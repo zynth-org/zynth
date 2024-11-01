@@ -16,11 +16,17 @@ Pod::Spec.new do |s|
   s.frameworks   = "JavaScriptCore", "UIKit", "Foundation"
   s.dependency   "Yoga"
 
+  # Configure C++ support for Yoga integration
+  s.library = 'c++'
+
   # Ensure module is defined and headers are visible to user targets
   s.pod_target_xcconfig = {
-    'DEFINES_MODULE' => 'YES'
+    'DEFINES_MODULE' => 'YES',
+    'CLANG_CXX_LANGUAGE_STANDARD' => 'c++14',
+    'CLANG_CXX_LIBRARY' => 'libc++'
   }
   s.user_target_xcconfig = {
-    'HEADER_SEARCH_PATHS' => '$(inherited) ${PODS_ROOT}/Headers/Public ${PODS_ROOT}/Headers/Public/SolidNativeKit'
+    'HEADER_SEARCH_PATHS' => '$(inherited) ${PODS_ROOT}/Headers/Public ${PODS_ROOT}/Headers/Public/SolidNativeKit',
+    'OTHER_LDFLAGS' => '$(inherited) -lc++'
   }
 end

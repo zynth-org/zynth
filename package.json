@@ -7,13 +7,9 @@
   ],
   "scripts": {
     "build": "yarn workspaces run build",
-    "clean": "git clean -xfd -e apps/sn-demo/ios/Pods -e apps/sn-demo/ios/SnDemo.xcworkspace",
-    "ios:init": "node scripts/generate-ios.js apps/sn-demo && cd apps/sn-demo/ios && pod install && xcodegen generate --spec project.yml",
-    "ios:pods": "cd apps/sn-demo/ios && pod install",
-    "ios:bundle": "yarn workspace @demo/sn-demo build",
-    "ios:build": "xcodebuild -workspace apps/sn-demo/ios/SnDemo.xcworkspace -scheme SnDemo -configuration Debug -sdk iphonesimulator -derivedDataPath apps/sn-demo/ios/.build",
-    "ios:run": "xcrun simctl bootstatus booted -b && xcrun simctl install booted apps/sn-demo/ios/.build/Build/Products/Debug-iphonesimulator/SnDemo.app && xcrun simctl launch booted com.solidnative.sndemo",
-    "ios:logs": "xcrun simctl spawn booted log stream --style compact --level debug --predicate 'process == \"SnDemo\" AND (eventMessage BEGINSWITH \"[SN]\" OR eventMessage CONTAINS \"JS Error\")'",
-    "ios:dev": "(yarn ios:logs &) && yarn build && yarn ios:build && yarn ios:run"
+    "clean": "git clean -xfd -e apps/*/ios/Pods -e apps/*/ios/*.xcworkspace",
+    "prebuild:ios": "yarn workspace @demo/sn-demo prebuild:ios",
+    "ios:dev": "yarn workspace @demo/sn-demo ios:dev",
+    "dev:sn-demo": "yarn workspace @demo/sn-demo ios:dev"
   }
 }

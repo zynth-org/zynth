@@ -1,5 +1,5 @@
 name: {{APP_NAME}}
-opti          - "{{APP_NAME}}.xcworkspace/**"ns:
+options:
   minimumXcodeGenVersion: 2.38.0
   deploymentTarget:
     iOS: "12.0"
@@ -21,7 +21,7 @@ targets:
           - Podfile.lock
           - Manifest.lock
           - Pods/**
-          - {{APP_NAME}}.xcworkspace/**
+          - "{{APP_NAME}}.xcworkspace/**"
           - Info.plist
           - build/**
           - .build/**

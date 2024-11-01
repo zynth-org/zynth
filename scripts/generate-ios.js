@@ -3,9 +3,11 @@
 const fs = require("fs");
 const path = require("path");
 
-// Configuration - parse app info from package.json
+// Configuration - parse app info from app.json (Expo-style) and package.json
 function getAppConfig(appDir) {
   const pkgPath = path.join(appDir, "package.json");
+  const appJsonPath = path.join(appDir, "app.json");
+
   if (!fs.existsSync(pkgPath)) {
     throw new Error(`package.json not found at ${pkgPath}`);
   }
@@ -13,15 +15,28 @@ function getAppConfig(appDir) {
   const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
   const appName = path.basename(appDir);
 
+  // Try to read app.json (Expo-style config)
+  let appConfig = {};
+  if (fs.existsSync(appJsonPath)) {
+    const appJson = JSON.parse(fs.readFileSync(appJsonPath, "utf8"));
+    appConfig = appJson.expo || appJson;
+  }
+
+  // Clean app name for Xcode (no spaces, special chars)
+  const cleanAppName = (appConfig.name || appName).replace(/[^a-zA-Z0-9]/g, "");
+
   return {
-    appName: appName.replace(/[^a-zA-Z0-9]/g, ""), // Clean for Xcode
+    appName: cleanAppName,
     appNameCapitalized:
-      appName.charAt(0).toUpperCase() +
-      appName.slice(1).replace(/[^a-zA-Z0-9]/g, ""),
+      cleanAppName.charAt(0).toUpperCase() + cleanAppName.slice(1),
     appDir: appName,
-    bundleId: pkg.bundleId || `com.solidnative.${appName}`,
+    bundleId:
+      appConfig.ios?.bundleIdentifier ||
+      pkg.bundleId ||
+      `com.solidnative.${appName.replace(/-/g, "")}`,
     workspaceName: pkg.name || `@demo/${appName}`,
-    displayName: pkg.displayName || appName,
+    displayName: appConfig.name || pkg.displayName || appName,
+    version: appConfig.version || pkg.version || "1.0.0",
   };
 }
 
@@ -41,9 +56,10 @@ function generateIOSProject(appDir) {
   const templateDir = path.resolve(__dirname, "../templates/ios");
   const targetDir = path.join(appDir, "ios");
 
-  console.log(`Generating iOS project for ${config.appName}...`);
-  console.log(`  App: ${config.appName}`);
+  console.log(`Generating iOS project for ${config.displayName}...`);
+  console.log(`  App Name: ${config.appName} (${config.displayName})`);
   console.log(`  Bundle ID: ${config.bundleId}`);
+  console.log(`  Version: ${config.version}`);
   console.log(`  Target: ${targetDir}`);
 
   // Remove existing iOS folder if it exists
