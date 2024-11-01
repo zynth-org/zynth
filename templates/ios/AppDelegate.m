@@ -1,6 +1,6 @@
 #import "AppDelegate.h"
 #import <JavaScriptCore/JavaScriptCore.h>
-#import <SolidNativeKit/SNUIManager.h>
+#import <RuneKit/SNUIManager.h>
 
 @interface AppDelegate ()
 @property(nonatomic, strong) JSContext *js;
@@ -11,7 +11,7 @@
 @implementation AppDelegate
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
-  NSLog(@"[SN] App start");
+  NSLog(@"[Rune] App start");
 
   self.window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
   UIViewController *vc = [UIViewController new];
@@ -30,22 +30,22 @@
   };
 
   // Install __ui bridge
-  NSLog(@"[SN] Installing JS bridge");
+  NSLog(@"[Rune] Installing JS bridge");
   SNInstallBindings(self.js, self.uiMgr);
 
   // Load bundled main.js
   NSString *path = [[NSBundle mainBundle] pathForResource:@"main" ofType:@"js"];
   NSAssert(path != nil, @"main.js not found (build the JS bundle)");
   NSString *code = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nil];
-  NSLog(@"[SN] Loaded main.js len=%lu", (unsigned long)code.length);
+  NSLog(@"[Rune] Loaded main.js len=%lu", (unsigned long)code.length);
   [self.js evaluateScript:code];
   // Sanity: ensure console works
   [self.js evaluateScript:@"console.log('JS bootstrap')"];
 
   // Ensure initial layout pass after JS loads
-  NSLog(@"[SN] Forcing initial flush");
+  NSLog(@"[Rune] Forcing initial flush");
   [self.uiMgr flush];
-  NSLog(@"[SN] Initial flush requested");
+  NSLog(@"[Rune] Initial flush requested");
 
   return YES;
 }

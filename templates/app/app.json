@@ -1,5 +1,5 @@
 {
-  "expo": {
+  "rune": {
     "name": "{{DISPLAY_NAME}}",
     "slug": "{{APP_SLUG}}",
     "version": "1.0.0",

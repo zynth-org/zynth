@@ -1,5 +1,5 @@
 {
-  "name": "@solid-native/core",
+  "name": "@rune/core",
   "version": "0.0.1",
   "type": "module",
   "main": "dist/cjs/index.cjs",

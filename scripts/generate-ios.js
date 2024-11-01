@@ -3,7 +3,7 @@
 const fs = require("fs");
 const path = require("path");
 
-// Configuration - parse app info from app.json (Expo-style) and package.json
+// Configuration - parse app info from app.json (Rune-style) and package.json
 function getAppConfig(appDir) {
   const pkgPath = path.join(appDir, "package.json");
   const appJsonPath = path.join(appDir, "app.json");
@@ -15,11 +15,11 @@ function getAppConfig(appDir) {
   const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
   const appName = path.basename(appDir);
 
-  // Try to read app.json (Expo-style config)
+  // Try to read app.json (Rune-style config)
   let appConfig = {};
   if (fs.existsSync(appJsonPath)) {
     const appJson = JSON.parse(fs.readFileSync(appJsonPath, "utf8"));
-    appConfig = appJson.expo || appJson;
+    appConfig = appJson.rune || appJson;
   }
 
   // Clean app name for Xcode (no spaces, special chars)

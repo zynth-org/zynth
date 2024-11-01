@@ -7,7 +7,7 @@
     "@babel/core": "^7.28.4",
     "@babel/preset-typescript": "^7.27.1",
     "@rollup/plugin-babel": "^6.0.4",
-    "@solid-native/core": "^0.0.1",
+    "@rune/core": "^0.0.1",
     "solid-js": "^1.8.0"
   },
   "devDependencies": {
@@ -24,7 +24,7 @@
     "build": "rollup -c",
     "prebuild:ios": "node ../../scripts/prebuild-ios.js",
     "ios:pods": "cd ios && pod install",
-    "ios:build": "node -e \"const app=require('./app.json'); const name=app.expo.name.replace(/[^a-zA-Z0-9]/g, ''); const workspace=require('fs').readdirSync('ios').find(f=>f.endsWith('.xcworkspace')); console.log('Building', name, 'workspace:', workspace); process.exit(0)\" && xcodebuild -workspace ios/*.xcworkspace -scheme {{XCODE_SCHEME}} -configuration Debug -sdk iphonesimulator -derivedDataPath ios/.build",
+    "ios:build": "node -e \"const app=require('./app.json'); const name=app.rune.name.replace(/[^a-zA-Z0-9]/g, ''); const workspace=require('fs').readdirSync('ios').find(f=>f.endsWith('.xcworkspace')); console.log('Building', name, 'workspace:', workspace); process.exit(0)\" && xcodebuild -workspace ios/*.xcworkspace -scheme {{XCODE_SCHEME}} -configuration Debug -sdk iphonesimulator -derivedDataPath ios/.build",
     "ios:run": "xcrun simctl bootstatus booted -b && xcrun simctl install booted ios/.build/Build/Products/Debug-iphonesimulator/{{XCODE_SCHEME}}.app && xcrun simctl launch booted {{BUNDLE_ID}}",
     "ios:logs": "xcrun simctl spawn booted log stream --style compact --level debug --predicate 'process == \"{{XCODE_SCHEME}}\" AND (eventMessage BEGINSWITH \"[SN]\" OR eventMessage CONTAINS \"JS Error\")'",
     "ios:dev": "(yarn ios:logs &) && yarn build && yarn ios:build && yarn ios:run"

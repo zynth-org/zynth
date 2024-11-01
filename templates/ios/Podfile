@@ -3,7 +3,7 @@ use_frameworks! :linkage => :static
 
 target '{{APP_NAME}}' do
   pod 'Yoga'
-  pod 'SolidNativeKit', :path => '../../../native/ios/SolidNativeKit'
+  pod 'RuneKit', :path => '../../../native/ios/RuneKit'
 end
 
 post_install do |installer|
