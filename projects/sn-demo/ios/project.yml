@@ -1,0 +1,56 @@
+name: SnDemo
+options:
+  minimumXcodeGenVersion: 2.38.0
+  deploymentTarget:
+    iOS: "12.0"
+settings:
+  base:
+    PRODUCT_BUNDLE_IDENTIFIER: com.solidnative.sndemo
+    SWIFT_VERSION: ""
+    CLANG_ENABLE_MODULES: YES
+    CODE_SIGN_STYLE: Automatic
+targets:
+  SnDemo:
+    type: application
+    platform: iOS
+    sources:
+      - path: .
+        excludes:
+          - project.yml
+          - Podfile
+          - Podfile.lock
+          - Manifest.lock
+          - Pods/**
+          - SnDemo.xcworkspace/**
+          - Info.plist
+          - build/**
+          - .build/**
+          - .xcodegen/**
+    info:
+      path: Info.plist
+    settings:
+      base:
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_OBJC_BRIDGING_HEADER: ""
+        LD_RUNPATH_SEARCH_PATHS: "@executable_path/Frameworks"
+    prebuildScripts:
+      - name: BundleJS
+        basedOnDependencyAnalysis: false
+        script: |
+          set -e
+          # Build all workspaces so @solid-native/core dist exists
+          cd "$PROJECT_DIR/../../../"
+          yarn build
+          # Build the demo bundle
+          yarn workspace @demo/sn-demo build
+          # Copy bundle into app resources
+          mkdir -p "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
+          cp apps/sn-demo/dist/main.js "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/main.js"
+    dependencies:
+      - sdk: JavaScriptCore.framework
+      - sdk: libc++.tbd
+schemes:
+  SnDemo:
+    build:
+      targets:
+        SnDemo: all

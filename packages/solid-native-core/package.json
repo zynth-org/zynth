@@ -1,0 +1,22 @@
+{
+  "name": "@solid-native/core",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "dist/cjs/index.cjs",
+  "module": "dist/esm/index.js",
+  "types": "dist/index.d.ts",
+  "sideEffects": false,
+  "license": "MIT",
+  "peerDependencies": {
+    "solid-js": ">=1.8.0"
+  },
+  "devDependencies": {
+    "solid-js": "^1.8.0",
+    "typescript": "^5.6.2",
+    "rollup": "^4.21.0",
+    "rollup-preset-solid": "^2.0.0"
+  },
+  "scripts": {
+    "build": "rollup -c"
+  }
+}

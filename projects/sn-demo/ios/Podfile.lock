@@ -1,0 +1,24 @@
+PODS:
+  - SolidNativeKit (0.0.1):
+    - Yoga
+  - Yoga (1.14.0)
+
+DEPENDENCIES:
+  - SolidNativeKit (from `../../../native/ios/SolidNativeKit`)
+  - Yoga
+
+SPEC REPOS:
+  trunk:
+    - Yoga
+
+EXTERNAL SOURCES:
+  SolidNativeKit:
+    :path: "../../../native/ios/SolidNativeKit"
+
+SPEC CHECKSUMS:
+  SolidNativeKit: 70b2816644e863da3ee1b2fba88dca92a0032313
+  Yoga: cff67a400f6b74dc38eb0bad4f156673d9aa980c
+
+PODFILE CHECKSUM: 24c1ee7d8ccc526108f3ec66c3fb93267f3dbc6a
+
+COCOAPODS: 1.16.2

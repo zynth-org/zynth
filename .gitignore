@@ -1,0 +1,41 @@
+# Node modules
+node_modules
+**/node_modules
+
+# JS build outputs
+/dist
+**/dist
+packages/*/dist
+apps/*/dist
+
+# Yarn / npm / pnpm
+yarn.lock
+.pnpm-debug.log
+
+# Build artifacts
+**/.build
+projects/**/build/
+
+# iOS / Xcode (generated projects - not templates)
+apps/*/ios/
+!templates/ios/
+projects/**/ios/.build
+projects/**/ios/build
+projects/**/ios/Pods/
+projects/**/ios/Pods-*/
+projects/**/ios/Pods.xcodeproj
+projects/**/ios/Pods/**
+*.xcuserstate
+*.xcuserdata
+**/ios/*.xcworkspace/xcuserdata/
+**/ios/*.xcodeproj/xcuserdata/
+
+# macOS
+.DS_Store
+
+# Editors
+.vscode/
+.idea/
+
+# Logs
+*.log
