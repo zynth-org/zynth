@@ -9,8 +9,8 @@
     "skipLibCheck": true,
     "baseUrl": ".",
     "paths": {
-      "@solid-native/core": ["packages/solid-native-core/src/index.ts"]
+      "@rune/core": ["packages/rune-core/src/index.ts"],
+      "@rune/core/*": ["packages/rune-core/src/*"]
     }
   }
 }
-
