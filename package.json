@@ -9,8 +9,11 @@
     "build": "yarn workspaces run build",
     "clean": "git clean -xfd -e apps/*/ios/Pods -e apps/*/ios/*.xcworkspace",
     "prebuild:ios": "yarn workspace @demo/sn-demo prebuild:ios",
+    "prebuild:android": "yarn workspace @demo/sn-demo prebuild:android",
     "ios:dev": "yarn workspace @demo/sn-demo ios:dev",
+    "android:dev": "yarn workspace @demo/sn-demo android:dev",
     "dev:sn-demo": "yarn workspace @demo/sn-demo ios:dev",
-    "check:bundle": "grep -q 'document\\.' apps/sn-demo/dist/main.js && (echo 'DOM refs found' && exit 1) || exit 0"
+    "check:bundle": "grep -q 'document\\.' apps/sn-demo/dist/main.js && (echo 'DOM refs found' && exit 1) || exit 0",
+    "android:reset": "rm -rf ./apps/sn-demo/android ./apps/sn-demo/dist && yarn build && yarn prebuild:android && yarn android:dev"
   }
 }

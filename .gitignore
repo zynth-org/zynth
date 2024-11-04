@@ -30,6 +30,11 @@ projects/**/ios/Pods/**
 **/ios/*.xcworkspace/xcuserdata/
 **/ios/*.xcodeproj/xcuserdata/
 
+# Android (generated projects - not templates)
+apps/*/android/
+!templates/android/
+native/android/**/build/
+
 # macOS
 .DS_Store
 

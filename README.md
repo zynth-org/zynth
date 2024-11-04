@@ -14,7 +14,7 @@ Features
 
 - Universal renderer API in `@rune/core` for writing platform-agnostic UI code.
 - iOS native runtime in `native/ios/RuneKit` (Objective-C/C++) and Podspec for integration.
-- Example app `apps/sn-demo` demonstrating development flow and iOS prebuild.
+- Example app `apps/sn-demo` demonstrating development flow and iOS/Android prebuild.
 - Rollup-based bundling for demo app (`apps/sn-demo/rollup.config.mjs`).
 - Prebuild tooling to generate Xcode/Pods configuration from `app.json`-style config using `rune` key.
 
@@ -23,8 +23,8 @@ Repository layout
 - apps/sn-demo — example app workspace (`@demo/sn-demo`) with rollup, iOS template, and scripts
 - packages/rune-core — core JS renderer and components (`@rune/core`)
 - native/ios/RuneKit — native iOS framework and podspec
-- scripts — prebuild scripts for generating iOS projects
-- templates — iOS/Xcode templates used by prebuild
+- scripts — prebuild scripts for generating native projects (iOS & Android)
+- templates — iOS/Xcode and Android/Gradle templates used by prebuild
 
 Quick start (development)
 
@@ -46,6 +46,7 @@ yarn workspace @demo/sn-demo build
 
 ```bash
 yarn workspace @demo/sn-demo prebuild:ios
+yarn workspace @demo/sn-demo prebuild:android
 yarn workspace @demo/sn-demo ios:pods
 ```
 
