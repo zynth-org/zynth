@@ -54,7 +54,9 @@
     _nextId = 1;
     _rootYoga = YGNodeNew();
 
-    // Prepare root surface
+    // Prepare root surface - ensure it fills the entire screen
+    CGRect screenBounds = [UIScreen mainScreen].bounds;
+    rootView.frame = screenBounds;
     rootView.backgroundColor = [UIColor colorWithRed:0.06 green:0.07 blue:0.09 alpha:1.0];
   }
   return self;
@@ -333,8 +335,16 @@ static YGSize SNMeasureLabelFunc(YGNodeRef node,
     NSLog(@"[SN] flush start: rootSubviews=%lu", (unsigned long)self.root.subviews.count);
     
     // Size the persistent root and compute layout
-    YGNodeStyleSetWidth(self.rootYoga, (float)self.root.bounds.size.width);
-    YGNodeStyleSetHeight(self.rootYoga, (float)self.root.bounds.size.height);
+    CGRect screenBounds = [UIScreen mainScreen].bounds;
+    YGNodeStyleSetWidth(self.rootYoga, (float)screenBounds.size.width);
+    YGNodeStyleSetHeight(self.rootYoga, (float)screenBounds.size.height);
+
+      // Force first child to fill root if needed (fixes 'card' effect)
+      if (YGNodeGetChildCount(self.rootYoga) > 0) {
+        YGNodeRef firstChild = YGNodeGetChild(self.rootYoga, 0);
+        YGNodeStyleSetWidth(firstChild, (float)screenBounds.size.width);
+        YGNodeStyleSetHeight(firstChild, (float)screenBounds.size.height);
+      }
     
     @try {
       YGNodeCalculateLayout(self.rootYoga, YGUndefined, YGUndefined, YGDirectionLTR);
