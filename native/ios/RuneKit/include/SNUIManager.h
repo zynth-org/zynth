@@ -24,6 +24,7 @@ NS_ASSUME_NONNULL_BEGIN
 extern "C" {
 #endif
 void SNInstallBindings(JSContext *ctx, SNUIManager *mgr);
+void RuneInstallBindings(JSContext *ctx, SNUIManager *mgr); // TODO: remove SNInstallBindings shim once call sites migrate
 #ifdef __cplusplus
 }
 #endif

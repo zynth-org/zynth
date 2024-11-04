@@ -71,3 +71,7 @@ void SNInstallBindings(JSContext *ctx, SNUIManager *mgr) {
     NSLog(@"JS[error]: %@", [parts componentsJoinedByString:@" "] ?: @"");
   };
 }
+
+void RuneInstallBindings(JSContext *ctx, SNUIManager *mgr) {
+  SNInstallBindings(ctx, mgr);
+}

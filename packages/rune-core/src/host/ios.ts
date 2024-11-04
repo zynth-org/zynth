@@ -1,4 +1,5 @@
 import type { Host, HostNode, Style } from "./HostTypes";
+import type { RuneUIBridge } from "../bridge";
 
 export function createIOSHost(): Host {
   const g: any =
@@ -6,8 +7,9 @@ export function createIOSHost(): Host {
       ? globalThis
       : // eslint-disable-next-line @typescript-eslint/no-implied-eval
         (0, eval)("this");
-  const ui = g.__ui;
-  if (!ui) throw new Error("__ui not found (native bindings missing)");
+  const ui = (g.__ui as RuneUIBridge | undefined) ?? (() => {
+    throw new Error("__ui not found (native bindings missing)");
+  })();
 
   const PARENTS = new Map<number, number | null>();
   const CHILDREN = new Map<number, number[]>();

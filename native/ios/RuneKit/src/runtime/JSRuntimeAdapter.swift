@@ -1,0 +1,40 @@
+import Foundation
+import JavaScriptCore
+
+public protocol JSRuntimeAdapter: AnyObject {
+  var onException: ((String) -> Void)? { get set }
+  func setGlobalObject(_ name: String, _ value: Any)
+  func setGlobalFunction(_ name: String, _ fn: @escaping ([Any]) -> Any?)
+  func evaluate(code: String)
+  func callGlobal(_ name: String, args: [Any]) -> Any?
+}
+
+public final class JSCAdapter: JSRuntimeAdapter {
+  let ctx = JSContext()!
+  public var onException: ((String) -> Void)?
+
+  public init() {
+    ctx.exceptionHandler = { [weak self] _, e in self?.onException?(e?.toString() ?? "unknown") }
+  }
+
+  public func setGlobalObject(_ name: String, _ value: Any) {
+    ctx.setObject(value, forKeyedSubscript: name as (NSCopying & NSObjectProtocol))
+  }
+
+  public func setGlobalFunction(_ name: String, _ fn: @escaping ([Any]) -> Any?) {
+    let block: @convention(block) ([Any]) -> Any? = { fn($0) }
+    ctx.setObject(block, forKeyedSubscript: name as (NSCopying & NSObjectProtocol))
+  }
+
+  public func evaluate(code: String) {
+    _ = ctx.evaluateScript(code)
+  }
+
+  public func callGlobal(_ name: String, args: [Any]) -> Any? {
+    ctx.objectForKeyedSubscript(name)?.call(withArguments: args)?.toObject()
+  }
+
+  public var rawContext: JSContext {
+    ctx
+  }
+}

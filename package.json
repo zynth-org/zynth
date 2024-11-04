@@ -10,6 +10,7 @@
     "clean": "git clean -xfd -e apps/*/ios/Pods -e apps/*/ios/*.xcworkspace",
     "prebuild:ios": "yarn workspace @demo/sn-demo prebuild:ios",
     "ios:dev": "yarn workspace @demo/sn-demo ios:dev",
-    "dev:sn-demo": "yarn workspace @demo/sn-demo ios:dev"
+    "dev:sn-demo": "yarn workspace @demo/sn-demo ios:dev",
+    "check:bundle": "grep -q 'document\\.' apps/sn-demo/dist/main.js && (echo 'DOM refs found' && exit 1) || exit 0"
   }
 }
