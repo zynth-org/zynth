@@ -5,28 +5,28 @@ Pod::Spec.new do |s|
   s.license      = { :type => "MIT" }
   s.author       = { "Rune" => "dev@example.com" }
   s.homepage     = "https://example.com/rune-kit"
-  s.platform     = :ios, "12.0"
-  # For local development pods installed via :path, CocoaPods still
-  # validates the presence of a proper `source`. This value won't be used
-  # when :path is provided but silences validation errors.
+  s.platform     = :ios, "15.0"
+
   s.source       = { :git => "https://example.com/rune-kit.git", :tag => s.version.to_s }
-  s.source_files = "include/**/*.{h}", "src/**/*.{m,mm}"
-  s.public_header_files = "include/**/*.h"
+  s.source_files = "include/**/*.{h}", "src/**/*.{h,m,mm,cpp,c,swift}"
+  s.public_header_files = "include/**/*.h", "src/runtime/HermesRuntimeHost.h"
   s.header_mappings_dir = "include"
+
   s.frameworks   = "JavaScriptCore", "UIKit", "Foundation"
   s.dependency   "Yoga"
+  s.dependency   "hermes-engine"
 
-  # Configure C++ support for Yoga integration
   s.library = 'c++'
 
-  # Ensure module is defined and headers are visible to user targets
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
-    'CLANG_CXX_LANGUAGE_STANDARD' => 'c++14',
-    'CLANG_CXX_LIBRARY' => 'libc++'
+    'CLANG_CXX_LANGUAGE_STANDARD' => 'c++17',
+    'CLANG_CXX_LIBRARY' => 'libc++',
+    'OTHER_CFLAGS' => '-DHERMES_ENABLE_DEBUGGER=0',
+    'HEADER_SEARCH_PATHS' => '$(inherited) ${PODS_TARGET_SRCROOT}/include'
   }
   s.user_target_xcconfig = {
-    'HEADER_SEARCH_PATHS' => '$(inherited) ${PODS_ROOT}/Headers/Public ${PODS_ROOT}/Headers/Public/RuneKit',
+    'HEADER_SEARCH_PATHS' => '$(inherited) ${PODS_ROOT}/Headers/Public ${PODS_ROOT}/Headers/Public/RuneKit ${PODS_TARGET_SRCROOT}/include',
     'OTHER_LDFLAGS' => '$(inherited) -lc++'
   }
 end

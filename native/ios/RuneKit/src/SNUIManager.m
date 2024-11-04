@@ -9,6 +9,7 @@
 @property(nonatomic, assign) YGNodeRef yoga;
 @property(nonatomic, strong) NSMutableArray<NSNumber *> *children;
 @property(nonatomic, strong) JSValue *onPressCallback;
+@property(nonatomic, assign) BOOL hasOnPressHandler;
 @end
 
 @implementation SNNode
@@ -103,7 +104,7 @@
 
 static CGFloat SNNum(id x) { return x ? [x doubleValue] : NAN; }
 
-static YGSize SNMeasureLabelFunc(YGNodeRef node,
+static YGSize SNMeasureLabelFunc(YGNodeConstRef node,
                                  float width,
                                  YGMeasureMode widthMode,
                                  float height,
@@ -213,44 +214,78 @@ static YGSize SNMeasureLabelFunc(YGNodeRef node,
   }
 }
 
+
+- (void)sn_attachTapRecognizerForNode:(SNNode *)node {
+  if (!node || !node.view) return;
+
+  for (UIGestureRecognizer *gr in node.view.gestureRecognizers.copy) {
+    if ([gr isKindOfClass:[UITapGestureRecognizer class]]) {
+      [node.view removeGestureRecognizer:gr];
+    }
+  }
+
+  UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(_handleTap:)];
+  tap.name = [NSString stringWithFormat:@"node:%d", node.nid];
+  [node.view addGestureRecognizer:tap];
+  node.hasOnPressHandler = YES;
+  NSLog(@"[SN] onPress handler attached nid=%d", node.nid);
+}
+
 - (void)setPropCallback:(NSNumber *)nodeId name:(NSString *)name callback:(JSValue *)callback {
   SNNode *n = _nodes[nodeId];
   if (!n || !n.view) return;
   
   if ([name isEqualToString:@"onPress"]) {
-    // Store the JavaScript callback
     n.onPressCallback = callback;
-    
-    // Remove existing tap gesture recognizers
-    for (UIGestureRecognizer *gr in n.view.gestureRecognizers.copy) {
-      if ([gr isKindOfClass:[UITapGestureRecognizer class]]) [n.view removeGestureRecognizer:gr];
+    BOOL validCallback = callback && ![callback isUndefined] && ![callback isNull];
+    n.hasOnPressHandler = validCallback;
+    if (validCallback) {
+      [self sn_attachTapRecognizerForNode:n];
     }
-    
-    // Add new tap gesture recognizer
-    UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(_handleTap:)];
-    tap.name = [NSString stringWithFormat:@"node:%d", n.nid];
-    [n.view addGestureRecognizer:tap];
-    NSLog(@"[SN] onPress callback stored and gesture attached nid=%d", n.nid);
   }
 }
+
+- (void)setHandler:(NSNumber *)nodeId name:(NSString *)name {
+  SNNode *n = _nodes[nodeId];
+  if (!n || !n.view) return;
+
+  if ([name isEqualToString:@"onPress"]) {
+    n.onPressCallback = nil;
+    n.hasOnPressHandler = YES;
+    [self sn_attachTapRecognizerForNode:n];
+  }
+}
+
 
 - (void)_handleTap:(UIGestureRecognizer *)gr {
   if (![gr isKindOfClass:[UITapGestureRecognizer class]]) return;
   NSString *name = gr.name; if (![name hasPrefix:@"node:"]) return;
-  
-  // Extract node ID from gesture recognizer name
-  NSString *nodeIdStr = [name substringFromIndex:5]; // Remove "node:" prefix
+
+  NSString *nodeIdStr = [name substringFromIndex:5];
   NSNumber *nodeId = @([nodeIdStr intValue]);
-  
+
   NSLog(@"[SN] Tapped node %@", nodeId);
-  
-  // Find the node and trigger its JavaScript callback
+
   SNNode *node = self.nodes[nodeId];
-  if (node && node.onPressCallback && ![node.onPressCallback isUndefined]) {
+  if (!node) {
+    NSLog(@"[SN] No node found for tap %@", nodeId);
+    return;
+  }
+
+  BOOL invoked = NO;
+  if (node.hasOnPressHandler && self.jsInvoker) {
+    [self.jsInvoker invokeHandlerForNode:node.nid name:@"onPress"];
+    invoked = YES;
+  }
+
+  if (!invoked && node.onPressCallback && ![node.onPressCallback isUndefined]) {
     NSLog(@"[SN] Executing onPress JavaScript callback for node %@", nodeId);
     [node.onPressCallback callWithArguments:@[]];
-  } else {
-    NSLog(@"[SN] No JavaScript callback found for node %@", nodeId);
+    invoked = YES;
+  }
+
+  if (!invoked) {
+    NSLog(@"[SN] No tap handler registered for node %@", nodeId);
   }
 }
 

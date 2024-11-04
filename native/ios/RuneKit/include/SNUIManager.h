@@ -1,6 +1,10 @@
+#ifndef SNUIMANAGER_H
+#define SNUIMANAGER_H
+
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 #import <JavaScriptCore/JavaScriptCore.h>
+#import "RuneJSInvoker.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -8,10 +12,13 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface SNUIManager : NSObject
 
+@property(nonatomic, weak) id<RuneJSInvoker> jsInvoker;
+
 - (instancetype)initWithRootView:(UIView *)rootView;
 - (NSNumber *)createNode:(NSString *)type; // returns nodeId
 - (void)setProp:(NSNumber *)nodeId name:(NSString *)name valueJSON:(NSString *)json;
 - (void)setPropCallback:(NSNumber *)nodeId name:(NSString *)name callback:(JSValue *)callback;
+- (void)setHandler:(NSNumber *)nodeId name:(NSString *)name;
 - (void)setText:(NSNumber *)nodeId text:(NSString *)text;
 - (void)insertChild:(NSNumber *)parentId child:(NSNumber *)childId index:(NSNumber *)index;
 - (void)removeChild:(NSNumber *)parentId child:(NSNumber *)childId;
@@ -30,3 +37,5 @@ void RuneInstallBindings(JSContext *ctx, SNUIManager *mgr); // TODO: remove SNIn
 #endif
 
 NS_ASSUME_NONNULL_END
+
+#endif /* SNUIMANAGER_H */

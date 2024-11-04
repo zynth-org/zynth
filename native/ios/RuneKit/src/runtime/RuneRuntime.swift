@@ -9,9 +9,26 @@ public final class RuneRuntime {
   let manager: RuneUIManager
   let registry = RuneModuleRegistry()
 
-  public init(rootView: UIView, runtime: JSRuntimeAdapter = JSCAdapter()) {
-    self.runtime = runtime
+  public init(rootView: UIView, runtime: JSRuntimeAdapter? = nil) {
     self.manager = RuneUIManager(rootView: rootView)
+
+    if let runtime {
+      self.runtime = runtime
+    } else {
+      self.runtime = HermesAdapter(uiManager: manager)
+    }
+
+    configureRuntime()
+  }
+
+  private func configureRuntime() {
+    if let hermes = runtime as? HermesAdapter {
+      hermes.configureModuleCall { [weak self] name, method, argsJSON in
+        guard let self else { return "{}" }
+        return self.registry.call(name, method: method, argsJSON: argsJSON)
+      }
+      return
+    }
 
     runtime.evaluate(code: "globalThis.console = globalThis.console || {};")
     runtime.setGlobalFunction("__runeConsoleLog") { (args: [Any]) -> Any? in
