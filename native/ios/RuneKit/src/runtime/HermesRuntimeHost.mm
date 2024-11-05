@@ -309,9 +309,10 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
                 dispatch_async(host->_jsQueue, ^{
                   auto &rtRef = *host->_rt;
                   [host reportExceptionMessage:message];
-                  auto jsMessage = String::createFromUtf8(rtRef, message);
-                  Value errorValue(std::move(jsMessage));
-                  rejectPtr->call(rtRef, std::move(errorValue));
+                  Object errorObj(rtRef);
+                  errorObj.setProperty(rtRef, "code", String::createFromUtf8(rtRef, "E_NATIVE"));
+                  errorObj.setProperty(rtRef, "message", String::createFromUtf8(rtRef, message));
+                  rejectPtr->call(rtRef, {Value(rtRef, errorObj)});
                 });
                 return;
               }
@@ -328,19 +329,21 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
                   auto parse = JSONObj.getPropertyAsFunction(rtRef, "parse");
                   auto jsString = String::createFromUtf8(rtRef, resultStd);
                   Value parsed = parse.call(rtRef, Value(std::move(jsString)));
-                  resolvePtr->call(rtRef, std::move(parsed));
+                  resolvePtr->call(rtRef, {Value(rtRef, parsed)});
                 } catch (const facebook::jsi::JSError &error) {
                   std::string message(error.what());
                   [host reportExceptionMessage:message];
-                  auto jsMessage = String::createFromUtf8(rtRef, message);
-                  Value errorValue(std::move(jsMessage));
-                  rejectPtr->call(rtRef, std::move(errorValue));
+                  Object errorObj(rtRef);
+                  errorObj.setProperty(rtRef, "code", String::createFromUtf8(rtRef, "E_JS"));
+                  errorObj.setProperty(rtRef, "message", String::createFromUtf8(rtRef, message));
+                  rejectPtr->call(rtRef, {Value(rtRef, errorObj)});
                 } catch (const std::exception &ex) {
                   std::string message(ex.what());
                   [host reportExceptionMessage:message];
-                  auto jsMessage = String::createFromUtf8(rtRef, message);
-                  Value errorValue(std::move(jsMessage));
-                  rejectPtr->call(rtRef, std::move(errorValue));
+                  Object errorObj(rtRef);
+                  errorObj.setProperty(rtRef, "code", String::createFromUtf8(rtRef, "E_NATIVE"));
+                  errorObj.setProperty(rtRef, "message", String::createFromUtf8(rtRef, message));
+                  rejectPtr->call(rtRef, {Value(rtRef, errorObj)});
                 }
               });
             }
@@ -414,15 +417,10 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
         auto fn = a[0].asObject(rt).asFunction(rt);
         double delay = (count > 1 && a[1].isNumber()) ? a[1].asNumber() : 0;
         std::vector<Value> args;
-        if (count > 2 && a[2].isObject()) {
-          Object argObj = a[2].asObject(rt);
-          if (argObj.isArray(rt)) {
-            Array argArray = argObj.asArray(rt);
-            size_t length = argArray.length(rt);
-            args.reserve(length);
-            for (size_t i = 0; i < length; ++i) {
-              args.emplace_back(argArray.getValueAtIndex(rt, i));
-            }
+        if (count > 2) {
+          args.reserve(count - 2);
+          for (size_t i = 2; i < count; ++i) {
+            args.emplace_back(Value(rt, a[i]));
           }
         }
         auto callback = std::make_shared<Function>(std::move(fn));
@@ -445,7 +443,7 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
   rt.global().setProperty(rt, "__hostClearTimeout", hostClearTimeout);
 
   static const char *timerScript =
-      "globalThis.setTimeout=(fn,ms,...a)=>__hostSetTimeout(fn,ms,a);"
+      "globalThis.setTimeout=(fn,ms,...a)=>__hostSetTimeout(fn,ms|0,...a);"
       "globalThis.clearTimeout=(id)=>__hostClearTimeout(id);";
 
   auto buffer = std::make_shared<StringBuffer>(timerScript);
