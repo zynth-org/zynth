@@ -19,6 +19,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)setProp:(NSNumber *)nodeId name:(NSString *)name valueJSON:(NSString *)json;
 - (void)setPropCallback:(NSNumber *)nodeId name:(NSString *)name callback:(JSValue *)callback;
 - (void)setHandler:(NSNumber *)nodeId name:(NSString *)name;
+- (void)setStyle:(NSNumber *)nodeId style:(NSDictionary *)style;
 - (void)setText:(NSNumber *)nodeId text:(NSString *)text;
 - (void)insertChild:(NSNumber *)parentId child:(NSNumber *)childId index:(NSNumber *)index;
 - (void)removeChild:(NSNumber *)parentId child:(NSNumber *)childId;

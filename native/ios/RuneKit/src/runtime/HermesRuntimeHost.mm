@@ -2,6 +2,7 @@
 
 #import <hermes/hermes.h>
 #import <jsi/jsi.h>
+#import <dispatch/dispatch.h>
 
 #import <unordered_map>
 #import <memory>
@@ -25,6 +26,31 @@ struct HandlerKeyHash {
     return std::hash<int>{}(k.id) ^ std::hash<std::string>{}(k.name);
   }
 };
+
+struct TimerEntry {
+  dispatch_source_t source;
+  std::shared_ptr<Function> callback;
+  std::vector<Value> args;
+};
+
+Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function &&reject)> work) {
+  auto promiseCtor = rt.global().getPropertyAsFunction(rt, "Promise");
+  auto workPtr = std::make_shared<std::function<void(Function &&, Function &&)>>(std::move(work));
+
+  auto executor = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "__runePromiseExecutor"), 2,
+      [workPtr](Runtime &rt, const Value &, const Value *argv, size_t argc) -> Value {
+        if (argc < 2 || !argv[0].isObject() || !argv[1].isObject()) {
+          return Value::undefined();
+        }
+        auto resolve = argv[0].asObject(rt).asFunction(rt);
+        auto reject = argv[1].asObject(rt).asFunction(rt);
+        (*workPtr)(std::move(resolve), std::move(reject));
+        return Value::undefined();
+      });
+
+  return promiseCtor.callAsConstructor(rt, executor);
+}
 }
 
 @interface HermesRuntimeHost ()
@@ -34,18 +60,27 @@ struct HandlerKeyHash {
 @implementation HermesRuntimeHost {
   std::unique_ptr<facebook::hermes::HermesRuntime> _rt;
   std::unordered_map<HandlerKey, std::shared_ptr<Function>, HandlerKeyHash> _handlers;
+  std::unordered_map<uint64_t, TimerEntry> _timers;
+  dispatch_queue_t _jsQueue;
+  dispatch_queue_t _moduleQueue;
+  uint64_t _nextTimerId;
 }
 
 - (instancetype)initWithUIManager:(SNUIManager *)manager {
   if (self = [super init]) {
     _manager = manager;
-    _rt = facebook::hermes::makeHermesRuntime();
+    _jsQueue = dispatch_queue_create("com.rune.hermes.js", DISPATCH_QUEUE_SERIAL);
+    _moduleQueue = dispatch_queue_create("com.rune.hermes.modules", DISPATCH_QUEUE_CONCURRENT);
+    _nextTimerId = 1;
 
-    _manager.jsInvoker = self;
-
-    [self installConsole];
-    [self installUIBridge];
-    [self installModulesBridge];
+    dispatch_sync(_jsQueue, ^{
+      _rt = facebook::hermes::makeHermesRuntime();
+      _manager.jsInvoker = self;
+      [self installConsole];
+      [self installUIBridge];
+      [self installModulesBridge];
+      [self installTimers];
+    });
   }
   return self;
 }
@@ -95,6 +130,54 @@ struct HandlerKeyHash {
         }
         int id = (int)a[0].asNumber();
         std::string name = a[1].getString(rt).utf8(rt);
+        if (name == "style" && a[2].isObject()) {
+          Object styleObj = a[2].asObject(rt);
+          NSMutableDictionary *styleDict = [NSMutableDictionary dictionary];
+
+          auto copyNumber = [&](const char *prop) {
+            if (!styleObj.hasProperty(rt, prop)) {
+              return;
+            }
+            Value v = styleObj.getProperty(rt, prop);
+            if (!v.isNumber()) {
+              return;
+            }
+            NSString *key = [NSString stringWithUTF8String:prop];
+            styleDict[key] = @(v.asNumber());
+          };
+
+          auto copyString = [&](const char *prop) {
+            if (!styleObj.hasProperty(rt, prop)) {
+              return;
+            }
+            Value v = styleObj.getProperty(rt, prop);
+            if (!v.isString()) {
+              return;
+            }
+            std::string utf8 = v.getString(rt).utf8(rt);
+            NSString *key = [NSString stringWithUTF8String:prop];
+            styleDict[key] = [NSString stringWithUTF8String:utf8.c_str()];
+          };
+
+          const char *numericKeys[] = {"width",          "height",         "flex",           "padding",
+                                       "paddingHorizontal", "paddingVertical", "paddingTop",    "paddingRight",
+                                       "paddingBottom",  "margin",         "marginHorizontal", "marginVertical",
+                                       "marginTop",      "marginRight",    "marginBottom",   "borderRadius",
+                                       "fontSize"};
+          for (const char *key : numericKeys) {
+            copyNumber(key);
+          }
+
+          const char *stringKeys[] = {"flexDirection", "justifyContent", "alignItems",
+                                       "backgroundColor", "fontWeight",   "color"};
+          for (const char *key : stringKeys) {
+            copyString(key);
+          }
+
+          [[host manager] setStyle:@(id) style:styleDict];
+          return Value::undefined();
+        }
+
         auto JSON = rt.global().getPropertyAsObject(rt, "JSON");
         auto stringify = JSON.getPropertyAsFunction(rt, "stringify");
         auto str = stringify.call(rt, Value(rt, a[2])).getString(rt).utf8(rt);
@@ -134,7 +217,10 @@ struct HandlerKeyHash {
         if (count < 2) {
           return Value::undefined();
         }
-        [[host manager] removeChild:@((int)a[0].asNumber()) child:@((int)a[1].asNumber())];
+        int parentId = (int)a[0].asNumber();
+        int childId = (int)a[1].asNumber();
+        [[host manager] removeChild:@(parentId) child:@(childId)];
+        [host sn_removeHandlersForNode:childId];
         return Value::undefined();
       });
 
@@ -170,6 +256,17 @@ struct HandlerKeyHash {
   rt.global().setProperty(rt, "__ui", ui);
 }
 
+- (void)sn_removeHandlersForNode:(int)nodeId {
+  auto it = _handlers.begin();
+  while (it != _handlers.end()) {
+    if (it->first.id == nodeId) {
+      it = _handlers.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
 - (void)installModulesBridge {
   auto &rt = *_rt;
   HermesRuntimeHost *host = self;
@@ -184,24 +281,175 @@ struct HandlerKeyHash {
         std::string method = a[1].getString(rt).utf8(rt);
         auto JSON = rt.global().getPropertyAsObject(rt, "JSON");
         auto stringify = JSON.getPropertyAsFunction(rt, "stringify");
-        auto str = stringify.call(rt, Value(rt, a[2])).getString(rt).utf8(rt);
+        auto argsJSON = stringify.call(rt, Value(rt, a[2])).getString(rt).utf8(rt);
 
-        NSString *(^handler)(NSString *, NSString *, NSString *) = host.moduleCallHandler;
-        NSString *resultJSON = handler ? handler([NSString stringWithUTF8String:module.c_str()],
-                                                [NSString stringWithUTF8String:method.c_str()],
-                                                [NSString stringWithUTF8String:str.c_str()])
-                                      : @"{}";
-        if (!resultJSON) {
-          resultJSON = @"{}";
-        }
-        auto outString = String::createFromUtf8(rt, resultJSON.UTF8String);
-        auto parse = JSON.getPropertyAsFunction(rt, "parse");
-        return parse.call(rt, Value(std::move(outString)));
+        return SNMakePromise(rt, [host, module, method, argsJSON](Function &&resolve, Function &&reject) {
+          auto resolvePtr = std::make_shared<Function>(std::move(resolve));
+          auto rejectPtr = std::make_shared<Function>(std::move(reject));
+
+          dispatch_async(host->_moduleQueue, ^{
+            @autoreleasepool {
+              NSString *resultString = nil;
+              NSString *errorString = nil;
+              @try {
+                if (host.moduleCallHandler) {
+                  NSString *moduleName = [NSString stringWithUTF8String:module.c_str()];
+                  NSString *methodName = [NSString stringWithUTF8String:method.c_str()];
+                  NSString *argsString = [NSString stringWithUTF8String:argsJSON.c_str()];
+                  resultString = host.moduleCallHandler(moduleName, methodName, argsString);
+                } else {
+                  resultString = @"{}";
+                }
+              } @catch (NSException *exception) {
+                errorString = [NSString stringWithFormat:@"Module call threw: %@", exception.reason ?: @"unknown"];
+              }
+
+              if (errorString) {
+                std::string message = [errorString UTF8String] ? std::string([errorString UTF8String]) : std::string("Module call error");
+                dispatch_async(host->_jsQueue, ^{
+                  auto &rtRef = *host->_rt;
+                  [host reportExceptionMessage:message];
+                  auto jsMessage = String::createFromUtf8(rtRef, message);
+                  Value errorValue(std::move(jsMessage));
+                  rejectPtr->call(rtRef, std::move(errorValue));
+                });
+                return;
+              }
+
+              if (!resultString) {
+                resultString = @"{}";
+              }
+              std::string resultStd = [resultString UTF8String] ? std::string([resultString UTF8String]) : std::string("{}");
+
+              dispatch_async(host->_jsQueue, ^{
+                auto &rtRef = *host->_rt;
+                try {
+                  auto JSONObj = rtRef.global().getPropertyAsObject(rtRef, "JSON");
+                  auto parse = JSONObj.getPropertyAsFunction(rtRef, "parse");
+                  auto jsString = String::createFromUtf8(rtRef, resultStd);
+                  Value parsed = parse.call(rtRef, Value(std::move(jsString)));
+                  resolvePtr->call(rtRef, std::move(parsed));
+                } catch (const facebook::jsi::JSError &error) {
+                  std::string message(error.what());
+                  [host reportExceptionMessage:message];
+                  auto jsMessage = String::createFromUtf8(rtRef, message);
+                  Value errorValue(std::move(jsMessage));
+                  rejectPtr->call(rtRef, std::move(errorValue));
+                } catch (const std::exception &ex) {
+                  std::string message(ex.what());
+                  [host reportExceptionMessage:message];
+                  auto jsMessage = String::createFromUtf8(rtRef, message);
+                  Value errorValue(std::move(jsMessage));
+                  rejectPtr->call(rtRef, std::move(errorValue));
+                }
+              });
+            }
+          });
+        });
       });
 
   Object modules(rt);
   modules.setProperty(rt, "call", hostCall);
   rt.global().setProperty(rt, "__modules", modules);
+}
+
+- (uint64_t)sn_scheduleTimerWithDelay:(double)delayMillis
+                               callback:(std::shared_ptr<Function>)callback
+                                   args:(std::vector<Value>)args {
+  double clamped = delayMillis < 0 ? 0 : delayMillis;
+  int64_t delayNs = (int64_t)(clamped * NSEC_PER_MSEC);
+
+  uint64_t timerId = _nextTimerId++;
+  dispatch_source_t timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, _jsQueue);
+
+  TimerEntry entry{timer, callback, std::move(args)};
+  _timers.emplace(timerId, std::move(entry));
+
+  HermesRuntimeHost *host = self;
+  dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, delayNs), DISPATCH_TIME_FOREVER, 0);
+  dispatch_source_set_event_handler(timer, ^{
+    auto it = host->_timers.find(timerId);
+    if (it == host->_timers.end()) {
+      return;
+    }
+    TimerEntry &entryRef = it->second;
+    auto &rt = *host->_rt;
+    const Value *argsPtr = entryRef.args.empty() ? nullptr : entryRef.args.data();
+    try {
+      entryRef.callback->call(rt, argsPtr, entryRef.args.size());
+    } catch (const facebook::jsi::JSError &error) {
+      std::string message(error.what());
+      [host reportExceptionMessage:message];
+    } catch (const std::exception &ex) {
+      std::string message(ex.what());
+      [host reportExceptionMessage:message];
+    }
+    dispatch_source_cancel(entryRef.source);
+    host->_timers.erase(timerId);
+  });
+
+  dispatch_resume(timer);
+  return timerId;
+}
+
+- (void)sn_clearTimer:(uint64_t)timerId {
+  auto it = _timers.find(timerId);
+  if (it == _timers.end()) {
+    return;
+  }
+  dispatch_source_cancel(it->second.source);
+  _timers.erase(it);
+}
+
+- (void)installTimers {
+  auto &rt = *_rt;
+  HermesRuntimeHost *host = self;
+
+  auto hostSetTimeout = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "__hostSetTimeout"), 3,
+      [host](Runtime &rt, const Value &, const Value *a, size_t count) -> Value {
+        if (count < 2 || !a[0].isObject()) {
+          return Value::undefined();
+        }
+        auto fn = a[0].asObject(rt).asFunction(rt);
+        double delay = (count > 1 && a[1].isNumber()) ? a[1].asNumber() : 0;
+        std::vector<Value> args;
+        if (count > 2 && a[2].isObject()) {
+          Object argObj = a[2].asObject(rt);
+          if (argObj.isArray(rt)) {
+            Array argArray = argObj.asArray(rt);
+            size_t length = argArray.length(rt);
+            args.reserve(length);
+            for (size_t i = 0; i < length; ++i) {
+              args.emplace_back(argArray.getValueAtIndex(rt, i));
+            }
+          }
+        }
+        auto callback = std::make_shared<Function>(std::move(fn));
+        uint64_t timerId = [host sn_scheduleTimerWithDelay:delay callback:callback args:std::move(args)];
+        return Value(static_cast<double>(timerId));
+      });
+
+  auto hostClearTimeout = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "__hostClearTimeout"), 1,
+      [host](Runtime &rt, const Value &, const Value *a, size_t count) -> Value {
+        if (count < 1 || !a[0].isNumber()) {
+          return Value::undefined();
+        }
+        uint64_t timerId = (uint64_t)a[0].asNumber();
+        [host sn_clearTimer:timerId];
+        return Value::undefined();
+      });
+
+  rt.global().setProperty(rt, "__hostSetTimeout", hostSetTimeout);
+  rt.global().setProperty(rt, "__hostClearTimeout", hostClearTimeout);
+
+  static const char *timerScript =
+      "globalThis.setTimeout=(fn,ms,...a)=>__hostSetTimeout(fn,ms,a);"
+      "globalThis.clearTimeout=(id)=>__hostClearTimeout(id);";
+
+  auto buffer = std::make_shared<StringBuffer>(timerScript);
+  _rt->evaluateJavaScript(buffer, "timers.js");
 }
 
 - (void)invokeHandlerForNode:(int)nid name:(NSString *)name {
@@ -218,44 +466,48 @@ struct HandlerKeyHash {
 }
 
 - (void)evaluateString:(NSString *)code {
-  try {
-    auto buffer = std::make_shared<StringBuffer>(code.UTF8String);
-    _rt->evaluateJavaScript(buffer, "main.js");
-  } catch (const facebook::jsi::JSError &error) {
-    std::string message(error.what());
-    [self reportExceptionMessage:message];
-  } catch (const std::exception &ex) {
-    std::string message(ex.what());
-    [self reportExceptionMessage:message];
-  }
+  dispatch_sync(_jsQueue, ^{
+    try {
+      auto buffer = std::make_shared<StringBuffer>(code.UTF8String);
+      _rt->evaluateJavaScript(buffer, "main.js");
+    } catch (const facebook::jsi::JSError &error) {
+      std::string message(error.what());
+      [self reportExceptionMessage:message];
+    } catch (const std::exception &ex) {
+      std::string message(ex.what());
+      [self reportExceptionMessage:message];
+    }
+  });
 }
 
 - (id)callGlobal:(NSString *)name args:(NSArray *)args {
-  auto &rt = *_rt;
-  try {
-    auto fn = rt.global().getPropertyAsFunction(rt, [name UTF8String]);
-    std::vector<Value> va;
-    va.reserve(args.count);
-    for (id arg in args) {
-      if ([arg isKindOfClass:[NSNumber class]]) {
-        va.emplace_back([(NSNumber *)arg doubleValue]);
-      } else if ([arg isKindOfClass:[NSString class]]) {
-        va.emplace_back(String::createFromUtf8(rt, [(NSString *)arg UTF8String]));
-      } else if ([arg isKindOfClass:[NSNull class]]) {
-        va.emplace_back(Value::null());
-      } else {
-        va.emplace_back(Value::undefined());
+  dispatch_sync(_jsQueue, ^{
+    auto &rt = *_rt;
+    try {
+      auto fn = rt.global().getPropertyAsFunction(rt, [name UTF8String]);
+      std::vector<Value> va;
+      va.reserve(args.count);
+      for (id arg in args) {
+        if ([arg isKindOfClass:[NSNumber class]]) {
+          va.emplace_back([(NSNumber *)arg doubleValue]);
+        } else if ([arg isKindOfClass:[NSString class]]) {
+          va.emplace_back(String::createFromUtf8(rt, [(NSString *)arg UTF8String]));
+        } else if ([arg isKindOfClass:[NSNull class]]) {
+          va.emplace_back(Value::null());
+        } else {
+          va.emplace_back(Value::undefined());
+        }
       }
+      const Value *argsPtr = va.data();
+      fn.call(rt, argsPtr, va.size());
+    } catch (const facebook::jsi::JSError &error) {
+      std::string message(error.what());
+      [self reportExceptionMessage:message];
+    } catch (const std::exception &ex) {
+      std::string message(ex.what());
+      [self reportExceptionMessage:message];
     }
-    const Value *argsPtr = va.data();
-    fn.call(rt, argsPtr, va.size());
-  } catch (const facebook::jsi::JSError &error) {
-    std::string message(error.what());
-    [self reportExceptionMessage:message];
-  } catch (const std::exception &ex) {
-    std::string message(ex.what());
-    [self reportExceptionMessage:message];
-  }
+  });
   return nil;
 }
 

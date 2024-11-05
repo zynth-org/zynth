@@ -135,6 +135,92 @@ static YGSize SNMeasureLabelFunc(YGNodeConstRef node,
   return (YGSize){.width = outW, .height = outH};
 }
 
+static void SNApplyEdges(NSDictionary *style,
+                        NSString *baseKey,
+                        NSString *horizontalKey,
+                        NSString *verticalKey,
+                        NSString *topKey,
+                        NSString *rightKey,
+                        NSString *bottomKey,
+                        YGNodeRef yoga,
+                        void (^setter)(YGEdge edge, float value)) {
+  NSNumber *base = style[baseKey];
+  NSNumber *horizontal = style[horizontalKey];
+  NSNumber *vertical = style[verticalKey];
+  NSNumber *top = style[topKey];
+  NSNumber *right = style[rightKey];
+  NSNumber *bottom = style[bottomKey];
+
+  NSNumber *T = top ?: vertical ?: base;
+  NSNumber *R = right ?: horizontal ?: base;
+  NSNumber *B = bottom ?: vertical ?: base;
+  NSNumber *L = horizontal ?: base;
+
+  if (T) setter(YGEdgeTop, (float)SNNum(T));
+  if (R) setter(YGEdgeRight, (float)SNNum(R));
+  if (B) setter(YGEdgeBottom, (float)SNNum(B));
+  if (L) setter(YGEdgeLeft, (float)SNNum(L));
+}
+
+- (void)sn_applyStyleDictionary:(NSDictionary *)style toNode:(SNNode *)n {
+  if (!style || !n || !n.view) return;
+  if (![style isKindOfClass:[NSDictionary class]] || !n.yoga) return;
+
+  // Sizes
+  NSNumber *w = style[@"width"]; if (w) YGNodeStyleSetWidth(n.yoga, (float)SNNum(w));
+  NSNumber *h = style[@"height"]; if (h) YGNodeStyleSetHeight(n.yoga, (float)SNNum(h));
+
+  // Flex
+  NSNumber *flex = style[@"flex"]; if (flex) YGNodeStyleSetFlex(n.yoga, (float)SNNum(flex));
+  NSString *fd = style[@"flexDirection"];
+  if (fd) YGNodeStyleSetFlexDirection(n.yoga, [fd isEqualToString:@"row"] ? YGFlexDirectionRow : YGFlexDirectionColumn);
+
+  NSString *jc = style[@"justifyContent"];
+  if (jc) {
+    YGJustify j = YGJustifyFlexStart;
+    if ([jc isEqualToString:@"center"]) j = YGJustifyCenter;
+    else if ([jc isEqualToString:@"flex-end"]) j = YGJustifyFlexEnd;
+    else if ([jc isEqualToString:@"space-between"]) j = YGJustifySpaceBetween;
+    else if ([jc isEqualToString:@"space-around"]) j = YGJustifySpaceAround;
+    YGNodeStyleSetJustifyContent(n.yoga, j);
+  }
+
+  NSString *ai = style[@"alignItems"];
+  if (ai) {
+    YGAlign a = YGAlignFlexStart;
+    if ([ai isEqualToString:@"center"]) a = YGAlignCenter;
+    else if ([ai isEqualToString:@"flex-end"]) a = YGAlignFlexEnd;
+    else if ([ai isEqualToString:@"stretch"]) a = YGAlignStretch;
+    YGNodeStyleSetAlignItems(n.yoga, a);
+  }
+
+  SNApplyEdges(style, @"padding", @"paddingHorizontal", @"paddingVertical", @"paddingTop", @"paddingRight", @"paddingBottom", n.yoga,
+               ^(YGEdge e, float v){ YGNodeStyleSetPadding(n.yoga, e, v); });
+
+  SNApplyEdges(style, @"margin", @"marginHorizontal", @"marginVertical", @"marginTop", @"marginRight", @"marginBottom", n.yoga,
+               ^(YGEdge e, float v){ YGNodeStyleSetMargin(n.yoga, e, v); });
+
+  // View styling
+  NSString *bg = style[@"backgroundColor"]; if (bg) { n.view.backgroundColor = SNColorFromHex(bg); }
+  NSNumber *br = style[@"borderRadius"];
+  if (br) { n.view.layer.cornerRadius = (CGFloat)SNNum(br); n.view.clipsToBounds = YES; }
+
+  // Text styling
+  if ([n.view isKindOfClass:[UILabel class]]) {
+    UILabel *l = (UILabel *)n.view;
+    NSNumber *fs = style[@"fontSize"]; if (fs) l.font = [UIFont systemFontOfSize:(CGFloat)SNNum(fs) weight:UIFontWeightRegular];
+    NSString *fw = style[@"fontWeight"];
+    if (fw) {
+      NSDictionary *m = @{@"normal":@(UIFontWeightRegular),@"bold":@(UIFontWeightBold),
+                           @"100":@(UIFontWeightUltraLight),@"200":@(UIFontWeightThin),@"300":@(UIFontWeightLight),@"400":@(UIFontWeightRegular),
+                           @"500":@(UIFontWeightMedium),@"600":@(UIFontWeightSemibold),@"700":@(UIFontWeightBold),@"800":@(UIFontWeightHeavy),@"900":@(UIFontWeightBlack)};
+      l.font = [UIFont systemFontOfSize:l.font.pointSize weight:[m[fw] doubleValue]];
+    }
+    NSString *color = style[@"color"]; if (color) l.textColor = SNColorFromHex(color);
+    if (n.yoga) YGNodeMarkDirty(n.yoga);
+  }
+}
+
 - (void)setProp:(NSNumber *)nodeId name:(NSString *)name valueJSON:(NSString *)json {
   SNNode *n = _nodes[nodeId]; 
   if (!n || !n.view) return;
@@ -142,76 +228,15 @@ static YGSize SNMeasureLabelFunc(YGNodeConstRef node,
   if ([name isEqualToString:@"style"]) {
     NSData *data = [json dataUsingEncoding:NSUTF8StringEncoding];
     NSDictionary *s = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
-    if (![s isKindOfClass:[NSDictionary class]] || !n.yoga) return;
-
-    // Sizes
-    NSNumber *w = s[@"width"]; if (w) YGNodeStyleSetWidth(n.yoga, (float)SNNum(w));
-    NSNumber *h = s[@"height"]; if (h) YGNodeStyleSetHeight(n.yoga, (float)SNNum(h));
-
-    // Flex
-    NSNumber *flex = s[@"flex"]; if (flex) YGNodeStyleSetFlex(n.yoga, (float)SNNum(flex));
-    NSString *fd = s[@"flexDirection"];
-    if (fd) YGNodeStyleSetFlexDirection(n.yoga, [fd isEqualToString:@"row"] ? YGFlexDirectionRow : YGFlexDirectionColumn);
-
-    NSString *jc = s[@"justifyContent"];
-    if (jc) {
-      YGJustify j = YGJustifyFlexStart;
-      if ([jc isEqualToString:@"center"]) j = YGJustifyCenter;
-      else if ([jc isEqualToString:@"flex-end"]) j = YGJustifyFlexEnd;
-      else if ([jc isEqualToString:@"space-between"]) j = YGJustifySpaceBetween;
-      else if ([jc isEqualToString:@"space-around"]) j = YGJustifySpaceAround;
-      YGNodeStyleSetJustifyContent(n.yoga, j);
-    }
-
-    NSString *ai = s[@"alignItems"];
-    if (ai) {
-      YGAlign a = YGAlignFlexStart;
-      if ([ai isEqualToString:@"center"]) a = YGAlignCenter;
-      else if ([ai isEqualToString:@"flex-end"]) a = YGAlignFlexEnd;
-      else if ([ai isEqualToString:@"stretch"]) a = YGAlignStretch;
-      YGNodeStyleSetAlignItems(n.yoga, a);
-    }
-
-    // Padding / Margin helpers
-    void (^edges)(NSNumber*, NSNumber*, NSNumber*, NSNumber*, NSNumber*, NSNumber*, void(^)(YGEdge,float)) =
-    ^(NSNumber *base, NSNumber *horiz, NSNumber *vert, NSNumber *t, NSNumber *r, NSNumber *b, void(^setter)(YGEdge,float)) {
-      NSNumber *T = t ?: vert ?: base;
-      NSNumber *R = r ?: horiz ?: base;
-      NSNumber *B = b ?: vert ?: base;
-      NSNumber *L = horiz ?: base;
-      if (T) setter(YGEdgeTop, (float)SNNum(T));
-      if (R) setter(YGEdgeRight, (float)SNNum(R));
-      if (B) setter(YGEdgeBottom, (float)SNNum(B));
-      if (L) setter(YGEdgeLeft, (float)SNNum(L));
-    };
-
-    edges(s[@"padding"], s[@"paddingHorizontal"], s[@"paddingVertical"], s[@"paddingTop"], s[@"paddingRight"], s[@"paddingBottom"],
-          ^(YGEdge e, float v){ YGNodeStyleSetPadding(n.yoga, e, v); });
-
-    edges(s[@"margin"], s[@"marginHorizontal"], s[@"marginVertical"], s[@"marginTop"], s[@"marginRight"], s[@"marginBottom"],
-          ^(YGEdge e, float v){ YGNodeStyleSetMargin(n.yoga, e, v); });
-
-    // View styling
-    NSString *bg = s[@"backgroundColor"]; if (bg) { n.view.backgroundColor = SNColorFromHex(bg); NSLog(@"[SN] set bg nid=%d color=%@", n.nid, bg); }
-    NSNumber *br = s[@"borderRadius"];
-    if (br) { n.view.layer.cornerRadius = (CGFloat)SNNum(br); n.view.clipsToBounds = YES; }
-
-    // Text styling
-    if ([n.view isKindOfClass:[UILabel class]]) {
-      UILabel *l = (UILabel *)n.view;
-      NSNumber *fs = s[@"fontSize"]; if (fs) l.font = [UIFont systemFontOfSize:(CGFloat)SNNum(fs) weight:UIFontWeightRegular];
-      NSString *fw = s[@"fontWeight"];
-      if (fw) {
-        NSDictionary *m = @{@"normal":@(UIFontWeightRegular),@"bold":@(UIFontWeightBold),
-                             @"100":@(UIFontWeightUltraLight),@"200":@(UIFontWeightThin),@"300":@(UIFontWeightLight),@"400":@(UIFontWeightRegular),
-                             @"500":@(UIFontWeightMedium),@"600":@(UIFontWeightSemibold),@"700":@(UIFontWeightBold),@"800":@(UIFontWeightHeavy),@"900":@(UIFontWeightBlack)};
-        l.font = [UIFont systemFontOfSize:l.font.pointSize weight:[m[fw] doubleValue]];
-      }
-      NSString *color = s[@"color"]; if (color) l.textColor = SNColorFromHex(color);
-      if (n.yoga) YGNodeMarkDirty(n.yoga);
-    }
-
+    [self sn_applyStyleDictionary:s toNode:n];
+    return;
   }
+}
+
+- (void)setStyle:(NSNumber *)nodeId style:(NSDictionary *)style {
+  SNNode *n = _nodes[nodeId];
+  if (!n || !n.view) return;
+  [self sn_applyStyleDictionary:style toNode:n];
 }
 
 
