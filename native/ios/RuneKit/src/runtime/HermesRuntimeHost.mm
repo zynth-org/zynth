@@ -3,6 +3,13 @@
 #import <hermes/hermes.h>
 #import <jsi/jsi.h>
 #import <dispatch/dispatch.h>
+#import <objc/message.h>
+
+#if __has_include(<RuneKit/RuneKit-Swift.h>)
+#import <RuneKit/RuneKit-Swift.h>
+#elif __has_include("RuneKit-Swift.h")
+#import "RuneKit-Swift.h"
+#endif
 
 #import <unordered_map>
 #import <memory>
@@ -33,6 +40,20 @@ struct TimerEntry {
   std::vector<Value> args;
 };
 
+inline void SNShowRedBox(NSString *title, NSString *message, NSString *stack) {
+  Class redBoxClass = NSClassFromString(@"DevRedBox");
+  if (redBoxClass && [redBoxClass respondsToSelector:@selector(showWithTitle:message:stack:)]) {
+    auto showSelector = @selector(showWithTitle:message:stack:);
+    void (*showFunc)(id, SEL, NSString *, NSString *, NSString *) = (void (*)(id, SEL, NSString *, NSString *, NSString *))objc_msgSend;
+    showFunc(redBoxClass, showSelector, title, message, stack);
+  }
+}
+
+inline void SNCallJSFunction(Function &fn, Runtime &rt, const Value *args, size_t count) {
+  const auto callPtr = static_cast<Value (Function::*)(Runtime&, const Value*, size_t) const>(&Function::call);
+  (fn.*callPtr)(rt, args, count);
+}
+
 Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function &&reject)> work) {
   auto promiseCtor = rt.global().getPropertyAsFunction(rt, "Promise");
   auto workPtr = std::make_shared<std::function<void(Function &&, Function &&)>>(std::move(work));
@@ -55,6 +76,9 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
 
 @interface HermesRuntimeHost ()
 @property(nonatomic, strong) SNUIManager *manager;
+- (void)reportExceptionWithContext:(NSString *)context message:(const std::string &)message stack:(const std::string &)stack;
+- (void)reportJSException:(const facebook::jsi::JSError &)error context:(NSString *)context;
+- (void)reportStdException:(const std::exception &)ex context:(NSString *)context;
 @end
 
 @implementation HermesRuntimeHost {
@@ -80,17 +104,43 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
       [self installUIBridge];
       [self installModulesBridge];
       [self installTimers];
+      [self installUnhandledPromiseReporting];
     });
   }
   return self;
 }
 
 - (void)reportExceptionMessage:(const std::string &)message {
+  [self reportExceptionWithContext:@"Hermes" message:message stack:""];
+}
+
+- (void)reportExceptionWithContext:(NSString *)context
+                            message:(const std::string &)message
+                               stack:(const std::string &)stack {
+  NSString *title = context ?: @"Hermes";
+  NSString *msg = message.empty() ? @"Unknown Error" : [NSString stringWithUTF8String:message.c_str()];
+  NSString *stackString = stack.empty() ? nil : [NSString stringWithUTF8String:stack.c_str()];
+
+  NSLog(@"[Hermes] %@: %@", title, msg);
+
+  dispatch_async(dispatch_get_main_queue(), ^{
+    SNShowRedBox(title, msg, stackString);
+  });
+
   if (self.exceptionHandler) {
-    self.exceptionHandler([NSString stringWithUTF8String:message.c_str()]);
-  } else {
-    NSLog(@"Hermes exception: %s", message.c_str());
+    self.exceptionHandler(msg);
   }
+}
+
+- (void)reportJSException:(const facebook::jsi::JSError &)error context:(NSString *)context {
+  std::string message = error.getMessage();
+  std::string stack = error.getStack();
+  [self reportExceptionWithContext:context message:message stack:stack];
+}
+
+- (void)reportStdException:(const std::exception &)ex context:(NSString *)context {
+  std::string message = ex.what();
+  [self reportExceptionWithContext:context message:message stack:""];
 }
 
 - (void)installConsole {
@@ -114,134 +164,176 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
   auto hostCreateNode = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "createNode"), 1,
       [host](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
-        if (count < 1 || !args[0].isString()) {
-          return Value::undefined();
+        try {
+          if (count < 1 || !args[0].isString()) {
+            return Value::undefined();
+          }
+          std::string type = args[0].getString(rt).utf8(rt);
+          int nid = [[host manager] createNode:[NSString stringWithUTF8String:type.c_str()]].intValue;
+          return Value((double)nid);
+        } catch (const facebook::jsi::JSError &error) {
+          [host reportJSException:error context:@"__ui.createNode"];
+        } catch (const std::exception &ex) {
+          [host reportStdException:ex context:@"__ui.createNode"];
         }
-        std::string type = args[0].getString(rt).utf8(rt);
-        int nid = [[host manager] createNode:[NSString stringWithUTF8String:type.c_str()]].intValue;
-        return Value((double)nid);
+        return Value::undefined();
       });
 
   auto hostSetProp = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "setProp"), 3,
       [host](Runtime &rt, const Value &, const Value *a, size_t count) -> Value {
-        if (count < 3) {
-          return Value::undefined();
-        }
-        int id = (int)a[0].asNumber();
-        std::string name = a[1].getString(rt).utf8(rt);
-        if (name == "style" && a[2].isObject()) {
-          Object styleObj = a[2].asObject(rt);
-          NSMutableDictionary *styleDict = [NSMutableDictionary dictionary];
+        try {
+          if (count < 3) {
+            return Value::undefined();
+          }
+          int id = (int)a[0].asNumber();
+          std::string name = a[1].getString(rt).utf8(rt);
+          if (name == "style" && a[2].isObject()) {
+            Object styleObj = a[2].asObject(rt);
+            NSMutableDictionary *styleDict = [NSMutableDictionary dictionary];
 
-          auto copyNumber = [&](const char *prop) {
-            if (!styleObj.hasProperty(rt, prop)) {
-              return;
-            }
-            Value v = styleObj.getProperty(rt, prop);
-            if (!v.isNumber()) {
-              return;
-            }
-            NSString *key = [NSString stringWithUTF8String:prop];
-            styleDict[key] = @(v.asNumber());
-          };
+            auto copyNumber = [&](const char *prop) {
+              if (!styleObj.hasProperty(rt, prop)) {
+                return;
+              }
+              Value v = styleObj.getProperty(rt, prop);
+              if (!v.isNumber()) {
+                return;
+              }
+              NSString *key = [NSString stringWithUTF8String:prop];
+              styleDict[key] = @(v.asNumber());
+            };
 
-          auto copyString = [&](const char *prop) {
-            if (!styleObj.hasProperty(rt, prop)) {
-              return;
-            }
-            Value v = styleObj.getProperty(rt, prop);
-            if (!v.isString()) {
-              return;
-            }
-            std::string utf8 = v.getString(rt).utf8(rt);
-            NSString *key = [NSString stringWithUTF8String:prop];
-            styleDict[key] = [NSString stringWithUTF8String:utf8.c_str()];
-          };
+            auto copyString = [&](const char *prop) {
+              if (!styleObj.hasProperty(rt, prop)) {
+                return;
+              }
+              Value v = styleObj.getProperty(rt, prop);
+              if (!v.isString()) {
+                return;
+              }
+              std::string utf8 = v.getString(rt).utf8(rt);
+              NSString *key = [NSString stringWithUTF8String:prop];
+              styleDict[key] = [NSString stringWithUTF8String:utf8.c_str()];
+            };
 
-          const char *numericKeys[] = {"width",          "height",         "flex",           "padding",
-                                       "paddingHorizontal", "paddingVertical", "paddingTop",    "paddingRight",
-                                       "paddingBottom",  "margin",         "marginHorizontal", "marginVertical",
-                                       "marginTop",      "marginRight",    "marginBottom",   "borderRadius",
-                                       "fontSize"};
-          for (const char *key : numericKeys) {
-            copyNumber(key);
+            const char *numericKeys[] = {"width",          "height",         "flex",           "padding",
+                                         "paddingHorizontal", "paddingVertical", "paddingTop",    "paddingRight",
+                                         "paddingBottom",  "margin",         "marginHorizontal", "marginVertical",
+                                         "marginTop",      "marginRight",    "marginBottom",   "borderRadius",
+                                         "fontSize"};
+            for (const char *key : numericKeys) {
+              copyNumber(key);
+            }
+
+            const char *stringKeys[] = {"flexDirection", "justifyContent", "alignItems",
+                                         "backgroundColor", "fontWeight",   "color"};
+            for (const char *key : stringKeys) {
+              copyString(key);
+            }
+
+            [[host manager] setStyle:@(id) style:styleDict];
+            return Value::undefined();
           }
 
-          const char *stringKeys[] = {"flexDirection", "justifyContent", "alignItems",
-                                       "backgroundColor", "fontWeight",   "color"};
-          for (const char *key : stringKeys) {
-            copyString(key);
-          }
-
-          [[host manager] setStyle:@(id) style:styleDict];
-          return Value::undefined();
+          auto JSON = rt.global().getPropertyAsObject(rt, "JSON");
+          auto stringify = JSON.getPropertyAsFunction(rt, "stringify");
+          auto str = stringify.call(rt, Value(rt, a[2])).getString(rt).utf8(rt);
+          [[host manager] setProp:@(id)
+                                name:[NSString stringWithUTF8String:name.c_str()]
+                           valueJSON:[NSString stringWithUTF8String:str.c_str()]];
+        } catch (const facebook::jsi::JSError &error) {
+          [host reportJSException:error context:@"__ui.setProp"];
+        } catch (const std::exception &ex) {
+          [host reportStdException:ex context:@"__ui.setProp"];
         }
-
-        auto JSON = rt.global().getPropertyAsObject(rt, "JSON");
-        auto stringify = JSON.getPropertyAsFunction(rt, "stringify");
-        auto str = stringify.call(rt, Value(rt, a[2])).getString(rt).utf8(rt);
-        [[host manager] setProp:@(id)
-                              name:[NSString stringWithUTF8String:name.c_str()]
-                         valueJSON:[NSString stringWithUTF8String:str.c_str()]];
         return Value::undefined();
       });
 
   auto hostSetText = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "setText"), 2,
       [host](Runtime &rt, const Value &, const Value *a, size_t count) -> Value {
-        if (count < 2) {
-          return Value::undefined();
+        try {
+          if (count < 2) {
+            return Value::undefined();
+          }
+          int id = (int)a[0].asNumber();
+          auto text = a[1].getString(rt).utf8(rt);
+          [[host manager] setText:@(id) text:[NSString stringWithUTF8String:text.c_str()]];
+        } catch (const facebook::jsi::JSError &error) {
+          [host reportJSException:error context:@"__ui.setText"];
+        } catch (const std::exception &ex) {
+          [host reportStdException:ex context:@"__ui.setText"];
         }
-        int id = (int)a[0].asNumber();
-        auto text = a[1].getString(rt).utf8(rt);
-        [[host manager] setText:@(id) text:[NSString stringWithUTF8String:text.c_str()]];
         return Value::undefined();
       });
 
   auto hostInsertChild = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "insertChild"), 3,
       [host](Runtime &rt, const Value &, const Value *a, size_t count) -> Value {
-        if (count < 3) {
-          return Value::undefined();
+        try {
+          if (count < 3) {
+            return Value::undefined();
+          }
+          [[host manager] insertChild:@((int)a[0].asNumber())
+                                 child:@((int)a[1].asNumber())
+                                 index:@((int)a[2].asNumber())];
+        } catch (const facebook::jsi::JSError &error) {
+          [host reportJSException:error context:@"__ui.insertChild"];
+        } catch (const std::exception &ex) {
+          [host reportStdException:ex context:@"__ui.insertChild"];
         }
-        [[host manager] insertChild:@((int)a[0].asNumber())
-                               child:@((int)a[1].asNumber())
-                               index:@((int)a[2].asNumber())];
         return Value::undefined();
       });
 
   auto hostRemoveChild = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "removeChild"), 2,
       [host](Runtime &rt, const Value &, const Value *a, size_t count) -> Value {
-        if (count < 2) {
-          return Value::undefined();
+        try {
+          if (count < 2) {
+            return Value::undefined();
+          }
+          int parentId = (int)a[0].asNumber();
+          int childId = (int)a[1].asNumber();
+          [[host manager] removeChild:@(parentId) child:@(childId)];
+          [host sn_removeHandlersForNode:childId];
+        } catch (const facebook::jsi::JSError &error) {
+          [host reportJSException:error context:@"__ui.removeChild"];
+        } catch (const std::exception &ex) {
+          [host reportStdException:ex context:@"__ui.removeChild"];
         }
-        int parentId = (int)a[0].asNumber();
-        int childId = (int)a[1].asNumber();
-        [[host manager] removeChild:@(parentId) child:@(childId)];
-        [host sn_removeHandlersForNode:childId];
         return Value::undefined();
       });
 
   auto hostSetHandler = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "setHandler"), 3,
       [host](Runtime &rt, const Value &, const Value *a, size_t count) -> Value {
-        if (count < 3) {
-          return Value::undefined();
+        try {
+          if (count < 3) {
+            return Value::undefined();
+          }
+          int id = (int)a[0].asNumber();
+          std::string name = a[1].getString(rt).utf8(rt);
+          auto fn = a[2].asObject(rt).asFunction(rt);
+          host->_handlers[{id, name}] = std::make_shared<Function>(std::move(fn));
+          [[host manager] setHandler:@(id) name:[NSString stringWithUTF8String:name.c_str()]];
+        } catch (const facebook::jsi::JSError &error) {
+          [host reportJSException:error context:@"__ui.setHandler"];
+        } catch (const std::exception &ex) {
+          [host reportStdException:ex context:@"__ui.setHandler"];
         }
-        int id = (int)a[0].asNumber();
-        std::string name = a[1].getString(rt).utf8(rt);
-        auto fn = a[2].asObject(rt).asFunction(rt);
-        host->_handlers[{id, name}] = std::make_shared<Function>(std::move(fn));
-        [[host manager] setHandler:@(id) name:[NSString stringWithUTF8String:name.c_str()]];
         return Value::undefined();
       });
 
   auto hostFlush = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "flush"), 0,
       [host](Runtime &, const Value &, const Value *, size_t) -> Value {
-        [[host manager] flush];
+        @try {
+          [[host manager] flush];
+        } @catch (NSException *exception) {
+          std::string message = exception.reason ? [exception.reason UTF8String] : "flush failed";
+          [host reportExceptionWithContext:@"__ui.flush" message:message stack:""];
+        }
         return Value::undefined();
       });
 
@@ -274,21 +366,22 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
   auto hostCall = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "call"), 3,
       [host](Runtime &rt, const Value &, const Value *a, size_t count) -> Value {
-        if (count < 3) {
-          return Value::undefined();
-        }
-        std::string module = a[0].getString(rt).utf8(rt);
-        std::string method = a[1].getString(rt).utf8(rt);
-        auto JSON = rt.global().getPropertyAsObject(rt, "JSON");
-        auto stringify = JSON.getPropertyAsFunction(rt, "stringify");
-        auto argsJSON = stringify.call(rt, Value(rt, a[2])).getString(rt).utf8(rt);
+        try {
+          if (count < 3) {
+            return Value::undefined();
+          }
+          std::string module = a[0].getString(rt).utf8(rt);
+          std::string method = a[1].getString(rt).utf8(rt);
+          auto JSON = rt.global().getPropertyAsObject(rt, "JSON");
+          auto stringify = JSON.getPropertyAsFunction(rt, "stringify");
+          auto argsJSON = stringify.call(rt, Value(rt, a[2])).getString(rt).utf8(rt);
 
-        return SNMakePromise(rt, [host, module, method, argsJSON](Function &&resolve, Function &&reject) {
-          auto resolvePtr = std::make_shared<Function>(std::move(resolve));
-          auto rejectPtr = std::make_shared<Function>(std::move(reject));
+          return SNMakePromise(rt, [host, module, method, argsJSON](Function &&resolve, Function &&reject) {
+            auto resolvePtr = std::make_shared<Function>(std::move(resolve));
+            auto rejectPtr = std::make_shared<Function>(std::move(reject));
 
-          dispatch_async(host->_moduleQueue, ^{
-            @autoreleasepool {
+            dispatch_async(host->_moduleQueue, ^{
+              @autoreleasepool {
               NSString *resultString = nil;
               NSString *errorString = nil;
               @try {
@@ -308,11 +401,12 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
                 std::string message = [errorString UTF8String] ? std::string([errorString UTF8String]) : std::string("Module call error");
                 dispatch_async(host->_jsQueue, ^{
                   auto &rtRef = *host->_rt;
-                  [host reportExceptionMessage:message];
+                  [host reportExceptionWithContext:@"Native Module" message:message stack:""];
                   Object errorObj(rtRef);
                   errorObj.setProperty(rtRef, "code", String::createFromUtf8(rtRef, "E_NATIVE"));
                   errorObj.setProperty(rtRef, "message", String::createFromUtf8(rtRef, message));
-                  rejectPtr->call(rtRef, {Value(rtRef, errorObj)});
+                  Value errorValue = Value(rtRef, errorObj);
+                  SNCallJSFunction(*rejectPtr, rtRef, &errorValue, 1);
                 });
                 return;
               }
@@ -329,26 +423,34 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
                   auto parse = JSONObj.getPropertyAsFunction(rtRef, "parse");
                   auto jsString = String::createFromUtf8(rtRef, resultStd);
                   Value parsed = parse.call(rtRef, Value(std::move(jsString)));
-                  resolvePtr->call(rtRef, {Value(rtRef, parsed)});
+                  Value resultValue = Value(rtRef, parsed);
+                  SNCallJSFunction(*resolvePtr, rtRef, &resultValue, 1);
                 } catch (const facebook::jsi::JSError &error) {
-                  std::string message(error.what());
-                  [host reportExceptionMessage:message];
+                  [host reportJSException:error context:@"Native Module"];
                   Object errorObj(rtRef);
                   errorObj.setProperty(rtRef, "code", String::createFromUtf8(rtRef, "E_JS"));
-                  errorObj.setProperty(rtRef, "message", String::createFromUtf8(rtRef, message));
-                  rejectPtr->call(rtRef, {Value(rtRef, errorObj)});
+                  errorObj.setProperty(rtRef, "message", String::createFromUtf8(rtRef, error.getMessage()));
+                  Value errorValue = Value(rtRef, errorObj);
+                  SNCallJSFunction(*rejectPtr, rtRef, &errorValue, 1);
                 } catch (const std::exception &ex) {
                   std::string message(ex.what());
-                  [host reportExceptionMessage:message];
+                  [host reportStdException:ex context:@"Native Module"];
                   Object errorObj(rtRef);
                   errorObj.setProperty(rtRef, "code", String::createFromUtf8(rtRef, "E_NATIVE"));
                   errorObj.setProperty(rtRef, "message", String::createFromUtf8(rtRef, message));
-                  rejectPtr->call(rtRef, {Value(rtRef, errorObj)});
+                  Value errorValue = Value(rtRef, errorObj);
+                  SNCallJSFunction(*rejectPtr, rtRef, &errorValue, 1);
                 }
               });
             }
           });
-        });
+          });
+        } catch (const facebook::jsi::JSError &error) {
+          [host reportJSException:error context:@"__modules.call"];
+        } catch (const std::exception &ex) {
+          [host reportStdException:ex context:@"__modules.call"];
+        }
+        return Value::undefined();
       });
 
   Object modules(rt);
@@ -381,11 +483,9 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
     try {
       entryRef.callback->call(rt, argsPtr, entryRef.args.size());
     } catch (const facebook::jsi::JSError &error) {
-      std::string message(error.what());
-      [host reportExceptionMessage:message];
+      [host reportJSException:error context:@"Timer"];
     } catch (const std::exception &ex) {
-      std::string message(ex.what());
-      [host reportExceptionMessage:message];
+      [host reportStdException:ex context:@"Timer"];
     }
     dispatch_source_cancel(entryRef.source);
     host->_timers.erase(timerId);
@@ -411,31 +511,44 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
   auto hostSetTimeout = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "__hostSetTimeout"), 3,
       [host](Runtime &rt, const Value &, const Value *a, size_t count) -> Value {
-        if (count < 2 || !a[0].isObject()) {
-          return Value::undefined();
-        }
-        auto fn = a[0].asObject(rt).asFunction(rt);
-        double delay = (count > 1 && a[1].isNumber()) ? a[1].asNumber() : 0;
-        std::vector<Value> args;
-        if (count > 2) {
-          args.reserve(count - 2);
-          for (size_t i = 2; i < count; ++i) {
-            args.emplace_back(Value(rt, a[i]));
+        try {
+          if (count < 2 || !a[0].isObject()) {
+            return Value::undefined();
           }
+          auto fn = a[0].asObject(rt).asFunction(rt);
+          double delay = (count > 1 && a[1].isNumber()) ? a[1].asNumber() : 0;
+          std::vector<Value> args;
+          if (count > 2) {
+            args.reserve(count - 2);
+            for (size_t i = 2; i < count; ++i) {
+              args.emplace_back(Value(rt, a[i]));
+            }
+          }
+          auto callback = std::make_shared<Function>(std::move(fn));
+          uint64_t timerId = [host sn_scheduleTimerWithDelay:delay callback:callback args:std::move(args)];
+          return Value(static_cast<double>(timerId));
+        } catch (const facebook::jsi::JSError &error) {
+          [host reportJSException:error context:@"setTimeout"];
+        } catch (const std::exception &ex) {
+          [host reportStdException:ex context:@"setTimeout"];
         }
-        auto callback = std::make_shared<Function>(std::move(fn));
-        uint64_t timerId = [host sn_scheduleTimerWithDelay:delay callback:callback args:std::move(args)];
-        return Value(static_cast<double>(timerId));
+        return Value::undefined();
       });
 
   auto hostClearTimeout = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "__hostClearTimeout"), 1,
       [host](Runtime &rt, const Value &, const Value *a, size_t count) -> Value {
-        if (count < 1 || !a[0].isNumber()) {
-          return Value::undefined();
+        try {
+          if (count < 1 || !a[0].isNumber()) {
+            return Value::undefined();
+          }
+          uint64_t timerId = (uint64_t)a[0].asNumber();
+          [host sn_clearTimer:timerId];
+        } catch (const facebook::jsi::JSError &error) {
+          [host reportJSException:error context:@"clearTimeout"];
+        } catch (const std::exception &ex) {
+          [host reportStdException:ex context:@"clearTimeout"];
         }
-        uint64_t timerId = (uint64_t)a[0].asNumber();
-        [host sn_clearTimer:timerId];
         return Value::undefined();
       });
 
@@ -448,6 +561,64 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
 
   auto buffer = std::make_shared<StringBuffer>(timerScript);
   _rt->evaluateJavaScript(buffer, "timers.js");
+}
+
+- (void)installUnhandledPromiseReporting {
+  auto &rt = *_rt;
+  HermesRuntimeHost *host = self;
+
+  auto hostReportUnhandled = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "__hostReportUnhandled"), 2,
+      [host](Runtime &rt, const Value &, const Value *a, size_t count) -> Value {
+        std::string message;
+        std::string stack;
+        if (count > 0 && a[0].isString()) {
+          message = a[0].getString(rt).utf8(rt);
+        }
+        if (count > 1 && a[1].isString()) {
+          stack = a[1].getString(rt).utf8(rt);
+        }
+        if (message.empty()) {
+          message = "Unhandled promise rejection";
+        }
+        [host reportExceptionWithContext:@"Unhandled Promise" message:message stack:stack];
+        return Value::undefined();
+      });
+
+  rt.global().setProperty(rt, "__hostReportUnhandled", hostReportUnhandled);
+
+  static const char *unhandledScript =
+      "(function(){\n"
+      "if(globalThis.__runeUnhandledInstalled) return;\n"
+      "if(typeof __hostReportUnhandled !== 'function'){ globalThis.__runeUnhandledInstalled = true; return; }\n"
+      "const report = (reason) => {\n"
+      "  let message = '';\n"
+      "  let stack = '';\n"
+      "  if (reason && typeof reason.message === 'string') { message = reason.message; } else { message = String(reason); }\n"
+      "  if (reason && typeof reason.stack === 'string') { stack = reason.stack; }\n"
+      "  __hostReportUnhandled(message, stack);\n"
+      "};\n"
+      "const originalCatch = Promise.prototype.catch;\n"
+      "const originalThen = Promise.prototype.then;\n"
+      "Promise.prototype.catch = function(onRejected){\n"
+      "  if (typeof onRejected !== 'function') {\n"
+      "    return originalCatch.call(this, function(reason){ report(reason); throw reason; });\n"
+      "  }\n"
+      "  return originalCatch.call(this, function(reason){\n"
+      "    try { return onRejected(reason); } catch (err) { report(err); throw err; }\n"
+      "  });\n"
+      "};\n"
+      "Promise.prototype.then = function(onFulfilled, onRejected){\n"
+      "  const wrappedRejected = typeof onRejected === 'function' ? function(reason){\n"
+      "    try { return onRejected(reason); } catch (err) { report(err); throw err; }\n"
+      "  } : function(reason){ report(reason); throw reason; };\n"
+      "  return originalThen.call(this, onFulfilled, wrappedRejected);\n"
+      "};\n"
+      "globalThis.__runeUnhandledInstalled = true;\n"
+      "})();";
+
+  auto buffer = std::make_shared<StringBuffer>(unhandledScript);
+  _rt->evaluateJavaScript(buffer, "promises.js");
 }
 
 - (void)invokeHandlerForNode:(int)nid name:(NSString *)name {
@@ -469,11 +640,9 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
       auto buffer = std::make_shared<StringBuffer>(code.UTF8String);
       _rt->evaluateJavaScript(buffer, "main.js");
     } catch (const facebook::jsi::JSError &error) {
-      std::string message(error.what());
-      [self reportExceptionMessage:message];
+      [self reportJSException:error context:@"Evaluate"];
     } catch (const std::exception &ex) {
-      std::string message(ex.what());
-      [self reportExceptionMessage:message];
+      [self reportStdException:ex context:@"Evaluate"];
     }
   });
 }
@@ -499,11 +668,9 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
       const Value *argsPtr = va.data();
       fn.call(rt, argsPtr, va.size());
     } catch (const facebook::jsi::JSError &error) {
-      std::string message(error.what());
-      [self reportExceptionMessage:message];
+      [self reportJSException:error context:@"callGlobal"];
     } catch (const std::exception &ex) {
-      std::string message(ex.what());
-      [self reportExceptionMessage:message];
+      [self reportStdException:ex context:@"callGlobal"];
     }
   });
   return nil;
