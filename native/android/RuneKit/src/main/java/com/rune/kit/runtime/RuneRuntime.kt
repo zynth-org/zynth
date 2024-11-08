@@ -50,7 +50,7 @@ class RuneRuntime(
   }
 
   fun start(rootId: Int) {
-    adapter.callGlobal("__startApp", arrayOf(rootId))
+    adapter.callGlobalAsync("__startApp", arrayOf(rootId))
   }
 
   fun destroy() {
@@ -61,6 +61,10 @@ class RuneRuntime(
   }
 
   private fun installConsole() {
+    if (adapter is HermesAdapter) {
+      // Hermes bridge installs console functions natively.
+      return
+    }
     adapter.setGlobalFunction("console_log") { args ->
       val message = args.joinToString(" ") { it?.toString() ?: "null" }
       Log.i("JS_LOG", message)

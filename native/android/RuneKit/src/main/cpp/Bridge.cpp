@@ -216,12 +216,17 @@ facebook::jsi::Value javaObjectToJsValue(
     jclass classString) {
   using namespace facebook::jsi;
   if (!value) {
+    BRIDGE_LOG(ANDROID_LOG_INFO, "javaObjectToJsValue: null object");
     return Value::null();
   }
   if (env->IsInstanceOf(value, classInteger)) {
+    BRIDGE_LOG(ANDROID_LOG_INFO, "javaObjectToJsValue: Converting Integer");
     jint v = env->CallIntMethod(value, integerValue);
     logJniException(env, "Integer.intValue");
-    return Value(static_cast<double>(v));
+    BRIDGE_LOG(ANDROID_LOG_INFO, "javaObjectToJsValue: Integer value = %d", v);
+    Value result = Value(static_cast<double>(v));
+    BRIDGE_LOG(ANDROID_LOG_INFO, "javaObjectToJsValue: Created JS Value, isNumber = %s", result.isNumber() ? "true" : "false");
+    return result;
   }
   if (env->IsInstanceOf(value, classDouble)) {
     jdouble v = env->CallDoubleMethod(value, doubleValue);
@@ -238,6 +243,7 @@ facebook::jsi::Value javaObjectToJsValue(
     std::string utf = getUtfString(env, js);
     return Value(facebook::jsi::String::createFromUtf8(rt, utf));
   }
+  BRIDGE_LOG(ANDROID_LOG_WARN, "javaObjectToJsValue: Unknown type, returning undefined");
   return Value::undefined();
 }
 
@@ -559,6 +565,8 @@ void installTimers(std::shared_ptr<RuntimeState> state) {
 
   rt.global().setProperty(rt, "setTimeout", setTimeoutFn);
   rt.global().setProperty(rt, "clearTimeout", clearTimeoutFn);
+  rt.global().setProperty(rt, "setImmediate", setTimeoutFn);
+  rt.global().setProperty(rt, "clearImmediate", clearTimeoutFn);
 }
 
 void installModules(std::shared_ptr<RuntimeState> state) {
@@ -699,7 +707,14 @@ void evaluateString(
   try {
     runtime->evaluateJavaScript(buffer, sourceUrl);
   } catch (const facebook::jsi::JSError &err) {
-    BRIDGE_LOG(ANDROID_LOG_ERROR, "Hermes error: %s", err.getMessage().c_str());
+    BRIDGE_LOG(ANDROID_LOG_ERROR, "Hermes evaluateString error: %s", err.getMessage().c_str());
+    auto state = getState(runtime);
+    if (state) {
+      BRIDGE_LOG(ANDROID_LOG_ERROR, "Hermes stack: %s", err.getStack().c_str());
+    }
+    throw;
+  } catch (const std::exception &ex) {
+    BRIDGE_LOG(ANDROID_LOG_ERROR, "Hermes evaluateString std::exception: %s", ex.what());
     throw;
   }
 }
@@ -721,6 +736,10 @@ void callGlobal(
     const std::string &name,
     jobjectArray args) {
   if (!runtime) return;
+  
+  jsize argsLength = args ? env->GetArrayLength(args) : 0;
+  BRIDGE_LOG(ANDROID_LOG_INFO, "callGlobal: %s with %d arguments", name.c_str(), argsLength);
+  
   using namespace facebook::jsi;
   auto global = runtime->global();
   auto globalValue = global.getProperty(*runtime, name.c_str());
@@ -743,10 +762,43 @@ void callGlobal(
   argv.reserve(length);
   for (jsize i = 0; i < length; ++i) {
     jobject element = env->GetObjectArrayElement(args, i);
-    argv.push_back(javaObjectToJsValue(*runtime, env, element, classInteger, integerValue, classDouble, doubleValue, classBoolean, booleanValue, classString));
+    BRIDGE_LOG(ANDROID_LOG_INFO, "Processing argument %d: %s", i, element ? "non-null" : "null");
+    if (element) {
+      jclass cls = env->GetObjectClass(element);
+      jstring className = (jstring)env->CallObjectMethod(cls, env->GetMethodID(env->GetObjectClass(cls), "getName", "()Ljava/lang/String;"));
+      if (className) {
+        std::string classNameStr = getUtfString(env, className);
+        BRIDGE_LOG(ANDROID_LOG_INFO, "Argument %d class: %s", i, classNameStr.c_str());
+        env->DeleteLocalRef(className);
+      }
+      env->DeleteLocalRef(cls);
+    }
+    Value jsValue = javaObjectToJsValue(*runtime, env, element, classInteger, integerValue, classDouble, doubleValue, classBoolean, booleanValue, classString);
+    BRIDGE_LOG(ANDROID_LOG_INFO, "Converted argument %d: isNumber=%s, isNull=%s, isUndefined=%s", 
+               i, jsValue.isNumber() ? "true" : "false", 
+               jsValue.isNull() ? "true" : "false", 
+               jsValue.isUndefined() ? "true" : "false");
+    if (jsValue.isNumber()) {
+      BRIDGE_LOG(ANDROID_LOG_INFO, "Argument %d number value: %f", i, jsValue.getNumber());
+    }
+    argv.push_back(std::move(jsValue));
     env->DeleteLocalRef(element);
   }
-  fn.call(*runtime, static_cast<const facebook::jsi::Value *>(argv.data()), argv.size());
+  BRIDGE_LOG(ANDROID_LOG_INFO, "Calling JavaScript function with %zu arguments", argv.size());
+  BRIDGE_LOG(ANDROID_LOG_INFO, "About to call fn.call() with argv.data()=%p, argv.size()=%zu", argv.data(), argv.size());
+  for (size_t i = 0; i < argv.size(); ++i) {
+    BRIDGE_LOG(ANDROID_LOG_INFO, "argv[%zu]: isNumber=%s, value=%f", i, 
+               argv[i].isNumber() ? "true" : "false",
+               argv[i].isNumber() ? argv[i].getNumber() : 0.0);
+  }
+  try {
+    fn.call(*runtime, static_cast<const Value *>(argv.data()), argv.size());
+    BRIDGE_LOG(ANDROID_LOG_INFO, "fn.call() completed successfully");
+  } catch (const facebook::jsi::JSError &err) {
+    BRIDGE_LOG(ANDROID_LOG_ERROR, "JSI Error calling function: %s", err.getMessage().c_str());
+  } catch (const std::exception &ex) {
+    BRIDGE_LOG(ANDROID_LOG_ERROR, "Exception calling function: %s", ex.what());
+  }
 }
 
 void onTimerFired(facebook::hermes::HermesRuntime *runtime, int timerId) {

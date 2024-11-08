@@ -60,8 +60,15 @@ function generateAndroidProject(appDir) {
   for (const file of files) {
     const rel = path.relative(templateDir, file);
     const targetPath = (() => {
-      if (rel === path.join("app", "src", "main", "java", "MainActivity.kt")) {
+      const javaDir = path.join("app", "src", "main", "java");
+      const mainActivityPath = path.join(javaDir, "MainActivity.kt");
+      const modulesDir = path.join(javaDir, "modules");
+      if (rel === mainActivityPath) {
         return path.join(targetDir, "app", "src", "main", "java", packagePath, "MainActivity.kt");
+      }
+      if (rel.startsWith(modulesDir + path.sep)) {
+        const remainder = rel.slice(modulesDir.length + 1);
+        return path.join(targetDir, "app", "src", "main", "java", packagePath, "modules", remainder);
       }
       return path.join(targetDir, rel);
     })();

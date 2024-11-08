@@ -81,9 +81,15 @@ class HermesAdapter(
   }
 
   fun invokeHandler(handlerId: Long, nodeId: Int, event: String) {
-    runOnJS {
-      ensureRuntime()
-      bridge.invokeHandler(runtimePtr, handlerId, nodeId, event)
+    if (destroyed || runtimePtr == 0L) return
+    jsHandler.post {
+      try {
+        ensureRuntime()
+        bridge.invokeHandler(runtimePtr, handlerId, nodeId, event)
+      } catch (t: Throwable) {
+        Log.e(TAG, "invokeHandler($event) failed", t)
+        onException?.invoke(t.message ?: t.toString())
+      }
     }
   }
 
@@ -113,6 +119,21 @@ class HermesAdapter(
       }
     } else {
       functions[name]?.invoke(args)
+    }
+  }
+
+  override fun callGlobalAsync(name: String, args: Array<Any?>) {
+    if (destroyed || runtimePtr == 0L) return
+    val payload = args.copyOf()
+    jsHandler.post {
+      try {
+        ensureRuntime()
+        // Avoid blocking the UI thread by executing the call entirely on the JS thread.
+        bridge.callGlobal(runtimePtr, name, payload)
+      } catch (t: Throwable) {
+        Log.e(TAG, "callGlobalAsync($name) failed", t)
+        onException?.invoke(t.message ?: t.toString())
+      }
     }
   }
 

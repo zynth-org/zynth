@@ -2,11 +2,13 @@ package {{BUNDLE_ID}}
 
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
+import {{BUNDLE_ID}}.modules.DeviceModule
 import com.rune.kit.core.RuneRootView
-import com.rune.kit.runtime.RhinoAdapter
 import com.rune.kit.runtime.RuneRuntime
 
 class MainActivity : AppCompatActivity() {
+  private var runtime: RuneRuntime? = null
+
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
 
@@ -16,9 +18,19 @@ class MainActivity : AppCompatActivity() {
     val root = RuneRootView(this)
     setContentView(root)
 
-    val runtime = RuneRuntime(root, RhinoAdapter())
+    val runtime = RuneRuntime(root)
+    runtime.installModules(listOf(DeviceModule()))
+
     val code = assets.open("main.js").bufferedReader().use { it.readText() }
     runtime.load(code)
     runtime.start(root.rootId)
+
+    this.runtime = runtime
+  }
+
+  override fun onDestroy() {
+    super.onDestroy()
+    runtime?.destroy()
+    runtime = null
   }
 }

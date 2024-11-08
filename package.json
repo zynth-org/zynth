@@ -15,6 +15,7 @@
     "dev:sn-demo": "yarn workspace @demo/sn-demo ios:dev",
     "check:bundle": "grep -q 'document\\.' apps/sn-demo/dist/main.js && (echo 'DOM refs found' && exit 1) || exit 0",
     "android:reset": "rm -rf ./apps/sn-demo/android ./apps/sn-demo/dist && yarn build && yarn prebuild:android && yarn android:dev",
-    "ios:reset": "rm -rf ./apps/sn-demo/ios && yarn prebuild:ios && yarn workspace @demo/sn-demo ios:build && yarn workspace @demo/sn-demo ios:run"
+    "ios:reset": "rm -rf ./apps/sn-demo/ios && yarn prebuild:ios && yarn workspace @demo/sn-demo ios:build && yarn workspace @demo/sn-demo ios:run",
+    "android:logs": "adb logcat -s \"RuneHermesBridge\" \"RuneKitNative\" \"com.rune.demo\" \"JS_LOG\" \"JS_ERROR\" \"JS_WARN\""
   }
 }
