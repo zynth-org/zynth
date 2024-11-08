@@ -35,25 +35,8 @@ post_install do |installer|
       config.build_settings['OTHER_CPLUSPLUSFLAGS'] = '-std=c++17 -Wno-bitwise-instead-of-logical -Wno-error'
     end
 
-    # Patch Yoga.cpp to replace bitwise OR on booleans with logical OR
-    begin
-      pods_dir = installer.sandbox.root.to_s
-      yoga_cpp = File.join(pods_dir, 'Yoga', 'yoga', 'Yoga.cpp')
-      if File.exist?(yoga_cpp)
-        content = File.read(yoga_cpp)
-        patched = content.gsub(/getLayout\(\)\.hadOverflow\s*\|\s*currentRelativeChild->getLayout\(\)\.hadOverflow/, 'getLayout().hadOverflow || currentRelativeChild->getLayout().hadOverflow')
-        if patched != content
-          File.open(yoga_cpp, 'w') { |f| f.write(patched) }
-          puts 'Patched Yoga.cpp: replaced bitwise OR on booleans with logical OR'
-        else
-          puts 'Yoga.cpp patch not needed (already logical OR)'
-        end
-      else
-        puts "Yoga.cpp not found at #{yoga_cpp}"
-      end
-    rescue => e
-      puts "Warning: Failed to patch Yoga.cpp: #{e}"
-    end
+    # Note: Yoga.cpp patching was removed as it's no longer needed in Yoga 3.2.1+
+    # The hadOverflow bitwise OR issue has been fixed upstream
   end
 
   # Remove resource/framework embed script phases that can cause duplicate
