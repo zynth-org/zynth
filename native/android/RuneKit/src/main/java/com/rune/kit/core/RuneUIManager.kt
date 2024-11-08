@@ -24,6 +24,7 @@ class RuneUIManager(
   private val root: RuneRootView,
   private val engine: LayoutEngine,
   private val eventDispatcher: (Int, String) -> Unit = { _, _ -> },
+  private val handlerListener: (Int, String, Long) -> Unit = { _, _, _ -> },
 ) {
   data class Node(val id: Int, val type: String, val view: View, val label: TextView? = null)
 
@@ -219,6 +220,12 @@ class RuneUIManager(
         }
       }
     }
+    handlerListener(id, name, fnRef)
+  }
+
+  fun removeNode(id: Int) = onMain {
+    removeNodeRecursive(id)
+    scheduleFlush()
   }
 
   fun flush() = onMain {
@@ -273,6 +280,18 @@ class RuneUIManager(
       currentId = parents[currentId]
     }
     return nodes.get(id)
+  }
+
+  private fun removeNodeRecursive(id: Int) {
+    if (id == root.rootId) return
+    val children = parents.entries.filter { it.value == id }.map { it.key }
+    children.forEach { childId -> removeNodeRecursive(childId) }
+    val node = nodes.get(id) ?: return
+    (node.view.parent as? ViewGroup)?.removeView(node.view)
+    engine.setMeasureHandler(id, null)
+    engine.removeNode(id)
+    nodes.remove(id)
+    parents.remove(id)
   }
 
   companion object {

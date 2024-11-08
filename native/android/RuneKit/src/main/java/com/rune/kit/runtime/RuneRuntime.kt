@@ -8,27 +8,35 @@ import com.rune.kit.core.RuneUIManager
 import com.rune.kit.layout.YogaLayoutEngine
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 import org.mozilla.javascript.Function
 
 class RuneRuntime(
   private val root: RuneRootView,
-  private val adapter: JSRuntimeAdapter = RhinoAdapter(),
+  private val adapter: JSRuntimeAdapter = HermesAdapter(),
 ) {
-  private val handlerMap = mutableMapOf<Pair<Int, String>, Any>()
+  private val handlerMap = mutableMapOf<Pair<Int, String>, HandlerRef>()
   private val registry = RuneModuleRegistry()
-  private val manager = RuneUIManager(root, YogaLayoutEngine(root.rootId)) { id, name ->
-    dispatchHandler(id, name)
+  private val moduleExecutor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
+    Thread(runnable, "RuneModuleInvoker").apply { isDaemon = true }
   }
+  private val manager = RuneUIManager(
+    root,
+    YogaLayoutEngine(root.rootId),
+    eventDispatcher = { id, name -> dispatchHandler(id, name) },
+    handlerListener = { id, name, handlerRef -> onHandlerAttached(id, name, handlerRef) },
+  )
 
   init {
     installConsole()
-    if (adapter is RhinoAdapter) {
-      installRhinoGlobals(adapter)
-    }
-    if (adapter is RhinoAdapter) {
-      installRhinoBridge(adapter)
-    } else {
-      installFallbackBridge()
+    when (adapter) {
+      is RhinoAdapter -> {
+        installRhinoGlobals(adapter)
+        installRhinoBridge(adapter)
+      }
+      is HermesAdapter -> installHermesBindings(adapter)
+      else -> installFallbackBridge()
     }
   }
 
@@ -43,6 +51,13 @@ class RuneRuntime(
 
   fun start(rootId: Int) {
     adapter.callGlobal("__startApp", arrayOf(rootId))
+  }
+
+  fun destroy() {
+    moduleExecutor.shutdownNow()
+    if (adapter is HermesAdapter) {
+      adapter.destroy()
+    }
   }
 
   private fun installConsole() {
@@ -199,7 +214,7 @@ class RuneRuntime(
       val fn = args.getOrNull(2)
       Log.d("RuneUI", "Registering handler: id=$id name=$name fn=${fn?.javaClass?.simpleName}")
       if (fn is Function) {
-        handlerMap[id to name] = fn
+        handlerMap[id to name] = HandlerRef.Rhino(fn)
         Log.d("RuneUI", "Handler registered in handlerMap")
       } else {
         Log.d("RuneUI", "Handler function is null or not a Function")
@@ -258,15 +273,101 @@ class RuneRuntime(
   private fun dispatchHandler(id: Int, name: String) {
     Log.d("RuneUI", "dispatchHandler called for id=$id name=$name")
     val key = id to name
-    val fn = handlerMap[key]
-    Log.d("RuneUI", "Handler function found: ${fn != null}")
-    if (fn is Function && adapter is RhinoAdapter) {
-      val event = adapter.createObject(mapOf("target" to id))
-      Log.d("RuneUI", "Calling JavaScript function")
-      adapter.callFunction(fn, arrayOf(event))
-    } else {
-      Log.d("RuneUI", "No valid handler found for $key")
+    val handler = handlerMap[key]
+    Log.d("RuneUI", "Handler function found: ${handler != null}")
+    when {
+      handler is HandlerRef.Rhino && adapter is RhinoAdapter -> {
+        val event = adapter.createObject(mapOf("target" to id))
+        Log.d("RuneUI", "Calling JavaScript function")
+        adapter.callFunction(handler.function, arrayOf(event))
+      }
+      handler is HandlerRef.Hermes && adapter is HermesAdapter -> {
+        Log.d("RuneUI", "Dispatching Hermes handler $handler for node $id")
+        adapter.invokeHandler(handler.handlerId, id, name)
+      }
+      else -> Log.d("RuneUI", "No valid handler found for $key")
     }
+  }
+
+  private fun installHermesBindings(hermes: HermesAdapter) {
+    val uiShim = object : JSBridge.UIShim {
+      override fun createNode(type: String): Int = manager.createNode(type)
+
+      override fun setProp(nodeId: Int, name: String, jsonValue: String?) {
+        manager.setProp(nodeId, name, jsonValue ?: "{}")
+      }
+
+      override fun setText(nodeId: Int, text: String) {
+        manager.setText(nodeId, text)
+      }
+
+      override fun insertChild(parentId: Int, childId: Int, index: Int) {
+        manager.insertChild(parentId, childId, index)
+      }
+
+      override fun removeChild(parentId: Int, childId: Int) {
+        manager.removeChild(parentId, childId)
+      }
+
+      override fun removeNode(nodeId: Int) {
+        clearHandlersForNode(nodeId)
+        manager.removeNode(nodeId)
+      }
+
+      override fun setHandler(nodeId: Int, event: String, handlerId: Long) {
+        manager.setHandler(nodeId, event, handlerId)
+      }
+
+      override fun flush() {
+        manager.flush()
+      }
+    }
+
+    val modulesShim = HermesModulesShim(hermes)
+    hermes.installBindings(uiShim, modulesShim)
+  }
+
+  private fun clearHandlersForNode(nodeId: Int) {
+    val iterator = handlerMap.entries.iterator()
+    while (iterator.hasNext()) {
+      val entry = iterator.next()
+      if (entry.key.first == nodeId) {
+        iterator.remove()
+      }
+    }
+  }
+
+  private fun onHandlerAttached(id: Int, name: String, handlerRef: Long) {
+    val key = id to name
+    if (adapter is HermesAdapter) {
+      if (handlerRef != 0L) {
+        handlerMap[key] = HandlerRef.Hermes(handlerRef)
+      } else {
+        handlerMap.remove(key)
+      }
+    }
+  }
+
+  private inner class HermesModulesShim(
+    private val hermes: HermesAdapter,
+  ) : JSBridge.ModulesShim {
+    override fun invoke(module: String, method: String, args: Array<Any?>, promiseId: Int) {
+      moduleExecutor.execute {
+        try {
+          val argsPayload = args.firstOrNull()
+          val argsJson = toJsonString(argsPayload)
+          val result = handleModuleCall(module, method, argsJson)
+          hermes.resolvePromise(promiseId, result)
+        } catch (t: Throwable) {
+          hermes.rejectPromise(promiseId, t.message ?: "error")
+        }
+      }
+    }
+  }
+
+  private sealed class HandlerRef {
+    data class Rhino(val function: Function) : HandlerRef()
+    data class Hermes(val handlerId: Long) : HandlerRef()
   }
 
   private fun Array<Any?>.getOrNull(index: Int): Any? = if (index in indices) this[index] else null

@@ -13,9 +13,7 @@ import com.facebook.yoga.YogaNodeFactory
 import kotlin.math.roundToInt
 
 class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
-  private val config: YogaConfig = YogaConfigFactory.create().apply {
-    setUseLegacyStretchBehaviour(false)
-  }
+  private val config: YogaConfig = YogaConfigFactory.create()
   private val nodes = HashMap<Int, YogaNode>()
   private val styles = HashMap<Int, Style>()
   private val measureHandlers = HashMap<Int, MeasureHandler>()
