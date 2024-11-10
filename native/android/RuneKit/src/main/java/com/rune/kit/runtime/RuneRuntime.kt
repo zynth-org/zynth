@@ -29,6 +29,15 @@ class RuneRuntime(
   )
 
   init {
+    adapter.onException = { error ->
+      val stack = error.stack?.takeIf { it.isNotBlank() }
+      if (stack != null) {
+        Log.e(TAG, "JS error: ${error.message}\n$stack")
+      } else {
+        Log.e(TAG, "JS error: ${error.message}")
+      }
+      root.showRedBox(error.message, error.stack)
+    }
     installConsole()
     when (adapter) {
       is RhinoAdapter -> {
@@ -45,7 +54,7 @@ class RuneRuntime(
   }
 
   fun load(code: String) {
-    adapter.onException = { Log.e("JS", it) }
+    root.hideRedBox()
     adapter.evaluate(code)
   }
 
@@ -463,5 +472,7 @@ class RuneRuntime(
     fun initialize(context: Context) {
       SoLoader.init(context, false)
     }
+
+    private const val TAG = "RuneRuntime"
   }
 }

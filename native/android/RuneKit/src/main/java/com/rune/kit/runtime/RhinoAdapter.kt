@@ -15,7 +15,7 @@ class RhinoAdapter : JSRuntimeAdapter {
     languageVersion = Context.VERSION_ES6
   }
   private val scope: Scriptable = cx.initStandardObjects()
-  override var onException: ((String) -> Unit)? = null
+  override var onException: ((JsRuntimeException) -> Unit)? = null
 
   override fun setGlobalObject(name: String, value: Any) {
     val jsObj = Context.javaToJS(value, scope)
@@ -33,7 +33,7 @@ class RhinoAdapter : JSRuntimeAdapter {
         return try {
           fn(args as Array<Any?>) ?: Undefined.instance
         } catch (t: Throwable) {
-          onException?.invoke(t.message ?: t.toString())
+          onException?.invoke(t.toJsRuntimeException())
           Undefined.instance
         }
       }
@@ -45,7 +45,7 @@ class RhinoAdapter : JSRuntimeAdapter {
     try {
       cx.evaluateString(scope, code, "bundle.js", 1, null)
     } catch (t: Throwable) {
-      onException?.invoke(t.message ?: t.toString())
+      onException?.invoke(t.toJsRuntimeException())
     }
   }
 
@@ -60,7 +60,7 @@ class RhinoAdapter : JSRuntimeAdapter {
       val jsArgs = args.map { Context.javaToJS(it, scope) }.toTypedArray()
       fn.call(cx, scope, scope, jsArgs)
     } catch (t: Throwable) {
-      onException?.invoke(t.message ?: t.toString())
+      onException?.invoke(t.toJsRuntimeException())
       null
     }
   }
@@ -69,7 +69,7 @@ class RhinoAdapter : JSRuntimeAdapter {
     return try {
       NativeJSON.parse(cx, scope, json, null)
     } catch (t: Throwable) {
-      onException?.invoke(t.message ?: t.toString())
+      onException?.invoke(t.toJsRuntimeException())
       null
     }
   }
@@ -80,5 +80,10 @@ class RhinoAdapter : JSRuntimeAdapter {
       ScriptableObject.putProperty(obj, key, Context.javaToJS(value, scope))
     }
     return obj
+  }
+
+  private fun Throwable.toJsRuntimeException(): JsRuntimeException {
+    val message = message ?: toString()
+    return JsRuntimeException(message, stackTraceToString())
   }
 }

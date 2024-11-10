@@ -16,6 +16,7 @@ object JSBridge {
     uiShim: UIShim,
     modulesShim: ModulesShim,
     timerShim: TimerShim,
+    errorHandler: ErrorHandler,
   )
   external fun evaluateString(runtimePtr: Long, script: String, sourceUrl: String = "<unknown>")
   external fun evaluateBytecode(runtimePtr: Long, bytecode: ByteArray, sourceUrl: String)
@@ -43,6 +44,10 @@ object JSBridge {
   interface TimerShim {
     fun scheduleTimeout(timerId: Int, delayMs: Long)
     fun clearTimeout(timerId: Int)
+  }
+
+  interface ErrorHandler {
+    fun report(message: String?, stack: String?)
   }
 
   class HandlerTimerShim(

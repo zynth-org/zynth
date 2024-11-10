@@ -17,7 +17,8 @@ void installBindings(
     JNIEnv *env,
     jobject uiShim,
     jobject modulesShim,
-    jobject timerShim);
+    jobject timerShim,
+    jobject errorHandler);
 void evaluateString(
     facebook::hermes::HermesRuntime *runtime,
     const std::string &code,
@@ -86,9 +87,10 @@ Java_com_rune_kit_runtime_JSBridge_installBindings(
     jlong runtimePtr,
     jobject uiShim,
     jobject modulesShim,
-    jobject timerShim) {
+    jobject timerShim,
+    jobject errorHandler) {
   auto *runtime = rune::kit::fromPtr(runtimePtr);
-  rune::kit::installBindings(runtime, env, uiShim, modulesShim, timerShim);
+  rune::kit::installBindings(runtime, env, uiShim, modulesShim, timerShim, errorHandler);
 }
 
 extern "C" JNIEXPORT void JNICALL

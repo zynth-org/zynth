@@ -98,12 +98,15 @@ struct RuntimeState {
   jobject uiShim = nullptr;
   jobject modulesShim = nullptr;
   jobject timerShim = nullptr;
+  jobject errorHandler = nullptr;
   jclass uiClass = nullptr;
   jclass modulesClass = nullptr;
   jclass timerClass = nullptr;
+  jclass errorHandlerClass = nullptr;
   UIShimMethods uiMethods;
   ModulesShimMethods moduleMethods;
   TimerShimMethods timerMethods;
+  jmethodID reportError = nullptr;
   std::mutex mutex;
   long nextHandlerId = 1;
   int nextTimerId = 1;
@@ -181,6 +184,26 @@ facebook::jsi::Value parseJson(facebook::jsi::Runtime &rt, const std::string &js
   auto parse = jsonObj.getPropertyAsFunction(rt, "parse");
   auto arg = String::createFromUtf8(rt, json);
   return parse.call(rt, arg);
+}
+
+void reportJsError(
+    const std::shared_ptr<RuntimeState> &state,
+    const std::string &message,
+    const std::string &stack) {
+  if (!state || !state->errorHandler || !state->reportError) {
+    return;
+  }
+  std::string safeMessage = message.empty() ? std::string("Unknown JavaScript error") : message;
+  JniEnv env;
+  if (!env.valid()) {
+    return;
+  }
+  jstring jMessage = makeJString(env.get(), safeMessage);
+  jstring jStack = stack.empty() ? nullptr : makeJString(env.get(), stack);
+  env->CallVoidMethod(state->errorHandler, state->reportError, jMessage, jStack);
+  if (jMessage) env->DeleteLocalRef(jMessage);
+  if (jStack) env->DeleteLocalRef(jStack);
+  logJniException(env.get(), "ErrorHandler.report");
 }
 
 facebook::jsi::Value makePromise(
@@ -642,9 +665,11 @@ void cleanupState(std::shared_ptr<RuntimeState> state) {
   if (state->uiShim) env->DeleteGlobalRef(state->uiShim);
   if (state->modulesShim) env->DeleteGlobalRef(state->modulesShim);
   if (state->timerShim) env->DeleteGlobalRef(state->timerShim);
+  if (state->errorHandler) env->DeleteGlobalRef(state->errorHandler);
   if (state->uiClass) env->DeleteGlobalRef(state->uiClass);
   if (state->modulesClass) env->DeleteGlobalRef(state->modulesClass);
   if (state->timerClass) env->DeleteGlobalRef(state->timerClass);
+  if (state->errorHandlerClass) env->DeleteGlobalRef(state->errorHandlerClass);
 }
 
 } // namespace
@@ -658,8 +683,9 @@ void installBindings(
     JNIEnv *env,
     jobject uiShim,
     jobject modulesShim,
-    jobject timerShim) {
-  if (!runtime || !env || !uiShim || !modulesShim || !timerShim) {
+    jobject timerShim,
+    jobject errorHandler) {
+  if (!runtime || !env || !uiShim || !modulesShim || !timerShim || !errorHandler) {
     BRIDGE_LOG(ANDROID_LOG_ERROR, "installBindings received null arguments");
     return;
   }
@@ -669,9 +695,11 @@ void installBindings(
   state->uiShim = env->NewGlobalRef(uiShim);
   state->modulesShim = env->NewGlobalRef(modulesShim);
   state->timerShim = env->NewGlobalRef(timerShim);
+  state->errorHandler = env->NewGlobalRef(errorHandler);
   state->uiClass = static_cast<jclass>(env->NewGlobalRef(env->GetObjectClass(uiShim)));
   state->modulesClass = static_cast<jclass>(env->NewGlobalRef(env->GetObjectClass(modulesShim)));
   state->timerClass = static_cast<jclass>(env->NewGlobalRef(env->GetObjectClass(timerShim)));
+  state->errorHandlerClass = static_cast<jclass>(env->NewGlobalRef(env->GetObjectClass(errorHandler)));
 
   state->uiMethods.createNode = env->GetMethodID(state->uiClass, "createNode", "(Ljava/lang/String;)I");
   state->uiMethods.setProp = env->GetMethodID(state->uiClass, "setProp", "(ILjava/lang/String;Ljava/lang/String;)V");
@@ -686,6 +714,8 @@ void installBindings(
 
   state->timerMethods.scheduleTimeout = env->GetMethodID(state->timerClass, "scheduleTimeout", "(IJ)V");
   state->timerMethods.clearTimeout = env->GetMethodID(state->timerClass, "clearTimeout", "(I)V");
+
+  state->reportError = env->GetMethodID(state->errorHandlerClass, "report", "(Ljava/lang/String;Ljava/lang/String;)V");
 
   storeState(runtime, state);
 
@@ -711,10 +741,15 @@ void evaluateString(
     auto state = getState(runtime);
     if (state) {
       BRIDGE_LOG(ANDROID_LOG_ERROR, "Hermes stack: %s", err.getStack().c_str());
+      reportJsError(state, err.getMessage(), err.getStack());
     }
     throw;
   } catch (const std::exception &ex) {
     BRIDGE_LOG(ANDROID_LOG_ERROR, "Hermes evaluateString std::exception: %s", ex.what());
+    auto state = getState(runtime);
+    if (state) {
+      reportJsError(state, ex.what(), "");
+    }
     throw;
   }
 }
@@ -727,7 +762,24 @@ void evaluateBytecode(
   if (!runtime || !data || length == 0) return;
   // TODO: Support Hermes bytecode evaluation (HBC).
   auto buffer = std::make_shared<facebook::jsi::StringBuffer>(std::string(reinterpret_cast<const char *>(data), length));
-  runtime->evaluateJavaScript(buffer, sourceUrl);
+  try {
+    runtime->evaluateJavaScript(buffer, sourceUrl);
+  } catch (const facebook::jsi::JSError &err) {
+    BRIDGE_LOG(ANDROID_LOG_ERROR, "Hermes evaluateBytecode error: %s", err.getMessage().c_str());
+    auto state = getState(runtime);
+    if (state) {
+      BRIDGE_LOG(ANDROID_LOG_ERROR, "Hermes stack: %s", err.getStack().c_str());
+      reportJsError(state, err.getMessage(), err.getStack());
+    }
+    throw;
+  } catch (const std::exception &ex) {
+    BRIDGE_LOG(ANDROID_LOG_ERROR, "Hermes evaluateBytecode std::exception: %s", ex.what());
+    auto state = getState(runtime);
+    if (state) {
+      reportJsError(state, ex.what(), "");
+    }
+    throw;
+  }
 }
 
 void callGlobal(
@@ -796,8 +848,16 @@ void callGlobal(
     BRIDGE_LOG(ANDROID_LOG_INFO, "fn.call() completed successfully");
   } catch (const facebook::jsi::JSError &err) {
     BRIDGE_LOG(ANDROID_LOG_ERROR, "JSI Error calling function: %s", err.getMessage().c_str());
+    auto state = getState(runtime);
+    if (state) {
+      reportJsError(state, err.getMessage(), err.getStack());
+    }
   } catch (const std::exception &ex) {
     BRIDGE_LOG(ANDROID_LOG_ERROR, "Exception calling function: %s", ex.what());
+    auto state = getState(runtime);
+    if (state) {
+      reportJsError(state, ex.what(), "");
+    }
   }
 }
 
@@ -813,7 +873,21 @@ void onTimerFired(facebook::hermes::HermesRuntime *runtime, int timerId) {
     entry = std::move(it->second);
     state->timers.erase(it);
   }
-  entry.callback->call(*runtime, static_cast<const facebook::jsi::Value *>(entry.args.data()), entry.args.size());
+  try {
+    entry.callback->call(*runtime, static_cast<const facebook::jsi::Value *>(entry.args.data()), entry.args.size());
+  } catch (const facebook::jsi::JSError &err) {
+    BRIDGE_LOG(ANDROID_LOG_ERROR, "Timer callback error: %s", err.getMessage().c_str());
+    auto state = getState(runtime);
+    if (state) {
+      reportJsError(state, err.getMessage(), err.getStack());
+    }
+  } catch (const std::exception &ex) {
+    BRIDGE_LOG(ANDROID_LOG_ERROR, "Timer callback exception: %s", ex.what());
+    auto state = getState(runtime);
+    if (state) {
+      reportJsError(state, ex.what(), "");
+    }
+  }
 }
 
 void resolvePromise(facebook::hermes::HermesRuntime *runtime, int promiseId, const std::string &payloadJson) {
@@ -831,7 +905,21 @@ void resolvePromise(facebook::hermes::HermesRuntime *runtime, int promiseId, con
   Value result = payloadJson.empty() ? Value::undefined() : parseJson(*runtime, payloadJson);
   std::vector<Value> args;
   args.emplace_back(std::move(result));
-  entry.resolve->call(*runtime, static_cast<const facebook::jsi::Value *>(args.data()), args.size());
+  try {
+    entry.resolve->call(*runtime, static_cast<const facebook::jsi::Value *>(args.data()), args.size());
+  } catch (const facebook::jsi::JSError &err) {
+    BRIDGE_LOG(ANDROID_LOG_ERROR, "resolvePromise error: %s", err.getMessage().c_str());
+    auto state = getState(runtime);
+    if (state) {
+      reportJsError(state, err.getMessage(), err.getStack());
+    }
+  } catch (const std::exception &ex) {
+    BRIDGE_LOG(ANDROID_LOG_ERROR, "resolvePromise exception: %s", ex.what());
+    auto state = getState(runtime);
+    if (state) {
+      reportJsError(state, ex.what(), "");
+    }
+  }
 }
 
 void rejectPromise(facebook::hermes::HermesRuntime *runtime, int promiseId, const std::string &message) {
@@ -850,7 +938,21 @@ void rejectPromise(facebook::hermes::HermesRuntime *runtime, int promiseId, cons
   Value errorValue = message.empty() ? Value::undefined() : Value(String::createFromUtf8(rt, message));
   std::vector<Value> args;
   args.emplace_back(std::move(errorValue));
-  entry.reject->call(rt, static_cast<const facebook::jsi::Value *>(args.data()), args.size());
+  try {
+    entry.reject->call(rt, static_cast<const facebook::jsi::Value *>(args.data()), args.size());
+  } catch (const facebook::jsi::JSError &err) {
+    BRIDGE_LOG(ANDROID_LOG_ERROR, "rejectPromise error: %s", err.getMessage().c_str());
+    auto state = getState(runtime);
+    if (state) {
+      reportJsError(state, err.getMessage(), err.getStack());
+    }
+  } catch (const std::exception &ex) {
+    BRIDGE_LOG(ANDROID_LOG_ERROR, "rejectPromise exception: %s", ex.what());
+    auto state = getState(runtime);
+    if (state) {
+      reportJsError(state, ex.what(), "");
+    }
+  }
 }
 
 void invokeHandler(facebook::hermes::HermesRuntime *runtime, long handlerId, int nodeId, const std::string &event) {
@@ -870,7 +972,21 @@ void invokeHandler(facebook::hermes::HermesRuntime *runtime, long handlerId, int
   evt.setProperty(rt, "type", String::createFromUtf8(rt, event));
   std::vector<Value> handlerArgs;
   handlerArgs.emplace_back(std::move(evt));
-  entry.function->call(rt, static_cast<const facebook::jsi::Value *>(handlerArgs.data()), handlerArgs.size());
+  try {
+    entry.function->call(rt, static_cast<const facebook::jsi::Value *>(handlerArgs.data()), handlerArgs.size());
+  } catch (const facebook::jsi::JSError &err) {
+    BRIDGE_LOG(ANDROID_LOG_ERROR, "invokeHandler error: %s", err.getMessage().c_str());
+    auto state = getState(runtime);
+    if (state) {
+      reportJsError(state, err.getMessage(), err.getStack());
+    }
+  } catch (const std::exception &ex) {
+    BRIDGE_LOG(ANDROID_LOG_ERROR, "invokeHandler exception: %s", ex.what());
+    auto state = getState(runtime);
+    if (state) {
+      reportJsError(state, ex.what(), "");
+    }
+  }
 }
 
 void destroyRuntime(facebook::hermes::HermesRuntime *runtime) {

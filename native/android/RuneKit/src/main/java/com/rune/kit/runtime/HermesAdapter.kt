@@ -10,7 +10,7 @@ import java.util.concurrent.CountDownLatch
 class HermesAdapter(
   private val bridge: JSBridge = JSBridge,
 ) : JSRuntimeAdapter {
-  override var onException: ((String) -> Unit)? = null
+  override var onException: ((JsRuntimeException) -> Unit)? = null
 
   private val jsThread = HandlerThread(THREAD_NAME).apply { start() }
   private val jsHandler = Handler(jsThread.looper)
@@ -18,6 +18,12 @@ class HermesAdapter(
   private val timerShim = JSBridge.HandlerTimerShim(::getRuntimePtr, jsThread.looper)
   private val objects = HashMap<String, Any>()
   private val functions = HashMap<String, (Array<Any?>) -> Any?>()
+  private val errorHandler = object : JSBridge.ErrorHandler {
+    override fun report(message: String?, stack: String?) {
+      val text = message?.takeUnless { it.isBlank() } ?: "Unknown JavaScript error"
+      onException?.invoke(JsRuntimeException(text, stack))
+    }
+  }
 
   @Volatile private var destroyed = false
 
@@ -31,7 +37,7 @@ class HermesAdapter(
   ) {
     runOnJS {
       ensureRuntime()
-      bridge.installBindings(runtimePtr, uiShim, modulesShim, timerShim)
+      bridge.installBindings(runtimePtr, uiShim, modulesShim, timerShim, errorHandler)
     }
   }
 
@@ -88,7 +94,7 @@ class HermesAdapter(
         bridge.invokeHandler(runtimePtr, handlerId, nodeId, event)
       } catch (t: Throwable) {
         Log.e(TAG, "invokeHandler($event) failed", t)
-        onException?.invoke(t.message ?: t.toString())
+        onException?.invoke(t.toJsRuntimeException())
       }
     }
   }
@@ -132,7 +138,7 @@ class HermesAdapter(
         bridge.callGlobal(runtimePtr, name, payload)
       } catch (t: Throwable) {
         Log.e(TAG, "callGlobalAsync($name) failed", t)
-        onException?.invoke(t.message ?: t.toString())
+        onException?.invoke(t.toJsRuntimeException())
       }
     }
   }
@@ -166,6 +172,11 @@ class HermesAdapter(
   }
 
   private fun getRuntimePtr(): Long = runtimePtr
+
+  private fun Throwable.toJsRuntimeException(): JsRuntimeException {
+    val text = message ?: toString()
+    return JsRuntimeException(text, stackTraceToString())
+  }
 
   companion object {
     private const val TAG = "HermesAdapter"
