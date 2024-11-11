@@ -1,7 +1,7 @@
 import Foundation
 
 public final class HermesAdapter: JSRuntimeAdapter {
-  public var onException: ((String) -> Void)? {
+  public var onException: ((JsRuntimeException) -> Void)? {
     didSet { installExceptionHandler() }
   }
   private let host: HermesRuntimeHost
@@ -17,9 +17,15 @@ public final class HermesAdapter: JSRuntimeAdapter {
 
   private func installExceptionHandler() {
     if onException != nil {
-      host.exceptionHandler = { [weak self] message in
+      host.exceptionHandler = { [weak self] message, stack in
         guard let self else { return }
-        self.onException?(message)
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        let stackText = stack?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let error = JsRuntimeException(
+          message: trimmed.isEmpty ? "Unknown Error" : trimmed,
+          stack: stackText?.isEmpty == true ? nil : stackText
+        )
+        self.onException?(error)
       }
     } else {
       host.exceptionHandler = nil

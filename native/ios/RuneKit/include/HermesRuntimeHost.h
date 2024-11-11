@@ -6,7 +6,7 @@ NS_ASSUME_NONNULL_BEGIN
 @interface HermesRuntimeHost : NSObject <RuneJSInvoker>
 
 @property(nonatomic, copy, nullable) NSString *(^moduleCallHandler)(NSString *module, NSString *method, NSString *argsJSON);
-@property(nonatomic, copy, nullable) void (^exceptionHandler)(NSString *message);
+@property(nonatomic, copy, nullable) void (^exceptionHandler)(NSString *message, NSString *_Nullable stack);
 
 - (instancetype)initWithUIManager:(SNUIManager *)manager;
 - (void)evaluateString:(NSString *)code;

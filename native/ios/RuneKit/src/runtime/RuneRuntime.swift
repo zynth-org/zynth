@@ -22,6 +22,24 @@ public final class RuneRuntime {
   }
 
   private func configureRuntime() {
+    runtime.onException = { error in
+      let trimmedMessage = error.message.trimmingCharacters(in: .whitespacesAndNewlines)
+      let message = trimmedMessage.isEmpty ? "Unknown Error" : trimmedMessage
+      let trimmedStack = error.stack?.trimmingCharacters(in: .whitespacesAndNewlines)
+      if let stack = trimmedStack, !stack.isEmpty {
+        print("JS error:\n\(message)\nStack:\n\(stack)")
+      } else {
+        print("JS error:\n\(message)")
+      }
+      let stackForDisplay = (trimmedStack?.isEmpty == true) ? nil : trimmedStack
+      DevRedBox.show(title: "JavaScript Error", message: message, stack: stackForDisplay)
+    }
+
+    print("[RuneTrace] configureRuntime using adapter", type(of: runtime))
+
+    runtime.evaluate(code: "globalThis.__RUNE_PLATFORM = \"ios\";")
+    print("[RuneTrace] __RUNE_PLATFORM set to ios")
+
     if let hermes = runtime as? HermesAdapter {
       hermes.configureModuleCall { [weak self] name, method, argsJSON in
         guard let self else { return "{}" }
@@ -66,11 +84,14 @@ public final class RuneRuntime {
 
   public func load(jsBundleURL: URL) throws {
     let code = try String(contentsOf: jsBundleURL, encoding: .utf8)
-    runtime.onException = { print("JS error:", $0) }
+    print("[RuneTrace] load() evaluating bundle length", code.count)
+    DevRedBox.dismiss()
     runtime.evaluate(code: code)
+    print("[RuneTrace] bundle evaluated")
   }
 
   public func start(rootId: Int) {
+    print("[RuneTrace] start() invoking __startApp with rootId", rootId)
     _ = runtime.callGlobal("__startApp", args: [rootId])
   }
 }

@@ -123,12 +123,12 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
 
   NSLog(@"[Hermes] %@: %@", title, msg);
 
-  dispatch_async(dispatch_get_main_queue(), ^{
-    SNShowRedBox(title, msg, stackString);
-  });
-
   if (self.exceptionHandler) {
-    self.exceptionHandler(msg);
+    self.exceptionHandler(msg, stackString);
+  } else {
+    dispatch_async(dispatch_get_main_queue(), ^{
+      SNShowRedBox(title, msg, stackString);
+    });
   }
 }
 
@@ -170,6 +170,8 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
           }
           std::string type = args[0].getString(rt).utf8(rt);
           int nid = [[host manager] createNode:[NSString stringWithUTF8String:type.c_str()]].intValue;
+          NSString *typeStr = [NSString stringWithUTF8String:type.c_str()];
+          NSLog(@"[RuneTrace] __ui.createNode type=%@ -> id=%d", typeStr, nid);
           return Value((double)nid);
         } catch (const facebook::jsi::JSError &error) {
           [host reportJSException:error context:@"__ui.createNode"];
@@ -188,6 +190,8 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
           }
           int id = (int)a[0].asNumber();
           std::string name = a[1].getString(rt).utf8(rt);
+          NSString *nameStr = [NSString stringWithUTF8String:name.c_str()];
+          NSLog(@"[RuneTrace] __ui.setProp id=%d name=%@", id, nameStr);
           if (name == "style" && a[2].isObject()) {
             Object styleObj = a[2].asObject(rt);
             NSMutableDictionary *styleDict = [NSMutableDictionary dictionary];
@@ -259,6 +263,7 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
           }
           int id = (int)a[0].asNumber();
           auto text = a[1].getString(rt).utf8(rt);
+          NSLog(@"[RuneTrace] __ui.setText id=%d", id);
           [[host manager] setText:@(id) text:[NSString stringWithUTF8String:text.c_str()]];
         } catch (const facebook::jsi::JSError &error) {
           [host reportJSException:error context:@"__ui.setText"];
@@ -275,9 +280,13 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
           if (count < 3) {
             return Value::undefined();
           }
-          [[host manager] insertChild:@((int)a[0].asNumber())
-                                 child:@((int)a[1].asNumber())
-                                 index:@((int)a[2].asNumber())];
+          int parentId = (int)a[0].asNumber();
+          int childId = (int)a[1].asNumber();
+          int index = (int)a[2].asNumber();
+          NSLog(@"[RuneTrace] __ui.insertChild parent=%d child=%d index=%d", parentId, childId, index);
+          [[host manager] insertChild:@(parentId)
+                                 child:@(childId)
+                                 index:@(index)];
         } catch (const facebook::jsi::JSError &error) {
           [host reportJSException:error context:@"__ui.insertChild"];
         } catch (const std::exception &ex) {
@@ -295,6 +304,7 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
           }
           int parentId = (int)a[0].asNumber();
           int childId = (int)a[1].asNumber();
+          NSLog(@"[RuneTrace] __ui.removeChild parent=%d child=%d", parentId, childId);
           [[host manager] removeChild:@(parentId) child:@(childId)];
           [host sn_removeHandlersForNode:childId];
         } catch (const facebook::jsi::JSError &error) {

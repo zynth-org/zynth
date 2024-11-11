@@ -2,7 +2,7 @@ import Foundation
 import JavaScriptCore
 
 public protocol JSRuntimeAdapter: AnyObject {
-  var onException: ((String) -> Void)? { get set }
+  var onException: ((JsRuntimeException) -> Void)? { get set }
   func setGlobalObject(_ name: String, _ value: Any)
   func setGlobalFunction(_ name: String, _ fn: @escaping ([Any]) -> Any?)
   func evaluate(code: String)
@@ -11,10 +11,17 @@ public protocol JSRuntimeAdapter: AnyObject {
 
 public final class JSCAdapter: JSRuntimeAdapter {
   let ctx = JSContext()!
-  public var onException: ((String) -> Void)?
+  public var onException: ((JsRuntimeException) -> Void)?
 
   public init() {
-    ctx.exceptionHandler = { [weak self] _, e in self?.onException?(e?.toString() ?? "unknown") }
+    ctx.exceptionHandler = { [weak self] _, exception in
+      guard let self else { return }
+      let message = (exception?.toString() ?? "unknown").trimmingCharacters(in: .whitespacesAndNewlines)
+      let stackValue = exception?.objectForKeyedSubscript("stack")
+      let stack = stackValue?.toString()?.trimmingCharacters(in: .whitespacesAndNewlines)
+      let error = JsRuntimeException(message: message.isEmpty ? "Unknown Error" : message, stack: stack)
+      self.onException?(error)
+    }
   }
 
   public func setGlobalObject(_ name: String, _ value: Any) {

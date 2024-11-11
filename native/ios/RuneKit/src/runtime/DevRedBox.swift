@@ -1,9 +1,5 @@
 import UIKit
 
-public extension Notification.Name {
-  static let runeReloadRequested = Notification.Name("runeReloadRequested")
-}
-
 @objc public final class DevRedBox: NSObject {
   private var window: UIWindow?
   private var controller: RedBoxViewController?
@@ -43,8 +39,12 @@ public extension Notification.Name {
     redBoxController.onDismiss = { [weak self] in
       self?.hide()
     }
-    redBoxController.onReload = {
-      NotificationCenter.default.post(name: .runeReloadRequested, object: nil)
+    redBoxController.onCloseApp = { [weak self] in
+      self?.hide()
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+        // Terminate the app so developers can relaunch manually.
+        exit(EXIT_FAILURE)
+      }
     }
 
     let overlayWindow = UIWindow(frame: UIScreen.main.bounds)
@@ -59,13 +59,13 @@ public extension Notification.Name {
 
 final class RedBoxViewController: UIViewController {
   var onDismiss: (() -> Void)?
-  var onReload: (() -> Void)?
+  var onCloseApp: (() -> Void)?
 
   private let container = UIView()
   private let titleLabel = UILabel()
   private let messageView = UITextView()
   private let stackView = UITextView()
-  private let reloadButton = UIButton(type: .system)
+  private let closeButton = UIButton(type: .system)
   private let dismissButton = UIButton(type: .system)
 
   override func viewDidLoad() {
@@ -98,11 +98,11 @@ final class RedBoxViewController: UIViewController {
     stackView.layer.cornerRadius = 8
     stackView.translatesAutoresizingMaskIntoConstraints = false
 
-    reloadButton.setTitle("Reload", for: .normal)
-    reloadButton.setTitleColor(.white, for: .normal)
-    reloadButton.titleLabel?.font = UIFont.boldSystemFont(ofSize: 16)
-    reloadButton.translatesAutoresizingMaskIntoConstraints = false
-    reloadButton.addTarget(self, action: #selector(handleReload), for: .touchUpInside)
+    closeButton.setTitle("Close App", for: .normal)
+    closeButton.setTitleColor(.white, for: .normal)
+    closeButton.titleLabel?.font = UIFont.boldSystemFont(ofSize: 16)
+    closeButton.translatesAutoresizingMaskIntoConstraints = false
+    closeButton.addTarget(self, action: #selector(handleCloseApp), for: .touchUpInside)
 
     dismissButton.setTitle("Dismiss", for: .normal)
     dismissButton.setTitleColor(UIColor(white: 0.9, alpha: 1), for: .normal)
@@ -112,7 +112,7 @@ final class RedBoxViewController: UIViewController {
     container.addSubview(titleLabel)
     container.addSubview(messageView)
     container.addSubview(stackView)
-    container.addSubview(reloadButton)
+    container.addSubview(closeButton)
     container.addSubview(dismissButton)
 
     NSLayoutConstraint.activate([
@@ -133,15 +133,15 @@ final class RedBoxViewController: UIViewController {
       stackView.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
       stackView.heightAnchor.constraint(greaterThanOrEqualToConstant: 120),
 
-      reloadButton.topAnchor.constraint(equalTo: stackView.bottomAnchor, constant: 16),
-      reloadButton.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
-      reloadButton.heightAnchor.constraint(equalToConstant: 36),
+      closeButton.topAnchor.constraint(equalTo: stackView.bottomAnchor, constant: 16),
+      closeButton.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
+      closeButton.heightAnchor.constraint(equalToConstant: 36),
 
-      dismissButton.centerYAnchor.constraint(equalTo: reloadButton.centerYAnchor),
+      dismissButton.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
       dismissButton.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
       dismissButton.heightAnchor.constraint(equalToConstant: 36),
 
-      container.bottomAnchor.constraint(equalTo: reloadButton.bottomAnchor, constant: 20)
+      container.bottomAnchor.constraint(equalTo: closeButton.bottomAnchor, constant: 20)
     ])
   }
 
@@ -157,9 +157,8 @@ final class RedBoxViewController: UIViewController {
     }
   }
 
-  @objc private func handleReload() {
-    onReload?()
-    DevRedBox.dismiss()
+  @objc private func handleCloseApp() {
+    onCloseApp?()
   }
 
   @objc private func handleDismiss() {
