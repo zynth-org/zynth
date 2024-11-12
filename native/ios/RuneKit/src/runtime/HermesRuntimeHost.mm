@@ -11,6 +11,9 @@
 #import "RuneKit-Swift.h"
 #endif
 
+extern "C" void RuneDiagnosticsReport(const char *phase, const char *message, const char *stack) noexcept;
+
+#import <atomic>
 #import <unordered_map>
 #import <memory>
 #import <functional>
@@ -22,6 +25,12 @@
 using namespace facebook::jsi;
 
 namespace {
+struct NSDataBuffer final : public facebook::jsi::Buffer {
+  NSData *data_;
+  explicit NSDataBuffer(NSData *data) : data_(data) {}
+  size_t size() const override { return (size_t)[data_ length]; }
+  const uint8_t *data() const override { return (const uint8_t *)[data_ bytes]; }
+};
 struct HandlerKey {
   int id;
   std::string name;
@@ -34,11 +43,15 @@ struct HandlerKeyHash {
   }
 };
 
-struct TimerEntry {
-  dispatch_source_t source;
-  std::shared_ptr<Function> callback;
+struct Timer {
+  int id;
+  std::shared_ptr<Function> fn;
   std::vector<Value> args;
+  dispatch_source_t source;
 };
+
+static std::atomic<int> gNextTimer{1};
+static std::unordered_map<int, std::unique_ptr<Timer>> gTimers;
 
 inline void SNShowRedBox(NSString *title, NSString *message, NSString *stack) {
   Class redBoxClass = NSClassFromString(@"DevRedBox");
@@ -47,6 +60,27 @@ inline void SNShowRedBox(NSString *title, NSString *message, NSString *stack) {
     void (*showFunc)(id, SEL, NSString *, NSString *, NSString *) = (void (*)(id, SEL, NSString *, NSString *, NSString *))objc_msgSend;
     showFunc(redBoxClass, showSelector, title, message, stack);
   }
+}
+
+static void RuneReportJSIError(facebook::jsi::Runtime &rt,
+                               const facebook::jsi::JSError &error,
+                               const char *phase) {
+  std::string message;
+  std::string stack;
+
+  try {
+    message = error.getMessage();
+  } catch (...) {
+  }
+
+  // Best-effort: avoid copying JSI values which may be move-only across some Hermes/JSI versions.
+  // If message is empty, keep default; stack will remain empty if not retrievable.
+
+  if (message.empty()) {
+    message = "Unknown JSI error";
+  }
+
+  RuneDiagnosticsReport(phase ? phase : "jsi", message.c_str(), stack.c_str());
 }
 
 inline void SNCallJSFunction(Function &fn, Runtime &rt, const Value *args, size_t count) {
@@ -77,17 +111,14 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
 @interface HermesRuntimeHost ()
 @property(nonatomic, strong) SNUIManager *manager;
 - (void)reportExceptionWithContext:(NSString *)context message:(const std::string &)message stack:(const std::string &)stack;
-- (void)reportJSException:(const facebook::jsi::JSError &)error context:(NSString *)context;
 - (void)reportStdException:(const std::exception &)ex context:(NSString *)context;
 @end
 
 @implementation HermesRuntimeHost {
   std::unique_ptr<facebook::hermes::HermesRuntime> _rt;
   std::unordered_map<HandlerKey, std::shared_ptr<Function>, HandlerKeyHash> _handlers;
-  std::unordered_map<uint64_t, TimerEntry> _timers;
   dispatch_queue_t _jsQueue;
   dispatch_queue_t _moduleQueue;
-  uint64_t _nextTimerId;
 }
 
 - (instancetype)initWithUIManager:(SNUIManager *)manager {
@@ -95,7 +126,6 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
     _manager = manager;
     _jsQueue = dispatch_queue_create("com.rune.hermes.js", DISPATCH_QUEUE_SERIAL);
     _moduleQueue = dispatch_queue_create("com.rune.hermes.modules", DISPATCH_QUEUE_CONCURRENT);
-    _nextTimerId = 1;
 
     dispatch_sync(_jsQueue, ^{
       _rt = facebook::hermes::makeHermesRuntime();
@@ -130,12 +160,6 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
       SNShowRedBox(title, msg, stackString);
     });
   }
-}
-
-- (void)reportJSException:(const facebook::jsi::JSError &)error context:(NSString *)context {
-  std::string message = error.getMessage();
-  std::string stack = error.getStack();
-  [self reportExceptionWithContext:context message:message stack:stack];
 }
 
 - (void)reportStdException:(const std::exception &)ex context:(NSString *)context {
@@ -174,7 +198,7 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
           NSLog(@"[RuneTrace] __ui.createNode type=%@ -> id=%d", typeStr, nid);
           return Value((double)nid);
         } catch (const facebook::jsi::JSError &error) {
-          [host reportJSException:error context:@"__ui.createNode"];
+          RuneReportJSIError(rt, error, "__ui.createNode");
         } catch (const std::exception &ex) {
           [host reportStdException:ex context:@"__ui.createNode"];
         }
@@ -247,7 +271,7 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
                                 name:[NSString stringWithUTF8String:name.c_str()]
                            valueJSON:[NSString stringWithUTF8String:str.c_str()]];
         } catch (const facebook::jsi::JSError &error) {
-          [host reportJSException:error context:@"__ui.setProp"];
+          RuneReportJSIError(rt, error, "__ui.setProp");
         } catch (const std::exception &ex) {
           [host reportStdException:ex context:@"__ui.setProp"];
         }
@@ -266,7 +290,7 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
           NSLog(@"[RuneTrace] __ui.setText id=%d", id);
           [[host manager] setText:@(id) text:[NSString stringWithUTF8String:text.c_str()]];
         } catch (const facebook::jsi::JSError &error) {
-          [host reportJSException:error context:@"__ui.setText"];
+          RuneReportJSIError(rt, error, "__ui.setText");
         } catch (const std::exception &ex) {
           [host reportStdException:ex context:@"__ui.setText"];
         }
@@ -288,7 +312,7 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
                                  child:@(childId)
                                  index:@(index)];
         } catch (const facebook::jsi::JSError &error) {
-          [host reportJSException:error context:@"__ui.insertChild"];
+          RuneReportJSIError(rt, error, "__ui.insertChild");
         } catch (const std::exception &ex) {
           [host reportStdException:ex context:@"__ui.insertChild"];
         }
@@ -308,7 +332,7 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
           [[host manager] removeChild:@(parentId) child:@(childId)];
           [host sn_removeHandlersForNode:childId];
         } catch (const facebook::jsi::JSError &error) {
-          [host reportJSException:error context:@"__ui.removeChild"];
+          RuneReportJSIError(rt, error, "__ui.removeChild");
         } catch (const std::exception &ex) {
           [host reportStdException:ex context:@"__ui.removeChild"];
         }
@@ -328,7 +352,7 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
           host->_handlers[{id, name}] = std::make_shared<Function>(std::move(fn));
           [[host manager] setHandler:@(id) name:[NSString stringWithUTF8String:name.c_str()]];
         } catch (const facebook::jsi::JSError &error) {
-          [host reportJSException:error context:@"__ui.setHandler"];
+          RuneReportJSIError(rt, error, "__ui.setHandler");
         } catch (const std::exception &ex) {
           [host reportStdException:ex context:@"__ui.setHandler"];
         }
@@ -369,7 +393,7 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
   }
 }
 
-- (void)installModulesBridge {
+-(void)installModulesBridge {
   auto &rt = *_rt;
   HermesRuntimeHost *host = self;
 
@@ -392,71 +416,78 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
 
             dispatch_async(host->_moduleQueue, ^{
               @autoreleasepool {
-              NSString *resultString = nil;
-              NSString *errorString = nil;
-              @try {
-                if (host.moduleCallHandler) {
-                  NSString *moduleName = [NSString stringWithUTF8String:module.c_str()];
-                  NSString *methodName = [NSString stringWithUTF8String:method.c_str()];
-                  NSString *argsString = [NSString stringWithUTF8String:argsJSON.c_str()];
-                  resultString = host.moduleCallHandler(moduleName, methodName, argsString);
-                } else {
+                NSString *resultString = nil;
+                std::string nativeError;
+
+                try {
+                  @try {
+                    if (host.moduleCallHandler) {
+                      NSString *moduleName = [NSString stringWithUTF8String:module.c_str()];
+                      NSString *methodName = [NSString stringWithUTF8String:method.c_str()];
+                      NSString *argsString = [NSString stringWithUTF8String:argsJSON.c_str()];
+                      resultString = host.moduleCallHandler(moduleName, methodName, argsString);
+                    } else {
+                      resultString = @"{}";
+                    }
+                  } @catch (NSException *exception) {
+                    NSString *reason = exception.reason ?: @"unknown";
+                    const char *reasonC = [reason UTF8String];
+                    nativeError = std::string("Module call threw: ") + (reasonC ? reasonC : "unknown");
+                  }
+                } catch (const std::exception &ex) {
+                  nativeError = std::string("Module call threw: ") + (ex.what() ? ex.what() : "unknown");
+                }
+
+                if (!nativeError.empty()) {
+                  dispatch_async(host->_jsQueue, ^{
+                    auto &rtRef = *host->_rt;
+                    RuneDiagnosticsReport("modules", nativeError.c_str(), "");
+                    Object errorObj(rtRef);
+                    errorObj.setProperty(rtRef, "code", String::createFromUtf8(rtRef, "native_error"));
+                    errorObj.setProperty(rtRef, "message", String::createFromUtf8(rtRef, nativeError));
+                    Value errorValue = Value(rtRef, errorObj);
+                    SNCallJSFunction(*rejectPtr, rtRef, &errorValue, 1);
+                  });
+                  return;
+                }
+
+                if (!resultString) {
                   resultString = @"{}";
                 }
-              } @catch (NSException *exception) {
-                errorString = [NSString stringWithFormat:@"Module call threw: %@", exception.reason ?: @"unknown"];
-              }
+                std::string resultStd = [resultString UTF8String] ? std::string([resultString UTF8String]) : std::string("{}");
 
-              if (errorString) {
-                std::string message = [errorString UTF8String] ? std::string([errorString UTF8String]) : std::string("Module call error");
                 dispatch_async(host->_jsQueue, ^{
                   auto &rtRef = *host->_rt;
-                  [host reportExceptionWithContext:@"Native Module" message:message stack:""];
-                  Object errorObj(rtRef);
-                  errorObj.setProperty(rtRef, "code", String::createFromUtf8(rtRef, "E_NATIVE"));
-                  errorObj.setProperty(rtRef, "message", String::createFromUtf8(rtRef, message));
-                  Value errorValue = Value(rtRef, errorObj);
-                  SNCallJSFunction(*rejectPtr, rtRef, &errorValue, 1);
+                  try {
+                    auto JSONObj = rtRef.global().getPropertyAsObject(rtRef, "JSON");
+                    auto parse = JSONObj.getPropertyAsFunction(rtRef, "parse");
+                    auto jsString = String::createFromUtf8(rtRef, resultStd);
+                    Value parsed = parse.call(rtRef, Value(std::move(jsString)));
+                    Value resultValue = Value(rtRef, parsed);
+                    SNCallJSFunction(*resolvePtr, rtRef, &resultValue, 1);
+                  } catch (const facebook::jsi::JSError &error) {
+                    RuneReportJSIError(rtRef, error, "modules");
+                    std::string message = error.getMessage();
+                    Object errorObj(rtRef);
+                    errorObj.setProperty(rtRef, "code", String::createFromUtf8(rtRef, "invalid_json"));
+                    errorObj.setProperty(rtRef, "message", String::createFromUtf8(rtRef, message));
+                    Value errorValue = Value(rtRef, errorObj);
+                    SNCallJSFunction(*rejectPtr, rtRef, &errorValue, 1);
+                  } catch (const std::exception &ex) {
+                    std::string message(ex.what());
+                    RuneDiagnosticsReport("modules", message.c_str(), "");
+                    Object errorObj(rtRef);
+                    errorObj.setProperty(rtRef, "code", String::createFromUtf8(rtRef, "invalid_json"));
+                    errorObj.setProperty(rtRef, "message", String::createFromUtf8(rtRef, message));
+                    Value errorValue = Value(rtRef, errorObj);
+                    SNCallJSFunction(*rejectPtr, rtRef, &errorValue, 1);
+                  }
                 });
-                return;
               }
-
-              if (!resultString) {
-                resultString = @"{}";
-              }
-              std::string resultStd = [resultString UTF8String] ? std::string([resultString UTF8String]) : std::string("{}");
-
-              dispatch_async(host->_jsQueue, ^{
-                auto &rtRef = *host->_rt;
-                try {
-                  auto JSONObj = rtRef.global().getPropertyAsObject(rtRef, "JSON");
-                  auto parse = JSONObj.getPropertyAsFunction(rtRef, "parse");
-                  auto jsString = String::createFromUtf8(rtRef, resultStd);
-                  Value parsed = parse.call(rtRef, Value(std::move(jsString)));
-                  Value resultValue = Value(rtRef, parsed);
-                  SNCallJSFunction(*resolvePtr, rtRef, &resultValue, 1);
-                } catch (const facebook::jsi::JSError &error) {
-                  [host reportJSException:error context:@"Native Module"];
-                  Object errorObj(rtRef);
-                  errorObj.setProperty(rtRef, "code", String::createFromUtf8(rtRef, "E_JS"));
-                  errorObj.setProperty(rtRef, "message", String::createFromUtf8(rtRef, error.getMessage()));
-                  Value errorValue = Value(rtRef, errorObj);
-                  SNCallJSFunction(*rejectPtr, rtRef, &errorValue, 1);
-                } catch (const std::exception &ex) {
-                  std::string message(ex.what());
-                  [host reportStdException:ex context:@"Native Module"];
-                  Object errorObj(rtRef);
-                  errorObj.setProperty(rtRef, "code", String::createFromUtf8(rtRef, "E_NATIVE"));
-                  errorObj.setProperty(rtRef, "message", String::createFromUtf8(rtRef, message));
-                  Value errorValue = Value(rtRef, errorObj);
-                  SNCallJSFunction(*rejectPtr, rtRef, &errorValue, 1);
-                }
-              });
-            }
-          });
+            });
           });
         } catch (const facebook::jsi::JSError &error) {
-          [host reportJSException:error context:@"__modules.call"];
+          RuneReportJSIError(rt, error, "__modules.call");
         } catch (const std::exception &ex) {
           [host reportStdException:ex context:@"__modules.call"];
         }
@@ -466,52 +497,6 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
   Object modules(rt);
   modules.setProperty(rt, "call", hostCall);
   rt.global().setProperty(rt, "__modules", modules);
-}
-
-- (uint64_t)sn_scheduleTimerWithDelay:(double)delayMillis
-                               callback:(std::shared_ptr<Function>)callback
-                                   args:(std::vector<Value>)args {
-  double clamped = delayMillis < 0 ? 0 : delayMillis;
-  int64_t delayNs = (int64_t)(clamped * NSEC_PER_MSEC);
-
-  uint64_t timerId = _nextTimerId++;
-  dispatch_source_t timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, _jsQueue);
-
-  TimerEntry entry{timer, callback, std::move(args)};
-  _timers.emplace(timerId, std::move(entry));
-
-  HermesRuntimeHost *host = self;
-  dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, delayNs), DISPATCH_TIME_FOREVER, 0);
-  dispatch_source_set_event_handler(timer, ^{
-    auto it = host->_timers.find(timerId);
-    if (it == host->_timers.end()) {
-      return;
-    }
-    TimerEntry &entryRef = it->second;
-    auto &rt = *host->_rt;
-    const Value *argsPtr = entryRef.args.empty() ? nullptr : entryRef.args.data();
-    try {
-      entryRef.callback->call(rt, argsPtr, entryRef.args.size());
-    } catch (const facebook::jsi::JSError &error) {
-      [host reportJSException:error context:@"Timer"];
-    } catch (const std::exception &ex) {
-      [host reportStdException:ex context:@"Timer"];
-    }
-    dispatch_source_cancel(entryRef.source);
-    host->_timers.erase(timerId);
-  });
-
-  dispatch_resume(timer);
-  return timerId;
-}
-
-- (void)sn_clearTimer:(uint64_t)timerId {
-  auto it = _timers.find(timerId);
-  if (it == _timers.end()) {
-    return;
-  }
-  dispatch_source_cancel(it->second.source);
-  _timers.erase(it);
 }
 
 - (void)installTimers {
@@ -525,20 +510,62 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
           if (count < 2 || !a[0].isObject()) {
             return Value::undefined();
           }
-          auto fn = a[0].asObject(rt).asFunction(rt);
-          double delay = (count > 1 && a[1].isNumber()) ? a[1].asNumber() : 0;
+
+          Object fnObject = a[0].asObject(rt);
+          if (!fnObject.isFunction(rt)) {
+            return Value::undefined();
+          }
+
+          int delayMs = (count > 1 && a[1].isNumber()) ? static_cast<int>(a[1].asNumber()) : 0;
           std::vector<Value> args;
-          if (count > 2) {
-            args.reserve(count - 2);
-            for (size_t i = 2; i < count; ++i) {
-              args.emplace_back(Value(rt, a[i]));
+          if (count > 2 && a[2].isObject()) {
+            Object maybeArray = a[2].asObject(rt);
+            if (maybeArray.isArray(rt)) {
+              Array array = maybeArray.asArray(rt);
+              size_t length = array.size(rt);
+              args.reserve(length);
+              for (size_t i = 0; i < length; ++i) {
+                args.emplace_back(Value(rt, array.getValueAtIndex(rt, i)));
+              }
             }
           }
-          auto callback = std::make_shared<Function>(std::move(fn));
-          uint64_t timerId = [host sn_scheduleTimerWithDelay:delay callback:callback args:std::move(args)];
+
+          int timerId = gNextTimer.fetch_add(1);
+          auto timer = std::make_unique<Timer>();
+          timer->id = timerId;
+          timer->fn = std::make_shared<Function>(fnObject.asFunction(rt));
+          timer->args = std::move(args);
+          timer->source = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, host->_jsQueue);
+
+          dispatch_source_t source = timer->source;
+          gTimers.emplace(timerId, std::move(timer));
+
+          int64_t delayNs = delayMs < 0 ? 0 : (int64_t)delayMs * NSEC_PER_MSEC;
+          dispatch_source_set_timer(source, dispatch_time(DISPATCH_TIME_NOW, delayNs), DISPATCH_TIME_FOREVER, 0);
+
+          dispatch_source_set_event_handler(source, ^{
+            auto it = gTimers.find(timerId);
+            if (it == gTimers.end()) {
+              return;
+            }
+            auto &timerRef = *it->second;
+            auto &runtime = *host->_rt;
+            const Value *argsPtr = timerRef.args.empty() ? nullptr : timerRef.args.data();
+            try {
+              timerRef.fn->call(runtime, argsPtr, timerRef.args.size());
+            } catch (const facebook::jsi::JSError &error) {
+              RuneReportJSIError(runtime, error, "setTimeout");
+            } catch (const std::exception &ex) {
+              [host reportStdException:ex context:@"setTimeout"];
+            }
+            dispatch_source_cancel(timerRef.source);
+            gTimers.erase(it);
+          });
+
+          dispatch_resume(source);
           return Value(static_cast<double>(timerId));
         } catch (const facebook::jsi::JSError &error) {
-          [host reportJSException:error context:@"setTimeout"];
+          RuneReportJSIError(rt, error, "setTimeout");
         } catch (const std::exception &ex) {
           [host reportStdException:ex context:@"setTimeout"];
         }
@@ -552,10 +579,15 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
           if (count < 1 || !a[0].isNumber()) {
             return Value::undefined();
           }
-          uint64_t timerId = (uint64_t)a[0].asNumber();
-          [host sn_clearTimer:timerId];
+          int timerId = static_cast<int>(a[0].asNumber());
+          auto it = gTimers.find(timerId);
+          if (it == gTimers.end()) {
+            return Value::undefined();
+          }
+          dispatch_source_cancel(it->second->source);
+          gTimers.erase(it);
         } catch (const facebook::jsi::JSError &error) {
-          [host reportJSException:error context:@"clearTimeout"];
+          RuneReportJSIError(rt, error, "clearTimeout");
         } catch (const std::exception &ex) {
           [host reportStdException:ex context:@"clearTimeout"];
         }
@@ -566,69 +598,49 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
   rt.global().setProperty(rt, "__hostClearTimeout", hostClearTimeout);
 
   static const char *timerScript =
-      "globalThis.setTimeout=(fn,ms,...a)=>__hostSetTimeout(fn,ms|0,...a);"
+      "globalThis.setTimeout=(fn,ms,...a)=>__hostSetTimeout(fn,ms|0,a);"
       "globalThis.clearTimeout=(id)=>__hostClearTimeout(id);";
 
   auto buffer = std::make_shared<StringBuffer>(timerScript);
   _rt->evaluateJavaScript(buffer, "timers.js");
 }
 
-- (void)installUnhandledPromiseReporting {
+-(void)installUnhandledPromiseReporting {
   auto &rt = *_rt;
-  HermesRuntimeHost *host = self;
-
-  auto hostReportUnhandled = Function::createFromHostFunction(
+  auto reportUnhandled = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "__hostReportUnhandled"), 2,
-      [host](Runtime &rt, const Value &, const Value *a, size_t count) -> Value {
-        std::string message;
-        std::string stack;
-        if (count > 0 && a[0].isString()) {
-          message = a[0].getString(rt).utf8(rt);
-        }
-        if (count > 1 && a[1].isString()) {
-          stack = a[1].getString(rt).utf8(rt);
-        }
+      [](Runtime &rt, const Value &, const Value *a, size_t count) -> Value {
+        std::string message = (count > 0 && a[0].isString()) ? a[0].getString(rt).utf8(rt) : "";
+        std::string stack = (count > 1 && a[1].isString()) ? a[1].getString(rt).utf8(rt) : "";
         if (message.empty()) {
           message = "Unhandled promise rejection";
         }
-        [host reportExceptionWithContext:@"Unhandled Promise" message:message stack:stack];
+        RuneDiagnosticsReport("unhandled", message.c_str(), stack.c_str());
         return Value::undefined();
       });
 
-  rt.global().setProperty(rt, "__hostReportUnhandled", hostReportUnhandled);
+  rt.global().setProperty(rt, "__hostReportUnhandled", reportUnhandled);
 
-  static const char *unhandledScript =
-      "(function(){\n"
-      "if(globalThis.__runeUnhandledInstalled) return;\n"
-      "if(typeof __hostReportUnhandled !== 'function'){ globalThis.__runeUnhandledInstalled = true; return; }\n"
-      "const report = (reason) => {\n"
-      "  let message = '';\n"
-      "  let stack = '';\n"
-      "  if (reason && typeof reason.message === 'string') { message = reason.message; } else { message = String(reason); }\n"
-      "  if (reason && typeof reason.stack === 'string') { stack = reason.stack; }\n"
-      "  __hostReportUnhandled(message, stack);\n"
-      "};\n"
-      "const originalCatch = Promise.prototype.catch;\n"
-      "const originalThen = Promise.prototype.then;\n"
-      "Promise.prototype.catch = function(onRejected){\n"
-      "  if (typeof onRejected !== 'function') {\n"
-      "    return originalCatch.call(this, function(reason){ report(reason); throw reason; });\n"
-      "  }\n"
-      "  return originalCatch.call(this, function(reason){\n"
-      "    try { return onRejected(reason); } catch (err) { report(err); throw err; }\n"
-      "  });\n"
-      "};\n"
-      "Promise.prototype.then = function(onFulfilled, onRejected){\n"
-      "  const wrappedRejected = typeof onRejected === 'function' ? function(reason){\n"
-      "    try { return onRejected(reason); } catch (err) { report(err); throw err; }\n"
-      "  } : function(reason){ report(reason); throw reason; };\n"
-      "  return originalThen.call(this, onFulfilled, wrappedRejected);\n"
-      "};\n"
-      "globalThis.__runeUnhandledInstalled = true;\n"
-      "})();";
+  const char *js = R"JS(
+    (function(){
+      if (globalThis.__rune && __rune._uh_installed) return;
+      globalThis.__rune = globalThis.__rune || {};
+      __rune._uh_installed = true;
+      const _then = Promise.prototype.then;
+      Promise.prototype.then = function(onFulfilled, onRejected){
+        const p = _then.call(this, onFulfilled, onRejected);
+        p.catch(function(e){
+          try {
+            __hostReportUnhandled(String(e?.message || e), String(e?.stack || ""));
+          } catch (_) {}
+        });
+        return p;
+      };
+    })();
+  )JS";
 
-  auto buffer = std::make_shared<StringBuffer>(unhandledScript);
-  _rt->evaluateJavaScript(buffer, "promises.js");
+  auto buffer = std::make_shared<StringBuffer>(js);
+  _rt->evaluateJavaScript(buffer, "rune-unhandled.js");
 }
 
 - (void)invokeHandlerForNode:(int)nid name:(NSString *)name {
@@ -647,17 +659,22 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
 - (void)evaluateString:(NSString *)code {
   dispatch_sync(_jsQueue, ^{
     try {
-      auto buffer = std::make_shared<StringBuffer>(code.UTF8String);
+      const char *utf8 = code ? [code UTF8String] : "";
+      std::string source = utf8 ? utf8 : "";
+      if (source.find("sourceURL=") == std::string::npos) {
+        source.append("\n//# sourceURL=main.js");
+      }
+      auto buffer = std::make_shared<StringBuffer>(source.c_str());
       _rt->evaluateJavaScript(buffer, "main.js");
     } catch (const facebook::jsi::JSError &error) {
-      [self reportJSException:error context:@"Evaluate"];
+      RuneReportJSIError(*_rt, error, "Evaluate");
     } catch (const std::exception &ex) {
       [self reportStdException:ex context:@"Evaluate"];
     }
   });
 }
 
-- (id)callGlobal:(NSString *)name args:(NSArray *)args {
+-(id)callGlobal:(NSString *)name args:(NSArray *)args {
   dispatch_sync(_jsQueue, ^{
     auto &rt = *_rt;
     try {
@@ -678,12 +695,42 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
       const Value *argsPtr = va.data();
       fn.call(rt, argsPtr, va.size());
     } catch (const facebook::jsi::JSError &error) {
-      [self reportJSException:error context:@"callGlobal"];
+      RuneReportJSIError(rt, error, "callGlobal");
     } catch (const std::exception &ex) {
       [self reportStdException:ex context:@"callGlobal"];
     }
   });
   return nil;
+}
+
+- (void)evaluateBytecode:(NSData *)data sourceURL:(NSString *)sourceURL {
+  if (data == nil || data.length == 0) {
+    return;
+  }
+  dispatch_sync(_jsQueue, ^{
+    try {
+      const uint8_t *bytes = (const uint8_t *)data.bytes;
+      size_t len = (size_t)data.length;
+      if (!facebook::hermes::HermesRuntime::isHermesBytecode(bytes, len)) {
+        // Fallback: try to decode as UTF-8 source
+        NSString *code = [[NSString alloc] initWithData:(NSData *)data encoding:NSUTF8StringEncoding];
+        if (code.length > 0) {
+          [self evaluateString:code];
+          return;
+        }
+      } else {
+        facebook::hermes::HermesRuntime::prefetchHermesBytecode(bytes, len);
+      }
+
+      auto buffer = std::make_shared<NSDataBuffer>(data);
+      std::string url = sourceURL ? [sourceURL UTF8String] : "main.hbc";
+      _rt->evaluateJavaScript(buffer, url);
+    } catch (const facebook::jsi::JSError &error) {
+      RuneReportJSIError(*_rt, error, "EvaluateBytecode");
+    } catch (const std::exception &ex) {
+      [self reportStdException:ex context:@"EvaluateBytecode"];
+    }
+  });
 }
 
 @end

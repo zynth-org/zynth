@@ -10,6 +10,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (instancetype)initWithUIManager:(SNUIManager *)manager;
 - (void)evaluateString:(NSString *)code;
+- (void)evaluateBytecode:(NSData *)data sourceURL:(NSString *)sourceURL;
 - (id)callGlobal:(NSString *)name args:(NSArray *)args;
 
 @end

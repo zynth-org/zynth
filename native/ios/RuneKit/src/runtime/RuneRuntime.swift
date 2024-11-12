@@ -1,6 +1,6 @@
 import Foundation
-import UIKit
 import JavaScriptCore
+import UIKit
 
 public typealias RuneUIManager = SNUIManager
 
@@ -20,6 +20,17 @@ public final class RuneRuntime {
 
     configureRuntime()
   }
+
+  // Toggle to prefer Hermes Bytecode bundles when available
+  public var prefersHermesBytecode: Bool = {
+    // Allow override via environment variable RUNE_IOS_USE_HBC=1
+    if let v = ProcessInfo.processInfo.environment["RUNE_IOS_USE_HBC"],
+      v == "1" || v.lowercased() == "true"
+    {
+      return true
+    }
+    return false
+  }()
 
   private func configureRuntime() {
     runtime.onException = { error in
@@ -63,8 +74,9 @@ public final class RuneRuntime {
       "call": { [weak self] (args: [Any]) -> Any in
         guard let self else { return ["error": "runtime_deallocated"] }
         guard args.count >= 3,
-              let name = args[0] as? String,
-              let method = args[1] as? String else {
+          let name = args[0] as? String,
+          let method = args[1] as? String
+        else {
           return ["error": "bad_args"]
         }
         let payload = args[2]
@@ -73,7 +85,7 @@ public final class RuneRuntime {
         let out = self.registry.call(name, method: method, argsJSON: json)
         let outData = Data(out.utf8)
         return (try? JSONSerialization.jsonObject(with: outData)) ?? [:]
-      },
+      }
     ]
     runtime.setGlobalObject("__modules", modules)
   }
@@ -83,11 +95,24 @@ public final class RuneRuntime {
   }
 
   public func load(jsBundleURL: URL) throws {
+    DevRedBox.dismiss()
+    // If we prefer HBC, try loading a sibling .hbc first
+    if prefersHermesBytecode, let hermes = runtime as? HermesAdapter {
+      let hbcURL = jsBundleURL.deletingPathExtension().appendingPathExtension("hbc")
+      if FileManager.default.fileExists(atPath: hbcURL.path) {
+        print("[RuneTrace] load() evaluating HBC bundle", hbcURL.lastPathComponent)
+        try hermes.evaluate(bytecodeURL: hbcURL)
+        print("[RuneTrace] HBC bundle evaluated")
+        return
+      } else {
+        print("[RuneTrace] prefers HBC but file missing:", hbcURL.lastPathComponent)
+      }
+    }
+    // Fallback to JS source text
     let code = try String(contentsOf: jsBundleURL, encoding: .utf8)
     print("[RuneTrace] load() evaluating bundle length", code.count)
-    DevRedBox.dismiss()
     runtime.evaluate(code: code)
-    print("[RuneTrace] bundle evaluated")
+    print("[RuneTrace] JS bundle evaluated")
   }
 
   public func start(rootId: Int) {
@@ -96,4 +121,4 @@ public final class RuneRuntime {
   }
 }
 
-public typealias SolidRuntime = RuneRuntime // TODO: phase out once external references migrate to RuneRuntime
+public typealias SolidRuntime = RuneRuntime  // TODO: phase out once external references migrate to RuneRuntime

@@ -1,6 +1,7 @@
 #import "SNUIManager.h"
 #import "SNHexColor.h"
 #import <Yoga/Yoga.h>
+#import <QuartzCore/QuartzCore.h>
 #import <JavaScriptCore/JavaScriptCore.h>
 
 @interface SNNode : NSObject
@@ -37,11 +38,14 @@
 @property(nonatomic, strong) NSMutableDictionary<NSNumber *, SNNode *> *nodes;
 @property(nonatomic, assign) int nextId;
 @property(nonatomic, assign) YGNodeRef rootYoga;
+@property(nonatomic, strong) CADisplayLink *displayLink;
+@property(nonatomic, assign) BOOL needsFlush;
 @end
 
 @implementation SNUIManager
 
 - (void)dealloc {
+  [self sn_stopDisplayLink];
   if (_rootYoga) {
     YGNodeFreeRecursive(_rootYoga);
     _rootYoga = NULL;
@@ -61,6 +65,37 @@
     rootView.backgroundColor = [UIColor colorWithRed:0.06 green:0.07 blue:0.09 alpha:1.0];
   }
   return self;
+}
+
+#pragma mark - Flush scheduling
+
+- (void)sn_startDisplayLinkIfNeeded {
+  if (self.displayLink) return;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    if (self.displayLink) return;
+    self.displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(sn_displayLinkTick:)];
+    [self.displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+  });
+}
+
+- (void)sn_stopDisplayLink {
+  if (self.displayLink) {
+    [self.displayLink invalidate];
+    self.displayLink = nil;
+  }
+}
+
+- (void)sn_markNeedsFlush {
+  dispatch_async(dispatch_get_main_queue(), ^{
+    self.needsFlush = YES;
+    [self sn_startDisplayLinkIfNeeded];
+  });
+}
+
+- (void)sn_displayLinkTick:(CADisplayLink *)link {
+  if (!self.needsFlush) return;
+  self.needsFlush = NO;
+  [self sn_performFlush];
 }
 
 - (NSNumber *)createNode:(NSString *)type {
@@ -229,6 +264,7 @@ static void SNApplyEdges(NSDictionary *style,
     NSData *data = [json dataUsingEncoding:NSUTF8StringEncoding];
     NSDictionary *s = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
     [self sn_applyStyleDictionary:s toNode:n];
+    [self sn_markNeedsFlush];
     return;
   }
 }
@@ -237,6 +273,7 @@ static void SNApplyEdges(NSDictionary *style,
   SNNode *n = _nodes[nodeId];
   if (!n || !n.view) return;
   [self sn_applyStyleDictionary:style toNode:n];
+  [self sn_markNeedsFlush];
 }
 
 
@@ -261,11 +298,20 @@ static void SNApplyEdges(NSDictionary *style,
   if (!n || !n.view) return;
   
   if ([name isEqualToString:@"onPress"]) {
-    n.onPressCallback = callback;
     BOOL validCallback = callback && ![callback isUndefined] && ![callback isNull];
-    n.hasOnPressHandler = validCallback;
     if (validCallback) {
+      n.onPressCallback = callback;
+      n.hasOnPressHandler = YES;
       [self sn_attachTapRecognizerForNode:n];
+    } else {
+      // Treat as removing the handler
+      n.onPressCallback = nil;
+      n.hasOnPressHandler = NO;
+      for (UIGestureRecognizer *gr in n.view.gestureRecognizers.copy) {
+        if ([gr isKindOfClass:[UITapGestureRecognizer class]]) {
+          [n.view removeGestureRecognizer:gr];
+        }
+      }
     }
   }
 }
@@ -275,6 +321,7 @@ static void SNApplyEdges(NSDictionary *style,
   if (!n || !n.view) return;
 
   if ([name isEqualToString:@"onPress"]) {
+    // JSI handler path: prefer native invocation; clear JS callback
     n.onPressCallback = nil;
     n.hasOnPressHandler = YES;
     [self sn_attachTapRecognizerForNode:n];
@@ -322,6 +369,7 @@ static void SNApplyEdges(NSDictionary *style,
     ((UILabel *)n.view).text = text;
     if (n.yoga) YGNodeMarkDirty(n.yoga);
   }
+  [self sn_markNeedsFlush];
 }
 
 - (void)insertChild:(NSNumber *)parentId child:(NSNumber *)childId index:(NSNumber *)index {
@@ -359,11 +407,18 @@ static void SNApplyEdges(NSDictionary *style,
     YGNodeInsertChild(p.yoga, c.yoga, (uint32_t)i);
     NSLog(@"[SN] insert %d->%d at %d (children=%lu)", p.nid, c.nid, i, (unsigned long)p.view.subviews.count);
   }
+  [self sn_markNeedsFlush];
 }
 
 - (void)removeChild:(NSNumber *)parentId child:(NSNumber *)childId {
   SNNode *c = _nodes[childId];
   if (!c || !c.view) return;
+  // Clean up gesture recognizers and JS callback flags to avoid stacking
+  for (UIGestureRecognizer *gr in c.view.gestureRecognizers.copy) {
+    [c.view removeGestureRecognizer:gr];
+  }
+  c.onPressCallback = nil;
+  c.hasOnPressHandler = NO;
   
   if (parentId.intValue == 0) {
     [c.view removeFromSuperview];
@@ -382,9 +437,10 @@ static void SNApplyEdges(NSDictionary *style,
       YGNodeRemoveChild(p.yoga, c.yoga);
     }
   }
+  [self sn_markNeedsFlush];
 }
 
-- (void)flush {
+- (void)sn_performFlush {
   dispatch_async(dispatch_get_main_queue(), ^{
     // Add safety checks
     if (!self.rootYoga || !self.root || !self.nodes) {
@@ -454,6 +510,11 @@ static void SNApplyEdges(NSDictionary *style,
 
     NSLog(@"[SN] flush end");
   });
+}
+
+- (void)flush {
+  // Public API called from JS bridge; schedule at most once per frame
+  [self sn_markNeedsFlush];
 }
 
 @end

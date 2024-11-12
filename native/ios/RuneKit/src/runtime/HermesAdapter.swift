@@ -44,6 +44,17 @@ public final class HermesAdapter: JSRuntimeAdapter {
     host.evaluateString(code)
   }
 
+  // Optional API: evaluate Hermes bytecode when available
+  public func evaluate(bytecode data: Data, sourceURL: String = "main.hbc") {
+    host.evaluateBytecode(data, sourceURL: sourceURL)
+  }
+
+  // Convenience to load from URL
+  public func evaluate(bytecodeURL url: URL) throws {
+    let data = try Data(contentsOf: url)
+    evaluate(bytecode: data, sourceURL: url.lastPathComponent)
+  }
+
   public func callGlobal(_ name: String, args: [Any]) -> Any? {
     host.callGlobal(name, args: args)
     return nil

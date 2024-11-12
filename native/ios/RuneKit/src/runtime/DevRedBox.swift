@@ -12,6 +12,11 @@ import UIKit
     }
   }
 
+  @objc(showWithTitle:stack:)
+  public static func show(title: String, stack: String?) {
+    show(title: title, message: title, stack: stack)
+  }
+
   @objc public static func dismiss() {
     DispatchQueue.main.async {
       shared.hide()
