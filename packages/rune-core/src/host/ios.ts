@@ -7,9 +7,11 @@ export function createIOSHost(): Host {
       ? globalThis
       : // eslint-disable-next-line @typescript-eslint/no-implied-eval
         (0, eval)("this");
-  const ui = (g.__ui as RuneUIBridge | undefined) ?? (() => {
-    throw new Error("__ui not found (native bindings missing)");
-  })();
+  const ui =
+    (g.__ui as RuneUIBridge | undefined) ??
+    (() => {
+      throw new Error("__ui not found (native bindings missing)");
+    })();
 
   const PARENTS = new Map<number, number | null>();
   const CHILDREN = new Map<number, number[]>();
@@ -59,10 +61,24 @@ export function createIOSHost(): Host {
       ? CHILDREN.get(id)!
       : (CHILDREN.set(id, []), CHILDREN.get(id)!);
 
-  const nodeFor = (id: number, type: HostNode["type"] = "view"): HostNode => ({
-    id,
-    type,
-  });
+  // helper to compute physical index (exclude markers)
+  const physicalIndex = (parentId: number, logicalInsertIdx: number) => {
+    const kids = ensure(parentId);
+    let count = 0;
+    for (let i = 0; i < logicalInsertIdx; i++) {
+      const k = kids[i];
+      // find child type; markers are negative ids (from renderer.ts) => skip native
+      const isMarker = k < 0; // relies on marker ids < 0
+      if (!isMarker) count++;
+    }
+    return count;
+  };
+
+  const isMarkerId = (id: number) => id < 0;
+  const asType = (id: number): HostNode["type"] =>
+    isMarkerId(id) ? "marker" : "view";
+
+  const nodeFor = (id: number): HostNode => ({ id, type: asType(id) });
 
   const api: Host = {
     createRootContainer() {
@@ -101,24 +117,42 @@ export function createIOSHost(): Host {
     },
     insertNode(parent, node, anchor) {
       const kids = ensure(parent.id);
-      const idx = anchor ? Math.max(0, kids.indexOf(anchor.id)) : kids.length;
-      kids.splice(idx, 0, node.id);
+      const aIdx = anchor ? kids.indexOf(anchor.id) : -1;
+      const logicalAt = aIdx >= 0 ? aIdx : kids.length;
+
+      // physical index counts only non-markers STRICTLY BEFORE logicalAt
+      let physIdx = 0;
+      for (let i = 0; i < logicalAt; i++) if (!isMarkerId(kids[i])) physIdx++;
+
+      // mutate logical structure AFTER computing physIdx
+      kids.splice(logicalAt, 0, node.id);
       PARENTS.set(node.id, parent.id);
-      ui.insertChild(parent.id, node.id, idx);
+
+      if (!isMarkerId(node.id)) ui.insertChild(parent.id, node.id, physIdx);
       schedule();
     },
     removeNode(parent, node) {
       const kids = ensure(parent.id);
       const i = kids.indexOf(node.id);
-      if (i >= 0) kids.splice(i, 1);
+      if (i < 0) return;
+
+      const nonMarkerBefore = (() => {
+        let n = 0;
+        for (let j = 0; j < i; j++) if (!isMarkerId(kids[j])) n++;
+        return n;
+      })();
+
+      // remove from logical
+      kids.splice(i, 1);
       PARENTS.set(node.id, null);
-      ui.removeChild(parent.id, node.id);
+
+      if (!isMarkerId(node.id)) ui.removeChild(parent.id, node.id);
       schedule();
     },
     getParentNode(node) {
       const pid = PARENTS.get(node.id);
       if (pid == null) return null;
-      return nodeFor(pid, pid === 0 ? "root" : "view");
+      return { id: pid, type: pid === 0 ? "root" : asType(pid) };
     },
     getFirstChild(node) {
       const kids = ensure(node.id);

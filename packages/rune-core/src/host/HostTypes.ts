@@ -1,8 +1,8 @@
-export type NodeType = "root" | "view" | "text";
+export type NodeType = "root" | "view" | "text" | "marker";
 
 export interface HostNode {
-  id: number;
-  type: NodeType;
+  id: number; // for marker: generate a synthetic negative or a distinct counter
+  type: NodeType; // "marker" has no native nor yoga counterparts
 }
 
 export type Style = {
@@ -51,7 +51,10 @@ export type Style = {
 
 export interface Host {
   createRootContainer(container: unknown): HostNode;
-  createNode(type: Exclude<NodeType, "root">, props?: Record<string, any>): HostNode;
+  createNode(
+    type: Exclude<NodeType, "root">,
+    props?: Record<string, any>
+  ): HostNode;
   createText(value: string): HostNode;
   setProperty(node: HostNode, name: string, value: any): void;
   setText(node: HostNode, value: string): void;
@@ -63,4 +66,3 @@ export interface Host {
   getText(node: HostNode): string;
   flush?(): void;
 }
-
