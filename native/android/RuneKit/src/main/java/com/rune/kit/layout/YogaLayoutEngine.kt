@@ -21,6 +21,8 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
   init {
     val rootNode = YogaNodeFactory.create(config)
     rootNode.setFlexDirection(YogaFlexDirection.COLUMN)
+    // Ensure children of the root stretch to full width by default
+    rootNode.setAlignItems(YogaAlign.STRETCH)
     nodes[rootId] = rootNode
   }
 
@@ -68,9 +70,10 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
   }
 
   override fun setStyle(id: Int, style: Style) {
-    styles[id] = style
+    val merged = mergeStyles(styles[id], style)
+    styles[id] = merged
     val node = getNode(id)
-    applyStyle(node, style)
+    applyStyle(node, merged)
   }
 
   override fun calculateLayout(width: Int, height: Int) {
@@ -98,6 +101,18 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
     attachMeasureFunc(id, node, handler)
   }
 
+  override fun markDirty(id: Int) {
+    nodes[id]?.let { node ->
+      // Only mark dirty if a measure function is defined or the node exists
+      // Yoga will re-run measurement on next calculateLayout
+      try {
+        node.dirty()
+      } catch (_: Throwable) {
+        // Some Yoga versions throw if no measure function is set; ignore safely
+      }
+    }
+  }
+
   private fun attachMeasureFunc(id: Int, node: YogaNode, handler: MeasureHandler) {
     node.setMeasureFunction { _, width, widthMode, height, heightMode ->
       val input = MeasureInput(
@@ -112,15 +127,68 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
   }
 
   private fun applyStyle(node: YogaNode, style: Style) {
-    if (style.width != null) node.setWidth(style.width) else node.setWidthAuto()
-    if (style.height != null) node.setHeight(style.height) else node.setHeightAuto()
+    // Width / Height: support absolute and percent
+    when {
+      style.width != null -> node.setWidth(style.width)
+      style.widthPercent != null -> node.setWidthPercent(style.widthPercent)
+      else -> node.setWidthAuto()
+    }
+    when {
+      style.height != null -> node.setHeight(style.height)
+      style.heightPercent != null -> node.setHeightPercent(style.heightPercent)
+      else -> node.setHeightAuto()
+    }
     node.setFlex(style.flex ?: 0f)
     node.setFlexDirection(style.flexDirection?.toFlexDirection() ?: YogaFlexDirection.COLUMN)
     node.setJustifyContent(style.justifyContent?.toJustify() ?: YogaJustify.FLEX_START)
-    // Default to STRETCH so children take full width of parent
+    // Default to STRETCH so children take full width of parent; allow explicit alignSelf override
     node.setAlignItems(style.alignItems?.toAlignItems() ?: YogaAlign.STRETCH)
+    style.alignSelf?.let { alignSelf ->
+      val yogaAlign = when (alignSelf.lowercase()) {
+        "auto" -> null
+        "flex-start", "flex_start" -> YogaAlign.FLEX_START
+        "flex-end", "flex_end" -> YogaAlign.FLEX_END
+        "center" -> YogaAlign.CENTER
+        "stretch" -> YogaAlign.STRETCH
+        "baseline" -> YogaAlign.BASELINE
+        else -> null
+      }
+      if (yogaAlign != null) node.setAlignSelf(yogaAlign) else node.setAlignSelf(YogaAlign.AUTO)
+    }
     applyPadding(node, style)
     applyMargin(node, style)
+  }
+
+  private fun mergeStyles(prev: Style?, next: Style): Style {
+    if (prev == null) return next
+    return Style(
+      width = next.width ?: prev.width,
+      height = next.height ?: prev.height,
+      widthPercent = next.widthPercent ?: prev.widthPercent,
+      heightPercent = next.heightPercent ?: prev.heightPercent,
+      flex = next.flex ?: prev.flex,
+      flexDirection = next.flexDirection ?: prev.flexDirection,
+      justifyContent = next.justifyContent ?: prev.justifyContent,
+      alignItems = next.alignItems ?: prev.alignItems,
+      alignSelf = next.alignSelf ?: prev.alignSelf,
+      padding = next.padding ?: prev.padding,
+      paddingHorizontal = next.paddingHorizontal ?: prev.paddingHorizontal,
+      paddingVertical = next.paddingVertical ?: prev.paddingVertical,
+      paddingLeft = next.paddingLeft ?: prev.paddingLeft,
+      paddingRight = next.paddingRight ?: prev.paddingRight,
+      paddingTop = next.paddingTop ?: prev.paddingTop,
+      paddingBottom = next.paddingBottom ?: prev.paddingBottom,
+      margin = next.margin ?: prev.margin,
+      marginLeft = next.marginLeft ?: prev.marginLeft,
+      marginRight = next.marginRight ?: prev.marginRight,
+      marginTop = next.marginTop ?: prev.marginTop,
+      marginBottom = next.marginBottom ?: prev.marginBottom,
+      backgroundColor = next.backgroundColor ?: prev.backgroundColor,
+      borderRadius = next.borderRadius ?: prev.borderRadius,
+      fontSize = next.fontSize ?: prev.fontSize,
+      color = next.color ?: prev.color,
+      fontWeight = next.fontWeight ?: prev.fontWeight,
+    )
   }
 
   private fun applyPadding(node: YogaNode, style: Style) {
@@ -176,6 +244,6 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
     "flex-end" -> YogaAlign.FLEX_END
     "stretch" -> YogaAlign.STRETCH
     "baseline" -> YogaAlign.BASELINE
-    else -> YogaAlign.FLEX_START
+    else -> YogaAlign.STRETCH
   }
 }

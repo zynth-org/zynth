@@ -21,6 +21,9 @@ class HermesAdapter(
   private val errorHandler = object : JSBridge.ErrorHandler {
     override fun report(message: String?, stack: String?) {
       val text = message?.takeUnless { it.isBlank() } ?: "Unknown JavaScript error"
+      // Report to unified diagnostics system (this handles RedBox display)
+      com.rune.kit.dev.RuneDiagnostics.report("hermes", text, stack)
+      // Also call the legacy error handler for compatibility
       onException?.invoke(JsRuntimeException(text, stack))
     }
   }
@@ -52,6 +55,40 @@ class HermesAdapter(
     runOnJS {
       ensureRuntime()
       bridge.evaluateBytecode(runtimePtr, bytecode, sourceUrl)
+    }
+  }
+
+  fun loadMainBundle(assets: android.content.res.AssetManager) {
+    // Check for HBC debug flag in system properties or BuildConfig
+    val useHbc = System.getProperty("RUNE_USE_HBC") == "1" || 
+                 try {
+                   val buildConfigClass = Class.forName("${javaClass.packageName}.BuildConfig")
+                   val field = buildConfigClass.getDeclaredField("RUNE_USE_HBC")
+                   field.getBoolean(null)
+                 } catch (e: Exception) {
+                   false
+                 }
+
+    if (useHbc) {
+      try {
+        // Try to load main.hbc first
+        val hbcBytes = assets.open("main.hbc").use { it.readBytes() }
+        Log.d(TAG, "Loading Hermes bytecode (main.hbc)")
+        evaluateBytecode(hbcBytes, "main.hbc")
+        return
+      } catch (e: Exception) {
+        Log.w(TAG, "Failed to load main.hbc, falling back to main.js: ${e.message}")
+      }
+    }
+
+    // Fallback to JavaScript source
+    try {
+      val jsCode = assets.open("main.js").use { it.bufferedReader().readText() }
+      Log.d(TAG, "Loading JavaScript source (main.js)")
+      evaluateSource(jsCode, "main.js")
+    } catch (e: Exception) {
+      Log.e(TAG, "Failed to load main.js", e)
+      throw RuntimeException("Could not load JavaScript bundle", e)
     }
   }
 

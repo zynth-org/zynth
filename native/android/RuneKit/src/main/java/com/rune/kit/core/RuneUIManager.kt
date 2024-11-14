@@ -16,6 +16,7 @@ import com.rune.kit.layout.LayoutEngine
 import com.rune.kit.layout.MeasureMode
 import com.rune.kit.layout.Rect
 import com.rune.kit.layout.Style
+import com.rune.kit.runtime.JSBridge
 import java.util.HashMap
 import java.util.concurrent.CountDownLatch
 import kotlin.math.roundToInt
@@ -25,12 +26,13 @@ class RuneUIManager(
   private val engine: LayoutEngine,
   private val eventDispatcher: (Int, String) -> Unit = { _, _ -> },
   private val handlerListener: (Int, String, Long) -> Unit = { _, _, _ -> },
-) {
+) : JSBridge.UIShim {
   data class Node(val id: Int, val type: String, val view: View, val label: TextView? = null)
 
   private val nodes = SparseArray<Node>()
   private val parents = HashMap<Int, Int?>()
   private val handler = Handler(Looper.getMainLooper())
+  private val frameScheduler = FrameScheduler()
   private var nextId = root.rootId + 1
   @Volatile private var dirty = false
   private var lastRootWidth = -1
@@ -50,7 +52,7 @@ class RuneUIManager(
     }
   }
 
-  fun createNode(type: String): Int = onMain {
+  override fun createNode(type: String): Int = onMain {
     val id = nextId++
     val view: View
     val label: TextView?
@@ -66,12 +68,24 @@ class RuneUIManager(
       view = FrameLayout(root.context)
       label = null
     }
+  // Prevent pre-layout artifacts: reduce visibility impact by creating at 0x0 size
+  // Avoid setting alpha to 0 for all nodes: only first layout will size them correctly.
+  // Keep alpha at 1 to reduce flicker on subsequent conditional mounts.
+  view.layoutParams = FrameLayout.LayoutParams(0, 0)
     // Don't set clickable by default - only when a handler is actually set
     view.isClickable = false
     val node = Node(id, type, view, label)
     nodes.put(id, node)
     parents[id] = null
     engine.createNode(id)
+    // Default non-text views to full width unless overridden by explicit style
+    if (label == null) {
+      try {
+        engine.setStyle(id, Style(widthPercent = 100f))
+      } catch (_: Throwable) {
+        // Defensive: style application should never crash creation
+      }
+    }
     if (label != null) {
       engine.setMeasureHandler(id) { input ->
         val widthValue = when {
@@ -103,16 +117,25 @@ class RuneUIManager(
     id
   }
 
-  fun setProp(id: Int, name: String, valueJson: String) = onMain {
-    Log.d("RuneUI", "setProp: id=$id name=$name valueJson=$valueJson")
-    val node = nodes.get(id) ?: return@onMain
-    val target = if (node.label != null || node.view is TextView) node else resolveTextNode(id) ?: node
+  override fun setProp(nodeId: Int, name: String, jsonValue: String?) = onMain {
+    Log.d("RuneUI", "setProp: nodeId=$nodeId name=$name jsonValue=$jsonValue")
+    val valueJson = jsonValue ?: return@onMain
+    // Resolve target even if the original node was merged/removed (e.g., text child inside Text)
+    val direct = nodes.get(nodeId)
+    val target = when {
+      direct != null && (direct.label != null || direct.view is TextView) -> direct
+      else -> resolveTextNode(nodeId) ?: direct
+    } ?: run {
+      Log.w("RuneUI", "setProp: nodeId=$nodeId not found and no text ancestor; skipping prop '$name'")
+      return@onMain
+    }
     when (name) {
       "style" -> {
         val style = Style.fromJson(valueJson)
         engine.setStyle(target.id, style)
-        if (target.id != id) {
-          engine.setStyle(id, Style())
+        // If styling a merged child, clear any residual style on the original id in the layout engine
+        if (target.id != nodeId) {
+          engine.setStyle(nodeId, Style())
         }
         (target.label ?: target.view as? TextView)?.let { textView ->
           style.fontSize?.let { textView.textSize = it }
@@ -132,7 +155,7 @@ class RuneUIManager(
       "onPress" -> {
         // onPress should be handled by the JavaScript bridge calling setHandler
         // This is just for logging
-        Log.d("RuneUI", "onPress prop set for node $id, expecting setHandler call")
+        Log.d("RuneUI", "onPress prop set for node $nodeId, expecting setHandler call")
       }
       else -> {
         Log.d("RuneUI", "Unhandled prop: $name = $valueJson")
@@ -141,9 +164,12 @@ class RuneUIManager(
     scheduleFlush()
   }
 
-  fun setText(id: Int, text: String) = onMain {
-    Log.d("RuneUI", "setText id=$id text='$text'")
-    val target = resolveTextNode(id)
+  override fun setText(nodeId: Int, text: String) = onMain {
+    Log.d("RuneUI", "setText nodeId=$nodeId text='$text'")
+    val target = resolveTextNode(nodeId)
+    if (target == null) {
+      Log.w("RuneUI", "setText: could not resolve target for nodeId=$nodeId")
+    }
     when {
       target?.label != null -> {
         target.label.text = text
@@ -154,86 +180,99 @@ class RuneUIManager(
         Log.d("RuneUI", "Set text on view: ${(target.view as TextView).text}")
       }
     }
+    // Mark layout dirty so Yoga will re-measure intrinsic text size
+    engine.markDirty(target?.id ?: nodeId)
     scheduleFlush()
   }
 
-  fun insertChild(parent: Int, child: Int, index: Int) = onMain {
-    parents[child] = parent
-    val parentNode = nodes.get(parent)
+  override fun insertChild(parentId: Int, childId: Int, index: Int) = onMain {
+    parents[childId] = parentId
+    val parentNode = nodes.get(parentId)
     if (parentNode?.type == TEXT_TYPE) {
       // If parent is a text node, merge text content from child instead of nesting views
-      val childNode = nodes.get(child)
+      val childNode = nodes.get(childId)
       if (childNode?.type == TEXT_TYPE && parentNode.label != null && childNode.label != null) {
         parentNode.label.text = childNode.label.text
-        Log.d("RuneUI", "Merged text from child $child into parent $parent: '${childNode.label.text}'")
+        Log.d("RuneUI", "Merged text from child $childId into parent $parentId: '${childNode.label.text}'")
         // Remove the child node from nodes map so it doesn't get layout applied
-        nodes.remove(child)
-        parents.remove(child)
+        nodes.remove(childId)
+        // IMPORTANT: Keep the parents[childId] mapping so future setText(childId, ...)
+        // can resolve to this parent text node via resolveTextNode.
         // Remove from layout engine as well
-        engine.removeNode(child)
+        engine.removeNode(childId)
       }
       scheduleFlush()
       return@onMain
     }
-    val parentView: View = if (parent == root.rootId) {
+    val parentView: View = if (parentId == root.rootId) {
       root
     } else {
-      nodes.get(parent)?.view ?: return@onMain
+      nodes.get(parentId)?.view ?: return@onMain
     }
-    val childView = nodes.get(child)?.view ?: return@onMain
+    val childView = nodes.get(childId)?.view ?: return@onMain
     if (parentView is ViewGroup) {
       val safeIndex = index.coerceIn(0, parentView.childCount)
       parentView.addView(childView, safeIndex)
     }
-    engine.insertChild(parent, child, index)
+    engine.insertChild(parentId, childId, index)
     scheduleFlush()
   }
 
-  fun removeChild(parent: Int, child: Int) = onMain {
-    parents[child] = null
-    val parentNode = nodes.get(parent)
+  override fun removeChild(parentId: Int, childId: Int) = onMain {
+    val parentNode = nodes.get(parentId)
     if (parentNode?.type == TEXT_TYPE) {
-      engine.setMeasureHandler(child, null)
-      engine.removeNode(child)
+      engine.setMeasureHandler(childId, null)
+      engine.removeNode(childId)
       scheduleFlush()
-      parents.remove(child)
+      // IMPORTANT: Do NOT remove the parent mapping here for merged text children.
+      // During reconciliation, Solid may transiently remove/re-insert text nodes while
+      // still issuing setText on the child id. Keeping the mapping ensures resolveTextNode
+      // can still find the actual parent text node.
       return@onMain
     }
-    val childView = nodes.get(child)?.view ?: return@onMain
+    // For non-text parents, clear mapping early
+    parents[childId] = null
+    val childView = nodes.get(childId)?.view ?: return@onMain
     (childView.parent as? ViewGroup)?.removeView(childView)
-    engine.setMeasureHandler(child, null)
-    engine.removeNode(child)
+    engine.setMeasureHandler(childId, null)
+    engine.removeNode(childId)
     scheduleFlush()
-    parents.remove(child)
+    parents.remove(childId)
   }
 
-  fun setHandler(id: Int, name: String, fnRef: Long) = onMain {
-    if (name == "onPress") {
-      Log.d("RuneUI", "Setting onPress handler for node $id")
-      val node = nodes.get(id)
+  override fun setHandler(nodeId: Int, event: String, handlerId: Long) = onMain {
+    if (event == "onPress") {
+      Log.d("RuneUI", "Setting onPress handler for node $nodeId")
+      val node = nodes.get(nodeId)
       node?.view?.let { view ->
         // Make the view clickable when we set an onPress handler
         view.isClickable = true
         view.setOnClickListener {
-          Log.d("RuneUI", "onPress triggered for node $id")
-          eventDispatcher(id, name)
+          Log.d("RuneUI", "onPress triggered for node $nodeId")
+          eventDispatcher(nodeId, event)
         }
       }
     }
-    handlerListener(id, name, fnRef)
+    handlerListener(nodeId, event, handlerId)
   }
 
-  fun removeNode(id: Int) = onMain {
-    removeNodeRecursive(id)
+  override fun removeNode(nodeId: Int) = onMain {
+    removeNodeRecursive(nodeId)
     scheduleFlush()
   }
 
-  fun flush() = onMain {
-    performFlush()
+  override fun flush() = onMain {
+    // Defer to next frame to avoid mid-frame relayout flicker
+    scheduleFlush()
   }
 
   private fun scheduleFlush() {
     dirty = true
+    frameScheduler.scheduleFlush {
+      if (dirty) {
+        performFlush()
+      }
+    }
   }
 
   private inline fun <T> onMain(crossinline block: () -> T): T {
@@ -264,6 +303,7 @@ class RuneUIManager(
       val frame: Rect = engine.frame(node.id)
       Log.d("RuneUI", "Layout node ${node.id} (type=${node.type}) frame=$frame")
       node.view.layout(frame.left, frame.top, frame.right, frame.bottom)
+  // View alpha remains 1 by default; avoid toggling visibility to reduce flicker
       // For text nodes, don't layout the label separately since view and label are the same object
       if (node.type != TEXT_TYPE) {
         node.label?.layout(0, 0, frame.right - frame.left, frame.bottom - frame.top)
@@ -286,10 +326,24 @@ class RuneUIManager(
     if (id == root.rootId) return
     val children = parents.entries.filter { it.value == id }.map { it.key }
     children.forEach { childId -> removeNodeRecursive(childId) }
-    val node = nodes.get(id) ?: return
+    val node = nodes.get(id)
+    if (node == null) {
+      // Node may have been removed earlier (e.g., merged text child).
+      // Ensure we still clear parent mapping to avoid stale references.
+      parents.remove(id)
+      return
+    }
+    
+    // Clean up view: remove click listener and from parent
+    node.view.setOnClickListener(null)
+    node.view.isClickable = false
     (node.view.parent as? ViewGroup)?.removeView(node.view)
+    
+    // Clean up layout engine
     engine.setMeasureHandler(id, null)
     engine.removeNode(id)
+    
+    // Remove from our tracking maps
     nodes.remove(id)
     parents.remove(id)
   }

@@ -365,13 +365,17 @@ class RuneRuntime(
     private val hermes: HermesAdapter,
   ) : JSBridge.ModulesShim {
     override fun invoke(module: String, method: String, args: Array<Any?>, promiseId: Int) {
+      Log.d(TAG, "HermesModulesShim.invoke module=$module method=$method argsCount=${args.size} promiseId=$promiseId")
       moduleExecutor.execute {
         try {
           val argsPayload = args.firstOrNull()
           val argsJson = toJsonString(argsPayload)
+          Log.d(TAG, "HermesModulesShim payloadLen=${argsJson.length} for $module.$method")
           val result = handleModuleCall(module, method, argsJson)
+          Log.d(TAG, "HermesModulesShim.resolve promiseId=$promiseId resultLen=${result.length}")
           hermes.resolvePromise(promiseId, result)
         } catch (t: Throwable) {
+          Log.e(TAG, "HermesModulesShim.reject promiseId=$promiseId: ${t.message}")
           hermes.rejectPromise(promiseId, t.message ?: "error")
         }
       }

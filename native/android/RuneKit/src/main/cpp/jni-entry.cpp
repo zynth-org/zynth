@@ -181,6 +181,32 @@ Java_com_rune_kit_runtime_JSBridge_invokeHandler(
   rune::kit::invokeHandler(runtime, handlerId, nodeId, ::toStdString(env, eventName));
 }
 
+extern "C" JNIEXPORT void JNICALL
+Java_com_rune_kit_dev_RuneDiagnosticsKt_runeDiagnosticsReportJNI(
+    JNIEnv *env,
+    jclass,
+    jstring phase,
+    jstring message,
+    jstring stack) {
+  // This is the JNI bridge for RuneDiagnostics.report() calls from native C++
+  jclass diagClass = env->FindClass("com/rune/kit/dev/RuneDiagnostics");
+  if (!diagClass) {
+    return;
+  }
+  
+  jmethodID reportMethod = env->GetStaticMethodID(
+      diagClass,
+      "report", 
+      "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V");
+  if (!reportMethod) {
+    env->DeleteLocalRef(diagClass);
+    return;
+  }
+  
+  env->CallStaticVoidMethod(diagClass, reportMethod, phase, message, stack);
+  env->DeleteLocalRef(diagClass);
+}
+
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *) {
   rune::kit::setJavaVm(vm);
   rune::kit::logDebug("JNI_OnLoad");

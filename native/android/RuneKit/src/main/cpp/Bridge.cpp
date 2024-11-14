@@ -206,6 +206,67 @@ void reportJsError(
   logJniException(env.get(), "ErrorHandler.report");
 }
 
+/**
+ * Unified diagnostics reporting function similar to iOS RuneReportJSIError.
+ * Reports errors through the RuneDiagnostics system.
+ */
+void RuneReportJSIError(
+    facebook::jsi::Runtime & /* rt */, 
+    const facebook::jsi::JSError &error, 
+    const char *phase) {
+  std::string message = error.getMessage();
+  std::string stack = error.getStack();
+  
+  if (message.empty()) {
+    message = "Unknown JSI error";
+  }
+  
+  JniEnv env;
+  if (!env.valid()) {
+    BRIDGE_LOG(ANDROID_LOG_ERROR, "[%s] %s", phase ? phase : "jsi", message.c_str());
+    return;
+  }
+  
+  jstring jPhase = env->NewStringUTF(phase ? phase : "jsi");
+  jstring jMessage = env->NewStringUTF(message.c_str());
+  jstring jStack = env->NewStringUTF(stack.c_str());
+  
+  // Call the JNI bridge to RuneDiagnostics
+  jclass runeDiagClass = env->FindClass("com/rune/kit/dev/RuneDiagnosticsKt");
+  if (runeDiagClass) {
+    jmethodID reportMethod = env->GetStaticMethodID(
+        runeDiagClass, 
+        "runeDiagnosticsReportJNI", 
+        "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V");
+    if (reportMethod) {
+      env->CallStaticVoidMethod(runeDiagClass, reportMethod, jPhase, jMessage, jStack);
+    }
+    env->DeleteLocalRef(runeDiagClass);
+  }
+  
+  if (jPhase) env->DeleteLocalRef(jPhase);
+  if (jMessage) env->DeleteLocalRef(jMessage);
+  if (jStack) env->DeleteLocalRef(jStack);
+}
+
+/**
+ * Clean up all handlers for a given node ID.
+ * This should be called when a node is removed to prevent memory leaks
+ * and ensure handlers don't fire for non-existent nodes.
+ */
+void removeHandlersForNode(const std::shared_ptr<RuntimeState> &state, int nodeId) {
+  std::lock_guard<std::mutex> lock(state->mutex);
+  for (auto it = state->handlers.begin(); it != state->handlers.end();) {
+    if (it->second.nodeId == nodeId) {
+      BRIDGE_LOG(ANDROID_LOG_DEBUG, "Removing handler %ld for node %d event %s", 
+                 it->first, nodeId, it->second.event.c_str());
+      it = state->handlers.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
 facebook::jsi::Value makePromise(
     facebook::jsi::Runtime &rt,
     std::function<void(facebook::jsi::Function &&resolve, facebook::jsi::Function &&reject)> work) {
@@ -274,35 +335,70 @@ void installConsole(std::shared_ptr<RuntimeState> state) {
   using namespace facebook::jsi;
   auto &rt = *state->runtime;
   auto logFunction = Function::createFromHostFunction(
-      rt, PropNameID::forAscii(rt, "log"), 1,
+      rt, PropNameID::forAscii(rt, "log"), 0,
       [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
         std::string message;
-        if (count > 0) {
-          if (args[0].isString()) {
-            message = args[0].getString(rt).utf8(rt);
-          } else if (args[0].isNumber()) {
-            message = std::to_string(args[0].getNumber());
+        for (size_t i = 0; i < count; ++i) {
+          if (i > 0) message += " ";
+          if (args[i].isString()) {
+            message += args[i].getString(rt).utf8(rt);
+          } else if (args[i].isNumber()) {
+            message += std::to_string(args[i].getNumber());
+          } else if (args[i].isBool()) {
+            message += args[i].getBool() ? "true" : "false";
+          } else if (args[i].isNull()) {
+            message += "null";
+          } else if (args[i].isUndefined()) {
+            message += "undefined";
+          } else {
+            message += "[object]";
           }
         }
         BRIDGE_LOG(ANDROID_LOG_INFO, "%s", message.c_str());
         return Value::undefined();
       });
   auto warnFunction = Function::createFromHostFunction(
-      rt, PropNameID::forAscii(rt, "warn"), 1,
+      rt, PropNameID::forAscii(rt, "warn"), 0,
       [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
         std::string message;
-        if (count > 0 && args[0].isString()) {
-          message = args[0].getString(rt).utf8(rt);
+        for (size_t i = 0; i < count; ++i) {
+          if (i > 0) message += " ";
+          if (args[i].isString()) {
+            message += args[i].getString(rt).utf8(rt);
+          } else if (args[i].isNumber()) {
+            message += std::to_string(args[i].getNumber());
+          } else if (args[i].isBool()) {
+            message += args[i].getBool() ? "true" : "false";
+          } else if (args[i].isNull()) {
+            message += "null";
+          } else if (args[i].isUndefined()) {
+            message += "undefined";
+          } else {
+            message += "[object]";
+          }
         }
         BRIDGE_LOG(ANDROID_LOG_WARN, "%s", message.c_str());
         return Value::undefined();
       });
   auto errorFunction = Function::createFromHostFunction(
-      rt, PropNameID::forAscii(rt, "error"), 1,
+      rt, PropNameID::forAscii(rt, "error"), 0,
       [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
         std::string message;
-        if (count > 0 && args[0].isString()) {
-          message = args[0].getString(rt).utf8(rt);
+        for (size_t i = 0; i < count; ++i) {
+          if (i > 0) message += " ";
+          if (args[i].isString()) {
+            message += args[i].getString(rt).utf8(rt);
+          } else if (args[i].isNumber()) {
+            message += std::to_string(args[i].getNumber());
+          } else if (args[i].isBool()) {
+            message += args[i].getBool() ? "true" : "false";
+          } else if (args[i].isNull()) {
+            message += "null";
+          } else if (args[i].isUndefined()) {
+            message += "undefined";
+          } else {
+            message += "[object]";
+          }
         }
         BRIDGE_LOG(ANDROID_LOG_ERROR, "%s", message.c_str());
         return Value::undefined();
@@ -424,6 +520,10 @@ void installUIBindings(std::shared_ptr<RuntimeState> state) {
         }
         int parentId = static_cast<int>(args[0].asNumber());
         int childId = static_cast<int>(args[1].asNumber());
+        
+        // Clean up handlers for the child node (matching iOS behavior)
+        removeHandlersForNode(state, childId);
+        
         JniEnv env;
         if (!env.valid()) return Value::undefined();
         env->CallVoidMethod(state->uiShim, state->uiMethods.removeChild, parentId, childId);
@@ -441,16 +541,9 @@ void installUIBindings(std::shared_ptr<RuntimeState> state) {
           return Value::undefined();
         }
         int nodeId = static_cast<int>(args[0].asNumber());
-        {
-          std::lock_guard<std::mutex> lock(state->mutex);
-          for (auto it = state->handlers.begin(); it != state->handlers.end();) {
-            if (it->second.nodeId == nodeId) {
-              it = state->handlers.erase(it);
-            } else {
-              ++it;
-            }
-          }
-        }
+        
+        // Clean up handlers for the node
+        removeHandlersForNode(state, nodeId);
         JniEnv env;
         if (!env.valid()) return Value::undefined();
         env->CallVoidMethod(state->uiShim, state->uiMethods.removeNode, nodeId);
@@ -590,6 +683,73 @@ void installTimers(std::shared_ptr<RuntimeState> state) {
   rt.global().setProperty(rt, "clearTimeout", clearTimeoutFn);
   rt.global().setProperty(rt, "setImmediate", setTimeoutFn);
   rt.global().setProperty(rt, "clearImmediate", clearTimeoutFn);
+
+  // Host timer functions for framework usage
+  auto hostSetTimeoutFn = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "__hostSetTimeout"), 3,
+      [weakState](Runtime &runtime, const Value &, const Value *args, size_t count) -> Value {
+        auto state = weakState.lock();
+        if (!state) return Value::undefined();
+        if (count < 2 || !args[0].isObject() || !args[0].asObject(runtime).isFunction(runtime)) {
+          BRIDGE_LOG(ANDROID_LOG_WARN, "__hostSetTimeout expects (function, delay, ...args)");
+          return Value::undefined();
+        }
+        double delayMs = args[1].isNumber() ? args[1].getNumber() : 0.0;
+        int timerId;
+        TimerEntry entry;
+        entry.callback = std::make_shared<Function>(args[0].asObject(runtime).asFunction(runtime));
+        
+        // Handle args array if provided as third parameter
+        if (count >= 3 && args[2].isObject()) {
+          auto argsArray = args[2].asObject(runtime);
+          if (argsArray.isArray(runtime)) {
+            auto arrayLength = argsArray.getArray(runtime).length(runtime);
+            entry.args.reserve(arrayLength);
+            for (size_t i = 0; i < arrayLength; ++i) {
+              entry.args.emplace_back(runtime, argsArray.getArray(runtime).getValueAtIndex(runtime, i));
+            }
+          }
+        }
+        
+        {
+          std::lock_guard<std::mutex> lock(state->mutex);
+          timerId = state->nextTimerId++;
+          entry.id = timerId;
+          state->timers.emplace(timerId, std::move(entry));
+        }
+        JniEnv env;
+        if (!env.valid()) {
+          return Value(static_cast<double>(timerId));
+        }
+        jlong delay = static_cast<jlong>(delayMs <= 0 ? 0 : std::llround(delayMs));
+        env->CallVoidMethod(state->timerShim, state->timerMethods.scheduleTimeout, timerId, delay);
+        logJniException(env.get(), "TimerShim.scheduleTimeout");
+        return Value(static_cast<double>(timerId));
+      });
+
+  auto hostClearTimeoutFn = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "__hostClearTimeout"), 1,
+      [weakState](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        auto state = weakState.lock();
+        if (!state) return Value::undefined();
+        if (count < 1 || !args[0].isNumber()) {
+          return Value::undefined();
+        }
+        int timerId = static_cast<int>(args[0].asNumber());
+        {
+          std::lock_guard<std::mutex> lock(state->mutex);
+          state->timers.erase(timerId);
+        }
+        JniEnv env;
+        if (env.valid()) {
+          env->CallVoidMethod(state->timerShim, state->timerMethods.clearTimeout, timerId);
+          logJniException(env.get(), "TimerShim.clearTimeout");
+        }
+        return Value::undefined();
+      });
+
+  rt.global().setProperty(rt, "__hostSetTimeout", hostSetTimeoutFn);
+  rt.global().setProperty(rt, "__hostClearTimeout", hostClearTimeoutFn);
 }
 
 void installModules(std::shared_ptr<RuntimeState> state) {
@@ -610,6 +770,7 @@ void installModules(std::shared_ptr<RuntimeState> state) {
         std::string methodName = args[1].getString(runtime).utf8(runtime);
         facebook::jsi::Value payload = count >= 3 ? facebook::jsi::Value(runtime, args[2]) : facebook::jsi::Value::undefined();
         std::string jsonPayload = toJsonString(runtime, payload);
+        BRIDGE_LOG(ANDROID_LOG_INFO, "__modules.call(%s, %s) payloadLen=%zu", moduleName.c_str(), methodName.c_str(), jsonPayload.size());
 
         return makePromise(runtime, [weakState, moduleName, methodName, jsonPayload](Function &&resolve, Function &&reject) {
           if (auto state = weakState.lock()) {
@@ -622,6 +783,7 @@ void installModules(std::shared_ptr<RuntimeState> state) {
               entry.reject = std::make_shared<Function>(std::move(reject));
               state->promises.emplace(promiseId, std::move(entry));
             }
+            BRIDGE_LOG(ANDROID_LOG_INFO, "ModulesShim.invoke -> promiseId=%d", promiseId);
             JniEnv env;
             if (!env.valid()) return;
             jstring jModule = makeJString(env.get(), moduleName);
@@ -674,6 +836,81 @@ void cleanupState(std::shared_ptr<RuntimeState> state) {
 
 } // namespace
 
+void installUnhandledPromiseReporting(std::shared_ptr<RuntimeState> state) {
+  using namespace facebook::jsi;
+  auto &rt = *state->runtime;
+  
+  auto reportUnhandled = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "__hostReportUnhandled"), 2,
+      [](Runtime &rt, const Value &, const Value *a, size_t count) -> Value {
+        std::string message = (count > 0 && a[0].isString()) ? a[0].getString(rt).utf8(rt) : "";
+        std::string stack = (count > 1 && a[1].isString()) ? a[1].getString(rt).utf8(rt) : "";
+        if (message.empty()) {
+          message = "Unhandled promise rejection";
+        }
+        
+        JniEnv env;
+        if (!env.valid()) {
+          BRIDGE_LOG(ANDROID_LOG_ERROR, "[unhandled] %s", message.c_str());
+          return Value::undefined();
+        }
+        
+        jstring jPhase = env->NewStringUTF("unhandled");
+        jstring jMessage = env->NewStringUTF(message.c_str());
+        jstring jStack = env->NewStringUTF(stack.c_str());
+        
+        // Call the JNI bridge to RuneDiagnostics
+        jclass runeDiagClass = env->FindClass("com/rune/kit/dev/RuneDiagnosticsKt");
+        if (runeDiagClass) {
+          jmethodID reportMethod = env->GetStaticMethodID(
+              runeDiagClass, 
+              "runeDiagnosticsReportJNI", 
+              "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V");
+          if (reportMethod) {
+            env->CallStaticVoidMethod(runeDiagClass, reportMethod, jPhase, jMessage, jStack);
+          }
+          env->DeleteLocalRef(runeDiagClass);
+        }
+        
+        if (jPhase) env->DeleteLocalRef(jPhase);
+        if (jMessage) env->DeleteLocalRef(jMessage);
+        if (jStack) env->DeleteLocalRef(jStack);
+        
+        return Value::undefined();
+      });
+
+  rt.global().setProperty(rt, "__hostReportUnhandled", reportUnhandled);
+
+  // Install the Promise rejection shim based on iOS implementation
+  const char *js = R"JS(
+    (function(){
+      if (globalThis.__rune && __rune._uh_installed) return;
+      globalThis.__rune = globalThis.__rune || {};
+      __rune._uh_installed = true;
+      const _then = Promise.prototype.then;
+      const _catch = Promise.prototype.catch;
+      const _seen = new WeakSet();
+      Promise.prototype.then = function(onFulfilled, onRejected){
+        const p = _then.call(this, onFulfilled, onRejected);
+        try {
+          if (!_seen.has(p)) {
+            _seen.add(p);
+            _catch.call(p, function(e){
+              try {
+                __hostReportUnhandled(String(e?.message || e), String(e?.stack || ""));
+              } catch (_) {}
+            });
+          }
+        } catch (_) {}
+        return p;
+      };
+    })();
+  )JS";
+
+  auto buffer = std::make_shared<StringBuffer>(js);
+  rt.evaluateJavaScript(buffer, "rune-unhandled.js");
+}
+
 void setJavaVm(JavaVM *vm) {
   gJavaVm = vm;
 }
@@ -724,6 +961,7 @@ void installBindings(
   installUIBindings(state);
   installModules(state);
   installTimers(state);
+  installUnhandledPromiseReporting(state);
 
   BRIDGE_LOG(ANDROID_LOG_INFO, "Hermes bindings installed");
 }
@@ -737,18 +975,30 @@ void evaluateString(
   try {
     runtime->evaluateJavaScript(buffer, sourceUrl);
   } catch (const facebook::jsi::JSError &err) {
-    BRIDGE_LOG(ANDROID_LOG_ERROR, "Hermes evaluateString error: %s", err.getMessage().c_str());
-    auto state = getState(runtime);
-    if (state) {
-      BRIDGE_LOG(ANDROID_LOG_ERROR, "Hermes stack: %s", err.getStack().c_str());
-      reportJsError(state, err.getMessage(), err.getStack());
-    }
+    RuneReportJSIError(*runtime, err, "Evaluate");
     throw;
   } catch (const std::exception &ex) {
-    BRIDGE_LOG(ANDROID_LOG_ERROR, "Hermes evaluateString std::exception: %s", ex.what());
-    auto state = getState(runtime);
-    if (state) {
-      reportJsError(state, ex.what(), "");
+    JniEnv env;
+    if (env.valid()) {
+      jstring jPhase = env->NewStringUTF("Evaluate");
+      jstring jMessage = env->NewStringUTF(ex.what());
+      jstring jStack = env->NewStringUTF("");
+      
+      jclass runeDiagClass = env->FindClass("com/rune/kit/dev/RuneDiagnosticsKt");
+      if (runeDiagClass) {
+        jmethodID reportMethod = env->GetStaticMethodID(
+            runeDiagClass, 
+            "runeDiagnosticsReportJNI", 
+            "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V");
+        if (reportMethod) {
+          env->CallStaticVoidMethod(runeDiagClass, reportMethod, jPhase, jMessage, jStack);
+        }
+        env->DeleteLocalRef(runeDiagClass);
+      }
+      
+      if (jPhase) env->DeleteLocalRef(jPhase);
+      if (jMessage) env->DeleteLocalRef(jMessage);
+      if (jStack) env->DeleteLocalRef(jStack);
     }
     throw;
   }
@@ -908,13 +1158,13 @@ void resolvePromise(facebook::hermes::HermesRuntime *runtime, int promiseId, con
   try {
     entry.resolve->call(*runtime, static_cast<const facebook::jsi::Value *>(args.data()), args.size());
   } catch (const facebook::jsi::JSError &err) {
-    BRIDGE_LOG(ANDROID_LOG_ERROR, "resolvePromise error: %s", err.getMessage().c_str());
+    BRIDGE_LOG(ANDROID_LOG_ERROR, "resolvePromise error (id=%d): %s", promiseId, err.getMessage().c_str());
     auto state = getState(runtime);
     if (state) {
       reportJsError(state, err.getMessage(), err.getStack());
     }
   } catch (const std::exception &ex) {
-    BRIDGE_LOG(ANDROID_LOG_ERROR, "resolvePromise exception: %s", ex.what());
+    BRIDGE_LOG(ANDROID_LOG_ERROR, "resolvePromise exception (id=%d): %s", promiseId, ex.what());
     auto state = getState(runtime);
     if (state) {
       reportJsError(state, ex.what(), "");
@@ -941,13 +1191,13 @@ void rejectPromise(facebook::hermes::HermesRuntime *runtime, int promiseId, cons
   try {
     entry.reject->call(rt, static_cast<const facebook::jsi::Value *>(args.data()), args.size());
   } catch (const facebook::jsi::JSError &err) {
-    BRIDGE_LOG(ANDROID_LOG_ERROR, "rejectPromise error: %s", err.getMessage().c_str());
+    BRIDGE_LOG(ANDROID_LOG_ERROR, "rejectPromise error (id=%d): %s", promiseId, err.getMessage().c_str());
     auto state = getState(runtime);
     if (state) {
       reportJsError(state, err.getMessage(), err.getStack());
     }
   } catch (const std::exception &ex) {
-    BRIDGE_LOG(ANDROID_LOG_ERROR, "rejectPromise exception: %s", ex.what());
+    BRIDGE_LOG(ANDROID_LOG_ERROR, "rejectPromise exception (id=%d): %s", promiseId, ex.what());
     auto state = getState(runtime);
     if (state) {
       reportJsError(state, ex.what(), "");
