@@ -1,0 +1,21 @@
+{
+  "name": "@rune/cli",
+  "version": "0.0.1",
+  "description": "Rune development CLI",
+  "license": "MIT",
+  "bin": {
+    "rune": "./bin/rune"
+  },
+  "files": [
+    "bin",
+    "src"
+  ],
+  "keywords": ["rune", "cli"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rune/rune"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

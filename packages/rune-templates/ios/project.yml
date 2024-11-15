@@ -42,14 +42,25 @@ targets:
       - name: BundleJS
         basedOnDependencyAnalysis: false
         script: |
+          # Exit immediately if a command exits with a non-zero status.
           set -e
-          # Build all workspaces so @solid-native/core dist exists
+
+          # 🎯 Directly add your specific NVM bin folder to the PATH.
+          export PATH="/Users/ignaciozsabo/.nvm/versions/node/v22.15.0/bin:$PATH"
+
+          # ✅ Navigate from the Xcode project dir to the root of your framework.
           cd "$PROJECT_DIR/../../../"
-          yarn build
-          # Build the demo bundle
+
+          # Run the build commands.
+          echo "Bundling workspace packages..."
+          yarn bundle:packages
+          echo "Bundling app workspace..."
           yarn workspace {{WORKSPACE_NAME}} build
-          # Copy bundle into app resources
+
+          # Copy the generated JS bundle into the app's resources folder.
+          echo "Copying main.js to app resources..."
           mkdir -p "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
-          cp apps/{{APP_DIR}}/dist/main.js "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/main.js"
+          cp "apps/{{APP_DIR}}/dist/main.js" "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/main.js"
+
     dependencies:
       - sdk: JavaScriptCore.framework

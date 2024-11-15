@@ -12,10 +12,14 @@
     "prebuild:android": "yarn workspace @demo/sn-demo prebuild:android",
     "ios:dev": "yarn workspace @demo/sn-demo ios:dev",
     "android:dev": "yarn workspace @demo/sn-demo android:dev",
-    "dev:sn-demo": "yarn workspace @demo/sn-demo ios:dev",
-    "check:bundle": "grep -q 'document\\.' apps/sn-demo/dist/main.js && (echo 'DOM refs found' && exit 1) || exit 0",
-    "android:reset": "rm -rf ./apps/sn-demo/android ./apps/sn-demo/dist && yarn build && yarn prebuild:android && yarn android:dev",
-    "ios:reset": "yarn build && rm -rf ./apps/sn-demo/ios && yarn prebuild:ios && yarn workspace @demo/sn-demo ios:build && yarn workspace @demo/sn-demo ios:run",
-    "android:logs": "adb logcat -s \"RuneHermesBridge\" \"RuneKitNative\" \"com.rune.demo\" \"JS_LOG\" \"JS_ERROR\" \"JS_WARN\""
+    "bundle:apps": "rune bundle apps",
+    "bundle:packages": "rune bundle packages",
+    "bundle": "rune bundle all",
+    "reset:ios": "yarn workspace @demo/sn-demo reset:ios",
+    "reset:android": "yarn workspace @demo/sn-demo reset:android"
+  },
+  "devDependencies": {
+    "@rune/cli": "*",
+    "@rune/templates": "*"
   }
 }

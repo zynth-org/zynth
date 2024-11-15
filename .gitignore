@@ -33,9 +33,9 @@ projects/**/ios/Pods/**
 # Android (generated projects - not templates)
 apps/*/android/
 !templates/android/
-native/android/**/build/
-native/android/**/.cxx/
-native/android/**/.gradle/
+packages/rune-android/**/build/
+packages/rune-android/**/.cxx/
+packages/rune-android/**/.gradle/
 
 # macOS
 .DS_Store

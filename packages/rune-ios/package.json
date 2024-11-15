@@ -1,0 +1,18 @@
+{
+  "name": "@rune/ios",
+  "version": "0.0.1",
+  "description": "Rune iOS native SDK",
+  "license": "MIT",
+  "files": [
+    "ios",
+    "RuneKit.podspec"
+  ],
+  "keywords": ["rune", "solid", "native", "ios"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rune/rune"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

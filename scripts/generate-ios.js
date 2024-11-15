@@ -51,9 +51,11 @@ function replacePlaceholders(content, config) {
 }
 
 // Copy template files and replace placeholders
+const templatesRoot = path.dirname(require.resolve("@rune/templates/package.json"));
+
 function generateIOSProject(appDir) {
   const config = getAppConfig(appDir);
-  const templateDir = path.resolve(__dirname, "../templates/ios");
+  const templateDir = path.join(templatesRoot, "ios");
   const targetDir = path.join(appDir, "ios");
 
   console.log(`Generating iOS project for ${config.displayName}...`);

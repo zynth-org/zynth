@@ -4,6 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const { getAppConfig } = require("./generate-ios.js");
 
+const templatesRoot = path.dirname(require.resolve("@rune/templates/package.json"));
 const BINARY_EXTENSIONS = new Set([".jar", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico"]);
 
 function replacePlaceholders(content, config) {
@@ -45,7 +46,7 @@ function generateAndroidProject(appDir) {
     ...baseConfig,
     bundleId: androidPackage,
   };
-  const templateDir = path.resolve(__dirname, "../templates/android");
+  const templateDir = path.join(templatesRoot, "android");
   const targetDir = path.join(appDir, "android");
 
   if (fs.existsSync(targetDir)) {

@@ -4,6 +4,8 @@ const path = require("path");
 const { generateAndroidProject } = require("./generate-android.js");
 const fs = require("fs");
 
+const templatesRoot = path.dirname(require.resolve("@rune/templates/package.json"));
+
 function main() {
   const appDir = process.cwd();
   console.log("🚀 Starting Android prebuild...");
@@ -15,8 +17,9 @@ function main() {
 
     const androidDir = path.join(appDir, "android");
     const gradlePropsSrc = path.join(
-      __dirname,
-      "../templates/android/gradle.properties"
+      templatesRoot,
+      "android",
+      "gradle.properties"
     );
     const gradlePropsDest = path.join(androidDir, "gradle.properties");
     if (fs.existsSync(gradlePropsSrc)) {

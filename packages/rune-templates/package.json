@@ -1,0 +1,19 @@
+{
+  "name": "@rune/templates",
+  "version": "0.0.1",
+  "description": "Rune app and native templates",
+  "license": "MIT",
+  "files": [
+    "app",
+    "ios",
+    "android"
+  ],
+  "keywords": ["rune", "templates", "solid"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rune/rune"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

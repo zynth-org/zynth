@@ -1,7 +1,7 @@
 #import "AppDelegate.h"
 #import <JavaScriptCore/JavaScriptCore.h>
-#import <RuneKit/RuneKit.h>
-#import <RuneKit/RuneKit-Swift.h>
+#import "RuneKit.h"
+#import "RuneKit-Swift.h"
 
 @interface AppDelegate ()
 @property(nonatomic, strong) JSContext *js;
