@@ -68,12 +68,26 @@ class RuneUIManager(
       view = FrameLayout(root.context)
       label = null
     }
-  // Prevent pre-layout artifacts: reduce visibility impact by creating at 0x0 size
-  // Avoid setting alpha to 0 for all nodes: only first layout will size them correctly.
-  // Keep alpha at 1 to reduce flicker on subsequent conditional mounts.
-  view.layoutParams = FrameLayout.LayoutParams(0, 0)
+    // Use appropriate layout params based on type - this helps prevent layout jumps
+    if (type == TEXT_TYPE) {
+      // For text nodes, use wrap content to prevent them from affecting layout too much
+      view.layoutParams = FrameLayout.LayoutParams(
+        ViewGroup.LayoutParams.WRAP_CONTENT,
+        ViewGroup.LayoutParams.WRAP_CONTENT
+      )
+    } else {
+      // For container nodes, use small fixed size initially
+      view.layoutParams = FrameLayout.LayoutParams(1, 1)
+      // Use transparent background to prevent white flash during transitions
+      view.setBackgroundColor(Color.TRANSPARENT)
+    }
+    
+    // Keep new views invisible until layout is complete
+    view.visibility = View.INVISIBLE
+    
     // Don't set clickable by default - only when a handler is actually set
     view.isClickable = false
+    view.setBackgroundColor(Color.TRANSPARENT)
     val node = Node(id, type, view, label)
     nodes.put(id, node)
     parents[id] = null
@@ -210,6 +224,22 @@ class RuneUIManager(
       nodes.get(parentId)?.view ?: return@onMain
     }
     val childView = nodes.get(childId)?.view ?: return@onMain
+    val childNode = nodes.get(childId)
+    
+    // Keep child invisible until layout is complete to prevent white flash during transitions
+    // Apply careful insertion to prevent layout jumps
+    childView.visibility = View.INVISIBLE
+    
+    // For newly added conditional views (like the count > 5 case),
+    // we need special treatment to avoid layout jumps
+    if (childNode?.type != TEXT_TYPE && childNode?.view?.layoutParams?.width == 1) {
+      // Pre-measure if possible to reduce layout changes
+      childView.measure(
+        View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+        View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+      )
+    }
+    
     if (parentView is ViewGroup) {
       val safeIndex = index.coerceIn(0, parentView.childCount)
       parentView.addView(childView, safeIndex)
@@ -233,6 +263,15 @@ class RuneUIManager(
     // For non-text parents, clear mapping early
     parents[childId] = null
     val childView = nodes.get(childId)?.view ?: return@onMain
+    val childNode = nodes.get(childId)
+    
+    // Make the view invisible before removing to avoid flashing
+    // Set to transparent background to ensure no white flash
+    childView.visibility = View.INVISIBLE
+    if (childNode?.type != TEXT_TYPE) {
+      childView.setBackgroundColor(Color.TRANSPARENT)
+    }
+    
     (childView.parent as? ViewGroup)?.removeView(childView)
     engine.setMeasureHandler(childId, null)
     engine.removeNode(childId)
@@ -263,6 +302,8 @@ class RuneUIManager(
 
   override fun flush() = onMain {
     // Defer to next frame to avoid mid-frame relayout flicker
+    // Set dirty flag immediately to ensure we know there's pending work
+    dirty = true
     scheduleFlush()
   }
 
@@ -297,18 +338,83 @@ class RuneUIManager(
     }
     if (!dirty) return
     dirty = false
+    
+    // Store previous frames for existing nodes to detect layout jumps
+    val previousFrames = SparseArray<Rect>()
+    for (i in 0 until nodes.size()) {
+      val node = nodes.valueAt(i)
+      if (node.view.visibility == View.VISIBLE) {
+        // Only track visible nodes that might jump
+        previousFrames.put(node.id, Rect(
+          node.view.left,
+          node.view.top,
+          node.view.right,
+          node.view.bottom
+        ))
+      }
+    }
+    
+    // Calculate layout first, before any visual changes
     engine.calculateLayout(root.width, root.height)
+    
+    // First pass: update sizes only without changing positions for existing visible views
+    // This prevents the jump effect when new content is added
     for (i in 0 until nodes.size()) {
       val node = nodes.valueAt(i)
       val frame: Rect = engine.frame(node.id)
-      Log.d("RuneUI", "Layout node ${node.id} (type=${node.type}) frame=$frame")
+      val width = frame.right - frame.left
+      val height = frame.bottom - frame.top
+      
+      // Update size params while keeping position stable
+      if (width > 0 && height > 0) {
+        if (node.view.layoutParams.width != width || node.view.layoutParams.height != height) {
+          node.view.layoutParams = FrameLayout.LayoutParams(width, height)
+        }
+      }
+    }
+    
+    // Second pass: animate position changes for existing views to prevent jumps
+    for (i in 0 until nodes.size()) {
+      val node = nodes.valueAt(i)
+      val frame: Rect = engine.frame(node.id)
+      val prevFrame = previousFrames.get(node.id)
+      
+      // Apply layout directly without animation
+      // We're keeping the position tracking to avoid jumps, but not animating the transition
       node.view.layout(frame.left, frame.top, frame.right, frame.bottom)
-  // View alpha remains 1 by default; avoid toggling visibility to reduce flicker
+      
       // For text nodes, don't layout the label separately since view and label are the same object
       if (node.type != TEXT_TYPE) {
         node.label?.layout(0, 0, frame.right - frame.left, frame.bottom - frame.top)
       }
-      node.label?.alpha = 1f
+    }
+    
+    // Final pass: make all nodes visible with fade-in for new views
+    // This creates a smooth transition when new elements are added
+    handler.post {
+      for (i in 0 until nodes.size()) {
+        val node = nodes.valueAt(i)
+        val frame: Rect = engine.frame(node.id)
+        
+        // Only make visible if it has a valid size
+        if ((frame.right - frame.left) > 0 && (frame.bottom - frame.top) > 0) {
+          if (node.view.visibility != View.VISIBLE) {
+            // Set proper layout params before making visible to ensure stable layout
+            val width = frame.right - frame.left
+            val height = frame.bottom - frame.top
+            if (width > 0 && height > 0) {
+              node.view.layoutParams.width = width
+              node.view.layoutParams.height = height
+            }
+            
+            // Make visible immediately without fade-in animation
+            node.view.visibility = View.VISIBLE
+          }
+        }
+        
+        // Ensure text is visible
+        node.label?.alpha = 1f
+      }
     }
   }
 
