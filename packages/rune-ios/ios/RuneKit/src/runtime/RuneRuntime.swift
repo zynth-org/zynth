@@ -48,13 +48,30 @@ public final class RuneRuntime {
 
     print("[RuneTrace] configureRuntime using adapter", type(of: runtime))
 
+#if DEBUG
+    installModules([RuneEnvModule()])
+#endif
+
     runtime.evaluate(code: "globalThis.__RUNE_PLATFORM = \"ios\";")
     print("[RuneTrace] __RUNE_PLATFORM set to ios")
+
+    runtime.evaluate(
+      code:
+        """
+        if (typeof globalThis.__modules === 'object' && typeof globalThis.__modules.callSync !== 'function' && typeof globalThis.__runeCallSync === 'function') {
+          globalThis.__modules.callSync = globalThis.__runeCallSync;
+        }
+        """
+    )
 
     if let hermes = runtime as? HermesAdapter {
       hermes.configureModuleCall { [weak self] name, method, argsJSON in
         guard let self else { return "{}" }
         return self.registry.call(name, method: method, argsJSON: argsJSON)
+      }
+      hermes.configureModuleSyncCall { [weak self] name, method, args in
+        guard let self else { throw RuneModuleError.runtimeDeallocated }
+        return try self.registry.callSync(name, method: method, args: args)
       }
       return
     }
@@ -85,6 +102,30 @@ public final class RuneRuntime {
         let out = self.registry.call(name, method: method, argsJSON: json)
         let outData = Data(out.utf8)
         return (try? JSONSerialization.jsonObject(with: outData)) ?? [:]
+      },
+      "callSync": { [weak self] (args: [Any]) -> Any in
+        guard let self else { return ["error": "runtime_deallocated"] }
+        guard args.count >= 2,
+          let name = args[0] as? String,
+          let method = args[1] as? String
+        else {
+          return ["error": "bad_args"]
+        }
+
+        let payload = args.count > 2 ? args[2] : nil
+
+        do {
+          let result = try self.registry.callSync(name, method: method, args: payload)
+          return result ?? NSNull()
+        } catch {
+          let message: String
+          if let localized = error as? LocalizedError, let desc = localized.errorDescription {
+            message = desc
+          } else {
+            message = String(describing: error)
+          }
+          return ["error": message]
+        }
       }
     ]
     runtime.setGlobalObject("__modules", modules)

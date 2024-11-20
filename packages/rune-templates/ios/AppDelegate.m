@@ -108,6 +108,29 @@
     return [promiseCtor invokeMethod:@"reject" withArguments:@[errorValue]];
   };
 
+  modules[@"callSync"] = ^id(NSString *moduleName, NSString *methodName, JSValue *argsValue) {
+    if ([moduleName isEqualToString:@"Env"] && [methodName isEqualToString:@"constants"]) {
+      return @{
+        @"platform": @"ios",
+        @"runtime": @"jsc",
+        @"timestamp": @([[NSDate date] timeIntervalSince1970])
+      };
+    }
+    if ([moduleName isEqualToString:@"Device"] && [methodName isEqualToString:@"constants"]) {
+      return @{
+        @"error": @"not_supported",
+        @"message": @"Device constants not implemented"
+      };
+    }
+    return @{
+      @"error": @"unknown_method",
+      @"module": moduleName ?: @"",
+      @"method": methodName ?: @""
+    };
+  };
+
+  self.js[@"__runeCallSync"] = modules[@"callSync"];
+
   // Load bundled main.js
   NSString *path = [[NSBundle mainBundle] pathForResource:@"main" ofType:@"js"];
   NSAssert(path != nil, @"main.js not found (build the JS bundle)");

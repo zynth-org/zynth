@@ -15,6 +15,19 @@ public final class HermesAdapter: JSRuntimeAdapter {
     host.moduleCallHandler = handler
   }
 
+  public func configureModuleSyncCall(_ handler: @escaping (String, String, Any?) throws -> Any?) {
+    host.moduleCallSyncHandler = { module, method, args, errorPtr in
+      do {
+        return try handler(module, method, args)
+      } catch {
+        if let errorPtr {
+          errorPtr.pointee = error as NSError
+        }
+        return nil
+      }
+    }
+  }
+
   private func installExceptionHandler() {
     if onException != nil {
       host.exceptionHandler = { [weak self] message, stack in

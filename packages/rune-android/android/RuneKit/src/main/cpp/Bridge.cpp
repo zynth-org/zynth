@@ -68,6 +68,7 @@ struct UIShimMethods {
 
 struct ModulesShimMethods {
   jmethodID invoke = nullptr;
+  jmethodID callSync = nullptr;
 };
 
 struct TimerShimMethods {
@@ -163,6 +164,27 @@ std::string getUtfString(JNIEnv *env, jstring str) {
   std::string result = chars ? chars : "";
   if (chars) env->ReleaseStringUTFChars(str, chars);
   return result;
+}
+
+std::string getThrowableMessage(JNIEnv *env, jthrowable throwable) {
+  if (!env || !throwable) {
+    return {};
+  }
+  jclass throwableClass = env->GetObjectClass(throwable);
+  if (!throwableClass) {
+    return {};
+  }
+  jmethodID getMessage = env->GetMethodID(throwableClass, "getMessage", "()Ljava/lang/String;");
+  std::string message;
+  if (getMessage) {
+    jstring jMessage = static_cast<jstring>(env->CallObjectMethod(throwable, getMessage));
+    message = getUtfString(env, jMessage);
+    if (jMessage) {
+      env->DeleteLocalRef(jMessage);
+    }
+  }
+  env->DeleteLocalRef(throwableClass);
+  return message;
 }
 
 std::string toJsonString(facebook::jsi::Runtime &rt, const facebook::jsi::Value &value) {
@@ -817,7 +839,90 @@ void installModules(std::shared_ptr<RuntimeState> state) {
 
   facebook::jsi::Object modules(rt);
   modules.setProperty(rt, "call", callFn);
+  auto callSyncFn = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "callSync"), 3,
+      [weakState](Runtime &runtime, const Value &, const Value *args, size_t count) -> Value {
+        try {
+          auto state = weakState.lock();
+          if (!state) {
+            return Value::undefined();
+          }
+          if (count < 2 || !args[0].isString() || !args[1].isString()) {
+            throw facebook::jsi::JSError(runtime, "__modules.callSync requires module and method strings");
+          }
+
+          std::string moduleName = args[0].getString(runtime).utf8(runtime);
+          std::string methodName = args[1].getString(runtime).utf8(runtime);
+          std::string jsonPayload;
+          if (count >= 3) {
+            facebook::jsi::Value payload(runtime, args[2]);
+            jsonPayload = toJsonString(runtime, payload);
+          }
+
+          JniEnv env;
+          if (!env.valid()) {
+            throw facebook::jsi::JSError(runtime, "JNI environment unavailable for callSync");
+          }
+
+          jstring jModule = makeJString(env.get(), moduleName);
+          jstring jMethod = makeJString(env.get(), methodName);
+          jstring jArgs = jsonPayload.empty() ? nullptr : makeJString(env.get(), jsonPayload);
+          jobject result = env->CallObjectMethod(
+              state->modulesShim,
+              state->moduleMethods.callSync,
+              jModule,
+              jMethod,
+              jArgs);
+
+          if (jArgs) {
+            env->DeleteLocalRef(jArgs);
+          }
+
+          if (env->ExceptionCheck()) {
+            jthrowable throwable = env->ExceptionOccurred();
+            env->ExceptionClear();
+            std::string message = getThrowableMessage(env.get(), throwable);
+            if (throwable) {
+              env->DeleteLocalRef(throwable);
+            }
+            env->DeleteLocalRef(jModule);
+            env->DeleteLocalRef(jMethod);
+            throw facebook::jsi::JSError(runtime, message.empty() ? "Native sync call failed" : message);
+          }
+
+          std::string resultJson;
+          if (result) {
+            resultJson = getUtfString(env.get(), static_cast<jstring>(result));
+            env->DeleteLocalRef(result);
+          }
+
+          env->DeleteLocalRef(jModule);
+          env->DeleteLocalRef(jMethod);
+
+          if (resultJson.empty()) {
+            return Value::undefined();
+          }
+
+          try {
+            return parseJson(runtime, resultJson);
+          } catch (const facebook::jsi::JSError &error) {
+            RuneReportJSIError(runtime, error, "__modules.callSync");
+            throw;
+          } catch (const std::exception &ex) {
+            throw facebook::jsi::JSError(runtime, ex.what());
+          }
+        } catch (const facebook::jsi::JSError &error) {
+          RuneReportJSIError(runtime, error, "__modules.callSync");
+          throw;
+        } catch (const std::exception &ex) {
+          auto message = ex.what() ? ex.what() : "callSync failed";
+          throw facebook::jsi::JSError(runtime, message);
+        }
+      });
+
+  modules.setProperty(rt, "callSync", callSyncFn);
   rt.global().setProperty(rt, "__modules", modules);
+  rt.global().setProperty(rt, "__runeCallSync", callSyncFn);
 }
 
 void cleanupState(std::shared_ptr<RuntimeState> state) {
@@ -948,6 +1053,7 @@ void installBindings(
   state->uiMethods.flush = env->GetMethodID(state->uiClass, "flush", "()V");
 
   state->moduleMethods.invoke = env->GetMethodID(state->modulesClass, "invoke", "(Ljava/lang/String;Ljava/lang/String;[Ljava/lang/Object;I)V");
+  state->moduleMethods.callSync = env->GetMethodID(state->modulesClass, "callSync", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
 
   state->timerMethods.scheduleTimeout = env->GetMethodID(state->timerClass, "scheduleTimeout", "(IJ)V");
   state->timerMethods.clearTimeout = env->GetMethodID(state->timerClass, "clearTimeout", "(I)V");

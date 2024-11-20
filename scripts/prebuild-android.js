@@ -30,6 +30,10 @@ function main() {
     const bundleDest = path.join(assetsDir, "main.js");
     const hbcDest = path.join(assetsDir, "main.hbc");
 
+    if (!fs.existsSync(assetsDir)) {
+      fs.mkdirSync(assetsDir, { recursive: true });
+    }
+
     if (fs.existsSync(bundleSrc)) {
       fs.copyFileSync(bundleSrc, bundleDest);
       console.log(

@@ -10,6 +10,7 @@ export type RuneUIBridge = {
 
 export type RuneModulesBridge = {
   call(name: string, method: string, args: any): any;
+  callSync?: (name: string, method: string, args: any) => any;
 };
 
 declare global {

@@ -193,8 +193,8 @@ function devIOS(root, appDir) {
 
 function devAndroid(root, appDir) {
   const config = getAndroidConfig(root, appDir);
-  ensurePrebuild(root, appDir, 'android');
   ensureBundle(appDir);
+  ensurePrebuild(root, appDir, 'android');
   console.log('📦 Installing Android build...');
   const androidDir = path.join(appDir, 'android');
   runCommand('./gradlew', [':app:assembleDebug'], { cwd: androidDir });

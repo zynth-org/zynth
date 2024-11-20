@@ -3,6 +3,7 @@ package {{BUNDLE_ID}}
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import {{BUNDLE_ID}}.modules.DeviceModule
+import {{BUNDLE_ID}}.modules.EnvModule
 import com.rune.kit.core.RuneRootView
 import com.rune.kit.runtime.RuneRuntime
 
@@ -19,7 +20,7 @@ class MainActivity : AppCompatActivity() {
     setContentView(root)
 
     val runtime = RuneRuntime(root)
-    runtime.installModules(listOf(DeviceModule()))
+    runtime.installModules(listOf(DeviceModule(), EnvModule()))
 
     val code = assets.open("main.js").bufferedReader().use { it.readText() }
     runtime.load(code)

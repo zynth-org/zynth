@@ -3,6 +3,7 @@
 #import <hermes/hermes.h>
 #import <jsi/jsi.h>
 #import <dispatch/dispatch.h>
+#import <CoreFoundation/CoreFoundation.h>
 #import <objc/message.h>
 
 #if __has_include(<RuneKit/RuneKit-Swift.h>)
@@ -105,6 +106,133 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
       });
 
   return promiseCtor.callAsConstructor(rt, executor);
+}
+
+static bool SNNSNumberIsBool(NSNumber *number) {
+  return CFGetTypeID((__bridge CFTypeRef)number) == CFBooleanGetTypeID();
+}
+
+static id SNConvertJSIValueToNSObject(Runtime &rt, const Value &value);
+static Value SNConvertNSObjectToJSI(Runtime &rt, id object);
+
+static id SNConvertJSIObjectToNSDictionary(Runtime &rt, Object &&object) {
+  auto propertyNames = object.getPropertyNames(rt);
+  const size_t length = propertyNames.size(rt);
+  NSMutableDictionary *dictionary = [NSMutableDictionary dictionaryWithCapacity:length];
+
+  for (size_t i = 0; i < length; ++i) {
+    Value nameValue = propertyNames.getValueAtIndex(rt, i);
+    if (!nameValue.isString()) {
+      continue;
+    }
+    std::string keyStd = nameValue.getString(rt).utf8(rt);
+    NSString *key = [NSString stringWithUTF8String:keyStd.c_str()];
+    if (!key) {
+      continue;
+    }
+    Value propertyValue = object.getProperty(rt, keyStd.c_str());
+    id converted = SNConvertJSIValueToNSObject(rt, propertyValue);
+    if (!converted) {
+      converted = [NSNull null];
+    }
+    dictionary[key] = converted;
+  }
+
+  return [dictionary copy];
+}
+
+static id SNConvertJSIArrayToNSArray(Runtime &rt, Array &&array) {
+  const size_t length = array.size(rt);
+  NSMutableArray *result = [NSMutableArray arrayWithCapacity:length];
+
+  for (size_t i = 0; i < length; ++i) {
+    Value element = array.getValueAtIndex(rt, i);
+    id converted = SNConvertJSIValueToNSObject(rt, element);
+    [result addObject:converted ?: [NSNull null]];
+  }
+
+  return [result copy];
+}
+
+static id SNConvertJSIValueToNSObject(Runtime &rt, const Value &value) {
+  if (value.isUndefined()) {
+    return nil;
+  }
+  if (value.isNull()) {
+    return [NSNull null];
+  }
+  if (value.isBool()) {
+    return @(value.getBool());
+  }
+  if (value.isNumber()) {
+    return @(value.getNumber());
+  }
+  if (value.isString()) {
+    std::string str = value.getString(rt).utf8(rt);
+    return [NSString stringWithUTF8String:str.c_str()];
+  }
+  if (value.isObject()) {
+    auto object = value.asObject(rt);
+    if (object.isArray(rt)) {
+      return SNConvertJSIArrayToNSArray(rt, object.asArray(rt));
+    }
+    if (object.isFunction(rt)) {
+      return [NSNull null];
+    }
+    return SNConvertJSIObjectToNSDictionary(rt, std::move(object));
+  }
+
+  return [NSNull null];
+}
+
+static Value SNConvertNSObjectArrayToJSI(Runtime &rt, NSArray *array) {
+  Array jsArray(rt, array.count);
+  for (NSUInteger i = 0; i < array.count; ++i) {
+    Value converted = SNConvertNSObjectToJSI(rt, array[i]);
+    jsArray.setValueAtIndex(rt, i, std::move(converted));
+  }
+  return Value(rt, jsArray);
+}
+
+static Value SNConvertNSObjectDictionaryToJSI(Runtime &rt, NSDictionary *dictionary) {
+  Object jsObject(rt);
+  for (id key in dictionary) {
+    if (![key isKindOfClass:[NSString class]]) {
+      continue;
+    }
+    NSString *keyString = (NSString *)key;
+    Value converted = SNConvertNSObjectToJSI(rt, dictionary[key]);
+    jsObject.setProperty(rt, keyString.UTF8String, std::move(converted));
+  }
+  return Value(rt, jsObject);
+}
+
+static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
+  if (!object) {
+    return Value::undefined();
+  }
+  if (object == [NSNull null]) {
+    return Value::null();
+  }
+  if ([object isKindOfClass:[NSString class]]) {
+    NSString *string = (NSString *)object;
+    return Value(rt, String::createFromUtf8(rt, string.UTF8String ?: ""));
+  }
+  if ([object isKindOfClass:[NSNumber class]]) {
+    NSNumber *number = (NSNumber *)object;
+    if (SNNSNumberIsBool(number)) {
+      return Value(number.boolValue);
+    }
+    return Value(number.doubleValue);
+  }
+  if ([object isKindOfClass:[NSArray class]]) {
+    return SNConvertNSObjectArrayToJSI(rt, (NSArray *)object);
+  }
+  if ([object isKindOfClass:[NSDictionary class]]) {
+    return SNConvertNSObjectDictionaryToJSI(rt, (NSDictionary *)object);
+  }
+
+  return Value::undefined();
 }
 }
 
@@ -494,9 +622,60 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
         return Value::undefined();
       });
 
+  auto hostCallSync = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "callSync"), 3,
+      [host](Runtime &rt, const Value &, const Value *a, size_t count) -> Value {
+        try {
+          if (count < 2 || !a[0].isString() || !a[1].isString()) {
+            throw facebook::jsi::JSError(rt, "__modules.callSync requires module and method strings");
+          }
+
+          std::string module = a[0].getString(rt).utf8(rt);
+          std::string method = a[1].getString(rt).utf8(rt);
+          id argsObject = nil;
+
+          if (count > 2) {
+            argsObject = SNConvertJSIValueToNSObject(rt, a[2]);
+          }
+
+          if (!host.moduleCallSyncHandler) {
+            throw facebook::jsi::JSError(rt, "No synchronous module handler registered");
+          }
+
+          NSString *moduleName = [NSString stringWithUTF8String:module.c_str()];
+          if (!moduleName) {
+            moduleName = [NSString stringWithCString:module.c_str() encoding:NSUTF8StringEncoding];
+          }
+
+          NSString *methodName = [NSString stringWithUTF8String:method.c_str()];
+          if (!methodName) {
+            methodName = [NSString stringWithCString:method.c_str() encoding:NSUTF8StringEncoding];
+          }
+
+          NSError *nativeError = nil;
+          id result = host.moduleCallSyncHandler(moduleName ?: @"", methodName ?: @"", argsObject, &nativeError);
+
+          if (nativeError) {
+            NSString *errorMessage = nativeError.localizedDescription ?: @"Native sync call failed";
+            std::string message = errorMessage ? [errorMessage UTF8String] : "Native sync call failed";
+            throw facebook::jsi::JSError(rt, message);
+          }
+
+          return SNConvertNSObjectToJSI(rt, result);
+        } catch (const facebook::jsi::JSError &error) {
+          RuneReportJSIError(rt, error, "__modules.callSync");
+          throw;
+        } catch (const std::exception &ex) {
+          [host reportStdException:ex context:@"__modules.callSync"];
+          throw facebook::jsi::JSError(rt, ex.what());
+        }
+      });
+
   Object modules(rt);
   modules.setProperty(rt, "call", hostCall);
+  modules.setProperty(rt, "callSync", hostCallSync);
   rt.global().setProperty(rt, "__modules", modules);
+  rt.global().setProperty(rt, "__runeCallSync", hostCallSync);
 }
 
 - (void)installTimers {

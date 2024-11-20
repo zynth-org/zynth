@@ -283,6 +283,10 @@ class RuneRuntime(
     return registry.call(name, method, argsJson)
   }
 
+  private fun handleModuleCallSync(name: String, method: String, argsJson: String): String? {
+    return registry.callSync(name, method, argsJson)
+  }
+
   private fun dispatchHandler(id: Int, name: String) {
     Log.d("RuneUI", "dispatchHandler called for id=$id name=$name")
     val key = id to name
@@ -379,6 +383,12 @@ class RuneRuntime(
           hermes.rejectPromise(promiseId, t.message ?: "error")
         }
       }
+    }
+
+    override fun callSync(module: String, method: String, argsJson: String?): String? {
+      Log.d(TAG, "HermesModulesShim.callSync module=$module method=$method args=${argsJson?.length ?: 0}")
+      val payload = argsJson ?: "{}"
+      return handleModuleCallSync(module, method, payload)
     }
   }
 

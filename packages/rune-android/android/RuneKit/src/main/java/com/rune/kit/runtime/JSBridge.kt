@@ -39,6 +39,7 @@ object JSBridge {
 
   interface ModulesShim {
     fun invoke(module: String, method: String, args: Array<Any?>, promiseId: Int)
+    fun callSync(module: String, method: String, argsJson: String?): String?
   }
 
   interface TimerShim {

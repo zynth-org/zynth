@@ -8,27 +8,6 @@ This file tracks the necessary core platform enhancements to ensure the iOS SDK 
 
 ## 1. Bridge & Interoperability Enhancements
 
-### ☐ Synchronous Native Method Invocation
-
-**Why:** The current `__modules.call` is async-only. Some native values (e.g., device constants) are needed synchronously by JS at startup without the overhead of a `Promise`.
-
-**Files Involved:**
-
-- `RuneKit/Hermes/HermesRuntimeHost.mm`
-- `RuneKit/RuneModule.swift` (or a new protocol)
-
-**Implementation Steps:**
-
-1.  **Define a Sync Module Protocol:** In Swift, create a new protocol (e.g., `RuneSyncModule`) with a method like `callSync(method: String, args: [Any]?) -> Any?`. Native modules that need to expose synchronous methods will conform to this.
-2.  **Create `__modules.callSync`:** In `HermesRuntimeHost.mm`, create a new JSI host function `__modules.callSync`.
-3.  **Implement Sync Logic:** This function will:
-    - Parse the module and method name from JS arguments.
-    - Find the corresponding native module instance.
-    - Check if it conforms to `RuneSyncModule`.
-    - If it does, invoke its `callSync` method **on the current JS thread**.
-    - Convert the returned `Any?` value from Swift into a `jsi::Value` (e.g., string, number, boolean) and return it directly.
-    - Throw a JSI exception if the module/method doesn't exist, doesn't support sync calls, or if the native method throws an error.
-
 ### ☐ Native-to-JS Event Emitter
 
 **Why:** The framework needs a standard way for native code to send events to JS listeners (e.g., device orientation changes, keyboard visibility).

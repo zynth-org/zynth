@@ -5,6 +5,10 @@ interface RuneModule {
   fun call(method: String, argsJson: String): String
 }
 
+interface RuneSyncModule {
+  fun callSync(method: String, argsJson: String): String?
+}
+
 class RuneModuleRegistry {
   private val modules = mutableMapOf<String, RuneModule>()
 
@@ -19,5 +23,16 @@ class RuneModuleRegistry {
     } catch (t: Throwable) {
       "{\"error\":\"exception\",\"message\":\"${t.message ?: "unknown"}\"}"
     }
+  }
+
+  fun callSync(name: String, method: String, argsJson: String): String? {
+    val module = modules[name]
+      ?: throw IllegalStateException("Module $name not found")
+
+    if (module !is RuneSyncModule) {
+      throw UnsupportedOperationException("Module $name does not support synchronous method $method")
+    }
+
+    return module.callSync(method, argsJson)
   }
 }

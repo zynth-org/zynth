@@ -6,26 +6,6 @@ This file tracks the necessary core platform enhancements to ensure the Android 
 
 ## 1. Bridge & Interoperability Enhancements
 
-### ☐ Synchronous Native Method Invocation
-
-**Why:** The current `__modules.call` is async-only. Some native values (e.g., device constants) are needed synchronously by JS at startup without the overhead of a `Promise`.
-
-**Files Involved:**
-
-- `src/main/cpp/Bridge.cpp`
-- `src/main/java/com/sonnatas/rune/HermesModulesShim.kt`
-
-**Implementation Steps:**
-
-1.  **Define a Sync Interface:** In `HermesModulesShim.kt`, define a new interface (e.g., `RuneSyncModule`) with a method like `callSync(method: String, args: String?): String?`. Native modules that need to expose synchronous methods will implement this.
-2.  **Create `__modules.callSync`:** In `Bridge.cpp`, create a new JSI host function `__modules.callSync` within the `installModules` function.
-3.  **Implement Sync Logic:** This function will:
-    - Parse the module and method name from JS arguments.
-    - Call a new JNI method on `HermesModulesShim` (e.g., `callSyncModule`).
-    - The Kotlin `callSyncModule` method will find the module, check if it implements `RuneSyncModule`, and invoke its `callSync` method **on the current JS thread**.
-    - The result is passed back through JNI to C++, converted to a `jsi::Value`, and returned directly.
-    - Throw a JSI exception if the module/method doesn't exist, doesn't support sync calls, or if the native method throws an error.
-
 ### ☐ Native-to-JS Event Emitter
 
 **Why:** The framework needs a standard way for native code to send events to JS listeners (e.g., device orientation changes, keyboard visibility).
