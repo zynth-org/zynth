@@ -13,6 +13,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)evaluateString:(NSString *)code;
 - (void)evaluateBytecode:(NSData *)data sourceURL:(NSString *)sourceURL;
 - (id)callGlobal:(NSString *)name args:(NSArray *)args;
+- (void)emitEventWithName:(NSString *)name body:(id _Nullable)body;
 
 @end
 

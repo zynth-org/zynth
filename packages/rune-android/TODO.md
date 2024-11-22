@@ -6,7 +6,7 @@ This file tracks the necessary core platform enhancements to ensure the Android 
 
 ## 1. Bridge & Interoperability Enhancements
 
-### ☐ Native-to-JS Event Emitter
+### ☑ Native-to-JS Event Emitter
 
 **Why:** The framework needs a standard way for native code to send events to JS listeners (e.g., device orientation changes, keyboard visibility).
 

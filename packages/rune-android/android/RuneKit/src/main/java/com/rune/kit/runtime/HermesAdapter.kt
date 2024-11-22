@@ -6,6 +6,8 @@ import android.os.HandlerThread
 import android.os.Looper
 import android.util.Log
 import java.util.concurrent.CountDownLatch
+import org.json.JSONArray
+import org.json.JSONObject
 
 class HermesAdapter(
   private val bridge: JSBridge = JSBridge,
@@ -55,6 +57,23 @@ class HermesAdapter(
     runOnJS {
       ensureRuntime()
       bridge.evaluateBytecode(runtimePtr, bytecode, sourceUrl)
+    }
+  }
+
+  fun emitEvent(name: String, body: Any?) {
+    if (destroyed || runtimePtr == 0L) return
+    val trimmedName = name.trim()
+    if (trimmedName.isEmpty()) return
+
+    runOnJS {
+      ensureRuntime()
+      val payloadJson = body?.let { encodePayload(it) }
+      try {
+        bridge.emitEvent(runtimePtr, trimmedName, payloadJson)
+      } catch (t: Throwable) {
+        Log.e(TAG, "emitEvent($trimmedName) failed", t)
+        onException?.invoke(t.toJsRuntimeException())
+      }
     }
   }
 
@@ -213,6 +232,18 @@ class HermesAdapter(
   private fun Throwable.toJsRuntimeException(): JsRuntimeException {
     val text = message ?: toString()
     return JsRuntimeException(text, stackTraceToString())
+  }
+
+  private fun encodePayload(value: Any?): String? {
+    if (value == null) return null
+    return when (value) {
+      is String -> value
+      is Map<*, *> -> JSONObject(value).toString()
+      is List<*> -> JSONArray(value).toString()
+      is Array<*> -> JSONArray(value).toString()
+      is Number, is Boolean -> JSONObject.wrap(value)?.toString() ?: value.toString()
+      else -> JSONObject.wrap(value)?.toString() ?: value.toString()
+    }
   }
 
   companion object {

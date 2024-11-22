@@ -678,6 +678,62 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
   rt.global().setProperty(rt, "__runeCallSync", hostCallSync);
 }
 
+- (void)emitEventWithName:(NSString *)name body:(id)body {
+  if (name.length == 0) {
+    return;
+  }
+
+  HermesRuntimeHost *host = self;
+  NSString *eventName = [name copy];
+  id payload = body;
+
+  dispatch_async(_jsQueue, ^{
+    HermesRuntimeHost *strongHost = host;
+    if (!strongHost || !strongHost->_rt) {
+      return;
+    }
+
+    auto &rt = *strongHost->_rt;
+
+    try {
+      auto global = rt.global();
+      if (!global.hasProperty(rt, "RuneNativeEmitter")) {
+        NSLog(@"[Hermes] RuneNativeEmitter missing when emitting %@", eventName);
+        return;
+      }
+
+      auto emitterValue = global.getProperty(rt, "RuneNativeEmitter");
+      if (!emitterValue.isObject()) {
+        NSLog(@"[Hermes] RuneNativeEmitter is not an object when emitting %@", eventName);
+        return;
+      }
+
+      auto emitterObj = emitterValue.asObject(rt);
+      if (!emitterObj.hasProperty(rt, "emit")) {
+        NSLog(@"[Hermes] RuneNativeEmitter.emit missing for event %@", eventName);
+        return;
+      }
+
+      auto emitValue = emitterObj.getProperty(rt, "emit");
+      if (!emitValue.isObject() || !emitValue.asObject(rt).isFunction(rt)) {
+        NSLog(@"[Hermes] RuneNativeEmitter.emit is not a function for event %@", eventName);
+        return;
+      }
+
+      auto emitFn = emitValue.asObject(rt).asFunction(rt);
+      std::string eventNameStd(eventName.UTF8String ?: "");
+      Value args[2];
+      args[0] = Value(rt, String::createFromUtf8(rt, eventNameStd));
+      args[1] = payload ? SNConvertNSObjectToJSI(rt, payload) : Value::undefined();
+      SNCallJSFunction(emitFn, rt, args, 2);
+    } catch (const facebook::jsi::JSError &error) {
+      RuneReportJSIError(rt, error, "RuneNativeEmitter.emit");
+    } catch (const std::exception &ex) {
+      [strongHost reportStdException:ex context:@"RuneNativeEmitter.emit"];
+    }
+  });
+}
+
 - (void)installTimers {
   auto &rt = *_rt;
   HermesRuntimeHost *host = self;

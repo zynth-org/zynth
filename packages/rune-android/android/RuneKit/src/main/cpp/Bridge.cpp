@@ -208,6 +208,15 @@ facebook::jsi::Value parseJson(facebook::jsi::Runtime &rt, const std::string &js
   return parse.call(rt, arg);
 }
 
+inline void CallJSFunction(facebook::jsi::Function &fn,
+                           facebook::jsi::Runtime &rt,
+                           const facebook::jsi::Value *args,
+                           size_t count) {
+  const auto callPtr = static_cast<facebook::jsi::Value (facebook::jsi::Function::*)(
+      facebook::jsi::Runtime &, const facebook::jsi::Value *, size_t) const>(&facebook::jsi::Function::call);
+  (fn.*callPtr)(rt, args, count);
+}
+
 void reportJsError(
     const std::shared_ptr<RuntimeState> &state,
     const std::string &message,
@@ -1308,6 +1317,67 @@ void rejectPromise(facebook::hermes::HermesRuntime *runtime, int promiseId, cons
     if (state) {
       reportJsError(state, ex.what(), "");
     }
+  }
+}
+
+void emitEvent(
+    facebook::hermes::HermesRuntime *runtime,
+    const std::string &eventName,
+    const std::string &payloadJson) {
+  if (!runtime) {
+    return;
+  }
+
+  auto state = getState(runtime);
+  if (!state) {
+    BRIDGE_LOG(ANDROID_LOG_WARN, "emitEvent called with missing state");
+    return;
+  }
+
+  using namespace facebook::jsi;
+  auto &rt = *runtime;
+
+  try {
+    auto global = rt.global();
+    if (!global.hasProperty(rt, "RuneNativeEmitter")) {
+      BRIDGE_LOG(ANDROID_LOG_WARN, "RuneNativeEmitter missing when emitting %s", eventName.c_str());
+      return;
+    }
+
+    auto emitterValue = global.getProperty(rt, "RuneNativeEmitter");
+    if (!emitterValue.isObject()) {
+      BRIDGE_LOG(ANDROID_LOG_WARN, "RuneNativeEmitter is not an object for event %s", eventName.c_str());
+      return;
+    }
+
+    auto emitterObj = emitterValue.asObject(rt);
+    if (!emitterObj.hasProperty(rt, "emit")) {
+      BRIDGE_LOG(ANDROID_LOG_WARN, "RuneNativeEmitter.emit missing for event %s", eventName.c_str());
+      return;
+    }
+
+    auto emitValue = emitterObj.getProperty(rt, "emit");
+    if (!emitValue.isObject()) {
+      BRIDGE_LOG(ANDROID_LOG_WARN, "RuneNativeEmitter.emit is not callable for event %s", eventName.c_str());
+      return;
+    }
+
+    auto emitFn = emitValue.asObject(rt).asFunction(rt);
+    Value args[2];
+    args[0] = Value(rt, String::createFromUtf8(rt, eventName));
+    if (payloadJson.empty()) {
+      args[1] = Value::undefined();
+    } else {
+      args[1] = parseJson(rt, payloadJson);
+    }
+
+  CallJSFunction(emitFn, rt, args, 2);
+  } catch (const facebook::jsi::JSError &err) {
+    BRIDGE_LOG(ANDROID_LOG_ERROR, "emitEvent JSI error: %s", err.getMessage().c_str());
+    reportJsError(state, err.getMessage(), err.getStack());
+  } catch (const std::exception &ex) {
+    BRIDGE_LOG(ANDROID_LOG_ERROR, "emitEvent exception: %s", ex.what());
+    reportJsError(state, ex.what(), "");
   }
 }
 

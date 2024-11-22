@@ -25,6 +25,7 @@ object JSBridge {
   external fun resolvePromise(runtimePtr: Long, promiseId: Int, payloadJson: String?)
   external fun rejectPromise(runtimePtr: Long, promiseId: Int, errorMessage: String?)
   external fun invokeHandler(runtimePtr: Long, handlerId: Long, nodeId: Int, event: String)
+  external fun emitEvent(runtimePtr: Long, name: String, payloadJson: String?)
 
   interface UIShim {
     fun createNode(type: String): Int

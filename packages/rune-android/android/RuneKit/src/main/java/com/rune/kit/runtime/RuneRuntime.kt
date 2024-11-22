@@ -62,6 +62,13 @@ class RuneRuntime(
     adapter.callGlobalAsync("__startApp", arrayOf(rootId))
   }
 
+  fun emitEvent(name: String, payload: Any?) {
+    when (val runtimeAdapter = adapter) {
+      is HermesAdapter -> runtimeAdapter.emitEvent(name, payload)
+      else -> runtimeAdapter.callGlobalAsync("RuneNativeEmitter.emit", arrayOf(name, payload))
+    }
+  }
+
   fun destroy() {
     moduleExecutor.shutdownNow()
     if (adapter is HermesAdapter) {

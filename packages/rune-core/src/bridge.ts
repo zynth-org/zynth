@@ -1,3 +1,5 @@
+import type { RuneNativeEmitterBridge } from "./nativeEmitter";
+
 export type RuneUIBridge = {
   createNode(type: string): number;
   setProp(id: number, name: string, value: any): void;
@@ -17,4 +19,5 @@ declare global {
   var __ui: RuneUIBridge;
   var __modules: RuneModulesBridge;
   var __startApp: (rootId: number) => void;
+  var RuneNativeEmitter: RuneNativeEmitterBridge;
 }

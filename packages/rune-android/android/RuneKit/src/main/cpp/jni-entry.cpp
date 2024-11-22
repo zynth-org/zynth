@@ -37,6 +37,7 @@ void onTimerFired(facebook::hermes::HermesRuntime *runtime, int timerId);
 void resolvePromise(facebook::hermes::HermesRuntime *runtime, int promiseId, const std::string &payloadJson);
 void rejectPromise(facebook::hermes::HermesRuntime *runtime, int promiseId, const std::string &message);
 void invokeHandler(facebook::hermes::HermesRuntime *runtime, long handlerId, int nodeId, const std::string &event);
+void emitEvent(facebook::hermes::HermesRuntime *runtime, const std::string &eventName, const std::string &payloadJson);
 
 namespace {
 constexpr const char *kTag = "RuneKitNative";
@@ -167,6 +168,20 @@ Java_com_rune_kit_runtime_JSBridge_rejectPromise(
     jstring message) {
   auto *runtime = rune::kit::fromPtr(runtimePtr);
   rune::kit::rejectPromise(runtime, promiseId, ::toStdString(env, message));
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_rune_kit_runtime_JSBridge_emitEvent(
+    JNIEnv *env,
+    jclass,
+    jlong runtimePtr,
+    jstring eventName,
+    jstring payloadJson) {
+  auto *runtime = rune::kit::fromPtr(runtimePtr);
+  if (!runtime) {
+    return;
+  }
+  rune::kit::emitEvent(runtime, ::toStdString(env, eventName), ::toStdString(env, payloadJson));
 }
 
 extern "C" JNIEXPORT void JNICALL

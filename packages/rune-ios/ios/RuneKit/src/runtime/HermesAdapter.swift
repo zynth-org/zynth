@@ -68,6 +68,10 @@ public final class HermesAdapter: JSRuntimeAdapter {
     evaluate(bytecode: data, sourceURL: url.lastPathComponent)
   }
 
+  public func emitEvent(name: String, body: Any?) {
+    host.emitEvent(withName: name, body: body)
+  }
+
   public func callGlobal(_ name: String, args: [Any]) -> Any? {
     host.callGlobal(name, args: args)
     return nil

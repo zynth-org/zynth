@@ -1,7 +1,10 @@
 import type { Host, HostNode, Style } from "./HostTypes";
 import type { RuneUIBridge } from "../bridge";
+import { ensureNativeEmitter } from "../nativeEmitter";
 
 export function createIOSHost(): Host {
+  ensureNativeEmitter();
+
   const g: any =
     typeof globalThis !== "undefined"
       ? globalThis
