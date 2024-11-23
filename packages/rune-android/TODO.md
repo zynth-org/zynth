@@ -24,7 +24,7 @@ This file tracks the necessary core platform enhancements to ensure the Android 
 4.  **Invoke JS Callback:** The `Runnable` will execute on the JS thread and call a global JS function (e.g., `global.RuneNativeEmitter.emit(eventName, body)`).
 5.  **Create JS Emitter:** In the core JS package, create a `NativeEventEmitter` class that defines `global.RuneNativeEmitter` and provides `addListener(eventName, callback)` and `removeListener` methods for app developers to use.
 
-### ☐ Efficient Binary Data Transfer (`ArrayBuffer`)
+### ☑ Efficient Binary Data Transfer (`ArrayBuffer`)
 
 **Why:** Passing large binary data (images, files) as base64-encoded JSON strings is inefficient. The bridge should support direct `ArrayBuffer` access.
 
