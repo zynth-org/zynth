@@ -5,6 +5,8 @@ import org.json.JSONObject
 interface RuneModule {
     val name: String
     fun call(method: String, args: Array<Any?>): JSONObject
+    fun initialize() {}
+    fun invalidate() {}
 }
 
 interface RuneSyncModule {
@@ -16,6 +18,12 @@ class RuneModuleRegistry {
 
     fun register(module: RuneModule) {
         modules[module.name] = module
+        module.initialize()
+    }
+
+    fun destroy() {
+        modules.values.forEach { it.invalidate() }
+        modules.clear()
     }
 
     fun call(name: String, method: String, args: Array<Any?>): JSONObject {

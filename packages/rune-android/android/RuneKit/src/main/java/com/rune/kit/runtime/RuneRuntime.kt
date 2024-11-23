@@ -70,6 +70,7 @@ class RuneRuntime(
   }
 
   fun destroy() {
+    registry.destroy()
     moduleExecutor.shutdownNow()
     if (adapter is HermesAdapter) {
       adapter.destroy()
