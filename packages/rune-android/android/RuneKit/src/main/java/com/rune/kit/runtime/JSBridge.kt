@@ -40,7 +40,12 @@ object JSBridge {
 
   interface ModulesShim {
     fun invoke(module: String, method: String, args: Array<Any?>, promiseId: Int)
-    fun callSync(module: String, method: String, argsJson: String?): String?
+    fun callSync(module: String, method: String, args: Array<Any?>): Any?
+
+    @Deprecated("Use callSync with Array<Any?> instead")
+    fun callSync(module: String, method: String, argsJson: String?): String? {
+      throw UnsupportedOperationException("JSON-based callSync is deprecated")
+    }
   }
 
   interface TimerShim {

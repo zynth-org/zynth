@@ -263,10 +263,10 @@ class RuneRuntime(
     adapter.setGlobalFunction("__modules_call") { args ->
       val name = args.stringAt(0) ?: return@setGlobalFunction mapOf("error" to "bad_args")
       val method = args.stringAt(1) ?: return@setGlobalFunction mapOf("error" to "bad_args")
-      val payload = args.stringAt(2) ?: "{}"
+      val payload = arrayOf(args.getOrNull(2))
       val result = handleModuleCall(name, method, payload)
-      if (result.isBlank()) return@setGlobalFunction emptyMap<String, Any?>()
-      rhino.parseJson(result) ?: emptyMap<String, Any?>()
+      if (result.length() == 0) return@setGlobalFunction emptyMap<String, Any?>()
+      rhino.parseJson(result.toString()) ?: emptyMap<String, Any?>()
     }
     adapter.evaluate("globalThis.__modules = { call: __modules_call };")
   }
@@ -279,19 +279,19 @@ class RuneRuntime(
         "call" to call@{ argv: Array<Any?> ->
           val name = argv.firstOrNull() as? String ?: return@call mapOf("error" to "bad_args")
           val method = argv.getOrNull(1) as? String ?: return@call mapOf("error" to "bad_args")
-          val argsJson = toJsonString(argv.getOrNull(2))
-          parseJson(handleModuleCall(name, method, argsJson))
+          val args = arrayOf(argv.getOrNull(2))
+          parseJson(handleModuleCall(name, method, args).toString())
         },
       ),
     )
   }
 
-  private fun handleModuleCall(name: String, method: String, argsJson: String): String {
-    return registry.call(name, method, argsJson)
+  private fun handleModuleCall(name: String, method: String, args: Array<Any?>): JSONObject {
+    return registry.call(name, method, args)
   }
 
-  private fun handleModuleCallSync(name: String, method: String, argsJson: String): String? {
-    return registry.callSync(name, method, argsJson)
+  private fun handleModuleCallSync(name: String, method: String, args: Array<Any?>): Any? {
+    return registry.callSync(name, method, args)
   }
 
   private fun dispatchHandler(id: Int, name: String) {
@@ -379,12 +379,9 @@ class RuneRuntime(
       Log.d(TAG, "HermesModulesShim.invoke module=$module method=$method argsCount=${args.size} promiseId=$promiseId")
       moduleExecutor.execute {
         try {
-          val argsPayload = args.firstOrNull()
-          val argsJson = toJsonString(argsPayload)
-          Log.d(TAG, "HermesModulesShim payloadLen=${argsJson.length} for $module.$method")
-          val result = handleModuleCall(module, method, argsJson)
-          Log.d(TAG, "HermesModulesShim.resolve promiseId=$promiseId resultLen=${result.length}")
-          hermes.resolvePromise(promiseId, result)
+          val result = handleModuleCall(module, method, args)
+          Log.d(TAG, "HermesModulesShim.resolve promiseId=$promiseId resultLen=${result.length()}")
+          hermes.resolvePromise(promiseId, result.toString())
         } catch (t: Throwable) {
           Log.e(TAG, "HermesModulesShim.reject promiseId=$promiseId: ${t.message}")
           hermes.rejectPromise(promiseId, t.message ?: "error")
@@ -392,10 +389,9 @@ class RuneRuntime(
       }
     }
 
-    override fun callSync(module: String, method: String, argsJson: String?): String? {
-      Log.d(TAG, "HermesModulesShim.callSync module=$module method=$method args=${argsJson?.length ?: 0}")
-      val payload = argsJson ?: "{}"
-      return handleModuleCallSync(module, method, payload)
+    override fun callSync(module: String, method: String, args: Array<Any?>): Any? {
+      Log.d(TAG, "HermesModulesShim.callSync module=$module method=$method args=${args.size}")
+      return handleModuleCallSync(module, method, args)
     }
   }
 

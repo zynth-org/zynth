@@ -331,26 +331,18 @@ facebook::jsi::Value javaObjectToJsValue(
     jclass classString) {
   using namespace facebook::jsi;
   if (!value) {
-    BRIDGE_LOG(ANDROID_LOG_INFO, "javaObjectToJsValue: null object");
     return Value::null();
   }
   if (env->IsInstanceOf(value, classInteger)) {
-    BRIDGE_LOG(ANDROID_LOG_INFO, "javaObjectToJsValue: Converting Integer");
     jint v = env->CallIntMethod(value, integerValue);
-    logJniException(env, "Integer.intValue");
-    BRIDGE_LOG(ANDROID_LOG_INFO, "javaObjectToJsValue: Integer value = %d", v);
-    Value result = Value(static_cast<double>(v));
-    BRIDGE_LOG(ANDROID_LOG_INFO, "javaObjectToJsValue: Created JS Value, isNumber = %s", result.isNumber() ? "true" : "false");
-    return result;
+    return Value(static_cast<double>(v));
   }
   if (env->IsInstanceOf(value, classDouble)) {
     jdouble v = env->CallDoubleMethod(value, doubleValue);
-    logJniException(env, "Double.doubleValue");
     return Value(static_cast<double>(v));
   }
   if (env->IsInstanceOf(value, classBoolean)) {
     jboolean v = env->CallBooleanMethod(value, booleanValue);
-    logJniException(env, "Boolean.booleanValue");
     return Value(static_cast<bool>(v == JNI_TRUE));
   }
   if (env->IsInstanceOf(value, classString)) {
@@ -358,6 +350,19 @@ facebook::jsi::Value javaObjectToJsValue(
     std::string utf = getUtfString(env, js);
     return Value(facebook::jsi::String::createFromUtf8(rt, utf));
   }
+  jclass byteBufferClass = env->FindClass("java/nio/ByteBuffer");
+  if (env->IsInstanceOf(value, byteBufferClass)) {
+    auto buffer = static_cast<uint8_t*>(env->GetDirectBufferAddress(value));
+    auto capacity = env->GetDirectBufferCapacity(value);
+    auto arrayBuffer = rt.global()
+      .getPropertyAsFunction(rt, "ArrayBuffer")
+      .callAsConstructor(rt, {Value(static_cast<double>(capacity))})
+      .getObject(rt)
+      .getArrayBuffer(rt);
+    memcpy(arrayBuffer.data(rt), buffer, capacity);
+    return arrayBuffer;
+  }
+
   BRIDGE_LOG(ANDROID_LOG_WARN, "javaObjectToJsValue: Unknown type, returning undefined");
   return Value::undefined();
 }
@@ -783,6 +788,74 @@ void installTimers(std::shared_ptr<RuntimeState> state) {
   rt.global().setProperty(rt, "__hostClearTimeout", hostClearTimeoutFn);
 }
 
+jobject jsiValueToJObject(facebook::jsi::Runtime &rt, JNIEnv *env, const facebook::jsi::Value &value);
+
+jobjectArray jsiArrayToJObjectArray(facebook::jsi::Runtime &rt, JNIEnv *env, const facebook::jsi::Array &array) {
+    jsize size = array.size(rt);
+    jclass objectClass = env->FindClass("java/lang/Object");
+    jobjectArray objArray = env->NewObjectArray(size, objectClass, nullptr);
+    for (jsize i = 0; i < size; ++i) {
+        jobject element = jsiValueToJObject(rt, env, array.getValueAtIndex(rt, i));
+        env->SetObjectArrayElement(objArray, i, element);
+        env->DeleteLocalRef(element);
+    }
+    return objArray;
+}
+
+jobject jsiObjectToJObjectMap(facebook::jsi::Runtime &rt, JNIEnv *env, const facebook::jsi::Object &obj) {
+    jclass mapClass = env->FindClass("java/util/HashMap");
+    jmethodID mapConstructor = env->GetMethodID(mapClass, "<init>", "()V");
+    jobject map = env->NewObject(mapClass, mapConstructor);
+    jmethodID putMethod = env->GetMethodID(mapClass, "put", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
+
+    facebook::jsi::Array propertyNames = obj.getPropertyNames(rt);
+    size_t size = propertyNames.size(rt);
+    for (size_t i = 0; i < size; ++i) {
+        facebook::jsi::String propName = propertyNames.getValueAtIndex(rt, i).toString(rt);
+        jstring key = env->NewStringUTF(propName.utf8(rt).c_str());
+        jobject value = jsiValueToJObject(rt, env, obj.getProperty(rt, propName));
+        env->CallObjectMethod(map, putMethod, key, value);
+        env->DeleteLocalRef(key);
+        env->DeleteLocalRef(value);
+    }
+    return map;
+}
+
+jobject jsiValueToJObject(facebook::jsi::Runtime &rt, JNIEnv *env, const facebook::jsi::Value &value) {
+    if (value.isUndefined() || value.isNull()) {
+        return nullptr;
+    }
+    if (value.isBool()) {
+        jclass booleanClass = env->FindClass("java/lang/Boolean");
+        jmethodID constructor = env->GetMethodID(booleanClass, "<init>", "(Z)V");
+        return env->NewObject(booleanClass, constructor, value.getBool());
+    }
+    if (value.isNumber()) {
+        jclass doubleClass = env->FindClass("java/lang/Double");
+        jmethodID constructor = env->GetMethodID(doubleClass, "<init>", "(D)V");
+        return env->NewObject(doubleClass, constructor, value.getNumber());
+    }
+    if (value.isString()) {
+        return env->NewStringUTF(value.getString(rt).utf8(rt).c_str());
+    }
+    if (value.isObject()) {
+        auto obj = value.getObject(rt);
+        if (obj.isArrayBuffer(rt)) {
+            auto arrayBuffer = obj.getArrayBuffer(rt);
+            return env->NewDirectByteBuffer(const_cast<uint8_t*>(arrayBuffer.data(rt)), arrayBuffer.size(rt));
+        }
+        if (obj.isArray(rt)) {
+            return jsiArrayToJObjectArray(rt, env, obj.getArray(rt));
+        }
+        if (obj.isFunction(rt)) {
+            // Functions are not supported
+            return nullptr;
+        }
+        return jsiObjectToJObjectMap(rt, env, obj);
+    }
+    return nullptr;
+}
+
 void installModules(std::shared_ptr<RuntimeState> state) {
   using namespace facebook::jsi;
   auto weakState = std::weak_ptr<RuntimeState>(state);
@@ -799,11 +872,16 @@ void installModules(std::shared_ptr<RuntimeState> state) {
         }
         std::string moduleName = args[0].getString(runtime).utf8(runtime);
         std::string methodName = args[1].getString(runtime).utf8(runtime);
-        facebook::jsi::Value payload = count >= 3 ? facebook::jsi::Value(runtime, args[2]) : facebook::jsi::Value::undefined();
-        std::string jsonPayload = toJsonString(runtime, payload);
-        BRIDGE_LOG(ANDROID_LOG_INFO, "__modules.call(%s, %s) payloadLen=%zu", moduleName.c_str(), methodName.c_str(), jsonPayload.size());
 
-        return makePromise(runtime, [weakState, moduleName, methodName, jsonPayload](Function &&resolve, Function &&reject) {
+        auto capturedArgs = std::make_shared<std::vector<Value>>();
+        if (count > 2) {
+            capturedArgs->reserve(count - 2);
+            for (size_t i = 2; i < count; ++i) {
+                capturedArgs->emplace_back(runtime, args[i]);
+            }
+        }
+
+        return makePromise(runtime, [weakState, moduleName, methodName, capturedArgs](Function &&resolve, Function &&reject) {
           if (auto state = weakState.lock()) {
             int promiseId;
             {
@@ -820,24 +898,15 @@ void installModules(std::shared_ptr<RuntimeState> state) {
             jstring jModule = makeJString(env.get(), moduleName);
             jstring jMethod = makeJString(env.get(), methodName);
             jclass objectClass = env->FindClass("java/lang/Object");
-            if (!objectClass) {
-              logJniException(env.get(), "FindClass java/lang/Object");
-              env->DeleteLocalRef(jModule);
-              env->DeleteLocalRef(jMethod);
-              return;
+
+            jobjectArray argsArray = env->NewObjectArray(capturedArgs->size(), objectClass, nullptr);
+            for (size_t i = 0; i < capturedArgs->size(); ++i) {
+                jobject jniArg = jsiValueToJObject(*state->runtime, env.get(), (*capturedArgs)[i]);
+                env->SetObjectArrayElement(argsArray, i, jniArg);
+                env->DeleteLocalRef(jniArg);
             }
-            jobjectArray argsArray = env->NewObjectArray(1, objectClass, nullptr);
-            env->DeleteLocalRef(objectClass);
-            if (!argsArray) {
-              logJniException(env.get(), "NewObjectArray args");
-              env->DeleteLocalRef(jModule);
-              env->DeleteLocalRef(jMethod);
-              return;
-            }
-            jstring jPayload = makeJString(env.get(), jsonPayload);
-            env->SetObjectArrayElement(argsArray, 0, jPayload);
+
             env->CallVoidMethod(state->modulesShim, state->moduleMethods.invoke, jModule, jMethod, argsArray, promiseId);
-            env->DeleteLocalRef(jPayload);
             env->DeleteLocalRef(argsArray);
             env->DeleteLocalRef(jModule);
             env->DeleteLocalRef(jMethod);
@@ -846,92 +915,78 @@ void installModules(std::shared_ptr<RuntimeState> state) {
         });
       });
 
-  facebook::jsi::Object modules(rt);
-  modules.setProperty(rt, "call", callFn);
-  auto callSyncFn = Function::createFromHostFunction(
-      rt, PropNameID::forAscii(rt, "callSync"), 3,
-      [weakState](Runtime &runtime, const Value &, const Value *args, size_t count) -> Value {
-        try {
-          auto state = weakState.lock();
-          if (!state) {
-            return Value::undefined();
-          }
-          if (count < 2 || !args[0].isString() || !args[1].isString()) {
-            throw facebook::jsi::JSError(runtime, "__modules.callSync requires module and method strings");
-          }
+    facebook::jsi::Object modules(rt);
+    modules.setProperty(rt, "call", callFn);
+    auto callSyncFn = Function::createFromHostFunction(
+        rt, PropNameID::forAscii(rt, "callSync"), 3,
+        [weakState](Runtime &runtime, const Value &, const Value *args, size_t count) -> Value {
+            try {
+                auto state = weakState.lock();
+                if (!state) {
+                    return Value::undefined();
+                }
+                if (count < 2 || !args[0].isString() || !args[1].isString()) {
+                    throw facebook::jsi::JSError(runtime, "__modules.callSync requires module and method strings");
+                }
 
-          std::string moduleName = args[0].getString(runtime).utf8(runtime);
-          std::string methodName = args[1].getString(runtime).utf8(runtime);
-          std::string jsonPayload;
-          if (count >= 3) {
-            facebook::jsi::Value payload(runtime, args[2]);
-            jsonPayload = toJsonString(runtime, payload);
-          }
+                std::string moduleName = args[0].getString(runtime).utf8(runtime);
+                std::string methodName = args[1].getString(runtime).utf8(runtime);
 
-          JniEnv env;
-          if (!env.valid()) {
-            throw facebook::jsi::JSError(runtime, "JNI environment unavailable for callSync");
-          }
+                JniEnv env;
+                if (!env.valid()) {
+                    throw facebook::jsi::JSError(runtime, "JNI environment unavailable for callSync");
+                }
 
-          jstring jModule = makeJString(env.get(), moduleName);
-          jstring jMethod = makeJString(env.get(), methodName);
-          jstring jArgs = jsonPayload.empty() ? nullptr : makeJString(env.get(), jsonPayload);
-          jobject result = env->CallObjectMethod(
-              state->modulesShim,
-              state->moduleMethods.callSync,
-              jModule,
-              jMethod,
-              jArgs);
+                jstring jModule = makeJString(env.get(), moduleName);
+                jstring jMethod = makeJString(env.get(), methodName);
 
-          if (jArgs) {
-            env->DeleteLocalRef(jArgs);
-          }
+                jclass objectClass = env->FindClass("java/lang/Object");
+                jobjectArray argsArray = env->NewObjectArray(count > 2 ? 1 : 0, objectClass, nullptr);
+                if (count > 2) {
+                    jobject jniArg = jsiValueToJObject(runtime, env.get(), args[2]);
+                    env->SetObjectArrayElement(argsArray, 0, jniArg);
+                    env->DeleteLocalRef(jniArg);
+                }
 
-          if (env->ExceptionCheck()) {
-            jthrowable throwable = env->ExceptionOccurred();
-            env->ExceptionClear();
-            std::string message = getThrowableMessage(env.get(), throwable);
-            if (throwable) {
-              env->DeleteLocalRef(throwable);
+                jobject result = env->CallObjectMethod(
+                    state->modulesShim,
+                    state->moduleMethods.callSync,
+                    jModule,
+                    jMethod,
+                    argsArray);
+
+                env->DeleteLocalRef(argsArray);
+
+                if (env->ExceptionCheck()) {
+                    jthrowable throwable = env->ExceptionOccurred();
+                    env->ExceptionClear();
+                    std::string message = getThrowableMessage(env.get(), throwable);
+                    if (throwable) {
+                        env->DeleteLocalRef(throwable);
+                    }
+                    env->DeleteLocalRef(jModule);
+                    env->DeleteLocalRef(jMethod);
+                    throw facebook::jsi::JSError(runtime, message.empty() ? "Native sync call failed" : message);
+                }
+
+                return javaObjectToJsValue(runtime, env.get(), result, 
+                    env->FindClass("java/lang/Integer"), env->GetMethodID(env->FindClass("java/lang/Integer"), "intValue", "()I"),
+                    env->FindClass("java/lang/Double"), env->GetMethodID(env->FindClass("java/lang/Double"), "doubleValue", "()D"),
+                    env->FindClass("java/lang/Boolean"), env->GetMethodID(env->FindClass("java/lang/Boolean"), "booleanValue", "()Z"),
+                    env->FindClass("java/lang/String"));
+
+            } catch (const facebook::jsi::JSError &error) {
+                RuneReportJSIError(runtime, error, "__modules.callSync");
+                throw;
+            } catch (const std::exception &ex) {
+                auto message = ex.what() ? ex.what() : "callSync failed";
+                throw facebook::jsi::JSError(runtime, message);
             }
-            env->DeleteLocalRef(jModule);
-            env->DeleteLocalRef(jMethod);
-            throw facebook::jsi::JSError(runtime, message.empty() ? "Native sync call failed" : message);
-          }
+        });
 
-          std::string resultJson;
-          if (result) {
-            resultJson = getUtfString(env.get(), static_cast<jstring>(result));
-            env->DeleteLocalRef(result);
-          }
-
-          env->DeleteLocalRef(jModule);
-          env->DeleteLocalRef(jMethod);
-
-          if (resultJson.empty()) {
-            return Value::undefined();
-          }
-
-          try {
-            return parseJson(runtime, resultJson);
-          } catch (const facebook::jsi::JSError &error) {
-            RuneReportJSIError(runtime, error, "__modules.callSync");
-            throw;
-          } catch (const std::exception &ex) {
-            throw facebook::jsi::JSError(runtime, ex.what());
-          }
-        } catch (const facebook::jsi::JSError &error) {
-          RuneReportJSIError(runtime, error, "__modules.callSync");
-          throw;
-        } catch (const std::exception &ex) {
-          auto message = ex.what() ? ex.what() : "callSync failed";
-          throw facebook::jsi::JSError(runtime, message);
-        }
-      });
-
-  modules.setProperty(rt, "callSync", callSyncFn);
-  rt.global().setProperty(rt, "__modules", modules);
-  rt.global().setProperty(rt, "__runeCallSync", callSyncFn);
+    modules.setProperty(rt, "callSync", callSyncFn);
+    rt.global().setProperty(rt, "__modules", modules);
+    rt.global().setProperty(rt, "__runeCallSync", callSyncFn);
 }
 
 void cleanupState(std::shared_ptr<RuntimeState> state) {
@@ -1062,7 +1117,7 @@ void installBindings(
   state->uiMethods.flush = env->GetMethodID(state->uiClass, "flush", "()V");
 
   state->moduleMethods.invoke = env->GetMethodID(state->modulesClass, "invoke", "(Ljava/lang/String;Ljava/lang/String;[Ljava/lang/Object;I)V");
-  state->moduleMethods.callSync = env->GetMethodID(state->modulesClass, "callSync", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
+  state->moduleMethods.callSync = env->GetMethodID(state->modulesClass, "callSync", "(Ljava/lang/String;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/Object;");
 
   state->timerMethods.scheduleTimeout = env->GetMethodID(state->timerClass, "scheduleTimeout", "(IJ)V");
   state->timerMethods.clearTimeout = env->GetMethodID(state->timerClass, "clearTimeout", "(I)V");
