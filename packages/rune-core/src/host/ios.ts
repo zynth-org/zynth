@@ -94,7 +94,9 @@ export function createIOSHost(): Host {
       PARENTS.set(id, null);
       CHILDREN.set(id, []);
       if (props?.style) ui.setProp(id, "style", props.style as Style);
-      if (props?.onPress) ui.setProp(id, "onPress", props.onPress);
+      if (typeof props?.onPress === "function") {
+        ui.setHandler(id, "onPress", props.onPress);
+      }
       schedule();
       return { id, type } as HostNode;
     },
@@ -108,9 +110,13 @@ export function createIOSHost(): Host {
       return { id, type: "text" };
     },
     setProperty(node, name, value) {
-      if (name === "style") ui.setProp(node.id, "style", value || {});
-      else if (name === "onPress") ui.setProp(node.id, "onPress", value);
-      else ui.setProp(node.id, name, value);
+      if (name === "style") {
+        ui.setProp(node.id, "style", value || {});
+      } else if (typeof value === "function") {
+        ui.setHandler(node.id, name, value);
+      } else {
+        ui.setProp(node.id, name, value);
+      }
       schedule();
     },
     setText(node, value) {

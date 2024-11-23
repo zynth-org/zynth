@@ -4,7 +4,8 @@ import UIKit
 
 public typealias RuneUIManager = SNUIManager
 
-public final class RuneRuntime {
+@objcMembers
+public final class RuneRuntime: NSObject {
   let runtime: JSRuntimeAdapter
   let manager: RuneUIManager
   let registry = RuneModuleRegistry()
@@ -18,7 +19,12 @@ public final class RuneRuntime {
       self.runtime = HermesAdapter(uiManager: manager)
     }
 
+    super.init()
     configureRuntime()
+  }
+
+  @objc public convenience init(rootView: UIView) {
+    self.init(rootView: rootView, runtime: nil)
   }
 
   // Toggle to prefer Hermes Bytecode bundles when available
@@ -48,9 +54,10 @@ public final class RuneRuntime {
 
     print("[RuneTrace] configureRuntime using adapter", type(of: runtime))
 
-#if DEBUG
-    installModules([RuneEnvModule()])
-#endif
+    #if DEBUG
+      print("[RuneRuntime] Installing default modules")
+    #endif
+    installModules([RuneEnvModule(), RuneDeviceModule()])
 
     runtime.evaluate(code: "globalThis.__RUNE_PLATFORM = \"ios\";")
     print("[RuneTrace] __RUNE_PLATFORM set to ios")
@@ -65,12 +72,30 @@ public final class RuneRuntime {
     )
 
     if let hermes = runtime as? HermesAdapter {
-      hermes.configureModuleCall { [weak self] name, method, argsJSON in
-        guard let self else { return "{}" }
-        return self.registry.call(name, method: method, argsJSON: argsJSON)
+      hermes.configureModuleCall { [weak self] name, method, args in
+        guard let self else { throw RuneModuleError.runtimeDeallocated }
+        #if DEBUG
+          let typeDescription: String
+          if let value = args {
+            typeDescription = String(describing: type(of: value))
+          } else {
+            typeDescription = "nil"
+          }
+          print("[RuneRuntime] moduleCall -> \(name).\(method) argsType=\(typeDescription)")
+        #endif
+        return try self.registry.call(name, method: method, args: args)
       }
       hermes.configureModuleSyncCall { [weak self] name, method, args in
         guard let self else { throw RuneModuleError.runtimeDeallocated }
+        #if DEBUG
+          let typeDescription: String
+          if let value = args {
+            typeDescription = String(describing: type(of: value))
+          } else {
+            typeDescription = "nil"
+          }
+          print("[RuneRuntime] moduleCallSync -> \(name).\(method) argsType=\(typeDescription)")
+        #endif
         return try self.registry.callSync(name, method: method, args: args)
       }
       return
@@ -97,11 +122,19 @@ public final class RuneRuntime {
           return ["error": "bad_args"]
         }
         let payload = args[2]
-        let data = (try? JSONSerialization.data(withJSONObject: payload)) ?? Data("{}".utf8)
-        let json = String(data: data, encoding: .utf8) ?? "{}"
-        let out = self.registry.call(name, method: method, argsJSON: json)
-        let outData = Data(out.utf8)
-        return (try? JSONSerialization.jsonObject(with: outData)) ?? [:]
+
+        do {
+          let result = try self.registry.call(name, method: method, args: payload)
+          return result ?? NSNull()
+        } catch {
+          let message: String
+          if let localized = error as? LocalizedError, let desc = localized.errorDescription {
+            message = desc
+          } else {
+            message = String(describing: error)
+          }
+          return ["error": message]
+        }
       },
       "callSync": { [weak self] (args: [Any]) -> Any in
         guard let self else { return ["error": "runtime_deallocated"] }
@@ -126,7 +159,7 @@ public final class RuneRuntime {
           }
           return ["error": message]
         }
-      }
+      },
     ]
     runtime.setGlobalObject("__modules", modules)
   }

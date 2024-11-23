@@ -7,9 +7,9 @@ public enum RuneModuleError: LocalizedError {
 
   public var errorDescription: String? {
     switch self {
-    case let .moduleNotFound(module):
+    case .moduleNotFound(let module):
       return "Module \(module) not found"
-    case let .syncNotSupported(module, method):
+    case .syncNotSupported(let module, let method):
       return "Module \(module) does not support synchronous method \(method)"
     case .runtimeDeallocated:
       return "Runtime deallocated"
@@ -19,7 +19,7 @@ public enum RuneModuleError: LocalizedError {
 
 public protocol RuneModule {
   var name: String { get }
-  func call(method: String, argsJSON: String) -> String
+  func call(method: String, args: Any?) throws -> Any?
 }
 
 public protocol RuneSyncModule {
@@ -35,12 +35,11 @@ public final class RuneModuleRegistry {
     modules[module.name] = module
   }
 
-  public func call(_ name: String, method: String, argsJSON: String) -> String {
+  public func call(_ name: String, method: String, args: Any?) throws -> Any? {
     guard let module = modules[name] else {
-      print("[RuneModuleRegistry] Missing module \(name)")
-      return "{}"
+      throw RuneModuleError.moduleNotFound(name)
     }
-    return module.call(method: method, argsJSON: argsJSON)
+    return try module.call(method: method, args: args)
   }
 
   public func callSync(_ name: String, method: String, args: Any?) throws -> Any? {

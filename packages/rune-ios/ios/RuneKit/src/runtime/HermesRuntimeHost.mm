@@ -22,8 +22,20 @@ extern "C" void RuneDiagnosticsReport(const char *phase, const char *message, co
 #import <vector>
 #import <utility>
 #import <exception>
+#include <cstring>
 
 using namespace facebook::jsi;
+
+static inline void SNRunOnMain(void (^block)(void)) {
+  if (!block) {
+    return;
+  }
+  if ([NSThread isMainThread]) {
+    block();
+  } else {
+    dispatch_sync(dispatch_get_main_queue(), block);
+  }
+}
 
 namespace {
 struct NSDataBuffer final : public facebook::jsi::Buffer {
@@ -173,6 +185,15 @@ static id SNConvertJSIValueToNSObject(Runtime &rt, const Value &value) {
   }
   if (value.isObject()) {
     auto object = value.asObject(rt);
+    if (object.isArrayBuffer(rt)) {
+      auto arrayBuffer = object.getArrayBuffer(rt);
+      size_t length = arrayBuffer.size(rt);
+      const uint8_t *bytes = arrayBuffer.data(rt);
+      if (length == 0 || bytes == nullptr) {
+        return [NSData data];
+      }
+      return [NSData dataWithBytes:bytes length:length];
+    }
     if (object.isArray(rt)) {
       return SNConvertJSIArrayToNSArray(rt, object.asArray(rt));
     }
@@ -230,6 +251,35 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
   }
   if ([object isKindOfClass:[NSDictionary class]]) {
     return SNConvertNSObjectDictionaryToJSI(rt, (NSDictionary *)object);
+  }
+  if ([object isKindOfClass:[NSData class]]) {
+    NSData *data = (NSData *)object;
+    size_t length = data.length;
+    try {
+      auto global = rt.global();
+      if (!global.hasProperty(rt, "ArrayBuffer")) {
+        return Value::undefined();
+      }
+
+      auto ctorValue = global.getProperty(rt, "ArrayBuffer");
+      if (!ctorValue.isObject() || !ctorValue.asObject(rt).isFunction(rt)) {
+        return Value::undefined();
+      }
+
+      auto ctor = ctorValue.asObject(rt).asFunction(rt);
+  Value bufferValue = ctor.callAsConstructor(rt, (double)length);
+      auto bufferObject = bufferValue.asObject(rt);
+      auto buffer = bufferObject.getArrayBuffer(rt);
+      if (length > 0 && data.bytes != NULL) {
+        memcpy(buffer.data(rt), data.bytes, length);
+      }
+      return bufferValue;
+    } catch (const facebook::jsi::JSError &error) {
+      RuneReportJSIError(rt, error, "ArrayBufferCtor");
+    } catch (const std::exception &ex) {
+      RuneDiagnosticsReport("ArrayBufferCtor", ex.what(), "");
+    }
+    return Value::undefined();
   }
 
   return Value::undefined();
@@ -297,15 +347,54 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
 
 - (void)installConsole {
   auto &rt = *_rt;
-  auto consoleLog = Function::createFromHostFunction(
-      rt, PropNameID::forAscii(rt, "log"), 1,
-      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
-        std::string s = (count > 0 && args[0].isString()) ? args[0].getString(rt).utf8(rt) : "";
-        NSLog(@"JS: %s", s.c_str());
-        return Value::undefined();
-      });
+
+  auto makeConsoleFunction = [&](const char *methodName) {
+    std::string level = methodName ? methodName : "log";
+    return Function::createFromHostFunction(
+        rt, PropNameID::forAscii(rt, methodName), 0,
+        [level](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+          std::string message;
+          for (size_t i = 0; i < count; ++i) {
+            std::string part;
+            try {
+              if (args[i].isString()) {
+                part = args[i].getString(rt).utf8(rt);
+              } else {
+                part = args[i].toString(rt).utf8(rt);
+              }
+            } catch (...) {
+              part = "<unprintable>";
+            }
+            if (i > 0) {
+              message.append(" ");
+            }
+            message.append(part);
+          }
+
+          NSLog(@"JS[%s] %s", level.c_str(), message.c_str());
+
+          if (level == "error") {
+            RuneDiagnosticsReport("console.error", message.c_str(), "");
+          }
+
+          return Value::undefined();
+        });
+  };
+
   Object console(rt);
+  auto consoleLog = makeConsoleFunction("log");
+  auto consoleInfo = makeConsoleFunction("info");
+  auto consoleDebug = makeConsoleFunction("debug");
+  auto consoleWarn = makeConsoleFunction("warn");
+  auto consoleError = makeConsoleFunction("error");
+  auto consoleTrace = makeConsoleFunction("trace");
+
   console.setProperty(rt, "log", consoleLog);
+  console.setProperty(rt, "info", consoleInfo);
+  console.setProperty(rt, "debug", consoleDebug);
+  console.setProperty(rt, "warn", consoleWarn);
+  console.setProperty(rt, "error", consoleError);
+  console.setProperty(rt, "trace", consoleTrace);
   rt.global().setProperty(rt, "console", console);
 }
 
@@ -321,9 +410,12 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
             return Value::undefined();
           }
           std::string type = args[0].getString(rt).utf8(rt);
-          int nid = [[host manager] createNode:[NSString stringWithUTF8String:type.c_str()]].intValue;
-          NSString *typeStr = [NSString stringWithUTF8String:type.c_str()];
-          NSLog(@"[RuneTrace] __ui.createNode type=%@ -> id=%d", typeStr, nid);
+          __block int nid = 0;
+          SNRunOnMain(^{
+            NSString *typeStr = [NSString stringWithUTF8String:type.c_str()];
+            nid = [[host manager] createNode:typeStr].intValue;
+            NSLog(@"[RuneTrace] __ui.createNode type=%@ -> id=%d", typeStr, nid);
+          });
           return Value((double)nid);
         } catch (const facebook::jsi::JSError &error) {
           RuneReportJSIError(rt, error, "__ui.createNode");
@@ -337,7 +429,18 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
       rt, PropNameID::forAscii(rt, "setProp"), 3,
       [host](Runtime &rt, const Value &, const Value *a, size_t count) -> Value {
         try {
-          if (count < 3) {
+          if (count < 3 || !a[0].isNumber() || !a[1].isString()) {
+            if (count >= 2) {
+              NSLog(@"[Hermes] __ui.setProp invalid args count=%zu nameType=%s", count,
+                    a[1].isUndefined() ? "undefined" :
+                    a[1].isNull() ? "null" :
+                    a[1].isBool() ? "bool" :
+                    a[1].isNumber() ? "number" :
+                    a[1].isString() ? "string" :
+                    a[1].isObject() ? "object" : "other");
+            } else {
+              NSLog(@"[Hermes] __ui.setProp missing arguments");
+            }
             return Value::undefined();
           }
           int id = (int)a[0].asNumber();
@@ -388,16 +491,20 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
               copyString(key);
             }
 
-            [[host manager] setStyle:@(id) style:styleDict];
+            SNRunOnMain(^{
+              [[host manager] setStyle:@(id) style:styleDict];
+            });
             return Value::undefined();
           }
 
           auto JSON = rt.global().getPropertyAsObject(rt, "JSON");
           auto stringify = JSON.getPropertyAsFunction(rt, "stringify");
           auto str = stringify.call(rt, Value(rt, a[2])).getString(rt).utf8(rt);
-          [[host manager] setProp:@(id)
-                                name:[NSString stringWithUTF8String:name.c_str()]
-                           valueJSON:[NSString stringWithUTF8String:str.c_str()]];
+          SNRunOnMain(^{
+            [[host manager] setProp:@(id)
+                                  name:[NSString stringWithUTF8String:name.c_str()]
+                             valueJSON:[NSString stringWithUTF8String:str.c_str()]];
+          });
         } catch (const facebook::jsi::JSError &error) {
           RuneReportJSIError(rt, error, "__ui.setProp");
         } catch (const std::exception &ex) {
@@ -410,13 +517,26 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
       rt, PropNameID::forAscii(rt, "setText"), 2,
       [host](Runtime &rt, const Value &, const Value *a, size_t count) -> Value {
         try {
-          if (count < 2) {
+          if (count < 2 || !a[0].isNumber()) {
             return Value::undefined();
           }
           int id = (int)a[0].asNumber();
-          auto text = a[1].getString(rt).utf8(rt);
-          NSLog(@"[RuneTrace] __ui.setText id=%d", id);
-          [[host manager] setText:@(id) text:[NSString stringWithUTF8String:text.c_str()]];
+          std::string text;
+          if (count > 1) {
+            if (a[1].isString()) {
+              text = a[1].getString(rt).utf8(rt);
+            } else {
+              try {
+                text = a[1].toString(rt).utf8(rt);
+              } catch (...) {
+                text = "";
+              }
+            }
+          }
+          SNRunOnMain(^{
+            NSLog(@"[RuneTrace] __ui.setText id=%d", id);
+            [[host manager] setText:@(id) text:[NSString stringWithUTF8String:text.c_str()]];
+          });
         } catch (const facebook::jsi::JSError &error) {
           RuneReportJSIError(rt, error, "__ui.setText");
         } catch (const std::exception &ex) {
@@ -435,10 +555,12 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
           int parentId = (int)a[0].asNumber();
           int childId = (int)a[1].asNumber();
           int index = (int)a[2].asNumber();
-          NSLog(@"[RuneTrace] __ui.insertChild parent=%d child=%d index=%d", parentId, childId, index);
-          [[host manager] insertChild:@(parentId)
-                                 child:@(childId)
-                                 index:@(index)];
+          SNRunOnMain(^{
+            NSLog(@"[RuneTrace] __ui.insertChild parent=%d child=%d index=%d", parentId, childId, index);
+            [[host manager] insertChild:@(parentId)
+                                   child:@(childId)
+                                   index:@(index)];
+          });
         } catch (const facebook::jsi::JSError &error) {
           RuneReportJSIError(rt, error, "__ui.insertChild");
         } catch (const std::exception &ex) {
@@ -456,9 +578,11 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
           }
           int parentId = (int)a[0].asNumber();
           int childId = (int)a[1].asNumber();
-          NSLog(@"[RuneTrace] __ui.removeChild parent=%d child=%d", parentId, childId);
-          [[host manager] removeChild:@(parentId) child:@(childId)];
-          [host sn_removeHandlersForNode:childId];
+          SNRunOnMain(^{
+            NSLog(@"[RuneTrace] __ui.removeChild parent=%d child=%d", parentId, childId);
+            [[host manager] removeChild:@(parentId) child:@(childId)];
+            [host sn_removeHandlersForNode:childId];
+          });
         } catch (const facebook::jsi::JSError &error) {
           RuneReportJSIError(rt, error, "__ui.removeChild");
         } catch (const std::exception &ex) {
@@ -478,7 +602,9 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
           std::string name = a[1].getString(rt).utf8(rt);
           auto fn = a[2].asObject(rt).asFunction(rt);
           host->_handlers[{id, name}] = std::make_shared<Function>(std::move(fn));
-          [[host manager] setHandler:@(id) name:[NSString stringWithUTF8String:name.c_str()]];
+          SNRunOnMain(^{
+            [[host manager] setHandler:@(id) name:[NSString stringWithUTF8String:name.c_str()]];
+          });
         } catch (const facebook::jsi::JSError &error) {
           RuneReportJSIError(rt, error, "__ui.setHandler");
         } catch (const std::exception &ex) {
@@ -490,12 +616,14 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
   auto hostFlush = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "flush"), 0,
       [host](Runtime &, const Value &, const Value *, size_t) -> Value {
-        @try {
-          [[host manager] flush];
-        } @catch (NSException *exception) {
-          std::string message = exception.reason ? [exception.reason UTF8String] : "flush failed";
-          [host reportExceptionWithContext:@"__ui.flush" message:message stack:""];
-        }
+        SNRunOnMain(^{
+          @try {
+            [[host manager] flush];
+          } @catch (NSException *exception) {
+            std::string message = exception.reason ? [exception.reason UTF8String] : "flush failed";
+            [host reportExceptionWithContext:@"__ui.flush" message:message stack:""];
+          }
+        });
         return Value::undefined();
       });
 
@@ -529,33 +657,59 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
       rt, PropNameID::forAscii(rt, "call"), 3,
       [host](Runtime &rt, const Value &, const Value *a, size_t count) -> Value {
         try {
-          if (count < 3) {
-            return Value::undefined();
+          if (count < 2 || !a[0].isString() || !a[1].isString()) {
+            throw facebook::jsi::JSError(rt, "__modules.call requires module and method strings");
           }
+
           std::string module = a[0].getString(rt).utf8(rt);
           std::string method = a[1].getString(rt).utf8(rt);
-          auto JSON = rt.global().getPropertyAsObject(rt, "JSON");
-          auto stringify = JSON.getPropertyAsFunction(rt, "stringify");
-          auto argsJSON = stringify.call(rt, Value(rt, a[2])).getString(rt).utf8(rt);
+          id argsObject = nil;
+          if (count > 2) {
+            argsObject = SNConvertJSIValueToNSObject(rt, a[2]);
+          }
 
-          return SNMakePromise(rt, [host, module, method, argsJSON](Function &&resolve, Function &&reject) {
+          NSString *moduleLog = [NSString stringWithUTF8String:module.c_str()];
+          if (!moduleLog) {
+            moduleLog = [NSString stringWithCString:module.c_str() encoding:NSUTF8StringEncoding];
+          }
+          NSString *methodLog = [NSString stringWithUTF8String:method.c_str()];
+          if (!methodLog) {
+            methodLog = [NSString stringWithCString:method.c_str() encoding:NSUTF8StringEncoding];
+          }
+          NSString *argsLog = argsObject ? NSStringFromClass([argsObject class]) : @"<nil>";
+          NSLog(@"[Hermes] __modules.call enqueue %@.%@ argsClass=%@", moduleLog ?: @"<unknown>", methodLog ?: @"<unknown>", argsLog);
+
+          return SNMakePromise(rt, [host, module, method, argsObject](Function &&resolve, Function &&reject) {
             auto resolvePtr = std::make_shared<Function>(std::move(resolve));
             auto rejectPtr = std::make_shared<Function>(std::move(reject));
 
             dispatch_async(host->_moduleQueue, ^{
               @autoreleasepool {
-                NSString *resultString = nil;
+                NSError *callError = nil;
+                id resultObject = nil;
                 std::string nativeError;
 
                 try {
                   @try {
-                    if (host.moduleCallHandler) {
-                      NSString *moduleName = [NSString stringWithUTF8String:module.c_str()];
-                      NSString *methodName = [NSString stringWithUTF8String:method.c_str()];
-                      NSString *argsString = [NSString stringWithUTF8String:argsJSON.c_str()];
-                      resultString = host.moduleCallHandler(moduleName, methodName, argsString);
+                    NSString *moduleName = [NSString stringWithUTF8String:module.c_str()];
+                    if (!moduleName) {
+                      moduleName = [NSString stringWithCString:module.c_str() encoding:NSUTF8StringEncoding];
+                    }
+                    NSString *methodName = [NSString stringWithUTF8String:method.c_str()];
+                    if (!methodName) {
+                      methodName = [NSString stringWithCString:method.c_str() encoding:NSUTF8StringEncoding];
+                    }
+
+                    NSString *safeModule = moduleName ?: @"<unknown>";
+                    NSString *safeMethod = methodName ?: @"<unknown>";
+
+                    if (!host.moduleCallHandler) {
+                      nativeError = "Module call handler not configured";
+                      NSLog(@"[Hermes] __modules.call missing handler for %@.%@", safeModule, safeMethod);
                     } else {
-                      resultString = @"{}";
+                      NSLog(@"[Hermes] __modules.call native invoke %@.%@ on thread %@ args=%@", safeModule, safeMethod, NSThread.currentThread, argsObject ? NSStringFromClass([argsObject class]) : @"<nil>");
+                      resultObject = host.moduleCallHandler(safeModule, safeMethod, argsObject, &callError);
+                      NSLog(@"[Hermes] __modules.call native completed %@.%@ resultClass=%@ error=%@", safeModule, safeMethod, resultObject ? NSStringFromClass([resultObject class]) : @"<nil>", callError);
                     }
                   } @catch (NSException *exception) {
                     NSString *reason = exception.reason ?: @"unknown";
@@ -567,6 +721,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
                 }
 
                 if (!nativeError.empty()) {
+                  NSLog(@"[Hermes] __modules.call native error: %s", nativeError.c_str());
                   dispatch_async(host->_jsQueue, ^{
                     auto &rtRef = *host->_rt;
                     RuneDiagnosticsReport("modules", nativeError.c_str(), "");
@@ -579,23 +734,37 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
                   return;
                 }
 
-                if (!resultString) {
-                  resultString = @"{}";
+                if (callError) {
+                  NSString *errorMessage = callError.localizedDescription ?: @"Native module call failed";
+                  NSLog(@"[Hermes] __modules.call native NSError: %@", errorMessage);
+                  const char *errorC = [errorMessage UTF8String];
+                  std::string message = errorC ? std::string(errorC) : std::string("Native module call failed");
+                  dispatch_async(host->_jsQueue, ^{
+                    auto &rtRef = *host->_rt;
+                    RuneDiagnosticsReport("modules", message.c_str(), "");
+                    Object errorObj(rtRef);
+                    errorObj.setProperty(rtRef, "code", String::createFromUtf8(rtRef, "native_error"));
+                    errorObj.setProperty(rtRef, "message", String::createFromUtf8(rtRef, message));
+                    Value errorValue = Value(rtRef, errorObj);
+                    SNCallJSFunction(*rejectPtr, rtRef, &errorValue, 1);
+                  });
+                  return;
                 }
-                std::string resultStd = [resultString UTF8String] ? std::string([resultString UTF8String]) : std::string("{}");
 
                 dispatch_async(host->_jsQueue, ^{
                   auto &rtRef = *host->_rt;
                   try {
-                    auto JSONObj = rtRef.global().getPropertyAsObject(rtRef, "JSON");
-                    auto parse = JSONObj.getPropertyAsFunction(rtRef, "parse");
-                    auto jsString = String::createFromUtf8(rtRef, resultStd);
-                    Value parsed = parse.call(rtRef, Value(std::move(jsString)));
-                    Value resultValue = Value(rtRef, parsed);
+                    NSString *safeModule = [NSString stringWithUTF8String:module.c_str()] ?: @"<unknown>";
+                    NSString *safeMethod = [NSString stringWithUTF8String:method.c_str()] ?: @"<unknown>";
+                    NSString *resultClass = resultObject ? NSStringFromClass([resultObject class]) : @"<nil>";
+                    NSLog(@"[Hermes] __modules.call resolving %@.%@ on JS queue resultClass=%@", safeModule, safeMethod, resultClass);
+                    Value resultValue = SNConvertNSObjectToJSI(rtRef, resultObject);
                     SNCallJSFunction(*resolvePtr, rtRef, &resultValue, 1);
+                    NSLog(@"[Hermes] __modules.call resolved %@.%@", safeModule, safeMethod);
                   } catch (const facebook::jsi::JSError &error) {
-                    RuneReportJSIError(rtRef, error, "modules");
                     std::string message = error.getMessage();
+                    NSLog(@"[Hermes] __modules.call resolve JSI error: %s", message.c_str());
+                    RuneReportJSIError(rtRef, error, "modules");
                     Object errorObj(rtRef);
                     errorObj.setProperty(rtRef, "code", String::createFromUtf8(rtRef, "invalid_json"));
                     errorObj.setProperty(rtRef, "message", String::createFromUtf8(rtRef, message));
@@ -603,6 +772,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
                     SNCallJSFunction(*rejectPtr, rtRef, &errorValue, 1);
                   } catch (const std::exception &ex) {
                     std::string message(ex.what());
+                    NSLog(@"[Hermes] __modules.call resolve std::exception: %s", message.c_str());
                     RuneDiagnosticsReport("modules", message.c_str(), "");
                     Object errorObj(rtRef);
                     errorObj.setProperty(rtRef, "code", String::createFromUtf8(rtRef, "invalid_json"));
@@ -834,7 +1004,9 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
 
   static const char *timerScript =
       "globalThis.setTimeout=(fn,ms,...a)=>__hostSetTimeout(fn,ms|0,a);"
-      "globalThis.clearTimeout=(id)=>__hostClearTimeout(id);";
+    "globalThis.clearTimeout=(id)=>__hostClearTimeout(id);"
+    "globalThis.setImmediate=(fn,...a)=>__hostSetTimeout(fn,0,a);"
+    "globalThis.clearImmediate=(id)=>__hostClearTimeout(id);";
 
   auto buffer = std::make_shared<StringBuffer>(timerScript);
   _rt->evaluateJavaScript(buffer, "timers.js");
@@ -864,7 +1036,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
       const _then = Promise.prototype.then;
       Promise.prototype.then = function(onFulfilled, onRejected){
         const p = _then.call(this, onFulfilled, onRejected);
-        p.catch(function(e){
+        _then.call(p, undefined, function(e){
           try {
             __hostReportUnhandled(String(e?.message || e), String(e?.stack || ""));
           } catch (_) {}
@@ -879,16 +1051,28 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
 }
 
 - (void)invokeHandlerForNode:(int)nid name:(NSString *)name {
-  auto &rt = *_rt;
   std::string handlerName = [name UTF8String] ?: "";
-  auto it = _handlers.find({nid, handlerName});
-  if (it == _handlers.end()) {
-    return;
-  }
-  Object event(rt);
-  event.setProperty(rt, "target", (double)nid);
-  Value eventValue(std::move(event));
-  it->second->call(rt, std::move(eventValue));
+  HermesRuntimeHost *host = self;
+  dispatch_async(_jsQueue, ^{
+    if (!host || !host->_rt) {
+      return;
+    }
+    auto &rt = *host->_rt;
+    auto it = host->_handlers.find({nid, handlerName});
+    if (it == host->_handlers.end()) {
+      return;
+    }
+    try {
+      Object event(rt);
+      event.setProperty(rt, "target", (double)nid);
+      Value eventValue(std::move(event));
+      it->second->call(rt, std::move(eventValue));
+    } catch (const facebook::jsi::JSError &error) {
+      RuneReportJSIError(rt, error, "invokeHandler");
+    } catch (const std::exception &ex) {
+      [host reportStdException:ex context:@"invokeHandler"];
+    }
+  });
 }
 
 - (void)evaluateString:(NSString *)code {
@@ -913,7 +1097,26 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
   dispatch_sync(_jsQueue, ^{
     auto &rt = *_rt;
     try {
-      auto fn = rt.global().getPropertyAsFunction(rt, [name UTF8String]);
+      std::string functionName = [name UTF8String] ? [name UTF8String] : "";
+      auto global = rt.global();
+      if (!global.hasProperty(rt, functionName.c_str())) {
+        NSLog(@"[Hermes] callGlobal missing %@", name);
+        return;
+      }
+
+      Value fnValue = global.getProperty(rt, functionName.c_str());
+      if (!fnValue.isObject()) {
+        NSLog(@"[Hermes] callGlobal %@ value is not object", name);
+        return;
+      }
+
+      auto fnObject = fnValue.asObject(rt);
+      if (!fnObject.isFunction(rt)) {
+        NSLog(@"[Hermes] callGlobal %@ value is not function", name);
+        return;
+      }
+
+      auto fn = fnObject.asFunction(rt);
       std::vector<Value> va;
       va.reserve(args.count);
       for (id arg in args) {

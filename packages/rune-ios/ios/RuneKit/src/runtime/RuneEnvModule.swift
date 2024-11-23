@@ -3,12 +3,17 @@ import Foundation
 final class RuneEnvModule: RuneModule, RuneSyncModule {
   let name: String = "Env"
 
-  func call(method: String, argsJSON: String) -> String {
+  func call(method: String, args: Any?) throws -> Any? {
+    #if DEBUG
+      print("[RuneEnvModule] call method=\(method) payloadType=\(type(of: args))")
+    #endif
     switch method {
     case "constants":
-      return jsonString(from: ["result": constantsPayload()])
+      return ["result": constantsPayload()]
+    case "echoData":
+      return handleEchoData(args: args)
     default:
-      return jsonString(from: ["error": "unknown_method", "method": method])
+      return ["error": "unknown_method", "method": method]
     }
   }
 
@@ -23,15 +28,74 @@ final class RuneEnvModule: RuneModule, RuneSyncModule {
     [
       "platform": "ios",
       "runtime": "hermes",
-      "timestamp": Date().timeIntervalSince1970
+      "timestamp": Date().timeIntervalSince1970,
     ]
   }
 
-  private func jsonString(from object: Any) -> String {
-    guard JSONSerialization.isValidJSONObject(object),
-          let data = try? JSONSerialization.data(withJSONObject: object) else {
-      return "{}"
+  private func handleEchoData(args: Any?) -> Any {
+    guard let payloadDict = args as? [String: Any] else {
+      #if DEBUG
+        print("[RuneEnvModule] echoData invalid args type=\(String(describing: type(of: args)))")
+      #endif
+      return ["error": "invalid_arguments"]
     }
-    return String(data: data, encoding: .utf8) ?? "{}"
+
+    guard let payload = payloadDict["payload"] else {
+      #if DEBUG
+        print("[RuneEnvModule] echoData missing payload key. keys=\(Array(payloadDict.keys))")
+      #endif
+      return ["error": "missing_payload"]
+    }
+
+    let data: Data
+    if let payloadData = payload as? Data {
+      #if DEBUG
+        print("[RuneEnvModule] echoData payload bridged as Data length=\(payloadData.count)")
+      #endif
+      data = payloadData
+    } else if let numbers = payload as? [NSNumber] {
+      #if DEBUG
+        print("[RuneEnvModule] echoData payload bridged as [NSNumber] count=\(numbers.count)")
+      #endif
+      data = Data(numbers.map { UInt8(truncating: $0) })
+    } else if let bytes = payload as? [UInt8] {
+      #if DEBUG
+        print("[RuneEnvModule] echoData payload bridged as [UInt8] count=\(bytes.count)")
+      #endif
+      data = Data(bytes)
+    } else {
+      #if DEBUG
+        print(
+          "[RuneEnvModule] echoData unsupported payload type=\(String(describing: type(of: payload)))"
+        )
+      #endif
+      return [
+        "error": "unsupported_payload_type",
+        "type": String(describing: type(of: payload)),
+      ]
+    }
+
+    let checksum = fnv1a32Hex(data: data)
+
+    #if DEBUG
+      print("[RuneEnvModule] echoData received bytes=\(data.count) checksum=\(checksum)")
+    #endif
+
+    return [
+      "result": [
+        "byteLength": data.count,
+        "checksum": checksum,
+        "echo": data,
+      ]
+    ]
+  }
+
+  private func fnv1a32Hex(data: Data) -> String {
+    var hash: UInt32 = 0x811C_9DC5
+    for byte in data {
+      hash ^= UInt32(byte)
+      hash = hash &* 16_777_619
+    }
+    return String(format: "%08x", hash)
   }
 }

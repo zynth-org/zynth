@@ -11,8 +11,17 @@ public final class HermesAdapter: JSRuntimeAdapter {
     installExceptionHandler()
   }
 
-  public func configureModuleCall(_ handler: @escaping (String, String, String) -> String) {
-    host.moduleCallHandler = handler
+  public func configureModuleCall(_ handler: @escaping (String, String, Any?) throws -> Any?) {
+    host.moduleCallHandler = { module, method, args, errorPtr in
+      do {
+        return try handler(module, method, args)
+      } catch {
+        if let errorPtr {
+          errorPtr.pointee = error as NSError
+        }
+        return nil
+      }
+    }
   }
 
   public func configureModuleSyncCall(_ handler: @escaping (String, String, Any?) throws -> Any?) {
@@ -30,7 +39,7 @@ public final class HermesAdapter: JSRuntimeAdapter {
 
   private func installExceptionHandler() {
     if onException != nil {
-      host.exceptionHandler = { [weak self] message, stack in
+      host.exceptionHandler = { [weak self] (message: String, stack: String?) in
         guard let self else { return }
         let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
         let stackText = stack?.trimmingCharacters(in: .whitespacesAndNewlines)
