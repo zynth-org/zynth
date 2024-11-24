@@ -27,6 +27,10 @@ public final class RuneRuntime: NSObject {
     self.init(rootView: rootView, runtime: nil)
   }
 
+  deinit {
+    registry.destroy()
+  }
+
   // Toggle to prefer Hermes Bytecode bundles when available
   public var prefersHermesBytecode: Bool = {
     // Allow override via environment variable RUNE_IOS_USE_HBC=1

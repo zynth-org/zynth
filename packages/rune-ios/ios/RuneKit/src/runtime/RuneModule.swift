@@ -20,6 +20,13 @@ public enum RuneModuleError: LocalizedError {
 public protocol RuneModule {
   var name: String { get }
   func call(method: String, args: Any?) throws -> Any?
+  func initialize()
+  func invalidate()
+}
+
+public extension RuneModule {
+    func initialize() {}
+    func invalidate() {}
 }
 
 public protocol RuneSyncModule {
@@ -33,6 +40,14 @@ public final class RuneModuleRegistry {
 
   public func register(_ module: RuneModule) {
     modules[module.name] = module
+    module.initialize()
+  }
+
+  public func destroy() {
+    for module in modules.values {
+      module.invalidate()
+    }
+    modules.removeAll()
   }
 
   public func call(_ name: String, method: String, args: Any?) throws -> Any? {
