@@ -63,6 +63,13 @@ public final class RuneRuntime: NSObject {
     #endif
     installModules([RuneEnvModule(), RuneDeviceModule()])
 
+    let constants = registry.exportedConstants()
+    if !constants.isEmpty, let constantsData = try? JSONSerialization.data(withJSONObject: constants, options: []) {
+        let constantsJson = String(data: constantsData, encoding: .utf8) ?? "{}"
+        let script = "globalThis.NativeConstants = \(constantsJson);"
+        runtime.evaluate(code: script)
+    }
+
     runtime.evaluate(code: "globalThis.__RUNE_PLATFORM = \"ios\";")
     print("[RuneTrace] __RUNE_PLATFORM set to ios")
 

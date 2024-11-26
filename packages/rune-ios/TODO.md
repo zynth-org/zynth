@@ -62,7 +62,7 @@ This file tracks the necessary core platform enhancements to ensure the iOS SDK 
     - Call `initialize()` on each module after it has been instantiated.
     - Call `invalidate()` on each module when the `RuneView` or runtime is being deallocated to allow for resource cleanup.
 
-### ☐ Synchronous Constants Exporting
+### ☑ Synchronous Constants Exporting
 
 **Why:** Modules need a way to export constants that are immediately available to JS on load, without an async call.
 

@@ -19,12 +19,14 @@ public enum RuneModuleError: LocalizedError {
 
 public protocol RuneModule {
   var name: String { get }
+  var constantsToExport: [String: Any]? { get }
   func call(method: String, args: Any?) throws -> Any?
   func initialize()
   func invalidate()
 }
 
 public extension RuneModule {
+    var constantsToExport: [String: Any]? { nil }
     func initialize() {}
     func invalidate() {}
 }
@@ -48,6 +50,16 @@ public final class RuneModuleRegistry {
       module.invalidate()
     }
     modules.removeAll()
+  }
+
+  public func exportedConstants() -> [String: Any] {
+    var constants: [String: Any] = [:]
+    for module in modules.values {
+        if let moduleConstants = module.constantsToExport {
+            constants[module.name] = moduleConstants
+        }
+    }
+    return constants
   }
 
   public func call(_ name: String, method: String, args: Any?) throws -> Any? {
