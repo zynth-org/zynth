@@ -12,6 +12,7 @@ import android.view.View.MeasureSpec
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.TextView
+import com.rune.kit.debug.PerformanceProfiler
 import com.rune.kit.layout.LayoutEngine
 import com.rune.kit.layout.MeasureMode
 import com.rune.kit.layout.Rect
@@ -339,6 +340,7 @@ class RuneUIManager(
     if (!dirty) return
     dirty = false
     
+    PerformanceProfiler.recordLayoutStart()
     // Store previous frames for existing nodes to detect layout jumps
     val previousFrames = SparseArray<Rect>()
     for (i in 0 until nodes.size()) {
@@ -356,7 +358,9 @@ class RuneUIManager(
     
     // Calculate layout first, before any visual changes
     engine.calculateLayout(root.width, root.height)
-    
+    PerformanceProfiler.recordLayoutEnd()
+
+    PerformanceProfiler.recordRenderStart()
     // First pass: update sizes only without changing positions for existing visible views
     // This prevents the jump effect when new content is added
     for (i in 0 until nodes.size()) {
@@ -415,6 +419,7 @@ class RuneUIManager(
         // Ensure text is visible
         node.label?.alpha = 1f
       }
+      PerformanceProfiler.recordRenderEnd()
     }
   }
 
