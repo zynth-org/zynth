@@ -39,6 +39,7 @@ object JSBridge {
   }
 
   interface ModulesShim {
+    fun getConstants(): String
     fun invoke(module: String, method: String, args: Array<Any?>, promiseId: Int)
     fun callSync(module: String, method: String, args: Array<Any?>): Any?
 

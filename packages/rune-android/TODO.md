@@ -61,7 +61,7 @@ This file tracks the necessary core platform enhancements to ensure the Android 
     - Call `initialize()` on each module after it has been instantiated.
     - Add a public `destroy()` method to `HermesModulesShim` that calls `invalidate()` on all modules. This should be called when the `RuneView` is detached or destroyed.
 
-### ☐ Synchronous Constants Exporting
+### ☑ Synchronous Constants Exporting
 
 **Why:** Modules need a way to export constants that are immediately available to JS on load, without an async call.
 

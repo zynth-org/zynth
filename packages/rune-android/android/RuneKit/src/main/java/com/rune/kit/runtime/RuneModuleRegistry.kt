@@ -4,6 +4,8 @@ import org.json.JSONObject
 
 interface RuneModule {
     val name: String
+    val constants: Map<String, Any>?
+        get() = null
     fun call(method: String, args: Array<Any?>): JSONObject
     fun initialize() {}
     fun invalidate() {}
@@ -24,6 +26,16 @@ class RuneModuleRegistry {
     fun destroy() {
         modules.values.forEach { it.invalidate() }
         modules.clear()
+    }
+
+    fun exportedConstants(): Map<String, Any> {
+        val constants = mutableMapOf<String, Any>()
+        for (module in modules.values) {
+            module.constants?.let {
+                constants[module.name] = it
+            }
+        }
+        return constants
     }
 
     fun call(name: String, method: String, args: Array<Any?>): JSONObject {

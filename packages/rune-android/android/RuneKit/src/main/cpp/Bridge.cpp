@@ -67,6 +67,7 @@ struct UIShimMethods {
 };
 
 struct ModulesShimMethods {
+  jmethodID getConstants = nullptr;
   jmethodID invoke = nullptr;
   jmethodID callSync = nullptr;
 };
@@ -1116,6 +1117,7 @@ void installBindings(
   state->uiMethods.setHandler = env->GetMethodID(state->uiClass, "setHandler", "(ILjava/lang/String;J)V");
   state->uiMethods.flush = env->GetMethodID(state->uiClass, "flush", "()V");
 
+  state->moduleMethods.getConstants = env->GetMethodID(state->modulesClass, "getConstants", "()Ljava/lang/String;");
   state->moduleMethods.invoke = env->GetMethodID(state->modulesClass, "invoke", "(Ljava/lang/String;Ljava/lang/String;[Ljava/lang/Object;I)V");
   state->moduleMethods.callSync = env->GetMethodID(state->modulesClass, "callSync", "(Ljava/lang/String;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/Object;");
 
@@ -1125,6 +1127,18 @@ void installBindings(
   state->reportError = env->GetMethodID(state->errorHandlerClass, "report", "(Ljava/lang/String;Ljava/lang/String;)V");
 
   storeState(runtime, state);
+
+  if (state->moduleMethods.getConstants) {
+    jstring constantsJson = (jstring)env->CallObjectMethod(state->modulesShim, state->moduleMethods.getConstants);
+    std::string constantsStr = getUtfString(env, constantsJson);
+    if (!constantsStr.empty() && constantsStr != "{}") {
+        try {
+            runtime->global().setProperty(*runtime, "NativeConstants", parseJson(*runtime, constantsStr));
+        } catch (const std::exception& e) {
+            BRIDGE_LOG(ANDROID_LOG_ERROR, "Failed to parse and set NativeConstants: %s", e.what());
+        }
+    }
+  }
 
   installConsole(state);
   installPlatformFlag(state);

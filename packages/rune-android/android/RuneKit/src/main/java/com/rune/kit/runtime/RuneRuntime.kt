@@ -376,6 +376,11 @@ class RuneRuntime(
   private inner class HermesModulesShim(
     private val hermes: HermesAdapter,
   ) : JSBridge.ModulesShim {
+    override fun getConstants(): String {
+        val constants = registry.exportedConstants()
+        return if (constants.isNotEmpty()) JSONObject(constants).toString() else "{}"
+    }
+
     override fun invoke(module: String, method: String, args: Array<Any?>, promiseId: Int) {
       Log.d(TAG, "HermesModulesShim.invoke module=$module method=$method argsCount=${args.size} promiseId=$promiseId")
       moduleExecutor.execute {
