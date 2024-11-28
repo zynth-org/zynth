@@ -61,7 +61,7 @@ public final class RuneRuntime: NSObject {
     #if DEBUG
       print("[RuneRuntime] Installing default modules")
     #endif
-    installModules([RuneEnvModule(), RuneDeviceModule()])
+    installModules([RuneEnvModule(), RuneDeviceModule(), PerformanceModule()])
 
     let constants = registry.exportedConstants()
     if !constants.isEmpty, let constantsData = try? JSONSerialization.data(withJSONObject: constants, options: []) {

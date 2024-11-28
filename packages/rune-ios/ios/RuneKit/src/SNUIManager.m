@@ -4,6 +4,12 @@
 #import <QuartzCore/QuartzCore.h>
 #import <JavaScriptCore/JavaScriptCore.h>
 
+#if __has_include(<RuneKit/RuneKit-Swift.h>)
+#import <RuneKit/RuneKit-Swift.h>
+#elif __has_include("RuneKit-Swift.h")
+#import "RuneKit-Swift.h"
+#endif
+
 @interface SNNode : NSObject
 @property(nonatomic, assign) int nid;
 @property(nonatomic, strong) UIView *view;
@@ -441,6 +447,7 @@ static void SNApplyEdges(NSDictionary *style,
 }
 
 - (void)sn_performFlush {
+  [[PerformanceProfiler shared] recordLayoutStart];
   dispatch_async(dispatch_get_main_queue(), ^{
     // Add safety checks
     if (!self.rootYoga || !self.root || !self.nodes) {
@@ -467,9 +474,12 @@ static void SNApplyEdges(NSDictionary *style,
     }
     @catch (NSException *exception) {
       NSLog(@"[SN] Exception in YGNodeCalculateLayout: %@", exception);
+      [[PerformanceProfiler shared] recordLayoutEnd];
       return;
     }
+    [[PerformanceProfiler shared] recordLayoutEnd];
 
+    [[PerformanceProfiler shared] recordRenderStart];
     // Use a simpler approach: iterate through our nodes and apply frames directly
     // This avoids the complex recursive traversal that might be accessing freed nodes
     [self.nodes enumerateKeysAndObjectsUsingBlock:^(NSNumber *key, SNNode *obj, BOOL *stop) {
@@ -507,6 +517,7 @@ static void SNApplyEdges(NSDictionary *style,
         NSLog(@"[SN] Exception applying frame for nid=%d: %@", obj.nid, exception);
       }
     }];
+    [[PerformanceProfiler shared] recordRenderEnd];
 
     NSLog(@"[SN] flush end");
   });
