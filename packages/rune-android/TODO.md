@@ -81,7 +81,7 @@ This file tracks the necessary core platform enhancements to ensure the Android 
 
 ## 3. Core Performance & Diagnostics
 
-### ☐ Core Performance Markers
+### ☑ Core Performance Markers
 
 **Why:** To diagnose future performance issues, we need the ability to measure the core primitives (JS thread vs. UI thread time, layout time, etc.).
 
