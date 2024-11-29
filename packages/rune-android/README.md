@@ -49,6 +49,13 @@ This document tracks the implementation status of core features for the Android 
 - **Stable JSON Envelope:** ✅ **Implemented**. The `__modules.call` bridge in `Bridge.cpp` stringifies the arguments to JSON before passing them to the Kotlin `HermesModulesShim`, which expects a JSON string back.
 - **Background Execution:** ✅ **Implemented**. The `HermesModulesShim` uses a dedicated `ExecutorService` to run module logic on a background thread, preventing long-running native tasks from blocking the JS thread.
 
+#### Module Features
+
+- **Lifecycle Methods:** ✅ **Implemented**. Modules can implement `initialize()` and `invalidate()` for setup and teardown, invoked by the `HermesModulesShim`.
+- **Native-to-JS Events:** ✅ **Implemented**. A standard event emitter (`JSBridge.emitEvent`) allows native Kotlin code to send events to JavaScript listeners.
+- **Synchronous Constants:** ✅ **Implemented**. Modules can export constants via `getConstants()` that are synchronously available to JavaScript when the runtime loads.
+- **`ArrayBuffer` Support:** ✅ **Implemented**. The bridge supports passing binary data directly from a JS `ArrayBuffer` to a Kotlin `java.nio.ByteBuffer`, optimizing large data transfers.
+
 #### 6. Packaging & Templates
 
 - **Yarn Workspaces & Packaging:** ✅ **Implemented**. The root `README.md` confirms the monorepo structure with packages like `@rune/core`, `@rune/android`, etc., managed by Yarn workspaces.
