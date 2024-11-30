@@ -19,6 +19,7 @@ import com.rune.kit.layout.Rect
 import com.rune.kit.layout.Style
 import com.rune.kit.runtime.JSBridge
 import java.util.HashMap
+import java.util.LinkedHashSet
 import java.util.concurrent.CountDownLatch
 import kotlin.math.roundToInt
 
@@ -28,10 +29,19 @@ class RuneUIManager(
   private val eventDispatcher: (Int, String) -> Unit = { _, _ -> },
   private val handlerListener: (Int, String, Long) -> Unit = { _, _, _ -> },
 ) : JSBridge.UIShim {
-  data class Node(val id: Int, val type: String, val view: View, val label: TextView? = null)
+  data class Node(
+    val id: Int,
+    val type: String,
+    val view: View,
+    val label: TextView? = null,
+    val textChildren: MutableList<Int> = mutableListOf(),
+    var parentId: Int? = null,
+    var cachedText: String = ""
+  )
 
   private val nodes = SparseArray<Node>()
   private val parents = HashMap<Int, Int?>()
+  private val pendingTextRebuild = LinkedHashSet<Int>()
   private val handler = Handler(Looper.getMainLooper())
   private val frameScheduler = FrameScheduler()
   private var nextId = root.rootId + 1
@@ -51,6 +61,46 @@ class RuneUIManager(
         flush()
       }
     }
+  }
+
+  private fun isVirtualTextNode(node: Node): Boolean {
+    val parent = node.parentId?.let { nodes.get(it) }
+    return node.type == TEXT_TYPE && parent?.type == TEXT_TYPE
+  }
+
+  private fun recomputeTextForNode(node: Node?): String {
+    if (node == null) return ""
+    if (node.type != TEXT_TYPE) {
+      return node.label?.text?.toString()
+        ?: (node.view as? TextView)?.text?.toString()
+        ?: node.cachedText
+    }
+    if (node.textChildren.isEmpty()) {
+      return node.cachedText
+    }
+    val builder = StringBuilder()
+    node.textChildren.forEach { childId ->
+      val childText = recomputeTextForNode(nodes.get(childId))
+      builder.append(childText)
+    }
+    return builder.toString()
+  }
+
+  private fun propagateTextChange(node: Node) {
+    var currentParentId = node.parentId
+    while (currentParentId != null) {
+      val parent = nodes.get(currentParentId) ?: break
+      if (parent.type != TEXT_TYPE) break
+      pendingTextRebuild.add(parent.id)
+      engine.markDirty(parent.id)
+      currentParentId = parent.parentId
+    }
+  }
+
+  private fun recomputeAndPropagate(node: Node) {
+    pendingTextRebuild.add(node.id)
+    engine.markDirty(node.id)
+    propagateTextChange(node)
   }
 
   override fun createNode(type: String): Int = onMain {
@@ -90,6 +140,7 @@ class RuneUIManager(
     view.isClickable = false
     view.setBackgroundColor(Color.TRANSPARENT)
     val node = Node(id, type, view, label)
+    node.cachedText = (label?.text?.toString() ?: "")
     nodes.put(id, node)
     parents[id] = null
     engine.createNode(id)
@@ -181,40 +232,47 @@ class RuneUIManager(
 
   override fun setText(nodeId: Int, text: String) = onMain {
     Log.d("RuneUI", "setText nodeId=$nodeId text='$text'")
+    val node = nodes.get(nodeId)
+    node?.cachedText = text
+
     val target = resolveTextNode(nodeId)
     if (target == null) {
       Log.w("RuneUI", "setText: could not resolve target for nodeId=$nodeId")
     }
+
     when {
-      target?.label != null -> {
-        target.label.text = text
-        Log.d("RuneUI", "Set text on label: ${target.label.text}")
+      target?.type == TEXT_TYPE -> {
+        pendingTextRebuild.add(target.id)
+        engine.markDirty(target.id)
+        propagateTextChange(target)
+        Log.d("RuneUI", "Set text on label: ${target.label?.text}")
       }
       target?.view is TextView -> {
         (target.view as TextView).text = text
+        engine.markDirty(target.id)
         Log.d("RuneUI", "Set text on view: ${(target.view as TextView).text}")
       }
+      else -> {
+        engine.markDirty(target?.id ?: nodeId)
+      }
     }
-    // Mark layout dirty so Yoga will re-measure intrinsic text size
-    engine.markDirty(target?.id ?: nodeId)
     scheduleFlush()
   }
 
   override fun insertChild(parentId: Int, childId: Int, index: Int) = onMain {
     parents[childId] = parentId
+    nodes.get(childId)?.parentId = parentId
     val parentNode = nodes.get(parentId)
     if (parentNode?.type == TEXT_TYPE) {
       // If parent is a text node, merge text content from child instead of nesting views
       val childNode = nodes.get(childId)
-      if (childNode?.type == TEXT_TYPE && parentNode.label != null && childNode.label != null) {
-        parentNode.label.text = childNode.label.text
-        Log.d("RuneUI", "Merged text from child $childId into parent $parentId: '${childNode.label.text}'")
-        // Remove the child node from nodes map so it doesn't get layout applied
-        nodes.remove(childId)
-        // IMPORTANT: Keep the parents[childId] mapping so future setText(childId, ...)
-        // can resolve to this parent text node via resolveTextNode.
-        // Remove from layout engine as well
-        engine.removeNode(childId)
+      if (childNode?.type == TEXT_TYPE) {
+        val insertIndex = index.coerceIn(0, parentNode.textChildren.size)
+        parentNode.textChildren.remove(childId)
+        parentNode.textChildren.add(insertIndex, childId)
+        pendingTextRebuild.add(parentNode.id)
+        engine.markDirty(parentNode.id)
+        propagateTextChange(parentNode)
       }
       scheduleFlush()
       return@onMain
@@ -252,17 +310,18 @@ class RuneUIManager(
   override fun removeChild(parentId: Int, childId: Int) = onMain {
     val parentNode = nodes.get(parentId)
     if (parentNode?.type == TEXT_TYPE) {
-      engine.setMeasureHandler(childId, null)
-      engine.removeNode(childId)
+      parentNode.textChildren.remove(childId)
+      parents[childId] = null
+      nodes.get(childId)?.parentId = null
+      pendingTextRebuild.add(parentNode.id)
+      engine.markDirty(parentNode.id)
+      propagateTextChange(parentNode)
       scheduleFlush()
-      // IMPORTANT: Do NOT remove the parent mapping here for merged text children.
-      // During reconciliation, Solid may transiently remove/re-insert text nodes while
-      // still issuing setText on the child id. Keeping the mapping ensures resolveTextNode
-      // can still find the actual parent text node.
       return@onMain
     }
     // For non-text parents, clear mapping early
     parents[childId] = null
+    nodes.get(childId)?.parentId = null
     val childView = nodes.get(childId)?.view ?: return@onMain
     val childNode = nodes.get(childId)
     
@@ -339,8 +398,9 @@ class RuneUIManager(
     }
     if (!dirty) return
     dirty = false
-    
+
     PerformanceProfiler.recordLayoutStart()
+    drainPendingTextRebuilds()
     // Store previous frames for existing nodes to detect layout jumps
     val previousFrames = SparseArray<Rect>()
     for (i in 0 until nodes.size()) {
@@ -365,6 +425,7 @@ class RuneUIManager(
     // This prevents the jump effect when new content is added
     for (i in 0 until nodes.size()) {
       val node = nodes.valueAt(i)
+      if (isVirtualTextNode(node)) continue
       val frame: Rect = engine.frame(node.id)
       val width = frame.right - frame.left
       val height = frame.bottom - frame.top
@@ -380,6 +441,7 @@ class RuneUIManager(
     // Second pass: animate position changes for existing views to prevent jumps
     for (i in 0 until nodes.size()) {
       val node = nodes.valueAt(i)
+      if (isVirtualTextNode(node)) continue
       val frame: Rect = engine.frame(node.id)
       val prevFrame = previousFrames.get(node.id)
       
@@ -398,6 +460,7 @@ class RuneUIManager(
     handler.post {
       for (i in 0 until nodes.size()) {
         val node = nodes.valueAt(i)
+        if (isVirtualTextNode(node)) continue
         val frame: Rect = engine.frame(node.id)
         
         // Only make visible if it has a valid size
@@ -423,6 +486,20 @@ class RuneUIManager(
     }
   }
 
+  private fun drainPendingTextRebuilds() {
+    if (pendingTextRebuild.isEmpty()) return
+    val toProcess = pendingTextRebuild.toList()
+    pendingTextRebuild.clear()
+    toProcess.forEach { nodeId ->
+      val node = nodes.get(nodeId) ?: return@forEach
+      if (node.type != TEXT_TYPE) return@forEach
+      val newText = recomputeTextForNode(node)
+      node.cachedText = newText
+      node.label?.text = newText
+      (node.view as? TextView)?.text = newText
+    }
+  }
+
   private fun resolveTextNode(id: Int): Node? {
     var currentId: Int? = id
     while (currentId != null) {
@@ -444,7 +521,12 @@ class RuneUIManager(
       parents.remove(id)
       return
     }
-    
+
+    node.parentId?.let { parentId ->
+      nodes.get(parentId)?.textChildren?.remove(id)
+    }
+    node.parentId = null
+
     // Clean up view: remove click listener and from parent
     node.view.setOnClickListener(null)
     node.view.isClickable = false

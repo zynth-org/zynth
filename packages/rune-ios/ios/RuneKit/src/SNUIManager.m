@@ -17,6 +17,7 @@
 @property(nonatomic, strong) NSMutableArray<NSNumber *> *children;
 @property(nonatomic, strong) JSValue *onPressCallback;
 @property(nonatomic, assign) BOOL hasOnPressHandler;
+@property(nonatomic, assign) int parentId;
 @end
 
 @implementation SNNode
@@ -91,6 +92,39 @@
   }
 }
 
+- (void)sn_refreshTextForLabelNode:(SNNode *)node {
+  if (!node || ![node.view isKindOfClass:[UILabel class]]) return;
+  if (!node.children.count) {
+    ((UILabel *)node.view).text = @"";
+    if (node.yoga) YGNodeMarkDirty(node.yoga);
+    return;
+  }
+
+  NSMutableString *composed = [NSMutableString string];
+  for (NSNumber *childId in node.children) {
+    SNNode *child = _nodes[childId];
+    if (!child || ![child.view isKindOfClass:[UILabel class]]) continue;
+    NSString *childText = ((UILabel *)child.view).text ?: @"";
+    [composed appendString:childText];
+  }
+
+  ((UILabel *)node.view).text = composed;
+  if (node.yoga) YGNodeMarkDirty(node.yoga);
+}
+
+- (void)sn_propagateTextChangeFromNode:(SNNode *)node {
+  if (!node) return;
+
+  int currentParentId = node.parentId;
+  while (currentParentId > 0) {
+    SNNode *parent = _nodes[@(currentParentId)];
+    if (!parent || ![parent.view isKindOfClass:[UILabel class]]) break;
+
+    [self sn_refreshTextForLabelNode:parent];
+    currentParentId = parent.parentId;
+  }
+}
+
 - (void)sn_markNeedsFlush {
   dispatch_async(dispatch_get_main_queue(), ^{
     self.needsFlush = YES;
@@ -122,6 +156,7 @@
   n.view = v;
   n.yoga = YGNodeNew();
   n.children = [NSMutableArray new];
+  n.parentId = -1;
 
   // Safety check for Yoga node creation
   if (!n.yoga) {
@@ -370,10 +405,11 @@ static void SNApplyEdges(NSDictionary *style,
 - (void)setText:(NSNumber *)nodeId text:(NSString *)text {
   SNNode *n = _nodes[nodeId];
   if (!n || !n.view) return;
-  
+
   if ([n.view isKindOfClass:[UILabel class]]) {
     ((UILabel *)n.view).text = text;
     if (n.yoga) YGNodeMarkDirty(n.yoga);
+    [self sn_propagateTextChangeFromNode:n];
   }
   [self sn_markNeedsFlush];
 }
@@ -385,24 +421,36 @@ static void SNApplyEdges(NSDictionary *style,
   if (parentId.intValue == 0) {
     // Attach to root surface directly
     if (!self.rootYoga || !self.root) return;
-    
+
     int i = (int)index.intValue;
     i = MAX(0, MIN(i, (int)self.root.subviews.count));
     [self.root insertSubview:c.view atIndex:i];
     // Link Yoga under persistent root
     YGNodeInsertChild(self.rootYoga, c.yoga, (uint32_t)MIN(i, (int)YGNodeGetChildCount(self.rootYoga)));
     NSLog(@"[SN] insert root->%d at %d (rootSubviews=%lu)", c.nid, i, (unsigned long)self.root.subviews.count);
+    c.parentId = 0;
   } else {
     SNNode *p = _nodes[parentId];
     if (!p || !p.view || !p.yoga) return;
-    
+    c.parentId = p.nid;
+
     // If parent is a UILabel, merge text instead of nesting subviews
     if ([p.view isKindOfClass:[UILabel class]]) {
+      // Maintain logical child order so text composition is deterministic
+      NSUInteger existingIdx = [p.children indexOfObject:childId];
+      if (existingIdx != NSNotFound) {
+        [p.children removeObjectAtIndex:existingIdx];
+      }
+      NSUInteger insertIdx = MIN((NSUInteger)index.unsignedIntegerValue, p.children.count);
+      [p.children insertObject:childId atIndex:insertIdx];
+
       if ([c.view isKindOfClass:[UILabel class]]) {
-        ((UILabel *)p.view).text = ((UILabel *)c.view).text ?: @"";
-        if (p.yoga) YGNodeMarkDirty(p.yoga);
         NSLog(@"[SN] merge text %d->%d", p.nid, c.nid);
       }
+
+      [self sn_refreshTextForLabelNode:p];
+      [self sn_propagateTextChangeFromNode:p];
+      [self sn_markNeedsFlush];
       return;
     }
     int i = (int)index.intValue;
@@ -425,23 +473,37 @@ static void SNApplyEdges(NSDictionary *style,
   }
   c.onPressCallback = nil;
   c.hasOnPressHandler = NO;
-  
+
   if (parentId.intValue == 0) {
     [c.view removeFromSuperview];
     if (self.rootYoga && c.yoga) {
       YGNodeRemoveChild(self.rootYoga, c.yoga);
     }
+    c.parentId = -1;
   } else {
     SNNode *p = _nodes[parentId];
     if (!p || !p.yoga) return;
-    
+
+    if ([p.view isKindOfClass:[UILabel class]]) {
+      NSUInteger idx = [p.children indexOfObject:childId];
+      if (idx != NSNotFound) {
+        [p.children removeObjectAtIndex:idx];
+      }
+      c.parentId = -1;
+      [self sn_refreshTextForLabelNode:p];
+      [self sn_propagateTextChangeFromNode:p];
+      [self sn_markNeedsFlush];
+      return;
+    }
+
     [c.view removeFromSuperview];
     NSUInteger idx = [p.children indexOfObject:childId];
     if (idx != NSNotFound) [p.children removeObjectAtIndex:idx];
-    
+
     if (c.yoga) {
       YGNodeRemoveChild(p.yoga, c.yoga);
     }
+    c.parentId = -1;
   }
   [self sn_markNeedsFlush];
 }
