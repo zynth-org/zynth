@@ -351,6 +351,58 @@ facebook::jsi::Value javaObjectToJsValue(
     std::string utf = getUtfString(env, js);
     return Value(facebook::jsi::String::createFromUtf8(rt, utf));
   }
+  jclass jsonObjectClass = env->FindClass("org/json/JSONObject");
+  if (jsonObjectClass) {
+    const bool isJsonObject = env->IsInstanceOf(value, jsonObjectClass);
+    if (isJsonObject) {
+      jmethodID toStringMethod = env->GetMethodID(jsonObjectClass, "toString", "()Ljava/lang/String;");
+      jstring jsonString = nullptr;
+      if (toStringMethod) {
+        jsonString = static_cast<jstring>(env->CallObjectMethod(value, toStringMethod));
+      }
+      std::string jsonUtf = getUtfString(env, jsonString);
+      if (jsonString) {
+        env->DeleteLocalRef(jsonString);
+      }
+      env->DeleteLocalRef(jsonObjectClass);
+      if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        BRIDGE_LOG(ANDROID_LOG_ERROR, "javaObjectToJsValue: JSONObject.toString threw an exception");
+        return Value::undefined();
+      }
+      if (!jsonUtf.empty()) {
+        return parseJson(rt, jsonUtf);
+      }
+      return parseJson(rt, "{}");
+    }
+    env->DeleteLocalRef(jsonObjectClass);
+  }
+  jclass jsonArrayClass = env->FindClass("org/json/JSONArray");
+  if (jsonArrayClass) {
+    const bool isJsonArray = env->IsInstanceOf(value, jsonArrayClass);
+    if (isJsonArray) {
+      jmethodID toStringMethod = env->GetMethodID(jsonArrayClass, "toString", "()Ljava/lang/String;");
+      jstring jsonString = nullptr;
+      if (toStringMethod) {
+        jsonString = static_cast<jstring>(env->CallObjectMethod(value, toStringMethod));
+      }
+      std::string jsonUtf = getUtfString(env, jsonString);
+      if (jsonString) {
+        env->DeleteLocalRef(jsonString);
+      }
+      env->DeleteLocalRef(jsonArrayClass);
+      if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        BRIDGE_LOG(ANDROID_LOG_ERROR, "javaObjectToJsValue: JSONArray.toString threw an exception");
+        return Value::undefined();
+      }
+      if (!jsonUtf.empty()) {
+        return parseJson(rt, jsonUtf);
+      }
+      return parseJson(rt, "[]");
+    }
+    env->DeleteLocalRef(jsonArrayClass);
+  }
   jclass byteBufferClass = env->FindClass("java/nio/ByteBuffer");
   if (env->IsInstanceOf(value, byteBufferClass)) {
     auto buffer = static_cast<uint8_t*>(env->GetDirectBufferAddress(value));
