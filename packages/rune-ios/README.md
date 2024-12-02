@@ -54,7 +54,7 @@ This document tracks the implementation status of core features for the iOS SDK.
 - **Lifecycle Methods:** ✅ **Implemented**. Modules can implement optional `initialize()` and `invalidate()` methods for setup and teardown logic, managed by the `HermesAdapter`.
 - **Native-to-JS Events:** ✅ **Implemented**. A standardized event emitter allows native Swift or Objective-C code to send events to JavaScript listeners, enabling communication for device events like orientation or keyboard status.
 - **Synchronous Constants:** ✅ **Implemented**. Modules can export constants that are synchronously available to JavaScript upon initialization, avoiding the need for an async bridge call for static data.
-- **`ArrayBuffer` Support:** ⚠️ **Partially Implemented**. The bridge supports passing binary data from JS to native (`ArrayBuffer` -> Swift `Data`). However, returning `Data` from native back to a JS `ArrayBuffer` is not yet supported and will result in an empty object.
+- **`ArrayBuffer` Support:** ✅ **Complete**. The bridge supports passing binary data from JS to native (`ArrayBuffer` -> Swift `Data`) and returning `Data` from native back to a JS `ArrayBuffer`.
 
 #### 6. Packaging & Templates
 
