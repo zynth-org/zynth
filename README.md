@@ -34,7 +34,19 @@ Repository layout
 - `scripts` — thin Node helpers invoked by the CLI (shared logic currently lives here).
 - `README.md`, `TODO.md`, etc. — documentation.
 
-Quick start (development)
+## Architectural Principles & API Design
+
+**Objective:** To build a framework that is not only powerful but also intuitive, logical, and a pleasure to use, drawing inspiration from the clean, modular design of modern development tools.
+
+-   **Lean Core:** The `@rune/core` package is the minimal runtime engine (renderer, reconciler, native bridge). All components, including primitives like `View` and `Text`, and APIs live in separate, dedicated packages.
+-   **Modular Ecosystem:** The framework is composed of small, focused packages (e.g., `@rune/components`, `@rune/animation`, `@rune/api`). This promotes separation of concerns, independent versioning, and better tree-shaking.
+-   **Intuitive Naming:** File and folder names are explicit and predictable. API and component names are clear and self-documenting.
+-   **Developer-First API:** APIs are designed for clarity and ease of use. For example, hooks are the primary interface for accessing framework features (`useAnimation`, `useDimensions`).
+-   **Convention over Configuration:** The framework provides sensible defaults and a clear project structure out of the box, minimizing the need for boilerplate configuration. The CLI enforces these conventions.
+
+---
+
+## Quick start (development)
 
 1. Install dependencies (root of repo):
 

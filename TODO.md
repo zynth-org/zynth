@@ -4,12 +4,15 @@ This document outlines the development plan to evolve Rune into a powerful, AI-n
 
 ---
 
-## Phase 1: Foundational Ecosystem (Target: 2-3 Weeks)
+## Architectural Principles & API Design
 
-**Objective:** Build out the ecosystem of foundational components and APIs required to create rich, interactive applications. This involves creating several new packages to maintain modularity.
+**Objective:** To build a framework that is not only powerful but also intuitive, logical, and a pleasure to use, drawing inspiration from the clean, modular design of modern development tools.
+
+-   [ ] **Lean Core:** The `@rune/core` package should be the minimal runtime engine (renderer, reconciler, native bridge). All components, including primitives like `View` and `Text`, and APIs should live in separate, dedicated packages.
 
 ### 1. Core Components (`packages/rune-components`)
 -   [ ] **`@rune/components` Package:** Create a new package to house standard UI components.
+-   [ ] **Relocate Primitives:** Move `View` and `Text` from `@rune/core` to this package.
 -   [ ] **`Image`:** Implement a component for local and remote images.
 -   [ ] **`TextInput`:** Implement a component for text input.
 -   [ ] **`ScrollView`:** Implement a scrolling container.
