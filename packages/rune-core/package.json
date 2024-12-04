@@ -4,7 +4,7 @@
   "type": "module",
   "main": "dist/cjs/index.cjs",
   "module": "dist/esm/index.js",
-  "types": "dist/index.d.ts",
+  "types": "dist/types/index.d.ts",
   "sideEffects": false,
   "license": "MIT",
   "peerDependencies": {
