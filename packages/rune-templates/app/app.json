@@ -1,8 +1,7 @@
 {
   "rune": {
-    "name": "{{DISPLAY_NAME}}",
-    "slug": "{{APP_SLUG}}",
-    "version": "1.0.0",
+    "name": "{{displayName}}",
+    "slug": "{{slug}}",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -12,15 +11,13 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "{{BUNDLE_ID}}"
+      "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#FFFFFF"
-      },
-      "package": "{{BUNDLE_ID}}"
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"
