@@ -1,8 +1,4 @@
-import type { ParentComponent } from "solid-js";
-import type { Style } from "./host/HostTypes";
-
-export const View: ParentComponent<{ style?: Style; onPress?: () => void }> =
-  (p) => <view style={p.style} onPress={p.onPress}>{p.children}</view>;
-
-export const Text: ParentComponent<{ style?: Style }> =
-  (p) => <text style={p.style}>{p.children}</text>;
+throw new Error(
+  "View/Text primitives moved to @rune/components. Update your imports."
+);
+export {};

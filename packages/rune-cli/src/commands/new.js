@@ -11,7 +11,9 @@ async function createNewApp(argv) {
   const baseDir = customPath ? path.resolve(customPath) : process.cwd();
 
   if (directory && fs.existsSync(path.join(baseDir, directory))) {
-    console.error(chalk.red(`Directory '${directory}' already exists in '${baseDir}'.`));
+    console.error(
+      chalk.red(`Directory '${directory}' already exists in '${baseDir}'.`)
+    );
     process.exit(1);
   }
 
@@ -80,7 +82,7 @@ start(App);`
   );
   fs.writeFileSync(
     path.join(srcDir, "App.tsx"),
-    `import { View, Text } from "@rune/core";
+    `import { View, Text } from "@rune/components";
 
 export default function App() {
   return (
@@ -96,6 +98,11 @@ export default function App() {
   const appJson = readJSON(appJsonPath);
   appJson.name = displayName;
   appJson.slug = slug;
+  if (!appJson.rune || typeof appJson.rune !== "object") {
+    appJson.rune = {};
+  }
+  appJson.rune.name = displayName;
+  appJson.rune.slug = slug;
   fs.writeFileSync(appJsonPath, JSON.stringify(appJson, null, 2));
 
   // Update package.json
@@ -105,10 +112,12 @@ export default function App() {
   fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
 
   console.log(chalk.green("✅ App created successfully!"));
-  console.log(chalk.cyan(`To get started, run:
+  console.log(
+    chalk.cyan(`To get started, run:
 
   cd ${directory}
-  rune dev ios`));
+  rune dev ios`)
+  );
 }
 
 module.exports = {

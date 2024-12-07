@@ -1,5 +1,4 @@
 export * from "./renderer";
-export * from "./components";
 export * from "./host/HostTypes";
 export { createIOSHost } from "./host/ios";
 export { createAndroidHost } from "./host/android";

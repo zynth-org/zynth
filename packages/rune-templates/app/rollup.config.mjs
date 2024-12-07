@@ -30,6 +30,21 @@ export default {
             "../../packages/rune-core/src/index.ts"
           ),
         },
+        {
+          // Match exactly `@rune/components`
+          find: /^@rune\/components$/,
+          replacement: path.resolve(
+            __dirname,
+            "../../packages/rune-components/src/index.ts"
+          ),
+        },
+        {
+          // Allow deep imports from @rune/components
+          find: /^@rune\/components\//,
+          replacement:
+            path.resolve(__dirname, "../../packages/rune-components/src/") +
+            "/",
+        },
       ],
     }),
     resolve({ extensions: [".mjs", ".js", ".ts", ".tsx"] }),

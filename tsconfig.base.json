@@ -10,7 +10,9 @@
     "baseUrl": ".",
     "paths": {
       "@rune/core": ["packages/rune-core/src/index.ts"],
-      "@rune/core/*": ["packages/rune-core/src/*"]
+      "@rune/core/*": ["packages/rune-core/src/*"],
+      "@rune/components": ["packages/rune-components/src/index.ts"],
+      "@rune/components/*": ["packages/rune-components/src/*"]
     }
   }
 }

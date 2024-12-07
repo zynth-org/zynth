@@ -1,11 +1,13 @@
 {
   "name": "{{slug}}",
   "type": "module",
+  "version": "0.0.1",
   "dependencies": {
     "@babel/core": "^7.28.4",
     "@babel/preset-typescript": "^7.27.1",
     "@rollup/plugin-babel": "^6.0.4",
     "@rune/android": "*",
+    "@rune/components": "^0.0.1",
     "@rune/core": "^0.0.1",
     "@rune/ios": "*",
     "solid-js": "^1.9.9"
