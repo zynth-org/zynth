@@ -1,4 +1,6 @@
 #import "SNUIManager.h"
+#import "SNUIManager+Internal.h"
+#import "SNUIManager+Image.h"
 #import "SNHexColor.h"
 #import <Yoga/Yoga.h>
 #import <QuartzCore/QuartzCore.h>
@@ -10,14 +12,14 @@
 #import "RuneKit-Swift.h"
 #endif
 
-@interface SNNode : NSObject
-@property(nonatomic, assign) int nid;
-@property(nonatomic, strong) UIView *view;
-@property(nonatomic, assign) YGNodeRef yoga;
-@property(nonatomic, strong) NSMutableArray<NSNumber *> *children;
-@property(nonatomic, strong) JSValue *onPressCallback;
-@property(nonatomic, assign) BOOL hasOnPressHandler;
-@property(nonatomic, assign) int parentId;
+@interface SNUIManager ()
+@property(nonatomic, strong) UIView *root;
+@property(nonatomic, strong) NSMutableDictionary<NSNumber *, SNNode *> *nodes;
+@property(nonatomic, assign) int nextId;
+@property(nonatomic, assign) YGNodeRef rootYoga;
+@property(nonatomic, strong, nullable) CADisplayLink *displayLink;
+@property(nonatomic, assign) BOOL needsFlush;
+@property(nonatomic, strong) NSMutableDictionary<NSString *, NSDictionary *> *eventPayloads;
 @end
 
 @implementation SNNode
@@ -36,17 +38,12 @@
     }
     _yoga = NULL;
   }
+  if (_imageTask) {
+    [_imageTask cancel];
+    _imageTask = nil;
+  }
 }
 
-@end
-
-@interface SNUIManager ()
-@property(nonatomic, strong) UIView *root;
-@property(nonatomic, strong) NSMutableDictionary<NSNumber *, SNNode *> *nodes;
-@property(nonatomic, assign) int nextId;
-@property(nonatomic, assign) YGNodeRef rootYoga;
-@property(nonatomic, strong) CADisplayLink *displayLink;
-@property(nonatomic, assign) BOOL needsFlush;
 @end
 
 @implementation SNUIManager
@@ -65,6 +62,7 @@
     _nodes = [NSMutableDictionary new];
     _nextId = 1;
     _rootYoga = YGNodeNew();
+    _eventPayloads = [NSMutableDictionary new];
 
     // Prepare root surface - ensure it fills the entire screen
     CGRect screenBounds = [UIScreen mainScreen].bounds;
@@ -125,6 +123,63 @@
   }
 }
 
+- (NSString *)sn_eventKeyForNode:(int)nid name:(NSString *)name {
+  if (nid <= 0 || name.length == 0) return nil;
+  return [NSString stringWithFormat:@"%d::%@", nid, name];
+}
+
+- (void)sn_storeEventPayload:(NSDictionary *_Nullable)payload forNode:(SNNode *)node name:(NSString *)name {
+  if (!node || name.length == 0) return;
+  NSString *key = [self sn_eventKeyForNode:node.nid name:name];
+  if (!key) return;
+  if (payload && payload.count > 0) {
+    if (!self.eventPayloads) {
+      self.eventPayloads = [NSMutableDictionary new];
+    }
+    self.eventPayloads[key] = payload;
+  } else {
+    [self.eventPayloads removeObjectForKey:key];
+  }
+}
+
+- (void)sn_dispatchEvent:(NSString *)name payload:(NSDictionary *_Nullable)payload toNode:(SNNode *)node {
+  if (!node || name.length == 0) return;
+  NSDictionary *normalizedPayload = payload ?: @{};
+  BOOL invoked = NO;
+
+  if (self.jsInvoker && (([name isEqualToString:@"onLoad"] && node.hasOnLoadHandler) ||
+                         ([name isEqualToString:@"onError"] && node.hasOnErrorHandler))) {
+    if (normalizedPayload.count > 0) {
+      [self sn_storeEventPayload:normalizedPayload forNode:node name:name];
+    } else {
+      [self sn_storeEventPayload:nil forNode:node name:name];
+    }
+    [self.jsInvoker invokeHandlerForNode:node.nid name:name];
+    invoked = YES;
+  }
+
+  if (invoked) {
+    return;
+  }
+
+  JSValue *callback = nil;
+  if ([name isEqualToString:@"onLoad"]) {
+    callback = node.onLoadCallback;
+  } else if ([name isEqualToString:@"onError"]) {
+    callback = node.onErrorCallback;
+  }
+
+  if (!callback || [callback isUndefined] || [callback isNull]) {
+    return;
+  }
+
+  if (normalizedPayload.count > 0) {
+    [callback callWithArguments:@[normalizedPayload]];
+  } else {
+    [callback callWithArguments:@[]];
+  }
+}
+
 - (void)sn_markNeedsFlush {
   dispatch_async(dispatch_get_main_queue(), ^{
     self.needsFlush = YES;
@@ -138,6 +193,19 @@
   [self sn_performFlush];
 }
 
+- (NSDictionary *)dequeueEventPayloadForNode:(int)nodeId name:(NSString *)name {
+  NSString *key = [self sn_eventKeyForNode:nodeId name:name];
+  if (!key || key.length == 0) {
+    return @{};
+  }
+  NSDictionary *payload = self.eventPayloads[key];
+  if (payload) {
+    [self.eventPayloads removeObjectForKey:key];
+    return payload;
+  }
+  return @{};
+}
+
 - (NSNumber *)createNode:(NSString *)type {
   int nid = _nextId++;
   UIView *v;
@@ -146,6 +214,15 @@
     l.textColor = [UIColor whiteColor];
     l.numberOfLines = 0;
     v = l;
+  } else if ([type isEqualToString:@"image"]) {
+#if __has_include(<UIKit/UIKit.h>)
+    UIImageView *imageView = [UIImageView new];
+    imageView.contentMode = UIViewContentModeScaleAspectFill;
+    imageView.clipsToBounds = YES;
+    v = imageView;
+#else
+    v = [UIView new];
+#endif
   } else {
     v = [UIView new];
   }
@@ -157,6 +234,13 @@
   n.yoga = YGNodeNew();
   n.children = [NSMutableArray new];
   n.parentId = -1;
+  n.onLoadCallback = nil;
+  n.onErrorCallback = nil;
+  n.hasOnLoadHandler = NO;
+  n.hasOnErrorHandler = NO;
+  n.imageTask = nil;
+  n.imageSourceToken = nil;
+  n.imageTintColor = nil;
 
   // Safety check for Yoga node creation
   if (!n.yoga) {
@@ -308,6 +392,10 @@ static void SNApplyEdges(NSDictionary *style,
     [self sn_markNeedsFlush];
     return;
   }
+
+  if ([self sn_imageHandlesSetPropForNode:n name:name valueJSON:json]) {
+    return;
+  }
 }
 
 - (void)setStyle:(NSNumber *)nodeId style:(NSDictionary *)style {
@@ -354,6 +442,11 @@ static void SNApplyEdges(NSDictionary *style,
         }
       }
     }
+    return;
+  }
+
+  if ([self sn_imageHandlesSetPropCallbackForNode:n name:name callback:callback]) {
+    return;
   }
 }
 
@@ -366,6 +459,11 @@ static void SNApplyEdges(NSDictionary *style,
     n.onPressCallback = nil;
     n.hasOnPressHandler = YES;
     [self sn_attachTapRecognizerForNode:n];
+    return;
+  }
+
+  if ([self sn_imageHandlesSetHandlerForNode:n name:name]) {
+    return;
   }
 }
 
@@ -467,6 +565,7 @@ static void SNApplyEdges(NSDictionary *style,
 - (void)removeChild:(NSNumber *)parentId child:(NSNumber *)childId {
   SNNode *c = _nodes[childId];
   if (!c || !c.view) return;
+  [self sn_imageCleanupNode:c];
   // Clean up gesture recognizers and JS callback flags to avoid stacking
   for (UIGestureRecognizer *gr in c.view.gestureRecognizers.copy) {
     [c.view removeGestureRecognizer:gr];

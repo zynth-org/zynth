@@ -11,6 +11,7 @@ import android.view.View
 import android.view.View.MeasureSpec
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.TextView
 import com.rune.kit.debug.PerformanceProfiler
 import com.rune.kit.layout.LayoutEngine
@@ -22,6 +23,8 @@ import java.util.HashMap
 import java.util.LinkedHashSet
 import java.util.concurrent.CountDownLatch
 import kotlin.math.roundToInt
+import org.json.JSONException
+import org.json.JSONObject
 
 class RuneUIManager(
   private val root: RuneRootView,
@@ -36,7 +39,8 @@ class RuneUIManager(
     val label: TextView? = null,
     val textChildren: MutableList<Int> = mutableListOf(),
     var parentId: Int? = null,
-    var cachedText: String = ""
+    var cachedText: String = "",
+    var imageState: ImageState? = null,
   )
 
   private val nodes = SparseArray<Node>()
@@ -44,6 +48,16 @@ class RuneUIManager(
   private val pendingTextRebuild = LinkedHashSet<Int>()
   private val handler = Handler(Looper.getMainLooper())
   private val frameScheduler = FrameScheduler()
+  private val imageSupport = RuneImageSupport(
+    root = root,
+    engine = engine,
+    handler = handler,
+    eventDispatcher = eventDispatcher,
+    scheduleFlush = this::scheduleFlush,
+    storeEventPayload = this::storeEventPayload,
+    runOnMainThread = this::runOnMainThread,
+  )
+  private val eventPayloads = HashMap<String, JSONObject>()
   private var nextId = root.rootId + 1
   @Volatile private var dirty = false
   private var lastRootWidth = -1
@@ -60,6 +74,40 @@ class RuneUIManager(
         scheduleFlush()
         flush()
       }
+    }
+  }
+
+  private fun eventKey(nodeId: Int, event: String): String = "$nodeId::$event"
+
+  private fun storeEventPayload(nodeId: Int, event: String, payload: JSONObject?) {
+    val key = eventKey(nodeId, event)
+    synchronized(eventPayloads) {
+      if (payload != null && payload.length() > 0) {
+        eventPayloads[key] = payload
+      } else {
+        eventPayloads.remove(key)
+      }
+    }
+  }
+
+  fun consumeEventPayload(nodeId: Int, event: String): JSONObject? {
+    val key = eventKey(nodeId, event)
+    synchronized(eventPayloads) {
+      return eventPayloads.remove(key)?.let {
+        try {
+          JSONObject(it.toString())
+        } catch (_: JSONException) {
+          null
+        }
+      }
+    }
+  }
+
+  fun dequeueEventPayloadJson(nodeId: Int, event: String): String? {
+    val key = eventKey(nodeId, event)
+    synchronized(eventPayloads) {
+      val payload = eventPayloads.remove(key)
+      return payload?.toString()
     }
   }
 
@@ -115,6 +163,13 @@ class RuneUIManager(
       Log.d("RuneUI", "Created text node $id")
       view = text
       label = text
+    } else if (type == IMAGE_TYPE) {
+      val imageView = ImageView(root.context)
+      imageView.adjustViewBounds = true
+      imageView.scaleType = ImageView.ScaleType.CENTER_CROP
+      imageView.setBackgroundColor(Color.TRANSPARENT)
+      view = imageView
+      label = null
     } else {
       view = FrameLayout(root.context)
       label = null
@@ -141,6 +196,9 @@ class RuneUIManager(
     view.setBackgroundColor(Color.TRANSPARENT)
     val node = Node(id, type, view, label)
     node.cachedText = (label?.text?.toString() ?: "")
+    if (type == IMAGE_TYPE) {
+      imageSupport.initializeNode(node)
+    }
     nodes.put(id, node)
     parents[id] = null
     engine.createNode(id)
@@ -179,13 +237,17 @@ class RuneUIManager(
         val measuredHeight = label.measuredHeight.coerceAtLeast((label.textSize * 1.2f).roundToInt())
         measuredWidth.toFloat() to measuredHeight.toFloat()
       }
+    } else if (type == IMAGE_TYPE) {
+      engine.setMeasureHandler(id) { input ->
+        imageSupport.measure(node, input)
+      }
     }
     id
   }
 
   override fun setProp(nodeId: Int, name: String, jsonValue: String?) = onMain {
     Log.d("RuneUI", "setProp: nodeId=$nodeId name=$name jsonValue=$jsonValue")
-    val valueJson = jsonValue ?: return@onMain
+    val valueJson = jsonValue
     // Resolve target even if the original node was merged/removed (e.g., text child inside Text)
     val direct = nodes.get(nodeId)
     val target = when {
@@ -197,7 +259,8 @@ class RuneUIManager(
     }
     when (name) {
       "style" -> {
-        val style = Style.fromJson(valueJson)
+        val styleValue = valueJson ?: return@onMain
+        val style = Style.fromJson(styleValue)
         engine.setStyle(target.id, style)
         // If styling a merged child, clear any residual style on the original id in the layout engine
         if (target.id != nodeId) {
@@ -217,6 +280,9 @@ class RuneUIManager(
           target.view.clipToOutline = true
           target.view.outlineProvider = RoundedOutline(radius)
         }
+        if (target.type == IMAGE_TYPE) {
+          imageSupport.onStyleApplied(target, style)
+        }
       }
       "onPress" -> {
         // onPress should be handled by the JavaScript bridge calling setHandler
@@ -224,6 +290,10 @@ class RuneUIManager(
         Log.d("RuneUI", "onPress prop set for node $nodeId, expecting setHandler call")
       }
       else -> {
+        if (target.type == IMAGE_TYPE && imageSupport.handleProp(target, name, jsonValue)) {
+          scheduleFlush()
+          return@onMain
+        }
         Log.d("RuneUI", "Unhandled prop: $name = $valueJson")
       }
     }
@@ -340,6 +410,11 @@ class RuneUIManager(
   }
 
   override fun setHandler(nodeId: Int, event: String, handlerId: Long) = onMain {
+    nodes.get(nodeId)?.let { node ->
+      if (node.type == IMAGE_TYPE) {
+        imageSupport.onHandlerSet(node, event)
+      }
+    }
     if (event == "onPress") {
       Log.d("RuneUI", "Setting onPress handler for node $nodeId")
       val node = nodes.get(nodeId)
@@ -360,11 +435,26 @@ class RuneUIManager(
     scheduleFlush()
   }
 
+  private fun runOnMainThread(block: () -> Unit) {
+    if (Looper.myLooper() == Looper.getMainLooper()) {
+      block()
+    } else {
+      handler.post { block() }
+    }
+  }
+
+  override fun dequeueEventPayload(nodeId: Int, event: String): String? {
+    return dequeueEventPayloadJson(nodeId, event)
+  }
+
   override fun flush() = onMain {
-    // Defer to next frame to avoid mid-frame relayout flicker
-    // Set dirty flag immediately to ensure we know there's pending work
     dirty = true
-    scheduleFlush()
+    if (root.width > 0 && root.height > 0) {
+      frameScheduler.cancelFlush()
+      performFlush()
+    } else {
+      scheduleFlush()
+    }
   }
 
   private fun scheduleFlush() {
@@ -421,8 +511,8 @@ class RuneUIManager(
     PerformanceProfiler.recordLayoutEnd()
 
     PerformanceProfiler.recordRenderStart()
-    // First pass: update sizes only without changing positions for existing visible views
-    // This prevents the jump effect when new content is added
+    // First pass: update layout params (size + margins) so Android's layout pass positions views correctly
+    // even before we manually apply frames. This prevents the initial "stacked in top-left" flash.
     for (i in 0 until nodes.size()) {
       val node = nodes.valueAt(i)
       if (isVirtualTextNode(node)) continue
@@ -430,11 +520,35 @@ class RuneUIManager(
       val width = frame.right - frame.left
       val height = frame.bottom - frame.top
       
-      // Update size params while keeping position stable
-      if (width > 0 && height > 0) {
-        if (node.view.layoutParams.width != width || node.view.layoutParams.height != height) {
-          node.view.layoutParams = FrameLayout.LayoutParams(width, height)
-        }
+      val layoutParams = when (val current = node.view.layoutParams) {
+        is FrameLayout.LayoutParams -> current
+        else -> FrameLayout.LayoutParams(width.coerceAtLeast(0), height.coerceAtLeast(0))
+      }
+
+      var paramsChanged = false
+      if (width >= 0 && layoutParams.width != width) {
+        layoutParams.width = width
+        paramsChanged = true
+      }
+      if (height >= 0 && layoutParams.height != height) {
+        layoutParams.height = height
+        paramsChanged = true
+      }
+      if (layoutParams.leftMargin != frame.left) {
+        layoutParams.leftMargin = frame.left
+        paramsChanged = true
+      }
+      if (layoutParams.topMargin != frame.top) {
+        layoutParams.topMargin = frame.top
+        paramsChanged = true
+      }
+      // Ensure we don't retain stale end/bottom margins that could offset layout unexpectedly
+      if (layoutParams.gravity != (Gravity.START or Gravity.TOP)) {
+        layoutParams.gravity = Gravity.START or Gravity.TOP
+        paramsChanged = true
+      }
+      if (paramsChanged) {
+        node.view.layoutParams = layoutParams
       }
     }
     
@@ -522,6 +636,10 @@ class RuneUIManager(
       return
     }
 
+    if (node.type == IMAGE_TYPE) {
+      imageSupport.cleanup(node)
+    }
+
     node.parentId?.let { parentId ->
       nodes.get(parentId)?.textChildren?.remove(id)
     }
@@ -543,5 +661,6 @@ class RuneUIManager(
 
   companion object {
     private const val TEXT_TYPE = "text"
+    private const val IMAGE_TYPE = "image"
   }
 }

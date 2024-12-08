@@ -446,6 +446,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
           int id = (int)a[0].asNumber();
           std::string name = a[1].getString(rt).utf8(rt);
           NSString *nameStr = [NSString stringWithUTF8String:name.c_str()];
+          Value propValue = count > 2 ? Value(rt, a[2]) : Value::undefined();
           NSLog(@"[RuneTrace] __ui.setProp id=%d name=%@", id, nameStr);
           if (name == "style" && a[2].isObject()) {
             Object styleObj = a[2].asObject(rt);
@@ -497,13 +498,32 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
             return Value::undefined();
           }
 
+          if (propValue.isUndefined() || (propValue.isObject() && propValue.asObject(rt).isFunction(rt))) {
+            SNRunOnMain(^{
+              [[host manager] setProp:@(id)
+                                        name:nameStr
+                                   valueJSON:@"null"];
+            });
+            return Value::undefined();
+          }
+
           auto JSON = rt.global().getPropertyAsObject(rt, "JSON");
           auto stringify = JSON.getPropertyAsFunction(rt, "stringify");
-          auto str = stringify.call(rt, Value(rt, a[2])).getString(rt).utf8(rt);
+          Value stringified = stringify.call(rt, propValue);
+          if (!stringified.isString()) {
+            std::string fallback = propValue.toString(rt).utf8(rt);
+            SNRunOnMain(^{
+              [[host manager] setProp:@(id)
+                                        name:nameStr
+                                   valueJSON:[NSString stringWithUTF8String:fallback.c_str()]];
+            });
+            return Value::undefined();
+          }
+          std::string jsonUTF8 = stringified.getString(rt).utf8(rt);
           SNRunOnMain(^{
             [[host manager] setProp:@(id)
-                                  name:[NSString stringWithUTF8String:name.c_str()]
-                             valueJSON:[NSString stringWithUTF8String:str.c_str()]];
+                                      name:nameStr
+                                 valueJSON:[NSString stringWithUTF8String:jsonUTF8.c_str()]];
           });
         } catch (const facebook::jsi::JSError &error) {
           RuneReportJSIError(rt, error, "__ui.setProp");
@@ -1065,6 +1085,18 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
     try {
       Object event(rt);
       event.setProperty(rt, "target", (double)nid);
+      NSDictionary *payload = [[host manager] dequeueEventPayloadForNode:nid name:name];
+      if ([payload isKindOfClass:[NSDictionary class]] && payload.count > 0) {
+        for (id key in payload) {
+          if (![key isKindOfClass:[NSString class]]) continue;
+          id obj = payload[key];
+          const char *utf8 = [(NSString *)key UTF8String];
+          std::string prop = utf8 ? utf8 : "";
+          auto propId = facebook::jsi::PropNameID::forUtf8(rt, prop);
+          Value converted = SNConvertNSObjectToJSI(rt, obj);
+          event.setProperty(rt, propId, converted);
+        }
+      }
       Value eventValue(std::move(event));
       it->second->call(rt, std::move(eventValue));
     } catch (const facebook::jsi::JSError &error) {

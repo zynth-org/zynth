@@ -64,6 +64,7 @@ struct UIShimMethods {
   jmethodID removeNode = nullptr;
   jmethodID setHandler = nullptr;
   jmethodID flush = nullptr;
+  jmethodID dequeueEventPayload = nullptr;
 };
 
 struct ModulesShimMethods {
@@ -1168,6 +1169,7 @@ void installBindings(
   state->uiMethods.removeNode = env->GetMethodID(state->uiClass, "removeNode", "(I)V");
   state->uiMethods.setHandler = env->GetMethodID(state->uiClass, "setHandler", "(ILjava/lang/String;J)V");
   state->uiMethods.flush = env->GetMethodID(state->uiClass, "flush", "()V");
+  state->uiMethods.dequeueEventPayload = env->GetMethodID(state->uiClass, "dequeueEventPayload", "(ILjava/lang/String;)Ljava/lang/String;");
 
   state->moduleMethods.getConstants = env->GetMethodID(state->modulesClass, "getConstants", "()Ljava/lang/String;");
   state->moduleMethods.invoke = env->GetMethodID(state->modulesClass, "invoke", "(Ljava/lang/String;Ljava/lang/String;[Ljava/lang/Object;I)V");
@@ -1517,6 +1519,42 @@ void invokeHandler(facebook::hermes::HermesRuntime *runtime, long handlerId, int
   Object evt(rt);
   evt.setProperty(rt, "target", Value(static_cast<double>(nodeId)));
   evt.setProperty(rt, "type", String::createFromUtf8(rt, event));
+
+  if (state->uiMethods.dequeueEventPayload) {
+    JniEnv env;
+    if (env.valid()) {
+      jstring jEvent = makeJString(env.get(), event);
+      jstring jPayload = static_cast<jstring>(env->CallObjectMethod(state->uiShim, state->uiMethods.dequeueEventPayload, nodeId, jEvent));
+      logJniException(env.get(), "UIShim.dequeueEventPayload");
+      if (jPayload) {
+        std::string payloadJson = getUtfString(env.get(), jPayload);
+        env->DeleteLocalRef(jPayload);
+        if (!payloadJson.empty()) {
+          try {
+            Value payloadValue = parseJson(rt, payloadJson);
+            if (payloadValue.isObject()) {
+              auto payloadObj = payloadValue.getObject(rt);
+              auto keys = payloadObj.getPropertyNames(rt);
+              size_t len = keys.size(rt);
+              for (size_t i = 0; i < len; ++i) {
+                auto keyValue = keys.getValueAtIndex(rt, i);
+                if (!keyValue.isString()) continue;
+                std::string key = keyValue.getString(rt).utf8(rt);
+                auto propId = facebook::jsi::PropNameID::forUtf8(rt, key);
+                auto propValue = payloadObj.getProperty(rt, propId);
+                evt.setProperty(rt, propId, propValue);
+              }
+            }
+          } catch (const std::exception &ex) {
+            BRIDGE_LOG(ANDROID_LOG_WARN, "Failed to merge event payload for %s: %s", event.c_str(), ex.what());
+          }
+        }
+      }
+      if (jEvent) {
+        env->DeleteLocalRef(jEvent);
+      }
+    }
+  }
   std::vector<Value> handlerArgs;
   handlerArgs.emplace_back(std::move(evt));
   try {

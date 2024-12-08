@@ -302,7 +302,12 @@ class RuneRuntime(
     Log.d("RuneUI", "Handler function found: ${handler != null}")
     when {
       handler is HandlerRef.Rhino && adapter is RhinoAdapter -> {
-        val event = adapter.createObject(mapOf("target" to id))
+        val payload = manager.consumeEventPayload(id, name)
+        val eventPayload = mutableMapOf<String, Any?>("target" to id, "type" to name)
+        if (payload != null) {
+          eventPayload.putAll(payload.toMap())
+        }
+        val event = adapter.createObject(eventPayload)
         Log.d("RuneUI", "Calling JavaScript function")
         adapter.callFunction(handler.function, arrayOf(event))
       }
@@ -345,6 +350,10 @@ class RuneRuntime(
 
       override fun flush() {
         manager.flush()
+      }
+
+      override fun dequeueEventPayload(nodeId: Int, event: String): String? {
+        return manager.dequeueEventPayloadJson(nodeId, event)
       }
     }
 

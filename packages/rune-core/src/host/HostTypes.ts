@@ -1,4 +1,4 @@
-export type NodeType = "root" | "view" | "text" | "marker";
+export type NodeType = "root" | "view" | "text" | "image" | "marker";
 
 export interface HostNode {
   id: number; // for marker: generate a synthetic negative or a distinct counter
@@ -47,7 +47,35 @@ export type Style = {
     | "700"
     | "800"
     | "900";
+  tintColor?: string;
 };
+
+export type ImageResizeMode = "cover" | "contain" | "stretch" | "center";
+
+export type ImageUriSource = {
+  uri: string;
+  headers?: Record<string, string>;
+  method?: string;
+  body?: string;
+  cache?: "default" | "reload" | "force-cache" | "only-if-cached";
+};
+
+export type ImageAssetSource = {
+  asset: string;
+  bundle?: string;
+  scale?: number;
+};
+
+export type ImageDataSource = {
+  data: string;
+  mimeType?: string;
+};
+
+export type ImageSource =
+  | string
+  | ImageUriSource
+  | ImageAssetSource
+  | ImageDataSource;
 
 export interface Host {
   createRootContainer(container: unknown): HostNode;

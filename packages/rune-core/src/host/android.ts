@@ -16,6 +16,7 @@ export function createAndroidHost(): Host {
   const PARENTS = new Map<number, number | null>();
   const CHILDREN = new Map<number, number[]>();
   const TEXTS = new Map<number, string>();
+  const TYPES = new Map<number, HostNode["type"]>();
 
   let flushScheduled = false;
   const schedule = () => {
@@ -70,21 +71,23 @@ export function createAndroidHost(): Host {
   };
 
   const isMarkerId = (id: number) => id < 0;
-  const asType = (id: number): HostNode["type"] =>
-    isMarkerId(id) ? "marker" : "view";
+  const typeFor = (id: number): HostNode["type"] =>
+    TYPES.get(id) ?? (isMarkerId(id) ? "marker" : "view");
 
-  const nodeFor = (id: number): HostNode => ({ id, type: asType(id) });
+  const nodeFor = (id: number): HostNode => ({ id, type: typeFor(id) });
 
   const api: Host = {
     createRootContainer() {
       PARENTS.set(0, null);
       CHILDREN.set(0, []);
+      TYPES.set(0, "root");
       return { id: 0, type: "root" };
     },
     createNode(type, props) {
       const id: number = ui.createNode(type);
       PARENTS.set(id, null);
       CHILDREN.set(id, []);
+      TYPES.set(id, type);
       if (props?.style) ui.setProp(id, "style", props.style as Style);
       if (typeof props?.onPress === "function") {
         ui.setHandler(id, "onPress", props.onPress);
@@ -98,6 +101,7 @@ export function createAndroidHost(): Host {
       PARENTS.set(id, null);
       CHILDREN.set(id, []);
       TEXTS.set(id, value ?? "");
+      TYPES.set(id, "text");
       schedule();
       return { id, type: "text" };
     },
@@ -146,6 +150,7 @@ export function createAndroidHost(): Host {
       // remove from logical
       kids.splice(i, 1);
       PARENTS.set(node.id, null);
+      if (!isMarkerId(node.id)) TYPES.delete(node.id);
 
       if (!isMarkerId(node.id)) ui.removeChild(parent.id, node.id);
       schedule();
@@ -153,7 +158,7 @@ export function createAndroidHost(): Host {
     getParentNode(node) {
       const pid = PARENTS.get(node.id);
       if (pid == null) return null;
-      return { id: pid, type: pid === 0 ? "root" : asType(pid) };
+      return { id: pid, type: typeFor(pid) };
     },
     getFirstChild(node) {
       const kids = ensure(node.id);
