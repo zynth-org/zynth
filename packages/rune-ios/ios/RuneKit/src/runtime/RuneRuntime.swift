@@ -9,6 +9,11 @@ public final class RuneRuntime: NSObject {
   let runtime: JSRuntimeAdapter
   let manager: RuneUIManager
   let registry = RuneModuleRegistry()
+  private var devClient: RuneDevClient?
+  private var devServerURL: URL?
+  private var lastDevBundle: RuneDevBundle?
+  private var lastRootId: Int?
+  private let statusBar = RuneDevStatusBar()
 
   public init(rootView: UIView, runtime: JSRuntimeAdapter? = nil) {
     self.manager = RuneUIManager(rootView: rootView)
@@ -28,6 +33,7 @@ public final class RuneRuntime: NSObject {
   }
 
   deinit {
+    devClient?.disconnect()
     registry.destroy()
   }
 
@@ -43,6 +49,9 @@ public final class RuneRuntime: NSObject {
   }()
 
   private func configureRuntime() {
+    let devURL = ProcessInfo.processInfo.environment["RUNE_DEV_SERVER_URL"] ?? "<unset>"
+    print("[RuneRuntime] RUNE_DEV_SERVER_URL =", devURL)
+
     runtime.onException = { error in
       let trimmedMessage = error.message.trimmingCharacters(in: .whitespacesAndNewlines)
       let message = trimmedMessage.isEmpty ? "Unknown Error" : trimmedMessage
@@ -64,10 +73,12 @@ public final class RuneRuntime: NSObject {
     installModules([RuneEnvModule(), RuneDeviceModule(), PerformanceModule()])
 
     let constants = registry.exportedConstants()
-    if !constants.isEmpty, let constantsData = try? JSONSerialization.data(withJSONObject: constants, options: []) {
-        let constantsJson = String(data: constantsData, encoding: .utf8) ?? "{}"
-        let script = "globalThis.NativeConstants = \(constantsJson);"
-        runtime.evaluate(code: script)
+    if !constants.isEmpty,
+      let constantsData = try? JSONSerialization.data(withJSONObject: constants, options: [])
+    {
+      let constantsJson = String(data: constantsData, encoding: .utf8) ?? "{}"
+      let script = "globalThis.NativeConstants = \(constantsJson);"
+      runtime.evaluate(code: script)
     }
 
     runtime.evaluate(code: "globalThis.__RUNE_PLATFORM = \"ios\";")
@@ -81,6 +92,47 @@ public final class RuneRuntime: NSObject {
         }
         """
     )
+
+    runtime.evaluate(
+      code:
+        """
+        if (typeof globalThis.__rune_receiveHMRMessage !== 'function') {
+          globalThis.__rune_receiveHMRMessage = function(payload) {
+            try {
+              if (typeof payload === 'string') {
+                payload = JSON.parse(payload);
+              }
+            } catch (error) {
+              console.error('[Rune HMR] parse failed', error);
+              return;
+            }
+            if (payload && typeof globalThis.__rune_refresh === 'function') {
+              globalThis.__rune_refresh(payload);
+            } else if (payload && typeof globalThis.__rune_requestFullReload === 'function') {
+              globalThis.__rune_requestFullReload(payload);
+            } else {
+              console.warn('[Rune HMR] No refresh handler available', payload && payload.type);
+            }
+          };
+        }
+        if (typeof globalThis.__rune_refresh !== 'function') {
+          globalThis.__rune_refresh = function(payload) {
+            console.warn('[Rune HMR] Refresh invoked with no runtime listener', payload && payload.type);
+          };
+        }
+        """
+    )
+
+    if let urlString = ProcessInfo.processInfo.environment["RUNE_DEV_SERVER_URL"],
+      let url = URL(string: urlString)
+    {
+      devServerURL = url
+      installDevServerGlobal(url: url)
+      #if DEBUG
+        print("[RuneRuntime] Connecting to dev server at \(url.absoluteString)")
+      #endif
+      connectToDevServer(url)
+    }
 
     if let hermes = runtime as? HermesAdapter {
       hermes.configureModuleCall { [weak self] name, method, args in
@@ -173,10 +225,36 @@ public final class RuneRuntime: NSObject {
       },
     ]
     runtime.setGlobalObject("__modules", modules)
+
   }
 
   public func installModules(_ modules: [RuneModule]) {
     modules.forEach(registry.register)
+  }
+
+  public func connectToDevServer(_ url: URL) {
+    devServerURL = url
+    installDevServerGlobal(url: url)
+    if devClient == nil {
+      devClient = RuneDevClient(url: url, runtime: self)
+    }
+    devClient?.connect()
+  }
+
+  func handleDevMessage(_ text: String) {
+    // Show update notification when HMR message received
+    if text.contains("\"type\":\"update\"") || text.contains("'type':'update'") {
+      statusBar.showUpdateAvailable()
+    }
+    _ = runtime.callGlobal("__rune_receiveHMRMessage", args: [text])
+  }
+
+  @objc public func loadInitialBundle(jsBundleURL: URL) throws {
+    if loadDevBundleIfAvailable() {
+      return
+    }
+
+    try load(jsBundleURL: jsBundleURL)
   }
 
   public func load(jsBundleURL: URL) throws {
@@ -202,7 +280,85 @@ public final class RuneRuntime: NSObject {
 
   public func start(rootId: Int) {
     print("[RuneTrace] start() invoking __startApp with rootId", rootId)
+    lastRootId = rootId
     _ = runtime.callGlobal("__startApp", args: [rootId])
+  }
+
+  public func refreshDevBundle() {
+    guard devServerURL != nil else {
+      NSLog("[RuneRuntime] refreshDevBundle called without devServerURL")
+      return
+    }
+    print("[RuneRuntime] ⚡️ refreshDevBundle called from thread: \(Thread.current)")
+    statusBar.showUpdating()
+    if loadDevBundleIfAvailable() {
+      restartAfterReload()
+    }
+  }
+
+  private func loadDevBundleIfAvailable() -> Bool {
+    guard let devURL = devServerURL else { return false }
+
+    print("[RuneRuntime] 📦 loadDevBundleIfAvailable called")
+    statusBar.showBundleLoading()
+
+    do {
+      let bundle = try RuneDevBundleFetcher.fetch(baseURL: devURL)
+      lastDevBundle = bundle
+      evaluateDevBundle(bundle.code, description: bundle.url.absoluteString)
+      print("[RuneRuntime] ✅ Bundle loaded successfully, showing status")
+      statusBar.showBundleLoaded()
+      return true
+    } catch {
+      let message = "Dev bundle fetch failed: \(error.localizedDescription)"
+      print("[RuneRuntime] ❌ \(message)")
+      statusBar.showError("Bundle Load Failed")
+      DevRedBox.show(title: "Dev Bundle Error", message: message, stack: nil)
+      if let cached = lastDevBundle {
+        print("[RuneRuntime] 💾 Falling back to cached dev bundle")
+        evaluateDevBundle(cached.code, description: "cached bundle")
+        statusBar.showBundleLoaded()
+        return true
+      }
+      return false
+    }
+  }
+
+  private func evaluateDevBundle(_ code: String, description: String) {
+    // For dev reloads, we need to reset the runtime to avoid corruption
+    // This creates a fresh JS environment AND clears the old UI
+    if lastDevBundle != nil {
+      print("[RuneRuntime] Resetting runtime and clearing UI for dev reload")
+
+      // Ensure UI cleanup happens on main thread
+      if Thread.isMainThread {
+        manager.clearAllNodes()
+      } else {
+        DispatchQueue.main.sync {
+          self.manager.clearAllNodes()
+        }
+      }
+
+      configureRuntime()
+    }
+
+    runtime.evaluate(code: code)
+    print("[RuneRuntime] Evaluated dev bundle from \(description)")
+  }
+
+  private func restartAfterReload() {
+    guard let rootId = lastRootId else { return }
+    print("[RuneRuntime] Restarting app after dev reload with rootId", rootId)
+    _ = runtime.callGlobal("__startApp", args: [rootId])
+  }
+
+  private func installDevServerGlobal(url: URL) {
+    let escaped = url.absoluteString
+      .replacingOccurrences(of: "\\", with: "\\\\")
+      .replacingOccurrences(of: "\"", with: "\\\"")
+    runtime.evaluate(
+      code: "globalThis.__RUNE_DEV_SERVER_URL = \"\(escaped)\";"
+    )
   }
 }
 

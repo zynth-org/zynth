@@ -147,11 +147,68 @@ function startIOSLogs(config) {
   }
 }
 
-function devIOS(root, appDir) {
+async function startRuneHMRServer(appDir, platform) {
+  const { RuneHMRServer } = require("@rune/hmr");
+
+  const defaultPort = 8081;
+  const resolvedPort = Number(process.env.RUNE_HMR_PORT || defaultPort);
+  const localHost = process.env.RUNE_HMR_HOST || "localhost";
+  const defaultDeviceHost = platform === "android" ? "10.0.2.2" : "localhost";
+  const deviceHost = process.env.RUNE_DEVICE_HOST || defaultDeviceHost;
+
+  const devServerLocalUrl = `http://${localHost}:${resolvedPort}`;
+  const devServerDeviceUrl = `http://${deviceHost}:${resolvedPort}`;
+
+  console.log(`🔥 Starting Rune HMR server on ${devServerLocalUrl}...`);
+
+  const server = new RuneHMRServer({
+    appRoot: appDir,
+    port: resolvedPort,
+    outDir: "dist",
+    host: localHost,
+  });
+
+  try {
+    await server.start();
+
+    // Setup cleanup handlers
+    const dispose = async () => {
+      console.log("\n🛑 Stopping Rune HMR server...");
+      await server.stop();
+    };
+
+    process.on("exit", dispose);
+    process.on("SIGINT", async () => {
+      await dispose();
+      process.exit(0);
+    });
+    process.on("SIGTERM", dispose);
+
+    console.log(`✓ Rune HMR server running`);
+    console.log(`  Local:  ${devServerLocalUrl}`);
+    console.log(`  Device: ${devServerDeviceUrl}`);
+    console.log(`  Bundle: ${devServerDeviceUrl}/bundle/main.js`);
+    console.log(`  WebSocket: ws://${deviceHost}:${resolvedPort}/rune-native`);
+
+    return {
+      server,
+      deviceUrl: devServerDeviceUrl,
+      localUrl: devServerLocalUrl,
+    };
+  } catch (error) {
+    console.error("❌ Failed to start Rune HMR server:", error.message);
+    return null;
+  }
+}
+
+async function devIOS(root, appDir) {
   const config = getIOSConfig(root, appDir);
   ensurePrebuild(root, appDir, "ios");
   const logProcess = startIOSLogs(config);
-  ensureBundle(appDir);
+
+  // Start Rune HMR server
+  const hmrServer = await startRuneHMRServer(appDir, "ios");
+
   console.log(`📦 Building ${config.appNameCapitalized} for iOS simulator...`);
   const iosDir = path.join(appDir, "ios");
   runCommand(
@@ -182,7 +239,22 @@ function devIOS(root, appDir) {
   runCommand("xcrun", ["simctl", "install", "booted", appBundle], {
     cwd: iosDir,
   });
-  runCommand("xcrun", ["simctl", "launch", "booted", config.bundleId]);
+
+  if (hmrServer?.deviceUrl) {
+    runCommand("xcrun", [
+      "simctl",
+      "spawn",
+      "booted",
+      "launchctl",
+      "setenv",
+      "RUNE_DEV_SERVER_URL",
+      hmrServer.deviceUrl,
+    ]);
+  }
+
+  const launchArgs = ["simctl", "launch", "booted", config.bundleId];
+  runCommand("xcrun", launchArgs);
+
   if (logProcess) {
     console.log("📖 iOS logs streaming. Press Ctrl+C to stop.");
     logProcess.on("exit", (code, signal) => {
@@ -191,11 +263,20 @@ function devIOS(root, appDir) {
       }
     });
   }
+
+  if (hmrServer) {
+    console.log(
+      "🔥 Rune HMR server running. Leave this session open for hot reloading."
+    );
+  }
 }
 
-function devAndroid(root, appDir) {
+async function devAndroid(root, appDir) {
   const config = getAndroidConfig(root, appDir);
-  ensureBundle(appDir);
+
+  // Start Rune HMR server
+  const hmrServer = await startRuneHMRServer(appDir, "android");
+
   ensurePrebuild(root, appDir, "android");
   console.log("📦 Installing Android build...");
   const androidDir = path.join(appDir, "android");
@@ -213,13 +294,23 @@ function devAndroid(root, appDir) {
   }
 
   runCommand("./gradlew", [":app:installDebug"], { cwd: androidDir });
-  runCommand("adb", [
+  const launchArgs = [
     "shell",
     "am",
     "start",
     "-n",
     `${config.bundleId}/.MainActivity`,
-  ]);
+  ];
+  if (hmrServer?.deviceUrl) {
+    launchArgs.push("--es", "RUNE_DEV_SERVER_URL", hmrServer.deviceUrl);
+  }
+  runCommand("adb", launchArgs);
+
+  if (hmrServer) {
+    console.log(
+      "🔥 Rune HMR server running. Leave this session open for hot reloading."
+    );
+  }
 }
 
 function listWorkspaces(root, folder) {
@@ -309,6 +400,7 @@ module.exports = {
   startIOSLogs,
   getIOSConfig,
   getAndroidConfig,
+  startRuneHMRServer,
   listWorkspaces,
   bundle,
   resetIOS,

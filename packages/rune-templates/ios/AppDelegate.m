@@ -28,7 +28,7 @@
   NSAssert(bundleURL != nil, @"main.js not found (build the JS bundle)");
 
   NSError *loadError = nil;
-  if (![self.runtime loadWithJsBundleURL:bundleURL error:&loadError]) {
+  if (![self.runtime loadInitialBundleWithJsBundleURL:bundleURL error:&loadError]) {
     NSLog(@"[Rune] Failed to load bundle: %@", loadError);
     if (loadError) {
       [DevRedBox showWithTitle:@"Bundle Load Failed"

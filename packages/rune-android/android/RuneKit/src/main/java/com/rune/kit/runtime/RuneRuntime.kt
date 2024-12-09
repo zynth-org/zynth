@@ -1,11 +1,15 @@
 package com.rune.kit.runtime
 
 import android.content.Context
+import android.content.res.AssetManager
 import android.util.Log
 import com.facebook.soloader.SoLoader
 import com.rune.kit.core.RuneRootView
 import com.rune.kit.core.RuneUIManager
 import com.rune.kit.layout.YogaLayoutEngine
+import com.rune.kit.dev.RuneDevClient
+import com.rune.kit.dev.RuneDevBundle
+import com.rune.kit.dev.RuneDevBundleFetcher
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.ExecutorService
@@ -21,6 +25,11 @@ class RuneRuntime(
   private val moduleExecutor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
     Thread(runnable, "RuneModuleInvoker").apply { isDaemon = true }
   }
+  private val devClient = RuneDevClient(this)
+  private var devServerUrl: String? = System.getenv("RUNE_DEV_SERVER_URL")?.takeUnless { it.isBlank() }
+  private var lastDevBundle: RuneDevBundle? = null
+  private var lastRootId: Int? = null
+  private val statusBar = RuneDevStatusBar(root.context)
   private val manager = RuneUIManager(
     root,
     YogaLayoutEngine(root.rootId),
@@ -47,6 +56,13 @@ class RuneRuntime(
       is HermesAdapter -> installHermesBindings(adapter)
       else -> installFallbackBridge()
     }
+    installHmrShim()
+
+    devServerUrl?.let {
+      installDevServerGlobal(it)
+      Log.d(TAG, "Connecting to dev server at $it")
+      connectDevServer(it)
+    }
   }
 
   fun installModules(modules: List<RuneModule>) {
@@ -58,7 +74,17 @@ class RuneRuntime(
     adapter.evaluate(code)
   }
 
+  fun loadInitialBundle(assets: AssetManager, assetName: String = "main.js") {
+    if (loadDevBundleIfAvailable()) {
+      return
+    }
+
+    val code = assets.open(assetName).use { it.bufferedReader().readText() }
+    load(code)
+  }
+
   fun start(rootId: Int) {
+    lastRootId = rootId
     adapter.callGlobalAsync("__startApp", arrayOf(rootId))
   }
 
@@ -72,8 +98,31 @@ class RuneRuntime(
   fun destroy() {
     registry.destroy()
     moduleExecutor.shutdownNow()
+    devClient.disconnect()
     if (adapter is HermesAdapter) {
       adapter.destroy()
+    }
+  }
+
+  fun connectDevServer(url: String) {
+    devServerUrl = url
+    installDevServerGlobal(url)
+    devClient.connect(url)
+  }
+
+  internal fun handleDevMessage(payload: String) {
+    // Show update notification when HMR message received
+    if (payload.contains("\"type\":\"update\"") || payload.contains("'type':'update'")) {
+      root.post { statusBar.showUpdateAvailable() }
+    }
+    adapter.callGlobal("__rune_receiveHMRMessage", arrayOf(payload))
+  }
+
+  fun refreshDevBundle() {
+    Log.d(TAG, "refreshDevBundle invoked")
+    root.post { statusBar.showUpdating() }
+    if (loadDevBundleIfAvailable()) {
+      restartAfterReload()
     }
   }
 
@@ -106,6 +155,75 @@ class RuneRuntime(
       globalThis.console.error = console_error;
       globalThis.console.warn = console_warn;
     """)
+  }
+
+  private fun installHmrShim() {
+    adapter.evaluate(
+      """
+      if (typeof globalThis.__rune_receiveHMRMessage !== "function") {
+        globalThis.__rune_receiveHMRMessage = function(payload) {
+          try {
+            if (typeof payload === "string") {
+              payload = JSON.parse(payload);
+            }
+          } catch (error) {
+            console.error('[Rune HMR] parse failed', error);
+            return;
+          }
+          if (payload && typeof globalThis.__rune_refresh === 'function') {
+            globalThis.__rune_refresh(payload);
+          } else if (payload && typeof globalThis.__rune_requestFullReload === 'function') {
+            globalThis.__rune_requestFullReload(payload);
+          } else {
+            console.warn('[Rune HMR] No refresh handler available', payload && payload.type);
+          }
+        };
+      }
+      if (typeof globalThis.__rune_refresh !== 'function') {
+        globalThis.__rune_refresh = function(payload) {
+          console.warn('[Rune HMR] Refresh invoked with no runtime listener', payload && payload.type);
+        };
+      }
+      """.trimIndent(),
+    )
+  }
+
+  private fun loadDevBundleIfAvailable(): Boolean {
+    val devUrl = devServerUrl ?: return false
+    
+    root.post { statusBar.showBundleLoading() }
+    
+    return try {
+      val bundle = RuneDevBundleFetcher.fetch(devUrl)
+      lastDevBundle = bundle
+      Log.d(TAG, "Loaded dev bundle from ${bundle.url}")
+      load(bundle.code)
+      root.post { statusBar.showBundleLoaded() }
+      true
+    } catch (t: Throwable) {
+      val message = "Dev bundle fetch failed: ${t.message ?: t::class.java.simpleName}"
+      Log.w(TAG, message, t)
+      root.post { statusBar.showError("Bundle Load Failed") }
+      root.showRedBox("Dev Bundle Error", message)
+      lastDevBundle?.let {
+        Log.d(TAG, "Using cached dev bundle")
+        load(it.code)
+        root.post { statusBar.showBundleLoaded() }
+        return true
+      }
+      false
+    }
+  }
+
+  private fun restartAfterReload() {
+    val rootId = lastRootId ?: return
+    Log.d(TAG, "Restarting app after dev reload rootId=$rootId")
+    adapter.callGlobalAsync("__startApp", arrayOf(rootId))
+  }
+
+  private fun installDevServerGlobal(url: String) {
+    val escaped = url.replace("\\", "\\\\").replace("\"", "\\\"")
+    adapter.evaluate("globalThis.__RUNE_DEV_SERVER_URL = \"$escaped\";")
   }
 
   private fun installRhinoGlobals(rhino: RhinoAdapter) {

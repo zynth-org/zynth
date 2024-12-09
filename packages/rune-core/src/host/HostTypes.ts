@@ -66,6 +66,16 @@ export type ImageAssetSource = {
   scale?: number;
 };
 
+export type ImageAssetDescriptor = {
+  type: "asset";
+  name: string;
+  ext: string;
+  hash: string;
+  scale?: number;
+  relativePath?: string;
+  devPath?: string;
+};
+
 export type ImageDataSource = {
   data: string;
   mimeType?: string;
@@ -75,7 +85,8 @@ export type ImageSource =
   | string
   | ImageUriSource
   | ImageAssetSource
-  | ImageDataSource;
+  | ImageDataSource
+  | ImageAssetDescriptor;
 
 export interface Host {
   createRootContainer(container: unknown): HostNode;

@@ -1,5 +1,10 @@
 const path = require("path");
-const { findWorkspaceRoot, findAppDirectory, devIOS, devAndroid } = require("../utils");
+const {
+  findWorkspaceRoot,
+  findAppDirectory,
+  devIOS,
+  devAndroid,
+} = require("../utils");
 
 module.exports = {
   command: "dev <platform>",
@@ -10,15 +15,15 @@ module.exports = {
       choices: ["ios", "android"],
     });
   },
-  handler: (argv) => {
+  handler: async (argv) => {
     const root = findWorkspaceRoot(process.cwd());
     const appDir = argv.app
       ? path.resolve(process.cwd(), argv.app)
       : findAppDirectory(process.cwd());
     if (argv.platform === "ios") {
-      devIOS(root, appDir);
+      await devIOS(root, appDir);
     } else {
-      devAndroid(root, appDir);
+      await devAndroid(root, appDir);
     }
   },
 };

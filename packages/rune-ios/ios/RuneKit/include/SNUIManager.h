@@ -30,6 +30,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)removeChild:(NSNumber *)parentId child:(NSNumber *)childId;
 - (void)flush; // layout + commit
 - (NSDictionary *)dequeueEventPayloadForNode:(int)nodeId name:(NSString *)name;
+- (void)clearAllNodes; // Clear all nodes and views for HMR reload
 
 @end
 

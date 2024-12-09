@@ -23,8 +23,11 @@ class MainActivity : AppCompatActivity() {
     val runtime = RuneRuntime(root)
     runtime.installModules(listOf(DeviceModule(), EnvModule(), PerformanceModule()))
 
-    val code = assets.open("main.js").bufferedReader().use { it.readText() }
-    runtime.load(code)
+    intent?.getStringExtra("RUNE_DEV_SERVER_URL")?.let { url ->
+      runtime.connectDevServer(url)
+    }
+
+    runtime.loadInitialBundle(assets)
     runtime.start(root.rootId)
 
     this.runtime = runtime

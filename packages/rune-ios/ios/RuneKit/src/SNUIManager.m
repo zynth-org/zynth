@@ -689,4 +689,46 @@ static void SNApplyEdges(NSDictionary *style,
   [self sn_markNeedsFlush];
 }
 
+- (void)clearAllNodes {
+  NSLog(@"[SN] clearAllNodes: removing all nodes and views for HMR reload");
+  
+  // This method MUST be called from main thread
+  NSAssert([NSThread isMainThread], @"clearAllNodes must be called from main thread");
+  
+  // Stop any pending flushes first
+  [self sn_stopDisplayLink];
+  self.needsFlush = NO;
+  
+  // Remove all subviews from root first
+  // Copy the array to avoid mutation during enumeration
+  NSArray<UIView *> *subviews = [self.root.subviews copy];
+  NSLog(@"[SN] clearAllNodes: removing %lu subviews", (unsigned long)subviews.count);
+  
+  for (UIView *subview in subviews) {
+    // Disable animations to prevent issues
+    [UIView performWithoutAnimation:^{
+      [subview removeFromSuperview];
+    }];
+  }
+  
+  // Clear all node data - this will trigger SNNode dealloc which frees Yoga nodes
+  NSLog(@"[SN] clearAllNodes: clearing %lu nodes", (unsigned long)self.nodes.count);
+  [self.nodes removeAllObjects];
+  
+  // Clear event payloads
+  [self.eventPayloads removeAllObjects];
+  
+  // Free and recreate the root Yoga node
+  if (self.rootYoga) {
+    YGNodeFreeRecursive(self.rootYoga);
+    self.rootYoga = NULL;
+  }
+  self.rootYoga = YGNodeNew();
+  
+  // Reset the node ID counter
+  self.nextId = 1;
+  
+  NSLog(@"[SN] clearAllNodes: reset complete, ready for new bundle");
+}
+
 @end

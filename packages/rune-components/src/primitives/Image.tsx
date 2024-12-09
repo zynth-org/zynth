@@ -1,5 +1,10 @@
 import type { Component } from "solid-js";
-import type { Style } from "@rune/core";
+import type {
+  Style,
+  ImageAssetSource,
+  ImageUriSource,
+  ImageAssetDescriptor,
+} from "@rune/core";
 
 export type ImageResizeMode = "cover" | "contain" | "stretch" | "center";
 
@@ -22,11 +27,14 @@ export type ImageBase64Source = {
   mimeType?: string;
 };
 
+export type ImageDescriptorSource = ImageAssetDescriptor;
+
 export type ImageSource =
   | string
   | ImageUriSource
   | ImageAssetSource
-  | ImageBase64Source;
+  | ImageBase64Source
+  | ImageDescriptorSource;
 
 export interface ImageLoadEvent {
   target: number;
@@ -52,10 +60,11 @@ export type ImageElementProps = ImageProps & { children?: never };
 
 export const Image: Component<ImageProps> = (props) => {
   const { style, source, resizeMode, tintColor, onLoad, onError } = props;
+  const normalizedSource = () => normalizeImageSource(source);
   return (
     <image
       style={style as any}
-      source={source}
+      source={normalizedSource()}
       resizeMode={resizeMode}
       tintColor={tintColor}
       onLoad={onLoad}
@@ -63,3 +72,44 @@ export const Image: Component<ImageProps> = (props) => {
     />
   );
 };
+
+function normalizeImageSource(input: ImageSource | ImageSource[]): ImageSource | ImageSource[] {
+  if (Array.isArray(input)) {
+    return input.map(normalizeSingleSource);
+  }
+  return normalizeSingleSource(input);
+}
+
+function normalizeSingleSource(source: ImageSource): ImageSource {
+  if (typeof source === "string") {
+    return { uri: source } satisfies ImageUriSource;
+  }
+  if (source && typeof source === "object" && (source as any).type === "asset") {
+    return descriptorToNativeSource(source as ImageDescriptorSource);
+  }
+  return source;
+}
+
+function descriptorToNativeSource(descriptor: ImageDescriptorSource): ImageSource {
+  const devUrl = (globalThis as any).__RUNE_DEV_SERVER_URL;
+  if (devUrl && descriptor.devPath) {
+    const encodedPath = encodeDevPath(descriptor.devPath);
+    return {
+      uri: `${devUrl}/@fs/${encodedPath}?hash=${descriptor.hash}`,
+    } satisfies ImageUriSource;
+  }
+
+  const assetId = descriptor.hash ? `${descriptor.name}-${descriptor.hash}` : descriptor.name;
+  return {
+    asset: assetId,
+    scale: descriptor.scale,
+  } satisfies ImageAssetSource;
+}
+
+function encodeDevPath(filePath: string): string {
+  return filePath
+    .replace(/\\/g, "/")
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+}

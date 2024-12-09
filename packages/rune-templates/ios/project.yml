@@ -45,8 +45,21 @@ targets:
           # Exit immediately if a command exits with a non-zero status.
           set -e
 
-          # 🎯 Directly add your specific NVM bin folder to the PATH.
-          export PATH="/Users/ignaciozsabo/.nvm/versions/node/v22.15.0/bin:$PATH"
+          # 🎯 FIX: Explicitly set the PATH for NVM-managed executables.
+          # You must use the directory containing the 'node' and 'yarn' binaries.
+          # WARNING: If you change your Node version using NVM, you must update the version number here!
+          export PATH="/Users/ignaciozsabo/.nvm/versions/node/v22.20.0/bin:$PATH"
+
+          # 💡 Optional robust check:
+          # Use 'command -v' to check if 'yarn' is now available and fail the build otherwise.
+          command -v yarn >/dev/null 2>&1 || {
+            echo "---" >&2
+            echo "FATAL ERROR: 'yarn' command not found in the Xcode build environment." >&2
+            echo "Please verify the following path in your project.yml file is correct:" >&2
+            echo "Path: /Users/ignaciozsabo/.nvm/versions/node/v22.20.0/bin" >&2
+            echo "---" >&2
+            exit 1
+          }
 
           # ✅ Navigate from the Xcode project dir to the root of your framework.
           cd "$PROJECT_DIR/../../../"
@@ -61,6 +74,5 @@ targets:
           echo "Copying main.js to app resources..."
           mkdir -p "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
           cp "apps/{{APP_DIR}}/dist/main.js" "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/main.js"
-
     dependencies:
       - sdk: JavaScriptCore.framework

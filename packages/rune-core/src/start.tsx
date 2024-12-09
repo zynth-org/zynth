@@ -23,8 +23,10 @@ if (typeof globalThis.queueMicrotask !== "function") {
 import { render, setHost } from "./renderer";
 import { createIOSHost } from "./host/ios";
 import { createAndroidHost } from "./host/android";
+import { ensureNativeHMRHooks } from "./hmr";
 
 export function start(App: () => any) {
+  ensureNativeHMRHooks();
   const platform =
     typeof globalThis !== "undefined"
       ? (globalThis as any).__RUNE_PLATFORM
