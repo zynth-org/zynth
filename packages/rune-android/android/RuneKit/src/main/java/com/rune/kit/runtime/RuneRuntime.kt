@@ -2,6 +2,8 @@ package com.rune.kit.runtime
 
 import android.content.Context
 import android.content.res.AssetManager
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import com.facebook.soloader.SoLoader
 import com.rune.kit.core.RuneRootView
@@ -10,26 +12,52 @@ import com.rune.kit.layout.YogaLayoutEngine
 import com.rune.kit.dev.RuneDevClient
 import com.rune.kit.dev.RuneDevBundle
 import com.rune.kit.dev.RuneDevBundleFetcher
+import java.util.LinkedHashMap
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.Future
+import java.util.concurrent.TimeUnit
+import kotlin.jvm.Volatile
 import org.mozilla.javascript.Function
+
+private const val TAG = "RuneRuntime"
 
 class RuneRuntime(
   private val root: RuneRootView,
-  private val adapter: JSRuntimeAdapter = HermesAdapter(),
+  private var adapter: JSRuntimeAdapter = HermesAdapter(),
 ) {
   private val handlerMap = mutableMapOf<Pair<Int, String>, HandlerRef>()
   private val registry = RuneModuleRegistry()
   private val moduleExecutor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
     Thread(runnable, "RuneModuleInvoker").apply { isDaemon = true }
   }
+  private val installedModules = LinkedHashMap<String, RuneModule>()
+  private val discoveryExecutor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
+    Thread(runnable, "RuneDevDiscovery").apply { isDaemon = true }
+  }
+  private val discoveryClient: OkHttpClient = OkHttpClient.Builder()
+    .connectTimeout(1, TimeUnit.SECONDS)
+    .readTimeout(1, TimeUnit.SECONDS)
+    .build()
+  private val bundleExecutor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
+    Thread(runnable, "RuneBundleFetcher").apply { isDaemon = true }
+  }
+  private val bundleRetryHandler = Handler(Looper.getMainLooper())
+  @Volatile private var pendingRetry = false
+  private var bundleRetryCount = 0
+  @Volatile private var isLoadingBundle = false
   private val devClient = RuneDevClient(this)
-  private var devServerUrl: String? = System.getenv("RUNE_DEV_SERVER_URL")?.takeUnless { it.isBlank() }
+  @Volatile private var devServerUrl: String? = System.getenv("RUNE_DEV_SERVER_URL")?.takeUnless { it.isBlank() }
+  @Volatile private var isConnectingToDevServer = false
   private var lastDevBundle: RuneDevBundle? = null
+  private var hasSuccessfulDevBundle = false
   private var lastRootId: Int? = null
-  private val statusBar = RuneDevStatusBar(root.context)
+  private val statusBar = RuneDevStatusBar(root)
   private val manager = RuneUIManager(
     root,
     YogaLayoutEngine(root.rootId),
@@ -37,7 +65,7 @@ class RuneRuntime(
     handlerListener = { id, name, handlerRef -> onHandlerAttached(id, name, handlerRef) },
   )
 
-  init {
+  private fun configureAdapter() {
     adapter.onException = { error ->
       val stack = error.stack?.takeIf { it.isNotBlank() }
       if (stack != null) {
@@ -47,26 +75,39 @@ class RuneRuntime(
       }
       root.showRedBox(error.message, error.stack)
     }
+
     installConsole()
-    when (adapter) {
+    when (val runtimeAdapter = adapter) {
       is RhinoAdapter -> {
-        installRhinoGlobals(adapter)
-        installRhinoBridge(adapter)
+        installRhinoGlobals(runtimeAdapter)
+        installRhinoBridge(runtimeAdapter)
       }
-      is HermesAdapter -> installHermesBindings(adapter)
+      is HermesAdapter -> installHermesBindings(runtimeAdapter)
       else -> installFallbackBridge()
     }
-    installHmrShim()
 
+    injectModuleConstants()
+    installHmrShim()
+  }
+
+  init {
+    configureAdapter()
     devServerUrl?.let {
       installDevServerGlobal(it)
       Log.d(TAG, "Connecting to dev server at $it")
       connectDevServer(it)
     }
+    if (devServerUrl == null) {
+      autoDiscoverDevServer()
+    }
   }
 
   fun installModules(modules: List<RuneModule>) {
-    modules.forEach { registry.register(it) }
+    modules.forEach { module ->
+      installedModules[module.name] = module
+      registry.register(module)
+    }
+    injectModuleConstants()
   }
 
   fun load(code: String) {
@@ -75,16 +116,32 @@ class RuneRuntime(
   }
 
   fun loadInitialBundle(assets: AssetManager, assetName: String = "main.js") {
+    if (lastDevBundle != null) {
+      Log.d(TAG, "Dev bundle already loaded, skipping initial asset load")
+      return
+    }
+    
+    // Try to load dev bundle first if available
     if (loadDevBundleIfAvailable()) {
+      // Dev bundle loaded successfully, start() will be called by restartAfterReload
       return
     }
 
+    // No dev bundle available, load from assets
     val code = assets.open(assetName).use { it.bufferedReader().readText() }
     load(code)
   }
 
   fun start(rootId: Int) {
     lastRootId = rootId
+    
+    // If we're still loading the dev bundle, defer the start
+    if (devServerUrl != null && !hasSuccessfulDevBundle && lastDevBundle == null) {
+      Log.d(TAG, "Deferring start until dev bundle loads")
+      return
+    }
+    
+    Log.d(TAG, "Starting app with rootId=$rootId")
     adapter.callGlobalAsync("__startApp", arrayOf(rootId))
   }
 
@@ -98,16 +155,38 @@ class RuneRuntime(
   fun destroy() {
     registry.destroy()
     moduleExecutor.shutdownNow()
+    discoveryExecutor.shutdownNow()
+    bundleExecutor.shutdownNow()
+    bundleRetryHandler.removeCallbacksAndMessages(null)
+    pendingRetry = false
+    bundleRetryCount = 0
     devClient.disconnect()
-    if (adapter is HermesAdapter) {
-      adapter.destroy()
-    }
+    (adapter as? HermesAdapter)?.destroy()
+    installedModules.clear()
   }
 
   fun connectDevServer(url: String) {
+    // Prevent multiple concurrent connections
+    synchronized(this) {
+      if (isConnectingToDevServer || devServerUrl == url) {
+        Log.d(TAG, "Already connecting/connected to $url, skipping duplicate connection")
+        return
+      }
+      isConnectingToDevServer = true
+    }
+    
     devServerUrl = url
     installDevServerGlobal(url)
     devClient.connect(url)
+    
+    // Only fetch bundle if not already loading and no bundle exists
+    if (!isLoadingBundle && lastDevBundle == null) {
+      refreshDevBundle()
+    } else {
+      Log.d(TAG, "Bundle already loading or exists, skipping refresh on connect")
+    }
+    
+    isConnectingToDevServer = false
   }
 
   internal fun handleDevMessage(payload: String) {
@@ -120,36 +199,48 @@ class RuneRuntime(
 
   fun refreshDevBundle() {
     Log.d(TAG, "refreshDevBundle invoked")
+    
+    // Prevent multiple simultaneous refresh attempts
+    synchronized(this) {
+      if (pendingRetry) {
+        Log.d(TAG, "Refresh already pending, skipping")
+        return
+      }
+    }
+    
     root.post { statusBar.showUpdating() }
     if (loadDevBundleIfAvailable()) {
       restartAfterReload()
+    } else {
+      root.post { statusBar.showError("Reload Failed") }
     }
   }
 
   private fun installConsole() {
-    if (adapter is HermesAdapter) {
+    val runtimeAdapter = adapter
+    if (runtimeAdapter is HermesAdapter) {
       // Hermes bridge installs console functions natively.
       return
     }
-    adapter.setGlobalFunction("console_log") { args ->
+    runtimeAdapter.setGlobalFunction("console_log") { args ->
       val message = args.joinToString(" ") { it?.toString() ?: "null" }
       Log.i("JS_LOG", message)
       println("JS: $message") // Also print to stdout for easier debugging
       null
     }
-    adapter.setGlobalFunction("console_error") { args ->
+    runtimeAdapter.setGlobalFunction("console_error") { args ->
       val message = args.joinToString(" ") { it?.toString() ?: "null" }
       Log.e("JS_ERROR", message)
       println("JS ERROR: $message")
       null
     }
-    adapter.setGlobalFunction("console_warn") { args ->
+    runtimeAdapter.setGlobalFunction("console_warn") { args ->
       val message = args.joinToString(" ") { it?.toString() ?: "null" }
       Log.w("JS_WARN", message)
       println("JS WARN: $message")
       null
     }
-    adapter.evaluate("""
+    runtimeAdapter.evaluate("""
       globalThis.console = globalThis.console || {};
       globalThis.console.log = console_log;
       globalThis.console.error = console_error;
@@ -190,33 +281,136 @@ class RuneRuntime(
 
   private fun loadDevBundleIfAvailable(): Boolean {
     val devUrl = devServerUrl ?: return false
-    
-    root.post { statusBar.showBundleLoading() }
-    
-    return try {
-      val bundle = RuneDevBundleFetcher.fetch(devUrl)
-      lastDevBundle = bundle
+
+    // Mark that we're loading to prevent concurrent loads
+    synchronized(this) {
+      if (isLoadingBundle) {
+        Log.d(TAG, "Bundle load already in progress")
+        return false
+      }
+      isLoadingBundle = true
+    }
+
+    try {
+      if (lastDevBundle == null && !hasSuccessfulDevBundle) {
+        root.post { statusBar.showBundleLoading() }
+      }
+
+      val bundle = fetchDevBundle(devUrl)
       Log.d(TAG, "Loaded dev bundle from ${bundle.url}")
-      load(bundle.code)
-      root.post { statusBar.showBundleLoaded() }
-      true
+      evaluateDevBundle(bundle)
+      return true
     } catch (t: Throwable) {
       val message = "Dev bundle fetch failed: ${t.message ?: t::class.java.simpleName}"
-      Log.w(TAG, message, t)
-      root.post { statusBar.showError("Bundle Load Failed") }
-      root.showRedBox("Dev Bundle Error", message)
-      lastDevBundle?.let {
-        Log.d(TAG, "Using cached dev bundle")
-        load(it.code)
-        root.post { statusBar.showBundleLoaded() }
-        return true
+      Log.w(TAG, message)
+      val hasPriorSuccess = hasSuccessfulDevBundle
+      
+      if (hasPriorSuccess) {
+        // If we've had success before, show error and use cache
+        root.post { statusBar.showError("Bundle Load Failed") }
+        root.showRedBox("Dev Bundle Error", message)
+        lastDevBundle?.let {
+          Log.d(TAG, "Using cached dev bundle")
+          evaluateDevBundle(it)
+          return true
+        }
+      } else {
+        // First-time load failed, retry
+        Log.d(TAG, "Initial bundle load failed, will retry")
+        root.post { statusBar.showBundleLoading() }
+        scheduleDevBundleRetry()
       }
-      false
+      return false
+    } finally {
+      isLoadingBundle = false
     }
   }
 
+  private fun fetchDevBundle(devUrl: String): RuneDevBundle {
+    return if (Looper.myLooper() == Looper.getMainLooper()) {
+      val future: Future<RuneDevBundle> = bundleExecutor.submit<RuneDevBundle> {
+        RuneDevBundleFetcher.fetch(devUrl)
+      }
+      try {
+        future.get()
+      } catch (e: InterruptedException) {
+        Thread.currentThread().interrupt()
+        throw e
+      } catch (e: ExecutionException) {
+        val cause = e.cause
+        if (cause is Exception) throw cause
+        throw e
+      }
+    } else {
+      RuneDevBundleFetcher.fetch(devUrl)
+    }
+  }
+
+  private fun evaluateDevBundle(bundle: RuneDevBundle) {
+    val shouldReset = lastDevBundle != null || manager.hasRenderableContent()
+    if (shouldReset) {
+      resetRuntimeForDevReload()
+    }
+    lastDevBundle = bundle
+    hasSuccessfulDevBundle = true
+    pendingRetry = false
+    bundleRetryCount = 0  // Reset retry counter on success
+    load(bundle.code)
+    root.post { statusBar.showBundleLoaded() }
+  }
+
+  private fun resetRuntimeForDevReload() {
+    Log.d(TAG, "Resetting runtime before applying dev bundle")
+    synchronized(handlerMap) {
+      handlerMap.clear()
+    }
+    manager.clearAllNodes()
+    registry.destroy()
+    val previousAdapter = adapter
+    if (previousAdapter is HermesAdapter) {
+      previousAdapter.destroy()
+    }
+    adapter = when (previousAdapter) {
+      is RhinoAdapter -> RhinoAdapter()
+      else -> HermesAdapter()
+    }
+    configureAdapter()
+    reinitializeModules()
+    devServerUrl?.let { installDevServerGlobal(it) }
+  }
+
+  private fun scheduleDevBundleRetry() {
+    if (pendingRetry) {
+      return
+    }
+    
+    // Max 5 retries to prevent infinite loops
+    if (bundleRetryCount >= 5) {
+      Log.w(TAG, "Max bundle retry attempts reached, giving up")
+      root.post { 
+        statusBar.showError("Dev Server Unavailable")
+        statusBar.hide()
+      }
+      return
+    }
+    
+    bundleRetryCount++
+    pendingRetry = true
+    val delay = 1500L + (bundleRetryCount * 500L)  // Increasing delay
+    Log.d(TAG, "Scheduling bundle retry #$bundleRetryCount in ${delay}ms")
+    
+    bundleRetryHandler.postDelayed({
+      pendingRetry = false
+      refreshDevBundle()
+    }, delay)
+  }
+
   private fun restartAfterReload() {
-    val rootId = lastRootId ?: return
+    val rootId = lastRootId
+    if (rootId == null) {
+      Log.d(TAG, "No rootId set yet, cannot restart")
+      return
+    }
     Log.d(TAG, "Restarting app after dev reload rootId=$rootId")
     adapter.callGlobalAsync("__startApp", arrayOf(rootId))
   }
@@ -224,6 +418,69 @@ class RuneRuntime(
   private fun installDevServerGlobal(url: String) {
     val escaped = url.replace("\\", "\\\\").replace("\"", "\\\"")
     adapter.evaluate("globalThis.__RUNE_DEV_SERVER_URL = \"$escaped\";")
+  }
+
+  private fun autoDiscoverDevServer() {
+    discoveryExecutor.execute {
+      val hosts = listOf("10.0.2.2", "127.0.0.1", "localhost")
+      val ports = 8081..8085
+      for (host in hosts) {
+        for (port in ports) {
+          if (Thread.currentThread().isInterrupted) {
+            return@execute
+          }
+          // Stop discovery if dev server is already set
+          if (devServerUrl != null || isConnectingToDevServer) {
+            Log.d(TAG, "Dev server already configured, stopping discovery")
+            return@execute
+          }
+          val baseUrl = "http://$host:$port"
+          if (probeDevServer(baseUrl)) {
+            Log.d(TAG, "Auto-discovered dev server at $baseUrl")
+            connectDevServer(baseUrl)
+            return@execute
+          }
+        }
+      }
+      Log.d(TAG, "No dev server detected on default hosts/ports")
+    }
+  }
+
+  private fun probeDevServer(baseUrl: String): Boolean {
+    return try {
+      val request = Request.Builder()
+        .url("$baseUrl/health")
+        .get()
+        .build()
+      discoveryClient.newCall(request).execute().use { response ->
+        response.isSuccessful
+      }
+    } catch (_: Throwable) {
+      false
+    }
+  }
+
+  private fun injectModuleConstants() {
+    val constants = registry.exportedConstants()
+    if (constants.isEmpty()) {
+      adapter.evaluate("globalThis.NativeConstants = globalThis.NativeConstants || {};")
+      return
+    }
+    val json = JSONObject()
+    for ((key, value) in constants) {
+      json.put(key, wrapForJson(value))
+    }
+    adapter.evaluate("globalThis.NativeConstants = ${json.toString()};")
+  }
+
+  private fun reinitializeModules() {
+    if (installedModules.isEmpty()) {
+      return
+    }
+    installedModules.values.forEach { module ->
+      registry.register(module)
+    }
+    injectModuleConstants()
   }
 
   private fun installRhinoGlobals(rhino: RhinoAdapter) {
@@ -417,21 +674,22 @@ class RuneRuntime(
     Log.d("RuneUI", "dispatchHandler called for id=$id name=$name")
     val key = id to name
     val handler = handlerMap[key]
+    val runtimeAdapter = adapter
     Log.d("RuneUI", "Handler function found: ${handler != null}")
     when {
-      handler is HandlerRef.Rhino && adapter is RhinoAdapter -> {
+      handler is HandlerRef.Rhino && runtimeAdapter is RhinoAdapter -> {
         val payload = manager.consumeEventPayload(id, name)
         val eventPayload = mutableMapOf<String, Any?>("target" to id, "type" to name)
         if (payload != null) {
           eventPayload.putAll(payload.toMap())
         }
-        val event = adapter.createObject(eventPayload)
+        val event = runtimeAdapter.createObject(eventPayload)
         Log.d("RuneUI", "Calling JavaScript function")
-        adapter.callFunction(handler.function, arrayOf(event))
+        runtimeAdapter.callFunction(handler.function, arrayOf(event))
       }
-      handler is HandlerRef.Hermes && adapter is HermesAdapter -> {
+      handler is HandlerRef.Hermes && runtimeAdapter is HermesAdapter -> {
         Log.d("RuneUI", "Dispatching Hermes handler $handler for node $id")
-        adapter.invokeHandler(handler.handlerId, id, name)
+        runtimeAdapter.invokeHandler(handler.handlerId, id, name)
       }
       else -> Log.d("RuneUI", "No valid handler found for $key")
     }
@@ -491,7 +749,8 @@ class RuneRuntime(
 
   private fun onHandlerAttached(id: Int, name: String, handlerRef: Long) {
     val key = id to name
-    if (adapter is HermesAdapter) {
+    val runtimeAdapter = adapter
+    if (runtimeAdapter is HermesAdapter) {
       if (handlerRef != 0L) {
         handlerMap[key] = HandlerRef.Hermes(handlerRef)
       } else {
@@ -504,8 +763,13 @@ class RuneRuntime(
     private val hermes: HermesAdapter,
   ) : JSBridge.ModulesShim {
     override fun getConstants(): String {
-        val constants = registry.exportedConstants()
-        return if (constants.isNotEmpty()) JSONObject(constants).toString() else "{}"
+      val constants = registry.exportedConstants()
+      if (constants.isEmpty()) return "{}"
+      val json = JSONObject()
+      for ((key, value) in constants) {
+        json.put(key, wrapForJson(value))
+      }
+      return json.toString()
     }
 
     override fun invoke(module: String, method: String, args: Array<Any?>, promiseId: Int) {
@@ -613,6 +877,15 @@ class RuneRuntime(
     return map
   }
 
+  private fun wrapForJson(value: Any?): Any? = when (value) {
+    null -> JSONObject.NULL
+    is JSONObject, is JSONArray, is Number, is Boolean, is String -> value
+    is Map<*, *> -> JSONObject(value)
+    is Collection<*> -> JSONArray(value)
+    is Array<*> -> JSONArray(value.toList())
+    else -> value.toString()
+  }
+
   companion object {
     /**
      * Initialize SoLoader required for Yoga layout engine.
@@ -622,7 +895,5 @@ class RuneRuntime(
     fun initialize(context: Context) {
       SoLoader.init(context, false)
     }
-
-    private const val TAG = "RuneRuntime"
   }
 }

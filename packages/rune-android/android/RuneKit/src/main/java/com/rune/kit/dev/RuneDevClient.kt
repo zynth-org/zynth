@@ -30,6 +30,7 @@ class RuneDevClient(
   private var stopped = false
   private var baseUrl: HttpUrl? = null
   private var socket: WebSocket? = null
+  @Volatile private var isConnecting = false
 
   fun connect(url: String) {
     val parsed = url.toHttpUrlOrNull()
@@ -37,14 +38,26 @@ class RuneDevClient(
       Log.w(TAG, "Invalid dev server URL: $url")
       return
     }
+    
+    // Prevent duplicate connections
+    synchronized(this) {
+      if (isConnecting || (baseUrl?.toString() == url && socket != null)) {
+        Log.d(TAG, "Already connecting/connected to $url")
+        return
+      }
+      isConnecting = true
+    }
+    
     baseUrl = parsed
     stopped = false
     reconnectAttempts = 0
+    Log.d(TAG, "Connecting to dev server $url")
     openSocket()
   }
 
   fun disconnect() {
     stopped = true
+    isConnecting = false
     reconnectHandler.removeCallbacksAndMessages(null)
     socket?.close(NORMAL_CLOSURE, "client disconnect")
     socket = null
@@ -52,16 +65,43 @@ class RuneDevClient(
 
   private fun openSocket() {
     val httpUrl = baseUrl ?: return
-    val wsUrl = httpUrl.newBuilder()
-      .scheme(if (httpUrl.isHttps) "wss" else "ws")
-      .encodedPath(ensureNativePath(httpUrl.encodedPath))
+    val adjustedPath = ensureNativePath(httpUrl.encodedPath)
+    val httpRequestUrl = httpUrl.newBuilder()
+      .encodedPath(adjustedPath)
       .build()
+    val httpString = httpRequestUrl.toString()
+    val wsUrl = when (httpRequestUrl.scheme) {
+      "https" -> "wss" + httpString.removePrefix("https")
+      "http" -> "ws" + httpString.removePrefix("http")
+      else -> {
+        val port = httpRequestUrl.port.takeIf { it != -1 }
+        buildString {
+          append(if (httpUrl.isHttps) "wss" else "ws")
+          append("://")
+          append(httpRequestUrl.host)
+          if (port != null) {
+            append(":")
+            append(port)
+          }
+          append(httpRequestUrl.encodedPath)
+          if (httpRequestUrl.encodedQuery != null) {
+            append("?")
+            append(httpRequestUrl.encodedQuery)
+          }
+        }
+      }
+    }
+    Log.d(TAG, "Opening WebSocket ${wsUrl}")
     val request = Request.Builder()
       .url(wsUrl)
       .build()
 
-    socket?.close(NORMAL_CLOSURE, "reconnecting")
+    // Close existing socket only if we have one
+    val existingSocket = socket
     socket = client.newWebSocket(request, this)
+    
+    // Close the old socket after creating the new one to avoid race conditions
+    existingSocket?.close(NORMAL_CLOSURE, "new connection")
   }
 
   private fun ensureNativePath(path: String): String {
@@ -80,6 +120,7 @@ class RuneDevClient(
 
   override fun onOpen(webSocket: WebSocket, response: Response) {
     reconnectAttempts = 0
+    isConnecting = false
     Log.d(TAG, "Connected to dev server ${webSocket.request().url}")
     sendHello(webSocket)
   }
@@ -107,12 +148,17 @@ class RuneDevClient(
 
   override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
     Log.d(TAG, "Dev socket closed code=$code reason=$reason")
-    scheduleReconnect()
+    isConnecting = false
+    // Don't reconnect if it was a normal closure from our side
+    if (code != NORMAL_CLOSURE || reason != "client disconnect") {
+      scheduleReconnect()
+    }
   }
 
   override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+    isConnecting = false
     if (!stopped) {
-      Log.w(TAG, "Dev socket failure", t)
+      Log.w(TAG, "Dev socket failure: ${t.message}")
     }
     scheduleReconnect()
   }
@@ -140,6 +186,10 @@ class RuneDevClient(
         "update", "full-reload" -> {
           Log.d(TAG, "Received ${payload.optString("type")}, refreshing bundle")
           runtime.refreshDevBundle()
+          true
+        }
+        "error" -> {
+          Log.d(TAG, "Received HMR error payload $payload")
           true
         }
         else -> false

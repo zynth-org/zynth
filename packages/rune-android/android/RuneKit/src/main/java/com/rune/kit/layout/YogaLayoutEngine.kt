@@ -113,6 +113,34 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
     }
   }
 
+  override fun reset() {
+    val rootNode = nodes[rootId] ?: YogaNodeFactory.create(config).also { node ->
+      node.setFlexDirection(YogaFlexDirection.COLUMN)
+      node.setAlignItems(YogaAlign.STRETCH)
+      nodes[rootId] = node
+    }
+
+    val iterator = nodes.entries.iterator()
+    while (iterator.hasNext()) {
+      val (id, node) = iterator.next()
+      if (id == rootId) continue
+      clearNode(node)
+      iterator.remove()
+    }
+
+    clearNode(rootNode)
+
+    styles.clear()
+    measureHandlers.clear()
+  }
+
+  private fun clearNode(node: YogaNode) {
+    node.setMeasureFunction(null)
+    while (node.childCount > 0) {
+      node.removeChildAt(node.childCount - 1)
+    }
+  }
+
   private fun attachMeasureFunc(id: Int, node: YogaNode, handler: MeasureHandler) {
     node.setMeasureFunction { _, width, widthMode, height, heightMode ->
       val input = MeasureInput(

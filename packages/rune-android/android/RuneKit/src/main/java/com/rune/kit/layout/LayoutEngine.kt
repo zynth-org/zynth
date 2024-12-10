@@ -17,6 +17,14 @@ interface LayoutEngine {
    * Use this after content changes that affect intrinsic size (e.g., text updates).
    */
   fun markDirty(id: Int)
+
+  /**
+   * Reset layout state by removing all tracked nodes except the root.
+   * Implementations should also clear cached styles/measure handlers.
+   */
+  fun reset() {
+    // Default no-op; implement when full reset is supported.
+  }
 }
 
 enum class MeasureMode { UNDEFINED, EXACTLY, AT_MOST }

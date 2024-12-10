@@ -147,14 +147,17 @@ function startIOSLogs(config) {
   }
 }
 
-async function startRuneHMRServer(appDir, platform) {
+async function startRuneHMRServer(appDir, platform, options = {}) {
   const { RuneHMRServer } = require("@rune/hmr");
 
   const defaultPort = 8081;
   const resolvedPort = Number(process.env.RUNE_HMR_PORT || defaultPort);
   const localHost = process.env.RUNE_HMR_HOST || "localhost";
+  const bindHost = process.env.RUNE_HMR_BIND || (localHost === "localhost" ? "0.0.0.0" : localHost);
   const defaultDeviceHost = platform === "android" ? "10.0.2.2" : "localhost";
-  const deviceHost = process.env.RUNE_DEVICE_HOST || defaultDeviceHost;
+  const deviceHostOverride = options.deviceHostOverride;
+  const deviceHost =
+    deviceHostOverride || process.env.RUNE_DEVICE_HOST || defaultDeviceHost;
 
   const devServerLocalUrl = `http://${localHost}:${resolvedPort}`;
   const devServerDeviceUrl = `http://${deviceHost}:${resolvedPort}`;
@@ -165,7 +168,7 @@ async function startRuneHMRServer(appDir, platform) {
     appRoot: appDir,
     port: resolvedPort,
     outDir: "dist",
-    host: localHost,
+    host: bindHost,
   });
 
   try {
@@ -194,6 +197,8 @@ async function startRuneHMRServer(appDir, platform) {
       server,
       deviceUrl: devServerDeviceUrl,
       localUrl: devServerLocalUrl,
+      deviceHost,
+      port: resolvedPort,
     };
   } catch (error) {
     console.error("❌ Failed to start Rune HMR server:", error.message);
@@ -274,8 +279,17 @@ async function devIOS(root, appDir) {
 async function devAndroid(root, appDir) {
   const config = getAndroidConfig(root, appDir);
 
+  const initialDevices = getConnectedAndroidDevices();
+  const userDeviceHost = process.env.RUNE_DEVICE_HOST;
+  const hasPhysicalDeviceInitially = initialDevices.some(
+    (id) => !id.startsWith("emulator-")
+  );
+
   // Start Rune HMR server
-  const hmrServer = await startRuneHMRServer(appDir, "android");
+  const hmrServer = await startRuneHMRServer(appDir, "android", {
+    deviceHostOverride:
+      userDeviceHost || (hasPhysicalDeviceInitially ? "127.0.0.1" : undefined),
+  });
 
   ensurePrebuild(root, appDir, "android");
   console.log("📦 Installing Android build...");
@@ -293,7 +307,51 @@ async function devAndroid(root, appDir) {
     return;
   }
 
+  const hasPhysicalDeviceConnected = devices.some(
+    (id) => !id.startsWith("emulator-")
+  );
+  const portForReverse = hmrServer?.port || Number(process.env.RUNE_HMR_PORT || 8081);
+  const shouldReverse =
+    (!!hmrServer &&
+      portForReverse &&
+      ((!userDeviceHost && hasPhysicalDeviceConnected) ||
+        userDeviceHost === "127.0.0.1"));
+
+  if (shouldReverse) {
+    for (const deviceId of devices) {
+      const result = spawnSync("adb", [
+        "-s",
+        deviceId,
+        "reverse",
+        `tcp:${portForReverse}`,
+        `tcp:${portForReverse}`,
+      ]);
+      if (result.status !== 0) {
+        console.warn(
+          `⚠️  Failed to reverse port ${portForReverse} for ${deviceId}`
+        );
+      }
+    }
+    if (!userDeviceHost && hasPhysicalDeviceConnected) {
+      console.log(
+        "🔄 Enabled adb reverse for connected device(s); tunneling via localhost."
+      );
+    }
+  } else if (hasPhysicalDeviceConnected && !userDeviceHost) {
+    console.warn(
+      "⚠️  Physical device detected. Use USB (adb reverse) or set RUNE_DEVICE_HOST to your LAN IP."
+    );
+  }
+
   runCommand("./gradlew", [":app:installDebug"], { cwd: androidDir });
+
+  let runtimeDeviceUrl = hmrServer?.deviceUrl;
+  if (!userDeviceHost && hasPhysicalDeviceConnected && portForReverse) {
+    runtimeDeviceUrl = `http://127.0.0.1:${portForReverse}`;
+  } else if (userDeviceHost) {
+    runtimeDeviceUrl = `http://${userDeviceHost}:${portForReverse}`;
+  }
+
   const launchArgs = [
     "shell",
     "am",
@@ -301,8 +359,8 @@ async function devAndroid(root, appDir) {
     "-n",
     `${config.bundleId}/.MainActivity`,
   ];
-  if (hmrServer?.deviceUrl) {
-    launchArgs.push("--es", "RUNE_DEV_SERVER_URL", hmrServer.deviceUrl);
+  if (runtimeDeviceUrl) {
+    launchArgs.push("--es", "RUNE_DEV_SERVER_URL", runtimeDeviceUrl);
   }
   runCommand("adb", launchArgs);
 
@@ -310,6 +368,9 @@ async function devAndroid(root, appDir) {
     console.log(
       "🔥 Rune HMR server running. Leave this session open for hot reloading."
     );
+    if (runtimeDeviceUrl && runtimeDeviceUrl !== hmrServer.deviceUrl) {
+      console.log(`  ↳ Device URL: ${runtimeDeviceUrl}`);
+    }
   }
 }
 

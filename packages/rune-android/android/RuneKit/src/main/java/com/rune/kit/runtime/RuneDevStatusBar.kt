@@ -2,7 +2,6 @@ package com.rune.kit.runtime
 
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
-import android.content.Context
 import android.graphics.Color
 import android.os.Handler
 import android.os.Looper
@@ -16,7 +15,7 @@ import android.widget.TextView
 /**
  * Visual indicator for HMR bundle loading and updates
  */
-class RuneDevStatusBar(context: Context) : FrameLayout(context) {
+class RuneDevStatusBar(private val host: ViewGroup) : FrameLayout(host.context) {
   private val textView: TextView
   private val progressBar: ProgressBar
   private val handler = Handler(Looper.getMainLooper())
@@ -153,8 +152,7 @@ class RuneDevStatusBar(context: Context) : FrameLayout(context) {
   private fun animateIn(position: Position) {
     // Ensure we're attached to the root view
     if (parent == null) {
-      val rootView = rootView as? ViewGroup ?: return
-      rootView.addView(this)
+      host.addView(this)
     }
 
     // Position at top or bottom
@@ -164,6 +162,9 @@ class RuneDevStatusBar(context: Context) : FrameLayout(context) {
       Position.BOTTOM -> Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
     }
     layoutParams = params
+
+    // Keep overlay above app content every time it animates in
+    bringToFront()
 
     // Animate in
     visibility = View.VISIBLE

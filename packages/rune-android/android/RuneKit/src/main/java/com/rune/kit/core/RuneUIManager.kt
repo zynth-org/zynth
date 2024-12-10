@@ -435,6 +435,36 @@ class RuneUIManager(
     scheduleFlush()
   }
 
+  fun hasRenderableContent(): Boolean = onMain { nodes.size() > 0 }
+
+  fun clearAllNodes() = onMain {
+    Log.d("RuneUI", "Clearing all nodes for dev reload")
+    frameScheduler.cancelFlush()
+    handler.removeCallbacksAndMessages(null)
+    pendingTextRebuild.clear()
+    eventPayloads.clear()
+    dirty = false
+
+    for (i in nodes.size() - 1 downTo 0) {
+      val node = nodes.valueAt(i)
+      if (node.id == root.rootId) continue
+      imageSupport.cleanup(node)
+      node.view.animate()?.cancel()
+      node.view.clearAnimation()
+      node.view.setOnClickListener(null)
+      (node.view.parent as? ViewGroup)?.removeView(node.view)
+      nodes.removeAt(i)
+    }
+
+    parents.clear()
+    parents[root.rootId] = null
+    nextId = root.rootId + 1
+    lastRootWidth = -1
+    lastRootHeight = -1
+
+    engine.reset()
+  }
+
   private fun runOnMainThread(block: () -> Unit) {
     if (Looper.myLooper() == Looper.getMainLooper()) {
       block()
