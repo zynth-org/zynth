@@ -50,29 +50,52 @@ targets:
           # WARNING: If you change your Node version using NVM, you must update the version number here!
           export PATH="/Users/ignaciozsabo/.nvm/versions/node/v22.20.0/bin:$PATH"
 
-          # 💡 Optional robust check:
-          # Use 'command -v' to check if 'yarn' is now available and fail the build otherwise.
-          command -v yarn >/dev/null 2>&1 || {
-            echo "---" >&2
-            echo "FATAL ERROR: 'yarn' command not found in the Xcode build environment." >&2
-            echo "Please verify the following path in your project.yml file is correct:" >&2
-            echo "Path: /Users/ignaciozsabo/.nvm/versions/node/v22.20.0/bin" >&2
-            echo "---" >&2
-            exit 1
-          }
-
           # ✅ Navigate from the Xcode project dir to the root of your framework.
           cd "$PROJECT_DIR/../../../"
 
-          # Run the build commands.
-          echo "Bundling workspace packages..."
-          yarn bundle:packages
-          echo "Bundling app workspace..."
-          yarn workspace {{WORKSPACE_NAME}} build
+          # Check if bundle already exists and we're in Release mode
+          BUNDLE_PATH="apps/{{APP_DIR}}/dist/main.js"
+          if [ "$CONFIGURATION" = "Release" ]; then
+            echo "⚡ Release build detected - using pre-built bundle"
+            if [ ! -f "$BUNDLE_PATH" ]; then
+              echo "---" >&2
+              echo "FATAL ERROR: JS bundle not found at $BUNDLE_PATH" >&2
+              echo "For Release builds, you must build the bundle first:" >&2
+              echo "  yarn workspace {{WORKSPACE_NAME}} build" >&2
+              echo "Or use: rune build ios" >&2
+              echo "---" >&2
+              exit 1
+            fi
+          else
+            # Development/Debug build - rebuild the bundle
+            # 💡 Optional robust check:
+            # Use 'command -v' to check if 'yarn' is now available and fail the build otherwise.
+            command -v yarn >/dev/null 2>&1 || {
+              echo "---" >&2
+              echo "FATAL ERROR: 'yarn' command not found in the Xcode build environment." >&2
+              echo "Please verify the following path in your project.yml file is correct:" >&2
+              echo "Path: /Users/ignaciozsabo/.nvm/versions/node/v22.20.0/bin" >&2
+              echo "---" >&2
+              exit 1
+            }
+
+            # Run the build commands.
+            echo "📦 Debug build - bundling workspace packages..."
+            yarn bundle:packages
+            echo "📦 Debug build - bundling app workspace..."
+            yarn workspace {{WORKSPACE_NAME}} build
+          fi
 
           # Copy the generated JS bundle into the app's resources folder.
-          echo "Copying main.js to app resources..."
+          echo "📄 Copying main.js to app resources..."
           mkdir -p "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
-          cp "apps/{{APP_DIR}}/dist/main.js" "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/main.js"
+          cp "$BUNDLE_PATH" "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/main.js"
+          
+          # Try to copy Hermes bytecode if it exists (for faster startup)
+          HBC_PATH="apps/{{APP_DIR}}/dist/main.hbc"
+          if [ -f "$HBC_PATH" ]; then
+            echo "📦 Copying Hermes bytecode..."
+            cp "$HBC_PATH" "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/main.hbc"
+          fi
     dependencies:
       - sdk: JavaScriptCore.framework

@@ -4,8 +4,18 @@ const fs = require("fs");
 const path = require("path");
 const { getAppConfig } = require("./generate-ios.js");
 
-const templatesRoot = path.dirname(require.resolve("@rune/templates/package.json"));
-const BINARY_EXTENSIONS = new Set([".jar", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico"]);
+const templatesRoot = path.dirname(
+  require.resolve("@rune/templates/package.json")
+);
+const BINARY_EXTENSIONS = new Set([
+  ".jar",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".ico",
+]);
 
 function replacePlaceholders(content, config) {
   return content
@@ -14,7 +24,10 @@ function replacePlaceholders(content, config) {
     .replace(/\{\{BUNDLE_ID\}\}/g, config.bundleId)
     .replace(/\{\{DISPLAY_NAME\}\}/g, config.displayName)
     .replace(/\{\{WORKSPACE_NAME\}\}/g, config.workspaceName || config.appName)
-    .replace(/\{\{APP_NAME_CAP\}\}/g, config.appNameCapitalized || config.appName);
+    .replace(
+      /\{\{APP_NAME_CAP\}\}/g,
+      config.appNameCapitalized || config.appName
+    );
 }
 
 function walk(dir) {
@@ -39,13 +52,22 @@ function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
-function generateAndroidProject(appDir) {
+function generateAndroidProject(appDir, options = {}) {
+  const { dev = true } = options; // Default to dev mode for backward compatibility
   const baseConfig = getAppConfig(appDir);
-  const androidPackage = (baseConfig.bundleId || `com.solidnative.${baseConfig.appDir.replace(/-/g, "")}`).toLowerCase();
+  const androidPackage = (
+    baseConfig.bundleId ||
+    `com.solidnative.${baseConfig.appDir.replace(/-/g, "")}`
+  ).toLowerCase();
   const config = {
     ...baseConfig,
     bundleId: androidPackage,
   };
+
+  console.log(`Generating Android project for ${config.displayName}...`);
+  console.log(`  Package: ${androidPackage}`);
+  console.log(`  Mode: ${dev ? "Development" : "Production"}`);
+
   const templateDir = path.join(templatesRoot, "android");
   const targetDir = path.join(appDir, "android");
 
@@ -65,11 +87,28 @@ function generateAndroidProject(appDir) {
       const mainActivityPath = path.join(javaDir, "MainActivity.kt");
       const modulesDir = path.join(javaDir, "modules");
       if (rel === mainActivityPath) {
-        return path.join(targetDir, "app", "src", "main", "java", packagePath, "MainActivity.kt");
+        return path.join(
+          targetDir,
+          "app",
+          "src",
+          "main",
+          "java",
+          packagePath,
+          "MainActivity.kt"
+        );
       }
       if (rel.startsWith(modulesDir + path.sep)) {
         const remainder = rel.slice(modulesDir.length + 1);
-        return path.join(targetDir, "app", "src", "main", "java", packagePath, "modules", remainder);
+        return path.join(
+          targetDir,
+          "app",
+          "src",
+          "main",
+          "java",
+          packagePath,
+          "modules",
+          remainder
+        );
       }
       return path.join(targetDir, rel);
     })();

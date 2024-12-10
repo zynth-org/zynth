@@ -83,13 +83,22 @@ function getAndroidConfig(root, appDir) {
   return { ...base, bundleId: pkgName };
 }
 
-function ensurePrebuild(root, appDir, platform) {
+function ensurePrebuild(root, appDir, platform, options = {}) {
   const script = platform === "ios" ? "prebuild-ios.js" : "prebuild-android.js";
   const scriptPath = path.join(root, "scripts", script);
   if (!fs.existsSync(scriptPath)) {
     throw new Error(`Missing ${script} at ${scriptPath}`);
   }
-  runNode(scriptPath, [], { cwd: appDir });
+
+  // Load and call the prebuild script with options
+  const prebuildModule = require(scriptPath);
+  const originalCwd = process.cwd();
+  try {
+    process.chdir(appDir);
+    prebuildModule.main(options);
+  } finally {
+    process.chdir(originalCwd);
+  }
 }
 
 function ensureBundle(appDir) {
@@ -153,7 +162,9 @@ async function startRuneHMRServer(appDir, platform, options = {}) {
   const defaultPort = 8081;
   const resolvedPort = Number(process.env.RUNE_HMR_PORT || defaultPort);
   const localHost = process.env.RUNE_HMR_HOST || "localhost";
-  const bindHost = process.env.RUNE_HMR_BIND || (localHost === "localhost" ? "0.0.0.0" : localHost);
+  const bindHost =
+    process.env.RUNE_HMR_BIND ||
+    (localHost === "localhost" ? "0.0.0.0" : localHost);
   const defaultDeviceHost = platform === "android" ? "10.0.2.2" : "localhost";
   const deviceHostOverride = options.deviceHostOverride;
   const deviceHost =
@@ -208,7 +219,7 @@ async function startRuneHMRServer(appDir, platform, options = {}) {
 
 async function devIOS(root, appDir) {
   const config = getIOSConfig(root, appDir);
-  ensurePrebuild(root, appDir, "ios");
+  ensurePrebuild(root, appDir, "ios", { dev: true });
   const logProcess = startIOSLogs(config);
 
   // Start Rune HMR server
@@ -291,7 +302,7 @@ async function devAndroid(root, appDir) {
       userDeviceHost || (hasPhysicalDeviceInitially ? "127.0.0.1" : undefined),
   });
 
-  ensurePrebuild(root, appDir, "android");
+  ensurePrebuild(root, appDir, "android", { dev: true });
   console.log("📦 Installing Android build...");
   const androidDir = path.join(appDir, "android");
   runCommand("./gradlew", [":app:assembleDebug"], { cwd: androidDir });
@@ -310,12 +321,13 @@ async function devAndroid(root, appDir) {
   const hasPhysicalDeviceConnected = devices.some(
     (id) => !id.startsWith("emulator-")
   );
-  const portForReverse = hmrServer?.port || Number(process.env.RUNE_HMR_PORT || 8081);
+  const portForReverse =
+    hmrServer?.port || Number(process.env.RUNE_HMR_PORT || 8081);
   const shouldReverse =
-    (!!hmrServer &&
-      portForReverse &&
-      ((!userDeviceHost && hasPhysicalDeviceConnected) ||
-        userDeviceHost === "127.0.0.1"));
+    !!hmrServer &&
+    portForReverse &&
+    ((!userDeviceHost && hasPhysicalDeviceConnected) ||
+      userDeviceHost === "127.0.0.1");
 
   if (shouldReverse) {
     for (const deviceId of devices) {

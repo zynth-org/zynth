@@ -4,16 +4,18 @@ const path = require("path");
 const { generateAndroidProject } = require("./generate-android.js");
 const fs = require("fs");
 
-const templatesRoot = path.dirname(require.resolve("@rune/templates/package.json"));
+const templatesRoot = path.dirname(
+  require.resolve("@rune/templates/package.json")
+);
 
-function main() {
+function main(options = {}) {
   const appDir = process.cwd();
   console.log("🚀 Starting Android prebuild...");
   console.log(`📱 App directory: ${appDir}`);
 
   try {
     console.log("\n📦 Generating Android project from template...");
-    const config = generateAndroidProject(appDir);
+    const config = generateAndroidProject(appDir, options);
 
     const androidDir = path.join(appDir, "android");
     const gradlePropsSrc = path.join(

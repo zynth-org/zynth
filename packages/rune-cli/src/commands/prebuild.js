@@ -1,5 +1,9 @@
 const path = require("path");
-const { findWorkspaceRoot, findAppDirectory, ensurePrebuild } = require("../utils");
+const {
+  findWorkspaceRoot,
+  findAppDirectory,
+  ensurePrebuild,
+} = require("../utils");
 
 module.exports = {
   command: "prebuild <platform>",
@@ -9,12 +13,18 @@ module.exports = {
       describe: "Platform to prebuild for",
       choices: ["ios", "android"],
     });
+    yargs.option("production", {
+      describe: "Generate production build without dev infrastructure",
+      type: "boolean",
+      default: false,
+    });
   },
   handler: (argv) => {
     const root = findWorkspaceRoot(process.cwd());
     const appDir = argv.app
       ? path.resolve(process.cwd(), argv.app)
       : findAppDirectory(process.cwd());
-    ensurePrebuild(root, appDir, argv.platform);
+    const options = { dev: !argv.production };
+    ensurePrebuild(root, appDir, argv.platform, options);
   },
 };

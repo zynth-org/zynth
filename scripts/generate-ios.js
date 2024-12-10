@@ -51,9 +51,12 @@ function replacePlaceholders(content, config) {
 }
 
 // Copy template files and replace placeholders
-const templatesRoot = path.dirname(require.resolve("@rune/templates/package.json"));
+const templatesRoot = path.dirname(
+  require.resolve("@rune/templates/package.json")
+);
 
-function generateIOSProject(appDir) {
+function generateIOSProject(appDir, options = {}) {
+  const { dev = true } = options; // Default to dev mode for backward compatibility
   const config = getAppConfig(appDir);
   const templateDir = path.join(templatesRoot, "ios");
   const targetDir = path.join(appDir, "ios");
@@ -62,6 +65,7 @@ function generateIOSProject(appDir) {
   console.log(`  App Name: ${config.appName} (${config.displayName})`);
   console.log(`  Bundle ID: ${config.bundleId}`);
   console.log(`  Version: ${config.version}`);
+  console.log(`  Mode: ${dev ? "Development" : "Production"}`);
   console.log(`  Target: ${targetDir}`);
 
   // Remove existing iOS folder if it exists
