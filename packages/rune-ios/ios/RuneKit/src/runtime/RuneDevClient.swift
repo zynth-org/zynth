@@ -45,47 +45,29 @@
 
     private func openSocket() {
       guard let socketURL = makeWebSocketURL(from: baseURL) else {
-        print("[RuneDevClient] Invalid dev server URL: \(baseURL.absoluteString)")
+        print("[RuneDevClient] ❌ Invalid dev server URL: \(baseURL.absoluteString)")
         return
       }
+
+      print("[RuneDevClient] 🔌 Opening WebSocket connection to: \(socketURL.absoluteString)")
       socket?.cancel(with: .goingAway, reason: nil)
       socket = session.webSocketTask(with: socketURL)
       socket?.resume()
     }
 
     private func makeWebSocketURL(from url: URL) -> URL? {
-      guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
-        return nil
-      }
-      let scheme = (components.scheme ?? "http").lowercased()
-      switch scheme {
-      case "https":
+      guard let host = url.host else { return nil }
+      var components = URLComponents()
+      let lowercasedScheme = (url.scheme ?? "http").lowercased()
+      if lowercasedScheme == "https" || lowercasedScheme == "wss" {
         components.scheme = "wss"
-      case "http":
-        components.scheme = "ws"
-      case "ws", "wss":
-        break
-      default:
+      } else {
         components.scheme = "ws"
       }
-
-      let existingPath = components.percentEncodedPath
-      components.percentEncodedPath = normalizePath(existingPath)
+      components.host = host
+      components.port = url.port
+      components.path = "/__rspack_hmr"
       return components.url
-    }
-
-    private func normalizePath(_ path: String) -> String {
-      var trimmed = path
-      if trimmed.isEmpty || trimmed == "/" {
-        return "/rune-native"
-      }
-      if trimmed.hasSuffix("/") {
-        trimmed.removeLast()
-      }
-      if trimmed.hasSuffix("rune-native") {
-        return trimmed
-      }
-      return trimmed + "/rune-native"
     }
 
     private func receiveNextMessage() {
@@ -116,29 +98,57 @@
       if text == "__rune_pong__" {
         return
       }
-      if processControlMessage(text) {
+
+      // Try to parse as JSON first
+      var parsedPayload: [String: Any]?
+      if let data = text.data(using: .utf8),
+        let object = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any]
+      {
+        parsedPayload = object
+      }
+
+      guard let payload = parsedPayload, let type = payload["type"] as? String else {
+        // Not a structured message, pass through
+        runtime?.handleDevMessage(text)
         return
       }
-      runtime?.handleDevMessage(text)
-    }
 
-    private func processControlMessage(_ text: String) -> Bool {
-      guard
-        let data = text.data(using: .utf8),
-        let object = try? JSONSerialization.jsonObject(with: data, options: []),
-        let payload = object as? [String: Any],
-        let type = payload["type"] as? String
-      else {
-        return false
-      }
+      print("[RuneDevClient] Received message type: \(type)")
 
       switch type {
-      case "update", "full-reload":
-        print("[RuneDevClient] Received \(type), refreshing bundle")
-        runtime?.refreshDevBundle()
-        return true
+      case "hash":
+        if let hash = payload["data"] as? String {
+          print("[RuneDevClient] 🔑 New build hash: \(hash)")
+        }
+
+      case "ok", "still-ok":
+        print("[RuneDevClient] ✅ Compilation OK")
+      // Don't apply hot update here - wait for the actual "update" message
+
+      case "warnings":
+        if let warnings = payload["data"] as? [[String: Any]] {
+          print("[RuneDevClient] ⚠️ Compilation warnings (\(warnings.count))")
+          for warning in warnings {
+            if let message = warning["message"] as? String {
+              print("  - \(message)")
+            }
+          }
+        }
+
+      case "errors":
+        if let errors = payload["data"] as? [[String: Any]] {
+          print("[RuneDevClient] ❌ Compilation errors (\(errors.count))")
+          for error in errors {
+            if let message = error["message"] as? String {
+              print("  - \(message)")
+            }
+          }
+        }
+
       default:
-        return false
+        // Pass through other message types (like "update")
+        print("[RuneDevClient] Forwarding message type '\(type)' to runtime")
+        runtime?.handleDevMessage(text)
       }
     }
 
@@ -155,9 +165,12 @@
       if let data = try? JSONSerialization.data(withJSONObject: payload, options: []),
         let json = String(data: data, encoding: .utf8)
       {
+        print("[RuneDevClient] 👋 Sending hello message")
         socket.send(.string(json)) { error in
           if let error {
-            print("[RuneDevClient] failed to send hello: \(error.localizedDescription)")
+            print("[RuneDevClient] ❌ Failed to send hello: \(error.localizedDescription)")
+          } else {
+            print("[RuneDevClient] ✅ Hello message sent")
           }
         }
       }
@@ -217,9 +230,8 @@
         guard let self else { return }
         self.reconnectAttempts = 0
         self.startPingTimer()
-        print(
-          "[RuneDevClient] Connected to dev server at \(webSocketTask.currentRequest?.url?.absoluteString ?? "<unknown>")"
-        )
+        let urlString = webSocketTask.currentRequest?.url?.absoluteString ?? "<unknown>"
+        print("[RuneDevClient] ✅ WebSocket connected to \(urlString)")
         self.sendHello()
         self.receiveNextMessage()
       }
@@ -232,7 +244,10 @@
       reason: Data?
     ) {
       queue.async { [weak self] in
-        print("[RuneDevClient] Socket closed, scheduling reconnect")
+        let reasonString = reason.flatMap { String(data: $0, encoding: .utf8) } ?? "none"
+        print(
+          "[RuneDevClient] ⚠️ WebSocket closed (code: \(closeCode.rawValue), reason: \(reasonString))"
+        )
         self?.scheduleReconnect()
       }
     }

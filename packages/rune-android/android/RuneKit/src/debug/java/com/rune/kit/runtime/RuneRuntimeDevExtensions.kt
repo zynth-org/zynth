@@ -15,6 +15,8 @@ import java.util.concurrent.Executors
 import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
 import kotlin.jvm.Volatile
+import org.json.JSONArray
+import org.json.JSONObject
 
 private const val TAG = "RuneRuntime"
 
@@ -47,6 +49,13 @@ internal val RuneRuntime.bundleExecutor: ExecutorService
     Executors.newSingleThreadExecutor { runnable ->
       Thread(runnable, "RuneBundleFetcher").apply { isDaemon = true }
     }
+  }
+
+internal val RuneRuntime.hotUpdateClient: OkHttpClient
+  get() = getOrCreateProperty("hotUpdateClient") {
+    OkHttpClient.Builder()
+      .retryOnConnectionFailure(true)
+      .build()
   }
 
 internal val RuneRuntime.bundleRetryHandler: Handler
@@ -170,6 +179,69 @@ internal fun RuneRuntime.refreshDevBundleInternal() {
     restartAfterReload()
   } else {
     root.post { statusBar.showError("Reload Failed") }
+  }
+}
+
+internal fun RuneRuntime.applyHotUpdate() {
+  val baseUrl = devServerUrl
+  if (baseUrl.isNullOrEmpty()) {
+    Log.w(TAG, "Hot update requested without dev server URL; falling back to full reload")
+    root.post { refreshDevBundleInternal() }
+    return
+  }
+
+  root.post { statusBar.showUpdating() }
+
+  bundleExecutor.execute {
+    try {
+      val manifestUrl = "$baseUrl/bundle/app.hot-update.json"
+      Log.d(TAG, "Fetching hot-update manifest $manifestUrl")
+      val manifestJson = fetchHotUpdateResource(manifestUrl)
+        ?: throw IllegalStateException("Manifest fetch returned empty body")
+      val manifest = JSONObject(manifestJson)
+      val chunkIds = when (val chunks = manifest.opt("c")) {
+        is JSONArray -> (0 until chunks.length()).mapNotNull { chunks.optString(it, null) }
+        is JSONObject -> chunks.keys().asSequence().toList()
+        else -> emptyList()
+      }
+      if (chunkIds.isEmpty()) {
+        throw IllegalStateException("Manifest missing chunk list: $manifestJson")
+      }
+
+      val scripts = mutableListOf<Pair<String, String>>()
+      for (chunkId in chunkIds) {
+        val chunkUrl = "$baseUrl/bundle/$chunkId.hot-update.js"
+        Log.d(TAG, "Fetching hot-update chunk $chunkUrl")
+        val code = fetchHotUpdateResource(chunkUrl)
+          ?: throw IllegalStateException("Hot-update chunk $chunkId returned empty body")
+        scripts += chunkId to code
+      }
+
+      root.post {
+        scripts.forEach { (chunkId, code) ->
+          Log.d(TAG, "Executing hot-update chunk $chunkId")
+          adapter.evaluate(code)
+        }
+        statusBar.showBundleLoaded()
+        Log.d(TAG, "Hot update applied successfully")
+      }
+    } catch (t: Throwable) {
+      Log.w(TAG, "Hot update failed: ${t.message}", t)
+      root.post { refreshDevBundleInternal() }
+    }
+  }
+}
+
+private fun RuneRuntime.fetchHotUpdateResource(url: String): String? {
+  val request = Request.Builder()
+    .url(url)
+    .header("Cache-Control", "no-cache")
+    .build()
+  return hotUpdateClient.newCall(request).execute().use { response ->
+    if (!response.isSuccessful) {
+      throw IllegalStateException("Request $url failed with ${response.code}")
+    }
+    response.body?.string()
   }
 }
 

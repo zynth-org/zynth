@@ -216,6 +216,20 @@ class RuneRuntime(
       globalThis.console.error = console_error;
       globalThis.console.warn = console_warn;
     """)
+
+    runtimeAdapter.evaluate(
+      """
+      if (typeof globalThis.global === 'undefined') {
+        globalThis.global = globalThis;
+      }
+      if (typeof globalThis.self === 'undefined') {
+        globalThis.self = globalThis;
+      }
+      if (typeof globalThis.window === 'undefined') {
+        globalThis.window = globalThis;
+      }
+      """
+    )
   }
 
   private fun injectModuleConstants() {

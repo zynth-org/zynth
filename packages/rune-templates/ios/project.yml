@@ -67,30 +67,18 @@ targets:
               exit 1
             fi
           else
-            # Development/Debug build - rebuild the bundle
-            # 💡 Optional robust check:
-            # Use 'command -v' to check if 'yarn' is now available and fail the build otherwise.
-            command -v yarn >/dev/null 2>&1 || {
-              echo "---" >&2
-              echo "FATAL ERROR: 'yarn' command not found in the Xcode build environment." >&2
-              echo "Please verify the following path in your project.yml file is correct:" >&2
-              echo "Path: /Users/ignaciozsabo/.nvm/versions/node/v22.20.0/bin" >&2
-              echo "---" >&2
-              exit 1
-            }
-
-            # Run the build commands.
-            echo "📦 Debug build - bundling workspace packages..."
-            yarn bundle:packages
-            echo "📦 Debug build - bundling app workspace..."
-            yarn workspace {{WORKSPACE_NAME}} build
+            echo "⚡ Debug build - skipping bundle copy (Rsbuild dev server supplies JS)."
+            mkdir -p "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
+            rm -f "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/main.js"
+            rm -f "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/main.hbc"
+            exit 0
           fi
 
-          # Copy the generated JS bundle into the app's resources folder.
+          # Copy the generated JS bundle into the app's resources folder (Release only).
           echo "📄 Copying main.js to app resources..."
           mkdir -p "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
           cp "$BUNDLE_PATH" "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/main.js"
-          
+
           # Try to copy Hermes bytecode if it exists (for faster startup)
           HBC_PATH="apps/{{APP_DIR}}/dist/main.hbc"
           if [ -f "$HBC_PATH" ]; then

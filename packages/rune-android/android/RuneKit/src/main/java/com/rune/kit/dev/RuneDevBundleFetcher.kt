@@ -17,22 +17,39 @@ object RuneDevBundleFetcher {
     .build()
 
   private fun buildBundleUrl(base: HttpUrl): HttpUrl {
-    val builder = base.newBuilder()
-    val segments = base.pathSegments
-    if (segments.isNotEmpty() && segments.last().isBlank()) {
-      builder.removePathSegment(segments.size - 1)
-    }
-    return builder
-      .addPathSegment("rune-native")
-      .addPathSegment("bundle")
+    return base.newBuilder()
+      .encodedPath("/main.js")
       .build()
   }
 
   @Throws(IOException::class)
-  fun fetch(baseUrl: String): RuneDevBundle {
+  fun fetch(baseUrl: String, attempts: Int = 8, retryDelayMs: Long = 750): RuneDevBundle {
     val httpUrl = baseUrl.toHttpUrlOrNull()
       ?: throw IOException("Invalid dev server URL: $baseUrl")
     val requestUrl = buildBundleUrl(httpUrl)
+    var lastError: IOException? = null
+
+    repeat(max(attempts, 1)) { index ->
+      try {
+        return fetchOnce(requestUrl)
+      } catch (io: IOException) {
+        lastError = io
+        if (index < attempts - 1) {
+          try {
+            Thread.sleep(retryDelayMs)
+          } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw io
+          }
+        }
+      }
+    }
+
+    throw lastError ?: IOException("Failed to fetch bundle")
+  }
+
+  @Throws(IOException::class)
+  private fun fetchOnce(requestUrl: HttpUrl): RuneDevBundle {
     val request = Request.Builder()
       .url(requestUrl)
       .header("Cache-Control", "no-cache")

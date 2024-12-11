@@ -86,6 +86,12 @@ static void RuneReportJSIError(facebook::jsi::Runtime &rt,
   } catch (...) {
   }
 
+  try {
+    stack = error.getStack();
+  } catch (...) {
+    // It's possible for getStack to throw, so we guard against it.
+  }
+
   // Best-effort: avoid copying JSI values which may be move-only across some Hermes/JSI versions.
   // If message is empty, keep default; stack will remain empty if not retrievable.
 

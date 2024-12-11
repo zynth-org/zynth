@@ -85,6 +85,21 @@ public final class RuneRuntime: NSObject {
     runtime.evaluate(
       code:
         """
+        if (typeof globalThis.global === 'undefined') {
+          globalThis.global = globalThis;
+        }
+        if (typeof globalThis.self === 'undefined') {
+          globalThis.self = globalThis;
+        }
+        if (typeof globalThis.window === 'undefined') {
+          globalThis.window = globalThis;
+        }
+        """
+    )
+
+    runtime.evaluate(
+      code:
+        """
         if (typeof globalThis.__modules === 'object' && typeof globalThis.__modules.callSync !== 'function' && typeof globalThis.__runeCallSync === 'function') {
           globalThis.__modules.callSync = globalThis.__runeCallSync;
         }
@@ -223,14 +238,21 @@ public final class RuneRuntime: NSObject {
     modules.forEach(registry.register)
   }
 
-  @objc public func loadInitialBundle(jsBundleURL: URL) throws {
+  @objc public func loadInitialBundle(jsBundleURL: URL?) throws {
     #if DEBUG
       if loadDevBundleIfAvailable() {
         return
       }
     #endif
 
-    try load(jsBundleURL: jsBundleURL)
+    guard let url = jsBundleURL else {
+      throw NSError(
+        domain: "dev.rune.runtime",
+        code: -1,
+        userInfo: [NSLocalizedDescriptionKey: "Bundle URL not provided"]
+      )
+    }
+    try load(jsBundleURL: url)
   }
 
   public func load(jsBundleURL: URL) throws {

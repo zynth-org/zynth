@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const http = require("http");
 const { spawn, spawnSync } = require("child_process");
 
 function readJSON(filePath) {
@@ -105,6 +106,70 @@ function ensureBundle(appDir) {
   runCommand("yarn", ["build"], { cwd: appDir });
 }
 
+function removeDirectory(targetPath) {
+  if (fs.existsSync(targetPath)) {
+    fs.rmSync(targetPath, { recursive: true, force: true });
+  }
+}
+
+function getBootedSimulatorId() {
+  const output = readCommandOutput("xcrun", [
+    "simctl",
+    "list",
+    "devices",
+    "booted",
+    "--json",
+  ]);
+  if (!output) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(output);
+    const devices = parsed.devices || {};
+    for (const runtime of Object.keys(devices)) {
+      const entries = devices[runtime] || [];
+      for (const device of entries) {
+        if (device.state === "Booted" && device.udid) {
+          return device.udid;
+        }
+      }
+    }
+  } catch (error) {
+    console.warn("⚠️  Failed to parse simctl output:", error.message);
+  }
+  return null;
+}
+
+async function waitForDevServer(url, timeoutMs = 60000) {
+  const deadline = Date.now() + timeoutMs;
+  const target = `${url.replace(/\/$/, "")}/main.js`;
+
+  const attempt = () =>
+    new Promise((resolve) => {
+      const req = http.get(target, (res) => {
+        res.resume();
+        resolve(res.statusCode && res.statusCode >= 200 && res.statusCode < 300);
+      });
+      req.on("error", () => resolve(false));
+      req.setTimeout(2000, () => {
+        req.destroy();
+        resolve(false);
+      });
+    });
+
+  while (Date.now() < deadline) {
+    // eslint-disable-next-line no-await-in-loop
+    const ok = await attempt();
+    if (ok) {
+      return true;
+    }
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+
+  return false;
+}
+
 function getConnectedAndroidDevices() {
   const output = readCommandOutput("adb", ["devices"]);
   if (!output) {
@@ -157,10 +222,8 @@ function startIOSLogs(config) {
 }
 
 async function startRuneHMRServer(appDir, platform, options = {}) {
-  const { RuneHMRServer } = require("@rune/hmr");
-
   const defaultPort = 8081;
-  const resolvedPort = Number(process.env.RUNE_HMR_PORT || defaultPort);
+  const port = Number(process.env.RUNE_HMR_PORT || options.port || defaultPort);
   const localHost = process.env.RUNE_HMR_HOST || "localhost";
   const bindHost =
     process.env.RUNE_HMR_BIND ||
@@ -170,63 +233,94 @@ async function startRuneHMRServer(appDir, platform, options = {}) {
   const deviceHost =
     deviceHostOverride || process.env.RUNE_DEVICE_HOST || defaultDeviceHost;
 
-  const devServerLocalUrl = `http://${localHost}:${resolvedPort}`;
-  const devServerDeviceUrl = `http://${deviceHost}:${resolvedPort}`;
+  const args = [
+    "rsbuild",
+    "dev",
+    "--port",
+    String(port),
+    "--host",
+    bindHost,
+  ];
 
-  console.log(`🔥 Starting Rune HMR server on ${devServerLocalUrl}...`);
+  console.log(
+    `🔥 Starting Rsbuild dev server (port ${port}, host ${bindHost})...`
+  );
 
-  const server = new RuneHMRServer({
-    appRoot: appDir,
-    port: resolvedPort,
-    outDir: "dist",
-    host: bindHost,
+  const command = process.platform === "win32" ? "npx.cmd" : "npx";
+  const child = spawn(command, args, {
+    cwd: appDir,
+    stdio: "inherit",
+    env: {
+      ...process.env,
+      RUNE_HMR_PORT: String(port),
+    },
   });
 
-  try {
-    await server.start();
+  child.on("error", (error) => {
+    console.error("❌ Failed to launch Rsbuild dev server:", error.message);
+  });
 
-    // Setup cleanup handlers
-    const dispose = async () => {
-      console.log("\n🛑 Stopping Rune HMR server...");
-      await server.stop();
-    };
+  const cleanup = () => {
+    if (!child.killed) {
+      child.kill("SIGTERM");
+    }
+  };
 
-    process.on("exit", dispose);
-    process.on("SIGINT", async () => {
-      await dispose();
-      process.exit(0);
-    });
-    process.on("SIGTERM", dispose);
+  process.on("exit", cleanup);
+  process.on("SIGINT", () => {
+    cleanup();
+    process.exit(0);
+  });
+  process.on("SIGTERM", cleanup);
 
-    console.log(`✓ Rune HMR server running`);
-    console.log(`  Local:  ${devServerLocalUrl}`);
-    console.log(`  Device: ${devServerDeviceUrl}`);
-    console.log(`  Bundle: ${devServerDeviceUrl}/bundle/main.js`);
-    console.log(`  WebSocket: ws://${deviceHost}:${resolvedPort}/rune-native`);
+  const localUrl = `http://${localHost}:${port}`;
+  const deviceUrl = `http://${deviceHost}:${port}`;
 
-    return {
-      server,
-      deviceUrl: devServerDeviceUrl,
-      localUrl: devServerLocalUrl,
-      deviceHost,
-      port: resolvedPort,
-    };
-  } catch (error) {
-    console.error("❌ Failed to start Rune HMR server:", error.message);
-    return null;
-  }
+  console.log(`✓ Rsbuild dev server spawned`);
+  console.log(`  Local:   ${localUrl}`);
+  console.log(`  Device:  ${deviceUrl}`);
+  console.log(`  Bundle:  ${deviceUrl}/main.js`);
+  console.log(`  Updates: ${deviceUrl}/bundle/app.hot-update.json`);
+  console.log(`  Socket:  ws://${deviceHost}:${port}/__rspack_hmr`);
+
+  return {
+    process: child,
+    port,
+    localUrl,
+    deviceUrl,
+    deviceHost,
+  };
 }
 
-async function devIOS(root, appDir) {
+async function devIOS(root, appDir, options = {}) {
   const config = getIOSConfig(root, appDir);
-  ensurePrebuild(root, appDir, "ios", { dev: true });
-  const logProcess = startIOSLogs(config);
-
-  // Start Rune HMR server
-  const hmrServer = await startRuneHMRServer(appDir, "ios");
-
-  console.log(`📦 Building ${config.appNameCapitalized} for iOS simulator...`);
   const iosDir = path.join(appDir, "ios");
+
+  if (options.prebuild) {
+    console.log("♻️  Regenerating iOS project (--prebuild)");
+    removeDirectory(iosDir);
+    ensurePrebuild(root, appDir, "ios", { dev: true });
+  }
+
+  if (!fs.existsSync(iosDir)) {
+    console.error(
+      "❌ iOS project not found. Run `rune prebuild ios` or pass --prebuild."
+    );
+    process.exit(1);
+  }
+
+  const workspacePath = path.join(
+    iosDir,
+    `${config.appNameCapitalized}.xcworkspace`
+  );
+  if (!fs.existsSync(workspacePath)) {
+    console.error(
+      `❌ Missing workspace at ${workspacePath}. Regenerate with --prebuild.`
+    );
+    process.exit(1);
+  }
+
+  console.log(`🛠️  Building ${config.appNameCapitalized} for iOS simulator...`);
   runCommand(
     "xcodebuild",
     [
@@ -243,34 +337,65 @@ async function devIOS(root, appDir) {
     ],
     { cwd: iosDir }
   );
-  console.log("🚀 Installing build to simulator...");
-  const appBundle = path.join(
+
+  const simulatorId = getBootedSimulatorId();
+  if (!simulatorId) {
+    console.error(
+      "❌ No booted iOS simulator detected. Launch a simulator and try again."
+    );
+    process.exit(1);
+  }
+
+  const appBundlePath = path.join(
+    iosDir,
     ".build",
     "Build",
     "Products",
     "Debug-iphonesimulator",
     `${config.appNameCapitalized}.app`
   );
-  runCommand("xcrun", ["simctl", "bootstatus", "booted", "-b"]);
-  runCommand("xcrun", ["simctl", "install", "booted", appBundle], {
-    cwd: iosDir,
-  });
-
-  if (hmrServer?.deviceUrl) {
-    runCommand("xcrun", [
-      "simctl",
-      "spawn",
-      "booted",
-      "launchctl",
-      "setenv",
-      "RUNE_DEV_SERVER_URL",
-      hmrServer.deviceUrl,
-    ]);
+  if (!fs.existsSync(appBundlePath)) {
+    console.error(
+      `❌ Built app not found at ${appBundlePath}. Check xcodebuild output.`
+    );
+    process.exit(1);
   }
 
-  const launchArgs = ["simctl", "launch", "booted", config.bundleId];
-  runCommand("xcrun", launchArgs);
+  console.log("📥 Installing build to simulator...");
+  runCommand("xcrun", ["simctl", "install", simulatorId, appBundlePath]);
 
+  const desiredPort = Number(process.env.RUNE_HMR_PORT || 8081);
+  const hmrServer = await startRuneHMRServer(appDir, "ios", {
+    port: desiredPort,
+  });
+
+  if (!hmrServer) {
+    console.error("❌ Failed to start Rsbuild dev server. Aborting.");
+    process.exit(1);
+  }
+
+  const serverReady = await waitForDevServer(hmrServer.localUrl);
+  if (!serverReady) {
+    console.error(
+      "❌ Rsbuild dev server did not respond within the expected time window."
+    );
+    process.exit(1);
+  }
+
+  runCommand("xcrun", [
+    "simctl",
+    "spawn",
+    simulatorId,
+    "launchctl",
+    "setenv",
+    "RUNE_DEV_SERVER_URL",
+    hmrServer.deviceUrl,
+  ]);
+
+  console.log("🚀 Launching application on simulator...");
+  runCommand("xcrun", ["simctl", "launch", simulatorId, config.bundleId]);
+
+  const logProcess = startIOSLogs(config);
   if (logProcess) {
     console.log("📖 iOS logs streaming. Press Ctrl+C to stop.");
     logProcess.on("exit", (code, signal) => {
@@ -282,9 +407,11 @@ async function devIOS(root, appDir) {
 
   if (hmrServer) {
     console.log(
-      "🔥 Rune HMR server running. Leave this session open for hot reloading."
+      "🔥 Rsbuild dev server running. Leave this session open for hot reloading."
     );
   }
+
+  await new Promise(() => {});
 }
 
 async function devAndroid(root, appDir) {
@@ -301,6 +428,19 @@ async function devAndroid(root, appDir) {
     deviceHostOverride:
       userDeviceHost || (hasPhysicalDeviceInitially ? "127.0.0.1" : undefined),
   });
+
+  if (!hmrServer) {
+    console.error("❌ Failed to start Rsbuild dev server. Aborting.");
+    process.exit(1);
+  }
+
+  const serverReady = await waitForDevServer(hmrServer.localUrl);
+  if (!serverReady) {
+    console.error(
+      "❌ Rsbuild dev server did not respond within the expected time window."
+    );
+    process.exit(1);
+  }
 
   ensurePrebuild(root, appDir, "android", { dev: true });
   console.log("📦 Installing Android build...");

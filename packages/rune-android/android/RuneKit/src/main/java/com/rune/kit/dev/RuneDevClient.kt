@@ -65,31 +65,10 @@ class RuneDevClient(
 
   private fun openSocket() {
     val httpUrl = baseUrl ?: return
-    val adjustedPath = ensureNativePath(httpUrl.encodedPath)
-    val httpRequestUrl = httpUrl.newBuilder()
-      .encodedPath(adjustedPath)
-      .build()
-    val httpString = httpRequestUrl.toString()
-    val wsUrl = when (httpRequestUrl.scheme) {
-      "https" -> "wss" + httpString.removePrefix("https")
-      "http" -> "ws" + httpString.removePrefix("http")
-      else -> {
-        val port = httpRequestUrl.port.takeIf { it != -1 }
-        buildString {
-          append(if (httpUrl.isHttps) "wss" else "ws")
-          append("://")
-          append(httpRequestUrl.host)
-          if (port != null) {
-            append(":")
-            append(port)
-          }
-          append(httpRequestUrl.encodedPath)
-          if (httpRequestUrl.encodedQuery != null) {
-            append("?")
-            append(httpRequestUrl.encodedQuery)
-          }
-        }
-      }
+    val wsUrl = buildWebSocketUrl(httpUrl)
+    if (wsUrl == null) {
+      Log.w(TAG, "Unable to derive WebSocket URL from ${httpUrl}")
+      return
     }
     Log.d(TAG, "Opening WebSocket ${wsUrl}")
     val request = Request.Builder()
@@ -104,18 +83,23 @@ class RuneDevClient(
     existingSocket?.close(NORMAL_CLOSURE, "new connection")
   }
 
-  private fun ensureNativePath(path: String): String {
-    if (path.isEmpty() || path == "/") {
-      return "/rune-native"
+  private fun buildWebSocketUrl(httpUrl: HttpUrl): String? {
+    val scheme = if (httpUrl.isHttps) "wss" else "ws"
+    val host = httpUrl.host
+    if (host.isNullOrEmpty()) {
+      return null
     }
-    var trimmed = path
-    if (trimmed.endsWith('/')) {
-      trimmed = trimmed.dropLast(1)
+    val port = httpUrl.port
+    return buildString {
+      append(scheme)
+      append("://")
+      append(host)
+      if (port != -1 && port != 80 && port != 443) {
+        append(":")
+        append(port)
+      }
+      append("/__rspack_hmr")
     }
-    if (trimmed.endsWith("rune-native")) {
-      return trimmed
-    }
-    return "$trimmed/rune-native"
   }
 
   override fun onOpen(webSocket: WebSocket, response: Response) {
@@ -126,24 +110,12 @@ class RuneDevClient(
   }
 
   override fun onMessage(webSocket: WebSocket, text: String) {
-    if (text == "__rune_pong__") {
-      return
-    }
-    if (processControlMessage(text)) {
-      return
-    }
-    runtime.handleDevMessage(text)
+    handleMessage(text)
   }
 
   override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
     val text = bytes.utf8()
-    if (text == "__rune_pong__") {
-      return
-    }
-    if (processControlMessage(text)) {
-      return
-    }
-    runtime.handleDevMessage(text)
+    handleMessage(text)
   }
 
   override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
@@ -179,23 +151,32 @@ class RuneDevClient(
     reconnectHandler.postDelayed({ openSocket() }, delay)
   }
 
-  private fun processControlMessage(text: String): Boolean {
-    return try {
-      val payload = JSONObject(text)
-      when (payload.optString("type")) {
-        "update", "full-reload" -> {
-          Log.d(TAG, "Received ${payload.optString("type")}, refreshing bundle")
-          runtime.refreshDevBundle()
-          true
-        }
-        "error" -> {
-          Log.d(TAG, "Received HMR error payload $payload")
-          true
-        }
-        else -> false
-      }
+  private fun handleMessage(text: String) {
+    if (text == "__rune_pong__") {
+      return
+    }
+    val payload = try {
+      JSONObject(text)
     } catch (t: Throwable) {
-      false
+      runtime.handleDevMessage(text)
+      return
+    }
+
+    when (payload.optString("type")) {
+      "hash" -> {
+        Log.d(TAG, "New compilation hash ${payload.optString("data")}")
+      }
+      "ok", "still-ok" -> {
+        Log.d(TAG, "Compilation OK, applying hot update")
+        runtime.applyHotUpdate()
+      }
+      "warnings" -> {
+        Log.w(TAG, "Compilation warnings: $payload")
+      }
+      "errors" -> {
+        Log.e(TAG, "Compilation errors: $payload")
+      }
+      else -> runtime.handleDevMessage(text)
     }
   }
 

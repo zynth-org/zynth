@@ -2,6 +2,7 @@
 #import <UIKit/UIKit.h>
 #import "RuneKit.h"
 #import "RuneKit-Swift.h"
+#import "dev-helper.h"
 
 @interface AppDelegate ()
 @property(nonatomic, strong) RuneRuntime *runtime;
@@ -24,11 +25,21 @@
 
   self.runtime = [[RuneRuntime alloc] initWithRootView:self.surface];
 
-  NSURL *bundleURL = [[NSBundle mainBundle] URLForResource:@"main" withExtension:@"js"];
-  NSAssert(bundleURL != nil, @"main.js not found (build the JS bundle)");
+#if DEBUG
+  NSString *devServer = [[NSProcessInfo processInfo] environment][@"RUNE_DEV_SERVER_URL"];
+  if (devServer.length == 0) {
+    devServer = @"http://localhost:8081";
+  }
+  BOOL ready = rune_wait_for_dev_server(devServer, 15.0);
+  if (!ready) {
+    NSLog(@"[Rune] ⚠️ Dev server at %@ not reachable; startup may fail", devServer);
+  }
+#endif
+
+  NSURL *fallbackBundleURL = [[NSBundle mainBundle] URLForResource:@"main" withExtension:@"js"];
 
   NSError *loadError = nil;
-  if (![self.runtime loadInitialBundleWithJsBundleURL:bundleURL error:&loadError]) {
+  if (![self.runtime loadInitialBundleWithJsBundleURL:fallbackBundleURL error:&loadError]) {
     NSLog(@"[Rune] Failed to load bundle: %@", loadError);
     if (loadError) {
       [DevRedBox showWithTitle:@"Bundle Load Failed"

@@ -15,20 +15,36 @@
   enum RuneDevBundleFetcher {
     private static func buildBundleURL(from baseURL: URL) -> URL {
       var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
-      let normalizedPath: String
-      if let path = components?.percentEncodedPath, !path.isEmpty, path != "/" {
-        normalizedPath =
-          path.hasSuffix("/") ? path + "rune-native/bundle" : path + "/rune-native/bundle"
-      } else {
-        normalizedPath = "/rune-native/bundle"
-      }
-      components?.percentEncodedPath = normalizedPath
-      return components?.url ?? baseURL.appendingPathComponent("rune-native/bundle")
+      components?.percentEncodedPath = "/main.js"
+      return components?.url ?? baseURL.appendingPathComponent("main.js")
     }
 
-    static func fetch(baseURL: URL, timeout: TimeInterval = 12) throws -> RuneDevBundle {
-      let bundleURL = buildBundleURL(from: baseURL)
-      var request = URLRequest(url: bundleURL)
+    static func fetch(
+      baseURL: URL,
+      timeout: TimeInterval = 12,
+      attempts: Int = 8,
+      retryDelay: TimeInterval = 0.75
+    ) throws -> RuneDevBundle {
+      var lastError: Error?
+      for attempt in 0..<max(attempts, 1) {
+        do {
+          return try fetchOnce(
+            url: buildBundleURL(from: baseURL),
+            timeout: timeout
+          )
+        } catch {
+          lastError = error
+          if attempt < attempts - 1 {
+            Thread.sleep(forTimeInterval: retryDelay)
+            continue
+          }
+        }
+      }
+      throw lastError ?? RuneDevBundleError.invalidResponse
+    }
+
+    private static func fetchOnce(url: URL, timeout: TimeInterval) throws -> RuneDevBundle {
+      var request = URLRequest(url: url)
       request.httpMethod = "GET"
       request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
 
@@ -65,7 +81,7 @@
         throw RuneDevBundleError.invalidResponse
       }
 
-      return RuneDevBundle(code: code, url: bundleURL)
+      return RuneDevBundle(code: code, url: url)
     }
   }
 #endif

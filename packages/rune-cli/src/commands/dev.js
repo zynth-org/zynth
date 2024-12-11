@@ -14,6 +14,11 @@ module.exports = {
       describe: "Platform to run on",
       choices: ["ios", "android"],
     });
+    yargs.option("prebuild", {
+      describe: "Regenerate native project before launching",
+      type: "boolean",
+      default: false,
+    });
   },
   handler: async (argv) => {
     const root = findWorkspaceRoot(process.cwd());
@@ -21,7 +26,7 @@ module.exports = {
       ? path.resolve(process.cwd(), argv.app)
       : findAppDirectory(process.cwd());
     if (argv.platform === "ios") {
-      await devIOS(root, appDir);
+      await devIOS(root, appDir, { prebuild: argv.prebuild });
     } else {
       await devAndroid(root, appDir);
     }
