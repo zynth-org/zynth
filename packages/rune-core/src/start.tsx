@@ -26,18 +26,25 @@ import { createAndroidHost } from "./host/android";
 import { ensureNativeHMRHooks } from "./hmr";
 
 let lastRootId: number | null = null;
+let currentApp: (() => any) | null = null;
 
 export function start(App: () => any) {
   ensureNativeHMRHooks();
   const g = globalThis as any;
+
+  currentApp = App;
 
   g.__rune_rerenderApp = () => {
     if (lastRootId == null) {
       console.warn("[RuneRuntime] rerender requested before root id set");
       return;
     }
+    if (typeof currentApp !== "function") {
+      console.warn("[RuneRuntime] rerender requested before app initialized");
+      return;
+    }
     try {
-      render(() => <App />, { id: lastRootId, type: "root" } as any);
+      render(() => currentApp!(), { id: lastRootId, type: "root" } as any);
       console.log("[RuneRuntime] rerender completed");
     } catch (error) {
       const msg = String((error as any)?.message || error);
@@ -45,6 +52,21 @@ export function start(App: () => any) {
       console.error(`[RuneRuntime] rerender failed: ${msg}`);
       if (stack) console.error(`[RuneRuntime] rerender stack: ${stack}`);
       throw error;
+    }
+  };
+
+  g.__rune_updateApp = (NextApp: () => any) => {
+    if (typeof NextApp !== "function") {
+      console.warn("[RuneRuntime] updateApp received non-function", NextApp);
+      return;
+    }
+    currentApp = NextApp;
+    if (lastRootId != null) {
+      try {
+        g.__rune_rerenderApp();
+      } catch (error) {
+        console.error("[RuneRuntime] updateApp rerender failed", error);
+      }
     }
   };
 
@@ -67,8 +89,13 @@ export function start(App: () => any) {
     }
 
     console.log(`Starting render with rootId: ${rootId}`);
+    if (typeof currentApp !== "function") {
+      console.error("[__startApp] no app registered for rendering");
+      return;
+    }
+
     try {
-      render(() => <App />, { id: rootId, type: "root" } as any);
+      render(() => currentApp!(), { id: rootId, type: "root" } as any);
       lastRootId = rootId;
       console.log("Render completed successfully");
     } catch (error) {

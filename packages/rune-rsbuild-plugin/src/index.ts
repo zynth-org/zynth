@@ -191,7 +191,8 @@ export function createRuneRsbuildPlugin(
           config.output = {
             ...config.output,
             hotUpdateGlobal: "webpackHotUpdate",
-            hotUpdateMainFilename: "bundle/[runtime].hot-update.json",
+            hotUpdateMainFilename:
+              "bundle/[runtime].[fullhash].hot-update.json",
             hotUpdateChunkFilename: "bundle/[id].[fullhash].hot-update.js",
             iife: true,
             chunkFormat: "array-push",

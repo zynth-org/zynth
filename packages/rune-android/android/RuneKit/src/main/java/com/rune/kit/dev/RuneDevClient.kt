@@ -98,7 +98,7 @@ class RuneDevClient(
         append(":")
         append(port)
       }
-      append("/__rspack_hmr")
+      append("/rsbuild-hmr")
     }
   }
 

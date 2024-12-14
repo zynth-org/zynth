@@ -148,7 +148,9 @@ async function waitForDevServer(url, timeoutMs = 60000) {
     new Promise((resolve) => {
       const req = http.get(target, (res) => {
         res.resume();
-        resolve(res.statusCode && res.statusCode >= 200 && res.statusCode < 300);
+        resolve(
+          res.statusCode && res.statusCode >= 200 && res.statusCode < 300
+        );
       });
       req.on("error", () => resolve(false));
       req.setTimeout(2000, () => {
@@ -168,6 +170,42 @@ async function waitForDevServer(url, timeoutMs = 60000) {
   }
 
   return false;
+}
+
+function readRuneArtifacts(appDir) {
+  const artifactPath = path.join(appDir, ".rune", "artifacts.json");
+  if (!fs.existsSync(artifactPath)) {
+    return null;
+  }
+  try {
+    const raw = fs.readFileSync(artifactPath, "utf8");
+    return JSON.parse(raw);
+  } catch (error) {
+    console.warn(`⚠️  Failed to read ${artifactPath}:`, error.message);
+    return null;
+  }
+}
+
+function sanitizeToken(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+async function waitForHMRToken(appDir, timeoutMs = 15000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const artifacts = readRuneArtifacts(appDir);
+    const token = artifacts && sanitizeToken(artifacts.hmrServerToken);
+    if (token) {
+      return token;
+    }
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  return null;
 }
 
 function getConnectedAndroidDevices() {
@@ -228,19 +266,12 @@ async function startRuneHMRServer(appDir, platform, options = {}) {
   const bindHost =
     process.env.RUNE_HMR_BIND ||
     (localHost === "localhost" ? "0.0.0.0" : localHost);
-  const defaultDeviceHost = platform === "android" ? "10.0.2.2" : "localhost";
+  const defaultDeviceHost = platform === "android" ? "10.0.2.2" : "127.0.0.1";
   const deviceHostOverride = options.deviceHostOverride;
   const deviceHost =
     deviceHostOverride || process.env.RUNE_DEVICE_HOST || defaultDeviceHost;
 
-  const args = [
-    "rsbuild",
-    "dev",
-    "--port",
-    String(port),
-    "--host",
-    bindHost,
-  ];
+  const args = ["rsbuild", "dev", "--port", String(port), "--host", bindHost];
 
   console.log(
     `🔥 Starting Rsbuild dev server (port ${port}, host ${bindHost})...`
@@ -281,7 +312,7 @@ async function startRuneHMRServer(appDir, platform, options = {}) {
   console.log(`  Device:  ${deviceUrl}`);
   console.log(`  Bundle:  ${deviceUrl}/main.js`);
   console.log(`  Updates: ${deviceUrl}/bundle/app.hot-update.json`);
-  console.log(`  Socket:  ws://${deviceHost}:${port}/__rspack_hmr`);
+  console.log(`  Socket:  ws://${deviceHost}:${port}/rsbuild-hmr`);
 
   return {
     process: child,
@@ -380,6 +411,39 @@ async function devIOS(root, appDir, options = {}) {
       "❌ Rsbuild dev server did not respond within the expected time window."
     );
     process.exit(1);
+  }
+
+  const hmrToken = await waitForHMRToken(appDir);
+  if (hmrToken) {
+    console.log("🔐 Injecting HMR token into simulator environment");
+    process.env.RUNE_DEV_SERVER_TOKEN = hmrToken;
+    runCommand("xcrun", [
+      "simctl",
+      "spawn",
+      simulatorId,
+      "launchctl",
+      "setenv",
+      "RUNE_DEV_SERVER_TOKEN",
+      hmrToken,
+    ]);
+  } else {
+    console.warn(
+      "⚠️  HMR token not detected; continuing without authentication"
+    );
+    delete process.env.RUNE_DEV_SERVER_TOKEN;
+    const unsetResult = spawnSync("xcrun", [
+      "simctl",
+      "spawn",
+      simulatorId,
+      "launchctl",
+      "unsetenv",
+      "RUNE_DEV_SERVER_TOKEN",
+    ]);
+    if (unsetResult.status !== 0) {
+      console.warn(
+        "⚠️  Unable to clear RUNE_DEV_SERVER_TOKEN from simulator environment"
+      );
+    }
   }
 
   runCommand("xcrun", [

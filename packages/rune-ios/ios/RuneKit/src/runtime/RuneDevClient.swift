@@ -3,7 +3,8 @@
 
   final class RuneDevClient: NSObject, URLSessionWebSocketDelegate {
     private weak var runtime: RuneRuntime?
-    private let baseURL: URL
+    private var baseURL: URL
+    private var token: String?
     private var session: URLSession!
     private var socket: URLSessionWebSocketTask?
     private var reconnectWorkItem: DispatchWorkItem?
@@ -12,8 +13,9 @@
     private let queue = DispatchQueue(label: "dev.rune.websocket")
     private var stopped = false
 
-    init(url: URL, runtime: RuneRuntime) {
-      self.baseURL = url
+    init(url: URL, runtime: RuneRuntime, token: String?) {
+      self.baseURL = Self.normalize(url)
+      self.token = Self.sanitizeToken(token)
       self.runtime = runtime
       super.init()
       let configuration = URLSessionConfiguration.default
@@ -23,9 +25,19 @@
       self.session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
     }
 
+    func updateConfiguration(url: URL, token: String?) {
+      queue.async { [weak self] in
+        guard let self else { return }
+        self.baseURL = Self.normalize(url)
+        self.token = Self.sanitizeToken(token)
+        self.stopped = false
+      }
+    }
+
     func connect() {
       queue.async { [weak self] in
-        guard let self, !self.stopped else { return }
+        guard let self else { return }
+        self.stopped = false
         self.reconnectWorkItem?.cancel()
         self.openSocket()
       }
@@ -59,14 +71,22 @@
       guard let host = url.host else { return nil }
       var components = URLComponents()
       let lowercasedScheme = (url.scheme ?? "http").lowercased()
-      if lowercasedScheme == "https" || lowercasedScheme == "wss" {
-        components.scheme = "wss"
-      } else {
-        components.scheme = "ws"
-      }
+      components.scheme = (lowercasedScheme == "https" || lowercasedScheme == "wss") ? "wss" : "ws"
       components.host = host
       components.port = url.port
-      components.path = "/__rspack_hmr"
+      components.path = "/rsbuild-hmr"
+
+      if let token = token {
+        var items = components.queryItems ?? []
+        let desiredItems = [
+          URLQueryItem(name: "token", value: token)
+        ]
+        for item in desiredItems where !items.contains(where: { $0.name == item.name }) {
+          items.append(item)
+        }
+        components.queryItems = items
+      }
+
       return components.url
     }
 
@@ -115,6 +135,7 @@
 
       print("[RuneDevClient] Received message type: \(type)")
 
+      var shouldForward = true
       switch type {
       case "hash":
         if let hash = payload["data"] as? String {
@@ -123,7 +144,7 @@
 
       case "ok", "still-ok":
         print("[RuneDevClient] ✅ Compilation OK")
-      // Don't apply hot update here - wait for the actual "update" message
+      // Forward to runtime so it can decide whether to apply updates
 
       case "warnings":
         if let warnings = payload["data"] as? [[String: Any]] {
@@ -148,6 +169,9 @@
       default:
         // Pass through other message types (like "update")
         print("[RuneDevClient] Forwarding message type '\(type)' to runtime")
+      }
+
+      if shouldForward {
         runtime?.handleDevMessage(text)
       }
     }
@@ -217,6 +241,28 @@
       }
       reconnectWorkItem = workItem
       queue.asyncAfter(deadline: .now() + delay, execute: workItem)
+    }
+
+    private static func sanitizeToken(_ token: String?) -> String? {
+      guard
+        let trimmed = token?.trimmingCharacters(in: .whitespacesAndNewlines),
+        !trimmed.isEmpty
+      else {
+        return nil
+      }
+      return trimmed
+    }
+
+    private static func normalize(_ url: URL) -> URL {
+      guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+        return url
+      }
+
+      if let host = components.host?.lowercased(), host == "localhost" {
+        components.host = "127.0.0.1"
+      }
+
+      return components.url ?? url
     }
 
     // MARK: - URLSessionWebSocketDelegate

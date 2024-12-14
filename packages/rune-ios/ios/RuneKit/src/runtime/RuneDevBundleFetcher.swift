@@ -13,14 +13,26 @@
   }
 
   enum RuneDevBundleFetcher {
-    private static func buildBundleURL(from baseURL: URL) -> URL {
-      var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
+    private static func buildBundleURL(from baseURL: URL, token: String?) -> URL {
+      let normalized = normalize(baseURL)
+      var components = URLComponents(url: normalized, resolvingAgainstBaseURL: false)
       components?.percentEncodedPath = "/main.js"
-      return components?.url ?? baseURL.appendingPathComponent("main.js")
+
+      if let token = sanitizedToken(token) {
+        var items = components?.queryItems ?? []
+        let tokenItem = URLQueryItem(name: "token", value: token)
+        if !items.contains(where: { $0.name == tokenItem.name }) {
+          items.append(tokenItem)
+        }
+        components?.queryItems = items
+      }
+
+      return components?.url ?? normalized.appendingPathComponent("main.js")
     }
 
     static func fetch(
       baseURL: URL,
+      token: String?,
       timeout: TimeInterval = 12,
       attempts: Int = 8,
       retryDelay: TimeInterval = 0.75
@@ -29,7 +41,7 @@
       for attempt in 0..<max(attempts, 1) {
         do {
           return try fetchOnce(
-            url: buildBundleURL(from: baseURL),
+            url: buildBundleURL(from: baseURL, token: token),
             timeout: timeout
           )
         } catch {
@@ -82,6 +94,28 @@
       }
 
       return RuneDevBundle(code: code, url: url)
+    }
+
+    private static func sanitizedToken(_ token: String?) -> String? {
+      guard
+        let trimmed = token?.trimmingCharacters(in: .whitespacesAndNewlines),
+        !trimmed.isEmpty
+      else {
+        return nil
+      }
+      return trimmed
+    }
+
+    private static func normalize(_ url: URL) -> URL {
+      guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+        return url
+      }
+
+      if let host = components.host?.lowercased(), host == "localhost" {
+        components.host = "127.0.0.1"
+      }
+
+      return components.url ?? url
     }
   }
 #endif
