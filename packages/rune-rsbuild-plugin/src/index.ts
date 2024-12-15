@@ -156,6 +156,15 @@ function createRuneBabelPlugin(
         ],
         "@babel/preset-typescript",
       ];
+      const isDev =
+        typeof process !== "undefined" &&
+        process.env?.NODE_ENV !== "production";
+      if (isDev) {
+        options.plugins = [
+          ...(options.plugins ?? []),
+          ["solid-refresh/babel", { bundler: "webpack5" }],
+        ];
+      }
       return options;
     },
   });

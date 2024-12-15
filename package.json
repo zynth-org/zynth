@@ -20,6 +20,7 @@
   },
   "devDependencies": {
     "@rune/cli": "*",
-    "@rune/templates": "*"
+    "@rune/templates": "*",
+    "solid-refresh": "^0.7.5"
   }
 }

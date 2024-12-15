@@ -32,10 +32,10 @@ const r = createRenderer<any>({
 
 // Loosen the render signature so apps can pass `() => JSX.Element`
 // and auto-create a root container if one isn't provided.
-export const render: (code: () => any, container?: HostNode | null) => void = (
-  code,
-  container
-) => {
+export const render: (
+  code: () => any,
+  container?: HostNode | null
+) => () => void = (code, container) => {
   let c = container as HostNode | null | undefined;
   if (!c || typeof (c as any).id !== "number") {
     const make = (host as any)?.createRootContainer as
@@ -43,7 +43,21 @@ export const render: (code: () => any, container?: HostNode | null) => void = (
       | undefined;
     c = make ? make(undefined) : ({ id: 0, type: "root" } as any);
   }
-  (r.render as any)(code as any, c as any);
+
+  const dispose = (r.render as any)(code as any, c as any) as
+    | (() => void)
+    | undefined;
+
+  return () => {
+    dispose?.();
+
+    let child = H().getFirstChild(c as HostNode);
+    while (child) {
+      const next = H().getNextSibling(child);
+      H().removeNode(c as HostNode, child);
+      child = next;
+    }
+  };
 };
 export const effect = r.effect;
 export const memo = r.memo;

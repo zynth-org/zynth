@@ -176,7 +176,7 @@
           }
           if (typeof globalThis.__rune_refresh !== 'function') {
             globalThis.__rune_refresh = function(payload) {
-              console.warn('[Rune HMR] Refresh invoked with no runtime listener', payload && payload.type);
+              console.warn('[Rune HMR1] Refresh invoked with no runtime listener', payload && payload.type);
             };
           }
           console.log('[Rune HMR] Runtime hooks installed');
