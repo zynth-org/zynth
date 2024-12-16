@@ -162,7 +162,7 @@ function createRuneBabelPlugin(
       if (isDev) {
         options.plugins = [
           ...(options.plugins ?? []),
-          ["solid-refresh/babel", { bundler: "webpack5" }],
+          ["solid-refresh/babel", { bundler: "standard" }],
         ];
       }
       return options;

@@ -178,9 +178,15 @@ export function start(App: () => any) {
 
   // Accept boundary for App if hot exists in this scope
   const m: any = typeof module !== "undefined" ? (module as any) : undefined;
-  const hot =
-    (m && m.hot) ||
-    (typeof import.meta !== "undefined" && (import.meta as any).hot);
+  let hot: any;
+  try {
+    hot = (import.meta as any).hot;
+  } catch {
+    // import.meta not available
+  }
+  if (!hot) {
+    hot = m && m.hot;
+  }
   if (hot && typeof hot.accept === "function") {
     const APP_ID = "./src/App.tsx";
     __HMR_DEBUG.log("registering hot.accept for", APP_ID);
