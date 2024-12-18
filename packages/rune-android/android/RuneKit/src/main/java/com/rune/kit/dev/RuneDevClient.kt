@@ -1,5 +1,6 @@
 package com.rune.kit.dev
 
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -31,24 +32,34 @@ class RuneDevClient(
   private var baseUrl: HttpUrl? = null
   private var socket: WebSocket? = null
   @Volatile private var isConnecting = false
+  @Volatile private var authToken: String? = null
 
-  fun connect(url: String) {
+  fun connect(url: String, token: String?) {
     val parsed = url.toHttpUrlOrNull()
     if (parsed == null) {
       Log.w(TAG, "Invalid dev server URL: $url")
       return
     }
-    
+
+    val sanitizedToken = sanitizeToken(token)
+    Log.d(
+      TAG,
+      "connect called url=$url tokenPresent=${sanitizedToken != null} tokenPrefix=${sanitizedToken?.take(8)}"
+    )
+
     // Prevent duplicate connections
     synchronized(this) {
-      if (isConnecting || (baseUrl?.toString() == url && socket != null)) {
+      val sameUrl = baseUrl?.toString() == url
+      val sameToken = authToken == sanitizedToken
+      if (isConnecting || (sameUrl && sameToken && socket != null)) {
         Log.d(TAG, "Already connecting/connected to $url")
         return
       }
       isConnecting = true
     }
-    
+
     baseUrl = parsed
+    authToken = sanitizedToken
     stopped = false
     reconnectAttempts = 0
     Log.d(TAG, "Connecting to dev server $url")
@@ -65,7 +76,11 @@ class RuneDevClient(
 
   private fun openSocket() {
     val httpUrl = baseUrl ?: return
-    val wsUrl = buildWebSocketUrl(httpUrl)
+    Log.d(
+      TAG,
+      "openSocket base=$httpUrl tokenPresent=${authToken != null} tokenPrefix=${authToken?.take(8)}"
+    )
+    val wsUrl = buildWebSocketUrl(httpUrl, authToken)
     if (wsUrl == null) {
       Log.w(TAG, "Unable to derive WebSocket URL from ${httpUrl}")
       return
@@ -83,14 +98,14 @@ class RuneDevClient(
     existingSocket?.close(NORMAL_CLOSURE, "new connection")
   }
 
-  private fun buildWebSocketUrl(httpUrl: HttpUrl): String? {
+  private fun buildWebSocketUrl(httpUrl: HttpUrl, token: String?): String? {
     val scheme = if (httpUrl.isHttps) "wss" else "ws"
     val host = httpUrl.host
     if (host.isNullOrEmpty()) {
       return null
     }
     val port = httpUrl.port
-    return buildString {
+    val url = buildString {
       append(scheme)
       append("://")
       append(host)
@@ -99,7 +114,14 @@ class RuneDevClient(
         append(port)
       }
       append("/rsbuild-hmr")
+      val sanitized = sanitizeToken(token)
+      if (sanitized != null) {
+        append("?token=")
+        append(Uri.encode(sanitized))
+      }
     }
+    Log.d(TAG, "buildWebSocketUrl result=$url tokenPresent=${token != null}")
+    return url
   }
 
   override fun onOpen(webSocket: WebSocket, response: Response) {
@@ -121,8 +143,9 @@ class RuneDevClient(
   override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
     Log.d(TAG, "Dev socket closed code=$code reason=$reason")
     isConnecting = false
+    val selfInitiated = reason == "client disconnect" || reason == "new connection"
     // Don't reconnect if it was a normal closure from our side
-    if (code != NORMAL_CLOSURE || reason != "client disconnect") {
+    if (!selfInitiated || code != NORMAL_CLOSURE) {
       scheduleReconnect()
     }
   }
@@ -162,13 +185,15 @@ class RuneDevClient(
       return
     }
 
-    when (payload.optString("type")) {
+    when (val type = payload.optString("type")) {
       "hash" -> {
         Log.d(TAG, "New compilation hash ${payload.optString("data")}")
       }
-      "ok", "still-ok" -> {
-        Log.d(TAG, "Compilation OK, applying hot update")
-        runtime.applyHotUpdate()
+      "ok", "still-ok", "built", "sync" -> {
+        Log.d(TAG, "Compilation message received: $type")
+      }
+      "update" -> {
+        Log.d(TAG, "Forwarding hot update payload to runtime")
       }
       "warnings" -> {
         Log.w(TAG, "Compilation warnings: $payload")
@@ -176,8 +201,19 @@ class RuneDevClient(
       "errors" -> {
         Log.e(TAG, "Compilation errors: $payload")
       }
-      else -> runtime.handleDevMessage(text)
+      else -> {
+        if (type.isNotBlank()) {
+          Log.d(TAG, "Unhandled dev message type '$type'")
+        }
+      }
     }
+
+    runtime.handleDevMessage(text)
+  }
+
+  private fun sanitizeToken(token: String?): String? {
+    val trimmed = token?.trim()
+    return if (trimmed.isNullOrEmpty()) null else trimmed
   }
 
   companion object {

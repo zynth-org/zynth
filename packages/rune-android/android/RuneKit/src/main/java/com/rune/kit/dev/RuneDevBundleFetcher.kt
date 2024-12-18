@@ -5,6 +5,7 @@ import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import kotlin.math.max
 
 data class RuneDevBundle(
   val code: String,
@@ -16,17 +17,26 @@ object RuneDevBundleFetcher {
     .retryOnConnectionFailure(true)
     .build()
 
-  private fun buildBundleUrl(base: HttpUrl): HttpUrl {
-    return base.newBuilder()
+  private fun buildBundleUrl(base: HttpUrl, token: String?): HttpUrl {
+    val builder = base.newBuilder()
       .encodedPath("/main.js")
-      .build()
+    sanitizeToken(token)?.let { value ->
+      builder.removeAllQueryParameters("token")
+      builder.addQueryParameter("token", value)
+    }
+    return builder.build()
   }
 
   @Throws(IOException::class)
-  fun fetch(baseUrl: String, attempts: Int = 8, retryDelayMs: Long = 750): RuneDevBundle {
+  fun fetch(
+    baseUrl: String,
+    token: String? = null,
+    attempts: Int = 8,
+    retryDelayMs: Long = 750,
+  ): RuneDevBundle {
     val httpUrl = baseUrl.toHttpUrlOrNull()
       ?: throw IOException("Invalid dev server URL: $baseUrl")
-    val requestUrl = buildBundleUrl(httpUrl)
+    val requestUrl = buildBundleUrl(httpUrl, token)
     var lastError: IOException? = null
 
     repeat(max(attempts, 1)) { index ->
@@ -46,6 +56,11 @@ object RuneDevBundleFetcher {
     }
 
     throw lastError ?: IOException("Failed to fetch bundle")
+  }
+
+  private fun sanitizeToken(token: String?): String? {
+    val trimmed = token?.trim()
+    return if (trimmed.isNullOrEmpty()) null else trimmed
   }
 
   @Throws(IOException::class)

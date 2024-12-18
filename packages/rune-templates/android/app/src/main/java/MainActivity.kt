@@ -23,8 +23,12 @@ class MainActivity : AppCompatActivity() {
     val runtime = RuneRuntime(root)
     runtime.installModules(listOf(DeviceModule(), EnvModule(), PerformanceModule()))
 
-    intent?.getStringExtra("RUNE_DEV_SERVER_URL")?.let { url ->
-      runtime.connectDevServer(url)
+    intent?.let { launchIntent ->
+      val url = launchIntent.getStringExtra("RUNE_DEV_SERVER_URL")
+      if (!url.isNullOrBlank()) {
+        val token = launchIntent.getStringExtra("RUNE_DEV_SERVER_TOKEN")
+        runtime.connectDevServer(url, token)
+      }
     }
 
     runtime.loadInitialBundle(assets)

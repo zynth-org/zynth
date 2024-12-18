@@ -182,14 +182,15 @@ class RuneRuntime(
   }
 
   // Public methods that delegate to debug extension (or no-op in release)
-  fun connectDevServer(url: String) = connectDevServerInternal(url)
+  fun connectDevServer(url: String, token: String? = null) = connectDevServerInternal(url, token)
   fun refreshDevBundle() = refreshDevBundleInternal()
   internal fun handleDevMessage(payload: String) = handleDevMessageInternal(payload)
 
   private fun installConsole() {
     val runtimeAdapter = adapter
     if (runtimeAdapter is HermesAdapter) {
-      // Hermes bridge installs console functions natively.
+      // Hermes bridge installs console functions natively; still ensure aliases exist.
+      ensureCommonGlobalAliases(runtimeAdapter)
       return
     }
     runtimeAdapter.setGlobalFunction("console_log") { args ->
@@ -217,6 +218,10 @@ class RuneRuntime(
       globalThis.console.warn = console_warn;
     """)
 
+    ensureCommonGlobalAliases(runtimeAdapter)
+  }
+
+  private fun ensureCommonGlobalAliases(runtimeAdapter: JSRuntimeAdapter) {
     runtimeAdapter.evaluate(
       """
       if (typeof globalThis.global === 'undefined') {

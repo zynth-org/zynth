@@ -178,6 +178,12 @@
             globalThis.__rune_refresh = function(payload) {
               console.warn('[Rune HMR1] Refresh invoked with no runtime listener', payload && payload.type);
             };
+            Object.defineProperty(globalThis.__rune_refresh, '__isRuneDefaultStub', {
+              value: true,
+              configurable: true,
+              enumerable: false,
+              writable: false,
+            });
           }
           console.log('[Rune HMR] Runtime hooks installed');
           """

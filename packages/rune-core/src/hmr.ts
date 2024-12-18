@@ -80,6 +80,7 @@ export function ensureNativeHMRHooks() {
     typeof g.__rune_refresh === "function" ? g.__rune_refresh : undefined;
   const isDefaultStub = (() => {
     if (typeof previous !== "function") return false;
+    if ((previous as any).__isRuneDefaultStub === true) return true;
     const src = String(previous);
     return src.includes("Refresh invoked with no runtime listener");
   })();

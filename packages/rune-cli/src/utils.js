@@ -72,6 +72,67 @@ function readCommandOutput(command, args, options = {}) {
   return result.stdout;
 }
 
+function writeDeviceDevConfig(deviceId, bundleId, jsonPayload) {
+  const ensureDir = spawnSync(
+    "adb",
+    [
+      "-s",
+      deviceId,
+      "shell",
+      "run-as",
+      bundleId,
+      "/system/bin/mkdir",
+      "-p",
+      "files/.rune",
+    ],
+    { encoding: "utf8" }
+  );
+
+  if (ensureDir.status !== 0) {
+    const output = ensureDir.stderr || ensureDir.stdout || "unknown error";
+    // Ignore benign "File exists" errors, surface everything else for visibility.
+    if (!/File exists/i.test(output || "")) {
+      console.warn(
+        `⚠️  Failed to prepare dev config directory on ${deviceId}: ${output.trim()}`
+      );
+    }
+  }
+
+  const result = spawnSync(
+    "adb",
+    [
+      "-s",
+      deviceId,
+      "shell",
+      "run-as",
+      bundleId,
+      "sh",
+      "-c",
+      "/system/bin/cat > files/.rune/dev-server.json",
+    ],
+    {
+      input: jsonPayload,
+      encoding: "utf8",
+    }
+  );
+
+  if (result.status !== 0) {
+    console.warn(
+      `⚠️  Failed to write dev config to ${deviceId}: ${
+        result.stderr || result.stdout || "unknown error"
+      }`
+    );
+  }
+}
+
+function writeAndroidDevAsset(androidDir, payload) {
+  const assetDir = path.join(androidDir, "app", "src", "main", "assets");
+  const assetPath = path.join(assetDir, "rune-dev-config.json");
+
+  fs.mkdirSync(assetDir, { recursive: true });
+  fs.writeFileSync(assetPath, `${payload}\n`, "utf8");
+}
+
 function getIOSConfig(root, appDir) {
   const script = require(path.join(root, "scripts", "generate-ios.js"));
   return script.getAppConfig(appDir);
@@ -480,17 +541,31 @@ async function devIOS(root, appDir, options = {}) {
 
 async function devAndroid(root, appDir) {
   const config = getAndroidConfig(root, appDir);
-
-  const initialDevices = getConnectedAndroidDevices();
+  const androidDir = path.join(appDir, "android");
   const userDeviceHost = process.env.RUNE_DEVICE_HOST;
-  const hasPhysicalDeviceInitially = initialDevices.some(
+
+  ensurePrebuild(root, appDir, "android", { dev: true });
+
+  const devicesBeforeBuild = getConnectedAndroidDevices();
+  if (!devicesBeforeBuild.length) {
+    console.warn(
+      "⚠️  No Android devices or emulators detected. Skipping install."
+    );
+    console.warn(
+      "    Launch an emulator or connect a device, then rerun this command."
+    );
+    return;
+  }
+
+  const hasPhysicalDeviceInitial = devicesBeforeBuild.some(
     (id) => !id.startsWith("emulator-")
   );
 
-  // Start Rune HMR server
+  const desiredPort = Number(process.env.RUNE_HMR_PORT || 8081);
   const hmrServer = await startRuneHMRServer(appDir, "android", {
+    port: desiredPort,
     deviceHostOverride:
-      userDeviceHost || (hasPhysicalDeviceInitially ? "127.0.0.1" : undefined),
+      userDeviceHost || (hasPhysicalDeviceInitial ? "127.0.0.1" : undefined),
   });
 
   if (!hmrServer) {
@@ -506,27 +581,63 @@ async function devAndroid(root, appDir) {
     process.exit(1);
   }
 
-  ensurePrebuild(root, appDir, "android", { dev: true });
-  console.log("📦 Installing Android build...");
-  const androidDir = path.join(appDir, "android");
+  const hmrToken = await waitForHMRToken(appDir);
+  if (hmrToken) {
+    console.log("🔐 Passing HMR token to Android runtime");
+    process.env.RUNE_DEV_SERVER_TOKEN = hmrToken;
+  } else {
+    console.warn(
+      "⚠️  HMR token not detected; continuing without authentication"
+    );
+    delete process.env.RUNE_DEV_SERVER_TOKEN;
+  }
+
+  const portForReverse = hmrServer?.port || desiredPort;
+  let runtimeDeviceUrl = hmrServer.deviceUrl;
+  if (!userDeviceHost && hasPhysicalDeviceInitial && portForReverse) {
+    runtimeDeviceUrl = `http://127.0.0.1:${portForReverse}`;
+  } else if (userDeviceHost) {
+    runtimeDeviceUrl = `http://${userDeviceHost}:${portForReverse}`;
+  }
+
+  let runtimeConfig = {
+    url: runtimeDeviceUrl,
+    token: hmrToken || null,
+    updatedAt: new Date().toISOString(),
+  };
+  let serializedConfig = `${JSON.stringify(runtimeConfig)}\n`;
+
+  writeAndroidDevAsset(androidDir, serializedConfig.trim());
+
+  console.log("🛠️  Assembling Android debug build...");
   runCommand("./gradlew", [":app:assembleDebug"], { cwd: androidDir });
 
-  const devices = getConnectedAndroidDevices();
-  if (!devices.length) {
+  const devicesForInstall = getConnectedAndroidDevices();
+  if (!devicesForInstall.length) {
     console.warn(
       "⚠️  No Android devices or emulators detected. Skipping install."
     );
     console.warn(
-      "    Install/launch manually with an emulator or device when available."
+      "    Launch an emulator or connect a device, then rerun this command."
     );
+    return;
+  }
+
+  console.log("📥 Installing Android build...");
+  runCommand("./gradlew", [":app:installDebug"], { cwd: androidDir });
+
+  const devices = getConnectedAndroidDevices();
+  if (!devices.length) {
+    console.warn(
+      "⚠️  No Android devices or emulators detected. Skipping launch."
+    );
+    console.warn("    Install/launch manually once a device is available.");
     return;
   }
 
   const hasPhysicalDeviceConnected = devices.some(
     (id) => !id.startsWith("emulator-")
   );
-  const portForReverse =
-    hmrServer?.port || Number(process.env.RUNE_HMR_PORT || 8081);
   const shouldReverse =
     !!hmrServer &&
     portForReverse &&
@@ -559,34 +670,58 @@ async function devAndroid(root, appDir) {
     );
   }
 
-  runCommand("./gradlew", [":app:installDebug"], { cwd: androidDir });
-
-  let runtimeDeviceUrl = hmrServer?.deviceUrl;
-  if (!userDeviceHost && hasPhysicalDeviceConnected && portForReverse) {
+  if (shouldReverse) {
     runtimeDeviceUrl = `http://127.0.0.1:${portForReverse}`;
   } else if (userDeviceHost) {
     runtimeDeviceUrl = `http://${userDeviceHost}:${portForReverse}`;
+  } else {
+    runtimeDeviceUrl = hmrServer.deviceUrl;
+  }
+
+  runtimeConfig = {
+    url: runtimeDeviceUrl,
+    token: hmrToken || null,
+    updatedAt: runtimeConfig.updatedAt,
+  };
+  serializedConfig = `${JSON.stringify(runtimeConfig)}\n`;
+
+  for (const deviceId of devices) {
+    writeDeviceDevConfig(deviceId, config.bundleId, serializedConfig);
+  }
+
+  // Force-stop the app so the next launch picks up fresh intent extras.
+  for (const deviceId of devices) {
+    runCommand("adb", [
+      "-s",
+      deviceId,
+      "shell",
+      "am",
+      "force-stop",
+      config.bundleId,
+    ]);
   }
 
   const launchArgs = [
     "shell",
     "am",
     "start",
+    "-S",
     "-n",
     `${config.bundleId}/.MainActivity`,
   ];
   if (runtimeDeviceUrl) {
     launchArgs.push("--es", "RUNE_DEV_SERVER_URL", runtimeDeviceUrl);
   }
+  if (hmrToken) {
+    launchArgs.push("--es", "RUNE_DEV_SERVER_TOKEN", hmrToken);
+  }
   runCommand("adb", launchArgs);
 
-  if (hmrServer) {
-    console.log(
-      "🔥 Rune HMR server running. Leave this session open for hot reloading."
-    );
-    if (runtimeDeviceUrl && runtimeDeviceUrl !== hmrServer.deviceUrl) {
-      console.log(`  ↳ Device URL: ${runtimeDeviceUrl}`);
-    }
+  console.log(
+    "🔥 Rune HMR server running. Leave this session open for hot reloading."
+  );
+  if (runtimeDeviceUrl && runtimeDeviceUrl !== hmrServer.deviceUrl) {
+    console.log(`  ↳ Device URL: ${runtimeDeviceUrl}`);
   }
 }
 

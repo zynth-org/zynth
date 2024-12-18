@@ -7,7 +7,7 @@ package com.rune.kit.runtime
 
 // Empty stubs - these methods should never be called in release builds
 // No-op implementations for release builds
-internal fun RuneRuntime.connectDevServerInternal(url: String) {
+internal fun RuneRuntime.connectDevServerInternal(url: String, token: String?) {
   // No-op in release
 }
 
@@ -39,7 +39,7 @@ internal fun RuneRuntime.refreshDevBundle() {
   // No-op in release builds
 }
 
-internal fun RuneRuntime.connectDevServer(url: String) {
+internal fun RuneRuntime.connectDevServer(url: String, token: String?) {
   // No-op in release builds
 }
 
@@ -47,7 +47,7 @@ fun RuneRuntime.handleDevMessage(payload: String) {
   // No-op in release builds
 }
 
-internal fun RuneRuntime.installDevServerGlobal(url: String) {
+internal fun RuneRuntime.installDevServerGlobal(url: String, token: String?) {
   // No-op in release builds
 }
 
