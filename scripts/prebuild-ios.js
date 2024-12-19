@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Generic prebuild script for Solid Native apps
+ * Generic prebuild script for RuneJS apps
  * Usage: node ../../scripts/prebuild-ios.js
  *
  * This script:

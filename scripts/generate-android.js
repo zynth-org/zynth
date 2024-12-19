@@ -56,8 +56,7 @@ function generateAndroidProject(appDir, options = {}) {
   const { dev = true } = options; // Default to dev mode for backward compatibility
   const baseConfig = getAppConfig(appDir);
   const androidPackage = (
-    baseConfig.bundleId ||
-    `com.solidnative.${baseConfig.appDir.replace(/-/g, "")}`
+    baseConfig.bundleId || `com.rune.${baseConfig.appDir.replace(/-/g, "")}`
   ).toLowerCase();
   const config = {
     ...baseConfig,

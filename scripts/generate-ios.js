@@ -33,7 +33,7 @@ function getAppConfig(appDir) {
     bundleId:
       appConfig.ios?.bundleIdentifier ||
       pkg.bundleId ||
-      `com.solidnative.${appName.replace(/-/g, "")}`,
+      `com.rune.${appName.replace(/-/g, "")}`,
     workspaceName: pkg.name || `@demo/${appName}`,
     displayName: appConfig.name || pkg.displayName || appName,
     version: appConfig.version || pkg.version || "1.0.0",
