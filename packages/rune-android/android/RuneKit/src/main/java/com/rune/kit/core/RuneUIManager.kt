@@ -10,9 +10,13 @@ import android.view.Gravity
 import android.view.View
 import android.view.View.MeasureSpec
 import android.view.ViewGroup
+import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
+import androidx.core.view.AccessibilityDelegateCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import com.rune.kit.debug.PerformanceProfiler
 import com.rune.kit.layout.LayoutEngine
 import com.rune.kit.layout.MeasureMode
@@ -41,6 +45,7 @@ class RuneUIManager(
     var parentId: Int? = null,
     var cachedText: String = "",
     var imageState: ImageState? = null,
+    var pointerEvents: String = "auto",
   )
 
   private val nodes = SparseArray<Node>()
@@ -245,6 +250,15 @@ class RuneUIManager(
     id
   }
 
+  private fun parseString(json: String?): String? {
+    if (json == null || json == "null") return null
+    // The string is JSON-encoded, so it's wrapped in quotes.
+    if (json.length >= 2 && json.startsWith("\"") && json.endsWith("\"")) {
+      return json.substring(1, json.length - 1)
+    }
+    return json
+  }
+
   override fun setProp(nodeId: Int, name: String, jsonValue: String?) = onMain {
     Log.d("RuneUI", "setProp: nodeId=$nodeId name=$name jsonValue=$jsonValue")
     val valueJson = jsonValue
@@ -288,6 +302,50 @@ class RuneUIManager(
         // onPress should be handled by the JavaScript bridge calling setHandler
         // This is just for logging
         Log.d("RuneUI", "onPress prop set for node $nodeId, expecting setHandler call")
+      }
+      "accessibilityLabel" -> {
+        target.view.contentDescription = parseString(jsonValue)
+      }
+      "accessibilityHint" -> {
+        Log.w("RuneUI", "accessibilityHint is not a supported concept on Android and will be ignored.")
+      }
+      "accessibilityRole" -> {
+        val role = parseString(jsonValue)
+        ViewCompat.setAccessibilityDelegate(target.view, object : AccessibilityDelegateCompat() {
+          override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfoCompat) {
+            super.onInitializeAccessibilityNodeInfo(host, info)
+            when (role) {
+              "button" -> info.className = Button::class.java.name
+              "header" -> info.isHeading = true
+              "none" -> ViewCompat.setImportantForAccessibility(host, ViewCompat.IMPORTANT_FOR_ACCESSIBILITY_NO)
+              else -> { // Default to auto if not explicitly 'none'
+                if (ViewCompat.getImportantForAccessibility(host) == ViewCompat.IMPORTANT_FOR_ACCESSIBILITY_NO) {
+                  ViewCompat.setImportantForAccessibility(host, ViewCompat.IMPORTANT_FOR_ACCESSIBILITY_AUTO)
+                }
+              }
+            }
+          }
+        })
+      }
+      "pointerEvents" -> {
+        val value = parseString(jsonValue) ?: "auto"
+        target.pointerEvents = value // Store the value
+        when (value) {
+          "none" -> {
+            target.view.isClickable = false
+            target.view.isFocusable = false
+          }
+          else -> { // "auto" and others
+            target.view.isFocusable = true
+            // If an onPress handler is already attached, ensure it's clickable.
+            if (target.view.hasOnClickListeners()) {
+              target.view.isClickable = true
+            }
+          }
+        }
+      }
+      "testID" -> {
+        Log.w("RuneUI", "testID is not a recommended pattern on Android as it can conflict with accessibility. It will be ignored.")
       }
       else -> {
         if (target.type == IMAGE_TYPE && imageSupport.handleProp(target, name, jsonValue)) {
@@ -419,8 +477,10 @@ class RuneUIManager(
       Log.d("RuneUI", "Setting onPress handler for node $nodeId")
       val node = nodes.get(nodeId)
       node?.view?.let { view ->
-        // Make the view clickable when we set an onPress handler
-        view.isClickable = true
+        // Make the view clickable only if pointerEvents allows it
+        if (node.pointerEvents != "none") {
+          view.isClickable = true
+        }
         view.setOnClickListener {
           Log.d("RuneUI", "onPress triggered for node $nodeId")
           eventDispatcher(nodeId, event)
@@ -482,7 +542,8 @@ class RuneUIManager(
     if (root.width > 0 && root.height > 0) {
       frameScheduler.cancelFlush()
       performFlush()
-    } else {
+    }
+    else {
       scheduleFlush()
     }
   }

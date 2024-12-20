@@ -92,6 +92,14 @@ export function createAndroidHost(): Host {
       if (typeof props?.onPress === "function") {
         ui.setHandler(id, "onPress", props.onPress);
       }
+      if (props?.accessibilityLabel)
+        ui.setProp(id, "accessibilityLabel", props.accessibilityLabel);
+      if (props?.accessibilityHint)
+        ui.setProp(id, "accessibilityHint", props.accessibilityHint);
+      if (props?.accessibilityRole)
+        ui.setProp(id, "accessibilityRole", props.accessibilityRole);
+      if (props?.pointerEvents) ui.setProp(id, "pointerEvents", props.pointerEvents);
+      if (props?.testID) ui.setProp(id, "testID", props.testID);
       schedule();
       return { id, type } as HostNode;
     },

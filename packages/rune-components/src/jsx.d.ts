@@ -8,6 +8,11 @@ interface ViewElementProps {
   style?: Style;
   children?: RuneChildren;
   onPress?: () => void;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
+  accessibilityRole?: "button" | "header" | "link" | "none";
+  pointerEvents?: "auto" | "none" | "box-none" | "box-only";
+  testID?: string;
 }
 
 interface TextElementProps {

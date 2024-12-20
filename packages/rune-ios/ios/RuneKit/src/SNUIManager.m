@@ -26,7 +26,6 @@
 
 - (void)dealloc {
   if (_yoga) {
-    NSLog(@"[SN] deallocating SNNode nid=%d, freeing yoga node", _nid);
     // Ensure we're on the main queue when freeing Yoga nodes to avoid race conditions
     if ([NSThread isMainThread]) {
       YGNodeFree(_yoga);
@@ -64,7 +63,6 @@
     _rootYoga = YGNodeNew();
     _eventPayloads = [NSMutableDictionary new];
 
-    // Prepare root surface - ensure it fills the entire screen
     CGRect screenBounds = [UIScreen mainScreen].bounds;
     rootView.frame = screenBounds;
     rootView.backgroundColor = [UIColor colorWithRed:0.06 green:0.07 blue:0.09 alpha:1.0];
@@ -139,6 +137,33 @@
     self.eventPayloads[key] = payload;
   } else {
     [self.eventPayloads removeObjectForKey:key];
+  }
+}
+
+- (void)sn_updateInteractionStateForNode:(SNNode *)node {
+  if (!node || !node.view) return;
+
+  BOOL pointerDisabled = [node.pointerEvents isEqualToString:@"none"];
+  BOOL shouldEnableTap = node.hasOnPressHandler && !pointerDisabled;
+
+  if (pointerDisabled) {
+    node.view.userInteractionEnabled = NO;
+  } else if ([node.pointerEvents isEqualToString:@"auto"]) {
+    node.view.userInteractionEnabled = shouldEnableTap;
+  } else {
+    node.view.userInteractionEnabled = shouldEnableTap;
+  }
+
+  for (UIGestureRecognizer *gr in node.view.gestureRecognizers) {
+    if (![gr isKindOfClass:[UITapGestureRecognizer class]]) {
+      continue;
+    }
+    NSString *name = gr.name;
+    BOOL isNodeTap = name && [name hasPrefix:@"node:"];
+    if (!isNodeTap) {
+      continue;
+    }
+    gr.enabled = shouldEnableTap;
   }
 }
 
@@ -226,7 +251,6 @@
   } else {
     v = [UIView new];
   }
-  v.userInteractionEnabled = YES;
 
   SNNode *n = [SNNode new];
   n.nid = nid;
@@ -234,31 +258,29 @@
   n.yoga = YGNodeNew();
   n.children = [NSMutableArray new];
   n.parentId = -1;
-  n.onLoadCallback = nil;
-  n.onErrorCallback = nil;
-  n.hasOnLoadHandler = NO;
-  n.hasOnErrorHandler = NO;
-  n.imageTask = nil;
-  n.imageSourceToken = nil;
-  n.imageTintColor = nil;
+  n.pointerEvents = @"auto"; // Default pointerEvents state
 
-  // Safety check for Yoga node creation
+  // Set userInteractionEnabled based on default pointerEvents and view type
+  if ([n.pointerEvents isEqualToString:@"none"]) {
+    v.userInteractionEnabled = NO;
+  } else {
+    // Default for UIView is YES, for UILabel is NO. We will manage it explicitly.
+    v.userInteractionEnabled = ![v isKindOfClass:[UILabel class]];
+  }
+
   if (!n.yoga) {
     NSLog(@"[SN] ERROR: Failed to create Yoga node for nid=%d", nid);
     return @(nid);
   }
 
-  // Defaults
   YGNodeStyleSetFlexDirection(n.yoga, YGFlexDirectionColumn);
 
-  // Attach text measurement for UILabel-backed nodes
   if ([v isKindOfClass:[UILabel class]]) {
     YGNodeSetContext(n.yoga, (__bridge void *)v);
     YGNodeSetMeasureFunc(n.yoga, SNMeasureLabelFunc);
   }
 
   _nodes[@(nid)] = n;
-  NSLog(@"[SN] createNode type=%@ nid=%d", type, nid);
   return @(nid);
 }
 
@@ -326,11 +348,9 @@ static void SNApplyEdges(NSDictionary *style,
   if (!style || !n || !n.view) return;
   if (![style isKindOfClass:[NSDictionary class]] || !n.yoga) return;
 
-  // Sizes
   NSNumber *w = style[@"width"]; if (w) YGNodeStyleSetWidth(n.yoga, (float)SNNum(w));
   NSNumber *h = style[@"height"]; if (h) YGNodeStyleSetHeight(n.yoga, (float)SNNum(h));
 
-  // Flex
   NSNumber *flex = style[@"flex"]; if (flex) YGNodeStyleSetFlex(n.yoga, (float)SNNum(flex));
   NSString *fd = style[@"flexDirection"];
   if (fd) YGNodeStyleSetFlexDirection(n.yoga, [fd isEqualToString:@"row"] ? YGFlexDirectionRow : YGFlexDirectionColumn);
@@ -360,12 +380,10 @@ static void SNApplyEdges(NSDictionary *style,
   SNApplyEdges(style, @"margin", @"marginHorizontal", @"marginVertical", @"marginTop", @"marginRight", @"marginBottom", n.yoga,
                ^(YGEdge e, float v){ YGNodeStyleSetMargin(n.yoga, e, v); });
 
-  // View styling
   NSString *bg = style[@"backgroundColor"]; if (bg) { n.view.backgroundColor = SNColorFromHex(bg); }
   NSNumber *br = style[@"borderRadius"];
   if (br) { n.view.layer.cornerRadius = (CGFloat)SNNum(br); n.view.clipsToBounds = YES; }
 
-  // Text styling
   if ([n.view isKindOfClass:[UILabel class]]) {
     UILabel *l = (UILabel *)n.view;
     NSNumber *fs = style[@"fontSize"]; if (fs) l.font = [UIFont systemFontOfSize:(CGFloat)SNNum(fs) weight:UIFontWeightRegular];
@@ -382,7 +400,7 @@ static void SNApplyEdges(NSDictionary *style,
 }
 
 - (void)setProp:(NSNumber *)nodeId name:(NSString *)name valueJSON:(NSString *)json {
-  SNNode *n = _nodes[nodeId]; 
+  SNNode *n = _nodes[nodeId];
   if (!n || !n.view) return;
 
   if ([name isEqualToString:@"style"]) {
@@ -390,6 +408,47 @@ static void SNApplyEdges(NSDictionary *style,
     NSDictionary *s = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
     [self sn_applyStyleDictionary:s toNode:n];
     [self sn_markNeedsFlush];
+    return;
+  }
+
+  id value = [NSJSONSerialization JSONObjectWithData:[json dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+  NSString *stringValue = [value isKindOfClass:[NSString class]] ? (NSString *)value : nil;
+
+  if ([name isEqualToString:@"accessibilityLabel"]) {
+    n.view.isAccessibilityElement = YES;
+    n.view.accessibilityLabel = stringValue;
+    return;
+  }
+  
+  if ([name isEqualToString:@"accessibilityHint"]) {
+    n.view.isAccessibilityElement = YES;
+    n.view.accessibilityHint = stringValue;
+    return;
+  }
+  
+  if ([name isEqualToString:@"accessibilityRole"]) {
+    if ([stringValue isEqualToString:@"none"]) {
+      n.view.isAccessibilityElement = NO;
+    } else {
+      n.view.isAccessibilityElement = YES;
+      UIAccessibilityTraits traits = n.view.accessibilityTraits;
+      traits &= ~(UIAccessibilityTraitButton | UIAccessibilityTraitHeader | UIAccessibilityTraitLink);
+      if ([stringValue isEqualToString:@"button"]) traits |= UIAccessibilityTraitButton;
+      else if ([stringValue isEqualToString:@"header"]) traits |= UIAccessibilityTraitHeader;
+      else if ([stringValue isEqualToString:@"link"]) traits |= UIAccessibilityTraitLink;
+      n.view.accessibilityTraits = traits;
+    }
+    return;
+  }
+
+  if ([name isEqualToString:@"pointerEvents"]) {
+    n.pointerEvents = stringValue.length ? stringValue : @"auto";
+    [self sn_updateInteractionStateForNode:n];
+    return;
+  }
+
+  if ([name isEqualToString:@"testID"]) {
+    n.view.accessibilityIdentifier = stringValue;
     return;
   }
 
@@ -405,7 +464,6 @@ static void SNApplyEdges(NSDictionary *style,
   [self sn_markNeedsFlush];
 }
 
-
 - (void)sn_attachTapRecognizerForNode:(SNNode *)node {
   if (!node || !node.view) return;
 
@@ -419,7 +477,7 @@ static void SNApplyEdges(NSDictionary *style,
   tap.name = [NSString stringWithFormat:@"node:%d", node.nid];
   [node.view addGestureRecognizer:tap];
   node.hasOnPressHandler = YES;
-  NSLog(@"[SN] onPress handler attached nid=%d", node.nid);
+  [self sn_updateInteractionStateForNode:node];
 }
 
 - (void)setPropCallback:(NSNumber *)nodeId name:(NSString *)name callback:(JSValue *)callback {
@@ -430,10 +488,8 @@ static void SNApplyEdges(NSDictionary *style,
     BOOL validCallback = callback && ![callback isUndefined] && ![callback isNull];
     if (validCallback) {
       n.onPressCallback = callback;
-      n.hasOnPressHandler = YES;
       [self sn_attachTapRecognizerForNode:n];
     } else {
-      // Treat as removing the handler
       n.onPressCallback = nil;
       n.hasOnPressHandler = NO;
       for (UIGestureRecognizer *gr in n.view.gestureRecognizers.copy) {
@@ -441,6 +497,7 @@ static void SNApplyEdges(NSDictionary *style,
           [n.view removeGestureRecognizer:gr];
         }
       }
+      [self sn_updateInteractionStateForNode:n];
     }
     return;
   }
@@ -455,9 +512,7 @@ static void SNApplyEdges(NSDictionary *style,
   if (!n || !n.view) return;
 
   if ([name isEqualToString:@"onPress"]) {
-    // JSI handler path: prefer native invocation; clear JS callback
     n.onPressCallback = nil;
-    n.hasOnPressHandler = YES;
     [self sn_attachTapRecognizerForNode:n];
     return;
   }
@@ -467,7 +522,6 @@ static void SNApplyEdges(NSDictionary *style,
   }
 }
 
-
 - (void)_handleTap:(UIGestureRecognizer *)gr {
   if (![gr isKindOfClass:[UITapGestureRecognizer class]]) return;
   NSString *name = gr.name; if (![name hasPrefix:@"node:"]) return;
@@ -475,11 +529,8 @@ static void SNApplyEdges(NSDictionary *style,
   NSString *nodeIdStr = [name substringFromIndex:5];
   NSNumber *nodeId = @([nodeIdStr intValue]);
 
-  NSLog(@"[SN] Tapped node %@", nodeId);
-
   SNNode *node = self.nodes[nodeId];
   if (!node) {
-    NSLog(@"[SN] No node found for tap %@", nodeId);
     return;
   }
 
@@ -490,13 +541,8 @@ static void SNApplyEdges(NSDictionary *style,
   }
 
   if (!invoked && node.onPressCallback && ![node.onPressCallback isUndefined]) {
-    NSLog(@"[SN] Executing onPress JavaScript callback for node %@", nodeId);
     [node.onPressCallback callWithArguments:@[]];
     invoked = YES;
-  }
-
-  if (!invoked) {
-    NSLog(@"[SN] No tap handler registered for node %@", nodeId);
   }
 }
 
@@ -517,24 +563,19 @@ static void SNApplyEdges(NSDictionary *style,
   if (!c || !c.view || !c.yoga) return;
   
   if (parentId.intValue == 0) {
-    // Attach to root surface directly
     if (!self.rootYoga || !self.root) return;
 
     int i = (int)index.intValue;
     i = MAX(0, MIN(i, (int)self.root.subviews.count));
     [self.root insertSubview:c.view atIndex:i];
-    // Link Yoga under persistent root
     YGNodeInsertChild(self.rootYoga, c.yoga, (uint32_t)MIN(i, (int)YGNodeGetChildCount(self.rootYoga)));
-    NSLog(@"[SN] insert root->%d at %d (rootSubviews=%lu)", c.nid, i, (unsigned long)self.root.subviews.count);
     c.parentId = 0;
   } else {
     SNNode *p = _nodes[parentId];
     if (!p || !p.view || !p.yoga) return;
     c.parentId = p.nid;
 
-    // If parent is a UILabel, merge text instead of nesting subviews
     if ([p.view isKindOfClass:[UILabel class]]) {
-      // Maintain logical child order so text composition is deterministic
       NSUInteger existingIdx = [p.children indexOfObject:childId];
       if (existingIdx != NSNotFound) {
         [p.children removeObjectAtIndex:existingIdx];
@@ -543,7 +584,6 @@ static void SNApplyEdges(NSDictionary *style,
       [p.children insertObject:childId atIndex:insertIdx];
 
       if ([c.view isKindOfClass:[UILabel class]]) {
-        NSLog(@"[SN] merge text %d->%d", p.nid, c.nid);
       }
 
       [self sn_refreshTextForLabelNode:p];
@@ -555,9 +595,7 @@ static void SNApplyEdges(NSDictionary *style,
     i = MAX(0, MIN(i, (int)p.view.subviews.count));
     [p.view insertSubview:c.view atIndex:i];
     [p.children insertObject:childId atIndex:i];
-    // Link Yoga nodes
     YGNodeInsertChild(p.yoga, c.yoga, (uint32_t)i);
-    NSLog(@"[SN] insert %d->%d at %d (children=%lu)", p.nid, c.nid, i, (unsigned long)p.view.subviews.count);
   }
   [self sn_markNeedsFlush];
 }
@@ -566,7 +604,6 @@ static void SNApplyEdges(NSDictionary *style,
   SNNode *c = _nodes[childId];
   if (!c || !c.view) return;
   [self sn_imageCleanupNode:c];
-  // Clean up gesture recognizers and JS callback flags to avoid stacking
   for (UIGestureRecognizer *gr in c.view.gestureRecognizers.copy) {
     [c.view removeGestureRecognizer:gr];
   }
@@ -610,20 +647,14 @@ static void SNApplyEdges(NSDictionary *style,
 - (void)sn_performFlush {
   [[PerformanceProfiler shared] recordLayoutStart];
   dispatch_async(dispatch_get_main_queue(), ^{
-    // Add safety checks
     if (!self.rootYoga || !self.root || !self.nodes) {
-      NSLog(@"[SN] flush skipped: invalid state");
       return;
     }
     
-    NSLog(@"[SN] flush start: rootSubviews=%lu", (unsigned long)self.root.subviews.count);
-    
-    // Size the persistent root and compute layout
     CGRect screenBounds = [UIScreen mainScreen].bounds;
     YGNodeStyleSetWidth(self.rootYoga, (float)screenBounds.size.width);
     YGNodeStyleSetHeight(self.rootYoga, (float)screenBounds.size.height);
 
-      // Force first child to fill root if needed (fixes 'card' effect)
       if (YGNodeGetChildCount(self.rootYoga) > 0) {
         YGNodeRef firstChild = YGNodeGetChild(self.rootYoga, 0);
         YGNodeStyleSetWidth(firstChild, (float)screenBounds.size.width);
@@ -641,94 +672,66 @@ static void SNApplyEdges(NSDictionary *style,
     [[PerformanceProfiler shared] recordLayoutEnd];
 
     [[PerformanceProfiler shared] recordRenderStart];
-    // Use a simpler approach: iterate through our nodes and apply frames directly
-    // This avoids the complex recursive traversal that might be accessing freed nodes
     [self.nodes enumerateKeysAndObjectsUsingBlock:^(NSNumber *key, SNNode *obj, BOOL *stop) {
       if (!obj || !obj.view || !obj.yoga) {
-        NSLog(@"[SN] skipping invalid node nid=%@", key);
         return;
       }
       
-      // Double-check that the view is still in the hierarchy
       if (!obj.view.superview && obj.view != self.root.subviews.firstObject) {
-        NSLog(@"[SN] skipping detached view nid=%d", obj.nid);
         return;
       }
       
       @try {
-        // Get layout values with safety checks
         CGFloat x = YGNodeLayoutGetLeft(obj.yoga);
         CGFloat y = YGNodeLayoutGetTop(obj.yoga);
         CGFloat w = YGNodeLayoutGetWidth(obj.yoga);
         CGFloat h = YGNodeLayoutGetHeight(obj.yoga);
         
-        // Validate the frame values
         if (isnan(x) || isnan(y) || isnan(w) || isnan(h) || 
             isinf(x) || isinf(y) || isinf(w) || isinf(h) ||
             w < 0 || h < 0) {
-          NSLog(@"[SN] invalid frame values for nid=%d: {{%.1f,%.1f},{%.1f,%.1f}}", obj.nid, x, y, w, h);
           return;
         }
         
-        // Apply the frame
         obj.view.frame = CGRectMake(x, y, w, h);
-        NSLog(@"[SN] applied frame nid=%d frame={{%.1f,%.1f},{%.1f,%.1f}}", obj.nid, x, y, w, h);
       }
       @catch (NSException *exception) {
         NSLog(@"[SN] Exception applying frame for nid=%d: %@", obj.nid, exception);
       }
     }];
     [[PerformanceProfiler shared] recordRenderEnd];
-
-    NSLog(@"[SN] flush end");
   });
 }
 
 - (void)flush {
-  // Public API called from JS bridge; schedule at most once per frame
   [self sn_markNeedsFlush];
 }
 
 - (void)clearAllNodes {
-  NSLog(@"[SN] clearAllNodes: removing all nodes and views for HMR reload");
-  
-  // This method MUST be called from main thread
   NSAssert([NSThread isMainThread], @"clearAllNodes must be called from main thread");
   
-  // Stop any pending flushes first
   [self sn_stopDisplayLink];
   self.needsFlush = NO;
   
-  // Remove all subviews from root first
-  // Copy the array to avoid mutation during enumeration
   NSArray<UIView *> *subviews = [self.root.subviews copy];
-  NSLog(@"[SN] clearAllNodes: removing %lu subviews", (unsigned long)subviews.count);
   
   for (UIView *subview in subviews) {
-    // Disable animations to prevent issues
     [UIView performWithoutAnimation:^{
       [subview removeFromSuperview];
     }];
   }
   
-  // Clear all node data - this will trigger SNNode dealloc which frees Yoga nodes
-  NSLog(@"[SN] clearAllNodes: clearing %lu nodes", (unsigned long)self.nodes.count);
   [self.nodes removeAllObjects];
   
-  // Clear event payloads
   [self.eventPayloads removeAllObjects];
   
-  // Free and recreate the root Yoga node
   if (self.rootYoga) {
     YGNodeFreeRecursive(self.rootYoga);
     self.rootYoga = NULL;
   }
   self.rootYoga = YGNodeNew();
   
-  // Reset the node ID counter
   self.nextId = 1;
-  
-  NSLog(@"[SN] clearAllNodes: reset complete, ready for new bundle");
 }
 
 @end

@@ -28,6 +28,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, copy, nullable) NSString *imageSourceToken;
 @property(nonatomic, strong, nullable) UIColor *imageTintColor;
 @property(nonatomic, assign) int parentId;
+@property(nonatomic, copy, nullable) NSString *pointerEvents;
 @end
 
 @interface SNUIManager (Internal)
