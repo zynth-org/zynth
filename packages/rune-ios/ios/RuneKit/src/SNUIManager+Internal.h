@@ -40,6 +40,13 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, assign, readonly) BOOL needsFlush;
 @property(nonatomic, strong, readonly) NSMutableDictionary<NSString *, NSDictionary *> *eventPayloads;
 
+- (CADisplayLink *)rune_displayLink;
+- (void)rune_setDisplayLink:(CADisplayLink *_Nullable)displayLink;
+- (BOOL)rune_needsFlush;
+- (void)rune_setNeedsFlush:(BOOL)needsFlush;
+- (NSMutableDictionary<NSString *, NSDictionary *> *)rune_eventPayloads;
+- (void)rune_setEventPayloads:(NSMutableDictionary<NSString *, NSDictionary *> *)payloads;
+
 - (void)sn_markNeedsFlush;
 - (void)sn_startDisplayLinkIfNeeded;
 - (void)sn_stopDisplayLink;

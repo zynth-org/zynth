@@ -22,10 +22,16 @@ export const View: ParentComponent<ViewProps> = (props) => {
     pointerEvents,
     testID,
   } = props;
+  const resolvedPointer = pointerEvents ?? "auto";
+  const pressHandlers: Record<string, (() => void) | undefined> = {
+    onPress,
+  };
+  const shouldEnablePress = resolvedPointer !== "none";
+  const appliedPressHandlers = shouldEnablePress ? pressHandlers : {};
   return (
     <view
       style={style as any}
-      onPress={onPress}
+      onPress={appliedPressHandlers.onPress}
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
       accessibilityRole={accessibilityRole}

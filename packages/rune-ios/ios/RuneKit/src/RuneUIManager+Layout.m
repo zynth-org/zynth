@@ -1,0 +1,97 @@
+#import "RuneUIManager+Layout.h"
+
+#if __has_include(<RuneKit/RuneKit-Swift.h>)
+#import <RuneKit/RuneKit-Swift.h>
+#elif __has_include("RuneKit-Swift.h")
+#import "RuneKit-Swift.h"
+#endif
+
+@implementation SNUIManager (RuneLayout)
+
+- (void)rune_startDisplayLinkIfNeeded {
+  if (self.displayLink) return;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    if (self.displayLink) return;
+    [self rune_setDisplayLink:[CADisplayLink displayLinkWithTarget:self selector:@selector(rune_displayLinkTick:)]];
+    [self.displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+  });
+}
+
+- (void)rune_stopDisplayLink {
+  if (self.displayLink) {
+    [self.displayLink invalidate];
+    [self rune_setDisplayLink:nil];
+  }
+}
+
+- (void)rune_markNeedsFlush {
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [self rune_setNeedsFlush:YES];
+    [self rune_startDisplayLinkIfNeeded];
+  });
+}
+
+- (void)rune_displayLinkTick:(CADisplayLink *)link {
+  if (!self.needsFlush) return;
+  [self rune_setNeedsFlush:NO];
+  [self rune_performFlush];
+}
+
+- (void)rune_performFlush {
+  [[PerformanceProfiler shared] recordLayoutStart];
+  dispatch_async(dispatch_get_main_queue(), ^{
+    if (!self.rootYoga || !self.root || !self.nodes) {
+      return;
+    }
+
+    CGRect screenBounds = [UIScreen mainScreen].bounds;
+    YGNodeStyleSetWidth(self.rootYoga, (float)screenBounds.size.width);
+    YGNodeStyleSetHeight(self.rootYoga, (float)screenBounds.size.height);
+
+    if (YGNodeGetChildCount(self.rootYoga) > 0) {
+      YGNodeRef firstChild = YGNodeGetChild(self.rootYoga, 0);
+      YGNodeStyleSetWidth(firstChild, (float)screenBounds.size.width);
+      YGNodeStyleSetHeight(firstChild, (float)screenBounds.size.height);
+    }
+
+    @try {
+      YGNodeCalculateLayout(self.rootYoga, YGUndefined, YGUndefined, YGDirectionLTR);
+    } @catch (NSException *exception) {
+      NSLog(@"[SN] Exception in YGNodeCalculateLayout: %@", exception);
+      [[PerformanceProfiler shared] recordLayoutEnd];
+      return;
+    }
+    [[PerformanceProfiler shared] recordLayoutEnd];
+
+    [[PerformanceProfiler shared] recordRenderStart];
+    [self.nodes enumerateKeysAndObjectsUsingBlock:^(NSNumber *key, SNNode *obj, BOOL *stop) {
+      if (!obj || !obj.view || !obj.yoga) {
+        return;
+      }
+
+      if (!obj.view.superview && obj.view != self.root.subviews.firstObject) {
+        return;
+      }
+
+      @try {
+        CGFloat x = YGNodeLayoutGetLeft(obj.yoga);
+        CGFloat y = YGNodeLayoutGetTop(obj.yoga);
+        CGFloat w = YGNodeLayoutGetWidth(obj.yoga);
+        CGFloat h = YGNodeLayoutGetHeight(obj.yoga);
+
+        if (isnan(x) || isnan(y) || isnan(w) || isnan(h) ||
+            isinf(x) || isinf(y) || isinf(w) || isinf(h) ||
+            w < 0 || h < 0) {
+          return;
+        }
+
+        obj.view.frame = CGRectMake(x, y, w, h);
+      } @catch (NSException *exception) {
+        NSLog(@"[SN] Exception applying frame for nid=%d: %@", obj.nid, exception);
+      }
+    }];
+    [[PerformanceProfiler shared] recordRenderEnd];
+  });
+}
+
+@end

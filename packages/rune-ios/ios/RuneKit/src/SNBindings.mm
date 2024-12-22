@@ -3,6 +3,44 @@
 
 static JSValue *SNBox(JSContext *ctx, id obj) { return [JSValue valueWithObject:obj inContext:ctx]; }
 
+static NSString *SNJSONStringForValue(id value) {
+  if (!value || value == [NSNull null]) {
+    return @"null";
+  }
+
+  if ([value isKindOfClass:[JSValue class]]) {
+    JSValue *jsValue = (JSValue *)value;
+    if ([jsValue isNull] || [jsValue isUndefined]) {
+      return @"null";
+    }
+    return SNJSONStringForValue([jsValue toObject]);
+  }
+
+  if ([NSJSONSerialization isValidJSONObject:value]) {
+    NSError *error = nil;
+    NSData *data = [NSJSONSerialization dataWithJSONObject:value options:0 error:&error];
+    if (data && !error) {
+      return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    }
+  }
+
+  id boxable = value;
+  if (![value isKindOfClass:[NSString class]] && ![value isKindOfClass:[NSNumber class]]) {
+    boxable = [value description] ?: @"";
+  }
+
+  NSError *primitiveError = nil;
+  NSData *wrapped = [NSJSONSerialization dataWithJSONObject:@[boxable] options:0 error:&primitiveError];
+  if (wrapped && !primitiveError) {
+    NSString *arrayJSON = [[NSString alloc] initWithData:wrapped encoding:NSUTF8StringEncoding];
+    if (arrayJSON.length >= 2) {
+      return [arrayJSON substringWithRange:NSMakeRange(1, arrayJSON.length - 2)];
+    }
+  }
+
+  return @"null";
+}
+
 void SNInstallBindings(JSContext *ctx, SNUIManager *mgr) {
   JSValue *ui = [JSValue valueWithNewObjectInContext:ctx];
 
@@ -34,8 +72,7 @@ void SNInstallBindings(JSContext *ctx, SNUIManager *mgr) {
       }
     }
     
-    NSData *data = [NSJSONSerialization dataWithJSONObject:value ?: @{} options:0 error:nil];
-    NSString *json = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    NSString *json = SNJSONStringForValue(value ?: [NSNull null]);
     [mgr setProp:nodeId name:name valueJSON:json];
   };
 
