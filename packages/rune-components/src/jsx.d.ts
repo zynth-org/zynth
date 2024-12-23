@@ -1,6 +1,7 @@
 import type { Style } from "@rune/core";
 import type { JSX } from "solid-js";
 import type { ImageElementProps } from "./primitives/Image";
+import type { TextInputProps } from "./primitives/TextInput";
 
 type RuneChildren = JSX.Element | JSX.Element[] | null | undefined;
 
@@ -26,6 +27,7 @@ declare module "solid-js" {
       view: ViewElementProps;
       text: TextElementProps;
       image: ImageElementProps;
+      "text-input": TextInputProps & { [key: string]: any };
     }
   }
 }

@@ -1,3 +1,4 @@
+import { children as resolveChildren } from "solid-js";
 import type { ParentComponent } from "solid-js";
 import type { Style } from "@rune/core";
 
@@ -6,6 +7,6 @@ export interface TextProps {
 }
 
 export const Text: ParentComponent<TextProps> = (props) => {
-  const { style, children } = props;
-  return <text style={style as any}>{children}</text>;
+  const resolvedChildren = resolveChildren(() => props.children);
+  return <text style={props.style as any}>{resolvedChildren()}</text>;
 };

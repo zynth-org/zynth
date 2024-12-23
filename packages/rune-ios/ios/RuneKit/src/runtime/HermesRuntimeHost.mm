@@ -559,8 +559,9 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
               }
             }
           }
+          // Log text value
           SNRunOnMain(^{
-            NSLog(@"[RuneTrace] __ui.setText id=%d", id);
+            NSLog(@"[RuneTrace] __ui.setText id=%d text='%s'", id, text.c_str());
             [[host manager] setText:@(id) text:[NSString stringWithUTF8String:text.c_str()]];
           });
         } catch (const facebook::jsi::JSError &error) {

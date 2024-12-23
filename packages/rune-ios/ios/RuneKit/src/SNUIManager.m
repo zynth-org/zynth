@@ -3,6 +3,8 @@
 #import "SNUIManager+Image.h"
 #import "RuneUIManager+View.h"
 #import "RuneUIManager+Text.h"
+#import "RuneUIManager+TextInput.h"
+#import "RuneTextInputView.h"
 #import "RuneUIManager+Events.h"
 #import "RuneUIManager+Layout.h"
 #import "SNHexColor.h"
@@ -83,11 +85,21 @@
 - (NSNumber *)createNode:(NSString *)type {
   int nid = _nextId++;
   UIView *v;
+  BOOL isTextInput = NO;
+
   if ([type isEqualToString:@"text"]) {
     UILabel *l = [UILabel new];
     l.textColor = [UIColor whiteColor];
     l.numberOfLines = 0;
     v = l;
+  } else if ([type isEqualToString:@"text-input"]) {
+    UIView *input = [self sn_textInputCreateView];
+    if (input) {
+      v = input;
+      isTextInput = YES;
+    } else {
+      v = [self rune_makeContainerView];
+    }
   } else if ([type isEqualToString:@"image"]) {
 #if __has_include(<UIKit/UIKit.h>)
     UIImageView *imageView = [UIImageView new];
@@ -121,6 +133,10 @@
   if ([v isKindOfClass:[UILabel class]]) {
     YGNodeSetContext(n.yoga, (__bridge void *)v);
     YGNodeSetMeasureFunc(n.yoga, SNMeasureLabelFunc);
+  }
+
+  if (isTextInput && [v isKindOfClass:[RuneTextInputView class]]) {
+    [self sn_textInputAttachNode:n view:(RuneTextInputView *)v];
   }
 
   _nodes[@(nid)] = n;
@@ -240,6 +256,37 @@ static void SNApplyEdges(NSDictionary *style,
     NSString *color = style[@"color"]; if (color) l.textColor = SNColorFromHex(color);
     if (n.yoga) YGNodeMarkDirty(n.yoga);
   }
+
+  if ([n.view isKindOfClass:[RuneTextInputView class]]) {
+    RuneTextInputView *input = (RuneTextInputView *)n.view;
+    NSNumber *fs = style[@"fontSize"];
+    CGFloat currentSize = input.font ? input.font.pointSize : 16.0;
+    CGFloat targetSize = fs ? (CGFloat)SNNum(fs) : currentSize;
+    CGFloat targetWeight = UIFontWeightRegular;
+
+    NSString *fw = style[@"fontWeight"];
+    if (fw) {
+      NSDictionary *weights = @{@"normal":@(UIFontWeightRegular),@"bold":@(UIFontWeightBold),
+                                @"100":@(UIFontWeightUltraLight),@"200":@(UIFontWeightThin),@"300":@(UIFontWeightLight),@"400":@(UIFontWeightRegular),
+                                @"500":@(UIFontWeightMedium),@"600":@(UIFontWeightSemibold),@"700":@(UIFontWeightBold),@"800":@(UIFontWeightHeavy),@"900":@(UIFontWeightBlack)};
+      NSNumber *mapped = weights[fw];
+      if (mapped) {
+        targetWeight = (CGFloat)mapped.doubleValue;
+      }
+    }
+
+    input.font = [UIFont systemFontOfSize:targetSize weight:targetWeight];
+
+    NSString *color = style[@"color"];
+    if (color) {
+      input.textColor = SNColorFromHex(color);
+      [input applyPlaceholderToneFromTextColor];
+    }
+
+    if (n.yoga) {
+      YGNodeMarkDirty(n.yoga);
+    }
+  }
 }
 
 - (void)setProp:(NSNumber *)nodeId name:(NSString *)name valueJSON:(NSString *)json {
@@ -254,7 +301,18 @@ static void SNApplyEdges(NSDictionary *style,
     return;
   }
 
-  id value = [NSJSONSerialization JSONObjectWithData:[json dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+  NSData *jsonData = [json dataUsingEncoding:NSUTF8StringEncoding];
+  NSError *parseError = nil;
+  id value = [NSJSONSerialization JSONObjectWithData:jsonData
+                                             options:NSJSONReadingAllowFragments
+                                               error:&parseError];
+  if (!value && json) {
+    // Fallback: treat the raw string as the value if JSON parsing fails (e.g., scalar fragments)
+    if (parseError) {
+      NSLog(@"[SNUIManager] JSON parse fallback name=%@ raw=%@ error=%@", name, json, parseError);
+    }
+    value = json;
+  }
   NSString *stringValue = [value isKindOfClass:[NSString class]] ? (NSString *)value : nil;
 
   if ([name isEqualToString:@"accessibilityLabel"]) {
@@ -295,6 +353,10 @@ static void SNApplyEdges(NSDictionary *style,
     return;
   }
 
+  if ([self sn_textInputHandlesSetPropForNode:n name:name value:value rawJSON:json]) {
+    return;
+  }
+
   if ([self sn_imageHandlesSetPropForNode:n name:name valueJSON:json]) {
     return;
   }
@@ -332,6 +394,10 @@ static void SNApplyEdges(NSDictionary *style,
   if ([self sn_imageHandlesSetPropCallbackForNode:n name:name callback:callback]) {
     return;
   }
+
+  if ([self sn_textInputHandlesSetPropCallbackForNode:n name:name callback:callback]) {
+    return;
+  }
 }
 
 - (void)setHandler:(NSNumber *)nodeId name:(NSString *)name {
@@ -347,6 +413,10 @@ static void SNApplyEdges(NSDictionary *style,
   if ([self sn_imageHandlesSetHandlerForNode:n name:name]) {
     return;
   }
+
+  if ([self sn_textInputHandlesSetHandlerForNode:n name:name]) {
+    return;
+  }
 }
 
 - (void)setText:(NSNumber *)nodeId text:(NSString *)text {
@@ -357,6 +427,15 @@ static void SNApplyEdges(NSDictionary *style,
     ((UILabel *)n.view).text = text;
     if (n.yoga) YGNodeMarkDirty(n.yoga);
     [self rune_propagateTextChangeFromNode:n];
+  } else if ([n.view isKindOfClass:[RuneTextInputView class]]) {
+    RuneTextInputView *input = (RuneTextInputView *)n.view;
+    [input performProgrammaticUpdate:^{
+      input.text = text ?: @"";
+    }];
+    [self sn_textInputUpdateTextForNode:n text:text ?: @""];
+    if (n.yoga) {
+      YGNodeMarkDirty(n.yoga);
+    }
   }
   [self rune_markNeedsFlush];
 }
@@ -397,6 +476,7 @@ static void SNApplyEdges(NSDictionary *style,
   SNNode *c = _nodes[childId];
   if (!c || !c.view) return;
   [self sn_imageCleanupNode:c];
+  [self sn_textInputCleanupNode:c];
   for (UIGestureRecognizer *gr in c.view.gestureRecognizers.copy) {
     [c.view removeGestureRecognizer:gr];
   }
@@ -451,6 +531,7 @@ static void SNApplyEdges(NSDictionary *style,
   [self.nodes removeAllObjects];
   
   [self.eventPayloads removeAllObjects];
+  [self sn_textInputResetStates];
   
   if (self.rootYoga) {
     YGNodeFreeRecursive(self.rootYoga);

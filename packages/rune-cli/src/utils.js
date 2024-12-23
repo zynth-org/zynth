@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 const http = require("http");
 const { spawn, spawnSync } = require("child_process");
 
@@ -201,6 +202,51 @@ function getBootedSimulatorId() {
   return null;
 }
 
+function getConnectedIOSDevices() {
+  const output = readCommandOutput("xcrun", ["xctrace", "list", "devices"]);
+  if (!output) {
+    return [];
+  }
+
+  const devices = [];
+  const lines = output.split("\n");
+  let isDeviceSection = false;
+
+  for (const line of lines) {
+    if (line.startsWith("== Simulators ==")) {
+      isDeviceSection = false;
+    }
+    if (isDeviceSection && line.trim()) {
+      const match = line.match(/^(.*?) \((.*?)\) \((.*?)\)/);
+      if (match) {
+        const [, name, version, udid] = match;
+        devices.push({
+          type: "device",
+          name: name.trim(),
+          version,
+          udid,
+          isBooted: false, // Physical devices are always "booted" in a sense
+        });
+      }
+    }
+    if (line.startsWith("== Devices ==")) {
+      isDeviceSection = true;
+    }
+  }
+
+  const bootedSimulatorId = getBootedSimulatorId();
+  if (bootedSimulatorId) {
+    devices.push({
+      type: "simulator",
+      name: "Booted Simulator",
+      udid: bootedSimulatorId,
+      isBooted: true,
+    });
+  }
+
+  return devices;
+}
+
 async function waitForDevServer(url, timeoutMs = 60000) {
   const deadline = Date.now() + timeoutMs;
   const target = `${url.replace(/\/$/, "")}/main.js`;
@@ -320,6 +366,21 @@ function startIOSLogs(config) {
   }
 }
 
+function getLocalIp() {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    const ifaceList = interfaces[name] || [];
+    for (const iface of ifaceList) {
+      // Skip over internal (i.e. 127.0.0.1) and non-ipv4 addresses
+      if (iface.family === "IPv4" && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+  // Fallback for cases where no external IPv4 is found
+  return "127.0.0.1";
+}
+
 async function startRuneHMRServer(appDir, platform, options = {}) {
   const defaultPort = 8081;
   const port = Number(process.env.RUNE_HMR_PORT || options.port || defaultPort);
@@ -327,11 +388,21 @@ async function startRuneHMRServer(appDir, platform, options = {}) {
   const bindHost =
     process.env.RUNE_HMR_BIND ||
     (localHost === "localhost" ? "0.0.0.0" : localHost);
-  const defaultDeviceHost = platform === "android" ? "10.0.2.2" : "127.0.0.1";
+  const defaultSimulatorHost =
+    platform === "android" ? "10.0.2.2" : "127.0.0.1";
+  const defaultPhysicalHost = getLocalIp();
+  const defaultDeviceHost = options.isPhysicalDevice
+    ? defaultPhysicalHost
+    : defaultSimulatorHost;
   const deviceHostOverride = options.deviceHostOverride;
-  const deviceHost =
+  let deviceHost =
     deviceHostOverride || process.env.RUNE_DEVICE_HOST || defaultDeviceHost;
 
+  if (options.local) {
+    deviceHost = "127.0.0.1";
+  } else if (options.hmrNetwork) {
+    deviceHost = getLocalIp();
+  }
   const args = ["rsbuild", "dev", "--port", String(port), "--host", bindHost];
 
   console.log(
@@ -387,6 +458,48 @@ async function startRuneHMRServer(appDir, platform, options = {}) {
 async function devIOS(root, appDir, options = {}) {
   const config = getIOSConfig(root, appDir);
   const iosDir = path.join(appDir, "ios");
+  let targetDevice = null;
+
+  if (options.devices) {
+    const availableDevices = getConnectedIOSDevices();
+    if (availableDevices.length === 0) {
+      console.error(
+        "❌ No booted iOS simulator or connected physical device detected."
+      );
+      console.error(
+        "   Launch a simulator or connect a device via USB and try again."
+      );
+      process.exit(1);
+    }
+    const inquirer = (await import("inquirer")).default;
+    const { selectedDevice } = await inquirer.prompt([
+      {
+        type: "list",
+        name: "selectedDevice",
+        message: "Select a device to launch on",
+        choices: availableDevices.map((d) => ({
+          name: `${d.name} (${d.type})`,
+          value: d,
+        })),
+      },
+    ]);
+    targetDevice = selectedDevice;
+  } else {
+    // Default to booted simulator if --devices is not used
+    const simulatorId = getBootedSimulatorId();
+    if (!simulatorId) {
+      console.error(
+        "❌ No booted iOS simulator detected. Launch a simulator or use `rune dev ios --devices` to select a target."
+      );
+      process.exit(1);
+    }
+    targetDevice = {
+      type: "simulator",
+      name: "Booted Simulator",
+      udid: simulatorId,
+      isBooted: true,
+    };
+  }
 
   if (options.prebuild) {
     console.log("♻️  Regenerating iOS project (--prebuild)");
@@ -412,38 +525,50 @@ async function devIOS(root, appDir, options = {}) {
     process.exit(1);
   }
 
-  console.log(`🛠️  Building ${config.appNameCapitalized} for iOS simulator...`);
-  runCommand(
-    "xcodebuild",
-    [
-      "-workspace",
-      `${config.appNameCapitalized}.xcworkspace`,
-      "-scheme",
-      config.appNameCapitalized,
-      "-configuration",
-      "Debug",
-      "-sdk",
-      "iphonesimulator",
-      "-derivedDataPath",
-      ".build",
-    ],
-    { cwd: iosDir }
+  const isPhysicalDevice = targetDevice.type === "device";
+  const sdk = isPhysicalDevice ? "iphoneos" : "iphonesimulator";
+  const buildConfiguration = "Debug";
+  const buildDir = path.join(iosDir, ".build");
+
+  console.log(
+    `🛠️  Building ${config.appNameCapitalized} for ${targetDevice.name} (${sdk})...`
   );
 
-  const simulatorId = getBootedSimulatorId();
-  if (!simulatorId) {
-    console.error(
-      "❌ No booted iOS simulator detected. Launch a simulator and try again."
-    );
-    process.exit(1);
+  const buildArgs = [
+    "-workspace",
+    `${config.appNameCapitalized}.xcworkspace`,
+    "-scheme",
+    config.appNameCapitalized,
+    "-configuration",
+    buildConfiguration,
+    "-sdk",
+    sdk,
+    "-derivedDataPath",
+    buildDir,
+  ];
+
+  if (isPhysicalDevice) {
+    // For physical devices, we don't need a destination if we use `ios-deploy`
+    // which will find the device by its UDID. We do need to provide
+    // code signing information.
+    buildArgs.push("CODE_SIGN_STYLE=Automatic");
+    const devTeam = process.env.RUNE_IOS_DEVELOPMENT_TEAM;
+    if (devTeam) {
+      buildArgs.push(`DEVELOPMENT_TEAM=${devTeam}`);
+    } else {
+      console.warn(
+        "\n⚠️  Building for a physical device. If the build fails due to code signing, set the RUNE_IOS_DEVELOPMENT_TEAM environment variable to your Apple Development Team ID.\n"
+      );
+    }
   }
 
+  runCommand("xcodebuild", buildArgs, { cwd: iosDir });
+
   const appBundlePath = path.join(
-    iosDir,
-    ".build",
+    buildDir,
     "Build",
     "Products",
-    "Debug-iphonesimulator",
+    `${buildConfiguration}-${sdk}`,
     `${config.appNameCapitalized}.app`
   );
   if (!fs.existsSync(appBundlePath)) {
@@ -453,12 +578,34 @@ async function devIOS(root, appDir, options = {}) {
     process.exit(1);
   }
 
-  console.log("📥 Installing build to simulator...");
-  runCommand("xcrun", ["simctl", "install", simulatorId, appBundlePath]);
+  if (isPhysicalDevice) {
+    console.log(`📥 Installing build to ${targetDevice.name}...`);
+    // `ios-deploy` is a common tool for this. Assumes it's installed.
+    // You can install it with `npm install -g ios-deploy`
+    runCommand("ios-deploy", [
+      "--id",
+      targetDevice.udid,
+      "--bundle",
+      appBundlePath,
+      "--verbose",
+    ]);
+  } else {
+    console.log("📥 Installing build to simulator...");
+    runCommand("xcrun", [
+      "simctl",
+      "install",
+      targetDevice.udid,
+      appBundlePath,
+      "--verbose",
+    ]);
+  }
 
   const desiredPort = Number(process.env.RUNE_HMR_PORT || 8081);
   const hmrServer = await startRuneHMRServer(appDir, "ios", {
     port: desiredPort,
+    isPhysicalDevice: isPhysicalDevice,
+    local: options.local,
+    hmrNetwork: options.hmrNetwork,
   });
 
   if (!hmrServer) {
@@ -474,51 +621,73 @@ async function devIOS(root, appDir, options = {}) {
     process.exit(1);
   }
 
-  const hmrToken = await waitForHMRToken(appDir);
-  if (hmrToken) {
-    console.log("🔐 Injecting HMR token into simulator environment");
-    process.env.RUNE_DEV_SERVER_TOKEN = hmrToken;
+  if (isPhysicalDevice) {
+    // On physical devices, we pass config via launch arguments.
+    // No special environment setup is needed like with simctl.
+    console.log("🚀 Launching application on device...");
+    const launchArgs = [
+      "--id",
+      targetDevice.udid,
+      "--bundle_id",
+      config.bundleId,
+      "--justlaunch",
+      "--args",
+      `--RUNE_DEV_SERVER_URL ${hmrServer.deviceUrl}`,
+      "--verbose",
+    ];
+    const hmrToken = await waitForHMRToken(appDir);
+    if (hmrToken) {
+      launchArgs.push(`--RUNE_DEV_SERVER_TOKEN ${hmrToken}`);
+    }
+    runCommand("ios-deploy", launchArgs);
+  } else {
+    // Simulator-specific logic
+    const hmrToken = await waitForHMRToken(appDir);
+    if (hmrToken) {
+      console.log("🔐 Injecting HMR token into simulator environment");
+      process.env.RUNE_DEV_SERVER_TOKEN = hmrToken;
+      runCommand("xcrun", [
+        "simctl",
+        "spawn",
+        targetDevice.udid,
+        "launchctl",
+        "setenv",
+        "RUNE_DEV_SERVER_TOKEN",
+        hmrToken,
+      ]);
+    } else {
+      console.warn(
+        "⚠️  HMR token not detected; continuing without authentication"
+      );
+      delete process.env.RUNE_DEV_SERVER_TOKEN;
+      spawnSync("xcrun", [
+        "simctl",
+        "spawn",
+        targetDevice.udid,
+        "launchctl",
+        "unsetenv",
+        "RUNE_DEV_SERVER_TOKEN",
+      ]);
+    }
+
     runCommand("xcrun", [
       "simctl",
       "spawn",
-      simulatorId,
+      targetDevice.udid,
       "launchctl",
       "setenv",
-      "RUNE_DEV_SERVER_TOKEN",
-      hmrToken,
+      "RUNE_DEV_SERVER_URL",
+      hmrServer.deviceUrl,
     ]);
-  } else {
-    console.warn(
-      "⚠️  HMR token not detected; continuing without authentication"
-    );
-    delete process.env.RUNE_DEV_SERVER_TOKEN;
-    const unsetResult = spawnSync("xcrun", [
+
+    console.log("🚀 Launching application on simulator...");
+    runCommand("xcrun", [
       "simctl",
-      "spawn",
-      simulatorId,
-      "launchctl",
-      "unsetenv",
-      "RUNE_DEV_SERVER_TOKEN",
+      "launch",
+      targetDevice.udid,
+      config.bundleId,
     ]);
-    if (unsetResult.status !== 0) {
-      console.warn(
-        "⚠️  Unable to clear RUNE_DEV_SERVER_TOKEN from simulator environment"
-      );
-    }
   }
-
-  runCommand("xcrun", [
-    "simctl",
-    "spawn",
-    simulatorId,
-    "launchctl",
-    "setenv",
-    "RUNE_DEV_SERVER_URL",
-    hmrServer.deviceUrl,
-  ]);
-
-  console.log("🚀 Launching application on simulator...");
-  runCommand("xcrun", ["simctl", "launch", simulatorId, config.bundleId]);
 
   const logProcess = startIOSLogs(config);
   if (logProcess) {
@@ -539,10 +708,11 @@ async function devIOS(root, appDir, options = {}) {
   await new Promise(() => {});
 }
 
-async function devAndroid(root, appDir) {
+async function devAndroid(root, appDir, options = {}) {
   const config = getAndroidConfig(root, appDir);
   const androidDir = path.join(appDir, "android");
   const userDeviceHost = process.env.RUNE_DEVICE_HOST;
+  const { local, hmrNetwork } = options;
 
   ensurePrebuild(root, appDir, "android", { dev: true });
 
@@ -566,6 +736,9 @@ async function devAndroid(root, appDir) {
     port: desiredPort,
     deviceHostOverride:
       userDeviceHost || (hasPhysicalDeviceInitial ? "127.0.0.1" : undefined),
+    isPhysicalDevice: hasPhysicalDeviceInitial,
+    local: local,
+    hmrNetwork: hmrNetwork,
   });
 
   if (!hmrServer) {
@@ -811,6 +984,7 @@ module.exports = {
   getConnectedAndroidDevices,
   startIOSLogs,
   getIOSConfig,
+  getLocalIp,
   getAndroidConfig,
   startRuneHMRServer,
   listWorkspaces,

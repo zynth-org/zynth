@@ -17,6 +17,7 @@ export {
   getNodeValue,
   isTextNode,
   insert, // <-- Added this export
+  use,
 } from "./renderer";
 
 // Minimal universal helpers some transforms import

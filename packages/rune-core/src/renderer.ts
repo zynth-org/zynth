@@ -110,3 +110,8 @@ export const insert = (r as any).insert as (
   marker?: any,
   initial?: any
 ) => void;
+export const use = (r as any).use as (
+  fn: (value: any, arg: any) => any,
+  element: any,
+  arg: any
+) => any;

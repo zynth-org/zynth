@@ -45,20 +45,15 @@
   if (!node || name.length == 0) return;
 
   NSDictionary *normalized = payload ?: @{};
-  BOOL invoked = NO;
-
-  if (self.jsInvoker && (([name isEqualToString:@"onLoad"] && node.hasOnLoadHandler) ||
-                         ([name isEqualToString:@"onError"] && node.hasOnErrorHandler))) {
+  if (self.jsInvoker) {
     if (normalized.count > 0) {
       [self rune_storeEventPayload:normalized forNode:node name:name];
     } else {
       [self rune_storeEventPayload:nil forNode:node name:name];
     }
     [self.jsInvoker invokeHandlerForNode:node.nid name:name];
-    invoked = YES;
+    return;
   }
-
-  if (invoked) return;
 
   JSValue *callback = nil;
   if ([name isEqualToString:@"onLoad"]) {

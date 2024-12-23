@@ -65,6 +65,65 @@ export function createIOSHost(): Host {
       ? CHILDREN.get(id)!
       : (CHILDREN.set(id, []), CHILDREN.get(id)!);
 
+  const applyTextInputInitialProps = (id: number, props: any) => {
+    if (!props) return;
+
+    const assign = (key: string, value: unknown) => {
+      if (value !== undefined) {
+        console.log("[IOS host] initial text-input prop", { id, key, value });
+        ui.setProp(id, key, value);
+      }
+    };
+
+    assign("value", props.value);
+    assign("defaultValue", props.defaultValue);
+    if (props?.defaultValue != null && props.value == null) {
+      ui.setText(id, String(props.defaultValue));
+    }
+    assign("placeholder", props.placeholder);
+    assign("multiline", props.multiline);
+    assign("numberOfLines", props.numberOfLines);
+    assign("maxLength", props.maxLength);
+    assign("editable", props.editable);
+    assign("secureTextEntry", props.secureTextEntry);
+    assign("inputMode", props.inputMode);
+    assign("autoCapitalize", props.autoCapitalize);
+    assign("autoCorrect", props.autoCorrect);
+    assign("spellCheck", props.spellCheck);
+    assign("returnKeyType", props.returnKeyType);
+    assign("blurOnSubmit", props.blurOnSubmit);
+    assign("submitBehavior", props.submitBehavior);
+    assign("selection", props.selection);
+    assign("selectionColor", props.selectionColor);
+    assign("caretColor", props.caretColor);
+    assign("clearButtonMode", props.clearButtonMode);
+    assign("showClearAccessory", props.showClearAccessory);
+    assign("eventThrottleMs", props.eventThrottleMs);
+    assign(
+      "allowProgrammaticJumpDuringEdit",
+      props.allowProgrammaticJumpDuringEdit
+    );
+    assign("testID", props.testID);
+
+    const eventHandlers: Record<string, Function | undefined> = {
+      onChange: props.onChange,
+      onChangeText: props.onChangeText,
+      onSelectionChange: props.onSelectionChange,
+      onSubmitEditing: props.onSubmitEditing,
+      onKeyPress: props.onKeyPress,
+      onFocus: props.onFocus,
+      onBlur: props.onBlur,
+      onCompositionStart: props.onCompositionStart,
+      onCompositionEnd: props.onCompositionEnd,
+    };
+
+    for (const [name, handler] of Object.entries(eventHandlers)) {
+      if (typeof handler === "function") {
+        ui.setHandler(id, name, handler);
+      }
+    }
+  };
+
   // helper to compute physical index (exclude markers)
   const physicalIndex = (parentId: number, logicalInsertIdx: number) => {
     const kids = ensure(parentId);
@@ -106,8 +165,25 @@ export function createIOSHost(): Host {
         ui.setProp(id, "accessibilityHint", props.accessibilityHint);
       if (props?.accessibilityRole)
         ui.setProp(id, "accessibilityRole", props.accessibilityRole);
-      if (props?.pointerEvents) ui.setProp(id, "pointerEvents", props.pointerEvents);
+      if (props?.pointerEvents)
+        ui.setProp(id, "pointerEvents", props.pointerEvents);
       if (props?.testID) ui.setProp(id, "testID", props.testID);
+      if (type === "text-input") {
+        console.log(
+          "[IOS host] createNode text-input",
+          JSON.stringify({
+            id,
+            props: JSON.stringify({
+              value: props?.value,
+              defaultValue: props?.defaultValue,
+              placeholder: props?.placeholder,
+              maxLength: props?.maxLength,
+              inputMode: props?.inputMode,
+            }),
+          })
+        );
+        applyTextInputInitialProps(id, props);
+      }
       schedule();
       return { id, type } as HostNode;
     },
@@ -122,8 +198,25 @@ export function createIOSHost(): Host {
       return { id, type: "text" };
     },
     setProperty(node, name, value) {
+      if (value === undefined && name !== "style") {
+        return;
+      }
+      if (name !== "style") {
+        console.log(
+          "[IOS host] setProperty",
+          JSON.stringify({
+            id: node?.id,
+            type: node?.type,
+            name,
+            value,
+          })
+        );
+      }
       if (name === "style") {
         ui.setProp(node.id, "style", value || {});
+      } else if (name === "controller") {
+        // Controller is managed purely on the JS side for now.
+        return;
       } else if (typeof value === "function") {
         ui.setHandler(node.id, name, value);
       } else {
@@ -132,6 +225,7 @@ export function createIOSHost(): Host {
       schedule();
     },
     setText(node, value) {
+      console.log("[IOS host] setText", { id: node.id, value });
       TEXTS.set(node.id, value ?? "");
       ui.setText(node.id, value ?? "");
       schedule();

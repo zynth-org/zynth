@@ -1,3 +1,4 @@
+import { children as resolveChildren, splitProps } from "solid-js";
 import type { ParentComponent } from "solid-js";
 import type { Style } from "@rune/core";
 
@@ -12,33 +13,33 @@ export interface ViewProps {
 }
 
 export const View: ParentComponent<ViewProps> = (props) => {
-  const {
-    style,
-    onPress,
-    children,
-    accessibilityLabel,
-    accessibilityHint,
-    accessibilityRole,
-    pointerEvents,
-    testID,
-  } = props;
-  const resolvedPointer = pointerEvents ?? "auto";
+  const [local] = splitProps(props, [
+    "style",
+    "onPress",
+    "accessibilityLabel",
+    "accessibilityHint",
+    "accessibilityRole",
+    "pointerEvents",
+    "testID",
+  ]);
+  const resolvedChildren = resolveChildren(() => props.children);
+  const resolvedPointer = local.pointerEvents ?? "auto";
   const pressHandlers: Record<string, (() => void) | undefined> = {
-    onPress,
+    onPress: local.onPress,
   };
   const shouldEnablePress = resolvedPointer !== "none";
   const appliedPressHandlers = shouldEnablePress ? pressHandlers : {};
   return (
     <view
-      style={style as any}
+      style={local.style as any}
       onPress={appliedPressHandlers.onPress}
-      accessibilityLabel={accessibilityLabel}
-      accessibilityHint={accessibilityHint}
-      accessibilityRole={accessibilityRole}
-      pointerEvents={pointerEvents}
-      testID={testID}
+      accessibilityLabel={local.accessibilityLabel}
+      accessibilityHint={local.accessibilityHint}
+      accessibilityRole={local.accessibilityRole}
+      pointerEvents={local.pointerEvents}
+      testID={local.testID}
     >
-      {children}
+      {resolvedChildren()}
     </view>
   );
 };

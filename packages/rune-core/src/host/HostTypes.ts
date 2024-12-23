@@ -1,4 +1,10 @@
-export type NodeType = "root" | "view" | "text" | "image" | "marker";
+export type NodeType =
+  | "root"
+  | "view"
+  | "text"
+  | "image"
+  | "marker"
+  | "text-input";
 
 export interface HostNode {
   id: number; // for marker: generate a synthetic negative or a distinct counter
