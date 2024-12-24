@@ -4,7 +4,9 @@
 #import "RuneUIManager+View.h"
 #import "RuneUIManager+Text.h"
 #import "RuneUIManager+TextInput.h"
+#import "RuneUIManager+SecureTextInput.h"
 #import "RuneTextInputView.h"
+#import "RuneSecureTextInputView.h"
 #import "RuneUIManager+Events.h"
 #import "RuneUIManager+Layout.h"
 #import "SNHexColor.h"
@@ -86,6 +88,7 @@
   int nid = _nextId++;
   UIView *v;
   BOOL isTextInput = NO;
+  BOOL isSecureTextInput = NO;
 
   if ([type isEqualToString:@"text"]) {
     UILabel *l = [UILabel new];
@@ -100,6 +103,14 @@
     } else {
       v = [self rune_makeContainerView];
     }
+  } else if ([type isEqualToString:@"secure-text-input"]) {
+      UIView *input = [self sn_secureTextInputCreateView];
+      if (input) {
+          v = input;
+          isSecureTextInput = YES;
+      } else {
+          v = [self rune_makeContainerView];
+      }
   } else if ([type isEqualToString:@"image"]) {
 #if __has_include(<UIKit/UIKit.h>)
     UIImageView *imageView = [UIImageView new];
@@ -137,6 +148,10 @@
 
   if (isTextInput && [v isKindOfClass:[RuneTextInputView class]]) {
     [self sn_textInputAttachNode:n view:(RuneTextInputView *)v];
+  }
+  
+  if (isSecureTextInput && [v isKindOfClass:[RuneSecureTextInputView class]]) {
+      [self sn_secureTextInputAttachNode:n view:(RuneSecureTextInputView *)v];
   }
 
   _nodes[@(nid)] = n;
@@ -282,6 +297,56 @@ static void SNApplyEdges(NSDictionary *style,
       input.textColor = SNColorFromHex(color);
       [input applyPlaceholderToneFromTextColor];
     }
+      
+    CGFloat top = [style[@"paddingTop"] ?: style[@"paddingVertical"] ?: style[@"padding"] floatValue];
+    CGFloat left = [style[@"paddingLeft"] ?: style[@"paddingHorizontal"] ?: style[@"padding"] floatValue];
+    CGFloat bottom = [style[@"paddingBottom"] ?: style[@"paddingVertical"] ?: style[@"padding"] floatValue];
+    CGFloat right = [style[@"paddingRight"] ?: style[@"paddingHorizontal"] ?: style[@"padding"] floatValue];
+    input.textContainerInset = UIEdgeInsetsMake(top, left, bottom, right);
+
+    if (input.placeholderLeadingConstraint) {
+        input.placeholderLeadingConstraint.constant = left;
+    }
+    if (input.placeholderTopConstraint) {
+        input.placeholderTopConstraint.constant = top;
+    }
+
+    if (n.yoga) {
+      YGNodeMarkDirty(n.yoga);
+    }
+  }
+    
+  if ([n.view isKindOfClass:[RuneSecureTextInputView class]]) {
+    RuneSecureTextInputView *input = (RuneSecureTextInputView *)n.view;
+    NSNumber *fs = style[@"fontSize"];
+    CGFloat currentSize = input.font ? input.font.pointSize : 16.0;
+    CGFloat targetSize = fs ? (CGFloat)SNNum(fs) : currentSize;
+    CGFloat targetWeight = UIFontWeightRegular;
+
+    NSString *fw = style[@"fontWeight"];
+    if (fw) {
+      NSDictionary *weights = @{@"normal":@(UIFontWeightRegular),@"bold":@(UIFontWeightBold),
+                                @"100":@(UIFontWeightUltraLight),@"200":@(UIFontWeightThin),@"300":@(UIFontWeightLight),@"400":@(UIFontWeightRegular),
+                                @"500":@(UIFontWeightMedium),@"600":@(UIFontWeightSemibold),@"700":@(UIFontWeightBold),@"800":@(UIFontWeightHeavy),@"900":@(UIFontWeightBlack)};
+      NSNumber *mapped = weights[fw];
+      if (mapped) {
+        targetWeight = (CGFloat)mapped.doubleValue;
+      }
+    }
+
+    input.font = [UIFont systemFontOfSize:targetSize weight:targetWeight];
+
+    NSString *color = style[@"color"];
+    if (color) {
+      input.textColor = SNColorFromHex(color);
+      [input applyPlaceholderToneFromTextColor];
+    }
+
+    CGFloat top = [style[@"paddingTop"] ?: style[@"paddingVertical"] ?: style[@"padding"] floatValue];
+    CGFloat left = [style[@"paddingLeft"] ?: style[@"paddingHorizontal"] ?: style[@"padding"] floatValue];
+    CGFloat bottom = [style[@"paddingBottom"] ?: style[@"paddingVertical"] ?: style[@"padding"] floatValue];
+    CGFloat right = [style[@"paddingRight"] ?: style[@"paddingHorizontal"] ?: style[@"padding"] floatValue];
+    input.padding = UIEdgeInsetsMake(top, left, bottom, right);
 
     if (n.yoga) {
       YGNodeMarkDirty(n.yoga);
@@ -357,6 +422,10 @@ static void SNApplyEdges(NSDictionary *style,
     return;
   }
 
+  if ([self sn_secureTextInputHandlesSetPropForNode:n name:name value:value rawJSON:json]) {
+      return;
+  }
+
   if ([self sn_imageHandlesSetPropForNode:n name:name valueJSON:json]) {
     return;
   }
@@ -416,6 +485,10 @@ static void SNApplyEdges(NSDictionary *style,
 
   if ([self sn_textInputHandlesSetHandlerForNode:n name:name]) {
     return;
+  }
+
+  if ([self sn_secureTextInputHandlesSetHandlerForNode:n name:name]) {
+      return;
   }
 }
 
@@ -477,6 +550,7 @@ static void SNApplyEdges(NSDictionary *style,
   if (!c || !c.view) return;
   [self sn_imageCleanupNode:c];
   [self sn_textInputCleanupNode:c];
+  [self sn_secureTextInputCleanupNode:c];
   for (UIGestureRecognizer *gr in c.view.gestureRecognizers.copy) {
     [c.view removeGestureRecognizer:gr];
   }

@@ -52,7 +52,6 @@ static UIColor *RuneColorFromHexOrNil(NSString *hex) {
   self.textColor = [UIColor whiteColor];
   self.font = [UIFont systemFontOfSize:16 weight:UIFontWeightRegular];
   self.textContainer.lineFragmentPadding = 0;
-  self.textContainerInset = UIEdgeInsetsZero;
   self.textContainer.lineBreakMode = NSLineBreakByWordWrapping;
   self.scrollEnabled = NO;
   [self applyMultiline:NO numberOfLines:0];
@@ -70,10 +69,12 @@ static UIColor *RuneColorFromHexOrNil(NSString *hex) {
   placeholder.numberOfLines = 0;
   placeholder.translatesAutoresizingMaskIntoConstraints = NO;
   [self addSubview:placeholder];
+  self.placeholderLeadingConstraint = [placeholder.leadingAnchor constraintEqualToAnchor:self.leadingAnchor constant:2];
+  self.placeholderTopConstraint = [placeholder.topAnchor constraintEqualToAnchor:self.topAnchor constant:2];
   [NSLayoutConstraint activateConstraints:@[
-    [placeholder.leadingAnchor constraintEqualToAnchor:self.leadingAnchor constant:2],
+    self.placeholderLeadingConstraint,
     [placeholder.trailingAnchor constraintEqualToAnchor:self.trailingAnchor constant:-2],
-    [placeholder.topAnchor constraintEqualToAnchor:self.topAnchor constant:2]
+    self.placeholderTopConstraint
   ]];
   self.placeholderLabel = placeholder;
   [self updatePlaceholderVisibility];
@@ -157,24 +158,25 @@ static UIColor *RuneColorFromHexOrNil(NSString *hex) {
   if (!changed) return;
   NSLog(@"[RuneTextInputView] applySecureEntry secure=%@ text=%@", secure ? @"YES" : @"NO", self.text);
 
+  NSString *currentText = [self.text copy] ?: @"";
+  UITextRange *selectedRange = self.selectedTextRange;
+  NSInteger cursorOffset = 0;
+  if (selectedRange) {
+    cursorOffset = [self offsetFromPosition:self.beginningOfDocument toPosition:selectedRange.start];
+  }
+
+  if (wasFirstResponder) {
+    [self resignFirstResponder];
+  }
+
   [self performProgrammaticUpdate:^{
-    NSString *currentText = [self.text copy] ?: @"";
-    UITextRange *selectedRange = self.selectedTextRange;
-    NSInteger cursorOffset = 0;
-    if (selectedRange) {
-      cursorOffset = [self offsetFromPosition:self.beginningOfDocument toPosition:selectedRange.start];
-    }
-
     self.secureTextEntry = secure;
-
-    if (wasFirstResponder) {
-      BOOL becameResponder = [self becomeFirstResponder];
-      if (!becameResponder) {
-        NSLog(@"[RuneTextInputView] WARNING failed to regain first responder after secure toggle");
-      }
-    }
-
     self.text = currentText;
+
+    // The magic font reset trick for UITextView's secureTextEntry
+    UIFont *originalFont = self.font;
+    self.font = nil;
+    self.font = originalFont;
 
     NSInteger clampedOffset = MAX(0, MIN((NSInteger)currentText.length, cursorOffset));
     UITextPosition *startPos = [self positionFromPosition:self.beginningOfDocument offset:clampedOffset];
@@ -184,7 +186,9 @@ static UIColor *RuneColorFromHexOrNil(NSString *hex) {
     }
   }];
 
-  [self reloadInputViewsIfNeeded];
+  if (wasFirstResponder) {
+    [self becomeFirstResponder];
+  }
 }
 
 - (void)applyEditable:(BOOL)editable {

@@ -29,6 +29,9 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, assign) BOOL isEditableProp;
 @property(nonatomic, copy) NSString *submitBehavior;
 
+@property (nonatomic, strong, nullable) NSLayoutConstraint *placeholderLeadingConstraint;
+@property (nonatomic, strong, nullable) NSLayoutConstraint *placeholderTopConstraint;
+
 - (void)configureDefaults;
 - (void)applySelectionFromDictionary:(NSDictionary *_Nullable)dict;
 - (NSDictionary *)currentSelectionPayload;

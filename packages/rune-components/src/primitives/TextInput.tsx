@@ -1,5 +1,5 @@
 import type { Component } from "solid-js";
-import { createEffect, createMemo, createSignal } from "solid-js";
+import { createEffect, createMemo, createSignal, Show } from "solid-js";
 import type { HostNode, Style } from "@rune/core";
 import { setProperty } from "@rune/core";
 
@@ -212,6 +212,18 @@ export const TextInput: Component<TextInputProps> = (props) => {
   const controller = createMemo(() => props.controller);
   const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
 
+  const isPotentiallySecure = createMemo(
+    () => props.secureTextEntry !== undefined
+  );
+
+  createEffect(() => {
+    if (isPotentiallySecure() && props.multiline) {
+      console.warn(
+        "[Rune] The `secureTextEntry` prop is not compatible with `multiline`. `multiline` will be ignored."
+      );
+    }
+  });
+
   const handleChange = (event: NativeTextChangeEvent) => {
     props.onChange?.(event);
     if (typeof event.textAfter === "string") {
@@ -324,7 +336,11 @@ export const TextInput: Component<TextInputProps> = (props) => {
     const nodeId = (node as any)?.id;
 
     console.log("[TextInput] updating static props", { nodeId });
-    setProperty(node, "multiline", props.multiline ?? false);
+    setProperty(
+      node,
+      "multiline",
+      isPotentiallySecure() ? false : props.multiline ?? false
+    );
     setProperty(node, "onChange", handleChange);
     setProperty(node, "onChangeText", handleChangeText);
     setProperty(node, "onSelectionChange", handleSelectionChange);
@@ -368,6 +384,10 @@ export const TextInput: Component<TextInputProps> = (props) => {
 
     for (const [name, value] of optionalEntries) {
       if (value !== undefined) {
+        // Don't pass multiline to secure text input
+        if (isPotentiallySecure() && name === "multiline") continue;
+        if (isPotentiallySecure() && name === "numberOfLines") continue;
+
         console.log(
           "[TextInput] set optional prop",
           JSON.stringify({ nodeId, name, value })
@@ -378,8 +398,17 @@ export const TextInput: Component<TextInputProps> = (props) => {
   });
 
   return (
-    <text-input
-      ref={(node) => setHostNode((node as unknown as HostNode) ?? null)}
-    />
+    <Show
+      when={isPotentiallySecure()}
+      fallback={
+        <text-input
+          ref={(node) => setHostNode((node as unknown as HostNode) ?? null)}
+        />
+      }
+    >
+      <secure-text-input
+        ref={(node) => setHostNode((node as unknown as HostNode) ?? null)}
+      />
+    </Show>
   );
 };
