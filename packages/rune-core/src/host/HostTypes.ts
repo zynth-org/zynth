@@ -4,7 +4,8 @@ export type NodeType =
   | "text"
   | "image"
   | "marker"
-  | "text-input";
+  | "text-input"
+  | "secure-text-input";
 
 export interface HostNode {
   id: number; // for marker: generate a synthetic negative or a distinct counter

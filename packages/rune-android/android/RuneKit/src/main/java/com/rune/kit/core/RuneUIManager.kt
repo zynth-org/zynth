@@ -19,6 +19,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import com.rune.kit.debug.PerformanceProfiler
 import com.rune.kit.layout.LayoutEngine
+import com.rune.kit.layout.MeasureInput
 import com.rune.kit.layout.MeasureMode
 import com.rune.kit.layout.Rect
 import com.rune.kit.layout.Style
@@ -29,6 +30,7 @@ import java.util.concurrent.CountDownLatch
 import kotlin.math.roundToInt
 import org.json.JSONException
 import org.json.JSONObject
+import org.json.JSONTokener
 
 class RuneUIManager(
   private val root: RuneRootView,
@@ -46,6 +48,17 @@ class RuneUIManager(
     var cachedText: String = "",
     var imageState: ImageState? = null,
     var pointerEvents: String = "auto",
+    var textInputState: TextInputState? = null,
+  )
+
+  data class SelectionSpec(var start: Int, var end: Int)
+
+  data class TextInputState(
+    var defaultValue: String = "",
+    var currentText: String = "",
+    var awaitingInitialValue: Boolean = true,
+    var hasAppliedInitialText: Boolean = false,
+    var pendingSelection: SelectionSpec? = null,
   )
 
   private val nodes = SparseArray<Node>()
@@ -168,6 +181,26 @@ class RuneUIManager(
       Log.d("RuneUI", "Created text node $id")
       view = text
       label = text
+    } else if (type == TEXT_INPUT_TYPE || type == SECURE_TEXT_INPUT_TYPE) {
+      val inputView = if (type == SECURE_TEXT_INPUT_TYPE) {
+        RuneSecureTextInputView(root.context)
+      } else {
+        RuneTextInputView(root.context)
+      }
+      inputView.manager = this
+      inputView.nodeId = id
+      inputView.applyEditable(true)
+      inputView.applyMultiline(false)
+      inputView.applyNumberOfLines(0)
+      inputView.submitBehavior = "submit"
+      inputView.blurOnSubmit = false
+      view = inputView
+      label = null
+      val params = FrameLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        ViewGroup.LayoutParams.WRAP_CONTENT,
+      )
+      inputView.layoutParams = params
     } else if (type == IMAGE_TYPE) {
       val imageView = ImageView(root.context)
       imageView.adjustViewBounds = true
@@ -180,29 +213,42 @@ class RuneUIManager(
       label = null
     }
     // Use appropriate layout params based on type - this helps prevent layout jumps
-    if (type == TEXT_TYPE) {
-      // For text nodes, use wrap content to prevent them from affecting layout too much
-      view.layoutParams = FrameLayout.LayoutParams(
-        ViewGroup.LayoutParams.WRAP_CONTENT,
-        ViewGroup.LayoutParams.WRAP_CONTENT
-      )
-    } else {
-      // For container nodes, use small fixed size initially
-      view.layoutParams = FrameLayout.LayoutParams(1, 1)
-      // Use transparent background to prevent white flash during transitions
-      view.setBackgroundColor(Color.TRANSPARENT)
+    when (type) {
+      TEXT_TYPE -> {
+        view.layoutParams = FrameLayout.LayoutParams(
+          ViewGroup.LayoutParams.WRAP_CONTENT,
+          ViewGroup.LayoutParams.WRAP_CONTENT,
+        )
+      }
+      TEXT_INPUT_TYPE, SECURE_TEXT_INPUT_TYPE -> {
+        val params = view.layoutParams as? FrameLayout.LayoutParams
+          ?: FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+          )
+        params.width = FrameLayout.LayoutParams.WRAP_CONTENT
+        params.height = FrameLayout.LayoutParams.WRAP_CONTENT
+        view.layoutParams = params
+        view.isClickable = true
+        view.isFocusable = true
+        view.isFocusableInTouchMode = true
+      }
+      else -> {
+        view.layoutParams = FrameLayout.LayoutParams(
+          ViewGroup.LayoutParams.WRAP_CONTENT,
+          ViewGroup.LayoutParams.WRAP_CONTENT,
+        )
+        view.isClickable = false
+      }
     }
-    
-    // Keep new views invisible until layout is complete
-    view.visibility = View.INVISIBLE
-    
-    // Don't set clickable by default - only when a handler is actually set
-    view.isClickable = false
     view.setBackgroundColor(Color.TRANSPARENT)
     val node = Node(id, type, view, label)
     node.cachedText = (label?.text?.toString() ?: "")
     if (type == IMAGE_TYPE) {
       imageSupport.initializeNode(node)
+    }
+    if (type == TEXT_INPUT_TYPE || type == SECURE_TEXT_INPUT_TYPE) {
+      node.textInputState = TextInputState()
     }
     nodes.put(id, node)
     parents[id] = null
@@ -242,6 +288,11 @@ class RuneUIManager(
         val measuredHeight = label.measuredHeight.coerceAtLeast((label.textSize * 1.2f).roundToInt())
         measuredWidth.toFloat() to measuredHeight.toFloat()
       }
+    } else if (type == TEXT_INPUT_TYPE || type == SECURE_TEXT_INPUT_TYPE) {
+      val inputView = view as RuneTextInputView
+      engine.setMeasureHandler(id) { input ->
+        measureTextInput(inputView, input)
+      }
     } else if (type == IMAGE_TYPE) {
       engine.setMeasureHandler(id) { input ->
         imageSupport.measure(node, input)
@@ -259,6 +310,381 @@ class RuneUIManager(
     return json
   }
 
+  private fun parseJsonValue(raw: String?): Any? {
+    if (raw == null) return null
+    val trimmed = raw.trim()
+    if (trimmed.isEmpty() || trimmed == "null") return null
+    return try {
+      val value = JSONTokener(trimmed).nextValue()
+      if (value === JSONObject.NULL) null else value
+    } catch (_: JSONException) {
+      trimmed
+    }
+  }
+
+  private fun parseColorValue(raw: Any?): Int? {
+    val value = when (raw) {
+      null -> return null
+      is Number -> raw.toInt()
+      else -> raw.toString().trim()
+    }
+    return try {
+      when (value) {
+        is Int -> value
+        is String -> Color.parseColor(
+          if (value.startsWith("#") || value.startsWith("rgb", ignoreCase = true)) value else "#$value".takeIf {
+            value.matches(Regex("[0-9a-fA-F]{6}|[0-9a-fA-F]{8}|[0-9a-fA-F]{3}"))
+          } ?: value,
+        )
+        else -> null
+      }
+    } catch (e: IllegalArgumentException) {
+      when (value) {
+        is String -> {
+          when (value.lowercase()) {
+            "transparent" -> Color.TRANSPARENT
+            "black" -> Color.BLACK
+            "white" -> Color.WHITE
+            "red" -> Color.RED
+            "green" -> Color.GREEN
+            "blue" -> Color.BLUE
+            "yellow" -> Color.YELLOW
+            "cyan" -> Color.CYAN
+            "magenta" -> Color.MAGENTA
+            "gray", "grey" -> Color.GRAY
+            "darkgray", "darkgrey" -> Color.DKGRAY
+            "lightgray", "lightgrey" -> Color.LTGRAY
+            else -> null
+          }
+        }
+        else -> null
+      }
+    }
+  }
+
+  private fun applyTextInputStyle(view: RuneTextInputView, style: Style, nodeId: Int) {
+    var left = view.paddingLeft
+    var top = view.paddingTop
+    var right = view.paddingRight
+    var bottom = view.paddingBottom
+
+    fun Float?.asPx(): Int? = this?.roundToInt()?.coerceAtLeast(0)
+
+    style.padding.asPx()?.let { value ->
+      left = value
+      top = value
+      right = value
+      bottom = value
+    }
+    style.paddingHorizontal.asPx()?.let { value ->
+      left = value
+      right = value
+    }
+    style.paddingVertical.asPx()?.let { value ->
+      top = value
+      bottom = value
+    }
+    style.paddingLeft.asPx()?.let { left = it }
+    style.paddingRight.asPx()?.let { right = it }
+    style.paddingTop.asPx()?.let { top = it }
+    style.paddingBottom.asPx()?.let { bottom = it }
+
+    val changed = left != view.paddingLeft || top != view.paddingTop || right != view.paddingRight || bottom != view.paddingBottom
+    if (changed) {
+      view.setPadding(left, top, right, bottom)
+      engine.markDirty(nodeId)
+    }
+  }
+
+  private fun handleTextInputProp(node: Node, name: String, rawJson: String?): Boolean {
+    val view = node.view as? RuneTextInputView ?: return false
+    val state = ensureTextInputState(node)
+
+    val parsed = parseJsonValue(rawJson)
+    return when (name) {
+      "style" -> false
+      "value" -> {
+        val textValue = parsed?.toString() ?: ""
+        if (!textValue.contentEquals(view.text?.toString())) {
+          view.performProgrammaticUpdate {
+            if (!textValue.contentEquals(view.text?.toString())) {
+              view.setText(textValue)
+            }
+          }
+        } else {
+          onTextInputIntrinsicSizeChanged(node.id)
+        }
+        state.awaitingInitialValue = false
+        state.hasAppliedInitialText = true
+        onTextInputTextUpdated(node.id, textValue)
+        true
+      }
+      "defaultValue" -> {
+        val textValue = parsed?.toString() ?: ""
+        val previousDefault = state.defaultValue
+        state.defaultValue = textValue
+        var shouldApply = state.awaitingInitialValue || !state.hasAppliedInitialText
+        if (!shouldApply) {
+          val current = state.currentText.ifEmpty { view.text?.toString().orEmpty() }
+          shouldApply = current.isEmpty() || current == previousDefault
+        }
+        if (shouldApply) {
+          view.performProgrammaticUpdate {
+            if (!textValue.contentEquals(view.text?.toString())) {
+              view.setText(textValue)
+            }
+          }
+          onTextInputTextUpdated(node.id, textValue)
+          state.awaitingInitialValue = false
+          state.hasAppliedInitialText = true
+        }
+        true
+      }
+      "placeholder" -> {
+        val placeholder = (parsed as? String) ?: parseString(rawJson)
+        view.applyPlaceholder(placeholder)
+        true
+      }
+      "multiline" -> {
+        val multiline = when (parsed) {
+          is Boolean -> parsed
+          is Number -> parsed.toInt() != 0
+          else -> false
+        }
+        view.applyMultiline(multiline)
+        true
+      }
+      "numberOfLines" -> {
+        val lines = when (parsed) {
+          is Number -> parsed.toInt()
+          else -> 0
+        }
+        view.applyNumberOfLines(lines)
+        true
+      }
+      "maxLength" -> {
+        view.maxLength = when (parsed) {
+          is Number -> parsed.toInt()
+          is String -> parsed.toIntOrNull() ?: -1
+          else -> -1
+        }
+        true
+      }
+      "editable" -> {
+        val editable = when (parsed) {
+          is Boolean -> parsed
+          is Number -> parsed.toInt() != 0
+          else -> true
+        }
+        view.applyEditable(editable)
+        true
+      }
+      "secureTextEntry" -> {
+        val secure = when (parsed) {
+          is Boolean -> parsed
+          is Number -> parsed.toInt() != 0
+          else -> false
+        }
+        view.applySecureEntry(secure)
+        true
+      }
+      "inputMode" -> {
+        val mode = (parsed as? String) ?: parseString(rawJson)
+        view.applyInputMode(mode)
+        true
+      }
+      "autoCapitalize" -> {
+        val mode = (parsed as? String) ?: parseString(rawJson)
+        view.applyAutoCapitalize(mode)
+        true
+      }
+      "autoCorrect" -> {
+        view.applyAutoCorrect(parsed as? Boolean)
+        true
+      }
+      "spellCheck" -> {
+        view.applySpellCheck(parsed as? Boolean)
+        true
+      }
+      "returnKeyType" -> {
+        val type = (parsed as? String) ?: parseString(rawJson)
+        view.applyReturnKeyType(type)
+        true
+      }
+      "blurOnSubmit" -> {
+        view.blurOnSubmit = when (parsed) {
+          is Boolean -> parsed
+          is Number -> parsed.toInt() != 0
+          else -> false
+        }
+        true
+      }
+      "submitBehavior" -> {
+        val behavior = (parsed as? String)?.takeIf { it.isNotBlank() }
+          ?: parseString(rawJson)?.takeIf { it.isNotBlank() }
+          ?: "submit"
+        view.submitBehavior = behavior
+        true
+      }
+      "selection" -> {
+        val selectionJson = parsed as? JSONObject
+        if (selectionJson != null) {
+          val start = selectionJson.optInt("start", selectionJson.optInt("begin", 0))
+          val end = selectionJson.optInt("end", start)
+          val spec = SelectionSpec(start.coerceAtLeast(0), end.coerceAtLeast(0))
+          state.pendingSelection = spec
+          view.post {
+            state.pendingSelection?.let { pending ->
+              if (pending.start == spec.start && pending.end == spec.end) {
+                view.applySelection(pending.start, pending.end)
+              }
+            }
+          }
+        }
+        true
+      }
+      "selectionColor" -> {
+        val color = parseColorValue(parsed)
+        view.applySelectionColor(color)
+        true
+      }
+      "caretColor" -> {
+        val color = parseColorValue(parsed)
+        view.applyCaretColor(color)
+        true
+      }
+      "eventThrottleMs" -> {
+        val throttle = when (parsed) {
+          is Number -> parsed.toLong()
+          is String -> parsed.toLongOrNull()
+          else -> null
+        } ?: 0L
+        view.applyEventThrottle(throttle)
+        true
+      }
+      "allowProgrammaticJumpDuringEdit" -> {
+        val allow = when (parsed) {
+          is Boolean -> parsed
+          is Number -> parsed.toInt() != 0
+          else -> false
+        }
+        view.allowProgrammaticJumpDuringEdit = allow
+        true
+      }
+      "clearButtonMode" -> {
+        Log.d("RuneUI", "clearButtonMode is not supported on Android; ignoring value: $parsed")
+        true
+      }
+      "showClearAccessory" -> {
+        Log.d("RuneUI", "showClearAccessory is not supported on Android; ignoring value: $parsed")
+        true
+      }
+      else -> false
+    }
+  }
+
+  private fun measureTextInput(view: RuneTextInputView, input: MeasureInput): Pair<Float, Float> {
+    val widthSpec = when (input.widthMode) {
+      MeasureMode.EXACTLY -> MeasureSpec.makeMeasureSpec(
+        when {
+          input.width.isNaN() -> 0
+          input.width.isInfinite() -> Int.MAX_VALUE / 2
+          else -> input.width.roundToInt()
+        },
+        MeasureSpec.EXACTLY,
+      )
+      MeasureMode.AT_MOST -> MeasureSpec.makeMeasureSpec(
+        when {
+          input.width.isNaN() -> Int.MAX_VALUE / 2
+          input.width.isInfinite() -> Int.MAX_VALUE / 2
+          else -> input.width.roundToInt()
+        },
+        MeasureSpec.AT_MOST,
+      )
+      MeasureMode.UNDEFINED -> MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
+    }
+    val heightSpec = when (input.heightMode) {
+      MeasureMode.EXACTLY -> MeasureSpec.makeMeasureSpec(
+        when {
+          input.height.isNaN() -> 0
+          input.height.isInfinite() -> Int.MAX_VALUE / 2
+          else -> input.height.roundToInt()
+        },
+        MeasureSpec.EXACTLY,
+      )
+      MeasureMode.AT_MOST -> MeasureSpec.makeMeasureSpec(
+        when {
+          input.height.isNaN() -> Int.MAX_VALUE / 2
+          input.height.isInfinite() -> Int.MAX_VALUE / 2
+          else -> input.height.roundToInt()
+        },
+        MeasureSpec.AT_MOST,
+      )
+      MeasureMode.UNDEFINED -> MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
+    }
+
+    view.measure(widthSpec, heightSpec)
+    val targetWidth = if (input.widthMode == MeasureMode.EXACTLY) {
+      MeasureSpec.getSize(widthSpec)
+    } else {
+      view.measuredWidth
+    }.coerceAtLeast(1)
+
+    val minHeight = if (view.lineCount == 0) view.lineHeight else view.lineHeight * view.lineCount
+    val targetHeight = if (input.heightMode == MeasureMode.EXACTLY) {
+      MeasureSpec.getSize(heightSpec)
+    } else {
+      view.measuredHeight.coerceAtLeast(minHeight)
+    }.coerceAtLeast(1)
+
+    return targetWidth.toFloat() to targetHeight.toFloat()
+  }
+
+  private fun ensureTextInputState(node: Node): TextInputState {
+    val existing = node.textInputState
+    if (existing != null) return existing
+    val created = TextInputState()
+    node.textInputState = created
+    return created
+  }
+
+  private fun cleanupTextInput(node: Node) {
+    (node.view as? RuneTextInputView)?.let { input ->
+      input.clearHandlers()
+      input.manager = null
+      input.nodeId = -1
+    }
+    node.textInputState = null
+  }
+
+  internal fun emitTextInputEvent(nodeId: Int, event: String, payload: JSONObject?) {
+    storeEventPayload(nodeId, event, payload)
+    eventDispatcher(nodeId, event)
+  }
+
+  internal fun onTextInputTextUpdated(nodeId: Int, text: String) {
+    val node = nodes.get(nodeId) ?: return
+    val state = ensureTextInputState(node)
+    state.currentText = text
+    state.hasAppliedInitialText = true
+    state.awaitingInitialValue = false
+    node.cachedText = text
+    state.pendingSelection?.let { pending ->
+      val inputView = node.view as? RuneTextInputView
+      if (inputView != null) {
+        inputView.post {
+          inputView.applySelection(pending.start, pending.end)
+          state.pendingSelection = null
+        }
+      }
+    }
+  }
+
+  internal fun onTextInputIntrinsicSizeChanged(nodeId: Int) {
+    engine.markDirty(nodeId)
+    scheduleFlush()
+  }
+
   override fun setProp(nodeId: Int, name: String, jsonValue: String?) = onMain {
     Log.d("RuneUI", "setProp: nodeId=$nodeId name=$name jsonValue=$jsonValue")
     val valueJson = jsonValue
@@ -271,6 +697,13 @@ class RuneUIManager(
       Log.w("RuneUI", "setProp: nodeId=$nodeId not found and no text ancestor; skipping prop '$name'")
       return@onMain
     }
+    if (target.type == TEXT_INPUT_TYPE || target.type == SECURE_TEXT_INPUT_TYPE) {
+      if (handleTextInputProp(target, name, valueJson)) {
+        scheduleFlush()
+        return@onMain
+      }
+    }
+
     when (name) {
       "style" -> {
         val styleValue = valueJson ?: return@onMain
@@ -296,6 +729,9 @@ class RuneUIManager(
         }
         if (target.type == IMAGE_TYPE) {
           imageSupport.onStyleApplied(target, style)
+        }
+        if (target.view is RuneTextInputView) {
+          applyTextInputStyle(target.view as RuneTextInputView, style, target.id)
         }
       }
       "onPress" -> {
@@ -375,6 +811,16 @@ class RuneUIManager(
         propagateTextChange(target)
         Log.d("RuneUI", "Set text on label: ${target.label?.text}")
       }
+      target?.view is RuneTextInputView -> {
+        val input = target.view as RuneTextInputView
+        input.performProgrammaticUpdate {
+          if (!text.contentEquals(input.text?.toString())) {
+            input.setText(text)
+          }
+        }
+        onTextInputTextUpdated(target.id, text)
+        Log.d("RuneUI", "Set text on input view: ${input.text}")
+      }
       target?.view is TextView -> {
         (target.view as TextView).text = text
         engine.markDirty(target.id)
@@ -410,23 +856,13 @@ class RuneUIManager(
     } else {
       nodes.get(parentId)?.view ?: return@onMain
     }
-    val childView = nodes.get(childId)?.view ?: return@onMain
-    val childNode = nodes.get(childId)
-    
-    // Keep child invisible until layout is complete to prevent white flash during transitions
-    // Apply careful insertion to prevent layout jumps
-    childView.visibility = View.INVISIBLE
-    
-    // For newly added conditional views (like the count > 5 case),
-    // we need special treatment to avoid layout jumps
-    if (childNode?.type != TEXT_TYPE && childNode?.view?.layoutParams?.width == 1) {
-      // Pre-measure if possible to reduce layout changes
-      childView.measure(
-        View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
-        View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
-      )
+    val node = nodes.get(childId)
+    if (node == null) {
+      Log.w("RuneUI", "removeChild: node $childId not found for parent $parentId")
+      return@onMain
     }
-    
+    val childView = node.view
+
     if (parentView is ViewGroup) {
       val safeIndex = index.coerceIn(0, parentView.childCount)
       parentView.addView(childView, safeIndex)
@@ -451,24 +887,30 @@ class RuneUIManager(
     parents[childId] = null
     nodes.get(childId)?.parentId = null
     val childView = nodes.get(childId)?.view ?: return@onMain
-    val childNode = nodes.get(childId)
-    
-    // Make the view invisible before removing to avoid flashing
-    // Set to transparent background to ensure no white flash
-    childView.visibility = View.INVISIBLE
-    if (childNode?.type != TEXT_TYPE) {
-      childView.setBackgroundColor(Color.TRANSPARENT)
-    }
-    
+
     (childView.parent as? ViewGroup)?.removeView(childView)
     engine.setMeasureHandler(childId, null)
     engine.removeNode(childId)
     scheduleFlush()
     parents.remove(childId)
+    nodes.remove(childId)
   }
 
   override fun setHandler(nodeId: Int, event: String, handlerId: Long) = onMain {
     nodes.get(nodeId)?.let { node ->
+      (node.view as? RuneTextInputView)?.let { input ->
+        when (event) {
+          "onChange" -> input.hasOnChange = true
+          "onChangeText" -> input.hasOnChangeText = true
+          "onSelectionChange" -> input.hasOnSelectionChange = true
+          "onFocus" -> input.hasOnFocus = true
+          "onBlur" -> input.hasOnBlur = true
+          "onSubmitEditing" -> input.hasOnSubmitEditing = true
+          "onKeyPress" -> input.hasOnKeyPress = true
+          "onCompositionStart" -> input.hasOnCompositionStart = true
+          "onCompositionEnd" -> input.hasOnCompositionEnd = true
+        }
+      }
       if (node.type == IMAGE_TYPE) {
         imageSupport.onHandlerSet(node, event)
       }
@@ -509,6 +951,9 @@ class RuneUIManager(
       val node = nodes.valueAt(i)
       if (node.id == root.rootId) continue
       imageSupport.cleanup(node)
+      if (node.type == TEXT_INPUT_TYPE || node.type == SECURE_TEXT_INPUT_TYPE) {
+        cleanupTextInput(node)
+      }
       node.view.animate()?.cancel()
       node.view.clearAnimation()
       node.view.setOnClickListener(null)
@@ -730,6 +1175,9 @@ class RuneUIManager(
     if (node.type == IMAGE_TYPE) {
       imageSupport.cleanup(node)
     }
+    if (node.type == TEXT_INPUT_TYPE || node.type == SECURE_TEXT_INPUT_TYPE) {
+      cleanupTextInput(node)
+    }
 
     node.parentId?.let { parentId ->
       nodes.get(parentId)?.textChildren?.remove(id)
@@ -753,5 +1201,7 @@ class RuneUIManager(
   companion object {
     private const val TEXT_TYPE = "text"
     private const val IMAGE_TYPE = "image"
+    private const val TEXT_INPUT_TYPE = "text-input"
+    private const val SECURE_TEXT_INPUT_TYPE = "secure-text-input"
   }
 }
