@@ -2,6 +2,7 @@ package com.rune.kit.core
 
 import android.graphics.Color
 import android.graphics.Typeface
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -61,6 +62,259 @@ class RuneUIManager(
     var pendingSelection: SelectionSpec? = null,
   )
 
+  private sealed class ViewOperation {
+    data class Insert(val parentId: Int, val childId: Int, val index: Int) : ViewOperation()
+    data class Remove(val parentId: Int, val node: Node) : ViewOperation()
+  }
+
+  private sealed class NativeOperation {
+    data class SetProp(val nodeId: Int, val name: String, val jsonValue: String?) : NativeOperation()
+    data class SetText(val nodeId: Int, val text: String) : NativeOperation()
+    data class SetHandler(val nodeId: Int, val event: String, val handlerId: Long) : NativeOperation()
+  }
+
+  private fun processPendingNativeOperations() {
+    if (pendingNativeOperations.isEmpty()) return
+    val operations = pendingNativeOperations.toList()
+    pendingNativeOperations.clear()
+    operations.forEach { op ->
+      when (op) {
+        is NativeOperation.SetProp -> applySetProp(op.nodeId, op.name, op.jsonValue)
+        is NativeOperation.SetText -> applySetText(op.nodeId, op.text)
+        is NativeOperation.SetHandler -> applySetHandler(op.nodeId, op.event, op.handlerId)
+      }
+    }
+  }
+
+  private fun processPendingViewOperations() {
+    if (pendingViewOperations.isEmpty() || viewTransactionInProgress) return
+    viewTransactionInProgress = true
+    try {
+      val operationsByParent = pendingViewOperations.groupBy {
+        when (it) {
+          is ViewOperation.Insert -> it.parentId
+          is ViewOperation.Remove -> it.parentId
+        }
+      }
+      operationsByParent.forEach { (parentId, operations) ->
+        val parentView = if (parentId == root.rootId) {
+          root
+        } else {
+          nodes.get(parentId)?.view as? ViewGroup
+        }
+
+        if (parentView == null) {
+          operations.filterIsInstance<ViewOperation.Remove>().forEach { op ->
+            detachChildView(parentId, op.node)
+          }
+          return@forEach
+        }
+
+        parentView.suppressLayoutCompat(true)
+        try {
+          operations.forEach { operation ->
+            when (operation) {
+              is ViewOperation.Insert -> {
+                val childNode = nodes.get(operation.childId)
+                if (childNode == null) {
+                  Log.w(
+                    "RuneUI",
+                    "processPendingViewOperations: insert node ${operation.childId} missing for parent $parentId",
+                  )
+                  return@forEach
+                }
+                val childView = childNode.view
+                (childView.parent as? ViewGroup)?.removeView(childView)
+                val safeIndex = operation.index.coerceIn(0, parentView.childCount)
+                parentView.addView(childView, safeIndex)
+              }
+              is ViewOperation.Remove -> {
+                detachChildView(operation.parentId, operation.node)
+              }
+            }
+          }
+        } finally {
+          parentView.suppressLayoutCompat(false)
+        }
+      }
+    } finally {
+      pendingViewOperations.clear()
+      viewTransactionInProgress = false
+    }
+  }
+
+  private fun applySetProp(nodeId: Int, name: String, jsonValue: String?) {
+    val valueJson = jsonValue
+    val direct = nodes.get(nodeId)
+    val target = when {
+      direct != null && (direct.label != null || direct.view is TextView) -> direct
+      else -> resolveTextNode(nodeId) ?: direct
+    } ?: run {
+      Log.w("RuneUI", "setProp: nodeId=$nodeId not found and no text ancestor; skipping prop '$name'")
+      return
+    }
+    if (target.type == TEXT_INPUT_TYPE || target.type == SECURE_TEXT_INPUT_TYPE) {
+      if (handleTextInputProp(target, name, valueJson)) {
+        return
+      }
+    }
+
+    when (name) {
+      "style" -> {
+        val styleValue = valueJson ?: return
+        val style = Style.fromJson(styleValue)
+        engine.setStyle(target.id, style)
+        if (target.id != nodeId) {
+          engine.setStyle(nodeId, Style())
+        }
+        (target.label ?: target.view as? TextView)?.let { textView ->
+          style.fontSize?.let { textView.textSize = it }
+          style.color?.let { textView.setTextColor(it) }
+          style.fontWeight?.let { weight ->
+            val isBold = weight.equals("bold", ignoreCase = true) ||
+              weight.toIntOrNull()?.let { it >= 600 } == true
+            textView.setTypeface(textView.typeface, if (isBold) Typeface.BOLD else Typeface.NORMAL)
+          }
+        }
+        style.backgroundColor?.let { target.view.setBackgroundColor(it) }
+        if (target.type == IMAGE_TYPE) {
+          imageSupport.onStyleApplied(target, style)
+        }
+        if (target.view is RuneTextInputView) {
+          applyTextInputStyle(target.view as RuneTextInputView, style, target.id)
+        }
+      }
+      "accessibilityLabel" -> {
+        target.label?.contentDescription = parseString(valueJson)
+        target.view.contentDescription = parseString(valueJson)
+      }
+      "accessibilityHint" -> {
+        target.view.tooltipText = parseString(valueJson)
+      }
+      "accessibilityRole" -> {
+        val role = parseString(valueJson)
+        val view = target.view
+        if (role == null || role == "auto") {
+          ViewCompat.setAccessibilityDelegate(view, null)
+        } else {
+          ViewCompat.setAccessibilityDelegate(view, object : AccessibilityDelegateCompat() {
+            override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfoCompat) {
+              super.onInitializeAccessibilityNodeInfo(host, info)
+              when (role) {
+                "button" -> info.className = Button::class.java.name
+                "header" -> info.isHeading = true
+                "none" -> ViewCompat.setImportantForAccessibility(host, ViewCompat.IMPORTANT_FOR_ACCESSIBILITY_NO)
+                else -> {
+                  if (ViewCompat.getImportantForAccessibility(host) == ViewCompat.IMPORTANT_FOR_ACCESSIBILITY_NO) {
+                    ViewCompat.setImportantForAccessibility(host, ViewCompat.IMPORTANT_FOR_ACCESSIBILITY_AUTO)
+                  }
+                }
+              }
+            }
+          })
+        }
+      }
+      "pointerEvents" -> {
+        val value = parseString(jsonValue) ?: "auto"
+        target.pointerEvents = value
+        when (value) {
+          "none" -> {
+            target.view.isClickable = false
+            target.view.isFocusable = false
+          }
+          else -> {
+            target.view.isFocusable = true
+            if (target.view.hasOnClickListeners()) {
+              target.view.isClickable = true
+            }
+          }
+        }
+      }
+      "testID" -> {
+        Log.w("RuneUI", "testID is not a recommended pattern on Android as it can conflict with accessibility. It will be ignored.")
+      }
+      else -> {
+        if (target.type == IMAGE_TYPE && imageSupport.handleProp(target, name, jsonValue)) {
+          return
+        }
+        Log.d("RuneUI", "Unhandled prop: $name = $valueJson")
+      }
+    }
+  }
+
+  private fun applySetText(nodeId: Int, text: String) {
+    Log.d("RuneUI", "setText nodeId=$nodeId text='$text'")
+    val node = nodes.get(nodeId)
+    node?.cachedText = text
+
+    val target = resolveTextNode(nodeId)
+    if (target == null) {
+      Log.w("RuneUI", "setText: could not resolve target for nodeId=$nodeId")
+    }
+
+    when {
+      target?.type == TEXT_TYPE -> {
+        pendingTextRebuild.add(target.id)
+        engine.markDirty(target.id)
+        propagateTextChange(target)
+        Log.d("RuneUI", "Set text on label: ${target.label?.text}")
+      }
+      target?.view is RuneTextInputView -> {
+        val input = target.view as RuneTextInputView
+        input.performProgrammaticUpdate {
+          if (!text.contentEquals(input.text?.toString())) {
+            input.setText(text)
+          }
+        }
+        onTextInputTextUpdated(target.id, text)
+        Log.d("RuneUI", "Set text on input view: ${input.text}")
+      }
+      target?.view is TextView -> {
+        (target.view as TextView).text = text
+        engine.markDirty(target.id)
+        Log.d("RuneUI", "Set text on view: ${(target.view as TextView).text}")
+      }
+      else -> {
+        engine.markDirty(target?.id ?: nodeId)
+      }
+    }
+  }
+
+  private fun applySetHandler(nodeId: Int, event: String, handlerId: Long) {
+    nodes.get(nodeId)?.let { node ->
+      (node.view as? RuneTextInputView)?.let { input ->
+        when (event) {
+          "onChange" -> input.hasOnChange = true
+          "onChangeText" -> input.hasOnChangeText = true
+          "onSelectionChange" -> input.hasOnSelectionChange = true
+          "onFocus" -> input.hasOnFocus = true
+          "onBlur" -> input.hasOnBlur = true
+          "onSubmitEditing" -> input.hasOnSubmitEditing = true
+          "onKeyPress" -> input.hasOnKeyPress = true
+          "onCompositionStart" -> input.hasOnCompositionStart = true
+          "onCompositionEnd" -> input.hasOnCompositionEnd = true
+        }
+      }
+      if (node.type == IMAGE_TYPE) {
+        imageSupport.onHandlerSet(node, event)
+      }
+    }
+    if (event == "onPress") {
+      Log.d("RuneUI", "Setting onPress handler for node $nodeId")
+      val node = nodes.get(nodeId)
+      node?.view?.let { view ->
+        if (node.pointerEvents != "none") {
+          view.isClickable = true
+        }
+        view.setOnClickListener {
+          Log.d("RuneUI", "onPress triggered for node $nodeId")
+          eventDispatcher(nodeId, event)
+        }
+      }
+    }
+    handlerListener(nodeId, event, handlerId)
+  }
+
   private val nodes = SparseArray<Node>()
   private val parents = HashMap<Int, Int?>()
   private val pendingTextRebuild = LinkedHashSet<Int>()
@@ -76,6 +330,23 @@ class RuneUIManager(
     runOnMainThread = this::runOnMainThread,
   )
   private val eventPayloads = HashMap<String, JSONObject>()
+  private val pendingViewOperations = mutableListOf<ViewOperation>()
+  private val pendingNativeOperations = mutableListOf<NativeOperation>()
+  @Volatile private var viewTransactionInProgress = false
+  @Volatile private var layoutTransactionActive = false
+  private var flushCoalesceScheduled = false
+  private val flushCoalesceRunnable = Runnable {
+    flushCoalesceScheduled = false
+    if (layoutTransactionActive) {
+      scheduleFlush()
+      return@Runnable
+    }
+    frameScheduler.scheduleFlush {
+      if (dirty) {
+        performFlush()
+      }
+    }
+  }
   private var nextId = root.rootId + 1
   @Volatile private var dirty = false
   private var lastRootWidth = -1
@@ -686,150 +957,12 @@ class RuneUIManager(
   }
 
   override fun setProp(nodeId: Int, name: String, jsonValue: String?) = onMain {
-    Log.d("RuneUI", "setProp: nodeId=$nodeId name=$name jsonValue=$jsonValue")
-    val valueJson = jsonValue
-    // Resolve target even if the original node was merged/removed (e.g., text child inside Text)
-    val direct = nodes.get(nodeId)
-    val target = when {
-      direct != null && (direct.label != null || direct.view is TextView) -> direct
-      else -> resolveTextNode(nodeId) ?: direct
-    } ?: run {
-      Log.w("RuneUI", "setProp: nodeId=$nodeId not found and no text ancestor; skipping prop '$name'")
-      return@onMain
-    }
-    if (target.type == TEXT_INPUT_TYPE || target.type == SECURE_TEXT_INPUT_TYPE) {
-      if (handleTextInputProp(target, name, valueJson)) {
-        scheduleFlush()
-        return@onMain
-      }
-    }
-
-    when (name) {
-      "style" -> {
-        val styleValue = valueJson ?: return@onMain
-        val style = Style.fromJson(styleValue)
-        engine.setStyle(target.id, style)
-        // If styling a merged child, clear any residual style on the original id in the layout engine
-        if (target.id != nodeId) {
-          engine.setStyle(nodeId, Style())
-        }
-        (target.label ?: target.view as? TextView)?.let { textView ->
-          style.fontSize?.let { textView.textSize = it }
-          style.color?.let { textView.setTextColor(it) }
-          style.fontWeight?.let { weight ->
-            val isBold = weight.equals("bold", ignoreCase = true) ||
-              weight.toFloatOrNull()?.let { it >= 600f } == true
-            textView.typeface = if (isBold) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
-          }
-        }
-        style.backgroundColor?.let { target.view.setBackgroundColor(it) }
-        style.borderRadius?.let { radius ->
-          target.view.clipToOutline = true
-          target.view.outlineProvider = RoundedOutline(radius)
-        }
-        if (target.type == IMAGE_TYPE) {
-          imageSupport.onStyleApplied(target, style)
-        }
-        if (target.view is RuneTextInputView) {
-          applyTextInputStyle(target.view as RuneTextInputView, style, target.id)
-        }
-      }
-      "onPress" -> {
-        // onPress should be handled by the JavaScript bridge calling setHandler
-        // This is just for logging
-        Log.d("RuneUI", "onPress prop set for node $nodeId, expecting setHandler call")
-      }
-      "accessibilityLabel" -> {
-        target.view.contentDescription = parseString(jsonValue)
-      }
-      "accessibilityHint" -> {
-        Log.w("RuneUI", "accessibilityHint is not a supported concept on Android and will be ignored.")
-      }
-      "accessibilityRole" -> {
-        val role = parseString(jsonValue)
-        ViewCompat.setAccessibilityDelegate(target.view, object : AccessibilityDelegateCompat() {
-          override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfoCompat) {
-            super.onInitializeAccessibilityNodeInfo(host, info)
-            when (role) {
-              "button" -> info.className = Button::class.java.name
-              "header" -> info.isHeading = true
-              "none" -> ViewCompat.setImportantForAccessibility(host, ViewCompat.IMPORTANT_FOR_ACCESSIBILITY_NO)
-              else -> { // Default to auto if not explicitly 'none'
-                if (ViewCompat.getImportantForAccessibility(host) == ViewCompat.IMPORTANT_FOR_ACCESSIBILITY_NO) {
-                  ViewCompat.setImportantForAccessibility(host, ViewCompat.IMPORTANT_FOR_ACCESSIBILITY_AUTO)
-                }
-              }
-            }
-          }
-        })
-      }
-      "pointerEvents" -> {
-        val value = parseString(jsonValue) ?: "auto"
-        target.pointerEvents = value // Store the value
-        when (value) {
-          "none" -> {
-            target.view.isClickable = false
-            target.view.isFocusable = false
-          }
-          else -> { // "auto" and others
-            target.view.isFocusable = true
-            // If an onPress handler is already attached, ensure it's clickable.
-            if (target.view.hasOnClickListeners()) {
-              target.view.isClickable = true
-            }
-          }
-        }
-      }
-      "testID" -> {
-        Log.w("RuneUI", "testID is not a recommended pattern on Android as it can conflict with accessibility. It will be ignored.")
-      }
-      else -> {
-        if (target.type == IMAGE_TYPE && imageSupport.handleProp(target, name, jsonValue)) {
-          scheduleFlush()
-          return@onMain
-        }
-        Log.d("RuneUI", "Unhandled prop: $name = $valueJson")
-      }
-    }
+    pendingNativeOperations.add(NativeOperation.SetProp(nodeId, name, jsonValue))
     scheduleFlush()
   }
 
   override fun setText(nodeId: Int, text: String) = onMain {
-    Log.d("RuneUI", "setText nodeId=$nodeId text='$text'")
-    val node = nodes.get(nodeId)
-    node?.cachedText = text
-
-    val target = resolveTextNode(nodeId)
-    if (target == null) {
-      Log.w("RuneUI", "setText: could not resolve target for nodeId=$nodeId")
-    }
-
-    when {
-      target?.type == TEXT_TYPE -> {
-        pendingTextRebuild.add(target.id)
-        engine.markDirty(target.id)
-        propagateTextChange(target)
-        Log.d("RuneUI", "Set text on label: ${target.label?.text}")
-      }
-      target?.view is RuneTextInputView -> {
-        val input = target.view as RuneTextInputView
-        input.performProgrammaticUpdate {
-          if (!text.contentEquals(input.text?.toString())) {
-            input.setText(text)
-          }
-        }
-        onTextInputTextUpdated(target.id, text)
-        Log.d("RuneUI", "Set text on input view: ${input.text}")
-      }
-      target?.view is TextView -> {
-        (target.view as TextView).text = text
-        engine.markDirty(target.id)
-        Log.d("RuneUI", "Set text on view: ${(target.view as TextView).text}")
-      }
-      else -> {
-        engine.markDirty(target?.id ?: nodeId)
-      }
-    }
+    pendingNativeOperations.add(NativeOperation.SetText(nodeId, text))
     scheduleFlush()
   }
 
@@ -851,22 +984,15 @@ class RuneUIManager(
       scheduleFlush()
       return@onMain
     }
-    val parentView: View = if (parentId == root.rootId) {
-      root
-    } else {
-      nodes.get(parentId)?.view ?: return@onMain
-    }
     val node = nodes.get(childId)
     if (node == null) {
-      Log.w("RuneUI", "removeChild: node $childId not found for parent $parentId")
+      Log.w("RuneUI", "insertChild: node $childId not found for parent $parentId")
       return@onMain
     }
-    val childView = node.view
-
-    if (parentView is ViewGroup) {
-      val safeIndex = index.coerceIn(0, parentView.childCount)
-      parentView.addView(childView, safeIndex)
+    pendingViewOperations.removeAll { op ->
+      op is ViewOperation.Remove && op.node.id == childId
     }
+    pendingViewOperations.add(ViewOperation.Insert(parentId, childId, index))
     engine.insertChild(parentId, childId, index)
     scheduleFlush()
   }
@@ -883,53 +1009,23 @@ class RuneUIManager(
       scheduleFlush()
       return@onMain
     }
-    // For non-text parents, clear mapping early
-    parents[childId] = null
-    nodes.get(childId)?.parentId = null
-    val childView = nodes.get(childId)?.view ?: return@onMain
 
-    (childView.parent as? ViewGroup)?.removeView(childView)
-    engine.setMeasureHandler(childId, null)
-    engine.removeNode(childId)
+    val childNode = nodes.get(childId)
+    if (childNode == null) {
+      Log.w("RuneUI", "removeChild: node $childId not found for parent $parentId")
+      return@onMain
+    }
+    pendingViewOperations.removeAll { op ->
+      op is ViewOperation.Insert && op.parentId == parentId && op.childId == childId
+    }
+    pendingViewOperations.add(ViewOperation.Remove(parentId, childNode))
+    removeNodeRecursive(childId, detachView = false)
     scheduleFlush()
-    parents.remove(childId)
-    nodes.remove(childId)
   }
 
   override fun setHandler(nodeId: Int, event: String, handlerId: Long) = onMain {
-    nodes.get(nodeId)?.let { node ->
-      (node.view as? RuneTextInputView)?.let { input ->
-        when (event) {
-          "onChange" -> input.hasOnChange = true
-          "onChangeText" -> input.hasOnChangeText = true
-          "onSelectionChange" -> input.hasOnSelectionChange = true
-          "onFocus" -> input.hasOnFocus = true
-          "onBlur" -> input.hasOnBlur = true
-          "onSubmitEditing" -> input.hasOnSubmitEditing = true
-          "onKeyPress" -> input.hasOnKeyPress = true
-          "onCompositionStart" -> input.hasOnCompositionStart = true
-          "onCompositionEnd" -> input.hasOnCompositionEnd = true
-        }
-      }
-      if (node.type == IMAGE_TYPE) {
-        imageSupport.onHandlerSet(node, event)
-      }
-    }
-    if (event == "onPress") {
-      Log.d("RuneUI", "Setting onPress handler for node $nodeId")
-      val node = nodes.get(nodeId)
-      node?.view?.let { view ->
-        // Make the view clickable only if pointerEvents allows it
-        if (node.pointerEvents != "none") {
-          view.isClickable = true
-        }
-        view.setOnClickListener {
-          Log.d("RuneUI", "onPress triggered for node $nodeId")
-          eventDispatcher(nodeId, event)
-        }
-      }
-    }
-    handlerListener(nodeId, event, handlerId)
+    pendingNativeOperations.add(NativeOperation.SetHandler(nodeId, event, handlerId))
+    scheduleFlush()
   }
 
   override fun removeNode(nodeId: Int) = onMain {
@@ -944,23 +1040,23 @@ class RuneUIManager(
     frameScheduler.cancelFlush()
     handler.removeCallbacksAndMessages(null)
     pendingTextRebuild.clear()
+    pendingViewOperations.clear()
+    pendingNativeOperations.clear()
     eventPayloads.clear()
     dirty = false
+    viewTransactionInProgress = false
+    flushCoalesceScheduled = false
 
-    for (i in nodes.size() - 1 downTo 0) {
-      val node = nodes.valueAt(i)
-      if (node.id == root.rootId) continue
-      imageSupport.cleanup(node)
-      if (node.type == TEXT_INPUT_TYPE || node.type == SECURE_TEXT_INPUT_TYPE) {
-        cleanupTextInput(node)
-      }
-      node.view.animate()?.cancel()
-      node.view.clearAnimation()
-      node.view.setOnClickListener(null)
-      (node.view.parent as? ViewGroup)?.removeView(node.view)
-      nodes.removeAt(i)
+    // Remove all nodes recursively starting from leaves
+    val nodesToRemove = nodes.size().let { size ->
+        (0 until size).map { nodes.keyAt(it) }
+    }.filter { it != root.rootId }
+    
+    nodesToRemove.forEach { nodeId ->
+        removeNodeRecursive(nodeId)
     }
 
+    // Final cleanup
     parents.clear()
     parents[root.rootId] = null
     nextId = root.rootId + 1
@@ -984,22 +1080,21 @@ class RuneUIManager(
 
   override fun flush() = onMain {
     dirty = true
+    if (layoutTransactionActive) return@onMain
     if (root.width > 0 && root.height > 0) {
       frameScheduler.cancelFlush()
       performFlush()
-    }
-    else {
+    } else {
       scheduleFlush()
     }
   }
 
   private fun scheduleFlush() {
     dirty = true
-    frameScheduler.scheduleFlush {
-      if (dirty) {
-        performFlush()
-      }
-    }
+    if (layoutTransactionActive) return
+    if (flushCoalesceScheduled) return
+    flushCoalesceScheduled = true
+    handler.postDelayed(flushCoalesceRunnable, FLUSH_COALESCE_WINDOW_MS)
   }
 
   private inline fun <T> onMain(crossinline block: () -> T): T {
@@ -1018,121 +1113,109 @@ class RuneUIManager(
   }
 
   private fun performFlush() {
-    if (root.width == 0 || root.height == 0) {
-      handler.post { performFlush() }
-      return
-    }
-    if (!dirty) return
-    dirty = false
-
-    PerformanceProfiler.recordLayoutStart()
-    drainPendingTextRebuilds()
-    // Store previous frames for existing nodes to detect layout jumps
-    val previousFrames = SparseArray<Rect>()
-    for (i in 0 until nodes.size()) {
-      val node = nodes.valueAt(i)
-      if (node.view.visibility == View.VISIBLE) {
-        // Only track visible nodes that might jump
-        previousFrames.put(node.id, Rect(
-          node.view.left,
-          node.view.top,
-          node.view.right,
-          node.view.bottom
-        ))
-      }
-    }
-    
-    // Calculate layout first, before any visual changes
-    engine.calculateLayout(root.width, root.height)
-    PerformanceProfiler.recordLayoutEnd()
-
-    PerformanceProfiler.recordRenderStart()
-    // First pass: update layout params (size + margins) so Android's layout pass positions views correctly
-    // even before we manually apply frames. This prevents the initial "stacked in top-left" flash.
-    for (i in 0 until nodes.size()) {
-      val node = nodes.valueAt(i)
-      if (isVirtualTextNode(node)) continue
-      val frame: Rect = engine.frame(node.id)
-      val width = frame.right - frame.left
-      val height = frame.bottom - frame.top
-      
-      val layoutParams = when (val current = node.view.layoutParams) {
-        is FrameLayout.LayoutParams -> current
-        else -> FrameLayout.LayoutParams(width.coerceAtLeast(0), height.coerceAtLeast(0))
+    if (layoutTransactionActive) return
+    layoutTransactionActive = true
+    root.suppressLayoutCompat(true)
+    try {
+      if (root.width == 0 || root.height == 0) {
+        handler.post { performFlush() }
+        return
       }
 
-      var paramsChanged = false
-      if (width >= 0 && layoutParams.width != width) {
-        layoutParams.width = width
-        paramsChanged = true
-      }
-      if (height >= 0 && layoutParams.height != height) {
-        layoutParams.height = height
-        paramsChanged = true
-      }
-      if (layoutParams.leftMargin != frame.left) {
-        layoutParams.leftMargin = frame.left
-        paramsChanged = true
-      }
-      if (layoutParams.topMargin != frame.top) {
-        layoutParams.topMargin = frame.top
-        paramsChanged = true
-      }
-      // Ensure we don't retain stale end/bottom margins that could offset layout unexpectedly
-      if (layoutParams.gravity != (Gravity.START or Gravity.TOP)) {
-        layoutParams.gravity = Gravity.START or Gravity.TOP
-        paramsChanged = true
-      }
-      if (paramsChanged) {
-        node.view.layoutParams = layoutParams
-      }
-    }
-    
-    // Second pass: animate position changes for existing views to prevent jumps
-    for (i in 0 until nodes.size()) {
-      val node = nodes.valueAt(i)
-      if (isVirtualTextNode(node)) continue
-      val frame: Rect = engine.frame(node.id)
-      val prevFrame = previousFrames.get(node.id)
-      
-      // Apply layout directly without animation
-      // We're keeping the position tracking to avoid jumps, but not animating the transition
-      node.view.layout(frame.left, frame.top, frame.right, frame.bottom)
-      
-      // For text nodes, don't layout the label separately since view and label are the same object
-      if (node.type != TEXT_TYPE) {
-        node.label?.layout(0, 0, frame.right - frame.left, frame.bottom - frame.top)
-      }
-    }
-    
-    // Final pass: make all nodes visible with fade-in for new views
-    // This creates a smooth transition when new elements are added
-    handler.post {
-      for (i in 0 until nodes.size()) {
-        val node = nodes.valueAt(i)
-        if (isVirtualTextNode(node)) continue
-        val frame: Rect = engine.frame(node.id)
-        
-        // Only make visible if it has a valid size
-        if ((frame.right - frame.left) > 0 && (frame.bottom - frame.top) > 0) {
-          if (node.view.visibility != View.VISIBLE) {
-            // Set proper layout params before making visible to ensure stable layout
-            val width = frame.right - frame.left
-            val height = frame.bottom - frame.top
-            if (width > 0 && height > 0) {
-              node.view.layoutParams.width = width
-              node.view.layoutParams.height = height
-            }
-            
-            // Make visible immediately without fade-in animation
-            node.view.visibility = View.VISIBLE
+      if (!dirty && pendingNativeOperations.isEmpty() && pendingViewOperations.isEmpty()) return
+
+      do {
+        dirty = false
+
+        PerformanceProfiler.recordLayoutStart()
+        processPendingNativeOperations()
+        processPendingViewOperations()
+        drainPendingTextRebuilds()
+
+        val previousFrames = SparseArray<Rect>()
+        for (i in 0 until nodes.size()) {
+          val node = nodes.valueAt(i)
+          if (node.view.visibility == View.VISIBLE) {
+            previousFrames.put(node.id, Rect(
+              node.view.left,
+              node.view.top,
+              node.view.right,
+              node.view.bottom,
+            ))
           }
         }
-        
-        // Ensure text is visible
-        node.label?.alpha = 1f
+
+        engine.calculateLayout(root.width, root.height)
+        PerformanceProfiler.recordLayoutEnd()
+
+        PerformanceProfiler.recordRenderStart()
+
+        for (i in 0 until nodes.size()) {
+          val node = nodes.valueAt(i)
+          if (isVirtualTextNode(node)) continue
+          val frame: Rect = engine.frame(node.id)
+          val width = frame.right - frame.left
+          val height = frame.bottom - frame.top
+
+          val layoutParams = when (val current = node.view.layoutParams) {
+            is FrameLayout.LayoutParams -> current
+            else -> FrameLayout.LayoutParams(width.coerceAtLeast(0), height.coerceAtLeast(0))
+          }
+
+          var paramsChanged = false
+          if (width >= 0 && layoutParams.width != width) {
+            layoutParams.width = width
+            paramsChanged = true
+          }
+          if (height >= 0 && layoutParams.height != height) {
+            layoutParams.height = height
+            paramsChanged = true
+          }
+          if (layoutParams.leftMargin != frame.left) {
+            layoutParams.leftMargin = frame.left
+            paramsChanged = true
+          }
+          if (layoutParams.topMargin != frame.top) {
+            layoutParams.topMargin = frame.top
+            paramsChanged = true
+          }
+          if (layoutParams.gravity != (Gravity.START or Gravity.TOP)) {
+            layoutParams.gravity = Gravity.START or Gravity.TOP
+            paramsChanged = true
+          }
+          if (paramsChanged) {
+            node.view.layoutParams = layoutParams
+          }
+        }
+
+        for (i in 0 until nodes.size()) {
+          val node = nodes.valueAt(i)
+          if (isVirtualTextNode(node)) continue
+          val frame: Rect = engine.frame(node.id)
+          node.view.layout(frame.left, frame.top, frame.right, frame.bottom)
+          if (node.type != TEXT_TYPE) {
+            node.label?.layout(0, 0, frame.right - frame.left, frame.bottom - frame.top)
+          }
+        }
+
+        for (i in 0 until nodes.size()) {
+          val node = nodes.valueAt(i)
+          if (isVirtualTextNode(node)) continue
+          val frame: Rect = engine.frame(node.id)
+          val hasSize = (frame.right - frame.left) > 0 && (frame.bottom - frame.top) > 0
+          node.view.visibility = if (hasSize) View.VISIBLE else View.GONE
+          if (hasSize) {
+            node.label?.alpha = 1f
+          }
+        }
+        PerformanceProfiler.recordRenderEnd()
+      } while (dirty || pendingNativeOperations.isNotEmpty() || pendingViewOperations.isNotEmpty())
+    } finally {
+      root.suppressLayoutCompat(false)
+      layoutTransactionActive = false
+      if (dirty || pendingNativeOperations.isNotEmpty() || pendingViewOperations.isNotEmpty()) {
+        scheduleFlush()
       }
-      PerformanceProfiler.recordRenderEnd()
     }
   }
 
@@ -1160,34 +1243,41 @@ class RuneUIManager(
     return nodes.get(id)
   }
 
-  private fun removeNodeRecursive(id: Int) {
+  private fun removeNodeRecursive(id: Int, detachView: Boolean = true) {
     if (id == root.rootId) return
-    val children = parents.entries.filter { it.value == id }.map { it.key }
-    children.forEach { childId -> removeNodeRecursive(childId) }
+    
     val node = nodes.get(id)
     if (node == null) {
-      // Node may have been removed earlier (e.g., merged text child).
-      // Ensure we still clear parent mapping to avoid stale references.
-      parents.remove(id)
-      return
+        // Node may have been removed earlier (e.g., merged text child).
+        // Ensure we still clear parent mapping to avoid stale references.
+        parents.remove(id)
+        return
+    }
+
+    // First, recursively remove all children
+    val childrenToRemove = parents.entries.filter { it.value == id }.map { it.key }
+    childrenToRemove.forEach { childId ->
+        removeNodeRecursive(childId, detachView)
+    }
+
+    // Clean up from parent's textChildren if this is a text child
+    node.parentId?.let { parentId ->
+        nodes.get(parentId)?.textChildren?.remove(id)
     }
 
     if (node.type == IMAGE_TYPE) {
-      imageSupport.cleanup(node)
+        imageSupport.cleanup(node)
     }
     if (node.type == TEXT_INPUT_TYPE || node.type == SECURE_TEXT_INPUT_TYPE) {
-      cleanupTextInput(node)
+        cleanupTextInput(node)
     }
-
-    node.parentId?.let { parentId ->
-      nodes.get(parentId)?.textChildren?.remove(id)
-    }
-    node.parentId = null
 
     // Clean up view: remove click listener and from parent
     node.view.setOnClickListener(null)
     node.view.isClickable = false
-    (node.view.parent as? ViewGroup)?.removeView(node.view)
+    if (detachView) {
+      (node.view.parent as? ViewGroup)?.removeView(node.view)
+    }
     
     // Clean up layout engine
     engine.setMeasureHandler(id, null)
@@ -1196,9 +1286,52 @@ class RuneUIManager(
     // Remove from our tracking maps
     nodes.remove(id)
     parents.remove(id)
+    node.parentId = null
+    
+    // Also clean up from any pending text rebuilds
+    pendingTextRebuild.remove(id)
+  }
+
+  private fun ViewGroup.suppressLayoutCompat(shouldSuppress: Boolean) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
+      suppressLayout(shouldSuppress)
+    }
+  }
+
+  private fun detachChildView(parentId: Int, childNode: Node) {
+    val expectedParentView = when {
+      parentId == root.rootId -> root
+      else -> nodes.get(parentId)?.view as? ViewGroup
+    }
+    val childView = childNode.view
+
+    var wasRemoved = false
+    if (expectedParentView != null) {
+      val index = expectedParentView.indexOfChild(childView)
+      if (index >= 0) {
+        expectedParentView.removeViewAt(index)
+        wasRemoved = true
+      }
+    }
+
+    if (!wasRemoved) {
+      val actualParent = childView.parent as? ViewGroup
+      if (actualParent != null) {
+        actualParent.removeView(childView)
+        wasRemoved = true
+      }
+    }
+
+    if (!wasRemoved) {
+      Log.w(
+        "RuneUI",
+        "detachChildView: unable to locate view for node ${childNode.id} under parent $parentId; view may already be detached",
+      )
+    }
   }
 
   companion object {
+    private const val FLUSH_COALESCE_WINDOW_MS = 4L
     private const val TEXT_TYPE = "text"
     private const val IMAGE_TYPE = "image"
     private const val TEXT_INPUT_TYPE = "text-input"

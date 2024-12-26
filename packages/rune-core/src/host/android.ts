@@ -19,36 +19,45 @@ export function createAndroidHost(): Host {
   const TYPES = new Map<number, HostNode["type"]>();
 
   let flushScheduled = false;
+  const operations: Array<() => void> = [];
+
+  const runFlush = () => {
+    flushScheduled = false;
+    try {
+      if (operations.length) {
+        const pending = operations.splice(0);
+        for (const op of pending) op();
+      }
+      ui.flush();
+    } catch (e) {
+      console.error("Flush error:", e);
+    }
+  };
+
   const schedule = () => {
     if (flushScheduled) return;
     flushScheduled = true;
-    if (typeof setTimeout !== "undefined") {
-      setTimeout(() => {
-        flushScheduled = false;
-        try {
-          ui.flush();
-        } catch (e) {
-          console.error("Flush error:", e);
-        }
-      }, 0);
-    } else {
+
+    if (typeof queueMicrotask === "function") {
+      queueMicrotask(runFlush);
+      return;
+    }
+
+    if (typeof Promise !== "undefined") {
       Promise.resolve()
-        .then(() => {
+        .then(runFlush)
+        .catch((err) => {
           flushScheduled = false;
-          try {
-            ui.flush();
-          } catch (e) {
-            console.error("Flush error:", e);
-          }
-        })
-        .catch(() => {
-          flushScheduled = false;
-          try {
-            ui.flush();
-          } catch (e) {
-            console.error("Flush error:", e);
-          }
+          console.error("Flush error:", err);
         });
+      return;
+    }
+
+    if (typeof setTimeout !== "undefined") {
+      setTimeout(runFlush, 0);
+    } else {
+      // final fallback: run synchronously
+      runFlush();
     }
   };
 
@@ -62,14 +71,14 @@ export function createAndroidHost(): Host {
 
     const assign = (key: string, value: unknown) => {
       if (value !== undefined) {
-        ui.setProp(id, key, value);
+        operations.push(() => ui.setProp(id, key, value));
       }
     };
 
     assign("value", props.value);
     assign("defaultValue", props.defaultValue);
     if (props?.defaultValue != null && props.value == null) {
-      ui.setText(id, String(props.defaultValue));
+      operations.push(() => ui.setText(id, String(props.defaultValue)));
     }
     assign("placeholder", props.placeholder);
     assign("multiline", props.multiline);
@@ -110,7 +119,7 @@ export function createAndroidHost(): Host {
 
     for (const [name, handler] of Object.entries(events)) {
       if (typeof handler === "function") {
-        ui.setHandler(id, name, handler);
+        operations.push(() => ui.setHandler(id, name, handler));
       }
     }
   };
@@ -146,18 +155,19 @@ export function createAndroidHost(): Host {
       PARENTS.set(id, null);
       CHILDREN.set(id, []);
       TYPES.set(id, type);
-      if (props?.style) ui.setProp(id, "style", props.style as Style);
+      if (props?.style) operations.push(() => ui.setProp(id, "style", props.style as Style));
       if (typeof props?.onPress === "function") {
-        ui.setHandler(id, "onPress", props.onPress);
+        operations.push(() => ui.setHandler(id, "onPress", props.onPress));
       }
       if (props?.accessibilityLabel)
-        ui.setProp(id, "accessibilityLabel", props.accessibilityLabel);
+        operations.push(() => ui.setProp(id, "accessibilityLabel", props.accessibilityLabel));
       if (props?.accessibilityHint)
-        ui.setProp(id, "accessibilityHint", props.accessibilityHint);
+        operations.push(() => ui.setProp(id, "accessibilityHint", props.accessibilityHint));
       if (props?.accessibilityRole)
-        ui.setProp(id, "accessibilityRole", props.accessibilityRole);
-      if (props?.pointerEvents) ui.setProp(id, "pointerEvents", props.pointerEvents);
-      if (props?.testID) ui.setProp(id, "testID", props.testID);
+        operations.push(() => ui.setProp(id, "accessibilityRole", props.accessibilityRole));
+      if (props?.pointerEvents)
+        operations.push(() => ui.setProp(id, "pointerEvents", props.pointerEvents));
+      if (props?.testID) operations.push(() => ui.setProp(id, "testID", props.testID));
       if (type === "text-input" || type === "secure-text-input") {
         applyTextInputInitialProps(id, props);
       }
@@ -166,7 +176,7 @@ export function createAndroidHost(): Host {
     },
     createText(value) {
       const id: number = ui.createNode("text");
-      ui.setText(id, value ?? "");
+      operations.push(() => ui.setText(id, value ?? ""));
       PARENTS.set(id, null);
       CHILDREN.set(id, []);
       TEXTS.set(id, value ?? "");
@@ -179,19 +189,19 @@ export function createAndroidHost(): Host {
         return;
       }
       if (name === "style") {
-        ui.setProp(node.id, "style", value || {});
+        operations.push(() => ui.setProp(node.id, "style", value || {}));
       } else if (name === "controller") {
         return;
       } else if (typeof value === "function") {
-        ui.setHandler(node.id, name, value);
+        operations.push(() => ui.setHandler(node.id, name, value));
       } else {
-        ui.setProp(node.id, name, value);
+        operations.push(() => ui.setProp(node.id, name, value));
       }
       schedule();
     },
     setText(node, value) {
       TEXTS.set(node.id, value ?? "");
-      ui.setText(node.id, value ?? "");
+      operations.push(() => ui.setText(node.id, value ?? ""));
       schedule();
     },
     insertNode(parent, node, anchor) {
@@ -207,7 +217,9 @@ export function createAndroidHost(): Host {
       kids.splice(logicalAt, 0, node.id);
       PARENTS.set(node.id, parent.id);
 
-      if (!isMarkerId(node.id)) ui.insertChild(parent.id, node.id, physIdx);
+      if (!isMarkerId(node.id)) {
+        operations.push(() => ui.insertChild(parent.id, node.id, physIdx));
+      }
       schedule();
     },
     removeNode(parent, node) {
@@ -215,15 +227,19 @@ export function createAndroidHost(): Host {
       const i = kids.indexOf(node.id);
       if (i < 0) return;
 
-      const isMarker = isMarkerId(node.id);
+      const nonMarkerBefore = (() => {
+        let n = 0;
+        for (let j = 0; j < i; j++) if (!isMarkerId(kids[j])) n++;
+        return n;
+      })();
 
-      // remove from logical structure
+      // remove from logical
       kids.splice(i, 1);
       PARENTS.set(node.id, null);
+      if (!isMarkerId(node.id)) TYPES.delete(node.id);
 
-      if (!isMarker) {
-        TYPES.delete(node.id);
-        ui.removeChild(parent.id, node.id);
+      if (!isMarkerId(node.id)) {
+        operations.push(() => ui.removeChild(parent.id, node.id));
       }
       schedule();
     },
@@ -249,6 +265,10 @@ export function createAndroidHost(): Host {
       return TEXTS.get(node.id) ?? "";
     },
     flush() {
+      if (operations.length) {
+        const pending = operations.splice(0);
+        for (const op of pending) op();
+      }
       ui.flush();
     },
   };
