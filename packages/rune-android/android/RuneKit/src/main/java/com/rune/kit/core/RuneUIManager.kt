@@ -901,12 +901,26 @@ class RuneUIManager(
       view.measuredWidth
     }.coerceAtLeast(1)
 
-    val minHeight = if (view.lineCount == 0) view.lineHeight else view.lineHeight * view.lineCount
-    val targetHeight = if (input.heightMode == MeasureMode.EXACTLY) {
-      MeasureSpec.getSize(heightSpec)
-    } else {
-      view.measuredHeight.coerceAtLeast(minHeight)
-    }.coerceAtLeast(1)
+    val desiredLines = when {
+      view.maxLines in 1 until Int.MAX_VALUE -> view.maxLines
+      view.minLines > 0 -> view.minLines
+      view.lineCount > 0 -> view.lineCount
+      else -> if (view.isSingleLine) 1 else 2
+    }
+    val baseLineHeight = view.lineHeight.coerceAtLeast(1)
+    val paddingVertical = view.paddingTop + view.paddingBottom
+    val minHeight = baseLineHeight * desiredLines + paddingVertical
+    val isMultiline = !view.isSingleLine || (view.maxLines > 1 && view.maxLines != Int.MAX_VALUE)
+
+    val resolvedHeight = when (input.heightMode) {
+      MeasureMode.EXACTLY -> MeasureSpec.getSize(heightSpec)
+      MeasureMode.AT_MOST, MeasureMode.UNDEFINED -> {
+        val measured = view.measuredHeight
+        if (isMultiline) measured.coerceAtLeast(minHeight) else minHeight
+      }
+    }
+
+    val targetHeight = resolvedHeight.coerceAtLeast(1)
 
     return targetWidth.toFloat() to targetHeight.toFloat()
   }
