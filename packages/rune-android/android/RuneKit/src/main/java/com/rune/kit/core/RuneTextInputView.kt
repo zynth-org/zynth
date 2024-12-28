@@ -22,7 +22,9 @@ import android.widget.TextView
 import androidx.appcompat.widget.AppCompatEditText
 import androidx.core.graphics.ColorUtils
 import androidx.core.graphics.drawable.DrawableCompat
+import androidx.core.view.ViewCompat
 import org.json.JSONObject
+import java.util.ArrayDeque
 
 internal open class RuneTextInputView @JvmOverloads constructor(
   context: Context,
@@ -73,6 +75,10 @@ internal open class RuneTextInputView @JvmOverloads constructor(
 
   private var externalFocusListener: OnFocusChangeListener? = null
   private var externalEditorActionListener: TextView.OnEditorActionListener? = null
+  private val pendingPostRevealCallbacks = ArrayDeque<() -> Unit>()
+  private var hasCompletedFirstReveal = false
+  private var postRevealDispatchScheduled = false
+  private var pendingFocusEmission = false
 
   private val changeWatcher = object : TextWatcher {
     override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {
@@ -180,6 +186,7 @@ internal open class RuneTextInputView @JvmOverloads constructor(
     super.setOnEditorActionListener(internalEditorActionListener)
     addTextChangedListener(changeWatcher)
     updatePlaceholderTone()
+    ensureBaselineConstraints()
   }
 
   override fun setOnFocusChangeListener(l: OnFocusChangeListener?) {
@@ -233,6 +240,7 @@ internal open class RuneTextInputView @JvmOverloads constructor(
     maxLines = lines
     isSingleLine = !multiline
     updateGravity()
+    ensureBaselineConstraints()
     manager?.onTextInputIntrinsicSizeChanged(nodeId)
   }
 
@@ -247,7 +255,30 @@ internal open class RuneTextInputView @JvmOverloads constructor(
       maxLines = resolved
     }
     updateGravity()
+    ensureBaselineConstraints()
     manager?.onTextInputIntrinsicSizeChanged(nodeId)
+  }
+
+  internal fun ensureBaselineConstraints(): Boolean {
+    val baseLineHeight = lineHeight.coerceAtLeast(1)
+    val resolvedLines = when {
+      !multiline -> 1
+      numberOfLinesHint > 0 -> numberOfLinesHint.coerceAtLeast(1)
+      maxLines in 1 until Int.MAX_VALUE -> maxLines
+      else -> 2
+    }
+    val paddedHeight = (baseLineHeight * resolvedLines) + paddingTop + paddingBottom
+    val enforced = paddedHeight.coerceAtLeast(1)
+    var changed = false
+    if (minHeight != enforced) {
+      setMinHeight(enforced)
+      changed = true
+    }
+    if (minimumHeight != enforced) {
+      setMinimumHeight(enforced)
+      changed = true
+    }
+    return changed
   }
 
   fun applySecureEntry(isSecure: Boolean) {
@@ -313,19 +344,21 @@ internal open class RuneTextInputView @JvmOverloads constructor(
   }
 
   fun applySelection(start: Int, end: Int) {
-    val length = text?.length ?: 0
-    val clampedStart = start.coerceIn(0, length)
-    val clampedEnd = end.coerceIn(0, length)
-    val finalStart = minOf(clampedStart, clampedEnd)
-    val finalEnd = maxOf(clampedStart, clampedEnd)
-    val previous = selectionWatcherEnabled
-    selectionWatcherEnabled = false
-    try {
-      setSelection(finalStart, finalEnd)
-    } catch (_: Throwable) {
-      // Defensive: ignore selection issues caused by stale positions
-    } finally {
-      selectionWatcherEnabled = previous
+    runAfterReveal {
+      val length = text?.length ?: 0
+      val clampedStart = start.coerceIn(0, length)
+      val clampedEnd = end.coerceIn(0, length)
+      val finalStart = minOf(clampedStart, clampedEnd)
+      val finalEnd = maxOf(clampedStart, clampedEnd)
+      val previous = selectionWatcherEnabled
+      selectionWatcherEnabled = false
+      try {
+        setSelection(finalStart, finalEnd)
+      } catch (_: Throwable) {
+        // Defensive: ignore selection issues caused by stale positions
+      } finally {
+        selectionWatcherEnabled = previous
+      }
     }
   }
 
@@ -345,6 +378,7 @@ internal open class RuneTextInputView @JvmOverloads constructor(
     hasOnCompositionEnd = false
     didEmitFocus = false
     isComposingText = false
+    pendingFocusEmission = false
   }
 
   override fun setTextColor(color: Int) {
@@ -374,6 +408,34 @@ internal open class RuneTextInputView @JvmOverloads constructor(
     emitSelectionChanged(selStart, selEnd)
   }
 
+  override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+    super.onLayout(changed, left, top, right, bottom)
+    val hasSize = (right - left) > 0 && (bottom - top) > 0
+    if (hasSize && !hasCompletedFirstReveal) {
+      hasCompletedFirstReveal = true
+      schedulePostRevealDispatch()
+    }
+  }
+
+  private fun runAfterReveal(action: () -> Unit) {
+    if (hasCompletedFirstReveal) {
+      action()
+      return
+    }
+    pendingPostRevealCallbacks.add(action)
+  }
+
+  private fun schedulePostRevealDispatch() {
+    if (pendingPostRevealCallbacks.isEmpty() || postRevealDispatchScheduled) return
+    postRevealDispatchScheduled = true
+    ViewCompat.postOnAnimation(this) {
+      postRevealDispatchScheduled = false
+      while (pendingPostRevealCallbacks.isNotEmpty()) {
+        pendingPostRevealCallbacks.removeFirst().invoke()
+      }
+    }
+  }
+
   override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
     if (keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN) {
       if (handleEditorAction(EditorInfo.IME_NULL, event)) {
@@ -400,6 +462,11 @@ internal open class RuneTextInputView @JvmOverloads constructor(
     super.onDetachedFromWindow()
     // Ensure we do not leak callbacks
     pendingChange = null
+    pendingPostRevealCallbacks.clear()
+    postRevealDispatchScheduled = false
+    hasCompletedFirstReveal = false
+    pendingFocusEmission = false
+    didEmitFocus = false
   }
 
   private fun handleEditorAction(actionId: Int, event: KeyEvent?): Boolean {
@@ -432,13 +499,27 @@ internal open class RuneTextInputView @JvmOverloads constructor(
 
   private fun emitFocusIfNeeded() {
     if (!hasOnFocus || didEmitFocus) return
-    didEmitFocus = true
-    manager?.emitTextInputEvent(nodeId, "onFocus", null)
+    val dispatch: () -> Unit = l@{
+      if (!hasOnFocus || didEmitFocus) return@l
+      didEmitFocus = true
+      manager?.emitTextInputEvent(nodeId, "onFocus", null)
+    }
+    if (!hasCompletedFirstReveal) {
+      if (pendingFocusEmission) return
+      pendingFocusEmission = true
+      runAfterReveal {
+        pendingFocusEmission = false
+        dispatch()
+      }
+      return
+    }
+    dispatch()
   }
 
   private fun emitBlurIfNeeded() {
     if (!hasOnBlur || !didEmitFocus) return
     didEmitFocus = false
+    pendingFocusEmission = false
     manager?.emitTextInputEvent(nodeId, "onBlur", null)
   }
 

@@ -50,6 +50,7 @@ class RuneUIManager(
     var imageState: ImageState? = null,
     var pointerEvents: String = "auto",
     var textInputState: TextInputState? = null,
+    var hasCompletedInitialMount: Boolean = false,
   )
 
   data class SelectionSpec(var start: Int, var end: Int)
@@ -73,11 +74,26 @@ class RuneUIManager(
     data class SetHandler(val nodeId: Int, val event: String, val handlerId: Long) : NativeOperation()
   }
 
+  private fun shouldPrioritizeTextInputProp(operation: NativeOperation.SetProp): Boolean {
+    val node = nodes.get(operation.nodeId) ?: return false
+    val isTextInput = node.type == TEXT_INPUT_TYPE || node.type == SECURE_TEXT_INPUT_TYPE
+    return isTextInput && TEXT_INPUT_MEASURE_PROPS.contains(operation.name)
+  }
+
   private fun processPendingNativeOperations() {
     if (pendingNativeOperations.isEmpty()) return
     val operations = pendingNativeOperations.toList()
     pendingNativeOperations.clear()
+    val prioritized = mutableListOf<NativeOperation>()
+    val remaining = mutableListOf<NativeOperation>()
     operations.forEach { op ->
+      if (op is NativeOperation.SetProp && shouldPrioritizeTextInputProp(op)) {
+        prioritized.add(op)
+      } else {
+        remaining.add(op)
+      }
+    }
+    (prioritized + remaining).forEach { op ->
       when (op) {
         is NativeOperation.SetProp -> applySetProp(op.nodeId, op.name, op.jsonValue)
         is NativeOperation.SetText -> applySetText(op.nodeId, op.text)
@@ -127,6 +143,13 @@ class RuneUIManager(
                 (childView.parent as? ViewGroup)?.removeView(childView)
                 val safeIndex = operation.index.coerceIn(0, parentView.childCount)
                 parentView.addView(childView, safeIndex)
+                if (
+                  !childNode.hasCompletedInitialMount &&
+                  (childNode.type == TEXT_INPUT_TYPE || childNode.type == SECURE_TEXT_INPUT_TYPE)
+                ) {
+                  scheduleFlush(FlushPriority.HIGH)
+                }
+                childNode.hasCompletedInitialMount = true
               }
               is ViewOperation.Remove -> {
                 detachChildView(operation.parentId, operation.node)
@@ -332,21 +355,12 @@ class RuneUIManager(
   private val eventPayloads = HashMap<String, JSONObject>()
   private val pendingViewOperations = mutableListOf<ViewOperation>()
   private val pendingNativeOperations = mutableListOf<NativeOperation>()
+  private val stickyFrameCarryover = mutableSetOf<Int>()
   @Volatile private var viewTransactionInProgress = false
   @Volatile private var layoutTransactionActive = false
+  private enum class FlushPriority { HIGH, NORMAL }
   private var flushCoalesceScheduled = false
-  private val flushCoalesceRunnable = Runnable {
-    flushCoalesceScheduled = false
-    if (layoutTransactionActive) {
-      scheduleFlush()
-      return@Runnable
-    }
-    frameScheduler.scheduleFlush {
-      if (dirty) {
-        performFlush()
-      }
-    }
-  }
+  private var pendingFlushPriority = FlushPriority.NORMAL
   private var nextId = root.rootId + 1
   @Volatile private var dirty = false
   private var lastRootWidth = -1
@@ -663,6 +677,9 @@ class RuneUIManager(
     val changed = left != view.paddingLeft || top != view.paddingTop || right != view.paddingRight || bottom != view.paddingBottom
     if (changed) {
       view.setPadding(left, top, right, bottom)
+    }
+    val baselineChanged = view.ensureBaselineConstraints()
+    if (changed || baselineChanged) {
       engine.markDirty(nodeId)
     }
   }
@@ -1103,12 +1120,26 @@ class RuneUIManager(
     }
   }
 
-  private fun scheduleFlush() {
+  private fun scheduleFlush(priority: FlushPriority = FlushPriority.NORMAL) {
     dirty = true
     if (layoutTransactionActive) return
+    if (priority.ordinal < pendingFlushPriority.ordinal) {
+      pendingFlushPriority = priority
+    }
     if (flushCoalesceScheduled) return
     flushCoalesceScheduled = true
-    handler.postDelayed(flushCoalesceRunnable, FLUSH_COALESCE_WINDOW_MS)
+    frameScheduler.scheduleFlush {
+      flushCoalesceScheduled = false
+      val dispatchPriority = pendingFlushPriority
+      pendingFlushPriority = FlushPriority.NORMAL
+      if (layoutTransactionActive) {
+        scheduleFlush(dispatchPriority)
+        return@scheduleFlush
+      }
+      if (dirty) {
+        performFlush()
+      }
+    }
   }
 
   private inline fun <T> onMain(crossinline block: () -> T): T {
@@ -1130,6 +1161,7 @@ class RuneUIManager(
     if (layoutTransactionActive) return
     layoutTransactionActive = true
     root.suppressLayoutCompat(true)
+    val stickyRelayoutNodes = mutableSetOf<Int>()
     try {
       if (root.width == 0 || root.height == 0) {
         handler.post { performFlush() }
@@ -1164,12 +1196,36 @@ class RuneUIManager(
 
         PerformanceProfiler.recordRenderStart()
 
+        val appliedFrames = SparseArray<Rect>()
+        val stickyNodesForRelayout = mutableSetOf<Int>()
+        val stickyFramesUsedThisFrame = mutableSetOf<Int>()
+
         for (i in 0 until nodes.size()) {
           val node = nodes.valueAt(i)
           if (isVirtualTextNode(node)) continue
-          val frame: Rect = engine.frame(node.id)
-          val width = frame.right - frame.left
-          val height = frame.bottom - frame.top
+          val rawFrame: Rect = engine.frame(node.id)
+          val rawWidth = rawFrame.right - rawFrame.left
+          val rawHeight = rawFrame.bottom - rawFrame.top
+          val previous = previousFrames.get(node.id)
+          val previousWidth = previous?.let { it.right - it.left } ?: 0
+          val previousHeight = previous?.let { it.bottom - it.top } ?: 0
+          val shouldReusePrevious = (rawWidth <= 0 || rawHeight <= 0) &&
+            previousWidth > 0 &&
+            previousHeight > 0 &&
+            !stickyFrameCarryover.contains(node.id)
+
+          val appliedFrame = if (shouldReusePrevious && previous != null) {
+            stickyNodesForRelayout.add(node.id)
+            stickyFramesUsedThisFrame.add(node.id)
+            previous
+          } else {
+            stickyFrameCarryover.remove(node.id)
+            rawFrame
+          }
+          appliedFrames.put(node.id, appliedFrame)
+
+          val width = (appliedFrame.right - appliedFrame.left).coerceAtLeast(0)
+          val height = (appliedFrame.bottom - appliedFrame.top).coerceAtLeast(0)
 
           val layoutParams = when (val current = node.view.layoutParams) {
             is FrameLayout.LayoutParams -> current
@@ -1177,20 +1233,20 @@ class RuneUIManager(
           }
 
           var paramsChanged = false
-          if (width >= 0 && layoutParams.width != width) {
+          if (layoutParams.width != width) {
             layoutParams.width = width
             paramsChanged = true
           }
-          if (height >= 0 && layoutParams.height != height) {
+          if (layoutParams.height != height) {
             layoutParams.height = height
             paramsChanged = true
           }
-          if (layoutParams.leftMargin != frame.left) {
-            layoutParams.leftMargin = frame.left
+          if (layoutParams.leftMargin != appliedFrame.left) {
+            layoutParams.leftMargin = appliedFrame.left
             paramsChanged = true
           }
-          if (layoutParams.topMargin != frame.top) {
-            layoutParams.topMargin = frame.top
+          if (layoutParams.topMargin != appliedFrame.top) {
+            layoutParams.topMargin = appliedFrame.top
             paramsChanged = true
           }
           if (layoutParams.gravity != (Gravity.START or Gravity.TOP)) {
@@ -1205,30 +1261,40 @@ class RuneUIManager(
         for (i in 0 until nodes.size()) {
           val node = nodes.valueAt(i)
           if (isVirtualTextNode(node)) continue
-          val frame: Rect = engine.frame(node.id)
-          node.view.layout(frame.left, frame.top, frame.right, frame.bottom)
+          val appliedFrame = appliedFrames.get(node.id) ?: engine.frame(node.id)
+          node.view.layout(appliedFrame.left, appliedFrame.top, appliedFrame.right, appliedFrame.bottom)
           if (node.type != TEXT_TYPE) {
-            node.label?.layout(0, 0, frame.right - frame.left, frame.bottom - frame.top)
+            node.label?.layout(0, 0, appliedFrame.right - appliedFrame.left, appliedFrame.bottom - appliedFrame.top)
           }
         }
 
         for (i in 0 until nodes.size()) {
           val node = nodes.valueAt(i)
           if (isVirtualTextNode(node)) continue
-          val frame: Rect = engine.frame(node.id)
-          val hasSize = (frame.right - frame.left) > 0 && (frame.bottom - frame.top) > 0
-          node.view.visibility = if (hasSize) View.VISIBLE else View.GONE
+          val appliedFrame = appliedFrames.get(node.id) ?: engine.frame(node.id)
+          val hasSize = (appliedFrame.right - appliedFrame.left) > 0 && (appliedFrame.bottom - appliedFrame.top) > 0
+          node.view.visibility = if (hasSize) View.VISIBLE else View.INVISIBLE
           if (hasSize) {
             node.label?.alpha = 1f
           }
         }
+        stickyFrameCarryover.clear()
+        stickyFrameCarryover.addAll(stickyFramesUsedThisFrame)
+        if (stickyNodesForRelayout.isNotEmpty()) {
+          stickyRelayoutNodes.addAll(stickyNodesForRelayout)
+        }
         PerformanceProfiler.recordRenderEnd()
       } while (dirty || pendingNativeOperations.isNotEmpty() || pendingViewOperations.isNotEmpty())
+      if (stickyRelayoutNodes.isNotEmpty()) {
+        stickyRelayoutNodes.forEach { engine.markDirty(it) }
+      }
     } finally {
       root.suppressLayoutCompat(false)
       layoutTransactionActive = false
-      if (dirty || pendingNativeOperations.isNotEmpty() || pendingViewOperations.isNotEmpty()) {
-        scheduleFlush()
+      val hasPendingOperations = dirty || pendingNativeOperations.isNotEmpty() || pendingViewOperations.isNotEmpty()
+      when {
+        stickyRelayoutNodes.isNotEmpty() -> scheduleFlush(FlushPriority.HIGH)
+        hasPendingOperations -> scheduleFlush()
       }
     }
   }
@@ -1345,10 +1411,30 @@ class RuneUIManager(
   }
 
   companion object {
-    private const val FLUSH_COALESCE_WINDOW_MS = 4L
     private const val TEXT_TYPE = "text"
     private const val IMAGE_TYPE = "image"
     private const val TEXT_INPUT_TYPE = "text-input"
     private const val SECURE_TEXT_INPUT_TYPE = "secure-text-input"
+    private val TEXT_INPUT_MEASURE_PROPS = setOf(
+      "style",
+      "multiline",
+      "numberOfLines",
+      "maxLength",
+      "secureTextEntry",
+      "inputMode",
+      "autoCapitalize",
+      "autoCorrect",
+      "spellCheck",
+      "editable",
+      "placeholder",
+      "selection",
+      "selectionColor",
+      "caretColor",
+      "eventThrottleMs",
+      "allowProgrammaticJumpDuringEdit",
+      "returnKeyType",
+      "blurOnSubmit",
+      "submitBehavior",
+    )
   }
 }

@@ -75,34 +75,37 @@ export function createAndroidHost(): Host {
       }
     };
 
+    const measureProps: Array<[string, unknown]> = [
+      ["multiline", props.multiline],
+      ["numberOfLines", props.numberOfLines],
+      ["maxLength", props.maxLength],
+      ["editable", props.editable],
+      ["secureTextEntry", props.secureTextEntry],
+      ["inputMode", props.inputMode],
+      ["autoCapitalize", props.autoCapitalize],
+      ["autoCorrect", props.autoCorrect],
+      ["spellCheck", props.spellCheck],
+      ["returnKeyType", props.returnKeyType],
+      ["blurOnSubmit", props.blurOnSubmit],
+      ["submitBehavior", props.submitBehavior],
+      ["eventThrottleMs", props.eventThrottleMs],
+      ["allowProgrammaticJumpDuringEdit", props.allowProgrammaticJumpDuringEdit],
+    ];
+
+    for (const [key, value] of measureProps) assign(key, value);
+
     assign("value", props.value);
     assign("defaultValue", props.defaultValue);
     if (props?.defaultValue != null && props.value == null) {
       operations.push(() => ui.setText(id, String(props.defaultValue)));
     }
+
     assign("placeholder", props.placeholder);
-    assign("multiline", props.multiline);
-    assign("numberOfLines", props.numberOfLines);
-    assign("maxLength", props.maxLength);
-    assign("editable", props.editable);
-    assign("secureTextEntry", props.secureTextEntry);
-    assign("inputMode", props.inputMode);
-    assign("autoCapitalize", props.autoCapitalize);
-    assign("autoCorrect", props.autoCorrect);
-    assign("spellCheck", props.spellCheck);
-    assign("returnKeyType", props.returnKeyType);
-    assign("blurOnSubmit", props.blurOnSubmit);
-    assign("submitBehavior", props.submitBehavior);
     assign("selection", props.selection);
     assign("selectionColor", props.selectionColor);
     assign("caretColor", props.caretColor);
     assign("clearButtonMode", props.clearButtonMode);
     assign("showClearAccessory", props.showClearAccessory);
-    assign("eventThrottleMs", props.eventThrottleMs);
-    assign(
-      "allowProgrammaticJumpDuringEdit",
-      props.allowProgrammaticJumpDuringEdit,
-    );
     assign("testID", props.testID);
 
     const events: Record<string, Function | undefined> = {
