@@ -18,6 +18,7 @@ import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputConnectionWrapper
+import android.view.inputmethod.InputMethodManager
 import android.widget.TextView
 import androidx.appcompat.widget.AppCompatEditText
 import androidx.core.graphics.ColorUtils
@@ -172,6 +173,8 @@ internal open class RuneTextInputView @JvmOverloads constructor(
     imeOptions = imeOptions or EditorInfo.IME_FLAG_NO_EXTRACT_UI
     overScrollMode = View.OVER_SCROLL_NEVER
     isVerticalScrollBarEnabled = false
+    isVerticalFadingEdgeEnabled = false
+    setFadingEdgeLength(0)
     setHorizontallyScrolling(false)
     isSingleLine = true
     isFocusable = true
@@ -364,6 +367,19 @@ internal open class RuneTextInputView @JvmOverloads constructor(
 
   fun applyEventThrottle(throttleMs: Long) {
     eventThrottleMs = throttleMs
+  }
+
+  fun requestFocusFromJS() {
+    runAfterReveal {
+      if (!isFocusable || !isEnabled) return@runAfterReveal
+      if (!hasFocus()) {
+        requestFocus()
+      }
+      post {
+        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+        imm?.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT)
+      }
+    }
   }
 
   fun clearHandlers() {

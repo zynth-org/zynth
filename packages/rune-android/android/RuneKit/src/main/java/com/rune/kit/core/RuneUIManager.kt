@@ -2,6 +2,8 @@ package com.rune.kit.core
 
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -190,6 +192,7 @@ class RuneUIManager(
         if (target.id != nodeId) {
           engine.setStyle(nodeId, Style())
         }
+        applyBackgroundStyle(target.view, style)
         (target.label ?: target.view as? TextView)?.let { textView ->
           style.fontSize?.let { textView.textSize = it }
           style.color?.let { textView.setTextColor(it) }
@@ -199,7 +202,6 @@ class RuneUIManager(
             textView.setTypeface(textView.typeface, if (isBold) Typeface.BOLD else Typeface.NORMAL)
           }
         }
-        style.backgroundColor?.let { target.view.setBackgroundColor(it) }
         if (target.type == IMAGE_TYPE) {
           imageSupport.onStyleApplied(target, style)
         }
@@ -684,6 +686,55 @@ class RuneUIManager(
     }
   }
 
+  private fun applyBackgroundStyle(view: View, style: Style) {
+    val backgroundColor = style.backgroundColor
+    val borderRadius = style.borderRadius?.coerceAtLeast(0f)
+    val needsRoundedBackground = borderRadius != null && borderRadius > 0f
+    val paddingStart = ViewCompat.getPaddingStart(view)
+    val paddingTop = view.paddingTop
+    val paddingEnd = ViewCompat.getPaddingEnd(view)
+    val paddingBottom = view.paddingBottom
+
+    when {
+      needsRoundedBackground -> {
+        val mutated = (view.background as? GradientDrawable)?.mutate() as? GradientDrawable
+        val drawable = mutated ?: GradientDrawable()
+        drawable.cornerRadius = borderRadius!!
+        drawable.setColor(backgroundColor ?: Color.TRANSPARENT)
+        ViewCompat.setBackground(view, drawable)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+          view.clipToOutline = true
+        }
+      }
+      backgroundColor != null -> {
+        if (view.background is GradientDrawable) {
+          val mutated = (view.background as GradientDrawable).mutate() as? GradientDrawable
+          val drawable = mutated ?: GradientDrawable()
+          drawable.cornerRadius = 0f
+          drawable.setColor(backgroundColor)
+          ViewCompat.setBackground(view, drawable)
+        } else {
+          view.setBackgroundColor(backgroundColor)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+          view.clipToOutline = false
+        }
+      }
+      else -> {
+        when (val current = view.background) {
+          is GradientDrawable, is ColorDrawable -> ViewCompat.setBackground(view, null)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+          view.clipToOutline = false
+        }
+      }
+    }
+
+    if (needsRoundedBackground || backgroundColor != null) {
+      ViewCompat.setPaddingRelative(view, paddingStart, paddingTop, paddingEnd, paddingBottom)
+    }
+  }
+
   private fun handleTextInputProp(node: Node, name: String, rawJson: String?): Boolean {
     val view = node.view as? RuneTextInputView ?: return false
     val state = ensureTextInputState(node)
@@ -859,6 +910,10 @@ class RuneUIManager(
         view.allowProgrammaticJumpDuringEdit = allow
         true
       }
+      "__focusRequest" -> {
+        view.requestFocusFromJS()
+        true
+      }
       "clearButtonMode" -> {
         Log.d("RuneUI", "clearButtonMode is not supported on Android; ignoring value: $parsed")
         true
@@ -938,7 +993,6 @@ class RuneUIManager(
     }
 
     val targetHeight = resolvedHeight.coerceAtLeast(1)
-
     return targetWidth.toFloat() to targetHeight.toFloat()
   }
 
