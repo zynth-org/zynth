@@ -63,6 +63,7 @@ class RuneUIManager(
     var awaitingInitialValue: Boolean = true,
     var hasAppliedInitialText: Boolean = false,
     var pendingSelection: SelectionSpec? = null,
+    var lastExactHeight: Int = 0,
   )
 
   private sealed class ViewOperation {
@@ -676,14 +677,16 @@ class RuneUIManager(
     style.paddingTop.asPx()?.let { top = it }
     style.paddingBottom.asPx()?.let { bottom = it }
 
-    val changed = left != view.paddingLeft || top != view.paddingTop || right != view.paddingRight || bottom != view.paddingBottom
-    if (changed) {
-      view.setPadding(left, top, right, bottom)
-    }
+    val paddingChanged = view.updateStylePadding(left, top, right, bottom)
+    Log.d(
+      "RuneTextInputView",
+      "applyTextInputStyle paddingTop=$top paddingBottom=$bottom maxLines=${view.maxLines} minLines=${view.minLines} minHeight=${view.minHeight} minimumHeight=${view.minimumHeight} measured=${view.measuredHeight} scrollY=${view.scrollY}",
+    )
     val baselineChanged = view.ensureBaselineConstraints()
-    if (changed || baselineChanged) {
-      engine.markDirty(nodeId)
+    if (paddingChanged || baselineChanged) {
+      view.requestLayout()
     }
+    engine.markDirty(nodeId)
   }
 
   private fun applyBackgroundStyle(view: View, style: Style) {
@@ -927,72 +930,66 @@ class RuneUIManager(
   }
 
   private fun measureTextInput(view: RuneTextInputView, input: MeasureInput): Pair<Float, Float> {
+    val node = nodes.get(view.nodeId)
+    if (node != null) {
+      val state = ensureTextInputState(node)
+      if (state.lastExactHeight > 0) {
+        view.setExpectedExactHeight(state.lastExactHeight)
+      }
+    }
     val widthSpec = when (input.widthMode) {
-      MeasureMode.EXACTLY -> MeasureSpec.makeMeasureSpec(
+      MeasureMode.EXACTLY -> View.MeasureSpec.makeMeasureSpec(
         when {
           input.width.isNaN() -> 0
           input.width.isInfinite() -> Int.MAX_VALUE / 2
           else -> input.width.roundToInt()
         },
-        MeasureSpec.EXACTLY,
+        View.MeasureSpec.EXACTLY,
       )
-      MeasureMode.AT_MOST -> MeasureSpec.makeMeasureSpec(
+      MeasureMode.AT_MOST -> View.MeasureSpec.makeMeasureSpec(
         when {
           input.width.isNaN() -> Int.MAX_VALUE / 2
           input.width.isInfinite() -> Int.MAX_VALUE / 2
           else -> input.width.roundToInt()
         },
-        MeasureSpec.AT_MOST,
+        View.MeasureSpec.AT_MOST,
       )
-      MeasureMode.UNDEFINED -> MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
+      MeasureMode.UNDEFINED -> View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
     }
+
     val heightSpec = when (input.heightMode) {
-      MeasureMode.EXACTLY -> MeasureSpec.makeMeasureSpec(
+      MeasureMode.EXACTLY -> View.MeasureSpec.makeMeasureSpec(
         when {
           input.height.isNaN() -> 0
           input.height.isInfinite() -> Int.MAX_VALUE / 2
           else -> input.height.roundToInt()
         },
-        MeasureSpec.EXACTLY,
+        View.MeasureSpec.EXACTLY,
       )
-      MeasureMode.AT_MOST -> MeasureSpec.makeMeasureSpec(
+      MeasureMode.AT_MOST -> View.MeasureSpec.makeMeasureSpec(
         when {
           input.height.isNaN() -> Int.MAX_VALUE / 2
           input.height.isInfinite() -> Int.MAX_VALUE / 2
           else -> input.height.roundToInt()
         },
-        MeasureSpec.AT_MOST,
+        View.MeasureSpec.AT_MOST,
       )
-      MeasureMode.UNDEFINED -> MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
+      MeasureMode.UNDEFINED -> View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
     }
 
     view.measure(widthSpec, heightSpec)
+
     val targetWidth = if (input.widthMode == MeasureMode.EXACTLY) {
-      MeasureSpec.getSize(widthSpec)
+      View.MeasureSpec.getSize(widthSpec)
     } else {
       view.measuredWidth
     }.coerceAtLeast(1)
 
-    val desiredLines = when {
-      view.maxLines in 1 until Int.MAX_VALUE -> view.maxLines
-      view.minLines > 0 -> view.minLines
-      view.lineCount > 0 -> view.lineCount
-      else -> if (view.isSingleLine) 1 else 2
-    }
-    val baseLineHeight = view.lineHeight.coerceAtLeast(1)
-    val paddingVertical = view.paddingTop + view.paddingBottom
-    val minHeight = baseLineHeight * desiredLines + paddingVertical
-    val isMultiline = !view.isSingleLine || (view.maxLines > 1 && view.maxLines != Int.MAX_VALUE)
+    val targetHeight = when (input.heightMode) {
+      MeasureMode.EXACTLY -> View.MeasureSpec.getSize(heightSpec)
+      MeasureMode.AT_MOST, MeasureMode.UNDEFINED -> view.measuredHeight
+    }.coerceAtLeast(1)
 
-    val resolvedHeight = when (input.heightMode) {
-      MeasureMode.EXACTLY -> MeasureSpec.getSize(heightSpec)
-      MeasureMode.AT_MOST, MeasureMode.UNDEFINED -> {
-        val measured = view.measuredHeight
-        if (isMultiline) measured.coerceAtLeast(minHeight) else minHeight
-      }
-    }
-
-    val targetHeight = resolvedHeight.coerceAtLeast(1)
     return targetWidth.toFloat() to targetHeight.toFloat()
   }
 
@@ -1034,6 +1031,19 @@ class RuneUIManager(
         }
       }
     }
+  }
+
+  internal fun onTextInputLayout(nodeId: Int, height: Int) {
+    if (height <= 0) return
+    val node = nodes.get(nodeId) ?: return
+    val state = ensureTextInputState(node)
+    state.lastExactHeight = height
+  }
+
+  internal fun clearTextInputExactHeight(nodeId: Int) {
+    val node = nodes.get(nodeId) ?: return
+    val state = ensureTextInputState(node)
+    state.lastExactHeight = 0
   }
 
   internal fun onTextInputIntrinsicSizeChanged(nodeId: Int) {

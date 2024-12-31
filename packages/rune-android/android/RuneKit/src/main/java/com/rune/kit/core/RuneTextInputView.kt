@@ -66,6 +66,14 @@ internal open class RuneTextInputView @JvmOverloads constructor(
   private var spellCheck: Boolean? = null
   private var secureEntry = false
   private var multiline = false
+  private var styledPaddingLeft = 0
+  private var styledPaddingTop = 0
+  private var styledPaddingRight = 0
+  private var styledPaddingBottom = 0
+  private var lastExactHeight = 0
+  private var visualInsetTop = 0
+  private var visualInsetBottom = 0
+  private var applyingInternalPadding = false
 
   private var lengthFilter: InputFilter.LengthFilter? = null
   internal var maxLength: Int = -1
@@ -184,12 +192,17 @@ internal open class RuneTextInputView @JvmOverloads constructor(
     setMinHeight(0)
     setMinimumHeight(0)
     updateGravity()
+    applyBaselineAlignment()
 
     super.setOnFocusChangeListener(internalFocusListener)
     super.setOnEditorActionListener(internalEditorActionListener)
     addTextChangedListener(changeWatcher)
     updatePlaceholderTone()
     ensureBaselineConstraints()
+    styledPaddingLeft = paddingLeft
+    styledPaddingTop = paddingTop
+    styledPaddingRight = paddingRight
+    styledPaddingBottom = paddingBottom
   }
 
   override fun setOnFocusChangeListener(l: OnFocusChangeListener?) {
@@ -233,6 +246,7 @@ internal open class RuneTextInputView @JvmOverloads constructor(
     } else {
       multiline = enabled
     }
+    applyBaselineAlignment()
     updateInputConfiguration()
     val lines = when {
       !multiline -> 1
@@ -263,15 +277,34 @@ internal open class RuneTextInputView @JvmOverloads constructor(
   }
 
   internal fun ensureBaselineConstraints(): Boolean {
+    if (!multiline) {
+      var adjusted = false
+      if (minHeight != 0 || minimumHeight != 0) {
+        setMinHeight(0)
+        setMinimumHeight(0)
+        adjusted = true
+      }
+      if (scrollY != 0) {
+        Log.d(
+          "RuneTextInputView",
+          "ensureBaselineConstraints resetting scrollY=$scrollY paddingTop=$paddingTop paddingBottom=$paddingBottom",
+        )
+        scrollTo(scrollX, 0)
+        adjusted = true
+      }
+      return adjusted
+    }
+
     val baseLineHeight = lineHeight.coerceAtLeast(1)
     val resolvedLines = when {
-      !multiline -> 1
       numberOfLinesHint > 0 -> numberOfLinesHint.coerceAtLeast(1)
       maxLines in 1 until Int.MAX_VALUE -> maxLines
       else -> 2
     }
+
     val paddedHeight = (baseLineHeight * resolvedLines) + paddingTop + paddingBottom
     val enforced = paddedHeight.coerceAtLeast(1)
+
     var changed = false
     if (minHeight != enforced) {
       setMinHeight(enforced)
@@ -281,6 +314,13 @@ internal open class RuneTextInputView @JvmOverloads constructor(
       setMinimumHeight(enforced)
       changed = true
     }
+    if (changed) {
+      Log.d(
+        "RuneTextInputView",
+        "ensureBaselineConstraints multiline enforcedHeight=$enforced paddingTop=$paddingTop paddingBottom=$paddingBottom",
+      )
+    }
+
     return changed
   }
 
@@ -426,6 +466,19 @@ internal open class RuneTextInputView @JvmOverloads constructor(
 
   override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
     super.onLayout(changed, left, top, right, bottom)
+    if (!multiline) {
+      val totalHeight = bottom - top
+      updateVisualInsets(totalHeight)
+      Log.d(
+        "RuneTextInputView",
+        "onLayout singleLine height=$totalHeight paddingTop=$paddingTop paddingBottom=$paddingBottom baseline=$baseline scrollY=$scrollY visualInsetTop=$visualInsetTop visualInsetBottom=$visualInsetBottom",
+      )
+      val contentHeight = styledPaddingTop + styledPaddingBottom + lineHeight
+      if (totalHeight > contentHeight) {
+        lastExactHeight = totalHeight
+        manager?.onTextInputLayout(nodeId, totalHeight)
+      }
+    }
     val hasSize = (right - left) > 0 && (bottom - top) > 0
     if (hasSize && !hasCompletedFirstReveal) {
       hasCompletedFirstReveal = true
@@ -483,6 +536,46 @@ internal open class RuneTextInputView @JvmOverloads constructor(
     hasCompletedFirstReveal = false
     pendingFocusEmission = false
     didEmitFocus = false
+  }
+
+  override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+    super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+    if (!multiline) {
+      val mode = View.MeasureSpec.getMode(heightMeasureSpec)
+      val size = View.MeasureSpec.getSize(heightMeasureSpec)
+      when (mode) {
+        View.MeasureSpec.EXACTLY -> {
+          lastExactHeight = size
+          Log.d(
+            "RuneTextInputView",
+            "onMeasure singleLine exact measuredHeight=$measuredHeight size=$size paddingTop=$paddingTop paddingBottom=$paddingBottom lineHeight=$lineHeight",
+          )
+        }
+        else -> {
+          if (lastExactHeight > 0) {
+            val target = lastExactHeight.coerceAtLeast(measuredHeight)
+            if (target != measuredHeight) {
+              setMeasuredDimension(measuredWidth, target)
+              Log.d(
+                "RuneTextInputView",
+                "onMeasure adjusted singleLine measuredHeight=$target (fromExact=$lastExactHeight) paddingTop=$paddingTop paddingBottom=$paddingBottom lineHeight=$lineHeight mode=$mode size=$size",
+              )
+              updateVisualInsets(target)
+            } else {
+              Log.d(
+                "RuneTextInputView",
+                "onMeasure singleLine reuse measuredHeight=$measuredHeight (exact=$lastExactHeight) paddingTop=$paddingTop paddingBottom=$paddingBottom lineHeight=$lineHeight mode=$mode size=$size",
+              )
+            }
+          } else {
+            Log.d(
+              "RuneTextInputView",
+              "onMeasure singleLine measuredHeight=$measuredHeight mode=$mode size=$size paddingTop=$paddingTop paddingBottom=$paddingBottom lineHeight=$lineHeight",
+            )
+          }
+        }
+      }
+    }
   }
 
   private fun handleEditorAction(actionId: Int, event: KeyEvent?): Boolean {
@@ -733,6 +826,98 @@ internal open class RuneTextInputView @JvmOverloads constructor(
     } else {
       Gravity.START or Gravity.CENTER_VERTICAL
     }
+  }
+
+  private fun applyBaselineAlignment() {
+    if (!multiline) {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
+        textAlignment = View.TEXT_ALIGNMENT_VIEW_START
+      }
+    }
+  }
+
+  override fun scrollTo(x: Int, y: Int) {
+    val targetY = if (!multiline) 0 else y
+    if (!multiline && y != 0) {
+      Log.d(
+        "RuneTextInputView",
+        "scrollTo suppressed vertical scroll from y=$y paddingTop=$paddingTop paddingBottom=$paddingBottom",
+      )
+    }
+    super.scrollTo(x, targetY)
+  }
+
+  internal fun updateStylePadding(left: Int, top: Int, right: Int, bottom: Int): Boolean {
+    val changed = styledPaddingLeft != left || styledPaddingTop != top || styledPaddingRight != right || styledPaddingBottom != bottom
+    styledPaddingLeft = left
+    styledPaddingTop = top
+    styledPaddingRight = right
+    styledPaddingBottom = bottom
+    applyCurrentPadding()
+    if (!multiline && changed) {
+      lastExactHeight = 0
+      manager?.clearTextInputExactHeight(nodeId)
+      if (height > 0) {
+        updateVisualInsets(height)
+      }
+    }
+    return changed
+  }
+
+  internal fun setExpectedExactHeight(height: Int) {
+    if (!multiline && height > 0) {
+      lastExactHeight = height
+      updateVisualInsets(height)
+    }
+  }
+
+  private fun updateVisualInsets(totalHeight: Int) {
+    if (multiline || totalHeight <= 0) {
+      if (visualInsetTop != 0 || visualInsetBottom != 0) {
+        visualInsetTop = 0
+        visualInsetBottom = 0
+        applyCurrentPadding()
+      }
+      return
+    }
+    val contentHeight = styledPaddingTop + styledPaddingBottom + lineHeight
+    val extra = (totalHeight - contentHeight).coerceAtLeast(0)
+    val desiredTop = extra / 2
+    val desiredBottom = extra - desiredTop
+    if (desiredTop != visualInsetTop || desiredBottom != visualInsetBottom) {
+      visualInsetTop = desiredTop
+      visualInsetBottom = desiredBottom
+      applyCurrentPadding()
+    }
+  }
+
+  private fun applyCurrentPadding() {
+    val finalLeft = styledPaddingLeft
+    val finalTop = styledPaddingTop + visualInsetTop
+    val finalRight = styledPaddingRight
+    val finalBottom = styledPaddingBottom + visualInsetBottom
+    setActualPadding(finalLeft, finalTop, finalRight, finalBottom)
+  }
+
+  private fun setActualPadding(left: Int, top: Int, right: Int, bottom: Int) {
+    if (paddingLeft == left && paddingTop == top && paddingRight == right && paddingBottom == bottom) {
+      return
+    }
+    applyingInternalPadding = true
+    super.setPadding(left, top, right, bottom)
+    applyingInternalPadding = false
+  }
+
+  override fun setPadding(left: Int, top: Int, right: Int, bottom: Int) {
+    if (applyingInternalPadding) {
+      super.setPadding(left, top, right, bottom)
+      return
+    }
+    styledPaddingLeft = left
+    styledPaddingTop = top
+    styledPaddingRight = right
+    styledPaddingBottom = bottom
+    applyCurrentPadding()
   }
 
   private inner class RuneInputConnection(
