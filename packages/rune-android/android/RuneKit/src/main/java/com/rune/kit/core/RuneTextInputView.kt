@@ -73,6 +73,7 @@ internal open class RuneTextInputView @JvmOverloads constructor(
   private var lastExactHeight = 0
   private var visualInsetTop = 0
   private var visualInsetBottom = 0
+  private var targetCenteredHeight = 0
   private var applyingInternalPadding = false
 
   private var lengthFilter: InputFilter.LengthFilter? = null
@@ -214,6 +215,12 @@ internal open class RuneTextInputView @JvmOverloads constructor(
     externalEditorActionListener = l
     super.setOnEditorActionListener(internalEditorActionListener)
   }
+
+  fun getStyledPadding(): PaddingValues {
+    return PaddingValues(styledPaddingLeft, styledPaddingTop, styledPaddingRight, styledPaddingBottom)
+  }
+
+  data class PaddingValues(val left: Int, val top: Int, val right: Int, val bottom: Int)
 
   fun performProgrammaticUpdate(block: () -> Unit) {
     val previous = suppressNativeEvent
@@ -855,10 +862,12 @@ internal open class RuneTextInputView @JvmOverloads constructor(
     styledPaddingBottom = bottom
     applyCurrentPadding()
     if (!multiline && changed) {
-      lastExactHeight = 0
+      lastExactHeight = 0 // Reset if styled padding changes significantly
       manager?.clearTextInputExactHeight(nodeId)
-      if (height > 0) {
-        updateVisualInsets(height)
+      // Recalculate inset based on new base padding and current height/exact height
+      val currentHeight = if (height > 0) height else measuredHeight
+      if (currentHeight > 0) {
+          updateVisualInsets(currentHeight)
       }
     }
     return changed
@@ -876,17 +885,31 @@ internal open class RuneTextInputView @JvmOverloads constructor(
       if (visualInsetTop != 0 || visualInsetBottom != 0) {
         visualInsetTop = 0
         visualInsetBottom = 0
+        // Update target height if multiline becomes true
+        targetCenteredHeight = 0
         applyCurrentPadding()
       }
       return
     }
-    val contentHeight = styledPaddingTop + styledPaddingBottom + lineHeight
-    val extra = (totalHeight - contentHeight).coerceAtLeast(0)
-    val desiredTop = extra / 2
-    val desiredBottom = extra - desiredTop
+
+    // Calculate the minimum height needed just for styled padding and line content
+    val minimumContentHeight = styledPaddingTop + styledPaddingBottom + lineHeight
+
+    val targetHeightForCentering = if (lastExactHeight > 0) {
+         lastExactHeight
+     } else {
+         totalHeight.coerceAtLeast(minimumContentHeight)
+     }
+
+    val extraSpace = (targetHeightForCentering - minimumContentHeight).coerceAtLeast(0)
+    val desiredTop = extraSpace / 2
+    val desiredBottom = extraSpace - desiredTop
+
     if (desiredTop != visualInsetTop || desiredBottom != visualInsetBottom) {
       visualInsetTop = desiredTop
       visualInsetBottom = desiredBottom
+      // Update the targetCenteredHeight whenever visualInset changes
+      targetCenteredHeight = minimumContentHeight + extraSpace
       applyCurrentPadding()
     }
   }

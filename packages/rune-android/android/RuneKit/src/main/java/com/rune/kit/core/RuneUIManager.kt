@@ -651,26 +651,28 @@ class RuneUIManager(
   }
 
   private fun applyTextInputStyle(view: RuneTextInputView, style: Style, nodeId: Int) {
-    var left = view.paddingLeft
-    var top = view.paddingTop
-    var right = view.paddingRight
-    var bottom = view.paddingBottom
+    // Start from ZERO, not from current padding
+    var left = 0
+    var top = 0
+    var right = 0  
+    var bottom = 0
 
     fun Float?.asPx(): Int? = this?.roundToInt()?.coerceAtLeast(0)
 
+    // Apply style padding values - these should replace, not accumulate
     style.padding.asPx()?.let { value ->
-      left = value
-      top = value
-      right = value
-      bottom = value
+        left = value
+        top = value
+        right = value
+        bottom = value
     }
     style.paddingHorizontal.asPx()?.let { value ->
-      left = value
-      right = value
+        left = value
+        right = value
     }
     style.paddingVertical.asPx()?.let { value ->
-      top = value
-      bottom = value
+        top = value
+        bottom = value
     }
     style.paddingLeft.asPx()?.let { left = it }
     style.paddingRight.asPx()?.let { right = it }
@@ -679,12 +681,12 @@ class RuneUIManager(
 
     val paddingChanged = view.updateStylePadding(left, top, right, bottom)
     Log.d(
-      "RuneTextInputView",
-      "applyTextInputStyle paddingTop=$top paddingBottom=$bottom maxLines=${view.maxLines} minLines=${view.minLines} minHeight=${view.minHeight} minimumHeight=${view.minimumHeight} measured=${view.measuredHeight} scrollY=${view.scrollY}",
+        "RuneTextInputView",
+        "applyTextInputStyle paddingTop=$top paddingBottom=$bottom maxLines=${view.maxLines} minLines=${view.minLines} minHeight=${view.minHeight} minimumHeight=${view.minimumHeight} measured=${view.measuredHeight} scrollY=${view.scrollY}",
     )
     val baselineChanged = view.ensureBaselineConstraints()
     if (paddingChanged || baselineChanged) {
-      view.requestLayout()
+        view.requestLayout()
     }
     engine.markDirty(nodeId)
   }
