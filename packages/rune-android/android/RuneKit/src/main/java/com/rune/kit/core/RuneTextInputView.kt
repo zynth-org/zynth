@@ -75,6 +75,8 @@ internal open class RuneTextInputView @JvmOverloads constructor(
   private var visualInsetBottom = 0
   private var targetCenteredHeight = 0
   private var applyingInternalPadding = false
+  private var applyingSecureEntryPadding = false
+  private var isHandlingSecureToggle = false
 
   private var lengthFilter: InputFilter.LengthFilter? = null
   internal var maxLength: Int = -1
@@ -339,8 +341,25 @@ internal open class RuneTextInputView @JvmOverloads constructor(
     isFocusable = true
     isFocusableInTouchMode = true
     isClickable = true
-    updateInputConfiguration(preserveSelection = true)
-    updateGravity()
+
+    try {
+        updateInputConfiguration(preserveSelection = true)
+        updateGravity()
+
+        post {
+            val currentHeight = if (height > 0) height else measuredHeight
+            if (currentHeight > 0) {
+                updateVisualInsets(currentHeight)
+            } else {
+                 setActualPadding(styledPaddingLeft, styledPaddingTop, styledPaddingRight, styledPaddingBottom)
+                 val fallbackTargetHeight = targetCenteredHeight.takeIf { it > 0 } ?: (styledPaddingTop + styledPaddingBottom + lineHeight)
+                 updateVisualInsets(fallbackTargetHeight)
+            }
+        }
+    } finally {
+        // applyingSecureEntryPadding = false
+    }
+
     manager?.onTextInputIntrinsicSizeChanged(nodeId)
   }
 
@@ -892,9 +911,7 @@ internal open class RuneTextInputView @JvmOverloads constructor(
       return
     }
 
-    // Calculate the minimum height needed just for styled padding and line content
     val minimumContentHeight = styledPaddingTop + styledPaddingBottom + lineHeight
-
     val targetHeightForCentering = if (lastExactHeight > 0) {
          lastExactHeight
      } else {
@@ -911,6 +928,10 @@ internal open class RuneTextInputView @JvmOverloads constructor(
       // Update the targetCenteredHeight whenever visualInset changes
       targetCenteredHeight = minimumContentHeight + extraSpace
       applyCurrentPadding()
+      Log.d("RuneTextInputView", "updateVisualInsets CHANGED: totalHeight=$totalHeight, targetHeight=$targetHeightForCentering, styledPadding=$styledPaddingTop+$styledPaddingBottom, lineHeight=$lineHeight, visualInset=$visualInsetTop+$visualInsetBottom, actualPadding=${styledPaddingTop + visualInsetTop}+${styledPaddingBottom + visualInsetBottom}")
+    } else {
+       // Optional: Log if calculation seems stable
+       Log.d("RuneTextInputView", "updateVisualInsets STABLE: totalHeight=$totalHeight, targetHeight=$targetHeightForCentering, styledPadding=$styledPaddingTop+$styledPaddingBottom, lineHeight=$lineHeight, visualInset=$visualInsetTop+$visualInsetBottom")
     }
   }
 
@@ -940,7 +961,7 @@ internal open class RuneTextInputView @JvmOverloads constructor(
     styledPaddingTop = top
     styledPaddingRight = right
     styledPaddingBottom = bottom
-    applyCurrentPadding()
+    applyCurrentPadding() 
   }
 
   private inner class RuneInputConnection(
