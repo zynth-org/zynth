@@ -1,6 +1,7 @@
 package com.rune.kit.core
 
 import android.content.Context
+import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.Typeface
@@ -14,6 +15,7 @@ import android.util.AttributeSet
 import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
@@ -75,8 +77,6 @@ internal open class RuneTextInputView @JvmOverloads constructor(
   private var visualInsetBottom = 0
   private var targetCenteredHeight = 0
   private var applyingInternalPadding = false
-  private var applyingSecureEntryPadding = false
-  private var isHandlingSecureToggle = false
 
   private var lengthFilter: InputFilter.LengthFilter? = null
   internal var maxLength: Int = -1
@@ -341,6 +341,11 @@ internal open class RuneTextInputView @JvmOverloads constructor(
     isFocusable = true
     isFocusableInTouchMode = true
     isClickable = true
+
+    // Reset height memory, as toggling secure entry can change intrinsic size
+    // and invalidate previous measurements, preventing a layout feedback loop.
+    lastExactHeight = 0
+    manager?.clearTextInputExactHeight(nodeId)
 
     try {
         updateInputConfiguration(preserveSelection = true)
@@ -850,7 +855,7 @@ internal open class RuneTextInputView @JvmOverloads constructor(
     gravity = if (multiline) {
       Gravity.START or Gravity.TOP
     } else {
-      Gravity.START or Gravity.CENTER_VERTICAL
+      Gravity.START or Gravity.TOP
     }
   }
 
@@ -899,48 +904,64 @@ internal open class RuneTextInputView @JvmOverloads constructor(
     }
   }
 
+  override fun onDraw(canvas: Canvas) {
+    // Apply the visual inset by translating the canvas, so it doesn't affect layout.
+    if (visualInsetTop != 0) {
+      canvas.save()
+      canvas.translate(0f, visualInsetTop.toFloat())
+      super.onDraw(canvas)
+      canvas.restore()
+    } else {
+      super.onDraw(canvas)
+    }
+  }
+
+  override fun onTouchEvent(event: MotionEvent): Boolean {
+    // Offset the touch event to match the visually translated content.
+    val translatedEvent = MotionEvent.obtain(event)
+    translatedEvent.offsetLocation(0f, -visualInsetTop.toFloat())
+    val result = super.onTouchEvent(translatedEvent)
+    translatedEvent.recycle()
+    return result
+  }
+
   private fun updateVisualInsets(totalHeight: Int) {
     if (multiline || totalHeight <= 0) {
       if (visualInsetTop != 0 || visualInsetBottom != 0) {
         visualInsetTop = 0
         visualInsetBottom = 0
-        // Update target height if multiline becomes true
         targetCenteredHeight = 0
-        applyCurrentPadding()
+        invalidate()
       }
       return
     }
 
     val minimumContentHeight = styledPaddingTop + styledPaddingBottom + lineHeight
     val targetHeightForCentering = if (lastExactHeight > 0) {
-         lastExactHeight
-     } else {
-         totalHeight.coerceAtLeast(minimumContentHeight)
-     }
+      lastExactHeight
+    } else {
+      totalHeight.coerceAtLeast(minimumContentHeight)
+    }
 
     val extraSpace = (targetHeightForCentering - minimumContentHeight).coerceAtLeast(0)
-    val desiredTop = extraSpace / 2
-    val desiredBottom = extraSpace - desiredTop
+    val newInset = extraSpace / 2
 
-    if (desiredTop != visualInsetTop || desiredBottom != visualInsetBottom) {
-      visualInsetTop = desiredTop
-      visualInsetBottom = desiredBottom
-      // Update the targetCenteredHeight whenever visualInset changes
+    if (newInset != visualInsetTop) {
+      visualInsetTop = newInset
+      // We don't need visualInsetBottom as we only translate the canvas from the top.
+      visualInsetBottom = 0
       targetCenteredHeight = minimumContentHeight + extraSpace
-      applyCurrentPadding()
-      Log.d("RuneTextInputView", "updateVisualInsets CHANGED: totalHeight=$totalHeight, targetHeight=$targetHeightForCentering, styledPadding=$styledPaddingTop+$styledPaddingBottom, lineHeight=$lineHeight, visualInset=$visualInsetTop+$visualInsetBottom, actualPadding=${styledPaddingTop + visualInsetTop}+${styledPaddingBottom + visualInsetBottom}")
+      invalidate() // Trigger a redraw, not a re-layout.
+      Log.d("RuneTextInputView", "updateVisualInsets CHANGED: totalHeight=$totalHeight, targetHeight=$targetHeightForCentering, styledPadding=$styledPaddingTop+$styledPaddingBottom, lineHeight=$lineHeight, visualInset=$visualInsetTop")
     } else {
-       // Optional: Log if calculation seems stable
-       Log.d("RuneTextInputView", "updateVisualInsets STABLE: totalHeight=$totalHeight, targetHeight=$targetHeightForCentering, styledPadding=$styledPaddingTop+$styledPaddingBottom, lineHeight=$lineHeight, visualInset=$visualInsetTop+$visualInsetBottom")
+      Log.d("RuneTextInputView", "updateVisualInsets STABLE: totalHeight=$totalHeight, targetHeight=$targetHeightForCentering, styledPadding=$styledPaddingTop+$styledPaddingBottom, lineHeight=$lineHeight, visualInset=$visualInsetTop")
     }
   }
 
   private fun applyCurrentPadding() {
-    val finalLeft = styledPaddingLeft
-    val finalTop = styledPaddingTop + visualInsetTop
-    val finalRight = styledPaddingRight
-    val finalBottom = styledPaddingBottom + visualInsetBottom
-    setActualPadding(finalLeft, finalTop, finalRight, finalBottom)
+    // The "real" padding of the view should only be the styled padding.
+    // Visual insets are handled separately during the draw phase.
+    setActualPadding(styledPaddingLeft, styledPaddingTop, styledPaddingRight, styledPaddingBottom)
   }
 
   private fun setActualPadding(left: Int, top: Int, right: Int, bottom: Int) {
@@ -957,11 +978,13 @@ internal open class RuneTextInputView @JvmOverloads constructor(
       super.setPadding(left, top, right, bottom)
       return
     }
+    // This is an external call (from XML inflation or the framework).
+    // It defines the new styled padding baseline.
     styledPaddingLeft = left
     styledPaddingTop = top
     styledPaddingRight = right
     styledPaddingBottom = bottom
-    applyCurrentPadding() 
+    applyCurrentPadding()
   }
 
   private inner class RuneInputConnection(
