@@ -15,6 +15,12 @@ export interface HostNode {
 export type Style = {
   width?: number;
   height?: number;
+  minWidth?: number;
+  maxWidth?: number;
+  minHeight?: number;
+  maxHeight?: number;
+  flexGrow?: number;
+  flexShrink?: number;
   backgroundColor?: string;
   padding?: number;
   paddingHorizontal?: number;

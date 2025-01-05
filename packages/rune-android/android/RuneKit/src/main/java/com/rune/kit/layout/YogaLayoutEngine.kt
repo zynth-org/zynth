@@ -156,16 +156,32 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
 
   private fun applyStyle(node: YogaNode, style: Style) {
     // Width / Height: support absolute and percent
+    fun clamp(value: Float?, minValue: Float?, maxValue: Float?): Float? {
+      var result = value ?: return null
+      minValue?.let { if (result < it) result = it }
+      maxValue?.let { if (result > it) result = it }
+      return result
+    }
+
+    val resolvedWidth = clamp(style.width, style.minWidth, style.maxWidth)
+    val resolvedHeight = clamp(style.height, style.minHeight, style.maxHeight)
+
     when {
-      style.width != null -> node.setWidth(style.width)
+      resolvedWidth != null -> node.setWidth(resolvedWidth)
       style.widthPercent != null -> node.setWidthPercent(style.widthPercent)
       else -> node.setWidthAuto()
     }
     when {
-      style.height != null -> node.setHeight(style.height)
+      resolvedHeight != null -> node.setHeight(resolvedHeight)
       style.heightPercent != null -> node.setHeightPercent(style.heightPercent)
       else -> node.setHeightAuto()
     }
+    style.minWidth?.let { node.setMinWidth(it) }
+    style.maxWidth?.let { node.setMaxWidth(it) }
+    style.minHeight?.let { node.setMinHeight(it) }
+    style.maxHeight?.let { node.setMaxHeight(it) }
+    style.flexGrow?.let { node.setFlexGrow(it) }
+    style.flexShrink?.let { node.setFlexShrink(it) }
     node.setFlex(style.flex ?: 0f)
     node.setFlexDirection(style.flexDirection?.toFlexDirection() ?: YogaFlexDirection.COLUMN)
     node.setJustifyContent(style.justifyContent?.toJustify() ?: YogaJustify.FLEX_START)
@@ -194,7 +210,13 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
       height = next.height ?: prev.height,
       widthPercent = next.widthPercent ?: prev.widthPercent,
       heightPercent = next.heightPercent ?: prev.heightPercent,
+      minWidth = next.minWidth ?: prev.minWidth,
+      maxWidth = next.maxWidth ?: prev.maxWidth,
+      minHeight = next.minHeight ?: prev.minHeight,
+      maxHeight = next.maxHeight ?: prev.maxHeight,
       flex = next.flex ?: prev.flex,
+      flexGrow = next.flexGrow ?: prev.flexGrow,
+      flexShrink = next.flexShrink ?: prev.flexShrink,
       flexDirection = next.flexDirection ?: prev.flexDirection,
       justifyContent = next.justifyContent ?: prev.justifyContent,
       alignItems = next.alignItems ?: prev.alignItems,

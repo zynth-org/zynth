@@ -184,6 +184,94 @@ class RuneUIManager(
         return
       }
     }
+    if (target.type == SCROLL_VIEW_TYPE) {
+      val scrollView = target.view as? RuneScrollView ?: return
+      val parsed = parseJsonValue(valueJson)
+
+      fun asBoolean(value: Any?): Boolean? {
+        return when (value) {
+          is Boolean -> value
+          is Number -> value.toInt() != 0
+          is String -> value.equals("true", ignoreCase = true) || value == "1"
+          else -> null
+        }
+      }
+
+      fun asLong(value: Any?): Long? {
+        return when (value) {
+          is Number -> value.toLong()
+          is String -> value.toLongOrNull()
+          else -> null
+        }
+      }
+
+      fun asFloat(value: Any?): Float? {
+        return when (value) {
+          is Number -> value.toFloat()
+          is String -> value.toFloatOrNull()
+          else -> null
+        }
+      }
+
+      if (name == "style") {
+        val styleJson = valueJson ?: return
+        val style = Style.fromJson(styleJson)
+        engine.setStyle(target.id, style)
+        if (target.id != nodeId) {
+          engine.setStyle(nodeId, Style())
+        }
+        scrollView.applyStyle(style)
+        applyBackgroundStyle(target.view, style)
+        return
+      }
+
+      when (name) {
+        "horizontal" -> {
+          val horizontal = asBoolean(parsed) ?: false
+          scrollView.setAxis(horizontal)
+        }
+        "scrollEnabled" -> {
+          scrollView.setScrollEnabled(asBoolean(parsed))
+        }
+        "directionalLockEnabled" -> {
+          scrollView.setDirectionalLockEnabled(asBoolean(parsed))
+        }
+        "showsVerticalScrollIndicator" -> {
+          scrollView.setShowsVerticalScrollIndicator(asBoolean(parsed))
+        }
+        "showsHorizontalScrollIndicator" -> {
+          scrollView.setShowsHorizontalScrollIndicator(asBoolean(parsed))
+        }
+        "indicatorStyle" -> {
+          val style = (parsed as? String) ?: parseString(valueJson)
+          scrollView.setIndicatorStyle(style)
+        }
+        "overScrollBehavior" -> {
+          val behavior = (parsed as? String) ?: parseString(valueJson)
+          scrollView.setOverScrollBehavior(behavior)
+        }
+        "eventThrottleMs" -> {
+          scrollView.setEventThrottle(asLong(parsed))
+        }
+        "eventMinDisplacementPx" -> {
+          scrollView.setEventMinDisplacement(asFloat(parsed))
+        }
+        "bridgeCoalescing" -> {
+          scrollView.setBridgeCoalescing(asBoolean(parsed))
+        }
+        "__scrollCommand" -> {
+          val command = when (parsed) {
+            is JSONObject -> parsed
+            is Map<*, *> -> JSONObject(parsed)
+            else -> null
+          }
+          if (command != null) {
+            scrollView.applyCommand(command)
+          }
+        }
+      }
+      return
+    }
 
     when (name) {
       "style" -> {
@@ -238,6 +326,26 @@ class RuneUIManager(
               }
             }
           })
+        }
+      }
+      "testID" -> {
+        val testId = (parseString(valueJson) ?: "").trim()
+        if (testId.isNotEmpty()) {
+          if (!testIdWarningLogged) {
+            Log.w(
+              "RuneUI",
+              "testID is mapped to accessibilityLabel on Android to avoid conflicts; prefer accessibilityLabel directly.",
+            )
+            testIdWarningLogged = true
+          }
+          if (target.view.contentDescription.isNullOrEmpty()) {
+            target.view.contentDescription = testId
+          }
+          ViewCompat.setImportantForAccessibility(
+            target.view,
+            ViewCompat.IMPORTANT_FOR_ACCESSIBILITY_YES,
+          )
+          target.view.setTag(testId)
         }
       }
       "pointerEvents" -> {
@@ -495,6 +603,11 @@ class RuneUIManager(
       imageView.scaleType = ImageView.ScaleType.CENTER_CROP
       imageView.setBackgroundColor(Color.TRANSPARENT)
       view = imageView
+      label = null
+    } else if (type == SCROLL_VIEW_TYPE) {
+      val scrollView = RuneScrollView(root.context)
+      scrollView.bind(this, id)
+      view = scrollView
       label = null
     } else {
       view = FrameLayout(root.context)
@@ -1017,6 +1130,11 @@ class RuneUIManager(
     eventDispatcher(nodeId, event)
   }
 
+  internal fun dispatchEvent(nodeId: Int, event: String, payload: JSONObject?) {
+    storeEventPayload(nodeId, event, payload)
+    eventDispatcher(nodeId, event)
+  }
+
   internal fun onTextInputTextUpdated(nodeId: Int, text: String) {
     val node = nodes.get(nodeId) ?: return
     val state = ensureTextInputState(node)
@@ -1417,6 +1535,9 @@ class RuneUIManager(
     if (node.type == TEXT_INPUT_TYPE || node.type == SECURE_TEXT_INPUT_TYPE) {
         cleanupTextInput(node)
     }
+    if (node.type == SCROLL_VIEW_TYPE) {
+        (node.view as? RuneScrollView)?.unbind()
+    }
 
     // Clean up view: remove click listener and from parent
     node.view.setOnClickListener(null)
@@ -1481,6 +1602,8 @@ class RuneUIManager(
     private const val IMAGE_TYPE = "image"
     private const val TEXT_INPUT_TYPE = "text-input"
     private const val SECURE_TEXT_INPUT_TYPE = "secure-text-input"
+    private const val SCROLL_VIEW_TYPE = "scroll-view"
+    private var testIdWarningLogged = false
     private val TEXT_INPUT_MEASURE_PROPS = setOf(
       "style",
       "multiline",

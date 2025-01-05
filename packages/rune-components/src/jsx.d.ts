@@ -28,6 +28,7 @@ declare module "solid-js" {
       text: TextElementProps;
       image: ImageElementProps;
       "text-input": TextInputProps & { [key: string]: any };
+      "scroll-view": ViewElementProps & { [key: string]: any };
     }
   }
 }
