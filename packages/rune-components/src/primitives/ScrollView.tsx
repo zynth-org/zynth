@@ -280,8 +280,13 @@ export const ScrollView: ParentComponent<ScrollViewProps> = (props) => {
   );
   const resolvedChildren = resolveChildren(() => local.children);
   const containerStyle = createMemo<Style>(() => {
+    const axisValue = axis();
     const userStyle = local.contentContainerStyle as Style | undefined;
-    return userStyle ? { flexShrink: 0, ...userStyle } : { flexShrink: 0 };
+    const base: Style =
+      axisValue === "horizontal"
+        ? { flexShrink: 0, flexDirection: "row", width: "auto" }
+        : { flexShrink: 0 };
+    return userStyle ? { ...base, ...userStyle } : base;
   });
 
   const [hostNode, setHostNode] = createSignal<HostNode | null>(null);

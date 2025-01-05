@@ -13,8 +13,8 @@ export interface HostNode {
 }
 
 export type Style = {
-  width?: number;
-  height?: number;
+  width?: number | `${number}%` | "auto";
+  height?: number | `${number}%` | "auto";
   minWidth?: number;
   maxWidth?: number;
   minHeight?: number;

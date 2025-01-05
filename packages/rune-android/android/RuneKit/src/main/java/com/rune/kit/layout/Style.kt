@@ -17,6 +17,8 @@ data class Style(
   val height: Float? = null,
   val widthPercent: Float? = null,
   val heightPercent: Float? = null,
+  val widthAuto: Boolean = false,
+  val heightAuto: Boolean = false,
   val minWidth: Float? = null,
   val maxWidth: Float? = null,
   val minHeight: Float? = null,
@@ -94,24 +96,40 @@ data class Style(
     fun fromJson(jsonString: String): Style {
       try {
         val json = JSONObject(jsonString)
-        // Support width/height as numbers or percentage strings (e.g., "100%")
-  val rawWidth = json.opt("width")
-        val (width, widthPct) = when (rawWidth) {
-          is Number -> rawWidth.toFloat() to null
-          is String -> parseDimensionPercent(rawWidth)
-          else -> null to null
+        // Support width/height as numbers, percentages, or "auto"
+        val rawWidth = json.opt("width")
+        val widthResult = when (rawWidth) {
+          is Number -> Triple(rawWidth.toFloat(), null, false)
+          is String -> {
+            if (rawWidth.equals("auto", ignoreCase = true)) {
+              Triple(null, null, true)
+            } else {
+              val (value, percent) = parseDimensionPercent(rawWidth)
+              Triple(value, percent, false)
+            }
+          }
+          else -> Triple(null, null, false)
         }
-  val rawHeight = json.opt("height")
-        val (height, heightPct) = when (rawHeight) {
-          is Number -> rawHeight.toFloat() to null
-          is String -> parseDimensionPercent(rawHeight)
-          else -> null to null
+        val rawHeight = json.opt("height")
+        val heightResult = when (rawHeight) {
+          is Number -> Triple(rawHeight.toFloat(), null, false)
+          is String -> {
+            if (rawHeight.equals("auto", ignoreCase = true)) {
+              Triple(null, null, true)
+            } else {
+              val (value, percent) = parseDimensionPercent(rawHeight)
+              Triple(value, percent, false)
+            }
+          }
+          else -> Triple(null, null, false)
         }
         return Style(
-          width = width,
-          height = height,
-          widthPercent = widthPct,
-          heightPercent = heightPct,
+          width = widthResult.first,
+          height = heightResult.first,
+          widthPercent = widthResult.second,
+          heightPercent = heightResult.second,
+          widthAuto = widthResult.third,
+          heightAuto = heightResult.third,
           minWidth = json.optFloat("minWidth"),
           maxWidth = json.optFloat("maxWidth"),
           minHeight = json.optFloat("minHeight"),

@@ -167,11 +167,13 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
     val resolvedHeight = clamp(style.height, style.minHeight, style.maxHeight)
 
     when {
+      style.widthAuto -> node.setWidthAuto()
       resolvedWidth != null -> node.setWidth(resolvedWidth)
       style.widthPercent != null -> node.setWidthPercent(style.widthPercent)
       else -> node.setWidthAuto()
     }
     when {
+      style.heightAuto -> node.setHeightAuto()
       resolvedHeight != null -> node.setHeight(resolvedHeight)
       style.heightPercent != null -> node.setHeightPercent(style.heightPercent)
       else -> node.setHeightAuto()
@@ -206,10 +208,26 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
   private fun mergeStyles(prev: Style?, next: Style): Style {
     if (prev == null) return next
     return Style(
-      width = next.width ?: prev.width,
-      height = next.height ?: prev.height,
-      widthPercent = next.widthPercent ?: prev.widthPercent,
-      heightPercent = next.heightPercent ?: prev.heightPercent,
+      width = when {
+        next.widthAuto -> null
+        next.width != null -> next.width
+        else -> prev.width
+      },
+      height = when {
+        next.heightAuto -> null
+        next.height != null -> next.height
+        else -> prev.height
+      },
+      widthPercent = when {
+        next.widthAuto -> null
+        next.widthPercent != null -> next.widthPercent
+        else -> prev.widthPercent
+      },
+      heightPercent = when {
+        next.heightAuto -> null
+        next.heightPercent != null -> next.heightPercent
+        else -> prev.heightPercent
+      },
       minWidth = next.minWidth ?: prev.minWidth,
       maxWidth = next.maxWidth ?: prev.maxWidth,
       minHeight = next.minHeight ?: prev.minHeight,
@@ -238,6 +256,16 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
       fontSize = next.fontSize ?: prev.fontSize,
       color = next.color ?: prev.color,
       fontWeight = next.fontWeight ?: prev.fontWeight,
+      widthAuto = when {
+        next.widthAuto -> true
+        next.width != null || next.widthPercent != null -> false
+        else -> prev.widthAuto
+      },
+      heightAuto = when {
+        next.heightAuto -> true
+        next.height != null || next.heightPercent != null -> false
+        else -> prev.heightAuto
+      },
     )
   }
 

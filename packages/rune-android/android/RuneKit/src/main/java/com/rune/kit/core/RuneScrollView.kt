@@ -20,6 +20,8 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 import org.json.JSONObject
 
+private const val DEBUG_SCROLL_LOGS = false
+
 internal class RuneScrollView(
   context: Context,
 ) : FrameLayout(context) {
@@ -457,6 +459,7 @@ internal class RuneScrollView(
   }
 
   private fun logState(label: String) {
+    if (!DEBUG_SCROLL_LOGS) return
     Log.d(
       "RuneScrollView",
       "[$label] node=$nodeId axis=$axis scrollY=${host.view.scrollY} hostH=${host.view.height} contentH=${contentView.height} children=${contentView.childCount} enabled=$scrollEnabled"

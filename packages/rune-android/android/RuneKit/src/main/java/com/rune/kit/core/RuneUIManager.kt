@@ -27,13 +27,15 @@ import com.rune.kit.layout.MeasureMode
 import com.rune.kit.layout.Rect
 import com.rune.kit.layout.Style
 import com.rune.kit.runtime.JSBridge
+import org.json.JSONException
+import org.json.JSONObject
+import org.json.JSONTokener
 import java.util.HashMap
 import java.util.LinkedHashSet
 import java.util.concurrent.CountDownLatch
 import kotlin.math.roundToInt
-import org.json.JSONException
-import org.json.JSONObject
-import org.json.JSONTokener
+
+private const val DEBUG_SCROLL_LAYOUT = false
 
 class RuneUIManager(
   private val root: RuneRootView,
@@ -1407,6 +1409,19 @@ class RuneUIManager(
             rawFrame
           }
           appliedFrames.put(node.id, appliedFrame)
+          val parentId = parents[node.id]
+          val parentType = parentId?.let { nodes.get(it)?.type }
+          if (
+            DEBUG_SCROLL_LAYOUT &&
+            (node.type == SCROLL_VIEW_TYPE || parentType == SCROLL_VIEW_TYPE)
+          ) {
+            val vg = node.view as? ViewGroup
+            val childCount = vg?.childCount ?: -1
+            Log.d(
+              "RuneUI",
+              "[layout] node=${node.id} type=${node.type} parentType=$parentType raw=(${rawFrame.left},${rawFrame.top},${rawFrame.right},${rawFrame.bottom}) applied=(${appliedFrame.left},${appliedFrame.top},${appliedFrame.right},${appliedFrame.bottom}) children=$childCount reused=$shouldReusePrevious"
+            )
+          }
 
           val width = (appliedFrame.right - appliedFrame.left).coerceAtLeast(0)
           val height = (appliedFrame.bottom - appliedFrame.top).coerceAtLeast(0)
@@ -1439,6 +1454,16 @@ class RuneUIManager(
           }
           if (paramsChanged) {
             node.view.layoutParams = layoutParams
+          }
+
+          // Ensure the measured dimensions stay in sync with Yoga so scroll containers pick up correct sizes.
+          val targetWidthSpec = MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY)
+          val targetHeightSpec = MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY)
+          if (
+            node.view.measuredWidth != width ||
+            node.view.measuredHeight != height
+          ) {
+            node.view.measure(targetWidthSpec, targetHeightSpec)
           }
         }
 
