@@ -284,7 +284,12 @@ export const ScrollView: ParentComponent<ScrollViewProps> = (props) => {
     const userStyle = local.contentContainerStyle as Style | undefined;
     const base: Style =
       axisValue === "horizontal"
-        ? { flexShrink: 0, flexDirection: "row", width: "auto" }
+        ? {
+            flexShrink: 0,
+            flexDirection: "row",
+            width: "auto",
+            alignSelf: "flex-start",
+          }
         : { flexShrink: 0 };
     return userStyle ? { ...base, ...userStyle } : base;
   });

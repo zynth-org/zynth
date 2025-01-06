@@ -45,6 +45,13 @@ export type Style = {
     | "space-between"
     | "space-around";
   alignItems?: "flex-start" | "center" | "flex-end" | "stretch";
+  alignSelf?:
+    | "auto"
+    | "flex-start"
+    | "center"
+    | "flex-end"
+    | "stretch"
+    | "baseline";
   borderRadius?: number;
   fontSize?: number;
   color?: string;
