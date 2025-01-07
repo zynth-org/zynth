@@ -261,6 +261,18 @@ class RuneUIManager(
         "bridgeCoalescing" -> {
           scrollView.setBridgeCoalescing(asBoolean(parsed))
         }
+        "scrollSnapType" -> {
+          scrollView.setScrollSnapType(parsed)
+        }
+        "scrollSnapAlign" -> {
+          scrollView.setScrollSnapAlign(parsed)
+        }
+        "scrollSnapStop" -> {
+          scrollView.setScrollSnapStop(parsed)
+        }
+        "scrollPadding" -> {
+          scrollView.setScrollPadding(parsed)
+        }
         "__scrollCommand" -> {
           val command = when (parsed) {
             is JSONObject -> parsed

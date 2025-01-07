@@ -264,6 +264,10 @@ export const ScrollView: ParentComponent<ScrollViewProps> = (props) => {
     "eventThrottleMs",
     "eventMinDisplacementPx",
     "bridgeCoalescing",
+    "scrollSnapType",
+    "scrollSnapAlign",
+    "scrollSnapStop",
+    "scrollPadding",
     "controller",
     "onScroll",
     "onScrollBeginDrag",
@@ -399,6 +403,23 @@ export const ScrollView: ParentComponent<ScrollViewProps> = (props) => {
     setProperty(node, "eventMinDisplacementPx", resolvedMinDisplacement());
     setProperty(node, "bridgeCoalescing", resolvedBridgeCoalescing());
     setProperty(node, "overScrollBehavior", resolvedOverScrollBehavior());
+
+    if (local.scrollSnapType !== undefined) {
+      setProperty(
+        node,
+        "scrollSnapType",
+        local.scrollSnapType ?? "none"
+      );
+    }
+    if (local.scrollSnapAlign !== undefined) {
+      setProperty(node, "scrollSnapAlign", local.scrollSnapAlign ?? null);
+    }
+    if (local.scrollSnapStop !== undefined) {
+      setProperty(node, "scrollSnapStop", local.scrollSnapStop ?? null);
+    }
+    if (local.scrollPadding !== undefined) {
+      setProperty(node, "scrollPadding", local.scrollPadding ?? null);
+    }
 
     if (local.style) {
       setProperty(node, "style", local.style as any);

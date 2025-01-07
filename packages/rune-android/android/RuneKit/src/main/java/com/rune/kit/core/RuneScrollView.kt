@@ -18,6 +18,7 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import org.json.JSONArray
 import org.json.JSONObject
 
 private const val DEBUG_SCROLL_LOGS = false
@@ -64,6 +65,18 @@ internal class RuneScrollView(
   private var coalescedPayload: JSONObject? = null
   private var coalesceScheduled = false
   private var pendingMomentumEndCheck = false
+  private var snapPendingCheck = false
+  private var snapPendingForce = false
+
+  private var snapEnabled = false
+  private var snapAxisMode: String = "both"
+  private var snapStrictness: String = "none"
+  private var snapAlignments: List<String> = emptyList()
+  private var snapStopAlways = false
+  private var snapPaddingStart = 0
+  private var snapPaddingEnd = 0
+  private var snapPaddingTop = 0
+  private var snapPaddingBottom = 0
 
   private val coalesceCallback = Choreographer.FrameCallback {
     coalesceScheduled = false
@@ -153,6 +166,9 @@ internal class RuneScrollView(
     host.setLockedAxis(null)
     updateScrollEnabled()
     applyIndicatorStyles()
+    if (snapEnabled) {
+      scheduleSnapCheck(force = snapStrictness == "mandatory")
+    }
   }
 
   fun setScrollEnabled(enabled: Boolean?) {
@@ -176,6 +192,113 @@ internal class RuneScrollView(
     }
     verticalHost.view.overScrollMode = mode
     horizontalHost.view.overScrollMode = mode
+  }
+
+  fun setScrollSnapType(value: Any?) {
+    if (value == null || value == JSONObject.NULL) {
+      snapEnabled = false
+      snapAxisMode = "both"
+      snapStrictness = "none"
+      snapPendingCheck = false
+      snapPendingForce = false
+      return
+    }
+    if (value is String) {
+      val normalized = value.lowercase()
+      if (normalized == "none") {
+        snapEnabled = false
+        snapStrictness = "none"
+        snapAxisMode = "both"
+        snapPendingCheck = false
+        snapPendingForce = false
+        return
+      }
+      snapEnabled = true
+      snapAxisMode = when (normalized) {
+        "x", "inline" -> "x"
+        "y", "block" -> "y"
+        "both" -> "both"
+        else -> "both"
+      }
+      snapStrictness = if (normalized == "proximity") "proximity" else "mandatory"
+      return
+    }
+    if (value is JSONObject) {
+      snapAxisMode = value.optString("axis", "both").lowercase()
+      snapStrictness = value.optString("strictness", "proximity").lowercase()
+      snapEnabled = snapStrictness != "none"
+      if (!snapEnabled) {
+        snapPendingCheck = false
+        snapPendingForce = false
+      }
+      return
+    }
+    snapEnabled = true
+    snapStrictness = "mandatory"
+    snapAxisMode = "both"
+  }
+
+  fun setScrollSnapAlign(value: Any?) {
+    snapAlignments = when (value) {
+      null, JSONObject.NULL -> emptyList()
+      is String -> listOf(value.lowercase())
+      is JSONArray -> {
+        val list = mutableListOf<String>()
+        for (i in 0 until value.length()) {
+          val entry = value.optString(i, null)?.lowercase()
+          if (!entry.isNullOrEmpty()) list.add(entry)
+        }
+        list
+      }
+      else -> emptyList()
+    }
+  }
+
+  fun setScrollSnapStop(value: Any?) {
+    snapStopAlways = when (value) {
+      is String -> value.equals("always", ignoreCase = true)
+      else -> false
+    }
+  }
+
+  fun setScrollPadding(value: Any?) {
+    if (value == null || value == JSONObject.NULL) {
+      snapPaddingStart = 0
+      snapPaddingEnd = 0
+      snapPaddingTop = 0
+      snapPaddingBottom = 0
+      return
+    }
+    if (value is Number) {
+      val padding = value.toDouble().roundToInt().coerceAtLeast(0)
+      snapPaddingStart = padding
+      snapPaddingEnd = padding
+      snapPaddingTop = padding
+      snapPaddingBottom = padding
+      return
+    }
+    if (value is String) {
+      val numeric = value.toDoubleOrNull()
+      if (numeric != null) {
+        val padding = numeric.roundToInt().coerceAtLeast(0)
+        snapPaddingStart = padding
+        snapPaddingEnd = padding
+        snapPaddingTop = padding
+        snapPaddingBottom = padding
+        return
+      }
+    }
+    if (value is JSONObject) {
+      fun read(key: String): Int? =
+        if (value.has(key) && !value.isNull(key)) {
+          value.optDouble(key).roundToInt().coerceAtLeast(0)
+        } else null
+      snapPaddingTop = read("top") ?: 0
+      snapPaddingEnd = read("right") ?: 0
+      snapPaddingBottom = read("bottom") ?: 0
+      snapPaddingStart = read("left") ?: 0
+      return
+    }
   }
 
   fun setShowsVerticalScrollIndicator(show: Boolean?) {
@@ -349,6 +472,7 @@ internal class RuneScrollView(
     logState("handleEndDrag")
     dispatchScrollEventInternal("onScrollEndDrag", buildPayload(currentScrollX(), currentScrollY()), force = true)
     scheduleMomentumEndCheck()
+    scheduleSnapCheck(force = snapStrictness == "mandatory")
   }
 
   internal fun handleMomentumBegin() {
@@ -363,6 +487,7 @@ internal class RuneScrollView(
     isDecelerating = false
     logState("handleMomentumEnd")
     dispatchScrollEventInternal("onMomentumScrollEnd", buildPayload(currentScrollX(), currentScrollY()), force = true)
+    scheduleSnapCheck(force = true)
   }
 
   private fun scheduleMomentumEndCheck() {
@@ -374,6 +499,110 @@ internal class RuneScrollView(
         handleMomentumEnd()
       }
     }, 120L)
+  }
+
+  private fun scheduleSnapCheck(force: Boolean = false) {
+    if (!shouldSnap()) return
+    snapPendingForce = snapPendingForce || force || snapStopAlways
+    if (snapPendingCheck) return
+    snapPendingCheck = true
+    post {
+      snapPendingCheck = false
+      val forceSnap = snapPendingForce
+      snapPendingForce = false
+      snapToNearest(forceSnap)
+    }
+  }
+
+  private fun shouldSnap(): Boolean {
+    if (!snapEnabled) return false
+    return when (snapAxisMode) {
+      "x", "inline" -> axis == Axis.HORIZONTAL
+      "y", "block" -> axis == Axis.VERTICAL
+      "both" -> true
+      else -> true
+    }
+  }
+
+  private fun snapToNearest(force: Boolean) {
+    if (!shouldSnap()) return
+    if (contentView.childCount == 0) return
+    val viewportWidth = host.view.width.takeIf { it > 0 } ?: width
+    val viewportHeight = host.view.height.takeIf { it > 0 } ?: height
+
+    val viewportSize = if (axis == Axis.HORIZONTAL) viewportWidth else viewportHeight
+    if (viewportSize <= 0) return
+
+    val currentOffset = if (axis == Axis.HORIZONTAL) currentScrollX() else currentScrollY()
+    val maxScroll = if (axis == Axis.HORIZONTAL) {
+      max(0, contentView.width - viewportWidth)
+    } else {
+      max(0, contentView.height - viewportHeight)
+    }
+
+    val candidates: List<View> = if (contentView.childCount == 1) {
+      val sole = contentView.getChildAt(0)
+      if (sole is ViewGroup && sole.childCount > 0) {
+        val list = mutableListOf<View>()
+        for (i in 0 until sole.childCount) {
+          list.add(sole.getChildAt(i))
+        }
+        list
+      } else {
+        listOf(sole)
+      }
+    } else {
+      val list = mutableListOf<View>()
+      for (i in 0 until contentView.childCount) {
+        list.add(contentView.getChildAt(i))
+      }
+      list
+    }
+    if (candidates.isEmpty()) return
+
+    val alignments = if (snapAlignments.isEmpty()) listOf("start") else snapAlignments
+    var bestTarget = -1
+    var bestDistance = Float.MAX_VALUE
+
+    for (child in candidates) {
+      val childStart = if (axis == Axis.HORIZONTAL) child.left else child.top
+      val childSize = if (axis == Axis.HORIZONTAL) child.width else child.height
+      if (childSize <= 0) continue
+      val childEnd = childStart + childSize
+      for (align in alignments) {
+        val target = when (align) {
+          "center" -> (childStart + childSize / 2f) - viewportSize / 2f
+          "end" -> {
+            val paddingEnd = if (axis == Axis.HORIZONTAL) snapPaddingEnd else snapPaddingBottom
+            (childEnd + paddingEnd - viewportSize).toFloat()
+          }
+          else -> {
+            val paddingStart = if (axis == Axis.HORIZONTAL) snapPaddingStart else snapPaddingTop
+            (childStart - paddingStart).toFloat()
+          }
+        }
+        val clamped = target.roundToInt().coerceIn(0, maxScroll)
+        val distance = abs(clamped - currentOffset).toFloat()
+        if (distance < bestDistance - 0.5f) {
+          bestDistance = distance
+          bestTarget = clamped
+        }
+      }
+    }
+
+    if (bestTarget < 0) return
+
+    val threshold = viewportSize * 0.25f
+    val shouldSnapNow = force || snapStrictness == "mandatory" || bestDistance <= threshold
+    if (!shouldSnapNow) return
+
+    if (snapStopAlways) {
+      host.stopScroll()
+    }
+
+    val targetX = if (axis == Axis.HORIZONTAL) bestTarget else currentScrollX()
+    val targetY = if (axis == Axis.VERTICAL) bestTarget else currentScrollY()
+    host.scrollToPosition(targetX, targetY, animated = true)
   }
 
   private fun buildPayload(x: Int, y: Int): JSONObject {
