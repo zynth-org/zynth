@@ -78,3 +78,10 @@ This document outlines the development plan to evolve Rune into a powerful, AI-n
   - [ ] Prepare documentation for the core APIs and components.
   - [ ] Create a compelling "hello world" example for the AI-native workflow.
   - [ ] Announce the open-source project.
+
+## Phase 4: Platform parity
+
+**Objective:** Achieve feature parity across iOS and Android, ensuring a consistent developer experience.
+
+- [ ] **ScrollView:**
+  - [ ] iOS require declare style `height` when android requires `minHeight`.

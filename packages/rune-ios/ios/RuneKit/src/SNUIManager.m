@@ -1,6 +1,7 @@
 #import "SNUIManager.h"
 #import "SNUIManager+Internal.h"
 #import "SNUIManager+Image.h"
+#import "SNUIManager+ScrollView.h"
 #import "RuneUIManager+View.h"
 #import "RuneUIManager+Text.h"
 #import "RuneUIManager+TextInput.h"
@@ -9,6 +10,7 @@
 #import "RuneSecureTextInputView.h"
 #import "RuneUIManager+Events.h"
 #import "RuneUIManager+Layout.h"
+#import "RuneScrollView.h"
 #import "SNHexColor.h"
 #import <Yoga/Yoga.h>
 #import <QuartzCore/QuartzCore.h>
@@ -120,6 +122,9 @@
 #else
     v = [UIView new];
 #endif
+  } else if ([type isEqualToString:@"scroll-view"]) {
+    RuneScrollView *scroll = [RuneScrollView new];
+    v = scroll;
   } else {
     v = [self rune_makeContainerView];
   }
@@ -133,6 +138,7 @@
   n.pointerEvents = @"auto"; // Default pointerEvents state
 
   [self rune_initializePointerDefaultsForNode:n];
+  [self sn_scrollViewAttachIfNeeded:n];
 
   if (!n.yoga) {
     NSLog(@"[SN] ERROR: Failed to create Yoga node for nid=%d", nid);
@@ -426,6 +432,10 @@ static void SNApplyEdges(NSDictionary *style,
       return;
   }
 
+  if ([self sn_scrollViewHandlesSetPropForNode:n name:name value:value rawJSON:json]) {
+    return;
+  }
+
   if ([self sn_imageHandlesSetPropForNode:n name:name valueJSON:json]) {
     return;
   }
@@ -490,6 +500,10 @@ static void SNApplyEdges(NSDictionary *style,
   if ([self sn_secureTextInputHandlesSetHandlerForNode:n name:name]) {
       return;
   }
+
+  if ([self sn_scrollViewHandlesSetHandlerForNode:n name:name]) {
+    return;
+  }
 }
 
 - (void)setText:(NSNumber *)nodeId text:(NSString *)text {
@@ -538,6 +552,14 @@ static void SNApplyEdges(NSDictionary *style,
     }
     int i = (int)index.intValue;
     i = MAX(0, MIN(i, (int)p.view.subviews.count));
+
+    if ([self sn_scrollViewDidInsertChild:p child:c atIndex:i]) {
+      [p.children insertObject:childId atIndex:i];
+      YGNodeInsertChild(p.yoga, c.yoga, (uint32_t)i);
+      [self rune_markNeedsFlush];
+      return;
+    }
+
     [p.view insertSubview:c.view atIndex:i];
     [p.children insertObject:childId atIndex:i];
     YGNodeInsertChild(p.yoga, c.yoga, (uint32_t)i);
@@ -562,6 +584,7 @@ static void SNApplyEdges(NSDictionary *style,
     if (self.rootYoga && c.yoga) {
       YGNodeRemoveChild(self.rootYoga, c.yoga);
     }
+    [self sn_scrollViewCleanupNode:c];
     c.parentId = -1;
   } else {
     SNNode *p = _nodes[parentId];
@@ -572,6 +595,18 @@ static void SNApplyEdges(NSDictionary *style,
       return;
     }
 
+    if ([self sn_scrollViewDidRemoveChild:p child:c]) {
+      NSUInteger idx = [p.children indexOfObject:childId];
+      if (idx != NSNotFound) [p.children removeObjectAtIndex:idx];
+      if (c.yoga) {
+        YGNodeRemoveChild(p.yoga, c.yoga);
+      }
+      [self sn_scrollViewCleanupNode:c];
+      c.parentId = -1;
+      [self rune_markNeedsFlush];
+      return;
+    }
+
     [c.view removeFromSuperview];
     NSUInteger idx = [p.children indexOfObject:childId];
     if (idx != NSNotFound) [p.children removeObjectAtIndex:idx];
@@ -579,6 +614,7 @@ static void SNApplyEdges(NSDictionary *style,
     if (c.yoga) {
       YGNodeRemoveChild(p.yoga, c.yoga);
     }
+    [self sn_scrollViewCleanupNode:c];
     c.parentId = -1;
   }
   [self rune_markNeedsFlush];
