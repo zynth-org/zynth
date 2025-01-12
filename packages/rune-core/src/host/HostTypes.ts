@@ -1,6 +1,7 @@
 export type NodeType =
   | "root"
   | "view"
+  | "button"
   | "text"
   | "image"
   | "marker"
@@ -22,6 +23,9 @@ export type Style = {
   flexGrow?: number;
   flexShrink?: number;
   backgroundColor?: string;
+  gap?: number;
+  rowGap?: number;
+  columnGap?: number;
   padding?: number;
   paddingHorizontal?: number;
   paddingVertical?: number;

@@ -42,7 +42,7 @@ class RuneUIManager(
   private val engine: LayoutEngine,
   private val eventDispatcher: (Int, String) -> Unit = { _, _ -> },
   private val handlerListener: (Int, String, Long) -> Unit = { _, _, _ -> },
-) : JSBridge.UIShim {
+) : JSBridge.UIShim, RuneButtonView.Listener {
   data class Node(
     val id: Int,
     val type: String,
@@ -286,6 +286,87 @@ class RuneUIManager(
       }
       return
     }
+    if (target.type == BUTTON_TYPE) {
+      val button = target.view as? RuneButtonView ?: return
+      val parsed = parseJsonValue(valueJson)
+
+      fun asBoolean(value: Any?): Boolean? {
+        return when (value) {
+          is Boolean -> value
+          is Number -> value.toInt() != 0
+          is String -> value.equals("true", ignoreCase = true) || value == "1"
+          else -> null
+        }
+      }
+
+      when (name) {
+        "disabled" -> {
+          val disabled = asBoolean(parsed) ?: false
+          button.setDisabled(disabled)
+        }
+        "loading" -> {
+          val loading = asBoolean(parsed) ?: false
+          button.setLoading(loading)
+        }
+        "style" -> {
+          val styleJson = valueJson ?: return
+          val style = Style.fromJson(styleJson)
+          applyStyleToButton(target.id, button, style)
+          engine.setStyle(target.id, style)
+          return
+        }
+        "pressEffect" -> {
+          val effect = (parsed as? String) ?: parseString(valueJson)
+          button.setPressEffect(effect)
+        }
+        "pressRetentionOffset" -> {
+          val number = parsed as? Number
+          button.setPressRetentionOffset(number)
+        }
+        "preventFocusOnPress" -> {
+          val prevent = asBoolean(parsed) ?: false
+          button.setPreventFocusOnPress(prevent)
+        }
+        "haptics" -> {
+          val mode = (parsed as? String) ?: parseString(valueJson)
+          button.setHapticsMode(mode)
+        }
+        "hitSlop" -> {
+          val json = when (parsed) {
+            is JSONObject -> parsed
+            is Number -> {
+              val inset = parsed.toDouble()
+              JSONObject().apply {
+                put("top", inset)
+                put("left", inset)
+                put("bottom", inset)
+                put("right", inset)
+              }
+            }
+            is String -> runCatching { JSONObject(parsed) }.getOrNull()
+            else -> valueJson?.let { runCatching { JSONObject(it) }.getOrNull() }
+          }
+          button.setHitSlop(json)
+        }
+        "minimumTouchSize" -> {
+          val json = when (parsed) {
+            is JSONObject -> parsed
+            is String -> runCatching { JSONObject(parsed) }.getOrNull()
+            else -> valueJson?.let { runCatching { JSONObject(it) }.getOrNull() }
+          }
+          button.setMinimumTouchSize(json)
+        }
+        "__buttonCommand" -> {
+          val json = when (parsed) {
+            is JSONObject -> parsed
+            is String -> runCatching { JSONObject(parsed) }.getOrNull()
+            else -> valueJson?.let { runCatching { JSONObject(it) }.getOrNull() }
+          }
+          button.handleCommand(json)
+        }
+      }
+      return
+    }
 
     when (name) {
       "style" -> {
@@ -447,7 +528,18 @@ class RuneUIManager(
         imageSupport.onHandlerSet(node, event)
       }
     }
-    if (event == "onPress") {
+    val node = nodes.get(nodeId)
+    val nodeType = node?.type
+    if (nodeType == BUTTON_TYPE) {
+      (node.view as? RuneButtonView)?.let { button ->
+        if (event == "onLongPress") {
+          button.setHasLongPressHandler(true)
+        }
+      }
+      handlerListener(nodeId, event, handlerId)
+      return
+    }
+    if (event == "onPress" && nodeType != BUTTON_TYPE) {
       Log.d("RuneUI", "Setting onPress handler for node $nodeId")
       val node = nodes.get(nodeId)
       node?.view?.let { view ->
@@ -461,6 +553,16 @@ class RuneUIManager(
       }
     }
     handlerListener(nodeId, event, handlerId)
+  }
+
+  private fun applyStyleToButton(nodeId: Int, button: RuneButtonView, style: Style) {
+    val previous = buttonStyles.get(nodeId)
+    val merged = deriveButtonVisualStyle(style, previous, button)
+    if (previous == merged) {
+      return
+    }
+    buttonStyles.put(nodeId, merged)
+    applyVisualStyle(button, merged)
   }
 
   private val nodes = SparseArray<Node>()
@@ -481,6 +583,7 @@ class RuneUIManager(
   private val pendingViewOperations = mutableListOf<ViewOperation>()
   private val pendingNativeOperations = mutableListOf<NativeOperation>()
   private val stickyFrameCarryover = mutableSetOf<Int>()
+  private val buttonStyles = SparseArray<ButtonVisualStyle>()
   @Volatile private var viewTransactionInProgress = false
   @Volatile private var layoutTransactionActive = false
   private enum class FlushPriority { HIGH, NORMAL }
@@ -623,6 +726,16 @@ class RuneUIManager(
       scrollView.bind(this, id)
       view = scrollView
       label = null
+    } else if (type == BUTTON_TYPE) {
+      val button = RuneButtonView(root.context)
+      button.nodeId = id
+      button.listener = this
+      button.background = GradientDrawable()
+      view = button
+      label = null
+      val initialStyle = deriveButtonVisualStyle(Style(), null, button)
+      buttonStyles.put(id, initialStyle)
+      applyVisualStyle(button, initialStyle)
     } else {
       view = FrameLayout(root.context)
       label = null
@@ -643,6 +756,16 @@ class RuneUIManager(
           )
         params.width = FrameLayout.LayoutParams.WRAP_CONTENT
         params.height = FrameLayout.LayoutParams.WRAP_CONTENT
+        view.layoutParams = params
+        view.isClickable = true
+        view.isFocusable = true
+        view.isFocusableInTouchMode = true
+      }
+      BUTTON_TYPE -> {
+        val params = FrameLayout.LayoutParams(
+          ViewGroup.LayoutParams.WRAP_CONTENT,
+          ViewGroup.LayoutParams.WRAP_CONTENT,
+        )
         view.layoutParams = params
         view.isClickable = true
         view.isFocusable = true
@@ -1149,6 +1272,41 @@ class RuneUIManager(
     eventDispatcher(nodeId, event)
   }
 
+  override fun onPressIn(nodeId: Int) {
+    dispatchEvent(nodeId, "onPressIn", null)
+  }
+
+  override fun onPressOut(nodeId: Int, cancelled: Boolean) {
+    val payload = JSONObject().put("cancelled", cancelled)
+    dispatchEvent(nodeId, "onPressOut", payload)
+  }
+
+  override fun onPress(nodeId: Int) {
+    val payload = JSONObject().put("synthetic", false)
+    dispatchEvent(nodeId, "onPress", payload)
+  }
+
+  override fun onLongPress(nodeId: Int, durationMs: Long) {
+    val payload = JSONObject().put("durationMs", durationMs)
+    dispatchEvent(nodeId, "onLongPress", payload)
+  }
+
+  override fun onFocus(nodeId: Int) {
+    dispatchEvent(nodeId, "onFocus", null)
+  }
+
+  override fun onBlur(nodeId: Int) {
+    dispatchEvent(nodeId, "onBlur", null)
+  }
+
+  override fun onKeyEvent(nodeId: Int, phase: String, key: String?) {
+    val payload = JSONObject()
+    if (!key.isNullOrEmpty()) {
+      payload.put("key", key)
+    }
+    dispatchEvent(nodeId, phase, if (payload.length() == 0) null else payload)
+  }
+
   internal fun onTextInputTextUpdated(nodeId: Int, text: String) {
     val node = nodes.get(nodeId) ?: return
     val state = ensureTextInputState(node)
@@ -1291,6 +1449,7 @@ class RuneUIManager(
     nextId = root.rootId + 1
     lastRootWidth = -1
     lastRootHeight = -1
+    buttonStyles.clear()
 
     engine.reset()
   }
@@ -1575,6 +1734,9 @@ class RuneUIManager(
     if (node.type == SCROLL_VIEW_TYPE) {
         (node.view as? RuneScrollView)?.unbind()
     }
+    if (node.type == BUTTON_TYPE) {
+        buttonStyles.remove(id)
+    }
 
     // Clean up view: remove click listener and from parent
     node.view.setOnClickListener(null)
@@ -1640,6 +1802,7 @@ class RuneUIManager(
     private const val TEXT_INPUT_TYPE = "text-input"
     private const val SECURE_TEXT_INPUT_TYPE = "secure-text-input"
     private const val SCROLL_VIEW_TYPE = "scroll-view"
+    private const val BUTTON_TYPE = "button"
     private var testIdWarningLogged = false
     private val TEXT_INPUT_MEASURE_PROPS = setOf(
       "style",

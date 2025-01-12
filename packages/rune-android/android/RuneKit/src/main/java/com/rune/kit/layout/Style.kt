@@ -45,6 +45,9 @@ data class Style(
   val marginRight: Float? = null,
   val marginTop: Float? = null,
   val marginBottom: Float? = null,
+  val gap: Float? = null,
+  val rowGap: Float? = null,
+  val columnGap: Float? = null,
   
   // Visual properties
   val backgroundColor: Int? = null,
@@ -155,6 +158,9 @@ data class Style(
           marginRight = json.optFloat("marginRight"),
           marginTop = json.optFloat("marginTop"),
           marginBottom = json.optFloat("marginBottom"),
+          gap = json.optFloat("gap"),
+          rowGap = json.optFloat("rowGap"),
+          columnGap = json.optFloat("columnGap"),
           
           backgroundColor = json.optString("backgroundColor")?.let { parseColor(it) },
           borderRadius = json.optFloat("borderRadius"),

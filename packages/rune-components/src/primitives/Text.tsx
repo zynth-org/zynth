@@ -4,6 +4,7 @@ import type { Style } from "@rune/core";
 
 export interface TextProps {
   style?: Style;
+  numberOfLines?: number;
 }
 
 export const Text: ParentComponent<TextProps> = (props) => {

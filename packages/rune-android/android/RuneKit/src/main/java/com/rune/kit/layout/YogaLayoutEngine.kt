@@ -5,6 +5,7 @@ import com.facebook.yoga.YogaConfig
 import com.facebook.yoga.YogaConfigFactory
 import com.facebook.yoga.YogaEdge
 import com.facebook.yoga.YogaFlexDirection
+import com.facebook.yoga.YogaGutter
 import com.facebook.yoga.YogaJustify
 import com.facebook.yoga.YogaMeasureMode
 import com.facebook.yoga.YogaMeasureOutput
@@ -203,6 +204,7 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
     }
     applyPadding(node, style)
     applyMargin(node, style)
+    applyGap(node, style)
   }
 
   private fun mergeStyles(prev: Style?, next: Style): Style {
@@ -251,6 +253,9 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
       marginRight = next.marginRight ?: prev.marginRight,
       marginTop = next.marginTop ?: prev.marginTop,
       marginBottom = next.marginBottom ?: prev.marginBottom,
+      gap = next.gap ?: prev.gap,
+      rowGap = next.rowGap ?: prev.rowGap,
+      columnGap = next.columnGap ?: prev.columnGap,
       backgroundColor = next.backgroundColor ?: prev.backgroundColor,
       borderRadius = next.borderRadius ?: prev.borderRadius,
       fontSize = next.fontSize ?: prev.fontSize,
@@ -287,6 +292,17 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
     style.marginRight?.let { node.setMargin(YogaEdge.RIGHT, it) }
     style.marginTop?.let { node.setMargin(YogaEdge.TOP, it) }
     style.marginBottom?.let { node.setMargin(YogaEdge.BOTTOM, it) }
+  }
+
+  private fun applyGap(node: YogaNode, style: Style) {
+    node.setGap(YogaGutter.ROW, 0f)
+    node.setGap(YogaGutter.COLUMN, 0f)
+    style.gap?.let {
+      node.setGap(YogaGutter.ROW, it)
+      node.setGap(YogaGutter.COLUMN, it)
+    }
+    style.rowGap?.let { node.setGap(YogaGutter.ROW, it) }
+    style.columnGap?.let { node.setGap(YogaGutter.COLUMN, it) }
   }
 
   private fun YogaNode.indexOf(child: YogaNode): Int {

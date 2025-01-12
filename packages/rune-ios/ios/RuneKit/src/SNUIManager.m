@@ -2,6 +2,7 @@
 #import "SNUIManager+Internal.h"
 #import "SNUIManager+Image.h"
 #import "SNUIManager+ScrollView.h"
+#import "SNUIManager+Button.h"
 #import "RuneUIManager+View.h"
 #import "RuneUIManager+Text.h"
 #import "RuneUIManager+TextInput.h"
@@ -11,6 +12,7 @@
 #import "RuneUIManager+Events.h"
 #import "RuneUIManager+Layout.h"
 #import "RuneScrollView.h"
+#import "RuneButtonView.h"
 #import "SNHexColor.h"
 #import <Yoga/Yoga.h>
 #import <QuartzCore/QuartzCore.h>
@@ -125,6 +127,9 @@
   } else if ([type isEqualToString:@"scroll-view"]) {
     RuneScrollView *scroll = [RuneScrollView new];
     v = scroll;
+  } else if ([type isEqualToString:@"button"]) {
+    RuneButtonView *button = [RuneButtonView new];
+    v = button;
   } else {
     v = [self rune_makeContainerView];
   }
@@ -139,6 +144,7 @@
 
   [self rune_initializePointerDefaultsForNode:n];
   [self sn_scrollViewAttachIfNeeded:n];
+  [self sn_buttonAttachIfNeeded:n];
 
   if (!n.yoga) {
     NSLog(@"[SN] ERROR: Failed to create Yoga node for nid=%d", nid);
@@ -252,6 +258,26 @@ static void SNApplyEdges(NSDictionary *style,
     else if ([ai isEqualToString:@"flex-end"]) a = YGAlignFlexEnd;
     else if ([ai isEqualToString:@"stretch"]) a = YGAlignStretch;
     YGNodeStyleSetAlignItems(n.yoga, a);
+  }
+
+  NSNumber *gapAll = style[@"gap"];
+  NSNumber *gapRow = style[@"rowGap"];
+  NSNumber *gapColumn = style[@"columnGap"];
+  if (gapAll) {
+    float g = (float)SNNum(gapAll);
+    YGNodeStyleSetGap(n.yoga, YGGutterAll, g);
+  }
+  if (gapRow) {
+    float g = (float)SNNum(gapRow);
+    YGNodeStyleSetGap(n.yoga, YGGutterRow, g);
+  } else if (gapAll) {
+    YGNodeStyleSetGap(n.yoga, YGGutterRow, (float)SNNum(gapAll));
+  }
+  if (gapColumn) {
+    float g = (float)SNNum(gapColumn);
+    YGNodeStyleSetGap(n.yoga, YGGutterColumn, g);
+  } else if (gapAll) {
+    YGNodeStyleSetGap(n.yoga, YGGutterColumn, (float)SNNum(gapAll));
   }
 
   SNApplyEdges(style, @"padding", @"paddingHorizontal", @"paddingVertical", @"paddingTop", @"paddingRight", @"paddingBottom", n.yoga,
@@ -424,6 +450,10 @@ static void SNApplyEdges(NSDictionary *style,
     return;
   }
 
+  if ([self sn_buttonHandlesSetPropForNode:n name:name value:value rawJSON:json]) {
+    return;
+  }
+
   if ([self sn_textInputHandlesSetPropForNode:n name:name value:value rawJSON:json]) {
     return;
   }
@@ -451,6 +481,10 @@ static void SNApplyEdges(NSDictionary *style,
 - (void)setPropCallback:(NSNumber *)nodeId name:(NSString *)name callback:(JSValue *)callback {
   SNNode *n = _nodes[nodeId];
   if (!n || !n.view) return;
+  
+  if ([self sn_buttonHandlesSetHandlerForNode:n name:name]) {
+    return;
+  }
   
   if ([name isEqualToString:@"onPress"]) {
     BOOL validCallback = callback && ![callback isUndefined] && ![callback isNull];
@@ -482,6 +516,10 @@ static void SNApplyEdges(NSDictionary *style,
 - (void)setHandler:(NSNumber *)nodeId name:(NSString *)name {
   SNNode *n = _nodes[nodeId];
   if (!n || !n.view) return;
+
+  if ([self sn_buttonHandlesSetHandlerForNode:n name:name]) {
+    return;
+  }
 
   if ([name isEqualToString:@"onPress"]) {
     n.onPressCallback = nil;
