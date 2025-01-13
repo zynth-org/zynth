@@ -20,6 +20,8 @@ import kotlin.math.roundToInt
 private const val LONG_PRESS_TIMEOUT_MS = 500L
 private const val DEFAULT_PRESS_RETENTION_DP = 12f
 private const val DEFAULT_MIN_TOUCH_DP = 44f
+private const val HIGHLIGHT_ANIMATION_MS = 200L
+private const val ASYNC_PRESS_DELAY_MS = 50L
 
 class RuneButtonView(context: Context) : FrameLayout(context) {
 
@@ -170,6 +172,22 @@ class RuneButtonView(context: Context) : FrameLayout(context) {
     }
   }
 
+  private fun updateVisualState(animated: Boolean) {
+    val targetAlpha = when {
+      !isEnabled -> 0.5f
+      pressedDown && pressEffect.equals("highlight", ignoreCase = true) -> 0.85f
+      else -> 1f
+    }
+
+    if (animated) {
+      animate().alpha(targetAlpha).setDuration(HIGHLIGHT_ANIMATION_MS).start()
+    } else {
+      // Cancel any ongoing animation and set the alpha directly
+      animate().cancel()
+      alpha = targetAlpha
+    }
+  }
+
   override fun onTouchEvent(event: MotionEvent): Boolean {
     if (!shouldHandleInteraction() || nodeId < 0) {
       return super.onTouchEvent(event)
@@ -184,9 +202,7 @@ class RuneButtonView(context: Context) : FrameLayout(context) {
           requestFocus()
         }
         isPressed = true
-        if (pressEffect.equals("highlight", ignoreCase = true)) {
-          alpha = 0.85f
-        }
+        updateVisualState(animated = false)
         listener?.onPressIn(nodeId)
         scheduleLongPress()
         return true
@@ -207,13 +223,11 @@ class RuneButtonView(context: Context) : FrameLayout(context) {
         cancelLongPress()
         pressedDown = false
         isPressed = false
-        if (pressEffect.equals("highlight", ignoreCase = true)) {
-          post {
-            if (!pressedDown) {
-              alpha = if (isEnabled) 1f else 0.5f
-            }
+        mainHandler.postDelayed({
+          if (!pressedDown && !loading) {
+            updateVisualState(animated = true)
           }
-        }
+        }, ASYNC_PRESS_DELAY_MS)
         if (!wasLongPress) {
           triggerHaptics()
           listener?.onPress(nodeId)
@@ -236,9 +250,11 @@ class RuneButtonView(context: Context) : FrameLayout(context) {
     pressedDown = false
     longPressTriggered = false
     isPressed = false
-    if (pressEffect.equals("highlight", ignoreCase = true)) {
-      alpha = if (isEnabled) 1f else 0.5f
-    }
+    mainHandler.postDelayed({
+      if (!pressedDown && !loading) {
+        updateVisualState(animated = true)
+      }
+    }, ASYNC_PRESS_DELAY_MS)
     listener?.onPressOut(nodeId, cancelled)
   }
 
@@ -263,18 +279,19 @@ class RuneButtonView(context: Context) : FrameLayout(context) {
   fun setDisabled(value: Boolean) {
     disabled = value
     isEnabled = !value && !loading
-    alpha = if (isEnabled) 1f else 0.5f
+    updateVisualState(animated = true)
   }
 
   fun setLoading(value: Boolean) {
     loading = value
     isEnabled = !(value || disabled)
-    alpha = if (isEnabled) 1f else 0.5f
+    updateVisualState(animated = true)
   }
 
   fun setPressEffect(effect: String?) {
     pressEffect = effect ?: "ripple"
     updatePressEffect()
+    updateVisualState(animated = false)
   }
 
   fun setPressRetentionOffset(value: Number?) {
