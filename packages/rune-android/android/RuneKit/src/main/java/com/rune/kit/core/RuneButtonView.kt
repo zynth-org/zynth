@@ -45,8 +45,6 @@ class RuneButtonView(context: Context) : FrameLayout(context) {
   private var pressRetentionOffsetPx = DEFAULT_PRESS_RETENTION_DP * density
   private var hasLongPressHandler = false
   private var hapticsMode: String = "none"
-  private var minTouchWidthPx = DEFAULT_MIN_TOUCH_DP * density
-  private var minTouchHeightPx = DEFAULT_MIN_TOUCH_DP * density
   private var pressEffect: String = "ripple"
   private var lastCommandSeq: Long = -1L
 
@@ -65,6 +63,7 @@ class RuneButtonView(context: Context) : FrameLayout(context) {
     importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
     clipToPadding = false
     clipChildren = false
+    requestLayout()
     updatePressEffect()
     setOnFocusChangeListener { _, hasFocus ->
       if (nodeId < 0) return@setOnFocusChangeListener
@@ -171,17 +170,6 @@ class RuneButtonView(context: Context) : FrameLayout(context) {
     }
   }
 
-  override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-    super.onMeasure(widthMeasureSpec, heightMeasureSpec)
-    var measuredWidth = measuredWidth
-    var measuredHeight = measuredHeight
-    val minWidth = minTouchWidthPx.roundToInt()
-    val minHeight = minTouchHeightPx.roundToInt()
-    if (measuredWidth < minWidth) measuredWidth = minWidth
-    if (measuredHeight < minHeight) measuredHeight = minHeight
-    setMeasuredDimension(measuredWidth, measuredHeight)
-  }
-
   override fun onTouchEvent(event: MotionEvent): Boolean {
     if (!shouldHandleInteraction() || nodeId < 0) {
       return super.onTouchEvent(event)
@@ -220,7 +208,11 @@ class RuneButtonView(context: Context) : FrameLayout(context) {
         pressedDown = false
         isPressed = false
         if (pressEffect.equals("highlight", ignoreCase = true)) {
-          alpha = if (isEnabled) 1f else 0.5f
+          post {
+            if (!pressedDown) {
+              alpha = if (isEnabled) 1f else 0.5f
+            }
+          }
         }
         if (!wasLongPress) {
           triggerHaptics()
@@ -312,17 +304,17 @@ class RuneButtonView(context: Context) : FrameLayout(context) {
   }
 
   fun setMinimumTouchSize(value: JSONObject?) {
+    val w: Float
+    val h: Float
     if (value == null) {
-      minTouchWidthPx = DEFAULT_MIN_TOUCH_DP * density
-      minTouchHeightPx = DEFAULT_MIN_TOUCH_DP * density
+      w = DEFAULT_MIN_TOUCH_DP * density
+      h = DEFAULT_MIN_TOUCH_DP * density
     } else {
-      val w = value.optDouble("width", DEFAULT_MIN_TOUCH_DP.toDouble()).toFloat()
-      val h = value.optDouble("height", DEFAULT_MIN_TOUCH_DP.toDouble()).toFloat()
-      minTouchWidthPx = max(0f, w * density)
-      minTouchHeightPx = max(0f, h * density)
+      w = max(0f, value.optDouble("width", DEFAULT_MIN_TOUCH_DP.toDouble()).toFloat() * density)
+      h = max(0f, value.optDouble("height", DEFAULT_MIN_TOUCH_DP.toDouble()).toFloat() * density)
     }
-    minimumWidth = minTouchWidthPx.roundToInt()
-    minimumHeight = minTouchHeightPx.roundToInt()
+    minimumWidth = w.roundToInt()
+    minimumHeight = h.roundToInt()
     requestLayout()
   }
 

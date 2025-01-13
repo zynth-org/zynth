@@ -29,31 +29,25 @@ internal fun deriveButtonVisualStyle(
     ?: horizontal
     ?: paddingBase
     ?: current?.paddingLeft
-    ?: fallback.paddingLeft
+    ?: 0
   val right = style.paddingRight?.toInt()
     ?: horizontal
     ?: paddingBase
     ?: current?.paddingRight
-    ?: fallback.paddingRight
+    ?: 0
   val top = style.paddingTop?.toInt()
     ?: vertical
     ?: paddingBase
     ?: current?.paddingTop
-    ?: fallback.paddingTop
+    ?: 0
   val bottom = style.paddingBottom?.toInt()
     ?: vertical
     ?: paddingBase
     ?: current?.paddingBottom
-    ?: fallback.paddingBottom
+    ?: 0
 
-  val minWidth = style.minWidth?.toInt()
-    ?: current?.minWidth
-    ?: fallback.minimumWidth.takeIf { it > 0 }
-    ?: 44
-  val minHeight = style.minHeight?.toInt()
-    ?: current?.minHeight
-    ?: fallback.minimumHeight.takeIf { it > 0 }
-    ?: 44
+  val minWidth = style.minWidth?.toInt() ?: current?.minWidth
+  val minHeight = style.minHeight?.toInt() ?: current?.minHeight
 
   val existingColor = when (val bg = fallback.background) {
     is ColorDrawable -> bg.color
