@@ -17,7 +17,7 @@ This document outlines the development plan to evolve Rune into a powerful, AI-n
 - [✅/⚠️] **`Image`:** Implement a component for local and remote images.
 - [✅] **`TextInput`:** Implement a component for text input.
 - [✅] **`ScrollView`:** Implement a scrolling container.
-- [ ] **`Button`:** Implement a basic, cross-platform button.
+- [✅] **`Button`:** Implement a basic, cross-platform button.
 - [ ] **`Pressable`:** Implement a component to detect detailed press interactions.
 - [ ] **`FlatList`:** Implement a performant, virtualized list component.
 
