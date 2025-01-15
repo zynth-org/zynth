@@ -14,6 +14,7 @@ interface ViewElementProps {
   accessibilityRole?: "button" | "header" | "link" | "none";
   pointerEvents?: "auto" | "none" | "box-none" | "box-only";
   testID?: string;
+  key?: string | number;
 }
 
 interface TextElementProps {
@@ -29,6 +30,7 @@ declare module "solid-js" {
       image: ImageElementProps;
       "text-input": TextInputProps & { [key: string]: any };
       "scroll-view": ViewElementProps & { [key: string]: any };
+      pressable: ViewElementProps & { [key: string]: any };
     }
   }
 }

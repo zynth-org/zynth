@@ -10,6 +10,7 @@ export interface ViewProps {
   accessibilityRole?: "button" | "header" | "link" | "none";
   pointerEvents?: "auto" | "none" | "box-none" | "box-only";
   testID?: string;
+  key?: string | number;
 }
 
 export const View: ParentComponent<ViewProps> = (props) => {

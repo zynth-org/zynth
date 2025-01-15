@@ -42,7 +42,7 @@ class RuneUIManager(
   private val engine: LayoutEngine,
   private val eventDispatcher: (Int, String) -> Unit = { _, _ -> },
   private val handlerListener: (Int, String, Long) -> Unit = { _, _, _ -> },
-) : JSBridge.UIShim, RuneButtonView.Listener {
+) : JSBridge.UIShim, RuneButtonView.Listener, RunePressableView.Listener {
   data class Node(
     val id: Int,
     val type: String,
@@ -367,6 +367,141 @@ class RuneUIManager(
       }
       return
     }
+    if (target.type == PRESSABLE_TYPE) {
+      val pressable = target.view as? RunePressableView ?: return
+      val parsed = parseJsonValue(valueJson)
+
+      fun asBoolean(value: Any?): Boolean? {
+        return when (value) {
+          is Boolean -> value
+          is Number -> value.toInt() != 0
+          is String -> value.equals("true", ignoreCase = true) || value == "1"
+          else -> null
+        }
+      }
+
+      when (name) {
+        "disabled" -> {
+          val disabled = asBoolean(parsed) ?: false
+          pressable.setDisabled(disabled)
+        }
+        "style" -> {
+          val styleValue = valueJson ?: return
+          val style = Style.fromJson(styleValue)
+          engine.setStyle(target.id, style)
+          applyBackgroundStyle(pressable, style)
+          return
+        }
+        "stateLayerStyle" -> {
+          // No native handling yet; reserved for future visual overlays.
+          return
+        }
+        "pressEffect" -> {
+          val effect = (parsed as? String) ?: parseString(valueJson)
+          pressable.setPressEffect(effect)
+        }
+        "pressRetentionOffset" -> {
+          val number = parsed as? Number
+          pressable.setPressRetentionOffset(number)
+        }
+        "hitSlop" -> {
+          val json = when (parsed) {
+            is JSONObject -> parsed
+            is Number -> {
+              val inset = parsed.toDouble()
+              JSONObject().apply {
+                put("top", inset)
+                put("left", inset)
+                put("bottom", inset)
+                put("right", inset)
+              }
+            }
+            is String -> runCatching { JSONObject(parsed) }.getOrNull()
+            else -> valueJson?.let { runCatching { JSONObject(it) }.getOrNull() }
+          }
+          pressable.setHitSlop(json)
+        }
+        "delayPressInMs" -> {
+          val number = parsed as? Number
+          pressable.setDelayPressIn(number)
+        }
+        "delayPressOutMs" -> {
+          val number = parsed as? Number
+          pressable.setDelayPressOut(number)
+        }
+        "delayLongPressMs" -> {
+          val number = parsed as? Number
+          pressable.setDelayLongPress(number)
+        }
+        "longPressMinDurationMs" -> {
+          val number = parsed as? Number
+          pressable.setDelayLongPress(number)
+        }
+        "allowTouchPropagation" -> {
+          val allow = asBoolean(parsed) ?: false
+          pressable.setAllowTouchPropagation(allow)
+        }
+        "cancelOnOutside" -> {
+          val cancel = asBoolean(parsed) ?: true
+          pressable.setCancelOnOutside(cancel)
+        }
+        "enableDoublePress" -> {
+          val enabled = asBoolean(parsed) ?: false
+          pressable.setEnableDoublePress(enabled)
+        }
+        "doublePressWindowMs" -> {
+          val number = parsed as? Number
+          pressable.setDoublePressWindow(number)
+        }
+        "focusable" -> {
+          val focusable = asBoolean(parsed) ?: true
+          pressable.setFocusableSurface(focusable)
+        }
+        "preventFocusOnPress" -> {
+          val prevent = asBoolean(parsed) ?: false
+          pressable.setPreventFocusOnPress(prevent)
+        }
+        "pointerEvents" -> {
+          val pointer = (parsed as? String) ?: parseString(valueJson)
+          pressable.setPointerEvents(pointer)
+          target.pointerEvents = pointer ?: "auto"
+        }
+        "activateKeys" -> {
+          val keys: Set<String> = when (parsed) {
+            is org.json.JSONArray -> {
+              val result = mutableSetOf<String>()
+              for (i in 0 until parsed.length()) {
+                parsed.optString(i)?.let { result.add(it) }
+              }
+              result
+            }
+            is List<*> -> parsed.mapNotNull { it?.toString() }.toSet()
+            else -> {
+              valueJson?.let {
+                runCatching {
+                  val arr = org.json.JSONArray(it)
+                  val result = mutableSetOf<String>()
+                  for (i in 0 until arr.length()) {
+                    arr.optString(i)?.let { key -> result.add(key) }
+                  }
+                  result
+                }.getOrDefault(emptySet())
+              } ?: emptySet()
+            }
+          }
+          pressable.setActivateKeys(keys)
+        }
+        "__pressableCommand" -> {
+          val json = when (parsed) {
+            is JSONObject -> parsed
+            is String -> runCatching { JSONObject(parsed) }.getOrNull()
+            else -> valueJson?.let { runCatching { JSONObject(it) }.getOrNull() }
+          }
+          pressable.handleCommand(json)
+        }
+      }
+      return
+    }
 
     when (name) {
       "style" -> {
@@ -539,7 +674,10 @@ class RuneUIManager(
       handlerListener(nodeId, event, handlerId)
       return
     }
-    if (event == "onPress" && nodeType != BUTTON_TYPE) {
+    if (nodeType == PRESSABLE_TYPE && event == "onLongPress") {
+      (node?.view as? RunePressableView)?.setHasLongPressHandler(true)
+    }
+    if (event == "onPress" && nodeType != BUTTON_TYPE && nodeType != PRESSABLE_TYPE) {
       Log.d("RuneUI", "Setting onPress handler for node $nodeId")
       val node = nodes.get(nodeId)
       node?.view?.let { view ->
@@ -736,6 +874,12 @@ class RuneUIManager(
       val initialStyle = deriveButtonVisualStyle(Style(), null, button)
       buttonStyles.put(id, initialStyle)
       applyVisualStyle(button, initialStyle)
+    } else if (type == PRESSABLE_TYPE) {
+      val pressable = RunePressableView(root.context)
+      pressable.nodeId = id
+      pressable.listener = this
+      view = pressable
+      label = null
     } else {
       view = FrameLayout(root.context)
       label = null
@@ -761,7 +905,7 @@ class RuneUIManager(
         view.isFocusable = true
         view.isFocusableInTouchMode = true
       }
-      BUTTON_TYPE -> {
+      BUTTON_TYPE, PRESSABLE_TYPE -> {
         val params = FrameLayout.LayoutParams(
           ViewGroup.LayoutParams.WRAP_CONTENT,
           ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -944,48 +1088,54 @@ class RuneUIManager(
   private fun applyBackgroundStyle(view: View, style: Style) {
     val backgroundColor = style.backgroundColor
     val borderRadius = style.borderRadius?.coerceAtLeast(0f)
+    val borderColor = style.borderColor
+    val borderWidth = style.borderWidth?.coerceAtLeast(0f)
+    val borderStyle = style.borderStyle?.lowercase()
     val needsRoundedBackground = borderRadius != null && borderRadius > 0f
+    val shouldUseGradient = needsRoundedBackground || backgroundColor != null || (borderWidth ?: 0f) > 0f || borderColor != null
     val paddingStart = ViewCompat.getPaddingStart(view)
     val paddingTop = view.paddingTop
     val paddingEnd = ViewCompat.getPaddingEnd(view)
     val paddingBottom = view.paddingBottom
 
-    when {
-      needsRoundedBackground -> {
-        val mutated = (view.background as? GradientDrawable)?.mutate() as? GradientDrawable
-        val drawable = mutated ?: GradientDrawable()
-        drawable.cornerRadius = borderRadius!!
-        drawable.setColor(backgroundColor ?: Color.TRANSPARENT)
-        ViewCompat.setBackground(view, drawable)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-          view.clipToOutline = true
+    if (shouldUseGradient) {
+      val existing = (view.background as? GradientDrawable)?.mutate() as? GradientDrawable
+      val drawable = existing ?: GradientDrawable()
+      drawable.cornerRadius = borderRadius ?: 0f
+      drawable.setColor(backgroundColor ?: Color.TRANSPARENT)
+
+      val strokeWidth = (borderWidth ?: 0f).coerceAtLeast(0f)
+      if (strokeWidth > 0f && borderColor != null) {
+        val strokeWidthInt = strokeWidth.roundToInt().coerceAtLeast(1)
+        when (borderStyle) {
+          "dashed" -> {
+            val dash = strokeWidthInt * 3f
+            drawable.setStroke(strokeWidthInt, borderColor, dash, strokeWidthInt * 2f)
+          }
+          "dotted" -> {
+            val dash = strokeWidthInt.toFloat()
+            drawable.setStroke(strokeWidthInt, borderColor, dash, dash * 1.5f)
+          }
+          else -> drawable.setStroke(strokeWidthInt, borderColor)
         }
+      } else {
+        drawable.setStroke(0, borderColor ?: Color.TRANSPARENT)
       }
-      backgroundColor != null -> {
-        if (view.background is GradientDrawable) {
-          val mutated = (view.background as GradientDrawable).mutate() as? GradientDrawable
-          val drawable = mutated ?: GradientDrawable()
-          drawable.cornerRadius = 0f
-          drawable.setColor(backgroundColor)
-          ViewCompat.setBackground(view, drawable)
-        } else {
-          view.setBackgroundColor(backgroundColor)
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-          view.clipToOutline = false
-        }
+
+      ViewCompat.setBackground(view, drawable)
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        view.clipToOutline = needsRoundedBackground
       }
-      else -> {
-        when (val current = view.background) {
-          is GradientDrawable, is ColorDrawable -> ViewCompat.setBackground(view, null)
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-          view.clipToOutline = false
-        }
+    } else {
+      when (val current = view.background) {
+        is GradientDrawable, is ColorDrawable -> ViewCompat.setBackground(view, null)
+      }
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        view.clipToOutline = false
       }
     }
 
-    if (needsRoundedBackground || backgroundColor != null) {
+    if (shouldUseGradient) {
       ViewCompat.setPaddingRelative(view, paddingStart, paddingTop, paddingEnd, paddingBottom)
     }
   }
@@ -1305,6 +1455,49 @@ class RuneUIManager(
       payload.put("key", key)
     }
     dispatchEvent(nodeId, phase, if (payload.length() == 0) null else payload)
+  }
+
+  override fun onPressablePressIn(nodeId: Int, payload: JSONObject) {
+    dispatchEvent(nodeId, "onPressIn", payload)
+  }
+
+  override fun onPressablePressOut(nodeId: Int, payload: JSONObject, cancelled: Boolean) {
+    payload.put("cancelled", cancelled)
+    dispatchEvent(nodeId, "onPressOut", payload)
+  }
+
+  override fun onPressablePress(nodeId: Int, payload: JSONObject) {
+    dispatchEvent(nodeId, "onPress", payload)
+  }
+
+  override fun onPressableLongPress(nodeId: Int, durationMs: Long, payload: JSONObject) {
+    payload.put("durationMs", durationMs)
+    dispatchEvent(nodeId, "onLongPress", payload)
+  }
+
+  override fun onPressableDoublePress(nodeId: Int, payload: JSONObject) {
+    dispatchEvent(nodeId, "onDoublePress", payload)
+  }
+
+  override fun onPressableHover(nodeId: Int, hovering: Boolean) {
+    val event = if (hovering) "onHoverIn" else "onHoverOut"
+    dispatchEvent(nodeId, event, null)
+  }
+
+  override fun onPressableFocus(nodeId: Int) {
+    dispatchEvent(nodeId, "onFocus", null)
+  }
+
+  override fun onPressableBlur(nodeId: Int) {
+    dispatchEvent(nodeId, "onBlur", null)
+  }
+
+  override fun onPressableKeyEvent(nodeId: Int, phase: String, payload: JSONObject) {
+    dispatchEvent(nodeId, phase, payload)
+  }
+
+  override fun onPressableCancel(nodeId: Int, payload: JSONObject) {
+    // Cancellation is surfaced via onPressOut with the cancelled flag.
   }
 
   internal fun onTextInputTextUpdated(nodeId: Int, text: String) {
@@ -1803,6 +1996,7 @@ class RuneUIManager(
     private const val SECURE_TEXT_INPUT_TYPE = "secure-text-input"
     private const val SCROLL_VIEW_TYPE = "scroll-view"
     private const val BUTTON_TYPE = "button"
+    private const val PRESSABLE_TYPE = "pressable"
     private var testIdWarningLogged = false
     private val TEXT_INPUT_MEASURE_PROPS = setOf(
       "style",

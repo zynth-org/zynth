@@ -2,6 +2,7 @@ export type NodeType =
   | "root"
   | "view"
   | "button"
+  | "pressable"
   | "text"
   | "image"
   | "marker"
@@ -54,9 +55,12 @@ export type Style = {
     | "flex-start"
     | "center"
     | "flex-end"
-    | "stretch"
-    | "baseline";
+      | "stretch"
+      | "baseline";
   borderRadius?: number;
+  borderColor?: string;
+  borderWidth?: number;
+  borderStyle?: "solid" | "dashed" | "dotted";
   fontSize?: number;
   color?: string;
   fontWeight?:

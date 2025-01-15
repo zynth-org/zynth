@@ -6,6 +6,7 @@ declare global {
       view: { style?: Style; children?: any; onPress?: () => void };
       text: { style?: Style; children?: any };
       button: Record<string, any>;
+      pressable: Record<string, any>;
       "scroll-view": Record<string, any>;
     }
   }

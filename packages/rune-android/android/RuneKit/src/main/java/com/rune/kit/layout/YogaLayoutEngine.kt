@@ -205,6 +205,7 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
     applyPadding(node, style)
     applyMargin(node, style)
     applyGap(node, style)
+    applyBorder(node, style)
   }
 
   private fun mergeStyles(prev: Style?, next: Style): Style {
@@ -258,6 +259,9 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
       columnGap = next.columnGap ?: prev.columnGap,
       backgroundColor = next.backgroundColor ?: prev.backgroundColor,
       borderRadius = next.borderRadius ?: prev.borderRadius,
+      borderColor = next.borderColor ?: prev.borderColor,
+      borderWidth = next.borderWidth ?: prev.borderWidth,
+      borderStyle = next.borderStyle ?: prev.borderStyle,
       fontSize = next.fontSize ?: prev.fontSize,
       color = next.color ?: prev.color,
       fontWeight = next.fontWeight ?: prev.fontWeight,
@@ -303,6 +307,11 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
     }
     style.rowGap?.let { node.setGap(YogaGutter.ROW, it) }
     style.columnGap?.let { node.setGap(YogaGutter.COLUMN, it) }
+  }
+
+  private fun applyBorder(node: YogaNode, style: Style) {
+    val width = style.borderWidth ?: 0f
+    node.setBorder(YogaEdge.ALL, width)
   }
 
   private fun YogaNode.indexOf(child: YogaNode): Int {

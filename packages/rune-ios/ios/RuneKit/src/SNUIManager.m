@@ -3,6 +3,7 @@
 #import "SNUIManager+Image.h"
 #import "SNUIManager+ScrollView.h"
 #import "SNUIManager+Button.h"
+#import "SNUIManager+Pressable.h"
 #import "RuneUIManager+View.h"
 #import "RuneUIManager+Text.h"
 #import "RuneUIManager+TextInput.h"
@@ -13,10 +14,13 @@
 #import "RuneUIManager+Layout.h"
 #import "RuneScrollView.h"
 #import "RuneButtonView.h"
+#import "RunePressableView.h"
 #import "SNHexColor.h"
 #import <Yoga/Yoga.h>
 #import <QuartzCore/QuartzCore.h>
 #import <JavaScriptCore/JavaScriptCore.h>
+
+static NSString *const kRuneBorderLayerName = @"rune-border-style";
 
 #if __has_include(<RuneKit/RuneKit-Swift.h>)
 #import <RuneKit/RuneKit-Swift.h>
@@ -130,6 +134,9 @@
   } else if ([type isEqualToString:@"button"]) {
     RuneButtonView *button = [RuneButtonView new];
     v = button;
+  } else if ([type isEqualToString:@"pressable"]) {
+    RunePressableView *pressable = [RunePressableView new];
+    v = pressable;
   } else {
     v = [self rune_makeContainerView];
   }
@@ -145,6 +152,7 @@
   [self rune_initializePointerDefaultsForNode:n];
   [self sn_scrollViewAttachIfNeeded:n];
   [self sn_buttonAttachIfNeeded:n];
+  [self sn_pressableAttachIfNeeded:n];
 
   if (!n.yoga) {
     NSLog(@"[SN] ERROR: Failed to create Yoga node for nid=%d", nid);
@@ -171,6 +179,32 @@
 }
 
 static CGFloat SNNum(id x) { return x ? [x doubleValue] : NAN; }
+
+static void SNRemoveCustomBorderLayers(UIView *view) {
+  NSArray<CALayer *> *sublayers = [view.layer.sublayers copy];
+  for (CALayer *layer in sublayers) {
+    if ([layer.name isEqualToString:kRuneBorderLayerName]) {
+      [layer removeFromSuperlayer];
+    }
+  }
+}
+
+static void SNApplyBorderStyleToView(UIView *view, NSNumber *_Nullable borderWidthNumber, NSString *_Nullable borderColorHex, NSString *_Nullable borderStyle) {
+  SNRemoveCustomBorderLayers(view);
+  CGFloat borderWidth = borderWidthNumber ? (CGFloat)SNNum(borderWidthNumber) : 0.f;
+  UIColor *borderColor = borderColorHex ? SNColorFromHex(borderColorHex) : nil;
+  if (borderWidth <= 0.f || !borderColor) {
+    view.layer.borderWidth = borderWidth;
+    view.layer.borderColor = borderColor ? borderColor.CGColor : nil;
+    return;
+  }
+  view.layer.borderWidth = borderWidth;
+  view.layer.borderColor = borderColor.CGColor;
+  NSString *normalizedStyle = borderStyle.length ? borderStyle.lowercaseString : @"solid";
+  if (![normalizedStyle isEqualToString:@"solid"]) {
+    // TODO: dashed/dotted rendering via CAShapeLayer.
+  }
+}
 
 static YGSize SNMeasureLabelFunc(YGNodeConstRef node,
                                  float width,
@@ -286,9 +320,13 @@ static void SNApplyEdges(NSDictionary *style,
   SNApplyEdges(style, @"margin", @"marginHorizontal", @"marginVertical", @"marginTop", @"marginRight", @"marginBottom", n.yoga,
                ^(YGEdge e, float v){ YGNodeStyleSetMargin(n.yoga, e, v); });
 
+  NSNumber *borderWidthValue = style[@"borderWidth"];
+  YGNodeStyleSetBorder(n.yoga, YGEdgeAll, borderWidthValue ? (float)SNNum(borderWidthValue) : 0.f);
+
   NSString *bg = style[@"backgroundColor"]; if (bg) { n.view.backgroundColor = SNColorFromHex(bg); }
   NSNumber *br = style[@"borderRadius"];
   if (br) { n.view.layer.cornerRadius = (CGFloat)SNNum(br); n.view.clipsToBounds = YES; }
+  SNApplyBorderStyleToView(n.view, style[@"borderWidth"], style[@"borderColor"], style[@"borderStyle"]);
 
   if ([n.view isKindOfClass:[UILabel class]]) {
     UILabel *l = (UILabel *)n.view;
@@ -454,6 +492,10 @@ static void SNApplyEdges(NSDictionary *style,
     return;
   }
 
+  if ([self sn_pressableHandlesSetPropForNode:n name:name value:value rawJSON:json]) {
+    return;
+  }
+
   if ([self sn_textInputHandlesSetPropForNode:n name:name value:value rawJSON:json]) {
     return;
   }
@@ -483,6 +525,10 @@ static void SNApplyEdges(NSDictionary *style,
   if (!n || !n.view) return;
   
   if ([self sn_buttonHandlesSetHandlerForNode:n name:name]) {
+    return;
+  }
+
+  if ([self sn_pressableHandlesSetHandlerForNode:n name:name]) {
     return;
   }
   
@@ -518,6 +564,10 @@ static void SNApplyEdges(NSDictionary *style,
   if (!n || !n.view) return;
 
   if ([self sn_buttonHandlesSetHandlerForNode:n name:name]) {
+    return;
+  }
+
+  if ([self sn_pressableHandlesSetHandlerForNode:n name:name]) {
     return;
   }
 

@@ -213,6 +213,12 @@ export function createIOSHost(): Host {
         );
       }
       if (name === "style") {
+        if (value) {
+          console.log(
+            "[IOS host] setStyle",
+            JSON.stringify({ id: node?.id, type: node?.type, style: value })
+          );
+        }
         ui.setProp(node.id, "style", value || {});
       } else if (name === "controller") {
         // Controller is managed purely on the JS side for now.
