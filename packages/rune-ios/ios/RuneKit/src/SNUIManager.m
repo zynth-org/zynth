@@ -191,19 +191,35 @@ static void SNRemoveCustomBorderLayers(UIView *view) {
 
 static void SNApplyBorderStyleToView(UIView *view, NSNumber *_Nullable borderWidthNumber, NSString *_Nullable borderColorHex, NSString *_Nullable borderStyle) {
   SNRemoveCustomBorderLayers(view);
+  view.layer.borderWidth = 0;
+
   CGFloat borderWidth = borderWidthNumber ? (CGFloat)SNNum(borderWidthNumber) : 0.f;
-  UIColor *borderColor = borderColorHex ? SNColorFromHex(borderColorHex) : nil;
-  if (borderWidth <= 0.f || !borderColor) {
-    view.layer.borderWidth = borderWidth;
-    view.layer.borderColor = borderColor ? borderColor.CGColor : nil;
+  if (borderWidth <= 0.f) {
     return;
   }
-  view.layer.borderWidth = borderWidth;
-  view.layer.borderColor = borderColor.CGColor;
-  NSString *normalizedStyle = borderStyle.length ? borderStyle.lowercaseString : @"solid";
-  if (![normalizedStyle isEqualToString:@"solid"]) {
-    // TODO: dashed/dotted rendering via CAShapeLayer.
+
+  UIColor *borderColor = borderColorHex ? SNColorFromHex(borderColorHex) : nil;
+  if (!borderColor) {
+    return;
   }
+
+  CAShapeLayer *borderLayer = [CAShapeLayer layer];
+  borderLayer.name = kRuneBorderLayerName;
+  borderLayer.strokeColor = borderColor.CGColor;
+  borderLayer.fillColor = [UIColor clearColor].CGColor;
+  borderLayer.lineWidth = borderWidth;
+
+  CGFloat cornerRadius = view.layer.cornerRadius;
+  borderLayer.path = [UIBezierPath bezierPathWithRoundedRect:view.bounds cornerRadius:cornerRadius].CGPath;
+
+  NSString *normalizedStyle = borderStyle.length ? borderStyle.lowercaseString : @"solid";
+  if ([normalizedStyle isEqualToString:@"dotted"]) {
+    borderLayer.lineDashPattern = @[@(borderWidth), @(borderWidth)];
+  } else if ([normalizedStyle isEqualToString:@"dashed"]) {
+    borderLayer.lineDashPattern = @[@(borderWidth * 2), @(borderWidth * 2)];
+  }
+
+  [view.layer addSublayer:borderLayer];
 }
 
 static YGSize SNMeasureLabelFunc(YGNodeConstRef node,

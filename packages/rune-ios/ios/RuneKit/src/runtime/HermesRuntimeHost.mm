@@ -487,13 +487,14 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
                                          "paddingHorizontal", "paddingVertical", "paddingTop",    "paddingRight",
                                          "paddingBottom",  "margin",         "marginHorizontal", "marginVertical",
                                          "marginTop",      "marginRight",    "marginBottom",   "borderRadius",
-                                         "fontSize"};
+                                         "borderWidth",    "fontSize"};
             for (const char *key : numericKeys) {
               copyNumber(key);
             }
 
             const char *stringKeys[] = {"flexDirection", "justifyContent", "alignItems",
-                                         "backgroundColor", "fontWeight",   "color"};
+                                         "backgroundColor", "borderColor",  "borderStyle",
+                                         "fontWeight",     "color"};
             for (const char *key : stringKeys) {
               copyString(key);
             }

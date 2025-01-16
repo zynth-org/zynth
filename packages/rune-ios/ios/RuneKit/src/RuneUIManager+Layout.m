@@ -6,6 +6,8 @@
 #import "RuneKit-Swift.h"
 #endif
 
+static NSString *const kRuneBorderLayerName = @"rune-border-style";
+
 @implementation SNUIManager (RuneLayout)
 
 - (void)rune_startDisplayLinkIfNeeded {
@@ -86,6 +88,13 @@
         }
 
         obj.view.frame = CGRectMake(x, y, w, h);
+
+        for (CALayer *sublayer in obj.view.layer.sublayers) {
+            if ([sublayer.name isEqualToString:kRuneBorderLayerName] && [sublayer isKindOfClass:[CAShapeLayer class]]) {
+                CAShapeLayer *borderLayer = (CAShapeLayer *)sublayer;
+                borderLayer.path = [UIBezierPath bezierPathWithRoundedRect:obj.view.bounds cornerRadius:obj.view.layer.cornerRadius].CGPath;
+            }
+        }
       } @catch (NSException *exception) {
         NSLog(@"[SN] Exception applying frame for nid=%d: %@", obj.nid, exception);
       }

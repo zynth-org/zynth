@@ -55,12 +55,12 @@ export type Style = {
     | "flex-start"
     | "center"
     | "flex-end"
-      | "stretch"
-      | "baseline";
+    | "stretch"
+    | "baseline";
   borderRadius?: number;
-  borderColor?: string;
   borderWidth?: number;
-  borderStyle?: "solid" | "dashed" | "dotted";
+  borderColor?: string;
+  borderStyle?: "solid" | "dotted" | "dashed";
   fontSize?: number;
   color?: string;
   fontWeight?:
