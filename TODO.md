@@ -18,7 +18,7 @@ This document outlines the development plan to evolve Rune into a powerful, AI-n
 - [✅] **`TextInput`:** Implement a component for text input.
 - [✅] **`ScrollView`:** Implement a scrolling container.
 - [✅] **`Button`:** Implement a basic, cross-platform button.
-- [ ] **`Pressable`:** Implement a component to detect detailed press interactions.
+- [✅] **`Pressable`:** Implement a component to detect detailed press interactions.
 - [ ] **`FlatList`:** Implement a performant, virtualized list component.
 
 ### 2. Layout & Style (`packages/rune-layout`, `packages/rune-api`)
