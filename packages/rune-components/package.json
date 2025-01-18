@@ -7,6 +7,9 @@
   "types": "dist/types/index.d.ts",
   "sideEffects": false,
   "license": "MIT",
+  "dependencies": {
+    "@solid-primitives/keyed": "1.5.2"
+  },
   "peerDependencies": {
     "solid-js": ">=1.8.0",
     "@rune/core": "0.0.1"

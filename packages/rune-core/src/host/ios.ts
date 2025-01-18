@@ -70,7 +70,6 @@ export function createIOSHost(): Host {
 
     const assign = (key: string, value: unknown) => {
       if (value !== undefined) {
-        console.log("[IOS host] initial text-input prop", { id, key, value });
         ui.setProp(id, key, value);
       }
     };
@@ -169,19 +168,6 @@ export function createIOSHost(): Host {
         ui.setProp(id, "pointerEvents", props.pointerEvents);
       if (props?.testID) ui.setProp(id, "testID", props.testID);
       if (type === "text-input") {
-        console.log(
-          "[IOS host] createNode text-input",
-          JSON.stringify({
-            id,
-            props: JSON.stringify({
-              value: props?.value,
-              defaultValue: props?.defaultValue,
-              placeholder: props?.placeholder,
-              maxLength: props?.maxLength,
-              inputMode: props?.inputMode,
-            }),
-          })
-        );
         applyTextInputInitialProps(id, props);
       }
       schedule();
@@ -201,24 +187,7 @@ export function createIOSHost(): Host {
       if (value === undefined && name !== "style") {
         return;
       }
-      if (name !== "style") {
-        console.log(
-          "[IOS host] setProperty",
-          JSON.stringify({
-            id: node?.id,
-            type: node?.type,
-            name,
-            value,
-          })
-        );
-      }
       if (name === "style") {
-        if (value) {
-          console.log(
-            "[IOS host] setStyle",
-            JSON.stringify({ id: node?.id, type: node?.type, style: value })
-          );
-        }
         ui.setProp(node.id, "style", value || {});
       } else if (name === "controller") {
         // Controller is managed purely on the JS side for now.
@@ -231,12 +200,20 @@ export function createIOSHost(): Host {
       schedule();
     },
     setText(node, value) {
-      console.log("[IOS host] setText", { id: node.id, value });
       TEXTS.set(node.id, value ?? "");
       ui.setText(node.id, value ?? "");
       schedule();
     },
     insertNode(parent, node, anchor) {
+      console.log(
+        "[IOS host] insertNode",
+        JSON.stringify({
+          parentId: parent.id,
+          nodeId: node.id,
+          nodeType: node.type,
+          anchorId: anchor?.id,
+        })
+      );
       const kids = ensure(parent.id);
       const aIdx = anchor ? kids.indexOf(anchor.id) : -1;
       const logicalAt = aIdx >= 0 ? aIdx : kids.length;
@@ -253,6 +230,14 @@ export function createIOSHost(): Host {
       schedule();
     },
     removeNode(parent, node) {
+      console.log(
+        "[IOS host] removeNode",
+        JSON.stringify({
+          parentId: parent.id,
+          nodeId: node.id,
+          nodeType: node.type,
+        })
+      );
       const kids = ensure(parent.id);
       const i = kids.indexOf(node.id);
       if (i < 0) return;
