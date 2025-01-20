@@ -205,15 +205,15 @@ export function createIOSHost(): Host {
       schedule();
     },
     insertNode(parent, node, anchor) {
-      console.log(
-        "[IOS host] insertNode",
-        JSON.stringify({
-          parentId: parent.id,
-          nodeId: node.id,
-          nodeType: node.type,
-          anchorId: anchor?.id,
-        })
-      );
+      // console.log(
+      //   "[IOS host] insertNode",
+      //   JSON.stringify({
+      //     parentId: parent.id,
+      //     nodeId: node.id,
+      //     nodeType: node.type,
+      //     anchorId: anchor?.id,
+      //   })
+      // );
       const kids = ensure(parent.id);
       const aIdx = anchor ? kids.indexOf(anchor.id) : -1;
       const logicalAt = aIdx >= 0 ? aIdx : kids.length;
@@ -230,14 +230,14 @@ export function createIOSHost(): Host {
       schedule();
     },
     removeNode(parent, node) {
-      console.log(
-        "[IOS host] removeNode",
-        JSON.stringify({
-          parentId: parent.id,
-          nodeId: node.id,
-          nodeType: node.type,
-        })
-      );
+      // console.log(
+      //   "[IOS host] removeNode",
+      //   JSON.stringify({
+      //     parentId: parent.id,
+      //     nodeId: node.id,
+      //     nodeType: node.type,
+      //   })
+      // );
       const kids = ensure(parent.id);
       const i = kids.indexOf(node.id);
       if (i < 0) return;
