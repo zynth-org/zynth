@@ -187,6 +187,15 @@ export function createIOSHost(): Host {
       if (value === undefined && name !== "style") {
         return;
       }
+      console.log(
+        "[IOS host] setProperty",
+        JSON.stringify({
+          nodeId: node.id,
+          nodeType: node.type,
+          name,
+          value,
+        })
+      );
       if (name === "style") {
         ui.setProp(node.id, "style", value || {});
       } else if (name === "controller") {

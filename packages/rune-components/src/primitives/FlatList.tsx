@@ -55,6 +55,10 @@ export type OverscanConfig =
   | {
       pixels?: number;
       multiple?: number;
+      aheadPx?: number;
+      behindPx?: number;
+      aheadMultiple?: number;
+      behindMultiple?: number;
     };
 
 type RenderRange = {
@@ -113,26 +117,81 @@ const resolveOverscanPx = (
   viewport: number,
   itemSize: number
 ) => {
+  const defaultValue = Math.max(viewport * 1.5, itemSize * 4);
   if (typeof config === "number") {
-    if (!Number.isFinite(config) || config <= 0) return 0;
-    if (config <= 1) {
-      return config * viewport;
+    if (!Number.isFinite(config) || config <= 0) {
+      return { before: defaultValue, after: defaultValue };
     }
-    return config;
+    const asMultiple =
+      config <= 1 && viewport > 0 ? config * viewport : config;
+    return { before: asMultiple, after: asMultiple };
   }
-  if (!config) return itemSize * 1.5;
-  let maxPixels = 0;
-  if (typeof config.pixels === "number" && Number.isFinite(config.pixels)) {
-    maxPixels = Math.max(maxPixels, config.pixels);
+
+  if (!config) {
+    return { before: defaultValue, after: defaultValue };
   }
+
+  let beforePx = 0;
+  let afterPx = 0;
+
+  const applySymmetric = (value: number) => {
+    beforePx = Math.max(beforePx, value);
+    afterPx = Math.max(afterPx, value);
+  };
+
+  if (
+    typeof config.aheadPx === "number" &&
+    Number.isFinite(config.aheadPx) &&
+    config.aheadPx > 0
+  ) {
+    afterPx = Math.max(afterPx, config.aheadPx);
+  }
+  if (
+    typeof config.behindPx === "number" &&
+    Number.isFinite(config.behindPx) &&
+    config.behindPx > 0
+  ) {
+    beforePx = Math.max(beforePx, config.behindPx);
+  }
+
+  if (
+    typeof config.aheadMultiple === "number" &&
+    Number.isFinite(config.aheadMultiple) &&
+    config.aheadMultiple > 0 &&
+    viewport > 0
+  ) {
+    afterPx = Math.max(afterPx, config.aheadMultiple * viewport);
+  }
+  if (
+    typeof config.behindMultiple === "number" &&
+    Number.isFinite(config.behindMultiple) &&
+    config.behindMultiple > 0 &&
+    viewport > 0
+  ) {
+    beforePx = Math.max(beforePx, config.behindMultiple * viewport);
+  }
+
+  if (
+    typeof config.pixels === "number" &&
+    Number.isFinite(config.pixels) &&
+    config.pixels > 0
+  ) {
+    applySymmetric(config.pixels);
+  }
+
   if (
     typeof config.multiple === "number" &&
     Number.isFinite(config.multiple) &&
-    config.multiple > 0
+    config.multiple > 0 &&
+    viewport > 0
   ) {
-    maxPixels = Math.max(maxPixels, config.multiple * itemSize);
+    applySymmetric(config.multiple * viewport);
   }
-  return maxPixels;
+
+  if (beforePx <= 0) beforePx = defaultValue;
+  if (afterPx <= 0) afterPx = defaultValue;
+
+  return { before: beforePx, after: afterPx };
 };
 
 const numberFromStyle = (value: unknown): number | null => {
@@ -428,11 +487,25 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
 
   const [lastMeasuredViewport, setLastMeasuredViewport] = createSignal(0);
   const [lastStableOffset, setLastStableOffset] = createSignal(0);
+  let cachedOverscan = {
+    beforeItems: Math.ceil(MIN_INITIAL_WINDOW_ITEMS / 2),
+    afterItems: Math.ceil(MIN_INITIAL_WINDOW_ITEMS / 2),
+    viewport: 0,
+    itemSize: 0,
+    configKey: "",
+  };
 
   createEffect(() => {
     orientation();
     setLastMeasuredViewport(0);
     setLastStableOffset(0);
+    cachedOverscan = {
+      beforeItems: Math.ceil(MIN_INITIAL_WINDOW_ITEMS / 2),
+      afterItems: Math.ceil(MIN_INITIAL_WINDOW_ITEMS / 2),
+      viewport: 0,
+      itemSize: 0,
+      configKey: "",
+    };
   });
 
   const beforeSpacerSize = createMemo(() => {
@@ -486,6 +559,42 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
     }
     return source.slice(range.start, range.end + 1);
   });
+
+  const overscanFor = (viewportSize: number, itemSize: number) => {
+    if (viewportSize <= 0 || itemSize <= 0) {
+      return cachedOverscan;
+    }
+    const config = overscanSetting();
+    const configKey = JSON.stringify(config ?? null);
+    if (
+      cachedOverscan.viewport === viewportSize &&
+      cachedOverscan.itemSize === itemSize &&
+      cachedOverscan.configKey === configKey
+    ) {
+      return cachedOverscan;
+    }
+
+    const resolved = resolveOverscanPx(config, viewportSize, itemSize);
+    const beforeItems = clamp(
+      Math.ceil(resolved.before / itemSize),
+      0,
+      MAX_DYNAMIC_OVERSCAN_ITEMS
+    );
+    const afterItems = clamp(
+      Math.ceil(resolved.after / itemSize),
+      0,
+      MAX_DYNAMIC_OVERSCAN_ITEMS
+    );
+
+    cachedOverscan = {
+      beforeItems,
+      afterItems,
+      viewport: viewportSize,
+      itemSize,
+      configKey,
+    };
+    return cachedOverscan;
+  };
 
   createEffect(() => {
     const state = internalState();
@@ -578,15 +687,9 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
 
     const viewportSize = Math.max(itemSize, fallbackViewport);
 
-    const overscanPx = resolveOverscanPx(
-      overscanSetting(),
-      viewportSize,
-      itemSize
-    );
-    const overscanItems = Math.min(
-      Math.ceil(overscanPx / itemSize),
-      MAX_DYNAMIC_OVERSCAN_ITEMS
-    );
+    const overscanInfo = overscanFor(viewportSize, itemSize);
+    let overscanBeforeItems = overscanInfo.beforeItems;
+    let overscanAfterItems = overscanInfo.afterItems;
 
     const visibleCount = Math.max(1, Math.ceil(viewportSize / itemSize));
     const windowMultipleValue = Math.max(windowMultiple(), 1);
@@ -595,14 +698,28 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
     );
 
     // Use a more stable window calculation
-    const baseWindowCount = Math.max(
-      visibleCount + overscanItems * 2,
-      targetWindowFromMultiple,
-      MIN_INITIAL_WINDOW_ITEMS
-    );
+    let baseBeforeCount = overscanBeforeItems;
+    let baseAfterCount = overscanAfterItems;
+    let baseWindowCount =
+      visibleCount + baseBeforeCount + baseAfterCount;
 
-    let baseBeforeCount = Math.floor((baseWindowCount - visibleCount) / 2);
-    let baseAfterCount = baseWindowCount - visibleCount - baseBeforeCount;
+    if (baseWindowCount < targetWindowFromMultiple) {
+      const deficit = targetWindowFromMultiple - baseWindowCount;
+      const addBefore = Math.floor(deficit / 2);
+      baseBeforeCount += addBefore;
+      baseAfterCount += deficit - addBefore;
+      baseWindowCount =
+        visibleCount + baseBeforeCount + baseAfterCount;
+    }
+
+    if (baseWindowCount < MIN_INITIAL_WINDOW_ITEMS) {
+      const remaining = MIN_INITIAL_WINDOW_ITEMS - baseWindowCount;
+      const addBefore = Math.floor(remaining / 2);
+      baseBeforeCount += addBefore;
+      baseAfterCount += remaining - addBefore;
+      baseWindowCount =
+        visibleCount + baseBeforeCount + baseAfterCount;
+    }
 
     // Add hysteresis to prevent flickering at boundaries
     baseBeforeCount += RANGE_HYSTERESIS;
