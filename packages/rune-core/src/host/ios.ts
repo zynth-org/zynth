@@ -21,42 +21,46 @@ export function createIOSHost(): Host {
   const TEXTS = new Map<number, string>();
   const TYPES = new Map<number, HostNode["type"]>();
 
+  const operations: Array<() => void> = [];
+
+  const runFlush = () => {
+    flushScheduled = false;
+    try {
+      if (operations.length) {
+        const pending = operations.splice(0);
+        for (const op of pending) op();
+      }
+      ui.flush();
+    } catch (e) {
+      console.error("Flush error:", e);
+    }
+  };
+
   // Batch flush operations to avoid excessive layout calculations
   let flushScheduled = false;
   const schedule = () => {
     if (flushScheduled) return;
     flushScheduled = true;
 
-    // Use setTimeout to batch operations if available, otherwise flush immediately
-    if (typeof setTimeout !== "undefined") {
-      setTimeout(() => {
-        flushScheduled = false;
-        try {
-          ui.flush();
-        } catch (e) {
-          console.error("Flush error:", e);
-        }
-      }, 0);
-    } else {
-      // Fallback for environments without setTimeout
+    if (typeof queueMicrotask === "function") {
+      queueMicrotask(runFlush);
+      return;
+    }
+
+    if (typeof Promise !== "undefined") {
       Promise.resolve()
-        .then(() => {
+        .then(runFlush)
+        .catch((err) => {
           flushScheduled = false;
-          try {
-            ui.flush();
-          } catch (e) {
-            console.error("Flush error:", e);
-          }
-        })
-        .catch(() => {
-          // If Promise is not available either, flush immediately
-          flushScheduled = false;
-          try {
-            ui.flush();
-          } catch (e) {
-            console.error("Flush error:", e);
-          }
+          console.error("Flush error:", err);
         });
+      return;
+    }
+
+    if (typeof setTimeout !== "undefined") {
+      setTimeout(runFlush, 0);
+    } else {
+      runFlush();
     }
   };
 
@@ -70,14 +74,14 @@ export function createIOSHost(): Host {
 
     const assign = (key: string, value: unknown) => {
       if (value !== undefined) {
-        ui.setProp(id, key, value);
+        operations.push(() => ui.setProp(id, key, value));
       }
     };
 
     assign("value", props.value);
     assign("defaultValue", props.defaultValue);
     if (props?.defaultValue != null && props.value == null) {
-      ui.setText(id, String(props.defaultValue));
+      operations.push(() => ui.setText(id, String(props.defaultValue)));
     }
     assign("placeholder", props.placeholder);
     assign("multiline", props.multiline);
@@ -118,7 +122,7 @@ export function createIOSHost(): Host {
 
     for (const [name, handler] of Object.entries(eventHandlers)) {
       if (typeof handler === "function") {
-        ui.setHandler(id, name, handler);
+        operations.push(() => ui.setHandler(id, name, handler));
       }
     }
   };
@@ -154,19 +158,29 @@ export function createIOSHost(): Host {
       PARENTS.set(id, null);
       CHILDREN.set(id, []);
       TYPES.set(id, type);
-      if (props?.style) ui.setProp(id, "style", props.style as Style);
+      if (props?.style)
+        operations.push(() => ui.setProp(id, "style", props.style as Style));
       if (typeof props?.onPress === "function") {
-        ui.setHandler(id, "onPress", props.onPress);
+        operations.push(() => ui.setHandler(id, "onPress", props.onPress));
       }
       if (props?.accessibilityLabel)
-        ui.setProp(id, "accessibilityLabel", props.accessibilityLabel);
+        operations.push(() =>
+          ui.setProp(id, "accessibilityLabel", props.accessibilityLabel)
+        );
       if (props?.accessibilityHint)
-        ui.setProp(id, "accessibilityHint", props.accessibilityHint);
+        operations.push(() =>
+          ui.setProp(id, "accessibilityHint", props.accessibilityHint)
+        );
       if (props?.accessibilityRole)
-        ui.setProp(id, "accessibilityRole", props.accessibilityRole);
+        operations.push(() =>
+          ui.setProp(id, "accessibilityRole", props.accessibilityRole)
+        );
       if (props?.pointerEvents)
-        ui.setProp(id, "pointerEvents", props.pointerEvents);
-      if (props?.testID) ui.setProp(id, "testID", props.testID);
+        operations.push(() =>
+          ui.setProp(id, "pointerEvents", props.pointerEvents)
+        );
+      if (props?.testID)
+        operations.push(() => ui.setProp(id, "testID", props.testID));
       if (type === "text-input") {
         applyTextInputInitialProps(id, props);
       }
@@ -175,7 +189,7 @@ export function createIOSHost(): Host {
     },
     createText(value) {
       const id: number = ui.createNode("text");
-      ui.setText(id, value ?? "");
+      operations.push(() => ui.setText(id, value ?? ""));
       PARENTS.set(id, null);
       CHILDREN.set(id, []);
       TEXTS.set(id, value ?? "");
@@ -187,30 +201,30 @@ export function createIOSHost(): Host {
       if (value === undefined && name !== "style") {
         return;
       }
-      console.log(
-        "[IOS host] setProperty",
-        JSON.stringify({
-          nodeId: node.id,
-          nodeType: node.type,
-          name,
-          value,
-        })
-      );
+      // console.log(
+      //   "[IOS host] setProperty",
+      //   JSON.stringify({
+      //     nodeId: node.id,
+      //     nodeType: node.type,
+      //     name,
+      //     value,
+      //   })
+      // );
       if (name === "style") {
-        ui.setProp(node.id, "style", value || {});
+        operations.push(() => ui.setProp(node.id, "style", value || {}));
       } else if (name === "controller") {
         // Controller is managed purely on the JS side for now.
         return;
       } else if (typeof value === "function") {
-        ui.setHandler(node.id, name, value);
+        operations.push(() => ui.setHandler(node.id, name, value));
       } else {
-        ui.setProp(node.id, name, value);
+        operations.push(() => ui.setProp(node.id, name, value));
       }
       schedule();
     },
     setText(node, value) {
       TEXTS.set(node.id, value ?? "");
-      ui.setText(node.id, value ?? "");
+      operations.push(() => ui.setText(node.id, value ?? ""));
       schedule();
     },
     insertNode(parent, node, anchor) {
@@ -235,7 +249,8 @@ export function createIOSHost(): Host {
       kids.splice(logicalAt, 0, node.id);
       PARENTS.set(node.id, parent.id);
 
-      if (!isMarkerId(node.id)) ui.insertChild(parent.id, node.id, physIdx);
+      if (!isMarkerId(node.id))
+        operations.push(() => ui.insertChild(parent.id, node.id, physIdx));
       schedule();
     },
     removeNode(parent, node) {
@@ -262,7 +277,8 @@ export function createIOSHost(): Host {
       PARENTS.set(node.id, null);
       if (!isMarkerId(node.id)) TYPES.delete(node.id);
 
-      if (!isMarkerId(node.id)) ui.removeChild(parent.id, node.id);
+      if (!isMarkerId(node.id))
+        operations.push(() => ui.removeChild(parent.id, node.id));
       schedule();
     },
     getParentNode(node) {
@@ -287,6 +303,10 @@ export function createIOSHost(): Host {
       return TEXTS.get(node.id) ?? "";
     },
     flush() {
+      if (operations.length) {
+        const pending = operations.splice(0);
+        for (const op of pending) op();
+      }
       ui.flush();
     },
   };
