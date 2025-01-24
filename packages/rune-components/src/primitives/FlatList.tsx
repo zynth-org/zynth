@@ -40,6 +40,10 @@ export type FlatListProps<T> = {
   estimatedItemSize?: number;
   windowSize?: number;
   overscan?: OverscanConfig;
+  onViewableItemsChanged?: OnViewableItemsChanged;
+  viewabilityConfig?: ViewabilityConfig;
+  viewabilityConfigCallbackPairs?: ViewabilityConfigCallbackPair[];
+  viewabilityInteractionRef?: (api: { recordInteraction: () => void } | null) => void;
   state?: FlatListState;
   testID?: string;
 };
@@ -61,9 +65,58 @@ export type OverscanConfig =
       behindMultiple?: number;
     };
 
+export type ViewabilityConfig = {
+  minimumViewTime?: number;
+  itemVisiblePercentThreshold?: number;
+  viewAreaCoveragePercentThreshold?: number;
+  waitForInteraction?: boolean;
+};
+
+export type ViewToken = {
+  index: number;
+  key: string;
+  isViewable: boolean;
+  timestamp: number;
+};
+
+export type ViewabilityInfo = {
+  viewableItems: ViewToken[];
+  changed: ViewToken[];
+};
+
+export type OnViewableItemsChanged = (info: ViewabilityInfo) => void;
+
+export type ViewabilityConfigCallbackPair = {
+  viewabilityConfig: ViewabilityConfig;
+  onViewableItemsChanged: OnViewableItemsChanged;
+};
+
 type RenderRange = {
   start: number;
   end: number;
+};
+
+type NormalizedViewabilityConfig = {
+  minimumViewTime: number;
+  itemVisiblePercentThreshold: number;
+  viewAreaCoveragePercentThreshold: number;
+  waitForInteraction: boolean;
+};
+
+type ViewabilityTracker = {
+  config: NormalizedViewabilityConfig;
+  callback: OnViewableItemsChanged;
+  pending: Map<number, number>;
+  viewable: Map<number, number>;
+  hasInteracted: boolean;
+};
+
+type ViewabilityMetricsSnapshot = {
+  offset: number;
+  viewportSize: number;
+  orientation: "vertical" | "horizontal";
+  rangeStart: number;
+  rangeEnd: number;
 };
 
 const DEFAULT_WINDOW_MULTIPLE = 2;
@@ -74,6 +127,11 @@ const MAX_DYNAMIC_OVERSCAN_ITEMS = 48;
 type ScheduledTask = {
   cancel: () => void;
 };
+
+const getNow =
+  typeof performance !== "undefined" && typeof performance.now === "function"
+    ? () => performance.now()
+    : () => Date.now();
 
 const scheduleDeferred = (fn: () => void): ScheduledTask => {
   let cancelled = false;
@@ -97,6 +155,51 @@ const scheduleDeferred = (fn: () => void): ScheduledTask => {
     },
   };
 };
+
+const scheduleFrame = (fn: () => void): ScheduledTask => {
+  let cancelled = false;
+  if (typeof requestAnimationFrame === "function") {
+    const id = requestAnimationFrame(() => {
+      if (cancelled) return;
+      fn();
+    });
+    return {
+      cancel: () => {
+        cancelled = true;
+        if (typeof cancelAnimationFrame === "function") {
+          cancelAnimationFrame(id);
+        }
+      },
+    };
+  }
+  const timeoutId = setTimeout(() => {
+    if (cancelled) return;
+    fn();
+  }, 16);
+  return {
+    cancel: () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    },
+  };
+};
+
+const normalizeViewabilityConfig = (
+  config?: ViewabilityConfig
+): NormalizedViewabilityConfig => ({
+  minimumViewTime: Math.max(0, config?.minimumViewTime ?? 250),
+  itemVisiblePercentThreshold: clamp(
+    config?.itemVisiblePercentThreshold ?? 50,
+    0,
+    100
+  ),
+  viewAreaCoveragePercentThreshold: clamp(
+    config?.viewAreaCoveragePercentThreshold ?? 0,
+    0,
+    100
+  ),
+  waitForInteraction: config?.waitForInteraction ?? false,
+});
 
 const clamp = (value: number, min: number, max: number) => {
   if (Number.isNaN(value)) return min;
@@ -265,6 +368,7 @@ export type FlatListState = {
   viewport: () => number;
   firstVisibleIndex: () => number | null;
   visibleIndices: () => number[];
+  recordInteraction: () => void;
 };
 
 type InternalFlatListState = FlatListState & {
@@ -275,6 +379,7 @@ type InternalFlatListState = FlatListState & {
     getInsets: () => { leading: number; trailing: number };
   }) => void;
   __updateFromMetrics: (metrics: ScrollMetrics) => void;
+  __setRecordInteraction: (handler: () => void) => void;
 };
 
 export function createFlatListState(): FlatListState {
@@ -292,6 +397,7 @@ export function createFlatListState(): FlatListState {
     leading: 0,
     trailing: 0,
   });
+  let recordInteractionImpl: () => void = () => {};
 
   const updateFromMetrics = (metrics: ScrollMetrics) => {
     const orientation = getOrientation();
@@ -338,6 +444,9 @@ export function createFlatListState(): FlatListState {
     viewport,
     firstVisibleIndex,
     visibleIndices,
+    recordInteraction: () => {
+      recordInteractionImpl();
+    },
     __attach(payload) {
       getItems = payload.items;
       getItemSize = payload.getItemSize;
@@ -345,6 +454,9 @@ export function createFlatListState(): FlatListState {
       getInsets = payload.getInsets;
     },
     __updateFromMetrics: updateFromMetrics,
+    __setRecordInteraction(handler) {
+      recordInteractionImpl = handler;
+    },
   };
 
   return state;
@@ -365,6 +477,10 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
     "estimatedItemSize",
     "windowSize",
     "overscan",
+    "onViewableItemsChanged",
+    "viewabilityConfig",
+    "viewabilityConfigCallbackPairs",
+    "viewabilityInteractionRef",
     "state",
     "testID",
   ]);
@@ -436,6 +552,275 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
   );
 
   const overscanSetting = createMemo(() => local.overscan);
+
+  const normalizedViewabilityPairs = createMemo<
+    Array<{
+      config: NormalizedViewabilityConfig;
+      callback: OnViewableItemsChanged;
+    }>
+  >(() => {
+    const result: Array<{
+      config: NormalizedViewabilityConfig;
+      callback: OnViewableItemsChanged;
+    }> = [];
+    if (typeof local.onViewableItemsChanged === "function") {
+      result.push({
+        config: normalizeViewabilityConfig(local.viewabilityConfig),
+        callback: local.onViewableItemsChanged,
+      });
+    }
+    const extraPairs = local.viewabilityConfigCallbackPairs ?? [];
+    for (const pair of extraPairs) {
+      if (
+        pair &&
+        typeof pair.onViewableItemsChanged === "function"
+      ) {
+        result.push({
+          config: normalizeViewabilityConfig(pair.viewabilityConfig),
+          callback: pair.onViewableItemsChanged,
+        });
+      }
+    }
+    return result;
+  });
+
+  let viewabilityTrackers: ViewabilityTracker[] = [];
+  let viewabilityTask: ScheduledTask | null = null;
+  let lastViewabilityMetrics: ViewabilityMetricsSnapshot | null = null;
+
+  const markInteraction = () => {
+    for (const tracker of viewabilityTrackers) {
+      tracker.hasInteracted = true;
+    }
+  };
+
+  const recordInteraction = () => {
+    markInteraction();
+    requestViewabilityCheck();
+  };
+
+  const clearPendingViewability = (timestamp: number) => {
+    if (!viewabilityTrackers.length) return;
+    const itemsArray = items();
+    for (const tracker of viewabilityTrackers) {
+      if (!tracker.viewable.size) {
+        tracker.pending.clear();
+        continue;
+      }
+      const changed: ViewToken[] = [];
+      for (const index of tracker.viewable.keys()) {
+        const entry = itemsArray[index];
+        const key = entry?.key ?? String(index);
+        changed.push({
+          index,
+          key,
+          isViewable: false,
+          timestamp,
+        });
+      }
+      tracker.viewable.clear();
+      tracker.pending.clear();
+      if (changed.length) {
+        tracker.callback({
+          viewableItems: [],
+          changed,
+        });
+      }
+    }
+  };
+
+  const runViewabilityCheck = () => {
+    if (!viewabilityTrackers.length || !lastViewabilityMetrics) return;
+    const snapshot = lastViewabilityMetrics;
+    const itemSize = resolvedItemSize();
+    const itemsArray = items();
+    if (itemSize <= 0 || itemsArray.length === 0) {
+      clearPendingViewability(getNow());
+      return;
+    }
+
+    const { rangeStart, rangeEnd } = snapshot;
+    const totalItems = itemsArray.length;
+    let startIndex = Math.max(0, rangeStart);
+    let endIndex = Math.min(rangeEnd, totalItems - 1);
+    if (endIndex < startIndex || totalItems === 0) {
+      clearPendingViewability(getNow());
+      return;
+    }
+
+    const viewportOffset = snapshot.offset;
+    const viewportSize = snapshot.viewportSize;
+    const viewportEnd = viewportOffset + viewportSize;
+    const { leading } = containerInsets();
+    const indicesSet = new Set<number>();
+    const candidates: Array<{
+      index: number;
+      key: string;
+      itemPercent: number;
+      viewPercent: number;
+    }> = [];
+
+    for (let index = startIndex; index <= endIndex; index += 1) {
+      const entry = itemsArray[index];
+      if (!entry) continue;
+      const itemStart = leading + index * itemSize;
+      const itemEnd = itemStart + itemSize;
+      const intersection = Math.max(
+        0,
+        Math.min(itemEnd, viewportEnd) - Math.max(itemStart, viewportOffset)
+      );
+      const itemPercent =
+        itemSize > 0 ? (intersection / itemSize) * 100 : 0;
+      const viewPercent =
+        viewportSize > 0 ? (intersection / viewportSize) * 100 : 0;
+      candidates.push({
+        index,
+        key: entry.key,
+        itemPercent,
+        viewPercent,
+      });
+      indicesSet.add(index);
+    }
+
+    const timestamp = getNow();
+
+    for (const tracker of viewabilityTrackers) {
+      if (!tracker.hasInteracted) {
+        tracker.pending.clear();
+        tracker.viewable.clear();
+        continue;
+      }
+
+      const changed: ViewToken[] = [];
+      const minViewTime = tracker.config.minimumViewTime;
+      const itemThreshold = tracker.config.itemVisiblePercentThreshold;
+      const areaThreshold = tracker.config.viewAreaCoveragePercentThreshold;
+
+      for (const candidate of candidates) {
+        const meetsThreshold =
+          candidate.itemPercent >= itemThreshold ||
+          candidate.viewPercent >= areaThreshold;
+        if (meetsThreshold && candidate.itemPercent > 0) {
+          if (tracker.viewable.has(candidate.index)) {
+            continue;
+          }
+          if (minViewTime <= 0) {
+            tracker.viewable.set(candidate.index, timestamp);
+            tracker.pending.delete(candidate.index);
+            changed.push({
+              index: candidate.index,
+              key: candidate.key,
+              isViewable: true,
+              timestamp,
+            });
+          } else {
+            const pendingStart = tracker.pending.get(candidate.index);
+            if (pendingStart === undefined) {
+              tracker.pending.set(candidate.index, timestamp);
+            } else if (timestamp - pendingStart >= minViewTime) {
+              tracker.pending.delete(candidate.index);
+              tracker.viewable.set(candidate.index, timestamp);
+              changed.push({
+                index: candidate.index,
+                key: candidate.key,
+                isViewable: true,
+                timestamp,
+              });
+            }
+          }
+        } else {
+          tracker.pending.delete(candidate.index);
+          if (tracker.viewable.has(candidate.index)) {
+            tracker.viewable.delete(candidate.index);
+            changed.push({
+              index: candidate.index,
+              key: candidate.key,
+              isViewable: false,
+              timestamp,
+            });
+          }
+        }
+      }
+
+      for (const index of Array.from(tracker.pending.keys())) {
+        if (!indicesSet.has(index)) {
+          tracker.pending.delete(index);
+        }
+      }
+
+      for (const index of Array.from(tracker.viewable.keys())) {
+        if (!indicesSet.has(index)) {
+          tracker.viewable.delete(index);
+          const entry = itemsArray[index];
+          const key = entry?.key ?? String(index);
+          changed.push({
+            index,
+            key,
+            isViewable: false,
+            timestamp,
+          });
+        }
+      }
+
+      if (!changed.length) continue;
+
+      const viewableItemsTokens = Array.from(tracker.viewable.entries())
+        .map(([index, visibleTimestamp]) => {
+          const entry = itemsArray[index];
+          const key = entry?.key ?? String(index);
+          return {
+            index,
+            key,
+            isViewable: true,
+            timestamp: visibleTimestamp,
+          };
+        })
+        .sort((a, b) => a.index - b.index);
+
+      tracker.callback({
+        viewableItems: viewableItemsTokens,
+        changed,
+      });
+    }
+  };
+
+  const requestViewabilityCheck = () => {
+    if (!viewabilityTrackers.length || !lastViewabilityMetrics) return;
+    if (viewabilityTask) return;
+    viewabilityTask = scheduleFrame(() => {
+      viewabilityTask = null;
+      runViewabilityCheck();
+    });
+  };
+
+  createEffect(() => {
+    const pairs = normalizedViewabilityPairs();
+    if (!pairs.length) {
+      viewabilityTrackers = [];
+      lastViewabilityMetrics = null;
+      if (viewabilityTask) {
+        viewabilityTask.cancel();
+        viewabilityTask = null;
+      }
+      return;
+    }
+    viewabilityTrackers = pairs.map(({ config, callback }) => ({
+      config,
+      callback,
+      pending: new Map(),
+      viewable: new Map(),
+      hasInteracted: !config.waitForInteraction,
+    }));
+    requestViewabilityCheck();
+  });
+
+  createEffect(() => {
+    const ref = local.viewabilityInteractionRef;
+    if (!ref) return;
+    const api = { recordInteraction };
+    ref(api);
+    onCleanup(() => ref(null));
+  });
 
   const derivedItemSize = createMemo(() => {
     const metrics = latestMetrics();
@@ -605,6 +990,7 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
       orientation,
       getInsets: () => containerInsets(),
     });
+    state.__setRecordInteraction(recordInteraction);
   });
 
   // Use a more robust approach to handle scroll metrics
@@ -632,6 +1018,18 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
       if (prev.start !== 0 || prev.end !== end) {
         setRenderRange({ start: 0, end });
       }
+      const viewportSize =
+        axisForDisabled === "horizontal"
+          ? metrics.viewportSize.width
+          : metrics.viewportSize.height;
+      lastViewabilityMetrics = {
+        offset: Math.max(0, disabledOffset),
+        viewportSize: Math.max(0, viewportSize),
+        orientation: axisForDisabled,
+        rangeStart: 0,
+        rangeEnd: end,
+      };
+      requestViewabilityCheck();
       return;
     }
 
@@ -671,6 +1069,8 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
       if (prev.start !== 0 || prev.end !== end) {
         setRenderRange({ start: 0, end });
       }
+      lastViewabilityMetrics = null;
+      clearPendingViewability(getNow());
       return;
     }
 
@@ -756,6 +1156,14 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
         setRenderRange({ start: startIndex, end: endIndex });
       });
     }
+    lastViewabilityMetrics = {
+      offset: stableOffset,
+      viewportSize,
+      orientation: axis,
+      rangeStart: startIndex,
+      rangeEnd: endIndex,
+    };
+    requestViewabilityCheck();
 
     metricsUpdateFrame = null;
   };
@@ -783,6 +1191,7 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
     if (!isScrolling && Math.abs(axisOffset - lastStableOffset()) > 0.5) {
       isScrolling = true;
       consecutiveZeroOffsets = 0;
+      markInteraction();
     }
 
     // Schedule update
@@ -808,6 +1217,9 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
     }
     if (scrollEndTimeout) {
       clearTimeout(scrollEndTimeout);
+    }
+    if (viewabilityTask) {
+      viewabilityTask.cancel();
     }
   });
 

@@ -493,8 +493,8 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
             }
 
             const char *stringKeys[] = {"flexDirection", "justifyContent", "alignItems",
-                                         "backgroundColor", "borderColor",  "borderStyle",
-                                         "fontWeight",     "color"};
+                                         "flexWrap",      "backgroundColor", "borderColor",
+                                         "borderStyle",  "fontWeight",      "color"};
             for (const char *key : stringKeys) {
               copyString(key);
             }

@@ -43,6 +43,7 @@ export type Style = {
   marginLeft?: number;
   flex?: number;
   flexDirection?: "row" | "column";
+  flexWrap?: "nowrap" | "wrap" | "wrap-reverse";
   justifyContent?:
     | "flex-start"
     | "center"
