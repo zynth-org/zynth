@@ -44,6 +44,10 @@ export type FlatListProps<T> = {
   viewabilityConfig?: ViewabilityConfig;
   viewabilityConfigCallbackPairs?: ViewabilityConfigCallbackPair[];
   viewabilityInteractionRef?: (api: { recordInteraction: () => void } | null) => void;
+  onEndReached?: () => void;
+  onEndReachedThreshold?: number;
+  onStartReached?: () => void;
+  onStartReachedThreshold?: number;
   state?: FlatListState;
   testID?: string;
 };
@@ -123,6 +127,9 @@ const DEFAULT_WINDOW_MULTIPLE = 2;
 const RANGE_HYSTERESIS = 3;
 const MIN_INITIAL_WINDOW_ITEMS = 12;
 const MAX_DYNAMIC_OVERSCAN_ITEMS = 48;
+const DEFAULT_BOUNDARY_THRESHOLD = 0.1;
+const BOUNDARY_REARM_FACTOR = 1.5;
+const MIN_REARM_FRACTION = 0.05;
 
 type ScheduledTask = {
   cancel: () => void;
@@ -182,6 +189,28 @@ const scheduleFrame = (fn: () => void): ScheduledTask => {
       clearTimeout(timeoutId);
     },
   };
+};
+
+const computeThresholdPx = (
+  fraction: number | undefined,
+  viewportSize: number,
+  fallbackFraction: number
+) => {
+  if (viewportSize <= 0) return 0;
+  const normalized = Math.max(0, fraction ?? fallbackFraction);
+  return normalized * viewportSize;
+};
+
+const computeRearmDistance = (
+  thresholdPx: number,
+  viewportSize: number
+) => {
+  const minimum = viewportSize * MIN_REARM_FRACTION;
+  if (thresholdPx <= 0) {
+    return Math.max(minimum, viewportSize * DEFAULT_BOUNDARY_THRESHOLD);
+  }
+  const base = thresholdPx * BOUNDARY_REARM_FACTOR;
+  return Math.max(base, thresholdPx + minimum);
 };
 
 const normalizeViewabilityConfig = (
@@ -481,6 +510,10 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
     "viewabilityConfig",
     "viewabilityConfigCallbackPairs",
     "viewabilityInteractionRef",
+    "onEndReached",
+    "onEndReachedThreshold",
+    "onStartReached",
+    "onStartReachedThreshold",
     "state",
     "testID",
   ]);
@@ -587,6 +620,8 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
   let viewabilityTrackers: ViewabilityTracker[] = [];
   let viewabilityTask: ScheduledTask | null = null;
   let lastViewabilityMetrics: ViewabilityMetricsSnapshot | null = null;
+  let endArmed = typeof local.onEndReached === "function";
+  let startArmed = typeof local.onStartReached === "function";
 
   const markInteraction = () => {
     for (const tracker of viewabilityTrackers) {
@@ -793,6 +828,55 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
     });
   };
 
+  const checkBoundaries = (
+    offset: number,
+    viewportSize: number,
+    contentLength: number
+  ) => {
+    const endHandler = local.onEndReached;
+    const startHandler = local.onStartReached;
+    if (!endHandler && !startHandler) return;
+
+    const safeViewport = viewportSize > 0 ? viewportSize : 0;
+    const safeContent = contentLength > 0 ? contentLength : 0;
+    if (safeViewport <= 0 || safeContent <= 0) return;
+
+    if (endHandler) {
+      const thresholdPx = computeThresholdPx(
+        local.onEndReachedThreshold,
+        safeViewport,
+        DEFAULT_BOUNDARY_THRESHOLD
+      );
+      const rearmDistance = computeRearmDistance(thresholdPx, safeViewport);
+      const distanceToEnd = Math.max(
+        0,
+        safeContent - (offset + safeViewport)
+      );
+      if (endArmed && distanceToEnd <= thresholdPx) {
+        endArmed = false;
+        endHandler();
+      } else if (!endArmed && distanceToEnd > rearmDistance) {
+        endArmed = true;
+      }
+    }
+
+    if (startHandler) {
+      const thresholdPx = computeThresholdPx(
+        local.onStartReachedThreshold,
+        safeViewport,
+        DEFAULT_BOUNDARY_THRESHOLD
+      );
+      const rearmDistance = computeRearmDistance(thresholdPx, safeViewport);
+      const distanceToStart = Math.max(0, offset);
+      if (startArmed && distanceToStart <= thresholdPx) {
+        startArmed = false;
+        startHandler();
+      } else if (!startArmed && distanceToStart > rearmDistance) {
+        startArmed = true;
+      }
+    }
+  };
+
   createEffect(() => {
     const pairs = normalizedViewabilityPairs();
     if (!pairs.length) {
@@ -812,6 +896,15 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
       hasInteracted: !config.waitForInteraction,
     }));
     requestViewabilityCheck();
+  });
+
+  createEffect(() => {
+    const endHandler = local.onEndReached;
+    const startHandler = local.onStartReached;
+    endArmed = typeof endHandler === "function";
+    startArmed = typeof startHandler === "function";
+    void local.onEndReachedThreshold;
+    void local.onStartReachedThreshold;
   });
 
   createEffect(() => {
@@ -891,6 +984,8 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
       itemSize: 0,
       configKey: "",
     };
+    endArmed = typeof local.onEndReached === "function";
+    startArmed = typeof local.onStartReached === "function";
   });
 
   const beforeSpacerSize = createMemo(() => {
@@ -1012,6 +1107,10 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
         axisForDisabled === "horizontal"
           ? metrics.offset.x
           : metrics.offset.y;
+      const contentLengthDisabled =
+        axisForDisabled === "horizontal"
+          ? metrics.contentSize.width
+          : metrics.contentSize.height;
       setLastStableOffset(Math.max(0, disabledOffset));
       const end = total - 1;
       const prev = renderRange();
@@ -1030,6 +1129,16 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
         rangeEnd: end,
       };
       requestViewabilityCheck();
+      checkBoundaries(
+        Math.max(0, disabledOffset),
+        Math.max(
+          0,
+          axisForDisabled === "horizontal"
+            ? metrics.viewportSize.width
+            : metrics.viewportSize.height
+        ),
+        Math.max(0, contentLengthDisabled)
+      );
       return;
     }
 
@@ -1041,6 +1150,10 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
         : metrics.viewportSize.height;
     const axisOffset =
       axis === "horizontal" ? metrics.offset.x : metrics.offset.y;
+    const contentLength =
+      axis === "horizontal"
+        ? metrics.contentSize.width
+        : metrics.contentSize.height;
 
     // Filter out problematic offset values during fast scrolling
     const currentOffset = Math.max(0, axisOffset);
@@ -1164,6 +1277,7 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
       rangeEnd: endIndex,
     };
     requestViewabilityCheck();
+    checkBoundaries(stableOffset, viewportSize, contentLength);
 
     metricsUpdateFrame = null;
   };
