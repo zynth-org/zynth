@@ -155,8 +155,12 @@ type ScrollPadding =
     };
 
 export type MaintainVisibleContentPosition = {
-  minIndexForVisible: number;
+  disabled?: boolean;
+  startRenderingFromBottom?: boolean;
+  minIndexForVisible?: number;
   autoscrollToTopThreshold?: number;
+  autoscrollToBottomThreshold?: number;
+  animateAutoScroll?: boolean;
 };
 
 export type ScrollViewProps = {

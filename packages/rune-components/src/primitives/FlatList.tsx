@@ -15,6 +15,7 @@ import {
   type ScrollViewProps,
   createScrollController,
   type ScrollMetrics,
+  type MaintainVisibleContentPosition,
 } from "./ScrollView";
 import { View } from "./View";
 
@@ -43,13 +44,16 @@ export type FlatListProps<T> = {
   onViewableItemsChanged?: OnViewableItemsChanged;
   viewabilityConfig?: ViewabilityConfig;
   viewabilityConfigCallbackPairs?: ViewabilityConfigCallbackPair[];
-  viewabilityInteractionRef?: (api: { recordInteraction: () => void } | null) => void;
+  viewabilityInteractionRef?: (
+    api: { recordInteraction: () => void } | null
+  ) => void;
   onEndReached?: () => void;
   onEndReachedThreshold?: number;
   onStartReached?: () => void;
   onStartReachedThreshold?: number;
   state?: FlatListState;
   testID?: string;
+  maintainVisibleContentPosition?: MaintainVisibleContentPosition;
 };
 
 type ItemEntry<T> = {
@@ -121,6 +125,31 @@ type ViewabilityMetricsSnapshot = {
   orientation: "vertical" | "horizontal";
   rangeStart: number;
   rangeEnd: number;
+};
+
+type MVCPConfigNormalized = {
+  enabled: boolean;
+  startFromBottom: boolean;
+  minIndexForVisible: number;
+  autoscrollToTopThreshold?: number;
+  autoscrollToBottomThreshold?: number;
+  animateAutoScroll: boolean;
+};
+
+type MVCPMutation = {
+  type: "prepend" | "append";
+  count: number;
+  prevOffset: number;
+  prevContentLength: number;
+  prevViewport: number;
+  anchorEligible: boolean;
+};
+
+type AnchorSnapshot = {
+  key: string;
+  index: number;
+  itemOffset: number;
+  screenOffset: number;
 };
 
 const DEFAULT_WINDOW_MULTIPLE = 2;
@@ -201,10 +230,7 @@ const computeThresholdPx = (
   return normalized * viewportSize;
 };
 
-const computeRearmDistance = (
-  thresholdPx: number,
-  viewportSize: number
-) => {
+const computeRearmDistance = (thresholdPx: number, viewportSize: number) => {
   const minimum = viewportSize * MIN_REARM_FRACTION;
   if (thresholdPx <= 0) {
     return Math.max(minimum, viewportSize * DEFAULT_BOUNDARY_THRESHOLD);
@@ -230,6 +256,40 @@ const normalizeViewabilityConfig = (
   waitForInteraction: config?.waitForInteraction ?? false,
 });
 
+const normalizeMaintainVisibleContentPosition = (
+  config?: MaintainVisibleContentPosition
+): MVCPConfigNormalized => {
+  if (!config || config.disabled) {
+    return {
+      enabled: false,
+      startFromBottom: false,
+      minIndexForVisible: 0,
+      animateAutoScroll: true,
+    };
+  }
+  return {
+    enabled: true,
+    startFromBottom: config.startRenderingFromBottom ?? false,
+    minIndexForVisible: Math.max(0, config.minIndexForVisible ?? 0),
+    autoscrollToTopThreshold: config.autoscrollToTopThreshold,
+    autoscrollToBottomThreshold: config.autoscrollToBottomThreshold,
+    animateAutoScroll:
+      config.animateAutoScroll === undefined ? true : config.animateAutoScroll,
+  };
+};
+
+const resolveThresholdPx = (
+  value: number | undefined,
+  viewportSize: number
+): number | null => {
+  if (value === undefined) return null;
+  if (viewportSize <= 0) return null;
+  if (value >= 0 && value <= 1) {
+    return value * viewportSize;
+  }
+  return value;
+};
+
 const clamp = (value: number, min: number, max: number) => {
   if (Number.isNaN(value)) return min;
   if (value < min) return min;
@@ -254,8 +314,7 @@ const resolveOverscanPx = (
     if (!Number.isFinite(config) || config <= 0) {
       return { before: defaultValue, after: defaultValue };
     }
-    const asMultiple =
-      config <= 1 && viewport > 0 ? config * viewport : config;
+    const asMultiple = config <= 1 && viewport > 0 ? config * viewport : config;
     return { before: asMultiple, after: asMultiple };
   }
 
@@ -514,6 +573,7 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
     "onEndReachedThreshold",
     "onStartReached",
     "onStartReachedThreshold",
+    "maintainVisibleContentPosition",
     "state",
     "testID",
   ]);
@@ -604,10 +664,7 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
     }
     const extraPairs = local.viewabilityConfigCallbackPairs ?? [];
     for (const pair of extraPairs) {
-      if (
-        pair &&
-        typeof pair.onViewableItemsChanged === "function"
-      ) {
+      if (pair && typeof pair.onViewableItemsChanged === "function") {
         result.push({
           config: normalizeViewabilityConfig(pair.viewabilityConfig),
           callback: pair.onViewableItemsChanged,
@@ -622,6 +679,18 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
   let lastViewabilityMetrics: ViewabilityMetricsSnapshot | null = null;
   let endArmed = typeof local.onEndReached === "function";
   let startArmed = typeof local.onStartReached === "function";
+  const normalizedMVCP = createMemo(() =>
+    normalizeMaintainVisibleContentPosition(
+      local.maintainVisibleContentPosition
+    )
+  );
+  let pendingMVCP: MVCPMutation | null = null;
+  let lastAnchorSnapshot: AnchorSnapshot | null = null;
+  let lastContentLength = 0;
+  let lastViewportSize = 0;
+  let lastStableScrollOffsetValue = 0;
+  let startFromBottomApplied = false;
+  let previousKeys: string[] = [];
 
   const markInteraction = () => {
     for (const tracker of viewabilityTrackers) {
@@ -704,8 +773,7 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
         0,
         Math.min(itemEnd, viewportEnd) - Math.max(itemStart, viewportOffset)
       );
-      const itemPercent =
-        itemSize > 0 ? (intersection / itemSize) * 100 : 0;
+      const itemPercent = itemSize > 0 ? (intersection / itemSize) * 100 : 0;
       const viewPercent =
         viewportSize > 0 ? (intersection / viewportSize) * 100 : 0;
       candidates.push({
@@ -848,10 +916,7 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
         DEFAULT_BOUNDARY_THRESHOLD
       );
       const rearmDistance = computeRearmDistance(thresholdPx, safeViewport);
-      const distanceToEnd = Math.max(
-        0,
-        safeContent - (offset + safeViewport)
-      );
+      const distanceToEnd = Math.max(0, safeContent - (offset + safeViewport));
       if (endArmed && distanceToEnd <= thresholdPx) {
         endArmed = false;
         endHandler();
@@ -875,6 +940,153 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
         startArmed = true;
       }
     }
+  };
+
+  const applyMaintainVisibleContentPosition = (
+    mutation: MVCPMutation,
+    stableOffset: number,
+    viewportSize: number,
+    contentLength: number,
+    axis: "vertical" | "horizontal",
+    config: MVCPConfigNormalized
+  ) => {
+    const controller = scrollController;
+    if (controller.isDragging()) {
+      return false;
+    }
+
+    const itemEstimate = resolvedItemSize();
+    let insertedDistance = 0;
+    if (itemEstimate > 0) {
+      insertedDistance = mutation.count * itemEstimate;
+    } else {
+      insertedDistance = Math.max(
+        0,
+        contentLength - mutation.prevContentLength
+      );
+    }
+
+    let adjusted = false;
+
+    if (mutation.type === "prepend" && !config.startFromBottom) {
+      if (mutation.anchorEligible && insertedDistance > 0) {
+        const targetOffset = Math.max(0, stableOffset + insertedDistance);
+        if (Math.abs(targetOffset - stableOffset) > 0.5) {
+          controller.scrollTo(
+            axis === "horizontal"
+              ? { x: targetOffset, animated: false }
+              : { y: targetOffset, animated: false }
+          );
+          setLastStableOffset(targetOffset);
+          lastStableScrollOffsetValue = targetOffset;
+          adjusted = true;
+        }
+      }
+
+      const threshold = resolveThresholdPx(
+        config.autoscrollToTopThreshold,
+        viewportSize
+      );
+      if (threshold !== null && mutation.prevOffset <= threshold) {
+        const targetOffset = Math.max(0, stableOffset + insertedDistance);
+        controller.scrollTo(
+          axis === "horizontal"
+            ? { x: targetOffset, animated: config.animateAutoScroll }
+            : { y: targetOffset, animated: config.animateAutoScroll }
+        );
+        setLastStableOffset(targetOffset);
+        lastStableScrollOffsetValue = targetOffset;
+        adjusted = true;
+      }
+    }
+
+    if (mutation.type === "append") {
+      const threshold = resolveThresholdPx(
+        config.autoscrollToBottomThreshold,
+        viewportSize
+      );
+      const distanceToEnd = Math.max(
+        0,
+        contentLength - (stableOffset + viewportSize)
+      );
+      if (
+        config.startFromBottom ||
+        (threshold !== null && distanceToEnd <= threshold)
+      ) {
+        const targetOffset = Math.max(0, contentLength - viewportSize);
+        controller.scrollTo(
+          axis === "horizontal"
+            ? { x: targetOffset, animated: config.animateAutoScroll }
+            : { y: targetOffset, animated: config.animateAutoScroll }
+        );
+        setLastStableOffset(targetOffset);
+        lastStableScrollOffsetValue = targetOffset;
+        adjusted = true;
+      }
+    }
+
+    return adjusted;
+  };
+
+  const updateAnchorSnapshot = (
+    startIndex: number,
+    endIndex: number,
+    stableOffset: number,
+    axis: "vertical" | "horizontal"
+  ) => {
+    const cfg = normalizedMVCP();
+    if (!cfg.enabled) {
+      lastAnchorSnapshot = null;
+      return;
+    }
+    const itemsArray = items();
+    if (!itemsArray.length) {
+      lastAnchorSnapshot = null;
+      return;
+    }
+    const minIndex = cfg.minIndexForVisible;
+    let targetIndex: number | null = null;
+    if (cfg.startFromBottom) {
+      for (let idx = endIndex; idx >= startIndex; idx -= 1) {
+        if (idx >= 0 && idx < itemsArray.length) {
+          targetIndex = idx;
+          break;
+        }
+      }
+    } else {
+      for (let idx = startIndex; idx <= endIndex; idx += 1) {
+        if (idx >= minIndex) {
+          targetIndex = idx;
+          break;
+        }
+      }
+    }
+    if (targetIndex === null) {
+      targetIndex = cfg.startFromBottom ? endIndex : startIndex;
+    }
+    if (targetIndex < 0 || targetIndex >= itemsArray.length) {
+      lastAnchorSnapshot = null;
+      return;
+    }
+
+    const entry = itemsArray[targetIndex];
+    const insets = containerInsets();
+    const leading = axis === "horizontal" ? insets.leading : insets.leading;
+    const estimate = resolvedItemSize();
+    const fallback = virtualizationItemSize();
+    const sizeForOffset = estimate > 0 ? estimate : fallback > 0 ? fallback : 0;
+    if (sizeForOffset <= 0) {
+      lastAnchorSnapshot = null;
+      return;
+    }
+    const itemOffset = leading + targetIndex * sizeForOffset;
+    const screenOffset = itemOffset - stableOffset;
+    lastAnchorSnapshot = {
+      key: entry.key,
+      index: targetIndex,
+      itemOffset,
+      screenOffset,
+    };
   };
 
   createEffect(() => {
@@ -905,6 +1117,16 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
     startArmed = typeof startHandler === "function";
     void local.onEndReachedThreshold;
     void local.onStartReachedThreshold;
+  });
+
+  createEffect(() => {
+    const cfg = normalizedMVCP();
+    if (!cfg.enabled) {
+      pendingMVCP = null;
+      startFromBottomApplied = true;
+    } else if (cfg.startFromBottom) {
+      startFromBottomApplied = false;
+    }
   });
 
   createEffect(() => {
@@ -977,6 +1199,7 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
     orientation();
     setLastMeasuredViewport(0);
     setLastStableOffset(0);
+    lastStableScrollOffsetValue = 0;
     cachedOverscan = {
       beforeItems: Math.ceil(MIN_INITIAL_WINDOW_ITEMS / 2),
       afterItems: Math.ceil(MIN_INITIAL_WINDOW_ITEMS / 2),
@@ -1076,6 +1299,35 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
     return cachedOverscan;
   };
 
+  const classifyMutation = (prevKeys: string[], currKeys: string[]) => {
+    if (prevKeys.length === 0 || currKeys.length <= prevKeys.length) {
+      return null;
+    }
+    const growth = currKeys.length - prevKeys.length;
+    let matchesPrefix = true;
+    for (let i = 0; i < prevKeys.length; i += 1) {
+      if (currKeys[i] !== prevKeys[i]) {
+        matchesPrefix = false;
+        break;
+      }
+    }
+    if (matchesPrefix) {
+      return { type: "append" as const, count: growth };
+    }
+    let matchesSuffix = true;
+    const start = currKeys.length - prevKeys.length;
+    for (let i = 0; i < prevKeys.length; i += 1) {
+      if (currKeys[start + i] !== prevKeys[i]) {
+        matchesSuffix = false;
+        break;
+      }
+    }
+    if (matchesSuffix) {
+      return { type: "prepend" as const, count: growth };
+    }
+    return null;
+  };
+
   createEffect(() => {
     const state = internalState();
     if (!state) return;
@@ -1086,6 +1338,39 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
       getInsets: () => containerInsets(),
     });
     state.__setRecordInteraction(recordInteraction);
+  });
+
+  createEffect(() => {
+    const currentItems = items();
+    const currentKeys = currentItems.map((entry) => entry.key);
+    const cfg = normalizedMVCP();
+    if (!currentKeys.length) {
+      startFromBottomApplied = cfg.startFromBottom ? false : true;
+    }
+    if (previousKeys.length && cfg.enabled) {
+      const diff = classifyMutation(previousKeys, currentKeys);
+      if (diff) {
+        const anchorEligible =
+          !cfg.startFromBottom && diff.type === "prepend"
+            ? lastAnchorSnapshot
+              ? lastAnchorSnapshot.index >= cfg.minIndexForVisible
+              : false
+            : cfg.startFromBottom && diff.type === "append"
+            ? true
+            : cfg.autoscrollToBottomThreshold !== undefined &&
+              diff.type === "append";
+
+        pendingMVCP = {
+          type: diff.type,
+          count: diff.count,
+          prevOffset: lastStableScrollOffsetValue,
+          prevContentLength: lastContentLength,
+          prevViewport: lastViewportSize,
+          anchorEligible,
+        };
+      }
+    }
+    previousKeys = currentKeys;
   });
 
   // Use a more robust approach to handle scroll metrics
@@ -1104,14 +1389,18 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
     if (!virtualizationEnabled()) {
       const axisForDisabled = orientation();
       const disabledOffset =
-        axisForDisabled === "horizontal"
-          ? metrics.offset.x
-          : metrics.offset.y;
+        axisForDisabled === "horizontal" ? metrics.offset.x : metrics.offset.y;
       const contentLengthDisabled =
         axisForDisabled === "horizontal"
           ? metrics.contentSize.width
           : metrics.contentSize.height;
       setLastStableOffset(Math.max(0, disabledOffset));
+      lastStableScrollOffsetValue = Math.max(0, disabledOffset);
+      lastViewportSize =
+        axisForDisabled === "horizontal"
+          ? metrics.viewportSize.width
+          : metrics.viewportSize.height;
+      lastContentLength = contentLengthDisabled;
       const end = total - 1;
       const prev = renderRange();
       if (prev.start !== 0 || prev.end !== end) {
@@ -1175,6 +1464,18 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
     // Use stable offset for calculations
     const stableOffset =
       consecutiveZeroOffsets > 0 ? lastStableOffset() : currentOffset;
+    const fallbackViewport =
+      viewportRaw > 0
+        ? viewportRaw
+        : lastMeasuredViewport() > 0
+        ? lastMeasuredViewport()
+        : itemSize * MIN_INITIAL_WINDOW_ITEMS;
+
+    const viewportSize = Math.max(itemSize, fallbackViewport);
+
+    lastStableScrollOffsetValue = stableOffset;
+    lastViewportSize = viewportSize;
+    lastContentLength = contentLength;
 
     if (itemSize <= 0 || total === 0) {
       const end = total - 1;
@@ -1184,21 +1485,13 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
       }
       lastViewabilityMetrics = null;
       clearPendingViewability(getNow());
+      pendingMVCP = null;
       return;
     }
 
     if (viewportRaw > 0) {
       setLastMeasuredViewport(viewportRaw);
     }
-
-    const fallbackViewport =
-      viewportRaw > 0
-        ? viewportRaw
-        : lastMeasuredViewport() > 0
-        ? lastMeasuredViewport()
-        : itemSize * MIN_INITIAL_WINDOW_ITEMS;
-
-    const viewportSize = Math.max(itemSize, fallbackViewport);
 
     const overscanInfo = overscanFor(viewportSize, itemSize);
     let overscanBeforeItems = overscanInfo.beforeItems;
@@ -1213,16 +1506,14 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
     // Use a more stable window calculation
     let baseBeforeCount = overscanBeforeItems;
     let baseAfterCount = overscanAfterItems;
-    let baseWindowCount =
-      visibleCount + baseBeforeCount + baseAfterCount;
+    let baseWindowCount = visibleCount + baseBeforeCount + baseAfterCount;
 
     if (baseWindowCount < targetWindowFromMultiple) {
       const deficit = targetWindowFromMultiple - baseWindowCount;
       const addBefore = Math.floor(deficit / 2);
       baseBeforeCount += addBefore;
       baseAfterCount += deficit - addBefore;
-      baseWindowCount =
-        visibleCount + baseBeforeCount + baseAfterCount;
+      baseWindowCount = visibleCount + baseBeforeCount + baseAfterCount;
     }
 
     if (baseWindowCount < MIN_INITIAL_WINDOW_ITEMS) {
@@ -1230,8 +1521,7 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
       const addBefore = Math.floor(remaining / 2);
       baseBeforeCount += addBefore;
       baseAfterCount += remaining - addBefore;
-      baseWindowCount =
-        visibleCount + baseBeforeCount + baseAfterCount;
+      baseWindowCount = visibleCount + baseBeforeCount + baseAfterCount;
     }
 
     // Add hysteresis to prevent flickering at boundaries
@@ -1278,6 +1568,47 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
     };
     requestViewabilityCheck();
     checkBoundaries(stableOffset, viewportSize, contentLength);
+
+    const mvcp = normalizedMVCP();
+    if (mvcp.enabled) {
+      if (mvcp.startFromBottom && !startFromBottomApplied) {
+        const target = Math.max(0, contentLength - viewportSize);
+        if (contentLength > viewportSize && !scrollController.isDragging()) {
+          scrollController.scrollTo(
+            axis === "horizontal"
+              ? { x: target, animated: false }
+              : { y: target, animated: false }
+          );
+          setLastStableOffset(target);
+          lastStableScrollOffsetValue = target;
+        }
+        startFromBottomApplied = true;
+      }
+
+      if (pendingMVCP) {
+        const applied = applyMaintainVisibleContentPosition(
+          pendingMVCP,
+          stableOffset,
+          viewportSize,
+          contentLength,
+          axis,
+          mvcp
+        );
+        if (applied) {
+          pendingMVCP = null;
+        } else if (!scrollController.isDragging()) {
+          pendingMVCP = null;
+        }
+      }
+    } else {
+      pendingMVCP = null;
+      startFromBottomApplied = true;
+    }
+
+    const latestMetrics = scrollController.metrics();
+    const anchorOffset =
+      axis === "horizontal" ? latestMetrics.offset.x : latestMetrics.offset.y;
+    updateAnchorSnapshot(startIndex, endIndex, anchorOffset, axis);
 
     metricsUpdateFrame = null;
   };
@@ -1343,6 +1674,7 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
       style={local.style}
       contentContainerStyle={containerStyleSource()}
       controller={scrollController}
+      maintainVisibleContentPosition={local.maintainVisibleContentPosition}
       testID={local.testID ?? scrollProps().testID}
     >
       {renderSupplemental(local.ListHeaderComponent)}
