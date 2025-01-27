@@ -589,22 +589,50 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
       })
   );
 
-  const items = createMemo<ItemEntry<T>[]>(() => {
-    const entries = (local.data ?? []).map((item, index) => ({
-      item,
-      index,
-      key: keyExtractor()(item, index),
-    }));
+  const items = createMemo<ItemEntry<T>[]>((prevEntries = []) => {
+    const data = local.data ?? [];
+    const extractor = keyExtractor();
+
+    // 1. Create a Map of old entries for quick lookup by key
+    const prevEntryMap = new Map<string, ItemEntry<T>>();
+    if (prevEntries) {
+      for (const entry of prevEntries) {
+        prevEntryMap.set(entry.key, entry);
+      }
+    }
+
+    const newEntries: ItemEntry<T>[] = [];
     const seen = new Set<string>();
-    for (const entry of entries) {
-      if (seen.has(entry.key)) {
+
+    for (let index = 0; index < data.length; index++) {
+      const item = data[index];
+      const key = extractor(item, index);
+
+      if (seen.has(key)) {
         console.warn(
-          `[FlatList] Duplicate key detected for index ${entry.index}: "${entry.key}". Keys should be unique.`
+          `[FlatList] Duplicate key detected for index ${index}: "${key}". Keys should be unique.`
         );
       }
-      seen.add(entry.key);
+      seen.add(key);
+
+      const prevEntry = prevEntryMap.get(key);
+
+      // 2. Check if we can reuse the old object
+      // This is the key: we check if the item proxy and index are the same.
+      if (prevEntry && prevEntry.item === item && prevEntry.index === index) {
+        // 3. Reuse the existing object reference
+        newEntries.push(prevEntry);
+      } else {
+        // 4. Create a new object only if it's new or has changed
+        newEntries.push({
+          item,
+          index,
+          key,
+        });
+      }
     }
-    return entries;
+
+    return newEntries;
   });
 
   const scrollProps = createMemo<Partial<ScrollViewProps>>(
