@@ -16,8 +16,230 @@ import {
   createScrollController,
   type ScrollMetrics,
   type MaintainVisibleContentPosition,
+  ScrollController,
 } from "./ScrollView";
 import { View } from "./View";
+
+export interface FlatListController {
+  scrollToOffset(params: { offset: number; animated?: boolean }): void;
+  scrollToIndex(params: {
+    index: number;
+    viewOffset?: number;
+    viewPosition?: number;
+    animated?: boolean;
+  }): void;
+  scrollToItem(params: {
+    item: any;
+    viewPosition?: number;
+    animated?: boolean;
+  }): void;
+  scrollToTop(params?: { animated?: boolean }): void;
+  scrollToEnd(params?: { animated?: boolean }): void;
+  recordInteraction(): void;
+  recomputeViewableItems(): void;
+  flashScrollIndicators(): void;
+  getWindowSize(): { width: number; height: number };
+  getNativeScrollRef(): any;
+}
+
+type InternalFlatListController = FlatListController & {
+  __attach: (payload: {
+    getItems: () => ItemEntry<any>[];
+    getItemSize: () => number;
+    getMetrics: () => ScrollMetrics;
+    getOrientation: () => "vertical" | "horizontal";
+    getInsets: () => { leading: number; trailing: number };
+    getScrollController: () => ScrollController;
+    requestViewabilityCheck: () => void;
+    markInteraction: () => void;
+    estimateOffsetForIndex: (index: number) => number;
+    getContentLength: () => number;
+    getViewportLength: () => number;
+    findIndexForItem: (item: any) => number | null;
+    getNativeScrollRef: () => any;
+  }) => void;
+  __detach: () => void;
+  __resolvePending: () => void;
+};
+
+export function createFlatListController(): FlatListController {
+  let getItems: (() => ItemEntry<any>[]) | null = null;
+  let getItemSize: (() => number) | null = null;
+  let getMetrics: (() => ScrollMetrics) | null = null;
+  let getOrientation: (() => "vertical" | "horizontal") | null = null;
+  let getInsets: (() => { leading: number; trailing: number }) | null = null;
+  let getScrollController: (() => ScrollController) | null = null;
+  let requestViewability: (() => void) | null = null;
+  let markInteraction: (() => void) | null = null;
+  let estimateOffsetForIndex: ((index: number) => number) | null = null;
+  let getContentLength: (() => number) | null = null;
+  let getViewportLength: (() => number) | null = null;
+  let findIndexForItem: ((item: any) => number | null) | null = null;
+  let getNativeRef: (() => any) | null = null;
+
+  let pendingScroll: { offset: number; animated?: boolean } | null = null;
+
+  const computeBounds = () => {
+    let orientation: "vertical" | "horizontal" =
+      getOrientation?.() ?? "vertical";
+    let viewport = 0;
+    let content = 0;
+    if (getMetrics) {
+      const metrics = getMetrics();
+      viewport =
+        orientation === "horizontal"
+          ? metrics.viewportSize.width
+          : metrics.viewportSize.height;
+      content =
+        orientation === "horizontal"
+          ? metrics.contentSize.width
+          : metrics.contentSize.height;
+    }
+    if (viewport <= 0 && getViewportLength) {
+      viewport = Math.max(viewport, getViewportLength());
+    }
+    if (content <= 0 && getContentLength) {
+      content = Math.max(content, getContentLength());
+    }
+    if (content <= 0 && getItems && getItemSize) {
+      const size = getItemSize();
+      if (size > 0) content = size * getItems().length;
+    }
+    if (viewport <= 0 && getItemSize) {
+      const size = getItemSize();
+      if (size > 0) viewport = size;
+    }
+    return { orientation, viewport, content };
+  };
+
+  const tryScrollToOffset = (
+    targetOffset: number,
+    animated = false
+  ): boolean => {
+    const { orientation, viewport, content } = computeBounds();
+    if (viewport <= 0 || content <= 0) return false;
+    const maxOffset = Math.max(0, content - viewport);
+    const offset = Math.min(Math.max(targetOffset, 0), maxOffset);
+    const controller = getScrollController?.();
+    if (!controller) return false;
+    if (orientation === "horizontal") {
+      controller.scrollTo({ x: offset, animated });
+    } else {
+      controller.scrollTo({ y: offset, animated });
+    }
+    return true;
+  };
+
+  const controller: InternalFlatListController = {
+    scrollToOffset({ offset, animated }) {
+      if (!tryScrollToOffset(offset, animated)) {
+        pendingScroll = { offset, animated };
+      } else {
+        pendingScroll = null;
+      }
+    },
+    scrollToIndex({ index, viewOffset = 0, viewPosition = 0, animated }) {
+      if (!getItems || !estimateOffsetForIndex || !getViewportLength) return;
+      const items = getItems();
+      if (!items.length || index < 0 || index >= items.length) return;
+      const itemOffset = estimateOffsetForIndex(index);
+      const viewport = getViewportLength();
+      let position = viewPosition;
+      if (!Number.isFinite(position)) position = 0;
+      position = Math.min(Math.max(position, 0), 1);
+      const target = itemOffset - viewport * position + viewOffset;
+      if (!tryScrollToOffset(target, animated)) {
+        pendingScroll = { offset: target, animated };
+      } else {
+        pendingScroll = null;
+      }
+    },
+    scrollToItem({ item, viewPosition, animated }) {
+      if (!findIndexForItem) return;
+      const index = findIndexForItem(item);
+      if (index == null || index < 0) return;
+      controller.scrollToIndex({ index, viewPosition, animated });
+    },
+    scrollToTop({ animated } = {}) {
+      if (!tryScrollToOffset(0, animated)) {
+        pendingScroll = { offset: 0, animated };
+      } else {
+        pendingScroll = null;
+      }
+    },
+    scrollToEnd({ animated } = {}) {
+      if (!getContentLength || !getViewportLength) return;
+      const content = getContentLength();
+      const viewport = getViewportLength();
+      const target = Math.max(0, content - viewport);
+      if (!tryScrollToOffset(target, animated)) {
+        pendingScroll = { offset: target, animated };
+      } else {
+        pendingScroll = null;
+      }
+    },
+    recordInteraction() {
+      markInteraction?.();
+    },
+    recomputeViewableItems() {
+      requestViewability?.();
+    },
+    flashScrollIndicators() {
+      const controller = getScrollController?.();
+      controller?.flashScrollIndicators?.();
+    },
+    getWindowSize() {
+      if (!getMetrics) return { width: 0, height: 0 };
+      const metrics = getMetrics();
+      return {
+        width: metrics.viewportSize.width,
+        height: metrics.viewportSize.height,
+      };
+    },
+    getNativeScrollRef() {
+      return getNativeRef?.() ?? null;
+    },
+    __attach(payload) {
+      getItems = payload.getItems;
+      getItemSize = payload.getItemSize;
+      getMetrics = payload.getMetrics;
+      getOrientation = payload.getOrientation;
+      getInsets = payload.getInsets;
+      getScrollController = payload.getScrollController;
+      requestViewability = payload.requestViewabilityCheck;
+      markInteraction = payload.markInteraction;
+      estimateOffsetForIndex = payload.estimateOffsetForIndex;
+      getContentLength = payload.getContentLength;
+      getViewportLength = payload.getViewportLength;
+      findIndexForItem = payload.findIndexForItem;
+      getNativeRef = payload.getNativeScrollRef;
+    },
+    __detach() {
+      getItems = null;
+      getItemSize = null;
+      getMetrics = null;
+      getOrientation = null;
+      getInsets = null;
+      getScrollController = null;
+      requestViewability = null;
+      markInteraction = null;
+      estimateOffsetForIndex = null;
+      getContentLength = null;
+      getViewportLength = null;
+      findIndexForItem = null;
+      getNativeRef = null;
+      pendingScroll = null;
+    },
+    __resolvePending() {
+      if (!pendingScroll) return;
+      if (tryScrollToOffset(pendingScroll.offset, pendingScroll.animated)) {
+        pendingScroll = null;
+      }
+    },
+  };
+
+  return controller;
+}
 
 type RenderItemInfo<T> = {
   item: T;
@@ -54,6 +276,7 @@ export type FlatListProps<T> = {
   state?: FlatListState;
   testID?: string;
   maintainVisibleContentPosition?: MaintainVisibleContentPosition;
+  controller?: FlatListController;
 };
 
 type ItemEntry<T> = {
@@ -574,11 +797,31 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
     "onStartReached",
     "onStartReachedThreshold",
     "maintainVisibleContentPosition",
+    "controller",
     "state",
     "testID",
   ]);
 
   const scrollController = createScrollController();
+  let nativeScrollRef: any = null;
+  const internalScrollController = scrollController as any;
+  if (typeof internalScrollController.__setHost === "function") {
+    const originalSetHost = internalScrollController.__setHost.bind(
+      internalScrollController
+    );
+    internalScrollController.__setHost = (node: any) => {
+      nativeScrollRef = node ?? null;
+      originalSetHost(node);
+    };
+  }
+
+  const providedController = local.controller as
+    | InternalFlatListController
+    | undefined;
+  const internalFlatListController: InternalFlatListController =
+    providedController ??
+    (createFlatListController() as InternalFlatListController);
+
   const internalState = () => local.state as InternalFlatListState | undefined;
 
   const keyExtractor = createMemo<KeyExtractor<T>>(
@@ -1327,6 +1570,70 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
     return cachedOverscan;
   };
 
+  const estimateOffsetForIndex = (index: number) => {
+    const insets = containerInsets();
+    const leading = Number.isFinite(insets.leading) ? insets.leading : 0;
+    const size = resolvedItemSize();
+    if (size > 0) {
+      return Math.max(0, leading + index * size);
+    }
+    const metrics = scrollController.metrics();
+    const axis = orientation();
+    const contentLength =
+      axis === "horizontal"
+        ? metrics.contentSize.width
+        : metrics.contentSize.height;
+    const total = Math.max(1, items().length);
+    if (contentLength <= 0) {
+      return Math.max(0, leading);
+    }
+    const estimated = (contentLength / total) * index;
+    return Math.max(0, leading + estimated);
+  };
+
+  const getContentLength = () => {
+    const metrics = scrollController.metrics();
+    return orientation() === "horizontal"
+      ? metrics.contentSize.width
+      : metrics.contentSize.height;
+  };
+
+  const getViewportLength = () => {
+    const metrics = scrollController.metrics();
+    return orientation() === "horizontal"
+      ? metrics.viewportSize.width
+      : metrics.viewportSize.height;
+  };
+
+  const findIndexForItem = (target: any): number | null => {
+    const arr = items();
+    for (let i = 0; i < arr.length; i += 1) {
+      if (arr[i].item === target) {
+        return i;
+      }
+    }
+    return null;
+  };
+
+  internalFlatListController.__attach({
+    getItems: items,
+    getItemSize: () => resolvedItemSize(),
+    getMetrics: () => scrollController.metrics(),
+    getOrientation: orientation,
+    getInsets: () => containerInsets(),
+    getScrollController: () => scrollController,
+    requestViewabilityCheck,
+    markInteraction,
+    estimateOffsetForIndex,
+    getContentLength,
+    getViewportLength,
+    findIndexForItem,
+    getNativeScrollRef: () => nativeScrollRef,
+  });
+  onCleanup(() => {
+    internalFlatListController.__detach();
+  });
+
   const classifyMutation = (prevKeys: string[], currKeys: string[]) => {
     if (prevKeys.length === 0 || currKeys.length <= prevKeys.length) {
       return null;
@@ -1456,6 +1763,7 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
         ),
         Math.max(0, contentLengthDisabled)
       );
+      internalFlatListController.__resolvePending();
       return;
     }
 
@@ -1637,6 +1945,8 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
     const anchorOffset =
       axis === "horizontal" ? latestMetrics.offset.x : latestMetrics.offset.y;
     updateAnchorSnapshot(startIndex, endIndex, anchorOffset, axis);
+
+    internalFlatListController.__resolvePending();
 
     metricsUpdateFrame = null;
   };
