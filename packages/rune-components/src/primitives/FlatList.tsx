@@ -103,11 +103,17 @@ export function createFlatListController(): FlatListController {
     }
     if (content <= 0 && getItems && getItemSize) {
       const size = getItemSize();
-      if (size > 0) content = size * getItems().length;
+      const insets = getInsets?.() ?? { leading: 0, trailing: 0 };
+      if (size > 0) {
+        content = insets.leading + size * getItems().length + insets.trailing;
+      }
     }
     if (viewport <= 0 && getItemSize) {
       const size = getItemSize();
-      if (size > 0) viewport = size;
+      if (size > 0) {
+        // Use getViewportLength which has smarter estimation logic
+        viewport = getViewportLength?.() ?? size;
+      }
     }
     return { orientation, viewport, content };
   };
@@ -168,6 +174,13 @@ export function createFlatListController(): FlatListController {
       }
     },
     scrollToEnd({ animated } = {}) {
+      console.log(
+        "Scrolling to end",
+        JSON.stringify({
+          contentLength: getContentLength?.(),
+          viewportLength: getViewportLength?.(),
+        })
+      );
       if (!getContentLength || !getViewportLength) return;
       const content = getContentLength();
       const viewport = getViewportLength();
@@ -1593,16 +1606,50 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
 
   const getContentLength = () => {
     const metrics = scrollController.metrics();
-    return orientation() === "horizontal"
-      ? metrics.contentSize.width
-      : metrics.contentSize.height;
+    const axis = orientation();
+    let content =
+      axis === "horizontal"
+        ? metrics.contentSize.width
+        : metrics.contentSize.height;
+
+    // Fallback: if metrics don't have content size yet, estimate from items
+    if (content <= 0) {
+      const itemSize = resolvedItemSize();
+      const itemCount = items().length;
+      if (itemSize > 0 && itemCount > 0) {
+        const { leading, trailing } = containerInsets();
+        content = leading + itemSize * itemCount + trailing;
+      }
+    }
+
+    return content;
   };
 
   const getViewportLength = () => {
     const metrics = scrollController.metrics();
-    return orientation() === "horizontal"
-      ? metrics.viewportSize.width
-      : metrics.viewportSize.height;
+    const axis = orientation();
+    let viewport =
+      axis === "horizontal"
+        ? metrics.viewportSize.width
+        : metrics.viewportSize.height;
+
+    // Fallback: if metrics don't have viewport size yet, try to estimate
+    if (viewport <= 0) {
+      const itemSize = resolvedItemSize();
+      if (itemSize > 0) {
+        // Estimate viewport based on windowSize prop
+        // windowMultiple defines how many "windows" of items to keep in memory
+        // A single window should fit roughly in the viewport
+        const multiple = windowMultiple();
+        const estimatedItemsInViewport = Math.max(
+          MIN_INITIAL_WINDOW_ITEMS / multiple,
+          4
+        );
+        viewport = itemSize * estimatedItemsInViewport;
+      }
+    }
+
+    return viewport;
   };
 
   const findIndexForItem = (target: any): number | null => {
