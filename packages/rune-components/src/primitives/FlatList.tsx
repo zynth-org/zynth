@@ -276,6 +276,13 @@ type RenderItemInfo<T> = {
 
 type KeyExtractor<T> = (item: T, index: number) => string;
 
+export type ItemSeparatorProps<T> = {
+  leadingItem?: T;
+  trailingItem?: T;
+  leadingIndex?: number;
+  trailingIndex?: number;
+};
+
 export type FlatListProps<T> = {
   data: T[];
   renderItem: (info: RenderItemInfo<T>) => JSX.Element;
@@ -285,6 +292,7 @@ export type FlatListProps<T> = {
   ListHeaderComponent?: JSX.Element | Component;
   ListFooterComponent?: JSX.Element | Component;
   ListEmptyComponent?: JSX.Element | Component;
+  ItemSeparatorComponent?: Component<ItemSeparatorProps<T>>;
   scrollViewProps?: Partial<ScrollViewProps>;
   itemSize?: number;
   estimatedItemSize?: number;
@@ -810,6 +818,7 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
     "ListHeaderComponent",
     "ListFooterComponent",
     "ListEmptyComponent",
+    "ItemSeparatorComponent",
     "scrollViewProps",
     "itemSize",
     "estimatedItemSize",
@@ -2164,15 +2173,36 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
             : null
         }
       >
-        {(entry) => (
-          <View key={entry.key}>
-            {local.renderItem({
-              item: entry.item,
-              index: entry.index,
-              key: entry.key,
-            })}
-          </View>
-        )}
+        {(entry, indexAccessor) => {
+          const SeparatorComponent = local.ItemSeparatorComponent;
+          const separatorInfo = createMemo(() => {
+            if (!SeparatorComponent) return null;
+            const currentItems = windowedItems();
+            const nextEntry = currentItems[indexAccessor() + 1];
+            if (!nextEntry) return null;
+            return {
+              leadingItem: entry.item,
+              trailingItem: nextEntry.item,
+              leadingIndex: entry.index,
+              trailingIndex: nextEntry.index,
+            };
+          });
+
+          return (
+            <>
+              <View key={entry.key}>
+                {local.renderItem({
+                  item: entry.item,
+                  index: entry.index,
+                  key: entry.key,
+                })}
+              </View>
+              {separatorInfo() && SeparatorComponent ? (
+                <SeparatorComponent {...separatorInfo()!} />
+              ) : null}
+            </>
+          );
+        }}
       </For>
       {virtualizationEnabled() && afterSpacerSize() > 0 ? (
         <View style={afterSpacerStyle()} />
