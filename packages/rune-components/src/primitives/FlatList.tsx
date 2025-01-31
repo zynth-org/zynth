@@ -57,6 +57,8 @@ type InternalFlatListController = FlatListController & {
     getViewportLength: () => number;
     findIndexForItem: (item: any) => number | null;
     getNativeScrollRef: () => any;
+    notifyAnimatedScrollStart: (targetOffset: number) => void;
+    notifyAnimatedScrollEnd: () => void;
   }) => void;
   __detach: () => void;
   __resolvePending: () => void;
@@ -76,6 +78,8 @@ export function createFlatListController(): FlatListController {
   let getViewportLength: (() => number) | null = null;
   let findIndexForItem: ((item: any) => number | null) | null = null;
   let getNativeRef: (() => any) | null = null;
+  let notifyAnimatedScrollStart: ((targetOffset: number) => void) | null = null;
+  let notifyAnimatedScrollEnd: (() => void) | null = null;
 
   let pendingScroll: { offset: number; animated?: boolean } | null = null;
 
@@ -128,6 +132,12 @@ export function createFlatListController(): FlatListController {
     const offset = Math.min(Math.max(targetOffset, 0), maxOffset);
     const controller = getScrollController?.();
     if (!controller) return false;
+
+    // Notify about animated scroll start
+    if (animated && notifyAnimatedScrollStart) {
+      notifyAnimatedScrollStart(offset);
+    }
+
     if (orientation === "horizontal") {
       controller.scrollTo({ x: offset, animated });
     } else {
@@ -226,6 +236,8 @@ export function createFlatListController(): FlatListController {
       getViewportLength = payload.getViewportLength;
       findIndexForItem = payload.findIndexForItem;
       getNativeRef = payload.getNativeScrollRef;
+      notifyAnimatedScrollStart = payload.notifyAnimatedScrollStart;
+      notifyAnimatedScrollEnd = payload.notifyAnimatedScrollEnd;
     },
     __detach() {
       getItems = null;
@@ -241,6 +253,8 @@ export function createFlatListController(): FlatListController {
       getViewportLength = null;
       findIndexForItem = null;
       getNativeRef = null;
+      notifyAnimatedScrollStart = null;
+      notifyAnimatedScrollEnd = null;
       pendingScroll = null;
     },
     __resolvePending() {
@@ -1662,6 +1676,46 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
     return null;
   };
 
+  // Animated scroll tracking (defined before __attach)
+  let isAnimatedScrolling = false;
+  let animatedScrollTargetOffset: number | null = null;
+  let animatedScrollTimeout: number | null = null;
+
+  const handleAnimatedScrollStart = (targetOffset: number) => {
+    isAnimatedScrolling = true;
+    animatedScrollTargetOffset = targetOffset;
+
+    // Clear any existing timeout
+    if (animatedScrollTimeout) {
+      clearTimeout(animatedScrollTimeout);
+    }
+
+    // Set a timeout to ensure we clean up even if we don't get a scroll end event
+    animatedScrollTimeout = setTimeout(() => {
+      handleAnimatedScrollEnd();
+    }, 2000) as unknown as number; // 2 seconds max for any animation
+  };
+
+  const handleAnimatedScrollEnd = () => {
+    const wasAnimating = isAnimatedScrolling;
+    const targetOffset = animatedScrollTargetOffset;
+
+    isAnimatedScrolling = false;
+    animatedScrollTargetOffset = null;
+
+    if (animatedScrollTimeout) {
+      clearTimeout(animatedScrollTimeout);
+      animatedScrollTimeout = null;
+    }
+
+    // CRITICAL: Force immediate synchronous render of destination items
+    if (wasAnimating && targetOffset !== null) {
+      const currentMetrics = scrollController.metrics();
+      // Process immediately, not deferred, to ensure items appear
+      processMetricsUpdate(currentMetrics);
+    }
+  };
+
   internalFlatListController.__attach({
     getItems: items,
     getItemSize: () => resolvedItemSize(),
@@ -1676,6 +1730,8 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
     getViewportLength,
     findIndexForItem,
     getNativeScrollRef: () => nativeScrollRef,
+    notifyAnimatedScrollStart: handleAnimatedScrollStart,
+    notifyAnimatedScrollEnd: handleAnimatedScrollEnd,
   });
   onCleanup(() => {
     internalFlatListController.__detach();
@@ -1914,6 +1970,31 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
     const maxIndex = Math.max(total - 1, 0);
     const currentIndex = Math.floor(stableOffset / itemSize);
 
+    // During animated scrolls, REDUCE window to prevent bridge saturation
+    // Accept blank space during animation as a trade-off for smooth destination rendering
+    if (isAnimatedScrolling && animatedScrollTargetOffset !== null) {
+      const targetIndex = Math.floor(animatedScrollTargetOffset / itemSize);
+      const distanceInItems = Math.abs(targetIndex - currentIndex);
+
+      // For large jumps (>70 items), keep minimal window to reduce bridge load
+      if (distanceInItems > 70) {
+        // Only render current position's minimal visible window
+        baseBeforeCount = Math.min(
+          baseBeforeCount,
+          Math.ceil(visibleCount * 0.5)
+        );
+        baseAfterCount = Math.min(
+          baseAfterCount,
+          Math.ceil(visibleCount * 0.5)
+        );
+      } else if (distanceInItems > 20) {
+        // For medium jumps, slightly reduce window
+        baseBeforeCount = Math.min(baseBeforeCount, visibleCount);
+        baseAfterCount = Math.min(baseAfterCount, visibleCount);
+      }
+      // For small jumps (<20), use normal window
+    }
+
     let startIndex = clamp(currentIndex - baseBeforeCount, 0, maxIndex);
     let endIndex = clamp(
       currentIndex + visibleCount + baseAfterCount - 1,
@@ -2035,6 +2116,12 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
     scrollEndTimeout = setTimeout(() => {
       isScrolling = false;
       consecutiveZeroOffsets = 0;
+
+      // If we were doing an animated scroll, end it now
+      if (isAnimatedScrolling) {
+        handleAnimatedScrollEnd();
+      }
+
       // Force one final update with current metrics to ensure stable state
       scheduleMetricsUpdate(scrollController.metrics());
     }, 150) as unknown as number;
@@ -2047,6 +2134,9 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
     }
     if (scrollEndTimeout) {
       clearTimeout(scrollEndTimeout);
+    }
+    if (animatedScrollTimeout) {
+      clearTimeout(animatedScrollTimeout);
     }
     if (viewabilityTask) {
       viewabilityTask.cancel();
