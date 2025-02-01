@@ -1820,6 +1820,17 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
     previousKeys = currentKeys;
   });
 
+  // Force render range recalculation when data changes, even if not scrolling
+  createEffect(() => {
+    const currentItems = items();
+    const metrics = latestMetrics();
+    // Trigger range recalculation when items change
+    if (metrics) {
+      // Schedule the update to avoid synchronous recalculation during render
+      scheduleMetricsUpdate(metrics);
+    }
+  });
+
   // Use a more robust approach to handle scroll metrics
   let metricsUpdateFrame: ScheduledTask | null = null;
   let lastProcessedOffset = 0;
