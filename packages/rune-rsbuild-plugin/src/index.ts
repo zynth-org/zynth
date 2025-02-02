@@ -271,6 +271,7 @@ function ensureAliases(
       repoRoot,
       "packages/rune-components/src/index.ts"
     ),
+    "@rune/apis": path.join(repoRoot, "packages/rune-apis/src/index.ts"),
     "@rsbuild/core/dist/client/hmr.js": HMR_SHIM_PATH,
     "@rsbuild/core/dist/client/overlay.js": OVERLAY_SHIM_PATH,
     "@rsbuild/rsbuild/dist/client/hmr.js": HMR_SHIM_PATH,

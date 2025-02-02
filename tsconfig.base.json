@@ -12,7 +12,9 @@
       "@rune/core": ["packages/rune-core/src/index.ts"],
       "@rune/core/*": ["packages/rune-core/src/*"],
       "@rune/components": ["packages/rune-components/src/index.ts"],
-      "@rune/components/*": ["packages/rune-components/src/*"]
+      "@rune/components/*": ["packages/rune-components/src/*"],
+      "@rune/apis": ["packages/rune-apis/src/index.ts"],
+      "@rune/apis/*": ["packages/rune-apis/src/*"]
     }
   }
 }

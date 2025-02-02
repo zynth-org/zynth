@@ -21,11 +21,11 @@ This document outlines the development plan to evolve Rune into a powerful, AI-n
 - [✅] **`Pressable`:** Implement a component to detect detailed press interactions.
 - [ ] **`FlatList`:** Implement a performant, virtualized list component.
 
-### 2. Layout & Style (`packages/rune-layout`, `packages/rune-api`)
+### 2. Layout & Style (`packages/rune-layout`, `packages/rune-apis`)
 
 - [ ] **`@rune/layout` Package:** Create a package for layout-assisting components.
 - [ ] **`KeyboardAvoidingView`:** Implement a view that intelligently avoids the on-screen keyboard.
-- [ ] **`@rune/api` Package:** Create a package for essential device and utility APIs.
+- [ ] **`@rune/apis` Package:** Create a package for essential device and utility APIs.
 - [ ] **`StyleSheet`:** Implement a `StyleSheet.create` API for style abstraction and optimization.
 - [ ] **`Dimensions`:** Implement an API to get screen and window dimensions.
 

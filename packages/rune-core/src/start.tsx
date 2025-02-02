@@ -1,3 +1,4 @@
+import { Platform, OS } from "@rune/apis";
 import { render, setHost } from "./renderer";
 import { createIOSHost } from "./host/ios";
 import { createAndroidHost } from "./host/android";
@@ -94,11 +95,10 @@ export function start(App: () => any): () => void {
     console.log("__startApp called!");
     const rootId = args[0];
 
-    const platform =
-      typeof globalThis !== "undefined"
-        ? (globalThis as any).__RUNE_PLATFORM
-        : undefined;
-    setHost(platform === "android" ? createAndroidHost() : createIOSHost());
+    const platform = Platform.OS;
+    setHost(
+      platform === OS.ANDROID ? createAndroidHost() : createIOSHost()
+    );
 
     if (typeof rootId !== "number" || isNaN(rootId)) {
       console.error(`Invalid rootId received: ${rootId}`);
