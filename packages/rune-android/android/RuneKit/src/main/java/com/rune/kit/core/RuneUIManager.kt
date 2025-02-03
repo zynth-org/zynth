@@ -717,7 +717,7 @@ class RuneUIManager(
     storeEventPayload = this::storeEventPayload,
     runOnMainThread = this::runOnMainThread,
   )
-  private val eventPayloads = HashMap<String, JSONObject>()
+  private val eventPayloads = HashMap<String, ArrayDeque<String>>()
   private val pendingViewOperations = mutableListOf<ViewOperation>()
   private val pendingNativeOperations = mutableListOf<NativeOperation>()
   private val stickyFrameCarryover = mutableSetOf<Int>()
@@ -752,7 +752,8 @@ class RuneUIManager(
     val key = eventKey(nodeId, event)
     synchronized(eventPayloads) {
       if (payload != null && payload.length() > 0) {
-        eventPayloads[key] = payload
+        val queue = eventPayloads.getOrPut(key) { ArrayDeque() }
+        queue.addLast(payload.toString())
       } else {
         eventPayloads.remove(key)
       }
@@ -762,12 +763,19 @@ class RuneUIManager(
   fun consumeEventPayload(nodeId: Int, event: String): JSONObject? {
     val key = eventKey(nodeId, event)
     synchronized(eventPayloads) {
-      return eventPayloads.remove(key)?.let {
-        try {
-          JSONObject(it.toString())
-        } catch (_: JSONException) {
-          null
-        }
+      val queue = eventPayloads[key] ?: return null
+      if (queue.isEmpty()) {
+        eventPayloads.remove(key)
+        return null
+      }
+      val payloadJson = queue.removeFirst()
+      if (queue.isEmpty()) {
+        eventPayloads.remove(key)
+      }
+      return try {
+        JSONObject(payloadJson)
+      } catch (_: JSONException) {
+        null
       }
     }
   }
@@ -775,8 +783,16 @@ class RuneUIManager(
   fun dequeueEventPayloadJson(nodeId: Int, event: String): String? {
     val key = eventKey(nodeId, event)
     synchronized(eventPayloads) {
-      val payload = eventPayloads.remove(key)
-      return payload?.toString()
+      val queue = eventPayloads[key] ?: return null
+      if (queue.isEmpty()) {
+        eventPayloads.remove(key)
+        return null
+      }
+      val payload = queue.removeFirst()
+      if (queue.isEmpty()) {
+        eventPayloads.remove(key)
+      }
+      return payload
     }
   }
 
