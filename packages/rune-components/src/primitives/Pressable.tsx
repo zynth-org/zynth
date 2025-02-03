@@ -15,6 +15,8 @@ import {
   type InternalPressableController,
   type PressableController,
 } from "./pressable/controller";
+import type { KeyEvent, Modifiers } from "./events";
+export type { KeyEvent } from "./events";
 
 export type PressablePointerType =
   | "touch"
@@ -22,13 +24,6 @@ export type PressablePointerType =
   | "pen"
   | "keyboard"
   | "programmatic";
-
-type Modifiers = {
-  altKey?: boolean;
-  ctrlKey?: boolean;
-  metaKey?: boolean;
-  shiftKey?: boolean;
-};
 
 export type PressEvent = {
   x: number;
@@ -40,13 +35,6 @@ export type PressEvent = {
   button?: number;
   modifiers?: Modifiers;
   canceled?: boolean;
-};
-
-export type KeyEvent = {
-  key: string;
-  code?: string;
-  repeat?: boolean;
-  modifiers?: Modifiers;
 };
 
 export type PressableState = {

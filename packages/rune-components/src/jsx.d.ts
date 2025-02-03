@@ -4,6 +4,7 @@ import type { ImageElementProps } from "./primitives/Image";
 import type { TextInputProps } from "./primitives/TextInput";
 
 type RuneChildren = JSX.Element | JSX.Element[] | null | undefined;
+type SolidButtonProps = JSX.HTMLAttributes<HTMLButtonElement>;
 
 interface ViewElementProps {
   style?: Style;
@@ -29,8 +30,10 @@ declare module "solid-js" {
       text: TextElementProps;
       image: ImageElementProps;
       "text-input": TextInputProps & { [key: string]: any };
+      "secure-text-input": TextInputProps & { [key: string]: any };
       "scroll-view": ViewElementProps & { [key: string]: any };
       pressable: ViewElementProps & { [key: string]: any };
+      button: SolidButtonProps & { testID?: string };
     }
   }
 }

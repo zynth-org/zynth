@@ -2,7 +2,7 @@
   "name": "@rune/components",
   "version": "0.0.1",
   "type": "module",
-  "main": "dist/cjs/index.cjs",
+  "main": "dist/esm/index.js",
   "module": "dist/esm/index.js",
   "types": "dist/types/index.d.ts",
   "sideEffects": false,
@@ -13,13 +13,18 @@
     "@rune/apis": "0.0.1"
   },
   "devDependencies": {
+    "@babel/preset-env": "^7.24.7",
+    "@babel/preset-typescript": "^7.24.7",
+    "@rsbuild/core": "^1.0.1",
+    "@rsbuild/plugin-babel": "^1.0.1",
+    "@rune/apis": "0.0.1",
+    "babel-preset-solid": "^1.8.0",
     "solid-js": "^1.8.0",
-    "typescript": "^5.6.2",
-    "rollup": "^4.21.0",
-    "rollup-preset-solid": "^2.0.0",
-    "@rune/apis": "0.0.1"
+    "typescript": "^5.6.2"
   },
   "scripts": {
-    "build": "rollup -c"
+    "build": "yarn build:js && yarn build:types",
+    "build:js": "NODE_ENV=production rsbuild build --config rsbuild.config.ts",
+    "build:types": "tsc --project tsconfig.types.json"
   }
 }

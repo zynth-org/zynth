@@ -1,26 +1,16 @@
 import type { Component } from "solid-js";
 import type {
   Style,
-  ImageAssetSource,
-  ImageUriSource,
+  ImageAssetSource as CoreImageAssetSource,
+  ImageUriSource as CoreImageUriSource,
   ImageAssetDescriptor,
 } from "@rune/core";
 
 export type ImageResizeMode = "cover" | "contain" | "stretch" | "center";
 
-export type ImageUriSource = {
-  uri: string;
-  headers?: Record<string, string>;
-  method?: string;
-  body?: string;
-  cache?: "default" | "reload" | "force-cache" | "only-if-cached";
-};
+export type ImageUriSource = CoreImageUriSource;
 
-export type ImageAssetSource = {
-  asset: string;
-  bundle?: string;
-  scale?: number;
-};
+export type ImageAssetSource = CoreImageAssetSource;
 
 export type ImageBase64Source = {
   data: string;

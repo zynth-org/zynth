@@ -2,6 +2,8 @@ import type { Component } from "solid-js";
 import { createEffect, createMemo, createSignal, Show } from "solid-js";
 import type { HostNode, Style } from "@rune/core";
 import { setProperty } from "@rune/core";
+import type { KeyEvent } from "./events";
+export type { KeyEvent } from "./events";
 
 export type Selection = { start: number; end: number };
 
@@ -11,16 +13,6 @@ export type TextChangeEvent = {
   removed: string;
   textAfter: string;
   composing: boolean;
-};
-
-export type KeyEvent = {
-  key: string;
-  code?: string;
-  shift?: boolean;
-  alt?: boolean;
-  ctrl?: boolean;
-  meta?: boolean;
-  repeat?: boolean;
 };
 
 export type TextController = {
@@ -402,12 +394,16 @@ export const TextInput: Component<TextInputProps> = (props) => {
       when={isPotentiallySecure()}
       fallback={
         <text-input
-          ref={(node) => setHostNode((node as unknown as HostNode) ?? null)}
+          ref={(node: Element | null) =>
+            setHostNode((node as unknown as HostNode) ?? null)
+          }
         />
       }
     >
       <secure-text-input
-        ref={(node) => setHostNode((node as unknown as HostNode) ?? null)}
+        ref={(node: Element | null) =>
+          setHostNode((node as unknown as HostNode) ?? null)
+        }
       />
     </Show>
   );
