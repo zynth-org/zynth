@@ -2,6 +2,7 @@ package com.rune.kit.runtime
 
 import android.os.Handler
 import android.os.Looper
+import android.view.Choreographer
 import java.util.concurrent.ConcurrentHashMap
 
 object JSBridge {
@@ -22,6 +23,7 @@ object JSBridge {
   external fun evaluateBytecode(runtimePtr: Long, bytecode: ByteArray, sourceUrl: String)
   external fun callGlobal(runtimePtr: Long, name: String, args: Array<Any?> = emptyArray()): Any?
   external fun onTimerFired(runtimePtr: Long, timerId: Int)
+  external fun onAnimationFrame(runtimePtr: Long, frameId: Int, frameTimeNanos: Long)
   external fun resolvePromise(runtimePtr: Long, promiseId: Int, payloadJson: String?)
   external fun rejectPromise(runtimePtr: Long, promiseId: Int, errorMessage: String?)
   external fun invokeHandler(runtimePtr: Long, handlerId: Long, nodeId: Int, event: String)
@@ -53,6 +55,8 @@ object JSBridge {
   interface TimerShim {
     fun scheduleTimeout(timerId: Int, delayMs: Long)
     fun clearTimeout(timerId: Int)
+    fun requestAnimationFrame(frameId: Int)
+    fun cancelAnimationFrame(frameId: Int)
   }
 
   interface ErrorHandler {
@@ -65,6 +69,8 @@ object JSBridge {
   ) : TimerShim {
     private val handler = Handler(looper)
     private val callbacks = ConcurrentHashMap<Int, Runnable>()
+    private val frameCallbacks = ConcurrentHashMap<Int, Choreographer.FrameCallback>()
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun scheduleTimeout(timerId: Int, delayMs: Long) {
       val runnable = Runnable {
@@ -82,9 +88,38 @@ object JSBridge {
       callbacks.remove(timerId)?.let { handler.removeCallbacks(it) }
     }
 
+    override fun requestAnimationFrame(frameId: Int) {
+      val callback = Choreographer.FrameCallback { frameTimeNanos ->
+        frameCallbacks.remove(frameId)
+        val runtimePtr = runtimePtrProvider()
+        if (runtimePtr != 0L) {
+          onAnimationFrame(runtimePtr, frameId, frameTimeNanos)
+        }
+      }
+      frameCallbacks[frameId] = callback
+      mainHandler.post {
+        Choreographer.getInstance().postFrameCallback(callback)
+      }
+    }
+
+    override fun cancelAnimationFrame(frameId: Int) {
+      val callback = frameCallbacks.remove(frameId) ?: return
+      mainHandler.post {
+        Choreographer.getInstance().removeFrameCallback(callback)
+      }
+    }
+
     fun shutdown() {
       callbacks.values.forEach { handler.removeCallbacks(it) }
       callbacks.clear()
+      val pendingFrames = frameCallbacks.values.toList()
+      frameCallbacks.clear()
+      if (pendingFrames.isNotEmpty()) {
+        mainHandler.post {
+          val choreographer = Choreographer.getInstance()
+          pendingFrames.forEach { choreographer.removeFrameCallback(it) }
+        }
+      }
     }
   }
 }

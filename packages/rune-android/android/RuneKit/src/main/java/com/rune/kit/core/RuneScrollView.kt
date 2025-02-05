@@ -21,8 +21,6 @@ import kotlin.math.roundToInt
 import org.json.JSONArray
 import org.json.JSONObject
 
-private const val DEBUG_SCROLL_LOGS = false
-
 internal class RuneScrollView(
   context: Context,
 ) : FrameLayout(context) {
@@ -688,11 +686,21 @@ internal class RuneScrollView(
   }
 
   private fun logState(label: String) {
-    if (!DEBUG_SCROLL_LOGS) return
+    if (!isNativeDebugEnabled()) return
     Log.d(
       "RuneScrollView",
       "[$label] node=$nodeId axis=$axis scrollY=${host.view.scrollY} hostH=${host.view.height} contentH=${contentView.height} children=${contentView.childCount} enabled=$scrollEnabled"
     )
+  }
+
+  private fun isNativeDebugEnabled(): Boolean {
+    return try {
+      // Try to access __NATIVE_DEBUG__ from JavaScript globalThis
+      val debugValue = System.getProperty("__NATIVE_DEBUG__")
+      debugValue?.toBoolean() ?: false
+    } catch (e: Exception) {
+      false
+    }
   }
 
   private interface ScrollHost {
@@ -789,15 +797,15 @@ internal class RuneScrollView(
     override val view: ViewGroup
       get() = this
 
-  override fun ensureContentAttached(content: View) {
+    override fun ensureContentAttached(content: View) {
       if (content.parent === this) return
       (content.parent as? ViewGroup)?.removeView(content)
       removeAllViews()
       addView(content, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
-      Log.d("RuneScrollView", "ensureContentAttached vertical contentH=${content.height}")
-    }
-
-    override fun setScrollEnabled(enabled: Boolean) {
+      if (isNativeDebugEnabled()) {
+        Log.d("RuneScrollView", "ensureContentAttached vertical contentH=${content.height}")
+      }
+    }    override fun setScrollEnabled(enabled: Boolean) {
       isEnabled = enabled
     }
 

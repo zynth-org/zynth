@@ -34,6 +34,7 @@ void callGlobal(
     const std::string &name,
     jobjectArray args);
 void onTimerFired(facebook::hermes::HermesRuntime *runtime, int timerId);
+void onAnimationFrame(facebook::hermes::HermesRuntime *runtime, int frameId, double frameTimeMs);
 void resolvePromise(facebook::hermes::HermesRuntime *runtime, int promiseId, const std::string &payloadJson);
 void rejectPromise(facebook::hermes::HermesRuntime *runtime, int promiseId, const std::string &message);
 void invokeHandler(facebook::hermes::HermesRuntime *runtime, long handlerId, int nodeId, const std::string &event);
@@ -146,6 +147,18 @@ Java_com_rune_kit_runtime_JSBridge_onTimerFired(
     jint timerId) {
   auto *runtime = rune::kit::fromPtr(runtimePtr);
   rune::kit::onTimerFired(runtime, timerId);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_rune_kit_runtime_JSBridge_onAnimationFrame(
+    JNIEnv *,
+    jclass,
+    jlong runtimePtr,
+    jint frameId,
+    jlong frameTimeNanos) {
+  auto *runtime = rune::kit::fromPtr(runtimePtr);
+  double frameTimeMs = static_cast<double>(frameTimeNanos) / 1000000.0;
+  rune::kit::onAnimationFrame(runtime, frameId, frameTimeMs);
 }
 
 extern "C" JNIEXPORT void JNICALL

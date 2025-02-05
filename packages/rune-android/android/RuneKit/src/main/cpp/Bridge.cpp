@@ -76,6 +76,8 @@ struct ModulesShimMethods {
 struct TimerShimMethods {
   jmethodID scheduleTimeout = nullptr;
   jmethodID clearTimeout = nullptr;
+  jmethodID requestAnimationFrame = nullptr;
+  jmethodID cancelAnimationFrame = nullptr;
 };
 
 struct HandlerEntry {
@@ -113,9 +115,11 @@ struct RuntimeState {
   std::mutex mutex;
   long nextHandlerId = 1;
   int nextTimerId = 1;
+  int nextAnimationFrameId = 1;
   int nextPromiseId = 1;
   std::unordered_map<long, HandlerEntry> handlers;
   std::unordered_map<int, TimerEntry> timers;
+  std::unordered_map<int, std::shared_ptr<facebook::jsi::Function>> animationFrames;
   std::unordered_map<int, PromiseEntry> promises;
 };
 
@@ -217,6 +221,9 @@ inline void CallJSFunction(facebook::jsi::Function &fn,
   const auto callPtr = static_cast<facebook::jsi::Value (facebook::jsi::Function::*)(
       facebook::jsi::Runtime &, const facebook::jsi::Value *, size_t) const>(&facebook::jsi::Function::call);
   (fn.*callPtr)(rt, args, count);
+  if (auto *hermesRt = dynamic_cast<facebook::hermes::HermesRuntime *>(&rt)) {
+    hermesRt->drainMicrotasks();
+  }
 }
 
 void reportJsError(
@@ -769,10 +776,120 @@ void installTimers(std::shared_ptr<RuntimeState> state) {
         return Value::undefined();
       });
 
+  auto queueMicrotaskFn = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "queueMicrotask"), 1,
+      [weakState](Runtime &runtime, const Value &, const Value *args, size_t count) -> Value {
+        auto state = weakState.lock();
+        if (!state) return Value::undefined();
+        if (count < 1 || !args[0].isObject() || !args[0].asObject(runtime).isFunction(runtime)) {
+          BRIDGE_LOG(ANDROID_LOG_WARN, "queueMicrotask expects a function");
+          return Value::undefined();
+        }
+
+        const Value &callbackValue = args[0];
+        try {
+          auto promiseValue = runtime.global().getProperty(
+              runtime, facebook::jsi::PropNameID::forAscii(runtime, "Promise"));
+          if (promiseValue.isObject()) {
+            auto promiseObj = promiseValue.asObject(runtime);
+            auto resolveFn = promiseObj.getPropertyAsFunction(runtime, "resolve");
+            auto resolved = resolveFn.call(runtime);
+            auto resolvedObj = resolved.asObject(runtime);
+            auto thenFn = resolvedObj.getPropertyAsFunction(runtime, "then");
+            Value callbackCopy(runtime, callbackValue);
+            thenFn.callWithThis(runtime, resolvedObj, callbackCopy);
+            return Value::undefined();
+          }
+        } catch (const facebook::jsi::JSError &err) {
+          BRIDGE_LOG(ANDROID_LOG_WARN, "queueMicrotask Promise fallback: %s", err.getMessage().c_str());
+        } catch (const std::exception &ex) {
+          BRIDGE_LOG(ANDROID_LOG_WARN, "queueMicrotask Promise fallback (std): %s", ex.what());
+        }
+
+        try {
+          Value callbackCopy(runtime, callbackValue);
+          auto fn = callbackCopy.asObject(runtime).asFunction(runtime);
+          fn.call(runtime);
+        } catch (const facebook::jsi::JSError &err) {
+          reportJsError(state, err.getMessage(), err.getStack());
+        } catch (const std::exception &ex) {
+          reportJsError(state, ex.what(), "");
+        }
+        return Value::undefined();
+      });
+
+  auto requestAnimationFrameFn = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "requestAnimationFrame"), 1,
+      [weakState](Runtime &runtime, const Value &, const Value *args, size_t count) -> Value {
+        auto state = weakState.lock();
+        if (!state) return Value::undefined();
+        if (count < 1 || !args[0].isObject() || !args[0].asObject(runtime).isFunction(runtime)) {
+          BRIDGE_LOG(ANDROID_LOG_WARN, "requestAnimationFrame expects a function");
+          return Value::undefined();
+        }
+
+        auto callback = std::make_shared<Function>(args[0].asObject(runtime).asFunction(runtime));
+        int frameId;
+        {
+          std::lock_guard<std::mutex> lock(state->mutex);
+          frameId = state->nextAnimationFrameId++;
+          state->animationFrames.emplace(frameId, callback);
+        }
+
+        bool scheduled = false;
+        JniEnv env;
+        if (env.valid() && state->timerMethods.requestAnimationFrame) {
+          env->CallVoidMethod(state->timerShim, state->timerMethods.requestAnimationFrame, frameId);
+          logJniException(env.get(), "TimerShim.requestAnimationFrame");
+          scheduled = true;
+        }
+
+        if (!scheduled) {
+          {
+            std::lock_guard<std::mutex> lock(state->mutex);
+            state->animationFrames.erase(frameId);
+          }
+          try {
+            Value timestamp(0.0);
+            callback->call(runtime, timestamp);
+          } catch (const facebook::jsi::JSError &err) {
+            reportJsError(state, err.getMessage(), err.getStack());
+          } catch (const std::exception &ex) {
+            reportJsError(state, ex.what(), "");
+          }
+        }
+
+        return Value(static_cast<double>(frameId));
+      });
+
+  auto cancelAnimationFrameFn = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "cancelAnimationFrame"), 1,
+      [weakState](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        auto state = weakState.lock();
+        if (!state) return Value::undefined();
+        if (count < 1 || !args[0].isNumber()) {
+          return Value::undefined();
+        }
+        int frameId = static_cast<int>(args[0].asNumber());
+        {
+          std::lock_guard<std::mutex> lock(state->mutex);
+          state->animationFrames.erase(frameId);
+        }
+        JniEnv env;
+        if (env.valid() && state->timerMethods.cancelAnimationFrame) {
+          env->CallVoidMethod(state->timerShim, state->timerMethods.cancelAnimationFrame, frameId);
+          logJniException(env.get(), "TimerShim.cancelAnimationFrame");
+        }
+        return Value::undefined();
+      });
+
   rt.global().setProperty(rt, "setTimeout", setTimeoutFn);
   rt.global().setProperty(rt, "clearTimeout", clearTimeoutFn);
   rt.global().setProperty(rt, "setImmediate", setTimeoutFn);
   rt.global().setProperty(rt, "clearImmediate", clearTimeoutFn);
+  rt.global().setProperty(rt, "queueMicrotask", queueMicrotaskFn);
+  rt.global().setProperty(rt, "requestAnimationFrame", requestAnimationFrameFn);
+  rt.global().setProperty(rt, "cancelAnimationFrame", cancelAnimationFrameFn);
 
   // Host timer functions for framework usage
   auto hostSetTimeoutFn = Function::createFromHostFunction(
@@ -1177,6 +1294,8 @@ void installBindings(
 
   state->timerMethods.scheduleTimeout = env->GetMethodID(state->timerClass, "scheduleTimeout", "(IJ)V");
   state->timerMethods.clearTimeout = env->GetMethodID(state->timerClass, "clearTimeout", "(I)V");
+  state->timerMethods.requestAnimationFrame = env->GetMethodID(state->timerClass, "requestAnimationFrame", "(I)V");
+  state->timerMethods.cancelAnimationFrame = env->GetMethodID(state->timerClass, "cancelAnimationFrame", "(I)V");
 
   state->reportError = env->GetMethodID(state->errorHandlerClass, "report", "(Ljava/lang/String;Ljava/lang/String;)V");
 
@@ -1378,6 +1497,43 @@ void onTimerFired(facebook::hermes::HermesRuntime *runtime, int timerId) {
   }
 }
 
+void onAnimationFrame(
+    facebook::hermes::HermesRuntime *runtime,
+    int frameId,
+    double frameTimeMs) {
+  using namespace facebook::jsi;
+  auto state = getState(runtime);
+  if (!state) return;
+  std::shared_ptr<Function> callback;
+  {
+    std::lock_guard<std::mutex> lock(state->mutex);
+    auto it = state->animationFrames.find(frameId);
+    if (it == state->animationFrames.end()) {
+      return;
+    }
+    callback = std::move(it->second);
+    state->animationFrames.erase(it);
+  }
+  if (!callback) return;
+
+  try {
+    Value timestamp(frameTimeMs);
+    callback->call(*runtime, timestamp);
+  } catch (const facebook::jsi::JSError &err) {
+    BRIDGE_LOG(ANDROID_LOG_ERROR, "requestAnimationFrame error: %s", err.getMessage().c_str());
+    auto freshState = getState(runtime);
+    if (freshState) {
+      reportJsError(freshState, err.getMessage(), err.getStack());
+    }
+  } catch (const std::exception &ex) {
+    BRIDGE_LOG(ANDROID_LOG_ERROR, "requestAnimationFrame exception: %s", ex.what());
+    auto freshState = getState(runtime);
+    if (freshState) {
+      reportJsError(freshState, ex.what(), "");
+    }
+  }
+}
+
 void resolvePromise(facebook::hermes::HermesRuntime *runtime, int promiseId, const std::string &payloadJson) {
   auto state = getState(runtime);
   if (!state) return;
@@ -1559,6 +1715,7 @@ void invokeHandler(facebook::hermes::HermesRuntime *runtime, long handlerId, int
   handlerArgs.emplace_back(std::move(evt));
   try {
     entry.function->call(rt, static_cast<const facebook::jsi::Value *>(handlerArgs.data()), handlerArgs.size());
+    runtime->drainMicrotasks();
   } catch (const facebook::jsi::JSError &err) {
     BRIDGE_LOG(ANDROID_LOG_ERROR, "invokeHandler error: %s", err.getMessage().c_str());
     auto state = getState(runtime);

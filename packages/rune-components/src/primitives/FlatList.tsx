@@ -1907,12 +1907,11 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
     const currentOffset = Math.max(0, axisOffset);
 
     // Detect if we're getting inconsistent offset values
+    let treatingAsGlitch = false;
     if (currentOffset === 0 && lastProcessedOffset > 0) {
       consecutiveZeroOffsets++;
-      // If we get multiple consecutive zero offsets during scrolling, use the last stable offset
       if (consecutiveZeroOffsets > 2 && isScrolling) {
-        metricsUpdateFrame = null;
-        return; // Skip this update
+        treatingAsGlitch = true;
       }
     } else {
       consecutiveZeroOffsets = 0;
@@ -1922,7 +1921,9 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
 
     // Use stable offset for calculations
     const stableOffset =
-      consecutiveZeroOffsets > 0 ? lastStableOffset() : currentOffset;
+      treatingAsGlitch || consecutiveZeroOffsets > 0
+        ? lastStableOffset()
+        : currentOffset;
     const fallbackViewport =
       viewportRaw > 0
         ? viewportRaw

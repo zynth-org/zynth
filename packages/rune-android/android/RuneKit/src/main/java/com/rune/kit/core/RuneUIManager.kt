@@ -43,6 +43,19 @@ class RuneUIManager(
   private val eventDispatcher: (Int, String) -> Unit = { _, _ -> },
   private val handlerListener: (Int, String, Long) -> Unit = { _, _, _ -> },
 ) : JSBridge.UIShim, RuneButtonView.Listener, RunePressableView.Listener {
+  private fun isNativeDebugEnabled(): Boolean {
+    return try {
+      val debugValue = System.getProperty("__NATIVE_DEBUG__")
+      debugValue?.toBoolean() ?: false
+    } catch (e: Exception) {
+      false
+    }
+  }
+
+  private fun logDebug(tag: String, message: String) {
+    if (!isNativeDebugEnabled()) return
+    Log.d(tag, message)
+  }
   data class Node(
     val id: Int,
     val type: String,
@@ -601,13 +614,13 @@ class RuneUIManager(
         if (target.type == IMAGE_TYPE && imageSupport.handleProp(target, name, jsonValue)) {
           return
         }
-        Log.d("RuneUI", "Unhandled prop: $name = $valueJson")
+        logDebug("RuneUI", "Unhandled prop: $name = $valueJson")
       }
     }
   }
 
   private fun applySetText(nodeId: Int, text: String) {
-    Log.d("RuneUI", "setText nodeId=$nodeId text='$text'")
+    logDebug("RuneUI", "setText nodeId=$nodeId text='$text'")
     val node = nodes.get(nodeId)
     node?.cachedText = text
 
@@ -621,7 +634,7 @@ class RuneUIManager(
         pendingTextRebuild.add(target.id)
         engine.markDirty(target.id)
         propagateTextChange(target)
-        Log.d("RuneUI", "Set text on label: ${target.label?.text}")
+        logDebug("RuneUI", "Set text on label: ${target.label?.text}")
       }
       target?.view is RuneTextInputView -> {
         val input = target.view as RuneTextInputView
@@ -631,12 +644,12 @@ class RuneUIManager(
           }
         }
         onTextInputTextUpdated(target.id, text)
-        Log.d("RuneUI", "Set text on input view: ${input.text}")
+        logDebug("RuneUI", "Set text on input view: ${input.text}")
       }
       target?.view is TextView -> {
         (target.view as TextView).text = text
         engine.markDirty(target.id)
-        Log.d("RuneUI", "Set text on view: ${(target.view as TextView).text}")
+        logDebug("RuneUI", "Set text on view: ${(target.view as TextView).text}")
       }
       else -> {
         engine.markDirty(target?.id ?: nodeId)
@@ -678,14 +691,14 @@ class RuneUIManager(
       (node?.view as? RunePressableView)?.setHasLongPressHandler(true)
     }
     if (event == "onPress" && nodeType != BUTTON_TYPE && nodeType != PRESSABLE_TYPE) {
-      Log.d("RuneUI", "Setting onPress handler for node $nodeId")
+      logDebug("RuneUI", "Setting onPress handler for node $nodeId")
       val node = nodes.get(nodeId)
       node?.view?.let { view ->
         if (node.pointerEvents != "none") {
           view.isClickable = true
         }
         view.setOnClickListener {
-          Log.d("RuneUI", "onPress triggered for node $nodeId")
+          logDebug("RuneUI", "onPress triggered for node $nodeId")
           eventDispatcher(nodeId, event)
         }
       }
@@ -845,7 +858,7 @@ class RuneUIManager(
       text.textSize = 16f
       text.setTextColor(Color.WHITE)
       text.gravity = Gravity.START
-      Log.d("RuneUI", "Created text node $id")
+      logDebug("RuneUI", "Created text node $id")
       view = text
       label = text
     } else if (type == TEXT_INPUT_TYPE || type == SECURE_TEXT_INPUT_TYPE) {
@@ -1090,10 +1103,12 @@ class RuneUIManager(
     style.paddingBottom.asPx()?.let { bottom = it }
 
     val paddingChanged = view.updateStylePadding(left, top, right, bottom)
-    Log.d(
-        "RuneTextInputView",
-        "applyTextInputStyle paddingTop=$top paddingBottom=$bottom maxLines=${view.maxLines} minLines=${view.minLines} minHeight=${view.minHeight} minimumHeight=${view.minimumHeight} measured=${view.measuredHeight} scrollY=${view.scrollY}",
-    )
+    if (isNativeDebugEnabled()) {
+      Log.d(
+          "RuneTextInputView",
+          "applyTextInputStyle paddingTop=$top paddingBottom=$bottom maxLines=${view.maxLines} minLines=${view.minLines} minHeight=${view.minHeight} minimumHeight=${view.minimumHeight} measured=${view.measuredHeight} scrollY=${view.scrollY}",
+      )
+    }
     val baselineChanged = view.ensureBaselineConstraints()
     if (paddingChanged || baselineChanged) {
         view.requestLayout()
@@ -1336,11 +1351,11 @@ class RuneUIManager(
         true
       }
       "clearButtonMode" -> {
-        Log.d("RuneUI", "clearButtonMode is not supported on Android; ignoring value: $parsed")
+        logDebug("RuneUI", "clearButtonMode is not supported on Android; ignoring value: $parsed")
         true
       }
       "showClearAccessory" -> {
-        Log.d("RuneUI", "showClearAccessory is not supported on Android; ignoring value: $parsed")
+        logDebug("RuneUI", "showClearAccessory is not supported on Android; ignoring value: $parsed")
         true
       }
       else -> false
@@ -1632,7 +1647,7 @@ class RuneUIManager(
   fun hasRenderableContent(): Boolean = onMain { nodes.size() > 0 }
 
   fun clearAllNodes() = onMain {
-    Log.d("RuneUI", "Clearing all nodes for dev reload")
+    logDebug("RuneUI", "Clearing all nodes for dev reload")
     frameScheduler.cancelFlush()
     handler.removeCallbacksAndMessages(null)
     pendingTextRebuild.clear()
@@ -1797,10 +1812,12 @@ class RuneUIManager(
           ) {
             val vg = node.view as? ViewGroup
             val childCount = vg?.childCount ?: -1
-            Log.d(
-              "RuneUI",
-              "[layout] node=${node.id} type=${node.type} parentType=$parentType raw=(${rawFrame.left},${rawFrame.top},${rawFrame.right},${rawFrame.bottom}) applied=(${appliedFrame.left},${appliedFrame.top},${appliedFrame.right},${appliedFrame.bottom}) children=$childCount reused=$shouldReusePrevious"
-            )
+            if (isNativeDebugEnabled()) {
+              Log.d(
+                "RuneUI",
+                "[layout] node=${node.id} type=${node.type} parentType=$parentType raw=(${rawFrame.left},${rawFrame.top},${rawFrame.right},${rawFrame.bottom}) applied=(${appliedFrame.left},${appliedFrame.top},${appliedFrame.right},${appliedFrame.bottom}) children=$childCount reused=$shouldReusePrevious"
+              )
+            }
           }
 
           val width = (appliedFrame.right - appliedFrame.left).coerceAtLeast(0)

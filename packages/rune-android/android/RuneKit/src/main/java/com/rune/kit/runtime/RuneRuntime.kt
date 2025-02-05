@@ -48,6 +48,20 @@ class RuneRuntime(
     handlerListener = { id, name, handlerRef -> onHandlerAttached(id, name, handlerRef) },
   )
 
+  private fun isNativeDebugEnabled(): Boolean {
+    return try {
+      val debugValue = System.getProperty("__NATIVE_DEBUG__")
+      debugValue?.toBoolean() ?: false
+    } catch (e: Exception) {
+      false
+    }
+  }
+
+  private fun logDebug(tag: String, message: String) {
+    if (!isNativeDebugEnabled()) return
+    Log.d(tag, message)
+  }
+
   private fun configureAdapter() {
     adapter.onException = { error ->
       val stack = error.stack?.takeIf { it.isNotBlank() }
@@ -107,7 +121,7 @@ class RuneRuntime(
    * @param code The JavaScript bundle code to evaluate after reset
    */
   fun reloadJavaScript(code: String) {
-    Log.d(TAG, "Reloading JavaScript with full runtime reset")
+    logDebug(TAG, "Reloading JavaScript with full runtime reset")
     
     // Clear UI state
     synchronized(handlerMap) {
@@ -158,11 +172,11 @@ class RuneRuntime(
     
     // If we're still loading the dev bundle, defer the start
     if (devServerUrl != null && !hasSuccessfulDevBundle && lastDevBundle == null) {
-      Log.d(TAG, "Deferring start until dev bundle loads")
+      logDebug(TAG, "Deferring start until dev bundle loads")
       return
     }
     
-    Log.d(TAG, "Starting app with rootId=$rootId")
+    logDebug(TAG, "Starting app with rootId=$rootId")
     adapter.callGlobalAsync("__startApp", arrayOf(rootId))
   }
 
@@ -385,12 +399,12 @@ class RuneRuntime(
       val id = args.intAt(0) ?: return@setGlobalFunction null
       val name = args.stringAt(1) ?: return@setGlobalFunction null
       val fn = args.getOrNull(2)
-      Log.d("RuneUI", "Registering handler: id=$id name=$name fn=${fn?.javaClass?.simpleName}")
+      logDebug("RuneUI", "Registering handler: id=$id name=$name fn=${fn?.javaClass?.simpleName}")
       if (fn is Function) {
         handlerMap[id to name] = HandlerRef.Rhino(fn)
-        Log.d("RuneUI", "Handler registered in handlerMap")
+        logDebug("RuneUI", "Handler registered in handlerMap")
       } else {
-        Log.d("RuneUI", "Handler function is null or not a Function")
+        logDebug("RuneUI", "Handler function is null or not a Function")
       }
       manager.setHandler(id, name, 0L)
       null
@@ -448,11 +462,11 @@ class RuneRuntime(
   }
 
   private fun dispatchHandler(id: Int, name: String) {
-    Log.d("RuneUI", "dispatchHandler called for id=$id name=$name")
+    logDebug("RuneUI", "dispatchHandler called for id=$id name=$name")
     val key = id to name
     val handler = handlerMap[key]
     val runtimeAdapter = adapter
-    Log.d("RuneUI", "Handler function found: ${handler != null}")
+    logDebug("RuneUI", "Handler function found: ${handler != null}")
     when {
       handler is HandlerRef.Rhino && runtimeAdapter is RhinoAdapter -> {
         val payload = manager.consumeEventPayload(id, name)
@@ -461,14 +475,14 @@ class RuneRuntime(
           eventPayload.putAll(payload.toMap())
         }
         val event = runtimeAdapter.createObject(eventPayload)
-        Log.d("RuneUI", "Calling JavaScript function")
+        logDebug("RuneUI", "Calling JavaScript function")
         runtimeAdapter.callFunction(handler.function, arrayOf(event))
       }
       handler is HandlerRef.Hermes && runtimeAdapter is HermesAdapter -> {
-        Log.d("RuneUI", "Dispatching Hermes handler $handler for node $id")
+        logDebug("RuneUI", "Dispatching Hermes handler $handler for node $id")
         runtimeAdapter.invokeHandler(handler.handlerId, id, name)
       }
-      else -> Log.d("RuneUI", "No valid handler found for $key")
+      else -> logDebug("RuneUI", "No valid handler found for $key")
     }
   }
 
@@ -550,11 +564,11 @@ class RuneRuntime(
     }
 
     override fun invoke(module: String, method: String, args: Array<Any?>, promiseId: Int) {
-      Log.d(TAG, "HermesModulesShim.invoke module=$module method=$method argsCount=${args.size} promiseId=$promiseId")
+      logDebug(TAG, "HermesModulesShim.invoke module=$module method=$method argsCount=${args.size} promiseId=$promiseId")
       moduleExecutor.execute {
         try {
           val result = handleModuleCall(module, method, args)
-          Log.d(TAG, "HermesModulesShim.resolve promiseId=$promiseId resultLen=${result.length()}")
+          logDebug(TAG, "HermesModulesShim.resolve promiseId=$promiseId resultLen=${result.length()}")
           hermes.resolvePromise(promiseId, result.toString())
         } catch (t: Throwable) {
           Log.e(TAG, "HermesModulesShim.reject promiseId=$promiseId: ${t.message}")
@@ -564,7 +578,7 @@ class RuneRuntime(
     }
 
     override fun callSync(module: String, method: String, args: Array<Any?>): Any? {
-      Log.d(TAG, "HermesModulesShim.callSync module=$module method=$method args=${args.size}")
+      logDebug(TAG, "HermesModulesShim.callSync module=$module method=$method args=${args.size}")
       return handleModuleCallSync(module, method, args)
     }
   }

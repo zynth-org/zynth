@@ -16,6 +16,7 @@ class HermesAdapter(
 
   private val jsThread = HandlerThread(THREAD_NAME).apply { start() }
   private val jsHandler = Handler(jsThread.looper)
+  private val TAG = "HermesAdapter"
   @Volatile private var runtimePtr: Long = 0L
   private val timerShim = JSBridge.HandlerTimerShim(::getRuntimePtr, jsThread.looper)
   private val objects = HashMap<String, Any>()
@@ -31,6 +32,14 @@ class HermesAdapter(
   }
 
   @Volatile private var destroyed = false
+
+  private val nativeDebugEnabled: Boolean by lazy {
+    try {
+      evaluate("!!globalThis.__NATIVE_DEBUG__") as? Boolean ?: false
+    } catch (e: Throwable) {
+      false
+    }
+  }
 
   init {
     runtimePtr = runOnJS { bridge.createHermesRuntime() }
@@ -71,7 +80,7 @@ class HermesAdapter(
       try {
         bridge.emitEvent(runtimePtr, trimmedName, payloadJson)
       } catch (t: Throwable) {
-        Log.e(TAG, "emitEvent($trimmedName) failed", t)
+        if (nativeDebugEnabled) Log.e(TAG, "emitEvent($trimmedName) failed", t)
         onException?.invoke(t.toJsRuntimeException())
       }
     }
@@ -92,18 +101,18 @@ class HermesAdapter(
       try {
         // Try to load main.hbc first
         val hbcBytes = assets.open("main.hbc").use { it.readBytes() }
-        Log.d(TAG, "Loading Hermes bytecode (main.hbc)")
+        if (nativeDebugEnabled) Log.d(TAG, "Loading Hermes bytecode (main.hbc)")
         evaluateBytecode(hbcBytes, "main.hbc")
         return
       } catch (e: Exception) {
-        Log.w(TAG, "Failed to load main.hbc, falling back to main.js: ${e.message}")
+        if (nativeDebugEnabled) Log.w(TAG, "Failed to load main.hbc, falling back to main.js: ${e.message}")
       }
     }
 
     // Fallback to JavaScript source
     try {
       val jsCode = assets.open("main.js").use { it.bufferedReader().readText() }
-      Log.d(TAG, "Loading JavaScript source (main.js)")
+      if (nativeDebugEnabled) Log.d(TAG, "Loading JavaScript source (main.js)")
       evaluateSource(jsCode, "main.js")
     } catch (e: Exception) {
       Log.e(TAG, "Failed to load main.js", e)
@@ -149,7 +158,7 @@ class HermesAdapter(
         ensureRuntime()
         bridge.invokeHandler(runtimePtr, handlerId, nodeId, event)
       } catch (t: Throwable) {
-        Log.e(TAG, "invokeHandler($event) failed", t)
+        if (nativeDebugEnabled) Log.e(TAG, "invokeHandler($event) failed", t)
         onException?.invoke(t.toJsRuntimeException())
       }
     }
@@ -157,12 +166,12 @@ class HermesAdapter(
 
   override fun setGlobalObject(name: String, value: Any) {
     objects[name] = value
-    Log.d(TAG, "setGlobalObject($name)")
+    if (nativeDebugEnabled) Log.d(TAG, "setGlobalObject($name)")
   }
 
   override fun setGlobalFunction(name: String, fn: (Array<Any?>) -> Any?) {
     functions[name] = fn
-    Log.d(TAG, "setGlobalFunction($name)")
+    if (nativeDebugEnabled) Log.d(TAG, "setGlobalFunction($name)")
   }
 
   override fun evaluate(code: String) {
@@ -193,7 +202,7 @@ class HermesAdapter(
         // Avoid blocking the UI thread by executing the call entirely on the JS thread.
         bridge.callGlobal(runtimePtr, name, payload)
       } catch (t: Throwable) {
-        Log.e(TAG, "callGlobalAsync($name) failed", t)
+        if (nativeDebugEnabled) Log.e(TAG, "callGlobalAsync($name) failed", t)
         onException?.invoke(t.toJsRuntimeException())
       }
     }
