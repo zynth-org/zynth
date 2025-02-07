@@ -23,7 +23,6 @@ import java.util.concurrent.Executors
 import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
 import kotlin.jvm.Volatile
-import org.mozilla.javascript.Function
 
 private const val TAG = "RuneRuntime"
 
@@ -75,10 +74,6 @@ class RuneRuntime(
 
     installConsole()
     when (val runtimeAdapter = adapter) {
-      is RhinoAdapter -> {
-        installRhinoGlobals(runtimeAdapter)
-        installRhinoBridge(runtimeAdapter)
-      }
       is HermesAdapter -> installHermesBindings(runtimeAdapter)
       else -> installFallbackBridge()
     }
@@ -137,10 +132,7 @@ class RuneRuntime(
     if (previousAdapter is HermesAdapter) {
       previousAdapter.destroy()
     }
-    adapter = when (previousAdapter) {
-      is RhinoAdapter -> RhinoAdapter()
-      else -> HermesAdapter()
-    }
+    adapter = HermesAdapter()
     
     // Reconfigure adapter with all bindings
     configureAdapter()
@@ -274,170 +266,6 @@ class RuneRuntime(
     injectModuleConstants()
   }
 
-  private fun installRhinoGlobals(rhino: RhinoAdapter) {
-    // Install proper setTimeout/clearTimeout implementation
-    val timeouts = mutableMapOf<Int, android.os.Handler?>()
-    var nextTimeoutId = 1
-    
-    adapter.setGlobalFunction("setTimeout") { args ->
-      val fn = args.getOrNull(0) as? org.mozilla.javascript.Function
-      val delay = (args.getOrNull(1) as? Number)?.toLong() ?: 0L
-      if (fn != null) {
-        val timeoutId = nextTimeoutId++
-        val handler = android.os.Handler(android.os.Looper.getMainLooper())
-        timeouts[timeoutId] = handler
-        handler.postDelayed({
-          timeouts.remove(timeoutId)
-          try {
-            rhino.callFunction(fn, arrayOf())
-          } catch (e: Exception) {
-            Log.e("JS", "setTimeout error: ${e.message}")
-          }
-        }, delay)
-        timeoutId
-      } else 0
-    }
-    
-    adapter.setGlobalFunction("clearTimeout") { args ->
-      val timeoutId = (args.getOrNull(0) as? Number)?.toInt()
-      timeoutId?.let { id ->
-        timeouts.remove(id)?.removeCallbacksAndMessages(null)
-      }
-      null
-    }
-    
-    rhino.evaluate(
-      """
-      if (typeof globalThis.setTimeout !== "function") {
-        globalThis.setTimeout = setTimeout;
-      }
-      if (typeof globalThis.clearTimeout !== "function") {
-        globalThis.clearTimeout = clearTimeout;
-      }
-      if (typeof globalThis.Promise !== "function") {
-        (function() {
-          function SimplePromise(executor) {
-            if (!(this instanceof SimplePromise)) return new SimplePromise(executor);
-            var self = this;
-            self._resolved = false;
-            self._value = undefined;
-            self._handlers = [];
-            function resolve(value) {
-              if (self._resolved) return;
-              self._resolved = true;
-              self._value = value;
-              var handlers = self._handlers.slice();
-              self._handlers.length = 0;
-              for (var i = 0; i < handlers.length; i++) {
-                try { handlers[i](value); } catch (e) {}
-              }
-            }
-            function reject(err) {
-              resolve(err);
-            }
-            try {
-              executor(resolve, reject);
-            } catch (e) {
-              reject(e);
-            }
-          }
-          SimplePromise.prototype.then = function(onFulfilled) {
-            if (typeof onFulfilled !== "function") return this;
-            if (this._resolved) {
-              try { onFulfilled(this._value); } catch (e) {}
-            } else {
-              this._handlers.push(onFulfilled);
-            }
-            return this;
-          };
-          SimplePromise.prototype.catch = function() {
-            return this;
-          };
-          SimplePromise.resolve = function(value) {
-            return new SimplePromise(function(resolve) { resolve(value); });
-          };
-          globalThis.Promise = SimplePromise;
-        })();
-      }
-      globalThis.__RUNE_PLATFORM = "android";
-    """.trimIndent(),
-    )
-  }
-
-  private fun installRhinoBridge(rhino: RhinoAdapter) {
-    adapter.setGlobalFunction("__ui_createNode") { args ->
-      val type = args.stringAt(0) ?: "view"
-      manager.createNode(type)
-    }
-    adapter.setGlobalFunction("__ui_setProp") { args ->
-      val id = args.intAt(0) ?: return@setGlobalFunction null
-      val name = args.stringAt(1) ?: return@setGlobalFunction null
-      val json = args.stringAt(2) ?: "{}"
-      manager.setProp(id, name, json)
-      null
-    }
-    adapter.setGlobalFunction("__ui_setText") { args ->
-      val id = args.intAt(0) ?: return@setGlobalFunction null
-      val text = args.stringAt(1) ?: ""
-      manager.setText(id, text)
-      null
-    }
-    adapter.setGlobalFunction("__ui_insertChild") { args ->
-      val parent = args.intAt(0) ?: return@setGlobalFunction null
-      val child = args.intAt(1) ?: return@setGlobalFunction null
-      val index = args.intAt(2) ?: 0
-      manager.insertChild(parent, child, index)
-      null
-    }
-    adapter.setGlobalFunction("__ui_removeChild") { args ->
-      val parent = args.intAt(0) ?: return@setGlobalFunction null
-      val child = args.intAt(1) ?: return@setGlobalFunction null
-      manager.removeChild(parent, child)
-      null
-    }
-    adapter.setGlobalFunction("__ui_setHandler") { args ->
-      val id = args.intAt(0) ?: return@setGlobalFunction null
-      val name = args.stringAt(1) ?: return@setGlobalFunction null
-      val fn = args.getOrNull(2)
-      logDebug("RuneUI", "Registering handler: id=$id name=$name fn=${fn?.javaClass?.simpleName}")
-      if (fn is Function) {
-        handlerMap[id to name] = HandlerRef.Rhino(fn)
-        logDebug("RuneUI", "Handler registered in handlerMap")
-      } else {
-        logDebug("RuneUI", "Handler function is null or not a Function")
-      }
-      manager.setHandler(id, name, 0L)
-      null
-    }
-    adapter.setGlobalFunction("__ui_flush") { _ ->
-      manager.flush()
-      null
-    }
-    adapter.evaluate(
-      """
-      globalThis.__ui = {
-        createNode: function(type) { return __ui_createNode(type); },
-        setProp: function(id, name, value) { return __ui_setProp(id, name, JSON.stringify(value == null ? {} : value)); },
-        setText: function(id, text) { return __ui_setText(id, String(text == null ? "" : text)); },
-        insertChild: function(parent, child, index) { return __ui_insertChild(parent, child, index == null ? 0 : index); },
-        removeChild: function(parent, child) { return __ui_removeChild(parent, child); },
-        setHandler: function(id, name, fn) { return __ui_setHandler(id, name, fn); },
-        flush: function() { return __ui_flush(); }
-      };
-      """.trimIndent(),
-    )
-
-    adapter.setGlobalFunction("__modules_call") { args ->
-      val name = args.stringAt(0) ?: return@setGlobalFunction mapOf("error" to "bad_args")
-      val method = args.stringAt(1) ?: return@setGlobalFunction mapOf("error" to "bad_args")
-      val payload = arrayOf(args.getOrNull(2))
-      val result = handleModuleCall(name, method, payload)
-      if (result.length() == 0) return@setGlobalFunction emptyMap<String, Any?>()
-      rhino.parseJson(result.toString()) ?: emptyMap<String, Any?>()
-    }
-    adapter.evaluate("globalThis.__modules = { call: __modules_call };")
-  }
-
   private fun installFallbackBridge() {
     RuneBridge.install(adapter, manager)
     adapter.setGlobalObject(
@@ -468,16 +296,6 @@ class RuneRuntime(
     val runtimeAdapter = adapter
     logDebug("RuneUI", "Handler function found: ${handler != null}")
     when {
-      handler is HandlerRef.Rhino && runtimeAdapter is RhinoAdapter -> {
-        val payload = manager.consumeEventPayload(id, name)
-        val eventPayload = mutableMapOf<String, Any?>("target" to id, "type" to name)
-        if (payload != null) {
-          eventPayload.putAll(payload.toMap())
-        }
-        val event = runtimeAdapter.createObject(eventPayload)
-        logDebug("RuneUI", "Calling JavaScript function")
-        runtimeAdapter.callFunction(handler.function, arrayOf(event))
-      }
       handler is HandlerRef.Hermes && runtimeAdapter is HermesAdapter -> {
         logDebug("RuneUI", "Dispatching Hermes handler $handler for node $id")
         runtimeAdapter.invokeHandler(handler.handlerId, id, name)
@@ -584,7 +402,6 @@ class RuneRuntime(
   }
 
   private sealed class HandlerRef {
-    data class Rhino(val function: Function) : HandlerRef()
     data class Hermes(val handlerId: Long) : HandlerRef()
   }
 

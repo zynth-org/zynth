@@ -78,6 +78,5 @@ dependencies {
   implementation("com.facebook.react:hermes-android:$reactNativeVersion")
   implementation("com.facebook.react:react-android:$reactNativeVersion")
   implementation("com.facebook.soloader:soloader:0.10.5")
-  implementation("org.mozilla:rhino:1.7.14")
   implementation("com.squareup.okhttp3:okhttp:4.11.0")
 }
