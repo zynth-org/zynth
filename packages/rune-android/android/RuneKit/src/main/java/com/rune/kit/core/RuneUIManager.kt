@@ -32,6 +32,7 @@ import org.json.JSONObject
 import org.json.JSONTokener
 import java.util.HashMap
 import java.util.LinkedHashSet
+import java.util.ArrayDeque
 import java.util.concurrent.CountDownLatch
 import kotlin.math.roundToInt
 
@@ -230,6 +231,14 @@ class RuneUIManager(
     resolveTextNode = ::resolveTextNode,
     onTextInputTextUpdated = ::onTextInputTextUpdated,
   )
+  private val eventManager = RuneEventManager(
+    nodes = nodes,
+    engine = engine,
+    eventDispatcher = eventDispatcher,
+    handlerListener = handlerListener,
+    eventPayloads = eventPayloads,
+    ensureTextInputState = ::ensureTextInputState,
+  )
   @Volatile private var viewTransactionInProgress = false
   @Volatile private var layoutTransactionActive = false
   private enum class FlushPriority { HIGH, NORMAL }
@@ -254,54 +263,16 @@ class RuneUIManager(
     }
   }
 
-  private fun eventKey(nodeId: Int, event: String): String = "$nodeId::$event"
-
   private fun storeEventPayload(nodeId: Int, event: String, payload: JSONObject?) {
-    val key = eventKey(nodeId, event)
-    synchronized(eventPayloads) {
-      if (payload != null && payload.length() > 0) {
-        val queue = eventPayloads.getOrPut(key) { ArrayDeque() }
-        queue.addLast(payload.toString())
-      } else {
-        eventPayloads.remove(key)
-      }
-    }
+    eventManager.storeEventPayload(nodeId, event, payload)
   }
 
   fun consumeEventPayload(nodeId: Int, event: String): JSONObject? {
-    val key = eventKey(nodeId, event)
-    synchronized(eventPayloads) {
-      val queue = eventPayloads[key] ?: return null
-      if (queue.isEmpty()) {
-        eventPayloads.remove(key)
-        return null
-      }
-      val payloadJson = queue.removeFirst()
-      if (queue.isEmpty()) {
-        eventPayloads.remove(key)
-      }
-      return try {
-        JSONObject(payloadJson)
-      } catch (_: JSONException) {
-        null
-      }
-    }
+    return eventManager.consumeEventPayload(nodeId, event)
   }
 
   fun dequeueEventPayloadJson(nodeId: Int, event: String): String? {
-    val key = eventKey(nodeId, event)
-    synchronized(eventPayloads) {
-      val queue = eventPayloads[key] ?: return null
-      if (queue.isEmpty()) {
-        eventPayloads.remove(key)
-        return null
-      }
-      val payload = queue.removeFirst()
-      if (queue.isEmpty()) {
-        eventPayloads.remove(key)
-      }
-      return payload
-    }
+    return eventManager.dequeueEventPayloadJson(nodeId, event)
   }
 
   private fun isVirtualTextNode(node: Node): Boolean {
@@ -939,126 +910,95 @@ class RuneUIManager(
   }
 
   internal fun emitTextInputEvent(nodeId: Int, event: String, payload: JSONObject?) {
-    storeEventPayload(nodeId, event, payload)
-    eventDispatcher(nodeId, event)
+    eventManager.emitTextInputEvent(nodeId, event, payload)
   }
 
   internal fun dispatchEvent(nodeId: Int, event: String, payload: JSONObject?) {
-    storeEventPayload(nodeId, event, payload)
-    eventDispatcher(nodeId, event)
+    eventManager.dispatchEvent(nodeId, event, payload)
   }
 
   override fun onPressIn(nodeId: Int) {
-    dispatchEvent(nodeId, "onPressIn", null)
+    eventManager.onPressIn(nodeId)
   }
 
   override fun onPressOut(nodeId: Int, cancelled: Boolean) {
-    val payload = JSONObject().put("cancelled", cancelled)
-    dispatchEvent(nodeId, "onPressOut", payload)
+    eventManager.onPressOut(nodeId, cancelled)
   }
 
   override fun onPress(nodeId: Int) {
-    val payload = JSONObject().put("synthetic", false)
-    dispatchEvent(nodeId, "onPress", payload)
+    eventManager.onPress(nodeId)
   }
 
   override fun onLongPress(nodeId: Int, durationMs: Long) {
-    val payload = JSONObject().put("durationMs", durationMs)
-    dispatchEvent(nodeId, "onLongPress", payload)
+    eventManager.onLongPress(nodeId, durationMs)
   }
 
   override fun onFocus(nodeId: Int) {
-    dispatchEvent(nodeId, "onFocus", null)
+    eventManager.onFocus(nodeId)
   }
 
   override fun onBlur(nodeId: Int) {
-    dispatchEvent(nodeId, "onBlur", null)
+    eventManager.onBlur(nodeId)
   }
 
   override fun onKeyEvent(nodeId: Int, phase: String, key: String?) {
-    val payload = JSONObject()
-    if (!key.isNullOrEmpty()) {
-      payload.put("key", key)
-    }
-    dispatchEvent(nodeId, phase, if (payload.length() == 0) null else payload)
+    eventManager.onKeyEvent(nodeId, phase, key)
   }
 
   override fun onPressablePressIn(nodeId: Int, payload: JSONObject) {
-    dispatchEvent(nodeId, "onPressIn", payload)
+    eventManager.onPressablePressIn(nodeId, payload)
   }
 
   override fun onPressablePressOut(nodeId: Int, payload: JSONObject, cancelled: Boolean) {
-    payload.put("cancelled", cancelled)
-    dispatchEvent(nodeId, "onPressOut", payload)
+    eventManager.onPressablePressOut(nodeId, payload, cancelled)
   }
 
   override fun onPressablePress(nodeId: Int, payload: JSONObject) {
-    dispatchEvent(nodeId, "onPress", payload)
+    eventManager.onPressablePress(nodeId, payload)
   }
 
   override fun onPressableLongPress(nodeId: Int, durationMs: Long, payload: JSONObject) {
-    payload.put("durationMs", durationMs)
-    dispatchEvent(nodeId, "onLongPress", payload)
+    eventManager.onPressableLongPress(nodeId, durationMs, payload)
   }
 
   override fun onPressableDoublePress(nodeId: Int, payload: JSONObject) {
-    dispatchEvent(nodeId, "onDoublePress", payload)
+    eventManager.onPressableDoublePress(nodeId, payload)
   }
 
   override fun onPressableHover(nodeId: Int, hovering: Boolean) {
-    val event = if (hovering) "onHoverIn" else "onHoverOut"
-    dispatchEvent(nodeId, event, null)
+    eventManager.onPressableHover(nodeId, hovering)
   }
 
   override fun onPressableFocus(nodeId: Int) {
-    dispatchEvent(nodeId, "onFocus", null)
+    eventManager.onPressableFocus(nodeId)
   }
 
   override fun onPressableBlur(nodeId: Int) {
-    dispatchEvent(nodeId, "onBlur", null)
+    eventManager.onPressableBlur(nodeId)
   }
 
   override fun onPressableKeyEvent(nodeId: Int, phase: String, payload: JSONObject) {
-    dispatchEvent(nodeId, phase, payload)
+    eventManager.onPressableKeyEvent(nodeId, phase, payload)
   }
 
   override fun onPressableCancel(nodeId: Int, payload: JSONObject) {
-    // Cancellation is surfaced via onPressOut with the cancelled flag.
+    eventManager.onPressableCancel(nodeId, payload)
   }
 
   internal fun onTextInputTextUpdated(nodeId: Int, text: String) {
-    val node = nodes.get(nodeId) ?: return
-    val state = ensureTextInputState(node)
-    state.currentText = text
-    state.hasAppliedInitialText = true
-    state.awaitingInitialValue = false
-    node.cachedText = text
-    state.pendingSelection?.let { pending ->
-      val inputView = node.view as? RuneTextInputView
-      if (inputView != null) {
-        inputView.post {
-          inputView.applySelection(pending.start, pending.end)
-          state.pendingSelection = null
-        }
-      }
-    }
+    eventManager.onTextInputTextUpdated(nodeId, text)
   }
 
   internal fun onTextInputLayout(nodeId: Int, height: Int) {
-    if (height <= 0) return
-    val node = nodes.get(nodeId) ?: return
-    val state = ensureTextInputState(node)
-    state.lastExactHeight = height
+    eventManager.onTextInputLayout(nodeId, height)
   }
 
   internal fun clearTextInputExactHeight(nodeId: Int) {
-    val node = nodes.get(nodeId) ?: return
-    val state = ensureTextInputState(node)
-    state.lastExactHeight = 0
+    eventManager.clearTextInputExactHeight(nodeId)
   }
 
   internal fun onTextInputIntrinsicSizeChanged(nodeId: Int) {
-    engine.markDirty(nodeId)
+    eventManager.onTextInputIntrinsicSizeChanged(nodeId)
     scheduleFlush()
   }
 
