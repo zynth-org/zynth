@@ -38,6 +38,8 @@ import kotlin.math.roundToInt
 
 private const val DEBUG_SCROLL_LAYOUT = false
 
+internal enum class FlushPriority { HIGH, NORMAL }
+
 class RuneUIManager(
   private val root: RuneRootView,
   private val engine: LayoutEngine,
@@ -239,9 +241,25 @@ class RuneUIManager(
     eventPayloads = eventPayloads,
     ensureTextInputState = ::ensureTextInputState,
   )
+  private val nodeFactory = RuneNodeFactory(
+    root = root,
+    nodes = nodes,
+    parents = parents,
+    engine = engine,
+    imageSupport = imageSupport,
+    buttonStyles = buttonStyles,
+    pendingTextRebuild = pendingTextRebuild,
+    getNextId = { nextId },
+    incrementNextId = { nextId++ },
+    scheduleFlush = { priority: FlushPriority -> scheduleFlush(priority) },
+    deriveButtonVisualStyle = ::deriveButtonVisualStyle,
+    applyVisualStyle = ::applyVisualStyle,
+    logDebug = ::logDebug,
+    onTextInputIntrinsicSizeChanged = ::onTextInputIntrinsicSizeChanged,
+    manager = this,
+  )
   @Volatile private var viewTransactionInProgress = false
   @Volatile private var layoutTransactionActive = false
-  private enum class FlushPriority { HIGH, NORMAL }
   private var flushCoalesceScheduled = false
   private var pendingFlushPriority = FlushPriority.NORMAL
   private var nextId = root.rootId + 1
@@ -276,206 +294,39 @@ class RuneUIManager(
   }
 
   private fun isVirtualTextNode(node: Node): Boolean {
-    val parent = node.parentId?.let { nodes.get(it) }
-    return node.type == TEXT_TYPE && parent?.type == TEXT_TYPE
+    return nodeFactory.isVirtualTextNode(node)
   }
 
   private fun recomputeTextForNode(node: Node?): String {
-    if (node == null) return ""
-    if (node.type != TEXT_TYPE) {
-      return node.label?.text?.toString()
-        ?: (node.view as? TextView)?.text?.toString()
-        ?: node.cachedText
-    }
-    if (node.textChildren.isEmpty()) {
-      return node.cachedText
-    }
-    val builder = StringBuilder()
-    node.textChildren.forEach { childId ->
-      val childText = recomputeTextForNode(nodes.get(childId))
-      builder.append(childText)
-    }
-    return builder.toString()
+    return nodeFactory.recomputeTextForNode(node)
   }
 
   private fun propagateTextChange(node: Node) {
-    var currentParentId = node.parentId
-    while (currentParentId != null) {
-      val parent = nodes.get(currentParentId) ?: break
-      if (parent.type != TEXT_TYPE) break
-      pendingTextRebuild.add(parent.id)
-      engine.markDirty(parent.id)
-      currentParentId = parent.parentId
-    }
+    nodeFactory.propagateTextChange(node)
   }
 
   private fun recomputeAndPropagate(node: Node) {
-    pendingTextRebuild.add(node.id)
-    engine.markDirty(node.id)
-    propagateTextChange(node)
+    nodeFactory.recomputeAndPropagate(node)
+  }
+
+  private fun ensureTextInputState(node: Node): TextInputState {
+    return nodeFactory.ensureTextInputState(node)
+  }
+
+  private fun cleanupTextInput(node: Node) {
+    nodeFactory.cleanupTextInput(node)
+  }
+
+  private fun resolveTextNode(id: Int): Node? {
+    return nodeFactory.resolveTextNode(id)
+  }
+
+  private fun measureTextInput(view: RuneTextInputView, input: MeasureInput): Pair<Float, Float> {
+    return nodeFactory.measureTextInput(view, input)
   }
 
   override fun createNode(type: String): Int = onMain {
-    val id = nextId++
-    val view: View
-    val label: TextView?
-    if (type == TEXT_TYPE) {
-      val text = TextView(root.context)
-      text.textSize = 16f
-      text.setTextColor(Color.WHITE)
-      text.gravity = Gravity.START
-      logDebug("RuneUI", "Created text node $id")
-      view = text
-      label = text
-    } else if (type == TEXT_INPUT_TYPE || type == SECURE_TEXT_INPUT_TYPE) {
-      val inputView = if (type == SECURE_TEXT_INPUT_TYPE) {
-        RuneSecureTextInputView(root.context)
-      } else {
-        RuneTextInputView(root.context)
-      }
-      inputView.manager = this
-      inputView.nodeId = id
-      inputView.applyEditable(true)
-      inputView.applyMultiline(false)
-      inputView.applyNumberOfLines(0)
-      inputView.submitBehavior = "submit"
-      inputView.blurOnSubmit = false
-      view = inputView
-      label = null
-      val params = FrameLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT,
-        ViewGroup.LayoutParams.WRAP_CONTENT,
-      )
-      inputView.layoutParams = params
-    } else if (type == IMAGE_TYPE) {
-      val imageView = ImageView(root.context)
-      imageView.adjustViewBounds = true
-      imageView.scaleType = ImageView.ScaleType.CENTER_CROP
-      imageView.setBackgroundColor(Color.TRANSPARENT)
-      view = imageView
-      label = null
-    } else if (type == SCROLL_VIEW_TYPE) {
-      val scrollView = RuneScrollView(root.context)
-      scrollView.bind(this, id)
-      view = scrollView
-      label = null
-    } else if (type == BUTTON_TYPE) {
-      val button = RuneButtonView(root.context)
-      button.nodeId = id
-      button.listener = this
-      button.background = GradientDrawable()
-      view = button
-      label = null
-      val initialStyle = deriveButtonVisualStyle(Style(), null, button)
-      buttonStyles.put(id, initialStyle)
-      applyVisualStyle(button, initialStyle)
-    } else if (type == PRESSABLE_TYPE) {
-      val pressable = RunePressableView(root.context)
-      pressable.nodeId = id
-      pressable.listener = this
-      view = pressable
-      label = null
-    } else {
-      view = FrameLayout(root.context)
-      label = null
-    }
-    // Use appropriate layout params based on type - this helps prevent layout jumps
-    when (type) {
-      TEXT_TYPE -> {
-        view.layoutParams = FrameLayout.LayoutParams(
-          ViewGroup.LayoutParams.WRAP_CONTENT,
-          ViewGroup.LayoutParams.WRAP_CONTENT,
-        )
-      }
-      TEXT_INPUT_TYPE, SECURE_TEXT_INPUT_TYPE -> {
-        val params = view.layoutParams as? FrameLayout.LayoutParams
-          ?: FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.WRAP_CONTENT,
-            FrameLayout.LayoutParams.WRAP_CONTENT,
-          )
-        params.width = FrameLayout.LayoutParams.WRAP_CONTENT
-        params.height = FrameLayout.LayoutParams.WRAP_CONTENT
-        view.layoutParams = params
-        view.isClickable = true
-        view.isFocusable = true
-        view.isFocusableInTouchMode = true
-      }
-      BUTTON_TYPE, PRESSABLE_TYPE -> {
-        val params = FrameLayout.LayoutParams(
-          ViewGroup.LayoutParams.WRAP_CONTENT,
-          ViewGroup.LayoutParams.WRAP_CONTENT,
-        )
-        view.layoutParams = params
-        view.isClickable = true
-        view.isFocusable = true
-        view.isFocusableInTouchMode = true
-      }
-      else -> {
-        view.layoutParams = FrameLayout.LayoutParams(
-          ViewGroup.LayoutParams.WRAP_CONTENT,
-          ViewGroup.LayoutParams.WRAP_CONTENT,
-        )
-        view.isClickable = false
-      }
-    }
-    view.setBackgroundColor(Color.TRANSPARENT)
-    val node = Node(id, type, view, label)
-    node.cachedText = (label?.text?.toString() ?: "")
-    if (type == IMAGE_TYPE) {
-      imageSupport.initializeNode(node)
-    }
-    if (type == TEXT_INPUT_TYPE || type == SECURE_TEXT_INPUT_TYPE) {
-      node.textInputState = TextInputState()
-    }
-    nodes.put(id, node)
-    parents[id] = null
-    engine.createNode(id)
-    // Default non-text views to full width unless overridden by explicit style
-    if (label == null) {
-      try {
-        engine.setStyle(id, Style(widthPercent = 100f))
-      } catch (_: Throwable) {
-        // Defensive: style application should never crash creation
-      }
-    }
-    if (label != null) {
-      engine.setMeasureHandler(id) { input ->
-        val widthValue = when {
-          input.width.isNaN() -> 0
-          input.width.isInfinite() -> Int.MAX_VALUE / 2
-          else -> input.width.roundToInt()
-        }
-        val heightValue = when {
-          input.height.isNaN() -> 0
-          input.height.isInfinite() -> Int.MAX_VALUE / 2
-          else -> input.height.roundToInt()
-        }
-        val widthSpec = when (input.widthMode) {
-          MeasureMode.EXACTLY -> MeasureSpec.makeMeasureSpec(widthValue, MeasureSpec.EXACTLY)
-          MeasureMode.AT_MOST -> MeasureSpec.makeMeasureSpec(widthValue, MeasureSpec.AT_MOST)
-          MeasureMode.UNDEFINED -> MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
-        }
-        val heightSpec = when (input.heightMode) {
-          MeasureMode.EXACTLY -> MeasureSpec.makeMeasureSpec(heightValue, MeasureSpec.EXACTLY)
-          MeasureMode.AT_MOST -> MeasureSpec.makeMeasureSpec(heightValue, MeasureSpec.AT_MOST)
-          MeasureMode.UNDEFINED -> MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
-        }
-        label.measure(widthSpec, heightSpec)
-        val measuredWidth = label.measuredWidth.coerceAtLeast(1)
-        val measuredHeight = label.measuredHeight.coerceAtLeast((label.textSize * 1.2f).roundToInt())
-        measuredWidth.toFloat() to measuredHeight.toFloat()
-      }
-    } else if (type == TEXT_INPUT_TYPE || type == SECURE_TEXT_INPUT_TYPE) {
-      val inputView = view as RuneTextInputView
-      engine.setMeasureHandler(id) { input ->
-        measureTextInput(inputView, input)
-      }
-    } else if (type == IMAGE_TYPE) {
-      engine.setMeasureHandler(id) { input ->
-        imageSupport.measure(node, input)
-      }
-    }
-    id
+    nodeFactory.createNode(type)
   }
 
   private fun parseString(json: String?): String? {
@@ -828,87 +679,6 @@ class RuneUIManager(
     }
   }
 
-  private fun measureTextInput(view: RuneTextInputView, input: MeasureInput): Pair<Float, Float> {
-    val node = nodes.get(view.nodeId)
-    if (node != null) {
-      val state = ensureTextInputState(node)
-      if (state.lastExactHeight > 0) {
-        view.setExpectedExactHeight(state.lastExactHeight)
-      }
-    }
-    val widthSpec = when (input.widthMode) {
-      MeasureMode.EXACTLY -> View.MeasureSpec.makeMeasureSpec(
-        when {
-          input.width.isNaN() -> 0
-          input.width.isInfinite() -> Int.MAX_VALUE / 2
-          else -> input.width.roundToInt()
-        },
-        View.MeasureSpec.EXACTLY,
-      )
-      MeasureMode.AT_MOST -> View.MeasureSpec.makeMeasureSpec(
-        when {
-          input.width.isNaN() -> Int.MAX_VALUE / 2
-          input.width.isInfinite() -> Int.MAX_VALUE / 2
-          else -> input.width.roundToInt()
-        },
-        View.MeasureSpec.AT_MOST,
-      )
-      MeasureMode.UNDEFINED -> View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
-    }
-
-    val heightSpec = when (input.heightMode) {
-      MeasureMode.EXACTLY -> View.MeasureSpec.makeMeasureSpec(
-        when {
-          input.height.isNaN() -> 0
-          input.height.isInfinite() -> Int.MAX_VALUE / 2
-          else -> input.height.roundToInt()
-        },
-        View.MeasureSpec.EXACTLY,
-      )
-      MeasureMode.AT_MOST -> View.MeasureSpec.makeMeasureSpec(
-        when {
-          input.height.isNaN() -> Int.MAX_VALUE / 2
-          input.height.isInfinite() -> Int.MAX_VALUE / 2
-          else -> input.height.roundToInt()
-        },
-        View.MeasureSpec.AT_MOST,
-      )
-      MeasureMode.UNDEFINED -> View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
-    }
-
-    view.measure(widthSpec, heightSpec)
-
-    val targetWidth = if (input.widthMode == MeasureMode.EXACTLY) {
-      View.MeasureSpec.getSize(widthSpec)
-    } else {
-      view.measuredWidth
-    }.coerceAtLeast(1)
-
-    val targetHeight = when (input.heightMode) {
-      MeasureMode.EXACTLY -> View.MeasureSpec.getSize(heightSpec)
-      MeasureMode.AT_MOST, MeasureMode.UNDEFINED -> view.measuredHeight
-    }.coerceAtLeast(1)
-
-    return targetWidth.toFloat() to targetHeight.toFloat()
-  }
-
-  private fun ensureTextInputState(node: Node): TextInputState {
-    val existing = node.textInputState
-    if (existing != null) return existing
-    val created = TextInputState()
-    node.textInputState = created
-    return created
-  }
-
-  private fun cleanupTextInput(node: Node) {
-    (node.view as? RuneTextInputView)?.let { input ->
-      input.clearHandlers()
-      input.manager = null
-      input.nodeId = -1
-    }
-    node.textInputState = null
-  }
-
   internal fun emitTextInputEvent(nodeId: Int, event: String, payload: JSONObject?) {
     eventManager.emitTextInputEvent(nodeId, event, payload)
   }
@@ -1065,7 +835,7 @@ class RuneUIManager(
       op is ViewOperation.Insert && op.parentId == parentId && op.childId == childId
     }
     pendingViewOperations.add(ViewOperation.Remove(parentId, childNode))
-    removeNodeRecursive(childId, detachView = false)
+    nodeFactory.removeNodeRecursive(childId, detachView = false)
     scheduleFlush()
   }
 
@@ -1075,7 +845,7 @@ class RuneUIManager(
   }
 
   override fun removeNode(nodeId: Int) = onMain {
-    removeNodeRecursive(nodeId)
+    nodeFactory.removeNodeRecursive(nodeId)
     scheduleFlush()
   }
 
@@ -1099,7 +869,7 @@ class RuneUIManager(
     }.filter { it != root.rootId }
     
     nodesToRemove.forEach { nodeId ->
-        removeNodeRecursive(nodeId)
+        nodeFactory.removeNodeRecursive(nodeId)
     }
 
     // Final cleanup
@@ -1351,77 +1121,6 @@ class RuneUIManager(
       node.cachedText = newText
       node.label?.text = newText
       (node.view as? TextView)?.text = newText
-    }
-  }
-
-  private fun resolveTextNode(id: Int): Node? {
-    var currentId: Int? = id
-    while (currentId != null) {
-      val node = nodes.get(currentId)
-      if (node?.label != null || node?.view is TextView) return node
-      currentId = parents[currentId]
-    }
-    return nodes.get(id)
-  }
-
-  private fun removeNodeRecursive(id: Int, detachView: Boolean = true) {
-    if (id == root.rootId) return
-    
-    val node = nodes.get(id)
-    if (node == null) {
-        // Node may have been removed earlier (e.g., merged text child).
-        // Ensure we still clear parent mapping to avoid stale references.
-        parents.remove(id)
-        return
-    }
-
-    // First, recursively remove all children
-    val childrenToRemove = parents.entries.filter { it.value == id }.map { it.key }
-    childrenToRemove.forEach { childId ->
-        removeNodeRecursive(childId, detachView)
-    }
-
-    // Clean up from parent's textChildren if this is a text child
-    node.parentId?.let { parentId ->
-        nodes.get(parentId)?.textChildren?.remove(id)
-    }
-
-    if (node.type == IMAGE_TYPE) {
-        imageSupport.cleanup(node)
-    }
-    if (node.type == TEXT_INPUT_TYPE || node.type == SECURE_TEXT_INPUT_TYPE) {
-        cleanupTextInput(node)
-    }
-    if (node.type == SCROLL_VIEW_TYPE) {
-        (node.view as? RuneScrollView)?.unbind()
-    }
-    if (node.type == BUTTON_TYPE) {
-        buttonStyles.remove(id)
-    }
-
-    // Clean up view: remove click listener and from parent
-    node.view.setOnClickListener(null)
-    node.view.isClickable = false
-    if (detachView) {
-      (node.view.parent as? ViewGroup)?.removeView(node.view)
-    }
-    
-    // Clean up layout engine
-    engine.setMeasureHandler(id, null)
-    engine.removeNode(id)
-    
-    // Remove from our tracking maps
-    nodes.remove(id)
-    parents.remove(id)
-    node.parentId = null
-    
-    // Also clean up from any pending text rebuilds
-    pendingTextRebuild.remove(id)
-  }
-
-  private fun ViewGroup.suppressLayoutCompat(shouldSuppress: Boolean) {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
-      suppressLayout(shouldSuppress)
     }
   }
 
