@@ -46,6 +46,32 @@ internal class RuneNodeFactory(
     private val manager: RuneUIManager,
 ) {
 
+  // Fast enum-based dispatch to avoid repeated string comparisons in createNode
+  private enum class NodeType {
+    TEXT,
+    TEXT_INPUT,
+    SECURE_TEXT_INPUT,
+    IMAGE,
+    SCROLL_VIEW,
+    BUTTON,
+    PRESSABLE,
+    OTHER;
+
+    companion object {
+      private val MAP: Map<String, NodeType> = mapOf(
+        "text" to TEXT,
+        "text-input" to TEXT_INPUT,
+        "secure-text-input" to SECURE_TEXT_INPUT,
+        "image" to IMAGE,
+        "scroll-view" to SCROLL_VIEW,
+        "button" to BUTTON,
+        "pressable" to PRESSABLE,
+      )
+
+      fun fromString(type: String?): NodeType = MAP[type] ?: OTHER
+    }
+  }
+
   // Component type constants
   private val TEXT_TYPE = "text"
   private val IMAGE_TYPE = "image"
@@ -240,66 +266,75 @@ internal class RuneNodeFactory(
     val view: View
     val label: TextView?
 
-    // Step 1: Create view based on type
-    if (type == TEXT_TYPE) {
-      val text = TextView(root.context)
-      text.textSize = 16f
-      text.setTextColor(Color.WHITE)
-      text.gravity = Gravity.START
-      logDebug("RuneUI", "Created text node $id")
-      view = text
-      label = text
-    } else if (type == TEXT_INPUT_TYPE || type == SECURE_TEXT_INPUT_TYPE) {
-      val inputView = if (type == SECURE_TEXT_INPUT_TYPE) {
-        RuneSecureTextInputView(root.context)
-      } else {
-        RuneTextInputView(root.context)
+    // Fast dispatch once
+    val nodeType = NodeType.fromString(type)
+    when (nodeType) {
+      NodeType.TEXT -> {
+        val text = TextView(root.context)
+        text.textSize = 16f
+        text.setTextColor(Color.WHITE)
+        text.gravity = Gravity.START
+        logDebug("RuneUI", "Created text node $id")
+        view = text
+        label = text
       }
-      inputView.manager = manager
-      inputView.nodeId = id
-      inputView.applyEditable(true)
-      inputView.applyMultiline(false)
-      inputView.applyNumberOfLines(0)
-      inputView.submitBehavior = "submit"
-      inputView.blurOnSubmit = false
-      view = inputView
-      label = null
-      val params = FrameLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT,
-        ViewGroup.LayoutParams.WRAP_CONTENT,
-      )
-      inputView.layoutParams = params
-    } else if (type == IMAGE_TYPE) {
-      val imageView = ImageView(root.context)
-      imageView.adjustViewBounds = true
-      imageView.scaleType = ImageView.ScaleType.CENTER_CROP
-      imageView.setBackgroundColor(Color.TRANSPARENT)
-      view = imageView
-      label = null
-    } else if (type == SCROLL_VIEW_TYPE) {
-      val scrollView = RuneScrollView(root.context)
-      scrollView.bind(manager, id)
-      view = scrollView
-      label = null
-    } else if (type == BUTTON_TYPE) {
-      val button = RuneButtonView(root.context)
-      button.nodeId = id
-      button.listener = manager
-      button.background = GradientDrawable()
-      view = button
-      label = null
-      val initialStyle = deriveButtonVisualStyle(Style(), null, button)
-      buttonStyles.put(id, initialStyle)
-      applyVisualStyle(button, initialStyle)
-    } else if (type == PRESSABLE_TYPE) {
-      val pressable = RunePressableView(root.context)
-      pressable.nodeId = id
-      pressable.listener = manager
-      view = pressable
-      label = null
-    } else {
-      view = FrameLayout(root.context)
-      label = null
+      NodeType.TEXT_INPUT, NodeType.SECURE_TEXT_INPUT -> {
+        val inputView = if (nodeType == NodeType.SECURE_TEXT_INPUT) {
+          RuneSecureTextInputView(root.context)
+        } else {
+          RuneTextInputView(root.context)
+        }
+        inputView.manager = manager
+        inputView.nodeId = id
+        inputView.applyEditable(true)
+        inputView.applyMultiline(false)
+        inputView.applyNumberOfLines(0)
+        inputView.submitBehavior = "submit"
+        inputView.blurOnSubmit = false
+        view = inputView
+        label = null
+        val params = FrameLayout.LayoutParams(
+          ViewGroup.LayoutParams.MATCH_PARENT,
+          ViewGroup.LayoutParams.WRAP_CONTENT,
+        )
+        inputView.layoutParams = params
+      }
+      NodeType.IMAGE -> {
+        val imageView = ImageView(root.context)
+        imageView.adjustViewBounds = true
+        imageView.scaleType = ImageView.ScaleType.CENTER_CROP
+        imageView.setBackgroundColor(Color.TRANSPARENT)
+        view = imageView
+        label = null
+      }
+      NodeType.SCROLL_VIEW -> {
+        val scrollView = RuneScrollView(root.context)
+        scrollView.bind(manager, id)
+        view = scrollView
+        label = null
+      }
+      NodeType.BUTTON -> {
+        val button = RuneButtonView(root.context)
+        button.nodeId = id
+        button.listener = manager
+        button.background = GradientDrawable()
+        view = button
+        label = null
+        val initialStyle = deriveButtonVisualStyle(Style(), null, button)
+        buttonStyles.put(id, initialStyle)
+        applyVisualStyle(button, initialStyle)
+      }
+      NodeType.PRESSABLE -> {
+        val pressable = RunePressableView(root.context)
+        pressable.nodeId = id
+        pressable.listener = manager
+        view = pressable
+        label = null
+      }
+      NodeType.OTHER -> {
+        view = FrameLayout(root.context)
+        label = null
+      }
     }
 
     // Step 2: Apply appropriate layout params based on type
