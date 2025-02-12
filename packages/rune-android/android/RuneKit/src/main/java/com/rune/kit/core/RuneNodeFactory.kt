@@ -253,6 +253,150 @@ internal class RuneNodeFactory(
 
   // ==================== Node Creation ====================
 
+  // Small sealed interface to encapsulate view creation and per-node registration
+  private sealed interface ViewCreator {
+    fun create(context: android.content.Context, id: Int): View
+    fun registerHandlers(factory: RuneNodeFactory, id: Int, view: View, node: RuneUIManager.Node)
+  }
+
+  private object TextCreator : ViewCreator {
+    override fun create(context: android.content.Context, id: Int): View {
+      return TextView(context).apply {
+        textSize = 16f
+        setTextColor(Color.WHITE)
+        gravity = Gravity.START
+      }
+    }
+
+    override fun registerHandlers(factory: RuneNodeFactory, id: Int, view: View, node: RuneUIManager.Node) {
+      // measurement handler registered later in createNode using label != null path, so nothing to do here
+    }
+  }
+
+  private object TextInputCreator : ViewCreator {
+    override fun create(context: android.content.Context, id: Int): View {
+      return RuneTextInputView(context).apply {
+        nodeId = id
+        applyEditable(true)
+        applyMultiline(false)
+        applyNumberOfLines(0)
+        submitBehavior = "submit"
+        blurOnSubmit = false
+        layoutParams = FrameLayout.LayoutParams(
+          ViewGroup.LayoutParams.MATCH_PARENT,
+          ViewGroup.LayoutParams.WRAP_CONTENT,
+        )
+      }
+    }
+
+    override fun registerHandlers(factory: RuneNodeFactory, id: Int, view: View, node: RuneUIManager.Node) {
+      (view as? RuneTextInputView)?.let {
+        it.manager = factory.manager
+        it.nodeId = id
+      }
+    }
+  }
+
+  private object SecureTextInputCreator : ViewCreator {
+    override fun create(context: android.content.Context, id: Int): View {
+      return RuneSecureTextInputView(context).apply {
+        nodeId = id
+        applyEditable(true)
+        applyMultiline(false)
+        applyNumberOfLines(0)
+        submitBehavior = "submit"
+        blurOnSubmit = false
+        layoutParams = FrameLayout.LayoutParams(
+          ViewGroup.LayoutParams.MATCH_PARENT,
+          ViewGroup.LayoutParams.WRAP_CONTENT,
+        )
+      }
+    }
+
+    override fun registerHandlers(factory: RuneNodeFactory, id: Int, view: View, node: RuneUIManager.Node) {
+      (view as? RuneSecureTextInputView)?.let {
+        it.manager = factory.manager
+        it.nodeId = id
+      }
+    }
+  }
+
+  private object ImageCreator : ViewCreator {
+    override fun create(context: android.content.Context, id: Int): View {
+      return ImageView(context).apply {
+        adjustViewBounds = true
+        scaleType = ImageView.ScaleType.CENTER_CROP
+        setBackgroundColor(Color.TRANSPARENT)
+      }
+    }
+
+    override fun registerHandlers(factory: RuneNodeFactory, id: Int, view: View, node: RuneUIManager.Node) {
+      // imageSupport initialization for node happens in createNode after node creation
+    }
+  }
+
+  private object ScrollViewCreator : ViewCreator {
+    override fun create(context: android.content.Context, id: Int): View {
+      return RuneScrollView(context).apply {
+        // bind happens after node creation so we can pass manager and id
+      }
+    }
+
+    override fun registerHandlers(factory: RuneNodeFactory, id: Int, view: View, node: RuneUIManager.Node) {
+      (view as? RuneScrollView)?.bind(factory.manager, id)
+    }
+  }
+
+  private object ButtonCreator : ViewCreator {
+    override fun create(context: android.content.Context, id: Int): View {
+      return RuneButtonView(context).apply {
+        nodeId = id
+        background = GradientDrawable()
+      }
+    }
+
+    override fun registerHandlers(factory: RuneNodeFactory, id: Int, view: View, node: RuneUIManager.Node) {
+      val button = view as RuneButtonView
+      button.listener = factory.manager
+      val initialStyle = factory.deriveButtonVisualStyle(Style(), null, button)
+      factory.buttonStyles.put(id, initialStyle)
+      factory.applyVisualStyle(button, initialStyle)
+    }
+  }
+
+  private object PressableCreator : ViewCreator {
+    override fun create(context: android.content.Context, id: Int): View {
+      return RunePressableView(context).apply {
+        nodeId = id
+      }
+    }
+
+    override fun registerHandlers(factory: RuneNodeFactory, id: Int, view: View, node: RuneUIManager.Node) {
+      (view as? RunePressableView)?.listener = factory.manager
+    }
+  }
+
+  private object OtherCreator : ViewCreator {
+    override fun create(context: android.content.Context, id: Int): View {
+      return FrameLayout(context)
+    }
+
+    override fun registerHandlers(factory: RuneNodeFactory, id: Int, view: View, node: RuneUIManager.Node) {
+      // nothing extra
+    }
+  }
+
+  private fun getViewCreator(type: NodeType): ViewCreator = when (type) {
+    NodeType.TEXT -> TextCreator
+    NodeType.TEXT_INPUT -> TextInputCreator
+    NodeType.SECURE_TEXT_INPUT -> SecureTextInputCreator
+    NodeType.IMAGE -> ImageCreator
+    NodeType.SCROLL_VIEW -> ScrollViewCreator
+    NodeType.BUTTON -> ButtonCreator
+    NodeType.PRESSABLE -> PressableCreator
+    NodeType.OTHER -> OtherCreator
+  }
+
   /**
    * Creates a new node of the specified type.
    * Handles view creation, initialization, and measurement handler setup for all component types:
@@ -268,74 +412,9 @@ internal class RuneNodeFactory(
 
     // Fast dispatch once
     val nodeType = NodeType.fromString(type)
-    when (nodeType) {
-      NodeType.TEXT -> {
-        val text = TextView(root.context)
-        text.textSize = 16f
-        text.setTextColor(Color.WHITE)
-        text.gravity = Gravity.START
-        logDebug("RuneUI", "Created text node $id")
-        view = text
-        label = text
-      }
-      NodeType.TEXT_INPUT, NodeType.SECURE_TEXT_INPUT -> {
-        val inputView = if (nodeType == NodeType.SECURE_TEXT_INPUT) {
-          RuneSecureTextInputView(root.context)
-        } else {
-          RuneTextInputView(root.context)
-        }
-        inputView.manager = manager
-        inputView.nodeId = id
-        inputView.applyEditable(true)
-        inputView.applyMultiline(false)
-        inputView.applyNumberOfLines(0)
-        inputView.submitBehavior = "submit"
-        inputView.blurOnSubmit = false
-        view = inputView
-        label = null
-        val params = FrameLayout.LayoutParams(
-          ViewGroup.LayoutParams.MATCH_PARENT,
-          ViewGroup.LayoutParams.WRAP_CONTENT,
-        )
-        inputView.layoutParams = params
-      }
-      NodeType.IMAGE -> {
-        val imageView = ImageView(root.context)
-        imageView.adjustViewBounds = true
-        imageView.scaleType = ImageView.ScaleType.CENTER_CROP
-        imageView.setBackgroundColor(Color.TRANSPARENT)
-        view = imageView
-        label = null
-      }
-      NodeType.SCROLL_VIEW -> {
-        val scrollView = RuneScrollView(root.context)
-        scrollView.bind(manager, id)
-        view = scrollView
-        label = null
-      }
-      NodeType.BUTTON -> {
-        val button = RuneButtonView(root.context)
-        button.nodeId = id
-        button.listener = manager
-        button.background = GradientDrawable()
-        view = button
-        label = null
-        val initialStyle = deriveButtonVisualStyle(Style(), null, button)
-        buttonStyles.put(id, initialStyle)
-        applyVisualStyle(button, initialStyle)
-      }
-      NodeType.PRESSABLE -> {
-        val pressable = RunePressableView(root.context)
-        pressable.nodeId = id
-        pressable.listener = manager
-        view = pressable
-        label = null
-      }
-      NodeType.OTHER -> {
-        view = FrameLayout(root.context)
-        label = null
-      }
-    }
+    val creator = getViewCreator(nodeType)
+    view = creator.create(root.context, id)
+    label = (view as? TextView)
 
     // Step 2: Apply appropriate layout params based on type
     when (type) {
@@ -390,6 +469,9 @@ internal class RuneNodeFactory(
     nodes.put(id, node)
     parents[id] = null
     engine.createNode(id)
+
+    // Let the creator register any handlers or perform extra wiring
+    creator.registerHandlers(this, id, view, node)
 
     // Step 4: Set default width for non-text views
     if (label == null) {
