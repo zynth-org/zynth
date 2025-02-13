@@ -25,9 +25,8 @@ import java.util.concurrent.CountDownLatch
  * - Thread-safe execution on main thread
  */
 internal class RuneLayoutFlush(
-    private val root: RuneRootView,
-    private val nodes: SparseArray<RuneUIManager.Node>,
-    private val parents: HashMap<Int, Int?>,
+  private val root: RuneRootView,
+  private val nodes: SparseArray<RuneUIManager.Node>,
     private val engine: LayoutEngine,
     private val handler: Handler,
     private val frameScheduler: FrameScheduler,
@@ -280,8 +279,8 @@ internal class RuneLayoutFlush(
             rawFrame
           }
           appliedFrames.put(node.id, appliedFrame)
-          val parentId = parents[node.id]
-          val parentType = parentId?.let { nodes.get(it)?.type }
+            val parentId = node.parentId
+            val parentType = parentId?.let { nodes.get(it)?.type }
           if (
             DEBUG_SCROLL_LAYOUT &&
             (node.type == SCROLL_VIEW_TYPE || parentType == SCROLL_VIEW_TYPE)

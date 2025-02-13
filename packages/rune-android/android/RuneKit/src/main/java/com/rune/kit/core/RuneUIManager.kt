@@ -59,8 +59,9 @@ class RuneUIManager(
 ) : JSBridge.UIShim, RuneButtonView.Listener, RunePressableView.Listener {
   private fun isNativeDebugEnabled(): Boolean {
     return try {
-      val debugValue = System.getProperty("__NATIVE_DEBUG__")
-      debugValue?.toBoolean() ?: false
+      // val debugValue = System.getProperty("__NATIVE_DEBUG__")
+      // debugValue?.toBoolean() ?: false
+      true
     } catch (e: Exception) {
       false
     }
@@ -76,6 +77,9 @@ class RuneUIManager(
     val view: View,
     val label: TextView? = null,
     val textChildren: MutableList<Int> = mutableListOf(),
+    // children holds the list of direct child node ids (lazy: null when no children)
+    var children: MutableList<Int>? = null,
+    var index: Int = -1,
     var parentId: Int? = null,
     var cachedText: String = "",
     var imageState: ImageState? = null,
@@ -116,7 +120,6 @@ class RuneUIManager(
   }
 
   private val nodes = SparseArray<Node>()
-  private val parents = HashMap<Int, Int?>()
   private val pendingTextRebuild = LinkedHashSet<Int>()
   private val handler = Handler(Looper.getMainLooper())
   private val frameScheduler = FrameScheduler()
@@ -156,7 +159,6 @@ class RuneUIManager(
   private val nodeFactory = RuneNodeFactory(
     root = root,
     nodes = nodes,
-    parents = parents,
     engine = engine,
     imageSupport = imageSupport,
     buttonStyles = buttonStyles,
@@ -173,7 +175,6 @@ class RuneUIManager(
   private val layoutFlush = RuneLayoutFlush(
     root = root,
     nodes = nodes,
-    parents = parents,
     engine = engine,
     handler = handler,
     frameScheduler = frameScheduler,
@@ -200,7 +201,7 @@ class RuneUIManager(
   private var lastRootHeight = -1
 
   init {
-    parents[root.rootId] = null
+    // root has no parent by design; no global parents map needed
     root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
       val w = root.width
       val h = root.height
@@ -215,6 +216,48 @@ class RuneUIManager(
 
   private fun storeEventPayload(nodeId: Int, event: String, payload: JSONObject?) {
     eventManager.storeEventPayload(nodeId, event, payload)
+  }
+
+  // Child management helpers: lazily allocate children list on first attach
+  private fun attachChild(parentId: Int, childId: Int, atIndex: Int = -1) {
+    val parentNode = nodes.get(parentId)
+    val childNode = nodes.get(childId)
+    // still allow attaching even if node isn't created yet; parentId is set on child when created
+    if (parentNode == null || childNode == null) {
+      // fallback to setting parentId on the child Node if it exists
+      nodes.get(childId)?.parentId = parentId
+      return
+    }
+
+    if (parentNode.children == null) parentNode.children = ArrayList()
+    val list = parentNode.children!!
+    val insertPos = if (atIndex < 0 || atIndex > list.size) list.size else atIndex
+    // remove existing occurrence (defensive)
+    list.remove(childId)
+    list.add(insertPos, childId)
+
+    childNode.parentId = parentId
+    childNode.index = insertPos
+
+    // update indices of following siblings
+    for (i in insertPos + 1 until list.size) {
+      nodes.get(list[i])?.index = i
+    }
+  }
+
+  private fun detachChild(parentId: Int, childId: Int) {
+    val parentNode = nodes.get(parentId) ?: return
+    val list = parentNode.children ?: return
+    val idx = list.indexOf(childId)
+    if (idx >= 0) {
+      list.removeAt(idx)
+      for (i in idx until list.size) {
+        nodes.get(list[i])?.index = i
+      }
+      nodes.get(childId)?.parentId = null
+      nodes.get(childId)?.index = -1
+      if (list.isEmpty()) parentNode.children = null
+    }
   }
 
   fun consumeEventPayload(nodeId: Int, event: String): JSONObject? {
@@ -715,8 +758,7 @@ class RuneUIManager(
   }
 
   override fun insertChild(parentId: Int, childId: Int, index: Int) = onMain {
-    parents[childId] = parentId
-    nodes.get(childId)?.parentId = parentId
+    attachChild(parentId, childId, index)
     val parentNode = nodes.get(parentId)
     if (parentNode?.type == TEXT_TYPE) {
       // If parent is a text node, merge text content from child instead of nesting views
@@ -749,8 +791,7 @@ class RuneUIManager(
     val parentNode = nodes.get(parentId)
     if (parentNode?.type == TEXT_TYPE) {
       parentNode.textChildren.remove(childId)
-      parents[childId] = null
-      nodes.get(childId)?.parentId = null
+      detachChild(parentId, childId)
       pendingTextRebuild.add(parentNode.id)
       engine.markDirty(parentNode.id)
       propagateTextChange(parentNode)
@@ -804,9 +845,8 @@ class RuneUIManager(
         nodeFactory.removeNodeRecursive(nodeId)
     }
 
-    // Final cleanup
-    parents.clear()
-    parents[root.rootId] = null
+  // Final cleanup: clear children for root
+  nodes.get(root.rootId)?.children?.clear()
     nextId = root.rootId + 1
     lastRootWidth = -1
     lastRootHeight = -1

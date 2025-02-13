@@ -29,9 +29,8 @@ import kotlin.math.roundToInt
  * - Node measurement configuration
  */
 internal class RuneNodeFactory(
-    private val root: RuneRootView,
-    private val nodes: SparseArray<RuneUIManager.Node>,
-    private val parents: HashMap<Int, Int?>,
+  private val root: RuneRootView,
+  private val nodes: SparseArray<RuneUIManager.Node>,
     private val engine: LayoutEngine,
     private val imageSupport: RuneImageSupport,
     private val buttonStyles: SparseArray<ButtonVisualStyle>,
@@ -149,7 +148,7 @@ internal class RuneNodeFactory(
     while (currentId != null) {
       val node = nodes.get(currentId)
       if (node?.label != null || node?.view is TextView) return node
-      currentId = parents[currentId]
+      currentId = nodes.get(currentId)?.parentId
     }
     return nodes.get(id)
   }
@@ -189,12 +188,8 @@ internal class RuneNodeFactory(
    */
   internal fun measureTextInput(view: RuneTextInputView, input: MeasureInput): Pair<Float, Float> {
     val node = nodes.get(view.nodeId)
-    if (node != null) {
-      val state = ensureTextInputState(node)
-      if (state.lastExactHeight > 0) {
-        view.setExpectedExactHeight(state.lastExactHeight)
-      }
-    }
+    val stateLastExactHeight = node?.let { ensureTextInputState(it).lastExactHeight } ?: 0
+
     val widthSpec = when (input.widthMode) {
       MeasureMode.EXACTLY -> View.MeasureSpec.makeMeasureSpec(
         when {
@@ -215,7 +210,10 @@ internal class RuneNodeFactory(
       MeasureMode.UNDEFINED -> View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
     }
 
-    val heightSpec = when (input.heightMode) {
+    val heightSpec = if (stateLastExactHeight > 0) {
+      View.MeasureSpec.makeMeasureSpec(stateLastExactHeight, View.MeasureSpec.EXACTLY)
+    } else {
+      when (input.heightMode) {
       MeasureMode.EXACTLY -> View.MeasureSpec.makeMeasureSpec(
         when {
           input.height.isNaN() -> 0
@@ -233,6 +231,7 @@ internal class RuneNodeFactory(
         View.MeasureSpec.AT_MOST,
       )
       MeasureMode.UNDEFINED -> View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+      }
     }
 
     view.measure(widthSpec, heightSpec)
@@ -243,10 +242,14 @@ internal class RuneNodeFactory(
       view.measuredWidth
     }.coerceAtLeast(1)
 
-    val targetHeight = when (input.heightMode) {
-      MeasureMode.EXACTLY -> View.MeasureSpec.getSize(heightSpec)
-      MeasureMode.AT_MOST, MeasureMode.UNDEFINED -> view.measuredHeight
-    }.coerceAtLeast(1)
+    val targetHeight = if (stateLastExactHeight > 0) {
+      stateLastExactHeight.coerceAtLeast(1)
+    } else {
+      when (input.heightMode) {
+        MeasureMode.EXACTLY -> View.MeasureSpec.getSize(heightSpec)
+        MeasureMode.AT_MOST, MeasureMode.UNDEFINED -> view.measuredHeight
+      }.coerceAtLeast(1)
+    }
 
     return targetWidth.toFloat() to targetHeight.toFloat()
   }
@@ -466,8 +469,8 @@ internal class RuneNodeFactory(
     if (type == TEXT_INPUT_TYPE || type == SECURE_TEXT_INPUT_TYPE) {
       node.textInputState = RuneUIManager.TextInputState()
     }
-    nodes.put(id, node)
-    parents[id] = null
+  nodes.put(id, node)
+  node.parentId = null
     engine.createNode(id)
 
     // Let the creator register any handlers or perform extra wiring
@@ -538,12 +541,12 @@ internal class RuneNodeFactory(
     if (node == null) {
       // Node may have been removed earlier (e.g., merged text child).
       // Ensure we still clear parent mapping to avoid stale references.
-      parents.remove(id)
+      // Node is already absent; nothing to cleanup.
       return
     }
 
-    // First, recursively remove all children
-    val childrenToRemove = parents.entries.filter { it.value == id }.map { it.key }
+    // First, recursively remove all children (use per-node children list)
+    val childrenToRemove = node.children?.toList() ?: emptyList()
     childrenToRemove.forEach { childId ->
       removeNodeRecursive(childId, detachView)
     }
@@ -580,7 +583,6 @@ internal class RuneNodeFactory(
 
     // Remove from our tracking maps
     nodes.remove(id)
-    parents.remove(id)
     node.parentId = null
 
     // Also clean up from any pending text rebuilds
