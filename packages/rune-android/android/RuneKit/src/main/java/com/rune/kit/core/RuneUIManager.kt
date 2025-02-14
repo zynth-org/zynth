@@ -46,7 +46,20 @@ internal sealed class ViewOperation {
 }
 
 internal sealed class NativeOperation {
-  data class SetProp(val nodeId: Int, val name: String, val jsonValue: String?) : NativeOperation()
+  /**
+   * Optimized SetProp operation that stores:
+   * - Raw JSON string for fallback compatibility
+   * - Pre-parsed value to avoid repeated parsing
+   * - Property category for fast dispatch
+   */
+  data class SetProp(
+    val nodeId: Int,
+    val name: String,
+    val jsonValue: String?,
+    val parsedValue: Any? = null,
+    val category: PropertyCategory = PropertyCategory.UNKNOWN,
+  ) : NativeOperation()
+  
   data class SetText(val nodeId: Int, val text: String) : NativeOperation()
   data class SetHandler(val nodeId: Int, val event: String, val handlerId: Long) : NativeOperation()
 }
@@ -103,8 +116,8 @@ class RuneUIManager(
     layoutFlush.processPendingViewOperations()
   }
 
-  private fun applySetProp(nodeId: Int, name: String, jsonValue: String?) {
-    propApplier.applySetProp(nodeId, name, jsonValue)
+  private fun applySetProp(nodeId: Int, name: String, jsonValue: String?, category: PropertyCategory = PropertyCategory.UNKNOWN) {
+    propApplier.applySetProp(nodeId, name, jsonValue, category)
   }
 
   private fun applySetText(nodeId: Int, text: String) {
@@ -748,7 +761,22 @@ class RuneUIManager(
   }
 
   override fun setProp(nodeId: Int, name: String, jsonValue: String?) = onMain {
-    pendingNativeOperations.add(NativeOperation.SetProp(nodeId, name, jsonValue))
+    // Fast O(1) property categorization for optimized dispatch
+    val category = PropertyCategoryMap.getCategory(name)
+    
+    // Optionally pre-parse value for certain categories (future optimization)
+    // For now, we defer parsing until application
+    val parsedValue: Any? = null
+    
+    pendingNativeOperations.add(
+      NativeOperation.SetProp(
+        nodeId = nodeId,
+        name = name,
+        jsonValue = jsonValue,
+        parsedValue = parsedValue,
+        category = category
+      )
+    )
     scheduleFlush()
   }
 

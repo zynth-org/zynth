@@ -37,7 +37,7 @@ internal class RuneLayoutFlush(
     private val buttonStyles: SparseArray<ButtonVisualStyle>,
     private val isVirtualTextNode: (RuneUIManager.Node) -> Boolean,
     private val recomputeTextForNode: (RuneUIManager.Node?) -> String,
-    private val applySetProp: (Int, String, String?) -> Unit,
+    private val applySetProp: (Int, String, String?, PropertyCategory) -> Unit,
     private val applySetText: (Int, String) -> Unit,
     private val applySetHandler: (Int, String, Long) -> Unit,
     private val logDebug: (String, String) -> Unit,
@@ -107,7 +107,7 @@ internal class RuneLayoutFlush(
     }
     (prioritized + remaining).forEach { op ->
       when (op) {
-        is NativeOperation.SetProp -> applySetProp(op.nodeId, op.name, op.jsonValue)
+        is NativeOperation.SetProp -> applySetProp(op.nodeId, op.name, op.jsonValue, op.category)
         is NativeOperation.SetText -> applySetText(op.nodeId, op.text)
         is NativeOperation.SetHandler -> applySetHandler(op.nodeId, op.event, op.handlerId)
       }
