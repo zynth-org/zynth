@@ -91,6 +91,18 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
     return Rect(left, top, right, bottom)
   }
 
+  override fun getAllFrames(): Map<Int, Rect> {
+    val frameMap = HashMap<Int, Rect>(nodes.size)
+    for ((id, node) in nodes) {
+      val left = node.layoutX.roundToInt()
+      val top = node.layoutY.roundToInt()
+      val right = (node.layoutX + node.layoutWidth).roundToInt()
+      val bottom = (node.layoutY + node.layoutHeight).roundToInt()
+      frameMap[id] = Rect(left, top, right, bottom)
+    }
+    return frameMap
+  }
+
   override fun setMeasureHandler(id: Int, handler: MeasureHandler?) {
     if (handler == null) {
       measureHandlers.remove(id)

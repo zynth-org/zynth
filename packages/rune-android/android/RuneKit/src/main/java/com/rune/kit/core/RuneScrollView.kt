@@ -44,7 +44,7 @@ internal class RuneScrollView(
   private var overScrollBehavior: String = "auto"
   private var eventThrottleMs: Long = 16L
   private var eventMinDisplacementPx: Float = 0f
-  private var bridgeCoalescing: Boolean = true
+  private var bridgeCoalescing: Boolean = false
   private var lastCommandSeq: Long = -1L
 
   private var isDragging = false
@@ -331,7 +331,21 @@ internal class RuneScrollView(
   }
 
   fun setBridgeCoalescing(enabled: Boolean?) {
-    bridgeCoalescing = enabled ?: true
+    val next = enabled ?: false
+    if (bridgeCoalescing == next) {
+      return
+    }
+    bridgeCoalescing = next
+    if (!bridgeCoalescing) {
+      if (coalesceScheduled) {
+        choreographer.removeFrameCallback(coalesceCallback)
+        coalesceScheduled = false
+      }
+      coalescedPayload?.let { payload ->
+        coalescedPayload = null
+        dispatchScrollEventInternal("onScroll", payload, force = true)
+      }
+    }
   }
 
   fun scrollTo(x: Int?, y: Int?, animated: Boolean) {
@@ -452,7 +466,7 @@ internal class RuneScrollView(
         choreographer.postFrameCallback(coalesceCallback)
       }
     } else {
-      dispatchScrollEventInternal("onScroll", payload)
+      dispatchScrollEventInternal("onScroll", payload, force = true)
     }
   }
 
@@ -631,7 +645,8 @@ internal class RuneScrollView(
     force: Boolean = false,
   ) {
     val now = SystemClock.uptimeMillis()
-    if (!force) {
+    val skipThrottle = force || (event == "onScroll" && !bridgeCoalescing)
+    if (!skipThrottle) {
       val dt = now - lastDispatchTime
       if (event == "onScroll" && dt < eventThrottleMs) {
         return

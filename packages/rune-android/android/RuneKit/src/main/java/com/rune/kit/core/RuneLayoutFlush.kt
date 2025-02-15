@@ -252,19 +252,24 @@ internal class RuneLayoutFlush(
 
         PerformanceProfiler.recordRenderStart()
 
-        val appliedFrames = SparseArray<Rect>()
+        // Get all frames at once from the engine (single batch lookup)
+        val allFrames = engine.getAllFrames()
         val stickyNodesForRelayout = mutableSetOf<Int>()
         val stickyFramesUsedThisFrame = mutableSetOf<Int>()
 
+        // Single iteration: Apply frames, update layout params, measure, visibility
         for (i in 0 until nodes.size()) {
           val node = nodes.valueAt(i)
           if (isVirtualTextNode(node)) continue
-          val rawFrame: Rect = engine.frame(node.id)
+
+          val rawFrame = allFrames[node.id] ?: Rect(0, 0, 0, 0)
           val rawWidth = rawFrame.right - rawFrame.left
           val rawHeight = rawFrame.bottom - rawFrame.top
           val previous = previousFrames.get(node.id)
           val previousWidth = previous?.let { it.right - it.left } ?: 0
           val previousHeight = previous?.let { it.bottom - it.top } ?: 0
+          
+          // Sticky frame logic: reuse previous frame if raw frame is zero but previous had size
           val shouldReusePrevious = (rawWidth <= 0 || rawHeight <= 0) &&
             previousWidth > 0 &&
             previousHeight > 0 &&
@@ -278,9 +283,9 @@ internal class RuneLayoutFlush(
             stickyFrameCarryover.remove(node.id)
             rawFrame
           }
-          appliedFrames.put(node.id, appliedFrame)
-            val parentId = node.parentId
-            val parentType = parentId?.let { nodes.get(it)?.type }
+
+          val parentId = node.parentId
+          val parentType = parentId?.let { nodes.get(it)?.type }
           if (
             DEBUG_SCROLL_LAYOUT &&
             (node.type == SCROLL_VIEW_TYPE || parentType == SCROLL_VIEW_TYPE)
@@ -298,9 +303,10 @@ internal class RuneLayoutFlush(
           val width = (appliedFrame.right - appliedFrame.left).coerceAtLeast(0)
           val height = (appliedFrame.bottom - appliedFrame.top).coerceAtLeast(0)
 
+          // Update layout params if changed
           val layoutParams = when (val current = node.view.layoutParams) {
             is android.widget.FrameLayout.LayoutParams -> current
-            else -> android.widget.FrameLayout.LayoutParams(width.coerceAtLeast(0), height.coerceAtLeast(0))
+            else -> android.widget.FrameLayout.LayoutParams(width, height)
           }
 
           var paramsChanged = false
@@ -328,37 +334,41 @@ internal class RuneLayoutFlush(
             node.view.layoutParams = layoutParams
           }
 
-          // Ensure the measured dimensions stay in sync with Yoga so scroll containers pick up correct sizes.
-          val targetWidthSpec = MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY)
-          val targetHeightSpec = MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY)
-          if (
-            node.view.measuredWidth != width ||
-            node.view.measuredHeight != height
-          ) {
-            node.view.measure(targetWidthSpec, targetHeightSpec)
-          }
-        }
+          // Ensure measured dimensions stay in sync (batch with frame changes detection)
+          val cachedFrame = node.measuredFrame
+          val frameChanged = cachedFrame == null ||
+            cachedFrame.left != appliedFrame.left ||
+            cachedFrame.top != appliedFrame.top ||
+            cachedFrame.right != appliedFrame.right ||
+            cachedFrame.bottom != appliedFrame.bottom
 
-        for (i in 0 until nodes.size()) {
-          val node = nodes.valueAt(i)
-          if (isVirtualTextNode(node)) continue
-          val appliedFrame = appliedFrames.get(node.id) ?: engine.frame(node.id)
+          if (frameChanged) {
+            val targetWidthSpec = MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY)
+            val targetHeightSpec = MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY)
+            if (
+              node.view.measuredWidth != width ||
+              node.view.measuredHeight != height
+            ) {
+              node.view.measure(targetWidthSpec, targetHeightSpec)
+            }
+            // Cache the frame for future comparisons
+            node.measuredFrame = appliedFrame
+          }
+
+          // Apply layout with the final frame
           node.view.layout(appliedFrame.left, appliedFrame.top, appliedFrame.right, appliedFrame.bottom)
           if (node.type != TEXT_TYPE) {
-            node.label?.layout(0, 0, appliedFrame.right - appliedFrame.left, appliedFrame.bottom - appliedFrame.top)
+            node.label?.layout(0, 0, width, height)
           }
-        }
 
-        for (i in 0 until nodes.size()) {
-          val node = nodes.valueAt(i)
-          if (isVirtualTextNode(node)) continue
-          val appliedFrame = appliedFrames.get(node.id) ?: engine.frame(node.id)
-          val hasSize = (appliedFrame.right - appliedFrame.left) > 0 && (appliedFrame.bottom - appliedFrame.top) > 0
+          // Update visibility based on frame size (combined with frame application)
+          val hasSize = width > 0 && height > 0
           node.view.visibility = if (hasSize) View.VISIBLE else View.INVISIBLE
           if (hasSize) {
             node.label?.alpha = 1f
           }
         }
+
         stickyFrameCarryover.clear()
         stickyFrameCarryover.addAll(stickyFramesUsedThisFrame)
         if (stickyNodesForRelayout.isNotEmpty()) {

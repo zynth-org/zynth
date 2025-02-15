@@ -11,6 +11,12 @@ interface LayoutEngine {
   fun setStyle(id: Int, style: Style)
   fun calculateLayout(width: Int, height: Int)
   fun frame(id: Int): Rect
+  /**
+   * Get all node frames at once after layout calculation.
+   * This is more efficient than calling frame(id) repeatedly.
+   * Returns a map of nodeId -> Rect for all nodes in the layout tree.
+   */
+  fun getAllFrames(): Map<Int, Rect>
   fun setMeasureHandler(id: Int, handler: MeasureHandler?)
   /**
    * Mark the node as dirty so that Yoga will re-run its measure function.

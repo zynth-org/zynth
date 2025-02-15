@@ -72,9 +72,8 @@ class RuneUIManager(
 ) : JSBridge.UIShim, RuneButtonView.Listener, RunePressableView.Listener {
   private fun isNativeDebugEnabled(): Boolean {
     return try {
-      // val debugValue = System.getProperty("__NATIVE_DEBUG__")
-      // debugValue?.toBoolean() ?: false
-      true
+      val debugValue = System.getProperty("__NATIVE_DEBUG__")
+      debugValue?.toBoolean() ?: false
     } catch (e: Exception) {
       false
     }
@@ -99,6 +98,8 @@ class RuneUIManager(
     var pointerEvents: String = "auto",
     var textInputState: TextInputState? = null,
     var hasCompletedInitialMount: Boolean = false,
+    // Cache for frame dimensions to detect changes and support sticky frame reuse
+    var measuredFrame: Rect? = null,
   )
 
   data class SelectionSpec(var start: Int, var end: Int)
