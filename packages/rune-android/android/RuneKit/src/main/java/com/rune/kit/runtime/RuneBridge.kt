@@ -73,6 +73,13 @@ object RuneBridge {
       manager.flush()
       null
     }
+    val applyBatch: (Array<Any?>) -> Any? = { args ->
+      val raw = args.getOrNull(0)?.toString()
+      if (!raw.isNullOrBlank()) {
+        manager.applyBatch(raw)
+      }
+      null
+    }
 
     adapter.setGlobalObject(
       "__ui",
@@ -84,6 +91,7 @@ object RuneBridge {
         "removeChild" to removeChild,
         "setHandler" to setHandler,
         "flush" to flush,
+        "applyBatch" to applyBatch,
       ),
     )
   }

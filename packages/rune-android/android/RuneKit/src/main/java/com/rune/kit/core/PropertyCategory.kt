@@ -131,6 +131,8 @@ object PropertyCategoryMap {
     put("scrollSnapAlign", PropertyCategory.SCROLL_VIEW)
     put("scrollSnapStop", PropertyCategory.SCROLL_VIEW)
     put("scrollPadding", PropertyCategory.SCROLL_VIEW)
+  put("scrollGuardConfig", PropertyCategory.SCROLL_VIEW)
+  put("__recyclerState", PropertyCategory.SCROLL_VIEW)
     put("__scrollCommand", PropertyCategory.SCROLL_VIEW)
     
     // Button properties

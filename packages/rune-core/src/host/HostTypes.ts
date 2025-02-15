@@ -14,6 +14,18 @@ export interface HostNode {
   type: NodeType; // "marker" has no native nor yoga counterparts
 }
 
+export type HostBatchKind = "template" | "hydrate" | "update" | (string & {});
+
+export interface HostBatchMeta {
+  kind: HostBatchKind;
+  scope?: HostBatchKind;
+  target?: number;
+  templateId?: string;
+  itemKey?: string | number;
+  descriptor?: Record<string, any> | null;
+  extras?: Record<string, any> | null;
+}
+
 export type Style = {
   width?: number | `${number}%` | "auto";
   height?: number | `${number}%` | "auto";
@@ -133,4 +145,6 @@ export interface Host {
   getNextSibling(node: HostNode): HostNode | null;
   getText(node: HostNode): string;
   flush?(): void;
+  beginBatch?(meta: HostBatchMeta): void;
+  endBatch?(meta?: HostBatchMeta): void;
 }

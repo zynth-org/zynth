@@ -16,6 +16,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import com.rune.kit.layout.LayoutEngine
 import com.rune.kit.layout.Style
+import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import org.json.JSONTokener
@@ -335,6 +336,25 @@ internal class RunePropApplier(
       }
       "scrollPadding" -> {
         scrollView.setScrollPadding(parsed)
+      }
+      "scrollGuardConfig" -> {
+        val payload = when (parsed) {
+          is JSONObject -> parsed
+          is Map<*, *> -> JSONObject(parsed)
+          is String -> runCatching { JSONObject(parsed) }.getOrNull()
+          else -> jsonValue?.let { runCatching { JSONObject(it) }.getOrNull() }
+        }
+        scrollView.setScrollGuardConfig(payload)
+      }
+      "__recyclerState" -> {
+        val payload = when (parsed) {
+          is JSONObject -> parsed
+          is Map<*, *> -> JSONObject(parsed)
+          is String -> runCatching { JSONObject(parsed) }.getOrNull()
+          is JSONArray -> JSONObject().apply { put("items", parsed) }
+          else -> jsonValue?.let { runCatching { JSONObject(it) }.getOrNull() }
+        }
+        scrollView.setRecyclerState(payload)
       }
       "__scrollCommand" -> {
         val command = when (parsed) {

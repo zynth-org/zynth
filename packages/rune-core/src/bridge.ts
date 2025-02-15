@@ -8,6 +8,7 @@ export type RuneUIBridge = {
   removeChild(parent: number, child: number): void;
   setHandler(id: number, name: string, fn: Function): void;
   flush(): void;
+  applyBatch?(payload: string | Record<string, any>): void;
 };
 
 export type RuneModulesBridge = {

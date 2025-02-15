@@ -1,4 +1,4 @@
-import type { Host, HostNode, Style } from "./HostTypes";
+import type { Host, HostNode, HostBatchMeta, Style } from "./HostTypes";
 import type { RuneUIBridge } from "../bridge";
 
 export function createAndroidHost(): Host {
@@ -20,6 +20,26 @@ export function createAndroidHost(): Host {
 
   let flushScheduled = false;
   const operations: Array<() => void> = [];
+  type BatchOperation =
+    | { type: "setProp"; nodeId: number; name: string; value: any }
+    | { type: "setText"; nodeId: number; value: any };
+
+  type BatchContext = {
+    meta: HostBatchMeta;
+    operations: BatchOperation[];
+  };
+
+  const batchStack: BatchContext[] = [];
+
+  const currentBatch = (): BatchContext | undefined =>
+    batchStack[batchStack.length - 1];
+
+  const tryEnqueueBatch = (operation: BatchOperation): boolean => {
+    const batch = currentBatch();
+    if (!batch) return false;
+    batch.operations.push(operation);
+    return true;
+  };
 
   const runFlush = () => {
     flushScheduled = false;
@@ -89,7 +109,10 @@ export function createAndroidHost(): Host {
       ["blurOnSubmit", props.blurOnSubmit],
       ["submitBehavior", props.submitBehavior],
       ["eventThrottleMs", props.eventThrottleMs],
-      ["allowProgrammaticJumpDuringEdit", props.allowProgrammaticJumpDuringEdit],
+      [
+        "allowProgrammaticJumpDuringEdit",
+        props.allowProgrammaticJumpDuringEdit,
+      ],
     ];
 
     for (const [key, value] of measureProps) assign(key, value);
@@ -158,19 +181,29 @@ export function createAndroidHost(): Host {
       PARENTS.set(id, null);
       CHILDREN.set(id, []);
       TYPES.set(id, type);
-      if (props?.style) operations.push(() => ui.setProp(id, "style", props.style as Style));
+      if (props?.style)
+        operations.push(() => ui.setProp(id, "style", props.style as Style));
       if (typeof props?.onPress === "function") {
         operations.push(() => ui.setHandler(id, "onPress", props.onPress));
       }
       if (props?.accessibilityLabel)
-        operations.push(() => ui.setProp(id, "accessibilityLabel", props.accessibilityLabel));
+        operations.push(() =>
+          ui.setProp(id, "accessibilityLabel", props.accessibilityLabel)
+        );
       if (props?.accessibilityHint)
-        operations.push(() => ui.setProp(id, "accessibilityHint", props.accessibilityHint));
+        operations.push(() =>
+          ui.setProp(id, "accessibilityHint", props.accessibilityHint)
+        );
       if (props?.accessibilityRole)
-        operations.push(() => ui.setProp(id, "accessibilityRole", props.accessibilityRole));
+        operations.push(() =>
+          ui.setProp(id, "accessibilityRole", props.accessibilityRole)
+        );
       if (props?.pointerEvents)
-        operations.push(() => ui.setProp(id, "pointerEvents", props.pointerEvents));
-      if (props?.testID) operations.push(() => ui.setProp(id, "testID", props.testID));
+        operations.push(() =>
+          ui.setProp(id, "pointerEvents", props.pointerEvents)
+        );
+      if (props?.testID)
+        operations.push(() => ui.setProp(id, "testID", props.testID));
       if (type === "text-input" || type === "secure-text-input") {
         applyTextInputInitialProps(id, props);
       }
@@ -192,18 +225,45 @@ export function createAndroidHost(): Host {
         return;
       }
       if (name === "style") {
+        if (
+          tryEnqueueBatch({
+            type: "setProp",
+            nodeId: node.id,
+            name: "style",
+            value: value || {},
+          })
+        ) {
+          return;
+        }
         operations.push(() => ui.setProp(node.id, "style", value || {}));
-      } else if (name === "controller") {
+        schedule();
         return;
-      } else if (typeof value === "function") {
-        operations.push(() => ui.setHandler(node.id, name, value));
-      } else {
-        operations.push(() => ui.setProp(node.id, name, value));
       }
+      if (name === "controller") {
+        return;
+      }
+      if (typeof value === "function") {
+        operations.push(() => ui.setHandler(node.id, name, value));
+        schedule();
+        return;
+      }
+      if (tryEnqueueBatch({ type: "setProp", nodeId: node.id, name, value })) {
+        return;
+      }
+      operations.push(() => ui.setProp(node.id, name, value));
       schedule();
     },
     setText(node, value) {
       TEXTS.set(node.id, value ?? "");
+      if (
+        tryEnqueueBatch({
+          type: "setText",
+          nodeId: node.id,
+          value: value ?? "",
+        })
+      ) {
+        return;
+      }
       operations.push(() => ui.setText(node.id, value ?? ""));
       schedule();
     },
@@ -273,6 +333,68 @@ export function createAndroidHost(): Host {
         for (const op of pending) op();
       }
       ui.flush();
+    },
+    beginBatch(meta) {
+      const kind = meta?.kind ?? meta?.scope ?? "update";
+      const normalizedMeta: HostBatchMeta = {
+        kind,
+        scope: meta?.scope ?? kind,
+        target: meta?.target,
+        templateId: meta?.templateId,
+        itemKey: meta?.itemKey,
+        descriptor: meta?.descriptor ?? null,
+        extras: meta?.extras ?? null,
+      };
+      batchStack.push({ meta: normalizedMeta, operations: [] });
+    },
+    endBatch(meta) {
+      const context = batchStack.pop();
+      if (!context) return;
+      if (meta) {
+        context.meta = {
+          ...context.meta,
+          ...meta,
+          kind: meta.kind ?? context.meta.kind,
+          scope: meta.scope ?? context.meta.scope,
+        };
+      }
+      if (batchStack.length) {
+        batchStack[batchStack.length - 1].operations.push(
+          ...context.operations
+        );
+        return;
+      }
+      if (!context.operations.length) return;
+      const payload = {
+        meta: context.meta,
+        operations: context.operations.map((op) =>
+          op.type === "setProp"
+            ? {
+                type: "setProp" as const,
+                nodeId: op.nodeId,
+                name: op.name,
+                value: op.value,
+              }
+            : {
+                type: "setText" as const,
+                nodeId: op.nodeId,
+                value: op.value,
+              }
+        ),
+      };
+      if (typeof ui.applyBatch === "function") {
+        const serialized =
+          typeof payload === "string" ? payload : JSON.stringify(payload);
+        ui.applyBatch(serialized);
+        return;
+      }
+      for (const op of context.operations) {
+        if (op.type === "setProp") {
+          ui.setProp(op.nodeId, op.name, op.value);
+        } else {
+          ui.setText(op.nodeId, op.value);
+        }
+      }
     },
   };
 

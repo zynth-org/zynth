@@ -13,6 +13,7 @@ import type { Style } from "@rune/core";
 import {
   ScrollView,
   type ScrollViewProps,
+  type ScrollViewConfig,
   createScrollController,
   type ScrollMetrics,
   type MaintainVisibleContentPosition,
@@ -294,6 +295,8 @@ export type FlatListProps<T> = {
   ListEmptyComponent?: JSX.Element | Component;
   ItemSeparatorComponent?: Component<ItemSeparatorProps<T>>;
   scrollViewProps?: Partial<ScrollViewProps>;
+  /** Optional scroll guard overrides applied to the underlying `ScrollView`. */
+  scrollViewConfig?: ScrollViewConfig;
   itemSize?: number;
   estimatedItemSize?: number;
   windowSize?: number;
@@ -714,6 +717,7 @@ export type FlatListState = {
   viewport: () => number;
   firstVisibleIndex: () => number | null;
   visibleIndices: () => number[];
+  velocity: () => number;
   recordInteraction: () => void;
 };
 
@@ -735,6 +739,7 @@ export function createFlatListState(): FlatListState {
     null
   );
   const [visibleIndices, setVisibleIndices] = createSignal<number[]>([]);
+  const [velocity, setVelocity] = createSignal(0);
 
   let getItems: () => ItemEntry<any>[] = () => [];
   let getItemSize: () => number = () => 0;
@@ -753,9 +758,14 @@ export function createFlatListState(): FlatListState {
       orientation === "horizontal"
         ? metrics.viewportSize.width
         : metrics.viewportSize.height;
+    const axisVelocity =
+      orientation === "horizontal"
+        ? metrics.velocity?.x ?? 0
+        : metrics.velocity?.y ?? 0;
 
     setOffset(axisOffset);
     setViewport(viewportSize);
+    setVelocity(axisVelocity);
 
     const items = getItems();
     const itemSize = getItemSize();
@@ -790,6 +800,7 @@ export function createFlatListState(): FlatListState {
     viewport,
     firstVisibleIndex,
     visibleIndices,
+    velocity,
     recordInteraction: () => {
       recordInteractionImpl();
     },
@@ -820,6 +831,7 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
     "ListEmptyComponent",
     "ItemSeparatorComponent",
     "scrollViewProps",
+    "scrollViewConfig",
     "itemSize",
     "estimatedItemSize",
     "windowSize",
@@ -1840,76 +1852,78 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
 
   const processMetricsUpdate = (metrics: ScrollMetrics) => {
     const state = internalState();
-    state?.__updateFromMetrics(metrics);
-
+    const axis = orientation();
     const total = items().length;
 
+    const axisOffsetRaw =
+      axis === "horizontal" ? metrics.offset.x : metrics.offset.y;
+    const viewportRaw =
+      axis === "horizontal"
+        ? metrics.viewportSize.width
+        : metrics.viewportSize.height;
+    const contentLengthRaw =
+      axis === "horizontal"
+        ? metrics.contentSize.width
+        : metrics.contentSize.height;
+
+    const sanitizedOffset = Math.max(0, axisOffsetRaw);
+
     if (!virtualizationEnabled()) {
-      const axisForDisabled = orientation();
-      const disabledOffset =
-        axisForDisabled === "horizontal" ? metrics.offset.x : metrics.offset.y;
-      const contentLengthDisabled =
-        axisForDisabled === "horizontal"
-          ? metrics.contentSize.width
-          : metrics.contentSize.height;
-      setLastStableOffset(Math.max(0, disabledOffset));
-      lastStableScrollOffsetValue = Math.max(0, disabledOffset);
+      const adjustedMetrics: ScrollMetrics =
+        axis === "horizontal"
+          ? {
+              ...metrics,
+              offset: { ...metrics.offset, x: sanitizedOffset },
+            }
+          : {
+              ...metrics,
+              offset: { ...metrics.offset, y: sanitizedOffset },
+            };
+
+      state?.__updateFromMetrics(adjustedMetrics);
+
+      setLastStableOffset(sanitizedOffset);
+      lastStableScrollOffsetValue = sanitizedOffset;
       lastViewportSize =
-        axisForDisabled === "horizontal"
-          ? metrics.viewportSize.width
-          : metrics.viewportSize.height;
-      lastContentLength = contentLengthDisabled;
+        axis === "horizontal"
+          ? adjustedMetrics.viewportSize.width
+          : adjustedMetrics.viewportSize.height;
+      lastContentLength = contentLengthRaw;
       const end = total - 1;
       const prev = renderRange();
       if (prev.start !== 0 || prev.end !== end) {
         setRenderRange({ start: 0, end });
       }
       const viewportSize =
-        axisForDisabled === "horizontal"
-          ? metrics.viewportSize.width
-          : metrics.viewportSize.height;
+        axis === "horizontal"
+          ? adjustedMetrics.viewportSize.width
+          : adjustedMetrics.viewportSize.height;
       lastViewabilityMetrics = {
-        offset: Math.max(0, disabledOffset),
+        offset: sanitizedOffset,
         viewportSize: Math.max(0, viewportSize),
-        orientation: axisForDisabled,
+        orientation: axis,
         rangeStart: 0,
         rangeEnd: end,
       };
       requestViewabilityCheck();
       checkBoundaries(
-        Math.max(0, disabledOffset),
-        Math.max(
-          0,
-          axisForDisabled === "horizontal"
-            ? metrics.viewportSize.width
-            : metrics.viewportSize.height
-        ),
-        Math.max(0, contentLengthDisabled)
+        sanitizedOffset,
+        Math.max(0, viewportSize),
+        Math.max(0, contentLengthRaw)
       );
       internalFlatListController.__resolvePending();
+      metricsUpdateFrame = null;
       return;
     }
 
     const itemSize = virtualizationItemSize();
-    const axis = orientation();
-    const viewportRaw =
-      axis === "horizontal"
-        ? metrics.viewportSize.width
-        : metrics.viewportSize.height;
-    const axisOffset =
-      axis === "horizontal" ? metrics.offset.x : metrics.offset.y;
-    const contentLength =
-      axis === "horizontal"
-        ? metrics.contentSize.width
-        : metrics.contentSize.height;
+    const contentLength = contentLengthRaw;
 
-    // Filter out problematic offset values during fast scrolling
-    const currentOffset = Math.max(0, axisOffset);
+    const currentOffset = sanitizedOffset;
 
-    // Detect if we're getting inconsistent offset values
     let treatingAsGlitch = false;
     if (currentOffset === 0 && lastProcessedOffset > 0) {
-      consecutiveZeroOffsets++;
+      consecutiveZeroOffsets += 1;
       if (consecutiveZeroOffsets > 2 && isScrolling) {
         treatingAsGlitch = true;
       }
@@ -1919,11 +1933,11 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
       setLastStableOffset(currentOffset);
     }
 
-    // Use stable offset for calculations
     const stableOffset =
       treatingAsGlitch || consecutiveZeroOffsets > 0
         ? lastStableOffset()
         : currentOffset;
+
     const fallbackViewport =
       viewportRaw > 0
         ? viewportRaw
@@ -1932,6 +1946,36 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
         : itemSize * MIN_INITIAL_WINDOW_ITEMS;
 
     const viewportSize = Math.max(itemSize, fallbackViewport);
+
+    const adjustedMetrics: ScrollMetrics = (() => {
+      const needsOffsetPatch = treatingAsGlitch || consecutiveZeroOffsets > 0;
+      const needsViewportPatch = viewportRaw <= 0;
+      if (!needsOffsetPatch && !needsViewportPatch) {
+        return metrics;
+      }
+      if (axis === "horizontal") {
+        return {
+          ...metrics,
+          offset: needsOffsetPatch
+            ? { ...metrics.offset, x: stableOffset }
+            : metrics.offset,
+          viewportSize: needsViewportPatch
+            ? { ...metrics.viewportSize, width: viewportSize }
+            : metrics.viewportSize,
+        };
+      }
+      return {
+        ...metrics,
+        offset: needsOffsetPatch
+          ? { ...metrics.offset, y: stableOffset }
+          : metrics.offset,
+        viewportSize: needsViewportPatch
+          ? { ...metrics.viewportSize, height: viewportSize }
+          : metrics.viewportSize,
+      };
+    })();
+
+    state?.__updateFromMetrics(adjustedMetrics);
 
     lastStableScrollOffsetValue = stableOffset;
     lastViewportSize = viewportSize;
@@ -1946,6 +1990,7 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
       lastViewabilityMetrics = null;
       clearPendingViewability(getNow());
       pendingMVCP = null;
+      metricsUpdateFrame = null;
       return;
     }
 
@@ -2170,6 +2215,7 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
       style={local.style}
       contentContainerStyle={containerStyleSource()}
       controller={scrollController}
+      config={local.scrollViewConfig ?? scrollProps().config}
       maintainVisibleContentPosition={local.maintainVisibleContentPosition}
       testID={local.testID ?? scrollProps().testID}
     >

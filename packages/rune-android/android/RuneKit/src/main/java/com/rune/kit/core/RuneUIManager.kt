@@ -30,6 +30,7 @@ import com.rune.kit.runtime.JSBridge
 import org.json.JSONException
 import org.json.JSONObject
 import org.json.JSONTokener
+import org.json.JSONArray
 import java.util.HashMap
 import java.util.LinkedHashSet
 import java.util.ArrayDeque
@@ -170,6 +171,7 @@ class RuneUIManager(
     eventPayloads = eventPayloads,
     ensureTextInputState = ::ensureTextInputState,
   )
+  private val recyclerHost = RuneRecyclerHost()
   private val nodeFactory = RuneNodeFactory(
     root = root,
     nodes = nodes,
@@ -759,6 +761,70 @@ class RuneUIManager(
   internal fun onTextInputIntrinsicSizeChanged(nodeId: Int) {
     eventManager.onTextInputIntrinsicSizeChanged(nodeId)
     scheduleFlush()
+  }
+
+  fun applyBatch(batchJson: String?) = onMain {
+    if (batchJson.isNullOrBlank()) return@onMain
+    val payload = runCatching { JSONObject(batchJson) }.getOrNull() ?: return@onMain
+    val operations = payload.optJSONArray("operations") ?: return@onMain
+    recyclerHost.onBatch(payload.optJSONObject("meta"), operations)
+
+    var mutated = false
+    for (i in 0 until operations.length()) {
+      val op = operations.optJSONObject(i) ?: continue
+      when (op.optString("type")) {
+        "setProp" -> {
+          val nodeId = op.optInt("nodeId", -1)
+          if (nodeId < 0) continue
+          val name = op.optString("name")
+          if (name.isBlank()) continue
+          val value = op.opt("value")
+          val jsonValue = encodeBatchValue(value)
+          val category = PropertyCategoryMap.getCategory(name)
+          pendingNativeOperations.add(
+            NativeOperation.SetProp(
+              nodeId = nodeId,
+              name = name,
+              jsonValue = jsonValue,
+              parsedValue = if (value === JSONObject.NULL) null else value,
+              category = category,
+            ),
+          )
+          mutated = true
+        }
+        "setText" -> {
+          val nodeId = op.optInt("nodeId", -1)
+          if (nodeId < 0) continue
+          val value = op.opt("value")
+          val text = when (value) {
+            null, JSONObject.NULL -> ""
+            else -> value.toString()
+          }
+          pendingNativeOperations.add(NativeOperation.SetText(nodeId, text))
+          mutated = true
+        }
+      }
+    }
+
+    if (mutated) {
+      scheduleFlush()
+    }
+  }
+
+  private fun encodeBatchValue(value: Any?): String? {
+    when (value) {
+      null, JSONObject.NULL -> return null
+      is JSONObject -> return value.toString()
+      is JSONArray -> return value.toString()
+      is Number, is Boolean, is String -> {
+        val wrapped = JSONObject.wrap(value)
+        return wrapped?.toString() ?: value.toString()
+      }
+      else -> {
+        val wrapped = JSONObject.wrap(value)
+        return wrapped?.toString()
+      }
+    }
   }
 
   override fun setProp(nodeId: Int, name: String, jsonValue: String?) = onMain {

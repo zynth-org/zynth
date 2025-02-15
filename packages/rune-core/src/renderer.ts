@@ -6,7 +6,7 @@ import {
   mergeProps,
   untrack,
 } from "solid-js";
-import type { Host, HostNode } from "./host/HostTypes";
+import type { Host, HostNode, HostBatchMeta } from "./host/HostTypes";
 
 let host: Host | null = null;
 export const setHost = (h: Host) => (host = h);
@@ -439,6 +439,19 @@ export const render: (
   };
 };
 export const effect = r.effect;
+
+export function withHostBatch<T>(meta: HostBatchMeta, fn: () => T): T {
+  const h = host;
+  if (!h?.beginBatch || !h.endBatch) {
+    return fn();
+  }
+  h.beginBatch(meta);
+  try {
+    return fn();
+  } finally {
+    h.endBatch(meta);
+  }
+}
 
 // Expose renderer operations as functions (stable, hoisted bindings)
 export function createElement(t: any) {

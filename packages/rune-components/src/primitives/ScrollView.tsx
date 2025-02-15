@@ -154,6 +154,63 @@ type ScrollPadding =
       left?: number;
     };
 
+/**
+ * Optional tuning knobs for the native scroll guard that halts runaway user flings.
+ *
+ * All values are optional; unspecified fields fall back to the platform defaults. A typical
+ * use case is letting a `FlatList` or `ScrollView` allow longer inertial movement while still
+ * preventing blank seams when the JavaScript bridge stalls.
+ *
+ * ```ts
+ * const guard = ScrollView.config({
+ *   stopVelocityThreshold: 3600,
+ *   stopDistanceMultiplier: 3.25,
+ * });
+ * <FlatList scrollViewConfig={guard} />;
+ * ```
+ */
+export interface ScrollViewConfig {
+  /**
+   * Maximum fling velocity (in px per second) tolerated before the guard considers stopping the scroll.
+   * Raise the value to permit faster inertial runs; lower it to clamp sooner. Default: 7000.
+   */
+  stopVelocityThreshold?: number;
+  /**
+   * Multiplier applied to the current viewport length to derive the distance threshold. Larger values
+   * require the content to travel farther before the guard intervenes. Default: 6.
+   */
+  stopDistanceMultiplier?: number;
+  /**
+   * Absolute minimum distance (in px) the content must travel before the guard can stop the fling,
+   * regardless of viewport size. Default: 2500.
+   */
+  stopMinDistancePx?: number;
+  /**
+   * Cooldown window (in ms) after a guard-triggered stop before another stop will be issued. Default: 140.
+   */
+  stopCooldownMs?: number;
+  /**
+   * Time window (in ms) following the most recent user gesture during which a fling is still
+   * considered "manual" and eligible for stopping. Default: 900.
+   */
+  stopGestureWindowMs?: number;
+  /**
+   * Fallback viewport length (in px) used when the native view has not reported its size yet.
+   * Default: 960.
+   */
+  stopFallbackViewport?: number;
+  /**
+   * Fraction of the viewport that must be traversed before the guard updates its stable baseline.
+   * Keeps the thresholds responsive without thrashing. Range: 0–1. Default: 0.05.
+   */
+  stopRearmFraction?: number;
+  /**
+   * When true (default), the guard will only stop a fling once the distance threshold has been exceeded.
+   * Set to false to allow velocity alone to trigger an early stop.
+   */
+  stopRequiresDistance?: boolean;
+}
+
 export type MaintainVisibleContentPosition = {
   disabled?: boolean;
   startRenderingFromBottom?: boolean;
@@ -217,6 +274,8 @@ export type ScrollViewProps = {
   eventMinDisplacementPx?: number;
   bridgeCoalescing?: boolean;
   controller?: ScrollController;
+  /** Optional native scroll guard overrides produced by `ScrollView.config(...)`. */
+  config?: ScrollViewConfig;
   testID?: string;
 };
 
@@ -253,7 +312,7 @@ const makeMetricsFromEvent = (event: ScrollEvent): ScrollMetrics => ({
   zoomScale: event.zoomScale ?? 1,
 });
 
-export const ScrollView: ParentComponent<ScrollViewProps> = (props) => {
+const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
   const [local] = splitProps(props, [
     "horizontal",
     "scrollEnabled",
@@ -268,6 +327,7 @@ export const ScrollView: ParentComponent<ScrollViewProps> = (props) => {
     "eventThrottleMs",
     "eventMinDisplacementPx",
     "bridgeCoalescing",
+    "config",
     "scrollSnapType",
     "scrollSnapAlign",
     "scrollSnapStop",
@@ -324,7 +384,7 @@ export const ScrollView: ParentComponent<ScrollViewProps> = (props) => {
     () => local.eventMinDisplacementPx ?? 0
   );
   const resolvedBridgeCoalescing = createMemo(
-    () => local.bridgeCoalescing ?? true
+    () => local.bridgeCoalescing ?? false
   );
   const resolvedOverScrollBehavior = createMemo(() => {
     if (local.overScrollBehavior) return local.overScrollBehavior;
@@ -407,13 +467,10 @@ export const ScrollView: ParentComponent<ScrollViewProps> = (props) => {
     setProperty(node, "eventMinDisplacementPx", resolvedMinDisplacement());
     setProperty(node, "bridgeCoalescing", resolvedBridgeCoalescing());
     setProperty(node, "overScrollBehavior", resolvedOverScrollBehavior());
+    setProperty(node, "scrollGuardConfig", local.config ?? null);
 
     if (local.scrollSnapType !== undefined) {
-      setProperty(
-        node,
-        "scrollSnapType",
-        local.scrollSnapType ?? "none"
-      );
+      setProperty(node, "scrollSnapType", local.scrollSnapType ?? "none");
     }
     if (local.scrollSnapAlign !== undefined) {
       setProperty(node, "scrollSnapAlign", local.scrollSnapAlign ?? null);
@@ -469,3 +526,17 @@ export const ScrollView: ParentComponent<ScrollViewProps> = (props) => {
     </scroll-view>
   );
 };
+
+type ScrollViewComponent = ParentComponent<ScrollViewProps> & {
+  config: (config?: ScrollViewConfig) => ScrollViewConfig;
+};
+
+export const ScrollView = Object.assign(ScrollViewImpl, {
+  /**
+   * Creates a `ScrollViewConfig` object that can be reused across instances while preserving typing.
+   * Useful for sharing guard presets between `ScrollView` and `FlatList`.
+   */
+  config(config: ScrollViewConfig = {}) {
+    return { ...config };
+  },
+}) as ScrollViewComponent;

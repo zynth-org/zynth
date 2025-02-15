@@ -1,4 +1,4 @@
-import type { Host, HostNode, Style } from "./HostTypes";
+import type { Host, HostNode, HostBatchMeta, Style } from "./HostTypes";
 import type { RuneUIBridge } from "../bridge";
 import { ensureNativeEmitter } from "../nativeEmitter";
 
@@ -308,6 +308,12 @@ export function createIOSHost(): Host {
         for (const op of pending) op();
       }
       ui.flush();
+    },
+    beginBatch(_: HostBatchMeta) {
+      // Batching is currently a no-op on iOS; parity hook for renderer.
+    },
+    endBatch() {
+      // Batching is currently a no-op on iOS; parity hook for renderer.
     },
   };
 

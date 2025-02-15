@@ -18,6 +18,7 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -66,6 +67,35 @@ internal class RuneScrollView(
   private var snapPendingCheck = false
   private var snapPendingForce = false
 
+  private val defaultStopVelocityThreshold = 7000f
+  private val defaultStopDistanceMultiplier = 6f
+  private val defaultStopMinDistancePx = 2500f
+  private val defaultStopCooldownMs = 140L
+  private val defaultStopGestureWindowMs = 900L
+  private val defaultStopFallbackViewport = 960f
+  private val defaultStopRearmFraction = 0.05f
+  private val defaultStopRequiresDistance = true
+
+  private var stopVelocityThreshold = defaultStopVelocityThreshold
+  private var stopDistanceMultiplier = defaultStopDistanceMultiplier
+  private var stopMinDistancePx = defaultStopMinDistancePx
+  private var stopCooldownMs = defaultStopCooldownMs
+  private var stopGestureWindowMs = defaultStopGestureWindowMs
+  private var stopFallbackViewport = defaultStopFallbackViewport
+  private var stopRearmFraction = defaultStopRearmFraction
+  private var stopRequiresDistance = defaultStopRequiresDistance
+  private val programmaticScrollInstantGraceMs = 120L
+  private val programmaticScrollAnimatedGraceMs = 600L
+
+  private var lastKnownViewportWidth = 0
+  private var lastKnownViewportHeight = 0
+  private var lastStableOffsetX = 0
+  private var lastStableOffsetY = 0
+  private var lastStableTimestamp = 0L
+  private var lastGestureTimestamp = 0L
+  private var lastManualStopTimestamp = 0L
+  private var programmaticScrollGraceDeadline = 0L
+
   private var snapEnabled = false
   private var snapAxisMode: String = "both"
   private var snapStrictness: String = "none"
@@ -75,7 +105,15 @@ internal class RuneScrollView(
   private var snapPaddingEnd = 0
   private var snapPaddingTop = 0
   private var snapPaddingBottom = 0
+  private var recyclerState: JSONObject? = null
 
+  fun setRecyclerState(value: Any?) {
+    recyclerState = when (value) {
+      is JSONObject -> JSONObject(value.toString())
+      is String -> runCatching { JSONObject(value) }.getOrNull()
+      else -> null
+    }
+  }
   private val coalesceCallback = Choreographer.FrameCallback {
     coalesceScheduled = false
     coalescedPayload?.let { payload ->
@@ -351,12 +389,14 @@ internal class RuneScrollView(
   fun scrollTo(x: Int?, y: Int?, animated: Boolean) {
     val targetX = x ?: currentScrollX()
     val targetY = y ?: currentScrollY()
+    registerProgrammaticScroll(animated)
     host.scrollToPosition(targetX, targetY, animated)
   }
 
   fun scrollBy(dx: Int?, dy: Int?, animated: Boolean) {
     val targetX = currentScrollX() + (dx ?: 0)
     val targetY = currentScrollY() + (dy ?: 0)
+    registerProgrammaticScroll(animated)
     host.scrollToPosition(targetX, targetY, animated)
   }
 
@@ -450,6 +490,88 @@ internal class RuneScrollView(
     return payload
   }
 
+  private fun registerProgrammaticScroll(animated: Boolean) {
+    val now = SystemClock.uptimeMillis()
+    val grace = if (animated) programmaticScrollAnimatedGraceMs else programmaticScrollInstantGraceMs
+    programmaticScrollGraceDeadline = max(programmaticScrollGraceDeadline, now + grace)
+  }
+
+  private fun isProgrammaticScrollActive(now: Long = SystemClock.uptimeMillis()): Boolean {
+    if (programmaticScrollGraceDeadline <= 0L) return false
+    if (now > programmaticScrollGraceDeadline) return false
+    return true
+  }
+
+  private fun recordStableOffset(x: Int, y: Int, timestamp: Long = SystemClock.uptimeMillis()) {
+    lastStableOffsetX = x
+    lastStableOffsetY = y
+    lastStableTimestamp = timestamp
+  }
+
+  // Guard runaway user flings on the UI thread so blank seams do not appear when JS stalls.
+  private fun evaluateManualFlingGuard(x: Int, y: Int) {
+    val now = SystemClock.uptimeMillis()
+    if (isProgrammaticScrollActive(now)) {
+      return
+    }
+    if (isDragging) {
+      recordStableOffset(x, y, now)
+      return
+    }
+    if (!isDecelerating) {
+      return
+    }
+    if (now - lastGestureTimestamp > stopGestureWindowMs) {
+      return
+    }
+    if (now - lastManualStopTimestamp < stopCooldownMs) {
+      return
+    }
+
+    val velocity = when (axis) {
+      Axis.HORIZONTAL -> abs(lastVelocityX)
+      Axis.VERTICAL -> abs(lastVelocityY)
+    }
+
+    val viewportCandidate = when (axis) {
+      Axis.HORIZONTAL -> when {
+        host.view.width > 0 -> host.view.width
+        width > 0 -> width
+        lastKnownViewportWidth > 0 -> lastKnownViewportWidth
+        else -> 0
+      }
+      Axis.VERTICAL -> when {
+        host.view.height > 0 -> host.view.height
+        height > 0 -> height
+        lastKnownViewportHeight > 0 -> lastKnownViewportHeight
+        else -> 0
+      }
+    }
+    val viewport = if (viewportCandidate > 0) viewportCandidate.toFloat() else stopFallbackViewport
+
+    val distance = when (axis) {
+      Axis.HORIZONTAL -> abs(x - lastStableOffsetX)
+      Axis.VERTICAL -> abs(y - lastStableOffsetY)
+    }.toFloat()
+
+    val distanceThreshold = max(stopMinDistancePx, viewport * stopDistanceMultiplier)
+
+    val stopDueToDistance = distance >= distanceThreshold
+    val stopDueToVelocity = velocity >= stopVelocityThreshold
+    val allowVelocityOnly = !stopRequiresDistance
+
+    if (stopDueToDistance || (allowVelocityOnly && stopDueToVelocity)) {
+      host.stopScroll()
+      lastManualStopTimestamp = now
+      recordStableOffset(currentScrollX(), currentScrollY(), now)
+      return
+    }
+
+    if (distance >= viewport * stopRearmFraction) {
+      recordStableOffset(x, y, now)
+    }
+  }
+
   internal fun handleScrollChanged(x: Int, y: Int) {
     logState("handleScrollChanged(x=$x,y=$y)")
     val now = SystemClock.uptimeMillis()
@@ -459,6 +581,13 @@ internal class RuneScrollView(
     lastVelocityX = vx
     lastVelocityY = vy
     val payload = buildPayload(x, y)
+    if (host.view.width > 0) {
+      lastKnownViewportWidth = host.view.width
+    }
+    if (host.view.height > 0) {
+      lastKnownViewportHeight = host.view.height
+    }
+    evaluateManualFlingGuard(x, y)
     if (bridgeCoalescing) {
       coalescedPayload = payload
       if (!coalesceScheduled) {
@@ -470,11 +599,92 @@ internal class RuneScrollView(
     }
   }
 
+  fun setScrollGuardConfig(value: Any?) {
+    if (value == null || value == JSONObject.NULL) {
+      resetScrollGuardConfig()
+      return
+    }
+    val config = when (value) {
+      is JSONObject -> value
+      is Map<*, *> -> try {
+        JSONObject(value)
+      } catch (_: Exception) {
+        null
+      }
+      else -> null
+    } ?: run {
+      resetScrollGuardConfig()
+      return
+    }
+
+    resetScrollGuardConfig()
+
+    fun readDouble(vararg keys: String): Double? {
+      for (key in keys) {
+        if (!config.has(key) || config.isNull(key)) continue
+        val valueCandidate = config.optDouble(key, Double.NaN)
+        if (!valueCandidate.isNaN()) {
+          return valueCandidate
+        }
+      }
+      return null
+    }
+
+    fun readBoolean(vararg keys: String): Boolean? {
+      for (key in keys) {
+        if (!config.has(key) || config.isNull(key)) continue
+        if (config.has(key)) {
+          return config.optBoolean(key)
+        }
+      }
+      return null
+    }
+
+    readDouble("stopVelocityThreshold", "manualStopVelocityThreshold")?.let {
+      stopVelocityThreshold = it.toFloat().coerceAtLeast(0f)
+    }
+    readDouble("stopDistanceMultiplier", "manualStopDistanceMultiplier")?.let {
+      stopDistanceMultiplier = it.toFloat().coerceAtLeast(0f)
+    }
+    readDouble("stopMinDistancePx", "manualStopMinDistancePx")?.let {
+      stopMinDistancePx = it.toFloat().coerceAtLeast(0f)
+    }
+    readDouble("stopCooldownMs", "manualStopCooldownMs")?.let {
+      stopCooldownMs = it.roundToLong().coerceAtLeast(0L)
+    }
+    readDouble("stopGestureWindowMs", "manualStopGestureWindowMs")?.let {
+      stopGestureWindowMs = it.roundToLong().coerceAtLeast(0L)
+    }
+    readDouble("stopFallbackViewport", "manualStopFallbackViewport")?.let {
+      stopFallbackViewport = it.toFloat().coerceAtLeast(0f)
+    }
+    readDouble("stopRearmFraction", "manualStopRearmFraction")?.let {
+      stopRearmFraction = it.toFloat().coerceIn(0f, 1f)
+    }
+    readBoolean("stopRequiresDistance")?.let {
+      stopRequiresDistance = it
+    }
+  }
+
+  private fun resetScrollGuardConfig() {
+    stopVelocityThreshold = defaultStopVelocityThreshold
+    stopDistanceMultiplier = defaultStopDistanceMultiplier
+    stopMinDistancePx = defaultStopMinDistancePx
+    stopCooldownMs = defaultStopCooldownMs
+    stopGestureWindowMs = defaultStopGestureWindowMs
+    stopFallbackViewport = defaultStopFallbackViewport
+    stopRearmFraction = defaultStopRearmFraction
+    stopRequiresDistance = defaultStopRequiresDistance
+  }
+
   internal fun handleBeginDrag() {
     if (isDragging) return
     isDragging = true
     isDecelerating = false
     logState("handleBeginDrag")
+    val now = SystemClock.uptimeMillis()
+    lastGestureTimestamp = now
+    recordStableOffset(currentScrollX(), currentScrollY(), now)
     dispatchScrollEventInternal("onScrollBeginDrag", buildPayload(currentScrollX(), currentScrollY()), force = true)
   }
 
@@ -482,6 +692,7 @@ internal class RuneScrollView(
     if (!isDragging) return
     isDragging = false
     logState("handleEndDrag")
+    lastGestureTimestamp = SystemClock.uptimeMillis()
     dispatchScrollEventInternal("onScrollEndDrag", buildPayload(currentScrollX(), currentScrollY()), force = true)
     scheduleMomentumEndCheck()
     scheduleSnapCheck(force = snapStrictness == "mandatory")
@@ -491,6 +702,7 @@ internal class RuneScrollView(
     if (isDecelerating) return
     isDecelerating = true
     logState("handleMomentumBegin")
+    lastGestureTimestamp = SystemClock.uptimeMillis()
     dispatchScrollEventInternal("onMomentumScrollBegin", buildPayload(currentScrollX(), currentScrollY()), force = true)
   }
 
@@ -498,6 +710,7 @@ internal class RuneScrollView(
     if (!isDecelerating) return
     isDecelerating = false
     logState("handleMomentumEnd")
+    recordStableOffset(currentScrollX(), currentScrollY())
     dispatchScrollEventInternal("onMomentumScrollEnd", buildPayload(currentScrollX(), currentScrollY()), force = true)
     scheduleSnapCheck(force = true)
   }
@@ -612,6 +825,7 @@ internal class RuneScrollView(
       host.stopScroll()
     }
 
+    registerProgrammaticScroll(animated = true)
     val targetX = if (axis == Axis.HORIZONTAL) bestTarget else currentScrollX()
     val targetY = if (axis == Axis.VERTICAL) bestTarget else currentScrollY()
     host.scrollToPosition(targetX, targetY, animated = true)
