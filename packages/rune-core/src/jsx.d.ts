@@ -8,6 +8,7 @@ declare global {
       button: Record<string, any>;
       pressable: Record<string, any>;
       "scroll-view": Record<string, any>;
+      "virtual-list": Record<string, any>;
     }
   }
 }

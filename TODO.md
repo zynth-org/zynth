@@ -19,7 +19,8 @@ This document outlines the development plan to evolve Rune into a powerful, AI-n
 - [✅] **`ScrollView`:** Implement a scrolling container.
 - [✅] **`Button`:** Implement a basic, cross-platform button.
 - [✅] **`Pressable`:** Implement a component to detect detailed press interactions.
-- [ ] **`FlatList`:** Implement a performant, virtualized list component.
+- [✅/⚠️] **`FlatList`:** Implement a performant, virtualized list component, (Needs android performance optimizations).
+- [ ] **`VirtualList`:** Implement a performant, virtualized list component.
 
 ### 2. Layout & Style (`packages/rune-layout`, `packages/rune-apis`)
 

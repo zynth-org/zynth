@@ -195,6 +195,26 @@ std::string getThrowableMessage(JNIEnv *env, jthrowable throwable) {
 
 std::string toJsonString(facebook::jsi::Runtime &rt, const facebook::jsi::Value &value) {
   using namespace facebook::jsi;
+  
+  // If the value is already a string, check if it looks like JSON
+  // If it does, pass it through as-is to avoid double-encoding
+  if (value.isString()) {
+    std::string str = value.getString(rt).utf8(rt);
+    // Trim whitespace
+    size_t start = str.find_first_not_of(" \t\n\r");
+    size_t end = str.find_last_not_of(" \t\n\r");
+    if (start != std::string::npos && end != std::string::npos) {
+      std::string trimmed = str.substr(start, end - start + 1);
+      // If it looks like JSON (starts with { or [ and ends with } or ]), pass through
+      if ((trimmed.length() >= 2) &&
+          ((trimmed.front() == '{' && trimmed.back() == '}') ||
+           (trimmed.front() == '[' && trimmed.back() == ']'))) {
+        return trimmed;
+      }
+    }
+    // Otherwise, fall through to stringify it
+  }
+  
   auto global = rt.global();
   auto jsonObj = global.getPropertyAsObject(rt, "JSON");
   auto stringify = jsonObj.getPropertyAsFunction(rt, "stringify");

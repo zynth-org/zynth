@@ -52,6 +52,7 @@ internal class RuneNodeFactory(
     SECURE_TEXT_INPUT,
     IMAGE,
     SCROLL_VIEW,
+    VIRTUAL_LIST,
     BUTTON,
     PRESSABLE,
     OTHER;
@@ -63,6 +64,7 @@ internal class RuneNodeFactory(
         "secure-text-input" to SECURE_TEXT_INPUT,
         "image" to IMAGE,
         "scroll-view" to SCROLL_VIEW,
+        "virtual-list" to VIRTUAL_LIST,
         "button" to BUTTON,
         "pressable" to PRESSABLE,
       )
@@ -77,6 +79,7 @@ internal class RuneNodeFactory(
   private val TEXT_INPUT_TYPE = "text-input"
   private val SECURE_TEXT_INPUT_TYPE = "secure-text-input"
   private val SCROLL_VIEW_TYPE = "scroll-view"
+  private val VIRTUAL_LIST_TYPE = "virtual-list"
   private val BUTTON_TYPE = "button"
   private val PRESSABLE_TYPE = "pressable"
 
@@ -350,6 +353,16 @@ internal class RuneNodeFactory(
     }
   }
 
+  private object VirtualListCreator : ViewCreator {
+    override fun create(context: android.content.Context, id: Int): View {
+      return RuneVirtualListView(context)
+    }
+
+    override fun registerHandlers(factory: RuneNodeFactory, id: Int, view: View, node: RuneUIManager.Node) {
+      // no-op for now; hookup happens via prop applier
+    }
+  }
+
   private object ButtonCreator : ViewCreator {
     override fun create(context: android.content.Context, id: Int): View {
       return RuneButtonView(context).apply {
@@ -395,6 +408,7 @@ internal class RuneNodeFactory(
     NodeType.SECURE_TEXT_INPUT -> SecureTextInputCreator
     NodeType.IMAGE -> ImageCreator
     NodeType.SCROLL_VIEW -> ScrollViewCreator
+    NodeType.VIRTUAL_LIST -> VirtualListCreator
     NodeType.BUTTON -> ButtonCreator
     NodeType.PRESSABLE -> PressableCreator
     NodeType.OTHER -> OtherCreator
@@ -449,6 +463,13 @@ internal class RuneNodeFactory(
         view.isClickable = true
         view.isFocusable = true
         view.isFocusableInTouchMode = true
+      }
+      VIRTUAL_LIST_TYPE -> {
+        view.layoutParams = FrameLayout.LayoutParams(
+          ViewGroup.LayoutParams.MATCH_PARENT,
+          ViewGroup.LayoutParams.MATCH_PARENT,
+        )
+        view.isClickable = true
       }
       else -> {
         view.layoutParams = FrameLayout.LayoutParams(

@@ -1,6 +1,7 @@
 import { children as resolveChildren, splitProps } from "solid-js";
-import type { ParentComponent } from "solid-js";
+import type { JSX, ParentComponent } from "solid-js";
 import type { Style } from "@rune/core";
+import { getVirtualListRecorder } from "./virtual-list-recorder";
 
 export interface ViewProps {
   style?: Style;
@@ -30,6 +31,25 @@ export const View: ParentComponent<ViewProps> = (props) => {
   };
   const shouldEnablePress = resolvedPointer !== "none";
   const appliedPressHandlers = shouldEnablePress ? pressHandlers : {};
+
+  const templateRecorder = getVirtualListRecorder();
+  if (templateRecorder) {
+    const childrenValue = resolvedChildren();
+    const childArray = Array.isArray(childrenValue)
+      ? childrenValue
+      : [childrenValue];
+    return templateRecorder.createView({
+      key: props.key,
+      style: local.style,
+      testID: local.testID,
+      pointerEvents: local.pointerEvents,
+      accessibilityLabel: local.accessibilityLabel,
+      accessibilityHint: local.accessibilityHint,
+      accessibilityRole: local.accessibilityRole,
+      children: childArray,
+    }) as unknown as JSX.Element;
+  }
+
   return (
     <view
       style={local.style as any}

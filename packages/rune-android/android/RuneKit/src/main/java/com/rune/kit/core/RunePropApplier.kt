@@ -108,6 +108,12 @@ internal class RunePropApplier(
           return
         }
       }
+      PropertyCategory.VIRTUAL_LIST -> {
+        if (target.view is RuneVirtualListView) {
+          applyVirtualListProp(target, name, valueJson)
+          return
+        }
+      }
       PropertyCategory.IMAGE -> {
         if (target.type == IMAGE_TYPE && imageSupport.handleProp(target, name, valueJson)) {
           return
@@ -249,6 +255,19 @@ internal class RunePropApplier(
           }
         }
       }
+    }
+  }
+
+  private fun applyVirtualListProp(target: RuneUIManager.Node, name: String, jsonValue: String?) {
+    val view = target.view as? RuneVirtualListView ?: return
+    if (name == "__virtualListState") {
+      val payload = when {
+        jsonValue.isNullOrBlank() -> null
+        else -> runCatching { 
+          JSONObject(jsonValue) 
+        }.getOrNull()
+      }
+      view.applyVirtualListState(payload)
     }
   }
 

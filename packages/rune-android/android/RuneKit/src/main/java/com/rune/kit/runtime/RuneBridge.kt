@@ -106,7 +106,20 @@ private fun toJsonString(value: Any?): String {
     is Map<*, *> -> JSONObject(value).toString()
     is List<*> -> JSONArray(value).toString()
     is Array<*> -> JSONArray(value).toString()
-    is Number, is Boolean, is String -> JSONObject.wrap(value)?.toString() ?: value.toString()
+    is String -> {
+      // If the string looks like already-serialized JSON (starts with { or [),
+      // pass it through as-is. Otherwise, wrap it as a JSON string.
+      val trimmed = value.trim()
+      if ((trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+          (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+        // Already serialized JSON, pass through directly
+        trimmed
+      } else {
+        // Regular string, wrap it in JSON
+        JSONObject.wrap(value)?.toString() ?: value
+      }
+    }
+    is Number, is Boolean -> JSONObject.wrap(value)?.toString() ?: value.toString()
     else -> JSONObject.wrap(value)?.toString() ?: "{}"
   }
 }

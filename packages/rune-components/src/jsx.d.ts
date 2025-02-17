@@ -32,6 +32,7 @@ declare module "solid-js" {
       "text-input": TextInputProps & { [key: string]: any };
       "secure-text-input": TextInputProps & { [key: string]: any };
       "scroll-view": ViewElementProps & { [key: string]: any };
+      "virtual-list": ViewElementProps & { [key: string]: any };
       pressable: ViewElementProps & { [key: string]: any };
       button: SolidButtonProps & { testID?: string };
     }
