@@ -8,5 +8,6 @@ export * from "./primitives/Pressable";
 export * from "./primitives/FlatList";
 export * from "./primitives/VirtualList";
 export { createFlatListController } from "./primitives/FlatList";
+export { createVirtualListController } from "./primitives/VirtualList";
 export { createPressableController } from "./primitives/pressable/controller";
 export type { PressableController } from "./primitives/pressable/controller";

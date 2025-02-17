@@ -51,6 +51,96 @@ internal class RuneVirtualListView @JvmOverloads constructor(
     adapter.submitItems(parsed)
   }
 
+  fun applyHorizontal(horizontal: Boolean) {
+    val orientation = if (horizontal) {
+      LinearLayoutManager.HORIZONTAL
+    } else {
+      LinearLayoutManager.VERTICAL
+    }
+    (recyclerView.layoutManager as? LinearLayoutManager)?.orientation = orientation
+  }
+
+  fun applyContentContainerStyle(style: JSONObject?) {
+    if (style == null) {
+      recyclerView.setPadding(0)
+      recyclerView.background = null
+      return
+    }
+
+    // Apply padding
+    val density = context.resources.displayMetrics.density
+    val paddingAll = style.optInt("padding", 0)
+    val paddingH = style.optInt("paddingHorizontal", paddingAll)
+    val paddingV = style.optInt("paddingVertical", paddingAll)
+    val paddingLeft = (style.optInt("paddingLeft", paddingH) * density).roundToInt()
+    val paddingRight = (style.optInt("paddingRight", paddingH) * density).roundToInt()
+    val paddingTop = (style.optInt("paddingTop", paddingV) * density).roundToInt()
+    val paddingBottom = (style.optInt("paddingBottom", paddingV) * density).roundToInt()
+    recyclerView.setPadding(paddingLeft, paddingTop, paddingRight, paddingBottom)
+
+    // Apply background color
+    val bgColor = style.optString("backgroundColor", null)
+    if (bgColor != null) {
+      try {
+        recyclerView.setBackgroundColor(Color.parseColor(bgColor))
+      } catch (e: Exception) {
+        // Invalid color, ignore
+      }
+    }
+  }
+
+  fun executeCommand(command: JSONObject) {
+    val type = command.optString("type", null) ?: return
+    
+    when (type) {
+      "scrollToOffset" -> {
+        val offset = command.optInt("offset", 0)
+        val animated = command.optBoolean("animated", true)
+        if (animated) {
+          recyclerView.smoothScrollBy(0, offset)
+        } else {
+          recyclerView.scrollBy(0, offset)
+        }
+      }
+      "scrollToIndex" -> {
+        val index = command.optInt("index", 0)
+        val animated = command.optBoolean("animated", true)
+        val viewOffset = command.optInt("viewOffset", 0)
+        if (animated) {
+          recyclerView.smoothScrollToPosition(index)
+        } else {
+          (recyclerView.layoutManager as? LinearLayoutManager)?.scrollToPositionWithOffset(index, viewOffset)
+        }
+      }
+      "scrollToTop" -> {
+        val animated = command.optBoolean("animated", true)
+        if (animated) {
+          recyclerView.smoothScrollToPosition(0)
+        } else {
+          (recyclerView.layoutManager as? LinearLayoutManager)?.scrollToPositionWithOffset(0, 0)
+        }
+      }
+      "scrollToEnd" -> {
+        val animated = command.optBoolean("animated", true)
+        val lastIndex = adapter.itemCount - 1
+        if (lastIndex >= 0) {
+          if (animated) {
+            recyclerView.smoothScrollToPosition(lastIndex)
+          } else {
+            (recyclerView.layoutManager as? LinearLayoutManager)?.scrollToPositionWithOffset(lastIndex, 0)
+          }
+        }
+      }
+      "flashScrollIndicators" -> {
+        // Trigger scroll indicators by performing a tiny scroll
+        recyclerView.smoothScrollBy(0, 1)
+        recyclerView.postDelayed({
+          recyclerView.smoothScrollBy(0, -1)
+        }, 50)
+      }
+    }
+  }
+
   private fun parseItems(array: JSONArray?): List<VirtualItem> {
     if (array == null) return emptyList()
     val result = ArrayList<VirtualItem>(array.length())

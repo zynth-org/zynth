@@ -22,10 +22,36 @@ const DEFAULT_METRICS: VirtualListMetrics = {
   visibleEnd: 0,
 };
 
+export type VirtualListCommand =
+  | { type: "scrollToOffset"; offset: number; animated?: boolean }
+  | {
+      type: "scrollToIndex";
+      index: number;
+      viewOffset?: number;
+      viewPosition?: number;
+      animated?: boolean;
+    }
+  | { type: "scrollToTop"; animated?: boolean }
+  | { type: "scrollToEnd"; animated?: boolean }
+  | { type: "flashScrollIndicators" };
+
 export type VirtualListState = {
   metrics: () => VirtualListMetrics;
-  __setHost?: (node: HostNode | null) => void;
   __notifyMetrics?: (metrics: VirtualListMetrics) => void;
+};
+
+export type VirtualListController = {
+  scrollToOffset: (params: { offset: number; animated?: boolean }) => void;
+  scrollToIndex: (params: {
+    index: number;
+    viewOffset?: number;
+    viewPosition?: number;
+    animated?: boolean;
+  }) => void;
+  scrollToTop: (params?: { animated?: boolean }) => void;
+  scrollToEnd: (params?: { animated?: boolean }) => void;
+  flashScrollIndicators: () => void;
+  __setHost?: (node: HostNode | null) => void;
 };
 
 export function createVirtualListState(): VirtualListState {
@@ -34,9 +60,35 @@ export function createVirtualListState(): VirtualListState {
 
   return {
     metrics,
-    __setHost: undefined,
     __notifyMetrics(next) {
       setMetrics(next);
+    },
+  };
+}
+
+export function createVirtualListController(): VirtualListController {
+  let hostNode: HostNode | null = null;
+
+  const sendCommand = (command: VirtualListCommand) => {
+    if (!hostNode) {
+      console.warn("[VirtualList] Cannot send command: host not set");
+      return;
+    }
+    setProperty(hostNode, "__virtualListCommand", command);
+  };
+
+  return {
+    scrollToOffset: (params) =>
+      sendCommand({ type: "scrollToOffset", ...params }),
+    scrollToIndex: (params) =>
+      sendCommand({ type: "scrollToIndex", ...params }),
+    scrollToTop: (params = {}) =>
+      sendCommand({ type: "scrollToTop", ...params }),
+    scrollToEnd: (params = {}) =>
+      sendCommand({ type: "scrollToEnd", ...params }),
+    flashScrollIndicators: () => sendCommand({ type: "flashScrollIndicators" }),
+    __setHost: (node) => {
+      hostNode = node;
     },
   };
 }
@@ -51,7 +103,19 @@ export interface VirtualListProps<T> {
   renderItem: VirtualListRenderer<T>;
   keyExtractor?: (item: T, index: number) => string;
   state?: VirtualListState;
+  controller?: VirtualListController;
   style?: Style;
+  contentContainerStyle?: {
+    backgroundColor?: string;
+    padding?: number;
+    paddingHorizontal?: number;
+    paddingVertical?: number;
+    paddingTop?: number;
+    paddingBottom?: number;
+    paddingLeft?: number;
+    paddingRight?: number;
+  };
+  horizontal?: boolean;
   testID?: string;
 }
 
@@ -66,18 +130,24 @@ export function VirtualList<T>(allProps: VirtualListProps<T>) {
     "renderItem",
     "keyExtractor",
     "state",
+    "controller",
     "style",
+    "contentContainerStyle",
+    "horizontal",
     "testID",
   ]);
 
   const hostState = local.state;
+  const hostController = local.controller;
   const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
 
-  if (hostState) {
-    hostState.__setHost = (node) => {
-      setHostNode(node);
-    };
-  }
+  // Wire up controller to host node
+  createEffect(() => {
+    const node = hostNode();
+    if (hostController?.__setHost) {
+      hostController.__setHost(node);
+    }
+  });
 
   const keyExtractor =
     local.keyExtractor ??
@@ -126,6 +196,26 @@ export function VirtualList<T>(allProps: VirtualListProps<T>) {
     const node = hostNode();
     if (!node) return;
     setProperty(node, "__virtualListState", payload());
+  });
+
+  createEffect(() => {
+    const node = hostNode();
+    if (!node) return;
+    if (local.horizontal !== undefined) {
+      setProperty(node, "__virtualListHorizontal", local.horizontal);
+    }
+  });
+
+  createEffect(() => {
+    const node = hostNode();
+    if (!node) return;
+    if (local.contentContainerStyle) {
+      setProperty(
+        node,
+        "__virtualListContentContainerStyle",
+        local.contentContainerStyle
+      );
+    }
   });
 
   return (

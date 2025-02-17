@@ -167,6 +167,9 @@ object PropertyCategoryMap {
     
     // VirtualList properties
     put("__virtualListState", PropertyCategory.VIRTUAL_LIST)
+    put("__virtualListHorizontal", PropertyCategory.VIRTUAL_LIST)
+    put("__virtualListContentContainerStyle", PropertyCategory.VIRTUAL_LIST)
+    put("__virtualListCommand", PropertyCategory.VIRTUAL_LIST)
 
     // Image properties
     put("source", PropertyCategory.IMAGE)

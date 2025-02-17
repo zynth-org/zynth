@@ -260,14 +260,41 @@ internal class RunePropApplier(
 
   private fun applyVirtualListProp(target: RuneUIManager.Node, name: String, jsonValue: String?) {
     val view = target.view as? RuneVirtualListView ?: return
-    if (name == "__virtualListState") {
-      val payload = when {
-        jsonValue.isNullOrBlank() -> null
-        else -> runCatching { 
-          JSONObject(jsonValue) 
-        }.getOrNull()
+    
+    when (name) {
+      "__virtualListState" -> {
+        val payload = when {
+          jsonValue.isNullOrBlank() -> null
+          else -> runCatching { 
+            JSONObject(jsonValue) 
+          }.getOrNull()
+        }
+        view.applyVirtualListState(payload)
       }
-      view.applyVirtualListState(payload)
+      "__virtualListHorizontal" -> {
+        val horizontal = parseJsonValue(jsonValue) as? Boolean ?: false
+        view.applyHorizontal(horizontal)
+      }
+      "__virtualListContentContainerStyle" -> {
+        val style = when {
+          jsonValue.isNullOrBlank() -> null
+          else -> runCatching { 
+            JSONObject(jsonValue) 
+          }.getOrNull()
+        }
+        view.applyContentContainerStyle(style)
+      }
+      "__virtualListCommand" -> {
+        val command = when {
+          jsonValue.isNullOrBlank() -> null
+          else -> runCatching { 
+            JSONObject(jsonValue) 
+          }.getOrNull()
+        }
+        if (command != null) {
+          view.executeCommand(command)
+        }
+      }
     }
   }
 

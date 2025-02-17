@@ -226,10 +226,8 @@ export function MyList() {
 
 ## Limitations & Future Improvements
 
-- **No vertical/horizontal scrolling control**: Managed entirely by native RecyclerView
 - **Static serialization**: Changes to renderItem require data updates to propagate
 - **No header/footer support**: Can be added via wrapper View
-- **No scroll event callbacks**: Metrics available but not exposed to JS yet
 
 ## Summary
 
@@ -241,3 +239,138 @@ VirtualList achieves high performance through:
 4. **Bridge optimization** that handles JSON strings intelligently
 
 The architecture bridges Solid.js's reactive paradigm with native efficiency, providing a production-ready component for handling large datasets.
+
+---
+
+## Extended Features (Batch 1)
+
+### 1. Horizontal Scrolling
+
+**API:** `horizontal?: boolean` (default: `false`)
+
+**Behavior:**
+
+- When `true`, RecyclerView uses `LinearLayoutManager` with `HORIZONTAL` orientation
+- Items are laid out left-to-right instead of top-to-bottom
+- Scroll direction changes from vertical to horizontal
+
+**Implementation:**
+
+- **JavaScript**: Added `horizontal` prop to `VirtualListProps`
+- **Android**: `LinearLayoutManager` orientation set based on `horizontal` property
+- **Constraint**: Orientation cannot change after initial mount (v1)
+
+**Performance Considerations:**
+
+- Items **must provide explicit width** when horizontal to avoid layout thrashing
+- Vertical remains the default; no dynamic axis switching in v1
+- Bi-directional flings handled smoothly by RecyclerView
+
+**Acceptance Criteria:**
+✓ Smooth horizontal scrolling with momentum
+✓ No gaps during velocity changes mid-fling
+✓ Proper measurement and recycling in horizontal mode
+
+### 2. Content Container Styling
+
+**API:** `contentContainerStyle?: { backgroundColor?, padding?, paddingHorizontal?, paddingVertical?, paddingTop?, paddingBottom?, paddingLeft?, paddingRight? }`
+
+**Behavior:**
+
+- Applies padding as **RecyclerView content insets** (not outer view sizing)
+- Background color applied to the list container
+- Padding does not affect scroll physics or create layout shifts
+
+**Implementation:**
+
+- **JavaScript**: Accepts limited style bag focused on padding and background
+- **Android**: Applies padding via `RecyclerView.setPadding()` for content insets
+- **Separation**: Outer `style` prop controls list dimensions; `contentContainerStyle` controls content spacing
+
+**Why This Approach:**
+
+- Matches ScrollView ergonomics familiar to React Native developers
+- Avoids resizing the scroller or triggering adapter reflowing
+- Content insets don't interfere with scroll position calculations
+
+**Guardrails:**
+
+- Developers should **not** set padding on outer `style` prop (documented)
+- Only specific padding/background properties allowed in `contentContainerStyle`
+
+**Acceptance Criteria:**
+✓ Padding applied without affecting scroll physics
+✓ No "jump to start" when padding changes dynamically
+✓ Background color visible in padded areas
+
+### 3. Imperative Scroll Controller (v1)
+
+**API:** Exposed via `VirtualListState` returned from `createVirtualListState()`
+
+**Methods:**
+
+- `scrollToOffset({ offset: number, animated?: boolean })` - Scroll to exact pixel offset
+- `scrollToIndex({ index: number, viewOffset?: number, viewPosition?: number, animated?: boolean })` - Scroll to specific item
+- `scrollToTop({ animated?: boolean })` - Scroll to beginning
+- `scrollToEnd({ animated?: boolean })` - Scroll to end
+- `flashScrollIndicators()` - Briefly show scroll indicators
+
+**Implementation:**
+
+- **JavaScript**: Controller methods added to `VirtualListState` interface
+- **Bridge**: Commands sent via `__virtualListCommand` property with operation type
+- **Android**: Delegates to RecyclerView methods:
+  - `scrollToOffset` → `scrollBy()` or `smoothScrollBy()`
+  - `scrollToIndex` → `scrollToPositionWithOffset()` or `smoothScrollToPosition()`
+  - `scrollToTop/End` → computed index-based scroll
+  - `flashScrollIndicators` → `awakenScrollBars()`
+
+**Data Flow:**
+
+```
+JS: controller.scrollToIndex({ index: 50, animated: true })
+  ↓
+Bridge: { type: "scrollToIndex", index: 50, animated: true }
+  ↓
+Native: recyclerView.smoothScrollToPosition(50)
+  ↓
+Native: onScroll callback → __notifyMetrics(newMetrics)
+  ↓
+JS: state.metrics() reflects new position
+```
+
+**Guardrails:**
+
+- **Never mutate JS metrics** from imperative calls; let native scroll drive metrics back
+- Offset calculations use same math as native RecyclerView
+- Commands queued if sent during layout/scroll to avoid conflicts
+- All scroll commands are fire-and-forget; use metrics for position tracking
+
+**Acceptance Criteria:**
+✓ Imperatives work during idle and momentum states without flickering
+✓ Animated scrolls respect native easing and duration
+✓ Land precisely at target index/offset (or snap points when snapping added)
+✓ Metrics update asynchronously via native callbacks, not synchronously from JS
+✓ Multiple rapid imperatives don't cause jank or race conditions
+
+**Usage Example:**
+
+```tsx
+const state = createVirtualListState();
+
+// Later, imperatively scroll
+state.scrollToIndex({ index: 100, animated: true });
+state.scrollToTop({ animated: false });
+
+// Read metrics reactively
+createEffect(() => {
+  console.log("Current offset:", state.metrics().offset);
+});
+```
+
+**Design Philosophy:**
+
+- **Imperative commands** for user-triggered actions (buttons, gestures)
+- **Reactive metrics** for reading scroll position
+- Clear separation: commands go down (JS → Native), metrics come up (Native → JS)
+- No circular dependencies or synchronous position updates
