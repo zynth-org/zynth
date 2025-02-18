@@ -98,6 +98,13 @@ export type VirtualListRenderer<T> = (params: {
   index: number;
 }) => JSX.Element;
 
+export type VirtualListSeparatorRenderer<T> = (params: {
+  leadingItem?: T;
+  trailingItem?: T;
+  leadingIndex?: number;
+  trailingIndex?: number;
+}) => JSX.Element;
+
 export interface VirtualListProps<T> {
   data: T[];
   renderItem: VirtualListRenderer<T>;
@@ -116,6 +123,15 @@ export interface VirtualListProps<T> {
     paddingRight?: number;
   };
   horizontal?: boolean;
+
+  // Batch 2: Decorators
+  ListHeaderComponent?: () => JSX.Element;
+  ListHeaderComponentStyle?: Style;
+  ListFooterComponent?: () => JSX.Element;
+  ListFooterComponentStyle?: Style;
+  ListEmptyComponent?: () => JSX.Element;
+  ItemSeparatorComponent?: VirtualListSeparatorRenderer<T>;
+
   testID?: string;
 }
 
@@ -134,6 +150,12 @@ export function VirtualList<T>(allProps: VirtualListProps<T>) {
     "style",
     "contentContainerStyle",
     "horizontal",
+    "ListHeaderComponent",
+    "ListHeaderComponentStyle",
+    "ListFooterComponent",
+    "ListFooterComponentStyle",
+    "ListEmptyComponent",
+    "ItemSeparatorComponent",
     "testID",
   ]);
 
@@ -171,13 +193,78 @@ export function VirtualList<T>(allProps: VirtualListProps<T>) {
     });
   });
 
+  // Serialize decorators (header/footer/empty/separator)
+  const serializedDecorators = createMemo(() => {
+    const data = local.data ?? [];
+    const isEmpty = data.length === 0;
+
+    const decorators: {
+      header?: { tree: VirtualNode | null; style?: Style };
+      footer?: { tree: VirtualNode | null; style?: Style };
+      empty?: { tree: VirtualNode | null };
+      separator?: { tree: VirtualNode | null };
+    } = {};
+
+    // Header (always rendered if provided)
+    if (local.ListHeaderComponent) {
+      const recorder = createVirtualListRecorder();
+      const result = withVirtualListRecorder(recorder, () =>
+        local.ListHeaderComponent!()
+      );
+      decorators.header = {
+        tree: recorder.normalize(result),
+        style: local.ListHeaderComponentStyle,
+      };
+    }
+
+    // Footer (always rendered if provided)
+    if (local.ListFooterComponent) {
+      const recorder = createVirtualListRecorder();
+      const result = withVirtualListRecorder(recorder, () =>
+        local.ListFooterComponent!()
+      );
+      decorators.footer = {
+        tree: recorder.normalize(result),
+        style: local.ListFooterComponentStyle,
+      };
+    }
+
+    // Empty (only when data is empty)
+    if (isEmpty && local.ListEmptyComponent) {
+      const recorder = createVirtualListRecorder();
+      const result = withVirtualListRecorder(recorder, () =>
+        local.ListEmptyComponent!()
+      );
+      decorators.empty = {
+        tree: recorder.normalize(result),
+      };
+    }
+
+    // Separator (template for native to inject between items)
+    if (local.ItemSeparatorComponent && !isEmpty) {
+      const recorder = createVirtualListRecorder();
+      // Render separator with no items (native will inject between actual items)
+      const result = withVirtualListRecorder(recorder, () =>
+        local.ItemSeparatorComponent!({})
+      );
+      decorators.separator = {
+        tree: recorder.normalize(result),
+      };
+    }
+
+    return decorators;
+  });
+
   const payload = createMemo(() => {
     const items = serializedItems().map(({ key, tree }) => ({
       key,
       tree,
     }));
+    const decorators = serializedDecorators();
+
     return JSON.stringify({
       items,
+      decorators,
     });
   });
 

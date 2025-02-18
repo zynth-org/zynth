@@ -14,6 +14,7 @@ import android.widget.TextView
 import androidx.core.view.setPadding
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.ListUpdateCallback
 import androidx.recyclerview.widget.RecyclerView
 import org.json.JSONArray
 import org.json.JSONObject
@@ -47,8 +48,9 @@ internal class RuneVirtualListView @JvmOverloads constructor(
 
   fun applyVirtualListState(payload: JSONObject?) {
     val items = payload?.optJSONArray("items")
+    val decorators = payload?.optJSONObject("decorators")
     val parsed = parseItems(items)
-    adapter.submitItems(parsed)
+    adapter.submitData(parsed, decorators)
   }
 
   fun applyHorizontal(horizontal: Boolean) {
@@ -103,13 +105,18 @@ internal class RuneVirtualListView @JvmOverloads constructor(
         }
       }
       "scrollToIndex" -> {
-        val index = command.optInt("index", 0)
+        // Index refers to data items only, not decorators
+        val dataIndex = command.optInt("index", 0)
         val animated = command.optBoolean("animated", true)
         val viewOffset = command.optInt("viewOffset", 0)
+        
+        // Convert data index to adapter position
+        val adapterPosition = adapter.getAdapterPositionFromDataIndex(dataIndex)
+        
         if (animated) {
-          recyclerView.smoothScrollToPosition(index)
+          recyclerView.smoothScrollToPosition(adapterPosition)
         } else {
-          (recyclerView.layoutManager as? LinearLayoutManager)?.scrollToPositionWithOffset(index, viewOffset)
+          (recyclerView.layoutManager as? LinearLayoutManager)?.scrollToPositionWithOffset(adapterPosition, viewOffset)
         }
       }
       "scrollToTop" -> {
@@ -194,6 +201,15 @@ internal class RuneVirtualListView @JvmOverloads constructor(
     val key: String,
     val node: VirtualNode?,
   )
+  
+  private data class DecoratorSet(
+    val header: VirtualNode? = null,
+    val headerStyle: JSONObject? = null,
+    val footer: VirtualNode? = null,
+    val footerStyle: JSONObject? = null,
+    val empty: VirtualNode? = null,
+    val separator: VirtualNode? = null,
+  )
 
   private sealed class VirtualNode {
     data class ViewNode(
@@ -213,10 +229,49 @@ internal class RuneVirtualListView @JvmOverloads constructor(
     ) : VirtualNode()
   }
 
+  // View type constants for RecyclerView adapter
+  private companion object {
+    const val VIEW_TYPE_HEADER = 0
+    const val VIEW_TYPE_FOOTER = 1
+    const val VIEW_TYPE_EMPTY = 2
+    const val VIEW_TYPE_DATA = 3
+    const val VIEW_TYPE_SEPARATOR = 4
+  }
+
   private inner class RuneVirtualListAdapter :
     RecyclerView.Adapter<RuneVirtualListAdapter.VirtualViewHolder>() {
 
-    private val items = mutableListOf<VirtualItem>()
+    private val dataItems = mutableListOf<VirtualItem>()
+    private var decorators = DecoratorSet()
+
+    override fun getItemViewType(position: Int): Int {
+      // Empty state: header -> empty -> footer
+      if (dataItems.isEmpty() && decorators.empty != null) {
+        return when (position) {
+          0 -> if (decorators.header != null) VIEW_TYPE_HEADER else VIEW_TYPE_EMPTY
+          1 -> if (decorators.header != null) VIEW_TYPE_EMPTY else VIEW_TYPE_FOOTER
+          2 -> VIEW_TYPE_FOOTER
+          else -> VIEW_TYPE_EMPTY
+        }
+      }
+
+      // Normal mode with separators: header -> (data + separator)* -> footer
+      val hasHeader = decorators.header != null
+      val hasFooter = decorators.footer != null
+      val hasSeparator = decorators.separator != null
+
+      return when {
+        hasHeader && position == 0 -> VIEW_TYPE_HEADER
+        hasFooter && position == itemCount - 1 -> VIEW_TYPE_FOOTER
+        hasSeparator -> {
+          // With separators: positions alternate between data and separator
+          // Adjust for header
+          val adjustedPos = if (hasHeader) position - 1 else position
+          if (adjustedPos % 2 == 0) VIEW_TYPE_DATA else VIEW_TYPE_SEPARATOR
+        }
+        else -> VIEW_TYPE_DATA
+      }
+    }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VirtualViewHolder {
       val container = FrameLayout(parent.context).apply {
@@ -225,45 +280,192 @@ internal class RuneVirtualListView @JvmOverloads constructor(
           ViewGroup.LayoutParams.WRAP_CONTENT,
         )
       }
-      return VirtualViewHolder(container)
+      return VirtualViewHolder(container, viewType)
     }
 
     override fun onBindViewHolder(holder: VirtualViewHolder, position: Int) {
-      holder.bind(items[position])
+      when (holder.viewType) {
+        VIEW_TYPE_HEADER -> holder.bind(VirtualItem("__header", decorators.header), decorators.headerStyle)
+        VIEW_TYPE_FOOTER -> holder.bind(VirtualItem("__footer", decorators.footer), decorators.footerStyle)
+        VIEW_TYPE_EMPTY -> holder.bind(VirtualItem("__empty", decorators.empty), null)
+        VIEW_TYPE_SEPARATOR -> holder.bind(VirtualItem("__separator", decorators.separator), null)
+        VIEW_TYPE_DATA -> {
+          val dataIndex = getDataIndexFromPosition(position)
+          if (dataIndex in dataItems.indices) {
+            holder.bind(dataItems[dataIndex], null)
+          }
+        }
+      }
     }
 
-    override fun getItemCount(): Int = items.size
+    override fun getItemCount(): Int {
+      // Empty state: header? + empty + footer?
+      if (dataItems.isEmpty() && decorators.empty != null) {
+        var count = 1 // empty
+        if (decorators.header != null) count++
+        if (decorators.footer != null) count++
+        return count
+      }
 
-    fun submitItems(next: List<VirtualItem>) {
+      // Normal mode
+      val hasHeader = decorators.header != null
+      val hasFooter = decorators.footer != null
+      val hasSeparator = decorators.separator != null
+
+      var count = dataItems.size
+      if (hasSeparator && count > 0) {
+        // Add separators between items (n-1 separators for n items)
+        count += (dataItems.size - 1)
+      }
+      if (hasHeader) count++
+      if (hasFooter) count++
+      return count
+    }
+
+    private fun getDataIndexFromPosition(position: Int): Int {
+      val hasHeader = decorators.header != null
+      val hasSeparator = decorators.separator != null
+
+      var adjustedPos = position
+      if (hasHeader) adjustedPos--
+
+      return if (hasSeparator) {
+        // With separators, data items are at even positions
+        adjustedPos / 2
+      } else {
+        adjustedPos
+      }
+    }
+
+    fun getAdapterPositionFromDataIndex(dataIndex: Int): Int {
+      val hasHeader = decorators.header != null
+      val hasSeparator = decorators.separator != null
+
+      var position = dataIndex
+      if (hasSeparator) {
+        // With separators, each data item takes 2 positions (data + separator)
+        position *= 2
+      }
+      if (hasHeader) {
+        position++
+      }
+      return position
+    }
+
+    fun submitData(dataList: List<VirtualItem>, decoratorsJson: JSONObject?) {
+      // Parse decorators
+      val newDecorators = parseDecorators(decoratorsJson)
+      
+      // Calculate diff for data items only (maintains perfect measurement accuracy)
       val diff = DiffUtil.calculateDiff(
         object : DiffUtil.Callback() {
-          override fun getOldListSize(): Int = items.size
-          override fun getNewListSize(): Int = next.size
+          override fun getOldListSize(): Int = dataItems.size
+          override fun getNewListSize(): Int = dataList.size
 
           override fun areItemsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean {
-            return items[oldItemPosition].key == next[newItemPosition].key
+            return dataItems[oldItemPosition].key == dataList[newItemPosition].key
           }
 
           override fun areContentsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean {
-            val old = items[oldItemPosition].node
-            val new = next[newItemPosition].node
+            val old = dataItems[oldItemPosition].node
+            val new = dataList[newItemPosition].node
             return old == new
           }
         },
         false,
       )
-      items.clear()
-      items.addAll(next)
-      diff.dispatchUpdatesTo(this)
+      
+      val oldHasHeader = decorators.header != null
+      val oldHasFooter = decorators.footer != null
+      val oldHasSeparator = decorators.separator != null
+      val oldIsEmpty = dataItems.isEmpty() && decorators.empty != null
+      
+      val newHasHeader = newDecorators.header != null
+      val newHasFooter = newDecorators.footer != null
+      val newHasSeparator = newDecorators.separator != null
+      val newIsEmpty = dataList.isEmpty() && newDecorators.empty != null
+      
+      // Update state
+      dataItems.clear()
+      dataItems.addAll(dataList)
+      decorators = newDecorators
+      
+      // Notify changes carefully to avoid scroll jumps
+      if (oldIsEmpty != newIsEmpty || 
+          oldHasHeader != newHasHeader || 
+          oldHasFooter != newHasFooter ||
+          oldHasSeparator != newHasSeparator) {
+        // Structure changed significantly, full refresh
+        notifyDataSetChanged()
+      } else {
+        // Apply data diffs while preserving decorator positions
+        val headerOffset = if (newHasHeader) 1 else 0
+        val separatorMultiplier = if (newHasSeparator) 2 else 1
+        
+        diff.dispatchUpdatesTo(object : ListUpdateCallback {
+          override fun onInserted(position: Int, count: Int) {
+            val adapterPos = headerOffset + (position * separatorMultiplier)
+            notifyItemRangeInserted(adapterPos, count * separatorMultiplier)
+          }
+
+          override fun onRemoved(position: Int, count: Int) {
+            val adapterPos = headerOffset + (position * separatorMultiplier)
+            notifyItemRangeRemoved(adapterPos, count * separatorMultiplier)
+          }
+
+          override fun onMoved(fromPosition: Int, toPosition: Int) {
+            val fromPos = headerOffset + (fromPosition * separatorMultiplier)
+            val toPos = headerOffset + (toPosition * separatorMultiplier)
+            notifyItemMoved(fromPos, toPos)
+          }
+
+          override fun onChanged(position: Int, count: Int, payload: Any?) {
+            val adapterPos = headerOffset + (position * separatorMultiplier)
+            notifyItemRangeChanged(adapterPos, count * separatorMultiplier, payload)
+          }
+        })
+      }
     }
 
-    inner class VirtualViewHolder(private val container: FrameLayout) :
-      RecyclerView.ViewHolder(container) {
+    private fun parseDecorators(json: JSONObject?): DecoratorSet {
+      if (json == null) return DecoratorSet()
+      
+      val header = json.optJSONObject("header")?.let { obj ->
+        parseNode(obj.optJSONObject("tree"))
+      }
+      val headerStyle = json.optJSONObject("header")?.optJSONObject("style")
+      
+      val footer = json.optJSONObject("footer")?.let { obj ->
+        parseNode(obj.optJSONObject("tree"))
+      }
+      val footerStyle = json.optJSONObject("footer")?.optJSONObject("style")
+      
+      val empty = json.optJSONObject("empty")?.let { obj ->
+        parseNode(obj.optJSONObject("tree"))
+      }
+      
+      val separator = json.optJSONObject("separator")?.let { obj ->
+        parseNode(obj.optJSONObject("tree"))
+      }
+      
+      return DecoratorSet(header, headerStyle, footer, footerStyle, empty, separator)
+    }
 
-      fun bind(item: VirtualItem) {
+    inner class VirtualViewHolder(
+      private val container: FrameLayout,
+      val viewType: Int
+    ) : RecyclerView.ViewHolder(container) {
+
+      fun bind(item: VirtualItem, styleOverride: JSONObject? = null) {
         container.removeAllViews()
         val node = item.node ?: return
         val child = createView(container.context, node, container)
+        
+        // Apply style override for header/footer
+        if (styleOverride != null && child is ViewGroup) {
+          applyStyle(child, styleOverride)
+        }
+        
         container.addView(child)
       }
     }

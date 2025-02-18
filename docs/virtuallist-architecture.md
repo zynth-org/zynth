@@ -357,16 +357,272 @@ JS: state.metrics() reflects new position
 
 ```tsx
 const state = createVirtualListState();
+const controller = createVirtualListController();
 
 // Later, imperatively scroll
-state.scrollToIndex({ index: 100, animated: true });
-state.scrollToTop({ animated: false });
+controller.scrollToIndex({ index: 100, animated: true });
+controller.scrollToTop({ animated: false });
 
 // Read metrics reactively
 createEffect(() => {
   console.log("Current offset:", state.metrics().offset);
 });
 ```
+
+---
+
+## Batch 2: List Decorators (Header, Footer, Separator, Empty)
+
+Batch 2 introduces decorator components that enhance VirtualList without compromising performance or measurement accuracy. All decorators are implemented as **synthetic adapter rows** with special keys (`__header`, `__footer`, `__empty`, `__separator`), maintaining perfect isolation from data item indices and measurements.
+
+### Architectural Principles
+
+**1. Measurement Isolation**: Decorators have separate `VIEW_TYPE` constants in the RecyclerView adapter, ensuring they never interfere with data item recycling or measurement caching.
+
+**2. Index Stability**: Data item indices remain unchanged by decorators. The adapter translates between:
+
+- **Data Index**: Position in the original data array (0-based, excludes decorators)
+- **Adapter Position**: Position in RecyclerView (includes header/footer/separators)
+
+**3. Diff Precision**: DiffUtil calculations operate **only on data items**. Decorator changes trigger targeted `notifyItemInserted/Removed` calls without recalculating data diffs.
+
+**4. No Scroll Jumps**: Adding/removing decorators or changing their height does **not** trigger automatic scroll corrections (reserved for MVCP in Batch 4).
+
+### 1. List Header
+
+**API:** `ListHeaderComponent?: () => JSX.Element`, `ListHeaderComponentStyle?: Style`
+
+**Behavior:**
+
+- Rendered as the **first adapter position** if provided
+- Always visible, even when data is empty
+- Uses dedicated `VIEW_TYPE_HEADER` for recycling isolation
+- Optional style override via `ListHeaderComponentStyle`
+
+**Implementation:**
+
+```typescript
+// JavaScript serialization
+const serializedDecorators = createMemo(() => {
+  if (local.ListHeaderComponent) {
+    const recorder = createVirtualListRecorder();
+    const result = withVirtualListRecorder(recorder, () =>
+      local.ListHeaderComponent!()
+    );
+    decorators.header = {
+      tree: recorder.normalize(result),
+      style: local.ListHeaderComponentStyle,
+    };
+  }
+});
+```
+
+**Android Adapter Logic:**
+
+```kotlin
+override fun getItemViewType(position: Int): Int {
+  return when {
+    decorators.header != null && position == 0 -> VIEW_TYPE_HEADER
+    // ... other types
+  }
+}
+
+override fun onBindViewHolder(holder: ViewHolder, position: Int) {
+  when (holder.viewType) {
+    VIEW_TYPE_HEADER -> holder.bind(
+      VirtualItem("__header", decorators.header),
+      decorators.headerStyle
+    )
+  }
+}
+```
+
+**Acceptance Criteria:**
+✓ Header rendered at position 0
+✓ Header persists when toggling between empty/non-empty states
+✓ Header height changes don't cause scroll position shifts
+✓ Header recycling isolated from data items
+
+### 2. List Footer
+
+**API:** `ListFooterComponent?: () => JSX.Element`, `ListFooterComponentStyle?: Style`
+
+**Behavior:**
+
+- Rendered as the **last adapter position** if provided
+- Always visible, even when data is empty
+- Uses dedicated `VIEW_TYPE_FOOTER` for recycling isolation
+- Optional style override via `ListFooterComponentStyle`
+
+**Implementation:**
+
+Similar to header, but positioned at `itemCount - 1`:
+
+```kotlin
+override fun getItemViewType(position: Int): Int {
+  return when {
+    decorators.footer != null && position == itemCount - 1 -> VIEW_TYPE_FOOTER
+    // ... other types
+  }
+}
+```
+
+**Acceptance Criteria:**
+✓ Footer rendered at last position
+✓ Footer persists in empty states
+✓ Footer measurement independent of data items
+✓ Scroll-to-end commands work correctly (stop at footer, not beyond)
+
+### 3. List Empty State
+
+**API:** `ListEmptyComponent?: () => JSX.Element`
+
+**Behavior:**
+
+- Rendered **only when data array is empty** (`data.length === 0`)
+- Replaces data items but coexists with header/footer
+- Uses dedicated `VIEW_TYPE_EMPTY` for recycling
+- Layout: Header → Empty → Footer (when all present)
+
+**Implementation:**
+
+```typescript
+// Empty state detection
+const isEmpty = data.length === 0;
+if (isEmpty && local.ListEmptyComponent) {
+  decorators.empty = { tree: recorder.normalize(result) };
+}
+```
+
+**Android Adapter Logic:**
+
+```kotlin
+override fun getItemCount(): Int {
+  if (dataItems.isEmpty() && decorators.empty != null) {
+    var count = 1 // empty component
+    if (decorators.header != null) count++
+    if (decorators.footer != null) count++
+    return count
+  }
+  // ... normal mode count
+}
+```
+
+**Acceptance Criteria:**
+✓ Empty component shown when data.length === 0
+✓ Empty component hidden when data.length > 0
+✓ Transitions between empty/non-empty don't cause scroll jumps
+✓ Header/footer persist during empty state
+
+### 4. Item Separator
+
+**API:** `ItemSeparatorComponent?: (params: { leadingItem?: T, trailingItem?: T, leadingIndex?: number, trailingIndex?: number }) => JSX.Element`
+
+**Behavior:**
+
+- Rendered **between data items** (n-1 separators for n items)
+- Uses dedicated `VIEW_TYPE_SEPARATOR` for recycling
+- Not rendered in empty state
+- Separator template serialized once; native injects instances between items
+
+**Index Calculation:**
+
+With separators, adapter positions alternate:
+
+```
+Position:    0     1     2     3     4     5
+Item:     [Data0][Sep][Data1][Sep][Data2][Sep]
+```
+
+**Implementation:**
+
+```kotlin
+override fun getItemCount(): Int {
+  var count = dataItems.size
+  if (decorators.separator != null && count > 0) {
+    count += (dataItems.size - 1) // n-1 separators
+  }
+  return count
+}
+
+override fun getItemViewType(position: Int): Int {
+  val hasSeparator = decorators.separator != null
+  return if (hasSeparator && position % 2 == 1) {
+    VIEW_TYPE_SEPARATOR
+  } else {
+    VIEW_TYPE_DATA
+  }
+}
+```
+
+**Data Index Translation:**
+
+```kotlin
+fun getDataIndexFromPosition(position: Int): Int {
+  val hasHeader = decorators.header != null
+  val hasSeparator = decorators.separator != null
+
+  var adjustedPos = position
+  if (hasHeader) adjustedPos--
+
+  return if (hasSeparator) {
+    adjustedPos / 2 // Even positions are data items
+  } else {
+    adjustedPos
+  }
+}
+```
+
+**Acceptance Criteria:**
+✓ n-1 separators rendered for n items
+✓ Separators not counted in data indices
+✓ Adding/removing separators doesn't shift scroll position
+✓ Separators recycled independently from data items
+
+### Performance Guarantees
+
+All Batch 2 features maintain the 10/10 performance established in Batch 1:
+
+1. **Zero JS Re-renders on Scroll**: Decorators are serialized once and cached; scrolling never triggers React re-renders
+2. **Measurement Independence**: Decorator heights measured separately; data item measurement cache unaffected
+3. **Diff Efficiency**: DiffUtil operates only on data items; decorator changes use targeted `notifyItem*()` calls
+4. **Recycling Isolation**: Each decorator type has dedicated ViewHolder pools; no type confusion with data items
+5. **Index Precision**: All scroll commands (scrollToIndex, etc.) operate on **data indices only**, ignoring decorators
+
+### Migration Notes
+
+**From ScrollView + map():**
+
+```tsx
+// Before
+<ScrollView>
+  <HeaderComponent />
+  {items.map(item => <ItemView {...item} />)}
+  <FooterComponent />
+</ScrollView>
+
+// After
+<VirtualList
+  data={items}
+  renderItem={({ item }) => <ItemView {...item} />}
+  ListHeaderComponent={() => <HeaderComponent />}
+  ListFooterComponent={() => <FooterComponent />}
+/>
+```
+
+**Separator Usage:**
+
+```tsx
+<VirtualList
+  data={contacts}
+  renderItem={({ item }) => <ContactRow contact={item} />}
+  ItemSeparatorComponent={() => (
+    <View style={{ height: 1, backgroundColor: "#e0e0e0" }} />
+  )}
+/>
+```
+
+---
 
 **Design Philosophy:**
 
