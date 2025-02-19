@@ -16,6 +16,8 @@ import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.ListUpdateCallback
 import androidx.recyclerview.widget.RecyclerView
+import com.rune.kit.layout.LayoutEngine
+import com.rune.kit.layout.Style
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.roundToInt
@@ -23,6 +25,7 @@ import kotlin.math.roundToInt
 internal class RuneVirtualListView @JvmOverloads constructor(
   context: Context,
   attrs: AttributeSet? = null,
+  private val engine: LayoutEngine? = null,
 ) : FrameLayout(context, attrs) {
 
   private val recyclerView = RecyclerView(context).apply {
@@ -44,6 +47,17 @@ internal class RuneVirtualListView @JvmOverloads constructor(
     clipToPadding = false
     setBackgroundColor(Color.TRANSPARENT)
     addView(recyclerView)
+  }
+
+  private var layoutEngine: LayoutEngine? = null
+  private var nextYogaNodeId = 1000000 // Start with high ID to avoid conflicts
+
+  fun setLayoutEngine(engine: LayoutEngine) {
+    this.layoutEngine = engine
+  }
+
+  private fun getNextYogaNodeId(): Int {
+    return nextYogaNodeId++
   }
 
   fun applyVirtualListState(payload: JSONObject?) {
@@ -461,9 +475,9 @@ internal class RuneVirtualListView @JvmOverloads constructor(
         val node = item.node ?: return
         val child = createView(container.context, node, container)
         
-        // Apply style override for header/footer
+        // Apply style override for header/footer (use manual for JSONObject overrides)
         if (styleOverride != null && child is ViewGroup) {
-          applyStyle(child, styleOverride)
+          applyStyleManual(child, styleOverride)
         }
         
         container.addView(child)
@@ -472,6 +486,164 @@ internal class RuneVirtualListView @JvmOverloads constructor(
   }
 
   private fun createView(context: Context, node: VirtualNode, parent: ViewGroup): View {
+    val engine = layoutEngine
+    
+    // If no LayoutEngine available, fall back to manual layout
+    // TEMPORARY: Disable Yoga for VirtualList items due to performance concerns
+    // Will implement frame caching in future optimization
+    if (engine == null || true) {
+      return createViewManual(context, node, parent)
+    }
+    
+    // Create Yoga layout tree and calculate layout
+    val yogaNodeIds = mutableListOf<Int>()
+    val rootYogaId = getNextYogaNodeId()
+    val view = buildYogaTree(context, node, rootYogaId, engine, yogaNodeIds)
+    
+    // Get parent width for layout calculation
+    val parentWidth = when {
+      parent.width > 0 -> parent.width
+      parent.measuredWidth > 0 -> parent.measuredWidth
+      else -> {
+        // RecyclerView's width
+        val recyclerView = generateSequence(parent as View) { it.parent as? View }
+          .firstOrNull { it is RecyclerView }
+        recyclerView?.width?.takeIf { it > 0 } ?: 1080
+      }
+    }
+    
+    // Calculate layout with actual constraints
+    engine.calculateLayout(parentWidth, Int.MAX_VALUE)
+    
+    // Apply computed frames to views
+    applyYogaFrames(view, rootYogaId, engine)
+    
+    // Clean up Yoga nodes after applying frames
+    for (id in yogaNodeIds.reversed()) {
+      runCatching { engine.removeNode(id) }
+    }
+    
+    return view
+  }
+
+  private fun buildYogaTree(
+    context: Context,
+    node: VirtualNode,
+    yogaId: Int,
+    engine: LayoutEngine,
+    yogaNodeIds: MutableList<Int>
+  ): View {
+    engine.createNode(yogaId)
+    yogaNodeIds.add(yogaId)
+    
+    return when (node) {
+      is VirtualNode.ViewNode -> {
+        val layout = LinearLayout(context).apply {
+          orientation = LinearLayout.VERTICAL
+          clipChildren = false
+          clipToPadding = false
+          id = yogaId
+        }
+        
+        node.testId?.let { layout.tag = it }
+        node.accessibilityLabel?.let { layout.contentDescription = it }
+        
+        // Parse and apply style via Yoga
+        val style = node.styleJson?.let { 
+          runCatching { Style.fromJson(it) }.getOrNull() 
+        } ?: Style()
+        engine.setStyle(yogaId, style)
+        
+        // Build children
+        for ((index, child) in node.children.withIndex()) {
+          val childYogaId = getNextYogaNodeId()
+          val childView = buildYogaTree(context, child, childYogaId, engine, yogaNodeIds)
+          engine.insertChild(yogaId, childYogaId, index)
+          layout.addView(childView)
+        }
+        
+        // Apply visual styles (non-layout)
+        applyVisualStyle(layout, style)
+        
+        layout
+      }
+      is VirtualNode.TextNode -> {
+        val textView = TextView(context).apply {
+          text = node.text
+          id = yogaId
+        }
+        
+        node.numberOfLines?.let {
+          textView.maxLines = it
+          textView.ellipsize = TextUtils.TruncateAt.END
+        }
+        
+        val style = node.styleJson?.let { 
+          runCatching { Style.fromJson(it) }.getOrNull() 
+        } ?: Style()
+        engine.setStyle(yogaId, style)
+        
+        // Apply text-specific and visual styles
+        applyTextStyle(textView, style)
+        applyVisualStyle(textView, style)
+        
+        textView
+      }
+    }
+  }
+
+  private fun applyYogaFrames(view: View, yogaId: Int, engine: LayoutEngine, isRoot: Boolean = true) {
+    val frame = engine.frame(yogaId)
+    val width = frame.right - frame.left
+    val height = frame.bottom - frame.top
+    
+    // For the root view in RecyclerView, use MATCH_PARENT width but computed height
+    // For children, use exact Yoga dimensions
+    val parent = view.parent
+    val params = when {
+      isRoot && parent is FrameLayout -> {
+        // RecyclerView item container: match width, wrap height
+        FrameLayout.LayoutParams(
+          FrameLayout.LayoutParams.MATCH_PARENT,
+          if (height > 0) height else FrameLayout.LayoutParams.WRAP_CONTENT
+        )
+      }
+      parent is LinearLayout -> {
+        LinearLayout.LayoutParams(
+          if (width > 0) width else LinearLayout.LayoutParams.WRAP_CONTENT,
+          if (height > 0) height else LinearLayout.LayoutParams.WRAP_CONTENT
+        )
+      }
+      parent is FrameLayout -> {
+        FrameLayout.LayoutParams(
+          if (width > 0) width else FrameLayout.LayoutParams.WRAP_CONTENT,
+          if (height > 0) height else FrameLayout.LayoutParams.WRAP_CONTENT
+        )
+      }
+      else -> {
+        ViewGroup.LayoutParams(
+          if (width > 0) width else ViewGroup.LayoutParams.WRAP_CONTENT,
+          if (height > 0) height else ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+      }
+    }
+    
+    view.layoutParams = params
+    
+    // Recursively apply frames to children (not root anymore)
+    if (view is ViewGroup) {
+      for (i in 0 until view.childCount) {
+        val child = view.getChildAt(i)
+        val childYogaId = child.id
+        if (childYogaId > 0) {
+          applyYogaFrames(child, childYogaId, engine, isRoot = false)
+        }
+      }
+    }
+  }
+
+  // Fallback for when LayoutEngine is not available
+  private fun createViewManual(context: Context, node: VirtualNode, parent: ViewGroup): View {
     return when (node) {
       is VirtualNode.ViewNode -> {
         val layout = LinearLayout(context).apply {
@@ -482,12 +654,12 @@ internal class RuneVirtualListView @JvmOverloads constructor(
         node.testId?.let { layout.tag = it }
         node.accessibilityLabel?.let { layout.contentDescription = it }
         val style = node.styleJson?.let { runCatching { JSONObject(it) }.getOrNull() }
-        applyStyle(layout, style)
+        applyStyleManual(layout, style)
         for (child in node.children) {
-          val view = createView(context, child, layout)
+          val view = createViewManual(context, child, layout)
           layout.addView(view)
         }
-        applyLayoutParams(layout, style, parent)
+        applyLayoutParamsManual(layout, style, parent)
         layout
       }
       is VirtualNode.TextNode -> {
@@ -498,14 +670,63 @@ internal class RuneVirtualListView @JvmOverloads constructor(
           textView.ellipsize = TextUtils.TruncateAt.END
         }
         val style = node.styleJson?.let { runCatching { JSONObject(it) }.getOrNull() }
-        applyTextStyle(textView, style)
-        applyLayoutParams(textView, style, parent)
+        applyTextStyleManual(textView, style)
+        applyLayoutParamsManual(textView, style, parent)
         textView
       }
     }
   }
 
-  private fun applyLayoutParams(view: View, style: JSONObject?, parent: ViewGroup) {
+  private fun applyVisualStyle(view: View, style: Style) {
+    // Apply background color and border radius
+    style.backgroundColor?.let { color ->
+      if (style.borderRadius != null && style.borderRadius > 0) {
+        val drawable = GradientDrawable().apply {
+          setColor(color)
+          cornerRadius = dpToPxF(style.borderRadius.toDouble())
+        }
+        
+        // Apply border if specified
+        style.borderWidth?.let { width ->
+          style.borderColor?.let { borderColor ->
+            drawable.setStroke(dpToPx(width.toDouble()), borderColor)
+          }
+        }
+        
+        view.background = drawable
+      } else {
+        view.setBackgroundColor(color)
+      }
+    }
+
+    // Apply padding (Yoga calculates layout, but Android padding is visual)
+    val paddingLeft = (style.paddingLeft ?: style.paddingHorizontal ?: style.padding)?.let { dpToPx(it.toDouble()) } ?: 0
+    val paddingTop = (style.paddingTop ?: style.paddingVertical ?: style.padding)?.let { dpToPx(it.toDouble()) } ?: 0
+    val paddingRight = (style.paddingRight ?: style.paddingHorizontal ?: style.padding)?.let { dpToPx(it.toDouble()) } ?: 0
+    val paddingBottom = (style.paddingBottom ?: style.paddingVertical ?: style.padding)?.let { dpToPx(it.toDouble()) } ?: 0
+    
+    if (paddingLeft > 0 || paddingTop > 0 || paddingRight > 0 || paddingBottom > 0) {
+      view.setPadding(paddingLeft, paddingTop, paddingRight, paddingBottom)
+    }
+  }
+
+  private fun applyTextStyle(textView: TextView, style: Style) {
+    style.fontSize?.let {
+      textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, it)
+    }
+    
+    style.color?.let {
+      textView.setTextColor(it)
+    }
+    
+    style.fontWeight?.let { weight ->
+      textView.paint.isFakeBoldText = weight.equals("bold", ignoreCase = true) ||
+        weight.toIntOrNull()?.let { value -> value >= 600 } == true
+    }
+  }
+
+  // Manual fallback methods (keep old implementation for compatibility)
+  private fun applyLayoutParamsManual(view: View, style: JSONObject?, parent: ViewGroup) {
     val params = when (parent) {
       is LinearLayout -> LinearLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT,
@@ -538,7 +759,7 @@ internal class RuneVirtualListView @JvmOverloads constructor(
     view.layoutParams = params
   }
 
-  private fun applyStyle(view: View, style: JSONObject?) {
+  private fun applyStyleManual(view: View, style: JSONObject?) {
     if (style == null) return
     style.optString("backgroundColor", null)?.let { colorString ->
       parseColorSafely(colorString)?.let { color ->
@@ -580,9 +801,9 @@ internal class RuneVirtualListView @JvmOverloads constructor(
     }
   }
 
-  private fun applyTextStyle(textView: TextView, style: JSONObject?) {
+  private fun applyTextStyleManual(textView: TextView, style: JSONObject?) {
     if (style == null) return
-    applyStyle(textView, style)
+    applyStyleManual(textView, style)
 
     style.optDouble("fontSize", Double.NaN).let {
       if (!it.isNaN()) {

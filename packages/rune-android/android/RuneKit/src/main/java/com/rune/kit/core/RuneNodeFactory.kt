@@ -355,11 +355,12 @@ internal class RuneNodeFactory(
 
   private object VirtualListCreator : ViewCreator {
     override fun create(context: android.content.Context, id: Int): View {
-      return RuneVirtualListView(context)
+      return RuneVirtualListView(context, engine = null)
     }
 
     override fun registerHandlers(factory: RuneNodeFactory, id: Int, view: View, node: RuneUIManager.Node) {
-      // no-op for now; hookup happens via prop applier
+      // Pass LayoutEngine to VirtualList
+      (view as? RuneVirtualListView)?.setLayoutEngine(factory.engine)
     }
   }
 
