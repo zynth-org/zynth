@@ -246,6 +246,13 @@ private val yogaLayoutCache = object : LruCache<String, CachedLayout>(100) {
 - [ ] Support mixed Yoga + Manual items (opt-in per item)
 - [ ] Test with horizontal VirtualList
 - [ ] Test with separator/header/footer decorators
+- [ ] Surface feature flag + template versioning knobs for gradual rollout
+
+**Implementation notes (in progress):**
+
+- Added `templateVersion` and `layoutInvalidationKey` props on `VirtualList`, which feed through to Android and trigger a full cache reset whenever the value changes. This lets product teams bump a version or hash layout-affecting inputs explicitly instead of waiting for natural hash changes.
+- Decorators (header/footer/empty/separator) now participate in the same LRU cache with their own structure hashes, preventing them from thrashing the cache when data items change.
+- Robolectric unit tests cover hash stability and confirm that rendering the same structure twice results in zero extra Yoga passes once the cache is primed. Additional end-to-end scroll tests are still recommended on devices.
 
 ### Phase 4: Advanced (Future)
 

@@ -5,18 +5,22 @@ import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.text.TextUtils
 import android.util.AttributeSet
+import android.util.LruCache
+import android.util.Log
 import android.util.TypedValue
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.annotation.VisibleForTesting
 import androidx.core.view.setPadding
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.ListUpdateCallback
 import androidx.recyclerview.widget.RecyclerView
 import com.rune.kit.layout.LayoutEngine
+import com.rune.kit.layout.Rect
 import com.rune.kit.layout.Style
 import org.json.JSONArray
 import org.json.JSONObject
@@ -51,6 +55,23 @@ internal class RuneVirtualListView @JvmOverloads constructor(
 
   private var layoutEngine: LayoutEngine? = null
   private var nextYogaNodeId = 1000000 // Start with high ID to avoid conflicts
+  private val cacheStats = CacheStats()
+  private val structureHashByKey = mutableMapOf<String, String>()
+  private val structureUsageCounts = mutableMapOf<String, Int>()
+  private val decoratorHashes = mutableMapOf<String, String>()
+  private val styleCache = object : LruCache<String, Style>(STYLE_CACHE_SIZE) {}
+  private var currentTemplateVersion: String? = null
+  private var currentLayoutInvalidationKey: String? = null
+  private val yogaLayoutCache = object : LruCache<String, CachedLayout>(MAX_CACHE_NODE_COUNT) {
+    override fun sizeOf(key: String, value: CachedLayout): Int = value.nodeCount
+
+    override fun entryRemoved(evicted: Boolean, key: String, oldValue: CachedLayout, newValue: CachedLayout?) {
+      if (evicted) {
+        cacheStats.recordEviction()
+        maybeLogCacheStats("evicted:$key")
+      }
+    }
+  }
 
   fun setLayoutEngine(engine: LayoutEngine) {
     this.layoutEngine = engine
@@ -61,6 +82,22 @@ internal class RuneVirtualListView @JvmOverloads constructor(
   }
 
   fun applyVirtualListState(payload: JSONObject?) {
+    val templateVersion = payload?.opt("templateVersion")
+      ?.takeIf { it != JSONObject.NULL }
+      ?.toString()
+    if (templateVersion != currentTemplateVersion) {
+      currentTemplateVersion = templateVersion
+      invalidateAllCaches("template-version:${templateVersion ?: "cleared"}")
+    }
+
+    val layoutInvalidationKey = payload?.opt("layoutInvalidationKey")
+      ?.takeIf { it != JSONObject.NULL }
+      ?.toString()
+    if (layoutInvalidationKey != currentLayoutInvalidationKey) {
+      currentLayoutInvalidationKey = layoutInvalidationKey
+      invalidateAllCaches("layout-key:${layoutInvalidationKey ?: "cleared"}")
+    }
+
     val items = payload?.optJSONArray("items")
     val decorators = payload?.optJSONObject("decorators")
     val parsed = parseItems(items)
@@ -169,7 +206,7 @@ internal class RuneVirtualListView @JvmOverloads constructor(
       val obj = array.optJSONObject(i) ?: continue
       val key = obj.optString("key", "item-$i")
       val tree = parseNode(obj.optJSONObject("tree"))
-      result.add(VirtualItem(key, tree))
+      result.add(VirtualItem(key, tree, tree?.computeStructureHash()))
     }
     return result
   }
@@ -214,18 +251,23 @@ internal class RuneVirtualListView @JvmOverloads constructor(
   private data class VirtualItem(
     val key: String,
     val node: VirtualNode?,
+    val structureHash: String? = null,
   )
   
   private data class DecoratorSet(
     val header: VirtualNode? = null,
     val headerStyle: JSONObject? = null,
+    val headerHash: String? = null,
     val footer: VirtualNode? = null,
     val footerStyle: JSONObject? = null,
+    val footerHash: String? = null,
     val empty: VirtualNode? = null,
+    val emptyHash: String? = null,
     val separator: VirtualNode? = null,
+    val separatorHash: String? = null,
   )
 
-  private sealed class VirtualNode {
+  internal sealed class VirtualNode {
     data class ViewNode(
       val styleJson: String?,
       val pointerEvents: String?,
@@ -243,6 +285,158 @@ internal class RuneVirtualListView @JvmOverloads constructor(
     ) : VirtualNode()
   }
 
+  private data class CachedLayout(
+    val frames: Map<Int, Rect>,
+    val structure: ViewStructure,
+    val nodeCount: Int,
+  )
+
+  private data class BuildResult(
+    val view: View,
+    val structure: ViewStructure,
+  )
+
+  private sealed class ViewStructure(open val yogaNodeId: Int, open val style: Style?) {
+    data class Container(
+      override val yogaNodeId: Int,
+      val children: List<ViewStructure>,
+      override val style: Style?,
+    ) : ViewStructure(yogaNodeId, style)
+
+    data class Leaf(
+      override val yogaNodeId: Int,
+      override val style: Style?,
+    ) : ViewStructure(yogaNodeId, style)
+  }
+
+  private class CacheStats {
+    var hits: Int = 0
+      private set
+    var misses: Int = 0
+      private set
+    var evictions: Int = 0
+      private set
+    var manualInvalidations: Int = 0
+      private set
+    var samples: Int = 0
+      private set
+    var totalNodeCount: Int = 0
+      private set
+
+    fun recordHit() {
+      hits++
+    }
+
+    fun recordMiss() {
+      misses++
+    }
+
+    fun recordInsert(nodeCount: Int) {
+      samples++
+      totalNodeCount += nodeCount
+    }
+
+    fun recordEviction() {
+      evictions++
+    }
+
+    fun recordManualInvalidation() {
+      manualInvalidations++
+    }
+
+    fun averageNodeCount(): Int = if (samples == 0) 0 else totalNodeCount / samples
+  }
+
+  private fun maybeLogCacheStats(reason: String) {
+    if (!isDebugLoggingEnabled()) return
+    Log.d(
+      LOG_TAG,
+      "[VirtualListCache][$reason] hits=${cacheStats.hits} misses=${cacheStats.misses} " +
+        "evictions=${cacheStats.evictions} invalidations=${cacheStats.manualInvalidations} " +
+        "avgNodes=${cacheStats.averageNodeCount()} size=${yogaLayoutCache.size()} max=$MAX_CACHE_NODE_COUNT",
+    )
+  }
+
+  private fun getParsedStyle(styleJson: String?): Style? {
+    if (styleJson.isNullOrBlank()) return null
+    styleCache.get(styleJson)?.let { return it }
+    val parsed = runCatching { Style.fromJson(styleJson) }.getOrNull() ?: return null
+    styleCache.put(styleJson, parsed)
+    return parsed
+  }
+
+  private fun isYogaLayoutEnabled(): Boolean = yogaLayoutEnabled
+
+  private fun isDebugLoggingEnabled(): Boolean = debugLoggingEnabled
+
+  private fun incrementStructureUsage(hash: String) {
+    val next = (structureUsageCounts[hash] ?: 0) + 1
+    structureUsageCounts[hash] = next
+  }
+
+  private fun decrementStructureUsage(hash: String) {
+    val current = structureUsageCounts[hash] ?: return
+    if (current <= 1) {
+      structureUsageCounts.remove(hash)
+      yogaLayoutCache.remove(hash)
+      cacheStats.recordManualInvalidation()
+      maybeLogCacheStats("structure-invalidated:$hash")
+    } else {
+      structureUsageCounts[hash] = current - 1
+    }
+  }
+
+  private fun invalidateAllCaches(reason: String) {
+    structureUsageCounts.clear()
+    structureHashByKey.clear()
+    decoratorHashes.clear()
+    yogaLayoutCache.evictAll()
+    styleCache.evictAll()
+    cacheStats.recordManualInvalidation()
+    maybeLogCacheStats("full-reset:$reason")
+  }
+
+  private fun updateStructureUsage(newData: List<VirtualItem>) {
+    val previousHashes = HashMap(structureHashByKey)
+    val nextHashes = mutableMapOf<String, String>()
+
+    for (item in newData) {
+      val newHash = item.structureHash
+      val oldHash = previousHashes.remove(item.key)
+      if (oldHash != null && oldHash != newHash) {
+        decrementStructureUsage(oldHash)
+      }
+      if (newHash != null) {
+        if (oldHash == null || oldHash != newHash) {
+          incrementStructureUsage(newHash)
+        }
+        nextHashes[item.key] = newHash
+      }
+    }
+
+    for (remaining in previousHashes.values) {
+      decrementStructureUsage(remaining)
+    }
+
+    structureHashByKey.clear()
+    structureHashByKey.putAll(nextHashes)
+  }
+
+  private fun updateDecoratorUsage(key: String, newHash: String?) {
+    val oldHash = decoratorHashes[key]
+    if (oldHash != null && oldHash != newHash) {
+      decrementStructureUsage(oldHash)
+    }
+    if (newHash != null) {
+      if (oldHash == null || oldHash != newHash) {
+        incrementStructureUsage(newHash)
+      }
+      decoratorHashes[key] = newHash
+    } else {
+      decoratorHashes.remove(key)
+    }
+  }
+
   // View type constants for RecyclerView adapter
   private companion object {
     const val VIEW_TYPE_HEADER = 0
@@ -250,6 +444,23 @@ internal class RuneVirtualListView @JvmOverloads constructor(
     const val VIEW_TYPE_EMPTY = 2
     const val VIEW_TYPE_DATA = 3
     const val VIEW_TYPE_SEPARATOR = 4
+    const val MAX_CACHE_NODE_COUNT = 400
+    const val STYLE_CACHE_SIZE = 128
+    const val LOG_TAG = "RuneVirtualList"
+    @Volatile
+    private var yogaLayoutEnabled: Boolean = true
+    @Volatile
+    private var debugLoggingEnabled: Boolean = false
+
+    @JvmStatic
+    fun setYogaLayoutEnabled(enabled: Boolean) {
+      yogaLayoutEnabled = enabled
+    }
+
+    @JvmStatic
+    fun setVirtualListDebugLoggingEnabled(enabled: Boolean) {
+      debugLoggingEnabled = enabled
+    }
   }
 
   private inner class RuneVirtualListAdapter :
@@ -299,10 +510,22 @@ internal class RuneVirtualListView @JvmOverloads constructor(
 
     override fun onBindViewHolder(holder: VirtualViewHolder, position: Int) {
       when (holder.viewType) {
-        VIEW_TYPE_HEADER -> holder.bind(VirtualItem("__header", decorators.header), decorators.headerStyle)
-        VIEW_TYPE_FOOTER -> holder.bind(VirtualItem("__footer", decorators.footer), decorators.footerStyle)
-        VIEW_TYPE_EMPTY -> holder.bind(VirtualItem("__empty", decorators.empty), null)
-        VIEW_TYPE_SEPARATOR -> holder.bind(VirtualItem("__separator", decorators.separator), null)
+        VIEW_TYPE_HEADER -> holder.bind(
+          VirtualItem("__header", decorators.header, decorators.headerHash),
+          decorators.headerStyle,
+        )
+        VIEW_TYPE_FOOTER -> holder.bind(
+          VirtualItem("__footer", decorators.footer, decorators.footerHash),
+          decorators.footerStyle,
+        )
+        VIEW_TYPE_EMPTY -> holder.bind(
+          VirtualItem("__empty", decorators.empty, decorators.emptyHash),
+          null,
+        )
+        VIEW_TYPE_SEPARATOR -> holder.bind(
+          VirtualItem("__separator", decorators.separator, decorators.separatorHash),
+          null,
+        )
         VIEW_TYPE_DATA -> {
           val dataIndex = getDataIndexFromPosition(position)
           if (dataIndex in dataItems.indices) {
@@ -369,6 +592,8 @@ internal class RuneVirtualListView @JvmOverloads constructor(
     fun submitData(dataList: List<VirtualItem>, decoratorsJson: JSONObject?) {
       // Parse decorators
       val newDecorators = parseDecorators(decoratorsJson)
+
+      updateStructureUsage(dataList)
       
       // Calculate diff for data items only (maintains perfect measurement accuracy)
       val diff = DiffUtil.calculateDiff(
@@ -403,6 +628,11 @@ internal class RuneVirtualListView @JvmOverloads constructor(
       dataItems.clear()
       dataItems.addAll(dataList)
       decorators = newDecorators
+
+      updateDecoratorUsage("header", newDecorators.headerHash)
+      updateDecoratorUsage("footer", newDecorators.footerHash)
+      updateDecoratorUsage("empty", newDecorators.emptyHash)
+      updateDecoratorUsage("separator", newDecorators.separatorHash)
       
       // Notify changes carefully to avoid scroll jumps
       if (oldIsEmpty != newIsEmpty || 
@@ -448,21 +678,36 @@ internal class RuneVirtualListView @JvmOverloads constructor(
         parseNode(obj.optJSONObject("tree"))
       }
       val headerStyle = json.optJSONObject("header")?.optJSONObject("style")
+      val headerHash = header?.computeStructureHash()
       
       val footer = json.optJSONObject("footer")?.let { obj ->
         parseNode(obj.optJSONObject("tree"))
       }
       val footerStyle = json.optJSONObject("footer")?.optJSONObject("style")
+      val footerHash = footer?.computeStructureHash()
       
       val empty = json.optJSONObject("empty")?.let { obj ->
         parseNode(obj.optJSONObject("tree"))
       }
+      val emptyHash = empty?.computeStructureHash()
       
       val separator = json.optJSONObject("separator")?.let { obj ->
         parseNode(obj.optJSONObject("tree"))
       }
+      val separatorHash = separator?.computeStructureHash()
       
-      return DecoratorSet(header, headerStyle, footer, footerStyle, empty, separator)
+      return DecoratorSet(
+        header = header,
+        headerStyle = headerStyle,
+        headerHash = headerHash,
+        footer = footer,
+        footerStyle = footerStyle,
+        footerHash = footerHash,
+        empty = empty,
+        emptyHash = emptyHash,
+        separator = separator,
+        separatorHash = separatorHash,
+      )
     }
 
     inner class VirtualViewHolder(
@@ -473,7 +718,7 @@ internal class RuneVirtualListView @JvmOverloads constructor(
       fun bind(item: VirtualItem, styleOverride: JSONObject? = null) {
         container.removeAllViews()
         val node = item.node ?: return
-        val child = createView(container.context, node, container)
+        val child = createView(container.context, node, container, item.structureHash)
         
         // Apply style override for header/footer (use manual for JSONObject overrides)
         if (styleOverride != null && child is ViewGroup) {
@@ -485,45 +730,100 @@ internal class RuneVirtualListView @JvmOverloads constructor(
     }
   }
 
-  private fun createView(context: Context, node: VirtualNode, parent: ViewGroup): View {
+  private fun createView(
+    context: Context,
+    node: VirtualNode,
+    parent: ViewGroup,
+    structureHashOverride: String? = null,
+  ): View {
     val engine = layoutEngine
-    
-    // If no LayoutEngine available, fall back to manual layout
-    // TEMPORARY: Disable Yoga for VirtualList items due to performance concerns
-    // Will implement frame caching in future optimization
-    if (engine == null || true) {
+    if (engine == null || !isYogaLayoutEnabled()) {
       return createViewManual(context, node, parent)
     }
-    
-    // Create Yoga layout tree and calculate layout
+
+    val structureHash = structureHashOverride ?: node.computeStructureHash()
+    val cachedLayout = structureHash?.let { yogaLayoutCache.get(it) }
+    if (cachedLayout != null && cachedLayout.frames.isNotEmpty()) {
+      cacheStats.recordHit()
+      maybeLogCacheStats("hit:$structureHash")
+      val cachedView = buildCachedViewTree(context, node)
+      applyFramesFromStructure(
+        cachedView,
+        cachedLayout.structure,
+        cachedLayout.frames,
+        parent,
+        isRoot = true,
+      )
+      return cachedView
+    } else if (structureHash != null) {
+      cacheStats.recordMiss()
+      maybeLogCacheStats("miss:$structureHash")
+    }
+
     val yogaNodeIds = mutableListOf<Int>()
     val rootYogaId = getNextYogaNodeId()
-    val view = buildYogaTree(context, node, rootYogaId, engine, yogaNodeIds)
-    
-    // Get parent width for layout calculation
+    val (view, structure) = buildYogaTree(context, node, rootYogaId, engine, yogaNodeIds)
+
     val parentWidth = when {
       parent.width > 0 -> parent.width
       parent.measuredWidth > 0 -> parent.measuredWidth
       else -> {
-        // RecyclerView's width
         val recyclerView = generateSequence(parent as View) { it.parent as? View }
           .firstOrNull { it is RecyclerView }
         recyclerView?.width?.takeIf { it > 0 } ?: 1080
       }
     }
-    
-    // Calculate layout with actual constraints
-    engine.calculateLayout(parentWidth, Int.MAX_VALUE)
-    
-    // Apply computed frames to views
-    applyYogaFrames(view, rootYogaId, engine)
-    
-    // Clean up Yoga nodes after applying frames
-    for (id in yogaNodeIds.reversed()) {
-      runCatching { engine.removeNode(id) }
+
+    val frames = try {
+      engine.calculateLayout(parentWidth, Int.MAX_VALUE)
+      val computedFrames = captureFrames(engine, yogaNodeIds)
+      applyFramesFromStructure(view, structure, computedFrames, parent, isRoot = true)
+      computedFrames
+    } finally {
+      cleanupYogaNodes(engine, yogaNodeIds)
     }
-    
+
+    if (!structureHash.isNullOrEmpty() && frames.isNotEmpty()) {
+      val nodeCount = structure.countNodes()
+      yogaLayoutCache.put(structureHash, CachedLayout(frames, structure, nodeCount))
+      cacheStats.recordInsert(nodeCount)
+      maybeLogCacheStats("store:$structureHash")
+    }
+
     return view
+  }
+
+  private fun buildCachedViewTree(context: Context, node: VirtualNode): View {
+    return when (node) {
+      is VirtualNode.ViewNode -> {
+        val layout = FrameLayout(context).apply {
+          clipChildren = false
+          clipToPadding = false
+        }
+        node.testId?.let { layout.tag = it }
+        node.accessibilityLabel?.let { layout.contentDescription = it }
+        val style = getParsedStyle(node.styleJson) ?: Style()
+        applyVisualStyle(layout, style)
+        for (child in node.children) {
+          val childView = buildCachedViewTree(context, child)
+          layout.addView(childView)
+        }
+        layout
+      }
+      is VirtualNode.TextNode -> {
+        val textView = TextView(context).apply {
+          text = node.text
+        }
+        node.numberOfLines?.let {
+          textView.maxLines = it
+          textView.ellipsize = TextUtils.TruncateAt.END
+        }
+        val style = getParsedStyle(node.styleJson) ?: Style()
+        applyTextStyle(textView, style)
+        applyVisualStyle(textView, style)
+        textView
+      }
+    }
   }
 
   private fun buildYogaTree(
@@ -532,14 +832,13 @@ internal class RuneVirtualListView @JvmOverloads constructor(
     yogaId: Int,
     engine: LayoutEngine,
     yogaNodeIds: MutableList<Int>
-  ): View {
+  ): BuildResult {
     engine.createNode(yogaId)
     yogaNodeIds.add(yogaId)
     
     return when (node) {
       is VirtualNode.ViewNode -> {
-        val layout = LinearLayout(context).apply {
-          orientation = LinearLayout.VERTICAL
+        val layout = FrameLayout(context).apply {
           clipChildren = false
           clipToPadding = false
           id = yogaId
@@ -549,23 +848,22 @@ internal class RuneVirtualListView @JvmOverloads constructor(
         node.accessibilityLabel?.let { layout.contentDescription = it }
         
         // Parse and apply style via Yoga
-        val style = node.styleJson?.let { 
-          runCatching { Style.fromJson(it) }.getOrNull() 
-        } ?: Style()
+        val style = getParsedStyle(node.styleJson) ?: Style()
         engine.setStyle(yogaId, style)
         
-        // Build children
+        val childStructures = mutableListOf<ViewStructure>()
         for ((index, child) in node.children.withIndex()) {
           val childYogaId = getNextYogaNodeId()
-          val childView = buildYogaTree(context, child, childYogaId, engine, yogaNodeIds)
+          val childResult = buildYogaTree(context, child, childYogaId, engine, yogaNodeIds)
           engine.insertChild(yogaId, childYogaId, index)
-          layout.addView(childView)
+          layout.addView(childResult.view)
+          childStructures.add(childResult.structure)
         }
         
         // Apply visual styles (non-layout)
         applyVisualStyle(layout, style)
         
-        layout
+        BuildResult(layout, ViewStructure.Container(yogaId, childStructures.toList(), style))
       }
       is VirtualNode.TextNode -> {
         val textView = TextView(context).apply {
@@ -578,68 +876,196 @@ internal class RuneVirtualListView @JvmOverloads constructor(
           textView.ellipsize = TextUtils.TruncateAt.END
         }
         
-        val style = node.styleJson?.let { 
-          runCatching { Style.fromJson(it) }.getOrNull() 
-        } ?: Style()
+        val style = getParsedStyle(node.styleJson) ?: Style()
         engine.setStyle(yogaId, style)
         
         // Apply text-specific and visual styles
         applyTextStyle(textView, style)
         applyVisualStyle(textView, style)
         
-        textView
+        BuildResult(textView, ViewStructure.Leaf(yogaId, style))
       }
     }
   }
 
-  private fun applyYogaFrames(view: View, yogaId: Int, engine: LayoutEngine, isRoot: Boolean = true) {
-    val frame = engine.frame(yogaId)
+  private fun applyFramesFromStructure(
+    view: View,
+    structure: ViewStructure,
+    frames: Map<Int, Rect>,
+    parent: ViewGroup?,
+    isRoot: Boolean,
+  ) {
+    val frame = frames[structure.yogaNodeId] ?: return
     val width = frame.right - frame.left
     val height = frame.bottom - frame.top
-    
-    // For the root view in RecyclerView, use MATCH_PARENT width but computed height
-    // For children, use exact Yoga dimensions
-    val parent = view.parent
-    val params = when {
-      isRoot && parent is FrameLayout -> {
-        // RecyclerView item container: match width, wrap height
-        FrameLayout.LayoutParams(
-          FrameLayout.LayoutParams.MATCH_PARENT,
-          if (height > 0) height else FrameLayout.LayoutParams.WRAP_CONTENT
-        )
-      }
-      parent is LinearLayout -> {
-        LinearLayout.LayoutParams(
-          if (width > 0) width else LinearLayout.LayoutParams.WRAP_CONTENT,
-          if (height > 0) height else LinearLayout.LayoutParams.WRAP_CONTENT
-        )
-      }
-      parent is FrameLayout -> {
-        FrameLayout.LayoutParams(
-          if (width > 0) width else FrameLayout.LayoutParams.WRAP_CONTENT,
-          if (height > 0) height else FrameLayout.LayoutParams.WRAP_CONTENT
-        )
-      }
-      else -> {
-        ViewGroup.LayoutParams(
-          if (width > 0) width else ViewGroup.LayoutParams.WRAP_CONTENT,
-          if (height > 0) height else ViewGroup.LayoutParams.WRAP_CONTENT
-        )
-      }
+
+    val params = when (parent) {
+      is FrameLayout -> FrameLayout.LayoutParams(
+        if (width > 0) width else FrameLayout.LayoutParams.WRAP_CONTENT,
+        if (height > 0) height else FrameLayout.LayoutParams.WRAP_CONTENT,
+      )
+      is LinearLayout -> LinearLayout.LayoutParams(
+        if (width > 0) width else LinearLayout.LayoutParams.WRAP_CONTENT,
+        if (height > 0) height else LinearLayout.LayoutParams.WRAP_CONTENT,
+      )
+      is ViewGroup -> ViewGroup.LayoutParams(
+        if (width > 0) width else ViewGroup.LayoutParams.WRAP_CONTENT,
+        if (height > 0) height else ViewGroup.LayoutParams.WRAP_CONTENT,
+      )
+      else -> ViewGroup.LayoutParams(
+        if (width > 0) width else ViewGroup.LayoutParams.WRAP_CONTENT,
+        if (height > 0) height else ViewGroup.LayoutParams.WRAP_CONTENT,
+      )
     }
-    
+
+    if (params is FrameLayout.LayoutParams) {
+      if (isRoot) {
+        val margins = resolveMargins(structure.style)
+        params.leftMargin = margins.left
+        params.topMargin = margins.top
+        params.rightMargin = margins.right
+        params.bottomMargin = margins.bottom
+      } else {
+        params.leftMargin = frame.left
+        params.topMargin = frame.top
+        params.rightMargin = 0
+        params.bottomMargin = 0
+      }
+    } else if (params is ViewGroup.MarginLayoutParams && isRoot) {
+      val margins = resolveMargins(structure.style)
+      params.setMargins(margins.left, margins.top, margins.right, margins.bottom)
+    }
+
     view.layoutParams = params
-    
-    // Recursively apply frames to children (not root anymore)
-    if (view is ViewGroup) {
-      for (i in 0 until view.childCount) {
+
+    if (view is ViewGroup && structure is ViewStructure.Container) {
+      val childCount = minOf(view.childCount, structure.children.size)
+      for (i in 0 until childCount) {
         val child = view.getChildAt(i)
-        val childYogaId = child.id
-        if (childYogaId > 0) {
-          applyYogaFrames(child, childYogaId, engine, isRoot = false)
-        }
+        val childStructure = structure.children[i]
+        applyFramesFromStructure(child, childStructure, frames, view, false)
       }
     }
+
+    if (parent !is FrameLayout) {
+      view.translationX = if (isRoot) 0f else frame.left.toFloat()
+      view.translationY = if (isRoot) 0f else frame.top.toFloat()
+    } else {
+      view.translationX = 0f
+      view.translationY = 0f
+    }
+  }
+
+  private fun captureFrames(engine: LayoutEngine, yogaNodeIds: List<Int>): Map<Int, Rect> {
+    if (yogaNodeIds.isEmpty()) return emptyMap()
+    val allFrames = engine.getAllFrames()
+    if (allFrames.isEmpty()) return emptyMap()
+    val frames = HashMap<Int, Rect>(yogaNodeIds.size)
+    for (id in yogaNodeIds) {
+      allFrames[id]?.let { frames[id] = it }
+    }
+    return frames
+  }
+
+  private fun cleanupYogaNodes(engine: LayoutEngine, yogaNodeIds: List<Int>) {
+    for (id in yogaNodeIds.asReversed()) {
+      runCatching { engine.removeNode(id) }
+    }
+  }
+
+  private fun ViewStructure.countNodes(): Int = when (this) {
+    is ViewStructure.Container -> 1 + children.sumOf { it.countNodes() }
+    is ViewStructure.Leaf -> 1
+  }
+
+  private data class ResolvedMargins(val left: Int, val top: Int, val right: Int, val bottom: Int)
+
+  private fun resolveMargins(style: Style?): ResolvedMargins {
+    if (style == null) return ResolvedMargins(0, 0, 0, 0)
+
+    fun resolve(value: Float?, fallback: Float?): Int {
+      val raw = value ?: fallback ?: 0f
+      return dpToPx(raw.toDouble())
+    }
+
+    val all = style.margin
+    val left = resolve(style.marginLeft, all)
+    val right = resolve(style.marginRight, all)
+    val top = resolve(style.marginTop, all)
+    val bottom = resolve(style.marginBottom, all)
+    return ResolvedMargins(left, top, right, bottom)
+  }
+
+internal fun VirtualNode.computeStructureHash(): String = when (this) {
+    is VirtualNode.ViewNode -> {
+      val styleHash = styleJson?.let { hashStyleProperties(it) } ?: "0"
+      val childHash = if (children.isEmpty()) {
+        ""
+      } else {
+        children.joinToString(separator = ",") { it.computeStructureHash() }
+      }
+      "view|$styleHash|$childHash"
+    }
+    is VirtualNode.TextNode -> {
+      val styleHash = styleJson?.let { hashStyleProperties(it) } ?: "0"
+      val lines = numberOfLines ?: -1
+      "text|$styleHash|$lines"
+    }
+  }
+
+  internal fun hashStyleProperties(styleJson: String): String {
+    val style = getParsedStyle(styleJson) ?: return "0"
+    val signature = arrayOf(
+      style.width,
+      style.height,
+      style.widthPercent,
+      style.heightPercent,
+      style.widthAuto,
+      style.heightAuto,
+      style.minWidth,
+      style.maxWidth,
+      style.minHeight,
+      style.maxHeight,
+      style.flex,
+      style.flexGrow,
+      style.flexShrink,
+      style.flexDirection,
+      style.justifyContent,
+      style.alignItems,
+      style.alignSelf,
+      style.padding,
+      style.paddingHorizontal,
+      style.paddingVertical,
+      style.paddingLeft,
+      style.paddingRight,
+      style.paddingTop,
+      style.paddingBottom,
+      style.margin,
+      style.marginLeft,
+      style.marginRight,
+      style.marginTop,
+      style.marginBottom,
+      style.gap,
+      style.rowGap,
+      style.columnGap,
+      style.borderWidth,
+    )
+    return signature.contentDeepHashCode().toString()
+  }
+
+  @VisibleForTesting
+  internal fun renderNodeForTesting(node: VirtualNode): View {
+    val parent = FrameLayout(context)
+    parent.layoutParams = LayoutParams(
+      LayoutParams.MATCH_PARENT,
+      LayoutParams.WRAP_CONTENT,
+    )
+    return createView(context, node, parent)
+  }
+
+  @VisibleForTesting
+  internal fun clearCachesForTesting() {
+    invalidateAllCaches("test")
   }
 
   // Fallback for when LayoutEngine is not available

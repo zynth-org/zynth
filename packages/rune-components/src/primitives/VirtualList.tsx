@@ -133,6 +133,8 @@ export interface VirtualListProps<T> {
   ItemSeparatorComponent?: VirtualListSeparatorRenderer<T>;
 
   testID?: string;
+  templateVersion?: number | string;
+  layoutInvalidationKey?: string;
 }
 
 type SerializedItem = {
@@ -157,6 +159,8 @@ export function VirtualList<T>(allProps: VirtualListProps<T>) {
     "ListEmptyComponent",
     "ItemSeparatorComponent",
     "testID",
+    "templateVersion",
+    "layoutInvalidationKey",
   ]);
 
   const hostState = local.state;
@@ -261,11 +265,18 @@ export function VirtualList<T>(allProps: VirtualListProps<T>) {
       tree,
     }));
     const decorators = serializedDecorators();
-
-    return JSON.stringify({
+    const payloadObject: Record<string, unknown> = {
       items,
       decorators,
-    });
+    };
+    if (local.templateVersion !== undefined && local.templateVersion !== null) {
+      payloadObject.templateVersion = String(local.templateVersion);
+    }
+    if (local.layoutInvalidationKey) {
+      payloadObject.layoutInvalidationKey = local.layoutInvalidationKey;
+    }
+
+    return JSON.stringify(payloadObject);
   });
 
   createEffect(() => {
