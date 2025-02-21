@@ -10,6 +10,11 @@ interface LayoutEngine {
   fun insertChild(parent: Int, child: Int, index: Int)
   fun setStyle(id: Int, style: Style)
   fun calculateLayout(width: Int, height: Int)
+  /**
+   * Calculate layout for a specific node tree (not necessarily the root).
+   * Use this when you have isolated subtrees that aren't connected to the main root.
+   */
+  fun calculateLayoutForNode(nodeId: Int, width: Int, height: Int)
   fun frame(id: Int): Rect
   /**
    * Get all node frames at once after layout calculation.

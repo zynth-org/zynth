@@ -79,7 +79,18 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
 
   override fun calculateLayout(width: Int, height: Int) {
     val rootNode = getNode(rootId)
+    android.util.Log.d("RuneVirtualList_Yoga", "calculateLayout: Calculating layout on root node $rootId with ${width}x${height}")
     rootNode.calculateLayout(width.toFloat(), height.toFloat())
+  }
+
+  override fun calculateLayoutForNode(nodeId: Int, width: Int, height: Int) {
+    val node = nodes[nodeId]
+    if (node == null) {
+      android.util.Log.w("RuneVirtualList_Yoga", "calculateLayoutForNode: Node $nodeId not found!")
+      return
+    }
+    android.util.Log.d("RuneVirtualList_Yoga", "calculateLayoutForNode: Calculating layout on node $nodeId with ${width}x${height}")
+    node.calculateLayout(width.toFloat(), height.toFloat())
   }
 
   override fun frame(id: Int): Rect {
@@ -155,7 +166,9 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
   }
 
   private fun attachMeasureFunc(id: Int, node: YogaNode, handler: MeasureHandler) {
+    android.util.Log.d("RuneVirtualList_Yoga", "attachMeasureFunc: Setting measure function for node $id")
     node.setMeasureFunction { _, width, widthMode, height, heightMode ->
+      android.util.Log.d("RuneVirtualList_Yoga", "YogaNode.measureFunc CALLED: id=$id, width=$width mode=$widthMode, height=$height mode=$heightMode")
       val input = MeasureInput(
         width,
         widthMode.toMeasureMode(),
@@ -163,6 +176,7 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
         heightMode.toMeasureMode(),
       )
       val (measuredWidth, measuredHeight) = handler(input)
+      android.util.Log.d("RuneVirtualList_Yoga", "YogaNode.measureFunc RESULT: id=$id, measured=${measuredWidth}x${measuredHeight}")
       YogaMeasureOutput.make(measuredWidth, measuredHeight)
     }
   }
@@ -180,16 +194,40 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
     val resolvedHeight = clamp(style.height, style.minHeight, style.maxHeight)
 
     when {
-      style.widthAuto -> node.setWidthAuto()
-      resolvedWidth != null -> node.setWidth(resolvedWidth)
-      style.widthPercent != null -> node.setWidthPercent(style.widthPercent)
-      else -> node.setWidthAuto()
+      style.widthAuto -> {
+        android.util.Log.d("RuneVirtualList_Yoga", "applyStyle: Setting width=AUTO")
+        node.setWidthAuto()
+      }
+      resolvedWidth != null -> {
+        android.util.Log.d("RuneVirtualList_Yoga", "applyStyle: Setting width=$resolvedWidth (explicit)")
+        node.setWidth(resolvedWidth)
+      }
+      style.widthPercent != null -> {
+        android.util.Log.d("RuneVirtualList_Yoga", "applyStyle: Setting width=${style.widthPercent}% (percent)")
+        node.setWidthPercent(style.widthPercent)
+      }
+      else -> {
+        android.util.Log.d("RuneVirtualList_Yoga", "applyStyle: Setting width=AUTO (default)")
+        node.setWidthAuto()
+      }
     }
     when {
-      style.heightAuto -> node.setHeightAuto()
-      resolvedHeight != null -> node.setHeight(resolvedHeight)
-      style.heightPercent != null -> node.setHeightPercent(style.heightPercent)
-      else -> node.setHeightAuto()
+      style.heightAuto -> {
+        android.util.Log.d("RuneVirtualList_Yoga", "applyStyle: Setting height=AUTO")
+        node.setHeightAuto()
+      }
+      resolvedHeight != null -> {
+        android.util.Log.d("RuneVirtualList_Yoga", "applyStyle: Setting height=$resolvedHeight (explicit)")
+        node.setHeight(resolvedHeight)
+      }
+      style.heightPercent != null -> {
+        android.util.Log.d("RuneVirtualList_Yoga", "applyStyle: Setting height=${style.heightPercent}% (percent)")
+        node.setHeightPercent(style.heightPercent)
+      }
+      else -> {
+        android.util.Log.d("RuneVirtualList_Yoga", "applyStyle: Setting height=AUTO (default)")
+        node.setHeightAuto()
+      }
     }
     style.minWidth?.let { node.setMinWidth(it) }
     style.maxWidth?.let { node.setMaxWidth(it) }

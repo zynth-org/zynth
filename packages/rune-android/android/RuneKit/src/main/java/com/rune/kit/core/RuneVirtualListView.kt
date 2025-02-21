@@ -8,6 +8,7 @@ import android.util.AttributeSet
 import android.util.LruCache
 import android.util.Log
 import android.util.TypedValue
+import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -46,15 +47,20 @@ internal class RuneVirtualListView @JvmOverloads constructor(
   private val adapter: RuneVirtualListAdapter
     get() = recyclerView.adapter as RuneVirtualListAdapter
 
+  private var layoutEngine: LayoutEngine? = null
+  private var nextYogaNodeId = 1000000 // Start with high ID to avoid conflicts
+
   init {
     clipChildren = false
     clipToPadding = false
     setBackgroundColor(Color.TRANSPARENT)
     addView(recyclerView)
+    // Use the injected engine if provided
+    if (engine != null) {
+      layoutEngine = engine
+    }
   }
 
-  private var layoutEngine: LayoutEngine? = null
-  private var nextYogaNodeId = 1000000 // Start with high ID to avoid conflicts
   private val cacheStats = CacheStats()
   private val structureHashByKey = mutableMapOf<String, String>()
   private val structureUsageCounts = mutableMapOf<String, Int>()
@@ -447,6 +453,7 @@ internal class RuneVirtualListView @JvmOverloads constructor(
     const val MAX_CACHE_NODE_COUNT = 400
     const val STYLE_CACHE_SIZE = 128
     const val LOG_TAG = "RuneVirtualList"
+    const val YOGA_LOG_TAG = "RuneVirtualList_Yoga"
     @Volatile
     private var yogaLayoutEnabled: Boolean = true
     @Volatile
@@ -510,25 +517,38 @@ internal class RuneVirtualListView @JvmOverloads constructor(
 
     override fun onBindViewHolder(holder: VirtualViewHolder, position: Int) {
       when (holder.viewType) {
-        VIEW_TYPE_HEADER -> holder.bind(
-          VirtualItem("__header", decorators.header, decorators.headerHash),
-          decorators.headerStyle,
-        )
-        VIEW_TYPE_FOOTER -> holder.bind(
-          VirtualItem("__footer", decorators.footer, decorators.footerHash),
-          decorators.footerStyle,
-        )
-        VIEW_TYPE_EMPTY -> holder.bind(
-          VirtualItem("__empty", decorators.empty, decorators.emptyHash),
-          null,
-        )
-        VIEW_TYPE_SEPARATOR -> holder.bind(
-          VirtualItem("__separator", decorators.separator, decorators.separatorHash),
-          null,
-        )
+        VIEW_TYPE_HEADER -> {
+          Log.d(YOGA_LOG_TAG, "Binding HEADER at position $position")
+          holder.bind(
+            VirtualItem("__header", decorators.header, decorators.headerHash),
+            decorators.headerStyle,
+          )
+        }
+        VIEW_TYPE_FOOTER -> {
+          Log.d(YOGA_LOG_TAG, "Binding FOOTER at position $position")
+          holder.bind(
+            VirtualItem("__footer", decorators.footer, decorators.footerHash),
+            decorators.footerStyle,
+          )
+        }
+        VIEW_TYPE_EMPTY -> {
+          Log.d(YOGA_LOG_TAG, "Binding EMPTY at position $position")
+          holder.bind(
+            VirtualItem("__empty", decorators.empty, decorators.emptyHash),
+            null,
+          )
+        }
+        VIEW_TYPE_SEPARATOR -> {
+          Log.d(YOGA_LOG_TAG, "Binding SEPARATOR at position $position")
+          holder.bind(
+            VirtualItem("__separator", decorators.separator, decorators.separatorHash),
+            null,
+          )
+        }
         VIEW_TYPE_DATA -> {
           val dataIndex = getDataIndexFromPosition(position)
           if (dataIndex in dataItems.indices) {
+            Log.d(YOGA_LOG_TAG, "Binding DATA at position $position (dataIndex=$dataIndex)")
             holder.bind(dataItems[dataIndex], null)
           }
         }
@@ -738,6 +758,7 @@ internal class RuneVirtualListView @JvmOverloads constructor(
   ): View {
     val engine = layoutEngine
     if (engine == null || !isYogaLayoutEnabled()) {
+      Log.d(YOGA_LOG_TAG, "createView: Using manual layout (engine=${engine != null}, enabled=${isYogaLayoutEnabled()})")
       return createViewManual(context, node, parent)
     }
 
@@ -746,6 +767,7 @@ internal class RuneVirtualListView @JvmOverloads constructor(
     if (cachedLayout != null && cachedLayout.frames.isNotEmpty()) {
       cacheStats.recordHit()
       maybeLogCacheStats("hit:$structureHash")
+      Log.d(YOGA_LOG_TAG, "createView: CACHE HIT - hash=$structureHash, frames=${cachedLayout.frames.size}")
       val cachedView = buildCachedViewTree(context, node)
       applyFramesFromStructure(
         cachedView,
@@ -758,6 +780,7 @@ internal class RuneVirtualListView @JvmOverloads constructor(
     } else if (structureHash != null) {
       cacheStats.recordMiss()
       maybeLogCacheStats("miss:$structureHash")
+      Log.d(YOGA_LOG_TAG, "createView: CACHE MISS - hash=$structureHash, computing layout...")
     }
 
     val yogaNodeIds = mutableListOf<Int>()
@@ -773,10 +796,26 @@ internal class RuneVirtualListView @JvmOverloads constructor(
         recyclerView?.width?.takeIf { it > 0 } ?: 1080
       }
     }
+    
+    Log.d(YOGA_LOG_TAG, "createView: parentWidth=$parentWidth, hasExplicitWidth=${hasExplicitWidth(structure.style)}")
 
     val frames = try {
-      engine.calculateLayout(parentWidth, Int.MAX_VALUE)
+      // Force root node to use RecyclerView width so items default to 100% width like FlatList
+      // This happens BEFORE calculateLayout, ensuring Yoga uses the constraint
+      if (!hasExplicitWidth(structure.style)) {
+        Log.d(YOGA_LOG_TAG, "createView: Setting root width to $parentWidth (no explicit width)")
+        engine.setStyle(rootYogaId, (structure.style ?: Style()).copy(
+          width = parentWidth.toFloat()
+        ))
+      }
+      
+      // CRITICAL FIX: Calculate layout on THIS tree's root, not the global root
+      // VirtualList items are isolated trees not connected to the global root node
+      Log.d(YOGA_LOG_TAG, "createView: Calling calculateLayout on rootYogaId=$rootYogaId with width=$parentWidth")
+      engine.calculateLayoutForNode(rootYogaId, parentWidth, Int.MAX_VALUE)
+      
       val computedFrames = captureFrames(engine, yogaNodeIds)
+      Log.d(YOGA_LOG_TAG, "createView: Calculated ${computedFrames.size} frames")
       applyFramesFromStructure(view, structure, computedFrames, parent, isRoot = true)
       computedFrames
     } finally {
@@ -808,6 +847,7 @@ internal class RuneVirtualListView @JvmOverloads constructor(
           val childView = buildCachedViewTree(context, child)
           layout.addView(childView)
         }
+        Log.d(YOGA_LOG_TAG, "buildCachedViewTree: ViewNode with ${node.children.size} children")
         layout
       }
       is VirtualNode.TextNode -> {
@@ -821,6 +861,7 @@ internal class RuneVirtualListView @JvmOverloads constructor(
         val style = getParsedStyle(node.styleJson) ?: Style()
         applyTextStyle(textView, style)
         applyVisualStyle(textView, style)
+        Log.d(YOGA_LOG_TAG, "buildCachedViewTree: TextNode text='${node.text}' fontSize=${style.fontSize}")
         textView
       }
     }
@@ -877,6 +918,46 @@ internal class RuneVirtualListView @JvmOverloads constructor(
         }
         
         val style = getParsedStyle(node.styleJson) ?: Style()
+        
+        // CRITICAL: Register measure function BEFORE setStyle so Yoga knows TextView's intrinsic size
+        engine.setMeasureHandler(yogaId) { input ->
+          Log.d(YOGA_LOG_TAG, "TextNode MEASURE: yogaId=$yogaId, text='${node.text}', " +
+            "width=${input.width} mode=${input.widthMode}, height=${input.height} mode=${input.heightMode}")
+          
+          // Apply text styles first to measure accurately
+          applyTextStyle(textView, style)
+          
+          // Convert Yoga measure modes to Android MeasureSpecs
+          val widthMeasureSpec = when (input.widthMode) {
+            com.rune.kit.layout.MeasureMode.UNDEFINED -> 
+              View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+            com.rune.kit.layout.MeasureMode.EXACTLY -> 
+              View.MeasureSpec.makeMeasureSpec(input.width.toInt(), View.MeasureSpec.EXACTLY)
+            com.rune.kit.layout.MeasureMode.AT_MOST -> 
+              View.MeasureSpec.makeMeasureSpec(input.width.toInt(), View.MeasureSpec.AT_MOST)
+          }
+          
+          val heightMeasureSpec = when (input.heightMode) {
+            com.rune.kit.layout.MeasureMode.UNDEFINED -> 
+              View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+            com.rune.kit.layout.MeasureMode.EXACTLY -> 
+              View.MeasureSpec.makeMeasureSpec(input.height.toInt(), View.MeasureSpec.EXACTLY)
+            com.rune.kit.layout.MeasureMode.AT_MOST -> 
+              View.MeasureSpec.makeMeasureSpec(input.height.toInt(), View.MeasureSpec.AT_MOST)
+          }
+          
+          // Measure the TextView with constraints
+          textView.measure(widthMeasureSpec, heightMeasureSpec)
+          
+          val measuredW = textView.measuredWidth.toFloat()
+          val measuredH = textView.measuredHeight.toFloat()
+          
+          Log.d(YOGA_LOG_TAG, "TextNode MEASURED: yogaId=$yogaId, result=${measuredW}x${measuredH}")
+          
+          // Return measured size to Yoga
+          Pair(measuredW, measuredH)
+        }
+        
         engine.setStyle(yogaId, style)
         
         // Apply text-specific and visual styles
@@ -898,42 +979,41 @@ internal class RuneVirtualListView @JvmOverloads constructor(
     val frame = frames[structure.yogaNodeId] ?: return
     val width = frame.right - frame.left
     val height = frame.bottom - frame.top
+    
+    val viewType = when (view) {
+      is TextView -> "TextView('${view.text}')"
+      is ViewGroup -> "ViewGroup(${view.childCount} children)"
+      else -> view::class.simpleName
+    }
+    
+    Log.d(YOGA_LOG_TAG, "applyFrames: yogaId=${structure.yogaNodeId} $viewType frame=[$width x $height] at (${frame.left}, ${frame.top}) isRoot=$isRoot")
 
+    // Always use Yoga's calculated dimensions - don't override with MATCH_PARENT
+    val resolvedWidth = if (width > 0) width else ViewGroup.LayoutParams.WRAP_CONTENT
+    val resolvedHeight = if (height > 0) height else ViewGroup.LayoutParams.WRAP_CONTENT
     val params = when (parent) {
       is FrameLayout -> FrameLayout.LayoutParams(
-        if (width > 0) width else FrameLayout.LayoutParams.WRAP_CONTENT,
-        if (height > 0) height else FrameLayout.LayoutParams.WRAP_CONTENT,
-      )
-      is LinearLayout -> LinearLayout.LayoutParams(
-        if (width > 0) width else LinearLayout.LayoutParams.WRAP_CONTENT,
-        if (height > 0) height else LinearLayout.LayoutParams.WRAP_CONTENT,
-      )
-      is ViewGroup -> ViewGroup.LayoutParams(
-        if (width > 0) width else ViewGroup.LayoutParams.WRAP_CONTENT,
-        if (height > 0) height else ViewGroup.LayoutParams.WRAP_CONTENT,
-      )
-      else -> ViewGroup.LayoutParams(
-        if (width > 0) width else ViewGroup.LayoutParams.WRAP_CONTENT,
-        if (height > 0) height else ViewGroup.LayoutParams.WRAP_CONTENT,
-      )
+        resolvedWidth,
+        resolvedHeight,
+      ).apply {
+        gravity = Gravity.TOP or Gravity.START
+      }
+      is LinearLayout -> LinearLayout.LayoutParams(resolvedWidth, resolvedHeight)
+      is ViewGroup -> ViewGroup.LayoutParams(resolvedWidth, resolvedHeight)
+      else -> ViewGroup.LayoutParams(resolvedWidth, resolvedHeight)
     }
 
-    if (params is FrameLayout.LayoutParams) {
-      if (isRoot) {
-        val margins = resolveMargins(structure.style)
-        params.leftMargin = margins.left
-        params.topMargin = margins.top
-        params.rightMargin = margins.right
-        params.bottomMargin = margins.bottom
-      } else {
-        params.leftMargin = frame.left
-        params.topMargin = frame.top
-        params.rightMargin = 0
-        params.bottomMargin = 0
-      }
+    if (params is FrameLayout.LayoutParams && isRoot) {
+      val margins = resolveMargins(structure.style)
+      params.leftMargin = margins.left
+      params.topMargin = margins.top
+      params.rightMargin = margins.right
+      params.bottomMargin = margins.bottom
     } else if (params is ViewGroup.MarginLayoutParams && isRoot) {
       val margins = resolveMargins(structure.style)
       params.setMargins(margins.left, margins.top, margins.right, margins.bottom)
+    } else if (params is ViewGroup.MarginLayoutParams) {
+      params.setMargins(0, 0, 0, 0)
     }
 
     view.layoutParams = params
@@ -947,12 +1027,12 @@ internal class RuneVirtualListView @JvmOverloads constructor(
       }
     }
 
-    if (parent !is FrameLayout) {
-      view.translationX = if (isRoot) 0f else frame.left.toFloat()
-      view.translationY = if (isRoot) 0f else frame.top.toFloat()
-    } else {
+    if (isRoot) {
       view.translationX = 0f
       view.translationY = 0f
+    } else {
+      view.translationX = frame.left.toFloat()
+      view.translationY = frame.top.toFloat()
     }
   }
 
@@ -960,10 +1040,22 @@ internal class RuneVirtualListView @JvmOverloads constructor(
     if (yogaNodeIds.isEmpty()) return emptyMap()
     val allFrames = engine.getAllFrames()
     if (allFrames.isEmpty()) return emptyMap()
+    
+    Log.d(YOGA_LOG_TAG, "captureFrames: Looking for ${yogaNodeIds.size} nodes: $yogaNodeIds")
+    Log.d(YOGA_LOG_TAG, "captureFrames: getAllFrames returned ${allFrames.size} frames with keys: ${allFrames.keys}")
+    
     val frames = HashMap<Int, Rect>(yogaNodeIds.size)
     for (id in yogaNodeIds) {
-      allFrames[id]?.let { frames[id] = it }
+      val frame = allFrames[id]
+      if (frame != null) {
+        frames[id] = frame
+        Log.d(YOGA_LOG_TAG, "captureFrames: Found frame for id=$id: $frame")
+      } else {
+        Log.w(YOGA_LOG_TAG, "captureFrames: MISSING frame for id=$id!")
+      }
     }
+    
+    Log.d(YOGA_LOG_TAG, "captureFrames: Captured ${frames.size} frames successfully")
     return frames
   }
 
@@ -983,17 +1075,25 @@ internal class RuneVirtualListView @JvmOverloads constructor(
   private fun resolveMargins(style: Style?): ResolvedMargins {
     if (style == null) return ResolvedMargins(0, 0, 0, 0)
 
-    fun resolve(value: Float?, fallback: Float?): Int {
-      val raw = value ?: fallback ?: 0f
+    fun resolve(value: Float?, axisFallback: Float?, fallback: Float?): Int {
+      val raw = value ?: axisFallback ?: fallback ?: 0f
       return dpToPx(raw.toDouble())
     }
 
     val all = style.margin
-    val left = resolve(style.marginLeft, all)
-    val right = resolve(style.marginRight, all)
-    val top = resolve(style.marginTop, all)
-    val bottom = resolve(style.marginBottom, all)
+    val left = resolve(style.marginLeft, null, all)
+    val right = resolve(style.marginRight, null, all)
+    val top = resolve(style.marginTop, null, all)
+    val bottom = resolve(style.marginBottom, null, all)
     return ResolvedMargins(left, top, right, bottom)
+  }
+
+  private fun hasExplicitWidth(style: Style?): Boolean {
+    if (style == null) return false
+    if (style.width != null) return true
+    if (style.widthPercent != null) return true
+    if (style.widthAuto) return true
+    return false
   }
 
 internal fun VirtualNode.computeStructureHash(): String = when (this) {
