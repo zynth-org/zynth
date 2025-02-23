@@ -14,7 +14,7 @@ interface LayoutEngine {
    * Calculate layout for a specific node tree (not necessarily the root).
    * Use this when you have isolated subtrees that aren't connected to the main root.
    */
-  fun calculateLayoutForNode(nodeId: Int, width: Int, height: Int)
+  fun calculateLayoutForNode(nodeId: Int, width: Float, height: Float)
   fun frame(id: Int): Rect
   /**
    * Get all node frames at once after layout calculation.

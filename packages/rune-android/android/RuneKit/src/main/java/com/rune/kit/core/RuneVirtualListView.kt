@@ -801,18 +801,37 @@ internal class RuneVirtualListView @JvmOverloads constructor(
 
     val frames = try {
       // Force root node to use RecyclerView width so items default to 100% width like FlatList
-      // This happens BEFORE calculateLayout, ensuring Yoga uses the constraint
-      if (!hasExplicitWidth(structure.style)) {
+      val baseStyle = structure.style ?: Style()
+
+      val styleWithWidth = if (!hasExplicitWidth(baseStyle)) {
         Log.d(YOGA_LOG_TAG, "createView: Setting root width to $parentWidth (no explicit width)")
-        engine.setStyle(rootYogaId, (structure.style ?: Style()).copy(
-          width = parentWidth.toFloat()
-        ))
+        baseStyle.copy(
+          width = parentWidth.toFloat(),
+          widthPercent = null,
+          widthAuto = false,
+        )
+      } else {
+        baseStyle
       }
-      
+
+      val adjustedStyle = if (!hasExplicitHeight(styleWithWidth)) {
+        styleWithWidth.copy(
+          height = null,
+          heightPercent = null,
+          heightAuto = true,
+        )
+      } else {
+        styleWithWidth
+      }
+
+      engine.setStyle(rootYogaId, adjustedStyle)
+
       // CRITICAL FIX: Calculate layout on THIS tree's root, not the global root
       // VirtualList items are isolated trees not connected to the global root node
-      Log.d(YOGA_LOG_TAG, "createView: Calling calculateLayout on rootYogaId=$rootYogaId with width=$parentWidth")
-      engine.calculateLayoutForNode(rootYogaId, parentWidth, Int.MAX_VALUE)
+      // Use UNDEFINED height (0 with AT_MOST mode) to let Yoga calculate wrap-content behavior
+      // Yoga will size the container to fit its children instead of expanding to max
+      Log.d(YOGA_LOG_TAG, "createView: Calling calculateLayout on rootYogaId=$rootYogaId with width=$parentWidth, height=WRAP_CONTENT")
+      engine.calculateLayoutForNode(rootYogaId, parentWidth.toFloat(), Float.NaN)
       
       val computedFrames = captureFrames(engine, yogaNodeIds)
       Log.d(YOGA_LOG_TAG, "createView: Calculated ${computedFrames.size} frames")
@@ -976,9 +995,9 @@ internal class RuneVirtualListView @JvmOverloads constructor(
     parent: ViewGroup?,
     isRoot: Boolean,
   ) {
-    val frame = frames[structure.yogaNodeId] ?: return
-    val width = frame.right - frame.left
-    val height = frame.bottom - frame.top
+  val frame = frames[structure.yogaNodeId] ?: return
+  val width = frame.right - frame.left
+  val height = frame.bottom - frame.top
     
     val viewType = when (view) {
       is TextView -> "TextView('${view.text}')"
@@ -988,9 +1007,24 @@ internal class RuneVirtualListView @JvmOverloads constructor(
     
     Log.d(YOGA_LOG_TAG, "applyFrames: yogaId=${structure.yogaNodeId} $viewType frame=[$width x $height] at (${frame.left}, ${frame.top}) isRoot=$isRoot")
 
+    // For root views, calculate actual content height from children if height is AUTO
+    val finalHeight = if (isRoot && view is ViewGroup && structure is ViewStructure.Container) {
+      // Calculate the maximum bottom coordinate of all children
+      val childrenMaxBottom = structure.children.mapNotNull { childStructure ->
+        frames[childStructure.yogaNodeId]?.bottom
+      }.maxOrNull() ?: height
+      
+      Log.d(YOGA_LOG_TAG, "applyFrames: Root view calculated height: Yoga=$height, childrenBottom=$childrenMaxBottom")
+      
+      // Use the larger of Yoga's height or children's extent (for WRAP_CONTENT behavior)
+      maxOf(height, childrenMaxBottom)
+    } else {
+      height
+    }
+
     // Always use Yoga's calculated dimensions - don't override with MATCH_PARENT
     val resolvedWidth = if (width > 0) width else ViewGroup.LayoutParams.WRAP_CONTENT
-    val resolvedHeight = if (height > 0) height else ViewGroup.LayoutParams.WRAP_CONTENT
+    val resolvedHeight = if (finalHeight > 0) finalHeight else ViewGroup.LayoutParams.WRAP_CONTENT
     val params = when (parent) {
       is FrameLayout -> FrameLayout.LayoutParams(
         resolvedWidth,
@@ -1027,12 +1061,15 @@ internal class RuneVirtualListView @JvmOverloads constructor(
       }
     }
 
-    if (isRoot) {
-      view.translationX = 0f
-      view.translationY = 0f
-    } else {
+    // Only use translation for absolute positioning (not flex flow)
+    // Root items use margin/gravity, children in FrameLayout use translation for Yoga coordinates
+    if (!isRoot) {
+      // Use translation to position at Yoga's calculated coordinates
       view.translationX = frame.left.toFloat()
       view.translationY = frame.top.toFloat()
+    } else {
+      view.translationX = 0f
+      view.translationY = 0f
     }
   }
 
@@ -1093,6 +1130,14 @@ internal class RuneVirtualListView @JvmOverloads constructor(
     if (style.width != null) return true
     if (style.widthPercent != null) return true
     if (style.widthAuto) return true
+    return false
+  }
+
+  private fun hasExplicitHeight(style: Style?): Boolean {
+    if (style == null) return false
+    if (style.height != null) return true
+    if (style.heightPercent != null) return true
+    if (style.heightAuto) return true
     return false
   }
 
@@ -1226,13 +1271,20 @@ internal fun VirtualNode.computeStructureHash(): String = when (this) {
     }
 
     // Apply padding (Yoga calculates layout, but Android padding is visual)
-    val paddingLeft = (style.paddingLeft ?: style.paddingHorizontal ?: style.padding)?.let { dpToPx(it.toDouble()) } ?: 0
-    val paddingTop = (style.paddingTop ?: style.paddingVertical ?: style.padding)?.let { dpToPx(it.toDouble()) } ?: 0
-    val paddingRight = (style.paddingRight ?: style.paddingHorizontal ?: style.padding)?.let { dpToPx(it.toDouble()) } ?: 0
-    val paddingBottom = (style.paddingBottom ?: style.paddingVertical ?: style.padding)?.let { dpToPx(it.toDouble()) } ?: 0
-    
-    if (paddingLeft > 0 || paddingTop > 0 || paddingRight > 0 || paddingBottom > 0) {
-      view.setPadding(paddingLeft, paddingTop, paddingRight, paddingBottom)
+    if (view !is ViewGroup) {
+      val paddingLeft = (style.paddingLeft ?: style.paddingHorizontal ?: style.padding)?.let { dpToPx(it.toDouble()) } ?: 0
+      val paddingTop = (style.paddingTop ?: style.paddingVertical ?: style.padding)?.let { dpToPx(it.toDouble()) } ?: 0
+      val paddingRight = (style.paddingRight ?: style.paddingHorizontal ?: style.padding)?.let { dpToPx(it.toDouble()) } ?: 0
+      val paddingBottom = (style.paddingBottom ?: style.paddingVertical ?: style.padding)?.let { dpToPx(it.toDouble()) } ?: 0
+
+      if (paddingLeft > 0 || paddingTop > 0 || paddingRight > 0 || paddingBottom > 0) {
+        view.setPadding(paddingLeft, paddingTop, paddingRight, paddingBottom)
+      } else if (view.paddingLeft != 0 || view.paddingTop != 0 || view.paddingRight != 0 || view.paddingBottom != 0) {
+        view.setPadding(0, 0, 0, 0)
+      }
+    } else if (view.paddingLeft != 0 || view.paddingTop != 0 || view.paddingRight != 0 || view.paddingBottom != 0) {
+      // Containers rely on Yoga positioning for padding; ensure the Android padding stays zero to avoid double offsets.
+      view.setPadding(0, 0, 0, 0)
     }
   }
 

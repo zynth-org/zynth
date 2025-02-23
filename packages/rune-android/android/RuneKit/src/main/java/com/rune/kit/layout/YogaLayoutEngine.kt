@@ -7,6 +7,7 @@ import com.facebook.yoga.YogaEdge
 import com.facebook.yoga.YogaFlexDirection
 import com.facebook.yoga.YogaGutter
 import com.facebook.yoga.YogaJustify
+import com.facebook.yoga.YogaConstants
 import com.facebook.yoga.YogaMeasureMode
 import com.facebook.yoga.YogaMeasureOutput
 import com.facebook.yoga.YogaNode
@@ -83,14 +84,19 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
     rootNode.calculateLayout(width.toFloat(), height.toFloat())
   }
 
-  override fun calculateLayoutForNode(nodeId: Int, width: Int, height: Int) {
+  override fun calculateLayoutForNode(nodeId: Int, width: Float, height: Float) {
     val node = nodes[nodeId]
     if (node == null) {
       android.util.Log.w("RuneVirtualList_Yoga", "calculateLayoutForNode: Node $nodeId not found!")
       return
     }
-    android.util.Log.d("RuneVirtualList_Yoga", "calculateLayoutForNode: Calculating layout on node $nodeId with ${width}x${height}")
-    node.calculateLayout(width.toFloat(), height.toFloat())
+  val resolvedWidth = if (width.isNaN()) YogaConstants.UNDEFINED else width
+  val resolvedHeight = if (height.isNaN()) YogaConstants.UNDEFINED else height
+    android.util.Log.d(
+      "RuneVirtualList_Yoga",
+      "calculateLayoutForNode: Calculating layout on node $nodeId with ${resolvedWidth}x${resolvedHeight}"
+    )
+    node.calculateLayout(resolvedWidth, resolvedHeight)
   }
 
   override fun frame(id: Int): Rect {
