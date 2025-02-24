@@ -1,7 +1,5 @@
 package com.rune.kit.layout
 
-import android.util.Log
-
 data class Rect(val left: Int, val top: Int, val right: Int, val bottom: Int)
 
 interface LayoutEngine {

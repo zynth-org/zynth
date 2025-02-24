@@ -295,6 +295,7 @@ internal class RuneVirtualListView @JvmOverloads constructor(
     val frames: Map<Int, Rect>,
     val structure: ViewStructure,
     val nodeCount: Int,
+    val constraintWidth: Int,
   )
 
   private data class BuildResult(
@@ -374,6 +375,12 @@ internal class RuneVirtualListView @JvmOverloads constructor(
   private fun isYogaLayoutEnabled(): Boolean = yogaLayoutEnabled
 
   private fun isDebugLoggingEnabled(): Boolean = debugLoggingEnabled
+
+  private fun logDebug(message: String) {
+    Log.d(YOGA_LOG_TAG, message)
+    // if (isDebugLoggingEnabled()) {
+    // }
+  }
 
   private fun incrementStructureUsage(hash: String) {
     val next = (structureUsageCounts[hash] ?: 0) + 1
@@ -518,28 +525,28 @@ internal class RuneVirtualListView @JvmOverloads constructor(
     override fun onBindViewHolder(holder: VirtualViewHolder, position: Int) {
       when (holder.viewType) {
         VIEW_TYPE_HEADER -> {
-          Log.d(YOGA_LOG_TAG, "Binding HEADER at position $position")
+          logDebug("Binding HEADER at position $position")
           holder.bind(
             VirtualItem("__header", decorators.header, decorators.headerHash),
             decorators.headerStyle,
           )
         }
         VIEW_TYPE_FOOTER -> {
-          Log.d(YOGA_LOG_TAG, "Binding FOOTER at position $position")
+          logDebug("Binding FOOTER at position $position")
           holder.bind(
             VirtualItem("__footer", decorators.footer, decorators.footerHash),
             decorators.footerStyle,
           )
         }
         VIEW_TYPE_EMPTY -> {
-          Log.d(YOGA_LOG_TAG, "Binding EMPTY at position $position")
+          logDebug("Binding EMPTY at position $position")
           holder.bind(
             VirtualItem("__empty", decorators.empty, decorators.emptyHash),
             null,
           )
         }
         VIEW_TYPE_SEPARATOR -> {
-          Log.d(YOGA_LOG_TAG, "Binding SEPARATOR at position $position")
+          logDebug("Binding SEPARATOR at position $position")
           holder.bind(
             VirtualItem("__separator", decorators.separator, decorators.separatorHash),
             null,
@@ -548,7 +555,7 @@ internal class RuneVirtualListView @JvmOverloads constructor(
         VIEW_TYPE_DATA -> {
           val dataIndex = getDataIndexFromPosition(position)
           if (dataIndex in dataItems.indices) {
-            Log.d(YOGA_LOG_TAG, "Binding DATA at position $position (dataIndex=$dataIndex)")
+            logDebug("Binding DATA at position $position (dataIndex=$dataIndex)")
             holder.bind(dataItems[dataIndex], null)
           }
         }
@@ -758,21 +765,30 @@ internal class RuneVirtualListView @JvmOverloads constructor(
   ): View {
     val engine = layoutEngine
     if (engine == null || !isYogaLayoutEnabled()) {
-      Log.d(YOGA_LOG_TAG, "createView: Using manual layout (engine=${engine != null}, enabled=${isYogaLayoutEnabled()})")
+      logDebug("createView: Using manual layout (engine=${engine != null}, enabled=${isYogaLayoutEnabled()})")
       return createViewManual(context, node, parent)
     }
 
+    val parentWidth = resolveItemWidthPx(parent)
+    logDebug(
+      "createView: parent=${parent::class.java.simpleName}, width=${parent.width}, " +
+        "measuredWidth=${parent.measuredWidth}, resolvedParentWidth=$parentWidth",
+    )
+
     val structureHash = structureHashOverride ?: node.computeStructureHash()
     val cachedLayout = structureHash?.let { yogaLayoutCache.get(it) }
-    if (cachedLayout != null && cachedLayout.frames.isNotEmpty()) {
+    val validatedLayout = cachedLayout
+      ?.takeIf { it.frames.isNotEmpty() && it.constraintWidth == parentWidth }
+
+    if (validatedLayout != null) {
       cacheStats.recordHit()
       maybeLogCacheStats("hit:$structureHash")
-      Log.d(YOGA_LOG_TAG, "createView: CACHE HIT - hash=$structureHash, frames=${cachedLayout.frames.size}")
+      logDebug("createView: CACHE HIT - hash=$structureHash, width=$parentWidth, frames=${validatedLayout.frames.size}")
       val cachedView = buildCachedViewTree(context, node)
       applyFramesFromStructure(
         cachedView,
-        cachedLayout.structure,
-        cachedLayout.frames,
+        validatedLayout.structure,
+        validatedLayout.frames,
         parent,
         isRoot = true,
       )
@@ -780,31 +796,26 @@ internal class RuneVirtualListView @JvmOverloads constructor(
     } else if (structureHash != null) {
       cacheStats.recordMiss()
       maybeLogCacheStats("miss:$structureHash")
-      Log.d(YOGA_LOG_TAG, "createView: CACHE MISS - hash=$structureHash, computing layout...")
+      if (cachedLayout != null && cachedLayout.constraintWidth != parentWidth) {
+        logDebug(
+          "createView: Cache width mismatch for hash=$structureHash (cached=${cachedLayout.constraintWidth}, requested=$parentWidth)",
+        )
+      } else {
+        logDebug("createView: CACHE MISS - hash=$structureHash, computing layout...")
+      }
     }
 
     val yogaNodeIds = mutableListOf<Int>()
     val rootYogaId = getNextYogaNodeId()
     val (view, structure) = buildYogaTree(context, node, rootYogaId, engine, yogaNodeIds)
-
-    val parentWidth = when {
-      parent.width > 0 -> parent.width
-      parent.measuredWidth > 0 -> parent.measuredWidth
-      else -> {
-        val recyclerView = generateSequence(parent as View) { it.parent as? View }
-          .firstOrNull { it is RecyclerView }
-        recyclerView?.width?.takeIf { it > 0 } ?: 1080
-      }
-    }
-    
-    Log.d(YOGA_LOG_TAG, "createView: parentWidth=$parentWidth, hasExplicitWidth=${hasExplicitWidth(structure.style)}")
+    logDebug("createView: parentWidth=$parentWidth, hasExplicitWidth=${hasExplicitWidth(structure.style)}")
 
     val frames = try {
       // Force root node to use RecyclerView width so items default to 100% width like FlatList
       val baseStyle = structure.style ?: Style()
 
       val styleWithWidth = if (!hasExplicitWidth(baseStyle)) {
-        Log.d(YOGA_LOG_TAG, "createView: Setting root width to $parentWidth (no explicit width)")
+        logDebug("createView: Setting root width to $parentWidth (no explicit width)")
         baseStyle.copy(
           width = parentWidth.toFloat(),
           widthPercent = null,
@@ -830,11 +841,11 @@ internal class RuneVirtualListView @JvmOverloads constructor(
       // VirtualList items are isolated trees not connected to the global root node
       // Use UNDEFINED height (0 with AT_MOST mode) to let Yoga calculate wrap-content behavior
       // Yoga will size the container to fit its children instead of expanding to max
-      Log.d(YOGA_LOG_TAG, "createView: Calling calculateLayout on rootYogaId=$rootYogaId with width=$parentWidth, height=WRAP_CONTENT")
+      logDebug("createView: Calling calculateLayout on rootYogaId=$rootYogaId with width=$parentWidth, height=WRAP_CONTENT")
       engine.calculateLayoutForNode(rootYogaId, parentWidth.toFloat(), Float.NaN)
       
       val computedFrames = captureFrames(engine, yogaNodeIds)
-      Log.d(YOGA_LOG_TAG, "createView: Calculated ${computedFrames.size} frames")
+      logDebug("createView: Calculated ${computedFrames.size} frames")
       applyFramesFromStructure(view, structure, computedFrames, parent, isRoot = true)
       computedFrames
     } finally {
@@ -843,12 +854,56 @@ internal class RuneVirtualListView @JvmOverloads constructor(
 
     if (!structureHash.isNullOrEmpty() && frames.isNotEmpty()) {
       val nodeCount = structure.countNodes()
-      yogaLayoutCache.put(structureHash, CachedLayout(frames, structure, nodeCount))
+      yogaLayoutCache.put(structureHash, CachedLayout(frames, structure, nodeCount, parentWidth))
       cacheStats.recordInsert(nodeCount)
       maybeLogCacheStats("store:$structureHash")
     }
 
     return view
+  }
+
+  private fun resolveItemWidthPx(parent: ViewGroup): Int {
+    logDebug(
+      "resolveItemWidthPx: parent=${parent::class.java.simpleName}, " +
+        "width=${parent.width}, measuredWidth=${parent.measuredWidth}",
+    )
+    val directWidth = if (parent.width > 0) parent.width else parent.measuredWidth
+    if (directWidth > 0) {
+      logDebug("resolveItemWidthPx: using parent width=$directWidth")
+      return directWidth
+    }
+
+    val rv = recyclerView
+
+    val hostWidth = width.takeIf { it > 0 } ?: measuredWidth
+    if (hostWidth > 0) {
+      val horizontalPadding = rv.paddingLeft + rv.paddingRight
+      val resolved = (hostWidth - horizontalPadding).coerceAtLeast(1)
+      logDebug(
+        "resolveItemWidthPx: using host width=$hostWidth with padding=$horizontalPadding resolvedWidth=$resolved",
+      )
+      return resolved
+    }
+
+    val rvWidth = rv.width.takeIf { it > 0 } ?: rv.measuredWidth
+    if (rvWidth > 0) {
+      val horizontalPadding = rv.paddingLeft + rv.paddingRight
+      val resolved = (rvWidth - horizontalPadding).coerceAtLeast(1)
+      logDebug(
+        "resolveItemWidthPx: recyclerViewWidth=$rvWidth paddingLeft=${rv.paddingLeft} " +
+          "paddingRight=${rv.paddingRight} resolvedWidth=$resolved",
+      )
+      return resolved
+    }
+
+    val screenWidth = resources.displayMetrics.widthPixels
+    val horizontalPadding = rv.paddingLeft + rv.paddingRight
+    val fallbackWidth = (screenWidth - horizontalPadding).coerceAtLeast(1)
+    logDebug(
+      "resolveItemWidthPx: fallback to screen width=$screenWidth padding=$horizontalPadding " +
+        "resolvedWidth=$fallbackWidth",
+    )
+    return fallbackWidth
   }
 
   private fun buildCachedViewTree(context: Context, node: VirtualNode): View {
@@ -866,7 +921,7 @@ internal class RuneVirtualListView @JvmOverloads constructor(
           val childView = buildCachedViewTree(context, child)
           layout.addView(childView)
         }
-        Log.d(YOGA_LOG_TAG, "buildCachedViewTree: ViewNode with ${node.children.size} children")
+        logDebug("buildCachedViewTree: ViewNode with ${node.children.size} children")
         layout
       }
       is VirtualNode.TextNode -> {
@@ -880,7 +935,7 @@ internal class RuneVirtualListView @JvmOverloads constructor(
         val style = getParsedStyle(node.styleJson) ?: Style()
         applyTextStyle(textView, style)
         applyVisualStyle(textView, style)
-        Log.d(YOGA_LOG_TAG, "buildCachedViewTree: TextNode text='${node.text}' fontSize=${style.fontSize}")
+        logDebug("buildCachedViewTree: TextNode text='${node.text}' fontSize=${style.fontSize}")
         textView
       }
     }
@@ -940,8 +995,10 @@ internal class RuneVirtualListView @JvmOverloads constructor(
         
         // CRITICAL: Register measure function BEFORE setStyle so Yoga knows TextView's intrinsic size
         engine.setMeasureHandler(yogaId) { input ->
-          Log.d(YOGA_LOG_TAG, "TextNode MEASURE: yogaId=$yogaId, text='${node.text}', " +
-            "width=${input.width} mode=${input.widthMode}, height=${input.height} mode=${input.heightMode}")
+          logDebug(
+            "TextNode MEASURE: yogaId=$yogaId, text='${node.text}', " +
+              "width=${input.width} mode=${input.widthMode}, height=${input.height} mode=${input.heightMode}",
+          )
           
           // Apply text styles first to measure accurately
           applyTextStyle(textView, style)
@@ -971,7 +1028,7 @@ internal class RuneVirtualListView @JvmOverloads constructor(
           val measuredW = textView.measuredWidth.toFloat()
           val measuredH = textView.measuredHeight.toFloat()
           
-          Log.d(YOGA_LOG_TAG, "TextNode MEASURED: yogaId=$yogaId, result=${measuredW}x${measuredH}")
+          logDebug("TextNode MEASURED: yogaId=$yogaId, result=${measuredW}x${measuredH}")
           
           // Return measured size to Yoga
           Pair(measuredW, measuredH)
@@ -995,9 +1052,9 @@ internal class RuneVirtualListView @JvmOverloads constructor(
     parent: ViewGroup?,
     isRoot: Boolean,
   ) {
-  val frame = frames[structure.yogaNodeId] ?: return
-  val width = frame.right - frame.left
-  val height = frame.bottom - frame.top
+    val frame = frames[structure.yogaNodeId] ?: return
+    val width = frame.right - frame.left
+    val height = frame.bottom - frame.top
     
     val viewType = when (view) {
       is TextView -> "TextView('${view.text}')"
@@ -1005,7 +1062,7 @@ internal class RuneVirtualListView @JvmOverloads constructor(
       else -> view::class.simpleName
     }
     
-    Log.d(YOGA_LOG_TAG, "applyFrames: yogaId=${structure.yogaNodeId} $viewType frame=[$width x $height] at (${frame.left}, ${frame.top}) isRoot=$isRoot")
+    logDebug("applyFrames: yogaId=${structure.yogaNodeId} $viewType frame=[$width x $height] at (${frame.left}, ${frame.top}) isRoot=$isRoot")
 
     // For root views, calculate actual content height from children if height is AUTO
     val finalHeight = if (isRoot && view is ViewGroup && structure is ViewStructure.Container) {
@@ -1014,7 +1071,7 @@ internal class RuneVirtualListView @JvmOverloads constructor(
         frames[childStructure.yogaNodeId]?.bottom
       }.maxOrNull() ?: height
       
-      Log.d(YOGA_LOG_TAG, "applyFrames: Root view calculated height: Yoga=$height, childrenBottom=$childrenMaxBottom")
+    logDebug("applyFrames: Root view calculated height: Yoga=$height, childrenBottom=$childrenMaxBottom")
       
       // Use the larger of Yoga's height or children's extent (for WRAP_CONTENT behavior)
       maxOf(height, childrenMaxBottom)
@@ -1070,6 +1127,11 @@ internal class RuneVirtualListView @JvmOverloads constructor(
     } else {
       view.translationX = 0f
       view.translationY = 0f
+      val parentWidth = parent?.let { if (it.width > 0) it.width else it.measuredWidth }
+      logDebug(
+        "applyFrames: root resolvedWidth=$resolvedWidth parentWidth=$parentWidth " +
+          "container=${parent?.javaClass?.simpleName} layoutParamsWidth=${parent?.layoutParams?.width}",
+      )
     }
   }
 
@@ -1078,21 +1140,21 @@ internal class RuneVirtualListView @JvmOverloads constructor(
     val allFrames = engine.getAllFrames()
     if (allFrames.isEmpty()) return emptyMap()
     
-    Log.d(YOGA_LOG_TAG, "captureFrames: Looking for ${yogaNodeIds.size} nodes: $yogaNodeIds")
-    Log.d(YOGA_LOG_TAG, "captureFrames: getAllFrames returned ${allFrames.size} frames with keys: ${allFrames.keys}")
+    logDebug("captureFrames: Looking for ${yogaNodeIds.size} nodes: $yogaNodeIds")
+    logDebug("captureFrames: getAllFrames returned ${allFrames.size} frames with keys: ${allFrames.keys}")
     
     val frames = HashMap<Int, Rect>(yogaNodeIds.size)
     for (id in yogaNodeIds) {
       val frame = allFrames[id]
       if (frame != null) {
         frames[id] = frame
-        Log.d(YOGA_LOG_TAG, "captureFrames: Found frame for id=$id: $frame")
+        logDebug("captureFrames: Found frame for id=$id: $frame")
       } else {
         Log.w(YOGA_LOG_TAG, "captureFrames: MISSING frame for id=$id!")
       }
     }
     
-    Log.d(YOGA_LOG_TAG, "captureFrames: Captured ${frames.size} frames successfully")
+    logDebug("captureFrames: Captured ${frames.size} frames successfully")
     return frames
   }
 
