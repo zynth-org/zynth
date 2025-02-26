@@ -35,6 +35,7 @@ internal class RuneNodeFactory(
     private val imageSupport: RuneImageSupport,
     private val buttonStyles: SparseArray<ButtonVisualStyle>,
     private val pendingTextRebuild: LinkedHashSet<Int>,
+    private val nodeRecyclingPool: NodeRecyclingPool,
     private val getNextId: () -> Int,
     private val incrementNextId: () -> Unit,
     private val scheduleFlush: (FlushPriority) -> Unit,
@@ -614,5 +615,77 @@ internal class RuneNodeFactory(
 
     // Also clean up from any pending text rebuilds
     pendingTextRebuild.remove(id)
+  }
+
+  // ==================== Node Recycling ====================
+
+  /**
+   * Reset a recycled node to clean state for reuse.
+   * Clears all state that might persist from previous use.
+   */
+  internal fun resetRecycledNodeState(
+    node: RuneUIManager.Node,
+    type: String,
+  ) {
+    when (type) {
+      TEXT_TYPE -> {
+        node.label?.text = ""
+        node.cachedText = ""
+        node.textChildren.clear()
+      }
+
+      TEXT_INPUT_TYPE, SECURE_TEXT_INPUT_TYPE -> {
+        val input = node.view as? RuneTextInputView ?: return
+        input.setText("")
+        node.textInputState?.let {
+          it.currentText = ""
+          it.defaultValue = ""
+          it.awaitingInitialValue = true
+          it.hasAppliedInitialText = false
+          it.pendingSelection = null
+          it.lastExactHeight = 0
+        }
+      }
+
+      IMAGE_TYPE -> {
+        val image = node.view as? ImageView ?: return
+        image.setImageDrawable(null)
+        node.imageState = null
+      }
+
+      BUTTON_TYPE -> {
+        node.view.setOnClickListener(null)
+        node.view.isClickable = false
+        buttonStyles.remove(node.id)
+      }
+
+      PRESSABLE_TYPE -> {
+        node.view.setOnClickListener(null)
+        (node.view as? RunePressableView)?.let { pressable ->
+          pressable.setOnClickListener(null)
+          // Reset pressable state if it has a reset method
+          pressable.isClickable = false
+        }
+      }
+    }
+
+    // Clear common state
+    node.view.setBackgroundColor(Color.TRANSPARENT)
+    node.pointerEvents = "auto"
+    node.hasOnLayoutHandler = false
+    node.layoutListener?.let {
+      node.view.removeOnLayoutChangeListener(it)
+    }
+    node.layoutListener = null
+    node.cachedText = ""
+    node.children?.clear()
+    node.parentId = null
+    node.index = -1
+    node.hasCompletedInitialMount = false
+    node.measuredFrame = null
+    node.lastLayoutX = Int.MIN_VALUE
+    node.lastLayoutY = Int.MIN_VALUE
+    node.lastLayoutWidth = -1
+    node.lastLayoutHeight = -1
   }
 }

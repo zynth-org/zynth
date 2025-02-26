@@ -1,15 +1,26 @@
 import {
   JSX,
   For,
+  Index,
   createEffect,
   createMemo,
   createSignal,
   splitProps,
   batch,
   onCleanup,
+  untrack,
 } from "solid-js";
 import type { Component } from "solid-js";
 import type { Style } from "@rune/core";
+import { VirtualWindow } from "./VirtualWindow";
+import {
+  ImperativeListManager,
+  type ManagedItem,
+} from "./ImperativeListManager";
+import {
+  AppleStyleScrollController,
+  GapRecoveryManager,
+} from "./ScrollController";
 import {
   ScrollView,
   type ScrollViewProps,
@@ -416,7 +427,7 @@ type AnchorSnapshot = {
 const DEFAULT_WINDOW_MULTIPLE = 2;
 const RANGE_HYSTERESIS = 3;
 const MIN_INITIAL_WINDOW_ITEMS = 12;
-const MAX_DYNAMIC_OVERSCAN_ITEMS = 48;
+const MAX_DYNAMIC_OVERSCAN_ITEMS = 10; // Reduced from 20 to minimize node creation during gaps
 const DEFAULT_BOUNDARY_THRESHOLD = 0.1;
 const BOUNDARY_REARM_FACTOR = 1.5;
 const MIN_REARM_FRACTION = 0.05;
@@ -863,6 +874,13 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
       originalSetHost(node);
     };
   }
+
+  // Initialize imperative managers for immediate list control
+  const listManager = new ImperativeListManager<ItemEntry<T>>();
+  const scrollStopController = new AppleStyleScrollController(scrollController);
+  const gapRecovery = new GapRecoveryManager();
+  const [contentReady, setContentReady] = createSignal(false);
+  const [initialLoadComplete, setInitialLoadComplete] = createSignal(false);
 
   const providedController = local.controller as
     | InternalFlatListController
@@ -1601,17 +1619,50 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
     if (range.end < range.start || range.end < 0) {
       return [];
     }
-    return source.slice(range.start, range.end + 1);
+    const windowed = source.slice(range.start, range.end + 1);
+
+    // Log window changes to detect virtualization issues
+    if (typeof console !== "undefined" && windowed.length > 0) {
+      console.log(
+        `[FlatList] Window: ${range.start}-${range.end} (${windowed.length} items from ${source.length} total)`
+      );
+    }
+
+    return windowed;
+  });
+
+  // Track windowed items to measure cleanup performance
+  let previousWindowedKeys = new Set<string>();
+  createEffect(() => {
+    const currentItems = windowedItems();
+    const currentKeys = new Set(currentItems.map((e) => e.key));
+
+    // Find items that were removed from the window
+    const removedKeys: string[] = [];
+    for (const key of previousWindowedKeys) {
+      if (!currentKeys.has(key)) {
+        removedKeys.push(key);
+      }
+    }
+
+    if (removedKeys.length > 0) {
+      console.log(
+        `[FlatList] Items removed from window: ${
+          removedKeys.length
+        } items (keys: ${removedKeys.slice(0, 5).join(", ")}${
+          removedKeys.length > 5 ? "..." : ""
+        })`
+      );
+    }
+
+    previousWindowedKeys = currentKeys;
   });
 
   const handleItemLayout = (event: LayoutChangeEvent | undefined) => {
     if (!event?.nativeEvent?.layout) return;
     const axis = orientation();
     const layout = event.nativeEvent.layout;
-    const size =
-      axis === "horizontal"
-        ? layout.width ?? 0
-        : layout.height ?? 0;
+    const size = axis === "horizontal" ? layout.width ?? 0 : layout.height ?? 0;
     updateMeasuredItemSize(size);
   };
 
@@ -1882,6 +1933,11 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
   let consecutiveZeroOffsets = 0;
   let isScrolling = false;
   let scrollEndTimeout: number | null = null;
+  let lastRangeUpdateTime = 0;
+  let pendingRangeUpdate: { start: number; end: number } | null = null; // Track throttled updates
+  let gapDetectionTimeout: number | null = null; // Track gap detection
+  const MIN_RANGE_UPDATE_INTERVAL = 100; // Increased from 32ms to 100ms to give cleanup more time
+  const GAP_DETECTION_THRESHOLD = 1000; // 1 second without range update = gap (lowered from 2s)
 
   const processMetricsUpdate = (metrics: ScrollMetrics) => {
     const state = internalState();
@@ -2118,9 +2174,56 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
 
     const prev = renderRange();
     if (prev.start !== startIndex || prev.end !== endIndex) {
+      // Throttle range updates during fast scrolling to allow cleanup to complete
+      const now = getNow();
+      const timeSinceLastUpdate =
+        lastRangeUpdateTime > 0 ? now - lastRangeUpdateTime : 0;
+
+      if (timeSinceLastUpdate < MIN_RANGE_UPDATE_INTERVAL && isScrolling) {
+        // Store pending update to apply when scrolling ends
+        pendingRangeUpdate = { start: startIndex, end: endIndex };
+        console.log(
+          `[FlatList] Throttling range update (${timeSinceLastUpdate.toFixed(
+            0
+          )}ms since last, min ${MIN_RANGE_UPDATE_INTERVAL}ms) - will apply on scroll end`
+        );
+        return; // Don't update range yet
+      }
+
+      // Check if there was a gap BEFORE this update
+      if (timeSinceLastUpdate > GAP_DETECTION_THRESHOLD && isScrolling) {
+        console.warn(
+          `[FlatList] 🛑 GAP DETECTED! ${timeSinceLastUpdate}ms between range updates - STOPPING SCROLL`
+        );
+        scrollController.stop();
+        console.log("[FlatList] Scroll stopped imperatively (Apple-style)");
+        isScrolling = false; // Mark as stopped
+      }
+
+      console.log(
+        `[FlatList] Range change: ${prev.start}-${
+          prev.end
+        } → ${startIndex}-${endIndex} (offset: ${stableOffset.toFixed(
+          0
+        )}, items: ${total})${
+          timeSinceLastUpdate > 1000 ? ` [${timeSinceLastUpdate}ms gap]` : ""
+        }`
+      );
+      lastRangeUpdateTime = now;
+      pendingRangeUpdate = null; // Clear pending since we're applying now
+
+      // Clear gap detection timer - range updated successfully
+      if (gapDetectionTimeout) {
+        clearTimeout(gapDetectionTimeout);
+        gapDetectionTimeout = null;
+      }
+
       batch(() => {
         setRenderRange({ start: startIndex, end: endIndex });
       });
+    } else {
+      // Range is already correct, clear any pending update
+      pendingRangeUpdate = null;
     }
     lastViewabilityMetrics = {
       offset: stableOffset,
@@ -2202,6 +2305,25 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
       isScrolling = true;
       consecutiveZeroOffsets = 0;
       markInteraction();
+
+      // Start gap detection timer
+      if (gapDetectionTimeout) {
+        clearTimeout(gapDetectionTimeout);
+      }
+      gapDetectionTimeout = setTimeout(() => {
+        // If we're still scrolling after 2 seconds without a range update, we have a gap
+        if (isScrolling) {
+          const now = getNow();
+          const timeSinceLastRangeUpdate = now - lastRangeUpdateTime;
+          if (timeSinceLastRangeUpdate > GAP_DETECTION_THRESHOLD) {
+            console.warn(
+              `[FlatList] 🛑 GAP DETECTED! ${timeSinceLastRangeUpdate}ms since last range update - STOPPING SCROLL`
+            );
+            scrollController.stop();
+            console.log("[FlatList] Scroll stopped imperatively (Apple-style)");
+          }
+        }
+      }, GAP_DETECTION_THRESHOLD) as unknown as number;
     }
 
     // Schedule update
@@ -2216,9 +2338,51 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
       isScrolling = false;
       consecutiveZeroOffsets = 0;
 
+      // Clear gap detection timer
+      if (gapDetectionTimeout) {
+        clearTimeout(gapDetectionTimeout);
+        gapDetectionTimeout = null;
+      }
+
       // If we were doing an animated scroll, end it now
       if (isAnimatedScrolling) {
         handleAnimatedScrollEnd();
+      }
+
+      // Apply any pending throttled range update immediately
+      if (pendingRangeUpdate) {
+        const prev = renderRange();
+        console.log(
+          `[FlatList] Applying throttled range update on scroll end: ${prev.start}-${prev.end} → ${pendingRangeUpdate.start}-${pendingRangeUpdate.end}`
+        );
+        batch(() => {
+          setRenderRange(pendingRangeUpdate!);
+        });
+        pendingRangeUpdate = null;
+      }
+
+      // Check for gap state after scroll settles
+      const itemsInRange = windowedItems().length;
+      const isContentReady = contentReady();
+      const isGap = gapRecovery.detectGap(
+        itemsInRange,
+        isContentReady,
+        false // not scrolling anymore
+      );
+
+      if (isGap) {
+        console.warn(
+          `[FlatList] Gap detected after scroll end (${itemsInRange} items expected, ready: ${isContentReady})`
+        );
+        gapRecovery.attemptRecovery(() => {
+          console.log("[FlatList] Forcing recovery from gap");
+          listManager.forceRecovery();
+          // Force re-render by updating range
+          const current = renderRange();
+          batch(() => {
+            setRenderRange({ start: current.start, end: current.end });
+          });
+        });
       }
 
       // Force one final update with current metrics to ensure stable state
@@ -2234,6 +2398,9 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
     if (scrollEndTimeout) {
       clearTimeout(scrollEndTimeout);
     }
+    if (gapDetectionTimeout) {
+      clearTimeout(gapDetectionTimeout);
+    }
     if (animatedScrollTimeout) {
       clearTimeout(animatedScrollTimeout);
     }
@@ -2241,6 +2408,75 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
       viewabilityTask.cancel();
     }
   });
+
+  // Ensure initial items are visible on first load
+  createEffect(() => {
+    const items = windowedItems();
+    if (items.length > 0 && !initialLoadComplete()) {
+      console.log(`[FlatList] Initial load: ${items.length} items`);
+      setInitialLoadComplete(true);
+
+      // Force immediate render on first load
+      setTimeout(() => {
+        if (!contentReady()) {
+          console.warn("[FlatList] Initial content not ready, forcing render");
+          listManager.forceRecovery();
+        }
+      }, 100);
+    }
+  });
+
+  // Note: ImperativeListManager not used yet - still using <For> for compatibility
+  // The manager will be integrated once we solve the reactivity/rendering issue
+  /*
+  createEffect(() => {
+    const items = windowedItems();
+    const managedItems: ManagedItem<ItemEntry<T>>[] = items.map((entry) => ({
+      key: entry.key,
+      data: entry,
+      index: entry.index,
+    }));
+
+    listManager.update(managedItems, (entry, idx) => {
+      const SeparatorComponent = local.ItemSeparatorComponent;
+      const currentItems = windowedItems();
+      const nextEntry = currentItems[idx + 1];
+      const separatorInfo = nextEntry
+        ? {
+            leadingItem: entry.item,
+            trailingItem: nextEntry.item,
+            leadingIndex: entry.index,
+            trailingIndex: nextEntry.index,
+          }
+        : null;
+
+      return (
+        <>
+          <View
+            key={entry.key}
+            onLayout={virtualizationEnabled() ? handleItemLayout : undefined}
+          >
+            {local.renderItem({
+              item: entry.item,
+              index: entry.index,
+              key: entry.key,
+            })}
+          </View>
+          {separatorInfo && SeparatorComponent ? (
+            <SeparatorComponent {...separatorInfo} />
+          ) : null}
+        </>
+      );
+    });
+
+    setContentReady(listManager.isContentReady());
+
+    if (items.length > 0) {
+      const stats = listManager.getStats();
+      console.log("[FlatList] List manager stats:", stats);
+    }
+  });
+  */
 
   return (
     <ScrollView
@@ -2256,34 +2492,27 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
       {virtualizationEnabled() && beforeSpacerSize() > 0 ? (
         <View style={beforeSpacerStyle()} />
       ) : null}
-      <For
-        each={windowedItems()}
-        fallback={
-          items().length === 0
-            ? renderSupplemental(local.ListEmptyComponent)
-            : null
-        }
-      >
-        {(entry, indexAccessor) => {
+      <For each={windowedItems()}>
+        {(entry, idx) => {
           const SeparatorComponent = local.ItemSeparatorComponent;
-          const separatorInfo = createMemo(() => {
-            if (!SeparatorComponent) return null;
-            const currentItems = windowedItems();
-            const nextEntry = currentItems[indexAccessor() + 1];
-            if (!nextEntry) return null;
-            return {
-              leadingItem: entry.item,
-              trailingItem: nextEntry.item,
-              leadingIndex: entry.index,
-              trailingIndex: nextEntry.index,
-            };
-          });
+          const currentItems = windowedItems();
+          const nextEntry = currentItems[idx() + 1];
+          const separatorInfo = nextEntry
+            ? {
+                leadingItem: entry.item,
+                trailingItem: nextEntry.item,
+                leadingIndex: entry.index,
+                trailingIndex: nextEntry.index,
+              }
+            : null;
 
           return (
             <>
               <View
                 key={entry.key}
-                onLayout={virtualizationEnabled() ? handleItemLayout : undefined}
+                onLayout={
+                  virtualizationEnabled() ? handleItemLayout : undefined
+                }
               >
                 {local.renderItem({
                   item: entry.item,
@@ -2291,13 +2520,16 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
                   key: entry.key,
                 })}
               </View>
-              {separatorInfo() && SeparatorComponent ? (
-                <SeparatorComponent {...separatorInfo()!} />
+              {separatorInfo && SeparatorComponent ? (
+                <SeparatorComponent {...separatorInfo} />
               ) : null}
             </>
           );
         }}
       </For>
+      {items().length === 0
+        ? renderSupplemental(local.ListEmptyComponent)
+        : null}
       {virtualizationEnabled() && afterSpacerSize() > 0 ? (
         <View style={afterSpacerStyle()} />
       ) : null}

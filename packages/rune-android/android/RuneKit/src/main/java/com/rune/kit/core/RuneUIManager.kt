@@ -159,6 +159,9 @@ class RuneUIManager(
   private val pendingNativeOperations = mutableListOf<NativeOperation>()
   private val stickyFrameCarryover = mutableSetOf<Int>()
   private val buttonStyles = SparseArray<ButtonVisualStyle>()
+  private val nodeRecyclingPool = NodeRecyclingPool(
+    debugLogging = isNativeDebugEnabled(),
+  )
   private val propApplier = RunePropApplier(
     nodes = nodes,
     engine = engine,
@@ -187,6 +190,7 @@ class RuneUIManager(
     imageSupport = imageSupport,
     buttonStyles = buttonStyles,
     pendingTextRebuild = pendingTextRebuild,
+    nodeRecyclingPool = nodeRecyclingPool,
     getNextId = { nextId },
     incrementNextId = { nextId++ },
     scheduleFlush = { priority: FlushPriority -> layoutFlush.scheduleFlush(priority) },
@@ -223,6 +227,13 @@ class RuneUIManager(
   @Volatile private var dirty = false
   private var lastRootWidth = -1
   private var lastRootHeight = -1
+  
+  // Performance tracking for operation queues
+  private var maxViewOps = 0
+  private var maxNativeOps = 0
+  private var scheduleFlushCount = 0
+  private var totalNodesCreated = 0
+  private var totalNodesRemoved = 0
 
   init {
     // root has no parent by design; no global parents map needed
@@ -325,7 +336,27 @@ class RuneUIManager(
   }
 
   override fun createNode(type: String): Int = onMain {
-    nodeFactory.createNode(type)
+    // RECYCLING DISABLED - causing bugs without fixing performance
+    // The real issue is elsewhere (scroll offset updates, layout calculations)
+    
+    val createStart = android.os.SystemClock.elapsedRealtime()
+    
+    // Create new node from scratch
+    val id = nodeFactory.createNode(type)
+    
+    totalNodesCreated++
+    
+    val createTime = android.os.SystemClock.elapsedRealtime() - createStart
+    if (createTime > 10) {
+      Log.w("RunePerf", "⚠️ createNode took ${createTime}ms for type=$type (id=$id)")
+    }
+    
+    // Warn if node count is growing too large
+    if (nodes.size() > 400 && totalNodesCreated % 50 == 0) {
+      Log.e("RunePerf", "🚨 Node count: ${nodes.size()} (created: $totalNodesCreated, removed: $totalNodesRemoved, leaked: ${totalNodesCreated - totalNodesRemoved - nodes.size()})")
+    }
+    
+    return@onMain id
   }
 
   private fun parseString(json: String?): String? {
@@ -843,6 +874,19 @@ class RuneUIManager(
     // For now, we defer parsing until application
     val parsedValue: Any? = null
     
+    // Deduplicate: remove any previous setProp for same node+property
+    // Use reversed iteration for better performance when removing from end
+    val iterator = pendingNativeOperations.listIterator(pendingNativeOperations.size)
+    var removedCount = 0
+    while (iterator.hasPrevious() && removedCount < 20) {
+      val op = iterator.previous()
+      if (op is NativeOperation.SetProp && op.nodeId == nodeId && op.name == name) {
+        iterator.remove()
+        break // Only one setProp per node+property needed
+      }
+      removedCount++
+    }
+    
     pendingNativeOperations.add(
       NativeOperation.SetProp(
         nodeId = nodeId,
@@ -856,6 +900,19 @@ class RuneUIManager(
   }
 
   override fun setText(nodeId: Int, text: String) = onMain {
+    // Deduplicate: remove any previous setText for same node
+    // Use reversed iteration for better performance when removing from end
+    val iterator = pendingNativeOperations.listIterator(pendingNativeOperations.size)
+    var removedCount = 0
+    while (iterator.hasPrevious() && removedCount < 10) {
+      val op = iterator.previous()
+      if (op is NativeOperation.SetText && op.nodeId == nodeId) {
+        iterator.remove()
+        break // Only one setText per node needed
+      }
+      removedCount++
+    }
+    
     pendingNativeOperations.add(NativeOperation.SetText(nodeId, text))
     scheduleFlush()
   }
@@ -891,6 +948,11 @@ class RuneUIManager(
   }
 
   override fun removeChild(parentId: Int, childId: Int) = onMain {
+    // Track removal frequency
+    if (totalNodesRemoved % 10 == 0 && totalNodesRemoved > 0) {
+      Log.i("RunePerf", "🗑️ removeChild called (total removed: $totalNodesRemoved, current nodes: ${nodes.size()})")
+    }
+    
     val parentNode = nodes.get(parentId)
     if (parentNode?.type == TEXT_TYPE) {
       parentNode.textChildren.remove(childId)
@@ -907,9 +969,15 @@ class RuneUIManager(
       Log.w("RuneUI", "removeChild: node $childId not found for parent $parentId")
       return@onMain
     }
+    
+    totalNodesRemoved++
+    
     pendingViewOperations.removeAll { op ->
       op is ViewOperation.Insert && op.parentId == parentId && op.childId == childId
     }
+    
+    // RECYCLING DISABLED - causing bugs without fixing performance
+    // Normal removal and destruction
     pendingViewOperations.add(ViewOperation.Remove(parentId, childNode))
     nodeFactory.removeNodeRecursive(childId, detachView = false)
     scheduleFlush()
@@ -954,6 +1022,9 @@ class RuneUIManager(
     lastRootWidth = -1
     lastRootHeight = -1
     buttonStyles.clear()
+    
+    // Clear recycling pool to free memory
+    nodeRecyclingPool.clear()
 
     engine.reset()
   }
@@ -971,7 +1042,77 @@ class RuneUIManager(
   }
 
   private fun scheduleFlush(priority: FlushPriority = FlushPriority.NORMAL) {
+    scheduleFlushCount++
+    
+    val viewOps = pendingViewOperations.size
+    val nativeOps = pendingNativeOperations.size
+    
+    // Track peak queue sizes
+    if (viewOps > maxViewOps) {
+      maxViewOps = viewOps
+      if (viewOps > 50 && viewOps % 10 == 0) { // Only log every 10 to reduce spam
+        Log.w("RunePerf", "📈 NEW MAX view operations: $maxViewOps (nodes: ${nodes.size()})")
+      }
+    }
+    if (nativeOps > maxNativeOps) {
+      maxNativeOps = nativeOps
+      if (nativeOps > 100 && nativeOps % 25 == 0) { // Only log every 25 to reduce spam
+        Log.w("RunePerf", "📈 NEW MAX native operations: $maxNativeOps (nodes: ${nodes.size()})")
+      }
+    }
+    
+    // Warn if queues are growing large (less frequently to avoid log spam)
+    if ((viewOps > 100 || nativeOps > 200) && scheduleFlushCount % 50 == 0) {
+      Log.e("RunePerf", "🚨 LARGE OPERATION QUEUES: view=$viewOps native=$nativeOps (schedule #$scheduleFlushCount)")
+    }
+    
     layoutFlush.scheduleFlush(priority)
+  }
+
+  /**
+   * Debug method to log current recycling pool metrics.
+   * Call this to see pool efficiency during development.
+   */
+  fun logRecyclingPoolMetrics() {
+    if (!isNativeDebugEnabled()) return
+    nodeRecyclingPool.logMetrics()
+  }
+  
+  /**
+   * Log performance statistics for debugging.
+   */
+  fun logPerformanceStats() {
+    val nodeCountDiff = totalNodesCreated - totalNodesRemoved
+    val expectedNodeCount = nodes.size()
+    val leakedNodes = nodeCountDiff - expectedNodeCount
+    
+    Log.i("RunePerf", """
+      📊 PERFORMANCE STATS:
+        - scheduleFlush calls: $scheduleFlushCount
+        - Peak view ops: $maxViewOps
+        - Peak native ops: $maxNativeOps
+        - Current nodes: ${nodes.size()}
+        - Nodes created: $totalNodesCreated
+        - Nodes removed: $totalNodesRemoved
+        - Expected node count: $nodeCountDiff
+        - Leaked nodes: $leakedNodes
+        - Current view ops: ${pendingViewOperations.size}
+        - Current native ops: ${pendingNativeOperations.size}
+        - Flush stats: ${layoutFlush.totalFlushes} total, ${layoutFlush.slowFlushCount} slow (${if (layoutFlush.totalFlushes > 0) layoutFlush.slowFlushCount * 100 / layoutFlush.totalFlushes else 0}%)
+        - Avg flush time: ${if (layoutFlush.totalFlushes > 0) layoutFlush.totalFlushTime / layoutFlush.totalFlushes else 0}ms
+    """.trimIndent())
+    
+    if (leakedNodes > 50) {
+      Log.e("RunePerf", "🚨 MEMORY LEAK DETECTED: $leakedNodes nodes not properly cleaned up!")
+    }
+  }
+
+  /**
+   * Get current recycling pool metrics.
+   * Useful for telemetry or performance monitoring.
+   */
+  internal fun getRecyclingPoolMetrics(): NodeRecyclingPool.RecyclingMetrics {
+    return nodeRecyclingPool.getMetrics()
   }
 
   private inline fun <T> onMain(crossinline block: () -> T): T {

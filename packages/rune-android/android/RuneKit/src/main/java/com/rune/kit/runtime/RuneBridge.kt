@@ -80,6 +80,11 @@ object RuneBridge {
       }
       null
     }
+    
+    val logPerformanceStats: (Array<Any?>) -> Any? = {
+      manager.logPerformanceStats()
+      null
+    }
 
     adapter.setGlobalObject(
       "__ui",
@@ -92,6 +97,7 @@ object RuneBridge {
         "setHandler" to setHandler,
         "flush" to flush,
         "applyBatch" to applyBatch,
+        "logPerformanceStats" to logPerformanceStats,
       ),
     )
   }

@@ -83,6 +83,11 @@ internal class RuneLayoutFlush(
   var pendingFlushPriority = FlushPriority.NORMAL
   var lastRootWidth = -1
   var lastRootHeight = -1
+  
+  // Performance tracking
+  var totalFlushes = 0
+  var slowFlushCount = 0
+  var totalFlushTime = 0L
 
   // ==================== Operation Processing ====================
 
@@ -94,17 +99,43 @@ internal class RuneLayoutFlush(
 
   internal fun processPendingNativeOperations() {
     if (pendingNativeOperations.isEmpty()) return
+    
+    val startTime = android.os.SystemClock.elapsedRealtime()
+    val initialCount = pendingNativeOperations.size
+    
     val operations = pendingNativeOperations.toList()
     pendingNativeOperations.clear()
+    
+    // Build set of nodes being removed to skip operations on them
+    val nodesToRemove = pendingViewOperations
+      .filterIsInstance<ViewOperation.Remove>()
+      .map { it.node.id }
+      .toSet()
+    
     val prioritized = mutableListOf<NativeOperation>()
     val remaining = mutableListOf<NativeOperation>()
+    var skippedCount = 0
+    
     operations.forEach { op ->
+      // Skip operations on nodes that are about to be removed
+      val nodeId = when (op) {
+        is NativeOperation.SetProp -> op.nodeId
+        is NativeOperation.SetText -> op.nodeId
+        is NativeOperation.SetHandler -> op.nodeId
+      }
+      
+      if (nodesToRemove.contains(nodeId)) {
+        skippedCount++
+        return@forEach
+      }
+      
       if (op is NativeOperation.SetProp && shouldPrioritizeTextInputProp(op)) {
         prioritized.add(op)
       } else {
         remaining.add(op)
       }
     }
+    
     (prioritized + remaining).forEach { op ->
       when (op) {
         is NativeOperation.SetProp -> applySetProp(op.nodeId, op.name, op.jsonValue, op.category)
@@ -112,10 +143,20 @@ internal class RuneLayoutFlush(
         is NativeOperation.SetHandler -> applySetHandler(op.nodeId, op.event, op.handlerId)
       }
     }
+    
+    val elapsed = android.os.SystemClock.elapsedRealtime() - startTime
+    val processedCount = prioritized.size + remaining.size
+    if (elapsed > 5 || skippedCount > 0) {
+      Log.w("RunePerf", "⚠️ processPendingNativeOperations: ${elapsed}ms for $initialCount ops (processed: $processedCount, skipped: $skippedCount, prioritized: ${prioritized.size})")
+    }
   }
 
   internal fun processPendingViewOperations() {
     if (pendingViewOperations.isEmpty() || viewTransactionInProgress) return
+    
+    val startTime = android.os.SystemClock.elapsedRealtime()
+    val initialCount = pendingViewOperations.size
+    
     viewTransactionInProgress = true
     try {
       val operationsByParent = pendingViewOperations.groupBy {
@@ -175,6 +216,11 @@ internal class RuneLayoutFlush(
     } finally {
       pendingViewOperations.clear()
       viewTransactionInProgress = false
+      
+      val elapsed = android.os.SystemClock.elapsedRealtime() - startTime
+      if (elapsed > 5) {
+        Log.w("RunePerf", "⚠️ processPendingViewOperations: ${elapsed}ms for $initialCount ops")
+      }
     }
   }
 
@@ -215,6 +261,11 @@ internal class RuneLayoutFlush(
 
   internal fun performFlush() {
     if (layoutTransactionActive) return
+    
+    val flushStartTime = android.os.SystemClock.elapsedRealtime()
+    val initialViewOps = pendingViewOperations.size
+    val initialNativeOps = pendingNativeOperations.size
+    
     layoutTransactionActive = true
     root.suppressLayoutCompat(true)
     val stickyRelayoutNodes = mutableSetOf<Int>()
@@ -226,13 +277,24 @@ internal class RuneLayoutFlush(
 
       if (!dirty && pendingNativeOperations.isEmpty() && pendingViewOperations.isEmpty()) return
 
+      var loopCount = 0
       do {
+        loopCount++
         dirty = false
 
         PerformanceProfiler.recordLayoutStart()
+        
+        val nativeOpsStart = android.os.SystemClock.elapsedRealtime()
         processPendingNativeOperations()
+        val nativeOpsTime = android.os.SystemClock.elapsedRealtime() - nativeOpsStart
+        
+        val viewOpsStart = android.os.SystemClock.elapsedRealtime()
         processPendingViewOperations()
+        val viewOpsTime = android.os.SystemClock.elapsedRealtime() - viewOpsStart
+        
+        val textRebuildStart = android.os.SystemClock.elapsedRealtime()
         drainPendingTextRebuilds()
+        val textRebuildTime = android.os.SystemClock.elapsedRealtime() - textRebuildStart
 
         val previousFrames = SparseArray<Rect>()
         for (i in 0 until nodes.size()) {
@@ -249,8 +311,12 @@ internal class RuneLayoutFlush(
 
         engine.calculateLayout(root.width, root.height)
         PerformanceProfiler.recordLayoutEnd()
+        
+        val layoutCalcTime = android.os.SystemClock.elapsedRealtime() - textRebuildStart - textRebuildTime
 
         PerformanceProfiler.recordRenderStart()
+        
+        val applyLayoutStart = android.os.SystemClock.elapsedRealtime()
 
         // Get all frames at once from the engine (single batch lookup)
         val allFrames = engine.getAllFrames()
@@ -374,11 +440,51 @@ internal class RuneLayoutFlush(
         if (stickyNodesForRelayout.isNotEmpty()) {
           stickyRelayoutNodes.addAll(stickyNodesForRelayout)
         }
+        
+        val applyLayoutTime = android.os.SystemClock.elapsedRealtime() - applyLayoutStart
+        
         PerformanceProfiler.recordRenderEnd()
+        
+        // Log performance if this iteration was slow
+        val iterationTime = nativeOpsTime + viewOpsTime + textRebuildTime + layoutCalcTime + applyLayoutTime
+        if (iterationTime > 16) {
+          Log.w("RunePerf", """
+            🔥 SLOW FLUSH ITERATION #$loopCount: ${iterationTime}ms
+              - Native ops: ${nativeOpsTime}ms
+              - View ops: ${viewOpsTime}ms  
+              - Text rebuild: ${textRebuildTime}ms
+              - Layout calc: ${layoutCalcTime}ms
+              - Apply layout: ${applyLayoutTime}ms (${nodes.size()} nodes)
+          """.trimIndent())
+        }
+        
       } while (dirty || pendingNativeOperations.isNotEmpty() || pendingViewOperations.isNotEmpty())
       if (stickyRelayoutNodes.isNotEmpty()) {
         stickyRelayoutNodes.forEach { engine.markDirty(it) }
       }
+      
+      // Log overall flush performance
+      val totalFlushTime = android.os.SystemClock.elapsedRealtime() - flushStartTime
+      totalFlushes++
+      this.totalFlushTime += totalFlushTime
+      
+      if (totalFlushTime > 16) {
+        slowFlushCount++
+        val avgFlushTime = if (totalFlushes > 0) this.totalFlushTime / totalFlushes else 0
+        Log.e("RunePerf", """
+          ⚠️ SLOW FLUSH: ${totalFlushTime}ms ($loopCount iterations)
+            Initial ops: view=$initialViewOps native=$initialNativeOps
+            Total nodes: ${nodes.size()}
+            Slow flush rate: ${slowFlushCount}/${totalFlushes} (${slowFlushCount * 100 / totalFlushes}%)
+            Avg flush time: ${avgFlushTime}ms
+        """.trimIndent())
+        
+        // Extra warning if node count is suspiciously high
+        if (nodes.size() > 400) {
+          Log.e("RunePerf", "🚨 NODE COUNT EXPLOSION: ${nodes.size()} nodes (expected <100 for virtualized list)")
+        }
+      }
+      
     } finally {
       root.suppressLayoutCompat(false)
       layoutTransactionActive = false
@@ -394,6 +500,10 @@ internal class RuneLayoutFlush(
 
   private fun drainPendingTextRebuilds() {
     if (pendingTextRebuild.isEmpty()) return
+    
+    val rebuildStart = android.os.SystemClock.elapsedRealtime()
+    val count = pendingTextRebuild.size
+    
     val toProcess = pendingTextRebuild.toList()
     pendingTextRebuild.clear()
     toProcess.forEach { nodeId ->
@@ -403,6 +513,11 @@ internal class RuneLayoutFlush(
       node.cachedText = newText
       node.label?.text = newText
       (node.view as? TextView)?.text = newText
+    }
+    
+    val rebuildTime = android.os.SystemClock.elapsedRealtime() - rebuildStart
+    if (rebuildTime > 5) {
+      Log.w("RunePerf", "⚠️ drainPendingTextRebuilds: ${rebuildTime}ms for $count text nodes")
     }
   }
 

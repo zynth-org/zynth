@@ -48,6 +48,17 @@ export const Platform = Object.freeze({
   select<T>(spec: PlatformSelectSpec<T>): T {
     return getSpecValue(spec, resolveOS());
   },
+  /**
+   * Log native performance statistics (Android only).
+   * Call this after scrolling to see flush times, operation queue sizes, etc.
+   */
+  logPerformanceStats(): void {
+    if (typeof globalThis === "undefined") return;
+    const ui = (globalThis as any).__ui;
+    if (ui && typeof ui.logPerformanceStats === "function") {
+      ui.logPerformanceStats();
+    }
+  },
 });
 
 export type { PlatformSelectSpec };

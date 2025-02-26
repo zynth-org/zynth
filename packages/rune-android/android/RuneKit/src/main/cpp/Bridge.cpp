@@ -318,8 +318,8 @@ void removeHandlersForNode(const std::shared_ptr<RuntimeState> &state, int nodeI
   std::lock_guard<std::mutex> lock(state->mutex);
   for (auto it = state->handlers.begin(); it != state->handlers.end();) {
     if (it->second.nodeId == nodeId) {
-      BRIDGE_LOG(ANDROID_LOG_DEBUG, "Removing handler %ld for node %d event %s", 
-                 it->first, nodeId, it->second.event.c_str());
+      // BRIDGE_LOG(ANDROID_LOG_DEBUG, "Removing handler %ld for node %d event %s", 
+      //            it->first, nodeId, it->second.event.c_str());
       it = state->handlers.erase(it);
     } else {
       ++it;

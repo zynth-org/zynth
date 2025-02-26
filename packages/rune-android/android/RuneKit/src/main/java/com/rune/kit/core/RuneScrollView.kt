@@ -574,6 +574,7 @@ internal class RuneScrollView(
 
   internal fun handleScrollChanged(x: Int, y: Int) {
     logState("handleScrollChanged(x=$x,y=$y)")
+    val handleStart = SystemClock.uptimeMillis()
     val now = SystemClock.uptimeMillis()
     val dt = (now - lastDispatchTime).coerceAtLeast(1L)
     val vx = ((x - lastDispatchedX) / dt.toFloat()) * 1000f
@@ -596,6 +597,11 @@ internal class RuneScrollView(
       }
     } else {
       dispatchScrollEventInternal("onScroll", payload, force = true)
+    }
+    
+    val handleTime = SystemClock.uptimeMillis() - handleStart
+    if (handleTime > 5) {
+      Log.w("RunePerf", "⚠️ handleScrollChanged took ${handleTime}ms for offset ($x, $y)")
     }
   }
 
@@ -858,6 +864,7 @@ internal class RuneScrollView(
     payload: JSONObject,
     force: Boolean = false,
   ) {
+    val dispatchStart = SystemClock.uptimeMillis()
     val now = SystemClock.uptimeMillis()
     val skipThrottle = force || (event == "onScroll" && !bridgeCoalescing)
     if (!skipThrottle) {
@@ -876,7 +883,15 @@ internal class RuneScrollView(
       lastDispatchedX = it.optInt("x")
       lastDispatchedY = it.optInt("y")
     }
+    
     manager?.dispatchEvent(nodeId, event, payload)
+    
+    val dispatchTime = SystemClock.uptimeMillis() - dispatchStart
+    if (dispatchTime > 5) {
+      val offset = payload.optJSONObject("contentOffset")
+      val y = offset?.optInt("y") ?: 0
+      Log.w("RunePerf", "⚠️ dispatchScrollEvent took ${dispatchTime}ms for offset y=$y")
+    }
   }
 
   private fun attachHost(host: ScrollHost) {
