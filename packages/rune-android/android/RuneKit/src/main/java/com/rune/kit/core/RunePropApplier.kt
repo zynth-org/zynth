@@ -32,6 +32,7 @@ internal class RunePropApplier(
   private val logDebug: (String, String) -> Unit,
   private val resolveTextNode: (Int) -> RuneUIManager.Node?,
   private val onTextInputTextUpdated: (Int, String) -> Unit,
+  private val storeEventPayload: (Int, String, JSONObject?) -> Unit,
 ) {
   
   // Property batch applier for accumulating layout/style properties
@@ -698,6 +699,11 @@ internal class RunePropApplier(
       if (node.type == IMAGE_TYPE) {
         imageSupport.onHandlerSet(node, event)
       }
+      if (event == "onLayout") {
+        node.hasOnLayoutHandler = true
+        attachOnLayoutListener(node, eventDispatcher)
+        dispatchImmediateLayout(node, eventDispatcher)
+      }
     }
     val node = nodes.get(nodeId)
     val nodeType = node?.type
@@ -727,6 +733,84 @@ internal class RunePropApplier(
       }
     }
     handlerListener(nodeId, event, handlerId)
+  }
+
+  private fun attachOnLayoutListener(
+    node: RuneUIManager.Node,
+    eventDispatcher: (Int, String) -> Unit,
+  ) {
+    if (node.layoutListener != null) return
+    val listener = View.OnLayoutChangeListener { _, left, top, right, bottom, _, _, _, _ ->
+      maybeDispatchLayoutEvent(
+        node,
+        left,
+        top,
+        right,
+        bottom,
+        force = false,
+        eventDispatcher = eventDispatcher,
+      )
+    }
+    node.layoutListener = listener
+    node.view.addOnLayoutChangeListener(listener)
+  }
+
+  private fun dispatchImmediateLayout(
+    node: RuneUIManager.Node,
+    eventDispatcher: (Int, String) -> Unit,
+  ) {
+    val view = node.view
+    if (view.width > 0 || view.height > 0) {
+      maybeDispatchLayoutEvent(
+        node,
+        view.left,
+        view.top,
+        view.right,
+        view.bottom,
+        force = true,
+        eventDispatcher = eventDispatcher,
+      )
+    }
+  }
+
+  private fun maybeDispatchLayoutEvent(
+    node: RuneUIManager.Node,
+    left: Int,
+    top: Int,
+    right: Int,
+    bottom: Int,
+    force: Boolean,
+    eventDispatcher: (Int, String) -> Unit,
+  ) {
+    if (!node.hasOnLayoutHandler) return
+    val width = (right - left).coerceAtLeast(0)
+    val height = (bottom - top).coerceAtLeast(0)
+    if (width <= 0 && height <= 0) return
+    if (
+      !force &&
+        node.lastLayoutX == left &&
+        node.lastLayoutY == top &&
+        node.lastLayoutWidth == width &&
+        node.lastLayoutHeight == height
+    ) {
+      return
+    }
+    node.lastLayoutX = left
+    node.lastLayoutY = top
+    node.lastLayoutWidth = width
+    node.lastLayoutHeight = height
+    val payload = try {
+      val layout = JSONObject()
+        .put("x", left)
+        .put("y", top)
+        .put("width", width)
+        .put("height", height)
+      JSONObject().put("nativeEvent", JSONObject().put("layout", layout))
+    } catch (_: JSONException) {
+      null
+    }
+    storeEventPayload(node.id, "onLayout", payload)
+    eventDispatcher(node.id, "onLayout")
   }
 
   private fun applyStyleToButton(nodeId: Int, button: RuneButtonView, style: Style) {

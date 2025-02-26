@@ -29,6 +29,9 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, strong, nullable) UIColor *imageTintColor;
 @property(nonatomic, assign) int parentId;
 @property(nonatomic, copy, nullable) NSString *pointerEvents;
+@property(nonatomic, assign) BOOL hasOnLayoutHandler;
+@property(nonatomic, assign) BOOL hasDispatchedLayout;
+@property(nonatomic, assign) CGRect lastLayoutFrame;
 @end
 
 @interface SNUIManager (Internal)

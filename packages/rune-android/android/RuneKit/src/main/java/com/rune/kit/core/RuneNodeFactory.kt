@@ -591,6 +591,11 @@ internal class RuneNodeFactory(
     if (node.type == BUTTON_TYPE) {
       buttonStyles.remove(id)
     }
+    node.layoutListener?.let {
+      node.view.removeOnLayoutChangeListener(it)
+      node.layoutListener = null
+    }
+    node.hasOnLayoutHandler = false
 
     // Clean up view: remove click listener and from parent
     node.view.setOnClickListener(null)

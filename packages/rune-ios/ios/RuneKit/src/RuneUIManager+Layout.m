@@ -1,4 +1,5 @@
 #import "RuneUIManager+Layout.h"
+#import "RuneUIManager+Events.h"
 
 #if __has_include(<RuneKit/RuneKit-Swift.h>)
 #import <RuneKit/RuneKit-Swift.h>
@@ -88,6 +89,7 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
         }
 
         obj.view.frame = CGRectMake(x, y, w, h);
+        [self rune_dispatchLayoutEventForNode:obj force:NO];
 
         for (CALayer *sublayer in obj.view.layer.sublayers) {
             if ([sublayer.name isEqualToString:kRuneBorderLayerName] && [sublayer isKindOfClass:[CAShapeLayer class]]) {
@@ -101,6 +103,39 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
     }];
     [[PerformanceProfiler shared] recordRenderEnd];
   });
+}
+
+- (void)rune_dispatchLayoutEventForNode:(SNNode *)node force:(BOOL)force {
+  if (!node || !node.view || !node.hasOnLayoutHandler) {
+    return;
+  }
+
+  CGRect frame = node.view.frame;
+  if (CGRectIsNull(frame)) {
+    return;
+  }
+
+  CGFloat width = CGRectGetWidth(frame);
+  CGFloat height = CGRectGetHeight(frame);
+  if (width <= 0.f && height <= 0.f) {
+    return;
+  }
+
+  if (!force && node.hasDispatchedLayout && CGRectEqualToRect(node.lastLayoutFrame, frame)) {
+    return;
+  }
+
+  node.lastLayoutFrame = frame;
+  node.hasDispatchedLayout = YES;
+
+  NSDictionary *layout = @{
+    @"x": @(CGRectGetMinX(frame)),
+    @"y": @(CGRectGetMinY(frame)),
+    @"width": @(width),
+    @"height": @(height),
+  };
+  NSDictionary *payload = @{ @"nativeEvent": @{ @"layout": layout } };
+  [self rune_dispatchEvent:@"onLayout" payload:payload toNode:node];
 }
 
 @end

@@ -3,9 +3,23 @@ import type { JSX, ParentComponent } from "solid-js";
 import type { Style } from "@rune/core";
 import { getVirtualListRecorder } from "./virtual-list-recorder";
 
+export type LayoutRectangle = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export type LayoutChangeEvent = {
+  nativeEvent: {
+    layout: LayoutRectangle;
+  };
+};
+
 export interface ViewProps {
   style?: Style;
   onPress?: () => void;
+  onLayout?: (event: LayoutChangeEvent) => void;
   accessibilityLabel?: string;
   accessibilityHint?: string;
   accessibilityRole?: "button" | "header" | "link" | "none";
@@ -23,6 +37,7 @@ export const View: ParentComponent<ViewProps> = (props) => {
     "accessibilityRole",
     "pointerEvents",
     "testID",
+    "onLayout",
   ]);
   const resolvedChildren = resolveChildren(() => props.children);
   const resolvedPointer = local.pointerEvents ?? "auto";
@@ -58,6 +73,7 @@ export const View: ParentComponent<ViewProps> = (props) => {
       accessibilityHint={local.accessibilityHint}
       accessibilityRole={local.accessibilityRole}
       pointerEvents={local.pointerEvents}
+      onLayout={local.onLayout}
       testID={local.testID}
     >
       {resolvedChildren()}

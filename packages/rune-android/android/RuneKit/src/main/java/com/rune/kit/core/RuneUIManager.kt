@@ -11,6 +11,7 @@ import android.util.Log
 import android.util.SparseArray
 import android.view.Gravity
 import android.view.View
+import android.view.View.OnLayoutChangeListener
 import android.view.View.MeasureSpec
 import android.view.ViewGroup
 import android.widget.Button
@@ -101,6 +102,12 @@ class RuneUIManager(
     var hasCompletedInitialMount: Boolean = false,
     // Cache for frame dimensions to detect changes and support sticky frame reuse
     var measuredFrame: Rect? = null,
+    var hasOnLayoutHandler: Boolean = false,
+    var lastLayoutX: Int = Int.MIN_VALUE,
+    var lastLayoutY: Int = Int.MIN_VALUE,
+    var lastLayoutWidth: Int = -1,
+    var lastLayoutHeight: Int = -1,
+    var layoutListener: OnLayoutChangeListener? = null,
   )
 
   data class SelectionSpec(var start: Int, var end: Int)
@@ -162,6 +169,7 @@ class RuneUIManager(
     logDebug = ::logDebug,
     resolveTextNode = ::resolveTextNode,
     onTextInputTextUpdated = ::onTextInputTextUpdated,
+    storeEventPayload = ::storeEventPayload,
   )
   private val eventManager = RuneEventManager(
     nodes = nodes,

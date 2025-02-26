@@ -19,7 +19,7 @@ import {
   type MaintainVisibleContentPosition,
   ScrollController,
 } from "./ScrollView";
-import { View } from "./View";
+import { View, type LayoutChangeEvent } from "./View";
 
 export interface FlatListController {
   scrollToOffset(params: { offset: number; animated?: boolean }): void;
@@ -420,6 +420,7 @@ const MAX_DYNAMIC_OVERSCAN_ITEMS = 48;
 const DEFAULT_BOUNDARY_THRESHOLD = 0.1;
 const BOUNDARY_REARM_FACTOR = 1.5;
 const MIN_REARM_FRACTION = 0.05;
+const DEFAULT_FALLBACK_ITEM_SIZE = 110;
 
 type ScheduledTask = {
   cancel: () => void;
@@ -1456,6 +1457,20 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
     onCleanup(() => ref(null));
   });
 
+  const [measuredItemSize, setMeasuredItemSize] = createSignal<number | null>(
+    null
+  );
+
+  const updateMeasuredItemSize = (size: number) => {
+    if (!Number.isFinite(size) || size <= 0) return;
+    setMeasuredItemSize((prev) => {
+      if (prev === null) return size;
+      const delta = Math.abs(prev - size);
+      if (delta < 0.5) return prev;
+      return prev * 0.7 + size * 0.3;
+    });
+  };
+
   const derivedItemSize = createMemo(() => {
     const metrics = latestMetrics();
     const length = items().length;
@@ -1490,14 +1505,21 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
   const resolvedItemSize = createMemo(() => {
     const exact = exactItemSize();
     if (exact !== null) return exact;
-    return derivedItemSize();
+    const measured = measuredItemSize();
+    if (measured !== null && measured > 0) return measured;
+    const derived = derivedItemSize();
+    if (derived > 0) return derived;
+    return DEFAULT_FALLBACK_ITEM_SIZE;
   });
 
   const virtualizationEnabled = createMemo(
-    () => exactItemSize() !== null && items().length > 0
+    () => resolvedItemSize() > 0 && items().length > 0
   );
 
-  const virtualizationItemSize = createMemo(() => exactItemSize() ?? 0);
+  const virtualizationItemSize = createMemo(() => {
+    const size = resolvedItemSize();
+    return Number.isFinite(size) && size > 0 ? size : 0;
+  });
 
   const [renderRange, setRenderRange] = createSignal<RenderRange>({
     start: 0,
@@ -1581,6 +1603,17 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
     }
     return source.slice(range.start, range.end + 1);
   });
+
+  const handleItemLayout = (event: LayoutChangeEvent | undefined) => {
+    if (!event?.nativeEvent?.layout) return;
+    const axis = orientation();
+    const layout = event.nativeEvent.layout;
+    const size =
+      axis === "horizontal"
+        ? layout.width ?? 0
+        : layout.height ?? 0;
+    updateMeasuredItemSize(size);
+  };
 
   const overscanFor = (viewportSize: number, itemSize: number) => {
     if (viewportSize <= 0 || itemSize <= 0) {
@@ -2248,7 +2281,10 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
 
           return (
             <>
-              <View key={entry.key}>
+              <View
+                key={entry.key}
+                onLayout={virtualizationEnabled() ? handleItemLayout : undefined}
+              >
                 {local.renderItem({
                   item: entry.item,
                   index: entry.index,

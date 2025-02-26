@@ -163,6 +163,9 @@ export function createIOSHost(): Host {
       if (typeof props?.onPress === "function") {
         operations.push(() => ui.setHandler(id, "onPress", props.onPress));
       }
+      if (typeof props?.onLayout === "function") {
+        operations.push(() => ui.setHandler(id, "onLayout", props.onLayout));
+      }
       if (props?.accessibilityLabel)
         operations.push(() =>
           ui.setProp(id, "accessibilityLabel", props.accessibilityLabel)

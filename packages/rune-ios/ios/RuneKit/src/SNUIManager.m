@@ -608,6 +608,13 @@ static void SNApplyEdges(NSDictionary *style,
   if ([self sn_scrollViewHandlesSetHandlerForNode:n name:name]) {
     return;
   }
+
+  if ([name isEqualToString:@"onLayout"]) {
+    n.hasOnLayoutHandler = YES;
+    n.hasDispatchedLayout = NO;
+    [self rune_dispatchLayoutEventForNode:n force:YES];
+    return;
+  }
 }
 
 - (void)setText:(NSNumber *)nodeId text:(NSString *)text {
