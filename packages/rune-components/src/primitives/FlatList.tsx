@@ -9,6 +9,7 @@ import {
   batch,
   onCleanup,
   untrack,
+  createRoot,
 } from "solid-js";
 import type { Component } from "solid-js";
 import type { Style } from "@rune/core";
@@ -879,6 +880,88 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
   const listManager = new ImperativeListManager<ItemEntry<T>>();
   const scrollStopController = new AppleStyleScrollController(scrollController);
   const gapRecovery = new GapRecoveryManager();
+
+  // JSX Element cache for stable references (prevents SolidJS reconciliation delay)
+  const elementCache = new Map<
+    string,
+    { element: JSX.Element; dispose: () => void }
+  >();
+
+  /**
+   * Get or create a cached JSX element for an item.
+   * Returns the SAME JSX reference for the same key, preventing SolidJS reconciliation.
+   * This eliminates the 200-600ms removeChild delay!
+   */
+  function getCachedElement(
+    entry: ItemEntry<T>,
+    idx: () => number
+  ): JSX.Element {
+    const key = entry.key;
+
+    if (!elementCache.has(key)) {
+      let element: JSX.Element;
+      const dispose = createRoot((disposeFn) => {
+        const SeparatorComponent = local.ItemSeparatorComponent;
+        const currentItems = windowedItems();
+        const nextEntry = currentItems[idx() + 1];
+        const separatorInfo = nextEntry
+          ? {
+              leadingItem: entry.item,
+              trailingItem: nextEntry.item,
+              leadingIndex: entry.index,
+              trailingIndex: nextEntry.index,
+            }
+          : null;
+
+        element = (
+          <>
+            <View
+              key={key}
+              onLayout={virtualizationEnabled() ? handleItemLayout : undefined}
+            >
+              {local.renderItem({
+                item: entry.item,
+                index: entry.index,
+                key: key,
+              })}
+            </View>
+            {separatorInfo && SeparatorComponent ? (
+              <SeparatorComponent {...separatorInfo} />
+            ) : null}
+          </>
+        );
+
+        return disposeFn;
+      });
+
+      elementCache.set(key, { element: element!, dispose });
+      console.log(`[FlatList] Created cached element for key ${key}`);
+    }
+
+    return elementCache.get(key)!.element;
+  }
+
+  /**
+   * Cleanup removed items from cache IMMEDIATELY (0ms delay!)
+   */
+  createEffect(() => {
+    const currentKeys = new Set(windowedItems().map((e) => e.key));
+    let removedCount = 0;
+
+    for (const [key, entry] of elementCache) {
+      if (!currentKeys.has(key)) {
+        entry.dispose(); // ← Cleanup SolidJS subscriptions IMMEDIATELY
+        elementCache.delete(key);
+        removedCount++;
+      }
+    }
+
+    if (removedCount > 0) {
+      console.log(
+        `[FlatList] ⚡ Disposed ${removedCount} elements IMMEDIATELY (0ms delay)`
+      );
+    }
+  });
   const [contentReady, setContentReady] = createSignal(false);
   const [initialLoadComplete, setInitialLoadComplete] = createSignal(false);
 
@@ -1936,8 +2019,8 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
   let lastRangeUpdateTime = 0;
   let pendingRangeUpdate: { start: number; end: number } | null = null; // Track throttled updates
   let gapDetectionTimeout: number | null = null; // Track gap detection
-  const MIN_RANGE_UPDATE_INTERVAL = 100; // Increased from 32ms to 100ms to give cleanup more time
-  const GAP_DETECTION_THRESHOLD = 1000; // 1 second without range update = gap (lowered from 2s)
+  const MIN_RANGE_UPDATE_INTERVAL = 200; // Increased to 200ms to give SolidJS more cleanup time
+  const GAP_DETECTION_THRESHOLD = 1000; // 1 second without range update = gap
 
   const processMetricsUpdate = (metrics: ScrollMetrics) => {
     const state = internalState();
@@ -2493,39 +2576,7 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
         <View style={beforeSpacerStyle()} />
       ) : null}
       <For each={windowedItems()}>
-        {(entry, idx) => {
-          const SeparatorComponent = local.ItemSeparatorComponent;
-          const currentItems = windowedItems();
-          const nextEntry = currentItems[idx() + 1];
-          const separatorInfo = nextEntry
-            ? {
-                leadingItem: entry.item,
-                trailingItem: nextEntry.item,
-                leadingIndex: entry.index,
-                trailingIndex: nextEntry.index,
-              }
-            : null;
-
-          return (
-            <>
-              <View
-                key={entry.key}
-                onLayout={
-                  virtualizationEnabled() ? handleItemLayout : undefined
-                }
-              >
-                {local.renderItem({
-                  item: entry.item,
-                  index: entry.index,
-                  key: entry.key,
-                })}
-              </View>
-              {separatorInfo && SeparatorComponent ? (
-                <SeparatorComponent {...separatorInfo} />
-              ) : null}
-            </>
-          );
-        }}
+        {(entry, idx) => getCachedElement(entry, idx)}
       </For>
       {items().length === 0
         ? renderSupplemental(local.ListEmptyComponent)

@@ -1,18 +1,18 @@
 # FlatList Performance Investigation: SolidJS Reconciliation Bottleneck
 
 **Date:** October 28, 2025  
-**Status:** Architectural Limitation Identified  
-**Conclusion:** SolidJS reconciliation is incompatible with high-frequency native bridge operations
+**Status:** Problem Analysis - Active Investigation  
+**Last Updated:** October 28, 2025
 
 ---
 
 ## Executive Summary
 
-After extensive investigation and optimization attempts, we've identified that **SolidJS's asynchronous reconciliation architecture** is fundamentally incompatible with virtualized list rendering that requires high-frequency native DOM manipulation through a JNI bridge.
+This document analyzes the performance bottleneck observed in FlatList virtualization when using SolidJS's reconciliation system with a native bridge architecture (JNI). The investigation reveals that **SolidJS's asynchronous reconciliation** creates fundamental incompatibility with high-frequency native DOM manipulation.
 
-**Key Finding:** SolidJS batches `removeChild` operations with **200-600ms delays** for web performance optimization. During fast scrolling, new nodes are created every 16-32ms while old nodes are removed every 200-600ms, causing **massive memory leaks** (1000-2500+ leaked nodes).
+**Key Finding:** SolidJS batches `removeChild` operations with **200-600ms delays** optimized for web DOM performance. During fast scrolling, new nodes are created every 16-32ms while old nodes are removed every 200-600ms, causing **massive memory leaks** (1000-2500+ leaked nodes).
 
-**Decision:** FlatList item rendering must **bypass SolidJS reconciliation** and use imperative DOM management, while maintaining SolidJS reactivity for props, data, and callbacks.
+**This document focuses exclusively on problem analysis, evidence, and attempted optimizations. Solution proposals are documented separately.**
 
 ---
 
@@ -326,10 +326,14 @@ val (opsToProcess, opsToSkip) = nativeOps.partition { op ->
 ### ✅ Attempt 5: Throttle Scroll Updates
 
 **Approach:** Prevent rapid range changes  
+**Changes:**
+
+- `MIN_RANGE_UPDATE_INTERVAL`: 100ms → 200ms (increased October 28, 2025)
+
 **Implementation:**
 
 ```typescript
-const MIN_RANGE_UPDATE_INTERVAL = 100; // ms
+const MIN_RANGE_UPDATE_INTERVAL = 200; // ms (increased from 100ms)
 
 if (isScrolling && now - lastRangeUpdate < MIN_RANGE_UPDATE_INTERVAL) {
   return; // Skip update
@@ -337,7 +341,7 @@ if (isScrolling && now - lastRangeUpdate < MIN_RANGE_UPDATE_INTERVAL) {
 ```
 
 **Result:** SUCCESS - eliminated crashes  
-**Impact:** More stable, but blank screens during fast scroll
+**Impact:** More stable, but blank screens during fast scroll persist. Higher throttle reduces update frequency but increases lag between scroll and content updates.
 
 ### ❌ Attempt 6: Custom VirtualWindow Component
 
@@ -351,6 +355,61 @@ if (isScrolling && now - lastRangeUpdate < MIN_RANGE_UPDATE_INTERVAL) {
 
 **Result:** FAILED - cannot bypass SolidJS reconciler  
 **Impact:** Code organization improved, but fundamental delay remains
+
+### ✅ Attempt 7: Element Cache with Stable References (October 28, 2025)
+
+**Approach:** Cache JSX elements and return SAME references to prevent SolidJS reconciliation
+
+**Hypothesis:** SolidJS only reconciles when JSX element references change. By caching elements and returning the same reference for each key, we might bypass reconciliation entirely.
+
+**Implementation:**
+
+```typescript
+// In FlatList.tsx
+const elementCache = new Map<string, { element: JSX.Element; dispose: () => void }>();
+
+function getCachedElement(entry: ItemEntry<T>, idx: () => number): JSX.Element {
+  const key = entry.key;
+
+  if (!elementCache.has(key)) {
+    let element: JSX.Element;
+    const dispose = createRoot((disposeFn) => {
+      element = (/* item JSX */);
+      return disposeFn;
+    });
+
+    elementCache.set(key, { element: element!, dispose });
+  }
+
+  return elementCache.get(key)!.element; // ← SAME reference
+}
+
+// Immediate cleanup effect
+createEffect(() => {
+  const currentKeys = new Set(windowedItems().map(e => e.key));
+
+  for (const [key, entry] of elementCache) {
+    if (!currentKeys.has(key)) {
+      entry.dispose(); // ← IMMEDIATE cleanup (0ms delay)
+      elementCache.delete(key);
+    }
+  }
+});
+
+// Render
+<For each={windowedItems()}>
+  {(entry, idx) => getCachedElement(entry, idx)}
+</For>
+```
+
+**Expected Result:**
+
+- Same JSX references → No reconciliation
+- `dispose()` called immediately → 0ms delay
+- Node count stays ~300
+
+**Actual Result:** TO BE TESTED  
+**Status:** Implementation complete, awaiting performance validation
 
 ---
 
@@ -429,91 +488,11 @@ The formula is accurate. Nodes are created but not removed promptly.
 
 ---
 
-## Path Forward: Imperative DOM Management
-
-### Proposed Architecture (Without SolidJS Reconciliation)
-
-```
-User Code (SolidJS components)
-  ↓ FlatList.tsx (SolidJS reactive state) ✓ Keep SolidJS here
-  ↓ ImperativeListRenderer.tsx (NEW) ⚡ Direct DOM control
-      - Maintains Map<key, HostElement>
-      - Calls insertChild/removeChild directly
-      - No JSX arrays, no reconciliation
-  ↓ packages/rune-core/src/renderer.ts
-      - insertChild() / removeChild() called DIRECTLY
-  ↓ Native bridge...
-```
-
-### Implementation Strategy
-
-**Keep SolidJS For:**
-
-- ✅ FlatList state management (`createSignal`, `createMemo`)
-- ✅ Scroll event handling (`handleScroll`)
-- ✅ Props reactivity (data changes, renderItem updates)
-- ✅ Range calculations (`windowedItems()`)
-- ✅ User callbacks (onEndReached, onScroll)
-
-**Replace SolidJS For:**
-
-- ❌ Item rendering (no JSX arrays)
-- ❌ Item lifecycle (manual insertChild/removeChild)
-- ❌ Item caching (imperative Map management)
-
-### Pseudocode Example
-
-```typescript
-// ImperativeListRenderer.tsx
-class ImperativeListRenderer<T> {
-  private cache = new Map<any, HostElement>();
-  private containerRef: HostElement;
-
-  updateItems(items: T[], renderItem: (item: T) => JSX.Element) {
-    const currentKeys = new Set(items.map((i) => i.key));
-
-    // IMMEDIATE REMOVAL (no SolidJS delay)
-    for (const [key, element] of this.cache) {
-      if (!currentKeys.has(key)) {
-        removeChild(this.containerRef, element); // Direct call
-        this.cache.delete(key);
-      }
-    }
-
-    // IMMEDIATE ADDITION
-    items.forEach((item, index) => {
-      if (!this.cache.has(item.key)) {
-        const element = createHostElement(renderItem(item));
-        insertChild(this.containerRef, element, index); // Direct call
-        this.cache.set(item.key, element);
-      }
-    });
-  }
-}
-
-// FlatList.tsx
-export function FlatList<T>(props: FlatListProps<T>) {
-  const [range, setRange] = createSignal({ start: 0, end: 46 });
-  const renderer = new ImperativeListRenderer<T>();
-
-  createEffect(() => {
-    const items = windowedItems();
-    renderer.updateItems(items, props.renderItem); // Direct update
-  });
-
-  return <ScrollView onScroll={handleScroll} ref={renderer.containerRef} />;
-}
-```
-
-**Key Difference:** No JSX arrays returned from effects → No reconciliation delay
-
----
-
-## Current State & Workarounds
+## Current State Summary
 
 ### What's Working
 
-- ✅ Crashes eliminated (100ms throttling)
+- ✅ Crashes eliminated (200ms throttling)
 - ✅ Node count settles to ~300 after scroll stops
 - ✅ Operation deduplication reduces queue bloat
 - ✅ Skip-ops-on-removed-nodes reduces wasted work
@@ -526,7 +505,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
 - ❌ Blank screens during very fast scrolling
 - ❌ Flush times exceed 16ms budget (20-73ms)
 
-### Acceptable Trade-offs (if not rewriting)
+### Current Trade-offs
 
 1. **Temporary node buildup** (400-1600 nodes during fast scroll)
    - Settles to expected count after scroll stops
@@ -535,311 +514,22 @@ export function FlatList<T>(props: FlatListProps<T>) {
    - User must scroll slower to see content
    - Throttling prevents crashes at cost of UX
 3. **Reduced responsiveness**
-   - 100ms throttle means 100ms lag between scroll and content update
+   - 200ms throttle means 200ms lag between scroll and content update
    - Necessary to prevent operation queue explosion
 
 ---
 
-## Metrics Summary
-
-| Metric                 | Expected | Current (SolidJS)  | Target (Imperative) |
-| ---------------------- | -------- | ------------------ | ------------------- |
-| Visible nodes          | 300-350  | 1500-2500 (peak)   | 300-350             |
-| Flush time             | <16ms    | 20-73ms            | <16ms               |
-| Cleanup delay          | <16ms    | 200-600ms          | <16ms               |
-| Leaked nodes/100 items | 0        | 1000-2000          | 0                   |
-| Operation queue size   | <50      | 170-547            | <50                 |
-| Blank screens          | None     | Frequent           | None                |
-| Crash rate             | 0%       | 0% (with throttle) | 0%                  |
-
----
-
-## Recommendations
-
-### Option 1: Accept Current Behavior ⚠️
-
-**Effort:** None  
-**Pros:**
-
-- No code changes needed
-- Works for moderate scrolling
-- Crashes eliminated
-
-**Cons:**
-
-- Poor UX during fast scrolling
-- Memory spikes during scroll
-- Exceeds 16ms frame budget
-
-**Use When:** Prototype/demo apps with limited scrolling
-
-### Option 2: Imperative DOM Management ⭐ RECOMMENDED
-
-**Effort:** Medium (1-2 weeks)  
-**Pros:**
-
-- Solves root cause
-- Full control over lifecycle
-- Maintains SolidJS reactivity for state
-- No framework fork needed
-
-**Cons:**
-
-- More complex code
-- Must handle edge cases manually
-- Lower-level API usage
-
-**Use When:** Production apps requiring smooth scrolling
-
-### Option 3: Fork SolidJS 🚫 NOT RECOMMENDED
-
-**Effort:** Very High (months)  
-**Pros:**
-
-- Could add synchronous mode flag
-- Keeps current architecture
-
-**Cons:**
-
-- Maintenance burden
-- Must track upstream updates
-- May break other SolidJS assumptions
-- Affects entire framework
-
-**Use When:** Never (overkill for this problem)
-
-### Option 4: Switch Reactive Library 🚫 NOT RECOMMENDED
-
-**Effort:** Extreme (complete rewrite)  
-**Pros:**
-
-- Preact/Vue may have different reconciliation
-- Fresh start
-
-**Cons:**
-
-- Affects entire Rune framework
-- Breaking changes for all users
-- Unknown if other libraries better for native bridge
-
-**Use When:** Major version rewrite (v2.0+)
-
----
-
-## Next Steps
-
-1. **Document decision** (this file) ✅
-2. **Discuss with team:** Accept current behavior vs imperative rewrite? ✅ **Decision: Imperative approach**
-3. **Phase 1 Implementation:** ✅ **COMPLETED**
-   - Created `ImperativeListManager` class for direct bridge control
-   - Built `AppleStyleScrollController` for scroll interruption
-   - Added `GapRecoveryManager` for automatic blank screen recovery
-   - Integrated into FlatList.tsx
-4. **Phase 2 Testing:** Verify performance metrics with 5000 items
-5. **Phase 3 Polish:** Handle edge cases and fine-tuning
-
----
-
-## Implementation: Phase 1 Complete ✅
-
-### New Architecture
-
-```
-User Code (SolidJS components)
-  ↓ FlatList.tsx (SolidJS reactive state) ✓ SolidJS here
-  ↓ ImperativeListManager ⚡ NO SolidJS reconciliation
-      - Map<key, CacheEntry> for element storage
-      - createRoot() for each item (SolidJS reactivity preserved)
-      - update() calls immediate add/remove
-  ↓ Direct bridge calls (0ms delay)
-  ↓ packages/rune-core/src/renderer.ts
-      - insertChild() / removeChild() called IMMEDIATELY
-  ↓ Native bridge...
-```
-
-### Files Created
-
-#### `ImperativeListManager.tsx` (300 lines)
-
-**Purpose:** Bypass SolidJS reconciliation for list item lifecycle
-
-**Key Methods:**
-
-- `update(items, renderItem)`: Main entry point, calculates diff and applies changes
-- `getElements()`: Returns JSX elements for rendering
-- `forceRecovery()`: Triggers recovery from blank screen state
-- `getStats()`: Returns created/removed/cached/mounted counts
-
-**How It Works:**
-
-```typescript
-update(items, renderItem) {
-  // Phase 1: Immediate Removal (0ms delay, no SolidJS)
-  toRemove.forEach(key => {
-    entry.dispose();  // Cleanup SolidJS reactivity
-    cache.delete(key);
-  });
-
-  // Phase 2: Immediate Addition
-  toAdd.forEach(item => {
-    createRoot(dispose => {
-      const element = runWithOwner(owner, () => renderItem(item));
-      cache.set(key, { dispose, element, mounted: true });
-    });
-  });
-}
-```
-
-**Key Insight:** Each item is wrapped in `createRoot()` which creates an isolated reactive scope. When we call `dispose()`, SolidJS cleans up that scope immediately. The item component itself is still fully reactive - we just control when it enters/exits the tree.
-
-#### `ScrollController.tsx` (200 lines)
-
-**Purpose:** Apple-style scroll interruption and gap recovery
-
-**AppleStyleScrollController:**
-
-- `shouldStopScroll()`: Detects when content isn't ready during scroll
-- `stopScroll()`: Imperatively blocks scroll (Apple Mail/Contacts behavior)
-- `resumeScroll()`: Allows scroll to continue when content is ready
-- Maximum block duration: 500ms (prevents permanent freeze)
-
-**GapRecoveryManager:**
-
-- `detectGap()`: Identifies blank screen states (items expected but not ready)
-- `attemptRecovery()`: Triggers recovery after detecting consecutive gaps
-- Throttled to 1 recovery per second
-- Requires 2 consecutive gap detections before recovery
-
-### Integration Points in FlatList.tsx
-
-**Initialization (line ~855):**
-
-```typescript
-const listManager = new ImperativeListManager<ItemEntry<T>>();
-const scrollStopController = new AppleStyleScrollController(scrollController);
-const gapRecovery = new GapRecoveryManager();
-const [contentReady, setContentReady] = createSignal(false);
-const [initialLoadComplete, setInitialLoadComplete] = createSignal(false);
-```
-
-**Initial Load Handler (new effect):**
-
-```typescript
-createEffect(() => {
-  const items = windowedItems();
-  if (items.length > 0 && !initialLoadComplete()) {
-    console.log(`[FlatList] Initial load: ${items.length} items`);
-    setInitialLoadComplete(true);
-
-    // Force immediate render on first load
-    setTimeout(() => {
-      if (!contentReady()) {
-        listManager.forceRecovery();
-      }
-    }, 100);
-  }
-});
-```
-
-**List Update Handler (replaces VirtualWindow):**
-
-```typescript
-createEffect(() => {
-  const items = windowedItems();
-  const managedItems = items.map((entry) => ({
-    key: entry.key,
-    data: entry,
-    index: entry.index,
-  }));
-
-  listManager.update(managedItems, renderItemFunction);
-  setContentReady(listManager.isContentReady());
-});
-```
-
-**Gap Recovery on Scroll End (line ~2305):**
-
-```typescript
-scrollEndTimeout = setTimeout(() => {
-  // ... existing code ...
-
-  // Check for gap state after scroll settles
-  const itemsInRange = windowedItems().length;
-  const isContentReady = contentReady();
-  const isGap = gapRecovery.detectGap(itemsInRange, isContentReady, false);
-
-  if (isGap) {
-    gapRecovery.attemptRecovery(() => {
-      console.log("[FlatList] Forcing recovery from gap");
-      listManager.forceRecovery();
-      // Force re-render
-      const current = renderRange();
-      setRenderRange({ start: current.start, end: current.end });
-    });
-  }
-}, 150);
-```
-
-**Rendering (line ~2390):**
-
-```typescript
-return (
-  <ScrollView ...>
-    {/* ... headers, spacers ... */}
-    {listManager.getElements()}  {/* ← Direct element array, no reconciliation */}
-    {/* ... footers ... */}
-  </ScrollView>
-);
-```
-
-### What Changed vs VirtualWindow
-
-| Aspect             | VirtualWindow (Old)          | ImperativeListManager (New) |
-| ------------------ | ---------------------------- | --------------------------- |
-| **Reconciliation** | SolidJS reconciles JSX array | Direct cache management     |
-| **Removal delay**  | 200-600ms (SolidJS async)    | 0ms (immediate)             |
-| **Addition delay** | Immediate                    | Immediate                   |
-| **Reactivity**     | Component reactive           | Component reactive (same)   |
-| **Control**        | SolidJS controls lifecycle   | We control lifecycle        |
-| **Recovery**       | No automatic recovery        | Forced recovery on gaps     |
-| **Initial load**   | Requires manual scroll       | Auto-renders on mount       |
-
-### Expected Improvements
-
-Based on Phase 1 architecture:
-
-1. **Immediate Cleanup:** ✅
-
-   - `dispose()` called synchronously when item leaves window
-   - No 200-600ms delay
-   - Node count should stay ~300 (46 items × ~7 nodes/item)
-
-2. **Initial Load Fixed:** ✅
-
-   - `initialLoadComplete` flag triggers immediate render
-   - 100ms timeout forces recovery if content not ready
-   - No manual scroll needed
-
-3. **Gap Recovery:** ✅
-
-   - Detects gaps after scroll ends
-   - Automatically triggers `forceRecovery()`
-   - Throttled to prevent spam (1/second, 2 consecutive gaps required)
-
-4. **Apple-Style Scroll Stop:** ⚠️ Partial
-   - Detection implemented
-   - Needs native scroll controller integration to actually stop scroll
-   - Currently logs intent, doesn't block physically
-
-### Testing Checklist
-
-- [ ] Node count stays ~300 during scrolling (check with `Platform.logPerformanceStats()`)
-- [ ] No leaked nodes after scroll settles
-- [ ] Initial items visible on app launch (no manual scroll needed)
-- [ ] Gaps recover automatically within 1-2 seconds
-- [ ] No crashes during fast scrolling
-- [ ] Flush times <16ms consistently
-- [ ] Console logs show "Removing X items" followed immediately by disposal (not 600ms later)
+## Performance Metrics Summary
+
+| Metric                 | Expected | Current (Observed) |
+| ---------------------- | -------- | ------------------ |
+| Visible nodes          | 300-350  | 1500-2500 (peak)   |
+| Flush time             | <16ms    | 20-73ms            |
+| Cleanup delay          | <16ms    | 200-600ms          |
+| Leaked nodes/100 items | 0        | 1000-2000          |
+| Operation queue size   | <50      | 170-547            |
+| Blank screens          | None     | Frequent           |
+| Crash rate             | 0%       | 0% (with throttle) |
 
 ---
 
@@ -854,7 +544,7 @@ Based on Phase 1 architecture:
 
 ### Key Files
 
-- `packages/rune-components/src/primitives/FlatList.tsx` (2370 lines)
+- `packages/rune-components/src/primitives/FlatList.tsx` (2614 lines)
 - `packages/rune-components/src/primitives/VirtualWindow.tsx` (90 lines)
 - `packages/rune-android/android/RuneKit/RuneUIManager.kt` (1165 lines)
 - `packages/rune-android/android/RuneKit/RuneLayoutFlush.kt` (565 lines)
@@ -877,17 +567,37 @@ fun logPerformanceStats() {
 
 ---
 
-## Conclusion
+## Additional Context
 
-**SolidJS is excellent for reactive state management**, and we should continue using it for FlatList's props, data updates, scroll handling, and callbacks.
+### React Native Comparison
 
-**SolidJS reconciliation is NOT suitable for high-frequency native DOM manipulation** through expensive JNI bridges. The 200-600ms cleanup delay is a fundamental architectural limitation optimized for web performance.
+React Native faces similar challenges with native bridge overhead but uses different reconciliation strategies:
 
-**The path forward is imperative DOM management for item rendering only**, maintaining SolidJS for everything else. This gives us full control over the native bridge lifecycle while preserving the reactive programming model we love.
+- **Fiber architecture** with incremental reconciliation
+- **Batched updates** with priority scheduling
+- **VirtualizedList** uses imperative scrolling and item recycling
+- **FlashList** (community) uses cell recycling with pre-rendering
+
+Worth investigating: How does React Native's Fabric renderer handle high-frequency updates across the bridge?
+
+### SolidJS Web vs Native
+
+SolidJS was designed for web environments where:
+
+- DOM operations are relatively cheap (C++ browser implementation)
+- Batching prevents layout thrashing and reflows
+- Async scheduling improves perceived performance
+
+In Rune's native environment:
+
+- Every operation crosses expensive JNI boundary (~0.5ms)
+- Native UI thread synchronization required
+- No layout thrashing to prevent (Yoga handles layout separately)
+- Batching accumulates operations faster than they can be flushed
 
 ---
 
-**Document Version:** 1.0  
+**Document Version:** 2.0  
 **Last Updated:** October 28, 2025  
 **Authors:** Investigation team  
-**Status:** Architecture decision documented, awaiting implementation plan
+**Status:** Active problem analysis - solutions documented separately

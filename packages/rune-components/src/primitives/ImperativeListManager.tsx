@@ -8,19 +8,18 @@ import {
 } from "solid-js";
 
 /**
- * ImperativeListManager - Bypasses SolidJS reconciliation for immediate native view control
+ * ImperativeListManager - DEPRECATED
  *
- * WHY THIS EXISTS:
- * SolidJS reconciliation batches removeChild operations with 200-600ms delays.
- * During fast scrolling, this creates memory leaks (2000+ nodes instead of ~300).
+ * This class was an attempt to bypass SolidJS reconciliation but had issues
+ * with items not rendering due to reactivity isolation.
  *
- * This manager calls bridge insertChild/removeChild IMMEDIATELY, giving us:
- * - 0ms cleanup delay (vs 200-600ms with SolidJS)
- * - Full control over native view lifecycle
- * - Ability to stop scroll when content isn't ready (Apple-style)
+ * The CORRECT solution is implemented directly in FlatList.tsx using:
+ * - Element cache Map with stable JSX references
+ * - createRoot per item for proper cleanup
+ * - Immediate disposal in createEffect
  *
- * IMPORTANT: Individual item components are STILL reactive SolidJS components.
- * We only bypass reconciliation for the list container, not component internals.
+ * This class is kept for reference but is NOT used.
+ * See FlatList.tsx getCachedElement() for the working implementation.
  */
 
 export interface ManagedItem<T> {
@@ -31,16 +30,17 @@ export interface ManagedItem<T> {
 
 interface CacheEntry {
   dispose: () => void; // SolidJS cleanup
-  element: any; // The actual JSX element
-  mounted: boolean; // Whether it's in the DOM
+  element: JSX.Element; // The actual JSX element
+  key: string; // For debugging
+  mounted: boolean; // Whether currently in DOM
 }
 
 export class ImperativeListManager<T> {
   private cache = new Map<string, CacheEntry>();
-  private containerElement: any = null;
   private owner: any = null;
   private currentItems: ManagedItem<T>[] = [];
-  private isReady = false; // Track if initial render is complete
+  private containerElement: any = null;
+  private isReady = false;
 
   // Statistics
   private stats = {
@@ -135,17 +135,25 @@ export class ImperativeListManager<T> {
       console.log(`[ImperativeListManager] Adding ${toAdd.length} items`);
       toAdd.forEach((item) => {
         if (!this.cache.has(item.key)) {
-          // Render the item directly without createRoot to stay in parent context
-          const element = runWithOwner(this.owner, () =>
-            renderItem(item.data, item.index)
-          );
+          // Create a reactive root for this item - this makes it actually render!
+          let dispose: () => void;
+          let element: any;
+
+          createRoot((d) => {
+            dispose = d;
+            // Preserve parent owner context while creating isolated root
+            element = runWithOwner(this.owner, () =>
+              renderItem(item.data, item.index)
+            );
+          });
 
           this.cache.set(item.key, {
             dispose: () => {
-              // Disposal happens by removing from cache
+              dispose();
               console.log(`[ImperativeListManager] Disposed item ${item.key}`);
             },
             element,
+            key: item.key,
             mounted: true,
           });
 
@@ -201,14 +209,27 @@ export class ImperativeListManager<T> {
 
   /**
    * Get the current items as JSX elements for rendering
+   * Returns a reactive signal that FlatList can use
    */
   getElements(): JSX.Element[] {
-    return this.currentItems
+    // Map items and get their elements - this ensures they're in the right order
+    const elements = this.currentItems
       .map((item) => {
         const entry = this.cache.get(item.key);
-        return entry?.element;
+        if (!entry) {
+          console.warn(
+            `[ImperativeListManager] Missing cache entry for ${item.key}`
+          );
+          return null;
+        }
+        return entry.element;
       })
       .filter(Boolean);
+
+    console.log(
+      `[ImperativeListManager] getElements returning ${elements.length} elements`
+    );
+    return elements;
   }
 
   /**
