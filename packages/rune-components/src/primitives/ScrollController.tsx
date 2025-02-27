@@ -153,9 +153,9 @@ export class GapRecoveryManager {
 
     if (isGap) {
       this.consecutiveGaps++;
-      console.warn(
-        `[GapRecovery] Gap detected (consecutive: ${this.consecutiveGaps}/${this.maxConsecutiveGaps})`
-      );
+      // console.warn(
+      //   `[GapRecovery] Gap detected (consecutive: ${this.consecutiveGaps}/${this.maxConsecutiveGaps})`
+      // );
     } else {
       this.consecutiveGaps = 0;
     }
@@ -172,9 +172,9 @@ export class GapRecoveryManager {
 
     // Throttle recovery attempts
     if (timeSinceLastRecovery < this.recoveryThrottleMs) {
-      console.log(
-        `[GapRecovery] Throttling recovery (${timeSinceLastRecovery}ms since last)`
-      );
+      // console.log(
+      //   `[GapRecovery] Throttling recovery (${timeSinceLastRecovery}ms since last)`
+      // );
       return false;
     }
 
@@ -183,9 +183,9 @@ export class GapRecoveryManager {
       return false;
     }
 
-    console.log(
-      `[GapRecovery] Attempting recovery (${this.consecutiveGaps} consecutive gaps)`
-    );
+    // console.log(
+    //   `[GapRecovery] Attempting recovery (${this.consecutiveGaps} consecutive gaps)`
+    // );
 
     this.lastRecoveryTime = now;
     this.consecutiveGaps = 0;

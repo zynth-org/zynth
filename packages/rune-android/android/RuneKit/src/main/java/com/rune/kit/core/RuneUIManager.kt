@@ -348,12 +348,12 @@ class RuneUIManager(
     
     val createTime = android.os.SystemClock.elapsedRealtime() - createStart
     if (createTime > 10) {
-      Log.w("RunePerf", "⚠️ createNode took ${createTime}ms for type=$type (id=$id)")
+      // Log.w("RunePerf", "⚠️ createNode took ${createTime}ms for type=$type (id=$id)")
     }
     
     // Warn if node count is growing too large
     if (nodes.size() > 400 && totalNodesCreated % 50 == 0) {
-      Log.e("RunePerf", "🚨 Node count: ${nodes.size()} (created: $totalNodesCreated, removed: $totalNodesRemoved, leaked: ${totalNodesCreated - totalNodesRemoved - nodes.size()})")
+      // Log.e("RunePerf", "🚨 Node count: ${nodes.size()} (created: $totalNodesCreated, removed: $totalNodesRemoved, leaked: ${totalNodesCreated - totalNodesRemoved - nodes.size()})")
     }
     
     return@onMain id
@@ -950,7 +950,7 @@ class RuneUIManager(
   override fun removeChild(parentId: Int, childId: Int) = onMain {
     // Track removal frequency
     if (totalNodesRemoved % 10 == 0 && totalNodesRemoved > 0) {
-      Log.i("RunePerf", "🗑️ removeChild called (total removed: $totalNodesRemoved, current nodes: ${nodes.size()})")
+      // Log.i("RunePerf", "🗑️ removeChild called (total removed: $totalNodesRemoved, current nodes: ${nodes.size()})")
     }
     
     val parentNode = nodes.get(parentId)
@@ -1051,19 +1051,19 @@ class RuneUIManager(
     if (viewOps > maxViewOps) {
       maxViewOps = viewOps
       if (viewOps > 50 && viewOps % 10 == 0) { // Only log every 10 to reduce spam
-        Log.w("RunePerf", "📈 NEW MAX view operations: $maxViewOps (nodes: ${nodes.size()})")
+        // Log.w("RunePerf", "📈 NEW MAX view operations: $maxViewOps (nodes: ${nodes.size()})")
       }
     }
     if (nativeOps > maxNativeOps) {
       maxNativeOps = nativeOps
       if (nativeOps > 100 && nativeOps % 25 == 0) { // Only log every 25 to reduce spam
-        Log.w("RunePerf", "📈 NEW MAX native operations: $maxNativeOps (nodes: ${nodes.size()})")
+        // Log.w("RunePerf", "📈 NEW MAX native operations: $maxNativeOps (nodes: ${nodes.size()})")
       }
     }
     
     // Warn if queues are growing large (less frequently to avoid log spam)
     if ((viewOps > 100 || nativeOps > 200) && scheduleFlushCount % 50 == 0) {
-      Log.e("RunePerf", "🚨 LARGE OPERATION QUEUES: view=$viewOps native=$nativeOps (schedule #$scheduleFlushCount)")
+      // Log.e("RunePerf", "🚨 LARGE OPERATION QUEUES: view=$viewOps native=$nativeOps (schedule #$scheduleFlushCount)")
     }
     
     layoutFlush.scheduleFlush(priority)

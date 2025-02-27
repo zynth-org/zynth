@@ -147,7 +147,7 @@ internal class RuneLayoutFlush(
     val elapsed = android.os.SystemClock.elapsedRealtime() - startTime
     val processedCount = prioritized.size + remaining.size
     if (elapsed > 5 || skippedCount > 0) {
-      Log.w("RunePerf", "⚠️ processPendingNativeOperations: ${elapsed}ms for $initialCount ops (processed: $processedCount, skipped: $skippedCount, prioritized: ${prioritized.size})")
+      // Log.w("RunePerf", "⚠️ processPendingNativeOperations: ${elapsed}ms for $initialCount ops (processed: $processedCount, skipped: $skippedCount, prioritized: ${prioritized.size})")
     }
   }
 
@@ -219,7 +219,7 @@ internal class RuneLayoutFlush(
       
       val elapsed = android.os.SystemClock.elapsedRealtime() - startTime
       if (elapsed > 5) {
-        Log.w("RunePerf", "⚠️ processPendingViewOperations: ${elapsed}ms for $initialCount ops")
+        // Log.w("RunePerf", "⚠️ processPendingViewOperations: ${elapsed}ms for $initialCount ops")
       }
     }
   }
@@ -448,14 +448,14 @@ internal class RuneLayoutFlush(
         // Log performance if this iteration was slow
         val iterationTime = nativeOpsTime + viewOpsTime + textRebuildTime + layoutCalcTime + applyLayoutTime
         if (iterationTime > 16) {
-          Log.w("RunePerf", """
-            🔥 SLOW FLUSH ITERATION #$loopCount: ${iterationTime}ms
-              - Native ops: ${nativeOpsTime}ms
-              - View ops: ${viewOpsTime}ms  
-              - Text rebuild: ${textRebuildTime}ms
-              - Layout calc: ${layoutCalcTime}ms
-              - Apply layout: ${applyLayoutTime}ms (${nodes.size()} nodes)
-          """.trimIndent())
+          // Log.w("RunePerf", """
+          //   🔥 SLOW FLUSH ITERATION #$loopCount: ${iterationTime}ms
+          //     - Native ops: ${nativeOpsTime}ms
+          //     - View ops: ${viewOpsTime}ms  
+          //     - Text rebuild: ${textRebuildTime}ms
+          //     - Layout calc: ${layoutCalcTime}ms
+          //     - Apply layout: ${applyLayoutTime}ms (${nodes.size()} nodes)
+          // """.trimIndent())
         }
         
       } while (dirty || pendingNativeOperations.isNotEmpty() || pendingViewOperations.isNotEmpty())
@@ -471,17 +471,17 @@ internal class RuneLayoutFlush(
       if (totalFlushTime > 16) {
         slowFlushCount++
         val avgFlushTime = if (totalFlushes > 0) this.totalFlushTime / totalFlushes else 0
-        Log.e("RunePerf", """
-          ⚠️ SLOW FLUSH: ${totalFlushTime}ms ($loopCount iterations)
-            Initial ops: view=$initialViewOps native=$initialNativeOps
-            Total nodes: ${nodes.size()}
-            Slow flush rate: ${slowFlushCount}/${totalFlushes} (${slowFlushCount * 100 / totalFlushes}%)
-            Avg flush time: ${avgFlushTime}ms
-        """.trimIndent())
+        // Log.e("RunePerf", """
+        //   ⚠️ SLOW FLUSH: ${totalFlushTime}ms ($loopCount iterations)
+        //     Initial ops: view=$initialViewOps native=$initialNativeOps
+        //     Total nodes: ${nodes.size()}
+        //     Slow flush rate: ${slowFlushCount}/${totalFlushes} (${slowFlushCount * 100 / totalFlushes}%)
+        //     Avg flush time: ${avgFlushTime}ms
+        // """.trimIndent())
         
         // Extra warning if node count is suspiciously high
         if (nodes.size() > 400) {
-          Log.e("RunePerf", "🚨 NODE COUNT EXPLOSION: ${nodes.size()} nodes (expected <100 for virtualized list)")
+          // Log.e("RunePerf", "🚨 NODE COUNT EXPLOSION: ${nodes.size()} nodes (expected <100 for virtualized list)")
         }
       }
       
@@ -517,7 +517,7 @@ internal class RuneLayoutFlush(
     
     val rebuildTime = android.os.SystemClock.elapsedRealtime() - rebuildStart
     if (rebuildTime > 5) {
-      Log.w("RunePerf", "⚠️ drainPendingTextRebuilds: ${rebuildTime}ms for $count text nodes")
+      // Log.w("RunePerf", "⚠️ drainPendingTextRebuilds: ${rebuildTime}ms for $count text nodes")
     }
   }
 

@@ -191,7 +191,7 @@ export class ImperativeListManager<T> {
    * This re-mounts all current items
    */
   forceRecovery(): void {
-    console.log("[ImperativeListManager] Force recovery triggered");
+    // console.log("[ImperativeListManager] Force recovery triggered");
 
     // Clear mounted flags
     this.cache.forEach((entry) => {

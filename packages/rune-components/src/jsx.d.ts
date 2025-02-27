@@ -16,6 +16,16 @@ interface ViewElementProps {
   pointerEvents?: "auto" | "none" | "box-none" | "box-only";
   testID?: string;
   key?: string | number;
+  onLayout?: (event: {
+    nativeEvent: {
+      layout: {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      };
+    };
+  }) => void;
 }
 
 interface TextElementProps {

@@ -601,7 +601,7 @@ internal class RuneScrollView(
     
     val handleTime = SystemClock.uptimeMillis() - handleStart
     if (handleTime > 5) {
-      Log.w("RunePerf", "⚠️ handleScrollChanged took ${handleTime}ms for offset ($x, $y)")
+      // Log.w("RunePerf", "⚠️ handleScrollChanged took ${handleTime}ms for offset ($x, $y)")
     }
   }
 
