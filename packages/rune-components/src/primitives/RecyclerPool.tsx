@@ -55,17 +55,29 @@ export function createRecyclerPool<T>(config: RecyclerPoolConfig) {
 
   let lastVisibleRange = { start: -1, end: -1 };
 
+  // Throttling mechanism to reduce bridge saturation
+  let pendingUpdate: {
+    items: T[];
+    start: number;
+    end: number;
+    keyExtractor: (item: T, index: number) => string;
+    offset?: number;
+  } | null = null;
+  let throttleTimer: number | null = null;
+  let isProcessing = false;
+
   /**
-   * Update the pool to display items in the visible range.
-   * Reuses existing nodes by updating their data and position.
+   * Performs the actual update (called by throttled wrapper)
    */
-  const updateVisibleRange = (
+  const performUpdate = (
     items: T[],
     visibleStart: number,
     visibleEnd: number,
     keyExtractor: (item: T, index: number) => string,
     offset?: number
   ) => {
+    isProcessing = true;
+
     // Clamp to valid range
     const start = Math.max(0, Math.min(visibleStart, items.length - 1));
     const end = Math.max(start, Math.min(visibleEnd, items.length - 1));
@@ -142,6 +154,49 @@ export function createRecyclerPool<T>(config: RecyclerPoolConfig) {
         return newNodes;
       });
     });
+
+    isProcessing = false;
+  };
+
+  /**
+   * Update the pool to display items in the visible range.
+   * Throttled to prevent bridge saturation during fast scrolling.
+   */
+  const updateVisibleRange = (
+    items: T[],
+    visibleStart: number,
+    visibleEnd: number,
+    keyExtractor: (item: T, index: number) => string,
+    offset?: number
+  ) => {
+    // Store the latest update request
+    pendingUpdate = {
+      items,
+      start: visibleStart,
+      end: visibleEnd,
+      keyExtractor,
+      offset,
+    };
+
+    // If already processing, skip (will pick up latest on next cycle)
+    if (isProcessing) {
+      return;
+    }
+
+    // Throttle: batch rapid updates into single operation
+    if (throttleTimer !== null) {
+      return; // Already scheduled
+    }
+
+    throttleTimer = setTimeout(() => {
+      throttleTimer = null;
+
+      if (pendingUpdate) {
+        const { items, start, end, keyExtractor, offset } = pendingUpdate;
+        pendingUpdate = null;
+        performUpdate(items, start, end, keyExtractor, offset);
+      }
+    }, 16) as unknown as number; // ~1 frame delay (60fps)
   };
 
   /**
@@ -171,6 +226,14 @@ export function createRecyclerPool<T>(config: RecyclerPoolConfig) {
    * Reset the pool (clear all data)
    */
   const reset = () => {
+    // Clear any pending updates
+    if (throttleTimer !== null) {
+      clearTimeout(throttleTimer);
+      throttleTimer = null;
+    }
+    pendingUpdate = null;
+    isProcessing = false;
+
     batch(() => {
       setNodes((prevNodes) =>
         prevNodes.map((node) => ({
@@ -184,6 +247,13 @@ export function createRecyclerPool<T>(config: RecyclerPoolConfig) {
     });
     lastVisibleRange = { start: -1, end: -1 };
   };
+
+  // Cleanup on unmount
+  onCleanup(() => {
+    if (throttleTimer !== null) {
+      clearTimeout(throttleTimer);
+    }
+  });
 
   return {
     nodes,

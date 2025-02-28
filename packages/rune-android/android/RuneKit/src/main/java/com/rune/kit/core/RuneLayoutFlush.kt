@@ -471,17 +471,17 @@ internal class RuneLayoutFlush(
       if (totalFlushTime > 16) {
         slowFlushCount++
         val avgFlushTime = if (totalFlushes > 0) this.totalFlushTime / totalFlushes else 0
-        // Log.e("RunePerf", """
-        //   ⚠️ SLOW FLUSH: ${totalFlushTime}ms ($loopCount iterations)
-        //     Initial ops: view=$initialViewOps native=$initialNativeOps
-        //     Total nodes: ${nodes.size()}
-        //     Slow flush rate: ${slowFlushCount}/${totalFlushes} (${slowFlushCount * 100 / totalFlushes}%)
-        //     Avg flush time: ${avgFlushTime}ms
-        // """.trimIndent())
+        Log.e("RunePerf", """
+          ⚠️ SLOW FLUSH: ${totalFlushTime}ms ($loopCount iterations)
+            Initial ops: view=$initialViewOps native=$initialNativeOps
+            Total nodes: ${nodes.size()}
+            Slow flush rate: ${slowFlushCount}/${totalFlushes} (${slowFlushCount * 100 / totalFlushes}%)
+            Avg flush time: ${avgFlushTime}ms
+        """.trimIndent())
         
         // Extra warning if node count is suspiciously high
         if (nodes.size() > 400) {
-          // Log.e("RunePerf", "🚨 NODE COUNT EXPLOSION: ${nodes.size()} nodes (expected <100 for virtualized list)")
+          Log.e("RunePerf", "🚨 NODE COUNT EXPLOSION: ${nodes.size()} nodes (expected <100 for virtualized list)")
         }
       }
       

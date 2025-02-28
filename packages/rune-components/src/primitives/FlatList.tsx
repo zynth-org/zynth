@@ -1137,9 +1137,10 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
 
   // Calculate smart default pool size based on window configuration
   // Pool needs to be >= the maximum window size to avoid missing items
+  // OPTIMIZED: Keep pool smaller to reduce bridge saturation
   const defaultPoolSize = createMemo(() => {
     const itemSize = local.itemSize;
-    if (!itemSize || itemSize <= 0) return 40; // Generous fallback
+    if (!itemSize || itemSize <= 0) return 60; // Reduced from 40
 
     const multiple = windowMultiple();
 
@@ -1150,9 +1151,11 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
     // - hysteresis (3 items)
     // Total can easily be 30-40 items for typical viewports
     const baseEstimate = Math.ceil(MIN_INITIAL_WINDOW_ITEMS * multiple);
-    const withBuffer = baseEstimate + 20; // Add generous buffer for overscan
+    const withBuffer = baseEstimate + 15; // Reduced buffer (was 20)
 
-    return Math.max(40, withBuffer); // Minimum 40 nodes for smooth scrolling
+    // Clamp to 60-100 range to prevent bridge saturation
+    // Too many nodes (200+) = 12k+ bridge ops/sec during scroll
+    return Math.min(100, Math.max(60, withBuffer));
   });
 
   const normalizedViewabilityPairs = createMemo<
