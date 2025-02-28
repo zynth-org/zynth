@@ -1522,23 +1522,59 @@ void onAnimationFrame(
     int frameId,
     double frameTimeMs) {
   using namespace facebook::jsi;
+  
+  // Verify runtime is still valid before proceeding
+  if (!runtime) {
+    BRIDGE_LOG(ANDROID_LOG_WARN, "onAnimationFrame called with null runtime");
+    return;
+  }
+  
   auto state = getState(runtime);
-  if (!state) return;
+  if (!state) {
+    BRIDGE_LOG(ANDROID_LOG_WARN, "onAnimationFrame: state not found for runtime");
+    return;
+  }
+  
+  // Verify runtime pointer matches state's runtime
+  if (state->runtime != runtime) {
+    BRIDGE_LOG(ANDROID_LOG_WARN, "onAnimationFrame: runtime mismatch");
+    return;
+  }
+  
   std::shared_ptr<Function> callback;
   {
     std::lock_guard<std::mutex> lock(state->mutex);
     auto it = state->animationFrames.find(frameId);
     if (it == state->animationFrames.end()) {
+      // Callback was already cancelled, this is normal
       return;
     }
-    callback = std::move(it->second);
+    // Copy the shared_ptr instead of moving it to avoid invalidation issues
+    callback = it->second;
     state->animationFrames.erase(it);
   }
-  if (!callback) return;
+  
+  if (!callback) {
+    BRIDGE_LOG(ANDROID_LOG_WARN, "onAnimationFrame: null callback for frameId %d", frameId);
+    return;
+  }
 
+  // Verify the callback is actually a function before calling
   try {
+    // Extra validation - check if the Function object is still valid
+    if (!callback) {
+      BRIDGE_LOG(ANDROID_LOG_ERROR, "onAnimationFrame: callback became null");
+      return;
+    }
+    
     Value timestamp(frameTimeMs);
     callback->call(*runtime, timestamp);
+  } catch (const facebook::jsi::JSIException &err) {
+    BRIDGE_LOG(ANDROID_LOG_ERROR, "requestAnimationFrame JSI error: %s", err.what());
+    auto freshState = getState(runtime);
+    if (freshState) {
+      reportJsError(freshState, err.what(), "");
+    }
   } catch (const facebook::jsi::JSError &err) {
     BRIDGE_LOG(ANDROID_LOG_ERROR, "requestAnimationFrame error: %s", err.getMessage().c_str());
     auto freshState = getState(runtime);

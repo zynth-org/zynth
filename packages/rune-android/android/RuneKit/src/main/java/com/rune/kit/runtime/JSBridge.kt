@@ -71,6 +71,7 @@ object JSBridge {
     private val callbacks = ConcurrentHashMap<Int, Runnable>()
     private val frameCallbacks = ConcurrentHashMap<Int, Choreographer.FrameCallback>()
     private val mainHandler = Handler(Looper.getMainLooper())
+    @Volatile private var isShutdown = false
 
     override fun scheduleTimeout(timerId: Int, delayMs: Long) {
       val runnable = Runnable {
@@ -89,35 +90,67 @@ object JSBridge {
     }
 
     override fun requestAnimationFrame(frameId: Int) {
+      if (isShutdown) return
+      
       val callback = Choreographer.FrameCallback { frameTimeNanos ->
-        frameCallbacks.remove(frameId)
-        val runtimePtr = runtimePtrProvider()
-        if (runtimePtr != 0L) {
-          onAnimationFrame(runtimePtr, frameId, frameTimeNanos)
+        // Only proceed if this callback hasn't been cancelled and not shutdown
+        if (!isShutdown && frameCallbacks.remove(frameId) != null) {
+          val runtimePtr = runtimePtrProvider()
+          if (runtimePtr != 0L) {
+            // Convert nanoseconds to milliseconds for JS timestamp
+            val frameTimeMs = frameTimeNanos / 1_000_000.0
+            
+            // CRITICAL: Post back to JS thread! JSI calls must be on the JS thread
+            handler.post {
+              // Re-check runtime ptr in case it was destroyed while posting
+              val currentPtr = runtimePtrProvider()
+              if (currentPtr != 0L && currentPtr == runtimePtr) {
+                onAnimationFrame(runtimePtr, frameId, frameTimeMs.toLong())
+              }
+            }
+          }
         }
       }
       frameCallbacks[frameId] = callback
       mainHandler.post {
-        Choreographer.getInstance().postFrameCallback(callback)
+        // Double-check callback wasn't cancelled before we got here
+        if (!isShutdown && frameCallbacks.containsKey(frameId)) {
+          Choreographer.getInstance().postFrameCallback(callback)
+        }
       }
     }
 
     override fun cancelAnimationFrame(frameId: Int) {
       val callback = frameCallbacks.remove(frameId) ?: return
-      mainHandler.post {
+      // Immediately remove from Choreographer on main thread
+      if (Looper.myLooper() == Looper.getMainLooper()) {
         Choreographer.getInstance().removeFrameCallback(callback)
+      } else {
+        mainHandler.post {
+          Choreographer.getInstance().removeFrameCallback(callback)
+        }
       }
     }
 
     fun shutdown() {
+      isShutdown = true
+      
       callbacks.values.forEach { handler.removeCallbacks(it) }
       callbacks.clear()
+      
       val pendingFrames = frameCallbacks.values.toList()
       frameCallbacks.clear()
+      
       if (pendingFrames.isNotEmpty()) {
-        mainHandler.post {
+        // Synchronously remove if already on main thread, otherwise post
+        if (Looper.myLooper() == Looper.getMainLooper()) {
           val choreographer = Choreographer.getInstance()
           pendingFrames.forEach { choreographer.removeFrameCallback(it) }
+        } else {
+          mainHandler.post {
+            val choreographer = Choreographer.getInstance()
+            pendingFrames.forEach { choreographer.removeFrameCallback(it) }
+          }
         }
       }
     }
