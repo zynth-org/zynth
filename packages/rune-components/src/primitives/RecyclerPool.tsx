@@ -64,7 +64,6 @@ export function createRecyclerPool<T>(config: RecyclerPoolConfig) {
     offset?: number;
   } | null = null;
   let throttleTimer: number | null = null;
-  let isProcessing = false;
 
   /**
    * Performs the actual update (called by throttled wrapper)
@@ -76,8 +75,6 @@ export function createRecyclerPool<T>(config: RecyclerPoolConfig) {
     keyExtractor: (item: T, index: number) => string,
     offset?: number
   ) => {
-    isProcessing = true;
-
     // Clamp to valid range
     const start = Math.max(0, Math.min(visibleStart, items.length - 1));
     const end = Math.max(start, Math.min(visibleEnd, items.length - 1));
@@ -154,8 +151,6 @@ export function createRecyclerPool<T>(config: RecyclerPoolConfig) {
         return newNodes;
       });
     });
-
-    isProcessing = false;
   };
 
   /**
@@ -169,7 +164,7 @@ export function createRecyclerPool<T>(config: RecyclerPoolConfig) {
     keyExtractor: (item: T, index: number) => string,
     offset?: number
   ) => {
-    // Store the latest update request
+    // Always store the latest update request (even if one is pending)
     pendingUpdate = {
       items,
       start: visibleStart,
@@ -178,17 +173,13 @@ export function createRecyclerPool<T>(config: RecyclerPoolConfig) {
       offset,
     };
 
-    // If already processing, skip (will pick up latest on next cycle)
-    if (isProcessing) {
-      return;
-    }
-
-    // Throttle: batch rapid updates into single operation
+    // If we already have a timer scheduled, the latest update will be picked up
     if (throttleTimer !== null) {
-      return; // Already scheduled
+      return; // Already scheduled, will use latest pendingUpdate
     }
 
-    throttleTimer = setTimeout(() => {
+    // Schedule the update with requestAnimationFrame for smooth 60fps batching
+    throttleTimer = requestAnimationFrame(() => {
       throttleTimer = null;
 
       if (pendingUpdate) {
@@ -196,7 +187,7 @@ export function createRecyclerPool<T>(config: RecyclerPoolConfig) {
         pendingUpdate = null;
         performUpdate(items, start, end, keyExtractor, offset);
       }
-    }, 16) as unknown as number; // ~1 frame delay (60fps)
+    }) as unknown as number;
   };
 
   /**
@@ -228,11 +219,10 @@ export function createRecyclerPool<T>(config: RecyclerPoolConfig) {
   const reset = () => {
     // Clear any pending updates
     if (throttleTimer !== null) {
-      clearTimeout(throttleTimer);
+      cancelAnimationFrame(throttleTimer);
       throttleTimer = null;
     }
     pendingUpdate = null;
-    isProcessing = false;
 
     batch(() => {
       setNodes((prevNodes) =>
@@ -251,7 +241,7 @@ export function createRecyclerPool<T>(config: RecyclerPoolConfig) {
   // Cleanup on unmount
   onCleanup(() => {
     if (throttleTimer !== null) {
-      clearTimeout(throttleTimer);
+      cancelAnimationFrame(throttleTimer);
     }
   });
 
