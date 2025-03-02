@@ -450,16 +450,30 @@ export function createAndroidHost(): Host {
                 `[Host/insertNode] ♻️  RE-INSERTING recycled node ${node.id} (type=${node.type}) into parent ${parent.id} at index ${physIdx}`
               );
             }
-          } else {
-            // This is a nested child (e.g., Text inside View) - DON'T recycle it
-            // Remove from recycling if it was marked
-            if (NODE_TO_CONTEXT.has(node.id)) {
-              NODE_TO_CONTEXT.delete(node.id);
+          }
+
+          // Propagate recycling context to nested descendants so their pools can be reused.
+          if (!NODE_TO_CONTEXT.has(node.id)) {
+            let ancestorId: number | null = parent.id;
+            let inheritedContext: string | null = null;
+            while (ancestorId !== null) {
+              const ancestorContext = NODE_TO_CONTEXT.get(ancestorId);
+              if (ancestorContext) {
+                inheritedContext = ancestorContext;
+                break;
+              }
+              ancestorId = PARENTS.get(ancestorId) ?? null;
+            }
+
+            const isNativeElement = node.type !== "marker";
+            if (inheritedContext && isNativeElement) {
+              NODE_TO_CONTEXT.set(node.id, inheritedContext);
               console.log(
-                `[Host/insertNode] 🚫 Unmarked nested node ${node.id} (type=${node.type}) - nested children aren't recycled`
+                `[Host/insertNode] 🪆 Marked nested node ${node.id} (type=${node.type}) for recycling with context ${inheritedContext}`
               );
             }
           }
+
           break;
         }
         currentParent = PARENTS.get(currentParent) ?? null;
