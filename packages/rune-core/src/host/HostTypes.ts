@@ -23,6 +23,7 @@ export interface HostBatchMeta {
   target?: number;
   templateId?: string;
   itemKey?: string | number;
+  itemIndex?: number;
   descriptor?: Record<string, any> | null;
   extras?: Record<string, any> | null;
 }
@@ -71,6 +72,12 @@ export type Style = {
     | "flex-end"
     | "stretch"
     | "baseline";
+  position?: "relative" | "absolute";
+  top?: number;
+  right?: number;
+  bottom?: number;
+  left?: number;
+  display?: "flex" | "none";
   borderRadius?: number;
   borderWidth?: number;
   borderColor?: string;
@@ -130,6 +137,19 @@ export type ImageSource =
   | ImageDataSource
   | ImageAssetDescriptor;
 
+export type RecyclingConfig = {
+  poolSize: number;
+  itemType: NodeType;
+  resetProps?: string[];
+};
+
+export type RecyclingContext = {
+  id: string;
+  config: RecyclingConfig;
+  pool: Map<NodeType, number[]>; // type -> array of available nodeIds
+  activeBindings: Map<number, { itemKey: string; itemIndex: number }>; // nodeId -> item info
+};
+
 export interface Host {
   createRootContainer(container: unknown): HostNode;
   createNode(
@@ -148,4 +168,21 @@ export interface Host {
   flush?(): void;
   beginBatch?(meta: HostBatchMeta): void;
   endBatch?(meta?: HostBatchMeta): void;
+
+  // Recycling APIs
+  enableRecycling?(containerId: number, config: RecyclingConfig): string; // returns contextId
+  disableRecycling?(contextId: string): void;
+  reclaimNode?(contextId: string, node: HostNode): void; // return node to pool
+  acquireNode?(
+    contextId: string,
+    type: NodeType,
+    itemKey: string,
+    itemIndex: number
+  ): HostNode | null; // get node from pool or create new
+  updateNodeBinding?(
+    node: HostNode,
+    itemKey: string,
+    itemIndex: number,
+    props: Record<string, any>
+  ): void; // update existing node with new data
 }

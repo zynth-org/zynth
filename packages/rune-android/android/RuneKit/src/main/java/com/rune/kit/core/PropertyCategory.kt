@@ -77,6 +77,12 @@ object PropertyCategoryMap {
     put("gap", PropertyCategory.LAYOUT)
     put("rowGap", PropertyCategory.LAYOUT)
     put("columnGap", PropertyCategory.LAYOUT)
+    put("position", PropertyCategory.LAYOUT)
+    put("top", PropertyCategory.LAYOUT)
+    put("right", PropertyCategory.LAYOUT)
+    put("bottom", PropertyCategory.LAYOUT)
+    put("left", PropertyCategory.LAYOUT)
+    put("display", PropertyCategory.LAYOUT)
     
     // Visual style properties (applied to View background/appearance)
     put("backgroundColor", PropertyCategory.STYLE)

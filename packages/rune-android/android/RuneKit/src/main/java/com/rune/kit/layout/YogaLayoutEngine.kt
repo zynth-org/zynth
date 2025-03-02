@@ -246,6 +246,8 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
     applyMargin(node, style)
     applyGap(node, style)
     applyBorder(node, style)
+    applyPosition(node, style)
+    applyDisplay(node, style)
   }
 
   private fun mergeStyles(prev: Style?, next: Style): Style {
@@ -282,6 +284,12 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
       justifyContent = next.justifyContent ?: prev.justifyContent,
       alignItems = next.alignItems ?: prev.alignItems,
       alignSelf = next.alignSelf ?: prev.alignSelf,
+      position = next.position ?: prev.position,
+      top = next.top ?: prev.top,
+      right = next.right ?: prev.right,
+      bottom = next.bottom ?: prev.bottom,
+      left = next.left ?: prev.left,
+      display = next.display ?: prev.display,
       padding = next.padding ?: prev.padding,
       paddingHorizontal = next.paddingHorizontal ?: prev.paddingHorizontal,
       paddingVertical = next.paddingVertical ?: prev.paddingVertical,
@@ -352,6 +360,33 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
   private fun applyBorder(node: YogaNode, style: Style) {
     val width = style.borderWidth ?: 0f
     node.setBorder(YogaEdge.ALL, width)
+  }
+
+  private fun applyPosition(node: YogaNode, style: Style) {
+    // Set position type
+    style.position?.let { positionType ->
+      when (positionType.lowercase()) {
+        "absolute" -> node.setPositionType(com.facebook.yoga.YogaPositionType.ABSOLUTE)
+        "relative" -> node.setPositionType(com.facebook.yoga.YogaPositionType.RELATIVE)
+        else -> node.setPositionType(com.facebook.yoga.YogaPositionType.RELATIVE)
+      }
+    }
+    
+    // Set position edges
+    style.top?.let { node.setPosition(YogaEdge.TOP, it) }
+    style.right?.let { node.setPosition(YogaEdge.RIGHT, it) }
+    style.bottom?.let { node.setPosition(YogaEdge.BOTTOM, it) }
+    style.left?.let { node.setPosition(YogaEdge.LEFT, it) }
+  }
+
+  private fun applyDisplay(node: YogaNode, style: Style) {
+    style.display?.let { displayValue ->
+      when (displayValue.lowercase()) {
+        "none" -> node.setDisplay(com.facebook.yoga.YogaDisplay.NONE)
+        "flex" -> node.setDisplay(com.facebook.yoga.YogaDisplay.FLEX)
+        else -> node.setDisplay(com.facebook.yoga.YogaDisplay.FLEX)
+      }
+    }
   }
 
   private fun YogaNode.indexOf(child: YogaNode): Int {

@@ -1,4 +1,11 @@
-import type { Host, HostNode, HostBatchMeta, Style } from "./HostTypes";
+import type {
+  Host,
+  HostNode,
+  HostBatchMeta,
+  Style,
+  RecyclingConfig,
+  RecyclingContext,
+} from "./HostTypes";
 import type { RuneUIBridge } from "../bridge";
 
 export function createAndroidHost(): Host {
@@ -17,6 +24,13 @@ export function createAndroidHost(): Host {
   const CHILDREN = new Map<number, number[]>();
   const TEXTS = new Map<number, string>();
   const TYPES = new Map<number, HostNode["type"]>();
+
+  // Recycling system
+  const RECYCLING_CONTEXTS = new Map<string, RecyclingContext>();
+  const NODE_TO_CONTEXT = new Map<number, string>(); // track which context owns each node
+  const CONTAINER_TO_CONTEXT = new Map<number, string>(); // map container nodeId -> contextId
+  let nextContextId = 0;
+  let activeRecyclingContext: string | null = null; // Currently active context for createNode
 
   let flushScheduled = false;
   const operations: Array<() => void> = [];
@@ -169,6 +183,86 @@ export function createAndroidHost(): Host {
 
   const nodeFor = (id: number): HostNode => ({ id, type: typeFor(id) });
 
+  // Recycling helper functions
+  const resetNodeToDefault = (nodeId: number, type: HostNode["type"]) => {
+    // Reset common props to default state
+    operations.push(() => ui.setProp(nodeId, "style", {}));
+    if (type === "text") {
+      operations.push(() => ui.setText(nodeId, ""));
+      TEXTS.set(nodeId, "");
+    }
+
+    // DON'T clear children - they will be managed by SolidJS
+    // When a View is recycled, SolidJS will remove old Text children
+    // and add new ones via normal removeNode/insertNode calls
+
+    // Clear event handlers by setting them to no-op
+    // (Native side should handle cleanup)
+  };
+
+  const findAvailableNodeInPool = (
+    contextId: string,
+    type: HostNode["type"]
+  ): number | null => {
+    const context = RECYCLING_CONTEXTS.get(contextId);
+    if (!context) {
+      console.log(
+        `[Host/findAvailableNodeInPool] ❌ Context ${contextId} not found`
+      );
+      return null;
+    }
+
+    const pool = context.pool.get(type);
+    console.log(
+      `[Host/findAvailableNodeInPool] 🔍 Looking for ${type} in context ${contextId}, pool has ${
+        pool?.length || 0
+      } nodes`
+    );
+
+    if (!pool || pool.length === 0) {
+      console.log(
+        `[Host/findAvailableNodeInPool] ❌ Pool empty for type=${type}`
+      );
+      return null;
+    }
+
+    const nodeId = pool.pop() ?? null;
+    console.log(
+      `[Host/findAvailableNodeInPool] ✅ Found node ${nodeId} in pool`
+    );
+    return nodeId;
+  };
+
+  const returnNodeToPool = (contextId: string, nodeId: number) => {
+    const context = RECYCLING_CONTEXTS.get(contextId);
+    if (!context) return;
+
+    const nodeType = TYPES.get(nodeId);
+    if (!nodeType) return;
+
+    // Reset node to clean state
+    resetNodeToDefault(nodeId, nodeType);
+
+    // Add to pool
+    let pool = context.pool.get(nodeType);
+    if (!pool) {
+      pool = [];
+      context.pool.set(nodeType, pool);
+    }
+    pool.push(nodeId);
+
+    // Remove from active bindings
+    context.activeBindings.delete(nodeId);
+
+    // Log pool stats periodically
+    if (nodeId % 10 === 0) {
+      const poolStats = Array.from(context.pool.entries())
+        .map(([type, nodes]) => `${type}:${nodes.length}`)
+        .join(", ");
+      console.log(`[Host/Pool Stats] Context ${contextId}: ${poolStats}`);
+    }
+  };
+
   const api: Host = {
     createRootContainer() {
       PARENTS.set(0, null);
@@ -177,7 +271,31 @@ export function createAndroidHost(): Host {
       return { id: 0, type: "root" };
     },
     createNode(type, props) {
-      const id: number = ui.createNode(type);
+      let id: number | null = null;
+      let recycled = false;
+
+      // Try to get from ANY active recycling context
+      // We'll associate it with a container when it's inserted via insertNode
+      if (RECYCLING_CONTEXTS.size > 0) {
+        for (const [contextId, context] of RECYCLING_CONTEXTS) {
+          const pooled = findAvailableNodeInPool(contextId, type);
+          if (pooled !== null) {
+            id = pooled;
+            recycled = true;
+            NODE_TO_CONTEXT.set(id, contextId);
+            console.log(
+              `[Host/createNode] ♻️  RECYCLED node ${id} (type=${type}) from context ${contextId}`
+            );
+            break;
+          }
+        }
+      }
+
+      if (id === null) {
+        id = ui.createNode(type);
+        console.log(`[Host/createNode] 🆕 CREATED node ${id} (type=${type})`);
+      }
+
       PARENTS.set(id, null);
       CHILDREN.set(id, []);
       TYPES.set(id, type);
@@ -214,7 +332,30 @@ export function createAndroidHost(): Host {
       return { id, type } as HostNode;
     },
     createText(value) {
-      const id: number = ui.createNode("text");
+      let id: number | null = null;
+      let recycled = false;
+
+      // Try to recycle text nodes too
+      if (RECYCLING_CONTEXTS.size > 0) {
+        for (const [contextId, context] of RECYCLING_CONTEXTS) {
+          const pooled = findAvailableNodeInPool(contextId, "text");
+          if (pooled !== null) {
+            id = pooled;
+            recycled = true;
+            NODE_TO_CONTEXT.set(id, contextId);
+            console.log(
+              `[Host/createText] ♻️  RECYCLED text node ${id} from context ${contextId}`
+            );
+            break;
+          }
+        }
+      }
+
+      if (id === null) {
+        id = ui.createNode("text");
+        console.log(`[Host/createText] 🆕 CREATED text node ${id}`);
+      }
+
       operations.push(() => ui.setText(id, value ?? ""));
       PARENTS.set(id, null);
       CHILDREN.set(id, []);
@@ -279,6 +420,51 @@ export function createAndroidHost(): Host {
       let physIdx = 0;
       for (let i = 0; i < logicalAt; i++) if (!isMarkerId(kids[i])) physIdx++;
 
+      // Check if this is a recycled node being reinserted
+      const wasRecycled = NODE_TO_CONTEXT.has(node.id);
+
+      // Check if parent or any ancestor is a recycling container
+      // If yes, mark this node for recycling BUT ONLY if it's a direct child
+      // We don't want to recycle nested children (like Text inside View)
+      let currentParent: number | null = parent.id;
+      let isDirectChildOfContainer = false;
+
+      while (currentParent !== null) {
+        const contextId = CONTAINER_TO_CONTEXT.get(currentParent);
+        if (contextId && RECYCLING_CONTEXTS.has(contextId)) {
+          // Check if this is a DIRECT child of the recycling container
+          // (not a grandchild or deeper)
+          isDirectChildOfContainer =
+            PARENTS.get(parent.id) === currentParent ||
+            parent.id === currentParent;
+
+          if (isDirectChildOfContainer) {
+            // This node is a direct child - mark it for recycling
+            if (!NODE_TO_CONTEXT.has(node.id)) {
+              NODE_TO_CONTEXT.set(node.id, contextId);
+              console.log(
+                `[Host/insertNode] 🏷️  Marked node ${node.id} (type=${node.type}) for recycling in context ${contextId}`
+              );
+            } else if (wasRecycled) {
+              console.log(
+                `[Host/insertNode] ♻️  RE-INSERTING recycled node ${node.id} (type=${node.type}) into parent ${parent.id} at index ${physIdx}`
+              );
+            }
+          } else {
+            // This is a nested child (e.g., Text inside View) - DON'T recycle it
+            // Remove from recycling if it was marked
+            if (NODE_TO_CONTEXT.has(node.id)) {
+              NODE_TO_CONTEXT.delete(node.id);
+              console.log(
+                `[Host/insertNode] 🚫 Unmarked nested node ${node.id} (type=${node.type}) - nested children aren't recycled`
+              );
+            }
+          }
+          break;
+        }
+        currentParent = PARENTS.get(currentParent) ?? null;
+      }
+
       // mutate logical structure AFTER computing physIdx
       kids.splice(logicalAt, 0, node.id);
       PARENTS.set(node.id, parent.id);
@@ -299,13 +485,38 @@ export function createAndroidHost(): Host {
         return n;
       })();
 
-      // remove from logical
+      // Check if this node came from a recycling pool
+      const contextId = NODE_TO_CONTEXT.get(node.id);
+      const shouldRecycle = contextId && RECYCLING_CONTEXTS.has(contextId);
+
+      if (shouldRecycle) {
+        // Return to pool instead of destroying
+        console.log(
+          `[Host/removeNode] ♻️  RETURNING node ${node.id} (type=${node.type}) to pool ${contextId}`
+        );
+        returnNodeToPool(contextId!, node.id);
+
+        // Detach from parent but don't destroy
+        kids.splice(i, 1);
+        PARENTS.set(node.id, null);
+
+        if (!isMarkerId(node.id)) {
+          // Just detach visually, don't actually remove from native
+          operations.push(() => ui.removeChild(parent.id, node.id));
+        }
+        schedule();
+        return;
+      }
+
+      // Standard destruction path
       kids.splice(i, 1);
       PARENTS.set(node.id, null);
-      if (!isMarkerId(node.id)) TYPES.delete(node.id);
-
       if (!isMarkerId(node.id)) {
+        TYPES.delete(node.id);
         operations.push(() => ui.removeChild(parent.id, node.id));
+        console.log(
+          `[Host/removeNode] 🗑️  DESTROYED node ${node.id} (type=${node.type})`
+        );
       }
       schedule();
     },
@@ -398,6 +609,184 @@ export function createAndroidHost(): Host {
           ui.setText(op.nodeId, op.value);
         }
       }
+    },
+
+    enableRecycling(containerId: number, config: RecyclingConfig): string {
+      const contextId = `recycling-${containerId}-${nextContextId++}`;
+      RECYCLING_CONTEXTS.set(contextId, {
+        id: contextId,
+        config,
+        pool: new Map(),
+        activeBindings: new Map(),
+      });
+      CONTAINER_TO_CONTEXT.set(containerId, contextId);
+
+      // Retroactively mark existing direct children for recycling
+      const containerChildren = CHILDREN.get(containerId) || [];
+
+      console.log(
+        `[Host/Recycling] 🔍 Container ${containerId} has ${containerChildren.length} children:`,
+        containerChildren.map((id) => `${id}(${TYPES.get(id)})`).join(", ")
+      );
+
+      let markedCount = 0;
+      for (const childId of containerChildren) {
+        if (isMarkerId(childId)) {
+          console.log(`[Host/Recycling] ⏭️  Skipping marker ${childId}`);
+          continue;
+        }
+
+        const childType = TYPES.get(childId);
+        console.log(
+          `[Host/Recycling] 🔎 Checking child ${childId} (type=${childType}) against config.itemType=${config.itemType}`
+        );
+
+        // Only mark View nodes (containers), not Text or other types
+        if (childType === config.itemType) {
+          NODE_TO_CONTEXT.set(childId, contextId);
+          markedCount++;
+          console.log(
+            `[Host/Recycling] 🏷️  Retroactively marked node ${childId} (type=${childType}) for recycling in context ${contextId}`
+          );
+        } else {
+          console.log(
+            `[Host/Recycling] ❌ Not marking node ${childId} (type=${childType}) - doesn't match ${config.itemType}`
+          );
+        }
+      }
+
+      console.log(
+        `[Host/Recycling] ✅ Enabled recycling for container ${containerId} (context=${contextId}, pool size=${config.poolSize}, marked ${markedCount} existing nodes)`
+      );
+      return contextId;
+    },
+
+    disableRecycling(contextId: string) {
+      const context = RECYCLING_CONTEXTS.get(contextId);
+      if (!context) return;
+
+      // Return all active nodes to pool before cleanup
+      for (const [nodeId] of context.activeBindings) {
+        returnNodeToPool(contextId, nodeId);
+      }
+
+      // Clean up pool nodes (actually destroy them)
+      for (const [, nodeIds] of context.pool) {
+        for (const nodeId of nodeIds) {
+          const parent = PARENTS.get(nodeId);
+          if (parent !== null && parent !== undefined) {
+            const parentNode = nodeFor(parent);
+            api.removeNode(parentNode, nodeFor(nodeId));
+          }
+          NODE_TO_CONTEXT.delete(nodeId);
+        }
+      }
+
+      RECYCLING_CONTEXTS.delete(contextId);
+      console.log(`[Host/Recycling] Disabled recycling context ${contextId}`);
+    },
+
+    reclaimNode(contextId: string, node: HostNode) {
+      if (!RECYCLING_CONTEXTS.has(contextId)) {
+        console.warn(
+          `[Host/Recycling] Cannot reclaim node ${node.id}: context ${contextId} not found`
+        );
+        return;
+      }
+
+      console.log(
+        `[Host/Recycling] Reclaiming node ${node.id} (type=${node.type}) to pool ${contextId}`
+      );
+      returnNodeToPool(contextId, node.id);
+    },
+
+    acquireNode(
+      contextId: string,
+      type: HostNode["type"],
+      itemKey: string,
+      itemIndex: number
+    ): HostNode | null {
+      const context = RECYCLING_CONTEXTS.get(contextId);
+      if (!context) {
+        console.warn(
+          `[Host/Recycling] Cannot acquire node: context ${contextId} not found`
+        );
+        return null;
+      }
+
+      // Try to get from pool first
+      let nodeId = findAvailableNodeInPool(contextId, type);
+
+      if (nodeId !== null) {
+        // Reusing existing node
+        console.log(
+          `[Host/Recycling] ♻️  REUSING node ${nodeId} (type=${type}) for item ${itemKey} [${itemIndex}]`
+        );
+        context.activeBindings.set(nodeId, { itemKey, itemIndex });
+        return nodeFor(nodeId);
+      }
+
+      // Pool exhausted - create new node if within pool size limit
+      const currentActiveCount = context.activeBindings.size;
+      if (currentActiveCount >= context.config.poolSize) {
+        console.warn(
+          `[Host/Recycling] Pool exhausted! Active: ${currentActiveCount}, Limit: ${context.config.poolSize}`
+        );
+        return null;
+      }
+
+      // Create new node and track it
+      console.log(
+        `[Host/Recycling] 🆕 CREATING new node (type=${type}) for item ${itemKey} [${itemIndex}] (${
+          currentActiveCount + 1
+        }/${context.config.poolSize})`
+      );
+      if (type === "root") {
+        console.error("[Host/Recycling] Cannot create root node in pool");
+        return null;
+      }
+      const newNode = api.createNode(type, {});
+      NODE_TO_CONTEXT.set(newNode.id, contextId);
+      context.activeBindings.set(newNode.id, { itemKey, itemIndex });
+
+      return newNode;
+    },
+
+    updateNodeBinding(
+      node: HostNode,
+      itemKey: string,
+      itemIndex: number,
+      props: Record<string, any>
+    ) {
+      const contextId = NODE_TO_CONTEXT.get(node.id);
+      if (!contextId) {
+        console.warn(
+          `[Host/Recycling] Node ${node.id} not tracked in any recycling context`
+        );
+        return;
+      }
+
+      const context = RECYCLING_CONTEXTS.get(contextId);
+      if (!context) return;
+
+      // Update binding metadata
+      context.activeBindings.set(node.id, { itemKey, itemIndex });
+
+      // Apply props efficiently using batch if available
+      if (props.style !== undefined) {
+        operations.push(() => ui.setProp(node.id, "style", props.style || {}));
+      }
+
+      for (const [key, value] of Object.entries(props)) {
+        if (key === "style") continue; // Already handled
+        if (typeof value === "function") {
+          operations.push(() => ui.setHandler(node.id, key, value));
+        } else if (value !== undefined) {
+          operations.push(() => ui.setProp(node.id, key, value));
+        }
+      }
+
+      schedule();
     },
   };
 

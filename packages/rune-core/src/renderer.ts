@@ -10,6 +10,7 @@ import type { Host, HostNode, HostBatchMeta } from "./host/HostTypes";
 
 let host: Host | null = null;
 export const setHost = (h: Host) => (host = h);
+export const getHost = (): Host | null => host;
 const H = (): Host => {
   if (!host) throw new Error("Host not set");
   return host;

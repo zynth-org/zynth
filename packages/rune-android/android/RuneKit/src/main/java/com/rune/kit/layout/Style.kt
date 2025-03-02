@@ -31,6 +31,14 @@ data class Style(
   val alignItems: String? = null,
   val alignSelf: String? = null,
   
+  // Position properties
+  val position: String? = null,
+  val top: Float? = null,
+  val right: Float? = null,
+  val bottom: Float? = null,
+  val left: Float? = null,
+  val display: String? = null,
+  
   // Spacing properties
   val padding: Float? = null,
   val paddingHorizontal: Float? = null,
@@ -147,6 +155,13 @@ data class Style(
           justifyContent = json.optStringOrNull("justifyContent"),
           alignItems = json.optStringOrNull("alignItems"),
           alignSelf = json.optStringOrNull("alignSelf"),
+          
+          position = json.optStringOrNull("position"),
+          top = json.optFloat("top"),
+          right = json.optFloat("right"),
+          bottom = json.optFloat("bottom"),
+          left = json.optFloat("left"),
+          display = json.optStringOrNull("display"),
           
           padding = json.optFloat("padding"),
           paddingHorizontal = json.optFloat("paddingHorizontal"),
