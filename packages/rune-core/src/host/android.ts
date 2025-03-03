@@ -213,16 +213,16 @@ export function createAndroidHost(): Host {
     }
 
     const pool = context.pool.get(type);
-    console.log(
-      `[Host/findAvailableNodeInPool] 🔍 Looking for ${type} in context ${contextId}, pool has ${
-        pool?.length || 0
-      } nodes`
-    );
+    // console.log(
+    //   `[Host/findAvailableNodeInPool] 🔍 Looking for ${type} in context ${contextId}, pool has ${
+    //     pool?.length || 0
+    //   } nodes`
+    // );
 
     if (!pool || pool.length === 0) {
-      console.log(
-        `[Host/findAvailableNodeInPool] ❌ Pool empty for type=${type}`
-      );
+      // console.log(
+      //   `[Host/findAvailableNodeInPool] ❌ Pool empty for type=${type}`
+      // );
       return null;
     }
 
@@ -468,9 +468,9 @@ export function createAndroidHost(): Host {
             const isNativeElement = node.type !== "marker";
             if (inheritedContext && isNativeElement) {
               NODE_TO_CONTEXT.set(node.id, inheritedContext);
-              console.log(
-                `[Host/insertNode] 🪆 Marked nested node ${node.id} (type=${node.type}) for recycling with context ${inheritedContext}`
-              );
+              // console.log(
+              //   `[Host/insertNode] 🪆 Marked nested node ${node.id} (type=${node.type}) for recycling with context ${inheritedContext}`
+              // );
             }
           }
 
@@ -505,9 +505,9 @@ export function createAndroidHost(): Host {
 
       if (shouldRecycle) {
         // Return to pool instead of destroying
-        console.log(
-          `[Host/removeNode] ♻️  RETURNING node ${node.id} (type=${node.type}) to pool ${contextId}`
-        );
+        // console.log(
+        //   `[Host/removeNode] ♻️  RETURNING node ${node.id} (type=${node.type}) to pool ${contextId}`
+        // );
         returnNodeToPool(contextId!, node.id);
 
         // Detach from parent but don't destroy
