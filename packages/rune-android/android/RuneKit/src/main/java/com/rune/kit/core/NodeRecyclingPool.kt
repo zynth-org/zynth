@@ -197,7 +197,6 @@ internal class NodeRecyclingPool(
       "pressable" to 5,
       "view" to 20,
       "scroll-view" to 0, // Don't pool scroll views
-      "virtual-list" to 0, // Don't pool virtual lists
     )
   }
 }

@@ -7,8 +7,7 @@ export type NodeType =
   | "image"
   | "marker"
   | "text-input"
-  | "secure-text-input"
-  | "virtual-list";
+  | "secure-text-input";
 
 export interface HostNode {
   id: number; // for marker: generate a synthetic negative or a distinct counter

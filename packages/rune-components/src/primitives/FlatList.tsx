@@ -13,6 +13,7 @@ import {
 } from "solid-js";
 import type { Component } from "solid-js";
 import type { Style } from "@rune/core";
+import { getHost, withHostBatch } from "@rune/core";
 import { VirtualWindow } from "./VirtualWindow";
 import {
   ImperativeListManager,
@@ -900,13 +901,22 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
 
   const scrollController = createScrollController();
   let nativeScrollRef: any = null;
+  const [scrollRefSignal, setScrollRefSignal] = createSignal<any>(null);
+
   const internalScrollController = scrollController as any;
   if (typeof internalScrollController.__setHost === "function") {
     const originalSetHost = internalScrollController.__setHost.bind(
       internalScrollController
     );
     internalScrollController.__setHost = (node: any) => {
-      nativeScrollRef = node ?? null;
+      // Only update if actually changing to avoid triggering recycling context recreation
+      if (nativeScrollRef?.id !== node?.id) {
+        nativeScrollRef = node ?? null;
+        setScrollRefSignal(node ?? null);
+        console.log(
+          `[FlatList] ScrollView ref set: nodeId=${node?.id}, type=${node?.type}`
+        );
+      }
       originalSetHost(node);
     };
   }
@@ -915,6 +925,16 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
   const listManager = new ImperativeListManager<ItemEntry<T>>();
   const scrollStopController = new AppleStyleScrollController(scrollController);
   const gapRecovery = new GapRecoveryManager();
+
+  // Host-level recycling system
+  const host = getHost();
+  let recyclingContextId: string | null = null;
+  const hostSupportsRecycling = !!(
+    host?.enableRecycling &&
+    host?.acquireNode &&
+    host?.reclaimNode &&
+    host?.updateNodeBinding
+  );
 
   // JSX Element cache for stable references (prevents SolidJS reconciliation delay)
   const elementCache = new Map<
@@ -926,6 +946,8 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
    * Get or create a cached JSX element for an item.
    * Returns the SAME JSX reference for the same key, preventing SolidJS reconciliation.
    * This eliminates the 200-600ms removeChild delay!
+   *
+   * Now wraps rendering in a Host batch with recycling metadata
    */
   function getCachedElement(
     entry: ItemEntry<T>,
@@ -948,6 +970,7 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
             }
           : null;
 
+        // Create the item element
         element = (
           <>
             <View
@@ -1075,11 +1098,12 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
   // ===== DOM NODE RECYCLING SYSTEM =====
   // Determine if we should use recycling mode
   const useRecycling = createMemo(() => {
-    // Recycling requires enableRecycling flag and a fixed itemSize
+    // Recycling requires enableRecycling flag, a fixed itemSize, and Host support
     return (
       local.enableRecycling === true &&
       typeof local.itemSize === "number" &&
-      local.itemSize > 0
+      local.itemSize > 0 &&
+      hostSupportsRecycling
     );
   });
 
@@ -1629,6 +1653,49 @@ export function FlatList<T>(allProps: FlatListProps<T>) {
     startArmed = typeof startHandler === "function";
     void local.onEndReachedThreshold;
     void local.onStartReachedThreshold;
+  });
+
+  // Setup Host recycling context when enabled - wait for scroll ref
+  createEffect(() => {
+    if (!useRecycling() || !host?.enableRecycling) {
+      console.log(
+        `[FlatList/Recycling] Skipping setup: useRecycling=${useRecycling()}, hostSupports=${!!host?.enableRecycling}`
+      );
+      return;
+    }
+
+    const scrollRefNode = scrollRefSignal();
+    if (!scrollRefNode || typeof scrollRefNode.id !== "number") {
+      console.log("[FlatList/Recycling] Waiting for scroll ref...");
+      return;
+    }
+
+    // Don't recreate if already enabled
+    if (recyclingContextId !== null) {
+      console.log(
+        `[FlatList/Recycling] Already enabled (contextId=${recyclingContextId}), skipping`
+      );
+      return;
+    }
+
+    const poolSize = local.recyclePoolSize ?? defaultPoolSize();
+
+    recyclingContextId = host.enableRecycling(scrollRefNode.id, {
+      poolSize,
+      itemType: "view", // Items are wrapped in Views
+    });
+
+    console.log(
+      `[FlatList/Recycling] 🔄 Enabled Host-level recycling for container ${scrollRefNode.id} with pool size ${poolSize}, contextId=${recyclingContextId}`
+    );
+
+    onCleanup(() => {
+      if (recyclingContextId && host?.disableRecycling) {
+        console.log("[FlatList/Recycling] 🛑 Disabling recycling context");
+        host.disableRecycling(recyclingContextId);
+        recyclingContextId = null;
+      }
+    });
   });
 
   createEffect(() => {

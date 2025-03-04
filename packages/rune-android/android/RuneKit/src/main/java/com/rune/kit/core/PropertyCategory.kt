@@ -32,9 +32,6 @@ enum class PropertyCategory {
   /** Pressable component properties (disabled, pressEffect, hitSlop, etc.) */
   PRESSABLE,
 
-  /** VirtualList component properties */
-  VIRTUAL_LIST,
-  
   /** Image component properties (source, resizeMode, etc.) */
   IMAGE,
   
@@ -171,12 +168,6 @@ object PropertyCategoryMap {
     put("activateKeys", PropertyCategory.PRESSABLE)
     put("__pressableCommand", PropertyCategory.PRESSABLE)
     
-    // VirtualList properties
-    put("__virtualListState", PropertyCategory.VIRTUAL_LIST)
-    put("__virtualListHorizontal", PropertyCategory.VIRTUAL_LIST)
-    put("__virtualListContentContainerStyle", PropertyCategory.VIRTUAL_LIST)
-    put("__virtualListCommand", PropertyCategory.VIRTUAL_LIST)
-
     // Image properties
     put("source", PropertyCategory.IMAGE)
     put("resizeMode", PropertyCategory.IMAGE)

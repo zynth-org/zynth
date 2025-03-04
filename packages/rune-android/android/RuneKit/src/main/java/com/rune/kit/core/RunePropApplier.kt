@@ -109,12 +109,6 @@ internal class RunePropApplier(
           return
         }
       }
-      PropertyCategory.VIRTUAL_LIST -> {
-        if (target.view is RuneVirtualListView) {
-          applyVirtualListProp(target, name, valueJson)
-          return
-        }
-      }
       PropertyCategory.IMAGE -> {
         if (target.type == IMAGE_TYPE && imageSupport.handleProp(target, name, valueJson)) {
           return
@@ -259,45 +253,7 @@ internal class RunePropApplier(
     }
   }
 
-  private fun applyVirtualListProp(target: RuneUIManager.Node, name: String, jsonValue: String?) {
-    val view = target.view as? RuneVirtualListView ?: return
-    
-    when (name) {
-      "__virtualListState" -> {
-        val payload = when {
-          jsonValue.isNullOrBlank() -> null
-          else -> runCatching { 
-            JSONObject(jsonValue) 
-          }.getOrNull()
-        }
-        view.applyVirtualListState(payload)
-      }
-      "__virtualListHorizontal" -> {
-        val horizontal = parseJsonValue(jsonValue) as? Boolean ?: false
-        view.applyHorizontal(horizontal)
-      }
-      "__virtualListContentContainerStyle" -> {
-        val style = when {
-          jsonValue.isNullOrBlank() -> null
-          else -> runCatching { 
-            JSONObject(jsonValue) 
-          }.getOrNull()
-        }
-        view.applyContentContainerStyle(style)
-      }
-      "__virtualListCommand" -> {
-        val command = when {
-          jsonValue.isNullOrBlank() -> null
-          else -> runCatching { 
-            JSONObject(jsonValue) 
-          }.getOrNull()
-        }
-        if (command != null) {
-          view.executeCommand(command)
-        }
-      }
-    }
-  }
+  private fun applyScrollViewProp(target: RuneUIManager.Node, name: String, jsonValue: String?) {
 
 
   private fun applyScrollViewProp(target: RuneUIManager.Node, name: String, jsonValue: String?) {

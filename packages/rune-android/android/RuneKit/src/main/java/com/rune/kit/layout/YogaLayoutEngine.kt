@@ -86,7 +86,7 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
   override fun calculateLayoutForNode(nodeId: Int, width: Float, height: Float) {
     val node = nodes[nodeId]
     if (node == null) {
-      android.util.Log.w("RuneVirtualList_Yoga", "calculateLayoutForNode: Node $nodeId not found!")
+      android.util.Log.w("YogaLayoutEngine", "calculateLayoutForNode: Node $nodeId not found!")
       return
     }
     val resolvedWidth = if (width.isNaN()) YogaConstants.UNDEFINED else width
