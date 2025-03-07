@@ -328,7 +328,11 @@ export function FlatList<T>(props: FlatListProps<T>) {
                 },
                 has(_, prop) {
                   const item = currentItem();
-                  return item ? prop in item : false;
+                  if (item == null) return false;
+                  if (typeof item !== "object" && typeof item !== "function") {
+                    return false;
+                  }
+                  return prop in (item as object);
                 },
                 ownKeys() {
                   const item = currentItem();
@@ -381,7 +385,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
               const idx = binding().dataIndex;
               if (idx >= 0 && idx < props.data.length) {
                 setCurrentIndex(idx);
-                setCurrentItem(props.data[idx]);
+                setCurrentItem(() => props.data[idx]);
                 ensureSlotContent();
               }
             });
