@@ -23,6 +23,7 @@ This checklist captures the invariants that keep our Solid-based `FlatList` effi
 5. **Fixed layout container.**
    - The absolute-positioned slot container (`position: "absolute"`, width/height from `itemSize`) must stay.
    - Do not wrap slots in additional layout nodes that Solid would reconcile.
+   - Sanitize `contentContainerStyle` before applying it so user overrides can’t clobber required layout keys.
 
 ## Host Integration Rules
 

@@ -30,6 +30,7 @@ export type FlatListProps<T> = {
   itemSize: number;
   poolSize?: number;
   style?: Style;
+  contentContainerStyle?: Style;
   horizontal?: boolean;
   testID?: string;
 };
@@ -294,21 +295,36 @@ export function FlatList<T>(props: FlatListProps<T>) {
   });
 
   const contentSize = createMemo(() => props.data.length * props.itemSize);
+  const requiredContentStyle = createMemo<Style>(() => ({
+    position: "relative",
+    [props.horizontal ? "width" : "height"]: contentSize(),
+    [props.horizontal ? "height" : "width"]: "100%",
+  }));
+  const sanitizedContentContainerStyle = createMemo<Style | undefined>(() => {
+    const user = props.contentContainerStyle as Style | undefined;
+    if (!user) return undefined;
+    const {
+      position: _position,
+      width: _width,
+      height: _height,
+      top: _top,
+      right: _right,
+      bottom: _bottom,
+      left: _left,
+      ...rest
+    } = user;
+    return rest as Style;
+  });
 
   return (
     <ScrollView
       horizontal={props.horizontal}
       style={props.style}
+      contentContainerStyle={sanitizedContentContainerStyle()}
       controller={scrollController}
       testID={props.testID}
     >
-      <View
-        style={{
-          position: "relative",
-          [props.horizontal ? "width" : "height"]: contentSize(),
-          [props.horizontal ? "height" : "width"]: "100%",
-        }}
-      >
+      <View style={requiredContentStyle()}>
         {/* Use Index - keys by position, not data! */}
         <Index each={bindings()}>
           {(binding) => {
