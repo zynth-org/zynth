@@ -81,6 +81,16 @@ The scroll controller exposes metrics (`offset`, `viewportSize`). On each scroll
 
 Because the pool size equals `visible + overscan`, we never exhaust slots, and the same native nodes rotate through positions.
 
+### 5. Horizontal Support
+
+The same mechanics work on both axes:
+
+- `horizontal` toggles which scroll offset and viewport dimension we read.
+- `itemSize` is interpreted along the **primary** axis—height for vertical lists, width for horizontal lists.
+- Slot positioning flips from `top` to `left`, and the container swaps `width`/`height` assignments.
+
+No other changes are required; the pool logic and proxies remain identical.
+
 ## Why Node Creation Is Controlled
 
 - `<Index>` means Solid never calls `createNode` for the slot container after initialization.
