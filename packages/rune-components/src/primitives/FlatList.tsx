@@ -32,6 +32,7 @@ export type FlatListProps<T> = {
   style?: Style;
   contentContainerStyle?: Style;
   horizontal?: boolean;
+  state?: FlatListState;
   testID?: string;
 };
 
@@ -39,6 +40,65 @@ type Binding = {
   poolIndex: number;
   dataIndex: number; // -1 = not bound
 };
+
+export type FlatListState = {
+  offset: () => number;
+  viewport: () => number;
+  firstVisibleIndex: () => number | null;
+  visibleIndices: () => number[];
+};
+
+type InternalFlatListState = FlatListState & {
+  __update(payload: {
+    offset: number;
+    viewport: number;
+    firstVisibleIndex: number | null;
+    visibleIndices: number[];
+  }): void;
+};
+
+export function createFlatListState(): FlatListState {
+  const [offset, setOffset] = createSignal(0);
+  const [viewport, setViewport] = createSignal(0);
+  const [firstVisibleIndex, setFirstVisibleIndex] = createSignal<number | null>(
+    null
+  );
+  const [visibleIndices, setVisibleIndices] = createSignal<number[]>([]);
+
+  const state: InternalFlatListState = {
+    offset,
+    viewport,
+    firstVisibleIndex,
+    visibleIndices,
+    __update(payload) {
+      setOffset((prev) => (prev === payload.offset ? prev : payload.offset));
+      setViewport((prev) =>
+        prev === payload.viewport ? prev : payload.viewport
+      );
+      setFirstVisibleIndex((prev) =>
+        prev === payload.firstVisibleIndex ? prev : payload.firstVisibleIndex
+      );
+      setVisibleIndices((prev) => {
+        const next = payload.visibleIndices;
+        if (prev.length === next.length) {
+          let same = true;
+          for (let i = 0; i < prev.length; i++) {
+            if (prev[i] !== next[i]) {
+              same = false;
+              break;
+            }
+          }
+          if (same) {
+            return prev;
+          }
+        }
+        return next;
+      });
+    },
+  };
+
+  return state;
+}
 
 export function FlatList<T>(props: FlatListProps<T>) {
   const scrollController = createScrollController();
@@ -292,6 +352,36 @@ export function FlatList<T>(props: FlatListProps<T>) {
     }
 
     setBindings(newBindings);
+  });
+
+  // Expose read-only state to observers when provided
+  createEffect(() => {
+    const state = props.state as InternalFlatListState | undefined;
+    if (!state) return;
+
+    const offset = scrollOffset();
+    const viewport = viewportSize();
+    const range = visibleRange();
+    const dataLength = props.data.length;
+
+    let indices: number[] = [];
+    if (dataLength > 0 && range.end >= range.start) {
+      const start = Math.max(0, Math.min(range.start, dataLength - 1));
+      const end = Math.max(start, Math.min(range.end, dataLength - 1));
+      const count = end - start + 1;
+      if (count > 0) {
+        indices = Array.from({ length: count }, (_, i) => start + i);
+      }
+    }
+
+    const firstVisibleIndex = indices.length > 0 ? indices[0] : null;
+
+    state.__update({
+      offset,
+      viewport,
+      firstVisibleIndex,
+      visibleIndices: indices,
+    });
   });
 
   const contentSize = createMemo(() => props.data.length * props.itemSize);
