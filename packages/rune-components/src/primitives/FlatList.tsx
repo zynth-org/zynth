@@ -29,6 +29,8 @@ export type FlatListProps<T> = {
   keyExtractor: (item: T, index: number) => string;
   itemSize: number;
   poolSize?: number;
+  windowSize?: number;
+  overscan?: number | { multiple?: number; main?: number; cross?: number };
   style?: Style;
   contentContainerStyle?: Style;
   horizontal?: boolean;
@@ -100,6 +102,9 @@ export function createFlatListState(): FlatListState {
   return state;
 }
 
+const DEFAULT_MIN_POOL_ITEMS = 15;
+const DEFAULT_OVERSCAN_MULTIPLE = 2;
+
 export function FlatList<T>(props: FlatListProps<T>) {
   const scrollController = createScrollController();
   let nativeScrollRef: any = null;
@@ -149,15 +154,60 @@ export function FlatList<T>(props: FlatListProps<T>) {
     return size && size > 0 ? size : fallbackViewport();
   });
 
+  const overscanMainDistance = createMemo(() => {
+    const config = props.overscan;
+    if (typeof config === "number") {
+      return Math.max(0, config);
+    }
+    if (config && typeof config.main === "number") {
+      return Math.max(0, config.main);
+    }
+    const multiple =
+      config && typeof config.multiple === "number"
+        ? config.multiple
+        : DEFAULT_OVERSCAN_MULTIPLE;
+    return Math.max(0, props.itemSize * multiple);
+  });
+
+  const overscanItemsPerSide = createMemo(() => {
+    const distance = overscanMainDistance();
+    if (!props.itemSize) return 0;
+    return Math.max(0, Math.ceil(distance / props.itemSize));
+  });
+
+  const viewportItemCount = createMemo(() => {
+    const itemSize = props.itemSize;
+    if (!itemSize) return 0;
+    const viewport = viewportSize();
+    return Math.max(1, Math.ceil(viewport / itemSize));
+  });
+
   // Pool size - use generous default to avoid undersizing
   const poolSize = createMemo(() => {
     if (props.poolSize) return props.poolSize;
-    const viewport = viewportSize();
-    const visibleCount = Math.ceil(viewport / props.itemSize);
-    // Visible items + overscan buffer (2 items above + 2 below = 4 extra)
-    // Minimum 15 to handle typical mobile screens
-    const calculated = Math.max(visibleCount + 4, 15);
-    const final = Math.min(calculated, props.data.length);
+    const dataLength = props.data.length;
+    if (dataLength === 0 || !props.itemSize) return 0;
+
+    const visibleCount = viewportItemCount();
+    const overscanCount = overscanItemsPerSide();
+    let calculated = visibleCount + overscanCount * 2;
+
+    if (props.windowSize !== undefined) {
+      const windowMultiple = Math.max(0, props.windowSize);
+      if (windowMultiple === 0) {
+        calculated = Math.max(calculated, visibleCount);
+      } else {
+        const windowItems = Math.max(
+          visibleCount,
+          Math.ceil(windowMultiple * visibleCount)
+        );
+        calculated = Math.max(calculated, windowItems);
+      }
+    } else {
+      calculated = Math.max(calculated, DEFAULT_MIN_POOL_ITEMS);
+    }
+
+    const final = Math.min(calculated, dataLength);
     // console.log(
     //   `[FlatList] 📐 Pool size calc: viewport=${viewport}, itemSize=${props.itemSize}, visibleCount=${visibleCount}, calculated=${calculated}, final=${final}`
     // );
@@ -244,8 +294,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
         return { start: 0, end: 0 };
       }
 
-      // Smaller overscan: just 2 items above/below instead of 5
-      const overscan = itemSize * 2;
+      const overscan = overscanMainDistance();
       const startOffset = Math.max(0, offset - overscan);
       const endOffset = offset + viewport + overscan;
 

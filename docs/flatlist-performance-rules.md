@@ -24,6 +24,9 @@ This checklist captures the invariants that keep our Solid-based `FlatList` effi
    - The absolute-positioned slot container (`position: "absolute"`, width/height from `itemSize`) must stay.
    - Do not wrap slots in additional layout nodes that Solid would reconcile.
    - Sanitize `contentContainerStyle` before applying it so user overrides can’t clobber required layout keys.
+6. **Pool sizing stays deterministic.**
+   - `windowSize`, `overscan`, and `poolSize` must only influence counts, never trigger dynamic length changes post-mount.
+   - Derived counts must use the existing helpers (`viewportItemCount`, `overscanItemsPerSide`) to avoid desynchronising Solid and the recycling host.
 
 ## Host Integration Rules
 
