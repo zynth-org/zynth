@@ -214,17 +214,17 @@ internal class RuneImageSupport(
         null
       }
       is JSONObject -> {
-        val data = value.optString("data", null)
-        if (!data.isNullOrEmpty()) {
+        val data = value.optString("data", "")
+        if (data.isNotEmpty()) {
           val scale = value.optDouble("scale", Double.NaN)
           ImageSourceSpec.InlineData(
             data,
             if (!scale.isNaN() && scale > 0) scale.toFloat() else null,
-            value.optString("mimeType", null).takeIf { !it.isNullOrBlank() },
+            value.optString("mimeType", "").takeIf { it.isNotBlank() },
           )
         } else {
-          val uri = value.optString("uri", null)
-          if (uri.isNullOrBlank()) {
+          val uri = value.optString("uri", "")
+          if (uri.isBlank()) {
             null
           } else {
             val lower = uri.lowercase(Locale.US)
@@ -234,14 +234,14 @@ internal class RuneImageSupport(
                 ImageSourceSpec.InlineData(
                   uri,
                   if (!scale.isNaN() && scale > 0) scale.toFloat() else null,
-                  value.optString("mimeType", null).takeIf { !it.isNullOrBlank() },
+                  value.optString("mimeType", "").takeIf { it.isNotBlank() },
                 )
               }
               !lower.contains("://") && !lower.startsWith("/") -> {
                 val scale = value.optDouble("scale", Double.NaN)
                 ImageSourceSpec.AssetData(
                   uri,
-                  value.optString("bundle", null).takeIf { !it.isNullOrBlank() },
+                  value.optString("bundle", "").takeIf { it.isNotBlank() },
                   if (!scale.isNaN() && scale > 0) scale.toFloat() else null,
                 )
               }
@@ -273,7 +273,7 @@ internal class RuneImageSupport(
   }
 
   private fun applyImageSource(node: RuneUIManager.Node, rawValue: Any?) {
-    val imageView = node.view as? ImageView ?: return
+    (node.view as? ImageView) ?: return
     val state = ensureState(node)
     cancelImageRequest(state)
     val spec = normalizeImageSource(rawValue)
@@ -471,21 +471,21 @@ internal class RuneImageSupport(
         ?: return DownloadResult(error = "Image request failed: unsupported protocol")
       connection.connectTimeout = 15000
       connection.readTimeout = 30000
-      val method = info?.optString("method", null)?.takeIf { !it.isNullOrBlank() }?.uppercase(Locale.US) ?: "GET"
+      val method = (info?.optString("method", "") ?: "").takeIf { it.isNotBlank() }?.uppercase(Locale.US) ?: "GET"
       connection.requestMethod = method
       val headers = info?.optJSONObject("headers")
       if (headers != null) {
         val keys = headers.keys()
         while (keys.hasNext()) {
           val key = keys.next()
-          val value = headers.optString(key, null)
-          if (!key.isNullOrBlank() && !value.isNullOrBlank()) {
+          val value = headers.optString(key, "")
+          if (key.isNotBlank() && value.isNotBlank()) {
             connection.setRequestProperty(key, value)
           }
         }
       }
-      val body = info?.optString("body", null)
-      if (!body.isNullOrEmpty() && method != "GET" && method != "HEAD") {
+      val body = info?.optString("body", "") ?: ""
+      if (body.isNotEmpty() && method != "GET" && method != "HEAD") {
         connection.doOutput = true
         connection.outputStream.use { it.write(body.toByteArray()) }
       }

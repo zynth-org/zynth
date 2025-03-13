@@ -174,7 +174,7 @@ internal class RunePropApplier(
       imageSupport.onStyleApplied(target, style)
     }
     if (target.view is RuneTextInputView) {
-      applyTextInputStyle(target.view as RuneTextInputView, style, target.id)
+      applyTextInputStyle(target.view, style, target.id)
     }
   }
   
@@ -182,7 +182,6 @@ internal class RunePropApplier(
    * Apply view-level properties (accessibility, pointerEvents, testID).
    */
   private fun applyViewProp(target: RuneUIManager.Node, name: String, jsonValue: String?) {
-    var testIdWarningLogged = false
     when (name) {
       "accessibilityLabel" -> {
         target.label?.contentDescription = parseString(jsonValue)
@@ -217,13 +216,6 @@ internal class RunePropApplier(
       "testID" -> {
         val testId = (parseString(jsonValue) ?: "").trim()
         if (testId.isNotEmpty()) {
-          if (!testIdWarningLogged) {
-            // Log.w(
-            //   "RuneUI",
-            //   "testID is mapped to accessibilityLabel on Android to avoid conflicts; prefer accessibilityLabel directly.",
-            // )
-            testIdWarningLogged = true
-          }
           if (target.view.contentDescription.isNullOrEmpty()) {
             target.view.contentDescription = testId
           }
@@ -252,9 +244,6 @@ internal class RunePropApplier(
       }
     }
   }
-
-  private fun applyScrollViewProp(target: RuneUIManager.Node, name: String, jsonValue: String?) {
-
 
   private fun applyScrollViewProp(target: RuneUIManager.Node, name: String, jsonValue: String?) {
     val scrollView = target.view as? RuneScrollView ?: return
@@ -588,7 +577,7 @@ internal class RunePropApplier(
     }
   }
 
-  private fun applyGenericProp(target: RuneUIManager.Node, nodeId: Int, name: String, jsonValue: String?) {
+  private fun applyGenericProp(@Suppress("UNUSED_PARAMETER") target: RuneUIManager.Node, @Suppress("UNUSED_PARAMETER") nodeId: Int, name: String, jsonValue: String?) {
     // Most properties are now handled by category-specific handlers
     // This is only for truly unknown/unhandled properties
     logDebug("RuneUI", "Unhandled prop: $name = $jsonValue")
@@ -621,9 +610,11 @@ internal class RunePropApplier(
         logDebug("RuneUI", "Set text on input view: ${input.text}")
       }
       target?.view is TextView -> {
-        (target.view as TextView).text = text
+        @Suppress("UNCHECKED_CAST")
+        val textView = target.view as TextView
+        textView.text = text
         engine.markDirty(target.id)
-        logDebug("RuneUI", "Set text on view: ${(target.view as TextView).text}")
+        logDebug("RuneUI", "Set text on view: ${textView.text}")
       }
       else -> {
         engine.markDirty(target?.id ?: nodeId)
@@ -661,30 +652,29 @@ internal class RunePropApplier(
         dispatchImmediateLayout(node, eventDispatcher)
       }
     }
-    val node = nodes.get(nodeId)
-    val nodeType = node?.type
-    if (nodeType == BUTTON_TYPE) {
-      (node.view as? RuneButtonView)?.let { button ->
-        if (event == "onLongPress") {
-          button.setHasLongPressHandler(true)
+    nodes.get(nodeId)?.let { node ->
+      val nodeType = node.type
+      if (nodeType == BUTTON_TYPE) {
+        (node.view as? RuneButtonView)?.let { button ->
+          if (event == "onLongPress") {
+            button.setHasLongPressHandler(true)
+          }
         }
       }
-      handlerListener(nodeId, event, handlerId)
-      return
-    }
-    if (nodeType == PRESSABLE_TYPE && event == "onLongPress") {
-      (node?.view as? RunePressableView)?.setHasLongPressHandler(true)
-    }
-    if (event == "onPress" && nodeType != BUTTON_TYPE && nodeType != PRESSABLE_TYPE) {
-      logDebug("RuneUI", "Setting onPress handler for node $nodeId")
-      val node = nodes.get(nodeId)
-      node?.view?.let { view ->
-        if (node.pointerEvents != "none") {
-          view.isClickable = true
-        }
-        view.setOnClickListener {
-          logDebug("RuneUI", "onPress triggered for node $nodeId")
-          eventDispatcher(nodeId, event)
+      if (nodeType == PRESSABLE_TYPE && event == "onLongPress") {
+        (node.view as? RunePressableView)?.setHasLongPressHandler(true)
+      }
+      if (event == "onPress" && nodeType != BUTTON_TYPE && nodeType != PRESSABLE_TYPE) {
+        logDebug("RuneUI", "Setting onPress handler for node $nodeId")
+        node.let { n ->
+          val view = n.view
+          if (n.pointerEvents != "none") {
+            view.isClickable = true
+          }
+          view.setOnClickListener {
+            logDebug("RuneUI", "onPress triggered for node $nodeId")
+            eventDispatcher(nodeId, event)
+          }
         }
       }
     }
@@ -821,7 +811,7 @@ internal class RunePropApplier(
         view.clipToOutline = needsRoundedBackground
       }
     } else {
-      when (val current = view.background) {
+      when (view.background) {
         is GradientDrawable, is ColorDrawable -> ViewCompat.setBackground(view, null)
       }
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {

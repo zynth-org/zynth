@@ -259,7 +259,7 @@ internal class RuneEventManager(
    * Called when a pressable view is cancelled.
    * Note: Cancellation is surfaced via onPressOut with cancelled flag instead.
    */
-  internal fun onPressableCancel(nodeId: Int, payload: JSONObject) {
+  internal fun onPressableCancel(@Suppress("UNUSED_PARAMETER") nodeId: Int, @Suppress("UNUSED_PARAMETER") payload: JSONObject) {
     // Cancellation is surfaced via onPressOut with the cancelled flag.
   }
 

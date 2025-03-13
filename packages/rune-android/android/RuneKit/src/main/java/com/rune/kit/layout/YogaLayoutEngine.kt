@@ -59,6 +59,7 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
     val parentNode = getNode(parent)
     val childNode = getNode(child)
     val targetIndex = index.coerceIn(0, parentNode.childCount)
+    @Suppress("DEPRECATION")
     if (childNode.parent == parentNode) {
       val currentIndex = parentNode.indexOf(childNode)
       if (currentIndex == targetIndex) return
@@ -166,7 +167,7 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
     }
   }
 
-  private fun attachMeasureFunc(id: Int, node: YogaNode, handler: MeasureHandler) {
+  private fun attachMeasureFunc(@Suppress("UNUSED_PARAMETER") id: Int, node: YogaNode, handler: MeasureHandler) {
     node.setMeasureFunction { _, width, widthMode, height, heightMode ->
       val input = MeasureInput(
         width,
@@ -389,6 +390,7 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
     }
   }
 
+  @Suppress("EXTENSION_SHADOWED_BY_MEMBER")
   private fun YogaNode.indexOf(child: YogaNode): Int {
     for (i in 0 until childCount) {
       if (getChildAt(i) === child) return i

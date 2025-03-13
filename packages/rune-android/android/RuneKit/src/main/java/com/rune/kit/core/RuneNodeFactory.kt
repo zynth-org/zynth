@@ -349,6 +349,8 @@ internal class RuneNodeFactory(
     override fun registerHandlers(factory: RuneNodeFactory, id: Int, view: View, node: RuneUIManager.Node) {
       (view as? RuneScrollView)?.bind(factory.manager, id)
     }
+  }
+
   private object ButtonCreator : ViewCreator {
     override fun create(context: android.content.Context, id: Int): View {
       return RuneButtonView(context).apply {

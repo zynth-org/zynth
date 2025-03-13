@@ -137,7 +137,7 @@ class RuneUIManager(
     propApplier.applySetHandler(nodeId, event, eventDispatcher, handlerListener, handlerId)
   }
 
-  private fun applyStyleToButton(nodeId: Int, button: RuneButtonView, style: Style) {
+  private fun applyStyleToButton(@Suppress("UNUSED_PARAMETER") nodeId: Int, button: RuneButtonView, style: Style) {
     propApplier.applyBackgroundStyle(button, style)
   }
 
@@ -505,7 +505,7 @@ class RuneUIManager(
         view.clipToOutline = needsRoundedBackground
       }
     } else {
-      when (val current = view.background) {
+      when (view.background) {
         is GradientDrawable, is ColorDrawable -> ViewCompat.setBackground(view, null)
       }
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {

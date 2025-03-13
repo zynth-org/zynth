@@ -451,7 +451,7 @@ internal class RuneScrollView(
       "stop" -> stopScroll()
       "flashIndicators" -> flashIndicators()
       "lockAxis" -> {
-        val axisName = command.optString("axis", null)
+        val axisName = command.optString("axis", "")
         val axisValue = when (axisName) {
           "horizontal" -> Axis.HORIZONTAL
           "vertical" -> Axis.VERTICAL

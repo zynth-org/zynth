@@ -252,9 +252,9 @@ internal fun RuneRuntime.applyHotUpdate() {
             ?: throw IllegalStateException("Manifest fetch returned empty body")
           manifest = JSONObject(manifestJson)
           manifestSourcePath = candidate
-          manifestHash = manifest.optString("h").takeIf { !it.isNullOrBlank() }
+          manifestHash = manifest.optString("h").takeIf { it.isNotBlank() }
           manifestHash?.let { latestDevHash = it }
-          manifest?.optString("name")?.takeIf { it.isNotBlank() }?.let { runtimeName ->
+          manifest.optString("name").takeIf { it.isNotBlank() }?.let { runtimeName ->
             devRuntimeName = runtimeName
           }
           break

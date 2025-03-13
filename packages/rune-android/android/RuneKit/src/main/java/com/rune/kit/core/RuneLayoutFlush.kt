@@ -101,7 +101,6 @@ internal class RuneLayoutFlush(
     if (pendingNativeOperations.isEmpty()) return
     
     val startTime = android.os.SystemClock.elapsedRealtime()
-    val initialCount = pendingNativeOperations.size
     
     val operations = pendingNativeOperations.toList()
     pendingNativeOperations.clear()
@@ -145,7 +144,6 @@ internal class RuneLayoutFlush(
     }
     
     val elapsed = android.os.SystemClock.elapsedRealtime() - startTime
-    val processedCount = prioritized.size + remaining.size
     if (elapsed > 5 || skippedCount > 0) {
       // Log.w("RunePerf", "⚠️ processPendingNativeOperations: ${elapsed}ms for $initialCount ops (processed: $processedCount, skipped: $skippedCount, prioritized: ${prioritized.size})")
     }
@@ -155,7 +153,6 @@ internal class RuneLayoutFlush(
     if (pendingViewOperations.isEmpty() || viewTransactionInProgress) return
     
     val startTime = android.os.SystemClock.elapsedRealtime()
-    val initialCount = pendingViewOperations.size
     
     viewTransactionInProgress = true
     try {
@@ -165,7 +162,7 @@ internal class RuneLayoutFlush(
           is ViewOperation.Remove -> it.parentId
         }
       }
-      operationsByParent.forEach { (parentId, operations) ->
+      operationsByParent.forEach forEachParent@ { (parentId, operations) ->
         val parentView = if (parentId == root.rootId) {
           root
         } else {
@@ -176,7 +173,7 @@ internal class RuneLayoutFlush(
           operations.filterIsInstance<ViewOperation.Remove>().forEach { op ->
             detachChildView(parentId, op.node)
           }
-          return@forEach
+          return@forEachParent
         }
 
         parentView.suppressLayoutCompat(true)
@@ -245,13 +242,13 @@ internal class RuneLayoutFlush(
     }
     if (flushCoalesceScheduled) return
     flushCoalesceScheduled = true
-    frameScheduler.scheduleFlush {
+    frameScheduler.scheduleFlush frameFlush@ {
       flushCoalesceScheduled = false
       val dispatchPriority = pendingFlushPriority
       pendingFlushPriority = FlushPriority.NORMAL
       if (layoutTransactionActive) {
         scheduleFlush(dispatchPriority)
-        return@scheduleFlush
+        return@frameFlush
       }
       if (dirty) {
         performFlush()
@@ -502,7 +499,6 @@ internal class RuneLayoutFlush(
     if (pendingTextRebuild.isEmpty()) return
     
     val rebuildStart = android.os.SystemClock.elapsedRealtime()
-    val count = pendingTextRebuild.size
     
     val toProcess = pendingTextRebuild.toList()
     pendingTextRebuild.clear()
