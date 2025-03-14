@@ -470,7 +470,6 @@ export function FlatList<T>(props: FlatListProps<T>) {
     return rest as Style;
   });
 
-
   const hasData = createMemo(() => props.data.length > 0);
 
   return (
@@ -545,7 +544,8 @@ export function FlatList<T>(props: FlatListProps<T>) {
                   item: itemProxy,
                   index: indexValue,
                 });
-                const renderSeparator = () => {
+                // Create a reactive component for the separator
+                const SeparatorWrapper = () => {
                   if (!SeparatorComponent) return null;
                   const index = currentIndex();
                   if (index === -1 || index >= props.data.length - 1) {
@@ -555,9 +555,8 @@ export function FlatList<T>(props: FlatListProps<T>) {
                   if (leading == null) return null;
                   const trailing = props.data[index + 1];
                   if (trailing === undefined) return null;
-                  const Comp = SeparatorComponent;
                   return (
-                    <Comp
+                    <SeparatorComponent
                       leadingItem={leading}
                       trailingItem={trailing}
                       leadingIndex={index}
@@ -568,7 +567,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
                 return (
                   <>
                     {itemElement}
-                    {renderSeparator()}
+                    <SeparatorWrapper />
                   </>
                 );
               });
