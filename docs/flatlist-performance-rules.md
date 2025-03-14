@@ -28,6 +28,10 @@ This checklist captures the invariants that keep our Solid-based `FlatList` effi
    - `windowSize`, `overscan`, and `poolSize` must only influence counts, never trigger dynamic length changes post-mount.
    - Derived counts must use the existing helpers (`viewportItemCount`, `overscanItemsPerSide`) to avoid desynchronising Solid and the recycling host.
 
+### Decorators
+
+- Built-in support is limited to `ItemSeparatorComponent`. Render headers, footers, and empty states outside the list to keep the pool stable.
+
 ## Host Integration Rules
 
 1. **Must enable host recycling.**

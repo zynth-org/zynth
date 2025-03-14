@@ -30,12 +30,6 @@ export type ItemSeparatorProps<T> = {
   trailingIndex?: number;
 };
 
-type DecoratorElement =
-  | JSX.Element
-  | null
-  | undefined
-  | ((props?: Record<string, never>) => JSX.Element | null | undefined);
-
 export type FlatListProps<T> = {
   data: T[];
   renderItem: (info: { item: T; index: number }) => JSX.Element;
@@ -48,9 +42,6 @@ export type FlatListProps<T> = {
   contentContainerStyle?: Style;
   horizontal?: boolean;
   state?: FlatListState;
-  ListHeaderComponent?: DecoratorElement;
-  ListFooterComponent?: DecoratorElement;
-  ListEmptyComponent?: DecoratorElement;
   ItemSeparatorComponent?: (info: ItemSeparatorProps<T>) => JSX.Element;
   testID?: string;
 };
@@ -121,14 +112,6 @@ export function createFlatListState(): FlatListState {
 
 const DEFAULT_MIN_POOL_ITEMS = 15;
 const DEFAULT_OVERSCAN_MULTIPLE = 2;
-
-const resolveDecorator = (decorator: DecoratorElement): JSX.Element | null => {
-  if (!decorator) return null;
-  if (typeof decorator === "function") {
-    return decorator() ?? null;
-  }
-  return decorator ?? null;
-};
 
 export function FlatList<T>(props: FlatListProps<T>) {
   const scrollController = createScrollController();
@@ -390,6 +373,13 @@ export function FlatList<T>(props: FlatListProps<T>) {
     //   `[FlatList] Currently bound: ${boundIndices.size}, freed: ${unboundCount}, need: ${neededIndices.size}`
     // );
 
+    if (props.data.length === 0) {
+      if (unboundCount > 0) {
+        setBindings(newBindings);
+      }
+      return;
+    }
+
     // Step 3: Bind available slots to needed indices
     for (const dataIndex of neededIndices) {
       if (boundIndices.has(dataIndex)) continue; // Already bound
@@ -480,16 +470,8 @@ export function FlatList<T>(props: FlatListProps<T>) {
     return rest as Style;
   });
 
+
   const hasData = createMemo(() => props.data.length > 0);
-  const headerDecorator = createMemo(() =>
-    resolveDecorator(props.ListHeaderComponent)
-  );
-  const footerDecorator = createMemo(() =>
-    resolveDecorator(props.ListFooterComponent)
-  );
-  const emptyDecorator = createMemo(() =>
-    resolveDecorator(props.ListEmptyComponent)
-  );
 
   return (
     <ScrollView
@@ -499,13 +481,11 @@ export function FlatList<T>(props: FlatListProps<T>) {
       controller={scrollController}
       testID={props.testID}
     >
-      {headerDecorator()}
-      {hasData() ? (
-        <View style={requiredContentStyle()}>
-          {/* Use Index - keys by position, not data! */}
-          <Index each={bindings()}>
-            {(binding) => {
-              const poolIndex = untrack(() => binding().poolIndex);
+      <View style={requiredContentStyle()}>
+        {/* Use Index - keys by position, not data! */}
+        <Index each={bindings()}>
+          {(binding) => {
+            const poolIndex = untrack(() => binding().poolIndex);
             const [currentItem, setCurrentItem] = createSignal<T | null>(null);
             const [currentIndex, setCurrentIndex] = createSignal(-1);
 
@@ -622,7 +602,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
 
             return (
               <View
-                key={slotKey}
+                key={`pool-slot-${poolIndex}`}
                 style={{
                   position: "absolute",
                   [props.horizontal ? "left" : "top"]: position(),
@@ -637,10 +617,6 @@ export function FlatList<T>(props: FlatListProps<T>) {
           }}
         </Index>
       </View>
-      ) : (
-        emptyDecorator()
-      )}
-      {footerDecorator()}
     </ScrollView>
   );
 }
