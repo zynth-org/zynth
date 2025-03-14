@@ -23,6 +23,19 @@ import { getHost } from "@rune/core";
  * This is simpler than imperative approach while achieving same goal.
  */
 
+export type ItemSeparatorProps<T> = {
+  leadingItem: T;
+  trailingItem?: T;
+  leadingIndex: number;
+  trailingIndex?: number;
+};
+
+type DecoratorElement =
+  | JSX.Element
+  | null
+  | undefined
+  | ((props?: Record<string, never>) => JSX.Element | null | undefined);
+
 export type FlatListProps<T> = {
   data: T[];
   renderItem: (info: { item: T; index: number }) => JSX.Element;
@@ -35,6 +48,10 @@ export type FlatListProps<T> = {
   contentContainerStyle?: Style;
   horizontal?: boolean;
   state?: FlatListState;
+  ListHeaderComponent?: DecoratorElement;
+  ListFooterComponent?: DecoratorElement;
+  ListEmptyComponent?: DecoratorElement;
+  ItemSeparatorComponent?: (info: ItemSeparatorProps<T>) => JSX.Element;
   testID?: string;
 };
 
@@ -104,6 +121,14 @@ export function createFlatListState(): FlatListState {
 
 const DEFAULT_MIN_POOL_ITEMS = 15;
 const DEFAULT_OVERSCAN_MULTIPLE = 2;
+
+const resolveDecorator = (decorator: DecoratorElement): JSX.Element | null => {
+  if (!decorator) return null;
+  if (typeof decorator === "function") {
+    return decorator() ?? null;
+  }
+  return decorator ?? null;
+};
 
 export function FlatList<T>(props: FlatListProps<T>) {
   const scrollController = createScrollController();
@@ -455,6 +480,17 @@ export function FlatList<T>(props: FlatListProps<T>) {
     return rest as Style;
   });
 
+  const hasData = createMemo(() => props.data.length > 0);
+  const headerDecorator = createMemo(() =>
+    resolveDecorator(props.ListHeaderComponent)
+  );
+  const footerDecorator = createMemo(() =>
+    resolveDecorator(props.ListFooterComponent)
+  );
+  const emptyDecorator = createMemo(() =>
+    resolveDecorator(props.ListEmptyComponent)
+  );
+
   return (
     <ScrollView
       horizontal={props.horizontal}
@@ -463,11 +499,13 @@ export function FlatList<T>(props: FlatListProps<T>) {
       controller={scrollController}
       testID={props.testID}
     >
-      <View style={requiredContentStyle()}>
-        {/* Use Index - keys by position, not data! */}
-        <Index each={bindings()}>
-          {(binding) => {
-            const poolIndex = untrack(() => binding().poolIndex);
+      {headerDecorator()}
+      {hasData() ? (
+        <View style={requiredContentStyle()}>
+          {/* Use Index - keys by position, not data! */}
+          <Index each={bindings()}>
+            {(binding) => {
+              const poolIndex = untrack(() => binding().poolIndex);
             const [currentItem, setCurrentItem] = createSignal<T | null>(null);
             const [currentIndex, setCurrentIndex] = createSignal(-1);
 
@@ -520,12 +558,39 @@ export function FlatList<T>(props: FlatListProps<T>) {
 
             const ensureSlotContent = () => {
               if (slotContent) return slotContent;
+              const SeparatorComponent = props.ItemSeparatorComponent;
               slotContent = createRoot((dispose) => {
                 disposeSlot = dispose;
-                return props.renderItem({
+                const itemElement = props.renderItem({
                   item: itemProxy,
                   index: indexValue,
                 });
+                const renderSeparator = () => {
+                  if (!SeparatorComponent) return null;
+                  const index = currentIndex();
+                  if (index === -1 || index >= props.data.length - 1) {
+                    return null;
+                  }
+                  const leading = currentItem();
+                  if (leading == null) return null;
+                  const trailing = props.data[index + 1];
+                  if (trailing === undefined) return null;
+                  const Comp = SeparatorComponent;
+                  return (
+                    <Comp
+                      leadingItem={leading}
+                      trailingItem={trailing}
+                      leadingIndex={index}
+                      trailingIndex={index + 1}
+                    />
+                  );
+                };
+                return (
+                  <>
+                    {itemElement}
+                    {renderSeparator()}
+                  </>
+                );
               });
               return slotContent;
             };
@@ -572,6 +637,10 @@ export function FlatList<T>(props: FlatListProps<T>) {
           }}
         </Index>
       </View>
+      ) : (
+        emptyDecorator()
+      )}
+      {footerDecorator()}
     </ScrollView>
   );
 }
