@@ -345,6 +345,38 @@ export function FlatList<T>(props: FlatListProps<T>) {
       neededIndices.add(i);
     }
 
+    // Backfill indices so every slot stays populated even before native metrics settle.
+    const targetBindings = Math.min(currentBindings.length, data.length);
+    if (targetBindings > 0 && neededIndices.size < targetBindings) {
+      let expandStart = range.start;
+      let expandEnd = range.end;
+      while (
+        neededIndices.size < targetBindings &&
+        (expandStart > 0 || expandEnd < data.length - 1)
+      ) {
+        let expanded = false;
+        if (expandEnd < data.length - 1) {
+          expandEnd += 1;
+          neededIndices.add(expandEnd);
+          expanded = true;
+          if (neededIndices.size >= targetBindings) {
+            break;
+          }
+        }
+        if (expandStart > 0) {
+          expandStart -= 1;
+          neededIndices.add(expandStart);
+          expanded = true;
+          if (neededIndices.size >= targetBindings) {
+            break;
+          }
+        }
+        if (!expanded) {
+          break;
+        }
+      }
+    }
+
     // Clone bindings for update
     const newBindings = currentBindings.map((b) => ({ ...b }));
 
@@ -384,7 +416,8 @@ export function FlatList<T>(props: FlatListProps<T>) {
     }
 
     // Step 3: Bind available slots to needed indices
-    for (const dataIndex of neededIndices) {
+    const sortedNeeded = Array.from(neededIndices).sort((a, b) => a - b);
+    for (const dataIndex of sortedNeeded) {
       if (boundIndices.has(dataIndex)) continue; // Already bound
 
       // Find available slot
