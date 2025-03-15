@@ -43,6 +43,9 @@ export type FlatListProps<T> = {
   horizontal?: boolean;
   state?: FlatListState;
   ItemSeparatorComponent?: (info: ItemSeparatorProps<T>) => JSX.Element;
+  ListHeaderComponent?: JSX.Element | (() => JSX.Element);
+  ListFooterComponent?: JSX.Element | (() => JSX.Element);
+  ListEmptyComponent?: JSX.Element | (() => JSX.Element);
   testID?: string;
 };
 
@@ -472,6 +475,14 @@ export function FlatList<T>(props: FlatListProps<T>) {
 
   const hasData = createMemo(() => props.data.length > 0);
 
+  // Decorator helpers - render as components or elements
+  const renderDecorator = (
+    decorator: JSX.Element | (() => JSX.Element) | undefined
+  ) => {
+    if (!decorator) return null;
+    return typeof decorator === "function" ? decorator() : decorator;
+  };
+
   return (
     <ScrollView
       horizontal={props.horizontal}
@@ -480,142 +491,155 @@ export function FlatList<T>(props: FlatListProps<T>) {
       controller={scrollController}
       testID={props.testID}
     >
-      <View style={requiredContentStyle()}>
-        {/* Use Index - keys by position, not data! */}
-        <Index each={bindings()}>
-          {(binding) => {
-            const poolIndex = untrack(() => binding().poolIndex);
-            const [currentItem, setCurrentItem] = createSignal<T | null>(null);
-            const [currentIndex, setCurrentIndex] = createSignal(-1);
+      {renderDecorator(props.ListHeaderComponent)}
+      {hasData() ? (
+        <View style={requiredContentStyle()}>
+          {/* Use Index - keys by position, not data! */}
+          <Index each={bindings()}>
+            {(binding) => {
+              const poolIndex = untrack(() => binding().poolIndex);
+              const [currentItem, setCurrentItem] = createSignal<T | null>(
+                null
+              );
+              const [currentIndex, setCurrentIndex] = createSignal(-1);
 
-            // Proxy exposes latest item values while keeping Solid's fine-grained tracking intact.
-            const itemProxy = new Proxy(
-              {},
-              {
-                get(_, prop) {
-                  const item = currentItem();
-                  if (item == null) return undefined;
-                  const value = Reflect.get(item as any, prop, item);
-                  return typeof value === "function" ? value.bind(item) : value;
-                },
-                has(_, prop) {
-                  const item = currentItem();
-                  if (item == null) return false;
-                  if (typeof item !== "object" && typeof item !== "function") {
-                    return false;
-                  }
-                  return prop in (item as object);
-                },
-                ownKeys() {
-                  const item = currentItem();
-                  return item ? Reflect.ownKeys(item) : [];
-                },
-                getOwnPropertyDescriptor(_, prop) {
-                  const item = currentItem();
-                  if (!item) return undefined;
-                  const descriptor = Object.getOwnPropertyDescriptor(
-                    item,
-                    prop
-                  );
-                  if (!descriptor) return undefined;
-                  return { ...descriptor, configurable: true };
-                },
-              }
-            ) as T;
+              // Proxy exposes latest item values while keeping Solid's fine-grained tracking intact.
+              const itemProxy = new Proxy(
+                {},
+                {
+                  get(_, prop) {
+                    const item = currentItem();
+                    if (item == null) return undefined;
+                    const value = Reflect.get(item as any, prop, item);
+                    return typeof value === "function"
+                      ? value.bind(item)
+                      : value;
+                  },
+                  has(_, prop) {
+                    const item = currentItem();
+                    if (item == null) return false;
+                    if (
+                      typeof item !== "object" &&
+                      typeof item !== "function"
+                    ) {
+                      return false;
+                    }
+                    return prop in (item as object);
+                  },
+                  ownKeys() {
+                    const item = currentItem();
+                    return item ? Reflect.ownKeys(item) : [];
+                  },
+                  getOwnPropertyDescriptor(_, prop) {
+                    const item = currentItem();
+                    if (!item) return undefined;
+                    const descriptor = Object.getOwnPropertyDescriptor(
+                      item,
+                      prop
+                    );
+                    if (!descriptor) return undefined;
+                    return { ...descriptor, configurable: true };
+                  },
+                }
+              ) as T;
 
-            const indexValue = {
-              valueOf: () => currentIndex(),
-              toString: () => String(currentIndex()),
-              [Symbol.toPrimitive](hint: string) {
-                const value = currentIndex();
-                return hint === "string" ? String(value) : value;
-              },
-            } as unknown as number;
+              const indexValue = {
+                valueOf: () => currentIndex(),
+                toString: () => String(currentIndex()),
+                [Symbol.toPrimitive](hint: string) {
+                  const value = currentIndex();
+                  return hint === "string" ? String(value) : value;
+                },
+              } as unknown as number;
 
-            let slotContent: JSX.Element | null = null;
-            let disposeSlot: (() => void) | null = null;
+              let slotContent: JSX.Element | null = null;
+              let disposeSlot: (() => void) | null = null;
 
-            const ensureSlotContent = () => {
-              if (slotContent) return slotContent;
-              const SeparatorComponent = props.ItemSeparatorComponent;
-              slotContent = createRoot((dispose) => {
-                disposeSlot = dispose;
-                const itemElement = props.renderItem({
-                  item: itemProxy,
-                  index: indexValue,
-                });
-                // Create a reactive component for the separator
-                const SeparatorWrapper = () => {
-                  if (!SeparatorComponent) return null;
-                  const index = currentIndex();
-                  if (index === -1 || index >= props.data.length - 1) {
-                    return null;
-                  }
-                  const leading = currentItem();
-                  if (leading == null) return null;
-                  const trailing = props.data[index + 1];
-                  if (trailing === undefined) return null;
+              const ensureSlotContent = () => {
+                if (slotContent) return slotContent;
+                const SeparatorComponent = props.ItemSeparatorComponent;
+                slotContent = createRoot((dispose) => {
+                  disposeSlot = dispose;
+                  const itemElement = props.renderItem({
+                    item: itemProxy,
+                    index: indexValue,
+                  });
+                  // Create a reactive component for the separator
+                  const SeparatorWrapper = () => {
+                    if (!SeparatorComponent) return null;
+                    const index = currentIndex();
+                    if (index === -1 || index >= props.data.length - 1) {
+                      return null;
+                    }
+                    const leading = currentItem();
+                    if (leading == null) return null;
+                    const trailing = props.data[index + 1];
+                    if (trailing === undefined) return null;
+                    return (
+                      <SeparatorComponent
+                        leadingItem={leading}
+                        trailingItem={trailing}
+                        leadingIndex={index}
+                        trailingIndex={index + 1}
+                      />
+                    );
+                  };
                   return (
-                    <SeparatorComponent
-                      leadingItem={leading}
-                      trailingItem={trailing}
-                      leadingIndex={index}
-                      trailingIndex={index + 1}
-                    />
+                    <>
+                      {itemElement}
+                      <SeparatorWrapper />
+                    </>
                   );
-                };
-                return (
-                  <>
-                    {itemElement}
-                    <SeparatorWrapper />
-                  </>
-                );
+                });
+                return slotContent;
+              };
+
+              onCleanup(() => {
+                disposeSlot?.();
+                slotContent = null;
+                disposeSlot = null;
               });
-              return slotContent;
-            };
 
-            onCleanup(() => {
-              disposeSlot?.();
-              slotContent = null;
-              disposeSlot = null;
-            });
+              createEffect(() => {
+                const idx = binding().dataIndex;
+                if (idx >= 0 && idx < props.data.length) {
+                  setCurrentIndex(idx);
+                  setCurrentItem(() => props.data[idx]);
+                  ensureSlotContent();
+                }
+              });
 
-            createEffect(() => {
-              const idx = binding().dataIndex;
-              if (idx >= 0 && idx < props.data.length) {
-                setCurrentIndex(idx);
-                setCurrentItem(() => props.data[idx]);
-                ensureSlotContent();
-              }
-            });
+              const position = createMemo(() => {
+                const idx = binding().dataIndex;
+                if (idx === -1 || idx >= props.data.length) {
+                  return -9999;
+                }
+                return idx * props.itemSize;
+              });
 
-            const position = createMemo(() => {
-              const idx = binding().dataIndex;
-              if (idx === -1 || idx >= props.data.length) {
-                return -9999;
-              }
-              return idx * props.itemSize;
-            });
+              const slotKey = `pool-slot-${poolIndex}`;
 
-            const slotKey = `pool-slot-${poolIndex}`;
-
-            return (
-              <View
-                key={`pool-slot-${poolIndex}`}
-                style={{
-                  position: "absolute",
-                  [props.horizontal ? "left" : "top"]: position(),
-                  [props.horizontal ? "top" : "left"]: 0,
-                  width: props.horizontal ? props.itemSize : "100%",
-                  height: props.horizontal ? "100%" : props.itemSize,
-                }}
-              >
-                {currentItem() ? ensureSlotContent() : null}
-              </View>
-            );
-          }}
-        </Index>
-      </View>
+              return (
+                <View
+                  key={`pool-slot-${poolIndex}`}
+                  style={{
+                    position: "absolute",
+                    [props.horizontal ? "left" : "top"]: position(),
+                    [props.horizontal ? "top" : "left"]: 0,
+                    width: props.horizontal ? props.itemSize : "100%",
+                    height: props.horizontal ? "100%" : props.itemSize,
+                  }}
+                >
+                  {currentItem() ? ensureSlotContent() : null}
+                </View>
+              );
+            }}
+          </Index>
+        </View>
+      ) : (
+        renderDecorator(props.ListEmptyComponent)
+      )}
+      {renderDecorator(props.ListFooterComponent)}
     </ScrollView>
   );
 }
