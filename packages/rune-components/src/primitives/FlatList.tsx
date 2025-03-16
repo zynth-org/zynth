@@ -11,6 +11,7 @@ import {
 import { View, ScrollView, createScrollController } from "@rune/components";
 import type { Style } from "@rune/core";
 import { getHost } from "@rune/core";
+import type { FlatListController } from "./flatlist/controller";
 
 /**
  * FlatList - Fixed pool with Index (referential stability)
@@ -42,6 +43,7 @@ export type FlatListProps<T> = {
   contentContainerStyle?: Style;
   horizontal?: boolean;
   state?: FlatListState;
+  controller?: FlatListController;
   ItemSeparatorComponent?: (info: ItemSeparatorProps<T>) => JSX.Element;
   ListHeaderComponent?: JSX.Element | (() => JSX.Element);
   ListFooterComponent?: JSX.Element | (() => JSX.Element);
@@ -140,6 +142,35 @@ export function FlatList<T>(props: FlatListProps<T>) {
 
   const host = getHost();
   let recyclingContextId: string | null = null;
+
+  // Wire up FlatList controller if provided
+  createEffect(() => {
+    const controller = props.controller as any;
+    if (!controller) return;
+
+    // Attach scroll controller
+    if (typeof controller.__setScrollController === "function") {
+      controller.__setScrollController(scrollController);
+    }
+
+    onCleanup(() => {
+      if (typeof controller.__setScrollController === "function") {
+        controller.__setScrollController(null);
+      }
+    });
+  });
+
+  // Update controller metadata when props change
+  createEffect(() => {
+    const controller = props.controller as any;
+    if (!controller || typeof controller.__setMetadata !== "function") return;
+
+    controller.__setMetadata({
+      itemSize: props.itemSize,
+      horizontal: props.horizontal ?? false,
+      dataLength: props.data.length,
+    });
+  });
 
   // Scroll metrics
   const scrollMetrics = createMemo(() => scrollController.metrics());
@@ -289,13 +320,19 @@ export function FlatList<T>(props: FlatListProps<T>) {
     });
   });
 
-  // Visible range
+  // Visible range - with optional recompute trigger
   const visibleRange = createMemo(
     (prev: { start: number; end: number } | undefined) => {
       const offset = scrollOffset();
       const viewport = viewportSize();
       const itemSize = props.itemSize;
       const dataLength = props.data.length;
+
+      // Track recompute signal if controller provided
+      const controller = props.controller as any;
+      if (controller && typeof controller.__triggerRecompute === "function") {
+        controller.__triggerRecompute();
+      }
 
       // console.log(
       //   `[FlatList] 📏 Scroll offset: ${offset}, viewport: ${viewport}, itemSize: ${itemSize}`
