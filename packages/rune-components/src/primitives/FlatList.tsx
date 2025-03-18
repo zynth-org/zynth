@@ -49,6 +49,10 @@ export type FlatListProps<T> = {
   ListFooterComponent?: JSX.Element | (() => JSX.Element);
   ListEmptyComponent?: JSX.Element | (() => JSX.Element);
   testID?: string;
+  onEndReached?: () => void;
+  onEndReachedThreshold?: number;
+  onStartReached?: () => void;
+  onStartReachedThreshold?: number;
 };
 
 type Binding = {
@@ -258,6 +262,14 @@ export function FlatList<T>(props: FlatListProps<T>) {
 
   // Bindings array - FIXED size, never changes length!
   const [bindings, setBindings] = createSignal<Binding[]>([]);
+
+  // Boundary detection - imperative state outside reactive system
+  let boundaryTracker = {
+    startFired: false,
+    endFired: false,
+    startRearmThreshold: 0,
+    endRearmThreshold: 0,
+  };
 
   // Initialize bindings once
   createEffect(() => {
@@ -519,6 +531,59 @@ export function FlatList<T>(props: FlatListProps<T>) {
       firstVisibleIndex,
       visibleIndices: indices,
     });
+  });
+
+  // Boundary detection - separate effect, only reactive on scrollOffset
+  createEffect(() => {
+    if (!props.onStartReached && !props.onEndReached) return;
+
+    // Only reactive dependency: scrollOffset
+    const offset = scrollOffset();
+
+    // Read everything else untracked to prevent reactive interference
+    const viewport = untrack(viewportSize);
+    const dataLength = untrack(() => props.data.length);
+    const itemSize = untrack(() => props.itemSize);
+
+    if (!viewport || !dataLength || !itemSize) return;
+
+    const contentLength = dataLength * itemSize;
+    const startDistance = offset;
+    const endDistance = Math.max(0, contentLength - offset - viewport);
+
+    // Start boundary
+    if (props.onStartReached) {
+      const threshold = (props.onStartReachedThreshold ?? 0.1) * viewport;
+      const rearmThreshold = threshold * 1.5;
+
+      if (!boundaryTracker.startFired && startDistance <= threshold) {
+        boundaryTracker.startFired = true;
+        boundaryTracker.startRearmThreshold = rearmThreshold;
+        setTimeout(() => props.onStartReached?.(), 0);
+      } else if (
+        boundaryTracker.startFired &&
+        startDistance > boundaryTracker.startRearmThreshold
+      ) {
+        boundaryTracker.startFired = false;
+      }
+    }
+
+    // End boundary
+    if (props.onEndReached) {
+      const threshold = (props.onEndReachedThreshold ?? 0.1) * viewport;
+      const rearmThreshold = threshold * 1.5;
+
+      if (!boundaryTracker.endFired && endDistance <= threshold) {
+        boundaryTracker.endFired = true;
+        boundaryTracker.endRearmThreshold = rearmThreshold;
+        setTimeout(() => props.onEndReached?.(), 0);
+      } else if (
+        boundaryTracker.endFired &&
+        endDistance > boundaryTracker.endRearmThreshold
+      ) {
+        boundaryTracker.endFired = false;
+      }
+    }
   });
 
   const contentSize = createMemo(() => props.data.length * props.itemSize);

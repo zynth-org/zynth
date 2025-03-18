@@ -86,3 +86,9 @@ This document outlines the development plan to evolve Rune into a powerful, AI-n
 
 - [ ] **ScrollView:**
   - [ ] iOS require declare style `height` when android requires `minHeight`.
+
+---
+
+## Nice to Have
+
+- [ ] Enable Hermes `Intl` support on Android (fbjni initialization & runtime wiring) so features like `toLocaleTimeString` work without fallbacks.

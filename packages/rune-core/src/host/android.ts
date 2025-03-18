@@ -353,7 +353,9 @@ export function createAndroidHost(): Host {
 
       if (id === null) {
         id = ui.createNode("text");
-        console.log(`[Host/createText] 🆕 CREATED text node ${id}`);
+        console.log(
+          `[Host/createText] 🆕 CREATED text node ${id}, content: ${value}`
+        );
       }
 
       operations.push(() => ui.setText(id, value ?? ""));
