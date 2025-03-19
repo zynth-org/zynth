@@ -227,9 +227,9 @@ export function createAndroidHost(): Host {
     }
 
     const nodeId = pool.pop() ?? null;
-    console.log(
-      `[Host/findAvailableNodeInPool] ✅ Found node ${nodeId} in pool`
-    );
+    // console.log(
+    //   `[Host/findAvailableNodeInPool] ✅ Found node ${nodeId} in pool`
+    // );
     return nodeId;
   };
 
@@ -255,12 +255,12 @@ export function createAndroidHost(): Host {
     context.activeBindings.delete(nodeId);
 
     // Log pool stats periodically
-    if (nodeId % 10 === 0) {
-      const poolStats = Array.from(context.pool.entries())
-        .map(([type, nodes]) => `${type}:${nodes.length}`)
-        .join(", ");
-      console.log(`[Host/Pool Stats] Context ${contextId}: ${poolStats}`);
-    }
+    // if (nodeId % 10 === 0) {
+    //   const poolStats = Array.from(context.pool.entries())
+    //     .map(([type, nodes]) => `${type}:${nodes.length}`)
+    //     .join(", ");
+    //   console.log(`[Host/Pool Stats] Context ${contextId}: ${poolStats}`);
+    // }
   };
 
   const api: Host = {
@@ -343,9 +343,9 @@ export function createAndroidHost(): Host {
             id = pooled;
             recycled = true;
             NODE_TO_CONTEXT.set(id, contextId);
-            console.log(
-              `[Host/createText] ♻️  RECYCLED text node ${id} from context ${contextId}`
-            );
+            // console.log(
+            //   `[Host/createText] ♻️  RECYCLED text node ${id} from context ${contextId}`
+            // );
             break;
           }
         }
@@ -353,9 +353,7 @@ export function createAndroidHost(): Host {
 
       if (id === null) {
         id = ui.createNode("text");
-        console.log(
-          `[Host/createText] 🆕 CREATED text node ${id}, content: ${value}`
-        );
+        console.log(`[Host/createText] 🆕 CREATED text node ${id}`);
       }
 
       operations.push(() => ui.setText(id, value ?? ""));

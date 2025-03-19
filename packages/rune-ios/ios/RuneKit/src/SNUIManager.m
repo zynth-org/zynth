@@ -178,7 +178,76 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
   return @(nid);
 }
 
-static CGFloat SNNum(id x) { return x ? [x doubleValue] : NAN; }
+static CGFloat SNNum(id x) { return x && ![x isKindOfClass:[NSNull class]] ? [x doubleValue] : NAN; }
+
+static BOOL SNValueIsPercentString(id value) {
+  return [value isKindOfClass:[NSString class]] && [(NSString *)value hasSuffix:@"%"];
+}
+
+static BOOL SNIsNullish(id value) {
+  return value == nil || value == (id)kCFNull;
+}
+
+static void SNApplyDimensionValue(
+    YGNodeRef yoga,
+    id value,
+    void (^setPoint)(float),
+    void (^setPercent)(float),
+    void (^setAuto)(void)) {
+  if (SNIsNullish(value)) {
+    if (setAuto) setAuto();
+    return;
+  }
+
+  if ([value isKindOfClass:[NSNumber class]]) {
+    setPoint((float)SNNum(value));
+    return;
+  }
+
+  if (![value isKindOfClass:[NSString class]]) return;
+  NSString *stringValue = (NSString *)value;
+  NSString *lower = stringValue.lowercaseString;
+
+  if ([lower isEqualToString:@"auto"]) {
+    if (setAuto) setAuto();
+    return;
+  }
+
+  if (SNValueIsPercentString(stringValue)) {
+    if (setPercent) setPercent((float)[stringValue doubleValue]);
+    return;
+  }
+
+  setPoint((float)[stringValue doubleValue]);
+}
+
+static void SNApplyPositionValue(YGNodeRef yoga, id value, YGEdge edge) {
+  if (SNIsNullish(value)) {
+    YGNodeStyleSetPosition(yoga, edge, YGUndefined);
+    return;
+  }
+
+  if ([value isKindOfClass:[NSNumber class]]) {
+    YGNodeStyleSetPosition(yoga, edge, (float)SNNum(value));
+    return;
+  }
+
+  if (![value isKindOfClass:[NSString class]]) return;
+  NSString *stringValue = (NSString *)value;
+  NSString *lower = stringValue.lowercaseString;
+
+  if ([lower isEqualToString:@"auto"]) {
+    YGNodeStyleSetPosition(yoga, edge, YGUndefined);
+    return;
+  }
+
+  if (SNValueIsPercentString(stringValue)) {
+    YGNodeStyleSetPositionPercent(yoga, edge, (float)[stringValue doubleValue]);
+    return;
+  }
+
+  YGNodeStyleSetPosition(yoga, edge, (float)[stringValue doubleValue]);
+}
 
 static void SNRemoveCustomBorderLayers(UIView *view) {
   NSArray<CALayer *> *sublayers = [view.layer.sublayers copy];
@@ -274,20 +343,61 @@ static void SNApplyEdges(NSDictionary *style,
   NSNumber *B = bottom ?: vertical ?: base;
   NSNumber *L = horizontal ?: base;
 
-  if (T) setter(YGEdgeTop, (float)SNNum(T));
-  if (R) setter(YGEdgeRight, (float)SNNum(R));
-  if (B) setter(YGEdgeBottom, (float)SNNum(B));
-  if (L) setter(YGEdgeLeft, (float)SNNum(L));
+  if (T && ![T isKindOfClass:[NSNull class]]) setter(YGEdgeTop, (float)SNNum(T));
+  if (R && ![R isKindOfClass:[NSNull class]]) setter(YGEdgeRight, (float)SNNum(R));
+  if (B && ![B isKindOfClass:[NSNull class]]) setter(YGEdgeBottom, (float)SNNum(B));
+  if (L && ![L isKindOfClass:[NSNull class]]) setter(YGEdgeLeft, (float)SNNum(L));
 }
 
 - (void)sn_applyStyleDictionary:(NSDictionary *)style toNode:(SNNode *)n {
   if (!style || !n || !n.view) return;
   if (![style isKindOfClass:[NSDictionary class]] || !n.yoga) return;
 
-  NSNumber *w = style[@"width"]; if (w) YGNodeStyleSetWidth(n.yoga, (float)SNNum(w));
-  NSNumber *h = style[@"height"]; if (h) YGNodeStyleSetHeight(n.yoga, (float)SNNum(h));
+  SNApplyDimensionValue(
+      n.yoga,
+      style[@"width"],
+      ^(float v) { YGNodeStyleSetWidth(n.yoga, v); },
+      ^(float v) { YGNodeStyleSetWidthPercent(n.yoga, v); },
+      ^{ YGNodeStyleSetWidthAuto(n.yoga); });
+
+  SNApplyDimensionValue(
+      n.yoga,
+      style[@"height"],
+      ^(float v) { YGNodeStyleSetHeight(n.yoga, v); },
+      ^(float v) { YGNodeStyleSetHeightPercent(n.yoga, v); },
+      ^{ YGNodeStyleSetHeightAuto(n.yoga); });
+
+  SNApplyDimensionValue(
+      n.yoga,
+      style[@"minWidth"],
+      ^(float v) { YGNodeStyleSetMinWidth(n.yoga, v); },
+      ^(float v) { YGNodeStyleSetMinWidthPercent(n.yoga, v); },
+      ^{ YGNodeStyleSetMinWidth(n.yoga, YGUndefined); });
+
+  SNApplyDimensionValue(
+      n.yoga,
+      style[@"maxWidth"],
+      ^(float v) { YGNodeStyleSetMaxWidth(n.yoga, v); },
+      ^(float v) { YGNodeStyleSetMaxWidthPercent(n.yoga, v); },
+      ^{ YGNodeStyleSetMaxWidth(n.yoga, YGUndefined); });
+
+  SNApplyDimensionValue(
+      n.yoga,
+      style[@"minHeight"],
+      ^(float v) { YGNodeStyleSetMinHeight(n.yoga, v); },
+      ^(float v) { YGNodeStyleSetMinHeightPercent(n.yoga, v); },
+      ^{ YGNodeStyleSetMinHeight(n.yoga, YGUndefined); });
+
+  SNApplyDimensionValue(
+      n.yoga,
+      style[@"maxHeight"],
+      ^(float v) { YGNodeStyleSetMaxHeight(n.yoga, v); },
+      ^(float v) { YGNodeStyleSetMaxHeightPercent(n.yoga, v); },
+      ^{ YGNodeStyleSetMaxHeight(n.yoga, YGUndefined); });
 
   NSNumber *flex = style[@"flex"]; if (flex) YGNodeStyleSetFlex(n.yoga, (float)SNNum(flex));
+  NSNumber *flexGrow = style[@"flexGrow"]; if (flexGrow) YGNodeStyleSetFlexGrow(n.yoga, (float)SNNum(flexGrow));
+  NSNumber *flexShrink = style[@"flexShrink"]; if (flexShrink) YGNodeStyleSetFlexShrink(n.yoga, (float)SNNum(flexShrink));
   NSString *fd = style[@"flexDirection"];
   if (fd) YGNodeStyleSetFlexDirection(n.yoga, [fd isEqualToString:@"row"] ? YGFlexDirectionRow : YGFlexDirectionColumn);
 
@@ -335,6 +445,35 @@ static void SNApplyEdges(NSDictionary *style,
 
   SNApplyEdges(style, @"margin", @"marginHorizontal", @"marginVertical", @"marginTop", @"marginRight", @"marginBottom", n.yoga,
                ^(YGEdge e, float v){ YGNodeStyleSetMargin(n.yoga, e, v); });
+
+  NSString *position = style[@"position"];
+  if (position) {
+    NSString *normalized = position.lowercaseString;
+    if ([normalized isEqualToString:@"absolute"]) {
+      YGNodeStyleSetPositionType(n.yoga, YGPositionTypeAbsolute);
+    } else {
+      YGNodeStyleSetPositionType(n.yoga, YGPositionTypeRelative);
+    }
+  } else {
+    YGNodeStyleSetPositionType(n.yoga, YGPositionTypeRelative);
+  }
+
+  SNApplyPositionValue(n.yoga, style[@"top"], YGEdgeTop);
+  SNApplyPositionValue(n.yoga, style[@"right"], YGEdgeRight);
+  SNApplyPositionValue(n.yoga, style[@"bottom"], YGEdgeBottom);
+  SNApplyPositionValue(n.yoga, style[@"left"], YGEdgeLeft);
+
+  NSString *display = style[@"display"];
+  if (display) {
+    NSString *normalized = display.lowercaseString;
+    if ([normalized isEqualToString:@"none"]) {
+      YGNodeStyleSetDisplay(n.yoga, YGDisplayNone);
+    } else {
+      YGNodeStyleSetDisplay(n.yoga, YGDisplayFlex);
+    }
+  } else {
+    YGNodeStyleSetDisplay(n.yoga, YGDisplayFlex);
+  }
 
   NSNumber *borderWidthValue = style[@"borderWidth"];
   YGNodeStyleSetBorder(n.yoga, YGEdgeAll, borderWidthValue ? (float)SNNum(borderWidthValue) : 0.f);

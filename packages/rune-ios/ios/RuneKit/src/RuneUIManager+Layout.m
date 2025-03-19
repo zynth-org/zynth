@@ -1,5 +1,6 @@
 #import "RuneUIManager+Layout.h"
 #import "RuneUIManager+Events.h"
+#import "RuneScrollView.h"
 
 #if __has_include(<RuneKit/RuneKit-Swift.h>)
 #import <RuneKit/RuneKit-Swift.h>
@@ -67,6 +68,7 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
     [[PerformanceProfiler shared] recordLayoutEnd];
 
     [[PerformanceProfiler shared] recordRenderStart];
+    NSMutableSet<RuneScrollView *> *scrollsNeedingLayout = [NSMutableSet set];
     [self.nodes enumerateKeysAndObjectsUsingBlock:^(NSNumber *key, SNNode *obj, BOOL *stop) {
       if (!obj || !obj.view || !obj.yoga) {
         return;
@@ -91,6 +93,15 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
         obj.view.frame = CGRectMake(x, y, w, h);
         [self rune_dispatchLayoutEventForNode:obj force:NO];
 
+        if ([obj.view isKindOfClass:[RuneScrollView class]]) {
+          [scrollsNeedingLayout addObject:(RuneScrollView *)obj.view];
+        } else if (obj.parentId >= 0) {
+          SNNode *parentNode = self.nodes[@(obj.parentId)];
+          if (parentNode && [parentNode.view isKindOfClass:[RuneScrollView class]]) {
+            [scrollsNeedingLayout addObject:(RuneScrollView *)parentNode.view];
+          }
+        }
+
         for (CALayer *sublayer in obj.view.layer.sublayers) {
             if ([sublayer.name isEqualToString:kRuneBorderLayerName] && [sublayer isKindOfClass:[CAShapeLayer class]]) {
                 CAShapeLayer *borderLayer = (CAShapeLayer *)sublayer;
@@ -101,6 +112,10 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
         NSLog(@"[SN] Exception applying frame for nid=%d: %@", obj.nid, exception);
       }
     }];
+    for (RuneScrollView *scroll in scrollsNeedingLayout) {
+      [scroll setNeedsLayout];
+      [scroll layoutIfNeeded];
+    }
     [[PerformanceProfiler shared] recordRenderEnd];
   });
 }
