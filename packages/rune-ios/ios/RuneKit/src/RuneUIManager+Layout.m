@@ -90,6 +90,12 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
           return;
         }
 
+        // Log absolute positioned nodes to debug
+        YGPositionType posType = YGNodeStyleGetPositionType(obj.yoga);
+        // if (posType == YGPositionTypeAbsolute && (obj.nid >= 10 && obj.nid <= 25)) {
+        //   NSLog(@"[RuneLayout] Node %d: Yoga computed x=%.0f y=%.0f w=%.0f h=%.0f (absolute)", obj.nid, x, y, w, h);
+        // }
+
         obj.view.frame = CGRectMake(x, y, w, h);
         [self rune_dispatchLayoutEventForNode:obj force:NO];
 

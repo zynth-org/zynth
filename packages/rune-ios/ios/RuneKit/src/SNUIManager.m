@@ -160,6 +160,8 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
   }
 
   YGNodeStyleSetFlexDirection(n.yoga, YGFlexDirectionColumn);
+  // Ensure children stretch to full width by default (matches Android behavior)
+  YGNodeStyleSetAlignItems(n.yoga, YGAlignStretch);
 
   if ([v isKindOfClass:[UILabel class]]) {
     YGNodeSetContext(n.yoga, (__bridge void *)v);

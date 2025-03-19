@@ -420,7 +420,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
           SNRunOnMain(^{
             NSString *typeStr = [NSString stringWithUTF8String:type.c_str()];
             nid = [[host manager] createNode:typeStr].intValue;
-            NSLog(@"[RuneTrace] __ui.createNode type=%@ -> id=%d", typeStr, nid);
+            // NSLog(@"[RuneTrace] __ui.createNode type=%@ -> id=%d", typeStr, nid);
           });
           return Value((double)nid);
         } catch (const facebook::jsi::JSError &error) {
@@ -453,7 +453,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
           std::string name = a[1].getString(rt).utf8(rt);
           NSString *nameStr = [NSString stringWithUTF8String:name.c_str()];
           Value propValue = count > 2 ? Value(rt, a[2]) : Value::undefined();
-          NSLog(@"[RuneTrace] __ui.setProp id=%d name=%@", id, nameStr);
+          
           if (name == "style" && a[2].isObject()) {
             Object styleObj = a[2].asObject(rt);
             NSMutableDictionary *styleDict = [NSMutableDictionary dictionary];
@@ -463,11 +463,15 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
                 return;
               }
               Value v = styleObj.getProperty(rt, prop);
-              if (!v.isNumber()) {
-                return;
-              }
               NSString *key = [NSString stringWithUTF8String:prop];
-              styleDict[key] = @(v.asNumber());
+              
+              // Handle both numbers and strings (for percentages like "50%")
+              if (v.isNumber()) {
+                styleDict[key] = @(v.asNumber());
+              } else if (v.isString()) {
+                std::string utf8 = v.getString(rt).utf8(rt);
+                styleDict[key] = [NSString stringWithUTF8String:utf8.c_str()];
+              }
             };
 
             auto copyString = [&](const char *prop) {
@@ -487,14 +491,16 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
                                          "paddingHorizontal", "paddingVertical", "paddingTop",    "paddingRight",
                                          "paddingBottom",  "margin",         "marginHorizontal", "marginVertical",
                                          "marginTop",      "marginRight",    "marginBottom",   "borderRadius",
-                                         "borderWidth",    "fontSize"};
+                                         "borderWidth",    "fontSize",       "top",           "right",
+                                         "bottom",         "left"};
             for (const char *key : numericKeys) {
               copyNumber(key);
             }
 
             const char *stringKeys[] = {"flexDirection", "justifyContent", "alignItems",
                                          "flexWrap",      "backgroundColor", "borderColor",
-                                         "borderStyle",  "fontWeight",      "color"};
+                                         "borderStyle",  "fontWeight",      "color",         "position",
+                                         "display"};
             for (const char *key : stringKeys) {
               copyString(key);
             }
@@ -562,7 +568,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
           }
           // Log text value
           SNRunOnMain(^{
-            NSLog(@"[RuneTrace] __ui.setText id=%d text='%s'", id, text.c_str());
+            // NSLog(@"[RuneTrace] __ui.setText id=%d text='%s'", id, text.c_str());
             [[host manager] setText:@(id) text:[NSString stringWithUTF8String:text.c_str()]];
           });
         } catch (const facebook::jsi::JSError &error) {
@@ -584,7 +590,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
           int childId = (int)a[1].asNumber();
           int index = (int)a[2].asNumber();
           SNRunOnMain(^{
-            NSLog(@"[RuneTrace] __ui.insertChild parent=%d child=%d index=%d", parentId, childId, index);
+            // NSLog(@"[RuneTrace] __ui.insertChild parent=%d child=%d index=%d", parentId, childId, index);
             [[host manager] insertChild:@(parentId)
                                    child:@(childId)
                                    index:@(index)];
@@ -607,7 +613,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
           int parentId = (int)a[0].asNumber();
           int childId = (int)a[1].asNumber();
           SNRunOnMain(^{
-            NSLog(@"[RuneTrace] __ui.removeChild parent=%d child=%d", parentId, childId);
+            // NSLog(@"[RuneTrace] __ui.removeChild parent=%d child=%d", parentId, childId);
             [[host manager] removeChild:@(parentId) child:@(childId)];
             [host sn_removeHandlersForNode:childId];
           });

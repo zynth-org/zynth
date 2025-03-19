@@ -83,7 +83,18 @@ export function createIOSHost(): Host {
       : (CHILDREN.set(id, []), CHILDREN.get(id)!);
 
   const resetNodeToDefault = (nodeId: number, type: HostNode["type"]) => {
-    operations.push(() => ui.setProp(nodeId, "style", {}));
+    // Reset style with explicit position reset to prevent position from persisting
+    // When FlatList recycles nodes, they have absolute positioning that must be cleared
+    // Use null instead of undefined because JSON.stringify removes undefined values
+    operations.push(() =>
+      ui.setProp(nodeId, "style", {
+        position: "relative",
+        top: null,
+        left: null,
+        right: null,
+        bottom: null,
+      })
+    );
     if (type === "text") {
       operations.push(() => ui.setText(nodeId, ""));
       TEXTS.set(nodeId, "");
