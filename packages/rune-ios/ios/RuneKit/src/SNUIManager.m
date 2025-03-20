@@ -496,7 +496,10 @@ static void SNApplyEdges(NSDictionary *style,
       l.font = [UIFont systemFontOfSize:l.font.pointSize weight:[m[fw] doubleValue]];
     }
     NSString *color = style[@"color"]; if (color) l.textColor = SNColorFromHex(color);
-    if (n.yoga) YGNodeMarkDirty(n.yoga);
+    // Only mark dirty if node has no children (Yoga constraint: measure functions can't have children)
+    if (n.yoga && YGNodeGetChildCount(n.yoga) == 0 && YGNodeGetOwner(n.yoga)) {
+      YGNodeMarkDirty(n.yoga);
+    }
   }
 
   if ([n.view isKindOfClass:[RuneTextInputView class]]) {
@@ -538,7 +541,7 @@ static void SNApplyEdges(NSDictionary *style,
         input.placeholderTopConstraint.constant = top;
     }
 
-    if (n.yoga) {
+    if (n.yoga && YGNodeGetOwner(n.yoga)) {
       YGNodeMarkDirty(n.yoga);
     }
   }
@@ -575,7 +578,7 @@ static void SNApplyEdges(NSDictionary *style,
     CGFloat right = [style[@"paddingRight"] ?: style[@"paddingHorizontal"] ?: style[@"padding"] floatValue];
     input.padding = UIEdgeInsetsMake(top, left, bottom, right);
 
-    if (n.yoga) {
+    if (n.yoga && YGNodeGetOwner(n.yoga)) {
       YGNodeMarkDirty(n.yoga);
     }
   }
@@ -764,7 +767,12 @@ static void SNApplyEdges(NSDictionary *style,
 
   if ([n.view isKindOfClass:[UILabel class]]) {
     ((UILabel *)n.view).text = text;
-    if (n.yoga) YGNodeMarkDirty(n.yoga);
+    // Only mark dirty if node has no children (Yoga constraint: measure functions can't have children)
+    if (n.yoga && YGNodeGetChildCount(n.yoga) == 0) {
+      if (YGNodeGetOwner(n.yoga)) {
+        YGNodeMarkDirty(n.yoga);
+      }
+    }
     [self rune_propagateTextChangeFromNode:n];
   } else if ([n.view isKindOfClass:[RuneTextInputView class]]) {
     RuneTextInputView *input = (RuneTextInputView *)n.view;
@@ -773,7 +781,9 @@ static void SNApplyEdges(NSDictionary *style,
     }];
     [self sn_textInputUpdateTextForNode:n text:text ?: @""];
     if (n.yoga) {
-      YGNodeMarkDirty(n.yoga);
+      if (YGNodeGetOwner(n.yoga)) {
+        YGNodeMarkDirty(n.yoga);
+      }
     }
   }
   [self rune_markNeedsFlush];

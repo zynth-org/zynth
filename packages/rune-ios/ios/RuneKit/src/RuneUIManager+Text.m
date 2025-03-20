@@ -7,7 +7,7 @@
 
   if (node.children.count == 0) {
     ((UILabel *)node.view).text = @"";
-    if (node.yoga) {
+    if (node.yoga && YGNodeGetChildCount(node.yoga) == 0 && YGNodeGetOwner(node.yoga)) {
       YGNodeMarkDirty(node.yoga);
     }
     return;
@@ -22,7 +22,7 @@
   }
 
   ((UILabel *)node.view).text = composed;
-  if (node.yoga) {
+  if (node.yoga && YGNodeGetChildCount(node.yoga) == 0 && YGNodeGetOwner(node.yoga)) {
     YGNodeMarkDirty(node.yoga);
   }
 }
@@ -76,4 +76,3 @@
 }
 
 @end
-

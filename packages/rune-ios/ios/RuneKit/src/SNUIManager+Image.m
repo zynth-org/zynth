@@ -257,7 +257,9 @@ static NSString *SNImageNextToken(void) {
   if (!image) {
     imageView.image = nil;
     if (node.yoga && YGNodeHasMeasureFunc(node.yoga)) {
-      YGNodeMarkDirty(node.yoga);
+      if (YGNodeGetOwner(node.yoga)) {
+        YGNodeMarkDirty(node.yoga);
+      }
     }
     [self sn_markNeedsFlush];
     return;
@@ -274,7 +276,9 @@ static NSString *SNImageNextToken(void) {
   imageView.image = finalImage;
 
   if (node.yoga && YGNodeHasMeasureFunc(node.yoga)) {
-    YGNodeMarkDirty(node.yoga);
+    if (YGNodeGetOwner(node.yoga)) {
+      YGNodeMarkDirty(node.yoga);
+    }
   }
   [self sn_markNeedsFlush];
 

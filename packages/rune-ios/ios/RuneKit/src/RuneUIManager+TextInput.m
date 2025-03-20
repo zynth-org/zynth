@@ -111,7 +111,7 @@ static NSMutableDictionary<NSNumber *, SNTextInputState *> *SNTextInputStateMap(
     [view performProgrammaticUpdate:^{
       view.text = text;
     }];
-    if (node.yoga) {
+    if (node.yoga && YGNodeGetOwner(node.yoga)) {
       YGNodeMarkDirty(node.yoga);
       [self rune_markNeedsFlush];
     }
@@ -141,7 +141,7 @@ static NSMutableDictionary<NSNumber *, SNTextInputState *> *SNTextInputStateMap(
       [view performProgrammaticUpdate:^{
         view.text = initial;
       }];
-      if (node.yoga) {
+      if (node.yoga && YGNodeGetOwner(node.yoga)) {
         YGNodeMarkDirty(node.yoga);
         [self rune_markNeedsFlush];
       }

@@ -497,7 +497,7 @@ static UIColor *RuneColorFromHexOrNil(NSString *hex) {
   if (self.suppressNativeEvent) {
     [self updatePlaceholderVisibility];
     self.pendingChange = NO;
-    if (self.node && self.node.yoga) {
+    if (self.node && self.node.yoga && YGNodeGetOwner(self.node.yoga)) {
       YGNodeMarkDirty(self.node.yoga);
     }
     [self.manager sn_markNeedsFlush];
@@ -518,7 +518,7 @@ static UIColor *RuneColorFromHexOrNil(NSString *hex) {
   [self recordEventDispatch];
   self.pendingChange = NO;
 
-  if (self.node && self.node.yoga) {
+  if (self.node && self.node.yoga && YGNodeGetOwner(self.node.yoga)) {
     YGNodeMarkDirty(self.node.yoga);
   }
   [self.manager sn_markNeedsFlush];
