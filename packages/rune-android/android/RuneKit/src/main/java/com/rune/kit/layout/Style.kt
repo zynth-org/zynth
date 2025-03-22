@@ -20,9 +20,13 @@ data class Style(
   val widthAuto: Boolean = false,
   val heightAuto: Boolean = false,
   val minWidth: Float? = null,
+  val minWidthPercent: Float? = null,
   val maxWidth: Float? = null,
+  val maxWidthPercent: Float? = null,
   val minHeight: Float? = null,
+  val minHeightPercent: Float? = null,
   val maxHeight: Float? = null,
+  val maxHeightPercent: Float? = null,
   val flex: Float? = null,
   val flexGrow: Float? = null,
   val flexShrink: Float? = null,
@@ -137,6 +141,10 @@ data class Style(
           }
           else -> Triple(null, null, false)
         }
+        val (minWidthValue, minWidthPercent) = json.optDimensionWithPercent("minWidth")
+        val (maxWidthValue, maxWidthPercent) = json.optDimensionWithPercent("maxWidth")
+        val (minHeightValue, minHeightPercent) = json.optDimensionWithPercent("minHeight")
+        val (maxHeightValue, maxHeightPercent) = json.optDimensionWithPercent("maxHeight")
         return Style(
           width = widthResult.first,
           height = heightResult.first,
@@ -144,10 +152,14 @@ data class Style(
           heightPercent = heightResult.second,
           widthAuto = widthResult.third,
           heightAuto = heightResult.third,
-          minWidth = json.optFloat("minWidth"),
-          maxWidth = json.optFloat("maxWidth"),
-          minHeight = json.optFloat("minHeight"),
-          maxHeight = json.optFloat("maxHeight"),
+          minWidth = minWidthValue,
+          minWidthPercent = minWidthPercent,
+          maxWidth = maxWidthValue,
+          maxWidthPercent = maxWidthPercent,
+          minHeight = minHeightValue,
+          minHeightPercent = minHeightPercent,
+          maxHeight = maxHeightValue,
+          maxHeightPercent = maxHeightPercent,
           flex = json.optFloat("flex"),
           flexGrow = json.optFloat("flexGrow"),
           flexShrink = json.optFloat("flexShrink"),
@@ -243,6 +255,18 @@ data class Style(
         if (number != null) null to number else null to null
       } else {
         s.toFloatOrNull() to null
+      }
+    }
+
+    private fun JSONObject.optDimensionWithPercent(name: String): Pair<Float?, Float?> {
+      if (!has(name) || isNull(name)) return null to null
+      return when (val value = opt(name)) {
+        is Number -> value.toFloat() to null
+        is String -> {
+          val (absolute, percent) = parseDimensionPercent(value)
+          absolute to percent
+        }
+        else -> null to null
       }
     }
 

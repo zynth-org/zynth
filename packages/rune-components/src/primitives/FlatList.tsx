@@ -8,7 +8,13 @@ import {
   onCleanup,
   createRoot,
 } from "solid-js";
-import { View, ScrollView, createScrollController } from "@rune/components";
+import {
+  View,
+  ScrollView,
+  createScrollController,
+  type LayoutChangeEvent,
+} from "@rune/components";
+import type { MaintainVisibleContentPosition } from "./ScrollView";
 import type { Style } from "@rune/core";
 import { getHost } from "@rune/core";
 import type { FlatListController } from "./flatlist/controller";
@@ -35,7 +41,7 @@ export type FlatListProps<T> = {
   data: T[];
   renderItem: (info: { item: T; index: number }) => JSX.Element;
   keyExtractor: (item: T, index: number) => string;
-  itemSize: number;
+  itemSize?: number;
   poolSize?: number;
   windowSize?: number;
   overscan?: number | { multiple?: number; main?: number; cross?: number };
@@ -44,6 +50,8 @@ export type FlatListProps<T> = {
   horizontal?: boolean;
   state?: FlatListState;
   controller?: FlatListController;
+  estimatedItemSize?: number;
+  maintainVisibleContentPosition?: MaintainVisibleContentPosition;
   ItemSeparatorComponent?: (info: ItemSeparatorProps<T>) => JSX.Element;
   ListHeaderComponent?: JSX.Element | (() => JSX.Element);
   ListFooterComponent?: JSX.Element | (() => JSX.Element);
@@ -121,6 +129,7 @@ export function createFlatListState(): FlatListState {
 
 const DEFAULT_MIN_POOL_ITEMS = 15;
 const DEFAULT_OVERSCAN_MULTIPLE = 2;
+const DEFAULT_ESTIMATED_ITEM_SIZE = 64;
 
 export function FlatList<T>(props: FlatListProps<T>) {
   const scrollController = createScrollController();
@@ -170,7 +179,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
     if (!controller || typeof controller.__setMetadata !== "function") return;
 
     controller.__setMetadata({
-      itemSize: props.itemSize,
+      itemSize: estimatedItemExtent(),
       horizontal: props.horizontal ?? false,
       dataLength: props.data.length,
     });
@@ -200,6 +209,26 @@ export function FlatList<T>(props: FlatListProps<T>) {
     return size && size > 0 ? size : fallbackViewport();
   });
 
+  const maintainConfig = createMemo(
+    () => props.maintainVisibleContentPosition
+  );
+  const estimatedItemExtent = createMemo(() => {
+    const explicitEstimate = props.estimatedItemSize;
+    if (typeof explicitEstimate === "number" && explicitEstimate > 0) {
+      return explicitEstimate;
+    }
+    const fixed = props.itemSize;
+    if (typeof fixed === "number" && fixed > 0) {
+      return fixed;
+    }
+    return DEFAULT_ESTIMATED_ITEM_SIZE;
+  });
+
+  const fixedItemExtent = createMemo(() => {
+    const fixed = props.itemSize;
+    return typeof fixed === "number" && fixed > 0 ? fixed : null;
+  });
+
   const overscanMainDistance = createMemo(() => {
     const config = props.overscan;
     if (typeof config === "number") {
@@ -212,17 +241,18 @@ export function FlatList<T>(props: FlatListProps<T>) {
       config && typeof config.multiple === "number"
         ? config.multiple
         : DEFAULT_OVERSCAN_MULTIPLE;
-    return Math.max(0, props.itemSize * multiple);
+    return Math.max(0, estimatedItemExtent() * multiple);
   });
 
   const overscanItemsPerSide = createMemo(() => {
     const distance = overscanMainDistance();
-    if (!props.itemSize) return 0;
-    return Math.max(0, Math.ceil(distance / props.itemSize));
+    const extent = estimatedItemExtent();
+    if (!extent) return 0;
+    return Math.max(0, Math.ceil(distance / extent));
   });
 
   const viewportItemCount = createMemo(() => {
-    const itemSize = props.itemSize;
+    const itemSize = estimatedItemExtent();
     if (!itemSize) return 0;
     const viewport = viewportSize();
     return Math.max(1, Math.ceil(viewport / itemSize));
@@ -232,7 +262,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
   const poolSize = createMemo(() => {
     if (props.poolSize) return props.poolSize;
     const dataLength = props.data.length;
-    if (dataLength === 0 || !props.itemSize) return 0;
+    if (dataLength === 0) return 0;
 
     const visibleCount = viewportItemCount();
     const overscanCount = overscanItemsPerSide();
@@ -255,10 +285,222 @@ export function FlatList<T>(props: FlatListProps<T>) {
 
     const final = Math.min(calculated, dataLength);
     // console.log(
-    //   `[FlatList] 📐 Pool size calc: viewport=${viewport}, itemSize=${props.itemSize}, visibleCount=${visibleCount}, calculated=${calculated}, final=${final}`
+    //   `[FlatList] 📐 Pool size calc: viewport=${viewport}, estimate=${estimatedItemExtent()}, visibleCount=${visibleCount}, calculated=${calculated}, final=${final}`
     // );
     return final;
   });
+
+  type LayoutSnapshot = {
+    offsets: number[];
+    sizes: number[];
+    total: number;
+  };
+
+  const measurementCache = new Map<string, number>();
+  const [measurementVersion, setMeasurementVersion] = createSignal(0);
+  let lastOrientationHorizontal = props.horizontal ?? false;
+
+  createEffect(() => {
+    const isHorizontal = props.horizontal ?? false;
+    if (isHorizontal !== lastOrientationHorizontal) {
+      measurementCache.clear();
+      setMeasurementVersion((prev) => prev + 1);
+      lastOrientationHorizontal = isHorizontal;
+    }
+  });
+
+  const recordMeasurement = (key: string, size: number) => {
+    if (!key) return;
+    if (!Number.isFinite(size) || size <= 0) return;
+    if (fixedItemExtent()) return;
+    const previous = measurementCache.get(key);
+    if (previous !== undefined && Math.abs(previous - size) < 0.5) {
+      return;
+    }
+    measurementCache.set(key, size);
+    setMeasurementVersion((prev) => prev + 1);
+  };
+
+  const layoutMetrics = createMemo<LayoutSnapshot>(() => {
+    measurementVersion();
+    const data = props.data;
+    const estimate = estimatedItemExtent();
+    const fixed = fixedItemExtent();
+    const offsets = new Array<number>(data.length);
+    const sizes = new Array<number>(data.length);
+    let total = 0;
+    for (let i = 0; i < data.length; i++) {
+      const item = data[i];
+      const key = props.keyExtractor(item, i);
+      let size = measurementCache.get(key);
+      if (fixed != null) {
+        size = fixed;
+      }
+      if (!Number.isFinite(size as number) || (size as number) <= 0) {
+        size = estimate;
+      }
+      const resolvedSize =
+        typeof size === "number" && size > 0 ? size : estimate;
+      offsets[i] = total;
+      sizes[i] = resolvedSize;
+      total += resolvedSize;
+    }
+    return { offsets, sizes, total };
+  });
+
+  const initialMeasurementsReady = createMemo(() => {
+    if (fixedItemExtent()) return true;
+    measurementVersion();
+    const data = props.data;
+    const count = Math.min(data.length, viewportItemCount());
+    if (count === 0) return true;
+    for (let i = 0; i < count; i++) {
+      const item = data[i];
+      if (item === undefined) return false;
+      const key = props.keyExtractor(item, i);
+      const size = measurementCache.get(key);
+      if (!Number.isFinite(size ?? NaN) || (size as number) <= 0) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  const getOffsetForIndex = (snapshot: LayoutSnapshot, index: number) => {
+    if (index <= 0) return 0;
+    if (index >= snapshot.offsets.length) return snapshot.total;
+    return snapshot.offsets[index];
+  };
+
+  const getSizeForIndex = (snapshot: LayoutSnapshot, index: number) => {
+    if (index < 0 || index >= snapshot.sizes.length) {
+      return estimatedItemExtent();
+    }
+    return snapshot.sizes[index] ?? estimatedItemExtent();
+  };
+
+  const getEndForIndex = (snapshot: LayoutSnapshot, index: number) => {
+    const start = getOffsetForIndex(snapshot, index);
+    return start + getSizeForIndex(snapshot, index);
+  };
+
+  const findFirstIntersectingIndex = (
+    snapshot: LayoutSnapshot,
+    targetOffset: number
+  ) => {
+    const length = snapshot.sizes.length;
+    if (length === 0) return -1;
+    let low = 0;
+    let high = length - 1;
+    let result = length - 1;
+    while (low <= high) {
+      const mid = (low + high) >> 1;
+      const end = snapshot.offsets[mid] + snapshot.sizes[mid];
+      if (end > targetOffset) {
+        result = mid;
+        high = mid - 1;
+      } else {
+        low = mid + 1;
+      }
+    }
+    return Math.max(0, Math.min(result, length - 1));
+  };
+
+  const findLastIntersectingIndex = (
+    snapshot: LayoutSnapshot,
+    targetOffset: number
+  ) => {
+    const length = snapshot.sizes.length;
+    if (length === 0) return -1;
+    let low = 0;
+    let high = length - 1;
+    let result = 0;
+    while (low <= high) {
+      const mid = (low + high) >> 1;
+      const start = snapshot.offsets[mid];
+      if (start < targetOffset) {
+        result = mid;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+    return Math.max(0, Math.min(result, length - 1));
+  };
+
+  const locateIndexForOffset = (
+    snapshot: LayoutSnapshot,
+    targetOffset: number
+  ) => {
+    const length = snapshot.sizes.length;
+    if (length === 0) return -1;
+    let low = 0;
+    let high = length - 1;
+    while (low <= high) {
+      const mid = (low + high) >> 1;
+      const start = snapshot.offsets[mid];
+      const end = start + snapshot.sizes[mid];
+      if (targetOffset < start) {
+        high = mid - 1;
+      } else if (targetOffset >= end) {
+        low = mid + 1;
+      } else {
+        return mid;
+      }
+    }
+    return Math.max(0, Math.min(low, length - 1));
+  };
+
+  let anchorKey: string | null = null;
+  let anchorIndex = -1;
+  let anchorOffsetWithinItem = 0;
+  let previousKeys: string[] = [];
+  let previousDataLength = 0;
+  let initialBottomScrollApplied = false;
+  const [softCorrection, setSoftCorrection] = createSignal<{
+    targetOffset: number;
+    clampDistance: number;
+  } | null>(null);
+
+  const scheduleMicrotask = (fn: () => void) => {
+    Promise.resolve().then(fn);
+  };
+
+  const scheduleScrollBy = (delta: number) => {
+    if (!delta || Math.abs(delta) < 0.5) return;
+    if (!scrollHost()) return;
+    scheduleMicrotask(() => {
+      if (!scrollHost()) return;
+      if (props.horizontal) {
+        scrollController.scrollBy({ dx: delta, animated: false });
+      } else {
+        scrollController.scrollBy({ dy: delta, animated: false });
+      }
+    });
+  };
+
+  const scheduleScrollTo = (offset: number, animated: boolean) => {
+    if (!scrollHost()) return;
+    scheduleMicrotask(() => {
+      if (!scrollHost()) return;
+      const clamped = Math.max(0, offset);
+      if (props.horizontal) {
+        scrollController.scrollTo({ x: clamped, animated });
+      } else {
+        scrollController.scrollTo({ y: clamped, animated });
+      }
+    });
+  };
+
+  const queueSoftCorrection = (
+    targetOffset: number,
+    clampDistance: number
+  ) => {
+    setSoftCorrection({
+      targetOffset,
+      clampDistance,
+    });
+  };
 
   // Bindings array - FIXED size, never changes length!
   const [bindings, setBindings] = createSignal<Binding[]>([]);
@@ -332,12 +574,274 @@ export function FlatList<T>(props: FlatListProps<T>) {
     });
   });
 
+  createEffect(() => {
+    const config = maintainConfig();
+    if (!config || config.disabled) {
+      anchorKey = null;
+      anchorIndex = -1;
+      anchorOffsetWithinItem = 0;
+      return;
+    }
+
+    const offset = scrollOffset();
+    const data = untrack(() => props.data);
+    const length = data.length;
+
+    if (length === 0) {
+      anchorKey = null;
+      anchorIndex = -1;
+      anchorOffsetWithinItem = 0;
+      return;
+    }
+
+    const snapshot = layoutMetrics();
+    if (snapshot.sizes.length === 0) {
+      anchorKey = null;
+      anchorIndex = -1;
+      anchorOffsetWithinItem = 0;
+      return;
+    }
+
+    const index = locateIndexForOffset(snapshot, offset);
+    if (index < 0 || index >= length) {
+      anchorKey = null;
+      anchorIndex = -1;
+      anchorOffsetWithinItem = 0;
+      return;
+    }
+
+    const item = data[index];
+
+    if (item === undefined) {
+      anchorKey = null;
+      anchorIndex = -1;
+      anchorOffsetWithinItem = 0;
+      return;
+    }
+
+    anchorKey = props.keyExtractor(item, index);
+    anchorIndex = index;
+    const start = snapshot.offsets[index] ?? 0;
+    const size = snapshot.sizes[index] ?? estimatedItemExtent();
+    const remainder = offset - start;
+    anchorOffsetWithinItem = Math.max(0, Math.min(remainder, size));
+  });
+
+  createEffect(() => {
+    const config = maintainConfig();
+    if (!config || config.disabled || !config.startRenderingFromBottom) {
+      if (!config?.startRenderingFromBottom) {
+        initialBottomScrollApplied = false;
+      }
+      return;
+    }
+
+    if (initialBottomScrollApplied) return;
+    const hostNode = scrollHost();
+    if (!hostNode) return;
+    const dataLength = props.data.length;
+    if (dataLength === 0) return;
+    const viewport = untrack(viewportSize);
+    const snapshot = layoutMetrics();
+    const totalExtent = snapshot.total;
+    scheduleScrollTo(Math.max(0, totalExtent - viewport), false);
+    initialBottomScrollApplied = true;
+  });
+
+  createEffect(() => {
+    const config = maintainConfig();
+    const data = props.data;
+    const dataLength = data.length;
+
+    if (!config || config.disabled) {
+      previousKeys = data.map((item, idx) => props.keyExtractor(item, idx));
+      previousDataLength = dataLength;
+      setSoftCorrection(null);
+      return;
+    }
+
+    if (dataLength === 0) {
+      previousKeys = [];
+      previousDataLength = 0;
+      if (config.startRenderingFromBottom) {
+        initialBottomScrollApplied = false;
+      }
+      setSoftCorrection(null);
+      if (measurementCache.size > 0) {
+        measurementCache.clear();
+        setMeasurementVersion((prev) => prev + 1);
+      }
+      return;
+    }
+
+    const keys = data.map((item, idx) => props.keyExtractor(item, idx));
+    const prevKeys = previousKeys;
+    const prevLength = previousDataLength;
+
+    let prefixMatch = 0;
+    let suffixMatch = 0;
+    let appendedCount = 0;
+    let prependedCount = 0;
+
+    if (prevLength > 0) {
+      while (
+        prefixMatch < prevLength &&
+        prefixMatch < keys.length &&
+        prevKeys[prefixMatch] === keys[prefixMatch]
+      ) {
+        prefixMatch += 1;
+      }
+
+      while (
+        suffixMatch < prevLength &&
+        suffixMatch < keys.length &&
+        prevKeys[prevLength - 1 - suffixMatch] ===
+          keys[keys.length - 1 - suffixMatch]
+      ) {
+        suffixMatch += 1;
+      }
+
+      if (keys.length > prevLength) {
+        if (prefixMatch === prevLength) {
+          appendedCount = keys.length - prevLength;
+        } else if (suffixMatch === prevLength) {
+          prependedCount = keys.length - prevLength;
+        }
+      }
+    } else if (prevLength === 0 && keys.length > 0) {
+      appendedCount = keys.length;
+    }
+
+    if (
+      config.startRenderingFromBottom &&
+      prevLength > 0 &&
+      keys.length > 0 &&
+      prefixMatch === 0 &&
+      suffixMatch === 0
+    ) {
+      initialBottomScrollApplied = false;
+    }
+
+    const snapshot = layoutMetrics();
+    const estimatedExtent = estimatedItemExtent();
+    const minIndex = config.minIndexForVisible ?? 0;
+    const allowMaintain =
+      anchorIndex !== -1 && anchorIndex <= minIndex;
+    const currentOffset = untrack(scrollOffset);
+    let autoScrolledTop = false;
+
+    if (prependedCount > 0) {
+      const thresholdTop = config.autoscrollToTopThreshold;
+      if (typeof thresholdTop === "number") {
+        const viewport = untrack(viewportSize);
+        const thresholdPx =
+          thresholdTop > 1 ? thresholdTop : thresholdTop * viewport;
+        if (currentOffset <= thresholdPx) {
+          scheduleScrollTo(0, config.animateAutoScroll ?? false);
+          autoScrolledTop = true;
+        }
+      }
+
+      if (!autoScrolledTop && allowMaintain) {
+        const currentKey = anchorKey;
+        const previousAnchorIndex = anchorIndex;
+        if (
+          currentKey != null &&
+          previousAnchorIndex >= 0 &&
+          previousAnchorIndex < keys.length
+        ) {
+          const nextIndex = keys.indexOf(currentKey);
+          if (nextIndex !== -1 && nextIndex !== previousAnchorIndex) {
+            const startOffset = getOffsetForIndex(snapshot, nextIndex);
+            const size = getSizeForIndex(snapshot, nextIndex);
+            const clampedRemainder = Math.max(
+              0,
+              Math.min(anchorOffsetWithinItem, size)
+            );
+            const targetOffset = startOffset + clampedRemainder;
+            const delta = targetOffset - currentOffset;
+            if (Math.abs(delta) > 0.5) {
+              scheduleScrollBy(delta);
+            }
+            const clampDistance = Math.max(size, estimatedExtent);
+            queueSoftCorrection(targetOffset, clampDistance);
+          }
+        }
+      }
+    }
+
+    if (appendedCount > 0 && prevLength > 0) {
+      const viewport = untrack(viewportSize);
+      const totalExtent = snapshot.total;
+      const distanceToBottom = Math.max(
+        0,
+        totalExtent - viewport - currentOffset
+      );
+      const thresholdBottom = config.autoscrollToBottomThreshold;
+      let thresholdPx = 0;
+      if (typeof thresholdBottom === "number") {
+        thresholdPx =
+          thresholdBottom > 1
+            ? thresholdBottom
+            : thresholdBottom * viewport;
+      } else if (config.startRenderingFromBottom) {
+        thresholdPx = 0;
+      }
+      if (distanceToBottom <= thresholdPx) {
+        const targetOffset = Math.max(0, totalExtent - viewport);
+        scheduleScrollTo(
+          targetOffset,
+          config.animateAutoScroll ?? false
+        );
+      }
+    }
+
+    previousKeys = keys;
+    previousDataLength = dataLength;
+  });
+
+  createEffect(() => {
+    const correction = softCorrection();
+    if (!correction) return;
+
+    const currentOffset = scrollOffset();
+    if (!Number.isFinite(currentOffset)) {
+      return;
+    }
+
+    const diff = correction.targetOffset - currentOffset;
+    if (!Number.isFinite(diff) || Math.abs(diff) < 0.5) {
+      setSoftCorrection(null);
+      return;
+    }
+
+    const maxDelta =
+      correction.clampDistance > 0
+        ? correction.clampDistance
+        : Math.abs(diff);
+    const adjustment = Math.max(
+      -maxDelta,
+      Math.min(maxDelta, diff)
+    );
+
+    if (Math.abs(adjustment) < 0.5) {
+      setSoftCorrection(null);
+      return;
+    }
+
+    if (!scrollHost()) return;
+    if (props.horizontal) {
+      scrollController.scrollBy({ dx: adjustment, animated: false });
+    } else {
+      scrollController.scrollBy({ dy: adjustment, animated: false });
+    }
+  });
+
   // Visible range - with optional recompute trigger
   const visibleRange = createMemo(
     (prev: { start: number; end: number } | undefined) => {
       const offset = scrollOffset();
       const viewport = viewportSize();
-      const itemSize = props.itemSize;
       const dataLength = props.data.length;
 
       // Track recompute signal if controller provided
@@ -346,27 +850,23 @@ export function FlatList<T>(props: FlatListProps<T>) {
         controller.__triggerRecompute();
       }
 
-      // console.log(
-      //   `[FlatList] 📏 Scroll offset: ${offset}, viewport: ${viewport}, itemSize: ${itemSize}`
-      // );
-
-      if (!itemSize || !dataLength) {
+      if (dataLength === 0) {
         return { start: 0, end: 0 };
       }
 
       const overscan = overscanMainDistance();
+      const snapshot = layoutMetrics();
+      if (snapshot.sizes.length === 0) {
+        return { start: 0, end: 0 };
+      }
       const startOffset = Math.max(0, offset - overscan);
-      const endOffset = offset + viewport + overscan;
+      const endOffset = Math.min(snapshot.total, offset + viewport + overscan);
 
-      const startIndex = Math.floor(startOffset / itemSize);
-      const endIndex = Math.ceil(endOffset / itemSize);
+      const startIndex = findFirstIntersectingIndex(snapshot, startOffset);
+      const endIndex = findLastIntersectingIndex(snapshot, endOffset);
 
-      const start = Math.max(0, startIndex);
-      const end = Math.min(dataLength - 1, endIndex);
-
-      // console.log(
-      //   `[FlatList] 🧮 Calculated: startOffset=${startOffset}, endOffset=${endOffset}, startIndex=${startIndex}, endIndex=${endIndex}`
-      // );
+      const start = Math.max(0, Math.min(startIndex, dataLength - 1));
+      const end = Math.max(start, Math.min(endIndex, dataLength - 1));
 
       if (prev && start === prev.start && end === prev.end) {
         return prev;
@@ -543,11 +1043,10 @@ export function FlatList<T>(props: FlatListProps<T>) {
     // Read everything else untracked to prevent reactive interference
     const viewport = untrack(viewportSize);
     const dataLength = untrack(() => props.data.length);
-    const itemSize = untrack(() => props.itemSize);
-
-    if (!viewport || !dataLength || !itemSize) return;
-
-    const contentLength = dataLength * itemSize;
+    if (!viewport || !dataLength) return;
+    const snapshot = untrack(layoutMetrics);
+    const contentLength = snapshot.total;
+    if (contentLength <= 0) return;
     const startDistance = offset;
     const endDistance = Math.max(0, contentLength - offset - viewport);
 
@@ -586,11 +1085,12 @@ export function FlatList<T>(props: FlatListProps<T>) {
     }
   });
 
-  const contentSize = createMemo(() => props.data.length * props.itemSize);
+  const contentSize = createMemo(() => layoutMetrics().total);
   const requiredContentStyle = createMemo<Style>(() => ({
     position: "relative",
     [props.horizontal ? "width" : "height"]: contentSize(),
     [props.horizontal ? "height" : "width"]: "100%",
+    opacity: initialMeasurementsReady() ? 1 : 0,
   }));
   const sanitizedContentContainerStyle = createMemo<Style | undefined>(() => {
     const user = props.contentContainerStyle as Style | undefined;
@@ -623,6 +1123,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
       horizontal={props.horizontal}
       style={props.style}
       contentContainerStyle={sanitizedContentContainerStyle()}
+      maintainVisibleContentPosition={props.maintainVisibleContentPosition}
       controller={scrollController}
       testID={props.testID}
     >
@@ -744,26 +1245,74 @@ export function FlatList<T>(props: FlatListProps<T>) {
                 }
               });
 
+              const currentKey = createMemo(() => {
+                const idx = currentIndex();
+                if (idx === -1 || idx >= props.data.length) {
+                  return null;
+                }
+                const item = props.data[idx];
+                if (item === undefined) return null;
+                return props.keyExtractor(item, idx);
+              });
+
               const position = createMemo(() => {
                 const idx = binding().dataIndex;
                 if (idx === -1 || idx >= props.data.length) {
                   return -9999;
                 }
-                return idx * props.itemSize;
+                const snapshot = layoutMetrics();
+                if (idx >= snapshot.offsets.length) {
+                  return idx * estimatedItemExtent();
+                }
+                return snapshot.offsets[idx];
               });
+
+              const extent = createMemo(() => {
+                const idx = binding().dataIndex;
+                if (idx === -1 || idx >= props.data.length) {
+                  return estimatedItemExtent();
+                }
+                const snapshot = layoutMetrics();
+                if (idx >= snapshot.sizes.length) {
+                  return estimatedItemExtent();
+                }
+                const size = snapshot.sizes[idx];
+                return typeof size === "number" && size > 0
+                  ? size
+                  : estimatedItemExtent();
+              });
+
+              const handleLayout = (event: LayoutChangeEvent) => {
+                const key = currentKey();
+                if (!key) return;
+                const layout = event?.nativeEvent?.layout;
+                if (!layout) return;
+                const size = props.horizontal ? layout.width : layout.height;
+                recordMeasurement(key, size);
+              };
 
               const slotKey = `pool-slot-${poolIndex}`;
 
               return (
                 <View
                   key={`pool-slot-${poolIndex}`}
-                  style={{
-                    position: "absolute",
-                    [props.horizontal ? "left" : "top"]: position(),
-                    [props.horizontal ? "top" : "left"]: 0,
-                    width: props.horizontal ? props.itemSize : "100%",
-                    height: props.horizontal ? "100%" : props.itemSize,
-                  }}
+                  style={
+                    props.horizontal
+                      ? {
+                          position: "absolute",
+                          left: position(),
+                          top: 0,
+                          width: extent(),
+                          height: "100%",
+                        }
+                      : {
+                          position: "absolute",
+                          top: position(),
+                          left: 0,
+                          width: "100%",
+                        }
+                  }
+                  onLayout={handleLayout}
                 >
                   {currentItem() ? ensureSlotContent() : null}
                 </View>

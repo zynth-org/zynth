@@ -30,10 +30,10 @@ export interface HostBatchMeta {
 export type Style = {
   width?: number | `${number}%` | "auto";
   height?: number | `${number}%` | "auto";
-  minWidth?: number;
-  maxWidth?: number;
-  minHeight?: number;
-  maxHeight?: number;
+  minWidth?: number | `${number}%`;
+  maxWidth?: number | `${number}%`;
+  minHeight?: number | `${number}%`;
+  maxHeight?: number | `${number}%`;
   flexGrow?: number;
   flexShrink?: number;
   backgroundColor?: string;

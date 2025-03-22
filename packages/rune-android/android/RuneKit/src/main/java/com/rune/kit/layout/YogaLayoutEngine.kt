@@ -220,10 +220,26 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
         node.setHeightAuto()
       }
     }
-    style.minWidth?.let { node.setMinWidth(it) }
-    style.maxWidth?.let { node.setMaxWidth(it) }
-    style.minHeight?.let { node.setMinHeight(it) }
-    style.maxHeight?.let { node.setMaxHeight(it) }
+    when {
+      style.minWidthPercent != null -> node.setMinWidthPercent(style.minWidthPercent)
+      style.minWidth != null -> node.setMinWidth(style.minWidth)
+      else -> node.setMinWidth(YogaConstants.UNDEFINED)
+    }
+    when {
+      style.maxWidthPercent != null -> node.setMaxWidthPercent(style.maxWidthPercent)
+      style.maxWidth != null -> node.setMaxWidth(style.maxWidth)
+      else -> node.setMaxWidth(YogaConstants.UNDEFINED)
+    }
+    when {
+      style.minHeightPercent != null -> node.setMinHeightPercent(style.minHeightPercent)
+      style.minHeight != null -> node.setMinHeight(style.minHeight)
+      else -> node.setMinHeight(YogaConstants.UNDEFINED)
+    }
+    when {
+      style.maxHeightPercent != null -> node.setMaxHeightPercent(style.maxHeightPercent)
+      style.maxHeight != null -> node.setMaxHeight(style.maxHeight)
+      else -> node.setMaxHeight(YogaConstants.UNDEFINED)
+    }
     style.flexGrow?.let { node.setFlexGrow(it) }
     style.flexShrink?.let { node.setFlexShrink(it) }
     node.setFlex(style.flex ?: 0f)
@@ -274,10 +290,46 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
         next.heightPercent != null -> next.heightPercent
         else -> prev.heightPercent
       },
-      minWidth = next.minWidth ?: prev.minWidth,
-      maxWidth = next.maxWidth ?: prev.maxWidth,
-      minHeight = next.minHeight ?: prev.minHeight,
-      maxHeight = next.maxHeight ?: prev.maxHeight,
+      minWidth = when {
+        next.minWidthPercent != null -> null
+        next.minWidth != null -> next.minWidth
+        else -> prev.minWidth
+      },
+      minWidthPercent = when {
+        next.minWidthPercent != null -> next.minWidthPercent
+        next.minWidth != null -> null
+        else -> prev.minWidthPercent
+      },
+      maxWidth = when {
+        next.maxWidthPercent != null -> null
+        next.maxWidth != null -> next.maxWidth
+        else -> prev.maxWidth
+      },
+      maxWidthPercent = when {
+        next.maxWidthPercent != null -> next.maxWidthPercent
+        next.maxWidth != null -> null
+        else -> prev.maxWidthPercent
+      },
+      minHeight = when {
+        next.minHeightPercent != null -> null
+        next.minHeight != null -> next.minHeight
+        else -> prev.minHeight
+      },
+      minHeightPercent = when {
+        next.minHeightPercent != null -> next.minHeightPercent
+        next.minHeight != null -> null
+        else -> prev.minHeightPercent
+      },
+      maxHeight = when {
+        next.maxHeightPercent != null -> null
+        next.maxHeight != null -> next.maxHeight
+        else -> prev.maxHeight
+      },
+      maxHeightPercent = when {
+        next.maxHeightPercent != null -> next.maxHeightPercent
+        next.maxHeight != null -> null
+        else -> prev.maxHeightPercent
+      },
       flex = next.flex ?: prev.flex,
       flexGrow = next.flexGrow ?: prev.flexGrow,
       flexShrink = next.flexShrink ?: prev.flexShrink,
