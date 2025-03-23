@@ -132,6 +132,14 @@ const DEFAULT_OVERSCAN_MULTIPLE = 2;
 const DEFAULT_ESTIMATED_ITEM_SIZE = 64;
 
 export function FlatList<T>(props: FlatListProps<T>) {
+  console.log(
+    `[FlatList] 🚀 Initializing: ${
+      props.data.length
+    } items, estimatedItemSize=${props.estimatedItemSize ?? "auto"}, itemSize=${
+      props.itemSize ?? "auto"
+    }`
+  );
+
   const scrollController = createScrollController();
   let nativeScrollRef: any = null;
   const [scrollHost, setScrollHost] = createSignal<any>(null);
@@ -209,9 +217,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
     return size && size > 0 ? size : fallbackViewport();
   });
 
-  const maintainConfig = createMemo(
-    () => props.maintainVisibleContentPosition
-  );
+  const maintainConfig = createMemo(() => props.maintainVisibleContentPosition);
   const estimatedItemExtent = createMemo(() => {
     const explicitEstimate = props.estimatedItemSize;
     if (typeof explicitEstimate === "number" && explicitEstimate > 0) {
@@ -296,15 +302,127 @@ export function FlatList<T>(props: FlatListProps<T>) {
     total: number;
   };
 
+  type MeasurementEntry = {
+    size: number;
+    stable: boolean;
+    lastUpdate: number;
+    finalizeTimer: ReturnType<typeof setTimeout> | null;
+  };
+
+  const MEASUREMENT_EPSILON = 0.5;
+  const COLLAPSED_MEASUREMENT_RATIO = 0.65;
+  const PENDING_MEASUREMENT_DELAY_MS = 48;
+
+  const measurementEntries = new Map<string, MeasurementEntry>();
   const measurementCache = new Map<string, number>();
   const [measurementVersion, setMeasurementVersion] = createSignal(0);
+  const [initialMeasurementsPending, setInitialMeasurementsPending] =
+    createSignal(true);
+  const [initialBottomScrollApplied, setInitialBottomScrollApplied] =
+    createSignal(false);
+  const [initialRevealComplete, setInitialRevealComplete] =
+    createSignal(false);
   let lastOrientationHorizontal = props.horizontal ?? false;
+
+  const now = () => Date.now();
+
+  const cancelPendingTimer = (entry?: MeasurementEntry | null) => {
+    if (!entry?.finalizeTimer) return;
+    clearTimeout(entry.finalizeTimer);
+    entry.finalizeTimer = null;
+  };
+
+  const finalizeMeasurement = (key: string, size: number, reason: string) => {
+    const existing = measurementEntries.get(key) ?? {
+      size,
+      stable: false,
+      lastUpdate: now(),
+      finalizeTimer: null,
+    };
+    cancelPendingTimer(existing);
+    const previous = measurementCache.get(key);
+    existing.size = size;
+    existing.stable = true;
+    existing.lastUpdate = now();
+    existing.finalizeTimer = null;
+    measurementEntries.set(key, existing);
+
+    if (
+      previous !== undefined &&
+      Math.abs(previous - size) < MEASUREMENT_EPSILON
+    ) {
+      return;
+    }
+
+    console.log(
+      `[FlatList] 📏 recordMeasurement: key="${key}", size=${size}px (prev=${
+        previous ?? "none"
+      }, reason=${reason})`
+    );
+
+    measurementCache.set(key, size);
+    setMeasurementVersion((prev) => prev + 1);
+  };
+
+  const stagePendingMeasurement = (
+    key: string,
+    entry: MeasurementEntry,
+    reason: string
+  ) => {
+    cancelPendingTimer(entry);
+    const capturedSize = entry.size;
+    entry.stable = false;
+    entry.lastUpdate = now();
+    entry.finalizeTimer = setTimeout(() => {
+      const current = measurementEntries.get(key);
+      if (!current || current.stable) return;
+      if (Math.abs(current.size - capturedSize) > MEASUREMENT_EPSILON) return;
+      finalizeMeasurement(key, capturedSize, "timeout");
+    }, PENDING_MEASUREMENT_DELAY_MS);
+    measurementEntries.set(key, entry);
+
+    console.log(
+      `[FlatList] ⏳ pending measurement: key="${key}", size=${capturedSize}px (${reason})`
+    );
+  };
+
+  const resetMeasurements = (reason: string, force?: boolean) => {
+    let changed = force === true;
+    measurementEntries.forEach((entry) => {
+      if (entry.finalizeTimer) {
+        clearTimeout(entry.finalizeTimer);
+        entry.finalizeTimer = null;
+      }
+    });
+    if (measurementEntries.size > 0) {
+      measurementEntries.clear();
+      changed = true;
+    }
+    if (measurementCache.size > 0) {
+      measurementCache.clear();
+      changed = true;
+    }
+    if (changed) {
+      console.log(`[FlatList] ♻️ reset measurements (${reason})`);
+      setMeasurementVersion((prev) => prev + 1);
+    }
+    if (initialBottomScrollApplied()) {
+      setInitialBottomScrollApplied(false);
+    }
+    if (initialRevealComplete()) {
+      setInitialRevealComplete(false);
+    }
+    if (props.data.length > 0) {
+      setInitialMeasurementsPending(true);
+    } else {
+      setInitialMeasurementsPending(false);
+    }
+  };
 
   createEffect(() => {
     const isHorizontal = props.horizontal ?? false;
     if (isHorizontal !== lastOrientationHorizontal) {
-      measurementCache.clear();
-      setMeasurementVersion((prev) => prev + 1);
+      resetMeasurements("orientation change", true);
       lastOrientationHorizontal = isHorizontal;
     }
   });
@@ -313,13 +431,60 @@ export function FlatList<T>(props: FlatListProps<T>) {
     if (!key) return;
     if (!Number.isFinite(size) || size <= 0) return;
     if (fixedItemExtent()) return;
-    const previous = measurementCache.get(key);
-    if (previous !== undefined && Math.abs(previous - size) < 0.5) {
+
+    const stableValue = measurementCache.get(key);
+    if (
+      stableValue !== undefined &&
+      Math.abs(stableValue - size) < MEASUREMENT_EPSILON
+    ) {
       return;
     }
-    measurementCache.set(key, size);
-    setMeasurementVersion((prev) => prev + 1);
+
+    const estimate = estimatedItemExtent();
+    const collapseThreshold = Math.max(
+      1,
+      estimate * COLLAPSED_MEASUREMENT_RATIO
+    );
+
+    const existing = measurementEntries.get(key);
+    if (existing) {
+      cancelPendingTimer(existing);
+    }
+
+    const entry: MeasurementEntry = existing
+      ? { ...existing, size, lastUpdate: now(), finalizeTimer: null }
+      : { size, stable: false, lastUpdate: now(), finalizeTimer: null };
+
+    if (size >= collapseThreshold) {
+      finalizeMeasurement(key, size, "threshold");
+      return;
+    }
+
+    if (existing && !existing.stable) {
+      if (Math.abs(existing.size - size) < MEASUREMENT_EPSILON) {
+        finalizeMeasurement(key, size, "pending-confirmed");
+        return;
+      }
+    }
+
+    stagePendingMeasurement(
+      key,
+      entry,
+      `size=${size}px<threshold=${collapseThreshold.toFixed(
+        1
+      )}px (estimate=${estimate}px)`
+    );
   };
+
+  onCleanup(() => {
+    measurementEntries.forEach((entry) => {
+      if (entry.finalizeTimer) {
+        clearTimeout(entry.finalizeTimer);
+      }
+    });
+    measurementEntries.clear();
+    measurementCache.clear();
+  });
 
   const layoutMetrics = createMemo<LayoutSnapshot>(() => {
     measurementVersion();
@@ -329,10 +494,15 @@ export function FlatList<T>(props: FlatListProps<T>) {
     const offsets = new Array<number>(data.length);
     const sizes = new Array<number>(data.length);
     let total = 0;
+    let measuredCount = 0;
+    let estimatedCount = 0;
+
     for (let i = 0; i < data.length; i++) {
       const item = data[i];
       const key = props.keyExtractor(item, i);
       let size = measurementCache.get(key);
+      const hadMeasurement = measurementCache.has(key);
+
       if (fixed != null) {
         size = fixed;
       }
@@ -344,27 +514,115 @@ export function FlatList<T>(props: FlatListProps<T>) {
       offsets[i] = total;
       sizes[i] = resolvedSize;
       total += resolvedSize;
+
+      if (hadMeasurement && resolvedSize !== estimate) {
+        measuredCount++;
+      } else {
+        estimatedCount++;
+      }
     }
+
+    console.log(
+      `[FlatList] 📐 layoutMetrics: total=${total}px, items=${data.length}, measured=${measuredCount}, estimated=${estimatedCount}, estimatedSize=${estimate}px`
+    );
+
     return { offsets, sizes, total };
   });
 
-  const initialMeasurementsReady = createMemo(() => {
-    if (fixedItemExtent()) return true;
+  const initialViewportMeasured = createMemo(() => {
+    if (fixedItemExtent()) {
+      return true;
+    }
+
     measurementVersion();
     const data = props.data;
     const count = Math.min(data.length, viewportItemCount());
-    if (count === 0) return true;
-    for (let i = 0; i < count; i++) {
+    if (count === 0) {
+      return true;
+    }
+
+    const maintain = maintainConfig();
+    const requireBottom =
+      !!(maintain && !maintain.disabled && maintain.startRenderingFromBottom);
+    const startIndex = requireBottom
+      ? Math.max(0, data.length - count)
+      : 0;
+    const endIndexExclusive = requireBottom ? data.length : startIndex + count;
+
+    for (let i = startIndex; i < endIndexExclusive; i++) {
       const item = data[i];
-      if (item === undefined) return false;
+      if (item === undefined) {
+        return false;
+      }
       const key = props.keyExtractor(item, i);
-      const size = measurementCache.get(key);
-      if (!Number.isFinite(size ?? NaN) || (size as number) <= 0) {
+      const entry = measurementEntries.get(key);
+      if (
+        !entry ||
+        !entry.stable ||
+        !Number.isFinite(entry.size) ||
+        entry.size <= 0
+      ) {
         return false;
       }
     }
+
     return true;
   });
+
+  createEffect(() => {
+    const fixed = fixedItemExtent();
+    if (fixed != null) {
+      if (initialMeasurementsPending()) {
+        setInitialMeasurementsPending(false);
+      }
+      if (!initialRevealComplete()) {
+        setInitialRevealComplete(true);
+      }
+      return;
+    }
+
+    const dataLength = props.data.length;
+    if (dataLength === 0) {
+      if (initialMeasurementsPending()) {
+        setInitialMeasurementsPending(false);
+      }
+      return;
+    }
+
+    if (initialRevealComplete()) {
+      if (initialMeasurementsPending()) {
+        setInitialMeasurementsPending(false);
+      }
+      return;
+    }
+
+    const measured = initialViewportMeasured();
+    const config = maintainConfig();
+    const requireBottom =
+      !!(config && !config.disabled && config.startRenderingFromBottom);
+
+    if (!measured || (requireBottom && !initialBottomScrollApplied())) {
+      if (!initialMeasurementsPending()) {
+        setInitialMeasurementsPending(true);
+      }
+      return;
+    }
+
+    if (initialMeasurementsPending()) {
+      const count = Math.min(dataLength, viewportItemCount());
+      console.log(
+        `[FlatList] ✅ Initial measurements complete! Revealing ${count} items`
+      );
+      setInitialMeasurementsPending(false);
+    }
+    if (!initialRevealComplete()) {
+      setInitialRevealComplete(true);
+    }
+  });
+
+  const initialMeasurementsReady = createMemo(
+    () => !initialMeasurementsPending()
+  );
 
   const getOffsetForIndex = (snapshot: LayoutSnapshot, index: number) => {
     if (index <= 0) return 0;
@@ -456,7 +714,6 @@ export function FlatList<T>(props: FlatListProps<T>) {
   let anchorOffsetWithinItem = 0;
   let previousKeys: string[] = [];
   let previousDataLength = 0;
-  let initialBottomScrollApplied = false;
   const [softCorrection, setSoftCorrection] = createSignal<{
     targetOffset: number;
     clampDistance: number;
@@ -492,10 +749,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
     });
   };
 
-  const queueSoftCorrection = (
-    targetOffset: number,
-    clampDistance: number
-  ) => {
+  const queueSoftCorrection = (targetOffset: number, clampDistance: number) => {
     setSoftCorrection({
       targetOffset,
       clampDistance,
@@ -631,12 +885,13 @@ export function FlatList<T>(props: FlatListProps<T>) {
     const config = maintainConfig();
     if (!config || config.disabled || !config.startRenderingFromBottom) {
       if (!config?.startRenderingFromBottom) {
-        initialBottomScrollApplied = false;
+        setInitialBottomScrollApplied(false);
       }
       return;
     }
 
-    if (initialBottomScrollApplied) return;
+    if (initialBottomScrollApplied()) return;
+    if (!initialViewportMeasured()) return;
     const hostNode = scrollHost();
     if (!hostNode) return;
     const dataLength = props.data.length;
@@ -645,7 +900,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
     const snapshot = layoutMetrics();
     const totalExtent = snapshot.total;
     scheduleScrollTo(Math.max(0, totalExtent - viewport), false);
-    initialBottomScrollApplied = true;
+    setInitialBottomScrollApplied(true);
   });
 
   createEffect(() => {
@@ -664,13 +919,10 @@ export function FlatList<T>(props: FlatListProps<T>) {
       previousKeys = [];
       previousDataLength = 0;
       if (config.startRenderingFromBottom) {
-        initialBottomScrollApplied = false;
+        setInitialBottomScrollApplied(false);
       }
       setSoftCorrection(null);
-      if (measurementCache.size > 0) {
-        measurementCache.clear();
-        setMeasurementVersion((prev) => prev + 1);
-      }
+      resetMeasurements("maintainVisibleContentPosition reset");
       return;
     }
 
@@ -719,14 +971,13 @@ export function FlatList<T>(props: FlatListProps<T>) {
       prefixMatch === 0 &&
       suffixMatch === 0
     ) {
-      initialBottomScrollApplied = false;
+      setInitialBottomScrollApplied(false);
     }
 
     const snapshot = layoutMetrics();
     const estimatedExtent = estimatedItemExtent();
     const minIndex = config.minIndexForVisible ?? 0;
-    const allowMaintain =
-      anchorIndex !== -1 && anchorIndex <= minIndex;
+    const allowMaintain = anchorIndex !== -1 && anchorIndex <= minIndex;
     const currentOffset = untrack(scrollOffset);
     let autoScrolledTop = false;
 
@@ -781,18 +1032,13 @@ export function FlatList<T>(props: FlatListProps<T>) {
       let thresholdPx = 0;
       if (typeof thresholdBottom === "number") {
         thresholdPx =
-          thresholdBottom > 1
-            ? thresholdBottom
-            : thresholdBottom * viewport;
+          thresholdBottom > 1 ? thresholdBottom : thresholdBottom * viewport;
       } else if (config.startRenderingFromBottom) {
         thresholdPx = 0;
       }
       if (distanceToBottom <= thresholdPx) {
         const targetOffset = Math.max(0, totalExtent - viewport);
-        scheduleScrollTo(
-          targetOffset,
-          config.animateAutoScroll ?? false
-        );
+        scheduleScrollTo(targetOffset, config.animateAutoScroll ?? false);
       }
     }
 
@@ -816,13 +1062,8 @@ export function FlatList<T>(props: FlatListProps<T>) {
     }
 
     const maxDelta =
-      correction.clampDistance > 0
-        ? correction.clampDistance
-        : Math.abs(diff);
-    const adjustment = Math.max(
-      -maxDelta,
-      Math.min(maxDelta, diff)
-    );
+      correction.clampDistance > 0 ? correction.clampDistance : Math.abs(diff);
+    const adjustment = Math.max(-maxDelta, Math.min(maxDelta, diff));
 
     if (Math.abs(adjustment) < 0.5) {
       setSoftCorrection(null);
@@ -995,9 +1236,9 @@ export function FlatList<T>(props: FlatListProps<T>) {
 
       availableSlot.dataIndex = dataIndex;
       boundIndices.add(dataIndex);
-      // console.log(
-      //   `[FlatList] 🔗 Bound slot ${availableSlot.poolIndex} to index ${dataIndex} (key=${dataKey})`
-      // );
+      console.log(
+        `[FlatList] 🔗 Bound slot ${availableSlot.poolIndex} to index ${dataIndex} (key=${dataKey})`
+      );
     }
 
     setBindings(newBindings);
@@ -1085,7 +1326,16 @@ export function FlatList<T>(props: FlatListProps<T>) {
     }
   });
 
-  const contentSize = createMemo(() => layoutMetrics().total);
+  const contentSize = createMemo(() => {
+    const size = layoutMetrics().total;
+    const viewport = viewportSize();
+    console.log(
+      `[FlatList] 📦 contentSize: ${size}px, viewport: ${viewport}px, scrollable: ${
+        size > viewport
+      }`
+    );
+    return size;
+  });
   const requiredContentStyle = createMemo<Style>(() => ({
     position: "relative",
     [props.horizontal ? "width" : "height"]: contentSize(),
@@ -1255,7 +1505,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
                 return props.keyExtractor(item, idx);
               });
 
-              const position = createMemo(() => {
+              const position = createMemo((prev) => {
                 const idx = binding().dataIndex;
                 if (idx === -1 || idx >= props.data.length) {
                   return -9999;
@@ -1264,7 +1514,25 @@ export function FlatList<T>(props: FlatListProps<T>) {
                 if (idx >= snapshot.offsets.length) {
                   return idx * estimatedItemExtent();
                 }
-                return snapshot.offsets[idx];
+                const pos = snapshot.offsets[idx];
+
+                // Log position changes for debugging layout shifts
+                if (
+                  prev !== undefined &&
+                  typeof prev === "number" &&
+                  prev !== pos &&
+                  idx >= 0
+                ) {
+                  const item = props.data[idx];
+                  const key = item ? props.keyExtractor(item, idx) : "unknown";
+                  console.log(
+                    `[FlatList] 📍 Position shift: idx=${idx}, key="${key}", ${prev}px → ${pos}px (Δ${
+                      pos - prev
+                    }px)`
+                  );
+                }
+
+                return pos;
               });
 
               const extent = createMemo(() => {
@@ -1282,6 +1550,55 @@ export function FlatList<T>(props: FlatListProps<T>) {
                   : estimatedItemExtent();
               });
 
+              // Baseline height - always use estimatedItemSize to ensure items don't overlap
+              // before measurements complete. This prevents the first-frame layout shift.
+              const baselineExtent = createMemo((prev) => {
+                const estimated = estimatedItemExtent();
+                const measured = extent();
+                // Use estimated size until we have a measurement
+                const idx = binding().dataIndex;
+                if (idx === -1 || idx >= props.data.length) {
+                  return estimated;
+                }
+                const item = props.data[idx];
+                if (item === undefined) return estimated;
+                const key = props.keyExtractor(item, idx);
+                const hasMeasurement = measurementCache.has(key);
+                // Only use measured size after we have it
+                const result = hasMeasurement ? measured : estimated;
+
+                // Log when baseline changes (measurement arrives)
+                if (
+                  prev !== undefined &&
+                  typeof prev === "number" &&
+                  prev !== result &&
+                  idx >= 0
+                ) {
+                  console.log(
+                    `[FlatList] 📏 Baseline extent: idx=${idx}, key="${key}", ${prev}px → ${result}px, hasMeasurement=${hasMeasurement}`
+                  );
+                }
+
+                return result;
+              });
+
+              const measurementReady = createMemo(() => {
+                measurementVersion();
+                const fixed = fixedItemExtent();
+                if (typeof fixed === "number" && fixed > 0) {
+                  return true;
+                }
+                const idx = binding().dataIndex;
+                if (idx === -1 || idx >= props.data.length) {
+                  return false;
+                }
+                const item = props.data[idx];
+                if (item === undefined) return false;
+                const key = props.keyExtractor(item, idx);
+                const entry = measurementEntries.get(key);
+                return entry ? entry.stable : false;
+              });
+
               const handleLayout = (event: LayoutChangeEvent) => {
                 const key = currentKey();
                 if (!key) return;
@@ -1291,27 +1608,35 @@ export function FlatList<T>(props: FlatListProps<T>) {
                 recordMeasurement(key, size);
               };
 
-              const slotKey = `pool-slot-${poolIndex}`;
+              const itemStyle = createMemo((): Style => {
+                const ready = measurementReady();
+                const baseline = baselineExtent();
+                if (props.horizontal) {
+                  return {
+                    position: "absolute",
+                    left: position(),
+                    top: 0,
+                    width: extent(),
+                    minWidth: baseline,
+                    opacity: ready ? 1 : 0,
+                  };
+                } else {
+                  // Use measured extent which will be estimated size until measured
+                  return {
+                    position: "absolute",
+                    top: position(),
+                    left: 0,
+                    width: "100%",
+                    minHeight: baseline,
+                    opacity: ready ? 1 : 0,
+                  };
+                }
+              });
 
               return (
                 <View
                   key={`pool-slot-${poolIndex}`}
-                  style={
-                    props.horizontal
-                      ? {
-                          position: "absolute",
-                          left: position(),
-                          top: 0,
-                          width: extent(),
-                          height: "100%",
-                        }
-                      : {
-                          position: "absolute",
-                          top: position(),
-                          left: 0,
-                          width: "100%",
-                        }
-                  }
+                  style={itemStyle()}
                   onLayout={handleLayout}
                 >
                   {currentItem() ? ensureSlotContent() : null}

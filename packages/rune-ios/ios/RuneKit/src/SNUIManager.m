@@ -481,6 +481,14 @@ static void SNApplyEdges(NSDictionary *style,
   YGNodeStyleSetBorder(n.yoga, YGEdgeAll, borderWidthValue ? (float)SNNum(borderWidthValue) : 0.f);
 
   NSString *bg = style[@"backgroundColor"]; if (bg) { n.view.backgroundColor = SNColorFromHex(bg); }
+  NSNumber *opacityValue = style[@"opacity"];
+  if (opacityValue) {
+    CGFloat resolvedOpacity = (CGFloat)SNNum(opacityValue);
+    resolvedOpacity = MAX(0.f, MIN(1.f, resolvedOpacity));
+    n.view.alpha = resolvedOpacity;
+  } else {
+    n.view.alpha = 1.f;
+  }
   NSNumber *br = style[@"borderRadius"];
   if (br) { n.view.layer.cornerRadius = (CGFloat)SNNum(br); n.view.clipsToBounds = YES; }
   SNApplyBorderStyleToView(n.view, style[@"borderWidth"], style[@"borderColor"], style[@"borderStyle"]);

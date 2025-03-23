@@ -87,6 +87,7 @@ object PropertyCategoryMap {
     put("borderColor", PropertyCategory.STYLE)
     put("borderWidth", PropertyCategory.STYLE)
     put("borderStyle", PropertyCategory.STYLE)
+    put("opacity", PropertyCategory.STYLE)
     
     // Text properties (applied to TextView)
     put("fontSize", PropertyCategory.TEXT)

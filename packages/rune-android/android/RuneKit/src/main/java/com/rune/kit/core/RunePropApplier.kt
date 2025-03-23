@@ -161,6 +161,14 @@ internal class RunePropApplier(
       engine.setStyle(nodeId, Style())
     }
     applyBackgroundStyle(target.view, style)
+    val resolvedOpacity = style.opacity?.coerceIn(0f, 1f)
+    if (resolvedOpacity != null) {
+      target.view.alpha = resolvedOpacity
+      target.label?.alpha = resolvedOpacity
+    } else {
+      if (target.view.alpha != 1f) target.view.alpha = 1f
+      target.label?.let { if (it.alpha != 1f) it.alpha = 1f }
+    }
     (target.label ?: target.view as? TextView)?.let { textView ->
       style.fontSize?.let { textView.textSize = it }
       style.color?.let { textView.setTextColor(it) }

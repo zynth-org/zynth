@@ -67,6 +67,7 @@ data class Style(
   val borderColor: Int? = null,
   val borderWidth: Float? = null,
   val borderStyle: String? = null,
+  val opacity: Float? = null,
   
   // Text properties
   val fontSize: Float? = null,
@@ -197,6 +198,7 @@ data class Style(
           borderColor = json.optString("borderColor")?.let { parseColor(it) },
           borderWidth = json.optFloat("borderWidth"),
           borderStyle = json.optStringOrNull("borderStyle")?.lowercase(),
+          opacity = json.optFloat("opacity")?.coerceIn(0f, 1f),
           
           fontSize = json.optFloat("fontSize"),
           color = json.optString("color")?.let { parseColor(it) },

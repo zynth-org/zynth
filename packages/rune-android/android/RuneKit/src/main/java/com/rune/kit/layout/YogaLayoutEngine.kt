@@ -363,6 +363,7 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
       borderColor = next.borderColor ?: prev.borderColor,
       borderWidth = next.borderWidth ?: prev.borderWidth,
       borderStyle = next.borderStyle ?: prev.borderStyle,
+      opacity = next.opacity ?: prev.opacity,
       fontSize = next.fontSize ?: prev.fontSize,
       color = next.color ?: prev.color,
       fontWeight = next.fontWeight ?: prev.fontWeight,
