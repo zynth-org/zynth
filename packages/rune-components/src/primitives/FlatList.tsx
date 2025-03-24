@@ -132,13 +132,13 @@ const DEFAULT_OVERSCAN_MULTIPLE = 2;
 const DEFAULT_ESTIMATED_ITEM_SIZE = 64;
 
 export function FlatList<T>(props: FlatListProps<T>) {
-  console.log(
-    `[FlatList] 🚀 Initializing: ${
-      props.data.length
-    } items, estimatedItemSize=${props.estimatedItemSize ?? "auto"}, itemSize=${
-      props.itemSize ?? "auto"
-    }`
-  );
+  // console.log(
+  //   `[FlatList] 🚀 Initializing: ${
+  //     props.data.length
+  //   } items, estimatedItemSize=${props.estimatedItemSize ?? "auto"}, itemSize=${
+  //     props.itemSize ?? "auto"
+  //   }`
+  // );
 
   const scrollController = createScrollController();
   let nativeScrollRef: any = null;
@@ -320,8 +320,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
     createSignal(true);
   const [initialBottomScrollApplied, setInitialBottomScrollApplied] =
     createSignal(false);
-  const [initialRevealComplete, setInitialRevealComplete] =
-    createSignal(false);
+  const [initialRevealComplete, setInitialRevealComplete] = createSignal(false);
   let lastOrientationHorizontal = props.horizontal ?? false;
 
   const now = () => Date.now();
@@ -354,11 +353,11 @@ export function FlatList<T>(props: FlatListProps<T>) {
       return;
     }
 
-    console.log(
-      `[FlatList] 📏 recordMeasurement: key="${key}", size=${size}px (prev=${
-        previous ?? "none"
-      }, reason=${reason})`
-    );
+    // console.log(
+    //   `[FlatList] 📏 recordMeasurement: key="${key}", size=${size}px (prev=${
+    //     previous ?? "none"
+    //   }, reason=${reason})`
+    // );
 
     measurementCache.set(key, size);
     setMeasurementVersion((prev) => prev + 1);
@@ -381,9 +380,9 @@ export function FlatList<T>(props: FlatListProps<T>) {
     }, PENDING_MEASUREMENT_DELAY_MS);
     measurementEntries.set(key, entry);
 
-    console.log(
-      `[FlatList] ⏳ pending measurement: key="${key}", size=${capturedSize}px (${reason})`
-    );
+    // console.log(
+    //   `[FlatList] ⏳ pending measurement: key="${key}", size=${capturedSize}px (${reason})`
+    // );
   };
 
   const resetMeasurements = (reason: string, force?: boolean) => {
@@ -403,7 +402,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
       changed = true;
     }
     if (changed) {
-      console.log(`[FlatList] ♻️ reset measurements (${reason})`);
+      // console.log(`[FlatList] ♻️ reset measurements (${reason})`);
       setMeasurementVersion((prev) => prev + 1);
     }
     if (initialBottomScrollApplied()) {
@@ -522,9 +521,9 @@ export function FlatList<T>(props: FlatListProps<T>) {
       }
     }
 
-    console.log(
-      `[FlatList] 📐 layoutMetrics: total=${total}px, items=${data.length}, measured=${measuredCount}, estimated=${estimatedCount}, estimatedSize=${estimate}px`
-    );
+    // console.log(
+    //   `[FlatList] 📐 layoutMetrics: total=${total}px, items=${data.length}, measured=${measuredCount}, estimated=${estimatedCount}, estimatedSize=${estimate}px`
+    // );
 
     return { offsets, sizes, total };
   });
@@ -542,11 +541,12 @@ export function FlatList<T>(props: FlatListProps<T>) {
     }
 
     const maintain = maintainConfig();
-    const requireBottom =
-      !!(maintain && !maintain.disabled && maintain.startRenderingFromBottom);
-    const startIndex = requireBottom
-      ? Math.max(0, data.length - count)
-      : 0;
+    const requireBottom = !!(
+      maintain &&
+      !maintain.disabled &&
+      maintain.startRenderingFromBottom
+    );
+    const startIndex = requireBottom ? Math.max(0, data.length - count) : 0;
     const endIndexExclusive = requireBottom ? data.length : startIndex + count;
 
     for (let i = startIndex; i < endIndexExclusive; i++) {
@@ -598,8 +598,11 @@ export function FlatList<T>(props: FlatListProps<T>) {
 
     const measured = initialViewportMeasured();
     const config = maintainConfig();
-    const requireBottom =
-      !!(config && !config.disabled && config.startRenderingFromBottom);
+    const requireBottom = !!(
+      config &&
+      !config.disabled &&
+      config.startRenderingFromBottom
+    );
 
     if (!measured || (requireBottom && !initialBottomScrollApplied())) {
       if (!initialMeasurementsPending()) {
@@ -610,9 +613,9 @@ export function FlatList<T>(props: FlatListProps<T>) {
 
     if (initialMeasurementsPending()) {
       const count = Math.min(dataLength, viewportItemCount());
-      console.log(
-        `[FlatList] ✅ Initial measurements complete! Revealing ${count} items`
-      );
+      // console.log(
+      //   `[FlatList] ✅ Initial measurements complete! Revealing ${count} items`
+      // );
       setInitialMeasurementsPending(false);
     }
     if (!initialRevealComplete()) {
@@ -1217,14 +1220,14 @@ export function FlatList<T>(props: FlatListProps<T>) {
           `[FlatList] ⚠️ Pool exhausted! Need index ${dataIndex} but no slots available`
         );
         const boundList = Array.from(boundIndices).join(", ");
-        console.warn(`[FlatList] Currently bound indices: [${boundList}]`);
+        // console.warn(`[FlatList] Currently bound indices: [${boundList}]`);
         continue;
       }
 
       if (dataIndex >= data.length) {
-        console.warn(
-          `[FlatList] ⚠️ Attempted to bind index ${dataIndex} beyond data length ${data.length}`
-        );
+        // console.warn(
+        //   `[FlatList] ⚠️ Attempted to bind index ${dataIndex} beyond data length ${data.length}`
+        // );
         continue;
       }
 
@@ -1236,9 +1239,9 @@ export function FlatList<T>(props: FlatListProps<T>) {
 
       availableSlot.dataIndex = dataIndex;
       boundIndices.add(dataIndex);
-      console.log(
-        `[FlatList] 🔗 Bound slot ${availableSlot.poolIndex} to index ${dataIndex} (key=${dataKey})`
-      );
+      // console.log(
+      //   `[FlatList] 🔗 Bound slot ${availableSlot.poolIndex} to index ${dataIndex} (key=${dataKey})`
+      // );
     }
 
     setBindings(newBindings);
@@ -1329,11 +1332,11 @@ export function FlatList<T>(props: FlatListProps<T>) {
   const contentSize = createMemo(() => {
     const size = layoutMetrics().total;
     const viewport = viewportSize();
-    console.log(
-      `[FlatList] 📦 contentSize: ${size}px, viewport: ${viewport}px, scrollable: ${
-        size > viewport
-      }`
-    );
+    // console.log(
+    //   `[FlatList] 📦 contentSize: ${size}px, viewport: ${viewport}px, scrollable: ${
+    //     size > viewport
+    //   }`
+    // );
     return size;
   });
   const requiredContentStyle = createMemo<Style>(() => ({
@@ -1525,11 +1528,11 @@ export function FlatList<T>(props: FlatListProps<T>) {
                 ) {
                   const item = props.data[idx];
                   const key = item ? props.keyExtractor(item, idx) : "unknown";
-                  console.log(
-                    `[FlatList] 📍 Position shift: idx=${idx}, key="${key}", ${prev}px → ${pos}px (Δ${
-                      pos - prev
-                    }px)`
-                  );
+                  // console.log(
+                  //   `[FlatList] 📍 Position shift: idx=${idx}, key="${key}", ${prev}px → ${pos}px (Δ${
+                  //     pos - prev
+                  //   }px)`
+                  // );
                 }
 
                 return pos;
@@ -1574,9 +1577,9 @@ export function FlatList<T>(props: FlatListProps<T>) {
                   prev !== result &&
                   idx >= 0
                 ) {
-                  console.log(
-                    `[FlatList] 📏 Baseline extent: idx=${idx}, key="${key}", ${prev}px → ${result}px, hasMeasurement=${hasMeasurement}`
-                  );
+                  // console.log(
+                  //   `[FlatList] 📏 Baseline extent: idx=${idx}, key="${key}", ${prev}px → ${result}px, hasMeasurement=${hasMeasurement}`
+                  // );
                 }
 
                 return result;
