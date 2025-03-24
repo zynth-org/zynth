@@ -12,6 +12,7 @@ import com.rune.kit.layout.YogaLayoutEngine
 import com.rune.kit.dev.RuneDevClient
 import com.rune.kit.dev.RuneDevBundle
 import com.rune.kit.dev.RuneDevBundleFetcher
+import com.rune.kit.runtime.modules.DimensionsModule
 import java.util.LinkedHashMap
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -93,6 +94,12 @@ class RuneRuntime(
       registry.register(module)
     }
     injectModuleConstants()
+  }
+
+  fun installDefaultModules() {
+    if (!installedModules.containsKey("Dimensions")) {
+      installModules(listOf(DimensionsModule(this, root)))
+    }
   }
 
   fun load(code: String) {

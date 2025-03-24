@@ -21,6 +21,7 @@ class MainActivity : AppCompatActivity() {
     setContentView(root)
 
     val runtime = RuneRuntime(root)
+    runtime.installDefaultModules()
     runtime.installModules(listOf(DeviceModule(), EnvModule(), PerformanceModule()))
 
     intent?.let { launchIntent ->

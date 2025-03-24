@@ -6,12 +6,14 @@ public typealias RuneUIManager = SNUIManager
 
 @objcMembers
 public final class RuneRuntime: NSObject {
+  public let rootView: UIView
   let runtime: JSRuntimeAdapter
   let manager: RuneUIManager
   let registry = RuneModuleRegistry()
   internal var lastRootId: Int?
 
   public init(rootView: UIView, runtime: JSRuntimeAdapter? = nil) {
+    self.rootView = rootView
     self.manager = RuneUIManager(rootView: rootView)
 
     if let runtime {
@@ -68,7 +70,12 @@ public final class RuneRuntime: NSObject {
     #if DEBUG
       print("[RuneRuntime] Installing default modules")
     #endif
-    installModules([RuneEnvModule(), RuneDeviceModule(), PerformanceModule()])
+    installModules([
+      RuneEnvModule(),
+      RuneDeviceModule(),
+      PerformanceModule(),
+      RuneDimensionsModule(runtime: self, rootView: rootView),
+    ])
 
     let constants = registry.exportedConstants()
     if !constants.isEmpty,
@@ -280,6 +287,21 @@ public final class RuneRuntime: NSObject {
     print("[RuneTrace] start() invoking __startApp with rootId", rootId)
     lastRootId = rootId
     _ = runtime.callGlobal("__startApp", args: [rootId])
+  }
+
+  func emitEvent(name: String, payload: Any?) {
+    if let hermes = runtime as? HermesAdapter {
+      hermes.emitEvent(name: name, body: payload)
+      return
+    }
+
+    var args: [Any] = [name]
+    if let payload = payload {
+      args.append(payload)
+    } else {
+      args.append(NSNull())
+    }
+    _ = runtime.callGlobal("RuneNativeEmitter.emit", args: args)
   }
 }
 
