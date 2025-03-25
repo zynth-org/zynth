@@ -6,6 +6,7 @@ import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.util.Log
+import android.util.TypedValue
 import android.util.SparseArray
 import android.view.View
 import android.widget.Button
@@ -25,6 +26,7 @@ import kotlin.math.roundToInt
 internal class RunePropApplier(
   private val nodes: SparseArray<RuneUIManager.Node>,
   private val engine: LayoutEngine,
+  private val density: Float,
   private val imageSupport: RuneImageSupport,
   private val buttonStyles: SparseArray<ButtonVisualStyle>,
   private val deriveButtonVisualStyle: (Style, ButtonVisualStyle?, RuneButtonView) -> ButtonVisualStyle,
@@ -36,7 +38,7 @@ internal class RunePropApplier(
 ) {
   
   // Property batch applier for accumulating layout/style properties
-  private val batchApplier = PropertyBatchApplier(engine)
+  private val batchApplier = PropertyBatchApplier(engine, density)
   
   /**
    * Optimized property application using category-based dispatch.
@@ -156,11 +158,12 @@ internal class RunePropApplier(
   private fun applyStyleProp(target: RuneUIManager.Node, nodeId: Int, jsonValue: String?) {
     val styleValue = jsonValue ?: return
     val style = Style.fromJson(styleValue)
-    engine.setStyle(target.id, style)
+    val pixelStyle = style.toPixels(density)
+    engine.setStyle(target.id, pixelStyle)
     if (target.id != nodeId) {
       engine.setStyle(nodeId, Style())
     }
-    applyBackgroundStyle(target.view, style)
+    applyBackgroundStyle(target.view, pixelStyle)
     val resolvedOpacity = style.opacity?.coerceIn(0f, 1f)
     if (resolvedOpacity != null) {
       target.view.alpha = resolvedOpacity
@@ -170,7 +173,7 @@ internal class RunePropApplier(
       target.label?.let { if (it.alpha != 1f) it.alpha = 1f }
     }
     (target.label ?: target.view as? TextView)?.let { textView ->
-      style.fontSize?.let { textView.textSize = it }
+      pixelStyle.fontSize?.let { textView.setTextSize(TypedValue.COMPLEX_UNIT_PX, it) }
       style.color?.let { textView.setTextColor(it) }
       style.fontWeight?.let { weight ->
         val isBold = weight.equals("bold", ignoreCase = true) ||
@@ -179,10 +182,10 @@ internal class RunePropApplier(
       }
     }
     if (target.type == IMAGE_TYPE) {
-      imageSupport.onStyleApplied(target, style)
+      imageSupport.onStyleApplied(target, pixelStyle)
     }
     if (target.view is RuneTextInputView) {
-      applyTextInputStyle(target.view, style, target.id)
+      applyTextInputStyle(target.view, pixelStyle, target.id)
     }
   }
   
@@ -285,9 +288,10 @@ internal class RunePropApplier(
     if (name == "style") {
       val styleJson = jsonValue ?: return
       val style = Style.fromJson(styleJson)
-      engine.setStyle(target.id, style)
-      scrollView.applyStyle(style)
-      applyBackgroundStyle(target.view, style)
+      val pixelStyle = style.toPixels(density)
+      engine.setStyle(target.id, pixelStyle)
+      scrollView.applyStyle(pixelStyle)
+      applyBackgroundStyle(target.view, pixelStyle)
       return
     }
 
@@ -394,8 +398,9 @@ internal class RunePropApplier(
       "style" -> {
         val styleJson = jsonValue ?: return
         val style = Style.fromJson(styleJson)
-        applyStyleToButton(target.id, button, style)
-        engine.setStyle(target.id, style)
+        val pixelStyle = style.toPixels(density)
+        applyStyleToButton(target.id, button, pixelStyle)
+        engine.setStyle(target.id, pixelStyle)
         return
       }
       "pressEffect" -> {
@@ -471,8 +476,9 @@ internal class RunePropApplier(
       "style" -> {
         val styleValue = jsonValue ?: return
         val style = Style.fromJson(styleValue)
-        engine.setStyle(target.id, style)
-        applyBackgroundStyle(pressable, style)
+        val pixelStyle = style.toPixels(density)
+        engine.setStyle(target.id, pixelStyle)
+        applyBackgroundStyle(pressable, pixelStyle)
         return
       }
       "stateLayerStyle" -> {
@@ -754,11 +760,12 @@ internal class RunePropApplier(
     node.lastLayoutWidth = width
     node.lastLayoutHeight = height
     val payload = try {
+      val invDensity = if (density == 0f) 0f else 1f / density
       val layout = JSONObject()
-        .put("x", left)
-        .put("y", top)
-        .put("width", width)
-        .put("height", height)
+        .put("x", left * invDensity)
+        .put("y", top * invDensity)
+        .put("width", width * invDensity)
+        .put("height", height * invDensity)
       JSONObject().put("nativeEvent", JSONObject().put("layout", layout))
     } catch (_: JSONException) {
       null

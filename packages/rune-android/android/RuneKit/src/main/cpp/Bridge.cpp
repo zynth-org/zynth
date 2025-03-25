@@ -806,6 +806,9 @@ void installTimers(std::shared_ptr<RuntimeState> state) {
           return Value::undefined();
         }
 
+        // THREAD-SAFE IMPLEMENTATION:
+        // Leverage Hermes' built-in microtask queue via Promise.resolve().then()
+        // This avoids JNI calls entirely and uses the engine's native scheduling.
         const Value &callbackValue = args[0];
         try {
           auto promiseValue = runtime.global().getProperty(
@@ -821,20 +824,36 @@ void installTimers(std::shared_ptr<RuntimeState> state) {
             return Value::undefined();
           }
         } catch (const facebook::jsi::JSError &err) {
-          BRIDGE_LOG(ANDROID_LOG_WARN, "queueMicrotask Promise fallback: %s", err.getMessage().c_str());
+          BRIDGE_LOG(ANDROID_LOG_WARN, "queueMicrotask Promise failed: %s, using setTimeout fallback", err.getMessage().c_str());
         } catch (const std::exception &ex) {
-          BRIDGE_LOG(ANDROID_LOG_WARN, "queueMicrotask Promise fallback (std): %s", ex.what());
+          BRIDGE_LOG(ANDROID_LOG_WARN, "queueMicrotask Promise failed: %s, using setTimeout fallback", ex.what());
         }
 
-        try {
-          Value callbackCopy(runtime, callbackValue);
-          auto fn = callbackCopy.asObject(runtime).asFunction(runtime);
-          fn.call(runtime);
-        } catch (const facebook::jsi::JSError &err) {
-          reportJsError(state, err.getMessage(), err.getStack());
-        } catch (const std::exception &ex) {
-          reportJsError(state, ex.what(), "");
+        // Fallback to setTimeout(callback, 0) - this goes through the timer system
+        // which is thread-safe as the JNI call happens from the constructor context
+        auto callback = std::make_shared<Function>(args[0].asObject(runtime).asFunction(runtime));
+        int timerId;
+        TimerEntry entry;
+        entry.callback = callback;
+        entry.args.clear();
+        
+        {
+          std::lock_guard<std::mutex> lock(state->mutex);
+          timerId = state->nextTimerId++;
+          entry.id = timerId;
+          state->timers.emplace(timerId, std::move(entry));
         }
+        
+        JniEnv env;
+        if (env.valid()) {
+          env->CallVoidMethod(state->timerShim, state->timerMethods.scheduleTimeout, timerId, 0L);
+          logJniException(env.get(), "TimerShim.scheduleTimeout (queueMicrotask fallback)");
+        } else {
+          std::lock_guard<std::mutex> lock(state->mutex);
+          state->timers.erase(timerId);
+          BRIDGE_LOG(ANDROID_LOG_ERROR, "queueMicrotask: JNI not available");
+        }
+        
         return Value::undefined();
       });
 
@@ -848,6 +867,12 @@ void installTimers(std::shared_ptr<RuntimeState> state) {
           return Value::undefined();
         }
 
+        // THREAD-SAFE IMPLEMENTATION:
+        // Check if JavaVM is initialized before attempting JNI calls.
+        // If not available, we fall back to immediate execution.
+        // The JSBridge.kt posts callbacks back to the JS thread, so this is safe
+        // as long as the JNI environment can be obtained.
+        
         auto callback = std::make_shared<Function>(args[0].asObject(runtime).asFunction(runtime));
         int frameId;
         {
@@ -856,15 +881,9 @@ void installTimers(std::shared_ptr<RuntimeState> state) {
           state->animationFrames.emplace(frameId, callback);
         }
 
-        bool scheduled = false;
-        JniEnv env;
-        if (env.valid() && state->timerMethods.requestAnimationFrame) {
-          env->CallVoidMethod(state->timerShim, state->timerMethods.requestAnimationFrame, frameId);
-          logJniException(env.get(), "TimerShim.requestAnimationFrame");
-          scheduled = true;
-        }
-
-        if (!scheduled) {
+        // Check if JavaVM is available before creating JniEnv
+        if (!gJavaVm) {
+          BRIDGE_LOG(ANDROID_LOG_ERROR, "requestAnimationFrame: JavaVM not initialized, executing callback immediately");
           {
             std::lock_guard<std::mutex> lock(state->mutex);
             state->animationFrames.erase(frameId);
@@ -877,6 +896,28 @@ void installTimers(std::shared_ptr<RuntimeState> state) {
           } catch (const std::exception &ex) {
             reportJsError(state, ex.what(), "");
           }
+          return Value(static_cast<double>(frameId));
+        }
+
+        JniEnv env;
+        if (env.valid() && state->timerMethods.requestAnimationFrame) {
+          env->CallVoidMethod(state->timerShim, state->timerMethods.requestAnimationFrame, frameId);
+          logJniException(env.get(), "TimerShim.requestAnimationFrame");
+        } else {
+          // If JNI attach failed, clean up and execute callback immediately
+          {
+            std::lock_guard<std::mutex> lock(state->mutex);
+            state->animationFrames.erase(frameId);
+          }
+          try {
+            Value timestamp(0.0);
+            callback->call(runtime, timestamp);
+          } catch (const facebook::jsi::JSError &err) {
+            reportJsError(state, err.getMessage(), err.getStack());
+          } catch (const std::exception &ex) {
+            reportJsError(state, ex.what(), "");
+          }
+          BRIDGE_LOG(ANDROID_LOG_WARN, "requestAnimationFrame: JNI attach failed, executed callback immediately");
         }
 
         return Value(static_cast<double>(frameId));
@@ -1415,6 +1456,15 @@ void callGlobal(
     const std::string &name,
     jobjectArray args) {
   if (!runtime) return;
+  
+  // THREAD-SAFE FIX: When called via JNI (from callGlobalAsync), the env parameter
+  // is VALID for the current thread (the JS HandlerThread). Use it directly.
+  // Do NOT create a JniEnv wrapper as that will try to attach a thread that's
+  // already attached, which can fail with "fbjni is uninitialized" errors.
+  if (!env) {
+    BRIDGE_LOG(ANDROID_LOG_ERROR, "callGlobal: JNIEnv is null!");
+    return;
+  }
   
   jsize argsLength = args ? env->GetArrayLength(args) : 0;
   BRIDGE_LOG(ANDROID_LOG_INFO, "callGlobal: %s with %d arguments", name.c_str(), argsLength);

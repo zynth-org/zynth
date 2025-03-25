@@ -13,6 +13,7 @@ add_library(rune_kit SHARED
 
 find_package(hermes-engine REQUIRED CONFIG)
 find_package(ReactAndroid REQUIRED CONFIG)
+find_package(fbjni REQUIRED CONFIG)
 
 target_include_directories(rune_kit
     PRIVATE
@@ -36,5 +37,6 @@ target_link_libraries(rune_kit
     PRIVATE
         hermes-engine::libhermes
         ReactAndroid::jsi
+        fbjni::fbjni
         log
 )

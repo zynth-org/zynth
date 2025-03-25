@@ -30,7 +30,7 @@ This document outlines the development plan to evolve Rune into a powerful, AI-n
 - [ ] **`KeyboardAvoidingView`:** Implement a view that intelligently avoids the on-screen keyboard.
 - [ ] **`@rune/apis` Package:** Create a package for essential device and utility APIs.
 - [ ] **`StyleSheet`:** Implement a `StyleSheet.create` API for style abstraction and optimization.
-- [ ] **`Dimensions`:** Implement an API to get screen and window dimensions.
+- [✅] **`Dimensions`:** Implement an API to get screen and window dimensions.
 
 ### 3. Animation (`packages/rune-animation`)
 

@@ -324,4 +324,39 @@ data class Style(
       }
     }
   }
+
+  fun toPixels(density: Float): Style {
+    if (density == 1f) return this
+    fun Float?.scale(): Float? = this?.times(density)
+    return copy(
+      width = width.scale(),
+      height = height.scale(),
+      minWidth = minWidth.scale(),
+      maxWidth = maxWidth.scale(),
+      minHeight = minHeight.scale(),
+      maxHeight = maxHeight.scale(),
+      top = top.scale(),
+      right = right.scale(),
+      bottom = bottom.scale(),
+      left = left.scale(),
+      padding = padding.scale(),
+      paddingHorizontal = paddingHorizontal.scale(),
+      paddingVertical = paddingVertical.scale(),
+      paddingLeft = paddingLeft.scale(),
+      paddingRight = paddingRight.scale(),
+      paddingTop = paddingTop.scale(),
+      paddingBottom = paddingBottom.scale(),
+      margin = margin.scale(),
+      marginLeft = marginLeft.scale(),
+      marginRight = marginRight.scale(),
+      marginTop = marginTop.scale(),
+      marginBottom = marginBottom.scale(),
+      gap = gap.scale(),
+      rowGap = rowGap.scale(),
+      columnGap = columnGap.scale(),
+      borderRadius = borderRadius.scale(),
+      borderWidth = borderWidth.scale(),
+      fontSize = fontSize.scale(),
+    )
+  }
 }

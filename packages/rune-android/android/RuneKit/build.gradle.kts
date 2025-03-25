@@ -66,7 +66,8 @@ android {
         "**/libhermes.so",
         "**/libhermes-executor-debug.so",
         "**/libhermes-executor-release.so",
-        "**/libjsi.so"
+        "**/libjsi.so",
+        "**/libfbjni.so"
       )
     }
   }

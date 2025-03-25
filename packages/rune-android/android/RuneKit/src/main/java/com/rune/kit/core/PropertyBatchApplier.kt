@@ -20,6 +20,7 @@ import org.json.JSONObject
  */
 internal class PropertyBatchApplier(
   private val engine: LayoutEngine,
+  private val density: Float,
 ) {
   // Track accumulated properties per node for batching
   private val pendingStyleBatches = SparseArray<MutableMap<String, String?>>()
@@ -76,16 +77,17 @@ internal class PropertyBatchApplier(
     
     // Parse combined style and apply once
     val style = Style.fromJson(styleJson.toString())
-    engine.setStyle(nodeId, style)
+    val pixelStyle = style.toPixels(density)
+    engine.setStyle(nodeId, pixelStyle)
     
     // Store the applied style
-    appliedStyles.put(nodeId, style)
+    appliedStyles.put(nodeId, pixelStyle)
     
     // Clear the batch
     batch.clear()
     pendingStyleBatches.remove(nodeId)
     
-    return style
+    return pixelStyle
   }
   
   /**

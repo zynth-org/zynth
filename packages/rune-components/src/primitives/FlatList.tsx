@@ -90,6 +90,7 @@ export function createFlatListState(): FlatListState {
   const [firstVisibleIndex, setFirstVisibleIndex] = createSignal<number | null>(
     null
   );
+
   const [visibleIndices, setVisibleIndices] = createSignal<number[]>([]);
 
   const state: InternalFlatListState = {
@@ -214,7 +215,12 @@ export function FlatList<T>(props: FlatListProps<T>) {
     const size = props.horizontal
       ? metrics.viewportSize.width
       : metrics.viewportSize.height;
+    // return 760;
     return size && size > 0 ? size : fallbackViewport();
+  });
+
+  createEffect(() => {
+    console.log("Viewport size:", viewportSize());
   });
 
   const maintainConfig = createMemo(() => props.maintainVisibleContentPosition);
@@ -294,6 +300,26 @@ export function FlatList<T>(props: FlatListProps<T>) {
     //   `[FlatList] 📐 Pool size calc: viewport=${viewport}, estimate=${estimatedItemExtent()}, visibleCount=${visibleCount}, calculated=${calculated}, final=${final}`
     // );
     return final;
+  });
+
+  let lastDebugViewport = -1;
+  createEffect(() => {
+    const viewport = viewportSize();
+    const estimate = estimatedItemExtent();
+    const pool = poolSize();
+    if (!Number.isFinite(viewport) || viewport <= 0) {
+      return;
+    }
+    const roundedViewport = Math.round(viewport);
+    if (roundedViewport === lastDebugViewport) {
+      return;
+    }
+    lastDebugViewport = roundedViewport;
+    console.log(
+      `[FlatList][debug] viewport=${viewport.toFixed(2)} dp, estimate=${
+        estimate?.toFixed?.(2) ?? estimate
+      } dp, poolSize=${pool}, visibleCount=${viewportItemCount()}, overscanPerSide=${overscanItemsPerSide()}`
+    );
   });
 
   type LayoutSnapshot = {

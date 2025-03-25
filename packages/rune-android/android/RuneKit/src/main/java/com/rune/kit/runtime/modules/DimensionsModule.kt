@@ -188,9 +188,14 @@ class DimensionsModule(
         val fallbackWidthPx = resources.displayMetrics.widthPixels
         val fallbackHeightPx = resources.displayMetrics.heightPixels
 
+        val actualWidthPx = if (windowWidthPx > 0) windowWidthPx else fallbackWidthPx
+        val actualHeightPx = if (windowHeightPx > 0) windowHeightPx else fallbackHeightPx
+        
+        android.util.Log.d("DimensionsModule", "computePayload: widthPx=$actualWidthPx, heightPx=$actualHeightPx, density=$density, widthDp=${actualWidthPx.toDouble() / density}, heightDp=${actualHeightPx.toDouble() / density}")
+
         val windowMetrics = DimensionMetrics(
-            width = (if (windowWidthPx > 0) windowWidthPx else fallbackWidthPx).toDouble() / density,
-            height = (if (windowHeightPx > 0) windowHeightPx else fallbackHeightPx).toDouble() / density,
+            width = actualWidthPx.toDouble() / density,
+            height = actualHeightPx.toDouble() / density,
             scale = density,
             fontScale = fontScale,
         )

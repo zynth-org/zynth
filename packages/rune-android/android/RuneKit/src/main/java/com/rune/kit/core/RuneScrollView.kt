@@ -25,6 +25,7 @@ import org.json.JSONObject
 internal class RuneScrollView(
   context: Context,
 ) : FrameLayout(context) {
+  private val density: Float = resources.displayMetrics.density
 
   enum class Axis {
     VERTICAL,
@@ -67,12 +68,12 @@ internal class RuneScrollView(
   private var snapPendingCheck = false
   private var snapPendingForce = false
 
-  private val defaultStopVelocityThreshold = 7000f
+  private val defaultStopVelocityThreshold = 7000f * density
   private val defaultStopDistanceMultiplier = 6f
-  private val defaultStopMinDistancePx = 2500f
+  private val defaultStopMinDistancePx = 2500f * density
   private val defaultStopCooldownMs = 140L
   private val defaultStopGestureWindowMs = 900L
-  private val defaultStopFallbackViewport = 960f
+  private val defaultStopFallbackViewport = 960f * density
   private val defaultStopRearmFraction = 0.05f
   private val defaultStopRequiresDistance = true
 
@@ -306,7 +307,7 @@ internal class RuneScrollView(
       return
     }
     if (value is Number) {
-      val padding = value.toDouble().roundToInt().coerceAtLeast(0)
+      val padding = (value.toDouble() * density).roundToInt().coerceAtLeast(0)
       snapPaddingStart = padding
       snapPaddingEnd = padding
       snapPaddingTop = padding
@@ -316,7 +317,7 @@ internal class RuneScrollView(
     if (value is String) {
       val numeric = value.toDoubleOrNull()
       if (numeric != null) {
-        val padding = numeric.roundToInt().coerceAtLeast(0)
+        val padding = (numeric * density).roundToInt().coerceAtLeast(0)
         snapPaddingStart = padding
         snapPaddingEnd = padding
         snapPaddingTop = padding
@@ -327,7 +328,7 @@ internal class RuneScrollView(
     if (value is JSONObject) {
       fun read(key: String): Int? =
         if (value.has(key) && !value.isNull(key)) {
-          value.optDouble(key).roundToInt().coerceAtLeast(0)
+          (value.optDouble(key) * density).roundToInt().coerceAtLeast(0)
         } else null
       snapPaddingTop = read("top") ?: 0
       snapPaddingEnd = read("right") ?: 0
@@ -365,7 +366,7 @@ internal class RuneScrollView(
   }
 
   fun setEventMinDisplacement(px: Float?) {
-    eventMinDisplacementPx = (px ?: 0f).coerceAtLeast(0f)
+    eventMinDisplacementPx = ((px ?: 0f) * density).coerceAtLeast(0f)
   }
 
   fun setBridgeCoalescing(enabled: Boolean?) {
@@ -423,12 +424,12 @@ internal class RuneScrollView(
       "scrollTo" -> {
         val animated = command.optBoolean("animated", true)
         val x = if (command.has("x") && !command.isNull("x")) {
-          command.optDouble("x").roundToInt()
+          (command.optDouble("x") * density).roundToInt()
         } else {
           null
         }
         val y = if (command.has("y") && !command.isNull("y")) {
-          command.optDouble("y").roundToInt()
+          (command.optDouble("y") * density).roundToInt()
         } else {
           null
         }
@@ -437,12 +438,12 @@ internal class RuneScrollView(
       "scrollBy" -> {
         val animated = command.optBoolean("animated", true)
         val dx = if (command.has("dx") && !command.isNull("dx")) {
-          command.optDouble("dx").roundToInt()
+          (command.optDouble("dx") * density).roundToInt()
         } else {
           null
         }
         val dy = if (command.has("dy") && !command.isNull("dy")) {
-          command.optDouble("dy").roundToInt()
+          (command.optDouble("dy") * density).roundToInt()
         } else {
           null
         }
@@ -469,22 +470,23 @@ internal class RuneScrollView(
     val contentHeight = contentView.height
     val viewportWidth = width.takeIf { it > 0 } ?: host.view.width
     val viewportHeight = height.takeIf { it > 0 } ?: host.view.height
+    val invDensity = if (density == 0f) 0f else 1f / density
     val payload = JSONObject()
     payload.put("contentOffset", JSONObject().apply {
-      put("x", offsetX)
-      put("y", offsetY)
+      put("x", offsetX * invDensity)
+      put("y", offsetY * invDensity)
     })
     payload.put("contentSize", JSONObject().apply {
-      put("width", contentWidth)
-      put("height", contentHeight)
+      put("width", contentWidth * invDensity)
+      put("height", contentHeight * invDensity)
     })
     payload.put("layoutMeasurement", JSONObject().apply {
-      put("width", viewportWidth)
-      put("height", viewportHeight)
+      put("width", viewportWidth * invDensity)
+      put("height", viewportHeight * invDensity)
     })
     payload.put("velocity", JSONObject().apply {
-      put("x", lastVelocityX)
-      put("y", lastVelocityY)
+      put("x", lastVelocityX * invDensity)
+      put("y", lastVelocityY * invDensity)
     })
     payload.put("zoomScale", 1.0)
     return payload
@@ -647,13 +649,13 @@ internal class RuneScrollView(
     }
 
     readDouble("stopVelocityThreshold", "manualStopVelocityThreshold")?.let {
-      stopVelocityThreshold = it.toFloat().coerceAtLeast(0f)
+      stopVelocityThreshold = (it * density).toFloat().coerceAtLeast(0f)
     }
     readDouble("stopDistanceMultiplier", "manualStopDistanceMultiplier")?.let {
       stopDistanceMultiplier = it.toFloat().coerceAtLeast(0f)
     }
     readDouble("stopMinDistancePx", "manualStopMinDistancePx")?.let {
-      stopMinDistancePx = it.toFloat().coerceAtLeast(0f)
+      stopMinDistancePx = (it * density).toFloat().coerceAtLeast(0f)
     }
     readDouble("stopCooldownMs", "manualStopCooldownMs")?.let {
       stopCooldownMs = it.roundToLong().coerceAtLeast(0L)
@@ -662,7 +664,7 @@ internal class RuneScrollView(
       stopGestureWindowMs = it.roundToLong().coerceAtLeast(0L)
     }
     readDouble("stopFallbackViewport", "manualStopFallbackViewport")?.let {
-      stopFallbackViewport = it.toFloat().coerceAtLeast(0f)
+      stopFallbackViewport = (it * density).toFloat().coerceAtLeast(0f)
     }
     readDouble("stopRearmFraction", "manualStopRearmFraction")?.let {
       stopRearmFraction = it.toFloat().coerceIn(0f, 1f)
@@ -838,22 +840,23 @@ internal class RuneScrollView(
   }
 
   private fun buildPayload(x: Int, y: Int): JSONObject {
+    val invDensity = if (density == 0f) 0f else 1f / density
     val payload = JSONObject()
     payload.put("contentOffset", JSONObject().apply {
-      put("x", x)
-      put("y", y)
+      put("x", x * invDensity)
+      put("y", y * invDensity)
     })
     payload.put("contentSize", JSONObject().apply {
-      put("width", contentView.width)
-      put("height", contentView.height)
+      put("width", contentView.width * invDensity)
+      put("height", contentView.height * invDensity)
     })
     payload.put("layoutMeasurement", JSONObject().apply {
-      put("width", host.view.width)
-      put("height", host.view.height)
+      put("width", host.view.width * invDensity)
+      put("height", host.view.height * invDensity)
     })
     payload.put("velocity", JSONObject().apply {
-      put("x", lastVelocityX)
-      put("y", lastVelocityY)
+      put("x", lastVelocityX * invDensity)
+      put("y", lastVelocityY * invDensity)
     })
     payload.put("zoomScale", 1.0)
     return payload
@@ -872,16 +875,19 @@ internal class RuneScrollView(
       if (event == "onScroll" && dt < eventThrottleMs) {
         return
       }
-      val dx = abs(payload.optJSONObject("contentOffset")?.optInt("x") ?: 0 - lastDispatchedX)
-      val dy = abs(payload.optJSONObject("contentOffset")?.optInt("y") ?: 0 - lastDispatchedY)
+      val offsetObj = payload.optJSONObject("contentOffset")
+      val currentX = offsetObj?.optDouble("x")?.let { (it * density).roundToInt() } ?: 0
+      val currentY = offsetObj?.optDouble("y")?.let { (it * density).roundToInt() } ?: 0
+      val dx = abs(currentX - lastDispatchedX)
+      val dy = abs(currentY - lastDispatchedY)
       if (event == "onScroll" && dx < eventMinDisplacementPx && dy < eventMinDisplacementPx) {
         return
       }
     }
     lastDispatchTime = now
     payload.optJSONObject("contentOffset")?.let {
-      lastDispatchedX = it.optInt("x")
-      lastDispatchedY = it.optInt("y")
+      lastDispatchedX = (it.optDouble("x") * density).roundToInt()
+      lastDispatchedY = (it.optDouble("y") * density).roundToInt()
     }
     
     manager?.dispatchEvent(nodeId, event, payload)
@@ -889,7 +895,7 @@ internal class RuneScrollView(
     val dispatchTime = SystemClock.uptimeMillis() - dispatchStart
     if (dispatchTime > 5) {
       val offset = payload.optJSONObject("contentOffset")
-      val y = offset?.optInt("y") ?: 0
+      val y = offset?.optDouble("y") ?: 0.0
       Log.w("RunePerf", "⚠️ dispatchScrollEvent took ${dispatchTime}ms for offset y=$y")
     }
   }

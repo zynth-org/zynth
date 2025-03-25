@@ -260,7 +260,9 @@ class RuneRuntime(
     for ((key, value) in constants) {
       json.put(key, wrapForJson(value))
     }
-    adapter.evaluate("globalThis.NativeConstants = ${json.toString()};")
+    val constantsStr = json.toString()
+    logDebug(TAG, "Injecting NativeConstants: $constantsStr")
+    adapter.evaluate("globalThis.NativeConstants = $constantsStr;")
   }
 
   private fun reinitializeModules() {

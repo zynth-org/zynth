@@ -72,6 +72,7 @@ class RuneUIManager(
   private val eventDispatcher: (Int, String) -> Unit = { _, _ -> },
   private val handlerListener: (Int, String, Long) -> Unit = { _, _, _ -> },
 ) : JSBridge.UIShim, RuneButtonView.Listener, RunePressableView.Listener {
+  private val density: Float = root.resources.displayMetrics.density
   private fun isNativeDebugEnabled(): Boolean {
     return try {
       val debugValue = System.getProperty("__NATIVE_DEBUG__")
@@ -165,6 +166,7 @@ class RuneUIManager(
   private val propApplier = RunePropApplier(
     nodes = nodes,
     engine = engine,
+    density = density,
     imageSupport = imageSupport,
     buttonStyles = buttonStyles,
     deriveButtonVisualStyle = ::deriveButtonVisualStyle,

@@ -1,6 +1,7 @@
 #include <jni.h>
 
 #include <android/log.h>
+#include <fbjni/fbjni.h>
 #include <hermes/Public/RuntimeConfig.h>
 #include <hermes/hermes.h>
 #include <jsi/jsi.h>
@@ -133,6 +134,9 @@ Java_com_rune_kit_runtime_JSBridge_callGlobal(
     jlong runtimePtr,
     jstring name,
     jobjectArray args) {
+  // CRITICAL FIX: The env parameter is valid for THIS thread (the HandlerThread).
+  // We should use it directly instead of creating a new JniEnv wrapper.
+  // The issue was that we were discarding a valid env and trying to get a new one.
   auto *runtime = rune::kit::fromPtr(runtimePtr);
   std::string functionName = ::toStdString(env, name);
   rune::kit::callGlobal(runtime, env, functionName, args);
@@ -236,6 +240,7 @@ Java_com_rune_kit_dev_RuneDiagnosticsKt_runeDiagnosticsReportJNI(
 }
 
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *) {
+  facebook::jni::Environment::initialize(vm);
   rune::kit::setJavaVm(vm);
   rune::kit::logDebug("JNI_OnLoad");
   return JNI_VERSION_1_6;
