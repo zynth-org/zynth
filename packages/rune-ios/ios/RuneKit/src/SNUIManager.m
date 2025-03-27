@@ -3,7 +3,7 @@
 #import "SNUIManager+Image.h"
 #import "SNUIManager+ScrollView.h"
 #import "SNUIManager+Button.h"
-#import "SNUIManager+Pressable.h"
+#import "RuneComponentRegistry.h"
 #import "RuneUIManager+View.h"
 #import "RuneUIManager+Text.h"
 #import "RuneUIManager+TextInput.h"
@@ -14,7 +14,6 @@
 #import "RuneUIManager+Layout.h"
 #import "RuneScrollView.h"
 #import "RuneButtonView.h"
-#import "RunePressableView.h"
 #import "SNHexColor.h"
 #import <Yoga/Yoga.h>
 #import <QuartzCore/QuartzCore.h>
@@ -94,16 +93,21 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
 }
 - (NSNumber *)createNode:(NSString *)type {
   int nid = _nextId++;
-  UIView *v;
+  UIView *v = nil;
   BOOL isTextInput = NO;
   BOOL isSecureTextInput = NO;
 
-  if ([type isEqualToString:@"text"]) {
+  RuneComponentDescriptor *componentDescriptor = RuneGetComponentDescriptor(type);
+  if (componentDescriptor && componentDescriptor.createView) {
+    v = componentDescriptor.createView(self, type);
+  }
+
+  if (!v && [type isEqualToString:@"text"]) {
     UILabel *l = [UILabel new];
     l.textColor = [UIColor whiteColor];
     l.numberOfLines = 0;
     v = l;
-  } else if ([type isEqualToString:@"text-input"]) {
+  } else if (!v && [type isEqualToString:@"text-input"]) {
     UIView *input = [self sn_textInputCreateView];
     if (input) {
       v = input;
@@ -111,7 +115,7 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
     } else {
       v = [self rune_makeContainerView];
     }
-  } else if ([type isEqualToString:@"secure-text-input"]) {
+  } else if (!v && [type isEqualToString:@"secure-text-input"]) {
       UIView *input = [self sn_secureTextInputCreateView];
       if (input) {
           v = input;
@@ -119,7 +123,7 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
       } else {
           v = [self rune_makeContainerView];
       }
-  } else if ([type isEqualToString:@"image"]) {
+  } else if (!v && [type isEqualToString:@"image"]) {
 #if __has_include(<UIKit/UIKit.h>)
     UIImageView *imageView = [UIImageView new];
     imageView.contentMode = UIViewContentModeScaleAspectFill;
@@ -128,16 +132,15 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
 #else
     v = [UIView new];
 #endif
-  } else if ([type isEqualToString:@"scroll-view"]) {
+  } else if (!v && [type isEqualToString:@"scroll-view"]) {
     RuneScrollView *scroll = [RuneScrollView new];
     v = scroll;
-  } else if ([type isEqualToString:@"button"]) {
+  } else if (!v && [type isEqualToString:@"button"]) {
     RuneButtonView *button = [RuneButtonView new];
     v = button;
-  } else if ([type isEqualToString:@"pressable"]) {
-    RunePressableView *pressable = [RunePressableView new];
-    v = pressable;
-  } else {
+  }
+
+  if (!v) {
     v = [self rune_makeContainerView];
   }
 
@@ -148,11 +151,11 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
   n.children = [NSMutableArray new];
   n.parentId = -1;
   n.pointerEvents = @"auto"; // Default pointerEvents state
+  n.type = type;
 
   [self rune_initializePointerDefaultsForNode:n];
   [self sn_scrollViewAttachIfNeeded:n];
   [self sn_buttonAttachIfNeeded:n];
-  [self sn_pressableAttachIfNeeded:n];
 
   if (!n.yoga) {
     NSLog(@"[SN] ERROR: Failed to create Yoga node for nid=%d", nid);
@@ -177,6 +180,11 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
   }
 
   _nodes[@(nid)] = n;
+
+  if (componentDescriptor && componentDescriptor.attach) {
+    componentDescriptor.attach(self, n);
+  }
+
   return @(nid);
 }
 
@@ -596,6 +604,9 @@ static void SNApplyEdges(NSDictionary *style,
   SNNode *n = _nodes[nodeId];
   if (!n || !n.view) return;
 
+  RuneComponentDescriptor *componentDescriptor = RuneGetComponentDescriptor(n.type);
+  BOOL pointerEventsHandled = NO;
+
   if ([name isEqualToString:@"style"]) {
     NSData *data = [json dataUsingEncoding:NSUTF8StringEncoding];
     NSDictionary *s = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
@@ -648,7 +659,7 @@ static void SNApplyEdges(NSDictionary *style,
   if ([name isEqualToString:@"pointerEvents"]) {
     n.pointerEvents = stringValue.length ? stringValue : @"auto";
     [self rune_updateInteractionStateForNode:n];
-    return;
+    pointerEventsHandled = YES;
   }
 
   if ([name isEqualToString:@"testID"]) {
@@ -660,7 +671,13 @@ static void SNApplyEdges(NSDictionary *style,
     return;
   }
 
-  if ([self sn_pressableHandlesSetPropForNode:n name:name value:value rawJSON:json]) {
+  if (componentDescriptor && componentDescriptor.handleSetProp) {
+    if (componentDescriptor.handleSetProp(self, n, name, value, json)) {
+      return;
+    }
+  }
+
+  if (pointerEventsHandled) {
     return;
   }
 
@@ -691,13 +708,17 @@ static void SNApplyEdges(NSDictionary *style,
 - (void)setPropCallback:(NSNumber *)nodeId name:(NSString *)name callback:(JSValue *)callback {
   SNNode *n = _nodes[nodeId];
   if (!n || !n.view) return;
+
+  RuneComponentDescriptor *componentDescriptor = RuneGetComponentDescriptor(n.type);
   
   if ([self sn_buttonHandlesSetHandlerForNode:n name:name]) {
     return;
   }
 
-  if ([self sn_pressableHandlesSetHandlerForNode:n name:name]) {
-    return;
+  if (componentDescriptor && componentDescriptor.handleSetPropCallback) {
+    if (componentDescriptor.handleSetPropCallback(self, n, name, callback)) {
+      return;
+    }
   }
   
   if ([name isEqualToString:@"onPress"]) {
@@ -731,12 +752,16 @@ static void SNApplyEdges(NSDictionary *style,
   SNNode *n = _nodes[nodeId];
   if (!n || !n.view) return;
 
+  RuneComponentDescriptor *componentDescriptor = RuneGetComponentDescriptor(n.type);
+
   if ([self sn_buttonHandlesSetHandlerForNode:n name:name]) {
     return;
   }
 
-  if ([self sn_pressableHandlesSetHandlerForNode:n name:name]) {
-    return;
+  if (componentDescriptor && componentDescriptor.handleSetHandler) {
+    if (componentDescriptor.handleSetHandler(self, n, name)) {
+      return;
+    }
   }
 
   if ([name isEqualToString:@"onPress"]) {

@@ -10,29 +10,9 @@
 #import <JavaScriptCore/JavaScriptCore.h>
 #import <Yoga/Yoga.h>
 #import "SNUIManager.h"
+#import "SNNode.h"
 
 NS_ASSUME_NONNULL_BEGIN
-
-@interface SNNode : NSObject
-@property(nonatomic, assign) int nid;
-@property(nonatomic, strong) UIView *view;
-@property(nonatomic, assign) YGNodeRef yoga;
-@property(nonatomic, strong) NSMutableArray<NSNumber *> *children;
-@property(nonatomic, strong, nullable) JSValue *onPressCallback;
-@property(nonatomic, strong, nullable) JSValue *onLoadCallback;
-@property(nonatomic, strong, nullable) JSValue *onErrorCallback;
-@property(nonatomic, assign) BOOL hasOnPressHandler;
-@property(nonatomic, assign) BOOL hasOnLoadHandler;
-@property(nonatomic, assign) BOOL hasOnErrorHandler;
-@property(nonatomic, strong, nullable) NSURLSessionDataTask *imageTask;
-@property(nonatomic, copy, nullable) NSString *imageSourceToken;
-@property(nonatomic, strong, nullable) UIColor *imageTintColor;
-@property(nonatomic, assign) int parentId;
-@property(nonatomic, copy, nullable) NSString *pointerEvents;
-@property(nonatomic, assign) BOOL hasOnLayoutHandler;
-@property(nonatomic, assign) BOOL hasDispatchedLayout;
-@property(nonatomic, assign) CGRect lastLayoutFrame;
-@end
 
 @interface SNUIManager (Internal)
 @property(nonatomic, strong, readonly) UIView *root;

@@ -1,27 +1,24 @@
-#import "SNUIManager+Pressable.h"
+#if __has_include(<RuneKit/RuneKit.h>)
+#import <RuneKit/RuneKit.h>
+#else
+#import "RuneKit.h"
+#import "RuneComponentRegistry.h"
+#import "RuneComponentAPI.h"
+#import "SNUIManager.h"
+#import "SNNode.h"
+#endif
 
-#import "SNUIManager+Internal.h"
 #import "RunePressableView.h"
 
-@interface SNUIManager (PressableDelegate) <RunePressableViewDelegate>
-@end
-
-@implementation SNUIManager (Pressable)
-
-- (void)sn_pressableAttachIfNeeded:(SNNode *)node {
-  if (!node || ![node.view isKindOfClass:[RunePressableView class]]) return;
-  RunePressableView *pressable = (RunePressableView *)node.view;
-  pressable.delegate = self;
-  [pressable attachToManager:self node:node];
-}
-
-- (BOOL)sn_pressableHandlesSetPropForNode:(SNNode *)node
-                                    name:(NSString *)name
-                                   value:(id)value
-                                  rawJSON:(NSString *)rawJSON {
+static BOOL RunePressableHandleSetProp(SNUIManager *manager,
+                                       SNNode *node,
+                                       NSString *name,
+                                       id value,
+                                       NSString *rawJSON) {
   if (!node || ![node.view isKindOfClass:[RunePressableView class]]) {
     return NO;
   }
+
   RunePressableView *pressable = (RunePressableView *)node.view;
 
   if ([name isEqualToString:@"disabled"]) {
@@ -110,7 +107,7 @@
     NSString *pointer = [value isKindOfClass:[NSString class]] ? (NSString *)value : nil;
     [pressable rune_setPointerEvents:pointer];
     node.pointerEvents = pointer.length ? pointer : @"auto";
-    [self rune_updateInteractionStateForNode:node];
+    [manager rune_updateInteractionStateForNode:node];
     return YES;
   }
 
@@ -131,10 +128,13 @@
   return NO;
 }
 
-- (BOOL)sn_pressableHandlesSetHandlerForNode:(SNNode *)node name:(NSString *)name {
+static BOOL RunePressableHandleSetHandler(SNUIManager *manager,
+                                          SNNode *node,
+                                          NSString *name) {
   if (!node || ![node.view isKindOfClass:[RunePressableView class]]) {
     return NO;
   }
+
   RunePressableView *pressable = (RunePressableView *)node.view;
 
   if ([name isEqualToString:@"onPress"] ||
@@ -158,58 +158,94 @@
   return NO;
 }
 
+@interface SNUIManager (PressableComponent) <RunePressableViewDelegate>
+@end
+
+@implementation SNUIManager (PressableComponent)
+
++ (void)load {
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    RuneComponentDescriptor *descriptor = [[RuneComponentDescriptor alloc] initWithType:@"pressable"];
+    descriptor.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+      RunePressableView *pressable = [RunePressableView new];
+      return pressable;
+    };
+    descriptor.attach = ^(SNUIManager *manager, SNNode *node) {
+      if (![node.view isKindOfClass:[RunePressableView class]]) return;
+      RunePressableView *pressable = (RunePressableView *)node.view;
+      pressable.delegate = manager;
+      [pressable attachToManager:manager node:node];
+    };
+    descriptor.handleSetProp = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name, id value, NSString *rawJSON) {
+      return RunePressableHandleSetProp(manager, node, name, value, rawJSON);
+    };
+    descriptor.handleSetHandler = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name) {
+      return RunePressableHandleSetHandler(manager, node, name);
+    };
+    RuneRegisterComponentDescriptor(descriptor);
+  });
+}
+
 #pragma mark - RunePressableViewDelegate
 
 - (void)pressableView:(RunePressableView *)view didPressIn:(NSDictionary *)payload {
-  SNNode *node = self.nodes[@(view.nodeId)];
+  SNNode *node = view.rune_node;
   if (!node) return;
-  [self sn_dispatchEvent:@"onPressIn" payload:payload ?: @{} toNode:node];
+  [self rune_dispatchEvent:@"onPressIn" payload:payload ?: @{} toNode:node];
 }
 
 - (void)pressableView:(RunePressableView *)view didPressOut:(NSDictionary *)payload cancelled:(BOOL)cancelled {
-  SNNode *node = self.nodes[@(view.nodeId)];
+  SNNode *node = view.rune_node;
   if (!node) return;
   NSMutableDictionary *data = [payload mutableCopy] ?: [NSMutableDictionary new];
   data[@"cancelled"] = @(cancelled);
-  [self sn_dispatchEvent:@"onPressOut" payload:data toNode:node];
+  [self rune_dispatchEvent:@"onPressOut" payload:data toNode:node];
 }
 
 - (void)pressableView:(RunePressableView *)view didPress:(NSDictionary *)payload {
-  SNNode *node = self.nodes[@(view.nodeId)];
+  SNNode *node = view.rune_node;
   if (!node) return;
-  [self sn_dispatchEvent:@"onPress" payload:payload ?: @{} toNode:node];
+  [self rune_dispatchEvent:@"onPress" payload:payload ?: @{} toNode:node];
 }
 
 - (void)pressableView:(RunePressableView *)view didLongPress:(NSDictionary *)payload duration:(CFTimeInterval)duration {
-  SNNode *node = self.nodes[@(view.nodeId)];
+  SNNode *node = view.rune_node;
   if (!node) return;
   NSMutableDictionary *data = [payload mutableCopy] ?: [NSMutableDictionary new];
   data[@"durationMs"] = @(duration);
-  [self sn_dispatchEvent:@"onLongPress" payload:data toNode:node];
+  [self rune_dispatchEvent:@"onLongPress" payload:data toNode:node];
 }
 
 - (void)pressableView:(RunePressableView *)view didDoublePress:(NSDictionary *)payload {
-  SNNode *node = self.nodes[@(view.nodeId)];
+  SNNode *node = view.rune_node;
   if (!node) return;
-  [self sn_dispatchEvent:@"onDoublePress" payload:payload ?: @{} toNode:node];
+  [self rune_dispatchEvent:@"onDoublePress" payload:payload ?: @{} toNode:node];
+}
+
+- (void)pressableViewDidHover:(RunePressableView *)view hovering:(BOOL)hovering {
+  SNNode *node = view.rune_node;
+  if (!node) return;
+  NSString *event = hovering ? @"onHoverIn" : @"onHoverOut";
+  [self rune_dispatchEvent:event payload:@{} toNode:node];
 }
 
 - (void)pressableViewDidFocus:(RunePressableView *)view {
-  SNNode *node = self.nodes[@(view.nodeId)];
+  SNNode *node = view.rune_node;
   if (!node) return;
-  [self sn_dispatchEvent:@"onFocus" payload:@{} toNode:node];
+  [self rune_dispatchEvent:@"onFocus" payload:@{} toNode:node];
 }
 
 - (void)pressableViewDidBlur:(RunePressableView *)view {
-  SNNode *node = self.nodes[@(view.nodeId)];
+  SNNode *node = view.rune_node;
   if (!node) return;
-  [self sn_dispatchEvent:@"onBlur" payload:@{} toNode:node];
+  [self rune_dispatchEvent:@"onBlur" payload:@{} toNode:node];
 }
 
 - (void)pressableView:(RunePressableView *)view didEmitKeyEvent:(NSString *)phase payload:(NSDictionary *)payload {
-  SNNode *node = self.nodes[@(view.nodeId)];
+  SNNode *node = view.rune_node;
   if (!node) return;
-  [self sn_dispatchEvent:phase payload:payload ?: @{} toNode:node];
+  [self rune_dispatchEvent:phase payload:payload ?: @{} toNode:node];
 }
 
 @end

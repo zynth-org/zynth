@@ -1,8 +1,14 @@
 #import "RunePressableView.h"
 
 #import <QuartzCore/QuartzCore.h>
-
-#import "SNUIManager+Internal.h"
+#if __has_include(<RuneKit/RuneKit.h>)
+#import <RuneKit/RuneKit.h>
+#else
+#import "RuneKit.h"
+#import "RuneComponentAPI.h"
+#import "SNUIManager.h"
+#import "SNNode.h"
+#endif
 
 static const CFTimeInterval kRunePressableDefaultLongPressMs = 500.0;
 static const CGFloat kRunePressableDefaultRetention = 20.0;
@@ -64,6 +70,10 @@ static const CFTimeInterval kRunePressableDefaultDoublePressWindowMs = 250.0;
     self.layer.opacity = 1.0;
   }
   return self;
+}
+
+- (SNNode *)rune_node {
+  return self.node;
 }
 
 - (void)dealloc {

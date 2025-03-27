@@ -1,6 +1,9 @@
 #import <UIKit/UIKit.h>
-
-#import "RuneUIManager+View.h"
+#if __has_include(<RuneKit/RuneViewHost.h>)
+#import <RuneKit/RuneViewHost.h>
+#else
+#import "RuneViewHost.h"
+#endif
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -13,6 +16,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 @property(nonatomic, weak, nullable) id<RunePressableViewDelegate> delegate;
 @property(nonatomic, assign) int nodeId;
+@property(nonatomic, weak, nullable, readonly) SNNode *rune_node;
 
 - (void)attachToManager:(nullable SNUIManager *)manager node:(nullable SNNode *)node;
 - (void)rune_setDisabled:(BOOL)disabled;

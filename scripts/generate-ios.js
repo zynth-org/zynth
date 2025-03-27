@@ -40,14 +40,120 @@ function getAppConfig(appDir) {
   };
 }
 
-// Replace placeholders in file content
-function replacePlaceholders(content, config) {
-  return content
+function safeReadJSON(filePath) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch (error) {
+    return null;
+  }
+}
+
+function collectNativeIOSPods(appDir) {
+  const podsByName = new Map();
+  const appPackage = safeReadJSON(path.join(appDir, "package.json")) || {};
+
+  function registerPods(packageName, packageDir, iosConfig) {
+    if (!iosConfig || !Array.isArray(iosConfig.pods)) return;
+    for (const pod of iosConfig.pods) {
+      if (!pod || !pod.name) continue;
+      const record = {
+        name: pod.name,
+        packageName,
+        podspecPath: pod.podspec
+          ? path.resolve(packageDir, pod.podspec)
+          : null,
+        directoryPath: pod.path
+          ? path.resolve(packageDir, pod.path)
+          : packageDir,
+      };
+      podsByName.set(record.name, record);
+    }
+  }
+
+  if (appPackage.runeNative && appPackage.runeNative.ios) {
+    registerPods(appPackage.name || "(app)", appDir, appPackage.runeNative.ios);
+  }
+
+  const dependencySources = [
+    appPackage.dependencies || {},
+    appPackage.devDependencies || {},
+  ];
+
+  for (const source of dependencySources) {
+    for (const depName of Object.keys(source)) {
+      try {
+        const pkgJsonPath = require.resolve(
+          path.join(depName, "package.json"),
+          { paths: [appDir] }
+        );
+        const packageDir = path.dirname(pkgJsonPath);
+        const depPackage = safeReadJSON(pkgJsonPath);
+        if (!depPackage) continue;
+        if (depPackage.runeNative && depPackage.runeNative.ios) {
+          registerPods(depName, packageDir, depPackage.runeNative.ios);
+        }
+      } catch (_error) {
+        // Ignore resolvable failures; dependency may be optional for native
+      }
+    }
+  }
+
+  return Array.from(podsByName.values());
+}
+
+function formatComponentPodLines(pods, targetDir) {
+  if (!pods.length) {
+    return "\n  # No additional Rune component pods detected";
+  }
+
+  const lines = [];
+  for (const pod of pods) {
+    if (pod.directoryPath && fs.existsSync(pod.directoryPath)) {
+      const relative = path
+        .relative(targetDir, pod.directoryPath)
+        .split(path.sep)
+        .join("/");
+      lines.push(
+        `  pod '${pod.name}', :path => File.expand_path('${relative}', __dir__)`
+      );
+      continue;
+    }
+    if (pod.podspecPath && fs.existsSync(pod.podspecPath)) {
+      const relative = path
+        .relative(targetDir, pod.podspecPath)
+        .split(path.sep)
+        .join("/");
+      lines.push(
+        `  pod '${pod.name}', :podspec => File.expand_path('${relative}', __dir__)`
+      );
+      continue;
+    }
+    console.warn(
+      `⚠️  Skipping pod '${pod.name}' from ${pod.packageName} — podspec/path not found.`
+    );
+  }
+
+  if (!lines.length) {
+    return "\n  # No additional Rune component pods detected";
+  }
+
+  return "\n" + lines.join("\n");
+}
+
+function replacePlaceholders(content, config, extras = {}) {
+  let output = content
     .replace(/\{\{APP_NAME\}\}/g, config.appNameCapitalized)
     .replace(/\{\{BUNDLE_ID\}\}/g, config.bundleId)
     .replace(/\{\{WORKSPACE_NAME\}\}/g, config.workspaceName)
     .replace(/\{\{APP_DIR\}\}/g, config.appDir)
     .replace(/\{\{DISPLAY_NAME\}\}/g, config.displayName);
+
+  output = output.replace(
+    /\{\{RUNE_COMPONENT_PODS\}\}/g,
+    extras.componentPods ?? ""
+  );
+
+  return output;
 }
 
 // Copy template files and replace placeholders
@@ -68,6 +174,16 @@ function generateIOSProject(appDir, options = {}) {
   console.log(`  Mode: ${dev ? "Development" : "Production"}`);
   console.log(`  Target: ${targetDir}`);
 
+  const componentPods = collectNativeIOSPods(appDir);
+  if (componentPods.length) {
+    console.log("  Native component pods:");
+    componentPods.forEach((pod) => {
+      console.log(`    • ${pod.name} (${pod.packageName})`);
+    });
+  } else {
+    console.log("  Native component pods: none detected");
+  }
+
   // Remove existing iOS folder if it exists
   if (fs.existsSync(targetDir)) {
     console.log("  Removing existing iOS folder...");
@@ -76,6 +192,8 @@ function generateIOSProject(appDir, options = {}) {
 
   // Create target directory
   fs.mkdirSync(targetDir, { recursive: true });
+
+  const componentPodBlock = formatComponentPodLines(componentPods, targetDir);
 
   // Copy and process template files
   const templateFiles = fs.readdirSync(templateDir);
@@ -86,7 +204,9 @@ function generateIOSProject(appDir, options = {}) {
 
     if (fs.statSync(templateFile).isFile()) {
       const content = fs.readFileSync(templateFile, "utf8");
-      const processedContent = replacePlaceholders(content, config);
+      const processedContent = replacePlaceholders(content, config, {
+        componentPods: componentPodBlock,
+      });
       fs.writeFileSync(targetFile, processedContent);
       console.log(`  ✓ ${file}`);
     }

@@ -7,6 +7,14 @@
   "types": "dist/types/index.d.ts",
   "sideEffects": false,
   "license": "MIT",
+  "files": [
+    "dist",
+    "ios",
+    "src",
+    "package.json",
+    "README.md",
+    "RuneComponents.podspec"
+  ],
   "peerDependencies": {
     "solid-js": ">=1.8.0",
     "@rune/core": "0.0.1",
@@ -26,5 +34,15 @@
     "build": "yarn build:js && yarn build:types",
     "build:js": "NODE_ENV=production rsbuild build --config rsbuild.config.ts",
     "build:types": "tsc --project tsconfig.types.json"
+  },
+  "runeNative": {
+    "ios": {
+      "pods": [
+        {
+          "name": "RuneComponents",
+          "podspec": "./RuneComponents.podspec"
+        }
+      ]
+    }
   }
 }

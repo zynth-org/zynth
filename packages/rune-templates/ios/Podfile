@@ -13,6 +13,7 @@ raise "Unable to locate @rune/ios in node_modules (looked in #{rune_ios_candidat
 target '{{APP_NAME}}' do
   pod 'Yoga'
   pod 'RuneKit', :path => rune_ios_path
+{{RUNE_COMPONENT_PODS}}
 end
 
 post_install do |installer|

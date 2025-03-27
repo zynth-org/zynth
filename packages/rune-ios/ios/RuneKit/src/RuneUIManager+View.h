@@ -7,25 +7,7 @@
 #endif
 
 #import "SNUIManager+Internal.h"
-
-typedef NS_ENUM(NSInteger, RunePointerEventsMode) {
-  RunePointerEventsAuto = 0,
-  RunePointerEventsNone,
-  RunePointerEventsBoxNone,
-  RunePointerEventsBoxOnly
-};
-
-NS_INLINE RunePointerEventsMode RunePointerEventsFromString(NSString *value) {
-  if (![value isKindOfClass:[NSString class]] || value.length == 0) return RunePointerEventsAuto;
-  if ([value isEqualToString:@"none"]) return RunePointerEventsNone;
-  if ([value isEqualToString:@"box-none"]) return RunePointerEventsBoxNone;
-  if ([value isEqualToString:@"box-only"]) return RunePointerEventsBoxOnly;
-  return RunePointerEventsAuto;
-}
-
-@interface RuneHitTestingView : UIView
-@property(nonatomic, assign) RunePointerEventsMode pointerMode;
-@end
+#import "RuneViewHost.h"
 
 @interface SNUIManager (RuneView)
 
@@ -36,4 +18,3 @@ NS_INLINE RunePointerEventsMode RunePointerEventsFromString(NSString *value) {
 - (void)rune_handleTap:(UIGestureRecognizer *)gr;
 
 @end
-
