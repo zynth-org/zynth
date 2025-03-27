@@ -28,14 +28,44 @@ This document outlines the development plan to evolve Rune into a powerful, AI-n
 
 - [ ] **`@rune/layout` Package:** Create a package for layout-assisting components.
 - [ ] **`KeyboardAvoidingView`:** Implement a view that intelligently avoids the on-screen keyboard.
-- [ ] **`@rune/apis` Package:** Create a package for essential device and utility APIs.
+- [x] `@rune/apis`
+  - [x] Platform
+  - [x] Dimensions
+  - [ ] Device
+  - [ ] AppState
+  - [ ] Network
+  - [ ] Runtime
+
+#### ⚙️ Optional packages (lazy-loaded / opt-in native modules)
+
+- [ ] `@rune/location` — GPS & geolocation
+- [ ] `@rune/haptics` — haptic feedback & vibration
+- [ ] `@rune/permissions` — unified permissions layer
+- [ ] `@rune/storage` — async key/value local storage
+- [ ] `@rune/filesystem` — file read/write & directory access
+- [ ] `@rune/speech` — voice recognition & text-to-speech
+- [ ] `@rune/battery` — battery state & level listener
+- [ ] `@rune/clipboard` — clipboard read/write API
+- [ ] `@rune/devicemotion` — accelerometer & gyroscope
+- [ ] `@rune/hardware` — sensors, biometrics, camera, flashlight (future)
+- [ ] `@rune/notifications` — local & push notification control
+
+#### 🧠 Notes
+
+- Each module should:
+  - Export a **typed JS shim** and **native bridge**.
+  - Register itself lazily with the bridge only when imported.
+  - Use **Promise-based** APIs for parity across platforms.
+- `@rune/apis` remains **always available** and part of every Rune app build.
+- All others are **opt-in** — included only when imported.
+
 - [ ] **`StyleSheet`:** Implement a `StyleSheet.create` API for style abstraction and optimization.
 - [✅] **`Dimensions`:** Implement an API to get screen and window dimensions.
 
 ### 3. Animation (`packages/rune-animation`)
 
 - [ ] **`@rune/animation` Package:** Create a new package for a basic animation API.
-- [ ] **Animation API (v1):** Design and implement a simple, declarative animation API (e.g., `useSpring`, `useTiming`) that can animate style properties.
+- [ ] **Animation API (v1):** Design and implement a simple, declarative animation API (e.g., `createSpring`, `createTiming`) that can animate style properties.
 - [ ] **Native Driver:** Ensure animations can run on the native UI thread where possible for performance.
 
 ### 4. Developer Experience (`packages/rune-hmr`, `packages/rune-cli`)
