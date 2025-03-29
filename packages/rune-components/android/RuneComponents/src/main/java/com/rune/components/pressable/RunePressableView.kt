@@ -1,4 +1,4 @@
-package com.rune.kit.core
+package com.rune.components.pressable
 
 import android.content.Context
 import android.content.res.ColorStateList
@@ -13,6 +13,7 @@ import android.view.MotionEvent
 import android.view.TouchDelegate
 import android.view.View
 import android.widget.FrameLayout
+import com.rune.kit.core.RunePressableEventListener
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -25,21 +26,8 @@ private const val PRESS_FADE_ANIMATION_MS = 120L
 
 class RunePressableView(context: Context) : FrameLayout(context) {
 
-  interface Listener {
-    fun onPressablePressIn(nodeId: Int, payload: JSONObject)
-    fun onPressablePressOut(nodeId: Int, payload: JSONObject, cancelled: Boolean)
-    fun onPressablePress(nodeId: Int, payload: JSONObject)
-    fun onPressableLongPress(nodeId: Int, durationMs: Long, payload: JSONObject)
-    fun onPressableDoublePress(nodeId: Int, payload: JSONObject)
-    fun onPressableHover(nodeId: Int, hovering: Boolean)
-    fun onPressableFocus(nodeId: Int)
-    fun onPressableBlur(nodeId: Int)
-    fun onPressableKeyEvent(nodeId: Int, phase: String, payload: JSONObject)
-    fun onPressableCancel(nodeId: Int, payload: JSONObject)
-  }
-
   var nodeId: Int = -1
-  var listener: Listener? = null
+  var listener: RunePressableEventListener? = null
 
   private val density = resources.displayMetrics.density
   private val mainHandler = Handler(Looper.getMainLooper())
@@ -92,6 +80,43 @@ class RunePressableView(context: Context) : FrameLayout(context) {
       }
     }
     updatePressVisualState(animated = false)
+  }
+
+  fun resetState() {
+    cancelPressIn()
+    cancelPressOut()
+    cancelLongPress()
+    pressedDown = false
+    pressVisible = false
+    longPressTriggered = false
+    hasLongPressHandler = false
+    pressStartTimeMs = 0L
+    lastPressUpTimeMs = -1L
+    downX = 0f
+    downY = 0f
+    lastDownEvent = null
+
+    setDisabled(false)
+    setFocusableSurface(true)
+    setPreventFocusOnPress(false)
+    setPressEffect("none")
+    setPressRetentionOffset(null)
+    setDelayPressIn(null)
+    setDelayPressOut(null)
+    setDelayLongPress(null)
+    setAllowTouchPropagation(false)
+    setCancelOnOutside(true)
+    setEnableDoublePress(false)
+    setDoublePressWindow(null)
+    setActivateKeys(emptySet())
+    setPointerEvents("auto")
+
+    hitSlop = null
+    clearHitSlop()
+
+    nodeId = -1
+    listener = null
+    lastCommandSeq = -1L
   }
 
   override fun onAttachedToWindow() {
@@ -198,165 +223,146 @@ class RunePressableView(context: Context) : FrameLayout(context) {
 
   private fun createPayload(event: MotionEvent?): JSONObject {
     val payload = JSONObject()
-    val e = event ?: lastDownEvent
-    if (e != null) {
-      payload.put("x", e.x.toDouble())
-      payload.put("y", e.y.toDouble())
-      payload.put("screenX", e.rawX.toDouble())
-      payload.put("screenY", e.rawY.toDouble())
-      payload.put("timestamp", e.eventTime.toDouble())
-      val toolType = if (e.pointerCount > 0) e.getToolType(0) else MotionEvent.TOOL_TYPE_FINGER
-      payload.put("pointerType", when (toolType) {
-        MotionEvent.TOOL_TYPE_FINGER -> "touch"
-        MotionEvent.TOOL_TYPE_STYLUS -> "pen"
-        else -> "mouse"
-      })
-      if (e.buttonState != 0) {
-        payload.put("button", e.buttonState)
-      }
-      val modifiers = JSONObject()
-      modifiers.put("altKey", e.metaState and KeyEvent.META_ALT_ON != 0)
-      modifiers.put("ctrlKey", e.metaState and KeyEvent.META_CTRL_ON != 0)
-      modifiers.put("metaKey", e.metaState and KeyEvent.META_META_ON != 0)
-      modifiers.put("shiftKey", e.metaState and KeyEvent.META_SHIFT_ON != 0)
-      payload.put("modifiers", modifiers)
+    val source = event ?: lastDownEvent
+    if (source != null) {
+      payload.put("x", source.x)
+      payload.put("y", source.y)
+      payload.put("timestamp", source.eventTime.toDouble())
+      payload.put(
+        "pointerType",
+        when (source.getToolType(0)) {
+          MotionEvent.TOOL_TYPE_MOUSE -> "mouse"
+          MotionEvent.TOOL_TYPE_STYLUS -> "pen"
+          else -> "touch"
+        },
+      )
+    } else {
+      payload.put("x", 0)
+      payload.put("y", 0)
+      payload.put("timestamp", SystemClock.uptimeMillis().toDouble())
+      payload.put("pointerType", "touch")
     }
     return payload
   }
 
-  override fun onTouchEvent(event: MotionEvent): Boolean {
-    if (!shouldHandleInteraction() || nodeId < 0) {
-      return super.onTouchEvent(event)
+  private fun beginPress(event: MotionEvent) {
+    if (!shouldHandleInteraction()) return
+    pressedDown = true
+    longPressTriggered = false
+    lastDownEvent = MotionEvent.obtain(event)
+    schedulePressIn(event)
+    scheduleLongPress(event)
+    pressStartTimeMs = SystemClock.uptimeMillis()
+    if (!preventFocusOnPress && focusableSurface) {
+      requestFocus()
     }
-    when (event.actionMasked) {
-      MotionEvent.ACTION_DOWN -> {
-        pressedDown = true
-        longPressTriggered = false
-        lastDownEvent?.recycle()
-        lastDownEvent = MotionEvent.obtain(event)
-        downX = event.x
-        downY = event.y
-        pressStartTimeMs = SystemClock.uptimeMillis()
-        isPressed = true
-        if (!preventFocusOnPress && focusableSurface) {
-          requestFocus()
-        }
-        if (!allowTouchPropagation) {
-          parent?.requestDisallowInterceptTouchEvent(true)
-        }
-        schedulePressIn(event)
-        scheduleLongPress(event)
-        return true
-      }
-      MotionEvent.ACTION_MOVE -> {
-        if (!pressedDown) return super.onTouchEvent(event)
-        val dx = event.x - downX
-        val dy = event.y - downY
-        val distance = hypot(dx.toDouble(), dy.toDouble()).toFloat()
-        if (cancelOnOutside && pressRetentionOffsetPx > 0 && distance > pressRetentionOffsetPx) {
-          cancelCurrentPress(true, event)
-          return true
-        }
-        return super.onTouchEvent(event)
-      }
-      MotionEvent.ACTION_UP -> {
-        if (!pressedDown) return super.onTouchEvent(event)
-        val payload = createPayload(event)
-        pressedDown = false
-        cancelPressIn()
-        cancelLongPress()
-        if (!longPressTriggered) {
-          listener?.onPressablePress(nodeId, payload)
-          if (enableDoublePress) {
-            val now = SystemClock.uptimeMillis()
-            if (lastPressUpTimeMs > 0 && now - lastPressUpTimeMs <= doublePressWindowMs) {
-              listener?.onPressableDoublePress(nodeId, payload)
-            }
-            lastPressUpTimeMs = now
-          }
-        }
-        pressVisible = false
-        isPressed = false
-        updatePressVisualState(animated = true)
-        schedulePressOut(event, cancelled = false)
-        longPressTriggered = false
-        return true
-      }
-      MotionEvent.ACTION_CANCEL -> {
-        cancelCurrentPress(true, event)
-        return true
-      }
-    }
-    return super.onTouchEvent(event)
   }
 
-  private fun cancelCurrentPress(cancelled: Boolean, event: MotionEvent?) {
+  private fun endPress(event: MotionEvent?, cancelled: Boolean) {
     if (!pressedDown) return
     pressedDown = false
     cancelPressIn()
     cancelLongPress()
-    pressVisible = false
-    isPressed = false
-    updatePressVisualState(animated = true)
+    val payload = createPayload(event)
+    if (!longPressTriggered && !cancelled) {
+      listener?.onPressablePress(nodeId, payload)
+      if (enableDoublePress) {
+        val now = SystemClock.uptimeMillis()
+        if (lastPressUpTimeMs > 0 && now - lastPressUpTimeMs <= doublePressWindowMs) {
+          listener?.onPressableDoublePress(nodeId, payload)
+        }
+        lastPressUpTimeMs = now
+      }
+    }
     schedulePressOut(event, cancelled)
-    listener?.onPressableCancel(nodeId, createPayload(event))
-    longPressTriggered = false
+  }
+
+  private fun cancelCurrentPress(cancelled: Boolean, event: MotionEvent?) {
+    if (!pressedDown) return
+    endPress(event, cancelled)
+  }
+
+  override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
+    if (!shouldHandleInteraction()) return super.onInterceptTouchEvent(ev)
+    if (allowTouchPropagation) return super.onInterceptTouchEvent(ev)
+    return true
+  }
+
+  override fun onTouchEvent(event: MotionEvent): Boolean {
+    if (!shouldHandleInteraction()) return false
+    when (event.actionMasked) {
+      MotionEvent.ACTION_DOWN -> {
+        parent?.requestDisallowInterceptTouchEvent(true)
+        downX = event.x
+        downY = event.y
+        beginPress(event)
+      }
+      MotionEvent.ACTION_MOVE -> {
+        val dx = event.x - downX
+        val dy = event.y - downY
+        val distance = hypot(dx, dy)
+        if (cancelOnOutside && distance > pressRetentionOffsetPx) {
+          cancelCurrentPress(true, event)
+        }
+      }
+      MotionEvent.ACTION_UP -> {
+        endPress(event, cancelled = false)
+      }
+      MotionEvent.ACTION_CANCEL -> {
+        cancelCurrentPress(true, event)
+      }
+    }
+    return true
   }
 
   override fun onHoverEvent(event: MotionEvent): Boolean {
+    if (!shouldHandleInteraction()) return super.onHoverEvent(event)
     when (event.actionMasked) {
-      MotionEvent.ACTION_HOVER_ENTER, MotionEvent.ACTION_HOVER_MOVE -> {
-        listener?.onPressableHover(nodeId, true)
-      }
-      MotionEvent.ACTION_HOVER_EXIT -> {
-        listener?.onPressableHover(nodeId, false)
-      }
+      MotionEvent.ACTION_HOVER_ENTER -> listener?.onPressableHover(nodeId, true)
+      MotionEvent.ACTION_HOVER_EXIT -> listener?.onPressableHover(nodeId, false)
     }
     return super.onHoverEvent(event)
   }
 
-  override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent): Boolean {
-    val keyName = android.view.KeyEvent.keyCodeToString(keyCode).removePrefix("KEYCODE_")
-    val normalizedKey = keyName.uppercase()
-    if (activateKeys.contains(normalizedKey)) {
-      if (!pressedDown) {
-        pressedDown = true
-        pressVisible = true
-        updatePressVisualState(animated = true)
-        listener?.onPressablePressIn(
-          nodeId,
-          createPayload(null).apply { put("pointerType", "keyboard") },
-        )
-      }
-      return true
+  override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+    if (!focusableSurface) return super.dispatchKeyEvent(event)
+    val keyName = KeyEvent.keyCodeToString(event.keyCode).removePrefix("KEYCODE_")
+    val identifier = keyName.uppercase()
+    if (!activateKeys.contains(identifier)) {
+      return super.dispatchKeyEvent(event)
     }
-    val payload = JSONObject().put("key", keyName)
-    listener?.onPressableKeyEvent(nodeId, "onKeyDown", payload)
-    return super.onKeyDown(keyCode, event)
+    val payload = JSONObject().apply {
+      put("key", keyName.uppercase())
+      put("code", event.keyCode)
+      put("repeat", event.repeatCount > 0)
+    }
+    val phase = if (event.action == KeyEvent.ACTION_DOWN) "onKeyDown" else "onKeyUp"
+    listener?.onPressableKeyEvent(nodeId, phase, payload)
+    if (event.action == KeyEvent.ACTION_DOWN && !pressedDown) {
+      pressedDown = true
+      pressVisible = true
+      updatePressVisualState(animated = true)
+      listener?.onPressablePressIn(nodeId, payload)
+    } else if (event.action == KeyEvent.ACTION_UP && pressedDown) {
+      pressedDown = false
+      pressVisible = false
+      updatePressVisualState(animated = true)
+      listener?.onPressablePressOut(nodeId, payload, false)
+      listener?.onPressablePress(nodeId, payload)
+    }
+    return true
   }
 
-  override fun onKeyUp(keyCode: Int, event: android.view.KeyEvent): Boolean {
-    val keyName = android.view.KeyEvent.keyCodeToString(keyCode).removePrefix("KEYCODE_")
-    val normalizedKey = keyName.uppercase()
-    if (activateKeys.contains(normalizedKey)) {
-      if (pressedDown) {
-        pressedDown = false
-        listener?.onPressablePress(
-          nodeId,
-          createPayload(null).apply { put("pointerType", "keyboard") },
-        )
-        listener?.onPressablePressOut(
-          nodeId,
-          createPayload(null).apply { put("pointerType", "keyboard") },
-          false,
-        )
-        pressVisible = false
-        updatePressVisualState(animated = true)
-      }
-      return true
+  override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+    return if (focusableSurface && keyCode == KeyEvent.KEYCODE_ENTER) {
+      listener?.onPressablePress(nodeId, createPayload(null))
+      true
+    } else {
+      super.onKeyDown(keyCode, event)
     }
-    val payload = JSONObject().put("key", keyName)
-    listener?.onPressableKeyEvent(nodeId, "onKeyUp", payload)
+  }
+
+  override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
     return super.onKeyUp(keyCode, event)
   }
 
@@ -519,7 +525,6 @@ class RunePressableView(context: Context) : FrameLayout(context) {
         }
       }
       "click" -> {
-        if (!shouldHandleInteraction()) return
         val payload = createPayload(null)
         listener?.onPressablePressIn(nodeId, payload)
         listener?.onPressablePress(nodeId, payload)
@@ -527,6 +532,8 @@ class RunePressableView(context: Context) : FrameLayout(context) {
       }
       "cancel" -> {
         cancelCurrentPress(true, null)
+        val payload = createPayload(null)
+        listener?.onPressableCancel(nodeId, payload)
       }
     }
   }

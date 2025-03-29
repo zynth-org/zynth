@@ -38,6 +38,7 @@ projects/**/ios/Pods/**
 apps/*/android/
 !templates/android/
 packages/rune-android/**/build/
+packages/**/android/**/build/
 packages/rune-android/**/.cxx/
 packages/rune-android/**/.gradle/
 

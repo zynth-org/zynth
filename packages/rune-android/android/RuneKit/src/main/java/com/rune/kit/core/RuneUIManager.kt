@@ -21,6 +21,8 @@ import android.widget.TextView
 import androidx.core.view.AccessibilityDelegateCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
+import com.rune.kit.components.RuneComponentRegistry
+import com.rune.kit.core.RunePressableEventListener
 import com.rune.kit.debug.PerformanceProfiler
 import com.rune.kit.layout.LayoutEngine
 import com.rune.kit.layout.MeasureInput
@@ -71,7 +73,7 @@ class RuneUIManager(
   private val engine: LayoutEngine,
   private val eventDispatcher: (Int, String) -> Unit = { _, _ -> },
   private val handlerListener: (Int, String, Long) -> Unit = { _, _, _ -> },
-) : JSBridge.UIShim, RuneButtonView.Listener, RunePressableView.Listener {
+) : JSBridge.UIShim, RuneButtonView.Listener, RunePressableEventListener {
   private val density: Float = root.resources.displayMetrics.density
   private fun isNativeDebugEnabled(): Boolean {
     return try {
@@ -85,6 +87,10 @@ class RuneUIManager(
   private fun logDebug(tag: String, message: String) {
     if (!isNativeDebugEnabled()) return
     Log.d(tag, message)
+  }
+
+  init {
+    RuneComponentRegistry.ensureInitialized()
   }
   data class Node(
     val id: Int,
@@ -1139,7 +1145,6 @@ class RuneUIManager(
     private const val SECURE_TEXT_INPUT_TYPE = "secure-text-input"
     private const val SCROLL_VIEW_TYPE = "scroll-view"
     private const val BUTTON_TYPE = "button"
-    private const val PRESSABLE_TYPE = "pressable"
     private var testIdWarningLogged = false
     private val TEXT_INPUT_MEASURE_PROPS = setOf(
       "style",

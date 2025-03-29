@@ -9,6 +9,7 @@
   "license": "MIT",
   "files": [
     "dist",
+    "android",
     "ios",
     "src",
     "package.json",
@@ -41,6 +42,14 @@
         {
           "name": "RuneComponents",
           "podspec": "./RuneComponents.podspec"
+        }
+      ]
+    },
+    "android": {
+      "modules": [
+        {
+          "name": "RuneComponents",
+          "path": "./android/RuneComponents"
         }
       ]
     }

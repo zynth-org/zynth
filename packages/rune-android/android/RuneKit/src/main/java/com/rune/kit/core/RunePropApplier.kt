@@ -15,6 +15,7 @@ import android.widget.TextView
 import androidx.core.view.AccessibilityDelegateCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
+import com.rune.kit.components.RuneComponentRegistry
 import com.rune.kit.layout.LayoutEngine
 import com.rune.kit.layout.Style
 import org.json.JSONArray
@@ -59,6 +60,15 @@ internal class RunePropApplier(
       return
     }
     
+    // Allow component-specific handlers to intercept the property first
+    val componentDescriptor = RuneComponentRegistry.getDescriptor(target.type)
+    if (componentDescriptor != null) {
+      val handled = runCatching { componentDescriptor.applyProperty(target, name, valueJson) }.getOrDefault(false)
+      if (handled) {
+        return
+      }
+    }
+
     // Determine the effective category if not provided
     val effectiveCategory = if (category != PropertyCategory.UNKNOWN) {
       category
@@ -106,10 +116,7 @@ internal class RunePropApplier(
         }
       }
       PropertyCategory.PRESSABLE -> {
-        if (target.type == PRESSABLE_TYPE) {
-          applyPressableProp(target, name, valueJson)
-          return
-        }
+        // Handled by component descriptors (e.g., Rune Pressable)
       }
       PropertyCategory.IMAGE -> {
         if (target.type == IMAGE_TYPE && imageSupport.handleProp(target, name, valueJson)) {
@@ -455,142 +462,6 @@ internal class RunePropApplier(
     }
   }
 
-  private fun applyPressableProp(target: RuneUIManager.Node, name: String, jsonValue: String?) {
-    val pressable = target.view as? RunePressableView ?: return
-    val parsed = parseJsonValue(jsonValue)
-
-    fun asBoolean(value: Any?): Boolean? {
-      return when (value) {
-        is Boolean -> value
-        is Number -> value.toInt() != 0
-        is String -> value.equals("true", ignoreCase = true) || value == "1"
-        else -> null
-      }
-    }
-
-    when (name) {
-      "disabled" -> {
-        val disabled = asBoolean(parsed) ?: false
-        pressable.setDisabled(disabled)
-      }
-      "style" -> {
-        val styleValue = jsonValue ?: return
-        val style = Style.fromJson(styleValue)
-        val pixelStyle = style.toPixels(density)
-        engine.setStyle(target.id, pixelStyle)
-        applyBackgroundStyle(pressable, pixelStyle)
-        return
-      }
-      "stateLayerStyle" -> {
-        // No native handling yet; reserved for future visual overlays.
-        return
-      }
-      "pressEffect" -> {
-        val effect = (parsed as? String) ?: parseString(jsonValue)
-        pressable.setPressEffect(effect)
-      }
-      "pressRetentionOffset" -> {
-        val number = parsed as? Number
-        pressable.setPressRetentionOffset(number)
-      }
-      "hitSlop" -> {
-        val json = when (parsed) {
-          is JSONObject -> parsed
-          is Number -> {
-            val inset = parsed.toDouble()
-            JSONObject().apply {
-              put("top", inset)
-              put("left", inset)
-              put("bottom", inset)
-              put("right", inset)
-            }
-          }
-          is String -> runCatching { JSONObject(parsed) }.getOrNull()
-          else -> jsonValue?.let { runCatching { JSONObject(it) }.getOrNull() }
-        }
-        pressable.setHitSlop(json)
-      }
-      "delayPressInMs" -> {
-        val number = parsed as? Number
-        pressable.setDelayPressIn(number)
-      }
-      "delayPressOutMs" -> {
-        val number = parsed as? Number
-        pressable.setDelayPressOut(number)
-      }
-      "delayLongPressMs" -> {
-        val number = parsed as? Number
-        pressable.setDelayLongPress(number)
-      }
-      "longPressMinDurationMs" -> {
-        val number = parsed as? Number
-        pressable.setDelayLongPress(number)
-      }
-      "allowTouchPropagation" -> {
-        val allow = asBoolean(parsed) ?: false
-        pressable.setAllowTouchPropagation(allow)
-      }
-      "cancelOnOutside" -> {
-        val cancel = asBoolean(parsed) ?: true
-        pressable.setCancelOnOutside(cancel)
-      }
-      "enableDoublePress" -> {
-        val enabled = asBoolean(parsed) ?: false
-        pressable.setEnableDoublePress(enabled)
-      }
-      "doublePressWindowMs" -> {
-        val number = parsed as? Number
-        pressable.setDoublePressWindow(number)
-      }
-      "focusable" -> {
-        val focusable = asBoolean(parsed) ?: true
-        pressable.setFocusableSurface(focusable)
-      }
-      "preventFocusOnPress" -> {
-        val prevent = asBoolean(parsed) ?: false
-        pressable.setPreventFocusOnPress(prevent)
-      }
-      "pointerEvents" -> {
-        val pointer = (parsed as? String) ?: parseString(jsonValue)
-        pressable.setPointerEvents(pointer)
-        target.pointerEvents = pointer ?: "auto"
-      }
-      "activateKeys" -> {
-        val keys: Set<String> = when (parsed) {
-          is org.json.JSONArray -> {
-            val result = mutableSetOf<String>()
-            for (i in 0 until parsed.length()) {
-              parsed.optString(i)?.let { result.add(it) }
-            }
-            result
-          }
-          is List<*> -> parsed.mapNotNull { it?.toString() }.toSet()
-          else -> {
-            jsonValue?.let {
-              runCatching {
-                val arr = org.json.JSONArray(it)
-                val result = mutableSetOf<String>()
-                for (i in 0 until arr.length()) {
-                  arr.optString(i)?.let { key -> result.add(key) }
-                }
-                result
-              }.getOrDefault(emptySet())
-            } ?: emptySet()
-          }
-        }
-        pressable.setActivateKeys(keys)
-      }
-      "__pressableCommand" -> {
-        val json = when (parsed) {
-          is JSONObject -> parsed
-          is String -> runCatching { JSONObject(parsed) }.getOrNull()
-          else -> jsonValue?.let { runCatching { JSONObject(it) }.getOrNull() }
-        }
-        pressable.handleCommand(json)
-      }
-    }
-  }
-
   private fun applyGenericProp(@Suppress("UNUSED_PARAMETER") target: RuneUIManager.Node, @Suppress("UNUSED_PARAMETER") nodeId: Int, name: String, jsonValue: String?) {
     // Most properties are now handled by category-specific handlers
     // This is only for truly unknown/unhandled properties
@@ -643,55 +514,58 @@ internal class RunePropApplier(
     handlerListener: (Int, String, Long) -> Unit,
     handlerId: Long,
   ) {
-    nodes.get(nodeId)?.let { node ->
-      (node.view as? RuneTextInputView)?.let { input ->
-        when (event) {
-          "onChange" -> input.hasOnChange = true
-          "onChangeText" -> input.hasOnChangeText = true
-          "onSelectionChange" -> input.hasOnSelectionChange = true
-          "onFocus" -> input.hasOnFocus = true
-          "onBlur" -> input.hasOnBlur = true
-          "onSubmitEditing" -> input.hasOnSubmitEditing = true
-          "onKeyPress" -> input.hasOnKeyPress = true
-          "onCompositionStart" -> input.hasOnCompositionStart = true
-          "onCompositionEnd" -> input.hasOnCompositionEnd = true
-        }
-      }
-      if (node.type == IMAGE_TYPE) {
-        imageSupport.onHandlerSet(node, event)
-      }
-      if (event == "onLayout") {
-        node.hasOnLayoutHandler = true
-        attachOnLayoutListener(node, eventDispatcher)
-        dispatchImmediateLayout(node, eventDispatcher)
+    val node = nodes.get(nodeId) ?: run {
+      handlerListener(nodeId, event, handlerId)
+      return
+    }
+
+    (node.view as? RuneTextInputView)?.let { input ->
+      when (event) {
+        "onChange" -> input.hasOnChange = true
+        "onChangeText" -> input.hasOnChangeText = true
+        "onSelectionChange" -> input.hasOnSelectionChange = true
+        "onFocus" -> input.hasOnFocus = true
+        "onBlur" -> input.hasOnBlur = true
+        "onSubmitEditing" -> input.hasOnSubmitEditing = true
+        "onKeyPress" -> input.hasOnKeyPress = true
+        "onCompositionStart" -> input.hasOnCompositionStart = true
+        "onCompositionEnd" -> input.hasOnCompositionEnd = true
       }
     }
-    nodes.get(nodeId)?.let { node ->
-      val nodeType = node.type
-      if (nodeType == BUTTON_TYPE) {
-        (node.view as? RuneButtonView)?.let { button ->
-          if (event == "onLongPress") {
-            button.setHasLongPressHandler(true)
-          }
-        }
-      }
-      if (nodeType == PRESSABLE_TYPE && event == "onLongPress") {
-        (node.view as? RunePressableView)?.setHasLongPressHandler(true)
-      }
-      if (event == "onPress" && nodeType != BUTTON_TYPE && nodeType != PRESSABLE_TYPE) {
-        logDebug("RuneUI", "Setting onPress handler for node $nodeId")
-        node.let { n ->
-          val view = n.view
-          if (n.pointerEvents != "none") {
-            view.isClickable = true
-          }
-          view.setOnClickListener {
-            logDebug("RuneUI", "onPress triggered for node $nodeId")
-            eventDispatcher(nodeId, event)
-          }
+
+    if (node.type == IMAGE_TYPE) {
+      imageSupport.onHandlerSet(node, event)
+    }
+
+    if (event == "onLayout") {
+      node.hasOnLayoutHandler = true
+      attachOnLayoutListener(node, eventDispatcher)
+      dispatchImmediateLayout(node, eventDispatcher)
+    }
+
+    val descriptor = RuneComponentRegistry.getDescriptor(node.type)
+    val descriptorHandled = descriptor?.onSetHandler?.invoke(node, event) ?: false
+
+    if (node.type == BUTTON_TYPE) {
+      (node.view as? RuneButtonView)?.let { button ->
+        if (event == "onLongPress") {
+          button.setHasLongPressHandler(true)
         }
       }
     }
+
+    if (!descriptorHandled && descriptor == null && event == "onPress" && node.type != BUTTON_TYPE) {
+      logDebug("RuneUI", "Setting onPress handler for node $nodeId")
+      val view = node.view
+      if (node.pointerEvents != "none") {
+        view.isClickable = true
+      }
+      view.setOnClickListener {
+        logDebug("RuneUI", "onPress triggered for node $nodeId")
+        eventDispatcher(nodeId, event)
+      }
+    }
+
     handlerListener(nodeId, event, handlerId)
   }
 
@@ -1130,6 +1004,5 @@ internal class RunePropApplier(
     private const val SECURE_TEXT_INPUT_TYPE = "secure-text-input"
     private const val SCROLL_VIEW_TYPE = "scroll-view"
     private const val BUTTON_TYPE = "button"
-    private const val PRESSABLE_TYPE = "pressable"
   }
 }

@@ -1,24 +1,24 @@
 plugins {
-  id("com.android.application")
+  id("com.android.library")
   id("org.jetbrains.kotlin.android")
 }
 
 android {
-  namespace = "{{BUNDLE_ID}}"
+  namespace = "com.rune.components"
   compileSdk = 34
 
   defaultConfig {
-    applicationId = "{{BUNDLE_ID}}"
     minSdk = 24
-    targetSdk = 34
-    versionCode = 1
-    versionName = "1.0"
+    consumerProguardFiles("consumer-rules.pro")
   }
 
   buildTypes {
-    release {
+    getByName("release") {
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+    }
+    getByName("debug") {
+      // Defaults are sufficient; no additional config needed
     }
   }
 
@@ -29,11 +29,13 @@ android {
   kotlinOptions {
     jvmTarget = "17"
   }
+
+  packaging {
+    resources.excludes += setOf("**/*.md", "**/*.txt")
+  }
 }
 
 dependencies {
   implementation(project(":RuneKit"))
   implementation("androidx.core:core-ktx:1.12.0")
-  implementation("androidx.appcompat:appcompat:1.6.1")
-{{RUNE_COMPONENT_MODULE_DEPENDENCIES}}
 }

@@ -12,6 +12,7 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
+import com.rune.kit.components.RuneComponentRegistry
 import com.rune.kit.layout.LayoutEngine
 import com.rune.kit.layout.MeasureInput
 import com.rune.kit.layout.MeasureMode
@@ -22,7 +23,7 @@ import kotlin.math.roundToInt
  * RuneNodeFactory handles all node creation, removal, and lifecycle operations for the Rune UI framework.
  * 
  * Responsibilities:
- * - Node creation for all component types (TEXT, TEXT_INPUT, IMAGE, SCROLL_VIEW, BUTTON, PRESSABLE)
+ * - Node creation for all core component types (TEXT, TEXT_INPUT, IMAGE, SCROLL_VIEW, BUTTON)
  * - Node removal and recursive cleanup
  * - TextInput state management
  * - Text node utilities (virtual text detection, text recomputation)
@@ -54,7 +55,6 @@ internal class RuneNodeFactory(
     IMAGE,
     SCROLL_VIEW,
     BUTTON,
-    PRESSABLE,
     OTHER;
 
     companion object {
@@ -65,7 +65,6 @@ internal class RuneNodeFactory(
         "image" to IMAGE,
         "scroll-view" to SCROLL_VIEW,
         "button" to BUTTON,
-        "pressable" to PRESSABLE,
       )
 
       fun fromString(type: String?): NodeType = MAP[type] ?: OTHER
@@ -79,7 +78,6 @@ internal class RuneNodeFactory(
   private val SECURE_TEXT_INPUT_TYPE = "secure-text-input"
   private val SCROLL_VIEW_TYPE = "scroll-view"
   private val BUTTON_TYPE = "button"
-  private val PRESSABLE_TYPE = "pressable"
 
   // ==================== Text Node Helpers ====================
 
@@ -368,18 +366,6 @@ internal class RuneNodeFactory(
     }
   }
 
-  private object PressableCreator : ViewCreator {
-    override fun create(context: android.content.Context, id: Int): View {
-      return RunePressableView(context).apply {
-        nodeId = id
-      }
-    }
-
-    override fun registerHandlers(factory: RuneNodeFactory, id: Int, view: View, node: RuneUIManager.Node) {
-      (view as? RunePressableView)?.listener = factory.manager
-    }
-  }
-
   private object OtherCreator : ViewCreator {
     override fun create(context: android.content.Context, id: Int): View {
       return FrameLayout(context)
@@ -397,28 +383,35 @@ internal class RuneNodeFactory(
     NodeType.IMAGE -> ImageCreator
     NodeType.SCROLL_VIEW -> ScrollViewCreator
     NodeType.BUTTON -> ButtonCreator
-    NodeType.PRESSABLE -> PressableCreator
     NodeType.OTHER -> OtherCreator
   }
 
   /**
    * Creates a new node of the specified type.
-   * Handles view creation, initialization, and measurement handler setup for all component types:
-   * TEXT, TEXT_INPUT, SECURE_TEXT_INPUT, IMAGE, SCROLL_VIEW, BUTTON, PRESSABLE.
+   * Handles view creation, initialization, and measurement handler setup for core component types:
+   * TEXT, TEXT_INPUT, SECURE_TEXT_INPUT, IMAGE, SCROLL_VIEW, BUTTON.
    * 
    * Returns the newly created node's ID.
    */
   internal fun createNode(type: String): Int {
     val id = getNextId()
     incrementNextId()
+
+    val descriptor = RuneComponentRegistry.getDescriptor(type)
     val view: View
     val label: TextView?
+    val creator: ViewCreator?
 
-    // Fast dispatch once
-    val nodeType = NodeType.fromString(type)
-    val creator = getViewCreator(nodeType)
-    view = creator.create(root.context, id)
-    label = (view as? TextView)
+    if (descriptor != null) {
+      creator = null
+      view = descriptor.createView(root.context, id)
+      label = view as? TextView
+    } else {
+      val selectedCreator = getViewCreator(NodeType.fromString(type))
+      creator = selectedCreator
+      view = selectedCreator.create(root.context, id)
+      label = view as? TextView
+    }
 
     // Step 2: Apply appropriate layout params based on type
     when (type) {
@@ -441,7 +434,7 @@ internal class RuneNodeFactory(
         view.isFocusable = true
         view.isFocusableInTouchMode = true
       }
-      BUTTON_TYPE, PRESSABLE_TYPE -> {
+      BUTTON_TYPE -> {
         val params = FrameLayout.LayoutParams(
           ViewGroup.LayoutParams.WRAP_CONTENT,
           ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -452,11 +445,15 @@ internal class RuneNodeFactory(
         view.isFocusableInTouchMode = true
       }
       else -> {
-        view.layoutParams = FrameLayout.LayoutParams(
-          ViewGroup.LayoutParams.WRAP_CONTENT,
-          ViewGroup.LayoutParams.WRAP_CONTENT,
-        )
-        view.isClickable = false
+        if (view.layoutParams == null) {
+          view.layoutParams = FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+          )
+        }
+        if (descriptor == null) {
+          view.isClickable = false
+        }
       }
     }
     view.setBackgroundColor(Color.TRANSPARENT)
@@ -470,12 +467,15 @@ internal class RuneNodeFactory(
     if (type == TEXT_INPUT_TYPE || type == SECURE_TEXT_INPUT_TYPE) {
       node.textInputState = RuneUIManager.TextInputState()
     }
-  nodes.put(id, node)
-  node.parentId = null
+    nodes.put(id, node)
+    node.parentId = null
     engine.createNode(id)
 
-    // Let the creator register any handlers or perform extra wiring
-    creator.registerHandlers(this, id, view, node)
+    if (descriptor != null) {
+      descriptor.onNodeCreated(manager, node)
+    } else {
+      creator?.registerHandlers(this, id, view, node)
+    }
 
     // Step 4: Set default width for non-text views
     if (label == null) {
@@ -636,16 +636,9 @@ internal class RuneNodeFactory(
         node.view.isClickable = false
         buttonStyles.remove(node.id)
       }
-
-      PRESSABLE_TYPE -> {
-        node.view.setOnClickListener(null)
-        (node.view as? RunePressableView)?.let { pressable ->
-          pressable.setOnClickListener(null)
-          // Reset pressable state if it has a reset method
-          pressable.isClickable = false
-        }
-      }
     }
+
+    RuneComponentRegistry.getDescriptor(type)?.onReset?.invoke(node)
 
     // Clear common state
     node.view.setBackgroundColor(Color.TRANSPARENT)

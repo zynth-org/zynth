@@ -51,7 +51,6 @@ internal class RuneLayoutFlush(
   private val SECURE_TEXT_INPUT_TYPE = "secure-text-input"
   private val SCROLL_VIEW_TYPE = "scroll-view"
   private val BUTTON_TYPE = "button"
-  private val PRESSABLE_TYPE = "pressable"
   private val DEBUG_SCROLL_LAYOUT = false
   private val TEXT_INPUT_MEASURE_PROPS = setOf(
     "style",

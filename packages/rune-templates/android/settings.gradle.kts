@@ -29,3 +29,5 @@ val runeAndroidDir = listOf(
   ?: error("Unable to locate @rune/android package from $rootDir")
 
 project(":RuneKit").projectDir = runeAndroidDir
+
+{{RUNE_COMPONENT_MODULE_INCLUDES}}
