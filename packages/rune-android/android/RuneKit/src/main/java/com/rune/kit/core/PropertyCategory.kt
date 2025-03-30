@@ -26,9 +26,6 @@ enum class PropertyCategory {
   /** ScrollView component properties (horizontal, scrollEnabled, etc.) */
   SCROLL_VIEW,
   
-  /** Button component properties (disabled, loading, pressEffect, etc.) */
-  BUTTON,
-  
   /** Pressable component properties (disabled, pressEffect, hitSlop, etc.) */
   PRESSABLE,
 
@@ -139,19 +136,8 @@ object PropertyCategoryMap {
     put("scrollSnapStop", PropertyCategory.SCROLL_VIEW)
     put("scrollPadding", PropertyCategory.SCROLL_VIEW)
   put("scrollGuardConfig", PropertyCategory.SCROLL_VIEW)
-  put("__recyclerState", PropertyCategory.SCROLL_VIEW)
-    put("__scrollCommand", PropertyCategory.SCROLL_VIEW)
-    
-    // Button properties
-    put("disabled", PropertyCategory.BUTTON)
-    put("loading", PropertyCategory.BUTTON)
-    put("pressEffect", PropertyCategory.BUTTON)
-    put("pressRetentionOffset", PropertyCategory.BUTTON)
-    put("preventFocusOnPress", PropertyCategory.BUTTON)
-    put("haptics", PropertyCategory.BUTTON)
-    put("hitSlop", PropertyCategory.BUTTON)
-    put("minimumTouchSize", PropertyCategory.BUTTON)
-    put("__buttonCommand", PropertyCategory.BUTTON)
+  put("scrollGuardConfig", PropertyCategory.SCROLL_VIEW)
+  put("__scrollCommand", PropertyCategory.SCROLL_VIEW)
     
     // Pressable properties
     // Note: Some overlap with Button (disabled, pressEffect, etc.)

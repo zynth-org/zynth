@@ -14,7 +14,6 @@ import android.view.View
 import android.view.View.OnLayoutChangeListener
 import android.view.View.MeasureSpec
 import android.view.ViewGroup
-import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
@@ -73,7 +72,7 @@ class RuneUIManager(
   private val engine: LayoutEngine,
   private val eventDispatcher: (Int, String) -> Unit = { _, _ -> },
   private val handlerListener: (Int, String, Long) -> Unit = { _, _, _ -> },
-) : JSBridge.UIShim, RuneButtonView.Listener, RunePressableEventListener {
+) : JSBridge.UIShim, RunePressableEventListener {
   private val density: Float = root.resources.displayMetrics.density
   private fun isNativeDebugEnabled(): Boolean {
     return try {
@@ -144,10 +143,6 @@ class RuneUIManager(
     propApplier.applySetHandler(nodeId, event, eventDispatcher, handlerListener, handlerId)
   }
 
-  private fun applyStyleToButton(@Suppress("UNUSED_PARAMETER") nodeId: Int, button: RuneButtonView, style: Style) {
-    propApplier.applyBackgroundStyle(button, style)
-  }
-
   private val nodes = SparseArray<Node>()
   private val pendingTextRebuild = LinkedHashSet<Int>()
   private val handler = Handler(Looper.getMainLooper())
@@ -165,7 +160,6 @@ class RuneUIManager(
   private val pendingViewOperations = mutableListOf<ViewOperation>()
   private val pendingNativeOperations = mutableListOf<NativeOperation>()
   private val stickyFrameCarryover = mutableSetOf<Int>()
-  private val buttonStyles = SparseArray<ButtonVisualStyle>()
   private val nodeRecyclingPool = NodeRecyclingPool(
     debugLogging = isNativeDebugEnabled(),
   )
@@ -174,9 +168,6 @@ class RuneUIManager(
     engine = engine,
     density = density,
     imageSupport = imageSupport,
-    buttonStyles = buttonStyles,
-    deriveButtonVisualStyle = ::deriveButtonVisualStyle,
-    applyVisualStyle = ::applyVisualStyle,
     logDebug = ::logDebug,
     resolveTextNode = ::resolveTextNode,
     onTextInputTextUpdated = ::onTextInputTextUpdated,
@@ -196,14 +187,11 @@ class RuneUIManager(
     nodes = nodes,
     engine = engine,
     imageSupport = imageSupport,
-    buttonStyles = buttonStyles,
     pendingTextRebuild = pendingTextRebuild,
     nodeRecyclingPool = nodeRecyclingPool,
     getNextId = { nextId },
     incrementNextId = { nextId++ },
     scheduleFlush = { priority: FlushPriority -> layoutFlush.scheduleFlush(priority) },
-    deriveButtonVisualStyle = ::deriveButtonVisualStyle,
-    applyVisualStyle = ::applyVisualStyle,
     logDebug = ::logDebug,
     onTextInputIntrinsicSizeChanged = ::onTextInputIntrinsicSizeChanged,
     manager = this,
@@ -218,7 +206,6 @@ class RuneUIManager(
     pendingViewOperations = pendingViewOperations,
     pendingTextRebuild = pendingTextRebuild,
     stickyFrameCarryover = stickyFrameCarryover,
-    buttonStyles = buttonStyles,
     isVirtualTextNode = ::isVirtualTextNode,
     recomputeTextForNode = ::recomputeTextForNode,
     applySetProp = ::applySetProp,
@@ -721,36 +708,8 @@ class RuneUIManager(
     eventManager.emitTextInputEvent(nodeId, event, payload)
   }
 
-  internal fun dispatchEvent(nodeId: Int, event: String, payload: JSONObject?) {
+  fun dispatchEvent(nodeId: Int, event: String, payload: JSONObject?) {
     eventManager.dispatchEvent(nodeId, event, payload)
-  }
-
-  override fun onPressIn(nodeId: Int) {
-    eventManager.onPressIn(nodeId)
-  }
-
-  override fun onPressOut(nodeId: Int, cancelled: Boolean) {
-    eventManager.onPressOut(nodeId, cancelled)
-  }
-
-  override fun onPress(nodeId: Int) {
-    eventManager.onPress(nodeId)
-  }
-
-  override fun onLongPress(nodeId: Int, durationMs: Long) {
-    eventManager.onLongPress(nodeId, durationMs)
-  }
-
-  override fun onFocus(nodeId: Int) {
-    eventManager.onFocus(nodeId)
-  }
-
-  override fun onBlur(nodeId: Int) {
-    eventManager.onBlur(nodeId)
-  }
-
-  override fun onKeyEvent(nodeId: Int, phase: String, key: String?) {
-    eventManager.onKeyEvent(nodeId, phase, key)
   }
 
   override fun onPressablePressIn(nodeId: Int, payload: JSONObject) {
@@ -1029,7 +988,6 @@ class RuneUIManager(
     nextId = root.rootId + 1
     lastRootWidth = -1
     lastRootHeight = -1
-    buttonStyles.clear()
     
     // Clear recycling pool to free memory
     nodeRecyclingPool.clear()

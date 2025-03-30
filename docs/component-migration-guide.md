@@ -12,12 +12,12 @@
 
 ## 2. Terminology
 
-| Term | Meaning |
-| ---- | ------- |
-| **Host** | The platform pod (`@rune/ios` / `@rune/android`) that exposes registries, node APIs, layout engine, etc. |
-| **Component Package** | A workspace (e.g. `@rune/components`) that exports TS primitives and embeds native folders (`ios`, `android`). |
-| **Descriptor / Registrar** | Structures used by native registries to create views, apply props, and hook events for custom components. |
-| **Prebuild** | CLI command (`rune prebuild <platform>`) that scaffolds native projects and links component pods/modules. |
+| Term                       | Meaning                                                                                                        |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| **Host**                   | The platform pod (`@rune/ios` / `@rune/android`) that exposes registries, node APIs, layout engine, etc.       |
+| **Component Package**      | A workspace (e.g. `@rune/components`) that exports TS primitives and embeds native folders (`ios`, `android`). |
+| **Descriptor / Registrar** | Structures used by native registries to create views, apply props, and hook events for custom components.      |
+| **Prebuild**               | CLI command (`rune prebuild <platform>`) that scaffolds native projects and links component pods/modules.      |
 
 ## 3. High-Level Migration Checklist
 
@@ -104,7 +104,29 @@
 
 1. Delete the component-specific `.m/.mm/.kt` files from `@rune/ios` and `@rune/android` once the new package builds.
 2. Remove direct imports and switch cases referencing the component in `SNUIManager`, `RuneNodeFactory`, `RunePropApplier`, etc.
-3. Verify the component no longer appears in the host’s Podspec or Gradle module (only the registry remains).
+3. Verify the component no longer appears in the host's Podspec or Gradle module (only the registry remains).
+
+### 7.5.1. Core Cleanup Checklist
+
+**Why:** Leaving component-specific code in the core bloats the framework and prevents the registry from being the single source of truth.
+
+**Key Areas (Android example):**
+
+- **RuneNodeFactory:** Remove component from `NodeType` enum, remove `ComponentCreator` object, delete cleanup logic
+- **RunePropApplier:** Remove from `PropertyCategory` enum, delete property mapping entries, remove descriptor method
+- **RuneUIManager:** Remove component listener implementation, field declarations, method overrides
+- **RuneLayoutFlush:** Remove component parameters and constants
+
+**Key Areas (iOS example):**
+
+- **SNUIManager.m:** Remove `#import` for component category, delete `createNode` case, remove prop/handler dispatch calls
+- **View class deletion:** Remove from core once component package registers descriptor
+
+**Validation:**
+
+- Run `yarn workspace <app> prebuild:<platform>` and check for compilation errors
+- Grep for component name in core source—should only appear in registry lookups, not handler logic
+- Full platform build should succeed without errors
 
 ### 7.6. Update Prebuild Scripts
 
@@ -218,4 +240,3 @@ open apps/components/ios/Components.xcworkspace
 1. The new architecture enables modular component development, cleaner versioning, and easier community contributions.
 2. Use this guide whenever migrating additional components or authoring new ones.
 3. Keep documentation updated as registries evolve or new automation tooling is added.
-

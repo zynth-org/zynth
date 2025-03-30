@@ -9,7 +9,6 @@ import android.util.Log
 import android.util.TypedValue
 import android.util.SparseArray
 import android.view.View
-import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.core.view.AccessibilityDelegateCompat
@@ -29,9 +28,6 @@ internal class RunePropApplier(
   private val engine: LayoutEngine,
   private val density: Float,
   private val imageSupport: RuneImageSupport,
-  private val buttonStyles: SparseArray<ButtonVisualStyle>,
-  private val deriveButtonVisualStyle: (Style, ButtonVisualStyle?, RuneButtonView) -> ButtonVisualStyle,
-  private val applyVisualStyle: (RuneButtonView, ButtonVisualStyle) -> Unit,
   private val logDebug: (String, String) -> Unit,
   private val resolveTextNode: (Int) -> RuneUIManager.Node?,
   private val onTextInputTextUpdated: (Int, String) -> Unit,
@@ -109,14 +105,8 @@ internal class RunePropApplier(
           return
         }
       }
-      PropertyCategory.BUTTON -> {
-        if (target.type == BUTTON_TYPE) {
-          applyButtonProp(target, name, valueJson)
-          return
-        }
-      }
       PropertyCategory.PRESSABLE -> {
-        // Handled by component descriptors (e.g., Rune Pressable)
+        // Handled by component descriptors (e.g., Rune Pressable, Button)
       }
       PropertyCategory.IMAGE -> {
         if (target.type == IMAGE_TYPE && imageSupport.handleProp(target, name, valueJson)) {
@@ -218,7 +208,7 @@ internal class RunePropApplier(
             override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfoCompat) {
               super.onInitializeAccessibilityNodeInfo(host, info)
               when (role) {
-                "button" -> info.className = Button::class.java.name
+                "button" -> info.className = "android.widget.Button"
                 "header" -> info.isHeading = true
                 "none" -> ViewCompat.setImportantForAccessibility(host, ViewCompat.IMPORTANT_FOR_ACCESSIBILITY_NO)
                 else -> {
@@ -380,88 +370,6 @@ internal class RunePropApplier(
     }
   }
 
-  private fun applyButtonProp(target: RuneUIManager.Node, name: String, jsonValue: String?) {
-    val button = target.view as? RuneButtonView ?: return
-    val parsed = parseJsonValue(jsonValue)
-
-    fun asBoolean(value: Any?): Boolean? {
-      return when (value) {
-        is Boolean -> value
-        is Number -> value.toInt() != 0
-        is String -> value.equals("true", ignoreCase = true) || value == "1"
-        else -> null
-      }
-    }
-
-    when (name) {
-      "disabled" -> {
-        val disabled = asBoolean(parsed) ?: false
-        button.setDisabled(disabled)
-      }
-      "loading" -> {
-        val loading = asBoolean(parsed) ?: false
-        button.setLoading(loading)
-      }
-      "style" -> {
-        val styleJson = jsonValue ?: return
-        val style = Style.fromJson(styleJson)
-        val pixelStyle = style.toPixels(density)
-        applyStyleToButton(target.id, button, pixelStyle)
-        engine.setStyle(target.id, pixelStyle)
-        return
-      }
-      "pressEffect" -> {
-        val effect = (parsed as? String) ?: parseString(jsonValue)
-        button.setPressEffect(effect)
-      }
-      "pressRetentionOffset" -> {
-        val number = parsed as? Number
-        button.setPressRetentionOffset(number)
-      }
-      "preventFocusOnPress" -> {
-        val prevent = asBoolean(parsed) ?: false
-        button.setPreventFocusOnPress(prevent)
-      }
-      "haptics" -> {
-        val mode = (parsed as? String) ?: parseString(jsonValue)
-        button.setHapticsMode(mode)
-      }
-      "hitSlop" -> {
-        val json = when (parsed) {
-          is JSONObject -> parsed
-          is Number -> {
-            val inset = parsed.toDouble()
-            JSONObject().apply {
-              put("top", inset)
-              put("left", inset)
-              put("bottom", inset)
-              put("right", inset)
-            }
-          }
-          is String -> runCatching { JSONObject(parsed) }.getOrNull()
-          else -> jsonValue?.let { runCatching { JSONObject(it) }.getOrNull() }
-        }
-        button.setHitSlop(json)
-      }
-      "minimumTouchSize" -> {
-        val json = when (parsed) {
-          is JSONObject -> parsed
-          is String -> runCatching { JSONObject(parsed) }.getOrNull()
-          else -> jsonValue?.let { runCatching { JSONObject(it) }.getOrNull() }
-        }
-        button.setMinimumTouchSize(json)
-      }
-      "__buttonCommand" -> {
-        val json = when (parsed) {
-          is JSONObject -> parsed
-          is String -> runCatching { JSONObject(parsed) }.getOrNull()
-          else -> jsonValue?.let { runCatching { JSONObject(it) }.getOrNull() }
-        }
-        button.handleCommand(json)
-      }
-    }
-  }
-
   private fun applyGenericProp(@Suppress("UNUSED_PARAMETER") target: RuneUIManager.Node, @Suppress("UNUSED_PARAMETER") nodeId: Int, name: String, jsonValue: String?) {
     // Most properties are now handled by category-specific handlers
     // This is only for truly unknown/unhandled properties
@@ -546,15 +454,7 @@ internal class RunePropApplier(
     val descriptor = RuneComponentRegistry.getDescriptor(node.type)
     val descriptorHandled = descriptor?.onSetHandler?.invoke(node, event) ?: false
 
-    if (node.type == BUTTON_TYPE) {
-      (node.view as? RuneButtonView)?.let { button ->
-        if (event == "onLongPress") {
-          button.setHasLongPressHandler(true)
-        }
-      }
-    }
-
-    if (!descriptorHandled && descriptor == null && event == "onPress" && node.type != BUTTON_TYPE) {
+    if (!descriptorHandled && descriptor == null && event == "onPress") {
       logDebug("RuneUI", "Setting onPress handler for node $nodeId")
       val view = node.view
       if (node.pointerEvents != "none") {
@@ -646,16 +546,6 @@ internal class RunePropApplier(
     }
     storeEventPayload(node.id, "onLayout", payload)
     eventDispatcher(node.id, "onLayout")
-  }
-
-  private fun applyStyleToButton(nodeId: Int, button: RuneButtonView, style: Style) {
-    val previous = buttonStyles.get(nodeId)
-    val merged = deriveButtonVisualStyle(style, previous, button)
-    if (previous == merged) {
-      return
-    }
-    buttonStyles.put(nodeId, merged)
-    applyVisualStyle(button, merged)
   }
 
   internal fun applyBackgroundStyle(view: View, style: Style) {
@@ -1003,6 +893,5 @@ internal class RunePropApplier(
     private const val TEXT_INPUT_TYPE = "text-input"
     private const val SECURE_TEXT_INPUT_TYPE = "secure-text-input"
     private const val SCROLL_VIEW_TYPE = "scroll-view"
-    private const val BUTTON_TYPE = "button"
   }
 }

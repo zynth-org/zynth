@@ -1,4 +1,4 @@
-package com.rune.kit.core
+package com.rune.components.button
 
 import android.content.Context
 import android.graphics.Rect

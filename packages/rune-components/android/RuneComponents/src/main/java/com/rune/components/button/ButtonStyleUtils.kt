@@ -1,9 +1,9 @@
-package com.rune.kit.core
+package com.rune.components.button
 
+import com.rune.kit.layout.Style
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
-import com.rune.kit.layout.Style
 
 internal data class ButtonVisualStyle(
   val backgroundColor: Int?,

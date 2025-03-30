@@ -1,24 +1,19 @@
-#import "SNUIManager+Button.h"
+#if __has_include(<RuneKit/RuneKit.h>)
+#import <RuneKit/RuneKit.h>
+#else
+#import "RuneKit.h"
+#import "RuneComponentAPI.h"
+#import "SNUIManager.h"
+#import "SNNode.h"
+#endif
 
-#import "SNUIManager+Internal.h"
 #import "RuneButtonView.h"
 
-@interface SNUIManager (ButtonDelegate) <RuneButtonViewDelegate>
-@end
-
-@implementation SNUIManager (Button)
-
-- (void)sn_buttonAttachIfNeeded:(SNNode *)node {
-  if (!node || ![node.view isKindOfClass:[RuneButtonView class]]) return;
-  RuneButtonView *button = (RuneButtonView *)node.view;
-  button.delegate = self;
-  [button attachToManager:self node:node];
-}
-
-- (BOOL)sn_buttonHandlesSetPropForNode:(SNNode *)node
-                                  name:(NSString *)name
-                                 value:(id)value
-                                rawJSON:(NSString *)rawJSON {
+static BOOL RuneButtonHandleSetProp(SNUIManager *manager,
+                                    SNNode *node,
+                                    NSString *name,
+                                    id value,
+                                    NSString *rawJSON) {
   if (!node || ![node.view isKindOfClass:[RuneButtonView class]]) {
     return NO;
   }
@@ -81,7 +76,9 @@
   return NO;
 }
 
-- (BOOL)sn_buttonHandlesSetHandlerForNode:(SNNode *)node name:(NSString *)name {
+static BOOL RuneButtonHandleSetHandler(SNUIManager *manager,
+                                       SNNode *node,
+                                       NSString *name) {
   if (!node || ![node.view isKindOfClass:[RuneButtonView class]]) {
     return NO;
   }
@@ -109,51 +106,80 @@
   return NO;
 }
 
+@interface SNUIManager (ButtonComponent) <RuneButtonViewDelegate>
+@end
+
+@implementation SNUIManager (ButtonComponent)
+
++ (void)load {
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    RuneComponentDescriptor *descriptor = [[RuneComponentDescriptor alloc] initWithType:@"Button"];
+    descriptor.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+      RuneButtonView *button = [RuneButtonView new];
+      return button;
+    };
+    descriptor.attach = ^(SNUIManager *manager, SNNode *node) {
+      if (![node.view isKindOfClass:[RuneButtonView class]]) return;
+      RuneButtonView *button = (RuneButtonView *)node.view;
+      button.delegate = manager;
+      [button attachToManager:manager node:node];
+    };
+    descriptor.handleSetProp = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name, id value, NSString *rawJSON) {
+      return RuneButtonHandleSetProp(manager, node, name, value, rawJSON);
+    };
+    descriptor.handleSetHandler = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name) {
+      return RuneButtonHandleSetHandler(manager, node, name);
+    };
+    RuneRegisterComponentDescriptor(descriptor);
+  });
+}
+
 #pragma mark - RuneButtonViewDelegate
 
 - (void)buttonViewDidPressIn:(RuneButtonView *)button {
   SNNode *node = self.nodes[@(button.nodeId)];
   if (!node) return;
-  [self sn_dispatchEvent:@"onPressIn" payload:@{} toNode:node];
+  [self rune_dispatchEvent:@"onPressIn" payload:@{} toNode:node];
 }
 
 - (void)buttonViewDidPressOut:(RuneButtonView *)button cancelled:(BOOL)cancelled {
   SNNode *node = self.nodes[@(button.nodeId)];
   if (!node) return;
   NSDictionary *payload = @{@"cancelled" : @(cancelled)};
-  [self sn_dispatchEvent:@"onPressOut" payload:payload toNode:node];
+  [self rune_dispatchEvent:@"onPressOut" payload:payload toNode:node];
 }
 
 - (void)buttonViewDidActivate:(RuneButtonView *)button {
   SNNode *node = self.nodes[@(button.nodeId)];
   if (!node) return;
-  [self sn_dispatchEvent:@"onPress" payload:@{} toNode:node];
+  [self rune_dispatchEvent:@"onPress" payload:@{} toNode:node];
 }
 
 - (void)buttonView:(RuneButtonView *)button didLongPressWithDuration:(CFTimeInterval)duration {
   SNNode *node = self.nodes[@(button.nodeId)];
   if (!node) return;
   NSDictionary *payload = @{@"durationMs" : @(duration)};
-  [self sn_dispatchEvent:@"onLongPress" payload:payload toNode:node];
+  [self rune_dispatchEvent:@"onLongPress" payload:payload toNode:node];
 }
 
 - (void)buttonViewDidFocus:(RuneButtonView *)button {
   SNNode *node = self.nodes[@(button.nodeId)];
   if (!node) return;
-  [self sn_dispatchEvent:@"onFocus" payload:@{} toNode:node];
+  [self rune_dispatchEvent:@"onFocus" payload:@{} toNode:node];
 }
 
 - (void)buttonViewDidBlur:(RuneButtonView *)button {
   SNNode *node = self.nodes[@(button.nodeId)];
   if (!node) return;
-  [self sn_dispatchEvent:@"onBlur" payload:@{} toNode:node];
+  [self rune_dispatchEvent:@"onBlur" payload:@{} toNode:node];
 }
 
 - (void)buttonView:(RuneButtonView *)button didEmitKeyEvent:(NSString *)phase key:(NSString *)key {
   SNNode *node = self.nodes[@(button.nodeId)];
   if (!node) return;
   NSDictionary *payload = key.length ? @{@"key" : key} : @{};
-  [self sn_dispatchEvent:phase payload:payload toNode:node];
+  [self rune_dispatchEvent:phase payload:payload toNode:node];
 }
 
 @end

@@ -34,14 +34,11 @@ internal class RuneNodeFactory(
   private val nodes: SparseArray<RuneUIManager.Node>,
     private val engine: LayoutEngine,
     private val imageSupport: RuneImageSupport,
-    private val buttonStyles: SparseArray<ButtonVisualStyle>,
     private val pendingTextRebuild: LinkedHashSet<Int>,
     private val nodeRecyclingPool: NodeRecyclingPool,
     private val getNextId: () -> Int,
     private val incrementNextId: () -> Unit,
     private val scheduleFlush: (FlushPriority) -> Unit,
-    private val deriveButtonVisualStyle: (Style, ButtonVisualStyle?, RuneButtonView) -> ButtonVisualStyle,
-    private val applyVisualStyle: (RuneButtonView, ButtonVisualStyle) -> Unit,
     private val logDebug: (String, String) -> Unit,
     private val onTextInputIntrinsicSizeChanged: (Int) -> Unit,
     private val manager: RuneUIManager,
@@ -54,7 +51,6 @@ internal class RuneNodeFactory(
     SECURE_TEXT_INPUT,
     IMAGE,
     SCROLL_VIEW,
-    BUTTON,
     OTHER;
 
     companion object {
@@ -64,7 +60,6 @@ internal class RuneNodeFactory(
         "secure-text-input" to SECURE_TEXT_INPUT,
         "image" to IMAGE,
         "scroll-view" to SCROLL_VIEW,
-        "button" to BUTTON,
       )
 
       fun fromString(type: String?): NodeType = MAP[type] ?: OTHER
@@ -77,7 +72,6 @@ internal class RuneNodeFactory(
   private val TEXT_INPUT_TYPE = "text-input"
   private val SECURE_TEXT_INPUT_TYPE = "secure-text-input"
   private val SCROLL_VIEW_TYPE = "scroll-view"
-  private val BUTTON_TYPE = "button"
 
   // ==================== Text Node Helpers ====================
 
@@ -349,23 +343,6 @@ internal class RuneNodeFactory(
     }
   }
 
-  private object ButtonCreator : ViewCreator {
-    override fun create(context: android.content.Context, id: Int): View {
-      return RuneButtonView(context).apply {
-        nodeId = id
-        background = GradientDrawable()
-      }
-    }
-
-    override fun registerHandlers(factory: RuneNodeFactory, id: Int, view: View, node: RuneUIManager.Node) {
-      val button = view as RuneButtonView
-      button.listener = factory.manager
-      val initialStyle = factory.deriveButtonVisualStyle(Style(), null, button)
-      factory.buttonStyles.put(id, initialStyle)
-      factory.applyVisualStyle(button, initialStyle)
-    }
-  }
-
   private object OtherCreator : ViewCreator {
     override fun create(context: android.content.Context, id: Int): View {
       return FrameLayout(context)
@@ -382,14 +359,14 @@ internal class RuneNodeFactory(
     NodeType.SECURE_TEXT_INPUT -> SecureTextInputCreator
     NodeType.IMAGE -> ImageCreator
     NodeType.SCROLL_VIEW -> ScrollViewCreator
-    NodeType.BUTTON -> ButtonCreator
     NodeType.OTHER -> OtherCreator
   }
 
   /**
    * Creates a new node of the specified type.
    * Handles view creation, initialization, and measurement handler setup for core component types:
-   * TEXT, TEXT_INPUT, SECURE_TEXT_INPUT, IMAGE, SCROLL_VIEW, BUTTON.
+   * TEXT, TEXT_INPUT, SECURE_TEXT_INPUT, IMAGE, SCROLL_VIEW.
+   * Custom components are created via the component registry.
    * 
    * Returns the newly created node's ID.
    */
@@ -429,16 +406,6 @@ internal class RuneNodeFactory(
           )
         params.width = FrameLayout.LayoutParams.WRAP_CONTENT
         params.height = FrameLayout.LayoutParams.WRAP_CONTENT
-        view.layoutParams = params
-        view.isClickable = true
-        view.isFocusable = true
-        view.isFocusableInTouchMode = true
-      }
-      BUTTON_TYPE -> {
-        val params = FrameLayout.LayoutParams(
-          ViewGroup.LayoutParams.WRAP_CONTENT,
-          ViewGroup.LayoutParams.WRAP_CONTENT,
-        )
         view.layoutParams = params
         view.isClickable = true
         view.isFocusable = true
@@ -567,9 +534,6 @@ internal class RuneNodeFactory(
     if (node.type == SCROLL_VIEW_TYPE) {
       (node.view as? RuneScrollView)?.unbind()
     }
-    if (node.type == BUTTON_TYPE) {
-      buttonStyles.remove(id)
-    }
     node.layoutListener?.let {
       node.view.removeOnLayoutChangeListener(it)
       node.layoutListener = null
@@ -629,12 +593,6 @@ internal class RuneNodeFactory(
         val image = node.view as? ImageView ?: return
         image.setImageDrawable(null)
         node.imageState = null
-      }
-
-      BUTTON_TYPE -> {
-        node.view.setOnClickListener(null)
-        node.view.isClickable = false
-        buttonStyles.remove(node.id)
       }
     }
 

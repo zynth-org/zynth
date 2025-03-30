@@ -2,7 +2,6 @@
 #import "SNUIManager+Internal.h"
 #import "SNUIManager+Image.h"
 #import "SNUIManager+ScrollView.h"
-#import "SNUIManager+Button.h"
 #import "RuneComponentRegistry.h"
 #import "RuneUIManager+View.h"
 #import "RuneUIManager+Text.h"
@@ -13,7 +12,6 @@
 #import "RuneUIManager+Events.h"
 #import "RuneUIManager+Layout.h"
 #import "RuneScrollView.h"
-#import "RuneButtonView.h"
 #import "SNHexColor.h"
 #import <Yoga/Yoga.h>
 #import <QuartzCore/QuartzCore.h>
@@ -135,9 +133,6 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
   } else if (!v && [type isEqualToString:@"scroll-view"]) {
     RuneScrollView *scroll = [RuneScrollView new];
     v = scroll;
-  } else if (!v && [type isEqualToString:@"button"]) {
-    RuneButtonView *button = [RuneButtonView new];
-    v = button;
   }
 
   if (!v) {
@@ -155,7 +150,6 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
 
   [self rune_initializePointerDefaultsForNode:n];
   [self sn_scrollViewAttachIfNeeded:n];
-  [self sn_buttonAttachIfNeeded:n];
 
   if (!n.yoga) {
     NSLog(@"[SN] ERROR: Failed to create Yoga node for nid=%d", nid);
@@ -667,10 +661,6 @@ static void SNApplyEdges(NSDictionary *style,
     return;
   }
 
-  if ([self sn_buttonHandlesSetPropForNode:n name:name value:value rawJSON:json]) {
-    return;
-  }
-
   if (componentDescriptor && componentDescriptor.handleSetProp) {
     if (componentDescriptor.handleSetProp(self, n, name, value, json)) {
       return;
@@ -711,10 +701,6 @@ static void SNApplyEdges(NSDictionary *style,
 
   RuneComponentDescriptor *componentDescriptor = RuneGetComponentDescriptor(n.type);
   
-  if ([self sn_buttonHandlesSetHandlerForNode:n name:name]) {
-    return;
-  }
-
   if (componentDescriptor && componentDescriptor.handleSetPropCallback) {
     if (componentDescriptor.handleSetPropCallback(self, n, name, callback)) {
       return;
@@ -753,10 +739,6 @@ static void SNApplyEdges(NSDictionary *style,
   if (!n || !n.view) return;
 
   RuneComponentDescriptor *componentDescriptor = RuneGetComponentDescriptor(n.type);
-
-  if ([self sn_buttonHandlesSetHandlerForNode:n name:name]) {
-    return;
-  }
 
   if (componentDescriptor && componentDescriptor.handleSetHandler) {
     if (componentDescriptor.handleSetHandler(self, n, name)) {

@@ -34,7 +34,6 @@ internal class RuneLayoutFlush(
     private val pendingViewOperations: MutableList<ViewOperation>,
     private val pendingTextRebuild: LinkedHashSet<Int>,
     private val stickyFrameCarryover: MutableSet<Int>,
-    private val buttonStyles: SparseArray<ButtonVisualStyle>,
     private val isVirtualTextNode: (RuneUIManager.Node) -> Boolean,
     private val recomputeTextForNode: (RuneUIManager.Node?) -> String,
     private val applySetProp: (Int, String, String?, PropertyCategory) -> Unit,
@@ -50,7 +49,6 @@ internal class RuneLayoutFlush(
   private val TEXT_INPUT_TYPE = "text-input"
   private val SECURE_TEXT_INPUT_TYPE = "secure-text-input"
   private val SCROLL_VIEW_TYPE = "scroll-view"
-  private val BUTTON_TYPE = "button"
   private val DEBUG_SCROLL_LAYOUT = false
   private val TEXT_INPUT_MEASURE_PROPS = setOf(
     "style",

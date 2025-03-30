@@ -1,1 +1,2 @@
 com.rune.components.pressable.PressableComponentRegistrar
+com.rune.components.button.RuneButtonRegistrar
