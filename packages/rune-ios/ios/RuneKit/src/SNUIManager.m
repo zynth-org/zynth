@@ -1,7 +1,6 @@
 #import "SNUIManager.h"
 #import "SNUIManager+Internal.h"
 #import "SNUIManager+Image.h"
-#import "SNUIManager+ScrollView.h"
 #import "RuneComponentRegistry.h"
 #import "RuneUIManager+View.h"
 #import "RuneUIManager+Text.h"
@@ -11,11 +10,11 @@
 #import "RuneSecureTextInputView.h"
 #import "RuneUIManager+Events.h"
 #import "RuneUIManager+Layout.h"
-#import "RuneScrollView.h"
 #import "SNHexColor.h"
 #import <Yoga/Yoga.h>
 #import <QuartzCore/QuartzCore.h>
 #import <JavaScriptCore/JavaScriptCore.h>
+#import <objc/message.h>
 
 static NSString *const kRuneBorderLayerName = @"rune-border-style";
 
@@ -130,9 +129,6 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
 #else
     v = [UIView new];
 #endif
-  } else if (!v && [type isEqualToString:@"scroll-view"]) {
-    RuneScrollView *scroll = [RuneScrollView new];
-    v = scroll;
   }
 
   if (!v) {
@@ -149,7 +145,6 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
   n.type = type;
 
   [self rune_initializePointerDefaultsForNode:n];
-  [self sn_scrollViewAttachIfNeeded:n];
 
   if (!n.yoga) {
     NSLog(@"[SN] ERROR: Failed to create Yoga node for nid=%d", nid);
@@ -679,10 +674,6 @@ static void SNApplyEdges(NSDictionary *style,
       return;
   }
 
-  if ([self sn_scrollViewHandlesSetPropForNode:n name:name value:value rawJSON:json]) {
-    return;
-  }
-
   if ([self sn_imageHandlesSetPropForNode:n name:name valueJSON:json]) {
     return;
   }
@@ -764,10 +755,6 @@ static void SNApplyEdges(NSDictionary *style,
       return;
   }
 
-  if ([self sn_scrollViewHandlesSetHandlerForNode:n name:name]) {
-    return;
-  }
-
   if ([name isEqualToString:@"onLayout"]) {
     n.hasOnLayoutHandler = YES;
     n.hasDispatchedLayout = NO;
@@ -830,16 +817,23 @@ static void SNApplyEdges(NSDictionary *style,
     int i = (int)index.intValue;
     i = MAX(0, MIN(i, (int)p.view.subviews.count));
 
-    if ([self sn_scrollViewDidInsertChild:p child:c atIndex:i]) {
-      [p.children insertObject:childId atIndex:i];
-      YGNodeInsertChild(p.yoga, c.yoga, (uint32_t)i);
-      [self rune_markNeedsFlush];
-      return;
+    // Check if parent is a scroll view component
+    BOOL isScrollViewParent = [p.view respondsToSelector:@selector(insertContentSubview:atIndex:)];
+    if (isScrollViewParent) {
+      typedef void (*RuneScrollInsertIMP)(id, SEL, UIView *, NSInteger);
+      RuneScrollInsertIMP insertIMP = (RuneScrollInsertIMP)objc_msgSend;
+      insertIMP(p.view, @selector(insertContentSubview:atIndex:), c.view, i);
+    } else {
+      [p.view insertSubview:c.view atIndex:i];
     }
-
-    [p.view insertSubview:c.view atIndex:i];
     [p.children insertObject:childId atIndex:i];
-    YGNodeInsertChild(p.yoga, c.yoga, (uint32_t)i);
+    if (c.yoga) {
+      YGNodeRef owner = YGNodeGetOwner(c.yoga);
+      if (owner) {
+        YGNodeRemoveChild(owner, c.yoga);
+      }
+      YGNodeInsertChild(p.yoga, c.yoga, (uint32_t)i);
+    }
   }
   [self rune_markNeedsFlush];
 }
@@ -861,7 +855,6 @@ static void SNApplyEdges(NSDictionary *style,
     if (self.rootYoga && c.yoga) {
       YGNodeRemoveChild(self.rootYoga, c.yoga);
     }
-    [self sn_scrollViewCleanupNode:c];
     c.parentId = -1;
   } else {
     SNNode *p = _nodes[parentId];
@@ -872,26 +865,24 @@ static void SNApplyEdges(NSDictionary *style,
       return;
     }
 
-    if ([self sn_scrollViewDidRemoveChild:p child:c]) {
-      NSUInteger idx = [p.children indexOfObject:childId];
-      if (idx != NSNotFound) [p.children removeObjectAtIndex:idx];
-      if (c.yoga) {
-        YGNodeRemoveChild(p.yoga, c.yoga);
-      }
-      [self sn_scrollViewCleanupNode:c];
-      c.parentId = -1;
-      [self rune_markNeedsFlush];
-      return;
+    // Check if parent is a scroll view component
+    BOOL isScrollViewParent = [p.view respondsToSelector:@selector(removeContentSubview:)];
+    if (isScrollViewParent) {
+      typedef void (*RuneScrollRemoveIMP)(id, SEL, UIView *);
+      RuneScrollRemoveIMP removeIMP = (RuneScrollRemoveIMP)objc_msgSend;
+      removeIMP(p.view, @selector(removeContentSubview:), c.view);
+    } else {
+      [c.view removeFromSuperview];
     }
-
-    [c.view removeFromSuperview];
     NSUInteger idx = [p.children indexOfObject:childId];
     if (idx != NSNotFound) [p.children removeObjectAtIndex:idx];
 
     if (c.yoga) {
-      YGNodeRemoveChild(p.yoga, c.yoga);
+      YGNodeRef owner = YGNodeGetOwner(c.yoga);
+      if (owner) {
+        YGNodeRemoveChild(owner, c.yoga);
+      }
     }
-    [self sn_scrollViewCleanupNode:c];
     c.parentId = -1;
   }
   [self rune_markNeedsFlush];

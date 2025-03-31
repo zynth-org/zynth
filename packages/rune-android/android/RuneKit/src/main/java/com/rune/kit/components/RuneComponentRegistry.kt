@@ -3,6 +3,7 @@ package com.rune.kit.components
 import android.content.Context
 import android.view.View
 import com.rune.kit.core.RuneUIManager
+import com.rune.kit.layout.Style
 import java.util.ServiceLoader
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -20,6 +21,7 @@ data class RuneComponentDescriptor(
   val onNodeCreated: (manager: RuneUIManager, node: RuneUIManager.Node) -> Unit = { _, _ -> },
   val applyProperty: (node: RuneUIManager.Node, name: String, value: String?) -> Boolean = { _, _, _ -> false },
   val onSetHandler: (node: RuneUIManager.Node, event: String) -> Boolean = { _, _ -> false },
+  val onStyleApplied: (node: RuneUIManager.Node, style: Style) -> Unit = { _, _ -> },
   val onReset: (node: RuneUIManager.Node) -> Unit = { _ -> },
 )
 

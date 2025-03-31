@@ -23,7 +23,7 @@ import kotlin.math.roundToInt
  * RuneNodeFactory handles all node creation, removal, and lifecycle operations for the Rune UI framework.
  * 
  * Responsibilities:
- * - Node creation for all core component types (TEXT, TEXT_INPUT, IMAGE, SCROLL_VIEW, BUTTON)
+ * - Node creation for all core component types (TEXT, TEXT_INPUT, IMAGE)
  * - Node removal and recursive cleanup
  * - TextInput state management
  * - Text node utilities (virtual text detection, text recomputation)
@@ -50,7 +50,6 @@ internal class RuneNodeFactory(
     TEXT_INPUT,
     SECURE_TEXT_INPUT,
     IMAGE,
-    SCROLL_VIEW,
     OTHER;
 
     companion object {
@@ -59,7 +58,6 @@ internal class RuneNodeFactory(
         "text-input" to TEXT_INPUT,
         "secure-text-input" to SECURE_TEXT_INPUT,
         "image" to IMAGE,
-        "scroll-view" to SCROLL_VIEW,
       )
 
       fun fromString(type: String?): NodeType = MAP[type] ?: OTHER
@@ -71,7 +69,6 @@ internal class RuneNodeFactory(
   private val IMAGE_TYPE = "image"
   private val TEXT_INPUT_TYPE = "text-input"
   private val SECURE_TEXT_INPUT_TYPE = "secure-text-input"
-  private val SCROLL_VIEW_TYPE = "scroll-view"
 
   // ==================== Text Node Helpers ====================
 
@@ -333,13 +330,11 @@ internal class RuneNodeFactory(
 
   private object ScrollViewCreator : ViewCreator {
     override fun create(context: android.content.Context, id: Int): View {
-      return RuneScrollView(context).apply {
-        // bind happens after node creation so we can pass manager and id
-      }
+      return FrameLayout(context)
     }
 
     override fun registerHandlers(factory: RuneNodeFactory, id: Int, view: View, node: RuneUIManager.Node) {
-      (view as? RuneScrollView)?.bind(factory.manager, id)
+      // nothing extra
     }
   }
 
@@ -358,14 +353,13 @@ internal class RuneNodeFactory(
     NodeType.TEXT_INPUT -> TextInputCreator
     NodeType.SECURE_TEXT_INPUT -> SecureTextInputCreator
     NodeType.IMAGE -> ImageCreator
-    NodeType.SCROLL_VIEW -> ScrollViewCreator
     NodeType.OTHER -> OtherCreator
   }
 
   /**
    * Creates a new node of the specified type.
    * Handles view creation, initialization, and measurement handler setup for core component types:
-   * TEXT, TEXT_INPUT, SECURE_TEXT_INPUT, IMAGE, SCROLL_VIEW.
+   * TEXT, TEXT_INPUT, SECURE_TEXT_INPUT, IMAGE.
    * Custom components are created via the component registry.
    * 
    * Returns the newly created node's ID.
@@ -530,9 +524,6 @@ internal class RuneNodeFactory(
     }
     if (node.type == TEXT_INPUT_TYPE || node.type == SECURE_TEXT_INPUT_TYPE) {
       cleanupTextInput(node)
-    }
-    if (node.type == SCROLL_VIEW_TYPE) {
-      (node.view as? RuneScrollView)?.unbind()
     }
     node.layoutListener?.let {
       node.view.removeOnLayoutChangeListener(it)

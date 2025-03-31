@@ -23,9 +23,6 @@ enum class PropertyCategory {
   /** TextInput component properties (placeholder, multiline, maxLength, etc.) */
   TEXT_INPUT,
   
-  /** ScrollView component properties (horizontal, scrollEnabled, etc.) */
-  SCROLL_VIEW,
-  
   /** Pressable component properties (disabled, pressEffect, hitSlop, etc.) */
   PRESSABLE,
 
@@ -122,22 +119,6 @@ object PropertyCategoryMap {
     put("__focusRequest", PropertyCategory.TEXT_INPUT)
     put("clearButtonMode", PropertyCategory.TEXT_INPUT)
     put("showClearAccessory", PropertyCategory.TEXT_INPUT)
-    
-    // ScrollView properties
-    put("horizontal", PropertyCategory.SCROLL_VIEW)
-    put("scrollEnabled", PropertyCategory.SCROLL_VIEW)
-    put("directionalLockEnabled", PropertyCategory.SCROLL_VIEW)
-    put("showsVerticalScrollIndicator", PropertyCategory.SCROLL_VIEW)
-    put("showsHorizontalScrollIndicator", PropertyCategory.SCROLL_VIEW)
-    put("indicatorStyle", PropertyCategory.SCROLL_VIEW)
-    put("overScrollBehavior", PropertyCategory.SCROLL_VIEW)
-    put("scrollSnapType", PropertyCategory.SCROLL_VIEW)
-    put("scrollSnapAlign", PropertyCategory.SCROLL_VIEW)
-    put("scrollSnapStop", PropertyCategory.SCROLL_VIEW)
-    put("scrollPadding", PropertyCategory.SCROLL_VIEW)
-  put("scrollGuardConfig", PropertyCategory.SCROLL_VIEW)
-  put("scrollGuardConfig", PropertyCategory.SCROLL_VIEW)
-  put("__scrollCommand", PropertyCategory.SCROLL_VIEW)
     
     // Pressable properties
     // Note: Some overlap with Button (disabled, pressEffect, etc.)

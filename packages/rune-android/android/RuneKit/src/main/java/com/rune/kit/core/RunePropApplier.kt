@@ -99,12 +99,6 @@ internal class RunePropApplier(
           }
         }
       }
-      PropertyCategory.SCROLL_VIEW -> {
-        if (target.type == SCROLL_VIEW_TYPE) {
-          applyScrollViewProp(target, name, valueJson)
-          return
-        }
-      }
       PropertyCategory.PRESSABLE -> {
         // Handled by component descriptors (e.g., Rune Pressable, Button)
       }
@@ -156,6 +150,7 @@ internal class RunePropApplier(
     val styleValue = jsonValue ?: return
     val style = Style.fromJson(styleValue)
     val pixelStyle = style.toPixels(density)
+    RuneComponentRegistry.getDescriptor(target.type)?.onStyleApplied?.invoke(target, pixelStyle)
     engine.setStyle(target.id, pixelStyle)
     if (target.id != nodeId) {
       engine.setStyle(nodeId, Style())
@@ -248,123 +243,6 @@ internal class RunePropApplier(
               target.view.isClickable = true
             }
           }
-        }
-      }
-    }
-  }
-
-  private fun applyScrollViewProp(target: RuneUIManager.Node, name: String, jsonValue: String?) {
-    val scrollView = target.view as? RuneScrollView ?: return
-    val parsed = parseJsonValue(jsonValue)
-
-    fun asBoolean(value: Any?): Boolean? {
-      return when (value) {
-        is Boolean -> value
-        is Number -> value.toInt() != 0
-        is String -> value.equals("true", ignoreCase = true) || value == "1"
-        else -> null
-      }
-    }
-
-    fun asLong(value: Any?): Long? {
-      return when (value) {
-        is Number -> value.toLong()
-        is String -> value.toLongOrNull()
-        else -> null
-      }
-    }
-
-    fun asFloat(value: Any?): Float? {
-      return when (value) {
-        is Number -> value.toFloat()
-        is String -> value.toFloatOrNull()
-        else -> null
-      }
-    }
-
-    if (name == "style") {
-      val styleJson = jsonValue ?: return
-      val style = Style.fromJson(styleJson)
-      val pixelStyle = style.toPixels(density)
-      engine.setStyle(target.id, pixelStyle)
-      scrollView.applyStyle(pixelStyle)
-      applyBackgroundStyle(target.view, pixelStyle)
-      return
-    }
-
-    when (name) {
-      "horizontal" -> {
-        val horizontal = asBoolean(parsed) ?: false
-        scrollView.setAxis(horizontal)
-      }
-      "scrollEnabled" -> {
-        scrollView.setScrollEnabled(asBoolean(parsed))
-      }
-      "directionalLockEnabled" -> {
-        scrollView.setDirectionalLockEnabled(asBoolean(parsed))
-      }
-      "showsVerticalScrollIndicator" -> {
-        scrollView.setShowsVerticalScrollIndicator(asBoolean(parsed))
-      }
-      "showsHorizontalScrollIndicator" -> {
-        scrollView.setShowsHorizontalScrollIndicator(asBoolean(parsed))
-      }
-      "indicatorStyle" -> {
-        val style = (parsed as? String) ?: parseString(jsonValue)
-        scrollView.setIndicatorStyle(style)
-      }
-      "overScrollBehavior" -> {
-        val behavior = (parsed as? String) ?: parseString(jsonValue)
-        scrollView.setOverScrollBehavior(behavior)
-      }
-      "eventThrottleMs" -> {
-        scrollView.setEventThrottle(asLong(parsed))
-      }
-      "eventMinDisplacementPx" -> {
-        scrollView.setEventMinDisplacement(asFloat(parsed))
-      }
-      "bridgeCoalescing" -> {
-        scrollView.setBridgeCoalescing(asBoolean(parsed))
-      }
-      "scrollSnapType" -> {
-        scrollView.setScrollSnapType(parsed)
-      }
-      "scrollSnapAlign" -> {
-        scrollView.setScrollSnapAlign(parsed)
-      }
-      "scrollSnapStop" -> {
-        scrollView.setScrollSnapStop(parsed)
-      }
-      "scrollPadding" -> {
-        scrollView.setScrollPadding(parsed)
-      }
-      "scrollGuardConfig" -> {
-        val payload = when (parsed) {
-          is JSONObject -> parsed
-          is Map<*, *> -> JSONObject(parsed)
-          is String -> runCatching { JSONObject(parsed) }.getOrNull()
-          else -> jsonValue?.let { runCatching { JSONObject(it) }.getOrNull() }
-        }
-        scrollView.setScrollGuardConfig(payload)
-      }
-      "__recyclerState" -> {
-        val payload = when (parsed) {
-          is JSONObject -> parsed
-          is Map<*, *> -> JSONObject(parsed)
-          is String -> runCatching { JSONObject(parsed) }.getOrNull()
-          is JSONArray -> JSONObject().apply { put("items", parsed) }
-          else -> jsonValue?.let { runCatching { JSONObject(it) }.getOrNull() }
-        }
-        scrollView.setRecyclerState(payload)
-      }
-      "__scrollCommand" -> {
-        val command = when (parsed) {
-          is JSONObject -> parsed
-          is Map<*, *> -> JSONObject(parsed)
-          else -> null
-        }
-        if (command != null) {
-          scrollView.applyCommand(command)
         }
       }
     }
@@ -892,6 +770,5 @@ internal class RunePropApplier(
     private const val IMAGE_TYPE = "image"
     private const val TEXT_INPUT_TYPE = "text-input"
     private const val SECURE_TEXT_INPUT_TYPE = "secure-text-input"
-    private const val SCROLL_VIEW_TYPE = "scroll-view"
   }
 }

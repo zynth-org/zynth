@@ -1,4 +1,4 @@
-package com.rune.kit.core
+package com.rune.components.scrollview
 
 import android.content.Context
 import android.os.Build
@@ -38,7 +38,7 @@ internal class RuneScrollView(
   private var host: ScrollHost = verticalHost
 
   private val choreographer by lazy(LazyThreadSafetyMode.NONE) { Choreographer.getInstance() }
-  private var manager: RuneUIManager? = null
+  private var manager: com.rune.kit.core.RuneUIManager? = null
   private var nodeId: Int = -1
   private var axis: Axis = Axis.VERTICAL
   private var scrollEnabled: Boolean = true
@@ -132,7 +132,7 @@ internal class RuneScrollView(
     attachHost(verticalHost)
   }
 
-  fun bind(manager: RuneUIManager, nodeId: Int) {
+  fun bind(manager: com.rune.kit.core.RuneUIManager, nodeId: Int) {
     this.manager = manager
     this.nodeId = nodeId
   }
@@ -945,7 +945,6 @@ internal class RuneScrollView(
 
   private fun isNativeDebugEnabled(): Boolean {
     return try {
-      // Try to access __NATIVE_DEBUG__ from JavaScript globalThis
       val debugValue = System.getProperty("__NATIVE_DEBUG__")
       debugValue?.toBoolean() ?: false
     } catch (e: Exception) {

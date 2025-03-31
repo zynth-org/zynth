@@ -1,6 +1,5 @@
 #import "RuneUIManager+Layout.h"
 #import "RuneUIManager+Events.h"
-#import "RuneScrollView.h"
 
 #if __has_include(<RuneKit/RuneKit-Swift.h>)
 #import <RuneKit/RuneKit-Swift.h>
@@ -68,7 +67,6 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
     [[PerformanceProfiler shared] recordLayoutEnd];
 
     [[PerformanceProfiler shared] recordRenderStart];
-    NSMutableSet<RuneScrollView *> *scrollsNeedingLayout = [NSMutableSet set];
     [self.nodes enumerateKeysAndObjectsUsingBlock:^(NSNumber *key, SNNode *obj, BOOL *stop) {
       if (!obj || !obj.view || !obj.yoga) {
         return;
@@ -90,23 +88,8 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
           return;
         }
 
-        // Log absolute positioned nodes to debug
-        YGPositionType posType = YGNodeStyleGetPositionType(obj.yoga);
-        // if (posType == YGPositionTypeAbsolute && (obj.nid >= 10 && obj.nid <= 25)) {
-        //   NSLog(@"[RuneLayout] Node %d: Yoga computed x=%.0f y=%.0f w=%.0f h=%.0f (absolute)", obj.nid, x, y, w, h);
-        // }
-
         obj.view.frame = CGRectMake(x, y, w, h);
         [self rune_dispatchLayoutEventForNode:obj force:NO];
-
-        if ([obj.view isKindOfClass:[RuneScrollView class]]) {
-          [scrollsNeedingLayout addObject:(RuneScrollView *)obj.view];
-        } else if (obj.parentId >= 0) {
-          SNNode *parentNode = self.nodes[@(obj.parentId)];
-          if (parentNode && [parentNode.view isKindOfClass:[RuneScrollView class]]) {
-            [scrollsNeedingLayout addObject:(RuneScrollView *)parentNode.view];
-          }
-        }
 
         for (CALayer *sublayer in obj.view.layer.sublayers) {
             if ([sublayer.name isEqualToString:kRuneBorderLayerName] && [sublayer isKindOfClass:[CAShapeLayer class]]) {
@@ -118,10 +101,17 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
         NSLog(@"[SN] Exception applying frame for nid=%d: %@", obj.nid, exception);
       }
     }];
-    for (RuneScrollView *scroll in scrollsNeedingLayout) {
-      [scroll setNeedsLayout];
-      [scroll layoutIfNeeded];
-    }
+    
+    // Post-layout pass for scroll view component content geometry updates
+    [self.nodes enumerateKeysAndObjectsUsingBlock:^(NSNumber *key, SNNode *obj, BOOL *stop) {
+      if (!obj || !obj.view) return;
+      // Only trigger layout for views that have scroll-specific methods
+      if ([obj.view respondsToSelector:@selector(insertContentSubview:atIndex:)]) {
+        [obj.view setNeedsLayout];
+        [obj.view layoutIfNeeded];
+      }
+    }];
+    
     [[PerformanceProfiler shared] recordRenderEnd];
   });
 }
