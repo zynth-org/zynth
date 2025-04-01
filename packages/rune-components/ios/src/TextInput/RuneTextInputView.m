@@ -1,7 +1,14 @@
 #import "RuneTextInputView.h"
+#if __has_include(<RuneKit/SNHexColor.h>)
+#import <RuneKit/SNHexColor.h>
+#else
 #import "SNHexColor.h"
+#endif
+#if __has_include(<RuneKit/SNUIManager+Internal.h>)
+#import <RuneKit/SNUIManager+Internal.h>
+#else
 #import "SNUIManager+Internal.h"
-#import "RuneUIManager+TextInput.h"
+#endif
 
 static UIColor *RuneColorFromHexOrNil(NSString *hex) {
   if (![hex isKindOfClass:[NSString class]] || hex.length == 0) {
@@ -368,7 +375,6 @@ static UIColor *RuneColorFromHexOrNil(NSString *hex) {
       [self.manager.jsInvoker invokeHandlerForNode:self.node.nid name:@"onSelectionChange"];
     }
   }
-  [self.manager sn_textInputSelectionDidChangeForNode:self.node];
 }
 
 - (void)emitKeyEventForReplacement:(NSString *)replacement {
@@ -404,8 +410,6 @@ static UIColor *RuneColorFromHexOrNil(NSString *hex) {
       [self.manager.jsInvoker invokeHandlerForNode:self.node.nid name:@"onChangeText"];
     }
   }
-
-  [self.manager sn_textInputUpdateTextForNode:self.node text:self.text ?: @""];
 }
 
 - (CGSize)measureForWidth:(CGFloat)width height:(CGFloat)height widthMode:(YGMeasureMode)widthMode heightMode:(YGMeasureMode)heightMode {
@@ -469,9 +473,6 @@ static UIColor *RuneColorFromHexOrNil(NSString *hex) {
     }
   }
 
-  // Log maxLength value
-  NSLog(@"[Rune] RuneTextInputView maxLength value: %d", self.maxLength);
-
   if (self.maxLength >= 0) {
     NSString *proposed = [current stringByReplacingCharactersInRange:range withString:inserted];
     NSLog(@"[RuneTextInputView] maxLength check proposed=%@ length=%lu limit=%ld", proposed, (unsigned long)proposed.length, (long)self.maxLength);
@@ -501,7 +502,6 @@ static UIColor *RuneColorFromHexOrNil(NSString *hex) {
       YGNodeMarkDirty(self.node.yoga);
     }
     [self.manager sn_markNeedsFlush];
-    [self.manager sn_textInputUpdateTextForNode:self.node text:self.text ?: @""];
     return;
   }
   [self updatePlaceholderVisibility];

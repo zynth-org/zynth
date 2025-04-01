@@ -16,13 +16,14 @@ This document outlines the development plan to evolve Rune into a powerful, AI-n
 - [✅] **Relocate Primitives:** Move `View` and `Text` from `@rune/core` to this package.
 - [✅/⚠️] **`Image`:** Implement a component for local and remote images.
 - [✅] **`TextInput`:** Implement a component for text input.
+  - Fix toggle blink
+  - Padding vertical misalignment: center
 - [✅] **`ScrollView`:** Implement a scrolling container.
 - [✅] **`Button`:** Implement a basic, cross-platform button.
 - [✅] **`Pressable`:** Implement a component to detect detailed press interactions.
 - [✅/⚠️] **`FlatList`:** Implement a performant, virtualized list component
   Limitations:
-
-* Items without itemSize have a first frame empty list
+  - Items without itemSize have a first frame empty list
 
 ### 2. Layout & Style (`packages/rune-layout`, `packages/rune-apis`)
 

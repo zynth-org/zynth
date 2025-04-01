@@ -1,7 +1,14 @@
 #import "RuneSecureTextInputView.h"
+#if __has_include(<RuneKit/SNHexColor.h>)
+#import <RuneKit/SNHexColor.h>
+#else
 #import "SNHexColor.h"
+#endif
+#if __has_include(<RuneKit/SNUIManager+Internal.h>)
+#import <RuneKit/SNUIManager+Internal.h>
+#else
 #import "SNUIManager+Internal.h"
-#import "RuneUIManager+TextInput.h"
+#endif
 
 static UIColor *RuneColorFromHexOrNil(NSString *hex) {
   if (![hex isKindOfClass:[NSString class]] || hex.length == 0) {
