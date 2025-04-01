@@ -1,3 +1,4 @@
 com.rune.components.pressable.PressableComponentRegistrar
 com.rune.components.button.RuneButtonRegistrar
 com.rune.components.scrollview.RuneScrollViewRegistrar
+com.rune.components.textinput.TextInputComponentRegistrar

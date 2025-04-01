@@ -1,4 +1,4 @@
-package com.rune.kit.core
+package com.rune.components.textinput
 
 import android.content.Context
 import android.util.AttributeSet

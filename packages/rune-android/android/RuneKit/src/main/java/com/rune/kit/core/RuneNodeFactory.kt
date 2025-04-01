@@ -23,9 +23,8 @@ import kotlin.math.roundToInt
  * RuneNodeFactory handles all node creation, removal, and lifecycle operations for the Rune UI framework.
  * 
  * Responsibilities:
- * - Node creation for all core component types (TEXT, TEXT_INPUT, IMAGE)
+ * - Node creation for all core component types (TEXT, IMAGE)
  * - Node removal and recursive cleanup
- * - TextInput state management
  * - Text node utilities (virtual text detection, text recomputation)
  * - Node measurement configuration
  */
@@ -40,23 +39,18 @@ internal class RuneNodeFactory(
     private val incrementNextId: () -> Unit,
     private val scheduleFlush: (FlushPriority) -> Unit,
     private val logDebug: (String, String) -> Unit,
-    private val onTextInputIntrinsicSizeChanged: (Int) -> Unit,
     private val manager: RuneUIManager,
 ) {
 
   // Fast enum-based dispatch to avoid repeated string comparisons in createNode
   private enum class NodeType {
     TEXT,
-    TEXT_INPUT,
-    SECURE_TEXT_INPUT,
     IMAGE,
     OTHER;
 
     companion object {
       private val MAP: Map<String, NodeType> = mapOf(
         "text" to TEXT,
-        "text-input" to TEXT_INPUT,
-        "secure-text-input" to SECURE_TEXT_INPUT,
         "image" to IMAGE,
       )
 
@@ -67,8 +61,6 @@ internal class RuneNodeFactory(
   // Component type constants
   private val TEXT_TYPE = "text"
   private val IMAGE_TYPE = "image"
-  private val TEXT_INPUT_TYPE = "text-input"
-  private val SECURE_TEXT_INPUT_TYPE = "secure-text-input"
 
   // ==================== Text Node Helpers ====================
 
@@ -145,104 +137,7 @@ internal class RuneNodeFactory(
 
   // ==================== TextInput State Management ====================
 
-  /**
-   * Ensures a node has a TextInputState object.
-   * Creates one if it doesn't exist and returns it.
-   */
-  internal fun ensureTextInputState(node: RuneUIManager.Node): RuneUIManager.TextInputState {
-    val existing = node.textInputState
-    if (existing != null) return existing
-    val created = RuneUIManager.TextInputState()
-    node.textInputState = created
-    return created
-  }
-
-  /**
-   * Cleans up a TextInput node's state and references.
-   * Clears handlers, removes manager reference, and nullifies state.
-   */
-  internal fun cleanupTextInput(node: RuneUIManager.Node) {
-    (node.view as? RuneTextInputView)?.let { input ->
-      input.clearHandlers()
-      input.manager = null
-      input.nodeId = -1
-    }
-    node.textInputState = null
-  }
-
   // ==================== Measurement ====================
-
-  /**
-   * Measures a TextInput view and returns width/height pair.
-   * Uses cached exact height if available.
-   */
-  internal fun measureTextInput(view: RuneTextInputView, input: MeasureInput): Pair<Float, Float> {
-    val node = nodes.get(view.nodeId)
-    val stateLastExactHeight = node?.let { ensureTextInputState(it).lastExactHeight } ?: 0
-
-    val widthSpec = when (input.widthMode) {
-      MeasureMode.EXACTLY -> View.MeasureSpec.makeMeasureSpec(
-        when {
-          input.width.isNaN() -> 0
-          input.width.isInfinite() -> Int.MAX_VALUE / 2
-          else -> input.width.roundToInt()
-        },
-        View.MeasureSpec.EXACTLY,
-      )
-      MeasureMode.AT_MOST -> View.MeasureSpec.makeMeasureSpec(
-        when {
-          input.width.isNaN() -> Int.MAX_VALUE / 2
-          input.width.isInfinite() -> Int.MAX_VALUE / 2
-          else -> input.width.roundToInt()
-        },
-        View.MeasureSpec.AT_MOST,
-      )
-      MeasureMode.UNDEFINED -> View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
-    }
-
-    val heightSpec = if (stateLastExactHeight > 0) {
-      View.MeasureSpec.makeMeasureSpec(stateLastExactHeight, View.MeasureSpec.EXACTLY)
-    } else {
-      when (input.heightMode) {
-      MeasureMode.EXACTLY -> View.MeasureSpec.makeMeasureSpec(
-        when {
-          input.height.isNaN() -> 0
-          input.height.isInfinite() -> Int.MAX_VALUE / 2
-          else -> input.height.roundToInt()
-        },
-        View.MeasureSpec.EXACTLY,
-      )
-      MeasureMode.AT_MOST -> View.MeasureSpec.makeMeasureSpec(
-        when {
-          input.height.isNaN() -> Int.MAX_VALUE / 2
-          input.height.isInfinite() -> Int.MAX_VALUE / 2
-          else -> input.height.roundToInt()
-        },
-        View.MeasureSpec.AT_MOST,
-      )
-      MeasureMode.UNDEFINED -> View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
-      }
-    }
-
-    view.measure(widthSpec, heightSpec)
-
-    val targetWidth = if (input.widthMode == MeasureMode.EXACTLY) {
-      View.MeasureSpec.getSize(widthSpec)
-    } else {
-      view.measuredWidth
-    }.coerceAtLeast(1)
-
-    val targetHeight = if (stateLastExactHeight > 0) {
-      stateLastExactHeight.coerceAtLeast(1)
-    } else {
-      when (input.heightMode) {
-        MeasureMode.EXACTLY -> View.MeasureSpec.getSize(heightSpec)
-        MeasureMode.AT_MOST, MeasureMode.UNDEFINED -> view.measuredHeight
-      }.coerceAtLeast(1)
-    }
-
-    return targetWidth.toFloat() to targetHeight.toFloat()
-  }
 
   // ==================== Node Creation ====================
 
@@ -263,54 +158,6 @@ internal class RuneNodeFactory(
 
     override fun registerHandlers(factory: RuneNodeFactory, id: Int, view: View, node: RuneUIManager.Node) {
       // measurement handler registered later in createNode using label != null path, so nothing to do here
-    }
-  }
-
-  private object TextInputCreator : ViewCreator {
-    override fun create(context: android.content.Context, id: Int): View {
-      return RuneTextInputView(context).apply {
-        nodeId = id
-        applyEditable(true)
-        applyMultiline(false)
-        applyNumberOfLines(0)
-        submitBehavior = "submit"
-        blurOnSubmit = false
-        layoutParams = FrameLayout.LayoutParams(
-          ViewGroup.LayoutParams.MATCH_PARENT,
-          ViewGroup.LayoutParams.WRAP_CONTENT,
-        )
-      }
-    }
-
-    override fun registerHandlers(factory: RuneNodeFactory, id: Int, view: View, node: RuneUIManager.Node) {
-      (view as? RuneTextInputView)?.let {
-        it.manager = factory.manager
-        it.nodeId = id
-      }
-    }
-  }
-
-  private object SecureTextInputCreator : ViewCreator {
-    override fun create(context: android.content.Context, id: Int): View {
-      return RuneSecureTextInputView(context).apply {
-        nodeId = id
-        applyEditable(true)
-        applyMultiline(false)
-        applyNumberOfLines(0)
-        submitBehavior = "submit"
-        blurOnSubmit = false
-        layoutParams = FrameLayout.LayoutParams(
-          ViewGroup.LayoutParams.MATCH_PARENT,
-          ViewGroup.LayoutParams.WRAP_CONTENT,
-        )
-      }
-    }
-
-    override fun registerHandlers(factory: RuneNodeFactory, id: Int, view: View, node: RuneUIManager.Node) {
-      (view as? RuneSecureTextInputView)?.let {
-        it.manager = factory.manager
-        it.nodeId = id
-      }
     }
   }
 
@@ -350,8 +197,6 @@ internal class RuneNodeFactory(
 
   private fun getViewCreator(type: NodeType): ViewCreator = when (type) {
     NodeType.TEXT -> TextCreator
-    NodeType.TEXT_INPUT -> TextInputCreator
-    NodeType.SECURE_TEXT_INPUT -> SecureTextInputCreator
     NodeType.IMAGE -> ImageCreator
     NodeType.OTHER -> OtherCreator
   }
@@ -359,8 +204,7 @@ internal class RuneNodeFactory(
   /**
    * Creates a new node of the specified type.
    * Handles view creation, initialization, and measurement handler setup for core component types:
-   * TEXT, TEXT_INPUT, SECURE_TEXT_INPUT, IMAGE.
-   * Custom components are created via the component registry.
+   * TEXT, IMAGE. Custom components are created via the component registry.
    * 
    * Returns the newly created node's ID.
    */
@@ -392,19 +236,6 @@ internal class RuneNodeFactory(
           ViewGroup.LayoutParams.WRAP_CONTENT,
         )
       }
-      TEXT_INPUT_TYPE, SECURE_TEXT_INPUT_TYPE -> {
-        val params = view.layoutParams as? FrameLayout.LayoutParams
-          ?: FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.WRAP_CONTENT,
-            FrameLayout.LayoutParams.WRAP_CONTENT,
-          )
-        params.width = FrameLayout.LayoutParams.WRAP_CONTENT
-        params.height = FrameLayout.LayoutParams.WRAP_CONTENT
-        view.layoutParams = params
-        view.isClickable = true
-        view.isFocusable = true
-        view.isFocusableInTouchMode = true
-      }
       else -> {
         if (view.layoutParams == null) {
           view.layoutParams = FrameLayout.LayoutParams(
@@ -424,9 +255,6 @@ internal class RuneNodeFactory(
     node.cachedText = (label?.text?.toString() ?: "")
     if (type == IMAGE_TYPE) {
       imageSupport.initializeNode(node)
-    }
-    if (type == TEXT_INPUT_TYPE || type == SECURE_TEXT_INPUT_TYPE) {
-      node.textInputState = RuneUIManager.TextInputState()
     }
     nodes.put(id, node)
     node.parentId = null
@@ -475,11 +303,6 @@ internal class RuneNodeFactory(
         val measuredHeight = label.measuredHeight.coerceAtLeast((label.textSize * 1.2f).roundToInt())
         measuredWidth.toFloat() to measuredHeight.toFloat()
       }
-    } else if (type == TEXT_INPUT_TYPE || type == SECURE_TEXT_INPUT_TYPE) {
-      val inputView = view as RuneTextInputView
-      engine.setMeasureHandler(id) { input ->
-        measureTextInput(inputView, input)
-      }
     } else if (type == IMAGE_TYPE) {
       engine.setMeasureHandler(id) { input ->
         imageSupport.measure(node, input)
@@ -522,9 +345,6 @@ internal class RuneNodeFactory(
     if (node.type == IMAGE_TYPE) {
       imageSupport.cleanup(node)
     }
-    if (node.type == TEXT_INPUT_TYPE || node.type == SECURE_TEXT_INPUT_TYPE) {
-      cleanupTextInput(node)
-    }
     node.layoutListener?.let {
       node.view.removeOnLayoutChangeListener(it)
       node.layoutListener = null
@@ -566,20 +386,6 @@ internal class RuneNodeFactory(
         node.cachedText = ""
         node.textChildren.clear()
       }
-
-      TEXT_INPUT_TYPE, SECURE_TEXT_INPUT_TYPE -> {
-        val input = node.view as? RuneTextInputView ?: return
-        input.setText("")
-        node.textInputState?.let {
-          it.currentText = ""
-          it.defaultValue = ""
-          it.awaitingInitialValue = true
-          it.hasAppliedInitialText = false
-          it.pendingSelection = null
-          it.lastExactHeight = 0
-        }
-      }
-
       IMAGE_TYPE -> {
         val image = node.view as? ImageView ?: return
         image.setImageDrawable(null)

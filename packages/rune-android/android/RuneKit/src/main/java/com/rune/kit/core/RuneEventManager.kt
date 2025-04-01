@@ -13,7 +13,7 @@ import java.util.HashMap
  * Responsibilities:
  * - Event payload storage and consumption
  * - Event dispatch to native handlers
- * - Event callback handling for Button, Pressable, and TextInput components
+ * - Event callback handling for Button and Pressable components
  */
 internal class RuneEventManager(
     private val nodes: SparseArray<RuneUIManager.Node>,
@@ -21,7 +21,6 @@ internal class RuneEventManager(
     private val eventDispatcher: (Int, String) -> Unit,
     private val handlerListener: (Int, String, Long) -> Unit,
     private val eventPayloads: HashMap<String, ArrayDeque<String>>,
-    private val ensureTextInputState: (RuneUIManager.Node) -> RuneUIManager.TextInputState,
 ) {
 
   // ==================== Event Payload Management ====================
@@ -261,60 +260,5 @@ internal class RuneEventManager(
    */
   internal fun onPressableCancel(@Suppress("UNUSED_PARAMETER") nodeId: Int, @Suppress("UNUSED_PARAMETER") payload: JSONObject) {
     // Cancellation is surfaced via onPressOut with the cancelled flag.
-  }
-
-  // ==================== TextInput Events ====================
-
-  /**
-   * Called when TextInput text content changes.
-   * Updates node state and dispatches event to native layer.
-   * Handles pending selection application if needed.
-   */
-  internal fun onTextInputTextUpdated(nodeId: Int, text: String) {
-    val node = nodes.get(nodeId) ?: return
-    val state = ensureTextInputState(node)
-    state.currentText = text
-    state.hasAppliedInitialText = true
-    state.awaitingInitialValue = false
-    node.cachedText = text
-    state.pendingSelection?.let { pending ->
-      val inputView = node.view as? RuneTextInputView
-      if (inputView != null) {
-        inputView.post {
-          inputView.applySelection(pending.start, pending.end)
-          state.pendingSelection = null
-        }
-      }
-    }
-  }
-
-  /**
-   * Called when TextInput layout measurements change.
-   * Stores exact height for measurement optimization.
-   */
-  internal fun onTextInputLayout(nodeId: Int, height: Int) {
-    if (height <= 0) return
-    val node = nodes.get(nodeId) ?: return
-    val state = ensureTextInputState(node)
-    state.lastExactHeight = height
-  }
-
-  /**
-   * Clears the cached exact height for a TextInput.
-   * Used to reset measurement cache when needed.
-   */
-  internal fun clearTextInputExactHeight(nodeId: Int) {
-    val node = nodes.get(nodeId) ?: return
-    val state = ensureTextInputState(node)
-    state.lastExactHeight = 0
-  }
-
-  /**
-   * Called when TextInput intrinsic size changes.
-   * Marks node dirty and schedules a layout flush.
-   */
-  internal fun onTextInputIntrinsicSizeChanged(nodeId: Int) {
-    engine.markDirty(nodeId)
-    // Note: scheduleFlush is called by the caller
   }
 }

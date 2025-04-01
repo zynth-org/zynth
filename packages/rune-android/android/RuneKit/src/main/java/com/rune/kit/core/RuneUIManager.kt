@@ -24,6 +24,7 @@ import com.rune.kit.components.RuneComponentRegistry
 import com.rune.kit.core.RunePressableEventListener
 import com.rune.kit.debug.PerformanceProfiler
 import com.rune.kit.layout.LayoutEngine
+import com.rune.kit.layout.MeasureHandler
 import com.rune.kit.layout.MeasureInput
 import com.rune.kit.layout.MeasureMode
 import com.rune.kit.layout.Rect
@@ -170,7 +171,7 @@ class RuneUIManager(
     imageSupport = imageSupport,
     logDebug = ::logDebug,
     resolveTextNode = ::resolveTextNode,
-    onTextInputTextUpdated = ::onTextInputTextUpdated,
+    onTextInputTextUpdated = { _, _ -> },
     storeEventPayload = ::storeEventPayload,
   )
   private val eventManager = RuneEventManager(
@@ -179,7 +180,6 @@ class RuneUIManager(
     eventDispatcher = eventDispatcher,
     handlerListener = handlerListener,
     eventPayloads = eventPayloads,
-    ensureTextInputState = ::ensureTextInputState,
   )
   private val recyclerHost = RuneRecyclerHost()
   private val nodeFactory = RuneNodeFactory(
@@ -193,7 +193,6 @@ class RuneUIManager(
     incrementNextId = { nextId++ },
     scheduleFlush = { priority: FlushPriority -> layoutFlush.scheduleFlush(priority) },
     logDebug = ::logDebug,
-    onTextInputIntrinsicSizeChanged = ::onTextInputIntrinsicSizeChanged,
     manager = this,
   )
   private val layoutFlush = RuneLayoutFlush(
@@ -314,20 +313,8 @@ class RuneUIManager(
     nodeFactory.recomputeAndPropagate(node)
   }
 
-  private fun ensureTextInputState(node: Node): TextInputState {
-    return nodeFactory.ensureTextInputState(node)
-  }
-
-  private fun cleanupTextInput(node: Node) {
-    nodeFactory.cleanupTextInput(node)
-  }
-
   private fun resolveTextNode(id: Int): Node? {
     return nodeFactory.resolveTextNode(id)
-  }
-
-  private fun measureTextInput(view: RuneTextInputView, input: MeasureInput): Pair<Float, Float> {
-    return nodeFactory.measureTextInput(view, input)
   }
 
   override fun createNode(type: String): Int = onMain {
@@ -415,49 +402,6 @@ class RuneUIManager(
     }
   }
 
-  private fun applyTextInputStyle(view: RuneTextInputView, style: Style, nodeId: Int) {
-    // Start from ZERO, not from current padding
-    var left = 0
-    var top = 0
-    var right = 0  
-    var bottom = 0
-
-    fun Float?.asPx(): Int? = this?.roundToInt()?.coerceAtLeast(0)
-
-    // Apply style padding values - these should replace, not accumulate
-    style.padding.asPx()?.let { value ->
-        left = value
-        top = value
-        right = value
-        bottom = value
-    }
-    style.paddingHorizontal.asPx()?.let { value ->
-        left = value
-        right = value
-    }
-    style.paddingVertical.asPx()?.let { value ->
-        top = value
-        bottom = value
-    }
-    style.paddingLeft.asPx()?.let { left = it }
-    style.paddingRight.asPx()?.let { right = it }
-    style.paddingTop.asPx()?.let { top = it }
-    style.paddingBottom.asPx()?.let { bottom = it }
-
-    val paddingChanged = view.updateStylePadding(left, top, right, bottom)
-    if (isNativeDebugEnabled()) {
-      Log.d(
-          "RuneTextInputView",
-          "applyTextInputStyle paddingTop=$top paddingBottom=$bottom maxLines=${view.maxLines} minLines=${view.minLines} minHeight=${view.minHeight} minimumHeight=${view.minimumHeight} measured=${view.measuredHeight} scrollY=${view.scrollY}",
-      )
-    }
-    val baselineChanged = view.ensureBaselineConstraints()
-    if (paddingChanged || baselineChanged) {
-        view.requestLayout()
-    }
-    engine.markDirty(nodeId)
-  }
-
   private fun applyBackgroundStyle(view: View, style: Style) {
     val backgroundColor = style.backgroundColor
     val borderRadius = style.borderRadius?.coerceAtLeast(0f)
@@ -513,203 +457,27 @@ class RuneUIManager(
     }
   }
 
-  private fun handleTextInputProp(node: Node, name: String, rawJson: String?): Boolean {
-    val view = node.view as? RuneTextInputView ?: return false
-    val state = ensureTextInputState(node)
+  fun dispatchEvent(nodeId: Int, event: String, payload: JSONObject?) {
+    eventManager.dispatchEvent(nodeId, event, payload)
+  }
 
-    val parsed = parseJsonValue(rawJson)
-    return when (name) {
-      "style" -> false
-      "value" -> {
-        val textValue = parsed?.toString() ?: ""
-        if (!textValue.contentEquals(view.text?.toString())) {
-          view.performProgrammaticUpdate {
-            if (!textValue.contentEquals(view.text?.toString())) {
-              view.setText(textValue)
-            }
-          }
-        } else {
-          onTextInputIntrinsicSizeChanged(node.id)
-        }
-        state.awaitingInitialValue = false
-        state.hasAppliedInitialText = true
-        onTextInputTextUpdated(node.id, textValue)
-        true
-      }
-      "defaultValue" -> {
-        val textValue = parsed?.toString() ?: ""
-        val previousDefault = state.defaultValue
-        state.defaultValue = textValue
-        var shouldApply = state.awaitingInitialValue || !state.hasAppliedInitialText
-        if (!shouldApply) {
-          val current = state.currentText.ifEmpty { view.text?.toString().orEmpty() }
-          shouldApply = current.isEmpty() || current == previousDefault
-        }
-        if (shouldApply) {
-          view.performProgrammaticUpdate {
-            if (!textValue.contentEquals(view.text?.toString())) {
-              view.setText(textValue)
-            }
-          }
-          onTextInputTextUpdated(node.id, textValue)
-          state.awaitingInitialValue = false
-          state.hasAppliedInitialText = true
-        }
-        true
-      }
-      "placeholder" -> {
-        val placeholder = (parsed as? String) ?: parseString(rawJson)
-        view.applyPlaceholder(placeholder)
-        true
-      }
-      "multiline" -> {
-        val multiline = when (parsed) {
-          is Boolean -> parsed
-          is Number -> parsed.toInt() != 0
-          else -> false
-        }
-        view.applyMultiline(multiline)
-        true
-      }
-      "numberOfLines" -> {
-        val lines = when (parsed) {
-          is Number -> parsed.toInt()
-          else -> 0
-        }
-        view.applyNumberOfLines(lines)
-        true
-      }
-      "maxLength" -> {
-        view.maxLength = when (parsed) {
-          is Number -> parsed.toInt()
-          is String -> parsed.toIntOrNull() ?: -1
-          else -> -1
-        }
-        true
-      }
-      "editable" -> {
-        val editable = when (parsed) {
-          is Boolean -> parsed
-          is Number -> parsed.toInt() != 0
-          else -> true
-        }
-        view.applyEditable(editable)
-        true
-      }
-      "secureTextEntry" -> {
-        val secure = when (parsed) {
-          is Boolean -> parsed
-          is Number -> parsed.toInt() != 0
-          else -> false
-        }
-        view.applySecureEntry(secure)
-        true
-      }
-      "inputMode" -> {
-        val mode = (parsed as? String) ?: parseString(rawJson)
-        view.applyInputMode(mode)
-        true
-      }
-      "autoCapitalize" -> {
-        val mode = (parsed as? String) ?: parseString(rawJson)
-        view.applyAutoCapitalize(mode)
-        true
-      }
-      "autoCorrect" -> {
-        view.applyAutoCorrect(parsed as? Boolean)
-        true
-      }
-      "spellCheck" -> {
-        view.applySpellCheck(parsed as? Boolean)
-        true
-      }
-      "returnKeyType" -> {
-        val type = (parsed as? String) ?: parseString(rawJson)
-        view.applyReturnKeyType(type)
-        true
-      }
-      "blurOnSubmit" -> {
-        view.blurOnSubmit = when (parsed) {
-          is Boolean -> parsed
-          is Number -> parsed.toInt() != 0
-          else -> false
-        }
-        true
-      }
-      "submitBehavior" -> {
-        val behavior = (parsed as? String)?.takeIf { it.isNotBlank() }
-          ?: parseString(rawJson)?.takeIf { it.isNotBlank() }
-          ?: "submit"
-        view.submitBehavior = behavior
-        true
-      }
-      "selection" -> {
-        val selectionJson = parsed as? JSONObject
-        if (selectionJson != null) {
-          val start = selectionJson.optInt("start", selectionJson.optInt("begin", 0))
-          val end = selectionJson.optInt("end", start)
-          val spec = SelectionSpec(start.coerceAtLeast(0), end.coerceAtLeast(0))
-          state.pendingSelection = spec
-          view.post {
-            state.pendingSelection?.let { pending ->
-              if (pending.start == spec.start && pending.end == spec.end) {
-                view.applySelection(pending.start, pending.end)
-              }
-            }
-          }
-        }
-        true
-      }
-      "selectionColor" -> {
-        val color = parseColorValue(parsed)
-        view.applySelectionColor(color)
-        true
-      }
-      "caretColor" -> {
-        val color = parseColorValue(parsed)
-        view.applyCaretColor(color)
-        true
-      }
-      "eventThrottleMs" -> {
-        val throttle = when (parsed) {
-          is Number -> parsed.toLong()
-          is String -> parsed.toLongOrNull()
-          else -> null
-        } ?: 0L
-        view.applyEventThrottle(throttle)
-        true
-      }
-      "allowProgrammaticJumpDuringEdit" -> {
-        val allow = when (parsed) {
-          is Boolean -> parsed
-          is Number -> parsed.toInt() != 0
-          else -> false
-        }
-        view.allowProgrammaticJumpDuringEdit = allow
-        true
-      }
-      "__focusRequest" -> {
-        view.requestFocusFromJS()
-        true
-      }
-      "clearButtonMode" -> {
-        logDebug("RuneUI", "clearButtonMode is not supported on Android; ignoring value: $parsed")
-        true
-      }
-      "showClearAccessory" -> {
-        logDebug("RuneUI", "showClearAccessory is not supported on Android; ignoring value: $parsed")
-        true
-      }
-      else -> false
+  /**
+   * Allow components to provide custom Yoga measurement for their nodes.
+   */
+  fun setMeasureHandler(nodeId: Int, handler: MeasureHandler?) {
+    engine.setMeasureHandler(nodeId, handler)
+    if (handler != null) {
+      markNodeDirty(nodeId)
     }
   }
 
-  internal fun emitTextInputEvent(nodeId: Int, event: String, payload: JSONObject?) {
-    eventManager.emitTextInputEvent(nodeId, event, payload)
-  }
-
-  fun dispatchEvent(nodeId: Int, event: String, payload: JSONObject?) {
-    eventManager.dispatchEvent(nodeId, event, payload)
+  /**
+   * Generic API to mark a node's layout as dirty and trigger relayout.
+   * Used by components when their intrinsic size changes.
+   */
+  fun markNodeDirty(nodeId: Int) {
+    engine.markDirty(nodeId)
+    scheduleFlush(FlushPriority.HIGH)
   }
 
   override fun onPressablePressIn(nodeId: Int, payload: JSONObject) {
@@ -750,23 +518,6 @@ class RuneUIManager(
 
   override fun onPressableCancel(nodeId: Int, payload: JSONObject) {
     eventManager.onPressableCancel(nodeId, payload)
-  }
-
-  internal fun onTextInputTextUpdated(nodeId: Int, text: String) {
-    eventManager.onTextInputTextUpdated(nodeId, text)
-  }
-
-  internal fun onTextInputLayout(nodeId: Int, height: Int) {
-    eventManager.onTextInputLayout(nodeId, height)
-  }
-
-  internal fun clearTextInputExactHeight(nodeId: Int) {
-    eventManager.clearTextInputExactHeight(nodeId)
-  }
-
-  internal fun onTextInputIntrinsicSizeChanged(nodeId: Int) {
-    eventManager.onTextInputIntrinsicSizeChanged(nodeId)
-    scheduleFlush()
   }
 
   fun applyBatch(batchJson: String?) = onMain {
