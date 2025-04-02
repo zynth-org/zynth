@@ -27,7 +27,6 @@ internal class RunePropApplier(
   private val nodes: SparseArray<RuneUIManager.Node>,
   private val engine: LayoutEngine,
   private val density: Float,
-  private val imageSupport: RuneImageSupport,
   private val logDebug: (String, String) -> Unit,
   private val resolveTextNode: (Int) -> RuneUIManager.Node?,
   private val onTextInputTextUpdated: (Int, String) -> Unit,
@@ -96,9 +95,7 @@ internal class RunePropApplier(
         // Handled by component descriptors (e.g., Rune Pressable, Button)
       }
       PropertyCategory.IMAGE -> {
-        if (target.type == IMAGE_TYPE && imageSupport.handleProp(target, name, valueJson)) {
-          return
-        }
+        // Image properties are now handled by ImageComponentDescriptor
       }
       PropertyCategory.TEXT -> {
         // Text properties are part of style, accumulate them
@@ -169,9 +166,7 @@ internal class RunePropApplier(
         textView.setTypeface(textView.typeface, if (isBold) Typeface.BOLD else Typeface.NORMAL)
       }
     }
-    if (target.type == IMAGE_TYPE) {
-      imageSupport.onStyleApplied(target, pixelStyle)
-    }
+
   }
   
   /**
@@ -286,10 +281,6 @@ internal class RunePropApplier(
     val node = nodes.get(nodeId) ?: run {
       handlerListener(nodeId, event, handlerId)
       return
-    }
-
-    if (node.type == IMAGE_TYPE) {
-      imageSupport.onHandlerSet(node, event)
     }
 
     if (event == "onLayout") {
@@ -517,6 +508,5 @@ internal class RunePropApplier(
 
   companion object {
     private const val TEXT_TYPE = "text"
-    private const val IMAGE_TYPE = "image"
   }
 }

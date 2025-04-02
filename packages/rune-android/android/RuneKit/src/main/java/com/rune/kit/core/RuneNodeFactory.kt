@@ -32,7 +32,6 @@ internal class RuneNodeFactory(
   private val root: RuneRootView,
   private val nodes: SparseArray<RuneUIManager.Node>,
     private val engine: LayoutEngine,
-    private val imageSupport: RuneImageSupport,
     private val pendingTextRebuild: LinkedHashSet<Int>,
     private val nodeRecyclingPool: NodeRecyclingPool,
     private val getNextId: () -> Int,
@@ -45,13 +44,11 @@ internal class RuneNodeFactory(
   // Fast enum-based dispatch to avoid repeated string comparisons in createNode
   private enum class NodeType {
     TEXT,
-    IMAGE,
     OTHER;
 
     companion object {
       private val MAP: Map<String, NodeType> = mapOf(
         "text" to TEXT,
-        "image" to IMAGE,
       )
 
       fun fromString(type: String?): NodeType = MAP[type] ?: OTHER
@@ -60,7 +57,6 @@ internal class RuneNodeFactory(
 
   // Component type constants
   private val TEXT_TYPE = "text"
-  private val IMAGE_TYPE = "image"
 
   // ==================== Text Node Helpers ====================
 
@@ -161,20 +157,6 @@ internal class RuneNodeFactory(
     }
   }
 
-  private object ImageCreator : ViewCreator {
-    override fun create(context: android.content.Context, id: Int): View {
-      return ImageView(context).apply {
-        adjustViewBounds = true
-        scaleType = ImageView.ScaleType.CENTER_CROP
-        setBackgroundColor(Color.TRANSPARENT)
-      }
-    }
-
-    override fun registerHandlers(factory: RuneNodeFactory, id: Int, view: View, node: RuneUIManager.Node) {
-      // imageSupport initialization for node happens in createNode after node creation
-    }
-  }
-
   private object ScrollViewCreator : ViewCreator {
     override fun create(context: android.content.Context, id: Int): View {
       return FrameLayout(context)
@@ -197,7 +179,6 @@ internal class RuneNodeFactory(
 
   private fun getViewCreator(type: NodeType): ViewCreator = when (type) {
     NodeType.TEXT -> TextCreator
-    NodeType.IMAGE -> ImageCreator
     NodeType.OTHER -> OtherCreator
   }
 
@@ -253,9 +234,6 @@ internal class RuneNodeFactory(
     // Step 3: Create node and register
     val node = RuneUIManager.Node(id, type, view, label)
     node.cachedText = (label?.text?.toString() ?: "")
-    if (type == IMAGE_TYPE) {
-      imageSupport.initializeNode(node)
-    }
     nodes.put(id, node)
     node.parentId = null
     engine.createNode(id)
@@ -303,10 +281,6 @@ internal class RuneNodeFactory(
         val measuredHeight = label.measuredHeight.coerceAtLeast((label.textSize * 1.2f).roundToInt())
         measuredWidth.toFloat() to measuredHeight.toFloat()
       }
-    } else if (type == IMAGE_TYPE) {
-      engine.setMeasureHandler(id) { input ->
-        imageSupport.measure(node, input)
-      }
     }
 
     return id
@@ -342,9 +316,6 @@ internal class RuneNodeFactory(
     }
 
     // Type-specific cleanup
-    if (node.type == IMAGE_TYPE) {
-      imageSupport.cleanup(node)
-    }
     node.layoutListener?.let {
       node.view.removeOnLayoutChangeListener(it)
       node.layoutListener = null
@@ -385,11 +356,6 @@ internal class RuneNodeFactory(
         node.label?.text = ""
         node.cachedText = ""
         node.textChildren.clear()
-      }
-      IMAGE_TYPE -> {
-        val image = node.view as? ImageView ?: return
-        image.setImageDrawable(null)
-        node.imageState = null
       }
     }
 

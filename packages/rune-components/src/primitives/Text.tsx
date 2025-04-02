@@ -1,4 +1,4 @@
-import { children as resolveChildren } from "solid-js";
+import { mergeProps, children as resolveChildren } from "solid-js";
 import type { JSX, ParentComponent } from "solid-js";
 import type { Style } from "@rune/core";
 

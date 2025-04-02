@@ -1,15 +1,24 @@
-package com.rune.kit.core
+package com.rune.components.image
 
+import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.BlendMode
+import android.graphics.BlendModeColorFilter
 import android.graphics.Color
+import android.graphics.PorterDuff
 import android.net.Uri
+import android.os.Build
 import android.os.Handler
+import android.os.Looper
 import android.util.Base64
 import android.util.Log
 import android.widget.ImageView
 import androidx.core.widget.ImageViewCompat
+import com.rune.kit.core.ImageState
+import com.rune.kit.core.RuneRootView
+import com.rune.kit.core.RuneUIManager
 import com.rune.kit.layout.LayoutEngine
 import com.rune.kit.layout.MeasureInput
 import com.rune.kit.layout.MeasureMode
@@ -30,27 +39,18 @@ import org.json.JSONException
 import org.json.JSONObject
 import org.json.JSONTokener
 
-data class ImageState(
-  var requestToken: String = "",
-  var job: Future<*>? = null,
-  var tintColor: Int? = null,
-  var hasOnLoadHandler: Boolean = false,
-  var hasOnErrorHandler: Boolean = false,
-  var intrinsicWidth: Int = 0,
-  var intrinsicHeight: Int = 0,
-  var preferredWidth: Float? = null,
-  var preferredHeight: Float? = null,
-)
-
-internal class RuneImageSupport(
+/**
+ * RuneImageComponent handles image loading, measurement, and lifecycle for Image nodes.
+ * Migrated from core to component package following the migration guide.
+ */
+internal class RuneImageComponent(
   private val root: RuneRootView,
   private val engine: LayoutEngine,
-  private val handler: Handler,
   private val eventDispatcher: (Int, String) -> Unit,
   private val scheduleFlush: () -> Unit,
   private val storeEventPayload: (Int, String, JSONObject?) -> Unit,
-  private val runOnMainThread: ((() -> Unit) -> Unit),
 ) {
+  private val handler = Handler(Looper.getMainLooper())
   private val imageExecutor: ExecutorService = Executors.newFixedThreadPool(4) { runnable ->
     Thread(runnable, "RuneImageLoader").apply { isDaemon = true }
   }
@@ -162,7 +162,7 @@ internal class RuneImageSupport(
     storeEventPayload(node.id, "onLoad", null)
     storeEventPayload(node.id, "onError", null)
     val imageView = node.view as? ImageView
-    runOnMainThread {
+    handler.post {
       imageView?.setImageDrawable(null)
       imageView?.let { setTint(it, null) }
     }
@@ -294,7 +294,7 @@ internal class RuneImageSupport(
   private fun clearImage(node: RuneUIManager.Node) {
     val imageView = node.view as? ImageView ?: return
     val state = ensureState(node)
-    runOnMainThread {
+    handler.post {
       imageView.setImageDrawable(null)
       setTint(imageView, state.tintColor)
       state.intrinsicWidth = 0
@@ -603,9 +603,16 @@ internal class RuneImageSupport(
 
   private fun setTint(imageView: ImageView, color: Int?) {
     if (color != null) {
-      ImageViewCompat.setImageTintList(imageView, ColorStateList.valueOf(color))
+      // Use ColorFilter with SRC_ATOP mode to blend the tint with the image
+      // This allows the image to show through the tint color
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        imageView.colorFilter = BlendModeColorFilter(color, BlendMode.SRC_ATOP)
+      } else {
+        @Suppress("DEPRECATION")
+        imageView.setColorFilter(color, PorterDuff.Mode.SRC_ATOP)
+      }
     } else {
-      ImageViewCompat.setImageTintList(imageView, null)
+      imageView.colorFilter = null
     }
   }
 
@@ -621,10 +628,30 @@ internal class RuneImageSupport(
 
   private fun parseColorString(raw: String?): Int? {
     if (raw.isNullOrBlank()) return null
+
+    val trimmed = raw.trim()
+
+    // Handle rgba(r,g,b,a) format by converting to argb(a,r,g,b)
+    if (trimmed.startsWith("rgba(", ignoreCase = true) && trimmed.endsWith(")")) {
+      try {
+        val content = trimmed.substring(5, trimmed.length - 1) // Remove "rgba(" and ")"
+        val parts = content.split(",").map { it.trim() }
+        if (parts.size == 4) {
+          val r = parts[0].toFloatOrNull()?.roundToInt() ?: return null
+          val g = parts[1].toFloatOrNull()?.roundToInt() ?: return null
+          val b = parts[2].toFloatOrNull()?.roundToInt() ?: return null
+          val a = (parts[3].toFloatOrNull()?.times(255))?.roundToInt() ?: return null
+          return Color.argb(a.coerceIn(0, 255), r.coerceIn(0, 255), g.coerceIn(0, 255), b.coerceIn(0, 255))
+        }
+      } catch (e: Exception) {
+        // Fall through to standard parsing
+      }
+    }
+
     return try {
-      Color.parseColor(raw)
+      Color.parseColor(trimmed)
     } catch (_: IllegalArgumentException) {
-      when (raw.lowercase(Locale.US)) {
+      when (trimmed.lowercase(Locale.US)) {
         "transparent" -> Color.TRANSPARENT
         "black" -> Color.BLACK
         "white" -> Color.WHITE

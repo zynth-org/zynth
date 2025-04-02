@@ -128,6 +128,10 @@ class RuneUIManager(
     var lastExactHeight: Int = 0,
   )
 
+  // Public accessor methods for component packages
+  fun getRootView(): RuneRootView = root
+  fun getLayoutEngine(): LayoutEngine = engine
+
   private fun processPendingViewOperations() {
     layoutFlush.processPendingViewOperations()
   }
@@ -148,15 +152,6 @@ class RuneUIManager(
   private val pendingTextRebuild = LinkedHashSet<Int>()
   private val handler = Handler(Looper.getMainLooper())
   private val frameScheduler = FrameScheduler()
-  private val imageSupport = RuneImageSupport(
-    root = root,
-    engine = engine,
-    handler = handler,
-    eventDispatcher = eventDispatcher,
-    scheduleFlush = this::scheduleFlush,
-    storeEventPayload = this::storeEventPayload,
-    runOnMainThread = this::runOnMainThread,
-  )
   private val eventPayloads = HashMap<String, ArrayDeque<String>>()
   private val pendingViewOperations = mutableListOf<ViewOperation>()
   private val pendingNativeOperations = mutableListOf<NativeOperation>()
@@ -168,7 +163,6 @@ class RuneUIManager(
     nodes = nodes,
     engine = engine,
     density = density,
-    imageSupport = imageSupport,
     logDebug = ::logDebug,
     resolveTextNode = ::resolveTextNode,
     onTextInputTextUpdated = { _, _ -> },
@@ -186,7 +180,6 @@ class RuneUIManager(
     root = root,
     nodes = nodes,
     engine = engine,
-    imageSupport = imageSupport,
     pendingTextRebuild = pendingTextRebuild,
     nodeRecyclingPool = nodeRecyclingPool,
     getNextId = { nextId },

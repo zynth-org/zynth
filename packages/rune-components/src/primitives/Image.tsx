@@ -49,21 +49,22 @@ export interface ImageProps {
 export type ImageElementProps = ImageProps & { children?: never };
 
 export const Image: Component<ImageProps> = (props) => {
-  const { style, source, resizeMode, tintColor, onLoad, onError } = props;
-  const normalizedSource = () => normalizeImageSource(source);
+  const normalizedSource = () => normalizeImageSource(props.source);
   return (
     <image
-      style={style as any}
+      style={props.style as any}
       source={normalizedSource()}
-      resizeMode={resizeMode}
-      tintColor={tintColor}
-      onLoad={onLoad}
-      onError={onError}
+      resizeMode={props.resizeMode}
+      tintColor={props.tintColor}
+      onLoad={props.onLoad}
+      onError={props.onError}
     />
   );
 };
 
-function normalizeImageSource(input: ImageSource | ImageSource[]): ImageSource | ImageSource[] {
+function normalizeImageSource(
+  input: ImageSource | ImageSource[]
+): ImageSource | ImageSource[] {
   if (Array.isArray(input)) {
     return input.map(normalizeSingleSource);
   }
@@ -74,13 +75,19 @@ function normalizeSingleSource(source: ImageSource): ImageSource {
   if (typeof source === "string") {
     return { uri: source } satisfies ImageUriSource;
   }
-  if (source && typeof source === "object" && (source as any).type === "asset") {
+  if (
+    source &&
+    typeof source === "object" &&
+    (source as any).type === "asset"
+  ) {
     return descriptorToNativeSource(source as ImageDescriptorSource);
   }
   return source;
 }
 
-function descriptorToNativeSource(descriptor: ImageDescriptorSource): ImageSource {
+function descriptorToNativeSource(
+  descriptor: ImageDescriptorSource
+): ImageSource {
   const devUrl = (globalThis as any).__RUNE_DEV_SERVER_URL;
   if (devUrl && descriptor.devPath) {
     const encodedPath = encodeDevPath(descriptor.devPath);
@@ -89,7 +96,9 @@ function descriptorToNativeSource(descriptor: ImageDescriptorSource): ImageSourc
     } satisfies ImageUriSource;
   }
 
-  const assetId = descriptor.hash ? `${descriptor.name}-${descriptor.hash}` : descriptor.name;
+  const assetId = descriptor.hash
+    ? `${descriptor.name}-${descriptor.hash}`
+    : descriptor.name;
   return {
     asset: assetId,
     scale: descriptor.scale,
