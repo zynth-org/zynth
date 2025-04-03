@@ -12,6 +12,7 @@ typedef void (^RuneComponentAttachBlock)(SNUIManager *manager, SNNode *node);
 typedef BOOL (^RuneComponentSetPropBlock)(SNUIManager *manager, SNNode *node, NSString *name, id _Nullable value, NSString *rawJSON);
 typedef BOOL (^RuneComponentSetHandlerBlock)(SNUIManager *manager, SNNode *node, NSString *name);
 typedef BOOL (^RuneComponentSetPropCallbackBlock)(SNUIManager *manager, SNNode *node, NSString *name, id _Nullable callback);
+typedef void (^RuneComponentCleanupBlock)(SNUIManager *manager, SNNode *node);
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -31,6 +32,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, copy, nullable) RuneComponentSetPropBlock handleSetProp;
 @property(nonatomic, copy, nullable) RuneComponentSetHandlerBlock handleSetHandler;
 @property(nonatomic, copy, nullable) RuneComponentSetPropCallbackBlock handleSetPropCallback;
+@property(nonatomic, copy, nullable) RuneComponentCleanupBlock cleanup;
 
 @end
 

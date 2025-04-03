@@ -1,6 +1,5 @@
 #import "SNUIManager.h"
 #import "SNUIManager+Internal.h"
-#import "SNUIManager+Image.h"
 #import "RuneComponentRegistry.h"
 #import "RuneUIManager+View.h"
 #import "RuneUIManager+Text.h"
@@ -98,15 +97,6 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
     l.textColor = [UIColor whiteColor];
     l.numberOfLines = 0;
     v = l;
-  } else if (!v && [type isEqualToString:@"image"]) {
-#if __has_include(<UIKit/UIKit.h>)
-    UIImageView *imageView = [UIImageView new];
-    imageView.contentMode = UIViewContentModeScaleAspectFill;
-    imageView.clipsToBounds = YES;
-    v = imageView;
-#else
-    v = [UIView new];
-#endif
   }
 
   if (!v) {
@@ -653,10 +643,6 @@ static void SNApplyEdges(NSDictionary *style,
   if (pointerEventsHandled) {
     return;
   }
-
-  if ([self sn_imageHandlesSetPropForNode:n name:name valueJSON:json]) {
-    return;
-  }
 }
 
 - (void)setStyle:(NSNumber *)nodeId style:(NSDictionary *)style {
@@ -695,10 +681,6 @@ static void SNApplyEdges(NSDictionary *style,
     }
     return;
   }
-
-  if ([self sn_imageHandlesSetPropCallbackForNode:n name:name callback:callback]) {
-    return;
-  }
 }
 
 - (void)setHandler:(NSNumber *)nodeId name:(NSString *)name {
@@ -716,10 +698,6 @@ static void SNApplyEdges(NSDictionary *style,
   if ([name isEqualToString:@"onPress"]) {
     n.onPressCallback = nil;
     [self rune_attachTapRecognizerForNode:n];
-    return;
-  }
-
-  if ([self sn_imageHandlesSetHandlerForNode:n name:name]) {
     return;
   }
 
@@ -811,7 +789,12 @@ static void SNApplyEdges(NSDictionary *style,
 - (void)removeChild:(NSNumber *)parentId child:(NSNumber *)childId {
   SNNode *c = _nodes[childId];
   if (!c || !c.view) return;
-  [self sn_imageCleanupNode:c];
+  
+  RuneComponentDescriptor *componentDescriptor = RuneGetComponentDescriptor(c.type);
+  if (componentDescriptor && componentDescriptor.cleanup) {
+    componentDescriptor.cleanup(self, c);
+  }
+  
   for (UIGestureRecognizer *gr in c.view.gestureRecognizers.copy) {
     [c.view removeGestureRecognizer:gr];
   }
