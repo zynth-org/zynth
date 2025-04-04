@@ -157,16 +157,6 @@ internal class RunePropApplier(
       if (target.view.alpha != 1f) target.view.alpha = 1f
       target.label?.let { if (it.alpha != 1f) it.alpha = 1f }
     }
-    (target.label ?: target.view as? TextView)?.let { textView ->
-      pixelStyle.fontSize?.let { textView.setTextSize(TypedValue.COMPLEX_UNIT_PX, it) }
-      style.color?.let { textView.setTextColor(it) }
-      style.fontWeight?.let { weight ->
-        val isBold = weight.equals("bold", ignoreCase = true) ||
-          weight.toIntOrNull()?.let { it >= 600 } == true
-        textView.setTypeface(textView.typeface, if (isBold) Typeface.BOLD else Typeface.NORMAL)
-      }
-    }
-
   }
   
   /**
@@ -245,29 +235,32 @@ internal class RunePropApplier(
   internal fun applySetText(nodeId: Int, text: String, propagateTextChange: (RuneUIManager.Node) -> Unit) {
     logDebug("RuneUI", "setText nodeId=$nodeId text='$text'")
     val node = nodes.get(nodeId)
-    node?.cachedText = text
+    if (node == null) {
+      Log.w("RuneUI", "setText: node $nodeId not found")
+      return
+    }
+    
+    node.cachedText = text
 
-    val target = resolveTextNode(nodeId)
-    if (target == null) {
-      Log.w("RuneUI", "setText: could not resolve target for nodeId=$nodeId")
+    // Check if component has custom text handling via property
+    val descriptor = RuneComponentRegistry.getDescriptor(node.type)
+    if (descriptor != null) {
+      val handled = descriptor.applyProperty(node, "text", "\"$text\"")
+      if (handled) {
+        engine.markDirty(node.id)
+        propagateTextChange(node)
+        return
+      }
     }
 
-    when {
-      target?.type == TEXT_TYPE -> {
-        engine.markDirty(target.id)
-        propagateTextChange(target)
-        logDebug("RuneUI", "Set text on label: ${target.label?.text}")
-      }
-      target?.view is TextView -> {
-        @Suppress("UNCHECKED_CAST")
-        val textView = target.view as TextView
-        textView.text = text
-        engine.markDirty(target.id)
-        logDebug("RuneUI", "Set text on view: ${textView.text}")
-      }
-      else -> {
-        engine.markDirty(target?.id ?: nodeId)
-      }
+    // Fallback to TextView handling
+    if (node.view is TextView) {
+      val textView = node.view as TextView
+      textView.text = text
+      engine.markDirty(node.id)
+      logDebug("RuneUI", "Set text on view: ${textView.text}")
+    } else {
+      engine.markDirty(node.id)
     }
   }
 

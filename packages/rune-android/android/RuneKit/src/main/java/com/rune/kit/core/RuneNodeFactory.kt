@@ -43,13 +43,10 @@ internal class RuneNodeFactory(
 
   // Fast enum-based dispatch to avoid repeated string comparisons in createNode
   private enum class NodeType {
-    TEXT,
     OTHER;
 
     companion object {
-      private val MAP: Map<String, NodeType> = mapOf(
-        "text" to TEXT,
-      )
+      private val MAP: Map<String, NodeType> = mapOf<String, NodeType>()
 
       fun fromString(type: String?): NodeType = MAP[type] ?: OTHER
     }
@@ -143,30 +140,6 @@ internal class RuneNodeFactory(
     fun registerHandlers(factory: RuneNodeFactory, id: Int, view: View, node: RuneUIManager.Node)
   }
 
-  private object TextCreator : ViewCreator {
-    override fun create(context: android.content.Context, id: Int): View {
-      return TextView(context).apply {
-        textSize = 16f
-        setTextColor(Color.WHITE)
-        gravity = Gravity.START
-      }
-    }
-
-    override fun registerHandlers(factory: RuneNodeFactory, id: Int, view: View, node: RuneUIManager.Node) {
-      // measurement handler registered later in createNode using label != null path, so nothing to do here
-    }
-  }
-
-  private object ScrollViewCreator : ViewCreator {
-    override fun create(context: android.content.Context, id: Int): View {
-      return FrameLayout(context)
-    }
-
-    override fun registerHandlers(factory: RuneNodeFactory, id: Int, view: View, node: RuneUIManager.Node) {
-      // nothing extra
-    }
-  }
-
   private object OtherCreator : ViewCreator {
     override fun create(context: android.content.Context, id: Int): View {
       return FrameLayout(context)
@@ -178,7 +151,6 @@ internal class RuneNodeFactory(
   }
 
   private fun getViewCreator(type: NodeType): ViewCreator = when (type) {
-    NodeType.TEXT -> TextCreator
     NodeType.OTHER -> OtherCreator
   }
 
@@ -209,25 +181,15 @@ internal class RuneNodeFactory(
       label = view as? TextView
     }
 
-    // Step 2: Apply appropriate layout params based on type
-    when (type) {
-      TEXT_TYPE -> {
-        view.layoutParams = FrameLayout.LayoutParams(
-          ViewGroup.LayoutParams.WRAP_CONTENT,
-          ViewGroup.LayoutParams.WRAP_CONTENT,
-        )
-      }
-      else -> {
-        if (view.layoutParams == null) {
-          view.layoutParams = FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-          )
-        }
-        if (descriptor == null) {
-          view.isClickable = false
-        }
-      }
+    // Step 2: Apply appropriate layout params
+    if (view.layoutParams == null) {
+      view.layoutParams = FrameLayout.LayoutParams(
+        ViewGroup.LayoutParams.WRAP_CONTENT,
+        ViewGroup.LayoutParams.WRAP_CONTENT,
+      )
+    }
+    if (descriptor == null) {
+      view.isClickable = false
     }
     view.setBackgroundColor(Color.TRANSPARENT)
 
@@ -250,36 +212,6 @@ internal class RuneNodeFactory(
         engine.setStyle(id, Style(widthPercent = 100f))
       } catch (_: Throwable) {
         // Defensive: style application should never crash creation
-      }
-    }
-
-    // Step 5: Configure measurement handlers
-    if (label != null) {
-      engine.setMeasureHandler(id) { input ->
-        val widthValue = when {
-          input.width.isNaN() -> 0
-          input.width.isInfinite() -> Int.MAX_VALUE / 2
-          else -> input.width.roundToInt()
-        }
-        val heightValue = when {
-          input.height.isNaN() -> 0
-          input.height.isInfinite() -> Int.MAX_VALUE / 2
-          else -> input.height.roundToInt()
-        }
-        val widthSpec = when (input.widthMode) {
-          MeasureMode.EXACTLY -> MeasureSpec.makeMeasureSpec(widthValue, MeasureSpec.EXACTLY)
-          MeasureMode.AT_MOST -> MeasureSpec.makeMeasureSpec(widthValue, MeasureSpec.AT_MOST)
-          MeasureMode.UNDEFINED -> MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
-        }
-        val heightSpec = when (input.heightMode) {
-          MeasureMode.EXACTLY -> MeasureSpec.makeMeasureSpec(heightValue, MeasureSpec.EXACTLY)
-          MeasureMode.AT_MOST -> MeasureSpec.makeMeasureSpec(heightValue, MeasureSpec.AT_MOST)
-          MeasureMode.UNDEFINED -> MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
-        }
-        label.measure(widthSpec, heightSpec)
-        val measuredWidth = label.measuredWidth.coerceAtLeast(1)
-        val measuredHeight = label.measuredHeight.coerceAtLeast((label.textSize * 1.2f).roundToInt())
-        measuredWidth.toFloat() to measuredHeight.toFloat()
       }
     }
 
@@ -351,14 +283,6 @@ internal class RuneNodeFactory(
     node: RuneUIManager.Node,
     type: String,
   ) {
-    when (type) {
-      TEXT_TYPE -> {
-        node.label?.text = ""
-        node.cachedText = ""
-        node.textChildren.clear()
-      }
-    }
-
     RuneComponentRegistry.getDescriptor(type)?.onReset?.invoke(node)
 
     // Clear common state
