@@ -22,6 +22,12 @@ NS_ASSUME_NONNULL_BEGIN
                   payload:(NSDictionary *_Nullable)payload
                    toNode:(SNNode *)node;
 
+/// Marks that the UI needs to be flushed on the next display link tick.
+- (void)rune_markNeedsFlush;
+
+/// Retrieves a node by its ID. Returns nil if not found.
+- (SNNode *_Nullable)rune_nodeForId:(NSNumber *)nodeId;
+
 @end
 
 NS_ASSUME_NONNULL_END

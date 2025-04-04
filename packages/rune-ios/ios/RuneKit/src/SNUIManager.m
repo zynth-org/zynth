@@ -2,7 +2,6 @@
 #import "SNUIManager+Internal.h"
 #import "RuneComponentRegistry.h"
 #import "RuneUIManager+View.h"
-#import "RuneUIManager+Text.h"
 #import "RuneUIManager+Events.h"
 #import "RuneUIManager+Layout.h"
 #import "SNHexColor.h"
@@ -92,13 +91,6 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
     v = componentDescriptor.createView(self, type);
   }
 
-  if (!v && [type isEqualToString:@"text"]) {
-    UILabel *l = [UILabel new];
-    l.textColor = [UIColor whiteColor];
-    l.numberOfLines = 0;
-    v = l;
-  }
-
   if (!v) {
     v = [self rune_makeContainerView];
   }
@@ -122,11 +114,6 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
   YGNodeStyleSetFlexDirection(n.yoga, YGFlexDirectionColumn);
   // Ensure children stretch to full width by default (matches Android behavior)
   YGNodeStyleSetAlignItems(n.yoga, YGAlignStretch);
-
-  if ([v isKindOfClass:[UILabel class]]) {
-    YGNodeSetContext(n.yoga, (__bridge void *)v);
-    YGNodeSetMeasureFunc(n.yoga, SNMeasureLabelFunc);
-  }
 
   _nodes[@(nid)] = n;
 
@@ -248,37 +235,6 @@ static void SNApplyBorderStyleToView(UIView *view, NSNumber *_Nullable borderWid
   }
 
   [view.layer addSublayer:borderLayer];
-}
-
-static YGSize SNMeasureLabelFunc(YGNodeConstRef node,
-                                 float width,
-                                 YGMeasureMode widthMode,
-                                 float height,
-                                 YGMeasureMode heightMode) {
-  UILabel *label = (__bridge UILabel *)YGNodeGetContext(node);
-  if (![label isKindOfClass:[UILabel class]]) {
-    return (YGSize){.width = 0, .height = 0};
-  }
-  CGFloat maxW;
-  switch (widthMode) {
-    case YGMeasureModeExactly: maxW = width; break;
-    case YGMeasureModeAtMost: maxW = width; break;
-    case YGMeasureModeUndefined: default: maxW = CGFLOAT_MAX; break;
-  }
-  CGSize fit = [label sizeThatFits:CGSizeMake(maxW, CGFLOAT_MAX)];
-  float outW;
-  switch (widthMode) {
-    case YGMeasureModeExactly: outW = width; break;
-    case YGMeasureModeAtMost: outW = MIN(width, fit.width); break;
-    case YGMeasureModeUndefined: default: outW = fit.width; break;
-  }
-  float outH;
-  switch (heightMode) {
-    case YGMeasureModeExactly: outH = height; break;
-    case YGMeasureModeAtMost: outH = MIN(height, fit.height); break;
-    case YGMeasureModeUndefined: default: outH = fit.height; break;
-  }
-  return (YGSize){.width = outW, .height = outH};
 }
 
 static void SNApplyEdges(NSDictionary *style,
@@ -449,23 +405,6 @@ static void SNApplyEdges(NSDictionary *style,
   NSNumber *br = style[@"borderRadius"];
   if (br) { n.view.layer.cornerRadius = (CGFloat)SNNum(br); n.view.clipsToBounds = YES; }
   SNApplyBorderStyleToView(n.view, style[@"borderWidth"], style[@"borderColor"], style[@"borderStyle"]);
-
-  if ([n.view isKindOfClass:[UILabel class]]) {
-    UILabel *l = (UILabel *)n.view;
-    NSNumber *fs = style[@"fontSize"]; if (fs) l.font = [UIFont systemFontOfSize:(CGFloat)SNNum(fs) weight:UIFontWeightRegular];
-    NSString *fw = style[@"fontWeight"];
-    if (fw) {
-      NSDictionary *m = @{@"normal":@(UIFontWeightRegular),@"bold":@(UIFontWeightBold),
-                           @"100":@(UIFontWeightUltraLight),@"200":@(UIFontWeightThin),@"300":@(UIFontWeightLight),@"400":@(UIFontWeightRegular),
-                           @"500":@(UIFontWeightMedium),@"600":@(UIFontWeightSemibold),@"700":@(UIFontWeightBold),@"800":@(UIFontWeightHeavy),@"900":@(UIFontWeightBlack)};
-      l.font = [UIFont systemFontOfSize:l.font.pointSize weight:[m[fw] doubleValue]];
-    }
-    NSString *color = style[@"color"]; if (color) l.textColor = SNColorFromHex(color);
-    // Only mark dirty if node has no children (Yoga constraint: measure functions can't have children)
-    if (n.yoga && YGNodeGetChildCount(n.yoga) == 0 && YGNodeGetOwner(n.yoga)) {
-      YGNodeMarkDirty(n.yoga);
-    }
-  }
 
   // TextInput-specific styling - done via selector check to avoid import
   if ([n.view respondsToSelector:@selector(applyPlaceholderToneFromTextColor)]) {
@@ -648,6 +587,13 @@ static void SNApplyEdges(NSDictionary *style,
 - (void)setStyle:(NSNumber *)nodeId style:(NSDictionary *)style {
   SNNode *n = _nodes[nodeId];
   if (!n || !n.view) return;
+  
+  // Check if component has custom style handling
+  RuneComponentDescriptor *componentDescriptor = RuneGetComponentDescriptor(n.type);
+  if (componentDescriptor && componentDescriptor.applyStyle) {
+    componentDescriptor.applyStyle(self, n, style);
+  }
+  
   [self sn_applyStyleDictionary:style toNode:n];
   [self rune_markNeedsFlush];
 }
@@ -713,16 +659,16 @@ static void SNApplyEdges(NSDictionary *style,
   SNNode *n = _nodes[nodeId];
   if (!n || !n.view) return;
 
-  if ([n.view isKindOfClass:[UILabel class]]) {
-    ((UILabel *)n.view).text = text;
-    // Only mark dirty if node has no children (Yoga constraint: measure functions can't have children)
-    if (n.yoga && YGNodeGetChildCount(n.yoga) == 0) {
-      if (YGNodeGetOwner(n.yoga)) {
-        YGNodeMarkDirty(n.yoga);
-      }
+  // Check if component has custom text handling via prop
+  RuneComponentDescriptor *componentDescriptor = RuneGetComponentDescriptor(n.type);
+  if (componentDescriptor && componentDescriptor.handleSetProp) {
+    if (componentDescriptor.handleSetProp(self, n, @"text", text, nil)) {
+      return;
     }
-    [self rune_propagateTextChangeFromNode:n];
-  } else if ([n.view respondsToSelector:@selector(performProgrammaticUpdate:)]) {
+  }
+
+  // Fallback to TextInput handling via selector check
+  if ([n.view respondsToSelector:@selector(performProgrammaticUpdate:)]) {
     // Handle TextInput views via selector
     void (^updateBlock)(void) = ^{
       if ([n.view respondsToSelector:@selector(setText:)]) {
@@ -756,12 +702,14 @@ static void SNApplyEdges(NSDictionary *style,
     if (!p || !p.view || !p.yoga) return;
     c.parentId = p.nid;
 
-    if ([self rune_handleTextInsertionForParent:p
-                                          child:c
-                                        childId:childId
-                                        atIndex:(NSUInteger)index.unsignedIntegerValue]) {
-      return;
+    // Check if parent component has custom child insertion logic
+    RuneComponentDescriptor *parentDescriptor = RuneGetComponentDescriptor(p.type);
+    if (parentDescriptor && parentDescriptor.handleInsertChild) {
+      if (parentDescriptor.handleInsertChild(self, p, c, childId, (NSUInteger)index.unsignedIntegerValue)) {
+        return;
+      }
     }
+
     int i = (int)index.intValue;
     i = MAX(0, MIN(i, (int)p.view.subviews.count));
 
@@ -811,9 +759,13 @@ static void SNApplyEdges(NSDictionary *style,
     SNNode *p = _nodes[parentId];
     if (!p || !p.yoga) return;
 
-    if ([self rune_handleTextRemovalForParent:p child:c childId:childId]) {
-      c.parentId = -1;
-      return;
+    // Check if parent component has custom child removal logic
+    RuneComponentDescriptor *parentDescriptor = RuneGetComponentDescriptor(p.type);
+    if (parentDescriptor && parentDescriptor.handleRemoveChild) {
+      if (parentDescriptor.handleRemoveChild(self, p, c, childId)) {
+        c.parentId = -1;
+        return;
+      }
     }
 
     // Check if parent is a scroll view component

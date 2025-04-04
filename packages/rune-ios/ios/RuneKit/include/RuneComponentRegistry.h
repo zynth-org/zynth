@@ -13,6 +13,9 @@ typedef BOOL (^RuneComponentSetPropBlock)(SNUIManager *manager, SNNode *node, NS
 typedef BOOL (^RuneComponentSetHandlerBlock)(SNUIManager *manager, SNNode *node, NSString *name);
 typedef BOOL (^RuneComponentSetPropCallbackBlock)(SNUIManager *manager, SNNode *node, NSString *name, id _Nullable callback);
 typedef void (^RuneComponentCleanupBlock)(SNUIManager *manager, SNNode *node);
+typedef BOOL (^RuneComponentInsertChildBlock)(SNUIManager *manager, SNNode *parent, SNNode *child, NSNumber *childId, NSUInteger index);
+typedef BOOL (^RuneComponentRemoveChildBlock)(SNUIManager *manager, SNNode *parent, SNNode *child, NSNumber *childId);
+typedef void (^RuneComponentApplyStyleBlock)(SNUIManager *manager, SNNode *node, NSDictionary *style);
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -33,6 +36,9 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, copy, nullable) RuneComponentSetHandlerBlock handleSetHandler;
 @property(nonatomic, copy, nullable) RuneComponentSetPropCallbackBlock handleSetPropCallback;
 @property(nonatomic, copy, nullable) RuneComponentCleanupBlock cleanup;
+@property(nonatomic, copy, nullable) RuneComponentInsertChildBlock handleInsertChild;
+@property(nonatomic, copy, nullable) RuneComponentRemoveChildBlock handleRemoveChild;
+@property(nonatomic, copy, nullable) RuneComponentApplyStyleBlock applyStyle;
 
 @end
 
