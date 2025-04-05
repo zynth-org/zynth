@@ -42,15 +42,7 @@ internal class RuneNodeFactory(
 ) {
 
   // Fast enum-based dispatch to avoid repeated string comparisons in createNode
-  private enum class NodeType {
-    OTHER;
 
-    companion object {
-      private val MAP: Map<String, NodeType> = mapOf<String, NodeType>()
-
-      fun fromString(type: String?): NodeType = MAP[type] ?: OTHER
-    }
-  }
 
   // Component type constants
   private val TEXT_TYPE = "text"
@@ -134,30 +126,9 @@ internal class RuneNodeFactory(
 
   // ==================== Node Creation ====================
 
-  // Small sealed interface to encapsulate view creation and per-node registration
-  private sealed interface ViewCreator {
-    fun create(context: android.content.Context, id: Int): View
-    fun registerHandlers(factory: RuneNodeFactory, id: Int, view: View, node: RuneUIManager.Node)
-  }
-
-  private object OtherCreator : ViewCreator {
-    override fun create(context: android.content.Context, id: Int): View {
-      return FrameLayout(context)
-    }
-
-    override fun registerHandlers(factory: RuneNodeFactory, id: Int, view: View, node: RuneUIManager.Node) {
-      // nothing extra
-    }
-  }
-
-  private fun getViewCreator(type: NodeType): ViewCreator = when (type) {
-    NodeType.OTHER -> OtherCreator
-  }
-
   /**
    * Creates a new node of the specified type.
-   * Handles view creation, initialization, and measurement handler setup for core component types:
-   * TEXT, IMAGE. Custom components are created via the component registry.
+   * Components are created via the component registry. Unknown types fall back to a basic FrameLayout.
    * 
    * Returns the newly created node's ID.
    */
@@ -168,17 +139,16 @@ internal class RuneNodeFactory(
     val descriptor = RuneComponentRegistry.getDescriptor(type)
     val view: View
     val label: TextView?
-    val creator: ViewCreator?
 
     if (descriptor != null) {
-      creator = null
+      // Step 1: Create view via descriptor
       view = descriptor.createView(root.context, id)
       label = view as? TextView
     } else {
-      val selectedCreator = getViewCreator(NodeType.fromString(type))
-      creator = selectedCreator
-      view = selectedCreator.create(root.context, id)
-      label = view as? TextView
+      // Fallback: create a basic FrameLayout for unknown types
+      android.util.Log.w("RuneKit", "No descriptor found for type '$type', using fallback FrameLayout")
+      view = FrameLayout(root.context)
+      label = null
     }
 
     // Step 2: Apply appropriate layout params
@@ -187,9 +157,6 @@ internal class RuneNodeFactory(
         ViewGroup.LayoutParams.WRAP_CONTENT,
         ViewGroup.LayoutParams.WRAP_CONTENT,
       )
-    }
-    if (descriptor == null) {
-      view.isClickable = false
     }
     view.setBackgroundColor(Color.TRANSPARENT)
 
@@ -200,18 +167,17 @@ internal class RuneNodeFactory(
     node.parentId = null
     engine.createNode(id)
 
+    // Step 4: Call descriptor's onNodeCreated hook if available
     if (descriptor != null) {
       descriptor.onNodeCreated(manager, node)
     } else {
-      creator?.registerHandlers(this, id, view, node)
-    }
-
-    // Step 4: Set default width for non-text views
-    if (label == null) {
-      try {
-        engine.setStyle(id, Style(widthPercent = 100f))
-      } catch (_: Throwable) {
-        // Defensive: style application should never crash creation
+      // Fallback: set default width for non-text views
+      if (label == null) {
+        try {
+          engine.setStyle(id, Style(widthPercent = 100f))
+        } catch (_: Throwable) {
+          // Defensive: style application should never crash creation
+        }
       }
     }
 
