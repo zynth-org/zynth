@@ -11,7 +11,6 @@
 
 @interface SNUIManager (RuneView)
 
-- (UIView *)rune_makeContainerView;
 - (void)rune_initializePointerDefaultsForNode:(SNNode *)node;
 - (void)rune_updateInteractionStateForNode:(SNNode *)node;
 - (void)rune_attachTapRecognizerForNode:(SNNode *)node;

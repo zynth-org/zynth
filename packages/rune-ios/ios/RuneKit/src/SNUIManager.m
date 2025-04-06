@@ -92,7 +92,9 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
   }
 
   if (!v) {
-    v = [self rune_makeContainerView];
+    // Fallback: create a basic UIView for unknown types
+    NSLog(@"[RuneKit] WARNING: No descriptor found for type '%@', using fallback UIView", type);
+    v = [[UIView alloc] init];
   }
 
   SNNode *n = [SNNode new];
@@ -103,8 +105,6 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
   n.parentId = -1;
   n.pointerEvents = @"auto"; // Default pointerEvents state
   n.type = type;
-
-  [self rune_initializePointerDefaultsForNode:n];
 
   if (!n.yoga) {
     NSLog(@"[SN] ERROR: Failed to create Yoga node for nid=%d", nid);

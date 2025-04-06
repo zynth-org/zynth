@@ -47,6 +47,10 @@ static const CFTimeInterval kRunePressableDefaultDoublePressWindowMs = 250.0;
 
 @implementation RunePressableView
 
+- (instancetype)init {
+  return [self initWithFrame:CGRectZero];
+}
+
 - (instancetype)initWithFrame:(CGRect)frame {
   if (self = [super initWithFrame:frame]) {
     _pressRetentionOffset = kRunePressableDefaultRetention;

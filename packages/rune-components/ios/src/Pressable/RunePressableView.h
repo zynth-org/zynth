@@ -5,6 +5,8 @@
 #import "RuneViewHost.h"
 #endif
 
+#import "RuneHitTestingView.h"
+
 NS_ASSUME_NONNULL_BEGIN
 
 @class SNUIManager;

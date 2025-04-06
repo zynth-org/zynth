@@ -487,20 +487,23 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
               styleDict[key] = [NSString stringWithUTF8String:utf8.c_str()];
             };
 
-            const char *numericKeys[] = {"width",          "height",         "flex",           "padding",
-                                         "paddingHorizontal", "paddingVertical", "paddingTop",    "paddingRight",
-                                         "paddingBottom",  "margin",         "marginHorizontal", "marginVertical",
-                                         "marginTop",      "marginRight",    "marginBottom",   "borderRadius",
-                                         "borderWidth",    "fontSize",       "top",           "right",
-                                         "bottom",         "left",          "opacity"};
+            const char *numericKeys[] = {"width",          "height",         "flex",           "flexGrow",
+                                         "flexShrink",    "flexBasis",      "padding",        "paddingHorizontal",
+                                         "paddingVertical", "paddingTop",   "paddingRight",   "paddingBottom",
+                                         "paddingLeft",   "margin",         "marginHorizontal", "marginVertical",
+                                         "marginTop",     "marginRight",    "marginBottom",   "marginLeft",
+                                         "borderRadius",  "borderWidth",    "fontSize",       "top",
+                                         "right",         "bottom",         "left",           "opacity",
+                                         "gap",           "rowGap",         "columnGap",      "minWidth",
+                                         "minHeight",     "maxWidth",       "maxHeight",      "aspectRatio"};
             for (const char *key : numericKeys) {
               copyNumber(key);
             }
 
-            const char *stringKeys[] = {"flexDirection", "justifyContent", "alignItems",
-                                         "flexWrap",      "backgroundColor", "borderColor",
-                                         "borderStyle",  "fontWeight",      "color",         "position",
-                                         "display"};
+            const char *stringKeys[] = {"flexDirection", "justifyContent", "alignItems",   "alignSelf",
+                                         "alignContent",  "flexWrap",       "backgroundColor", "borderColor",
+                                         "borderStyle",   "fontWeight",     "color",        "position",
+                                         "display",       "overflow",       "pointerEvents"};
             for (const char *key : stringKeys) {
               copyString(key);
             }

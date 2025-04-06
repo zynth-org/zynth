@@ -29,6 +29,10 @@ static const CFTimeInterval kRuneButtonLongPressDuration = 0.5;
 
 @implementation RuneButtonView
 
+- (instancetype)init {
+  return [self initWithFrame:CGRectZero];
+}
+
 - (instancetype)initWithFrame:(CGRect)frame {
   if (self = [super initWithFrame:frame]) {
     _pressRetentionOffset = 14.0;

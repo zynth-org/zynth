@@ -24,11 +24,6 @@ NS_INLINE RunePointerEventsMode RunePointerEventsFromString(NSString *value) {
   return RunePointerEventsAuto;
 }
 
-/// Base UIView subclass that respects `pointerEvents` semantics.
-@interface RuneHitTestingView : UIView
-@property(nonatomic, assign) RunePointerEventsMode pointerMode;
-@end
-
 #endif
 
 #endif /* RUNE_VIEW_HOST_H */

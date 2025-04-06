@@ -46,6 +46,10 @@ static NSTimeInterval RuneScrollCurrentTime(void) {
 
 @implementation RuneScrollView
 
+- (instancetype)init {
+  return [self initWithFrame:CGRectZero];
+}
+
 - (instancetype)initWithFrame:(CGRect)frame {
   if (self = [super initWithFrame:frame]) {
     [self commonInit];
