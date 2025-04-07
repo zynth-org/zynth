@@ -17,6 +17,10 @@ import * as rspack from "@rspack/core";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HMR_SHIM_PATH = path.join(__dirname, "shims/hmr-client-empty.js");
 const OVERLAY_SHIM_PATH = path.join(__dirname, "shims/overlay-empty.js");
+const IMAGE_ASSET_LOADER_PATH = path.join(
+  __dirname,
+  "loaders/image-asset-loader.js"
+);
 
 const DEFAULT_ARTIFACT_RELATIVE_PATH = ".rune/artifacts.json";
 
@@ -191,8 +195,18 @@ export function createRuneRsbuildPlugin(
         ? artifactPath
         : path.join(api.context.rootPath, artifactPath);
 
+      // Exclude images from built-in asset handling so our custom loader can process them
+      api.modifyBundlerChain((chain, { CHAIN_ID }) => {
+        // Exclude our supported image formats from the built-in rule
+        // The built-in rule will still handle images imported with ?url or ?inline
+        chain.module
+          .rule(CHAIN_ID.RULE.IMAGE)
+          .exclude.add(/\.(png|jpe?g|gif|webp|avif|svg)$/i);
+      });
+
       api.modifyRspackConfig((config) => {
         ensureAliases(config, repoRoot, extraAliases);
+        configureImageAssets(config);
 
         if (hermesCompat) {
           config.target = ["electron-renderer", "es5"];
@@ -220,6 +234,28 @@ export function createRuneRsbuildPlugin(
         }
       });
 
+      // Add middleware to serve static files via /@fs/ routes (for dev mode)
+      if (api.context.action === "dev") {
+        api.modifyRsbuildConfig((config) => {
+          // Inject dev server URL as a global variable
+          const devServerHost = config.server?.host || "0.0.0.0";
+          const devServerPort = config.server?.port || 8081;
+          const devServerUrl = `http://${
+            devServerHost === "0.0.0.0" ? "localhost" : devServerHost
+          }:${devServerPort}`;
+
+          config.source ??= {};
+          config.source.define ??= {};
+          (config.source.define as Record<string, any>).__RUNE_DEV_SERVER_URL =
+            JSON.stringify(devServerUrl);
+
+          config.dev ??= {};
+          config.dev.setupMiddlewares = (middlewares: any) => {
+            // Add our custom middleware to serve files from filesystem
+            middlewares.unshift(createStaticAssetMiddleware());
+          };
+        });
+      }
       if (!writeArtifacts || api.context.action !== "dev") {
         return;
       }
@@ -247,6 +283,74 @@ export function createRuneRsbuildPlugin(
         await handleEnvironments(environments);
       });
     },
+  };
+}
+
+function configureImageAssets(config: rspack.Configuration) {
+  config.module ??= {};
+  config.module.rules ??= [];
+
+  // Insert at the beginning to override any default asset handling
+  // Use oneOf to ensure this rule takes precedence
+  config.module.rules.unshift({
+    test: /\.(png|jpe?g|gif|webp|avif|svg)$/i,
+    type: "javascript/auto", // Treat as JavaScript module, not asset
+    resourceQuery: { not: [/url/] }, // Skip if explicitly requested as URL
+    use: [
+      {
+        loader: IMAGE_ASSET_LOADER_PATH,
+        options: {},
+      },
+    ],
+  });
+}
+
+function createStaticAssetMiddleware() {
+  return async (req: any, res: any, next: any) => {
+    const url = req.url || "";
+
+    // Match /@fs/ routes for serving local files
+    const fsMatch = url.match(/^\/@fs\/(.+?)(?:\?.*)?$/);
+    if (!fsMatch) {
+      return next();
+    }
+
+    try {
+      // Decode the file path
+      const encodedPath = fsMatch[1];
+      // Decode each segment separately to handle special characters
+      const filePath = encodedPath
+        .split("/")
+        .map((segment: string) => decodeURIComponent(segment))
+        .join("/");
+
+      // Add leading slash back for absolute paths on Unix systems
+      const absolutePath = filePath.startsWith("/") ? filePath : "/" + filePath;
+
+      // Read and serve the file
+      const content = await fs.readFile(absolutePath);
+
+      // Set appropriate content type based on file extension
+      const ext = path.extname(filePath).toLowerCase();
+      const contentTypes: Record<string, string> = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+        ".avif": "image/avif",
+        ".svg": "image/svg+xml",
+      };
+
+      const contentType = contentTypes[ext] || "application/octet-stream";
+      res.setHeader("Content-Type", contentType);
+      res.setHeader("Cache-Control", "no-cache");
+      res.end(content);
+    } catch (error) {
+      console.error(`[rune-rsbuild-plugin] Failed to serve ${url}:`, error);
+      res.statusCode = 404;
+      res.end("Not found");
+    }
   };
 }
 

@@ -1,4 +1,4 @@
-import type { Component } from "solid-js";
+import { createEffect, type Component } from "solid-js";
 import type {
   Style,
   ImageAssetSource as CoreImageAssetSource,
@@ -49,7 +49,12 @@ export interface ImageProps {
 export type ImageElementProps = ImageProps & { children?: never };
 
 export const Image: Component<ImageProps> = (props) => {
-  const normalizedSource = () => normalizeImageSource(props.source);
+  const normalizedSource = () => {
+    console.log("[Image] Original source:", JSON.stringify(props.source));
+    const normalized = normalizeImageSource(props.source);
+    console.log("[Image] Normalized source:", JSON.stringify(normalized));
+    return normalized;
+  };
   return (
     <image
       style={props.style as any}
@@ -89,16 +94,25 @@ function descriptorToNativeSource(
   descriptor: ImageDescriptorSource
 ): ImageSource {
   const devUrl = (globalThis as any).__RUNE_DEV_SERVER_URL;
+  console.log("[Image] descriptorToNativeSource", {
+    devUrl,
+    descriptor,
+    hasDevPath: !!descriptor.devPath,
+  });
+
   if (devUrl && descriptor.devPath) {
     const encodedPath = encodeDevPath(descriptor.devPath);
+    const uri = `${devUrl}/@fs/${encodedPath}?hash=${descriptor.hash}`;
+    console.log("[Image] Using dev server URL:", uri);
     return {
-      uri: `${devUrl}/@fs/${encodedPath}?hash=${descriptor.hash}`,
+      uri,
     } satisfies ImageUriSource;
   }
 
   const assetId = descriptor.hash
     ? `${descriptor.name}-${descriptor.hash}`
     : descriptor.name;
+  console.log("[Image] Using asset ID:", assetId);
   return {
     asset: assetId,
     scale: descriptor.scale,
@@ -106,7 +120,9 @@ function descriptorToNativeSource(
 }
 
 function encodeDevPath(filePath: string): string {
-  return filePath
+  // Remove leading slash if present to avoid double slashes in URL
+  const normalized = filePath.startsWith("/") ? filePath.slice(1) : filePath;
+  return normalized
     .replace(/\\/g, "/")
     .split("/")
     .map((segment) => encodeURIComponent(segment))
