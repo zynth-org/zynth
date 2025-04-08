@@ -1,4 +1,4 @@
-import { createEffect, type Component } from "solid-js";
+import { createEffect, createSignal, type Component } from "solid-js";
 import type {
   Style,
   ImageAssetSource as CoreImageAssetSource,
@@ -49,20 +49,76 @@ export interface ImageProps {
 export type ImageElementProps = ImageProps & { children?: never };
 
 export const Image: Component<ImageProps> = (props) => {
+  const [currentSourceIndex, setCurrentSourceIndex] = createSignal(0);
+
+  const sources = () => {
+    const src = props.source;
+    return Array.isArray(src) ? src : [src];
+  };
+
+  const currentSource = () => {
+    const sourceList = sources();
+    const index = currentSourceIndex();
+    return index < sourceList.length ? sourceList[index] : sourceList[0];
+  };
+
   const normalizedSource = () => {
-    console.log("[Image] Original source:", JSON.stringify(props.source));
-    const normalized = normalizeImageSource(props.source);
+    const source = currentSource();
+    console.log(
+      "[Image] Current source (index:",
+      currentSourceIndex(),
+      "):",
+      JSON.stringify(source)
+    );
+    const normalized = normalizeSingleSource(source);
     console.log("[Image] Normalized source:", JSON.stringify(normalized));
     return normalized;
   };
+
+  const handleError = (event: ImageErrorEvent) => {
+    const sourceList = sources();
+    const nextIndex = currentSourceIndex() + 1;
+
+    console.log(
+      "[Image] Error loading source",
+      currentSourceIndex(),
+      "of",
+      sourceList.length
+    );
+
+    // Try next source if available
+    if (nextIndex < sourceList.length) {
+      console.log("[Image] Trying fallback source at index", nextIndex);
+      setCurrentSourceIndex(nextIndex);
+    } else {
+      console.log("[Image] All sources failed, calling onError");
+      // All sources failed, call the user's error handler
+      props.onError?.(event);
+    }
+  };
+
+  const handleLoad = (event: ImageLoadEvent) => {
+    console.log(
+      "[Image] Successfully loaded source at index",
+      currentSourceIndex()
+    );
+    props.onLoad?.(event);
+  };
+
+  // Reset to first source when source prop changes
+  createEffect(() => {
+    props.source;
+    setCurrentSourceIndex(0);
+  });
+
   return (
     <image
       style={props.style as any}
       source={normalizedSource()}
       resizeMode={props.resizeMode}
       tintColor={props.tintColor}
-      onLoad={props.onLoad}
-      onError={props.onError}
+      onLoad={handleLoad}
+      onError={handleError}
     />
   );
 };
