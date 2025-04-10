@@ -2,10 +2,61 @@
 
 Rune-flavoured Rsbuild defaults wrapped as a plugin. It provides:
 
+- **Auto-discovery of `@rune/*` packages**: Automatically finds and aliases all packages in your monorepo
 - Hermes-safe dev bundler settings with HMR client shims baked in.
 - Automatic alias wiring to local Rune packages during development.
 - A dev-only artifact writer that persists the Rsbuild HMR token to `.rune/artifacts.json`.
 - A `defineRuneConfig` helper that merges common defaults so app configs stay lean.
+
+## Auto-Discovery of Workspace Packages
+
+The plugin **automatically discovers** all `@rune/*` packages in your workspace by:
+
+1. Scanning the `packages/` directory at the monorepo root
+2. Reading each package's `package.json` to find packages named `@rune/*`
+3. Creating rspack aliases pointing to `src/index.ts` files
+
+This means **you don't need to manually configure aliases** when adding new packages!
+
+### Example
+
+If you have this structure:
+
+```
+packages/
+  rune-core/
+    package.json  (name: "@rune/core")
+    src/index.ts
+  rune-safe-area/
+    package.json  (name: "@rune/safe-area")
+    src/index.ts
+```
+
+The plugin automatically creates these aliases:
+
+```typescript
+{
+  "@rune/core": "/absolute/path/packages/rune-core/src/index.ts",
+  "@rune/safe-area": "/absolute/path/packages/rune-safe-area/src/index.ts"
+}
+```
+
+**Benefits:**
+
+- Import from `@rune/safe-area` instead of relative paths like `../../../packages/rune-safe-area/dist/...`
+- Changes in package source files are picked up immediately by HMR
+- TypeScript IntelliSense works correctly with source files
+- No manual alias configuration needed
+
+### Syncing TypeScript Paths
+
+To keep TypeScript `tsconfig.base.json` in sync with discovered packages, run:
+
+```bash
+yarn sync-aliases
+```
+
+This auto-generates the `compilerOptions.paths` configuration. Run this after adding new packages.
 
 ## Usage
 

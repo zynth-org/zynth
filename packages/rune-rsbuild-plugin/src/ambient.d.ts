@@ -19,18 +19,24 @@ declare module "node:url" {
 }
 
 declare module "node:fs" {
+  export interface Dirent {
+    name: string;
+    isDirectory(): boolean;
+    isFile(): boolean;
+  }
+
   export const promises: {
     readFile(path: string, encoding?: string): Promise<string>;
-    writeFile(
+    writeFile(path: string, data: string, encoding?: string): Promise<void>;
+    mkdir(path: string, options?: { recursive?: boolean }): Promise<void>;
+    readdir(
       path: string,
-      data: string,
-      encoding?: string
-    ): Promise<void>;
-    mkdir(
-      path: string,
-      options?: { recursive?: boolean }
-    ): Promise<void>;
+      options?: { withFileTypes?: boolean }
+    ): Promise<string[] | Dirent[]>;
+    access(path: string, mode?: number): Promise<void>;
   };
+
+  export function existsSync(path: string): boolean;
 }
 
 declare namespace NodeJS {

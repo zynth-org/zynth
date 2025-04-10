@@ -3,6 +3,7 @@
 #import "RuneKit.h"
 #import "RuneKit-Swift.h"
 #import "dev-helper.h"
+{{MODULE_IMPORTS}}
 
 @interface AppDelegate ()
 @property(nonatomic, strong) RuneRuntime *runtime;
@@ -48,6 +49,8 @@
     }
     return NO;
   }
+
+{{MODULE_INITIALIZERS}}
 
   NSLog(@"[Rune] Starting runtime with rootId 0");
   [self.runtime startWithRootId:0];

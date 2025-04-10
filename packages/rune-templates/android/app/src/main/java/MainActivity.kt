@@ -33,6 +33,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     runtime.loadInitialBundle(assets)
+
+{{MODULE_INITIALIZERS}}
+
     runtime.start(root.rootId)
 
     this.runtime = runtime

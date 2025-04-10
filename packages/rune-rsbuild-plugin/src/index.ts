@@ -354,7 +354,7 @@ function createStaticAssetMiddleware() {
   };
 }
 
-function ensureAliases(
+async function ensureAliases(
   config: rspack.Configuration,
   repoRoot: string,
   extraAliases?: Record<string, string | false | (string | false)[]>
@@ -365,34 +365,97 @@ function ensureAliases(
     string | false | (string | false)[]
   >;
 
-  const defaults: Record<string, string | false | (string | false)[]> = {
-    "@rune/core": path.join(repoRoot, "packages/rune-core/src/index.ts"),
-    "@rune/core/universal": path.join(
-      repoRoot,
-      "packages/rune-core/src/universal.ts"
-    ),
-    "@rune/components": path.join(
-      repoRoot,
-      "packages/rune-components/src/index.ts"
-    ),
-    "@rune/apis": path.join(repoRoot, "packages/rune-apis/src/index.ts"),
+  // Auto-discover all @rune/* packages from the workspace
+  const discoveredAliases = await discoverRunePackageAliases(repoRoot);
+
+  // Static aliases for special cases (HMR shims, etc)
+  const staticAliases: Record<string, string | false | (string | false)[]> = {
     "@rsbuild/core/dist/client/hmr.js": HMR_SHIM_PATH,
     "@rsbuild/core/dist/client/overlay.js": OVERLAY_SHIM_PATH,
     "@rsbuild/rsbuild/dist/client/hmr.js": HMR_SHIM_PATH,
     "@rsbuild/rsbuild/dist/client/overlay.js": OVERLAY_SHIM_PATH,
   };
 
-  for (const [key, value] of Object.entries(defaults)) {
+  // Apply discovered aliases first (lowest priority)
+  for (const [key, value] of Object.entries(discoveredAliases)) {
     if (alias[key] === undefined) {
       alias[key] = value;
     }
   }
 
+  // Apply static aliases (medium priority)
+  for (const [key, value] of Object.entries(staticAliases)) {
+    if (alias[key] === undefined) {
+      alias[key] = value;
+    }
+  }
+
+  // Apply extra aliases last (highest priority)
   if (extraAliases) {
     for (const [key, value] of Object.entries(extraAliases)) {
       alias[key] = value;
     }
   }
+}
+
+async function discoverRunePackageAliases(
+  repoRoot: string
+): Promise<Record<string, string>> {
+  const aliases: Record<string, string> = {};
+  const packagesDir = path.join(repoRoot, "packages");
+
+  try {
+    const entries = (await fs.readdir(packagesDir, {
+      withFileTypes: true,
+    })) as import("node:fs").Dirent[];
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+
+      const packageDir = path.join(packagesDir, entry.name);
+      const packageJsonPath = path.join(packageDir, "package.json");
+
+      try {
+        const raw = await fs.readFile(packageJsonPath, "utf8");
+        const pkg = JSON.parse(raw) as { name?: string };
+
+        // Only process @rune/* packages
+        if (pkg.name?.startsWith("@rune/")) {
+          const srcIndex = path.join(packageDir, "src/index.ts");
+
+          // Check if src/index.ts exists
+          try {
+            await fs.access(srcIndex);
+            aliases[pkg.name] = srcIndex;
+
+            // Add special case for @rune/core/universal
+            if (pkg.name === "@rune/core") {
+              const universalPath = path.join(packageDir, "src/universal.ts");
+              try {
+                await fs.access(universalPath);
+                aliases["@rune/core/universal"] = universalPath;
+              } catch {
+                // universal.ts doesn't exist, skip
+              }
+            }
+          } catch {
+            // src/index.ts doesn't exist, skip this package
+          }
+        }
+      } catch (error) {
+        // Couldn't read or parse package.json, skip
+        continue;
+      }
+    }
+  } catch (error) {
+    // packages directory doesn't exist or can't be read
+    console.warn(
+      `[rune-rsbuild-plugin] Could not discover packages in ${packagesDir}:`,
+      error
+    );
+  }
+
+  return aliases;
 }
 
 async function findWorkspaceRoot(start: string): Promise<string> {

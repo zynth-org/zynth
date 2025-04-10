@@ -59,12 +59,11 @@ function collectNativeIOSPods(appDir) {
       const record = {
         name: pod.name,
         packageName,
-        podspecPath: pod.podspec
-          ? path.resolve(packageDir, pod.podspec)
-          : null,
+        podspecPath: pod.podspec ? path.resolve(packageDir, pod.podspec) : null,
         directoryPath: pod.path
           ? path.resolve(packageDir, pod.path)
           : packageDir,
+        initializer: iosConfig.initializer || null, // Store initializer metadata
       };
       podsByName.set(record.name, record);
     }
@@ -140,6 +139,42 @@ function formatComponentPodLines(pods, targetDir) {
   return "\n" + lines.join("\n");
 }
 
+function generateModuleImports(pods) {
+  const imports = [];
+  for (const pod of pods) {
+    if (pod.initializer && pod.initializer.className) {
+      imports.push(`#import "${pod.name}-Swift.h"`);
+    }
+  }
+  return imports.length
+    ? "\n// Auto-generated module imports\n" + imports.join("\n")
+    : "";
+}
+
+function generateModuleInitializers(pods) {
+  const initializers = [];
+  for (const pod of pods) {
+    if (
+      pod.initializer &&
+      pod.initializer.className &&
+      pod.initializer.method
+    ) {
+      const className = pod.initializer.className;
+      const method = pod.initializer.method;
+      initializers.push(
+        `  [${className} ${method}self.runtime];`,
+        `  NSLog(@"[Rune] ${className} initialized");`
+      );
+    }
+  }
+
+  if (!initializers.length) {
+    return "  // No native modules to initialize";
+  }
+
+  return "  // Auto-generated module initializers\n" + initializers.join("\n");
+}
+
 function replacePlaceholders(content, config, extras = {}) {
   let output = content
     .replace(/\{\{APP_NAME\}\}/g, config.appNameCapitalized)
@@ -151,6 +186,16 @@ function replacePlaceholders(content, config, extras = {}) {
   output = output.replace(
     /\{\{RUNE_COMPONENT_PODS\}\}/g,
     extras.componentPods ?? ""
+  );
+
+  output = output.replace(
+    /\{\{MODULE_IMPORTS\}\}/g,
+    extras.moduleImports ?? ""
+  );
+
+  output = output.replace(
+    /\{\{MODULE_INITIALIZERS\}\}/g,
+    extras.moduleInitializers ?? ""
   );
 
   return output;
@@ -194,6 +239,8 @@ function generateIOSProject(appDir, options = {}) {
   fs.mkdirSync(targetDir, { recursive: true });
 
   const componentPodBlock = formatComponentPodLines(componentPods, targetDir);
+  const moduleImports = generateModuleImports(componentPods);
+  const moduleInitializers = generateModuleInitializers(componentPods);
 
   // Copy and process template files
   const templateFiles = fs.readdirSync(templateDir);
@@ -206,6 +253,8 @@ function generateIOSProject(appDir, options = {}) {
       const content = fs.readFileSync(templateFile, "utf8");
       const processedContent = replacePlaceholders(content, config, {
         componentPods: componentPodBlock,
+        moduleImports,
+        moduleInitializers,
       });
       fs.writeFileSync(targetFile, processedContent);
       console.log(`  ✓ ${file}`);

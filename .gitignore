@@ -5,7 +5,7 @@ node_modules
 # JS build outputs
 /dist
 **/dist
-packages/*/dist
+packages/**/dist
 apps/*/dist
 apps/*/.rune
 

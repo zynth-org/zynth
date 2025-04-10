@@ -9,12 +9,39 @@
     "skipLibCheck": true,
     "baseUrl": ".",
     "paths": {
-      "@rune/core": ["packages/rune-core/src/index.ts"],
-      "@rune/core/*": ["packages/rune-core/src/*"],
-      "@rune/components": ["packages/rune-components/src/index.ts"],
-      "@rune/components/*": ["packages/rune-components/src/*"],
-      "@rune/apis": ["packages/rune-apis/src/index.ts"],
-      "@rune/apis/*": ["packages/rune-apis/src/*"]
+      "@rune/apis": [
+        "packages/rune-apis/src/index.ts"
+      ],
+      "@rune/apis/*": [
+        "packages/rune-apis/src/*"
+      ],
+      "@rune/components": [
+        "packages/rune-components/src/index.ts"
+      ],
+      "@rune/components/*": [
+        "packages/rune-components/src/*"
+      ],
+      "@rune/core": [
+        "packages/rune-core/src/index.ts"
+      ],
+      "@rune/core/*": [
+        "packages/rune-core/src/*"
+      ],
+      "@rune/core/universal": [
+        "packages/rune-core/src/universal.ts"
+      ],
+      "@rune/rsbuild-plugin": [
+        "packages/rune-rsbuild-plugin/src/index.ts"
+      ],
+      "@rune/rsbuild-plugin/*": [
+        "packages/rune-rsbuild-plugin/src/*"
+      ],
+      "@rune/safe-area": [
+        "packages/rune-safe-area/src/index.ts"
+      ],
+      "@rune/safe-area/*": [
+        "packages/rune-safe-area/src/*"
+      ]
     }
   }
 }

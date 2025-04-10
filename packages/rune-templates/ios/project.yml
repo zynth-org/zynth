@@ -37,7 +37,8 @@ targets:
       base:
         TARGETED_DEVICE_FAMILY: "1,2"
         SWIFT_OBJC_BRIDGING_HEADER: ""
-        LD_RUNPATH_SEARCH_PATHS: "@executable_path/Frameworks"
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
+        OTHER_LDFLAGS: "$(inherited) -ObjC"
     prebuildScripts:
       - name: BundleJS
         basedOnDependencyAnalysis: false

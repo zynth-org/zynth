@@ -25,6 +25,32 @@ function safeReadJSON(filePath) {
   }
 }
 
+function generateAndroidModuleInitializers(modules) {
+  const initializers = [];
+  for (const module of modules) {
+    if (
+      module.initializer &&
+      module.initializer.className &&
+      module.initializer.method
+    ) {
+      const className = module.initializer.className;
+      const method = module.initializer.method;
+      initializers.push(
+        `        ${className}.${method}(this, runtime)`,
+        `        Log.d("Rune", "${className} initialized")`
+      );
+    }
+  }
+
+  if (!initializers.length) {
+    return "        // No native modules to initialize";
+  }
+
+  return (
+    "        // Auto-generated module initializers\n" + initializers.join("\n")
+  );
+}
+
 function replacePlaceholders(content, config, extras = {}) {
   return content
     .replace(/\{\{APP_NAME\}\}/g, config.appName)
@@ -36,11 +62,15 @@ function replacePlaceholders(content, config, extras = {}) {
       /\{\{APP_NAME_CAP\}\}/g,
       config.appNameCapitalized || config.appName
     )
-    .replace(/\{\{RUNE_COMPONENT_MODULE_INCLUDES\}\}/g, extras.componentIncludes ?? "")
+    .replace(
+      /\{\{RUNE_COMPONENT_MODULE_INCLUDES\}\}/g,
+      extras.componentIncludes ?? ""
+    )
     .replace(
       /\{\{RUNE_COMPONENT_MODULE_DEPENDENCIES\}\}/g,
       extras.componentDependencies ?? ""
-    );
+    )
+    .replace(/\{\{MODULE_INITIALIZERS\}\}/g, extras.moduleInitializers ?? "");
 }
 
 function walk(dir) {
@@ -80,13 +110,18 @@ function collectNativeAndroidModules(appDir) {
           ? path.resolve(packageDir, module.path)
           : packageDir,
         dependency: module.dependency || "implementation",
+        initializer: androidConfig.initializer || null, // Store initializer metadata
       };
       modulesByName.set(record.name, record);
     }
   }
 
   if (appPackage.runeNative && appPackage.runeNative.android) {
-    registerModules(appPackage.name || "(app)", appDir, appPackage.runeNative.android);
+    registerModules(
+      appPackage.name || "(app)",
+      appDir,
+      appPackage.runeNative.android
+    );
   }
 
   const dependencySources = [
@@ -97,9 +132,12 @@ function collectNativeAndroidModules(appDir) {
   for (const source of dependencySources) {
     for (const depName of Object.keys(source)) {
       try {
-        const pkgJsonPath = require.resolve(path.join(depName, "package.json"), {
-          paths: [appDir],
-        });
+        const pkgJsonPath = require.resolve(
+          path.join(depName, "package.json"),
+          {
+            paths: [appDir],
+          }
+        );
         const packageDir = path.dirname(pkgJsonPath);
         const depPackage = safeReadJSON(pkgJsonPath);
         if (!depPackage) continue;
@@ -175,8 +213,13 @@ function generateAndroidProject(appDir, options = {}) {
 
   const templateDir = path.join(templatesRoot, "android");
   const targetDir = path.join(appDir, "android");
-  const componentIncludes = formatAndroidSettingsBlock(componentModules, targetDir);
+  const componentIncludes = formatAndroidSettingsBlock(
+    componentModules,
+    targetDir
+  );
   const componentDependencies = formatAndroidDependencyBlock(componentModules);
+  const moduleInitializers =
+    generateAndroidModuleInitializers(componentModules);
 
   if (fs.existsSync(targetDir)) {
     console.log("  Removing existing Android folder...");
@@ -229,6 +272,7 @@ function generateAndroidProject(appDir, options = {}) {
       const processed = replacePlaceholders(content, config, {
         componentIncludes,
         componentDependencies,
+        moduleInitializers,
       });
       fs.writeFileSync(targetPath, processed, "utf8");
     }
