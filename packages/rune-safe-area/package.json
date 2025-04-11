@@ -66,7 +66,8 @@
       ],
       "initializer": {
         "className": "RuneSafeArea",
-        "method": "initialize"
+        "method": "initialize",
+        "package": "dev.rune.safearea"
       }
     }
   }

@@ -1,7 +1,7 @@
 package dev.rune.safearea
 
 import android.app.Activity
-import dev.rune.core.RuneRuntime
+import com.rune.kit.runtime.RuneRuntime
 
 /**
  * Public interface for RuneSafeArea module

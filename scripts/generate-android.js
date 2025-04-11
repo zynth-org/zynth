@@ -25,6 +25,35 @@ function safeReadJSON(filePath) {
   }
 }
 
+function generateAndroidModuleImports(modules) {
+  const imports = [];
+  const packages = new Set(); // Track unique packages to avoid duplicates
+
+  for (const module of modules) {
+    if (
+      module.initializer &&
+      module.initializer.className &&
+      module.initializer.package
+    ) {
+      const pkg = module.initializer.package;
+      const className = module.initializer.className;
+      const fullImport = `${pkg}.${className}`;
+
+      if (!packages.has(fullImport)) {
+        packages.add(fullImport);
+        imports.push(`import ${fullImport}`);
+      }
+    }
+  }
+
+  // Always import Log if we have initializers
+  if (imports.length > 0) {
+    imports.unshift("import android.util.Log");
+  }
+
+  return imports.length ? "\n" + imports.join("\n") : "";
+}
+
 function generateAndroidModuleInitializers(modules) {
   const initializers = [];
   for (const module of modules) {
@@ -70,6 +99,7 @@ function replacePlaceholders(content, config, extras = {}) {
       /\{\{RUNE_COMPONENT_MODULE_DEPENDENCIES\}\}/g,
       extras.componentDependencies ?? ""
     )
+    .replace(/\{\{MODULE_IMPORTS\}\}/g, extras.moduleImports ?? "")
     .replace(/\{\{MODULE_INITIALIZERS\}\}/g, extras.moduleInitializers ?? "");
 }
 
@@ -218,6 +248,7 @@ function generateAndroidProject(appDir, options = {}) {
     targetDir
   );
   const componentDependencies = formatAndroidDependencyBlock(componentModules);
+  const moduleImports = generateAndroidModuleImports(componentModules);
   const moduleInitializers =
     generateAndroidModuleInitializers(componentModules);
 
@@ -272,6 +303,7 @@ function generateAndroidProject(appDir, options = {}) {
       const processed = replacePlaceholders(content, config, {
         componentIncludes,
         componentDependencies,
+        moduleImports,
         moduleInitializers,
       });
       fs.writeFileSync(targetPath, processed, "utf8");
