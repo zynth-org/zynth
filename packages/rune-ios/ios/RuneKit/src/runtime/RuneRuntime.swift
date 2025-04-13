@@ -289,7 +289,7 @@ public final class RuneRuntime: NSObject {
     _ = runtime.callGlobal("__startApp", args: [rootId])
   }
 
-  func emitEvent(name: String, payload: Any?) {
+  public func emitEvent(name: String, payload: Any?) {
     if let hermes = runtime as? HermesAdapter {
       hermes.emitEvent(name: name, body: payload)
       return

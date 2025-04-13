@@ -5,6 +5,13 @@
 #import "dev-helper.h"
 {{MODULE_IMPORTS}}
 
+#if __has_include("RuneRouter-Swift.h")
+#import "RuneRouter-Swift.h"
+#define RUNE_ROUTER_AVAILABLE 1
+#else
+#define RUNE_ROUTER_AVAILABLE 0
+#endif
+
 @interface AppDelegate ()
 @property(nonatomic, strong) RuneRuntime *runtime;
 @property(nonatomic, strong) UIView *surface;
@@ -16,13 +23,9 @@
   NSLog(@"[Rune] App start");
 
   self.window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
-  UIViewController *vc = [UIViewController new];
   self.surface = [[UIView alloc] initWithFrame:self.window.bounds];
   self.surface.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
   self.surface.backgroundColor = [UIColor colorWithRed:0.06 green:0.07 blue:0.09 alpha:1.0];
-  vc.view = self.surface;
-  self.window.rootViewController = vc;
-  [self.window makeKeyAndVisible];
 
   self.runtime = [[RuneRuntime alloc] initWithRootView:self.surface];
 
@@ -51,6 +54,18 @@
   }
 
 {{MODULE_INITIALIZERS}}
+
+  BOOL routerAttached = NO;
+#if RUNE_ROUTER_AVAILABLE
+  routerAttached = [RuneRouterHost bootstrapWithWindow:self.window runtime:self.runtime];
+#endif
+
+  if (!routerAttached) {
+    UIViewController *vc = [UIViewController new];
+    vc.view = self.surface;
+    self.window.rootViewController = vc;
+  }
+  [self.window makeKeyAndVisible];
 
   NSLog(@"[Rune] Starting runtime with rootId 0");
   [self.runtime startWithRootId:0];

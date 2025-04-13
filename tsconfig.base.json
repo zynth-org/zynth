@@ -41,6 +41,12 @@
       ],
       "@rune/safe-area/*": [
         "packages/rune-safe-area/src/*"
+      ],
+      "@rune/router": [
+        "packages/rune-router/src/index.ts"
+      ],
+      "@rune/router/*": [
+        "packages/rune-router/src/*"
       ]
     }
   }

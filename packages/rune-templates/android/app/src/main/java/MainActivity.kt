@@ -1,6 +1,7 @@
 package {{BUNDLE_ID}}
 
 import android.os.Bundle
+import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import {{BUNDLE_ID}}.modules.DeviceModule
 import {{BUNDLE_ID}}.modules.EnvModule
@@ -31,8 +32,7 @@ class MainActivity : AppCompatActivity() {
     RuneRuntime.initialize(this)
 
     val root = RuneRootView(this)
-    setContentView(root)
-    
+
     // Force a layout pass to ensure window insets are available
     root.post {
       val runtime = RuneRuntime(root)
@@ -51,8 +51,13 @@ class MainActivity : AppCompatActivity() {
 
 {{MODULE_INITIALIZERS}}
 
+      val routerAttached = bootstrapNativeRouter(runtime, root)
+      if (!routerAttached) {
+        setContentView(root)
+      }
+
       runtime.start(root.rootId)
-      
+
       this@MainActivity.runtime = runtime
     }
   }
@@ -61,5 +66,26 @@ class MainActivity : AppCompatActivity() {
     super.onDestroy()
     runtime?.destroy()
     runtime = null
+  }
+
+  private fun bootstrapNativeRouter(runtime: RuneRuntime, rootView: RuneRootView): Boolean {
+    try {
+      val hostClass = Class.forName("com.rune.router.RuneRouterHost")
+      val method = hostClass.getMethod(
+        "bootstrap",
+        android.app.Activity::class.java,
+        RuneRuntime::class.java,
+        android.view.View::class.java
+      )
+      val result = method.invoke(null, this, runtime, rootView) as? Boolean
+      if (result == true) {
+        return true
+      }
+    } catch (_: ClassNotFoundException) {
+      // Router package not linked; ignore.
+    } catch (error: Throwable) {
+      Log.w("RuneRouterHost", "Bootstrap failed", error)
+    }
+    return false
   }
 }
