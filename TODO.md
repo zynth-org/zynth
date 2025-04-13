@@ -61,6 +61,7 @@ This document outlines the development plan to evolve Rune into a powerful, AI-n
 
 - [ ] **`StyleSheet`:** Implement a `StyleSheet.create` API for style abstraction and optimization.
 - [✅] **`Dimensions`:** Implement an API to get screen and window dimensions.
+- [✅] **`SafeArea`:** Implement a safe area API to get device insets.
 
 ### 3. Animation (`packages/rune-animation`)
 
