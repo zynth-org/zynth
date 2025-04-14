@@ -35,6 +35,10 @@ class FocusManager {
   update(state: NavigationState | null): void {
     const next = new Set(extractFocusedRouteKeys(state));
 
+    if (areSetsEqual(this.focused, next)) {
+      return;
+    }
+
     for (const key of next) {
       if (!this.focused.has(key)) {
         this.emit(key, true);
@@ -319,6 +323,18 @@ function extractFocusedRouteKeys(state: NavigationState | null): string[] {
   }
 
   return keys;
+}
+
+function areSetsEqual(a: Set<string>, b: Set<string>): boolean {
+  if (a.size !== b.size) {
+    return false;
+  }
+  for (const key of a) {
+    if (!b.has(key)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 export function isRouteKeyFocused(

@@ -15,6 +15,7 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
   private weak var transitionCoordinatorRef: UIViewControllerTransitionCoordinator?
   private weak var hostedSurface: UIView?
   private var stackKey: String = "stack-root"
+  private var lastEmittedStateJSON: String?
 
   public override func viewDidLoad() {
     super.viewDidLoad()
@@ -140,7 +141,19 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
 
   private func emitStateChanged() {
     guard let emitter else { return }
-    emitter.emitState(currentStatePayload())
+    let payload = currentStatePayload()
+    if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
+      let json = String(data: data, encoding: .utf8),
+      json == lastEmittedStateJSON
+    {
+      return
+    } else if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
+      let json = String(data: data, encoding: .utf8)
+    {
+      lastEmittedStateJSON = json
+    }
+
+    emitter.emitState(payload)
     updateRouteFocusState()
   }
 

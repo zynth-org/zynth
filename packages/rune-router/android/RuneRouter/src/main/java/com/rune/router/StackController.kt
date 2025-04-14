@@ -21,6 +21,8 @@ internal class StackController(
   private var routerModule: RuneRouterModule? = null
   private var focusedKey: String? = null
   private var surfaceView: View? = null
+  private var lastStateSignature: String? = null
+  private var stackKey: String = "stack-root"
 
   fun bindRouterModule(module: RuneRouterModule, emitter: RuneRouterEmitter) {
     this.routerModule = module
@@ -48,6 +50,7 @@ internal class StackController(
       replace(containerId, fragment, entry.key)
       addToBackStack(entry.key)
     }
+    emitState()
   }
 
   fun pop(count: Int, animated: Boolean) {
@@ -63,6 +66,7 @@ internal class StackController(
     while (routeStack.lastOrNull()?.key != targetEntry.key) {
       routeStack.removeLastOrNull()
     }
+    emitState()
   }
 
   fun replaceTop(name: String, params: JSONObject?, animated: Boolean) {
@@ -76,6 +80,7 @@ internal class StackController(
 
   fun reset(state: JSONObject, animated: Boolean) {
     val routes = state.optJSONArray("routes") ?: JSONArray()
+    stackKey = state.optString("key", stackKey)
     routeStack.clear()
     fragmentManager.popBackStackImmediate(null, FragmentManager.POP_BACK_STACK_INCLUSIVE)
     for (i in 0 until routes.length()) {
@@ -94,6 +99,7 @@ internal class StackController(
         addToBackStack(entry.key)
       }
     }
+    emitState()
   }
 
   fun setParams(routeKey: String, params: JSONObject) {
@@ -113,7 +119,7 @@ internal class StackController(
     val routes = JSONArray()
     routeStack.forEach { routes.put(it.asJson()) }
     return JSONObject()
-      .put("key", "stack-root")
+      .put("key", stackKey)
       .put("type", "stack")
       .put("index", max(routes.length() - 1, 0))
       .put("routes", routes)
@@ -131,7 +137,13 @@ internal class StackController(
   }
 
   private fun emitState() {
-    emitter?.emitState(currentState())
+    val payload = currentState()
+    val signature = payload.toString()
+    if (signature == lastStateSignature) {
+      return
+    }
+    lastStateSignature = signature
+    emitter?.emitState(payload)
   }
 
   private data class RouteEntry(
