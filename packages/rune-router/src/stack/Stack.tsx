@@ -4,14 +4,18 @@ import {
   createContext,
   createEffect,
   createMemo,
+  createRoot,
   createSignal,
   createUniqueId,
+  onCleanup,
   onMount,
   useContext,
 } from "solid-js";
 import type {
   NavigationState,
   RouteNode,
+  ScreenOptions,
+  ScreenOptionsInput,
   StackComponentType,
   StackProps,
 } from "../core/types";
@@ -140,6 +144,14 @@ const StackRenderer: ParentComponent<{ stackId: string }> = (props) => {
       },
       router.dispatch
     );
+    const disposeOptions = descriptor.options
+      ? observeRouteOptions(descriptor.options, (options) => {
+          if (options) {
+            router.setOptions(current.key, options as ScreenOptions);
+          }
+        })
+      : null;
+    onCleanup(() => disposeOptions?.());
     return (
       <RouteProvider value={routeContext}>
         <Component />
@@ -198,5 +210,21 @@ function findStackState(
     }
   }
   // Fallback: return the first stack state we encounter so the UI can render
-  return state.type === "stack" ? state : null;
+  if (state?.type === "stack") {
+    return state;
+  }
+  return null;
+}
+
+function observeRouteOptions(
+  options: ScreenOptionsInput,
+  callback: (options?: ScreenOptions) => void
+): () => void {
+  return createRoot((dispose) => {
+    createEffect(() => {
+      const next = typeof options === "function" ? options() : options;
+      callback(next as ScreenOptions | undefined);
+    });
+    return dispose;
+  });
 }

@@ -14,8 +14,10 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
   private var transitionDisplayLink: CADisplayLink?
   private weak var transitionCoordinatorRef: UIViewControllerTransitionCoordinator?
   private weak var hostedSurface: UIView?
+  private weak var activeHost: RNScreenHostController?
   private var stackKey: String = "stack-root"
   private var lastEmittedStateJSON: String?
+  private var pendingActions: [(RNStackController) -> Void] = []
 
   public override func viewDidLoad() {
     super.viewDidLoad()
@@ -23,6 +25,7 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
     navigator.view.frame = view.bounds
     navigator.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     view.addSubview(navigator.view)
+    configureNavigationAppearance()
     navigator.interactivePopGestureRecognizer?.delegate = self
     navigator.interactivePopGestureRecognizer?.addTarget(self, action: #selector(handleEdgePan(_:)))
   }
@@ -39,16 +42,27 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
   }  // MARK: - Navigation commands
 
   func push(routeName: String, params: [String: Any]?, animated: Bool) {
+    scheduleNavigationAction { controller in
+      controller.performPush(routeName: routeName, params: params, animated: animated)
+    }
+  }
+
+  private func performPush(routeName: String, params: [String: Any]?, animated: Bool) {
     let record = RouteRecord(name: routeName, params: params)
     let host = RNScreenHostController(routeKey: record.key, routeName: routeName, params: params)
     record.controller = host
     routeStack.append(record)
-    attachSurface(to: host)
     navigator.pushViewController(host, animated: animated)
     emitStateChanged()
   }
 
   func pop(count: Int, animated: Bool) {
+    scheduleNavigationAction { controller in
+      controller.performPop(count: count, animated: animated)
+    }
+  }
+
+  private func performPop(count: Int, animated: Bool) {
     guard !routeStack.isEmpty else { return }
     let targetCount = routeStack.count - count
     if targetCount > 0 {
@@ -76,17 +90,29 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
   }
 
   func replaceTop(with name: String, params: [String: Any]?, animated: Bool) {
+    scheduleNavigationAction { controller in
+      controller.performReplaceTop(with: name, params: params, animated: animated)
+    }
+  }
+
+  private func performReplaceTop(with name: String, params: [String: Any]?, animated: Bool) {
     guard !routeStack.isEmpty else {
       print("[RNStackController] replaceTop: stack empty")
       return
     }
     routeStack.removeLast()
     _ = navigator.popViewController(animated: false)
-    push(routeName: name, params: params, animated: animated)
+    performPush(routeName: name, params: params, animated: animated)
     // emitStateChanged is called by push()
   }
 
   func reset(using state: [String: Any], animated: Bool) {
+    scheduleNavigationAction { controller in
+      controller.performReset(using: state, animated: animated)
+    }
+  }
+
+  private func performReset(using state: [String: Any], animated: Bool) {
     guard let routes = state["routes"] as? [[String: Any]] else { return }
 
     // Store the stack key from JS if provided
@@ -123,8 +149,10 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
 
   func applyOptions(for key: String, options: [String: Any]) {
     guard let record = routeStack.first(where: { $0.key == key }) else { return }
-    record.options = options
-    record.controller?.apply(options: options)
+    var next = record.options ?? [:]
+    mergeOptions(into: &next, patch: options)
+    record.options = next
+    record.controller?.apply(options: next)
   }
 
   // MARK: - State + events
@@ -182,7 +210,6 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
       return
     }
     attachSurface(to: host)
-
     // Update route stack to match navigation controller state (for back button)
     let currentKeys = Set(
       navigationController.viewControllers.compactMap { ($0 as? RNScreenHostController)?.routeKey })
@@ -215,6 +242,9 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
     didShow viewController: UIViewController,
     animated: Bool
   ) {
+    if let host = viewController as? RNScreenHostController {
+      attachSurface(to: host)
+    }
     trimRouteStack()
     emitStateChanged()
     finishTransition(finished: true)
@@ -339,14 +369,57 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
     transitionDisplayLink?.invalidate()
     transitionDisplayLink = nil
     transitionCoordinatorRef = nil
-    guard let key = transitionRouteKey else { return }
-    emitter?.emitTransitionEnd(key: key, finished: finished)
+    let key = transitionRouteKey
     transitionRouteKey = nil
+    if let key {
+      emitter?.emitTransitionEnd(key: key, finished: finished)
+    }
+    for record in routeStack {
+      record.controller?.clearSnapshot()
+    }
+    flushPendingActionsIfPossible()
   }
 
   private func attachSurface(to host: RNScreenHostController) {
     guard let surface = hostedSurface else { return }
+    if activeHost === host, surface.superview === host.view {
+      return
+    }
+    if activeHost !== host {
+      activeHost?.captureSnapshot()
+    }
+    surface.removeFromSuperview()
     host.attachSurfaceView(surface)
+    activeHost = host
+  }
+
+  private func configureNavigationAppearance() {
+    let backgroundColor = UIColor(red: 0.06, green: 0.07, blue: 0.09, alpha: 1.0)
+    let titleColor = UIColor.white
+    if #available(iOS 13.0, *) {
+      let appearance = UINavigationBarAppearance()
+      appearance.configureWithTransparentBackground()
+      appearance.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterialDark)
+      appearance.backgroundColor = backgroundColor.withAlphaComponent(0.65)
+      appearance.shadowColor = nil
+      appearance.titleTextAttributes = [.foregroundColor: titleColor]
+      appearance.largeTitleTextAttributes = [.foregroundColor: titleColor]
+      navigator.navigationBar.standardAppearance = appearance
+      navigator.navigationBar.scrollEdgeAppearance = appearance
+      navigator.navigationBar.compactAppearance = appearance
+    } else {
+      navigator.navigationBar.barTintColor = backgroundColor.withAlphaComponent(0.65)
+      navigator.navigationBar.isTranslucent = true
+      navigator.navigationBar.titleTextAttributes = [.foregroundColor: titleColor]
+      if navigator.navigationBar.subviews.first(where: { $0 is UIVisualEffectView }) == nil {
+        let blurView = UIVisualEffectView(effect: UIBlurEffect(style: .dark))
+        blurView.frame = navigator.navigationBar.bounds
+        blurView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        navigator.navigationBar.insertSubview(blurView, at: 0)
+      }
+    }
+    navigator.navigationBar.tintColor = titleColor
+    navigator.navigationBar.barStyle = .black
   }
 
   private func trimRouteStack() {
@@ -357,6 +430,26 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
       guard let controller = record.controller else { return true }
       return !keys.contains(controller.routeKey)
     }
+  }
+
+  private func scheduleNavigationAction(_ action: @escaping (RNStackController) -> Void) {
+    if isTransitionInFlight {
+      pendingActions.append(action)
+    } else {
+      action(self)
+    }
+  }
+
+  private func flushPendingActionsIfPossible() {
+    guard !pendingActions.isEmpty else { return }
+    while !pendingActions.isEmpty && !isTransitionInFlight {
+      let next = pendingActions.removeFirst()
+      next(self)
+    }
+  }
+
+  private var isTransitionInFlight: Bool {
+    return transitionCoordinatorRef != nil || navigator.transitionCoordinator != nil
   }
 }
 
@@ -384,5 +477,15 @@ private final class RouteRecord {
       result["params"] = params
     }
     return result
+  }
+}
+
+private func mergeOptions(into target: inout [String: Any], patch: [String: Any]) {
+  for (key, value) in patch {
+    if value is NSNull {
+      target.removeValue(forKey: key)
+    } else {
+      target[key] = value
+    }
   }
 }

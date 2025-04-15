@@ -53,6 +53,7 @@ export interface HeaderOptions {
   headerTransparent?: boolean;
   headerBlurEffect?: "systemUltraThin" | "systemThin" | "systemChromatic";
   headerShadowVisible?: boolean;
+  userInterfaceStyle?: "light" | "dark" | "system";
   custom?: JSX.Element;
 }
 
