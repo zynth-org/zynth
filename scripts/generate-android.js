@@ -46,11 +46,6 @@ function generateAndroidModuleImports(modules) {
     }
   }
 
-  // Always import Log if we have initializers
-  if (imports.length > 0) {
-    imports.unshift("import android.util.Log");
-  }
-
   return imports.length ? "\n" + imports.join("\n") : "";
 }
 

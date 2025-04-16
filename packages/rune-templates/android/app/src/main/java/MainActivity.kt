@@ -32,6 +32,7 @@ class MainActivity : AppCompatActivity() {
     RuneRuntime.initialize(this)
 
     val root = RuneRootView(this)
+    setContentView(root)
 
     // Force a layout pass to ensure window insets are available
     root.post {
@@ -47,16 +48,20 @@ class MainActivity : AppCompatActivity() {
         }
       }
 
+      // Load bundle and start runtime FIRST so the root view has content
       runtime.loadInitialBundle(assets)
 
 {{MODULE_INITIALIZERS}}
 
+      runtime.start(root.rootId)
+
+      // NOW bootstrap the router after the UI tree is initialized
       val routerAttached = bootstrapNativeRouter(runtime, root)
+
       if (!routerAttached) {
+        // Only if router isn't being used, keep the root as content view
         setContentView(root)
       }
-
-      runtime.start(root.rootId)
 
       this@MainActivity.runtime = runtime
     }

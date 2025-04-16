@@ -1,6 +1,9 @@
 package com.rune.kit.runtime
 
+import android.util.Log
 import org.json.JSONObject
+
+private const val TAG = "RuneModuleRegistry"
 
 interface RuneModule {
     val name: String
@@ -19,8 +22,11 @@ class RuneModuleRegistry {
     private val modules = mutableMapOf<String, RuneModule>()
 
     fun register(module: RuneModule) {
+        Log.i(TAG, "Registering module: ${module.name}")
         modules[module.name] = module
+        Log.i(TAG, "Module registered. Total modules: ${modules.size}, keys: ${modules.keys}")
         module.initialize()
+        Log.i(TAG, "Module initialized: ${module.name}")
     }
 
     fun destroy() {
@@ -39,12 +45,19 @@ class RuneModuleRegistry {
     }
 
     fun call(name: String, method: String, args: Array<Any?>): JSONObject {
+        Log.i(TAG, "call(name=$name, method=$method) - modules.size=${modules.size}")
+        Log.i(TAG, "Available modules: ${modules.keys}")
         val module = modules[name]
-            ?: return JSONObject().put("error", "module_not_found")
+        if (module == null) {
+            Log.w(TAG, "Module not found: $name")
+            return JSONObject().put("error", "module_not_found")
+        }
 
+        Log.i(TAG, "Module found, calling: $name.$method")
         return try {
             module.call(method, args)
         } catch (t: Throwable) {
+            Log.e(TAG, "Exception calling $name.$method", t)
             JSONObject()
                 .put("error", "exception")
                 .put("message", t.message ?: "unknown")
@@ -52,8 +65,9 @@ class RuneModuleRegistry {
     }
 
     fun callSync(name: String, method: String, args: Array<Any?>): Any? {
+        Log.i(TAG, "callSync(name=$name, method=$method)")
         val module = modules[name]
-            ?: throw IllegalStateException("Module $name not found")
+            ?: throw IllegalStateException("Module $name not found. Available: ${modules.keys}")
 
         if (module !is RuneSyncModule) {
             throw UnsupportedOperationException("Module $name does not support synchronous method $method")
