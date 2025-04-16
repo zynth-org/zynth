@@ -11,13 +11,16 @@ import {
   onMount,
   useContext,
 } from "solid-js";
+import type { JSX } from "solid-js";
 import type {
   NavigationState,
   RouteNode,
+  RouteContextValueInternal,
   ScreenOptions,
   ScreenOptionsInput,
   StackComponentType,
   StackProps,
+  ScreenDescriptor,
 } from "../core/types";
 import { StackScreen } from "./Screen";
 import { Header } from "./Header";
@@ -123,19 +126,33 @@ const StackRenderer: ParentComponent<{ stackId: string }> = (props) => {
     });
   }
 
-  const renderRoute = createMemo(() => {
+  const [renderedRoute, setRenderedRoute] = createSignal<RenderedScene | null>(null);
+  let currentScene: RenderedScene | null = null;
+
+  createEffect(() => {
     const current = activeRoute();
-    if (!current) return null;
+    if (!current) {
+      cleanupScene(currentScene);
+      currentScene = null;
+      setRenderedRoute(null);
+      return;
+    }
 
     const descriptor = resolveScreenDescriptor(current.name);
-    console.log(
-      "[StackRenderer] Rendering route:",
-      current.name,
-      descriptor ? "found" : "NOT FOUND"
-    );
-    if (!descriptor) return null;
+    if (!descriptor) {
+      cleanupScene(currentScene);
+      currentScene = null;
+      setRenderedRoute(null);
+      return;
+    }
 
-    const Component = descriptor.component;
+    if (currentScene && currentScene.key === current.key) {
+      currentScene.context.__updateFromState(current.params as any);
+      setRenderedRoute(currentScene);
+      return;
+    }
+
+    cleanupScene(currentScene);
     const routeContext = createRouteContextValue(
       {
         key: current.key,
@@ -143,24 +160,52 @@ const StackRenderer: ParentComponent<{ stackId: string }> = (props) => {
         params: current.params,
       },
       router.dispatch
-    );
+    ) as RouteContextValueInternal;
     const disposeOptions = descriptor.options
       ? observeRouteOptions(descriptor.options, (options) => {
           if (options) {
             router.setOptions(current.key, options as ScreenOptions);
           }
         })
-      : null;
-    onCleanup(() => disposeOptions?.());
-    return (
-      <RouteProvider value={routeContext}>
-        <Component />
-      </RouteProvider>
-    );
+      : undefined;
+    currentScene = {
+      key: current.key,
+      descriptor,
+      context: routeContext,
+      disposeOptions,
+    };
+    setRenderedRoute(currentScene);
   });
 
-  return <>{renderRoute()}</>;
+  onCleanup(() => {
+    cleanupScene(currentScene);
+    currentScene = null;
+  });
+
+  return (
+    <Show when={renderedRoute()} keyed>
+      {(scene) => {
+        const Component = scene.descriptor.component;
+        return (
+          <RouteProvider value={scene.context}>
+            <Component />
+          </RouteProvider>
+        );
+      }}
+    </Show>
+  );
 };
+
+interface RenderedScene {
+  key: string;
+  descriptor: ScreenDescriptor;
+  context: RouteContextValueInternal;
+  disposeOptions?: () => void;
+}
+
+function cleanupScene(scene: RenderedScene | null) {
+  scene?.disposeOptions?.();
+}
 
 function firstRegisteredRouteName(stackId: string): string | undefined {
   const registries = listRegisteredScreens();

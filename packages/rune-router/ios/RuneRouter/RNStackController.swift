@@ -142,8 +142,12 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
 
   func setParams(for key: String, params: [String: Any]) {
     guard let record = routeStack.first(where: { $0.key == key }) else { return }
-    record.params = params
-    record.controller?.updateParams(params)
+    var merged = record.params ?? [:]
+    for (paramKey, value) in params {
+      merged[paramKey] = value
+    }
+    record.params = merged
+    record.controller?.updateParams(merged)
     emitStateChanged()
   }
 

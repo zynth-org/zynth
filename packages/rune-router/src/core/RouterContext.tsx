@@ -5,6 +5,7 @@ import {
   createRoot,
   createSignal,
   onCleanup,
+  untrack,
   useContext,
 } from "solid-js";
 import {
@@ -15,6 +16,7 @@ import {
   type NavigationState,
   type RouteNode,
   type RouteContextValue,
+  type RouteContextValueInternal,
   type RouteParamList,
   type RouterAction,
   type RouterContextValue,
@@ -285,22 +287,38 @@ export const RouteProvider: ParentComponent<{
 export function createRouteContextValue(
   route: { key: string; name: string; params?: Record<string, unknown> },
   dispatch: (action: RouterAction) => void
-): RouteContextValue {
+): RouteContextValueInternal {
   const [params, setParams] = createSignal(route.params as any);
-
-  return {
+  const mergeParams = (
+    partial: Record<string, unknown> | undefined
+  ): Record<string, unknown> => {
+    if (!partial) {
+      return (untrack(params) as Record<string, unknown>) ?? {};
+    }
+    const previous = (untrack(params) as Record<string, unknown>) ?? {};
+    return { ...previous, ...partial };
+  };
+  const context: RouteContextValueInternal = {
     key: route.key,
     name: route.name,
     params,
     setParams(next) {
-      setParams((prev) => ({ ...(prev ?? {}), ...(next as any) }));
+      const merged = mergeParams(next as Record<string, unknown>);
+      setParams(merged as any);
       dispatch({
         type: "SET_PARAMS",
         source: route.key,
-        payload: (next as Record<string, unknown>) ?? {},
+        payload: merged,
       });
     },
-  } as RouteContextValue;
+    __updateFromState(next) {
+      if (!next) return;
+      const merged = mergeParams(next as Record<string, unknown>);
+      setParams(merged as any);
+    },
+  };
+
+  return context;
 }
 
 export function registerScreen(descriptor: ScreenDescriptor): () => void {

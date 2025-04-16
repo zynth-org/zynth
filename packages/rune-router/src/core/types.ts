@@ -251,6 +251,13 @@ export interface RouteContextValue<
   setParams(params: Partial<ParamList[RouteName]>): void;
 }
 
+export interface RouteContextValueInternal<
+  ParamList extends RouteParamList = RouteParamList,
+  RouteName extends keyof ParamList = keyof ParamList
+> extends RouteContextValue<ParamList, RouteName> {
+  __updateFromState(params: ParamList[RouteName]): void;
+}
+
 export type StackComponentType = ParentComponent<StackProps> & {
   Screen: <
     ParamList extends RouteParamList = RouteParamList,
