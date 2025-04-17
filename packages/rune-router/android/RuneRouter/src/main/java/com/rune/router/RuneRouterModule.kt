@@ -82,6 +82,10 @@ class RuneRouterModule(
     beforeRemoveResolvers[requestId] = completion
     emitter.emitBeforeRemove(action, routeKey, requestId)
   }
+  
+  fun setOnSurfaceAttachedCallback(callback: () -> Unit) {
+    stackController.setOnSurfaceAttachedCallback(callback)
+  }
 
   private fun handleDispatch(action: JSONObject) {
     val type = action.optString("type")

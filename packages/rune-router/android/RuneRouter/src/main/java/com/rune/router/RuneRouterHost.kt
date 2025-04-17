@@ -15,24 +15,30 @@ object RuneRouterHost {
 
   @JvmStatic
   fun bootstrap(activity: Activity, runtime: RuneRuntime, surfaceView: View): Boolean {
-    Log.i(TAG, "Bootstrap invoked for activity=${activity::class.java.simpleName}")
+    Log.i(TAG, "=".repeat(60))
+    Log.i(TAG, "ROUTER BOOTSTRAP START")
+    Log.i(TAG, "Activity: ${activity::class.java.simpleName}")
+    Log.i(TAG, "SurfaceView: ${surfaceView.javaClass.simpleName}")
+    Log.i(TAG, "SurfaceView parent: ${surfaceView.parent?.javaClass?.simpleName ?: "null"}")
+    Log.i(TAG, "SurfaceView attached to window: ${surfaceView.isAttachedToWindow}")
+    
     if (activity !is FragmentActivity) {
       Log.w(TAG, "Host activity must extend FragmentActivity")
       return false
     }
 
-    // Surface view is already the activity's content view with the root node
-    // Don't move it yet - let fragments attach it when they're ready
     val containerId = View.generateViewId()
     val container = FrameLayout(activity).apply {
       id = containerId
       layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
       setBackgroundColor(0xFF101014.toInt())
     }
+    
+    Log.i(TAG, "Created container with id=$containerId")
 
     activity.setContentView(container)
-    Log.d(TAG, "Router container set as activity content view (id=$containerId)")
-    Log.i(TAG, "Surface will be moved to fragments on demand (parent=${surfaceView.parent?.javaClass?.simpleName})")
+    Log.i(TAG, "Set container as content view")
+    Log.i(TAG, "SurfaceView parent after setContentView: ${surfaceView.parent?.javaClass?.simpleName ?: "null"}")
 
     return try {
       Log.i(TAG, "About to call RuneRouterModule.attach with surface view")

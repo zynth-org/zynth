@@ -48,20 +48,27 @@ class MainActivity : AppCompatActivity() {
         }
       }
 
-      // Load bundle and start runtime FIRST so the root view has content
+      // Load bundle first
       runtime.loadInitialBundle(assets)
 
 {{MODULE_INITIALIZERS}}
 
-      runtime.start(root.rootId)
-
-      // NOW bootstrap the router after the UI tree is initialized
-      val routerAttached = bootstrapNativeRouter(runtime, root)
+      // Try to bootstrap router BEFORE starting runtime
+      val routerAttached = try {
+        bootstrapNativeRouter(runtime, root)
+      } catch (e: Exception) {
+        Log.w("MainActivity", "Router bootstrap failed", e)
+        false
+      }
 
       if (!routerAttached) {
-        // Only if router isn't being used, keep the root as content view
+        // No router - keep root as content view
         setContentView(root)
       }
+      
+      // ALWAYS start the runtime - router or not
+      Log.i("MainActivity", "Starting runtime (router=${routerAttached})")
+      runtime.start(root.rootId)
 
       this@MainActivity.runtime = runtime
     }
@@ -74,22 +81,41 @@ class MainActivity : AppCompatActivity() {
   }
 
   private fun bootstrapNativeRouter(runtime: RuneRuntime, rootView: RuneRootView): Boolean {
+    // TOGGLE THIS FLAG TO TEST MINIMAL FRAGMENT APPROACH
+    val USE_MINIMAL_TEST = false
+    
     try {
-      val hostClass = Class.forName("com.rune.router.RuneRouterHost")
-      val method = hostClass.getMethod(
-        "bootstrap",
-        android.app.Activity::class.java,
-        RuneRuntime::class.java,
-        android.view.View::class.java
-      )
-      val result = method.invoke(null, this, runtime, rootView) as? Boolean
-      if (result == true) {
-        return true
+      if (USE_MINIMAL_TEST) {
+        Log.i("MainActivity", "=== USING MINIMAL TEST MODE ===")
+        val hostClass = Class.forName("com.rune.router.RuneRouterTestHost")
+        val method = hostClass.getMethod(
+          "bootstrapMinimalTest",
+          android.app.Activity::class.java,
+          RuneRuntime::class.java,
+          android.view.View::class.java
+        )
+        val result = method.invoke(null, this, runtime, rootView) as? Boolean
+        if (result == true) {
+          return true
+        }
+      } else {
+        Log.i("MainActivity", "=== USING FULL ROUTER ===")
+        val hostClass = Class.forName("com.rune.router.RuneRouterHost")
+        val method = hostClass.getMethod(
+          "bootstrap",
+          android.app.Activity::class.java,
+          RuneRuntime::class.java,
+          android.view.View::class.java
+        )
+        val result = method.invoke(null, this, runtime, rootView) as? Boolean
+        if (result == true) {
+          return true
+        }
       }
     } catch (_: ClassNotFoundException) {
       // Router package not linked; ignore.
     } catch (error: Throwable) {
-      Log.w("RuneRouterHost", "Bootstrap failed", error)
+      Log.w("MainActivity", "Bootstrap failed", error)
     }
     return false
   }

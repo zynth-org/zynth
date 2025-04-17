@@ -38,14 +38,19 @@ internal class ScreenHostFragment : Fragment() {
         ViewGroup.LayoutParams.MATCH_PARENT,
         ViewGroup.LayoutParams.MATCH_PARENT
       )
-      setBackgroundColor(0xFF101014.toInt())
+      // setBackgroundColor(0xFF101014.toInt()) // <-- REMOVE THIS LINE
     }
   }
 
   override fun onResume() {
     super.onResume()
-    Log.d(HOST_TAG, "onResume route=$routeKey")
+    Log.d(HOST_TAG, "onResume route=$routeKey, view=${view?.javaClass?.simpleName ?: "NULL"}")
     RouterControllerRegistry.resolve(routeKey)?.onFragmentShown(this)
+  }
+  
+  override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+    super.onViewCreated(view, savedInstanceState)
+    Log.d(HOST_TAG, "onViewCreated route=$routeKey")
   }
 
   fun updateParams(newParams: JSONObject) {
@@ -56,15 +61,28 @@ internal class ScreenHostFragment : Fragment() {
   }
 
   fun attachSurfaceView(view: View) {
+    android.util.Log.e("SURFACE_ATTACH", ">>> attachSurfaceView CALLED for route=$routeKey")
     val container = this.view as? ViewGroup
     if (container == null) {
-      Log.w(HOST_TAG, "attachSurfaceView called but fragment view is null for route=$routeKey")
+      android.util.Log.e("SURFACE_ATTACH", "!!! attachSurfaceView: fragment view is NULL for route=$routeKey")
       return
     }
-    Log.i(HOST_TAG, "attachSurfaceView route=$routeKey, surfaceParent=${view.parent?.javaClass?.simpleName}")
+    
+    android.util.Log.e("SURFACE_ATTACH", "attachSurfaceView route=$routeKey")
+    android.util.Log.e("SURFACE_ATTACH", "  - Surface parent: ${view.parent?.javaClass?.simpleName}")
+    android.util.Log.e("SURFACE_ATTACH", "  - Container: ${container.javaClass.simpleName}")
+    android.util.Log.e("SURFACE_ATTACH", "  - Container childCount: ${container.childCount}")
+    android.util.Log.e("SURFACE_ATTACH", "  - Container attached to window: ${container.isAttachedToWindow}")
+    android.util.Log.e("SURFACE_ATTACH", "  - View attached to window BEFORE: ${view.isAttachedToWindow}")
+    
     if (view.parent !== container) {
+      android.util.Log.e("SURFACE_ATTACH", "  - Removing from parent: ${view.parent?.javaClass?.simpleName}")
       (view.parent as? ViewGroup)?.removeView(view)
+      
+      android.util.Log.e("SURFACE_ATTACH", "  - Clearing container (had ${container.childCount} children)")
       container.removeAllViews()
+      
+      android.util.Log.e("SURFACE_ATTACH", "  - Adding surface to container")
       container.addView(
         view,
         ViewGroup.LayoutParams(
@@ -72,9 +90,21 @@ internal class ScreenHostFragment : Fragment() {
           ViewGroup.LayoutParams.MATCH_PARENT
         )
       )
-      Log.i(HOST_TAG, "Surface attached to fragment $routeKey")
+      android.util.Log.e("SURFACE_ATTACH", "!!! Surface SUCCESSFULLY attached to fragment $routeKey")
+      android.util.Log.e("SURFACE_ATTACH", "  - Container now has ${container.childCount} children")
+      android.util.Log.e("SURFACE_ATTACH", "  - View attached to window AFTER: ${view.isAttachedToWindow}")
+      
+      // Force a complete layout pass on the view hierarchy
+      container.post {
+        android.util.Log.e("SURFACE_ATTACH", "  - Posted runnable executing")
+        view.requestLayout()
+        view.invalidate()
+        container.requestLayout()
+        container.invalidate()
+        android.util.Log.e("SURFACE_ATTACH", "  - Forced layout/invalidate on next frame")
+      }
     } else {
-      Log.d(HOST_TAG, "Surface already attached to fragment $routeKey")
+      android.util.Log.e("SURFACE_ATTACH", "Surface already attached to fragment $routeKey")
     }
   }
 

@@ -28,6 +28,7 @@ class StackController(
   private var surfaceView: View? = null
   private var lastStateSignature: String? = null
   private var stackKey: String = "stack-root"
+  private var onSurfaceAttachedCallback: (() -> Unit)? = null
 
   private fun runOnMainThread(block: () -> Unit) {
     if (Looper.myLooper() == Looper.getMainLooper()) {
@@ -47,6 +48,10 @@ class StackController(
     surfaceView = view
     (routeStack.lastOrNull()?.fragment as? ScreenHostFragment)?.attachSurfaceView(view)
     Log.d(STACK_TAG, "Surface view installed; top=${routeStack.lastOrNull()?.name}")
+  }
+  
+  fun setOnSurfaceAttachedCallback(callback: () -> Unit) {
+    onSurfaceAttachedCallback = callback
   }
 
   fun push(name: String, params: JSONObject?, animated: Boolean) {
@@ -98,13 +103,15 @@ class StackController(
   }
 
   fun replaceTop(name: String, params: JSONObject?, animated: Boolean) {
-    if (routeStack.isEmpty()) {
+    runOnMainThread {
+      if (routeStack.isEmpty()) {
+        push(name, params, animated)
+        return@runOnMainThread
+      }
+      Log.d(STACK_TAG, "replaceTop(name=$name, animated=$animated)")
+      routeStack.removeLast()
       push(name, params, animated)
-      return
     }
-    Log.d(STACK_TAG, "replaceTop(name=$name, animated=$animated)")
-    routeStack.removeLast()
-    push(name, params, animated)
   }
 
   fun reset(state: JSONObject, animated: Boolean) {
@@ -130,25 +137,32 @@ class StackController(
           addToBackStack(entry.key)
         }
       }
+      Log.i(STACK_TAG, "About to execute pending transactions...")
       fragmentManager.executePendingTransactions()
+      Log.i(STACK_TAG, "Pending transactions executed")
+      
       emitState()
       Log.i(STACK_TAG, "Stack reset complete size=${routeStack.size} key=$stackKey")
     }
   }
 
   fun setParams(routeKey: String, params: JSONObject) {
-    Log.d(STACK_TAG, "setParams(routeKey=$routeKey)")
-    val entry = routeStack.find { it.key == routeKey } ?: return
-    entry.params = params
-    (entry.fragment as? ScreenHostFragment)?.updateParams(params)
-    emitState()
+    runOnMainThread {
+      Log.d(STACK_TAG, "setParams(routeKey=$routeKey)")
+      val entry = routeStack.find { it.key == routeKey } ?: return@runOnMainThread
+      entry.params = params
+      (entry.fragment as? ScreenHostFragment)?.updateParams(params)
+      emitState()
+    }
   }
 
   fun applyOptions(routeKey: String, options: JSONObject) {
-    Log.d(STACK_TAG, "applyOptions(routeKey=$routeKey)")
-    val entry = routeStack.find { it.key == routeKey } ?: return
-    entry.options = options
-    (entry.fragment as? ScreenHostFragment)?.applyOptions(options)
+    runOnMainThread {
+      Log.d(STACK_TAG, "applyOptions(routeKey=$routeKey)")
+      val entry = routeStack.find { it.key == routeKey } ?: return@runOnMainThread
+      entry.options = options
+      (entry.fragment as? ScreenHostFragment)?.applyOptions(options)
+    }
   }
 
   fun currentState(): JSONObject {
@@ -162,7 +176,12 @@ class StackController(
   }
 
   internal fun onFragmentShown(fragment: ScreenHostFragment) {
+    Log.i(STACK_TAG, "=== onFragmentShown CALLED ===")
     Log.i(STACK_TAG, "fragment shown route=${fragment.routeKey}")
+    Log.i(STACK_TAG, "fragment.view = ${fragment.view?.javaClass?.simpleName ?: "NULL"}")
+    Log.i(STACK_TAG, "fragment.isAdded = ${fragment.isAdded}")
+    Log.i(STACK_TAG, "fragment.isResumed = ${fragment.isResumed}")
+    
     val key = fragment.routeKey
     if (key != focusedKey) {
       focusedKey?.let { emitter?.emitBlur(it) }
@@ -170,12 +189,26 @@ class StackController(
       focusedKey = key
     }
     val surface = surfaceView
+    Log.i(STACK_TAG, "surfaceView is ${if (surface != null) "NOT NULL" else "NULL"}")
     if (surface != null) {
-      Log.i(STACK_TAG, "Attaching surface to fragment ${fragment.routeKey}")
-      fragment.attachSurfaceView(surface)
+      Log.i(STACK_TAG, "About to call fragment.attachSurfaceView for ${fragment.routeKey}")
+      try {
+        fragment.attachSurfaceView(surface)
+        Log.i(STACK_TAG, "Returned from fragment.attachSurfaceView")
+      } catch (e: Exception) {
+        Log.e(STACK_TAG, "ERROR calling attachSurfaceView", e)
+      }
+      
+      // Notify that surface is attached and ready
+      onSurfaceAttachedCallback?.let { callback ->
+        Log.i(STACK_TAG, "Invoking onSurfaceAttached callback")
+        callback()
+        onSurfaceAttachedCallback = null // Call only once
+      }
     } else {
       Log.w(STACK_TAG, "No surface view available to attach to ${fragment.routeKey}")
     }
+    Log.i(STACK_TAG, "=== onFragmentShown COMPLETE ===")
   }
 
   private fun emitState() {
