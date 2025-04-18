@@ -1,5 +1,5 @@
 {
-  "name": "@rune/router",
+  "name": "@rune/android-router",
   "version": "0.0.1",
   "type": "module",
   "main": "dist/esm/index.js",
@@ -9,8 +9,7 @@
   "license": "MIT",
   "files": [
     "dist",
-    "ios",
-    "RuneRouter.podspec"
+    "android"
   ],
   "peerDependencies": {
     "solid-js": ">=1.8.0",
@@ -20,7 +19,10 @@
     "@rune/core": "0.0.1"
   },
   "devDependencies": {
+    "@babel/preset-typescript": "^7.24.7",
     "@rsbuild/core": "^1.0.1",
+    "@rsbuild/plugin-babel": "^1.0.1",
+    "babel-preset-solid": "^1.8.0",
     "solid-js": "^1.8.0",
     "typescript": "^5.6.2"
   },
@@ -30,13 +32,18 @@
     "build:types": "tsc --project tsconfig.types.json"
   },
   "runeNative": {
-    "ios": {
-      "pods": [
+    "android": {
+      "modules": [
         {
-          "name": "RuneRouter",
-          "podspec": "./RuneRouter.podspec"
+          "name": "RuneAndroidRouter",
+          "path": "./android/RuneAndroidRouter"
         }
-      ]
+      ],
+      "initializer": {
+        "package": "com.rune.androidrouter",
+        "className": "RuneAndroidRouterHost",
+        "method": "bootstrap"
+      }
     }
   }
 }
