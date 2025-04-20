@@ -84,7 +84,10 @@ internal class RuneNodeFactory(
 
   /**
    * Propagates text change upward through TEXT node hierarchy.
-   * Marks all parent TEXT nodes as dirty and adds to rebuild queue.
+   * Adds all parent TEXT nodes to rebuild queue.
+   * Note: We don't call markDirty on TEXT nodes since they have measure functions
+   * and Yoga doesn't allow marking leaf nodes with measure functions as dirty.
+   * The text rebuild process will handle remeasurement.
    */
   internal fun propagateTextChange(node: RuneUIManager.Node) {
     var currentParentId = node.parentId
@@ -92,18 +95,19 @@ internal class RuneNodeFactory(
       val parent = nodes.get(currentParentId) ?: break
       if (parent.type != TEXT_TYPE) break
       pendingTextRebuild.add(parent.id)
-      engine.markDirty(parent.id)
+      // Don't call markDirty - TEXT nodes with measure functions can't be marked dirty
       currentParentId = parent.parentId
     }
   }
 
   /**
    * Combined recompute and propagate operation.
-   * Marks node dirty, adds to rebuild queue, and propagates changes upward.
+   * Adds node to rebuild queue and propagates changes upward.
+   * Note: We don't call markDirty on TEXT nodes since they have measure functions.
    */
   internal fun recomputeAndPropagate(node: RuneUIManager.Node) {
     pendingTextRebuild.add(node.id)
-    engine.markDirty(node.id)
+    // Don't call markDirty - TEXT nodes with measure functions can't be marked dirty
     propagateTextChange(node)
   }
 

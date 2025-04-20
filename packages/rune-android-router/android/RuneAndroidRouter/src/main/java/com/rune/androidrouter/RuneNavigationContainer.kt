@@ -142,15 +142,19 @@ class RuneScreenFragment : Fragment() {
     ): View? {
         Log.e("RuneScreenFragment", "🔥🔥🔥 onCreateView: screen=$screenName 🔥🔥🔥")
         
+        // Allocate a unique rootId for this Fragment surface
+        val surfaceRootId = RuneRootView.allocateRootId()
+        Log.e("RuneScreenFragment", "🔥 Allocated surfaceRootId=$surfaceRootId for screen=$screenName")
+        
         // Create a RuneRootView to host the actual screen content
-        runeRootView = RuneRootView(requireContext()).apply {
+        runeRootView = RuneRootView(requireContext(), explicitRootId = surfaceRootId).apply {
             layoutParams = android.view.ViewGroup.LayoutParams(
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT,
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT
             )
         }
         
-        Log.e("RuneScreenFragment", "🔥 Created RuneRootView for Fragment")
+        Log.e("RuneScreenFragment", "🔥 Created RuneRootView with rootId=${runeRootView?.rootId}")
         return runeRootView
     }
     

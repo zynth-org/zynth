@@ -1,5 +1,6 @@
 package com.rune.kit.layout
 
+import android.util.Log
 import com.facebook.yoga.YogaAlign
 import com.facebook.yoga.YogaConfig
 import com.facebook.yoga.YogaConfigFactory
@@ -59,6 +60,11 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
     val parentNode = getNode(parent)
     val childNode = getNode(child)
     val targetIndex = index.coerceIn(0, parentNode.childCount)
+    
+    // Check if parent has a measure function (which would cause crash)
+    val hasMeasureFunc = measureHandlers.containsKey(parent)
+    android.util.Log.e("YogaLayoutEngine", "🔥 insertChild: parent=$parent child=$child index=$index->$targetIndex, parentHasMeasureFunc=$hasMeasureFunc")
+    
     @Suppress("DEPRECATION")
     if (childNode.parent == parentNode) {
       val currentIndex = parentNode.indexOf(childNode)
@@ -69,7 +75,14 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
       val idx = owner.indexOf(childNode)
       if (idx >= 0) owner.removeChildAt(idx)
     }
-    parentNode.addChildAt(childNode, targetIndex)
+    
+    try {
+      parentNode.addChildAt(childNode, targetIndex)
+      android.util.Log.e("YogaLayoutEngine", "🔥 insertChild SUCCESS")
+    } catch (e: Exception) {
+      android.util.Log.e("YogaLayoutEngine", "🔥 insertChild CRASH: ${e.message}", e)
+      throw e
+    }
   }
 
   override fun setStyle(id: Int, style: Style) {
@@ -129,12 +142,16 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
 
   override fun markDirty(id: Int) {
     nodes[id]?.let { node ->
-      // Only mark dirty if a measure function is defined or the node exists
+      // Only mark dirty if node exists
       // Yoga will re-run measurement on next calculateLayout
       try {
         node.dirty()
-      } catch (_: Throwable) {
-        // Some Yoga versions throw if no measure function is set; ignore safely
+      } catch (e: Throwable) {
+        // Yoga throws "Only leaf nodes with custom measure functions should manually mark themselves as dirty"
+        // when trying to mark a node with a measure function dirty.
+        // This is expected for TEXT nodes - they manage their own dirtiness through measure callbacks.
+        // We can safely ignore this error.
+        Log.d("YogaEngine", "markDirty on node $id ignored (likely has measure function): ${e.message}")
       }
     }
   }

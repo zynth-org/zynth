@@ -29,6 +29,7 @@ import com.rune.kit.layout.MeasureInput
 import com.rune.kit.layout.MeasureMode
 import com.rune.kit.layout.Rect
 import com.rune.kit.layout.Style
+import com.rune.kit.layout.YogaLayoutEngine
 import com.rune.kit.runtime.JSBridge
 import org.json.JSONException
 import org.json.JSONObject
@@ -71,7 +72,6 @@ internal sealed class NativeOperation {
 
 class RuneUIManager(
   private val root: RuneRootView,
-  private val engine: LayoutEngine,
   private val eventDispatcher: (Int, String) -> Unit = { _, _ -> },
   private val handlerListener: (Int, String, Long) -> Unit = { _, _, _ -> },
 ) : JSBridge.UIShim, RunePressableEventListener {
@@ -97,19 +97,39 @@ class RuneUIManager(
   fun unregisterSurface(surfaceId: Int) = onMain {
     if (surfaceId == root.rootId) return@onMain
     val state = surfaces[surfaceId] ?: return@onMain
-    surfaces.remove(surfaceId)
+    
+    Log.d("RuneUI", "Unregistering surface $surfaceId")
+    
+    // Cancel pending flush
     state.layoutListener?.let { state.rootView.removeOnLayoutChangeListener(it) }
     state.frameScheduler.cancelFlush()
 
+    // Remove all nodes in this surface
+    val surfaceNodes = state.nodes
     val nodesToRemove = mutableListOf<Int>()
-    for (i in 0 until nodes.size()) {
-      val node = nodes.valueAt(i) ?: continue
-      if (node.surfaceId == surfaceId) {
-        nodesToRemove.add(node.id)
-      }
+    for (i in 0 until surfaceNodes.size()) {
+      val nodeId = surfaceNodes.keyAt(i)
+      nodesToRemove.add(nodeId)
     }
     nodesToRemove.forEach { state.nodeFactory.removeNodeRecursive(it) }
 
+    // Clear pending operations
+    state.pendingViewOperations.clear()
+    state.pendingNativeOperations.clear()
+    state.pendingTextRebuild.clear()
+    state.stickyFrameCarryover.clear()
+    
+    // Remove cached helpers
+    propApplierCache.remove(surfaceId)
+    eventManagerCache.remove(surfaceId)
+    
+    // Remove the Yoga root node for this surface
+    engine.removeNode(surfaceId)
+    
+    // Remove surface state
+    surfaces.remove(surfaceId)
+
+    // Reset active surface if needed
     if (activeSurfaceId == surfaceId) {
       activeSurfaceId = root.rootId
     }
@@ -162,6 +182,8 @@ class RuneUIManager(
   private class SurfaceState(
     val id: Int,
     val rootView: RuneRootView,
+    val engine: LayoutEngine,
+    val nodes: SparseArray<Node>,
     val pendingTextRebuild: LinkedHashSet<Int>,
     val pendingViewOperations: MutableList<ViewOperation>,
     val pendingNativeOperations: MutableList<NativeOperation>,
@@ -175,27 +197,10 @@ class RuneUIManager(
     var layoutListener: OnLayoutChangeListener? = null
   }
 
-  private val nodes = SparseArray<Node>()
   private val handler = Handler(Looper.getMainLooper())
   private val eventPayloads = HashMap<String, ArrayDeque<String>>()
   private val nodeRecyclingPool = NodeRecyclingPool(
     debugLogging = isNativeDebugEnabled(),
-  )
-  private val propApplier = RunePropApplier(
-    nodes = nodes,
-    engine = engine,
-    density = density,
-    logDebug = ::logDebug,
-    resolveTextNode = ::resolveTextNode,
-    onTextInputTextUpdated = { _, _ -> },
-    storeEventPayload = ::storeEventPayload,
-  )
-  private val eventManager = RuneEventManager(
-    nodes = nodes,
-    engine = engine,
-    eventDispatcher = eventDispatcher,
-    handlerListener = handlerListener,
-    eventPayloads = eventPayloads,
   )
   private val recyclerHost = RuneRecyclerHost()
   private val surfaces = ConcurrentHashMap<Int, SurfaceState>()
@@ -206,6 +211,9 @@ class RuneUIManager(
     get() = surfaceStateOrNull(activeSurfaceId)
       ?: throw IllegalStateException("Surface $activeSurfaceId not registered")
 
+  // Per-surface accessors - these delegate to the current active surface
+  private val engine get() = currentSurface.engine
+  private val nodes get() = currentSurface.nodes
   private val pendingTextRebuild get() = currentSurface.pendingTextRebuild
   private val pendingViewOperations get() = currentSurface.pendingViewOperations
   private val pendingNativeOperations get() = currentSurface.pendingNativeOperations
@@ -213,6 +221,10 @@ class RuneUIManager(
   private val frameScheduler get() = currentSurface.frameScheduler
   private val layoutFlush get() = currentSurface.layoutFlush
   private val nodeFactory get() = currentSurface.nodeFactory
+  
+  // These are created lazily per-surface and cached
+  private val propApplierCache = ConcurrentHashMap<Int, RunePropApplier>()
+  private val eventManagerCache = ConcurrentHashMap<Int, RuneEventManager>()
 
   private fun surfaceStateOrNull(id: Int): SurfaceState? = surfaces[id]
 
@@ -222,6 +234,38 @@ class RuneUIManager(
   private fun registerSurfaceInternal(surfaceId: Int, surfaceRoot: RuneRootView) {
     if (surfaces.containsKey(surfaceId)) return
 
+    Log.d("RuneUI", "Registering surface $surfaceId")
+    
+    // Create a NEW isolated YogaLayoutEngine for this surface
+    // Each surface gets its own Yoga tree to prevent node collisions
+    val surfaceEngine = YogaLayoutEngine(rootId = surfaceId)
+    Log.d("RuneUI", "Created isolated Yoga engine for surface $surfaceId")
+    
+    // Initialize Yoga root node for this surface
+    // Configure it as a flex container that can hold children
+    surfaceEngine.createNode(surfaceId)
+    // CRITICAL: Ensure the root node has NO measure function
+    surfaceEngine.setMeasureHandler(surfaceId, null)
+    surfaceEngine.setStyle(surfaceId, Style(
+      flexDirection = "column",
+      alignItems = "stretch",
+    ))
+    Log.d("RuneUI", "Surface $surfaceId Yoga node configured as flex container (no measure function)")
+    
+    // Create per-surface node storage
+    val surfaceNodes = SparseArray<Node>()
+    
+    // Create a virtual container node for the surface root
+    // This represents the RuneRootView itself and allows children to be inserted
+    val rootContainerNode = Node(
+      id = surfaceId,
+      type = "view",
+      view = surfaceRoot,
+      label = null,
+      surfaceId = surfaceId,
+    )
+    surfaceNodes.put(surfaceId, rootContainerNode)
+    Log.d("RuneUI", "Created virtual root container node for surface $surfaceId")
     val pendingTextRebuild = LinkedHashSet<Int>()
     val pendingViewOperations = mutableListOf<ViewOperation>()
     val pendingNativeOperations = mutableListOf<NativeOperation>()
@@ -230,8 +274,8 @@ class RuneUIManager(
 
     val layoutFlush = RuneLayoutFlush(
       root = surfaceRoot,
-      nodes = nodes,
-      engine = engine,
+      nodes = surfaceNodes,
+      engine = surfaceEngine,
       handler = handler,
       frameScheduler = frameScheduler,
       pendingNativeOperations = pendingNativeOperations,
@@ -249,8 +293,8 @@ class RuneUIManager(
 
     val factory = RuneNodeFactory(
       root = surfaceRoot,
-      nodes = nodes,
-      engine = engine,
+      nodes = surfaceNodes,
+      engine = surfaceEngine,
       pendingTextRebuild = pendingTextRebuild,
       nodeRecyclingPool = nodeRecyclingPool,
       getNextId = { nextId },
@@ -264,6 +308,8 @@ class RuneUIManager(
     val surfaceState = SurfaceState(
       id = surfaceId,
       rootView = surfaceRoot,
+      engine = surfaceEngine,
+      nodes = surfaceNodes,
       pendingTextRebuild = pendingTextRebuild,
       pendingViewOperations = pendingViewOperations,
       pendingNativeOperations = pendingNativeOperations,
@@ -272,6 +318,27 @@ class RuneUIManager(
       layoutFlush = layoutFlush,
       nodeFactory = factory,
     )
+    
+    // Create per-surface prop applier and event manager
+    val propApplier = RunePropApplier(
+      nodes = surfaceNodes,
+      engine = surfaceEngine,
+      density = density,
+      logDebug = ::logDebug,
+      resolveTextNode = ::resolveTextNode,
+      onTextInputTextUpdated = { _, _ -> },
+      storeEventPayload = ::storeEventPayload,
+    )
+    propApplierCache[surfaceId] = propApplier
+    
+    val eventManager = RuneEventManager(
+      nodes = surfaceNodes,
+      engine = surfaceEngine,
+      eventDispatcher = eventDispatcher,
+      handlerListener = handlerListener,
+      eventPayloads = eventPayloads,
+    )
+    eventManagerCache[surfaceId] = eventManager
 
     val listener = OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
       val width = surfaceRoot.width
@@ -311,17 +378,28 @@ class RuneUIManager(
   // Public accessor methods for component packages
   fun getRootView(): RuneRootView = surfaceStateOrNull(activeSurfaceId)?.rootView ?: root
   fun getLayoutEngine(): LayoutEngine = engine
+  
+  // Get per-surface helpers
+  private fun getPropApplier(surfaceId: Int = activeSurfaceId): RunePropApplier {
+    return propApplierCache[surfaceId]
+      ?: throw IllegalStateException("PropApplier not found for surface $surfaceId")
+  }
+  
+  private fun getEventManager(surfaceId: Int = activeSurfaceId): RuneEventManager {
+    return eventManagerCache[surfaceId]
+      ?: throw IllegalStateException("EventManager not found for surface $surfaceId")
+  }
 
   private fun applySetProp(nodeId: Int, name: String, jsonValue: String?, category: PropertyCategory = PropertyCategory.UNKNOWN) {
-    propApplier.applySetProp(nodeId, name, jsonValue, category)
+    getPropApplier().applySetProp(nodeId, name, jsonValue, category)
   }
 
   private fun applySetText(nodeId: Int, text: String) {
-    propApplier.applySetText(nodeId, text, ::propagateTextChange)
+    getPropApplier().applySetText(nodeId, text, ::propagateTextChange)
   }
 
   private fun applySetHandler(nodeId: Int, event: String, handlerId: Long) {
-    propApplier.applySetHandler(nodeId, event, eventDispatcher, handlerListener, handlerId)
+    getPropApplier().applySetHandler(nodeId, event, eventDispatcher, handlerListener, handlerId)
   }
   
   // Performance tracking for operation queues
@@ -332,7 +410,7 @@ class RuneUIManager(
   private var totalNodesRemoved = 0
 
   private fun storeEventPayload(nodeId: Int, event: String, payload: JSONObject?) {
-    eventManager.storeEventPayload(nodeId, event, payload)
+    getEventManager().storeEventPayload(nodeId, event, payload)
   }
 
   // Child management helpers: lazily allocate children list on first attach
@@ -378,11 +456,11 @@ class RuneUIManager(
   }
 
   fun consumeEventPayload(nodeId: Int, event: String): JSONObject? {
-    return eventManager.consumeEventPayload(nodeId, event)
+    return getEventManager().consumeEventPayload(nodeId, event)
   }
 
   fun dequeueEventPayloadJson(nodeId: Int, event: String): String? {
-    return eventManager.dequeueEventPayloadJson(nodeId, event)
+    return getEventManager().dequeueEventPayloadJson(nodeId, event)
   }
 
   private fun isVirtualTextNode(node: Node): Boolean {
@@ -546,7 +624,7 @@ class RuneUIManager(
   }
 
   fun dispatchEvent(nodeId: Int, event: String, payload: JSONObject?) {
-    eventManager.dispatchEvent(nodeId, event, payload)
+    getEventManager().dispatchEvent(nodeId, event, payload)
   }
 
   /**
@@ -562,51 +640,59 @@ class RuneUIManager(
   /**
    * Generic API to mark a node's layout as dirty and trigger relayout.
    * Used by components when their intrinsic size changes.
+   * Note: TEXT nodes with measure functions cannot be marked dirty directly.
    */
   fun markNodeDirty(nodeId: Int) {
-    engine.markDirty(nodeId)
     val surface = surfaceStateForNode(nodeId)
+    val node = surface.nodes.get(nodeId)
+    
+    // Don't mark TEXT nodes dirty - they have measure functions and Yoga doesn't allow it
+    // Their measurement will be triggered through the measure function callback
+    if (node?.type != TEXT_TYPE) {
+      engine.markDirty(nodeId)
+    }
+    
     scheduleFlush(FlushPriority.HIGH, surface)
   }
 
   override fun onPressablePressIn(nodeId: Int, payload: JSONObject) {
-    eventManager.onPressablePressIn(nodeId, payload)
+    getEventManager().onPressablePressIn(nodeId, payload)
   }
 
   override fun onPressablePressOut(nodeId: Int, payload: JSONObject, cancelled: Boolean) {
-    eventManager.onPressablePressOut(nodeId, payload, cancelled)
+    getEventManager().onPressablePressOut(nodeId, payload, cancelled)
   }
 
   override fun onPressablePress(nodeId: Int, payload: JSONObject) {
-    eventManager.onPressablePress(nodeId, payload)
+    getEventManager().onPressablePress(nodeId, payload)
   }
 
   override fun onPressableLongPress(nodeId: Int, durationMs: Long, payload: JSONObject) {
-    eventManager.onPressableLongPress(nodeId, durationMs, payload)
+    getEventManager().onPressableLongPress(nodeId, durationMs, payload)
   }
 
   override fun onPressableDoublePress(nodeId: Int, payload: JSONObject) {
-    eventManager.onPressableDoublePress(nodeId, payload)
+    getEventManager().onPressableDoublePress(nodeId, payload)
   }
 
   override fun onPressableHover(nodeId: Int, hovering: Boolean) {
-    eventManager.onPressableHover(nodeId, hovering)
+    getEventManager().onPressableHover(nodeId, hovering)
   }
 
   override fun onPressableFocus(nodeId: Int) {
-    eventManager.onPressableFocus(nodeId)
+    getEventManager().onPressableFocus(nodeId)
   }
 
   override fun onPressableBlur(nodeId: Int) {
-    eventManager.onPressableBlur(nodeId)
+    getEventManager().onPressableBlur(nodeId)
   }
 
   override fun onPressableKeyEvent(nodeId: Int, phase: String, payload: JSONObject) {
-    eventManager.onPressableKeyEvent(nodeId, phase, payload)
+    getEventManager().onPressableKeyEvent(nodeId, phase, payload)
   }
 
   override fun onPressableCancel(nodeId: Int, payload: JSONObject) {
-    eventManager.onPressableCancel(nodeId, payload)
+    getEventManager().onPressableCancel(nodeId, payload)
   }
 
   fun applyBatch(batchJson: String?) = onMain {
@@ -729,25 +815,44 @@ class RuneUIManager(
   }
 
   override fun insertChild(parentId: Int, childId: Int, index: Int) = onMain {
+    Log.e("RuneUI", "🔥 insertChild CALLED: parent=$parentId child=$childId index=$index activeSurface=$activeSurfaceId")
     val surface = surfaceStateForParent(parentId)
+    Log.e("RuneUI", "🔥 insertChild: resolved surface=${surface.id}")
+    
+    // Get nodes from the correct surface
+    val surfaceNodes = surface.nodes
+    val childNode = surfaceNodes.get(childId)
+    val parentNode = surfaceNodes.get(parentId)
+    Log.e("RuneUI", "🔥 insertChild: parent=$parentId(type=${parentNode?.type}) child=$childId(type=${childNode?.type})")
+    
     attachChild(parentId, childId, index)
-    val parentNode = nodes.get(parentId)
+    
     if (parentNode?.type == TEXT_TYPE) {
+      Log.e("RuneUI", "🔥 insertChild: parent is TEXT, child type=${childNode?.type}")
       // If parent is a text node, merge text content from child instead of nesting views
-      val childNode = nodes.get(childId)
       if (childNode?.type == TEXT_TYPE) {
+        Log.e("RuneUI", "🔥 insertChild: both are TEXT, merging text (virtual text node)")
+        
+        // CRITICAL: Remove measure function from virtual text node
+        // Virtual text nodes should not have measure functions since they're merged into parent
+        engine.setMeasureHandler(childId, null)
+        Log.e("RuneUI", "🔥 Removed measure function from virtual text node $childId")
+        
         val insertIndex = index.coerceIn(0, parentNode.textChildren.size)
         parentNode.textChildren.remove(childId)
         parentNode.textChildren.add(insertIndex, childId)
         surface.pendingTextRebuild.add(parentNode.id)
-        engine.markDirty(parentNode.id)
+        // Don't call markDirty on parent - TEXT nodes with measure functions can't be marked dirty
+        // The text rebuild will handle updating the measurement
         propagateTextChange(parentNode)
+      } else {
+        Log.e("RuneUI", "🔥 insertChild: parent is TEXT but child is NOT TEXT - this will crash!")
       }
       scheduleFlush(surface = surface)
       return@onMain
     }
-    val node = nodes.get(childId)
-    if (node == null) {
+    
+    if (childNode == null) {
       Log.w("RuneUI", "insertChild: node $childId not found for parent $parentId")
       return@onMain
     }
@@ -756,7 +861,14 @@ class RuneUIManager(
       op is ViewOperation.Remove && op.node.id == childId
     }
     queue.add(ViewOperation.Insert(parentId, childId, index))
-    engine.insertChild(parentId, childId, index)
+    Log.e("RuneUI", "🔥 insertChild: calling engine.insertChild($parentId, $childId, $index)")
+    try {
+      engine.insertChild(parentId, childId, index)
+      Log.e("RuneUI", "🔥 insertChild: SUCCESS!")
+    } catch (e: Exception) {
+      Log.e("RuneUI", "🔥 insertChild: CRASH! ${e.message}", e)
+      throw e
+    }
     scheduleFlush(surface = surface)
   }
 
@@ -772,7 +884,7 @@ class RuneUIManager(
       parentNode.textChildren.remove(childId)
       detachChild(parentId, childId)
       surface.pendingTextRebuild.add(parentNode.id)
-      engine.markDirty(parentNode.id)
+      // Don't call markDirty - TEXT nodes with measure functions can't be marked dirty
       propagateTextChange(parentNode)
       scheduleFlush(surface = surface)
       return@onMain

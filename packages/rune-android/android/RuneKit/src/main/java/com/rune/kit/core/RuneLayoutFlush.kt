@@ -454,7 +454,13 @@ internal class RuneLayoutFlush(
         
       } while (dirty || pendingNativeOperations.isNotEmpty() || pendingViewOperations.isNotEmpty())
       if (stickyRelayoutNodes.isNotEmpty()) {
-        stickyRelayoutNodes.forEach { engine.markDirty(it) }
+        stickyRelayoutNodes.forEach { nodeId ->
+          val node = nodes.get(nodeId)
+          // Don't mark TEXT nodes dirty - they have measure functions
+          if (node?.type != "text") {
+            engine.markDirty(nodeId)
+          }
+        }
       }
       
       // Log overall flush performance

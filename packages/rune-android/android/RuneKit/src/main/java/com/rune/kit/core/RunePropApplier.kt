@@ -84,7 +84,11 @@ internal class RunePropApplier(
         batchApplier.accumulateProperty(target.id, name, valueJson)
         if (target.id != nodeId) {
           // Also mark the original node if different (e.g., text node case)
-          engine.markDirty(nodeId)
+          // Don't mark TEXT nodes dirty - they have measure functions
+          val node = nodes.get(nodeId)
+          if (node?.type != "text") {
+            engine.markDirty(nodeId)
+          }
         }
       }
       PropertyCategory.STYLE -> {
@@ -247,7 +251,7 @@ internal class RunePropApplier(
     if (descriptor != null) {
       val handled = descriptor.applyProperty(node, "text", "\"$text\"")
       if (handled) {
-        engine.markDirty(node.id)
+        // Don't mark TEXT nodes dirty - they have measure functions
         propagateTextChange(node)
         return
       }
@@ -257,11 +261,10 @@ internal class RunePropApplier(
     if (node.view is TextView) {
       val textView = node.view as TextView
       textView.text = text
-      engine.markDirty(node.id)
+      // Don't mark TEXT nodes dirty - they have measure functions
       logDebug("RuneUI", "Set text on view: ${textView.text}")
-    } else {
-      engine.markDirty(node.id)
     }
+    // Don't mark dirty for non-TextView cases either if it's a TEXT node
   }
 
   internal fun applySetHandler(

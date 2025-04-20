@@ -43,7 +43,6 @@ class RuneRuntime(
   // Core UI manager
   internal val manager = RuneUIManager(  // internal for dev extension access
     root,
-    YogaLayoutEngine(root.rootId),
     eventDispatcher = { id, name -> dispatchHandler(id, name) },
     handlerListener = { id, name, handlerRef -> onHandlerAttached(id, name, handlerRef) },
   )
