@@ -186,6 +186,22 @@ class RuneRuntime(
     }
   }
 
+  fun evaluateAsync(code: String) {
+    adapter.evaluateAsync(code)
+  }
+
+  fun registerSurface(rootView: RuneRootView) {
+    manager.registerSurface(rootView.rootId, rootView)
+  }
+
+  fun unregisterSurface(surfaceId: Int) {
+    manager.unregisterSurface(surfaceId)
+  }
+
+  fun setActiveSurface(surfaceId: Int) {
+    manager.setActiveSurface(surfaceId)
+  }
+
   fun destroy() {
     registry.destroy()
     moduleExecutor.shutdownNow()
@@ -348,6 +364,10 @@ class RuneRuntime(
 
       override fun dequeueEventPayload(nodeId: Int, event: String): String? {
         return manager.dequeueEventPayloadJson(nodeId, event)
+      }
+
+      override fun setSurface(surfaceId: Int) {
+        manager.setActiveSurface(surfaceId)
       }
     }
 

@@ -9,6 +9,7 @@ export type RuneUIBridge = {
   setHandler(id: number, name: string, fn: Function): void;
   flush(): void;
   applyBatch?(payload: string | Record<string, any>): void;
+  setSurface?(surfaceId: number): void;
 };
 
 export type RuneModulesBridge = {

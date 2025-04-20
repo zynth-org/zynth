@@ -7,6 +7,7 @@ import {
   setupEntryPointHMR,
   wrapRuneAppFns,
 } from "./hmr";
+import { setActiveSurface } from "./surface";
 
 if (typeof globalThis.queueMicrotask !== "function") {
   globalThis.queueMicrotask = function (callback) {
@@ -105,6 +106,7 @@ export function start(App: () => any): () => void {
       return;
     }
 
+    setActiveSurface(rootId);
     console.log(`Starting render with rootId: ${rootId}`);
     if (typeof currentApp !== "function") {
       console.error("[__startApp] no app registered for rendering");

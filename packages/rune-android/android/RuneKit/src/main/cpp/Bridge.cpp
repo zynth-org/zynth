@@ -65,6 +65,7 @@ struct UIShimMethods {
   jmethodID setHandler = nullptr;
   jmethodID flush = nullptr;
   jmethodID dequeueEventPayload = nullptr;
+  jmethodID setSurface = nullptr;
 };
 
 struct ModulesShimMethods {
@@ -723,6 +724,22 @@ void installUIBindings(std::shared_ptr<RuntimeState> state) {
         logJniException(env.get(), "UIShim.flush");
         return facebook::jsi::Value::undefined();
       });
+  auto setSurface = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "setSurface"), 1,
+      [weakState](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        auto state = weakState.lock();
+        if (!state) return Value::undefined();
+        if (count < 1 || !args[0].isNumber()) {
+          BRIDGE_LOG(ANDROID_LOG_WARN, "setSurface expects a numeric id");
+          return Value::undefined();
+        }
+        int surfaceId = static_cast<int>(args[0].asNumber());
+        JniEnv env;
+        if (!env.valid()) return Value::undefined();
+        env->CallVoidMethod(state->uiShim, state->uiMethods.setSurface, surfaceId);
+        logJniException(env.get(), "UIShim.setSurface");
+        return Value::undefined();
+      });
 
   facebook::jsi::Object ui(rt);
   ui.setProperty(rt, "createNode", createNode);
@@ -733,6 +750,7 @@ void installUIBindings(std::shared_ptr<RuntimeState> state) {
   ui.setProperty(rt, "removeNode", removeNode);
   ui.setProperty(rt, "setHandler", setHandler);
   ui.setProperty(rt, "flush", flush);
+  ui.setProperty(rt, "setSurface", setSurface);
 
   rt.global().setProperty(rt, "__ui", std::move(ui));
 }
@@ -1348,6 +1366,7 @@ void installBindings(
   state->uiMethods.setHandler = env->GetMethodID(state->uiClass, "setHandler", "(ILjava/lang/String;J)V");
   state->uiMethods.flush = env->GetMethodID(state->uiClass, "flush", "()V");
   state->uiMethods.dequeueEventPayload = env->GetMethodID(state->uiClass, "dequeueEventPayload", "(ILjava/lang/String;)Ljava/lang/String;");
+  state->uiMethods.setSurface = env->GetMethodID(state->uiClass, "setSurface", "(I)V");
 
   state->moduleMethods.getConstants = env->GetMethodID(state->modulesClass, "getConstants", "()Ljava/lang/String;");
   state->moduleMethods.invoke = env->GetMethodID(state->modulesClass, "invoke", "(Ljava/lang/String;Ljava/lang/String;[Ljava/lang/Object;I)V");

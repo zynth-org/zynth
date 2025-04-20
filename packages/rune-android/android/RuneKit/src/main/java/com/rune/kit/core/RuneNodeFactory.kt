@@ -30,6 +30,7 @@ import kotlin.math.roundToInt
  */
 internal class RuneNodeFactory(
   private val root: RuneRootView,
+  private val surfaceId: Int,
   private val nodes: SparseArray<RuneUIManager.Node>,
     private val engine: LayoutEngine,
     private val pendingTextRebuild: LinkedHashSet<Int>,
@@ -162,6 +163,7 @@ internal class RuneNodeFactory(
 
     // Step 3: Create node and register
     val node = RuneUIManager.Node(id, type, view, label)
+    node.surfaceId = surfaceId
     node.cachedText = (label?.text?.toString() ?: "")
     nodes.put(id, node)
     node.parentId = null

@@ -10,6 +10,8 @@ import type {
   RouterContextValue,
 } from "./types";
 import { RouterContext, applyScreenOptions, registerScreen } from "./context";
+import { setNativeRouterDispatch } from "./nativeInterop";
+import "./nativeRenderer";
 
 export interface NavigationContainerProps {
   children: any;
@@ -226,6 +228,9 @@ export const NavigationContainer: ParentComponent<NavigationContainerProps> = (
         break;
     }
   };
+
+  setNativeRouterDispatch(dispatch);
+  onCleanup(() => setNativeRouterDispatch(null));
 
   const context: RouterContextValue = {
     state,

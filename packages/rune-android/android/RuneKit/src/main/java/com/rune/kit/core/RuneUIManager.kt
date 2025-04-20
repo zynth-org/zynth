@@ -37,6 +37,7 @@ import org.json.JSONArray
 import java.util.HashMap
 import java.util.LinkedHashSet
 import java.util.ArrayDeque
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import kotlin.math.roundToInt
 
@@ -89,8 +90,37 @@ class RuneUIManager(
     Log.d(tag, message)
   }
 
-  init {
-    RuneComponentRegistry.ensureInitialized()
+  fun registerSurface(surfaceId: Int, surfaceRoot: RuneRootView) = onMain {
+    registerSurfaceInternal(surfaceId, surfaceRoot)
+  }
+
+  fun unregisterSurface(surfaceId: Int) = onMain {
+    if (surfaceId == root.rootId) return@onMain
+    val state = surfaces[surfaceId] ?: return@onMain
+    surfaces.remove(surfaceId)
+    state.layoutListener?.let { state.rootView.removeOnLayoutChangeListener(it) }
+    state.frameScheduler.cancelFlush()
+
+    val nodesToRemove = mutableListOf<Int>()
+    for (i in 0 until nodes.size()) {
+      val node = nodes.valueAt(i) ?: continue
+      if (node.surfaceId == surfaceId) {
+        nodesToRemove.add(node.id)
+      }
+    }
+    nodesToRemove.forEach { state.nodeFactory.removeNodeRecursive(it) }
+
+    if (activeSurfaceId == surfaceId) {
+      activeSurfaceId = root.rootId
+    }
+  }
+
+  fun setActiveSurface(surfaceId: Int) = onMain {
+    if (surfaces.containsKey(surfaceId)) {
+      activeSurfaceId = surfaceId
+    } else {
+      Log.w("RuneUI", "Ignoring setActiveSurface for unknown surfaceId=$surfaceId")
+    }
   }
   data class Node(
     val id: Int,
@@ -115,6 +145,7 @@ class RuneUIManager(
     var lastLayoutWidth: Int = -1,
     var lastLayoutHeight: Int = -1,
     var layoutListener: OnLayoutChangeListener? = null,
+    var surfaceId: Int = 0,
   )
 
   data class SelectionSpec(var start: Int, var end: Int)
@@ -128,34 +159,25 @@ class RuneUIManager(
     var lastExactHeight: Int = 0,
   )
 
-  // Public accessor methods for component packages
-  fun getRootView(): RuneRootView = root
-  fun getLayoutEngine(): LayoutEngine = engine
-
-  private fun processPendingViewOperations() {
-    layoutFlush.processPendingViewOperations()
-  }
-
-  private fun applySetProp(nodeId: Int, name: String, jsonValue: String?, category: PropertyCategory = PropertyCategory.UNKNOWN) {
-    propApplier.applySetProp(nodeId, name, jsonValue, category)
-  }
-
-  private fun applySetText(nodeId: Int, text: String) {
-    propApplier.applySetText(nodeId, text, ::propagateTextChange)
-  }
-
-  private fun applySetHandler(nodeId: Int, event: String, handlerId: Long) {
-    propApplier.applySetHandler(nodeId, event, eventDispatcher, handlerListener, handlerId)
+  private class SurfaceState(
+    val id: Int,
+    val rootView: RuneRootView,
+    val pendingTextRebuild: LinkedHashSet<Int>,
+    val pendingViewOperations: MutableList<ViewOperation>,
+    val pendingNativeOperations: MutableList<NativeOperation>,
+    val stickyFrameCarryover: MutableSet<Int>,
+    val frameScheduler: FrameScheduler,
+    val layoutFlush: RuneLayoutFlush,
+    val nodeFactory: RuneNodeFactory,
+  ) {
+    var lastWidth: Int = -1
+    var lastHeight: Int = -1
+    var layoutListener: OnLayoutChangeListener? = null
   }
 
   private val nodes = SparseArray<Node>()
-  private val pendingTextRebuild = LinkedHashSet<Int>()
   private val handler = Handler(Looper.getMainLooper())
-  private val frameScheduler = FrameScheduler()
   private val eventPayloads = HashMap<String, ArrayDeque<String>>()
-  private val pendingViewOperations = mutableListOf<ViewOperation>()
-  private val pendingNativeOperations = mutableListOf<NativeOperation>()
-  private val stickyFrameCarryover = mutableSetOf<Int>()
   private val nodeRecyclingPool = NodeRecyclingPool(
     debugLogging = isNativeDebugEnabled(),
   )
@@ -176,44 +198,131 @@ class RuneUIManager(
     eventPayloads = eventPayloads,
   )
   private val recyclerHost = RuneRecyclerHost()
-  private val nodeFactory = RuneNodeFactory(
-    root = root,
-    nodes = nodes,
-    engine = engine,
-    pendingTextRebuild = pendingTextRebuild,
-    nodeRecyclingPool = nodeRecyclingPool,
-    getNextId = { nextId },
-    incrementNextId = { nextId++ },
-    scheduleFlush = { priority: FlushPriority -> layoutFlush.scheduleFlush(priority) },
-    logDebug = ::logDebug,
-    manager = this,
-  )
-  private val layoutFlush = RuneLayoutFlush(
-    root = root,
-    nodes = nodes,
-    engine = engine,
-    handler = handler,
-    frameScheduler = frameScheduler,
-    pendingNativeOperations = pendingNativeOperations,
-    pendingViewOperations = pendingViewOperations,
-    pendingTextRebuild = pendingTextRebuild,
-    stickyFrameCarryover = stickyFrameCarryover,
-    isVirtualTextNode = ::isVirtualTextNode,
-    recomputeTextForNode = ::recomputeTextForNode,
-    applySetProp = ::applySetProp,
-    applySetText = ::applySetText,
-    applySetHandler = ::applySetHandler,
-    logDebug = ::logDebug,
-    isNativeDebugEnabled = ::isNativeDebugEnabled,
-  )
-  @Volatile private var viewTransactionInProgress = false
-  @Volatile private var layoutTransactionActive = false
-  private var flushCoalesceScheduled = false
-  private var pendingFlushPriority = FlushPriority.NORMAL
+  private val surfaces = ConcurrentHashMap<Int, SurfaceState>()
+  @Volatile private var activeSurfaceId: Int = root.rootId
   private var nextId = root.rootId + 1
-  @Volatile private var dirty = false
-  private var lastRootWidth = -1
-  private var lastRootHeight = -1
+
+  private val currentSurface: SurfaceState
+    get() = surfaceStateOrNull(activeSurfaceId)
+      ?: throw IllegalStateException("Surface $activeSurfaceId not registered")
+
+  private val pendingTextRebuild get() = currentSurface.pendingTextRebuild
+  private val pendingViewOperations get() = currentSurface.pendingViewOperations
+  private val pendingNativeOperations get() = currentSurface.pendingNativeOperations
+  private val stickyFrameCarryover get() = currentSurface.stickyFrameCarryover
+  private val frameScheduler get() = currentSurface.frameScheduler
+  private val layoutFlush get() = currentSurface.layoutFlush
+  private val nodeFactory get() = currentSurface.nodeFactory
+
+  private fun surfaceStateOrNull(id: Int): SurfaceState? = surfaces[id]
+
+  private fun surfaceState(id: Int): SurfaceState =
+    surfaceStateOrNull(id) ?: throw IllegalStateException("Surface $id not registered")
+
+  private fun registerSurfaceInternal(surfaceId: Int, surfaceRoot: RuneRootView) {
+    if (surfaces.containsKey(surfaceId)) return
+
+    val pendingTextRebuild = LinkedHashSet<Int>()
+    val pendingViewOperations = mutableListOf<ViewOperation>()
+    val pendingNativeOperations = mutableListOf<NativeOperation>()
+    val stickyFrameCarryover = mutableSetOf<Int>()
+    val frameScheduler = FrameScheduler()
+
+    val layoutFlush = RuneLayoutFlush(
+      root = surfaceRoot,
+      nodes = nodes,
+      engine = engine,
+      handler = handler,
+      frameScheduler = frameScheduler,
+      pendingNativeOperations = pendingNativeOperations,
+      pendingViewOperations = pendingViewOperations,
+      pendingTextRebuild = pendingTextRebuild,
+      stickyFrameCarryover = stickyFrameCarryover,
+      isVirtualTextNode = ::isVirtualTextNode,
+      recomputeTextForNode = ::recomputeTextForNode,
+      applySetProp = ::applySetProp,
+      applySetText = ::applySetText,
+      applySetHandler = ::applySetHandler,
+      logDebug = ::logDebug,
+      isNativeDebugEnabled = ::isNativeDebugEnabled,
+    )
+
+    val factory = RuneNodeFactory(
+      root = surfaceRoot,
+      nodes = nodes,
+      engine = engine,
+      pendingTextRebuild = pendingTextRebuild,
+      nodeRecyclingPool = nodeRecyclingPool,
+      getNextId = { nextId },
+      incrementNextId = { nextId++ },
+      scheduleFlush = { priority: FlushPriority -> layoutFlush.scheduleFlush(priority) },
+      logDebug = ::logDebug,
+      manager = this,
+      surfaceId = surfaceId,
+    )
+
+    val surfaceState = SurfaceState(
+      id = surfaceId,
+      rootView = surfaceRoot,
+      pendingTextRebuild = pendingTextRebuild,
+      pendingViewOperations = pendingViewOperations,
+      pendingNativeOperations = pendingNativeOperations,
+      stickyFrameCarryover = stickyFrameCarryover,
+      frameScheduler = frameScheduler,
+      layoutFlush = layoutFlush,
+      nodeFactory = factory,
+    )
+
+    val listener = OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+      val width = surfaceRoot.width
+      val height = surfaceRoot.height
+      if (width != surfaceState.lastWidth || height != surfaceState.lastHeight) {
+        surfaceState.lastWidth = width
+        surfaceState.lastHeight = height
+        layoutFlush.scheduleFlush()
+      }
+    }
+    surfaceState.layoutListener = listener
+    surfaceRoot.addOnLayoutChangeListener(listener)
+    surfaceState.lastWidth = surfaceRoot.width
+    surfaceState.lastHeight = surfaceRoot.height
+
+    surfaces[surfaceId] = surfaceState
+  }
+
+  init {
+    RuneComponentRegistry.ensureInitialized()
+    registerSurfaceInternal(root.rootId, root)
+  }
+
+  private fun surfaceStateForNode(nodeId: Int): SurfaceState {
+    val node = nodes.get(nodeId)
+    val surfaceId = node?.surfaceId ?: activeSurfaceId
+    return surfaceStateOrNull(surfaceId) ?: currentSurface
+  }
+
+  private fun surfaceStateForParent(parentId: Int): SurfaceState {
+    surfaces[parentId]?.let { return it }
+    val node = nodes.get(parentId)
+    val surfaceId = node?.surfaceId ?: activeSurfaceId
+    return surfaceStateOrNull(surfaceId) ?: currentSurface
+  }
+
+  // Public accessor methods for component packages
+  fun getRootView(): RuneRootView = surfaceStateOrNull(activeSurfaceId)?.rootView ?: root
+  fun getLayoutEngine(): LayoutEngine = engine
+
+  private fun applySetProp(nodeId: Int, name: String, jsonValue: String?, category: PropertyCategory = PropertyCategory.UNKNOWN) {
+    propApplier.applySetProp(nodeId, name, jsonValue, category)
+  }
+
+  private fun applySetText(nodeId: Int, text: String) {
+    propApplier.applySetText(nodeId, text, ::propagateTextChange)
+  }
+
+  private fun applySetHandler(nodeId: Int, event: String, handlerId: Long) {
+    propApplier.applySetHandler(nodeId, event, eventDispatcher, handlerListener, handlerId)
+  }
   
   // Performance tracking for operation queues
   private var maxViewOps = 0
@@ -221,20 +330,6 @@ class RuneUIManager(
   private var scheduleFlushCount = 0
   private var totalNodesCreated = 0
   private var totalNodesRemoved = 0
-
-  init {
-    // root has no parent by design; no global parents map needed
-    root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-      val w = root.width
-      val h = root.height
-      if (w != lastRootWidth || h != lastRootHeight) {
-        lastRootWidth = w
-        lastRootHeight = h
-        scheduleFlush()
-        flush()
-      }
-    }
-  }
 
   private fun storeEventPayload(nodeId: Int, event: String, payload: JSONObject?) {
     eventManager.storeEventPayload(nodeId, event, payload)
@@ -470,7 +565,8 @@ class RuneUIManager(
    */
   fun markNodeDirty(nodeId: Int) {
     engine.markDirty(nodeId)
-    scheduleFlush(FlushPriority.HIGH)
+    val surface = surfaceStateForNode(nodeId)
+    scheduleFlush(FlushPriority.HIGH, surface)
   }
 
   override fun onPressablePressIn(nodeId: Int, payload: JSONObject) {
@@ -578,6 +674,8 @@ class RuneUIManager(
   }
 
   override fun setProp(nodeId: Int, name: String, jsonValue: String?) = onMain {
+    val surface = surfaceStateForNode(nodeId)
+    val queue = surface.pendingNativeOperations
     // Fast O(1) property categorization for optimized dispatch
     val category = PropertyCategoryMap.getCategory(name)
     
@@ -587,7 +685,7 @@ class RuneUIManager(
     
     // Deduplicate: remove any previous setProp for same node+property
     // Use reversed iteration for better performance when removing from end
-    val iterator = pendingNativeOperations.listIterator(pendingNativeOperations.size)
+    val iterator = queue.listIterator(queue.size)
     var removedCount = 0
     while (iterator.hasPrevious() && removedCount < 20) {
       val op = iterator.previous()
@@ -598,7 +696,7 @@ class RuneUIManager(
       removedCount++
     }
     
-    pendingNativeOperations.add(
+    queue.add(
       NativeOperation.SetProp(
         nodeId = nodeId,
         name = name,
@@ -607,13 +705,15 @@ class RuneUIManager(
         category = category
       )
     )
-    scheduleFlush()
+    scheduleFlush(surface = surface)
   }
 
   override fun setText(nodeId: Int, text: String) = onMain {
+    val surface = surfaceStateForNode(nodeId)
+    val queue = surface.pendingNativeOperations
     // Deduplicate: remove any previous setText for same node
     // Use reversed iteration for better performance when removing from end
-    val iterator = pendingNativeOperations.listIterator(pendingNativeOperations.size)
+    val iterator = queue.listIterator(queue.size)
     var removedCount = 0
     while (iterator.hasPrevious() && removedCount < 10) {
       val op = iterator.previous()
@@ -624,11 +724,12 @@ class RuneUIManager(
       removedCount++
     }
     
-    pendingNativeOperations.add(NativeOperation.SetText(nodeId, text))
-    scheduleFlush()
+    queue.add(NativeOperation.SetText(nodeId, text))
+    scheduleFlush(surface = surface)
   }
 
   override fun insertChild(parentId: Int, childId: Int, index: Int) = onMain {
+    val surface = surfaceStateForParent(parentId)
     attachChild(parentId, childId, index)
     val parentNode = nodes.get(parentId)
     if (parentNode?.type == TEXT_TYPE) {
@@ -638,11 +739,11 @@ class RuneUIManager(
         val insertIndex = index.coerceIn(0, parentNode.textChildren.size)
         parentNode.textChildren.remove(childId)
         parentNode.textChildren.add(insertIndex, childId)
-        pendingTextRebuild.add(parentNode.id)
+        surface.pendingTextRebuild.add(parentNode.id)
         engine.markDirty(parentNode.id)
         propagateTextChange(parentNode)
       }
-      scheduleFlush()
+      scheduleFlush(surface = surface)
       return@onMain
     }
     val node = nodes.get(childId)
@@ -650,15 +751,17 @@ class RuneUIManager(
       Log.w("RuneUI", "insertChild: node $childId not found for parent $parentId")
       return@onMain
     }
-    pendingViewOperations.removeAll { op ->
+    val queue = surface.pendingViewOperations
+    queue.removeAll { op ->
       op is ViewOperation.Remove && op.node.id == childId
     }
-    pendingViewOperations.add(ViewOperation.Insert(parentId, childId, index))
+    queue.add(ViewOperation.Insert(parentId, childId, index))
     engine.insertChild(parentId, childId, index)
-    scheduleFlush()
+    scheduleFlush(surface = surface)
   }
 
   override fun removeChild(parentId: Int, childId: Int) = onMain {
+    val surface = surfaceStateForParent(parentId)
     // Track removal frequency
     if (totalNodesRemoved % 10 == 0 && totalNodesRemoved > 0) {
       // Log.i("RunePerf", "🗑️ removeChild called (total removed: $totalNodesRemoved, current nodes: ${nodes.size()})")
@@ -668,10 +771,10 @@ class RuneUIManager(
     if (parentNode?.type == TEXT_TYPE) {
       parentNode.textChildren.remove(childId)
       detachChild(parentId, childId)
-      pendingTextRebuild.add(parentNode.id)
+      surface.pendingTextRebuild.add(parentNode.id)
       engine.markDirty(parentNode.id)
       propagateTextChange(parentNode)
-      scheduleFlush()
+      scheduleFlush(surface = surface)
       return@onMain
     }
 
@@ -683,55 +786,59 @@ class RuneUIManager(
     
     totalNodesRemoved++
     
-    pendingViewOperations.removeAll { op ->
+    val queue = surface.pendingViewOperations
+    queue.removeAll { op ->
       op is ViewOperation.Insert && op.parentId == parentId && op.childId == childId
     }
     
     // RECYCLING DISABLED - causing bugs without fixing performance
     // Normal removal and destruction
-    pendingViewOperations.add(ViewOperation.Remove(parentId, childNode))
+    queue.add(ViewOperation.Remove(parentId, childNode))
     nodeFactory.removeNodeRecursive(childId, detachView = false)
-    scheduleFlush()
+    scheduleFlush(surface = surface)
   }
 
   override fun setHandler(nodeId: Int, event: String, handlerId: Long) = onMain {
-    pendingNativeOperations.add(NativeOperation.SetHandler(nodeId, event, handlerId))
-    scheduleFlush()
+    val surface = surfaceStateForNode(nodeId)
+    surface.pendingNativeOperations.add(NativeOperation.SetHandler(nodeId, event, handlerId))
+    scheduleFlush(surface = surface)
   }
 
   override fun removeNode(nodeId: Int) = onMain {
-    nodeFactory.removeNodeRecursive(nodeId)
-    scheduleFlush()
+    val surface = surfaceStateForNode(nodeId)
+    surface.nodeFactory.removeNodeRecursive(nodeId)
+    scheduleFlush(surface = surface)
+  }
+
+  override fun setSurface(surfaceId: Int) {
+    onMain { setActiveSurface(surfaceId) }
   }
 
   fun hasRenderableContent(): Boolean = onMain { nodes.size() > 0 }
 
   fun clearAllNodes() = onMain {
     logDebug("RuneUI", "Clearing all nodes for dev reload")
-    frameScheduler.cancelFlush()
-    handler.removeCallbacksAndMessages(null)
-    pendingTextRebuild.clear()
-    pendingViewOperations.clear()
-    pendingNativeOperations.clear()
-    eventPayloads.clear()
-    dirty = false
-    viewTransactionInProgress = false
-    flushCoalesceScheduled = false
-
-    // Remove all nodes recursively starting from leaves
-    val nodesToRemove = nodes.size().let { size ->
-        (0 until size).map { nodes.keyAt(it) }
-    }.filter { it != root.rootId }
-    
-    nodesToRemove.forEach { nodeId ->
-        nodeFactory.removeNodeRecursive(nodeId)
+    surfaces.values.forEach { state ->
+      state.frameScheduler.cancelFlush()
+      state.pendingTextRebuild.clear()
+      state.pendingViewOperations.clear()
+      state.pendingNativeOperations.clear()
+      state.stickyFrameCarryover.clear()
+      state.layoutFlush.flush()
     }
-
-  // Final cleanup: clear children for root
-  nodes.get(root.rootId)?.children?.clear()
+    handler.removeCallbacksAndMessages(null)
+    eventPayloads.clear()
+    // Remove all nodes recursively starting from leaves
+    val nodeIds = (0 until nodes.size()).map { nodes.keyAt(it) }
+    nodeIds.forEach { id ->
+      if (id != root.rootId) {
+        val surface = surfaceStateForNode(id)
+        surface.nodeFactory.removeNodeRecursive(id)
+      }
+    }
+    // Final cleanup: clear children for primary root
+    nodes.get(root.rootId)?.children?.clear()
     nextId = root.rootId + 1
-    lastRootWidth = -1
-    lastRootHeight = -1
     
     // Clear recycling pool to free memory
     nodeRecyclingPool.clear()
@@ -748,14 +855,17 @@ class RuneUIManager(
   }
 
   override fun flush() = onMain {
-    layoutFlush.flush()
+    currentSurface.layoutFlush.flush()
   }
 
-  private fun scheduleFlush(priority: FlushPriority = FlushPriority.NORMAL) {
+  private fun scheduleFlush(
+    priority: FlushPriority = FlushPriority.NORMAL,
+    surface: SurfaceState = currentSurface
+  ) {
     scheduleFlushCount++
     
-    val viewOps = pendingViewOperations.size
-    val nativeOps = pendingNativeOperations.size
+    val viewOps = surface.pendingViewOperations.size
+    val nativeOps = surface.pendingNativeOperations.size
     
     // Track peak queue sizes
     if (viewOps > maxViewOps) {
@@ -776,7 +886,7 @@ class RuneUIManager(
       // Log.e("RunePerf", "🚨 LARGE OPERATION QUEUES: view=$viewOps native=$nativeOps (schedule #$scheduleFlushCount)")
     }
     
-    layoutFlush.scheduleFlush(priority)
+    surface.layoutFlush.scheduleFlush(priority)
   }
 
   /**
@@ -795,6 +905,11 @@ class RuneUIManager(
     val nodeCountDiff = totalNodesCreated - totalNodesRemoved
     val expectedNodeCount = nodes.size()
     val leakedNodes = nodeCountDiff - expectedNodeCount
+    val currentViewOps = surfaces.values.sumOf { it.pendingViewOperations.size }
+    val currentNativeOps = surfaces.values.sumOf { it.pendingNativeOperations.size }
+    val totalFlushes = surfaces.values.sumOf { it.layoutFlush.totalFlushes }
+    val slowFlushes = surfaces.values.sumOf { it.layoutFlush.slowFlushCount }
+    val totalFlushTime = surfaces.values.sumOf { it.layoutFlush.totalFlushTime }
     
     Log.i("RunePerf", """
       📊 PERFORMANCE STATS:
@@ -806,10 +921,10 @@ class RuneUIManager(
         - Nodes removed: $totalNodesRemoved
         - Expected node count: $nodeCountDiff
         - Leaked nodes: $leakedNodes
-        - Current view ops: ${pendingViewOperations.size}
-        - Current native ops: ${pendingNativeOperations.size}
-        - Flush stats: ${layoutFlush.totalFlushes} total, ${layoutFlush.slowFlushCount} slow (${if (layoutFlush.totalFlushes > 0) layoutFlush.slowFlushCount * 100 / layoutFlush.totalFlushes else 0}%)
-        - Avg flush time: ${if (layoutFlush.totalFlushes > 0) layoutFlush.totalFlushTime / layoutFlush.totalFlushes else 0}ms
+        - Current view ops: $currentViewOps
+        - Current native ops: $currentNativeOps
+        - Flush stats: $totalFlushes total, $slowFlushes slow (${if (totalFlushes > 0) slowFlushes * 100 / totalFlushes else 0}%)
+        - Avg flush time: ${if (totalFlushes > 0) totalFlushTime / totalFlushes else 0}ms
     """.trimIndent())
     
     if (leakedNodes > 50) {

@@ -80,6 +80,12 @@ object RuneBridge {
       }
       null
     }
+
+    val setSurface: (Array<Any?>) -> Any? = setSurface@{ args ->
+      val surfaceId = (args.getOrNull(0) as? Number)?.toInt() ?: return@setSurface null
+      manager.setActiveSurface(surfaceId)
+      null
+    }
     
     val logPerformanceStats: (Array<Any?>) -> Any? = {
       manager.logPerformanceStats()
@@ -97,6 +103,7 @@ object RuneBridge {
         "setHandler" to setHandler,
         "flush" to flush,
         "applyBatch" to applyBatch,
+        "setSurface" to setSurface,
         "logPerformanceStats" to logPerformanceStats,
       ),
     )

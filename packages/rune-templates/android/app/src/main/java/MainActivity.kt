@@ -31,7 +31,7 @@ class MainActivity : AppCompatActivity() {
     // Initialize SoLoader for Yoga layout engine
     RuneRuntime.initialize(this)
 
-    val root = RuneRootView(this)
+    val root = RuneRootView(this, explicitRootId = 0)
     setContentView(root)
 
     // Force a layout pass to ensure window insets are available

@@ -39,6 +39,7 @@ object JSBridge {
     fun setHandler(nodeId: Int, event: String, handlerId: Long)
     fun flush()
     fun dequeueEventPayload(nodeId: Int, event: String): String?
+    fun setSurface(surfaceId: Int)
   }
 
   interface ModulesShim {

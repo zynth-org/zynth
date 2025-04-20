@@ -183,6 +183,24 @@ class HermesAdapter(
     evaluateSource(code)
   }
 
+  override fun evaluateAsync(code: String) {
+    if (destroyed || runtimePtr == 0L) {
+      Log.w(TAG, "evaluateAsync called after runtime destroyed")
+      return
+    }
+    jsHandler.post {
+      try {
+        ensureRuntime()
+        evaluateSource(code)
+      } catch (t: Throwable) {
+        if (nativeDebugEnabled) {
+          Log.e(TAG, "evaluateAsync failed", t)
+        }
+        onException?.invoke(t.toJsRuntimeException())
+      }
+    }
+  }
+
   override fun callGlobal(name: String, args: Array<Any?>): Any? {
     return if (!destroyed && runtimePtr != 0L) {
       runOnJS {

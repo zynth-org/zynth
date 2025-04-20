@@ -5,8 +5,8 @@ import android.util.Log
 import android.view.View
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentManager
-import androidx.fragment.app.FragmentTransaction
 import com.rune.kit.core.RuneRootView
+import com.rune.kit.runtime.RuneRuntime
 import org.json.JSONObject
 
 /**
@@ -169,42 +169,50 @@ class RuneScreenFragment : Fragment() {
             }
             
             Log.e("RuneScreenFragment", "🔥 Got main runtime: $runtime")
+            runtime.registerSurface(rootView)
+            runtime.setActiveSurface(rootView.rootId)
             
             // Call a global JS function to render the screen into this rootId
-            try {
-                val paramsJson = params?.toString() ?: "null"
-                val jsCode = """
-                    (function() {
-                        if (typeof globalThis.__renderRouterScreen === 'function') {
-                            console.log('[RuneScreenFragment] 🔥 Calling __renderRouterScreen');
-                            globalThis.__renderRouterScreen(${rootView.rootId}, '$screenName', $paramsJson);
-                        } else {
-                            console.error('[RuneScreenFragment] ❌ __renderRouterScreen not available!');
-                        }
-                    })();
-                """.trimIndent()
-                
-                Log.e("RuneScreenFragment", "🔥 Evaluating JS to render screen into rootId=${rootView.rootId}")
-                
-                // Use reflection to access the adapter and evaluate the JS
-                val adapterField = runtime.javaClass.getDeclaredField("adapter")
-                adapterField.isAccessible = true
-                val adapter = adapterField.get(runtime)
-                val evaluateMethod = adapter?.javaClass?.getMethod("evaluate", String::class.java)
-                evaluateMethod?.invoke(adapter, jsCode)
-                
-                Log.e("RuneScreenFragment", "🔥 JS evaluation completed")
-            } catch (e: Exception) {
-                Log.e("RuneScreenFragment", "Failed to render screen via JS", e)
-            }
+            val paramsJson = params?.toString() ?: "null"
+            val jsCode = """
+                (function() {
+                    if (typeof globalThis.__renderRouterScreen === 'function') {
+                        console.log('[RuneScreenFragment] 🔥 Calling __renderRouterScreen');
+                        globalThis.__renderRouterScreen(${rootView.rootId}, '$screenName', $paramsJson);
+                    } else {
+                        console.error('[RuneScreenFragment] ❌ __renderRouterScreen not available!');
+                    }
+                })();
+            """.trimIndent()
+            
+            Log.e("RuneScreenFragment", "🔥 Evaluating JS to render screen into rootId=${rootView.rootId}")
+            runtime.evaluateAsync(jsCode)
         }
     }
     
     override fun onDestroyView() {
         super.onDestroyView()
         Log.e("RuneScreenFragment", "🔥 onDestroyView for screen: $screenName")
+        
+        val runtime = RuneNavigationContainer.getMainRuntime()
+        val rootId = runeRootView?.rootId
+        if (runtime != null && rootId != null) {
+            val jsCode = """
+                (function() {
+                    if (typeof globalThis.__disposeRouterScreen === 'function') {
+                        console.log('[RuneScreenFragment] 🔥 Calling __disposeRouterScreen');
+                        globalThis.__disposeRouterScreen($rootId);
+                    }
+                })();
+            """.trimIndent()
+            runtime.evaluateAsync(jsCode)
+            runtime.unregisterSurface(rootId)
+            runtime.setActiveSurface(0)
+        }
+        
         runeRootView = null
     }
     
     fun getRootView(): RuneRootView? = runeRootView
+
 }

@@ -7,9 +7,13 @@ import android.os.Looper
 import android.view.View
 import android.widget.FrameLayout
 import com.rune.kit.debug.RuneRedBoxView
+import java.util.concurrent.atomic.AtomicInteger
 
-class RuneRootView(ctx: Context) : FrameLayout(ctx) {
-  val rootId: Int = 0
+class RuneRootView @JvmOverloads constructor(
+  ctx: Context,
+  explicitRootId: Int? = null,
+) : FrameLayout(ctx) {
+  val rootId: Int = explicitRootId ?: NEXT_ROOT_ID.getAndIncrement()
 
   private val redBox = RuneRedBoxView(ctx).apply {
     visibility = View.GONE
@@ -51,5 +55,11 @@ class RuneRootView(ctx: Context) : FrameLayout(ctx) {
       context = context.baseContext
     }
     return null
+  }
+
+  companion object {
+    private val NEXT_ROOT_ID = AtomicInteger(1)
+
+    fun allocateRootId(): Int = NEXT_ROOT_ID.getAndIncrement()
   }
 }
