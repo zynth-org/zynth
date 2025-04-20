@@ -24,6 +24,9 @@ object RuneAndroidRouterHost {
         try {
             Log.i(TAG, "Bootstrapping RuneAndroidRouter module")
             
+            // Store the main runtime so Fragments can use it
+            RuneNavigationContainer.setMainRuntime(runtime)
+            
             // Create navigation container with access to FragmentManager
             val navigationContainer = RuneNavigationContainer()
             if (activity is androidx.fragment.app.FragmentActivity) {

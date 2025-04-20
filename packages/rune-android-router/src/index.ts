@@ -10,3 +10,6 @@ export type {
   ScreenOptions,
   StackScreenProps,
 } from "./types";
+
+// Import native renderer to install global functions
+import "./nativeRenderer";

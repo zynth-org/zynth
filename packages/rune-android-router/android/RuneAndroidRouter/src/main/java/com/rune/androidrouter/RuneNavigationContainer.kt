@@ -20,6 +20,7 @@ class RuneNavigationContainer {
     
     companion object {
         private var currentFragmentManager: FragmentManager? = null
+        private var mainRuntime: com.rune.kit.runtime.RuneRuntime? = null
         
         @JvmStatic
         fun setFragmentManager(manager: FragmentManager) {
@@ -30,6 +31,17 @@ class RuneNavigationContainer {
         @JvmStatic
         fun getCurrentFragmentManager(): FragmentManager? {
             return currentFragmentManager
+        }
+        
+        @JvmStatic
+        fun setMainRuntime(runtime: com.rune.kit.runtime.RuneRuntime) {
+            mainRuntime = runtime
+            Log.e("RuneAndroidRouter", "🔥 Main runtime set: $runtime")
+        }
+        
+        @JvmStatic
+        fun getMainRuntime(): com.rune.kit.runtime.RuneRuntime? {
+            return mainRuntime
         }
     }
     
@@ -130,42 +142,68 @@ class RuneScreenFragment : Fragment() {
     ): View? {
         Log.e("RuneScreenFragment", "🔥🔥🔥 onCreateView: screen=$screenName 🔥🔥🔥")
         
-        // Create a colored view to prove the Fragment is visible
-        val fragmentView = android.widget.FrameLayout(requireContext()).apply {
+        // Create a RuneRootView to host the actual screen content
+        runeRootView = RuneRootView(requireContext()).apply {
             layoutParams = android.view.ViewGroup.LayoutParams(
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT,
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT
             )
-            // Bright color to prove native navigation is working!
-            setBackgroundColor(android.graphics.Color.parseColor("#FF6B35"))
-            
-            // Add a text view to show the screen name
-            val textView = android.widget.TextView(requireContext()).apply {
-                text = "🔥 NATIVE FRAGMENT 🔥\n\nScreen: $screenName\nParams: ${params?.toString() ?: "none"}"
-                textSize = 24f
-                setTextColor(android.graphics.Color.WHITE)
-                gravity = android.view.Gravity.CENTER
-                setPadding(40, 40, 40, 40)
-            }
-            addView(textView)
         }
         
-        Log.e("RuneScreenFragment", "🔥 Created colored Fragment view to prove native navigation!")
-        return fragmentView
+        Log.e("RuneScreenFragment", "🔥 Created RuneRootView for Fragment")
+        return runeRootView
     }
     
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        Log.d("RuneScreenFragment", "View created for screen: $screenName")
+        Log.e("RuneScreenFragment", "🔥 onViewCreated for screen: $screenName")
         
-        // Here we would initialize the Rune UI for this screen
-        // For now, it's just a container that the JS side can populate
+        runeRootView?.let { rootView ->
+            Log.e("RuneScreenFragment", "🔥 Fragment rootView created with rootId=${rootView.rootId}")
+            
+            // Get the main runtime
+            val runtime = RuneNavigationContainer.getMainRuntime()
+            if (runtime == null) {
+                Log.e("RuneScreenFragment", "🔥 ERROR: Main runtime not available!")
+                return
+            }
+            
+            Log.e("RuneScreenFragment", "🔥 Got main runtime: $runtime")
+            
+            // Call a global JS function to render the screen into this rootId
+            try {
+                val paramsJson = params?.toString() ?: "null"
+                val jsCode = """
+                    (function() {
+                        if (typeof globalThis.__renderRouterScreen === 'function') {
+                            console.log('[RuneScreenFragment] 🔥 Calling __renderRouterScreen');
+                            globalThis.__renderRouterScreen(${rootView.rootId}, '$screenName', $paramsJson);
+                        } else {
+                            console.error('[RuneScreenFragment] ❌ __renderRouterScreen not available!');
+                        }
+                    })();
+                """.trimIndent()
+                
+                Log.e("RuneScreenFragment", "🔥 Evaluating JS to render screen into rootId=${rootView.rootId}")
+                
+                // Use reflection to access the adapter and evaluate the JS
+                val adapterField = runtime.javaClass.getDeclaredField("adapter")
+                adapterField.isAccessible = true
+                val adapter = adapterField.get(runtime)
+                val evaluateMethod = adapter?.javaClass?.getMethod("evaluate", String::class.java)
+                evaluateMethod?.invoke(adapter, jsCode)
+                
+                Log.e("RuneScreenFragment", "🔥 JS evaluation completed")
+            } catch (e: Exception) {
+                Log.e("RuneScreenFragment", "Failed to render screen via JS", e)
+            }
+        }
     }
     
     override fun onDestroyView() {
         super.onDestroyView()
+        Log.e("RuneScreenFragment", "🔥 onDestroyView for screen: $screenName")
         runeRootView = null
-        Log.d("RuneScreenFragment", "View destroyed for screen: $screenName")
     }
     
     fun getRootView(): RuneRootView? = runeRootView
