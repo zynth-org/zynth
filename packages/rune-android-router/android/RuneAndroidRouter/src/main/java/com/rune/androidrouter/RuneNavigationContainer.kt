@@ -45,20 +45,33 @@ class RuneNavigationContainer {
      * Push a new screen onto the stack
      */
     fun pushScreen(screenName: String, params: JSONObject? = null) {
+        Log.e(TAG, "🔥🔥🔥 pushScreen() CALLED: screenName=$screenName, params=$params 🔥🔥🔥")
+        
         val manager = currentFragmentManager ?: run {
-            Log.e(TAG, "FragmentManager not available")
+            Log.e(TAG, "🔥 ERROR: FragmentManager not available!")
             return
         }
         
-        Log.d(TAG, "Pushing screen: $screenName with params: $params")
+        Log.e(TAG, "🔥 FragmentManager available, creating fragment...")
         
         val fragment = RuneScreenFragment.newInstance(screenName, params)
+        Log.e(TAG, "🔥 Fragment created: $fragment")
         
-        manager.beginTransaction()
-            .setTransition(FragmentTransaction.TRANSIT_FRAGMENT_OPEN)
+        Log.e(TAG, "🔥 Beginning fragment transaction...")
+        // Add fragment with custom animation
+        val transaction = manager.beginTransaction()
+            .setCustomAnimations(
+                android.R.anim.slide_in_left,  // enter
+                android.R.anim.slide_out_right, // exit
+                android.R.anim.slide_in_left,  // popEnter
+                android.R.anim.slide_out_right  // popExit
+            )
             .add(android.R.id.content, fragment, screenName)
             .addToBackStack(screenName)
-            .commit()
+        
+        Log.e(TAG, "🔥 Committing transaction...")
+        transaction.commit()
+        Log.e(TAG, "🔥🔥🔥 Transaction committed! Fragment should appear now. 🔥🔥🔥")
     }
     
     /**
@@ -107,7 +120,7 @@ class RuneScreenFragment : Fragment() {
             params = JSONObject(it)
         }
         
-        Log.d("RuneScreenFragment", "Created fragment for screen: $screenName")
+        Log.e("RuneScreenFragment", "🔥🔥🔥 Fragment onCreate: screen=$screenName 🔥🔥🔥")
     }
     
     override fun onCreateView(
@@ -115,17 +128,30 @@ class RuneScreenFragment : Fragment() {
         container: android.view.ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
-        Log.d("RuneScreenFragment", "Creating view for screen: $screenName")
+        Log.e("RuneScreenFragment", "🔥🔥🔥 onCreateView: screen=$screenName 🔥🔥🔥")
         
-        // Create a RuneRootView to host the screen content
-        runeRootView = RuneRootView(requireContext()).apply {
+        // Create a colored view to prove the Fragment is visible
+        val fragmentView = android.widget.FrameLayout(requireContext()).apply {
             layoutParams = android.view.ViewGroup.LayoutParams(
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT,
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT
             )
+            // Bright color to prove native navigation is working!
+            setBackgroundColor(android.graphics.Color.parseColor("#FF6B35"))
+            
+            // Add a text view to show the screen name
+            val textView = android.widget.TextView(requireContext()).apply {
+                text = "🔥 NATIVE FRAGMENT 🔥\n\nScreen: $screenName\nParams: ${params?.toString() ?: "none"}"
+                textSize = 24f
+                setTextColor(android.graphics.Color.WHITE)
+                gravity = android.view.Gravity.CENTER
+                setPadding(40, 40, 40, 40)
+            }
+            addView(textView)
         }
         
-        return runeRootView
+        Log.e("RuneScreenFragment", "🔥 Created colored Fragment view to prove native navigation!")
+        return fragmentView
     }
     
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {

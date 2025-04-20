@@ -11,11 +11,12 @@ import org.json.JSONObject
  * This provides just the essential methods needed to initialize and navigate
  * a single-screen router without complexity.
  */
-class RuneAndroidRouterModule : RuneModule, RuneSyncModule {
+class RuneAndroidRouterModule(
+    private val navigationContainer: RuneNavigationContainer
+) : RuneModule, RuneSyncModule {
     override val name: String = "RuneAndroidRouter"
     
     private val TAG = "RuneAndroidRouterModule"
-    private val navigationContainer = RuneNavigationContainer()
     
     override val constants: Map<String, Any>?
         get() = mapOf(
@@ -32,14 +33,44 @@ class RuneAndroidRouterModule : RuneModule, RuneSyncModule {
     }
     
     override fun call(method: String, args: Array<Any?>): JSONObject {
-        Log.d(TAG, "call: method=$method, args=${args.size}")
+        Log.e(TAG, "🔥🔥🔥 NATIVE CALL RECEIVED: method=$method, args.size=${args.size} 🔥🔥🔥")
+        
+        // Log each argument in detail
+        args.forEachIndexed { index, arg ->
+            Log.e(TAG, "  arg[$index]: ${arg?.javaClass?.simpleName} = $arg")
+        }
+        
+        // WORKAROUND: The bridge passes JS arrays as nested Object[] instead of flattening
+        // So when JS calls modules.call("Module", "method", [arg1, arg2])
+        // We receive args = [Object[arg1, arg2]] instead of args = [arg1, arg2]
+        val actualArgs = if (args.size == 1 && args[0] is Array<*>) {
+            Log.e(TAG, "🔥 Unwrapping nested array...")
+            @Suppress("UNCHECKED_CAST")
+            (args[0] as Array<Any?>)
+        } else {
+            args
+        }
+        
+        Log.e(TAG, "🔥 After unwrapping: actualArgs.size=${actualArgs.size}")
+        actualArgs.forEachIndexed { index, arg ->
+            Log.e(TAG, "  actualArgs[$index]: ${arg?.javaClass?.simpleName} = $arg")
+        }
         
         return try {
             when (method) {
                 "navigate" -> {
-                    val screenName = args.getOrNull(0) as? String 
-                        ?: return errorResponse("Missing screen name")
-                    val paramsJson = args.getOrNull(1) as? String
+                    Log.e(TAG, "🔥 Extracting screenName from actualArgs[0]...")
+                    val screenName = actualArgs.getOrNull(0) as? String
+                    if (screenName == null) {
+                        Log.e(TAG, "🔥 ERROR: screenName is null! actualArgs[0]=${actualArgs.getOrNull(0)}, type=${actualArgs.getOrNull(0)?.javaClass}")
+                        return errorResponse("Missing screen name")
+                    }
+                    Log.e(TAG, "🔥 screenName=$screenName")
+                    
+                    Log.e(TAG, "🔥 Extracting paramsJson from actualArgs[1]...")
+                    val paramsJson = actualArgs.getOrNull(1) as? String
+                    Log.e(TAG, "🔥 paramsJson=$paramsJson")
+                    
                     navigate(screenName, paramsJson)
                     successResponse()
                 }
@@ -74,7 +105,7 @@ class RuneAndroidRouterModule : RuneModule, RuneSyncModule {
     }
     
     private fun navigate(screenName: String, paramsJson: String?) {
-        Log.d(TAG, "Navigate to: $screenName with params: $paramsJson")
+        Log.e(TAG, "🔥 navigate() called: screenName=$screenName, paramsJson=$paramsJson")
         
         val params = paramsJson?.let {
             try {

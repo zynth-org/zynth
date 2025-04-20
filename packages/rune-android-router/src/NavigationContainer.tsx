@@ -87,14 +87,76 @@ export const NavigationContainer: ParentComponent<NavigationContainerProps> = (
   });
 
   const dispatch = (action: RouterAction) => {
-    console.log("[RuneAndroidRouter] Dispatch:", action);
-
-    // TODO: Call native navigation here for true native nav
-    // For now, this is JS-only state management
-    console.log("[RuneAndroidRouter] ⚠️ Using JS-only navigation (not native)");
+    console.log(
+      "[RuneAndroidRouter] Dispatch:",
+      JSON.stringify(action, null, 2)
+    );
 
     const currentState = state();
 
+    // Call native navigation if available
+    const globalObject = getGlobalObject();
+    const modules = globalObject.__modules;
+    const hasNativeModule = modules && typeof modules.call === "function";
+
+    if (hasNativeModule) {
+      console.log("[RuneAndroidRouter] 🔥 NATIVE MODULE DETECTED");
+
+      // For RESET (initial state), allow JS to render the first screen
+      // For PUSH/POP/NAVIGATE, delegate to native and skip JS rendering
+      if (
+        action.type === "PUSH" ||
+        action.type === "NAVIGATE" ||
+        action.type === "POP" ||
+        action.type === "GO_BACK"
+      ) {
+        console.log(
+          "[RuneAndroidRouter] 🚀 Delegating to NATIVE, skipping JS rendering"
+        );
+        try {
+          switch (action.type) {
+            case "PUSH":
+            case "NAVIGATE":
+              console.log(
+                "[RuneAndroidRouter] 🚀 Calling NATIVE navigate:",
+                action.name
+              );
+              modules.call("RuneAndroidRouter", "navigate", [
+                action.name,
+                action.params ? JSON.stringify(action.params) : null,
+              ]);
+              break;
+
+            case "POP":
+            case "GO_BACK":
+              console.log("[RuneAndroidRouter] 🚀 Calling NATIVE goBack");
+              modules.call("RuneAndroidRouter", "goBack", []);
+              break;
+          }
+        } catch (error) {
+          console.error("[RuneAndroidRouter] Native call failed:", error);
+        }
+
+        // DO NOT UPDATE JS STATE - let native handle everything
+        console.log(
+          "[RuneAndroidRouter] ✅ Navigation delegated to native, JS state unchanged"
+        );
+        return;
+      }
+
+      // For RESET, update JS state to render initial screen
+      console.log(
+        "[RuneAndroidRouter] 🔄 RESET action - updating JS state for initial render"
+      );
+    }
+
+    if (!hasNativeModule) {
+      console.warn(
+        "[RuneAndroidRouter] ⚠️ Native module not available, using JS-only fallback"
+      );
+    }
+
+    // Update JS state for RESET or when native is not available
     switch (action.type) {
       case "RESET":
         setState(action.state);
