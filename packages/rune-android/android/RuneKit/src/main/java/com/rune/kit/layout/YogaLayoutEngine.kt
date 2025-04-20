@@ -61,10 +61,6 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
     val childNode = getNode(child)
     val targetIndex = index.coerceIn(0, parentNode.childCount)
     
-    // Check if parent has a measure function (which would cause crash)
-    val hasMeasureFunc = measureHandlers.containsKey(parent)
-    android.util.Log.e("YogaLayoutEngine", "🔥 insertChild: parent=$parent child=$child index=$index->$targetIndex, parentHasMeasureFunc=$hasMeasureFunc")
-    
     @Suppress("DEPRECATION")
     if (childNode.parent == parentNode) {
       val currentIndex = parentNode.indexOf(childNode)
@@ -76,13 +72,7 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
       if (idx >= 0) owner.removeChildAt(idx)
     }
     
-    try {
-      parentNode.addChildAt(childNode, targetIndex)
-      android.util.Log.e("YogaLayoutEngine", "🔥 insertChild SUCCESS")
-    } catch (e: Exception) {
-      android.util.Log.e("YogaLayoutEngine", "🔥 insertChild CRASH: ${e.message}", e)
-      throw e
-    }
+    parentNode.addChildAt(childNode, targetIndex)
   }
 
   override fun setStyle(id: Int, style: Style) {

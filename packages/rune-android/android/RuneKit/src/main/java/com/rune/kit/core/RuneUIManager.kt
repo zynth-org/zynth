@@ -815,28 +815,21 @@ class RuneUIManager(
   }
 
   override fun insertChild(parentId: Int, childId: Int, index: Int) = onMain {
-    Log.e("RuneUI", "🔥 insertChild CALLED: parent=$parentId child=$childId index=$index activeSurface=$activeSurfaceId")
     val surface = surfaceStateForParent(parentId)
-    Log.e("RuneUI", "🔥 insertChild: resolved surface=${surface.id}")
     
     // Get nodes from the correct surface
     val surfaceNodes = surface.nodes
     val childNode = surfaceNodes.get(childId)
     val parentNode = surfaceNodes.get(parentId)
-    Log.e("RuneUI", "🔥 insertChild: parent=$parentId(type=${parentNode?.type}) child=$childId(type=${childNode?.type})")
     
     attachChild(parentId, childId, index)
     
     if (parentNode?.type == TEXT_TYPE) {
-      Log.e("RuneUI", "🔥 insertChild: parent is TEXT, child type=${childNode?.type}")
       // If parent is a text node, merge text content from child instead of nesting views
       if (childNode?.type == TEXT_TYPE) {
-        Log.e("RuneUI", "🔥 insertChild: both are TEXT, merging text (virtual text node)")
-        
         // CRITICAL: Remove measure function from virtual text node
         // Virtual text nodes should not have measure functions since they're merged into parent
         engine.setMeasureHandler(childId, null)
-        Log.e("RuneUI", "🔥 Removed measure function from virtual text node $childId")
         
         val insertIndex = index.coerceIn(0, parentNode.textChildren.size)
         parentNode.textChildren.remove(childId)
@@ -845,8 +838,6 @@ class RuneUIManager(
         // Don't call markDirty on parent - TEXT nodes with measure functions can't be marked dirty
         // The text rebuild will handle updating the measurement
         propagateTextChange(parentNode)
-      } else {
-        Log.e("RuneUI", "🔥 insertChild: parent is TEXT but child is NOT TEXT - this will crash!")
       }
       scheduleFlush(surface = surface)
       return@onMain
@@ -861,14 +852,7 @@ class RuneUIManager(
       op is ViewOperation.Remove && op.node.id == childId
     }
     queue.add(ViewOperation.Insert(parentId, childId, index))
-    Log.e("RuneUI", "🔥 insertChild: calling engine.insertChild($parentId, $childId, $index)")
-    try {
-      engine.insertChild(parentId, childId, index)
-      Log.e("RuneUI", "🔥 insertChild: SUCCESS!")
-    } catch (e: Exception) {
-      Log.e("RuneUI", "🔥 insertChild: CRASH! ${e.message}", e)
-      throw e
-    }
+    engine.insertChild(parentId, childId, index)
     scheduleFlush(surface = surface)
   }
 

@@ -57,33 +57,27 @@ class RuneNavigationContainer {
      * Push a new screen onto the stack
      */
     fun pushScreen(screenName: String, params: JSONObject? = null) {
-        Log.e(TAG, "🔥🔥🔥 pushScreen() CALLED: screenName=$screenName, params=$params 🔥🔥🔥")
-        
         val manager = currentFragmentManager ?: run {
-            Log.e(TAG, "🔥 ERROR: FragmentManager not available!")
+            Log.e(TAG, "FragmentManager not available")
             return
         }
         
-        Log.e(TAG, "🔥 FragmentManager available, creating fragment...")
-        
         val fragment = RuneScreenFragment.newInstance(screenName, params)
-        Log.e(TAG, "🔥 Fragment created: $fragment")
         
-        Log.e(TAG, "🔥 Beginning fragment transaction...")
-        // Add fragment with custom animation
+        // Add fragment with slide animations
+        // Push: new screen slides in from right, old slides out to left
+        // Pop: current slides out to right, previous slides in from left
         val transaction = manager.beginTransaction()
             .setCustomAnimations(
-                android.R.anim.slide_in_left,  // enter
-                android.R.anim.slide_out_right, // exit
-                android.R.anim.slide_in_left,  // popEnter
-                android.R.anim.slide_out_right  // popExit
+                android.R.anim.slide_in_left,   // enter: new screen slides from right
+                android.R.anim.slide_out_right, // exit: old screen slides to left
+                android.R.anim.slide_in_left,   // popEnter: previous screen slides from left
+                android.R.anim.slide_out_right  // popExit: current screen slides to right
             )
             .add(android.R.id.content, fragment, screenName)
             .addToBackStack(screenName)
         
-        Log.e(TAG, "🔥 Committing transaction...")
         transaction.commit()
-        Log.e(TAG, "🔥🔥🔥 Transaction committed! Fragment should appear now. 🔥🔥🔥")
     }
     
     /**
@@ -176,21 +170,25 @@ class RuneScreenFragment : Fragment() {
             runtime.registerSurface(rootView)
             runtime.setActiveSurface(rootView.rootId)
             
-            // Call a global JS function to render the screen into this rootId
-            val paramsJson = params?.toString() ?: "null"
-            val jsCode = """
-                (function() {
-                    if (typeof globalThis.__renderRouterScreen === 'function') {
-                        console.log('[RuneScreenFragment] 🔥 Calling __renderRouterScreen');
-                        globalThis.__renderRouterScreen(${rootView.rootId}, '$screenName', $paramsJson);
-                    } else {
-                        console.error('[RuneScreenFragment] ❌ __renderRouterScreen not available!');
-                    }
-                })();
-            """.trimIndent()
-            
-            Log.e("RuneScreenFragment", "🔥 Evaluating JS to render screen into rootId=${rootView.rootId}")
-            runtime.evaluateAsync(jsCode)
+            // Defer JS evaluation to allow Fragment animation to start
+            // This prevents blocking the UI thread during the animation
+            rootView.postDelayed({
+                // Call a global JS function to render the screen into this rootId
+                val paramsJson = params?.toString() ?: "null"
+                val jsCode = """
+                    (function() {
+                        if (typeof globalThis.__renderRouterScreen === 'function') {
+                            console.log('[RuneScreenFragment] 🔥 Calling __renderRouterScreen');
+                            globalThis.__renderRouterScreen(${rootView.rootId}, '$screenName', $paramsJson);
+                        } else {
+                            console.error('[RuneScreenFragment] ❌ __renderRouterScreen not available!');
+                        }
+                    })();
+                """.trimIndent()
+                
+                Log.e("RuneScreenFragment", "🔥 Evaluating JS to render screen into rootId=${rootView.rootId}")
+                runtime.evaluateAsync(jsCode)
+            }, 50) // 50ms delay allows animation to start
         }
     }
     
