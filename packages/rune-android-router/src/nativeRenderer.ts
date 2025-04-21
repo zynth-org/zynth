@@ -13,6 +13,27 @@ type ScreenInstance = {
 };
 
 const mountedScreens = new Map<number, ScreenInstance>();
+const suppressionKey = "__runeSuppressNativeMutations";
+
+function withSuppressedNativeMutations<T>(fn: () => T): T {
+  if (typeof globalThis === "undefined") {
+    return fn();
+  }
+
+  const globalObject = globalThis as Record<string, any>;
+  const current = (globalObject[suppressionKey] as number | undefined) ?? 0;
+  globalObject[suppressionKey] = current + 1;
+  try {
+    return fn();
+  } finally {
+    const next = ((globalObject[suppressionKey] as number | undefined) ?? 1) - 1;
+    if (next <= 0) {
+      delete globalObject[suppressionKey];
+    } else {
+      globalObject[suppressionKey] = next;
+    }
+  }
+}
 
 const logPrefix = "[nativeRenderer]";
 
@@ -27,7 +48,9 @@ function disposeScreen(rootId: number) {
   const entry = mountedScreens.get(rootId);
   if (!entry) return;
   try {
-    entry.dispose();
+    withSuppressedNativeMutations(() => {
+      entry.dispose();
+    });
   } catch (error) {
     console.error(
       `${logPrefix} Failed to dispose screen for rootId=${rootId}`,

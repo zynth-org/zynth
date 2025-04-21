@@ -201,6 +201,18 @@ class RuneRuntime(
     manager.setActiveSurface(surfaceId)
   }
 
+  fun getRootSurfaceId(): Int {
+    return root.rootId
+  }
+
+  fun addSurfaceFirstFrameListener(surfaceId: Int, listener: () -> Unit) {
+    manager.addSurfaceFirstFrameListener(surfaceId, listener)
+  }
+
+  fun removeSurfaceFirstFrameListener(surfaceId: Int, listener: () -> Unit) {
+    manager.removeSurfaceFirstFrameListener(surfaceId, listener)
+  }
+
   fun destroy() {
     registry.destroy()
     moduleExecutor.shutdownNow()

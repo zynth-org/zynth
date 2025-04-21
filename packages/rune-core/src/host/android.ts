@@ -34,6 +34,12 @@ export function createAndroidHost(): Host {
 
   let flushScheduled = false;
   const operations: Array<() => void> = [];
+  const suppressionKey = "__runeSuppressNativeMutations";
+  const isSuppressed = () => Boolean((g as any)[suppressionKey]);
+  const enqueueOperation = (operation: () => void) => {
+    if (isSuppressed()) return;
+    operations.push(operation);
+  };
   type BatchOperation =
     | { type: "setProp"; nodeId: number; name: string; value: any }
     | { type: "setText"; nodeId: number; value: any };
@@ -105,7 +111,7 @@ export function createAndroidHost(): Host {
 
     const assign = (key: string, value: unknown) => {
       if (value !== undefined) {
-        operations.push(() => ui.setProp(id, key, value));
+        enqueueOperation(() => ui.setProp(id, key, value));
       }
     };
 
@@ -134,7 +140,7 @@ export function createAndroidHost(): Host {
     assign("value", props.value);
     assign("defaultValue", props.defaultValue);
     if (props?.defaultValue != null && props.value == null) {
-      operations.push(() => ui.setText(id, String(props.defaultValue)));
+      enqueueOperation(() => ui.setText(id, String(props.defaultValue)));
     }
 
     assign("placeholder", props.placeholder);
@@ -159,7 +165,7 @@ export function createAndroidHost(): Host {
 
     for (const [name, handler] of Object.entries(events)) {
       if (typeof handler === "function") {
-        operations.push(() => ui.setHandler(id, name, handler));
+        enqueueOperation(() => ui.setHandler(id, name, handler));
       }
     }
   };
@@ -186,9 +192,9 @@ export function createAndroidHost(): Host {
   // Recycling helper functions
   const resetNodeToDefault = (nodeId: number, type: HostNode["type"]) => {
     // Reset common props to default state
-    operations.push(() => ui.setProp(nodeId, "style", {}));
+    enqueueOperation(() => ui.setProp(nodeId, "style", {}));
     if (type === "text") {
-      operations.push(() => ui.setText(nodeId, ""));
+      enqueueOperation(() => ui.setText(nodeId, ""));
       TEXTS.set(nodeId, "");
     }
 
@@ -300,31 +306,31 @@ export function createAndroidHost(): Host {
       CHILDREN.set(id, []);
       TYPES.set(id, type);
       if (props?.style)
-        operations.push(() => ui.setProp(id, "style", props.style as Style));
+        enqueueOperation(() => ui.setProp(id, "style", props.style as Style));
       if (typeof props?.onPress === "function") {
-        operations.push(() => ui.setHandler(id, "onPress", props.onPress));
+        enqueueOperation(() => ui.setHandler(id, "onPress", props.onPress));
       }
       if (typeof props?.onLayout === "function") {
-        operations.push(() => ui.setHandler(id, "onLayout", props.onLayout));
+        enqueueOperation(() => ui.setHandler(id, "onLayout", props.onLayout));
       }
       if (props?.accessibilityLabel)
-        operations.push(() =>
+        enqueueOperation(() =>
           ui.setProp(id, "accessibilityLabel", props.accessibilityLabel)
         );
       if (props?.accessibilityHint)
-        operations.push(() =>
+        enqueueOperation(() =>
           ui.setProp(id, "accessibilityHint", props.accessibilityHint)
         );
       if (props?.accessibilityRole)
-        operations.push(() =>
+        enqueueOperation(() =>
           ui.setProp(id, "accessibilityRole", props.accessibilityRole)
         );
       if (props?.pointerEvents)
-        operations.push(() =>
+        enqueueOperation(() =>
           ui.setProp(id, "pointerEvents", props.pointerEvents)
         );
       if (props?.testID)
-        operations.push(() => ui.setProp(id, "testID", props.testID));
+        enqueueOperation(() => ui.setProp(id, "testID", props.testID));
       if (type === "text-input" || type === "secure-text-input") {
         applyTextInputInitialProps(id, props);
       }
@@ -356,7 +362,7 @@ export function createAndroidHost(): Host {
         console.log(`[Host/createText] 🆕 CREATED text node ${id}`);
       }
 
-      operations.push(() => ui.setText(id, value ?? ""));
+      enqueueOperation(() => ui.setText(id, value ?? ""));
       PARENTS.set(id, null);
       CHILDREN.set(id, []);
       TEXTS.set(id, value ?? "");
@@ -379,7 +385,7 @@ export function createAndroidHost(): Host {
         ) {
           return;
         }
-        operations.push(() => ui.setProp(node.id, "style", value || {}));
+        enqueueOperation(() => ui.setProp(node.id, "style", value || {}));
         schedule();
         return;
       }
@@ -387,14 +393,14 @@ export function createAndroidHost(): Host {
         return;
       }
       if (typeof value === "function") {
-        operations.push(() => ui.setHandler(node.id, name, value));
+        enqueueOperation(() => ui.setHandler(node.id, name, value));
         schedule();
         return;
       }
       if (tryEnqueueBatch({ type: "setProp", nodeId: node.id, name, value })) {
         return;
       }
-      operations.push(() => ui.setProp(node.id, name, value));
+      enqueueOperation(() => ui.setProp(node.id, name, value));
       schedule();
     },
     setText(node, value) {
@@ -408,7 +414,7 @@ export function createAndroidHost(): Host {
       ) {
         return;
       }
-      operations.push(() => ui.setText(node.id, value ?? ""));
+      enqueueOperation(() => ui.setText(node.id, value ?? ""));
       schedule();
     },
     insertNode(parent, node, anchor) {
@@ -484,7 +490,7 @@ export function createAndroidHost(): Host {
       PARENTS.set(node.id, parent.id);
 
       if (!isMarkerId(node.id)) {
-        operations.push(() => ui.insertChild(parent.id, node.id, physIdx));
+        enqueueOperation(() => ui.insertChild(parent.id, node.id, physIdx));
       }
       schedule();
     },
@@ -516,7 +522,7 @@ export function createAndroidHost(): Host {
 
         if (!isMarkerId(node.id)) {
           // Just detach visually, don't actually remove from native
-          operations.push(() => ui.removeChild(parent.id, node.id));
+          enqueueOperation(() => ui.removeChild(parent.id, node.id));
         }
         schedule();
         return;
@@ -527,7 +533,7 @@ export function createAndroidHost(): Host {
       PARENTS.set(node.id, null);
       if (!isMarkerId(node.id)) {
         TYPES.delete(node.id);
-        operations.push(() => ui.removeChild(parent.id, node.id));
+        enqueueOperation(() => ui.removeChild(parent.id, node.id));
         console.log(
           `[Host/removeNode] 🗑️  DESTROYED node ${node.id} (type=${node.type})`
         );
@@ -611,11 +617,13 @@ export function createAndroidHost(): Host {
         ),
       };
       if (typeof ui.applyBatch === "function") {
+        if (isSuppressed()) return;
         const serialized =
           typeof payload === "string" ? payload : JSON.stringify(payload);
         ui.applyBatch(serialized);
         return;
       }
+      if (isSuppressed()) return;
       for (const op of context.operations) {
         if (op.type === "setProp") {
           ui.setProp(op.nodeId, op.name, op.value);
@@ -788,15 +796,15 @@ export function createAndroidHost(): Host {
 
       // Apply props efficiently using batch if available
       if (props.style !== undefined) {
-        operations.push(() => ui.setProp(node.id, "style", props.style || {}));
+        enqueueOperation(() => ui.setProp(node.id, "style", props.style || {}));
       }
 
       for (const [key, value] of Object.entries(props)) {
         if (key === "style") continue; // Already handled
         if (typeof value === "function") {
-          operations.push(() => ui.setHandler(node.id, key, value));
+          enqueueOperation(() => ui.setHandler(node.id, key, value));
         } else if (value !== undefined) {
-          operations.push(() => ui.setProp(node.id, key, value));
+          enqueueOperation(() => ui.setProp(node.id, key, value));
         }
       }
 

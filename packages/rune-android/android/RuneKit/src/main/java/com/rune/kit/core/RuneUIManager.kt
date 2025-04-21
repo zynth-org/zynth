@@ -118,6 +118,7 @@ class RuneUIManager(
     state.pendingNativeOperations.clear()
     state.pendingTextRebuild.clear()
     state.stickyFrameCarryover.clear()
+    state.firstFrameListeners.clear()
     
     // Remove cached helpers
     propApplierCache.remove(surfaceId)
@@ -191,10 +192,12 @@ class RuneUIManager(
     val frameScheduler: FrameScheduler,
     val layoutFlush: RuneLayoutFlush,
     val nodeFactory: RuneNodeFactory,
+    val firstFrameListeners: MutableList<() -> Unit>,
   ) {
     var lastWidth: Int = -1
     var lastHeight: Int = -1
     var layoutListener: OnLayoutChangeListener? = null
+    var hasDispatchedFirstFrame: Boolean = false
   }
 
   private val handler = Handler(Looper.getMainLooper())
@@ -230,6 +233,33 @@ class RuneUIManager(
 
   private fun surfaceState(id: Int): SurfaceState =
     surfaceStateOrNull(id) ?: throw IllegalStateException("Surface $id not registered")
+
+  fun addSurfaceFirstFrameListener(surfaceId: Int, listener: () -> Unit) = onMain {
+    val state = surfaceState(surfaceId)
+    if (state.hasDispatchedFirstFrame) {
+      listener()
+    } else {
+      state.firstFrameListeners.add(listener)
+    }
+  }
+
+  fun removeSurfaceFirstFrameListener(surfaceId: Int, listener: () -> Unit) = onMain {
+    surfaceStateOrNull(surfaceId)?.firstFrameListeners?.remove(listener)
+  }
+
+  private fun dispatchSurfaceFirstFrame(surfaceId: Int) {
+    val state = surfaceStateOrNull(surfaceId) ?: return
+    if (state.hasDispatchedFirstFrame) return
+    state.hasDispatchedFirstFrame = true
+    if (state.firstFrameListeners.isEmpty()) return
+    val callbacks = state.firstFrameListeners.toList()
+    state.firstFrameListeners.clear()
+    callbacks.forEach { callback ->
+      runCatching { callback() }.onFailure {
+        Log.w("RuneUI", "Surface $surfaceId first-frame callback failed", it)
+      }
+    }
+  }
 
   private fun registerSurfaceInternal(surfaceId: Int, surfaceRoot: RuneRootView) {
     if (surfaces.containsKey(surfaceId)) return
@@ -290,6 +320,9 @@ class RuneUIManager(
       logDebug = ::logDebug,
       isNativeDebugEnabled = ::isNativeDebugEnabled,
     )
+    layoutFlush.setOnFirstFrameCallback {
+      dispatchSurfaceFirstFrame(surfaceId)
+    }
 
     val factory = RuneNodeFactory(
       root = surfaceRoot,
@@ -317,6 +350,7 @@ class RuneUIManager(
       frameScheduler = frameScheduler,
       layoutFlush = layoutFlush,
       nodeFactory = factory,
+      firstFrameListeners = mutableListOf(),
     )
     
     // Create per-surface prop applier and event manager

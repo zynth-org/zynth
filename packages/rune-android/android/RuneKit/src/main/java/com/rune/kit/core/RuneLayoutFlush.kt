@@ -27,20 +27,20 @@ import java.util.concurrent.CountDownLatch
 internal class RuneLayoutFlush(
   private val root: RuneRootView,
   private val nodes: SparseArray<RuneUIManager.Node>,
-    private val engine: LayoutEngine,
-    private val handler: Handler,
-    private val frameScheduler: FrameScheduler,
-    private val pendingNativeOperations: MutableList<NativeOperation>,
-    private val pendingViewOperations: MutableList<ViewOperation>,
-    private val pendingTextRebuild: LinkedHashSet<Int>,
-    private val stickyFrameCarryover: MutableSet<Int>,
-    private val isVirtualTextNode: (RuneUIManager.Node) -> Boolean,
-    private val recomputeTextForNode: (RuneUIManager.Node?) -> String,
-    private val applySetProp: (Int, String, String?, PropertyCategory) -> Unit,
-    private val applySetText: (Int, String) -> Unit,
-    private val applySetHandler: (Int, String, Long) -> Unit,
-    private val logDebug: (String, String) -> Unit,
-    private val isNativeDebugEnabled: () -> Boolean,
+  private val engine: LayoutEngine,
+  private val handler: Handler,
+  private val frameScheduler: FrameScheduler,
+  private val pendingNativeOperations: MutableList<NativeOperation>,
+  private val pendingViewOperations: MutableList<ViewOperation>,
+  private val pendingTextRebuild: LinkedHashSet<Int>,
+  private val stickyFrameCarryover: MutableSet<Int>,
+  private val isVirtualTextNode: (RuneUIManager.Node) -> Boolean,
+  private val recomputeTextForNode: (RuneUIManager.Node?) -> String,
+  private val applySetProp: (Int, String, String?, PropertyCategory) -> Unit,
+  private val applySetText: (Int, String) -> Unit,
+  private val applySetHandler: (Int, String, Long) -> Unit,
+  private val logDebug: (String, String) -> Unit,
+  private val isNativeDebugEnabled: () -> Boolean,
 ) {
 
   // Component type constants
@@ -80,11 +80,21 @@ internal class RuneLayoutFlush(
   var pendingFlushPriority = FlushPriority.NORMAL
   var lastRootWidth = -1
   var lastRootHeight = -1
+  private var firstFrameCallback: (() -> Unit)? = null
+  private var hasDispatchedFirstFrame = false
   
   // Performance tracking
   var totalFlushes = 0
   var slowFlushCount = 0
   var totalFlushTime = 0L
+
+  fun setOnFirstFrameCallback(callback: (() -> Unit)?) {
+    firstFrameCallback = callback
+    if (callback != null && hasDispatchedFirstFrame) {
+      callback()
+      firstFrameCallback = null
+    }
+  }
 
   // ==================== Operation Processing ====================
 
@@ -453,6 +463,7 @@ internal class RuneLayoutFlush(
         }
         
       } while (dirty || pendingNativeOperations.isNotEmpty() || pendingViewOperations.isNotEmpty())
+      maybeDispatchFirstFrame()
       if (stickyRelayoutNodes.isNotEmpty()) {
         stickyRelayoutNodes.forEach { nodeId ->
           val node = nodes.get(nodeId)
@@ -575,5 +586,15 @@ internal class RuneLayoutFlush(
     latch.await()
     @Suppress("UNCHECKED_CAST")
     return result as T
+  }
+
+  private fun maybeDispatchFirstFrame() {
+    if (hasDispatchedFirstFrame) return
+    val callback = firstFrameCallback ?: return
+    val hasRenderableChildren = nodes.size() > 1 && root.childCount > 0
+    if (!hasRenderableChildren) return
+    hasDispatchedFirstFrame = true
+    firstFrameCallback = null
+    callback()
   }
 }

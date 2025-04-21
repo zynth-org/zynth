@@ -78,6 +78,24 @@ class RuneAndroidRouterModule(
                     goBack()
                     successResponse()
                 }
+                "surfaceReady" -> {
+                    val surfaceId = (actualArgs.getOrNull(0) as? Number)?.toInt()
+                    if (surfaceId != null) {
+                        RuneNavigationContainer.notifySurfaceReady(surfaceId)
+                    } else {
+                        Log.w(TAG, "surfaceReady called without surfaceId")
+                    }
+                    successResponse()
+                }
+                "surfaceDisposed" -> {
+                    val surfaceId = (actualArgs.getOrNull(0) as? Number)?.toInt()
+                    if (surfaceId != null) {
+                        RuneNavigationContainer.notifySurfaceDisposed(surfaceId)
+                    } else {
+                        Log.w(TAG, "surfaceDisposed called without surfaceId")
+                    }
+                    successResponse()
+                }
                 "getState" -> {
                     JSONObject().apply {
                         put("ok", true)
