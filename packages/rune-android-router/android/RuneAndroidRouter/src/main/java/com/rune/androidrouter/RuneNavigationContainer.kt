@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.View
+import android.view.ViewTreeObserver
 import android.view.animation.AccelerateDecelerateInterpolator
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentManager
@@ -15,10 +16,15 @@ import org.json.JSONObject
 import java.lang.ref.WeakReference
 import java.util.concurrent.ConcurrentHashMap
 
+enum class SurfaceReadySource {
+    NATIVE_FIRST_FRAME,
+    JS_BRIDGE,
+    TIMEOUT_FALLBACK,
+}
+
 /**
  * Minimal Android Router - Single screen container for iterating on basic navigation.
- * 
- * This is a deliberately simple implementation to avoid the complexity that causes
+ * * This is a deliberately simple implementation to avoid the complexity that causes
  * freezes and rendering issues. Once stable, it will be merged into the main router.
  */
 class RuneNavigationContainer {
@@ -29,6 +35,7 @@ class RuneNavigationContainer {
         private var mainRuntime: com.rune.kit.runtime.RuneRuntime? = null
         private val fragmentRegistry = ConcurrentHashMap<Int, WeakReference<RuneScreenFragment>>()
         private var defaultSurfaceId: Int = 0
+        private val mainThreadHandler = Handler(Looper.getMainLooper())
         
         @JvmStatic
         fun setFragmentManager(manager: FragmentManager) {
@@ -61,12 +68,24 @@ class RuneNavigationContainer {
             fragmentRegistry.remove(rootId)
         }
 
-        fun notifySurfaceReady(rootId: Int) {
-            fragmentRegistry[rootId]?.get()?.onSurfaceReady()
+        fun notifySurfaceReady(rootId: Int, source: SurfaceReadySource) {
+            fragmentRegistry[rootId]?.get()?.let { fragment ->
+                if (Looper.myLooper() == Looper.getMainLooper()) {
+                    fragment.onSurfaceReady(source)
+                } else {
+                    mainThreadHandler.post { fragment.onSurfaceReady(source) }
+                }
+            }
         }
 
         fun notifySurfaceDisposed(rootId: Int) {
-            fragmentRegistry[rootId]?.get()?.onSurfaceDisposed(rootId)
+            fragmentRegistry[rootId]?.get()?.let { fragment ->
+                if (Looper.myLooper() == Looper.getMainLooper()) {
+                    fragment.onSurfaceDisposed(rootId)
+                } else {
+                    mainThreadHandler.post { fragment.onSurfaceDisposed(rootId) }
+                }
+            }
         }
 
         fun getDefaultSurfaceId(): Int = defaultSurfaceId.takeIf { it != 0 } ?: mainRuntime?.getRootSurfaceId() ?: 0
@@ -137,10 +156,17 @@ class RuneScreenFragment : Fragment() {
     private var disposalCompleted = false
     private var disposalTimeout: Runnable? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var layoutReadyListener: ViewTreeObserver.OnGlobalLayoutListener? = null
+    private var surfaceReadyDelivered = false
+    private var nativeFirstFrameReceived = false
+    private var surfaceReadyTimeoutRunnable: Runnable? = null
+    private var startTime: Long = 0 // <--- ADDED: Time measurement variable
+    private var hasRunEnterAnimation = false
     
     companion object {
         private const val ARG_SCREEN_NAME = "screen_name"
         private const val ARG_PARAMS = "params"
+        private const val SURFACE_READY_TIMEOUT_MS = 5000L
         
         fun newInstance(screenName: String, params: JSONObject?): RuneScreenFragment {
             return RuneScreenFragment().apply {
@@ -154,13 +180,13 @@ class RuneScreenFragment : Fragment() {
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        startTime = System.currentTimeMillis() // <--- ADDED: Start time
+        Log.d("RuneScreenFragment", "🔥 [T=0ms] onCreate: POSTPONING transition for $screenName") // <--- ADDED LOG
         postponeEnterTransition()
         screenName = arguments?.getString(ARG_SCREEN_NAME)
         arguments?.getString(ARG_PARAMS)?.let {
             params = JSONObject(it)
         }
-        
-        Log.e("RuneScreenFragment", "🔥🔥🔥 Fragment onCreate: screen=$screenName 🔥🔥🔥")
     }
     
     override fun onCreateView(
@@ -168,11 +194,9 @@ class RuneScreenFragment : Fragment() {
         container: android.view.ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
-        Log.e("RuneScreenFragment", "🔥🔥🔥 onCreateView: screen=$screenName 🔥🔥🔥")
         
         // Allocate a unique rootId for this Fragment surface
         val surfaceRootId = RuneRootView.allocateRootId()
-        Log.e("RuneScreenFragment", "🔥 Allocated surfaceRootId=$surfaceRootId for screen=$screenName")
         
         // Create a RuneRootView to host the actual screen content
         runeRootView = RuneRootView(requireContext(), explicitRootId = surfaceRootId).apply {
@@ -180,7 +204,7 @@ class RuneScreenFragment : Fragment() {
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT,
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT
             )
-            alpha = 0f
+            alpha = 1f
             translationX = 0f
             isClickable = true
             isFocusable = true
@@ -190,19 +214,26 @@ class RuneScreenFragment : Fragment() {
         disposalCompleted = false
         lastSurfaceRootId = surfaceRootId
         disposalTimeout = null
-        
+        surfaceReadyDelivered = false
+        nativeFirstFrameReceived = false
+        surfaceReadyTimeoutRunnable = null
+        layoutReadyListener = ViewTreeObserver.OnGlobalLayoutListener {
+            if (hasMeasuredSize()) {
+                tryStartSurfaceAnimation()
+            }
+        }
+        runeRootView?.viewTreeObserver?.addOnGlobalLayoutListener(layoutReadyListener)
+
         RuneNavigationContainer.registerFragmentSurface(surfaceRootId, this)
-        
-        Log.e("RuneScreenFragment", "🔥 Created RuneRootView with rootId=${runeRootView?.rootId}")
+
         return runeRootView
     }
     
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        Log.e("RuneScreenFragment", "🔥 onViewCreated for screen: $screenName")
+        Log.d("RuneScreenFragment", "🔥 [T=${System.currentTimeMillis() - startTime}ms] onViewCreated") // <--- ADDED LOG
 
         runeRootView?.let { rootView ->
-            Log.e("RuneScreenFragment", "🔥 Fragment rootView created with rootId=${rootView.rootId}")
             
             // Get the main runtime
             val runtime = RuneNavigationContainer.getMainRuntime()
@@ -211,21 +242,23 @@ class RuneScreenFragment : Fragment() {
                 return
             }
             
-            Log.e("RuneScreenFragment", "🔥 Got main runtime: $runtime")
             runtime.registerSurface(rootView)
             runtime.setActiveSurface(rootView.rootId)
 
             val surfaceId = rootView.rootId
             val readyListener = {
-                RuneNavigationContainer.notifySurfaceReady(surfaceId)
+                RuneNavigationContainer.notifySurfaceReady(surfaceId, SurfaceReadySource.NATIVE_FIRST_FRAME)
             }
             surfaceReadyListener = readyListener
             runtime.addSurfaceFirstFrameListener(surfaceId, readyListener)
             
-            // Fallback: ensure transitions start even if JS never calls back
-            rootView.postDelayed({
-                RuneNavigationContainer.notifySurfaceReady(rootView.rootId)
-            }, 600)
+            // Fallback: ensure transitions start even if JS never calls back (now set to 5000ms)
+            val fallbackRunnable = Runnable {
+                Log.w("RuneScreenFragment", "🔥 [T=${System.currentTimeMillis() - startTime}ms] ${SURFACE_READY_TIMEOUT_MS}ms FALLBACK triggered for surfaceId=${rootView.rootId}")
+                RuneNavigationContainer.notifySurfaceReady(rootView.rootId, SurfaceReadySource.TIMEOUT_FALLBACK)
+            }
+            surfaceReadyTimeoutRunnable = fallbackRunnable
+            rootView.postDelayed(fallbackRunnable, SURFACE_READY_TIMEOUT_MS)
             
             val paramsJson = params?.toString() ?: "null"
             val jsCode = """
@@ -239,14 +272,15 @@ class RuneScreenFragment : Fragment() {
                 })();
             """.trimIndent()
             
-            Log.e("RuneScreenFragment", "🔥 Evaluating JS to render screen into rootId=${rootView.rootId}")
+            Log.e("RuneScreenFragment", "🔥 [T=${System.currentTimeMillis() - startTime}ms] Evaluating JS to render screen into rootId=${rootView.rootId}") // <--- UPDATED LOG
             runtime.evaluateAsync(jsCode)
         }
+
+        // <<<--- LINE REMOVED (startEnterTransitionIfNeeded()) ---<<<
     }
     
     override fun onDestroyView() {
         super.onDestroyView()
-        Log.e("RuneScreenFragment", "🔥 onDestroyView for screen: $screenName")
         
         val runtime = RuneNavigationContainer.getMainRuntime()
         val rootId = runeRootView?.rootId ?: lastSurfaceRootId
@@ -255,6 +289,8 @@ class RuneScreenFragment : Fragment() {
             runtime.removeSurfaceFirstFrameListener(rootId, listener)
         }
         surfaceReadyListener = null
+        removeLayoutReadyListener()
+        cancelSurfaceReadyTimeout()
         if (runtime != null && rootId != null) {
             val jsCode = """
                 (function() {
@@ -281,6 +317,8 @@ class RuneScreenFragment : Fragment() {
     private fun startEnterTransitionIfNeeded() {
         if (enterTransitionStarted) return
         enterTransitionStarted = true
+        // <--- CRITICAL LOG: This tells you when the animation is told to start --->
+        Log.e("RuneScreenFragment", "🔥 [T=${System.currentTimeMillis() - startTime}ms] startEnterTransitionIfNeeded: STARTING POSTPONED TRANSITION")
 
         view?.post {
             try {
@@ -291,17 +329,27 @@ class RuneScreenFragment : Fragment() {
         }
     }
 
-    fun onSurfaceReady() {
-        runeRootView?.animate()
-            ?.alpha(1f)
-            ?.setDuration(180)
-            ?.setInterpolator(AccelerateDecelerateInterpolator())
-            ?.start()
-        startEnterTransitionIfNeeded()
+    fun onSurfaceReady(source: SurfaceReadySource) {
+        when (source) {
+            SurfaceReadySource.NATIVE_FIRST_FRAME -> {
+                nativeFirstFrameReceived = true
+                deliverSurfaceReady(source)
+            }
+            SurfaceReadySource.TIMEOUT_FALLBACK -> {
+                deliverSurfaceReady(source)
+            }
+            SurfaceReadySource.JS_BRIDGE -> {
+                if (nativeFirstFrameReceived) {
+                    Log.d("RuneScreenFragment", "🔥 [T=${System.currentTimeMillis() - startTime}ms] Ignoring JS surfaceReady; native frame already delivered")
+                } else {
+                    Log.w("RuneScreenFragment", "🔥 [T=${System.currentTimeMillis() - startTime}ms] JS surfaceReady arrived before native first frame; holding animation")
+                }
+            }
+        }
     }
 
     fun onSurfaceDisposed(surfaceId: Int) {
-        if (surfaceId != lastSurfaceRootId) {
+        if (surfaceId != lastSurfaceRootId) { 
             completeSurfaceDisposal(surfaceId)
             return
         }
@@ -336,5 +384,57 @@ class RuneScreenFragment : Fragment() {
         if (lastSurfaceRootId == rootId) {
             lastSurfaceRootId = null
         }
+    }
+
+    private fun removeLayoutReadyListener() {
+        val listener = layoutReadyListener ?: return
+        runeRootView?.viewTreeObserver?.removeOnGlobalLayoutListener(listener)
+        layoutReadyListener = null
+    }
+
+    private fun cancelSurfaceReadyTimeout() {
+        val runnable = surfaceReadyTimeoutRunnable ?: return
+        runeRootView?.removeCallbacks(runnable)
+        surfaceReadyTimeoutRunnable = null
+    }
+
+    private fun deliverSurfaceReady(source: SurfaceReadySource) {
+        if (surfaceReadyDelivered) return
+        surfaceReadyDelivered = true
+        cancelSurfaceReadyTimeout()
+        Log.d(
+            "RuneScreenFragment",
+            "🔥 [T=${System.currentTimeMillis() - startTime}ms] onSurfaceReady: Signal RECEIVED via $source"
+        )
+        tryStartSurfaceAnimation()
+    }
+
+    private fun hasMeasuredSize(): Boolean {
+        val view = runeRootView
+        return view != null && view.width > 0 && view.height > 0
+    }
+
+    private fun tryStartSurfaceAnimation() {
+        // <--- ADDED LOG --->
+        Log.d("RuneScreenFragment", "🔥 [T=${System.currentTimeMillis() - startTime}ms] tryStartSurfaceAnimation: Checking... (Ready=${surfaceReadyDelivered}, Measured=${hasMeasuredSize()}, Animated=$hasRunEnterAnimation)")
+
+        if (!surfaceReadyDelivered || !hasMeasuredSize() || hasRunEnterAnimation) {
+            return
+        }
+
+        Log.d("RuneScreenFragment", "🔥 [T=${System.currentTimeMillis() - startTime}ms] tryStartSurfaceAnimation: Fading in view and starting transition...") // <--- ADDED LOG
+        val view = runeRootView ?: return
+        hasRunEnterAnimation = true
+        val width = view.width.toFloat().takeIf { it > 0 } ?: view.resources.displayMetrics.widthPixels.toFloat()
+        view.translationX = width
+        view.alpha = 0f
+        view.animate()
+            .translationX(0f)
+            .alpha(1f)
+            .setDuration(220)
+            .setInterpolator(AccelerateDecelerateInterpolator())
+            .withStartAction { startEnterTransitionIfNeeded() }
+            .start()
+        removeLayoutReadyListener()
     }
 }

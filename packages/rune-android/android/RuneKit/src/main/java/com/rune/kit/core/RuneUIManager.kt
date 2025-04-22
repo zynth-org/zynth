@@ -7,6 +7,7 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.util.SparseArray
 import android.view.Gravity
@@ -38,6 +39,7 @@ import org.json.JSONArray
 import java.util.HashMap
 import java.util.LinkedHashSet
 import java.util.ArrayDeque
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import kotlin.math.roundToInt
@@ -77,6 +79,7 @@ class RuneUIManager(
 ) : JSBridge.UIShim, RunePressableEventListener {
   private val density: Float = root.resources.displayMetrics.density
   private fun isNativeDebugEnabled(): Boolean {
+    return true
     return try {
       val debugValue = System.getProperty("__NATIVE_DEBUG__")
       debugValue?.toBoolean() ?: false
@@ -224,6 +227,7 @@ class RuneUIManager(
   private val frameScheduler get() = currentSurface.frameScheduler
   private val layoutFlush get() = currentSurface.layoutFlush
   private val nodeFactory get() = currentSurface.nodeFactory
+  private val surfaceMetrics = ConcurrentHashMap<Int, RuneLayoutFlush.FlushMetrics>()
   
   // These are created lazily per-surface and cached
   private val propApplierCache = ConcurrentHashMap<Int, RunePropApplier>()
@@ -319,6 +323,8 @@ class RuneUIManager(
       applySetHandler = ::applySetHandler,
       logDebug = ::logDebug,
       isNativeDebugEnabled = ::isNativeDebugEnabled,
+      surfaceId = surfaceId,
+      reportMetrics = ::recordSurfaceMetrics,
     )
     layoutFlush.setOnFirstFrameCallback {
       dispatchSurfaceFirstFrame(surfaceId)
@@ -424,12 +430,21 @@ class RuneUIManager(
       ?: throw IllegalStateException("EventManager not found for surface $surfaceId")
   }
 
-  private fun applySetProp(nodeId: Int, name: String, jsonValue: String?, category: PropertyCategory = PropertyCategory.UNKNOWN) {
+  private fun applySetProp(
+    nodeId: Int,
+    name: String,
+    jsonValue: String?,
+    category: PropertyCategory = PropertyCategory.UNKNOWN,
+  ) {
+    val startNs = SystemClock.elapsedRealtimeNanos()
     getPropApplier().applySetProp(nodeId, name, jsonValue, category)
+    maybeLogSlowNativeWork(nodeId, name, category.name, startNs)
   }
 
   private fun applySetText(nodeId: Int, text: String) {
+    val startNs = SystemClock.elapsedRealtimeNanos()
     getPropApplier().applySetText(nodeId, text, ::propagateTextChange)
+    maybeLogSlowNativeWork(nodeId, "setText", "text", startNs)
   }
 
   private fun applySetHandler(nodeId: Int, event: String, handlerId: Long) {
@@ -793,6 +808,27 @@ class RuneUIManager(
     }
   }
 
+  private fun maybeLogSlowNativeWork(
+    nodeId: Int,
+    label: String,
+    category: String,
+    startedAtNs: Long,
+  ) {
+    val elapsedMs = (SystemClock.elapsedRealtimeNanos() - startedAtNs) / 1_000_000.0
+    if (elapsedMs < 4.0) return
+    val surfaceId = runCatching { surfaceStateForNode(nodeId).id }.getOrElse { activeSurfaceId }
+    val message = String.format(
+      Locale.US,
+      "slow native op: surface=%d node=%d op=%s category=%s duration=%.2fms",
+      surfaceId,
+      nodeId,
+      label,
+      category,
+      elapsedMs,
+    )
+    Log.w("RunePerf", message)
+  }
+
   override fun setProp(nodeId: Int, name: String, jsonValue: String?) = onMain {
     val surface = surfaceStateForNode(nodeId)
     val queue = surface.pendingNativeOperations
@@ -1059,6 +1095,32 @@ class RuneUIManager(
     
     if (leakedNodes > 50) {
       Log.e("RunePerf", "🚨 MEMORY LEAK DETECTED: $leakedNodes nodes not properly cleaned up!")
+    }
+  }
+
+  private fun recordSurfaceMetrics(metrics: RuneLayoutFlush.FlushMetrics) {
+    surfaceMetrics[metrics.surfaceId] = metrics
+    val message = buildString {
+      append("surface=")
+      append(metrics.surfaceId)
+      append(" iterations=")
+      append(metrics.iterationCount)
+      append(" total=")
+      append(metrics.totalDurationMs)
+      append("ms viewOps=")
+      append(metrics.initialViewOps)
+      append(" nativeOps=")
+      append(metrics.initialNativeOps)
+      append(" firstFrameDelay=")
+      append(metrics.firstFrameDelayMs ?: -1)
+      append("ms")
+      if (metrics.iterationCapHit) {
+        append(" cap-hit")
+      }
+    }
+    when {
+      metrics.iterationCapHit || metrics.totalDurationMs > 24 -> Log.w("RunePerf", message)
+      isNativeDebugEnabled() -> Log.d("RunePerf", message)
     }
   }
 

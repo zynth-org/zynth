@@ -2,6 +2,7 @@ package com.rune.components.text
 
 import android.graphics.Typeface
 import android.util.Log
+import android.os.SystemClock
 import android.util.TypedValue
 import android.view.View
 import android.view.View.MeasureSpec
@@ -37,7 +38,9 @@ fun createTextComponentDescriptor(): RuneComponentDescriptor {
       val textView = node.view as? TextView ?: return@RuneComponentDescriptor
       
       // Set up measurement handler for text
+      val measureTag = "RuneText/measure"
       manager.getLayoutEngine().setMeasureHandler(node.id) { input ->
+        val measureStart = SystemClock.elapsedRealtimeNanos()
         val widthValue = when {
           input.width.isNaN() -> 0
           input.width.isInfinite() -> Int.MAX_VALUE / 2
@@ -63,6 +66,13 @@ fun createTextComponentDescriptor(): RuneComponentDescriptor {
         textView.measure(widthSpec, heightSpec)
         val measuredWidth = textView.measuredWidth.coerceAtLeast(1)
         val measuredHeight = textView.measuredHeight.coerceAtLeast((textView.textSize * 1.2f).roundToInt())
+        val durationMs = (SystemClock.elapsedRealtimeNanos() - measureStart) / 1_000_000.0
+        if (durationMs > 8) {
+          Log.w(
+            measureTag,
+            "Slow text measure: node=${node.id} text='${node.cachedText.take(24)}' duration=${"%.2f".format(durationMs)}ms",
+          )
+        }
         measuredWidth.toFloat() to measuredHeight.toFloat()
       }
       
@@ -79,9 +89,17 @@ fun createTextComponentDescriptor(): RuneComponentDescriptor {
       } else {
         when (name) {
           "text" -> {
+            val startNs = SystemClock.elapsedRealtimeNanos()
             val text = parseString(jsonValue) ?: ""
             node.cachedText = text
             // Text will be set during style application or setText
+            val durationMs = (SystemClock.elapsedRealtimeNanos() - startNs) / 1_000_000.0
+            if (durationMs > 4) {
+              Log.w(
+                "RuneText/setProp",
+                "Slow text prop: node=${node.id} duration=${"%.2f".format(durationMs)}ms",
+              )
+            }
             true
           }
           "numberOfLines" -> {
@@ -95,7 +113,8 @@ fun createTextComponentDescriptor(): RuneComponentDescriptor {
     },
     onStyleApplied = { node, style ->
       val textView = node.view as? TextView ?: return@RuneComponentDescriptor
-      
+      val styleStart = SystemClock.elapsedRealtimeNanos()
+
       // Apply text-specific styling
       style.fontSize?.let { fontSize ->
         textView.setTextSize(TypedValue.COMPLEX_UNIT_PX, fontSize)
@@ -109,6 +128,14 @@ fun createTextComponentDescriptor(): RuneComponentDescriptor {
         val isBold = weight.equals("bold", ignoreCase = true) ||
           weight.toIntOrNull()?.let { it >= 600 } == true
         textView.setTypeface(textView.typeface, if (isBold) Typeface.BOLD else Typeface.NORMAL)
+      }
+
+      val durationMs = (SystemClock.elapsedRealtimeNanos() - styleStart) / 1_000_000.0
+      if (durationMs > 4) {
+        Log.w(
+          "RuneText/style",
+          "Slow text style: node=${node.id} duration=${"%.2f".format(durationMs)}ms",
+        )
       }
     },
     onSetHandler = { node, event ->

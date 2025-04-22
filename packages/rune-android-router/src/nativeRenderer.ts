@@ -26,7 +26,8 @@ function withSuppressedNativeMutations<T>(fn: () => T): T {
   try {
     return fn();
   } finally {
-    const next = ((globalObject[suppressionKey] as number | undefined) ?? 1) - 1;
+    const next =
+      ((globalObject[suppressionKey] as number | undefined) ?? 1) - 1;
     if (next <= 0) {
       delete globalObject[suppressionKey];
     } else {
@@ -67,6 +68,15 @@ function renderNativeScreen(rootId: number, screenName: string, params: any) {
       params
     )}`
   );
+  const perfNow = globalThis.performance?.now?.bind(globalThis.performance);
+  const timingLabel = `[router] surface ${rootId} render`;
+  const renderStart = perfNow ? perfNow() : Date.now();
+  const useRuneTimers =
+    typeof (globalThis as any).__runeConsoleTimeStart === "function" &&
+    typeof (globalThis as any).__runeConsoleTimeEnd === "function";
+  if (useRuneTimers) {
+    console.time(timingLabel);
+  }
 
   const descriptor = resolveScreenDescriptor(screenName);
   if (!descriptor) {
@@ -110,12 +120,21 @@ function renderNativeScreen(rootId: number, screenName: string, params: any) {
 
     const dispose = render(tree, container) ?? (() => {});
     mountedScreens.set(rootId, { dispose });
+    const renderEnd = perfNow ? perfNow() : Date.now();
+    const duration = (renderEnd - renderStart).toFixed(2);
     console.log(
-      `${logPrefix} ✅ Rendered "${screenName}" into rootId=${rootId}`
+      `${logPrefix} ✅ Rendered "${screenName}" into rootId=${rootId} in ${duration}ms`
     );
   } catch (error) {
     console.error(`${logPrefix} Failed to render "${screenName}"`, error);
     disposeScreen(rootId);
+  } finally {
+    if (useRuneTimers) {
+      console.timeEnd(timingLabel);
+    }
+    const renderEnd = perfNow ? perfNow() : Date.now();
+    const duration = (renderEnd - renderStart).toFixed(2);
+    console.log(`${timingLabel}: ${duration}ms`);
   }
 }
 

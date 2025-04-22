@@ -2,6 +2,7 @@ package com.rune.kit.core
 
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.util.SparseArray
 import android.view.View
@@ -24,6 +25,8 @@ import java.util.concurrent.CountDownLatch
  * - Manage text rebuilds and view detachment
  * - Thread-safe execution on main thread
  */
+private const val MAX_FLUSH_ITERATIONS = 4
+
 internal class RuneLayoutFlush(
   private val root: RuneRootView,
   private val nodes: SparseArray<RuneUIManager.Node>,
@@ -41,6 +44,8 @@ internal class RuneLayoutFlush(
   private val applySetHandler: (Int, String, Long) -> Unit,
   private val logDebug: (String, String) -> Unit,
   private val isNativeDebugEnabled: () -> Boolean,
+  private val surfaceId: Int,
+  private val reportMetrics: (FlushMetrics) -> Unit = {},
 ) {
 
   // Component type constants
@@ -82,6 +87,8 @@ internal class RuneLayoutFlush(
   var lastRootHeight = -1
   private var firstFrameCallback: (() -> Unit)? = null
   private var hasDispatchedFirstFrame = false
+  @Volatile private var firstFrameStartTimeMs: Long? = null
+  @Volatile private var lastFirstFrameDelayMs: Long? = null
   
   // Performance tracking
   var totalFlushes = 0
@@ -232,6 +239,9 @@ internal class RuneLayoutFlush(
 
   internal fun flush() = onMain {
     dirty = true
+    if (!hasDispatchedFirstFrame && firstFrameStartTimeMs == null) {
+      firstFrameStartTimeMs = SystemClock.elapsedRealtime()
+    }
     if (layoutTransactionActive) return@onMain
     if (root.width > 0 && root.height > 0) {
       frameScheduler.cancelFlush()
@@ -269,6 +279,13 @@ internal class RuneLayoutFlush(
     val flushStartTime = android.os.SystemClock.elapsedRealtime()
     val initialViewOps = pendingViewOperations.size
     val initialNativeOps = pendingNativeOperations.size
+    var totalNativeOpsTime = 0L
+    var totalViewOpsTime = 0L
+    var totalTextRebuildTime = 0L
+    var totalLayoutCalcTime = 0L
+    var totalApplyLayoutTime = 0L
+    var iterationCapHit = false
+    var shouldContinue = false
     
     layoutTransactionActive = true
     root.suppressLayoutCompat(true)
@@ -291,14 +308,17 @@ internal class RuneLayoutFlush(
         val nativeOpsStart = android.os.SystemClock.elapsedRealtime()
         processPendingNativeOperations()
         val nativeOpsTime = android.os.SystemClock.elapsedRealtime() - nativeOpsStart
+        totalNativeOpsTime += nativeOpsTime
         
         val viewOpsStart = android.os.SystemClock.elapsedRealtime()
         processPendingViewOperations()
         val viewOpsTime = android.os.SystemClock.elapsedRealtime() - viewOpsStart
+        totalViewOpsTime += viewOpsTime
         
         val textRebuildStart = android.os.SystemClock.elapsedRealtime()
         drainPendingTextRebuilds()
         val textRebuildTime = android.os.SystemClock.elapsedRealtime() - textRebuildStart
+        totalTextRebuildTime += textRebuildTime
 
         val previousFrames = SparseArray<Rect>()
         for (i in 0 until nodes.size()) {
@@ -317,6 +337,7 @@ internal class RuneLayoutFlush(
         PerformanceProfiler.recordLayoutEnd()
         
         val layoutCalcTime = android.os.SystemClock.elapsedRealtime() - textRebuildStart - textRebuildTime
+        totalLayoutCalcTime += layoutCalcTime
 
         PerformanceProfiler.recordRenderStart()
         
@@ -438,7 +459,7 @@ internal class RuneLayoutFlush(
             node.label?.alpha = 1f
           }
         }
-
+        
         stickyFrameCarryover.clear()
         stickyFrameCarryover.addAll(stickyFramesUsedThisFrame)
         if (stickyNodesForRelayout.isNotEmpty()) {
@@ -446,6 +467,7 @@ internal class RuneLayoutFlush(
         }
         
         val applyLayoutTime = android.os.SystemClock.elapsedRealtime() - applyLayoutStart
+        totalApplyLayoutTime += applyLayoutTime
         
         PerformanceProfiler.recordRenderEnd()
         
@@ -462,7 +484,13 @@ internal class RuneLayoutFlush(
           // """.trimIndent())
         }
         
-      } while (dirty || pendingNativeOperations.isNotEmpty() || pendingViewOperations.isNotEmpty())
+        shouldContinue = dirty || pendingNativeOperations.isNotEmpty() || pendingViewOperations.isNotEmpty()
+        if (shouldContinue && loopCount >= MAX_FLUSH_ITERATIONS) {
+          iterationCapHit = true
+          dirty = true
+          break
+        }
+      } while (shouldContinue)
       maybeDispatchFirstFrame()
       if (stickyRelayoutNodes.isNotEmpty()) {
         stickyRelayoutNodes.forEach { nodeId ->
@@ -495,13 +523,30 @@ internal class RuneLayoutFlush(
           Log.e("RunePerf", "🚨 NODE COUNT EXPLOSION: ${nodes.size()} nodes (expected <100 for virtualized list)")
         }
       }
-      
+      reportMetrics(
+        FlushMetrics(
+          surfaceId = surfaceId,
+          totalDurationMs = totalFlushTime,
+          iterationCount = loopCount,
+          initialNativeOps = initialNativeOps,
+          initialViewOps = initialViewOps,
+          totalNativeTimeMs = totalNativeOpsTime,
+          totalViewTimeMs = totalViewOpsTime,
+          totalTextTimeMs = totalTextRebuildTime,
+          totalLayoutTimeMs = totalLayoutCalcTime,
+          totalApplyTimeMs = totalApplyLayoutTime,
+          iterationCapHit = iterationCapHit,
+          firstFrameDelayMs = lastFirstFrameDelayMs,
+        ),
+      )
+
     } finally {
       root.suppressLayoutCompat(false)
       layoutTransactionActive = false
       val hasPendingOperations = dirty || pendingNativeOperations.isNotEmpty() || pendingViewOperations.isNotEmpty()
       when {
         stickyRelayoutNodes.isNotEmpty() -> scheduleFlush(FlushPriority.HIGH)
+        iterationCapHit -> scheduleFlush(FlushPriority.HIGH)
         hasPendingOperations -> scheduleFlush()
       }
     }
@@ -595,6 +640,25 @@ internal class RuneLayoutFlush(
     if (!hasRenderableChildren) return
     hasDispatchedFirstFrame = true
     firstFrameCallback = null
+    firstFrameStartTimeMs?.let {
+      lastFirstFrameDelayMs = SystemClock.elapsedRealtime() - it
+    }
+    firstFrameStartTimeMs = null
     callback()
   }
+
+  data class FlushMetrics(
+    val surfaceId: Int,
+    val totalDurationMs: Long,
+    val iterationCount: Int,
+    val initialNativeOps: Int,
+    val initialViewOps: Int,
+    val totalNativeTimeMs: Long,
+    val totalViewTimeMs: Long,
+    val totalTextTimeMs: Long,
+    val totalLayoutTimeMs: Long,
+    val totalApplyTimeMs: Long,
+    val iterationCapHit: Boolean,
+    val firstFrameDelayMs: Long?,
+  )
 }

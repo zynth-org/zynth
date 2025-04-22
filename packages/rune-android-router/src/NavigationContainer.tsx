@@ -1,9 +1,4 @@
-import {
-  createSignal,
-  createEffect,
-  onCleanup,
-  ParentComponent,
-} from "solid-js";
+import { createSignal, createEffect, onCleanup, ParentComponent } from "solid-js";
 import type {
   NavigationState,
   RouterAction,

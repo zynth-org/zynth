@@ -33,18 +33,11 @@ class RuneAndroidRouterModule(
     }
     
     override fun call(method: String, args: Array<Any?>): JSONObject {
-        Log.e(TAG, "🔥🔥🔥 NATIVE CALL RECEIVED: method=$method, args.size=${args.size} 🔥🔥🔥")
-        
-        // Log each argument in detail
-        args.forEachIndexed { index, arg ->
-            Log.e(TAG, "  arg[$index]: ${arg?.javaClass?.simpleName} = $arg")
-        }
-        
+                
         // WORKAROUND: The bridge passes JS arrays as nested Object[] instead of flattening
         // So when JS calls modules.call("Module", "method", [arg1, arg2])
         // We receive args = [Object[arg1, arg2]] instead of args = [arg1, arg2]
         val actualArgs = if (args.size == 1 && args[0] is Array<*>) {
-            Log.e(TAG, "🔥 Unwrapping nested array...")
             @Suppress("UNCHECKED_CAST")
             (args[0] as Array<Any?>)
         } else {
@@ -59,17 +52,13 @@ class RuneAndroidRouterModule(
         return try {
             when (method) {
                 "navigate" -> {
-                    Log.e(TAG, "🔥 Extracting screenName from actualArgs[0]...")
                     val screenName = actualArgs.getOrNull(0) as? String
                     if (screenName == null) {
                         Log.e(TAG, "🔥 ERROR: screenName is null! actualArgs[0]=${actualArgs.getOrNull(0)}, type=${actualArgs.getOrNull(0)?.javaClass}")
                         return errorResponse("Missing screen name")
                     }
-                    Log.e(TAG, "🔥 screenName=$screenName")
                     
-                    Log.e(TAG, "🔥 Extracting paramsJson from actualArgs[1]...")
                     val paramsJson = actualArgs.getOrNull(1) as? String
-                    Log.e(TAG, "🔥 paramsJson=$paramsJson")
                     
                     navigate(screenName, paramsJson)
                     successResponse()
@@ -81,7 +70,7 @@ class RuneAndroidRouterModule(
                 "surfaceReady" -> {
                     val surfaceId = (actualArgs.getOrNull(0) as? Number)?.toInt()
                     if (surfaceId != null) {
-                        RuneNavigationContainer.notifySurfaceReady(surfaceId)
+                        RuneNavigationContainer.notifySurfaceReady(surfaceId, SurfaceReadySource.JS_BRIDGE)
                     } else {
                         Log.w(TAG, "surfaceReady called without surfaceId")
                     }

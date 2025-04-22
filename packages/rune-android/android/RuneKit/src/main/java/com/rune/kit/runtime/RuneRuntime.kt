@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.res.AssetManager
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import com.facebook.soloader.SoLoader
 import com.rune.kit.core.RuneRootView
@@ -23,6 +24,7 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.jvm.Volatile
 
 private const val TAG = "RuneRuntime"
@@ -48,6 +50,7 @@ class RuneRuntime(
   )
 
   private fun isNativeDebugEnabled(): Boolean {
+    return true
     return try {
       val debugValue = System.getProperty("__NATIVE_DEBUG__")
       debugValue?.toBoolean() ?: false
@@ -231,34 +234,148 @@ class RuneRuntime(
     if (runtimeAdapter is HermesAdapter) {
       // Hermes bridge installs console functions natively; still ensure aliases exist.
       ensureCommonGlobalAliases(runtimeAdapter)
-      return
-    }
-    runtimeAdapter.setGlobalFunction("console_log") { args ->
-      val message = args.joinToString(" ") { it?.toString() ?: "null" }
-      Log.i("JS_LOG", message)
-      println("JS: $message") // Also print to stdout for easier debugging
-      null
-    }
-    runtimeAdapter.setGlobalFunction("console_error") { args ->
-      val message = args.joinToString(" ") { it?.toString() ?: "null" }
-      Log.e("JS_ERROR", message)
-      println("JS ERROR: $message")
-      null
-    }
-    runtimeAdapter.setGlobalFunction("console_warn") { args ->
-      val message = args.joinToString(" ") { it?.toString() ?: "null" }
-      Log.w("JS_WARN", message)
-      println("JS WARN: $message")
-      null
-    }
-    runtimeAdapter.evaluate("""
-      globalThis.console = globalThis.console || {};
-      globalThis.console.log = console_log;
-      globalThis.console.error = console_error;
-      globalThis.console.warn = console_warn;
-    """)
+    } else {
+      runtimeAdapter.setGlobalFunction("console_log") { args ->
+        val message = args.joinToString(" ") { it?.toString() ?: "null" }
+        Log.i("JS_LOG", message)
+        println("JS: $message") // Also print to stdout for easier debugging
+        null
+      }
+      runtimeAdapter.setGlobalFunction("console_error") { args ->
+        val message = args.joinToString(" ") { it?.toString() ?: "null" }
+        Log.e("JS_ERROR", message)
+        println("JS ERROR: $message")
+        null
+      }
+      runtimeAdapter.setGlobalFunction("console_warn") { args ->
+        val message = args.joinToString(" ") { it?.toString() ?: "null" }
+        Log.w("JS_WARN", message)
+        println("JS WARN: $message")
+        null
+      }
+      runtimeAdapter.evaluate(
+        """
+        globalThis.console = globalThis.console || {};
+        globalThis.console.log = console_log;
+        globalThis.console.error = console_error;
+        globalThis.console.warn = console_warn;
+      """.trimIndent(),
+      )
 
-    ensureCommonGlobalAliases(runtimeAdapter)
+      ensureCommonGlobalAliases(runtimeAdapter)
+    }
+
+    installConsolePolyfills(runtimeAdapter)
+  }
+
+  private fun installConsolePolyfills(runtimeAdapter: JSRuntimeAdapter) {
+    val timers = ConcurrentHashMap<String, Long>()
+
+    runtimeAdapter.setGlobalFunction("__runeConsoleTimeStart") { args ->
+      val label = args.firstOrNull()?.toString() ?: "default"
+      timers[label] = SystemClock.elapsedRealtimeNanos()
+      null
+    }
+
+    runtimeAdapter.setGlobalFunction("__runeConsoleTimeLog") { args ->
+      val label = args.firstOrNull()?.toString() ?: "default"
+      val start = timers[label]
+      if (start != null) {
+        (SystemClock.elapsedRealtimeNanos() - start) / 1_000_000.0
+      } else {
+        "Timer \"$label\" does not exist"
+      }
+    }
+
+    runtimeAdapter.setGlobalFunction("__runeConsoleTimeEnd") { args ->
+      val label = args.firstOrNull()?.toString() ?: "default"
+      val start = timers.remove(label)
+      if (start != null) {
+        (SystemClock.elapsedRealtimeNanos() - start) / 1_000_000.0
+      } else {
+        "Timer \"$label\" does not exist"
+      }
+    }
+
+    runtimeAdapter.setGlobalFunction("__runePerformanceNow") { _ ->
+      SystemClock.elapsedRealtimeNanos() / 1_000_000.0
+    }
+
+    runtimeAdapter.evaluate(
+      """
+      (function() {
+        globalThis.console = globalThis.console || {};
+        const hasNativeTimeStart = typeof __runeConsoleTimeStart === 'function';
+        const hasNativeTimeLog = typeof __runeConsoleTimeLog === 'function';
+        const hasNativeTimeEnd = typeof __runeConsoleTimeEnd === 'function';
+        const nativeNow = typeof __runePerformanceNow === 'function'
+          ? __runePerformanceNow
+          : function() { return Date.now(); };
+        const fallbackTimers = Object.create(null);
+        function fallbackStart(label) {
+          fallbackTimers[label] = Date.now();
+        }
+        function fallbackLog(label) {
+          const start = fallbackTimers[label];
+          if (typeof start === 'number') {
+            return Date.now() - start;
+          }
+          return null;
+        }
+        function fallbackEnd(label) {
+          const start = fallbackTimers[label];
+          if (typeof start === 'number') {
+            delete fallbackTimers[label];
+            return Date.now() - start;
+          }
+          return null;
+        }
+
+        if (typeof console.time !== 'function') {
+          console.time = function(label = 'default') {
+            if (hasNativeTimeStart) {
+              __runeConsoleTimeStart(label);
+            } else {
+              fallbackStart(label);
+            }
+          };
+        }
+
+        if (typeof console.timeLog !== 'function') {
+          console.timeLog = function(label = 'default') {
+            const result = hasNativeTimeLog
+              ? __runeConsoleTimeLog(label)
+              : fallbackLog(label);
+            if (typeof result === 'number') {
+              console.log(label + ': ' + result.toFixed(3) + 'ms');
+            } else if (typeof result === 'string') {
+              console.warn(result);
+            }
+          };
+        }
+
+        if (typeof console.timeEnd !== 'function') {
+          console.timeEnd = function(label = 'default') {
+            const result = hasNativeTimeEnd
+              ? __runeConsoleTimeEnd(label)
+              : fallbackEnd(label);
+            if (typeof result === 'number') {
+              console.log(label + ': ' + result.toFixed(3) + 'ms');
+            } else if (typeof result === 'string') {
+              console.warn(result);
+            }
+          };
+        }
+
+        globalThis.performance = globalThis.performance || {};
+        if (typeof globalThis.performance.now !== 'function') {
+          globalThis.performance.now = function() {
+            return nativeNow();
+          };
+        }
+      })();
+      """.trimIndent(),
+    )
   }
 
   private fun ensureCommonGlobalAliases(runtimeAdapter: JSRuntimeAdapter) {

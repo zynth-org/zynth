@@ -299,7 +299,7 @@ export function createAndroidHost(): Host {
 
       if (id === null) {
         id = ui.createNode(type);
-        console.log(`[Host/createNode] 🆕 CREATED node ${id} (type=${type})`);
+        // console.log(`[Host/createNode] 🆕 CREATED node ${id} (type=${type})`);
       }
 
       PARENTS.set(id, null);
@@ -359,7 +359,7 @@ export function createAndroidHost(): Host {
 
       if (id === null) {
         id = ui.createNode("text");
-        console.log(`[Host/createText] 🆕 CREATED text node ${id}`);
+        // console.log(`[Host/createText] 🆕 CREATED text node ${id}`);
       }
 
       enqueueOperation(() => ui.setText(id, value ?? ""));
@@ -448,13 +448,13 @@ export function createAndroidHost(): Host {
             // This node is a direct child - mark it for recycling
             if (!NODE_TO_CONTEXT.has(node.id)) {
               NODE_TO_CONTEXT.set(node.id, contextId);
-              console.log(
-                `[Host/insertNode] 🏷️  Marked node ${node.id} (type=${node.type}) for recycling in context ${contextId}`
-              );
+              // console.log(
+              //   `[Host/insertNode] 🏷️  Marked node ${node.id} (type=${node.type}) for recycling in context ${contextId}`
+              // );
             } else if (wasRecycled) {
-              console.log(
-                `[Host/insertNode] ♻️  RE-INSERTING recycled node ${node.id} (type=${node.type}) into parent ${parent.id} at index ${physIdx}`
-              );
+              // console.log(
+              //   `[Host/insertNode] ♻️  RE-INSERTING recycled node ${node.id} (type=${node.type}) into parent ${parent.id} at index ${physIdx}`
+              // );
             }
           }
 
@@ -534,9 +534,9 @@ export function createAndroidHost(): Host {
       if (!isMarkerId(node.id)) {
         TYPES.delete(node.id);
         enqueueOperation(() => ui.removeChild(parent.id, node.id));
-        console.log(
-          `[Host/removeNode] 🗑️  DESTROYED node ${node.id} (type=${node.type})`
-        );
+        // console.log(
+        //   `[Host/removeNode] 🗑️  DESTROYED node ${node.id} (type=${node.type})`
+        // );
       }
       schedule();
     },
@@ -659,27 +659,27 @@ export function createAndroidHost(): Host {
         }
 
         const childType = TYPES.get(childId);
-        console.log(
-          `[Host/Recycling] 🔎 Checking child ${childId} (type=${childType}) against config.itemType=${config.itemType}`
-        );
+        // console.log(
+        //   `[Host/Recycling] 🔎 Checking child ${childId} (type=${childType}) against config.itemType=${config.itemType}`
+        // );
 
         // Only mark View nodes (containers), not Text or other types
         if (childType === config.itemType) {
           NODE_TO_CONTEXT.set(childId, contextId);
           markedCount++;
-          console.log(
-            `[Host/Recycling] 🏷️  Retroactively marked node ${childId} (type=${childType}) for recycling in context ${contextId}`
-          );
+          // console.log(
+          //   `[Host/Recycling] 🏷️  Retroactively marked node ${childId} (type=${childType}) for recycling in context ${contextId}`
+          // );
         } else {
-          console.log(
-            `[Host/Recycling] ❌ Not marking node ${childId} (type=${childType}) - doesn't match ${config.itemType}`
-          );
+          // console.log(
+          //   `[Host/Recycling] ❌ Not marking node ${childId} (type=${childType}) - doesn't match ${config.itemType}`
+          // );
         }
       }
 
-      console.log(
-        `[Host/Recycling] ✅ Enabled recycling for container ${containerId} (context=${contextId}, pool size=${config.poolSize}, marked ${markedCount} existing nodes)`
-      );
+      // console.log(
+      //   `[Host/Recycling] ✅ Enabled recycling for container ${containerId} (context=${contextId}, pool size=${config.poolSize}, marked ${markedCount} existing nodes)`
+      // );
       return contextId;
     },
 
@@ -705,20 +705,20 @@ export function createAndroidHost(): Host {
       }
 
       RECYCLING_CONTEXTS.delete(contextId);
-      console.log(`[Host/Recycling] Disabled recycling context ${contextId}`);
+      // console.log(`[Host/Recycling] Disabled recycling context ${contextId}`);
     },
 
     reclaimNode(contextId: string, node: HostNode) {
       if (!RECYCLING_CONTEXTS.has(contextId)) {
-        console.warn(
-          `[Host/Recycling] Cannot reclaim node ${node.id}: context ${contextId} not found`
-        );
+        // console.warn(
+        //   `[Host/Recycling] Cannot reclaim node ${node.id}: context ${contextId} not found`
+        // );
         return;
       }
 
-      console.log(
-        `[Host/Recycling] Reclaiming node ${node.id} (type=${node.type}) to pool ${contextId}`
-      );
+      // console.log(
+      //   `[Host/Recycling] Reclaiming node ${node.id} (type=${node.type}) to pool ${contextId}`
+      // );
       returnNodeToPool(contextId, node.id);
     },
 
@@ -730,9 +730,9 @@ export function createAndroidHost(): Host {
     ): HostNode | null {
       const context = RECYCLING_CONTEXTS.get(contextId);
       if (!context) {
-        console.warn(
-          `[Host/Recycling] Cannot acquire node: context ${contextId} not found`
-        );
+        // console.warn(
+        //   `[Host/Recycling] Cannot acquire node: context ${contextId} not found`
+        // );
         return null;
       }
 
@@ -741,9 +741,9 @@ export function createAndroidHost(): Host {
 
       if (nodeId !== null) {
         // Reusing existing node
-        console.log(
-          `[Host/Recycling] ♻️  REUSING node ${nodeId} (type=${type}) for item ${itemKey} [${itemIndex}]`
-        );
+        // console.log(
+        //   `[Host/Recycling] ♻️  REUSING node ${nodeId} (type=${type}) for item ${itemKey} [${itemIndex}]`
+        // );
         context.activeBindings.set(nodeId, { itemKey, itemIndex });
         return nodeFor(nodeId);
       }
@@ -751,18 +751,18 @@ export function createAndroidHost(): Host {
       // Pool exhausted - create new node if within pool size limit
       const currentActiveCount = context.activeBindings.size;
       if (currentActiveCount >= context.config.poolSize) {
-        console.warn(
-          `[Host/Recycling] Pool exhausted! Active: ${currentActiveCount}, Limit: ${context.config.poolSize}`
-        );
+        // console.warn(
+        //   `[Host/Recycling] Pool exhausted! Active: ${currentActiveCount}, Limit: ${context.config.poolSize}`
+        // );
         return null;
       }
 
       // Create new node and track it
-      console.log(
-        `[Host/Recycling] 🆕 CREATING new node (type=${type}) for item ${itemKey} [${itemIndex}] (${
-          currentActiveCount + 1
-        }/${context.config.poolSize})`
-      );
+      // console.log(
+      //   `[Host/Recycling] 🆕 CREATING new node (type=${type}) for item ${itemKey} [${itemIndex}] (${
+      //     currentActiveCount + 1
+      //   }/${context.config.poolSize})`
+      // );
       if (type === "root") {
         console.error("[Host/Recycling] Cannot create root node in pool");
         return null;
@@ -782,9 +782,9 @@ export function createAndroidHost(): Host {
     ) {
       const contextId = NODE_TO_CONTEXT.get(node.id);
       if (!contextId) {
-        console.warn(
-          `[Host/Recycling] Node ${node.id} not tracked in any recycling context`
-        );
+        // console.warn(
+        //   `[Host/Recycling] Node ${node.id} not tracked in any recycling context`
+        // );
         return;
       }
 

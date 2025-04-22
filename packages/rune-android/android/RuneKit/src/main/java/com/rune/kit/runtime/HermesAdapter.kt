@@ -35,8 +35,9 @@ class HermesAdapter(
 
   private val nativeDebugEnabled: Boolean by lazy {
     try {
-      @Suppress("USELESS_CAST")
-      (callGlobal("globalThis.__NATIVE_DEBUG__", emptyArray()) as? Boolean) ?: false
+      true
+      // @Suppress("USELESS_CAST")
+      // (callGlobal("globalThis.__NATIVE_DEBUG__", emptyArray()) as? Boolean) ?: false
     } catch (e: Throwable) {
       false
     }
