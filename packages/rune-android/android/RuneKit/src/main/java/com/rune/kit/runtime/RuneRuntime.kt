@@ -208,6 +208,10 @@ class RuneRuntime(
     return root.rootId
   }
 
+  fun isSurfaceIdle(surfaceId: Int): Boolean {
+    return manager.isSurfaceIdle(surfaceId)
+  }
+
   fun addSurfaceFirstFrameListener(surfaceId: Int, listener: () -> Unit) {
     manager.addSurfaceFirstFrameListener(surfaceId, listener)
   }

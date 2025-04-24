@@ -59,6 +59,8 @@ This document captures the current architecture of the minimal Android router st
 ### Logging & debugging notes
 
 - Logs starting with `[RuneScreenFragment]` indicate lifecycle events like creation, JS evaluation, and transition starts.
+- Enabling the system property `rune.router.perfLogs=true` (or simply attaching a debugger) turns on per-iteration RuneLayoutFlush warnings when an iteration exceeds 12 ms; each warning includes the native/text/layout breakdown so you can pinpoint the bottleneck for that surface.
+- Set `globalThis.__ROUTER_PERF_LOGS = true/false` at runtime to toggle JS render instrumentation (see `RouterMinimal` for an example using `withPerfSection`), which prints how long each screen’s render tree takes to build.
 - `[nativeRenderer]` logs reveal component registration, first-frame render, and disposal.
 - Watch for `surfaceId=10` (or any incrementing id) to ensure the fragment matches the right surface; the numeric id should correlate with the `RuneRootView` root id.
 - When the Home UI disappears, check the log for `[Host/removeNode]`, which now should not fire against the root when details dispose.

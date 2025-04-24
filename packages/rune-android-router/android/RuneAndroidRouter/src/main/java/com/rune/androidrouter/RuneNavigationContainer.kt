@@ -8,6 +8,7 @@ import android.util.Log
 import android.view.View
 import android.view.ViewTreeObserver
 import android.view.animation.AccelerateDecelerateInterpolator
+import androidx.core.view.ViewCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentManager
 import com.rune.androidrouter.R
@@ -114,12 +115,6 @@ class RuneNavigationContainer {
         // Push: new screen slides in from right, old slides out to left
         // Pop: current slides out to right, previous slides in from left
         val transaction = manager.beginTransaction()
-            .setCustomAnimations(
-                R.anim.rune_slide_in_right,
-                R.anim.rune_fade_out,
-                R.anim.rune_slide_in_left,
-                R.anim.rune_slide_out_right
-            )
             .add(android.R.id.content, fragment, screenName)
             .addToBackStack(screenName)
         
@@ -160,13 +155,14 @@ class RuneScreenFragment : Fragment() {
     private var surfaceReadyDelivered = false
     private var nativeFirstFrameReceived = false
     private var surfaceReadyTimeoutRunnable: Runnable? = null
+    private var surfaceReadySource: SurfaceReadySource? = null
     private var startTime: Long = 0 // <--- ADDED: Time measurement variable
     private var hasRunEnterAnimation = false
     
     companion object {
         private const val ARG_SCREEN_NAME = "screen_name"
         private const val ARG_PARAMS = "params"
-        private const val SURFACE_READY_TIMEOUT_MS = 5000L
+        private const val SURFACE_READY_TIMEOUT_MS = 800L
         
         fun newInstance(screenName: String, params: JSONObject?): RuneScreenFragment {
             return RuneScreenFragment().apply {
@@ -217,6 +213,7 @@ class RuneScreenFragment : Fragment() {
         surfaceReadyDelivered = false
         nativeFirstFrameReceived = false
         surfaceReadyTimeoutRunnable = null
+        surfaceReadySource = null
         layoutReadyListener = ViewTreeObserver.OnGlobalLayoutListener {
             if (hasMeasuredSize()) {
                 tryStartSurfaceAnimation()
@@ -252,7 +249,7 @@ class RuneScreenFragment : Fragment() {
             surfaceReadyListener = readyListener
             runtime.addSurfaceFirstFrameListener(surfaceId, readyListener)
             
-            // Fallback: ensure transitions start even if JS never calls back (now set to 5000ms)
+            // Fallback: ensure transitions start even if JS never calls back
             val fallbackRunnable = Runnable {
                 Log.w("RuneScreenFragment", "🔥 [T=${System.currentTimeMillis() - startTime}ms] ${SURFACE_READY_TIMEOUT_MS}ms FALLBACK triggered for surfaceId=${rootView.rootId}")
                 RuneNavigationContainer.notifySurfaceReady(rootView.rootId, SurfaceReadySource.TIMEOUT_FALLBACK)
@@ -401,6 +398,7 @@ class RuneScreenFragment : Fragment() {
     private fun deliverSurfaceReady(source: SurfaceReadySource) {
         if (surfaceReadyDelivered) return
         surfaceReadyDelivered = true
+        surfaceReadySource = source
         cancelSurfaceReadyTimeout()
         Log.d(
             "RuneScreenFragment",
@@ -415,26 +413,59 @@ class RuneScreenFragment : Fragment() {
     }
 
     private fun tryStartSurfaceAnimation() {
-        // <--- ADDED LOG --->
-        Log.d("RuneScreenFragment", "🔥 [T=${System.currentTimeMillis() - startTime}ms] tryStartSurfaceAnimation: Checking... (Ready=${surfaceReadyDelivered}, Measured=${hasMeasuredSize()}, Animated=$hasRunEnterAnimation)")
+        val view = runeRootView
+        val ready = surfaceReadyDelivered
+        val measured = hasMeasuredSize()
+        val laidOut = view?.let { ViewCompat.isLaidOut(it) } ?: false
+        val source = surfaceReadySource ?: SurfaceReadySource.NATIVE_FIRST_FRAME
+        Log.d(
+            "RuneScreenFragment",
+            "🔥 [T=${System.currentTimeMillis() - startTime}ms] tryStartSurfaceAnimation: Checking... (Ready=$ready, Measured=$measured, LaidOut=$laidOut, Animated=$hasRunEnterAnimation, Source=$source)"
+        )
 
-        if (!surfaceReadyDelivered || !hasMeasuredSize() || hasRunEnterAnimation) {
+        if (!ready || !measured || !laidOut || hasRunEnterAnimation || view == null) {
             return
         }
 
-        Log.d("RuneScreenFragment", "🔥 [T=${System.currentTimeMillis() - startTime}ms] tryStartSurfaceAnimation: Fading in view and starting transition...") // <--- ADDED LOG
-        val view = runeRootView ?: return
+        val runtime = RuneNavigationContainer.getMainRuntime()
+        val surfaceId = view.rootId
+        val surfaceIdle = runtime?.isSurfaceIdle(surfaceId) ?: true
+        if (!surfaceIdle) {
+            Log.d(
+                "RuneScreenFragment",
+                "🔥 [T=${System.currentTimeMillis() - startTime}ms] tryStartSurfaceAnimation: Surface $surfaceId still flushing, deferring animation"
+            )
+            view.postOnAnimation { tryStartSurfaceAnimation() }
+            return
+        }
+
         hasRunEnterAnimation = true
-        val width = view.width.toFloat().takeIf { it > 0 } ?: view.resources.displayMetrics.widthPixels.toFloat()
-        view.translationX = width
-        view.alpha = 0f
-        view.animate()
-            .translationX(0f)
-            .alpha(1f)
-            .setDuration(220)
-            .setInterpolator(AccelerateDecelerateInterpolator())
-            .withStartAction { startEnterTransitionIfNeeded() }
-            .start()
+        val slideDuration = 220L
+        val fadeDuration = 160L
+
+        val animation = view.animate()
+        if (source == SurfaceReadySource.TIMEOUT_FALLBACK) {
+            view.translationX = 0f
+            view.alpha = 0f
+            animation
+                .alpha(1f)
+                .setDuration(fadeDuration)
+                .setInterpolator(AccelerateDecelerateInterpolator())
+                .withStartAction { startEnterTransitionIfNeeded() }
+                .start()
+        } else {
+            val width = view.width.toFloat().takeIf { it > 0 }
+                ?: view.resources.displayMetrics.widthPixels.toFloat()
+            view.translationX = width
+            view.alpha = 0f
+            animation
+                .translationX(0f)
+                .alpha(1f)
+                .setDuration(slideDuration)
+                .setInterpolator(AccelerateDecelerateInterpolator())
+                .withStartAction { startEnterTransitionIfNeeded() }
+                .start()
+        }
         removeLayoutReadyListener()
     }
 }

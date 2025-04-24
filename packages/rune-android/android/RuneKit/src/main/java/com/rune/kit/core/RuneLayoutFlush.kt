@@ -1,5 +1,6 @@
 package com.rune.kit.core
 
+import android.os.Debug
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -26,6 +27,12 @@ import java.util.concurrent.CountDownLatch
  * - Thread-safe execution on main thread
  */
 private const val MAX_FLUSH_ITERATIONS = 4
+private const val FLUSH_ITERATION_WARN_THRESHOLD_MS = 12L
+private val routerPerfLoggingEnabled: Boolean by lazy {
+  val property = System.getProperty("rune.router.perfLogs")?.lowercase()
+  val propertyEnabled = property == "1" || property == "true" || property == "on"
+  propertyEnabled || Debug.isDebuggerConnected()
+}
 
 internal class RuneLayoutFlush(
   private val root: RuneRootView,
@@ -473,6 +480,15 @@ internal class RuneLayoutFlush(
         
         // Log performance if this iteration was slow
         val iterationTime = nativeOpsTime + viewOpsTime + textRebuildTime + layoutCalcTime + applyLayoutTime
+        if (routerPerfLoggingEnabled && iterationTime >= FLUSH_ITERATION_WARN_THRESHOLD_MS) {
+          Log.w(
+            "RunePerf",
+            "Surface $surfaceId flush iteration #$loopCount took ${iterationTime}ms " +
+              "(native=${nativeOpsTime}ms, view=${viewOpsTime}ms, text=${textRebuildTime}ms, " +
+              "layout=${layoutCalcTime}ms, apply=${applyLayoutTime}ms)"
+          )
+        }
+
         if (iterationTime > 16) {
           // Log.w("RunePerf", """
           //   🔥 SLOW FLUSH ITERATION #$loopCount: ${iterationTime}ms

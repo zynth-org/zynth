@@ -251,6 +251,11 @@ class RuneUIManager(
     surfaceStateOrNull(surfaceId)?.firstFrameListeners?.remove(listener)
   }
 
+  fun isSurfaceIdle(surfaceId: Int): Boolean {
+    val state = surfaceStateOrNull(surfaceId) ?: return true
+    return state.frameScheduler.isIdle
+  }
+
   private fun dispatchSurfaceFirstFrame(surfaceId: Int) {
     val state = surfaceStateOrNull(surfaceId) ?: return
     if (state.hasDispatchedFirstFrame) return

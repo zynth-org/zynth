@@ -6,6 +6,8 @@ class FrameScheduler {
     private val choreographer = Choreographer.getInstance()
     private var isFlushPending = false
     private var flushCallback: (() -> Unit)? = null
+    val isIdle: Boolean
+        get() = !isFlushPending
     
     private val frameCallback = object : Choreographer.FrameCallback {
         override fun doFrame(frameTimeNanos: Long) {
