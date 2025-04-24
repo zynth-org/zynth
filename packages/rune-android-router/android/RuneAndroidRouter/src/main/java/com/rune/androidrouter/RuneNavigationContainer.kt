@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.View
+import android.view.ViewPropertyAnimator
 import android.view.ViewTreeObserver
 import android.view.animation.AccelerateDecelerateInterpolator
 import androidx.core.view.ViewCompat
@@ -111,10 +112,13 @@ class RuneNavigationContainer {
         
         val fragment = RuneScreenFragment.newInstance(screenName, params)
         
-        // Add fragment with slide animations
-        // Push: new screen slides in from right, old slides out to left
-        // Pop: current slides out to right, previous slides in from left
         val transaction = manager.beginTransaction()
+            .setCustomAnimations(
+                0,
+                0,
+                R.anim.rune_slide_in_left,
+                R.anim.rune_slide_out_right
+            )
             .add(android.R.id.content, fragment, screenName)
             .addToBackStack(screenName)
         
@@ -131,7 +135,7 @@ class RuneNavigationContainer {
         }
         
         Log.d(TAG, "Popping screen")
-        
+
         if (manager.backStackEntryCount > 0) {
             manager.popBackStack()
         }
@@ -158,6 +162,7 @@ class RuneScreenFragment : Fragment() {
     private var surfaceReadySource: SurfaceReadySource? = null
     private var startTime: Long = 0 // <--- ADDED: Time measurement variable
     private var hasRunEnterAnimation = false
+    private var enterAnimator: ViewPropertyAnimator? = null
     
     companion object {
         private const val ARG_SCREEN_NAME = "screen_name"
@@ -214,6 +219,7 @@ class RuneScreenFragment : Fragment() {
         nativeFirstFrameReceived = false
         surfaceReadyTimeoutRunnable = null
         surfaceReadySource = null
+        enterAnimator = null
         layoutReadyListener = ViewTreeObserver.OnGlobalLayoutListener {
             if (hasMeasuredSize()) {
                 tryStartSurfaceAnimation()
@@ -288,6 +294,8 @@ class RuneScreenFragment : Fragment() {
         surfaceReadyListener = null
         removeLayoutReadyListener()
         cancelSurfaceReadyTimeout()
+        enterAnimator?.cancel()
+        enterAnimator = null
         if (runtime != null && rootId != null) {
             val jsCode = """
                 (function() {
@@ -443,6 +451,7 @@ class RuneScreenFragment : Fragment() {
         val slideDuration = 220L
         val fadeDuration = 160L
 
+        enterAnimator?.cancel()
         val animation = view.animate()
         if (source == SurfaceReadySource.TIMEOUT_FALLBACK) {
             view.translationX = 0f
@@ -465,6 +474,10 @@ class RuneScreenFragment : Fragment() {
                 .setInterpolator(AccelerateDecelerateInterpolator())
                 .withStartAction { startEnterTransitionIfNeeded() }
                 .start()
+        }
+        enterAnimator = animation
+        animation.withEndAction {
+            enterAnimator = null
         }
         removeLayoutReadyListener()
     }

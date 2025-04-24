@@ -56,6 +56,13 @@ This document captures the current architecture of the minimal Android router st
 - `RuneAndroidRouterBridge` exposes `surfaceReady` and `surfaceDisposed`, unwrapping nested arrays to keep the existing module system (Hermes + modules shim) happy.
 - The router module now logs each bridge call for easier debugging and reuses the same unwrapped args logic for all surface callbacks.
 
+### Animation stabilization (2024‑xx update)
+
+- Fragment enter animations are no longer supplied via `FragmentTransaction.setCustomAnimations`. Instead, `RuneScreenFragment` owns the full enter effect (slide + fade) and only triggers it when the view has measured, is laid out, and the surface’s frame scheduler reports idle. This prevents the native transaction animation from fighting the surface animation and guarantees a single transition pathway on every push.
+- For back navigation we lean on Android’s pop animations only: the transaction is configured with zero enter/exit animations for push, but `popEnter`/`popExit` still use the stock slide pair so the previous screen glides in when the stack pops without interfering with the fragment’s custom enter logic.
+- Surface readiness is tagged with `SurfaceReadySource`, and only the native first-frame callback (or the short 800 ms timeout) unlocks transitions; JS bridge callbacks are logged but ignored to avoid racing animations before layout completes.
+- When the fallback fires, the fragment now runs a subtle fade-only animation so QA can visually tell when the safety net triggered.
+
 ### Logging & debugging notes
 
 - Logs starting with `[RuneScreenFragment]` indicate lifecycle events like creation, JS evaluation, and transition starts.
