@@ -8,6 +8,7 @@ export type {
   NavigationHelpers,
   NavigationState,
   ScreenOptions,
+  HeaderOptions,
   StackScreenProps,
 } from "./types";
 

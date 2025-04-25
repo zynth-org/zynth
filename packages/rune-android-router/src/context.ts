@@ -70,6 +70,9 @@ export function createRouteContextValue<ParamList extends RouteParamList>(
     reset: (state) => {
       dispatch({ type: "RESET", state });
     },
+    setOptions: (options) => {
+      applyScreenOptions(route.key, options as ScreenOptions);
+    },
   };
 
   return {
@@ -98,7 +101,82 @@ export function listRegisteredScreens() {
   return Array.from(screenRegistry.values());
 }
 
+// Store header options per surface/route key
+const headerOptionsCache = new Map<string, ScreenOptions>();
+
 export function applyScreenOptions(key: string, options: ScreenOptions) {
-  // For minimal implementation, we just log
-  console.log("[RuneAndroidRouter] setOptions", key, options);
+  console.log("[RuneAndroidRouter] setOptions", key, JSON.stringify(options));
+  headerOptionsCache.set(key, options);
+
+  // Send to native if available
+  sendHeaderOptionsToNative(key, options);
+}
+
+export function getHeaderOptionsForScreen(
+  screenName: string,
+  navigatorId?: string
+): ScreenOptions | undefined {
+  const descriptor = resolveScreenDescriptor(screenName, navigatorId);
+  if (!descriptor?.options) {
+    return undefined;
+  }
+
+  // Resolve options if it's a function
+  const options =
+    typeof descriptor.options === "function"
+      ? descriptor.options()
+      : descriptor.options;
+
+  return options;
+}
+
+function sendHeaderOptionsToNative(routeKey: string, options: ScreenOptions) {
+  try {
+    const globalObject = getGlobalObject();
+    const modules = globalObject.__modules;
+
+    if (!modules || typeof modules.call !== "function") {
+      console.log(
+        "[RuneAndroidRouter] Native module not available for header options"
+      );
+      return;
+    }
+
+    // Normalize options for native
+    const headerConfig = {
+      title: options.title,
+      subtitle: options.subtitle,
+      headerShown: options.headerShown !== false, // default true
+      headerTintColor: options.headerTintColor,
+      headerBackgroundColor: options.headerBackgroundColor,
+      headerTransparent: options.headerTransparent || false,
+      headerShadowVisible: options.headerShadowVisible !== false, // default true
+      userInterfaceStyle: options.userInterfaceStyle || "system",
+      largeTitle: options.largeTitle || false,
+    };
+
+    console.log(
+      "[RuneAndroidRouter] Sending header options to native:",
+      JSON.stringify(headerConfig)
+    );
+
+    // We'll send surface ID once we have it from the fragment
+    // For now, store for when surface is created
+    modules.call("RuneAndroidRouter", "setHeaderOptions", [
+      routeKey,
+      JSON.stringify(headerConfig),
+    ]);
+  } catch (error) {
+    console.warn(
+      "[RuneAndroidRouter] Failed to send header options to native:",
+      error
+    );
+  }
+}
+
+function getGlobalObject(): any {
+  if (typeof globalThis !== "undefined") return globalThis;
+  if (typeof window !== "undefined") return window;
+  if (typeof global !== "undefined") return global;
+  return {};
 }

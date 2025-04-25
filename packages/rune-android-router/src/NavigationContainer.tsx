@@ -1,10 +1,20 @@
-import { createSignal, createEffect, onCleanup, ParentComponent } from "solid-js";
+import {
+  createSignal,
+  createEffect,
+  onCleanup,
+  ParentComponent,
+} from "solid-js";
 import type {
   NavigationState,
   RouterAction,
   RouterContextValue,
 } from "./types";
-import { RouterContext, applyScreenOptions, registerScreen } from "./context";
+import {
+  RouterContext,
+  applyScreenOptions,
+  registerScreen,
+  getHeaderOptionsForScreen,
+} from "./context";
 import { setNativeRouterDispatch } from "./nativeInterop";
 import "./nativeRenderer";
 
@@ -118,6 +128,41 @@ export const NavigationContainer: ParentComponent<NavigationContainerProps> = (
                 "[RuneAndroidRouter] 🚀 Calling NATIVE navigate:",
                 action.name
               );
+
+              // Get and send header options for this screen
+              const headerOptions = getHeaderOptionsForScreen(
+                action.name,
+                currentState?.key
+              );
+              if (headerOptions) {
+                const headerConfig = {
+                  title: headerOptions.title || action.name,
+                  subtitle: headerOptions.subtitle,
+                  headerShown: headerOptions.headerShown !== false,
+                  headerTintColor: headerOptions.headerTintColor,
+                  headerBackgroundColor: headerOptions.headerBackgroundColor,
+                  headerTransparent: headerOptions.headerTransparent || false,
+                  headerShadowVisible:
+                    headerOptions.headerShadowVisible !== false,
+                  userInterfaceStyle:
+                    headerOptions.userInterfaceStyle || "system",
+                  largeTitle: headerOptions.largeTitle || false,
+                };
+
+                try {
+                  modules.call(
+                    "RuneAndroidRouter",
+                    "setHeaderOptionsForNextScreen",
+                    [JSON.stringify(headerConfig)]
+                  );
+                } catch (error) {
+                  console.warn(
+                    "[RuneAndroidRouter] Failed to send header options:",
+                    error
+                  );
+                }
+              }
+
               modules.call("RuneAndroidRouter", "navigate", [
                 action.name,
                 action.params ? JSON.stringify(action.params) : null,
@@ -157,6 +202,61 @@ export const NavigationContainer: ParentComponent<NavigationContainerProps> = (
     switch (action.type) {
       case "RESET":
         setState(action.state);
+
+        // Set initial screen as a fragment with header support
+        if (hasNativeModule && action.state.routes.length > 0) {
+          const initialRoute = action.state.routes[0];
+          const headerOptions = getHeaderOptionsForScreen(
+            initialRoute.name,
+            action.state.key
+          );
+          if (headerOptions) {
+            const headerConfig = {
+              title: headerOptions.title || initialRoute.name,
+              subtitle: headerOptions.subtitle,
+              headerShown: headerOptions.headerShown !== false,
+              headerTintColor: headerOptions.headerTintColor,
+              headerBackgroundColor: headerOptions.headerBackgroundColor,
+              headerTransparent: headerOptions.headerTransparent || false,
+              headerShadowVisible: headerOptions.headerShadowVisible !== false,
+              userInterfaceStyle: headerOptions.userInterfaceStyle || "system",
+              largeTitle: headerOptions.largeTitle || false,
+            };
+
+            try {
+              modules.call("RuneAndroidRouter", "setInitialScreen", [
+                initialRoute.name,
+                JSON.stringify(headerConfig),
+              ]);
+              console.log(
+                "[RuneAndroidRouter] Set initial screen with header:",
+                initialRoute.name
+              );
+            } catch (error) {
+              console.warn(
+                "[RuneAndroidRouter] Failed to set initial screen:",
+                error
+              );
+            }
+          } else {
+            // No header options, still set as fragment
+            try {
+              modules.call("RuneAndroidRouter", "setInitialScreen", [
+                initialRoute.name,
+                null,
+              ]);
+              console.log(
+                "[RuneAndroidRouter] Set initial screen without header:",
+                initialRoute.name
+              );
+            } catch (error) {
+              console.warn(
+                "[RuneAndroidRouter] Failed to set initial screen:",
+                error
+              );
+            }
+          }
+        }
         break;
 
       case "PUSH":

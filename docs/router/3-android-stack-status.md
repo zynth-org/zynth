@@ -68,6 +68,13 @@ This document captures the current architecture of the minimal Android router st
 - Logs starting with `[RuneScreenFragment]` indicate lifecycle events like creation, JS evaluation, and transition starts.
 - Enabling the system property `rune.router.perfLogs=true` (or simply attaching a debugger) turns on per-iteration RuneLayoutFlush warnings when an iteration exceeds 12 ms; each warning includes the native/text/layout breakdown so you can pinpoint the bottleneck for that surface.
 - Set `globalThis.__ROUTER_PERF_LOGS = true/false` at runtime to toggle JS render instrumentation (see `RouterMinimal` for an example using `withPerfSection`), which prints how long each screen’s render tree takes to build.
+
+### AppBar (header) pipeline
+
+- Headers (called AppBars on Android) are always shown unless a screen opts out via `headerShown: false` or `header: false`. Every screen builds header config from the same option names used on iOS (`title`, `headerTintColor`, `headerBackgroundColor`, `userInterfaceStyle`, etc.) so you can reuse the same `options={{ … }}` object.  
+- The JS renderer normalizes those options and sends them to native through a new `setHeaderOptions(surfaceId, config)` bridge call, which stores the data per surface before the fragment is created.  
+- `RuneScreenFragment` wraps its `RuneRootView` with a `Toolbar`, applies the incoming config (title, tint, background, visibility, nav icon), and reacts to later `navigation.setOptions(...)` calls via the same bridge hook.  
+- Because the header lives inside the fragment, you can animate it alongside the rest of the surface and keep the same look-and-feel as iOS; use `header: { headerTintColor: "#1d1dff" }` etc. to customize individual screens.
 - `[nativeRenderer]` logs reveal component registration, first-frame render, and disposal.
 - Watch for `surfaceId=10` (or any incrementing id) to ensure the fragment matches the right surface; the numeric id should correlate with the `RuneRootView` root id.
 - When the Home UI disappears, check the log for `[Host/removeNode]`, which now should not fire against the root when details dispose.

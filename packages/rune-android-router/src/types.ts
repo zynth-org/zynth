@@ -33,9 +33,22 @@ export interface NavigationState {
   routes: RouteNode[];
 }
 
-export interface ScreenOptions {
+export interface HeaderOptions {
   title?: string;
+  subtitle?: string;
+  largeTitle?: boolean;
   headerShown?: boolean;
+  headerTintColor?: string;
+  headerBackgroundColor?: string;
+  headerTransparent?: boolean;
+  headerBlurEffect?: "systemUltraThin" | "systemThin" | "systemChromatic";
+  headerShadowVisible?: boolean;
+  userInterfaceStyle?: "light" | "dark" | "system";
+  custom?: JSX.Element;
+}
+
+export interface ScreenOptions extends HeaderOptions {
+  // Screen options can include header options and potentially more
 }
 
 export type ScreenOptionsInput =
@@ -63,6 +76,7 @@ export interface NavigationHelpers<ParamList extends RouteParamList> {
   pop(count?: number): void;
   goBack(): void;
   reset(state: NavigationState): void;
+  setOptions(options: Partial<ScreenOptions>): void;
 }
 
 export type RouterAction =

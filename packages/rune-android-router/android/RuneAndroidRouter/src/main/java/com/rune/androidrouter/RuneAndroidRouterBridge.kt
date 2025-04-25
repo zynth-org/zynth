@@ -67,6 +67,33 @@ class RuneAndroidRouterModule(
                     goBack()
                     successResponse()
                 }
+                "setHeaderOptionsForNextScreen" -> {
+                    val headerJson = actualArgs.getOrNull(0) as? String
+                    if (headerJson != null) {
+                        try {
+                            val headerConfig = JSONObject(headerJson)
+                            navigationContainer.setPendingHeaderOptions(headerConfig)
+                            Log.d(TAG, "Header options stored for next screen: $headerConfig")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to parse header options JSON", e)
+                        }
+                    }
+                    successResponse()
+                }
+                "setHeaderOptions" -> {
+                    val routeKey = actualArgs.getOrNull(0) as? String
+                    val headerJson = actualArgs.getOrNull(1) as? String
+                    if (routeKey != null && headerJson != null) {
+                        try {
+                            val headerConfig = JSONObject(headerJson)
+                            navigationContainer.setHeaderOptionsForRoute(routeKey, headerConfig)
+                            Log.d(TAG, "Header options set for route $routeKey: $headerConfig")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to parse header options JSON", e)
+                        }
+                    }
+                    successResponse()
+                }
                 "surfaceReady" -> {
                     val surfaceId = (actualArgs.getOrNull(0) as? Number)?.toInt()
                     if (surfaceId != null) {
@@ -82,6 +109,23 @@ class RuneAndroidRouterModule(
                         RuneNavigationContainer.notifySurfaceDisposed(surfaceId)
                     } else {
                         Log.w(TAG, "surfaceDisposed called without surfaceId")
+                    }
+                    successResponse()
+                }
+                "setInitialScreen" -> {
+                    val screenName = actualArgs.getOrNull(0) as? String
+                    val headerJson = actualArgs.getOrNull(1) as? String
+                    if (screenName != null) {
+                        val headerOptions = headerJson?.let {
+                            try {
+                                JSONObject(it)
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Failed to parse header options for initial screen", e)
+                                null
+                            }
+                        }
+                        navigationContainer.setInitialScreen(screenName, headerOptions)
+                        Log.d(TAG, "Initial screen set to: $screenName")
                     }
                     successResponse()
                 }
