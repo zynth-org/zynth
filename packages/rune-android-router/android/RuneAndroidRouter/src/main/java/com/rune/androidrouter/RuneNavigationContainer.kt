@@ -5,16 +5,17 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewPropertyAnimator
 import android.view.ViewTreeObserver
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.FrameLayout
-import android.widget.LinearLayout
 import androidx.appcompat.widget.Toolbar
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentManager
 import com.rune.androidrouter.R
@@ -244,6 +245,10 @@ class RuneScreenFragment : Fragment() {
     private var startTime: Long = 0 // <--- ADDED: Time measurement variable
     private var hasRunEnterAnimation = false
     private var enterAnimator: ViewPropertyAnimator? = null
+    private var jsRenderRequested = false
+    private var initialLayoutRenderListener: ViewTreeObserver.OnGlobalLayoutListener? = null
+    private var initialLayoutRenderFallback: Runnable? = null
+    private var initialLayoutRenderTarget: RuneRootView? = null
     
     // Public getter for screenName
     val screenName: String?
@@ -333,6 +338,8 @@ class RuneScreenFragment : Fragment() {
             }
         }
         runeRootView?.viewTreeObserver?.addOnGlobalLayoutListener(layoutReadyListener)
+        jsRenderRequested = false
+        clearInitialLayoutRenderWaiters()
 
         RuneNavigationContainer.registerFragmentSurface(surfaceRootId, this)
 
@@ -350,49 +357,80 @@ class RuneScreenFragment : Fragment() {
     
     private fun createViewWithToolbar(contentView: View): View {
         val context = requireContext()
-        
-        // Create container
-        val container = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
+        val toolbarHeightPx = context.resources.getDimensionPixelSize(R.dimen.rune_toolbar_height)
+
+        // Root container overlays the toolbar on top of the Rune surface
+        val container = FrameLayout(context).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
         }
-        
+
         // Create toolbar
         toolbar = Toolbar(context).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                context.resources.getDimensionPixelSize(R.dimen.rune_toolbar_height)
-            )
-            // Set default background to avoid theme color bleeding through
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                toolbarHeightPx
+            ).apply {
+                gravity = Gravity.TOP
+            }
             setBackgroundColor(Color.parseColor("#FFFFFF"))
         }
-        
-        // Apply header options to toolbar
         applyHeaderOptions(toolbar!!)
-        
-        // Wrap RuneRootView in a FrameLayout to avoid LayoutParams cast issues
-        val contentContainer = FrameLayout(context).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                0,
-                1f // weight = 1 to fill remaining space
-            )
-        }
-        
-        // Add content view to the frame container with FrameLayout.LayoutParams
+
+        // Let the Rune surface fill the whole screen; we'll inset its padding so
+        // layout metrics still report the full window height.
         contentView.layoutParams = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT
         )
-        contentContainer.addView(contentView)
-        
-        // Add toolbar and content container to the vertical LinearLayout
+        contentView.setPadding(
+            contentView.paddingLeft,
+            toolbarHeightPx,
+            contentView.paddingRight,
+            contentView.paddingBottom
+        )
+        container.addView(contentView)
         container.addView(toolbar)
-        container.addView(contentContainer)
-        
+
+        // Keep insets flowing so the toolbar can pad for the status bar but the content
+        // still consumes the entire window height beneath it.
+        ViewCompat.setOnApplyWindowInsetsListener(container) { _, insets ->
+            val statusInsets = insets.getInsets(WindowInsetsCompat.Type.statusBars())
+            val navInsets = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
+            val desiredToolbarHeight = toolbarHeightPx + statusInsets.top
+
+            toolbar?.let { bar ->
+                val toolbarParams = bar.layoutParams as FrameLayout.LayoutParams
+                if (toolbarParams.height != desiredToolbarHeight) {
+                    toolbarParams.height = desiredToolbarHeight
+                    bar.layoutParams = toolbarParams
+                }
+                if (bar.paddingTop != statusInsets.top) {
+                    bar.setPadding(
+                        bar.paddingLeft,
+                        statusInsets.top,
+                        bar.paddingRight,
+                        bar.paddingBottom
+                    )
+                }
+            }
+
+            val currentPaddingTop = contentView.paddingTop
+            val currentPaddingBottom = contentView.paddingBottom
+            if (currentPaddingTop != desiredToolbarHeight || currentPaddingBottom != navInsets.bottom) {
+                contentView.setPadding(
+                    contentView.paddingLeft,
+                    desiredToolbarHeight,
+                    contentView.paddingRight,
+                    navInsets.bottom
+                )
+            }
+            insets
+        }
+        ViewCompat.requestApplyInsets(container)
+
         return container
     }
     
@@ -523,17 +561,7 @@ class RuneScreenFragment : Fragment() {
             
             Log.e("RuneScreenFragment", "🔥 [T=${System.currentTimeMillis() - startTime}ms] Evaluating JS to render screen into rootId=${rootView.rootId}") // <--- UPDATED LOG
             
-            if (isInitialScreen) {
-                // For initial screen, wait for layout to complete before rendering JS content
-                rootView.post {
-                    rootView.post {
-                        Log.e("RuneScreenFragment", "🔥 [T=${System.currentTimeMillis() - startTime}ms] Initial screen layout complete, now rendering JS")
-                        runtime.evaluateAsync(jsCode)
-                    }
-                }
-            } else {
-                runtime.evaluateAsync(jsCode)
-            }
+            requestSurfaceRender(runtime, rootView, jsCode)
         }
 
         // <<<--- LINE REMOVED (startEnterTransitionIfNeeded()) ---<<<
@@ -541,6 +569,7 @@ class RuneScreenFragment : Fragment() {
     
     override fun onDestroyView() {
         super.onDestroyView()
+        clearInitialLayoutRenderWaiters()
         
         val runtime = RuneNavigationContainer.getMainRuntime()
         val rootId = runeRootView?.rootId ?: lastSurfaceRootId
@@ -572,6 +601,7 @@ class RuneScreenFragment : Fragment() {
         }
 
         runeRootView = null
+        jsRenderRequested = false
     }
     
     fun getRootView(): RuneRootView? = runeRootView
@@ -685,9 +715,91 @@ class RuneScreenFragment : Fragment() {
         tryStartSurfaceAnimation()
     }
 
-    private fun hasMeasuredSize(): Boolean {
-        val view = runeRootView
-        return view != null && view.width > 0 && view.height > 0
+    private fun hasMeasuredSize(targetView: View? = runeRootView): Boolean {
+        return targetView != null && targetView.width > 0 && targetView.height > 0
+    }
+
+    private fun requestSurfaceRender(
+        runtime: com.rune.kit.runtime.RuneRuntime,
+        rootView: RuneRootView,
+        jsCode: String
+    ) {
+        clearInitialLayoutRenderWaiters()
+
+        if (!isInitialScreen) {
+            dispatchJsRender(runtime, rootView, jsCode, "non-initial screen")
+            return
+        }
+
+        if (hasMeasuredSize(rootView) && ViewCompat.isLaidOut(rootView)) {
+            dispatchJsRender(runtime, rootView, jsCode, "initial layout already measured")
+            return
+        }
+
+        Log.d(
+            "RuneScreenFragment",
+            "🔥 [T=${System.currentTimeMillis() - startTime}ms] Initial layout not ready (w=${rootView.width}, h=${rootView.height}), waiting before rendering JS"
+        )
+
+        val listener = object : ViewTreeObserver.OnGlobalLayoutListener {
+            override fun onGlobalLayout() {
+                if (!hasMeasuredSize(rootView) || !ViewCompat.isLaidOut(rootView)) {
+                    return
+                }
+                dispatchJsRender(runtime, rootView, jsCode, "initial layout ready")
+            }
+        }
+        initialLayoutRenderListener = listener
+        initialLayoutRenderTarget = rootView
+        rootView.viewTreeObserver.addOnGlobalLayoutListener(listener)
+
+        val fallback = Runnable {
+            dispatchJsRender(runtime, rootView, jsCode, "layout timeout")
+        }
+        initialLayoutRenderFallback = fallback
+        rootView.postDelayed(fallback, 300)
+    }
+
+    private fun dispatchJsRender(
+        runtime: com.rune.kit.runtime.RuneRuntime,
+        rootView: RuneRootView,
+        jsCode: String,
+        reason: String
+    ) {
+        if (jsRenderRequested) {
+            Log.d(
+                "RuneScreenFragment",
+                "🔥 [T=${System.currentTimeMillis() - startTime}ms] JS render already requested, skipping ($reason)"
+            )
+            return
+        }
+        clearInitialLayoutRenderWaiters()
+        jsRenderRequested = true
+        Log.e(
+            "RuneScreenFragment",
+            "🔥 [T=${System.currentTimeMillis() - startTime}ms] Rendering JS ($reason) for rootId=${rootView.rootId} size=${rootView.width}x${rootView.height}"
+        )
+        runtime.evaluateAsync(jsCode)
+    }
+
+    private fun clearInitialLayoutRenderWaiters() {
+        val targetView = initialLayoutRenderTarget ?: runeRootView
+
+        initialLayoutRenderListener?.let { listener ->
+            val observer = targetView?.viewTreeObserver
+            if (observer?.isAlive == true) {
+                observer.removeOnGlobalLayoutListener(listener)
+            } else {
+                targetView?.viewTreeObserver?.removeOnGlobalLayoutListener(listener)
+            }
+        }
+        initialLayoutRenderListener = null
+
+        initialLayoutRenderFallback?.let { runnable ->
+            targetView?.removeCallbacks(runnable)
+        }
+        initialLayoutRenderFallback = null
+        initialLayoutRenderTarget = null
     }
 
     private fun tryStartSurfaceAnimation() {
