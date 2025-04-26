@@ -83,7 +83,21 @@ class MainActivity : AppCompatActivity() {
   private fun bootstrapNativeRouter(runtime: RuneRuntime, rootView: RuneRootView): Boolean {
     // TOGGLE THIS FLAG TO TEST MINIMAL FRAGMENT APPROACH
     val USE_MINIMAL_TEST = false
-    
+
+    try {
+      val hostClass = Class.forName("com.rune.androidrouter.RuneAndroidRouterHost")
+      val method = hostClass.getMethod("isAttached")
+      val attached = method.invoke(null) as? Boolean
+      if (attached == true) {
+        Log.i("MainActivity", "RuneAndroidRouter already attached; skipping legacy bootstrap")
+        return true
+      }
+    } catch (_: ClassNotFoundException) {
+      // RuneAndroidRouter not linked; fallthrough to legacy router bootstrap
+    } catch (error: Throwable) {
+      Log.w("MainActivity", "RuneAndroidRouterHost introspection failed", error)
+    }
+
     try {
       if (USE_MINIMAL_TEST) {
         Log.i("MainActivity", "=== USING MINIMAL TEST MODE ===")

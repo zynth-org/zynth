@@ -1,29 +1,17 @@
-import { onMount, onCleanup } from "solid-js";
-import type { StackScreenProps, RouteParamList } from "./types";
-import { registerScreen } from "./context";
-import { useStackId } from "./Stack";
+import type {
+  RouterScreenComponentProps,
+  ScreenComponent,
+  ScreenOptions,
+} from "./types";
 
-export function StackScreen<
-  ParamList extends RouteParamList,
-  RouteName extends keyof ParamList
->(props: StackScreenProps<ParamList, RouteName>) {
-  const stackId = useStackId();
+export interface ScreenProps<Params = any> {
+  name: string;
+  component: ScreenComponent<Params>;
+  options?: ScreenOptions;
+}
 
-  let unregister: (() => void) | undefined;
-
-  onMount(() => {
-    unregister = registerScreen({
-      name: props.name as string,
-      component: props.component,
-      navigatorId: stackId,
-      initialParams: props.initialParams,
-      options: props.options,
-    });
-  });
-
-  onCleanup(() => {
-    unregister?.();
-  });
-
+export function Screen(_props: ScreenProps) {
   return null;
 }
+
+export type { ScreenOptions, ScreenComponent, RouterScreenComponentProps };

@@ -76,10 +76,11 @@ class HermesAdapter(
     val trimmedName = name.trim()
     if (trimmedName.isEmpty()) return
 
-    runOnJS {
-      ensureRuntime()
-      val payloadJson = body?.let { encodePayload(it) }
+    val payloadJson = body?.let { encodePayload(it) }
+    jsHandler.post {
+      if (destroyed || runtimePtr == 0L) return@post
       try {
+        ensureRuntime()
         bridge.emitEvent(runtimePtr, trimmedName, payloadJson)
       } catch (t: Throwable) {
         if (nativeDebugEnabled) Log.e(TAG, "emitEvent($trimmedName) failed", t)

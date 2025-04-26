@@ -51,6 +51,12 @@ function generateAndroidModuleImports(modules) {
 
 function generateAndroidModuleInitializers(modules) {
   const initializers = [];
+  const argMap = {
+    activity: "this",
+    runtime: "runtime",
+    rootView: "root",
+    root: "root",
+  };
   for (const module of modules) {
     if (
       module.initializer &&
@@ -59,8 +65,14 @@ function generateAndroidModuleInitializers(modules) {
     ) {
       const className = module.initializer.className;
       const method = module.initializer.method;
+      const argsSpec = Array.isArray(module.initializer.args)
+        ? module.initializer.args
+        : null;
+      const args = argsSpec && argsSpec.length
+        ? argsSpec.map((token) => argMap[token] || token).join(", ")
+        : "this, runtime";
       initializers.push(
-        `        ${className}.${method}(this, runtime)`,
+        `        ${className}.${method}(${args})`,
         `        Log.d("Rune", "${className} initialized")`
       );
     }

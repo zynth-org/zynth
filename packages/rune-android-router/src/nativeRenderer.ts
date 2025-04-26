@@ -1,160 +1,156 @@
-import { render } from "@rune/core";
-import { createComponent } from "solid-js";
-import {
-  RouteProvider,
-  createRouteContextValue,
-  listRegisteredScreens,
-} from "./context";
-import type { RouteProp, ScreenDescriptor } from "./types";
-import { getNativeRouterDispatch } from "./nativeInterop";
+import { render, setActiveSurface } from "@rune/core";
+import type { HostNode } from "@rune/core";
+import { findScreenDefinition } from "./registry";
+import type { RouterScreenComponentProps, ScreenOptions } from "./types";
+import { goBackNative, navigateNative, setOptionsNative } from "./nativeBridge";
 
-type ScreenInstance = {
-  dispose: () => void;
-};
+const mountedScreens = new Map<number, () => void>();
 
-const mountedScreens = new Map<number, ScreenInstance>();
-const suppressionKey = "__runeSuppressNativeMutations";
-
-function withSuppressedNativeMutations<T>(fn: () => T): T {
-  if (typeof globalThis === "undefined") {
-    return fn();
+function parseParams(raw: unknown): any {
+  if (raw == null) {
+    return undefined;
   }
-
-  const globalObject = globalThis as Record<string, any>;
-  const current = (globalObject[suppressionKey] as number | undefined) ?? 0;
-  globalObject[suppressionKey] = current + 1;
-  try {
-    return fn();
-  } finally {
-    const next =
-      ((globalObject[suppressionKey] as number | undefined) ?? 1) - 1;
-    if (next <= 0) {
-      delete globalObject[suppressionKey];
-    } else {
-      globalObject[suppressionKey] = next;
+  if (typeof raw === "string") {
+    if (raw === "null") return undefined;
+    try {
+      return JSON.parse(raw);
+    } catch (error) {
+      console.warn("[RuneAndroidRouter] Failed to parse params", error);
+      return undefined;
     }
   }
+  return raw;
 }
 
-const logPrefix = "[nativeRenderer]";
+function createNavigationHelpers(routeName: string) {
+  return {
+    navigate: (name: string, params?: any) => navigateNative(name, params),
+    push: (name: string, params?: any) => navigateNative(name, params),
+    goBack: () => goBackNative(),
+    setOptions: (options: ScreenOptions) =>
+      setOptionsNative(options, routeName),
+  };
+}
 
-function resolveScreenDescriptor(
-  screenName: string
-): ScreenDescriptor | undefined {
-  const screens = listRegisteredScreens() as ScreenDescriptor[];
-  return screens.find((screen) => screen.name === screenName);
+function createSurfaceContainer(rootId: number): HostNode {
+  return { id: rootId, type: "root" };
+}
+
+function renderScreen(rootId: number, routeName: string, paramsJson?: any) {
+  console.log(
+    "[RuneAndroidRouter/nativeRenderer] renderScreen",
+    rootId,
+    routeName,
+    paramsJson
+  );
+  const definition = findScreenDefinition(routeName);
+  if (!definition) {
+    console.warn(`[RuneAndroidRouter] Screen ${routeName} is not registered.`);
+    return false;
+  }
+
+  const params = parseParams(paramsJson);
+  const navigation = createNavigationHelpers(routeName);
+  const props: RouterScreenComponentProps<any> = {
+    route: {
+      key: routeName,
+      name: routeName,
+      params,
+    },
+    navigation,
+  };
+
+  const disposePrevious = mountedScreens.get(rootId);
+  if (disposePrevious) {
+    try {
+      disposePrevious();
+    } catch (error) {
+      console.error(
+        "[RuneAndroidRouter] Failed to dispose previous screen",
+        error
+      );
+    }
+  }
+
+  setActiveSurface(rootId);
+  const dispose = render(() => {
+    console.log(
+      "[RuneAndroidRouter/nativeRenderer] invoking component",
+      routeName
+    );
+    try {
+      const element = definition.component(props);
+      console.log(
+        "[RuneAndroidRouter/nativeRenderer] component rendered",
+        routeName,
+        Boolean(element)
+      );
+      return element;
+    } catch (error) {
+      console.error(
+        "[RuneAndroidRouter/nativeRenderer] component threw",
+        routeName,
+        error
+      );
+      throw error;
+    }
+  }, createSurfaceContainer(rootId));
+
+  mountedScreens.set(rootId, () => {
+    console.log(
+      "[RuneAndroidRouter/nativeRenderer] disposing previous render for",
+      rootId
+    );
+    setActiveSurface(rootId);
+    dispose();
+  });
+  return true;
 }
 
 function disposeScreen(rootId: number) {
-  const entry = mountedScreens.get(rootId);
-  if (!entry) return;
+  const dispose = mountedScreens.get(rootId);
+  if (!dispose) {
+    return;
+  }
+  mountedScreens.delete(rootId);
   try {
-    withSuppressedNativeMutations(() => {
-      entry.dispose();
-    });
+    setActiveSurface(rootId);
+    dispose();
   } catch (error) {
-    console.error(
-      `${logPrefix} Failed to dispose screen for rootId=${rootId}`,
-      error
-    );
-  } finally {
-    mountedScreens.delete(rootId);
+    console.error("[RuneAndroidRouter] disposeScreen failed", error);
   }
 }
 
-function renderNativeScreen(rootId: number, screenName: string, params: any) {
-  console.log(
-    `${logPrefix} render request: rootId=${rootId}, screen=${screenName}, params=${JSON.stringify(
-      params
-    )}`
-  );
-  const perfNow = globalThis.performance?.now?.bind(globalThis.performance);
-  const timingLabel = `[router] surface ${rootId} render`;
-  const renderStart = perfNow ? perfNow() : Date.now();
-  const useRuneTimers =
-    typeof (globalThis as any).__runeConsoleTimeStart === "function" &&
-    typeof (globalThis as any).__runeConsoleTimeEnd === "function";
-  if (useRuneTimers) {
-    console.time(timingLabel);
-  }
-
-  const descriptor = resolveScreenDescriptor(screenName);
-  if (!descriptor) {
-    console.error(
-      `${logPrefix} No screen registered with name "${screenName}"`
-    );
-    return;
-  }
-
-  const dispatch = getNativeRouterDispatch();
-  if (!dispatch) {
-    console.error(
-      `${logPrefix} Router dispatch not available. Is NavigationContainer mounted?`
-    );
-    return;
-  }
-
-  const resolvedParams =
-    params ?? descriptor.initialParams ?? (undefined as unknown);
-
-  const route: RouteProp = {
-    key: `${screenName}-${rootId}-${Date.now().toString(36)}`,
-    name: screenName,
-    params: resolvedParams,
-  };
-
-  const routeContext = createRouteContextValue(route, dispatch);
-
-  disposeScreen(rootId);
-
-  const container = { id: rootId, type: "root" } as any;
-
-  try {
-    const tree = () =>
-      createComponent(RouteProvider, {
-        value: routeContext,
-        get children() {
-          return createComponent(descriptor.component, {});
-        },
-      });
-
-    const dispose = render(tree, container) ?? (() => {});
-    mountedScreens.set(rootId, { dispose });
-    const renderEnd = perfNow ? perfNow() : Date.now();
-    const duration = (renderEnd - renderStart).toFixed(2);
-    console.log(
-      `${logPrefix} ✅ Rendered "${screenName}" into rootId=${rootId} in ${duration}ms`
-    );
-  } catch (error) {
-    console.error(`${logPrefix} Failed to render "${screenName}"`, error);
-    disposeScreen(rootId);
-  } finally {
-    if (useRuneTimers) {
-      console.timeEnd(timingLabel);
-    }
-    const renderEnd = perfNow ? perfNow() : Date.now();
-    const duration = (renderEnd - renderStart).toFixed(2);
-    console.log(`${timingLabel}: ${duration}ms`);
-  }
+function getScreenOptions(name: string): ScreenOptions | null {
+  return findScreenDefinition(name)?.options ?? null;
 }
 
-function installNativeRenderer() {
-  if (typeof globalThis === "undefined") {
-    console.warn(`${logPrefix} globalThis unavailable; native renderer inert`);
+function installRenderer() {
+  const globalObj = globalThis as Record<string, any>;
+  if (typeof globalObj.__renderRouterScreen === "function") {
     return;
   }
-
-  const globalObject = globalThis as Record<string, unknown>;
-  (globalObject as any).__renderRouterScreen = (
-    rootId: number,
-    screenName: string,
-    params: any
-  ) => renderNativeScreen(rootId, screenName, params);
-
-  (globalObject as any).__disposeRouterScreen = (rootId: number) =>
-    disposeScreen(rootId);
-
-  console.log(`${logPrefix} ✅ __renderRouterScreen installed`);
+  Object.defineProperties(globalObj, {
+    __renderRouterScreen: {
+      value: renderScreen,
+      enumerable: false,
+      configurable: false,
+      writable: false,
+    },
+    __disposeRouterScreen: {
+      value: disposeScreen,
+      enumerable: false,
+      configurable: false,
+      writable: false,
+    },
+    __getRouterScreenOptions: {
+      value: getScreenOptions,
+      enumerable: false,
+      configurable: false,
+      writable: false,
+    },
+  });
+  console.log("[RuneAndroidRouter] Native router renderer installed");
 }
 
-installNativeRenderer();
+installRenderer();

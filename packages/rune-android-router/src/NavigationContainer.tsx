@@ -1,342 +1,84 @@
 import {
-  createSignal,
-  createEffect,
-  onCleanup,
   ParentComponent,
+  createEffect,
+  createSignal,
+  onCleanup,
 } from "solid-js";
-import type {
-  NavigationState,
-  RouterAction,
-  RouterContextValue,
-} from "./types";
-import {
-  RouterContext,
-  applyScreenOptions,
-  registerScreen,
-  getHeaderOptionsForScreen,
-} from "./context";
-import { setNativeRouterDispatch } from "./nativeInterop";
+import { NavigationContext, createNavigationController } from "./context";
+import { listScreenDefinitions, subscribeScreenRegistry } from "./registry";
+import { registerScreensNative, resetStackNative } from "./nativeBridge";
+import type { NativeScreenRegistration } from "./nativeBridge";
 import "./nativeRenderer";
+import { onStackChanged } from "./events";
 
 export interface NavigationContainerProps {
-  children: any;
-  onReady?: (state: NavigationState | null) => void;
-  suppressSafeAreaWarning?: boolean;
-}
-
-// Get global for module access
-function getGlobalObject(): any {
-  if (typeof globalThis !== "undefined") return globalThis;
-  if (typeof window !== "undefined") return window;
-  if (typeof global !== "undefined") return global;
-  return {};
-}
-
-// Minimal native bridge - tries to connect to native module if available
-function getNativeRouterBridge() {
-  const globalObject = getGlobalObject();
-  const modules = globalObject.__modules;
-
-  // Check if native module is available
-  const hasNativeModule = modules && typeof modules.callSync === "function";
-
-  if (hasNativeModule) {
-    console.log("[RuneAndroidRouter] Native module bridge available");
-
-    const moduleName = "RuneAndroidRouter";
-    const callSync = modules.callSync.bind(modules);
-
-    return {
-      getState: (): NavigationState | null => {
-        try {
-          const result = callSync(moduleName, "getState", []);
-          console.log("[RuneAndroidRouter] getState result:", result);
-          return result as NavigationState | null;
-        } catch (error) {
-          console.warn("[RuneAndroidRouter] getState failed:", error);
-          return null;
-        }
-      },
-      dispatch: (action: RouterAction) => {
-        console.log("[RuneAndroidRouter] Native dispatch:", action);
-        // For minimal version, we handle state locally
-        // Can wire up native dispatch later if needed
-      },
-    };
-  }
-
-  // Fallback for web/dev mode
-  console.log("[RuneAndroidRouter] Using fallback bridge (no native module)");
-  return {
-    getState: (): NavigationState | null => {
-      return null;
-    },
-    dispatch: (action: RouterAction) => {
-      console.log("[RuneAndroidRouter] Fallback dispatch:", action);
-    },
-  };
+  children?: any;
 }
 
 export const NavigationContainer: ParentComponent<NavigationContainerProps> = (
   props
 ) => {
-  const bridge = getNativeRouterBridge();
-  const initialState = bridge.getState();
-  const [state, setState] = createSignal<NavigationState | null>(initialState);
-  let ready = false;
+  const [initialRouteName, setInitialRouteName] = createSignal<
+    string | undefined
+  >();
+  const [registryVersion, setRegistryVersion] = createSignal(0);
+  let bootstrapped = false;
 
   createEffect(() => {
-    const next = state();
-    if (next && props.onReady && !ready) {
-      ready = true;
-      props.onReady(next);
+    const globalObject = globalThis as Record<string, any>;
+    globalObject.__RUNE_NATIVE_ROUTER_ACTIVE = true;
+    return () => {
+      delete globalObject.__RUNE_NATIVE_ROUTER_ACTIVE;
+    };
+  });
+
+  createEffect(() => {
+    setRegistryVersion((value) => value + 1);
+    const unsubscribeRegistry = subscribeScreenRegistry(() => {
+      setRegistryVersion((value) => value + 1);
+    });
+    const unsubscribeStacks = onStackChanged((payload) => {
+      const globalObject = globalThis as Record<string, any>;
+      globalObject.__RUNE_NATIVE_ROUTER_STACK = payload;
+      globalObject.__RUNE_NATIVE_ROUTER_CAN_GO_BACK = payload.canGoBack;
+    });
+    onCleanup(() => {
+      unsubscribeRegistry();
+      unsubscribeStacks();
+    });
+  });
+
+  createEffect(() => {
+    registryVersion();
+    const screens = listScreenDefinitions();
+    console.log(
+      "[RuneAndroidRouter] registry changed",
+      JSON.stringify(screens.map((screen) => screen.name))
+    );
+    if (screens.length === 0) {
+      return;
+    }
+    const payload: NativeScreenRegistration[] = screens.map((screen) => ({
+      name: screen.name,
+      options: screen.options,
+    }));
+    void registerScreensNative(payload);
+
+    const target = initialRouteName() ?? screens[0]?.name;
+    if (!bootstrapped && target) {
+      console.log("[RuneAndroidRouter] issuing reset", target);
+      bootstrapped = true;
+      void resetStackNative(target);
     }
   });
 
-  const dispatch = (action: RouterAction) => {
-    console.log(
-      "[RuneAndroidRouter] Dispatch:",
-      JSON.stringify(action, null, 2)
-    );
-
-    const currentState = state();
-
-    // Call native navigation if available
-    const globalObject = getGlobalObject();
-    const modules = globalObject.__modules;
-    const hasNativeModule = modules && typeof modules.call === "function";
-
-    if (hasNativeModule) {
-      console.log("[RuneAndroidRouter] 🔥 NATIVE MODULE DETECTED");
-
-      // For RESET (initial state), allow JS to render the first screen
-      // For PUSH/POP/NAVIGATE, delegate to native and skip JS rendering
-      if (
-        action.type === "PUSH" ||
-        action.type === "NAVIGATE" ||
-        action.type === "POP" ||
-        action.type === "GO_BACK"
-      ) {
-        console.log(
-          "[RuneAndroidRouter] 🚀 Delegating to NATIVE, skipping JS rendering"
-        );
-        try {
-          switch (action.type) {
-            case "PUSH":
-            case "NAVIGATE":
-              console.log(
-                "[RuneAndroidRouter] 🚀 Calling NATIVE navigate:",
-                action.name
-              );
-
-              // Get and send header options for this screen
-              const headerOptions = getHeaderOptionsForScreen(
-                action.name,
-                currentState?.key
-              );
-              if (headerOptions) {
-                const headerConfig = {
-                  title: headerOptions.title || action.name,
-                  subtitle: headerOptions.subtitle,
-                  headerShown: headerOptions.headerShown !== false,
-                  headerTintColor: headerOptions.headerTintColor,
-                  headerBackgroundColor: headerOptions.headerBackgroundColor,
-                  headerTransparent: headerOptions.headerTransparent || false,
-                  headerShadowVisible:
-                    headerOptions.headerShadowVisible !== false,
-                  userInterfaceStyle:
-                    headerOptions.userInterfaceStyle || "system",
-                  largeTitle: headerOptions.largeTitle || false,
-                };
-
-                try {
-                  modules.call(
-                    "RuneAndroidRouter",
-                    "setHeaderOptionsForNextScreen",
-                    [JSON.stringify(headerConfig)]
-                  );
-                } catch (error) {
-                  console.warn(
-                    "[RuneAndroidRouter] Failed to send header options:",
-                    error
-                  );
-                }
-              }
-
-              modules.call("RuneAndroidRouter", "navigate", [
-                action.name,
-                action.params ? JSON.stringify(action.params) : null,
-              ]);
-              break;
-
-            case "POP":
-            case "GO_BACK":
-              console.log("[RuneAndroidRouter] 🚀 Calling NATIVE goBack");
-              modules.call("RuneAndroidRouter", "goBack", []);
-              break;
-          }
-        } catch (error) {
-          console.error("[RuneAndroidRouter] Native call failed:", error);
-        }
-
-        // DO NOT UPDATE JS STATE - let native handle everything
-        console.log(
-          "[RuneAndroidRouter] ✅ Navigation delegated to native, JS state unchanged"
-        );
-        return;
-      }
-
-      // For RESET, update JS state to render initial screen
-      console.log(
-        "[RuneAndroidRouter] 🔄 RESET action - updating JS state for initial render"
-      );
-    }
-
-    if (!hasNativeModule) {
-      console.warn(
-        "[RuneAndroidRouter] ⚠️ Native module not available, using JS-only fallback"
-      );
-    }
-
-    // Update JS state for RESET or when native is not available
-    switch (action.type) {
-      case "RESET":
-        setState(action.state);
-
-        // Set initial screen as a fragment with header support
-        if (hasNativeModule && action.state.routes.length > 0) {
-          const initialRoute = action.state.routes[0];
-          const headerOptions = getHeaderOptionsForScreen(
-            initialRoute.name,
-            action.state.key
-          );
-          if (headerOptions) {
-            const headerConfig = {
-              title: headerOptions.title || initialRoute.name,
-              subtitle: headerOptions.subtitle,
-              headerShown: headerOptions.headerShown !== false,
-              headerTintColor: headerOptions.headerTintColor,
-              headerBackgroundColor: headerOptions.headerBackgroundColor,
-              headerTransparent: headerOptions.headerTransparent || false,
-              headerShadowVisible: headerOptions.headerShadowVisible !== false,
-              userInterfaceStyle: headerOptions.userInterfaceStyle || "system",
-              largeTitle: headerOptions.largeTitle || false,
-            };
-
-            try {
-              modules.call("RuneAndroidRouter", "setInitialScreen", [
-                initialRoute.name,
-                JSON.stringify(headerConfig),
-              ]);
-              console.log(
-                "[RuneAndroidRouter] Set initial screen with header:",
-                initialRoute.name
-              );
-            } catch (error) {
-              console.warn(
-                "[RuneAndroidRouter] Failed to set initial screen:",
-                error
-              );
-            }
-          } else {
-            // No header options, still set as fragment
-            try {
-              modules.call("RuneAndroidRouter", "setInitialScreen", [
-                initialRoute.name,
-                null,
-              ]);
-              console.log(
-                "[RuneAndroidRouter] Set initial screen without header:",
-                initialRoute.name
-              );
-            } catch (error) {
-              console.warn(
-                "[RuneAndroidRouter] Failed to set initial screen:",
-                error
-              );
-            }
-          }
-        }
-        break;
-
-      case "PUSH":
-        if (currentState) {
-          const newRoute = {
-            key: `${action.name}-${Date.now().toString(36)}`,
-            name: action.name,
-            params: action.params,
-          };
-          setState({
-            ...currentState,
-            index: currentState.routes.length,
-            routes: [...currentState.routes, newRoute],
-          });
-        }
-        break;
-
-      case "POP":
-        if (currentState && currentState.routes.length > 1) {
-          const count = action.count ?? 1;
-          const newRoutes = currentState.routes.slice(0, -count);
-          setState({
-            ...currentState,
-            index: newRoutes.length - 1,
-            routes: newRoutes,
-          });
-        }
-        break;
-
-      case "GO_BACK":
-        if (currentState && currentState.routes.length > 1) {
-          setState({
-            ...currentState,
-            index: currentState.index - 1,
-            routes: currentState.routes.slice(0, -1),
-          });
-        }
-        break;
-
-      case "NAVIGATE":
-        // For now, navigate behaves like push
-        if (currentState) {
-          const existingIndex = currentState.routes.findIndex(
-            (r) => r.name === action.name
-          );
-          if (existingIndex >= 0) {
-            setState({
-              ...currentState,
-              index: existingIndex,
-            });
-          } else {
-            const newRoute = {
-              key: `${action.name}-${Date.now().toString(36)}`,
-              name: action.name,
-              params: action.params,
-            };
-            setState({
-              ...currentState,
-              index: currentState.routes.length,
-              routes: [...currentState.routes, newRoute],
-            });
-          }
-        }
-        break;
-    }
-  };
-
-  setNativeRouterDispatch(dispatch);
-  onCleanup(() => setNativeRouterDispatch(null));
-
-  const context: RouterContextValue = {
-    state,
-    dispatch,
-    setOptions: applyScreenOptions,
-    registerScreen: (descriptor) => registerScreen(descriptor),
-  };
+  const controller = createNavigationController((name) => {
+    setInitialRouteName(name);
+  });
 
   return (
-    <RouterContext.Provider value={context}>
+    <NavigationContext.Provider value={controller}>
       {props.children}
-    </RouterContext.Provider>
+    </NavigationContext.Provider>
   );
 };

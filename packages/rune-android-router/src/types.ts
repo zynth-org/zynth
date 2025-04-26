@@ -1,126 +1,36 @@
-import type { Accessor, Component, JSX } from "solid-js";
+import type { Component } from "solid-js";
 
-// Minimal types for basic routing
-export type RouteParamList = Record<string, object | undefined>;
-
-export type RouteParams<
-  T extends RouteParamList,
-  RouteName extends keyof T
-> = RouteName extends keyof T
-  ? T[RouteName]
-  : Record<string, unknown> | undefined;
-
-export interface RouteProp<
-  ParamList extends RouteParamList = RouteParamList,
-  RouteName extends keyof ParamList = keyof ParamList
-> {
-  key: string;
-  name: RouteName;
-  params: ParamList[RouteName];
-}
-
-export interface RouteNode {
-  key: string;
-  name: string;
-  params?: Record<string, unknown>;
-  state?: NavigationState;
-}
-
-export interface NavigationState {
-  key: string;
-  type: "stack";
-  index: number;
-  routes: RouteNode[];
-}
-
-export interface HeaderOptions {
+export interface ScreenOptions {
   title?: string;
-  subtitle?: string;
-  largeTitle?: boolean;
-  headerShown?: boolean;
   headerTintColor?: string;
   headerBackgroundColor?: string;
-  headerTransparent?: boolean;
-  headerBlurEffect?: "systemUltraThin" | "systemThin" | "systemChromatic";
-  headerShadowVisible?: boolean;
-  userInterfaceStyle?: "light" | "dark" | "system";
-  custom?: JSX.Element;
+  headerShown?: boolean;
 }
 
-export interface ScreenOptions extends HeaderOptions {
-  // Screen options can include header options and potentially more
-}
-
-export type ScreenOptionsInput =
-  | ScreenOptions
-  | (() => ScreenOptions | undefined)
-  | undefined;
-
-export interface ScreenDescriptor {
+export interface RouteDescriptor<Params = any> {
+  key: string;
   name: string;
-  component: Component<any>;
-  navigatorId?: string;
-  initialParams?: Record<string, unknown>;
-  options?: ScreenOptionsInput;
+  params?: Params;
 }
 
-export interface NavigationHelpers<ParamList extends RouteParamList> {
-  navigate<RouteName extends keyof ParamList>(
-    name: RouteName,
-    params?: ParamList[RouteName]
-  ): void;
-  push<RouteName extends keyof ParamList>(
-    name: RouteName,
-    params?: ParamList[RouteName]
-  ): void;
-  pop(count?: number): void;
+export interface NavigationHelpers {
+  navigate<RouteParams = any>(name: string, params?: RouteParams): void;
+  push<RouteParams = any>(name: string, params?: RouteParams): void;
   goBack(): void;
-  reset(state: NavigationState): void;
-  setOptions(options: Partial<ScreenOptions>): void;
+  setOptions(options: ScreenOptions): void;
 }
 
-export type RouterAction =
-  | { type: "PUSH"; name: string; params?: any }
-  | { type: "POP"; count?: number; source?: string }
-  | { type: "NAVIGATE"; name: string; params?: any }
-  | { type: "GO_BACK" }
-  | { type: "RESET"; state: NavigationState };
-
-export interface RouteContextValue<
-  ParamList extends RouteParamList = RouteParamList,
-  RouteName extends keyof ParamList = keyof ParamList
-> {
-  navigation: NavigationHelpers<ParamList>;
-  route: RouteProp<ParamList, RouteName>;
+export interface RouterScreenComponentProps<Params = any> {
+  route: RouteDescriptor<Params>;
+  navigation: NavigationHelpers;
 }
 
-export interface RouterContextValue {
-  state: Accessor<NavigationState | null>;
-  dispatch: (action: RouterAction) => void;
-  setOptions: (key: string, options: ScreenOptions) => void;
-  registerScreen: (descriptor: ScreenDescriptor) => () => void;
-}
+export type ScreenComponent<Params = any> = Component<
+  RouterScreenComponentProps<Params>
+>;
 
-// Component prop types
-export interface StackProps {
-  id?: string;
-  initialRouteName?: string;
-  children?: JSX.Element;
-}
-
-export interface StackScreenProps<
-  ParamList extends RouteParamList,
-  RouteName extends keyof ParamList
-> {
-  name: RouteName;
-  component: Component<any>;
-  initialParams?: ParamList[RouteName];
-  options?: ScreenOptionsInput;
-}
-
-export interface StackComponentType {
-  (props: StackProps): JSX.Element;
-  Screen: <ParamList extends RouteParamList, RouteName extends keyof ParamList>(
-    props: StackScreenProps<ParamList, RouteName>
-  ) => JSX.Element | null;
+export interface ScreenRegistration {
+  name: string;
+  component: ScreenComponent<any>;
+  options?: ScreenOptions;
 }

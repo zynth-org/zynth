@@ -45,7 +45,8 @@
       "initializer": {
         "package": "com.rune.androidrouter",
         "className": "RuneAndroidRouterHost",
-        "method": "bootstrap"
+        "method": "bootstrap",
+        "args": ["activity", "runtime", "rootView"]
       }
     }
   }

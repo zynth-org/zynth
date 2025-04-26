@@ -193,6 +193,7 @@ class RuneRuntime(
   }
 
   fun registerSurface(rootView: RuneRootView) {
+    Log.d(TAG, "registerSurface(rootId=${rootView.rootId})")
     manager.registerSurface(rootView.rootId, rootView)
   }
 
@@ -201,6 +202,7 @@ class RuneRuntime(
   }
 
   fun setActiveSurface(surfaceId: Int) {
+    Log.d(TAG, "setActiveSurface(surfaceId=$surfaceId)")
     manager.setActiveSurface(surfaceId)
   }
 
