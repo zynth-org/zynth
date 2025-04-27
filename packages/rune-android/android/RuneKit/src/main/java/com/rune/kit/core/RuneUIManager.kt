@@ -42,6 +42,7 @@ import java.util.ArrayDeque
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.roundToInt
 
 private const val DEBUG_SCROLL_LAYOUT = false
@@ -94,6 +95,7 @@ class RuneUIManager(
   }
 
   fun registerSurface(surfaceId: Int, surfaceRoot: RuneRootView) = onMain {
+    logSurfaceEvent(surfaceId, "registerSurface", "rootView=${surfaceRoot.hashCode()}")
     registerSurfaceInternal(surfaceId, surfaceRoot)
   }
 
@@ -142,6 +144,7 @@ class RuneUIManager(
   fun setActiveSurface(surfaceId: Int) = onMain {
     if (surfaces.containsKey(surfaceId)) {
       activeSurfaceId = surfaceId
+      logSurfaceEvent(surfaceId, "setActiveSurface", "active=$surfaceId")
     } else {
       Log.w("RuneUI", "Ignoring setActiveSurface for unknown surfaceId=$surfaceId")
     }
@@ -212,6 +215,8 @@ class RuneUIManager(
   private val surfaces = ConcurrentHashMap<Int, SurfaceState>()
   @Volatile private var activeSurfaceId: Int = root.rootId
   private var nextId = root.rootId + 1
+  private val surfaceLogLimit = 200
+  private val surfaceLogCounter = AtomicInteger(0)
 
   private val currentSurface: SurfaceState
     get() = surfaceStateOrNull(activeSurfaceId)
@@ -237,6 +242,17 @@ class RuneUIManager(
 
   private fun surfaceState(id: Int): SurfaceState =
     surfaceStateOrNull(id) ?: throw IllegalStateException("Surface $id not registered")
+
+  private fun logSurfaceEvent(surfaceId: Int, event: String, details: String? = null) {
+    // if (!isNativeDebugEnabled()) return
+    val index = surfaceLogCounter.getAndIncrement()
+    if (index >= surfaceLogLimit) return
+    val suffix = when {
+      details.isNullOrBlank() -> ""
+      else -> " $details"
+    }
+    Log.d("RuneSurface", "[surface=$surfaceId] $event$suffix")
+  }
 
   fun addSurfaceFirstFrameListener(surfaceId: Int, listener: () -> Unit) = onMain {
     val state = surfaceState(surfaceId)
@@ -272,6 +288,11 @@ class RuneUIManager(
 
   private fun registerSurfaceInternal(surfaceId: Int, surfaceRoot: RuneRootView) {
     if (surfaces.containsKey(surfaceId)) return
+
+    // Ensure node ids never collide with the surface root id.
+    if (nextId <= surfaceId) {
+      nextId = surfaceId + 1
+    }
 
     Log.d("RuneUI", "Registering surface $surfaceId")
     
@@ -538,6 +559,7 @@ class RuneUIManager(
   }
 
   override fun createNode(type: String): Int = onMain {
+    val surfaceId = currentSurface.id
     // RECYCLING DISABLED - causing bugs without fixing performance
     // The real issue is elsewhere (scroll offset updates, layout calculations)
     
@@ -545,6 +567,7 @@ class RuneUIManager(
     
     // Create new node from scratch
     val id = nodeFactory.createNode(type)
+    logSurfaceEvent(surfaceId, "createNode", "id=$id type=$type")
     
     totalNodesCreated++
     
@@ -836,6 +859,7 @@ class RuneUIManager(
 
   override fun setProp(nodeId: Int, name: String, jsonValue: String?) = onMain {
     val surface = surfaceStateForNode(nodeId)
+    logSurfaceEvent(surface.id, "setProp", "node=$nodeId name=$name")
     val queue = surface.pendingNativeOperations
     // Fast O(1) property categorization for optimized dispatch
     val category = PropertyCategoryMap.getCategory(name)
@@ -871,6 +895,7 @@ class RuneUIManager(
 
   override fun setText(nodeId: Int, text: String) = onMain {
     val surface = surfaceStateForNode(nodeId)
+    logSurfaceEvent(surface.id, "setText", "node=$nodeId length=${text.length}")
     val queue = surface.pendingNativeOperations
     // Deduplicate: remove any previous setText for same node
     // Use reversed iteration for better performance when removing from end
@@ -891,6 +916,7 @@ class RuneUIManager(
 
   override fun insertChild(parentId: Int, childId: Int, index: Int) = onMain {
     val surface = surfaceStateForParent(parentId)
+    logSurfaceEvent(surface.id, "insertChild", "parent=$parentId child=$childId index=$index")
     
     // Get nodes from the correct surface
     val surfaceNodes = surface.nodes

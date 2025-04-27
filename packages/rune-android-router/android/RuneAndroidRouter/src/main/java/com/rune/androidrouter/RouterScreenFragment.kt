@@ -80,6 +80,7 @@ class RouterScreenFragment : Fragment() {
 
         Log.d(TAG, "registerSurface >>> route=$routeName rootId=${content.rootId}")
         RuneAndroidRouterHost.requireRuntime().registerSurface(content)
+        focusSurface("registered")
         applyOptions(options)
         trackLayout(content)
 
@@ -89,34 +90,40 @@ class RouterScreenFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         Log.d(TAG, "onViewCreated route=$routeName")
+        focusSurface("onViewCreated")
         renderScreen()
     }
 
     override fun onResume() {
         super.onResume()
+        focusSurface("onResume")
         updateToolbarNavigation()
     }
 
     override fun onDestroyView() {
         val root = contentRoot
         val surfaceId = root?.rootId
-        root?.let { RuneAndroidRouterHost.runtimeOrNull()?.unregisterSurface(it.rootId) }
         layoutListener?.let { listener ->
             root?.viewTreeObserver?.removeOnGlobalLayoutListener(listener)
         }
         layoutListener = null
+
+        if (surfaceId != null) {
+            focusSurface(surfaceId, "dispose")
+            sendDispose(surfaceId)
+            RuneAndroidRouterHost.runtimeOrNull()?.unregisterSurface(surfaceId)
+        }
+
         toolbar = null
         appBarLayout = null
         contentRoot = null
-        if (surfaceId != null) {
-            sendDispose(surfaceId)
-        }
         super.onDestroyView()
     }
 
     private fun renderScreen() {
         val runtime = RuneAndroidRouterHost.runtimeOrNull() ?: return
         val root = contentRoot ?: return
+        focusSurface("render")
         val paramsExpression = paramsJson ?: "null"
         Log.d(TAG, "renderScreen route=$routeName rootId=${root.rootId} params=$paramsExpression")
         val nameLiteral = JSONObject.quote(routeName)
@@ -196,6 +203,17 @@ class RouterScreenFragment : Fragment() {
         }
         layoutListener = listener
         root.viewTreeObserver.addOnGlobalLayoutListener(listener)
+    }
+
+    private fun focusSurface(reason: String) {
+        val surfaceId = contentRoot?.rootId ?: return
+        focusSurface(surfaceId, reason)
+    }
+
+    private fun focusSurface(surfaceId: Int, reason: String) {
+        val runtime = RuneAndroidRouterHost.runtimeOrNull() ?: return
+        runtime.setActiveSurface(surfaceId)
+        Log.d(TAG, "focusSurface[$reason] route=$routeName surfaceId=$surfaceId")
     }
 
     companion object {
