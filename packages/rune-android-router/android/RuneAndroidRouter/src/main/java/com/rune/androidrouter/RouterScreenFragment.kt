@@ -9,6 +9,8 @@ import android.view.ViewGroup
 import android.view.ViewTreeObserver
 import android.widget.FrameLayout
 import androidx.appcompat.widget.Toolbar
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
 import com.google.android.material.appbar.AppBarLayout
 import com.google.android.material.appbar.AppBarLayout.LayoutParams as AppBarParams
@@ -47,7 +49,7 @@ class RouterScreenFragment : Fragment() {
         // DON'T set layoutParams on root - Fragment container will apply its own
         val root = android.widget.LinearLayout(context).apply {
             orientation = android.widget.LinearLayout.VERTICAL
-            fitsSystemWindows = true
+            fitsSystemWindows = false
         }
 
         val appBar = AppBarLayout(context)
@@ -77,6 +79,8 @@ class RouterScreenFragment : Fragment() {
         this.toolbar = toolbar
         this.appBarLayout = appBar
         contentRoot = content
+
+        applyStatusBarInsetPadding(root, appBar)
 
         Log.d(TAG, "registerSurface >>> route=$routeName rootId=${content.rootId}")
         RuneAndroidRouterHost.requireRuntime().registerSurface(content)
@@ -203,6 +207,22 @@ class RouterScreenFragment : Fragment() {
         }
         layoutListener = listener
         root.viewTreeObserver.addOnGlobalLayoutListener(listener)
+    }
+
+    private fun applyStatusBarInsetPadding(container: View, appBar: AppBarLayout) {
+        ViewCompat.setOnApplyWindowInsetsListener(container) { _, insets ->
+            val topInset = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
+            if (appBar.paddingTop != topInset) {
+                appBar.setPadding(
+                    appBar.paddingLeft,
+                    topInset,
+                    appBar.paddingRight,
+                    appBar.paddingBottom,
+                )
+            }
+            insets
+        }
+        ViewCompat.requestApplyInsets(container)
     }
 
     private fun focusSurface(reason: String) {
