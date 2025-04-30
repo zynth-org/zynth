@@ -10,22 +10,34 @@ private const val TAG = "RuneAndroidRouter"
 
 data class RouterScreenOptions(
     val title: String? = null,
+    val subtitle: String? = null,
+    val largeTitle: Boolean = false,
+    val headerShown: Boolean = true,
     val headerTintColor: Int? = null,
     val headerBackgroundColor: Int? = null,
-    val headerShown: Boolean = true,
+    val headerTransparent: Boolean = false,
+    val headerShadowVisible: Boolean = true,
 ) {
     fun toBundle(): Bundle = Bundle().apply {
         putString(KEY_TITLE, title)
+        putString(KEY_SUBTITLE, subtitle)
+        putBoolean(KEY_LARGE_TITLE, largeTitle)
+        putBoolean(KEY_HEADER_SHOWN, headerShown)
         headerTintColor?.let { putInt(KEY_HEADER_TINT, it) }
         headerBackgroundColor?.let { putInt(KEY_HEADER_BACKGROUND, it) }
-        putBoolean(KEY_HEADER_SHOWN, headerShown)
+        putBoolean(KEY_HEADER_TRANSPARENT, headerTransparent)
+        putBoolean(KEY_HEADER_SHADOW_VISIBLE, headerShadowVisible)
     }
 
     companion object {
         private const val KEY_TITLE = "title"
+        private const val KEY_SUBTITLE = "subtitle"
+        private const val KEY_LARGE_TITLE = "largeTitle"
+        private const val KEY_HEADER_SHOWN = "headerShown"
         private const val KEY_HEADER_TINT = "headerTint"
         private const val KEY_HEADER_BACKGROUND = "headerBackground"
-        private const val KEY_HEADER_SHOWN = "headerShown"
+        private const val KEY_HEADER_TRANSPARENT = "headerTransparent"
+        private const val KEY_HEADER_SHADOW_VISIBLE = "headerShadowVisible"
 
         fun fromBundle(bundle: Bundle?): RouterScreenOptions {
             if (bundle == null) return RouterScreenOptions()
@@ -33,27 +45,35 @@ data class RouterScreenOptions(
             val hasBackground = bundle.containsKey(KEY_HEADER_BACKGROUND)
             return RouterScreenOptions(
                 title = bundle.getString(KEY_TITLE),
+                subtitle = bundle.getString(KEY_SUBTITLE),
+                largeTitle = bundle.getBoolean(KEY_LARGE_TITLE, false),
+                headerShown = bundle.getBoolean(KEY_HEADER_SHOWN, true),
                 headerTintColor = if (hasTint) bundle.getInt(KEY_HEADER_TINT) else null,
                 headerBackgroundColor = if (hasBackground) bundle.getInt(KEY_HEADER_BACKGROUND) else null,
-                headerShown = bundle.getBoolean(KEY_HEADER_SHOWN, true),
+                headerTransparent = bundle.getBoolean(KEY_HEADER_TRANSPARENT, false),
+                headerShadowVisible = bundle.getBoolean(KEY_HEADER_SHADOW_VISIBLE, true),
             )
         }
 
         fun fromMap(map: Map<String, Any?>?): RouterScreenOptions {
             if (map == null) return RouterScreenOptions()
             val title = map["title"] as? String
-            val headerShown = when (val shown = map["headerShown"]) {
-                is Boolean -> shown
-                is String -> shown.toBooleanStrictOrNull() ?: true
-                else -> true
-            }
+            val subtitle = map["subtitle"] as? String
+            val largeTitle = map["largeTitle"].asBoolean(false)
+            val headerShown = map["headerShown"].asBoolean(true)
+            val headerTransparent = map["headerTransparent"].asBoolean(false)
+            val headerShadowVisible = map["headerShadowVisible"].asBoolean(true)
             val tint = parseColor(map["headerTintColor"])
             val background = parseColor(map["headerBackgroundColor"])
             return RouterScreenOptions(
                 title = title,
+                subtitle = subtitle,
+                largeTitle = largeTitle,
+                headerShown = headerShown,
                 headerTintColor = tint,
                 headerBackgroundColor = background,
-                headerShown = headerShown,
+                headerTransparent = headerTransparent,
+                headerShadowVisible = headerShadowVisible,
             )
         }
 
@@ -162,4 +182,11 @@ private fun Any?.toJsonCompatible(): Any? = when (this) {
         }
     }
     else -> this.toString()
+}
+
+private fun Any?.asBoolean(default: Boolean): Boolean = when (this) {
+    is Boolean -> this
+    is String -> this.toBooleanStrictOrNull() ?: default
+    is Number -> this.toInt() != 0
+    else -> default
 }

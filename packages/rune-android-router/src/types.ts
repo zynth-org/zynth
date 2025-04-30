@@ -2,9 +2,13 @@ import type { Component } from "solid-js";
 
 export interface ScreenOptions {
   title?: string;
+  subtitle?: string;
+  largeTitle?: boolean;
+  headerShown?: boolean;
   headerTintColor?: string;
   headerBackgroundColor?: string;
-  headerShown?: boolean;
+  headerTransparent?: boolean;
+  headerShadowVisible?: boolean;
 }
 
 export interface RouteDescriptor<Params = any> {

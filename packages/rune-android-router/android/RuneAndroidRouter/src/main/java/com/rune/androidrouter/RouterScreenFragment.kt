@@ -9,6 +9,7 @@ import android.view.ViewGroup
 import android.view.ViewTreeObserver
 import android.widget.FrameLayout
 import androidx.appcompat.widget.Toolbar
+import androidx.core.graphics.drawable.DrawableCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
@@ -164,9 +165,17 @@ class RouterScreenFragment : Fragment() {
         val appBar = appBarLayout
         val resolvedTitle = next.title ?: routeName
         toolbar.title = resolvedTitle
+        toolbar.subtitle = next.subtitle
         val tint = next.headerTintColor ?: Color.WHITE
         toolbar.setTitleTextColor(tint)
-        appBar?.setBackgroundColor(next.headerBackgroundColor ?: resolveDefaultAppBarColor())
+        toolbar.setSubtitleTextColor(tint)
+        val backgroundColor = if (next.headerTransparent) {
+            Color.TRANSPARENT
+        } else {
+            next.headerBackgroundColor ?: resolveDefaultAppBarColor()
+        }
+        appBar?.setBackgroundColor(backgroundColor)
+        appBar?.elevation = if (next.headerShadowVisible) defaultAppBarElevation() else 0f
         appBar?.visibility = if (next.headerShown) View.VISIBLE else View.GONE
         updateToolbarNavigation()
     }
@@ -181,6 +190,7 @@ class RouterScreenFragment : Fragment() {
     private fun updateToolbarNavigation() {
         val toolbar = toolbar ?: return
         val canGoBack = parentFragmentManager.backStackEntryCount > 1
+        val tint = options.headerTintColor ?: Color.WHITE
         if (canGoBack) {
             toolbar.setNavigationIcon(androidx.appcompat.R.drawable.abc_ic_ab_back_material)
             toolbar.setNavigationOnClickListener {
@@ -189,6 +199,9 @@ class RouterScreenFragment : Fragment() {
         } else {
             toolbar.navigationIcon = null
             toolbar.setNavigationOnClickListener(null)
+        }
+        toolbar.navigationIcon?.let { icon ->
+            DrawableCompat.wrap(icon).mutate().setTint(tint)
         }
     }
 
@@ -234,6 +247,11 @@ class RouterScreenFragment : Fragment() {
         val runtime = RuneAndroidRouterHost.runtimeOrNull() ?: return
         runtime.setActiveSurface(surfaceId)
         Log.d(TAG, "focusSurface[$reason] route=$routeName surfaceId=$surfaceId")
+    }
+
+    private fun defaultAppBarElevation(): Float {
+        val density = context?.resources?.displayMetrics?.density ?: 0f
+        return 4f * density
     }
 
     companion object {
