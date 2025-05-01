@@ -17,6 +17,9 @@ internal class RuneAndroidRouterBridge(
             "navigate" -> handleNavigate(args)
             "goBack" -> handleGoBack()
             "setOptions" -> handleSetOptions(args)
+            "registerTabs" -> handleRegisterTabs(args)
+            "switchTab" -> handleSwitchTab(args)
+            "setTabOptions" -> handleSetTabOptions(args)
             else -> errorResponse(method, "unsupported_method")
         }
     }
@@ -64,6 +67,40 @@ internal class RuneAndroidRouterBridge(
         val payload = args.firstOrNull().asMap() ?: return errorResponse("setOptions", "invalid_payload")
         val options = RouterScreenOptions.fromMap(payload["options"].asMap())
         navigationContainer.applyOptions(options)
+        return successResponse()
+    }
+
+    private fun handleRegisterTabs(args: Array<Any?>): JSONObject {
+        Log.d(name, "handleRegisterTabs args=${args.contentToString()}")
+        val payload = args.firstOrNull().asMap() ?: return errorResponse("registerTabs", "invalid_payload")
+        val tabEntries = payload["tabs"].asList().orEmpty()
+        val definitions = tabEntries.mapNotNull { entry ->
+            val data = entry.asMap() ?: return@mapNotNull null
+            val tabName = data["name"] as? String ?: return@mapNotNull null
+            val screenOptions = RouterScreenOptions.fromMap(data["options"].asMap())
+            val tabOptions = RouterTabOptions.fromMap(data["tab"].asMap())
+            RouterTabDefinition(tabName, screenOptions, tabOptions)
+        }
+        val initialRoute = payload["initialRouteName"] as? String
+        val tabBarOptions = RouterTabBarOptions.fromMap(payload["tabBarOptions"].asMap())
+        navigationContainer.registerTabs(definitions, initialRoute, tabBarOptions)
+        return successResponse()
+    }
+
+    private fun handleSwitchTab(args: Array<Any?>): JSONObject {
+        Log.d(name, "handleSwitchTab args=${args.contentToString()}")
+        val payload = args.firstOrNull().asMap() ?: return errorResponse("switchTab", "invalid_payload")
+        val tabName = payload["name"] as? String ?: return errorResponse("switchTab", "missing_name")
+        navigationContainer.switchTab(tabName)
+        return successResponse()
+    }
+
+    private fun handleSetTabOptions(args: Array<Any?>): JSONObject {
+        Log.d(name, "handleSetTabOptions args=${args.contentToString()}")
+        val payload = args.firstOrNull().asMap() ?: return errorResponse("setTabOptions", "invalid_payload")
+        val tabName = payload["name"] as? String ?: return errorResponse("setTabOptions", "missing_name")
+        val tabOptions = RouterTabOptions.fromMap(payload["options"].asMap())
+        navigationContainer.setTabOptions(tabName, tabOptions)
         return successResponse()
     }
 

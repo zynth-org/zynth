@@ -1,4 +1,27 @@
-import type { Component } from "solid-js";
+import type { Component, JSX } from "solid-js";
+
+export interface TabIconDescriptor {
+  systemName?: string;
+  assetName?: string;
+  uri?: string;
+}
+
+export interface TabOptions {
+  label?: string;
+  icon?: TabIconDescriptor;
+  badge?: string | number;
+  badgeColor?: string;
+  activeTintColor?: string;
+  inactiveTintColor?: string;
+  tabBarVisible?: boolean;
+  tabBarBackgroundColor?: string;
+  tabBarIndicatorColor?: string;
+  customTab?: JSX.Element;
+}
+
+export interface TabBarOptions {
+  backgroundColor?: string;
+}
 
 export interface ScreenOptions {
   title?: string;
@@ -9,6 +32,7 @@ export interface ScreenOptions {
   headerBackgroundColor?: string;
   headerTransparent?: boolean;
   headerShadowVisible?: boolean;
+  tab?: TabOptions;
 }
 
 export interface RouteDescriptor<Params = any> {

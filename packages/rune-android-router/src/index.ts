@@ -13,3 +13,4 @@ export type {
 export { useNavigation } from "./hooks";
 export { onStackChanged, onBackPress } from "./events";
 export type { StackChangedPayload, BackPressPayload } from "./events";
+export { createBottomTabs } from "./Tabs";

@@ -1,12 +1,8 @@
 package com.rune.androidrouter
 
-import android.graphics.Color
 import android.os.Bundle
-import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
-
-private const val TAG = "RuneAndroidRouter"
 
 data class RouterScreenOptions(
     val title: String? = null,
@@ -59,10 +55,10 @@ data class RouterScreenOptions(
             if (map == null) return RouterScreenOptions()
             val title = map["title"] as? String
             val subtitle = map["subtitle"] as? String
-            val largeTitle = map["largeTitle"].asBoolean(false)
-            val headerShown = map["headerShown"].asBoolean(true)
-            val headerTransparent = map["headerTransparent"].asBoolean(false)
-            val headerShadowVisible = map["headerShadowVisible"].asBoolean(true)
+            val largeTitle = parseBoolean(map["largeTitle"], false)
+            val headerShown = parseBoolean(map["headerShown"], true)
+            val headerTransparent = parseBoolean(map["headerTransparent"], false)
+            val headerShadowVisible = parseBoolean(map["headerShadowVisible"], true)
             val tint = parseColor(map["headerTintColor"])
             val background = parseColor(map["headerBackgroundColor"])
             return RouterScreenOptions(
@@ -77,20 +73,6 @@ data class RouterScreenOptions(
             )
         }
 
-        private fun parseColor(value: Any?): Int? {
-            val candidate = when (value) {
-                null -> return null
-                is String -> value.trim().ifEmpty { return null }
-                is Number -> String.format("#%06X", 0xFFFFFF and value.toInt())
-                else -> value.toString()
-            }
-            return try {
-                Color.parseColor(candidate)
-            } catch (t: Throwable) {
-                Log.w(TAG, "Unable to parse color '$candidate'", t)
-                null
-            }
-        }
     }
 }
 

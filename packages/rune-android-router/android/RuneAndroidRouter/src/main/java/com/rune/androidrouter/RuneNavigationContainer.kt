@@ -10,6 +10,8 @@ import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.FragmentManager
 import androidx.fragment.app.FragmentTransaction
 import androidx.fragment.app.FragmentContainerView
+import androidx.lifecycle.Lifecycle
+import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.rune.kit.core.RuneRootView
 import com.rune.kit.runtime.RuneRuntime
 import org.json.JSONObject
@@ -25,10 +27,12 @@ internal class RuneNavigationContainer(
     private val runtimeRootView: RuneRootView,
 ) : FrameLayout(activity) {
 
-    private val fragmentContainerView: FragmentContainerView = FragmentContainerView(context)
+    private val hostLayout = RuneNavigationHostLayout(activity)
+    private val fragmentContainerView = hostLayout.fragmentContainerView
     private val handler = Handler(Looper.getMainLooper())
     private val screenDefinitions = mutableMapOf<String, RouterScreenDefinition>()
     private val fragmentTagCounter = AtomicInteger(0)
+    private val tabController = RuneTabController()
 
     init {
         (runtimeRootView.parent as? ViewGroup)?.removeView(runtimeRootView)
@@ -36,9 +40,9 @@ internal class RuneNavigationContainer(
         runtimeRootView.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
         runtimeRootView.visibility = View.GONE
         fragmentContainerView.id = View.generateViewId()
-        fragmentContainerView.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
+        hostLayout.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
         addView(runtimeRootView)
-        addView(fragmentContainerView)
+        addView(hostLayout)
         fragmentManager().addOnBackStackChangedListener {
             emitStackSnapshot("backStackChanged")
         }
@@ -106,6 +110,28 @@ internal class RuneNavigationContainer(
             if (existing != null) {
                 screenDefinitions[route] = existing.copy(options = options)
             }
+        }
+    }
+
+    fun registerTabs(
+        definitions: List<RouterTabDefinition>,
+        initialRouteName: String?,
+        navigatorOptions: RouterTabBarOptions?,
+    ) {
+        runOnUiThread {
+            tabController.registerTabs(definitions, initialRouteName, navigatorOptions)
+        }
+    }
+
+    fun switchTab(routeName: String) {
+        runOnUiThread {
+            tabController.switchTab(routeName)
+        }
+    }
+
+    fun setTabOptions(routeName: String, options: RouterTabOptions) {
+        runOnUiThread {
+            tabController.setTabOptions(routeName, options)
         }
     }
 
@@ -190,5 +216,183 @@ internal class RuneNavigationContainer(
         )
         Log.d(TAG, "backPress source=$source handled=$handled")
         runtime.emitEvent(EVENT_BACK_PRESS, payload)
+    }
+
+    private inner class RuneTabController {
+        private val bottomNavigationView = BottomNavigationView(context).apply {
+            visibility = View.GONE
+            setOnItemSelectedListener { item ->
+                if (suppressMenuSelection) return@setOnItemSelectedListener true
+                val route = routeByMenuItem[item.itemId]
+                if (route != null) {
+                    selectTab(route)
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        private val tabDefinitions = linkedMapOf<String, RouterTabDefinition>()
+        private val fragments = mutableMapOf<String, RouterScreenFragment>()
+        private val menuItemIdByRoute = mutableMapOf<String, Int>()
+        private val routeByMenuItem = mutableMapOf<Int, String>()
+        private var selectedRoute: String? = null
+        private var suppressMenuSelection = false
+        private val defaultTabBackground = bottomNavigationView.background
+        private var tabBarOptions: RouterTabBarOptions? = null
+
+        init {
+            hostLayout.setBottomSlotView(bottomNavigationView)
+        }
+
+        fun registerTabs(
+            definitions: List<RouterTabDefinition>,
+            initialRouteName: String?,
+            navigatorOptions: RouterTabBarOptions?,
+        ) {
+            clearFragments()
+            tabDefinitions.clear()
+            menuItemIdByRoute.clear()
+            routeByMenuItem.clear()
+            tabBarOptions = navigatorOptions
+
+            if (definitions.isEmpty()) {
+                bottomNavigationView.menu.clear()
+                bottomNavigationView.visibility = View.GONE
+                selectedRoute = null
+                applyTabBarAppearance(null)
+                return
+            }
+
+            definitions.forEach { definition ->
+                tabDefinitions[definition.routeName] = definition
+            }
+            rebuildMenu(definitions)
+            val target = initialRouteName?.takeIf { tabDefinitions.containsKey(it) }
+                ?: tabDefinitions.keys.firstOrNull()
+            applyTabBarAppearance(target)
+            if (target != null) {
+                selectTab(target)
+            }
+        }
+
+        fun switchTab(routeName: String) {
+            if (!tabDefinitions.containsKey(routeName)) {
+                Log.w(TAG, "Attempted to switch to unknown tab $routeName")
+                return
+            }
+            selectTab(routeName)
+        }
+
+        fun setTabOptions(routeName: String, options: RouterTabOptions) {
+            val existing = tabDefinitions[routeName] ?: return
+            tabDefinitions[routeName] = existing.copy(tabOptions = options)
+            menuItemIdByRoute[routeName]?.let { menuId ->
+                bottomNavigationView.menu.findItem(menuId)?.title = options.label ?: existing.routeName
+            }
+            if (selectedRoute == routeName) {
+                updateTabBarVisibility(routeName)
+                applyTabBarAppearance(routeName)
+            }
+        }
+
+        private fun rebuildMenu(definitions: List<RouterTabDefinition>) {
+            bottomNavigationView.menu.clear()
+            definitions.forEachIndexed { index, definition ->
+                val menuId = View.generateViewId()
+                menuItemIdByRoute[definition.routeName] = menuId
+                routeByMenuItem[menuId] = definition.routeName
+                val label = definition.tabOptions.label ?: definition.routeName
+                bottomNavigationView.menu.add(0, menuId, index, label)
+            }
+        }
+
+        private fun selectTab(routeName: String) {
+            if (selectedRoute == routeName) {
+                updateTabBarVisibility(routeName)
+                return
+            }
+            val definition = tabDefinitions[routeName] ?: return
+            val targetFragment = fragments[routeName] ?: RouterScreenFragment.newInstance(
+                RouterScreenRequest(
+                    definition.routeName,
+                    null,
+                    definition.screenOptions,
+                )
+            ).also {
+                fragments[routeName] = it
+            }
+
+            val transaction = fragmentManager().beginTransaction()
+            fragments.values.forEach { fragment ->
+                if (fragment !== targetFragment) {
+                    transaction.hide(fragment)
+                    transaction.setMaxLifecycle(fragment, Lifecycle.State.STARTED)
+                }
+            }
+            if (!targetFragment.isAdded) {
+                transaction.add(
+                    fragmentContainerView.id,
+                    targetFragment,
+                    "rune-tab-${routeName}"
+                )
+            }
+            transaction.show(targetFragment)
+            transaction.setMaxLifecycle(targetFragment, Lifecycle.State.RESUMED)
+            transaction.commitNowAllowingStateLoss()
+
+            selectedRoute = routeName
+            menuItemIdByRoute[routeName]?.let { menuId ->
+                suppressMenuSelection = true
+                bottomNavigationView.selectedItemId = menuId
+                suppressMenuSelection = false
+            }
+            updateTabBarVisibility(routeName)
+            applyTabBarAppearance(routeName)
+        }
+
+        private fun clearFragments() {
+            if (fragments.isEmpty()) {
+                return
+            }
+            val transaction = fragmentManager().beginTransaction()
+            fragments.values.forEach { fragment ->
+                transaction.remove(fragment)
+            }
+            transaction.commitNowAllowingStateLoss()
+            fragments.clear()
+            selectedRoute = null
+            applyTabBarAppearance(null)
+        }
+
+        private fun updateTabBarVisibility(routeName: String) {
+            if (!tabDefinitions.containsKey(routeName)) {
+                bottomNavigationView.visibility = View.GONE
+                return
+            }
+            val shouldBeVisible = tabDefinitions[routeName]?.tabOptions?.tabBarVisible ?: true
+            val targetVisibility = if (shouldBeVisible && tabDefinitions.isNotEmpty()) {
+                View.VISIBLE
+            } else {
+                View.GONE
+            }
+            if (bottomNavigationView.visibility != targetVisibility) {
+                bottomNavigationView.visibility = targetVisibility
+            }
+        }
+
+        private fun applyTabBarAppearance(routeName: String?) {
+            val perRoute = routeName?.let { tabDefinitions[it]?.tabOptions?.tabBarBackgroundColor }
+            val resolvedColor = perRoute ?: tabBarOptions?.backgroundColor
+            if (resolvedColor != null) {
+                bottomNavigationView.setBackgroundColor(resolvedColor)
+            } else {
+                val background = defaultTabBackground?.constantState?.newDrawable()?.mutate()
+                if (background != null) {
+                    bottomNavigationView.background = background
+                }
+            }
+        }
     }
 }

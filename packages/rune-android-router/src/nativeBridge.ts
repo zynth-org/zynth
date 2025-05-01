@@ -1,4 +1,4 @@
-import type { ScreenOptions } from "./types";
+import type { ScreenOptions, TabBarOptions, TabOptions } from "./types";
 
 const MODULE_NAME = "RuneAndroidRouter";
 
@@ -39,6 +39,19 @@ export interface NativeScreenRegistration {
   options?: ScreenOptions;
 }
 
+export interface NativeTabDefinition {
+  name: string;
+  options?: ScreenOptions;
+  tab?: TabOptions;
+}
+
+export interface RegisterTabsPayload {
+  navigatorId?: string;
+  initialRouteName?: string;
+  tabBarOptions?: TabBarOptions;
+  tabs: NativeTabDefinition[];
+}
+
 export function registerScreensNative(screens: NativeScreenRegistration[]) {
   return callNative("registerScreens", { screens });
 }
@@ -60,4 +73,16 @@ export function setOptionsNative(
   routeName?: string
 ) {
   return callNative("setOptions", { routeName, options });
+}
+
+export function registerTabsNative(payload: RegisterTabsPayload) {
+  return callNative("registerTabs", payload);
+}
+
+export function switchTabNative(name: string) {
+  return callNative("switchTab", { name });
+}
+
+export function setTabOptionsNative(name: string, options?: TabOptions) {
+  return callNative("setTabOptions", { name, options });
 }
