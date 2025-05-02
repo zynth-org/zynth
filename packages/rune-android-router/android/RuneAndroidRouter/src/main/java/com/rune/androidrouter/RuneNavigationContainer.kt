@@ -1,21 +1,29 @@
 package com.rune.androidrouter
 
+import android.content.res.ColorStateList
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
+import android.view.Gravity
 import android.widget.FrameLayout
+import android.graphics.Color
 import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.FragmentManager
 import androidx.fragment.app.FragmentTransaction
 import androidx.fragment.app.FragmentContainerView
 import androidx.lifecycle.Lifecycle
 import com.google.android.material.bottomnavigation.BottomNavigationView
+import com.google.android.material.navigation.NavigationBarItemView
+import com.google.android.material.navigation.NavigationBarMenuView
+import com.google.android.material.navigation.NavigationBarView
+import com.google.android.material.color.MaterialColors
 import com.rune.kit.core.RuneRootView
 import com.rune.kit.runtime.RuneRuntime
 import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.math.roundToInt
 
 private const val TAG = "RuneAndroidRouter"
 private const val EVENT_STACK_CHANGED = "rune.androidRouter.stackChanged"
@@ -243,9 +251,11 @@ internal class RuneNavigationContainer(
         private val defaultTabBackground = bottomNavigationView.background
         private var tabBarOptions: RouterTabBarOptions? = null
         private var bottomInset = 0
+        private val iconHostsByRoute = mutableMapOf<String, RuneTabIconHostView>()
 
         init {
             hostLayout.setBottomSlotView(bottomNavigationView)
+            bottomNavigationView.labelVisibilityMode = NavigationBarView.LABEL_VISIBILITY_LABELED
         }
 
         fun onBottomInsetChanged(inset: Int) {
@@ -262,6 +272,10 @@ internal class RuneNavigationContainer(
             tabDefinitions.clear()
             menuItemIdByRoute.clear()
             routeByMenuItem.clear()
+            iconHostsByRoute.values.forEach { host ->
+                removeHostView(host)
+            }
+            iconHostsByRoute.clear()
             tabBarOptions = navigatorOptions
 
             if (definitions.isEmpty()) {
@@ -269,6 +283,7 @@ internal class RuneNavigationContainer(
                 bottomNavigationView.visibility = View.GONE
                 selectedRoute = null
                 applyTabBarAppearance(null)
+                updateNavigationColors()
                 return
             }
 
@@ -279,6 +294,8 @@ internal class RuneNavigationContainer(
             val target = initialRouteName?.takeIf { tabDefinitions.containsKey(it) }
                 ?: tabDefinitions.keys.firstOrNull()
             applyTabBarAppearance(target)
+            refreshTabIcons()
+            updateNavigationColors()
             if (target != null) {
                 selectTab(target)
             }
@@ -302,6 +319,8 @@ internal class RuneNavigationContainer(
                 updateTabBarVisibility(routeName)
                 applyTabBarAppearance(routeName)
             }
+            refreshTabIcons()
+            updateNavigationColors()
         }
 
         private fun rebuildMenu(definitions: List<RouterTabDefinition>) {
@@ -371,6 +390,11 @@ internal class RuneNavigationContainer(
             fragments.clear()
             selectedRoute = null
             applyTabBarAppearance(null)
+            iconHostsByRoute.values.forEach { host ->
+                removeHostView(host)
+            }
+            iconHostsByRoute.clear()
+            updateNavigationColors()
         }
 
         private fun updateTabBarVisibility(routeName: String) {
@@ -409,6 +433,129 @@ internal class RuneNavigationContainer(
                 bottomNavigationView.paddingRight,
                 bottomInset,
             )
+        }
+
+        private fun refreshTabIcons() {
+            val menuView = bottomNavigationView.getChildAt(0) as? NavigationBarMenuView ?: return
+            for (index in 0 until menuView.childCount) {
+                val itemView = menuView.getChildAt(index) as? NavigationBarItemView ?: continue
+                val menuItem = bottomNavigationView.menu.getItem(index)
+                val route = routeByMenuItem[menuItem.itemId] ?: continue
+                val descriptor = tabDefinitions[route]?.tabOptions?.icon
+                if (descriptor?.runeId != null) {
+                    val host = ensureHostView(itemView)
+                    iconHostsByRoute[route] = host
+                    host.bindIcon(descriptor.runeId)
+                } else {
+                    iconHostsByRoute.remove(route)?.let { host ->
+                        removeHostView(host)
+                    }
+                    restoreDefaultIconView(itemView)
+                }
+            }
+        }
+
+        private fun ensureHostView(itemView: NavigationBarItemView): RuneTabIconHostView {
+            val container = itemView.findViewById<ViewGroup>(
+                com.google.android.material.R.id.navigation_bar_item_icon_container,
+            ) ?: itemView
+            val iconView = container.findViewById<View>(
+                com.google.android.material.R.id.navigation_bar_item_icon_view,
+            )
+            val existing = container.findViewWithTag<RuneTabIconHostView>("rune-tab-icon-host")
+            if (existing != null) {
+                hideDefaultIconView(container)
+                existing.visibility = View.VISIBLE
+                return existing
+            }
+            val host = RuneTabIconHostView(container.context).apply {
+                tag = "rune-tab-icon-host"
+            }
+            val layoutParams = when (val params = iconView?.layoutParams) {
+                is FrameLayout.LayoutParams -> FrameLayout.LayoutParams(params).apply {
+                    gravity = params.gravity
+                }
+                is ViewGroup.LayoutParams -> ViewGroup.LayoutParams(params)
+                else -> FrameLayout.LayoutParams(dpToPx(24), dpToPx(24)).apply {
+                    gravity = Gravity.CENTER
+                }
+            }
+            host.layoutParams = layoutParams
+            host.minimumWidth = iconView?.measuredWidth ?: dpToPx(24)
+            host.minimumHeight = iconView?.measuredHeight ?: dpToPx(24)
+            hideDefaultIconView(container)
+            container.addView(host)
+            container.requestLayout()
+            return host
+        }
+
+        private fun removeHostView(hostView: RuneTabIconHostView) {
+            hostView.dispose()
+            val parent = hostView.parent as? ViewGroup ?: return
+            parent.removeView(hostView)
+        }
+
+        private fun hideDefaultIconView(container: ViewGroup) {
+            val iconView = container.findViewById<View>(
+                com.google.android.material.R.id.navigation_bar_item_icon_view,
+            )
+            iconView?.visibility = View.INVISIBLE
+        }
+
+        private fun restoreDefaultIconView(itemView: NavigationBarItemView) {
+            val container = itemView.findViewById<ViewGroup>(
+                com.google.android.material.R.id.navigation_bar_item_icon_container,
+            ) ?: return
+            val iconView = container.findViewById<View>(
+                com.google.android.material.R.id.navigation_bar_item_icon_view,
+            )
+            iconView?.visibility = View.VISIBLE
+            container.findViewWithTag<RuneTabIconHostView>("rune-tab-icon-host")?.let { host ->
+                removeHostView(host)
+            }
+        }
+
+        private fun updateNavigationColors() {
+            val activeColor = resolveActiveColor()
+            val inactiveColor = resolveInactiveColor()
+            val states = arrayOf(
+                intArrayOf(android.R.attr.state_checked),
+                intArrayOf(-android.R.attr.state_checked),
+            )
+            val colors = intArrayOf(activeColor, inactiveColor)
+            val colorStateList = ColorStateList(states, colors)
+            bottomNavigationView.itemTextColor = colorStateList
+            bottomNavigationView.itemIconTintList = colorStateList
+        }
+
+        private fun resolveActiveColor(): Int {
+            val custom = resolveColorFromTabs { options -> options?.activeTintColor }
+            return custom ?: MaterialColors.getColor(
+                bottomNavigationView,
+                com.google.android.material.R.attr.colorPrimary,
+                Color.WHITE,
+            )
+        }
+
+        private fun resolveInactiveColor(): Int {
+            val custom = resolveColorFromTabs { options -> options?.inactiveTintColor }
+            return custom ?: MaterialColors.getColor(
+                bottomNavigationView,
+                com.google.android.material.R.attr.colorOnSurfaceVariant,
+                Color.GRAY,
+            )
+        }
+
+        private fun resolveColorFromTabs(selector: (RouterTabOptions?) -> Int?): Int? {
+            tabDefinitions.values.forEach { definition ->
+                selector(definition.tabOptions)?.let { return it }
+            }
+            return null
+        }
+
+        private fun dpToPx(dp: Int): Int {
+            val metrics = context.resources.displayMetrics
+            return (dp * metrics.density).roundToInt()
         }
     }
 }

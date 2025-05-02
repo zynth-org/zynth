@@ -4,6 +4,7 @@ internal data class TabIconDescriptor(
     val systemName: String? = null,
     val assetName: String? = null,
     val uri: String? = null,
+    val runeId: String? = null,
 )
 
 internal data class RouterTabOptions(
@@ -26,6 +27,7 @@ internal data class RouterTabOptions(
                     systemName = icon["systemName"] as? String,
                     assetName = icon["assetName"] as? String,
                     uri = icon["uri"] as? String,
+                    runeId = icon["runeId"] as? String,
                 )
             }
             val badgeValue = parseBadge(map["badge"])

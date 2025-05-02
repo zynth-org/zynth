@@ -4,11 +4,14 @@ export interface TabIconDescriptor {
   systemName?: string;
   assetName?: string;
   uri?: string;
+  runeId?: string;
 }
+
+export type TabIconInput = TabIconDescriptor | JSX.Element;
 
 export interface TabOptions {
   label?: string;
-  icon?: TabIconDescriptor;
+  icon?: TabIconInput;
   badge?: string | number;
   badgeColor?: string;
   activeTintColor?: string;
@@ -17,6 +20,11 @@ export interface TabOptions {
   tabBarBackgroundColor?: string;
   tabBarIndicatorColor?: string;
   customTab?: JSX.Element;
+}
+
+export interface NativeTabOptions
+  extends Omit<TabOptions, "icon" | "customTab"> {
+  icon?: TabIconDescriptor;
 }
 
 export interface TabBarOptions {
