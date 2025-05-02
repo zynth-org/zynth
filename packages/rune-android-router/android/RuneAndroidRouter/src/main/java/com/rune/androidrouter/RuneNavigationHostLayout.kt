@@ -101,8 +101,8 @@ internal class RuneNavigationHostLayout(context: Context) : FrameLayout(context)
     private fun updateFragmentInsets() {
         val bottomPadding = bottomHeight + navBarInset
         val hasBottomView = currentBottomView != null
-        val paddedBottomHeight = if (hasBottomView) bottomHeight + navBarInset else 0
-        fragmentContainerView.setPadding(0, topHeight, 0, paddedBottomHeight)
+        val contentBottomPadding = if (hasBottomView) bottomHeight else 0
+        fragmentContainerView.setPadding(0, topHeight, 0, contentBottomPadding)
         val slotPaddingBottom = if (hasBottomView) navBarInset else 0
         if (bottomSlot.paddingBottom != slotPaddingBottom) {
             bottomSlot.setPadding(
