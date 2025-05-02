@@ -43,6 +43,7 @@ internal class RuneNavigationContainer(
         hostLayout.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
         addView(runtimeRootView)
         addView(hostLayout)
+        hostLayout.setBottomInsetListener(tabController::onBottomInsetChanged)
         fragmentManager().addOnBackStackChangedListener {
             emitStackSnapshot("backStackChanged")
         }
@@ -241,9 +242,15 @@ internal class RuneNavigationContainer(
         private var suppressMenuSelection = false
         private val defaultTabBackground = bottomNavigationView.background
         private var tabBarOptions: RouterTabBarOptions? = null
+        private var bottomInset = 0
 
         init {
             hostLayout.setBottomSlotView(bottomNavigationView)
+        }
+
+        fun onBottomInsetChanged(inset: Int) {
+            bottomInset = inset
+            applyBottomInsetPadding()
         }
 
         fun registerTabs(
@@ -393,6 +400,15 @@ internal class RuneNavigationContainer(
                     bottomNavigationView.background = background
                 }
             }
+        }
+
+        private fun applyBottomInsetPadding() {
+            bottomNavigationView.setPadding(
+                bottomNavigationView.paddingLeft,
+                bottomNavigationView.paddingTop,
+                bottomNavigationView.paddingRight,
+                bottomInset,
+            )
         }
     }
 }

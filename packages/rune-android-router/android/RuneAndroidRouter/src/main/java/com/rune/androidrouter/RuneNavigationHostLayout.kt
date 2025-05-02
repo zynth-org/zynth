@@ -22,6 +22,7 @@ internal class RuneNavigationHostLayout(context: Context) : FrameLayout(context)
     private var bottomListener: View.OnLayoutChangeListener? = null
     private var currentTopView: View? = null
     private var currentBottomView: View? = null
+    private var bottomInsetListener: ((Int) -> Unit)? = null
 
     init {
         clipToPadding = false
@@ -54,6 +55,11 @@ internal class RuneNavigationHostLayout(context: Context) : FrameLayout(context)
             insets
         }
         ViewCompat.requestApplyInsets(this)
+    }
+
+    fun setBottomInsetListener(listener: ((Int) -> Unit)?) {
+        bottomInsetListener = listener
+        listener?.invoke(navBarInset)
     }
 
     fun setTopSlotView(view: View?) {
@@ -99,18 +105,9 @@ internal class RuneNavigationHostLayout(context: Context) : FrameLayout(context)
     }
 
     private fun updateFragmentInsets() {
-        val bottomPadding = bottomHeight + navBarInset
         val hasBottomView = currentBottomView != null
         val contentBottomPadding = if (hasBottomView) bottomHeight else 0
         fragmentContainerView.setPadding(0, topHeight, 0, contentBottomPadding)
-        val slotPaddingBottom = if (hasBottomView) navBarInset else 0
-        if (bottomSlot.paddingBottom != slotPaddingBottom) {
-            bottomSlot.setPadding(
-                bottomSlot.paddingLeft,
-                bottomSlot.paddingTop,
-                bottomSlot.paddingRight,
-                slotPaddingBottom,
-            )
-        }
+        bottomInsetListener?.invoke(if (hasBottomView) navBarInset else 0)
     }
 }
