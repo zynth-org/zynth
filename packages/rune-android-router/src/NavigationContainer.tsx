@@ -9,6 +9,7 @@ import { listScreenDefinitions, subscribeScreenRegistry } from "./registry";
 import { registerScreensNative, resetStackNative } from "./nativeBridge";
 import type { NativeScreenRegistration } from "./nativeBridge";
 import "./nativeRenderer";
+import "./tabIconRenderer";
 import { onStackChanged } from "./events";
 
 export interface NavigationContainerProps {

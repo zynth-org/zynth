@@ -1,6 +1,7 @@
 import { render, setActiveSurface } from "@rune/core";
 import type { HostNode } from "@rune/core";
 import { getTabIconFactory } from "./tabIconRegistry";
+import { TabIconWrapper } from "./tabIconWrapper";
 
 const mountedIcons = new Map<number, () => void>();
 
@@ -17,8 +18,16 @@ function renderTabIcon(surfaceId: number, iconId: string) {
 
   mountedIcons.get(surfaceId)?.();
 
+  console.log(
+    "[RuneAndroidRouter/nativeRenderer] renderTabIcon",
+    surfaceId,
+    iconId
+  );
   setActiveSurface(surfaceId);
-  const dispose = render(factory, createSurfaceContainer(surfaceId));
+  const dispose = render(
+    () => <TabIconWrapper>{factory()}</TabIconWrapper>,
+    createSurfaceContainer(surfaceId)
+  );
   mountedIcons.set(surfaceId, () => {
     setActiveSurface(surfaceId);
     dispose();
@@ -38,7 +47,7 @@ function disposeTabIcon(surfaceId: number) {
   }
 }
 
-function installIconRenderer() {
+export function installIconRenderer() {
   const globalObj = globalThis as Record<string, unknown>;
   if (typeof globalObj.__renderTabIcon === "function") {
     return;

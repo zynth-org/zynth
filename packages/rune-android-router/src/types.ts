@@ -7,7 +7,9 @@ export interface TabIconDescriptor {
   runeId?: string;
 }
 
-export type TabIconInput = TabIconDescriptor | JSX.Element;
+export type TabIconFactory = () => JSX.Element;
+
+export type TabIconInput = TabIconDescriptor | TabIconFactory;
 
 export interface TabOptions {
   label?: string;

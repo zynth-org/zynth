@@ -465,28 +465,40 @@ internal class RuneNavigationContainer(
             val existing = container.findViewWithTag<RuneTabIconHostView>("rune-tab-icon-host")
             if (existing != null) {
                 hideDefaultIconView(container)
+                val size = resolveIconSize(iconView)
+                existing.updateDesiredSize(size.first, size.second)
                 existing.visibility = View.VISIBLE
                 return existing
             }
             val host = RuneTabIconHostView(container.context).apply {
                 tag = "rune-tab-icon-host"
             }
-            val layoutParams = when (val params = iconView?.layoutParams) {
-                is FrameLayout.LayoutParams -> FrameLayout.LayoutParams(params).apply {
-                    gravity = params.gravity
-                }
-                is ViewGroup.LayoutParams -> ViewGroup.LayoutParams(params)
-                else -> FrameLayout.LayoutParams(dpToPx(24), dpToPx(24)).apply {
-                    gravity = Gravity.CENTER
-                }
+            val size = resolveIconSize(iconView)
+            val layoutParams = FrameLayout.LayoutParams(size.first, size.second).apply {
+                gravity = (iconView?.layoutParams as? FrameLayout.LayoutParams)?.gravity ?: Gravity.CENTER
             }
             host.layoutParams = layoutParams
-            host.minimumWidth = iconView?.measuredWidth ?: dpToPx(24)
-            host.minimumHeight = iconView?.measuredHeight ?: dpToPx(24)
+            host.minimumWidth = size.first
+            host.minimumHeight = size.second
+            host.updateDesiredSize(size.first, size.second)
             hideDefaultIconView(container)
             container.addView(host)
             container.requestLayout()
             return host
+        }
+
+        private fun resolveIconSize(iconView: View?): Pair<Int, Int> {
+            val width = maxOf(
+                iconView?.measuredWidth ?: 0,
+                iconView?.layoutParams?.width?.takeIf { it > 0 } ?: 0,
+                dpToPx(24),
+            )
+            val height = maxOf(
+                iconView?.measuredHeight ?: 0,
+                iconView?.layoutParams?.height?.takeIf { it > 0 } ?: 0,
+                dpToPx(24),
+            )
+            return width to height
         }
 
         private fun removeHostView(hostView: RuneTabIconHostView) {

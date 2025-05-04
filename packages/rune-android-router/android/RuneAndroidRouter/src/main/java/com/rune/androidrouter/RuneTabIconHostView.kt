@@ -3,6 +3,7 @@ package com.rune.androidrouter
 import android.content.Context
 import android.util.AttributeSet
 import android.util.Log
+import android.util.TypedValue
 import android.widget.FrameLayout
 import com.rune.kit.core.RuneRootView
 import org.json.JSONObject
@@ -16,6 +17,8 @@ class RuneTabIconHostView @JvmOverloads constructor(
 
     private val iconRoot = RuneRootView(context)
     private var surfaceId: Int? = null
+    private var desiredWidthPx: Int = dpToPx(24)
+    private var desiredHeightPx: Int = dpToPx(24)
 
     init {
         layoutParams = LayoutParams(
@@ -30,6 +33,28 @@ class RuneTabIconHostView @JvmOverloads constructor(
             ),
         )
         registerSurfaceIfNeeded()
+    }
+
+    fun updateDesiredSize(widthPx: Int, heightPx: Int) {
+        if (widthPx <= 0 || heightPx <= 0) {
+            return
+        }
+        if (desiredWidthPx != widthPx || desiredHeightPx != heightPx) {
+            desiredWidthPx = widthPx
+            desiredHeightPx = heightPx
+            requestLayout()
+        }
+    }
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val resolvedWidth = resolveSize(desiredWidthPx, widthMeasureSpec)
+        val resolvedHeight = resolveSize(desiredHeightPx, heightMeasureSpec)
+        val childWidthSpec = MeasureSpec.makeMeasureSpec(resolvedWidth, MeasureSpec.EXACTLY)
+        val childHeightSpec = MeasureSpec.makeMeasureSpec(resolvedHeight, MeasureSpec.EXACTLY)
+        for (index in 0 until childCount) {
+            getChildAt(index).measure(childWidthSpec, childHeightSpec)
+        }
+        setMeasuredDimension(resolvedWidth, resolvedHeight)
     }
 
     fun bindIcon(runeId: String?) {
@@ -94,5 +119,10 @@ class RuneTabIconHostView @JvmOverloads constructor(
             })();
         """.trimIndent()
         runtime.evaluateAsync(script)
+    }
+
+    private fun dpToPx(dp: Int): Int {
+        val metrics = context.resources.displayMetrics
+        return TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, dp.toFloat(), metrics).toInt()
     }
 }

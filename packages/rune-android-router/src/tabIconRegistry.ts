@@ -1,10 +1,9 @@
 import type { JSX } from "solid-js";
+import type { TabIconFactory } from "./types";
 
-type IconFactory = () => JSX.Element;
+const iconRegistry = new Map<string, TabIconFactory>();
 
-const iconRegistry = new Map<string, IconFactory>();
-
-export function registerTabIcon(iconId: string, factory: IconFactory): () => void {
+export function registerTabIcon(iconId: string, factory: TabIconFactory): () => void {
   iconRegistry.set(iconId, factory);
   return () => {
     const current = iconRegistry.get(iconId);
@@ -14,6 +13,6 @@ export function registerTabIcon(iconId: string, factory: IconFactory): () => voi
   };
 }
 
-export function getTabIconFactory(iconId: string): IconFactory | undefined {
+export function getTabIconFactory(iconId: string): TabIconFactory | undefined {
   return iconRegistry.get(iconId);
 }

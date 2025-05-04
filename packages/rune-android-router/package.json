@@ -7,7 +7,8 @@
   "types": "dist/types/index.d.ts",
   "sideEffects": [
     "./src/nativeRenderer.ts",
-    "./dist/esm/nativeRenderer.js"
+    "./dist/esm/nativeRenderer.js",
+    "./src/tabIconRenderer.tsx"
   ],
   "license": "MIT",
   "files": [
@@ -46,7 +47,11 @@
         "package": "com.rune.androidrouter",
         "className": "RuneAndroidRouterHost",
         "method": "bootstrap",
-        "args": ["activity", "runtime", "rootView"]
+        "args": [
+          "activity",
+          "runtime",
+          "rootView"
+        ]
       }
     }
   }

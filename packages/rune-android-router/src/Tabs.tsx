@@ -16,6 +16,7 @@ import type {
   ScreenOptions,
   TabBarOptions,
   TabIconDescriptor,
+  TabIconFactory,
   TabOptions,
 } from "./types";
 import { registerTabIcon } from "./tabIconRegistry";
@@ -158,7 +159,8 @@ function prepareTabOptions(
   }
 
   const runeId = `${navigatorId}:${routeName}`;
-  const unregister = registerTabIcon(runeId, () => icon);
+  const factory = typeof icon === "function" ? icon : () => icon;
+  const unregister = registerTabIcon(runeId, factory);
   const nextOptions: NativeTabOptions = {
     ...rest,
     icon: { runeId },
@@ -166,7 +168,9 @@ function prepareTabOptions(
   return { options: nextOptions, disposeIcon: unregister };
 }
 
-function isTabIconDescriptor(icon: TabOptions["icon"]): icon is TabIconDescriptor {
+function isTabIconDescriptor(
+  icon: TabOptions["icon"]
+): icon is TabIconDescriptor {
   if (!icon || typeof icon !== "object") {
     return false;
   }
