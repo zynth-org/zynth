@@ -376,6 +376,7 @@ internal class RuneNavigationContainer(
             }
             updateTabBarVisibility(routeName)
             applyTabBarAppearance(routeName)
+            updateIconActiveStates()
         }
 
         private fun clearFragments() {
@@ -445,13 +446,20 @@ internal class RuneNavigationContainer(
                 if (descriptor?.runeId != null) {
                     val host = ensureHostView(itemView)
                     iconHostsByRoute[route] = host
-                    host.bindIcon(descriptor.runeId)
+                    host.bindIcon(descriptor.runeId, isRouteSelected(route))
                 } else {
                     iconHostsByRoute.remove(route)?.let { host ->
                         removeHostView(host)
                     }
                     restoreDefaultIconView(itemView)
                 }
+            }
+        }
+
+        private fun updateIconActiveStates() {
+            iconHostsByRoute.forEach { (route, host) ->
+                val runeId = tabDefinitions[route]?.tabOptions?.icon?.runeId ?: return@forEach
+                host.bindIcon(runeId, isRouteSelected(route))
             }
         }
 
@@ -563,6 +571,10 @@ internal class RuneNavigationContainer(
                 selector(definition.tabOptions)?.let { return it }
             }
             return null
+        }
+
+        private fun isRouteSelected(route: String): Boolean {
+            return selectedRoute == route
         }
 
         private fun dpToPx(dp: Int): Int {

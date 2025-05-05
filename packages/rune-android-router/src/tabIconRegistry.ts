@@ -1,4 +1,3 @@
-import type { JSX } from "solid-js";
 import type { TabIconFactory } from "./types";
 
 const iconRegistry = new Map<string, TabIconFactory>();

@@ -7,7 +7,11 @@ export interface TabIconDescriptor {
   runeId?: string;
 }
 
-export type TabIconFactory = () => JSX.Element;
+export interface TabIconRenderProps {
+  active: boolean;
+}
+
+export type TabIconFactory = (props: TabIconRenderProps) => JSX.Element;
 
 export type TabIconInput = TabIconDescriptor | TabIconFactory;
 

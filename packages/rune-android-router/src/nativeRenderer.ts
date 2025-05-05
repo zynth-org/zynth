@@ -1,4 +1,9 @@
-import { render, setActiveSurface } from "@rune/core";
+import {
+  getHost,
+  render,
+  setActiveSurface,
+  getActiveSurface,
+} from "@rune/core";
 import type { HostNode } from "@rune/core";
 import { findScreenDefinition } from "./registry";
 import type { RouterScreenComponentProps, ScreenOptions } from "./types";
@@ -72,6 +77,7 @@ function renderScreen(rootId: number, routeName: string, paramsJson?: any) {
     }
   }
 
+  const previousSurface = getActiveSurface();
   setActiveSurface(rootId);
   const dispose = render(() => {
     console.log(
@@ -96,6 +102,7 @@ function renderScreen(rootId: number, routeName: string, paramsJson?: any) {
     }
   }, createSurfaceContainer(rootId));
 
+  flushHostQueue();
   mountedScreens.set(rootId, () => {
     console.log(
       "[RuneAndroidRouter/nativeRenderer] disposing previous render for",
@@ -103,7 +110,11 @@ function renderScreen(rootId: number, routeName: string, paramsJson?: any) {
     );
     setActiveSurface(rootId);
     dispose();
+    flushHostQueue();
+    setActiveSurface(previousSurface);
   });
+  flushHostQueue();
+  setActiveSurface(previousSurface);
   return true;
 }
 
@@ -116,6 +127,7 @@ function disposeScreen(rootId: number) {
   try {
     setActiveSurface(rootId);
     dispose();
+    flushHostQueue();
   } catch (error) {
     console.error("[RuneAndroidRouter] disposeScreen failed", error);
   }
@@ -154,3 +166,15 @@ function installRenderer() {
 }
 
 installRenderer();
+
+function flushHostQueue() {
+  const host = getHost();
+  if (host && typeof host.flush === "function") {
+    host.flush();
+    return;
+  }
+  const ui = (globalThis as Record<string, any>).__ui;
+  if (ui && typeof ui.flush === "function") {
+    ui.flush();
+  }
+}

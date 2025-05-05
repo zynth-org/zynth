@@ -1,49 +1,99 @@
-import { getHost, render, setActiveSurface } from "@rune/core";
+import {
+  getHost,
+  render,
+  setActiveSurface,
+  getActiveSurface,
+} from "@rune/core";
 import type { HostNode } from "@rune/core";
+import { createSignal } from "solid-js";
 import { getTabIconFactory } from "./tabIconRegistry";
 import { TabIconWrapper } from "./tabIconWrapper";
 
-const mountedIcons = new Map<number, () => void>();
+type MountedIcon = {
+  iconId: string;
+  dispose: () => void;
+  setActive: (value: boolean) => void;
+};
+
+const mountedIcons = new Map<number, MountedIcon>();
+
+function runWithSurface<T>(surfaceId: number, work: () => T): T {
+  const previousSurface = getActiveSurface();
+  const shouldSwitch = surfaceId !== previousSurface;
+  if (shouldSwitch) {
+    setActiveSurface(surfaceId);
+  }
+  try {
+    return work();
+  } finally {
+    if (shouldSwitch) {
+      setActiveSurface(previousSurface);
+    }
+  }
+}
 
 function createSurfaceContainer(rootId: number): HostNode {
   return { id: rootId, type: "root" };
 }
 
-function renderTabIcon(surfaceId: number, iconId: string) {
+function renderTabIcon(
+  surfaceId: number,
+  iconId: string,
+  isActive: boolean = false
+) {
   const factory = getTabIconFactory(iconId);
   if (!factory) {
     console.warn(`[RuneAndroidRouter] Icon ${iconId} is not registered.`);
     return false;
   }
 
-  mountedIcons.get(surfaceId)?.();
+  const current = mountedIcons.get(surfaceId);
+  if (current?.iconId === iconId) {
+    current.setActive(isActive);
+    return true;
+  }
+
+  current?.dispose();
 
   console.log(
     "[RuneAndroidRouter/nativeRenderer] renderTabIcon",
     surfaceId,
     iconId
   );
-  setActiveSurface(surfaceId);
-  const dispose = render(
-    () => <TabIconWrapper>{factory()}</TabIconWrapper>,
-    createSurfaceContainer(surfaceId)
-  );
-  flushHostQueue();
-  mountedIcons.set(surfaceId, () => {
-    setActiveSurface(surfaceId);
-    dispose();
+  const [activeState, setActiveState] = createSignal(isActive);
+  let disposeFn: () => void = () => {};
+  runWithSurface(surfaceId, () => {
+    disposeFn = render(
+      () => <TabIconWrapper>{factory({ active: activeState() })}</TabIconWrapper>,
+      createSurfaceContainer(surfaceId)
+    );
     flushHostQueue();
+  });
+  mountedIcons.set(surfaceId, {
+    iconId,
+    dispose: () => {
+      runWithSurface(surfaceId, () => {
+        disposeFn();
+        flushHostQueue();
+      });
+    },
+    setActive(value: boolean) {
+      if (activeState() === value) return;
+      runWithSurface(surfaceId, () => {
+        setActiveState(value);
+        flushHostQueue();
+      });
+    },
   });
   return true;
 }
 
 function disposeTabIcon(surfaceId: number) {
-  const dispose = mountedIcons.get(surfaceId);
-  if (!dispose) return;
+  const mountedIcon = mountedIcons.get(surfaceId);
+  if (!mountedIcon) return;
   mountedIcons.delete(surfaceId);
   try {
-    setActiveSurface(surfaceId);
-    dispose();
+    mountedIcon.dispose();
   } catch (error) {
     console.error("[RuneAndroidRouter] disposeTabIcon failed", error);
   }

@@ -16,7 +16,6 @@ import type {
   ScreenOptions,
   TabBarOptions,
   TabIconDescriptor,
-  TabIconFactory,
   TabOptions,
 } from "./types";
 import { registerTabIcon } from "./tabIconRegistry";

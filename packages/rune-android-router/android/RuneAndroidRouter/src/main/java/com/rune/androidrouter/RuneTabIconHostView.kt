@@ -57,12 +57,12 @@ class RuneTabIconHostView @JvmOverloads constructor(
         setMeasuredDimension(resolvedWidth, resolvedHeight)
     }
 
-    fun bindIcon(runeId: String?) {
+    fun bindIcon(runeId: String?, isActive: Boolean) {
         if (runeId == null) {
             clearIcon()
             return
         }
-        renderIcon(runeId)
+        renderIcon(runeId, isActive)
     }
 
     fun clearIcon() {
@@ -97,7 +97,7 @@ class RuneTabIconHostView @JvmOverloads constructor(
         surfaceId = iconRoot.rootId
     }
 
-    private fun renderIcon(iconId: String) {
+    private fun renderIcon(iconId: String, isActive: Boolean) {
         var surface = surfaceId
         if (surface == null) {
             registerSurfaceIfNeeded()
@@ -110,11 +110,12 @@ class RuneTabIconHostView @JvmOverloads constructor(
         val runtime = RuneAndroidRouterHost.runtimeOrNull() ?: return
         runtime.setActiveSurface(surface)
         val escapedId = JSONObject.quote(iconId)
+        val activeFlag = if (isActive) "true" else "false"
         val script = """
             (function(){
               const render = globalThis.__renderTabIcon;
               if (typeof render === 'function') {
-                render($surface, $escapedId);
+                render($surface, $escapedId, $activeFlag);
               }
             })();
         """.trimIndent()
