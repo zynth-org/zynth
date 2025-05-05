@@ -405,9 +405,7 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     if (typeof labelContent === "string") return labelContent;
     return local.label;
   });
-  const resolvedRounded = createMemo(
-    () => local.rounded ?? ("md" as const)
-  );
+  const resolvedRounded = createMemo(() => local.rounded ?? ("md" as const));
   const sizePaddingMap: Record<Size, { pv: number; ph: number }> = {
     xs: { pv: 6, ph: 10 },
     sm: { pv: 8, ph: 14 },
@@ -495,7 +493,11 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
       composed.width = "100%";
     }
     if (local.iconOnly) {
-      const side = composed.minHeight ?? 44;
+      const resolvedSideRaw = composed.minHeight ?? 44;
+      const side =
+        typeof resolvedSideRaw === "number"
+          ? resolvedSideRaw
+          : parseFloat(resolvedSideRaw) || 44;
       composed.width = side;
       composed.height = side;
       composed.minWidth = side;

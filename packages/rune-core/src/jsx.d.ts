@@ -19,6 +19,7 @@ declare global {
         children?: any;
         onPress?: () => void;
         onLayout?: (event: ViewLayoutEvent) => void;
+        pointerEvents?: "auto" | "none" | "box-none" | "box-only";
       };
       text: { style?: Style; children?: any };
       button: Record<string, any>;

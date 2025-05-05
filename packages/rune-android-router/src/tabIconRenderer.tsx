@@ -1,4 +1,4 @@
-import { render, setActiveSurface } from "@rune/core";
+import { getHost, render, setActiveSurface } from "@rune/core";
 import type { HostNode } from "@rune/core";
 import { getTabIconFactory } from "./tabIconRegistry";
 import { TabIconWrapper } from "./tabIconWrapper";
@@ -28,9 +28,11 @@ function renderTabIcon(surfaceId: number, iconId: string) {
     () => <TabIconWrapper>{factory()}</TabIconWrapper>,
     createSurfaceContainer(surfaceId)
   );
+  flushHostQueue();
   mountedIcons.set(surfaceId, () => {
     setActiveSurface(surfaceId);
     dispose();
+    flushHostQueue();
   });
   return true;
 }
@@ -69,3 +71,15 @@ export function installIconRenderer() {
 }
 
 installIconRenderer();
+
+function flushHostQueue() {
+  const host = getHost();
+  if (host && typeof host.flush === "function") {
+    host.flush();
+    return;
+  }
+  const ui = (globalThis as Record<string, any>).__ui;
+  if (ui && typeof ui.flush === "function") {
+    ui.flush();
+  }
+}

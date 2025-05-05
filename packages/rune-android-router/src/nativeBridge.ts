@@ -10,7 +10,10 @@ function getModulesBridge(): ModulesBridge | null {
   const globalObj = globalThis as Record<string, any>;
   const modules = globalObj.__modules;
   if (!modules || typeof modules.call !== "function") {
-    if (process.env.NODE_ENV !== "production") {
+    const isDevEnvironment =
+      ((globalThis as any)?.process?.env?.NODE_ENV ?? "development") !==
+      "production";
+    if (isDevEnvironment) {
       console.warn("[RuneAndroidRouter] __modules bridge not available");
     }
     return null;
@@ -68,10 +71,7 @@ export function goBackNative() {
   return callNative("goBack");
 }
 
-export function setOptionsNative(
-  options: ScreenOptions,
-  routeName?: string
-) {
+export function setOptionsNative(options: ScreenOptions, routeName?: string) {
   return callNative("setOptions", { routeName, options });
 }
 
