@@ -128,6 +128,8 @@ internal class RuneNavigationContainer(
         navigatorOptions: RouterTabBarOptions?,
     ) {
         runOnUiThread {
+            // Drop any existing stack-managed fragments before wiring up tabs to avoid duplicates.
+            clearBackStack()
             tabController.registerTabs(definitions, initialRouteName, navigatorOptions)
         }
     }
@@ -385,7 +387,9 @@ internal class RuneNavigationContainer(
             }
             val transaction = fragmentManager().beginTransaction()
             fragments.values.forEach { fragment ->
-                transaction.remove(fragment)
+                if (fragment.isAdded) {
+                    transaction.remove(fragment)
+                }
             }
             transaction.commitNowAllowingStateLoss()
             fragments.clear()
