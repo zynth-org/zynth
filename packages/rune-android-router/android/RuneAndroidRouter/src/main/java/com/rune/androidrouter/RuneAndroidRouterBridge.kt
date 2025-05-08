@@ -20,6 +20,7 @@ internal class RuneAndroidRouterBridge(
             "registerTabs" -> handleRegisterTabs(args)
             "switchTab" -> handleSwitchTab(args)
             "setTabOptions" -> handleSetTabOptions(args)
+            "screenRendered" -> handleScreenRendered(args)
             else -> errorResponse(method, "unsupported_method")
         }
     }
@@ -101,6 +102,14 @@ internal class RuneAndroidRouterBridge(
         val tabName = payload["name"] as? String ?: return errorResponse("setTabOptions", "missing_name")
         val tabOptions = RouterTabOptions.fromMap(payload["options"].asMap())
         navigationContainer.setTabOptions(tabName, tabOptions)
+        return successResponse()
+    }
+
+    private fun handleScreenRendered(args: Array<Any?>): JSONObject {
+        Log.d(name, "handleScreenRendered args=${args.contentToString()}")
+        val payload = args.firstOrNull().asMap() ?: return errorResponse("screenRendered", "invalid_payload")
+        val rootId = payload["rootId"] as? Number ?: return errorResponse("screenRendered", "missing_root_id")
+        navigationContainer.notifyScreenRendered(rootId.toInt())
         return successResponse()
     }
 

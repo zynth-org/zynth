@@ -7,7 +7,12 @@ import {
 import type { HostNode } from "@rune/core";
 import { findScreenDefinition } from "./registry";
 import type { RouterScreenComponentProps, ScreenOptions } from "./types";
-import { goBackNative, navigateNative, setOptionsNative } from "./nativeBridge";
+import {
+  goBackNative,
+  navigateNative,
+  notifyScreenRenderedNative,
+  setOptionsNative,
+} from "./nativeBridge";
 
 const mountedScreens = new Map<number, () => void>();
 
@@ -103,6 +108,7 @@ function renderScreen(rootId: number, routeName: string, paramsJson?: any) {
   }, createSurfaceContainer(rootId));
 
   flushHostQueue();
+  void notifyScreenRenderedNative(rootId);
   mountedScreens.set(rootId, () => {
     console.log(
       "[RuneAndroidRouter/nativeRenderer] disposing previous render for",

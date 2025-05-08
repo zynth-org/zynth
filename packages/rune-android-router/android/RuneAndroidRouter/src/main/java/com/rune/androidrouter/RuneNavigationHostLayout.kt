@@ -1,6 +1,9 @@
 package com.rune.androidrouter
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.BitmapDrawable
 import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
@@ -13,6 +16,7 @@ internal class RuneNavigationHostLayout(context: Context) : FrameLayout(context)
     val fragmentContainerView: FragmentContainerView = FragmentContainerView(context)
     private val topSlot = FrameLayout(context)
     private val bottomSlot = FrameLayout(context)
+    private var snapshotDrawable: BitmapDrawable? = null
 
     private var topHeight = 0
     private var bottomHeight = 0
@@ -109,5 +113,37 @@ internal class RuneNavigationHostLayout(context: Context) : FrameLayout(context)
         val contentBottomPadding = if (hasBottomView) bottomHeight else 0
         fragmentContainerView.setPadding(0, topHeight, 0, contentBottomPadding)
         bottomInsetListener?.invoke(if (hasBottomView) navBarInset else 0)
+    }
+
+    fun showContentSnapshot(): Boolean {
+        clearSnapshot()
+        val width = fragmentContainerView.width
+        val height = fragmentContainerView.height
+        if (width <= 0 || height <= 0) {
+            return false
+        }
+        val bitmap = try {
+            Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        } catch (error: OutOfMemoryError) {
+            return false
+        }
+        val canvas = Canvas(bitmap)
+        fragmentContainerView.draw(canvas)
+        val drawable = BitmapDrawable(context.resources, bitmap)
+        snapshotDrawable = drawable
+        fragmentContainerView.overlay.add(drawable)
+        return true
+    }
+
+    fun hideContentSnapshot() {
+        clearSnapshot()
+    }
+
+    private fun clearSnapshot() {
+        snapshotDrawable?.let { drawable ->
+            fragmentContainerView.overlay.remove(drawable)
+            drawable.bitmap?.recycle()
+        }
+        snapshotDrawable = null
     }
 }

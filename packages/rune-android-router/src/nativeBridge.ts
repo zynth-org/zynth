@@ -86,3 +86,7 @@ export function switchTabNative(name: string) {
 export function setTabOptionsNative(name: string, options?: TabOptions) {
   return callNative("setTabOptions", { name, options });
 }
+
+export function notifyScreenRenderedNative(rootId: number) {
+  return callNative("screenRendered", { rootId });
+}

@@ -28,6 +28,9 @@ class RouterScreenFragment : Fragment() {
         private set
     private var paramsJson: String? = null
     private var layoutListener: ViewTreeObserver.OnGlobalLayoutListener? = null
+    private var contentRendered: Boolean = false
+    private var viewMeasured: Boolean = false
+    private var readinessNotified: Boolean = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -81,6 +84,8 @@ class RouterScreenFragment : Fragment() {
         this.appBarLayout = appBar
         contentRoot = content
 
+        RuneAndroidRouterHost.containerOrNull()?.registerFragmentSurface(content.rootId, this)
+
         applyStatusBarInsetPadding(root, appBar)
 
         Log.d(TAG, "registerSurface >>> route=$routeName rootId=${content.rootId}")
@@ -117,12 +122,30 @@ class RouterScreenFragment : Fragment() {
             focusSurface(surfaceId, "dispose")
             sendDispose(surfaceId)
             RuneAndroidRouterHost.runtimeOrNull()?.unregisterSurface(surfaceId)
+            RuneAndroidRouterHost.containerOrNull()?.unregisterFragmentSurface(surfaceId)
         }
 
+        contentRendered = false
+        viewMeasured = false
+        readinessNotified = false
         toolbar = null
         appBarLayout = null
         contentRoot = null
         super.onDestroyView()
+    }
+
+    internal fun markContentRendered() {
+        contentRendered = true
+        notifyReadinessIfNeeded()
+    }
+
+    internal fun hasRenderedContent(): Boolean = contentRendered
+
+    private fun notifyReadinessIfNeeded() {
+        if (contentRendered && viewMeasured && !readinessNotified) {
+            readinessNotified = true
+            RuneAndroidRouterHost.containerOrNull()?.onFragmentContentReady(this)
+        }
     }
 
     private fun renderScreen() {
@@ -207,11 +230,18 @@ class RouterScreenFragment : Fragment() {
 
     private fun trackLayout(root: RuneRootView) {
         layoutListener?.let { root.viewTreeObserver.removeOnGlobalLayoutListener(it) }
+        if (root.width > 0 && root.height > 0) {
+            viewMeasured = true
+            notifyReadinessIfNeeded()
+            return
+        }
         val listener = ViewTreeObserver.OnGlobalLayoutListener {
             val width = root.width
             val height = root.height
             if (width > 0 && height > 0) {
                 Log.d(TAG, "Screen $routeName measured ${width}x$height")
+                viewMeasured = true
+                notifyReadinessIfNeeded()
                 layoutListener?.let { existing ->
                     root.viewTreeObserver.removeOnGlobalLayoutListener(existing)
                 }
