@@ -37,6 +37,8 @@ export interface TabBarOptions {
   backgroundColor?: string;
 }
 
+export type ScreenPresentation = "push" | "modal";
+
 export interface ScreenOptions {
   title?: string;
   subtitle?: string;
@@ -46,6 +48,7 @@ export interface ScreenOptions {
   headerBackgroundColor?: string;
   headerTransparent?: boolean;
   headerShadowVisible?: boolean;
+  presentation?: ScreenPresentation;
   tab?: TabOptions;
 }
 

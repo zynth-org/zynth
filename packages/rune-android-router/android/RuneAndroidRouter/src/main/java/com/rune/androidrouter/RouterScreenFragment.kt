@@ -24,6 +24,7 @@ class RouterScreenFragment : Fragment() {
     private var toolbar: Toolbar? = null
     private var contentRoot: RuneRootView? = null
     private var options: RouterScreenOptions = RouterScreenOptions()
+    private var disposeRunnable: Runnable? = null
     internal var routeName: String = ""
         private set
     private var paramsJson: String? = null
@@ -40,6 +41,7 @@ class RouterScreenFragment : Fragment() {
         paramsJson = request.paramsJson
         options = request.options
         Log.d(TAG, "onCreate route=$routeName params=$paramsJson options=$options")
+        postponeEnterTransition()
     }
 
     override fun onCreateView(
@@ -54,6 +56,7 @@ class RouterScreenFragment : Fragment() {
         val root = android.widget.LinearLayout(context).apply {
             orientation = android.widget.LinearLayout.VERTICAL
             fitsSystemWindows = false
+            // setBackgroundColor(Color.TRANSPARENT)
         }
 
         val appBar = AppBarLayout(context)
@@ -118,11 +121,12 @@ class RouterScreenFragment : Fragment() {
         }
         layoutListener = null
 
-        if (surfaceId != null) {
-            focusSurface(surfaceId, "dispose")
-            sendDispose(surfaceId)
-            RuneAndroidRouterHost.runtimeOrNull()?.unregisterSurface(surfaceId)
-            RuneAndroidRouterHost.containerOrNull()?.unregisterFragmentSurface(surfaceId)
+        surfaceId?.let { id ->
+            if (shouldDelaySurfaceDispose()) {
+                scheduleSurfaceDispose(id, root)
+            } else {
+                disposeSurface(id)
+            }
         }
 
         contentRendered = false
@@ -141,11 +145,39 @@ class RouterScreenFragment : Fragment() {
 
     internal fun hasRenderedContent(): Boolean = contentRendered
 
+    internal fun presentation(): RouterScreenPresentation = options.presentation
+
     private fun notifyReadinessIfNeeded() {
         if (contentRendered && viewMeasured && !readinessNotified) {
             readinessNotified = true
+            startPostponedEnterTransition()
             RuneAndroidRouterHost.containerOrNull()?.onFragmentContentReady(this)
         }
+    }
+
+    private fun shouldDelaySurfaceDispose(): Boolean {
+        return options.presentation == RouterScreenPresentation.MODAL
+    }
+
+    private fun scheduleSurfaceDispose(surfaceId: Int, hostView: View?) {
+        disposeRunnable?.let { root ->
+            hostView?.removeCallbacks(root)
+        }
+        val runnable = Runnable {
+            disposeSurface(surfaceId)
+        }
+        disposeRunnable = runnable
+        val delayHost = hostView ?: return runnable.run()
+        delayHost.postDelayed(runnable, MODAL_DISPOSE_DELAY_MS)
+    }
+
+    private fun disposeSurface(surfaceId: Int) {
+        disposeRunnable = null
+        val runtime = RuneAndroidRouterHost.runtimeOrNull() ?: return
+        focusSurface(surfaceId, "dispose")
+        sendDispose(surfaceId)
+        runtime.unregisterSurface(surfaceId)
+        RuneAndroidRouterHost.containerOrNull()?.unregisterFragmentSurface(surfaceId)
     }
 
     private fun renderScreen() {
@@ -286,6 +318,7 @@ class RouterScreenFragment : Fragment() {
 
     companion object {
         private const val TAG = "RuneRouterScreen"
+        private const val MODAL_DISPOSE_DELAY_MS = 275L
 
         fun newInstance(request: RouterScreenRequest): RouterScreenFragment {
             val fragment = RouterScreenFragment()

@@ -14,12 +14,15 @@ import androidx.fragment.app.FragmentManager
 import androidx.fragment.app.FragmentTransaction
 import androidx.fragment.app.FragmentContainerView
 import androidx.lifecycle.Lifecycle
+import androidx.transition.Fade
+import androidx.transition.Slide
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.navigation.NavigationBarItemView
 import com.google.android.material.navigation.NavigationBarMenuView
 import com.google.android.material.navigation.NavigationBarView
 import com.google.android.material.color.MaterialColors
 import com.rune.kit.core.RuneRootView
+import com.rune.androidrouter.R
 import com.rune.kit.runtime.RuneRuntime
 import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicInteger
@@ -28,6 +31,7 @@ import kotlin.math.roundToInt
 private const val TAG = "RuneAndroidRouter"
 private const val EVENT_STACK_CHANGED = "rune.androidRouter.stackChanged"
 private const val EVENT_BACK_PRESS = "rune.androidRouter.backPress"
+private const val FIRST_FRAME_TIMEOUT_MS = 1000L
 
 internal class RuneNavigationContainer(
     private val activity: FragmentActivity,
@@ -41,7 +45,9 @@ internal class RuneNavigationContainer(
     private val screenDefinitions = mutableMapOf<String, RouterScreenDefinition>()
     private val fragmentTagCounter = AtomicInteger(0)
     private val tabController = RuneTabController()
+    private var modalOverlayActive = false
     private val fragmentBySurfaceId = mutableMapOf<Int, RouterScreenFragment>()
+    private val firstFrameTimeouts = mutableMapOf<Int, Runnable>()
 
     init {
         (runtimeRootView.parent as? ViewGroup)?.removeView(runtimeRootView)
@@ -160,6 +166,7 @@ internal class RuneNavigationContainer(
 
     fun unregisterFragmentSurface(surfaceId: Int) {
         fragmentBySurfaceId.remove(surfaceId)
+        firstFrameTimeouts.remove(surfaceId)?.let(handler::removeCallbacks)
     }
 
     fun notifyScreenRendered(surfaceId: Int) {
@@ -168,12 +175,14 @@ internal class RuneNavigationContainer(
             val deferred = runCatching {
                 runtime.addSurfaceFirstFrameListener(surfaceId) {
                     runOnUiThread {
+                        firstFrameTimeouts.remove(surfaceId)?.let(handler::removeCallbacks)
                         val stillActive = fragmentBySurfaceId[surfaceId]
                         if (stillActive == fragment) {
                             stillActive.markContentRendered()
                         }
                     }
                 }
+                scheduleFirstFrameTimeout(surfaceId, fragment)
                 true
             }.getOrElse { error ->
                 Log.w(TAG, "Failed to defer screenRendered for surface=$surfaceId", error)
@@ -183,6 +192,20 @@ internal class RuneNavigationContainer(
                 fragment.markContentRendered()
             }
         }
+    }
+    
+    private fun scheduleFirstFrameTimeout(surfaceId: Int, fragment: RouterScreenFragment) {
+        firstFrameTimeouts.remove(surfaceId)?.let(handler::removeCallbacks)
+        val runnable = Runnable {
+            val stillActive = fragmentBySurfaceId[surfaceId]
+            if (stillActive == fragment) {
+                Log.w(TAG, "First frame timeout for surface=$surfaceId; marking content rendered")
+                stillActive.markContentRendered()
+            }
+            firstFrameTimeouts.remove(surfaceId)
+        }
+        firstFrameTimeouts[surfaceId] = runnable
+        handler.postDelayed(runnable, FIRST_FRAME_TIMEOUT_MS)
     }
 
     fun onFragmentContentReady(fragment: RouterScreenFragment) {
@@ -205,9 +228,31 @@ internal class RuneNavigationContainer(
         )
         val fragment = RouterScreenFragment.newInstance(request)
         val transaction = fragmentManager().beginTransaction()
-        if (animate) {
+
+        // --- START: CORRECTED LOGIC ---
+        if (animate && definition.options.presentation == RouterScreenPresentation.MODAL) {
+            // 1. Set transitions on the NEW fragment
+            fragment.enterTransition = Slide(android.view.Gravity.BOTTOM)
+            // This is for when the modal is POPPED (it slides out)
+            fragment.returnTransition = Slide(android.view.Gravity.BOTTOM)
+
+            // 2. Set transitions on the CURRENT fragment (the one exiting/underneath)
+            val currentFragment = topScreenFragment()
+            currentFragment?.exitTransition = Fade()
+            // This is for when the modal is popped and we RETURN to this screen (it fades back in)
+            currentFragment?.reenterTransition = Fade()
+
+            // 3. Set reordering
+            transaction.setReorderingAllowed(true)
+        } else if (animate) {
+            // Use the old logic for non-modal pushes
             transaction.setTransition(FragmentTransaction.TRANSIT_FRAGMENT_OPEN)
         }
+        // --- END: CORRECTED LOGIC ---
+
+        // **Ensure the old applyPresentationAnimation call is deleted**
+        // DELETE THIS LINE: transaction.applyPresentationAnimation(definition.options, animate)
+
         val tag = "rune-screen-${fragmentTagCounter.incrementAndGet()}"
         transaction.add(fragmentContainerView.id, fragment, tag)
             .addToBackStack(tag)
@@ -263,6 +308,27 @@ internal class RuneNavigationContainer(
             "reason" to reason,
         )
         runtime.emitEvent(EVENT_STACK_CHANGED, payload)
+        updateModalOverlayState(fragments)
+    }
+
+    private fun updateModalOverlayState(
+        fragments: List<RouterScreenFragment>? = null,
+    ) {
+        val stack = fragments ?: fragmentManager().fragments
+            .filterIsInstance<RouterScreenFragment>()
+        val hasModal = stack.any { fragment ->
+            fragment.isAdded &&
+                !fragment.isHidden &&
+                fragment.presentation() == RouterScreenPresentation.MODAL
+        }
+        if (hasModal == modalOverlayActive) {
+            return
+        }
+        modalOverlayActive = hasModal
+        if (!hasModal) {
+            tabController.clearPendingSnapshot()
+        }
+        hostLayout.setModalOverlayActive(hasModal)
     }
 
     private fun emitBackPressEvent(source: String, handled: Boolean) {
@@ -461,6 +527,13 @@ internal class RuneNavigationContainer(
                 hostLayout.hideContentSnapshot()
                 completeDeferredHide()
             }
+        }
+
+        fun clearPendingSnapshot() {
+            pendingRouteSelection = null
+            awaitingRenderedRoute = null
+            hostLayout.hideContentSnapshot()
+            completeDeferredHide()
         }
 
         private fun activateTab(routeName: String, targetFragment: RouterScreenFragment, delayHidePrevious: Boolean) {
@@ -714,5 +787,25 @@ internal class RuneNavigationContainer(
             val metrics = context.resources.displayMetrics
             return (dp * metrics.density).roundToInt()
         }
+    }
+
+    private fun FragmentTransaction.applyPresentationAnimation(
+        options: RouterScreenOptions,
+        animate: Boolean,
+    ) {
+        if (!animate) {
+            return
+        }
+        if (options.presentation == RouterScreenPresentation.MODAL) {
+            setReorderingAllowed(true)
+            setCustomAnimations(
+                R.anim.rune_slide_in_bottom,
+                0,
+                R.anim.rune_slide_in_bottom,
+                R.anim.rune_slide_out_bottom,
+            )
+            return
+        }
+        setTransition(FragmentTransaction.TRANSIT_FRAGMENT_OPEN)
     }
 }

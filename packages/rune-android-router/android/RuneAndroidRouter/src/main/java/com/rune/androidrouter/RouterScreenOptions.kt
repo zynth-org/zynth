@@ -4,6 +4,21 @@ import android.os.Bundle
 import org.json.JSONArray
 import org.json.JSONObject
 
+enum class RouterScreenPresentation(val value: String) {
+    PUSH("push"),
+    MODAL("modal");
+
+    companion object {
+        fun from(value: String?): RouterScreenPresentation {
+            val stringValue = value?.trim()?.lowercase()
+            if (stringValue == null || stringValue.isEmpty()) {
+                return PUSH
+            }
+            return values().firstOrNull { it.value == stringValue } ?: PUSH
+        }
+    }
+}
+
 data class RouterScreenOptions(
     val title: String? = null,
     val subtitle: String? = null,
@@ -13,6 +28,7 @@ data class RouterScreenOptions(
     val headerBackgroundColor: Int? = null,
     val headerTransparent: Boolean = false,
     val headerShadowVisible: Boolean = true,
+    val presentation: RouterScreenPresentation = RouterScreenPresentation.PUSH,
 ) {
     fun toBundle(): Bundle = Bundle().apply {
         putString(KEY_TITLE, title)
@@ -23,6 +39,7 @@ data class RouterScreenOptions(
         headerBackgroundColor?.let { putInt(KEY_HEADER_BACKGROUND, it) }
         putBoolean(KEY_HEADER_TRANSPARENT, headerTransparent)
         putBoolean(KEY_HEADER_SHADOW_VISIBLE, headerShadowVisible)
+        putString(KEY_PRESENTATION, presentation.value)
     }
 
     companion object {
@@ -34,6 +51,7 @@ data class RouterScreenOptions(
         private const val KEY_HEADER_BACKGROUND = "headerBackground"
         private const val KEY_HEADER_TRANSPARENT = "headerTransparent"
         private const val KEY_HEADER_SHADOW_VISIBLE = "headerShadowVisible"
+        private const val KEY_PRESENTATION = "presentation"
 
         fun fromBundle(bundle: Bundle?): RouterScreenOptions {
             if (bundle == null) return RouterScreenOptions()
@@ -48,6 +66,7 @@ data class RouterScreenOptions(
                 headerBackgroundColor = if (hasBackground) bundle.getInt(KEY_HEADER_BACKGROUND) else null,
                 headerTransparent = bundle.getBoolean(KEY_HEADER_TRANSPARENT, false),
                 headerShadowVisible = bundle.getBoolean(KEY_HEADER_SHADOW_VISIBLE, true),
+                presentation = RouterScreenPresentation.from(bundle.getString(KEY_PRESENTATION)),
             )
         }
 
@@ -70,6 +89,9 @@ data class RouterScreenOptions(
                 headerBackgroundColor = background,
                 headerTransparent = headerTransparent,
                 headerShadowVisible = headerShadowVisible,
+                presentation = RouterScreenPresentation.from(
+                    map["presentation"]?.toString()
+                ),
             )
         }
 

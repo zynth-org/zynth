@@ -27,6 +27,9 @@ internal class RuneNavigationHostLayout(context: Context) : FrameLayout(context)
     private var currentTopView: View? = null
     private var currentBottomView: View? = null
     private var bottomInsetListener: ((Int) -> Unit)? = null
+    private var modalOverlayActive: Boolean = false
+    private val modalElevation = 1000f
+    private val defaultFragmentZ = fragmentContainerView.z
 
     init {
         clipToPadding = false
@@ -110,7 +113,8 @@ internal class RuneNavigationHostLayout(context: Context) : FrameLayout(context)
 
     private fun updateFragmentInsets() {
         val hasBottomView = currentBottomView != null
-        val contentBottomPadding = if (hasBottomView) bottomHeight else 0
+        val reserveBottomSpace = hasBottomView && !modalOverlayActive
+        val contentBottomPadding = if (reserveBottomSpace) bottomHeight else 0
         fragmentContainerView.setPadding(0, topHeight, 0, contentBottomPadding)
         bottomInsetListener?.invoke(if (hasBottomView) navBarInset else 0)
     }
@@ -145,5 +149,23 @@ internal class RuneNavigationHostLayout(context: Context) : FrameLayout(context)
             drawable.bitmap?.recycle()
         }
         snapshotDrawable = null
+    }
+
+    fun setModalOverlayActive(active: Boolean) {
+        if (modalOverlayActive == active) {
+            return
+        }
+        modalOverlayActive = active
+        updateFragmentInsets()
+        post {
+            if (active) {
+                fragmentContainerView.bringToFront()
+                fragmentContainerView.z = modalElevation
+            } else {
+                bottomSlot.bringToFront()
+                fragmentContainerView.z = defaultFragmentZ
+            }
+            topSlot.bringToFront()
+        }
     }
 }
