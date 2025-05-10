@@ -21,3 +21,8 @@ Users reported a white flash during tab switches: the previous fragment was hidd
 ## Follow-up ideas
 
 - If a tab ever fails to report readiness (e.g., due to an error), consider adding a short fallback timer that forces the snapshot to clear after a configurable delay, so the app doesn’t appear stuck forever.
+
+## Programmatic tab navigation
+
+- Calling `navigation.navigate("SomeTab")` now checks whether `SomeTab` is one of the registered tabs. If it is, we delegate to the tab controller and avoid pushing a new stack entry, so the bottom bar and AppBar stay consistent with a real tab switch.
+- The native implementation ignores any params when the destination resolves to a tab, since the existing tabs are long-lived fragments that do not re-render with new params on every switch. You can still pass params when pushing a stack screen that happens to share the same name as a tab, but in that case you must ensure the tab is not registered.

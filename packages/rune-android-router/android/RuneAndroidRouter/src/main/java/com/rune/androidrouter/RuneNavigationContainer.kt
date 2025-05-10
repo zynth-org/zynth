@@ -94,6 +94,13 @@ internal class RuneNavigationContainer(
     fun navigate(routeName: String, params: JSONObject?) {
         Log.d(TAG, "navigate route=$routeName params=$params")
         runOnUiThread {
+            if (tabController.hasRoute(routeName)) {
+                if (params != null) {
+                    Log.d(TAG, "navigate route=$routeName resolved to tab; params will be ignored in tab switch")
+                }
+                tabController.switchTab(routeName)
+                return@runOnUiThread
+            }
             push(routeName, params, animate = true)
         }
     }
@@ -304,6 +311,10 @@ internal class RuneNavigationContainer(
         fun onBottomInsetChanged(inset: Int) {
             bottomInset = inset
             applyBottomInsetPadding()
+        }
+
+        fun hasRoute(routeName: String): Boolean {
+            return tabDefinitions.containsKey(routeName)
         }
 
         fun registerTabs(

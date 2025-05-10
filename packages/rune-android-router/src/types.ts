@@ -49,15 +49,33 @@ export interface ScreenOptions {
   tab?: TabOptions;
 }
 
+type RouteName<Routes extends Record<string, any>> = Extract<
+  keyof Routes,
+  string
+>;
+
+type RouteParams<
+  Routes extends Record<string, any>,
+  Name extends RouteName<Routes>
+> = undefined extends Routes[Name] ? Routes[Name] : Routes[Name] | undefined;
+
 export interface RouteDescriptor<Params = any> {
   key: string;
   name: string;
   params?: Params;
 }
 
-export interface NavigationHelpers {
-  navigate<RouteParams = any>(name: string, params?: RouteParams): void;
-  push<RouteParams = any>(name: string, params?: RouteParams): void;
+export interface NavigationHelpers<
+  Routes extends Record<string, any> = Record<string, any>
+> {
+  navigate<Name extends RouteName<Routes>>(
+    name: Name,
+    params?: RouteParams<Routes, Name>
+  ): void;
+  push<Name extends RouteName<Routes>>(
+    name: Name,
+    params?: RouteParams<Routes, Name>
+  ): void;
   goBack(): void;
   setOptions(options: ScreenOptions): void;
 }
