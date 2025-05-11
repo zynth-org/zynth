@@ -14,8 +14,6 @@ import androidx.fragment.app.FragmentManager
 import androidx.fragment.app.FragmentTransaction
 import androidx.fragment.app.FragmentContainerView
 import androidx.lifecycle.Lifecycle
-import androidx.transition.Fade
-import androidx.transition.Slide
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.navigation.NavigationBarItemView
 import com.google.android.material.navigation.NavigationBarMenuView
@@ -228,30 +226,7 @@ internal class RuneNavigationContainer(
         )
         val fragment = RouterScreenFragment.newInstance(request)
         val transaction = fragmentManager().beginTransaction()
-
-        // --- START: CORRECTED LOGIC ---
-        if (animate && definition.options.presentation == RouterScreenPresentation.MODAL) {
-            // 1. Set transitions on the NEW fragment
-            fragment.enterTransition = Slide(android.view.Gravity.BOTTOM)
-            // This is for when the modal is POPPED (it slides out)
-            fragment.returnTransition = Slide(android.view.Gravity.BOTTOM)
-
-            // 2. Set transitions on the CURRENT fragment (the one exiting/underneath)
-            val currentFragment = topScreenFragment()
-            currentFragment?.exitTransition = Fade()
-            // This is for when the modal is popped and we RETURN to this screen (it fades back in)
-            currentFragment?.reenterTransition = Fade()
-
-            // 3. Set reordering
-            transaction.setReorderingAllowed(true)
-        } else if (animate) {
-            // Use the old logic for non-modal pushes
-            transaction.setTransition(FragmentTransaction.TRANSIT_FRAGMENT_OPEN)
-        }
-        // --- END: CORRECTED LOGIC ---
-
-        // **Ensure the old applyPresentationAnimation call is deleted**
-        // DELETE THIS LINE: transaction.applyPresentationAnimation(definition.options, animate)
+        transaction.applyPresentationAnimation(definition.options, animate)
 
         val tag = "rune-screen-${fragmentTagCounter.incrementAndGet()}"
         transaction.add(fragmentContainerView.id, fragment, tag)
@@ -280,7 +255,12 @@ internal class RuneNavigationContainer(
         val fragments = fragmentManager().fragments
         for (index in fragments.indices.reversed()) {
             val fragment = fragments[index]
-            if (fragment is RouterScreenFragment && fragment.isAdded && fragment.view != null) {
+            if (
+                fragment is RouterScreenFragment &&
+                fragment.isAdded &&
+                fragment.view != null &&
+                !fragment.isHidden
+            ) {
                 return fragment
             }
         }
@@ -801,7 +781,7 @@ internal class RuneNavigationContainer(
             setCustomAnimations(
                 R.anim.rune_slide_in_bottom,
                 0,
-                R.anim.rune_slide_in_bottom,
+                0,
                 R.anim.rune_slide_out_bottom,
             )
             return
