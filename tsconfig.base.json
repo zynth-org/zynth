@@ -25,7 +25,9 @@
       "@rune/router": ["packages/rune-router/src/index.ts"],
       "@rune/router/*": ["packages/rune-router/src/*"],
       "@rune/android-router": ["packages/rune-android-router/src/index.ts"],
-      "@rune/android-router/*": ["packages/rune-android-router/src/*"]
+      "@rune/android-router/*": ["packages/rune-android-router/src/*"],
+      "@rune/bottom-sheet": ["packages/rune-bottom-sheet/src/index.ts"],
+      "@rune/bottom-sheet/*": ["packages/rune-bottom-sheet/src/*"]
     }
   }
 }

@@ -439,3 +439,9 @@ When creating a new native module:
 - [ ] Components render with correct initial values
 - [ ] Updates from native propagate to UI
 - [ ] HMR works without breaking module state
+
+## Rune Bottom Sheet Rollout Plan
+
+1. **Phase 1 – Package scaffolding.** Mirror the structure of `rune-components`: create `packages/rune-bottom-sheet` with `package.json`, `tsconfig`, `src`, native `ios`/`android` folders, and the required `runeNative` registry metadata so the CLI can discover/register the package. Keep it empty for now aside from the metadata and a placeholder README explaining the future API surface.
+2. **Phase 2 – Android host infrastructure.** Build the Android module under the new package: implement `RuneBottomSheetLayout`, planner for snap points, scrim, and `RuneBottomSheetFragment`, plus any descriptors needed to register it with `RuneComponentRegistry`. Validate by wiring a small test sample within `apps` so behavior and layout math can be verified before router integration.
+3. **Phase 3 – JS/TS integration.** Add the Solid helper components and default styles in `packages/rune-bottom-sheet/src`, defining the props/events described earlier (snap points, overlay listener, scroll container). Update `packages/rune-android-router` to consume this package when `presentation: "bottomSheet"` is requested, exposing the API through the navigation context and runtime events.
