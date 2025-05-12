@@ -125,3 +125,8 @@ This document outlines the development plan to evolve Rune into a powerful, AI-n
 ## Nice to Have
 
 - [ ] Enable Hermes `Intl` support on Android (fbjni initialization & runtime wiring) so features like `toLocaleTimeString` work without fallbacks.
+
+## Errors
+
+- [ ] Android Router previous screen keeps triggering touch events from the new screen underneath it.
+- [ ] Android Router bottom tabs icons ghost active state when switching tabs, duplicate icon but only one it show active state.

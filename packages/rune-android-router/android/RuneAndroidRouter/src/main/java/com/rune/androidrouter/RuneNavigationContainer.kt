@@ -46,6 +46,7 @@ internal class RuneNavigationContainer(
     private var modalOverlayActive = false
     private val fragmentBySurfaceId = mutableMapOf<Int, RouterScreenFragment>()
     private val firstFrameTimeouts = mutableMapOf<Int, Runnable>()
+    private var routerActive = false
 
     init {
         (runtimeRootView.parent as? ViewGroup)?.removeView(runtimeRootView)
@@ -60,11 +61,15 @@ internal class RuneNavigationContainer(
         fragmentManager().addOnBackStackChangedListener {
             emitStackSnapshot("backStackChanged")
         }
+        setRouterActive(false)
     }
 
     fun attachToActivity() {
         runOnUiThread {
-            (runtimeRootView.parent as? ViewGroup)?.removeView(runtimeRootView)
+            if (runtimeRootView.parent !== this) {
+                (runtimeRootView.parent as? ViewGroup)?.removeView(runtimeRootView)
+                addView(runtimeRootView, 0)
+            }
             activity.setContentView(this)
             emitStackSnapshot("attached")
         }
@@ -79,6 +84,7 @@ internal class RuneNavigationContainer(
             screenDefinitions[definition.name] = definition
         }
         Log.i(TAG, "Registered ${definitions.size} router screens")
+        setRouterActive(definitions.isNotEmpty())
         emitStackSnapshot("screensRegistered")
     }
 
@@ -143,6 +149,9 @@ internal class RuneNavigationContainer(
             // Drop any existing stack-managed fragments before wiring up tabs to avoid duplicates.
             clearBackStack()
             tabController.registerTabs(definitions, initialRouteName, navigatorOptions)
+            if (definitions.isNotEmpty()) {
+                setRouterActive(true)
+            }
         }
     }
 
@@ -318,6 +327,26 @@ internal class RuneNavigationContainer(
         )
         Log.d(TAG, "backPress source=$source handled=$handled")
         runtime.emitEvent(EVENT_BACK_PRESS, payload)
+    }
+
+    private fun setRouterActive(active: Boolean) {
+        if (routerActive == active) {
+            return
+        }
+        val wasActive = routerActive
+        routerActive = active
+        if (active) {
+            runtimeRootView.visibility = View.GONE
+            hostLayout.visibility = View.VISIBLE
+        } else {
+            hostLayout.visibility = View.GONE
+            runtimeRootView.visibility = View.VISIBLE
+            if (wasActive) {
+                runOnUiThread {
+                    clearBackStack()
+                }
+            }
+        }
     }
 
     private inner class RuneTabController {
