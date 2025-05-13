@@ -1,4 +1,10 @@
-import { createEffect, createMemo, splitProps } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  onCleanup,
+  splitProps,
+} from "solid-js";
 import type { JSX, ParentComponent } from "solid-js";
 import type { HostNode, Style } from "@rune/core";
 import { setProperty } from "@rune/core";
@@ -6,16 +12,38 @@ import { View } from "@rune/components";
 
 export type SnapPoint = number | `${number}%`;
 
+export interface BottomSheetController {
+  open: (index?: number) => void;
+  close: () => void;
+  snapTo: (index: number) => void;
+  getCurrentIndex: () => number;
+}
+
+type BottomSheetCommand =
+  | { type: "open"; index?: number }
+  | { type: "close" }
+  | { type: "snapTo"; index: number };
+
+type InternalController = BottomSheetController & {
+  __attachHost: (node: HostNode | null) => void;
+  __updateIndex: (index: number) => void;
+};
+
 export interface BottomSheetProps {
   children?: JSX.Element;
   snapPoints?: SnapPoint[];
-  initialIndex?: number;
+  initialSnapIndex?: number;
   overlayColor?: string;
   overlayOpacity?: number;
   dismissOnOverlayPress?: boolean;
+  open?: boolean;
+  defaultOpen?: boolean;
+  controller?: BottomSheetController;
   style?: Style;
   contentContainerStyle?: Style;
+  onOpenChange?: (open: boolean) => void;
   onSnapChange?: (payload: { index: number; progress: number }) => void;
+  onSnapIndexChange?: (index: number) => void;
   onDismiss?: () => void;
   testID?: string;
 }
@@ -27,8 +55,8 @@ const DEFAULT_SHEET_STYLE: Style = {
   left: 0,
   right: 0,
   bottom: 0,
-  backgroundColor: "transparent",
 };
+
 const DEFAULT_CONTENT_STYLE: Style = {
   minHeight: 120,
   padding: 16,
@@ -37,22 +65,79 @@ const DEFAULT_CONTENT_STYLE: Style = {
   borderRadius: 16,
 };
 
+const asInternalController = (
+  controller?: BottomSheetController | null
+): InternalController | undefined => {
+  if (
+    controller &&
+    typeof (controller as InternalController).__attachHost === "function"
+  ) {
+    return controller as InternalController;
+  }
+  return undefined;
+};
+
+const sendCommand = (host: HostNode | null, command: BottomSheetCommand) => {
+  if (!host) return;
+  setProperty(host, "__command", JSON.stringify(command));
+};
+
+export const createBottomSheetController = (): BottomSheetController => {
+  let host: HostNode | null = null;
+  let currentIndex = 0;
+
+  const controller: InternalController = {
+    open: (index) => {
+      sendCommand(
+        host,
+        index != null ? { type: "open", index } : { type: "open" }
+      );
+    },
+    close: () => {
+      sendCommand(host, { type: "close" });
+    },
+    snapTo: (index) => {
+      sendCommand(host, { type: "snapTo", index });
+    },
+    getCurrentIndex: () => currentIndex,
+    __attachHost: (node) => {
+      host = node;
+    },
+    __updateIndex: (index) => {
+      currentIndex = index;
+    },
+  };
+
+  return controller;
+};
+
 export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
   const [local] = splitProps(props, [
     "children",
     "snapPoints",
-    "initialIndex",
+    "initialSnapIndex",
     "overlayColor",
     "overlayOpacity",
     "dismissOnOverlayPress",
+    "open",
+    "defaultOpen",
+    "controller",
     "style",
     "contentContainerStyle",
+    "onOpenChange",
     "onSnapChange",
+    "onSnapIndexChange",
     "onDismiss",
     "testID",
   ]);
 
   let host: HostNode | null = null;
+  const [uncontrolledOpen, setUncontrolledOpen] = createSignal(
+    local.defaultOpen ?? false
+  );
+  const isControlled = () => local.open !== undefined;
+  const resolvedOpen = () =>
+    isControlled() ? !!local.open : uncontrolledOpen();
 
   const contentStyle = createMemo<Style>(() => ({
     ...DEFAULT_CONTENT_STYLE,
@@ -64,11 +149,25 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
     ...local.style,
   }));
 
+  const controller = asInternalController(local.controller);
+
+  const attachHost = (node: HostNode | null) => {
+    host = node;
+    controller?.__attachHost(node);
+    if (node && resolvedOpen()) {
+      setProperty(node, "open", true);
+    }
+  };
+
+  onCleanup(() => {
+    controller?.__attachHost(null);
+  });
+
   createEffect(() => {
     if (!host) return;
     setProperty(host, "style", sheetStyle());
     setProperty(host, "snapPoints", local.snapPoints ?? DEFAULT_SNAP_POINTS);
-    setProperty(host, "initialIndex", local.initialIndex ?? 0);
+    setProperty(host, "initialSnapIndex", local.initialSnapIndex ?? 0);
     if (local.overlayColor != null) {
       setProperty(host, "overlayColor", local.overlayColor);
     }
@@ -78,20 +177,39 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
     if (local.dismissOnOverlayPress != null) {
       setProperty(host, "dismissOnOverlayPress", local.dismissOnOverlayPress);
     }
-    if (local.onSnapChange) {
-      setProperty(host, "onSnapChange", local.onSnapChange);
-    }
-    if (local.onDismiss) {
-      setProperty(host, "onDismiss", local.onDismiss);
-    }
     if (local.testID) {
       setProperty(host, "testID", local.testID);
     }
+    setProperty(host, "open", resolvedOpen());
   });
 
-  const attachHost = (node: HostNode | null) => {
-    host = node;
-  };
+  createEffect(() => {
+    if (!host) return;
+
+    const handleSnap = (payload: { index: number; progress: number }) => {
+      controller?.__updateIndex(payload.index);
+      local.onSnapIndexChange?.(payload.index);
+      local.onSnapChange?.(payload);
+    };
+
+    setProperty(host, "onSnapChange", handleSnap);
+
+    const handleDismiss = () => {
+      if (!isControlled()) {
+        setUncontrolledOpen(false);
+      }
+      local.onDismiss?.();
+    };
+
+    setProperty(host, "onDismiss", handleDismiss);
+
+    setProperty(host, "onOpenChange", (payload: { open: boolean }) => {
+      if (!isControlled()) {
+        setUncontrolledOpen(payload.open);
+      }
+      local.onOpenChange?.(payload.open);
+    });
+  });
 
   return (
     <rune-bottom-sheet ref={attachHost} style={sheetStyle()}>
