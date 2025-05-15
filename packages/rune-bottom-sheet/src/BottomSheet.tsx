@@ -63,6 +63,7 @@ const DEFAULT_CONTENT_STYLE: Style = {
   gap: 12,
   backgroundColor: "#ffffff",
   borderRadius: 16,
+  flex: 1,
 };
 
 const asInternalController = (
