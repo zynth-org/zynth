@@ -40,6 +40,7 @@ class RuneBottomSheetDialog(
   private var overlayView: View? = null
   private var lastOverlayProgress: Float = 0f
   private var pendingIndex: Int = 0
+  private var hasPresentedOnce: Boolean = false
   private val bottomSheetCallback = object : BottomSheetBehavior.BottomSheetCallback() {
     override fun onSlide(bottomSheet: View, slideOffset: Float) {
       listener?.onSlide(bottomSheet, slideOffset)
@@ -140,8 +141,19 @@ class RuneBottomSheetDialog(
       behavior = BottomSheetBehavior.from(container).apply {
         addBottomSheetCallback(bottomSheetCallback)
       }
-      configureBehavior()
-      setStateForIndex(pendingIndex, animated = true)
+      configureBehavior(animatePeek = hasPresentedOnce)
+      if (!hasPresentedOnce) {
+        behavior?.let(::prepareEntranceState)
+        container.post {
+          behavior?.let {
+            configureBehavior(animatePeek = true)
+            setStateForIndex(pendingIndex, animated = true)
+            hasPresentedOnce = true
+          }
+        }
+      } else {
+        setStateForIndex(pendingIndex, animated = true)
+      }
     }
     overlayView = window?.findViewById<View>(com.google.android.material.R.id.touch_outside)?.also { outside ->
       outside.alpha = 0f
@@ -151,7 +163,7 @@ class RuneBottomSheetDialog(
     listener?.onShow()
   }
 
-  private fun configureBehavior() {
+  private fun configureBehavior(animatePeek: Boolean = false) {
     val metrics = context.resources.displayMetrics
     resolvedSnapHeights = snapPoints.mapNotNull {
       val resolved = it.resolveHeight(screenHeight, metrics)
@@ -169,7 +181,7 @@ class RuneBottomSheetDialog(
       resolvedSnapHeights = listOf(screenHeight)
     }
 
-    behavior?.let { applyBehaviorConfiguration(it) }
+    behavior?.let { applyBehaviorConfiguration(it, animatePeek) }
   }
 
   private fun setStateForIndex(index: Int, animated: Boolean) {
@@ -224,7 +236,7 @@ class RuneBottomSheetDialog(
     }
   }
 
-  private fun applyBehaviorConfiguration(state: BottomSheetBehavior<FrameLayout>) {
+  private fun applyBehaviorConfiguration(state: BottomSheetBehavior<FrameLayout>, animatePeek: Boolean) {
     if (resolvedSnapHeights.isEmpty()) return
     val count = resolvedSnapHeights.size
     val maxHeight = resolvedSnapHeights.last()
@@ -234,17 +246,17 @@ class RuneBottomSheetDialog(
       1 -> {
         state.isFitToContents = true
         state.skipCollapsed = true
-        state.setPeekHeight(maxHeight, isShowing)
+        state.setPeekHeight(maxHeight, animatePeek)
       }
       2 -> {
         state.isFitToContents = true
         state.skipCollapsed = false
-        state.setPeekHeight(resolvedSnapHeights.first(), isShowing)
+        state.setPeekHeight(resolvedSnapHeights.first(), animatePeek)
       }
       else -> {
         state.isFitToContents = false
         state.skipCollapsed = false
-        state.setPeekHeight(resolvedSnapHeights.first(), isShowing)
+        state.setPeekHeight(resolvedSnapHeights.first(), animatePeek)
         val halfRatio = (resolvedSnapHeights.getOrNull(1)?.toFloat() ?: maxHeight.toFloat()) / screenHeight.toFloat()
         state.halfExpandedRatio = halfRatio.coerceIn(0f, 1f)
       }
@@ -256,6 +268,13 @@ class RuneBottomSheetDialog(
         container.layoutParams = params
       }
     }
+  }
+
+  private fun prepareEntranceState(state: BottomSheetBehavior<FrameLayout>) {
+    state.isFitToContents = false
+    state.skipCollapsed = false
+    state.setPeekHeight(0, false)
+    state.state = BottomSheetBehavior.STATE_COLLAPSED
   }
 
   private fun updateOverlayProgress(sheet: View) {
