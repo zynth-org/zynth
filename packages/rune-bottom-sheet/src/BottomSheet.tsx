@@ -61,7 +61,7 @@ const DEFAULT_CONTENT_STYLE: Style = {
   minHeight: 120,
   padding: 16,
   gap: 12,
-  backgroundColor: "#faacac",
+  backgroundColor: "#ffffff",
   borderRadius: 16,
   flex: 1,
 };

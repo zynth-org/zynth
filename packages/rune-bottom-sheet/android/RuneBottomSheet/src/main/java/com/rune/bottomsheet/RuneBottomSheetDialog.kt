@@ -138,6 +138,8 @@ class RuneBottomSheetDialog(
     screenHeight = RuneBottomSheetUtils.screenHeight(context)
     sheetContainer = findViewById(com.google.android.material.R.id.design_bottom_sheet)
     sheetContainer?.let { container ->
+      container.setBackgroundColor(Color.TRANSPARENT)
+      container.background = null
       behavior = BottomSheetBehavior.from(container).apply {
         addBottomSheetCallback(bottomSheetCallback)
       }
