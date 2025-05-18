@@ -256,8 +256,10 @@ class RuneBottomSheetDialog(
     if (resolvedSnapHeights.isEmpty()) return
     val count = resolvedSnapHeights.size
     val maxHeight = resolvedSnapHeights.last()
+    val expandedOffset = (screenHeight - maxHeight).coerceAtLeast(0)
     state.maxHeight = maxHeight
     state.isHideable = true
+    state.expandedOffset = expandedOffset
     when (count) {
       1 -> {
         state.isFitToContents = true
