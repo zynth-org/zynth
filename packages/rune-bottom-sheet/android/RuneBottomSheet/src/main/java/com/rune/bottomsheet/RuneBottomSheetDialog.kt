@@ -5,6 +5,9 @@ import android.content.DialogInterface
 import android.graphics.Color
 import android.view.View
 import android.widget.FrameLayout
+import androidx.core.graphics.Insets
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import kotlin.math.abs
@@ -140,6 +143,17 @@ class RuneBottomSheetDialog(
     sheetContainer?.let { container ->
       container.setBackgroundColor(Color.TRANSPARENT)
       container.background = null
+      ViewCompat.setOnApplyWindowInsetsListener(container) { view, insets ->
+        val defaultInsets = ViewCompat.onApplyWindowInsets(view, insets)
+        val systemBars = defaultInsets.getInsets(WindowInsetsCompat.Type.systemBars())
+        view.setPadding(view.paddingLeft, view.paddingTop, view.paddingRight, 0)
+        WindowInsetsCompat.Builder(defaultInsets)
+          .setInsets(
+            WindowInsetsCompat.Type.systemBars(),
+            Insets.of(systemBars.left, systemBars.top, systemBars.right, 0),
+          )
+          .build()
+      }
       behavior = BottomSheetBehavior.from(container).apply {
         addBottomSheetCallback(bottomSheetCallback)
       }
