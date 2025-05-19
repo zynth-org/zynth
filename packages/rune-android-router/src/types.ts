@@ -37,6 +37,23 @@ export interface TabBarOptions {
   backgroundColor?: string;
 }
 
+export type BottomSheetSnapPoint = number | `${number}%`;
+
+export interface BottomSheetNavigatorOptions {
+  snapPoints?: BottomSheetSnapPoint[];
+  initialSnapIndex?: number;
+  overlayColor?: string;
+  overlayOpacity?: number;
+  dismissOnOverlayPress?: boolean;
+  enableDynamicSizing?: boolean;
+}
+
+export interface BottomSheetScreenOptions
+  extends BottomSheetNavigatorOptions {
+  enablePanningGesture?: boolean;
+  preferredDetent?: number;
+}
+
 export type ScreenPresentation = "push" | "modal";
 
 export interface ScreenOptions {
@@ -50,6 +67,7 @@ export interface ScreenOptions {
   headerShadowVisible?: boolean;
   presentation?: ScreenPresentation;
   tab?: TabOptions;
+  bottomSheet?: BottomSheetScreenOptions;
 }
 
 type RouteName<Routes extends Record<string, any>> = Extract<
@@ -92,8 +110,11 @@ export type ScreenComponent<Params = any> = Component<
   RouterScreenComponentProps<Params>
 >;
 
+export type ScreenSurface = "stack" | "bottomSheet";
+
 export interface ScreenRegistration {
   name: string;
   component: ScreenComponent<any>;
   options?: ScreenOptions;
+  surface?: ScreenSurface;
 }

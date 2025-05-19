@@ -62,10 +62,14 @@ export const NavigationContainer: ParentComponent<NavigationContainerProps> = (
     const payload: NativeScreenRegistration[] = screens.map((screen) => ({
       name: screen.name,
       options: screen.options,
+      target: screen.surface,
     }));
     void registerScreensNative(payload);
 
-    const target = initialRouteName() ?? screens[0]?.name;
+    const stackScreens = screens.filter(
+      (screen) => screen.surface !== "bottomSheet"
+    );
+    const target = initialRouteName() ?? stackScreens[0]?.name;
     if (!bootstrapped && target) {
       console.log("[RuneAndroidRouter] issuing reset", target);
       bootstrapped = true;

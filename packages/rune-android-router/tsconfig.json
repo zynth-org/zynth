@@ -1,4 +1,7 @@
 {
   "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["rune-jsx", "node"]
+  },
   "include": ["src"]
 }

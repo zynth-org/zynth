@@ -1,4 +1,11 @@
-import type { ScreenOptions, TabBarOptions, TabOptions } from "./types";
+import type {
+  BottomSheetNavigatorOptions,
+  BottomSheetScreenOptions,
+  ScreenOptions,
+  ScreenSurface,
+  TabBarOptions,
+  TabOptions,
+} from "./types";
 
 const MODULE_NAME = "RuneAndroidRouter";
 
@@ -40,6 +47,7 @@ async function callNative<T = any>(
 export interface NativeScreenRegistration {
   name: string;
   options?: ScreenOptions;
+  target?: ScreenSurface;
 }
 
 export interface NativeTabDefinition {
@@ -48,11 +56,24 @@ export interface NativeTabDefinition {
   tab?: TabOptions;
 }
 
+export interface NativeBottomSheetScreen {
+  name: string;
+  options?: ScreenOptions;
+  sheet?: BottomSheetScreenOptions;
+}
+
 export interface RegisterTabsPayload {
   navigatorId?: string;
   initialRouteName?: string;
   tabBarOptions?: TabBarOptions;
   tabs: NativeTabDefinition[];
+}
+
+export interface RegisterBottomSheetNavigatorPayload {
+  navigatorId: string;
+  initialRouteName?: string;
+  sheetOptions?: BottomSheetNavigatorOptions;
+  screens: NativeBottomSheetScreen[];
 }
 
 export function registerScreensNative(screens: NativeScreenRegistration[]) {
@@ -77,6 +98,12 @@ export function setOptionsNative(options: ScreenOptions, routeName?: string) {
 
 export function registerTabsNative(payload: RegisterTabsPayload) {
   return callNative("registerTabs", payload);
+}
+
+export function registerBottomSheetNavigatorNative(
+  payload: RegisterBottomSheetNavigatorPayload
+) {
+  return callNative("registerBottomSheetNavigator", payload);
 }
 
 export function switchTabNative(name: string) {

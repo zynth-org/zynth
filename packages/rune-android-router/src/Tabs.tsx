@@ -105,6 +105,7 @@ export function createBottomTabs(): TabNavigatorComponent {
         name: screenProps.name,
         component: screenProps.component,
         options: screenProps.options,
+        surface: "stack",
       });
       onCleanup(unregister);
     });

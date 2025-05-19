@@ -47,6 +47,7 @@ internal class RuneNavigationContainer(
     private val fragmentBySurfaceId = mutableMapOf<Int, RouterScreenFragment>()
     private val firstFrameTimeouts = mutableMapOf<Int, Runnable>()
     private var routerActive = false
+    private val bottomSheetHost = BottomSheetNavigatorHost(activity)
 
     init {
         (runtimeRootView.parent as? ViewGroup)?.removeView(runtimeRootView)
@@ -84,7 +85,8 @@ internal class RuneNavigationContainer(
             screenDefinitions[definition.name] = definition
         }
         Log.i(TAG, "Registered ${definitions.size} router screens")
-        setRouterActive(definitions.isNotEmpty())
+        val stackScreensPresent = definitions.any { it.target == RouterScreenTarget.STACK }
+        setRouterActive(stackScreensPresent)
         emitStackSnapshot("screensRegistered")
     }
 
@@ -92,9 +94,19 @@ internal class RuneNavigationContainer(
         Log.d(TAG, "reset requested initialRoute=$initialRouteName")
         runOnUiThread {
             clearBackStack()
-            val targetRoute = initialRouteName ?: screenDefinitions.keys.firstOrNull()
+            val preferred = initialRouteName?.takeIf { route ->
+                screenDefinitions[route]?.target == RouterScreenTarget.STACK
+            }
+            val targetRoute = preferred ?: screenDefinitions.values
+                .firstOrNull { it.target == RouterScreenTarget.STACK }
+                ?.name
             if (targetRoute == null) {
-                Log.w(TAG, "reset requested but no screens registered")
+                Log.w(TAG, "reset requested but no stack screens registered")
+                return@runOnUiThread
+            }
+            val definition = screenDefinitions[targetRoute]
+            if (definition?.target == RouterScreenTarget.BOTTOM_SHEET) {
+                Log.d(TAG, "reset target=$targetRoute maps to bottom sheet; skipping stack reset")
                 return@runOnUiThread
             }
             push(targetRoute, null, animate = false)
@@ -111,12 +123,18 @@ internal class RuneNavigationContainer(
                 tabController.switchTab(routeName)
                 return@runOnUiThread
             }
+            if (bottomSheetHost.handleNavigate(routeName, params)) {
+                return@runOnUiThread
+            }
             push(routeName, params, animate = true)
         }
     }
 
     fun goBack() {
         runOnUiThread {
+            if (bottomSheetHost.handleGoBack()) {
+                return@runOnUiThread
+            }
             val handled = if (fragmentManager().backStackEntryCount > 0) {
                 fragmentManager().popBackStackImmediate()
                 true
@@ -176,9 +194,21 @@ internal class RuneNavigationContainer(
         firstFrameTimeouts.remove(surfaceId)?.let(handler::removeCallbacks)
     }
 
+    fun registerBottomSheetNavigator(config: RouterBottomSheetNavigatorConfig) {
+        runOnUiThread {
+            bottomSheetHost.register(config)
+        }
+    }
+
     fun notifyScreenRendered(surfaceId: Int) {
         runOnUiThread {
-            val fragment = fragmentBySurfaceId[surfaceId] ?: return@runOnUiThread
+            val fragment = fragmentBySurfaceId[surfaceId]
+            if (fragment == null) {
+                if (bottomSheetHost.notifyScreenRendered(surfaceId)) {
+                    return@runOnUiThread
+                }
+                return@runOnUiThread
+            }
             val deferred = runCatching {
                 runtime.addSurfaceFirstFrameListener(surfaceId) {
                     runOnUiThread {

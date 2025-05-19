@@ -320,10 +320,8 @@ class RuneBottomSheetDialog(
   }
 
   private fun updateContentPadding() {
-    val bottomGap = (screenHeight - (resolvedSnapHeights.lastOrNull() ?: 0)).coerceAtLeast(0)
-    val desired = bottomGap + systemBottomInset
-    if (contentHost.paddingBottom != desired) {
-      contentHost.setPadding(contentHost.paddingLeft, contentHost.paddingTop, contentHost.paddingRight, desired)
+    if (contentHost.paddingBottom != 0) {
+      contentHost.setPadding(contentHost.paddingLeft, contentHost.paddingTop, contentHost.paddingRight, 0)
     }
   }
 }

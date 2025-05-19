@@ -21,6 +21,7 @@ internal class RuneAndroidRouterBridge(
             "switchTab" -> handleSwitchTab(args)
             "setTabOptions" -> handleSetTabOptions(args)
             "screenRendered" -> handleScreenRendered(args)
+            "registerBottomSheetNavigator" -> handleRegisterBottomSheetNavigator(args)
             else -> errorResponse(method, "unsupported_method")
         }
     }
@@ -33,7 +34,8 @@ internal class RuneAndroidRouterBridge(
             val data = entry.asMap() ?: return@mapNotNull null
             val name = data["name"] as? String ?: return@mapNotNull null
             val options = RouterScreenOptions.fromMap(data["options"].asMap())
-            RouterScreenDefinition(name, options)
+            val target = RouterScreenTarget.from(data["target"] as? String)
+            RouterScreenDefinition(name, options, target)
         }
         navigationContainer.registerScreens(definitions)
         return successResponse()
@@ -110,6 +112,24 @@ internal class RuneAndroidRouterBridge(
         val payload = args.firstOrNull().asMap() ?: return errorResponse("screenRendered", "invalid_payload")
         val rootId = payload["rootId"] as? Number ?: return errorResponse("screenRendered", "missing_root_id")
         navigationContainer.notifyScreenRendered(rootId.toInt())
+        return successResponse()
+    }
+
+    private fun handleRegisterBottomSheetNavigator(args: Array<Any?>): JSONObject {
+        Log.d(name, "handleRegisterBottomSheetNavigator args=${args.contentToString()}")
+        val payload = args.firstOrNull().asMap() ?: return errorResponse("registerBottomSheetNavigator", "invalid_payload")
+        val navigatorId = payload["navigatorId"] as? String
+            ?: return errorResponse("registerBottomSheetNavigator", "missing_navigator_id")
+        val initialRoute = payload["initialRouteName"] as? String
+        val navigatorOptions = RouterBottomSheetParser.optionsFromMap(payload["sheetOptions"].asMap())
+        val screens = RouterBottomSheetParser.screensFromList(payload["screens"].asList())
+        val config = RouterBottomSheetNavigatorConfig(
+            navigatorId = navigatorId,
+            initialRouteName = initialRoute,
+            options = navigatorOptions,
+            screens = screens,
+        )
+        navigationContainer.registerBottomSheetNavigator(config)
         return successResponse()
     }
 

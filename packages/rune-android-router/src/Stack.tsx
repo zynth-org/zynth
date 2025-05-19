@@ -29,6 +29,7 @@ StackComponentImpl.Screen = (props) => {
       name: props.name,
       component: props.component,
       options: props.options,
+      surface: "stack",
     });
     onCleanup(() => unregister?.());
   });

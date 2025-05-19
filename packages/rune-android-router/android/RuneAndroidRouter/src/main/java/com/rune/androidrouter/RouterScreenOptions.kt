@@ -19,6 +19,18 @@ enum class RouterScreenPresentation(val value: String) {
     }
 }
 
+enum class RouterScreenTarget(val value: String) {
+    STACK("stack"),
+    BOTTOM_SHEET("bottomSheet");
+
+    companion object {
+        fun from(raw: String?): RouterScreenTarget {
+            val normalized = raw?.trim()?.lowercase()
+            return if (normalized == BOTTOM_SHEET.value) BOTTOM_SHEET else STACK
+        }
+    }
+}
+
 data class RouterScreenOptions(
     val title: String? = null,
     val subtitle: String? = null,
@@ -101,6 +113,7 @@ data class RouterScreenOptions(
 data class RouterScreenDefinition(
     val name: String,
     val options: RouterScreenOptions,
+    val target: RouterScreenTarget = RouterScreenTarget.STACK,
 )
 
 data class RouterScreenRequest(

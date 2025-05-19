@@ -5,6 +5,9 @@ import {
   getActiveSurface,
 } from "@rune/core";
 import type { HostNode } from "@rune/core";
+import { Dimensions } from "@rune/apis";
+import { SafeAreaProvider } from "@rune/safe-area";
+import type { InitialWindowMetrics } from "@rune/safe-area";
 import { findScreenDefinition } from "./registry";
 import type { RouterScreenComponentProps, ScreenOptions } from "./types";
 import {
@@ -90,7 +93,15 @@ function renderScreen(rootId: number, routeName: string, paramsJson?: any) {
       routeName
     );
     try {
-      const element = definition.component(props);
+      const componentElement = definition.component(props);
+      const element =
+        definition.surface === "bottomSheet" ? (
+          <SafeAreaProvider initialMetrics={createZeroedWindowMetrics()}>
+            {componentElement}
+          </SafeAreaProvider>
+        ) : (
+          componentElement
+        );
       console.log(
         "[RuneAndroidRouter/nativeRenderer] component rendered",
         routeName,
@@ -101,7 +112,7 @@ function renderScreen(rootId: number, routeName: string, paramsJson?: any) {
       console.error(
         "[RuneAndroidRouter/nativeRenderer] component threw",
         routeName,
-        error
+        JSON.stringify(error)
       );
       throw error;
     }
@@ -183,4 +194,17 @@ function flushHostQueue() {
   if (ui && typeof ui.flush === "function") {
     ui.flush();
   }
+}
+
+function createZeroedWindowMetrics(): InitialWindowMetrics {
+  const window = Dimensions.get("window");
+  return {
+    insets: { top: 0, right: 0, bottom: 0, left: 0 },
+    frame: {
+      x: 0,
+      y: 0,
+      width: window.width,
+      height: window.height,
+    },
+  };
 }
