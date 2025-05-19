@@ -163,10 +163,10 @@ class RuneBottomSheetLayout @JvmOverloads constructor(
   override fun getChildCount(): Int = contentHost.childCount
 
   override fun generateDefaultLayoutParams(): LayoutParams =
-    LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
+    LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
 
   override fun generateLayoutParams(attrs: AttributeSet?): LayoutParams =
-    LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
+    LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
 
   override fun checkLayoutParams(p: LayoutParams?): Boolean = p is LayoutParams
 }

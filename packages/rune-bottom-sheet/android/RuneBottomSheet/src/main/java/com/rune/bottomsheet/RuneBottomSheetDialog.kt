@@ -44,6 +44,7 @@ class RuneBottomSheetDialog(
   private var lastOverlayProgress: Float = 0f
   private var pendingIndex: Int = 0
   private var hasPresentedOnce: Boolean = false
+  private var systemBottomInset: Int = 0
   private val bottomSheetCallback = object : BottomSheetBehavior.BottomSheetCallback() {
     override fun onSlide(bottomSheet: View, slideOffset: Float) {
       listener?.onSlide(bottomSheet, slideOffset)
@@ -59,7 +60,7 @@ class RuneBottomSheetDialog(
     setContentView(contentHost)
     contentHost.layoutParams = FrameLayout.LayoutParams(
       FrameLayout.LayoutParams.MATCH_PARENT,
-      FrameLayout.LayoutParams.WRAP_CONTENT,
+      FrameLayout.LayoutParams.MATCH_PARENT,
     )
     setCancelable(true)
     setCanceledOnTouchOutside(false)
@@ -146,6 +147,8 @@ class RuneBottomSheetDialog(
       ViewCompat.setOnApplyWindowInsetsListener(container) { view, insets ->
         val defaultInsets = ViewCompat.onApplyWindowInsets(view, insets)
         val systemBars = defaultInsets.getInsets(WindowInsetsCompat.Type.systemBars())
+        systemBottomInset = systemBars.bottom
+        updateContentPadding()
         view.setPadding(view.paddingLeft, view.paddingTop, view.paddingRight, 0)
         WindowInsetsCompat.Builder(defaultInsets)
           .setInsets(
@@ -260,6 +263,7 @@ class RuneBottomSheetDialog(
     state.maxHeight = maxHeight
     state.isHideable = true
     state.expandedOffset = expandedOffset
+    updateContentPadding()
     when (count) {
       1 -> {
         state.isFitToContents = true
@@ -286,6 +290,14 @@ class RuneBottomSheetDialog(
         container.layoutParams = params
       }
     }
+    val hostParams = contentHost.layoutParams
+    if (hostParams == null) {
+      contentHost.layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, maxHeight)
+    } else if (hostParams.height != maxHeight) {
+      hostParams.height = maxHeight
+      contentHost.layoutParams = hostParams
+    }
+    contentHost.requestLayout()
   }
 
   private fun prepareEntranceState(state: BottomSheetBehavior<FrameLayout>) {
@@ -304,6 +316,14 @@ class RuneBottomSheetDialog(
     overlayView?.let {
       it.visibility = if (progress > 0f) View.VISIBLE else View.GONE
       it.alpha = overlayOpacity * progress
+    }
+  }
+
+  private fun updateContentPadding() {
+    val bottomGap = (screenHeight - (resolvedSnapHeights.lastOrNull() ?: 0)).coerceAtLeast(0)
+    val desired = bottomGap + systemBottomInset
+    if (contentHost.paddingBottom != desired) {
+      contentHost.setPadding(contentHost.paddingLeft, contentHost.paddingTop, contentHost.paddingRight, desired)
     }
   }
 }

@@ -9,6 +9,7 @@ import type { JSX, ParentComponent } from "solid-js";
 import type { HostNode, Style } from "@rune/core";
 import { setProperty } from "@rune/core";
 import { View } from "@rune/components";
+import { Dimensions } from "@rune/apis";
 
 export type SnapPoint = number | `${number}%`;
 
@@ -58,12 +59,24 @@ const DEFAULT_SHEET_STYLE: Style = {
 };
 
 const DEFAULT_CONTENT_STYLE: Style = {
-  minHeight: 120,
   padding: 16,
   gap: 12,
   backgroundColor: "#ffffff",
   borderRadius: 16,
+  minHeight: 100,
   flex: 1,
+};
+
+const resolveSnapPointToDp = (
+  point: SnapPoint,
+  windowHeight: number
+): number => {
+  if (typeof point === "number") {
+    return Math.max(0, point);
+  }
+  const numeric = Number(point.slice(0, -1));
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.max(0, (numeric / 100) * windowHeight);
 };
 
 const asInternalController = (
@@ -140,10 +153,45 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
   const resolvedOpen = () =>
     isControlled() ? !!local.open : uncontrolledOpen();
 
-  const contentStyle = createMemo<Style>(() => ({
-    ...DEFAULT_CONTENT_STYLE,
-    ...local.contentContainerStyle,
-  }));
+  const [windowHeight, setWindowHeight] = createSignal(
+    Dimensions.get("window").height
+  );
+
+  createEffect(() => {
+    const unsubscribe = Dimensions.observe("window", (metrics) => {
+      setWindowHeight(metrics.height);
+    });
+    onCleanup(unsubscribe);
+  });
+
+  const maxSnapHeight = createMemo(() => {
+    const points = local.snapPoints ?? DEFAULT_SNAP_POINTS;
+    const height = windowHeight();
+    let result = 0;
+    for (const point of points) {
+      result = Math.max(
+        result,
+        resolveSnapPointToDp(point as SnapPoint, height)
+      );
+    }
+    return result;
+  });
+
+  const contentStyle = createMemo<Style>(() => {
+    const resolvedMaxHeight = Number(maxSnapHeight());
+    const style: Style = {
+      ...DEFAULT_CONTENT_STYLE,
+      ...local.contentContainerStyle,
+    };
+    if (
+      resolvedMaxHeight > 0 &&
+      local.contentContainerStyle?.height == null &&
+      local.contentContainerStyle?.maxHeight == null
+    ) {
+      style.maxHeight = resolvedMaxHeight;
+    }
+    return style;
+  });
 
   const sheetStyle = createMemo<Style>(() => ({
     ...DEFAULT_SHEET_STYLE,
