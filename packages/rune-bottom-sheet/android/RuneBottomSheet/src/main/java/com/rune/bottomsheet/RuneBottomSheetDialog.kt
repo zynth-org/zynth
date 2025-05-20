@@ -45,6 +45,8 @@ class RuneBottomSheetDialog(
   private var pendingIndex: Int = 0
   private var hasPresentedOnce: Boolean = false
   private var systemBottomInset: Int = 0
+  private var pendingHeightRestore: Int? = null
+  private var pendingExpandedOffset: Int? = null
   private val bottomSheetCallback = object : BottomSheetBehavior.BottomSheetCallback() {
     override fun onSlide(bottomSheet: View, slideOffset: Float) {
       listener?.onSlide(bottomSheet, slideOffset)
@@ -53,6 +55,9 @@ class RuneBottomSheetDialog(
 
     override fun onStateChanged(bottomSheet: View, newState: Int) {
       listener?.onStateChanged(bottomSheet, newState)
+      if (newState != BottomSheetBehavior.STATE_EXPANDED) {
+        commitPendingExpandedOffset()
+      }
     }
   }
 
@@ -76,6 +81,7 @@ class RuneBottomSheetDialog(
   }
 
   fun setSnapPoints(points: List<BottomSheetSnapPoint>) {
+    pendingHeightRestore = sheetContainer?.let { visibleHeightForSheet(it) }
     snapPoints = if (points.isEmpty()) DEFAULT_SNAP_POINTS else points
     configureBehavior()
   }
@@ -205,6 +211,10 @@ class RuneBottomSheetDialog(
 
   private fun setStateForIndex(index: Int, animated: Boolean) {
     pendingIndex = index
+    applyStateForIndex(index)
+  }
+
+  private fun applyStateForIndex(index: Int) {
     val behavior = behavior ?: return
     val resolvedIndex = normalizedIndex(index)
     val state = getStateForSizeIndex(resolvedIndex)
@@ -262,7 +272,7 @@ class RuneBottomSheetDialog(
     val expandedOffset = (screenHeight - maxHeight).coerceAtLeast(0)
     state.maxHeight = maxHeight
     state.isHideable = true
-    state.expandedOffset = expandedOffset
+    applyExpandedOffset(expandedOffset)
     updateContentPadding()
     when (count) {
       1 -> {
@@ -298,6 +308,7 @@ class RuneBottomSheetDialog(
       contentHost.layoutParams = hostParams
     }
     contentHost.requestLayout()
+    restorePendingHeightIfNeeded()
   }
 
   private fun prepareEntranceState(state: BottomSheetBehavior<FrameLayout>) {
@@ -323,5 +334,33 @@ class RuneBottomSheetDialog(
     if (contentHost.paddingBottom != 0) {
       contentHost.setPadding(contentHost.paddingLeft, contentHost.paddingTop, contentHost.paddingRight, 0)
     }
+  }
+
+  private fun restorePendingHeightIfNeeded() {
+    val height = pendingHeightRestore ?: return
+    pendingHeightRestore = null
+    val index = nearestIndexForHeight(height)
+    applyStateForIndex(index)
+    commitPendingExpandedOffset()
+  }
+
+  private fun applyExpandedOffset(offset: Int) {
+    val behavior = behavior ?: return
+    if (pendingHeightRestore != null && behavior.state == BottomSheetBehavior.STATE_EXPANDED) {
+      pendingExpandedOffset = offset
+      return
+    }
+    behavior.expandedOffset = offset
+    pendingExpandedOffset = null
+  }
+
+  private fun commitPendingExpandedOffset() {
+    val behavior = behavior ?: return
+    val pending = pendingExpandedOffset ?: return
+    if (behavior.state == BottomSheetBehavior.STATE_EXPANDED) {
+      return
+    }
+    behavior.expandedOffset = pending
+    pendingExpandedOffset = null
   }
 }
