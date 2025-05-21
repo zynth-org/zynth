@@ -1,10 +1,14 @@
 package com.rune.androidrouter
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.ValueAnimator
 import android.graphics.Color
 import android.os.Looper
 import android.util.Log
 import android.view.View
 import android.widget.FrameLayout
+import android.view.animation.LinearInterpolator
 import androidx.fragment.app.FragmentActivity
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.rune.bottomsheet.BottomSheetSnapPoint
@@ -26,6 +30,7 @@ internal class BottomSheetNavigatorHost(
     private var lastKnownSheetHeight: Int? = null
     private var currentMeasuredSnapIndex: Int? = null
     private var lastCommandedSnapIndex: Int = DEFAULT_INITIAL_SNAP_INDEX
+    private var activeSceneTransition: ValueAnimator? = null
 
     fun register(config: RouterBottomSheetNavigatorConfig) {
         runOnUiThread {
@@ -104,15 +109,15 @@ internal class BottomSheetNavigatorHost(
             return false
         }
         val removed = routeStack.removeAt(routeStack.lastIndex)
-        removed.dispose(contentHost)
         val previous = routeStack.lastOrNull()
         if (previous != null) {
-            previous.show()
             val options = resolveOptionsForRoute(previous.routeName)
             showScene(previous, options, animated = true)
+            startPopSceneTransition(previous, removed)
             Log.d(TAG, "popRoute route=${removed.routeName} -> previous=${previous.routeName}")
             return true
         }
+        removed.dispose(contentHost)
         Log.d(TAG, "popRoute route=${removed.routeName} -> no previous route")
         return false
     }
@@ -173,6 +178,83 @@ internal class BottomSheetNavigatorHost(
         }
         lastCommandedSnapIndex = indexSelection.commandIndex
         scene.lastSnapIndex = indexSelection.finalIndex
+    }
+
+    private fun startPushSceneTransition(previous: BottomSheetScene, entering: BottomSheetScene) {
+        crossFadeScenes(
+            entering = entering,
+            exiting = previous,
+            afterExit = {
+                previous.rootView.alpha = 1f
+                previous.rootView.visibility = View.GONE
+            },
+            afterEnter = {
+                entering.rootView.alpha = 1f
+                entering.rootView.visibility = View.VISIBLE
+            },
+        )
+    }
+
+    private fun startPopSceneTransition(entering: BottomSheetScene, exiting: BottomSheetScene) {
+        crossFadeScenes(
+            entering = entering,
+            exiting = exiting,
+            afterExit = {
+                exiting.dispose(contentHost)
+            },
+            afterEnter = {
+                entering.rootView.alpha = 1f
+                entering.rootView.visibility = View.VISIBLE
+            },
+        )
+    }
+
+    private fun crossFadeScenes(
+        entering: BottomSheetScene,
+        exiting: BottomSheetScene?,
+        afterExit: (() -> Unit)? = null,
+        afterEnter: (() -> Unit)? = null,
+    ) {
+        cancelSceneTransition()
+        val enteringView = entering.rootView
+        enteringView.visibility = View.VISIBLE
+        enteringView.alpha = 0f
+        val exitingView = exiting?.rootView
+        exitingView?.let {
+            it.visibility = View.VISIBLE
+            it.alpha = 1f
+        }
+        val animator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = SCENE_FADE_DURATION_MS
+            interpolator = LinearInterpolator()
+            addUpdateListener { valueAnimator ->
+                val progress = valueAnimator.animatedValue as Float
+                enteringView.alpha = progress
+                exitingView?.alpha = 1f - progress
+            }
+            addListener(object : AnimatorListenerAdapter() {
+                private var completed = false
+                private fun finish() {
+                    if (completed) return
+                    completed = true
+                    activeSceneTransition = null
+                    enteringView.alpha = 1f
+                    afterEnter?.invoke()
+                    exitingView?.alpha = 1f
+                    afterExit?.invoke()
+                }
+
+                override fun onAnimationEnd(animation: Animator) = finish()
+                override fun onAnimationCancel(animation: Animator) = finish()
+            })
+        }
+        activeSceneTransition = animator
+        animator.start()
+    }
+
+    private fun cancelSceneTransition() {
+        activeSceneTransition?.cancel()
+        activeSceneTransition = null
     }
 
     private fun configureSnapPoints(
@@ -298,6 +380,7 @@ internal class BottomSheetNavigatorHost(
     }
 
     private fun resetSheetTracking() {
+        cancelSceneTransition()
         pendingSnapPointReset = null
         lastKnownSheetHeight = null
         currentMeasuredSnapIndex = null
@@ -391,9 +474,16 @@ internal class BottomSheetNavigatorHost(
 
     private fun handleSceneReady(scene: BottomSheetScene) {
         val index = routeStack.indexOf(scene)
-        if (index > 0) {
-            routeStack[index - 1].hide()
+        if (index == -1) {
+            return
         }
+        if (index == 0) {
+            scene.rootView.visibility = View.VISIBLE
+            scene.rootView.alpha = 1f
+            return
+        }
+        val previous = routeStack[index - 1]
+        startPushSceneTransition(previous, scene)
     }
 
     private fun runOnUiThread(block: () -> Unit) {
@@ -451,7 +541,13 @@ internal class BottomSheetNavigatorHost(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT,
             )
-            rootView.visibility = if (deferVisibility) View.INVISIBLE else View.VISIBLE
+            if (deferVisibility) {
+                rootView.visibility = View.INVISIBLE
+                rootView.alpha = 0f
+            } else {
+                rootView.visibility = View.VISIBLE
+                rootView.alpha = 1f
+            }
             RuneAndroidRouterHost.runtimeOrNull()?.registerSurface(rootView)
             registerSceneSurface(rootView.rootId, this)
         }
@@ -471,14 +567,6 @@ internal class BottomSheetNavigatorHost(
                 })();
             """.trimIndent()
             runtime.evaluateAsync(script)
-        }
-
-        fun show() {
-            rootView.visibility = View.VISIBLE
-        }
-
-        fun hide() {
-            rootView.visibility = View.GONE
         }
 
         fun dispose(host: FrameLayout?) {
@@ -519,5 +607,6 @@ internal class BottomSheetNavigatorHost(
         private const val DEFAULT_OVERLAY_OPACITY = 0.58f
         private const val DEFAULT_DISMISS_ON_OVERLAY_PRESS = true
         private val DEFAULT_OVERLAY_COLOR = Color.BLACK
+        private const val SCENE_FADE_DURATION_MS = 220L
     }
 }
