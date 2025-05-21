@@ -6,6 +6,7 @@ import android.util.Log
 import android.view.View
 import android.widget.FrameLayout
 import androidx.fragment.app.FragmentActivity
+import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.rune.bottomsheet.BottomSheetSnapPoint
 import com.rune.bottomsheet.RuneBottomSheetDialog
 import com.rune.kit.core.RuneRootView
@@ -21,6 +22,10 @@ internal class BottomSheetNavigatorHost(
     private var contentHost: FrameLayout? = null
     private var suppressDismissCallback = false
     private val sceneBySurfaceId = mutableMapOf<Int, BottomSheetScene>()
+    private var pendingSnapPointReset: PendingSnapPointReset? = null
+    private var lastKnownSheetHeight: Int? = null
+    private var currentMeasuredSnapIndex: Int? = null
+    private var lastCommandedSnapIndex: Int = DEFAULT_INITIAL_SNAP_INDEX
 
     fun register(config: RouterBottomSheetNavigatorConfig) {
         runOnUiThread {
@@ -91,13 +96,7 @@ internal class BottomSheetNavigatorHost(
         )
         scene.render()
         val options = resolveOptionsForRoute(routeName)
-        applySheetOptions(options)
-        val dialog = ensureDialog()
-        if (!dialog.isShowing) {
-            dialog.present(options.initialSnapIndex, animated)
-        } else {
-            dialog.snapTo(options.initialSnapIndex)
-        }
+        showScene(scene, options, animated)
     }
 
     private fun popRoute(): Boolean {
@@ -110,8 +109,7 @@ internal class BottomSheetNavigatorHost(
         if (previous != null) {
             previous.show()
             val options = resolveOptionsForRoute(previous.routeName)
-            applySheetOptions(options)
-            dialog?.snapTo(options.initialSnapIndex)
+            showScene(previous, options, animated = true)
             Log.d(TAG, "popRoute route=${removed.routeName} -> previous=${previous.routeName}")
             return true
         }
@@ -158,12 +156,152 @@ internal class BottomSheetNavigatorHost(
         }
     }
 
-    private fun applySheetOptions(options: ResolvedSheetOptions) {
+    private fun showScene(scene: BottomSheetScene, options: ResolvedSheetOptions, animated: Boolean) {
         val dialog = ensureDialog()
-        dialog.setSnapPoints(options.snapPoints)
+        val desiredIndex = (scene.lastSnapIndex ?: options.initialSnapIndex).coerceAtLeast(0)
+        val indexSelection = configureSnapPoints(
+            dialog = dialog,
+            snapPoints = options.snapPoints,
+            desiredIndex = desiredIndex,
+            animateTransition = animated && dialog.isShowing,
+        )
+        applyNonSnapOptions(dialog, options)
+        if (!dialog.isShowing) {
+            dialog.present(indexSelection.commandIndex, animated)
+        } else {
+            dialog.snapTo(indexSelection.commandIndex)
+        }
+        lastCommandedSnapIndex = indexSelection.commandIndex
+        scene.lastSnapIndex = indexSelection.finalIndex
+    }
+
+    private fun configureSnapPoints(
+        dialog: RuneBottomSheetDialog,
+        snapPoints: List<BottomSheetSnapPoint>,
+        desiredIndex: Int,
+        animateTransition: Boolean,
+    ): IndexSelection {
+        pendingSnapPointReset = null
+        val normalizedDesired = desiredIndex.coerceAtLeast(0)
+        if (animateTransition) {
+            val transition = maybeBuildSinglePointTransition(dialog, snapPoints, normalizedDesired)
+            if (transition != null) {
+                dialog.setSnapPoints(transition.temporaryPoints)
+                pendingSnapPointReset = PendingSnapPointReset(
+                    triggerIndex = transition.commandIndex,
+                    finalSnapPoints = snapPoints,
+                    finalIndex = transition.finalIndex,
+                )
+                return IndexSelection(
+                    commandIndex = transition.commandIndex,
+                    finalIndex = transition.finalIndex,
+                )
+            }
+        }
+        dialog.setSnapPoints(snapPoints)
+        val resolvedCount = dialog.getResolvedSnapHeights().size.coerceAtLeast(1)
+        val clampedIndex = normalizedDesired.coerceIn(0, resolvedCount - 1)
+        return IndexSelection(clampedIndex, clampedIndex)
+    }
+
+    private fun maybeBuildSinglePointTransition(
+        dialog: RuneBottomSheetDialog,
+        snapPoints: List<BottomSheetSnapPoint>,
+        desiredIndex: Int,
+    ): TransitionSnapConfig? {
+        if (snapPoints.size != 1) return null
+        if (desiredIndex != 0) return null
+        val targetPoint = snapPoints.first()
+        val screenHeight = dialog.getMaxScreenHeight().takeIf { it > 0 } ?: return null
+        val metrics = activity.resources.displayMetrics
+        val targetHeight = targetPoint.resolveHeight(screenHeight, metrics)
+        val currentHeight = lastKnownSheetHeight ?: resolveCurrentSheetHeight(dialog) ?: return null
+        if (currentHeight == targetHeight) return null
+        val currentRatio = (currentHeight.toFloat() / screenHeight.toFloat()).coerceIn(0f, 1f)
+        val currentPoint = BottomSheetSnapPoint.Percent(currentRatio)
+        val entries = listOf(
+            SnapPointHeight(targetPoint, targetHeight),
+            SnapPointHeight(currentPoint, currentHeight),
+        ).distinctBy { it.height }
+        if (entries.size < 2) return null
+        val sorted = entries.sortedBy { it.height }
+        val commandIndex = sorted.indexOfFirst { it.point === targetPoint }
+        if (commandIndex == -1) return null
+        return TransitionSnapConfig(
+            temporaryPoints = sorted.map { it.point },
+            commandIndex = commandIndex,
+            finalIndex = 0,
+        )
+    }
+
+    private fun resolveCurrentSheetHeight(dialog: RuneBottomSheetDialog): Int? {
+        val resolved = dialog.getResolvedSnapHeights()
+        if (resolved.isEmpty()) return null
+        val index = (currentMeasuredSnapIndex ?: lastCommandedSnapIndex).coerceIn(0, resolved.size - 1)
+        return resolved[index]
+    }
+
+    private fun applyNonSnapOptions(dialog: RuneBottomSheetDialog, options: ResolvedSheetOptions) {
         dialog.setOverlayColor(options.overlayColor)
         dialog.setOverlayOpacity(options.overlayOpacity)
         dialog.setDismissOnOverlayPress(options.dismissOnOverlayPress)
+    }
+
+    private fun handleBottomSheetStateChanged(newState: Int) {
+        if (newState == BottomSheetBehavior.STATE_DRAGGING || newState == BottomSheetBehavior.STATE_SETTLING) {
+            return
+        }
+        if (newState == BottomSheetBehavior.STATE_HIDDEN) {
+            currentMeasuredSnapIndex = null
+            return
+        }
+        val dialog = dialog ?: return
+        val resolvedCount = dialog.getResolvedSnapHeights().size
+        if (resolvedCount == 0) return
+        val mappedIndex = mapStateToIndex(newState, resolvedCount) ?: return
+        currentMeasuredSnapIndex = mappedIndex
+        routeStack.lastOrNull()?.lastSnapIndex = mappedIndex
+        lastCommandedSnapIndex = mappedIndex
+        checkPendingSnapPointReset(mappedIndex)
+    }
+
+    private fun checkPendingSnapPointReset(currentIndex: Int) {
+        val pending = pendingSnapPointReset ?: return
+        if (currentIndex != pending.triggerIndex) {
+            return
+        }
+        pendingSnapPointReset = null
+        val dialog = dialog ?: return
+        dialog.setSnapPoints(pending.finalSnapPoints)
+        val finalCount = dialog.getResolvedSnapHeights().size.coerceAtLeast(1)
+        val normalizedFinal = pending.finalIndex.coerceIn(0, finalCount - 1)
+        lastCommandedSnapIndex = normalizedFinal
+        currentMeasuredSnapIndex = normalizedFinal
+        routeStack.lastOrNull()?.lastSnapIndex = normalizedFinal
+    }
+
+    private fun mapStateToIndex(state: Int, snapCount: Int): Int? {
+        return when (snapCount) {
+            1 -> if (state == BottomSheetBehavior.STATE_EXPANDED) 0 else null
+            2 -> when (state) {
+                BottomSheetBehavior.STATE_COLLAPSED -> 0
+                BottomSheetBehavior.STATE_EXPANDED -> 1
+                else -> null
+            }
+            else -> when (state) {
+                BottomSheetBehavior.STATE_COLLAPSED -> 0
+                BottomSheetBehavior.STATE_HALF_EXPANDED -> 1
+                BottomSheetBehavior.STATE_EXPANDED -> 2
+                else -> null
+            }
+        }
+    }
+
+    private fun resetSheetTracking() {
+        pendingSnapPointReset = null
+        lastKnownSheetHeight = null
+        currentMeasuredSnapIndex = null
+        lastCommandedSnapIndex = DEFAULT_INITIAL_SNAP_INDEX
     }
 
     private fun ensureDialog(): RuneBottomSheetDialog {
@@ -177,6 +315,7 @@ internal class BottomSheetNavigatorHost(
                     }
 
                     override fun onDismiss() {
+                        resetSheetTracking()
                         if (suppressDismissCallback) {
                             suppressDismissCallback = false
                             return
@@ -185,11 +324,11 @@ internal class BottomSheetNavigatorHost(
                     }
 
                     override fun onSlide(sheet: View, slideOffset: Float) {
-                        // Observers can be added later if needed.
+                        lastKnownSheetHeight = sheetDialog.visibleHeightForSheet(sheet)
                     }
 
                     override fun onStateChanged(sheet: View, newState: Int) {
-                        // no-op for now
+                        handleBottomSheetStateChanged(newState)
                     }
                 }
             }
@@ -220,6 +359,7 @@ internal class BottomSheetNavigatorHost(
         routeStack.clear()
         sceneBySurfaceId.clear()
         host?.removeAllViews()
+        resetSheetTracking()
     }
 
     private fun dismissDialogImmediate() {
@@ -272,6 +412,28 @@ internal class BottomSheetNavigatorHost(
         val dismissOnOverlayPress: Boolean,
     )
 
+    private data class IndexSelection(
+        val commandIndex: Int,
+        val finalIndex: Int,
+    )
+
+    private data class PendingSnapPointReset(
+        val triggerIndex: Int,
+        val finalSnapPoints: List<BottomSheetSnapPoint>,
+        val finalIndex: Int,
+    )
+
+    private data class TransitionSnapConfig(
+        val temporaryPoints: List<BottomSheetSnapPoint>,
+        val commandIndex: Int,
+        val finalIndex: Int,
+    )
+
+    private data class SnapPointHeight(
+        val point: BottomSheetSnapPoint,
+        val height: Int,
+    )
+
     private inner class BottomSheetScene(
         val routeName: String,
         params: JSONObject?,
@@ -279,6 +441,7 @@ internal class BottomSheetNavigatorHost(
     ) {
         val rootView: RuneRootView = RuneRootView(activity)
         private val paramsExpression: String = params?.toString() ?: "null"
+        var lastSnapIndex: Int? = null
         private var disposed = false
         private var ready = false
         private var handledReady = false
