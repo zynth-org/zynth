@@ -13,7 +13,7 @@ class RuneRootView @JvmOverloads constructor(
   ctx: Context,
   explicitRootId: Int? = null,
 ) : FrameLayout(ctx) {
-  val rootId: Int = explicitRootId ?: NEXT_ROOT_ID.getAndIncrement()
+  val rootId: Int = explicitRootId ?: allocateRootId()
 
   private val redBox = RuneRedBoxView(ctx).apply {
     visibility = View.GONE
@@ -58,7 +58,10 @@ class RuneRootView @JvmOverloads constructor(
   }
 
   companion object {
-    private val NEXT_ROOT_ID = AtomicInteger(1)
+    // Offset router/tab surfaces far away from regular node ids so the host never reuses the same
+    // identifier for both a Yoga node and a surface root.
+    private const val SURFACE_ID_OFFSET = 1 shl 20
+    private val NEXT_ROOT_ID = AtomicInteger(SURFACE_ID_OFFSET)
 
     fun allocateRootId(): Int = NEXT_ROOT_ID.getAndIncrement()
   }
