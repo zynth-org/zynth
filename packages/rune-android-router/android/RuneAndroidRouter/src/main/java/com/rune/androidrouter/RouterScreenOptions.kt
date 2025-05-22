@@ -24,10 +24,10 @@ enum class RouterScreenTarget(val value: String) {
     BOTTOM_SHEET("bottomSheet");
 
     companion object {
-        fun from(raw: String?): RouterScreenTarget {
-            val normalized = raw?.trim()?.lowercase()
-            return if (normalized == BOTTOM_SHEET.value) BOTTOM_SHEET else STACK
-        }
+    fun from(raw: String?): RouterScreenTarget {
+        val normalized = raw?.trim()?.lowercase()
+        return if (normalized == BOTTOM_SHEET.value.lowercase()) BOTTOM_SHEET else STACK
+    }
     }
 }
 
