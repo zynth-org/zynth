@@ -4,11 +4,14 @@ import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.os.Looper
 import android.util.Log
 import android.view.View
 import android.widget.FrameLayout
 import android.view.animation.LinearInterpolator
+import android.util.TypedValue
+import android.view.ViewOutlineProvider
 import androidx.fragment.app.FragmentActivity
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.rune.bottomsheet.BottomSheetSnapPoint
@@ -219,10 +222,13 @@ internal class BottomSheetNavigatorHost(
         val enteringView = entering.rootView
         enteringView.visibility = View.VISIBLE
         enteringView.alpha = 0f
+        val slideDistance = sceneSlideDistancePx()
+        enteringView.translationX = slideDistance
         val exitingView = exiting?.rootView
         exitingView?.let {
             it.visibility = View.VISIBLE
             it.alpha = 1f
+            it.translationX = 0f
         }
         val animator = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = SCENE_FADE_DURATION_MS
@@ -230,7 +236,9 @@ internal class BottomSheetNavigatorHost(
             addUpdateListener { valueAnimator ->
                 val progress = valueAnimator.animatedValue as Float
                 enteringView.alpha = progress
+                enteringView.translationX = slideDistance * (1f - progress)
                 exitingView?.alpha = 1f - progress
+                exitingView?.translationX = -slideDistance * progress
             }
             addListener(object : AnimatorListenerAdapter() {
                 private var completed = false
@@ -239,8 +247,10 @@ internal class BottomSheetNavigatorHost(
                     completed = true
                     activeSceneTransition = null
                     enteringView.alpha = 1f
+                    enteringView.translationX = 0f
                     afterEnter?.invoke()
                     exitingView?.alpha = 1f
+                    exitingView?.translationX = 0f
                     afterExit?.invoke()
                 }
 
@@ -255,6 +265,15 @@ internal class BottomSheetNavigatorHost(
     private fun cancelSceneTransition() {
         activeSceneTransition?.cancel()
         activeSceneTransition = null
+    }
+
+    private fun sceneSlideDistancePx(): Float {
+        return dpToPx(SCENE_SLIDE_DISTANCE_DP)
+    }
+
+    private fun dpToPx(value: Float): Float {
+        val metrics = activity.resources.displayMetrics
+        return TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value, metrics)
     }
 
     private fun configureSnapPoints(
@@ -428,6 +447,15 @@ internal class BottomSheetNavigatorHost(
                     FrameLayout.LayoutParams.MATCH_PARENT,
                     FrameLayout.LayoutParams.MATCH_PARENT,
                 )
+                clipChildren = true
+                clipToPadding = true
+                outlineProvider = ViewOutlineProvider.BACKGROUND
+                clipToOutline = true
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    cornerRadius = dpToPx(SCENE_CONTAINER_CORNER_RADIUS_DP)
+                    setColor(SCENE_CONTAINER_BACKGROUND_COLOR)
+                }
             }
             contentHost = host
         }
@@ -608,5 +636,8 @@ internal class BottomSheetNavigatorHost(
         private const val DEFAULT_DISMISS_ON_OVERLAY_PRESS = true
         private val DEFAULT_OVERLAY_COLOR = Color.BLACK
         private const val SCENE_FADE_DURATION_MS = 220L
+        private const val SCENE_SLIDE_DISTANCE_DP = 24f
+        private const val SCENE_CONTAINER_CORNER_RADIUS_DP = 16f
+        private val SCENE_CONTAINER_BACKGROUND_COLOR = Color.WHITE
     }
 }
