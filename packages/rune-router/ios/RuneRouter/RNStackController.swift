@@ -6,6 +6,7 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
   UIGestureRecognizerDelegate, UINavigationBarDelegate, UIBarPositioningDelegate
 {
   private let navigator = UINavigationController()
+  private let fallbackSurfaceHost = UIView()
   private var routeStack: [RouteRecord] = []
   private weak var routerModule: RuneRouterModule?
   private var emitter: RuneRouterEmitter?
@@ -15,6 +16,7 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
   private weak var transitionCoordinatorRef: UIViewControllerTransitionCoordinator?
   private weak var hostedSurface: UIView?
   private weak var activeHost: RNScreenHostController?
+  private var routerActive = false
   private var stackKey: String = "stack-root"
   private var lastEmittedStateJSON: String?
   private var pendingActions: [(RNStackController) -> Void] = []
@@ -25,9 +27,14 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
     navigator.view.frame = view.bounds
     navigator.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     view.addSubview(navigator.view)
+    fallbackSurfaceHost.frame = view.bounds
+    fallbackSurfaceHost.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    fallbackSurfaceHost.backgroundColor = UIColor(red: 0.06, green: 0.07, blue: 0.09, alpha: 1.0)
+    view.addSubview(fallbackSurfaceHost)
     configureNavigationAppearance()
     navigator.interactivePopGestureRecognizer?.delegate = self
     navigator.interactivePopGestureRecognizer?.addTarget(self, action: #selector(handleEdgePan(_:)))
+    setRouterActive(false)
   }
 
   func bindRouterModule(_ module: RuneRouterModule, emitter: RuneRouterEmitter) {
@@ -36,8 +43,10 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
   }
 
   func installRootSurface(_ surface: UIView) {
+    loadViewIfNeeded()
     hostedSurface = surface
     surface.removeFromSuperview()
+    attachSurfaceToFallbackHost()
     // Don't create any initial route - let JS dispatch RESET to initialize
   }  // MARK: - Navigation commands
 
@@ -135,7 +144,10 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
     routeStack = records
     navigator.setViewControllers(controllers, animated: animated)
     if let activeHost = controllers.last as? RNScreenHostController {
+      setRouterActive(true)
       attachSurface(to: activeHost)
+    } else {
+      setRouterActive(false)
     }
     emitStateChanged()
   }
@@ -172,6 +184,7 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
   }
 
   private func emitStateChanged() {
+    updateRouterActivationState()
     guard let emitter else { return }
     let payload = currentStatePayload()
     if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
@@ -395,6 +408,51 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
     surface.removeFromSuperview()
     host.attachSurfaceView(surface)
     activeHost = host
+  }
+
+  private func attachSurfaceToFallbackHost() {
+    guard let surface = hostedSurface else { return }
+    loadViewIfNeeded()
+    if surface.superview === fallbackSurfaceHost {
+      return
+    }
+    activeHost = nil
+    surface.removeFromSuperview()
+    surface.frame = fallbackSurfaceHost.bounds
+    surface.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    fallbackSurfaceHost.addSubview(surface)
+  }
+
+  private func setRouterActive(_ active: Bool) {
+    if routerActive == active {
+      updateHostVisibility(active: active)
+      if !active {
+        attachSurfaceToFallbackHost()
+      }
+      return
+    }
+    routerActive = active
+    updateHostVisibility(active: active)
+    if !active {
+      attachSurfaceToFallbackHost()
+    }
+  }
+
+  private func updateRouterActivationState() {
+    setRouterActive(!routeStack.isEmpty)
+  }
+
+  private func updateHostVisibility(active: Bool) {
+    loadViewIfNeeded()
+    navigator.view.isHidden = !active
+    navigator.view.isUserInteractionEnabled = active
+    fallbackSurfaceHost.isHidden = active
+    fallbackSurfaceHost.isUserInteractionEnabled = !active
+    if active {
+      view.bringSubviewToFront(navigator.view)
+    } else {
+      view.bringSubviewToFront(fallbackSurfaceHost)
+    }
   }
 
   private func configureNavigationAppearance() {
