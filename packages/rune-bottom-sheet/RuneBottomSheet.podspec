@@ -9,8 +9,9 @@ Pod::Spec.new do |s|
 
   s.source       = { :git => "https://github.com/rune/rune.git", :branch => "main" }
   s.source_files = "ios/src/**/*.{h,m,mm,swift}"
+  s.swift_version = "5.9"
 
-  s.dependency   = "RuneKit"
+  s.dependency "RuneKit"
 
   s.pod_target_xcconfig = {
     'HEADER_SEARCH_PATHS' => %w[
