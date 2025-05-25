@@ -106,6 +106,13 @@ public final class RuneBottomSheetView: UIView {
     presenter.updateOptions(options)
   }
 
+  @objc public func setAllowDismissOnInteraction(_ value: NSNumber?) {
+
+    guard let value = value else { return }
+    options.allowDismissOnInteraction = value.boolValue
+    presenter.updateOptions(options)
+  }
+
   @objc public func setInitialSnapIndex(_ value: NSNumber?) {
 
     guard let value = value else { return }

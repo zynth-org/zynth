@@ -37,6 +37,8 @@ export interface BottomSheetProps {
   overlayColor?: string;
   overlayOpacity?: number;
   dismissOnOverlayPress?: boolean;
+  allowDismissOnInteraction?: boolean;
+  allowSwipeToDismiss?: boolean;
   open?: boolean;
   defaultOpen?: boolean;
   controller?: BottomSheetController;
@@ -133,6 +135,8 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
     "overlayColor",
     "overlayOpacity",
     "dismissOnOverlayPress",
+    "allowDismissOnInteraction",
+    "allowSwipeToDismiss",
     "open",
     "defaultOpen",
     "controller",
@@ -198,6 +202,16 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
     ...local.style,
   }));
 
+  const resolvedAllowDismissOnInteraction = () => {
+    if (local.allowDismissOnInteraction != null) {
+      return !!local.allowDismissOnInteraction;
+    }
+    if (local.allowSwipeToDismiss != null) {
+      return !!local.allowSwipeToDismiss;
+    }
+    return true;
+  };
+
   const controller = asInternalController(local.controller);
 
   const attachHost = (node: HostNode | null) => {
@@ -226,6 +240,9 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
     if (local.dismissOnOverlayPress != null) {
       setProperty(host, "dismissOnOverlayPress", local.dismissOnOverlayPress);
     }
+    const allowDismiss = resolvedAllowDismissOnInteraction();
+    setProperty(host, "allowDismissOnInteraction", allowDismiss);
+    setProperty(host, "allowSwipeToDismiss", allowDismiss);
     if (local.testID) {
       setProperty(host, "testID", local.testID);
     }
@@ -235,10 +252,19 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
   createEffect(() => {
     if (!host) return;
 
-    const handleSnap = (payload: { index: number; progress: number }) => {
-      controller?.__updateIndex(payload.index);
-      local.onSnapIndexChange?.(payload.index);
-      local.onSnapChange?.(payload);
+    const handleSnap = (payload?: { index?: number; progress?: number }) => {
+      if (!payload) return;
+      const index =
+        typeof payload.index === "number" && Number.isFinite(payload.index)
+          ? payload.index
+          : controller?.getCurrentIndex() ?? 0;
+      const progress =
+        typeof payload.progress === "number" && Number.isFinite(payload.progress)
+          ? payload.progress
+          : 0;
+      controller?.__updateIndex(index);
+      local.onSnapIndexChange?.(index);
+      local.onSnapChange?.({ index, progress });
     };
 
     setProperty(host, "onSnapChange", handleSnap);

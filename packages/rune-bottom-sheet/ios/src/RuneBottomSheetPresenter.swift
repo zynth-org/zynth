@@ -47,6 +47,7 @@ struct RuneBottomSheetOptions {
   var overlayOpacity: CGFloat = 0.58
   var dismissOnOverlayPress: Bool = true
   var initialSnapIndex: Int = 0
+  var allowDismissOnInteraction: Bool = true
 
   static let defaultSnapPoints: [BottomSheetSnapPoint] = [
     .percent(0.4),
@@ -163,7 +164,7 @@ final class RuneBottomSheetPresenter: NSObject {
 
     rebuildDetents()
     overlayView?.backgroundColor = options.overlayColor
-    overlayTapGesture.isEnabled = options.dismissOnOverlayPress
+    overlayTapGesture.isEnabled = options.dismissOnOverlayPress && options.allowDismissOnInteraction
     updateOverlay(for: lastProgress)
   }
 
@@ -201,7 +202,9 @@ final class RuneBottomSheetPresenter: NSObject {
       return
     }
 
-    controller.dismiss(animated: true) {}
+    controller.dismiss(animated: true) { [weak self] in
+      self?.completeDismiss()
+    }
   }
 
   func reset() {
@@ -340,8 +343,8 @@ final class RuneBottomSheetPresenter: NSObject {
     overlay.alpha = options.overlayOpacity * progress
     overlay.backgroundColor = options.overlayColor
     overlay.isHidden = progress <= 0
-    overlay.isUserInteractionEnabled = options.dismissOnOverlayPress
-    overlayTapGesture.isEnabled = options.dismissOnOverlayPress
+    overlay.isUserInteractionEnabled = options.dismissOnOverlayPress && options.allowDismissOnInteraction
+    overlayTapGesture.isEnabled = options.dismissOnOverlayPress && options.allowDismissOnInteraction
   }
 
   private func updateOverlayFrame() {
@@ -350,7 +353,7 @@ final class RuneBottomSheetPresenter: NSObject {
   }
 
   @objc private func handleOverlayTap() {
-    guard options.dismissOnOverlayPress else { return }
+    guard options.dismissOnOverlayPress && options.allowDismissOnInteraction else { return }
     dismiss()
   }
 
@@ -359,7 +362,7 @@ final class RuneBottomSheetPresenter: NSObject {
     let overlay = UIView(frame: container.bounds)
     overlay.backgroundColor = options.overlayColor
     overlay.alpha = 0
-    overlay.isUserInteractionEnabled = options.dismissOnOverlayPress
+    overlay.isUserInteractionEnabled = options.dismissOnOverlayPress && options.allowDismissOnInteraction
     overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     overlay.addGestureRecognizer(overlayTapGesture)
     overlayView = overlay
@@ -380,9 +383,17 @@ final class RuneBottomSheetPresenter: NSObject {
     isSheetOpen = false
     cleanupOverlay()
     contentController = nil
+    let lastIndex = currentReportedIndex
     pendingIndex = 0
     currentReportedIndex = 0
     lastProgress = 0
+    host?.dispatchEvent(
+      "onSnapChange",
+      payload: [
+        "index": lastIndex,
+        "progress": 0,
+      ]
+    )
     host?.dispatchEvent("onOpenChange", payload: ["open": false])
     host?.dispatchEvent("onDismiss", payload: nil)
 
@@ -446,6 +457,6 @@ extension RuneBottomSheetPresenter: UIAdaptivePresentationControllerDelegate {
   func presentationControllerShouldDismiss(_ presentationController: UIPresentationController)
     -> Bool
   {
-    return options.dismissOnOverlayPress
+    return options.allowDismissOnInteraction
   }
 }

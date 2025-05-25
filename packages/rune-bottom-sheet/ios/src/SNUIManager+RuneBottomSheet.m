@@ -153,6 +153,13 @@ static BOOL RuneBottomSheetParseBoolean(NSString *rawJSON, BOOL fallback) {
           return YES;
         }
 
+        if ([name isEqualToString:@"allowDismissOnInteraction"]) {
+          
+          BOOL allow = RuneBottomSheetParseBoolean(rawJSON, YES);
+          [view setAllowDismissOnInteraction:@(allow)];
+          return YES;
+        }
+
         if ([name isEqualToString:@"initialSnapIndex"]) {
           
           NSInteger index = RuneBottomSheetParseInteger(rawJSON, 0);
