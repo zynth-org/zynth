@@ -61,8 +61,6 @@ const DEFAULT_SHEET_STYLE: Style = {
 };
 
 const DEFAULT_CONTENT_STYLE: Style = {
-  padding: 16,
-  gap: 12,
   backgroundColor: "#ffffff",
   borderRadius: 16,
   minHeight: 100,
@@ -259,7 +257,8 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
           ? payload.index
           : controller?.getCurrentIndex() ?? 0;
       const progress =
-        typeof payload.progress === "number" && Number.isFinite(payload.progress)
+        typeof payload.progress === "number" &&
+        Number.isFinite(payload.progress)
           ? payload.progress
           : 0;
       controller?.__updateIndex(index);
