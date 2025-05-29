@@ -36,9 +36,11 @@ export interface BottomSheetProps {
   initialSnapIndex?: number;
   overlayColor?: string;
   overlayOpacity?: number;
+  showOverlay?: boolean;
   dismissOnOverlayPress?: boolean;
   allowDismissOnInteraction?: boolean;
   allowSwipeToDismiss?: boolean;
+  allowBackgroundInteraction?: boolean;
   open?: boolean;
   defaultOpen?: boolean;
   controller?: BottomSheetController;
@@ -132,9 +134,11 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
     "initialSnapIndex",
     "overlayColor",
     "overlayOpacity",
+    "showOverlay",
     "dismissOnOverlayPress",
     "allowDismissOnInteraction",
     "allowSwipeToDismiss",
+    "allowBackgroundInteraction",
     "open",
     "defaultOpen",
     "controller",
@@ -238,9 +242,19 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
     if (local.dismissOnOverlayPress != null) {
       setProperty(host, "dismissOnOverlayPress", local.dismissOnOverlayPress);
     }
+    if (local.showOverlay != null) {
+      setProperty(host, "showOverlay", local.showOverlay);
+    }
     const allowDismiss = resolvedAllowDismissOnInteraction();
     setProperty(host, "allowDismissOnInteraction", allowDismiss);
     setProperty(host, "allowSwipeToDismiss", allowDismiss);
+    if (local.allowBackgroundInteraction != null) {
+      setProperty(
+        host,
+        "allowBackgroundInteraction",
+        local.allowBackgroundInteraction
+      );
+    }
     if (local.testID) {
       setProperty(host, "testID", local.testID);
     }

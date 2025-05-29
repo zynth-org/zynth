@@ -146,6 +146,13 @@ static BOOL RuneBottomSheetParseBoolean(NSString *rawJSON, BOOL fallback) {
           return YES;
         }
 
+        if ([name isEqualToString:@"showOverlay"]) {
+          
+          BOOL showOverlay = RuneBottomSheetParseBoolean(rawJSON, YES);
+          [view setShowOverlay:@(showOverlay)];
+          return YES;
+        }
+
         if ([name isEqualToString:@"dismissOnOverlayPress"]) {
           
           BOOL dismiss = RuneBottomSheetParseBoolean(rawJSON, YES);
@@ -157,6 +164,13 @@ static BOOL RuneBottomSheetParseBoolean(NSString *rawJSON, BOOL fallback) {
           
           BOOL allow = RuneBottomSheetParseBoolean(rawJSON, YES);
           [view setAllowDismissOnInteraction:@(allow)];
+          return YES;
+        }
+
+        if ([name isEqualToString:@"allowBackgroundInteraction"]) {
+          
+          BOOL allowBackground = RuneBottomSheetParseBoolean(rawJSON, NO);
+          [view setAllowBackgroundInteraction:@(allowBackground)];
           return YES;
         }
 

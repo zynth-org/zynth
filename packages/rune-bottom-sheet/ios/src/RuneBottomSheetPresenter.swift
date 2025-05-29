@@ -45,9 +45,11 @@ struct RuneBottomSheetOptions {
   var snapPoints: [BottomSheetSnapPoint] = RuneBottomSheetOptions.defaultSnapPoints
   var overlayColor: UIColor = .black
   var overlayOpacity: CGFloat = 0.58
+  var showOverlay: Bool = true
   var dismissOnOverlayPress: Bool = true
   var initialSnapIndex: Int = 0
   var allowDismissOnInteraction: Bool = true
+  var allowBackgroundInteraction: Bool = false
 
   static let defaultSnapPoints: [BottomSheetSnapPoint] = [
     .percent(0.4),
@@ -142,7 +144,7 @@ final class RuneBottomSheetPresenter: NSObject {
   private var options = RuneBottomSheetOptions()
   private var detentInfo: [SnapDetent] = []
   private var contentController: RuneBottomSheetContentViewController?
-  private var overlayView: UIView?
+  private weak var systemDimmingView: UIView?
   private lazy var overlayTapGesture: UITapGestureRecognizer = {
     let gesture = UITapGestureRecognizer(target: self, action: #selector(handleOverlayTap))
     gesture.cancelsTouchesInView = false
@@ -163,9 +165,8 @@ final class RuneBottomSheetPresenter: NSObject {
     options = newOptions
 
     rebuildDetents()
-    overlayView?.backgroundColor = options.overlayColor
-    overlayTapGesture.isEnabled = options.dismissOnOverlayPress && options.allowDismissOnInteraction
-    updateOverlay(for: lastProgress)
+    applyBackgroundInteraction(to: contentController?.sheetPresentationController)
+    updateSystemDimmingViewState()
   }
 
   func setOpenState(_ open: Bool, preferredIndex: Int) {
@@ -212,7 +213,7 @@ final class RuneBottomSheetPresenter: NSObject {
       self?.contentController?.dismiss(animated: false) { [weak self] in
         self?.completeDismiss()
       }
-      self?.cleanupOverlay()
+      self?.detachSystemDimmingView()
       self?.isSheetOpen = false
     }
   }
@@ -238,6 +239,7 @@ final class RuneBottomSheetPresenter: NSObject {
     sheet.sheetPresentationController?.delegate = self
     sheet.sheetPresentationController?.prefersGrabberVisible = true
     applyDetents(to: sheet.sheetPresentationController)
+    applyBackgroundInteraction(to: sheet.sheetPresentationController)
 
     if let identifier = detentIdentifier(for: normalized) {
       sheet.sheetPresentationController?.selectedDetentIdentifier = identifier
@@ -290,6 +292,16 @@ final class RuneBottomSheetPresenter: NSObject {
     if let identifier = detentIdentifier(for: pendingIndex) {
       sheet.selectedDetentIdentifier = identifier
     }
+    applyBackgroundInteraction(to: sheet)
+  }
+
+  private func applyBackgroundInteraction(to sheet: UISheetPresentationController?) {
+    guard let sheet = sheet else { return }
+    if options.allowBackgroundInteraction, let identifier = detentIdentifier(for: detentInfo.count - 1) {
+      sheet.largestUndimmedDetentIdentifier = identifier
+    } else {
+      sheet.largestUndimmedDetentIdentifier = nil
+    }
   }
 
   private func normalizedIndex(_ index: Int) -> Int {
@@ -306,14 +318,15 @@ final class RuneBottomSheetPresenter: NSObject {
 
   func sheetDidLayout(height: CGFloat) {
     guard isSheetOpen, let maxHeight = detentInfo.last?.height, maxHeight > 0 else { return }
-    updateOverlayFrame()
 
     let visible = min(max(height, 0), maxHeight)
     let progress = (maxHeight == 0) ? 0 : (visible / maxHeight)
-    updateOverlay(for: progress)
+    let previousProgress = lastProgress
+    lastProgress = progress
+    updateSystemDimmingViewState()
 
     let nearest = nearestIndex(for: visible)
-    if nearest != currentReportedIndex || abs(progress - lastProgress) > 0.001 {
+    if nearest != currentReportedIndex || abs(progress - previousProgress) > 0.001 {
       currentReportedIndex = nearest
       host?.dispatchEvent(
         "onSnapChange",
@@ -321,7 +334,6 @@ final class RuneBottomSheetPresenter: NSObject {
       )
 
     }
-    lastProgress = progress
   }
 
   private func nearestIndex(for height: CGFloat) -> Int {
@@ -338,50 +350,70 @@ final class RuneBottomSheetPresenter: NSObject {
     return nearest
   }
 
-  private func updateOverlay(for progress: CGFloat) {
-    guard let overlay = overlayView else { return }
-    overlay.alpha = options.overlayOpacity * progress
-    overlay.backgroundColor = options.overlayColor
-    overlay.isHidden = progress <= 0
-    overlay.isUserInteractionEnabled = options.dismissOnOverlayPress && options.allowDismissOnInteraction
-    overlayTapGesture.isEnabled = options.dismissOnOverlayPress && options.allowDismissOnInteraction
-  }
-
-  private func updateOverlayFrame() {
-    guard let container = contentController?.presentationController?.containerView else { return }
-    overlayView?.frame = container.bounds
-  }
-
   @objc private func handleOverlayTap() {
-    guard options.dismissOnOverlayPress && options.allowDismissOnInteraction else { return }
+    guard options.dismissOnOverlayPress && options.allowDismissOnInteraction && !options.allowBackgroundInteraction
+    else { return }
     dismiss()
   }
 
-  private func setupOverlay(in container: UIView?) {
-    guard let container = container, overlayView == nil else { return }
-    let overlay = UIView(frame: container.bounds)
-    overlay.backgroundColor = options.overlayColor
-    overlay.alpha = 0
-    overlay.isUserInteractionEnabled = options.dismissOnOverlayPress && options.allowDismissOnInteraction
-    overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-    overlay.addGestureRecognizer(overlayTapGesture)
-    overlayView = overlay
-    if let sheetView = contentController?.view {
-      container.insertSubview(overlay, belowSubview: sheetView)
-    } else {
-      container.addSubview(overlay)
+  private func updateSystemDimmingViewState() {
+    guard let container = contentController?.presentationController?.containerView else { return }
+    guard let dimmingView = resolveSystemDimmingView(in: container) else { return }
+
+    let disableCompletely = options.allowBackgroundInteraction || !options.showOverlay
+    if disableCompletely {
+      dimmingView.layer.removeAllAnimations()
+      dimmingView.isHidden = true
+      dimmingView.alpha = 0
+      dimmingView.isUserInteractionEnabled = false
+      overlayTapGesture.isEnabled = false
+      return
     }
+
+    dimmingView.layer.removeAllAnimations()
+    dimmingView.backgroundColor = options.overlayColor
+    dimmingView.alpha = options.overlayOpacity * lastProgress
+    dimmingView.isHidden = lastProgress <= 0
+
+    let canReceiveTouches =
+      options.dismissOnOverlayPress &&
+      options.allowDismissOnInteraction &&
+      !options.allowBackgroundInteraction
+    dimmingView.isUserInteractionEnabled = canReceiveTouches
+    overlayTapGesture.isEnabled = canReceiveTouches
   }
 
-  private func cleanupOverlay() {
-    overlayView?.removeFromSuperview()
-    overlayView = nil
+  private func resolveSystemDimmingView(in container: UIView) -> UIView? {
+    if let current = systemDimmingView, current.superview === container {
+      return current
+    }
+    let sheetView = contentController?.view
+    let candidates = container.subviews.filter { subview in
+      subview !== sheetView
+    }
+    guard !candidates.isEmpty else { return nil }
+    let resolved = candidates.first(where: { view in
+      let name = NSStringFromClass(type(of: view)).lowercased()
+      return name.contains("dimming") || name.contains("backdrop")
+    }) ?? candidates.first
+    systemDimmingView = resolved
+    if overlayTapGesture.view !== resolved {
+      overlayTapGesture.view?.removeGestureRecognizer(overlayTapGesture)
+      resolved?.addGestureRecognizer(overlayTapGesture)
+    }
+    return resolved
+  }
+
+  private func detachSystemDimmingView() {
+    overlayTapGesture.isEnabled = false
+    overlayTapGesture.view?.removeGestureRecognizer(overlayTapGesture)
+    systemDimmingView = nil
   }
 
   private func completeDismiss() {
     guard isSheetOpen else { return }
     isSheetOpen = false
-    cleanupOverlay()
+    detachSystemDimmingView()
     contentController = nil
     let lastIndex = currentReportedIndex
     pendingIndex = 0
@@ -447,7 +479,7 @@ extension RuneBottomSheetPresenter: UIAdaptivePresentationControllerDelegate {
   func presentationControllerWillBeginPresentation(
     _ presentationController: UIPresentationController
   ) {
-    setupOverlay(in: presentationController.containerView)
+    updateSystemDimmingViewState()
   }
 
   func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {

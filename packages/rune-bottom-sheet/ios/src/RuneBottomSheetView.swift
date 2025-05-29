@@ -99,6 +99,12 @@ public final class RuneBottomSheetView: UIView {
     presenter.updateOptions(options)
   }
 
+  @objc public func setShowOverlay(_ value: NSNumber?) {
+    guard let value = value else { return }
+    options.showOverlay = value.boolValue
+    presenter.updateOptions(options)
+  }
+
   @objc public func setDismissOnOverlayPress(_ value: NSNumber?) {
 
     guard let value = value else { return }
@@ -110,6 +116,12 @@ public final class RuneBottomSheetView: UIView {
 
     guard let value = value else { return }
     options.allowDismissOnInteraction = value.boolValue
+    presenter.updateOptions(options)
+  }
+
+  @objc public func setAllowBackgroundInteraction(_ value: NSNumber?) {
+    guard let value = value else { return }
+    options.allowBackgroundInteraction = value.boolValue
     presenter.updateOptions(options)
   }
 
