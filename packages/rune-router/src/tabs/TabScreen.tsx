@@ -26,7 +26,12 @@ export const TabScreen = <
     mountStrategy,
   });
 
-  onCleanup(unregister);
+  const unregisterTab = tabs.registerScreen(String(props.name));
+
+  onCleanup(() => {
+    unregister();
+    unregisterTab();
+  });
 
   if (props.options) {
     const dispose = observeOptions(props.options, (options) => {

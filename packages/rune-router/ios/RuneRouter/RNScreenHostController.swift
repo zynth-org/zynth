@@ -1,6 +1,6 @@
 import UIKit
 
-final class RNScreenHostController: UIViewController {
+final class RNScreenHostController: UIViewController, UITabBarDelegate {
   let routeKey: String
   let routeName: String
   private var params: [String: Any]?
@@ -9,6 +9,11 @@ final class RNScreenHostController: UIViewController {
   private weak var snapshotView: UIView?
   private var cachedDefaultTintColor: UIColor?
   private var cachedDefaultBarTintColor: UIColor?
+  private let contentView = UIView()
+  private var tabBar: UITabBar?
+  private var tabItemsByName: [String: UITabBarItem] = [:]
+  private var tabNameByItem: [UITabBarItem: String] = [:]
+  private var tabSelectionHandler: ((String) -> Void)?
 
   init(routeKey: String, routeName: String, params: [String: Any]?) {
     self.routeKey = routeKey
@@ -27,6 +32,9 @@ final class RNScreenHostController: UIViewController {
     super.viewDidLoad()
     // Match your app's background color to avoid white flash during transitions
     view.backgroundColor = UIColor(red: 0.06, green: 0.07, blue: 0.09, alpha: 1.0)  // #101217
+    contentView.frame = view.bounds
+    contentView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    view.addSubview(contentView)
   }
 
   override func viewWillAppear(_ animated: Bool) {
@@ -40,9 +48,9 @@ final class RNScreenHostController: UIViewController {
 
   func attachSurfaceView(_ surface: UIView) {
     surface.removeFromSuperview()
-    surface.frame = view.bounds
+    surface.frame = contentView.bounds
     surface.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-    view.addSubview(surface)
+    contentView.addSubview(surface)
     surfaceView = surface
     clearSnapshot()
     view.setNeedsLayout()
@@ -51,7 +59,32 @@ final class RNScreenHostController: UIViewController {
 
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
-    surfaceView?.frame = view.bounds
+    layoutContentContainers()
+  }
+
+  private func layoutContentContainers() {
+    let bounds = view.bounds
+    guard let tabBar else {
+      contentView.frame = bounds
+      surfaceView?.frame = contentView.bounds
+      return
+    }
+    let tabSize = tabBar.sizeThatFits(bounds.size)
+    let safeInsets = view.safeAreaInsets
+    let totalHeight = tabSize.height + safeInsets.bottom
+    tabBar.frame = CGRect(
+      x: 0,
+      y: bounds.height - totalHeight,
+      width: bounds.width,
+      height: totalHeight
+    )
+    contentView.frame = CGRect(
+      x: 0,
+      y: 0,
+      width: bounds.width,
+      height: bounds.height - totalHeight
+    )
+    surfaceView?.frame = contentView.bounds
   }
 
   func apply(options: [String: Any]) {
@@ -66,6 +99,90 @@ final class RNScreenHostController: UIViewController {
       navigationController?.setNavigationBarHidden(!headerShown, animated: true)
     }
     applyStoredOptionsToNavigationBar()
+  }
+
+  func configureTabs(
+    configuration: TabBarConfiguration,
+    selectionHandler: @escaping (String) -> Void
+  ) {
+    tabSelectionHandler = selectionHandler
+    let bar: UITabBar
+    if let existing = tabBar {
+      bar = existing
+    } else {
+      let created = UITabBar()
+      created.delegate = self
+      tabBar = created
+      bar = created
+      view.addSubview(created)
+    }
+    var items: [UITabBarItem] = []
+    tabItemsByName.removeAll()
+    tabNameByItem.removeAll()
+    for item in configuration.items {
+      let tabItem = UITabBarItem(
+        title: item.label ?? item.name,
+        image: item.icon?.makeImage(),
+        selectedImage: nil
+      )
+      tabItem.badgeValue = item.badge
+      if #available(iOS 10.0, *) {
+        tabItem.badgeColor = item.badgeColor
+      }
+      items.append(tabItem)
+      tabItemsByName[item.name] = tabItem
+      tabNameByItem[tabItem] = item.name
+    }
+    bar.items = items
+    applyTabBarAppearance(items: configuration.items)
+    view.setNeedsLayout()
+
+    if let initial = configuration.initialRouteName ?? configuration.items.first?.name {
+      selectTab(named: initial)
+    }
+  }
+
+  func selectTab(named name: String) {
+    guard let item = tabItemsByName[name], let bar = tabBar else { return }
+    if bar.selectedItem !== item {
+      bar.selectedItem = item
+    }
+  }
+
+  func removeTabs() {
+    tabBar?.delegate = nil
+    tabBar?.removeFromSuperview()
+    tabBar = nil
+    tabItemsByName.removeAll()
+    tabNameByItem.removeAll()
+    tabSelectionHandler = nil
+    view.setNeedsLayout()
+  }
+
+  func tabBar(_ tabBar: UITabBar, didSelect item: UITabBarItem) {
+    guard let name = tabNameByItem[item] else { return }
+    tabSelectionHandler?(name)
+  }
+
+  private func applyTabBarAppearance(items: [TabBarConfiguration.Item]) {
+    guard let tabBar else { return }
+    if let backgroundColor = items.compactMap({ $0.backgroundColor }).first {
+      tabBar.barTintColor = backgroundColor
+      tabBar.backgroundColor = backgroundColor
+    } else {
+      tabBar.barTintColor = nil
+      tabBar.backgroundColor = nil
+    }
+    if let activeColor = items.compactMap({ $0.activeTintColor }).first {
+      tabBar.tintColor = activeColor
+    } else {
+      tabBar.tintColor = cachedDefaultTintColor
+    }
+    if let inactiveColor = items.compactMap({ $0.inactiveTintColor }).first {
+      tabBar.unselectedItemTintColor = inactiveColor
+    } else {
+      tabBar.unselectedItemTintColor = nil
+    }
   }
 
   private func applyStoredOptionsToNavigationBar() {
@@ -250,7 +367,7 @@ final class RNScreenHostController: UIViewController {
 }
 
 extension UIColor {
-  fileprivate convenience init?(hex: String) {
+  convenience init?(hex: String) {
     var formatted = hex.trimmingCharacters(in: .whitespacesAndNewlines)
     if formatted.hasPrefix("#") {
       formatted.removeFirst()

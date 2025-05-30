@@ -11,6 +11,7 @@ enum RuneRouterEvent: String {
   case back = "rune.router.back"
   case predictiveBack = "rune.router.predictiveBack"
   case beforeRemove = "rune.router.beforeRemove"
+  case tabSelected = "rune.router.tabSelected"
 }
 
 final class RuneRouterEmitter {
@@ -59,6 +60,16 @@ final class RuneRouterEmitter {
         "key": key,
         "action": action,
         "requestId": requestId,
+      ]
+    )
+  }
+
+  func emitTabSelection(navigatorId: String, tabName: String) {
+    emit(
+      .tabSelected,
+      payload: [
+        "navigatorId": navigatorId,
+        "tabName": tabName,
       ]
     )
   }

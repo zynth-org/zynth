@@ -50,6 +50,35 @@ final class RuneRouterModule: NSObject, RuneModule, RuneSyncModule {
       else { return ["error": "invalid_screens"] }
       registeredScreens = screens
       return ["result": "ok"]
+    case "configureTabs":
+      guard
+        let dict = args as? [String: Any],
+        let routeKey = dict["routeKey"] as? String,
+        let config = dict["config"] as? [String: Any],
+        let tabsConfig = TabBarConfiguration(dictionary: config)
+      else { return ["error": "invalid_tabs"] }
+      DispatchQueue.main.async { [weak self] in
+        self?.stackController?.configureTabs(for: routeKey, configuration: tabsConfig)
+      }
+      return ["result": "ok"]
+    case "removeTabs":
+      guard let dict = args as? [String: Any],
+        let routeKey = dict["routeKey"] as? String
+      else { return ["error": "invalid_route"] }
+      DispatchQueue.main.async { [weak self] in
+        self?.stackController?.removeTabs(for: routeKey)
+      }
+      return ["result": "ok"]
+    case "selectTab":
+      guard
+        let dict = args as? [String: Any],
+        let routeKey = dict["routeKey"] as? String,
+        let tabName = dict["tabName"] as? String
+      else { return ["error": "invalid_tab"] }
+      DispatchQueue.main.async { [weak self] in
+        self?.stackController?.selectTab(for: routeKey, name: tabName)
+      }
+      return ["result": "ok"]
     case "resolveBeforeRemove":
       guard
         let dict = args as? [String: Any],

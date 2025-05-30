@@ -171,6 +171,24 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
     record.controller?.apply(options: next)
   }
 
+  func configureTabs(for routeKey: String, configuration: TabBarConfiguration) {
+    guard let host = controller(for: routeKey) else { return }
+    host.configureTabs(configuration: configuration) { [weak self] tabName in
+      self?.emitter?.emitTabSelection(
+        navigatorId: configuration.navigatorId,
+        tabName: tabName
+      )
+    }
+  }
+
+  func removeTabs(for routeKey: String) {
+    controller(for: routeKey)?.removeTabs()
+  }
+
+  func selectTab(for routeKey: String, name: String) {
+    controller(for: routeKey)?.selectTab(named: name)
+  }
+
   // MARK: - State + events
 
   func currentStatePayload() -> [String: Any] {
@@ -492,6 +510,10 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
       guard let controller = record.controller else { return true }
       return !keys.contains(controller.routeKey)
     }
+  }
+
+  private func controller(for routeKey: String) -> RNScreenHostController? {
+    return routeStack.first(where: { $0.key == routeKey })?.controller
   }
 
   private func scheduleNavigationAction(_ action: @escaping (RNStackController) -> Void) {

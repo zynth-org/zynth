@@ -3,6 +3,7 @@ import type {
   RouterAction,
   ScreenDescriptor,
   ScreenOptions,
+  TabIconDescriptor,
 } from "./types";
 import type {
   RouterEventListener,
@@ -20,6 +21,9 @@ export interface NativeRouterBridge {
     listener: RouterEventListener<Name>
   ): () => void;
   resolveBeforeRemove?(requestId: string, cancelled: boolean): void;
+  configureTabs?(routeKey: string, config: NativeTabBarConfig): void;
+  removeTabs?(routeKey: string): void;
+  selectTab?(routeKey: string, tabName: string): void;
 }
 
 export interface RegisteredScreenSummary {
@@ -27,6 +31,23 @@ export interface RegisteredScreenSummary {
   navigatorId: string;
   type: "stack" | "tab";
   memoryPolicy?: ScreenDescriptor["memoryPolicy"];
+}
+
+export interface NativeTabBarItem {
+  name: string;
+  label?: string;
+  badge?: string | number;
+  badgeColor?: string;
+  activeTintColor?: string;
+  inactiveTintColor?: string;
+  backgroundColor?: string;
+  icon?: TabIconDescriptor;
+}
+
+export interface NativeTabBarConfig {
+  navigatorId: string;
+  initialRouteName?: string;
+  tabs: NativeTabBarItem[];
 }
 
 declare global {
@@ -73,6 +94,20 @@ const fallbackBridge: NativeRouterBridge = {
         `[RuneRouter] Received beforeRemove request (${requestId}) but no native bridge is installed; result=${cancelled}`
       );
     }
+  },
+  configureTabs(_, config) {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn(
+        "[RuneRouter] Cannot configure tabs because native bridge is missing.",
+        config
+      );
+    }
+  },
+  removeTabs() {
+    /* no-op */
+  },
+  selectTab() {
+    /* no-op */
   },
 };
 
@@ -141,6 +176,15 @@ function installModuleBackedRouterBridge(
     },
     resolveBeforeRemove(requestId, cancelled) {
       call(moduleName, "resolveBeforeRemove", { requestId, cancelled });
+    },
+    configureTabs(routeKey, config) {
+      call(moduleName, "configureTabs", { routeKey, config });
+    },
+    removeTabs(routeKey) {
+      call(moduleName, "removeTabs", { routeKey });
+    },
+    selectTab(routeKey, tabName) {
+      call(moduleName, "selectTab", { routeKey, tabName });
     },
   };
 
@@ -213,6 +257,30 @@ export function setNativeScreenOptions(
   options: ScreenOptions
 ): void {
   getNativeRouterBridge().setOptions(key, options);
+}
+
+export function setNativeTabs(
+  routeKey: string,
+  config: NativeTabBarConfig
+): void {
+  const bridge = getNativeRouterBridge();
+  if (typeof bridge.configureTabs === "function") {
+    bridge.configureTabs(routeKey, config);
+  }
+}
+
+export function removeNativeTabs(routeKey: string): void {
+  const bridge = getNativeRouterBridge();
+  if (typeof bridge.removeTabs === "function") {
+    bridge.removeTabs(routeKey);
+  }
+}
+
+export function selectNativeTab(routeKey: string, tabName: string): void {
+  const bridge = getNativeRouterBridge();
+  if (typeof bridge.selectTab === "function") {
+    bridge.selectTab(routeKey, tabName);
+  }
 }
 
 export function subscribeToNativeRouterEvent<Name extends RouterEventName>(
