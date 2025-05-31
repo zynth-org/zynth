@@ -64,7 +64,7 @@ extension TabBarConfiguration.Item {
     }
     self.name = name
     self.label = dictionary["label"] as? String
-    if let badge = dictionary["badge"] {
+    if let badge = dictionary["badge"], !(badge is NSNull) {
       self.badge = "\(badge)"
     } else {
       self.badge = nil
