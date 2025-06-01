@@ -1,4 +1,5 @@
 import UIKit
+import RuneKit
 
 @objcMembers
 @objc(RNStackController)
@@ -10,6 +11,14 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
   private var routeStack: [RouteRecord] = []
   private weak var routerModule: RuneRouterModule?
   private var emitter: RuneRouterEmitter?
+  weak var runtime: RuneRuntime? {
+    didSet {
+      guard let runtime else { return }
+      for record in routeStack {
+        record.controller?.attachRuntime(runtime)
+      }
+    }
+  }
   private var focusedRouteKey: String?
   private var transitionRouteKey: String?
   private var transitionDisplayLink: CADisplayLink?
@@ -59,6 +68,9 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
   private func performPush(routeName: String, params: [String: Any]?, animated: Bool) {
     let record = RouteRecord(name: routeName, params: params)
     let host = RNScreenHostController(routeKey: record.key, routeName: routeName, params: params)
+    if let runtime {
+      host.attachRuntime(runtime)
+    }
     record.controller = host
     routeStack.append(record)
     navigator.pushViewController(host, animated: animated)
@@ -137,6 +149,9 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
       let key = (route["key"] as? String) ?? UUID().uuidString
       let record = RouteRecord(name: name, params: params, key: key)
       let host = RNScreenHostController(routeKey: record.key, routeName: name, params: params)
+      if let runtime {
+        host.attachRuntime(runtime)
+      }
       record.controller = host
       records.append(record)
       controllers.append(host)

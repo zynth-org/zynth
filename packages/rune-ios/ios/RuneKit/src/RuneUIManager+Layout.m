@@ -43,26 +43,43 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
 - (void)rune_performFlush {
   [[PerformanceProfiler shared] recordLayoutStart];
   dispatch_async(dispatch_get_main_queue(), ^{
-    if (!self.rootYoga || !self.root || !self.nodes) {
+    if (!self.nodes) {
       return;
     }
+    NSArray<NSNumber *> *surfaceIds = [self rune_allSurfaceIds];
+    for (NSNumber *sid in surfaceIds) {
+      int surfaceId = sid.intValue;
+      UIView *rootView = [self rune_rootViewForSurface:surfaceId];
+      YGNodeRef rootYoga = [self rune_rootYogaForSurface:surfaceId];
+      if (!rootView || !rootYoga) {
+        continue;
+      }
 
-    CGRect screenBounds = [UIScreen mainScreen].bounds;
-    YGNodeStyleSetWidth(self.rootYoga, (float)screenBounds.size.width);
-    YGNodeStyleSetHeight(self.rootYoga, (float)screenBounds.size.height);
+      CGSize boundsSize = rootView.bounds.size;
+      if (boundsSize.width <= 0 || boundsSize.height <= 0) {
+        boundsSize = rootView.frame.size;
+      }
+      if ((boundsSize.width <= 0 || boundsSize.height <= 0) && surfaceId == [self rune_rootSurfaceId]) {
+        CGRect screenBounds = [UIScreen mainScreen].bounds;
+        boundsSize = screenBounds.size;
+      }
 
-    if (YGNodeGetChildCount(self.rootYoga) > 0) {
-      YGNodeRef firstChild = YGNodeGetChild(self.rootYoga, 0);
-      YGNodeStyleSetWidth(firstChild, (float)screenBounds.size.width);
-      YGNodeStyleSetHeight(firstChild, (float)screenBounds.size.height);
-    }
+      YGNodeStyleSetWidth(rootYoga, (float)boundsSize.width);
+      YGNodeStyleSetHeight(rootYoga, (float)boundsSize.height);
 
-    @try {
-      YGNodeCalculateLayout(self.rootYoga, YGUndefined, YGUndefined, YGDirectionLTR);
-    } @catch (NSException *exception) {
-      NSLog(@"[SN] Exception in YGNodeCalculateLayout: %@", exception);
-      [[PerformanceProfiler shared] recordLayoutEnd];
-      return;
+      if (YGNodeGetChildCount(rootYoga) > 0) {
+        YGNodeRef firstChild = YGNodeGetChild(rootYoga, 0);
+        YGNodeStyleSetWidth(firstChild, (float)boundsSize.width);
+        YGNodeStyleSetHeight(firstChild, (float)boundsSize.height);
+      }
+
+      @try {
+        YGNodeCalculateLayout(rootYoga, YGUndefined, YGUndefined, YGDirectionLTR);
+      } @catch (NSException *exception) {
+        NSLog(@"[SN] Exception in YGNodeCalculateLayout for surface %d: %@", surfaceId, exception);
+        [[PerformanceProfiler shared] recordLayoutEnd];
+        return;
+      }
     }
     [[PerformanceProfiler shared] recordLayoutEnd];
 
@@ -72,7 +89,7 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
         return;
       }
 
-      if (!obj.view.superview && obj.view != self.root.subviews.firstObject) {
+      if (!obj.view.superview) {
         return;
       }
 

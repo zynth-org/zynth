@@ -628,6 +628,25 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
         return Value::undefined();
       });
 
+  auto hostSetSurface = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "setSurface"), 1,
+      [host](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        try {
+          if (count < 1 || !args[0].isNumber()) {
+            return Value::undefined();
+          }
+          int surfaceId = (int)args[0].asNumber();
+          SNRunOnMain(^{
+            [[host manager] setActiveSurface:surfaceId];
+          });
+        } catch (const facebook::jsi::JSError &error) {
+          RuneReportJSIError(rt, error, "__ui.setSurface");
+        } catch (const std::exception &ex) {
+          [host reportStdException:ex context:@"__ui.setSurface"];
+        }
+        return Value::undefined();
+      });
+
   auto hostSetHandler = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "setHandler"), 3,
       [host](Runtime &rt, const Value &, const Value *a, size_t count) -> Value {
@@ -670,6 +689,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
   ui.setProperty(rt, "setText", hostSetText);
   ui.setProperty(rt, "insertChild", hostInsertChild);
   ui.setProperty(rt, "removeChild", hostRemoveChild);
+  ui.setProperty(rt, "setSurface", hostSetSurface);
   ui.setProperty(rt, "setHandler", hostSetHandler);
   ui.setProperty(rt, "flush", hostFlush);
   rt.global().setProperty(rt, "__ui", ui);

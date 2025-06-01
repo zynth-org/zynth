@@ -1,4 +1,5 @@
 import UIKit
+import RuneKit
 
 final class RNScreenHostController: UIViewController, UITabBarDelegate {
   let routeKey: String
@@ -14,6 +15,15 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
   private var tabItemsByName: [String: UITabBarItem] = [:]
   private var tabNameByItem: [UITabBarItem: String] = [:]
   private var tabSelectionHandler: ((String) -> Void)?
+  private var suppressTabSelectionCallback = false
+  private weak var runtime: RuneRuntime?
+  private struct IconHostEntry {
+    let host: RuneTabIconHostView
+    let name: String
+  }
+  private var tabIconHosts: [String: IconHostEntry] = [:]
+  private var tabIconConfigs: [String: TabIconConfiguration] = [:]
+  private var tabConfiguration: TabBarConfiguration?
 
   init(routeKey: String, routeName: String, params: [String: Any]?) {
     self.routeKey = routeKey
@@ -42,8 +52,16 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
     applyStoredOptionsToNavigationBar()
   }
 
+  deinit {
+    disposeTabIconHosts()
+  }
+
   func updateParams(_ params: [String: Any]?) {
     self.params = params
+  }
+
+  func attachRuntime(_ runtime: RuneRuntime) {
+    self.runtime = runtime
   }
 
   func attachSurfaceView(_ surface: UIView) {
@@ -60,6 +78,7 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
     layoutContentContainers()
+    refreshTabIconHosts()
   }
 
   private func layoutContentContainers() {
@@ -105,6 +124,8 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
     configuration: TabBarConfiguration,
     selectionHandler: @escaping (String) -> Void
   ) {
+    tabIconConfigs.removeAll()
+    disposeTabIconHosts()
     tabSelectionHandler = selectionHandler
     let bar: UITabBar
     if let existing = tabBar {
@@ -122,9 +143,19 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
     for item in configuration.items {
       let tabItem = UITabBarItem(
         title: item.label ?? item.name,
-        image: item.icon?.makeImage(),
+        image: nil,
         selectedImage: nil
       )
+      if let icon = item.icon {
+        tabIconConfigs[item.name] = icon
+        if let glyph = icon.glyph {
+          tabItem.image = glyph.image(active: false)?.withRenderingMode(.alwaysOriginal)
+          tabItem.selectedImage = glyph.image(active: true)?.withRenderingMode(.alwaysOriginal)
+        } else if let systemImage = icon.makeSystemImage() {
+          tabItem.image = systemImage
+          tabItem.selectedImage = systemImage
+        }
+      }
       tabItem.badgeValue = item.badge
       if #available(iOS 10.0, *) {
         tabItem.badgeColor = item.badgeColor
@@ -136,16 +167,25 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
     bar.items = items
     applyTabBarAppearance(items: configuration.items)
     view.setNeedsLayout()
+    DispatchQueue.main.async { [weak self] in
+      self?.refreshTabIconHosts()
+    }
 
     if let initial = configuration.initialRouteName ?? configuration.items.first?.name {
       selectTab(named: initial)
+    } else {
+      updateTabIconActiveStates()
     }
   }
 
   func selectTab(named name: String) {
     guard let item = tabItemsByName[name], let bar = tabBar else { return }
-    if bar.selectedItem !== item {
-      bar.selectedItem = item
+    if bar.selectedItem === item { return }
+    suppressTabSelectionCallback = true
+    bar.selectedItem = item
+    updateTabIconActiveStates()
+    DispatchQueue.main.async { [weak self] in
+      self?.suppressTabSelectionCallback = false
     }
   }
 
@@ -156,11 +196,20 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
     tabItemsByName.removeAll()
     tabNameByItem.removeAll()
     tabSelectionHandler = nil
+    disposeTabIconHosts()
+    tabIconConfigs.removeAll()
+    tabConfiguration = nil
     view.setNeedsLayout()
   }
 
   func tabBar(_ tabBar: UITabBar, didSelect item: UITabBarItem) {
+    if suppressTabSelectionCallback {
+      suppressTabSelectionCallback = false
+      updateTabIconActiveStates()
+      return
+    }
     guard let name = tabNameByItem[item] else { return }
+    updateTabIconActiveStates()
     tabSelectionHandler?(name)
   }
 
@@ -183,6 +232,144 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
     } else {
       tabBar.unselectedItemTintColor = nil
     }
+  }
+
+  private func refreshTabIconHosts() {
+    guard let runtime else { return }
+    guard let bar = tabBar, let items = bar.items, !items.isEmpty else { return }
+    let buttons = collectTabButtons(in: bar)
+    if buttons.isEmpty { return }
+    let sortedButtons = buttons.sorted { $0.frame.minX < $1.frame.minX }
+    let itemsByTitle: [String: UITabBarItem] = Dictionary(
+      uniqueKeysWithValues: items.compactMap { item -> (String, UITabBarItem)? in
+        guard let title = item.title?.lowercased(), !title.isEmpty else { return nil }
+        return (title, item)
+      }
+    )
+
+    var usedKeys: Set<String> = []
+
+    for (index, button) in sortedButtons.enumerated() {
+      let item: UITabBarItem
+      if let title = titleForTabButton(button),
+        let matched = itemsByTitle[title.lowercased()]
+      {
+        item = matched
+      } else {
+        item = items[index % items.count]
+      }
+      guard let name = tabNameByItem[item] else { continue }
+      let key = "\(name)-\(ObjectIdentifier(button).hashValue)"
+      usedKeys.insert(key)
+
+      let imageView = findImageView(in: button)
+      let runeId = tabIconConfigs[name]?.runeId
+
+      if let runeId {
+        imageView?.isHidden = true
+        let entry: IconHostEntry
+        if let existing = tabIconHosts[key] {
+          entry = existing
+        } else {
+          let host = RuneTabIconHostView(runtime: runtime)
+          entry = IconHostEntry(host: host, name: name)
+          tabIconHosts[key] = entry
+        }
+        attachHost(entry.host, to: button, targetView: imageView)
+        button.layoutIfNeeded()
+        entry.host.bindIcon(runeId: runeId, isActive: bar.selectedItem === item)
+      } else {
+        imageView?.isHidden = false
+        if let entry = tabIconHosts.removeValue(forKey: key) {
+          entry.host.dispose()
+          entry.host.removeFromSuperview()
+        }
+      }
+    }
+
+    // Dispose hosts that were not used in this pass
+    let unusedKeys = tabIconHosts.keys.filter { !usedKeys.contains($0) }
+    for key in unusedKeys {
+      if let entry = tabIconHosts.removeValue(forKey: key) {
+        entry.host.dispose()
+        entry.host.removeFromSuperview()
+      }
+    }
+  }
+
+  private func collectTabButtons(in view: UIView) -> [UIControl] {
+    var result: [UIControl] = []
+    func walk(_ node: UIView) {
+      if let control = node as? UIControl, String(describing: type(of: control)).contains("Tab") || control is UIControl {
+        result.append(control)
+      }
+      for child in node.subviews {
+        walk(child)
+      }
+    }
+    walk(view)
+    return result
+  }
+
+  private func updateTabIconActiveStates() {
+    guard let bar = tabBar else { return }
+    for (_, entry) in tabIconHosts {
+      guard let item = tabItemsByName[entry.name] else { continue }
+      entry.host.updateActiveState(bar.selectedItem === item)
+    }
+  }
+
+  private func attachHost(_ host: RuneTabIconHostView, to container: UIView, targetView: UIView?) {
+    if host.superview !== container {
+      host.removeFromSuperview()
+      container.addSubview(host)
+    }
+    host.translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.deactivate(host.constraints)
+
+    let targetSize = targetView?.bounds.size ?? host.intrinsicContentSize
+    let width = max(targetSize.width, host.intrinsicContentSize.width)
+    let height = max(targetSize.height, host.intrinsicContentSize.height)
+
+    let anchorView = targetView ?? container
+    NSLayoutConstraint.activate([
+      host.centerXAnchor.constraint(equalTo: anchorView.centerXAnchor),
+      host.centerYAnchor.constraint(equalTo: anchorView.centerYAnchor),
+      host.widthAnchor.constraint(equalToConstant: width),
+      host.heightAnchor.constraint(equalToConstant: height),
+    ])
+  }
+
+  private func findImageView(in view: UIView) -> UIImageView? {
+    if let imageView = view as? UIImageView {
+      return imageView
+    }
+    for subview in view.subviews {
+      if let imageView = findImageView(in: subview) {
+        return imageView
+      }
+    }
+    return nil
+  }
+
+  private func disposeTabIconHosts() {
+    for (_, entry) in tabIconHosts {
+      entry.host.dispose()
+      entry.host.removeFromSuperview()
+    }
+    tabIconHosts.removeAll()
+  }
+
+  private func titleForTabButton(_ view: UIView) -> String? {
+    if let label = view as? UILabel, let text = label.text, !text.isEmpty {
+      return text
+    }
+    for subview in view.subviews {
+      if let found = titleForTabButton(subview) {
+        return found
+      }
+    }
+    return nil
   }
 
   private func applyStoredOptionsToNavigationBar() {

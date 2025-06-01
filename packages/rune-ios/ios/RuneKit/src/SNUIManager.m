@@ -11,6 +11,7 @@
 #import <objc/message.h>
 
 static NSString *const kRuneBorderLayerName = @"rune-border-style";
+static const int kRuneSurfaceIdBase = 1 << 20;
 
 #if __has_include(<RuneKit/RuneKit-Swift.h>)
 #import <RuneKit/RuneKit-Swift.h>
@@ -23,6 +24,10 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
 @property(nonatomic, strong) NSMutableDictionary<NSNumber *, SNNode *> *nodes;
 @property(nonatomic, assign) int nextId;
 @property(nonatomic, assign) YGNodeRef rootYoga;
+@property(nonatomic, strong) NSMutableDictionary<NSNumber *, UIView *> *surfaceRoots;
+@property(nonatomic, strong) NSMutableDictionary<NSNumber *, NSValue *> *surfaceYoga;
+@property(nonatomic, assign) int activeSurfaceId;
+@property(nonatomic, assign) int surfaceIdSeed;
 @property(nonatomic, strong, nullable) CADisplayLink *displayLink;
 @property(nonatomic, assign) BOOL needsFlush;
 @property(nonatomic, strong) NSMutableDictionary<NSString *, NSDictionary *> *eventPayloads;
@@ -62,10 +67,13 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
 
 - (void)dealloc {
   [self rune_stopDisplayLink];
-  if (_rootYoga) {
-    YGNodeFreeRecursive(_rootYoga);
-    _rootYoga = NULL;
+  for (NSValue *value in _surfaceYoga.allValues) {
+    YGNodeRef yoga = (YGNodeRef)value.pointerValue;
+    if (yoga) {
+      YGNodeFreeRecursive(yoga);
+    }
   }
+  _rootYoga = NULL;
 }
 
 - (instancetype)initWithRootView:(UIView *)rootView {
@@ -74,13 +82,133 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
     _nodes = [NSMutableDictionary new];
     _nextId = 1;
     _rootYoga = YGNodeNew();
+    YGNodeStyleSetFlexDirection(_rootYoga, YGFlexDirectionColumn);
+    YGNodeStyleSetAlignItems(_rootYoga, YGAlignStretch);
     _eventPayloads = [NSMutableDictionary new];
+    _surfaceRoots = [NSMutableDictionary new];
+    _surfaceYoga = [NSMutableDictionary new];
+    _surfaceIdSeed = kRuneSurfaceIdBase;
+    _activeSurfaceId = 0;
 
     CGRect screenBounds = [UIScreen mainScreen].bounds;
     rootView.frame = screenBounds;
     rootView.backgroundColor = [UIColor colorWithRed:0.06 green:0.07 blue:0.09 alpha:1.0];
+    _surfaceRoots[@(0)] = rootView;
+    _surfaceYoga[@(0)] = [NSValue valueWithPointer:_rootYoga];
   }
   return self;
+}
+
+- (int)rootSurfaceId { return 0; }
+
+- (NSArray<NSNumber *> *)rune_allSurfaceIds {
+  NSMutableSet<NSNumber *> *ids = [NSMutableSet setWithArray:self.surfaceRoots.allKeys];
+  [ids addObject:@(0)];
+  return ids.allObjects;
+}
+
+- (UIView *_Nullable)rune_rootViewForSurface:(int)surfaceId {
+  if (surfaceId == 0) {
+    return self.root;
+  }
+  return self.surfaceRoots[@(surfaceId)];
+}
+
+- (YGNodeRef)rune_rootYogaForSurface:(int)surfaceId {
+  if (surfaceId == 0) {
+    return self.rootYoga;
+  }
+  NSValue *value = self.surfaceYoga[@(surfaceId)];
+  return (YGNodeRef)value.pointerValue;
+}
+
+- (BOOL)rune_hasSurface:(int)surfaceId {
+  return [self rune_rootViewForSurface:surfaceId] != nil;
+}
+
+- (BOOL)rune_isSurfaceRootId:(NSNumber *)nodeId {
+  if (!nodeId) return NO;
+  int sid = nodeId.intValue;
+  return sid == self.rootSurfaceId || self.surfaceRoots[@(sid)] != nil;
+}
+
+- (int)rune_allocateSurfaceId {
+  int candidate = self.surfaceIdSeed;
+  while (self.surfaceRoots[@(candidate)] != nil) {
+    candidate++;
+  }
+  self.surfaceIdSeed = candidate + 1;
+  return candidate;
+}
+
+- (NSNumber *)registerSurfaceWithRootView:(UIView *)rootView {
+  return [self registerSurfaceWithRootView:rootView surfaceId:nil];
+}
+
+- (NSNumber *)registerSurfaceWithRootView:(UIView *)rootView surfaceId:(NSNumber *_Nullable)surfaceId {
+  NSAssert([NSThread isMainThread], @"registerSurfaceWithRootView must be called on main thread");
+  int sid = surfaceId != nil ? surfaceId.intValue : [self rune_allocateSurfaceId];
+  if ([self rune_hasSurface:sid]) {
+    return @(sid);
+  }
+  if (self.nextId <= sid) {
+    self.nextId = sid + 1;
+  }
+  YGNodeRef yoga = YGNodeNew();
+  YGNodeStyleSetFlexDirection(yoga, YGFlexDirectionColumn);
+  YGNodeStyleSetAlignItems(yoga, YGAlignStretch);
+  self.surfaceRoots[@(sid)] = rootView;
+  self.surfaceYoga[@(sid)] = [NSValue valueWithPointer:yoga];
+  return @(sid);
+}
+
+- (void)unregisterSurface:(int)surfaceId {
+  if (surfaceId == 0) {
+    NSLog(@"[SNUIManager] Ignoring attempt to unregister root surface");
+    return;
+  }
+  UIView *rootView = self.surfaceRoots[@(surfaceId)];
+  NSValue *yogaValue = self.surfaceYoga[@(surfaceId)];
+  if (!rootView || !yogaValue) {
+    return;
+  }
+  NSArray<NSNumber *> *allKeys = [self.nodes allKeys];
+  for (NSNumber *key in allKeys) {
+    SNNode *node = self.nodes[key];
+    if (!node || node.surfaceId != surfaceId) continue;
+
+    RuneComponentDescriptor *descriptor = RuneGetComponentDescriptor(node.type);
+    if (descriptor && descriptor.cleanup) {
+      descriptor.cleanup(self, node);
+    }
+    for (UIGestureRecognizer *gr in node.view.gestureRecognizers.copy) {
+      [node.view removeGestureRecognizer:gr];
+    }
+    node.onPressCallback = nil;
+    node.hasOnPressHandler = NO;
+    [node.view removeFromSuperview];
+    [self.nodes removeObjectForKey:key];
+  }
+  for (UIView *subview in [rootView.subviews copy]) {
+    [subview removeFromSuperview];
+  }
+  YGNodeRef yoga = (YGNodeRef)yogaValue.pointerValue;
+  if (yoga) {
+    YGNodeFreeRecursive(yoga);
+  }
+  [self.surfaceRoots removeObjectForKey:@(surfaceId)];
+  [self.surfaceYoga removeObjectForKey:@(surfaceId)];
+  if (self.activeSurfaceId == surfaceId) {
+    self.activeSurfaceId = self.rootSurfaceId;
+  }
+}
+
+- (void)setActiveSurface:(int)surfaceId {
+  if (![self rune_hasSurface:surfaceId]) {
+    NSLog(@"[SNUIManager] Attempted to activate unknown surface %d", surfaceId);
+    return;
+  }
+  self.activeSurfaceId = surfaceId;
 }
 - (NSNumber *)createNode:(NSString *)type {
   int nid = _nextId++;
@@ -105,6 +233,7 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
   n.parentId = -1;
   n.pointerEvents = @"auto"; // Default pointerEvents state
   n.type = type;
+  n.surfaceId = self.activeSurfaceId;
 
   if (!n.yoga) {
     NSLog(@"[SN] ERROR: Failed to create Yoga node for nid=%d", nid);
@@ -688,19 +817,23 @@ static void SNApplyEdges(NSDictionary *style,
 - (void)insertChild:(NSNumber *)parentId child:(NSNumber *)childId index:(NSNumber *)index {
   SNNode *c = _nodes[childId];
   if (!c || !c.view || !c.yoga) return;
-  
-  if (parentId.intValue == 0) {
-    if (!self.rootYoga || !self.root) return;
+
+  if ([self rune_isSurfaceRootId:parentId]) {
+    UIView *rootView = [self rune_rootViewForSurface:parentId.intValue];
+    YGNodeRef rootYoga = [self rune_rootYogaForSurface:parentId.intValue];
+    if (!rootView || !rootYoga) return;
 
     int i = (int)index.intValue;
-    i = MAX(0, MIN(i, (int)self.root.subviews.count));
-    [self.root insertSubview:c.view atIndex:i];
-    YGNodeInsertChild(self.rootYoga, c.yoga, (uint32_t)MIN(i, (int)YGNodeGetChildCount(self.rootYoga)));
-    c.parentId = 0;
+    i = MAX(0, MIN(i, (int)rootView.subviews.count));
+    [rootView insertSubview:c.view atIndex:i];
+    YGNodeInsertChild(rootYoga, c.yoga, (uint32_t)MIN(i, (int)YGNodeGetChildCount(rootYoga)));
+    c.parentId = parentId.intValue;
+    c.surfaceId = parentId.intValue;
   } else {
     SNNode *p = _nodes[parentId];
     if (!p || !p.view || !p.yoga) return;
     c.parentId = p.nid;
+    c.surfaceId = p.surfaceId;
 
     // Check if parent component has custom child insertion logic
     RuneComponentDescriptor *parentDescriptor = RuneGetComponentDescriptor(p.type);
@@ -749,10 +882,12 @@ static void SNApplyEdges(NSDictionary *style,
   c.onPressCallback = nil;
   c.hasOnPressHandler = NO;
 
-  if (parentId.intValue == 0) {
+  if ([self rune_isSurfaceRootId:parentId]) {
+    UIView *rootView = [self rune_rootViewForSurface:parentId.intValue];
+    YGNodeRef rootYoga = [self rune_rootYogaForSurface:parentId.intValue];
     [c.view removeFromSuperview];
-    if (self.rootYoga && c.yoga) {
-      YGNodeRemoveChild(self.rootYoga, c.yoga);
+    if (rootYoga && c.yoga) {
+      YGNodeRemoveChild(rootYoga, c.yoga);
     }
     c.parentId = -1;
   } else {
@@ -775,7 +910,7 @@ static void SNApplyEdges(NSDictionary *style,
       RuneScrollRemoveIMP removeIMP = (RuneScrollRemoveIMP)objc_msgSend;
       removeIMP(p.view, @selector(removeContentSubview:), c.view);
     } else {
-      [c.view removeFromSuperview];
+      [p.view removeFromSuperview];
     }
     NSUInteger idx = [p.children indexOfObject:childId];
     if (idx != NSNotFound) [p.children removeObjectAtIndex:idx];
@@ -801,24 +936,34 @@ static void SNApplyEdges(NSDictionary *style,
   [self rune_stopDisplayLink];
   self.needsFlush = NO;
   
-  NSArray<UIView *> *subviews = [self.root.subviews copy];
-  
-  for (UIView *subview in subviews) {
-    [UIView performWithoutAnimation:^{
-      [subview removeFromSuperview];
-    }];
+  for (UIView *rootView in self.surfaceRoots.allValues) {
+    NSArray<UIView *> *subviews = [rootView.subviews copy];
+    for (UIView *subview in subviews) {
+      [UIView performWithoutAnimation:^{
+        [subview removeFromSuperview];
+      }];
+    }
   }
-  
+
   [self.nodes removeAllObjects];
   
   [self.eventPayloads removeAllObjects];
   
-  if (self.rootYoga) {
-    YGNodeFreeRecursive(self.rootYoga);
-    self.rootYoga = NULL;
+  for (NSValue *value in self.surfaceYoga.allValues) {
+    YGNodeRef yoga = (YGNodeRef)value.pointerValue;
+    if (yoga) {
+      YGNodeFreeRecursive(yoga);
+    }
   }
+  [self.surfaceRoots removeAllObjects];
+  [self.surfaceYoga removeAllObjects];
   self.rootYoga = YGNodeNew();
-  
+  YGNodeStyleSetFlexDirection(self.rootYoga, YGFlexDirectionColumn);
+  YGNodeStyleSetAlignItems(self.rootYoga, YGAlignStretch);
+  self.surfaceYoga[@(self.rootSurfaceId)] = [NSValue valueWithPointer:self.rootYoga];
+  self.surfaceRoots[@(self.rootSurfaceId)] = self.root;
+  self.surfaceIdSeed = kRuneSurfaceIdBase;
+  self.activeSurfaceId = self.rootSurfaceId;
   self.nextId = 1;
 }
 

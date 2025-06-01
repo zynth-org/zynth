@@ -5,7 +5,10 @@
   "main": "dist/esm/index.js",
   "module": "dist/esm/index.js",
   "types": "dist/types/index.d.ts",
-  "sideEffects": false,
+  "sideEffects": [
+    "./src/tabs/tabIconRenderer.tsx",
+    "./dist/esm/tabs/tabIconRenderer.js"
+  ],
   "license": "MIT",
   "files": [
     "dist",
@@ -17,7 +20,8 @@
     "@rune/safe-area": "0.0.1"
   },
   "dependencies": {
-    "@rune/core": "0.0.1"
+    "@rune/core": "0.0.1",
+    "@rune/components": "0.0.1"
   },
   "devDependencies": {
     "@rsbuild/core": "^1.0.1",

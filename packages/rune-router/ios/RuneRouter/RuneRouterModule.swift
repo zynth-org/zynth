@@ -22,6 +22,7 @@ final class RuneRouterModule: NSObject, RuneModule, RuneSyncModule {
 
   func attach(stackController: RNStackController) {
     self.stackController = stackController
+    stackController.runtime = runtime
     stackController.bindRouterModule(self, emitter: emitter)
   }
 

@@ -22,6 +22,9 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, strong, readonly, nullable) CADisplayLink *displayLink;
 @property(nonatomic, assign, readonly) BOOL needsFlush;
 @property(nonatomic, strong, readonly) NSMutableDictionary<NSString *, NSDictionary *> *eventPayloads;
+@property(nonatomic, strong, readonly) NSMutableDictionary<NSNumber *, UIView *> *surfaceRoots;
+@property(nonatomic, strong, readonly) NSMutableDictionary<NSNumber *, NSValue *> *surfaceYoga;
+@property(nonatomic, assign, readonly) int activeSurfaceId;
 
 - (CADisplayLink *)rune_displayLink;
 - (void)rune_setDisplayLink:(CADisplayLink *_Nullable)displayLink;
@@ -29,6 +32,10 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)rune_setNeedsFlush:(BOOL)needsFlush;
 - (NSMutableDictionary<NSString *, NSDictionary *> *)rune_eventPayloads;
 - (void)rune_setEventPayloads:(NSMutableDictionary<NSString *, NSDictionary *> *)payloads;
+- (NSArray<NSNumber *> *)rune_allSurfaceIds;
+- (UIView *_Nullable)rune_rootViewForSurface:(int)surfaceId;
+- (YGNodeRef)rune_rootYogaForSurface:(int)surfaceId;
+- (int)rune_rootSurfaceId;
 
 - (void)sn_markNeedsFlush;
 - (void)sn_startDisplayLinkIfNeeded;

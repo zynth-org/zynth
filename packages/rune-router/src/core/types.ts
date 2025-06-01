@@ -61,11 +61,27 @@ export interface TabIconDescriptor {
   systemName?: string;
   assetName?: string;
   uri?: string;
+  runeId?: string;
+  glyph?: string;
+  glyphFontFamily?: string;
+  glyphFontSize?: number;
+  glyphFontWeight?: "thin" | "light" | "regular" | "medium" | "semibold" | "bold" | "heavy";
+  glyphBaselineOffset?: number;
+  glyphActiveColor?: string;
+  glyphInactiveColor?: string;
 }
+
+export interface TabIconRenderProps {
+  active: boolean;
+}
+
+export type TabIconFactory = (props: TabIconRenderProps) => JSX.Element;
+
+export type TabIconInput = TabIconDescriptor | TabIconFactory;
 
 export interface TabOptions {
   label?: string;
-  icon?: TabIconDescriptor;
+  icon?: TabIconInput;
   badge?: string | number;
   badgeColor?: string;
   activeTintColor?: string;

@@ -88,6 +88,8 @@ public final class RuneRuntime: NSObject {
 
     runtime.evaluate(code: "globalThis.__RUNE_PLATFORM = \"ios\";")
     print("[RuneTrace] __RUNE_PLATFORM set to ios")
+    runtime.evaluate(code: "globalThis.__IOS_TAB_ICON_SURFACES__ = true;")
+    print("[RuneTrace] __IOS_TAB_ICON_SURFACES__ = true")
 
     runtime.evaluate(
       code:
@@ -245,6 +247,30 @@ public final class RuneRuntime: NSObject {
     modules.forEach(registry.register)
   }
 
+  @objc public func registerSurface(rootView: UIView) -> Int {
+    return manager.registerSurface(withRootView: rootView).intValue
+  }
+
+  @objc public func unregisterSurface(id: Int) {
+    manager.unregisterSurface(Int32(id))
+  }
+
+  @objc public func setActiveSurface(_ surfaceId: Int) {
+    manager.setActiveSurface(Int32(surfaceId))
+  }
+
+  @objc public func evaluate(code: String) {
+    runtime.evaluate(code: code)
+  }
+
+  @objc public func callGlobal(_ name: String, args: [Any]) {
+    _ = runtime.callGlobal(name, args: args)
+  }
+
+  public var rootSurfaceId: Int {
+    return Int(manager.rootSurfaceId())
+  }
+
   @objc public func loadInitialBundle(jsBundleURL: URL?) throws {
     #if DEBUG
       if loadDevBundleIfAvailable() {
@@ -285,8 +311,16 @@ public final class RuneRuntime: NSObject {
 
   public func start(rootId: Int) {
     print("[RuneTrace] start() invoking __startApp with rootId", rootId)
-    lastRootId = rootId
-    _ = runtime.callGlobal("__startApp", args: [rootId])
+    let resolvedRootId: Int
+    if rootId != rootSurfaceId {
+      print("[RuneTrace] start() overriding rootId \(rootId) with surfaceId", rootSurfaceId)
+      resolvedRootId = rootSurfaceId
+    } else {
+      resolvedRootId = rootId
+    }
+    manager.setActiveSurface(Int32(resolvedRootId))
+    lastRootId = resolvedRootId
+    _ = runtime.callGlobal("__startApp", args: [resolvedRootId])
   }
 
   public func emitEvent(name: String, payload: Any?) {

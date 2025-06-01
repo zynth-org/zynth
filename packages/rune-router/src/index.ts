@@ -13,6 +13,7 @@ export {
 export { addBackHandler } from "./integration/back";
 export { useHeaderMetrics, useTabBarMetrics } from "./integration/insets";
 export { handleLink, getPathFromState } from "./core/linking";
+export { createTabGlyphIcon } from "./tabs/createTabIcon";
 export type {
   RouteParamList,
   RouteProp,

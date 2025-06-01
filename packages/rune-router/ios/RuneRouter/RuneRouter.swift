@@ -7,6 +7,7 @@ public final class RuneRouter: NSObject {
 
   @objc
   public static func attach(runtime: RuneRuntime, stackController: RNStackController) {
+    stackController.runtime = runtime
     if let existing = module {
       existing.attach(stackController: stackController)
       return

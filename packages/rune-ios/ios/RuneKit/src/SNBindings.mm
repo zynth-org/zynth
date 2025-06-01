@@ -79,6 +79,7 @@ void SNInstallBindings(JSContext *ctx, SNUIManager *mgr) {
   ui[@"setText"] = ^(NSNumber *nodeId, NSString *text) { [mgr setText:nodeId text:text]; };
   ui[@"insertChild"] = ^(NSNumber *parentId, NSNumber *childId, NSNumber *index) { [mgr insertChild:parentId child:childId index:index]; };
   ui[@"removeChild"] = ^(NSNumber *parentId, NSNumber *childId) { [mgr removeChild:parentId child:childId]; };
+  ui[@"setSurface"] = ^(NSNumber *surfaceId) { [mgr setActiveSurface:surfaceId.intValue]; };
   ui[@"flush"] = ^() { [mgr flush]; };
 
   ctx[@"__ui"] = ui;

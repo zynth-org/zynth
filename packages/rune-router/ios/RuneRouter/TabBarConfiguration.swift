@@ -21,8 +21,10 @@ struct TabIconConfiguration {
   let systemName: String?
   let assetName: String?
   let runeId: String?
+  let surfaceId: Int?
+  let glyph: TabGlyphIconConfiguration?
 
-  func makeImage() -> UIImage? {
+  func makeSystemImage() -> UIImage? {
     if let systemName {
       if #available(iOS 13.0, *) {
         return UIImage(systemName: systemName)
@@ -32,6 +34,67 @@ struct TabIconConfiguration {
       return UIImage(named: assetName)
     }
     return nil
+  }
+}
+
+struct TabGlyphIconConfiguration {
+  let glyph: String
+  let fontSize: CGFloat
+  let fontFamily: String?
+  let fontWeight: String?
+  let baselineOffset: CGFloat
+  let activeColor: UIColor?
+  let inactiveColor: UIColor?
+
+  func image(active: Bool) -> UIImage? {
+    guard !glyph.isEmpty else { return nil }
+    let color = active ? (activeColor ?? UIColor.label) : (inactiveColor ?? UIColor.secondaryLabel)
+    let font: UIFont
+    if let family = fontFamily, let custom = UIFont(name: family, size: fontSize) {
+      font = custom
+    } else {
+      font = UIFont.systemFont(ofSize: fontSize, weight: fontWeightValue())
+    }
+    let attributes: [NSAttributedString.Key: Any] = [
+      .font: font,
+      .foregroundColor: color,
+    ]
+    let attributed = NSAttributedString(string: glyph, attributes: attributes)
+    var size = attributed.size()
+    size.width = max(ceil(size.width) + 6, 20)
+    size.height = max(ceil(size.height) + 4, 20)
+    let renderer = UIGraphicsImageRenderer(size: size)
+    return renderer.image { _ in
+      let rect = CGRect(
+        x: (size.width - attributed.size().width) / 2,
+        y: (size.height - attributed.size().height) / 2 - baselineOffset,
+        width: size.width,
+        height: size.height
+      )
+      attributed.draw(in: rect)
+    }
+  }
+
+  private func fontWeightValue() -> UIFont.Weight {
+    guard let fontWeight else { return .medium }
+    switch fontWeight.lowercased() {
+    case "thin":
+      return .thin
+    case "light":
+      return .light
+    case "regular":
+      return .regular
+    case "medium":
+      return .medium
+    case "semibold":
+      return .semibold
+    case "bold":
+      return .bold
+    case "heavy":
+      return .heavy
+    default:
+      return .medium
+    }
   }
 }
 
@@ -102,11 +165,46 @@ extension TabIconConfiguration {
     let systemName = dictionary["systemName"] as? String
     let assetName = dictionary["assetName"] as? String
     let runeId = dictionary["runeId"] as? String
-    if systemName == nil, assetName == nil, runeId == nil {
+    let surfaceId = (dictionary["surfaceId"] as? NSNumber)?.intValue
+    let glyph = TabGlyphIconConfiguration(dictionary: dictionary)
+    if systemName == nil, assetName == nil, runeId == nil, glyph == nil {
       return nil
     }
     self.systemName = systemName
     self.assetName = assetName
     self.runeId = runeId
+    self.surfaceId = surfaceId
+    self.glyph = glyph
+  }
+}
+
+extension TabGlyphIconConfiguration {
+  init?(dictionary: [String: Any]) {
+    guard let glyph = dictionary["glyph"] as? String, !glyph.isEmpty else {
+      return nil
+    }
+    self.glyph = glyph
+    if let fontSize = dictionary["glyphFontSize"] as? NSNumber {
+      self.fontSize = CGFloat(truncating: fontSize)
+    } else {
+      self.fontSize = 16
+    }
+    self.fontFamily = dictionary["glyphFontFamily"] as? String
+    self.fontWeight = dictionary["glyphFontWeight"] as? String
+    if let offset = dictionary["glyphBaselineOffset"] as? NSNumber {
+      self.baselineOffset = CGFloat(truncating: offset)
+    } else {
+      self.baselineOffset = 0
+    }
+    if let activeHex = dictionary["glyphActiveColor"] as? String {
+      self.activeColor = UIColor(hex: activeHex)
+    } else {
+      self.activeColor = nil
+    }
+    if let inactiveHex = dictionary["glyphInactiveColor"] as? String {
+      self.inactiveColor = UIColor(hex: inactiveHex)
+    } else {
+      self.inactiveColor = nil
+    }
   }
 }

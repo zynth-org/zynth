@@ -24,6 +24,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)setProp:(NSNumber *)nodeId name:(NSString *)name valueJSON:(NSString *)json;
 - (void)setPropCallback:(NSNumber *)nodeId name:(NSString *)name callback:(JSValue *)callback;
 - (void)setHandler:(NSNumber *)nodeId name:(NSString *)name;
+- (void)setActiveSurface:(int)surfaceId;
 - (void)setStyle:(NSNumber *)nodeId style:(NSDictionary *)style;
 - (void)setText:(NSNumber *)nodeId text:(NSString *)text;
 - (void)insertChild:(NSNumber *)parentId child:(NSNumber *)childId index:(NSNumber *)index;
@@ -31,6 +32,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)flush; // layout + commit
 - (NSDictionary *)dequeueEventPayloadForNode:(int)nodeId name:(NSString *)name;
 - (void)clearAllNodes; // Clear all nodes and views for HMR reload
+- (NSNumber *)registerSurfaceWithRootView:(UIView *)rootView;
+- (void)unregisterSurface:(int)surfaceId;
+- (int)rootSurfaceId;
 
 @end
 

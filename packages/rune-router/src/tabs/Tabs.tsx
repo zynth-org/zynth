@@ -1,5 +1,6 @@
 import {
   type Accessor,
+  type JSX,
   ParentComponent,
   Show,
   createContext,
@@ -11,11 +12,13 @@ import {
   untrack,
   useContext,
 } from "solid-js";
+import { Platform, OS } from "@rune/apis";
 import type {
   RouteContextValueInternal,
   RouterAction,
   ScreenOptions,
   ScreenDescriptor,
+  TabIconDescriptor,
   TabsComponentType,
   TabsProps,
 } from "../core/types";
@@ -27,6 +30,8 @@ import {
   useRoute,
   useRouterContext,
 } from "../core/RouterContext";
+import { registerTabIcon } from "./tabIconRegistry";
+import "./tabIconRenderer";
 import {
   resolveScreenDescriptor,
   removeNativeTabs,
@@ -71,10 +76,12 @@ const TabsBase: ParentComponent<TabsProps> = (props) => {
   const router = useRouterContext();
   const routeContext = useRoute();
   const hostRouteKey = routeContext.key;
+  const tabIconDisposers = new Map<string, () => void>();
 
   const [registeredNames, setRegisteredNames] = createSignal<string[]>([]);
   const [routes, setRoutes] = createSignal<TabRouteRecord[]>([]);
   const [activeKey, setActiveKey] = createSignal<string | null>(null);
+  let lastSelectedRouteName: string | null = props.initialRouteName ?? null;
 
   const registerScreen = (name: string) => {
     setRegisteredNames((prev) => {
@@ -94,28 +101,21 @@ const TabsBase: ParentComponent<TabsProps> = (props) => {
     return routes().find((route) => route.key === key) ?? null;
   };
 
-  const updateActiveRoute = (
-    route: TabRouteRecord | undefined,
-    syncNative = true
-  ) => {
+  const updateActiveRoute = (route: TabRouteRecord | undefined) => {
     if (!route) {
       return;
     }
-    if (activeKey() === route.key) {
-      if (syncNative) {
-        selectNativeTab(hostRouteKey, route.name);
-      }
-      return;
+    const alreadyActive = activeKey() === route.key;
+    if (!alreadyActive) {
+      setActiveKey(route.key);
     }
-    setActiveKey(route.key);
-    if (syncNative) {
-      selectNativeTab(hostRouteKey, route.name);
-    }
+    lastSelectedRouteName = route.name;
+    selectNativeTab(hostRouteKey, route.name);
   };
 
-  const handleSelectRoute = (routeName: string, syncNative = true) => {
+  const handleSelectRoute = (routeName: string) => {
     const target = routes().find((route) => route.name === routeName);
-    updateActiveRoute(target, syncNative);
+    updateActiveRoute(target);
   };
 
   createEffect(() => {
@@ -134,26 +134,43 @@ const TabsBase: ParentComponent<TabsProps> = (props) => {
       return;
     }
     const nextRoute = nextRoutes.find((route) => route.key === nextKey);
-    updateActiveRoute(nextRoute, true);
+    updateActiveRoute(nextRoute);
   });
 
   createEffect(() => {
     const list = routes();
     if (!list.length) {
+      tabIconDisposers.forEach((dispose) => dispose());
+      tabIconDisposers.clear();
       removeNativeTabs(hostRouteKey);
       return;
     }
+    const present = new Set(list.map((route) => route.name));
+    for (const [routeName, dispose] of tabIconDisposers) {
+      if (!present.has(routeName)) {
+        dispose();
+        tabIconDisposers.delete(routeName);
+      }
+    }
+    const initialName =
+      lastSelectedRouteName ?? props.initialRouteName ?? list[0].name;
     setNativeTabs(hostRouteKey, {
       navigatorId: tabsId,
-      initialRouteName: props.initialRouteName ?? list[0].name,
-      tabs: list.map((route) => ({
+      initialRouteName: initialName,
+      tabs: list.map((route, index) => ({
         name: route.name,
         label: route.tabOptions?.label ?? route.name,
         badge: route.tabOptions?.badge,
         badgeColor: route.tabOptions?.badgeColor,
         activeTintColor: route.tabOptions?.activeTintColor,
         inactiveTintColor: route.tabOptions?.inactiveTintColor,
-        icon: route.tabOptions?.icon,
+        icon: serializeIcon(
+          tabsId,
+          route.name,
+          index,
+          route.tabOptions?.icon,
+          tabIconDisposers
+        ),
         backgroundColor: route.tabOptions?.tabBarBackgroundColor,
       })),
     });
@@ -166,13 +183,15 @@ const TabsBase: ParentComponent<TabsProps> = (props) => {
         if (payload.navigatorId !== tabsId) {
           return;
         }
-        handleSelectRoute(payload.tabName, false);
+        handleSelectRoute(payload.tabName);
       }
     );
     onCleanup(unsubscribe);
   });
 
   onCleanup(() => {
+    tabIconDisposers.forEach((dispose) => dispose());
+    tabIconDisposers.clear();
     removeNativeTabs(hostRouteKey);
   });
 
@@ -184,7 +203,7 @@ const TabsBase: ParentComponent<TabsProps> = (props) => {
         registerScreen,
         routes,
         activeRoute,
-        setActiveRoute: (routeName) => handleSelectRoute(routeName, true),
+        setActiveRoute: handleSelectRoute,
       }}
     >
       <TabsRenderer routes={routes} activeRoute={activeRoute} />
@@ -333,8 +352,10 @@ function buildRouteRecords(
     }
     const previousRoute = previousByName.get(name);
     const staticOptions = getStaticOptions(descriptor.options);
+    const stableKey =
+      previousRoute?.key ?? createTabRouteKey(`${name}-${next.length}`);
     next.push({
-      key: previousRoute?.key ?? createTabRouteKey(name),
+      key: stableKey,
       name: descriptor.name,
       descriptor,
       params: previousRoute?.params ?? descriptor.initialParams,
@@ -377,6 +398,51 @@ function getStaticOptions(
     return undefined;
   }
   return options as ScreenOptions;
+}
+
+function serializeIcon(
+  navigatorId: string,
+  routeName: string,
+  order: number,
+  icon: TabIconDescriptor | ((props: { active: boolean }) => JSX.Element) | undefined,
+  disposers: Map<string, () => void>
+): TabIconDescriptor | undefined {
+  if (!icon) {
+    disposeTabIcon(disposers, routeName);
+    return undefined;
+  }
+  if (typeof icon === "function") {
+    if (!supportsNativeTabIconSurfaces()) {
+      if (process.env.NODE_ENV !== "production") {
+        console.warn(
+          "[RuneRouter] Tab icon render functions are not available on this platform. Falling back to static icons."
+        );
+      }
+      disposeTabIcon(disposers, routeName);
+      return undefined;
+    }
+    const iconId = `${navigatorId}:${order}:${routeName}`;
+    disposeTabIcon(disposers, routeName);
+    const unregister = registerTabIcon(iconId, icon);
+    disposers.set(routeName, unregister);
+    return { runeId: iconId };
+  }
+  disposeTabIcon(disposers, routeName);
+  const result: TabIconDescriptor = { ...icon };
+  return result;
+}
+
+function disposeTabIcon(disposers: Map<string, () => void>, routeName: string) {
+  const dispose = disposers.get(routeName);
+  if (dispose) {
+    dispose();
+    disposers.delete(routeName);
+  }
+}
+
+function supportsNativeTabIconSurfaces(): boolean {
+  if (Platform.OS === OS.ANDROID) return true;
+  return (globalThis as any).__IOS_TAB_ICON_SURFACES__ === true;
 }
 
 function observeRouteOptions(

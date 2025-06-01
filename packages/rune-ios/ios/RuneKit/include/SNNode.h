@@ -41,6 +41,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, assign) BOOL hasDispatchedLayout;
 @property(nonatomic, assign) CGRect lastLayoutFrame;
 @property(nonatomic, copy) NSString *type;
+@property(nonatomic, assign) int surfaceId;
 
 @end
 
