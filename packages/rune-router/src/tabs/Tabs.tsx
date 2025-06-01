@@ -145,6 +145,10 @@ const TabsBase: ParentComponent<TabsProps> = (props) => {
       removeNativeTabs(hostRouteKey);
       return;
     }
+    if (!activeKey()) {
+      const first = list[0];
+      setActiveKey(first.key);
+    }
     const present = new Set(list.map((route) => route.name));
     for (const [routeName, dispose] of tabIconDisposers) {
       if (!present.has(routeName)) {

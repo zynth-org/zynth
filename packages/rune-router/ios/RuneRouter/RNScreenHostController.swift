@@ -1,5 +1,5 @@
-import UIKit
 import RuneKit
+import UIKit
 
 final class RNScreenHostController: UIViewController, UITabBarDelegate {
   let routeKey: String
@@ -300,7 +300,9 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
   private func collectTabButtons(in view: UIView) -> [UIControl] {
     var result: [UIControl] = []
     func walk(_ node: UIView) {
-      if let control = node as? UIControl, String(describing: type(of: control)).contains("Tab") || control is UIControl {
+      if let control = node as? UIControl,
+        String(describing: type(of: control)).contains("Tab") || control is UIControl
+      {
         result.append(control)
       }
       for child in node.subviews {
@@ -320,24 +322,33 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
   }
 
   private func attachHost(_ host: RuneTabIconHostView, to container: UIView, targetView: UIView?) {
+    container.layoutIfNeeded()
     if host.superview !== container {
       host.removeFromSuperview()
       container.addSubview(host)
+      // Keep system badge/label above the custom icon
+      container.sendSubviewToBack(host)
     }
     host.translatesAutoresizingMaskIntoConstraints = false
     NSLayoutConstraint.deactivate(host.constraints)
 
-    let targetSize = targetView?.bounds.size ?? host.intrinsicContentSize
-    let width = max(targetSize.width, host.intrinsicContentSize.width)
-    let height = max(targetSize.height, host.intrinsicContentSize.height)
-
-    let anchorView = targetView ?? container
-    NSLayoutConstraint.activate([
-      host.centerXAnchor.constraint(equalTo: anchorView.centerXAnchor),
-      host.centerYAnchor.constraint(equalTo: anchorView.centerYAnchor),
-      host.widthAnchor.constraint(equalToConstant: width),
-      host.heightAnchor.constraint(equalToConstant: height),
-    ])
+    if let target = targetView, target.bounds.width > 1, target.bounds.height > 1 {
+      NSLayoutConstraint.activate([
+        host.centerXAnchor.constraint(equalTo: target.centerXAnchor),
+        host.centerYAnchor.constraint(equalTo: target.centerYAnchor),
+        host.widthAnchor.constraint(equalTo: target.widthAnchor),
+        host.heightAnchor.constraint(equalTo: target.heightAnchor),
+      ])
+    } else {
+      // Reserve space for the tab label by pinning the icon to the upper portion of the button.
+      let heightMultiplier: CGFloat = 0.70
+      NSLayoutConstraint.activate([
+        host.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+        host.topAnchor.constraint(equalTo: container.topAnchor, constant: 6),
+        host.heightAnchor.constraint(equalTo: container.heightAnchor, multiplier: heightMultiplier),
+        host.widthAnchor.constraint(equalTo: host.heightAnchor),
+      ])
+    }
   }
 
   private func findImageView(in view: UIView) -> UIImageView? {
@@ -499,11 +510,9 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
   }
 
   private func hasAppearanceOverrides(_ options: [String: Any]) -> Bool {
-    return options["headerTransparent"] != nil ||
-      options["headerBackgroundColor"] != nil ||
-      options["headerBlurEffect"] != nil ||
-      options["headerShadowVisible"] != nil ||
-      options["headerTintColor"] != nil
+    return options["headerTransparent"] != nil || options["headerBackgroundColor"] != nil
+      || options["headerBlurEffect"] != nil || options["headerShadowVisible"] != nil
+      || options["headerTintColor"] != nil
   }
 
   private func applyUserInterfaceStyle(_ style: String) {
