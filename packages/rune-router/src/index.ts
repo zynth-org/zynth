@@ -14,6 +14,7 @@ export { addBackHandler } from "./integration/back";
 export { useHeaderMetrics, useTabBarMetrics } from "./integration/insets";
 export { handleLink, getPathFromState } from "./core/linking";
 export { createTabGlyphIcon } from "./tabs/createTabIcon";
+export { TABS_ROOT_NAVIGATOR_ID, TABS_ROOT_ROUTE_KEY } from "./core/types";
 export type {
   RouteParamList,
   RouteProp,
@@ -22,5 +23,6 @@ export type {
   ScreenOptions,
   StackScreenProps,
   TabScreenProps,
+  TabsRootNavigatorId,
 } from "./core/types";
 export { createRouter } from "./routerFactory";

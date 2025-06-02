@@ -168,6 +168,10 @@ const StackRenderer: ParentComponent<{ stackId: string }> = (props) => {
           }
         })
       : undefined;
+    const staticOptions = getStaticOptions(descriptor.options);
+    if (staticOptions) {
+      router.setOptions(current.key, staticOptions as ScreenOptions);
+    }
     currentScene = {
       key: current.key,
       descriptor,
@@ -205,6 +209,15 @@ interface RenderedScene {
 
 function cleanupScene(scene: RenderedScene | null) {
   scene?.disposeOptions?.();
+}
+
+function getStaticOptions(
+  options?: ScreenDescriptor["options"]
+): ScreenOptions | undefined {
+  if (!options || typeof options === "function") {
+    return undefined;
+  }
+  return options as ScreenOptions;
 }
 
 function firstRegisteredRouteName(stackId: string): string | undefined {

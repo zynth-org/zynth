@@ -24,6 +24,7 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
   private var tabIconHosts: [String: IconHostEntry] = [:]
   private var tabIconConfigs: [String: TabIconConfiguration] = [:]
   private var tabConfiguration: TabBarConfiguration?
+  private var hasAppliedHeaderVisibility = false
 
   init(routeKey: String, routeName: String, params: [String: Any]?) {
     self.routeKey = routeKey
@@ -399,7 +400,11 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
     let options = appliedOptions ?? [:]
 
     let headerShown = (options["headerShown"] as? Bool) ?? true
-    navigationController.setNavigationBarHidden(!headerShown, animated: true)
+    let animate = hasAppliedHeaderVisibility
+    navigationController.setNavigationBarHidden(!headerShown, animated: animate)
+    if !hasAppliedHeaderVisibility {
+      hasAppliedHeaderVisibility = true
+    }
 
     if let style = options["userInterfaceStyle"] as? String {
       applyUserInterfaceStyle(style)

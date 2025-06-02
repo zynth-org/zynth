@@ -116,6 +116,10 @@ export interface NavigatorDescriptor {
   initialRouteName?: string;
 }
 
+export const TABS_ROOT_NAVIGATOR_ID = "tabs-root" as const;
+export type TabsRootNavigatorId = typeof TABS_ROOT_NAVIGATOR_ID;
+export const TABS_ROOT_ROUTE_KEY = "tabs-root" as const;
+
 export interface ScreenDescriptor {
   name: string;
   navigatorId: string;

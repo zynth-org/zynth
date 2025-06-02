@@ -7,9 +7,11 @@ final class RuneRouterModule: NSObject, RuneModule, RuneSyncModule {
 
   private weak var runtime: RuneRuntime?
   private weak var stackController: RNStackController?
+  private var tabsHostController: RNTabsHostController?
   private let emitter: RuneRouterEmitter
   private var registeredScreens: [[String: Any]] = []
   private var beforeRemoveResolvers: [String: (Bool) -> Void] = [:]
+  private let tabsRootRouteKey = "tabs-root"
   var sharedEmitter: RuneRouterEmitter { emitter }
 
   init(runtime: RuneRuntime, stackController: RNStackController) {
@@ -24,6 +26,10 @@ final class RuneRouterModule: NSObject, RuneModule, RuneSyncModule {
     self.stackController = stackController
     stackController.runtime = runtime
     stackController.bindRouterModule(self, emitter: emitter)
+    if let runtime, let tabsHostController {
+      tabsHostController.attachRuntime(runtime)
+      tabsHostController.installRootSurface(runtime.rootView)
+    }
   }
 
   func call(method: String, args: Any?) throws -> Any? {
@@ -42,7 +48,11 @@ final class RuneRouterModule: NSObject, RuneModule, RuneSyncModule {
         let options = dict["options"] as? [String: Any]
       else { return ["error": "invalid_options"] }
       DispatchQueue.main.async { [weak self] in
-        self?.stackController?.applyOptions(for: key, options: options)
+        guard let self else { return }
+        if key == self.tabsRootRouteKey {
+          return
+        }
+        self.stackController?.applyOptions(for: key, options: options)
       }
       return ["result": "ok"]
     case "registerScreens":
@@ -50,6 +60,11 @@ final class RuneRouterModule: NSObject, RuneModule, RuneSyncModule {
         let screens = dict["screens"] as? [[String: Any]]
       else { return ["error": "invalid_screens"] }
       registeredScreens = screens
+      if screens.contains(where: { ($0["navigatorId"] as? String) == tabsRootRouteKey }) {
+        DispatchQueue.main.async { [weak self] in
+          _ = self?.ensureTabsRootHost()
+        }
+      }
       return ["result": "ok"]
     case "configureTabs":
       guard
@@ -59,7 +74,12 @@ final class RuneRouterModule: NSObject, RuneModule, RuneSyncModule {
         let tabsConfig = TabBarConfiguration(dictionary: config)
       else { return ["error": "invalid_tabs"] }
       DispatchQueue.main.async { [weak self] in
-        self?.stackController?.configureTabs(for: routeKey, configuration: tabsConfig)
+        guard let self else { return }
+        if routeKey == self.tabsRootRouteKey {
+          self.ensureTabsRootHost()?.configureTabs(configuration: tabsConfig)
+        } else {
+          self.stackController?.configureTabs(for: routeKey, configuration: tabsConfig)
+        }
       }
       return ["result": "ok"]
     case "removeTabs":
@@ -67,7 +87,12 @@ final class RuneRouterModule: NSObject, RuneModule, RuneSyncModule {
         let routeKey = dict["routeKey"] as? String
       else { return ["error": "invalid_route"] }
       DispatchQueue.main.async { [weak self] in
-        self?.stackController?.removeTabs(for: routeKey)
+        guard let self else { return }
+        if routeKey == self.tabsRootRouteKey {
+          self.tabsHostController?.removeTabs()
+        } else {
+          self.stackController?.removeTabs(for: routeKey)
+        }
       }
       return ["result": "ok"]
     case "selectTab":
@@ -77,7 +102,12 @@ final class RuneRouterModule: NSObject, RuneModule, RuneSyncModule {
         let tabName = dict["tabName"] as? String
       else { return ["error": "invalid_tab"] }
       DispatchQueue.main.async { [weak self] in
-        self?.stackController?.selectTab(for: routeKey, name: tabName)
+        guard let self else { return }
+        if routeKey == self.tabsRootRouteKey {
+          self.tabsHostController?.selectTab(named: tabName)
+        } else {
+          self.stackController?.selectTab(for: routeKey, name: tabName)
+        }
       }
       return ["result": "ok"]
     case "resolveBeforeRemove":
@@ -96,7 +126,7 @@ final class RuneRouterModule: NSObject, RuneModule, RuneSyncModule {
   func callSync(method: String, args: Any?) throws -> Any? {
     switch method {
     case "getState":
-      let state = stackController?.currentStatePayload()
+      let state = tabsHostController?.currentStatePayload() ?? stackController?.currentStatePayload()
       return ["state": state as Any]
     default:
       throw RuneModuleError.syncNotSupported(module: name, method: method)
@@ -120,10 +150,34 @@ final class RuneRouterModule: NSObject, RuneModule, RuneSyncModule {
     completion(!cancelled)
   }
 
+  private func ensureTabsRootHost() -> RNTabsHostController? {
+    if let host = tabsHostController {
+      return host
+    }
+    guard let runtime else {
+      #if DEBUG
+        print("[RuneRouterModule] Cannot create tabs root host without runtime")
+      #endif
+      return nil
+    }
+    let host = RNTabsHostController(routeKey: tabsRootRouteKey, emitter: emitter)
+    host.attachRuntime(runtime)
+    host.installRootSurface(runtime.rootView)
+    tabsHostController = host
+    RuneRouterHost.installTabsHost(host)
+    return host
+  }
+
   private func handleDispatch(_ action: [String: Any]) {
     guard let type = action["type"] as? String else { return }
     DispatchQueue.main.async { [weak self] in
       guard let self else { return }
+      if self.tabsHostController != nil {
+        #if DEBUG
+          print("[RuneRouterModule] Ignoring action \(type) because tabs root is active")
+        #endif
+        return
+      }
       switch type {
       case "PUSH", "NAVIGATE":
         guard let payload = action["payload"] as? [String: Any],

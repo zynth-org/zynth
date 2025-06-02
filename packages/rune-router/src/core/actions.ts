@@ -34,6 +34,7 @@ export interface RegisteredScreenSummary {
 }
 
 export interface NativeTabBarItem {
+  key?: string;
   name: string;
   label?: string;
   badge?: string | number;

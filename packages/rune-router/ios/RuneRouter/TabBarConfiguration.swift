@@ -2,6 +2,7 @@ import UIKit
 
 struct TabBarConfiguration {
   struct Item {
+    let key: String?
     let name: String
     let label: String?
     let badge: String?
@@ -125,6 +126,7 @@ extension TabBarConfiguration.Item {
     guard let name = dictionary["name"] as? String else {
       return nil
     }
+    self.key = dictionary["key"] as? String
     self.name = name
     self.label = dictionary["label"] as? String
     if let badge = dictionary["badge"], !(badge is NSNull) {

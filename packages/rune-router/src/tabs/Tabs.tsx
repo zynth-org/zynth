@@ -13,6 +13,10 @@ import {
   useContext,
 } from "solid-js";
 import { Platform, OS } from "@rune/apis";
+import {
+  TABS_ROOT_NAVIGATOR_ID,
+  TABS_ROOT_ROUTE_KEY,
+} from "../core/types";
 import type {
   RouteContextValueInternal,
   RouterAction,
@@ -26,8 +30,8 @@ import { TabScreen } from "./TabScreen";
 import { TabBar } from "./TabBar";
 import {
   RouteProvider,
+  RouteContext,
   createRouteContextValue,
-  useRoute,
   useRouterContext,
 } from "../core/RouterContext";
 import { registerTabIcon } from "./tabIconRegistry";
@@ -72,10 +76,12 @@ export function useTabsContext(): TabsContextValue {
 }
 
 const TabsBase: ParentComponent<TabsProps> = (props) => {
-  const tabsId = props.id ?? `tabs-${createUniqueId()}`;
+  const parentRoute = useContext(RouteContext);
+  const isRootTabs = !parentRoute;
+  const tabsId =
+    props.id ?? (isRootTabs ? TABS_ROOT_NAVIGATOR_ID : `tabs-${createUniqueId()}`);
   const router = useRouterContext();
-  const routeContext = useRoute();
-  const hostRouteKey = routeContext.key;
+  const hostRouteKey = parentRoute?.key ?? TABS_ROOT_ROUTE_KEY;
   const tabIconDisposers = new Map<string, () => void>();
 
   const [registeredNames, setRegisteredNames] = createSignal<string[]>([]);
@@ -167,6 +173,7 @@ const TabsBase: ParentComponent<TabsProps> = (props) => {
       navigatorId: tabsId,
       initialRouteName: initialName,
       tabs: list.map((route, index) => ({
+        key: route.key,
         name: route.name,
         label: route.tabOptions?.label ?? route.name,
         badge: route.tabOptions?.badge,
