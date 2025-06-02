@@ -81,6 +81,7 @@ const TabsBase: ParentComponent<TabsProps> = (props) => {
   const [registeredNames, setRegisteredNames] = createSignal<string[]>([]);
   const [routes, setRoutes] = createSignal<TabRouteRecord[]>([]);
   const [activeKey, setActiveKey] = createSignal<string | null>(null);
+  const [lastNativeConfig, setLastNativeConfig] = createSignal<string | null>(null);
   let lastSelectedRouteName: string | null = props.initialRouteName ?? null;
 
   const registerScreen = (name: string) => {
@@ -139,6 +140,10 @@ const TabsBase: ParentComponent<TabsProps> = (props) => {
 
   createEffect(() => {
     const list = routes();
+    console.log(
+      "[TabsRenderer] routes build",
+      list.map((r) => r.name)
+    );
     if (!list.length) {
       tabIconDisposers.forEach((dispose) => dispose());
       tabIconDisposers.clear();
@@ -158,7 +163,7 @@ const TabsBase: ParentComponent<TabsProps> = (props) => {
     }
     const initialName =
       lastSelectedRouteName ?? props.initialRouteName ?? list[0].name;
-    setNativeTabs(hostRouteKey, {
+    const nativeConfig = {
       navigatorId: tabsId,
       initialRouteName: initialName,
       tabs: list.map((route, index) => ({
@@ -177,7 +182,13 @@ const TabsBase: ParentComponent<TabsProps> = (props) => {
         ),
         backgroundColor: route.tabOptions?.tabBarBackgroundColor,
       })),
-    });
+    };
+    const serialized = JSON.stringify(nativeConfig);
+    if (serialized !== lastNativeConfig()) {
+      console.log("[TabsRenderer] configuring native tabs", nativeConfig);
+      setNativeTabs(hostRouteKey, nativeConfig);
+      setLastNativeConfig(serialized);
+    }
   });
 
   createEffect(() => {
@@ -234,6 +245,7 @@ const TabsRenderer: ParentComponent<{
   createEffect(() => {
     const routeList = props.routes();
     const current = props.activeRoute() ?? routeList[0];
+    console.log("[TabsRenderer] active route", current?.name, current?.key);
 
     const visibleKeys = new Set(routeList.map((route) => route.key));
     for (const [key, storedScene] of scenes.entries()) {
@@ -254,6 +266,11 @@ const TabsRenderer: ParentComponent<{
     if (!stored) {
       stored = createScene(current, router.dispatch, router.setOptions);
       scenes.set(current.key, stored);
+      console.log(
+        "[TabsRenderer] mounted scene",
+        stored.descriptor.name,
+        stored.route.key
+      );
     } else {
       stored.route = current;
     }
@@ -408,7 +425,10 @@ function serializeIcon(
   navigatorId: string,
   routeName: string,
   order: number,
-  icon: TabIconDescriptor | ((props: { active: boolean }) => JSX.Element) | undefined,
+  icon:
+    | TabIconDescriptor
+    | ((props: { active: boolean }) => JSX.Element)
+    | undefined,
   disposers: Map<string, () => void>
 ): TabIconDescriptor | undefined {
   if (!icon) {

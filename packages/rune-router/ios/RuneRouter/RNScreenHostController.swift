@@ -124,6 +124,7 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
     configuration: TabBarConfiguration,
     selectionHandler: @escaping (String) -> Void
   ) {
+    print("[RuneTabBar] configureTabs", configuration.items.map({ $0.name }))
     tabIconConfigs.removeAll()
     disposeTabIconHosts()
     tabSelectionHandler = selectionHandler
@@ -180,6 +181,7 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
 
   func selectTab(named name: String) {
     guard let item = tabItemsByName[name], let bar = tabBar else { return }
+    print("[RuneTabBar] selectTab", name)
     if bar.selectedItem === item { return }
     suppressTabSelectionCallback = true
     bar.selectedItem = item
@@ -237,6 +239,7 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
   private func refreshTabIconHosts() {
     guard let runtime else { return }
     guard let bar = tabBar, let items = bar.items, !items.isEmpty else { return }
+    print("[RuneTabBar] refreshTabIconHosts items", items.map({ $0.title ?? "unknown" }))
     let buttons = collectTabButtons(in: bar)
     if buttons.isEmpty { return }
     let sortedButtons = buttons.sorted { $0.frame.minX < $1.frame.minX }
@@ -295,6 +298,8 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
         entry.host.removeFromSuperview()
       }
     }
+    updateTabIconActiveStates()
+    runtime.setActiveSurface(Int(runtime.rootSurfaceId))
   }
 
   private func collectTabButtons(in view: UIView) -> [UIControl] {
