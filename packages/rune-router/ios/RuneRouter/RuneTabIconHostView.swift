@@ -11,6 +11,8 @@ final class RuneTabIconHostView: UIView {
   private var currentActive = false
   private let iconRoot = UIView()
   private let renderQueue = DispatchQueue(label: "dev.rune.tabicon.render", qos: .userInitiated)
+  // renderToken drops any in-flight render/dispose work once a new bind starts.
+  private var renderToken = 0
 
   init(runtime: RuneRuntime) {
     self.runtime = runtime
@@ -42,18 +44,19 @@ final class RuneTabIconHostView: UIView {
   }
 
   func bindIcon(runeId: String?, isActive: Bool) {
+    let token = nextRenderToken()
     currentRuneId = runeId
     currentActive = isActive
 
     guard let runeId else {
-      clearIcon()
+      clearIcon(token: token)
       return
     }
     guard let surface = ensureSurface() else {
       NSLog("\(kRuneTabIconHostLog) Surface unavailable; cannot render icon \(runeId)")
       return
     }
-    renderIcon(surfaceId: surface, runeId: runeId, active: isActive)
+    renderIcon(surfaceId: surface, runeId: runeId, active: isActive, token: token)
   }
 
   func updateActiveState(_ isActive: Bool) {
@@ -62,28 +65,26 @@ final class RuneTabIconHostView: UIView {
     bindIcon(runeId: runeId, isActive: isActive)
   }
 
-  func clearIcon() {
+  func clearIcon(token: Int? = nil, unregisterSurface: Bool = false) {
+    let currentToken = token ?? nextRenderToken()
+    let runeIdentifier = currentRuneId
     currentRuneId = nil
     guard let surface = surfaceId else { return }
     guard let runtime else { return }
-    let rootSurface = runtime.rootSurfaceId
-    DispatchQueue.main.async { [weak runtime] in
-      runtime?.setActiveSurface(Int(surface))
-    }
-    print("[RuneTabIconHost] dispose surface", surface, "runeId", currentRuneId ?? "<unknown>")
-    renderQueue.async { [weak runtime] in
-      runtime?.callGlobal("__disposeTabIcon", args: [surface])
-      DispatchQueue.main.async { [weak runtime] in
-        runtime?.setActiveSurface(rootSurface)
+    print("[RuneTabIconHost] dispose surface", surface, "runeId", runeIdentifier ?? "<unknown>")
+    renderQueue.async { [weak self, weak runtime] in
+      guard let self, let runtime else { return }
+      guard currentToken == self.renderToken else { return }
+      runtime.callGlobal("__disposeTabIcon", args: [surface])
+      if unregisterSurface {
+        runtime.unregisterSurface(id: surface)
       }
     }
   }
 
   func dispose() {
-    clearIcon()
-    if let surface = surfaceId {
-      runtime?.unregisterSurface(id: surface)
-    }
+    let token = nextRenderToken()
+    clearIcon(token: token, unregisterSurface: true)
     surfaceId = nil
   }
 
@@ -99,18 +100,18 @@ final class RuneTabIconHostView: UIView {
     return registered
   }
 
-  private func renderIcon(surfaceId: Int, runeId: String, active: Bool) {
+  private func renderIcon(surfaceId: Int, runeId: String, active: Bool, token: Int) {
     guard let runtime else { return }
-    let rootSurface = runtime.rootSurfaceId
     print("[RuneTabIconHost] render surface", surfaceId, "runeId", runeId, "active", active)
-    DispatchQueue.main.async { [weak runtime] in
-      runtime?.setActiveSurface(Int(surfaceId))
+    renderQueue.async { [weak self, weak runtime] in
+      guard let self, let runtime else { return }
+      guard token == self.renderToken else { return }
+      runtime.callGlobal("__renderTabIcon", args: [surfaceId, runeId, active])
     }
-    renderQueue.async { [weak runtime] in
-      runtime?.callGlobal("__renderTabIcon", args: [surfaceId, runeId, active])
-      DispatchQueue.main.async { [weak runtime] in
-        runtime?.setActiveSurface(rootSurface)
-      }
-    }
+  }
+
+  private func nextRenderToken() -> Int {
+    renderToken &+= 1
+    return renderToken
   }
 }
