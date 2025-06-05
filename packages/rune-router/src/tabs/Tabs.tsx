@@ -82,7 +82,10 @@ const TabsBase: ParentComponent<TabsProps> = (props) => {
     props.id ?? (isRootTabs ? TABS_ROOT_NAVIGATOR_ID : `tabs-${createUniqueId()}`);
   const router = useRouterContext();
   const hostRouteKey = parentRoute?.key ?? TABS_ROOT_ROUTE_KEY;
-  const tabIconDisposers = new Map<string, () => void>();
+  const tabIconDisposers = new Map<
+    string,
+    { dispose: () => void; icon: unknown }
+  >();
 
   const [registeredNames, setRegisteredNames] = createSignal<string[]>([]);
   const [routes, setRoutes] = createSignal<TabRouteRecord[]>([]);
@@ -151,7 +154,7 @@ const TabsBase: ParentComponent<TabsProps> = (props) => {
       list.map((r) => r.name)
     );
     if (!list.length) {
-      tabIconDisposers.forEach((dispose) => dispose());
+      tabIconDisposers.forEach(({ dispose }) => dispose());
       tabIconDisposers.clear();
       removeNativeTabs(hostRouteKey);
       return;
@@ -161,7 +164,7 @@ const TabsBase: ParentComponent<TabsProps> = (props) => {
       setActiveKey(first.key);
     }
     const present = new Set(list.map((route) => route.name));
-    for (const [routeName, dispose] of tabIconDisposers) {
+    for (const [routeName, { dispose }] of tabIconDisposers) {
       if (!present.has(routeName)) {
         dispose();
         tabIconDisposers.delete(routeName);
@@ -212,7 +215,7 @@ const TabsBase: ParentComponent<TabsProps> = (props) => {
   });
 
   onCleanup(() => {
-    tabIconDisposers.forEach((dispose) => dispose());
+    tabIconDisposers.forEach(({ dispose }) => dispose());
     tabIconDisposers.clear();
     removeNativeTabs(hostRouteKey);
   });
@@ -436,7 +439,7 @@ function serializeIcon(
     | TabIconDescriptor
     | ((props: { active: boolean }) => JSX.Element)
     | undefined,
-  disposers: Map<string, () => void>
+  disposers: Map<string, { dispose: () => void; icon: unknown }>
 ): TabIconDescriptor | undefined {
   if (!icon) {
     disposeTabIcon(disposers, routeName);
@@ -453,9 +456,15 @@ function serializeIcon(
       return undefined;
     }
     const iconId = `${navigatorId}:${order}:${routeName}`;
+
+    const existing = disposers.get(routeName);
+    if (existing && existing.icon === icon) {
+      return { runeId: iconId };
+    }
+
     disposeTabIcon(disposers, routeName);
     const unregister = registerTabIcon(iconId, icon);
-    disposers.set(routeName, unregister);
+    disposers.set(routeName, { dispose: unregister, icon });
     return { runeId: iconId };
   }
   disposeTabIcon(disposers, routeName);
@@ -463,10 +472,13 @@ function serializeIcon(
   return result;
 }
 
-function disposeTabIcon(disposers: Map<string, () => void>, routeName: string) {
-  const dispose = disposers.get(routeName);
-  if (dispose) {
-    dispose();
+function disposeTabIcon(
+  disposers: Map<string, { dispose: () => void; icon: unknown }>,
+  routeName: string
+) {
+  const entry = disposers.get(routeName);
+  if (entry) {
+    entry.dispose();
     disposers.delete(routeName);
   }
 }

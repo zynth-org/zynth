@@ -1,3 +1,4 @@
+import type { JSX } from "solid-js";
 import type { TabIconDescriptor } from "../core/types";
 
 export interface TabGlyphIconOptions {
@@ -7,6 +8,12 @@ export interface TabGlyphIconOptions {
   baselineOffset?: number;
   activeColor?: string;
   inactiveColor?: string;
+}
+
+export function createTabIcon(
+  component: (props: { active: boolean }) => JSX.Element
+): (props: { active: boolean }) => JSX.Element {
+  return component;
 }
 
 export function createTabGlyphIcon(
