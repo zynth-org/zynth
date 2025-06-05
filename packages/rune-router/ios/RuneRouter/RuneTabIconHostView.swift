@@ -71,13 +71,19 @@ final class RuneTabIconHostView: UIView {
     currentRuneId = nil
     guard let surface = surfaceId else { return }
     guard let runtime else { return }
+    let rootSurface = runtime.rootSurfaceId
     print("[RuneTabIconHost] dispose surface", surface, "runeId", runeIdentifier ?? "<unknown>")
     renderQueue.async { [weak self, weak runtime] in
       guard let self, let runtime else { return }
       guard currentToken == self.renderToken else { return }
       runtime.callGlobal("__disposeTabIcon", args: [surface])
-      if unregisterSurface {
-        runtime.unregisterSurface(id: surface)
+      DispatchQueue.main.async { [weak self, weak runtime] in
+        guard let self, let runtime else { return }
+        guard currentToken == self.renderToken else { return }
+        runtime.setActiveSurface(rootSurface)
+        if unregisterSurface {
+          runtime.unregisterSurface(id: surface)
+        }
       }
     }
   }
@@ -103,10 +109,21 @@ final class RuneTabIconHostView: UIView {
   private func renderIcon(surfaceId: Int, runeId: String, active: Bool, token: Int) {
     guard let runtime else { return }
     print("[RuneTabIconHost] render surface", surfaceId, "runeId", runeId, "active", active)
+    let rootSurface = runtime.rootSurfaceId
+    DispatchQueue.main.async { [weak self, weak runtime] in
+      guard let self, let runtime else { return }
+      guard token == self.renderToken else { return }
+      runtime.setActiveSurface(Int(surfaceId))
+    }
     renderQueue.async { [weak self, weak runtime] in
       guard let self, let runtime else { return }
       guard token == self.renderToken else { return }
       runtime.callGlobal("__renderTabIcon", args: [surfaceId, runeId, active])
+      DispatchQueue.main.async { [weak self, weak runtime] in
+        guard let self, let runtime else { return }
+        guard token == self.renderToken else { return }
+        runtime.setActiveSurface(rootSurface)
+      }
     }
   }
 
