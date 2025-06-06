@@ -59,7 +59,14 @@ function renderTabIcon(
   let disposeFn: () => void = () => {};
   runWithSurface(surfaceId, () => {
     disposeFn = render(
-      () => <TabIconWrapper>{factory({ active: activeState() })}</TabIconWrapper>,
+      () => {
+        const IconComponent = factory;
+        return (
+          <TabIconWrapper>
+            <IconComponent active={activeState()} />
+          </TabIconWrapper>
+        );
+      },
       createSurfaceContainer(surfaceId)
     );
     flushHostQueue();
