@@ -5,7 +5,6 @@ import {
   getActiveSurface,
 } from "@rune/core";
 import type { HostNode } from "@rune/core";
-import { createSignal } from "solid-js";
 import { getTabIconFactory } from "./tabIconRegistry";
 import { TabIconWrapper } from "./tabIconWrapper";
 
@@ -13,6 +12,7 @@ type MountedIcon = {
   iconId: string;
   dispose: () => void;
   setActive: (value: boolean) => void;
+  targetActive?: boolean | null;
 };
 
 const mountedIcons = new Map<number, MountedIcon>();
@@ -49,45 +49,61 @@ function renderTabIcon(
 
   const current = mountedIcons.get(surfaceId);
   if (current?.iconId === iconId) {
-    current.setActive(isActive);
+    const effectiveActive =
+      current.targetActive !== undefined && current.targetActive !== null
+        ? current.targetActive
+        : isActive;
+    current.setActive(effectiveActive);
     return true;
   }
 
   current?.dispose();
 
-  const [activeState, setActiveState] = createSignal(isActive);
   let disposeFn: () => void = () => {};
-  runWithSurface(surfaceId, () => {
-    disposeFn = render(
-      () => {
-        const IconComponent = factory;
-        return (
-          <TabIconWrapper>
-            <IconComponent active={activeState()} />
-          </TabIconWrapper>
-        );
-      },
-      createSurfaceContainer(surfaceId)
-    );
-    flushHostQueue();
-  });
+  let currentActive = isActive;
+  let isMounted = true;
+
+  const doRender = (active: boolean) => {
+    if (!isMounted) return;
+    runWithSurface(surfaceId, () => {
+      disposeFn();
+      disposeFn = render(
+        () => <TabIconWrapper>{factory({ active })}</TabIconWrapper>,
+        createSurfaceContainer(surfaceId)
+      );
+      flushHostQueue();
+    });
+  };
+
+  doRender(isActive);
+
   mountedIcons.set(surfaceId, {
     iconId,
+    targetActive: null,
     dispose: () => {
+      isMounted = false;
       runWithSurface(surfaceId, () => {
         disposeFn();
         flushHostQueue();
       });
     },
     setActive(value: boolean) {
-      if (activeState() === value) return;
-      runWithSurface(surfaceId, () => {
-        setActiveState(value);
-        flushHostQueue();
-      });
+      if (currentActive === value) return;
+      currentActive = value;
+      doRender(value);
     },
   });
   return true;
+}
+
+export function updateTabIconActiveState(iconId: string, isActive: boolean) {
+  for (const mounted of mountedIcons.values()) {
+    if (mounted.iconId === iconId) {
+      mounted.targetActive = isActive;
+      mounted.setActive(isActive);
+      return;
+    }
+  }
 }
 
 function disposeTabIcon(surfaceId: number) {

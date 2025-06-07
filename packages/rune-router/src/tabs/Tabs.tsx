@@ -36,7 +36,7 @@ import {
   useRouterContext,
 } from "../core/RouterContext";
 import { registerTabIcon, getTabIconFactory } from "./tabIconRegistry";
-import "./tabIconRenderer";
+import { updateTabIconActiveState } from "./tabIconRenderer";
 import {
   resolveScreenDescriptor,
   removeNativeTabs,
@@ -127,6 +127,15 @@ const TabsBase: ParentComponent<TabsProps> = (props) => {
       setActiveKey(route.key);
     }
     lastSelectedRouteName = route.name;
+
+    const list = routes();
+    list.forEach((r, index) => {
+      if (r.tabOptions?.icon) {
+        const iconId = `${tabsId}:${index}:${r.name}`;
+        updateTabIconActiveState(iconId, r.key === route.key);
+      }
+    });
+
     if (!fromNative) {
       selectNativeTab(hostRouteKey, route.name);
     }
