@@ -118,7 +118,6 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
 
   private func performReplaceTop(with name: String, params: [String: Any]?, animated: Bool) {
     guard !routeStack.isEmpty else {
-      print("[RNStackController] replaceTop: stack empty")
       return
     }
     routeStack.removeLast()

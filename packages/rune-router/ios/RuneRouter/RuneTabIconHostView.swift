@@ -2,8 +2,6 @@ import Foundation
 import RuneKit
 import UIKit
 
-private let kRuneTabIconHostLog = "[RuneTabIconHost]"
-
 final class RuneTabIconHostView: UIView {
   private weak var runtime: RuneRuntime?
   private var surfaceId: Int?
@@ -53,7 +51,6 @@ final class RuneTabIconHostView: UIView {
       return
     }
     guard let surface = ensureSurface() else {
-      NSLog("\(kRuneTabIconHostLog) Surface unavailable; cannot render icon \(runeId)")
       return
     }
     renderIcon(surfaceId: surface, runeId: runeId, active: isActive, token: token)
@@ -72,7 +69,6 @@ final class RuneTabIconHostView: UIView {
     guard let surface = surfaceId else { return }
     guard let runtime else { return }
     let rootSurface = runtime.rootSurfaceId
-    print("[RuneTabIconHost] dispose surface", surface, "runeId", runeIdentifier ?? "<unknown>")
     renderQueue.async { [weak self, weak runtime] in
       guard let self, let runtime else { return }
       guard currentToken == self.renderToken else { return }
@@ -108,7 +104,6 @@ final class RuneTabIconHostView: UIView {
 
   private func renderIcon(surfaceId: Int, runeId: String, active: Bool, token: Int) {
     guard let runtime else { return }
-    print("[RuneTabIconHost] render surface", surfaceId, "runeId", runeId, "active", active)
     let rootSurface = runtime.rootSurfaceId
     DispatchQueue.main.async { [weak self, weak runtime] in
       guard let self, let runtime else { return }

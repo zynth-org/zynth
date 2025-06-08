@@ -75,7 +75,6 @@ final class RNTabsHostController: UIViewController, UITabBarDelegate {
   }
 
   func configureTabs(configuration: TabBarConfiguration) {
-    print("[RNTabsHostController] configureTabs", configuration.items.map({ $0.name }))
     loadViewIfNeeded()
     self.configuration = configuration
     tabBar.delegate = self
@@ -301,7 +300,6 @@ final class RNTabsHostController: UIViewController, UITabBarDelegate {
   private func refreshTabIconHosts() {
     guard let runtime else { return }
     guard let items = tabBar.items, !items.isEmpty else { return }
-    print("[RNTabsHostController] refreshTabIconHosts items", items.map({ $0.title ?? "unknown" }))
     let buttons = collectTabButtons(in: tabBar)
     if buttons.isEmpty { return }
     let sortedButtons = buttons.sorted { $0.frame.minX < $1.frame.minX }

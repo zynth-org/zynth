@@ -75,9 +75,6 @@ final class RuneRouterEmitter {
   }
 
   private func emit(_ event: RuneRouterEvent, payload: [String: Any]) {
-    #if DEBUG
-      print("[RuneRouterEmitter] emit \(event.rawValue) payload=\(payload)")
-    #endif
     runtime?.emitEvent(name: event.rawValue, payload: payload)
   }
 }

@@ -12,7 +12,6 @@ import RuneKit
     window.rootViewController = stackController
     window.makeKeyAndVisible()
     RuneRouter.attach(runtime: runtime, stackController: stackController)
-    NSLog("[RuneRouterHost] RuneRouter attached to window with RNStackController")
     return true
   }
 
@@ -20,6 +19,5 @@ import RuneKit
     guard let window = currentWindow else { return }
     window.rootViewController = controller
     window.makeKeyAndVisible()
-    NSLog("[RuneRouterHost] RuneRouter attached to window with RNTabsHostController")
   }
 }

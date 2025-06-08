@@ -155,9 +155,6 @@ final class RuneRouterModule: NSObject, RuneModule, RuneSyncModule {
       return host
     }
     guard let runtime else {
-      #if DEBUG
-        print("[RuneRouterModule] Cannot create tabs root host without runtime")
-      #endif
       return nil
     }
     let host = RNTabsHostController(routeKey: tabsRootRouteKey, emitter: emitter)
@@ -173,9 +170,6 @@ final class RuneRouterModule: NSObject, RuneModule, RuneSyncModule {
     DispatchQueue.main.async { [weak self] in
       guard let self else { return }
       if self.tabsHostController != nil {
-        #if DEBUG
-          print("[RuneRouterModule] Ignoring action \(type) because tabs root is active")
-        #endif
         return
       }
       switch type {
@@ -205,9 +199,7 @@ final class RuneRouterModule: NSObject, RuneModule, RuneSyncModule {
         else { return }
         self.stackController?.setParams(for: source, params: payload)
       default:
-        #if DEBUG
-          print("[RuneRouterModule] Unsupported action \(type)")
-        #endif
+        return
       }
     }
   }
