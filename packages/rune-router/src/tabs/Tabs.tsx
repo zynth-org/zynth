@@ -36,7 +36,10 @@ import {
   useRouterContext,
 } from "../core/RouterContext";
 import { registerTabIcon, getTabIconFactory } from "./tabIconRegistry";
-import { updateTabIconActiveState } from "./tabIconRenderer";
+import {
+  updateTabIconActiveState,
+  removeTabIconState,
+} from "./tabIconRenderer";
 import {
   resolveScreenDescriptor,
   removeNativeTabs,
@@ -132,6 +135,7 @@ const TabsBase: ParentComponent<TabsProps> = (props) => {
     list.forEach((r, index) => {
       if (r.tabOptions?.icon) {
         const iconId = `${tabsId}:${index}:${r.name}`;
+        // console.log(`[Tabs] Updating icon ${iconId} active=${r.key === route.key}`);
         updateTabIconActiveState(iconId, r.key === route.key);
       }
     });
@@ -178,7 +182,10 @@ const TabsBase: ParentComponent<TabsProps> = (props) => {
             iconDisposers.get(iconId)!();
           }
           const unregister = registerTabIcon(iconId, icon);
-          iconDisposers.set(iconId, unregister);
+          iconDisposers.set(iconId, () => {
+            unregister();
+            removeTabIconState(iconId);
+          });
         } else {
           // console.log(`[Tabs] Icon factory matches for ${iconId}`);
         }

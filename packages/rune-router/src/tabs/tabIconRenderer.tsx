@@ -16,6 +16,7 @@ type MountedIcon = {
 };
 
 const mountedIcons = new Map<number, MountedIcon>();
+const iconActiveStates = new Map<string, boolean>();
 
 function runWithSurface<T>(surfaceId: number, work: () => T): T {
   const previousSurface = getActiveSurface();
@@ -47,12 +48,13 @@ function renderTabIcon(
     return false;
   }
 
+  let effectiveActive = isActive;
+  if (iconActiveStates.has(iconId)) {
+    effectiveActive = iconActiveStates.get(iconId)!;
+  }
+
   const current = mountedIcons.get(surfaceId);
   if (current?.iconId === iconId) {
-    const effectiveActive =
-      current.targetActive !== undefined && current.targetActive !== null
-        ? current.targetActive
-        : isActive;
     current.setActive(effectiveActive);
     return true;
   }
@@ -60,7 +62,7 @@ function renderTabIcon(
   current?.dispose();
 
   let disposeFn: () => void = () => {};
-  let currentActive = isActive;
+  let currentActive = effectiveActive;
   let isMounted = true;
 
   const doRender = (active: boolean) => {
@@ -75,11 +77,11 @@ function renderTabIcon(
     });
   };
 
-  doRender(isActive);
+  doRender(effectiveActive);
 
   mountedIcons.set(surfaceId, {
     iconId,
-    targetActive: null,
+    targetActive: effectiveActive,
     dispose: () => {
       isMounted = false;
       runWithSurface(surfaceId, () => {
@@ -97,13 +99,18 @@ function renderTabIcon(
 }
 
 export function updateTabIconActiveState(iconId: string, isActive: boolean) {
+  // console.log(`[RuneRouter] updateTabIconActiveState: ${iconId} -> ${isActive}`);
+  iconActiveStates.set(iconId, isActive);
   for (const mounted of mountedIcons.values()) {
     if (mounted.iconId === iconId) {
       mounted.targetActive = isActive;
       mounted.setActive(isActive);
-      return;
     }
   }
+}
+
+export function removeTabIconState(iconId: string) {
+  iconActiveStates.delete(iconId);
 }
 
 function disposeTabIcon(surfaceId: number) {
