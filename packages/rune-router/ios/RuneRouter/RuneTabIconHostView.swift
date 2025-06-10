@@ -42,6 +42,10 @@ final class RuneTabIconHostView: UIView {
   }
 
   func bindIcon(runeId: String?, isActive: Bool) {
+    if runeId == currentRuneId && isActive == currentActive {
+      return
+    }
+
     let token = nextRenderToken()
     currentRuneId = runeId
     currentActive = isActive

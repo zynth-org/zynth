@@ -5,6 +5,7 @@ import {
   getActiveSurface,
 } from "@rune/core";
 import type { HostNode } from "@rune/core";
+import { createSignal } from "solid-js";
 import { getTabIconFactory } from "./tabIconRegistry";
 import { TabIconWrapper } from "./tabIconWrapper";
 
@@ -62,37 +63,36 @@ function renderTabIcon(
   current?.dispose();
 
   let disposeFn: () => void = () => {};
-  let currentActive = effectiveActive;
-  let isMounted = true;
+  const [activeSignal, setActiveSignal] = createSignal(effectiveActive);
 
-  const doRender = (active: boolean) => {
-    if (!isMounted) return;
-    runWithSurface(surfaceId, () => {
-      disposeFn();
-      disposeFn = render(
-        () => <TabIconWrapper>{factory({ active })}</TabIconWrapper>,
-        createSurfaceContainer(surfaceId)
-      );
-      flushHostQueue();
-    });
-  };
-
-  doRender(effectiveActive);
+  runWithSurface(surfaceId, () => {
+    const Factory = factory as any;
+    disposeFn = render(
+      () => (
+        <TabIconWrapper>
+          <Factory active={activeSignal()} />
+        </TabIconWrapper>
+      ),
+      createSurfaceContainer(surfaceId)
+    );
+    flushHostQueue();
+  });
 
   mountedIcons.set(surfaceId, {
     iconId,
     targetActive: effectiveActive,
     dispose: () => {
-      isMounted = false;
       runWithSurface(surfaceId, () => {
         disposeFn();
         flushHostQueue();
       });
     },
     setActive(value: boolean) {
-      if (currentActive === value) return;
-      currentActive = value;
-      doRender(value);
+      if (activeSignal() === value) return;
+      runWithSurface(surfaceId, () => {
+        setActiveSignal(value);
+        flushHostQueue();
+      });
     },
   });
   return true;

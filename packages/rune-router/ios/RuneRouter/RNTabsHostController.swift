@@ -194,10 +194,6 @@ final class RNTabsHostController: UIViewController, UITabBarDelegate {
       }
     }
     updateTabIconActiveStates()
-    DispatchQueue.main.async { [weak self] in
-      // Ensure the active tab rebinds its icon host after selection changes.
-      self?.refreshTabIconHosts()
-    }
     if emitSelectionEvent, let navigator = configuration?.navigatorId {
       emitter.emitTabSelection(navigatorId: navigator, tabName: name)
     }
