@@ -169,7 +169,14 @@ final class RuneRouterModule: NSObject, RuneModule, RuneSyncModule {
     guard let type = action["type"] as? String else { return }
     DispatchQueue.main.async { [weak self] in
       guard let self else { return }
-      if self.tabsHostController != nil {
+      if let tabsHost = self.tabsHostController {
+        if type == "NAVIGATE" || type == "JUMP_TO" {
+          if let payload = action["payload"] as? [String: Any],
+            let name = payload["name"] as? String
+          {
+            tabsHost.selectTab(named: name)
+          }
+        }
         return
       }
       switch type {

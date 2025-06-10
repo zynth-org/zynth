@@ -121,7 +121,7 @@ final class RNTabsHostController: UIViewController, UITabBarDelegate {
   }
 
   func selectTab(named name: String?) {
-    selectTab(named: name, emitSelectionEvent: false, notifyState: true)
+    selectTab(named: name, emitSelectionEvent: true, notifyState: true)
   }
 
   func removeTabs() {
