@@ -82,6 +82,7 @@ export type Style = {
   borderColor?: string;
   borderStyle?: "solid" | "dotted" | "dashed";
   opacity?: number;
+  zIndex?: number;
   fontSize?: number;
   color?: string;
   fontWeight?:

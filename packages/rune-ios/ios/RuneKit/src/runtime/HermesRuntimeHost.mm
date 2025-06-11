@@ -494,7 +494,8 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
                                          "marginTop",     "marginRight",    "marginBottom",   "marginLeft",
                                          "borderRadius",  "borderWidth",    "fontSize",       "top",
                                          "right",         "bottom",         "left",           "opacity",
-                                         "gap",           "rowGap",         "columnGap",      "minWidth",
+                                         "zIndex",        "gap",            "rowGap",         "columnGap",
+                                         "minWidth",
                                          "minHeight",     "maxWidth",       "maxHeight",      "aspectRatio"};
             for (const char *key : numericKeys) {
               copyNumber(key);

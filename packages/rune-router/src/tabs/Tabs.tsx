@@ -1,8 +1,10 @@
+import { View } from "@rune/components";
 import {
   type Accessor,
   type JSX,
   ParentComponent,
   Show,
+  For,
   createContext,
   createEffect,
   createMemo,
@@ -294,57 +296,76 @@ const TabsRenderer: ParentComponent<{
   activeRoute: Accessor<TabRouteRecord | null>;
 }> = (props) => {
   const router = useRouterContext();
-  const [scene, setScene] = createSignal<RenderedScene | null>(null);
-  const scenes = new Map<string, RenderedScene>();
-  let activeScene: RenderedScene | null = null;
+  const [visited, setVisited] = createSignal<string[]>([]);
 
   createEffect(() => {
-    const routeList = props.routes();
-    const current = props.activeRoute() ?? routeList[0];
-
-    const visibleKeys = new Set(routeList.map((route) => route.key));
-    for (const [key, storedScene] of scenes.entries()) {
-      if (!visibleKeys.has(key)) {
-        cleanupScene(storedScene);
-        scenes.delete(key);
-      }
+    const current = props.activeRoute();
+    if (current) {
+      setVisited((prev) => {
+        if (prev.includes(current.key)) return prev;
+        return [...prev, current.key];
+      });
     }
-
-    if (!current) {
-      cleanupScene(activeScene);
-      activeScene = null;
-      setScene(null);
-      return;
-    }
-
-    let stored = scenes.get(current.key);
-    if (!stored) {
-      stored = createScene(current, router.dispatch, router.setOptions);
-      scenes.set(current.key, stored);
-    } else {
-      stored.route = current;
-    }
-
-    activeScene = stored;
-    setScene(stored);
-  });
-
-  onCleanup(() => {
-    scenes.forEach((storedScene) => cleanupScene(storedScene));
-    scenes.clear();
   });
 
   return (
-    <Show when={scene()} keyed>
-      {(currentScene) => {
-        const Component = currentScene.descriptor.component;
-        return (
-          <RouteProvider value={currentScene.context}>
-            <Component />
-          </RouteProvider>
-        );
+    <View style={{ flex: 1, width: "100%", height: "100%" }}>
+      <For each={visited()}>
+        {(key) => {
+          const route = () => props.routes().find((r) => r.key === key);
+          const isActive = () => props.activeRoute()?.key === key;
+
+          return (
+            <Show when={route()}>
+              {(validRoute) => (
+                <KeepAliveScene
+                  route={validRoute()}
+                  isActive={isActive()}
+                  dispatch={router.dispatch}
+                  setOptions={router.setOptions}
+                />
+              )}
+            </Show>
+          );
+        }}
+      </For>
+    </View>
+  );
+};
+
+const KeepAliveScene: ParentComponent<{
+  route: TabRouteRecord;
+  isActive: boolean;
+  dispatch: (action: RouterAction) => void;
+  setOptions: (key: string, options: ScreenOptions) => void;
+}> = (props) => {
+  const scene = createScene(props.route, props.dispatch, props.setOptions);
+
+  onCleanup(() => {
+    cleanupScene(scene);
+  });
+
+  const Component = scene.descriptor.component;
+
+  return (
+    <View
+      style={{
+        display: props.isActive ? "flex" : "none",
+        flex: 1,
+        width: "100%",
+        height: "100%",
+        position: "absolute",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: props.isActive ? 1 : 0,
       }}
-    </Show>
+    >
+      <RouteProvider value={scene.context}>
+        <Component />
+      </RouteProvider>
+    </View>
   );
 };
 

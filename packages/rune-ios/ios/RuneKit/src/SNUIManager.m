@@ -531,6 +531,14 @@ static void SNApplyEdges(NSDictionary *style,
   } else {
     n.view.alpha = 1.f;
   }
+
+  NSNumber *zIndexValue = style[@"zIndex"];
+  if (zIndexValue) {
+    n.view.layer.zPosition = (CGFloat)SNNum(zIndexValue);
+  } else {
+    n.view.layer.zPosition = 0.f;
+  }
+
   NSNumber *br = style[@"borderRadius"];
   if (br) { n.view.layer.cornerRadius = (CGFloat)SNNum(br); n.view.clipsToBounds = YES; }
   SNApplyBorderStyleToView(n.view, style[@"borderWidth"], style[@"borderColor"], style[@"borderStyle"]);
