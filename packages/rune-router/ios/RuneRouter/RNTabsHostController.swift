@@ -139,22 +139,29 @@ final class RNTabsHostController: UIViewController, UITabBarDelegate {
 
   private func layoutContentContainers() {
     let bounds = view.bounds
-    let tabSize = tabBar.sizeThatFits(bounds.size)
-    let safeInsets = view.safeAreaInsets
-    let totalHeight = tabSize.height + safeInsets.bottom
+    let systemBottom = view.window?.safeAreaInsets.bottom ?? view.safeAreaInsets.bottom
+    // Measure with a fresh tab bar to avoid any stale safe-area adjustments on the live instance.
+    let measureBar = UITabBar()
+    measureBar.items = tabBar.items
+    let barContentHeight = measureBar.sizeThatFits(bounds.size).height
+    let totalHeight = barContentHeight + systemBottom
+
+    // Avoid inflating the view's safe area; keeping it at zero prevents the tab bar content from collapsing.
+    if additionalSafeAreaInsets.bottom != 0 {
+      additionalSafeAreaInsets.bottom = 0
+    }
+
     tabBar.frame = CGRect(
       x: 0,
       y: bounds.height - totalHeight,
       width: bounds.width,
       height: totalHeight
     )
-    contentView.frame = CGRect(
-      x: 0,
-      y: 0,
-      width: bounds.width,
-      height: bounds.height - totalHeight
-    )
+
+    contentView.frame = bounds
     surfaceView?.frame = contentView.bounds
+
+    view.bringSubviewToFront(tabBar)
   }
 
   func tabBar(_ tabBar: UITabBar, didSelect item: UITabBarItem) {
