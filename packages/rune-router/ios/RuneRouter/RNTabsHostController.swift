@@ -19,6 +19,7 @@ final class RNTabsHostController: UIViewController, UITabBarDelegate {
   private var suppressTabSelectionCallback = false
   private var cachedDefaultTintColor: UIColor?
   private var cachedDefaultBarTintColor: UIColor?
+  private var lastEmittedTabMetrics: (height: CGFloat, inset: CGFloat)?
 
   private struct IconHostEntry {
     let host: RuneTabIconHostView
@@ -77,6 +78,7 @@ final class RNTabsHostController: UIViewController, UITabBarDelegate {
   func configureTabs(configuration: TabBarConfiguration) {
     loadViewIfNeeded()
     self.configuration = configuration
+    lastEmittedTabMetrics = nil
     tabBar.delegate = self
     tabIconConfigs.removeAll()
     disposeTabIconHosts()
@@ -134,6 +136,7 @@ final class RNTabsHostController: UIViewController, UITabBarDelegate {
     configuration = nil
     selectedTabName = nil
     tabRouteKeys.removeAll()
+    lastEmittedTabMetrics = nil
     emitStateChanged()
   }
 
@@ -145,6 +148,7 @@ final class RNTabsHostController: UIViewController, UITabBarDelegate {
     measureBar.items = tabBar.items
     let barContentHeight = measureBar.sizeThatFits(bounds.size).height
     let totalHeight = barContentHeight + systemBottom
+    emitTabBarMetricsIfNeeded(height: totalHeight, inset: systemBottom)
 
     // Avoid inflating the view's safe area; keeping it at zero prevents the tab bar content from collapsing.
     if additionalSafeAreaInsets.bottom != 0 {
@@ -177,6 +181,20 @@ final class RNTabsHostController: UIViewController, UITabBarDelegate {
       emitter.emitTabSelection(navigatorId: navigator, tabName: name)
     }
     emitStateChanged()
+  }
+
+  private func emitTabBarMetricsIfNeeded(height: CGFloat, inset: CGFloat) {
+    guard let navigatorId = configuration?.navigatorId else { return }
+    let roundedHeight = Double((height * 1000).rounded() / 1000)
+    let roundedInset = Double((inset * 1000).rounded() / 1000)
+    if let last = lastEmittedTabMetrics,
+      abs(last.height - CGFloat(roundedHeight)) < 0.5,
+      abs(last.inset - CGFloat(roundedInset)) < 0.5
+    {
+      return
+    }
+    lastEmittedTabMetrics = (CGFloat(roundedHeight), CGFloat(roundedInset))
+    emitter.emitTabMetrics(navigatorId: navigatorId, height: roundedHeight, inset: roundedInset)
   }
 
   private func determineInitialSelection(preferred: String?, configuration: TabBarConfiguration) -> String? {

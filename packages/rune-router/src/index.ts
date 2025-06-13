@@ -24,5 +24,6 @@ export type {
   StackScreenProps,
   TabScreenProps,
   TabsRootNavigatorId,
+  TabBarMetrics,
 } from "./core/types";
 export { createRouter } from "./routerFactory";

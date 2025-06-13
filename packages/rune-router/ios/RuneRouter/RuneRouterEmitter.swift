@@ -12,6 +12,7 @@ enum RuneRouterEvent: String {
   case predictiveBack = "rune.router.predictiveBack"
   case beforeRemove = "rune.router.beforeRemove"
   case tabSelected = "rune.router.tabSelected"
+  case tabMetrics = "rune.router.tabMetrics"
 }
 
 final class RuneRouterEmitter {
@@ -70,6 +71,17 @@ final class RuneRouterEmitter {
       payload: [
         "navigatorId": navigatorId,
         "tabName": tabName,
+      ]
+    )
+  }
+
+  func emitTabMetrics(navigatorId: String, height: Double, inset: Double) {
+    emit(
+      .tabMetrics,
+      payload: [
+        "navigatorId": navigatorId,
+        "height": height,
+        "inset": inset,
       ]
     )
   }

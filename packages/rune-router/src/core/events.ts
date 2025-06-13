@@ -12,6 +12,7 @@ export const ROUTER_EVENT_BACK = `${ROUTER_EVENT_PREFIX}.back` as const;
 export const ROUTER_EVENT_PREDICTIVE_BACK = `${ROUTER_EVENT_PREFIX}.predictiveBack` as const;
 export const ROUTER_EVENT_BEFORE_REMOVE = `${ROUTER_EVENT_PREFIX}.beforeRemove` as const;
 export const ROUTER_EVENT_TAB_SELECTED = `${ROUTER_EVENT_PREFIX}.tabSelected` as const;
+export const ROUTER_EVENT_TAB_METRICS = `${ROUTER_EVENT_PREFIX}.tabMetrics` as const;
 
 export type RouterEventName =
   | typeof ROUTER_EVENT_STATE_CHANGED
@@ -23,7 +24,8 @@ export type RouterEventName =
   | typeof ROUTER_EVENT_PREDICTIVE_BACK
   | typeof ROUTER_EVENT_BACK
   | typeof ROUTER_EVENT_BEFORE_REMOVE
-  | typeof ROUTER_EVENT_TAB_SELECTED;
+  | typeof ROUTER_EVENT_TAB_SELECTED
+  | typeof ROUTER_EVENT_TAB_METRICS;
 
 interface RouterEventsPayloadMap {
   [ROUTER_EVENT_STATE_CHANGED]: { state: NavigationState };
@@ -47,6 +49,11 @@ interface RouterEventsPayloadMap {
   [ROUTER_EVENT_TAB_SELECTED]: {
     navigatorId: string;
     tabName: string;
+  };
+  [ROUTER_EVENT_TAB_METRICS]: {
+    navigatorId: string;
+    height: number;
+    inset: number;
   };
 }
 

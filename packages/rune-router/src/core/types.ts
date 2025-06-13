@@ -1,4 +1,7 @@
 import type { Accessor, Component, JSX, ParentComponent } from "solid-js";
+import type { TabBarMetrics } from "./tabMetrics";
+
+export type { TabBarMetrics } from "./tabMetrics";
 
 export type RouteParamList = Record<string, object | undefined>;
 
@@ -218,6 +221,7 @@ export interface NavigationHelpers<
     options: ScreenOptionsInput,
     config?: SetOptionsConfig
   ): () => void;
+  tabBarMetrics(extraHeight?: number): () => TabBarMetrics;
 }
 
 export type RouterAction =

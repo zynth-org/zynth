@@ -49,6 +49,9 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
   func bindRouterModule(_ module: RuneRouterModule, emitter: RuneRouterEmitter) {
     routerModule = module
     self.emitter = emitter
+    for record in routeStack {
+      record.controller?.attachEmitter(emitter)
+    }
   }
 
   func installRootSurface(_ surface: UIView) {
@@ -70,6 +73,9 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
     let host = RNScreenHostController(routeKey: record.key, routeName: routeName, params: params)
     if let runtime {
       host.attachRuntime(runtime)
+    }
+    if let emitter {
+      host.attachEmitter(emitter)
     }
     record.controller = host
     routeStack.append(record)
@@ -150,6 +156,9 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
       let host = RNScreenHostController(routeKey: record.key, routeName: name, params: params)
       if let runtime {
         host.attachRuntime(runtime)
+      }
+      if let emitter {
+        host.attachEmitter(emitter)
       }
       record.controller = host
       records.append(record)

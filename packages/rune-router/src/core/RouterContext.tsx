@@ -25,7 +25,12 @@ import {
   type ScreenOptionsInput,
   type SetOptionsConfig,
 } from "./types";
-import { registerScreenDescriptor, setNativeScreenOptions } from "./actions";
+import {
+  registerScreenDescriptor,
+  resolveScreenDescriptor,
+  setNativeScreenOptions,
+} from "./actions";
+import { createTabBarMetricsAccessor } from "./tabMetrics";
 
 export const RouterContext = createContext<RouterContextValue | null>(null);
 export const RouteContext = createContext<RouteContextValue | null>(null);
@@ -171,6 +176,8 @@ export function useNavigation<
 >(): NavigationHelpers<ParamList> {
   const router = useRouterContext();
   const route = useRoute<ParamList, RouteName>();
+  const descriptor = resolveScreenDescriptor(route.name as string);
+  const navigatorId = descriptor?.navigatorId;
 
   const runSetOptions = (
     options: ScreenOptionsInput,
@@ -272,6 +279,9 @@ export function useNavigation<
     },
     setOptions(options, config) {
       return runSetOptions(options, config);
+    },
+    tabBarMetrics(extraHeight = 0) {
+      return createTabBarMetricsAccessor(navigatorId, extraHeight);
     },
   } satisfies NavigationHelpers<ParamList>;
 }

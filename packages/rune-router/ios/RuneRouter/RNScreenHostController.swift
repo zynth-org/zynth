@@ -11,6 +11,7 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
   private var cachedDefaultTintColor: UIColor?
   private var cachedDefaultBarTintColor: UIColor?
   private let contentView = UIView()
+  private weak var emitter: RuneRouterEmitter?
   private var tabBar: UITabBar?
   private var tabItemsByName: [String: UITabBarItem] = [:]
   private var tabNameByItem: [UITabBarItem: String] = [:]
@@ -25,6 +26,7 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
   private var tabIconConfigs: [String: TabIconConfiguration] = [:]
   private var tabConfiguration: TabBarConfiguration?
   private var hasAppliedHeaderVisibility = false
+  private var lastEmittedTabMetrics: (height: CGFloat, inset: CGFloat)?
 
   init(routeKey: String, routeName: String, params: [String: Any]?) {
     self.routeKey = routeKey
@@ -65,6 +67,10 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
     self.runtime = runtime
   }
 
+  func attachEmitter(_ emitter: RuneRouterEmitter?) {
+    self.emitter = emitter
+  }
+
   func attachSurfaceView(_ surface: UIView) {
     surface.removeFromSuperview()
     surface.frame = contentView.bounds
@@ -89,9 +95,10 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
       surfaceView?.frame = contentView.bounds
       return
     }
-    let tabSize = tabBar.sizeThatFits(bounds.size)
-    let safeInsets = view.safeAreaInsets
-    let totalHeight = tabSize.height + safeInsets.bottom
+    let systemBottom = view.window?.safeAreaInsets.bottom ?? view.safeAreaInsets.bottom
+    let tabContentHeight = tabBar.sizeThatFits(bounds.size).height
+    let totalHeight = tabContentHeight + systemBottom
+    emitTabBarMetricsIfNeeded(height: totalHeight, inset: systemBottom)
     tabBar.frame = CGRect(
       x: 0,
       y: bounds.height - totalHeight,
@@ -125,6 +132,8 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
     configuration: TabBarConfiguration,
     selectionHandler: @escaping (String) -> Void
   ) {
+    lastEmittedTabMetrics = nil
+    tabConfiguration = configuration
     tabIconConfigs.removeAll()
     disposeTabIconHosts()
     tabSelectionHandler = selectionHandler
@@ -200,6 +209,7 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
     disposeTabIconHosts()
     tabIconConfigs.removeAll()
     tabConfiguration = nil
+    lastEmittedTabMetrics = nil
     view.setNeedsLayout()
   }
 
@@ -384,6 +394,21 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
       }
     }
     return nil
+  }
+
+  private func emitTabBarMetricsIfNeeded(height: CGFloat, inset: CGFloat) {
+    guard let navigatorId = tabConfiguration?.navigatorId else { return }
+    guard let emitter else { return }
+    let roundedHeight = Double((height * 1000).rounded() / 1000)
+    let roundedInset = Double((inset * 1000).rounded() / 1000)
+    if let last = lastEmittedTabMetrics,
+      abs(last.height - CGFloat(roundedHeight)) < 0.5,
+      abs(last.inset - CGFloat(roundedInset)) < 0.5
+    {
+      return
+    }
+    lastEmittedTabMetrics = (CGFloat(roundedHeight), CGFloat(roundedInset))
+    emitter.emitTabMetrics(navigatorId: navigatorId, height: roundedHeight, inset: roundedInset)
   }
 
   private func applyStoredOptionsToNavigationBar() {
