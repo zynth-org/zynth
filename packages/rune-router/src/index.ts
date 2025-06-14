@@ -11,7 +11,7 @@ export {
   createRouteContextValue,
 } from "./core/RouterContext";
 export { addBackHandler } from "./integration/back";
-export { useHeaderMetrics, useTabBarMetrics } from "./integration/insets";
+export { useHeaderMetrics, createTabBarMetrics } from "./integration/insets";
 export { handleLink, getPathFromState } from "./core/linking";
 export { createTabGlyphIcon, createTabIcon } from "./tabs/createTabIcon";
 export { TABS_ROOT_NAVIGATOR_ID, TABS_ROOT_ROUTE_KEY } from "./core/types";
