@@ -11,6 +11,13 @@ import {
   onMount,
   useContext,
 } from "solid-js";
+import {
+  getHost,
+  render,
+  setActiveSurface,
+  getActiveSurface,
+} from "@rune/core";
+import type { HostNode } from "@rune/core";
 import type { JSX } from "solid-js";
 import type {
   NavigationState,
@@ -21,6 +28,7 @@ import type {
   StackComponentType,
   StackProps,
   ScreenDescriptor,
+  RouterContextValue,
 } from "../core/types";
 import { StackScreen } from "./Screen";
 import { Header } from "./Header";
@@ -30,6 +38,7 @@ import {
 } from "../core/actions";
 import {
   RouteProvider,
+  RouterContext,
   createRouteContextValue,
   useRouterContext,
 } from "../core/RouterContext";
@@ -101,6 +110,13 @@ const StackRenderer: ParentComponent<{ stackId: string }> = (props) => {
     findStackState(router.state(), props.stackId)
   );
   const activeRoute = createMemo(() => getActiveRoute(stackState()));
+  const surfaceManager = createNativeSurfaceManager(router);
+  const hasNativeSurfaces = createMemo(() => {
+    const routes = stackState()?.routes ?? [];
+    return routes.some(
+      (route) => typeof (route.meta as Record<string, unknown> | undefined)?.surfaceId === "number"
+    );
+  });
 
   if (process.env.NODE_ENV !== "production") {
     createEffect(() => {
@@ -130,6 +146,23 @@ const StackRenderer: ParentComponent<{ stackId: string }> = (props) => {
   let currentScene: RenderedScene | null = null;
 
   createEffect(() => {
+    if (!hasNativeSurfaces()) return;
+    cleanupScene(currentScene);
+    currentScene = null;
+    setRenderedRoute(null);
+    surfaceManager.sync(stackState());
+  });
+
+  createEffect(() => {
+    if (!hasNativeSurfaces()) {
+      surfaceManager.disposeAll();
+    }
+  });
+
+  createEffect(() => {
+    if (hasNativeSurfaces()) {
+      return;
+    }
     const current = activeRoute();
     if (!current) {
       cleanupScene(currentScene);
@@ -184,7 +217,12 @@ const StackRenderer: ParentComponent<{ stackId: string }> = (props) => {
   onCleanup(() => {
     cleanupScene(currentScene);
     currentScene = null;
+    surfaceManager.disposeAll();
   });
+
+  if (hasNativeSurfaces()) {
+    return null;
+  }
 
   return (
     <Show when={renderedRoute()} keyed>
@@ -210,6 +248,198 @@ interface RenderedScene {
 function cleanupScene(scene: RenderedScene | null) {
   scene?.disposeOptions?.();
 }
+
+type NativeSurfaceScene = {
+  key: string;
+  surfaceId: number;
+  descriptor: ScreenDescriptor;
+  context: RouteContextValueInternal;
+  disposeOptions?: () => void;
+  disposeRender: () => void;
+};
+
+function createNativeSurfaceManager(router: RouterContextValue) {
+  const scenes = new Map<string, NativeSurfaceScene>();
+
+  const sync = (state: NavigationState | null) => {
+    const routes = state?.routes ?? [];
+    const activeIndex = state?.index ?? 0;
+    const activeKey = routes[activeIndex]?.key ?? routes[activeIndex]?.name;
+    const keep = new Set<string>();
+
+    for (const route of routes) {
+      const surfaceId = (route.meta as Record<string, unknown> | undefined)?.surfaceId;
+      if (typeof surfaceId !== "number") {
+        continue;
+      }
+      const key = route.key ?? route.name;
+      keep.add(key);
+
+      const existing = scenes.get(key);
+      if (existing) {
+        existing.context.__updateFromState(route.params as any);
+        continue;
+      }
+
+      const descriptor = resolveScreenDescriptor(route.name);
+      if (!descriptor) {
+        continue;
+      }
+
+      const routeContext = createRouteContextValue(
+        {
+          key,
+          name: route.name,
+          params: route.params,
+        },
+        router.dispatch
+      ) as RouteContextValueInternal;
+      const disposeOptions = descriptor.options
+        ? observeRouteOptions(descriptor.options, (options) => {
+            if (options) {
+              router.setOptions(key, options as ScreenOptions);
+            }
+          })
+        : undefined;
+      const staticOptions = getStaticOptions(descriptor.options);
+      if (staticOptions) {
+        router.setOptions(key, staticOptions as ScreenOptions);
+      }
+
+      const disposeRender = renderOnSurface(surfaceId, () => {
+        const Component = descriptor.component;
+        return (
+          <RouterContext.Provider value={router}>
+            <RouteProvider value={routeContext}>
+              <Component />
+            </RouteProvider>
+          </RouterContext.Provider>
+        );
+      });
+      registerNativeSurfaceDisposer(surfaceId, disposeRender);
+
+      scenes.set(key, {
+        key,
+        surfaceId,
+        descriptor,
+        context: routeContext,
+        disposeOptions,
+        disposeRender,
+      });
+    }
+
+    for (const [key, scene] of Array.from(scenes.entries())) {
+      if (!keep.has(key)) {
+        disposeNativeScene(scene);
+        scenes.delete(key);
+      }
+    }
+
+    if (activeKey) {
+      const activeScene = scenes.get(activeKey);
+      if (activeScene) {
+        setActiveSurface(activeScene.surfaceId);
+      }
+    }
+  };
+
+  const disposeAll = () => {
+    for (const scene of scenes.values()) {
+      disposeNativeScene(scene);
+    }
+    scenes.clear();
+  };
+
+  return {
+    sync,
+    disposeAll,
+  };
+
+  function disposeNativeScene(scene: NativeSurfaceScene) {
+    scene.disposeOptions?.();
+    scene.disposeRender();
+    unregisterNativeSurfaceDisposer(scene.surfaceId);
+  }
+}
+
+function renderOnSurface(surfaceId: number, factory: () => JSX.Element) {
+  let dispose: () => void = () => {};
+  runWithSurface(surfaceId, () => {
+    dispose = render(factory as any, createSurfaceContainer(surfaceId));
+    flushHostQueue();
+  });
+  return () => {
+    runWithSurface(surfaceId, () => {
+      dispose();
+      flushHostQueue();
+    });
+  };
+}
+
+function runWithSurface<T>(surfaceId: number, work: () => T): T {
+  const previous = getActiveSurface();
+  const shouldSwitch = previous !== surfaceId;
+  if (shouldSwitch) {
+    setActiveSurface(surfaceId);
+  }
+  try {
+    return work();
+  } finally {
+    if (shouldSwitch) {
+      setActiveSurface(previous);
+    }
+  }
+}
+
+function createSurfaceContainer(rootId: number): HostNode {
+  return { id: rootId, type: "root" };
+}
+
+function flushHostQueue() {
+  const host = getHost();
+  if (host && typeof host.flush === "function") {
+    host.flush();
+    return;
+  }
+  const ui = (globalThis as Record<string, any>).__ui;
+  if (ui && typeof ui.flush === "function") {
+    ui.flush();
+  }
+}
+
+const nativeSurfaceDisposers = new Map<number, () => void>();
+
+function registerNativeSurfaceDisposer(surfaceId: number, dispose: () => void) {
+  nativeSurfaceDisposers.set(surfaceId, dispose);
+}
+
+function unregisterNativeSurfaceDisposer(surfaceId: number) {
+  nativeSurfaceDisposers.delete(surfaceId);
+}
+
+function installNativeSurfaceDisposer() {
+  const globalObj = globalThis as Record<string, any>;
+  if (typeof globalObj.__disposeRouterScreen === "function") {
+    return;
+  }
+  Object.defineProperty(globalObj, "__disposeRouterScreen", {
+    value(surfaceId: number) {
+      const dispose = nativeSurfaceDisposers.get(surfaceId);
+      if (dispose) {
+        try {
+          dispose();
+        } finally {
+          nativeSurfaceDisposers.delete(surfaceId);
+        }
+      }
+    },
+    enumerable: false,
+    configurable: false,
+    writable: false,
+  });
+}
+
+installNativeSurfaceDisposer();
 
 function getStaticOptions(
   options?: ScreenDescriptor["options"]

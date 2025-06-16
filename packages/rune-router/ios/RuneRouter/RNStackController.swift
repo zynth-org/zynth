@@ -17,6 +17,7 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
       guard let runtime else { return }
       for record in routeStack {
         record.controller?.attachRuntime(runtime)
+        ensureSurface(for: record, runtime: runtime)
       }
     }
   }
@@ -24,7 +25,7 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
   private var transitionRouteKey: String?
   private var transitionDisplayLink: CADisplayLink?
   private weak var transitionCoordinatorRef: UIViewControllerTransitionCoordinator?
-  private weak var hostedSurface: UIView?
+  private weak var rootSurface: UIView?
   private weak var activeHost: RNScreenHostController?
   private var routerActive = false
   private var stackKey: String = "stack-root"
@@ -62,7 +63,9 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
 
   func installRootSurface(_ surface: UIView) {
     loadViewIfNeeded()
-    hostedSurface = surface
+    rootSurface = surface
+    // Keep the root surface around so the runtime retains surface 0, but do not
+    // reuse it for individual screens (each screen gets its own surface).
     surface.removeFromSuperview()
     attachSurfaceToFallbackHost()
     // Don't create any initial route - let JS dispatch RESET to initialize
@@ -85,6 +88,12 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
       host.attachEmitter(emitter)
     }
     record.controller = host
+    if let runtime {
+      ensureSurface(for: record, runtime: runtime)
+    }
+    if let surface = record.surfaceView {
+      host.attachSurfaceView(surface)
+    }
     
     // Resolve options and presentation
     let staticOptions = options ?? routerModule?.getOptions(for: routeName)
@@ -115,7 +124,6 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
       activeNav.pushViewController(host, animated: animated)
     }
     
-    emitStateChanged()
   }
 
   private func activeNavigationController() -> UINavigationController {
@@ -157,19 +165,29 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
       let targetRecord = index > 0 ? routeStack[index - 1] : nil
       let targetHost = targetRecord?.controller
       let targetNavigator = targetRecord?.hostingNavigator
-      record.presentedController?.dismiss(animated: animated) { [weak self, weak targetHost, weak targetNavigator] in
+      let recordsToDispose = Array(routeStack[index..<routeStack.count])
+      routeStack.removeSubrange(index..<routeStack.count)
+      let completion: () -> Void = { [weak self, weak targetHost, weak targetNavigator] in
         guard let self else { return }
         if let host = targetHost {
           self.attachSurface(to: host)
           self.clearSnapshots(for: targetNavigator ?? self.navigator)
         }
+        self.emitStateChanged()
+        self.scheduleTeardown(recordsToDispose)
       }
-      routeStack.removeSubrange(index..<routeStack.count)
-      emitStateChanged()
+
+      if animated {
+        record.presentedController?.dismiss(animated: true, completion: completion)
+      } else {
+        record.presentedController?.dismiss(animated: false)
+        completion()
+      }
       return
     } else {
       // Normal pop in active navigator
       let activeNav = activeNavigationController()
+      let removedRecords = Array(routeStack.suffix(removeCount))
       routeStack.removeLast(removeCount)
       
       if activeNav.viewControllers.count > 1 {
@@ -191,6 +209,9 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
               // Don't pop root of base
           }
       }
+      emitStateChanged()
+      scheduleTeardown(removedRecords)
+      return
     }
 
     emitStateChanged()
@@ -220,6 +241,7 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
   }
 
   private func performReset(using state: [String: Any], animated: Bool) {
+    let previousRecords = routeStack
     // Dismiss any presented modals first
     if let firstModal = routeStack.first(where: { $0.presentedController != nil }) {
       firstModal.presentedController?.dismiss(animated: false)
@@ -247,12 +269,19 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
         host.attachEmitter(emitter)
       }
       record.controller = host
+      if let runtime {
+        ensureSurface(for: record, runtime: runtime)
+      }
+      if let surface = record.surfaceView {
+        host.attachSurfaceView(surface)
+      }
       record.hostingNavigator = navigator
       records.append(record)
       controllers.append(host)
     }
     routeStack = records
     navigator.setViewControllers(controllers, animated: animated)
+    scheduleTeardown(previousRecords)
     if let activeHost = controllers.last as? RNScreenHostController {
       setRouterActive(true)
       attachSurface(to: activeHost)
@@ -340,6 +369,11 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
       emitter.emitBlur(key: previous)
     }
     emitter.emitFocus(key: newFocused)
+    if let record = routeStack.first(where: { $0.key == newFocused }),
+      let surfaceId = record.surfaceId
+    {
+      runtime?.setActiveSurface(surfaceId)
+    }
     focusedRouteKey = newFocused
   }
 
@@ -523,25 +557,20 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
   }
 
   private func attachSurface(to host: RNScreenHostController) {
-    guard let surface = hostedSurface else { return }
-    if activeHost === host, surface.superview === host.view {
-      return
-    }
-    if activeHost !== host {
-      activeHost?.captureSnapshot()
-    }
+    guard let record = routeStack.first(where: { $0.controller === host }) else { return }
+    guard let surface = record.surfaceView else { return }
+    if surface.superview === host.view { return }
     surface.removeFromSuperview()
     host.attachSurfaceView(surface)
+    if let surfaceId = record.surfaceId {
+      runtime?.setActiveSurface(Int(surfaceId))
+    }
     activeHost = host
   }
 
   private func attachSurfaceToFallbackHost() {
-    guard let surface = hostedSurface else { return }
+    guard let surface = rootSurface else { return }
     loadViewIfNeeded()
-    if surface.superview === fallbackSurfaceHost {
-      return
-    }
-    activeHost = nil
     surface.removeFromSuperview()
     surface.frame = fallbackSurfaceHost.bounds
     surface.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -613,14 +642,23 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
     let currentKeys = Set(
       navigationController.viewControllers.compactMap { ($0 as? RNScreenHostController)?.routeKey }
     )
+    var removed: [RouteRecord] = []
     routeStack.removeAll { record in
       // Only remove if this record belongs to this navigator AND is not in currentKeys
       if record.hostingNavigator === navigationController {
-        guard let controller = record.controller else { return true }
-        return !currentKeys.contains(controller.routeKey)
+        guard let controller = record.controller else {
+          removed.append(record)
+          return true
+        }
+        let shouldRemove = !currentKeys.contains(controller.routeKey)
+        if shouldRemove {
+          removed.append(record)
+        }
+        return shouldRemove
       }
       return false
     }
+    scheduleTeardown(removed)
   }
 
   private func controller(for routeKey: String) -> RNScreenHostController? {
@@ -649,6 +687,7 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
     guard let index = routeStack.lastIndex(where: { $0.presentedController === controller }) else {
       return
     }
+    let removedRecords = Array(routeStack[index..<routeStack.count])
     routeStack.removeSubrange(index..<routeStack.count)
     if let host = routeStack.last?.controller {
       attachSurface(to: host)
@@ -662,6 +701,7 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
       clearSnapshots(for: navigator)
     }
     emitStateChanged()
+    scheduleTeardown(removedRecords)
   }
 
   private func scheduleNavigationAction(_ action: @escaping (RNStackController) -> Void) {
@@ -683,6 +723,44 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
   private var isTransitionInFlight: Bool {
     return transitionCoordinatorRef != nil || navigator.transitionCoordinator != nil
   }
+
+  private func makeSurfaceView() -> UIView {
+    let view = UIView(frame: self.view.bounds)
+    view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    view.backgroundColor = UIColor(red: 0.06, green: 0.07, blue: 0.09, alpha: 1.0)
+    return view
+  }
+
+  private func ensureSurface(for record: RouteRecord, runtime: RuneRuntime) {
+    guard record.surfaceId == nil else { return }
+    let surfaceHost = record.surfaceView ?? makeSurfaceView()
+    let surfaceId = runtime.registerSurface(rootView: surfaceHost)
+    record.surfaceId = surfaceId
+    record.surfaceView = surfaceHost
+    if let controller = record.controller {
+      controller.attachSurfaceView(surfaceHost)
+    }
+  }
+
+  private func teardownRecords(_ records: [RouteRecord]) {
+    guard let runtime else { return }
+    for record in records {
+      if let surfaceId = record.surfaceId {
+        runtime.unregisterSurface(id: surfaceId)
+      }
+      record.surfaceView?.removeFromSuperview()
+      record.surfaceId = nil
+      record.surfaceView = nil
+      record.controller?.clearSnapshot()
+    }
+  }
+
+  private func scheduleTeardown(_ records: [RouteRecord]) {
+    guard !records.isEmpty else { return }
+    DispatchQueue.main.async { [weak self] in
+      self?.teardownRecords(records)
+    }
+  }
 }
 
 // MARK: - Route record
@@ -692,6 +770,8 @@ private final class RouteRecord {
   let name: String
   var params: [String: Any]?
   var options: [String: Any]?
+  var surfaceId: Int?
+  weak var surfaceView: UIView?
   weak var controller: RNScreenHostController?
   weak var hostingNavigator: UINavigationController?
   var presentedController: UIViewController?
@@ -709,6 +789,9 @@ private final class RouteRecord {
     ]
     if let params {
       result["params"] = params
+    }
+    if let surfaceId {
+      result["meta"] = ["surfaceId": surfaceId]
     }
     return result
   }

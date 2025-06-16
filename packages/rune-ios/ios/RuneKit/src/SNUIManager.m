@@ -147,7 +147,21 @@ static const int kRuneSurfaceIdBase = 1 << 20;
 
 - (NSNumber *)registerSurfaceWithRootView:(UIView *)rootView surfaceId:(NSNumber *_Nullable)surfaceId {
   NSAssert([NSThread isMainThread], @"registerSurfaceWithRootView must be called on main thread");
-  int sid = surfaceId != nil ? surfaceId.intValue : [self rune_allocateSurfaceId];
+  int sid = 0;
+  if (surfaceId != nil) {
+    sid = surfaceId.intValue;
+  } else {
+    // Allocate surface ids well above any existing node id to prevent collisions.
+    int candidate = [self rune_allocateSurfaceId];
+    int minSafe = self.nextId + kRuneSurfaceIdBase;
+    if (candidate < minSafe) {
+      candidate = minSafe;
+    }
+    while ([self rune_hasSurface:candidate]) {
+      candidate += kRuneSurfaceIdBase;
+    }
+    sid = candidate;
+  }
   if ([self rune_hasSurface:sid]) {
     return @(sid);
   }

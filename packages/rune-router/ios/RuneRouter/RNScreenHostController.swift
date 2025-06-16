@@ -316,9 +316,7 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
   private func collectTabButtons(in view: UIView) -> [UIControl] {
     var result: [UIControl] = []
     func walk(_ node: UIView) {
-      if let control = node as? UIControl,
-        String(describing: type(of: control)).contains("Tab") || control is UIControl
-      {
+      if let control = node as? UIControl {
         result.append(control)
       }
       for child in node.subviews {
@@ -587,37 +585,38 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
     guard view.bounds.width > 0, view.bounds.height > 0 else { return }
     
     view.layoutIfNeeded()
+    surfaceView?.layoutIfNeeded()
 
-    // Try fast snapshot first (captures without forcing a draw)
-    var snapshot = view.snapshotView(afterScreenUpdates: false)
+    // Prefer capturing the surfaceView (actual rendered content) to avoid occasional blank host snapshots.
+    let targetView: UIView = surfaceView ?? view
+    let targetBounds = targetView.bounds
 
-    // Try with screen updates if fast path fails
-    if snapshot == nil {
-      snapshot = view.snapshotView(afterScreenUpdates: true)
-    }
+    // Use afterScreenUpdates: true to ensure we capture the latest state and avoid blank snapshots.
+    // This synchronizes with the render server which is critical during transitions.
+    var snapshot = targetView.snapshotView(afterScreenUpdates: true)
 
     // Fallback to drawHierarchy if snapshotView fails (e.g. for WebViews or GL views)
     if snapshot == nil {
-      UIGraphicsBeginImageContextWithOptions(view.bounds.size, view.isOpaque, 0)
-      view.drawHierarchy(in: view.bounds, afterScreenUpdates: true)
+      UIGraphicsBeginImageContextWithOptions(targetBounds.size, targetView.isOpaque, 0)
+      let success = targetView.drawHierarchy(in: targetBounds, afterScreenUpdates: true)
       let image = UIGraphicsGetImageFromCurrentImageContext()
       UIGraphicsEndImageContext()
-      if let image {
+      if success, let image {
         snapshot = UIImageView(image: image)
       }
     }
 
     // Final fallback: render layer directly
     if snapshot == nil {
-      let renderer = UIGraphicsImageRenderer(bounds: view.bounds)
+      let renderer = UIGraphicsImageRenderer(bounds: targetBounds)
       let image = renderer.image { context in
-        view.layer.render(in: context.cgContext)
+        targetView.layer.render(in: context.cgContext)
       }
       snapshot = UIImageView(image: image)
     }
 
     guard let finalSnapshot = snapshot else { return }
-    finalSnapshot.frame = view.bounds
+    finalSnapshot.frame = view.convert(targetBounds, from: targetView)
     finalSnapshot.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     view.addSubview(finalSnapshot)
     view.bringSubviewToFront(finalSnapshot)
