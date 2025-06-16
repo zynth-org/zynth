@@ -4,7 +4,8 @@ import RuneKit
 @objcMembers
 @objc(RNStackController)
 public final class RNStackController: UIViewController, UINavigationControllerDelegate,
-  UIGestureRecognizerDelegate, UINavigationBarDelegate, UIBarPositioningDelegate
+  UIGestureRecognizerDelegate, UINavigationBarDelegate, UIBarPositioningDelegate,
+  UIAdaptivePresentationControllerDelegate
 {
   private let navigator = UINavigationController()
   private let fallbackSurfaceHost = UIView()
@@ -28,6 +29,7 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
   private var routerActive = false
   private var stackKey: String = "stack-root"
   private var lastEmittedStateJSON: String?
+  private weak var transitioningNavigationController: UINavigationController?
   private var pendingActions: [(RNStackController) -> Void] = []
 
   public override func viewDidLoad() {
@@ -35,7 +37,11 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
     navigator.delegate = self
     navigator.view.frame = view.bounds
     navigator.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    
+    addChild(navigator)
     view.addSubview(navigator.view)
+    navigator.didMove(toParent: self)
+    
     fallbackSurfaceHost.frame = view.bounds
     fallbackSurfaceHost.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     fallbackSurfaceHost.backgroundColor = UIColor(red: 0.06, green: 0.07, blue: 0.09, alpha: 1.0)
@@ -62,15 +68,16 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
     // Don't create any initial route - let JS dispatch RESET to initialize
   }  // MARK: - Navigation commands
 
-  func push(routeName: String, params: [String: Any]?, animated: Bool) {
+  func push(routeName: String, params: [String: Any]?, options: [String: Any]?, animated: Bool) {
     scheduleNavigationAction { controller in
-      controller.performPush(routeName: routeName, params: params, animated: animated)
+      controller.performPush(routeName: routeName, params: params, options: options, animated: animated)
     }
   }
 
-  private func performPush(routeName: String, params: [String: Any]?, animated: Bool) {
+  private func performPush(routeName: String, params: [String: Any]?, options: [String: Any]?, animated: Bool) {
     let record = RouteRecord(name: routeName, params: params)
     let host = RNScreenHostController(routeKey: record.key, routeName: routeName, params: params)
+    
     if let runtime {
       host.attachRuntime(runtime)
     }
@@ -78,9 +85,51 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
       host.attachEmitter(emitter)
     }
     record.controller = host
+    
+    // Resolve options and presentation
+    let staticOptions = options ?? routerModule?.getOptions(for: routeName)
+    let presentation = staticOptions?["presentation"] as? String
+    let isModal = presentation == "modal" || presentation == "fullScreen" || presentation == "formSheet" || presentation == "pageSheet" || presentation == "transparentModal"
+    
+    // Determine context before appending to avoid self-discovery
+    let activeNav = activeNavigationController()
+
     routeStack.append(record)
-    navigator.pushViewController(host, animated: animated)
+
+    if isModal {
+      let modalNav = UINavigationController(rootViewController: host)
+      modalNav.delegate = self
+      modalNav.modalPresentationStyle = mapPresentationStyle(presentation)
+      modalNav.presentationController?.delegate = self
+      
+      record.presentedController = modalNav
+      record.hostingNavigator = modalNav
+      
+      if activeNav === navigator {
+          self.present(modalNav, animated: animated)
+      } else {
+          activeNav.present(modalNav, animated: animated)
+      }
+    } else {
+      record.hostingNavigator = activeNav
+      activeNav.pushViewController(host, animated: animated)
+    }
+    
     emitStateChanged()
+  }
+
+  private func activeNavigationController() -> UINavigationController {
+    // Find the last record that has a presented controller which is a NavController
+    // If none, return self.navigator
+    // We scan backwards
+    for record in routeStack.reversed() {
+      if let nav = record.presentedController as? UINavigationController {
+        return nav
+      }
+      // If a record is hosted by a navigator, that doesn't mean it PRESENTS one.
+      // We look for the PRESENTING record.
+    }
+    return navigator
   }
 
   func pop(count: Int, animated: Bool) {
@@ -91,28 +140,59 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
 
   private func performPop(count: Int, animated: Bool) {
     guard !routeStack.isEmpty else { return }
-    let targetCount = routeStack.count - count
-    if targetCount > 0 {
-      routeStack.removeLast(count)
+    let removeCount = min(count, routeStack.count)
+    let startIndex = routeStack.count - removeCount
+    
+    // Check if we are removing a modal root
+    var modalDismissalIndex: Int?
+    for i in startIndex..<routeStack.count {
+      if routeStack[i].presentedController != nil {
+        modalDismissalIndex = i
+        break
+      }
+    }
+    
+    if let index = modalDismissalIndex {
+      let record = routeStack[index]
+      let targetRecord = index > 0 ? routeStack[index - 1] : nil
+      let targetHost = targetRecord?.controller
+      let targetNavigator = targetRecord?.hostingNavigator
+      record.presentedController?.dismiss(animated: animated) { [weak self, weak targetHost, weak targetNavigator] in
+        guard let self else { return }
+        if let host = targetHost {
+          self.attachSurface(to: host)
+          self.clearSnapshots(for: targetNavigator ?? self.navigator)
+        }
+      }
+      routeStack.removeSubrange(index..<routeStack.count)
+      emitStateChanged()
+      return
     } else {
-      routeStack.removeAll()
+      // Normal pop in active navigator
+      let activeNav = activeNavigationController()
+      routeStack.removeLast(removeCount)
+      
+      if activeNav.viewControllers.count > 1 {
+        if let targetRecord = routeStack.last,
+           let targetVC = targetRecord.controller,
+           targetRecord.hostingNavigator === activeNav
+        {
+          activeNav.popToViewController(targetVC, animated: animated)
+        } else {
+          // Fallback if target not found or stack mismatch
+          if activeNav.viewControllers.count > 1 {
+             activeNav.popViewController(animated: animated)
+          }
+        }
+      } else {
+          // If we popped the last item in a modal stack (but it wasn't marked as modal root? Impossible if logic holds),
+          // or we popped the root of base navigator.
+          if activeNav === navigator {
+              // Don't pop root of base
+          }
+      }
     }
 
-    if count <= 1 {
-      navigator.popViewController(animated: animated)
-    } else {
-      let controllerCount = navigator.viewControllers.count
-      let targetIndex = max(controllerCount - count - 1, 0)
-      guard targetIndex < controllerCount,
-        targetIndex < navigator.viewControllers.count
-      else {
-        navigator.popToRootViewController(animated: animated)
-        emitStateChanged()
-        return
-      }
-      let target = navigator.viewControllers[targetIndex]
-      navigator.popToViewController(target, animated: animated)
-    }
     emitStateChanged()
   }
 
@@ -128,7 +208,8 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
     }
     routeStack.removeLast()
     _ = navigator.popViewController(animated: false)
-    performPush(routeName: name, params: params, animated: animated)
+    let options = routerModule?.getOptions(for: name)
+    performPush(routeName: name, params: params, options: options, animated: animated)
     // emitStateChanged is called by push()
   }
 
@@ -139,6 +220,11 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
   }
 
   private func performReset(using state: [String: Any], animated: Bool) {
+    // Dismiss any presented modals first
+    if let firstModal = routeStack.first(where: { $0.presentedController != nil }) {
+      firstModal.presentedController?.dismiss(animated: false)
+    }
+
     guard let routes = state["routes"] as? [[String: Any]] else { return }
 
     // Store the stack key from JS if provided
@@ -161,6 +247,7 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
         host.attachEmitter(emitter)
       }
       record.controller = host
+      record.hostingNavigator = navigator
       records.append(record)
       controllers.append(host)
     }
@@ -263,17 +350,13 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
     willShow viewController: UIViewController,
     animated: Bool
   ) {
+    transitioningNavigationController = navigationController
     guard let host = viewController as? RNScreenHostController else {
       transitionRouteKey = nil
       return
     }
     attachSurface(to: host)
-    // Update route stack to match navigation controller state (for back button)
-    let currentKeys = Set(
-      navigationController.viewControllers.compactMap { ($0 as? RNScreenHostController)?.routeKey })
-    routeStack.removeAll { record in
-      !currentKeys.contains(record.key)
-    }
+    trimRouteStack(for: navigationController)
     emitStateChanged()
 
     transitionRouteKey = host.routeKey
@@ -303,7 +386,7 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
     if let host = viewController as? RNScreenHostController {
       attachSurface(to: host)
     }
-    trimRouteStack()
+    trimRouteStack(for: navigationController)
     emitStateChanged()
     finishTransition(finished: true)
   }
@@ -432,9 +515,10 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
     if let key {
       emitter?.emitTransitionEnd(key: key, finished: finished)
     }
-    for record in routeStack {
-      record.controller?.clearSnapshot()
+    if let nav = transitioningNavigationController {
+      clearSnapshots(for: nav)
     }
+    transitioningNavigationController = nil
     flushPendingActionsIfPossible()
   }
 
@@ -525,18 +609,59 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
     navigator.navigationBar.barStyle = .black
   }
 
-  private func trimRouteStack() {
-    let keys = Set(
-      navigator.viewControllers.compactMap { ($0 as? RNScreenHostController)?.routeKey }
+  private func trimRouteStack(for navigationController: UINavigationController) {
+    let currentKeys = Set(
+      navigationController.viewControllers.compactMap { ($0 as? RNScreenHostController)?.routeKey }
     )
     routeStack.removeAll { record in
-      guard let controller = record.controller else { return true }
-      return !keys.contains(controller.routeKey)
+      // Only remove if this record belongs to this navigator AND is not in currentKeys
+      if record.hostingNavigator === navigationController {
+        guard let controller = record.controller else { return true }
+        return !currentKeys.contains(controller.routeKey)
+      }
+      return false
     }
   }
 
   private func controller(for routeKey: String) -> RNScreenHostController? {
     return routeStack.first(where: { $0.key == routeKey })?.controller
+  }
+
+  private func clearSnapshots(for navigationController: UINavigationController?) {
+    guard let navigationController else {
+      for record in routeStack {
+        record.controller?.clearSnapshot()
+      }
+      return
+    }
+    for record in routeStack where record.hostingNavigator === navigationController {
+      record.controller?.clearSnapshot()
+    }
+  }
+
+  // MARK: - UIAdaptivePresentationControllerDelegate
+
+  public func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+    handlePresentedControllerDismissal(presentationController.presentedViewController)
+  }
+
+  private func handlePresentedControllerDismissal(_ controller: UIViewController) {
+    guard let index = routeStack.lastIndex(where: { $0.presentedController === controller }) else {
+      return
+    }
+    routeStack.removeSubrange(index..<routeStack.count)
+    if let host = routeStack.last?.controller {
+      attachSurface(to: host)
+    } else {
+      attachSurfaceToFallbackHost()
+      setRouterActive(false)
+    }
+    if let nav = controller as? UINavigationController {
+      clearSnapshots(for: nav)
+    } else {
+      clearSnapshots(for: navigator)
+    }
+    emitStateChanged()
   }
 
   private func scheduleNavigationAction(_ action: @escaping (RNStackController) -> Void) {
@@ -568,6 +693,8 @@ private final class RouteRecord {
   var params: [String: Any]?
   var options: [String: Any]?
   weak var controller: RNScreenHostController?
+  weak var hostingNavigator: UINavigationController?
+  var presentedController: UIViewController?
 
   init(name: String, params: [String: Any]?, key: String = UUID().uuidString) {
     self.name = name
@@ -594,5 +721,20 @@ private func mergeOptions(into target: inout [String: Any], patch: [String: Any]
     } else {
       target[key] = value
     }
+  }
+}
+
+private func mapPresentationStyle(_ style: String?) -> UIModalPresentationStyle {
+  switch style {
+  case "modal", "formSheet":
+    return .formSheet
+  case "fullScreen":
+    return .fullScreen
+  case "pageSheet":
+    return .pageSheet
+  case "transparentModal":
+    return .overFullScreen
+  default:
+    return .automatic
   }
 }

@@ -77,6 +77,7 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
     surface.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     contentView.addSubview(surface)
     surfaceView = surface
+
     clearSnapshot()
     view.setNeedsLayout()
     view.layoutIfNeeded()
@@ -127,6 +128,8 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
     }
     applyStoredOptionsToNavigationBar()
   }
+
+
 
   func configureTabs(
     configuration: TabBarConfiguration,
@@ -581,11 +584,44 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
 
   func captureSnapshot() {
     guard snapshotView == nil else { return }
-    guard let snapshot = view.snapshotView(afterScreenUpdates: false) else { return }
-    snapshot.frame = view.bounds
-    snapshot.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-    view.addSubview(snapshot)
-    snapshotView = snapshot
+    guard view.bounds.width > 0, view.bounds.height > 0 else { return }
+    
+    view.layoutIfNeeded()
+
+    // Try fast snapshot first (captures without forcing a draw)
+    var snapshot = view.snapshotView(afterScreenUpdates: false)
+
+    // Try with screen updates if fast path fails
+    if snapshot == nil {
+      snapshot = view.snapshotView(afterScreenUpdates: true)
+    }
+
+    // Fallback to drawHierarchy if snapshotView fails (e.g. for WebViews or GL views)
+    if snapshot == nil {
+      UIGraphicsBeginImageContextWithOptions(view.bounds.size, view.isOpaque, 0)
+      view.drawHierarchy(in: view.bounds, afterScreenUpdates: true)
+      let image = UIGraphicsGetImageFromCurrentImageContext()
+      UIGraphicsEndImageContext()
+      if let image {
+        snapshot = UIImageView(image: image)
+      }
+    }
+
+    // Final fallback: render layer directly
+    if snapshot == nil {
+      let renderer = UIGraphicsImageRenderer(bounds: view.bounds)
+      let image = renderer.image { context in
+        view.layer.render(in: context.cgContext)
+      }
+      snapshot = UIImageView(image: image)
+    }
+
+    guard let finalSnapshot = snapshot else { return }
+    finalSnapshot.frame = view.bounds
+    finalSnapshot.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    view.addSubview(finalSnapshot)
+    view.bringSubviewToFront(finalSnapshot)
+    snapshotView = finalSnapshot
   }
 
   func clearSnapshot() {

@@ -239,15 +239,25 @@ export function useNavigation<
 
   return {
     navigate(name, params) {
+      const staticOptions = getStaticScreenOptions(name as string);
       router.dispatch({
         type: "NAVIGATE",
-        payload: { name: name as string, params: params as any },
+        payload: {
+          name: name as string,
+          params: params as any,
+          options: staticOptions as ScreenOptions | undefined,
+        },
       });
     },
     push(name, params) {
+      const staticOptions = getStaticScreenOptions(name as string);
       router.dispatch({
         type: "PUSH",
-        payload: { name: name as string, params: params as any },
+        payload: {
+          name: name as string,
+          params: params as any,
+          options: staticOptions as ScreenOptions | undefined,
+        },
       });
     },
     pop(count) {
@@ -255,6 +265,13 @@ export function useNavigation<
         type: "POP",
         source: route.key,
         payload: count ? { count } : undefined,
+      });
+    },
+    goBack() {
+      router.dispatch({
+        type: "POP",
+        source: route.key,
+        payload: { count: 1 },
       });
     },
     replace(name, params) {
@@ -337,6 +354,16 @@ export function registerScreen(descriptor: ScreenDescriptor): () => void {
 
 export function applyScreenOptions(key: string, options: ScreenOptions): void {
   setNativeScreenOptions(key, options);
+}
+
+function getStaticScreenOptions(name: string): ScreenOptions | undefined {
+  const descriptor = resolveScreenDescriptor(name);
+  if (!descriptor) return undefined;
+  const options = descriptor.options;
+  if (!options || typeof options === "function") {
+    return undefined;
+  }
+  return options as ScreenOptions;
 }
 
 function extractFocusedRouteKeys(state: NavigationState | null): string[] {

@@ -31,6 +31,7 @@ export interface RegisteredScreenSummary {
   navigatorId: string;
   type: "stack" | "tab";
   memoryPolicy?: ScreenDescriptor["memoryPolicy"];
+  options?: ScreenOptions;
 }
 
 export interface NativeTabBarItem {
@@ -216,12 +217,19 @@ function extractStateFromResult(result: any): NavigationState | null {
 
 function syncRegisteredScreens(): void {
   const bridge = getNativeRouterBridge();
-  summaries = Array.from(descriptorRegistry.values()).map((descriptor) => ({
-    name: descriptor.name,
-    navigatorId: descriptor.navigatorId,
-    type: descriptor.type,
-    memoryPolicy: descriptor.memoryPolicy,
-  }));
+  summaries = Array.from(descriptorRegistry.values()).map((descriptor) => {
+    let options: ScreenOptions | undefined;
+    if (descriptor.options && typeof descriptor.options !== "function") {
+      options = descriptor.options as ScreenOptions;
+    }
+    return {
+      name: descriptor.name,
+      navigatorId: descriptor.navigatorId,
+      type: descriptor.type,
+      memoryPolicy: descriptor.memoryPolicy,
+      options,
+    };
+  });
 
   if (typeof bridge.registerScreens === "function") {
     bridge.registerScreens(summaries);

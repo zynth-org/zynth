@@ -143,6 +143,10 @@ final class RuneRouterModule: NSObject, RuneModule, RuneSyncModule {
     emitter.emitBeforeRemove(action: action, key: routeKey, requestId: requestId)
   }
 
+  func getOptions(for routeName: String) -> [String: Any]? {
+    return registeredScreens.first(where: { ($0["name"] as? String) == routeName })?["options"] as? [String: Any]
+  }
+
   private func resolveBeforeRemove(requestId: String, cancelled: Bool) {
     guard let completion = beforeRemoveResolvers.removeValue(forKey: requestId) else {
       return
@@ -185,7 +189,8 @@ final class RuneRouterModule: NSObject, RuneModule, RuneSyncModule {
           let name = payload["name"] as? String
         else { return }
         let params = payload["params"] as? [String: Any]
-        self.stackController?.push(routeName: name, params: params, animated: true)
+        let options = payload["options"] as? [String: Any]
+        self.stackController?.push(routeName: name, params: params, options: options, animated: true)
       case "POP":
         let payload = action["payload"] as? [String: Any]
         let count = payload?["count"] as? Int ?? 1

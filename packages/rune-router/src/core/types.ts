@@ -209,6 +209,7 @@ export interface NavigationHelpers<
     params?: ParamList[RouteName]
   ): void;
   pop(count?: number): void;
+  goBack(): void;
   replace<RouteName extends keyof ParamList>(
     name: RouteName,
     params?: ParamList[RouteName]
@@ -228,12 +229,20 @@ export type RouterAction =
   | {
       type: "NAVIGATE";
       source?: string;
-      payload: { name: string; params?: Record<string, unknown> };
+      payload: {
+        name: string;
+        params?: Record<string, unknown>;
+        options?: ScreenOptions;
+      };
     }
   | {
       type: "PUSH";
       source?: string;
-      payload: { name: string; params?: Record<string, unknown> };
+      payload: {
+        name: string;
+        params?: Record<string, unknown>;
+        options?: ScreenOptions;
+      };
     }
   | { type: "POP"; source?: string; payload?: { count?: number } }
   | {
