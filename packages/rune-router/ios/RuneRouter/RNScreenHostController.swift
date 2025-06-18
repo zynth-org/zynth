@@ -4,6 +4,7 @@ import UIKit
 final class RNScreenHostController: UIViewController, UITabBarDelegate {
   let routeKey: String
   let routeName: String
+  private let isModal: Bool
   private var params: [String: Any]?
   private var appliedOptions: [String: Any]?
   private weak var surfaceView: UIView?
@@ -28,9 +29,12 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
   private var hasAppliedHeaderVisibility = false
   private var lastEmittedTabMetrics: (height: CGFloat, inset: CGFloat)?
 
-  init(routeKey: String, routeName: String, params: [String: Any]?) {
+  var onDismiss: (() -> Void)?
+
+  init(routeKey: String, routeName: String, params: [String: Any]?, isModal: Bool) {
     self.routeKey = routeKey
     self.routeName = routeName
+    self.isModal = isModal
     self.params = params
     super.init(nibName: nil, bundle: nil)
     title = routeName
@@ -43,8 +47,14 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
 
   override func viewDidLoad() {
     super.viewDidLoad()
-    // Match your app's background color to avoid white flash during transitions
-    view.backgroundColor = UIColor(red: 0.06, green: 0.07, blue: 0.09, alpha: 1.0)  // #101217
+    // Match app background for push screens; modal screens default to transparent so underlying content stays visible.
+    if isModal {
+      view.backgroundColor = .clear
+      contentView.backgroundColor = .clear
+    } else {
+      view.backgroundColor = UIColor(red: 0.06, green: 0.07, blue: 0.09, alpha: 1.0)  // #101217
+      contentView.backgroundColor = view.backgroundColor
+    }
     contentView.frame = view.bounds
     contentView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     view.addSubview(contentView)
@@ -126,7 +136,35 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
     if let headerShown = options["headerShown"] as? Bool {
       navigationController?.setNavigationBarHidden(!headerShown, animated: true)
     }
+    
+    if let rightButtonConfig = options["headerRightButton"] as? [String: Any] {
+      let styleString = rightButtonConfig["style"] as? String
+      
+      if styleString == "icon", let systemItemName = rightButtonConfig["systemItem"] as? String, systemItemName == "close" {
+          let item = UIBarButtonItem(barButtonSystemItem: .close, target: self, action: #selector(handleHeaderRightPress))
+          navigationItem.rightBarButtonItem = item
+      } else {
+          let title = rightButtonConfig["title"] as? String ?? "Done"
+          let style: UIBarButtonItem.Style = (styleString == "done") ? .done : .plain
+          let item = UIBarButtonItem(title: title, style: style, target: self, action: #selector(handleHeaderRightPress))
+          navigationItem.rightBarButtonItem = item
+      }
+    } else {
+      navigationItem.rightBarButtonItem = nil
+    }
+
     applyStoredOptionsToNavigationBar()
+  }
+  
+  @objc
+  private func handleHeaderRightPress() {
+    // Default behavior: dismiss
+    // We must ensure the navigation controller is dismissed if we are the root of a modal
+    if let nav = navigationController, nav.presentingViewController != nil, nav.viewControllers.first === self {
+        dismiss(animated: true) { [weak self] in
+            self?.onDismiss?()
+        }
+    }
   }
 
 

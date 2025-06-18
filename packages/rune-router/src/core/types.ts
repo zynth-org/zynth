@@ -56,6 +56,11 @@ export interface HeaderOptions {
   headerTransparent?: boolean;
   headerBlurEffect?: "systemUltraThin" | "systemThin" | "systemChromatic";
   headerShadowVisible?: boolean;
+  headerRightButton?: {
+    title?: string;
+    style?: "plain" | "done" | "icon";
+    systemItem?: "close";
+  };
   userInterfaceStyle?: "light" | "dark" | "system";
   custom?: JSX.Element;
 }

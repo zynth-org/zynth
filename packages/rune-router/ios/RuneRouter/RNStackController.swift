@@ -78,8 +78,18 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
   }
 
   private func performPush(routeName: String, params: [String: Any]?, options: [String: Any]?, animated: Bool) {
+    // Resolve options and presentation early to know if this is a modal host.
+    let staticOptions = options ?? routerModule?.getOptions(for: routeName)
+    let presentation = staticOptions?["presentation"] as? String
+    let isModal = presentation == "modal" || presentation == "fullScreen" || presentation == "formSheet" || presentation == "pageSheet" || presentation == "transparentModal"
+
     let record = RouteRecord(name: routeName, params: params)
-    let host = RNScreenHostController(routeKey: record.key, routeName: routeName, params: params)
+    let host = RNScreenHostController(
+      routeKey: record.key,
+      routeName: routeName,
+      params: params,
+      isModal: isModal
+    )
     
     if let runtime {
       host.attachRuntime(runtime)
@@ -95,11 +105,6 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
       host.attachSurfaceView(surface)
     }
     
-    // Resolve options and presentation
-    let staticOptions = options ?? routerModule?.getOptions(for: routeName)
-    let presentation = staticOptions?["presentation"] as? String
-    let isModal = presentation == "modal" || presentation == "fullScreen" || presentation == "formSheet" || presentation == "pageSheet" || presentation == "transparentModal"
-    
     // Determine context before appending to avoid self-discovery
     let activeNav = activeNavigationController()
 
@@ -109,6 +114,7 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
       let modalNav = UINavigationController(rootViewController: host)
       modalNav.delegate = self
       modalNav.modalPresentationStyle = mapPresentationStyle(presentation)
+      configureTransparentNav(modalNav)
       modalNav.presentationController?.delegate = self
       
       record.presentedController = modalNav
@@ -119,6 +125,13 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
       } else {
           activeNav.present(modalNav, animated: animated)
       }
+      
+      // Hook up programmatic dismissal cleanup
+      host.onDismiss = { [weak self, weak modalNav] in
+        guard let modalNav else { return }
+        self?.handlePresentedControllerDismissal(modalNav)
+      }
+
     } else {
       record.hostingNavigator = activeNav
       activeNav.pushViewController(host, animated: animated)
@@ -261,7 +274,12 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
       let params = route["params"] as? [String: Any]
       let key = (route["key"] as? String) ?? UUID().uuidString
       let record = RouteRecord(name: name, params: params, key: key)
-      let host = RNScreenHostController(routeKey: record.key, routeName: name, params: params)
+      let host = RNScreenHostController(
+        routeKey: record.key,
+        routeName: name,
+        params: params,
+        isModal: false
+      )
       if let runtime {
         host.attachRuntime(runtime)
       }
@@ -609,6 +627,23 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
     }
   }
 
+  private func configureTransparentNav(_ nav: UINavigationController) {
+    nav.view.backgroundColor = .clear
+    nav.view.isOpaque = false
+    nav.navigationBar.setBackgroundImage(UIImage(), for: .default)
+    nav.navigationBar.shadowImage = UIImage()
+    nav.navigationBar.isTranslucent = true
+    nav.navigationBar.backgroundColor = .clear
+    if #available(iOS 13.0, *) {
+      let appearance = UINavigationBarAppearance()
+      appearance.configureWithTransparentBackground()
+      appearance.backgroundColor = .clear
+      nav.navigationBar.standardAppearance = appearance
+      nav.navigationBar.scrollEdgeAppearance = appearance
+      nav.navigationBar.compactAppearance = appearance
+    }
+  }
+
   private func configureNavigationAppearance() {
     let backgroundColor = UIColor(red: 0.06, green: 0.07, blue: 0.09, alpha: 1.0)
     let titleColor = UIColor.white
@@ -727,7 +762,7 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
   private func makeSurfaceView() -> UIView {
     let view = UIView(frame: self.view.bounds)
     view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-    view.backgroundColor = UIColor(red: 0.06, green: 0.07, blue: 0.09, alpha: 1.0)
+    view.backgroundColor = .clear
     return view
   }
 
