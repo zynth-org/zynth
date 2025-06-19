@@ -1,5 +1,5 @@
-import UIKit
 import RuneKit
+import UIKit
 
 @objcMembers
 @objc(RNStackController)
@@ -38,11 +38,11 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
     navigator.delegate = self
     navigator.view.frame = view.bounds
     navigator.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-    
+
     addChild(navigator)
     view.addSubview(navigator.view)
     navigator.didMove(toParent: self)
-    
+
     fallbackSurfaceHost.frame = view.bounds
     fallbackSurfaceHost.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     fallbackSurfaceHost.backgroundColor = UIColor(red: 0.06, green: 0.07, blue: 0.09, alpha: 1.0)
@@ -73,15 +73,20 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
 
   func push(routeName: String, params: [String: Any]?, options: [String: Any]?, animated: Bool) {
     scheduleNavigationAction { controller in
-      controller.performPush(routeName: routeName, params: params, options: options, animated: animated)
+      controller.performPush(
+        routeName: routeName, params: params, options: options, animated: animated)
     }
   }
 
-  private func performPush(routeName: String, params: [String: Any]?, options: [String: Any]?, animated: Bool) {
+  private func performPush(
+    routeName: String, params: [String: Any]?, options: [String: Any]?, animated: Bool
+  ) {
     // Resolve options and presentation early to know if this is a modal host.
     let staticOptions = options ?? routerModule?.getOptions(for: routeName)
     let presentation = staticOptions?["presentation"] as? String
-    let isModal = presentation == "modal" || presentation == "fullScreen" || presentation == "formSheet" || presentation == "pageSheet" || presentation == "transparentModal"
+    let isModal =
+      presentation == "modal" || presentation == "fullScreen" || presentation == "formSheet"
+      || presentation == "pageSheet" || presentation == "transparentModal"
 
     let record = RouteRecord(name: routeName, params: params)
     let host = RNScreenHostController(
@@ -90,7 +95,7 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
       params: params,
       isModal: isModal
     )
-    
+
     if let runtime {
       host.attachRuntime(runtime)
     }
@@ -104,7 +109,7 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
     if let surface = record.surfaceView {
       host.attachSurfaceView(surface)
     }
-    
+
     // Determine context before appending to avoid self-discovery
     let activeNav = activeNavigationController()
 
@@ -116,16 +121,16 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
       modalNav.modalPresentationStyle = mapPresentationStyle(presentation)
       configureTransparentNav(modalNav)
       modalNav.presentationController?.delegate = self
-      
+
       record.presentedController = modalNav
       record.hostingNavigator = modalNav
-      
+
       if activeNav === navigator {
-          self.present(modalNav, animated: animated)
+        self.present(modalNav, animated: animated)
       } else {
-          activeNav.present(modalNav, animated: animated)
+        activeNav.present(modalNav, animated: animated)
       }
-      
+
       // Hook up programmatic dismissal cleanup
       host.onDismiss = { [weak self, weak modalNav] in
         guard let modalNav else { return }
@@ -136,7 +141,7 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
       record.hostingNavigator = activeNav
       activeNav.pushViewController(host, animated: animated)
     }
-    
+
   }
 
   private func activeNavigationController() -> UINavigationController {
@@ -163,7 +168,7 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
     guard !routeStack.isEmpty else { return }
     let removeCount = min(count, routeStack.count)
     let startIndex = routeStack.count - removeCount
-    
+
     // Check if we are removing a modal root
     var modalDismissalIndex: Int?
     for i in startIndex..<routeStack.count {
@@ -172,7 +177,7 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
         break
       }
     }
-    
+
     if let index = modalDismissalIndex {
       let record = routeStack[index]
       let targetRecord = index > 0 ? routeStack[index - 1] : nil
@@ -202,25 +207,25 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
       let activeNav = activeNavigationController()
       let removedRecords = Array(routeStack.suffix(removeCount))
       routeStack.removeLast(removeCount)
-      
+
       if activeNav.viewControllers.count > 1 {
         if let targetRecord = routeStack.last,
-           let targetVC = targetRecord.controller,
-           targetRecord.hostingNavigator === activeNav
+          let targetVC = targetRecord.controller,
+          targetRecord.hostingNavigator === activeNav
         {
           activeNav.popToViewController(targetVC, animated: animated)
         } else {
           // Fallback if target not found or stack mismatch
           if activeNav.viewControllers.count > 1 {
-             activeNav.popViewController(animated: animated)
+            activeNav.popViewController(animated: animated)
           }
         }
       } else {
-          // If we popped the last item in a modal stack (but it wasn't marked as modal root? Impossible if logic holds),
-          // or we popped the root of base navigator.
-          if activeNav === navigator {
-              // Don't pop root of base
-          }
+        // If we popped the last item in a modal stack (but it wasn't marked as modal root? Impossible if logic holds),
+        // or we popped the root of base navigator.
+        if activeNav === navigator {
+          // Don't pop root of base
+        }
       }
       emitStateChanged()
       scheduleTeardown(removedRecords)
@@ -367,7 +372,8 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
       json == lastEmittedStateJSON
     {
       return
-    } else if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
+    } else if let data = try? JSONSerialization.data(
+      withJSONObject: payload, options: [.sortedKeys]),
       let json = String(data: data, encoding: .utf8)
     {
       lastEmittedStateJSON = json
@@ -408,7 +414,11 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
       return
     }
     attachSurface(to: host)
-    trimRouteStack(for: navigationController)
+
+    // We update the state here to ensure the JS side is aware of the new route (PUSH)
+    // immediately, allowing it to render content during the transition.
+    // We intentionally do NOT call trimRouteStack here to avoid premature disposal
+    // during interactive pops.
     emitStateChanged()
 
     transitionRouteKey = host.routeKey
