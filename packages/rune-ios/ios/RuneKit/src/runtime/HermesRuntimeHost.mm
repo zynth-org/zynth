@@ -4,6 +4,7 @@
 #import <jsi/jsi.h>
 #import <dispatch/dispatch.h>
 #import <CoreFoundation/CoreFoundation.h>
+#import <UIKit/UIKit.h>
 #import <objc/message.h>
 
 #if __has_include(<RuneKit/RuneKit-Swift.h>)
@@ -65,6 +66,9 @@ struct Timer {
 
 static std::atomic<int> gNextTimer{1};
 static std::unordered_map<int, std::unique_ptr<Timer>> gTimers;
+static std::atomic<int> gNextAnimationFrame{1};
+static std::unordered_map<int, std::shared_ptr<Function>> gAnimationFrames;
+static CADisplayLink *gAnimationDisplayLink = nil;
 
 inline void SNShowRedBox(NSString *title, NSString *message, NSString *stack) {
   Class redBoxClass = NSClassFromString(@"DevRedBox");
@@ -296,6 +300,10 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
 @property(nonatomic, strong) SNUIManager *manager;
 - (void)reportExceptionWithContext:(NSString *)context message:(const std::string &)message stack:(const std::string &)stack;
 - (void)reportStdException:(const std::exception &)ex context:(NSString *)context;
+- (void)ensureAnimationDisplayLink;
+- (void)stopAnimationDisplayLink;
+- (void)onAnimationFrame:(CADisplayLink *)link;
+- (void)flushAnimationFrames:(CFTimeInterval)timestamp;
 @end
 
 @implementation HermesRuntimeHost {
@@ -1035,6 +1043,44 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
         return Value::undefined();
       });
 
+  auto hostRequestAnimationFrame = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "__hostRequestAnimationFrame"), 1,
+      [host](Runtime &rt, const Value &, const Value *a, size_t count) -> Value {
+        try {
+          if (count < 1 || !a[0].isObject()) {
+            return Value::undefined();
+          }
+          Object fnObject = a[0].asObject(rt);
+          if (!fnObject.isFunction(rt)) {
+            return Value::undefined();
+          }
+          int frameId = gNextAnimationFrame.fetch_add(1);
+          auto callback = std::make_shared<Function>(fnObject.asFunction(rt));
+          gAnimationFrames.emplace(frameId, callback);
+          [host ensureAnimationDisplayLink];
+          return Value(static_cast<double>(frameId));
+        } catch (const facebook::jsi::JSError &error) {
+          RuneReportJSIError(rt, error, "requestAnimationFrame");
+        } catch (const std::exception &ex) {
+          [host reportStdException:ex context:@"requestAnimationFrame"];
+        }
+        return Value::undefined();
+      });
+
+  auto hostCancelAnimationFrame = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "__hostCancelAnimationFrame"), 1,
+      [host](Runtime &, const Value &, const Value *a, size_t count) -> Value {
+        if (count < 1 || !a[0].isNumber()) {
+          return Value::undefined();
+        }
+        int frameId = static_cast<int>(a[0].asNumber());
+        gAnimationFrames.erase(frameId);
+        if (gAnimationFrames.empty()) {
+          [host stopAnimationDisplayLink];
+        }
+        return Value::undefined();
+      });
+
   auto hostClearTimeout = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "__hostClearTimeout"), 1,
       [host](Runtime &rt, const Value &, const Value *a, size_t count) -> Value {
@@ -1059,12 +1105,16 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
 
   rt.global().setProperty(rt, "__hostSetTimeout", hostSetTimeout);
   rt.global().setProperty(rt, "__hostClearTimeout", hostClearTimeout);
+  rt.global().setProperty(rt, "__hostRequestAnimationFrame", hostRequestAnimationFrame);
+  rt.global().setProperty(rt, "__hostCancelAnimationFrame", hostCancelAnimationFrame);
 
   static const char *timerScript =
       "globalThis.setTimeout=(fn,ms,...a)=>__hostSetTimeout(fn,ms|0,a);"
     "globalThis.clearTimeout=(id)=>__hostClearTimeout(id);"
     "globalThis.setImmediate=(fn,...a)=>__hostSetTimeout(fn,0,a);"
-    "globalThis.clearImmediate=(id)=>__hostClearTimeout(id);";
+    "globalThis.clearImmediate=(id)=>__hostClearTimeout(id);"
+    "globalThis.requestAnimationFrame=(fn)=>__hostRequestAnimationFrame(fn);"
+    "globalThis.cancelAnimationFrame=(id)=>__hostCancelAnimationFrame(id);";
 
   auto buffer = std::make_shared<StringBuffer>(timerScript);
   _rt->evaluateJavaScript(buffer, "timers.js");
@@ -1106,6 +1156,59 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
 
   auto buffer = std::make_shared<StringBuffer>(js);
   _rt->evaluateJavaScript(buffer, "rune-unhandled.js");
+}
+
+- (void)ensureAnimationDisplayLink {
+  dispatch_async(dispatch_get_main_queue(), ^{
+    if (gAnimationDisplayLink) return;
+    gAnimationDisplayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(onAnimationFrame:)];
+    [gAnimationDisplayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+  });
+}
+
+- (void)stopAnimationDisplayLink {
+  dispatch_async(dispatch_get_main_queue(), ^{
+    if (!gAnimationDisplayLink) return;
+    [gAnimationDisplayLink invalidate];
+    gAnimationDisplayLink = nil;
+  });
+}
+
+- (void)onAnimationFrame:(CADisplayLink *)link {
+  CFTimeInterval timestamp = link.timestamp;
+  __weak HermesRuntimeHost *weakSelf = self;
+  dispatch_async(_jsQueue, ^{
+    [weakSelf flushAnimationFrames:timestamp];
+  });
+}
+
+- (void)flushAnimationFrames:(CFTimeInterval)timestamp {
+  if (!_rt) return;
+
+  std::vector<std::shared_ptr<Function>> callbacks;
+  callbacks.reserve(gAnimationFrames.size());
+  for (auto &entry : gAnimationFrames) {
+    callbacks.push_back(entry.second);
+  }
+  gAnimationFrames.clear();
+
+  auto &rt = *_rt;
+  for (auto &fn : callbacks) {
+    try {
+      Value ts(static_cast<double>(timestamp * 1000.0));
+      SNCallJSFunction(*fn, rt, &ts, 1);
+    } catch (const facebook::jsi::JSError &error) {
+      RuneReportJSIError(rt, error, "requestAnimationFrame");
+    } catch (const std::exception &ex) {
+      [self reportStdException:ex context:@"requestAnimationFrame"];
+    }
+  }
+
+  if (gAnimationFrames.empty()) {
+    [self stopAnimationDisplayLink];
+  } else {
+    [self ensureAnimationDisplayLink];
+  }
 }
 
 - (void)invokeHandlerForNode:(int)nid name:(NSString *)name {
