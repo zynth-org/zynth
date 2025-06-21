@@ -28,6 +28,9 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
   private var tabConfiguration: TabBarConfiguration?
   private var hasAppliedHeaderVisibility = false
   private var lastEmittedTabMetrics: (height: CGFloat, inset: CGFloat)?
+  private var pendingTabIconRefresh = false
+  
+  var isInteractivelyTransitioning = false
 
   var onDismiss: (() -> Void)?
 
@@ -97,6 +100,13 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
     super.viewDidLayoutSubviews()
     layoutContentContainers()
     refreshTabIconHosts()
+  }
+
+  override func viewDidAppear(_ animated: Bool) {
+    super.viewDidAppear(animated)
+    if pendingTabIconRefresh {
+      refreshTabIconHosts()
+    }
   }
 
   private func layoutContentContainers() {
@@ -287,6 +297,13 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
   }
 
   private func refreshTabIconHosts() {
+    // Avoid touching the tab bar hierarchy while off-screen or during transitions.
+    if shouldDeferTabRefresh() {
+      pendingTabIconRefresh = true
+      return
+    }
+    pendingTabIconRefresh = false
+
     guard let runtime else { return }
     guard let bar = tabBar, let items = bar.items, !items.isEmpty else { return }
     let buttons = collectTabButtons(in: bar)
@@ -349,6 +366,18 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
     }
     updateTabIconActiveStates()
     runtime.setActiveSurface(Int(runtime.rootSurfaceId))
+  }
+
+  private func shouldDeferTabRefresh() -> Bool {
+    if isInteractivelyTransitioning { return true }
+    if isBeingDismissed || isMovingFromParent { return true }
+    if view.window == nil { return true }
+    if let coordinator = navigationController?.transitionCoordinator, coordinator.isInteractive {
+      return true
+    }
+    // Only refresh when this controller is the visible top.
+    if navigationController?.topViewController !== self { return true }
+    return false
   }
 
   private func collectTabButtons(in view: UIView) -> [UIControl] {

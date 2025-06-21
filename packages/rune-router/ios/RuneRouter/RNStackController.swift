@@ -1,5 +1,6 @@
 import RuneKit
 import UIKit
+import QuartzCore
 
 @objcMembers
 @objc(RNStackController)
@@ -32,6 +33,7 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
   private var lastEmittedStateJSON: String?
   private weak var transitioningNavigationController: UINavigationController?
   private var pendingActions: [(RNStackController) -> Void] = []
+  private var lastProgressByRoute: [String: (progress: Double, timestamp: CFTimeInterval)] = [:]
 
   public override func viewDidLoad() {
     super.viewDidLoad()
@@ -426,8 +428,34 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
 
     if let coordinator = navigationController.transitionCoordinator {
       transitionCoordinatorRef = coordinator
+      
+      // If we are interactively popping, lock the "from" controller (the one potentially being removed)
+      // so it doesn't try to refresh tabs during the unstable layout phase.
+      weak var fromHost: RNScreenHostController?
+      if coordinator.isInteractive,
+         let fromVC = coordinator.viewController(forKey: .from) as? RNScreenHostController {
+          fromVC.isInteractivelyTransitioning = true
+          fromHost = fromVC
+      }
+
       coordinator.notifyWhenInteractionEnds { [weak self] context in
-        self?.finishTransition(finished: !context.isCancelled)
+        guard let self else { return }
+        
+        // Unlock the host
+        if let fromHost {
+            fromHost.isInteractivelyTransitioning = false
+            // If cancelled, we must ensure tabs are refreshed since we skipped it during the gesture
+            if context.isCancelled {
+                fromHost.view.setNeedsLayout()
+                fromHost.view.layoutIfNeeded()
+            }
+        }
+        
+        if !context.isCancelled {
+          self.trimRouteStack(for: navigationController)
+        }
+        self.emitStateChanged()
+        self.finishTransition(finished: !context.isCancelled)
       }
       coordinator.notifyWhenInteractionChanges { [weak self] context in
         if !context.isInteractive {
@@ -436,6 +464,8 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
       }
       startTransitionDisplayLink()
     } else {
+      trimRouteStack(for: navigationController)
+      emitStateChanged()
       finishTransition(finished: true)
     }
   }
@@ -448,9 +478,6 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
     if let host = viewController as? RNScreenHostController {
       attachSurface(to: host)
     }
-    trimRouteStack(for: navigationController)
-    emitStateChanged()
-    finishTransition(finished: true)
   }
 
   // MARK: - UIGestureRecognizerDelegate + predictive back
@@ -475,8 +502,9 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
 
     switch gesture.state {
     case .began, .changed:
-      emitter?.emitTransitionProgress(key: key, progress: progress)
-      emitter?.emitPredictiveBack(key: key, progress: progress, velocity: nil)
+      if shouldEmitProgress(key: key, progress: progress) {
+        emitter?.emitPredictiveBack(key: key, progress: progress, velocity: nil)
+      }
     case .ended, .cancelled:
       let velocity = gesture.velocity(in: view).x / view.bounds.width
       emitter?.emitPredictiveBack(
@@ -484,6 +512,7 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
         progress: progress,
         velocity: Double(velocity)
       )
+      lastProgressByRoute[key] = nil
     default:
       break
     }
@@ -562,9 +591,11 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
       return
     }
     let progress = Double(coordinator.percentComplete)
-    emitter?.emitTransitionProgress(key: key, progress: progress)
-    if coordinator.isInteractive {
-      emitter?.emitPredictiveBack(key: key, progress: progress, velocity: nil)
+    if shouldEmitProgress(key: key, progress: progress) {
+      emitter?.emitTransitionProgress(key: key, progress: progress)
+      if coordinator.isInteractive {
+        emitter?.emitPredictiveBack(key: key, progress: progress, velocity: nil)
+      }
     }
   }
 
@@ -576,12 +607,27 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
     transitionRouteKey = nil
     if let key {
       emitter?.emitTransitionEnd(key: key, finished: finished)
+      lastProgressByRoute[key] = nil
     }
     if let nav = transitioningNavigationController {
       clearSnapshots(for: nav)
     }
     transitioningNavigationController = nil
     flushPendingActionsIfPossible()
+  }
+
+  private func shouldEmitProgress(key: String, progress: Double, force: Bool = false) -> Bool {
+    let now = CACurrentMediaTime()
+    if !force, let last = lastProgressByRoute[key] {
+      let delta = abs(last.progress - progress)
+      let dt = now - last.timestamp
+      // Skip tiny/noise updates that occur within a single frame (~60fps).
+      if delta < 0.05 && dt < (1.0 / 30.0) {
+        return false
+      }
+    }
+    lastProgressByRoute[key] = (progress, now)
+    return true
   }
 
   private func attachSurface(to host: RNScreenHostController) {
