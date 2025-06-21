@@ -34,10 +34,40 @@ export function createIOSHost(): Host {
   const CONTAINER_TO_CONTEXT = new Map<number, string>();
   let nextContextId = 0;
 
+  const suppressionKey = "__runeSuppressNativeMutations";
+  const isSuppressed = () => Boolean((g as any)[suppressionKey]);
+
   const operations: Array<() => void> = [];
+  const enqueueOperation = (operation: () => void) => {
+    if (isSuppressed()) return;
+    operations.push(operation);
+  };
+  let rafHandle: number | null = null;
+
+  type BatchOperation =
+    | { type: "setProp"; nodeId: number; name: string; value: any }
+    | { type: "setText"; nodeId: number; value: any };
+
+  type BatchContext = {
+    meta: HostBatchMeta;
+    operations: BatchOperation[];
+  };
+
+  const batchStack: BatchContext[] = [];
+
+  const currentBatch = (): BatchContext | undefined =>
+    batchStack[batchStack.length - 1];
+
+  const tryEnqueueBatch = (operation: BatchOperation): boolean => {
+    const batch = currentBatch();
+    if (!batch) return false;
+    batch.operations.push(operation);
+    return true;
+  };
 
   const runFlush = () => {
     flushScheduled = false;
+    rafHandle = null;
     try {
       if (operations.length) {
         const pending = operations.splice(0);
@@ -54,6 +84,13 @@ export function createIOSHost(): Host {
   const schedule = () => {
     if (flushScheduled) return;
     flushScheduled = true;
+
+    if (typeof requestAnimationFrame === "function") {
+      if (rafHandle == null) {
+        rafHandle = requestAnimationFrame(runFlush);
+      }
+      return;
+    }
 
     if (typeof queueMicrotask === "function") {
       queueMicrotask(runFlush);
@@ -86,7 +123,7 @@ export function createIOSHost(): Host {
     // Reset style with explicit position reset to prevent position from persisting
     // When FlatList recycles nodes, they have absolute positioning that must be cleared
     // Use null instead of undefined because JSON.stringify removes undefined values
-    operations.push(() =>
+    enqueueOperation(() =>
       ui.setProp(nodeId, "style", {
         position: "relative",
         top: null,
@@ -96,7 +133,7 @@ export function createIOSHost(): Host {
       })
     );
     if (type === "text") {
-      operations.push(() => ui.setText(nodeId, ""));
+      enqueueOperation(() => ui.setText(nodeId, ""));
       TEXTS.set(nodeId, "");
     }
   };
@@ -136,14 +173,14 @@ export function createIOSHost(): Host {
 
     const assign = (key: string, value: unknown) => {
       if (value !== undefined) {
-        operations.push(() => ui.setProp(id, key, value));
+        enqueueOperation(() => ui.setProp(id, key, value));
       }
     };
 
     assign("value", props.value);
     assign("defaultValue", props.defaultValue);
     if (props?.defaultValue != null && props.value == null) {
-      operations.push(() => ui.setText(id, String(props.defaultValue)));
+      enqueueOperation(() => ui.setText(id, String(props.defaultValue)));
     }
     assign("placeholder", props.placeholder);
     assign("multiline", props.multiline);
@@ -184,7 +221,7 @@ export function createIOSHost(): Host {
 
     for (const [name, handler] of Object.entries(eventHandlers)) {
       if (typeof handler === "function") {
-        operations.push(() => ui.setHandler(id, name, handler));
+        enqueueOperation(() => ui.setHandler(id, name, handler));
       }
     }
   };
@@ -237,31 +274,31 @@ export function createIOSHost(): Host {
       CHILDREN.set(id, []);
       TYPES.set(id, type);
       if (props?.style)
-        operations.push(() => ui.setProp(id, "style", props.style as Style));
+        enqueueOperation(() => ui.setProp(id, "style", props.style as Style));
       if (typeof props?.onPress === "function") {
-        operations.push(() => ui.setHandler(id, "onPress", props.onPress));
+        enqueueOperation(() => ui.setHandler(id, "onPress", props.onPress));
       }
       if (typeof props?.onLayout === "function") {
-        operations.push(() => ui.setHandler(id, "onLayout", props.onLayout));
+        enqueueOperation(() => ui.setHandler(id, "onLayout", props.onLayout));
       }
       if (props?.accessibilityLabel)
-        operations.push(() =>
+        enqueueOperation(() =>
           ui.setProp(id, "accessibilityLabel", props.accessibilityLabel)
         );
       if (props?.accessibilityHint)
-        operations.push(() =>
+        enqueueOperation(() =>
           ui.setProp(id, "accessibilityHint", props.accessibilityHint)
         );
       if (props?.accessibilityRole)
-        operations.push(() =>
+        enqueueOperation(() =>
           ui.setProp(id, "accessibilityRole", props.accessibilityRole)
         );
       if (props?.pointerEvents)
-        operations.push(() =>
+        enqueueOperation(() =>
           ui.setProp(id, "pointerEvents", props.pointerEvents)
         );
       if (props?.testID)
-        operations.push(() => ui.setProp(id, "testID", props.testID));
+        enqueueOperation(() => ui.setProp(id, "testID", props.testID));
       if (type === "text-input") {
         applyTextInputInitialProps(id, props);
       }
@@ -270,7 +307,7 @@ export function createIOSHost(): Host {
     },
     createText(value) {
       const id: number = ui.createNode("text");
-      operations.push(() => ui.setText(id, value ?? ""));
+      enqueueOperation(() => ui.setText(id, value ?? ""));
       PARENTS.set(id, null);
       CHILDREN.set(id, []);
       TEXTS.set(id, value ?? "");
@@ -292,20 +329,49 @@ export function createIOSHost(): Host {
       //   })
       // );
       if (name === "style") {
-        operations.push(() => ui.setProp(node.id, "style", value || {}));
+        if (
+          tryEnqueueBatch({
+            type: "setProp",
+            nodeId: node.id,
+            name: "style",
+            value: value || {},
+          })
+        ) {
+          return;
+        }
+        enqueueOperation(() => ui.setProp(node.id, "style", value || {}));
       } else if (name === "controller") {
         // Controller is managed purely on the JS side for now.
         return;
       } else if (typeof value === "function") {
-        operations.push(() => ui.setHandler(node.id, name, value));
+        enqueueOperation(() => ui.setHandler(node.id, name, value));
       } else {
-        operations.push(() => ui.setProp(node.id, name, value));
+        if (
+          tryEnqueueBatch({
+            type: "setProp",
+            nodeId: node.id,
+            name,
+            value,
+          })
+        ) {
+          return;
+        }
+        enqueueOperation(() => ui.setProp(node.id, name, value));
       }
       schedule();
     },
     setText(node, value) {
       TEXTS.set(node.id, value ?? "");
-      operations.push(() => ui.setText(node.id, value ?? ""));
+      if (
+        tryEnqueueBatch({
+          type: "setText",
+          nodeId: node.id,
+          value: value ?? "",
+        })
+      ) {
+        return;
+      }
+      enqueueOperation(() => ui.setText(node.id, value ?? ""));
       schedule();
     },
     insertNode(parent, node, anchor) {
@@ -358,7 +424,7 @@ export function createIOSHost(): Host {
       PARENTS.set(node.id, parent.id);
 
       if (!isMarkerId(node.id))
-        operations.push(() => ui.insertChild(parent.id, node.id, physIdx));
+        enqueueOperation(() => ui.insertChild(parent.id, node.id, physIdx));
       schedule();
     },
     removeNode(parent, node) {
@@ -387,7 +453,7 @@ export function createIOSHost(): Host {
         kids.splice(i, 1);
         PARENTS.set(node.id, null);
         if (!isMarkerId(node.id)) {
-          operations.push(() => ui.removeChild(parent.id, node.id));
+          enqueueOperation(() => ui.removeChild(parent.id, node.id));
           returnNodeToPool(contextId!, node.id);
         }
         schedule();
@@ -399,7 +465,7 @@ export function createIOSHost(): Host {
       if (!isMarkerId(node.id)) {
         TYPES.delete(node.id);
         NODE_TO_CONTEXT.delete(node.id);
-        operations.push(() => ui.removeChild(parent.id, node.id));
+        enqueueOperation(() => ui.removeChild(parent.id, node.id));
       } else if (contextId) {
         NODE_TO_CONTEXT.delete(node.id);
       }
@@ -433,11 +499,71 @@ export function createIOSHost(): Host {
       }
       ui.flush();
     },
-    beginBatch(_: HostBatchMeta) {
-      // Batching is currently a no-op on iOS; parity hook for renderer.
+    beginBatch(meta) {
+      const kind = meta?.kind ?? meta?.scope ?? "update";
+      const normalizedMeta: HostBatchMeta = {
+        kind,
+        scope: meta?.scope ?? kind,
+        target: meta?.target,
+        templateId: meta?.templateId,
+        itemKey: meta?.itemKey,
+        descriptor: meta?.descriptor ?? null,
+        extras: meta?.extras ?? null,
+      };
+      batchStack.push({ meta: normalizedMeta, operations: [] });
     },
-    endBatch() {
-      // Batching is currently a no-op on iOS; parity hook for renderer.
+    endBatch(meta) {
+      const context = batchStack.pop();
+      if (!context) return;
+      if (meta) {
+        context.meta = {
+          ...context.meta,
+          ...meta,
+          kind: meta.kind ?? context.meta.kind,
+          scope: meta.scope ?? context.meta.scope,
+        };
+      }
+      if (batchStack.length) {
+        batchStack[batchStack.length - 1].operations.push(
+          ...context.operations
+        );
+        return;
+      }
+      if (!context.operations.length) return;
+
+      const payload = {
+        meta: context.meta,
+        operations: context.operations.map((op) =>
+          op.type === "setProp"
+            ? {
+                type: "setProp" as const,
+                nodeId: op.nodeId,
+                name: op.name,
+                value: op.value,
+              }
+            : {
+                type: "setText" as const,
+                nodeId: op.nodeId,
+                value: op.value,
+              }
+        ),
+      };
+
+      if (typeof ui.applyBatch === "function") {
+        if (isSuppressed()) return;
+        const serialized =
+          typeof payload === "string" ? payload : JSON.stringify(payload);
+        ui.applyBatch(serialized);
+        return;
+      }
+      if (isSuppressed()) return;
+      for (const op of context.operations) {
+        if (op.type === "setProp") {
+          ui.setProp(op.nodeId, op.name, op.value);
+        } else {
+          ui.setText(op.nodeId, op.value);
+        }
+      }
     },
     enableRecycling(containerId: number, config: RecyclingConfig): string {
       const contextId = `recycling-${containerId}-${nextContextId++}`;
@@ -532,15 +658,36 @@ export function createIOSHost(): Host {
       context.activeBindings.set(node.id, { itemKey, itemIndex });
 
       if (props.style !== undefined) {
-        operations.push(() => ui.setProp(node.id, "style", props.style || {}));
+        if (
+          tryEnqueueBatch({
+            type: "setProp",
+            nodeId: node.id,
+            name: "style",
+            value: props.style || {},
+          })
+        ) {
+          // batched
+        } else {
+          enqueueOperation(() => ui.setProp(node.id, "style", props.style || {}));
+        }
       }
 
       for (const [key, value] of Object.entries(props)) {
         if (key === "style") continue;
         if (typeof value === "function") {
-          operations.push(() => ui.setHandler(node.id, key, value));
+          enqueueOperation(() => ui.setHandler(node.id, key, value));
         } else if (value !== undefined) {
-          operations.push(() => ui.setProp(node.id, key, value));
+          if (
+            tryEnqueueBatch({
+              type: "setProp",
+              nodeId: node.id,
+              name: key,
+              value,
+            })
+          ) {
+            continue;
+          }
+          enqueueOperation(() => ui.setProp(node.id, key, value));
         }
       }
       schedule();
