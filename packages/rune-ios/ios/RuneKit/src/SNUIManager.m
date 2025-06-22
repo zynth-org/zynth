@@ -932,7 +932,7 @@ static void SNApplyEdges(NSDictionary *style,
       RuneScrollRemoveIMP removeIMP = (RuneScrollRemoveIMP)objc_msgSend;
       removeIMP(p.view, @selector(removeContentSubview:), c.view);
     } else {
-      [p.view removeFromSuperview];
+      [c.view removeFromSuperview];
     }
     NSUInteger idx = [p.children indexOfObject:childId];
     if (idx != NSNotFound) [p.children removeObjectAtIndex:idx];
