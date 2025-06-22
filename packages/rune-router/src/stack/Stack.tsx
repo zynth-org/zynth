@@ -35,6 +35,7 @@ import { Header } from "./Header";
 import {
   listRegisteredScreens,
   resolveScreenDescriptor,
+  notifyScreenRendered,
 } from "../core/actions";
 import {
   RouteProvider,
@@ -367,6 +368,7 @@ function renderOnSurface(surfaceId: number, factory: () => JSX.Element) {
   runWithSurface(surfaceId, () => {
     dispose = render(factory as any, createSurfaceContainer(surfaceId));
     flushHostQueue();
+    notifyScreenRendered(surfaceId);
   });
   return () => {
     runWithSurface(surfaceId, () => {

@@ -24,6 +24,7 @@ export interface NativeRouterBridge {
   configureTabs?(routeKey: string, config: NativeTabBarConfig): void;
   removeTabs?(routeKey: string): void;
   selectTab?(routeKey: string, tabName: string): void;
+  screenRendered?(rootId: number): void;
 }
 
 export interface RegisteredScreenSummary {
@@ -188,6 +189,9 @@ function installModuleBackedRouterBridge(
     selectTab(routeKey, tabName) {
       call(moduleName, "selectTab", { routeKey, tabName });
     },
+    screenRendered(rootId) {
+      call(moduleName, "screenRendered", { rootId });
+    },
   };
 
   Object.defineProperty(globalObject, "__RUNE_ROUTER__", {
@@ -310,5 +314,12 @@ export function resolveBeforeRemoveRequest(
   const bridge = getNativeRouterBridge();
   if (typeof bridge.resolveBeforeRemove === "function") {
     bridge.resolveBeforeRemove(requestId, cancelled);
+  }
+}
+
+export function notifyScreenRendered(rootId: number): void {
+  const bridge = getNativeRouterBridge();
+  if (typeof bridge.screenRendered === "function") {
+    bridge.screenRendered(rootId);
   }
 }

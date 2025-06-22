@@ -1,6 +1,6 @@
+import QuartzCore
 import RuneKit
 import UIKit
-import QuartzCore
 
 @objcMembers
 @objc(RNStackController)
@@ -34,6 +34,7 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
   private weak var transitioningNavigationController: UINavigationController?
   private var pendingActions: [(RNStackController) -> Void] = []
   private var lastProgressByRoute: [String: (progress: Double, timestamp: CFTimeInterval)] = [:]
+  private var pendingRenderCallbacks: [Int: () -> Void] = [:]
 
   public override func viewDidLoad() {
     super.viewDidLoad()
@@ -60,6 +61,12 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
     self.emitter = emitter
     for record in routeStack {
       record.controller?.attachEmitter(emitter)
+    }
+  }
+
+  func notifyScreenRendered(surfaceId: Int) {
+    if let callback = pendingRenderCallbacks.removeValue(forKey: surfaceId) {
+      callback()
     }
   }
 
@@ -114,36 +121,50 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
 
     // Determine context before appending to avoid self-discovery
     let activeNav = activeNavigationController()
-
     routeStack.append(record)
+    emitStateChanged()
+    // Force view load to ensure surface is attached
+    host.loadViewIfNeeded()
+    let executePush = { [weak self, record, host, activeNav] in
+      guard let self = self else { return }
+      // Ensure the record is still in the stack (hasn't been popped while waiting)
 
-    if isModal {
-      let modalNav = UINavigationController(rootViewController: host)
-      modalNav.delegate = self
-      modalNav.modalPresentationStyle = mapPresentationStyle(presentation)
-      configureTransparentNav(modalNav)
-      modalNav.presentationController?.delegate = self
+      guard self.routeStack.contains(where: { $0 === record }) else { return }
 
-      record.presentedController = modalNav
-      record.hostingNavigator = modalNav
+      if isModal {
+        let modalNav = UINavigationController(rootViewController: host)
+        modalNav.delegate = self
+        modalNav.modalPresentationStyle = mapPresentationStyle(presentation)
+        self.configureTransparentNav(modalNav)
+        modalNav.presentationController?.delegate = self
+        record.presentedController = modalNav
+        record.hostingNavigator = modalNav
 
-      if activeNav === navigator {
-        self.present(modalNav, animated: animated)
+        if activeNav === self.navigator {
+          self.present(modalNav, animated: animated)
+        } else {
+          activeNav.present(modalNav, animated: animated)
+        }
+        // Hook up programmatic dismissal cleanup
+        host.onDismiss = { [weak self, weak modalNav] in
+          guard let modalNav else { return }
+          self?.handlePresentedControllerDismissal(modalNav)
+        }
       } else {
-        activeNav.present(modalNav, animated: animated)
+        record.hostingNavigator = activeNav
+        activeNav.pushViewController(host, animated: animated)
       }
-
-      // Hook up programmatic dismissal cleanup
-      host.onDismiss = { [weak self, weak modalNav] in
-        guard let modalNav else { return }
-        self?.handlePresentedControllerDismissal(modalNav)
-      }
-
-    } else {
-      record.hostingNavigator = activeNav
-      activeNav.pushViewController(host, animated: animated)
     }
 
+    if let surfaceId = record.surfaceId {
+      pendingRenderCallbacks[surfaceId] = executePush
+      // Fallback timeout in case rendering is slow or fails
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+        self?.notifyScreenRendered(surfaceId: surfaceId)
+      }
+    } else {
+      executePush()
+    }
   }
 
   private func activeNavigationController() -> UINavigationController {
@@ -428,29 +449,30 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
 
     if let coordinator = navigationController.transitionCoordinator {
       transitionCoordinatorRef = coordinator
-      
+
       // If we are interactively popping, lock the "from" controller (the one potentially being removed)
       // so it doesn't try to refresh tabs during the unstable layout phase.
       weak var fromHost: RNScreenHostController?
       if coordinator.isInteractive,
-         let fromVC = coordinator.viewController(forKey: .from) as? RNScreenHostController {
-          fromVC.isInteractivelyTransitioning = true
-          fromHost = fromVC
+        let fromVC = coordinator.viewController(forKey: .from) as? RNScreenHostController
+      {
+        fromVC.isInteractivelyTransitioning = true
+        fromHost = fromVC
       }
 
       coordinator.notifyWhenInteractionEnds { [weak self] context in
         guard let self else { return }
-        
+
         // Unlock the host
         if let fromHost {
-            fromHost.isInteractivelyTransitioning = false
-            // If cancelled, we must ensure tabs are refreshed since we skipped it during the gesture
-            if context.isCancelled {
-                fromHost.view.setNeedsLayout()
-                fromHost.view.layoutIfNeeded()
-            }
+          fromHost.isInteractivelyTransitioning = false
+          // If cancelled, we must ensure tabs are refreshed since we skipped it during the gesture
+          if context.isCancelled {
+            fromHost.view.setNeedsLayout()
+            fromHost.view.layoutIfNeeded()
+          }
         }
-        
+
         if !context.isCancelled {
           self.trimRouteStack(for: navigationController)
         }

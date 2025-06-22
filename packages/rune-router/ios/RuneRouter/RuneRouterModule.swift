@@ -118,6 +118,14 @@ final class RuneRouterModule: NSObject, RuneModule, RuneSyncModule {
       else { return ["error": "invalid_request"] }
       resolveBeforeRemove(requestId: requestId, cancelled: cancelled)
       return ["result": "ok"]
+    case "screenRendered":
+      guard let dict = args as? [String: Any],
+        let rootId = dict["rootId"] as? Int
+      else { return ["error": "invalid_root_id"] }
+      DispatchQueue.main.async { [weak self] in
+        self?.stackController?.notifyScreenRendered(surfaceId: rootId)
+      }
+      return ["result": "ok"]
     default:
       return ["error": "unknown_method"]
     }
