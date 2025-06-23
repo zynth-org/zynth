@@ -100,6 +100,19 @@ export interface TabOptions {
   customTab?: JSX.Element;
 }
 
+export type BottomSheetSnapPoint = string | number;
+
+export interface BottomSheetScreenOptions {
+  snapPoints?: BottomSheetSnapPoint[];
+  initialSnapIndex?: number;
+  overlayColor?: string;
+  overlayOpacity?: number;
+  dismissOnOverlayPress?: boolean;
+  enableDynamicSizing?: boolean;
+  allowDismissOnInteraction?: boolean;
+  allowBackgroundInteraction?: boolean;
+}
+
 export interface ScreenOptions extends HeaderOptions {
   gestureEnabled?: boolean;
   presentation?:
@@ -111,6 +124,7 @@ export interface ScreenOptions extends HeaderOptions {
     | "formSheet";
   animationEnabled?: boolean;
   tab?: TabOptions;
+  bottomSheet?: BottomSheetScreenOptions;
 }
 
 export type ScreenOptionsInput =
@@ -120,7 +134,7 @@ export type ScreenOptionsInput =
 
 export interface NavigatorDescriptor {
   id: string;
-  type: "stack" | "tabs";
+  type: "stack" | "tabs" | "bottom-sheet";
   initialRouteName?: string;
 }
 
@@ -131,7 +145,7 @@ export const TABS_ROOT_ROUTE_KEY = "tabs-root" as const;
 export interface ScreenDescriptor {
   name: string;
   navigatorId: string;
-  type: "stack" | "tab";
+  type: "stack" | "tab" | "bottomSheet";
   component: Component<any>;
   initialParams?: Record<string, unknown>;
   options?: ScreenOptionsInput;
@@ -142,6 +156,17 @@ export interface ScreenDescriptor {
 export interface StackProps {
   id?: string;
   initialRouteName?: string;
+  children: JSX.Element;
+}
+
+export interface BottomSheetProps {
+  id?: string;
+  initialRouteName?: string;
+  snapPoints?: BottomSheetSnapPoint[];
+  overlayColor?: string;
+  overlayOpacity?: number;
+  dismissOnOverlayPress?: boolean;
+  enableDynamicSizing?: boolean;
   children: JSX.Element;
 }
 
@@ -175,6 +200,16 @@ export type StackScreenProps<
   initialParams?: ParamList[RouteName];
   keepAlive?: number;
   unmountOnBlur?: boolean;
+};
+
+export type BottomSheetScreenProps<
+  ParamList extends RouteParamList = RouteParamList,
+  RouteName extends keyof ParamList = keyof ParamList
+> = {
+  name: RouteName;
+  component: Component;
+  options?: ScreenOptionsInput;
+  initialParams?: ParamList[RouteName];
 };
 
 export type TabScreenProps<
@@ -304,6 +339,15 @@ export type StackComponentType = ParentComponent<StackProps> & {
     props: StackScreenProps<ParamList, RouteName>
   ) => JSX.Element | null;
   Header: Component<StackHeaderProps>;
+};
+
+export type BottomSheetComponentType = ParentComponent<BottomSheetProps> & {
+  Screen: <
+    ParamList extends RouteParamList = RouteParamList,
+    RouteName extends keyof ParamList = keyof ParamList
+  >(
+    props: BottomSheetScreenProps<ParamList, RouteName>
+  ) => JSX.Element | null;
 };
 
 export type TabsComponentType = ParentComponent<TabsProps> & {

@@ -93,6 +93,30 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
     // Resolve options and presentation early to know if this is a modal host.
     let staticOptions = options ?? routerModule?.getOptions(for: routeName)
     let presentation = staticOptions?["presentation"] as? String
+    
+    if presentation == "bottomSheet" {
+        if #available(iOS 16.0, *) {
+             let sheetOptions = staticOptions?["bottomSheet"] as? [String: Any]
+             let sheet = RNBottomSheetController(config: sheetOptions)
+             if let runtime { sheet.runtime = runtime }
+             if let emitter { sheet.emitter = emitter }
+             if let module = routerModule {
+                 sheet.routerModule = module
+                 module.registerBottomSheet(sheet)
+             }
+             sheet.modalPresentationStyle = .overFullScreen
+             
+             let record = RouteRecord(name: routeName, params: params)
+             record.presentedController = sheet
+             routeStack.append(record)
+             emitStateChanged()
+             
+             let activeNav = activeNavigationController()
+             activeNav.present(sheet, animated: false)
+             return
+        }
+    }
+
     let isModal =
       presentation == "modal" || presentation == "fullScreen" || presentation == "formSheet"
       || presentation == "pageSheet" || presentation == "transparentModal"
