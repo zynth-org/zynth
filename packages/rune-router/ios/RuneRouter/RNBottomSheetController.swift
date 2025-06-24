@@ -15,12 +15,21 @@ public final class RNBottomSheetController: UIViewController, UINavigationContro
   weak var runtime: RuneRuntime?
   weak var emitter: RuneRouterEmitter?
 
-  // Route tracking similar to RNStackController but simplified
-  private var routeStack: [RouteRecord] = []
+    // Route tracking similar to RNStackController but simplified
 
-  public var navigatorId: String?
+    private var routeStack: [RouteRecord] = []
 
-  public init(config: [String: Any]?) {
+    private var recordsToTeardown: [RouteRecord] = []
+
+    
+
+    public var navigatorId: String?
+
+  
+
+    public init(config: [String: Any]?) {
+
+  
     self.initialConfig = config
     super.init(nibName: nil, bundle: nil)
   }
@@ -128,31 +137,47 @@ public final class RNBottomSheetController: UIViewController, UINavigationContro
 
   // MARK: - Presenter Delegate
 
-  func bottomSheetDidDismiss() {
+    func bottomSheetDidDismiss() {
 
-    // The sheet was dismissed by user interaction or programmatically.
+      // The sheet was dismissed by user interaction or programmatically.
 
-    // We should dismiss ourselves to clean up the parent stack/modal.
+      // We should dismiss ourselves to clean up the parent stack/modal.
 
-    if let nav = navigationController, nav.viewControllers.last === self {
+      if let nav = navigationController, nav.viewControllers.last === self {
 
-      nav.popViewController(animated: false)
+         nav.popViewController(animated: false)
 
-    } else {
+      } else {
 
-      dismiss(animated: false)
+         dismiss(animated: false)
+
+      }
+
+      flushTeardown()
 
     }
 
-    // Emit empty state or cleanup?
+    
 
-    // If dismissed, the router usually expects a POP or similar, but here the whole navigator is gone.
+    private func flushTeardown() {
 
-    // Ideally we emit a state with empty routes or similar to signal it's closed if it was driven by JS.
+        let records = recordsToTeardown
 
-    // But usually JS drives the close. If User drives close, we might need to sync back.
+        recordsToTeardown = []
 
-  }
+        if !records.isEmpty {
+
+            DispatchQueue.main.async { [weak self] in
+
+                self?.teardownRecords(records)
+
+            }
+
+        }
+
+    }
+
+  
 
   func bottomSheetDidChangeSnap(index: Int, progress: CGFloat) {
 
@@ -162,16 +187,37 @@ public final class RNBottomSheetController: UIViewController, UINavigationContro
 
   // MARK: - Navigation Delegate
 
-  public func navigationController(
-    _ navigationController: UINavigationController, willShow viewController: UIViewController,
-    animated: Bool
-  ) {
+    public func navigationController(_ navigationController: UINavigationController, willShow viewController: UIViewController, animated: Bool) {
 
-    guard let host = viewController as? RNScreenHostController else { return }
+        if let coordinator = navigationController.transitionCoordinator {
 
-    // Attach surface if needed
+            coordinator.animate(alongsideTransition: nil) { [weak self] context in
 
-    attachSurface(to: host)
+                if !context.isCancelled {
+
+                    self?.flushTeardown()
+
+                }
+
+            }
+
+        } else {
+
+            flushTeardown()
+
+        }
+
+  
+
+        guard let host = viewController as? RNScreenHostController else { return }
+
+        
+
+        // Attach surface if needed
+
+        attachSurface(to: host)
+
+  
 
     // Update snap points from screen options
 
@@ -249,33 +295,61 @@ public final class RNBottomSheetController: UIViewController, UINavigationContro
 
   }
 
-  func pop(count: Int, animated: Bool) {
+      func pop(count: Int, animated: Bool) {
 
-    // Simplified pop
+          // Simplified pop
 
-    let removeCount = min(count, routeStack.count)
+          let removeCount = min(count, routeStack.count)
 
-    guard removeCount > 0 else { return }
+          guard removeCount > 0 else { return }
 
-    let removedRecords = Array(routeStack.suffix(removeCount))
+          
 
-    routeStack.removeLast(removeCount)
+          // Capture snapshot of the top controller to preserve visual state during animation
 
-    if routeStack.isEmpty {
+          // while JS unmounts the surface.
 
-      presenter?.dismiss()
+          if animated, let topRecord = routeStack.last {
 
-    } else {
+              topRecord.controller?.captureSnapshot()
 
-      navigator.popViewController(animated: animated)
+          }
 
-    }
+          
 
-    emitStateChanged()
+          let removedRecords = Array(routeStack.suffix(removeCount))
 
-    scheduleTeardown(removedRecords)
+          routeStack.removeLast(removeCount)
 
-  }
+          
+
+          recordsToTeardown.append(contentsOf: removedRecords)
+
+          
+
+          if routeStack.isEmpty {
+
+              presenter?.dismiss()
+
+          } else {
+
+              navigator.popViewController(animated: animated)
+
+              if !animated {
+
+                  flushTeardown()
+
+              }
+
+          }
+
+          emitStateChanged()
+
+      }
+
+    
+
+  
 
   func setParams(for key: String, params: [String: Any]) {
 
@@ -317,66 +391,103 @@ public final class RNBottomSheetController: UIViewController, UINavigationContro
 
   }
 
-  func reset(using state: [String: Any], animated: Bool) {
+      func reset(using state: [String: Any], animated: Bool) {
 
-    let previousRecords = routeStack
+          let previousRecords = routeStack
 
-    if let config = state["config"] as? [String: Any] {
+          recordsToTeardown.append(contentsOf: previousRecords)
 
-      applyConfig(config)
+          
+
+          // Snapshot the previous top screen if animating
+
+          if animated, let previousTop = previousRecords.last {
+
+              previousTop.controller?.captureSnapshot()
+
+          }
+
+          
+
+          if let config = state["config"] as? [String: Any] {
+
+              applyConfig(config)
+
+          }
+
+    
+
+        
+
+        guard let routes = state["routes"] as? [[String: Any]] else { return }
+
+        
+
+        var newControllers: [UIViewController] = []
+
+        var newRecords: [RouteRecord] = []
+
+        
+
+        for route in routes {
+
+            guard let name = route["name"] as? String else { continue }
+
+            let params = route["params"] as? [String: Any]
+
+            let key = (route["key"] as? String) ?? UUID().uuidString
+
+            let record = RouteRecord(name: name, params: params, key: key)
+
+            let host = RNScreenHostController(routeKey: key, routeName: name, params: params, isModal: false)
+
+            
+
+            if let runtime { host.attachRuntime(runtime) }
+
+            if let emitter { host.attachEmitter(emitter) }
+
+            record.controller = host
+
+            if let runtime { ensureSurface(for: record, runtime: runtime) }
+
+            if let surface = record.surfaceView { host.attachSurfaceView(surface) }
+
+            
+
+            newRecords.append(record)
+
+            newControllers.append(host)
+
+        }
+
+        
+
+        routeStack = newRecords
+
+        navigator.setViewControllers(newControllers, animated: animated)
+
+        if !animated {
+
+            flushTeardown()
+
+        }
+
+        
+
+        emitStateChanged()
+
+        
+
+        if let activeHost = newControllers.last as? RNScreenHostController {
+
+            attachSurface(to: activeHost)
+
+        }
 
     }
 
-    guard let routes = state["routes"] as? [[String: Any]] else { return }
-
-    var newControllers: [UIViewController] = []
-
-    var newRecords: [RouteRecord] = []
-
-    for route in routes {
-
-      guard let name = route["name"] as? String else { continue }
-
-      let params = route["params"] as? [String: Any]
-
-      let key = (route["key"] as? String) ?? UUID().uuidString
-
-      let record = RouteRecord(name: name, params: params, key: key)
-
-      let host = RNScreenHostController(
-        routeKey: key, routeName: name, params: params, isModal: false)
-
-      if let runtime { host.attachRuntime(runtime) }
-
-      if let emitter { host.attachEmitter(emitter) }
-
-      record.controller = host
-
-      if let runtime { ensureSurface(for: record, runtime: runtime) }
-
-      if let surface = record.surfaceView { host.attachSurfaceView(surface) }
-
-      newRecords.append(record)
-
-      newControllers.append(host)
-
-    }
-
-    routeStack = newRecords
-
-    navigator.setViewControllers(newControllers, animated: animated)
-
-    emitStateChanged()
-
-    scheduleTeardown(previousRecords)
-
-    if let activeHost = newControllers.last as? RNScreenHostController {
-
-      attachSurface(to: activeHost)
-
-    }
-
-  }
+  
 
   // Helpers duplicated from RNStackController (simplified)
 
