@@ -50,14 +50,10 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
 
   override func viewDidLoad() {
     super.viewDidLoad()
-    // Match app background for push screens; modal screens default to transparent so underlying content stays visible.
-    if isModal {
-      view.backgroundColor = .clear
-      contentView.backgroundColor = .clear
-    } else {
-      view.backgroundColor = UIColor(red: 0.06, green: 0.07, blue: 0.09, alpha: 1.0)  // #101217
-      contentView.backgroundColor = view.backgroundColor
-    }
+    // Default to transparent background. The surface content should provide its own background.
+    view.backgroundColor = .clear
+    contentView.backgroundColor = .clear
+    
     contentView.frame = view.bounds
     contentView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     view.addSubview(contentView)
