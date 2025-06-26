@@ -15,21 +15,13 @@ public final class RNBottomSheetController: UIViewController, UINavigationContro
   weak var runtime: RuneRuntime?
   weak var emitter: RuneRouterEmitter?
 
-    // Route tracking similar to RNStackController but simplified
+  // Route tracking similar to RNStackController but simplified
+  private var routeStack: [RouteRecord] = []
+  private var recordsToTeardown: [RouteRecord] = []
 
-    private var routeStack: [RouteRecord] = []
+  public var navigatorId: String?
 
-    private var recordsToTeardown: [RouteRecord] = []
-
-    
-
-    public var navigatorId: String?
-
-  
-
-    public init(config: [String: Any]?) {
-
-  
+  public init(config: [String: Any]?) {
     self.initialConfig = config
     super.init(nibName: nil, bundle: nil)
   }
@@ -137,47 +129,35 @@ public final class RNBottomSheetController: UIViewController, UINavigationContro
 
   // MARK: - Presenter Delegate
 
-    func bottomSheetDidDismiss() {
+  func bottomSheetDidDismiss() {
 
-      // The sheet was dismissed by user interaction or programmatically.
+    // The sheet was dismissed by user interaction or programmatically.
 
-      // We should dismiss ourselves to clean up the parent stack/modal.
+    // We should dismiss ourselves to clean up the parent stack/modal.
 
-      if let nav = navigationController, nav.viewControllers.last === self {
+    if let nav = navigationController, nav.viewControllers.last === self {
 
-         nav.popViewController(animated: false)
+      nav.popViewController(animated: false)
 
-      } else {
+    } else {
 
-         dismiss(animated: false)
+      dismiss(animated: false)
 
+    }
+
+    flushTeardown()
+
+  }
+
+  private func flushTeardown() {
+    let records = recordsToTeardown
+    recordsToTeardown = []
+    if !records.isEmpty {
+      DispatchQueue.main.async { [weak self] in
+        self?.teardownRecords(records)
       }
-
-      flushTeardown()
-
     }
-
-    
-
-    private func flushTeardown() {
-
-        let records = recordsToTeardown
-
-        recordsToTeardown = []
-
-        if !records.isEmpty {
-
-            DispatchQueue.main.async { [weak self] in
-
-                self?.teardownRecords(records)
-
-            }
-
-        }
-
-    }
-
-  
+  }
 
   func bottomSheetDidChangeSnap(index: Int, progress: CGFloat) {
 
@@ -187,37 +167,25 @@ public final class RNBottomSheetController: UIViewController, UINavigationContro
 
   // MARK: - Navigation Delegate
 
-    public func navigationController(_ navigationController: UINavigationController, willShow viewController: UIViewController, animated: Bool) {
-
-        if let coordinator = navigationController.transitionCoordinator {
-
-            coordinator.animate(alongsideTransition: nil) { [weak self] context in
-
-                if !context.isCancelled {
-
-                    self?.flushTeardown()
-
-                }
-
-            }
-
-        } else {
-
-            flushTeardown()
-
+  public func navigationController(
+    _ navigationController: UINavigationController, willShow viewController: UIViewController,
+    animated: Bool
+  ) {
+    if let coordinator = navigationController.transitionCoordinator {
+      coordinator.animate(alongsideTransition: nil) { [weak self] context in
+        if !context.isCancelled {
+          self?.flushTeardown()
         }
+      }
+    } else {
+      flushTeardown()
+    }
 
-  
+    guard let host = viewController as? RNScreenHostController else { return }
 
-        guard let host = viewController as? RNScreenHostController else { return }
+    // Attach surface if needed
 
-        
-
-        // Attach surface if needed
-
-        attachSurface(to: host)
-
-  
+    attachSurface(to: host)
 
     // Update snap points from screen options
 
@@ -250,6 +218,15 @@ public final class RNBottomSheetController: UIViewController, UINavigationContro
 
     }
 
+  }
+
+  public func navigationController(
+    _ navigationController: UINavigationController,
+    animationControllerFor operation: UINavigationController.Operation,
+    from fromVC: UIViewController,
+    to toVC: UIViewController
+  ) -> UIViewControllerAnimatedTransitioning? {
+    return RNBottomSheetTransitionAnimator(operation: operation)
   }
 
   private func updateSheetOptions(from screenOptions: [String: Any]) {
@@ -295,61 +272,42 @@ public final class RNBottomSheetController: UIViewController, UINavigationContro
 
   }
 
-      func pop(count: Int, animated: Bool) {
+  func pop(count: Int, animated: Bool) {
 
-          // Simplified pop
+    // Simplified pop
 
-          let removeCount = min(count, routeStack.count)
+    let removeCount = min(count, routeStack.count)
 
-          guard removeCount > 0 else { return }
+    guard removeCount > 0 else { return }
 
-          
+    // Capture snapshot of the top controller to preserve visual state during animation
+    // while JS unmounts the surface.
+    if animated, let topRecord = routeStack.last {
+      topRecord.controller?.captureSnapshot()
+    }
 
-          // Capture snapshot of the top controller to preserve visual state during animation
+    let removedRecords = Array(routeStack.suffix(removeCount))
 
-          // while JS unmounts the surface.
+    routeStack.removeLast(removeCount)
 
-          if animated, let topRecord = routeStack.last {
+    recordsToTeardown.append(contentsOf: removedRecords)
 
-              topRecord.controller?.captureSnapshot()
+    if routeStack.isEmpty {
 
-          }
+      presenter?.dismiss()
 
-          
+    } else {
 
-          let removedRecords = Array(routeStack.suffix(removeCount))
-
-          routeStack.removeLast(removeCount)
-
-          
-
-          recordsToTeardown.append(contentsOf: removedRecords)
-
-          
-
-          if routeStack.isEmpty {
-
-              presenter?.dismiss()
-
-          } else {
-
-              navigator.popViewController(animated: animated)
-
-              if !animated {
-
-                  flushTeardown()
-
-              }
-
-          }
-
-          emitStateChanged()
-
+      navigator.popViewController(animated: animated)
+      if !animated {
+        flushTeardown()
       }
 
-    
+    }
 
-  
+    emitStateChanged()
+
+  }
 
   func setParams(for key: String, params: [String: Any]) {
 
@@ -391,103 +349,73 @@ public final class RNBottomSheetController: UIViewController, UINavigationContro
 
   }
 
-      func reset(using state: [String: Any], animated: Bool) {
+  func reset(using state: [String: Any], animated: Bool) {
 
-          let previousRecords = routeStack
+    let previousRecords = routeStack
+    recordsToTeardown.append(contentsOf: previousRecords)
 
-          recordsToTeardown.append(contentsOf: previousRecords)
+    // Snapshot the previous top screen if animating
+    if animated, let previousTop = previousRecords.last {
+      previousTop.controller?.captureSnapshot()
+    }
 
-          
+    if let config = state["config"] as? [String: Any] {
 
-          // Snapshot the previous top screen if animating
-
-          if animated, let previousTop = previousRecords.last {
-
-              previousTop.controller?.captureSnapshot()
-
-          }
-
-          
-
-          if let config = state["config"] as? [String: Any] {
-
-              applyConfig(config)
-
-          }
-
-    
-
-        
-
-        guard let routes = state["routes"] as? [[String: Any]] else { return }
-
-        
-
-        var newControllers: [UIViewController] = []
-
-        var newRecords: [RouteRecord] = []
-
-        
-
-        for route in routes {
-
-            guard let name = route["name"] as? String else { continue }
-
-            let params = route["params"] as? [String: Any]
-
-            let key = (route["key"] as? String) ?? UUID().uuidString
-
-            let record = RouteRecord(name: name, params: params, key: key)
-
-            let host = RNScreenHostController(routeKey: key, routeName: name, params: params, isModal: false)
-
-            
-
-            if let runtime { host.attachRuntime(runtime) }
-
-            if let emitter { host.attachEmitter(emitter) }
-
-            record.controller = host
-
-            if let runtime { ensureSurface(for: record, runtime: runtime) }
-
-            if let surface = record.surfaceView { host.attachSurfaceView(surface) }
-
-            
-
-            newRecords.append(record)
-
-            newControllers.append(host)
-
-        }
-
-        
-
-        routeStack = newRecords
-
-        navigator.setViewControllers(newControllers, animated: animated)
-
-        if !animated {
-
-            flushTeardown()
-
-        }
-
-        
-
-        emitStateChanged()
-
-        
-
-        if let activeHost = newControllers.last as? RNScreenHostController {
-
-            attachSurface(to: activeHost)
-
-        }
+      applyConfig(config)
 
     }
 
-  
+    guard let routes = state["routes"] as? [[String: Any]] else { return }
+
+    var newControllers: [UIViewController] = []
+
+    var newRecords: [RouteRecord] = []
+
+    for route in routes {
+
+      guard let name = route["name"] as? String else { continue }
+
+      let params = route["params"] as? [String: Any]
+
+      let key = (route["key"] as? String) ?? UUID().uuidString
+
+      let record = RouteRecord(name: name, params: params, key: key)
+
+      let host = RNScreenHostController(
+        routeKey: key, routeName: name, params: params, isModal: false)
+
+      if let runtime { host.attachRuntime(runtime) }
+
+      if let emitter { host.attachEmitter(emitter) }
+
+      record.controller = host
+
+      if let runtime { ensureSurface(for: record, runtime: runtime) }
+
+      if let surface = record.surfaceView { host.attachSurfaceView(surface) }
+
+      newRecords.append(record)
+
+      newControllers.append(host)
+
+    }
+
+    routeStack = newRecords
+
+    navigator.setViewControllers(newControllers, animated: animated)
+    if !animated {
+      flushTeardown()
+    }
+
+    emitStateChanged()
+
+    if let activeHost = newControllers.last as? RNScreenHostController {
+
+      attachSurface(to: activeHost)
+
+    }
+
+  }
 
   // Helpers duplicated from RNStackController (simplified)
 
@@ -566,6 +494,8 @@ public final class RNBottomSheetController: UIViewController, UINavigationContro
       record.surfaceId = nil
 
       record.surfaceView = nil
+
+      record.controller?.clearSnapshot()
 
     }
 
@@ -708,3 +638,69 @@ private class RouteRecord {
 
 }
 
+final class RNBottomSheetTransitionAnimator: NSObject, UIViewControllerAnimatedTransitioning {
+  let operation: UINavigationController.Operation
+
+  init(operation: UINavigationController.Operation) {
+    self.operation = operation
+    super.init()
+  }
+
+  func transitionDuration(using transitionContext: UIViewControllerContextTransitioning?)
+    -> TimeInterval
+  {
+    return 0.35
+  }
+
+  func animateTransition(using transitionContext: UIViewControllerContextTransitioning) {
+    guard let toView = transitionContext.view(forKey: .to),
+      let fromView = transitionContext.view(forKey: .from)
+    else {
+      transitionContext.completeTransition(false)
+      return
+    }
+
+    let container = transitionContext.containerView
+    let width = container.bounds.width
+
+    if operation == .push {
+      container.addSubview(toView)
+      toView.frame = container.bounds
+      toView.transform = CGAffineTransform(translationX: width, y: 0)
+      toView.alpha = 0
+
+      UIView.animate(
+        withDuration: transitionDuration(using: transitionContext), delay: 0,
+        options: .curveEaseInOut
+      ) {
+        toView.transform = .identity
+        toView.alpha = 1
+        fromView.transform = CGAffineTransform(translationX: -width * 0.3, y: 0)
+        fromView.alpha = 0
+      } completion: { finished in
+        fromView.transform = .identity
+        fromView.alpha = 1
+        transitionContext.completeTransition(!transitionContext.transitionWasCancelled)
+      }
+    } else if operation == .pop {
+      container.insertSubview(toView, belowSubview: fromView)
+      toView.frame = container.bounds
+      toView.transform = CGAffineTransform(translationX: -width * 0.3, y: 0)
+      toView.alpha = 0
+
+      UIView.animate(
+        withDuration: transitionDuration(using: transitionContext), delay: 0,
+        options: .curveEaseInOut
+      ) {
+        fromView.transform = CGAffineTransform(translationX: width, y: 0)
+        fromView.alpha = 0
+        toView.transform = .identity
+        toView.alpha = 1
+      } completion: { finished in
+        fromView.transform = .identity
+        fromView.alpha = 1
+        transitionContext.completeTransition(!transitionContext.transitionWasCancelled)
+      }
+    }
+  }
+}
