@@ -242,6 +242,7 @@ export function useNavigation<
       const staticOptions = getStaticScreenOptions(name as string);
       router.dispatch({
         type: "NAVIGATE",
+        source: route.key,
         payload: {
           name: name as string,
           params: params as any,
@@ -253,6 +254,7 @@ export function useNavigation<
       const staticOptions = getStaticScreenOptions(name as string);
       router.dispatch({
         type: "PUSH",
+        source: route.key,
         payload: {
           name: name as string,
           params: params as any,

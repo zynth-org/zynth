@@ -146,9 +146,7 @@ export function createBottomSheetNavigator(): BottomSheetNavigatorComponent {
 }
 
 const DEFAULT_BOTTOM_SHEET_CONTENT_STYLE: Style = {
-  padding: 16,
-  gap: 12,
-  backgroundColor: "#ffffff",
+  backgroundColor: "transparent",
   borderRadius: 16,
   minHeight: 100,
   flex: 1,
