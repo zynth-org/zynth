@@ -16,6 +16,12 @@ import {
   notifyScreenRenderedNative,
   setOptionsNative,
 } from "./nativeBridge";
+import {
+  RouterContext,
+  RouteProvider,
+  createRouteContextValue,
+  getRouterContextValue,
+} from "./RouterContext";
 
 const mountedScreens = new Map<number, () => void>();
 
@@ -64,12 +70,13 @@ function renderScreen(rootId: number, routeName: string, paramsJson?: any) {
 
   const params = parseParams(paramsJson);
   const navigation = createNavigationHelpers(routeName);
+  const route = {
+    key: routeName,
+    name: routeName,
+    params,
+  };
   const props: RouterScreenComponentProps<any> = {
-    route: {
-      key: routeName,
-      name: routeName,
-      params,
-    },
+    route,
     navigation,
   };
 
@@ -92,27 +99,33 @@ function renderScreen(rootId: number, routeName: string, paramsJson?: any) {
       "[RuneAndroidRouter/nativeRenderer] invoking component",
       routeName
     );
+    const routeContext = createRouteContextValue(route);
+    const routerContext = getRouterContextValue();
     try {
       const componentElement = definition.component(props);
-      const element =
+      const wrapped =
         definition.surface === "bottomSheet" ? (
           <SafeAreaProvider initialMetrics={createZeroedWindowMetrics()}>
-            {componentElement}
+            <RouterContext.Provider value={routerContext}>
+              <RouteProvider value={routeContext}>{componentElement}</RouteProvider>
+            </RouterContext.Provider>
           </SafeAreaProvider>
         ) : (
-          componentElement
+          <RouterContext.Provider value={routerContext}>
+            <RouteProvider value={routeContext}>{componentElement}</RouteProvider>
+          </RouterContext.Provider>
         );
       console.log(
         "[RuneAndroidRouter/nativeRenderer] component rendered",
         routeName,
-        Boolean(element)
+        Boolean(wrapped)
       );
-      return element;
+      return wrapped;
     } catch (error) {
       console.error(
         "[RuneAndroidRouter/nativeRenderer] component threw",
         routeName,
-        JSON.stringify(error)
+        error
       );
       throw error;
     }
@@ -156,30 +169,38 @@ function getScreenOptions(name: string): ScreenOptions | null {
 
 function installRenderer() {
   const globalObj = globalThis as Record<string, any>;
-  if (typeof globalObj.__renderRouterScreen === "function") {
+  const existing = Object.getOwnPropertyDescriptor(globalObj, "__renderRouterScreen");
+  if (existing && typeof existing.value === "function") {
     return;
   }
-  Object.defineProperties(globalObj, {
-    __renderRouterScreen: {
-      value: renderScreen,
-      enumerable: false,
-      configurable: false,
-      writable: false,
-    },
-    __disposeRouterScreen: {
-      value: disposeScreen,
-      enumerable: false,
-      configurable: false,
-      writable: false,
-    },
-    __getRouterScreenOptions: {
-      value: getScreenOptions,
-      enumerable: false,
-      configurable: false,
-      writable: false,
-    },
-  });
-  console.log("[RuneAndroidRouter] Native router renderer installed");
+  try {
+    Object.defineProperties(globalObj, {
+      __renderRouterScreen: {
+        value: renderScreen,
+        enumerable: false,
+        configurable: true,
+        writable: false,
+      },
+      __disposeRouterScreen: {
+        value: disposeScreen,
+        enumerable: false,
+        configurable: true,
+        writable: false,
+      },
+      __getRouterScreenOptions: {
+        value: getScreenOptions,
+        enumerable: false,
+        configurable: true,
+        writable: false,
+      },
+    });
+    console.log("[RuneAndroidRouter] Native router renderer installed");
+  } catch (error) {
+    console.error(
+      "[RuneAndroidRouter] Failed to install renderer globals",
+      (error as Error)?.message ?? error
+    );
+  }
 }
 
 installRenderer();

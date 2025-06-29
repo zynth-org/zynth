@@ -4,6 +4,14 @@ import { createSafeAreaInsets } from "@rune/safe-area";
 import type { JSX } from "solid-js";
 import * as IOS from "./platform/ios";
 import * as Android from "./platform/android";
+import {
+  useRoute as useAndroidRoute,
+  useFocusEffect as useAndroidFocusEffect,
+  useBeforeRemove as useAndroidBeforeRemove,
+  useNavigationEvents as useAndroidNavigationEvents,
+  RouteProvider as AndroidRouteProvider,
+  createRouteContextValue as createAndroidRouteContextValue,
+} from "./platform/android/RouterContext";
 import type { HeaderMetrics } from "./platform/ios/integration/insets";
 import type { TabBarMetrics } from "./platform/ios/core/types";
 
@@ -72,13 +80,15 @@ function createAndroidAdapter(): RouterRuntime {
     NavigationContainer: Android.NavigationContainer,
     Stack: Android.Stack as unknown as RouterRuntime["Stack"],
     Tabs: TabsImpl as RouterRuntime["Tabs"],
-    useFocusEffect: createUnsupportedHook("useFocusEffect"),
-    useBeforeRemove: createUnsupportedHook("useBeforeRemove"),
-    useNavigationEvents: createUnsupportedHook("useNavigationEvents"),
+    useFocusEffect: useAndroidFocusEffect as RouterRuntime["useFocusEffect"],
+    useBeforeRemove: useAndroidBeforeRemove as RouterRuntime["useBeforeRemove"],
+    useNavigationEvents:
+      useAndroidNavigationEvents as RouterRuntime["useNavigationEvents"],
     useNavigation: Android.useNavigation as RouterRuntime["useNavigation"],
-    useRoute: createUnsupportedHook("useRoute"),
-    RouteProvider: createPassThroughProvider(),
-    createRouteContextValue: createAndroidRouteContextValue(),
+    useRoute: useAndroidRoute as RouterRuntime["useRoute"],
+    RouteProvider: AndroidRouteProvider as RouterRuntime["RouteProvider"],
+    createRouteContextValue:
+      createAndroidRouteContextValue as RouterRuntime["createRouteContextValue"],
     addBackHandler: createAndroidBackHandler(),
     useHeaderMetrics: createAndroidHeaderMetricsHook(),
     createTabBarMetrics: createAndroidTabBarMetricsFactory(),
@@ -88,16 +98,6 @@ function createAndroidAdapter(): RouterRuntime {
   };
 }
 
-function createUnsupportedHook<K extends keyof RouterRuntime>(
-  name: K,
-  returnValue?: RouterRuntime[K]
-): RouterRuntime[K] {
-  return ((..._args: any[]) => {
-    console.warn(`[RuneRouter] ${String(name)} is not implemented on Android yet.`);
-    return returnValue;
-  }) as RouterRuntime[K];
-}
-
 function createUnsupportedComponent<K extends keyof RouterRuntime>(
   name: K
 ): RouterRuntime[K] {
@@ -105,27 +105,6 @@ function createUnsupportedComponent<K extends keyof RouterRuntime>(
     console.warn(`[RuneRouter] ${String(name)} is not implemented on Android yet.`);
     return props.children ?? null;
   }) as RouterRuntime[K];
-}
-
-function createPassThroughProvider(): RouterRuntime["RouteProvider"] {
-  return ((props) => props.children) as RouterRuntime["RouteProvider"];
-}
-
-function createAndroidRouteContextValue(): RouterRuntime["createRouteContextValue"] {
-  return ((route: { key: string; name: string; params?: Record<string, unknown> }) => {
-    const params = () => (route.params as Record<string, unknown> | undefined) as any;
-    return {
-      key: route.key,
-      name: route.name as any,
-      params,
-      setParams(next: Record<string, unknown>) {
-        console.warn("[RuneRouter] setParams is not implemented on Android yet.", next);
-      },
-      __updateFromState() {
-        /* no-op */
-      },
-    };
-  }) as RouterRuntime["createRouteContextValue"];
 }
 
 function createAndroidHandleLink(): RouterRuntime["handleLink"] {

@@ -101,23 +101,31 @@ function disposeTabIcon(surfaceId: number) {
 
 export function installIconRenderer() {
   const globalObj = globalThis as Record<string, unknown>;
-  if (typeof globalObj.__renderTabIcon === "function") {
+  const existing = Object.getOwnPropertyDescriptor(globalObj, "__renderTabIcon");
+  if (existing && typeof existing.value === "function") {
     return;
   }
-  Object.defineProperties(globalObj, {
-    __renderTabIcon: {
-      value: renderTabIcon,
-      enumerable: false,
-      configurable: false,
-      writable: false,
-    },
-    __disposeTabIcon: {
-      value: disposeTabIcon,
-      enumerable: false,
-      configurable: false,
-      writable: false,
-    },
-  });
+  try {
+    Object.defineProperties(globalObj, {
+      __renderTabIcon: {
+        value: renderTabIcon,
+        enumerable: false,
+        configurable: true,
+        writable: false,
+      },
+      __disposeTabIcon: {
+        value: disposeTabIcon,
+        enumerable: false,
+        configurable: true,
+        writable: false,
+      },
+    });
+  } catch (error) {
+    console.error(
+      "[RuneAndroidRouter] Failed to install tab icon renderer",
+      (error as Error)?.message ?? error
+    );
+  }
 }
 
 installIconRenderer();
