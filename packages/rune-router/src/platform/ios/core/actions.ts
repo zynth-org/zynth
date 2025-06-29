@@ -30,7 +30,7 @@ export interface NativeRouterBridge {
 export interface RegisteredScreenSummary {
   name: string;
   navigatorId: string;
-  type: "stack" | "tab";
+  type: "stack" | "tab" | "bottomSheet";
   memoryPolicy?: ScreenDescriptor["memoryPolicy"];
   options?: ScreenOptions;
 }

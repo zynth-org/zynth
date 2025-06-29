@@ -6,8 +6,10 @@
   "module": "dist/esm/index.js",
   "types": "dist/types/index.d.ts",
   "sideEffects": [
-    "./src/tabs/tabIconRenderer.tsx",
-    "./dist/esm/tabs/tabIconRenderer.js"
+    "./src/platform/ios/tabs/tabIconRenderer.tsx",
+    "./src/platform/android/tabIconRenderer.tsx",
+    "./dist/esm/platform/ios/tabs/tabIconRenderer.js",
+    "./dist/esm/platform/android/tabIconRenderer.js"
   ],
   "license": "MIT",
   "files": [
@@ -41,6 +43,24 @@
           "podspec": "./RuneRouter.podspec"
         }
       ]
+    },
+    "android": {
+      "modules": [
+        {
+          "name": "RuneAndroidRouter",
+          "path": "./android/RuneAndroidRouter"
+        }
+      ],
+      "initializer": {
+        "package": "com.rune.androidrouter",
+        "className": "RuneAndroidRouterHost",
+        "method": "bootstrap",
+        "args": [
+          "activity",
+          "runtime",
+          "rootView"
+        ]
+      }
     }
   }
 }

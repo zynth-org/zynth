@@ -163,6 +163,7 @@ export interface BottomSheetProps {
   id?: string;
   initialRouteName?: string;
   snapPoints?: BottomSheetSnapPoint[];
+  initialSnapIndex?: number;
   overlayColor?: string;
   overlayOpacity?: number;
   dismissOnOverlayPress?: boolean;

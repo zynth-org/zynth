@@ -1,4 +1,5 @@
 import { View } from "@rune/components";
+import type { Style } from "@rune/core";
 import {
   type Accessor,
   type JSX,
@@ -346,22 +347,21 @@ const KeepAliveScene: ParentComponent<{
   });
 
   const Component = scene.descriptor.component;
+  const sceneStyle: Style & { zIndex?: number } = {
+    display: props.isActive ? "flex" : "none",
+    flex: 1,
+    width: "100%",
+    height: "100%",
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: props.isActive ? 1 : 0,
+  };
 
   return (
-    <View
-      style={{
-        display: props.isActive ? "flex" : "none",
-        flex: 1,
-        width: "100%",
-        height: "100%",
-        position: "absolute",
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        zIndex: props.isActive ? 1 : 0,
-      }}
-    >
+    <View style={sceneStyle}>
       <RouteProvider value={scene.context}>
         <Component />
       </RouteProvider>
