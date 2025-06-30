@@ -29,6 +29,10 @@ import kotlin.math.roundToInt
 private const val TAG = "RuneAndroidRouter"
 private const val EVENT_STACK_CHANGED = "rune.androidRouter.stackChanged"
 private const val EVENT_BACK_PRESS = "rune.androidRouter.backPress"
+private const val ROUTER_EVENT_STATE_CHANGED = "rune.router.stateChanged"
+private const val ROUTER_EVENT_FOCUS = "rune.router.focus"
+private const val ROUTER_EVENT_BLUR = "rune.router.blur"
+private const val ROUTER_EVENT_BACK = "rune.router.back"
 private const val FIRST_FRAME_TIMEOUT_MS = 1000L
 
 internal class RuneNavigationContainer(
@@ -48,6 +52,8 @@ internal class RuneNavigationContainer(
     private val firstFrameTimeouts = mutableMapOf<Int, Runnable>()
     private var routerActive = false
     private val bottomSheetHost = BottomSheetNavigatorHost(activity)
+    private var lastFocusedKey: String? = null
+    private var lastRoutesSnapshot: List<String> = emptyList()
 
     init {
         (runtimeRootView.parent as? ViewGroup)?.removeView(runtimeRootView)
@@ -185,6 +191,40 @@ internal class RuneNavigationContainer(
         }
     }
 
+    fun currentState(): Map<String, Any?> = buildNavigationState()
+
+    fun dispatch(type: String, action: Map<String, Any?>) {
+        when (type) {
+            "NAVIGATE", "PUSH" -> {
+                val payload = action["payload"].asMap()
+                val name = payload?.get("name") as? String ?: return
+                val params = payload["params"].asJSONObject()
+                navigate(name, params)
+            }
+            "POP" -> {
+                goBack()
+            }
+            "REPLACE" -> {
+                val payload = action["payload"].asMap()
+                val name = payload?.get("name") as? String ?: return
+                val params = payload["params"].asJSONObject()
+                goBack()
+                navigate(name, params)
+            }
+            "RESET" -> {
+                val state = action["state"].asMap()
+                val routes = state?.get("routes").asList().orEmpty()
+                val first = routes.firstOrNull().asMap()
+                val name = first?.get("name") as? String
+                reset(name)
+            }
+            "SET_PARAMS" -> {
+                Log.w(TAG, "SET_PARAMS not implemented on Android")
+            }
+            else -> Log.w(TAG, "Unsupported dispatch type=$type")
+        }
+    }
+
     fun registerFragmentSurface(surfaceId: Int, fragment: RouterScreenFragment) {
         fragmentBySurfaceId[surfaceId] = fragment
     }
@@ -319,6 +359,10 @@ internal class RuneNavigationContainer(
             .filterIsInstance<RouterScreenFragment>()
             .filter { it.isAdded }
         val routes = fragments.map { it.routeName }
+        if (routes == lastRoutesSnapshot) {
+            return
+        }
+        lastRoutesSnapshot = routes
         Log.d(TAG, "stackChanged reason=$reason stack=$routes managerFragments=${fragmentManager().fragments.map { it::class.simpleName }}")
         val payload = mapOf(
             "routes" to routes,
@@ -327,6 +371,15 @@ internal class RuneNavigationContainer(
             "reason" to reason,
         )
         runtime.emitEvent(EVENT_STACK_CHANGED, payload)
+        runtime.emitEvent(ROUTER_EVENT_STATE_CHANGED, mapOf("state" to buildNavigationState()))
+        val nextFocused = routes.lastOrNull()
+        if (nextFocused != null && nextFocused != lastFocusedKey) {
+            lastFocusedKey?.let { prev ->
+                runtime.emitEvent(ROUTER_EVENT_BLUR, mapOf("key" to prev))
+            }
+            runtime.emitEvent(ROUTER_EVENT_FOCUS, mapOf("key" to nextFocused))
+            lastFocusedKey = nextFocused
+        }
         updateModalOverlayState(fragments)
     }
 
@@ -357,6 +410,26 @@ internal class RuneNavigationContainer(
         )
         Log.d(TAG, "backPress source=$source handled=$handled")
         runtime.emitEvent(EVENT_BACK_PRESS, payload)
+        runtime.emitEvent(ROUTER_EVENT_BACK, mapOf("source" to source))
+    }
+
+    private fun buildNavigationState(): Map<String, Any?> {
+        val fragments = fragmentManager().fragments
+            .filterIsInstance<RouterScreenFragment>()
+            .filter { it.isAdded }
+        val routes = fragments.mapIndexed { index, fragment ->
+            mapOf(
+                "key" to "${fragment.routeName}-$index",
+                "name" to fragment.routeName,
+            )
+        }
+        val topIndex = if (routes.isNotEmpty()) routes.size - 1 else 0
+        return mapOf(
+            "key" to "stack-root",
+            "type" to "stack",
+            "index" to topIndex,
+            "routes" to routes,
+        )
     }
 
     private fun setRouterActive(active: Boolean) {

@@ -22,6 +22,8 @@ internal class RuneAndroidRouterBridge(
             "setTabOptions" -> handleSetTabOptions(args)
             "screenRendered" -> handleScreenRendered(args)
             "registerBottomSheetNavigator" -> handleRegisterBottomSheetNavigator(args)
+            "getState" -> handleGetState()
+            "dispatch" -> handleDispatch(args)
             else -> errorResponse(method, "unsupported_method")
         }
     }
@@ -130,6 +132,21 @@ internal class RuneAndroidRouterBridge(
             screens = screens,
         )
         navigationContainer.registerBottomSheetNavigator(config)
+        return successResponse()
+    }
+
+    private fun handleGetState(): JSONObject {
+        val state = navigationContainer.currentState()
+        return JSONObject()
+            .put("ok", true)
+            .put("state", state)
+    }
+
+    private fun handleDispatch(args: Array<Any?>): JSONObject {
+        val payload = args.firstOrNull().asMap() ?: return errorResponse("dispatch", "invalid_payload")
+        val action = payload["action"].asMap() ?: return errorResponse("dispatch", "missing_action")
+        val type = action["type"] as? String ?: return errorResponse("dispatch", "missing_type")
+        navigationContainer.dispatch(type, action)
         return successResponse()
     }
 

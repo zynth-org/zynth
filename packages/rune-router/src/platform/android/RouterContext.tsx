@@ -17,6 +17,11 @@ import type {
   RouteParamList,
 } from "../ios/core/types";
 import { onStackChanged, onBackPress } from "./events";
+import {
+  addRouterEventListener,
+  ROUTER_EVENT_FOCUS,
+  ROUTER_EVENT_BLUR,
+} from "../ios/core/events";
 import { useNavigation as useNativeNavigation } from "./hooks";
 
 type RouteContextValueRaw = {
@@ -145,9 +150,23 @@ const sharedRouterContext: RouterContextValue = {
   addBeforeRemoveListener,
 };
 
+let ambientRouteContext: RouteContextValueInternal | null = null;
+let ambientRouterContext: RouterContextValue | null = null;
+
+export function setAmbientContexts(
+  routeCtx: RouteContextValueInternal,
+  routerCtx: RouterContextValue
+): void {
+  ambientRouteContext = routeCtx;
+  ambientRouterContext = routerCtx;
+}
+
 export function useRouterContext(): RouterContextValue {
   const ctx = useContext(RouterContext);
   if (!ctx) {
+    if (ambientRouterContext) {
+      return ambientRouterContext;
+    }
     console.warn(
       "[RuneRouter] useRouterContext called without a provider. Falling back to a global context."
     );
@@ -162,6 +181,9 @@ export function useRoute<
 >(): RouteContextValue<ParamList, RouteName> {
   const ctx = useContext(RouteContext);
   if (!ctx) {
+    if (ambientRouteContext) {
+      return ambientRouteContext as unknown as RouteContextValue<ParamList, RouteName>;
+    }
     console.warn(
       "[RuneRouter] useRoute called outside of RouteProvider. Returning a placeholder route."
     );
@@ -215,7 +237,7 @@ export function useFocusEffect(callback: FocusEffectCallback): void {
     const run = () => {
       cleanup = callback();
     };
-    const unsubscribe = router.subscribeFocus(route.key, (focused) => {
+    const unsubscribeFocus = router.subscribeFocus(route.key, (focused) => {
       if (focused) {
         cleanup?.();
         cleanup = callback();
@@ -223,11 +245,10 @@ export function useFocusEffect(callback: FocusEffectCallback): void {
         cleanup?.();
       }
     });
-    // Run once on mount
     run();
     onCleanup(() => {
       cleanup?.();
-      unsubscribe();
+      unsubscribeFocus();
     });
   });
 }
@@ -249,20 +270,14 @@ export function useNavigationEvents(handlers: {
   blur?: (payload: { key: string }) => void;
 }): void {
   createEffect(() => {
-    let lastFocused: string | null = null;
-    const unsubscribe = onStackChanged((payload) => {
-      const routes = payload.routes ?? [];
-      const nextTop = routes[routes.length - 1] ?? null;
-      if (nextTop === lastFocused) return;
-      if (lastFocused && handlers.blur) {
-        handlers.blur({ key: lastFocused });
-      }
-      if (nextTop && handlers.focus) {
-        handlers.focus({ key: nextTop });
-      }
-      lastFocused = nextTop;
-    });
-    onCleanup(unsubscribe);
+    const subs: Array<() => void> = [];
+    if (handlers.focus) {
+      subs.push(addRouterEventListener(ROUTER_EVENT_FOCUS, handlers.focus));
+    }
+    if (handlers.blur) {
+      subs.push(addRouterEventListener(ROUTER_EVENT_BLUR, handlers.blur));
+    }
+    onCleanup(() => subs.forEach((off) => off()));
   });
 }
 

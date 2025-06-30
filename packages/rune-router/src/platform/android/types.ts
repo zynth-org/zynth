@@ -68,6 +68,11 @@ export interface ScreenOptions {
   presentation?: ScreenPresentation;
   tab?: TabOptions;
   bottomSheet?: BottomSheetScreenOptions;
+  /**
+   * Background color applied to the wrapper around the screen component.
+   * Defaults to white if not provided.
+   */
+  backgroundColor?: string;
 }
 
 type RouteName<Routes extends Record<string, any>> = Extract<

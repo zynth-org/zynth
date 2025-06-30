@@ -4,15 +4,17 @@ High-level tracker for bringing the unified router surface to feature parity acr
 
 ## JS runtime gaps (Android)
 
-- [ ] **Route context & hooks** – Port `RouteProvider`, `createRouteContextValue`, `useRoute`, `useFocusEffect`, `useBeforeRemove`, and `useNavigationEvents` so they run off the Android navigation state instead of just logging warnings.
-- [ ] **NavigationContainer state bridge** – Expose `getState`/`dispatch` parity on Android so `handleLink`, persistence, and deep-link helpers can work identically.
+- [x] **Route context & hooks** – Port `RouteProvider`, `createRouteContextValue`, `useRoute`, `useFocusEffect`, `useBeforeRemove`, and `useNavigationEvents` so they run off the Android navigation state instead of just logging warnings.
+  - ✅ JS hooks now wired to Android context; native renderer wraps screens with providers so hooks work.
+- [x] **NavigationContainer state bridge** – Expose `getState`/`dispatch` parity on Android so `handleLink`, persistence, and deep-link helpers can work identically.
 - [ ] **Linking helpers** – Once Android emits full `NavigationState`, hook up `handleLink(url)` and `getPathFromState(state)` rather than returning placeholders.
 - [ ] **Reactive `setOptions` + `setParams`** – Mirror the Solid effect plumbing from iOS so Android screens can call `navigation.setOptions(() => …)` and `setParams` without warnings.
 - [ ] **Tab/Stack JS renderers** – Evaluate whether we keep the iOS-style keep-alive scene management for Android tabs/bottom sheets or remove that surface entirely if the native host owns rendering.
 
 ## Native bridge gaps (Android)
 
-- [ ] **Event stream** – Emit the shared `ROUTER_EVENT_*` events (focus/blur, transitions, before-remove, tab metrics) so the JS hooks stay platform-agnostic.
+- [x] **Event stream (focus/blur/back/state)** – Emit the shared `ROUTER_EVENT_*` events so the JS hooks stay platform-agnostic.
+- [ ] **Transitions / before-remove / tab metrics** – Fill in transition events, before-remove requests, and tab metrics once native exposes them.
 - [ ] **Before-remove guards** – Support `RouterContext`’s `beforeRemove` pipeline so Android can block navigation like iOS does.
 - [ ] **Tab/header metrics** – Replace the hard-coded 56pt fallbacks with actual measurements emitted from native (`ROUTER_EVENT_TAB_METRICS`) and read via `useHeaderMetrics`.
 - [ ] **Tabs + icons** – Reuse the shared `tabIconRegistry`/renderer surface so dynamic icons behave the same way on both platforms; ensure tab registration populates glyph data (`glyphFontFamily`, `glyphFontSize`, etc.).

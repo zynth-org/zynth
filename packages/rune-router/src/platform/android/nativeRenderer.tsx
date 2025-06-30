@@ -8,6 +8,7 @@ import type { HostNode } from "@rune/core";
 import { Dimensions } from "@rune/apis";
 import { SafeAreaProvider } from "@rune/safe-area";
 import type { InitialWindowMetrics } from "@rune/safe-area";
+import { View } from "@rune/components";
 import { findScreenDefinition } from "./registry";
 import type { RouterScreenComponentProps, ScreenOptions } from "./types";
 import {
@@ -21,6 +22,7 @@ import {
   RouteProvider,
   createRouteContextValue,
   getRouterContextValue,
+  setAmbientContexts,
 } from "./RouterContext";
 
 const mountedScreens = new Map<number, () => void>();
@@ -101,18 +103,34 @@ function renderScreen(rootId: number, routeName: string, paramsJson?: any) {
     );
     const routeContext = createRouteContextValue(route);
     const routerContext = getRouterContextValue();
+    setAmbientContexts(routeContext, routerContext);
     try {
-      const componentElement = definition.component(props);
+      const ScreenComponent = definition.component;
+      const backgroundColor =
+        (definition.options as ScreenOptions | undefined)?.backgroundColor ??
+        "#ffffff";
+      const content = (
+        <View
+          style={{
+            flex: 1,
+            width: "100%",
+            height: "100%",
+            backgroundColor,
+          }}
+        >
+          <ScreenComponent {...props} />
+        </View>
+      );
       const wrapped =
         definition.surface === "bottomSheet" ? (
           <SafeAreaProvider initialMetrics={createZeroedWindowMetrics()}>
             <RouterContext.Provider value={routerContext}>
-              <RouteProvider value={routeContext}>{componentElement}</RouteProvider>
+              <RouteProvider value={routeContext}>{content}</RouteProvider>
             </RouterContext.Provider>
           </SafeAreaProvider>
         ) : (
           <RouterContext.Provider value={routerContext}>
-            <RouteProvider value={routeContext}>{componentElement}</RouteProvider>
+            <RouteProvider value={routeContext}>{content}</RouteProvider>
           </RouterContext.Provider>
         );
       console.log(
@@ -128,6 +146,8 @@ function renderScreen(rootId: number, routeName: string, paramsJson?: any) {
         error
       );
       throw error;
+    } finally {
+      setAmbientContexts(routeContext, routerContext);
     }
   }, createSurfaceContainer(rootId));
 
