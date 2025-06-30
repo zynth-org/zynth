@@ -33,6 +33,8 @@ private const val ROUTER_EVENT_STATE_CHANGED = "rune.router.stateChanged"
 private const val ROUTER_EVENT_FOCUS = "rune.router.focus"
 private const val ROUTER_EVENT_BLUR = "rune.router.blur"
 private const val ROUTER_EVENT_BACK = "rune.router.back"
+private const val ROUTER_EVENT_BEFORE_REMOVE = "rune.router.beforeRemove"
+private const val ROUTER_EVENT_TAB_METRICS = "rune.router.tabMetrics"
 private const val FIRST_FRAME_TIMEOUT_MS = 1000L
 
 internal class RuneNavigationContainer(
@@ -54,6 +56,7 @@ internal class RuneNavigationContainer(
     private val bottomSheetHost = BottomSheetNavigatorHost(activity)
     private var lastFocusedKey: String? = null
     private var lastRoutesSnapshot: List<String> = emptyList()
+    private val beforeRemoveRequests = mutableMapOf<String, () -> Unit>()
 
     init {
         (runtimeRootView.parent as? ViewGroup)?.removeView(runtimeRootView)
@@ -141,14 +144,16 @@ internal class RuneNavigationContainer(
             if (bottomSheetHost.handleGoBack()) {
                 return@runOnUiThread
             }
-            val handled = if (fragmentManager().backStackEntryCount > 0) {
-                fragmentManager().popBackStackImmediate()
-                true
-            } else {
-                activity.onBackPressedDispatcher.onBackPressed()
-                false
+            maybeEmitBeforeRemove {
+                val handled = if (fragmentManager().backStackEntryCount > 0) {
+                    fragmentManager().popBackStackImmediate()
+                    true
+                } else {
+                    activity.onBackPressedDispatcher.onBackPressed()
+                    false
+                }
+                emitBackPressEvent("runtime", handled)
             }
-            emitBackPressEvent("runtime", handled)
         }
     }
 
@@ -168,11 +173,12 @@ internal class RuneNavigationContainer(
         definitions: List<RouterTabDefinition>,
         initialRouteName: String?,
         navigatorOptions: RouterTabBarOptions?,
+        navigatorId: String?,
     ) {
         runOnUiThread {
             // Drop any existing stack-managed fragments before wiring up tabs to avoid duplicates.
             clearBackStack()
-            tabController.registerTabs(definitions, initialRouteName, navigatorOptions)
+            tabController.registerTabs(definitions, initialRouteName, navigatorOptions, navigatorId)
             if (definitions.isNotEmpty()) {
                 setRouterActive(true)
             }
@@ -413,6 +419,38 @@ internal class RuneNavigationContainer(
         runtime.emitEvent(ROUTER_EVENT_BACK, mapOf("source" to source))
     }
 
+    private fun maybeEmitBeforeRemove(onAllowed: () -> Unit) {
+        val topFragment = topScreenFragment() ?: return onAllowed()
+        val requestId = java.util.UUID.randomUUID().toString()
+        beforeRemoveRequests[requestId] = onAllowed
+        val action = mapOf(
+            "type" to "POP",
+            "payload" to mapOf("count" to 1),
+            "source" to topFragment.routeName,
+        )
+        runtime.emitEvent(
+            ROUTER_EVENT_BEFORE_REMOVE,
+            mapOf(
+                "key" to topFragment.routeName,
+                "action" to action,
+                "requestId" to requestId,
+            )
+        )
+        // Fallback: if JS never responds, allow after a delay to avoid deadlocks.
+        handler.postDelayed({
+            beforeRemoveRequests.remove(requestId)?.invoke()
+        }, 500)
+    }
+
+    fun resolveBeforeRemove(requestId: String, cancelled: Boolean) {
+        val resolver = beforeRemoveRequests.remove(requestId)
+        resolver?.let { resolve ->
+            if (!cancelled) {
+                resolve()
+            }
+        }
+    }
+
     private fun buildNavigationState(): Map<String, Any?> {
         val fragments = fragmentManager().fragments
             .filterIsInstance<RouterScreenFragment>()
@@ -469,7 +507,8 @@ internal class RuneNavigationContainer(
         private val iconHostsByRoute = mutableMapOf<String, RuneTabIconHostView>()
         private var awaitingRenderedRoute: String? = null
         private var pendingRouteSelection: String? = null
-    private var fragmentAwaitingHide: RouterScreenFragment? = null
+        private var fragmentAwaitingHide: RouterScreenFragment? = null
+        private var navigatorId: String? = null
 
         init {
             hostLayout.setBottomSlotView(bottomNavigationView)
@@ -489,6 +528,7 @@ internal class RuneNavigationContainer(
         fun onBottomInsetChanged(inset: Int) {
             bottomInset = inset
             applyBottomInsetPadding()
+            emitTabMetrics()
         }
 
         fun hasRoute(routeName: String): Boolean {
@@ -499,8 +539,10 @@ internal class RuneNavigationContainer(
             definitions: List<RouterTabDefinition>,
             initialRouteName: String?,
             navigatorOptions: RouterTabBarOptions?,
+            navigatorId: String?,
         ) {
             clearFragments()
+            this.navigatorId = navigatorId
             tabDefinitions.clear()
             menuItemIdByRoute.clear()
             routeByMenuItem.clear()
@@ -531,6 +573,7 @@ internal class RuneNavigationContainer(
             if (target != null) {
                 selectTab(target)
             }
+            emitTabMetrics()
         }
 
         fun switchTab(routeName: String) {
@@ -626,6 +669,7 @@ internal class RuneNavigationContainer(
 
             pendingRouteSelection = null
             activateTab(routeName, targetFragment, needsSnapshot)
+            emitTabMetrics()
         }
 
         fun onFragmentReady(fragment: RouterScreenFragment) {
@@ -677,6 +721,7 @@ internal class RuneNavigationContainer(
             updateTabBarVisibility(routeName)
             applyTabBarAppearance(routeName)
             updateIconActiveStates()
+            emitTabMetrics()
         }
 
         private fun clearFragments() {
@@ -742,6 +787,22 @@ internal class RuneNavigationContainer(
                 if (background != null) {
                     bottomNavigationView.background = background
                 }
+            }
+        }
+
+        private fun emitTabMetrics() {
+            bottomNavigationView.post {
+                val height = bottomNavigationView.height
+                if (height <= 0) return@post
+                val id = navigatorId ?: "tabs-root"
+                runtime.emitEvent(
+                    ROUTER_EVENT_TAB_METRICS,
+                    mapOf(
+                        "navigatorId" to id,
+                        "height" to height,
+                        "inset" to bottomInset,
+                    )
+                )
             }
         }
 

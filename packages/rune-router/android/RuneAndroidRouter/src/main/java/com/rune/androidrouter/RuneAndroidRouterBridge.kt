@@ -24,6 +24,7 @@ internal class RuneAndroidRouterBridge(
             "registerBottomSheetNavigator" -> handleRegisterBottomSheetNavigator(args)
             "getState" -> handleGetState()
             "dispatch" -> handleDispatch(args)
+            "resolveBeforeRemove" -> handleResolveBeforeRemove(args)
             else -> errorResponse(method, "unsupported_method")
         }
     }
@@ -79,6 +80,7 @@ internal class RuneAndroidRouterBridge(
         Log.d(name, "handleRegisterTabs args=${args.contentToString()}")
         val payload = args.firstOrNull().asMap() ?: return errorResponse("registerTabs", "invalid_payload")
         val tabEntries = payload["tabs"].asList().orEmpty()
+        val navigatorId = payload["navigatorId"] as? String
         val definitions = tabEntries.mapNotNull { entry ->
             val data = entry.asMap() ?: return@mapNotNull null
             val tabName = data["name"] as? String ?: return@mapNotNull null
@@ -88,7 +90,7 @@ internal class RuneAndroidRouterBridge(
         }
         val initialRoute = payload["initialRouteName"] as? String
         val tabBarOptions = RouterTabBarOptions.fromMap(payload["tabBarOptions"].asMap())
-        navigationContainer.registerTabs(definitions, initialRoute, tabBarOptions)
+        navigationContainer.registerTabs(definitions, initialRoute, tabBarOptions, navigatorId)
         return successResponse()
     }
 
@@ -147,6 +149,14 @@ internal class RuneAndroidRouterBridge(
         val action = payload["action"].asMap() ?: return errorResponse("dispatch", "missing_action")
         val type = action["type"] as? String ?: return errorResponse("dispatch", "missing_type")
         navigationContainer.dispatch(type, action)
+        return successResponse()
+    }
+
+    private fun handleResolveBeforeRemove(args: Array<Any?>): JSONObject {
+        val payload = args.firstOrNull().asMap() ?: return errorResponse("resolveBeforeRemove", "invalid_payload")
+        val requestId = payload["requestId"] as? String ?: return errorResponse("resolveBeforeRemove", "missing_request_id")
+        val cancelled = payload["cancelled"] as? Boolean ?: false
+        navigationContainer.resolveBeforeRemove(requestId, cancelled)
         return successResponse()
     }
 

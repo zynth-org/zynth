@@ -16,7 +16,7 @@ import type {
   RouteContextValueInternal,
   RouteParamList,
 } from "../ios/core/types";
-import { onStackChanged, onBackPress } from "./events";
+import { onBackPress } from "./events";
 import {
   addRouterEventListener,
   ROUTER_EVENT_FOCUS,
@@ -40,59 +40,29 @@ export interface RouterContextValue {
 
 export const RouterContext = createContext<RouterContextValue | null>(null);
 const RouteContext = createContext<RouteContextValueInternal | null>(null);
-
-const focusListeners = new Map<string, Set<FocusChangeHandler>>();
 let currentFocused: string | null = null;
-let unsubscribeStack: (() => void) | null = null;
-
-function ensureStackSubscription(): void {
-  if (unsubscribeStack) return;
-  unsubscribeStack = onStackChanged((payload) => {
-    const routes = payload.routes ?? [];
-    const nextTop = routes[routes.length - 1] ?? null;
-    updateFocus(nextTop);
-  });
-}
-
-function updateFocus(next: string | null): void {
-  if (next === currentFocused) {
-    return;
-  }
-  const prev = currentFocused;
-  if (prev && focusListeners.has(prev)) {
-    emitFocus(prev, false);
-  }
-  currentFocused = next;
-  if (next && focusListeners.has(next)) {
-    emitFocus(next, true);
-  }
-}
-
-function emitFocus(key: string, focused: boolean): void {
-  const listeners = focusListeners.get(key);
-  if (!listeners) return;
-  for (const handler of listeners) {
-    try {
-      handler(focused);
-    } catch (error) {
-      console.error("[RuneRouter] focus handler threw", error);
-    }
-  }
-}
 
 function addFocusListener(key: string, handler: FocusChangeHandler): () => void {
-  ensureStackSubscription();
-  let listeners = focusListeners.get(key);
-  if (!listeners) {
-    listeners = new Set();
-    focusListeners.set(key, listeners);
-  }
-  listeners.add(handler);
-  return () => {
-    listeners?.delete(handler);
-    if (listeners && listeners.size === 0) {
-      focusListeners.delete(key);
+  let last: boolean | undefined;
+  const offFocus = addRouterEventListener(ROUTER_EVENT_FOCUS, ({ key: target }) => {
+    if (target !== key) return;
+    if (last === true) return;
+    last = true;
+    currentFocused = key;
+    handler(true);
+  });
+  const offBlur = addRouterEventListener(ROUTER_EVENT_BLUR, ({ key: target }) => {
+    if (target !== key) return;
+    if (last === false) return;
+    last = false;
+    if (currentFocused === key) {
+      currentFocused = null;
     }
+    handler(false);
+  });
+  return () => {
+    offFocus();
+    offBlur();
   };
 }
 
@@ -234,9 +204,6 @@ export function useFocusEffect(callback: FocusEffectCallback): void {
 
   createEffect(() => {
     let cleanup: (() => void) | void;
-    const run = () => {
-      cleanup = callback();
-    };
     const unsubscribeFocus = router.subscribeFocus(route.key, (focused) => {
       if (focused) {
         cleanup?.();
@@ -245,7 +212,6 @@ export function useFocusEffect(callback: FocusEffectCallback): void {
         cleanup?.();
       }
     });
-    run();
     onCleanup(() => {
       cleanup?.();
       unsubscribeFocus();
@@ -308,6 +274,5 @@ export function createRouteContextValue(
 }
 
 export function getRouterContextValue(): RouterContextValue {
-  ensureStackSubscription();
   return sharedRouterContext;
 }

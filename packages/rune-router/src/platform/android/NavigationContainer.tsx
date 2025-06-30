@@ -11,7 +11,6 @@ import type { NativeScreenRegistration } from "./nativeBridge";
 import "./nativeRenderer";
 import "./tabIconRenderer";
 import { onStackChanged } from "./events";
-import { emitStackChange, emitBackEvent } from "./eventBridge";
 
 export interface NavigationContainerProps {
   children?: any;
@@ -43,10 +42,6 @@ export const NavigationContainer: ParentComponent<NavigationContainerProps> = (
       const globalObject = globalThis as Record<string, any>;
       globalObject.__RUNE_NATIVE_ROUTER_STACK = payload;
       globalObject.__RUNE_NATIVE_ROUTER_CAN_GO_BACK = payload.canGoBack;
-      emitStackChange(payload.routes ?? []);
-      if (payload.reason === "backPress") {
-        emitBackEvent("android");
-      }
     });
     onCleanup(() => {
       unsubscribeRegistry();
