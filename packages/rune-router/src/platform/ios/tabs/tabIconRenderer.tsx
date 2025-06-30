@@ -4,6 +4,7 @@ import {
   setActiveSurface,
   getActiveSurface,
 } from "@rune/core";
+import { Platform, OS } from "@rune/apis";
 import type { HostNode } from "@rune/core";
 import { createSignal } from "solid-js";
 import { getTabIconFactory } from "./tabIconRegistry";
@@ -125,6 +126,9 @@ function disposeTabIcon(surfaceId: number) {
 }
 
 export function installIconRenderer() {
+  if (Platform.OS !== OS.IOS) {
+    return;
+  }
   const globalObj = globalThis as Record<string, unknown>;
   if (typeof globalObj.__renderTabIcon === "function") {
     return;
