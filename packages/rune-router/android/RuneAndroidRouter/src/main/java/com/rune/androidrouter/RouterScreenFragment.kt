@@ -147,6 +147,16 @@ class RouterScreenFragment : Fragment() {
 
     internal fun presentation(): RouterScreenPresentation = options.presentation
 
+    fun updateParams(params: JSONObject?) {
+        val newParams = params?.toString()
+        if (paramsJson == newParams) return
+        paramsJson = newParams
+        Log.d(TAG, "updateParams route=$routeName params=$paramsJson")
+        if (contentRoot != null) {
+            renderScreen()
+        }
+    }
+
     private fun notifyReadinessIfNeeded() {
         if (contentRendered && viewMeasured && !readinessNotified) {
             readinessNotified = true

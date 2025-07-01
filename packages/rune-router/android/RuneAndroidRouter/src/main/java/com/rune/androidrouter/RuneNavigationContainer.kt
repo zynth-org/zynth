@@ -126,10 +126,7 @@ internal class RuneNavigationContainer(
         Log.d(TAG, "navigate route=$routeName params=$params")
         runOnUiThread {
             if (tabController.hasRoute(routeName)) {
-                if (params != null) {
-                    Log.d(TAG, "navigate route=$routeName resolved to tab; params will be ignored in tab switch")
-                }
-                tabController.switchTab(routeName)
+                tabController.switchTab(routeName, params)
                 return@runOnUiThread
             }
             if (bottomSheetHost.handleNavigate(routeName, params)) {
@@ -576,12 +573,12 @@ internal class RuneNavigationContainer(
             emitTabMetrics()
         }
 
-        fun switchTab(routeName: String) {
+        fun switchTab(routeName: String, params: JSONObject? = null) {
             if (!tabDefinitions.containsKey(routeName)) {
                 Log.w(TAG, "Attempted to switch to unknown tab $routeName")
                 return
             }
-            selectTab(routeName)
+            selectTab(routeName, params)
         }
 
         fun setTabOptions(routeName: String, options: RouterTabOptions) {
@@ -609,7 +606,7 @@ internal class RuneNavigationContainer(
             }
         }
 
-        private fun selectTab(routeName: String) {
+        private fun selectTab(routeName: String, params: JSONObject? = null) {
             if (pendingRouteSelection == routeName) {
                 return
             }
@@ -617,34 +614,43 @@ internal class RuneNavigationContainer(
                 fragmentAwaitingHide = null
             }
             if (pendingRouteSelection == null && selectedRoute == routeName) {
+                if (params != null) {
+                    fragments[routeName]?.updateParams(params)
+                }
                 updateTabBarVisibility(routeName)
                 hostLayout.hideContentSnapshot()
                 awaitingRenderedRoute = null
                 return
             }
             val definition = tabDefinitions[routeName] ?: return
-            val targetFragment = fragments[routeName] ?: RouterScreenFragment.newInstance(
+            val targetFragment = fragments[routeName]
+            
+            if (targetFragment != null) {
+                targetFragment.updateParams(params)
+            }
+
+            val fragmentToUse = targetFragment ?: RouterScreenFragment.newInstance(
                 RouterScreenRequest(
                     definition.routeName,
-                    null,
+                    params?.toString(),
                     definition.screenOptions,
                 )
             ).also {
                 fragments[routeName] = it
             }
 
-            if (!targetFragment.isAdded) {
+            if (!fragmentToUse.isAdded) {
                 fragmentManager().beginTransaction()
                     .add(
                         fragmentContainerView.id,
-                        targetFragment,
+                        fragmentToUse,
                         "rune-tab-${routeName}"
                     )
                     .commitNowAllowingStateLoss()
             }
 
             val currentFragment = selectedRoute?.let { fragments[it] }
-            val needsSnapshot = currentFragment != null && !targetFragment.hasRenderedContent()
+            val needsSnapshot = currentFragment != null && !fragmentToUse.hasRenderedContent()
             fragmentAwaitingHide = if (needsSnapshot) currentFragment else null
             val snapshotCreated = if (needsSnapshot) {
                 hostLayout.showContentSnapshot()
@@ -668,7 +674,7 @@ internal class RuneNavigationContainer(
             }
 
             pendingRouteSelection = null
-            activateTab(routeName, targetFragment, needsSnapshot)
+            activateTab(routeName, fragmentToUse, needsSnapshot)
             emitTabMetrics()
         }
 
