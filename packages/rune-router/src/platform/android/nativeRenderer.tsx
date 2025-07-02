@@ -24,8 +24,15 @@ import {
   getRouterContextValue,
   setAmbientContexts,
 } from "./RouterContext";
+import type { RouteContextValueInternal } from "../ios/core/types";
 
-const mountedScreens = new Map<number, () => void>();
+type MountedScreen = {
+  dispose: () => void;
+  routeContext: RouteContextValueInternal;
+  routeName: string;
+};
+
+const mountedScreens = new Map<number, MountedScreen>();
 
 function parseParams(raw: unknown): any {
   if (raw == null) {
@@ -71,6 +78,32 @@ function renderScreen(rootId: number, routeName: string, paramsJson?: any) {
   }
 
   const params = parseParams(paramsJson);
+
+  const existing = mountedScreens.get(rootId);
+  if (existing) {
+    if (existing.routeName === routeName) {
+      console.log(
+        "[RuneAndroidRouter/nativeRenderer] updating params for existing screen",
+        rootId,
+        params
+      );
+      existing.routeContext.__updateFromState(params);
+      return true;
+    }
+    console.log(
+      "[RuneAndroidRouter/nativeRenderer] disposing previous render for",
+      rootId
+    );
+    try {
+      existing.dispose();
+    } catch (error) {
+      console.error(
+        "[RuneAndroidRouter] Failed to dispose previous screen",
+        error
+      );
+    }
+  }
+
   const navigation = createNavigationHelpers(routeName);
   const route = {
     key: routeName,
@@ -82,17 +115,7 @@ function renderScreen(rootId: number, routeName: string, paramsJson?: any) {
     navigation,
   };
 
-  const disposePrevious = mountedScreens.get(rootId);
-  if (disposePrevious) {
-    try {
-      disposePrevious();
-    } catch (error) {
-      console.error(
-        "[RuneAndroidRouter] Failed to dispose previous screen",
-        error
-      );
-    }
-  }
+  const routeContext = createRouteContextValue(route);
 
   const previousSurface = getActiveSurface();
   setActiveSurface(rootId);
@@ -101,7 +124,6 @@ function renderScreen(rootId: number, routeName: string, paramsJson?: any) {
       "[RuneAndroidRouter/nativeRenderer] invoking component",
       routeName
     );
-    const routeContext = createRouteContextValue(route);
     const routerContext = getRouterContextValue();
     setAmbientContexts(routeContext, routerContext);
     try {
@@ -153,15 +175,15 @@ function renderScreen(rootId: number, routeName: string, paramsJson?: any) {
 
   flushHostQueue();
   void notifyScreenRenderedNative(rootId);
-  mountedScreens.set(rootId, () => {
-    console.log(
-      "[RuneAndroidRouter/nativeRenderer] disposing previous render for",
-      rootId
-    );
-    setActiveSurface(rootId);
-    dispose();
-    flushHostQueue();
-    setActiveSurface(previousSurface);
+  mountedScreens.set(rootId, {
+    dispose: () => {
+      setActiveSurface(rootId);
+      dispose();
+      flushHostQueue();
+      setActiveSurface(previousSurface);
+    },
+    routeContext,
+    routeName,
   });
   flushHostQueue();
   setActiveSurface(previousSurface);
@@ -169,15 +191,13 @@ function renderScreen(rootId: number, routeName: string, paramsJson?: any) {
 }
 
 function disposeScreen(rootId: number) {
-  const dispose = mountedScreens.get(rootId);
-  if (!dispose) {
+  const existing = mountedScreens.get(rootId);
+  if (!existing) {
     return;
   }
   mountedScreens.delete(rootId);
   try {
-    setActiveSurface(rootId);
-    dispose();
-    flushHostQueue();
+    existing.dispose();
   } catch (error) {
     console.error("[RuneAndroidRouter] disposeScreen failed", error);
   }
