@@ -5,7 +5,11 @@
   "main": "dist/esm/index.js",
   "module": "dist/esm/index.js",
   "types": "dist/types/index.d.ts",
-  "sideEffects": false,
+  "sideEffects": [
+    "./src/polyfills/URLSearchParams.ts",
+    "./src/index.ts",
+    "./dist/esm/index.js"
+  ],
   "license": "MIT",
   "peerDependencies": {
     "solid-js": ">=1.8.0"

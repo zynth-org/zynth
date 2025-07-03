@@ -62,11 +62,11 @@ internal class RuneNavigationContainer(
         (runtimeRootView.parent as? ViewGroup)?.removeView(runtimeRootView)
         layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
         runtimeRootView.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
-        runtimeRootView.visibility = View.GONE
+        // runtimeRootView.visibility = View.GONE // Keep visible for overlays
         fragmentContainerView.id = View.generateViewId()
         hostLayout.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
-        addView(runtimeRootView)
         addView(hostLayout)
+        addView(runtimeRootView)
         hostLayout.setBottomInsetListener(tabController::onBottomInsetChanged)
         fragmentManager().addOnBackStackChangedListener {
             emitStackSnapshot("backStackChanged")
@@ -78,7 +78,10 @@ internal class RuneNavigationContainer(
         runOnUiThread {
             if (runtimeRootView.parent !== this) {
                 (runtimeRootView.parent as? ViewGroup)?.removeView(runtimeRootView)
-                addView(runtimeRootView, 0)
+                // Ensure correct z-order: Host (bottom) -> Runtime (top)
+                removeView(hostLayout)
+                addView(hostLayout)
+                addView(runtimeRootView)
             }
             activity.setContentView(this)
             emitStackSnapshot("attached")
@@ -99,8 +102,8 @@ internal class RuneNavigationContainer(
         emitStackSnapshot("screensRegistered")
     }
 
-    fun reset(initialRouteName: String?) {
-        Log.d(TAG, "reset requested initialRoute=$initialRouteName")
+    fun reset(initialRouteName: String?, params: JSONObject? = null) {
+        Log.d(TAG, "reset requested initialRoute=$initialRouteName params=$params")
         runOnUiThread {
             clearBackStack()
             val preferred = initialRouteName?.takeIf { route ->
@@ -118,7 +121,7 @@ internal class RuneNavigationContainer(
                 Log.d(TAG, "reset target=$targetRoute maps to bottom sheet; skipping stack reset")
                 return@runOnUiThread
             }
-            push(targetRoute, null, animate = false)
+            push(targetRoute, params, animate = false)
         }
     }
 
@@ -142,11 +145,12 @@ internal class RuneNavigationContainer(
                 return@runOnUiThread
             }
             maybeEmitBeforeRemove {
-                val handled = if (fragmentManager().backStackEntryCount > 0) {
+                val count = fragmentManager().backStackEntryCount
+                val handled = if (count > 1) {
                     fragmentManager().popBackStackImmediate()
                     true
                 } else {
-                    activity.onBackPressedDispatcher.onBackPressed()
+                    activity.finish()
                     false
                 }
                 emitBackPressEvent("runtime", handled)
@@ -219,7 +223,8 @@ internal class RuneNavigationContainer(
                 val routes = state?.get("routes").asList().orEmpty()
                 val first = routes.firstOrNull().asMap()
                 val name = first?.get("name") as? String
-                reset(name)
+                val params = first?.get("params").asJSONObject()
+                reset(name, params)
             }
             "SET_PARAMS" -> {
                 Log.w(TAG, "SET_PARAMS not implemented on Android")
@@ -474,11 +479,11 @@ internal class RuneNavigationContainer(
         val wasActive = routerActive
         routerActive = active
         if (active) {
-            runtimeRootView.visibility = View.GONE
+            // runtimeRootView.visibility = View.GONE // Don't hide, let overlays show
             hostLayout.visibility = View.VISIBLE
         } else {
             hostLayout.visibility = View.GONE
-            runtimeRootView.visibility = View.VISIBLE
+            // runtimeRootView.visibility = View.VISIBLE
             if (wasActive) {
                 runOnUiThread {
                     clearBackStack()

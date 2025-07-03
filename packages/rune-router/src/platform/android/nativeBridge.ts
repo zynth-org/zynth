@@ -6,6 +6,7 @@ import type {
   TabBarOptions,
   TabOptions,
 } from "./types";
+import type { RouterAction } from "../ios/core/types";
 
 const MODULE_NAME = "RuneAndroidRouter";
 
@@ -116,4 +117,8 @@ export function setTabOptionsNative(name: string, options?: TabOptions) {
 
 export function notifyScreenRenderedNative(rootId: number) {
   return callNative("screenRendered", { rootId });
+}
+
+export function dispatchNavigationAction(action: RouterAction) {
+  return callNative("dispatch", { action });
 }

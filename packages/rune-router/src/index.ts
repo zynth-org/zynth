@@ -92,8 +92,8 @@ function createAndroidAdapter(): RouterRuntime {
     addBackHandler: createAndroidBackHandler(),
     useHeaderMetrics: createAndroidHeaderMetricsHook(),
     createTabBarMetrics: createAndroidTabBarMetricsFactory(),
-    handleLink: createAndroidHandleLink(),
-    getPathFromState: createAndroidGetPathFromState(),
+    handleLink: Android.handleLink as RouterRuntime["handleLink"],
+    getPathFromState: Android.getPathFromState as RouterRuntime["getPathFromState"],
     createRouter: Android.createRouter as unknown as RouterRuntime["createRouter"],
   };
 }
@@ -107,6 +107,7 @@ function createUnsupportedComponent<K extends keyof RouterRuntime>(
   }) as RouterRuntime[K];
 }
 
+/*
 function createAndroidHandleLink(): RouterRuntime["handleLink"] {
   return ((url: string) => {
     console.warn(`[RuneRouter] handleLink is not implemented on Android yet. Ignoring ${url}.`);
@@ -120,6 +121,7 @@ function createAndroidGetPathFromState(): RouterRuntime["getPathFromState"] {
     return "";
   }) as RouterRuntime["getPathFromState"];
 }
+*/
 
 function createAndroidBackHandler(): RouterRuntime["addBackHandler"] {
   const handlers: Array<() => boolean | void> = [];

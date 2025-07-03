@@ -10,10 +10,14 @@ import { registerScreensNative, resetStackNative } from "./nativeBridge";
 import type { NativeScreenRegistration } from "./nativeBridge";
 import "./nativeRenderer";
 import "./tabIconRenderer";
-import { onStackChanged } from "./events";
+import { onStackChanged, onRouterStateChanged, onNativeRestart } from "./events";
+import { setLinkingOptions } from "./linking";
+import type { LinkingOptions, NavigationState } from "../ios/core/types";
 
 export interface NavigationContainerProps {
   children?: any;
+  linking?: LinkingOptions;
+  onStateChange?: (state: NavigationState) => void;
 }
 
 export const NavigationContainer: ParentComponent<NavigationContainerProps> = (
@@ -24,6 +28,10 @@ export const NavigationContainer: ParentComponent<NavigationContainerProps> = (
   >();
   const [registryVersion, setRegistryVersion] = createSignal(0);
   let bootstrapped = false;
+
+  createEffect(() => {
+    setLinkingOptions(props.linking ?? null);
+  });
 
   createEffect(() => {
     const globalObject = globalThis as Record<string, any>;
@@ -43,9 +51,19 @@ export const NavigationContainer: ParentComponent<NavigationContainerProps> = (
       globalObject.__RUNE_NATIVE_ROUTER_STACK = payload;
       globalObject.__RUNE_NATIVE_ROUTER_CAN_GO_BACK = payload.canGoBack;
     });
+    const unsubscribeState = onRouterStateChanged((payload) => {
+      props.onStateChange?.(payload.state);
+    });
+    const unsubscribeRestart = onNativeRestart(() => {
+      console.log("[RuneAndroidRouter] Native restart detected, re-registering screens...");
+      bootstrapped = false;
+      setRegistryVersion((value) => value + 1);
+    });
     onCleanup(() => {
       unsubscribeRegistry();
       unsubscribeStacks();
+      unsubscribeState();
+      unsubscribeRestart();
     });
   });
 

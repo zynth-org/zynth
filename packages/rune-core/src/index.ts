@@ -1,3 +1,4 @@
+import "./polyfills/URLSearchParams";
 export * from "./renderer";
 export * from "./host/HostTypes";
 export { createIOSHost } from "./host/ios";

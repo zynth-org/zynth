@@ -65,44 +65,37 @@ The goal of this document is to capture how each package currently works, surfac
 
 | Capability | iOS router (`@rune/router`) | Android router (`@rune/android-router`) |
 | --- | --- | --- |
-| Navigation container props | `linking`, `persistence`, `onStateChange`, `enableDevtoolsTimeline`, safe-area warning | Only `children`; registry drives bootstrapping and `initialRouteName` is implicit |
-| Screen registration | `router.registerScreen` + `ScreenDescriptor` + memory policy (`keepAlive`, `unmountOnBlur`) | `registerScreenDefinition` + surface flag; no memory hints |
-| Navigation helpers | `navigate`, `push`, `pop`, `goBack`, `replace`, `reset`, `setParams`, `setOptions`, `tabBarMetrics` | `navigate`, `push` (same), `goBack`, `setOptions` (thin bridge) |
-| Hooks | `useNavigation`, `useRoute`, `useFocusEffect`, `useBeforeRemove`, `useNavigationEvents`, `RouteProvider` | Only `useNavigation` |
-| Events | Rich emitter (`ROUTER_EVENT_*`) including focus, transition progress, before remove | Only stack/back events (`rune.androidRouter.*`) |
-| Tabs | JS “keep alive” scenes + metrics + icon surfaces (supports `lazy`, `mountStrategy`) | Native tab navigator that receives descriptor list + icons; no JS keep-alive |
-| Bottom sheets | JS fallback + native surfaces + `enableDynamicSizing`, `allowDismissOnInteraction` | Native sheet options (`preferredDetent`, `enablePanningGesture`); content wrapped in transparent `View` |
-| Screen options | Full set of header/tab/gesture/presentation options (`core/types.ts`) | Subset: title, header colors, presentation, tab config, bottom sheet config (`types.ts`) |
-| Linking/persistence | Supported | Not implemented |
-| Tab icons | Surface + glyph helpers + `createTabIcon` utilities | Surface rendering + `registerTabIcon` |
+| Navigation container props | `linking`, `persistence`, `onStateChange`, `enableDevtoolsTimeline`, safe-area warning | `children` plus full `getState`/`dispatch` parity; safe-area warning still iOS-only |
+| Screen registration | `router.registerScreen` + `ScreenDescriptor` + memory policy (`keepAlive`, `unmountOnBlur`) | Registers screens with native; memory hints not wired |
+| Navigation helpers | `navigate`, `push`, `pop`, `goBack`, `replace`, `reset`, `setParams`, `setOptions`, `tabBarMetrics` | `navigate`, `push`, `goBack`, `setOptions`; `getState`/`dispatch` now available but `setParams`/`reset` still stubby in JS |
+| Hooks | `useNavigation`, `useRoute`, `useFocusEffect`, `useBeforeRemove`, `useNavigationEvents`, `RouteProvider` | All hooks wired; route context/providers wrapped in native renderer |
+| Events | Rich emitter (`ROUTER_EVENT_*`) including focus, transition progress, before remove | Focus/blur/back/state/tab metrics emitted; transition events still missing |
+| Tabs | JS “keep alive” scenes + metrics + icon surfaces | Native tab navigator; emits tab metrics; icon surfaces supported |
+| Bottom sheets | JS fallback + native surfaces + `enableDynamicSizing`, `allowDismissOnInteraction` | Native sheet options (`preferredDetent`, `enablePanningGesture`); renders JS content wrapped |
+| Screen options | Full set of header/tab/gesture/presentation options (`core/types.ts`) | Subset; `backgroundColor` added; parity for most headers/tabs; some iOS-only props remain |
+| Linking/persistence | Supported | Bridge now exposes state/dispatch; helpers still stubbed |
+| Tab icons | Surface + glyph helpers + `createTabIcon` utilities | Surface rendering + `registerTabIcon` (shared) |
 
 ## Unified API proposal
 
 The plan is to make `@rune/router` the canonical package, consume it from `apps/components`, and under the hood dispatch to the platform-specific implementations we already have.
 
 1. **Single public API.** Keep the exports in `packages/rune-router/src/index.ts` as the surface: `NavigationContainer`, `createRouter`, `Stack`, `Tabs`, `BottomSheet`, `useNavigation`, `useRoute`, `useBeforeRemove`, `addBackHandler`, `useHeaderMetrics`, `createTabBarMetrics`, `handleLink`, `getPathFromState`, and the type helpers from `core/types.ts`. This is the API apps already expect.  
-2. **Platform-specific implementations.** Introduce a `src/platform/ios` and `src/platform/android` folder (or similar) that each export their versions of `NavigationContainer`, `Stack`, `Tabs`, and `BottomSheet`. The shared entry points can branch on `Platform.OS` (see how `tabs/Tabs.tsx` already reads `Platform`/`OS`) and delegate to the right implementation while reusing the same TypeScript type definitions from `core/types.ts`.  
-3. **Shared context + types.** Keep the `core/` folder (context, actions, events, types, tab metrics) as the truth. Both platform implementations should depend on it so we stay in sync on `ScreenDescriptor`, `NavigationHelpers`, and `RouterAction`. Android’s registry logic can be refactored into a platform helper that still uses those types.  
-4. **Feature parity via intersection.** Reduce the public `ScreenOptions` / navigator props to the features both platforms support today (title, header tint, presentation, tabs, bottom sheet config). Extra iOS-only bits (header blur, right button, `userInterfaceStyle`, the full `linking` surface) should either be deferred or gated behind platform-specific props until Android can ship them. Tabs’ `lazy`/`mountStrategy` metadata should stay, but Android might ignore them for now (or we can plumbing them into the native host as future work).  
-5. **Event/bridge unification.** Reuse `core/events.ts`’s emitter so `useNavigationEvents`, `addBackHandler`, and listeners like `ROUTER_EVENT_TAB_SELECTED` work on both platforms. The Android native controller should emit the same event names (instead of `rune.androidRouter.*`), or we wrap it to re-emit the shared constants.  
-6. **Tab icon surfaces.** Share the `tabIconRegistry`, `tabIconRenderer`, and `tabIconWrapper` code between platforms (currently duplicated) so registering a custom icon factory works regardless of where the native host renders the icon surface.  
-7. **Navigation container responsibilities.** The unified `NavigationContainer` should still expose `linking`, `persistence`, `onStateChange`, and devtools props, but each platform implementation will decide how best to surface them: iOS can keep the existing `NativeRouterBridge`, while Android’s bridge must eventually honor `linking`/`persistence` by forwarding the data to the native host.
+2. **Platform-specific implementations.** Done. Entry points branch on `Platform.OS` and delegate to `src/platform/ios` or `src/platform/android`, sharing types/context.  
+3. **Shared context + types.** Done. Android uses the shared context types and now wraps screens with providers in the native renderer.  
+4. **Feature parity via intersection.** In progress. Android supports most header/tab options and backgroundColor; iOS-only props (header blur, right button, userInterfaceStyle) still pending a decision.  
+5. **Event/bridge unification.** In progress. Android now emits focus/blur/back/state/tab metrics via `ROUTER_EVENT_*`; transition events are still missing.  
+6. **Tab icon surfaces.** Done. Both platforms share the tab icon registry/renderer.  
+7. **Navigation container responsibilities.** Android bridge now exposes `getState`/`dispatch`; linking/persistence helpers still need wiring on the JS side.
 
-## Migration considerations
+## Current status (late November)
 
-1. **Copy the Android runtime into `@rune/router`.** As you plan to do, duplicate `packages/rune-android-router/src` under `packages/rune-router/src/platform/android` so the Android logic lives inside the unified package.  
-2. **Modularize the entry points.** Turn `Stack`, `Tabs`, `BottomSheet`, and `NavigationContainer` into thin wrappers that choose between `/platform/ios` and `/platform/android` implementations based on `Platform.OS`.  
-3. **Unify the type definitions.** Consolidate the shared `ScreenOptions`, `NavigationHelpers`, tab/bottom-sheet option types inside `core/types.ts` so both implementations depend on the same shape. Expand the Android types as needed (e.g., add glyph fields to `TabIconDescriptor`) instead of defining a separate `types.ts` file.  
-4. **Standardize the native bridge interface.** Both host controllers should implement `NativeRouterBridge`’s `dispatch`, `setOptions`, `registerScreens`, `configureTabs`, `selectTab`, and event listener hooks so the JS runtime can treat them uniformly. Android can install its bridge on `globalThis.__RUNE_ROUTER__` just like iOS does.  
-5. **Document platform-specific limitations.** Where we cannot implement parity yet (e.g., Android does not currently emit transition events or support `linking`), call those out cleanly in the docs and consider adding `Platform.OS === OS.ANDROID ? undefined : extraProp` in the TypeScript declarations until the bridge matures.  
-6. **Harmonize event names.** Emit the shared `ROUTER_EVENT_*` constants from Android (via `addRouterEventListener`) instead of the legacy `rune.androidRouter.*` strings, so hooks and integrations can be platform-agnostic.  
-7. **Align tabs/bottom sheets.** Share the `tabIcon` surface utilities and keep the `Tabs` component’s JS scene management for both platforms; Android’s native implementation can continue to drive the actual tab UI while still honoring the metadata from `Tabs.Screen`. Bottom sheets should also reuse the same `SceneContent` pattern so they pass `navigation`/`route` props to screen components in a consistent way.
-
-## Outstanding questions
-
-1. Should we keep separate navigator names (Stack/Tabs/BottomSheet) inside the unified `createRouter`, or give the Android runtime the same Flexible `Router.Stack.Screen` semantics that the iOS runtime currently uses?  
-2. Once Android starts emitting the richer `ROUTER_EVENT_*` payloads, can we remove the simplified `events.ts` emitter and rely solely on `core/events.ts`?  
-3. How do we want to signal “unsupported feature” in the public API? A runtime warning when a screen option is ignored, or TypeScript narrowing via `Platform.OS` unions?  
-4. Are there parts of the Android registry/bridge that can be simplified once `Stack.Screen` is unified (for example, the [`registerScreenDefinition`](packages/rune-android-router/src/registry.ts) + `NavigationContainer` loop)?
-
-Once we have consensus on the above and the Android files live inside `packages/rune-router`, we can start rewriting the platform wrappers and share the `core/` logic without duplicating documentation for two packages.
+- JS entry point unified; platform-specific implementations under `src/platform/ios` and `src/platform/android`.
+- Hooks: `useRoute`, `useFocusEffect`, `useBeforeRemove`, `useNavigationEvents` now work on Android; screens are wrapped with providers in the native renderer.
+- Bridge: Android exposes `getState`/`dispatch`; emits `ROUTER_EVENT_*` for focus/blur/back/state/tab metrics; tab backgroundColor supported; screen backgroundColor default added.
+- Tab metrics: emitted from native; JS metrics hooks can consume real values.
+- Remaining work:
+  - Emit transition events (start/end/progress) on Android.
+  - Complete before-remove round-trip: JS should respond to `requestId` to block/allow; native currently emits `beforeRemove` and accepts `resolveBeforeRemove`.
+  - Wire linking helpers (`handleLink`, `getPathFromState`) and `setParams`/`reset` on Android now that state/dispatch are present.
+  - Decide on iOS-only options (header blur, right button, userInterfaceStyle) and either gate or implement on Android.

@@ -22,17 +22,22 @@ object RuneAndroidRouterHost {
             Log.w(TAG, "bootstrap expected RuneRootView, got ${rootView::class.java.simpleName}")
             return false
         }
-        if (navigationContainer != null) {
-            Log.i(TAG, "RuneAndroidRouter already attached")
-            return true
-        }
 
+        // Always recreate container on bootstrap to handle Activity restarts
         val container = RuneNavigationContainer(activity, runtime, runeRoot)
         container.attachToActivity()
-        runtime.installModules(listOf(RuneAndroidRouterBridge(container)))
+        
+        // Bridge now looks up the container dynamically, so we can reinstall or reuse.
+        // Re-installing is safe (idempotent-ish in RuneRuntime usually).
+        runtime.installModules(listOf(RuneAndroidRouterBridge()))
+        
         flagNativeRouterActive(runtime)
         navigationContainer = container
         runtimeRef = runtime
+
+        // Notify JS that native router has restarted so it can re-register screens
+        runtime.emitEvent("rune.androidRouter.nativeRestart", emptyMap<String, Any>())
+        
         Log.i(TAG, "RuneAndroidRouter bootstrap complete")
         return true
     }

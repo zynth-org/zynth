@@ -32,3 +32,4 @@ export type {
   BottomSheetScreenOptions,
   BottomSheetSnapPoint,
 } from "./types";
+export { handleLink, getPathFromState } from "./linking";

@@ -4,11 +4,13 @@ import android.util.Log
 import com.rune.kit.runtime.RuneModule
 import org.json.JSONObject
 
-internal class RuneAndroidRouterBridge(
-    private val navigationContainer: RuneNavigationContainer,
-) : RuneModule {
+internal class RuneAndroidRouterBridge : RuneModule {
 
     override val name: String = "RuneAndroidRouter"
+
+    private val navigationContainer: RuneNavigationContainer
+        get() = RuneAndroidRouterHost.containerOrNull()
+            ?: error("RuneAndroidRouter not attached")
 
     override fun call(method: String, args: Array<Any?>): JSONObject {
         return when (method) {
