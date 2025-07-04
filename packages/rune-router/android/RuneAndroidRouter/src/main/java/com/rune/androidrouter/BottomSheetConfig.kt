@@ -20,6 +20,11 @@ data class RouterBottomSheetOptions(
     val overlayColor: Int?,
     val overlayOpacity: Float?,
     val dismissOnOverlayPress: Boolean?,
+    val enableDynamicSizing: Boolean?,
+    val enablePanningGesture: Boolean?,
+    val allowDismissOnInteraction: Boolean?,
+    val allowBackgroundInteraction: Boolean?,
+    val preferredDetent: Int?, // Using Int index for now, could be complex logic
 )
 
 sealed class RouterBottomSheetSnapPoint {
@@ -54,12 +59,23 @@ object RouterBottomSheetParser {
         val overlayColor = parseColor(map["overlayColor"])
         val overlayOpacity = map["overlayOpacity"].asFloat()
         val dismissOnOverlayPress = map["dismissOnOverlayPress"].asBoolean()
+        val enableDynamicSizing = map["enableDynamicSizing"].asBoolean()
+        val enablePanningGesture = map["enablePanningGesture"].asBoolean()
+        val allowDismissOnInteraction = map["allowDismissOnInteraction"].asBoolean()
+        val allowBackgroundInteraction = map["allowBackgroundInteraction"].asBoolean()
+        val preferredDetent = map["preferredDetent"].asInt()
+
         if (
             snapPoints == null &&
             initialIndex == null &&
             overlayColor == null &&
             overlayOpacity == null &&
-            dismissOnOverlayPress == null
+            dismissOnOverlayPress == null &&
+            enableDynamicSizing == null &&
+            enablePanningGesture == null &&
+            allowDismissOnInteraction == null &&
+            allowBackgroundInteraction == null &&
+            preferredDetent == null
         ) {
             return null
         }
@@ -69,6 +85,11 @@ object RouterBottomSheetParser {
             overlayColor = overlayColor,
             overlayOpacity = overlayOpacity,
             dismissOnOverlayPress = dismissOnOverlayPress,
+            enableDynamicSizing = enableDynamicSizing,
+            enablePanningGesture = enablePanningGesture,
+            allowDismissOnInteraction = allowDismissOnInteraction,
+            allowBackgroundInteraction = allowBackgroundInteraction,
+            preferredDetent = preferredDetent,
         )
     }
 

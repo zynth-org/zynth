@@ -133,9 +133,24 @@ internal class BottomSheetNavigatorHost(
             ?: DEFAULT_OVERLAY_COLOR
         val overlayOpacity = (screenOptions?.overlayOpacity ?: navigatorOptions?.overlayOpacity
             ?: DEFAULT_OVERLAY_OPACITY).coerceIn(0f, 1f)
+        
+        // Fallback logic:
+        // 1. dismissOnOverlayPress (explicit)
+        // 2. allowDismissOnInteraction (explicit)
+        // 3. DEFAULT (true)
         val dismissOnOverlayPress = screenOptions?.dismissOnOverlayPress
             ?: navigatorOptions?.dismissOnOverlayPress
+            ?: screenOptions?.allowDismissOnInteraction
+            ?: navigatorOptions?.allowDismissOnInteraction
             ?: DEFAULT_DISMISS_ON_OVERLAY_PRESS
+
+        val enableDynamicSizing = screenOptions?.enableDynamicSizing
+            ?: navigatorOptions?.enableDynamicSizing
+            ?: DEFAULT_ENABLE_DYNAMIC_SIZING
+
+        val enablePanningGesture = screenOptions?.enablePanningGesture
+            ?: navigatorOptions?.enablePanningGesture
+            ?: DEFAULT_ENABLE_PANNING_GESTURE
 
         return ResolvedSheetOptions(
             snapPoints = snapPoints,
@@ -143,6 +158,8 @@ internal class BottomSheetNavigatorHost(
             overlayColor = overlayColor,
             overlayOpacity = overlayOpacity,
             dismissOnOverlayPress = dismissOnOverlayPress,
+            enableDynamicSizing = enableDynamicSizing,
+            enablePanningGesture = enablePanningGesture,
         )
     }
 
@@ -281,6 +298,9 @@ internal class BottomSheetNavigatorHost(
         dialog.setOverlayColor(options.overlayColor)
         dialog.setOverlayOpacity(options.overlayOpacity)
         dialog.setDismissOnOverlayPress(options.dismissOnOverlayPress)
+        dialog.setDraggable(options.enablePanningGesture)
+        // enableDynamicSizing handling should be added to RuneBottomSheetDialog if supported
+        // For now, we just parsed them to ensure they are available in ResolvedSheetOptions
     }
 
     private fun handleBottomSheetStateChanged(newState: Int) {
@@ -416,6 +436,8 @@ internal class BottomSheetNavigatorHost(
         val overlayColor: Int,
         val overlayOpacity: Float,
         val dismissOnOverlayPress: Boolean,
+        val enableDynamicSizing: Boolean,
+        val enablePanningGesture: Boolean,
     )
 
     private inner class BottomSheetScene(
@@ -500,6 +522,8 @@ internal class BottomSheetNavigatorHost(
         private const val DEFAULT_INITIAL_SNAP_INDEX = 0
         private const val DEFAULT_OVERLAY_OPACITY = 0.58f
         private const val DEFAULT_DISMISS_ON_OVERLAY_PRESS = true
+        private const val DEFAULT_ENABLE_DYNAMIC_SIZING = false
+        private const val DEFAULT_ENABLE_PANNING_GESTURE = true
         private val DEFAULT_OVERLAY_COLOR = Color.BLACK
         private const val SCENE_FADE_DURATION_MS = 220L
         private const val SCENE_SLIDE_DISTANCE_DP = 24f

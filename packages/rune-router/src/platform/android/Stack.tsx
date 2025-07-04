@@ -25,6 +25,7 @@ const StackComponentImpl: StackComponent = (props) => {
 StackComponentImpl.Screen = (props) => {
   const controller = useNavigationController();
   createEffect(() => {
+    if (!props) return;
     const unregister = controller.registerScreen({
       name: props.name,
       component: props.component,

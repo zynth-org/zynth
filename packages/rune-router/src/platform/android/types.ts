@@ -46,6 +46,8 @@ export interface BottomSheetNavigatorOptions {
   overlayOpacity?: number;
   dismissOnOverlayPress?: boolean;
   enableDynamicSizing?: boolean;
+  allowDismissOnInteraction?: boolean;
+  allowBackgroundInteraction?: boolean;
 }
 
 export interface BottomSheetScreenOptions

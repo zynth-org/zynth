@@ -120,6 +120,7 @@ export function createBottomSheetNavigator(): BottomSheetNavigatorComponent {
     }) as ScreenProps<any>["component"];
 
     createEffect(() => {
+      if (!props) return;
       const unregister = controller.registerScreen({
         name: props.name,
         component: WrappedComponent,
@@ -130,6 +131,7 @@ export function createBottomSheetNavigator(): BottomSheetNavigatorComponent {
     });
 
     createEffect(() => {
+      if (!props) return;
       const unregister = navigator.registerScreen({
         name: props.name,
         options: props.options,

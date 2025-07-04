@@ -35,6 +35,7 @@ class RuneBottomSheetDialog(
   private var overlayColor: Int = Color.BLACK
   private var overlayOpacity: Float = 0.58f
   private var dismissOnOverlayPress: Boolean = true
+  private var isDraggable: Boolean = true
   private var snapPoints: List<BottomSheetSnapPoint> = DEFAULT_SNAP_POINTS
   private var resolvedSnapHeights: List<Int> = emptyList()
   private var screenHeight: Int = RuneBottomSheetUtils.screenHeight(context)
@@ -99,6 +100,11 @@ class RuneBottomSheetDialog(
   fun setDismissOnOverlayPress(enabled: Boolean) {
     dismissOnOverlayPress = enabled
     applyDismissBehavior()
+  }
+
+  fun setDraggable(enabled: Boolean) {
+    isDraggable = enabled
+    behavior?.isDraggable = enabled
   }
 
   fun present(index: Int, animated: Boolean = true) {
@@ -272,6 +278,7 @@ class RuneBottomSheetDialog(
     val expandedOffset = (screenHeight - maxHeight).coerceAtLeast(0)
     state.maxHeight = maxHeight
     state.isHideable = true
+    state.isDraggable = isDraggable
     applyExpandedOffset(expandedOffset)
     updateContentPadding()
     when (count) {

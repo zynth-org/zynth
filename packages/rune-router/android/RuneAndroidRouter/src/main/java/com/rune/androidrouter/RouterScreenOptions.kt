@@ -41,6 +41,7 @@ data class RouterScreenOptions(
     val headerTransparent: Boolean = false,
     val headerShadowVisible: Boolean = true,
     val presentation: RouterScreenPresentation = RouterScreenPresentation.PUSH,
+    val bottomSheet: RouterBottomSheetOptions? = null,
 ) {
     fun toBundle(): Bundle = Bundle().apply {
         putString(KEY_TITLE, title)
@@ -52,6 +53,8 @@ data class RouterScreenOptions(
         putBoolean(KEY_HEADER_TRANSPARENT, headerTransparent)
         putBoolean(KEY_HEADER_SHADOW_VISIBLE, headerShadowVisible)
         putString(KEY_PRESENTATION, presentation.value)
+        // BottomSheet options are not currently bundled as they are usually handled by the navigator config,
+        // but we could serialize them if needed for per-screen overrides in the future.
     }
 
     companion object {
@@ -79,6 +82,7 @@ data class RouterScreenOptions(
                 headerTransparent = bundle.getBoolean(KEY_HEADER_TRANSPARENT, false),
                 headerShadowVisible = bundle.getBoolean(KEY_HEADER_SHADOW_VISIBLE, true),
                 presentation = RouterScreenPresentation.from(bundle.getString(KEY_PRESENTATION)),
+                // bottomSheet is not restored from bundle yet
             )
         }
 
@@ -92,6 +96,7 @@ data class RouterScreenOptions(
             val headerShadowVisible = parseBoolean(map["headerShadowVisible"], true)
             val tint = parseColor(map["headerTintColor"])
             val background = parseColor(map["headerBackgroundColor"])
+            val bottomSheet = RouterBottomSheetParser.optionsFromMap(map["bottomSheet"].asMap())
             return RouterScreenOptions(
                 title = title,
                 subtitle = subtitle,
@@ -104,6 +109,7 @@ data class RouterScreenOptions(
                 presentation = RouterScreenPresentation.from(
                     map["presentation"]?.toString()
                 ),
+                bottomSheet = bottomSheet,
             )
         }
 

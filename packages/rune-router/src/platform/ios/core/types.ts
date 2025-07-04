@@ -210,6 +210,7 @@ export type BottomSheetScreenProps<
   name: RouteName;
   component: Component;
   options?: ScreenOptionsInput;
+  sheetOptions?: BottomSheetScreenOptions;
   initialParams?: ParamList[RouteName];
 };
 
