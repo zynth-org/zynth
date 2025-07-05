@@ -9,6 +9,7 @@ import android.view.ViewGroup
 import android.view.Gravity
 import android.widget.FrameLayout
 import android.graphics.Color
+import androidx.activity.OnBackPressedCallback
 import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.FragmentManager
 import androidx.fragment.app.FragmentTransaction
@@ -84,6 +85,14 @@ internal class RuneNavigationContainer(
                 addView(runtimeRootView)
             }
             activity.setContentView(this)
+            
+            activity.onBackPressedDispatcher.addCallback(activity, object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    Log.d(TAG, "System back press intercepted")
+                    goBack()
+                }
+            })
+
             emitStackSnapshot("attached")
         }
     }
@@ -146,6 +155,7 @@ internal class RuneNavigationContainer(
             }
             maybeEmitBeforeRemove {
                 val count = fragmentManager().backStackEntryCount
+                Log.d(TAG, "goBack allowed. stackCount=$count")
                 val handled = if (count > 1) {
                     fragmentManager().popBackStackImmediate()
                     true
@@ -425,6 +435,9 @@ internal class RuneNavigationContainer(
         val topFragment = topScreenFragment() ?: return onAllowed()
         val requestId = java.util.UUID.randomUUID().toString()
         beforeRemoveRequests[requestId] = onAllowed
+        
+        Log.d(TAG, "maybeEmitBeforeRemove requestId=$requestId source=${topFragment.routeName}")
+        
         val action = mapOf(
             "type" to "POP",
             "payload" to mapOf("count" to 1),
@@ -440,15 +453,24 @@ internal class RuneNavigationContainer(
         )
         // Fallback: if JS never responds, allow after a delay to avoid deadlocks.
         handler.postDelayed({
-            beforeRemoveRequests.remove(requestId)?.invoke()
+            if (beforeRemoveRequests.containsKey(requestId)) {
+                Log.w(TAG, "beforeRemove timeout for requestId=$requestId; proceeding")
+                beforeRemoveRequests.remove(requestId)?.invoke()
+            }
         }, 500)
     }
 
     fun resolveBeforeRemove(requestId: String, cancelled: Boolean) {
+        Log.d(TAG, "resolveBeforeRemove requestId=$requestId cancelled=$cancelled")
         val resolver = beforeRemoveRequests.remove(requestId)
         resolver?.let { resolve ->
             if (!cancelled) {
-                resolve()
+                runOnUiThread {
+                    Log.d(TAG, "Executing resolved callback for requestId=$requestId on UI thread")
+                    resolve()
+                }
+            } else {
+                Log.d(TAG, "Cancelled beforeRemove requestId=$requestId")
             }
         }
     }

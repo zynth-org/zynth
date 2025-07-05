@@ -16,7 +16,16 @@ import type {
   RouteContextValueInternal,
   RouteParamList,
 } from "../ios/core/types";
-import { onBackPress } from "./events";
+import {
+  onBeforeRemove,
+  onTransitionStart,
+  onTransitionEnd,
+  onTransitionProgress,
+  type TransitionStartPayload,
+  type TransitionEndPayload,
+  type TransitionProgressPayload,
+} from "./events";
+import { resolveBeforeRemoveNative } from "./nativeBridge";
 import {
   addRouterEventListener,
   ROUTER_EVENT_FOCUS,
@@ -67,18 +76,26 @@ function addFocusListener(key: string, handler: FocusChangeHandler): () => void 
 }
 
 const beforeRemoveHandlers = new Map<string, Set<BeforeRemoveHandler>>();
-let unsubscribeBack: (() => void) | null = null;
+let unsubscribeBeforeRemove: (() => void) | null = null;
 
-function ensureBackSubscription(): void {
-  if (unsubscribeBack) return;
-  unsubscribeBack = onBackPress(() => {
-    if (!currentFocused) return;
-    const handlers = beforeRemoveHandlers.get(currentFocused);
-    if (!handlers || handlers.size === 0) return;
+function ensureBeforeRemoveSubscription(): void {
+  if (unsubscribeBeforeRemove) return;
+  unsubscribeBeforeRemove = onBeforeRemove((payload) => {
+    console.log(
+      `[RuneRouter] onBeforeRemove received for key=${payload.key}, requestId=${payload.requestId}`
+    );
+    const handlers = beforeRemoveHandlers.get(payload.key);
+    if (!handlers || handlers.size === 0) {
+      console.log(
+        `[RuneRouter] No handlers for key=${payload.key}. Allowing navigation.`
+      );
+      resolveBeforeRemoveNative(payload.requestId, false);
+      return;
+    }
 
     const event: BeforeRemoveEvent = {
-      action: { type: "POP", payload: { count: 1 } } as any,
-      targetKey: currentFocused,
+      action: payload.action as any,
+      targetKey: payload.key,
       data: undefined,
       defaultPrevented: false,
       preventDefault() {
@@ -86,6 +103,9 @@ function ensureBackSubscription(): void {
       },
     };
 
+    console.log(
+      `[RuneRouter] Executing ${handlers.size} beforeRemove handlers for key=${payload.key}`
+    );
     for (const handler of handlers) {
       try {
         handler(event);
@@ -93,6 +113,11 @@ function ensureBackSubscription(): void {
         console.error("[RuneRouter] beforeRemove handler threw", error);
       }
     }
+
+    console.log(
+      `[RuneRouter] Resolving beforeRemove for requestId=${payload.requestId}. prevented=${event.defaultPrevented}`
+    );
+    resolveBeforeRemoveNative(payload.requestId, event.defaultPrevented);
   });
 }
 
@@ -100,7 +125,7 @@ function addBeforeRemoveListener(
   key: string,
   handler: BeforeRemoveHandler
 ): () => void {
-  ensureBackSubscription();
+  ensureBeforeRemoveSubscription();
   let listeners = beforeRemoveHandlers.get(key);
   if (!listeners) {
     listeners = new Set();
@@ -234,6 +259,9 @@ export function useBeforeRemove(
 export function useNavigationEvents(handlers: {
   focus?: (payload: { key: string }) => void;
   blur?: (payload: { key: string }) => void;
+  transitionStart?: (payload: TransitionStartPayload) => void;
+  transitionEnd?: (payload: TransitionEndPayload) => void;
+  transitionProgress?: (payload: TransitionProgressPayload) => void;
 }): void {
   createEffect(() => {
     const subs: Array<() => void> = [];
@@ -242,6 +270,15 @@ export function useNavigationEvents(handlers: {
     }
     if (handlers.blur) {
       subs.push(addRouterEventListener(ROUTER_EVENT_BLUR, handlers.blur));
+    }
+    if (handlers.transitionStart) {
+      subs.push(onTransitionStart(handlers.transitionStart));
+    }
+    if (handlers.transitionEnd) {
+      subs.push(onTransitionEnd(handlers.transitionEnd));
+    }
+    if (handlers.transitionProgress) {
+      subs.push(onTransitionProgress(handlers.transitionProgress));
     }
     onCleanup(() => subs.forEach((off) => off()));
   });

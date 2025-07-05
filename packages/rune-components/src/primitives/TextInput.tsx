@@ -208,13 +208,13 @@ export const TextInput: Component<TextInputProps> = (props) => {
     () => props.secureTextEntry !== undefined
   );
 
-  createEffect(() => {
-    if (isPotentiallySecure() && props.multiline) {
-      console.warn(
-        "[Rune] The `secureTextEntry` prop is not compatible with `multiline`. `multiline` will be ignored."
-      );
-    }
-  });
+  // createEffect(() => {
+  //   if (isPotentiallySecure() && props.multiline) {
+  //     console.warn(
+  //       "[Rune] The `secureTextEntry` prop is not compatible with `multiline`. `multiline` will be ignored."
+  //     );
+  //   }
+  // });
 
   const handleChange = (event: NativeTextChangeEvent) => {
     props.onChange?.(event);
@@ -287,17 +287,17 @@ export const TextInput: Component<TextInputProps> = (props) => {
     if (!node || !ctrl?.__attachInternal) return;
 
     const nodeId = (node as any)?.id;
-    console.log("[TextInput] attach controller bridge", { nodeId });
+    // console.log("[TextInput] attach controller bridge", { nodeId });
     const bridge: TextControllerBridge = {
       notifyNativeValue(value) {
-        console.log("[TextInput] bridge notifyNativeValue", { nodeId, value });
+        // console.log("[TextInput] bridge notifyNativeValue", { nodeId, value });
         setProperty(node, "value", value);
       },
       notifyNativeSelection(sel) {
-        console.log("[TextInput] bridge notifyNativeSelection", {
-          nodeId,
-          selection: sel,
-        });
+        // console.log("[TextInput] bridge notifyNativeSelection", {
+        //   nodeId,
+        //   selection: sel,
+        // });
         setProperty(node, "selection", sel);
       },
       notifyEditing() {
@@ -317,7 +317,7 @@ export const TextInput: Component<TextInputProps> = (props) => {
     const nodeId = (node as any)?.id;
     const value = props.value;
     if (value !== undefined) {
-      console.log("[TextInput] controlled value update", { nodeId, value });
+      // console.log("[TextInput] controlled value update", { nodeId, value });
       setProperty(node, "value", value);
     }
   });
@@ -327,7 +327,7 @@ export const TextInput: Component<TextInputProps> = (props) => {
     if (!node) return;
     const nodeId = (node as any)?.id;
 
-    console.log("[TextInput] updating static props", { nodeId });
+    // console.log("[TextInput] updating static props", { nodeId });
     setProperty(
       node,
       "multiline",
@@ -380,10 +380,10 @@ export const TextInput: Component<TextInputProps> = (props) => {
         if (isPotentiallySecure() && name === "multiline") continue;
         if (isPotentiallySecure() && name === "numberOfLines") continue;
 
-        console.log(
-          "[TextInput] set optional prop",
-          JSON.stringify({ nodeId, name, value })
-        );
+        // console.log(
+        //   "[TextInput] set optional prop",
+        //   JSON.stringify({ nodeId, name, value })
+        // );
         setProperty(node, name, value);
       }
     }

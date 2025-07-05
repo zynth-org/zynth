@@ -14,11 +14,11 @@ High-level tracker for bringing the unified router surface to feature parity acr
 ## Native bridge gaps (Android)
 
 - [x] **Event stream (focus/blur/back/state/tab metrics)** – Emit the shared `ROUTER_EVENT_*` events so the JS hooks stay platform-agnostic.
-- [ ] **Transitions / before-remove** – Fill in transition events and complete the before-remove request/response loop with JS.
-- [ ] **Before-remove guards** – Support `RouterContext`’s `beforeRemove` pipeline so Android can block navigation like iOS does.
+- [x] **Transitions / before-remove** – Fill in transition events and complete the before-remove request/response loop with JS.
+- [x] **Before-remove guards** – Support `RouterContext`’s `beforeRemove` pipeline so Android can block navigation like iOS does.
 - [x] **Tab/header metrics** – Replace the hard-coded fallbacks with actual measurements emitted from native (`ROUTER_EVENT_TAB_METRICS`) and read via `useHeaderMetrics`.
 - [x] **Tabs + icons** – Reuse the shared `tabIconRegistry`/renderer surface so dynamic icons behave the same way on both platforms; ensure tab registration populates glyph data (`glyphFontFamily`, `glyphFontSize`, etc.).
-- [ ] **Bottom-sheet descriptors** – Confirm Android registers sheets using the same descriptor format (options + snap points) so `ScreenOptions.bottomSheet` stays consistent.
+- [x] **Bottom-sheet descriptors** – Confirm Android registers sheets using the same descriptor format (options + snap points) so `ScreenOptions.bottomSheet` stays consistent.
 
 ## API trim/removal candidates
 

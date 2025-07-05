@@ -15,10 +15,10 @@ This document outlines the development plan to evolve Rune into a powerful, AI-n
 - [✅] **`@rune/components` Package:** Create a new package to house standard UI components.
 - [✅] **Relocate Primitives:** Move `View` and `Text` from `@rune/core` to this package.
 - [✅] **`Image`:** Implement a component for local and remote images.
-- [✅] **`TextInput`:** Implement a component for text input.
+- [✅/⚠️] **`TextInput`:** Implement a component for text input, android have some issues we need to address.
   - Fix toggle blink on iOS
 - [✅] **`ScrollView`:** Implement a scrolling container.
-- [✅] **`Button`:** Implement a basic, cross-platform button.
+- [✅/⚠️] **`Button`:** Implement a basic, cross-platform button, need native looking on both platforms.
 - [✅] **`Pressable`:** Implement a component to detect detailed press interactions.
 - [✅] **`FlatList`:** Implement a performant, virtualized list component
   Limitations:

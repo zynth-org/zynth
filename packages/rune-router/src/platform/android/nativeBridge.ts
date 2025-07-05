@@ -122,3 +122,7 @@ export function notifyScreenRenderedNative(rootId: number) {
 export function dispatchNavigationAction(action: RouterAction) {
   return callNative("dispatch", { action });
 }
+
+export function resolveBeforeRemoveNative(requestId: string, cancelled: boolean) {
+  return callNative("resolveBeforeRemove", { requestId, cancelled });
+}
