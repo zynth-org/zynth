@@ -1,10 +1,13 @@
 #if __has_include(<RuneKit/RuneKit.h>)
 #import <RuneKit/RuneKit.h>
+#import <RuneKit/SNHexColor.h>
 #else
 #import "RuneKit.h"
 #import "RuneComponentAPI.h"
 #import "SNUIManager.h"
 #import "SNNode.h"
+#import "SNHexColor.h"
+#import "RuneViewHost.h"
 #endif
 
 #import "RuneButtonView.h"
@@ -31,6 +34,45 @@ static BOOL RuneButtonHandleSetProp(SNUIManager *manager,
     return YES;
   }
 
+  if ([name isEqualToString:@"variant"]) {
+    NSString *variant = [value isKindOfClass:[NSString class]] ? (NSString *)value : nil;
+    [button rune_setVariant:variant];
+    return YES;
+  }
+  
+  if ([name isEqualToString:@"role"]) {
+    NSString *role = [value isKindOfClass:[NSString class]] ? (NSString *)value : nil;
+    [button rune_setRole:role];
+    return YES;
+  }
+  
+  if ([name isEqualToString:@"size"]) {
+    NSString *size = [value isKindOfClass:[NSString class]] ? (NSString *)value : nil;
+    [button rune_setSize:size];
+    return YES;
+  }
+  
+  if ([name isEqualToString:@"title"]) {
+    NSString *title = [value isKindOfClass:[NSString class]] ? (NSString *)value : nil;
+    [button rune_setTitle:title];
+    return YES;
+  }
+  
+  if ([name isEqualToString:@"baseColor"]) {
+    UIColor *color = nil;
+    if ([value isKindOfClass:[NSString class]]) {
+      color = SNColorFromHex((NSString *)value);
+    }
+    [button rune_setBaseColor:color];
+    return YES;
+  }
+  
+  if ([name isEqualToString:@"pointerEvents"]) {
+    NSString *mode = [value isKindOfClass:[NSString class]] ? (NSString *)value : nil;
+    button.pointerMode = RunePointerEventsFromString(mode);
+    return YES;
+  }
+
   if ([name isEqualToString:@"pressEffect"]) {
     NSString *effect = [value isKindOfClass:[NSString class]] ? (NSString *)value : nil;
     [button rune_setPressEffect:effect];
@@ -51,6 +93,12 @@ static BOOL RuneButtonHandleSetProp(SNUIManager *manager,
 
   if ([name isEqualToString:@"minimumTouchSize"]) {
     [button rune_setMinimumTouchSize:value];
+    return YES;
+  }
+
+  if ([name isEqualToString:@"rounded"]) {
+    NSString *rounded = [value isKindOfClass:[NSString class]] ? (NSString *)value : nil;
+    [button rune_setRounded:rounded];
     return YES;
   }
 
@@ -114,7 +162,7 @@ static BOOL RuneButtonHandleSetHandler(SNUIManager *manager,
 + (void)load {
   static dispatch_once_t onceToken;
   dispatch_once(&onceToken, ^{
-    RuneComponentDescriptor *descriptor = [[RuneComponentDescriptor alloc] initWithType:@"Button"];
+    RuneComponentDescriptor *descriptor = [[RuneComponentDescriptor alloc] initWithType:@"button"];
     descriptor.createView = ^UIView *(SNUIManager *manager, NSString *type) {
       RuneButtonView *button = [RuneButtonView new];
       return button;
@@ -138,45 +186,45 @@ static BOOL RuneButtonHandleSetHandler(SNUIManager *manager,
 #pragma mark - RuneButtonViewDelegate
 
 - (void)buttonViewDidPressIn:(RuneButtonView *)button {
-  SNNode *node = self.nodes[@(button.nodeId)];
+  SNNode *node = [self rune_nodeForId:@(button.nodeId)];
   if (!node) return;
   [self rune_dispatchEvent:@"onPressIn" payload:@{} toNode:node];
 }
 
 - (void)buttonViewDidPressOut:(RuneButtonView *)button cancelled:(BOOL)cancelled {
-  SNNode *node = self.nodes[@(button.nodeId)];
+  SNNode *node = [self rune_nodeForId:@(button.nodeId)];
   if (!node) return;
   NSDictionary *payload = @{@"cancelled" : @(cancelled)};
   [self rune_dispatchEvent:@"onPressOut" payload:payload toNode:node];
 }
 
 - (void)buttonViewDidActivate:(RuneButtonView *)button {
-  SNNode *node = self.nodes[@(button.nodeId)];
+  SNNode *node = [self rune_nodeForId:@(button.nodeId)];
   if (!node) return;
   [self rune_dispatchEvent:@"onPress" payload:@{} toNode:node];
 }
 
 - (void)buttonView:(RuneButtonView *)button didLongPressWithDuration:(CFTimeInterval)duration {
-  SNNode *node = self.nodes[@(button.nodeId)];
+  SNNode *node = [self rune_nodeForId:@(button.nodeId)];
   if (!node) return;
   NSDictionary *payload = @{@"durationMs" : @(duration)};
   [self rune_dispatchEvent:@"onLongPress" payload:payload toNode:node];
 }
 
 - (void)buttonViewDidFocus:(RuneButtonView *)button {
-  SNNode *node = self.nodes[@(button.nodeId)];
+  SNNode *node = [self rune_nodeForId:@(button.nodeId)];
   if (!node) return;
   [self rune_dispatchEvent:@"onFocus" payload:@{} toNode:node];
 }
 
 - (void)buttonViewDidBlur:(RuneButtonView *)button {
-  SNNode *node = self.nodes[@(button.nodeId)];
+  SNNode *node = [self rune_nodeForId:@(button.nodeId)];
   if (!node) return;
   [self rune_dispatchEvent:@"onBlur" payload:@{} toNode:node];
 }
 
 - (void)buttonView:(RuneButtonView *)button didEmitKeyEvent:(NSString *)phase key:(NSString *)key {
-  SNNode *node = self.nodes[@(button.nodeId)];
+  SNNode *node = [self rune_nodeForId:@(button.nodeId)];
   if (!node) return;
   NSDictionary *payload = key.length ? @{@"key" : key} : @{};
   [self rune_dispatchEvent:phase payload:payload toNode:node];

@@ -1,33 +1,49 @@
 #import "RuneButtonView.h"
-
-#import <QuartzCore/QuartzCore.h>
-
 #import "SNUIManager+Internal.h"
+#import <QuartzCore/QuartzCore.h>
 
 static const CFTimeInterval kRuneButtonLongPressDuration = 0.5;
 
 @interface RuneButtonView ()
 @property(nonatomic, weak, nullable) SNUIManager *manager;
 @property(nonatomic, weak, nullable) SNNode *node;
+
+// State
 @property(nonatomic, assign) BOOL runeDisabled;
 @property(nonatomic, assign) BOOL runeLoading;
-@property(nonatomic, assign) BOOL pressed;
-@property(nonatomic, assign) BOOL longPressFired;
+@property(nonatomic, assign) NSInteger lastCommandSeq;
+
+// Configuration Props
+@property(nonatomic, copy) NSString *variant;
+@property(nonatomic, copy) NSString *runeRole;
+@property(nonatomic, copy) NSString *size;
+@property(nonatomic, copy) NSString *buttonTitle;
+@property(nonatomic, copy) NSString *rounded;
+@property(nonatomic, strong, nullable) UIImage *buttonImage;
+@property(nonatomic, strong, nullable) UIColor *baseColor;
+
+// Interaction Props
+@property(nonatomic, copy) NSString *pressEffect;
+@property(nonatomic, copy) NSString *hapticsMode;
+@property(nonatomic, assign) BOOL hasLongPressHandler;
 @property(nonatomic, assign) BOOL preventFocusOnPress;
 @property(nonatomic, assign) CGFloat pressRetentionOffset;
 @property(nonatomic, assign) UIEdgeInsets hitSlopInsets;
 @property(nonatomic, assign) CGSize minimumTouchSize;
+
+// Internal State for Long Press / Interaction
 @property(nonatomic, strong, nullable) NSTimer *longPressTimer;
 @property(nonatomic, assign) CFTimeInterval pressStartTimestamp;
-@property(nonatomic, assign) CGPoint initialTouchPoint;
-@property(nonatomic, assign) NSInteger lastCommandSeq;
-@property(nonatomic, copy) NSString *pressEffect;
-@property(nonatomic, copy) NSString *hapticsMode;
-@property(nonatomic, assign) BOOL hasLongPressHandler;
-@property(nonatomic, assign) BOOL isHighlightActive;
+@property(nonatomic, assign) BOOL longPressFired;
+
 @end
 
 @implementation RuneButtonView
+
+- (BOOL)isSystemSubview:(UIView *)subview {
+  NSString *name = NSStringFromClass([subview class]);
+  return [name hasPrefix:@"_UI"] || [name containsString:@"UIButtonConfiguration"];
+}
 
 - (instancetype)init {
   return [self initWithFrame:CGRectZero];
@@ -35,25 +51,35 @@ static const CFTimeInterval kRuneButtonLongPressDuration = 0.5;
 
 - (instancetype)initWithFrame:(CGRect)frame {
   if (self = [super initWithFrame:frame]) {
+    // Default values
+    _variant = @"plain";
+    _runeRole = @"normal";
+    _size = @"medium";
+    _rounded = @"md";
     _pressRetentionOffset = 14.0;
     _hitSlopInsets = UIEdgeInsetsZero;
     _minimumTouchSize = CGSizeMake(44.0, 44.0);
     _pressEffect = @"highlight";
     _hapticsMode = @"none";
     _lastCommandSeq = -1;
-    self.exclusiveTouch = YES;
-    self.multipleTouchEnabled = NO;
-    self.layer.opacity = 1.0;
+    _pointerMode = RunePointerEventsAuto;
+    
+    // Setup target-actions for touch events
+    [self addTarget:self action:@selector(handleTouchDown) forControlEvents:UIControlEventTouchDown];
+    [self addTarget:self action:@selector(handleTouchUp) forControlEvents:UIControlEventTouchUpInside];
+    [self addTarget:self action:@selector(handleTouchCancel) forControlEvents:UIControlEventTouchUpOutside | UIControlEventTouchCancel];
+    [self addTarget:self action:@selector(handleTouchDragExit) forControlEvents:UIControlEventTouchDragExit];
+    
+    // Initial Configuration
+    if (@available(iOS 15.0, *)) {
+      [self updateNativeConfiguration];
+    }
   }
   return self;
 }
 
 - (void)dealloc {
-  [self.longPressTimer invalidate];
-}
-
-- (BOOL)canBecomeFirstResponder {
-  return YES;
+  [_longPressTimer invalidate];
 }
 
 - (void)attachToManager:(SNUIManager *)manager node:(SNNode *)node {
@@ -62,88 +88,281 @@ static const CFTimeInterval kRuneButtonLongPressDuration = 0.5;
   self.nodeId = node ? node.nid : -1;
 }
 
-- (BOOL)shouldHandleTouch {
-  if (self.runeDisabled || self.runeLoading) return NO;
-  return self.userInteractionEnabled;
+#pragma mark - Native Configuration (iOS 15+)
+
+- (void)updateNativeConfiguration {
+  if (!@available(iOS 15.0, *)) {
+    return;
+  }
+
+  UIButtonConfiguration *config = nil;
+  BOOL usesNativeContent = (self.buttonTitle != nil) || (self.buttonImage != nil);
+  
+  // 1. Variant
+  if ([self.variant isEqualToString:@"filled"]) {
+    config = [UIButtonConfiguration filledButtonConfiguration];
+  } else if ([self.variant isEqualToString:@"tinted"]) {
+    config = [UIButtonConfiguration tintedButtonConfiguration];
+  } else if ([self.variant isEqualToString:@"gray"]) {
+    config = [UIButtonConfiguration grayButtonConfiguration];
+  } else {
+    config = [UIButtonConfiguration plainButtonConfiguration];
+  }
+
+  // 2. Size
+  if ([self.size isEqualToString:@"mini"]) {
+    config.buttonSize = UIButtonConfigurationSizeMini;
+  } else if ([self.size isEqualToString:@"small"]) {
+    config.buttonSize = UIButtonConfigurationSizeSmall;
+  } else if ([self.size isEqualToString:@"large"]) {
+    config.buttonSize = UIButtonConfigurationSizeLarge;
+  } else {
+    config.buttonSize = UIButtonConfigurationSizeMedium;
+  }
+
+  // 3. Base Color
+  if (self.baseColor) {
+    if ([self.variant isEqualToString:@"filled"]) {
+      config.baseBackgroundColor = self.baseColor;
+      config.baseForegroundColor = nil;
+    } else {
+      config.baseForegroundColor = self.baseColor;
+      config.baseBackgroundColor = nil; 
+    }
+  }
+
+  // 4. Title & Image
+  if (self.buttonTitle) {
+    config.title = self.buttonTitle;
+  } else {
+    config.title = nil;
+  }
+  
+  if (self.buttonImage) {
+    config.image = self.buttonImage;
+  } else {
+    config.image = nil;
+  }
+
+  if (usesNativeContent) {
+    config.titleAlignment = UIButtonConfigurationTitleAlignmentCenter;
+    config.imagePadding = 6.0;
+  }
+
+  // If we're rendering custom content (no native title/image), let our subviews
+  // own the entire content area.
+  if (!usesNativeContent) {
+    config.contentInsets = NSDirectionalEdgeInsetsZero;
+  }
+  
+  // 5. Loading State
+  // Only show native spinner when using native title/image; otherwise it interferes with custom layout.
+  config.showsActivityIndicator = self.runeLoading && usesNativeContent;
+
+  // 6. Corner Style
+  if ([self.rounded isEqualToString:@"pill"] || [self.rounded isEqualToString:@"full"]) {
+    config.cornerStyle = UIButtonConfigurationCornerStyleCapsule;
+  } else if ([self.rounded isEqualToString:@"none"]) {
+    config.cornerStyle = UIButtonConfigurationCornerStyleFixed;
+    if (config.background) {
+      config.background.cornerRadius = 0.0;
+    }
+  } else {
+    // Default to system-defined dynamic corner style (available iOS 15+)
+    config.cornerStyle = UIButtonConfigurationCornerStyleDynamic;
+  }
+
+  // Apply Configuration
+  self.configuration = config;
+  if (usesNativeContent) {
+    self.contentHorizontalAlignment = UIControlContentHorizontalAlignmentCenter;
+    self.contentVerticalAlignment = UIControlContentVerticalAlignmentCenter;
+  } else {
+    self.contentHorizontalAlignment = UIControlContentHorizontalAlignmentFill;
+    self.contentVerticalAlignment = UIControlContentVerticalAlignmentFill;
+  }
+  [self bringCustomContentToFrontIfNeeded];
+  
+  // Sync legacy properties for compatibility and robust rendering
+  [super setTitle:self.buttonTitle forState:UIControlStateNormal];
+  [super setImage:self.buttonImage forState:UIControlStateNormal];
+  
+  // Role
+  if ([self.runeRole isEqualToString:@"destructive"]) {
+    self.role = UIButtonRoleDestructive;
+    self.tintColor = [UIColor systemRedColor];
+  } else if ([self.runeRole isEqualToString:@"cancel"]) {
+    self.role = UIButtonRoleCancel;
+  } else {
+    self.role = UIButtonRoleNormal;
+  }
+
+  // Disabled State
+  self.enabled = !self.runeDisabled;
+  
+  [self setNeedsLayout];
 }
 
-- (void)startLongPressTimer {
-  if (!self.hasLongPressHandler) return;
-  [self.longPressTimer invalidate];
+#pragma mark - Prop Setters
+
+- (void)rune_setVariant:(NSString *)variant {
+  _variant = variant ?: @"plain";
+  [self updateNativeConfiguration];
+}
+
+- (void)rune_setRole:(NSString *)role {
+  _runeRole = role ?: @"normal";
+  [self updateNativeConfiguration];
+}
+
+- (void)rune_setSize:(NSString *)size {
+  _size = size ?: @"medium";
+  [self updateNativeConfiguration];
+}
+
+- (void)rune_setTitle:(NSString *)title {
+  _buttonTitle = title;
+  [self updateNativeConfiguration];
+}
+
+- (void)rune_setBaseColor:(UIColor *)color {
+  _baseColor = color;
+  [self updateNativeConfiguration];
+}
+
+- (void)rune_setImage:(UIImage *)image {
+  _buttonImage = image;
+  [self updateNativeConfiguration];
+}
+
+- (void)rune_setRounded:(NSString *)rounded {
+  _rounded = rounded ?: @"md";
+  [self updateNativeConfiguration];
+}
+
+- (void)rune_setDisabled:(BOOL)disabled {
+  _runeDisabled = disabled;
+  self.enabled = !disabled;
+}
+
+- (void)rune_setLoading:(BOOL)loading {
+  _runeLoading = loading;
+  [self updateNativeConfiguration];
+}
+
+- (void)rune_setPressEffect:(NSString *)effect {
+  _pressEffect = effect ?: @"highlight";
+}
+
+- (void)rune_setPressRetentionOffset:(NSNumber *)offset {
+  if (!offset || [offset isKindOfClass:[NSNull class]]) return;
+  _pressRetentionOffset = MAX(0.0, offset.doubleValue);
+}
+
+- (void)rune_setHitSlop:(id)hitSlop {
+  if (!hitSlop || [hitSlop isKindOfClass:[NSNull class]]) {
+    _hitSlopInsets = UIEdgeInsetsZero;
+    return;
+  }
+  if ([hitSlop isKindOfClass:[NSNumber class]]) {
+    CGFloat inset = ((NSNumber *)hitSlop).doubleValue;
+    _hitSlopInsets = UIEdgeInsetsMake(inset, inset, inset, inset);
+    return;
+  }
+  if ([hitSlop isKindOfClass:[NSDictionary class]]) {
+    NSDictionary *dict = (NSDictionary *)hitSlop;
+    CGFloat top = [dict[@"top"] doubleValue];
+    CGFloat left = [dict[@"left"] doubleValue];
+    CGFloat bottom = [dict[@"bottom"] doubleValue];
+    CGFloat right = [dict[@"right"] doubleValue];
+    _hitSlopInsets = UIEdgeInsetsMake(top, left, bottom, right);
+  }
+}
+
+- (void)rune_setMinimumTouchSize:(id)sizeValue {
+  if (!sizeValue || [sizeValue isKindOfClass:[NSNull class]]) {
+    _minimumTouchSize = CGSizeMake(44.0, 44.0);
+    return;
+  }
+  if ([sizeValue isKindOfClass:[NSDictionary class]]) {
+    NSDictionary *dict = (NSDictionary *)sizeValue;
+    CGFloat width = [dict[@"width"] doubleValue];
+    CGFloat height = [dict[@"height"] doubleValue];
+    _minimumTouchSize = CGSizeMake(MAX(0.0, width), MAX(0.0, height));
+  } else {
+    _minimumTouchSize = CGSizeMake(44.0, 44.0);
+  }
+}
+
+- (void)rune_setPreventFocusOnPress:(BOOL)prevent {
+  _preventFocusOnPress = prevent;
+}
+
+- (void)rune_setHapticsMode:(NSString *)mode {
+  _hapticsMode = mode ?: @"none";
+}
+
+- (void)rune_setHasLongPressHandler:(BOOL)hasHandler {
+  _hasLongPressHandler = hasHandler;
+}
+
+#pragma mark - Event Handling
+
+- (void)handleTouchDown {
   self.pressStartTimestamp = CACurrentMediaTime();
   self.longPressFired = NO;
-  self.longPressTimer =
-      [NSTimer scheduledTimerWithTimeInterval:kRuneButtonLongPressDuration
-                                       target:self
-                                     selector:@selector(handleLongPressTimer)
-                                     userInfo:nil
-                                      repeats:NO];
+  
+  if (self.hasLongPressHandler) {
+    [self startLongPressTimer];
+  }
+  
+  [self notifyPressIn];
+  [self triggerHapticsIfNeeded];
+}
+
+- (void)handleTouchUp {
+  [self cancelLongPressTimer];
+  
+  if (!self.longPressFired) {
+    [self notifyActivate];
+  }
+  
+  [self notifyPressOutWithCancel:NO];
+}
+
+- (void)handleTouchCancel {
+  [self cancelLongPressTimer];
+  [self notifyPressOutWithCancel:YES];
+}
+
+- (void)handleTouchDragExit {
+  [self cancelLongPressTimer];
+}
+
+#pragma mark - Long Press
+
+- (void)startLongPressTimer {
+  [_longPressTimer invalidate];
+  _longPressTimer = [NSTimer scheduledTimerWithTimeInterval:kRuneButtonLongPressDuration
+                                                     target:self
+                                                   selector:@selector(handleLongPressTimer)
+                                                   userInfo:nil
+                                                    repeats:NO];
 }
 
 - (void)cancelLongPressTimer {
-  [self.longPressTimer invalidate];
-  self.longPressTimer = nil;
+  [_longPressTimer invalidate];
+  _longPressTimer = nil;
 }
 
 - (void)handleLongPressTimer {
   self.longPressFired = YES;
-  [self cancelLongPressTimer];
-  if (![self shouldHandleTouch]) return;
-  CFTimeInterval duration = CACurrentMediaTime() - self.pressStartTimestamp;
-  if (duration < kRuneButtonLongPressDuration) {
-    duration = kRuneButtonLongPressDuration;
-  }
   if (self.delegate && [self.delegate respondsToSelector:@selector(buttonView:didLongPressWithDuration:)]) {
-    [self.delegate buttonView:self didLongPressWithDuration:duration * 1000.0];
+    [self.delegate buttonView:self didLongPressWithDuration:kRuneButtonLongPressDuration * 1000.0];
   }
 }
 
-- (void)updateInteractivity {
-  BOOL enabled = !(self.runeDisabled || self.runeLoading);
-  self.userInteractionEnabled = enabled;
-  self.alpha = enabled ? 1.0 : 0.5;
-}
-
-- (void)setHighlightActive:(BOOL)active animated:(BOOL)animated {
-  if (self.isHighlightActive == active) return;
-  self.isHighlightActive = active;
-  if ([self.pressEffect.lowercaseString isEqualToString:@"none"]) return;
-  float target = active ? 0.85f : 1.0f;
-  if (animated) {
-    [CATransaction begin];
-    [CATransaction setAnimationDuration:0.12];
-    self.layer.opacity = target;
-    [CATransaction commit];
-  } else {
-    self.layer.opacity = target;
-  }
-}
-
-- (void)triggerHapticsIfNeeded {
-#if __has_include(<UIKit/UIKit.h>)
-  if (!self.hapticsMode || [self.hapticsMode isEqualToString:@"none"]) return;
-  NSString *mode = self.hapticsMode.lowercaseString;
-  if ([mode isEqualToString:@"light"]) {
-    UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight];
-    [generator impactOccurred];
-  } else if ([mode isEqualToString:@"medium"]) {
-    UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
-    [generator impactOccurred];
-  } else if ([mode isEqualToString:@"heavy"]) {
-    UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleHeavy];
-    [generator impactOccurred];
-  } else if ([mode isEqualToString:@"success"]) {
-    UINotificationFeedbackGenerator *generator = [[UINotificationFeedbackGenerator alloc] init];
-    [generator notificationOccurred:UINotificationFeedbackTypeSuccess];
-  } else if ([mode isEqualToString:@"warning"]) {
-    UINotificationFeedbackGenerator *generator = [[UINotificationFeedbackGenerator alloc] init];
-    [generator notificationOccurred:UINotificationFeedbackTypeWarning];
-  } else if ([mode isEqualToString:@"error"]) {
-    UINotificationFeedbackGenerator *generator = [[UINotificationFeedbackGenerator alloc] init];
-    [generator notificationOccurred:UINotificationFeedbackTypeError];
-  }
-#endif
-}
+#pragma mark - Delegate Notifications
 
 - (void)notifyPressIn {
   if (self.delegate && [self.delegate respondsToSelector:@selector(buttonViewDidPressIn:)]) {
@@ -163,69 +382,28 @@ static const CFTimeInterval kRuneButtonLongPressDuration = 0.5;
   }
 }
 
-- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-  [super touchesBegan:touches withEvent:event];
-  if (![self shouldHandleTouch]) return;
-  UITouch *touch = touches.anyObject;
-  if (!touch) return;
-  self.initialTouchPoint = [touch locationInView:self];
-  self.pressed = YES;
-  self.pressStartTimestamp = CACurrentMediaTime();
-  if (!self.preventFocusOnPress) {
-    [self becomeFirstResponder];
+- (void)triggerHapticsIfNeeded {
+  if (!self.hapticsMode || [self.hapticsMode isEqualToString:@"none"]) return;
+  
+  UIImpactFeedbackGenerator *generator = nil;
+  if ([self.hapticsMode isEqualToString:@"light"]) {
+    generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight];
+  } else if ([self.hapticsMode isEqualToString:@"medium"]) {
+    generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
+  } else if ([self.hapticsMode isEqualToString:@"heavy"]) {
+    generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleHeavy];
   }
-  [self setHighlightActive:YES animated:YES];
-  [self notifyPressIn];
-  [self startLongPressTimer];
-}
-
-- (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-  [super touchesMoved:touches withEvent:event];
-  if (!self.pressed) return;
-  UITouch *touch = touches.anyObject;
-  if (!touch) return;
-  if (self.pressRetentionOffset <= 0) return;
-  CGPoint point = [touch locationInView:self];
-  CGFloat dx = point.x - self.initialTouchPoint.x;
-  CGFloat dy = point.y - self.initialTouchPoint.y;
-  CGFloat distance = hypot(dx, dy);
-  if (distance > self.pressRetentionOffset) {
-    [self cancelCurrentPress:YES];
+  
+  if (generator) {
+    [generator impactOccurred];
   }
 }
 
-- (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-  [super touchesEnded:touches withEvent:event];
-  if (!self.pressed) return;
-  [self cancelLongPressTimer];
-  [self setHighlightActive:NO animated:YES];
-  BOOL longPressTriggered = self.longPressFired;
-  self.longPressFired = NO;
-  self.pressed = NO;
-  if (!longPressTriggered) {
-    [self triggerHapticsIfNeeded];
-    [self notifyActivate];
-  }
-  [self notifyPressOutWithCancel:NO];
-}
-
-- (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-  [super touchesCancelled:touches withEvent:event];
-  if (!self.pressed) return;
-  [self cancelCurrentPress:YES];
-}
-
-- (void)cancelCurrentPress:(BOOL)cancelled {
-  [self cancelLongPressTimer];
-  if (!self.pressed) return;
-  self.pressed = NO;
-  self.longPressFired = NO;
-  [self setHighlightActive:NO animated:YES];
-  [self notifyPressOutWithCancel:cancelled];
-}
+#pragma mark - Hit Testing & Layout
 
 - (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
   CGRect bounds = self.bounds;
+  
   if (bounds.size.width < self.minimumTouchSize.width) {
     CGFloat inset = (self.minimumTouchSize.width - bounds.size.width) / 2.0;
     bounds = CGRectInset(bounds, -inset, 0);
@@ -234,164 +412,73 @@ static const CFTimeInterval kRuneButtonLongPressDuration = 0.5;
     CGFloat inset = (self.minimumTouchSize.height - bounds.size.height) / 2.0;
     bounds = CGRectInset(bounds, 0, -inset);
   }
+  
   bounds.origin.x -= self.hitSlopInsets.left;
   bounds.origin.y -= self.hitSlopInsets.top;
   bounds.size.width += (self.hitSlopInsets.left + self.hitSlopInsets.right);
   bounds.size.height += (self.hitSlopInsets.top + self.hitSlopInsets.bottom);
+  
   return CGRectContainsPoint(bounds, point);
 }
 
-- (BOOL)becomeFirstResponder {
-  BOOL result = [super becomeFirstResponder];
-  if (result && self.delegate && [self.delegate respondsToSelector:@selector(buttonViewDidFocus:)]) {
-    [self.delegate buttonViewDidFocus:self];
-  }
-  return result;
-}
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+  if (self.hidden || self.alpha <= 0.01) return nil;
 
-- (BOOL)resignFirstResponder {
-  BOOL result = [super resignFirstResponder];
-  if (result && self.delegate && [self.delegate respondsToSelector:@selector(buttonViewDidBlur:)]) {
-    [self.delegate buttonViewDidBlur:self];
-  }
-  return result;
-}
+  // Respect Pointer Events Mode
+  switch (self.pointerMode) {
+    case RunePointerEventsNone:
+      return nil;
 
-- (void)pressesBegan:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
-  [super pressesBegan:presses withEvent:event];
-  for (UIPress *press in presses) {
-    if (!press.key) continue;
-    NSString *key = press.key.charactersIgnoringModifiers ?: press.key.characters ?: @"";
-    if (self.delegate && [self.delegate respondsToSelector:@selector(buttonView:didEmitKeyEvent:key:)]) {
-      [self.delegate buttonView:self didEmitKeyEvent:@"onKeyDown" key:key];
+    case RunePointerEventsBoxNone: {
+      // Pass through to children, but don't catch self
+      for (UIView *subview in self.subviews.reverseObjectEnumerator) {
+        CGPoint converted = [subview convertPoint:point fromView:self];
+        UIView *hit = [subview hitTest:converted withEvent:event];
+        if (hit) return hit;
+      }
+      return nil;
     }
+
+    case RunePointerEventsBoxOnly:
+      // Catch self if inside, ignore children
+      return [self pointInside:point withEvent:event] ? self : nil;
+
+    case RunePointerEventsAuto:
+    default:
+      return [super hitTest:point withEvent:event];
   }
-}
-
-- (void)pressesEnded:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
-  [super pressesEnded:presses withEvent:event];
-  for (UIPress *press in presses) {
-    if (!press.key) continue;
-    NSString *key = press.key.charactersIgnoringModifiers ?: press.key.characters ?: @"";
-    if (self.delegate && [self.delegate respondsToSelector:@selector(buttonView:didEmitKeyEvent:key:)]) {
-      [self.delegate buttonView:self didEmitKeyEvent:@"onKeyUp" key:key];
-    }
-  }
-}
-
-- (void)performProgrammaticActivation {
-  if (![self shouldHandleTouch]) return;
-  [self setHighlightActive:YES animated:NO];
-  [self notifyPressIn];
-  [self triggerHapticsIfNeeded];
-  [self notifyActivate];
-  [self notifyPressOutWithCancel:NO];
-  [self setHighlightActive:NO animated:YES];
-}
-
-- (void)rune_setDisabled:(BOOL)disabled {
-  self.runeDisabled = disabled;
-  [self updateInteractivity];
-}
-
-- (void)rune_setLoading:(BOOL)loading {
-  self.runeLoading = loading;
-  [self updateInteractivity];
-}
-
-- (void)rune_setPressEffect:(NSString *)effect {
-  self.pressEffect = effect ?: @"highlight";
-}
-
-- (void)rune_setPressRetentionOffset:(NSNumber *)offset {
-  if (!offset || [offset isKindOfClass:[NSNull class]]) return;
-  self.pressRetentionOffset = MAX(0.0, offset.doubleValue);
-}
-
-- (void)rune_setHitSlop:(id)hitSlop {
-  if (!hitSlop || [hitSlop isKindOfClass:[NSNull class]]) {
-    self.hitSlopInsets = UIEdgeInsetsZero;
-    return;
-  }
-  if ([hitSlop isKindOfClass:[NSNumber class]]) {
-    CGFloat inset = ((NSNumber *)hitSlop).doubleValue;
-    self.hitSlopInsets = UIEdgeInsetsMake(inset, inset, inset, inset);
-    return;
-  }
-  if ([hitSlop isKindOfClass:[NSDictionary class]]) {
-    NSDictionary *dict = (NSDictionary *)hitSlop;
-    CGFloat top = [dict[@"top"] respondsToSelector:@selector(doubleValue)] ? [dict[@"top"] doubleValue] : 0.0;
-    CGFloat left = [dict[@"left"] respondsToSelector:@selector(doubleValue)] ? [dict[@"left"] doubleValue] : 0.0;
-    CGFloat bottom = [dict[@"bottom"] respondsToSelector:@selector(doubleValue)] ? [dict[@"bottom"] doubleValue] : 0.0;
-    CGFloat right = [dict[@"right"] respondsToSelector:@selector(doubleValue)] ? [dict[@"right"] doubleValue] : 0.0;
-    self.hitSlopInsets = UIEdgeInsetsMake(top, left, bottom, right);
-    return;
-  }
-}
-
-- (void)rune_setMinimumTouchSize:(id)sizeValue {
-  if (!sizeValue || [sizeValue isKindOfClass:[NSNull class]]) {
-    self.minimumTouchSize = CGSizeMake(44.0, 44.0);
-    return;
-  }
-  if ([sizeValue isKindOfClass:[NSDictionary class]]) {
-    NSDictionary *dict = (NSDictionary *)sizeValue;
-    CGFloat width = [dict[@"width"] respondsToSelector:@selector(doubleValue)] ? [dict[@"width"] doubleValue] : 44.0;
-    CGFloat height = [dict[@"height"] respondsToSelector:@selector(doubleValue)] ? [dict[@"height"] doubleValue] : 44.0;
-    self.minimumTouchSize = CGSizeMake(MAX(0.0, width), MAX(0.0, height));
-    return;
-  }
-  self.minimumTouchSize = CGSizeMake(44.0, 44.0);
-}
-
-- (void)rune_setPreventFocusOnPress:(BOOL)prevent {
-  self.preventFocusOnPress = prevent;
-}
-
-- (void)rune_setHapticsMode:(NSString *)mode {
-  if (!mode || [mode isKindOfClass:[NSNull class]]) {
-    self.hapticsMode = @"none";
-    return;
-  }
-  self.hapticsMode = mode;
-}
-
-- (void)rune_setHasLongPressHandler:(BOOL)hasHandler {
-  self.hasLongPressHandler = hasHandler;
 }
 
 - (void)rune_handleCommand:(NSDictionary *)command {
-  if (![command isKindOfClass:[NSDictionary class]]) return;
-  NSNumber *seq = command[@"seq"];
-  if (seq && [seq respondsToSelector:@selector(integerValue)]) {
-    NSInteger nextSeq = seq.integerValue;
-    if (nextSeq <= self.lastCommandSeq) {
-      return;
+    NSString *type = command[@"type"];
+    if ([type isEqualToString:@"focus"]) {
+        [self becomeFirstResponder];
+    } else if ([type isEqualToString:@"blur"]) {
+        [self resignFirstResponder];
+    } else if ([type isEqualToString:@"click"]) {
+        [self sendActionsForControlEvents:UIControlEventTouchUpInside];
     }
-    self.lastCommandSeq = nextSeq;
-  }
+}
 
-  NSString *type = command[@"type"];
-  if (![type isKindOfClass:[NSString class]]) return;
+#pragma mark - Z-Ordering Helpers
 
-  if ([type isEqualToString:@"focus"]) {
-    [self becomeFirstResponder];
-    return;
-  }
-  if ([type isEqualToString:@"blur"]) {
-    if (self.isFirstResponder) {
-      [self resignFirstResponder];
+- (void)bringCustomContentToFrontIfNeeded {
+  if (self.buttonTitle || self.buttonImage) return;
+  for (UIView *subview in self.subviews) {
+    if (![self isSystemSubview:subview]) {
+      subview.userInteractionEnabled = NO;
+      [self bringSubviewToFront:subview];
     }
-    return;
   }
-  if ([type isEqualToString:@"click"]) {
-    [self setHighlightActive:YES animated:NO];
-    [self notifyPressIn];
-    [self triggerHapticsIfNeeded];
-    [self notifyActivate];
-    [self notifyPressOutWithCancel:NO];
-    [self setHighlightActive:NO animated:YES];
-    return;
+}
+
+- (void)didAddSubview:(UIView *)subview {
+  [super didAddSubview:subview];
+  if (![self isSystemSubview:subview]) {
+    subview.userInteractionEnabled = NO; // let touches reach the button
+    if (!self.buttonTitle && !self.buttonImage) {
+      [self bringSubviewToFront:subview];
+    }
   }
 }
 

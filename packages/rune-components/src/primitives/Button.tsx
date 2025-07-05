@@ -86,7 +86,23 @@ type ButtonCommand = { type: "focus" } | { type: "blur" } | { type: "click" };
 
 const MINIMUM_TOUCH_SIZE: Required<MinimumTouchSize> = {
   width: 44,
-  height: 44,
+  height: 36, // allow slightly smaller height while keeping reasonable touch width
+};
+
+const sizeMetrics: Record<Size, { minHeight: number; paddingH: number; paddingV: number; gap: number }> = {
+  xs: { minHeight: 32, paddingH: 10, paddingV: 6, gap: 6 },
+  sm: { minHeight: 36, paddingH: 12, paddingV: 8, gap: 6 },
+  md: { minHeight: 44, paddingH: 14, paddingV: 10, gap: 8 },
+  lg: { minHeight: 52, paddingH: 16, paddingV: 12, gap: 10 },
+  xl: { minHeight: 60, paddingH: 18, paddingV: 14, gap: 12 },
+};
+
+const sizeFontMap: Record<Size, number> = {
+  xs: 13,
+  sm: 14,
+  md: 15,
+  lg: 16,
+  xl: 17,
 };
 
 export function createButtonController(opts?: {
@@ -205,6 +221,10 @@ export type ButtonProps = {
   accessibilityLabel?: string;
   accessibilityHint?: string;
   testID?: string;
+  /**
+   * Explicit override for the base color.
+   */
+  baseColor?: string;
 };
 
 const isPromise = <T,>(value: any): value is Promise<T> =>
@@ -286,6 +306,7 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     "accessibilityLabel",
     "accessibilityHint",
     "testID",
+    "baseColor",
   ]);
 
   const providedController = () =>
@@ -388,6 +409,18 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
   );
   const resolvedHitSlop = createMemo(() => local.hitSlop ?? 0);
   const resolvedChildren = resolveChildren(() => local.children);
+  
+  // Detect if children is a simple string to use native title
+  const titleContent = createMemo(() => {
+    const resolved = resolvedChildren();
+    if (typeof resolved === "string") return resolved;
+    // Also check if label prop is provided
+    if (local.label) return local.label;
+    return undefined;
+  });
+
+  const isStringContent = createMemo(() => titleContent() !== undefined);
+
   const labelForRender = createMemo(() => {
     const resolved = resolvedChildren();
     if (typeof resolved === "string") return resolved;
@@ -406,26 +439,9 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     return local.label;
   });
   const resolvedRounded = createMemo(() => local.rounded ?? ("md" as const));
-  const sizePaddingMap: Record<Size, { pv: number; ph: number }> = {
-    xs: { pv: 6, ph: 10 },
-    sm: { pv: 8, ph: 14 },
-    md: { pv: 12, ph: 18 },
-    lg: { pv: 14, ph: 22 },
-    xl: { pv: 18, ph: 26 },
-  };
-  const sizeFontMap: Record<Size, number> = {
-    xs: 12,
-    sm: 14,
-    md: 16,
-    lg: 18,
-    xl: 20,
-  };
-  const baseRadiusMap: Record<"none" | "sm" | "md" | "lg", number> = {
-    none: 0,
-    sm: 8,
-    md: 12,
-    lg: 16,
-  };
+  
+  // Removed: sizePaddingMap, baseRadiusMap, etc. since native handles layout.
+
   const toneColorMap: Record<Tone, string> = {
     primary: "#7c3aed",
     secondary: "#6366f1",
@@ -434,113 +450,57 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     danger: "#dc2626",
     neutral: "#4b5563",
   };
+
   const defaultButtonStyle = createMemo<Style>(() => {
-    const sizeKey = resolvedSize();
-    const { pv, ph } = sizePaddingMap[sizeKey];
-    const baseMin = Math.max(pv * 2 + 20, 44);
-    const roundedValue = resolvedRounded();
-    const radius =
-      roundedValue === "pill" || roundedValue === "full"
-        ? baseMin / 2
-        : baseRadiusMap[roundedValue] ?? baseRadiusMap.md;
-    const base: Style = {
-      paddingVertical: pv,
-      paddingHorizontal: ph,
-      borderRadius: radius,
+    const touch = resolvedMinimumTouch();
+    const metrics = sizeMetrics[resolvedSize()] ?? sizeMetrics.md;
+    return {
+      minHeight: Math.max(metrics.minHeight, touch.height),
+      minWidth: touch.width,
       alignItems: "center",
       justifyContent: "center",
-      minHeight: baseMin,
-      minWidth: 44,
+      paddingHorizontal: metrics.paddingH,
+      paddingVertical: metrics.paddingV,
     };
-
-    const toneBackground = toneColorMap[resolvedTone()];
-    const variant = local.variant ?? "solid";
-    if (variant === "solid") {
-      return {
-        ...base,
-        backgroundColor: toneBackground,
-      };
-    }
-    if (variant === "outline") {
-      return {
-        ...base,
-        backgroundColor: "transparent",
-        borderColor: toneBackground,
-        borderWidth: 2,
-      };
-    }
-    if (variant === "ghost") {
-      return {
-        ...base,
-        backgroundColor: withAlphaHex(toneBackground, 0.12),
-      };
-    }
-    if (variant === "link") {
-      return {
-        ...base,
-        backgroundColor: "transparent",
-        paddingHorizontal: 4,
-        paddingVertical: 4,
-        minHeight: baseMin,
-        minWidth: 0,
-      };
-    }
-    return base;
   });
+
   const resolvedButtonStyle = createMemo<Style>(() => {
     const composed: Style = { ...defaultButtonStyle() };
     if (local.fullWidth) {
       composed.width = "100%";
     }
     if (local.iconOnly) {
-      const resolvedSideRaw = composed.minHeight ?? 44;
-      const side =
-        typeof resolvedSideRaw === "number"
-          ? resolvedSideRaw
-          : parseFloat(resolvedSideRaw) || 44;
-      composed.width = side;
-      composed.height = side;
-      composed.minWidth = side;
-      composed.minHeight = side;
-      const pad = Math.max(composed.paddingVertical ?? 0, 8);
-      composed.paddingVertical = pad;
-      composed.paddingHorizontal = pad;
-      composed.alignSelf = "center";
-      if (resolvedRounded() === "pill" || resolvedRounded() === "full") {
-        composed.borderRadius = side / 2;
-      }
+      const touch = resolvedMinimumTouch();
+      if (composed.width === undefined) composed.width = touch.width;
+      if (composed.height === undefined) composed.height = touch.height;
+      composed.paddingHorizontal = 0;
+      composed.paddingVertical = 0;
     }
     if (local.style) {
       Object.assign(composed, local.style as Style);
     }
     return composed;
   });
-  const resolvedLabelStyle = createMemo<Style | undefined>(() => {
-    if (local.labelStyle) return local.labelStyle as Style;
-    const variant = local.variant ?? "solid";
-    const fontSize = sizeFontMap[resolvedSize()];
-    const toneColor = toneColorMap[resolvedTone()];
-    if (variant === "solid") {
-      return { color: "#ffffff", fontWeight: "600", fontSize };
-    }
-    return { color: toneColor, fontWeight: "600", fontSize };
-  });
+
+  // Removed: resolvedLabelStyle logic (native handles text style)
+  
   const hasStartIcon = createMemo(() => !!local.startIcon);
   const hasEndIcon = createMemo(() => !!local.endIcon);
+  const hasAffixes = createMemo(() => hasStartIcon() || hasEndIcon());
   const contentStyle = createMemo<Style>(() => {
+    const metrics = sizeMetrics[resolvedSize()] ?? sizeMetrics.md;
     const base: Style = {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "center",
     };
-    if (hasStartIcon() || hasEndIcon()) {
-      base.gap = 8;
-    }
+    base.gap = metrics.gap;
     if (local.fullWidth) {
       base.width = "100%";
     }
     return base;
   });
+
   const shouldHideContentForOverlay = createMemo(() => {
     if (!computedLoading()) return false;
     if (resolvedLoadingPlacement() !== "overlay") return false;
@@ -645,13 +605,61 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     const node = hostNode();
     if (!node) return;
 
+    // Native Variant Mapping
+    let effectiveVariant = resolvedVariant();
+    // Map JS variants to iOS native variants
+    if (effectiveVariant === "solid") effectiveVariant = "filled" as any;
+    else if (effectiveVariant === "outline") effectiveVariant = "tinted" as any;
+    else if (effectiveVariant === "ghost") effectiveVariant = "plain" as any;
+    else if (effectiveVariant === "link") effectiveVariant = "plain" as any;
+
+    // Native Role Mapping
+    let effectiveRole = "normal";
+    if (resolvedTone() === "danger") {
+        effectiveRole = "destructive";
+    } else if (resolvedTone() === "neutral") {
+        // maybe?
+    }
+    
+    // Base Color — let the system choose unless explicitly provided or destructive tone
+    const color =
+      local.baseColor ??
+      (resolvedTone() === "danger" ? toneColorMap[resolvedTone()] : undefined);
+    
     setProperty(node, "style", resolvedButtonStyle());
     setProperty(node, "type", resolvedType());
     setProperty(node, "disabled", resolvedDisabled());
     setProperty(node, "loading", computedLoading());
-    setProperty(node, "variant", resolvedVariant());
+    
+    // Pass native props
+    setProperty(node, "variant", effectiveVariant);
+    setProperty(node, "role", effectiveRole);
+    if (color) setProperty(node, "baseColor", color);
+    if (useNativeTitle()) {
+      setProperty(node, "title", titleContent());
+    } else {
+      setProperty(node, "title", null);
+    }
+
     setProperty(node, "tone", resolvedTone());
-    setProperty(node, "size", resolvedSize());
+    // Map JS size to native UIButtonConfiguration sizes
+    let nativeSize: any = resolvedSize();
+    switch (resolvedSize()) {
+      case "xs":
+        nativeSize = "mini" as any;
+        break;
+      case "sm":
+        nativeSize = "small" as any;
+        break;
+      case "lg":
+      case "xl":
+        nativeSize = "large" as any;
+        break;
+      default:
+        nativeSize = "medium" as any;
+        break;
+    }
+    setProperty(node, "size", nativeSize);
     setProperty(node, "fullWidth", local.fullWidth ?? false);
     setProperty(node, "rounded", resolvedRounded());
     setProperty(node, "elevation", resolvedElevation());
@@ -667,6 +675,8 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     setProperty(node, "loadingPlacement", resolvedLoadingPlacement());
     setProperty(node, "loadingAriaLabel", local.loadingAriaLabel);
     setProperty(node, "haptics", local.haptics ?? "none");
+    // labelStyle, iconStyle, pressedStyle etc might not be needed for native text,
+    // unless we want to allow overriding native text attributes (requires more native code)
     setProperty(node, "labelStyle", local.labelStyle);
     setProperty(node, "iconStyle", local.iconStyle);
     setProperty(node, "pressedStyle", local.pressedStyle);
@@ -691,18 +701,6 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     });
   });
 
-  const renderLabel = () => {
-    const labelContent = labelForRender();
-    if (typeof labelContent === "string") {
-      return (
-        <Text numberOfLines={local.numberOfLines} style={resolvedLabelStyle()}>
-          {labelContent}
-        </Text>
-      );
-    }
-    return labelContent;
-  };
-
   const renderLoadingIndicator = () => {
     if (!computedLoading()) return null;
     if (
@@ -711,38 +709,32 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     ) {
       return local.loadingIndicator;
     }
-    if (local.loadingAriaLabel) {
-      return <Text style={resolvedLabelStyle()}>{local.loadingAriaLabel}</Text>;
-    }
-    return null;
+    // Native handles activity indicator usually, but if we want custom one...
+    // If native=true (always true now), native button shows spinner if loading=true.
+    // So we might NOT want to render it here unless it's custom?
+    // Let's leave it for now, but native config usually handles "showsActivityIndicator".
+    return null; 
   };
+  
+  // Decide whether to use native title rendering.
+  const useNativeTitle = createMemo(() => {
+    if (!isStringContent()) return false;
+    // When we have custom adornments (icons) or iconOnly, keep layout in JS
+    // so we can align everything together.
+    if (hasAffixes() || local.iconOnly) return false;
+    return true;
+  });
 
-  const renderStartLoading = () => {
-    if (resolvedLoadingPlacement() !== "start") return null;
-    return renderLoadingIndicator();
+  // If using native title, we don't render text children.
+  // Otherwise, render a Text node for string content so it participates in layout.
+  const renderContent = () => {
+      if (isStringContent() && !useNativeTitle()) {
+        const fontSize = sizeFontMap[resolvedSize()] ?? sizeFontMap.md;
+        return <Text style={{ fontSize }}>{titleContent()}</Text>;
+      }
+      if (isStringContent()) return null;
+      return local.children;
   };
-
-  const renderEndLoading = () => {
-    if (resolvedLoadingPlacement() !== "end") return null;
-    return renderLoadingIndicator();
-  };
-
-  const renderOverlayLoading = () => {
-    if (resolvedLoadingPlacement() !== "overlay") return null;
-    return renderLoadingIndicator();
-  };
-
-  if (local.iconOnly && !local.accessibilityLabel && !local.label) {
-    console.warn(
-      "[rune] Button with iconOnly requires accessibilityLabel or label."
-    );
-  }
-
-  if (local.asChild) {
-    console.warn(
-      "[rune] Button asChild mode is not implemented yet; falling back to regular rendering."
-    );
-  }
 
   return (
     <button
@@ -750,12 +742,9 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
       testID={local.testID}
     >
       <View style={contentStyle()}>
-        {renderStartLoading()}
         {!shouldHideContentForOverlay() ? local.startIcon : null}
-        {!shouldHideContentForOverlay() ? renderLabel() : null}
+        {!shouldHideContentForOverlay() ? renderContent() : null}
         {!shouldHideContentForOverlay() ? local.endIcon : null}
-        {renderEndLoading()}
-        {shouldHideContentForOverlay() ? renderOverlayLoading() : null}
       </View>
     </button>
   );

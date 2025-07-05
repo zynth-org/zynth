@@ -1,7 +1,10 @@
 #import <UIKit/UIKit.h>
 
-#import "RuneUIManager+View.h"
-#import "RuneHitTestingView.h"
+#if __has_include(<RuneKit/RuneKit.h>)
+#import <RuneKit/RuneKit.h>
+#else
+#import "RuneViewHost.h"
+#endif
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -10,12 +13,15 @@ NS_ASSUME_NONNULL_BEGIN
 
 @protocol RuneButtonViewDelegate;
 
-@interface RuneButtonView : RuneHitTestingView
+@interface RuneButtonView : UIButton
 
 @property(nonatomic, weak, nullable) id<RuneButtonViewDelegate> delegate;
 @property(nonatomic, assign) int nodeId;
+@property(nonatomic, assign) RunePointerEventsMode pointerMode;
 
 - (void)attachToManager:(nullable SNUIManager *)manager node:(nullable SNNode *)node;
+
+// Existing props
 - (void)rune_setDisabled:(BOOL)disabled;
 - (void)rune_setLoading:(BOOL)loading;
 - (void)rune_setPressEffect:(NSString *_Nullable)effect;
@@ -26,6 +32,15 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)rune_setHapticsMode:(NSString *_Nullable)mode;
 - (void)rune_setHasLongPressHandler:(BOOL)hasHandler;
 - (void)rune_handleCommand:(NSDictionary *_Nullable)command;
+
+// New Native Props
+- (void)rune_setVariant:(NSString *_Nullable)variant;
+- (void)rune_setRole:(NSString *_Nullable)role;
+- (void)rune_setSize:(NSString *_Nullable)size;
+- (void)rune_setTitle:(NSString *_Nullable)title;
+- (void)rune_setBaseColor:(UIColor *_Nullable)color;
+- (void)rune_setImage:(UIImage *_Nullable)image;
+- (void)rune_setRounded:(NSString *_Nullable)rounded;
 
 @end
 

@@ -12,7 +12,7 @@ class RuneButtonRegistrar : RuneComponentRegistrar {
   override fun register(registry: RuneComponentRegistry) {
     registry.register(
       RuneComponentDescriptor(
-        type = "Button",
+        type = "button",
         createView = { context: Context, nodeId: Int ->
           RuneButtonView(context).apply {
             this.nodeId = nodeId
