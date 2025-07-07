@@ -68,9 +68,10 @@ function generateAndroidModuleInitializers(modules) {
       const argsSpec = Array.isArray(module.initializer.args)
         ? module.initializer.args
         : null;
-      const args = argsSpec && argsSpec.length
-        ? argsSpec.map((token) => argMap[token] || token).join(", ")
-        : "this, runtime";
+      const args =
+        argsSpec && argsSpec.length
+          ? argsSpec.map((token) => argMap[token] || token).join(", ")
+          : "this, runtime";
       initializers.push(
         `        ${className}.${method}(${args})`,
         `        Log.d("Rune", "${className} initialized")`
@@ -273,6 +274,7 @@ function generateAndroidProject(appDir, options = {}) {
     const targetPath = (() => {
       const javaDir = path.join("app", "src", "main", "java");
       const mainActivityPath = path.join(javaDir, "MainActivity.kt");
+      const mainApplicationPath = path.join(javaDir, "MainApplication.kt");
       const modulesDir = path.join(javaDir, "modules");
       if (rel === mainActivityPath) {
         return path.join(
@@ -283,6 +285,17 @@ function generateAndroidProject(appDir, options = {}) {
           "java",
           packagePath,
           "MainActivity.kt"
+        );
+      }
+      if (rel === mainApplicationPath) {
+        return path.join(
+          targetDir,
+          "app",
+          "src",
+          "main",
+          "java",
+          packagePath,
+          "MainApplication.kt"
         );
       }
       if (rel.startsWith(modulesDir + path.sep)) {

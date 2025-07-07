@@ -89,7 +89,10 @@ const MINIMUM_TOUCH_SIZE: Required<MinimumTouchSize> = {
   height: 36, // allow slightly smaller height while keeping reasonable touch width
 };
 
-const sizeMetrics: Record<Size, { minHeight: number; paddingH: number; paddingV: number; gap: number }> = {
+const sizeMetrics: Record<
+  Size,
+  { minHeight: number; paddingH: number; paddingV: number; gap: number }
+> = {
   xs: { minHeight: 32, paddingH: 10, paddingV: 6, gap: 6 },
   sm: { minHeight: 36, paddingH: 12, paddingV: 8, gap: 6 },
   md: { minHeight: 44, paddingH: 14, paddingV: 10, gap: 8 },
@@ -409,7 +412,7 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
   );
   const resolvedHitSlop = createMemo(() => local.hitSlop ?? 0);
   const resolvedChildren = resolveChildren(() => local.children);
-  
+
   // Detect if children is a simple string to use native title
   const titleContent = createMemo(() => {
     const resolved = resolvedChildren();
@@ -439,7 +442,7 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     return local.label;
   });
   const resolvedRounded = createMemo(() => local.rounded ?? ("md" as const));
-  
+
   // Removed: sizePaddingMap, baseRadiusMap, etc. since native handles layout.
 
   const toneColorMap: Record<Tone, string> = {
@@ -470,9 +473,14 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
       composed.width = "100%";
     }
     if (local.iconOnly) {
-      const touch = resolvedMinimumTouch();
-      if (composed.width === undefined) composed.width = touch.width;
-      if (composed.height === undefined) composed.height = touch.height;
+      const metrics = sizeMetrics[resolvedSize()] ?? sizeMetrics.md;
+      // Icon-only buttons should be square (height = width)
+      const size = metrics.minHeight;
+      composed.width = size;
+      composed.height = size;
+      composed.minWidth = size;
+      composed.minHeight = size;
+      // Remove horizontal padding for square shape
       composed.paddingHorizontal = 0;
       composed.paddingVertical = 0;
     }
@@ -483,7 +491,7 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
   });
 
   // Removed: resolvedLabelStyle logic (native handles text style)
-  
+
   const hasStartIcon = createMemo(() => !!local.startIcon);
   const hasEndIcon = createMemo(() => !!local.endIcon);
   const hasAffixes = createMemo(() => hasStartIcon() || hasEndIcon());
@@ -607,30 +615,31 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
 
     // Native Variant Mapping
     let effectiveVariant = resolvedVariant();
-    // Map JS variants to iOS native variants
+    // Map JS variants to native Material variants
     if (effectiveVariant === "solid") effectiveVariant = "filled" as any;
-    else if (effectiveVariant === "outline") effectiveVariant = "tinted" as any;
-    else if (effectiveVariant === "ghost") effectiveVariant = "plain" as any;
-    else if (effectiveVariant === "link") effectiveVariant = "plain" as any;
+    else if (effectiveVariant === "outline")
+      effectiveVariant = "outlined" as any;
+    else if (effectiveVariant === "ghost") effectiveVariant = "text" as any;
+    else if (effectiveVariant === "link") effectiveVariant = "text" as any;
 
     // Native Role Mapping
     let effectiveRole = "normal";
     if (resolvedTone() === "danger") {
-        effectiveRole = "destructive";
+      effectiveRole = "destructive";
     } else if (resolvedTone() === "neutral") {
-        // maybe?
+      // maybe?
     }
-    
+
     // Base Color — let the system choose unless explicitly provided or destructive tone
     const color =
       local.baseColor ??
       (resolvedTone() === "danger" ? toneColorMap[resolvedTone()] : undefined);
-    
+
     setProperty(node, "style", resolvedButtonStyle());
     setProperty(node, "type", resolvedType());
     setProperty(node, "disabled", resolvedDisabled());
     setProperty(node, "loading", computedLoading());
-    
+
     // Pass native props
     setProperty(node, "variant", effectiveVariant);
     setProperty(node, "role", effectiveRole);
@@ -642,6 +651,7 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     }
 
     setProperty(node, "tone", resolvedTone());
+    setProperty(node, "iconOnly", local.iconOnly ?? false);
     // Map JS size to native UIButtonConfiguration sizes
     let nativeSize: any = resolvedSize();
     switch (resolvedSize()) {
@@ -713,9 +723,9 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     // If native=true (always true now), native button shows spinner if loading=true.
     // So we might NOT want to render it here unless it's custom?
     // Let's leave it for now, but native config usually handles "showsActivityIndicator".
-    return null; 
+    return null;
   };
-  
+
   // Decide whether to use native title rendering.
   const useNativeTitle = createMemo(() => {
     if (!isStringContent()) return false;
@@ -728,12 +738,17 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
   // If using native title, we don't render text children.
   // Otherwise, render a Text node for string content so it participates in layout.
   const renderContent = () => {
-      if (isStringContent() && !useNativeTitle()) {
-        const fontSize = sizeFontMap[resolvedSize()] ?? sizeFontMap.md;
-        return <Text style={{ fontSize }}>{titleContent()}</Text>;
-      }
-      if (isStringContent()) return null;
-      return local.children;
+    if (isStringContent() && !useNativeTitle()) {
+      const fontSize = sizeFontMap[resolvedSize()] ?? sizeFontMap.md;
+      // Merge labelStyle with default font size
+      const textStyle: Style = {
+        fontSize,
+        ...((local.labelStyle as Style) ?? {}),
+      };
+      return <Text style={textStyle}>{titleContent()}</Text>;
+    }
+    if (isStringContent()) return null;
+    return local.children;
   };
 
   return (
