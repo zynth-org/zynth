@@ -6,6 +6,7 @@ export * from "./primitives/ScrollView";
 export * from "./primitives/Button";
 export * from "./primitives/Pressable";
 export * from "./primitives/FlatList";
+export * from "./primitives/ProgressIndicator";
 export { createPressableController } from "./primitives/pressable/controller";
 export type { PressableController } from "./primitives/pressable/controller";
 export { createFlatListController } from "./primitives/flatlist/controller";

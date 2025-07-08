@@ -2,6 +2,7 @@ import type { Style } from "@rune/core";
 import type { JSX } from "solid-js";
 import type { ImageElementProps } from "./primitives/Image";
 import type { TextInputProps } from "./primitives/TextInput";
+import type { ProgressIndicatorProps } from "./primitives/ProgressIndicator";
 
 type RuneChildren = JSX.Element | JSX.Element[] | null | undefined;
 type SolidButtonProps = JSX.HTMLAttributes<HTMLButtonElement>;
@@ -44,6 +45,7 @@ declare module "solid-js" {
       "scroll-view": ViewElementProps & { [key: string]: any };
       pressable: ViewElementProps & { [key: string]: any };
       button: SolidButtonProps & { testID?: string };
+      "progress-indicator": ProgressIndicatorProps & { [key: string]: any };
     }
   }
 }
