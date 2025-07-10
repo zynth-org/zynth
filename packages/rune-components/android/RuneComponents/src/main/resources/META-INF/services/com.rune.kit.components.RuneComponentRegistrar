@@ -6,3 +6,4 @@ com.rune.components.image.ImageComponentRegistrar
 com.rune.components.text.TextComponentRegistrar
 com.rune.components.view.ViewComponentRegistrar
 com.rune.components.progressindicator.ProgressIndicatorRegistrar
+com.rune.components.switch.SwitchComponentRegistrar

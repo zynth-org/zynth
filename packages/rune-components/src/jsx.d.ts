@@ -3,6 +3,7 @@ import type { JSX } from "solid-js";
 import type { ImageElementProps } from "./primitives/Image";
 import type { TextInputProps } from "./primitives/TextInput";
 import type { ProgressIndicatorProps } from "./primitives/ProgressIndicator";
+import type { SwitchProps } from "./primitives/Switch";
 
 type RuneChildren = JSX.Element | JSX.Element[] | null | undefined;
 type SolidButtonProps = JSX.HTMLAttributes<HTMLButtonElement>;
@@ -46,6 +47,7 @@ declare module "solid-js" {
       pressable: ViewElementProps & { [key: string]: any };
       button: SolidButtonProps & { testID?: string };
       "progress-indicator": ProgressIndicatorProps & { [key: string]: any };
+      "switch-view": SwitchProps & { [key: string]: any };
     }
   }
 }
