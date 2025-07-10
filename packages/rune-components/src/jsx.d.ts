@@ -2,6 +2,7 @@ import type { Style } from "@rune/core";
 import type { JSX } from "solid-js";
 import type { ImageElementProps } from "./primitives/Image";
 import type { TextInputProps } from "./primitives/TextInput";
+import type { TextFieldProps } from "./primitives/TextField";
 import type { ProgressIndicatorProps } from "./primitives/ProgressIndicator";
 import type { SwitchProps } from "./primitives/Switch";
 
@@ -48,6 +49,7 @@ declare module "solid-js" {
       button: SolidButtonProps & { testID?: string };
       "progress-indicator": ProgressIndicatorProps & { [key: string]: any };
       "switch-view": SwitchProps & { [key: string]: any };
+      "text-field": TextFieldProps & { [key: string]: any };
     }
   }
 }
