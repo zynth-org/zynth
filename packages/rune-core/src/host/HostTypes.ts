@@ -85,6 +85,7 @@ export type Style = {
   zIndex?: number;
   fontSize?: number;
   color?: string;
+  placeholderColor?: string;
   fontWeight?:
     | "normal"
     | "bold"

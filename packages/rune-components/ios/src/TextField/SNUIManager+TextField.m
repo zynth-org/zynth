@@ -130,6 +130,12 @@ static BOOL RuneTextFieldHandleSetProp(SNUIManager *manager,
     return YES;
   }
 
+  if ([name isEqualToString:@"variant"]) {
+    NSString *strValue = [value isKindOfClass:[NSString class]] ? value : @"filled";
+    [textFieldView rune_setVariant:strValue];
+    return YES;
+  }
+
   if ([name isEqualToString:@"requestFocus"]) {
     BOOL shouldFocus = [value respondsToSelector:@selector(boolValue)] ? [value boolValue] : NO;
     if (shouldFocus) {
@@ -143,6 +149,59 @@ static BOOL RuneTextFieldHandleSetProp(SNUIManager *manager,
     if (shouldBlur) {
       [textFieldView rune_requestBlur];
     }
+    return YES;
+  }
+
+  if ([name isEqualToString:@"backgroundColor"]) {
+    UIColor *color = nil;
+    if ([value isKindOfClass:[NSString class]]) {
+      NSString *colorStr = (NSString *)value;
+      if ([colorStr isEqualToString:@"transparent"]) {
+        color = [UIColor clearColor];
+      } else {
+        color = SNColorFromHex(colorStr);
+      }
+    }
+    [textFieldView rune_setBackgroundColor:color];
+    return YES;
+  }
+
+  if ([name isEqualToString:@"borderRadius"]) {
+    CGFloat radius = [value respondsToSelector:@selector(floatValue)] ? [value floatValue] : 0;
+    [textFieldView rune_setBorderRadius:radius];
+    return YES;
+  }
+
+  if ([name isEqualToString:@"borderWidth"]) {
+    CGFloat width = [value respondsToSelector:@selector(floatValue)] ? [value floatValue] : 0;
+    [textFieldView rune_setBorderWidth:width];
+    return YES;
+  }
+
+  if ([name isEqualToString:@"borderColor"]) {
+    UIColor *color = nil;
+    if ([value isKindOfClass:[NSString class]]) {
+      color = SNColorFromHex((NSString *)value);
+    }
+    [textFieldView rune_setBorderColor:color];
+    return YES;
+  }
+
+  if ([name isEqualToString:@"textColor"]) {
+    UIColor *color = nil;
+    if ([value isKindOfClass:[NSString class]]) {
+      color = SNColorFromHex((NSString *)value);
+    }
+    [textFieldView rune_setTextColor:color];
+    return YES;
+  }
+
+  if ([name isEqualToString:@"placeholderColor"]) {
+    UIColor *color = nil;
+    if ([value isKindOfClass:[NSString class]]) {
+      color = SNColorFromHex((NSString *)value);
+    }
+    [textFieldView rune_setPlaceholderColor:color];
     return YES;
   }
 

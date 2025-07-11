@@ -33,6 +33,15 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)rune_setAutoCapitalize:(NSString *)autoCapitalize;
 - (void)rune_setAutoCorrect:(BOOL)autoCorrect;
 - (void)rune_setMaxLength:(NSInteger)maxLength;
+- (void)rune_setVariant:(NSString *)variant;
+
+/// Styling
+- (void)rune_setBackgroundColor:(UIColor *_Nullable)color;
+- (void)rune_setBorderRadius:(CGFloat)radius;
+- (void)rune_setBorderWidth:(CGFloat)width;
+- (void)rune_setBorderColor:(UIColor *_Nullable)color;
+- (void)rune_setTextColor:(UIColor *_Nullable)color;
+- (void)rune_setPlaceholderColor:(UIColor *_Nullable)color;
 
 /// Focus control
 - (void)rune_requestFocus;

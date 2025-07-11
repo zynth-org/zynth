@@ -10,6 +10,7 @@ import { setProperty } from "@rune/core";
 export type KeyboardType = "default" | "numeric" | "email" | "phone" | "url";
 export type ReturnKeyType = "done" | "go" | "next" | "search" | "send";
 export type AutoCapitalize = "none" | "sentences" | "words" | "characters";
+export type TextFieldVariant = "filled" | "outlined" | "none";
 
 export interface TextFieldController {
   /** Get the current text value */
@@ -99,6 +100,8 @@ export interface TextFieldProps {
   autoCorrect?: boolean;
   /** Maximum number of characters allowed */
   maxLength?: number;
+  /** Visual variant: 'filled' (default), 'outlined', or 'none' (Android only) */
+  variant?: TextFieldVariant;
 
   // Events
   /** Called when the text changes */
@@ -136,6 +139,7 @@ export const TextField: Component<TextFieldProps> = (props) => {
     "autoCapitalize",
     "autoCorrect",
     "maxLength",
+    "variant",
     "onChange",
     "onFocus",
     "onBlur",
@@ -211,6 +215,10 @@ export const TextField: Component<TextFieldProps> = (props) => {
     setProperty(node, "returnKeyType", local.returnKeyType ?? "done");
     setProperty(node, "autoCapitalize", local.autoCapitalize ?? "sentences");
     setProperty(node, "autoCorrect", local.autoCorrect ?? true);
+    // Only send variant if explicitly set - don't interfere with default filled style
+    if (local.variant !== undefined) {
+      setProperty(node, "variant", local.variant);
+    }
     if (local.maxLength !== undefined) {
       setProperty(node, "maxLength", local.maxLength);
     }
@@ -222,11 +230,54 @@ export const TextField: Component<TextFieldProps> = (props) => {
     setProperty(node, "onSubmit", handleSubmit);
   });
 
+  // Sync style properties to native
+  createEffect(() => {
+    const node = hostNode();
+    if (!node || !local.style) return;
+
+    const style = local.style as Record<string, unknown>;
+
+    if (style.backgroundColor !== undefined) {
+      setProperty(node, "backgroundColor", style.backgroundColor);
+    }
+    if (style.borderRadius !== undefined) {
+      setProperty(node, "borderRadius", style.borderRadius);
+    }
+    if (style.borderWidth !== undefined) {
+      setProperty(node, "borderWidth", style.borderWidth);
+    }
+    if (style.borderColor !== undefined) {
+      setProperty(node, "borderColor", style.borderColor);
+    }
+    if (style.color !== undefined) {
+      setProperty(node, "textColor", style.color);
+    }
+    if (style.placeholderColor !== undefined) {
+      setProperty(node, "placeholderColor", style.placeholderColor);
+    }
+  });
+
+  // Filter out styles that are handled natively to avoid double-application
+  const filteredStyle = () => {
+    if (!local.style) return undefined;
+    const style = local.style as Record<string, unknown>;
+    const {
+      backgroundColor,
+      borderRadius,
+      borderWidth,
+      borderColor,
+      color,
+      placeholderColor,
+      ...rest
+    } = style;
+    return rest;
+  };
+
   return (
     <text-field
       ref={(node: HostNode) => setHostNode(node)}
       defaultValue={local.defaultValue}
-      style={local.style}
+      style={filteredStyle()}
       testID={local.testID}
     />
   );

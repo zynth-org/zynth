@@ -167,6 +167,48 @@ class TextFieldComponentRegistrar : RuneComponentRegistrar {
                   }
                   true
                 }
+                "backgroundColor" -> {
+                  val color = parseStringValue(value, name)
+                  Log.d(TAG, "applyProperty backgroundColor: raw=$value parsed=$color")
+                  textFieldView.setBackgroundColor(color)
+                  true
+                }
+                "borderRadius" -> {
+                  val radius = parseFloatValue(value, name, 0f)
+                  Log.d(TAG, "applyProperty borderRadius: raw=$value parsed=$radius")
+                  textFieldView.setBorderRadius(radius)
+                  true
+                }
+                "borderWidth" -> {
+                  val width = parseFloatValue(value, name, 0f)
+                  Log.d(TAG, "applyProperty borderWidth: raw=$value parsed=$width")
+                  textFieldView.setBorderWidth(width)
+                  true
+                }
+                "borderColor" -> {
+                  val color = parseStringValue(value, name)
+                  Log.d(TAG, "applyProperty borderColor: raw=$value parsed=$color")
+                  textFieldView.setBorderColor(color)
+                  true
+                }
+                "variant" -> {
+                  val variant = parseStringValue(value, name) ?: "filled"
+                  Log.d(TAG, "applyProperty variant: raw=$value parsed=$variant")
+                  textFieldView.setVariant(variant)
+                  true
+                }
+                "textColor" -> {
+                  val color = parseStringValue(value, name)
+                  Log.d(TAG, "applyProperty textColor: raw=$value parsed=$color")
+                  textFieldView.setTextColor(color)
+                  true
+                }
+                "placeholderColor" -> {
+                  val color = parseStringValue(value, name)
+                  Log.d(TAG, "applyProperty placeholderColor: raw=$value parsed=$color")
+                  textFieldView.setPlaceholderColor(color)
+                  true
+                }
                 else -> false
               }
             } catch (e: Exception) {
@@ -181,6 +223,30 @@ class TextFieldComponentRegistrar : RuneComponentRegistrar {
 
   companion object {
     private const val TAG = "TextFieldComponent"
+  }
+
+  /**
+   * Parses a float value from JSON.
+   */
+  private fun parseFloatValue(json: String?, propName: String, default: Float): Float {
+    if (json == null || json == "null") return default
+
+    // First try as JSON object
+    try {
+      val obj = JSONObject(json)
+      if (obj.has(propName)) {
+        return obj.getDouble(propName).toFloat()
+      }
+    } catch (e: Exception) {
+      // Not a JSON object
+    }
+
+    // Try parsing as raw number
+    return try {
+      json.trim().toFloat()
+    } catch (e: Exception) {
+      default
+    }
   }
 
   /**

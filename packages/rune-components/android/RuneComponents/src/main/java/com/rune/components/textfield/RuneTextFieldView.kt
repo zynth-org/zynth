@@ -44,6 +44,11 @@ class RuneTextFieldView(context: Context) : FrameLayout(context) {
 
   private var isUpdatingFromJS = false
   private var maxLength: Int = Int.MAX_VALUE
+  private var currentVariant: String = "filled"
+  private var currentBackgroundColor: Int? = null
+  private var currentBorderRadius: Float? = null  // null means use M3 default
+  private var hasCustomBorderColor: Boolean = false
+  private var currentBorderWidth: Float? = null  // null means use M3 default
 
   interface Listener {
     fun onChange(nodeId: Int, value: String)
@@ -55,6 +60,7 @@ class RuneTextFieldView(context: Context) : FrameLayout(context) {
   companion object {
     private const val TAG = "RuneTextFieldView"
     private const val MIN_HEIGHT_DP = 56 // Material 3 minimum height for filled text field
+    private const val DEFAULT_CORNER_RADIUS_DP = 4f // Material 3 default corner radius
   }
 
   init {
@@ -260,5 +266,201 @@ class RuneTextFieldView(context: Context) : FrameLayout(context) {
     textInputEditText.clearFocus()
     val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
     imm.hideSoftInputFromWindow(textInputEditText.windowToken, 0)
+  }
+
+  fun setVariant(variant: String) {
+    currentVariant = variant
+    when (variant) {
+      "outlined" -> {
+        textInputLayout.boxBackgroundMode = TextInputLayout.BOX_BACKGROUND_OUTLINE
+        // Reset EditText background
+        textInputEditText.background = null
+        // Outlined mode should have equal corner radii on all 4 corners
+        // Material 3 default is 4dp, but respect custom radius if set
+        val radiusPx = currentBorderRadius?.let { it * density } ?: (4 * density)
+        textInputLayout.setBoxCornerRadii(radiusPx, radiusPx, radiusPx, radiusPx)
+        // Set background color (transparent by default for outlined, or custom if set)
+        textInputLayout.boxBackgroundColor = currentBackgroundColor ?: Color.TRANSPARENT
+      }
+      "none" -> {
+        // For "none" variant, we need to completely remove all M3 styling
+        textInputLayout.boxBackgroundMode = TextInputLayout.BOX_BACKGROUND_NONE
+        textInputLayout.boxBackgroundColor = Color.TRANSPARENT
+        // Remove the underline/stroke
+        textInputLayout.boxStrokeWidth = 0
+        textInputLayout.boxStrokeWidthFocused = 0
+        // Clear all corner radii on the layout
+        textInputLayout.setBoxCornerRadii(0f, 0f, 0f, 0f)
+        // Apply current background to EditText with rounded corners if needed
+        applyEditTextBackground()
+      }
+      else -> { // "filled" is default
+        textInputLayout.boxBackgroundMode = TextInputLayout.BOX_BACKGROUND_FILLED
+        // Reset EditText background - let TextInputLayout handle it
+        textInputEditText.background = null
+        // Only set background color if explicitly provided by the user
+        // Otherwise, let Material 3 handle its default background (don't interfere!)
+        if (currentBackgroundColor != null) {
+          textInputLayout.boxBackgroundColor = currentBackgroundColor!!
+        }
+        // Note: We intentionally do NOT set defaultFilledBackgroundColor here
+        // because TextInputLayout already has the correct default from the theme
+        
+        // Apply custom border radius if set (filled mode has rounded top, flat bottom by default)
+        currentBorderRadius?.let { radius ->
+          val radiusPx = radius * density
+          // Keep M3's top-only rounded corners for filled variant
+          textInputLayout.setBoxCornerRadii(radiusPx, radiusPx, 0f, 0f)
+        }
+      }
+    }
+  }
+
+  private fun applyEditTextBackground() {
+    // Only apply custom background drawable for "none" variant
+    if (currentVariant != "none") {
+      return
+    }
+    
+    val bgColor = currentBackgroundColor ?: Color.TRANSPARENT
+    val radiusPx = (currentBorderRadius ?: 0f) * density
+    
+    val drawable = android.graphics.drawable.GradientDrawable().apply {
+      setColor(bgColor)
+      cornerRadius = radiusPx
+    }
+    textInputEditText.background = drawable
+    
+    // Add padding for text when using custom background
+    val paddingPx = (12 * density).toInt()
+    textInputEditText.setPadding(paddingPx, paddingPx / 2, paddingPx, paddingPx / 2)
+  }
+
+  fun setBackgroundColor(colorString: String?) {
+    val color = colorString?.let { parseColor(it) }
+    currentBackgroundColor = color
+    
+    if (currentVariant == "none") {
+      // For "none" variant, apply directly to EditText with rounded corners
+      applyEditTextBackground()
+    } else if (color != null) {
+      // For filled/outlined, set the background color
+      textInputLayout.boxBackgroundColor = color
+      
+      // For filled variant, ensure we have the proper rounded corners
+      // when setting a custom background color
+      if (currentVariant == "filled") {
+        val radiusPx = (currentBorderRadius ?: DEFAULT_CORNER_RADIUS_DP) * density
+        // If user set a custom borderRadius, use it on all corners
+        // Otherwise use M3 default: rounded top, flat bottom
+        if (currentBorderRadius != null) {
+          textInputLayout.setBoxCornerRadii(radiusPx, radiusPx, radiusPx, radiusPx)
+        } else {
+          textInputLayout.setBoxCornerRadii(radiusPx, radiusPx, 0f, 0f)
+        }
+      }
+    }
+    // Note: We intentionally do nothing when color is null for filled/outlined
+    // This allows Material 3 to handle its default background color
+  }
+
+  fun setBorderRadius(radius: Float) {
+    currentBorderRadius = radius
+    val radiusPx = radius * density
+    
+    if (currentVariant == "none") {
+      // For "none" variant, apply to EditText background
+      applyEditTextBackground()
+    } else {
+      // For filled/outlined, when user explicitly sets borderRadius,
+      // apply equal corners on all sides (user is customizing the shape)
+      textInputLayout.setBoxCornerRadii(radiusPx, radiusPx, radiusPx, radiusPx)
+      
+      // For filled variant with custom border radius, hide the bottom underline indicator
+      // since it would cut across the rounded bottom corners
+      if (currentVariant == "filled") {
+        textInputLayout.boxStrokeWidth = 0
+        textInputLayout.boxStrokeWidthFocused = 0
+      }
+    }
+  }
+
+  fun setBorderWidth(width: Float) {
+    currentBorderWidth = width
+    val widthPx = (width * density).roundToInt()
+    textInputLayout.boxStrokeWidth = widthPx
+    textInputLayout.boxStrokeWidthFocused = widthPx
+  }
+
+  fun setBorderColor(colorString: String?) {
+    val color = colorString?.let { parseColor(it) }
+    hasCustomBorderColor = color != null
+    
+    if (color != null) {
+      // Create a ColorStateList that uses the same color for ALL states
+      // This includes: focused, unfocused, hovered, error, disabled
+      val states = arrayOf(
+        intArrayOf(android.R.attr.state_focused),
+        intArrayOf(android.R.attr.state_hovered),
+        intArrayOf(-android.R.attr.state_enabled),
+        intArrayOf() // default state
+      )
+      val colors = intArrayOf(color, color, color, color)
+      val colorStateList = android.content.res.ColorStateList(states, colors)
+      
+      // Set the stroke color state list for all states
+      textInputLayout.setBoxStrokeColorStateList(colorStateList)
+      
+      // Also set the focused stroke color explicitly
+      textInputLayout.boxStrokeColor = color
+    }
+  }
+
+  fun setTextColor(colorString: String?) {
+    val color = colorString?.let { parseColor(it) }
+    if (color != null) {
+      textInputEditText.setTextColor(color)
+    }
+  }
+
+  fun setPlaceholderColor(colorString: String?) {
+    val color = colorString?.let { parseColor(it) }
+    if (color != null) {
+      // Set hint color on the TextInputLayout
+      textInputLayout.hintTextColor = android.content.res.ColorStateList.valueOf(color)
+      // Also set the default hint color for when not focused
+      textInputLayout.defaultHintTextColor = android.content.res.ColorStateList.valueOf(color)
+    }
+  }
+
+  private fun parseColor(colorStr: String): Int? {
+    return try {
+      when {
+        colorStr == "transparent" -> Color.TRANSPARENT
+        colorStr.startsWith("#") -> Color.parseColor(colorStr)
+        colorStr.startsWith("rgba(") -> parseRgba(colorStr)
+        colorStr.startsWith("rgb(") -> parseRgb(colorStr)
+        else -> Color.parseColor("#$colorStr")
+      }
+    } catch (e: Exception) {
+      null
+    }
+  }
+
+  private fun parseRgba(rgba: String): Int {
+    val values = rgba.removePrefix("rgba(").removeSuffix(")").split(",").map { it.trim() }
+    val r = values[0].toInt()
+    val g = values[1].toInt()
+    val b = values[2].toInt()
+    val a = (values[3].toFloat() * 255).roundToInt()
+    return Color.argb(a, r, g, b)
+  }
+
+  private fun parseRgb(rgb: String): Int {
+    val values = rgb.removePrefix("rgb(").removeSuffix(")").split(",").map { it.trim() }
+    val r = values[0].toInt()
+    val g = values[1].toInt()
+    val b = values[2].toInt()
+    return Color.rgb(r, g, b)
   }
 }
