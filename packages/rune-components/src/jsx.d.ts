@@ -50,6 +50,7 @@ declare module "solid-js" {
       "progress-indicator": ProgressIndicatorProps & { [key: string]: any };
       "switch-view": SwitchProps & { [key: string]: any };
       "text-field": TextFieldProps & { [key: string]: any };
+      "rune-alert": { [key: string]: any };
     }
   }
 }

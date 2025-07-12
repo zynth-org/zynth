@@ -8,3 +8,4 @@ com.rune.components.view.ViewComponentRegistrar
 com.rune.components.progressindicator.ProgressIndicatorRegistrar
 com.rune.components.switch.SwitchComponentRegistrar
 com.rune.components.textfield.TextFieldComponentRegistrar
+com.rune.components.alert.RuneAlertRegistrar
