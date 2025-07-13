@@ -94,6 +94,7 @@ struct TimerEntry {
   int id = 0;
   std::shared_ptr<facebook::jsi::Function> callback;
   std::vector<facebook::jsi::Value> args;
+  bool isInterval = false;
 };
 
 struct PromiseEntry {
@@ -834,6 +835,7 @@ void installTimers(std::shared_ptr<RuntimeState> state) {
         for (size_t i = 2; i < count; ++i) {
           entry.args.emplace_back(runtime, args[i]);
         }
+        entry.isInterval = true;
         {
           std::lock_guard<std::mutex> lock(state->mutex);
           timerId = state->nextTimerId++;
@@ -1121,6 +1123,7 @@ void installTimers(std::shared_ptr<RuntimeState> state) {
           }
         }
         
+        entry.isInterval = true;
         {
           std::lock_guard<std::mutex> lock(state->mutex);
           timerId = state->nextTimerId++;
@@ -1689,16 +1692,33 @@ void onTimerFired(facebook::hermes::HermesRuntime *runtime, int timerId) {
   using namespace facebook::jsi;
   auto state = getState(runtime);
   if (!state) return;
-  TimerEntry entry;
+  
+  std::shared_ptr<Function> callback;
+  std::vector<Value> args;
+  
   {
     std::lock_guard<std::mutex> lock(state->mutex);
     auto it = state->timers.find(timerId);
     if (it == state->timers.end()) return;
-    entry = std::move(it->second);
-    state->timers.erase(it);
+    
+    if (it->second.isInterval) {
+      callback = it->second.callback;
+      args.reserve(it->second.args.size());
+      for (const auto &arg : it->second.args) {
+        args.emplace_back(*runtime, arg);
+      }
+    } else {
+      TimerEntry entry = std::move(it->second);
+      state->timers.erase(it);
+      callback = std::move(entry.callback);
+      args = std::move(entry.args);
+    }
   }
+  
   try {
-    entry.callback->call(*runtime, static_cast<const facebook::jsi::Value *>(entry.args.data()), entry.args.size());
+    if (callback) {
+      callback->call(*runtime, static_cast<const facebook::jsi::Value *>(args.data()), args.size());
+    }
   } catch (const facebook::jsi::JSError &err) {
     BRIDGE_LOG(ANDROID_LOG_ERROR, "Timer callback error: %s", err.getMessage().c_str());
     auto state = getState(runtime);
