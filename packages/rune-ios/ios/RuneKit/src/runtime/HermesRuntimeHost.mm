@@ -62,6 +62,8 @@ struct Timer {
   std::shared_ptr<Function> fn;
   std::vector<Value> args;
   dispatch_source_t source;
+  bool isInterval;
+  int64_t intervalNs;
 };
 
 static std::atomic<int> gNextTimer{1};
@@ -1007,6 +1009,8 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
           timer->fn = std::make_shared<Function>(fnObject.asFunction(rt));
           timer->args = std::move(args);
           timer->source = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, host->_jsQueue);
+          timer->isInterval = false;
+          timer->intervalNs = 0;
 
           dispatch_source_t source = timer->source;
           gTimers.emplace(timerId, std::move(timer));
@@ -1039,6 +1043,81 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
           RuneReportJSIError(rt, error, "setTimeout");
         } catch (const std::exception &ex) {
           [host reportStdException:ex context:@"setTimeout"];
+        }
+        return Value::undefined();
+      });
+
+  auto hostSetInterval = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "__hostSetInterval"), 3,
+      [host](Runtime &rt, const Value &, const Value *a, size_t count) -> Value {
+        try {
+          if (count < 2 || !a[0].isObject()) {
+            return Value::undefined();
+          }
+
+          Object fnObject = a[0].asObject(rt);
+          if (!fnObject.isFunction(rt)) {
+            return Value::undefined();
+          }
+
+          int delayMs = (count > 1 && a[1].isNumber()) ? static_cast<int>(a[1].asNumber()) : 0;
+          if (delayMs < 1) delayMs = 1; // Minimum 1ms for intervals to prevent tight loops
+          
+          std::vector<Value> args;
+          if (count > 2 && a[2].isObject()) {
+            Object maybeArray = a[2].asObject(rt);
+            if (maybeArray.isArray(rt)) {
+              Array array = maybeArray.asArray(rt);
+              size_t length = array.size(rt);
+              args.reserve(length);
+              for (size_t i = 0; i < length; ++i) {
+                args.emplace_back(Value(rt, array.getValueAtIndex(rt, i)));
+              }
+            }
+          }
+
+          int timerId = gNextTimer.fetch_add(1);
+          int64_t intervalNs = (int64_t)delayMs * NSEC_PER_MSEC;
+          
+          auto timer = std::make_unique<Timer>();
+          timer->id = timerId;
+          timer->fn = std::make_shared<Function>(fnObject.asFunction(rt));
+          timer->args = std::move(args);
+          timer->source = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, host->_jsQueue);
+          timer->isInterval = true;
+          timer->intervalNs = intervalNs;
+
+          dispatch_source_t source = timer->source;
+          gTimers.emplace(timerId, std::move(timer));
+
+          // Set repeating timer: first fire after intervalNs, then repeat every intervalNs
+          dispatch_source_set_timer(source, dispatch_time(DISPATCH_TIME_NOW, intervalNs), intervalNs, 0);
+
+          dispatch_source_set_event_handler(source, ^{
+            auto it = gTimers.find(timerId);
+            if (it == gTimers.end()) {
+              return;
+            }
+            auto &timerRef = *it->second;
+            auto &runtime = *host->_rt;
+            const Value *argsPtr = timerRef.args.empty() ? nullptr : timerRef.args.data();
+            try {
+              timerRef.fn->call(runtime, argsPtr, timerRef.args.size());
+            } catch (const facebook::jsi::JSError &error) {
+              RuneReportJSIError(runtime, error, "setInterval");
+            } catch (const std::exception &ex) {
+              [host reportStdException:ex context:@"setInterval"];
+            }
+            // Note: Unlike setTimeout, we do NOT cancel or erase the timer here
+            // The interval continues until explicitly cleared
+          });
+
+          dispatch_resume(source);
+          return Value(static_cast<double>(timerId));
+        } catch (const facebook::jsi::JSError &error) {
+          RuneReportJSIError(rt, error, "setInterval");
+        } catch (const std::exception &ex) {
+          [host reportStdException:ex context:@"setInterval"];
         }
         return Value::undefined();
       });
@@ -1103,14 +1182,40 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
         return Value::undefined();
       });
 
+  auto hostClearInterval = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "__hostClearInterval"), 1,
+      [host](Runtime &rt, const Value &, const Value *a, size_t count) -> Value {
+        try {
+          if (count < 1 || !a[0].isNumber()) {
+            return Value::undefined();
+          }
+          int timerId = static_cast<int>(a[0].asNumber());
+          auto it = gTimers.find(timerId);
+          if (it == gTimers.end()) {
+            return Value::undefined();
+          }
+          dispatch_source_cancel(it->second->source);
+          gTimers.erase(it);
+        } catch (const facebook::jsi::JSError &error) {
+          RuneReportJSIError(rt, error, "clearInterval");
+        } catch (const std::exception &ex) {
+          [host reportStdException:ex context:@"clearInterval"];
+        }
+        return Value::undefined();
+      });
+
   rt.global().setProperty(rt, "__hostSetTimeout", hostSetTimeout);
+  rt.global().setProperty(rt, "__hostSetInterval", hostSetInterval);
   rt.global().setProperty(rt, "__hostClearTimeout", hostClearTimeout);
+  rt.global().setProperty(rt, "__hostClearInterval", hostClearInterval);
   rt.global().setProperty(rt, "__hostRequestAnimationFrame", hostRequestAnimationFrame);
   rt.global().setProperty(rt, "__hostCancelAnimationFrame", hostCancelAnimationFrame);
 
   static const char *timerScript =
       "globalThis.setTimeout=(fn,ms,...a)=>__hostSetTimeout(fn,ms|0,a);"
     "globalThis.clearTimeout=(id)=>__hostClearTimeout(id);"
+    "globalThis.setInterval=(fn,ms,...a)=>__hostSetInterval(fn,ms|0,a);"
+    "globalThis.clearInterval=(id)=>__hostClearInterval(id);"
     "globalThis.setImmediate=(fn,...a)=>__hostSetTimeout(fn,0,a);"
     "globalThis.clearImmediate=(id)=>__hostClearTimeout(id);"
     "globalThis.requestAnimationFrame=(fn)=>__hostRequestAnimationFrame(fn);"

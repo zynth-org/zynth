@@ -56,6 +56,8 @@ object JSBridge {
   interface TimerShim {
     fun scheduleTimeout(timerId: Int, delayMs: Long)
     fun clearTimeout(timerId: Int)
+    fun scheduleInterval(timerId: Int, delayMs: Long)
+    fun clearInterval(timerId: Int)
     fun requestAnimationFrame(frameId: Int)
     fun cancelAnimationFrame(frameId: Int)
   }
@@ -87,6 +89,29 @@ object JSBridge {
     }
 
     override fun clearTimeout(timerId: Int) {
+      callbacks.remove(timerId)?.let { handler.removeCallbacks(it) }
+    }
+
+    override fun scheduleInterval(timerId: Int, delayMs: Long) {
+      val interval = if (delayMs < 1) 1L else delayMs // Minimum 1ms to prevent tight loops
+      val runnable = object : Runnable {
+        override fun run() {
+          if (!callbacks.containsKey(timerId)) return // Interval was cleared
+          val runtimePtr = runtimePtrProvider()
+          if (runtimePtr != 0L) {
+            onTimerFired(runtimePtr, timerId)
+            // Schedule next interval if still active
+            if (callbacks.containsKey(timerId)) {
+              handler.postDelayed(this, interval)
+            }
+          }
+        }
+      }
+      callbacks.put(timerId, runnable)?.let { handler.removeCallbacks(it) }
+      handler.postDelayed(runnable, interval)
+    }
+
+    override fun clearInterval(timerId: Int) {
       callbacks.remove(timerId)?.let { handler.removeCallbacks(it) }
     }
 

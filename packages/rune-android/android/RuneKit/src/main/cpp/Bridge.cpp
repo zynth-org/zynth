@@ -77,6 +77,8 @@ struct ModulesShimMethods {
 struct TimerShimMethods {
   jmethodID scheduleTimeout = nullptr;
   jmethodID clearTimeout = nullptr;
+  jmethodID scheduleInterval = nullptr;
+  jmethodID clearInterval = nullptr;
   jmethodID requestAnimationFrame = nullptr;
   jmethodID cancelAnimationFrame = nullptr;
 };
@@ -814,6 +816,61 @@ void installTimers(std::shared_ptr<RuntimeState> state) {
         return Value::undefined();
       });
 
+  auto setIntervalFn = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "setInterval"), 2,
+      [weakState](Runtime &runtime, const Value &, const Value *args, size_t count) -> Value {
+        auto state = weakState.lock();
+        if (!state) return Value::undefined();
+        if (count < 1 || !args[0].isObject() || !args[0].asObject(runtime).isFunction(runtime)) {
+          BRIDGE_LOG(ANDROID_LOG_WARN, "setInterval expects a function");
+          return Value::undefined();
+        }
+        double delayMs = (count >= 2 && args[1].isNumber()) ? args[1].getNumber() : 0.0;
+        if (delayMs < 1) delayMs = 1; // Minimum 1ms to prevent tight loops
+        int timerId;
+        TimerEntry entry;
+        entry.callback = std::make_shared<Function>(args[0].asObject(runtime).asFunction(runtime));
+        entry.args.reserve(count >= 3 ? count - 2 : 0);
+        for (size_t i = 2; i < count; ++i) {
+          entry.args.emplace_back(runtime, args[i]);
+        }
+        {
+          std::lock_guard<std::mutex> lock(state->mutex);
+          timerId = state->nextTimerId++;
+          entry.id = timerId;
+          state->timers.emplace(timerId, std::move(entry));
+        }
+        JniEnv env;
+        if (!env.valid()) {
+          return Value(static_cast<double>(timerId));
+        }
+        jlong delay = static_cast<jlong>(std::llround(delayMs));
+        env->CallVoidMethod(state->timerShim, state->timerMethods.scheduleInterval, timerId, delay);
+        logJniException(env.get(), "TimerShim.scheduleInterval");
+        return Value(static_cast<double>(timerId));
+      });
+
+  auto clearIntervalFn = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "clearInterval"), 1,
+      [weakState](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        auto state = weakState.lock();
+        if (!state) return Value::undefined();
+        if (count < 1 || !args[0].isNumber()) {
+          return Value::undefined();
+        }
+        int timerId = static_cast<int>(args[0].asNumber());
+        {
+          std::lock_guard<std::mutex> lock(state->mutex);
+          state->timers.erase(timerId);
+        }
+        JniEnv env;
+        if (env.valid()) {
+          env->CallVoidMethod(state->timerShim, state->timerMethods.clearInterval, timerId);
+          logJniException(env.get(), "TimerShim.clearInterval");
+        }
+        return Value::undefined();
+      });
+
   auto queueMicrotaskFn = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "queueMicrotask"), 1,
       [weakState](Runtime &runtime, const Value &, const Value *args, size_t count) -> Value {
@@ -964,6 +1021,8 @@ void installTimers(std::shared_ptr<RuntimeState> state) {
 
   rt.global().setProperty(rt, "setTimeout", setTimeoutFn);
   rt.global().setProperty(rt, "clearTimeout", clearTimeoutFn);
+  rt.global().setProperty(rt, "setInterval", setIntervalFn);
+  rt.global().setProperty(rt, "clearInterval", clearIntervalFn);
   rt.global().setProperty(rt, "setImmediate", setTimeoutFn);
   rt.global().setProperty(rt, "clearImmediate", clearTimeoutFn);
   rt.global().setProperty(rt, "queueMicrotask", queueMicrotaskFn);
@@ -1034,8 +1093,75 @@ void installTimers(std::shared_ptr<RuntimeState> state) {
         return Value::undefined();
       });
 
+  auto hostSetIntervalFn = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "__hostSetInterval"), 3,
+      [weakState](Runtime &runtime, const Value &, const Value *args, size_t count) -> Value {
+        auto state = weakState.lock();
+        if (!state) return Value::undefined();
+        if (count < 2 || !args[0].isObject() || !args[0].asObject(runtime).isFunction(runtime)) {
+          BRIDGE_LOG(ANDROID_LOG_WARN, "__hostSetInterval expects (function, delay, ...args)");
+          return Value::undefined();
+        }
+        double delayMs = args[1].isNumber() ? args[1].getNumber() : 0.0;
+        if (delayMs < 1) delayMs = 1; // Minimum 1ms to prevent tight loops
+        
+        int timerId;
+        TimerEntry entry;
+        entry.callback = std::make_shared<Function>(args[0].asObject(runtime).asFunction(runtime));
+        
+        // Handle args array if provided as third parameter
+        if (count >= 3 && args[2].isObject()) {
+          auto argsArray = args[2].asObject(runtime);
+          if (argsArray.isArray(runtime)) {
+            auto arrayLength = argsArray.getArray(runtime).length(runtime);
+            entry.args.reserve(arrayLength);
+            for (size_t i = 0; i < arrayLength; ++i) {
+              entry.args.emplace_back(runtime, argsArray.getArray(runtime).getValueAtIndex(runtime, i));
+            }
+          }
+        }
+        
+        {
+          std::lock_guard<std::mutex> lock(state->mutex);
+          timerId = state->nextTimerId++;
+          entry.id = timerId;
+          state->timers.emplace(timerId, std::move(entry));
+        }
+        JniEnv env;
+        if (!env.valid()) {
+          return Value(static_cast<double>(timerId));
+        }
+        jlong delay = static_cast<jlong>(std::llround(delayMs));
+        env->CallVoidMethod(state->timerShim, state->timerMethods.scheduleInterval, timerId, delay);
+        logJniException(env.get(), "TimerShim.scheduleInterval");
+        return Value(static_cast<double>(timerId));
+      });
+
+  auto hostClearIntervalFn = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "__hostClearInterval"), 1,
+      [weakState](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        auto state = weakState.lock();
+        if (!state) return Value::undefined();
+        if (count < 1 || !args[0].isNumber()) {
+          return Value::undefined();
+        }
+        int timerId = static_cast<int>(args[0].asNumber());
+        {
+          std::lock_guard<std::mutex> lock(state->mutex);
+          state->timers.erase(timerId);
+        }
+        JniEnv env;
+        if (env.valid()) {
+          env->CallVoidMethod(state->timerShim, state->timerMethods.clearInterval, timerId);
+          logJniException(env.get(), "TimerShim.clearInterval");
+        }
+        return Value::undefined();
+      });
+
   rt.global().setProperty(rt, "__hostSetTimeout", hostSetTimeoutFn);
   rt.global().setProperty(rt, "__hostClearTimeout", hostClearTimeoutFn);
+  rt.global().setProperty(rt, "__hostSetInterval", hostSetIntervalFn);
+  rt.global().setProperty(rt, "__hostClearInterval", hostClearIntervalFn);
 }
 
 jobject jsiValueToJObject(facebook::jsi::Runtime &rt, JNIEnv *env, const facebook::jsi::Value &value);
@@ -1374,6 +1500,8 @@ void installBindings(
 
   state->timerMethods.scheduleTimeout = env->GetMethodID(state->timerClass, "scheduleTimeout", "(IJ)V");
   state->timerMethods.clearTimeout = env->GetMethodID(state->timerClass, "clearTimeout", "(I)V");
+  state->timerMethods.scheduleInterval = env->GetMethodID(state->timerClass, "scheduleInterval", "(IJ)V");
+  state->timerMethods.clearInterval = env->GetMethodID(state->timerClass, "clearInterval", "(I)V");
   state->timerMethods.requestAnimationFrame = env->GetMethodID(state->timerClass, "requestAnimationFrame", "(I)V");
   state->timerMethods.cancelAnimationFrame = env->GetMethodID(state->timerClass, "cancelAnimationFrame", "(I)V");
 
