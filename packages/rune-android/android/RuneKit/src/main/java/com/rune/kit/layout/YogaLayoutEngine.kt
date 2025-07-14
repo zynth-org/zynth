@@ -132,16 +132,19 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
 
   override fun markDirty(id: Int) {
     nodes[id]?.let { node ->
-      // Only mark dirty if node exists
-      // Yoga will re-run measurement on next calculateLayout
-      try {
-        node.dirty()
-      } catch (e: Throwable) {
-        // Yoga throws "Only leaf nodes with custom measure functions should manually mark themselves as dirty"
-        // when trying to mark a node with a measure function dirty.
-        // This is expected for TEXT nodes - they manage their own dirtiness through measure callbacks.
-        // We can safely ignore this error.
-        Log.d("YogaEngine", "markDirty on node $id ignored (likely has measure function): ${e.message}")
+      // Only mark dirty if node exists AND satisfies Yoga requirements:
+      // 1. It must be a leaf node (childCount == 0)
+      // 2. It must have a custom measure function (we track this in measureHandlers)
+      // Calling dirty() on other nodes causes a native abort.
+      val hasMeasureFunc = measureHandlers.containsKey(id)
+      val isLeaf = node.childCount == 0
+      
+      if (hasMeasureFunc && isLeaf) {
+        try {
+          node.dirty()
+        } catch (e: Throwable) {
+          Log.d("YogaEngine", "markDirty on node $id ignored: ${e.message}")
+        }
       }
     }
   }
