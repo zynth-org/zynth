@@ -13,6 +13,8 @@ import com.facebook.yoga.YogaMeasureMode
 import com.facebook.yoga.YogaMeasureOutput
 import com.facebook.yoga.YogaNode
 import com.facebook.yoga.YogaNodeFactory
+import com.facebook.yoga.YogaWrap
+import com.facebook.yoga.YogaOverflow
 import kotlin.math.roundToInt
 
 class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
@@ -252,9 +254,17 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
     }
     style.flexGrow?.let { node.setFlexGrow(it) }
     style.flexShrink?.let { node.setFlexShrink(it) }
+    when {
+        style.flexBasisAuto -> node.setFlexBasisAuto()
+        style.flexBasis != null -> node.setFlexBasis(style.flexBasis)
+        style.flexBasisPercent != null -> node.setFlexBasisPercent(style.flexBasisPercent)
+        else -> node.setFlexBasisAuto()
+    }
     node.setFlex(style.flex ?: 0f)
     node.setFlexDirection(style.flexDirection?.toFlexDirection() ?: YogaFlexDirection.COLUMN)
+    node.setWrap(style.flexWrap?.toWrap() ?: YogaWrap.NO_WRAP)
     node.setJustifyContent(style.justifyContent?.toJustify() ?: YogaJustify.FLEX_START)
+    node.setAlignContent(style.alignContent?.toAlignContent() ?: YogaAlign.FLEX_START)
     // Default to STRETCH so children take full width of parent; allow explicit alignSelf override
     node.setAlignItems(style.alignItems?.toAlignItems() ?: YogaAlign.STRETCH)
     style.alignSelf?.let { alignSelf ->
@@ -269,6 +279,8 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
       }
       if (yogaAlign != null) node.setAlignSelf(yogaAlign) else node.setAlignSelf(YogaAlign.AUTO)
     }
+    style.aspectRatio?.let { node.setAspectRatio(it) }
+    node.setOverflow(style.overflow?.toOverflow() ?: YogaOverflow.VISIBLE)
     applyPadding(node, style)
     applyMargin(node, style)
     applyGap(node, style)
@@ -343,10 +355,30 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
       flex = next.flex ?: prev.flex,
       flexGrow = next.flexGrow ?: prev.flexGrow,
       flexShrink = next.flexShrink ?: prev.flexShrink,
+      flexBasis = when {
+        next.flexBasisAuto -> null
+        next.flexBasis != null -> next.flexBasis
+        else -> prev.flexBasis
+      },
+      flexBasisPercent = when {
+        next.flexBasisAuto -> null
+        next.flexBasisPercent != null -> next.flexBasisPercent
+        else -> prev.flexBasisPercent
+      },
+      flexBasisAuto = when {
+        next.flexBasisAuto -> true
+        next.flexBasis != null || next.flexBasisPercent != null -> false
+        else -> prev.flexBasisAuto
+      },
       flexDirection = next.flexDirection ?: prev.flexDirection,
+      flexWrap = next.flexWrap ?: prev.flexWrap,
       justifyContent = next.justifyContent ?: prev.justifyContent,
       alignItems = next.alignItems ?: prev.alignItems,
+      alignContent = next.alignContent ?: prev.alignContent,
       alignSelf = next.alignSelf ?: prev.alignSelf,
+      aspectRatio = next.aspectRatio ?: prev.aspectRatio,
+      overflow = next.overflow ?: prev.overflow,
+      zIndex = next.zIndex ?: prev.zIndex,
       position = next.position ?: prev.position,
       top = next.top ?: prev.top,
       right = next.right ?: prev.right,
@@ -488,5 +520,29 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
     "stretch" -> YogaAlign.STRETCH
     "baseline" -> YogaAlign.BASELINE
     else -> YogaAlign.STRETCH
+  }
+
+  private fun String.toWrap(): YogaWrap = when (lowercase()) {
+    "wrap" -> YogaWrap.WRAP
+    "wrap-reverse" -> YogaWrap.WRAP_REVERSE
+    "nowrap" -> YogaWrap.NO_WRAP
+    else -> YogaWrap.NO_WRAP
+  }
+
+  private fun String.toAlignContent(): YogaAlign = when (lowercase().replace("-", "_")) {
+    "flex_start", "flexstart" -> YogaAlign.FLEX_START
+    "flex_end", "flexend" -> YogaAlign.FLEX_END
+    "center" -> YogaAlign.CENTER
+    "stretch" -> YogaAlign.STRETCH
+    "space_between", "spacebetween" -> YogaAlign.SPACE_BETWEEN
+    "space_around", "spacearound" -> YogaAlign.SPACE_AROUND
+    else -> YogaAlign.FLEX_START
+  }
+
+  private fun String.toOverflow(): YogaOverflow = when (lowercase()) {
+    "hidden" -> YogaOverflow.HIDDEN
+    "scroll" -> YogaOverflow.SCROLL
+    "visible" -> YogaOverflow.VISIBLE
+    else -> YogaOverflow.VISIBLE
   }
 }

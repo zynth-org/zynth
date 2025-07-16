@@ -53,7 +53,12 @@ fun createViewComponentDescriptor(): RuneComponentDescriptor {
       }
     },
     onStyleApplied = { node, style ->
-      // View doesn't need special style handling beyond core
+      val viewContainer = node.view as? RuneViewContainer ?: return@RuneComponentDescriptor
+      style.overflow?.let { overflow ->
+        val shouldClip = !overflow.equals("visible", ignoreCase = true)
+        viewContainer.clipChildren = shouldClip
+        viewContainer.clipToPadding = shouldClip
+      }
     },
     onSetHandler = { node, event ->
       // View doesn't handle any specific events directly

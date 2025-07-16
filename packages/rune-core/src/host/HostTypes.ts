@@ -57,6 +57,7 @@ export type Style = {
   flex?: number;
   flexDirection?: "row" | "column";
   flexWrap?: "nowrap" | "wrap" | "wrap-reverse";
+  flexBasis?: number | string | "auto";
   justifyContent?:
     | "flex-start"
     | "center"
@@ -64,6 +65,13 @@ export type Style = {
     | "space-between"
     | "space-around";
   alignItems?: "flex-start" | "center" | "flex-end" | "stretch";
+  alignContent?:
+    | "flex-start"
+    | "flex-end"
+    | "center"
+    | "stretch"
+    | "space-between"
+    | "space-around";
   alignSelf?:
     | "auto"
     | "flex-start"
@@ -83,6 +91,8 @@ export type Style = {
   borderStyle?: "solid" | "dotted" | "dashed";
   opacity?: number;
   zIndex?: number;
+  aspectRatio?: number;
+  overflow?: "visible" | "hidden" | "scroll";
   fontSize?: number;
   color?: string;
   placeholderColor?: string;

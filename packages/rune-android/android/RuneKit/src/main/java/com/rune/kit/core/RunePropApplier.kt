@@ -153,6 +153,13 @@ internal class RunePropApplier(
       engine.setStyle(nodeId, Style())
     }
     applyBackgroundStyle(target.view, pixelStyle, target.type)
+    
+    // Apply zIndex
+    val zIndex = style.zIndex
+    if (zIndex != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+      target.view.translationZ = zIndex
+    }
+
     val resolvedOpacity = style.opacity?.coerceIn(0f, 1f)
     if (resolvedOpacity != null) {
       target.view.alpha = resolvedOpacity
@@ -425,7 +432,8 @@ internal class RunePropApplier(
 
       ViewCompat.setBackground(view, drawable)
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-        view.clipToOutline = needsRoundedBackground
+        val isOverflowVisible = style.overflow.equals("visible", ignoreCase = true)
+        view.clipToOutline = needsRoundedBackground && !isOverflowVisible
       }
     } else {
       when (view.background) {

@@ -30,10 +30,18 @@ data class Style(
   val flex: Float? = null,
   val flexGrow: Float? = null,
   val flexShrink: Float? = null,
+  val flexBasis: Float? = null,
+  val flexBasisPercent: Float? = null,
+  val flexBasisAuto: Boolean = false,
   val flexDirection: String? = null,
+  val flexWrap: String? = null,
   val justifyContent: String? = null,
   val alignItems: String? = null,
+  val alignContent: String? = null,
   val alignSelf: String? = null,
+  val aspectRatio: Float? = null,
+  val overflow: String? = null,
+  val zIndex: Float? = null,
   
   // Position properties
   val position: String? = null,
@@ -146,6 +154,22 @@ data class Style(
         val (maxWidthValue, maxWidthPercent) = json.optDimensionWithPercent("maxWidth")
         val (minHeightValue, minHeightPercent) = json.optDimensionWithPercent("minHeight")
         val (maxHeightValue, maxHeightPercent) = json.optDimensionWithPercent("maxHeight")
+        
+        // Flex basis can be auto, number or percent
+        val rawFlexBasis = json.opt("flexBasis")
+        val flexBasisResult = when (rawFlexBasis) {
+          is Number -> Triple(rawFlexBasis.toFloat(), null, false)
+          is String -> {
+            if (rawFlexBasis.equals("auto", ignoreCase = true)) {
+              Triple(null, null, true)
+            } else {
+              val (value, percent) = parseDimensionPercent(rawFlexBasis)
+              Triple(value, percent, false)
+            }
+          }
+          else -> Triple(null, null, false)
+        }
+
         return Style(
           width = widthResult.first,
           height = heightResult.first,
@@ -164,10 +188,18 @@ data class Style(
           flex = json.optFloat("flex"),
           flexGrow = json.optFloat("flexGrow"),
           flexShrink = json.optFloat("flexShrink"),
+          flexBasis = flexBasisResult.first,
+          flexBasisPercent = flexBasisResult.second,
+          flexBasisAuto = flexBasisResult.third,
           flexDirection = json.optStringOrNull("flexDirection"),
+          flexWrap = json.optStringOrNull("flexWrap"),
           justifyContent = json.optStringOrNull("justifyContent"),
           alignItems = json.optStringOrNull("alignItems"),
+          alignContent = json.optStringOrNull("alignContent"),
           alignSelf = json.optStringOrNull("alignSelf"),
+          aspectRatio = json.optFloat("aspectRatio"),
+          overflow = json.optStringOrNull("overflow"),
+          zIndex = json.optFloat("zIndex"),
           
           position = json.optStringOrNull("position"),
           top = json.optFloat("top"),
@@ -329,6 +361,9 @@ data class Style(
     if (density == 1f) return this
     fun Float?.scale(): Float? = this?.times(density)
     return copy(
+      flexGrow = flexGrow,
+      flexShrink = flexShrink,
+      flexBasis = flexBasis.scale(),
       width = width.scale(),
       height = height.scale(),
       minWidth = minWidth.scale(),

@@ -146,6 +146,17 @@ internal class RuneScrollView(
     declaredHeight = style.height?.roundToInt()
     declaredMinHeight = style.minHeight?.roundToInt()
     declaredMaxHeight = style.maxHeight?.roundToInt()
+
+    style.overflow?.let { overflow ->
+      val shouldClip = !overflow.equals("visible", ignoreCase = true)
+      clipChildren = shouldClip
+      clipToPadding = shouldClip
+      host.view.clipChildren = shouldClip
+      host.view.clipToPadding = shouldClip
+      contentView.clipChildren = shouldClip
+      contentView.clipToPadding = shouldClip
+    }
+
     invalidate()
     requestLayout()
   }
