@@ -308,7 +308,7 @@ class RuneUIManager(
     surfaceEngine.setMeasureHandler(surfaceId, null)
     surfaceEngine.setStyle(surfaceId, Style(
       flexDirection = "column",
-      alignItems = "stretch",
+      alignItems = "stretch",  // Children stretch to full width (standard CSS Flexbox default)
     ))
     Log.d("RuneUI", "Surface $surfaceId Yoga node configured as flex container (no measure function)")
     

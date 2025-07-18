@@ -267,17 +267,19 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
     node.setAlignContent(style.alignContent?.toAlignContent() ?: YogaAlign.FLEX_START)
     // Default to STRETCH so children take full width of parent; allow explicit alignSelf override
     node.setAlignItems(style.alignItems?.toAlignItems() ?: YogaAlign.STRETCH)
+    // Only set alignSelf if explicitly provided (matches iOS behavior)
+    // Yoga's default is AUTO which inherits from parent's alignItems
     style.alignSelf?.let { alignSelf ->
       val yogaAlign = when (alignSelf.lowercase()) {
-        "auto" -> null
+        "auto" -> YogaAlign.AUTO
         "flex-start", "flex_start" -> YogaAlign.FLEX_START
         "flex-end", "flex_end" -> YogaAlign.FLEX_END
         "center" -> YogaAlign.CENTER
         "stretch" -> YogaAlign.STRETCH
         "baseline" -> YogaAlign.BASELINE
-        else -> null
+        else -> YogaAlign.AUTO
       }
-      if (yogaAlign != null) node.setAlignSelf(yogaAlign) else node.setAlignSelf(YogaAlign.AUTO)
+      node.setAlignSelf(yogaAlign)
     }
     style.aspectRatio?.let { node.setAspectRatio(it) }
     node.setOverflow(style.overflow?.toOverflow() ?: YogaOverflow.VISIBLE)
@@ -499,13 +501,13 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
     YogaMeasureMode.AT_MOST -> MeasureMode.AT_MOST
   }
 
-  private fun String.toFlexDirection(): YogaFlexDirection = when (lowercase()) {
+  private fun String.toFlexDirection(): YogaFlexDirection = when (trim().lowercase()) {
     "row", "row-reverse" -> YogaFlexDirection.ROW
     "column", "column-reverse" -> YogaFlexDirection.COLUMN
     else -> YogaFlexDirection.COLUMN
   }
 
-  private fun String.toJustify(): YogaJustify = when (lowercase()) {
+  private fun String.toJustify(): YogaJustify = when (trim().lowercase()) {
     "center" -> YogaJustify.CENTER
     "flex-end" -> YogaJustify.FLEX_END
     "space-between" -> YogaJustify.SPACE_BETWEEN
@@ -514,22 +516,23 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
     else -> YogaJustify.FLEX_START
   }
 
-  private fun String.toAlignItems(): YogaAlign = when (lowercase()) {
+  private fun String.toAlignItems(): YogaAlign = when (trim().lowercase().replace("-", "_")) {
     "center" -> YogaAlign.CENTER
-    "flex-end" -> YogaAlign.FLEX_END
+    "flex_end", "flexend", "end" -> YogaAlign.FLEX_END
+    "flex_start", "flexstart", "start" -> YogaAlign.FLEX_START
     "stretch" -> YogaAlign.STRETCH
     "baseline" -> YogaAlign.BASELINE
     else -> YogaAlign.STRETCH
   }
 
-  private fun String.toWrap(): YogaWrap = when (lowercase()) {
+  private fun String.toWrap(): YogaWrap = when (trim().lowercase()) {
     "wrap" -> YogaWrap.WRAP
     "wrap-reverse" -> YogaWrap.WRAP_REVERSE
     "nowrap" -> YogaWrap.NO_WRAP
     else -> YogaWrap.NO_WRAP
   }
 
-  private fun String.toAlignContent(): YogaAlign = when (lowercase().replace("-", "_")) {
+  private fun String.toAlignContent(): YogaAlign = when (trim().lowercase().replace("-", "_")) {
     "flex_start", "flexstart" -> YogaAlign.FLEX_START
     "flex_end", "flexend" -> YogaAlign.FLEX_END
     "center" -> YogaAlign.CENTER
@@ -539,7 +542,7 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
     else -> YogaAlign.FLEX_START
   }
 
-  private fun String.toOverflow(): YogaOverflow = when (lowercase()) {
+  private fun String.toOverflow(): YogaOverflow = when (trim().lowercase()) {
     "hidden" -> YogaOverflow.HIDDEN
     "scroll" -> YogaOverflow.SCROLL
     "visible" -> YogaOverflow.VISIBLE

@@ -121,6 +121,8 @@ export type Style = {
     | "800"
     | "900";
   tintColor?: string;
+  transform?: string | Record<string, number | string>[];
+  transformOrigin?: string | (string | number)[];
 };
 
 export type ImageResizeMode = "cover" | "contain" | "stretch" | "center";

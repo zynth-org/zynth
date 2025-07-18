@@ -5,6 +5,7 @@
 #import "RuneUIManager+Events.h"
 #import "RuneUIManager+Layout.h"
 #import "SNHexColor.h"
+#import "utils/RuneTransformParser.h"
 #import <Yoga/Yoga.h>
 #import <QuartzCore/QuartzCore.h>
 #import <JavaScriptCore/JavaScriptCore.h>
@@ -803,6 +804,13 @@ static void SNApplyEdges(NSDictionary *style,
     n.view.layer.zPosition = (CGFloat)SNNum(zIndexValue);
   } else {
     n.view.layer.zPosition = 0.f;
+  }
+
+  id transform = style[@"transform"];
+  if (transform) {
+    n.view.layer.transform = [RuneTransformParser parse:transform];
+  } else {
+    n.view.layer.transform = CATransform3DIdentity;
   }
 
   NSNumber *br = style[@"borderRadius"];

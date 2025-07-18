@@ -497,6 +497,30 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
               styleDict[key] = [NSString stringWithUTF8String:utf8.c_str()];
             };
 
+            auto copyObject = [&](const char *prop) {
+              if (!styleObj.hasProperty(rt, prop)) {
+                return;
+              }
+              Value v = styleObj.getProperty(rt, prop);
+              NSString *key = [NSString stringWithUTF8String:prop];
+              
+              if (v.isString()) {
+                 std::string utf8 = v.getString(rt).utf8(rt);
+                 styleDict[key] = [NSString stringWithUTF8String:utf8.c_str()];
+                 return;
+              }
+              
+              if (v.isObject()) {
+                auto JSON = rt.global().getPropertyAsObject(rt, "JSON");
+                auto stringify = JSON.getPropertyAsFunction(rt, "stringify");
+                Value stringified = stringify.call(rt, v);
+                if (stringified.isString()) {
+                    std::string utf8 = stringified.getString(rt).utf8(rt);
+                    styleDict[key] = [NSString stringWithUTF8String:utf8.c_str()];
+                }
+              }
+            };
+
             const char *numericKeys[] = {"width",          "height",         "flex",           "flexGrow",
                                          "flexShrink",    "flexBasis",      "padding",        "paddingHorizontal",
                                          "paddingVertical", "paddingTop",   "paddingRight",   "paddingBottom",
@@ -519,6 +543,11 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
                                          "borderTopColor", "borderRightColor", "borderBottomColor", "borderLeftColor"};
             for (const char *key : stringKeys) {
               copyString(key);
+            }
+            
+            const char *objectKeys[] = {"transform", "transformOrigin"};
+            for (const char *key : objectKeys) {
+              copyObject(key);
             }
 
             SNRunOnMain(^{

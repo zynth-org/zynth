@@ -1,6 +1,8 @@
 package com.rune.kit.layout
 
 import com.rune.kit.core.RuneColorParser
+import com.rune.kit.core.RuneTransformParser
+import com.rune.kit.core.TransformOperation
 import com.facebook.yoga.YogaAlign
 import com.facebook.yoga.YogaFlexDirection
 import com.facebook.yoga.YogaJustify
@@ -93,6 +95,9 @@ data class Style(
   val fontSize: Float? = null,
   val color: Int? = null,
   val fontWeight: String? = null,
+  
+  // Transform properties
+  val transform: List<TransformOperation>? = null,
 ) {
   
   enum class FlexDirection {
@@ -259,6 +264,8 @@ data class Style(
           fontSize = json.optFloat("fontSize"),
           color = json.optString("color")?.let { parseColor(it) },
           fontWeight = json.optStringOrNull("fontWeight"),
+          
+          transform = RuneTransformParser.parse(json.opt("transform")),
         )
       } catch (e: JSONException) {
         // Return empty style if parsing fails
@@ -386,6 +393,18 @@ data class Style(
       borderBottomWidth = borderBottomWidth.scale(),
       borderLeftWidth = borderLeftWidth.scale(),
       fontSize = fontSize.scale(),
+      transform = transform?.map { op ->
+        when (op) {
+          is TransformOperation.Translate -> TransformOperation.Translate(
+            op.x * density,
+            op.y * density
+          )
+          is TransformOperation.Perspective -> TransformOperation.Perspective(
+            op.value * density
+          )
+          else -> op
+        }
+      }
     )
   }
 }

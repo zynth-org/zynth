@@ -5,8 +5,6 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import com.rune.kit.components.RuneComponentDescriptor
 import com.rune.kit.components.RuneComponentRegistrar
-import com.rune.kit.core.RuneUIManager
-import com.rune.kit.layout.Style
 
 /**
  * Creates and returns the View component descriptor.
@@ -18,18 +16,13 @@ fun createViewComponentDescriptor(): RuneComponentDescriptor {
     onNodeCreated = { manager, node ->
       val viewContainer = node.view as? RuneViewContainer ?: return@RuneComponentDescriptor
       
-      // Set appropriate layout params
+      // Set appropriate layout params - WRAP_CONTENT allows Yoga to control sizing
       node.view.layoutParams = FrameLayout.LayoutParams(
         ViewGroup.LayoutParams.WRAP_CONTENT,
         ViewGroup.LayoutParams.WRAP_CONTENT,
       )
-      
-      // Apply default width: 100%
-      try {
-        manager.getLayoutEngine().setStyle(node.id, Style(widthPercent = 100f))
-      } catch (_: Throwable) {
-        // Defensive: style application should never crash creation
-      }
+      // No default width applied - views shrink to fit content (standard CSS Flexbox behavior)
+      // Parent's alignItems and child's alignSelf control cross-axis alignment
     },
     applyProperty = { node, name, jsonValue ->
       val viewContainer = node.view as? RuneViewContainer

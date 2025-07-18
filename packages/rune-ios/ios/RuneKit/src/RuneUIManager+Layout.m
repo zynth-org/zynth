@@ -106,7 +106,15 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
           return;
         }
 
-        obj.view.frame = CGRectMake(x, y, w, h);
+        // Using center/bounds instead of frame to support transform
+        CGPoint center = CGPointMake(x + w / 2.0, y + h / 2.0);
+        CGRect bounds = CGRectMake(0, 0, w, h);
+
+        if (!CGPointEqualToPoint(obj.view.center, center) || !CGRectEqualToRect(obj.view.bounds, bounds)) {
+          obj.view.center = center;
+          obj.view.bounds = bounds;
+        }
+        
         [self rune_dispatchLayoutEventForNode:obj force:NO];
 
         // Re-apply border style to update layer paths based on new frame

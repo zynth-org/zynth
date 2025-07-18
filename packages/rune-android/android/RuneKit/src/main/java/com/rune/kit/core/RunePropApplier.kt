@@ -1,6 +1,7 @@
 package com.rune.kit.core
 
 import android.graphics.Color
+import android.graphics.Matrix
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
@@ -17,6 +18,7 @@ import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import com.rune.kit.components.RuneComponentRegistry
 import com.rune.kit.layout.LayoutEngine
 import com.rune.kit.layout.Style
+import com.rune.kit.core.TransformOperation
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
@@ -158,6 +160,86 @@ internal class RunePropApplier(
     val zIndex = style.zIndex
     if (zIndex != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
       target.view.translationZ = zIndex
+    }
+    
+    // Apply Transform
+    val transform = pixelStyle.transform
+    if (transform != null) {
+      var tx = 0f
+      var ty = 0f
+      var sx = 1f
+      var sy = 1f
+      var rot = 0f
+      var rotX = 0f
+      var rotY = 0f
+      var skewX = 0f
+      var skewY = 0f
+      var hasSkew = false
+      
+      for (op in transform) {
+        when (op) {
+          is TransformOperation.Translate -> {
+            tx += op.x
+            ty += op.y
+          }
+          is TransformOperation.Scale -> {
+            sx *= op.x
+            sy *= op.y
+          }
+          is TransformOperation.Rotate -> rot += op.degrees
+          is TransformOperation.RotateZ -> rot += op.degrees
+          is TransformOperation.RotateX -> rotX += op.degrees
+          is TransformOperation.RotateY -> rotY += op.degrees
+          is TransformOperation.SkewX -> {
+            skewX += op.degrees
+            hasSkew = true
+          }
+          is TransformOperation.SkewY -> {
+            skewY += op.degrees
+            hasSkew = true
+          }
+          is TransformOperation.Perspective -> {
+             val d = target.view.resources.displayMetrics.density
+             target.view.cameraDistance = op.value * d
+          }
+        }
+      }
+      
+      // Apply basic transforms
+      target.view.translationX = tx
+      target.view.translationY = ty
+      target.view.scaleX = sx
+      target.view.scaleY = sy
+      target.view.rotation = rot
+      target.view.rotationX = rotX
+      target.view.rotationY = rotY
+      
+      // Apply skew using Matrix if needed
+      if (hasSkew) {
+        val matrix = android.graphics.Matrix()
+        val radX = Math.toRadians(skewX.toDouble()).toFloat()
+        val radY = Math.toRadians(skewY.toDouble()).toFloat()
+        matrix.setValues(floatArrayOf(
+          1f, Math.tan(radX.toDouble()).toFloat(), 0f,
+          Math.tan(radY.toDouble()).toFloat(), 1f, 0f,
+          0f, 0f, 1f
+        ))
+        target.view.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        target.view.setAnimationMatrix(matrix)
+      } else {
+        target.view.setAnimationMatrix(null)
+        target.view.setLayerType(View.LAYER_TYPE_NONE, null)
+      }
+    } else {
+      target.view.translationX = 0f
+      target.view.translationY = 0f
+      target.view.scaleX = 1f
+      target.view.scaleY = 1f
+      target.view.rotation = 0f
+      target.view.rotationX = 0f
+      target.view.rotationY = 0f
+      target.view.setAnimationMatrix(null)
+      target.view.setLayerType(View.LAYER_TYPE_NONE, null)
     }
 
     val resolvedOpacity = style.opacity?.coerceIn(0f, 1f)
@@ -451,8 +533,17 @@ internal class RunePropApplier(
 
       ViewCompat.setBackground(view, drawable)
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-        val isOverflowVisible = style.overflow.equals("visible", ignoreCase = true)
-        view.clipToOutline = needsRoundedBackground && !isOverflowVisible
+        val overflow = style.overflow
+        val shouldClip = overflow.equals("hidden", ignoreCase = true) || overflow.equals("scroll", ignoreCase = true)
+        
+        // clipToOutline is for the View's own background shape/shadow
+        view.clipToOutline = needsRoundedBackground && shouldClip
+        
+        // clipChildren is for the View's children (ViewGroup behavior)
+        if (view is android.view.ViewGroup) {
+            view.clipChildren = shouldClip
+            view.clipToPadding = shouldClip
+        }
       }
     } else {
       when (view.background) {
@@ -460,6 +551,14 @@ internal class RunePropApplier(
       }
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
         view.clipToOutline = false
+        
+        // Apply overflow logic even without custom background
+        val overflow = style.overflow
+        val shouldClip = overflow.equals("hidden", ignoreCase = true) || overflow.equals("scroll", ignoreCase = true)
+        if (view is android.view.ViewGroup) {
+            view.clipChildren = shouldClip
+            view.clipToPadding = shouldClip
+        }
       }
     }
 
