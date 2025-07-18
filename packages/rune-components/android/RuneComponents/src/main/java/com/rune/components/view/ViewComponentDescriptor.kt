@@ -47,11 +47,14 @@ fun createViewComponentDescriptor(): RuneComponentDescriptor {
     },
     onStyleApplied = { node, style ->
       val viewContainer = node.view as? RuneViewContainer ?: return@RuneComponentDescriptor
-      style.overflow?.let { overflow ->
-        val shouldClip = !overflow.equals("visible", ignoreCase = true)
-        viewContainer.clipChildren = shouldClip
-        viewContainer.clipToPadding = shouldClip
-      }
+      // CSS overflow behavior: only clip THIS container's content, not propagate to descendants
+      val overflow = style.overflow ?: "visible"
+      val shouldClip = overflow.equals("hidden", ignoreCase = true) || overflow.equals("scroll", ignoreCase = true)
+      viewContainer.setOverflowHidden(shouldClip)
+      
+      // Set corner radius for rounded clipping if needed
+      val borderRadius = style.borderRadius ?: 0f
+      viewContainer.setClipRadius(borderRadius)
     },
     onSetHandler = { node, event ->
       // View doesn't handle any specific events directly
@@ -61,6 +64,8 @@ fun createViewComponentDescriptor(): RuneComponentDescriptor {
     onReset = { node ->
       val viewContainer = node.view as? RuneViewContainer ?: return@RuneComponentDescriptor
       viewContainer.pointerMode = RuneViewContainer.PointerEventsMode.AUTO
+      viewContainer.setOverflowHidden(false)
+      viewContainer.setClipRadius(0f)
     }
   )
 }

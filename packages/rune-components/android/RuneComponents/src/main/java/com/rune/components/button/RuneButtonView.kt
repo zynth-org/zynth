@@ -86,6 +86,10 @@ class RuneButtonView(context: Context) : FrameLayout(context) {
   private var hitSlop: Rect? = null
 
   init {
+    // Ensure children can render outside bounds when their overflow is visible
+    clipChildren = false
+    clipToPadding = false
+    
     // Create the MaterialButton
     materialButton = MaterialButton(context).apply {
       layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)

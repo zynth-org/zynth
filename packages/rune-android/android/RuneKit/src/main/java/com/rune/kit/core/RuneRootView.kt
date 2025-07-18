@@ -20,6 +20,10 @@ class RuneRootView @JvmOverloads constructor(
   }
 
   init {
+    // Default to overflow visible (no clipping) to match CSS behavior
+    clipChildren = false
+    clipToPadding = false
+    
     addView(redBox, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
   }
 

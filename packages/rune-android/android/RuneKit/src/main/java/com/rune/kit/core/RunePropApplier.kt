@@ -533,17 +533,9 @@ internal class RunePropApplier(
 
       ViewCompat.setBackground(view, drawable)
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-        val overflow = style.overflow
-        val shouldClip = overflow.equals("hidden", ignoreCase = true) || overflow.equals("scroll", ignoreCase = true)
-        
-        // clipToOutline is for the View's own background shape/shadow
-        view.clipToOutline = needsRoundedBackground && shouldClip
-        
-        // clipChildren is for the View's children (ViewGroup behavior)
-        if (view is android.view.ViewGroup) {
-            view.clipChildren = shouldClip
-            view.clipToPadding = shouldClip
-        }
+        // clipToOutline only affects the view's own shadow/outline clipping, not children
+        // Overflow clipping is handled by RuneViewContainer.setOverflowHidden()
+        view.clipToOutline = needsRoundedBackground
       }
     } else {
       when (view.background) {
@@ -551,14 +543,6 @@ internal class RunePropApplier(
       }
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
         view.clipToOutline = false
-        
-        // Apply overflow logic even without custom background
-        val overflow = style.overflow
-        val shouldClip = overflow.equals("hidden", ignoreCase = true) || overflow.equals("scroll", ignoreCase = true)
-        if (view is android.view.ViewGroup) {
-            view.clipChildren = shouldClip
-            view.clipToPadding = shouldClip
-        }
       }
     }
 

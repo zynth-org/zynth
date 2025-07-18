@@ -36,6 +36,10 @@ class RuneProgressIndicatorView(context: Context) : FrameLayout(context) {
   }
 
   init {
+    // Ensure children can render outside bounds when their overflow is visible
+    clipChildren = false
+    clipToPadding = false
+    
     indicator = CircularProgressIndicator(context).apply {
       isIndeterminate = true
       trackCornerRadius = (2 * density).roundToInt()
