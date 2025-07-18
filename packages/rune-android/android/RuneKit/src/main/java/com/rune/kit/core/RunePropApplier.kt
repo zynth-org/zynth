@@ -474,40 +474,11 @@ internal class RunePropApplier(
     val value = when (raw) {
       null -> return null
       is Number -> raw.toInt()
-      else -> raw.toString().trim()
+      else -> raw.toString()
     }
-    return try {
-      when (value) {
-        is Int -> value
-        is String -> Color.parseColor(
-          if (value.startsWith("#") || value.startsWith("rgb", ignoreCase = true)) value else "#$value".takeIf {
-            value.matches(Regex("[0-9a-fA-F]{6}|[0-9a-fA-F]{8}|[0-9a-fA-F]{3}"))
-          } ?: value,
-        )
-        else -> null
-      }
-    } catch (e: IllegalArgumentException) {
-      when (value) {
-        is String -> {
-          when (value.lowercase()) {
-            "transparent" -> Color.TRANSPARENT
-            "black" -> Color.BLACK
-            "white" -> Color.WHITE
-            "red" -> Color.RED
-            "green" -> Color.GREEN
-            "blue" -> Color.BLUE
-            "yellow" -> Color.YELLOW
-            "cyan" -> Color.CYAN
-            "magenta" -> Color.MAGENTA
-            "gray", "grey" -> Color.GRAY
-            "darkgray", "darkgrey" -> Color.DKGRAY
-            "lightgray", "lightgrey" -> Color.LTGRAY
-            else -> null
-          }
-        }
-        else -> null
-      }
-    }
+    
+    if (value is Int) return value
+    return RuneColorParser.parse(value as String)
   }
 
   companion object {

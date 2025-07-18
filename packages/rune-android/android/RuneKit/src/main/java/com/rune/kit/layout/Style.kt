@@ -1,6 +1,6 @@
 package com.rune.kit.layout
 
-import android.graphics.Color
+import com.rune.kit.core.RuneColorParser
 import com.facebook.yoga.YogaAlign
 import com.facebook.yoga.YogaFlexDirection
 import com.facebook.yoga.YogaJustify
@@ -312,48 +312,10 @@ data class Style(
     }
     
     /**
-     * Parse color from various formats:
-     * - Hex: "#FF0000", "#F00"
-     * - Named colors: "red", "blue", "white", etc.
-     * - RGB: "rgb(255, 0, 0)"
-     * - RGBA: "rgba(255, 0, 0, 0.5)"
+     * Parse color from various formats using RuneColorParser.
      */
     private fun parseColor(colorString: String): Int? {
-      try {
-        val color = colorString.trim()
-        
-        // Handle hex colors
-        if (color.startsWith("#")) {
-          return Color.parseColor(color)
-        }
-        
-        // Handle named colors
-        return when (color.lowercase()) {
-          "transparent" -> Color.TRANSPARENT
-          "black" -> Color.BLACK
-          "white" -> Color.WHITE
-          "red" -> Color.RED
-          "green" -> Color.GREEN
-          "blue" -> Color.BLUE
-          "yellow" -> Color.YELLOW
-          "cyan" -> Color.CYAN
-          "magenta" -> Color.MAGENTA
-          "gray", "grey" -> Color.GRAY
-          "darkgray", "darkgrey" -> Color.DKGRAY
-          "lightgray", "lightgrey" -> Color.LTGRAY
-          else -> {
-            // Try to parse as hex color without #
-            if (color.matches(Regex("[0-9a-fA-F]{6}|[0-9a-fA-F]{3}"))) {
-              Color.parseColor("#$color")
-            } else {
-              // TODO: Add RGB/RGBA parsing if needed
-              null
-            }
-          }
-        }
-      } catch (e: IllegalArgumentException) {
-        return null
-      }
+      return RuneColorParser.parse(colorString)
     }
   }
 

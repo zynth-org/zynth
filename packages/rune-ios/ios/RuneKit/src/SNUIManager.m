@@ -456,6 +456,22 @@ static void SNApplyEdges(NSDictionary *style,
   NSNumber *flex = style[@"flex"]; if (flex) YGNodeStyleSetFlex(n.yoga, (float)SNNum(flex));
   NSNumber *flexGrow = style[@"flexGrow"]; if (flexGrow) YGNodeStyleSetFlexGrow(n.yoga, (float)SNNum(flexGrow));
   NSNumber *flexShrink = style[@"flexShrink"]; if (flexShrink) YGNodeStyleSetFlexShrink(n.yoga, (float)SNNum(flexShrink));
+  
+  NSString *fw = style[@"flexWrap"];
+  if (fw) {
+    YGWrap w = YGWrapNoWrap;
+    if ([fw isEqualToString:@"wrap"]) w = YGWrapWrap;
+    else if ([fw isEqualToString:@"wrap-reverse"]) w = YGWrapWrapReverse;
+    YGNodeStyleSetFlexWrap(n.yoga, w);
+  }
+
+  SNApplyDimensionValue(
+      n.yoga,
+      style[@"flexBasis"],
+      ^(float v) { YGNodeStyleSetFlexBasis(n.yoga, v); },
+      ^(float v) { YGNodeStyleSetFlexBasisPercent(n.yoga, v); },
+      ^{ YGNodeStyleSetFlexBasisAuto(n.yoga); });
+
   NSString *fd = style[@"flexDirection"];
   if (fd) YGNodeStyleSetFlexDirection(n.yoga, [fd isEqualToString:@"row"] ? YGFlexDirectionRow : YGFlexDirectionColumn);
 
@@ -466,6 +482,7 @@ static void SNApplyEdges(NSDictionary *style,
     else if ([jc isEqualToString:@"flex-end"]) j = YGJustifyFlexEnd;
     else if ([jc isEqualToString:@"space-between"]) j = YGJustifySpaceBetween;
     else if ([jc isEqualToString:@"space-around"]) j = YGJustifySpaceAround;
+    else if ([jc isEqualToString:@"space-evenly"]) j = YGJustifySpaceEvenly;
     YGNodeStyleSetJustifyContent(n.yoga, j);
   }
 
@@ -475,7 +492,43 @@ static void SNApplyEdges(NSDictionary *style,
     if ([ai isEqualToString:@"center"]) a = YGAlignCenter;
     else if ([ai isEqualToString:@"flex-end"]) a = YGAlignFlexEnd;
     else if ([ai isEqualToString:@"stretch"]) a = YGAlignStretch;
+    else if ([ai isEqualToString:@"baseline"]) a = YGAlignBaseline;
     YGNodeStyleSetAlignItems(n.yoga, a);
+  }
+
+  NSString *ac = style[@"alignContent"];
+  if (ac) {
+    YGAlign a = YGAlignFlexStart;
+    if ([ac isEqualToString:@"center"]) a = YGAlignCenter;
+    else if ([ac isEqualToString:@"flex-end"]) a = YGAlignFlexEnd;
+    else if ([ac isEqualToString:@"stretch"]) a = YGAlignStretch;
+    else if ([ac isEqualToString:@"space-between"]) a = YGAlignSpaceBetween;
+    else if ([ac isEqualToString:@"space-around"]) a = YGAlignSpaceAround;
+    YGNodeStyleSetAlignContent(n.yoga, a);
+  }
+  
+  NSString *as = style[@"alignSelf"];
+  if (as) {
+    YGAlign a = YGAlignAuto;
+    if ([as isEqualToString:@"flex-start"]) a = YGAlignFlexStart;
+    else if ([as isEqualToString:@"center"]) a = YGAlignCenter;
+    else if ([as isEqualToString:@"flex-end"]) a = YGAlignFlexEnd;
+    else if ([as isEqualToString:@"stretch"]) a = YGAlignStretch;
+    else if ([as isEqualToString:@"baseline"]) a = YGAlignBaseline;
+    YGNodeStyleSetAlignSelf(n.yoga, a);
+  }
+
+  NSNumber *aspectRatio = style[@"aspectRatio"];
+  if (aspectRatio && ![aspectRatio isKindOfClass:[NSNull class]]) {
+    YGNodeStyleSetAspectRatio(n.yoga, (float)SNNum(aspectRatio));
+  }
+
+  NSString *overflow = style[@"overflow"];
+  if (overflow) {
+    YGOverflow o = YGOverflowVisible;
+    if ([overflow isEqualToString:@"hidden"]) o = YGOverflowHidden;
+    else if ([overflow isEqualToString:@"scroll"]) o = YGOverflowScroll;
+    YGNodeStyleSetOverflow(n.yoga, o);
   }
 
   NSNumber *gapAll = style[@"gap"];
