@@ -1,5 +1,6 @@
 #import "RuneUIManager+Layout.h"
 #import "RuneUIManager+Events.h"
+#import "SNUIManager+Internal.h"
 
 #if __has_include(<RuneKit/RuneKit-Swift.h>)
 #import <RuneKit/RuneKit-Swift.h>
@@ -108,11 +109,9 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
         obj.view.frame = CGRectMake(x, y, w, h);
         [self rune_dispatchLayoutEventForNode:obj force:NO];
 
-        for (CALayer *sublayer in obj.view.layer.sublayers) {
-            if ([sublayer.name isEqualToString:kRuneBorderLayerName] && [sublayer isKindOfClass:[CAShapeLayer class]]) {
-                CAShapeLayer *borderLayer = (CAShapeLayer *)sublayer;
-                borderLayer.path = [UIBezierPath bezierPathWithRoundedRect:obj.view.bounds cornerRadius:obj.view.layer.cornerRadius].CGPath;
-            }
+        // Re-apply border style to update layer paths based on new frame
+        if (obj.latestStyle) {
+            [self sn_applyBorderStyle:obj.latestStyle toView:obj.view];
         }
       } @catch (NSException *exception) {
         NSLog(@"[SN] Exception applying frame for nid=%d: %@", obj.nid, exception);

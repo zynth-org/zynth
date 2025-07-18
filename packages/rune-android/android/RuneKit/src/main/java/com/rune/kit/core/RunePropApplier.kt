@@ -395,8 +395,32 @@ internal class RunePropApplier(
     val borderColor = style.borderColor
     val borderWidth = style.borderWidth?.coerceAtLeast(0f)
     val borderStyle = style.borderStyle?.lowercase()
-    val needsRoundedBackground = borderRadius != null && borderRadius > 0f
-    val shouldUseGradient = needsRoundedBackground || backgroundColor != null || (borderWidth ?: 0f) > 0f || borderColor != null
+
+    // Individual border properties
+    val borderTopWidth = style.borderTopWidth?.coerceAtLeast(0f) ?: borderWidth
+    val borderRightWidth = style.borderRightWidth?.coerceAtLeast(0f) ?: borderWidth
+    val borderBottomWidth = style.borderBottomWidth?.coerceAtLeast(0f) ?: borderWidth
+    val borderLeftWidth = style.borderLeftWidth?.coerceAtLeast(0f) ?: borderWidth
+
+    val borderTopColor = style.borderTopColor ?: borderColor
+    val borderRightColor = style.borderRightColor ?: borderColor
+    val borderBottomColor = style.borderBottomColor ?: borderColor
+    val borderLeftColor = style.borderLeftColor ?: borderColor
+
+    val borderTopLeftRadius = style.borderTopLeftRadius?.coerceAtLeast(0f) ?: borderRadius ?: 0f
+    val borderTopRightRadius = style.borderTopRightRadius?.coerceAtLeast(0f) ?: borderRadius ?: 0f
+    val borderBottomRightRadius = style.borderBottomRightRadius?.coerceAtLeast(0f) ?: borderRadius ?: 0f
+    val borderBottomLeftRadius = style.borderBottomLeftRadius?.coerceAtLeast(0f) ?: borderRadius ?: 0f
+
+    val hasAnyBorderWidth = (borderTopWidth ?: 0f) > 0f || (borderRightWidth ?: 0f) > 0f ||
+      (borderBottomWidth ?: 0f) > 0f || (borderLeftWidth ?: 0f) > 0f
+    val hasAnyBorderColor = borderTopColor != null || borderRightColor != null ||
+      borderBottomColor != null || borderLeftColor != null
+    val hasAnyBorderRadius = borderTopLeftRadius > 0f || borderTopRightRadius > 0f ||
+      borderBottomRightRadius > 0f || borderBottomLeftRadius > 0f
+
+    val needsRoundedBackground = hasAnyBorderRadius
+    val shouldUseGradient = needsRoundedBackground || backgroundColor != null || hasAnyBorderWidth || hasAnyBorderColor
     
     // TextInput components manage their own padding through onStyleApplied to handle visual insets
     val isTextInput = nodeType == "text-input" || nodeType == "secure-text-input"
@@ -407,28 +431,23 @@ internal class RunePropApplier(
     val paddingBottom = view.paddingBottom
 
     if (shouldUseGradient) {
-      val existing = (view.background as? GradientDrawable)?.mutate() as? GradientDrawable
-      val drawable = existing ?: GradientDrawable()
-      drawable.cornerRadius = borderRadius ?: 0f
-      drawable.setColor(backgroundColor ?: Color.TRANSPARENT)
+      val existing = (view.background as? RuneBorderDrawable)?.mutate() as? RuneBorderDrawable
+      val drawable = existing ?: RuneBorderDrawable()
 
-      val strokeWidth = (borderWidth ?: 0f).coerceAtLeast(0f)
-      if (strokeWidth > 0f && borderColor != null) {
-        val strokeWidthInt = strokeWidth.roundToInt().coerceAtLeast(1)
-        when (borderStyle) {
-          "dashed" -> {
-            val dash = strokeWidthInt * 3f
-            drawable.setStroke(strokeWidthInt, borderColor, dash, strokeWidthInt * 2f)
-          }
-          "dotted" -> {
-            val dash = strokeWidthInt.toFloat()
-            drawable.setStroke(strokeWidthInt, borderColor, dash, dash * 1.5f)
-          }
-          else -> drawable.setStroke(strokeWidthInt, borderColor)
-        }
-      } else {
-        drawable.setStroke(0, borderColor ?: Color.TRANSPARENT)
-      }
+      drawable.backgroundColor = backgroundColor ?: Color.TRANSPARENT
+      drawable.borderTopWidth = borderTopWidth ?: 0f
+      drawable.borderRightWidth = borderRightWidth ?: 0f
+      drawable.borderBottomWidth = borderBottomWidth ?: 0f
+      drawable.borderLeftWidth = borderLeftWidth ?: 0f
+      drawable.borderTopColor = borderTopColor ?: Color.TRANSPARENT
+      drawable.borderRightColor = borderRightColor ?: Color.TRANSPARENT
+      drawable.borderBottomColor = borderBottomColor ?: Color.TRANSPARENT
+      drawable.borderLeftColor = borderLeftColor ?: Color.TRANSPARENT
+      drawable.borderTopLeftRadius = borderTopLeftRadius
+      drawable.borderTopRightRadius = borderTopRightRadius
+      drawable.borderBottomRightRadius = borderBottomRightRadius
+      drawable.borderBottomLeftRadius = borderBottomLeftRadius
+      drawable.borderStyle = borderStyle
 
       ViewCompat.setBackground(view, drawable)
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
@@ -437,7 +456,7 @@ internal class RunePropApplier(
       }
     } else {
       when (view.background) {
-        is GradientDrawable, is ColorDrawable -> ViewCompat.setBackground(view, null)
+        is RuneBorderDrawable, is ColorDrawable -> ViewCompat.setBackground(view, null)
       }
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
         view.clipToOutline = false

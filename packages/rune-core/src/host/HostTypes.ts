@@ -88,6 +88,18 @@ export type Style = {
   borderRadius?: number;
   borderWidth?: number;
   borderColor?: string;
+  borderTopColor?: string;
+  borderRightColor?: string;
+  borderBottomColor?: string;
+  borderLeftColor?: string;
+  borderTopWidth?: number;
+  borderRightWidth?: number;
+  borderBottomWidth?: number;
+  borderLeftWidth?: number;
+  borderTopLeftRadius?: number;
+  borderTopRightRadius?: number;
+  borderBottomRightRadius?: number;
+  borderBottomLeftRadius?: number;
   borderStyle?: "solid" | "dotted" | "dashed";
   opacity?: number;
   zIndex?: number;

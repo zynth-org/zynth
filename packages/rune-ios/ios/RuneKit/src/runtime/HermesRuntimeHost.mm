@@ -505,8 +505,9 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
                                          "borderRadius",  "borderWidth",    "fontSize",       "top",
                                          "right",         "bottom",         "left",           "opacity",
                                          "zIndex",        "gap",            "rowGap",         "columnGap",
-                                         "minWidth",
-                                         "minHeight",     "maxWidth",       "maxHeight",      "aspectRatio"};
+                                         "minWidth",      "minHeight",      "maxWidth",       "maxHeight",      "aspectRatio",
+                                         "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth",
+                                         "borderTopLeftRadius", "borderTopRightRadius", "borderBottomRightRadius", "borderBottomLeftRadius"};
             for (const char *key : numericKeys) {
               copyNumber(key);
             }
@@ -514,7 +515,8 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
             const char *stringKeys[] = {"flexDirection", "justifyContent", "alignItems",   "alignSelf",
                                          "alignContent",  "flexWrap",       "backgroundColor", "borderColor",
                                          "borderStyle",   "fontWeight",     "color",        "position",
-                                         "display",       "overflow",       "pointerEvents"};
+                                         "display",       "overflow",       "pointerEvents",
+                                         "borderTopColor", "borderRightColor", "borderBottomColor", "borderLeftColor"};
             for (const char *key : stringKeys) {
               copyString(key);
             }

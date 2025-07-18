@@ -347,37 +347,232 @@ static void SNRemoveCustomBorderLayers(UIView *view) {
   }
 }
 
-static void SNApplyBorderStyleToView(UIView *view, NSNumber *_Nullable borderWidthNumber, NSString *_Nullable borderColorHex, NSString *_Nullable borderStyle) {
-  SNRemoveCustomBorderLayers(view);
+static void SNApplyBorderStyleToView(UIView *view, NSDictionary *style) {
+  SNRemoveCustomBorderLayers(view); // Removes all layers named kRuneBorderLayerName
+  
+  // Reset standard layer properties
   view.layer.borderWidth = 0;
+  view.layer.borderColor = nil;
+  view.layer.cornerRadius = 0;
+  view.layer.mask = nil;
 
-  CGFloat borderWidth = borderWidthNumber ? (CGFloat)SNNum(borderWidthNumber) : 0.f;
-  if (borderWidth <= 0.f) {
-    return;
-  }
+  // Extract individual border properties
+  NSNumber *borderWidthNum = style[@"borderWidth"];
+  CGFloat borderWidth = borderWidthNum ? (CGFloat)SNNum(borderWidthNum) : 0.f;
 
+  NSString *borderColorHex = style[@"borderColor"];
   UIColor *borderColor = borderColorHex ? SNColorFromHex(borderColorHex) : nil;
-  if (!borderColor) {
-    return;
+
+  NSString *borderStyle = style[@"borderStyle"];
+
+  // Individual widths
+  CGFloat borderTopWidth = style[@"borderTopWidth"] ? (CGFloat)SNNum(style[@"borderTopWidth"]) : borderWidth;
+  CGFloat borderRightWidth = style[@"borderRightWidth"] ? (CGFloat)SNNum(style[@"borderRightWidth"]) : borderWidth;
+  CGFloat borderBottomWidth = style[@"borderBottomWidth"] ? (CGFloat)SNNum(style[@"borderBottomWidth"]) : borderWidth;
+  CGFloat borderLeftWidth = style[@"borderLeftWidth"] ? (CGFloat)SNNum(style[@"borderLeftWidth"]) : borderWidth;
+
+  // Individual colors
+  UIColor *borderTopColor = style[@"borderTopColor"] ? SNColorFromHex(style[@"borderTopColor"]) : borderColor;
+  UIColor *borderRightColor = style[@"borderRightColor"] ? SNColorFromHex(style[@"borderRightColor"]) : borderColor;
+  UIColor *borderBottomColor = style[@"borderBottomColor"] ? SNColorFromHex(style[@"borderBottomColor"]) : borderColor;
+  UIColor *borderLeftColor = style[@"borderLeftColor"] ? SNColorFromHex(style[@"borderLeftColor"]) : borderColor;
+
+  // Individual radii
+  CGFloat defaultRadius = style[@"borderRadius"] ? (CGFloat)SNNum(style[@"borderRadius"]) : 0.f;
+  CGFloat borderTopLeftRadius = style[@"borderTopLeftRadius"] ? (CGFloat)SNNum(style[@"borderTopLeftRadius"]) : defaultRadius;
+  CGFloat borderTopRightRadius = style[@"borderTopRightRadius"] ? (CGFloat)SNNum(style[@"borderTopRightRadius"]) : defaultRadius;
+  CGFloat borderBottomRightRadius = style[@"borderBottomRightRadius"] ? (CGFloat)SNNum(style[@"borderBottomRightRadius"]) : defaultRadius;
+  CGFloat borderBottomLeftRadius = style[@"borderBottomLeftRadius"] ? (CGFloat)SNNum(style[@"borderBottomLeftRadius"]) : defaultRadius;
+  
+  BOOL hasAnyRadius = borderTopLeftRadius > 0 || borderTopRightRadius > 0 || borderBottomRightRadius > 0 || borderBottomLeftRadius > 0;
+  BOOL uniformRadius = (borderTopLeftRadius == borderTopRightRadius) &&
+                       (borderTopRightRadius == borderBottomRightRadius) &&
+                       (borderBottomRightRadius == borderBottomLeftRadius);
+
+  // Apply Corner Radius (Uniform or Mask)
+  if (uniformRadius) {
+      view.layer.cornerRadius = borderTopLeftRadius;
+      view.layer.masksToBounds = hasAnyRadius; 
+  } else if (hasAnyRadius) {
+      // Non-uniform: Use a mask
+      CAShapeLayer *maskLayer = [CAShapeLayer layer];
+      maskLayer.frame = view.bounds;
+      
+      UIBezierPath *path = [UIBezierPath bezierPath];
+      // Top Left
+      [path moveToPoint:CGPointMake(0, borderTopLeftRadius)];
+      if (borderTopLeftRadius > 0) {
+          [path addArcWithCenter:CGPointMake(borderTopLeftRadius, borderTopLeftRadius) radius:borderTopLeftRadius startAngle:M_PI endAngle:3*M_PI_2 clockwise:YES];
+      } else {
+          [path addLineToPoint:CGPointMake(0, 0)];
+      }
+      
+      // Top Edge
+      [path addLineToPoint:CGPointMake(view.bounds.size.width - borderTopRightRadius, 0)];
+      
+      // Top Right
+      if (borderTopRightRadius > 0) {
+          [path addArcWithCenter:CGPointMake(view.bounds.size.width - borderTopRightRadius, borderTopRightRadius) radius:borderTopRightRadius startAngle:3*M_PI_2 endAngle:0 clockwise:YES];
+      } else {
+          [path addLineToPoint:CGPointMake(view.bounds.size.width, 0)];
+      }
+
+      // Right Edge
+      [path addLineToPoint:CGPointMake(view.bounds.size.width, view.bounds.size.height - borderBottomRightRadius)];
+      
+      // Bottom Right
+      if (borderBottomRightRadius > 0) {
+          [path addArcWithCenter:CGPointMake(view.bounds.size.width - borderBottomRightRadius, view.bounds.size.height - borderBottomRightRadius) radius:borderBottomRightRadius startAngle:0 endAngle:M_PI_2 clockwise:YES];
+      } else {
+          [path addLineToPoint:CGPointMake(view.bounds.size.width, view.bounds.size.height)];
+      }
+
+      // Bottom Edge
+      [path addLineToPoint:CGPointMake(borderBottomLeftRadius, view.bounds.size.height)];
+      
+      // Bottom Left
+      if (borderBottomLeftRadius > 0) {
+          [path addArcWithCenter:CGPointMake(borderBottomLeftRadius, view.bounds.size.height - borderBottomLeftRadius) radius:borderBottomLeftRadius startAngle:M_PI_2 endAngle:M_PI clockwise:YES];
+      } else {
+          [path addLineToPoint:CGPointMake(0, view.bounds.size.height)];
+      }
+
+      [path closePath];
+      
+      maskLayer.path = path.CGPath;
+      view.layer.mask = maskLayer;
+      view.layer.masksToBounds = YES;
   }
 
-  CAShapeLayer *borderLayer = [CAShapeLayer layer];
-  borderLayer.name = kRuneBorderLayerName;
-  borderLayer.strokeColor = borderColor.CGColor;
-  borderLayer.fillColor = [UIColor clearColor].CGColor;
-  borderLayer.lineWidth = borderWidth;
+  // Apply Borders
+  BOOL uniformBorder = (borderTopWidth == borderWidth) && (borderRightWidth == borderWidth) &&
+                       (borderBottomWidth == borderWidth) && (borderLeftWidth == borderWidth) &&
+                       [borderTopColor isEqual:borderColor] && [borderRightColor isEqual:borderColor] &&
+                       [borderBottomColor isEqual:borderColor] && [borderLeftColor isEqual:borderColor];
+                       
+  BOOL hasDashedOrDotted = [borderStyle isEqualToString:@"dashed"] || [borderStyle isEqualToString:@"dotted"];
 
-  CGFloat cornerRadius = view.layer.cornerRadius;
-  borderLayer.path = [UIBezierPath bezierPathWithRoundedRect:view.bounds cornerRadius:cornerRadius].CGPath;
+  // If using a mask, we cannot rely on standard borders because they don't follow the mask path (they follow cornerRadius which is 0).
+  // So if hasAnyRadius is true (mask used), we must draw borders manually.
+  BOOL canUseStandardBorder = uniformBorder && !hasDashedOrDotted && !(!uniformRadius && hasAnyRadius);
 
-  NSString *normalizedStyle = borderStyle.length ? borderStyle.lowercaseString : @"solid";
-  if ([normalizedStyle isEqualToString:@"dotted"]) {
-    borderLayer.lineDashPattern = @[@(borderWidth), @(borderWidth)];
-  } else if ([normalizedStyle isEqualToString:@"dashed"]) {
-    borderLayer.lineDashPattern = @[@(borderWidth * 2), @(borderWidth * 2)];
+  if (canUseStandardBorder) {
+      if (borderWidth > 0 && borderColor) {
+          view.layer.borderWidth = borderWidth;
+          view.layer.borderColor = borderColor.CGColor;
+      }
+  } else {
+      // Individual borders or styled borders or masked borders
+      
+      NSArray<NSNumber *> *lineDashPattern = nil;
+      if ([borderStyle isEqualToString:@"dotted"]) {
+          lineDashPattern = @[@(borderWidth), @(borderWidth)];
+      } else if ([borderStyle isEqualToString:@"dashed"]) {
+          lineDashPattern = @[@(borderWidth * 2), @(borderWidth * 2)];
+      }
+      
+      // Helper to create layer
+      CAShapeLayer* (^createLayer)(UIColor *, CGFloat, NSArray *) = ^(UIColor *c, CGFloat w, NSArray *d) {
+          CAShapeLayer *l = [CAShapeLayer layer];
+          l.name = kRuneBorderLayerName;
+          l.strokeColor = c.CGColor;
+          l.lineWidth = w;
+          l.fillColor = [UIColor clearColor].CGColor;
+          l.lineCap = kCALineCapButt;
+          if (d) l.lineDashPattern = d;
+          return l;
+      };
+
+      CGFloat w = view.bounds.size.width;
+      CGFloat h = view.bounds.size.height;
+
+      // Top Border (handles Top-Left and Top-Right corners)
+      if (borderTopWidth > 0 && borderTopColor) {
+          CAShapeLayer *l = createLayer(borderTopColor, borderTopWidth, lineDashPattern);
+          UIBezierPath *p = [UIBezierPath bezierPath];
+          CGFloat inset = borderTopWidth / 2.0;
+          
+          // Top-Left Arc
+          if (borderTopLeftRadius > 0) {
+              CGFloat r = MAX(0, borderTopLeftRadius - inset);
+              [p addArcWithCenter:CGPointMake(borderTopLeftRadius, borderTopLeftRadius) radius:r startAngle:M_PI endAngle:3*M_PI_2 clockwise:YES];
+          } else {
+              [p moveToPoint:CGPointMake(0, inset)];
+          }
+          
+          // Top Line
+          CGFloat rightStart = w - (borderTopRightRadius > 0 ? borderTopRightRadius : 0);
+          [p addLineToPoint:CGPointMake(rightStart, inset)];
+          
+          // Top-Right Arc
+          if (borderTopRightRadius > 0) {
+              CGFloat r = MAX(0, borderTopRightRadius - inset);
+              [p addArcWithCenter:CGPointMake(w - borderTopRightRadius, borderTopRightRadius) radius:r startAngle:3*M_PI_2 endAngle:0 clockwise:YES];
+          } else {
+              [p addLineToPoint:CGPointMake(w, inset)];
+          }
+          
+          l.path = p.CGPath;
+          [view.layer addSublayer:l];
+      }
+
+      // Bottom Border (handles Bottom-Left and Bottom-Right corners)
+      if (borderBottomWidth > 0 && borderBottomColor) {
+          CAShapeLayer *l = createLayer(borderBottomColor, borderBottomWidth, lineDashPattern);
+          UIBezierPath *p = [UIBezierPath bezierPath];
+          CGFloat inset = borderBottomWidth / 2.0;
+          CGFloat y = h - inset;
+          
+          // Bottom-Right Arc
+          if (borderBottomRightRadius > 0) {
+               CGFloat r = MAX(0, borderBottomRightRadius - inset);
+               [p addArcWithCenter:CGPointMake(w - borderBottomRightRadius, h - borderBottomRightRadius) radius:r startAngle:0 endAngle:M_PI_2 clockwise:YES];
+          } else {
+               [p moveToPoint:CGPointMake(w, y)];
+          }
+
+          // Bottom Line
+          CGFloat leftStart = (borderBottomLeftRadius > 0 ? borderBottomLeftRadius : 0);
+          [p addLineToPoint:CGPointMake(leftStart, y)];
+          
+          // Bottom-Left Arc
+          if (borderBottomLeftRadius > 0) {
+              CGFloat r = MAX(0, borderBottomLeftRadius - inset);
+              [p addArcWithCenter:CGPointMake(borderBottomLeftRadius, h - borderBottomLeftRadius) radius:r startAngle:M_PI_2 endAngle:M_PI clockwise:YES];
+          } else {
+              [p addLineToPoint:CGPointMake(0, y)];
+          }
+          
+          l.path = p.CGPath;
+          [view.layer addSublayer:l];
+      }
+      
+      // Left Border (Straight part only)
+      if (borderLeftWidth > 0 && borderLeftColor) {
+          CAShapeLayer *l = createLayer(borderLeftColor, borderLeftWidth, lineDashPattern);
+          UIBezierPath *p = [UIBezierPath bezierPath];
+          CGFloat inset = borderLeftWidth / 2.0;
+          CGFloat startY = (borderTopLeftRadius > 0 ? borderTopLeftRadius : 0);
+          
+          [p moveToPoint:CGPointMake(inset, startY)];
+          [p addLineToPoint:CGPointMake(inset, h - (borderBottomLeftRadius > 0 ? borderBottomLeftRadius : 0))];
+          l.path = p.CGPath;
+          [view.layer addSublayer:l];
+      }
+
+      // Right Border (Straight part only)
+      if (borderRightWidth > 0 && borderRightColor) {
+          CAShapeLayer *l = createLayer(borderRightColor, borderRightWidth, lineDashPattern);
+          UIBezierPath *p = [UIBezierPath bezierPath];
+          CGFloat inset = borderRightWidth / 2.0;
+          CGFloat startY = (borderTopRightRadius > 0 ? borderTopRightRadius : 0);
+          
+          [p moveToPoint:CGPointMake(w - inset, startY)];
+          [p addLineToPoint:CGPointMake(w - inset, h - (borderBottomRightRadius > 0 ? borderBottomRightRadius : 0))];
+          l.path = p.CGPath;
+          [view.layer addSublayer:l];
+      }
   }
-
-  [view.layer addSublayer:borderLayer];
 }
 
 static void SNApplyEdges(NSDictionary *style,
@@ -589,7 +784,11 @@ static void SNApplyEdges(NSDictionary *style,
   NSNumber *borderWidthValue = style[@"borderWidth"];
   YGNodeStyleSetBorder(n.yoga, YGEdgeAll, borderWidthValue ? (float)SNNum(borderWidthValue) : 0.f);
 
+  n.latestStyle = style;
   NSString *bg = style[@"backgroundColor"]; if (bg) { n.view.backgroundColor = SNColorFromHex(bg); }
+
+  // Background color is handled in SNApplyBorderStyleToView now
+  // NSString *bg = style[@"backgroundColor"]; if (bg) { n.view.backgroundColor = SNColorFromHex(bg); }
   NSNumber *opacityValue = style[@"opacity"];
   if (opacityValue) {
     CGFloat resolvedOpacity = (CGFloat)SNNum(opacityValue);
@@ -608,7 +807,7 @@ static void SNApplyEdges(NSDictionary *style,
 
   NSNumber *br = style[@"borderRadius"];
   if (br) { n.view.layer.cornerRadius = (CGFloat)SNNum(br); n.view.clipsToBounds = YES; }
-  SNApplyBorderStyleToView(n.view, style[@"borderWidth"], style[@"borderColor"], style[@"borderStyle"]);
+  SNApplyBorderStyleToView(n.view, style);
 
   // TextInput-specific styling - done via selector check to avoid import
   if ([n.view respondsToSelector:@selector(applyPlaceholderToneFromTextColor)]) {
@@ -1080,5 +1279,8 @@ static void SNApplyEdges(NSDictionary *style,
   return [self rune_dequeueEventPayloadForNode:nodeId name:name];
 }
 
+- (void)sn_applyBorderStyle:(NSDictionary *)style toView:(UIView *)view {
+  SNApplyBorderStyleToView(view, style);
+}
 
 @end

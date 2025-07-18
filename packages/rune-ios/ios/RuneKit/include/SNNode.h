@@ -42,6 +42,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, assign) CGRect lastLayoutFrame;
 @property(nonatomic, copy) NSString *type;
 @property(nonatomic, assign) int surfaceId;
+@property(nonatomic, copy, nullable) NSDictionary *latestStyle;
 
 @end
 

@@ -45,6 +45,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)sn_storeEventPayload:(NSDictionary *_Nullable)payload forNode:(SNNode *)node name:(NSString *)name;
 - (NSString *_Nullable)sn_eventKeyForNode:(int)nid name:(NSString *)name;
 - (void)sn_dispatchEvent:(NSString *)name payload:(NSDictionary *_Nullable)payload toNode:(SNNode *)node;
+- (void)sn_applyBorderStyle:(NSDictionary *)style toView:(UIView *)view;
 @end
 
 NS_ASSUME_NONNULL_END
