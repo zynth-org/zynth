@@ -348,7 +348,7 @@ static void SNRemoveCustomBorderLayers(UIView *view) {
   }
 }
 
-static void SNApplyBorderStyleToView(UIView *view, NSDictionary *style) {
+static void SNApplyBorderStyleToView(UIView *view, NSDictionary *style, BOOL overflowClip) {
   SNRemoveCustomBorderLayers(view); // Removes all layers named kRuneBorderLayerName
   
   // Reset standard layer properties
@@ -391,9 +391,10 @@ static void SNApplyBorderStyleToView(UIView *view, NSDictionary *style) {
                        (borderBottomRightRadius == borderBottomLeftRadius);
 
   // Apply Corner Radius (Uniform or Mask)
+  // Preserve overflow clipping - if overflow: hidden/scroll was set, keep masksToBounds = YES
   if (uniformRadius) {
       view.layer.cornerRadius = borderTopLeftRadius;
-      view.layer.masksToBounds = hasAnyRadius; 
+      view.layer.masksToBounds = hasAnyRadius || overflowClip; 
   } else if (hasAnyRadius) {
       // Non-uniform: Use a mask
       CAShapeLayer *maskLayer = [CAShapeLayer layer];
@@ -443,6 +444,9 @@ static void SNApplyBorderStyleToView(UIView *view, NSDictionary *style) {
       maskLayer.path = path.CGPath;
       view.layer.mask = maskLayer;
       view.layer.masksToBounds = YES;
+  } else {
+      // No radius - still need to respect overflow clipping
+      view.layer.masksToBounds = overflowClip;
   }
 
   // Apply Borders
@@ -720,12 +724,20 @@ static void SNApplyEdges(NSDictionary *style,
   }
 
   NSString *overflow = style[@"overflow"];
+  // Default to visible (no clipping) to match CSS behavior
+  BOOL shouldClip = NO;
   if (overflow) {
     YGOverflow o = YGOverflowVisible;
-    if ([overflow isEqualToString:@"hidden"]) o = YGOverflowHidden;
-    else if ([overflow isEqualToString:@"scroll"]) o = YGOverflowScroll;
+    if ([overflow isEqualToString:@"hidden"]) {
+      o = YGOverflowHidden;
+      shouldClip = YES;
+    } else if ([overflow isEqualToString:@"scroll"]) {
+      o = YGOverflowScroll;
+      shouldClip = YES;
+    }
     YGNodeStyleSetOverflow(n.yoga, o);
   }
+  n.view.clipsToBounds = shouldClip;
 
   NSNumber *gapAll = style[@"gap"];
   NSNumber *gapRow = style[@"rowGap"];
@@ -814,8 +826,25 @@ static void SNApplyEdges(NSDictionary *style,
   }
 
   NSNumber *br = style[@"borderRadius"];
-  if (br) { n.view.layer.cornerRadius = (CGFloat)SNNum(br); n.view.clipsToBounds = YES; }
-  SNApplyBorderStyleToView(n.view, style);
+  NSString *overflowForClip = style[@"overflow"];
+  if (br) {
+    n.view.layer.cornerRadius = (CGFloat)SNNum(br);
+    // borderRadius requires clipping to show rounded corners, BUT respect explicit overflow setting
+    // If overflow is explicitly "visible", don't clip even with borderRadius
+    // If overflow is "hidden" or "scroll", clip (already set above)
+    // If overflow is not set, enable clipping for borderRadius to work visually
+    if (overflowForClip && [overflowForClip isEqualToString:@"visible"]) {
+      // User explicitly wants visible - don't clip, corners won't show but that's their choice
+      n.view.clipsToBounds = NO;
+      shouldClip = NO;
+    } else if (!overflowForClip) {
+      // No overflow set but has borderRadius - need clipping for rounded corners
+      n.view.clipsToBounds = YES;
+      shouldClip = YES;
+    }
+    // If overflow is "hidden"/"scroll", clipsToBounds was already set to YES above
+  }
+  SNApplyBorderStyleToView(n.view, style, shouldClip);
 
   // TextInput-specific styling - done via selector check to avoid import
   if ([n.view respondsToSelector:@selector(applyPlaceholderToneFromTextColor)]) {
@@ -1288,7 +1317,14 @@ static void SNApplyEdges(NSDictionary *style,
 }
 
 - (void)sn_applyBorderStyle:(NSDictionary *)style toView:(UIView *)view {
-  SNApplyBorderStyleToView(view, style);
+  // Preserve overflow clipping when border styles are re-applied after layout changes
+  BOOL overflowClip = NO;
+  NSString *overflow = style[@"overflow"];
+  if ([overflow isKindOfClass:[NSString class]]) {
+    overflowClip = [overflow isEqualToString:@"hidden"] || [overflow isEqualToString:@"scroll"];
+  }
+
+  SNApplyBorderStyleToView(view, style, overflowClip);
 }
 
 @end
