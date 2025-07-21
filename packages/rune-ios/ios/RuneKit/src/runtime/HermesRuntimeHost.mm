@@ -528,6 +528,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
                                          "marginTop",     "marginRight",    "marginBottom",   "marginLeft",
                                          "borderRadius",  "borderWidth",    "fontSize",       "top",
                                          "right",         "bottom",         "left",           "opacity",
+                                         "shadowOpacity", "shadowRadius",   "elevation",
                                          "zIndex",        "gap",            "rowGap",         "columnGap",
                                          "minWidth",      "minHeight",      "maxWidth",       "maxHeight",      "aspectRatio",
                                          "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth",
@@ -540,12 +541,13 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
                                          "alignContent",  "flexWrap",       "backgroundColor", "borderColor",
                                          "borderStyle",   "fontWeight",     "color",        "position",
                                          "display",       "overflow",       "pointerEvents",
-                                         "borderTopColor", "borderRightColor", "borderBottomColor", "borderLeftColor"};
+                                         "borderTopColor", "borderRightColor", "borderBottomColor", "borderLeftColor",
+                                         "shadowColor",   "boxShadow"};
             for (const char *key : stringKeys) {
               copyString(key);
             }
             
-            const char *objectKeys[] = {"transform", "transformOrigin"};
+            const char *objectKeys[] = {"transform", "transformOrigin", "shadowOffset", "boxShadow"};
             for (const char *key : objectKeys) {
               copyObject(key);
             }

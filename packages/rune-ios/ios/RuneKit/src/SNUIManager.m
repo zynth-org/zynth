@@ -6,6 +6,7 @@
 #import "RuneUIManager+Layout.h"
 #import "SNHexColor.h"
 #import "utils/RuneTransformParser.h"
+#import "utils/RuneShadowParser.h"
 #import <Yoga/Yoga.h>
 #import <QuartzCore/QuartzCore.h>
 #import <JavaScriptCore/JavaScriptCore.h>
@@ -348,6 +349,78 @@ static void SNRemoveCustomBorderLayers(UIView *view) {
   }
 }
 
+static void SNApplyShadowStyleToView(UIView *view, NSArray<RuneShadowLayer *> *layers, NSNumber *elevation) {
+  if (!view) return;
+
+  NSMutableArray<RuneShadowLayer *> *effectiveLayers = [layers mutableCopy];
+  if (!effectiveLayers && elevation) {
+    effectiveLayers = [NSMutableArray array];
+  }
+  if (effectiveLayers.count == 0 && elevation) {
+    CGFloat e = MAX(0.f, (CGFloat)SNNum(elevation));
+    UIColor *color = [[UIColor blackColor] colorWithAlphaComponent:0.25];
+    RuneShadowLayer *synthetic = [[RuneShadowLayer alloc] initWithOffsetX:0 offsetY:e / 2.f blurRadius:e spread:0 color:color inset:NO];
+    [effectiveLayers addObject:synthetic];
+  }
+
+  if (effectiveLayers.count == 0 && !elevation) {
+    view.layer.shadowOpacity = 0.f;
+    view.layer.shadowRadius = 0.f;
+    view.layer.shadowOffset = CGSizeZero;
+    view.layer.shadowColor = nil;
+    view.layer.shadowPath = nil;
+    return;
+  }
+
+  // Remove existing shadow-only sublayers
+  NSArray<CALayer *> *sublayers = [view.layer.sublayers copy];
+  for (CALayer *layer in sublayers) {
+    if ([layer.name isEqualToString:@"rune-shadow-layer"]) {
+      [layer removeFromSuperlayer];
+    }
+  }
+
+  RuneShadowLayer *primary = effectiveLayers.firstObject;
+  if (primary) {
+    view.layer.shadowColor = primary.color.CGColor;
+    CGFloat alpha = CGColorGetAlpha(primary.color.CGColor);
+    view.layer.shadowOpacity = alpha > 0 ? alpha : 1.f;
+    view.layer.shadowRadius = primary.blurRadius;
+    view.layer.shadowOffset = CGSizeMake(primary.offsetX, primary.offsetY);
+    view.layer.masksToBounds = NO;
+  } else {
+    view.layer.shadowOpacity = 0.f;
+    view.layer.shadowRadius = 0.f;
+    view.layer.shadowOffset = CGSizeZero;
+    view.layer.shadowColor = nil;
+    view.layer.shadowPath = nil;
+  }
+
+  CGPathRef maskPath = nil;
+  if ([view.layer.mask isKindOfClass:[CAShapeLayer class]]) {
+    maskPath = ((CAShapeLayer *)view.layer.mask).path;
+  }
+  if (maskPath) {
+    view.layer.shadowPath = maskPath;
+  } else if (view.layer.cornerRadius > 0) {
+    UIBezierPath *path = [UIBezierPath bezierPathWithRoundedRect:view.bounds cornerRadius:view.layer.cornerRadius];
+    view.layer.shadowPath = path.CGPath;
+  } else {
+    view.layer.shadowPath = nil;
+  }
+
+  // Additional shadows use dedicated layers stacked behind
+  // Multiple shadows intentionally not drawn to match Android limitation and keep layer stack simple.
+
+  if (elevation) {
+    CGFloat e = MAX(0.f, (CGFloat)SNNum(elevation));
+    if (e > 0) {
+      view.layer.shadowOpacity = MAX(view.layer.shadowOpacity, 0.0001f);
+      view.layer.shadowRadius = MAX(view.layer.shadowRadius, e);
+    }
+  }
+}
+
 static void SNApplyBorderStyleToView(UIView *view, NSDictionary *style, BOOL overflowClip) {
   SNRemoveCustomBorderLayers(view); // Removes all layers named kRuneBorderLayerName
   
@@ -394,59 +467,70 @@ static void SNApplyBorderStyleToView(UIView *view, NSDictionary *style, BOOL ove
   // Preserve overflow clipping - if overflow: hidden/scroll was set, keep masksToBounds = YES
   if (uniformRadius) {
       view.layer.cornerRadius = borderTopLeftRadius;
-      view.layer.masksToBounds = hasAnyRadius || overflowClip; 
+      view.layer.masksToBounds = overflowClip;
+      if (!overflowClip && view.layer.mask) {
+          view.layer.mask = nil;
+      }
   } else if (hasAnyRadius) {
-      // Non-uniform: Use a mask
-      CAShapeLayer *maskLayer = [CAShapeLayer layer];
-      maskLayer.frame = view.bounds;
-      
-      UIBezierPath *path = [UIBezierPath bezierPath];
-      // Top Left
-      [path moveToPoint:CGPointMake(0, borderTopLeftRadius)];
-      if (borderTopLeftRadius > 0) {
-          [path addArcWithCenter:CGPointMake(borderTopLeftRadius, borderTopLeftRadius) radius:borderTopLeftRadius startAngle:M_PI endAngle:3*M_PI_2 clockwise:YES];
-      } else {
-          [path addLineToPoint:CGPointMake(0, 0)];
-      }
-      
-      // Top Edge
-      [path addLineToPoint:CGPointMake(view.bounds.size.width - borderTopRightRadius, 0)];
-      
-      // Top Right
-      if (borderTopRightRadius > 0) {
-          [path addArcWithCenter:CGPointMake(view.bounds.size.width - borderTopRightRadius, borderTopRightRadius) radius:borderTopRightRadius startAngle:3*M_PI_2 endAngle:0 clockwise:YES];
-      } else {
-          [path addLineToPoint:CGPointMake(view.bounds.size.width, 0)];
-      }
+      // Non-uniform: Use a mask only when we need to clip (overflow hidden/scroll)
+      if (overflowClip) {
+          CAShapeLayer *maskLayer = [CAShapeLayer layer];
+          maskLayer.frame = view.bounds;
+          
+          UIBezierPath *path = [UIBezierPath bezierPath];
+          // Top Left
+          [path moveToPoint:CGPointMake(0, borderTopLeftRadius)];
+          if (borderTopLeftRadius > 0) {
+              [path addArcWithCenter:CGPointMake(borderTopLeftRadius, borderTopLeftRadius) radius:borderTopLeftRadius startAngle:M_PI endAngle:3*M_PI_2 clockwise:YES];
+          } else {
+              [path addLineToPoint:CGPointMake(0, 0)];
+          }
+          
+          // Top Edge
+          [path addLineToPoint:CGPointMake(view.bounds.size.width - borderTopRightRadius, 0)];
+          
+          // Top Right
+          if (borderTopRightRadius > 0) {
+              [path addArcWithCenter:CGPointMake(view.bounds.size.width - borderTopRightRadius, borderTopRightRadius) radius:borderTopRightRadius startAngle:3*M_PI_2 endAngle:0 clockwise:YES];
+          } else {
+              [path addLineToPoint:CGPointMake(view.bounds.size.width, 0)];
+          }
 
-      // Right Edge
-      [path addLineToPoint:CGPointMake(view.bounds.size.width, view.bounds.size.height - borderBottomRightRadius)];
-      
-      // Bottom Right
-      if (borderBottomRightRadius > 0) {
-          [path addArcWithCenter:CGPointMake(view.bounds.size.width - borderBottomRightRadius, view.bounds.size.height - borderBottomRightRadius) radius:borderBottomRightRadius startAngle:0 endAngle:M_PI_2 clockwise:YES];
-      } else {
-          [path addLineToPoint:CGPointMake(view.bounds.size.width, view.bounds.size.height)];
-      }
+          // Right Edge
+          [path addLineToPoint:CGPointMake(view.bounds.size.width, view.bounds.size.height - borderBottomRightRadius)];
+          
+          // Bottom Right
+          if (borderBottomRightRadius > 0) {
+              [path addArcWithCenter:CGPointMake(view.bounds.size.width - borderBottomRightRadius, view.bounds.size.height - borderBottomRightRadius) radius:borderBottomRightRadius startAngle:0 endAngle:M_PI_2 clockwise:YES];
+          } else {
+              [path addLineToPoint:CGPointMake(view.bounds.size.width, view.bounds.size.height)];
+          }
 
-      // Bottom Edge
-      [path addLineToPoint:CGPointMake(borderBottomLeftRadius, view.bounds.size.height)];
-      
-      // Bottom Left
-      if (borderBottomLeftRadius > 0) {
-          [path addArcWithCenter:CGPointMake(borderBottomLeftRadius, view.bounds.size.height - borderBottomLeftRadius) radius:borderBottomLeftRadius startAngle:M_PI_2 endAngle:M_PI clockwise:YES];
-      } else {
-          [path addLineToPoint:CGPointMake(0, view.bounds.size.height)];
-      }
+          // Bottom Edge
+          [path addLineToPoint:CGPointMake(borderBottomLeftRadius, view.bounds.size.height)];
+          
+          // Bottom Left
+          if (borderBottomLeftRadius > 0) {
+              [path addArcWithCenter:CGPointMake(borderBottomLeftRadius, view.bounds.size.height - borderBottomLeftRadius) radius:borderBottomLeftRadius startAngle:M_PI_2 endAngle:M_PI clockwise:YES];
+          } else {
+              [path addLineToPoint:CGPointMake(0, view.bounds.size.height)];
+          }
 
-      [path closePath];
-      
-      maskLayer.path = path.CGPath;
-      view.layer.mask = maskLayer;
-      view.layer.masksToBounds = YES;
+          [path closePath];
+          
+          maskLayer.path = path.CGPath;
+          view.layer.mask = maskLayer;
+          view.layer.masksToBounds = YES;
+      } else {
+          view.layer.mask = nil;
+          view.layer.masksToBounds = NO;
+      }
   } else {
       // No radius - still need to respect overflow clipping
       view.layer.masksToBounds = overflowClip;
+      if (!overflowClip && view.layer.mask) {
+          view.layer.mask = nil;
+      }
   }
 
   // Apply Borders
@@ -845,6 +929,25 @@ static void SNApplyEdges(NSDictionary *style,
     // If overflow is "hidden"/"scroll", clipsToBounds was already set to YES above
   }
   SNApplyBorderStyleToView(n.view, style, shouldClip);
+
+  NSDictionary *shadowOffset = [style[@"shadowOffset"] isKindOfClass:[NSDictionary class]] ? style[@"shadowOffset"] : nil;
+  NSNumber *shadowOffsetX = [shadowOffset[@"width"] isKindOfClass:[NSNumber class]] ? shadowOffset[@"width"] : nil;
+  NSNumber *shadowOffsetY = [shadowOffset[@"height"] isKindOfClass:[NSNumber class]] ? shadowOffset[@"height"] : nil;
+  NSString *shadowColorString = [style[@"shadowColor"] isKindOfClass:[NSString class]] ? style[@"shadowColor"] : nil;
+  UIColor *shadowColor = shadowColorString ? SNColorFromHex(shadowColorString) : nil;
+  NSNumber *shadowOpacity = [style[@"shadowOpacity"] isKindOfClass:[NSNumber class]] ? style[@"shadowOpacity"] : nil;
+  NSNumber *shadowRadius = [style[@"shadowRadius"] isKindOfClass:[NSNumber class]] ? style[@"shadowRadius"] : nil;
+  NSNumber *elevation = [style[@"elevation"] isKindOfClass:[NSNumber class]] ? style[@"elevation"] : nil;
+  NSArray<RuneShadowLayer *> *cssShadow = [RuneShadowParser parse:style[@"boxShadow"]];
+  NSArray<RuneShadowLayer *> *rnShadow = [RuneShadowParser fromReactNativeColor:shadowColor
+                                                                        opacity:shadowOpacity
+                                                                         radius:shadowRadius
+                                                                        offsetX:shadowOffsetX
+                                                                        offsetY:shadowOffsetY];
+  NSArray<RuneShadowLayer *> *shadows = [RuneShadowParser merged:cssShadow fallback:rnShadow];
+  n.latestShadowLayers = shadows;
+  n.latestElevation = elevation;
+  SNApplyShadowStyleToView(n.view, shadows, elevation);
 
   // TextInput-specific styling - done via selector check to avoid import
   if ([n.view respondsToSelector:@selector(applyPlaceholderToneFromTextColor)]) {
@@ -1325,6 +1428,10 @@ static void SNApplyEdges(NSDictionary *style,
   }
 
   SNApplyBorderStyleToView(view, style, overflowClip);
+}
+
+- (void)sn_applyShadowLayers:(NSArray<RuneShadowLayer *> *_Nullable)layers elevation:(NSNumber *_Nullable)elevation toView:(UIView *)view {
+  SNApplyShadowStyleToView(view, layers, elevation);
 }
 
 @end

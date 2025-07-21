@@ -121,6 +121,9 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
         if (obj.latestStyle) {
             [self sn_applyBorderStyle:obj.latestStyle toView:obj.view];
         }
+        if (obj.latestShadowLayers || obj.latestElevation) {
+            [self sn_applyShadowLayers:obj.latestShadowLayers elevation:obj.latestElevation toView:obj.view];
+        }
       } @catch (NSException *exception) {
         NSLog(@"[SN] Exception applying frame for nid=%d: %@", obj.nid, exception);
       }

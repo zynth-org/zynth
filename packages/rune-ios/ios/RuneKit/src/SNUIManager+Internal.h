@@ -11,6 +11,7 @@
 #import <Yoga/Yoga.h>
 #import "SNUIManager.h"
 #import "SNNode.h"
+@class RuneShadowLayer;
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -46,6 +47,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (NSString *_Nullable)sn_eventKeyForNode:(int)nid name:(NSString *)name;
 - (void)sn_dispatchEvent:(NSString *)name payload:(NSDictionary *_Nullable)payload toNode:(SNNode *)node;
 - (void)sn_applyBorderStyle:(NSDictionary *)style toView:(UIView *)view;
+- (void)sn_applyShadowLayers:(NSArray<RuneShadowLayer *> *_Nullable)layers elevation:(NSNumber *_Nullable)elevation toView:(UIView *)view;
 @end
 
 NS_ASSUME_NONNULL_END

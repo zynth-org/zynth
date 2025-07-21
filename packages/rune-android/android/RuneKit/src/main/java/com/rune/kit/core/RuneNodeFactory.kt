@@ -164,6 +164,10 @@ internal class RuneNodeFactory(
       )
     }
     view.setBackgroundColor(Color.TRANSPARENT)
+    if (view is ViewGroup) {
+      view.clipChildren = false
+      view.clipToPadding = false
+    }
 
     // Step 3: Create node and register
     val node = RuneUIManager.Node(id, type, view, label)

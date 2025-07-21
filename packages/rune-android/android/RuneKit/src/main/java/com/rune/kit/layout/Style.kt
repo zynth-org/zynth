@@ -1,6 +1,8 @@
 package com.rune.kit.layout
 
 import com.rune.kit.core.RuneColorParser
+import com.rune.kit.core.RuneShadowParser
+import com.rune.kit.core.ShadowLayer
 import com.rune.kit.core.RuneTransformParser
 import com.rune.kit.core.TransformOperation
 import com.facebook.yoga.YogaAlign
@@ -89,6 +91,13 @@ data class Style(
   val borderTopRightRadius: Float? = null,
   val borderBottomRightRadius: Float? = null,
   val borderBottomLeftRadius: Float? = null,
+  val boxShadow: List<ShadowLayer>? = null,
+  val shadowColor: Int? = null,
+  val shadowOpacity: Float? = null,
+  val shadowOffsetX: Float? = null,
+  val shadowOffsetY: Float? = null,
+  val shadowRadius: Float? = null,
+  val elevation: Float? = null,
   val opacity: Float? = null,
   
   // Text properties
@@ -255,6 +264,22 @@ data class Style(
           borderBottomWidth = json.optFloat("borderBottomWidth"),
           borderLeftWidth = json.optFloat("borderLeftWidth"),
           borderStyle = json.optStringOrNull("borderStyle")?.lowercase(),
+          boxShadow = RuneShadowParser.merge(
+            RuneShadowParser.parse(json.opt("boxShadow")),
+            RuneShadowParser.fromReactNative(
+              shadowColor = json.optString("shadowColor")?.let { parseColor(it) },
+              shadowOpacity = json.optFloat("shadowOpacity"),
+              shadowRadius = json.optFloat("shadowRadius"),
+              offsetX = json.optJSONObject("shadowOffset")?.optFloat("width"),
+              offsetY = json.optJSONObject("shadowOffset")?.optFloat("height"),
+            ),
+          ),
+          shadowColor = json.optString("shadowColor")?.let { parseColor(it) },
+          shadowOpacity = json.optFloat("shadowOpacity")?.coerceIn(0f, 1f),
+          shadowOffsetX = json.optJSONObject("shadowOffset")?.optFloat("width"),
+          shadowOffsetY = json.optJSONObject("shadowOffset")?.optFloat("height"),
+          shadowRadius = json.optFloat("shadowRadius"),
+          elevation = json.optFloat("elevation"),
           opacity = json.optFloat("opacity")?.coerceIn(0f, 1f),
           borderTopLeftRadius = json.optFloat("borderTopLeftRadius"),
           borderTopRightRadius = json.optFloat("borderTopRightRadius"),
@@ -392,6 +417,11 @@ data class Style(
       borderRightWidth = borderRightWidth.scale(),
       borderBottomWidth = borderBottomWidth.scale(),
       borderLeftWidth = borderLeftWidth.scale(),
+      boxShadow = boxShadow?.map { it.scale(density) },
+      shadowOffsetX = shadowOffsetX.scale(),
+      shadowOffsetY = shadowOffsetY.scale(),
+      shadowRadius = shadowRadius.scale(),
+      elevation = elevation.scale(),
       fontSize = fontSize.scale(),
       transform = transform?.map { op ->
         when (op) {

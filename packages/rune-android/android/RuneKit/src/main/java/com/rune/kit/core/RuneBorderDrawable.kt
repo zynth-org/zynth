@@ -7,6 +7,7 @@ import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PixelFormat
+import android.graphics.Outline
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.drawable.Drawable
@@ -36,6 +37,7 @@ class RuneBorderDrawable : Drawable() {
     private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val path = Path()
     private val rectF = RectF()
+    private val tempOutlineRect = Rect()
 
     override fun draw(canvas: Canvas) {
         val bounds = bounds
@@ -192,6 +194,27 @@ class RuneBorderDrawable : Drawable() {
                 canvas.drawArc(rectF, 90f, 90f, false, borderPaint)
             }
         }
+    }
+
+    override fun getOutline(outline: Outline) {
+        copyBounds(tempOutlineRect)
+        if (tempOutlineRect.isEmpty) {
+            outline.setEmpty()
+            return
+        }
+        // Outline only supports a single radius. Use the max corner radius to approximate.
+        val maxRadius = maxOf(
+            borderTopLeftRadius,
+            borderTopRightRadius,
+            borderBottomRightRadius,
+            borderBottomLeftRadius,
+        ).coerceAtLeast(0f)
+        if (maxRadius > 0f) {
+            outline.setRoundRect(tempOutlineRect, maxRadius)
+        } else {
+            outline.setRect(tempOutlineRect)
+        }
+        outline.alpha = 1.0f
     }
 
     private fun applyBorderStyle(paint: Paint, strokeWidth: Float, style: String?) {

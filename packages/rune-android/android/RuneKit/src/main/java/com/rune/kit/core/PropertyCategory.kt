@@ -88,6 +88,12 @@ object PropertyCategoryMap {
     put("borderWidth", PropertyCategory.STYLE)
     put("borderStyle", PropertyCategory.STYLE)
     put("opacity", PropertyCategory.STYLE)
+    put("boxShadow", PropertyCategory.STYLE)
+    put("shadowColor", PropertyCategory.STYLE)
+    put("shadowOffset", PropertyCategory.STYLE)
+    put("shadowOpacity", PropertyCategory.STYLE)
+    put("shadowRadius", PropertyCategory.STYLE)
+    put("elevation", PropertyCategory.STYLE)
     
     // Text properties (applied to TextView)
     put("fontSize", PropertyCategory.TEXT)

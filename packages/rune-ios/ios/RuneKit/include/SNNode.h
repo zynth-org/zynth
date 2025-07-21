@@ -9,6 +9,7 @@
 @class UIView;
 @class UIColor;
 #endif
+@class RuneShadowLayer;
 #import <JavaScriptCore/JavaScriptCore.h>
 #import <Yoga/Yoga.h>
 
@@ -43,6 +44,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, copy) NSString *type;
 @property(nonatomic, assign) int surfaceId;
 @property(nonatomic, copy, nullable) NSDictionary *latestStyle;
+@property(nonatomic, copy, nullable) NSArray<RuneShadowLayer *> *latestShadowLayers;
+@property(nonatomic, strong, nullable) NSNumber *latestElevation;
 
 @end
 

@@ -10,6 +10,8 @@ import android.util.Log
 import android.util.TypedValue
 import android.util.SparseArray
 import android.view.View
+import android.view.ViewGroup
+import android.view.ViewOutlineProvider
 import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.core.view.AccessibilityDelegateCompat
@@ -155,6 +157,7 @@ internal class RunePropApplier(
       engine.setStyle(nodeId, Style())
     }
     applyBackgroundStyle(target.view, pixelStyle, target.type)
+    applyShadowStyle(target.view, pixelStyle)
     
     // Apply zIndex
     val zIndex = style.zIndex
@@ -500,9 +503,14 @@ internal class RunePropApplier(
       borderBottomColor != null || borderLeftColor != null
     val hasAnyBorderRadius = borderTopLeftRadius > 0f || borderTopRightRadius > 0f ||
       borderBottomRightRadius > 0f || borderBottomLeftRadius > 0f
+    
+    // Check if elevation/shadow requires a background for proper outline
+    val hasElevation = (style.elevation ?: 0f) > 0f
+    val hasBoxShadow = style.boxShadow?.isNotEmpty() == true
 
     val needsRoundedBackground = hasAnyBorderRadius
-    val shouldUseGradient = needsRoundedBackground || backgroundColor != null || hasAnyBorderWidth || hasAnyBorderColor
+    // Also create RuneBorderDrawable when elevation is set to ensure proper shadow outline
+    val shouldUseGradient = needsRoundedBackground || backgroundColor != null || hasAnyBorderWidth || hasAnyBorderColor || hasElevation || hasBoxShadow
     
     // TextInput components manage their own padding through onStyleApplied to handle visual insets
     val isTextInput = nodeType == "text-input" || nodeType == "secure-text-input"
@@ -549,6 +557,31 @@ internal class RunePropApplier(
     // Restore padding after setting background, but skip for TextInput which manages its own padding
     if (shouldUseGradient && !isTextInput) {
       ViewCompat.setPaddingRelative(view, paddingStart, paddingTop, paddingEnd, paddingBottom)
+    }
+  }
+
+  private fun applyShadowStyle(view: View, style: Style) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return
+    val primaryShadow = style.boxShadow?.firstOrNull()
+    val elevation = style.elevation ?: primaryShadow?.blurRadius
+    if (elevation != null && elevation > 0f) {
+      ViewCompat.setElevation(view, elevation)
+      view.translationZ = elevation
+      // Ensure parent doesn't clip the shadow
+      val parent = view.parent as? ViewGroup
+      parent?.clipChildren = false
+      parent?.clipToPadding = false
+      // Use background's outline for shadow shape (respects border radius)
+      view.outlineProvider = ViewOutlineProvider.BACKGROUND
+    } else {
+      ViewCompat.setElevation(view, 0f)
+      view.translationZ = 0f
+    }
+    // Only set custom shadow colors if boxShadow is explicitly specified
+    // When using elevation only, leave system defaults for proper Material shadows
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && primaryShadow != null) {
+      view.outlineAmbientShadowColor = primaryShadow.color
+      view.outlineSpotShadowColor = primaryShadow.color
     }
   }
 
