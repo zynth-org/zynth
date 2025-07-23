@@ -1,6 +1,9 @@
 #import "RuneUIManager+Layout.h"
 #import "RuneUIManager+Events.h"
 #import "SNUIManager+Internal.h"
+#import "utils/RuneGradientParser.h"
+
+extern void SNApplyGradientToView(UIView *view, RuneLinearGradient *gradient);
 
 #if __has_include(<RuneKit/RuneKit-Swift.h>)
 #import <RuneKit/RuneKit-Swift.h>
@@ -120,6 +123,16 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
         // Re-apply border style to update layer paths based on new frame
         if (obj.latestStyle) {
             [self sn_applyBorderStyle:obj.latestStyle toView:obj.view];
+        }
+        if (obj.latestStyle) {
+            id bgValue = obj.latestStyle[@"background"] ?: obj.latestStyle[@"backgroundImage"];
+            RuneLinearGradient *gradient = [RuneGradientParser parse:bgValue];
+            if (!gradient && [bgValue isKindOfClass:[NSString class]]) {
+                gradient = [RuneGradientParser parse:bgValue];
+            }
+            if (gradient) {
+                SNApplyGradientToView(obj.view, gradient);
+            }
         }
         if (obj.latestShadowLayers || obj.latestElevation) {
             [self sn_applyShadowLayers:obj.latestShadowLayers elevation:obj.latestElevation toView:obj.view];

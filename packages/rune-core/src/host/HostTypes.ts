@@ -36,6 +36,8 @@ export type Style = {
   maxHeight?: number | `${number}%`;
   flexGrow?: number;
   flexShrink?: number;
+  background?: string | string[];
+  backgroundImage?: string | string[];
   backgroundColor?: string;
   gap?: number;
   rowGap?: number;

@@ -6,6 +6,7 @@
 #import "RuneUIManager+Layout.h"
 #import "SNHexColor.h"
 #import "utils/RuneTransformParser.h"
+#import "utils/RuneGradientParser.h"
 #import "utils/RuneShadowParser.h"
 #import <Yoga/Yoga.h>
 #import <QuartzCore/QuartzCore.h>
@@ -13,6 +14,7 @@
 #import <objc/message.h>
 
 static NSString *const kRuneBorderLayerName = @"rune-border-style";
+static NSString *const kRuneGradientLayerName = @"rune-background-gradient";
 static const int kRuneSurfaceIdBase = 1 << 20;
 
 #if __has_include(<RuneKit/RuneKit-Swift.h>)
@@ -346,7 +348,117 @@ static void SNRemoveCustomBorderLayers(UIView *view) {
     if ([layer.name isEqualToString:kRuneBorderLayerName]) {
       [layer removeFromSuperlayer];
     }
+    if ([layer.name isEqualToString:kRuneGradientLayerName]) {
+      [layer removeFromSuperlayer];
+    }
   }
+}
+
+static NSArray<NSNumber *> *SNResolveGradientLocations(NSArray<RuneGradientStop *> *stops) {
+  NSUInteger count = stops.count;
+  if (count == 0) return nil;
+  NSMutableArray<NSNumber *> *locations = [NSMutableArray arrayWithCapacity:count];
+  for (NSUInteger i = 0; i < count; i++) {
+    [locations addObject:@(NAN)];
+  }
+
+  NSInteger lastIdx = -1;
+  CGFloat lastPos = 0.f;
+  for (NSUInteger i = 0; i < count; i++) {
+    NSNumber *posNum = stops[i].position;
+    if (posNum) {
+      CGFloat p = fmax(0.f, fmin(1.f, posNum.floatValue));
+      locations[i] = @(p);
+      if (lastIdx == -1) {
+        if (i > 0) {
+          CGFloat step = p / (CGFloat)(i + 1);
+          for (NSUInteger k = 0; k < i; k++) {
+            locations[k] = @(step * (CGFloat)(k + 1));
+          }
+        }
+      } else if (i - (NSUInteger)lastIdx > 1) {
+        NSUInteger span = i - (NSUInteger)lastIdx;
+        CGFloat step = (p - lastPos) / (CGFloat)span;
+        for (NSUInteger k = (NSUInteger)lastIdx + 1; k < i; k++) {
+          locations[k] = @(lastPos + step * (CGFloat)(k - (NSUInteger)lastIdx));
+        }
+      }
+      lastIdx = (NSInteger)i;
+      lastPos = p;
+    }
+  }
+
+  if (lastIdx == -1) {
+    if (count == 1) {
+      locations[0] = @0.f;
+    } else {
+      CGFloat step = 1.f / (CGFloat)(count - 1);
+      for (NSUInteger k = 0; k < count; k++) {
+        locations[k] = @(step * (CGFloat)k);
+      }
+    }
+  } else if ((NSUInteger)lastIdx < count - 1) {
+    NSUInteger span = (count - 1) - (NSUInteger)lastIdx;
+    CGFloat step = (1.f - lastPos) / (CGFloat)span;
+    for (NSUInteger k = (NSUInteger)lastIdx + 1; k < count; k++) {
+      locations[k] = @(lastPos + step * (CGFloat)(k - (NSUInteger)lastIdx));
+    }
+  }
+
+  CGFloat prev = [[locations firstObject] floatValue];
+  prev = fmax(0.f, fmin(1.f, prev));
+  locations[0] = @(prev);
+  for (NSUInteger i = 1; i < count; i++) {
+    CGFloat p = [locations[i] floatValue];
+    if (isnan(p)) p = prev;
+    p = fmax(prev, fmin(1.f, p));
+    locations[i] = @(p);
+    prev = p;
+  }
+
+  return locations;
+}
+
+void SNApplyGradientToView(UIView *view, RuneLinearGradient *gradient) {
+  if (!view) return;
+
+  NSArray<CALayer *> *sublayers = [view.layer.sublayers copy];
+  for (CALayer *layer in sublayers) {
+    if ([layer.name isEqualToString:kRuneGradientLayerName]) {
+      [layer removeFromSuperlayer];
+    }
+  }
+
+  if (!gradient || gradient.stops.count < 2) return;
+
+  NSMutableArray *colors = [NSMutableArray arrayWithCapacity:gradient.stops.count];
+  for (RuneGradientStop *stop in gradient.stops) {
+    if (stop.color) {
+      [colors addObject:(__bridge id)stop.color.CGColor];
+    }
+  }
+  if (colors.count < 2) return;
+
+  NSArray<NSNumber *> *locations = SNResolveGradientLocations(gradient.stops);
+
+  CGFloat angleRad = gradient.angle * (CGFloat)M_PI / 180.f;
+  CGFloat dx = sin(angleRad);
+  CGFloat dy = -cos(angleRad);
+  CGPoint startPoint = CGPointMake(0.5f - dx / 2.f, 0.5f - dy / 2.f);
+  CGPoint endPoint = CGPointMake(0.5f + dx / 2.f, 0.5f + dy / 2.f);
+
+  CAGradientLayer *layer = [CAGradientLayer layer];
+  layer.name = kRuneGradientLayerName;
+  layer.frame = view.bounds;
+  layer.needsDisplayOnBoundsChange = YES;
+  layer.startPoint = startPoint;
+  layer.endPoint = endPoint;
+  layer.colors = colors;
+  layer.locations = locations;
+  layer.cornerRadius = view.layer.cornerRadius;
+  layer.masksToBounds = view.layer.masksToBounds;
+
+  [view.layer insertSublayer:layer atIndex:0];
 }
 
 static void SNApplyShadowStyleToView(UIView *view, NSArray<RuneShadowLayer *> *layers, NSNumber *elevation) {
@@ -882,10 +994,20 @@ static void SNApplyEdges(NSDictionary *style,
   YGNodeStyleSetBorder(n.yoga, YGEdgeAll, borderWidthValue ? (float)SNNum(borderWidthValue) : 0.f);
 
   n.latestStyle = style;
-  NSString *bg = style[@"backgroundColor"]; if (bg) { n.view.backgroundColor = SNColorFromHex(bg); }
-
+  id backgroundValue = style[@"background"] ?: style[@"backgroundImage"];
+  RuneLinearGradient *gradient = [RuneGradientParser parse:backgroundValue];
+  NSString *bg = style[@"backgroundColor"];
+  if (!bg && !gradient && [backgroundValue isKindOfClass:[NSString class]]) {
+    bg = (NSString *)backgroundValue;
+  }
+  if (bg) {
+    n.view.backgroundColor = SNColorFromHex(bg);
+  } else if (gradient) {
+    n.view.backgroundColor = [UIColor clearColor];
+  } else {
+    n.view.backgroundColor = [UIColor clearColor];
+  }
   // Background color is handled in SNApplyBorderStyleToView now
-  // NSString *bg = style[@"backgroundColor"]; if (bg) { n.view.backgroundColor = SNColorFromHex(bg); }
   NSNumber *opacityValue = style[@"opacity"];
   if (opacityValue) {
     CGFloat resolvedOpacity = (CGFloat)SNNum(opacityValue);
@@ -929,6 +1051,7 @@ static void SNApplyEdges(NSDictionary *style,
     // If overflow is "hidden"/"scroll", clipsToBounds was already set to YES above
   }
   SNApplyBorderStyleToView(n.view, style, shouldClip);
+  SNApplyGradientToView(n.view, gradient);
 
   NSDictionary *shadowOffset = [style[@"shadowOffset"] isKindOfClass:[NSDictionary class]] ? style[@"shadowOffset"] : nil;
   NSNumber *shadowOffsetX = [shadowOffset[@"width"] isKindOfClass:[NSNumber class]] ? shadowOffset[@"width"] : nil;

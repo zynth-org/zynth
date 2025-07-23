@@ -4,18 +4,29 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.ColorFilter
 import android.graphics.DashPathEffect
+import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PixelFormat
 import android.graphics.Outline
 import android.graphics.Rect
 import android.graphics.RectF
+import android.graphics.Shader
 import android.graphics.drawable.Drawable
-import kotlin.math.roundToInt
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.hypot
+import kotlin.math.sin
 
 class RuneBorderDrawable : Drawable() {
 
     var backgroundColor: Int = Color.TRANSPARENT
+    var backgroundGradient: RuneLinearGradient? = null
+        set(value) {
+            field = value
+            updateShader()
+            invalidateSelf()
+        }
     var borderTopWidth: Float = 0f
     var borderRightWidth: Float = 0f
     var borderBottomWidth: Float = 0f
@@ -48,8 +59,9 @@ class RuneBorderDrawable : Drawable() {
         val hasAnyBorderRadius = borderTopLeftRadius > 0f || borderTopRightRadius > 0f || borderBottomRightRadius > 0f || borderBottomLeftRadius > 0f
 
         // Draw background
-        if (backgroundColor != Color.TRANSPARENT || hasAnyBorderRadius) {
+        if (backgroundGradient != null || backgroundColor != Color.TRANSPARENT || hasAnyBorderRadius) {
             backgroundPaint.color = backgroundColor
+            backgroundPaint.alpha = if (backgroundGradient != null) 255 else Color.alpha(backgroundColor)
             path.reset()
             rectF.set(bounds)
             if (hasAnyBorderRadius) {
@@ -246,6 +258,99 @@ class RuneBorderDrawable : Drawable() {
 
     override fun onBoundsChange(bounds: Rect) {
         super.onBoundsChange(bounds)
+        updateShader()
         invalidateSelf()
+    }
+
+    private fun updateShader() {
+        val gradient = backgroundGradient
+        val b = bounds
+        if (gradient == null || gradient.stops.size < 2 || b.width() <= 0 || b.height() <= 0) {
+            backgroundPaint.shader = null
+            return
+        }
+
+        val positions = resolvePositions(gradient.stops)
+        val colors = gradient.stops.map { it.color }.toIntArray()
+
+        val angleRad = gradient.angle.toDouble() * PI / 180.0
+        val dx = sin(angleRad)
+        val dy = -cos(angleRad)
+        val cx = b.exactCenterX()
+        val cy = b.exactCenterY()
+        val radius = hypot(b.width().toDouble(), b.height().toDouble()) / 2.0
+
+        val startX = (cx - dx * radius).toFloat()
+        val startY = (cy - dy * radius).toFloat()
+        val endX = (cx + dx * radius).toFloat()
+        val endY = (cy + dy * radius).toFloat()
+
+        backgroundPaint.shader = LinearGradient(
+            startX, startY, endX, endY,
+            colors,
+            positions,
+            Shader.TileMode.CLAMP
+        )
+    }
+
+    private fun resolvePositions(stops: List<RuneGradientStop>): FloatArray {
+        val n = stops.size
+        val positions = FloatArray(n) { Float.NaN }
+        var lastIdx = -1
+        var lastPos = 0f
+
+        for (i in 0 until n) {
+            val raw = stops[i].position
+            if (raw != null) {
+                val clamped = raw.coerceIn(0f, 1f)
+                positions[i] = clamped
+                if (lastIdx == -1) {
+                    if (i > 0) {
+                        val step = clamped / (i + 1)
+                        for (k in 0 until i) {
+                            positions[k] = step * (k + 1)
+                        }
+                    }
+                } else if (i - lastIdx > 1) {
+                    val span = i - lastIdx
+                    val step = (clamped - lastPos) / span
+                    for (k in lastIdx + 1 until i) {
+                        positions[k] = lastPos + step * (k - lastIdx)
+                    }
+                }
+                lastIdx = i
+                lastPos = clamped
+            }
+        }
+
+        if (lastIdx == -1) {
+            if (n == 1) {
+                positions[0] = 0f
+            } else {
+                val step = 1f / (n - 1)
+                for (i in 0 until n) {
+                    positions[i] = step * i
+                }
+            }
+        } else if (lastIdx < n - 1) {
+            val span = (n - 1) - lastIdx
+            val step = (1f - lastPos) / span
+            for (k in lastIdx + 1 until n) {
+                positions[k] = lastPos + step * (k - lastIdx)
+            }
+        }
+
+        var prev = positions[0].let { if (it.isNaN()) 0f else it }.coerceIn(0f, 1f)
+        positions[0] = prev
+        for (i in 1 until n) {
+            var p = positions[i]
+            if (p.isNaN()) p = prev
+            p = p.coerceIn(0f, 1f)
+            if (p < prev) p = prev
+            positions[i] = p
+            prev = p
+        }
+
+        return positions
     }
 }

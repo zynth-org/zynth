@@ -476,6 +476,7 @@ internal class RunePropApplier(
 
   internal fun applyBackgroundStyle(view: View, style: Style, nodeType: String? = null) {
     val backgroundColor = style.backgroundColor
+    val backgroundGradient = style.backgroundGradient
     val borderRadius = style.borderRadius?.coerceAtLeast(0f)
     val borderColor = style.borderColor
     val borderWidth = style.borderWidth?.coerceAtLeast(0f)
@@ -510,7 +511,7 @@ internal class RunePropApplier(
 
     val needsRoundedBackground = hasAnyBorderRadius
     // Also create RuneBorderDrawable when elevation is set to ensure proper shadow outline
-    val shouldUseGradient = needsRoundedBackground || backgroundColor != null || hasAnyBorderWidth || hasAnyBorderColor || hasElevation || hasBoxShadow
+    val shouldUseGradient = needsRoundedBackground || backgroundColor != null || backgroundGradient != null || hasAnyBorderWidth || hasAnyBorderColor || hasElevation || hasBoxShadow
     
     // TextInput components manage their own padding through onStyleApplied to handle visual insets
     val isTextInput = nodeType == "text-input" || nodeType == "secure-text-input"
@@ -538,6 +539,7 @@ internal class RunePropApplier(
       drawable.borderBottomRightRadius = borderBottomRightRadius
       drawable.borderBottomLeftRadius = borderBottomLeftRadius
       drawable.borderStyle = borderStyle
+      drawable.backgroundGradient = backgroundGradient
 
       ViewCompat.setBackground(view, drawable)
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {

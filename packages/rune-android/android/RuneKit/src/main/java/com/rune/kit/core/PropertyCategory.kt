@@ -82,6 +82,8 @@ object PropertyCategoryMap {
     put("display", PropertyCategory.LAYOUT)
     
     // Visual style properties (applied to View background/appearance)
+    put("background", PropertyCategory.STYLE)
+    put("backgroundImage", PropertyCategory.STYLE)
     put("backgroundColor", PropertyCategory.STYLE)
     put("borderRadius", PropertyCategory.STYLE)
     put("borderColor", PropertyCategory.STYLE)

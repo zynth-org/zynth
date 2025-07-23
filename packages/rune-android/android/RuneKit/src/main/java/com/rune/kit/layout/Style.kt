@@ -1,6 +1,8 @@
 package com.rune.kit.layout
 
 import com.rune.kit.core.RuneColorParser
+import com.rune.kit.core.RuneGradientParser
+import com.rune.kit.core.RuneLinearGradient
 import com.rune.kit.core.RuneShadowParser
 import com.rune.kit.core.ShadowLayer
 import com.rune.kit.core.RuneTransformParser
@@ -75,6 +77,7 @@ data class Style(
   
   // Visual properties
   val backgroundColor: Int? = null,
+  val backgroundGradient: RuneLinearGradient? = null,
   val borderColor: Int? = null,
   val borderTopColor: Int? = null,
   val borderRightColor: Int? = null,
@@ -196,6 +199,13 @@ data class Style(
           else -> Triple(null, null, false)
         }
 
+        var backgroundColor = json.optStringOrNull("backgroundColor")?.let { parseColor(it) }
+        val backgroundValue = json.opt("background") ?: json.opt("backgroundImage")
+        val backgroundGradient = RuneGradientParser.parse(backgroundValue)
+        if (backgroundColor == null && backgroundGradient == null && backgroundValue is String) {
+          backgroundColor = parseColor(backgroundValue)
+        }
+
         return Style(
           width = widthResult.first,
           height = heightResult.first,
@@ -251,7 +261,8 @@ data class Style(
           rowGap = json.optFloat("rowGap"),
           columnGap = json.optFloat("columnGap"),
           
-          backgroundColor = json.optString("backgroundColor")?.let { parseColor(it) },
+          backgroundColor = backgroundColor,
+          backgroundGradient = backgroundGradient,
           borderRadius = json.optFloat("borderRadius"),
           borderColor = json.optString("borderColor")?.let { parseColor(it) },
           borderTopColor = json.optString("borderTopColor")?.let { parseColor(it) },
