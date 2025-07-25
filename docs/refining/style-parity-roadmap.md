@@ -122,6 +122,12 @@ Based on codebase analysis of `PropertyCategory.kt` (Android), `Style.kt` (Andro
   - **Parser:** Implement `RuneGradientParser`.
   - **Android:** Render via `GradientDrawable` in `RunePropApplier`.
   - **iOS:** Render via `CAGradientLayer` inserted as sublayer.
+ - **Delivered:**
+   - Shared `RuneGradientParser` on Android/iOS normalizes `linear-gradient(...)` strings (including stringified arrays) into a linear gradient model with angle and stops.
+   - Style typing accepts `background` / `backgroundImage` and native bridges ingest them (HermesRuntimeHost.mm for iOS, PropertyCategory/Style parsing for Android).
+   - Android: gradients rendered via shader-backed `RuneBorderDrawable` so fills respect border radii and coexist with borders/shadows.
+   - iOS: gradients rendered via `CAGradientLayer` inserted behind borders; reapplied on layout to follow size/radius/masks.
+   - Dev harness: `GradientExample` story under `apps/components/src/components/styles` exercises angles, keyword directions, explicit stops, and array syntax.
 
 ### Phase 5: Typography (Low Priority - Continuous)
 
