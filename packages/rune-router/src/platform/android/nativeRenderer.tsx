@@ -5,7 +5,7 @@ import {
   getActiveSurface,
 } from "@rune/core";
 import type { HostNode } from "@rune/core";
-import { Dimensions } from "@rune/apis";
+import { Dimensions, OS, Platform } from "@rune/apis";
 import { SafeAreaProvider } from "@rune/safe-area";
 import type { InitialWindowMetrics } from "@rune/safe-area";
 import { View } from "@rune/components";
@@ -209,9 +209,21 @@ function getScreenOptions(name: string): ScreenOptions | null {
 
 function installRenderer() {
   const globalObj = globalThis as Record<string, any>;
-  const existing = Object.getOwnPropertyDescriptor(globalObj, "__renderRouterScreen");
-  if (existing && typeof existing.value === "function") {
-    return;
+  const existing = Object.getOwnPropertyDescriptor(
+    globalObj,
+    "__renderRouterScreen"
+  );
+  if (existing) {
+    if (typeof existing.value === "function") {
+      return;
+    }
+    if (existing.configurable === false) {
+      console.error(
+        "[RuneAndroidRouter] renderer globals already exist and are not configurable",
+        existing
+      );
+      return;
+    }
   }
   try {
     Object.defineProperties(globalObj, {
@@ -238,12 +250,15 @@ function installRenderer() {
   } catch (error) {
     console.error(
       "[RuneAndroidRouter] Failed to install renderer globals",
-      (error as Error)?.message ?? error
+      (error as Error)?.message ?? error,
+      Object.getOwnPropertyDescriptor(globalObj, "__renderRouterScreen")
     );
   }
 }
 
-installRenderer();
+if (Platform.OS === OS.ANDROID) {
+  installRenderer();
+}
 
 function flushHostQueue() {
   const host = getHost();
