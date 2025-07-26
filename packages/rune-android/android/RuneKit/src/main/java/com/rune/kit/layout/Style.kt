@@ -107,6 +107,18 @@ data class Style(
   val fontSize: Float? = null,
   val color: Int? = null,
   val fontWeight: String? = null,
+  val fontFamily: String? = null,
+  val fontStyle: String? = null,
+  val textAlign: String? = null,
+  val lineHeight: Float? = null,
+  val lineSpacing: Float? = null,
+  val paragraphSpacing: Float? = null,
+  val letterSpacing: Float? = null,
+  val textDecorationLine: String? = null,
+  val textTransform: String? = null,
+  val minimumFontScale: Float? = null,
+  val baselineShift: Float? = null,
+  val hyphenation: String? = null,
   
   // Transform properties
   val transform: List<TransformOperation>? = null,
@@ -205,6 +217,18 @@ data class Style(
         if (backgroundColor == null && backgroundGradient == null && backgroundValue is String) {
           backgroundColor = parseColor(backgroundValue)
         }
+        val fontFamily = json.optStringOrNull("fontFamily")
+        val fontStyle = json.optStringOrNull("fontStyle")
+        val textAlign = json.optStringOrNull("textAlign")
+        val lineHeight = json.optFloat("lineHeight")
+        val lineSpacing = json.optFloat("lineSpacing")
+        val paragraphSpacing = json.optFloat("paragraphSpacing")
+        val letterSpacing = json.optFloat("letterSpacing")
+        val textDecorationLine = json.optStringOrNull("textDecorationLine")
+        val textTransform = json.optStringOrNull("textTransform")
+        val minimumFontScale = json.optFloat("minimumFontScale")
+        val baselineShift = json.optFloat("baselineShift")
+        val hyphenation = json.optStringOrNull("hyphenation")
 
         return Style(
           width = widthResult.first,
@@ -300,6 +324,18 @@ data class Style(
           fontSize = json.optFloat("fontSize"),
           color = json.optString("color")?.let { parseColor(it) },
           fontWeight = json.optStringOrNull("fontWeight"),
+          fontFamily = fontFamily,
+          fontStyle = fontStyle,
+          textAlign = textAlign,
+          lineHeight = lineHeight,
+          lineSpacing = lineSpacing,
+          paragraphSpacing = paragraphSpacing,
+          letterSpacing = letterSpacing,
+          textDecorationLine = textDecorationLine,
+          textTransform = textTransform,
+          minimumFontScale = minimumFontScale,
+          baselineShift = baselineShift,
+          hyphenation = hyphenation,
           
           transform = RuneTransformParser.parse(json.opt("transform")),
         )
@@ -434,6 +470,11 @@ data class Style(
       shadowRadius = shadowRadius.scale(),
       elevation = elevation.scale(),
       fontSize = fontSize.scale(),
+      lineHeight = lineHeight.scale(),
+      lineSpacing = lineSpacing.scale(),
+      paragraphSpacing = paragraphSpacing.scale(),
+      letterSpacing = letterSpacing.scale(),
+      baselineShift = baselineShift.scale(),
       transform = transform?.map { op ->
         when (op) {
           is TransformOperation.Translate -> TransformOperation.Translate(

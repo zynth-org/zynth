@@ -128,6 +128,18 @@ export type Style = {
     | "700"
     | "800"
     | "900";
+  fontFamily?: string;
+  fontStyle?: "normal" | "italic";
+  textAlign?: "left" | "center" | "right" | "justify";
+  lineHeight?: number;
+  lineSpacing?: number;
+  paragraphSpacing?: number;
+  letterSpacing?: number;
+  textDecorationLine?: "none" | "underline" | "line-through" | "underline line-through";
+  textTransform?: "none" | "uppercase" | "lowercase" | "capitalize";
+  minimumFontScale?: number;
+  baselineShift?: number;
+  hyphenation?: "none" | "standard" | "high";
   tintColor?: string;
   transform?: string | Record<string, number | string>[];
   transformOrigin?: string | (string | number)[];

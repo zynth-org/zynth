@@ -12,6 +12,7 @@ import android.widget.TextView
 import com.rune.kit.components.RuneComponentDescriptor
 import com.rune.kit.components.RuneComponentRegistrar
 import com.rune.kit.core.RuneUIManager
+import com.rune.kit.core.TextStyleAttributes
 import com.rune.kit.layout.MeasureMode
 import com.rune.kit.layout.Style
 import kotlin.math.roundToInt
@@ -129,6 +130,8 @@ fun createTextComponentDescriptor(): RuneComponentDescriptor {
           weight.toIntOrNull()?.let { it >= 600 } == true
         textView.setTypeface(textView.typeface, if (isBold) Typeface.BOLD else Typeface.NORMAL)
       }
+      
+      node.textStyle = TextStyleAttributes.fromStyle(style)
 
       val durationMs = (SystemClock.elapsedRealtimeNanos() - styleStart) / 1_000_000.0
       if (durationMs > 4) {
@@ -147,6 +150,7 @@ fun createTextComponentDescriptor(): RuneComponentDescriptor {
       textView.text = ""
       node.cachedText = ""
       node.textChildren.clear()
+      node.textStyle = null
     }
   )
 }

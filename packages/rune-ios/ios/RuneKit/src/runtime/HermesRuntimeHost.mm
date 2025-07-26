@@ -521,29 +521,33 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
               }
             };
 
-            const char *numericKeys[] = {"width",          "height",         "flex",           "flexGrow",
-                                         "flexShrink",    "flexBasis",      "padding",        "paddingHorizontal",
-                                         "paddingVertical", "paddingTop",   "paddingRight",   "paddingBottom",
-                                         "paddingLeft",   "margin",         "marginHorizontal", "marginVertical",
-                                         "marginTop",     "marginRight",    "marginBottom",   "marginLeft",
-                                         "borderRadius",  "borderWidth",    "fontSize",       "top",
-                                         "right",         "bottom",         "left",           "opacity",
-                                         "shadowOpacity", "shadowRadius",   "elevation",
-                                         "zIndex",        "gap",            "rowGap",         "columnGap",
-                                         "minWidth",      "minHeight",      "maxWidth",       "maxHeight",      "aspectRatio",
-                                         "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth",
-                                         "borderTopLeftRadius", "borderTopRightRadius", "borderBottomRightRadius", "borderBottomLeftRadius"};
+            const char *numericKeys[] = {"width",            "height",           "flex",           "flexGrow",
+                                         "flexShrink",       "flexBasis",        "padding",        "paddingHorizontal",
+                                         "paddingVertical",  "paddingTop",       "paddingRight",   "paddingBottom",
+                                         "paddingLeft",      "margin",           "marginHorizontal", "marginVertical",
+                                         "marginTop",        "marginRight",      "marginBottom",   "marginLeft",
+                                         "borderRadius",     "borderWidth",      "fontSize",       "top",
+                                         "right",            "bottom",           "left",           "opacity",
+                                         "shadowOpacity",    "shadowRadius",     "elevation",
+                                         "zIndex",           "gap",              "rowGap",         "columnGap",
+                                         "minWidth",         "minHeight",        "maxWidth",       "maxHeight",      "aspectRatio",
+                                         "borderTopWidth",   "borderRightWidth", "borderBottomWidth", "borderLeftWidth",
+                                         "borderTopLeftRadius", "borderTopRightRadius", "borderBottomRightRadius", "borderBottomLeftRadius",
+                                         "lineHeight",       "lineSpacing",      "paragraphSpacing", "letterSpacing",
+                                         "baselineShift",    "minimumFontScale"};
             for (const char *key : numericKeys) {
               copyNumber(key);
             }
 
-            const char *stringKeys[] = {"flexDirection", "justifyContent", "alignItems",   "alignSelf",
-                                         "alignContent",  "flexWrap",       "background", "backgroundImage",
+            const char *stringKeys[] = {"flexDirection",    "justifyContent",   "alignItems",      "alignSelf",
+                                         "alignContent",    "flexWrap",         "background",      "backgroundImage",
                                          "backgroundColor", "borderColor",
-                                         "borderStyle",   "fontWeight",     "color",        "position",
-                                         "display",       "overflow",       "pointerEvents",
-                                         "borderTopColor", "borderRightColor", "borderBottomColor", "borderLeftColor",
-                                         "shadowColor",   "boxShadow"};
+                                         "borderStyle",     "fontWeight",       "color",           "position",
+                                         "display",         "overflow",         "pointerEvents",
+                                         "borderTopColor",  "borderRightColor", "borderBottomColor", "borderLeftColor",
+                                         "shadowColor",     "boxShadow",
+                                         "fontFamily",      "fontStyle",        "textAlign",
+                                         "textDecorationLine", "textTransform", "hyphenation"};
             for (const char *key : stringKeys) {
               copyString(key);
             }

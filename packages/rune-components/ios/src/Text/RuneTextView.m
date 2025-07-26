@@ -12,6 +12,9 @@
   if (self = [super init]) {
     self.textColor = [UIColor blackColor];
     self.numberOfLines = 0;
+    self.rune_baseTextAttributes = nil;
+    self.rune_textTransform = nil;
+    self.rune_hasExplicitFontSize = NO;
   }
   return self;
 }

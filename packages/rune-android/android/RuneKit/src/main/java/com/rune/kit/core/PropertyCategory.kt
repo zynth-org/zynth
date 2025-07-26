@@ -101,6 +101,18 @@ object PropertyCategoryMap {
     put("fontSize", PropertyCategory.TEXT)
     put("color", PropertyCategory.TEXT)
     put("fontWeight", PropertyCategory.TEXT)
+    put("fontFamily", PropertyCategory.TEXT)
+    put("fontStyle", PropertyCategory.TEXT)
+    put("textAlign", PropertyCategory.TEXT)
+    put("lineHeight", PropertyCategory.TEXT)
+    put("lineSpacing", PropertyCategory.TEXT)
+    put("paragraphSpacing", PropertyCategory.TEXT)
+    put("letterSpacing", PropertyCategory.TEXT)
+    put("textDecorationLine", PropertyCategory.TEXT)
+    put("textTransform", PropertyCategory.TEXT)
+    put("minimumFontScale", PropertyCategory.TEXT)
+    put("baselineShift", PropertyCategory.TEXT)
+    put("hyphenation", PropertyCategory.TEXT)
     
     // View-level properties
     put("accessibilityLabel", PropertyCategory.VIEW)

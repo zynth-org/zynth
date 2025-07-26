@@ -13,28 +13,91 @@
 #import <Yoga/Yoga.h>
 
 // Helper function to refresh text for a label node by composing from children
+static NSString *RuneTextApplyTransform(NSString *text, NSString *transform) {
+  if (!transform || text.length == 0) return text;
+  if ([transform isEqualToString:@"uppercase"]) {
+    return [text uppercaseString];
+  }
+  if ([transform isEqualToString:@"lowercase"]) {
+    return [text lowercaseString];
+  }
+  if ([transform isEqualToString:@"capitalize"]) {
+    return [text capitalizedString];
+  }
+  return text;
+}
+
+static NSDictionary<NSAttributedStringKey, id> *
+RuneMergeAttributes(NSDictionary<NSAttributedStringKey, id> *parent,
+                    NSDictionary<NSAttributedStringKey, id> *child) {
+  if (!parent) return child ?: @{};
+  if (!child) return parent;
+  NSMutableDictionary *merged = [parent mutableCopy];
+  [child enumerateKeysAndObjectsUsingBlock:^(id key, id obj, BOOL *stop) {
+    merged[key] = obj;
+  }];
+  return merged;
+}
+
+static NSAttributedString *RuneBuildAttributedText(SNUIManager *manager,
+                                                   SNNode *node,
+                                                   NSDictionary<NSAttributedStringKey, id> *inherited) {
+  if (!node || ![node.view isKindOfClass:[RuneTextView class]]) {
+    return [[NSAttributedString alloc] initWithString:@""];
+  }
+
+  RuneTextView *textView = (RuneTextView *)node.view;
+  NSDictionary *ownAttributes = textView.rune_baseTextAttributes ?: @{};
+
+  // If child has a font but no explicit size, adopt parent's point size.
+  NSDictionary *effective = inherited;
+  UIFont *parentFont = inherited[NSFontAttributeName];
+  UIFont *ownFont = ownAttributes[NSFontAttributeName];
+  NSMutableDictionary *adjustedOwn = [ownAttributes mutableCopy];
+  if (ownFont && parentFont && !textView.rune_hasExplicitFontSize) {
+    UIFontDescriptor *descriptor = [ownFont.fontDescriptor fontDescriptorWithSize:parentFont.pointSize];
+    adjustedOwn[NSFontAttributeName] = [UIFont fontWithDescriptor:descriptor size:parentFont.pointSize];
+  }
+  if (adjustedOwn) {
+    effective = RuneMergeAttributes(inherited, adjustedOwn);
+  }
+
+  if (node.children.count == 0) {
+    NSString *raw = textView.text ?: @"";
+    NSString *transformed = RuneTextApplyTransform(raw, textView.rune_textTransform);
+    return [[NSAttributedString alloc] initWithString:transformed attributes:effective];
+  }
+
+  NSMutableAttributedString *builder = [[NSMutableAttributedString alloc] init];
+  for (NSNumber *childId in node.children) {
+    SNNode *child = [manager rune_nodeForId:childId];
+    if (!child || ![child.view isKindOfClass:[RuneTextView class]]) continue;
+    NSAttributedString *childText = RuneBuildAttributedText(manager, child, effective);
+    [builder appendAttributedString:childText];
+  }
+
+  // Apply paragraph-level attributes (alignment/lineHeight/spacing) from this node across its range.
+  if (ownAttributes[NSParagraphStyleAttributeName]) {
+    NSRange fullRange = NSMakeRange(0, builder.length);
+    [builder addAttribute:NSParagraphStyleAttributeName value:ownAttributes[NSParagraphStyleAttributeName] range:fullRange];
+  }
+  if (ownAttributes[NSKernAttributeName]) {
+    NSRange fullRange = NSMakeRange(0, builder.length);
+    [builder addAttribute:NSKernAttributeName value:ownAttributes[NSKernAttributeName] range:fullRange];
+  }
+
+  return builder;
+}
+
+// Helper function to refresh text for a label node by composing from children
 static void RuneTextRefreshLabelNode(SNUIManager *manager, SNNode *node) {
   if (!node || ![node.view isKindOfClass:[RuneTextView class]]) return;
 
   RuneTextView *textView = (RuneTextView *)node.view;
-  
-  if (node.children.count == 0) {
-    textView.text = @"";
-    if (node.yoga && YGNodeGetChildCount(node.yoga) == 0 && YGNodeGetOwner(node.yoga)) {
-      YGNodeMarkDirty(node.yoga);
-    }
-    return;
-  }
 
-  NSMutableString *composed = [NSMutableString string];
-  for (NSNumber *childId in node.children) {
-    SNNode *child = [manager rune_nodeForId:childId];
-    if (!child || ![child.view isKindOfClass:[UILabel class]]) continue;
-    NSString *childText = ((UILabel *)child.view).text ?: @"";
-    [composed appendString:childText];
-  }
+  NSAttributedString *composed = RuneBuildAttributedText(manager, node, nil);
+  textView.attributedText = composed;
 
-  textView.text = composed;
   if (node.yoga && YGNodeGetChildCount(node.yoga) == 0 && YGNodeGetOwner(node.yoga)) {
     YGNodeMarkDirty(node.yoga);
   }
@@ -148,6 +211,7 @@ static BOOL RuneTextHandleSetProp(SNUIManager *manager,
   if ([name isEqualToString:@"text"]) {
     NSString *text = [value isKindOfClass:[NSString class]] ? (NSString *)value : @"";
     textView.text = text;
+    RuneTextRefreshLabelNode(manager, node);
     
     // Only mark dirty if node has no children (Yoga constraint)
     if (node.yoga && YGNodeGetChildCount(node.yoga) == 0) {
@@ -174,44 +238,111 @@ static void RuneTextHandleStyle(SNUIManager *manager, SNNode *node, NSDictionary
   if (!node || ![node.view isKindOfClass:[RuneTextView class]] || !style) return;
   
   RuneTextView *textView = (RuneTextView *)node.view;
-  
-  // Handle fontSize
+  CGFloat defaultSize = textView.font ? textView.font.pointSize : 16.0;
   NSNumber *fontSize = style[@"fontSize"];
-  if (fontSize) {
-    textView.font = [UIFont systemFontOfSize:(CGFloat)RuneTextNum(fontSize) weight:UIFontWeightRegular];
-  }
-  
-  // Handle fontWeight
+  CGFloat resolvedSize = fontSize ? (CGFloat)RuneTextNum(fontSize) : defaultSize;
+  textView.rune_hasExplicitFontSize = fontSize != nil;
+
+  NSString *fontFamily = style[@"fontFamily"];
+  NSString *fontStyle = style[@"fontStyle"];
   NSString *fontWeight = style[@"fontWeight"];
-  if (fontWeight) {
-    NSDictionary *weights = @{
-      @"normal": @(UIFontWeightRegular),
-      @"bold": @(UIFontWeightBold),
-      @"100": @(UIFontWeightUltraLight),
-      @"200": @(UIFontWeightThin),
-      @"300": @(UIFontWeightLight),
-      @"400": @(UIFontWeightRegular),
-      @"500": @(UIFontWeightMedium),
-      @"600": @(UIFontWeightSemibold),
-      @"700": @(UIFontWeightBold),
-      @"800": @(UIFontWeightHeavy),
-      @"900": @(UIFontWeightBlack)
-    };
-    CGFloat currentSize = textView.font ? textView.font.pointSize : 16.0;
-    NSNumber *weight = weights[fontWeight];
-    if (weight) {
-      textView.font = [UIFont systemFontOfSize:currentSize weight:[weight doubleValue]];
-    }
+
+  NSDictionary *weights = @{
+    @"normal": @(UIFontWeightRegular),
+    @"bold": @(UIFontWeightBold),
+    @"100": @(UIFontWeightUltraLight),
+    @"200": @(UIFontWeightThin),
+    @"300": @(UIFontWeightLight),
+    @"400": @(UIFontWeightRegular),
+    @"500": @(UIFontWeightMedium),
+    @"600": @(UIFontWeightSemibold),
+    @"700": @(UIFontWeightBold),
+    @"800": @(UIFontWeightHeavy),
+    @"900": @(UIFontWeightBlack)
+  };
+  NSNumber *weightNum = weights[fontWeight ?: @""] ?: @(UIFontWeightRegular);
+  UIFontDescriptorSymbolicTraits traits = 0;
+  if ([fontStyle isKindOfClass:[NSString class]] && [fontStyle isEqualToString:@"italic"]) {
+    traits |= UIFontDescriptorTraitItalic;
   }
-  
-  // Handle color
+
+  UIFontDescriptor *descriptor;
+  if ([fontFamily isKindOfClass:[NSString class]] && fontFamily.length > 0) {
+    descriptor = [UIFontDescriptor fontDescriptorWithName:fontFamily size:resolvedSize];
+  } else {
+    descriptor = [UIFont systemFontOfSize:resolvedSize weight:(CGFloat)[weightNum doubleValue]].fontDescriptor;
+  }
+  if (traits != 0) {
+    descriptor = [descriptor fontDescriptorWithSymbolicTraits:traits];
+  }
+  BOOL hasCustomFontProp = fontSize || (fontFamily && fontFamily.length > 0) || fontWeight || traits != 0;
+  UIFont *font = hasCustomFontProp ? [UIFont fontWithDescriptor:descriptor size:resolvedSize] : nil;
+
+  NSMutableParagraphStyle *paragraph = [[NSMutableParagraphStyle alloc] init];
+  NSString *textAlign = style[@"textAlign"];
+  if ([textAlign isEqualToString:@"center"]) paragraph.alignment = NSTextAlignmentCenter;
+  else if ([textAlign isEqualToString:@"right"]) paragraph.alignment = NSTextAlignmentRight;
+  else if ([textAlign isEqualToString:@"justify"]) paragraph.alignment = NSTextAlignmentJustified;
+  else paragraph.alignment = NSTextAlignmentLeft;
+
+  NSNumber *lineHeight = style[@"lineHeight"];
+  if (lineHeight) {
+    CGFloat lh = (CGFloat)RuneTextNum(lineHeight);
+    paragraph.minimumLineHeight = lh;
+    paragraph.maximumLineHeight = lh;
+  }
+  NSNumber *lineSpacing = style[@"lineSpacing"];
+  if (lineSpacing) {
+    paragraph.lineSpacing = (CGFloat)RuneTextNum(lineSpacing);
+  }
+  NSNumber *paragraphSpacing = style[@"paragraphSpacing"];
+  if (paragraphSpacing) {
+    paragraph.paragraphSpacing = (CGFloat)RuneTextNum(paragraphSpacing);
+  }
+
+  NSMutableDictionary<NSAttributedStringKey, id> *attrs = [NSMutableDictionary dictionary];
+  if (font) {
+    attrs[NSFontAttributeName] = font;
+  }
+  BOOL hasParagraphProp = textAlign || lineHeight || lineSpacing || paragraphSpacing;
+  if (hasParagraphProp) {
+    attrs[NSParagraphStyleAttributeName] = paragraph;
+  }
+
   NSString *color = style[@"color"];
   if (color) {
-    // We need to import SNHexColor for this
-    textView.textColor = SNColorFromHex(color);
+    UIColor *uicolor = SNColorFromHex(color);
+    textView.textColor = uicolor;
+    attrs[NSForegroundColorAttributeName] = uicolor;
   }
-  
-  // Mark dirty if needed
+
+  NSNumber *letterSpacing = style[@"letterSpacing"];
+  if (letterSpacing) {
+    attrs[NSKernAttributeName] = @((CGFloat)RuneTextNum(letterSpacing));
+  }
+
+  NSString *decoration = style[@"textDecorationLine"];
+  if ([decoration isKindOfClass:[NSString class]]) {
+    if ([decoration containsString:@"underline"]) {
+      attrs[NSUnderlineStyleAttributeName] = @(NSUnderlineStyleSingle);
+    }
+    if ([decoration containsString:@"line-through"] || [decoration containsString:@"strikethrough"]) {
+      attrs[NSStrikethroughStyleAttributeName] = @(NSUnderlineStyleSingle);
+    }
+  }
+
+  NSString *transform = style[@"textTransform"];
+  if ([transform isKindOfClass:[NSString class]]) {
+    textView.rune_textTransform = transform;
+  } else {
+    textView.rune_textTransform = nil;
+  }
+
+  textView.rune_baseTextAttributes = attrs;
+
+  // Mark dirty and refresh composed attributed text
+  RuneTextRefreshLabelNode(manager, node);
+  RuneTextPropagateChange(manager, node);
   if (node.yoga && YGNodeGetChildCount(node.yoga) == 0 && YGNodeGetOwner(node.yoga)) {
     YGNodeMarkDirty(node.yoga);
   }

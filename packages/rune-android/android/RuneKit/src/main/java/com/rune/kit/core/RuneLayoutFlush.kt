@@ -14,6 +14,8 @@ import com.rune.kit.debug.PerformanceProfiler
 import com.rune.kit.layout.LayoutEngine
 import com.rune.kit.layout.Rect
 import java.util.concurrent.CountDownLatch
+import com.rune.kit.core.TextComposer
+import com.rune.kit.core.TextStyleAttributes
 
 /**
  * RuneLayoutFlush handles all layout flushing, frame scheduling, and view operation batching.
@@ -45,7 +47,6 @@ internal class RuneLayoutFlush(
   private val pendingTextRebuild: LinkedHashSet<Int>,
   private val stickyFrameCarryover: MutableSet<Int>,
   private val isVirtualTextNode: (RuneUIManager.Node) -> Boolean,
-  private val recomputeTextForNode: (RuneUIManager.Node?) -> String,
   private val applySetProp: (Int, String, String?, PropertyCategory) -> Unit,
   private val applySetText: (Int, String) -> Unit,
   private val applySetHandler: (Int, String, Long) -> Unit,
@@ -54,6 +55,7 @@ internal class RuneLayoutFlush(
   private val surfaceId: Int,
   private val reportMetrics: (FlushMetrics) -> Unit = {},
 ) {
+  private val textComposer = TextComposer(nodes)
 
   // Component type constants
   private val TEXT_TYPE = "text"
@@ -580,15 +582,57 @@ internal class RuneLayoutFlush(
     toProcess.forEach { nodeId ->
       val node = nodes.get(nodeId) ?: return@forEach
       if (node.type != TEXT_TYPE) return@forEach
-      val newText = recomputeTextForNode(node)
-      node.cachedText = newText
-      node.label?.text = newText
-      (node.view as? TextView)?.text = newText
+      val result = textComposer.compose(node)
+      node.cachedText = result.text.toString()
+      val textView = node.view as? TextView
+      textView?.let {
+        it.text = result.text
+        applyRootTextStyle(it, result.effectiveStyle ?: node.textStyle)
+      }
     }
     
     val rebuildTime = android.os.SystemClock.elapsedRealtime() - rebuildStart
     if (rebuildTime > 5) {
       // Log.w("RunePerf", "⚠️ drainPendingTextRebuilds: ${rebuildTime}ms for $count text nodes")
+    }
+  }
+
+  private fun applyRootTextStyle(textView: TextView, style: TextStyleAttributes?) {
+    if (style == null) return
+    style.textAlign?.let { align ->
+      val gravity = when (align.lowercase()) {
+        "center" -> android.view.Gravity.CENTER_HORIZONTAL
+        "right", "end" -> android.view.Gravity.END
+        "justify" -> android.view.Gravity.FILL_HORIZONTAL
+        else -> android.view.Gravity.START
+      }
+      textView.gravity = gravity or (textView.gravity and android.view.Gravity.VERTICAL_GRAVITY_MASK)
+    }
+
+    style.lineHeight?.let { lh ->
+      val fm = textView.paint.fontMetricsInt
+      val current = (fm.descent - fm.ascent).toFloat().coerceAtLeast(1f)
+      val add = (lh - current).coerceAtLeast(0f)
+      textView.setLineSpacing(add, 1f)
+    } ?: style.lineSpacing?.let { spacing ->
+      textView.setLineSpacing(spacing, 1f)
+    }
+
+    style.letterSpacing?.let { spacingPx ->
+      val baseSize = (style.fontSize ?: textView.textSize).coerceAtLeast(1f)
+      textView.letterSpacing = spacingPx / baseSize
+    }
+
+    style.minimumFontScale?.let { scale ->
+      if (scale > 0f) {
+        val sizePx = (style.fontSize ?: textView.textSize).toInt()
+        val minSize = (sizePx * scale).toInt().coerceAtLeast(1)
+        try {
+          textView.setAutoSizeTextTypeUniformWithConfiguration(minSize, sizePx, 1, android.util.TypedValue.COMPLEX_UNIT_PX)
+        } catch (_: Throwable) {
+          // Autosize not available on this platform; skip gracefully
+        }
+      }
     }
   }
 

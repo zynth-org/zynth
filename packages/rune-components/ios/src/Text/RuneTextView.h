@@ -13,6 +13,12 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// Reference to the owning SNNode for traversing children during text composition
 @property (nonatomic, weak, nullable) SNNode *rune_node;
+/// Base text attributes derived from this node's style
+@property (nonatomic, strong, nullable) NSDictionary<NSAttributedStringKey, id> *rune_baseTextAttributes;
+/// Optional text transform ("uppercase" | "lowercase" | "capitalize")
+@property (nonatomic, copy, nullable) NSString *rune_textTransform;
+/// Whether this node specified an explicit fontSize
+@property (nonatomic, assign) BOOL rune_hasExplicitFontSize;
 
 /// Refreshes the composed text from all child text nodes
 - (void)rune_refreshComposedText;

@@ -173,6 +173,7 @@ class RuneUIManager(
     var lastLayoutHeight: Int = -1,
     var layoutListener: OnLayoutChangeListener? = null,
     var surfaceId: Int = 0,
+    var textStyle: TextStyleAttributes? = null,
   )
 
   data class SelectionSpec(var start: Int, var end: Int)
@@ -343,7 +344,6 @@ class RuneUIManager(
       pendingTextRebuild = pendingTextRebuild,
       stickyFrameCarryover = stickyFrameCarryover,
       isVirtualTextNode = ::isVirtualTextNode,
-      recomputeTextForNode = ::recomputeTextForNode,
       applySetProp = ::applySetProp,
       applySetText = ::applySetText,
       applySetHandler = ::applySetHandler,
@@ -860,6 +860,11 @@ class RuneUIManager(
   override fun setProp(nodeId: Int, name: String, jsonValue: String?) = onMain {
     val surface = surfaceStateForNode(nodeId)
     logSurfaceEvent(surface.id, "setProp", "node=$nodeId name=$name")
+    val targetNode = surface.nodes.get(nodeId)
+    if (name == "style" && targetNode?.type == TEXT_TYPE) {
+      surface.pendingTextRebuild.add(nodeId)
+      surface.nodeFactory.propagateTextChange(targetNode)
+    }
     val queue = surface.pendingNativeOperations
     // Fast O(1) property categorization for optimized dispatch
     val category = PropertyCategoryMap.getCategory(name)
@@ -896,6 +901,10 @@ class RuneUIManager(
   override fun setText(nodeId: Int, text: String) = onMain {
     val surface = surfaceStateForNode(nodeId)
     logSurfaceEvent(surface.id, "setText", "node=$nodeId length=${text.length}")
+    surface.nodes.get(nodeId)?.let { node ->
+      surface.pendingTextRebuild.add(nodeId)
+      surface.nodeFactory.propagateTextChange(node)
+    }
     val queue = surface.pendingNativeOperations
     // Deduplicate: remove any previous setText for same node
     // Use reversed iteration for better performance when removing from end
