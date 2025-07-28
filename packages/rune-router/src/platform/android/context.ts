@@ -11,8 +11,23 @@ export const NavigationContext = createContext<NavigationContainerController | n
   null
 );
 
+let ambientNavigationController: NavigationContainerController | null = null;
+
+export function setAmbientNavigationController(
+  controller: NavigationContainerController | null
+): void {
+  ambientNavigationController = controller;
+}
+
+export function getAmbientNavigationController():
+  | NavigationContainerController
+  | null {
+  return ambientNavigationController;
+}
+
 export function useNavigationController(): NavigationContainerController {
-  const controller = useContext(NavigationContext);
+  const controller =
+    useContext(NavigationContext) ?? getAmbientNavigationController();
   if (!controller) {
     throw new Error(
       "[RuneAndroidRouter] Navigator components must be rendered inside a <NavigationContainer>"

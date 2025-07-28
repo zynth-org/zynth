@@ -4,7 +4,12 @@ import {
   createSignal,
   onCleanup,
 } from "solid-js";
-import { NavigationContext, createNavigationController } from "./context";
+import {
+  NavigationContext,
+  createNavigationController,
+  getAmbientNavigationController,
+  setAmbientNavigationController,
+} from "./context";
 import { listScreenDefinitions, subscribeScreenRegistry } from "./registry";
 import { registerScreensNative, resetStackNative } from "./nativeBridge";
 import type { NativeScreenRegistration } from "./nativeBridge";
@@ -97,6 +102,13 @@ export const NavigationContainer: ParentComponent<NavigationContainerProps> = (
 
   const controller = createNavigationController((name) => {
     setInitialRouteName(name);
+  });
+
+  setAmbientNavigationController(controller);
+  onCleanup(() => {
+    if (getAmbientNavigationController() === controller) {
+      setAmbientNavigationController(null);
+    }
   });
 
   return (
