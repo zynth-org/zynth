@@ -17,10 +17,7 @@ import {
   useContext,
 } from "solid-js";
 import { Platform, OS } from "@rune/apis";
-import {
-  TABS_ROOT_NAVIGATOR_ID,
-  TABS_ROOT_ROUTE_KEY,
-} from "../core/types";
+import { TABS_ROOT_NAVIGATOR_ID, TABS_ROOT_ROUTE_KEY } from "../core/types";
 import type {
   RouteContextValueInternal,
   RouterAction,
@@ -347,7 +344,7 @@ const KeepAliveScene: ParentComponent<{
   });
 
   const Component = scene.descriptor.component;
-  const sceneStyle: Style & { zIndex?: number } = {
+  const sceneStyle = (): Style & { zIndex?: number } => ({
     display: props.isActive ? "flex" : "none",
     flex: 1,
     width: "100%",
@@ -358,10 +355,10 @@ const KeepAliveScene: ParentComponent<{
     right: 0,
     bottom: 0,
     zIndex: props.isActive ? 1 : 0,
-  };
+  });
 
   return (
-    <View style={sceneStyle}>
+    <View style={sceneStyle()}>
       <RouteProvider value={scene.context}>
         <Component />
       </RouteProvider>
