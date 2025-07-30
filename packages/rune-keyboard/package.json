@@ -1,0 +1,74 @@
+{
+  "name": "@rune/keyboard",
+  "version": "0.0.1",
+  "description": "Keyboard management utilities for Rune framework",
+  "type": "module",
+  "main": "dist/esm/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "types": "./dist/types/index.d.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "ios",
+    "android",
+    "RuneKeyboard.podspec"
+  ],
+  "scripts": {
+    "build": "yarn build:js && yarn build:types",
+    "build:js": "NODE_ENV=production rsbuild build --config rsbuild.config.ts",
+    "build:types": "tsc --project tsconfig.types.json",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "rune",
+    "keyboard",
+    "keyboard-controller",
+    "keyboard-avoiding",
+    "ios",
+    "android"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "@rune/core": ">=0.0.1",
+    "@rune/components": ">=0.0.1",
+    "solid-js": ">=1.8.0"
+  },
+  "devDependencies": {
+    "@rsbuild/core": "^1.5.0",
+    "@rune/rsbuild-plugin": "*",
+    "typescript": "^5.6.3"
+  },
+  "runeNative": {
+    "ios": {
+      "pods": [
+        {
+          "name": "RuneKeyboard",
+          "podspec": "./RuneKeyboard.podspec"
+        }
+      ],
+      "initializer": {
+        "className": "RuneKeyboard",
+        "method": "initializeWith:"
+      }
+    },
+    "android": {
+      "modules": [
+        {
+          "name": "RuneKeyboard",
+          "path": "./android/RuneKeyboard"
+        }
+      ],
+      "initializer": {
+        "className": "RuneKeyboard",
+        "method": "initialize",
+        "package": "dev.rune.keyboard"
+      }
+    }
+  }
+}

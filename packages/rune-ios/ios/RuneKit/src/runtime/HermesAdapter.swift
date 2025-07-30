@@ -82,7 +82,6 @@ public final class HermesAdapter: JSRuntimeAdapter {
   }
 
   public func callGlobal(_ name: String, args: [Any]) -> Any? {
-    host.callGlobal(name, args: args)
-    return nil
+    return host.callGlobal(name, args: args)
   }
 }
