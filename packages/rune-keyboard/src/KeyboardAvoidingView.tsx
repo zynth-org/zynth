@@ -66,13 +66,15 @@ export interface KeyboardAvoidingViewProps {
  * </KeyboardAvoidingView>
  * ```
  */
-export const KeyboardAvoidingView: ParentComponent<KeyboardAvoidingViewProps> = (props) => {
+export const KeyboardAvoidingView: ParentComponent<
+  KeyboardAvoidingViewProps
+> = (props) => {
   const keyboard = useKeyboard();
-  
+
   const behavior = () => props.behavior ?? "padding";
   const enabled = () => props.enabled ?? true;
   const offset = () => props.keyboardVerticalOffset ?? 0;
-  
+
   // Calculate the keyboard adjustment value
   const keyboardAdjustment = createMemo(() => {
     if (!enabled()) return 0;
@@ -80,40 +82,42 @@ export const KeyboardAvoidingView: ParentComponent<KeyboardAvoidingViewProps> = 
     if (!state.isVisible) return 0;
     return state.height + offset();
   });
-  
+
   // For "height" behavior, we render differently
   const isHeightBehavior = () => behavior() === "height";
-  
+
   // Compute the outer container style based on behavior
   const containerStyle = createMemo((): Style => {
     const adjustment = keyboardAdjustment();
     const baseStyle = props.style ?? {};
-    
+
     switch (behavior()) {
       case "padding":
         // Add bottom padding to push content up
         return {
           ...baseStyle,
-          paddingBottom: ((baseStyle.paddingBottom as number) ?? 0) + adjustment,
+          paddingBottom:
+            ((baseStyle.paddingBottom as number) ?? 0) + adjustment,
         };
-        
+
       case "position":
         // Translate the view upward
         return {
           ...baseStyle,
-          transform: adjustment > 0 ? `translateY(${-adjustment}px)` : undefined,
+          transform:
+            adjustment > 0 ? `translateY(${-adjustment}px)` : undefined,
         };
-        
+
       case "height":
         // For height behavior, we use the base style on outer container
         // and apply the height reduction on an inner wrapper
         return baseStyle;
-        
+
       default:
         return baseStyle;
     }
   });
-  
+
   // Inner content wrapper style for "height" behavior
   // This view takes flex:1 minus the keyboard height via marginBottom
   const heightContentStyle = createMemo((): Style => {
@@ -124,13 +128,11 @@ export const KeyboardAvoidingView: ParentComponent<KeyboardAvoidingViewProps> = 
       ...(props.contentContainerStyle ?? {}),
     };
   });
-  
+
   return (
     <View style={containerStyle()} testID={props.testID}>
       {isHeightBehavior() ? (
-        <View style={heightContentStyle()}>
-          {props.children}
-        </View>
+        <View style={heightContentStyle()}>{props.children}</View>
       ) : (
         props.children
       )}

@@ -53,16 +53,16 @@ export const KeyboardStickyView: ParentComponent<KeyboardStickyViewProps> = (
 ) => {
   const keyboard = useKeyboard();
   const userOffset = () => props.offset ?? 0;
-  
+
   // Compute the translation based on keyboard height
   const stickyStyle = createMemo((): Style => {
     const state = keyboard();
     const baseStyle = props.style ?? {};
-    
+
     if (!state.isVisible) {
       return baseStyle;
     }
-    
+
     // Translate upward by keyboard height + offset
     const translation = state.height + userOffset();
     return {
@@ -70,7 +70,7 @@ export const KeyboardStickyView: ParentComponent<KeyboardStickyViewProps> = (
       transform: `translateY(${-translation}px)`,
     };
   });
-  
+
   return (
     <View style={stickyStyle()} testID={props.testID}>
       {props.children}

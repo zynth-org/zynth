@@ -162,9 +162,14 @@ class RuneKeyboardModule(
                         insets: WindowInsetsCompat,
                         runningAnimations: MutableList<WindowInsetsAnimationCompat>
                     ): WindowInsetsCompat {
+                        // Only process IME animations
+                        val imeAnimation = runningAnimations.find { 
+                            it.typeMask and WindowInsetsCompat.Type.ime() != 0 
+                        } ?: return insets
+                        
                         val imeInsets = insets.getInsets(WindowInsetsCompat.Type.ime())
                         val imeHeight = imeInsets.bottom / density
-                        val isVisible = insets.isVisible(WindowInsetsCompat.Type.ime())
+                        val isVisible = imeHeight > 0
 
                         val screenHeight = view.height / density
                         val screenY = screenHeight - imeHeight
@@ -178,6 +183,8 @@ class RuneKeyboardModule(
                             isAnimating = true
                         )
 
+                        isKeyboardVisible = isVisible
+                        keyboardHeight = imeHeight
                         publishStateToJS(state)
                         return insets
                     }
@@ -185,11 +192,14 @@ class RuneKeyboardModule(
                     override fun onEnd(animation: WindowInsetsAnimationCompat) {
                         super.onEnd(animation)
                         
-                        // Get final state
+                        // Only process IME animations
+                        if (animation.typeMask and WindowInsetsCompat.Type.ime() == 0) return
+                        
+                        // Get final state from the actual insets
                         val insets = ViewCompat.getRootWindowInsets(view) ?: return
                         val imeInsets = insets.getInsets(WindowInsetsCompat.Type.ime())
                         val imeHeight = imeInsets.bottom / density
-                        val isVisible = insets.isVisible(WindowInsetsCompat.Type.ime())
+                        val isVisible = imeHeight > 0
 
                         val screenHeight = view.height / density
                         val screenY = screenHeight - imeHeight
@@ -209,64 +219,67 @@ class RuneKeyboardModule(
                     }
                 }
             )
-        }
+            
+            // When using animation callback, we don't need the ApplyWindowInsetsListener
+            // as it can interfere with SOFT_INPUT_ADJUST_NOTHING mode
+        } else {
+            // Fallback for older APIs (< API 30) - use WindowInsets listener
+            ViewCompat.setOnApplyWindowInsetsListener(view) { _, insets ->
+                val imeInsets = insets.getInsets(WindowInsetsCompat.Type.ime())
+                val imeHeight = imeInsets.bottom / density
+                val isVisible = imeHeight > 0
 
-        // Fallback for older APIs - use WindowInsets listener
-        ViewCompat.setOnApplyWindowInsetsListener(view) { _, insets ->
-            val imeInsets = insets.getInsets(WindowInsetsCompat.Type.ime())
-            val imeHeight = imeInsets.bottom / density
-            val isVisible = insets.isVisible(WindowInsetsCompat.Type.ime())
+                // Only update if state changed
+                if (isVisible != isKeyboardVisible || imeHeight != keyboardHeight) {
+                    val screenHeight = view.height / density
+                    val screenY = screenHeight - imeHeight
 
-            // Only update if state changed (for non-animation updates)
-            if (isVisible != isKeyboardVisible || imeHeight != keyboardHeight) {
-                val screenHeight = view.height / density
-                val screenY = screenHeight - imeHeight
+                    val state = KeyboardState(
+                        isVisible = isVisible,
+                        height = imeHeight,
+                        screenY = screenY,
+                        duration = 0.25f,
+                        easing = "keyboard",
+                        isAnimating = false
+                    )
 
-                val state = KeyboardState(
-                    isVisible = isVisible,
-                    height = imeHeight,
-                    screenY = screenY,
-                    duration = 0.25f,
-                    easing = "keyboard",
-                    isAnimating = false
-                )
+                    isKeyboardVisible = isVisible
+                    keyboardHeight = imeHeight
+                    publishStateToJS(state)
+                }
 
-                isKeyboardVisible = isVisible
-                keyboardHeight = imeHeight
-                publishStateToJS(state)
+                insets
             }
-
-            insets
-        }
-
-        // Also use the global layout listener as fallback for edge cases
-        view.viewTreeObserver.addOnGlobalLayoutListener {
-            val rect = Rect()
-            view.getWindowVisibleDisplayFrame(rect)
             
-            val screenHeight = view.rootView.height
-            val keypadHeight = screenHeight - rect.bottom
-            
-            // Keyboard is visible if it takes up more than 15% of screen
-            val isVisible = keypadHeight > screenHeight * 0.15
-            val heightDp = keypadHeight / density
+            // Also use the global layout listener as fallback for edge cases on older APIs
+            view.viewTreeObserver.addOnGlobalLayoutListener {
+                val rect = Rect()
+                view.getWindowVisibleDisplayFrame(rect)
+                
+                val screenHeight = view.rootView.height
+                val keypadHeight = screenHeight - rect.bottom
+                
+                // Keyboard is visible if it takes up more than 15% of screen
+                val isVisible = keypadHeight > screenHeight * 0.15
+                val heightDp = keypadHeight / density
 
-            if (isVisible != isKeyboardVisible) {
-                val screenHeightDp = screenHeight / density
-                val screenY = if (isVisible) screenHeightDp - heightDp else screenHeightDp
+                if (isVisible != isKeyboardVisible) {
+                    val screenHeightDp = screenHeight / density
+                    val screenY = if (isVisible) screenHeightDp - heightDp else screenHeightDp
 
-                val state = KeyboardState(
-                    isVisible = isVisible,
-                    height = if (isVisible) heightDp else 0f,
-                    screenY = screenY,
-                    duration = 0.25f,
-                    easing = "keyboard",
-                    isAnimating = false
-                )
+                    val state = KeyboardState(
+                        isVisible = isVisible,
+                        height = if (isVisible) heightDp else 0f,
+                        screenY = screenY,
+                        duration = 0.25f,
+                        easing = "keyboard",
+                        isAnimating = false
+                    )
 
-                isKeyboardVisible = isVisible
-                keyboardHeight = if (isVisible) heightDp else 0f
-                publishStateToJS(state)
+                    isKeyboardVisible = isVisible
+                    keyboardHeight = if (isVisible) heightDp else 0f
+                    publishStateToJS(state)
+                }
             }
         }
     }

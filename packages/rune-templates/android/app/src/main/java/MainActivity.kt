@@ -2,6 +2,7 @@ package {{BUNDLE_ID}}
 
 import android.os.Bundle
 import android.util.Log
+import android.view.WindowManager
 import androidx.appcompat.app.AppCompatActivity
 import {{BUNDLE_ID}}.modules.DeviceModule
 import {{BUNDLE_ID}}.modules.EnvModule
@@ -27,6 +28,10 @@ class MainActivity : AppCompatActivity() {
         or android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
       )
     }
+
+    // Disable automatic keyboard handling - let JS handle it via KeyboardAvoidingView
+    // This prevents the system from panning/resizing when keyboard appears
+    window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
 
     // Initialize SoLoader for Yoga layout engine
     RuneRuntime.initialize(this)
