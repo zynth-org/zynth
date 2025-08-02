@@ -1,0 +1,11 @@
+{
+  "name": "@rune/hypervisor",
+  "version": "0.0.1",
+  "description": "Multi-runtime hosting for Rune applications",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "peerDependencies": {
+    "solid-js": "^1.8.0"
+  },
+  "dependencies": {}
+}

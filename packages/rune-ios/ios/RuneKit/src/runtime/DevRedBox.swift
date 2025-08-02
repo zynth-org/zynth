@@ -1,66 +1,149 @@
 import UIKit
 
 @objc public final class DevRedBox: NSObject {
-  private var window: UIWindow?
+  private weak var rootView: UIView?
+  private var redBoxView: UIView?
   private var controller: RedBoxViewController?
 
+  @objc public init(rootView: UIView) {
+    self.rootView = rootView
+    super.init()
+  }
+
+  // --- Instance methods for JS Runtime errors ---
   @objc(showWithTitle:message:stack:)
-  public static func show(title: String, message: String, stack: String?) {
+  public func show(title: String, message: String, stack: String?) {
     let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
     DispatchQueue.main.async {
-      shared.present(title: title, message: text.isEmpty ? "Unknown Error" : text, stack: stack)
+      self.present(title: title, message: text.isEmpty ? "Unknown Error" : text, stack: stack)
     }
   }
 
   @objc(showWithTitle:stack:)
-  public static func show(title: String, stack: String?) {
+  public func show(title: String, stack: String?) {
     show(title: title, message: title, stack: stack)
   }
 
-  @objc public static func dismiss() {
+  @objc public func dismiss() {
     DispatchQueue.main.async {
-      shared.hide()
+      self.hide()
     }
   }
 
-  private static let shared = DevRedBox()
-
   private func present(title: String, message: String, stack: String?) {
+    guard let rootView = rootView else { return }
+    
     if controller == nil {
-      createOverlay()
+      createOverlay(in: rootView)
     }
     controller?.update(title: title, message: message, stack: stack)
-    window?.isHidden = false
+    redBoxView?.isHidden = false
+    rootView.bringSubviewToFront(redBoxView!)
   }
 
   private func hide() {
-    window?.isHidden = true
+    redBoxView?.isHidden = true
+    redBoxView?.removeFromSuperview()
     controller = nil
-    window = nil
+    redBoxView = nil
   }
 
-  private func createOverlay() {
+  private func createOverlay(in rootView: UIView) {
     let redBoxController = RedBoxViewController()
     redBoxController.onDismiss = { [weak self] in
       self?.hide()
     }
     redBoxController.onCloseApp = { [weak self] in
       self?.hide()
-      DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-        // Terminate the app so developers can relaunch manually.
-        exit(EXIT_FAILURE)
-      }
+      // In a multi-app context, "Close App" might mean "Close Guest". 
+      // For now, we just hide.
     }
 
-    let overlayWindow = UIWindow(frame: UIScreen.main.bounds)
-    overlayWindow.windowLevel = .alert + 1
-    overlayWindow.rootViewController = redBoxController
-    overlayWindow.isHidden = false
+    // Use the controller's view as the overlay
+    let view = redBoxController.view!
+    view.translatesAutoresizingMaskIntoConstraints = false
+    view.isHidden = false
+    
+    rootView.addSubview(view)
+    NSLayoutConstraint.activate([
+      view.leadingAnchor.constraint(equalTo: rootView.leadingAnchor),
+      view.trailingAnchor.constraint(equalTo: rootView.trailingAnchor),
+      view.topAnchor.constraint(equalTo: rootView.topAnchor),
+      view.bottomAnchor.constraint(equalTo: rootView.bottomAnchor)
+    ])
 
-    controller = redBoxController
-    window = overlayWindow
+    // Trigger viewDidLoad etc
+    redBoxController.didMove(toParent: nil) 
+
+    self.controller = redBoxController
+    self.redBoxView = view
+  }
+
+  // --- Static method for global/native errors (original behavior for DevRedBox) ---
+  @objc(showWithTitle:message:stack:)
+  public static func show(title: String, message: String, stack: String?) {
+    showGlobal(title: title, message: message, stack: stack)
+  }
+
+  @objc(showGlobalWithTitle:message:stack:)
+  public static func showGlobal(title: String, message: String, stack: String?) {
+    let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
+    DispatchQueue.main.async {
+      GlobalDevRedBoxOverlay.shared.present(title: title, message: text.isEmpty ? "Unknown Error" : text, stack: stack)
+    }
+  }
+  
+  @objc public static func dismissGlobal() {
+    DispatchQueue.main.async {
+        GlobalDevRedBoxOverlay.shared.hide()
+    }
   }
 }
+
+// Internal helper for the static global red box functionality
+private final class GlobalDevRedBoxOverlay: NSObject {
+    static let shared = GlobalDevRedBoxOverlay()
+
+    private var window: UIWindow?
+    private var controller: RedBoxViewController?
+
+    fileprivate func present(title: String, message: String, stack: String?) {
+        if controller == nil {
+            createOverlay()
+        }
+        controller?.update(title: title, message: message, stack: stack)
+        window?.isHidden = false
+    }
+
+    fileprivate func hide() {
+        window?.isHidden = true
+        controller = nil
+        window = nil
+    }
+
+    private func createOverlay() {
+        let redBoxController = RedBoxViewController()
+        redBoxController.onDismiss = { [weak self] in
+            self?.hide()
+        }
+        redBoxController.onCloseApp = { [weak self] in
+            self?.hide()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                // Terminate the app so developers can relaunch manually.
+                exit(EXIT_FAILURE)
+            }
+        }
+
+        let overlayWindow = UIWindow(frame: UIScreen.main.bounds)
+        overlayWindow.windowLevel = .alert + 1 // Higher than normal alerts
+        overlayWindow.rootViewController = redBoxController
+        overlayWindow.isHidden = false
+
+        controller = redBoxController
+        window = overlayWindow
+    }
+}
+
 
 final class RedBoxViewController: UIViewController {
   var onDismiss: (() -> Void)?

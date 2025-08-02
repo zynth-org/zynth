@@ -10,11 +10,13 @@ public final class RuneRuntime: NSObject {
   let runtime: JSRuntimeAdapter
   let manager: RuneUIManager
   let registry = RuneModuleRegistry()
+  internal let redBox: DevRedBox
   internal var lastRootId: Int?
 
   public init(rootView: UIView, runtime: JSRuntimeAdapter? = nil) {
     self.rootView = rootView
     self.manager = RuneUIManager(rootView: rootView)
+    self.redBox = DevRedBox(rootView: rootView)
 
     if let runtime {
       self.runtime = runtime
@@ -52,7 +54,7 @@ public final class RuneRuntime: NSObject {
     let devURL = ProcessInfo.processInfo.environment["RUNE_DEV_SERVER_URL"] ?? "<unset>"
     print("[RuneRuntime] RUNE_DEV_SERVER_URL =", devURL)
 
-    runtime.onException = { error in
+    runtime.onException = { [weak self] error in
       let trimmedMessage = error.message.trimmingCharacters(in: .whitespacesAndNewlines)
       let message = trimmedMessage.isEmpty ? "Unknown Error" : trimmedMessage
       let trimmedStack = error.stack?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -62,7 +64,7 @@ public final class RuneRuntime: NSObject {
         print("JS error:\n\(message)")
       }
       let stackForDisplay = (trimmedStack?.isEmpty == true) ? nil : trimmedStack
-      DevRedBox.show(title: "JavaScript Error", message: message, stack: stackForDisplay)
+      self?.redBox.show(title: "JavaScript Error", message: message, stack: stackForDisplay)
     }
 
     print("[RuneTrace] configureRuntime using adapter", type(of: runtime))
@@ -289,7 +291,7 @@ public final class RuneRuntime: NSObject {
   }
 
   public func load(jsBundleURL: URL) throws {
-    DevRedBox.dismiss()
+    redBox.dismiss()
     // If we prefer HBC, try loading a sibling .hbc first
     if prefersHermesBytecode, let hermes = runtime as? HermesAdapter {
       let hbcURL = jsBundleURL.deletingPathExtension().appendingPathExtension("hbc")

@@ -25,6 +25,7 @@ static const int kRuneSurfaceIdBase = 1 << 20;
 
 @interface SNUIManager ()
 @property(nonatomic, strong) UIView *root;
+@property(nonatomic, strong) RuneComponentRegistry *componentRegistry;
 @property(nonatomic, strong) NSMutableDictionary<NSNumber *, SNNode *> *nodes;
 @property(nonatomic, assign) int nextId;
 @property(nonatomic, assign) YGNodeRef rootYoga;
@@ -82,6 +83,7 @@ static const int kRuneSurfaceIdBase = 1 << 20;
 
 - (instancetype)initWithRootView:(UIView *)rootView {
   if (self = [super init]) {
+    _componentRegistry = [RuneComponentRegistry shared];
     _root = rootView;
     _nodes = [NSMutableDictionary new];
     _nextId = 1;
@@ -195,7 +197,7 @@ static const int kRuneSurfaceIdBase = 1 << 20;
     SNNode *node = self.nodes[key];
     if (!node || node.surfaceId != surfaceId) continue;
 
-    RuneComponentDescriptor *descriptor = RuneGetComponentDescriptor(node.type);
+    RuneComponentDescriptor *descriptor = [self.componentRegistry getDescriptor:node.type];
     if (descriptor && descriptor.cleanup) {
       descriptor.cleanup(self, node);
     }
@@ -232,7 +234,7 @@ static const int kRuneSurfaceIdBase = 1 << 20;
   int nid = _nextId++;
   UIView *v = nil;
 
-  RuneComponentDescriptor *componentDescriptor = RuneGetComponentDescriptor(type);
+  RuneComponentDescriptor *componentDescriptor = [self.componentRegistry getDescriptor:type];
   if (componentDescriptor && componentDescriptor.createView) {
     v = componentDescriptor.createView(self, type);
   }
@@ -1176,7 +1178,7 @@ static void SNApplyEdges(NSDictionary *style,
   SNNode *n = _nodes[nodeId];
   if (!n || !n.view) return;
 
-  RuneComponentDescriptor *componentDescriptor = RuneGetComponentDescriptor(n.type);
+  RuneComponentDescriptor *componentDescriptor = [self.componentRegistry getDescriptor:n.type];
   BOOL pointerEventsHandled = NO;
 
   if ([name isEqualToString:@"style"]) {
@@ -1255,7 +1257,7 @@ static void SNApplyEdges(NSDictionary *style,
   if (!n || !n.view) return;
   
   // Check if component has custom style handling
-  RuneComponentDescriptor *componentDescriptor = RuneGetComponentDescriptor(n.type);
+  RuneComponentDescriptor *componentDescriptor = [self.componentRegistry getDescriptor:n.type];
   if (componentDescriptor && componentDescriptor.applyStyle) {
     componentDescriptor.applyStyle(self, n, style);
   }
@@ -1268,7 +1270,7 @@ static void SNApplyEdges(NSDictionary *style,
   SNNode *n = _nodes[nodeId];
   if (!n || !n.view) return;
 
-  RuneComponentDescriptor *componentDescriptor = RuneGetComponentDescriptor(n.type);
+  RuneComponentDescriptor *componentDescriptor = [self.componentRegistry getDescriptor:n.type];
   
   if (componentDescriptor && componentDescriptor.handleSetPropCallback) {
     if (componentDescriptor.handleSetPropCallback(self, n, name, callback)) {
@@ -1299,7 +1301,7 @@ static void SNApplyEdges(NSDictionary *style,
   SNNode *n = _nodes[nodeId];
   if (!n || !n.view) return;
 
-  RuneComponentDescriptor *componentDescriptor = RuneGetComponentDescriptor(n.type);
+  RuneComponentDescriptor *componentDescriptor = [self.componentRegistry getDescriptor:n.type];
 
   if (componentDescriptor && componentDescriptor.handleSetHandler) {
     if (componentDescriptor.handleSetHandler(self, n, name)) {
@@ -1326,7 +1328,7 @@ static void SNApplyEdges(NSDictionary *style,
   if (!n || !n.view) return;
 
   // Check if component has custom text handling via prop
-  RuneComponentDescriptor *componentDescriptor = RuneGetComponentDescriptor(n.type);
+  RuneComponentDescriptor *componentDescriptor = [self.componentRegistry getDescriptor:n.type];
   if (componentDescriptor && componentDescriptor.handleSetProp) {
     if (componentDescriptor.handleSetProp(self, n, @"text", text, nil)) {
       return;
@@ -1373,7 +1375,7 @@ static void SNApplyEdges(NSDictionary *style,
     c.surfaceId = p.surfaceId;
 
     // Check if parent component has custom child insertion logic
-    RuneComponentDescriptor *parentDescriptor = RuneGetComponentDescriptor(p.type);
+    RuneComponentDescriptor *parentDescriptor = [self.componentRegistry getDescriptor:p.type];
     if (parentDescriptor && parentDescriptor.handleInsertChild) {
       if (parentDescriptor.handleInsertChild(self, p, c, childId, (NSUInteger)index.unsignedIntegerValue)) {
         return;
@@ -1408,7 +1410,7 @@ static void SNApplyEdges(NSDictionary *style,
   SNNode *c = _nodes[childId];
   if (!c || !c.view) return;
   
-  RuneComponentDescriptor *componentDescriptor = RuneGetComponentDescriptor(c.type);
+  RuneComponentDescriptor *componentDescriptor = [self.componentRegistry getDescriptor:c.type];
   if (componentDescriptor && componentDescriptor.cleanup) {
     componentDescriptor.cleanup(self, c);
   }
@@ -1432,7 +1434,7 @@ static void SNApplyEdges(NSDictionary *style,
     if (!p || !p.yoga) return;
 
     // Check if parent component has custom child removal logic
-    RuneComponentDescriptor *parentDescriptor = RuneGetComponentDescriptor(p.type);
+    RuneComponentDescriptor *parentDescriptor = [self.componentRegistry getDescriptor:p.type];
     if (parentDescriptor && parentDescriptor.handleRemoveChild) {
       if (parentDescriptor.handleRemoveChild(self, p, c, childId)) {
         c.parentId = -1;

@@ -4,7 +4,7 @@ import Foundation
   @objc public static func report(_ phase: String, message: String, stack: String) {
     print("[Rune][\(phase)]", message, "\n", stack)
     let stackValue = stack.isEmpty ? nil : stack
-    DevRedBox.show(title: "[\(phase)] \(message)", stack: stackValue)
+    DevRedBox.showGlobal(title: "[\(phase)] \(message)", message: message, stack: stackValue)
   }
 }
 

@@ -375,7 +375,7 @@
         let message = "Dev bundle fetch failed: \(error.localizedDescription)"
         print("[RuneRuntime] ❌ \(message)")
         ensureMain { self.statusBar.showError("Bundle Load Failed") }
-        DevRedBox.show(title: "Dev Bundle Error", message: message, stack: nil)
+        self.redBox.show(title: "Dev Bundle Error", message: message, stack: nil)
         if let cached = lastDevBundle {
           print("[RuneRuntime] 💾 Falling back to cached dev bundle")
           evaluateDevBundle(cached.code, description: "cached bundle")
