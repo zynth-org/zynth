@@ -66,11 +66,12 @@ struct Timer {
   int64_t intervalNs;
 };
 
-static std::atomic<int> gNextTimer{1};
-static std::unordered_map<int, std::unique_ptr<Timer>> gTimers;
-static std::atomic<int> gNextAnimationFrame{1};
-static std::unordered_map<int, std::shared_ptr<Function>> gAnimationFrames;
-static CADisplayLink *gAnimationDisplayLink = nil;
+// GLOBAL STATICS REMOVED - Moved to instance variables
+// static std::atomic<int> gNextTimer{1};
+// static std::unordered_map<int, std::unique_ptr<Timer>> gTimers;
+// static std::atomic<int> gNextAnimationFrame{1};
+// static std::unordered_map<int, std::shared_ptr<Function>> gAnimationFrames;
+// static CADisplayLink *gAnimationDisplayLink = nil;
 
 inline void SNShowRedBox(NSString *title, NSString *message, NSString *stack) {
   Class redBoxClass = NSClassFromString(@"DevRedBox");
@@ -298,7 +299,20 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
 }
 }
 
-@interface HermesRuntimeHost ()
+@interface HermesRuntimeHost () {
+@public
+  std::unique_ptr<facebook::hermes::HermesRuntime> _rt;
+  std::unordered_map<HandlerKey, std::shared_ptr<Function>, HandlerKeyHash> _handlers;
+  dispatch_queue_t _jsQueue;
+  dispatch_queue_t _moduleQueue;
+  
+  // Instance variables replacing globals
+  std::atomic<int> _nextTimer;
+  std::unordered_map<int, std::unique_ptr<Timer>> _timers;
+  std::atomic<int> _nextAnimationFrame;
+  std::unordered_map<int, std::shared_ptr<Function>> _animationFrames;
+  CADisplayLink *_animationDisplayLink;
+}
 @property(nonatomic, strong) SNUIManager *manager;
 - (void)reportExceptionWithContext:(NSString *)context message:(const std::string &)message stack:(const std::string &)stack;
 - (void)reportStdException:(const std::exception &)ex context:(NSString *)context;
@@ -308,18 +322,18 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
 - (void)flushAnimationFrames:(CFTimeInterval)timestamp;
 @end
 
-@implementation HermesRuntimeHost {
-  std::unique_ptr<facebook::hermes::HermesRuntime> _rt;
-  std::unordered_map<HandlerKey, std::shared_ptr<Function>, HandlerKeyHash> _handlers;
-  dispatch_queue_t _jsQueue;
-  dispatch_queue_t _moduleQueue;
-}
+@implementation HermesRuntimeHost
 
 - (instancetype)initWithUIManager:(SNUIManager *)manager {
   if (self = [super init]) {
     _manager = manager;
     _jsQueue = dispatch_queue_create("com.rune.hermes.js", DISPATCH_QUEUE_SERIAL);
     _moduleQueue = dispatch_queue_create("com.rune.hermes.modules", DISPATCH_QUEUE_CONCURRENT);
+    
+    // Initialize atomics
+    _nextTimer = 1;
+    _nextAnimationFrame = 1;
+    _animationDisplayLink = nil;
 
     dispatch_sync(_jsQueue, ^{
       _rt = facebook::hermes::makeHermesRuntime();
@@ -332,6 +346,10 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
     });
   }
   return self;
+}
+
+- (void)dealloc {
+    [self stopAnimationDisplayLink];
 }
 
 - (void)reportExceptionMessage:(const std::string &)message {
@@ -427,7 +445,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
           }
           std::string type = args[0].getString(rt).utf8(rt);
           __block int nid = 0;
-          SNRunOnMain(^{
+          SNRunOnMain(^{ 
             NSString *typeStr = [NSString stringWithUTF8String:type.c_str()];
             nid = [[host manager] createNode:typeStr].intValue;
             // NSLog(@"[RuneTrace] __ui.createNode type=%@ -> id=%d", typeStr, nid);
@@ -557,14 +575,14 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
               copyObject(key);
             }
 
-            SNRunOnMain(^{
+            SNRunOnMain(^{ 
               [[host manager] setStyle:@(id) style:styleDict];
             });
             return Value::undefined();
           }
 
           if (propValue.isUndefined() || (propValue.isObject() && propValue.asObject(rt).isFunction(rt))) {
-            SNRunOnMain(^{
+            SNRunOnMain(^{ 
               [[host manager] setProp:@(id)
                                         name:nameStr
                                    valueJSON:@"null"];
@@ -577,18 +595,18 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
           Value stringified = stringify.call(rt, propValue);
           if (!stringified.isString()) {
             std::string fallback = propValue.toString(rt).utf8(rt);
-            SNRunOnMain(^{
+            SNRunOnMain(^{ 
               [[host manager] setProp:@(id)
                                         name:nameStr
-                                   valueJSON:[NSString stringWithUTF8String:fallback.c_str()]];
+                                   valueJSON:[NSString stringWithUTF8String:fallback.c_str()]] ;
             });
             return Value::undefined();
           }
           std::string jsonUTF8 = stringified.getString(rt).utf8(rt);
-          SNRunOnMain(^{
+          SNRunOnMain(^{ 
             [[host manager] setProp:@(id)
                                       name:nameStr
-                                 valueJSON:[NSString stringWithUTF8String:jsonUTF8.c_str()]];
+                                 valueJSON:[NSString stringWithUTF8String:jsonUTF8.c_str()]] ;
           });
         } catch (const facebook::jsi::JSError &error) {
           RuneReportJSIError(rt, error, "__ui.setProp");
@@ -619,7 +637,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
             }
           }
           // Log text value
-          SNRunOnMain(^{
+          SNRunOnMain(^{ 
             // NSLog(@"[RuneTrace] __ui.setText id=%d text='%s'", id, text.c_str());
             [[host manager] setText:@(id) text:[NSString stringWithUTF8String:text.c_str()]];
           });
@@ -641,7 +659,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
           int parentId = (int)a[0].asNumber();
           int childId = (int)a[1].asNumber();
           int index = (int)a[2].asNumber();
-          SNRunOnMain(^{
+          SNRunOnMain(^{ 
             // NSLog(@"[RuneTrace] __ui.insertChild parent=%d child=%d index=%d", parentId, childId, index);
             [[host manager] insertChild:@(parentId)
                                    child:@(childId)
@@ -664,7 +682,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
           }
           int parentId = (int)a[0].asNumber();
           int childId = (int)a[1].asNumber();
-          SNRunOnMain(^{
+          SNRunOnMain(^{ 
             // NSLog(@"[RuneTrace] __ui.removeChild parent=%d child=%d", parentId, childId);
             [[host manager] removeChild:@(parentId) child:@(childId)];
             [host sn_removeHandlersForNode:childId];
@@ -685,7 +703,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
             return Value::undefined();
           }
           int surfaceId = (int)args[0].asNumber();
-          SNRunOnMain(^{
+          SNRunOnMain(^{ 
             [[host manager] setActiveSurface:surfaceId];
           });
         } catch (const facebook::jsi::JSError &error) {
@@ -707,7 +725,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
           std::string name = a[1].getString(rt).utf8(rt);
           auto fn = a[2].asObject(rt).asFunction(rt);
           host->_handlers[{id, name}] = std::make_shared<Function>(std::move(fn));
-          SNRunOnMain(^{
+          SNRunOnMain(^{ 
             [[host manager] setHandler:@(id) name:[NSString stringWithUTF8String:name.c_str()]];
           });
         } catch (const facebook::jsi::JSError &error) {
@@ -721,7 +739,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
   auto hostFlush = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "flush"), 0,
       [host](Runtime &, const Value &, const Value *, size_t) -> Value {
-        SNRunOnMain(^{
+        SNRunOnMain(^{ 
           @try {
             [[host manager] flush];
           } @catch (NSException *exception) {
@@ -857,7 +875,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
                   return;
                 }
 
-                dispatch_async(host->_jsQueue, ^{
+                dispatch_async(host->_jsQueue, ^{ 
                   auto &rtRef = *host->_rt;
                   try {
                     NSString *safeModule = [NSString stringWithUTF8String:module.c_str()] ?: @"<unknown>";
@@ -1041,7 +1059,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
             }
           }
 
-          int timerId = gNextTimer.fetch_add(1);
+          int timerId = host->_nextTimer.fetch_add(1);
           auto timer = std::make_unique<Timer>();
           timer->id = timerId;
           timer->fn = std::make_shared<Function>(fnObject.asFunction(rt));
@@ -1051,14 +1069,14 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
           timer->intervalNs = 0;
 
           dispatch_source_t source = timer->source;
-          gTimers.emplace(timerId, std::move(timer));
+          host->_timers.emplace(timerId, std::move(timer));
 
           int64_t delayNs = delayMs < 0 ? 0 : (int64_t)delayMs * NSEC_PER_MSEC;
           dispatch_source_set_timer(source, dispatch_time(DISPATCH_TIME_NOW, delayNs), DISPATCH_TIME_FOREVER, 0);
 
           dispatch_source_set_event_handler(source, ^{
-            auto it = gTimers.find(timerId);
-            if (it == gTimers.end()) {
+            auto it = host->_timers.find(timerId);
+            if (it == host->_timers.end()) {
               return;
             }
             auto &timerRef = *it->second;
@@ -1072,7 +1090,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
               [host reportStdException:ex context:@"setTimeout"];
             }
             dispatch_source_cancel(timerRef.source);
-            gTimers.erase(it);
+            host->_timers.erase(it);
           });
 
           dispatch_resume(source);
@@ -1114,7 +1132,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
             }
           }
 
-          int timerId = gNextTimer.fetch_add(1);
+          int timerId = host->_nextTimer.fetch_add(1);
           int64_t intervalNs = (int64_t)delayMs * NSEC_PER_MSEC;
           
           auto timer = std::make_unique<Timer>();
@@ -1126,14 +1144,14 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
           timer->intervalNs = intervalNs;
 
           dispatch_source_t source = timer->source;
-          gTimers.emplace(timerId, std::move(timer));
+          host->_timers.emplace(timerId, std::move(timer));
 
           // Set repeating timer: first fire after intervalNs, then repeat every intervalNs
           dispatch_source_set_timer(source, dispatch_time(DISPATCH_TIME_NOW, intervalNs), intervalNs, 0);
 
           dispatch_source_set_event_handler(source, ^{
-            auto it = gTimers.find(timerId);
-            if (it == gTimers.end()) {
+            auto it = host->_timers.find(timerId);
+            if (it == host->_timers.end()) {
               return;
             }
             auto &timerRef = *it->second;
@@ -1171,9 +1189,9 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
           if (!fnObject.isFunction(rt)) {
             return Value::undefined();
           }
-          int frameId = gNextAnimationFrame.fetch_add(1);
+          int frameId = host->_nextAnimationFrame.fetch_add(1);
           auto callback = std::make_shared<Function>(fnObject.asFunction(rt));
-          gAnimationFrames.emplace(frameId, callback);
+          host->_animationFrames.emplace(frameId, callback);
           [host ensureAnimationDisplayLink];
           return Value(static_cast<double>(frameId));
         } catch (const facebook::jsi::JSError &error) {
@@ -1191,8 +1209,8 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
           return Value::undefined();
         }
         int frameId = static_cast<int>(a[0].asNumber());
-        gAnimationFrames.erase(frameId);
-        if (gAnimationFrames.empty()) {
+        host->_animationFrames.erase(frameId);
+        if (host->_animationFrames.empty()) {
           [host stopAnimationDisplayLink];
         }
         return Value::undefined();
@@ -1206,12 +1224,12 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
             return Value::undefined();
           }
           int timerId = static_cast<int>(a[0].asNumber());
-          auto it = gTimers.find(timerId);
-          if (it == gTimers.end()) {
+          auto it = host->_timers.find(timerId);
+          if (it == host->_timers.end()) {
             return Value::undefined();
           }
           dispatch_source_cancel(it->second->source);
-          gTimers.erase(it);
+          host->_timers.erase(it);
         } catch (const facebook::jsi::JSError &error) {
           RuneReportJSIError(rt, error, "clearTimeout");
         } catch (const std::exception &ex) {
@@ -1228,12 +1246,12 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
             return Value::undefined();
           }
           int timerId = static_cast<int>(a[0].asNumber());
-          auto it = gTimers.find(timerId);
-          if (it == gTimers.end()) {
+          auto it = host->_timers.find(timerId);
+          if (it == host->_timers.end()) {
             return Value::undefined();
           }
           dispatch_source_cancel(it->second->source);
-          gTimers.erase(it);
+          host->_timers.erase(it);
         } catch (const facebook::jsi::JSError &error) {
           RuneReportJSIError(rt, error, "clearInterval");
         } catch (const std::exception &ex) {
@@ -1249,7 +1267,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
   rt.global().setProperty(rt, "__hostRequestAnimationFrame", hostRequestAnimationFrame);
   rt.global().setProperty(rt, "__hostCancelAnimationFrame", hostCancelAnimationFrame);
 
-  static const char *timerScript =
+  static const char *timerScript = 
       "globalThis.setTimeout=(fn,ms,...a)=>__hostSetTimeout(fn,ms|0,a);"
     "globalThis.clearTimeout=(id)=>__hostClearTimeout(id);"
     "globalThis.setInterval=(fn,ms,...a)=>__hostSetInterval(fn,ms|0,a);"
@@ -1303,17 +1321,17 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
 
 - (void)ensureAnimationDisplayLink {
   dispatch_async(dispatch_get_main_queue(), ^{
-    if (gAnimationDisplayLink) return;
-    gAnimationDisplayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(onAnimationFrame:)];
-    [gAnimationDisplayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+    if (self->_animationDisplayLink) return;
+    self->_animationDisplayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(onAnimationFrame:)];
+    [self->_animationDisplayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
   });
 }
 
 - (void)stopAnimationDisplayLink {
   dispatch_async(dispatch_get_main_queue(), ^{
-    if (!gAnimationDisplayLink) return;
-    [gAnimationDisplayLink invalidate];
-    gAnimationDisplayLink = nil;
+    if (!self->_animationDisplayLink) return;
+    [self->_animationDisplayLink invalidate];
+    self->_animationDisplayLink = nil;
   });
 }
 
@@ -1329,11 +1347,11 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
   if (!_rt) return;
 
   std::vector<std::shared_ptr<Function>> callbacks;
-  callbacks.reserve(gAnimationFrames.size());
-  for (auto &entry : gAnimationFrames) {
+  callbacks.reserve(_animationFrames.size());
+  for (auto &entry : _animationFrames) {
     callbacks.push_back(entry.second);
   }
-  gAnimationFrames.clear();
+  _animationFrames.clear();
 
   auto &rt = *_rt;
   for (auto &fn : callbacks) {
@@ -1347,7 +1365,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
     }
   }
 
-  if (gAnimationFrames.empty()) {
+  if (_animationFrames.empty()) {
     [self stopAnimationDisplayLink];
   } else {
     [self ensureAnimationDisplayLink];

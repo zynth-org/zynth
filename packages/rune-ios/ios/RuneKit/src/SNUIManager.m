@@ -12,10 +12,14 @@
 #import <QuartzCore/QuartzCore.h>
 #import <JavaScriptCore/JavaScriptCore.h>
 #import <objc/message.h>
+#import <stdatomic.h>
 
 static NSString *const kRuneBorderLayerName = @"rune-border-style";
 static NSString *const kRuneGradientLayerName = @"rune-background-gradient";
 static const int kRuneSurfaceIdBase = 1 << 20;
+
+// Atomic counter for allocating unique guest surface IDs (mirrors Android's NEXT_ROOT_ID)
+static _Atomic int sNextGuestSurfaceId = kRuneSurfaceIdBase;
 
 #if __has_include(<RuneKit/RuneKit-Swift.h>)
 #import <RuneKit/RuneKit-Swift.h>
@@ -33,6 +37,7 @@ static const int kRuneSurfaceIdBase = 1 << 20;
 @property(nonatomic, strong) NSMutableDictionary<NSNumber *, NSValue *> *surfaceYoga;
 @property(nonatomic, assign) int activeSurfaceId;
 @property(nonatomic, assign) int surfaceIdSeed;
+@property(nonatomic, assign) int primarySurfaceId; // The surface ID for this manager's root view
 @property(nonatomic, strong, nullable) CADisplayLink *displayLink;
 @property(nonatomic, assign) BOOL needsFlush;
 @property(nonatomic, strong) NSMutableDictionary<NSString *, NSDictionary *> *eventPayloads;
@@ -82,6 +87,10 @@ static const int kRuneSurfaceIdBase = 1 << 20;
 }
 
 - (instancetype)initWithRootView:(UIView *)rootView {
+  return [self initWithRootView:rootView isGuest:NO];
+}
+
+- (instancetype)initWithRootView:(UIView *)rootView isGuest:(BOOL)isGuest {
   if (self = [super init]) {
     _componentRegistry = [RuneComponentRegistry shared];
     _root = rootView;
@@ -94,38 +103,46 @@ static const int kRuneSurfaceIdBase = 1 << 20;
     _surfaceRoots = [NSMutableDictionary new];
     _surfaceYoga = [NSMutableDictionary new];
     _surfaceIdSeed = kRuneSurfaceIdBase;
-    _activeSurfaceId = 0;
 
-    CGRect screenBounds = [UIScreen mainScreen].bounds;
-    rootView.frame = screenBounds;
-    rootView.backgroundColor = [UIColor colorWithRed:0.06 green:0.07 blue:0.09 alpha:1.0];
-    _surfaceRoots[@(0)] = rootView;
-    _surfaceYoga[@(0)] = [NSValue valueWithPointer:_rootYoga];
+    // For guest runtimes (e.g., Hypervisor), allocate a unique surface ID to avoid
+    // conflicts with the host app's surface 0
+    if (isGuest) {
+      _primarySurfaceId = atomic_fetch_add(&sNextGuestSurfaceId, 1);
+      _activeSurfaceId = _primarySurfaceId;
+      // Guest views inherit their frame from their container; don't force screen bounds
+      _surfaceRoots[@(_primarySurfaceId)] = rootView;
+      _surfaceYoga[@(_primarySurfaceId)] = [NSValue valueWithPointer:_rootYoga];
+    } else {
+      _primarySurfaceId = 0;
+      _activeSurfaceId = 0;
+      CGRect screenBounds = [UIScreen mainScreen].bounds;
+      rootView.frame = screenBounds;
+      rootView.backgroundColor = [UIColor colorWithRed:0.06 green:0.07 blue:0.09 alpha:1.0];
+      _surfaceRoots[@(0)] = rootView;
+      _surfaceYoga[@(0)] = [NSValue valueWithPointer:_rootYoga];
+    }
   }
   return self;
 }
 
-- (int)rootSurfaceId { return 0; }
+- (int)rootSurfaceId { return _primarySurfaceId; }
+
+- (int)rune_rootSurfaceId { return _primarySurfaceId; }
 
 - (NSArray<NSNumber *> *)rune_allSurfaceIds {
-  NSMutableSet<NSNumber *> *ids = [NSMutableSet setWithArray:self.surfaceRoots.allKeys];
-  [ids addObject:@(0)];
-  return ids.allObjects;
+  // Return all registered surface IDs (surfaceRoots already contains the primary surface)
+  return self.surfaceRoots.allKeys;
 }
 
 - (UIView *_Nullable)rune_rootViewForSurface:(int)surfaceId {
-  if (surfaceId == 0) {
-    return self.root;
-  }
+  // For the primary surface, self.root is registered in surfaceRoots during init
   return self.surfaceRoots[@(surfaceId)];
 }
 
 - (YGNodeRef)rune_rootYogaForSurface:(int)surfaceId {
-  if (surfaceId == 0) {
-    return self.rootYoga;
-  }
+  // For the primary surface, rootYoga is registered in surfaceYoga during init
   NSValue *value = self.surfaceYoga[@(surfaceId)];
-  return (YGNodeRef)value.pointerValue;
+  return value ? (YGNodeRef)value.pointerValue : NULL;
 }
 
 - (BOOL)rune_hasSurface:(int)surfaceId {

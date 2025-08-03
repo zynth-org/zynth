@@ -1,78 +1,88 @@
 #import <Foundation/Foundation.h>
+#if __has_include(<RuneKit/RuneKit.h>)
+#import <RuneKit/RuneKit.h>
+#else
 #import "RuneComponentRegistry.h"
-#import "RuneKit/SNUIManager.h" // For SNNode and SNUIManager
-
-#if __has_include(<RuneHypervisor/RuneHypervisor-Swift.h>)
-#import <RuneHypervisor/RuneHypervisor-Swift.h>
-#elif __has_include("RuneHypervisor-Swift.h")
-#import "RuneHypervisor-Swift.h"
+#import "SNUIManager.h"
+#import "SNNode.h"
 #endif
 
-@interface RuneHypervisorRegistrar : NSObject <RuneComponentRegistrar>
+// Forward declare the Swift-exposed view to avoid Swift header import issues.
+@class RuneHypervisorView;
+
+// We avoid importing the generated Swift header directly to keep the pod build happy.
+
+// Minimal interface to call into the Swift view without relying on generated headers
+@interface RuneHypervisorView : UIView
+@property(nonatomic, strong) NSDictionary *source;
+- (void)bindWithManager:(SNUIManager *)manager node:(SNNode *)node;
+- (void)reload;
+- (void)destroy;
+- (void)postMessage:(id)message;
 @end
 
-@implementation RuneHypervisorRegistrar
+@implementation RuneHypervisorRegistrar : NSObject
 
-- (void)register:(RuneComponentRegistry *)registry {
-    RuneComponentDescriptor *descriptor = [[RuneComponentDescriptor alloc] initWithType:@"rune-hypervisor-view"];
-    
-    descriptor.createView = ^UIView * _Nullable(SNUIManager * _Nonnull manager, NSString * _Nonnull type) {
-        return [[RuneHypervisorView alloc] init];
-    };
-    
-    descriptor.handleSetProp = ^BOOL(SNUIManager * _Nonnull manager, SNNode * _Nonnull node, NSString * _Nonnull name, id  _Nullable value, NSString * _Nonnull rawJSON) {
-        if (![node.view isKindOfClass:[RuneHypervisorView class]]) {
-            return NO;
-        }
-        RuneHypervisorView *view = (RuneHypervisorView *)node.view;
++ (void)load {
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        RuneComponentDescriptor *descriptor = [[RuneComponentDescriptor alloc] initWithType:@"rune-hypervisor-view"];
         
-        if ([name isEqualToString:@"source"]) {
-            if ([value isKindOfClass:[NSDictionary class]]) {
-                view.source = (NSDictionary *)value;
+        descriptor.createView = ^UIView * _Nullable(SNUIManager * _Nonnull manager, NSString * _Nonnull type) {
+            return [[RuneHypervisorView alloc] init];
+        };
+        
+        descriptor.attach = ^(SNUIManager * _Nonnull manager, SNNode * _Nonnull node) {
+            if ([node.view isKindOfClass:[RuneHypervisorView class]]) {
+                [(RuneHypervisorView *)node.view bindWithManager:manager node:node];
+            }
+        };
+        
+        descriptor.handleSetProp = ^BOOL(SNUIManager * _Nonnull manager, SNNode * _Nonnull node, NSString * _Nonnull name, id  _Nullable value, NSString * _Nonnull rawJSON) {
+            if (![node.view isKindOfClass:[RuneHypervisorView class]]) {
+                return NO;
+            }
+            RuneHypervisorView *view = (RuneHypervisorView *)node.view;
+            
+            if ([name isEqualToString:@"source"]) {
+                if ([value isKindOfClass:[NSDictionary class]]) {
+                    view.source = (NSDictionary *)value;
+                    return YES;
+                }
+            } else if ([name isEqualToString:@"onLoad"]) {
+                return YES; // events dispatched via notifyLoad/manager
+            } else if ([name isEqualToString:@"onError"]) {
                 return YES;
+            } else if ([name isEqualToString:@"onMessage"]) {
+                return YES;
+            } else if ([name isEqualToString:@"reload"]) { // This is an imperative call, not a prop.
+                if ([value boolValue]) { // Expecting a boolean or trigger
+                    [view reload];
+                }
+                return YES; // Consumed property
+            } else if ([name isEqualToString:@"destroy"]) { // This is an imperative call.
+                if ([value boolValue]) { // Expecting a boolean or trigger
+                    [view destroy];
+                }
+                return YES; // Consumed property
+            } else if ([name isEqualToString:@"postMessage"]) { // Imperative call
+                 if (value) {
+                     [view postMessage:value];
+                 }
+                 return YES;
             }
-        } else if ([name isEqualToString:@"onLoad"]) {
-            // Handlers are typically JSValue callbacks.
-            // For now, we store them as blocks.
-            // A more robust solution would involve a JSBridge-like mechanism.
-            view.onLoad = ^{
-                // Assuming `value` is a JSValue callback if from manager.
-                // For now, this is a native-to-native callback.
-                // This will need to trigger a JS event.
-            };
-            return YES;
-        } else if ([name isEqualToString:@"onError"]) {
-            view.onError = ^(NSDictionary *errorInfo) {
-                // This will need to trigger a JS event.
-            };
-            return YES;
-        } else if ([name isEqualToString:@"onMessage"]) {
-            view.onMessage = ^(NSDictionary *message) {
-                // This will need to trigger a JS event.
-            };
-            return YES;
-        } else if ([name isEqualToString:@"reload"]) { // This is an imperative call, not a prop.
-            if ([value boolValue]) { // Expecting a boolean or trigger
-                [view reload];
+            return NO;
+        };
+        
+        // Cleanup block for when the node is removed
+        descriptor.cleanup = ^(SNUIManager * _Nonnull manager, SNNode * _Nonnull node) {
+            if ([node.view isKindOfClass:[RuneHypervisorView class]]) {
+                [(RuneHypervisorView *)node.view destroy];
             }
-            return YES; // Consumed property
-        } else if ([name isEqualToString:@"destroy"]) { // This is an imperative call.
-            if ([value boolValue]) { // Expecting a boolean or trigger
-                [view destroy];
-            }
-            return YES; // Consumed property
-        }
-        return NO;
-    };
-    
-    // Cleanup block for when the node is removed
-    descriptor.cleanup = ^(SNUIManager * _Nonnull manager, SNNode * _Nonnull node) {
-        if ([node.view isKindOfClass:[RuneHypervisorView class]]) {
-            [(RuneHypervisorView *)node.view destroy];
-        }
-    };
-    
-    [registry register:descriptor];
+        };
+        
+        RuneRegisterComponentDescriptor(descriptor);
+    });
 }
 
 @end

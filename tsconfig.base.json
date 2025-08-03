@@ -29,7 +29,9 @@
       "@rune/bottom-sheet": ["packages/rune-bottom-sheet/src/index.ts"],
       "@rune/bottom-sheet/*": ["packages/rune-bottom-sheet/src/*"],
       "@rune/keyboard": ["packages/rune-keyboard/src/index.ts"],
-      "@rune/keyboard/*": ["packages/rune-keyboard/src/*"]
+      "@rune/keyboard/*": ["packages/rune-keyboard/src/*"],
+      "@rune/hypervisor": ["packages/rune-hypervisor/src/index.ts"],
+      "@rune/hypervisor/*": ["packages/rune-hypervisor/src/*"]
     }
   }
 }

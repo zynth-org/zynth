@@ -13,10 +13,31 @@ public final class RuneRuntime: NSObject {
   internal let redBox: DevRedBox
   internal var lastRootId: Int?
 
-  public init(rootView: UIView, runtime: JSRuntimeAdapter? = nil) {
+  public let enableDevServer: Bool
+
+  public init(rootView: UIView, runtime: JSRuntimeAdapter? = nil, enableDevServer: Bool = true) {
     self.rootView = rootView
     self.manager = RuneUIManager(rootView: rootView)
     self.redBox = DevRedBox(rootView: rootView)
+    self.enableDevServer = enableDevServer
+
+    if let runtime {
+      self.runtime = runtime
+    } else {
+      self.runtime = HermesAdapter(uiManager: manager)
+    }
+
+    super.init()
+    configureRuntime()
+  }
+  
+  /// Initializer for guest runtimes (e.g., Hypervisor).
+  /// Guest runtimes get their own unique surface ID to avoid conflicts with the host app.
+  public init(rootView: UIView, runtime: JSRuntimeAdapter? = nil, enableDevServer: Bool = true, isGuest: Bool) {
+    self.rootView = rootView
+    self.manager = RuneUIManager(rootView: rootView, isGuest: isGuest)
+    self.redBox = DevRedBox(rootView: rootView)
+    self.enableDevServer = enableDevServer
 
     if let runtime {
       self.runtime = runtime
@@ -148,7 +169,9 @@ public final class RuneRuntime: NSObject {
     )
 
     #if DEBUG
-      configureDevServer()
+      if enableDevServer {
+        configureDevServer()
+      }
     #endif
 
     if let hermes = runtime as? HermesAdapter {
@@ -267,6 +290,11 @@ public final class RuneRuntime: NSObject {
 
   @objc public func callGlobal(_ name: String, args: [Any]) {
     _ = runtime.callGlobal(name, args: args)
+  }
+  
+  /// Trigger a layout flush to recalculate and apply Yoga layout
+  @objc public func flush() {
+    manager.flush()
   }
 
   public var rootSurfaceId: Int {

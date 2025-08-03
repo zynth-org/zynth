@@ -31,13 +31,15 @@ private const val TAG = "RuneRuntime"
 
 class RuneRuntime(
   internal val root: RuneRootView,  // internal for dev extension access
-  internal var adapter: JSRuntimeAdapter = HermesAdapter(),  // internal for dev extension access
+  var adapter: JSRuntimeAdapter = HermesAdapter(),  // public for extensions/hypervisor, and mutable for reloads
 ) {
+  val id = System.identityHashCode(this).toString(16)
+  
   // Core runtime properties
   private val handlerMap = mutableMapOf<Pair<Int, String>, HandlerRef>()
   private val registry = RuneModuleRegistry()
   private val moduleExecutor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
-    Thread(runnable, "RuneModuleInvoker").apply { isDaemon = true }
+    Thread(runnable, "RuneModuleInvoker-$id").apply { isDaemon = true }
   }
   private val installedModules = LinkedHashMap<String, RuneModule>()
   internal var lastRootId: Int? = null  // internal for dev extension access
@@ -61,16 +63,16 @@ class RuneRuntime(
 
   private fun logDebug(tag: String, message: String) {
     if (!isNativeDebugEnabled()) return
-    Log.d(tag, message)
+    Log.d(tag, "[$id] $message")
   }
 
   private fun configureAdapter() {
     adapter.onException = { error ->
       val stack = error.stack?.takeIf { it.isNotBlank() }
       if (stack != null) {
-        Log.e(TAG, "JS error: ${error.message}\n$stack")
+        Log.e(TAG, "[$id] JS error: ${error.message}\n$stack")
       } else {
-        Log.e(TAG, "JS error: ${error.message}")
+        Log.e(TAG, "[$id] JS error: ${error.message}")
       }
       root.showRedBox(error.message, error.stack)
     }

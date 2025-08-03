@@ -20,6 +20,9 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, weak) id<RuneJSInvoker> jsInvoker;
 
 - (instancetype)initWithRootView:(UIView *)rootView;
+/// Initializer for guest runtimes (e.g., Hypervisor). Pass YES to isGuest to allocate
+/// a unique surface ID instead of using surface 0 (the host's main surface).
+- (instancetype)initWithRootView:(UIView *)rootView isGuest:(BOOL)isGuest;
 - (NSNumber *)createNode:(NSString *)type; // returns nodeId
 - (void)setProp:(NSNumber *)nodeId name:(NSString *)name valueJSON:(NSString *)json;
 - (void)setPropCallback:(NSNumber *)nodeId name:(NSString *)name callback:(JSValue *)callback;
