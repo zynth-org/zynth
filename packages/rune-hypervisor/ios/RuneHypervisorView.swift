@@ -9,6 +9,7 @@ public class RuneHypervisorView: UIView {
     private var guestRootView: UIView?
     private weak var manager: SNUIManager?
     private weak var node: SNNode?
+    private var isDestroyed: Bool = false  // Track explicit destroy state
     
     // Callbacks to JS
     @objc var onLoad: (() -> Void)?
@@ -17,6 +18,10 @@ public class RuneHypervisorView: UIView {
     
     @objc var source: NSDictionary? {
         didSet {
+            // Don't reload if explicitly destroyed
+            if isDestroyed {
+                return
+            }
             // Only reload if source actually changed or if runtime is nil
             let oldDict = oldValue as? [AnyHashable: Any]
             let newDict = source as? [AnyHashable: Any]
@@ -42,11 +47,13 @@ public class RuneHypervisorView: UIView {
     }
     
     func reload() {
+        isDestroyed = false  // Clear destroyed state on explicit reload
         loadGuest()
     }
     
     func destroy() {
         print("[RuneHypervisor] Destroying RuneRuntime for Hypervisor View")
+        isDestroyed = true  // Mark as explicitly destroyed
         destroyRuntime()
         guestRootView?.removeFromSuperview()
         guestRootView = nil
@@ -68,6 +75,7 @@ public class RuneHypervisorView: UIView {
     }
     
     private func loadGuest() {
+        isDestroyed = false  // Clear destroyed state when loading
         guard let source = source else {
             // If source is nil, ensure runtime is destroyed
             destroy()
