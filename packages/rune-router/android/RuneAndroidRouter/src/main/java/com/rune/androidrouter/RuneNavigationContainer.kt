@@ -158,7 +158,8 @@ internal class RuneNavigationContainer(
                 val count = fragmentManager().backStackEntryCount
                 Log.d(TAG, "goBack allowed. stackCount=$count")
                 val handled = if (count > 1) {
-                    fragmentManager().popBackStackImmediate()
+                    // Pop asynchronously to avoid blocking the UI thread before the transition starts.
+                    fragmentManager().popBackStack()
                     true
                 } else {
                     activity.finish()
