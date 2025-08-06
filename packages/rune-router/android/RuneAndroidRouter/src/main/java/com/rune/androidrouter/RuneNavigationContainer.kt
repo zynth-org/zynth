@@ -20,8 +20,9 @@ import com.google.android.material.navigation.NavigationBarItemView
 import com.google.android.material.navigation.NavigationBarMenuView
 import com.google.android.material.navigation.NavigationBarView
 import com.google.android.material.color.MaterialColors
-import com.rune.kit.core.RuneRootView
+import com.google.android.material.transition.platform.MaterialSharedAxis
 import com.rune.androidrouter.R
+import com.rune.kit.core.RuneRootView
 import com.rune.kit.runtime.RuneRuntime
 import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicInteger
@@ -322,8 +323,14 @@ internal class RuneNavigationContainer(
             options = definition.options,
         )
         val fragment = RouterScreenFragment.newInstance(request)
+        val exitingFragment = topScreenFragment()
         val transaction = fragmentManager().beginTransaction()
-        transaction.applyPresentationAnimation(definition.options, animate)
+        transaction.applyPresentationAnimation(
+            definition.options,
+            fragment,
+            exitingFragment,
+            animate,
+        )
 
         val tag = "rune-screen-${fragmentTagCounter.incrementAndGet()}"
         transaction.add(fragmentContainerView.id, fragment, tag)
@@ -997,21 +1004,60 @@ internal class RuneNavigationContainer(
 
     private fun FragmentTransaction.applyPresentationAnimation(
         options: RouterScreenOptions,
+        enteringFragment: RouterScreenFragment,
+        exitingFragment: RouterScreenFragment?,
         animate: Boolean,
     ) {
         if (!animate) {
+            clearFragmentTransitions(enteringFragment, exitingFragment)
             return
         }
-        if (options.presentation == RouterScreenPresentation.MODAL) {
-            setReorderingAllowed(true)
-            setCustomAnimations(
-                R.anim.rune_slide_in_bottom,
-                0,
-                0,
-                R.anim.rune_slide_out_bottom,
-            )
-            return
+        when (options.presentation) {
+            RouterScreenPresentation.MODAL -> {
+                clearFragmentTransitions(enteringFragment, exitingFragment)
+                setReorderingAllowed(true)
+                setCustomAnimations(
+                    R.anim.rune_slide_in_bottom,
+                    0,
+                    0,
+                    R.anim.rune_slide_out_bottom,
+                )
+            }
+            RouterScreenPresentation.ZOOM -> {
+                setReorderingAllowed(true)
+                applySharedAxisTransitions(enteringFragment, exitingFragment, MaterialSharedAxis.Z)
+            }
+            RouterScreenPresentation.PUSH -> {
+                setReorderingAllowed(true)
+                applySharedAxisTransitions(enteringFragment, exitingFragment, MaterialSharedAxis.X)
+            }
         }
-        setTransition(FragmentTransaction.TRANSIT_FRAGMENT_OPEN)
+    }
+
+    private fun applySharedAxisTransitions(
+        enteringFragment: RouterScreenFragment,
+        exitingFragment: RouterScreenFragment?,
+        axis: Int,
+    ) {
+        enteringFragment.enterTransition = createSharedAxis(axis, /* forward= */ true)
+        enteringFragment.returnTransition = createSharedAxis(axis, /* forward= */ false)
+        exitingFragment?.exitTransition = createSharedAxis(axis, /* forward= */ true)
+        exitingFragment?.reenterTransition = createSharedAxis(axis, /* forward= */ false)
+    }
+
+    private fun createSharedAxis(axis: Int, forward: Boolean): MaterialSharedAxis {
+        // Use the default Material shared-axis transitions (includes fade-through)
+        // so headers and content cross-fade together.
+        return MaterialSharedAxis(axis, forward)
+    }
+
+    private fun clearFragmentTransitions(
+        enteringFragment: RouterScreenFragment,
+        exitingFragment: RouterScreenFragment?,
+    ) {
+        enteringFragment.enterTransition = null
+        enteringFragment.returnTransition = null
+        exitingFragment?.exitTransition = null
+        exitingFragment?.reenterTransition = null
     }
 }

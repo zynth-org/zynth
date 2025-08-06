@@ -166,7 +166,11 @@ class RouterScreenFragment : Fragment() {
     }
 
     private fun shouldDelaySurfaceDispose(): Boolean {
-        return options.presentation == RouterScreenPresentation.MODAL
+        if (options.presentation == RouterScreenPresentation.MODAL) {
+            return true
+        }
+        // Delay disposal during animated stack pops to avoid tearing/flicker.
+        return isRemoving
     }
 
     private fun scheduleSurfaceDispose(surfaceId: Int, hostView: View?) {
@@ -178,7 +182,7 @@ class RouterScreenFragment : Fragment() {
         }
         disposeRunnable = runnable
         val delayHost = hostView ?: return runnable.run()
-        delayHost.postDelayed(runnable, MODAL_DISPOSE_DELAY_MS)
+        delayHost.postDelayed(runnable, EXIT_DISPOSE_DELAY_MS)
     }
 
     private fun disposeSurface(surfaceId: Int) {
@@ -328,7 +332,7 @@ class RouterScreenFragment : Fragment() {
 
     companion object {
         private const val TAG = "RuneRouterScreen"
-        private const val MODAL_DISPOSE_DELAY_MS = 275L
+        private const val EXIT_DISPOSE_DELAY_MS = 300L
 
         fun newInstance(request: RouterScreenRequest): RouterScreenFragment {
             val fragment = RouterScreenFragment()

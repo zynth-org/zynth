@@ -56,7 +56,7 @@ export interface BottomSheetScreenOptions
   preferredDetent?: number;
 }
 
-export type ScreenPresentation = "push" | "modal";
+export type ScreenPresentation = "push" | "modal" | "zoom";
 
 export interface ScreenOptions {
   title?: string;

@@ -6,7 +6,8 @@ import org.json.JSONObject
 
 enum class RouterScreenPresentation(val value: String) {
     PUSH("push"),
-    MODAL("modal");
+    MODAL("modal"),
+    ZOOM("zoom");
 
     companion object {
         fun from(value: String?): RouterScreenPresentation {

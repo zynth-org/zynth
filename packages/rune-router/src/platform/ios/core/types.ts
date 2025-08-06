@@ -121,7 +121,8 @@ export interface ScreenOptions extends HeaderOptions {
     | "transparentModal"
     | "fullScreen"
     | "pageSheet"
-    | "formSheet";
+    | "formSheet"
+    | "zoom";
   animationEnabled?: boolean;
   tab?: TabOptions;
   bottomSheet?: BottomSheetScreenOptions;
