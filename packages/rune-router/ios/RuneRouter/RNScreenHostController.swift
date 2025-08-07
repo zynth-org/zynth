@@ -5,8 +5,11 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
   let routeKey: String
   let routeName: String
   private let isModal: Bool
+  let presentation: String?
   private var params: [String: Any]?
   private var appliedOptions: [String: Any]?
+  private var gestureEnabledOverride: Bool?
+  var usesNativeZoomTransition = false
   private weak var surfaceView: UIView?
   private weak var snapshotView: UIView?
   private var cachedDefaultTintColor: UIColor?
@@ -31,16 +34,38 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
   private var pendingTabIconRefresh = false
   
   var isInteractivelyTransitioning = false
+  var usesZoomTransition: Bool { presentation == "zoom" }
+  var gestureEnabled: Bool? { gestureEnabledOverride }
+  var nativeZoomAvailable: Bool {
+    if #available(iOS 18.0, *) {
+      return usesZoomTransition && usesNativeZoomTransition
+    }
+    return false
+  }
 
   var onDismiss: (() -> Void)?
 
-  init(routeKey: String, routeName: String, params: [String: Any]?, isModal: Bool) {
+  init(
+    routeKey: String,
+    routeName: String,
+    params: [String: Any]?,
+    isModal: Bool,
+    presentation: String? = nil
+  ) {
     self.routeKey = routeKey
     self.routeName = routeName
     self.isModal = isModal
+    self.presentation = presentation
     self.params = params
     super.init(nibName: nil, bundle: nil)
     title = routeName
+
+    if #available(iOS 18.0, *), presentation == "zoom" {
+      usesNativeZoomTransition = true
+      preferredTransition = .zoom { _ in
+        return nil
+      }
+    }
   }
 
   @available(*, unavailable)
@@ -157,6 +182,10 @@ final class RNScreenHostController: UIViewController, UITabBarDelegate {
       }
     } else {
       navigationItem.rightBarButtonItem = nil
+    }
+
+    if let gestureEnabled = options["gestureEnabled"] as? Bool {
+      gestureEnabledOverride = gestureEnabled
     }
 
     applyStoredOptionsToNavigationBar()

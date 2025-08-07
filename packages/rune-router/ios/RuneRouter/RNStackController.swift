@@ -122,11 +122,13 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
       || presentation == "pageSheet" || presentation == "transparentModal"
 
     let record = RouteRecord(name: routeName, params: params)
+    record.options = staticOptions
     let host = RNScreenHostController(
       routeKey: record.key,
       routeName: routeName,
       params: params,
-      isModal: isModal
+      isModal: isModal,
+      presentation: presentation
     )
 
     if let runtime {
@@ -189,6 +191,7 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
     } else {
       executePush()
     }
+
   }
 
   private func activeNavigationController() -> UINavigationController {
@@ -326,11 +329,16 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
       let params = route["params"] as? [String: Any]
       let key = (route["key"] as? String) ?? UUID().uuidString
       let record = RouteRecord(name: name, params: params, key: key)
+      if let opts = route["options"] as? [String: Any] {
+        record.options = opts
+      }
+      let presentation = route["presentation"] as? String
       let host = RNScreenHostController(
         routeKey: record.key,
         routeName: name,
         params: params,
-        isModal: false
+        isModal: false,
+        presentation: presentation
       )
       if let runtime {
         host.attachRuntime(runtime)
@@ -378,6 +386,9 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
     mergeOptions(into: &next, patch: options)
     record.options = next
     record.controller?.apply(options: next)
+    if let host = record.controller, routeStack.last?.controller === host {
+      updateInteractivePop(for: host)
+    }
   }
 
   func configureTabs(for routeKey: String, configuration: TabBarConfiguration) {
@@ -461,6 +472,7 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
       return
     }
     attachSurface(to: host)
+    updateInteractivePop(for: host)
 
     // We update the state here to ensure the JS side is aware of the new route (PUSH)
     // immediately, allowing it to render content during the transition.
@@ -497,9 +509,6 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
           }
         }
 
-        if !context.isCancelled {
-          self.trimRouteStack(for: navigationController)
-        }
         self.emitStateChanged()
         self.finishTransition(finished: !context.isCancelled)
       }
@@ -510,7 +519,6 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
       }
       startTransitionDisplayLink()
     } else {
-      trimRouteStack(for: navigationController)
       emitStateChanged()
       finishTransition(finished: true)
     }
@@ -524,6 +532,43 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
     if let host = viewController as? RNScreenHostController {
       attachSurface(to: host)
     }
+    trimRouteStack(for: navigationController)
+    emitStateChanged()
+  }
+
+  public func navigationController(
+    _ navigationController: UINavigationController,
+    animationControllerFor operation: UINavigationController.Operation,
+    from fromVC: UIViewController,
+    to toVC: UIViewController
+  ) -> UIViewControllerAnimatedTransitioning? {
+    guard let fromHost = fromVC as? RNScreenHostController,
+      let toHost = toVC as? RNScreenHostController
+    else {
+      return nil
+    }
+    let usesZoom = fromHost.usesZoomTransition || toHost.usesZoomTransition
+    let nativeZoom = (fromHost.nativeZoomAvailable || toHost.nativeZoomAvailable)
+    if usesZoom && !nativeZoom {
+      return ZoomTransitionAnimator(operation: operation)
+    }
+    return nil
+  }
+
+  private func updateInteractivePop(for host: RNScreenHostController) {
+    // Disable the default edge-swipe pop when using custom zoom to avoid sideways parallax conflicts,
+    // unless the screen explicitly opts in via gestureEnabled. If native zoom is available, allow
+    // the system's interactive zoom unless explicitly disabled.
+    let override = host.gestureEnabled
+    let enableGesture: Bool
+    if host.nativeZoomAvailable {
+      enableGesture = override ?? true
+    } else if host.usesZoomTransition {
+      enableGesture = override ?? false
+    } else {
+      enableGesture = override ?? true
+    }
+    navigator.interactivePopGestureRecognizer?.isEnabled = enableGesture
   }
 
   // MARK: - UIGestureRecognizerDelegate + predictive back
@@ -896,6 +941,79 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
     guard !records.isEmpty else { return }
     DispatchQueue.main.async { [weak self] in
       self?.teardownRecords(records)
+    }
+  }
+}
+
+// MARK: - Zoom animator
+
+private final class ZoomTransitionAnimator: NSObject, UIViewControllerAnimatedTransitioning {
+  private let operation: UINavigationController.Operation
+  private let duration: TimeInterval = 0.32
+  private let startScale: CGFloat = 0.85
+  private let cornerRadius: CGFloat = 18
+
+  init(operation: UINavigationController.Operation) {
+    self.operation = operation
+    super.init()
+  }
+
+  func transitionDuration(using transitionContext: UIViewControllerContextTransitioning?) -> TimeInterval {
+    return duration
+  }
+
+  func animateTransition(using transitionContext: UIViewControllerContextTransitioning) {
+    guard
+      let fromView = transitionContext.view(forKey: .from),
+      let toView = transitionContext.view(forKey: .to)
+    else {
+      transitionContext.completeTransition(false)
+      return
+    }
+
+    let container = transitionContext.containerView
+    let isPush = operation == .push
+
+    if isPush {
+      toView.frame = container.bounds
+      toView.transform = CGAffineTransform(scaleX: startScale, y: startScale)
+      toView.alpha = 0.0
+      toView.layer.cornerRadius = cornerRadius
+      toView.layer.masksToBounds = true
+      if #available(iOS 13.0, *) {
+        toView.layer.cornerCurve = .continuous
+      }
+      container.addSubview(toView)
+    } else {
+      toView.frame = container.bounds
+      toView.transform = .identity
+      toView.alpha = 1.0
+      container.insertSubview(toView, belowSubview: fromView)
+    }
+
+    UIView.animate(
+      withDuration: duration,
+      delay: 0,
+      options: [.curveEaseInOut, .allowUserInteraction]
+    ) {
+      if isPush {
+        toView.layer.cornerRadius = 0
+        toView.transform = .identity
+        toView.alpha = 1.0
+      } else {
+        fromView.layer.cornerRadius = self.cornerRadius
+        fromView.transform = CGAffineTransform(scaleX: self.startScale, y: self.startScale)
+        fromView.alpha = 0.0
+      }
+    } completion: { finished in
+      let cancelled = transitionContext.transitionWasCancelled
+      if cancelled && isPush {
+        toView.removeFromSuperview()
+      }
+      toView.layer.masksToBounds = false
+      fromView.layer.cornerRadius = 0
+      fromView.transform = .identity
+      transitionContext.completeTransition(finished && !cancelled)
     }
   }
 }
