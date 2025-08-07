@@ -35,6 +35,7 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
   private var pendingActions: [(RNStackController) -> Void] = []
   private var lastProgressByRoute: [String: (progress: Double, timestamp: CFTimeInterval)] = [:]
   private var pendingRenderCallbacks: [Int: () -> Void] = [:]
+  private var pendingTransitionTeardowns: [RouteRecord] = []
 
   public override func viewDidLoad() {
     super.viewDidLoad()
@@ -476,8 +477,6 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
 
     // We update the state here to ensure the JS side is aware of the new route (PUSH)
     // immediately, allowing it to render content during the transition.
-    // We intentionally do NOT call trimRouteStack here to avoid premature disposal
-    // during interactive pops.
     emitStateChanged()
 
     transitionRouteKey = host.routeKey
@@ -509,7 +508,18 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
           }
         }
 
-        self.emitStateChanged()
+        if !context.isCancelled {
+          // Immediately update JS state by removing the popped route from the stack,
+          // but defer the actual teardown until the transition completes (in didShow).
+          let removed = self.trimRouteStack(for: navigationController)
+          // Snapshot removed screens to prevent visual disappearance when JS unmounts the surface
+          for record in removed {
+            record.controller?.captureSnapshot()
+          }
+          self.pendingTransitionTeardowns.append(contentsOf: removed)
+          self.emitStateChanged()
+        }
+
         self.finishTransition(finished: !context.isCancelled)
       }
       coordinator.notifyWhenInteractionChanges { [weak self] context in
@@ -519,6 +529,12 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
       }
       startTransitionDisplayLink()
     } else {
+      let removed = trimRouteStack(for: navigationController)
+      // Snapshot and defer teardown even for non-interactive/immediate transitions to be safe
+      for record in removed {
+        record.controller?.captureSnapshot()
+      }
+      pendingTransitionTeardowns.append(contentsOf: removed)
       emitStateChanged()
       finishTransition(finished: true)
     }
@@ -532,8 +548,23 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
     if let host = viewController as? RNScreenHostController {
       attachSurface(to: host)
     }
-    trimRouteStack(for: navigationController)
+
+    let removed = trimRouteStack(for: navigationController)
+    // Capture snapshot if we are removing in didShow (though usually caught in willShow)
+    for record in removed {
+      record.controller?.captureSnapshot()
+    }
+    pendingTransitionTeardowns.append(contentsOf: removed)
+
+    if !pendingTransitionTeardowns.isEmpty {
+      scheduleTeardown(pendingTransitionTeardowns)
+      pendingTransitionTeardowns.removeAll()
+    }
+
     emitStateChanged()
+    DispatchQueue.main.async { [weak self] in
+      self?.flushPendingActionsIfPossible()
+    }
   }
 
   public func navigationController(
@@ -704,7 +735,9 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
       clearSnapshots(for: nav)
     }
     transitioningNavigationController = nil
-    flushPendingActionsIfPossible()
+    DispatchQueue.main.async { [weak self] in
+      self?.flushPendingActionsIfPossible()
+    }
   }
 
   private func shouldEmitProgress(key: String, progress: Double, force: Bool = false) -> Bool {
@@ -820,7 +853,7 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
     navigator.navigationBar.barStyle = .black
   }
 
-  private func trimRouteStack(for navigationController: UINavigationController) {
+  private func trimRouteStack(for navigationController: UINavigationController) -> [RouteRecord] {
     let currentKeys = Set(
       navigationController.viewControllers.compactMap { ($0 as? RNScreenHostController)?.routeKey }
     )
@@ -840,7 +873,7 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
       }
       return false
     }
-    scheduleTeardown(removed)
+    return removed
   }
 
   private func controller(for routeKey: String) -> RNScreenHostController? {
