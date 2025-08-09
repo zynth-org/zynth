@@ -728,11 +728,20 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
 
   // Decide whether to use native title rendering.
   const useNativeTitle = createMemo(() => {
-    if (!isStringContent()) return false;
-    // When we have custom adornments (icons) or iconOnly, keep layout in JS
-    // so we can align everything together.
-    if (hasAffixes() || local.iconOnly) return false;
-    return true;
+    // Force JS rendering to ensure Yoga can measure the text content.
+    // Native title rendering often collapses to minWidth because the native view
+    // doesn't report intrinsic content size to Yoga correctly in all cases.
+    return false;
+  });
+
+  const resolvedTextColor = createMemo(() => {
+    const style = local.labelStyle as Style;
+    if (style?.color) return style.color;
+
+    if (resolvedVariant() === "solid") {
+      return "#ffffff";
+    }
+    return toneColorMap[resolvedTone()] ?? toneColorMap.primary;
   });
 
   // If using native title, we don't render text children.
@@ -743,6 +752,7 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
       // Merge labelStyle with default font size
       const textStyle: Style = {
         fontSize,
+        color: resolvedTextColor(),
         ...((local.labelStyle as Style) ?? {}),
       };
       return <Text style={textStyle}>{titleContent()}</Text>;
