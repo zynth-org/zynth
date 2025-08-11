@@ -200,8 +200,15 @@ export function FlatList<T>(props: FlatListProps<T>) {
     const metrics = scrollMetrics();
     return props.horizontal ? metrics.offset.x : metrics.offset.y;
   });
+  // Default ScrollView style, merged with user-provided style
+  const defaultScrollViewStyle: Style = { overflow: "hidden" };
+  const mergedScrollViewStyle = createMemo(() => {
+    const user = props.style as Style | undefined;
+    if (!user) return defaultScrollViewStyle;
+    return { ...defaultScrollViewStyle, ...user } as Style;
+  });
   const fallbackViewport = createMemo(() => {
-    const style = props.style as Style | undefined;
+    const style = mergedScrollViewStyle() as Style | undefined;
     if (!style) return 800;
     const sizeValue = props.horizontal ? style.width : style.height;
     if (typeof sizeValue === "number") {
@@ -1398,7 +1405,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
   return (
     <ScrollView
       horizontal={props.horizontal}
-      style={props.style}
+      style={mergedScrollViewStyle()}
       contentContainerStyle={sanitizedContentContainerStyle()}
       maintainVisibleContentPosition={props.maintainVisibleContentPosition}
       controller={scrollController}

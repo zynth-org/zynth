@@ -13,6 +13,9 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import androidx.core.widget.NestedScrollView
+import android.graphics.Outline
+import android.graphics.Color
+import android.view.ViewOutlineProvider
 import com.rune.kit.layout.Style
 import kotlin.math.abs
 import kotlin.math.max
@@ -126,8 +129,8 @@ internal class RuneScrollView(
   init {
     isClickable = false
     isFocusable = false
-    clipChildren = false
-    clipToPadding = false
+    clipChildren = true
+    clipToPadding = true
 
     attachHost(verticalHost)
   }
@@ -146,6 +149,21 @@ internal class RuneScrollView(
     declaredHeight = style.height?.roundToInt()
     declaredMinHeight = style.minHeight?.roundToInt()
     declaredMaxHeight = style.maxHeight?.roundToInt()
+
+    style.backgroundColor?.let { setBackgroundColor(it) }
+    style.opacity?.let { alpha = it }
+    style.elevation?.let { elevation = it * density }
+    
+    style.borderRadius?.let { radius ->
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        outlineProvider = object : ViewOutlineProvider() {
+          override fun getOutline(view: View, outline: Outline) {
+            outline.setRoundRect(0, 0, view.width, view.height, radius * density)
+          }
+        }
+        clipToOutline = true
+      }
+    }
 
     style.overflow?.let { overflow ->
       val shouldClip = !overflow.equals("visible", ignoreCase = true)
