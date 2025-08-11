@@ -133,13 +133,13 @@ const DEFAULT_OVERSCAN_MULTIPLE = 2;
 const DEFAULT_ESTIMATED_ITEM_SIZE = 64;
 
 export function FlatList<T>(props: FlatListProps<T>) {
-  console.log(
-    `[FlatList] 🚀 Initializing: ${
-      props.data.length
-    } items, estimatedItemSize=${props.estimatedItemSize ?? "auto"}, itemSize=${
-      props.itemSize ?? "auto"
-    }`
-  );
+  // console.log(
+  //   `[FlatList] 🚀 Initializing: ${
+  //     props.data.length
+  //   } items, estimatedItemSize=${props.estimatedItemSize ?? "auto"}, itemSize=${
+  //     props.itemSize ?? "auto"
+  //   }`
+  // );
 
   const scrollController = createScrollController();
   let nativeScrollRef: any = null;
@@ -154,9 +154,9 @@ export function FlatList<T>(props: FlatListProps<T>) {
       if (nativeScrollRef?.id !== node?.id) {
         nativeScrollRef = node ?? null;
         setScrollHost(node ?? null);
-        console.log(
-          `[FlatList] ScrollView ref set: nodeId=${node?.id}, type=${node?.type}`
-        );
+        // console.log(
+        //   `[FlatList] ScrollView ref set: nodeId=${node?.id}, type=${node?.type}`
+        // );
       }
       originalSetHost(node);
     };
@@ -220,7 +220,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
   });
 
   createEffect(() => {
-    console.log("Viewport size:", viewportSize());
+    // console.log("Viewport size:", viewportSize());
   });
 
   const maintainConfig = createMemo(() => props.maintainVisibleContentPosition);
@@ -315,11 +315,11 @@ export function FlatList<T>(props: FlatListProps<T>) {
       return;
     }
     lastDebugViewport = roundedViewport;
-    console.log(
-      `[FlatList][debug] viewport=${viewport.toFixed(2)} dp, estimate=${
-        estimate?.toFixed?.(2) ?? estimate
-      } dp, poolSize=${pool}, visibleCount=${viewportItemCount()}, overscanPerSide=${overscanItemsPerSide()}`
-    );
+    // console.log(
+    //   `[FlatList][debug] viewport=${viewport.toFixed(2)} dp, estimate=${
+    //     estimate?.toFixed?.(2) ?? estimate
+    //   } dp, poolSize=${pool}, visibleCount=${viewportItemCount()}, overscanPerSide=${overscanItemsPerSide()}`
+    // );
   });
 
   type LayoutSnapshot = {
@@ -379,11 +379,11 @@ export function FlatList<T>(props: FlatListProps<T>) {
       return;
     }
 
-    console.log(
-      `[FlatList] 📏 recordMeasurement: key="${key}", size=${size}px (prev=${
-        previous ?? "none"
-      }, reason=${reason})`
-    );
+    // console.log(
+    //   `[FlatList] 📏 recordMeasurement: key="${key}", size=${size}px (prev=${
+    //     previous ?? "none"
+    //   }, reason=${reason})`
+    // );
 
     measurementCache.set(key, size);
     setMeasurementVersion((prev) => prev + 1);
@@ -406,9 +406,9 @@ export function FlatList<T>(props: FlatListProps<T>) {
     }, PENDING_MEASUREMENT_DELAY_MS);
     measurementEntries.set(key, entry);
 
-    console.log(
-      `[FlatList] ⏳ pending measurement: key="${key}", size=${capturedSize}px (${reason})`
-    );
+    // console.log(
+    //   `[FlatList] ⏳ pending measurement: key="${key}", size=${capturedSize}px (${reason})`
+    // );
   };
 
   const resetMeasurements = (reason: string, force?: boolean) => {
@@ -428,7 +428,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
       changed = true;
     }
     if (changed) {
-      console.log(`[FlatList] ♻️ reset measurements (${reason})`);
+      // console.log(`[FlatList] ♻️ reset measurements (${reason})`);
       setMeasurementVersion((prev) => prev + 1);
     }
     if (initialBottomScrollApplied()) {
@@ -547,9 +547,9 @@ export function FlatList<T>(props: FlatListProps<T>) {
       }
     }
 
-    console.log(
-      `[FlatList] 📐 layoutMetrics: total=${total}px, items=${data.length}, measured=${measuredCount}, estimated=${estimatedCount}, estimatedSize=${estimate}px`
-    );
+    // console.log(
+    //   `[FlatList] 📐 layoutMetrics: total=${total}px, items=${data.length}, measured=${measuredCount}, estimated=${estimatedCount}, estimatedSize=${estimate}px`
+    // );
 
     return { offsets, sizes, total };
   });
@@ -639,9 +639,9 @@ export function FlatList<T>(props: FlatListProps<T>) {
 
     if (initialMeasurementsPending()) {
       const count = Math.min(dataLength, viewportItemCount());
-      console.log(
-        `[FlatList] ✅ Initial measurements complete! Revealing ${count} items`
-      );
+      // console.log(
+      //   `[FlatList] ✅ Initial measurements complete! Revealing ${count} items`
+      // );
       setInitialMeasurementsPending(false);
     }
     if (!initialRevealComplete()) {
@@ -807,7 +807,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
     }
 
     setBindings(initialBindings);
-    console.log(`[FlatList] 🎯 Initialized pool of ${size} slots`);
+    // console.log(`[FlatList] 🎯 Initialized pool of ${size} slots`);
   });
 
   // Enable host-level recycling once scroll view host is ready
@@ -818,15 +818,15 @@ export function FlatList<T>(props: FlatListProps<T>) {
       !host?.acquireNode ||
       !host?.reclaimNode
     ) {
-      console.log(
-        `[FlatList] Recycling not supported by host (enableRecycling=${!!host?.enableRecycling})`
-      );
+      // console.log(
+      //   `[FlatList] Recycling not supported by host (enableRecycling=${!!host?.enableRecycling})`
+      // );
       return;
     }
 
     const scrollNode = scrollHost();
     if (!scrollNode || typeof scrollNode.id !== "number") {
-      console.log("[FlatList] Waiting for ScrollView host node...");
+      // console.log("[FlatList] Waiting for ScrollView host node...");
       return;
     }
 
@@ -840,15 +840,15 @@ export function FlatList<T>(props: FlatListProps<T>) {
       itemType: "view",
     });
 
-    console.log(
-      `[FlatList] 🔄 Enabled host recycling (context=${recyclingContextId}, poolSize=${pool})`
-    );
+    // console.log(
+    //   `[FlatList] 🔄 Enabled host recycling (context=${recyclingContextId}, poolSize=${pool})`
+    // );
 
     onCleanup(() => {
       if (recyclingContextId) {
-        console.log(
-          `[FlatList] 🛑 Disabling recycling context ${recyclingContextId}`
-        );
+        // console.log(
+        //   `[FlatList] 🛑 Disabling recycling context ${recyclingContextId}`
+        // );
         host.disableRecycling?.(recyclingContextId);
         recyclingContextId = null;
       }
