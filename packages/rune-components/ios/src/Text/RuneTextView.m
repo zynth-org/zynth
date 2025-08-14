@@ -15,6 +15,7 @@
     self.rune_baseTextAttributes = nil;
     self.rune_textTransform = nil;
     self.rune_hasExplicitFontSize = NO;
+    self.rune_explicitFontFamily = nil;
   }
   return self;
 }

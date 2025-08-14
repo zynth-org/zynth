@@ -1,39 +1,118 @@
+import { createSignal, onMount, onCleanup } from "solid-js";
 import { Text, TextProps } from "@rune/components";
 import { Font } from "@rune/apis";
 
-// Cache loaded fonts to avoid repeated native calls
-const loadedFonts = new Set<string>();
+// Track font loading state globally
+const fontLoadState = new Map<string, "loading" | "loaded" | "error">();
+const fontLoadPromises = new Map<string, Promise<void>>();
+const fontLoadListeners = new Map<string, Set<() => void>>();
 
-export function createIcon(glyph: string, fontFamily: string) {
-  // Trigger font load if not already requested
-  if (!loadedFonts.has(fontFamily)) {
-    loadedFonts.add(fontFamily);
-    // The resource name typically matches the font family + .ttf in our generation script
-    const resourceName = `${fontFamily}.ttf`;
+function loadFont(fontFamily: string): Promise<void> {
+  const state = fontLoadState.get(fontFamily);
 
-    Font.loadAsync(fontFamily, resourceName).catch((err) => {
+  if (state === "loaded") {
+    return Promise.resolve();
+  }
+
+  if (state === "loading") {
+    return fontLoadPromises.get(fontFamily)!;
+  }
+
+  fontLoadState.set(fontFamily, "loading");
+
+  const resourceName = `${fontFamily}.ttf`;
+  const promise = Font.loadAsync(fontFamily, resourceName)
+    .then(() => {
+      fontLoadState.set(fontFamily, "loaded");
+      // Notify all listeners that font is ready
+      const listeners = fontLoadListeners.get(fontFamily);
+      if (listeners) {
+        listeners.forEach((cb) => cb());
+      }
+    })
+    .catch((err) => {
+      fontLoadState.set(fontFamily, "error");
       console.log(
         `Failed to load icon font ${fontFamily}:`,
         JSON.stringify(err)
       );
+      throw err;
     });
+
+  fontLoadPromises.set(fontFamily, promise);
+  return promise;
+}
+
+function subscribeToFont(fontFamily: string, callback: () => void): () => void {
+  let listeners = fontLoadListeners.get(fontFamily);
+  if (!listeners) {
+    listeners = new Set();
+    fontLoadListeners.set(fontFamily, listeners);
   }
+  listeners.add(callback);
+  return () => listeners!.delete(callback);
+}
+
+export function createIcon(glyph: string, fontFamily: string) {
+  // Eagerly start loading at module init time
+  loadFont(fontFamily);
 
   return (props: TextProps) => {
-    // Merge fontFamily with any incoming style; avoid destructuring props to keep reactivity intact
-    const mergedStyle = {
-      ...(props.style as Record<string, unknown>),
-      fontFamily,
-    };
+    const [isReady, setIsReady] = createSignal(
+      fontLoadState.get(fontFamily) === "loaded"
+    );
+
+    onMount(() => {
+      // If already loaded, ensure we're ready after a frame (for native font registration)
+      if (fontLoadState.get(fontFamily) === "loaded") {
+        if (!isReady()) {
+          requestAnimationFrame(() => setIsReady(true));
+        }
+        return;
+      }
+
+      let cancelled = false;
+
+      const checkAndSetReady = () => {
+        if (cancelled) return;
+        // Use requestAnimationFrame to ensure we're after the next paint
+        // This gives the native side time to process the font registration
+        requestAnimationFrame(() => {
+          if (!cancelled) {
+            setIsReady(true);
+          }
+        });
+      };
+
+      // Subscribe to font load completion
+      const unsubscribe = subscribeToFont(fontFamily, checkAndSetReady);
+
+      // Ensure loading is triggered
+      loadFont(fontFamily)
+        .then(checkAndSetReady)
+        .catch(() => {});
+
+      onCleanup(() => {
+        cancelled = true;
+        unsubscribe();
+      });
+    });
+
+    // Get fontSize from props to reserve square space for the icon
+    const style = props.style as Record<string, unknown> | undefined;
+
+    // Always render the same Text element to avoid layout thrashing
+    // Use a space character as placeholder until font is ready
+    // This maintains proper text composition in the native layer
     return (
       <Text
         {...props}
         style={{
-          ...mergedStyle,
-          fontWeight: undefined,
+          ...style,
+          ...(isReady() ? { fontFamily } : {}),
         }}
       >
-        {glyph}
+        {isReady() ? glyph : " "}
       </Text>
     );
   };

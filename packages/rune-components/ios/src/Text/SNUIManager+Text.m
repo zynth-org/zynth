@@ -11,6 +11,7 @@
 
 #import "RuneTextView.h"
 #import <Yoga/Yoga.h>
+#import <CoreText/CoreText.h>
 
 // Helper function to refresh text for a label node by composing from children
 static NSString *RuneTextApplyTransform(NSString *text, NSString *transform) {
@@ -49,40 +50,50 @@ static NSAttributedString *RuneBuildAttributedText(SNUIManager *manager,
   RuneTextView *textView = (RuneTextView *)node.view;
   NSDictionary *ownAttributes = textView.rune_baseTextAttributes ?: @{};
 
-  // If child has a font but no explicit size, adopt parent's point size.
+  // Build effective attributes:
+  // - If child has explicit fontFamily, NEVER inherit parent's font (crucial for icon fonts)
+  // - If child has font but no explicit size, adopt parent's point size while preserving font family
   NSDictionary *effective = inherited;
   UIFont *parentFont = inherited[NSFontAttributeName];
   UIFont *ownFont = ownAttributes[NSFontAttributeName];
   NSMutableDictionary *adjustedOwn = [ownAttributes mutableCopy];
   
-  if (ownFont && parentFont && !textView.rune_hasExplicitFontSize) {
-    // LOGGING START
-    if ([ownFont.fontName containsString:@"RuneIcons"]) {
-        NSLog(@"[RuneText] Nesting Icon Font: '%@' (size: %.1f). Parent Font: '%@' (size: %.1f)", 
-              ownFont.fontName, ownFont.pointSize, parentFont.fontName, parentFont.pointSize);
+  if (textView.rune_hasExplicitFontFamily) {
+    // Child has explicit fontFamily (e.g., icon font) - preserve it completely
+    // Strip parent's font from inheritance so child's font takes full precedence
+    NSMutableDictionary *filteredInherited = [inherited mutableCopy];
+    [filteredInherited removeObjectForKey:NSFontAttributeName];
+    
+    if (ownFont) {
+      // Only inherit parent's size if child doesn't have explicit size
+      if (!textView.rune_hasExplicitFontSize && parentFont) {
+        UIFont *resizedFont = [UIFont fontWithName:ownFont.fontName size:parentFont.pointSize];
+        adjustedOwn[NSFontAttributeName] = resizedFont ?: ownFont;
+      }
     }
-    // LOGGING END
-
+    effective = RuneMergeAttributes(filteredInherited, adjustedOwn);
+  } else if (ownFont && parentFont && !textView.rune_hasExplicitFontSize) {
+    // Child has font but no explicit size - adopt parent's size
     UIFontDescriptor *descriptor = [ownFont.fontDescriptor fontDescriptorWithSize:parentFont.pointSize];
-    UIFont *newFont = [UIFont fontWithDescriptor:descriptor size:parentFont.pointSize];
-    
-    // LOGGING START
-    if ([ownFont.fontName containsString:@"RuneIcons"]) {
-        NSLog(@"[RuneText] Resized Icon Font: '%@'", newFont.fontName);
-    }
-    // LOGGING END
-    
-    adjustedOwn[NSFontAttributeName] = newFont;
-  }
-
-  if (adjustedOwn) {
+    adjustedOwn[NSFontAttributeName] = [UIFont fontWithDescriptor:descriptor size:parentFont.pointSize];
+    effective = RuneMergeAttributes(inherited, adjustedOwn);
+  } else if (adjustedOwn) {
     effective = RuneMergeAttributes(inherited, adjustedOwn);
   }
 
   if (node.children.count == 0) {
     NSString *raw = textView.text ?: @"";
     NSString *transformed = RuneTextApplyTransform(raw, textView.rune_textTransform);
-    return [[NSAttributedString alloc] initWithString:transformed attributes:effective];
+    
+    // Ensure every text segment has a font - UILabel needs complete font coverage
+    NSMutableDictionary *finalAttrs = [effective mutableCopy] ?: [NSMutableDictionary dictionary];
+    if (!finalAttrs[NSFontAttributeName]) {
+      // Use label's current font or system default
+      UIFont *defaultFont = textView.font ?: [UIFont systemFontOfSize:17.0];
+      finalAttrs[NSFontAttributeName] = defaultFont;
+    }
+    
+    return [[NSAttributedString alloc] initWithString:transformed attributes:finalAttrs];
   }
 
   NSMutableAttributedString *builder = [[NSMutableAttributedString alloc] init];
@@ -114,6 +125,10 @@ static void RuneTextRefreshLabelNode(SNUIManager *manager, SNNode *node) {
 
   NSAttributedString *composed = RuneBuildAttributedText(manager, node, nil);
   textView.attributedText = composed;
+  
+  // Force layout update to ensure the new attributed text is rendered
+  [textView setNeedsDisplay];
+  [textView.superview setNeedsLayout];
 
   if (node.yoga && YGNodeGetChildCount(node.yoga) == 0 && YGNodeGetOwner(node.yoga)) {
     YGNodeMarkDirty(node.yoga);
@@ -263,6 +278,10 @@ static void RuneTextHandleStyle(SNUIManager *manager, SNNode *node, NSDictionary
   NSString *fontFamily = style[@"fontFamily"];
   NSString *fontStyle = style[@"fontStyle"];
   NSString *fontWeight = style[@"fontWeight"];
+  
+  // Track if this node has an explicit fontFamily (crucial for icon fonts)
+  textView.rune_hasExplicitFontFamily = ([fontFamily isKindOfClass:[NSString class]] && fontFamily.length > 0);
+  textView.rune_explicitFontFamily = textView.rune_hasExplicitFontFamily ? fontFamily : nil;
 
   NSDictionary *weights = @{
     @"normal": @(UIFontWeightRegular),
@@ -286,11 +305,6 @@ static void RuneTextHandleStyle(SNUIManager *manager, SNNode *node, NSDictionary
   UIFontDescriptor *descriptor;
   if ([fontFamily isKindOfClass:[NSString class]] && fontFamily.length > 0) {
     descriptor = [UIFontDescriptor fontDescriptorWithName:fontFamily size:resolvedSize];
-    // Debug logging for font lookup
-    if ([fontFamily hasPrefix:@"RuneIcons"]) {
-       UIFont *testFont = [UIFont fontWithDescriptor:descriptor size:resolvedSize];
-       NSLog(@"[RuneText] Requesting font: '%@'. Resolved: '%@'", fontFamily, testFont.fontName);
-    }
   } else {
     descriptor = [UIFont systemFontOfSize:resolvedSize weight:(CGFloat)[weightNum doubleValue]].fontDescriptor;
   }

@@ -45,6 +45,8 @@ class MainActivity : AppCompatActivity() {
       runtime.installDefaultModules()
       runtime.installModules(listOf(DeviceModule(), EnvModule(), PerformanceModule()))
 
+{{MODULE_INITIALIZERS}}
+
       intent?.let { launchIntent ->
         val url = launchIntent.getStringExtra("RUNE_DEV_SERVER_URL")
         if (!url.isNullOrBlank()) {
@@ -53,10 +55,8 @@ class MainActivity : AppCompatActivity() {
         }
       }
 
-      // Load bundle first
+      // Load bundle after all modules are initialized
       runtime.loadInitialBundle(assets)
-
-{{MODULE_INITIALIZERS}}
 
       // Try to bootstrap router BEFORE starting runtime
       val routerAttached = try {

@@ -589,6 +589,15 @@ internal class RuneLayoutFlush(
         it.text = result.text
         applyRootTextStyle(it, result.effectiveStyle ?: node.textStyle)
       }
+      // Mark Yoga node dirty so it re-measures with new text content
+      // This is critical for nested text changes (e.g., icon fonts loading)
+      try {
+        engine.markDirty(nodeId)
+      } catch (e: Throwable) {
+        // Ignore - markDirty may fail for non-leaf nodes
+      }
+      // Also mark layout as dirty to trigger a re-layout pass
+      dirty = true
     }
     
     val rebuildTime = android.os.SystemClock.elapsedRealtime() - rebuildStart

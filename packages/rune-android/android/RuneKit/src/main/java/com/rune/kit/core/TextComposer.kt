@@ -5,6 +5,7 @@ import android.graphics.Typeface
 import android.text.Spannable
 import android.text.SpannableStringBuilder
 import android.text.TextPaint
+import android.text.style.AbsoluteSizeSpan
 import android.text.style.ForegroundColorSpan
 import android.text.style.LineHeightSpan
 import android.text.style.MetricAffectingSpan
@@ -13,6 +14,7 @@ import android.text.style.StyleSpan
 import android.text.style.UnderlineSpan
 import android.util.SparseArray
 import com.rune.kit.core.RuneUIManager.Node
+import com.rune.kit.runtime.FontRegistry
 
 internal data class ComposedText(val text: CharSequence, val effectiveStyle: TextStyleAttributes?)
 
@@ -65,6 +67,10 @@ internal class TextComposer(
 
     style.color?.let { builder.setSpan(ForegroundColorSpan(it), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE) }
 
+    style.fontSize?.let { size ->
+      builder.setSpan(AbsoluteSizeSpan(size.toInt()), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+    }
+
     val isBold = style.fontWeight?.let { weight ->
       weight.equals("bold", ignoreCase = true) || weight.toIntOrNull()?.let { it >= 600 } == true
     } ?: false
@@ -110,7 +116,19 @@ internal class TextComposer(
     }
     val family = style.fontFamily
     return if (family != null) {
-      Typeface.create(family, tfStyle)
+      // First check if it's a dynamically loaded font (e.g., icon fonts)
+      val customTypeface = FontRegistry.getTypeface(family)
+      if (customTypeface != null) {
+        // Apply style to custom typeface if needed
+        if (tfStyle != Typeface.NORMAL) {
+          Typeface.create(customTypeface, tfStyle)
+        } else {
+          customTypeface
+        }
+      } else {
+        // Fall back to system font
+        Typeface.create(family, tfStyle)
+      }
     } else if (tfStyle != Typeface.NORMAL) {
       Typeface.create(Typeface.DEFAULT, tfStyle)
     } else null

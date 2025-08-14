@@ -95,7 +95,8 @@ internal class RuneNodeFactory(
       val parent = nodes.get(currentParentId) ?: break
       if (parent.type != TEXT_TYPE) break
       pendingTextRebuild.add(parent.id)
-      // Don't call markDirty - TEXT nodes with measure functions can't be marked dirty
+      // We MUST mark dirty so Yoga invalidates the cached size and calls measure() again.
+      engine.markDirty(parent.id)
       currentParentId = parent.parentId
     }
   }
@@ -107,7 +108,8 @@ internal class RuneNodeFactory(
    */
   internal fun recomputeAndPropagate(node: RuneUIManager.Node) {
     pendingTextRebuild.add(node.id)
-    // Don't call markDirty - TEXT nodes with measure functions can't be marked dirty
+    // We MUST mark dirty so Yoga invalidates the cached size and calls measure() again.
+    engine.markDirty(node.id)
     propagateTextChange(node)
   }
 

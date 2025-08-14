@@ -113,25 +113,28 @@ fun createTextComponentDescriptor(): RuneComponentDescriptor {
       }
     },
     onStyleApplied = { node, style ->
-      val textView = node.view as? TextView ?: return@RuneComponentDescriptor
       val styleStart = SystemClock.elapsedRealtimeNanos()
 
-      // Apply text-specific styling
-      style.fontSize?.let { fontSize ->
-        textView.setTextSize(TypedValue.COMPLEX_UNIT_PX, fontSize)
-      }
-      
-      style.color?.let { color ->
-        textView.setTextColor(color)
-      }
-      
-      style.fontWeight?.let { weight ->
-        val isBold = weight.equals("bold", ignoreCase = true) ||
-          weight.toIntOrNull()?.let { it >= 600 } == true
-        textView.setTypeface(textView.typeface, if (isBold) Typeface.BOLD else Typeface.NORMAL)
-      }
-      
+      // Always capture text style attributes for composition (even for virtual text nodes)
       node.textStyle = TextStyleAttributes.fromStyle(style)
+
+      // Apply text-specific styling to TextView (only for non-virtual text nodes)
+      val textView = node.view as? TextView
+      if (textView != null) {
+        style.fontSize?.let { fontSize ->
+          textView.setTextSize(TypedValue.COMPLEX_UNIT_PX, fontSize)
+        }
+        
+        style.color?.let { color ->
+          textView.setTextColor(color)
+        }
+        
+        style.fontWeight?.let { weight ->
+          val isBold = weight.equals("bold", ignoreCase = true) ||
+            weight.toIntOrNull()?.let { it >= 600 } == true
+          textView.setTypeface(textView.typeface, if (isBold) Typeface.BOLD else Typeface.NORMAL)
+        }
+      }
 
       val durationMs = (SystemClock.elapsedRealtimeNanos() - styleStart) / 1_000_000.0
       if (durationMs > 4) {

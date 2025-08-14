@@ -723,11 +723,8 @@ class RuneUIManager(
     val surface = surfaceStateForNode(nodeId)
     val node = surface.nodes.get(nodeId)
     
-    // Don't mark TEXT nodes dirty - they have measure functions and Yoga doesn't allow it
-    // Their measurement will be triggered through the measure function callback
-    if (node?.type != TEXT_TYPE) {
-      engine.markDirty(nodeId)
-    }
+    // Always mark dirty, even for text nodes, to force remeasurement
+    engine.markDirty(nodeId)
     
     scheduleFlush(FlushPriority.HIGH, surface)
   }
@@ -945,8 +942,8 @@ class RuneUIManager(
         parentNode.textChildren.remove(childId)
         parentNode.textChildren.add(insertIndex, childId)
         surface.pendingTextRebuild.add(parentNode.id)
-        // Don't call markDirty on parent - TEXT nodes with measure functions can't be marked dirty
-        // The text rebuild will handle updating the measurement
+        // We MUST mark dirty so Yoga invalidates the cached size and calls measure() again.
+        engine.markDirty(parentNode.id)
         propagateTextChange(parentNode)
       }
       scheduleFlush(surface = surface)
@@ -978,7 +975,8 @@ class RuneUIManager(
       parentNode.textChildren.remove(childId)
       detachChild(parentId, childId)
       surface.pendingTextRebuild.add(parentNode.id)
-      // Don't call markDirty - TEXT nodes with measure functions can't be marked dirty
+      // We MUST mark dirty so Yoga invalidates the cached size and calls measure() again.
+      engine.markDirty(parentNode.id)
       propagateTextChange(parentNode)
       scheduleFlush(surface = surface)
       return@onMain

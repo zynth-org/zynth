@@ -101,8 +101,16 @@ class RuneRuntime(
   }
 
   fun installDefaultModules() {
+    val modulesToInstall = mutableListOf<RuneModule>()
+    
     if (!installedModules.containsKey("Dimensions")) {
-      installModules(listOf(DimensionsModule(this, root)))
+      modulesToInstall.add(DimensionsModule(this, root))
+    }
+    
+    // Note: FontModule is installed by @rune/apis package via RuneAPIs.initialize()
+    
+    if (modulesToInstall.isNotEmpty()) {
+      installModules(modulesToInstall)
     }
   }
 

@@ -19,6 +19,10 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, copy, nullable) NSString *rune_textTransform;
 /// Whether this node specified an explicit fontSize
 @property (nonatomic, assign) BOOL rune_hasExplicitFontSize;
+/// Whether this node specified an explicit fontFamily (e.g., icon fonts)
+@property (nonatomic, assign) BOOL rune_hasExplicitFontFamily;
+/// The requested fontFamily string (kept even if the font is not yet resolved)
+@property (nonatomic, copy, nullable) NSString *rune_explicitFontFamily;
 
 /// Refreshes the composed text from all child text nodes
 - (void)rune_refreshComposedText;
