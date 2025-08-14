@@ -15,5 +15,19 @@
     "build": "yarn build:js && yarn build:types",
     "build:js": "NODE_ENV=production rsbuild build --config rsbuild.config.ts",
     "build:types": "tsc --project tsconfig.types.json"
+  },
+  "runeNative": {
+    "ios": {
+      "pods": [
+        {
+          "name": "RuneAPIs",
+          "podspec": "./RuneAPIs.podspec"
+        }
+      ],
+      "initializer": {
+        "className": "RuneAPIs",
+        "method": "initializeWith:"
+      }
+    }
   }
 }

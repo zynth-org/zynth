@@ -1,0 +1,370 @@
+#!/usr/bin/env node --experimental-strip-types
+
+import { createRequire } from "node:module";
+import { basename, dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  copyFile,
+  mkdir,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
+import sax from "sax";
+import svgtofont from "svgtofont";
+
+(sax as any).MAX_BUFFER_LENGTH = 1024 * 1024;
+
+type IconDef = {
+  name: string;
+  attributes: Record<string, string | number | undefined>;
+  content: string;
+};
+
+type BuiltFont = {
+  glyphMap: Record<string, string>;
+  fontFamily: string;
+  ttfPath: string | null;
+  dist: string | null;
+};
+
+const require = createRequire(import.meta.url);
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const pkgRoot = resolve(__dirname, "..");
+const solidIconsMain = require.resolve("solid-icons");
+const solidIconsRoot = dirname(dirname(solidIconsMain));
+const solidIconsLibEntry = join(solidIconsRoot, "lib", "index.cjs");
+const metaOutputDir = join(pkgRoot, "dist", "icons-meta");
+const fontOutputDir = join(pkgRoot, "dist", "fonts");
+const srcOutputDir = join(pkgRoot, "src");
+const iosFontsDir = join(pkgRoot, "ios", "Fonts");
+const androidFontsDir = join(
+  pkgRoot,
+  "android",
+  "src",
+  "main",
+  "assets",
+  "fonts"
+);
+
+function decodeGlyph(data: any): string {
+  const encoded: string | undefined = data?.encodedCode || data?.unicode;
+  if (!encoded) return "";
+  if (encoded.startsWith("&#")) {
+    const num = parseInt(encoded.replace(/[^\d]/g, ""), 10);
+    return Number.isFinite(num) ? String.fromCharCode(num) : "";
+  }
+  const match = encoded.match(/\\u?([0-9a-fA-F]+)/);
+  if (match?.[1]) {
+    return String.fromCharCode(parseInt(match[1], 16));
+  }
+  if (encoded.length === 1) return encoded;
+  return "";
+}
+
+function sanitizeContent(content: string): string {
+  if (!content) return "";
+  return content
+    .replace(/<\?xml[^>]*\?>/gi, "")
+    .replace(/<!DOCTYPE[^>]*>/gi, "")
+    .trim();
+}
+
+function filterCaseInsensitiveDuplicates(
+  packName: string,
+  icons: IconDef[]
+): IconDef[] {
+  const seen = new Map<string, string>();
+  const filtered: IconDef[] = [];
+  for (const icon of icons) {
+    const key = icon.name.toLowerCase();
+    if (seen.has(key)) {
+      console.warn(
+        `⚠️  Skipping duplicate icon "${
+          icon.name
+        }" in pack "${packName}" (conflicts with "${seen.get(key)}")`
+      );
+      continue;
+    }
+    seen.set(key, icon.name);
+    filtered.push(icon);
+  }
+  return filtered;
+}
+
+function isSvgOnly(icon: IconDef): boolean {
+  const attrKeys = Object.keys(icon.attributes || {});
+  const attrHasOpacity = attrKeys.some(
+    (key) => /opacity/i.test(key) || /fill-opacity/i.test(key)
+  );
+  const content = icon.content || "";
+  const lower = content.toLowerCase();
+  const contentHasOpacity =
+    lower.includes("fill-opacity") ||
+    lower.includes('opacity="') ||
+    lower.includes("opacity='");
+  return attrHasOpacity || contentHasOpacity;
+}
+
+function iconToSource(name: string, glyph: string, fontFamily: string): string {
+  const glyphLiteral = JSON.stringify(glyph);
+  return `export const ${name} = createIcon(${glyphLiteral}, "${fontFamily}");`;
+}
+
+async function discoverPacks(): Promise<string[]> {
+  const entries = await readdir(solidIconsRoot, { withFileTypes: true });
+  const packs: string[] = [];
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    if (entry.name === "lib") continue;
+
+    const cjsPath = join(solidIconsRoot, entry.name, "index.cjs");
+    try {
+      await stat(cjsPath);
+      packs.push(entry.name);
+    } catch {
+      // Not a pack, skip
+    }
+  }
+
+  return packs;
+}
+
+function extractPack(packName: string): IconDef[] {
+  const icons = new Map<string, IconDef>();
+  const packPath = join(solidIconsRoot, packName, "index.cjs");
+  const libPath = solidIconsLibEntry;
+  const originalLib = (require.cache as Record<string, any>)[libPath];
+
+  (require.cache as Record<string, any>)[libPath] = {
+    exports: {
+      IconTemplate: (iconSrc: any, props: Record<string, any> = {}) => {
+        const name = props.__name || "unknown";
+        icons.set(name, {
+          name,
+          attributes: iconSrc?.a || {},
+          content: iconSrc?.c || "",
+        });
+        return {};
+      },
+    },
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const mod = require(packPath);
+
+  for (const [name, factory] of Object.entries(mod)) {
+    if (typeof factory !== "function") continue;
+    try {
+      (factory as (p: any) => void)({ __name: name });
+    } catch (error) {
+      console.warn(
+        `⚠️  Failed to execute icon "${name}" in pack "${packName}":`,
+        error
+      );
+    }
+  }
+
+  if (originalLib) {
+    (require.cache as Record<string, any>)[libPath] = originalLib;
+  } else {
+    delete (require.cache as Record<string, any>)[libPath];
+  }
+
+  return Array.from(icons.values());
+}
+
+async function emitPackSource(
+  packName: string,
+  icons: IconDef[],
+  glyphMap: Record<string, string>,
+  fontFamily: string
+): Promise<void> {
+  const imports = ['import { createIcon } from "./createIcon";'];
+  const header =
+    "// AUTO-GENERATED by packages/rune-icons/scripts/generate.ts. Do not edit.\n" +
+    imports.join("\n") +
+    "\n\n";
+
+  const body = icons
+    .map((icon) => {
+      const glyph = glyphMap[icon.name];
+      if (!glyph) {
+        throw new Error(
+          `Missing glyph for icon ${icon.name} in pack ${packName}`
+        );
+      }
+      return iconToSource(icon.name, glyph, fontFamily);
+    })
+    .join("\n");
+
+  const contents = header + body + "\n";
+  const target = join(srcOutputDir, `${packName}.tsx`);
+  await writeFile(target, contents, "utf8");
+}
+
+async function emitFontInputSvgs(
+  packName: string,
+  icons: IconDef[]
+): Promise<string> {
+  const base = join(fontOutputDir, "input", packName);
+  await mkdir(base, { recursive: true });
+  const tasks = icons.map(async (icon) => {
+    const attrs = Object.entries(icon.attributes || {})
+      .map(([key, value]) => `${key}="${value}"`)
+      .join(" ");
+    const svg = `<svg ${attrs}>${sanitizeContent(icon.content)}</svg>\n`;
+    const target = join(base, `${icon.name}.svg`);
+    await writeFile(target, svg, "utf8");
+  });
+  await Promise.all(tasks);
+  return base;
+}
+
+async function pruneUnusedFontOutputs(dist: string, fontFamily: string) {
+  const keep = new Set([`${fontFamily}.ttf`, "glyph-map.json", "info.json"]);
+  const files = await readdir(dist);
+  const deletions = files
+    .filter((file) => !keep.has(file))
+    .map((file) => unlink(join(dist, file)).catch(() => {}));
+  await Promise.all(deletions);
+}
+
+async function buildFontForPack(
+  packName: string,
+  iconsForFont: IconDef[]
+): Promise<BuiltFont> {
+  if (!iconsForFont.length) {
+    return {
+      glyphMap: {},
+      fontFamily: `RuneIcons${packName.toUpperCase()}`,
+      ttfPath: null,
+      dist: null,
+    };
+  }
+
+  const src = await emitFontInputSvgs(packName, iconsForFont);
+  const dist = join(fontOutputDir, packName);
+  const fontFamily = `RuneIcons${packName.toUpperCase()}`;
+
+  try {
+    await svgtofont({
+      src,
+      dist,
+      fontName: fontFamily,
+      css: false,
+      website: undefined,
+      log: false,
+      logger: (msg: string) => console.log(`[${packName}] ${msg}`),
+      emptyDist: true,
+      startUnicode: 0xea01,
+      svgicons2svgfont: {
+        normalize: true,
+        fontHeight: 1000,
+        centerHorizontally: true,
+      },
+      outSVGReact: false,
+      outSVGVue: false,
+      outSVGReactNative: false,
+      generateInfoData: true,
+    });
+  } catch (error: any) {
+    throw new Error(
+      `Font build failed for pack "${packName}": ${error.message}`
+    );
+  }
+
+  const infoPath = join(dist, "info.json");
+  const rawInfo = await readFile(infoPath, "utf8");
+  const info = JSON.parse(rawInfo);
+
+  const glyphMap: Record<string, string> = {};
+  for (const [name, data] of Object.entries(info)) {
+    const glyph = decodeGlyph(data);
+    if (glyph) {
+      glyphMap[name] = glyph;
+    }
+  }
+
+  await writeFile(
+    join(dist, "glyph-map.json"),
+    JSON.stringify(glyphMap, null, 2) + "\n"
+  );
+  await pruneUnusedFontOutputs(dist, fontFamily);
+
+  const ttfPath = join(dist, `${fontFamily}.ttf`);
+  return { glyphMap, fontFamily, ttfPath, dist };
+}
+
+async function copyFontToPlatforms(ttfPath: string | null) {
+  if (!ttfPath) return;
+  const fileName = basename(ttfPath);
+  await mkdir(iosFontsDir, { recursive: true });
+  await mkdir(androidFontsDir, { recursive: true });
+  await Promise.all([
+    copyFile(ttfPath, join(iosFontsDir, fileName)),
+    copyFile(ttfPath, join(androidFontsDir, fileName)),
+  ]);
+}
+
+async function cleanTempInputs() {
+  const inputDir = join(fontOutputDir, "input");
+  await rm(inputDir, { recursive: true, force: true });
+}
+
+async function emitIndex(packs: string[]) {
+  const header =
+    "// AUTO-GENERATED by packages/rune-icons/scripts/generate.ts. Do not edit.\n";
+  const exports = packs.map((pack) => `export * from "./${pack}";`).join("\n");
+  const contents = `${header}export * from "./createIcon";\n${exports}\n`;
+  const target = join(srcOutputDir, "index.ts");
+  await writeFile(target, contents, "utf8");
+}
+
+async function main() {
+  const packs = await discoverPacks();
+  if (!packs.length) {
+    console.error("No solid-icons packs found.");
+    process.exit(1);
+  }
+
+  const result: Record<string, IconDef[]> = {};
+  let total = 0;
+
+  for (const pack of packs) {
+    const rawIcons = extractPack(pack);
+    const icons = filterCaseInsensitiveDuplicates(pack, rawIcons).filter(
+      (icon) => !isSvgOnly(icon)
+    );
+    const fontIcons = icons;
+    total += icons.length;
+    result[pack] = icons;
+    console.log(`✓ ${pack}: ${icons.length} icons (${fontIcons.length} font)`);
+    const { glyphMap, fontFamily, ttfPath } = await buildFontForPack(
+      pack,
+      fontIcons
+    );
+    await emitPackSource(pack, icons, glyphMap, fontFamily);
+    await copyFontToPlatforms(ttfPath);
+  }
+
+  await emitIndex(packs);
+
+  await mkdir(metaOutputDir, { recursive: true });
+  const outputPath = join(metaOutputDir, "solid-icons.json");
+  await writeFile(outputPath, JSON.stringify(result, null, 2) + "\n");
+
+  console.log(`\n✅ Extracted ${total} icons across ${packs.length} packs`);
+  console.log(`📝 Metadata saved to ${outputPath}`);
+  console.log(`🧩 Packs written to ${srcOutputDir}`);
+  await cleanTempInputs();
+}
+
+main().catch((error) => {
+  console.error("❌ Generation failed:", error);
+  process.exit(1);
+});

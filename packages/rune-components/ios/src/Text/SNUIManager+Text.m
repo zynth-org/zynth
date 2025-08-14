@@ -54,10 +54,27 @@ static NSAttributedString *RuneBuildAttributedText(SNUIManager *manager,
   UIFont *parentFont = inherited[NSFontAttributeName];
   UIFont *ownFont = ownAttributes[NSFontAttributeName];
   NSMutableDictionary *adjustedOwn = [ownAttributes mutableCopy];
+  
   if (ownFont && parentFont && !textView.rune_hasExplicitFontSize) {
+    // LOGGING START
+    if ([ownFont.fontName containsString:@"RuneIcons"]) {
+        NSLog(@"[RuneText] Nesting Icon Font: '%@' (size: %.1f). Parent Font: '%@' (size: %.1f)", 
+              ownFont.fontName, ownFont.pointSize, parentFont.fontName, parentFont.pointSize);
+    }
+    // LOGGING END
+
     UIFontDescriptor *descriptor = [ownFont.fontDescriptor fontDescriptorWithSize:parentFont.pointSize];
-    adjustedOwn[NSFontAttributeName] = [UIFont fontWithDescriptor:descriptor size:parentFont.pointSize];
+    UIFont *newFont = [UIFont fontWithDescriptor:descriptor size:parentFont.pointSize];
+    
+    // LOGGING START
+    if ([ownFont.fontName containsString:@"RuneIcons"]) {
+        NSLog(@"[RuneText] Resized Icon Font: '%@'", newFont.fontName);
+    }
+    // LOGGING END
+    
+    adjustedOwn[NSFontAttributeName] = newFont;
   }
+
   if (adjustedOwn) {
     effective = RuneMergeAttributes(inherited, adjustedOwn);
   }
@@ -269,6 +286,11 @@ static void RuneTextHandleStyle(SNUIManager *manager, SNNode *node, NSDictionary
   UIFontDescriptor *descriptor;
   if ([fontFamily isKindOfClass:[NSString class]] && fontFamily.length > 0) {
     descriptor = [UIFontDescriptor fontDescriptorWithName:fontFamily size:resolvedSize];
+    // Debug logging for font lookup
+    if ([fontFamily hasPrefix:@"RuneIcons"]) {
+       UIFont *testFont = [UIFont fontWithDescriptor:descriptor size:resolvedSize];
+       NSLog(@"[RuneText] Requesting font: '%@'. Resolved: '%@'", fontFamily, testFont.fontName);
+    }
   } else {
     descriptor = [UIFont systemFontOfSize:resolvedSize weight:(CGFloat)[weightNum doubleValue]].fontDescriptor;
   }

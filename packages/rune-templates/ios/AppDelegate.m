@@ -29,6 +29,8 @@
 
   self.runtime = [[RuneRuntime alloc] initWithRootView:self.surface];
 
+{{MODULE_INITIALIZERS}}
+
 #if DEBUG
   NSString *devServer = [[NSProcessInfo processInfo] environment][@"RUNE_DEV_SERVER_URL"];
   if (devServer.length == 0) {
@@ -52,8 +54,6 @@
     }
     return NO;
   }
-
-{{MODULE_INITIALIZERS}}
 
   BOOL routerAttached = NO;
 #if RUNE_ROUTER_AVAILABLE

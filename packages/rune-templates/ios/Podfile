@@ -41,12 +41,4 @@ post_install do |installer|
       config.build_settings['OTHER_CPLUSPLUSFLAGS'] = '-std=c++17 -Wno-bitwise-instead-of-logical -Wno-error'
     end
   end
-
-  installer.aggregate_targets.each do |aggregate_target|
-    aggregate_target.user_targets.each do |t|
-      t.build_phases.select do |p|
-        p.respond_to?(:name) && ['Embed Pods Frameworks', 'Copy Pods Resources'].include?(p.name)
-      end.each { |p| t.build_phases.delete(p) }
-    end
-  end
 end

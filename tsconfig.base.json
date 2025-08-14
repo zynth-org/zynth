@@ -31,7 +31,9 @@
       "@rune/keyboard": ["packages/rune-keyboard/src/index.ts"],
       "@rune/keyboard/*": ["packages/rune-keyboard/src/*"],
       "@rune/hypervisor": ["packages/rune-hypervisor/src/index.ts"],
-      "@rune/hypervisor/*": ["packages/rune-hypervisor/src/*"]
+      "@rune/hypervisor/*": ["packages/rune-hypervisor/src/*"],
+      "@rune/icons": ["packages/rune-icons/src/index.ts"],
+      "@rune/icons/*": ["packages/rune-icons/src/*"]
     }
   }
 }

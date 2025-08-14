@@ -1,0 +1,54 @@
+{
+  "name": "@rune/icons",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "dist/esm/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
+  "sideEffects": false,
+  "license": "MIT",
+  "files": [
+    "dist",
+    "android",
+    "ios",
+    "src",
+    "package.json",
+    "README.md",
+    "RuneIcons.podspec"
+  ],
+  "peerDependencies": {
+    "solid-js": ">=1.8.0",
+    "@rune/components": "^0.0.1",
+    "@rune/apis": "^0.0.1"
+  },
+  "devDependencies": {
+    "@rune/components": "^0.0.1",
+    "@rune/apis": "^0.0.1",
+    "typescript": "^5.0.0",
+    "solid-js": "^1.8.0",
+    "solid-icons": "1.1.0",
+    "svgtofont": "6.5.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "generate": "node --experimental-strip-types scripts/generate.ts"
+  },
+  "runeNative": {
+    "ios": {
+      "pods": [
+        {
+          "name": "RuneIcons",
+          "podspec": "./RuneIcons.podspec"
+        }
+      ]
+    },
+    "android": {
+      "modules": [
+        {
+          "name": "RuneIcons",
+          "path": "./android"
+        }
+      ]
+    }
+  }
+}

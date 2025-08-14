@@ -1050,6 +1050,58 @@ static void SNApplyEdges(NSDictionary *style,
     n.view.layer.transform = CATransform3DIdentity;
   }
 
+  // Font handling (applies to text-capable views)
+  NSString *fontFamily = [style objectForKey:@"fontFamily"];
+  NSNumber *fontSizeValue = [style objectForKey:@"fontSize"];
+  NSString *fontWeightValue = [style objectForKey:@"fontWeight"];
+  NSString *fontStyleValue = [style objectForKey:@"fontStyle"];
+
+  CGFloat baseSize = fontSizeValue ? (CGFloat)SNNum(fontSizeValue) : 0.0;
+  if (baseSize <= 0.0 && [n.view respondsToSelector:@selector(font)]) {
+    UIFont *current = [(id)n.view font];
+    baseSize = current ? current.pointSize : 16.0;
+  } else if (baseSize <= 0.0) {
+    baseSize = 16.0;
+  }
+
+  UIFontWeight targetWeight = UIFontWeightRegular;
+  if (fontWeightValue) {
+    NSDictionary *weights = @{@"normal":@(UIFontWeightRegular),@"bold":@(UIFontWeightBold),
+                              @"100":@(UIFontWeightUltraLight),@"200":@(UIFontWeightThin),@"300":@(UIFontWeightLight),@"400":@(UIFontWeightRegular),
+                              @"500":@(UIFontWeightMedium),@"600":@(UIFontWeightSemibold),@"700":@(UIFontWeightBold),@"800":@(UIFontWeightHeavy),@"900":@(UIFontWeightBlack)};
+    NSNumber *mapped = weights[fontWeightValue];
+    if (mapped) {
+      targetWeight = (CGFloat)mapped.doubleValue;
+    }
+  }
+
+  UIFont *targetFont = nil;
+  if (fontFamily.length > 0) {
+    targetFont = [UIFont fontWithName:fontFamily size:baseSize];
+    if (!targetFont) {
+      // Try known variants (e.g., PostScript names)
+      NSString *regularName = [fontFamily stringByAppendingString:@"Regular"];
+      targetFont = [UIFont fontWithName:regularName size:baseSize];
+    }
+    if (!targetFont) {
+      NSArray<NSString *> *familyMembers = [UIFont fontNamesForFamilyName:fontFamily];
+      if (familyMembers.count > 0) {
+        targetFont = [UIFont fontWithName:familyMembers.firstObject size:baseSize];
+      }
+    }
+  }
+  if (!targetFont) {
+    BOOL italic = fontStyleValue && [[fontStyleValue lowercaseString] isEqualToString:@"italic"];
+    if (italic) {
+      targetFont = [UIFont italicSystemFontOfSize:baseSize];
+    } else {
+      targetFont = [UIFont systemFontOfSize:baseSize weight:targetWeight];
+    }
+  }
+  if (targetFont && [n.view respondsToSelector:@selector(setFont:)]) {
+    [(id)n.view setFont:targetFont];
+  }
+
   NSNumber *br = style[@"borderRadius"];
   NSString *overflowForClip = style[@"overflow"];
   if (br) {
