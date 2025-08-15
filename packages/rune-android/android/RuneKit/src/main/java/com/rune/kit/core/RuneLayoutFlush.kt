@@ -588,6 +588,9 @@ internal class RuneLayoutFlush(
       textView?.let {
         it.text = result.text
         applyRootTextStyle(it, result.effectiveStyle ?: node.textStyle)
+        // Ensure TextView internal layout is invalidated so next measure() uses new content
+        it.requestLayout()
+        it.forceLayout()
       }
       // Mark Yoga node dirty so it re-measures with new text content
       // This is critical for nested text changes (e.g., icon fonts loading)

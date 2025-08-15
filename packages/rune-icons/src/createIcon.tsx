@@ -75,12 +75,14 @@ export function createIcon(glyph: string, fontFamily: string) {
 
       const checkAndSetReady = () => {
         if (cancelled) return;
-        // Use requestAnimationFrame to ensure we're after the next paint
-        // This gives the native side time to process the font registration
+        // Use double requestAnimationFrame to ensure we're past the next paint
+        // This gives the native side ample time to update the FontRegistry
         requestAnimationFrame(() => {
-          if (!cancelled) {
-            setIsReady(true);
-          }
+          requestAnimationFrame(() => {
+             if (!cancelled) {
+               setIsReady(true);
+             }
+          });
         });
       };
 
@@ -98,9 +100,6 @@ export function createIcon(glyph: string, fontFamily: string) {
       });
     });
 
-    // Get fontSize from props to reserve square space for the icon
-    const style = props.style as Record<string, unknown> | undefined;
-
     // Always render the same Text element to avoid layout thrashing
     // Use a space character as placeholder until font is ready
     // This maintains proper text composition in the native layer
@@ -108,8 +107,8 @@ export function createIcon(glyph: string, fontFamily: string) {
       <Text
         {...props}
         style={{
-          ...style,
-          ...(isReady() ? { fontFamily } : {}),
+          ...(props.style as object),
+          fontFamily: isReady() ? fontFamily : undefined,
         }}
       >
         {isReady() ? glyph : " "}
