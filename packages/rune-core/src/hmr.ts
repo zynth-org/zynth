@@ -12,8 +12,8 @@ const __HMR_DEBUG = (function () {
     if (!enabled) {
       return;
     }
-    const prefix = `[HMR-DEBUG ${timestamp()} ${tag}]`;
-    (console as any)[level](prefix, ...args);
+    // const prefix = `[HMR-DEBUG ${timestamp()} ${tag}]`;
+    // (console as any)[level](prefix, ...args);
   }
   function channel(tag: string) {
     return {
@@ -78,10 +78,10 @@ function parsePayload(payload: unknown): RuneHMRPayload | null {
 
 function dispatchNativePayload(payload: RuneHMRPayload) {
   if (nativeListeners.size === 0) {
-    console.warn(
-      "[Rune HMR] Received payload but no listeners registered",
-      payload.type
-    );
+    // console.warn(
+    //   "[Rune HMR] Received payload but no listeners registered",
+    //   payload.type
+    // );
     return;
   }
   for (const listener of Array.from(nativeListeners)) {

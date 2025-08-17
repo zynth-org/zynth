@@ -2,8 +2,8 @@ import Foundation
 import RuneKit
 import UIKit
 
-final class RuneRouterModule: NSObject, RuneModule, RuneSyncModule {
-  let name: String = "RuneRouter"
+public final class RuneRouterModule: NSObject, RuneModule, RuneSyncModule {
+  public let name: String = "RuneRouter"
 
   private weak var runtime: RuneRuntime?
   private weak var stackController: RNStackController?
@@ -15,11 +15,12 @@ final class RuneRouterModule: NSObject, RuneModule, RuneSyncModule {
   private let tabsRootRouteKey = "tabs-root"
   var sharedEmitter: RuneRouterEmitter { emitter }
 
-  init(runtime: RuneRuntime, stackController: RNStackController) {
+  public init(runtime: RuneRuntime, stackController: RNStackController) {
     self.runtime = runtime
     self.stackController = stackController
     self.emitter = RuneRouterEmitter(runtime: runtime)
     super.init()
+    stackController.runtime = runtime
     stackController.bindRouterModule(self, emitter: emitter)
   }
 
@@ -37,7 +38,7 @@ final class RuneRouterModule: NSObject, RuneModule, RuneSyncModule {
     bottomSheetControllers.add(controller as AnyObject)
   }
 
-  func call(method: String, args: Any?) throws -> Any? {
+  public func call(method: String, args: Any?) throws -> Any? {
     switch method {
     case "dispatch":
       guard
@@ -148,7 +149,7 @@ final class RuneRouterModule: NSObject, RuneModule, RuneSyncModule {
     }
   }
 
-  func callSync(method: String, args: Any?) throws -> Any? {
+  public func callSync(method: String, args: Any?) throws -> Any? {
     switch method {
     case "getState":
       let state = tabsHostController?.currentStatePayload() ?? stackController?.currentStatePayload()

@@ -71,15 +71,42 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
     }
   }
 
-  func installRootSurface(_ surface: UIView) {
+  public func installRootSurface(_ surface: UIView) {
     loadViewIfNeeded()
     rootSurface = surface
-    // Keep the root surface around so the runtime retains surface 0, but do not
-    // reuse it for individual screens (each screen gets its own surface).
+    
+    // Always dispatch to main queue async to ensure any current transaction commits are finished
+    // This prevents "CA::Layer::ensure_transaction_recursively" crashes during initial layout
+    DispatchQueue.main.async { [weak self] in
+        self?.performInstall(surface)
+    }
+  }
+  
+  private func performInstall(_ surface: UIView) {
     surface.removeFromSuperview()
     attachSurfaceToFallbackHost()
-    // Don't create any initial route - let JS dispatch RESET to initialize
-  }  // MARK: - Navigation commands
+  }
+
+  private func attachSurfaceToFallbackHost() {
+    guard let surface = rootSurface else { return }
+    loadViewIfNeeded()
+    
+    // Always dispatch to main queue async
+    DispatchQueue.main.async { [weak self] in
+        self?.performAttach()
+    }
+  }
+
+  private func performAttach() {
+    guard let surface = rootSurface else { return }
+    // Ensure superview and valid state
+    surface.removeFromSuperview()
+    surface.frame = fallbackSurfaceHost.bounds
+    surface.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    fallbackSurfaceHost.addSubview(surface)
+  }
+
+  // MARK: - Navigation commands
 
   func push(routeName: String, params: [String: Any]?, options: [String: Any]?, animated: Bool) {
     scheduleNavigationAction { controller in
@@ -764,15 +791,6 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
       runtime?.setActiveSurface(Int(surfaceId))
     }
     activeHost = host
-  }
-
-  private func attachSurfaceToFallbackHost() {
-    guard let surface = rootSurface else { return }
-    loadViewIfNeeded()
-    surface.removeFromSuperview()
-    surface.frame = fallbackSurfaceHost.bounds
-    surface.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-    fallbackSurfaceHost.addSubview(surface)
   }
 
   private func setRouterActive(_ active: Bool) {

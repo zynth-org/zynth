@@ -201,6 +201,25 @@ function replacePlaceholders(content, config, extras = {}) {
   return output;
 }
 
+function generateNativeModulesConfig(pods, targetDir) {
+  const modules = [];
+  for (const pod of pods) {
+    if (
+      pod.initializer &&
+      pod.initializer.className &&
+      pod.initializer.method
+    ) {
+      modules.push({
+        className: pod.initializer.className,
+        method: pod.initializer.method,
+      });
+    }
+  }
+
+  const jsonContent = JSON.stringify(modules, null, 2);
+  fs.writeFileSync(path.join(targetDir, "RuneNativeModules.json"), jsonContent);
+}
+
 // Copy template files and replace placeholders
 const templatesRoot = path.dirname(
   require.resolve("@rune/templates/package.json")
@@ -241,6 +260,9 @@ function generateIOSProject(appDir, options = {}) {
   const componentPodBlock = formatComponentPodLines(componentPods, targetDir);
   const moduleImports = generateModuleImports(componentPods);
   const moduleInitializers = generateModuleInitializers(componentPods);
+  
+  // Generate module config for dynamic loading (e.g. Hypervisor)
+  generateNativeModulesConfig(componentPods, targetDir);
 
   // Copy and process template files
   const templateFiles = fs.readdirSync(templateDir);

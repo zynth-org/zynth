@@ -6,6 +6,8 @@ import CoreText
 public class RuneFontModule: RuneModule {
     public var name: String { "Font" }
     
+    public init() {}
+    
     public func call(method: String, args: Any?) throws -> Any? {
         switch method {
         case "loadAsync":

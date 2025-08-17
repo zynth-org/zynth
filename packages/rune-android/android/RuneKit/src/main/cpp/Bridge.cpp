@@ -1271,7 +1271,7 @@ void installModules(std::shared_ptr<RuntimeState> state) {
               entry.reject = std::make_shared<Function>(std::move(reject));
               state->promises.emplace(promiseId, std::move(entry));
             }
-            BRIDGE_LOG(ANDROID_LOG_INFO, "ModulesShim.invoke -> promiseId=%d", promiseId);
+            // BRIDGE_LOG(ANDROID_LOG_INFO, "ModulesShim.invoke -> promiseId=%d", promiseId);
             JniEnv env;
             if (!env.valid()) return;
             jstring jModule = makeJString(env.get(), moduleName);

@@ -1,28 +1,25 @@
 import Foundation
 import RuneKit
+import RuneRouter
 import UIKit
 
 @objc(RuneHypervisorView)
 @objcMembers
 public class RuneHypervisorView: UIView {
     private var runtime: RuneRuntime?
-    private var guestRootView: UIView?
+    private var stackController: RNStackController?
     private weak var manager: SNUIManager?
     private weak var node: SNNode?
-    private var isDestroyed: Bool = false  // Track explicit destroy state
+    private var isDestroyed: Bool = false
     
     // Callbacks to JS
     @objc var onLoad: (() -> Void)?
     @objc var onError: ((NSDictionary) -> Void)?
-    @objc var onMessage: ((NSDictionary) -> Void)? // For Phase 4
+    @objc var onMessage: ((NSDictionary) -> Void)?
     
     @objc var source: NSDictionary? {
         didSet {
-            // Don't reload if explicitly destroyed
-            if isDestroyed {
-                return
-            }
-            // Only reload if source actually changed or if runtime is nil
+            if isDestroyed { return }
             let oldDict = oldValue as? [AnyHashable: Any]
             let newDict = source as? [AnyHashable: Any]
             let changed = !(NSDictionary(dictionary: oldDict ?? [:]).isEqual(to: newDict ?? [:]))
@@ -34,39 +31,30 @@ public class RuneHypervisorView: UIView {
     
     override init(frame: CGRect) {
         super.init(frame: frame)
-        setup()
     }
     
     required init?(coder: NSCoder) {
         super.init(coder: coder)
-        setup()
-    }
-    
-    private func setup() {
-        ensureGuestRoot()
     }
     
     func reload() {
-        isDestroyed = false  // Clear destroyed state on explicit reload
+        isDestroyed = false
         loadGuest()
     }
     
     func destroy() {
         print("[RuneHypervisor] Destroying RuneRuntime for Hypervisor View")
-        isDestroyed = true  // Mark as explicitly destroyed
+        isDestroyed = true
         destroyRuntime()
-        guestRootView?.removeFromSuperview()
-        guestRootView = nil
     }
     
-    /// Destroys only the runtime, keeping the guest root view intact for reuse
     private func destroyRuntime() {
         if let runtime = runtime {
             NotificationCenter.default.removeObserver(self, name: .didReceiveGuestMessage, object: runtime)
         }
         runtime = nil
-        // Clear subviews from guest root but keep the view itself
-        guestRootView?.subviews.forEach { $0.removeFromSuperview() }
+        stackController?.view.removeFromSuperview()
+        stackController = nil
     }
 
     func bind(manager: SNUIManager, node: SNNode) {
@@ -75,49 +63,75 @@ public class RuneHypervisorView: UIView {
     }
     
     private func loadGuest() {
-        isDestroyed = false  // Clear destroyed state when loading
+        isDestroyed = false
         guard let source = source else {
-            // If source is nil, ensure runtime is destroyed
             destroy()
             return
         }
         
-        // Destroy existing runtime but keep the guest root view
         destroyRuntime()
         
-        // Ensure guest root view exists
-        ensureGuestRoot()
-        guard let guestRoot = guestRootView else {
-            notifyError("Guest root view not available")
-            return
-        }
+        // Create Guest Stack Controller
+        let stack = RNStackController()
+        stack.view.frame = self.bounds
+        stack.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        self.addSubview(stack.view)
+        self.stackController = stack
+
+        // Guest runtimes need their own root surface view so we don't re-parent the
+        // stack controller's view into itself (which crashes). Keep it aligned to the stack.
+        let guestRootView = UIView(frame: stack.view.bounds)
+        guestRootView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        guestRootView.backgroundColor = .clear
         
         // Use isGuest: true to allocate a unique surface ID for this guest runtime
-        let newRuntime = RuneRuntime(rootView: guestRoot, runtime: nil, enableDevServer: false, isGuest: true)
+        // The runtime constructor expects a view to attach the "Root Surface" (id=1) to.
+        // RNStackController will manage its own view hierarchy.
+        let newRuntime = RuneRuntime(
+          rootView: guestRootView,
+          runtime: nil,
+          enableDevServer: false,
+          isGuest: true
+        )
+        
+        // Setup Router for Guest
+        stack.installRootSurface(newRuntime.rootView)
+        // We instantiate RuneRouterModule directly for the guest to avoid singleton conflicts in RuneRouter.attach
+        let routerModule = RuneRouterModule(runtime: newRuntime, stackController: stack)
         
         // Register Hypervisor Module for Guest -> Host communication
         let hypervisorModule = RuneHypervisorModule(runtime: newRuntime)
-        newRuntime.installModules([hypervisorModule])
+        newRuntime.installModules([hypervisorModule, routerModule])
 
-        // Dynamically initialize standard modules if available (e.g. RuneSafeArea)
-        if let safeAreaClass = NSClassFromString("RuneSafeAreaModule") as? NSObject.Type {
-            let selector = Selector("initializeWith:")
-            if safeAreaClass.responds(to: selector) {
-                safeAreaClass.perform(selector, with: newRuntime)
+        // Dynamic module auto-discovery via RuneNativeModules.json
+        if let configURL = Bundle.main.url(forResource: "RuneNativeModules", withExtension: "json"),
+           let data = try? Data(contentsOf: configURL),
+           let modules = try? JSONSerialization.jsonObject(with: data, options: []) as? [[String: String]] {
+            
+            for moduleConfig in modules {
+                guard let className = moduleConfig["className"],
+                      let methodName = moduleConfig["method"],
+                      let moduleClass = NSClassFromString(className) as? NSObject.Type else {
+                    continue
+                }
+                
+                let selector = Selector(methodName)
+                if moduleClass.responds(to: selector) {
+                    print("[RuneHypervisor] Auto-installing module: \(className)")
+                    moduleClass.perform(selector, with: newRuntime)
+                }
             }
         }
-        
+
         // Inject JS bridge for guest to communicate with native module
         newRuntime.evaluate(code: """
           globalThis.__RUNE_HYPERVISOR_BRIDGE__ = {
             postMessage: (message) => {
-              // The native module expects an array of args
               globalThis.__modules.call('RuneHypervisor', 'postMessage', [JSON.parse(message)]);
             }
           };
         """)
         
-        // Listen for messages from this specific runtime
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handleGuestMessage(_:)),
@@ -127,7 +141,6 @@ public class RuneHypervisorView: UIView {
         
         self.runtime = newRuntime
         print("[RuneHypervisor] Guest runtime created with surfaceId: \(newRuntime.rootSurfaceId)")
-        print("[RuneHypervisor] HypervisorView bounds: \(self.bounds), guestRoot bounds: \(guestRootView?.bounds ?? .zero)")
         
         if let uriString = source["uri"] as? String, let url = URL(string: uriString) {
             loadBundle(from: url, runtime: newRuntime)
@@ -144,9 +157,6 @@ public class RuneHypervisorView: UIView {
     
     @objc private func handleGuestMessage(_ notification: Notification) {
         guard let message = notification.userInfo?["message"] else { return }
-        // Wrap in a dictionary to pass to the callback if it expects one, or pass direct if simple type?
-        // The `onMessage` signature in Registrar expects a dictionary.
-        // If message is already a dictionary, pass it. Else wrap it.
             if let dict = message as? NSDictionary {
                 onMessage?(dict)
                 if let manager = manager, let node = node {
@@ -162,17 +172,12 @@ public class RuneHypervisorView: UIView {
         }
     
     func postMessage(_ message: Any) {
-        // Host -> Guest communication
-        // We emit an event on the guest's NativeEmitter
         runtime?.emitEvent(name: "RuneHypervisor:Message", payload: message)
     }
     
     public override func layoutSubviews() {
         super.layoutSubviews()
-        // Update guestRootView frame when our bounds change
-        guestRootView?.frame = self.bounds
-        print("[RuneHypervisor] layoutSubviews - bounds: \(self.bounds), guestRoot frame: \(guestRootView?.frame ?? .zero)")
-        // Trigger a flush on the runtime to recalculate layout with new bounds
+        stackController?.view.frame = self.bounds
         if self.bounds.width > 0 && self.bounds.height > 0 {
             runtime?.flush()
         }
@@ -180,23 +185,10 @@ public class RuneHypervisorView: UIView {
     
     deinit {
         print("[RuneHypervisor] Deallocating Hypervisor View")
-        destroy() // Ensure runtime is destroyed when view is deallocated
-    }
-
-    private func ensureGuestRoot() {
-        if guestRootView == nil {
-            let guestRoot = UIView()
-            guestRoot.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            guestRoot.frame = self.bounds
-            // Make sure the guest root can display content
-            guestRoot.clipsToBounds = true
-            self.addSubview(guestRoot)
-            self.guestRootView = guestRoot
-        }
+        destroy()
     }
 
     private func loadBundle(from url: URL, runtime: RuneRuntime) {
-        // Network load for http(s); file load for file URLs
         if url.isFileURL {
             do {
                 let code = try String(contentsOf: url, encoding: .utf8)
@@ -210,14 +202,13 @@ public class RuneHypervisorView: UIView {
             return
         }
 
-        // Remote fetch
         var request = URLRequest(url: url)
         request.cachePolicy = .reloadIgnoringLocalCacheData
         let session = URLSession(configuration: .default)
         let currentRuntime = runtime
         session.dataTask(with: request) { [weak self] data, response, error in
             guard let self = self else { return }
-            guard self.runtime === currentRuntime else { return } // runtime changed
+            guard self.runtime === currentRuntime else { return }
             if let error = error {
                 self.notifyError("Failed to load bundle from URL: \(error.localizedDescription)")
                 return
