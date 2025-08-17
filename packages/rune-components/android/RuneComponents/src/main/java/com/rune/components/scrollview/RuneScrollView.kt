@@ -129,8 +129,8 @@ internal class RuneScrollView(
   init {
     isClickable = false
     isFocusable = false
-    clipChildren = true
-    clipToPadding = true
+    clipChildren = false
+    clipToPadding = false
 
     attachHost(verticalHost)
   }
