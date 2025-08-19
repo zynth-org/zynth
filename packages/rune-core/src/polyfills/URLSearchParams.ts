@@ -152,12 +152,12 @@ export class URLSearchParams {
 
 const globalObject =
   typeof globalThis !== "undefined"
-    ? globalThis
-    : typeof global !== "undefined"
-    ? global
+    ? (globalThis as any)
     : typeof window !== "undefined"
-    ? window
-    : (this as any);
+    ? (window as any)
+    : typeof self !== "undefined"
+    ? (self as any)
+    : ({} as any);
 
 if (globalObject && !globalObject.URLSearchParams) {
   console.log("[RuneCore] Polyfilling URLSearchParams");

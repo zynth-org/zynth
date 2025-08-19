@@ -9,6 +9,9 @@ import { SafeAreaInsetsContext, SafeAreaFrameContext } from "./SafeAreaContext";
 import { getNativeSafeAreaModule } from "./NativeSafeAreaModule";
 import type { InitialWindowMetrics, WindowMetrics } from "./types";
 
+// Node globals are not typed in this bundle; guard access explicitly.
+declare const process: any;
+
 export interface SafeAreaProviderProps {
   /**
    * Optional initial metrics to prevent first-paint jumps

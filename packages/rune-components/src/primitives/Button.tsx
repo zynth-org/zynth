@@ -233,7 +233,9 @@ export type ButtonProps = {
 const isPromise = <T,>(value: any): value is Promise<T> =>
   !!value && typeof value.then === "function";
 
-const ensureMinimumTouch = (value?: MinimumTouchSize): MinimumTouchSize => {
+const ensureMinimumTouch = (
+  value?: MinimumTouchSize
+): Required<MinimumTouchSize> => {
   if (!value) return MINIMUM_TOUCH_SIZE;
   return {
     width:
@@ -407,7 +409,7 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     if (local.pressEffect) return local.pressEffect;
     return "highlight";
   });
-  const resolvedMinimumTouch = createMemo(() =>
+  const resolvedMinimumTouch = createMemo<Required<MinimumTouchSize>>(() =>
     ensureMinimumTouch(local.minimumTouchSize)
   );
   const resolvedHitSlop = createMemo(() => local.hitSlop ?? 0);

@@ -32,14 +32,18 @@ export const Switch: Component<SwitchProps> = (props) => {
   ]);
 
   // Wrap the callback to extract the value from the native event
-  const handleValueChange = (event: SwitchEvent) => {
-    local.onValueChange?.(event.value);
+  const handleValueChange = (value: boolean | SwitchEvent) => {
+    const next =
+      typeof value === "object" && value !== null ? value.value : Boolean(value);
+    local.onValueChange?.(next);
   };
 
   return (
     <switch-view
       value={local.value ?? false}
-      onValueChange={local.onValueChange ? handleValueChange : undefined}
+      onValueChange={
+        local.onValueChange ? ((value: boolean) => handleValueChange(value)) : undefined
+      }
       disabled={local.disabled ?? false}
       trackColor={local.trackColor}
       style={local.style}

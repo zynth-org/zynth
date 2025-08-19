@@ -1,6 +1,9 @@
 import { getNativeSafeAreaModule } from "./NativeSafeAreaModule";
 import type { InitialWindowMetrics } from "./types";
 
+// Node globals are not typed in this bundle; guard access explicitly.
+declare const process: any;
+
 /**
  * Gets the initial window metrics synchronously from the native module.
  * This should be called before the first render to prevent layout jumps.
