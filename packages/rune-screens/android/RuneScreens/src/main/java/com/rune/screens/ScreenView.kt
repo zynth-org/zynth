@@ -4,15 +4,12 @@ import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.animation.AnimatorSet
 import android.animation.ObjectAnimator
-import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.util.Log
 import android.view.View
-import android.view.animation.DecelerateInterpolator
-import android.view.animation.AccelerateInterpolator
 import android.widget.FrameLayout
 import androidx.interpolator.view.animation.FastOutSlowInInterpolator
 
@@ -26,11 +23,16 @@ class ScreenView(context: Context) : FrameLayout(context) {
         private const val ANIMATION_DURATION_MS = 300L
         private const val SHARED_AXIS_OFFSET_DP = 30f
         private const val ZOOM_SCALE_START = 0.92f
-        private const val DIM_MAX_ALPHA = 0.15f
     }
 
     /** Reference to parent container */
     internal var container: ScreenContainerView? = null
+        set(value) {
+            field = value
+            if (canApplyActiveState()) {
+                applyPendingActiveState()
+            }
+        }
 
     /** Unique key for this screen */
     var screenKey: String = ""
@@ -52,6 +54,9 @@ class ScreenView(context: Context) : FrameLayout(context) {
     var isInTransition: Boolean = false
         private set
 
+    /** Active state requests that arrive before we're attached to a container */
+    private var pendingActiveState: Boolean? = null
+
     /** Current animator (if running) */
     private var currentAnimator: Animator? = null
 
@@ -63,12 +68,16 @@ class ScreenView(context: Context) : FrameLayout(context) {
 
     private val fastOutSlowIn = FastOutSlowInInterpolator()
 
+    // Flag to prevent conflicting animations when being animated by a neighbor
+    private var isControlledByNeighbor = false
+
     // Dim overlay paint
     private val dimPaint = Paint().apply {
         color = Color.BLACK
         alpha = 0
     }
     private var dimAlpha: Int = 0
+
 
     init {
         visibility = View.GONE
@@ -79,6 +88,7 @@ class ScreenView(context: Context) : FrameLayout(context) {
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         Log.d(TAG, "onAttachedToWindow: $screenKey")
+        applyPendingActiveState()
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -95,22 +105,15 @@ class ScreenView(context: Context) : FrameLayout(context) {
 
     fun setScreenKey(key: String) {
         this.screenKey = key
-        Log.d(TAG, "Screen key set: $key")
     }
 
     fun setActive(active: Boolean) {
-        if (isScreenActive == active) return
-        
-        val wasActive = isScreenActive
-        isScreenActive = active
-        
-        Log.d(TAG, "Screen $screenKey active: $wasActive -> $active")
-        
-        if (active && !wasActive) {
-            performEnterAnimation()
-        } else if (!active && wasActive) {
-            performExitAnimation()
-        }
+        pendingActiveState = active
+
+        // If we're not attached to a container yet, defer the transition until we are.
+        if (!canApplyActiveState()) return
+
+        applyPendingActiveState()
     }
 
     fun setAnimationType(type: String?) {
@@ -151,6 +154,30 @@ class ScreenView(context: Context) : FrameLayout(context) {
         currentAnimator = null
     }
 
+    private fun canApplyActiveState(): Boolean {
+        return container != null && parent != null
+    }
+
+    private fun applyPendingActiveState() {
+        if (!canApplyActiveState()) return
+
+        val target = pendingActiveState ?: return
+        pendingActiveState = null
+
+        if (isScreenActive == target) return
+
+        val wasActive = isScreenActive
+        isScreenActive = target
+
+        Log.d(TAG, "Screen $screenKey active: $wasActive -> $target")
+
+        if (target && !wasActive) {
+            performEnterAnimation()
+        } else if (!target && wasActive) {
+            performExitAnimation()
+        }
+    }
+
     /**
      * Helper to find the previous screen (the one below this one)
      */
@@ -170,6 +197,11 @@ class ScreenView(context: Context) : FrameLayout(context) {
     }
 
     private fun performEnterAnimation() {
+        if (isControlledByNeighbor) {
+            Log.d(TAG, "performEnterAnimation: Skipped because controlled by neighbor")
+            return
+        }
+
         cancelAnimation()
         onWillAppear?.invoke()
         
@@ -242,16 +274,63 @@ class ScreenView(context: Context) : FrameLayout(context) {
     }
 
     private fun animatePreviousScreenOnEnter(animators: MutableList<Animator>, targetTranslationX: Float) {
-        val previousScreen = getPreviousScreen() ?: return
+        val previousScreen = getPreviousScreen()
+        if (previousScreen == null) {
+            Log.d(TAG, "animatePreviousScreenOnEnter: No previous screen found for $screenKey")
+            return
+        }
+
+        Log.d(TAG, "animatePreviousScreenOnEnter: animating ${previousScreen.screenKey} out (to x=$targetTranslationX)")
         
+        // Take control of previous screen
+        previousScreen.cancelAnimation()
+        previousScreen.isControlledByNeighbor = true
         previousScreen.isInTransition = true
+        
+        // Ensure it's visible and reset properties for the start of the exit animation
+        previousScreen.visibility = View.VISIBLE
+        previousScreen.alpha = 1f
+        previousScreen.translationX = 0f
+        
         previousScreen.setLayerType(LAYER_TYPE_HARDWARE, null)
         
         animators.add(ObjectAnimator.ofFloat(previousScreen, "translationX", targetTranslationX))
-        animators.add(ObjectAnimator.ofFloat(previousScreen, "alpha", 0f))
+        
+        val alphaAnim = ObjectAnimator.ofFloat(previousScreen, "alpha", 0f)
+        
+        // Cleanup listener for previous screen
+        alphaAnim.addListener(object : AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: Animator) {
+                previousScreen.isControlledByNeighbor = false
+                previousScreen.isInTransition = false
+                previousScreen.setLayerType(LAYER_TYPE_NONE, null)
+                previousScreen.container?.updateScreenVisibility()
+                
+                // Reset translation so it's centered if/when it appears again
+                previousScreen.translationX = 0f
+            }
+            override fun onAnimationCancel(animation: Animator) {
+                previousScreen.isControlledByNeighbor = false
+                previousScreen.isInTransition = false
+                previousScreen.setLayerType(LAYER_TYPE_NONE, null)
+                previousScreen.container?.updateScreenVisibility()
+                previousScreen.translationX = 0f
+            }
+        })
+        
+        animators.add(alphaAnim)
     }
 
     private fun performExitAnimation(isDetaching: Boolean = false) {
+        if (isControlledByNeighbor) {
+            Log.d(TAG, "performExitAnimation: Skipped because controlled by neighbor")
+            // If we skip the animation, we must ensure potential cleanup (if detaching) is handled
+            if (isDetaching) {
+                 container?.finishRemoval(this)
+            }
+            return
+        }
+
         cancelAnimation()
         onWillDisappear?.invoke()
         
@@ -301,9 +380,6 @@ class ScreenView(context: Context) : FrameLayout(context) {
                     val currentContainer = container
 
                     if (isDetaching) {
-                        // CRITICAL: Remove from container lists FIRST to prevent
-                        // updateScreenVisibility from seeing it and forcing it VISIBLE
-                        // after resetTransforms() makes it opaque.
                         currentContainer?.finishRemoval(this@ScreenView)
                     }
 
@@ -337,6 +413,9 @@ class ScreenView(context: Context) : FrameLayout(context) {
     private fun animatePreviousScreenOnExit(animators: MutableList<Animator>, startTranslationX: Float) {
         val previousScreen = getPreviousScreen() ?: return
         
+        // Take control of previous screen
+        previousScreen.cancelAnimation()
+        previousScreen.isControlledByNeighbor = true
         previousScreen.isInTransition = true
         previousScreen.visibility = View.VISIBLE
         previousScreen.setLayerType(LAYER_TYPE_HARDWARE, null)
@@ -348,9 +427,16 @@ class ScreenView(context: Context) : FrameLayout(context) {
         animators.add(ObjectAnimator.ofFloat(previousScreen, "translationX", 0f).apply {
             addListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: Animator) {
+                    previousScreen.isControlledByNeighbor = false
                     previousScreen.isInTransition = false
                     previousScreen.setLayerType(LAYER_TYPE_NONE, null)
                     // Ensure visibility is correct after transition
+                    previousScreen.container?.updateScreenVisibility()
+                }
+                override fun onAnimationCancel(animation: Animator) {
+                    previousScreen.isControlledByNeighbor = false
+                    previousScreen.isInTransition = false
+                    previousScreen.setLayerType(LAYER_TYPE_NONE, null)
                     previousScreen.container?.updateScreenVisibility()
                 }
             })
@@ -363,14 +449,5 @@ class ScreenView(context: Context) : FrameLayout(context) {
         scaleX = 1f
         scaleY = 1f
         alpha = 1f
-        dimAlpha = 0
-    }
-
-    override fun dispatchDraw(canvas: Canvas) {
-        super.dispatchDraw(canvas)
-        if (dimAlpha > 0) {
-            dimPaint.alpha = dimAlpha
-            canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), dimPaint)
-        }
     }
 }

@@ -12,9 +12,6 @@ import android.widget.FrameLayout
  * Handles z-ordering and visibility of child screens. Only the topmost
  * active screen is visible; others are hidden but kept in the view hierarchy
  * for fast transitions.
- * 
- * This is a pure View-based solution - no fragments, no surfaces.
- * All children render in the same Yoga tree / surface as the parent.
  */
 class ScreenContainerView(context: Context) : FrameLayout(context) {
 
@@ -103,7 +100,6 @@ class ScreenContainerView(context: Context) : FrameLayout(context) {
         screen.container = null
         
         // Perform actual removal from ViewGroup
-        // We use a runnable to ensure we're on the main thread and avoid state inconsistency
         post {
             super.removeView(screen)
         }
@@ -123,12 +119,11 @@ class ScreenContainerView(context: Context) : FrameLayout(context) {
             // Top active screen is always visible
             if (screen == topActive) shouldBeVisible = true
             
-            // If the screen is transitioning (entering/exiting via prop change), it's visible
+            // If the screen is transitioning, it's visible
             if (screen.isInTransition) shouldBeVisible = true
             
             // If the screen ABOVE this one is transitioning, this one might need to be visible 
             // as the background (cross-fade target).
-            // We check the next screen in the list.
             if (index + 1 < screens.size) {
                 val screenAbove = screens[index + 1]
                 if (screenAbove.isInTransition) {
@@ -154,28 +149,19 @@ class ScreenContainerView(context: Context) : FrameLayout(context) {
             // Ensure they are above everything else in the normal stack
             screen.translationZ = (screens.size + index + 100).toFloat()
         }
-        
-        Log.d(TAG, "Updated visibility. Stack: ${screens.size}, Detaching: ${detachingScreens.size}")
     }
 
     /**
      * Find a screen by its key
      */
     fun findScreenByKey(key: String): ScreenView? {
-        // Check both lists
         return screens.find { it.screenKey == key } ?: detachingScreens.find { it.screenKey == key }
     }
 
-    /**
-     * Get the topmost active screen
-     */
     fun getTopScreen(): ScreenView? {
         return screens.lastOrNull { it.isScreenActive }
     }
 
-    /**
-     * Get all active screens in order (bottom to top)
-     */
     fun getActiveScreens(): List<ScreenView> {
         return screens.filter { it.isScreenActive }
     }
