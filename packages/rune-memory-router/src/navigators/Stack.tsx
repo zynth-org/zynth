@@ -273,6 +273,8 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
     switch (animation) {
       case "push":
         return "push";
+      case "modal":
+        return "modal";
       case "zoom":
         return "zoom";
       case "fade":
@@ -282,6 +284,26 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
       default:
         return "push";
     }
+  }
+
+  function resolveScreenAnimation(options: ScreenOptions): ScreenAnimationType {
+    if (options.animationEnabled === false) {
+      return "none";
+    }
+
+    if (options.animation) {
+      return mapAnimation(options.animation);
+    }
+
+    if (options.presentation === "modal") {
+      return "modal";
+    }
+
+    if (options.presentation === "zoom") {
+      return "zoom";
+    }
+
+    return "push";
   }
 
   // Build navigation context value
@@ -341,7 +363,7 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
               <ScreenPrimitive
                 screenKey={route.key}
                 active={isInStack()}
-                animation={mapAnimation(options().animation)}
+                animation={resolveScreenAnimation(options())}
               >
                 <RouteContext.Provider value={routeContext}>
                   <ScreenComponent

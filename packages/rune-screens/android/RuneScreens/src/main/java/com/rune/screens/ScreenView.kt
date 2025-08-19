@@ -22,6 +22,7 @@ class ScreenView(context: Context) : FrameLayout(context) {
         private const val TAG = "ScreenView"
         private const val ANIMATION_DURATION_MS = 300L
         private const val SHARED_AXIS_OFFSET_DP = 30f
+        private const val MODAL_OFFSET_DP = 80f
         private const val ZOOM_SCALE_START = 0.92f
     }
 
@@ -220,6 +221,7 @@ class ScreenView(context: Context) : FrameLayout(context) {
         val animators = mutableListOf<Animator>()
         val density = context.resources.displayMetrics.density
         val offsetPx = SHARED_AXIS_OFFSET_DP * density
+        val modalOffsetPx = MODAL_OFFSET_DP * density
         
         when (animation) {
             ScreenAnimation.PUSH -> {
@@ -233,6 +235,13 @@ class ScreenView(context: Context) : FrameLayout(context) {
                 // Outgoing: Slide from Center to Left, Fade Out
                 animatePreviousScreenOnEnter(animators, -offsetPx)
             }
+            ScreenAnimation.MODAL -> {
+                // Incoming: Slide up from bottom with fade in
+                translationY = modalOffsetPx
+                alpha = 0f
+                animators.add(ObjectAnimator.ofFloat(this, "translationY", 0f))
+                animators.add(ObjectAnimator.ofFloat(this, "alpha", 1f))
+            }
             ScreenAnimation.ZOOM -> {
                 scaleX = ZOOM_SCALE_START
                 scaleY = ZOOM_SCALE_START
@@ -240,6 +249,9 @@ class ScreenView(context: Context) : FrameLayout(context) {
                 animators.add(ObjectAnimator.ofFloat(this, "scaleX", 1f))
                 animators.add(ObjectAnimator.ofFloat(this, "scaleY", 1f))
                 animators.add(ObjectAnimator.ofFloat(this, "alpha", 1f))
+                
+                // Outgoing: Fade out while zooming down
+                animatePreviousScreenOnEnterZoom(animators)
             }
             ScreenAnimation.FADE -> {
                 alpha = 0f
@@ -321,6 +333,56 @@ class ScreenView(context: Context) : FrameLayout(context) {
         animators.add(alphaAnim)
     }
 
+    private fun animatePreviousScreenOnEnterZoom(animators: MutableList<Animator>) {
+        val previousScreen = getPreviousScreen()
+        if (previousScreen == null) {
+            Log.d(TAG, "animatePreviousScreenOnEnterZoom: No previous screen found for $screenKey")
+            return
+        }
+
+        Log.d(TAG, "animatePreviousScreenOnEnterZoom: animating ${previousScreen.screenKey} out")
+
+        previousScreen.cancelAnimation()
+        previousScreen.isControlledByNeighbor = true
+        previousScreen.isInTransition = true
+
+        previousScreen.visibility = View.VISIBLE
+        previousScreen.alpha = 1f
+        previousScreen.scaleX = 1f
+        previousScreen.scaleY = 1f
+
+        previousScreen.setLayerType(LAYER_TYPE_HARDWARE, null)
+
+        val scaleXAnim = ObjectAnimator.ofFloat(previousScreen, "scaleX", ZOOM_SCALE_START)
+        val scaleYAnim = ObjectAnimator.ofFloat(previousScreen, "scaleY", ZOOM_SCALE_START)
+        val alphaAnim = ObjectAnimator.ofFloat(previousScreen, "alpha", 0f)
+
+        alphaAnim.addListener(object : AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: Animator) {
+                previousScreen.isControlledByNeighbor = false
+                previousScreen.isInTransition = false
+                previousScreen.setLayerType(LAYER_TYPE_NONE, null)
+                previousScreen.scaleX = 1f
+                previousScreen.scaleY = 1f
+                previousScreen.alpha = 1f
+                previousScreen.container?.updateScreenVisibility()
+            }
+            override fun onAnimationCancel(animation: Animator) {
+                previousScreen.isControlledByNeighbor = false
+                previousScreen.isInTransition = false
+                previousScreen.setLayerType(LAYER_TYPE_NONE, null)
+                previousScreen.scaleX = 1f
+                previousScreen.scaleY = 1f
+                previousScreen.alpha = 1f
+                previousScreen.container?.updateScreenVisibility()
+            }
+        })
+
+        animators.add(scaleXAnim)
+        animators.add(scaleYAnim)
+        animators.add(alphaAnim)
+    }
+
     private fun performExitAnimation(isDetaching: Boolean = false) {
         if (isControlledByNeighbor) {
             Log.d(TAG, "performExitAnimation: Skipped because controlled by neighbor")
@@ -349,6 +411,7 @@ class ScreenView(context: Context) : FrameLayout(context) {
         val animators = mutableListOf<Animator>()
         val density = context.resources.displayMetrics.density
         val offsetPx = SHARED_AXIS_OFFSET_DP * density
+        val modalOffsetPx = MODAL_OFFSET_DP * density
         
         when (animation) {
             ScreenAnimation.PUSH -> {
@@ -359,10 +422,18 @@ class ScreenView(context: Context) : FrameLayout(context) {
                 // Incoming: Slide from Left to Center, Fade In
                 animatePreviousScreenOnExit(animators, -offsetPx)
             }
+            ScreenAnimation.MODAL -> {
+                // Outgoing: Slide down to bottom with fade out
+                animators.add(ObjectAnimator.ofFloat(this, "translationY", modalOffsetPx))
+                animators.add(ObjectAnimator.ofFloat(this, "alpha", 0f))
+            }
             ScreenAnimation.ZOOM -> {
                 animators.add(ObjectAnimator.ofFloat(this, "scaleX", ZOOM_SCALE_START))
                 animators.add(ObjectAnimator.ofFloat(this, "scaleY", ZOOM_SCALE_START))
                 animators.add(ObjectAnimator.ofFloat(this, "alpha", 0f))
+                
+                // Incoming: Fade in while zooming up
+                animatePreviousScreenOnExitZoom(animators)
             }
             ScreenAnimation.FADE -> {
                 animators.add(ObjectAnimator.ofFloat(this, "alpha", 0f))
@@ -444,8 +515,51 @@ class ScreenView(context: Context) : FrameLayout(context) {
         animators.add(ObjectAnimator.ofFloat(previousScreen, "alpha", 1f))
     }
 
+    private fun animatePreviousScreenOnExitZoom(animators: MutableList<Animator>) {
+        val previousScreen = getPreviousScreen() ?: return
+
+        previousScreen.cancelAnimation()
+        previousScreen.isControlledByNeighbor = true
+        previousScreen.isInTransition = true
+        previousScreen.visibility = View.VISIBLE
+        previousScreen.setLayerType(LAYER_TYPE_HARDWARE, null)
+
+        // Prepare for entrance
+        previousScreen.scaleX = ZOOM_SCALE_START
+        previousScreen.scaleY = ZOOM_SCALE_START
+        previousScreen.alpha = 0f
+
+        val scaleXAnim = ObjectAnimator.ofFloat(previousScreen, "scaleX", 1f)
+        val scaleYAnim = ObjectAnimator.ofFloat(previousScreen, "scaleY", 1f)
+        val alphaAnim = ObjectAnimator.ofFloat(previousScreen, "alpha", 1f)
+
+        alphaAnim.addListener(object : AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: Animator) {
+                previousScreen.isControlledByNeighbor = false
+                previousScreen.isInTransition = false
+                previousScreen.setLayerType(LAYER_TYPE_NONE, null)
+                previousScreen.scaleX = 1f
+                previousScreen.scaleY = 1f
+                previousScreen.container?.updateScreenVisibility()
+            }
+            override fun onAnimationCancel(animation: Animator) {
+                previousScreen.isControlledByNeighbor = false
+                previousScreen.isInTransition = false
+                previousScreen.setLayerType(LAYER_TYPE_NONE, null)
+                previousScreen.scaleX = 1f
+                previousScreen.scaleY = 1f
+                previousScreen.container?.updateScreenVisibility()
+            }
+        })
+
+        animators.add(scaleXAnim)
+        animators.add(scaleYAnim)
+        animators.add(alphaAnim)
+    }
+
     private fun resetTransforms() {
         translationX = 0f
+        translationY = 0f
         scaleX = 1f
         scaleY = 1f
         alpha = 1f

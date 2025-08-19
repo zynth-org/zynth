@@ -9,6 +9,9 @@ enum class ScreenAnimation {
     
     /** Horizontal slide (iOS-style stack push/pop) */
     PUSH,
+
+    /** Modal sheet style: slide up + fade */
+    MODAL,
     
     /** Scale + fade (Android activity zoom) */
     ZOOM,
@@ -20,6 +23,7 @@ enum class ScreenAnimation {
         fun fromString(value: String?): ScreenAnimation {
             return when (value?.lowercase()) {
                 "push", "slide" -> PUSH
+                "modal", "sheet" -> MODAL
                 "zoom", "scale" -> ZOOM
                 "fade" -> FADE
                 "none" -> NONE

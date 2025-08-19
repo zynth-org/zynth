@@ -125,7 +125,7 @@ export type ScreenPresentation =
 /**
  * Screen animation types
  */
-export type ScreenAnimation = "push" | "zoom" | "fade" | "none";
+export type ScreenAnimation = "push" | "modal" | "zoom" | "fade" | "none";
 
 /**
  * Options can be static or a reactive function

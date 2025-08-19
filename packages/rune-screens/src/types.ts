@@ -4,7 +4,7 @@ import type { Style } from "@rune/core";
 /**
  * Animation types for screen transitions
  */
-export type ScreenAnimationType = "push" | "zoom" | "fade" | "none";
+export type ScreenAnimationType = "push" | "modal" | "zoom" | "fade" | "none";
 
 /**
  * Props for ScreenContainer component

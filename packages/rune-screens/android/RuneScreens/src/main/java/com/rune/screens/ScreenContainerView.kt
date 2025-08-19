@@ -111,6 +111,11 @@ class ScreenContainerView(context: Context) : FrameLayout(context) {
     internal fun updateScreenVisibility() {
         val activeScreens = screens.filter { it.isScreenActive }
         val topActive = activeScreens.lastOrNull()
+        val modalBackgroundIndex = if (topActive?.animation == ScreenAnimation.MODAL) {
+            screens.indexOf(topActive) - 1
+        } else {
+            -1
+        }
         
         // 1. Handle normal screens in the stack
         for ((index, screen) in screens.withIndex()) {
@@ -129,6 +134,11 @@ class ScreenContainerView(context: Context) : FrameLayout(context) {
                 if (screenAbove.isInTransition) {
                     shouldBeVisible = true
                 }
+            }
+
+            // Keep the immediate screen below a modal visible as the backdrop.
+            if (index == modalBackgroundIndex) {
+                shouldBeVisible = true
             }
             
             // Also, if there are any DETACHING screens (popping), the top active screen 
