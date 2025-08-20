@@ -26,6 +26,7 @@ declare global {
   interface Window {
     __RUNE_SAFE_AREA__?: NativeSafeAreaModule;
   }
+  var __RUNE_SAFE_AREA__: NativeSafeAreaModule | undefined;
 }
 
 /**
@@ -33,8 +34,30 @@ declare global {
  * Returns null if not available (dev warning will be emitted)
  */
 export function getNativeSafeAreaModule(): NativeSafeAreaModule | null {
-  if (typeof globalThis === "undefined") {
+  // Try to find the global object
+  let globalObject: any;
+  if (typeof globalThis !== "undefined") globalObject = globalThis;
+  else if (typeof global !== "undefined") globalObject = global;
+  else if (typeof window !== "undefined") globalObject = window;
+  else if (typeof self !== "undefined") globalObject = self;
+
+  if (!globalObject) {
+    console.warn("[getNativeSafeAreaModule] Could not find global object");
     return null;
   }
-  return (globalThis as any).__RUNE_SAFE_AREA__ || null;
+
+  const module = globalObject.__RUNE_SAFE_AREA__;
+
+  if (!module) {
+    // Debug info to help diagnose missing module
+    console.warn(
+      "[getNativeSafeAreaModule] __RUNE_SAFE_AREA__ not found on global object. " +
+        "Keys available: " +
+        Object.keys(globalObject)
+          .filter((k) => k.startsWith("__") || k.includes("RUNE"))
+          .join(", ")
+    );
+  }
+
+  return module || null;
 }

@@ -1,4 +1,5 @@
 import { createSignal, createEffect, onMount, type JSX } from "solid-js";
+import { SafeAreaProvider, getInitialWindowMetrics } from "@rune/safe-area";
 import type {
   NavigationContainerProps,
   NavigationState,
@@ -46,7 +47,9 @@ export function NavigationContainer<
         isReady,
       }}
     >
-      {props.children}
+      <SafeAreaProvider initialMetrics={getInitialWindowMetrics()}>
+        {props.children}
+      </SafeAreaProvider>
     </NavigationContainerContext.Provider>
   );
 }

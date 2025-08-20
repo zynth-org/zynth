@@ -33,6 +33,10 @@ export interface SafeAreaProviderProps {
  */
 export const SafeAreaProvider: Component<SafeAreaProviderProps> = (props) => {
   const nativeModule = getNativeSafeAreaModule();
+  console.log(
+    "[SafeAreaProvider] Initializing. Native module found:",
+    !!nativeModule
+  );
 
   // Warn in development if no native module is available
   if (
@@ -50,16 +54,25 @@ export const SafeAreaProvider: Component<SafeAreaProviderProps> = (props) => {
   // Initialize with provided metrics or query native
   const getInitialMetrics = (): WindowMetrics => {
     if (props.initialMetrics) {
+      console.log(
+        "[SafeAreaProvider] Using provided initialMetrics:",
+        JSON.stringify(props.initialMetrics)
+      );
       return props.initialMetrics;
     }
 
     if (nativeModule) {
       const metrics = nativeModule.getInitialMetrics();
+      console.log(
+        "[SafeAreaProvider] Native module returned metrics:",
+        JSON.stringify(metrics)
+      );
       if (metrics) {
         return metrics;
       }
     }
 
+    console.log("[SafeAreaProvider] Fallback to zero metrics");
     // Fallback to zeros
     return {
       insets: { top: 0, right: 0, bottom: 0, left: 0 },
@@ -67,9 +80,10 @@ export const SafeAreaProvider: Component<SafeAreaProviderProps> = (props) => {
     };
   };
 
-  const [metrics, setMetrics] = createSignal<WindowMetrics>(
-    getInitialMetrics()
-  );
+  const initial = getInitialMetrics();
+  console.log("[SafeAreaProvider] Final initial metrics:", JSON.stringify(initial));
+
+  const [metrics, setMetrics] = createSignal<WindowMetrics>(initial);
 
   // Subscribe to native metrics changes
   createEffect(() => {
@@ -78,6 +92,10 @@ export const SafeAreaProvider: Component<SafeAreaProviderProps> = (props) => {
     }
 
     const unsubscribe = nativeModule.addMetricsChangeListener((newMetrics) => {
+      console.log(
+        "[SafeAreaProvider] Metrics update received:",
+        JSON.stringify(newMetrics)
+      );
       setMetrics(newMetrics);
     });
 

@@ -1617,7 +1617,7 @@ void callGlobal(
   }
   
   jsize argsLength = args ? env->GetArrayLength(args) : 0;
-  BRIDGE_LOG(ANDROID_LOG_INFO, "callGlobal: %s with %d arguments", name.c_str(), argsLength);
+  // BRIDGE_LOG(ANDROID_LOG_INFO, "callGlobal: %s with %d arguments", name.c_str(), argsLength);
   
   using namespace facebook::jsi;
   auto global = runtime->global();
@@ -1641,38 +1641,38 @@ void callGlobal(
   argv.reserve(length);
   for (jsize i = 0; i < length; ++i) {
     jobject element = env->GetObjectArrayElement(args, i);
-    BRIDGE_LOG(ANDROID_LOG_INFO, "Processing argument %d: %s", i, element ? "non-null" : "null");
+    // BRIDGE_LOG(ANDROID_LOG_INFO, "Processing argument %d: %s", i, element ? "non-null" : "null");
     if (element) {
       jclass cls = env->GetObjectClass(element);
       jstring className = (jstring)env->CallObjectMethod(cls, env->GetMethodID(env->GetObjectClass(cls), "getName", "()Ljava/lang/String;"));
       if (className) {
         std::string classNameStr = getUtfString(env, className);
-        BRIDGE_LOG(ANDROID_LOG_INFO, "Argument %d class: %s", i, classNameStr.c_str());
+        // BRIDGE_LOG(ANDROID_LOG_INFO, "Argument %d class: %s", i, classNameStr.c_str());
         env->DeleteLocalRef(className);
       }
       env->DeleteLocalRef(cls);
     }
     Value jsValue = javaObjectToJsValue(*runtime, env, element, classInteger, integerValue, classDouble, doubleValue, classBoolean, booleanValue, classString);
-    BRIDGE_LOG(ANDROID_LOG_INFO, "Converted argument %d: isNumber=%s, isNull=%s, isUndefined=%s", 
-               i, jsValue.isNumber() ? "true" : "false", 
-               jsValue.isNull() ? "true" : "false", 
-               jsValue.isUndefined() ? "true" : "false");
+    // BRIDGE_LOG(ANDROID_LOG_INFO, "Converted argument %d: isNumber=%s, isNull=%s, isUndefined=%s", 
+    //            i, jsValue.isNumber() ? "true" : "false", 
+    //            jsValue.isNull() ? "true" : "false", 
+    //            jsValue.isUndefined() ? "true" : "false");
     if (jsValue.isNumber()) {
-      BRIDGE_LOG(ANDROID_LOG_INFO, "Argument %d number value: %f", i, jsValue.getNumber());
+      // BRIDGE_LOG(ANDROID_LOG_INFO, "Argument %d number value: %f", i, jsValue.getNumber());
     }
     argv.push_back(std::move(jsValue));
     env->DeleteLocalRef(element);
   }
-  BRIDGE_LOG(ANDROID_LOG_INFO, "Calling JavaScript function with %zu arguments", argv.size());
-  BRIDGE_LOG(ANDROID_LOG_INFO, "About to call fn.call() with argv.data()=%p, argv.size()=%zu", argv.data(), argv.size());
+  // BRIDGE_LOG(ANDROID_LOG_INFO, "Calling JavaScript function with %zu arguments", argv.size());
+  // BRIDGE_LOG(ANDROID_LOG_INFO, "About to call fn.call() with argv.data()=%p, argv.size()=%zu", argv.data(), argv.size());
   for (size_t i = 0; i < argv.size(); ++i) {
-    BRIDGE_LOG(ANDROID_LOG_INFO, "argv[%zu]: isNumber=%s, value=%f", i, 
-               argv[i].isNumber() ? "true" : "false",
-               argv[i].isNumber() ? argv[i].getNumber() : 0.0);
+    // BRIDGE_LOG(ANDROID_LOG_INFO, "argv[%zu]: isNumber=%s, value=%f", i, 
+    //            argv[i].isNumber() ? "true" : "false",
+    //            argv[i].isNumber() ? argv[i].getNumber() : 0.0);
   }
   try {
     fn.call(*runtime, static_cast<const Value *>(argv.data()), argv.size());
-    BRIDGE_LOG(ANDROID_LOG_INFO, "fn.call() completed successfully");
+    // BRIDGE_LOG(ANDROID_LOG_INFO, "fn.call() completed successfully");
   } catch (const facebook::jsi::JSError &err) {
     BRIDGE_LOG(ANDROID_LOG_ERROR, "JSI Error calling function: %s", err.getMessage().c_str());
     auto state = getState(runtime);

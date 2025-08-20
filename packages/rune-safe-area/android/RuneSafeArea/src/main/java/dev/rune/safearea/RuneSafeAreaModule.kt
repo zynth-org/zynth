@@ -6,6 +6,7 @@ import android.view.View
 import androidx.core.graphics.Insets
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import com.rune.kit.runtime.RuneModule
 import com.rune.kit.runtime.RuneRuntime
 import org.json.JSONObject
 
@@ -15,18 +16,29 @@ import org.json.JSONObject
 class RuneSafeAreaModule(
     private val activity: Activity,
     private val runtime: RuneRuntime
-) {
+) : RuneModule {
+    override val name: String = "RuneSafeArea"
+
+    override fun call(method: String, args: Array<Any?>): JSONObject {
+        android.util.Log.w("RuneSafeArea", "Synchronous call to RuneSafeAreaModule for method '$method' not implemented.")
+        return JSONObject()
+    }
     private var lastMetrics: WindowMetrics? = null
     private var pendingUpdate = false
     private var rootView: View? = null
 
-    init {
-        android.util.Log.d("RuneSafeArea", "Module instance created")
+    // MARK: - Lifecycle
+
+    override fun initialize() {
+        android.util.Log.d("RuneSafeArea", "Module initialize() called")
         attachToRootView()
         installJSInterface()
     }
 
-    // MARK: - Lifecycle
+    override fun invalidate() {
+        android.util.Log.d("RuneSafeArea", "Module invalidate() called")
+        rootView = null
+    }
 
     fun onDestroy() {
         rootView = null
@@ -71,7 +83,7 @@ class RuneSafeAreaModule(
                 }
               };
               
-              console.log('[RuneSafeArea] Module installed with initial metrics:', currentMetrics);
+              console.log('[RuneSafeArea] Module installed with initial metrics:', JSON.stringify(currentMetrics));
             })();
         """.trimIndent()
 
@@ -198,12 +210,8 @@ class RuneSafeAreaModule(
     }
 
     private fun publishMetricsToJS(metrics: WindowMetrics) {
-        // FIXME: Publishing metrics via adapter.evaluate() causes the app to freeze
-        // Need to find a safe way to update JS state after rendering has started
+        // Avoid adapter.evaluate() for now because it can freeze after render starts
         android.util.Log.d("RuneSafeArea", "Would publish metrics: ${metrics.toJSON()}")
-        
-        // TODO: Use emitEvent or another mechanism that doesn't block rendering
-        // runtime.emitEvent("safeAreaMetricsChanged", metrics.toJSON())
     }
     
     @Suppress("DEPRECATION")

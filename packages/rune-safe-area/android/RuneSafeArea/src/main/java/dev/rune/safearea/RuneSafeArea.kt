@@ -21,6 +21,7 @@ object RuneSafeArea {
         }
 
         moduleInstance = RuneSafeAreaModule(activity, runtime)
+        runtime.installModules(listOf(moduleInstance!!))
         android.util.Log.d("RuneSafeArea", "Module initialized")
     }
 
