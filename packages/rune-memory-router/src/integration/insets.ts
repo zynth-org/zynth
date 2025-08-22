@@ -2,7 +2,7 @@ import { createMemo } from "solid-js";
 import { createSafeAreaInsets } from "@rune/safe-area";
 
 // Default header height (similar to iOS navigation bar)
-const DEFAULT_HEADER_HEIGHT = 44;
+export const DEFAULT_HEADER_HEIGHT = 56;
 
 /**
  * Header metrics returned by useHeaderMetrics

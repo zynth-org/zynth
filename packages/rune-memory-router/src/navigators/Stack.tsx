@@ -7,6 +7,8 @@ import {
   type JSX,
   type Accessor,
 } from "solid-js";
+import { View, Text, Button } from "@rune/components";
+import { createSafeAreaInsets } from "@rune/safe-area";
 import {
   ScreenContainer,
   Screen as ScreenPrimitive,
@@ -14,6 +16,7 @@ import {
 } from "@rune/screens";
 import { NavigationContext, type NavigationContextValue } from "../context";
 import { RouteContext, type RouteContextData } from "../context";
+import { DEFAULT_HEADER_HEIGHT } from "../integration/insets";
 import type {
   RouteParamList,
   NavigationState,
@@ -265,7 +268,12 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
       typeof screenOptions === "function"
         ? screenOptions() ?? {}
         : screenOptions ?? {};
-    return { ...defaultOpts, ...screenOpts, ...routeOptions };
+    const merged = { ...defaultOpts, ...screenOpts, ...routeOptions };
+    return {
+      headerShown: merged.headerShown ?? true,
+      headerShadowVisible: merged.headerShadowVisible ?? true,
+      ...merged,
+    };
   }
 
   // Map animation type to @rune/screens animation
@@ -322,65 +330,89 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
     // Trigger initialization after children have rendered
     queueMicrotask(() => initializeState());
 
+    const currentRoute = createMemo(() => state().routes[state().index]);
+    const currentConfig = createMemo(
+      () => currentRoute() && screenRegistry.get(currentRoute()!.name)
+    );
+    const currentOptions = createMemo<ScreenOptions | undefined>(() => {
+      const route = currentRoute();
+      if (!route) return undefined;
+      const config = currentConfig();
+      return resolveOptions(route.options, config?.options);
+    });
+    const headerShown = createMemo(
+      () => currentOptions()?.headerShown !== false
+    );
+
     return (
-      <ScreenContainer>
-        <For each={state().routes}>
-          {(route, index) => {
-            const config = screenRegistry.get(route.name);
-            if (!config) return null;
+      <View style={{ flex: 1 }}>
+        <ScreenContainer>
+          <For each={state().routes}>
+            {(route, index) => {
+              const config = screenRegistry.get(route.name);
+              if (!config) return null;
 
-            const currentIndex = createMemo(() => state().index);
-            const isFocused = createMemo(() => index() === currentIndex());
-            const isInStack = createMemo(() => index() <= currentIndex());
-            const options = createMemo(() =>
-              resolveOptions(route.options, config.options)
-            );
+              const currentIndex = createMemo(() => state().index);
+              const isFocused = createMemo(() => index() === currentIndex());
+              const isInStack = createMemo(() => index() <= currentIndex());
+              const options = createMemo(() =>
+                resolveOptions(route.options, config.options)
+              );
 
-            // Route context for this screen
-            const [params, setParams] = createSignal(route.params ?? {});
-            const [screenOptions, setScreenOptions] =
-              createSignal<ScreenOptions>(options());
+              // Route context for this screen
+              const [params, setParams] = createSignal(route.params ?? {});
+              const [screenOptions, setScreenOptions] =
+                createSignal<ScreenOptions>(options());
 
-            const routeContext: RouteContextData = {
-              key: route.key,
-              name: route.name,
-              params: params as Accessor<object>,
-              setParams: (newParams) => {
-                setParams((p) => ({ ...p, ...newParams }));
-                helpers.setParams(newParams);
-              },
-              options: screenOptions,
-              setOptions: (newOptions) => {
-                setScreenOptions((o) => ({ ...o, ...newOptions }));
-                helpers.setOptions(newOptions);
-              },
-              isFocused,
-            };
+              const routeContext: RouteContextData = {
+                key: route.key,
+                name: route.name,
+                params: params as Accessor<object>,
+                setParams: (newParams) => {
+                  setParams((p) => ({ ...p, ...newParams }));
+                  helpers.setParams(newParams);
+                },
+                options: screenOptions,
+                setOptions: (newOptions) => {
+                  setScreenOptions((o) => ({ ...o, ...newOptions }));
+                  helpers.setOptions(newOptions);
+                },
+                isFocused,
+              };
 
-            const ScreenComponent = config.component;
+              const ScreenComponent = config.component;
 
-            return (
-              <ScreenPrimitive
-                screenKey={route.key}
-                active={isInStack()}
-                animation={resolveScreenAnimation(options())}
-              >
-                <RouteContext.Provider value={routeContext}>
-                  <ScreenComponent
-                    navigation={helpers}
-                    route={{
-                      key: route.key,
-                      name: route.name,
-                      params: params as Accessor<object>,
-                      setParams: routeContext.setParams,
-                    }}
-                  />
-                </RouteContext.Provider>
-              </ScreenPrimitive>
-            );
-          }}
-        </For>
-      </ScreenContainer>
+              return (
+                <ScreenPrimitive
+                  screenKey={route.key}
+                  active={isInStack()}
+                  animation={resolveScreenAnimation(options())}
+                >
+                  <RouteContext.Provider value={routeContext}>
+                    <ScreenComponent
+                      navigation={helpers}
+                      route={{
+                        key: route.key,
+                        name: route.name,
+                        params: params as Accessor<object>,
+                        setParams: routeContext.setParams,
+                      }}
+                    />
+                  </RouteContext.Provider>
+                </ScreenPrimitive>
+              );
+            }}
+          </For>
+        </ScreenContainer>
+        {headerShown() && currentRoute() && currentOptions() ? (
+          <HeaderBar
+            options={currentOptions()!}
+            title={currentOptions()!.title ?? currentRoute()!.name}
+            canGoBack={helpers.canGoBack()}
+            onBack={helpers.goBack}
+          />
+        ) : null}
+      </View>
     );
   };
 
@@ -404,3 +436,121 @@ export const Stack = {
   Navigator: StackNavigator,
   Screen: StackScreen,
 };
+
+// -----------------------------------------------------------------------------
+// Header Bar (JS-driven, safe-area aware)
+// -----------------------------------------------------------------------------
+
+interface HeaderBarProps {
+  options: ScreenOptions;
+  title?: string;
+  canGoBack: boolean;
+  onBack: () => void;
+}
+
+const DEFAULT_HEADER_BACKGROUND = "#ffffff";
+const DEFAULT_HEADER_TINT = "#111827";
+const DEFAULT_TITLE_SIZE = 22;
+
+function HeaderBar(props: HeaderBarProps) {
+  const insets = createSafeAreaInsets();
+  const insetTop = insets.top;
+  const baseHeight = insetTop + DEFAULT_HEADER_HEIGHT;
+
+  const tintColor = props.options.headerTintColor ?? DEFAULT_HEADER_TINT;
+  const titleColor =
+    props.options.headerTitleColor ??
+    props.options.headerTintColor ??
+    DEFAULT_HEADER_TINT;
+  const backgroundColor = props.options.headerTransparent
+    ? "transparent"
+    : props.options.headerBackgroundColor ?? DEFAULT_HEADER_BACKGROUND;
+  const backVisible = props.options.headerBackVisible ?? true;
+
+  const renderLeft = () => {
+    if (!props.canGoBack || !backVisible) return null;
+    if (props.options.headerLeft) return props.options.headerLeft();
+    return (
+      <Button
+        onPress={props.onBack}
+        variant="ghost"
+        iconOnly
+        rounded="pill"
+        style={{
+          backgroundColor: "transparent",
+          paddingHorizontal: 8,
+          paddingVertical: 6,
+          minWidth: 56,
+        }}
+      >
+        <Text style={{ color: tintColor, fontSize: 16 }}>Back</Text>
+      </Button>
+    );
+  };
+
+  const renderTitle = () => {
+    if (props.options.headerTitle) return props.options.headerTitle();
+    if (props.options.title) {
+      return (
+        <Text
+          style={{
+            color: titleColor,
+            fontSize: DEFAULT_TITLE_SIZE,
+            fontWeight: "500",
+          }}
+          numberOfLines={1}
+        >
+          {props.options.title}
+        </Text>
+      );
+    }
+    return null;
+  };
+
+  const renderRight = () => {
+    if (props.options.headerRight) return props.options.headerRight();
+    return null;
+  };
+
+  return (
+    <View
+      style={{
+        position: "absolute",
+        top: 0,
+        left: 0,
+        right: 0,
+        height: baseHeight,
+        paddingTop: insetTop,
+        backgroundColor,
+        flexDirection: "row",
+        alignItems: "center",
+        paddingHorizontal: 12,
+      }}
+    >
+      <View
+        style={{ minWidth: 64, flexDirection: "row", alignItems: "center" }}
+      >
+        {renderLeft()}
+      </View>
+      <View
+        style={{
+          flex: 1,
+          alignItems: "center",
+          justifyContent: "center",
+          paddingHorizontal: 8,
+        }}
+      >
+        {renderTitle()}
+      </View>
+      <View
+        style={{
+          minWidth: 64,
+          alignItems: "flex-end",
+          justifyContent: "center",
+        }}
+      >
+        {renderRight()}
+      </View>
+    </View>
+  );
+}

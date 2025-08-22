@@ -80,12 +80,16 @@ export interface ScreenOptions {
   headerShown?: boolean;
   /** Header text/icon tint color */
   headerTintColor?: string;
+  /** Header title color (separate from tint for back/right) */
+  headerTitleColor?: string;
   /** Header background color */
   headerBackgroundColor?: string;
   /** Transparent header */
   headerTransparent?: boolean;
   /** Header shadow visibility */
   headerShadowVisible?: boolean;
+  /** Hide the default back button */
+  headerBackVisible?: boolean;
   /** Custom header left component */
   headerLeft?: () => JSX.Element;
   /** Custom header right component */

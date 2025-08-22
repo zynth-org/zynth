@@ -1,6 +1,7 @@
 import { splitProps, children as resolveChildren, mergeProps } from "solid-js";
 import type { ParentComponent } from "solid-js";
 import type { ScreenProps } from "./types";
+import type { Style } from "@rune/core";
 
 /**
  * Individual screen primitive with built-in animations.
@@ -47,13 +48,13 @@ export const Screen: ParentComponent<ScreenProps> = (props) => {
 
   // Use absolute positioning to ensure screens overlap and fill the container
   // instead of stacking and sharing space (which causes the "cut in half" bug).
-  const finalStyle = {
+  const finalStyle: Style = {
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    ...local.style,
+    ...(local.style as Style),
   };
 
   const resolved = resolveChildren(() => local.children);
