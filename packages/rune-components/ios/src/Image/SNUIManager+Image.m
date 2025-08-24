@@ -248,6 +248,19 @@ static void SNImageLoadAsset(NSString *asset, id bundleValue, id scaleValue, SNN
   SNImageApplyImage(image, node, token, manager);
 }
 
+static void SNImageLoadSystem(NSString *name, SNNode *node, NSString *token, SNUIManager *manager) {
+  if (@available(iOS 13.0, *)) {
+    UIImage *image = [UIImage systemImageNamed:name];
+    if (!image) {
+      SNImageEmitError([NSString stringWithFormat:@"System image %@ not found", name], node, manager);
+      return;
+    }
+    SNImageApplyImage(image, node, token, manager);
+  } else {
+    SNImageEmitError(@"System images require iOS 13+", node, manager);
+  }
+}
+
 static void SNImageLoadURI(NSString *uri, NSDictionary * _Nullable info, SNNode *node, NSString *token, SNUIManager *manager) {
   NSString *lower = uri.lowercaseString;
   if ([lower hasPrefix:@"data:"]) {
@@ -380,10 +393,16 @@ static void SNImageApplySourceValue(id value, SNNode *node, SNUIManager *manager
     NSDictionary *dict = (NSDictionary *)first;
     NSString *uri = dict[@"uri"];
     NSString *asset = dict[@"asset"];
+    NSString *system = dict[@"system"];
     NSString *data = dict[@"data"];
 
     if (data.length > 0) {
       SNImageLoadBase64(data, dict[@"scale"], node, node.imageSourceToken, manager);
+      return;
+    }
+
+    if (system.length > 0) {
+      SNImageLoadSystem(system, node, node.imageSourceToken, manager);
       return;
     }
 

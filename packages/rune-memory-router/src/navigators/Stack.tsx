@@ -7,7 +7,7 @@ import {
   type JSX,
   type Accessor,
 } from "solid-js";
-import { View, Text, Button } from "@rune/components";
+import { View, Text, Button, SystemIcon } from "@rune/components";
 import { createSafeAreaInsets } from "@rune/safe-area";
 import {
   ScreenContainer,
@@ -85,6 +85,10 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
 
   // Track if we've initialized state
   const [initialized, setInitialized] = createSignal(false);
+  const [initialRouteKey, setInitialRouteKey] = createSignal<string | null>(
+    null
+  );
+  const [hasNavigated, setHasNavigated] = createSignal(false);
 
   const registerScreen = (name: string, config: ScreenConfig) => {
     if (!screenRegistry.has(name)) {
@@ -120,12 +124,14 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
     const initialRouteName = props.initialRouteName ?? screenOrder[0];
 
     if (initialRouteName && screenRegistry.has(initialRouteName)) {
+      const initialRoute = createRoute(initialRouteName);
       setState({
         key: navigatorId,
         type: "stack",
         index: 0,
-        routes: [createRoute(initialRouteName)],
+        routes: [initialRoute],
       });
+      setInitialRouteKey(initialRoute.key);
       setInitialized(true);
     }
   };
@@ -133,6 +139,7 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
   // Navigation helpers
   const helpers: NavigationHelpers = {
     navigate(name, params) {
+      setHasNavigated(true);
       setState((prev) => {
         // Check if route already exists in stack
         const existingIndex = prev.routes.findIndex((r) => r.name === name);
@@ -151,6 +158,7 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
       });
     },
     push(name, params) {
+      setHasNavigated(true);
       setState((prev) => {
         const routes = [
           ...prev.routes.slice(0, prev.index + 1),
@@ -160,6 +168,7 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
       });
     },
     pop(count = 1) {
+      setHasNavigated(true);
       setState((prev) => {
         const newIndex = Math.max(0, prev.index - count);
         return {
@@ -170,9 +179,11 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
       });
     },
     goBack() {
+      setHasNavigated(true);
       helpers.pop(1);
     },
     replace(name, params) {
+      setHasNavigated(true);
       setState((prev) => {
         const routes = [...prev.routes];
         routes[prev.index] = createRoute(name, params);
@@ -180,6 +191,7 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
       });
     },
     reset(resetState) {
+      setHasNavigated(true);
       setState((prev) => ({
         ...prev,
         index: resetState.index ?? resetState.routes.length - 1,
@@ -386,7 +398,13 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
                 <ScreenPrimitive
                   screenKey={route.key}
                   active={isInStack()}
-                  animation={resolveScreenAnimation(options())}
+                  animation={
+                    !hasNavigated() &&
+                    route.key === initialRouteKey() &&
+                    state().routes.length === 1
+                      ? "none"
+                      : resolveScreenAnimation(options())
+                  }
                 >
                   <RouteContext.Provider value={routeContext}>
                     <ScreenComponent
@@ -483,7 +501,14 @@ function HeaderBar(props: HeaderBarProps) {
           minWidth: 56,
         }}
       >
-        <Text style={{ color: tintColor, fontSize: 16 }}>Back</Text>
+        <SystemIcon
+          name="arrow.left"
+          tintColor="black"
+          style={{
+            width: 24,
+            height: 24,
+          }}
+        />
       </Button>
     );
   };

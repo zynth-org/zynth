@@ -203,6 +203,17 @@ class ScreenView(context: Context) : FrameLayout(context) {
             return
         }
 
+        // If there's no previous screen (first screen in stack), show immediately.
+        val previousScreen = getPreviousScreen()
+        if (previousScreen == null) {
+            visibility = View.VISIBLE
+            resetTransforms()
+            container?.updateScreenVisibility()
+            onWillAppear?.invoke()
+            onDidAppear?.invoke()
+            return
+        }
+
         cancelAnimation()
         onWillAppear?.invoke()
         

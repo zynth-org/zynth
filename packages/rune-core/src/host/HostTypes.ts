@@ -161,6 +161,10 @@ export type ImageAssetSource = {
   scale?: number;
 };
 
+export type ImageSystemSource = {
+  system: string;
+};
+
 export type ImageAssetDescriptor = {
   type: "asset";
   name: string;
@@ -180,6 +184,7 @@ export type ImageSource =
   | string
   | ImageUriSource
   | ImageAssetSource
+  | ImageSystemSource
   | ImageDataSource
   | ImageAssetDescriptor;
 

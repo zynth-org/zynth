@@ -3,6 +3,7 @@ import type {
   Style,
   ImageAssetSource as CoreImageAssetSource,
   ImageUriSource as CoreImageUriSource,
+  ImageSystemSource as CoreImageSystemSource,
   ImageAssetDescriptor,
 } from "@rune/core";
 
@@ -11,6 +12,8 @@ export type ImageResizeMode = "cover" | "contain" | "stretch" | "center";
 export type ImageUriSource = CoreImageUriSource;
 
 export type ImageAssetSource = CoreImageAssetSource;
+
+export type ImageSystemSource = CoreImageSystemSource;
 
 export type ImageBase64Source = {
   data: string;
@@ -23,6 +26,7 @@ export type ImageSource =
   | string
   | ImageUriSource
   | ImageAssetSource
+  | ImageSystemSource
   | ImageBase64Source
   | ImageDescriptorSource;
 

@@ -200,6 +200,7 @@ internal class RuneImageComponent(
   private sealed class ImageSourceSpec {
     data class InlineData(val payload: String, val scale: Float?, val mimeType: String?) : ImageSourceSpec()
     data class AssetData(val name: String, val bundle: String?, val scale: Float?) : ImageSourceSpec()
+    data class SystemData(val name: String) : ImageSourceSpec()
     data class RemoteData(val uri: String, val info: JSONObject?) : ImageSourceSpec()
   }
 
@@ -214,6 +215,10 @@ internal class RuneImageComponent(
         null
       }
       is JSONObject -> {
+        val system = value.optString("system", "")
+        if (system.isNotEmpty()) {
+          return ImageSourceSpec.SystemData(system)
+        }
         val data = value.optString("data", "")
         if (data.isNotEmpty()) {
           val scale = value.optDouble("scale", Double.NaN)
@@ -287,6 +292,7 @@ internal class RuneImageComponent(
     when (spec) {
       is ImageSourceSpec.InlineData -> loadInlineData(node, spec, token)
       is ImageSourceSpec.AssetData -> loadAssetImage(node, spec, token)
+      is ImageSourceSpec.SystemData -> loadSystemImage(node, spec, token)
       is ImageSourceSpec.RemoteData -> loadRemoteImage(node, spec, token)
     }
   }
@@ -333,6 +339,51 @@ internal class RuneImageComponent(
       Base64.decode(payload, Base64.DEFAULT)
     } catch (_: IllegalArgumentException) {
       null
+    }
+  }
+
+  private fun loadSystemImage(node: RuneUIManager.Node, spec: ImageSourceSpec.SystemData, token: String) {
+    val state = ensureState(node)
+    handler.post {
+      if (state.requestToken != token) return@post
+
+      val context = root.context
+      val resources = context.resources
+      val pkg = context.packageName
+
+      var resId = resources.getIdentifier(spec.name, "drawable", pkg)
+      if (resId == 0) {
+        resId = resources.getIdentifier(spec.name, "drawable", "android")
+      }
+
+      if (resId == 0) {
+        dispatchImageErrorEvent(node, "System image ${spec.name} not found")
+        return@post
+      }
+
+      val drawable = try {
+        androidx.core.content.ContextCompat.getDrawable(context, resId)
+      } catch (e: Exception) {
+        null
+      }
+
+      if (drawable == null) {
+        dispatchImageErrorEvent(node, "Unable to load system image ${spec.name}")
+        return@post
+      }
+
+      val imageView = node.view as? ImageView
+      if (imageView != null) {
+        imageView.setImageDrawable(drawable)
+        val width = drawable.intrinsicWidth
+        val height = drawable.intrinsicHeight
+        state.intrinsicWidth = if (width > 0) width else 1
+        state.intrinsicHeight = if (height > 0) height else 1
+        setTint(imageView, state.tintColor)
+        engine.markDirty(node.id)
+        scheduleFlush()
+        dispatchImageLoadEvent(node, state.intrinsicWidth.toFloat(), state.intrinsicHeight.toFloat())
+      }
     }
   }
 
