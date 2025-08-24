@@ -9,6 +9,7 @@ import {
 } from "solid-js";
 import { View, Text, Button, SystemIcon } from "@rune/components";
 import { createSafeAreaInsets } from "@rune/safe-area";
+import { Platform, OS } from "@rune/apis";
 import {
   ScreenContainer,
   Screen as ScreenPrimitive,
@@ -284,6 +285,8 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
     return {
       headerShown: merged.headerShown ?? true,
       headerShadowVisible: merged.headerShadowVisible ?? true,
+      headerBackgroundColor:
+        merged.headerBackgroundColor ?? DEFAULT_HEADER_BACKGROUND,
       ...merged,
     };
   }
@@ -343,13 +346,10 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
     queueMicrotask(() => initializeState());
 
     const currentRoute = createMemo(() => state().routes[state().index]);
-    const currentConfig = createMemo(
-      () => currentRoute() && screenRegistry.get(currentRoute()!.name)
-    );
     const currentOptions = createMemo<ScreenOptions | undefined>(() => {
       const route = currentRoute();
       if (!route) return undefined;
-      const config = currentConfig();
+      const config = screenRegistry.get(route.name);
       return resolveOptions(route.options, config?.options);
     });
     const headerShown = createMemo(
@@ -424,6 +424,7 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
         </ScreenContainer>
         {headerShown() && currentRoute() && currentOptions() ? (
           <HeaderBar
+            key={currentRoute()!.key}
             options={currentOptions()!}
             title={currentOptions()!.title ?? currentRoute()!.name}
             canGoBack={helpers.canGoBack()}
@@ -460,6 +461,7 @@ export const Stack = {
 // -----------------------------------------------------------------------------
 
 interface HeaderBarProps {
+  key?: string;
   options: ScreenOptions;
   title?: string;
   canGoBack: boolean;
@@ -475,18 +477,20 @@ function HeaderBar(props: HeaderBarProps) {
   const insetTop = insets.top;
   const baseHeight = insetTop + DEFAULT_HEADER_HEIGHT;
 
-  const tintColor = props.options.headerTintColor ?? DEFAULT_HEADER_TINT;
-  const titleColor =
+  const tintColor = () =>
+    props.options.headerTintColor ?? DEFAULT_HEADER_TINT;
+  const titleColor = () =>
     props.options.headerTitleColor ??
     props.options.headerTintColor ??
     DEFAULT_HEADER_TINT;
-  const backgroundColor = props.options.headerTransparent
-    ? "transparent"
-    : props.options.headerBackgroundColor ?? DEFAULT_HEADER_BACKGROUND;
-  const backVisible = props.options.headerBackVisible ?? true;
+  const backgroundColor = () =>
+    props.options.headerTransparent
+      ? "transparent"
+      : props.options.headerBackgroundColor ?? DEFAULT_HEADER_BACKGROUND;
+  const backVisible = () => props.options.headerBackVisible ?? true;
 
   const renderLeft = () => {
-    if (!props.canGoBack || !backVisible) return null;
+    if (!props.canGoBack || !backVisible()) return null;
     if (props.options.headerLeft) return props.options.headerLeft();
     return (
       <Button
@@ -502,8 +506,11 @@ function HeaderBar(props: HeaderBarProps) {
         }}
       >
         <SystemIcon
-          name="arrow.left"
-          tintColor="black"
+          name={Platform.select({
+            ios: "chevron.left",
+            android: "ic_arrow_back",
+          })}
+          tintColor={tintColor()}
           style={{
             width: 24,
             height: 24,
@@ -519,7 +526,7 @@ function HeaderBar(props: HeaderBarProps) {
       return (
         <Text
           style={{
-            color: titleColor,
+            color: titleColor(),
             fontSize: DEFAULT_TITLE_SIZE,
             fontWeight: "500",
           }}
@@ -546,7 +553,7 @@ function HeaderBar(props: HeaderBarProps) {
         right: 0,
         height: baseHeight,
         paddingTop: insetTop,
-        backgroundColor,
+        backgroundColor: backgroundColor(),
         flexDirection: "row",
         alignItems: "center",
         paddingHorizontal: 12,

@@ -249,9 +249,11 @@ static void SNImageLoadAsset(NSString *asset, id bundleValue, id scaleValue, SNN
 }
 
 static void SNImageLoadSystem(NSString *name, SNNode *node, NSString *token, SNUIManager *manager) {
+  NSLog(@"[SNImageLoadSystem] Loading system icon: '%@'", name);
   if (@available(iOS 13.0, *)) {
     UIImage *image = [UIImage systemImageNamed:name];
     if (!image) {
+      NSLog(@"[SNImageLoadSystem] Failed to find system icon: '%@'", name);
       SNImageEmitError([NSString stringWithFormat:@"System image %@ not found", name], node, manager);
       return;
     }
