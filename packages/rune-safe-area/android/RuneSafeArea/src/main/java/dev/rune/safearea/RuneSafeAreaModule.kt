@@ -83,7 +83,7 @@ class RuneSafeAreaModule(
                 }
               };
               
-              console.log('[RuneSafeArea] Module installed with initial metrics:', JSON.stringify(currentMetrics));
+            //   console.log('[RuneSafeArea] Module installed with initial metrics:', JSON.stringify(currentMetrics));
             })();
         """.trimIndent()
 

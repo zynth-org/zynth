@@ -653,7 +653,7 @@ fun RuneRuntime.installHmrShim() {
     }
     if (typeof globalThis.__rune_refresh !== 'function') {
       globalThis.__rune_refresh = function(payload) {
-        console.warn('[Rune HMR] Refresh invoked with no runtime listener', payload && payload.type);
+        // console.warn('[Rune HMR] Refresh invoked with no runtime listener', payload && payload.type);
       };
       Object.defineProperty(globalThis.__rune_refresh, '__isRuneDefaultStub', {
         value: true,

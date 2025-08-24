@@ -42,7 +42,7 @@ export function getNativeSafeAreaModule(): NativeSafeAreaModule | null {
   else if (typeof self !== "undefined") globalObject = self;
 
   if (!globalObject) {
-    console.warn("[getNativeSafeAreaModule] Could not find global object");
+    // console.warn("[getNativeSafeAreaModule] Could not find global object");
     return null;
   }
 
@@ -50,13 +50,13 @@ export function getNativeSafeAreaModule(): NativeSafeAreaModule | null {
 
   if (!module) {
     // Debug info to help diagnose missing module
-    console.warn(
-      "[getNativeSafeAreaModule] __RUNE_SAFE_AREA__ not found on global object. " +
-        "Keys available: " +
-        Object.keys(globalObject)
-          .filter((k) => k.startsWith("__") || k.includes("RUNE"))
-          .join(", ")
-    );
+    // console.warn(
+    //   "[getNativeSafeAreaModule] __RUNE_SAFE_AREA__ not found on global object. " +
+    //     "Keys available: " +
+    //     Object.keys(globalObject)
+    //       .filter((k) => k.startsWith("__") || k.includes("RUNE"))
+    //       .join(", ")
+    // );
   }
 
   return module || null;
