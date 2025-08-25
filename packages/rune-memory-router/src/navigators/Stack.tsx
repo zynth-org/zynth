@@ -477,8 +477,7 @@ function HeaderBar(props: HeaderBarProps) {
   const insetTop = insets.top;
   const baseHeight = insetTop + DEFAULT_HEADER_HEIGHT;
 
-  const tintColor = () =>
-    props.options.headerTintColor ?? DEFAULT_HEADER_TINT;
+  const tintColor = () => props.options.headerTintColor ?? DEFAULT_HEADER_TINT;
   const titleColor = () =>
     props.options.headerTitleColor ??
     props.options.headerTintColor ??
@@ -490,11 +489,11 @@ function HeaderBar(props: HeaderBarProps) {
   const backVisible = () => props.options.headerBackVisible ?? true;
 
   const renderLeft = () => {
-    if (!props.canGoBack || !backVisible()) return null;
+    const canBack = () => props.canGoBack || backVisible();
     if (props.options.headerLeft) return props.options.headerLeft();
     return (
       <Button
-        onPress={props.onBack}
+        onPress={canBack() ? props.onBack : undefined}
         variant="ghost"
         iconOnly
         rounded="pill"
@@ -503,6 +502,7 @@ function HeaderBar(props: HeaderBarProps) {
           paddingHorizontal: 8,
           paddingVertical: 6,
           minWidth: 56,
+          opacity: !props.canGoBack || !backVisible() ? 0 : 1,
         }}
       >
         <SystemIcon
@@ -560,25 +560,38 @@ function HeaderBar(props: HeaderBarProps) {
       }}
     >
       <View
-        style={{ minWidth: 64, flexDirection: "row", alignItems: "center" }}
-      >
-        {renderLeft()}
-      </View>
-      <View
         style={{
-          flex: 1,
+          flexDirection: "row",
           alignItems: "center",
-          justifyContent: "center",
-          paddingHorizontal: 8,
+          justifyContent: "flex-start",
+          flex: 1,
         }}
       >
-        {renderTitle()}
+        <View
+          style={{
+            minWidth: 64,
+            flexDirection: "row",
+            alignItems: "center",
+          }}
+        >
+          {renderLeft()}
+        </View>
+        <View
+          style={{
+            alignItems: "center",
+            paddingHorizontal: 8,
+            height: "100%",
+          }}
+        >
+          {renderTitle()}
+        </View>
       </View>
       <View
         style={{
           minWidth: 64,
           alignItems: "flex-end",
           justifyContent: "center",
+          background: "#796868",
         }}
       >
         {renderRight()}
