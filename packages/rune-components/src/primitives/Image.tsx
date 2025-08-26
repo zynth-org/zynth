@@ -68,14 +68,14 @@ export const Image: Component<ImageProps> = (props) => {
 
   const normalizedSource = () => {
     const source = currentSource();
-    console.log(
-      "[Image] Current source (index:",
-      currentSourceIndex(),
-      "):",
-      JSON.stringify(source)
-    );
+    // console.log(
+    //   "[Image] Current source (index:",
+    //   currentSourceIndex(),
+    //   "):",
+    //   JSON.stringify(source)
+    // );
     const normalized = normalizeSingleSource(source);
-    console.log("[Image] Normalized source:", JSON.stringify(normalized));
+    // console.log("[Image] Normalized source:", JSON.stringify(normalized));
     return normalized;
   };
 
@@ -102,10 +102,10 @@ export const Image: Component<ImageProps> = (props) => {
   };
 
   const handleLoad = (event: ImageLoadEvent) => {
-    console.log(
-      "[Image] Successfully loaded source at index",
-      currentSourceIndex()
-    );
+    // console.log(
+    //   "[Image] Successfully loaded source at index",
+    //   currentSourceIndex()
+    // );
     props.onLoad?.(event);
   };
 
