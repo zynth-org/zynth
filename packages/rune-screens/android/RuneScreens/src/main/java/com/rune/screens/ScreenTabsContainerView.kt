@@ -21,6 +21,13 @@ class ScreenTabsContainerView(context: Context) : FrameLayout(context) {
         private const val TAG = "ScreenTabsContainer"
     }
 
+    /**
+     * We reuse ScreenContainerView logic for ScreenView lifecycle/animations
+     * without adding it to the hierarchy. This keeps the ScreenView `container`
+     * pointer non-null so active state changes apply immediately.
+     */
+    private val containerProxy = ScreenContainerView(context)
+
     /** Currently selected tab index */
     private var selectedIndex: Int = 0
 
@@ -40,6 +47,12 @@ class ScreenTabsContainerView(context: Context) : FrameLayout(context) {
         if (child != null) {
             tabs.add(child)
             Log.d(TAG, "Added tab at index ${tabs.size - 1}")
+
+            if (child is ScreenView) {
+                // Keep ScreenView lifecycle consistent with the stack container
+                containerProxy.screens.add(child)
+                child.container = containerProxy
+            }
         }
         super.addView(child, index, params)
         updateTabVisibility()
@@ -48,6 +61,11 @@ class ScreenTabsContainerView(context: Context) : FrameLayout(context) {
     override fun removeView(child: View?) {
         if (child != null) {
             tabs.remove(child)
+
+            if (child is ScreenView) {
+                containerProxy.screens.remove(child)
+                child.container = null
+            }
         }
         super.removeView(child)
         updateTabVisibility()
@@ -57,6 +75,11 @@ class ScreenTabsContainerView(context: Context) : FrameLayout(context) {
         val child = getChildAt(index)
         if (child != null) {
             tabs.remove(child)
+
+            if (child is ScreenView) {
+                containerProxy.screens.remove(child)
+                child.container = null
+            }
         }
         super.removeViewAt(index)
         updateTabVisibility()

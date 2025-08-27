@@ -5,6 +5,7 @@ import {
   useContext,
   For,
   Show,
+  onMount,
   type JSX,
   type Accessor,
   children as resolveChildren,
@@ -89,7 +90,9 @@ function DefaultTabBar(
   return (
     <View
       style={{
+        width: "100%",
         flexDirection: "row",
+        justifyContent: "space-around",
         backgroundColor: tabBarBackgroundColor,
         paddingBottom: 20,
         paddingTop: 8,
@@ -188,20 +191,29 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
     screenRegistry.set(name, config);
   };
 
-  const resolved = resolveChildren(() => props.children);
-
   const navigatorId = props.id ?? `tabs-${generateKey()}`;
-  const [state, setState] = createSignal<NavigationState>(createInitialState());
 
-  function createInitialState(): NavigationState {
-    resolved(); // Force registration
+  // Start with empty state
+  const [state, setState] = createSignal<NavigationState>({
+    key: navigatorId,
+    type: "tabs",
+    index: 0,
+    routes: [],
+    history: [],
+  });
+
+  const [initialized, setInitialized] = createSignal(false);
+
+  function initializeState() {
+    if (initialized() || screenOrder.length === 0) return;
+
     const initialRouteName = props.initialRouteName ?? screenOrder[0];
     const routes = screenOrder.map((name) => createRoute(name));
     const initialIndex = initialRouteName
       ? routes.findIndex((r) => r.name === initialRouteName)
       : 0;
 
-    return {
+    setState({
       key: navigatorId,
       type: "tabs",
       index: Math.max(0, initialIndex),
@@ -209,7 +221,8 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
       history: [
         { key: routes[Math.max(0, initialIndex)]?.key ?? "", type: "tab" },
       ],
-    };
+    });
+    setInitialized(true);
   }
 
   function createRoute(name: string, params?: object): RouteNode {
@@ -226,6 +239,8 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
   const helpers: NavigationHelpers = {
     navigate(name, params) {
       setState((prev) => {
+        // If not initialized, we can't navigate yet, or should queue it?
+        // For now assume initialized.
         const index = prev.routes.findIndex((r) => r.name === name);
         if (index >= 0) {
           const routes = [...prev.routes];
@@ -375,9 +390,6 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
     return result;
   });
 
-  // Trigger screen registration
-  resolved();
-
   const TabBar =
     props.tabBar ??
     ((p: TabBarProps) => (
@@ -387,11 +399,11 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
   // Get current tab index
   const currentIndex = createMemo(() => state().index);
 
-  return (
-    <TabsNavigatorContext.Provider value={{ registerScreen }}>
-      {resolved()}
-
-      <NavigationContext.Provider value={navContextValue()}>
+  const TabsContent = () => {
+    onMount(() => initializeState());
+    
+    return (
+      <Show when={initialized()}>
         <View style={{ flex: 1 }}>
           <ScreenTabsContainer
             selectedIndex={currentIndex()}
@@ -460,6 +472,16 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
             />
           </Show>
         </View>
+      </Show>
+    );
+  };
+
+  return (
+    <TabsNavigatorContext.Provider value={{ registerScreen }}>
+      {resolveChildren(() => props.children)()}
+
+      <NavigationContext.Provider value={navContextValue()}>
+        <TabsContent />
       </NavigationContext.Provider>
     </TabsNavigatorContext.Provider>
   );
