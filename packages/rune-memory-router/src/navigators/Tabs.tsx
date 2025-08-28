@@ -423,18 +423,71 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
                 const [screenOptions, setScreenOptions] =
                   createSignal<ScreenOptions>(options());
 
+                // Create route-specific helpers that target THIS route instead of the active one
+                const routeHelpers = createMemo(() => ({
+                  ...helpers,
+                  setOptions: (opts: ScreenOptions) => {
+                    setState((prev) => {
+                      const idx = prev.routes.findIndex(
+                        (r) => r.key === route.key
+                      );
+                      if (idx === -1) return prev;
+                      const routes = [...prev.routes];
+                      const current = routes[idx];
+                      // Merge options
+                      const newOptions = { ...current.options, ...opts };
+                      // Optimization: If options haven't changed, don't update state
+                      if (
+                        JSON.stringify(current.options) ===
+                        JSON.stringify(newOptions)
+                      ) {
+                        return prev;
+                      }
+                      routes[idx] = {
+                        ...current,
+                        options: newOptions,
+                      };
+                      return { ...prev, routes };
+                    });
+                  },
+                  setParams: (p: object) => {
+                    setState((prev) => {
+                      const idx = prev.routes.findIndex(
+                        (r) => r.key === route.key
+                      );
+                      if (idx === -1) return prev;
+                      const routes = [...prev.routes];
+                      const current = routes[idx];
+                      // Merge params
+                      const newParams = { ...current.params, ...p };
+                      routes[idx] = {
+                        ...current,
+                        params: newParams,
+                      };
+                      return { ...prev, routes };
+                    });
+                  },
+                }));
+
+                // Create a route-specific navigation context
+                const screenNavContextValue = createMemo(() => ({
+                  ...navContextValue(),
+                  helpers: routeHelpers(),
+                  setOptions: routeHelpers().setOptions,
+                }));
+
                 const routeContext: RouteContextData = {
                   key: route.key,
                   name: route.name,
                   params: params as Accessor<object>,
                   setParams: (newParams) => {
                     setParams((p) => ({ ...p, ...newParams }));
-                    helpers.setParams(newParams);
+                    routeHelpers().setParams(newParams);
                   },
                   options: screenOptions,
                   setOptions: (newOptions) => {
                     setScreenOptions((o) => ({ ...o, ...newOptions }));
-                    helpers.setOptions(newOptions);
+                    routeHelpers().setOptions(newOptions);
                   },
                   isFocused: isActive,
                 };
@@ -447,17 +500,19 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
                     active={isActive()}
                     animation="none"
                   >
-                    <RouteContext.Provider value={routeContext}>
-                      <ScreenComponent
-                        navigation={helpers}
-                        route={{
-                          key: route.key,
-                          name: route.name,
-                          params: params as Accessor<object>,
-                          setParams: routeContext.setParams,
-                        }}
-                      />
-                    </RouteContext.Provider>
+                    <NavigationContext.Provider value={screenNavContextValue()}>
+                      <RouteContext.Provider value={routeContext}>
+                        <ScreenComponent
+                          navigation={routeHelpers()}
+                          route={{
+                            key: route.key,
+                            name: route.name,
+                            params: params as Accessor<object>,
+                            setParams: routeContext.setParams,
+                          }}
+                        />
+                      </RouteContext.Provider>
+                    </NavigationContext.Provider>
                   </ScreenPrimitive>
                 );
               }}
