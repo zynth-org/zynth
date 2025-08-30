@@ -87,34 +87,54 @@ class ScreenTabsContainerView(context: Context) : FrameLayout(context) {
      * Update tab visibility (only selected tab is visible)
      */
     private fun updateTabVisibility() {
-        Log.d(TAG, "updateTabVisibility: selectedIndex=$selectedIndex, children=$childCount")
-        
+        // Iterate through all children to ensure correct state
         for (i in 0 until childCount) {
             val child = getChildAt(i)
             val shouldBeVisible = (i == selectedIndex)
             
-            // Manage visibility
-            val desiredVisibility = if (shouldBeVisible) View.VISIBLE else View.GONE
-            if (child.visibility != desiredVisibility) {
-                child.visibility = desiredVisibility
-                Log.d(TAG, "Child $i visibility -> $desiredVisibility")
+            if (shouldBeVisible) {
+                // If we are showing the view (switching from GONE/INVISIBLE to VISIBLE)
+                if (child.visibility != View.VISIBLE) {
+                    Log.d(TAG, "Showing child $i (alpha fade-in)")
+                    
+                    // 1. Prepare for display
+                    child.visibility = View.VISIBLE
+                    child.translationZ = 10f
+                    
+                    // 2. Prevent FOUC: Start transparent
+                    child.alpha = 0f
+                    
+                    // 3. Fade in after layout has likely occurred
+                    child.post {
+                        // Check if still valid to show
+                        if (indexOfChild(child) == selectedIndex) {
+                             child.animate()
+                                 .alpha(1f)
+                                 .setDuration(100) // Short fade to mask unstyled frame
+                                 .start()
+                        }
+                    }
+                } else {
+                    // Already visible, ensure properties are correct (e.g. if re-added)
+                    if (child.translationZ != 10f) child.translationZ = 10f
+                    if (child.alpha != 1f) child.alpha = 1f
+                }
+            } else {
+                // Hiding the view
+                if (child.visibility != View.GONE) {
+                     Log.d(TAG, "Hiding child $i")
+                     child.visibility = View.GONE
+                     child.translationZ = 0f
+                     child.alpha = 1f // Reset alpha for next time
+                }
             }
             
             // Manage activity state if it's a ScreenView
             if (child is ScreenView) {
-                // Manually notify ScreenView of its active state since we aren't using the container stack logic
-                // We use reflection or access internal/public methods if available. 
-                // Since ScreenView logic depends on 'container', and we don't set it, we might skip this.
-                // However, for correct eventing (onAppear), we might need to handle this in the future.
-                // For now, visibility is the primary concern.
+                // Future: wiring for onAppear/onDisappear events
             }
-
-            // Ensure the active tab is at the top of the Z-order using translationZ
-            // DO NOT use bringToFront() as it reorders the children and breaks index correspondence
-            child.translationZ = if (shouldBeVisible) 10f else 0f
         }
         
-        // Force a layout request to ensure changes apply
         requestLayout()
         invalidate()
     }

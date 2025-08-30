@@ -3,6 +3,7 @@ import {
   createMemo,
   createContext,
   useContext,
+  Index,
   For,
   Show,
   onMount,
@@ -11,7 +12,7 @@ import {
   children as resolveChildren,
 } from "solid-js";
 import { View, Text, Pressable } from "@rune/components";
-import { ScreenTabsContainer, Screen as ScreenPrimitive } from "@rune/screens";
+import { ScreenTabsContainer } from "@rune/screens";
 import { NavigationContext, type NavigationContextValue } from "../context";
 import { RouteContext, type RouteContextData } from "../context";
 import type {
@@ -401,7 +402,7 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
 
   const TabsContent = () => {
     onMount(() => initializeState());
-    
+
     return (
       <Show when={initialized()}>
         <View style={{ flex: 1 }}>
@@ -409,17 +410,27 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
             selectedIndex={currentIndex()}
             style={{ flex: 1 }}
           >
-            <For each={state().routes}>
+            {/* Use Index instead of For to guarantee DOM order matches array indices.
+                ScreenTabsContainerView relies on child position for visibility. */}
+            <Index each={state().routes}>
               {(route, index) => {
-                const config = screenRegistry.get(route.name);
-                if (!config) return null;
+                // route is an Accessor when using Index
+                const routeValue = () => route();
+                const config = () => screenRegistry.get(routeValue().name);
 
-                const isActive = createMemo(() => index() === state().index);
-                const options = createMemo(() =>
-                  resolveOptions(route.options, config.options)
+                // Guard against missing config
+                const hasConfig = createMemo(() => !!config());
+
+                const isActive = createMemo(() => index === state().index);
+                const options = createMemo(() => {
+                  const cfg = config();
+                  if (!cfg) return {};
+                  return resolveOptions(routeValue().options, cfg.options);
+                });
+
+                const [params, setParams] = createSignal(
+                  routeValue().params ?? {}
                 );
-
-                const [params, setParams] = createSignal(route.params ?? {});
                 const [screenOptions, setScreenOptions] =
                   createSignal<ScreenOptions>(options());
 
@@ -429,7 +440,7 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
                   setOptions: (opts: ScreenOptions) => {
                     setState((prev) => {
                       const idx = prev.routes.findIndex(
-                        (r) => r.key === route.key
+                        (r) => r.key === routeValue().key
                       );
                       if (idx === -1) return prev;
                       const routes = [...prev.routes];
@@ -453,7 +464,7 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
                   setParams: (p: object) => {
                     setState((prev) => {
                       const idx = prev.routes.findIndex(
-                        (r) => r.key === route.key
+                        (r) => r.key === routeValue().key
                       );
                       if (idx === -1) return prev;
                       const routes = [...prev.routes];
@@ -476,13 +487,15 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
                   setOptions: routeHelpers().setOptions,
                 }));
 
-                const routeContext: RouteContextData = {
-                  key: route.key,
-                  name: route.name,
+                const routeContext = createMemo<RouteContextData>(() => ({
+                  key: routeValue().key,
+                  name: routeValue().name,
                   params: params as Accessor<object>,
                   setParams: (newParams) => {
-                    setParams((p) => ({ ...p, ...newParams }));
-                    routeHelpers().setParams(newParams);
+                    if (newParams) {
+                      setParams((p) => ({ ...p, ...newParams }));
+                      routeHelpers().setParams(newParams as object);
+                    }
                   },
                   options: screenOptions,
                   setOptions: (newOptions) => {
@@ -490,33 +503,50 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
                     routeHelpers().setOptions(newOptions);
                   },
                   isFocused: isActive,
-                };
-
-                const ScreenComponent = config.component;
+                }));
 
                 return (
-                  <ScreenPrimitive
-                    screenKey={route.key}
-                    active={isActive()}
-                    animation="none"
-                  >
-                    <NavigationContext.Provider value={screenNavContextValue()}>
-                      <RouteContext.Provider value={routeContext}>
-                        <ScreenComponent
-                          navigation={routeHelpers()}
-                          route={{
-                            key: route.key,
-                            name: route.name,
-                            params: params as Accessor<object>,
-                            setParams: routeContext.setParams,
-                          }}
-                        />
-                      </RouteContext.Provider>
-                    </NavigationContext.Provider>
-                  </ScreenPrimitive>
+                  <Show when={hasConfig()}>
+                    {/* Use a simple View wrapper instead of ScreenPrimitive.
+                        ScreenTabsContainerView handles visibility via selectedIndex,
+                        we don't need ScreenView's active prop logic here.
+                        Absolute positioning ensures children overlay each other. */}
+                    <View
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                      }}
+                    >
+                      <NavigationContext.Provider
+                        value={screenNavContextValue()}
+                      >
+                        <RouteContext.Provider value={routeContext()}>
+                          {(() => {
+                            const cfg = config();
+                            if (!cfg) return null;
+                            const ScreenComponent = cfg.component;
+                            return (
+                              <ScreenComponent
+                                navigation={routeHelpers()}
+                                route={{
+                                  key: routeValue().key,
+                                  name: routeValue().name,
+                                  params: params as Accessor<object>,
+                                  setParams: routeContext().setParams,
+                                }}
+                              />
+                            );
+                          })()}
+                        </RouteContext.Provider>
+                      </NavigationContext.Provider>
+                    </View>
+                  </Show>
                 );
               }}
-            </For>
+            </Index>
           </ScreenTabsContainer>
 
           <Show when={props.tabBarOptions?.tabBarVisible !== false}>
