@@ -13,7 +13,11 @@ import {
 } from "solid-js";
 import { View, Text, Pressable } from "@rune/components";
 import { ScreenTabsContainer } from "@rune/screens";
-import { NavigationContext, type NavigationContextValue } from "../context";
+import {
+  NavigationContext,
+  type NavigationContextValue,
+  useNavigationContextUnsafe,
+} from "../context";
 import { RouteContext, type RouteContextData } from "../context";
 import type {
   RouteParamList,
@@ -182,6 +186,9 @@ function DefaultTabBar(
 // ============================================================================
 
 export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
+  // Capture parent navigation context for nested navigators
+  const parentContext = useNavigationContextUnsafe();
+
   const screenRegistry = new Map<string, TabScreenConfig>();
   const screenOrder: string[] = [];
 
@@ -239,6 +246,20 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
   // Navigation helpers
   const helpers: NavigationHelpers = {
     navigate(name, params) {
+      // Check if this screen exists in current navigator
+      if (!screenRegistry.has(name)) {
+        // Screen not found in current navigator, bubble up to parent
+        if (parentContext) {
+          parentContext.helpers.navigate(name, params);
+          return;
+        }
+        // No parent and screen not found - log warning
+        console.warn(
+          `[Tabs Navigator] Screen '${name}' not found in navigator '${navigatorId}' and no parent navigator available.`
+        );
+        return;
+      }
+
       setState((prev) => {
         // If not initialized, we can't navigate yet, or should queue it?
         // For now assume initialized.
@@ -318,8 +339,10 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
     canGoBack() {
       return (state().history?.length ?? 0) > 1;
     },
-    getParent() {
-      return undefined;
+    getParent<T extends NavigationHelpers = NavigationHelpers>():
+      | T
+      | undefined {
+      return parentContext?.helpers as T | undefined;
     },
     isFocused() {
       return true;
@@ -373,7 +396,7 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
     helpers,
     dispatch,
     setOptions: helpers.setOptions,
-    parent: undefined,
+    parent: parentContext,
     navigatorId,
     navigatorType: "tabs",
   }));

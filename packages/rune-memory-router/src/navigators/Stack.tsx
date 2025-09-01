@@ -15,7 +15,11 @@ import {
   Screen as ScreenPrimitive,
   type ScreenAnimationType,
 } from "@rune/screens";
-import { NavigationContext, type NavigationContextValue } from "../context";
+import {
+  NavigationContext,
+  type NavigationContextValue,
+  useNavigationContextUnsafe,
+} from "../context";
 import { RouteContext, type RouteContextData } from "../context";
 import { DEFAULT_HEADER_HEIGHT } from "../integration/insets";
 import type {
@@ -80,6 +84,9 @@ export function StackScreen<
 // ============================================================================
 
 export function StackNavigator(props: StackNavigatorProps): JSX.Element {
+  // Capture parent navigation context for nested navigators
+  const parentContext = useNavigationContextUnsafe();
+
   // Screen registry - populated by Stack.Screen children
   const screenRegistry = new Map<string, ScreenConfig>();
   const screenOrder: string[] = [];
@@ -140,6 +147,20 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
   // Navigation helpers
   const helpers: NavigationHelpers = {
     navigate(name, params) {
+      // Check if this screen exists in current navigator
+      if (!screenRegistry.has(name)) {
+        // Screen not found in current navigator, bubble up to parent
+        if (parentContext) {
+          parentContext.helpers.navigate(name, params);
+          return;
+        }
+        // No parent and screen not found - log warning
+        console.warn(
+          `[Stack Navigator] Screen '${name}' not found in navigator '${navigatorId}' and no parent navigator available.`
+        );
+        return;
+      }
+
       setHasNavigated(true);
       setState((prev) => {
         // Check if route already exists in stack
@@ -227,8 +248,10 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
     canGoBack() {
       return state().index > 0;
     },
-    getParent() {
-      return undefined; // TODO: Support nested navigators
+    getParent<T extends NavigationHelpers = NavigationHelpers>():
+      | T
+      | undefined {
+      return parentContext?.helpers as T | undefined;
     },
     isFocused() {
       return true; // TODO: Track focus properly
@@ -335,7 +358,7 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
     helpers,
     dispatch,
     setOptions: helpers.setOptions,
-    parent: undefined,
+    parent: parentContext,
     navigatorId,
     navigatorType: "stack",
   }));
