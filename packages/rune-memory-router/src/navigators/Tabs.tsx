@@ -10,6 +10,7 @@ import {
   type JSX,
   type Accessor,
   children as resolveChildren,
+  createEffect,
 } from "solid-js";
 import { View, Text, Pressable } from "@rune/components";
 import { ScreenTabsContainer } from "@rune/screens";
@@ -92,6 +93,10 @@ function DefaultTabBar(
     tabBarShowLabels = true,
   } = props.tabBarOptions ?? {};
 
+  createEffect(() => {
+    console.log("Rendering DefaultTabBar with state:", props.state.routes);
+  });
+
   return (
     <View
       style={{
@@ -103,18 +108,19 @@ function DefaultTabBar(
         paddingTop: 8,
       }}
     >
-      <For each={props.state.routes}>
+      <Index each={props.state.routes}>
         {(route, index) => {
-          const isActive = () => index() === props.state.index;
-          const descriptor = props.descriptors[route.key];
-          const options = descriptor?.options ?? {};
-          const label = options.tab?.label ?? options.title ?? route.name;
+          const isActive = () => index === props.state.index;
+          const descriptor = () => props.descriptors[route().key];
+          const options = () => descriptor()?.options ?? {};
+          const label = () =>
+            options().tab?.label ?? options().title ?? route().name;
           const tintColor = () =>
             isActive() ? tabBarActiveTintColor : tabBarInactiveTintColor;
 
           return (
             <Pressable
-              onPress={() => props.navigation.navigate(route.name)}
+              onPress={() => props.navigation.navigate(route().name)}
               style={{
                 flex: 1,
                 alignItems: "center",
@@ -122,20 +128,10 @@ function DefaultTabBar(
                 paddingVertical: 4,
               }}
             >
-              {/* Icon placeholder - users can provide custom tab bar for icons */}
-              <View
-                style={{
-                  width: 24,
-                  height: 24,
-                  borderRadius: 12,
-                  backgroundColor: isActive()
-                    ? tabBarActiveTintColor
-                    : "transparent",
-                  borderWidth: 2,
-                  borderColor: tintColor(),
-                  marginBottom: 2,
-                }}
-              />
+              {(options().tab?.icon as any)?.({
+                active: isActive(),
+                color: tintColor(),
+              })}
               <Show when={tabBarShowLabels}>
                 <Text
                   style={{
@@ -144,16 +140,16 @@ function DefaultTabBar(
                     fontWeight: isActive() ? "600" : "400",
                   }}
                 >
-                  {label}
+                  {label()}
                 </Text>
               </Show>
-              <Show when={options.tab?.badge !== undefined}>
+              <Show when={options().tab?.badge !== undefined}>
                 <View
                   style={{
                     position: "absolute",
                     top: 0,
                     right: 10,
-                    backgroundColor: options.tab?.badgeColor ?? "#FF3B30",
+                    backgroundColor: options().tab?.badgeColor ?? "#FF3B30",
                     borderRadius: 8,
                     minWidth: 16,
                     height: 16,
@@ -169,14 +165,14 @@ function DefaultTabBar(
                       fontWeight: "600",
                     }}
                   >
-                    {String(options.tab?.badge)}
+                    {String(options().tab?.badge)}
                   </Text>
                 </View>
               </Show>
             </Pressable>
           );
         }}
-      </For>
+      </Index>
     </View>
   );
 }

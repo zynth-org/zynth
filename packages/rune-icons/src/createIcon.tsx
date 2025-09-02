@@ -58,16 +58,13 @@ export function createIcon(glyph: string, fontFamily: string) {
   loadFont(fontFamily);
 
   return (props: TextProps) => {
-    const [isReady, setIsReady] = createSignal(false);
+    const [isReady, setIsReady] = createSignal(
+      fontLoadState.get(fontFamily) === "loaded"
+    );
 
     onMount(() => {
-      // If already loaded, ensure we're ready after a frame (for native font registration)
+      // If already loaded, we're good (initialized to true)
       if (fontLoadState.get(fontFamily) === "loaded") {
-        if (!isReady()) {
-          requestAnimationFrame(() => {
-            setIsReady(true);
-          });
-        }
         return;
       }
 
