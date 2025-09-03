@@ -3,7 +3,6 @@ import type {
   Style,
   ImageAssetSource as CoreImageAssetSource,
   ImageUriSource as CoreImageUriSource,
-  ImageSystemSource as CoreImageSystemSource,
   ImageAssetDescriptor,
 } from "@rune/core";
 
@@ -13,8 +12,6 @@ export type ImageUriSource = CoreImageUriSource;
 
 export type ImageAssetSource = CoreImageAssetSource;
 
-export type ImageSystemSource = CoreImageSystemSource;
-
 export type ImageBase64Source = {
   data: string;
   mimeType?: string;
@@ -22,13 +19,17 @@ export type ImageBase64Source = {
 
 export type ImageDescriptorSource = ImageAssetDescriptor;
 
+export type SystemIconSource = {
+  system: string;
+};
+
 export type ImageSource =
   | string
   | ImageUriSource
   | ImageAssetSource
-  | ImageSystemSource
   | ImageBase64Source
-  | ImageDescriptorSource;
+  | ImageDescriptorSource
+  | SystemIconSource;
 
 export interface ImageLoadEvent {
   target: number;

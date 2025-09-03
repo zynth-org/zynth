@@ -37,7 +37,6 @@ export function getNativeSafeAreaModule(): NativeSafeAreaModule | null {
   // Try to find the global object
   let globalObject: any;
   if (typeof globalThis !== "undefined") globalObject = globalThis;
-  else if (typeof global !== "undefined") globalObject = global;
   else if (typeof window !== "undefined") globalObject = window;
   else if (typeof self !== "undefined") globalObject = self;
 

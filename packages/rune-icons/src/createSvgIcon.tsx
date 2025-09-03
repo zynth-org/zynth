@@ -28,19 +28,24 @@ export function createSvgIcon(definition: IconDefinition) {
       ? `${definition.c}<title>${local.title}</title>`
       : definition.c;
 
+    const colorValue =
+      typeof local.color === "string" ? local.color : String(local.color);
+    const sizeValue =
+      typeof local.size === "string" ? local.size : String(local.size);
+
     return (
       <svg
-        stroke={(definition.a?.stroke as string | undefined) ?? local.color}
-        color={local.color}
-        fill={local.color}
+        stroke={(definition.a?.stroke as string | undefined) ?? colorValue}
+        color={colorValue}
+        fill={colorValue}
         stroke-width="0"
         style={{ overflow: "visible", ...(local.style as any) }}
         innerHTML={content}
-        height={local.size}
-        width={local.size}
+        height={sizeValue}
+        width={sizeValue}
         xmlns="http://www.w3.org/2000/svg"
-        {...svgProps}
+        {...(svgProps as any)}
       />
-    );
+    ) as any;
   };
 }

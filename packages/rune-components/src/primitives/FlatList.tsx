@@ -8,12 +8,9 @@ import {
   onCleanup,
   createRoot,
 } from "solid-js";
-import {
-  View,
-  ScrollView,
-  createScrollController,
-  type LayoutChangeEvent,
-} from "@rune/components";
+import { View as ComponentView } from "../components";
+import { ScrollView, createScrollController } from "./ScrollView";
+import { View, type LayoutChangeEvent } from "./View";
 import type { MaintainVisibleContentPosition } from "./ScrollView";
 import type { Style } from "@rune/core";
 import { getHost } from "@rune/core";
@@ -201,7 +198,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
     return props.horizontal ? metrics.offset.x : metrics.offset.y;
   });
   // Default ScrollView style, merged with user-provided style
-  const defaultScrollViewStyle: Style = { overflow: "hidden" };
+  const defaultScrollViewStyle: Style = { overflow: "hidden" as const };
   const mergedScrollViewStyle = createMemo(() => {
     const user = props.style as Style | undefined;
     if (!user) return defaultScrollViewStyle;
@@ -1676,11 +1673,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
               });
 
               return (
-                <View
-                  key={`pool-slot-${poolIndex}`}
-                  style={itemStyle()}
-                  onLayout={handleLayout}
-                >
+                <View style={itemStyle()} onLayout={handleLayout}>
                   {currentItem() ? ensureSlotContent() : null}
                 </View>
               );
