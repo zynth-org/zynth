@@ -1,13 +1,15 @@
 import { mergeProps, children as resolveChildren } from "solid-js";
 import type { JSX, ParentComponent } from "solid-js";
-import type { Style } from "@rune/core";
+import type { Style, StyleProp } from "@rune/core";
+import { useStyle } from "../hooks/useStyle";
 
 export interface TextProps {
-  style?: Style;
+  style?: StyleProp;
   numberOfLines?: number;
 }
 
 export const Text: ParentComponent<TextProps> = (props) => {
   const resolvedChildren = resolveChildren(() => props.children);
-  return <text style={props.style as any}>{resolvedChildren()}</text>;
+  const style = useStyle(() => props.style);
+  return <text style={style()}>{resolvedChildren()}</text>;
 };

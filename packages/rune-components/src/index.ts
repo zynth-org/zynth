@@ -11,8 +11,8 @@ export * from "./primitives/ProgressIndicator";
 export * from "./primitives/Switch";
 export * from "./primitives/TextField";
 export * from "./primitives/Alert";
+export { useStyle, mergeStyles } from "./hooks/useStyle";
 export { createPressableController } from "./primitives/pressable/controller";
 export type { PressableController } from "./primitives/pressable/controller";
 export { createFlatListController } from "./primitives/flatlist/controller";
 export type { FlatListController } from "./primitives/flatlist/controller";
-

@@ -135,7 +135,11 @@ export type Style = {
   lineSpacing?: number;
   paragraphSpacing?: number;
   letterSpacing?: number;
-  textDecorationLine?: "none" | "underline" | "line-through" | "underline line-through";
+  textDecorationLine?:
+    | "none"
+    | "underline"
+    | "line-through"
+    | "underline line-through";
   textTransform?: "none" | "uppercase" | "lowercase" | "capitalize";
   minimumFontScale?: number;
   baselineShift?: number;
@@ -144,6 +148,16 @@ export type Style = {
   transform?: string | Record<string, number | string>[];
   transformOrigin?: string | (string | number)[];
 };
+
+/**
+ * StyleProp allows styles to be passed as either:
+ * - A single Style object: `{ color: "red" }`
+ * - An array of Style objects: `[{ color: "red" }, props.customStyle]`
+ *
+ * Array styles are merged left-to-right, with later values overriding earlier ones.
+ * Useful for conditional and responsive styling while maintaining SolidJS reactivity.
+ */
+export type StyleProp = Style | (Style | undefined | null)[];
 
 export type ImageResizeMode = "cover" | "contain" | "stretch" | "center";
 

@@ -1,20 +1,12 @@
-import { createMemo, type ParentComponent } from "solid-js";
-import type { Style } from "@rune/core";
+import { type ParentComponent } from "solid-js";
+import type { Style, StyleProp } from "@rune/core";
+import { useStyle } from "./hooks/useStyle";
 
 type PointerEvents = "auto" | "none" | "box-none" | "box-only";
 
-export type StyleProp = Style | (Style | undefined | null)[];
-
-const useStyle = (style: () => StyleProp | undefined) => {
-  return createMemo(() => {
-    const s = style();
-    if (!Array.isArray(s)) return s;
-    return s.reduce<Style>((acc, curr) => {
-      if (!curr) return acc;
-      return { ...acc, ...curr };
-    }, {});
-  });
-};
+// Re-export StyleProp for external use
+export type { StyleProp };
+export { useStyle };
 
 export const View: ParentComponent<{
   style?: StyleProp;
