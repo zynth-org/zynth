@@ -63,27 +63,31 @@ class ScreenContainerView(context: Context) : FrameLayout(context) {
     }
 
     private fun handleDetach(screen: ScreenView): Boolean {
-        // If the screen is visible or active, animate it out first
-        if (screen.visibility == View.VISIBLE || screen.isScreenActive) {
+        val isTopScreen = screens.lastOrNull() == screen
+        // Only animate the screen that currently sits on top of the stack. When popping multiple
+        // screens at once (e.g. popToTop), lower routes may be removed first due to diff ordering,
+        // and trying to animate them causes the native stack to lose its foreground content.
+        val shouldAnimate = isTopScreen
+
+        if (shouldAnimate) {
             if (!detachingScreens.contains(screen)) {
                 Log.d(TAG, "Deferring removal of ${screen.screenKey} for exit animation")
-                
+
                 // Move from main list to detaching list
                 screens.remove(screen)
                 detachingScreens.add(screen)
-                
+
                 // Trigger exit animation
-                // Note: The screen is no longer in 'screens', so updateScreenVisibility 
+                // Note: The screen is no longer in 'screens', so updateScreenVisibility
                 // will treat the next screen down as the new top.
                 updateScreenVisibility()
-                
+
                 // Start animation which will call finishRemoval when done
                 screen.startExitAnimationAndCleanup()
-                
-                return true
             }
+            return true
         }
-        
+
         // Just cleanup references
         screens.remove(screen)
         detachingScreens.remove(screen)
