@@ -28,7 +28,10 @@ import {
   useNavigationContextUnsafe,
 } from "../context";
 import { RouteContext, type RouteContextData } from "../context";
-import { DEFAULT_HEADER_HEIGHT } from "../integration/insets";
+import {
+  DEFAULT_HEADER_HEIGHT,
+  HeaderHeightContext,
+} from "../integration/insets";
 import type {
   RouteParamList,
   NavigationState,
@@ -375,110 +378,120 @@ export function BottomSheetNavigator(
       const opts = bottomSheetOptions();
       // Snap to the preferred index for the current screen
       if (opts.initialSnapIndex !== undefined) {
-        // We use a small timeout or just call it.
-        // Since snapPoints might change same tick, waiting for prop update is safer?
-        // But Rune native props update synchronously-ish.
-        bsController.snapTo(opts.initialSnapIndex);
+        // Defer the snap command to ensure snapPoints props have been updated on the native side
+
+        requestAnimationFrame(() => {
+          bsController.snapTo(opts.initialSnapIndex!);
+        });
       }
     });
 
     const headerShown = createMemo(
       () => currentOptions()?.headerShown !== false
     );
-
+    // Provide a static header height (no safe area) to children
+    const headerHeightValue = () => (headerShown() ? DEFAULT_HEADER_HEIGHT : 0);
     return (
-      <Show when={currentRoute()}>
-        <RuneBottomSheet
-          snapPoints={bottomSheetOptions().snapPoints as any}
-          initialSnapIndex={bottomSheetOptions().initialSnapIndex}
-          controller={bsController}
-          open={true} // Always open as a navigator
-          allowDismissOnInteraction={false} // Prevent closing the navigator by swipe by default? User can implement back behavior.
-          // Actually, if they swipe down, it might close. But for a navigator we probably want it to stay unless explicitly closed?
-          // The user didn't specify, but standard persistent bottom sheet usually stays open.
-          // We'll leave defaults or user overrides.
-        >
-          <View
-            style={{
-              flex: 1,
-              backgroundColor:
-                currentOptions()?.contentBackgroundColor ?? "#ffffff",
-            }}
+      <HeaderHeightContext.Provider value={headerHeightValue}>
+        <Show when={currentRoute()}>
+          <RuneBottomSheet
+            snapPoints={bottomSheetOptions().snapPoints as any}
+            initialSnapIndex={bottomSheetOptions().initialSnapIndex}
+            controller={bsController}
+            open={true} // Always open as a navigator
+            allowDismissOnInteraction={false} // Prevent closing the navigator by swipe by default? User can implement back behavior.
+
+            // Actually, if they swipe down, it might close. But for a navigator we probably want it to stay unless explicitly closed?
+
+            // The user didn't specify, but standard persistent bottom sheet usually stays open.
+
+            // We'll leave defaults or user overrides.
           >
-            <ScreenContainer>
-              <For each={state().routes}>
-                {(route, index) => {
-                  const config = screenRegistry.get(route.name);
-                  if (!config) return null;
+            <View
+              style={{
+                flex: 1,
 
-                  const currentIndex = createMemo(() => state().index);
-                  const isInStack = createMemo(() => index() <= currentIndex());
-                  const options = createMemo(() =>
-                    resolveOptions(route.options, config.options)
-                  );
+                backgroundColor:
+                  currentOptions()?.contentBackgroundColor ?? "#ffffff",
+              }}
+            >
+              <ScreenContainer>
+                <For each={state().routes}>
+                  {(route, index) => {
+                    const config = screenRegistry.get(route.name);
+                    if (!config) return null;
+                    const currentIndex = createMemo(() => state().index);
+                    const isInStack = createMemo(
+                      () => index() <= currentIndex()
+                    );
+                    const options = createMemo(() =>
+                      resolveOptions(route.options, config.options)
+                    );
+                    const [params, setParams] = createSignal(
+                      route.params ?? {}
+                    );
 
-                  const [params, setParams] = createSignal(route.params ?? {});
-                  const [screenOptions, setScreenOptions] =
-                    createSignal<ScreenOptions>(options());
+                    const [screenOptions, setScreenOptions] =
+                      createSignal<ScreenOptions>(options());
 
-                  const routeContext: RouteContextData = {
-                    key: route.key,
-                    name: route.name,
-                    params: params as Accessor<object>,
-                    setParams: (newParams) => {
-                      setParams((p) => ({ ...p, ...newParams }));
-                      helpers.setParams(newParams);
-                    },
-                    options: screenOptions,
-                    setOptions: (newOptions) => {
-                      setScreenOptions((o) => ({ ...o, ...newOptions }));
-                      helpers.setOptions(newOptions);
-                    },
-                    isFocused: createMemo(() => index() === currentIndex()),
-                  };
+                    const routeContext: RouteContextData = {
+                      key: route.key,
+                      name: route.name,
+                      params: params as Accessor<object>,
+                      setParams: (newParams) => {
+                        setParams((p) => ({ ...p, ...newParams }));
+                        helpers.setParams(newParams);
+                      },
+                      options: screenOptions,
+                      setOptions: (newOptions) => {
+                        setScreenOptions((o) => ({ ...o, ...newOptions }));
+                        helpers.setOptions(newOptions);
+                      },
+                      isFocused: createMemo(() => index() === currentIndex()),
+                    };
 
-                  const ScreenComponent = config.component;
+                    const ScreenComponent = config.component;
 
-                  return (
-                    <ScreenPrimitive
-                      screenKey={route.key}
-                      active={isInStack()}
-                      animation={
-                        !hasNavigated() &&
-                        route.key === initialRouteKey() &&
-                        state().routes.length === 1
-                          ? "none"
-                          : resolveScreenAnimation(options())
-                      }
-                    >
-                      <RouteContext.Provider value={routeContext}>
-                        <ScreenComponent
-                          navigation={helpers}
-                          route={{
-                            key: route.key,
-                            name: route.name,
-                            params: params as Accessor<object>,
-                            setParams: routeContext.setParams,
-                          }}
-                        />
-                      </RouteContext.Provider>
-                    </ScreenPrimitive>
-                  );
-                }}
-              </For>
-            </ScreenContainer>
-            {headerShown() && currentRoute() && currentOptions() ? (
-              <HeaderBar
-                key={currentRoute()!.key}
-                options={currentOptions()!}
-                title={currentOptions()!.title ?? currentRoute()!.name}
-                canGoBack={helpers.canGoBack()}
-                onBack={helpers.goBack}
-              />
-            ) : null}
-          </View>
-        </RuneBottomSheet>
-      </Show>
+                    return (
+                      <ScreenPrimitive
+                        screenKey={route.key}
+                        active={isInStack()}
+                        animation={
+                          route.key === initialRouteKey()
+                            ? "none"
+                            : resolveScreenAnimation(options())
+                        }
+                      >
+                        <RouteContext.Provider value={routeContext}>
+                          <ScreenComponent
+                            navigation={helpers}
+                            route={{
+                              key: route.key,
+                              name: route.name,
+                              params: params as Accessor<object>,
+                              setParams: routeContext.setParams,
+                            }}
+                          />
+                        </RouteContext.Provider>
+                      </ScreenPrimitive>
+                    );
+                  }}
+                </For>
+              </ScreenContainer>
+
+              {headerShown() && currentRoute() && currentOptions() ? (
+                <HeaderBar
+                  key={currentRoute()!.key}
+                  options={currentOptions()!}
+                  title={currentOptions()!.title ?? currentRoute()!.name}
+                  canGoBack={helpers.canGoBack()}
+                  onBack={helpers.goBack}
+                />
+              ) : null}
+            </View>
+          </RuneBottomSheet>
+        </Show>
+      </HeaderHeightContext.Provider>
     );
   };
 

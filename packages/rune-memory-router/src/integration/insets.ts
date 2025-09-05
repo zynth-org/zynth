@@ -1,8 +1,11 @@
-import { createMemo } from "solid-js";
+import { createMemo, createContext, useContext } from "solid-js";
 import { createSafeAreaInsets } from "@rune/safe-area";
 
 // Default header height (similar to iOS navigation bar)
 export const DEFAULT_HEADER_HEIGHT = 56;
+
+// Context to allow navigators (like BottomSheet) to override the effective header height
+export const HeaderHeightContext = createContext<() => number | undefined>();
 
 /**
  * Header metrics returned by useHeaderMetrics
@@ -36,11 +39,17 @@ export interface HeaderMetrics {
  * }
  */
 export function useHeaderMetrics(extraHeight = 0): () => HeaderMetrics {
+  const contextHeight = useContext(HeaderHeightContext);
   return createMemo(() => {
     const inset = createSafeAreaInsets().top;
+    
+    // If a navigator provided an explicit header height (e.g. BottomSheet), use that.
+    // Otherwise calculate standard Stack height (Safe Area + 56).
+    const baseHeight = contextHeight?.() ?? (DEFAULT_HEADER_HEIGHT + inset);
+    
     return {
-      inset,
-      height: DEFAULT_HEADER_HEIGHT + inset + extraHeight,
+      inset: contextHeight ? 0 : inset, // If forced, we assume inset is handled or irrelevant
+      height: baseHeight + extraHeight,
     };
   });
 }

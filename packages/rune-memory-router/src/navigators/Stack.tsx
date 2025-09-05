@@ -434,9 +434,7 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
                   screenKey={route.key}
                   active={isInStack()}
                   animation={
-                    !hasNavigated() &&
-                    route.key === initialRouteKey() &&
-                    state().routes.length === 1
+                    route.key === initialRouteKey()
                       ? "none"
                       : resolveScreenAnimation(options())
                   }
