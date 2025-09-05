@@ -4,12 +4,19 @@ import {
   createContext,
   useContext,
   For,
+  Show,
+  createEffect,
   type JSX,
   type Accessor,
 } from "solid-js";
 import { View, Text, Button, SystemIcon } from "@rune/components";
 import { createSafeAreaInsets } from "@rune/safe-area";
-import { Platform, OS } from "@rune/apis";
+import { Platform } from "@rune/apis";
+import {
+  BottomSheet as RuneBottomSheet,
+  createBottomSheetController,
+  type BottomSheetController,
+} from "@rune/bottom-sheet";
 import {
   ScreenContainer,
   Screen as ScreenPrimitive,
@@ -29,10 +36,11 @@ import type {
   ScreenOptions,
   RouterAction,
   NavigationHelpers,
-  StackNavigatorProps,
-  StackScreenProps,
+  BottomSheetNavigatorProps,
+  BottomSheetScreenProps,
   ScreenComponent,
   ScreenOptionsInput,
+  BottomSheetOptions,
 } from "../types";
 
 // ============================================================================
@@ -45,10 +53,10 @@ function generateKey(): string {
 }
 
 // ============================================================================
-// Stack Navigator Context (internal)
+// BottomSheet Navigator Context (internal)
 // ============================================================================
 
-interface StackNavigatorContextValue {
+interface BottomSheetNavigatorContextValue {
   registerScreen: (name: string, config: ScreenConfig) => void;
 }
 
@@ -58,17 +66,18 @@ interface ScreenConfig {
   initialParams?: object;
 }
 
-const StackNavigatorContext = createContext<StackNavigatorContextValue>();
+const BottomSheetNavigatorContext =
+  createContext<BottomSheetNavigatorContextValue>();
 
 // ============================================================================
-// Stack.Screen Component
+// BottomSheet.Screen Component
 // ============================================================================
 
-export function StackScreen<
+export function BottomSheetScreen<
   ParamList extends RouteParamList = RouteParamList,
   RouteName extends keyof ParamList & string = keyof ParamList & string
->(props: StackScreenProps<ParamList, RouteName>): JSX.Element {
-  const ctx = useContext(StackNavigatorContext);
+>(props: BottomSheetScreenProps<ParamList, RouteName>): JSX.Element {
+  const ctx = useContext(BottomSheetNavigatorContext);
   if (ctx) {
     ctx.registerScreen(props.name, {
       component: props.component as unknown as ScreenComponent,
@@ -80,14 +89,16 @@ export function StackScreen<
 }
 
 // ============================================================================
-// Stack.Navigator Component
+// BottomSheet.Navigator Component
 // ============================================================================
 
-export function StackNavigator(props: StackNavigatorProps): JSX.Element {
+export function BottomSheetNavigator(
+  props: BottomSheetNavigatorProps
+): JSX.Element {
   // Capture parent navigation context for nested navigators
   const parentContext = useNavigationContextUnsafe();
 
-  // Screen registry - populated by Stack.Screen children
+  // Screen registry - populated by BottomSheet.Screen children
   const screenRegistry = new Map<string, ScreenConfig>();
   const screenOrder: string[] = [];
 
@@ -98,6 +109,9 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
   );
   const [hasNavigated, setHasNavigated] = createSignal(false);
 
+  // Bottom Sheet Controller
+  const bsController = createBottomSheetController();
+
   const registerScreen = (name: string, config: ScreenConfig) => {
     if (!screenRegistry.has(name)) {
       screenOrder.push(name);
@@ -106,7 +120,7 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
   };
 
   // State - will be populated after children register
-  const navigatorId = props.id ?? `stack-${generateKey()}`;
+  const navigatorId = props.id ?? `bottom-sheet-${generateKey()}`;
 
   function createRoute(name: string, params?: object): RouteNode {
     const config = screenRegistry.get(name);
@@ -114,11 +128,11 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
       key: generateKey(),
       name,
       params: params ?? config?.initialParams,
-      type: "stack",
+      type: "stack", // We behave like a stack internally
     };
   }
 
-  // Start with empty state, will be populated after registration
+  // Start with empty state
   const [state, setState] = createSignal<NavigationState>({
     key: navigatorId,
     type: "stack",
@@ -144,34 +158,28 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
     }
   };
 
-  // Navigation helpers
+  // Navigation helpers (Identical to Stack)
   const helpers: NavigationHelpers = {
     navigate(name, params) {
-      // Check if this screen exists in current navigator
       if (!screenRegistry.has(name)) {
-        // Screen not found in current navigator, bubble up to parent
         if (parentContext) {
           parentContext.helpers.navigate(name, params);
           return;
         }
-        // No parent and screen not found - log warning
         console.warn(
-          `[Stack Navigator] Screen '${name}' not found in navigator '${navigatorId}' and no parent navigator available.`
+          `[BottomSheet Navigator] Screen '${name}' not found in navigator '${navigatorId}'`
         );
         return;
       }
 
       setHasNavigated(true);
       setState((prev) => {
-        // Check if route already exists in stack
         const existingIndex = prev.routes.findIndex((r) => r.name === name);
         if (existingIndex >= 0) {
-          // Navigate to existing route, updating params
           const routes = [...prev.routes];
           routes[existingIndex] = { ...routes[existingIndex], params };
           return { ...prev, index: existingIndex, routes };
         }
-        // Push new route
         const routes = [
           ...prev.routes.slice(0, prev.index + 1),
           createRoute(name, params),
@@ -246,7 +254,6 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
       });
     },
     setOptions(options) {
-      // Update options for current screen
       setState((prev) => {
         const routes = [...prev.routes];
         const current = routes[prev.index];
@@ -266,11 +273,10 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
       return parentContext?.helpers as T | undefined;
     },
     isFocused() {
-      return true; // TODO: Track focus properly
+      return true; // TODO
     },
   };
 
-  // Dispatch actions
   function dispatch(action: RouterAction): void {
     switch (action.type) {
       case "NAVIGATE":
@@ -303,7 +309,6 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
     }
   }
 
-  // Resolve screen options
   function resolveOptions(
     routeOptions?: ScreenOptions,
     screenOptions?: ScreenOptionsInput
@@ -326,45 +331,14 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
     };
   }
 
-  // Map animation type to @rune/screens animation
-  function mapAnimation(animation?: string): ScreenAnimationType {
-    switch (animation) {
-      case "push":
-        return "push";
-      case "modal":
-        return "modal";
-      case "zoom":
-        return "zoom";
-      case "fade":
-        return "fade";
-      case "none":
-        return "none";
-      default:
-        return "push";
-    }
-  }
-
   function resolveScreenAnimation(options: ScreenOptions): ScreenAnimationType {
-    if (options.animationEnabled === false) {
-      return "none";
-    }
-
-    if (options.animation) {
-      return mapAnimation(options.animation);
-    }
-
-    if (options.presentation === "modal") {
-      return "modal";
-    }
-
-    if (options.presentation === "zoom") {
-      return "zoom";
-    }
-
+    if (options.animationEnabled === false) return "none";
+    if (options.animation) return options.animation as ScreenAnimationType;
+    if (options.presentation === "modal") return "modal";
+    if (options.presentation === "zoom") return "zoom";
     return "push";
   }
 
-  // Build navigation context value
   const navContextValue = createMemo<NavigationContextValue>(() => ({
     state: state as Accessor<NavigationState>,
     helpers,
@@ -372,12 +346,10 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
     setOptions: helpers.setOptions,
     parent: parentContext,
     navigatorId,
-    navigatorType: "stack",
+    navigatorType: "stack", // Treat as stack for internal logic
   }));
 
-  // Inner component that renders after children have registered
   const ScreensRenderer = () => {
-    // Trigger initialization after children have rendered
     queueMicrotask(() => initializeState());
 
     const currentRoute = createMemo(() => state().routes[state().index]);
@@ -387,113 +359,142 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
       const config = screenRegistry.get(route.name);
       return resolveOptions(route.options, config?.options);
     });
+
+    const bottomSheetOptions = createMemo<BottomSheetOptions>(() => {
+      const opts = currentOptions()?.bottomSheet ?? {};
+      const globalOpts = props.bottomSheetOptions ?? {};
+      return {
+        snapPoints: opts.snapPoints ?? globalOpts.snapPoints ?? ["50%", "90%"],
+        initialSnapIndex:
+          opts.initialSnapIndex ?? globalOpts.initialSnapIndex ?? 0,
+      };
+    });
+
+    // Effect: Snap to new index when route changes (or initial load)
+    createEffect(() => {
+      const opts = bottomSheetOptions();
+      // Snap to the preferred index for the current screen
+      if (opts.initialSnapIndex !== undefined) {
+        // We use a small timeout or just call it.
+        // Since snapPoints might change same tick, waiting for prop update is safer?
+        // But Rune native props update synchronously-ish.
+        bsController.snapTo(opts.initialSnapIndex);
+      }
+    });
+
     const headerShown = createMemo(
       () => currentOptions()?.headerShown !== false
     );
 
     return (
-      <View style={{ flex: 1 }}>
-        <ScreenContainer>
-          <For each={state().routes}>
-            {(route, index) => {
-              const config = screenRegistry.get(route.name);
-              if (!config) return null;
-
-              const currentIndex = createMemo(() => state().index);
-              const isFocused = createMemo(() => index() === currentIndex());
-              const isInStack = createMemo(() => index() <= currentIndex());
-              const options = createMemo(() =>
-                resolveOptions(route.options, config.options)
-              );
-
-              // Route context for this screen
-              const [params, setParams] = createSignal(route.params ?? {});
-              const [screenOptions, setScreenOptions] =
-                createSignal<ScreenOptions>(options());
-
-              const routeContext: RouteContextData = {
-                key: route.key,
-                name: route.name,
-                params: params as Accessor<object>,
-                setParams: (newParams) => {
-                  setParams((p) => ({ ...p, ...newParams }));
-                  helpers.setParams(newParams);
-                },
-                options: screenOptions,
-                setOptions: (newOptions) => {
-                  setScreenOptions((o) => ({ ...o, ...newOptions }));
-                  helpers.setOptions(newOptions);
-                },
-                isFocused,
-              };
-
-              const ScreenComponent = config.component;
-
-              return (
-                <ScreenPrimitive
-                  screenKey={route.key}
-                  active={isInStack()}
-                  animation={
-                    !hasNavigated() &&
-                    route.key === initialRouteKey() &&
-                    state().routes.length === 1
-                      ? "none"
-                      : resolveScreenAnimation(options())
-                  }
-                >
-                  <RouteContext.Provider value={routeContext}>
-                    <ScreenComponent
-                      navigation={helpers}
-                      route={{
-                        key: route.key,
-                        name: route.name,
-                        params: params as Accessor<object>,
-                        setParams: routeContext.setParams,
-                      }}
-                    />
-                  </RouteContext.Provider>
-                </ScreenPrimitive>
-              );
+      <Show when={currentRoute()}>
+        <RuneBottomSheet
+          snapPoints={bottomSheetOptions().snapPoints as any}
+          initialSnapIndex={bottomSheetOptions().initialSnapIndex}
+          controller={bsController}
+          open={true} // Always open as a navigator
+          allowDismissOnInteraction={false} // Prevent closing the navigator by swipe by default? User can implement back behavior.
+          // Actually, if they swipe down, it might close. But for a navigator we probably want it to stay unless explicitly closed?
+          // The user didn't specify, but standard persistent bottom sheet usually stays open.
+          // We'll leave defaults or user overrides.
+        >
+          <View
+            style={{
+              flex: 1,
+              backgroundColor:
+                currentOptions()?.contentBackgroundColor ?? "#ffffff",
             }}
-          </For>
-        </ScreenContainer>
-        {headerShown() && currentRoute() && currentOptions() ? (
-          <HeaderBar
-            key={currentRoute()!.key}
-            options={currentOptions()!}
-            title={currentOptions()!.title ?? currentRoute()!.name}
-            canGoBack={helpers.canGoBack()}
-            onBack={helpers.goBack}
-          />
-        ) : null}
-      </View>
+          >
+            <ScreenContainer>
+              <For each={state().routes}>
+                {(route, index) => {
+                  const config = screenRegistry.get(route.name);
+                  if (!config) return null;
+
+                  const currentIndex = createMemo(() => state().index);
+                  const isInStack = createMemo(() => index() <= currentIndex());
+                  const options = createMemo(() =>
+                    resolveOptions(route.options, config.options)
+                  );
+
+                  const [params, setParams] = createSignal(route.params ?? {});
+                  const [screenOptions, setScreenOptions] =
+                    createSignal<ScreenOptions>(options());
+
+                  const routeContext: RouteContextData = {
+                    key: route.key,
+                    name: route.name,
+                    params: params as Accessor<object>,
+                    setParams: (newParams) => {
+                      setParams((p) => ({ ...p, ...newParams }));
+                      helpers.setParams(newParams);
+                    },
+                    options: screenOptions,
+                    setOptions: (newOptions) => {
+                      setScreenOptions((o) => ({ ...o, ...newOptions }));
+                      helpers.setOptions(newOptions);
+                    },
+                    isFocused: createMemo(() => index() === currentIndex()),
+                  };
+
+                  const ScreenComponent = config.component;
+
+                  return (
+                    <ScreenPrimitive
+                      screenKey={route.key}
+                      active={isInStack()}
+                      animation={
+                        !hasNavigated() &&
+                        route.key === initialRouteKey() &&
+                        state().routes.length === 1
+                          ? "none"
+                          : resolveScreenAnimation(options())
+                      }
+                    >
+                      <RouteContext.Provider value={routeContext}>
+                        <ScreenComponent
+                          navigation={helpers}
+                          route={{
+                            key: route.key,
+                            name: route.name,
+                            params: params as Accessor<object>,
+                            setParams: routeContext.setParams,
+                          }}
+                        />
+                      </RouteContext.Provider>
+                    </ScreenPrimitive>
+                  );
+                }}
+              </For>
+            </ScreenContainer>
+            {headerShown() && currentRoute() && currentOptions() ? (
+              <HeaderBar
+                key={currentRoute()!.key}
+                options={currentOptions()!}
+                title={currentOptions()!.title ?? currentRoute()!.name}
+                canGoBack={helpers.canGoBack()}
+                onBack={helpers.goBack}
+              />
+            ) : null}
+          </View>
+        </RuneBottomSheet>
+      </Show>
     );
   };
 
   return (
-    <StackNavigatorContext.Provider value={{ registerScreen }}>
-      {/* Render children to trigger registration */}
+    <BottomSheetNavigatorContext.Provider value={{ registerScreen }}>
       {props.children}
-
       <NavigationContext.Provider value={navContextValue()}>
         <ScreensRenderer />
       </NavigationContext.Provider>
-    </StackNavigatorContext.Provider>
+    </BottomSheetNavigatorContext.Provider>
   );
 }
 
 // ============================================================================
-// Stack Export Object
+// Header Bar (Reused)
 // ============================================================================
-
-export const Stack = {
-  Navigator: StackNavigator,
-  Screen: StackScreen,
-};
-
-// -----------------------------------------------------------------------------
-// Header Bar (JS-driven, safe-area aware)
-// -----------------------------------------------------------------------------
 
 interface HeaderBarProps {
   key?: string;
@@ -509,8 +510,8 @@ const DEFAULT_TITLE_SIZE = 22;
 
 function HeaderBar(props: HeaderBarProps) {
   const insets = createSafeAreaInsets();
-  const insetTop = insets.top;
-  const baseHeight = insetTop + DEFAULT_HEADER_HEIGHT;
+  const insetTop = 0; // Header inside bottom sheet doesn't need top inset usually
+  const baseHeight = DEFAULT_HEADER_HEIGHT;
 
   const tintColor = () => props.options.headerTintColor ?? DEFAULT_HEADER_TINT;
   const titleColor = () =>
@@ -592,6 +593,8 @@ function HeaderBar(props: HeaderBarProps) {
         flexDirection: "row",
         alignItems: "center",
         paddingHorizontal: 12,
+        borderBottomWidth: 0.5,
+        borderBottomColor: "rgba(0,0,0,0.1)",
       }}
     >
       <View
@@ -626,7 +629,6 @@ function HeaderBar(props: HeaderBarProps) {
           minWidth: 64,
           alignItems: "flex-end",
           justifyContent: "center",
-          background: "#796868",
         }}
       >
         {renderRight()}
@@ -634,3 +636,12 @@ function HeaderBar(props: HeaderBarProps) {
     </View>
   );
 }
+
+// ============================================================================
+// Export Object
+// ============================================================================
+
+export const BottomSheet = {
+  Navigator: BottomSheetNavigator,
+  Screen: BottomSheetScreen,
+};

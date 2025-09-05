@@ -1,7 +1,13 @@
 import type { JSX } from "solid-js";
-import type { RouteParamList, StackScreenProps, TabScreenProps } from "./types";
+import type {
+  RouteParamList,
+  StackScreenProps,
+  TabScreenProps,
+  BottomSheetScreenProps,
+} from "./types";
 import { Stack, StackNavigator } from "./navigators/Stack";
 import { Tabs, TabsNavigator } from "./navigators/Tabs";
+import { BottomSheet, BottomSheetNavigator } from "./navigators/BottomSheet";
 
 /**
  * Creates a typed Stack navigator (React Navigation style API).
@@ -64,6 +70,25 @@ export function createTabNavigator<ParamList extends RouteParamList>() {
 }
 
 /**
+ * Creates a typed BottomSheet navigator (React Navigation style API).
+ *
+ * @example
+ * type SheetParams = {
+ *   Sheet1: undefined;
+ *   Sheet2: undefined;
+ * };
+ *
+ * const Sheet = createBottomSheetNavigator<SheetParams>();
+ */
+export function createBottomSheetNavigator<ParamList extends RouteParamList>() {
+  return BottomSheet as typeof BottomSheet & {
+    Screen: <RouteName extends keyof ParamList & string>(
+      props: BottomSheetScreenProps<ParamList, RouteName>
+    ) => JSX.Element | null;
+  };
+}
+
+/**
  * @deprecated Use createStackNavigator and createTabNavigator instead.
  * Creates a typed router with Stack and Tabs navigators.
  */
@@ -71,5 +96,6 @@ export function createRouter<ParamList extends RouteParamList>() {
   return {
     Stack: createStackNavigator<ParamList>(),
     Tabs: createTabNavigator<ParamList>(),
+    BottomSheet: createBottomSheetNavigator<ParamList>(),
   };
 }

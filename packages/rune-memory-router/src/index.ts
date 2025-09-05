@@ -16,12 +16,18 @@ export { useContainerContext } from "./NavigationContainer";
 export {
   createStackNavigator,
   createTabNavigator,
+  createBottomSheetNavigator,
   createRouter,
 } from "./createRouter";
 
 // Navigators
 export { Stack, StackNavigator, StackScreen } from "./navigators";
 export { Tabs, TabsNavigator, TabScreen } from "./navigators";
+export {
+  BottomSheet,
+  BottomSheetNavigator,
+  BottomSheetScreen,
+} from "./navigators";
 
 // Hooks
 export {
@@ -68,6 +74,11 @@ export type {
   TabIconFactory,
   TabBarOptions,
   TabBarProps,
+
+  // BottomSheet options
+  BottomSheetOptions,
+  BottomSheetNavigatorProps,
+  BottomSheetScreenProps,
 
   // Navigation
   NavigationHelpers,

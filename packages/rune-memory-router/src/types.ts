@@ -111,6 +111,10 @@ export interface ScreenOptions {
   /** Tab bar options */
   tab?: TabOptions;
 
+  // BottomSheet-specific
+  /** BottomSheet options */
+  bottomSheet?: BottomSheetOptions;
+
   // Content options
   /** Content background color */
   contentBackgroundColor?: string;
@@ -201,6 +205,24 @@ export interface TabBarOptions {
   tabBarShowLabels?: boolean;
   /** Tab bar style */
   tabBarStyle?: Record<string, unknown>;
+}
+
+// ============================================================================
+// BottomSheet Options
+// ============================================================================
+
+/**
+ * BottomSheet-specific options
+ */
+export interface BottomSheetOptions {
+  /**
+   * Snap points (e.g., ["25%", "50%", "90%"] or [200, 400])
+   */
+  snapPoints?: (number | string)[];
+  /**
+   * Initial snap index when this screen is focused
+   */
+  initialSnapIndex?: number;
 }
 
 // ============================================================================
@@ -304,6 +326,9 @@ export interface NavigationHelpers<
 
   /** Pop screens from the stack */
   pop(count?: number): void;
+
+  /** Pop to the first screen in the stack */
+  popToTop(): void;
 
   /** Go back to the previous screen */
   goBack(): void;
@@ -450,6 +475,39 @@ export interface TabsNavigatorProps {
   /** Custom tab bar component */
   tabBar?: (props: TabBarProps) => JSX.Element;
   /** Children (Tabs.Screen elements) */
+  children?: JSX.Element;
+}
+
+/**
+ * Props for BottomSheet.Screen
+ */
+export interface BottomSheetScreenProps<
+  ParamList extends RouteParamList = RouteParamList,
+  RouteName extends keyof ParamList & string = keyof ParamList & string
+> {
+  /** Screen name */
+  name: RouteName;
+  /** Screen component */
+  component: ScreenComponent<ParamList, RouteName>;
+  /** Screen options */
+  options?: ScreenOptionsInput;
+  /** Initial params */
+  initialParams?: ParamList[RouteName];
+}
+
+/**
+ * Props for BottomSheet.Navigator
+ */
+export interface BottomSheetNavigatorProps {
+  /** Navigator ID */
+  id?: string;
+  /** Initial route name */
+  initialRouteName?: string;
+  /** Default screen options */
+  screenOptions?: ScreenOptionsInput;
+  /** Global bottom sheet options (default for all screens) */
+  bottomSheetOptions?: BottomSheetOptions;
+  /** Children (BottomSheet.Screen elements) */
   children?: JSX.Element;
 }
 
