@@ -6,6 +6,8 @@ import {
   For,
   Show,
   createEffect,
+  getOwner,
+  runWithOwner,
   type JSX,
   type Accessor,
 } from "solid-js";
@@ -525,6 +527,7 @@ function HeaderBar(props: HeaderBarProps) {
   const insets = createSafeAreaInsets();
   const insetTop = 0; // Header inside bottom sheet doesn't need top inset usually
   const baseHeight = DEFAULT_HEADER_HEIGHT;
+  const owner = getOwner();
 
   const tintColor = () => props.options.headerTintColor ?? DEFAULT_HEADER_TINT;
   const titleColor = () =>
@@ -536,13 +539,20 @@ function HeaderBar(props: HeaderBarProps) {
       ? "transparent"
       : props.options.headerBackgroundColor ?? DEFAULT_HEADER_BACKGROUND;
   const backVisible = () => props.options.headerBackVisible ?? true;
+  const invokeBack = () => {
+    if (owner) {
+      runWithOwner(owner, () => props.onBack());
+    } else {
+      props.onBack();
+    }
+  };
 
   const renderLeft = () => {
     const canBack = () => props.canGoBack || backVisible();
     if (props.options.headerLeft) return props.options.headerLeft();
     return (
       <Button
-        onPress={canBack() ? props.onBack : undefined}
+        onPress={canBack() ? invokeBack : undefined}
         variant="ghost"
         iconOnly
         rounded="pill"

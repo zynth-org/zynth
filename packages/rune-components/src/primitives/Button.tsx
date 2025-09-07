@@ -4,7 +4,9 @@ import {
   createEffect,
   createMemo,
   createSignal,
+  getOwner,
   onCleanup,
+  runWithOwner,
   splitProps,
 } from "solid-js";
 import type { ParentComponent } from "solid-js";
@@ -264,6 +266,18 @@ const withAlphaHex = (hex: string, alpha: number): string => {
 };
 
 export const Button: ParentComponent<ButtonProps> = (props) => {
+  const owner = getOwner();
+  const callWithOwner = <T extends (...args: any[]) => any>(
+    callback: T | undefined,
+    ...args: Parameters<T>
+  ): ReturnType<T> | undefined => {
+    if (!callback) return undefined;
+    if (owner) {
+      return runWithOwner(owner, () => callback(...args));
+    }
+    return callback(...args);
+  };
+
   const [local] = splitProps(props, [
     "children",
     "label",
@@ -537,7 +551,7 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     if (!local.onPress) return;
     if (resolvedDisabled()) return;
 
-    const result = local.onPress({ synthetic: false });
+    const result = callWithOwner(local.onPress, { synthetic: false });
     if (pendingBehavior().mode === "auto" && isPromise(result)) {
       setPendingCount((count) => count + 1);
       controller.__applyState?.({ loading: true });
@@ -581,34 +595,34 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
 
   const handlePressIn = () => {
     controller.__applyState?.({ pressed: true });
-    local.onPressIn?.();
+    callWithOwner(local.onPressIn);
   };
 
   const handlePressOut = () => {
     controller.__applyState?.({ pressed: false });
-    local.onPressOut?.();
+    callWithOwner(local.onPressOut);
   };
 
   const handleLongPress = (durationMs: number) => {
-    local.onLongPress?.({ durationMs });
+    callWithOwner(local.onLongPress, { durationMs });
   };
 
   const handleFocus = () => {
     controller.__applyState?.({ focused: true });
-    local.onFocus?.();
+    callWithOwner(local.onFocus);
   };
 
   const handleBlur = () => {
     controller.__applyState?.({ focused: false });
-    local.onBlur?.();
+    callWithOwner(local.onBlur);
   };
 
   const handleKeyDown = (key: string) => {
-    local.onKeyDown?.({ key });
+    callWithOwner(local.onKeyDown, { key });
   };
 
   const handleKeyUp = (key: string) => {
-    local.onKeyUp?.({ key });
+    callWithOwner(local.onKeyUp, { key });
   };
 
   createEffect(() => {
