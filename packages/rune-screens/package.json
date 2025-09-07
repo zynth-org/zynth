@@ -10,9 +10,11 @@
   "files": [
     "dist",
     "android",
+    "ios",
     "src",
     "package.json",
-    "README.md"
+    "README.md",
+    "RuneScreens.podspec"
   ],
   "peerDependencies": {
     "solid-js": ">=1.8.0",
@@ -33,6 +35,14 @@
     "build:types": "tsc --project tsconfig.types.json"
   },
   "runeNative": {
+    "ios": {
+      "pods": [
+        {
+          "name": "RuneScreens",
+          "podspec": "./RuneScreens.podspec"
+        }
+      ]
+    },
     "android": {
       "modules": [
         {
