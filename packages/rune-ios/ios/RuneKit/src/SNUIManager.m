@@ -117,7 +117,7 @@ static _Atomic int sNextGuestSurfaceId = kRuneSurfaceIdBase;
       _activeSurfaceId = 0;
       CGRect screenBounds = [UIScreen mainScreen].bounds;
       rootView.frame = screenBounds;
-      rootView.backgroundColor = [UIColor colorWithRed:0.06 green:0.07 blue:0.09 alpha:1.0];
+      rootView.backgroundColor = [UIColor colorWithRed:0.9686 green:0.9686 blue:0.9686 alpha:1.0]; // #f7f7f7
       _surfaceRoots[@(0)] = rootView;
       _surfaceYoga[@(0)] = [NSValue valueWithPointer:_rootYoga];
     }
