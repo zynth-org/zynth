@@ -60,6 +60,7 @@ final class RuneScreenViewController: UIViewController {
     } else {
       appearance.configureWithDefaultBackground()
     }
+    appearance.shadowColor = nil
 
     let titleColor = options.titleColor ?? UIColor.label
     appearance.titleTextAttributes = [
