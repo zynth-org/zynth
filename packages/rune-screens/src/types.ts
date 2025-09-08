@@ -30,6 +30,9 @@ export interface ScreenProps {
   /** Whether back gesture is enabled */
   gestureEnabled?: boolean;
 
+  /** Native header configuration (used primarily on iOS) */
+  headerOptions?: ScreenHeaderOptions;
+
   /** Called when screen is about to appear */
   onWillAppear?: () => void;
 
@@ -44,6 +47,22 @@ export interface ScreenProps {
 
   style?: Style;
   children?: JSX.Element;
+}
+
+/**
+ * Header configuration passed down to the native primitives.
+ * Primarily used for iOS UINavigationController integration.
+ */
+export interface ScreenHeaderOptions {
+  title?: string;
+  subtitle?: string;
+  prefersLargeTitle?: boolean;
+  visible?: boolean;
+  backVisible?: boolean;
+  tintColor?: string;
+  titleColor?: string;
+  backgroundColor?: string;
+  transparent?: boolean;
 }
 
 /**

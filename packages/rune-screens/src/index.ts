@@ -9,6 +9,7 @@ export type {
   ScreenProps,
   ScreenTabsContainerProps,
   ScreenAnimationType,
+  ScreenHeaderOptions,
   RouteDefinition,
   NavigationState,
 } from "./types";

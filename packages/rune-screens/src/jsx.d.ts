@@ -13,6 +13,7 @@ declare module "solid-js" {
         active?: boolean;
         animation?: string;
         gestureEnabled?: boolean;
+        headerOptions?: Record<string, any>;
         onWillAppear?: () => void;
         onDidAppear?: () => void;
         onWillDisappear?: () => void;

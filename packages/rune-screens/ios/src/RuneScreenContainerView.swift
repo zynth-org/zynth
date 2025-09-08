@@ -2,123 +2,177 @@ import UIKit
 
 @objcMembers
 public final class RuneScreenContainerView: UIView {
-  private var detachingScreens: [RuneScreenView] = []
+  private var orderedScreens: [RuneScreenView] = []
+  private var controllerMap: [ObjectIdentifier: RuneScreenViewController] = [:]
+  private var pendingNavigationUpdate = false
+
+  private weak var hostingController: UIViewController?
+  private var navigationController: RuneScreensNavigationController?
 
   public override init(frame: CGRect) {
     super.init(frame: frame)
-    commonInit()
+    clipsToBounds = true
   }
 
   public required init?(coder: NSCoder) {
     super.init(coder: coder)
-    commonInit()
-  }
-
-  private func commonInit() {
-    clipsToBounds = false
+    clipsToBounds = true
   }
 
   public override func layoutSubviews() {
     super.layoutSubviews()
-    for view in subviews {
-      view.frame = bounds
+    navigationController?.view.frame = bounds
+  }
+
+  public override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window != nil {
+      attachNavigationControllerIfNeeded()
+      scheduleNavigationUpdate()
+    } else {
+      detachNavigationController()
     }
   }
 
-  public override func didAddSubview(_ subview: UIView) {
-    super.didAddSubview(subview)
-    guard let screen = subview as? RuneScreenView else { return }
+  public func insertScreen(_ screen: RuneScreenView, at index: Int) {
+    let clampedIndex = max(0, min(index, orderedScreens.count))
+    orderedScreens.removeAll { $0 === screen }
+    orderedScreens.insert(screen, at: clampedIndex)
     screen.container = self
-    updateScreenVisibility()
+    scheduleNavigationUpdate()
   }
 
-  public override func willRemoveSubview(_ subview: UIView) {
-    super.willRemoveSubview(subview)
-    guard let screen = subview as? RuneScreenView else { return }
-    if screen.container === self {
-      screen.container = nil
+  public func removeScreen(_ screen: RuneScreenView) {
+    orderedScreens.removeAll { $0 === screen }
+    controllerMap.removeValue(forKey: ObjectIdentifier(screen))
+    screen.container = nil
+    scheduleNavigationUpdate()
+  }
+
+  func screenDidAttach(_ screen: RuneScreenView) {
+    if !orderedScreens.contains(where: { $0 === screen }) {
+      orderedScreens.append(screen)
     }
-    detachingScreens.removeAll { $0 === screen }
-    updateScreenVisibility()
+    scheduleNavigationUpdate()
   }
 
-  @objc(beginRemovalForScreen:)
-  public func beginRemoval(for screen: RuneScreenView) -> Bool {
-    guard let top = stackScreens().last, top === screen else {
+  func screenDidChangeActiveState(_ screen: RuneScreenView) {
+    scheduleNavigationUpdate()
+  }
+
+  private func attachNavigationControllerIfNeeded() {
+    guard navigationController == nil else { return }
+    guard let parentVC = findParentViewController() else { return }
+
+    let navController = RuneScreensNavigationController()
+    parentVC.addChild(navController)
+    navController.view.frame = bounds
+    navController.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    addSubview(navController.view)
+    navController.didMove(toParent: parentVC)
+
+    navigationController = navController
+    hostingController = parentVC
+  }
+
+  private func detachNavigationController() {
+    guard let navController = navigationController else { return }
+    navController.willMove(toParent: nil)
+    navController.view.removeFromSuperview()
+    navController.removeFromParent()
+    navigationController = nil
+    hostingController = nil
+  }
+
+  func screenHeaderOptionsDidChange(_ screen: RuneScreenView) {
+    let identifier = ObjectIdentifier(screen)
+    if let controller = controllerMap[identifier] {
+      controller.applyHeaderOptions()
+      navigationController?.updateNavigationBarHiddenState(animated: false)
+    }
+  }
+
+  private func controller(for screen: RuneScreenView, createIfMissing: Bool = true) -> RuneScreenViewController? {
+    let identifier = ObjectIdentifier(screen)
+    if let existing = controllerMap[identifier] {
+      return existing
+    }
+    guard createIfMissing else { return nil }
+    let controller = RuneScreenViewController(screenView: screen)
+    controller.applyHeaderOptions()
+    controllerMap[identifier] = controller
+    return controller
+  }
+
+  private func scheduleNavigationUpdate() {
+    guard !pendingNavigationUpdate else { return }
+    pendingNavigationUpdate = true
+    DispatchQueue.main.async { [weak self] in
+      self?.pendingNavigationUpdate = false
+      self?.applyNavigationChanges()
+    }
+  }
+
+  private func applyNavigationChanges() {
+    attachNavigationControllerIfNeeded()
+    guard let navController = navigationController else { return }
+
+    let activeScreens = orderedScreens.filter { $0.isScreenActive }
+    let desiredControllers = activeScreens.compactMap { controller(for: $0) }
+    let currentControllers = navController.viewControllers.compactMap { $0 as? RuneScreenViewController }
+
+    if currentControllers == desiredControllers {
+      navController.updateNavigationBarHiddenState(animated: false)
+      return
+    }
+
+    if currentControllers.isEmpty {
+      navController.setViewControllers(desiredControllers, animated: false)
+      navController.updateNavigationBarHiddenState(animated: false)
+      return
+    }
+
+    if desiredControllers.count == currentControllers.count + 1,
+       Array(desiredControllers.dropLast()) == currentControllers,
+       let newController = desiredControllers.last {
+      navController.pushViewController(newController, animated: true)
+      navController.updateNavigationBarHiddenState(animated: true)
+      return
+    }
+
+    if desiredControllers.count < currentControllers.count,
+       Array(currentControllers.prefix(desiredControllers.count)) == desiredControllers {
+      if let target = desiredControllers.last {
+        navController.popToViewController(target, animated: true)
+      } else {
+        navController.setViewControllers([], animated: false)
+      }
+      navController.updateNavigationBarHiddenState(animated: true)
+      return
+    }
+
+    navController.setViewControllers(desiredControllers, animated: false)
+    navController.updateNavigationBarHiddenState(animated: false)
+  }
+
+  private func findParentViewController() -> UIViewController? {
+    var responder: UIResponder? = self
+    while let next = responder?.next {
+      if let vc = next as? UIViewController {
+        return vc
+      }
+      responder = next
+    }
+    return nil
+  }
+}
+
+private func == (lhs: [RuneScreenViewController], rhs: [RuneScreenViewController]) -> Bool {
+  guard lhs.count == rhs.count else { return false }
+  for (index, controller) in lhs.enumerated() {
+    if controller !== rhs[index] {
       return false
     }
-    if !detachingScreens.contains(where: { $0 === screen }) {
-      detachingScreens.append(screen)
-    }
-    updateScreenVisibility()
-    screen.startExitAnimationAndCleanup()
-    return true
   }
-
-  @objc public func finishRemoval(screen: RuneScreenView) {
-    detachingScreens.removeAll { $0 === screen }
-    updateScreenVisibility()
-    guard screen.superview === self else { return }
-    UIView.performWithoutAnimation {
-      screen.removeFromSuperview()
-    }
-  }
-
-  func previousScreen(for screen: RuneScreenView) -> RuneScreenView? {
-    let stack = stackScreens()
-    if let index = stack.firstIndex(where: { $0 === screen }) {
-      if index > 0 {
-        return stack[index - 1]
-      }
-      return nil
-    }
-    return stack.last
-  }
-
-  public func updateScreenVisibility() {
-    let stack = stackScreens()
-    let topActive = stack.last(where: { $0.isScreenActive })
-    var modalBackgroundIndex: Int?
-    if let top = topActive,
-       top.animationType == .modal,
-       let topIndex = stack.firstIndex(where: { $0 === top }) {
-      modalBackgroundIndex = topIndex - 1
-    }
-
-    for (index, screen) in stack.enumerated() {
-      var shouldBeVisible = false
-      if screen === topActive {
-        shouldBeVisible = true
-      }
-      if screen.isInTransition {
-        shouldBeVisible = true
-      }
-      if index + 1 < stack.count {
-        let screenAbove = stack[index + 1]
-        if screenAbove.isInTransition {
-          shouldBeVisible = true
-        }
-      }
-      if let modalIndex = modalBackgroundIndex, modalIndex == index {
-        shouldBeVisible = true
-      }
-      if !detachingScreens.isEmpty, screen === topActive {
-        shouldBeVisible = true
-      }
-      screen.isHidden = !shouldBeVisible
-      screen.layer.zPosition = CGFloat(index)
-    }
-
-    for (offset, screen) in detachingScreens.enumerated() {
-      screen.isHidden = false
-      screen.layer.zPosition = CGFloat(stack.count + offset + 100)
-    }
-  }
-
-  private func stackScreens() -> [RuneScreenView] {
-    return subviews.compactMap { $0 as? RuneScreenView }
-      .filter { screen in
-        !detachingScreens.contains(where: { $0 === screen })
-      }
-  }
+  return true
 }

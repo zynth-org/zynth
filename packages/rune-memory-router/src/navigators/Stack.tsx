@@ -16,6 +16,7 @@ import {
   ScreenContainer,
   Screen as ScreenPrimitive,
   type ScreenAnimationType,
+  type ScreenHeaderOptions,
 } from "@rune/screens";
 import {
   NavigationContext,
@@ -389,8 +390,12 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
       const config = screenRegistry.get(route.name);
       return resolveOptions(route.options, config?.options);
     });
+    const useNativeHeader = Platform.OS === OS.IOS;
     const headerShown = createMemo(
       () => currentOptions()?.headerShown !== false
+    );
+    const shouldRenderHeaderBar = createMemo(
+      () => headerShown() && !useNativeHeader
     );
 
     return (
@@ -412,6 +417,31 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
               const [params, setParams] = createSignal(route.params ?? {});
               const [screenOptions, setScreenOptions] =
                 createSignal<ScreenOptions>(options());
+              const headerVisible = createMemo(
+                () => options()?.headerShown !== false
+              );
+              const nativeHeaderOptions = createMemo<ScreenHeaderOptions>(() => {
+                const opts = options();
+                const resolvedTitle = opts?.title ?? route.name;
+                const transparent = opts?.headerTransparent ?? false;
+                const backgroundColor = transparent
+                  ? undefined
+                  : opts?.headerBackgroundColor ?? DEFAULT_HEADER_BACKGROUND;
+                return {
+                  title: resolvedTitle,
+                  subtitle: opts?.subtitle,
+                  prefersLargeTitle: opts?.largeTitle ?? false,
+                  visible: headerVisible(),
+                  backVisible: opts?.headerBackVisible ?? true,
+                  tintColor: opts?.headerTintColor ?? DEFAULT_HEADER_TINT,
+                  titleColor:
+                    opts?.headerTitleColor ??
+                    opts?.headerTintColor ??
+                    DEFAULT_HEADER_TINT,
+                  backgroundColor,
+                  transparent,
+                };
+              });
 
               const routeContext: RouteContextData = {
                 key: route.key,
@@ -440,6 +470,7 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
                       ? "none"
                       : resolveScreenAnimation(options())
                   }
+                  headerOptions={nativeHeaderOptions()}
                 >
                   <RouteContext.Provider value={routeContext}>
                     <ScreenComponent
@@ -457,7 +488,7 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
             }}
           </For>
         </ScreenContainer>
-        {headerShown() && currentRoute() && currentOptions() ? (
+        {shouldRenderHeaderBar() && currentRoute() && currentOptions() ? (
           <HeaderBar
             key={currentRoute()!.key}
             options={currentOptions()!}

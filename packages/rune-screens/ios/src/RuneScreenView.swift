@@ -2,18 +2,81 @@ import Foundation
 import RuneKit
 import UIKit
 
+struct RuneScreenHeaderOptions: Equatable {
+  var title: String?
+  var subtitle: String?
+  var prefersLargeTitle: Bool
+  var isVisible: Bool
+  var isBackVisible: Bool
+  var isTransparent: Bool
+  var tintColor: UIColor?
+  var titleColor: UIColor?
+  var backgroundColor: UIColor?
+
+  static let `default` = RuneScreenHeaderOptions(
+    title: nil,
+    subtitle: nil,
+    prefersLargeTitle: false,
+    isVisible: true,
+    isBackVisible: true,
+    isTransparent: false,
+    tintColor: nil,
+    titleColor: nil,
+    backgroundColor: nil
+  )
+}
+
+private extension UIColor {
+  static func rune_color(from hexString: String?) -> UIColor? {
+    guard var hex = hexString?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: "#", with: ""),
+      !hex.isEmpty
+    else {
+      return nil
+    }
+
+    if hex.count == 3 {
+      let chars = Array(hex)
+      hex = chars.map { "\($0)\($0)" }.joined()
+    }
+
+    guard hex.count == 6 || hex.count == 8 else {
+      return nil
+    }
+
+    var int: UInt64 = 0
+    Scanner(string: hex).scanHexInt64(&int)
+
+    let r, g, b, a: UInt64
+    if hex.count == 8 {
+      a = int & 0xFF
+      b = (int >> 8) & 0xFF
+      g = (int >> 16) & 0xFF
+      r = (int >> 24) & 0xFF
+    } else {
+      a = 0xFF
+      b = int & 0xFF
+      g = (int >> 8) & 0xFF
+      r = (int >> 16) & 0xFF
+    }
+
+    return UIColor(
+      red: CGFloat(r) / 255.0,
+      green: CGFloat(g) / 255.0,
+      blue: CGFloat(b) / 255.0,
+      alpha: CGFloat(a) / 255.0
+    )
+  }
+}
+
 @objcMembers
 public final class RuneScreenView: UIView {
-  private enum Constants {
-    static let animationDuration: TimeInterval = 0.3
-    static let pushOffset: CGFloat = 30
-    static let modalOffset: CGFloat = 80
-    static let zoomScaleStart: CGFloat = 0.92
-  }
-
   weak var container: RuneScreenContainerView? {
     didSet {
-      applyPendingActiveStateIfNeeded()
+      if container !== oldValue {
+        container?.screenDidAttach(self)
+      }
     }
   }
 
@@ -21,15 +84,12 @@ public final class RuneScreenView: UIView {
   @objc public private(set) var isScreenActive: Bool = false
   @objc public private(set) var animationType: RuneScreenAnimation = .push
   @objc public private(set) var gestureEnabled: Bool = true
-  @objc public private(set) var isInTransition: Bool = false
-
-  private var pendingActiveState: Bool?
-  private var currentAnimator: UIViewPropertyAnimator?
-  private var isControlledByNeighbor: Bool = false
-  private var isPendingRemoval: Bool = false
+  var headerOptions: RuneScreenHeaderOptions = .default
 
   private weak var manager: SNUIManager?
   private weak var node: SNNode?
+
+  private var pendingActiveState: Bool?
 
   public override init(frame: CGRect) {
     super.init(frame: frame)
@@ -42,8 +102,9 @@ public final class RuneScreenView: UIView {
   }
 
   private func commonInit() {
-    isHidden = true
-    clipsToBounds = false
+    clipsToBounds = true
+    backgroundColor = .clear
+    autoresizingMask = [.flexibleWidth, .flexibleHeight]
   }
 
   public override func layoutSubviews() {
@@ -53,36 +114,21 @@ public final class RuneScreenView: UIView {
     }
   }
 
-  public override func didMoveToWindow() {
-    super.didMoveToWindow()
-    applyPendingActiveStateIfNeeded()
-  }
-
   public func bind(manager: SNUIManager, node: SNNode) {
     self.manager = manager
     self.node = node
   }
 
   public func prepareForReuse() {
-    cancelAnimation()
-    resetTransforms()
-    pendingActiveState = nil
-    isScreenActive = false
-    isInTransition = false
-    isControlledByNeighbor = false
-    isPendingRemoval = false
     manager = nil
     node = nil
+    pendingActiveState = nil
+    isScreenActive = false
+    container = nil
   }
 
   public func setScreenKeyValue(_ value: NSString?) {
     screenKey = value as String? ?? ""
-  }
-
-  public func setActiveStateValue(_ value: NSNumber?) {
-    let active = value?.boolValue ?? false
-    pendingActiveState = active
-    applyPendingActiveStateIfNeeded()
   }
 
   public func setAnimationTypeString(_ value: NSString?) {
@@ -91,290 +137,80 @@ public final class RuneScreenView: UIView {
 
   public func setGestureEnabledValue(_ value: NSNumber?) {
     gestureEnabled = value?.boolValue ?? true
-    isUserInteractionEnabled = gestureEnabled
   }
 
-  public func startExitAnimationAndCleanup() {
-    if isPendingRemoval {
-      return
+  public func setActiveStateValue(_ value: NSNumber?) {
+    let active = value?.boolValue ?? false
+    pendingActiveState = active
+    applyPendingActiveStateIfNeeded()
+  }
+
+  @objc(setHeaderOptionsFromDictionary:)
+  public func setHeaderOptions(from dictionary: NSDictionary?) {
+    var options = RuneScreenHeaderOptions.default
+    if let dict = dictionary {
+      if let title = dict["title"] as? String {
+        options.title = title
+      }
+      if let subtitle = dict["subtitle"] as? String {
+        options.subtitle = subtitle
+      }
+      if let prefersLargeTitle = dict["prefersLargeTitle"] as? Bool {
+        options.prefersLargeTitle = prefersLargeTitle
+      }
+      if let visible = dict["visible"] as? Bool {
+        options.isVisible = visible
+      }
+      if let backVisible = dict["backVisible"] as? Bool {
+        options.isBackVisible = backVisible
+      }
+      if let transparent = dict["transparent"] as? Bool {
+        options.isTransparent = transparent
+      }
+      if let tint = dict["tintColor"] as? String {
+        options.tintColor = UIColor.rune_color(from: tint)
+      }
+      if let titleColor = dict["titleColor"] as? String {
+        options.titleColor = UIColor.rune_color(from: titleColor)
+      }
+      if let backgroundColor = dict["backgroundColor"] as? String {
+        options.backgroundColor = UIColor.rune_color(from: backgroundColor)
+      }
     }
-    isPendingRemoval = true
-    pendingActiveState = nil
-    if isScreenActive {
-      isScreenActive = false
+
+    if headerOptions != options {
+      headerOptions = options
+      container?.screenHeaderOptionsDidChange(self)
     }
-    performExitAnimation(isDetaching: true)
   }
 
   private func applyPendingActiveStateIfNeeded() {
-    guard let target = pendingActiveState, container != nil, superview != nil else {
+    guard let target = pendingActiveState else { return }
+
+    if isScreenActive == target {
+      pendingActiveState = nil
       return
     }
+
     pendingActiveState = nil
-
-    if target == isScreenActive {
-      return
-    }
-
-    let wasActive = isScreenActive
     isScreenActive = target
-
-    if target && !wasActive {
-      performEnterAnimation()
-    } else if !target && wasActive {
-      performExitAnimation(isDetaching: isPendingRemoval)
-    }
+    container?.screenDidChangeActiveState(self)
   }
 
-  private func performEnterAnimation() {
-    if isControlledByNeighbor {
-      return
-    }
-
-    if previousScreen() == nil {
-      cancelAnimation()
-      dispatchEvent(name: "onWillAppear")
-      isHidden = false
-      resetTransforms()
-      container?.updateScreenVisibility()
-      dispatchEvent(name: "onDidAppear")
-      return
-    }
-
-    cancelAnimation()
+  func notifyWillAppear() {
     dispatchEvent(name: "onWillAppear")
-
-    guard animationType != .none else {
-      isHidden = false
-      resetTransforms()
-      container?.updateScreenVisibility()
-      dispatchEvent(name: "onDidAppear")
-      return
-    }
-
-    isInTransition = true
-    isHidden = false
-
-    switch animationType {
-    case .push:
-      transform = CGAffineTransform(translationX: Constants.pushOffset, y: 0)
-      alpha = 0
-    case .modal:
-      transform = CGAffineTransform(translationX: 0, y: Constants.modalOffset)
-      alpha = 0
-    case .zoom:
-      transform = CGAffineTransform(scaleX: Constants.zoomScaleStart, y: Constants.zoomScaleStart)
-      alpha = 0
-    case .fade:
-      alpha = 0
-    case .none:
-      break
-    }
-
-    let animator = UIViewPropertyAnimator(duration: Constants.animationDuration, curve: .easeInOut)
-    animator.addAnimations { [weak self] in
-      guard let self = self else { return }
-      self.transform = .identity
-      self.alpha = 1
-    }
-
-    switch animationType {
-    case .push:
-      animatePreviousScreenOnEnter(animator: animator, translationX: Constants.pushOffset)
-    case .zoom:
-      animatePreviousScreenOnEnterZoom(animator: animator)
-    default:
-      break
-    }
-
-    animator.addCompletion { [weak self] _ in
-      guard let self = self else { return }
-      self.isInTransition = false
-      self.resetTransforms()
-      self.container?.updateScreenVisibility()
-      self.dispatchEvent(name: "onDidAppear")
-      self.currentAnimator = nil
-    }
-
-    currentAnimator = animator
-    container?.updateScreenVisibility()
-    animator.startAnimation()
   }
 
-  private func performExitAnimation(isDetaching: Bool) {
-    if isControlledByNeighbor {
-      if isDetaching {
-        container?.finishRemoval(screen: self)
-      }
-      return
-    }
+  func notifyDidAppear() {
+    dispatchEvent(name: "onDidAppear")
+  }
 
-    cancelAnimation()
+  func notifyWillDisappear() {
     dispatchEvent(name: "onWillDisappear")
-
-    guard animationType != .none else {
-      isHidden = true
-      resetTransforms()
-      container?.updateScreenVisibility()
-      dispatchEvent(name: "onDidDisappear")
-      if isDetaching {
-        container?.finishRemoval(screen: self)
-      }
-      return
-    }
-
-    isInTransition = true
-
-    let animator = UIViewPropertyAnimator(duration: Constants.animationDuration, curve: .easeInOut)
-
-    animator.addAnimations { [weak self] in
-      guard let self = self else { return }
-      switch self.animationType {
-      case .push:
-        self.transform = CGAffineTransform(translationX: Constants.pushOffset, y: 0)
-        self.alpha = 0
-      case .modal:
-        self.transform = CGAffineTransform(translationX: 0, y: Constants.modalOffset)
-        self.alpha = 0
-      case .zoom:
-        self.transform = CGAffineTransform(scaleX: Constants.zoomScaleStart, y: Constants.zoomScaleStart)
-        self.alpha = 0
-      case .fade:
-        self.alpha = 0
-      case .none:
-        break
-      }
-    }
-
-    switch animationType {
-    case .push:
-      animatePreviousScreenOnExit(animator: animator, startTranslationX: -Constants.pushOffset)
-    case .zoom:
-      animatePreviousScreenOnExitZoom(animator: animator)
-    default:
-      break
-    }
-
-    animator.addCompletion { [weak self] _ in
-      guard let self = self else { return }
-      self.isInTransition = false
-      self.isHidden = true
-      self.resetTransforms()
-      self.container?.updateScreenVisibility()
-      self.dispatchEvent(name: "onDidDisappear")
-      self.currentAnimator = nil
-      if isDetaching {
-        self.container?.finishRemoval(screen: self)
-      }
-    }
-
-    currentAnimator = animator
-    container?.updateScreenVisibility()
-    animator.startAnimation()
   }
 
-  private func animatePreviousScreenOnEnter(animator: UIViewPropertyAnimator, translationX: CGFloat) {
-    guard let previous = previousScreen() else { return }
-    previous.cancelAnimation()
-    previous.isControlledByNeighbor = true
-    previous.isInTransition = true
-    previous.isHidden = false
-    previous.alpha = 1
-    previous.transform = .identity
-
-    animator.addAnimations {
-      previous.transform = CGAffineTransform(translationX: -translationX, y: 0)
-      previous.alpha = 0
-    }
-
-    animator.addCompletion { _ in
-      previous.isControlledByNeighbor = false
-      previous.isInTransition = false
-      previous.resetTransforms()
-      previous.container?.updateScreenVisibility()
-    }
-  }
-
-  private func animatePreviousScreenOnEnterZoom(animator: UIViewPropertyAnimator) {
-    guard let previous = previousScreen() else { return }
-    previous.cancelAnimation()
-    previous.isControlledByNeighbor = true
-    previous.isInTransition = true
-    previous.isHidden = false
-    previous.alpha = 1
-    previous.transform = .identity
-
-    animator.addAnimations {
-      previous.transform = CGAffineTransform(scaleX: Constants.zoomScaleStart, y: Constants.zoomScaleStart)
-      previous.alpha = 0
-    }
-
-    animator.addCompletion { _ in
-      previous.isControlledByNeighbor = false
-      previous.isInTransition = false
-      previous.resetTransforms()
-      previous.container?.updateScreenVisibility()
-    }
-  }
-
-  private func animatePreviousScreenOnExit(animator: UIViewPropertyAnimator, startTranslationX: CGFloat) {
-    guard let previous = previousScreen() else { return }
-    previous.cancelAnimation()
-    previous.isControlledByNeighbor = true
-    previous.isInTransition = true
-    previous.isHidden = false
-    previous.alpha = 0
-    previous.transform = CGAffineTransform(translationX: startTranslationX, y: 0)
-
-    animator.addAnimations {
-      previous.transform = .identity
-      previous.alpha = 1
-    }
-
-    animator.addCompletion { _ in
-      previous.isControlledByNeighbor = false
-      previous.isInTransition = false
-      previous.resetTransforms()
-      previous.container?.updateScreenVisibility()
-    }
-  }
-
-  private func animatePreviousScreenOnExitZoom(animator: UIViewPropertyAnimator) {
-    guard let previous = previousScreen() else { return }
-    previous.cancelAnimation()
-    previous.isControlledByNeighbor = true
-    previous.isInTransition = true
-    previous.isHidden = false
-    previous.alpha = 0
-    previous.transform = CGAffineTransform(scaleX: Constants.zoomScaleStart, y: Constants.zoomScaleStart)
-
-    animator.addAnimations {
-      previous.transform = .identity
-      previous.alpha = 1
-    }
-
-    animator.addCompletion { _ in
-      previous.isControlledByNeighbor = false
-      previous.isInTransition = false
-      previous.resetTransforms()
-      previous.container?.updateScreenVisibility()
-    }
-  }
-
-  private func previousScreen() -> RuneScreenView? {
-    return container?.previousScreen(for: self)
-  }
-
-  private func cancelAnimation() {
-    currentAnimator?.stopAnimation(true)
-    currentAnimator = nil
-    layer.removeAllAnimations()
-    isInTransition = false
-  }
-
-  private func resetTransforms() {
-    transform = .identity
-    alpha = 1
+  func notifyDidDisappear() {
+    dispatchEvent(name: "onDidDisappear")
   }
 
   private func dispatchEvent(name: String) {

@@ -56,6 +56,33 @@ static NSInteger RuneScreensParseInteger(NSString *rawJSON, NSInteger fallback) 
   return value.integerValue;
 }
 
+static NSDictionary *RuneScreensParseObject(NSString *rawJSON) {
+  if (rawJSON.length == 0) return nil;
+  NSString *value = [rawJSON stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+  if (value.length == 0 || [value isEqualToString:@"null"]) return nil;
+
+  NSString *normalized = RuneScreensNormalizeJSONString(value);
+  if ([normalized hasPrefix:@"\""] && [normalized hasSuffix:@"\""] && normalized.length >= 2) {
+    normalized = [normalized substringWithRange:NSMakeRange(1, normalized.length - 2)];
+    normalized = RuneScreensNormalizeJSONString(normalized);
+  }
+
+  NSData *data = [normalized dataUsingEncoding:NSUTF8StringEncoding];
+  if (!data) return nil;
+
+  NSError *error = nil;
+  id parsed = [NSJSONSerialization JSONObjectWithData:data options:NSJSONReadingAllowFragments error:&error];
+  if (error) {
+    NSLog(@"[RuneScreens] Failed to parse JSON '%@' error=%@", rawJSON, error);
+    return nil;
+  }
+
+  if ([parsed isKindOfClass:[NSDictionary class]]) {
+    return (NSDictionary *)parsed;
+  }
+  return nil;
+}
+
 @implementation SNUIManager (RuneScreens)
 
 + (void)load {
@@ -65,6 +92,40 @@ static NSInteger RuneScreensParseInteger(NSString *rawJSON, NSInteger fallback) 
     containerDescriptor.createView = ^UIView *(SNUIManager *manager, NSString *type) {
       return [[RuneScreenContainerView alloc] init];
     };
+    containerDescriptor.handleInsertChild = ^BOOL(SNUIManager *manager,
+                                                  SNNode *parent,
+                                                  SNNode *child,
+                                                  NSNumber *childId,
+                                                  NSUInteger index) {
+      if (![parent.view isKindOfClass:[RuneScreenContainerView class]]) {
+        return NO;
+      }
+      if (![child.view isKindOfClass:[RuneScreenView class]]) {
+        return NO;
+      }
+
+      RuneScreenContainerView *container = (RuneScreenContainerView *)parent.view;
+      RuneScreenView *screen = (RuneScreenView *)child.view;
+
+      child.parentId = parent.nid;
+      child.surfaceId = parent.surfaceId;
+
+      NSUInteger clamped = MIN(index, parent.children.count);
+      [parent.children insertObject:childId atIndex:clamped];
+
+      if (child.yoga) {
+        YGNodeRef owner = YGNodeGetOwner(child.yoga);
+        if (owner) {
+          YGNodeRemoveChild(owner, child.yoga);
+        }
+        YGNodeInsertChild(parent.yoga, child.yoga, (uint32_t)clamped);
+      }
+
+      [container insertScreen:screen at:(int)clamped];
+      [manager rune_markNeedsFlush];
+      return YES;
+    };
+
     containerDescriptor.handleRemoveChild = ^BOOL(SNUIManager *manager,
                                                   SNNode *parent,
                                                   SNNode *child,
@@ -75,20 +136,24 @@ static NSInteger RuneScreensParseInteger(NSString *rawJSON, NSInteger fallback) 
       if (![child.view isKindOfClass:[RuneScreenView class]]) {
         return NO;
       }
+
       RuneScreenContainerView *container = (RuneScreenContainerView *)parent.view;
       RuneScreenView *screen = (RuneScreenView *)child.view;
-      BOOL handled = [container beginRemovalForScreen:screen];
-      if (!handled) {
-        return NO;
-      }
 
       NSUInteger index = [parent.children indexOfObject:childId];
       if (index != NSNotFound) {
         [parent.children removeObjectAtIndex:index];
       }
-      if (parent.yoga && child.yoga) {
-        YGNodeRemoveChild(parent.yoga, child.yoga);
+      if (child.yoga) {
+        YGNodeRef owner = YGNodeGetOwner(child.yoga);
+        if (owner) {
+          YGNodeRemoveChild(owner, child.yoga);
+        }
       }
+      child.parentId = -1;
+      child.surfaceId = -1;
+
+      [container removeScreen:screen];
       [manager rune_markNeedsFlush];
       return YES;
     };
@@ -137,6 +202,12 @@ static NSInteger RuneScreensParseInteger(NSString *rawJSON, NSInteger fallback) 
       if ([name isEqualToString:@"gestureEnabled"]) {
         BOOL enabled = RuneScreensParseBoolean(rawJSON, YES);
         [view setGestureEnabledValue:@(enabled)];
+        return YES;
+      }
+
+      if ([name isEqualToString:@"headerOptions"]) {
+        NSDictionary *options = RuneScreensParseObject(rawJSON);
+        [view setHeaderOptionsFromDictionary:options];
         return YES;
       }
 
