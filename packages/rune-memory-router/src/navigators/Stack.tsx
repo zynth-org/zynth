@@ -391,12 +391,8 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
       return resolveOptions(route.options, config?.options);
     });
     const useNativeHeader = Platform.OS === OS.IOS;
-    const headerShown = createMemo(
-      () => currentOptions()?.headerShown !== false
-    );
-    const shouldRenderHeaderBar = createMemo(
-      () => headerShown() && !useNativeHeader
-    );
+    const headerShown = createMemo(() => currentOptions()?.headerShown !== false);
+    const shouldRenderHeaderBar = createMemo(() => headerShown() && !useNativeHeader);
 
     return (
       <View style={{ flex: 1 }}>
@@ -442,6 +438,9 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
                   transparent,
                 };
               });
+              const screenBackground = createMemo(
+                () => options()?.contentBackgroundColor ?? DEFAULT_SCREEN_BACKGROUND
+              );
 
               const routeContext: RouteContextData = {
                 key: route.key,
@@ -471,6 +470,9 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
                       : resolveScreenAnimation(options())
                   }
                   headerOptions={nativeHeaderOptions()}
+                  style={{
+                    backgroundColor: screenBackground(),
+                  }}
                 >
                   <RouteContext.Provider value={routeContext}>
                     <ScreenComponent
@@ -537,6 +539,7 @@ interface HeaderBarProps {
 const DEFAULT_HEADER_BACKGROUND = "#ffffff";
 const DEFAULT_HEADER_TINT = "#111827";
 const DEFAULT_TITLE_SIZE = 22;
+const DEFAULT_SCREEN_BACKGROUND = "#ffffff";
 
 function HeaderBar(props: HeaderBarProps) {
   const insets = createSafeAreaInsets();

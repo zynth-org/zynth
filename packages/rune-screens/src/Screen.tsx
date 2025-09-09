@@ -55,6 +55,7 @@ export const Screen: ParentComponent<ScreenProps> = (props) => {
     left: 0,
     right: 0,
     bottom: 0,
+    backgroundColor: DEFAULT_SCREEN_BACKGROUND,
     ...(local.style as Style),
   };
 
@@ -78,3 +79,4 @@ export const Screen: ParentComponent<ScreenProps> = (props) => {
     </rune-screen>
   );
 };
+const DEFAULT_SCREEN_BACKGROUND = "#ffffff";

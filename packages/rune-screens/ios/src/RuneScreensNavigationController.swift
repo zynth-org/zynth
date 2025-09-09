@@ -1,13 +1,13 @@
 import UIKit
 
-final class RuneScreensNavigationController: UINavigationController, UINavigationControllerDelegate {
+final class RuneScreensNavigationController: UINavigationController, UINavigationControllerDelegate, UIGestureRecognizerDelegate {
   override func viewDidLoad() {
     super.viewDidLoad()
     isNavigationBarHidden = false
-    interactivePopGestureRecognizer?.isEnabled = false
     view.backgroundColor = .clear
     navigationBar.prefersLargeTitles = true
     delegate = self
+    interactivePopGestureRecognizer?.delegate = self
   }
 
   func updateNavigationBarHiddenState(animated: Bool) {
@@ -22,5 +22,12 @@ final class RuneScreensNavigationController: UINavigationController, UINavigatio
   ) {
     guard let screenVC = viewController as? RuneScreenViewController else { return }
     setNavigationBarHidden(!screenVC.screenView.headerOptions.isVisible, animated: animated)
+  }
+
+  func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    if gestureRecognizer == interactivePopGestureRecognizer {
+      return viewControllers.count > 1
+    }
+    return true
   }
 }
