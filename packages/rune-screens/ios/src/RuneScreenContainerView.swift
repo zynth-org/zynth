@@ -70,6 +70,7 @@ public final class RuneScreenContainerView: UIView {
     navController.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     addSubview(navController.view)
     navController.didMove(toParent: parentVC)
+    navController.screenContainer = self
 
     navigationController = navController
     hostingController = parentVC
@@ -90,6 +91,10 @@ public final class RuneScreenContainerView: UIView {
       controller.applyHeaderOptions()
       navigationController?.updateNavigationBarHiddenState(animated: false)
     }
+  }
+
+  func handleNativePop(for controller: RuneScreenViewController) {
+    controller.screenView.notifyNativeBackRequested()
   }
 
   private func controller(for screen: RuneScreenView, createIfMissing: Bool = true) -> RuneScreenViewController? {
@@ -127,7 +132,9 @@ public final class RuneScreenContainerView: UIView {
     }
 
     if currentControllers.isEmpty {
-      navController.setViewControllers(desiredControllers, animated: false)
+      navController.performProgrammaticUpdate {
+        navController.setViewControllers(desiredControllers, animated: false)
+      }
       navController.updateNavigationBarHiddenState(animated: false)
       return
     }
@@ -135,7 +142,9 @@ public final class RuneScreenContainerView: UIView {
     if desiredControllers.count == currentControllers.count + 1,
        Array(desiredControllers.dropLast()) == currentControllers,
        let newController = desiredControllers.last {
-      navController.pushViewController(newController, animated: true)
+      navController.performProgrammaticUpdate {
+        navController.pushViewController(newController, animated: true)
+      }
       navController.updateNavigationBarHiddenState(animated: true)
       return
     }
@@ -143,15 +152,21 @@ public final class RuneScreenContainerView: UIView {
     if desiredControllers.count < currentControllers.count,
        Array(currentControllers.prefix(desiredControllers.count)) == desiredControllers {
       if let target = desiredControllers.last {
-        navController.popToViewController(target, animated: true)
+        navController.performProgrammaticUpdate {
+          navController.popToViewController(target, animated: true)
+        }
       } else {
-        navController.setViewControllers([], animated: false)
+        navController.performProgrammaticUpdate {
+          navController.setViewControllers([], animated: false)
+        }
       }
       navController.updateNavigationBarHiddenState(animated: true)
       return
     }
 
-    navController.setViewControllers(desiredControllers, animated: false)
+    navController.performProgrammaticUpdate {
+      navController.setViewControllers(desiredControllers, animated: false)
+    }
     navController.updateNavigationBarHiddenState(animated: false)
   }
 

@@ -441,6 +441,9 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
               const screenBackground = createMemo(
                 () => options()?.contentBackgroundColor ?? DEFAULT_SCREEN_BACKGROUND
               );
+              const handleNativeBack = () => {
+                helpers.goBack();
+              };
 
               const routeContext: RouteContextData = {
                 key: route.key,
@@ -470,6 +473,7 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
                       : resolveScreenAnimation(options())
                   }
                   headerOptions={nativeHeaderOptions()}
+                  onNativeBack={useNativeHeader ? handleNativeBack : undefined}
                   style={{
                     backgroundColor: screenBackground(),
                   }}

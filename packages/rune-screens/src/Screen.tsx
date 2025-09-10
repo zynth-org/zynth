@@ -39,6 +39,7 @@ export const Screen: ParentComponent<ScreenProps> = (props) => {
     "animation",
     "gestureEnabled",
     "headerOptions",
+    "onNativeBack",
     "onWillAppear",
     "onDidAppear",
     "onWillDisappear",
@@ -69,6 +70,7 @@ export const Screen: ParentComponent<ScreenProps> = (props) => {
       animation={local.animation}
       gestureEnabled={local.gestureEnabled}
       headerOptions={local.headerOptions}
+      onNativeBack={local.onNativeBack}
       onWillAppear={local.onWillAppear}
       onDidAppear={local.onDidAppear}
       onWillDisappear={local.onWillDisappear}

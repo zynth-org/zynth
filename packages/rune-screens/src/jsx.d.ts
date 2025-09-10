@@ -14,6 +14,7 @@ declare module "solid-js" {
         animation?: string;
         gestureEnabled?: boolean;
         headerOptions?: Record<string, any>;
+        onNativeBack?: () => void;
         onWillAppear?: () => void;
         onDidAppear?: () => void;
         onWillDisappear?: () => void;

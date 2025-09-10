@@ -33,6 +33,9 @@ export interface ScreenProps {
   /** Native header configuration (used primarily on iOS) */
   headerOptions?: ScreenHeaderOptions;
 
+  /** Called when the native navigation controller requests a back action */
+  onNativeBack?: () => void;
+
   /** Called when screen is about to appear */
   onWillAppear?: () => void;
 

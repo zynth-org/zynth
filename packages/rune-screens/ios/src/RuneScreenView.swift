@@ -213,6 +213,10 @@ public final class RuneScreenView: UIView {
     dispatchEvent(name: "onDidDisappear")
   }
 
+  func notifyNativeBackRequested() {
+    dispatchEvent(name: "onNativeBack")
+  }
+
   private func dispatchEvent(name: String) {
     guard let manager = manager, let node = node else { return }
     let selector = NSSelectorFromString("rune_dispatchEvent:payload:toNode:")

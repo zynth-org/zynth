@@ -218,7 +218,8 @@ static NSDictionary *RuneScreensParseObject(NSString *rawJSON) {
       return [name isEqualToString:@"onWillAppear"] ||
              [name isEqualToString:@"onDidAppear"] ||
              [name isEqualToString:@"onWillDisappear"] ||
-             [name isEqualToString:@"onDidDisappear"];
+             [name isEqualToString:@"onDidDisappear"] ||
+             [name isEqualToString:@"onNativeBack"];
     };
     RuneRegisterComponentDescriptor(screenDescriptor);
 
