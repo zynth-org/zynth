@@ -2,6 +2,7 @@ import UIKit
 
 final class RuneScreenViewController: UIViewController {
   let screenView: RuneScreenView
+  private var rightAccessoryHost: RuneScreenHeaderAccessoryHostView?
 
   init(screenView: RuneScreenView) {
     self.screenView = screenView
@@ -43,6 +44,10 @@ final class RuneScreenViewController: UIViewController {
     super.viewDidDisappear(animated)
     screenView.notifyDidDisappear()
   }
+  
+  deinit {
+    rightAccessoryHost?.teardown()
+  }
 
   func applyHeaderOptions() {
     let options = screenView.headerOptions
@@ -79,5 +84,39 @@ final class RuneScreenViewController: UIViewController {
     } else {
       navigationController?.navigationBar.tintColor = nil
     }
+    updateHeaderRightItems()
+  }
+
+  private func updateHeaderRightItems() {
+    if let accessory = screenView.headerOptions.rightAccessory {
+      let host = rightAccessoryHost ?? RuneScreenHeaderAccessoryHostView()
+      host.configure(with: accessory, screenView: screenView)
+      navigationItem.rightBarButtonItem = UIBarButtonItem(customView: host)
+      rightAccessoryHost = host
+      return
+    }
+
+    rightAccessoryHost?.teardown()
+    rightAccessoryHost = nil
+
+    if let buttonOptions = screenView.headerOptions.rightButton {
+      navigationItem.rightBarButtonItem = makeRightBarButton(from: buttonOptions)
+    } else {
+      navigationItem.rightBarButtonItem = nil
+    }
+  }
+
+  private func makeRightBarButton(from options: RuneScreenHeaderButtonOptions) -> UIBarButtonItem {
+    if options.systemItem == "close" {
+      return UIBarButtonItem(barButtonSystemItem: .close, target: self, action: #selector(handleHeaderRightButtonPress))
+    }
+    let style: UIBarButtonItem.Style = options.style == "done" ? .done : .plain
+    let title = options.title ?? (style == .done ? "Done" : "More")
+    let item = UIBarButtonItem(title: title, style: style, target: self, action: #selector(handleHeaderRightButtonPress))
+    return item
+  }
+
+  @objc private func handleHeaderRightButtonPress() {
+    screenView.notifyNativeHeaderRightPress()
   }
 }

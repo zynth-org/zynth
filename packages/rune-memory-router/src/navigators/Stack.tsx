@@ -6,6 +6,8 @@ import {
   For,
   getOwner,
   runWithOwner,
+  createEffect,
+  onCleanup,
   type JSX,
   type Accessor,
 } from "solid-js";
@@ -37,6 +39,10 @@ import type {
   ScreenComponent,
   ScreenOptionsInput,
 } from "../types";
+import {
+  registerNativeHeaderAccessory,
+  unregisterNativeHeaderAccessory,
+} from "../native/headerAccessoryRegistry";
 
 // ============================================================================
 // Utility: Generate unique keys
@@ -408,6 +414,29 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
               const options = createMemo(() =>
                 resolveOptions(route.options, config.options)
               );
+              const localOwner = getOwner();
+
+              createEffect(() => {
+                if (!useNativeHeader) {
+                  unregisterNativeHeaderAccessory(route.key, "right");
+                  return;
+                }
+                const headerRightFactory = options()?.headerRight;
+                if (!headerRightFactory) {
+                  unregisterNativeHeaderAccessory(route.key, "right");
+                  return;
+                }
+                registerNativeHeaderAccessory({
+                  routeKey: route.key,
+                  position: "right",
+                  factory: headerRightFactory,
+                  owner: localOwner ?? null,
+                });
+              });
+
+              onCleanup(() => {
+                unregisterNativeHeaderAccessory(route.key, "right");
+              });
 
               // Route context for this screen
               const [params, setParams] = createSignal(route.params ?? {});
@@ -423,6 +452,7 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
                 const backgroundColor = transparent
                   ? undefined
                   : opts?.headerBackgroundColor ?? DEFAULT_HEADER_BACKGROUND;
+                const buttonOptions = opts?.headerRightButton;
                 return {
                   title: resolvedTitle,
                   subtitle: opts?.subtitle,
@@ -436,13 +466,38 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
                     DEFAULT_HEADER_TINT,
                   backgroundColor,
                   transparent,
+                  rightButton: buttonOptions
+                    ? {
+                        title: buttonOptions.title,
+                        style: buttonOptions.style,
+                        systemItem: buttonOptions.systemItem,
+                      }
+                    : undefined,
+                  rightAccessory:
+                    useNativeHeader && headerVisible() && opts?.headerRight
+                      ? {
+                          type: "surface",
+                          routeKey: route.key,
+                          position: "right",
+                        }
+                      : undefined,
                 };
               });
               const screenBackground = createMemo(
                 () => options()?.contentBackgroundColor ?? DEFAULT_SCREEN_BACKGROUND
               );
+              const headerRightButton = createMemo(() => options()?.headerRightButton);
               const handleNativeBack = () => {
                 helpers.goBack();
+              };
+              const handleNativeHeaderRightPress = () => {
+                const handler = headerRightButton()?.onPress;
+                if (!handler) return;
+                if (localOwner) {
+                  runWithOwner(localOwner, () => handler());
+                } else {
+                  handler();
+                }
               };
 
               const routeContext: RouteContextData = {
@@ -474,6 +529,11 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
                   }
                   headerOptions={nativeHeaderOptions()}
                   onNativeBack={useNativeHeader ? handleNativeBack : undefined}
+                  onNativeHeaderRightPress={
+                    useNativeHeader && headerRightButton()
+                      ? handleNativeHeaderRightPress
+                      : undefined
+                  }
                   style={{
                     backgroundColor: screenBackground(),
                   }}
@@ -568,6 +628,15 @@ function HeaderBar(props: HeaderBarProps) {
       props.onBack();
     }
   };
+  const invokeHeaderRightButton = () => {
+    const handler = props.options.headerRightButton?.onPress;
+    if (!handler) return;
+    if (owner) {
+      runWithOwner(owner, () => handler());
+    } else {
+      handler();
+    }
+  };
 
   const renderLeft = () => {
     const canBack = () => props.canGoBack || backVisible();
@@ -622,6 +691,40 @@ function HeaderBar(props: HeaderBarProps) {
 
   const renderRight = () => {
     if (props.options.headerRight) return props.options.headerRight();
+    if (props.options.headerRightButton)
+      return (
+        <Button
+          onPress={
+            props.options.headerRightButton?.onPress
+              ? invokeHeaderRightButton
+              : undefined
+          }
+          variant="ghost"
+          style={{
+            paddingHorizontal: 12,
+            paddingVertical: 6,
+            minWidth: 56,
+            alignSelf: "stretch",
+            justifyContent: "center",
+          }}
+        >
+          <Text
+            style={{
+              color: tintColor(),
+              fontSize: 16,
+              fontWeight:
+                props.options.headerRightButton?.style === "done"
+                  ? "600"
+                  : "500",
+            }}
+          >
+            {props.options.headerRightButton?.title ??
+              (props.options.headerRightButton?.systemItem === "close"
+                ? "Close"
+                : "Done")}
+          </Text>
+        </Button>
+      );
     return null;
   };
 

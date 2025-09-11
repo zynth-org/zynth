@@ -28,6 +28,7 @@ public final class RuneRuntime: NSObject {
     }
 
     super.init()
+    RuneRuntimeManagerRegistry.shared.setRuntime(self, for: manager)
     configureRuntime()
   }
   
@@ -46,6 +47,7 @@ public final class RuneRuntime: NSObject {
     }
 
     super.init()
+    RuneRuntimeManagerRegistry.shared.setRuntime(self, for: manager)
     configureRuntime()
   }
 

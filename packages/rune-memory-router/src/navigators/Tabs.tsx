@@ -278,6 +278,17 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
       // Tabs don't push - navigate instead
       helpers.navigate(name, params);
     },
+    popToTop() {
+      setState((prev) => {
+        if (prev.routes.length === 0) return prev;
+        const firstRoute = prev.routes[0];
+        return {
+          ...prev,
+          index: 0,
+          history: [{ key: firstRoute.key, type: "tab" }],
+        };
+      });
+    },
     pop() {
       // Go back in tab history
       setState((prev) => {

@@ -35,6 +35,8 @@ export interface ScreenProps {
 
   /** Called when the native navigation controller requests a back action */
   onNativeBack?: () => void;
+  /** Called when a native header right button is tapped */
+  onNativeHeaderRightPress?: () => void;
 
   /** Called when screen is about to appear */
   onWillAppear?: () => void;
@@ -66,6 +68,20 @@ export interface ScreenHeaderOptions {
   titleColor?: string;
   backgroundColor?: string;
   transparent?: boolean;
+  rightButton?: ScreenHeaderButtonOptions;
+  rightAccessory?: ScreenHeaderAccessoryDescriptor;
+}
+
+export interface ScreenHeaderButtonOptions {
+  title?: string;
+  style?: "plain" | "done" | "icon";
+  systemItem?: "close";
+}
+
+export interface ScreenHeaderAccessoryDescriptor {
+  type: "surface";
+  routeKey: string;
+  position: "right";
 }
 
 /**

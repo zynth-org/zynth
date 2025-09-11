@@ -15,6 +15,7 @@ declare module "solid-js" {
         gestureEnabled?: boolean;
         headerOptions?: Record<string, any>;
         onNativeBack?: () => void;
+        onNativeHeaderRightPress?: () => void;
         onWillAppear?: () => void;
         onDidAppear?: () => void;
         onWillDisappear?: () => void;

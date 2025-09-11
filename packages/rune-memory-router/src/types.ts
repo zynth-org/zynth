@@ -94,6 +94,8 @@ export interface ScreenOptions {
   headerLeft?: () => JSX.Element;
   /** Custom header right component */
   headerRight?: () => JSX.Element;
+  /** Native-style header right button descriptor */
+  headerRightButton?: HeaderRightButtonOptions;
   /** Custom header title component */
   headerTitle?: () => JSX.Element;
 
@@ -118,6 +120,13 @@ export interface ScreenOptions {
   // Content options
   /** Content background color */
   contentBackgroundColor?: string;
+}
+
+export interface HeaderRightButtonOptions {
+  title?: string;
+  style?: "plain" | "done" | "icon";
+  systemItem?: "close";
+  onPress?: () => void;
 }
 
 /**

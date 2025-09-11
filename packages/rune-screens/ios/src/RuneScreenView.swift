@@ -12,6 +12,8 @@ struct RuneScreenHeaderOptions: Equatable {
   var tintColor: UIColor?
   var titleColor: UIColor?
   var backgroundColor: UIColor?
+  var rightButton: RuneScreenHeaderButtonOptions?
+  var rightAccessory: RuneScreenHeaderAccessory?
 
   static let `default` = RuneScreenHeaderOptions(
     title: nil,
@@ -22,8 +24,21 @@ struct RuneScreenHeaderOptions: Equatable {
     isTransparent: false,
     tintColor: nil,
     titleColor: nil,
-    backgroundColor: nil
+    backgroundColor: nil,
+    rightButton: nil,
+    rightAccessory: nil
   )
+}
+
+struct RuneScreenHeaderButtonOptions: Equatable {
+  var title: String?
+  var style: String?
+  var systemItem: String?
+}
+
+struct RuneScreenHeaderAccessory: Equatable {
+  var routeKey: String
+  var position: String
 }
 
 private extension UIColor {
@@ -86,7 +101,8 @@ public final class RuneScreenView: UIView {
   @objc public private(set) var gestureEnabled: Bool = true
   var headerOptions: RuneScreenHeaderOptions = .default
 
-  private weak var manager: SNUIManager?
+  weak var manager: SNUIManager?
+  weak var runtime: RuneRuntime?
   private weak var node: SNNode?
 
   private var pendingActiveState: Bool?
@@ -116,11 +132,13 @@ public final class RuneScreenView: UIView {
 
   public func bind(manager: SNUIManager, node: SNNode) {
     self.manager = manager
+    self.runtime = RuneRuntimeManagerRegistry.shared.runtime(for: manager)
     self.node = node
   }
 
   public func prepareForReuse() {
     manager = nil
+    runtime = nil
     node = nil
     pendingActiveState = nil
     isScreenActive = false
@@ -176,6 +194,32 @@ public final class RuneScreenView: UIView {
       if let backgroundColor = dict["backgroundColor"] as? String {
         options.backgroundColor = UIColor.rune_color(from: backgroundColor)
       }
+      if let rightButton = dict["rightButton"] as? [String: Any] {
+        var buttonOptions = RuneScreenHeaderButtonOptions()
+        if let title = rightButton["title"] as? String {
+          buttonOptions.title = title
+        }
+        if let style = rightButton["style"] as? String {
+          buttonOptions.style = style
+        }
+        if let systemItem = rightButton["systemItem"] as? String {
+          buttonOptions.systemItem = systemItem
+        }
+        options.rightButton = buttonOptions
+      } else {
+        options.rightButton = nil
+      }
+      if
+        let accessory = dict["rightAccessory"] as? [String: Any],
+        let type = accessory["type"] as? String,
+        type == "surface",
+        let routeKey = accessory["routeKey"] as? String,
+        let position = accessory["position"] as? String
+      {
+        options.rightAccessory = RuneScreenHeaderAccessory(routeKey: routeKey, position: position)
+      } else {
+        options.rightAccessory = nil
+      }
     }
 
     if headerOptions != options {
@@ -215,6 +259,10 @@ public final class RuneScreenView: UIView {
 
   func notifyNativeBackRequested() {
     dispatchEvent(name: "onNativeBack")
+  }
+
+  func notifyNativeHeaderRightPress() {
+    dispatchEvent(name: "onNativeHeaderRightPress")
   }
 
   private func dispatchEvent(name: String) {
