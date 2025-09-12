@@ -87,12 +87,69 @@ export interface ScreenHeaderAccessoryDescriptor {
 /**
  * Props for ScreenTabsContainer component
  */
+export interface ScreenTabBarIconDescriptor {
+  /** Icon defined by native sources (SF Symbols, assets, etc.) */
+  type: "descriptor";
+  systemName?: string;
+  assetName?: string;
+  uri?: string;
+  glyph?: string;
+  glyphFontFamily?: string;
+  glyphFontSize?: number;
+}
+
+export interface ScreenTabBarIconSurfaceDescriptor {
+  /** Icon rendered through a Solid surface */
+  type: "surface";
+  routeKey: string;
+}
+
+export type ScreenTabBarIcon =
+  | ScreenTabBarIconDescriptor
+  | ScreenTabBarIconSurfaceDescriptor;
+
+export interface ScreenTabBarItemDescriptor {
+  key: string;
+  routeName: string;
+  label?: string;
+  badge?: string | number;
+  badgeColor?: string;
+  hidden?: boolean;
+  icon?: ScreenTabBarIcon;
+}
+
+export interface ScreenTabBarOptions {
+  visible?: boolean;
+  backgroundColor?: string;
+  activeTintColor?: string;
+  inactiveTintColor?: string;
+  showLabels?: boolean;
+  blurEffectStyle?:
+    | "systemUltraThinMaterial"
+    | "systemThinMaterial"
+    | "systemChromeMaterial"
+    | "systemMaterial"
+    | "none";
+}
+
 export interface ScreenTabsContainerProps {
   /** Index of the currently selected tab */
   selectedIndex: number;
 
   /** Animation type for tab switching */
   tabAnimation?: ScreenAnimationType;
+
+  /** Native tab bar configuration */
+  tabBarOptions?: ScreenTabBarOptions;
+
+  /** Native tab items metadata */
+  tabBarItems?: ScreenTabBarItemDescriptor[];
+
+  /** Whether to enable the native tab bar */
+  nativeTabBarEnabled?: boolean;
+
+  /** Notified when a native tab selection occurs */
+  onNativeTabSelect?: (index: number) => void;
 
   style?: Style;
   children?: JSX.Element;

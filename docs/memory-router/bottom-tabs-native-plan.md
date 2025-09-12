@@ -89,3 +89,8 @@ Key pattern to reuse:
    - Ensure Android path is unaffected.
 
 Keep this document close when we start that work; it captures the current stack wiring and the exact points we’ll extend for tabs. Feel free to expand with notes or decisions as implementation progresses.
+## Status Update – Native Tab Bar MVP
+
+- `ScreenTabsContainer` now forwards tab metadata/options so the iOS runtime can host a native Liquid Glass tab bar alongside the JS-driven screens. The navigator disables the JS tab bar on iOS while keeping Android behavior untouched.
+- `ScreenTabsContainer` embeds a real `UITabBarController`, so JS tabs map to native view controllers and we get the system Liquid Glass bar, badges, and transitions automatically. JSX tab icons render through Solid surfaces that sit on top of the native bar (mirroring the Stack header accessory approach), keeping Android and iOS icon APIs aligned.
+- `RuneScreenTabsContainerView` embeds a custom native tab bar built with UIKit blur effects plus bidirectional events, so native selections notify JS (`onNativeTabSelect`) and programmatic index changes stay in sync.

@@ -7,6 +7,8 @@ import {
   For,
   Show,
   onMount,
+  onCleanup,
+  getOwner,
   type JSX,
   type Accessor,
   children as resolveChildren,
@@ -14,6 +16,7 @@ import {
 } from "solid-js";
 import { View, Text, Pressable } from "@rune/components";
 import { ScreenTabsContainer } from "@rune/screens";
+import { Platform, OS } from "@rune/apis";
 import {
   NavigationContext,
   type NavigationContextValue,
@@ -34,6 +37,11 @@ import type {
   ScreenComponent,
   ScreenOptionsInput,
 } from "../types";
+import {
+  registerNativeTabIcon,
+  unregisterNativeTabIcon,
+} from "../native/tabIconRegistry";
+import type { ScreenTabBarItemDescriptor } from "@rune/screens";
 
 // ============================================================================
 // Utility: Generate unique keys
@@ -196,6 +204,7 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
   };
 
   const navigatorId = props.id ?? `tabs-${generateKey()}`;
+  const useNativeTabBar = Platform.OS === OS.IOS;
 
   // Start with empty state
   const [state, setState] = createSignal<NavigationState>({
@@ -427,6 +436,62 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
       <DefaultTabBar {...p} tabBarOptions={props.tabBarOptions} />
     ));
 
+  const resolvedNativeTabBarOptions = createMemo(() => ({
+    visible: props.tabBarOptions?.tabBarVisible !== false,
+    backgroundColor: props.tabBarOptions?.tabBarBackgroundColor,
+    activeTintColor: props.tabBarOptions?.tabBarActiveTintColor,
+    inactiveTintColor: props.tabBarOptions?.tabBarInactiveTintColor,
+    showLabels: props.tabBarOptions?.tabBarShowLabels ?? true,
+  }));
+
+  const nativeTabItems = createMemo<ScreenTabBarItemDescriptor[]>(() => {
+    if (!useNativeTabBar) {
+      return [];
+    }
+    const descriptorMap = descriptors();
+    return state().routes.map((route) => {
+      const descriptor = descriptorMap[route.key];
+      const options = descriptor?.options;
+      const tabOptions = options?.tab;
+      const iconOption = tabOptions?.icon;
+      let iconDescriptor: ScreenTabBarItemDescriptor["icon"];
+      if (typeof iconOption === "function") {
+        iconDescriptor = { type: "surface", routeKey: route.key };
+      } else if (iconOption && typeof iconOption === "object") {
+        iconDescriptor = {
+          type: "descriptor",
+          systemName: iconOption.systemName,
+          assetName: iconOption.assetName,
+          uri: iconOption.uri,
+          glyph: iconOption.glyph,
+          glyphFontFamily: iconOption.glyphFontFamily,
+          glyphFontSize: iconOption.glyphFontSize,
+        };
+      }
+      return {
+        key: route.key,
+        routeName: route.name,
+        label: tabOptions?.label ?? options?.title ?? route.name,
+        badge: tabOptions?.badge,
+        badgeColor: tabOptions?.badgeColor,
+        hidden: tabOptions?.hidden ?? false,
+        icon: iconDescriptor,
+      };
+    });
+  });
+
+  const shouldRenderJSTabBar = createMemo(
+    () => !useNativeTabBar && props.tabBarOptions?.tabBarVisible !== false
+  );
+
+  const handleNativeTabSelect = (index: number) => {
+    if (!useNativeTabBar) return;
+    dispatch({
+      type: "SWITCH_TAB",
+      payload: { index },
+    });
+  };
+
   // Get current tab index
   const currentIndex = createMemo(() => state().index);
 
@@ -438,6 +503,10 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
         <View style={{ flex: 1 }}>
           <ScreenTabsContainer
             selectedIndex={currentIndex()}
+            tabBarOptions={resolvedNativeTabBarOptions()}
+            tabBarItems={nativeTabItems()}
+            nativeTabBarEnabled={useNativeTabBar}
+            onNativeTabSelect={useNativeTabBar ? handleNativeTabSelect : undefined}
             style={{ flex: 1 }}
           >
             {/* Use Index instead of For to guarantee DOM order matches array indices.
@@ -510,6 +579,25 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
                   },
                 }));
 
+                const localOwner = getOwner();
+
+                createEffect(() => {
+                  const tabOptions = options().tab;
+                  if (typeof tabOptions?.icon !== "function") {
+                    unregisterNativeTabIcon(routeValue().key);
+                    return;
+                  }
+                  registerNativeTabIcon({
+                    routeKey: routeValue().key,
+                    factory: tabOptions.icon,
+                    owner: localOwner ?? null,
+                  });
+                });
+
+                onCleanup(() => {
+                  unregisterNativeTabIcon(routeValue().key);
+                });
+
                 // Create a route-specific navigation context
                 const screenNavContextValue = createMemo(() => ({
                   ...navContextValue(),
@@ -579,7 +667,7 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
             </Index>
           </ScreenTabsContainer>
 
-          <Show when={props.tabBarOptions?.tabBarVisible !== false}>
+          <Show when={shouldRenderJSTabBar()}>
             <TabBar
               state={state()}
               navigation={helpers}

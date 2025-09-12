@@ -12,6 +12,9 @@ export type {
   ScreenHeaderOptions,
   RouteDefinition,
   NavigationState,
+  ScreenTabBarItemDescriptor,
+  ScreenTabBarIcon,
+  ScreenTabBarOptions,
 } from "./types";
 
 // JSX types (side effect import for type augmentation)

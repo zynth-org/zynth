@@ -27,6 +27,10 @@ declare module "solid-js" {
         selectedIndex?: number;
         tabAnimation?: string;
         style?: Style;
+        tabBarOptions?: Record<string, any>;
+        tabBarItems?: Array<Record<string, any>>;
+        nativeTabBarEnabled?: boolean;
+        onNativeTabSelect?: (index: number) => void;
         children?: JSX.Element;
       };
     }

@@ -43,9 +43,25 @@ export const ScreenTabsContainer: ParentComponent<ScreenTabsContainerProps> = (
     "tabAnimation",
     "style",
     "children",
+    "tabBarOptions",
+    "tabBarItems",
+    "nativeTabBarEnabled",
+    "onNativeTabSelect",
   ]);
 
   const resolved = resolveChildren(() => local.children);
+  const handleNativeTabSelect = (event: { index?: number } | number) => {
+    if (!local.onNativeTabSelect) return;
+    if (typeof event === "number") {
+      local.onNativeTabSelect(event);
+      return;
+    }
+    if (event && typeof event.index === "number") {
+      local.onNativeTabSelect(event.index);
+      return;
+    }
+    local.onNativeTabSelect(0);
+  };
 
   return (
     // @ts-ignore: Custom native element
@@ -53,6 +69,12 @@ export const ScreenTabsContainer: ParentComponent<ScreenTabsContainerProps> = (
       selectedIndex={local.selectedIndex}
       tabAnimation={local.tabAnimation}
       style={local.style}
+      tabBarOptions={local.tabBarOptions}
+      tabBarItems={local.tabBarItems}
+      nativeTabBarEnabled={local.nativeTabBarEnabled}
+      onNativeTabSelect={
+        local.onNativeTabSelect ? handleNativeTabSelect : undefined
+      }
     >
       {resolved()}
     </rune-screen-tabs-container>
