@@ -53,7 +53,14 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
   private var tabBarOptions: RuneNativeTabBarOptions = .default {
     didSet {
       applyTabBarAppearance()
-      refreshIconHosts()
+      // Defer icon host refresh for consistent timing with label layout
+      DispatchQueue.main.async { [weak self] in
+        guard let self else { return }
+        self.tabBarController?.tabBar.layoutIfNeeded()
+        DispatchQueue.main.async { [weak self] in
+          self?.refreshIconHosts()
+        }
+      }
     }
   }
   private var selectedIndex: Int = 0
@@ -92,8 +99,14 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
   public override func layoutSubviews() {
     super.layoutSubviews()
     tabBarController?.view.frame = bounds
+    // Defer icon host refresh to allow UITabBar to complete its internal layout pass (especially labels).
+    // Using two nested async dispatches ensures we run after the current and next layout cycles.
     DispatchQueue.main.async { [weak self] in
-      self?.refreshIconHosts()
+      guard let self, self.nativeTabBarEnabled else { return }
+      self.tabBarController?.tabBar.layoutIfNeeded()
+      DispatchQueue.main.async { [weak self] in
+        self?.refreshIconHosts()
+      }
     }
     if !nativeTabBarEnabled {
       updateTabVisibility()
@@ -327,14 +340,36 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
         let key = iconHostKey(routeKey: routeKey, button: button)
         activeKeys.insert(key)
         
-        // Hide the placeholder image so our view can take its place visually
+        // Use hidden = true matching rune-router. 
+        // We rely on the button layout to have already happened (via dispatch async) so frame should be valid.
         targetView.isHidden = true
+        targetView.alpha = 1.0
+        
+        // Debug and fix labels
+        func findLabel(in view: UIView) -> UILabel? {
+            if let label = view as? UILabel { return label }
+            for sub in view.subviews {
+                if let found = findLabel(in: sub) { return found }
+            }
+            return nil
+        }
+        
+        if let label = findLabel(in: button) {
+            let text = label.text ?? "nil"
+            // NSLog("[RuneScreenTabs] Button \(position) Label: '\(text)' hidden=\(label.isHidden) frame=\(label.frame)")
+            // Force label visibility if it was hidden by the system
+            if label.isHidden {
+                label.isHidden = false
+            }
+        }
+        
+        // NSLog("[RuneScreenTabs] TargetView frame: \(targetView.frame)")
         
         let entry: NativeTabIconHostEntry
         if let existing = iconHostEntries[key] {
           entry = existing
         } else {
-          NSLog("[RuneScreenTabs] Creating new Host for \(routeKey)")
+          // NSLog("[RuneScreenTabs] Creating new Host for \(routeKey)")
           let host = RuneTabIconHostView()
           entry = NativeTabIconHostEntry(host: host, index: itemIndex, routeKey: routeKey, button: button)
           iconHostEntries[key] = entry
@@ -362,11 +397,14 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
   }
 
   private func collectTabButtons(in view: UIView) -> [UIView] {
+    // Robust collection matching rune-router: checks for "Tab" string OR if it's a generic UIControl
     var result: [UIView] = []
     func walk(_ node: UIView) {
-       let className = String(describing: type(of: node))
-       if className.contains("Tab") && node is UIControl {
-           result.append(node)
+       if let control = node as? UIControl {
+          let className = String(describing: type(of: control))
+          if className.contains("Tab") || control is UIControl {
+              result.append(control)
+          }
        }
        for child in node.subviews {
          walk(child)
@@ -461,6 +499,7 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
   private func showNativeIcon(in button: UIView) {
     guard let imageView = findIconImageView(in: button) else { return }
     imageView.isHidden = false
+    imageView.alpha = 1.0
   }
 
   private func clearIconHosts() {
@@ -531,7 +570,14 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
       configureTabBarItem(for: tabController, descriptor: descriptor, index: index)
     }
     applyTabBarAppearance()
-    refreshIconHosts()
+    // Defer icon host refresh to allow tab bar to complete label layout
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      self.tabBarController?.tabBar.layoutIfNeeded()
+      DispatchQueue.main.async { [weak self] in
+        self?.refreshIconHosts()
+      }
+    }
   }
 
   private func configureTabBarItem(
@@ -685,7 +731,14 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
     hostingController = parentVC
     tabBarController = controller
     applyTabBarAppearance()
-    refreshIconHosts()
+    // Defer icon host setup to let the tab bar complete its initial layout
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      self.tabBarController?.tabBar.layoutIfNeeded()
+      DispatchQueue.main.async { [weak self] in
+        self?.refreshIconHosts()
+      }
+    }
   }
 
   private func detachTabBarController() {
