@@ -53,12 +53,17 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
   private var tabBarOptions: RuneNativeTabBarOptions = .default {
     didSet {
       applyTabBarAppearance()
-      // Defer icon host refresh for consistent timing with label layout
+      // Defer icon host refresh with triple async for label stability
       DispatchQueue.main.async { [weak self] in
         guard let self else { return }
         self.tabBarController?.tabBar.layoutIfNeeded()
         DispatchQueue.main.async { [weak self] in
-          self?.refreshIconHosts()
+          guard let self else { return }
+          self.tabBarController?.tabBar.setNeedsLayout()
+          self.tabBarController?.tabBar.layoutIfNeeded()
+          DispatchQueue.main.async { [weak self] in
+            self?.refreshIconHosts()
+          }
         }
       }
     }
@@ -99,13 +104,18 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
   public override func layoutSubviews() {
     super.layoutSubviews()
     tabBarController?.view.frame = bounds
-    // Defer icon host refresh to allow UITabBar to complete its internal layout pass (especially labels).
-    // Using two nested async dispatches ensures we run after the current and next layout cycles.
+    // Defer icon host refresh with triple async dispatch to ensure labels are fully laid out.
+    // Each dispatch gives UITabBar another run loop to complete its internal layout work.
     DispatchQueue.main.async { [weak self] in
       guard let self, self.nativeTabBarEnabled else { return }
       self.tabBarController?.tabBar.layoutIfNeeded()
       DispatchQueue.main.async { [weak self] in
-        self?.refreshIconHosts()
+        guard let self else { return }
+        self.tabBarController?.tabBar.setNeedsLayout()
+        self.tabBarController?.tabBar.layoutIfNeeded()
+        DispatchQueue.main.async { [weak self] in
+          self?.refreshIconHosts()
+        }
       }
     }
     if !nativeTabBarEnabled {
@@ -340,12 +350,12 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
         let key = iconHostKey(routeKey: routeKey, button: button)
         activeKeys.insert(key)
         
-        // Use hidden = true matching rune-router. 
-        // We rely on the button layout to have already happened (via dispatch async) so frame should be valid.
-        targetView.isHidden = true
-        targetView.alpha = 1.0
+        // CRITICAL: Ensure button has completed layout before hiding image view.
+        // Force a full layout cycle to ensure labels have their correct frames.
+        button.setNeedsLayout()
+        button.layoutIfNeeded()
         
-        // Debug and fix labels
+        // Find and protect label visibility BEFORE hiding image view
         func findLabel(in view: UIView) -> UILabel? {
             if let label = view as? UILabel { return label }
             for sub in view.subviews {
@@ -355,13 +365,16 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
         }
         
         if let label = findLabel(in: button) {
-            let text = label.text ?? "nil"
-            // NSLog("[RuneScreenTabs] Button \(position) Label: '\(text)' hidden=\(label.isHidden) frame=\(label.frame)")
-            // Force label visibility if it was hidden by the system
-            if label.isHidden {
-                label.isHidden = false
-            }
+            // Force label to be visible and maintain its properties
+            label.isHidden = false
+            label.alpha = 1.0
+            // Ensure label doesn't get clipped
+            label.clipsToBounds = false
         }
+        
+        // Only hide image view AFTER labels are protected and layout is stable
+        targetView.isHidden = true
+        targetView.alpha = 1.0
         
         // NSLog("[RuneScreenTabs] TargetView frame: \(targetView.frame)")
         
@@ -433,10 +446,17 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
   }
 
   private func attachIconHost(_ host: RuneTabIconHostView, to container: UIView, targetView: UIView?) {
+    // Ensure container has stable layout before attaching
+    container.setNeedsLayout()
     container.layoutIfNeeded()
+    
     if host.superview !== container {
       host.removeFromSuperview()
       container.addSubview(host)
+      // Send to back IMMEDIATELY to ensure it doesn't interfere with labels
+      container.sendSubviewToBack(host)
+    } else {
+      // Even if already attached, ensure it's at the back
       container.sendSubviewToBack(host)
     }
     host.translatesAutoresizingMaskIntoConstraints = false
@@ -570,12 +590,17 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
       configureTabBarItem(for: tabController, descriptor: descriptor, index: index)
     }
     applyTabBarAppearance()
-    // Defer icon host refresh to allow tab bar to complete label layout
+    // Defer icon host refresh with triple async for label stability
     DispatchQueue.main.async { [weak self] in
       guard let self else { return }
       self.tabBarController?.tabBar.layoutIfNeeded()
       DispatchQueue.main.async { [weak self] in
-        self?.refreshIconHosts()
+        guard let self else { return }
+        self.tabBarController?.tabBar.setNeedsLayout()
+        self.tabBarController?.tabBar.layoutIfNeeded()
+        DispatchQueue.main.async { [weak self] in
+          self?.refreshIconHosts()
+        }
       }
     }
   }
@@ -731,12 +756,17 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
     hostingController = parentVC
     tabBarController = controller
     applyTabBarAppearance()
-    // Defer icon host setup to let the tab bar complete its initial layout
+    // Defer icon host setup with triple async to ensure tab bar labels are fully rendered
     DispatchQueue.main.async { [weak self] in
       guard let self else { return }
       self.tabBarController?.tabBar.layoutIfNeeded()
       DispatchQueue.main.async { [weak self] in
-        self?.refreshIconHosts()
+        guard let self else { return }
+        self.tabBarController?.tabBar.setNeedsLayout()
+        self.tabBarController?.tabBar.layoutIfNeeded()
+        DispatchQueue.main.async { [weak self] in
+          self?.refreshIconHosts()
+        }
       }
     }
   }
