@@ -2,6 +2,7 @@ import UIKit
 
 final class RuneTabContentViewController: UIViewController {
   private let contentView: UIView
+  private let containerView = UIView()
 
   init(contentView: UIView) {
     self.contentView = contentView
@@ -14,12 +15,50 @@ final class RuneTabContentViewController: UIViewController {
   }
 
   override func loadView() {
-    view = contentView
-    view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    NSLog("[RuneTabContent] loadView - title: \(title ?? "nil")")
+    view = containerView
+    containerView.backgroundColor = .clear
+    containerView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+  }
+
+  override func viewDidLoad() {
+    super.viewDidLoad()
+    NSLog("[RuneTabContent] viewDidLoad - title: \(title ?? "nil"), contentView: \(contentView), bounds: \(containerView.bounds)")
+    NSLog("[RuneTabContent] viewDidLoad - contentView BEFORE: hidden: \(contentView.isHidden), alpha: \(contentView.alpha), frame: \(contentView.frame)")
+    
+    // Add content view to container
+    contentView.removeFromSuperview()
+    contentView.frame = containerView.bounds
+    contentView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    // Ensure content view is visible
+    contentView.isHidden = false
+    contentView.alpha = 1.0
+    containerView.addSubview(contentView)
+    NSLog("[RuneTabContent] viewDidLoad - contentView AFTER: hidden: \(contentView.isHidden), alpha: \(contentView.alpha), subviews: \(containerView.subviews.count)")
   }
 
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
-    contentView.frame = view.bounds
+    NSLog("[RuneTabContent] viewDidLayoutSubviews - title: \(title ?? "nil"), bounds: \(containerView.bounds), contentView.frame: \(contentView.frame)")
+    // Ensure content view fills the container
+    contentView.frame = containerView.bounds
+  }
+  
+  override func viewWillAppear(_ animated: Bool) {
+    super.viewWillAppear(animated)
+    NSLog("[RuneTabContent] viewWillAppear - title: \(title ?? "nil"), contentView hidden: \(contentView.isHidden), alpha: \(contentView.alpha)")
+    // Force layout when becoming visible
+    view.setNeedsLayout()
+    view.layoutIfNeeded()
+  }
+  
+  override func viewDidAppear(_ animated: Bool) {
+    super.viewDidAppear(animated)
+    NSLog("[RuneTabContent] viewDidAppear - title: \(title ?? "nil"), frame: \(view.frame), contentView.frame: \(contentView.frame)")
+  }
+  
+  override func viewWillDisappear(_ animated: Bool) {
+    super.viewWillDisappear(animated)
+    NSLog("[RuneTabContent] viewWillDisappear - title: \(title ?? "nil")")
   }
 }

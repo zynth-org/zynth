@@ -153,10 +153,13 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
   @objc(insertTabContentView:atIndex:)
   public func insertTabContentView(_ view: UIView, at index: Int) {
     let clamped = max(0, min(index, tabViews.count))
+    NSLog("[RuneScreenTabs] insertTabContentView at index \(index) (clamped: \(clamped)), view: \(view), nativeEnabled: \(nativeTabBarEnabled)")
     if let existingIndex = tabViews.firstIndex(where: { $0 === view }) {
+      NSLog("[RuneScreenTabs] View already exists at index \(existingIndex), removing")
       tabViews.remove(at: existingIndex)
     }
     tabViews.insert(view, at: clamped)
+    NSLog("[RuneScreenTabs] Total tabViews count: \(tabViews.count)")
 
     if nativeTabBarEnabled {
       adoptViewForNativeTabs(view)
@@ -184,13 +187,19 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
   public func setSelectedIndexValue(_ value: NSNumber?) {
     let proposed = value?.intValue ?? 0
     selectedIndex = clampIndex(proposed)
+    NSLog("[RuneScreenTabs] setSelectedIndexValue - proposed: \(proposed), clamped: \(selectedIndex), nativeEnabled: \(nativeTabBarEnabled)")
     if nativeTabBarEnabled {
-      guard let controller = tabBarController else { return }
+      guard let controller = tabBarController else {
+        NSLog("[RuneScreenTabs] ERROR: tabBarController is nil!")
+        return
+      }
       let clamped = clampIndex(selectedIndex)
+      NSLog("[RuneScreenTabs] Current controller.selectedIndex: \(controller.selectedIndex), new: \(clamped)")
       if controller.selectedIndex != clamped {
         isApplyingNativeSelection = true
         controller.selectedIndex = clamped
         isApplyingNativeSelection = false
+        NSLog("[RuneScreenTabs] Tab switched to index \(clamped)")
       }
       updateIconHostStates()
     } else {
@@ -264,10 +273,12 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
     guard nativeTabBarEnabled else { return }
     guard let controllers = tabBarController.viewControllers else { return }
     guard let index = controllers.firstIndex(of: viewController) else { return }
+    NSLog("[RuneScreenTabs] didSelect viewController at index \(index), title: \(viewController.title ?? "nil"), isApplying: \(isApplyingNativeSelection)")
     selectedIndex = index
     updateIconHostStates()
     if !isApplyingNativeSelection {
-      dispatchEvent(name: "onNativeTabSelect", payload: ["index": index])
+      NSLog("[RuneScreenTabs] Dispatching onNativeTabSelect event for index \(index)")
+      dispatchEvent(name: "onNativeTabSelect", payload: ["index": index] as NSDictionary)
     }
   }
 
@@ -282,7 +293,7 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
 
     tabBar.layoutIfNeeded()
     let buttons = collectTabButtons(in: tabBar)
-    NSLog("[RuneScreenTabs] refreshIconHosts: Found \(items.count) items and \(buttons.count) buttons")
+    // NSLog("[RuneScreenTabs] refreshIconHosts: Found \(items.count) items and \(buttons.count) buttons")
 
     if buttons.isEmpty {
       clearIconHosts()
@@ -309,19 +320,19 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
         fallbackIndex: position,
         itemIndexMap: itemIndexMap
       ) else {
-        NSLog("[RuneScreenTabs] Skipping button at index \(position): Could not resolve item")
+        // NSLog("[RuneScreenTabs] Skipping button at index \(position): Could not resolve item")
         continue
       }
 
       guard itemIndex < tabDescriptors.count else {
-        NSLog("[RuneScreenTabs] Skipping button at index \(position): Item index \(itemIndex) out of bounds")
+        // NSLog("[RuneScreenTabs] Skipping button at index \(position): Item index \(itemIndex) out of bounds")
         continue
       }
 
       let descriptor = tabDescriptors[itemIndex]
       let descriptorRouteKey = descriptor.key
       
-      NSLog("[RuneScreenTabs] Button \(position) -> Item \(itemIndex) (\(descriptor.label ?? "no-label"))")
+      // NSLog("[RuneScreenTabs] Button \(position) -> Item \(itemIndex) (\(descriptor.label ?? "no-label"))")
 
       if descriptor.hidden {
         showNativeIcon(in: button)
@@ -343,7 +354,7 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
         removeIconHostEntry(forKey: iconHostKey(routeKey: descriptorRouteKey, button: button))
       case .surface(let routeKey):
         guard let targetView = imageView else {
-             NSLog("[RuneScreenTabs] Failed to find UIImageView for button \(position)")
+            //  NSLog("[RuneScreenTabs] Failed to find UIImageView for button \(position)")
              continue
         }
         
@@ -553,29 +564,42 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
   }
 
   private func adoptViewForNativeTabs(_ view: UIView) {
+    NSLog("[RuneScreenTabs] adoptViewForNativeTabs - view: \(view), hidden: \(view.isHidden), alpha: \(view.alpha)")
     view.removeFromSuperview()
     view.frame = bounds
     view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    // CRITICAL: Unhide the view since UITabBarController will manage visibility
+    view.isHidden = false
+    view.alpha = 1.0
+    NSLog("[RuneScreenTabs] adoptViewForNativeTabs - after unhide: hidden: \(view.isHidden), alpha: \(view.alpha)")
   }
 
   private func synchronizeTabs() {
     guard nativeTabBarEnabled else { return }
+    NSLog("[RuneScreenTabs] synchronizeTabs - tabViews count: \(tabViews.count)")
     attachTabBarControllerIfNeeded()
-    guard let controller = tabBarController else { return }
+    guard let controller = tabBarController else {
+      NSLog("[RuneScreenTabs] ERROR: tabBarController is nil after attach!")
+      return
+    }
 
     let tabContentControllers = tabViews.compactMap { self.controller(for: $0) }
+    NSLog("[RuneScreenTabs] Created \(tabContentControllers.count) view controllers")
     controller.setViewControllers(tabContentControllers, animated: false)
     let clamped = max(0, min(selectedIndex, tabContentControllers.count - 1))
     selectedIndex = clamped
     controller.selectedIndex = clamped
+    NSLog("[RuneScreenTabs] Set selectedIndex to \(clamped)")
     updateTabBarItems()
   }
 
   private func controller(for view: UIView) -> RuneTabContentViewController {
     let key = ObjectIdentifier(view)
     if let existing = controllerMap[key] {
+      NSLog("[RuneScreenTabs] Reusing existing controller for view \(view)")
       return existing
     }
+    NSLog("[RuneScreenTabs] Creating new controller for view \(view), frame: \(view.frame), subviews: \(view.subviews.count)")
     let controller = RuneTabContentViewController(contentView: view)
     controllerMap[key] = controller
     return controller
