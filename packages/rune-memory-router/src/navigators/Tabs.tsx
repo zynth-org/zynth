@@ -366,10 +366,10 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
   };
 
   function dispatch(action: RouterAction): void {
-    console.log(
-      `[Tabs] dispatch action: ${action.type}`,
-      "payload" in action ? action.payload : undefined
-    );
+    // console.log(
+    //   `[Tabs] dispatch action: ${action.type}`,
+    //   "payload" in action ? JSON.stringify(action.payload) : undefined
+    // );
     switch (action.type) {
       case "NAVIGATE":
         helpers.navigate(action.payload.name, action.payload.params as object);
@@ -377,22 +377,22 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
       case "SWITCH_TAB":
         setState((prev) => {
           const index = action.payload.index;
-          console.log(
-            `[Tabs] SWITCH_TAB - index: ${index}, routes.length: ${prev.routes.length}, current index: ${prev.index}`
-          );
+          // console.log(
+          //   `[Tabs] SWITCH_TAB - index: ${index}, routes.length: ${prev.routes.length}, current index: ${prev.index}`
+          // );
           if (index >= 0 && index < prev.routes.length) {
             const history = [
               ...(prev.history ?? []),
               { key: prev.routes[index].key, type: "tab" },
             ];
-            console.log(
-              `[Tabs] Setting state index to ${index}, route: ${prev.routes[index].name}`
-            );
+            // console.log(
+            //   `[Tabs] Setting state index to ${index}, route: ${prev.routes[index].name}`
+            // );
             return { ...prev, index, history };
           }
-          console.log(
-            `[Tabs] Index ${index} out of bounds, not changing state`
-          );
+          // console.log(
+          //   `[Tabs] Index ${index} out of bounds, not changing state`
+          // );
           return prev;
         });
         break;
@@ -499,11 +499,11 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
 
   const handleNativeTabSelect = (index: number) => {
     if (!useNativeTabBar) return;
-    console.log(
-      `[Tabs] handleNativeTabSelect - index: ${index}, current state index: ${
-        state().index
-      }`
-    );
+    // console.log(
+    //   `[Tabs] handleNativeTabSelect - index: ${index}, current state index: ${
+    //     state().index
+    //   }`
+    // );
     dispatch({
       type: "SWITCH_TAB",
       payload: { index },
@@ -513,7 +513,7 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
   // Get current tab index
   const currentIndex = createMemo(() => {
     const idx = state().index;
-    console.log(`[Tabs] currentIndex changed to: ${idx}`);
+    // console.log(`[Tabs] currentIndex changed to: ${idx}`);
     return idx;
   });
 
@@ -669,19 +669,13 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
                           {(() => {
                             const cfg = config();
                             if (!cfg) {
-                              console.log(
-                                `[Tabs] No config for route at index ${index}`
-                              );
+                              // console.log(
+                              //   `[Tabs] No config for route at index ${index}`
+                              // );
                               return null;
                             }
                             const ScreenComponent = cfg.component;
-                            console.log(
-                              `[Tabs] Rendering screen "${
-                                routeValue().name
-                              }" at index ${index}, active: ${isActive()}, key: ${
-                                routeValue().key
-                              }`
-                            );
+
                             return (
                               <ScreenComponent
                                 navigation={routeHelpers()}

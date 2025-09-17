@@ -37,16 +37,29 @@ export function createIOSHost(): Host {
   const suppressionKey = "__runeSuppressNativeMutations";
   const isSuppressed = () => Boolean((g as any)[suppressionKey]);
 
-  const operations: Array<() => void> = [];
-  const enqueueOperation = (operation: () => void) => {
-    if (isSuppressed()) return;
-    operations.push(operation);
-  };
-  let rafHandle: number | null = null;
-
+  // NEW: Structured Queue System
   type BatchOperation =
     | { type: "setProp"; nodeId: number; name: string; value: any }
     | { type: "setText"; nodeId: number; value: any };
+
+  type QueueItem =
+    | { type: "closure"; func: () => void }
+    | { type: "batch"; op: BatchOperation };
+
+  const queue: QueueItem[] = [];
+
+  const enqueueOperation = (operation: () => void) => {
+    if (isSuppressed()) return;
+    queue.push({ type: "closure", func: operation });
+  };
+
+  const enqueueBatchOp = (op: BatchOperation) => {
+    if (isSuppressed()) return;
+    queue.push({ type: "batch", op });
+  };
+
+  let rafHandle: number | null = null;
+  let flushScheduled = false;
 
   type BatchContext = {
     meta: HostBatchMeta;
@@ -69,9 +82,44 @@ export function createIOSHost(): Host {
     flushScheduled = false;
     rafHandle = null;
     try {
-      if (operations.length) {
-        const pending = operations.splice(0);
-        for (const op of pending) op();
+      if (queue.length) {
+        const pending = queue.splice(0);
+        let batchAccumulator: BatchOperation[] = [];
+
+        const flushBatch = () => {
+          if (!batchAccumulator.length) return;
+
+          // Prepare payload with a global/flush scope
+          const payload = {
+            meta: { kind: "flush", scope: "global" },
+            operations: batchAccumulator,
+          };
+
+          if (typeof ui.applyBatch === "function") {
+            ui.applyBatch(JSON.stringify(payload));
+          } else {
+            // Fallback for runtimes without applyBatch
+            for (const op of batchAccumulator) {
+              if (op.type === "setProp") {
+                ui.setProp(op.nodeId, op.name, op.value);
+              } else {
+                ui.setText(op.nodeId, op.value);
+              }
+            }
+          }
+          batchAccumulator = [];
+        };
+
+        for (const item of pending) {
+          if (item.type === "batch") {
+            batchAccumulator.push(item.op);
+          } else {
+            // Flush pending batch ops before executing the closure to maintain order
+            flushBatch();
+            item.func();
+          }
+        }
+        flushBatch();
       }
       ui.flush();
     } catch (e) {
@@ -79,8 +127,6 @@ export function createIOSHost(): Host {
     }
   };
 
-  // Batch flush operations to avoid excessive layout calculations
-  let flushScheduled = false;
   const schedule = () => {
     if (flushScheduled) return;
     flushScheduled = true;
@@ -121,19 +167,20 @@ export function createIOSHost(): Host {
 
   const resetNodeToDefault = (nodeId: number, type: HostNode["type"]) => {
     // Reset style with explicit position reset to prevent position from persisting
-    // When FlatList recycles nodes, they have absolute positioning that must be cleared
-    // Use null instead of undefined because JSON.stringify removes undefined values
-    enqueueOperation(() =>
-      ui.setProp(nodeId, "style", {
+    enqueueBatchOp({
+      type: "setProp",
+      nodeId,
+      name: "style",
+      value: {
         position: "relative",
         top: null,
         left: null,
         right: null,
         bottom: null,
-      })
-    );
+      },
+    });
     if (type === "text") {
-      enqueueOperation(() => ui.setText(nodeId, ""));
+      enqueueBatchOp({ type: "setText", nodeId, value: "" });
       TEXTS.set(nodeId, "");
     }
   };
@@ -173,14 +220,18 @@ export function createIOSHost(): Host {
 
     const assign = (key: string, value: unknown) => {
       if (value !== undefined) {
-        enqueueOperation(() => ui.setProp(id, key, value));
+        enqueueBatchOp({ type: "setProp", nodeId: id, name: key, value });
       }
     };
 
     assign("value", props.value);
     assign("defaultValue", props.defaultValue);
     if (props?.defaultValue != null && props.value == null) {
-      enqueueOperation(() => ui.setText(id, String(props.defaultValue)));
+      enqueueBatchOp({
+        type: "setText",
+        nodeId: id,
+        value: String(props.defaultValue),
+      });
     }
     assign("placeholder", props.placeholder);
     assign("multiline", props.multiline);
@@ -274,31 +325,53 @@ export function createIOSHost(): Host {
       CHILDREN.set(id, []);
       TYPES.set(id, type);
       if (props?.style)
-        enqueueOperation(() => ui.setProp(id, "style", props.style as Style));
+        enqueueBatchOp({
+          type: "setProp",
+          nodeId: id,
+          name: "style",
+          value: props.style as Style,
+        });
       if (typeof props?.onPress === "function") {
-        enqueueOperation(() => ui.setHandler(id, "onPress", props.onPress));
+        enqueueOperation(() => ui.setHandler(id!, "onPress", props.onPress));
       }
       if (typeof props?.onLayout === "function") {
-        enqueueOperation(() => ui.setHandler(id, "onLayout", props.onLayout));
+        enqueueOperation(() => ui.setHandler(id!, "onLayout", props.onLayout));
       }
       if (props?.accessibilityLabel)
-        enqueueOperation(() =>
-          ui.setProp(id, "accessibilityLabel", props.accessibilityLabel)
-        );
+        enqueueBatchOp({
+          type: "setProp",
+          nodeId: id,
+          name: "accessibilityLabel",
+          value: props.accessibilityLabel,
+        });
       if (props?.accessibilityHint)
-        enqueueOperation(() =>
-          ui.setProp(id, "accessibilityHint", props.accessibilityHint)
-        );
+        enqueueBatchOp({
+          type: "setProp",
+          nodeId: id,
+          name: "accessibilityHint",
+          value: props.accessibilityHint,
+        });
       if (props?.accessibilityRole)
-        enqueueOperation(() =>
-          ui.setProp(id, "accessibilityRole", props.accessibilityRole)
-        );
+        enqueueBatchOp({
+          type: "setProp",
+          nodeId: id,
+          name: "accessibilityRole",
+          value: props.accessibilityRole,
+        });
       if (props?.pointerEvents)
-        enqueueOperation(() =>
-          ui.setProp(id, "pointerEvents", props.pointerEvents)
-        );
+        enqueueBatchOp({
+          type: "setProp",
+          nodeId: id,
+          name: "pointerEvents",
+          value: props.pointerEvents,
+        });
       if (props?.testID)
-        enqueueOperation(() => ui.setProp(id, "testID", props.testID));
+        enqueueBatchOp({
+          type: "setProp",
+          nodeId: id,
+          name: "testID",
+          value: props.testID,
+        });
       if (type === "text-input") {
         applyTextInputInitialProps(id, props);
       }
@@ -307,7 +380,7 @@ export function createIOSHost(): Host {
     },
     createText(value) {
       const id: number = ui.createNode("text");
-      enqueueOperation(() => ui.setText(id, value ?? ""));
+      enqueueBatchOp({ type: "setText", nodeId: id, value: value ?? "" });
       PARENTS.set(id, null);
       CHILDREN.set(id, []);
       TEXTS.set(id, value ?? "");
@@ -319,15 +392,6 @@ export function createIOSHost(): Host {
       if (value === undefined && name !== "style") {
         return;
       }
-      // console.log(
-      //   "[IOS host] setProperty",
-      //   JSON.stringify({
-      //     nodeId: node.id,
-      //     nodeType: node.type,
-      //     name,
-      //     value,
-      //   })
-      // );
       if (name === "style") {
         if (
           tryEnqueueBatch({
@@ -339,7 +403,12 @@ export function createIOSHost(): Host {
         ) {
           return;
         }
-        enqueueOperation(() => ui.setProp(node.id, "style", value || {}));
+        enqueueBatchOp({
+          type: "setProp",
+          nodeId: node.id,
+          name: "style",
+          value: value || {},
+        });
       } else if (name === "controller") {
         // Controller is managed purely on the JS side for now.
         return;
@@ -356,7 +425,12 @@ export function createIOSHost(): Host {
         ) {
           return;
         }
-        enqueueOperation(() => ui.setProp(node.id, name, value));
+        enqueueBatchOp({
+          type: "setProp",
+          nodeId: node.id,
+          name,
+          value,
+        });
       }
       schedule();
     },
@@ -371,19 +445,14 @@ export function createIOSHost(): Host {
       ) {
         return;
       }
-      enqueueOperation(() => ui.setText(node.id, value ?? ""));
+      enqueueBatchOp({
+        type: "setText",
+        nodeId: node.id,
+        value: value ?? "",
+      });
       schedule();
     },
     insertNode(parent, node, anchor) {
-      // console.log(
-      //   "[IOS host] insertNode",
-      //   JSON.stringify({
-      //     parentId: parent.id,
-      //     nodeId: node.id,
-      //     nodeType: node.type,
-      //     anchorId: anchor?.id,
-      //   })
-      // );
       const kids = ensure(parent.id);
       const aIdx = anchor ? kids.indexOf(anchor.id) : -1;
       const logicalAt = aIdx >= 0 ? aIdx : kids.length;
@@ -428,14 +497,6 @@ export function createIOSHost(): Host {
       schedule();
     },
     removeNode(parent, node) {
-      // console.log(
-      //   "[IOS host] removeNode",
-      //   JSON.stringify({
-      //     parentId: parent.id,
-      //     nodeId: node.id,
-      //     nodeType: node.type,
-      //   })
-      // );
       const kids = ensure(parent.id);
       const i = kids.indexOf(node.id);
       if (i < 0) return;
@@ -493,11 +554,8 @@ export function createIOSHost(): Host {
       return TEXTS.get(node.id) ?? "";
     },
     flush() {
-      if (operations.length) {
-        const pending = operations.splice(0);
-        for (const op of pending) op();
-      }
-      ui.flush();
+      // Force flush via runFlush to ensure coalescing
+      runFlush();
     },
     beginBatch(meta) {
       const kind = meta?.kind ?? meta?.scope ?? "update";
@@ -668,7 +726,12 @@ export function createIOSHost(): Host {
         ) {
           // batched
         } else {
-          enqueueOperation(() => ui.setProp(node.id, "style", props.style || {}));
+          enqueueBatchOp({
+            type: "setProp",
+            nodeId: node.id,
+            name: "style",
+            value: props.style || {},
+          });
         }
       }
 
@@ -687,7 +750,12 @@ export function createIOSHost(): Host {
           ) {
             continue;
           }
-          enqueueOperation(() => ui.setProp(node.id, key, value));
+          enqueueBatchOp({
+            type: "setProp",
+            nodeId: node.id,
+            name: key,
+            value,
+          });
         }
       }
       schedule();

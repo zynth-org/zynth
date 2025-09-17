@@ -32,17 +32,31 @@ export function createAndroidHost(): Host {
   let nextContextId = 0;
   let activeRecyclingContext: string | null = null; // Currently active context for createNode
 
-  let flushScheduled = false;
-  const operations: Array<() => void> = [];
-  const suppressionKey = "__runeSuppressNativeMutations";
-  const isSuppressed = () => Boolean((g as any)[suppressionKey]);
-  const enqueueOperation = (operation: () => void) => {
-    if (isSuppressed()) return;
-    operations.push(operation);
-  };
+  // NEW: Structured Queue System
   type BatchOperation =
     | { type: "setProp"; nodeId: number; name: string; value: any }
     | { type: "setText"; nodeId: number; value: any };
+
+  type QueueItem =
+    | { type: "closure"; func: () => void }
+    | { type: "batch"; op: BatchOperation };
+
+  const queue: QueueItem[] = [];
+  const suppressionKey = "__runeSuppressNativeMutations";
+  const isSuppressed = () => Boolean((g as any)[suppressionKey]);
+
+  const enqueueOperation = (operation: () => void) => {
+    if (isSuppressed()) return;
+    queue.push({ type: "closure", func: operation });
+  };
+
+  const enqueueBatchOp = (op: BatchOperation) => {
+    if (isSuppressed()) return;
+    queue.push({ type: "batch", op });
+  };
+
+  let rafHandle: number | null = null;
+  let flushScheduled = false;
 
   type BatchContext = {
     meta: HostBatchMeta;
@@ -64,9 +78,41 @@ export function createAndroidHost(): Host {
   const runFlush = () => {
     flushScheduled = false;
     try {
-      if (operations.length) {
-        const pending = operations.splice(0);
-        for (const op of pending) op();
+      if (queue.length) {
+        const pending = queue.splice(0);
+        let batchAccumulator: BatchOperation[] = [];
+
+        const flushBatch = () => {
+          if (!batchAccumulator.length) return;
+
+          const payload = {
+            meta: { kind: "flush", scope: "global" },
+            operations: batchAccumulator,
+          };
+
+          if (typeof ui.applyBatch === "function") {
+            ui.applyBatch(JSON.stringify(payload));
+          } else {
+            for (const op of batchAccumulator) {
+              if (op.type === "setProp") {
+                ui.setProp(op.nodeId, op.name, op.value);
+              } else {
+                ui.setText(op.nodeId, op.value);
+              }
+            }
+          }
+          batchAccumulator = [];
+        };
+
+        for (const item of pending) {
+          if (item.type === "batch") {
+            batchAccumulator.push(item.op);
+          } else {
+            flushBatch();
+            item.func();
+          }
+        }
+        flushBatch();
       }
       ui.flush();
     } catch (e) {
@@ -111,7 +157,7 @@ export function createAndroidHost(): Host {
 
     const assign = (key: string, value: unknown) => {
       if (value !== undefined) {
-        enqueueOperation(() => ui.setProp(id, key, value));
+        enqueueBatchOp({ type: "setProp", nodeId: id, name: key, value });
       }
     };
 
@@ -140,7 +186,11 @@ export function createAndroidHost(): Host {
     assign("value", props.value);
     assign("defaultValue", props.defaultValue);
     if (props?.defaultValue != null && props.value == null) {
-      enqueueOperation(() => ui.setText(id, String(props.defaultValue)));
+      enqueueBatchOp({
+        type: "setText",
+        nodeId: id,
+        value: String(props.defaultValue),
+      });
     }
 
     assign("placeholder", props.placeholder);
@@ -192,18 +242,16 @@ export function createAndroidHost(): Host {
   // Recycling helper functions
   const resetNodeToDefault = (nodeId: number, type: HostNode["type"]) => {
     // Reset common props to default state
-    enqueueOperation(() => ui.setProp(nodeId, "style", {}));
+    enqueueBatchOp({
+      type: "setProp",
+      nodeId,
+      name: "style",
+      value: {},
+    });
     if (type === "text") {
-      enqueueOperation(() => ui.setText(nodeId, ""));
+      enqueueBatchOp({ type: "setText", nodeId, value: "" });
       TEXTS.set(nodeId, "");
     }
-
-    // DON'T clear children - they will be managed by SolidJS
-    // When a View is recycled, SolidJS will remove old Text children
-    // and add new ones via normal removeNode/insertNode calls
-
-    // Clear event handlers by setting them to no-op
-    // (Native side should handle cleanup)
   };
 
   const findAvailableNodeInPool = (
@@ -219,23 +267,11 @@ export function createAndroidHost(): Host {
     }
 
     const pool = context.pool.get(type);
-    // console.log(
-    //   `[Host/findAvailableNodeInPool] 🔍 Looking for ${type} in context ${contextId}, pool has ${
-    //     pool?.length || 0
-    //   } nodes`
-    // );
-
     if (!pool || pool.length === 0) {
-      // console.log(
-      //   `[Host/findAvailableNodeInPool] ❌ Pool empty for type=${type}`
-      // );
       return null;
     }
 
     const nodeId = pool.pop() ?? null;
-    // console.log(
-    //   `[Host/findAvailableNodeInPool] ✅ Found node ${nodeId} in pool`
-    // );
     return nodeId;
   };
 
@@ -259,14 +295,6 @@ export function createAndroidHost(): Host {
 
     // Remove from active bindings
     context.activeBindings.delete(nodeId);
-
-    // Log pool stats periodically
-    // if (nodeId % 10 === 0) {
-    //   const poolStats = Array.from(context.pool.entries())
-    //     .map(([type, nodes]) => `${type}:${nodes.length}`)
-    //     .join(", ");
-    //   console.log(`[Host/Pool Stats] Context ${contextId}: ${poolStats}`);
-    // }
   };
 
   const api: Host = {
@@ -299,38 +327,59 @@ export function createAndroidHost(): Host {
 
       if (id === null) {
         id = ui.createNode(type);
-        // console.log(`[Host/createNode] 🆕 CREATED node ${id} (type=${type})`);
       }
 
       PARENTS.set(id, null);
       CHILDREN.set(id, []);
       TYPES.set(id, type);
       if (props?.style)
-        enqueueOperation(() => ui.setProp(id, "style", props.style as Style));
+        enqueueBatchOp({
+          type: "setProp",
+          nodeId: id,
+          name: "style",
+          value: props.style as Style,
+        });
       if (typeof props?.onPress === "function") {
-        enqueueOperation(() => ui.setHandler(id, "onPress", props.onPress));
+        enqueueOperation(() => ui.setHandler(id!, "onPress", props.onPress));
       }
       if (typeof props?.onLayout === "function") {
-        enqueueOperation(() => ui.setHandler(id, "onLayout", props.onLayout));
+        enqueueOperation(() => ui.setHandler(id!, "onLayout", props.onLayout));
       }
       if (props?.accessibilityLabel)
-        enqueueOperation(() =>
-          ui.setProp(id, "accessibilityLabel", props.accessibilityLabel)
-        );
+        enqueueBatchOp({
+          type: "setProp",
+          nodeId: id,
+          name: "accessibilityLabel",
+          value: props.accessibilityLabel,
+        });
       if (props?.accessibilityHint)
-        enqueueOperation(() =>
-          ui.setProp(id, "accessibilityHint", props.accessibilityHint)
-        );
+        enqueueBatchOp({
+          type: "setProp",
+          nodeId: id,
+          name: "accessibilityHint",
+          value: props.accessibilityHint,
+        });
       if (props?.accessibilityRole)
-        enqueueOperation(() =>
-          ui.setProp(id, "accessibilityRole", props.accessibilityRole)
-        );
+        enqueueBatchOp({
+          type: "setProp",
+          nodeId: id,
+          name: "accessibilityRole",
+          value: props.accessibilityRole,
+        });
       if (props?.pointerEvents)
-        enqueueOperation(() =>
-          ui.setProp(id, "pointerEvents", props.pointerEvents)
-        );
+        enqueueBatchOp({
+          type: "setProp",
+          nodeId: id,
+          name: "pointerEvents",
+          value: props.pointerEvents,
+        });
       if (props?.testID)
-        enqueueOperation(() => ui.setProp(id, "testID", props.testID));
+        enqueueBatchOp({
+          type: "setProp",
+          nodeId: id,
+          name: "testID",
+          value: props.testID,
+        });
       if (type === "text-input" || type === "secure-text-input") {
         applyTextInputInitialProps(id, props);
       }
@@ -349,9 +398,6 @@ export function createAndroidHost(): Host {
             id = pooled;
             recycled = true;
             NODE_TO_CONTEXT.set(id, contextId);
-            // console.log(
-            //   `[Host/createText] ♻️  RECYCLED text node ${id} from context ${contextId}`
-            // );
             break;
           }
         }
@@ -359,10 +405,9 @@ export function createAndroidHost(): Host {
 
       if (id === null) {
         id = ui.createNode("text");
-        // console.log(`[Host/createText] 🆕 CREATED text node ${id}`);
       }
 
-      enqueueOperation(() => ui.setText(id, value ?? ""));
+      enqueueBatchOp({ type: "setText", nodeId: id, value: value ?? "" });
       PARENTS.set(id, null);
       CHILDREN.set(id, []);
       TEXTS.set(id, value ?? "");
@@ -385,7 +430,12 @@ export function createAndroidHost(): Host {
         ) {
           return;
         }
-        enqueueOperation(() => ui.setProp(node.id, "style", value || {}));
+        enqueueBatchOp({
+          type: "setProp",
+          nodeId: node.id,
+          name: "style",
+          value: value || {},
+        });
         schedule();
         return;
       }
@@ -400,7 +450,7 @@ export function createAndroidHost(): Host {
       if (tryEnqueueBatch({ type: "setProp", nodeId: node.id, name, value })) {
         return;
       }
-      enqueueOperation(() => ui.setProp(node.id, name, value));
+      enqueueBatchOp({ type: "setProp", nodeId: node.id, name, value });
       schedule();
     },
     setText(node, value) {
@@ -414,7 +464,7 @@ export function createAndroidHost(): Host {
       ) {
         return;
       }
-      enqueueOperation(() => ui.setText(node.id, value ?? ""));
+      enqueueBatchOp({ type: "setText", nodeId: node.id, value: value ?? "" });
       schedule();
     },
     insertNode(parent, node, anchor) {
@@ -448,13 +498,6 @@ export function createAndroidHost(): Host {
             // This node is a direct child - mark it for recycling
             if (!NODE_TO_CONTEXT.has(node.id)) {
               NODE_TO_CONTEXT.set(node.id, contextId);
-              // console.log(
-              //   `[Host/insertNode] 🏷️  Marked node ${node.id} (type=${node.type}) for recycling in context ${contextId}`
-              // );
-            } else if (wasRecycled) {
-              // console.log(
-              //   `[Host/insertNode] ♻️  RE-INSERTING recycled node ${node.id} (type=${node.type}) into parent ${parent.id} at index ${physIdx}`
-              // );
             }
           }
 
@@ -474,9 +517,6 @@ export function createAndroidHost(): Host {
             const isNativeElement = node.type !== "marker";
             if (inheritedContext && isNativeElement) {
               NODE_TO_CONTEXT.set(node.id, inheritedContext);
-              // console.log(
-              //   `[Host/insertNode] 🪆 Marked nested node ${node.id} (type=${node.type}) for recycling with context ${inheritedContext}`
-              // );
             }
           }
 
@@ -511,9 +551,6 @@ export function createAndroidHost(): Host {
 
       if (shouldRecycle) {
         // Return to pool instead of destroying
-        // console.log(
-        //   `[Host/removeNode] ♻️  RETURNING node ${node.id} (type=${node.type}) to pool ${contextId}`
-        // );
         returnNodeToPool(contextId!, node.id);
 
         // Detach from parent but don't destroy
@@ -534,9 +571,6 @@ export function createAndroidHost(): Host {
       if (!isMarkerId(node.id)) {
         TYPES.delete(node.id);
         enqueueOperation(() => ui.removeChild(parent.id, node.id));
-        // console.log(
-        //   `[Host/removeNode] 🗑️  DESTROYED node ${node.id} (type=${node.type})`
-        // );
       }
       schedule();
     },
@@ -562,11 +596,7 @@ export function createAndroidHost(): Host {
       return TEXTS.get(node.id) ?? "";
     },
     flush() {
-      if (operations.length) {
-        const pending = operations.splice(0);
-        for (const op of pending) op();
-      }
-      ui.flush();
+      runFlush();
     },
     beginBatch(meta) {
       const kind = meta?.kind ?? meta?.scope ?? "update";
@@ -659,27 +689,14 @@ export function createAndroidHost(): Host {
         }
 
         const childType = TYPES.get(childId);
-        // console.log(
-        //   `[Host/Recycling] 🔎 Checking child ${childId} (type=${childType}) against config.itemType=${config.itemType}`
-        // );
 
         // Only mark View nodes (containers), not Text or other types
         if (childType === config.itemType) {
           NODE_TO_CONTEXT.set(childId, contextId);
           markedCount++;
-          // console.log(
-          //   `[Host/Recycling] 🏷️  Retroactively marked node ${childId} (type=${childType}) for recycling in context ${contextId}`
-          // );
-        } else {
-          // console.log(
-          //   `[Host/Recycling] ❌ Not marking node ${childId} (type=${childType}) - doesn't match ${config.itemType}`
-          // );
         }
       }
 
-      // console.log(
-      //   `[Host/Recycling] ✅ Enabled recycling for container ${containerId} (context=${contextId}, pool size=${config.poolSize}, marked ${markedCount} existing nodes)`
-      // );
       return contextId;
     },
 
@@ -705,20 +722,12 @@ export function createAndroidHost(): Host {
       }
 
       RECYCLING_CONTEXTS.delete(contextId);
-      // console.log(`[Host/Recycling] Disabled recycling context ${contextId}`);
     },
 
     reclaimNode(contextId: string, node: HostNode) {
       if (!RECYCLING_CONTEXTS.has(contextId)) {
-        // console.warn(
-        //   `[Host/Recycling] Cannot reclaim node ${node.id}: context ${contextId} not found`
-        // );
         return;
       }
-
-      // console.log(
-      //   `[Host/Recycling] Reclaiming node ${node.id} (type=${node.type}) to pool ${contextId}`
-      // );
       returnNodeToPool(contextId, node.id);
     },
 
@@ -730,9 +739,6 @@ export function createAndroidHost(): Host {
     ): HostNode | null {
       const context = RECYCLING_CONTEXTS.get(contextId);
       if (!context) {
-        // console.warn(
-        //   `[Host/Recycling] Cannot acquire node: context ${contextId} not found`
-        // );
         return null;
       }
 
@@ -741,9 +747,6 @@ export function createAndroidHost(): Host {
 
       if (nodeId !== null) {
         // Reusing existing node
-        // console.log(
-        //   `[Host/Recycling] ♻️  REUSING node ${nodeId} (type=${type}) for item ${itemKey} [${itemIndex}]`
-        // );
         context.activeBindings.set(nodeId, { itemKey, itemIndex });
         return nodeFor(nodeId);
       }
@@ -751,18 +754,9 @@ export function createAndroidHost(): Host {
       // Pool exhausted - create new node if within pool size limit
       const currentActiveCount = context.activeBindings.size;
       if (currentActiveCount >= context.config.poolSize) {
-        // console.warn(
-        //   `[Host/Recycling] Pool exhausted! Active: ${currentActiveCount}, Limit: ${context.config.poolSize}`
-        // );
         return null;
       }
 
-      // Create new node and track it
-      // console.log(
-      //   `[Host/Recycling] 🆕 CREATING new node (type=${type}) for item ${itemKey} [${itemIndex}] (${
-      //     currentActiveCount + 1
-      //   }/${context.config.poolSize})`
-      // );
       if (type === "root") {
         console.error("[Host/Recycling] Cannot create root node in pool");
         return null;
@@ -782,9 +776,6 @@ export function createAndroidHost(): Host {
     ) {
       const contextId = NODE_TO_CONTEXT.get(node.id);
       if (!contextId) {
-        // console.warn(
-        //   `[Host/Recycling] Node ${node.id} not tracked in any recycling context`
-        // );
         return;
       }
 
@@ -796,7 +787,12 @@ export function createAndroidHost(): Host {
 
       // Apply props efficiently using batch if available
       if (props.style !== undefined) {
-        enqueueOperation(() => ui.setProp(node.id, "style", props.style || {}));
+        enqueueBatchOp({
+          type: "setProp",
+          nodeId: node.id,
+          name: "style",
+          value: props.style || {},
+        });
       }
 
       for (const [key, value] of Object.entries(props)) {
@@ -804,7 +800,12 @@ export function createAndroidHost(): Host {
         if (typeof value === "function") {
           enqueueOperation(() => ui.setHandler(node.id, key, value));
         } else if (value !== undefined) {
-          enqueueOperation(() => ui.setProp(node.id, key, value));
+          enqueueBatchOp({
+            type: "setProp",
+            nodeId: node.id,
+            name: key,
+            value,
+          });
         }
       }
 
