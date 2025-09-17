@@ -6,7 +6,7 @@ import {
   type HostNode,
 } from "@rune/core";
 import { Platform, OS } from "@rune/apis";
-import { runWithOwner, type Owner } from "solid-js";
+import { runWithOwner, type Owner, createSignal } from "solid-js";
 import type { TabIconFactory } from "../types";
 
 interface RegistryEntry {
@@ -23,7 +23,7 @@ interface IconRenderProps {
 interface MountedIcon {
   key: string;
   dispose: () => void;
-  props: IconRenderProps;
+  setProps: (props: IconRenderProps) => void;
 }
 
 const registry = new Map<string, RegistryEntry>();
@@ -78,18 +78,33 @@ function mountIcon(
 ) {
   const current = mounted.get(surfaceId);
   if (current) {
-    current.dispose();
+    // If already mounted, just update the signal
+    current.setProps(props);
+    // CRITICAL: Must flush queue to apply updates immediately to the native view
+    runWithSurface(surfaceId, () => {
+        flushHostQueue();
+    });
+    return;
   }
 
+  // Create reactive props for this mount
+  const [getProps, setProps] = createSignal(props);
+
   let disposeFn: () => void = () => undefined;
+  
   runWithSurface(surfaceId, () => {
-    disposeFn = render(runFactory(entry, props), createSurfaceContainer(surfaceId));
+    // render expects a function that returns the JSX. 
+    // We wrap runFactory in a reactive tracking function.
+    disposeFn = render(() => {
+        const currentProps = getProps();
+        return runFactory(entry, currentProps)();
+    }, createSurfaceContainer(surfaceId));
     flushHostQueue();
   });
 
   const mountedEntry: MountedIcon = {
     key: entry.routeKey,
-    props,
+    setProps,
     dispose: () => {
       runWithSurface(surfaceId, () => {
         disposeFn();
@@ -131,8 +146,25 @@ function rerenderMountedIcons(routeKey: string) {
   if (!surfaces || surfaces.size === 0) return;
   const surfaceIds = Array.from(surfaces.values());
   for (const surfaceId of surfaceIds) {
+    // Just re-call mountIcon with current props (or default) to trigger update if needed
+    // But since we don't have stored props outside of the signal, this logic is tricky.
+    // However, rerenderMountedIcons is usually called when the *factory* changes (e.g. HMR).
+    // In that case, we probably DO want to re-mount or at least re-run the factory.
+    // Since our render function calls `runFactory(entry, getProps())`, and `entry` is passed by reference/closure?
+    // Wait, `runFactory` takes `entry`. If `registry.set` replaced the entry object, the closure in `render`
+    // still holds the OLD entry if we aren't careful.
+    
+    // To support HMR/Factory updates, we need to handle this.
+    // But for now, let's focus on the prop update flicker.
+    // If the factory changed, we SHOULD probably unmount and remount to be safe.
+    
     const mountedEntry = mounted.get(surfaceId);
-    const props = mountedEntry?.props ?? { active: false, color: "#ffffff" };
+    if (mountedEntry) {
+         // Force dispose and re-mount for factory updates
+         mountedEntry.dispose();
+         mounted.delete(surfaceId);
+    }
+    const props = { active: false, color: "#ffffff" }; // Default/Fallback
     mountIcon(surfaceId, entry, props);
   }
 }

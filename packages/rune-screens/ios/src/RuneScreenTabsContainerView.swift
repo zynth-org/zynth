@@ -490,13 +490,13 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
 
       if descriptor.hidden {
         showNativeIcon(in: button)
-        removeIconHostEntry(forKey: iconHostKey(routeKey: descriptorRouteKey, button: button))
+        removeIconHosts(forRouteKey: descriptorRouteKey)
         continue
       }
       
       guard let icon = descriptor.icon else {
         showNativeIcon(in: button)
-        removeIconHostEntry(forKey: iconHostKey(routeKey: descriptorRouteKey, button: button))
+        removeIconHosts(forRouteKey: descriptorRouteKey)
         continue
       }
       
@@ -505,13 +505,9 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
       switch icon {
       case .descriptor:
         showNativeIcon(in: button)
-        removeIconHostEntry(forKey: iconHostKey(routeKey: descriptorRouteKey, button: button))
+        removeIconHosts(forRouteKey: descriptorRouteKey)
       case .surface(let routeKey):
-        guard let targetView = imageView else {
-            //  NSLog("[RuneScreenTabs] Failed to find UIImageView for button \(position)")
-             continue
-        }
-        
+        let targetView = imageView
         let key = iconHostKey(routeKey: routeKey, button: button)
         activeKeys.insert(key)
         
@@ -520,46 +516,37 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
         button.setNeedsLayout()
         button.layoutIfNeeded()
         
-        // Find and protect label visibility BEFORE hiding image view
-        func findLabel(in view: UIView) -> UILabel? {
-            if let label = view as? UILabel { return label }
-            for sub in view.subviews {
-                if let found = findLabel(in: sub) { return found }
-            }
-            return nil
+        if let targetView {
+          // Hide native image view so our custom icon shows through
+          // Use both isHidden and alpha to be robust against UIKit resetting state
+          targetView.isHidden = true
+          targetView.alpha = 0.0
         }
-        
-        if let label = findLabel(in: button) {
-            // Force label to be visible and maintain its properties
-            label.isHidden = false
-            label.alpha = 1.0
-            // Ensure label doesn't get clipped
-            label.clipsToBounds = false
-        }
-        
-        // Only hide image view AFTER labels are protected and layout is stable
-        targetView.isHidden = true
-        targetView.alpha = 1.0
-        
-        // NSLog("[RuneScreenTabs] TargetView frame: \(targetView.frame)")
         
         let entry: NativeTabIconHostEntry
+        // Use the native icon's container (e.g. _UITabBarButtonContentView) if possible
+        let correctContainer = targetView?.superview ?? button
+
         if let existing = iconHostEntries[key] {
           entry = existing
+          // Re-attach if button instance changed or if host was detached/in wrong container
+          if entry.button !== button || entry.host.superview !== correctContainer {
+              entry.button = button
+              attachIconHost(entry.host, to: button, targetView: targetView)
+          }
         } else {
           // NSLog("[RuneScreenTabs] Creating new Host for \(routeKey)")
           let host = RuneTabIconHostView()
           entry = NativeTabIconHostEntry(host: host, index: itemIndex, routeKey: routeKey, button: button)
           iconHostEntries[key] = entry
+          
+          // Configure and Attach
+          entry.host.configure(routeKey: routeKey, runtime: runtime)
+          attachIconHost(entry.host, to: button, targetView: targetView)
         }
         
         entry.index = itemIndex
         entry.routeKey = routeKey
-        entry.button = button
-        
-        // Configure and Attach
-        entry.host.configure(routeKey: routeKey, runtime: runtime)
-        attachIconHost(entry.host, to: button, targetView: targetView)
         button.layoutIfNeeded()
         
         let tint = iconTintColor(isActive: itemIndex == selectedIndex)
@@ -611,19 +598,28 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
   }
 
   private func attachIconHost(_ host: RuneTabIconHostView, to container: UIView, targetView: UIView?) {
-    // Ensure container has stable layout before attaching
-    container.setNeedsLayout()
-    container.layoutIfNeeded()
+    // Determine the actual container (prefer targetView's parent to match native hierarchy)
+    let actualContainer = targetView?.superview ?? container
     
-    if host.superview !== container {
-      host.removeFromSuperview()
-      container.addSubview(host)
-      // Send to back IMMEDIATELY to ensure it doesn't interfere with labels
-      container.sendSubviewToBack(host)
-    } else {
-      // Even if already attached, ensure it's at the back
-      container.sendSubviewToBack(host)
+    // Ensure container has stable layout before attaching
+    actualContainer.setNeedsLayout()
+    actualContainer.layoutIfNeeded()
+    
+    // Debug logging for View Hierarchy
+    NSLog("[RuneScreenTabs] Attaching host to container: \(type(of: actualContainer))")
+    for (i, sub) in actualContainer.subviews.enumerated() {
+        NSLog("  - [\(i)] \(type(of: sub)) frame=\(sub.frame) hidden=\(sub.isHidden) alpha=\(sub.alpha)")
     }
+    
+    if host.superview !== actualContainer {
+      host.removeFromSuperview()
+      if let target = targetView, target.superview === actualContainer {
+        actualContainer.insertSubview(host, aboveSubview: target)
+      } else {
+        actualContainer.addSubview(host)
+      }
+    }
+    
     host.translatesAutoresizingMaskIntoConstraints = false
     NSLayoutConstraint.deactivate(host.constraints)
 
@@ -639,9 +635,9 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
        // Fallback
       let heightMultiplier: CGFloat = tabBarOptions.showLabels ? 0.65 : 0.85
       NSLayoutConstraint.activate([
-        host.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-        host.topAnchor.constraint(equalTo: container.topAnchor, constant: tabBarOptions.showLabels ? 6 : 0),
-        host.heightAnchor.constraint(equalTo: container.heightAnchor, multiplier: heightMultiplier),
+        host.centerXAnchor.constraint(equalTo: actualContainer.centerXAnchor),
+        host.topAnchor.constraint(equalTo: actualContainer.topAnchor, constant: tabBarOptions.showLabels ? 6 : 0),
+        host.heightAnchor.constraint(equalTo: actualContainer.heightAnchor, multiplier: heightMultiplier),
         host.widthAnchor.constraint(equalTo: host.heightAnchor),
       ])
     }
@@ -672,7 +668,16 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
   }
 
   private func iconHostKey(routeKey: String, button: UIView) -> String {
-    return "\(routeKey)-\(ObjectIdentifier(button).hashValue)"
+    return "\(routeKey)::\(ObjectIdentifier(button).hashValue)"
+  }
+
+  private func removeIconHosts(forRouteKey routeKey: String) {
+    let keysForRoute = iconHostEntries.compactMap { (key, entry) -> String? in
+      entry.routeKey == routeKey ? key : nil
+    }
+    for key in keysForRoute {
+      removeIconHostEntry(forKey: key)
+    }
   }
 
   private func removeIconHostEntry(forKey key: String) {
