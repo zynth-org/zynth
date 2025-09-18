@@ -24,6 +24,7 @@ interface MountedIcon {
   key: string;
   dispose: () => void;
   setProps: (props: IconRenderProps) => void;
+  getProps: () => IconRenderProps;
 }
 
 const registry = new Map<string, RegistryEntry>();
@@ -61,16 +62,6 @@ function createSurfaceContainer(rootId: number): HostNode {
   return { id: rootId, type: "root" };
 }
 
-function runFactory(
-  entry: RegistryEntry,
-  props: IconRenderProps
-): () => ReturnType<TabIconFactory> {
-  if (entry.owner) {
-    return () => runWithOwner(entry.owner, () => entry.factory(props));
-  }
-  return () => entry.factory(props);
-}
-
 function mountIcon(
   surfaceId: number,
   entry: RegistryEntry,
@@ -79,32 +70,44 @@ function mountIcon(
   const current = mounted.get(surfaceId);
   if (current) {
     // If already mounted, just update the signal
+    // console.log(`[tabIconRegistry] Updating existing icon for surface ${surfaceId}, routeKey: ${entry.routeKey}, active: ${props.active}`);
     current.setProps(props);
     // CRITICAL: Must flush queue to apply updates immediately to the native view
     runWithSurface(surfaceId, () => {
-        flushHostQueue();
+      flushHostQueue();
     });
     return;
   }
 
-  // Create reactive props for this mount
-  const [getProps, setProps] = createSignal(props);
+  // Create reactive props signal for this mount
+  const [getProps, setPropsSignal] = createSignal(props);
 
   let disposeFn: () => void = () => undefined;
-  
+
   runWithSurface(surfaceId, () => {
-    // render expects a function that returns the JSX. 
-    // We wrap runFactory in a reactive tracking function.
+    // Render the icon by calling the factory with initial props.
+    // The factory will be called again when setProps updates the signal,
+    // but SolidJS's fine-grained reactivity should handle this efficiently.
+    //
+    // IMPORTANT: We pass the signal getter to make props reactive.
+    // The factory receives props.active and props.color which update
+    // when the signal changes, allowing the component to re-render
+    // its styles without full recreation.
     disposeFn = render(() => {
-        const currentProps = getProps();
-        return runFactory(entry, currentProps)();
+      const currentProps = getProps();
+      return entry.owner
+        ? runWithOwner(entry.owner, () => entry.factory(currentProps))
+        : entry.factory(currentProps);
     }, createSurfaceContainer(surfaceId));
     flushHostQueue();
   });
 
   const mountedEntry: MountedIcon = {
     key: entry.routeKey,
-    setProps,
+    getProps,
+    setProps: (nextProps: IconRenderProps) => {
+      setPropsSignal(nextProps);
+    },
     dispose: () => {
       runWithSurface(surfaceId, () => {
         disposeFn();
@@ -146,25 +149,13 @@ function rerenderMountedIcons(routeKey: string) {
   if (!surfaces || surfaces.size === 0) return;
   const surfaceIds = Array.from(surfaces.values());
   for (const surfaceId of surfaceIds) {
-    // Just re-call mountIcon with current props (or default) to trigger update if needed
-    // But since we don't have stored props outside of the signal, this logic is tricky.
-    // However, rerenderMountedIcons is usually called when the *factory* changes (e.g. HMR).
-    // In that case, we probably DO want to re-mount or at least re-run the factory.
-    // Since our render function calls `runFactory(entry, getProps())`, and `entry` is passed by reference/closure?
-    // Wait, `runFactory` takes `entry`. If `registry.set` replaced the entry object, the closure in `render`
-    // still holds the OLD entry if we aren't careful.
-    
-    // To support HMR/Factory updates, we need to handle this.
-    // But for now, let's focus on the prop update flicker.
-    // If the factory changed, we SHOULD probably unmount and remount to be safe.
-    
     const mountedEntry = mounted.get(surfaceId);
+    const previousProps = mountedEntry?.getProps();
     if (mountedEntry) {
-         // Force dispose and re-mount for factory updates
-         mountedEntry.dispose();
-         mounted.delete(surfaceId);
+      mountedEntry.dispose();
+      mounted.delete(surfaceId);
     }
-    const props = { active: false, color: "#ffffff" }; // Default/Fallback
+    const props = previousProps ?? { active: false, color: "#ffffff" };
     mountIcon(surfaceId, entry, props);
   }
 }
@@ -186,6 +177,14 @@ function disposeNativeTabIcon(surfaceId: number) {
 }
 
 export function registerNativeTabIcon(entry: RegistryEntry) {
+  const current = registry.get(entry.routeKey);
+  if (
+    current &&
+    current.factory === entry.factory &&
+    current.owner === entry.owner
+  ) {
+    return;
+  }
   registry.set(entry.routeKey, entry);
   rerenderMountedIcons(entry.routeKey);
 }

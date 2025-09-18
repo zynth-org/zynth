@@ -446,10 +446,18 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
     }
 
     tabBar.layoutIfNeeded()
-    let buttons = collectTabButtons(in: tabBar)
-    // NSLog("[RuneScreenTabs] refreshIconHosts: Found \(items.count) items and \(buttons.count) buttons")
+    
+    // UITabBar structure:
+    // - _UITabBarPlatterView (iOS 18+) or direct subviews
+    //   - ContentView: contains buttons showing INACTIVE state
+    //   - SelectedContentView: contains buttons showing ACTIVE state (above selection indicator)
+    // We need to attach icon hosts to buttons in BOTH views.
+    
+    let (normalButtons, selectedButtons) = collectDualTabButtons(in: tabBar)
+    
+    // NSLog("[RuneScreenTabs] refreshIconHosts: Found \(normalButtons.count) normal buttons, \(selectedButtons.count) selected buttons")
 
-    if buttons.isEmpty {
+    if normalButtons.isEmpty && selectedButtons.isEmpty {
       clearIconHosts()
       return
     }
@@ -465,8 +473,11 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
     }
 
     var activeKeys: Set<String> = []
+    
+    // Use normal buttons for iteration (they should match 1:1 with selected buttons)
+    let buttonsToIterate = normalButtons.isEmpty ? selectedButtons : normalButtons
 
-    for (position, button) in buttons.enumerated() {
+    for (position, button) in buttonsToIterate.enumerated() {
       guard let (item, itemIndex) = resolveTabBarItem(
         for: button,
         items: items,
@@ -474,83 +485,98 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
         fallbackIndex: position,
         itemIndexMap: itemIndexMap
       ) else {
-        // NSLog("[RuneScreenTabs] Skipping button at index \(position): Could not resolve item")
         continue
       }
 
       guard itemIndex < tabDescriptors.count else {
-        // NSLog("[RuneScreenTabs] Skipping button at index \(position): Item index \(itemIndex) out of bounds")
         continue
       }
 
       let descriptor = tabDescriptors[itemIndex]
       let descriptorRouteKey = descriptor.key
-      
-      // NSLog("[RuneScreenTabs] Button \(position) -> Item \(itemIndex) (\(descriptor.label ?? "no-label"))")
 
       if descriptor.hidden {
         showNativeIcon(in: button)
+        if position < selectedButtons.count {
+          showNativeIcon(in: selectedButtons[position])
+        }
         removeIconHosts(forRouteKey: descriptorRouteKey)
         continue
       }
       
       guard let icon = descriptor.icon else {
         showNativeIcon(in: button)
+        if position < selectedButtons.count {
+          showNativeIcon(in: selectedButtons[position])
+        }
         removeIconHosts(forRouteKey: descriptorRouteKey)
         continue
       }
-      
-      let imageView = findIconImageView(in: button)
 
       switch icon {
       case .descriptor:
         showNativeIcon(in: button)
+        if position < selectedButtons.count {
+          showNativeIcon(in: selectedButtons[position])
+        }
         removeIconHosts(forRouteKey: descriptorRouteKey)
       case .surface(let routeKey):
-        let targetView = imageView
-        let key = iconHostKey(routeKey: routeKey, button: button)
+        let key = routeKey
         activeKeys.insert(key)
         
-        // CRITICAL: Ensure button has completed layout before hiding image view.
-        // Force a full layout cycle to ensure labels have their correct frames.
-        button.setNeedsLayout()
-        button.layoutIfNeeded()
+        // Find containers and image views in both normal and selected buttons
+        let normalButton = position < normalButtons.count ? normalButtons[position] : nil
+        let selectedButton = position < selectedButtons.count ? selectedButtons[position] : nil
         
-        if let targetView {
-          // Hide native image view so our custom icon shows through
-          // Use both isHidden and alpha to be robust against UIKit resetting state
-          targetView.isHidden = true
-          targetView.alpha = 0.0
-        }
+        let normalImageView = normalButton.flatMap { findIconImageView(in: $0) }
+        let selectedImageView = selectedButton.flatMap { findIconImageView(in: $0) }
         
-        let entry: NativeTabIconHostEntry
-        // Use the native icon's container (e.g. _UITabBarButtonContentView) if possible
-        let correctContainer = targetView?.superview ?? button
+        // Hide native image views
+        hideImageView(normalImageView)
+        hideImageView(selectedImageView)
+        
+        let normalContainer = normalImageView?.superview ?? normalButton
+        let selectedContainer = selectedImageView?.superview ?? selectedButton
 
         if let existing = iconHostEntries[key] {
-          entry = existing
-          // Re-attach if button instance changed or if host was detached/in wrong container
-          if entry.button !== button || entry.host.superview !== correctContainer {
-              entry.button = button
-              attachIconHost(entry.host, to: button, targetView: targetView)
+          // Update existing entry - re-attach hosts if needed
+          existing.index = itemIndex
+          existing.routeKey = routeKey
+          
+          if let container = normalContainer, existing.normalHost.superview !== container {
+            existing.normalContainer = container
+            attachIconHost(existing.normalHost, to: container, targetView: normalImageView)
+          }
+          if let container = selectedContainer, existing.selectedHost.superview !== container {
+            existing.selectedContainer = container
+            attachIconHost(existing.selectedHost, to: container, targetView: selectedImageView)
           }
         } else {
-          // NSLog("[RuneScreenTabs] Creating new Host for \(routeKey)")
-          let host = RuneTabIconHostView()
-          entry = NativeTabIconHostEntry(host: host, index: itemIndex, routeKey: routeKey, button: button)
+          // Create new entry with dual hosts
+          let normalHost = RuneTabIconHostView()
+          let selectedHost = RuneTabIconHostView()
+          let entry = NativeTabIconHostEntry(
+            normalHost: normalHost,
+            selectedHost: selectedHost,
+            index: itemIndex,
+            routeKey: routeKey
+          )
+          entry.normalContainer = normalContainer
+          entry.selectedContainer = selectedContainer
           iconHostEntries[key] = entry
           
-          // Configure and Attach
-          entry.host.configure(routeKey: routeKey, runtime: runtime)
-          attachIconHost(entry.host, to: button, targetView: targetView)
+          // Configure both hosts with the same route (they share the same JS icon registry entry)
+          normalHost.configure(routeKey: routeKey, runtime: runtime)
+          selectedHost.configure(routeKey: routeKey, runtime: runtime)
+          
+          // Attach to respective containers
+          if let container = normalContainer {
+            attachIconHost(normalHost, to: container, targetView: normalImageView)
+          }
+          if let container = selectedContainer {
+            attachIconHost(selectedHost, to: container, targetView: selectedImageView)
+          }
         }
-        
-        entry.index = itemIndex
-        entry.routeKey = routeKey
-        button.layoutIfNeeded()
-        
-        let tint = iconTintColor(isActive: itemIndex == selectedIndex)
-        entry.host.renderIcon(active: itemIndex == selectedIndex, tintColor: tint)
       }
     }
 
@@ -560,22 +586,88 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
     }
     updateIconHostStates()
   }
+  
+  /// Find tab buttons in both ContentView (normal) and SelectedContentView (selected)
+  private func collectDualTabButtons(in tabBar: UITabBar) -> (normal: [UIView], selected: [UIView]) {
+    var normalButtons: [UIView] = []
+    var selectedButtons: [UIView] = []
+    
+    // Look for _UITabBarPlatterView or similar container
+    func findContentViews(in view: UIView) -> (normal: UIView?, selected: UIView?) {
+      var normalView: UIView?
+      var selectedView: UIView?
+      
+      for subview in view.subviews {
+        let className = String(describing: type(of: subview))
+        // Look for ContentView (normal state) and SelectedContentView (selected state)
+        if className.contains("SelectedContentView") {
+          selectedView = subview
+        } else if className.contains("ContentView") && !className.contains("Selected") {
+          normalView = subview
+        }
+        
+        // Recurse into container views that might hold the content views
+        if className.contains("PlatterView") || className.contains("Container") {
+          let (n, s) = findContentViews(in: subview)
+          if n != nil { normalView = n }
+          if s != nil { selectedView = s }
+        }
+      }
+      
+      return (normalView, selectedView)
+    }
+    
+    let (normalContentView, selectedContentView) = findContentViews(in: tabBar)
+    
+    // Collect buttons from normal content view
+    if let normalView = normalContentView {
+      normalButtons = collectTabButtons(in: normalView)
+    }
+    
+    // Collect buttons from selected content view
+    if let selectedView = selectedContentView {
+      selectedButtons = collectTabButtons(in: selectedView)
+    }
+    
+    // Fallback: if we didn't find the dual structure, use the old approach
+    if normalButtons.isEmpty && selectedButtons.isEmpty {
+      normalButtons = collectTabButtons(in: tabBar)
+    }
+    
+    return (normalButtons, selectedButtons)
+  }
+  
+  private func hideImageView(_ imageView: UIImageView?) {
+    guard let imageView else { return }
+    imageView.isHidden = true
+    imageView.alpha = 0.0
+  }
 
   private func collectTabButtons(in view: UIView) -> [UIView] {
-    // Robust collection matching rune-router: checks for "Tab" string OR if it's a generic UIControl
     var result: [UIView] = []
+    var seen = Set<ObjectIdentifier>()
+
     func walk(_ node: UIView) {
-       if let control = node as? UIControl {
-          let className = String(describing: type(of: control))
-          if className.contains("Tab") || control is UIControl {
-              result.append(control)
+      if let control = node as? UIControl {
+        let className = String(describing: type(of: control))
+        let matchesExplicitClass = tabBarButtonClass.flatMap { control.isKind(of: $0) } ?? false
+        let matchesName = className.contains("TabButton") || className.contains("TabBarButton")
+        if matchesExplicitClass || matchesName {
+          let identifier = ObjectIdentifier(control)
+          if !seen.contains(identifier) {
+            seen.insert(identifier)
+            result.append(control)
           }
-       }
-       for child in node.subviews {
-         walk(child)
-       }
+          return
+        }
+      }
+      for child in node.subviews {
+        walk(child)
+      }
     }
+
     walk(view)
+
     return result.sorted { $0.frame.minX < $1.frame.minX }
   }
 
@@ -598,25 +690,16 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
   }
 
   private func attachIconHost(_ host: RuneTabIconHostView, to container: UIView, targetView: UIView?) {
-    // Determine the actual container (prefer targetView's parent to match native hierarchy)
-    let actualContainer = targetView?.superview ?? container
-    
     // Ensure container has stable layout before attaching
-    actualContainer.setNeedsLayout()
-    actualContainer.layoutIfNeeded()
+    container.setNeedsLayout()
+    container.layoutIfNeeded()
     
-    // Debug logging for View Hierarchy
-    NSLog("[RuneScreenTabs] Attaching host to container: \(type(of: actualContainer))")
-    for (i, sub) in actualContainer.subviews.enumerated() {
-        NSLog("  - [\(i)] \(type(of: sub)) frame=\(sub.frame) hidden=\(sub.isHidden) alpha=\(sub.alpha)")
-    }
-    
-    if host.superview !== actualContainer {
+    if host.superview !== container {
       host.removeFromSuperview()
-      if let target = targetView, target.superview === actualContainer {
-        actualContainer.insertSubview(host, aboveSubview: target)
+      if let target = targetView, target.superview === container {
+        container.insertSubview(host, aboveSubview: target)
       } else {
-        actualContainer.addSubview(host)
+        container.addSubview(host)
       }
     }
     
@@ -632,12 +715,12 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
         host.heightAnchor.constraint(equalTo: target.heightAnchor),
       ])
     } else {
-       // Fallback
+       // Fallback - center in container
       let heightMultiplier: CGFloat = tabBarOptions.showLabels ? 0.65 : 0.85
       NSLayoutConstraint.activate([
-        host.centerXAnchor.constraint(equalTo: actualContainer.centerXAnchor),
-        host.topAnchor.constraint(equalTo: actualContainer.topAnchor, constant: tabBarOptions.showLabels ? 6 : 0),
-        host.heightAnchor.constraint(equalTo: actualContainer.heightAnchor, multiplier: heightMultiplier),
+        host.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+        host.topAnchor.constraint(equalTo: container.topAnchor, constant: tabBarOptions.showLabels ? 6 : 0),
+        host.heightAnchor.constraint(equalTo: container.heightAnchor, multiplier: heightMultiplier),
         host.widthAnchor.constraint(equalTo: host.heightAnchor),
       ])
     }
@@ -667,10 +750,6 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
     return nil
   }
 
-  private func iconHostKey(routeKey: String, button: UIView) -> String {
-    return "\(routeKey)::\(ObjectIdentifier(button).hashValue)"
-  }
-
   private func removeIconHosts(forRouteKey routeKey: String) {
     let keysForRoute = iconHostEntries.compactMap { (key, entry) -> String? in
       entry.routeKey == routeKey ? key : nil
@@ -682,8 +761,10 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
 
   private func removeIconHostEntry(forKey key: String) {
     guard let entry = iconHostEntries.removeValue(forKey: key) else { return }
-    entry.host.removeFromSuperview()
-    entry.host.teardown()
+    entry.normalHost.removeFromSuperview()
+    entry.normalHost.teardown()
+    entry.selectedHost.removeFromSuperview()
+    entry.selectedHost.teardown()
   }
 
   private func showNativeIcon(in button: UIView) {
@@ -694,24 +775,28 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
 
   private func clearIconHosts() {
     for (_, entry) in iconHostEntries {
-      entry.host.removeFromSuperview()
-      entry.host.teardown()
+      entry.normalHost.removeFromSuperview()
+      entry.normalHost.teardown()
+      entry.selectedHost.removeFromSuperview()
+      entry.selectedHost.teardown()
     }
     iconHostEntries.removeAll()
   }
 
   private func updateIconHostStates() {
     guard nativeTabBarEnabled else { return }
-    let staleKeys = iconHostEntries.compactMap { (key, entry) -> String? in
-      return entry.button == nil ? key : nil
-    }
-    for key in staleKeys {
-      removeIconHostEntry(forKey: key)
-    }
+    // Note: We no longer check for stale entries with nil buttons here.
+    // Stale entries are cleaned up in refreshIconHosts via the unusedKeys mechanism.
+    // This prevents premature removal of entries when UIKit is recreating button views,
+    // which was causing icon blinking during tab switches.
     for (_, entry) in iconHostEntries {
       let isActive = entry.index == selectedIndex
-      let tint = iconTintColor(isActive: isActive)
-      entry.host.renderIcon(active: isActive, tintColor: tint)
+      let activeTint = iconTintColor(isActive: true)
+      let inactiveTint = iconTintColor(isActive: false)
+      // Normal host shows inactive state (visible when tab is NOT selected)
+      entry.normalHost.renderIcon(active: false, tintColor: inactiveTint)
+      // Selected host shows active state (visible when tab IS selected)
+      entry.selectedHost.renderIcon(active: true, tintColor: activeTint)
     }
   }
 
@@ -1006,16 +1091,18 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
 }
 
 private final class NativeTabIconHostEntry {
-  let host: RuneTabIconHostView
+  let normalHost: RuneTabIconHostView
+  let selectedHost: RuneTabIconHostView
   var index: Int
   var routeKey: String
-  weak var button: UIView?
+  weak var normalContainer: UIView?
+  weak var selectedContainer: UIView?
 
-  init(host: RuneTabIconHostView, index: Int, routeKey: String, button: UIView?) {
-    self.host = host
+  init(normalHost: RuneTabIconHostView, selectedHost: RuneTabIconHostView, index: Int, routeKey: String) {
+    self.normalHost = normalHost
+    self.selectedHost = selectedHost
     self.index = index
     self.routeKey = routeKey
-    self.button = button
   }
 }
 
