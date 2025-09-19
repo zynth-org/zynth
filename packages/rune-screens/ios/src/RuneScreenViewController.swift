@@ -3,6 +3,11 @@ import UIKit
 final class RuneScreenViewController: UIViewController {
   let screenView: RuneScreenView
   private var rightAccessoryHost: RuneScreenHeaderAccessoryHostView?
+  private lazy var modalCloseButton = UIBarButtonItem(
+    barButtonSystemItem: .close,
+    target: self,
+    action: #selector(handleModalCloseButtonPress)
+  )
 
   init(screenView: RuneScreenView) {
     self.screenView = screenView
@@ -53,8 +58,8 @@ final class RuneScreenViewController: UIViewController {
     let options = screenView.headerOptions
     navigationItem.title = options.title
     navigationItem.prompt = options.subtitle
-    navigationItem.hidesBackButton = !options.isBackVisible
     navigationItem.largeTitleDisplayMode = options.prefersLargeTitle ? .automatic : .never
+    updateBackItems(using: options)
 
     let appearance = UINavigationBarAppearance()
     if options.isTransparent {
@@ -85,6 +90,26 @@ final class RuneScreenViewController: UIViewController {
       navigationController?.navigationBar.tintColor = nil
     }
     updateHeaderRightItems()
+  }
+
+  private func updateBackItems(using options: RuneScreenHeaderOptions) {
+    if screenView.animationType == .modal {
+      navigationItem.hidesBackButton = true
+      guard
+        options.isBackVisible,
+        let nav = navigationController,
+        let index = nav.viewControllers.firstIndex(where: { $0 === self }),
+        index > 0
+      else {
+        navigationItem.leftBarButtonItem = nil
+        return
+      }
+      navigationItem.leftBarButtonItem = modalCloseButton
+      return
+    }
+
+    navigationItem.leftBarButtonItem = nil
+    navigationItem.hidesBackButton = !options.isBackVisible
   }
 
   private func updateHeaderRightItems() {
@@ -118,5 +143,9 @@ final class RuneScreenViewController: UIViewController {
 
   @objc private func handleHeaderRightButtonPress() {
     screenView.notifyNativeHeaderRightPress()
+  }
+
+  @objc private func handleModalCloseButtonPress() {
+    navigationController?.popViewController(animated: true)
   }
 }

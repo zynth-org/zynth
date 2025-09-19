@@ -126,8 +126,13 @@ public final class RuneScreenContainerView: UIView {
     let desiredControllers = activeScreens.compactMap { controller(for: $0) }
     let currentControllers = navController.viewControllers.compactMap { $0 as? RuneScreenViewController }
 
+    let finalizeUpdate: (Bool) -> Void = { animated in
+      navController.updateNavigationBarHiddenState(animated: animated)
+      desiredControllers.last?.applyHeaderOptions()
+    }
+
     if currentControllers == desiredControllers {
-      navController.updateNavigationBarHiddenState(animated: false)
+      finalizeUpdate(false)
       return
     }
 
@@ -135,7 +140,7 @@ public final class RuneScreenContainerView: UIView {
       navController.performProgrammaticUpdate {
         navController.setViewControllers(desiredControllers, animated: false)
       }
-      navController.updateNavigationBarHiddenState(animated: false)
+      finalizeUpdate(false)
       return
     }
 
@@ -145,7 +150,7 @@ public final class RuneScreenContainerView: UIView {
       navController.performProgrammaticUpdate {
         navController.pushViewController(newController, animated: true)
       }
-      navController.updateNavigationBarHiddenState(animated: true)
+      finalizeUpdate(true)
       return
     }
 
@@ -160,14 +165,14 @@ public final class RuneScreenContainerView: UIView {
           navController.setViewControllers([], animated: false)
         }
       }
-      navController.updateNavigationBarHiddenState(animated: true)
+      finalizeUpdate(true)
       return
     }
 
     navController.performProgrammaticUpdate {
       navController.setViewControllers(desiredControllers, animated: false)
     }
-    navController.updateNavigationBarHiddenState(animated: false)
+    finalizeUpdate(false)
   }
 
   private func findParentViewController() -> UIViewController? {

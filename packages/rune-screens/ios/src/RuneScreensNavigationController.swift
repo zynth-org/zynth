@@ -57,6 +57,37 @@ final class RuneScreensNavigationController: UINavigationController, UINavigatio
     previousViewControllers = navigationController.viewControllers
   }
 
+  func navigationController(
+    _ navigationController: UINavigationController,
+    animationControllerFor operation: UINavigationController.Operation,
+    from fromVC: UIViewController,
+    to toVC: UIViewController
+  ) -> UIViewControllerAnimatedTransitioning? {
+    guard
+      let fromScreen = fromVC as? RuneScreenViewController,
+      let toScreen = toVC as? RuneScreenViewController
+    else {
+      return nil
+    }
+
+    let animationType: RuneScreenAnimation
+    switch operation {
+    case .push:
+      animationType = toScreen.screenView.animationType
+    case .pop:
+      animationType = fromScreen.screenView.animationType
+    default:
+      return nil
+    }
+
+    switch animationType {
+    case .modal:
+      return RuneScreenModalTransitionAnimator(operation: operation)
+    default:
+      return nil
+    }
+  }
+
   func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
     if gestureRecognizer == interactivePopGestureRecognizer {
       return viewControllers.count > 1
