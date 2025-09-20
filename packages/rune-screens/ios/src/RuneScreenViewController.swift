@@ -8,6 +8,7 @@ final class RuneScreenViewController: UIViewController {
     target: self,
     action: #selector(handleModalCloseButtonPress)
   )
+  private(set) var usesNativeZoomTransition = false
 
   init(screenView: RuneScreenView) {
     self.screenView = screenView
@@ -27,11 +28,13 @@ final class RuneScreenViewController: UIViewController {
   override func viewDidLoad() {
     super.viewDidLoad()
     applyHeaderOptions()
+    updatePreferredTransitionConfiguration()
   }
 
   override func viewWillAppear(_ animated: Bool) {
     super.viewWillAppear(animated)
     applyHeaderOptions()
+    updatePreferredTransitionConfiguration()
     screenView.notifyWillAppear()
   }
 
@@ -147,5 +150,28 @@ final class RuneScreenViewController: UIViewController {
 
   @objc private func handleModalCloseButtonPress() {
     navigationController?.popViewController(animated: true)
+  }
+
+  func updatePreferredTransitionConfiguration() {
+    guard screenView.animationType == .zoom else {
+      resetPreferredTransitionIfNeeded()
+      return
+    }
+
+    if #available(iOS 18.0, *) {
+      usesNativeZoomTransition = true
+      preferredTransition = .zoom { _ in
+        return nil
+      }
+    } else {
+      usesNativeZoomTransition = false
+    }
+  }
+
+  private func resetPreferredTransitionIfNeeded() {
+    if #available(iOS 18.0, *), usesNativeZoomTransition {
+      preferredTransition = nil
+    }
+    usesNativeZoomTransition = false
   }
 }

@@ -97,6 +97,17 @@ public final class RuneScreenContainerView: UIView {
     controller.screenView.notifyNativeBackRequested()
   }
 
+  func refreshInteractiveGestureState() {
+    navigationController?.refreshInteractiveGestureState()
+  }
+
+  func screenAnimationDidChange(_ screen: RuneScreenView) {
+    let identifier = ObjectIdentifier(screen)
+    guard let controller = controllerMap[identifier] else { return }
+    controller.updatePreferredTransitionConfiguration()
+    navigationController?.refreshInteractiveGestureState()
+  }
+
   private func controller(for screen: RuneScreenView, createIfMissing: Bool = true) -> RuneScreenViewController? {
     let identifier = ObjectIdentifier(screen)
     if let existing = controllerMap[identifier] {
@@ -105,6 +116,7 @@ public final class RuneScreenContainerView: UIView {
     guard createIfMissing else { return nil }
     let controller = RuneScreenViewController(screenView: screen)
     controller.applyHeaderOptions()
+    controller.updatePreferredTransitionConfiguration()
     controllerMap[identifier] = controller
     return controller
   }
@@ -129,6 +141,7 @@ public final class RuneScreenContainerView: UIView {
     let finalizeUpdate: (Bool) -> Void = { animated in
       navController.updateNavigationBarHiddenState(animated: animated)
       desiredControllers.last?.applyHeaderOptions()
+      navController.refreshInteractiveGestureState()
     }
 
     if currentControllers == desiredControllers {

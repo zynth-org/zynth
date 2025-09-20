@@ -13,6 +13,7 @@ final class RuneScreensNavigationController: UINavigationController, UINavigatio
     delegate = self
     interactivePopGestureRecognizer?.delegate = self
     previousViewControllers = viewControllers
+    refreshInteractiveGestureState()
   }
 
   func performProgrammaticUpdate(_ block: () -> Void) {
@@ -20,6 +21,7 @@ final class RuneScreensNavigationController: UINavigationController, UINavigatio
     block()
     previousViewControllers = viewControllers
     isPerformingProgrammaticUpdate = false
+    refreshInteractiveGestureState()
   }
 
   func updateNavigationBarHiddenState(animated: Bool) {
@@ -55,6 +57,7 @@ final class RuneScreensNavigationController: UINavigationController, UINavigatio
     }
 
     previousViewControllers = navigationController.viewControllers
+    refreshInteractiveGestureState()
   }
 
   func navigationController(
@@ -83,6 +86,11 @@ final class RuneScreensNavigationController: UINavigationController, UINavigatio
     switch animationType {
     case .modal:
       return RuneScreenModalTransitionAnimator(operation: operation)
+    case .zoom:
+      if usesNativeZoomTransition(for: operation, from: fromScreen, to: toScreen) {
+        return nil
+      }
+      return RuneScreenZoomTransitionAnimator(operation: operation)
     default:
       return nil
     }
@@ -90,8 +98,52 @@ final class RuneScreensNavigationController: UINavigationController, UINavigatio
 
   func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
     if gestureRecognizer == interactivePopGestureRecognizer {
-      return viewControllers.count > 1
+      guard viewControllers.count > 1 else { return false }
+      guard let top = topViewController as? RuneScreenViewController else { return true }
+      if !top.screenView.gestureEnabled {
+        return false
+      }
+      if top.screenView.animationType == .zoom && !top.usesNativeZoomTransition {
+        return false
+      }
+      return true
     }
     return true
+  }
+
+  func refreshInteractiveGestureState() {
+    guard let gesture = interactivePopGestureRecognizer else { return }
+    guard
+      viewControllers.count > 1,
+      let top = topViewController as? RuneScreenViewController
+    else {
+      gesture.isEnabled = false
+      return
+    }
+
+    if top.screenView.animationType == .zoom && !top.usesNativeZoomTransition {
+      gesture.isEnabled = false
+      return
+    }
+
+    gesture.isEnabled = top.screenView.gestureEnabled
+  }
+
+  private func usesNativeZoomTransition(
+    for operation: UINavigationController.Operation,
+    from fromVC: RuneScreenViewController,
+    to toVC: RuneScreenViewController
+  ) -> Bool {
+    if #available(iOS 18.0, *) {
+      switch operation {
+      case .push:
+        return toVC.usesNativeZoomTransition
+      case .pop:
+        return fromVC.usesNativeZoomTransition
+      default:
+        return false
+      }
+    }
+    return false
   }
 }

@@ -106,11 +106,17 @@ public final class RuneScreenView: UIView {
   }
 
   public func setAnimationTypeString(_ value: NSString?) {
-    animationType = RuneScreenAnimation(string: value as String?)
+    let newType = RuneScreenAnimation(string: value as String?)
+    guard animationType != newType else { return }
+    animationType = newType
+    container?.screenAnimationDidChange(self)
   }
 
   public func setGestureEnabledValue(_ value: NSNumber?) {
-    gestureEnabled = value?.boolValue ?? true
+    let newValue = value?.boolValue ?? true
+    guard gestureEnabled != newValue else { return }
+    gestureEnabled = newValue
+    container?.refreshInteractiveGestureState()
   }
 
   public func setActiveStateValue(_ value: NSNumber?) {

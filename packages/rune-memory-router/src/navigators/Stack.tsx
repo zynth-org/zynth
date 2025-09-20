@@ -527,6 +527,7 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
                       ? "none"
                       : resolveScreenAnimation(options())
                   }
+                  gestureEnabled={options()?.gestureEnabled ?? true}
                   headerOptions={nativeHeaderOptions()}
                   onNativeBack={useNativeHeader ? handleNativeBack : undefined}
                   onNativeHeaderRightPress={
