@@ -409,6 +409,9 @@ export function BottomSheetNavigator(
     const Container =
       Platform.OS === OS.IOS ? ScreenSheetContainer : ScreenContainer;
 
+    const defaultBackgroundColor =
+      Platform.OS === OS.ANDROID ? "#ffffff" : "transparent";
+
     return (
       <HeaderHeightContext.Provider value={headerHeightValue}>
         <Show when={currentRoute()}>
@@ -418,19 +421,11 @@ export function BottomSheetNavigator(
             controller={bsController}
             open={true} // Always open as a navigator
             allowDismissOnInteraction={false} // Prevent closing the navigator by swipe by default? User can implement back behavior.
-
-            // Actually, if they swipe down, it might close. But for a navigator we probably want it to stay unless explicitly closed?
-
-            // The user didn't specify, but standard persistent bottom sheet usually stays open.
-
-            // We'll leave defaults or user overrides.
           >
             <View
               style={{
                 flex: 1,
-
-                backgroundColor:
-                  currentOptions()?.contentBackgroundColor ?? "transparent",
+                backgroundColor: "transparent",
               }}
             >
               <Container>
@@ -480,7 +475,9 @@ export function BottomSheetNavigator(
                             : resolveScreenAnimation(options())
                         }
                         style={{
-                          backgroundColor: "transparent",
+                          backgroundColor:
+                            options()?.contentBackgroundColor ??
+                            defaultBackgroundColor,
                         }}
                       >
                         <RouteContext.Provider value={routeContext}>
