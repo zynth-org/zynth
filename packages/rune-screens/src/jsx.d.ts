@@ -8,6 +8,10 @@ declare module "solid-js" {
         style?: Style;
         children?: JSX.Element;
       };
+      "rune-screen-sheet-container": {
+        style?: Style;
+        children?: JSX.Element;
+      };
       "rune-screen": {
         screenKey?: string;
         active?: boolean;

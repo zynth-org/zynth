@@ -43,7 +43,7 @@ struct RuneScreenHeaderAccessory: Equatable {
 
 @objcMembers
 public final class RuneScreenView: UIView {
-  weak var container: RuneScreenContainerView? {
+  weak var container: RuneScreenContainer? {
     didSet {
       if container !== oldValue {
         container?.screenDidAttach(self)
@@ -74,7 +74,7 @@ public final class RuneScreenView: UIView {
   }
 
   private func commonInit() {
-    clipsToBounds = true
+    clipsToBounds = false
     backgroundColor = .clear
     autoresizingMask = [.flexibleWidth, .flexibleHeight]
   }

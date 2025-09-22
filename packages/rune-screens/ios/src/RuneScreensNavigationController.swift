@@ -86,6 +86,8 @@ final class RuneScreensNavigationController: UINavigationController, UINavigatio
     switch animationType {
     case .modal:
       return RuneScreenModalTransitionAnimator(operation: operation)
+    case .sheetBlur:
+      return RuneScreenBlurTransitionAnimator(operation: operation)
     case .zoom:
       if usesNativeZoomTransition(for: operation, from: fromScreen, to: toScreen) {
         return nil

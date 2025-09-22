@@ -4,6 +4,7 @@ import Foundation
   case none
   case push
   case modal
+  case sheetBlur
   case zoom
   case fade
 
@@ -18,6 +19,8 @@ import Foundation
       self = .none
     case "modal", "sheet":
       self = .modal
+    case "sheet-blur":
+      self = .sheetBlur
     case "zoom", "scale":
       self = .zoom
     case "fade":

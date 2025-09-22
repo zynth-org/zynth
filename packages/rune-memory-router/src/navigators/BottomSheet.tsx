@@ -13,7 +13,7 @@ import {
 } from "solid-js";
 import { View, Text, Button, SystemIcon } from "@rune/components";
 import { createSafeAreaInsets } from "@rune/safe-area";
-import { Platform } from "@rune/apis";
+import { Platform, OS } from "@rune/apis";
 import {
   BottomSheet as RuneBottomSheet,
   createBottomSheetController,
@@ -21,6 +21,7 @@ import {
 } from "@rune/bottom-sheet";
 import {
   ScreenContainer,
+  ScreenSheetContainer,
   Screen as ScreenPrimitive,
   type ScreenAnimationType,
 } from "@rune/screens";
@@ -341,7 +342,7 @@ export function BottomSheetNavigator(
     if (options.animation) return options.animation as ScreenAnimationType;
     if (options.presentation === "modal") return "modal";
     if (options.presentation === "zoom") return "zoom";
-    return "push";
+    return "sheet-blur";
   }
 
   const navContextValue = createMemo<NavigationContextValue>(() => ({
@@ -388,11 +389,26 @@ export function BottomSheetNavigator(
       }
     });
 
+    // ... inside ScreensRenderer component ...
+
     const headerShown = createMemo(
       () => currentOptions()?.headerShown !== false
     );
-    // Provide a static header height (no safe area) to children
-    const headerHeightValue = () => (headerShown() ? DEFAULT_HEADER_HEIGHT : 0);
+
+    // On iOS, we use the native header provided by the navigation controller (via ScreenPrimitive props).
+    // On Android, we currently render a JS-based header.
+    const shouldRenderHeaderBar = createMemo(
+      () => headerShown() && Platform.OS === OS.ANDROID
+    );
+
+    // Provide a static header height (no safe area) to children if we are rendering a custom header
+    // On iOS, the native header height is handled by the OS/Native Stack.
+    const headerHeightValue = () =>
+      shouldRenderHeaderBar() ? DEFAULT_HEADER_HEIGHT : 0;
+
+    const Container =
+      Platform.OS === OS.IOS ? ScreenSheetContainer : ScreenContainer;
+
     return (
       <HeaderHeightContext.Provider value={headerHeightValue}>
         <Show when={currentRoute()}>
@@ -414,10 +430,10 @@ export function BottomSheetNavigator(
                 flex: 1,
 
                 backgroundColor:
-                  currentOptions()?.contentBackgroundColor ?? "#ffffff",
+                  currentOptions()?.contentBackgroundColor ?? "transparent",
               }}
             >
-              <ScreenContainer>
+              <Container>
                 <For each={state().routes}>
                   {(route, index) => {
                     const config = screenRegistry.get(route.name);
@@ -463,6 +479,9 @@ export function BottomSheetNavigator(
                             ? "none"
                             : resolveScreenAnimation(options())
                         }
+                        style={{
+                          backgroundColor: "transparent",
+                        }}
                       >
                         <RouteContext.Provider value={routeContext}>
                           <ScreenComponent
@@ -479,9 +498,9 @@ export function BottomSheetNavigator(
                     );
                   }}
                 </For>
-              </ScreenContainer>
+              </Container>
 
-              {headerShown() && currentRoute() && currentOptions() ? (
+              {shouldRenderHeaderBar() && currentRoute() && currentOptions() ? (
                 <HeaderBar
                   key={currentRoute()!.key}
                   options={currentOptions()!}

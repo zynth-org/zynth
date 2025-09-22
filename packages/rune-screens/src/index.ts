@@ -1,5 +1,6 @@
 // Components
 export { ScreenContainer } from "./ScreenContainer";
+export { ScreenSheetContainer } from "./ScreenSheetContainer";
 export { Screen } from "./Screen";
 export { ScreenTabsContainer } from "./ScreenTabsContainer";
 

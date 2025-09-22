@@ -1,7 +1,7 @@
 import UIKit
 
 @objcMembers
-public final class RuneScreenContainerView: UIView {
+public final class RuneScreenContainerView: UIView, RuneScreenContainer {
   private var orderedScreens: [RuneScreenView] = []
   private var controllerMap: [ObjectIdentifier: RuneScreenViewController] = [:]
   private var pendingNavigationUpdate = false

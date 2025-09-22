@@ -186,6 +186,77 @@ static NSArray *RuneScreensParseArray(NSString *rawJSON) {
     };
     RuneRegisterComponentDescriptor(containerDescriptor);
 
+    RuneComponentDescriptor *sheetContainerDescriptor = [[RuneComponentDescriptor alloc] initWithType:@"rune-screen-sheet-container"];
+    sheetContainerDescriptor.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+      return [[RuneScreenSheetContainerView alloc] init];
+    };
+    sheetContainerDescriptor.handleInsertChild = ^BOOL(SNUIManager *manager,
+                                                       SNNode *parent,
+                                                       SNNode *child,
+                                                       NSNumber *childId,
+                                                       NSUInteger index) {
+      if (![parent.view isKindOfClass:[RuneScreenSheetContainerView class]]) {
+        return NO;
+      }
+      if (![child.view isKindOfClass:[RuneScreenView class]]) {
+        return NO;
+      }
+
+      RuneScreenSheetContainerView *container = (RuneScreenSheetContainerView *)parent.view;
+      RuneScreenView *screen = (RuneScreenView *)child.view;
+
+      child.parentId = parent.nid;
+      child.surfaceId = parent.surfaceId;
+
+      NSUInteger clamped = MIN(index, parent.children.count);
+      [parent.children insertObject:childId atIndex:clamped];
+
+      if (child.yoga) {
+        YGNodeRef owner = YGNodeGetOwner(child.yoga);
+        if (owner) {
+          YGNodeRemoveChild(owner, child.yoga);
+        }
+        YGNodeInsertChild(parent.yoga, child.yoga, (uint32_t)clamped);
+      }
+
+      [container insertScreen:screen at:(int)clamped];
+      [manager rune_markNeedsFlush];
+      return YES;
+    };
+
+    sheetContainerDescriptor.handleRemoveChild = ^BOOL(SNUIManager *manager,
+                                                       SNNode *parent,
+                                                       SNNode *child,
+                                                       NSNumber *childId) {
+      if (![parent.view isKindOfClass:[RuneScreenSheetContainerView class]]) {
+        return NO;
+      }
+      if (![child.view isKindOfClass:[RuneScreenView class]]) {
+        return NO;
+      }
+
+      RuneScreenSheetContainerView *container = (RuneScreenSheetContainerView *)parent.view;
+      RuneScreenView *screen = (RuneScreenView *)child.view;
+
+      NSUInteger index = [parent.children indexOfObject:childId];
+      if (index != NSNotFound) {
+        [parent.children removeObjectAtIndex:index];
+      }
+      if (child.yoga) {
+        YGNodeRef owner = YGNodeGetOwner(child.yoga);
+        if (owner) {
+          YGNodeRemoveChild(owner, child.yoga);
+        }
+      }
+      child.parentId = -1;
+      child.surfaceId = -1;
+
+      [container removeScreen:screen];
+      [manager rune_markNeedsFlush];
+      return YES;
+    };
+    RuneRegisterComponentDescriptor(sheetContainerDescriptor);
+
     RuneComponentDescriptor *screenDescriptor = [[RuneComponentDescriptor alloc] initWithType:@"rune-screen"];
     screenDescriptor.createView = ^UIView *(SNUIManager *manager, NSString *type) {
       return [[RuneScreenView alloc] init];
