@@ -8,6 +8,7 @@ import {
   createEffect,
   getOwner,
   runWithOwner,
+  untrack,
   type JSX,
   type Accessor,
 } from "solid-js";
@@ -417,7 +418,9 @@ export function BottomSheetNavigator(
         <Show when={currentRoute()}>
           <RuneBottomSheet
             snapPoints={bottomSheetOptions().snapPoints as any}
-            initialSnapIndex={bottomSheetOptions().initialSnapIndex}
+            initialSnapIndex={untrack(
+              () => bottomSheetOptions().initialSnapIndex
+            )}
             controller={bsController}
             open={true} // Always open as a navigator
             allowDismissOnInteraction={false} // Prevent closing the navigator by swipe by default? User can implement back behavior.
