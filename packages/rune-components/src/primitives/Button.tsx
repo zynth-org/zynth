@@ -230,6 +230,7 @@ export type ButtonProps = {
    * Explicit override for the base color.
    */
   baseColor?: string;
+  ready?: boolean;
 };
 
 const isPromise = <T,>(value: any): value is Promise<T> =>
@@ -326,6 +327,7 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     "accessibilityHint",
     "testID",
     "baseColor",
+    "ready",
   ]);
 
   const providedController = () =>
@@ -725,6 +727,9 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     setProperty(node, "onKeyUp", (payload: { key: string }) => {
       handleKeyUp(payload?.key ?? "");
     });
+    if (local.ready !== undefined) {
+      setProperty(node, "ready", !!local.ready);
+    }
   });
 
   const renderLoadingIndicator = () => {

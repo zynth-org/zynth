@@ -104,6 +104,7 @@ class RuneUIManager(
     val state = surfaces[surfaceId] ?: return@onMain
     
     Log.d("RuneUI", "Unregistering surface $surfaceId")
+    state.trace("surface_unregistered", null)
     
     // Cancel pending flush
     state.layoutListener?.let { state.rootView.removeOnLayoutChangeListener(it) }
@@ -124,6 +125,7 @@ class RuneUIManager(
     state.pendingTextRebuild.clear()
     state.stickyFrameCarryover.clear()
     state.firstFrameListeners.clear()
+    state.frameCommitCoordinator.cancel()
     
     // Remove cached helpers
     propApplierCache.remove(surfaceId)
@@ -199,6 +201,8 @@ class RuneUIManager(
     val frameScheduler: FrameScheduler,
     val layoutFlush: RuneLayoutFlush,
     val nodeFactory: RuneNodeFactory,
+    val frameCommitCoordinator: FrameCommitCoordinator,
+    val visualTracer: VisualStateTracer?,
     val firstFrameListeners: MutableList<() -> Unit>,
   ) {
     var lastWidth: Int = -1
@@ -332,6 +336,10 @@ class RuneUIManager(
     val pendingNativeOperations = mutableListOf<NativeOperation>()
     val stickyFrameCarryover = mutableSetOf<Int>()
     val frameScheduler = FrameScheduler()
+    val visualTracer = if (VisualStateTracer.isEnabled()) VisualStateTracer(surfaceId) else null
+    visualTracer?.trace("surface_registered", "rootView=${surfaceRoot.hashCode()}")
+    val frameCommitCoordinator = FrameCommitCoordinator(surfaceRoot, surfaceId, ::logDebug, visualTracer)
+    lateinit var nodeFactory: RuneNodeFactory
 
     val layoutFlush = RuneLayoutFlush(
       root = surfaceRoot,
@@ -350,13 +358,15 @@ class RuneUIManager(
       logDebug = ::logDebug,
       isNativeDebugEnabled = ::isNativeDebugEnabled,
       surfaceId = surfaceId,
+      frameCommitCoordinator = frameCommitCoordinator,
+      visualTracer = visualTracer,
       reportMetrics = ::recordSurfaceMetrics,
     )
     layoutFlush.setOnFirstFrameCallback {
       dispatchSurfaceFirstFrame(surfaceId)
     }
 
-    val factory = RuneNodeFactory(
+    nodeFactory = RuneNodeFactory(
       root = surfaceRoot,
       nodes = surfaceNodes,
       engine = surfaceEngine,
@@ -381,9 +391,12 @@ class RuneUIManager(
       stickyFrameCarryover = stickyFrameCarryover,
       frameScheduler = frameScheduler,
       layoutFlush = layoutFlush,
-      nodeFactory = factory,
+      nodeFactory = nodeFactory,
+      frameCommitCoordinator = frameCommitCoordinator,
+      visualTracer = visualTracer,
       firstFrameListeners = mutableListOf(),
     )
+    surfaceState.trace("surface_ready", "width=${surfaceRoot.width} height=${surfaceRoot.height}")
     
     // Create per-surface prop applier and event manager
     val propApplier = RunePropApplier(
@@ -559,7 +572,8 @@ class RuneUIManager(
   }
 
   override fun createNode(type: String): Int = onMain {
-    val surfaceId = currentSurface.id
+    val surface = currentSurface
+    val surfaceId = surface.id
     // RECYCLING DISABLED - causing bugs without fixing performance
     // The real issue is elsewhere (scroll offset updates, layout calculations)
     
@@ -567,6 +581,7 @@ class RuneUIManager(
     
     // Create new node from scratch
     val id = nodeFactory.createNode(type)
+    surface.trace("create_node") { "id=$id type=$type" }
     logSurfaceEvent(surfaceId, "createNode", "id=$id type=$type")
     
     totalNodesCreated++
@@ -769,16 +784,60 @@ class RuneUIManager(
     getEventManager().onPressableCancel(nodeId, payload)
   }
 
-  fun applyBatch(batchJson: String?) = onMain {
-    if (batchJson.isNullOrBlank()) return@onMain
+  override fun applyBatch(batchJson: String) = onMain {
+    if (batchJson.isBlank()) return@onMain
+    // Log.d("RuneNative", "applyBatch: $batchJson")
     val payload = runCatching { JSONObject(batchJson) }.getOrNull() ?: return@onMain
     val operations = payload.optJSONArray("operations") ?: return@onMain
+    val surface = currentSurface
+    
+    Log.d("RuneNative", "applyBatch processing ${operations.length()} ops")
+
+    surface.visualTracer?.let { tracer ->
+      val meta = payload.optJSONObject("meta")?.toString()
+      tracer.trace(
+        "apply_batch",
+        "ops=${operations.length()} meta=${tracer.formatJson(meta)}",
+      )
+    }
+
     recyclerHost.onBatch(payload.optJSONObject("meta"), operations)
 
     var mutated = false
     for (i in 0 until operations.length()) {
       val op = operations.optJSONObject(i) ?: continue
       when (op.optString("type")) {
+        "createNode" -> {
+          val nodeId = op.optInt("nodeId", -1)
+          val tag = op.optString("tag")
+          if (nodeId >= 0 && tag.isNotEmpty()) {
+            nodeFactory.createNode(tag, nodeId)
+            totalNodesCreated++
+            surface.trace("op:createNode") { "node=$nodeId tag=$tag" }
+            Log.d("RuneNative", "applyBatch: created node $nodeId ($tag)")
+            mutated = true
+          }
+        }
+        "insertChild" -> {
+          val parentId = op.optInt("parentId", -1)
+          val childId = op.optInt("childId", -1)
+          val index = op.optInt("index", -1)
+          if (parentId >= 0 && childId >= 0) {
+            insertChild(parentId, childId, index)
+            surface.trace("op:insertChild") { "parent=$parentId child=$childId index=$index" }
+            Log.d("RuneNative", "applyBatch: inserting $childId into $parentId at $index")
+            mutated = true
+          }
+        }
+        "removeChild" -> {
+          val parentId = op.optInt("parentId", -1)
+          val childId = op.optInt("childId", -1)
+          if (parentId >= 0 && childId >= 0) {
+            removeChild(parentId, childId)
+            surface.trace("op:removeChild") { "parent=$parentId child=$childId" }
+            mutated = true
+          }
+        }
         "setProp" -> {
           val nodeId = op.optInt("nodeId", -1)
           if (nodeId < 0) continue
@@ -787,6 +846,16 @@ class RuneUIManager(
           val value = op.opt("value")
           val jsonValue = encodeBatchValue(value)
           val category = PropertyCategoryMap.getCategory(name)
+
+          // Propagate text changes if updating style on a text node
+          if (name == "style") {
+            surface.nodes.get(nodeId)?.let { node ->
+              if (node.type == TEXT_TYPE) {
+                nodeFactory.propagateTextChange(node)
+              }
+            }
+          }
+
           pendingNativeOperations.add(
             NativeOperation.SetProp(
               nodeId = nodeId,
@@ -796,6 +865,10 @@ class RuneUIManager(
               category = category,
             ),
           )
+          surface.trace("op:setProp") {
+            val formatted = surface.visualTracer?.formatValue(value) ?: ""
+            "node=$nodeId $name=$formatted"
+          }
           mutated = true
         }
         "setText" -> {
@@ -806,7 +879,14 @@ class RuneUIManager(
             null, JSONObject.NULL -> ""
             else -> value.toString()
           }
+
+          // Propagate text changes
+          surface.nodes.get(nodeId)?.let { node ->
+            nodeFactory.propagateTextChange(node)
+          }
+
           pendingNativeOperations.add(NativeOperation.SetText(nodeId, text))
+          surface.trace("op:setText") { "node=$nodeId len=${text.length}" }
           mutated = true
         }
       }
@@ -857,9 +937,12 @@ class RuneUIManager(
   override fun setProp(nodeId: Int, name: String, jsonValue: String?) = onMain {
     val surface = surfaceStateForNode(nodeId)
     logSurfaceEvent(surface.id, "setProp", "node=$nodeId name=$name")
+    surface.trace("setProp") {
+      val formatted = surface.visualTracer?.formatJson(jsonValue) ?: "null"
+      "node=$nodeId $name=$formatted"
+    }
     val targetNode = surface.nodes.get(nodeId)
     if (name == "style" && targetNode?.type == TEXT_TYPE) {
-      surface.pendingTextRebuild.add(nodeId)
       surface.nodeFactory.propagateTextChange(targetNode)
     }
     val queue = surface.pendingNativeOperations
@@ -898,8 +981,8 @@ class RuneUIManager(
   override fun setText(nodeId: Int, text: String) = onMain {
     val surface = surfaceStateForNode(nodeId)
     logSurfaceEvent(surface.id, "setText", "node=$nodeId length=${text.length}")
+    surface.trace("setText") { "node=$nodeId len=${text.length}" }
     surface.nodes.get(nodeId)?.let { node ->
-      surface.pendingTextRebuild.add(nodeId)
       surface.nodeFactory.propagateTextChange(node)
     }
     val queue = surface.pendingNativeOperations
@@ -923,11 +1006,12 @@ class RuneUIManager(
   override fun insertChild(parentId: Int, childId: Int, index: Int) = onMain {
     val surface = surfaceStateForParent(parentId)
     logSurfaceEvent(surface.id, "insertChild", "parent=$parentId child=$childId index=$index")
+    surface.trace("insertChild") { "parent=$parentId child=$childId index=$index" }
     
     // Get nodes from the correct surface
     val surfaceNodes = surface.nodes
-    val childNode = surfaceNodes.get(childId)
-    val parentNode = surfaceNodes.get(parentId)
+      val childNode = surfaceNodes.get(childId)
+      val parentNode = surfaceNodes.get(parentId)
     
     attachChild(parentId, childId, index)
     
@@ -941,10 +1025,7 @@ class RuneUIManager(
         val insertIndex = index.coerceIn(0, parentNode.textChildren.size)
         parentNode.textChildren.remove(childId)
         parentNode.textChildren.add(insertIndex, childId)
-        surface.pendingTextRebuild.add(parentNode.id)
-        // We MUST mark dirty so Yoga invalidates the cached size and calls measure() again.
-        engine.markDirty(parentNode.id)
-        propagateTextChange(parentNode)
+        nodeFactory.propagateTextChange(parentNode)
       }
       scheduleFlush(surface = surface)
       return@onMain
@@ -971,6 +1052,7 @@ class RuneUIManager(
     }
     
     val parentNode = nodes.get(parentId)
+    surface.trace("removeChild") { "parent=$parentId child=$childId parentType=${parentNode?.type}" }
     if (parentNode?.type == TEXT_TYPE) {
       parentNode.textChildren.remove(childId)
       detachChild(parentId, childId)
@@ -1004,12 +1086,14 @@ class RuneUIManager(
 
   override fun setHandler(nodeId: Int, event: String, handlerId: Long) = onMain {
     val surface = surfaceStateForNode(nodeId)
+    surface.trace("setHandler") { "node=$nodeId event=$event handler=$handlerId" }
     surface.pendingNativeOperations.add(NativeOperation.SetHandler(nodeId, event, handlerId))
     scheduleFlush(surface = surface)
   }
 
   override fun removeNode(nodeId: Int) = onMain {
     val surface = surfaceStateForNode(nodeId)
+    surface.trace("removeNode") { "node=$nodeId" }
     surface.nodeFactory.removeNodeRecursive(nodeId)
     scheduleFlush(surface = surface)
   }
@@ -1028,6 +1112,7 @@ class RuneUIManager(
       state.pendingViewOperations.clear()
       state.pendingNativeOperations.clear()
       state.stickyFrameCarryover.clear()
+      state.frameCommitCoordinator.cancel()
       state.layoutFlush.flush()
     }
     handler.removeCallbacksAndMessages(null)
@@ -1059,7 +1144,11 @@ class RuneUIManager(
   }
 
   override fun flush() = onMain {
-    currentSurface.layoutFlush.flush()
+    val surface = currentSurface
+    surface.trace("flush_request") {
+      "viewOps=${surface.pendingViewOperations.size} nativeOps=${surface.pendingNativeOperations.size}"
+    }
+    surface.layoutFlush.flush()
   }
 
   private fun scheduleFlush(
@@ -1070,6 +1159,10 @@ class RuneUIManager(
     
     val viewOps = surface.pendingViewOperations.size
     val nativeOps = surface.pendingNativeOperations.size
+    val blockReason = surface.describeVisualMutationReason()
+    if (blockReason != null) {
+      surface.frameCommitCoordinator.onMutationsQueued(blockReason)
+    }
     
     // Track peak queue sizes
     if (viewOps > maxViewOps) {
@@ -1090,6 +1183,10 @@ class RuneUIManager(
       // Log.e("RunePerf", "🚨 LARGE OPERATION QUEUES: view=$viewOps native=$nativeOps (schedule #$scheduleFlushCount)")
     }
     
+    surface.trace("scheduleFlush") {
+      "priority=$priority viewOps=$viewOps nativeOps=$nativeOps pendingText=${surface.pendingTextRebuild.size} dirty=${surface.layoutFlush.dirty} block=${blockReason != null}"
+    }
+
     surface.layoutFlush.scheduleFlush(priority)
   }
 
@@ -1133,6 +1230,35 @@ class RuneUIManager(
     
     if (leakedNodes > 50) {
       Log.e("RunePerf", "🚨 MEMORY LEAK DETECTED: $leakedNodes nodes not properly cleaned up!")
+    }
+  }
+
+  private inline fun SurfaceState.trace(event: String, detailsBuilder: () -> String) {
+    val tracer = visualTracer ?: return
+    tracer.trace(event, detailsBuilder())
+  }
+
+  private fun SurfaceState.trace(event: String, details: String?) {
+    visualTracer?.trace(event, details)
+  }
+
+  private fun SurfaceState.hasVisualNativeMutations(): Boolean {
+    for (op in pendingNativeOperations) {
+      when (op) {
+        is NativeOperation.SetProp,
+        is NativeOperation.SetText -> return true
+        else -> continue
+      }
+    }
+    return false
+  }
+
+  private fun SurfaceState.describeVisualMutationReason(): String? {
+    return when {
+      pendingViewOperations.isNotEmpty() -> "viewOps=${pendingViewOperations.size}"
+      pendingTextRebuild.isNotEmpty() -> "textRebuild=${pendingTextRebuild.size}"
+      hasVisualNativeMutations() -> "nativeOps=${pendingNativeOperations.size}"
+      else -> null
     }
   }
 

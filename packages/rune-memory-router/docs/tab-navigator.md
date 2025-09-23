@@ -292,9 +292,9 @@ function CustomTabBar(props: TabBarProps) {
         paddingTop: 10,
       }}
     >
-      <For each={props.state.routes}>
+      <For each={props.state().routes}>
         {(route, index) => {
-          const isActive = () => index() === props.state.index;
+          const isActive = () => index() === props.state().index;
           const descriptor = props.descriptors[route.key];
           const options = descriptor?.options;
           const label = options?.tab?.label ?? route.name;

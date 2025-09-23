@@ -83,33 +83,28 @@ internal class RuneNodeFactory(
   }
 
   /**
-   * Propagates text change upward through TEXT node hierarchy.
-   * Adds all parent TEXT nodes to rebuild queue.
-   * Note: We don't call markDirty on TEXT nodes since they have measure functions
-   * and Yoga doesn't allow marking leaf nodes with measure functions as dirty.
-   * The text rebuild process will handle remeasurement.
+   * Propagates text change through current node and any TEXT ancestors.
+   * Ensures each affected node is marked for rebuild so Yoga remeasures widths
+   * when font metrics change (e.g., fontWeight toggles on tab labels).
    */
   internal fun propagateTextChange(node: RuneUIManager.Node) {
-    var currentParentId = node.parentId
-    while (currentParentId != null) {
-      val parent = nodes.get(currentParentId) ?: break
-      if (parent.type != TEXT_TYPE) break
-      pendingTextRebuild.add(parent.id)
-      // We MUST mark dirty so Yoga invalidates the cached size and calls measure() again.
-      engine.markDirty(parent.id)
-      currentParentId = parent.parentId
+    var current: RuneUIManager.Node? = node
+    while (current != null && current.type == TEXT_TYPE) {
+      pendingTextRebuild.add(current.id)
+      try {
+        engine.markDirty(current.id)
+      } catch (_: Throwable) {
+        // Ignore markDirty failures for TEXT nodes
+      }
+      current = current.parentId?.let { nodes.get(it) }
     }
   }
 
   /**
    * Combined recompute and propagate operation.
    * Adds node to rebuild queue and propagates changes upward.
-   * Note: We don't call markDirty on TEXT nodes since they have measure functions.
    */
   internal fun recomputeAndPropagate(node: RuneUIManager.Node) {
-    pendingTextRebuild.add(node.id)
-    // We MUST mark dirty so Yoga invalidates the cached size and calls measure() again.
-    engine.markDirty(node.id)
     propagateTextChange(node)
   }
 
@@ -139,9 +134,12 @@ internal class RuneNodeFactory(
    * 
    * Returns the newly created node's ID.
    */
-  internal fun createNode(type: String): Int {
-    val id = getNextId()
-    incrementNextId()
+  internal fun createNode(type: String, explicitId: Int? = null): Int {
+    val id = explicitId ?: run {
+      val generated = getNextId()
+      incrementNextId()
+      generated
+    }
 
     val descriptor = RuneComponentRegistry.getDescriptor(type)
     val view: View

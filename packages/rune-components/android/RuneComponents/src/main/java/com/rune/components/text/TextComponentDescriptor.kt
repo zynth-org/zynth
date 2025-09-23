@@ -13,6 +13,7 @@ import com.rune.kit.components.RuneComponentDescriptor
 import com.rune.kit.components.RuneComponentRegistrar
 import com.rune.kit.core.RuneUIManager
 import com.rune.kit.core.TextStyleAttributes
+import com.rune.kit.runtime.FontRegistry
 import com.rune.kit.layout.MeasureMode
 import com.rune.kit.layout.Style
 import kotlin.math.roundToInt
@@ -129,10 +130,23 @@ fun createTextComponentDescriptor(): RuneComponentDescriptor {
           textView.setTextColor(color)
         }
         
-        style.fontWeight?.let { weight ->
-          val isBold = weight.equals("bold", ignoreCase = true) ||
-            weight.toIntOrNull()?.let { it >= 600 } == true
-          textView.setTypeface(textView.typeface, if (isBold) Typeface.BOLD else Typeface.NORMAL)
+        val weight = style.fontWeight
+        val isBold = weight?.let {
+          it.equals("bold", ignoreCase = true) || it.toIntOrNull()?.let { w -> w >= 600 } == true
+        } ?: false
+        val styleInt = if (isBold) Typeface.BOLD else Typeface.NORMAL
+
+        val family = style.fontFamily
+        val baseTypeface = if (family != null) {
+          FontRegistry.getTypeface(family) ?: Typeface.create(family, styleInt)
+        } else {
+          Typeface.DEFAULT
+        }
+        
+        if (baseTypeface != null) {
+          textView.setTypeface(Typeface.create(baseTypeface, styleInt))
+        } else {
+          textView.setTypeface(Typeface.DEFAULT, styleInt)
         }
       }
 

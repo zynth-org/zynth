@@ -468,7 +468,7 @@ Props passed to custom tab bar component.
 
 ```tsx
 interface TabBarProps {
-  state: NavigationState;
+  state: Accessor<NavigationState>;
   navigation: NavigationHelpers<any>;
   descriptors: {
     [key: string]: {

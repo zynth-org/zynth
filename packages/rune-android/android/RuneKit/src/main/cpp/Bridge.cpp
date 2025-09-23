@@ -66,6 +66,7 @@ struct UIShimMethods {
   jmethodID flush = nullptr;
   jmethodID dequeueEventPayload = nullptr;
   jmethodID setSurface = nullptr;
+  jmethodID applyBatch = nullptr;
 };
 
 struct ModulesShimMethods {
@@ -744,6 +745,33 @@ void installUIBindings(std::shared_ptr<RuntimeState> state) {
         return Value::undefined();
       });
 
+  auto applyBatch = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "applyBatch"), 1,
+      [weakState](Runtime &runtime, const Value &, const Value *args, size_t count) -> Value {
+        auto state = weakState.lock();
+        if (!state) return Value::undefined();
+        if (count < 1) {
+          BRIDGE_LOG(ANDROID_LOG_WARN, "applyBatch expects a JSON string argument");
+          return Value::undefined();
+        }
+        std::string batchJson;
+        if (args[0].isString()) {
+          batchJson = args[0].getString(runtime).utf8(runtime);
+        } else {
+          batchJson = toJsonString(runtime, args[0]);
+        }
+        if (batchJson.empty()) {
+          return Value::undefined();
+        }
+        JniEnv env;
+        if (!env.valid()) return Value::undefined();
+        jstring jBatchJson = makeJString(env.get(), batchJson);
+        env->CallVoidMethod(state->uiShim, state->uiMethods.applyBatch, jBatchJson);
+        env->DeleteLocalRef(jBatchJson);
+        logJniException(env.get(), "UIShim.applyBatch");
+        return Value::undefined();
+      });
+
   facebook::jsi::Object ui(rt);
   ui.setProperty(rt, "createNode", createNode);
   ui.setProperty(rt, "setProp", setProp);
@@ -754,6 +782,7 @@ void installUIBindings(std::shared_ptr<RuntimeState> state) {
   ui.setProperty(rt, "setHandler", setHandler);
   ui.setProperty(rt, "flush", flush);
   ui.setProperty(rt, "setSurface", setSurface);
+  ui.setProperty(rt, "applyBatch", applyBatch);
 
   rt.global().setProperty(rt, "__ui", std::move(ui));
 }
@@ -1496,6 +1525,7 @@ void installBindings(
   state->uiMethods.flush = env->GetMethodID(state->uiClass, "flush", "()V");
   state->uiMethods.dequeueEventPayload = env->GetMethodID(state->uiClass, "dequeueEventPayload", "(ILjava/lang/String;)Ljava/lang/String;");
   state->uiMethods.setSurface = env->GetMethodID(state->uiClass, "setSurface", "(I)V");
+  state->uiMethods.applyBatch = env->GetMethodID(state->uiClass, "applyBatch", "(Ljava/lang/String;)V");
 
   state->moduleMethods.getConstants = env->GetMethodID(state->modulesClass, "getConstants", "()Ljava/lang/String;");
   state->moduleMethods.invoke = env->GetMethodID(state->modulesClass, "invoke", "(Ljava/lang/String;Ljava/lang/String;[Ljava/lang/Object;I)V");
@@ -1616,7 +1646,8 @@ void callGlobal(
     return;
   }
   
-  jsize argsLength = args ? env->GetArrayLength(args) : 0;
+  // Uncomment for debugging:
+  // jsize argsLength = args ? env->GetArrayLength(args) : 0;
   // BRIDGE_LOG(ANDROID_LOG_INFO, "callGlobal: %s with %d arguments", name.c_str(), argsLength);
   
   using namespace facebook::jsi;

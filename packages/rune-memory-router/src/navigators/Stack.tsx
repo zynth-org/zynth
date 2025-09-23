@@ -26,6 +26,7 @@ import {
   useNavigationContextUnsafe,
 } from "../context";
 import { RouteContext, type RouteContextData } from "../context";
+import { useContainerContext } from "../NavigationContainer";
 import { DEFAULT_HEADER_HEIGHT } from "../integration/insets";
 import type {
   RouteParamList,
@@ -95,6 +96,8 @@ export function StackScreen<
 export function StackNavigator(props: StackNavigatorProps): JSX.Element {
   // Capture parent navigation context for nested navigators
   const parentContext = useNavigationContextUnsafe();
+  const containerContext = useContainerContext();
+  const isHydrated = createMemo(() => containerContext.isReady());
 
   // Screen registry - populated by Stack.Screen children
   const screenRegistry = new Map<string, ScreenConfig>();
@@ -382,6 +385,7 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
     parent: parentContext,
     navigatorId,
     navigatorType: "stack",
+    isHydrated,
   }));
 
   // Inner component that renders after children have registered

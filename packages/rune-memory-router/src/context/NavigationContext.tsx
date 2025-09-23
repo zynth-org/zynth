@@ -28,6 +28,8 @@ export interface NavigationContextValue<
   navigatorId: string;
   /** Navigator type */
   navigatorType: "stack" | "tabs";
+  /** Whether the navigation container has finished hydrating */
+  isHydrated: Accessor<boolean>;
 }
 
 export const NavigationContext = createContext<

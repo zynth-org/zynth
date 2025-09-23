@@ -14,7 +14,7 @@ import {
   children as resolveChildren,
   createEffect,
 } from "solid-js";
-import { View, Text, Pressable } from "@rune/components";
+import { View, Text, Pressable, Button } from "@rune/components";
 import { ScreenTabsContainer } from "@rune/screens";
 import { Platform, OS } from "@rune/apis";
 import {
@@ -22,6 +22,7 @@ import {
   type NavigationContextValue,
   useNavigationContextUnsafe,
 } from "../context";
+import { useContainerContext } from "../NavigationContainer";
 import { RouteContext, type RouteContextData } from "../context";
 import type {
   RouteParamList,
@@ -94,16 +95,15 @@ export function TabScreen<
 function DefaultTabBar(
   props: TabBarProps & { tabBarOptions?: TabBarOptions }
 ): JSX.Element {
+  const navContext = useNavigationContextUnsafe();
+  const hydrationReady = createMemo(() => navContext?.isHydrated?.() ?? false);
+  const navigationState = createMemo(() => props.state());
   const {
     tabBarBackgroundColor = "#ffffff",
     tabBarActiveTintColor = "#007AFF",
     tabBarInactiveTintColor = "#8E8E93",
     tabBarShowLabels = true,
   } = props.tabBarOptions ?? {};
-
-  createEffect(() => {
-    console.log("Rendering DefaultTabBar with state:", props.state.routes);
-  });
 
   return (
     <View
@@ -113,12 +113,13 @@ function DefaultTabBar(
         justifyContent: "space-around",
         backgroundColor: tabBarBackgroundColor,
         paddingBottom: 20,
+        paddingHorizontal: 5,
         paddingTop: 8,
       }}
     >
-      <Index each={props.state.routes}>
+      <Index each={navigationState().routes}>
         {(route, index) => {
-          const isActive = () => index === props.state.index;
+          const isActive = () => index === navigationState().index;
           const descriptor = () => props.descriptors[route().key];
           const options = () => descriptor()?.options ?? {};
           const label = () =>
@@ -127,57 +128,65 @@ function DefaultTabBar(
             isActive() ? tabBarActiveTintColor : tabBarInactiveTintColor;
 
           return (
-            <Pressable
+            <Button
               onPress={() => props.navigation.navigate(route().name)}
+              variant="ghost"
+              rounded="pill"
+              ready={hydrationReady()}
               style={{
                 flex: 1,
-                alignItems: "center",
-                justifyContent: "center",
-                paddingVertical: 4,
               }}
             >
-              {(options().tab?.icon as any)?.({
-                active: isActive(),
-                color: tintColor(),
-              })}
-              <Show when={tabBarShowLabels}>
-                <Text
-                  style={{
-                    fontSize: 10,
-                    color: tintColor(),
-                    fontWeight: isActive() ? "600" : "400",
-                  }}
-                >
-                  {label()}
-                </Text>
-              </Show>
-              <Show when={options().tab?.badge !== undefined}>
-                <View
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    right: 10,
-                    backgroundColor: options().tab?.badgeColor ?? "#FF3B30",
-                    borderRadius: 8,
-                    minWidth: 16,
-                    height: 16,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    paddingHorizontal: 4,
-                  }}
-                >
+              <View
+                style={{
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                {(options().tab?.icon as any)?.({
+                  active: isActive(),
+                  color: tintColor(),
+                })}
+                <Show when={tabBarShowLabels}>
                   <Text
                     style={{
                       fontSize: 10,
-                      color: "#ffffff",
-                      fontWeight: "600",
+                      // color: "#FFF",
+                      color: tintColor(),
+                      fontWeight: isActive() ? "600" : "400",
                     }}
                   >
-                    {String(options().tab?.badge)}
+                    {label()}
                   </Text>
-                </View>
-              </Show>
-            </Pressable>
+                </Show>
+                <Show when={options().tab?.badge !== undefined}>
+                  <View
+                    style={{
+                      position: "absolute",
+                      top: -5,
+                      right: -10,
+                      backgroundColor: options().tab?.badgeColor ?? "#FF3B30",
+                      borderRadius: 8,
+                      minWidth: 16,
+                      height: 16,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      paddingHorizontal: 4,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 10,
+                        color: "#ffffff",
+                        fontWeight: "600",
+                      }}
+                    >
+                      {String(options().tab?.badge)}
+                    </Text>
+                  </View>
+                </Show>
+              </View>
+            </Button>
           );
         }}
       </Index>
@@ -192,6 +201,8 @@ function DefaultTabBar(
 export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
   // Capture parent navigation context for nested navigators
   const parentContext = useNavigationContextUnsafe();
+  const containerContext = useContainerContext();
+  const isHydrated = createMemo(() => containerContext.isReady());
 
   const screenRegistry = new Map<string, TabScreenConfig>();
   const screenOrder: string[] = [];
@@ -428,6 +439,7 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
     parent: parentContext,
     navigatorId,
     navigatorType: "tabs",
+    isHydrated,
   }));
 
   // Build descriptors for tab bar
@@ -699,7 +711,7 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
 
           <Show when={shouldRenderJSTabBar()}>
             <TabBar
-              state={state()}
+              state={state}
               navigation={helpers}
               descriptors={descriptors()}
             />

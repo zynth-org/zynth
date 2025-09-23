@@ -53,6 +53,8 @@ internal class RuneLayoutFlush(
   private val logDebug: (String, String) -> Unit,
   private val isNativeDebugEnabled: () -> Boolean,
   private val surfaceId: Int,
+  private val frameCommitCoordinator: FrameCommitCoordinator,
+  private val visualTracer: VisualStateTracer?,
   private val reportMetrics: (FlushMetrics) -> Unit = {},
 ) {
   private val textComposer = TextComposer(nodes)
@@ -295,6 +297,11 @@ internal class RuneLayoutFlush(
     var totalApplyLayoutTime = 0L
     var iterationCapHit = false
     var shouldContinue = false
+    var loopCount = 0
+
+    trace("flush_start") {
+      "native=$initialNativeOps view=$initialViewOps dirty=$dirty text=${pendingTextRebuild.size}"
+    }
     
     layoutTransactionActive = true
     root.suppressLayoutCompat(true)
@@ -307,9 +314,11 @@ internal class RuneLayoutFlush(
 
       if (!dirty && pendingNativeOperations.isEmpty() && pendingViewOperations.isEmpty()) return
 
-      var loopCount = 0
       do {
         loopCount++
+        trace("flush_iteration_start") {
+          "loop=$loopCount nativeQueued=${pendingNativeOperations.size} viewQueued=${pendingViewOperations.size}"
+        }
         dirty = false
 
         PerformanceProfiler.recordLayoutStart()
@@ -503,6 +512,9 @@ internal class RuneLayoutFlush(
         }
         
         shouldContinue = dirty || pendingNativeOperations.isNotEmpty() || pendingViewOperations.isNotEmpty()
+        trace("flush_iteration_end") {
+          "loop=$loopCount continue=$shouldContinue nativeTime=${nativeOpsTime}ms viewTime=${viewOpsTime}ms textTime=${textRebuildTime}ms layoutTime=${layoutCalcTime}ms applyTime=${applyLayoutTime}ms"
+        }
         if (shouldContinue && loopCount >= MAX_FLUSH_ITERATIONS) {
           iterationCapHit = true
           dirty = true
@@ -562,6 +574,11 @@ internal class RuneLayoutFlush(
       root.suppressLayoutCompat(false)
       layoutTransactionActive = false
       val hasPendingOperations = dirty || pendingNativeOperations.isNotEmpty() || pendingViewOperations.isNotEmpty()
+      val flushDuration = android.os.SystemClock.elapsedRealtime() - flushStartTime
+      trace("flush_complete") {
+        "duration=${flushDuration}ms iterations=$loopCount pendingNative=${pendingNativeOperations.size} pendingView=${pendingViewOperations.size} dirty=$dirty"
+      }
+      frameCommitCoordinator.onFlushComplete(hasPendingOperations)
       when {
         stickyRelayoutNodes.isNotEmpty() -> scheduleFlush(FlushPriority.HIGH)
         iterationCapHit -> scheduleFlush(FlushPriority.HIGH)
@@ -688,6 +705,11 @@ internal class RuneLayoutFlush(
     } else {
       handler.post { block() }
     }
+  }
+
+  private inline fun trace(event: String, detailsBuilder: () -> String) {
+    val tracer = visualTracer ?: return
+    tracer.trace(event, detailsBuilder())
   }
 
   private inline fun <T> onMain(crossinline block: () -> T): T {

@@ -32,6 +32,7 @@ import {
   useNavigationContextUnsafe,
 } from "../context";
 import { RouteContext, type RouteContextData } from "../context";
+import { useContainerContext } from "../NavigationContainer";
 import {
   DEFAULT_HEADER_HEIGHT,
   HeaderHeightContext,
@@ -104,6 +105,8 @@ export function BottomSheetNavigator(
 ): JSX.Element {
   // Capture parent navigation context for nested navigators
   const parentContext = useNavigationContextUnsafe();
+  const containerContext = useContainerContext();
+  const isHydrated = createMemo(() => containerContext.isReady());
 
   // Screen registry - populated by BottomSheet.Screen children
   const screenRegistry = new Map<string, ScreenConfig>();
@@ -354,6 +357,7 @@ export function BottomSheetNavigator(
     parent: parentContext,
     navigatorId,
     navigatorType: "stack", // Treat as stack for internal logic
+    isHydrated,
   }));
 
   const ScreensRenderer = () => {

@@ -30,10 +30,14 @@ export function createAndroidHost(): Host {
   const NODE_TO_CONTEXT = new Map<number, string>(); // track which context owns each node
   const CONTAINER_TO_CONTEXT = new Map<number, string>(); // map container nodeId -> contextId
   let nextContextId = 0;
+  let nextNodeId = 10000; // high range to avoid conflicting with native-generated ids
   let activeRecyclingContext: string | null = null; // Currently active context for createNode
 
   // NEW: Structured Queue System
   type BatchOperation =
+    | { type: "createNode"; nodeId: number; tag: string }
+    | { type: "insertChild"; parentId: number; childId: number; index: number }
+    | { type: "removeChild"; parentId: number; childId: number }
     | { type: "setProp"; nodeId: number; name: string; value: any }
     | { type: "setText"; nodeId: number; value: any };
 
@@ -94,10 +98,22 @@ export function createAndroidHost(): Host {
             ui.applyBatch(JSON.stringify(payload));
           } else {
             for (const op of batchAccumulator) {
-              if (op.type === "setProp") {
-                ui.setProp(op.nodeId, op.name, op.value);
-              } else {
-                ui.setText(op.nodeId, op.value);
+              switch (op.type) {
+                case "createNode":
+                  ui.createNode(op.tag);
+                  break;
+                case "insertChild":
+                  ui.insertChild(op.parentId, op.childId, op.index);
+                  break;
+                case "removeChild":
+                  ui.removeChild(op.parentId, op.childId);
+                  break;
+                case "setProp":
+                  ui.setProp(op.nodeId, op.name, op.value);
+                  break;
+                case "setText":
+                  ui.setText(op.nodeId, op.value);
+                  break;
               }
             }
           }
@@ -308,25 +324,24 @@ export function createAndroidHost(): Host {
       let id: number | null = null;
       let recycled = false;
 
-      // Try to get from ANY active recycling context
-      // We'll associate it with a container when it's inserted via insertNode
-      if (RECYCLING_CONTEXTS.size > 0) {
+      if (type !== "text" && RECYCLING_CONTEXTS.size > 0) {
         for (const [contextId, context] of RECYCLING_CONTEXTS) {
           const pooled = findAvailableNodeInPool(contextId, type);
           if (pooled !== null) {
             id = pooled;
             recycled = true;
             NODE_TO_CONTEXT.set(id, contextId);
-            console.log(
-              `[Host/createNode] ♻️  RECYCLED node ${id} (type=${type}) from context ${contextId}`
-            );
             break;
           }
         }
       }
 
       if (id === null) {
-        id = ui.createNode(type);
+        id = nextNodeId++;
+        const op = { type: "createNode" as const, nodeId: id, tag: type };
+        if (!tryEnqueueBatch(op)) {
+          enqueueBatchOp(op);
+        }
       }
 
       PARENTS.set(id, null);
@@ -387,24 +402,10 @@ export function createAndroidHost(): Host {
       return { id, type } as HostNode;
     },
     createText(value) {
-      let id: number | null = null;
-      let recycled = false;
-
-      // Try to recycle text nodes too
-      if (RECYCLING_CONTEXTS.size > 0) {
-        for (const [contextId, context] of RECYCLING_CONTEXTS) {
-          const pooled = findAvailableNodeInPool(contextId, "text");
-          if (pooled !== null) {
-            id = pooled;
-            recycled = true;
-            NODE_TO_CONTEXT.set(id, contextId);
-            break;
-          }
-        }
-      }
-
-      if (id === null) {
-        id = ui.createNode("text");
+      let id = nextNodeId++;
+      const op = { type: "createNode" as const, nodeId: id, tag: "text" };
+      if (!tryEnqueueBatch(op)) {
+        enqueueBatchOp(op);
       }
 
       enqueueBatchOp({ type: "setText", nodeId: id, value: value ?? "" });
@@ -530,7 +531,15 @@ export function createAndroidHost(): Host {
       PARENTS.set(node.id, parent.id);
 
       if (!isMarkerId(node.id)) {
-        enqueueOperation(() => ui.insertChild(parent.id, node.id, physIdx));
+        const op = {
+          type: "insertChild" as const,
+          parentId: parent.id,
+          childId: node.id,
+          index: physIdx,
+        };
+        if (!tryEnqueueBatch(op)) {
+          enqueueBatchOp(op);
+        }
       }
       schedule();
     },
@@ -547,7 +556,19 @@ export function createAndroidHost(): Host {
 
       // Check if this node came from a recycling pool
       const contextId = NODE_TO_CONTEXT.get(node.id);
-      const shouldRecycle = contextId && RECYCLING_CONTEXTS.has(contextId);
+      const shouldRecycle =
+        contextId && RECYCLING_CONTEXTS.has(contextId) && node.type !== "text";
+
+      const enqueueRemoveOp = () => {
+        const op = {
+          type: "removeChild" as const,
+          parentId: parent.id,
+          childId: node.id,
+        };
+        if (!tryEnqueueBatch(op)) {
+          enqueueBatchOp(op);
+        }
+      };
 
       if (shouldRecycle) {
         // Return to pool instead of destroying
@@ -559,7 +580,7 @@ export function createAndroidHost(): Host {
 
         if (!isMarkerId(node.id)) {
           // Just detach visually, don't actually remove from native
-          enqueueOperation(() => ui.removeChild(parent.id, node.id));
+          enqueueRemoveOp();
         }
         schedule();
         return;
@@ -570,7 +591,7 @@ export function createAndroidHost(): Host {
       PARENTS.set(node.id, null);
       if (!isMarkerId(node.id)) {
         TYPES.delete(node.id);
-        enqueueOperation(() => ui.removeChild(parent.id, node.id));
+        enqueueRemoveOp();
       }
       schedule();
     },
@@ -631,20 +652,7 @@ export function createAndroidHost(): Host {
       if (!context.operations.length) return;
       const payload = {
         meta: context.meta,
-        operations: context.operations.map((op) =>
-          op.type === "setProp"
-            ? {
-                type: "setProp" as const,
-                nodeId: op.nodeId,
-                name: op.name,
-                value: op.value,
-              }
-            : {
-                type: "setText" as const,
-                nodeId: op.nodeId,
-                value: op.value,
-              }
-        ),
+        operations: context.operations,
       };
       if (typeof ui.applyBatch === "function") {
         if (isSuppressed()) return;
@@ -655,10 +663,22 @@ export function createAndroidHost(): Host {
       }
       if (isSuppressed()) return;
       for (const op of context.operations) {
-        if (op.type === "setProp") {
-          ui.setProp(op.nodeId, op.name, op.value);
-        } else {
-          ui.setText(op.nodeId, op.value);
+        switch (op.type) {
+          case "createNode":
+            ui.createNode(op.tag);
+            break;
+          case "insertChild":
+            ui.insertChild(op.parentId, op.childId, op.index);
+            break;
+          case "removeChild":
+            ui.removeChild(op.parentId, op.childId);
+            break;
+          case "setProp":
+            ui.setProp(op.nodeId, op.name, op.value);
+            break;
+          case "setText":
+            ui.setText(op.nodeId, op.value);
+            break;
         }
       }
     },

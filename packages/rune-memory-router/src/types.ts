@@ -524,8 +524,8 @@ export interface BottomSheetNavigatorProps {
  * Props passed to custom tab bar
  */
 export interface TabBarProps {
-  /** Current state */
-  state: NavigationState;
+  /** Reactive navigation state */
+  state: Accessor<NavigationState>;
   /** Navigation helpers */
   navigation: NavigationHelpers;
   /** Tab descriptors */

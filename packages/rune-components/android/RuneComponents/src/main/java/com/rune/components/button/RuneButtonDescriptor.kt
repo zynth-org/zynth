@@ -150,6 +150,11 @@ class RuneButtonRegistrar : RuneComponentRegistrar {
                   button.setHapticsMode(mode)
                   true
                 }
+                "ready" -> {
+                  val ready = if (value != null) JSONObject(value).optBoolean(name, true) else true
+                  button.setReady(ready)
+                  true
+                }
                 "__buttonCommand" -> {
                   val command = if (value != null) JSONObject(value) else null
                   button.handleCommand(command)

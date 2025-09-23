@@ -27,6 +27,7 @@ object RuneBridge {
   }
 
   private fun installFallback(adapter: JSRuntimeAdapter, manager: RuneUIManager) {
+    Log.d(TAG, "Installing fallback bindings including applyBatch")
     val createNode: (Array<Any?>) -> Any? = { args ->
       val type = (args.getOrNull(0) as? String) ?: "view"
       manager.createNode(type)

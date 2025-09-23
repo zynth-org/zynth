@@ -513,6 +513,10 @@ class RuneRuntime(
       override fun setSurface(surfaceId: Int) {
         manager.setActiveSurface(surfaceId)
       }
+
+      override fun applyBatch(batchJson: String) {
+        manager.applyBatch(batchJson)
+      }
     }
 
     val modulesShim = HermesModulesShim(hermes)

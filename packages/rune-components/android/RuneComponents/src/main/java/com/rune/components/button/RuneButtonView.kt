@@ -64,6 +64,7 @@ class RuneButtonView(context: Context) : FrameLayout(context) {
   private var hasLongPressHandler = false
   private var hapticsMode: String = "none"
   private var lastCommandSeq: Long = -1L
+  private var isReady = true
 
   // Loading state
   private var loadingAriaLabel: String? = null
@@ -141,6 +142,7 @@ class RuneButtonView(context: Context) : FrameLayout(context) {
 
     // Apply initial Material 3 style
     applyMaterialStyle()
+    updateReadyVisibility()
   }
 
   /**
@@ -616,15 +618,13 @@ class RuneButtonView(context: Context) : FrameLayout(context) {
 
   fun setDisabled(value: Boolean) {
     disabled = value
-    materialButton.isEnabled = !value && !loading
-    alpha = if (materialButton.isEnabled) 1f else 0.5f
+    applyEnabledState()
   }
 
   fun setLoading(value: Boolean) {
     val wasLoading = loading
     loading = value
-    materialButton.isEnabled = !(value || disabled)
-    alpha = if (materialButton.isEnabled) 1f else 0.5f
+    applyEnabledState()
     
     if (value && !wasLoading) {
       // Starting to load - save original title, show spinner
@@ -876,5 +876,24 @@ class RuneButtonView(context: Context) : FrameLayout(context) {
         parentView.touchDelegate = null
       }
     }
+  }
+
+  fun setReady(ready: Boolean) {
+    if (isReady == ready) return
+    isReady = ready
+    updateReadyVisibility()
+  }
+
+  private fun updateReadyVisibility() {
+    visibility = if (isReady) View.VISIBLE else View.INVISIBLE
+    materialButton.visibility = if (isReady) View.VISIBLE else View.INVISIBLE
+    applyEnabledState()
+  }
+
+  private fun applyEnabledState() {
+    val enabled = isReady && !disabled && !loading
+    materialButton.isEnabled = enabled
+    alpha = if (enabled) 1f else 0.5f
+    isClickable = enabled
   }
 }

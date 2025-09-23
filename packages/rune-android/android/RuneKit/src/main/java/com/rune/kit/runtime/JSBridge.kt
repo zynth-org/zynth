@@ -40,6 +40,7 @@ object JSBridge {
     fun flush()
     fun dequeueEventPayload(nodeId: Int, event: String): String?
     fun setSurface(surfaceId: Int)
+    fun applyBatch(batchJson: String)
   }
 
   interface ModulesShim {
