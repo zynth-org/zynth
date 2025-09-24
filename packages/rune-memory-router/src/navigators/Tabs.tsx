@@ -455,11 +455,7 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
     return result;
   });
 
-  const TabBar =
-    props.tabBar ??
-    ((p: TabBarProps) => (
-      <DefaultTabBar {...p} tabBarOptions={props.tabBarOptions} />
-    ));
+  const TabBarComponent = props.tabBar ?? DefaultTabBar;
 
   const resolvedNativeTabBarOptions = createMemo(() => ({
     visible: props.tabBarOptions?.tabBarVisible !== false,
@@ -710,10 +706,12 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
           </ScreenTabsContainer>
 
           <Show when={shouldRenderJSTabBar()}>
-            <TabBar
+            <TabBarComponent
               state={state}
               navigation={helpers}
               descriptors={descriptors()}
+              // @ts-ignore: DefaultTabBar expects tabBarOptions, custom ones might ignore it
+              tabBarOptions={props.tabBarOptions}
             />
           </Show>
         </View>

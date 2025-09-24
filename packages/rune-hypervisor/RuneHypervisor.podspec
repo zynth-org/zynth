@@ -17,5 +17,4 @@ Pod::Spec.new do |s|
   s.source_files = "ios/**/*.{h,m,mm,swift}"
   
   s.dependency "RuneKit"
-  s.dependency "RuneRouter"
 end

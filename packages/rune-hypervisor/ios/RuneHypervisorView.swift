@@ -1,13 +1,12 @@
 import Foundation
 import RuneKit
-import RuneRouter
 import UIKit
 
 @objc(RuneHypervisorView)
 @objcMembers
 public class RuneHypervisorView: UIView {
     private var runtime: RuneRuntime?
-    private var stackController: RNStackController?
+    private var guestRootView: UIView?
     private weak var manager: SNUIManager?
     private weak var node: SNNode?
     private var isDestroyed: Bool = false
@@ -53,8 +52,8 @@ public class RuneHypervisorView: UIView {
             NotificationCenter.default.removeObserver(self, name: .didReceiveGuestMessage, object: runtime)
         }
         runtime = nil
-        stackController?.view.removeFromSuperview()
-        stackController = nil
+        guestRootView?.removeFromSuperview()
+        guestRootView = nil
     }
 
     func bind(manager: SNUIManager, node: SNNode) {
@@ -71,37 +70,25 @@ public class RuneHypervisorView: UIView {
         
         destroyRuntime()
         
-        // Create Guest Stack Controller
-        let stack = RNStackController()
-        stack.view.frame = self.bounds
-        stack.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        self.addSubview(stack.view)
-        self.stackController = stack
-
-        // Guest runtimes need their own root surface view so we don't re-parent the
-        // stack controller's view into itself (which crashes). Keep it aligned to the stack.
-        let guestRootView = UIView(frame: stack.view.bounds)
-        guestRootView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        guestRootView.backgroundColor = .clear
+        // Create Guest Root View
+        let root = UIView(frame: self.bounds)
+        root.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        root.backgroundColor = .clear
+        self.addSubview(root)
+        self.guestRootView = root
         
         // Use isGuest: true to allocate a unique surface ID for this guest runtime
         // The runtime constructor expects a view to attach the "Root Surface" (id=1) to.
-        // RNStackController will manage its own view hierarchy.
         let newRuntime = RuneRuntime(
-          rootView: guestRootView,
+          rootView: root,
           runtime: nil,
           enableDevServer: false,
           isGuest: true
         )
         
-        // Setup Router for Guest
-        stack.installRootSurface(newRuntime.rootView)
-        // We instantiate RuneRouterModule directly for the guest to avoid singleton conflicts in RuneRouter.attach
-        let routerModule = RuneRouterModule(runtime: newRuntime, stackController: stack)
-        
         // Register Hypervisor Module for Guest -> Host communication
         let hypervisorModule = RuneHypervisorModule(runtime: newRuntime)
-        newRuntime.installModules([hypervisorModule, routerModule])
+        newRuntime.installModules([hypervisorModule])
 
         // Dynamic module auto-discovery via RuneNativeModules.json
         if let configURL = Bundle.main.url(forResource: "RuneNativeModules", withExtension: "json"),
@@ -177,7 +164,7 @@ public class RuneHypervisorView: UIView {
     
     public override func layoutSubviews() {
         super.layoutSubviews()
-        stackController?.view.frame = self.bounds
+        guestRootView?.frame = self.bounds
         if self.bounds.width > 0 && self.bounds.height > 0 {
             runtime?.flush()
         }
