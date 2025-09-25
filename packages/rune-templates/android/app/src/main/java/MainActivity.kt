@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.util.Log
 import android.view.WindowManager
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import {{BUNDLE_ID}}.modules.DeviceModule
 import {{BUNDLE_ID}}.modules.EnvModule
 import {{BUNDLE_ID}}.modules.PerformanceModule
@@ -13,9 +14,13 @@ import com.rune.kit.runtime.RuneRuntime
 
 class MainActivity : AppCompatActivity() {
   private var runtime: RuneRuntime? = null
+  private var isReady = false
 
   override fun onCreate(savedInstanceState: Bundle?) {
+    val splashScreen = installSplashScreen()
     super.onCreate(savedInstanceState)
+
+    splashScreen.setKeepOnScreenCondition { !isReady }
 
     // Enable edge-to-edge display
     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
@@ -69,6 +74,10 @@ class MainActivity : AppCompatActivity() {
       if (!routerAttached) {
         // No router - keep root as content view
         setContentView(root)
+      }
+
+      runtime.addSurfaceFirstFrameListener(root.rootId) {
+        isReady = true
       }
       
       // ALWAYS start the runtime - router or not
