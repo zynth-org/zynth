@@ -655,6 +655,14 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
                   isFocused: isActive,
                 }));
 
+                const [isLoaded, setIsLoaded] = createSignal(isActive());
+
+                createEffect(() => {
+                  if (isActive()) {
+                    setIsLoaded(true);
+                  }
+                });
+
                 return (
                   <Show when={hasConfig()}>
                     {/* Use a simple View wrapper instead of ScreenPrimitive.
@@ -668,34 +676,37 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
                         left: 0,
                         right: 0,
                         bottom: 0,
+                        display: isActive() ? "flex" : "none",
                       }}
                     >
                       <NavigationContext.Provider
                         value={screenNavContextValue()}
                       >
                         <RouteContext.Provider value={routeContext()}>
-                          {(() => {
-                            const cfg = config();
-                            if (!cfg) {
-                              // console.log(
-                              //   `[Tabs] No config for route at index ${index}`
-                              // );
-                              return null;
-                            }
-                            const ScreenComponent = cfg.component;
+                          <Show when={isLoaded()}>
+                            {(() => {
+                              const cfg = config();
+                              if (!cfg) {
+                                // console.log(
+                                //   `[Tabs] No config for route at index ${index}`
+                                // );
+                                return null;
+                              }
+                              const ScreenComponent = cfg.component;
 
-                            return (
-                              <ScreenComponent
-                                navigation={routeHelpers()}
-                                route={{
-                                  key: routeValue().key,
-                                  name: routeValue().name,
-                                  params: params as Accessor<object>,
-                                  setParams: routeContext().setParams,
-                                }}
-                              />
-                            );
-                          })()}
+                              return (
+                                <ScreenComponent
+                                  navigation={routeHelpers()}
+                                  route={{
+                                    key: routeValue().key,
+                                    name: routeValue().name,
+                                    params: params as Accessor<object>,
+                                    setParams: routeContext().setParams,
+                                  }}
+                                />
+                              );
+                            })()}
+                          </Show>
                         </RouteContext.Provider>
                       </NavigationContext.Provider>
                     </View>

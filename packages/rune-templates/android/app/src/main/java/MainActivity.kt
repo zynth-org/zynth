@@ -15,6 +15,7 @@ import com.rune.kit.runtime.RuneRuntime
 class MainActivity : AppCompatActivity() {
   private var runtime: RuneRuntime? = null
   private var isReady = false
+  @Volatile private var bundleCode: String? = null
 
   override fun onCreate(savedInstanceState: Bundle?) {
     val splashScreen = installSplashScreen()
@@ -44,24 +45,47 @@ class MainActivity : AppCompatActivity() {
     val root = RuneRootView(this, explicitRootId = 0)
     setContentView(root)
 
-    // Force a layout pass to ensure window insets are available
-    root.post {
-      val runtime = RuneRuntime(root)
-      runtime.installDefaultModules()
-      runtime.installModules(listOf(DeviceModule(), EnvModule(), PerformanceModule()))
+    // Initialize Runtime immediately
+    val runtime = RuneRuntime(root)
+    this.runtime = runtime
+    runtime.installDefaultModules()
+    runtime.installModules(listOf(DeviceModule(), EnvModule(), PerformanceModule()))
 
 {{MODULE_INITIALIZERS}}
 
-      intent?.let { launchIntent ->
-        val url = launchIntent.getStringExtra("RUNE_DEV_SERVER_URL")
-        if (!url.isNullOrBlank()) {
-          val token = launchIntent.getStringExtra("RUNE_DEV_SERVER_TOKEN")
-          runtime.connectDevServer(url, token)
+    // Start loading bundle in background
+    val launchIntent = intent
+    val devServerUrl = launchIntent?.getStringExtra("RUNE_DEV_SERVER_URL")
+    val loadThread = if (devServerUrl.isNullOrBlank()) {
+      Thread {
+        try {
+          bundleCode = assets.open("main.js").use { it.bufferedReader().readText() }
+        } catch (e: Exception) {
+          Log.e("MainActivity", "Failed to load bundle", e)
+        }
+      }.apply { start() }
+    } else {
+      null
+    }
+
+    // Force a layout pass to ensure window insets are available
+    root.post {
+      if (!devServerUrl.isNullOrBlank()) {
+        val token = launchIntent?.getStringExtra("RUNE_DEV_SERVER_TOKEN")
+        runtime.connectDevServer(devServerUrl, token)
+        runtime.loadInitialBundle(assets)
+      } else {
+        // Wait for background thread if needed
+        loadThread?.join()
+        
+        val code = bundleCode
+        if (code != null) {
+          runtime.load(code)
+        } else {
+          // Fallback if background load failed
+          runtime.loadInitialBundle(assets)
         }
       }
-
-      // Load bundle after all modules are initialized
-      runtime.loadInitialBundle(assets)
 
       // Try to bootstrap router BEFORE starting runtime
       val routerAttached = try {
@@ -83,8 +107,6 @@ class MainActivity : AppCompatActivity() {
       // ALWAYS start the runtime - router or not
       Log.i("MainActivity", "Starting runtime (router=${routerAttached})")
       runtime.start(root.rootId)
-
-      this@MainActivity.runtime = runtime
     }
   }
 

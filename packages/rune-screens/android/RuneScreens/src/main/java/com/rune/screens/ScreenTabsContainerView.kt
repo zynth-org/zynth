@@ -33,6 +33,18 @@ class ScreenTabsContainerView(context: Context) : FrameLayout(context) {
         clipToPadding = false
     }
 
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        // Enforce visibility before measuring to ensure only the selected tab is measured/laid out
+        updateTabVisibility()
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+    }
+
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+        super.onLayout(changed, left, top, right, bottom)
+        // Enforce visibility again after layout to catch any mid-layout changes
+        updateTabVisibility()
+    }
+
     override fun addView(child: View?, index: Int, params: ViewGroup.LayoutParams?) {
         super.addView(child, index, params)
         // Ensure the newly added child is correctly sized
@@ -41,19 +53,7 @@ class ScreenTabsContainerView(context: Context) : FrameLayout(context) {
             ViewGroup.LayoutParams.MATCH_PARENT
         )
         
-        Log.d(TAG, "addView: index=$index, total children=$childCount")
-        
         // When a view is added, we must update visibility to ensure it respects the current selection
-        updateTabVisibility()
-    }
-
-    override fun removeView(child: View?) {
-        super.removeView(child)
-        updateTabVisibility()
-    }
-
-    override fun removeViewAt(index: Int) {
-        super.removeViewAt(index)
         updateTabVisibility()
     }
 
@@ -61,18 +61,11 @@ class ScreenTabsContainerView(context: Context) : FrameLayout(context) {
      * Set the selected tab index
      */
     fun setSelectedIndex(index: Int) {
-        Log.d(TAG, "setSelectedIndex: $selectedIndex -> $index (children=$childCount)")
-        
         val previousIndex = selectedIndex
         selectedIndex = index
         
         if (childCount > 0) {
-            if (previousIndex != index) {
-                // Future: Implement transition animations here
-                updateTabVisibility()
-            } else {
-                updateTabVisibility()
-            }
+             updateTabVisibility()
         }
     }
 
@@ -95,25 +88,10 @@ class ScreenTabsContainerView(context: Context) : FrameLayout(context) {
             if (shouldBeVisible) {
                 // If we are showing the view (switching from GONE/INVISIBLE to VISIBLE)
                 if (child.visibility != View.VISIBLE) {
-                    Log.d(TAG, "Showing child $i (alpha fade-in)")
-                    
                     // 1. Prepare for display
                     child.visibility = View.VISIBLE
                     child.translationZ = 10f
-                    
-                    // 2. Prevent FOUC: Start transparent
-                    child.alpha = 0f
-                    
-                    // 3. Fade in after layout has likely occurred
-                    child.post {
-                        // Check if still valid to show
-                        if (indexOfChild(child) == selectedIndex) {
-                             child.animate()
-                                 .alpha(1f)
-                                 .setDuration(100) // Short fade to mask unstyled frame
-                                 .start()
-                        }
-                    }
+                    child.alpha = 1f
                 } else {
                     // Already visible, ensure properties are correct (e.g. if re-added)
                     if (child.translationZ != 10f) child.translationZ = 10f
@@ -122,7 +100,6 @@ class ScreenTabsContainerView(context: Context) : FrameLayout(context) {
             } else {
                 // Hiding the view
                 if (child.visibility != View.GONE) {
-                     Log.d(TAG, "Hiding child $i")
                      child.visibility = View.GONE
                      child.translationZ = 0f
                      child.alpha = 1f // Reset alpha for next time
@@ -134,8 +111,5 @@ class ScreenTabsContainerView(context: Context) : FrameLayout(context) {
                 // Future: wiring for onAppear/onDisappear events
             }
         }
-        
-        requestLayout()
-        invalidate()
     }
 }
