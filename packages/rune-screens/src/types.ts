@@ -151,6 +151,20 @@ export interface ScreenTabsContainerProps {
   /** Notified when a native tab selection occurs */
   onNativeTabSelect?: (index: number) => void;
 
+  /** Notified when a native tab icon surface is mounted (Android) */
+  onNativeTabMount?: (event: {
+    surfaceId: number;
+    routeKey: string;
+    active: boolean;
+  }) => void;
+
+  /** Notified when a native tab icon needs update (Android) */
+  onNativeTabUpdate?: (event: {
+    surfaceId: number;
+    routeKey: string;
+    active?: boolean;
+  }) => void;
+
   style?: Style;
   children?: JSX.Element;
 }

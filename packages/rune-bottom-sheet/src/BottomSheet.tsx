@@ -11,6 +11,20 @@ import { setProperty } from "@rune/core";
 import { View } from "@rune/components";
 import { Dimensions } from "@rune/apis";
 
+declare module "solid-js" {
+  namespace JSX {
+    interface IntrinsicElements {
+      "rune-bottom-sheet": {
+        style?: Style;
+        testID?: string;
+        ["data-testid"]?: string;
+        ref?: (node: HostNode | null) => void;
+        [key: string]: any;
+      };
+    }
+  }
+}
+
 export type SnapPoint = number | `${number}%`;
 
 export interface BottomSheetController {

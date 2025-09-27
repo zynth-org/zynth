@@ -41,6 +41,7 @@ import type {
 import {
   registerNativeTabIcon,
   unregisterNativeTabIcon,
+  renderNativeTabIcon,
 } from "../native/tabIconRegistry";
 import type { ScreenTabBarItemDescriptor } from "@rune/screens";
 
@@ -215,7 +216,7 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
   };
 
   const navigatorId = props.id ?? `tabs-${generateKey()}`;
-  const useNativeTabBar = Platform.OS === OS.IOS;
+  const useNativeTabBar = Platform.OS === OS.IOS || Platform.OS === OS.ANDROID;
 
   // Start with empty state
   const [state, setState] = createSignal<NavigationState>({
@@ -518,6 +519,50 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
     });
   };
 
+  const handleNativeTabMount = (event: {
+    surfaceId: number;
+    routeKey: string;
+    active: boolean;
+  }) => {
+    if (!useNativeTabBar) return;
+    const { surfaceId, routeKey, active } = event;
+    const color = active
+      ? props.tabBarOptions?.tabBarActiveTintColor ?? "#007AFF"
+      : props.tabBarOptions?.tabBarInactiveTintColor ?? "#8E8E93";
+    renderNativeTabIcon(surfaceId, routeKey, active, color);
+  };
+
+  const handleNativeTabUpdate = (event: {
+    surfaceId: number;
+    routeKey: string;
+    active?: boolean;
+  }) => {
+    if (!useNativeTabBar) return;
+    const { surfaceId, routeKey } = event;
+
+    // Debug logging
+    console.log(
+      `[Tabs] handleNativeTabUpdate surface=${surfaceId} route=${routeKey} activeInEvent=${
+        event.active
+      } currentIndex=${state().index}`
+    );
+
+    const active =
+      event.active ??
+      state().routes.find((r) => r.key === routeKey)?.name ===
+        state().routes[state().index].name;
+
+    const color = active
+      ? props.tabBarOptions?.tabBarActiveTintColor ?? "#007AFF"
+      : props.tabBarOptions?.tabBarInactiveTintColor ?? "#8E8E93";
+
+    console.log(
+      `[Tabs] Updating icon: ${routeKey} active=${active} color=${color}`
+    );
+
+    renderNativeTabIcon(surfaceId, routeKey, active, color);
+  };
+
   // Get current tab index
   const currentIndex = createMemo(() => {
     const idx = state().index;
@@ -538,6 +583,12 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
             nativeTabBarEnabled={useNativeTabBar}
             onNativeTabSelect={
               useNativeTabBar ? handleNativeTabSelect : undefined
+            }
+            onNativeTabMount={
+              useNativeTabBar ? handleNativeTabMount : undefined
+            }
+            onNativeTabUpdate={
+              useNativeTabBar ? handleNativeTabUpdate : undefined
             }
             style={{ flex: 1 }}
           >

@@ -112,11 +112,14 @@ fun createScreenTabsContainerDescriptor(): RuneComponentDescriptor {
     return RuneComponentDescriptor(
         type = "rune-screen-tabs-container",
         createView = { context, _ -> ScreenTabsContainerView(context) },
-        onNodeCreated = { _, node ->
+        onNodeCreated = { manager, node ->
             node.view.layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT,
             )
+            val container = node.view as? ScreenTabsContainerView
+            container?.setUIManager(manager)
+            container?.setNodeId(node.id)
         },
         applyProperty = { node, name, jsonValue ->
             val container = node.view as? ScreenTabsContainerView 
@@ -133,6 +136,24 @@ fun createScreenTabsContainerDescriptor(): RuneComponentDescriptor {
                     container.setTabAnimationType(animType)
                     true
                 }
+                "nativeTabBarEnabled" -> {
+                    val enabled = jsonValue?.trim('"')?.toBooleanStrictOrNull() 
+                        ?: (jsonValue == "true")
+                    container.setNativeTabBarEnabled(enabled)
+                    true
+                }
+                "tabBarItems" -> {
+                    if (jsonValue != null) {
+                        container.setTabBarItems(jsonValue)
+                    }
+                    true
+                }
+                "tabBarOptions" -> {
+                    if (jsonValue != null) {
+                        container.setTabBarOptions(jsonValue)
+                    }
+                    true
+                }
                 else -> false
             }
         },
@@ -140,6 +161,14 @@ fun createScreenTabsContainerDescriptor(): RuneComponentDescriptor {
             // Style is applied by the core system
         },
         onSetHandler = { node, event ->
+            val container = node.view as? ScreenTabsContainerView 
+                ?: return@RuneComponentDescriptor false
+            
+            Log.d("ScreenTabsContainer", "onSetHandler: $event")
+            
+            // Return false to let the core RunePropApplier register the handler in RuneEventManager.
+            // Returning true implies we handled it (e.g. set a specific listener) and core might skip registration
+            // depending on implementation details we can't see.
             false
         },
         onReset = { node ->
@@ -147,6 +176,7 @@ fun createScreenTabsContainerDescriptor(): RuneComponentDescriptor {
                 ?: return@RuneComponentDescriptor
             container.setSelectedIndex(0)
             container.setTabAnimationType("none")
+            container.setNativeTabBarEnabled(false)
         }
     )
 }

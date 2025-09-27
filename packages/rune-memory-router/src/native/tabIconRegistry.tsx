@@ -62,51 +62,93 @@ function createSurfaceContainer(rootId: number): HostNode {
   return { id: rootId, type: "root" };
 }
 
+import { View } from "@rune/components";
+
 function mountIcon(
   surfaceId: number,
   entry: RegistryEntry,
   props: IconRenderProps
 ) {
   const current = mounted.get(surfaceId);
+  
+  // If already mounted, just update the reactive signals
   if (current) {
-    // If already mounted, just update the signal
-    // console.log(`[tabIconRegistry] Updating existing icon for surface ${surfaceId}, routeKey: ${entry.routeKey}, active: ${props.active}`);
+    console.log(`[tabIconRegistry] Updating icon props for surface ${surfaceId}, routeKey=${entry.routeKey}, active=${props.active}, color=${props.color}`);
     current.setProps(props);
-    // CRITICAL: Must flush queue to apply updates immediately to the native view
-    runWithSurface(surfaceId, () => {
-      flushHostQueue();
-    });
     return;
   }
 
-  // Create reactive props signal for this mount
-  const [getProps, setPropsSignal] = createSignal(props);
+  console.log(`[tabIconRegistry] Mounting NEW icon for surface ${surfaceId}, routeKey: ${entry.routeKey}, active: ${props.active}, color: ${props.color}`);
+
+  // Create reactive signals for active and color
+  const [active, setActive] = createSignal(props.active);
+  const [color, setColor] = createSignal(props.color);
 
   let disposeFn: () => void = () => undefined;
 
   runWithSurface(surfaceId, () => {
-    // Render the icon by calling the factory with initial props.
-    // The factory will be called again when setProps updates the signal,
-    // but SolidJS's fine-grained reactivity should handle this efficiently.
-    //
-    // IMPORTANT: We pass the signal getter to make props reactive.
-    // The factory receives props.active and props.color which update
-    // when the signal changes, allowing the component to re-render
-    // its styles without full recreation.
     disposeFn = render(() => {
-      const currentProps = getProps();
-      return entry.owner
-        ? runWithOwner(entry.owner, () => entry.factory(currentProps))
-        : entry.factory(currentProps);
+      return (
+        <View
+          style={{
+            width: "100%",
+            height: "100%",
+            justifyContent: "center",
+            alignItems: "center",
+          }}
+        >
+          {(() => {
+            // Read signals inside the JSX function to establish tracking
+            // When they change, this function re-runs and updates the view
+            const currentActive = active();
+            const currentColor = color();
+            console.log(
+              `[tabIconRegistry] render/update executing for surface ${surfaceId}, active=${currentActive}, color=${currentColor}`
+            );
+
+            return entry.owner
+              ? runWithOwner(entry.owner, () =>
+                  entry.factory({ active: currentActive, color: currentColor })
+                )
+              : entry.factory({ active: currentActive, color: currentColor });
+          }) as any}
+        </View>
+      );
     }, createSurfaceContainer(surfaceId));
     flushHostQueue();
   });
 
   const mountedEntry: MountedIcon = {
     key: entry.routeKey,
-    getProps,
+    getProps: () => ({ active: active(), color: color() }),
     setProps: (nextProps: IconRenderProps) => {
-      setPropsSignal(nextProps);
+      runWithSurface(surfaceId, () => {
+        if (active() !== nextProps.active) {
+          console.log(
+            `[tabIconRegistry] Setting active: ${active()} -> ${nextProps.active}`
+          );
+          setActive(nextProps.active);
+        }
+        if (color() !== nextProps.color) {
+          console.log(
+            `[tabIconRegistry] Setting color: ${color()} -> ${nextProps.color}`
+          );
+          setColor(nextProps.color);
+        }
+        
+        // On Android, we MUST flush synchronously while the surface is active.
+        // On iOS, synchronous flushing might interfere with native animations (e.g. TabBar transitions),
+        // so we defer to the microtask queue to be safe.
+        if (Platform.OS === OS.ANDROID) {
+          flushHostQueue();
+        } else {
+          queueMicrotask(() => {
+            runWithSurface(surfaceId, () => {
+              flushHostQueue();
+            });
+          });
+        }
+      });
     },
     dispose: () => {
       runWithSurface(surfaceId, () => {
@@ -160,7 +202,7 @@ function rerenderMountedIcons(routeKey: string) {
   }
 }
 
-function renderNativeTabIcon(
+export function renderNativeTabIcon(
   surfaceId: number,
   routeKey: string,
   active: boolean,
@@ -172,7 +214,7 @@ function renderNativeTabIcon(
   return true;
 }
 
-function disposeNativeTabIcon(surfaceId: number) {
+export function disposeNativeTabIcon(surfaceId: number) {
   disposeMountedIcon(surfaceId);
 }
 
@@ -201,9 +243,6 @@ export function unregisterNativeTabIcon(routeKey: string) {
 }
 
 function installGlobalAccessors() {
-  if (Platform.OS !== OS.IOS) {
-    return;
-  }
   const globalObj = globalThis as Record<string, unknown>;
   if (typeof globalObj.__rune_renderTabIcon === "function") {
     return;

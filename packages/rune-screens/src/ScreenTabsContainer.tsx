@@ -47,6 +47,8 @@ export const ScreenTabsContainer: ParentComponent<ScreenTabsContainerProps> = (
     "tabBarItems",
     "nativeTabBarEnabled",
     "onNativeTabSelect",
+    "onNativeTabMount",
+    "onNativeTabUpdate",
   ]);
 
   const resolved = resolveChildren(() => local.children);
@@ -63,6 +65,14 @@ export const ScreenTabsContainer: ParentComponent<ScreenTabsContainerProps> = (
     local.onNativeTabSelect(0);
   };
 
+  const handleNativeTabMount = (event: any) => {
+    local.onNativeTabMount?.(event);
+  };
+
+  const handleNativeTabUpdate = (event: any) => {
+    local.onNativeTabUpdate?.(event);
+  };
+
   return (
     // @ts-ignore: Custom native element
     <rune-screen-tabs-container
@@ -74,6 +84,12 @@ export const ScreenTabsContainer: ParentComponent<ScreenTabsContainerProps> = (
       nativeTabBarEnabled={local.nativeTabBarEnabled}
       onNativeTabSelect={
         local.onNativeTabSelect ? handleNativeTabSelect : undefined
+      }
+      onNativeTabMount={
+        local.onNativeTabMount ? handleNativeTabMount : undefined
+      }
+      onNativeTabUpdate={
+        local.onNativeTabUpdate ? handleNativeTabUpdate : undefined
       }
     >
       {resolved()}

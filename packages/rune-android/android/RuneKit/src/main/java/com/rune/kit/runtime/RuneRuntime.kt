@@ -166,15 +166,15 @@ class RuneRuntime(
     load(code)
   }
 
-  fun loadInitialBundle(assets: AssetManager, assetName: String = "main.js") {
+  fun loadInitialBundle(assets: AssetManager, assetName: String = "main.js", preloadedCode: String? = null) {
     // Try to load dev bundle first if available (extension method)
     if (loadDevBundleIfAvailable()) {
       // Dev bundle loaded successfully, start() will be called by restartAfterReload
       return
     }
 
-    // No dev bundle available, load from assets
-    val code = assets.open(assetName).use { it.bufferedReader().readText() }
+    // No dev bundle available, load from assets or use preloaded code
+    val code = preloadedCode ?: assets.open(assetName).use { it.bufferedReader().readText() }
     load(code)
   }
 

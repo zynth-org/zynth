@@ -171,6 +171,8 @@ internal fun RuneRuntime.connectDevServerInternal(url: String, token: String? = 
       sanitizedToken?.take(8)
   )
 
+  savePersistedDevServerConfig(url, sanitizedToken)
+
   synchronized(this) {
     if (isConnectingToDevServer) {
       Log.d(TAG, "Already connecting to dev server, skipping duplicate request")
@@ -432,6 +434,25 @@ private fun ensureLeadingSlash(path: String): String {
 private fun sanitizeToken(token: String?): String? {
   val trimmed = token?.trim()
   return if (trimmed.isNullOrEmpty()) null else trimmed
+}
+
+private fun RuneRuntime.savePersistedDevServerConfig(url: String, token: String?) {
+  val context = root.context ?: return
+  runCatching {
+    val runeDir = File(context.filesDir, ".rune")
+    if (!runeDir.exists()) {
+      runeDir.mkdirs()
+    }
+    val configFile = File(runeDir, "dev-server.json")
+    val json = JSONObject()
+    json.put("url", url)
+    if (token != null) {
+      json.put("token", token)
+    }
+    configFile.writeText(json.toString(), Charset.forName("UTF-8"))
+  }.onFailure { error ->
+    Log.w(TAG, "Failed to save dev config: ${error.message}")
+  }
 }
 
 private fun RuneRuntime.loadPersistedDevServerConfig(): Pair<String?, String?>? {

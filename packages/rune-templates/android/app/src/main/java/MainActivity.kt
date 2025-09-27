@@ -45,18 +45,10 @@ class MainActivity : AppCompatActivity() {
     val root = RuneRootView(this, explicitRootId = 0)
     setContentView(root)
 
-    // Initialize Runtime immediately
-    val runtime = RuneRuntime(root)
-    this.runtime = runtime
-    runtime.installDefaultModules()
-    runtime.installModules(listOf(DeviceModule(), EnvModule(), PerformanceModule()))
-
-{{MODULE_INITIALIZERS}}
-
     // Start loading bundle in background
     val launchIntent = intent
-    val devServerUrl = launchIntent?.getStringExtra("RUNE_DEV_SERVER_URL")
-    val loadThread = if (devServerUrl.isNullOrBlank()) {
+    val preloadUrl = launchIntent?.getStringExtra("RUNE_DEV_SERVER_URL")
+    val loadThread = if (preloadUrl.isNullOrBlank()) {
       Thread {
         try {
           bundleCode = assets.open("main.js").use { it.bufferedReader().readText() }
@@ -70,22 +62,24 @@ class MainActivity : AppCompatActivity() {
 
     // Force a layout pass to ensure window insets are available
     root.post {
+      val runtime = RuneRuntime(root)
+      runtime.installDefaultModules()
+      runtime.installModules(listOf(DeviceModule(), EnvModule(), PerformanceModule()))
+
+{{MODULE_INITIALIZERS}}
+
+      val currentIntent = intent
+      val devServerUrl = currentIntent?.getStringExtra("RUNE_DEV_SERVER_URL")
+
       if (!devServerUrl.isNullOrBlank()) {
-        val token = launchIntent?.getStringExtra("RUNE_DEV_SERVER_TOKEN")
+        val token = currentIntent?.getStringExtra("RUNE_DEV_SERVER_TOKEN")
         runtime.connectDevServer(devServerUrl, token)
-        runtime.loadInitialBundle(assets)
       } else {
         // Wait for background thread if needed
         loadThread?.join()
-        
-        val code = bundleCode
-        if (code != null) {
-          runtime.load(code)
-        } else {
-          // Fallback if background load failed
-          runtime.loadInitialBundle(assets)
-        }
       }
+
+      runtime.loadInitialBundle(assets, preloadedCode = bundleCode)
 
       // Try to bootstrap router BEFORE starting runtime
       val routerAttached = try {
@@ -107,6 +101,8 @@ class MainActivity : AppCompatActivity() {
       // ALWAYS start the runtime - router or not
       Log.i("MainActivity", "Starting runtime (router=${routerAttached})")
       runtime.start(root.rootId)
+      
+      this.runtime = runtime
     }
   }
 

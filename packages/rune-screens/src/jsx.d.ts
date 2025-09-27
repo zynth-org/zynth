@@ -35,6 +35,8 @@ declare module "solid-js" {
         tabBarItems?: Array<Record<string, any>>;
         nativeTabBarEnabled?: boolean;
         onNativeTabSelect?: (index: number) => void;
+        onNativeTabMount?: (event: any) => void;
+        onNativeTabUpdate?: (event: any) => void;
         children?: JSX.Element;
       };
     }
