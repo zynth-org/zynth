@@ -79,6 +79,8 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
   private var iconHostEntries: [String: NativeTabIconHostEntry] = [:]
   private var pendingTabSwitch: Int?
   private var tabSwitchWorkItem: DispatchWorkItem?
+  private var readyContentViewIdentifiers: Set<ObjectIdentifier> = []
+  private var tabAnimationType: RuneScreenAnimation = .none
   private let tabBarButtonClass: AnyClass? = NSClassFromString("UITabBarButton")
   private lazy var surfaceIconPlaceholder: UIImage = {
     let size = CGSize(width: 24, height: 24)
@@ -149,7 +151,21 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
     clearIconHosts()
     controllerMap.removeAll()
     tabViews.removeAll()
+    readyContentViewIdentifiers.removeAll()
     detachTabBarController()
+  }
+
+  @objc(setTabAnimationType:)
+  public func setTabAnimationType(_ value: NSString?) {
+    let stringValue = value as String?
+    let newType: RuneScreenAnimation
+    if let stringValue, !stringValue.isEmpty {
+      newType = RuneScreenAnimation(string: stringValue)
+    } else {
+      newType = .none
+    }
+    guard tabAnimationType != newType else { return }
+    tabAnimationType = newType
   }
 
   @objc(insertTabContentView:atIndex:)
@@ -177,6 +193,7 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
     if let index = tabViews.firstIndex(where: { $0 === view }) {
       tabViews.remove(at: index)
     }
+    clearReadyState(for: view)
     if nativeTabBarEnabled {
       controllerMap.removeValue(forKey: ObjectIdentifier(view))
       synchronizeTabs()
@@ -186,155 +203,52 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
     }
   }
 
+    private var transitionOverlay: UIView?
+    private var contentWaitWorkItem: DispatchWorkItem?
+    private var pendingWaitIndex: Int?
+  
+    // ... (init and layoutSubviews remain same)
+  
+    // ...
+  
   public func setSelectedIndexValue(_ value: NSNumber?) {
-    let proposed = value?.intValue ?? 0
-    selectedIndex = clampIndex(proposed)
-    NSLog("[RuneScreenTabs] setSelectedIndexValue - proposed: \(proposed), clamped: \(selectedIndex), nativeEnabled: \(nativeTabBarEnabled)")
-    if nativeTabBarEnabled {
-      guard let controller = tabBarController else {
-        NSLog("[RuneScreenTabs] ERROR: tabBarController is nil!")
-        return
-      }
-      let clamped = clampIndex(selectedIndex)
-      NSLog("[RuneScreenTabs] Current controller.selectedIndex: \(controller.selectedIndex), new: \(clamped)")
-      
-      // Check if we're already switching to this index
-      if let pending = pendingTabSwitch, pending == clamped {
-        NSLog("[RuneScreenTabs] Already switching to \(clamped), ignoring duplicate request")
-        return
-      }
-      
-      if controller.selectedIndex != clamped {
-        // Defer tab switch until content is ready to prevent white flash
-        deferTabSwitch(to: clamped)
-      }
-      updateIconHostStates()
-    } else {
-      updateTabVisibility()
-    }
-  }
-
-  public func setTabAnimationType(_ value: NSString?) {
-    // No-op for now. Tab animations are handled by UITabBarController.
-  }
-  
-  private func deferTabSwitch(to index: Int) {
-    guard let controller = tabBarController else { return }
-    guard index < tabViews.count else { return }
-    
-    let targetView = tabViews[index]
-    NSLog("[RuneScreenTabs] deferTabSwitch to index \(index), checking content readiness")
-    
-    // Cancel any pending switch
-    tabSwitchWorkItem?.cancel()
-    pendingTabSwitch = index
-    
-    let isReady = isContentReady(targetView)
-    NSLog("[RuneScreenTabs] Target view ready: \(isReady), subviews: \(targetView.subviews.count)")
-    
-    // ALWAYS wait a minimum amount to ensure styles are applied
-    let minimumDelay: TimeInterval = 0.05 // 3 frames at 60fps
-    var attempts = 0
-    let maxAttempts = 12
-    let startTime = Date()
-    
-    func checkAndSwitch() {
-      attempts += 1
-      guard pendingTabSwitch == index else {
-        NSLog("[RuneScreenTabs] Pending switch cancelled")
-        return
-      }
-      
-      let elapsed = Date().timeIntervalSince(startTime)
-      let contentReady = isContentReady(targetView)
-      
-      // Wait for minimum delay AND content to be ready
-      let shouldSwitch = elapsed >= minimumDelay && contentReady
-      
-      if shouldSwitch {
-        NSLog("[RuneScreenTabs] Content ready after \(attempts) checks (\(String(format: "%.3f", elapsed))s), switching now")
-        performTabSwitch(to: index)
-      } else if attempts < maxAttempts {
-        // Check more frequently at first, then back off
-        let delay: TimeInterval
-        if elapsed < minimumDelay {
-          delay = 0.016 // Check every frame until minimum delay passed
-        } else if attempts < 5 {
-          delay = 0.03 // 2 frames
-        } else {
-          delay = 0.05 // 3 frames
+      let proposed = value?.intValue ?? 0
+      selectedIndex = clampIndex(proposed)
+      NSLog("[RuneScreenTabs] setSelectedIndexValue - proposed: \(proposed), clamped: \(selectedIndex), nativeEnabled: \(nativeTabBarEnabled)")
+      if nativeTabBarEnabled {
+        guard let controller = tabBarController else {
+          NSLog("[RuneScreenTabs] ERROR: tabBarController is nil!")
+          return
         }
+        let clamped = clampIndex(selectedIndex)
+        NSLog("[RuneScreenTabs] Current controller.selectedIndex: \(controller.selectedIndex), new: \(clamped)")
         
-        let workItem = DispatchWorkItem { checkAndSwitch() }
-        tabSwitchWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+        if controller.selectedIndex != clamped {
+          // If programmatic selection to unready tab, show overlay
+          let targetView = tabViews[clamped]
+          if !isContentReady(targetView) {
+            addTransitionOverlay(from: controller.selectedViewController?.view, tabBarController: controller)
+            waitForContentAndRemoveOverlay(for: clamped)
+          }
+          controller.selectedIndex = clamped
+        }
+        updateIconHostStates()
       } else {
-        // Safety timeout
-        NSLog("[RuneScreenTabs] WARNING: Forcing switch after \(String(format: "%.3f", elapsed))s, contentReady: \(contentReady)")
-        performTabSwitch(to: index)
+        updateTabVisibility()
       }
     }
-    
-    NSLog("[RuneScreenTabs] Starting deferred switch with minimum delay \(minimumDelay)s")
-    let initialWorkItem = DispatchWorkItem { checkAndSwitch() }
-    tabSwitchWorkItem = initialWorkItem
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.016, execute: initialWorkItem)
-  }
   
-  private func isContentReady(_ view: UIView) -> Bool {
-    // Check if view has meaningful content
-    guard !view.subviews.isEmpty else { return false }
-    
-    // Count subviews with substantial frames (not 1x1 placeholders)
-    var substantialViewCount = 0
-    func checkViewTree(_ v: UIView, depth: Int) {
-      // Don't go too deep
-      guard depth < 5 else { return }
-      
-      // Check if this view has a substantial frame
-      let frame = v.frame
-      if frame.width > 10 && frame.height > 10 {
-        substantialViewCount += 1
-      }
-      
-      // Check children
-      for subview in v.subviews where !subview.isHidden {
-        checkViewTree(subview, depth: depth + 1)
-      }
-    }
-    
-    checkViewTree(view, depth: 0)
-    // Need at least 2 substantial views (container + content)
-    return substantialViewCount >= 2
-  }
-  
-  private func performTabSwitch(to index: Int) {
-    guard let controller = tabBarController else { return }
-    guard pendingTabSwitch == index else { return }
-    
-    pendingTabSwitch = nil
-    tabSwitchWorkItem = nil
-    
-    NSLog("[RuneScreenTabs] performTabSwitch to index \(index)")
-    isApplyingNativeSelection = true
-    
-    // Disable implicit animations to prevent cross-fade effect
-    UIView.performWithoutAnimation {
-      controller.selectedIndex = index
-    }
-    
-    isApplyingNativeSelection = false
-  }
-
   @objc(setTabBarOptionsFromDictionary:)
   public func setTabBarOptions(from dictionary: NSDictionary?) {
     var options = RuneNativeTabBarOptions.default
     if let dict = dictionary as? [String: Any] {
       if let visible = dict["visible"] as? Bool {
         options.visible = visible
+      } else if let number = dict["visible"] as? NSNumber {
+        options.visible = number.boolValue
       }
-      if let backgroundColor = dict["backgroundColor"] as? String {
-        options.backgroundColor = UIColor.rune_color(from: backgroundColor)
+      if let background = dict["backgroundColor"] as? String {
+        options.backgroundColor = UIColor.rune_color(from: background)
       }
       if let activeTint = dict["activeTintColor"] as? String {
         options.activeTintColor = UIColor.rune_color(from: activeTint)
@@ -344,21 +258,35 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
       }
       if let showLabels = dict["showLabels"] as? Bool {
         options.showLabels = showLabels
+      } else if let number = dict["showLabels"] as? NSNumber {
+        options.showLabels = number.boolValue
       }
       if let blurStyle = dict["blurEffectStyle"] as? String {
-        options.blurEffectStyle = UIBlurEffect.Style(string: blurStyle)
+        if blurStyle == "none" {
+          options.blurEffectStyle = nil
+        } else {
+          options.blurEffectStyle = UIBlurEffect.Style(string: blurStyle)
+        }
       }
     }
+    guard tabBarOptions != options else { return }
     tabBarOptions = options
   }
 
   @objc(setTabItemsFromArray:)
   public func setTabItems(from array: NSArray?) {
-    guard let rawItems = array as? [[String: Any]] else {
-      tabDescriptors = []
+    guard let objects = array as? [Any], !objects.isEmpty else {
+      if !tabDescriptors.isEmpty {
+        tabDescriptors = []
+      }
       return
     }
-    tabDescriptors = rawItems.compactMap { RuneNativeTabBarItem(dictionary: $0) }
+    let descriptors: [RuneNativeTabBarItem] = objects.compactMap { element in
+      guard let dict = element as? [String: Any] else { return nil }
+      return RuneNativeTabBarItem(dictionary: dict)
+    }
+    guard tabDescriptors != descriptors else { return }
+    tabDescriptors = descriptors
   }
 
   @objc(setNativeTabBarEnabledValue:)
@@ -366,6 +294,7 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
     let enabled = value?.boolValue ?? false
     guard enabled != nativeTabBarEnabled else { return }
     nativeTabBarEnabled = enabled
+
     if enabled {
       for view in tabViews {
         adoptViewForNativeTabs(view)
@@ -374,57 +303,178 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
       synchronizeTabs()
     } else {
       detachTabBarController()
-      for view in tabViews where view.superview !== self {
-        addSubview(view)
+      for (index, view) in tabViews.enumerated() {
+        if view.superview !== self {
+          insertSubview(view, at: min(index, subviews.count))
+        }
       }
-      clearIconHosts()
       updateTabVisibility()
     }
   }
-
-  // MARK: - UITabBarControllerDelegate
   
-  public func tabBarController(_ tabBarController: UITabBarController, shouldSelect viewController: UIViewController) -> Bool {
-    guard nativeTabBarEnabled else { return true }
-    guard let controllers = tabBarController.viewControllers else { return true }
-    guard let targetIndex = controllers.firstIndex(of: viewController) else { return true }
+    // ...
+  
+    // MARK: - UITabBarControllerDelegate
     
-    let currentIndex = tabBarController.selectedIndex
-    NSLog("[RuneScreenTabs] shouldSelect - current: \(currentIndex), target: \(targetIndex)")
-    
-    // If already selected or programmatic, allow immediate switch
-    if targetIndex == currentIndex || isApplyingNativeSelection {
-      return true
-    }
-    
-    // User-initiated tap
-    // Check if content is ready
-    let targetView = tabViews[targetIndex]
-    if isContentReady(targetView) {
-        NSLog("[RuneScreenTabs] Content ready for index \(targetIndex), allowing immediate switch")
-        selectedIndex = targetIndex
-        updateIconHostStates()
-        
-        // Notify JS of the selection
-        dispatchEvent(name: "onNativeTabSelect", payload: ["index": targetIndex] as NSDictionary)
-        
+    public func tabBarController(_ tabBarController: UITabBarController, shouldSelect viewController: UIViewController) -> Bool {
+      guard nativeTabBarEnabled else { return true }
+      guard let controllers = tabBarController.viewControllers else { return true }
+      guard let targetIndex = controllers.firstIndex(of: viewController) else { return true }
+      
+      let currentIndex = tabBarController.selectedIndex
+      NSLog("[RuneScreenTabs] shouldSelect - current: \(currentIndex), target: \(targetIndex)")
+      
+      // If already selected or programmatic, allow immediate switch
+      if targetIndex == currentIndex || isApplyingNativeSelection {
         return true
-    } else {
-        NSLog("[RuneScreenTabs] Content NOT ready for index \(targetIndex), deferring switch")
-        selectedIndex = targetIndex
-        updateIconHostStates()
-        
-        // Notify JS of the selection
-        dispatchEvent(name: "onNativeTabSelect", payload: ["index": targetIndex] as NSDictionary)
-        
-        // Start deferred switch
-        deferTabSwitch(to: targetIndex)
-        
-        // Return false to prevent immediate switch by UITabBarController (avoids white flash)
-        return false
+      }
+      
+      // User-initiated tap
+      let targetView = tabViews[targetIndex]
+      
+      // Check if content is ready
+      if isContentReady(targetView) {
+          NSLog("[RuneScreenTabs] Content ready for index \(targetIndex), allowing immediate switch")
+          selectedIndex = targetIndex
+          updateIconHostStates()
+          
+          // Notify JS
+          dispatchEvent(name: "onNativeTabSelect", payload: ["index": targetIndex] as NSDictionary)
+          return true
+      } else {
+          NSLog("[RuneScreenTabs] Content NOT ready for index \(targetIndex). Showing overlay and switching immediately.")
+          
+          // 1. Snapshot current view to freeze the screen visually
+          addTransitionOverlay(from: tabBarController.selectedViewController?.view, tabBarController: tabBarController)
+          NSLog("[RuneScreenTabs] Transition overlay added")
+          
+          // 2. Start polling for readiness
+          waitForContentAndRemoveOverlay(for: targetIndex)
+          
+          // 3. Update state
+          selectedIndex = targetIndex
+          updateIconHostStates()
+          dispatchEvent(name: "onNativeTabSelect", payload: ["index": targetIndex] as NSDictionary)
+          
+          // 4. Return TRUE to allow immediate animation
+          return true
+      }
     }
+  
+  // ... (didSelect remains)
+
+  // MARK: - Private helpers
+
+  private func clearReadyState(for view: UIView) {
+    readyContentViewIdentifiers.remove(ObjectIdentifier(view))
   }
 
+  private func markViewReady(_ view: UIView) {
+    readyContentViewIdentifiers.insert(ObjectIdentifier(view))
+  }
+
+  private func addTransitionOverlay(from currentView: UIView?, tabBarController: UITabBarController) {
+    guard transitionOverlay == nil else { return }
+    guard let currentView = currentView else { return }
+    guard let snapshot = currentView.snapshotView(afterScreenUpdates: false) else { return }
+    snapshot.frame = currentView.frame
+    snapshot.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    if let container = currentView.superview {
+      container.addSubview(snapshot)
+    } else {
+      tabBarController.view.insertSubview(snapshot, belowSubview: tabBarController.tabBar)
+    }
+    transitionOverlay = snapshot
+  }
+
+  private func waitForContentAndRemoveOverlay(for index: Int) {
+    contentWaitWorkItem?.cancel()
+    pendingWaitIndex = index
+
+    guard index < tabViews.count else {
+      removeTransitionOverlay()
+      pendingWaitIndex = nil
+      return
+    }
+    let targetView = tabViews[index]
+    let startTime = Date()
+    let maxWaitTime: TimeInterval = 0.5 // Safety timeout
+
+    func check() {
+      guard pendingWaitIndex == index else { return }
+
+      let ready = isContentReady(targetView)
+      let elapsed = Date().timeIntervalSince(startTime)
+
+      if ready || elapsed > maxWaitTime {
+        NSLog("[RuneScreenTabs] Content ready (or timeout) for index \(index) after \(String(format: "%.3f", elapsed))s. Removing overlay.")
+
+        if ready {
+          markViewReady(targetView)
+        }
+
+        // Fade out overlay
+        UIView.animate(withDuration: 0.2, animations: {
+          self.transitionOverlay?.alpha = 0.0
+        }) { _ in
+          if self.pendingWaitIndex == index {
+            self.removeTransitionOverlay()
+            self.pendingWaitIndex = nil
+          }
+        }
+      } else {
+        // Poll every frame (approx 16ms)
+        let nextItem = DispatchWorkItem { check() }
+        self.contentWaitWorkItem = nextItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.016, execute: nextItem)
+      }
+    }
+
+    // Start checking
+    let initialItem = DispatchWorkItem { check() }
+    contentWaitWorkItem = initialItem
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.016, execute: initialItem)
+  }
+
+  private func removeTransitionOverlay() {
+    transitionOverlay?.removeFromSuperview()
+    transitionOverlay = nil
+  }
+
+  private func isContentReady(_ view: UIView) -> Bool {
+    let identifier = ObjectIdentifier(view)
+    if readyContentViewIdentifiers.contains(identifier) {
+      return true
+    }
+    // Check if view has meaningful content
+    guard !view.subviews.isEmpty else { return false }
+
+    // Count subviews with substantial frames (not 1x1 placeholders)
+    var substantialViewCount = 0
+    func checkViewTree(_ v: UIView, depth: Int) {
+      // Don't go too deep
+      guard depth < 5 else { return }
+
+      // Check if this view has a substantial frame
+      let frame = v.frame
+      if frame.width > 10 && frame.height > 10 {
+        substantialViewCount += 1
+      }
+
+      // Check children
+      for subview in v.subviews where !subview.isHidden {
+        checkViewTree(subview, depth: depth + 1)
+      }
+    }
+
+    checkViewTree(view, depth: 0)
+    // Need at least 2 substantial views (container + content)
+    if substantialViewCount >= 2 {
+      markViewReady(view)
+      return true
+    }
+    return false
+  }
   public func tabBarController(_ tabBarController: UITabBarController, didSelect viewController: UIViewController) {
     guard nativeTabBarEnabled else { return }
     guard let controllers = tabBarController.viewControllers else { return }
@@ -1047,6 +1097,7 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
     tabBarController = nil
     hostingController = nil
     clearIconHosts()
+    removeTransitionOverlay()
   }
 
   private func updateTabVisibility() {
