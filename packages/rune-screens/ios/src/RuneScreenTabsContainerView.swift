@@ -45,6 +45,9 @@ struct RuneNativeTabBarIconDescriptor: Equatable {
 
 @objcMembers
 public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelegate {
+  // Kill switch: disable JSX/surface tab icons entirely (use native icons only).
+  // Flip to `false` to re-enable.
+  private let disableTabIconSurfaces = false
   private var tabViews: [UIView] = []
   private var controllerMap: [ObjectIdentifier: RuneTabContentViewController] = [:]
   private var tabDescriptors: [RuneNativeTabBarItem] = [] {
@@ -81,7 +84,16 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
   private var tabSwitchWorkItem: DispatchWorkItem?
   private var readyContentViewIdentifiers: Set<ObjectIdentifier> = []
   private var tabAnimationType: RuneScreenAnimation = .none
+  private var iconHostRetryWorkItem: DispatchWorkItem?
+  private var iconHostRetryCount = 0
+  private var didForceInitialTabBarLayoutFix = false
+  private var tabBarLayoutFixWorkItem: DispatchWorkItem?
   private let tabBarButtonClass: AnyClass? = NSClassFromString("UITabBarButton")
+  
+  // Custom overlay labels to replace buggy native labels
+  private var customLabelOverlays: [UILabel] = []
+  private var customLabelContainer: UIView?
+  
   private lazy var surfaceIconPlaceholder: UIImage = {
     let size = CGSize(width: 24, height: 24)
     let renderer = UIGraphicsImageRenderer(size: size)
@@ -103,6 +115,10 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
 
   private func commonInit() {
     clipsToBounds = true
+  }
+
+  private func debugLog(_ message: String) {
+    // Logging disabled
   }
 
   public override func layoutSubviews() {
@@ -152,6 +168,12 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
     controllerMap.removeAll()
     tabViews.removeAll()
     readyContentViewIdentifiers.removeAll()
+    iconHostRetryWorkItem?.cancel()
+    iconHostRetryWorkItem = nil
+    iconHostRetryCount = 0
+    tabBarLayoutFixWorkItem?.cancel()
+    tabBarLayoutFixWorkItem = nil
+    didForceInitialTabBarLayoutFix = false
     detachTabBarController()
   }
 
@@ -441,6 +463,81 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
     transitionOverlay = nil
   }
 
+  private func scheduleIconHostRetry() {
+    guard nativeTabBarEnabled else { return }
+    guard iconHostRetryCount < 6 else { return }
+    iconHostRetryWorkItem?.cancel()
+
+    let nextCount = iconHostRetryCount + 1
+    iconHostRetryCount = nextCount
+
+    let item = DispatchWorkItem { [weak self] in
+      guard let self else { return }
+      guard self.nativeTabBarEnabled else { return }
+      self.debugLog("iconHostRetry attempt \(self.iconHostRetryCount)")
+      self.tabBarController?.tabBar.setNeedsLayout()
+      self.tabBarController?.tabBar.layoutIfNeeded()
+      self.refreshIconHosts()
+    }
+    iconHostRetryWorkItem = item
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: item)
+  }
+
+  private func scheduleInitialTabBarLayoutFix() {
+    guard nativeTabBarEnabled else { return }
+    guard !didForceInitialTabBarLayoutFix else { return }
+    tabBarLayoutFixWorkItem?.cancel()
+
+    let item = DispatchWorkItem { [weak self] in
+      guard let self else { return }
+      guard self.nativeTabBarEnabled else { return }
+      
+      // Only proceed if tab bar has valid width
+      guard let tabBar = self.tabBarController?.tabBar, tabBar.bounds.width > 1 else {
+        // Tab bar still not ready, schedule another attempt
+        self.tabBarLayoutFixWorkItem = nil
+        self.scheduleInitialTabBarLayoutFix()
+        return
+      }
+      
+      self.forceTabBarRelayout(reason: "initial")
+      self.didForceInitialTabBarLayoutFix = true
+    }
+    tabBarLayoutFixWorkItem = item
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: item)
+  }
+
+  private func forceTabBarRelayout(reason: String) {
+    guard let controller = tabBarController else { return }
+    let tabBar = controller.tabBar
+    debugLog("forceTabBarRelayout(\(reason)) begin: selectedIndex=\(controller.selectedIndex) bounds=\(tabBar.bounds)")
+
+    UIView.performWithoutAnimation {
+      tabBar.setNeedsLayout()
+      tabBar.layoutIfNeeded()
+
+      tabBar.setNeedsLayout()
+      tabBar.layoutIfNeeded()
+
+      // Also force layout on all nested subviews (ContentView, SelectedContentView, etc.)
+      func forceLayoutRecursively(_ view: UIView) {
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
+        for subview in view.subviews {
+          forceLayoutRecursively(subview)
+        }
+      }
+      for view in tabBar.subviews {
+        forceLayoutRecursively(view)
+      }
+    }
+
+    debugLog("forceTabBarRelayout(\(reason)) end")
+    
+    // Re-run icon host refresh after forcing layout to re-normalize labels
+    refreshIconHosts()
+  }
+
   private func isContentReady(_ view: UIView) -> Bool {
     let identifier = ObjectIdentifier(view)
     if readyContentViewIdentifiers.contains(identifier) {
@@ -496,6 +593,16 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
     }
 
     tabBar.layoutIfNeeded()
+    debugLog("refreshIconHosts begin: items=\(items.count) bounds=\(tabBar.bounds) subviews=\(tabBar.subviews.count)")
+    
+    // CRITICAL: Skip processing if tab bar hasn't been laid out yet (width == 0).
+    // UIKit will position labels incorrectly during this phase, and any normalization
+    // we apply will be wrong. Schedule a retry instead.
+    if tabBar.bounds.width < 1 {
+      debugLog("refreshIconHosts: tabBar width is 0, scheduling retry")
+      scheduleIconHostRetry()
+      return
+    }
     
     // UITabBar structure:
     // - _UITabBarPlatterView (iOS 18+) or direct subviews
@@ -504,6 +611,7 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
     // We need to attach icon hosts to buttons in BOTH views.
     
     let (normalButtons, selectedButtons) = collectDualTabButtons(in: tabBar)
+    debugLog("tabButtons: normal=\(normalButtons.count) selected=\(selectedButtons.count)")
     
     // NSLog("[RuneScreenTabs] refreshIconHosts: Found \(normalButtons.count) normal buttons, \(selectedButtons.count) selected buttons")
 
@@ -527,7 +635,12 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
     // Use normal buttons for iteration (they should match 1:1 with selected buttons)
     let buttonsToIterate = normalButtons.isEmpty ? selectedButtons : normalButtons
 
+    var needsRetry = false
+
     for (position, button) in buttonsToIterate.enumerated() {
+      if position < normalButtons.count && position < selectedButtons.count {
+        normalizeLabelLayout(using: tabBar, normalButton: normalButtons[position], selectedButton: selectedButtons[position])
+      }
       guard let (item, itemIndex) = resolveTabBarItem(
         for: button,
         items: items,
@@ -544,6 +657,7 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
 
       let descriptor = tabDescriptors[itemIndex]
       let descriptorRouteKey = descriptor.key
+      let title = item.title ?? "(nil)"
 
       if descriptor.hidden {
         showNativeIcon(in: button)
@@ -571,6 +685,14 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
         }
         removeIconHosts(forRouteKey: descriptorRouteKey)
       case .surface(let routeKey):
+        if disableTabIconSurfaces {
+          showNativeIcon(in: button)
+          if position < selectedButtons.count {
+            showNativeIcon(in: selectedButtons[position])
+          }
+          removeIconHosts(forRouteKey: descriptorRouteKey)
+          continue
+        }
         let key = routeKey
         activeKeys.insert(key)
         
@@ -580,13 +702,29 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
         
         let normalImageView = normalButton.flatMap { findIconImageView(in: $0) }
         let selectedImageView = selectedButton.flatMap { findIconImageView(in: $0) }
-        
-        // Hide native image views
-        hideImageView(normalImageView)
-        hideImageView(selectedImageView)
-        
-        let normalContainer = normalImageView?.superview ?? normalButton
-        let selectedContainer = selectedImageView?.superview ?? selectedButton
+
+        let normalReady = (normalImageView?.bounds.width ?? 0) > 1 && (normalImageView?.bounds.height ?? 0) > 1
+        let selectedReady = (selectedImageView?.bounds.width ?? 0) > 1 && (selectedImageView?.bounds.height ?? 0) > 1
+
+        if !normalReady || !selectedReady {
+          needsRetry = true
+        }
+
+
+        // For surface icons, the UITabBarItem image is already a transparent placeholder.
+        // Keep UIKit's image view completely intact so it can do its layout work; we only overlay
+        // the custom surface inside the image view once it's sized.
+        if normalReady {
+          normalImageView?.isHidden = false
+          normalImageView?.alpha = 1.0
+        }
+        if selectedReady {
+          selectedImageView?.isHidden = false
+          selectedImageView?.alpha = 1.0
+        }
+
+        let normalContainer = normalReady ? normalImageView : nil
+        let selectedContainer = selectedReady ? selectedImageView : nil
 
         if let existing = iconHostEntries[key] {
           // Update existing entry - re-attach hosts if needed
@@ -595,11 +733,15 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
           
           if let container = normalContainer, existing.normalHost.superview !== container {
             existing.normalContainer = container
-            attachIconHost(existing.normalHost, to: container, targetView: normalImageView)
+            attachIconHost(existing.normalHost, to: container, targetView: nil)
+          } else if normalContainer == nil {
+            existing.normalHost.removeFromSuperview()
           }
           if let container = selectedContainer, existing.selectedHost.superview !== container {
             existing.selectedContainer = container
-            attachIconHost(existing.selectedHost, to: container, targetView: selectedImageView)
+            attachIconHost(existing.selectedHost, to: container, targetView: nil)
+          } else if selectedContainer == nil {
+            existing.selectedHost.removeFromSuperview()
           }
         } else {
           // Create new entry with dual hosts
@@ -621,10 +763,10 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
           
           // Attach to respective containers
           if let container = normalContainer {
-            attachIconHost(normalHost, to: container, targetView: normalImageView)
+            attachIconHost(normalHost, to: container, targetView: nil)
           }
           if let container = selectedContainer {
-            attachIconHost(selectedHost, to: container, targetView: selectedImageView)
+            attachIconHost(selectedHost, to: container, targetView: nil)
           }
         }
       }
@@ -635,6 +777,19 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
       removeIconHostEntry(forKey: key)
     }
     updateIconHostStates()
+
+    if needsRetry {
+      scheduleIconHostRetry()
+    } else {
+      iconHostRetryWorkItem?.cancel()
+      iconHostRetryWorkItem = nil
+      iconHostRetryCount = 0
+    }
+
+    scheduleInitialTabBarLayoutFix()
+    
+    // Setup custom label overlays after icon hosts are configured
+    setupCustomLabelOverlays()
   }
   
   /// Find tab buttons in both ContentView (normal) and SelectedContentView (selected)
@@ -689,7 +844,9 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
   
   private func hideImageView(_ imageView: UIImageView?) {
     guard let imageView else { return }
-    imageView.isHidden = true
+    // Keep the native image view in the layout to avoid label truncation/misalignment
+    // on cold start when UIKit hasn't finalized tab bar layout yet.
+    imageView.isHidden = false
     imageView.alpha = 0.0
   }
 
@@ -754,7 +911,19 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
     }
     
     host.translatesAutoresizingMaskIntoConstraints = false
-    NSLayoutConstraint.deactivate(host.constraints)
+    // Deactivate previously-installed constraints that reference this host.
+    // These constraints are typically owned by the container (not `host.constraints`),
+    // and letting them accumulate can cause unstable layout on cold start.
+    let stale = container.constraints.filter { constraint in
+      if let first = constraint.firstItem as AnyObject?, first === host {
+        return true
+      }
+      if let second = constraint.secondItem as AnyObject?, second === host {
+        return true
+      }
+      return false
+    }
+    NSLayoutConstraint.deactivate(stale)
 
     if let target = targetView, target.bounds.width > 1, target.bounds.height > 1 {
        // Match the image view exactly
@@ -763,6 +932,14 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
         host.centerYAnchor.constraint(equalTo: target.centerYAnchor),
         host.widthAnchor.constraint(equalTo: target.widthAnchor),
         host.heightAnchor.constraint(equalTo: target.heightAnchor),
+      ])
+    } else if container is UIImageView {
+      // When overlaying a native image view, pin to its bounds so we never influence surrounding layout.
+      NSLayoutConstraint.activate([
+        host.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+        host.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+        host.topAnchor.constraint(equalTo: container.topAnchor),
+        host.bottomAnchor.constraint(equalTo: container.bottomAnchor),
       ])
     } else {
        // Fallback - center in container
@@ -800,6 +977,153 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
     return nil
   }
 
+  private func findFirstLabel(in view: UIView) -> UILabel? {
+    // Skip our custom icon host views to find the native tab bar label
+    if view is RuneTabIconHostView {
+      return nil
+    }
+    if let label = view as? UILabel, let text = label.text, !text.isEmpty {
+      return label
+    }
+    for subview in view.subviews {
+      if let found = findFirstLabel(in: subview) {
+        return found
+      }
+    }
+    return nil
+  }
+
+  private func normalizeLabelLayout(using tabBar: UITabBar, normalButton: UIView?, selectedButton: UIView?) {
+    guard let normalButton, let selectedButton else { return }
+    guard let normalLabel = findFirstLabel(in: normalButton) else { return }
+    guard let selectedLabel = findFirstLabel(in: selectedButton) else { return }
+
+    // CREATIVE FIX: Hide native labels completely and use custom overlays instead
+    // This bypasses UIKit's buggy dual-content-view label positioning entirely
+    normalLabel.alpha = 0
+    selectedLabel.alpha = 0
+  }
+  
+  /// Create custom label overlays that we fully control, positioned above the tab bar buttons
+  private func setupCustomLabelOverlays() {
+    guard nativeTabBarEnabled, let tabBar = tabBarController?.tabBar else { return }
+    guard tabBar.bounds.width > 1 else { return }
+    
+    // Create container if needed
+    let container: UIView
+    if let existing = customLabelContainer {
+      container = existing
+    } else {
+      container = UIView()
+      container.isUserInteractionEnabled = false
+      container.backgroundColor = .clear
+      tabBar.addSubview(container)
+      customLabelContainer = container
+    }
+    
+    // Position container to cover the tab bar
+    container.frame = tabBar.bounds
+    container.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    
+    // Bring container to front
+    tabBar.bringSubviewToFront(container)
+    
+    // Get buttons to determine positions
+    let (normalButtons, _) = collectDualTabButtons(in: tabBar)
+    guard !normalButtons.isEmpty else { return }
+    
+    let activeColor = tabBarOptions.activeTintColor ?? .systemBlue
+    let inactiveColor = tabBarOptions.inactiveTintColor ?? .systemGray
+    let fontSize: CGFloat = tabBarOptions.showLabels ? 10 : 0.1
+    
+    // Check if we already have the right number of labels
+    let needsRecreate = customLabelOverlays.count != tabDescriptors.filter({ !$0.hidden && tabBarOptions.showLabels }).count
+    
+    if needsRecreate {
+      // Remove existing overlays only if count changed
+      clearCustomLabelOverlays()
+      
+      for (index, button) in normalButtons.enumerated() {
+        guard index < tabDescriptors.count else { continue }
+        let descriptor = tabDescriptors[index]
+        
+        guard !descriptor.hidden, tabBarOptions.showLabels else { continue }
+        
+        let labelText = descriptor.label ?? descriptor.routeName
+        let isActive = index == selectedIndex
+        
+        let label = UILabel()
+        label.text = labelText
+        label.font = UIFont.systemFont(ofSize: fontSize, weight: .semibold)
+        label.textColor = isActive ? activeColor : inactiveColor
+        label.textAlignment = .center
+        label.numberOfLines = 1
+        label.lineBreakMode = .byTruncatingTail
+        
+        // Calculate position based on button frame
+        let buttonFrame = button.convert(button.bounds, to: tabBar)
+        label.sizeToFit()
+        
+        // Position label below icon area (icon is at Y=8, height=24, so label starts around Y=35-39)
+        let labelY: CGFloat = 39  // Standard iOS tab bar label Y position
+        let labelWidth = min(label.bounds.width + 4, buttonFrame.width)
+        let labelX = buttonFrame.midX - labelWidth / 2
+        
+        label.frame = CGRect(
+          x: labelX,
+          y: labelY,
+          width: labelWidth,
+          height: label.bounds.height
+        )
+        
+        container.addSubview(label)
+        customLabelOverlays.append(label)
+      }
+    } else {
+      // Just update positions and colors without recreating
+      for (index, button) in normalButtons.enumerated() {
+        guard index < customLabelOverlays.count else { continue }
+        let label = customLabelOverlays[index]
+        let isActive = index == selectedIndex
+        
+        // Update color
+        label.textColor = isActive ? activeColor : inactiveColor
+        
+        // Update position in case buttons moved
+        let buttonFrame = button.convert(button.bounds, to: tabBar)
+        let labelY: CGFloat = 39
+        let labelWidth = label.bounds.width
+        let labelX = buttonFrame.midX - labelWidth / 2
+        
+        label.frame = CGRect(
+          x: labelX,
+          y: labelY,
+          width: labelWidth,
+          height: label.bounds.height
+        )
+      }
+    }
+  }
+  
+  private func updateCustomLabelColors() {
+    guard nativeTabBarEnabled else { return }
+    
+    let activeColor = tabBarOptions.activeTintColor ?? .systemBlue
+    let inactiveColor = tabBarOptions.inactiveTintColor ?? .systemGray
+    
+    for (index, label) in customLabelOverlays.enumerated() {
+      let isActive = index == selectedIndex
+      label.textColor = isActive ? activeColor : inactiveColor
+    }
+  }
+  
+  private func clearCustomLabelOverlays() {
+    for label in customLabelOverlays {
+      label.removeFromSuperview()
+    }
+    customLabelOverlays.removeAll()
+  }
+
   private func removeIconHosts(forRouteKey routeKey: String) {
     let keysForRoute = iconHostEntries.compactMap { (key, entry) -> String? in
       entry.routeKey == routeKey ? key : nil
@@ -831,6 +1155,11 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
       entry.selectedHost.teardown()
     }
     iconHostEntries.removeAll()
+    
+    // Also clear custom label overlays
+    clearCustomLabelOverlays()
+    customLabelContainer?.removeFromSuperview()
+    customLabelContainer = nil
   }
 
   private func updateIconHostStates() {
@@ -848,6 +1177,9 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
       // Selected host shows active state (visible when tab IS selected)
       entry.selectedHost.renderIcon(active: true, tintColor: activeTint)
     }
+    
+    // Update custom label overlay colors
+    updateCustomLabelColors()
   }
 
   private func iconTintColor(isActive: Bool) -> UIColor {
@@ -1087,6 +1419,7 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
         }
       }
     }
+    scheduleInitialTabBarLayoutFix()
   }
 
   private func detachTabBarController() {
@@ -1098,6 +1431,12 @@ public final class RuneScreenTabsContainerView: UIView, UITabBarControllerDelega
     hostingController = nil
     clearIconHosts()
     removeTransitionOverlay()
+    iconHostRetryWorkItem?.cancel()
+    iconHostRetryWorkItem = nil
+    iconHostRetryCount = 0
+    tabBarLayoutFixWorkItem?.cancel()
+    tabBarLayoutFixWorkItem = nil
+    didForceInitialTabBarLayoutFix = false
   }
 
   private func updateTabVisibility() {

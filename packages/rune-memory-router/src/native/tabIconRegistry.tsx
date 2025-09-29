@@ -70,15 +70,15 @@ function mountIcon(
   props: IconRenderProps
 ) {
   const current = mounted.get(surfaceId);
-  
+
   // If already mounted, just update the reactive signals
   if (current) {
-    console.log(`[tabIconRegistry] Updating icon props for surface ${surfaceId}, routeKey=${entry.routeKey}, active=${props.active}, color=${props.color}`);
+    // console.log(`[tabIconRegistry] Updating icon props for surface ${surfaceId}, routeKey=${entry.routeKey}, active=${props.active}, color=${props.color}`);
     current.setProps(props);
     return;
   }
 
-  console.log(`[tabIconRegistry] Mounting NEW icon for surface ${surfaceId}, routeKey: ${entry.routeKey}, active: ${props.active}, color: ${props.color}`);
+  // console.log(`[tabIconRegistry] Mounting NEW icon for surface ${surfaceId}, routeKey: ${entry.routeKey}, active: ${props.active}, color: ${props.color}`);
 
   // Create reactive signals for active and color
   const [active, setActive] = createSignal(props.active);
@@ -97,21 +97,26 @@ function mountIcon(
             alignItems: "center",
           }}
         >
-          {(() => {
-            // Read signals inside the JSX function to establish tracking
-            // When they change, this function re-runs and updates the view
-            const currentActive = active();
-            const currentColor = color();
-            console.log(
-              `[tabIconRegistry] render/update executing for surface ${surfaceId}, active=${currentActive}, color=${currentColor}`
-            );
+          {
+            (() => {
+              // Read signals inside the JSX function to establish tracking
+              // When they change, this function re-runs and updates the view
+              const currentActive = active();
+              const currentColor = color();
+              // console.log(
+              //   `[tabIconRegistry] render/update executing for surface ${surfaceId}, active=${currentActive}, color=${currentColor}`
+              // );
 
-            return entry.owner
-              ? runWithOwner(entry.owner, () =>
-                  entry.factory({ active: currentActive, color: currentColor })
-                )
-              : entry.factory({ active: currentActive, color: currentColor });
-          }) as any}
+              return entry.owner
+                ? runWithOwner(entry.owner, () =>
+                    entry.factory({
+                      active: currentActive,
+                      color: currentColor,
+                    })
+                  )
+                : entry.factory({ active: currentActive, color: currentColor });
+            }) as any
+          }
         </View>
       );
     }, createSurfaceContainer(surfaceId));
@@ -124,18 +129,18 @@ function mountIcon(
     setProps: (nextProps: IconRenderProps) => {
       runWithSurface(surfaceId, () => {
         if (active() !== nextProps.active) {
-          console.log(
-            `[tabIconRegistry] Setting active: ${active()} -> ${nextProps.active}`
-          );
+          // console.log(
+          //   `[tabIconRegistry] Setting active: ${active()} -> ${nextProps.active}`
+          // );
           setActive(nextProps.active);
         }
         if (color() !== nextProps.color) {
-          console.log(
-            `[tabIconRegistry] Setting color: ${color()} -> ${nextProps.color}`
-          );
+          // console.log(
+          //   `[tabIconRegistry] Setting color: ${color()} -> ${nextProps.color}`
+          // );
           setColor(nextProps.color);
         }
-        
+
         // On Android, we MUST flush synchronously while the surface is active.
         // On iOS, synchronous flushing might interfere with native animations (e.g. TabBar transitions),
         // so we defer to the microtask queue to be safe.
