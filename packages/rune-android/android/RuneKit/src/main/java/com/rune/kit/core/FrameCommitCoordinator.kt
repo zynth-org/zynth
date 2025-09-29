@@ -20,20 +20,37 @@ internal class FrameCommitCoordinator(
   private val logDebug: (String, String) -> Unit,
   private val tracer: VisualStateTracer?,
 ) {
+  private enum class BarrierMode { PREDRAW, HIDE_CONTENT, OFF }
+
+  private val mode: BarrierMode = run {
+    when (System.getProperty("rune.frameBarrier.mode")?.lowercase()) {
+      "predraw", "pre_draw", "predraw_block" -> BarrierMode.PREDRAW
+      "hide", "hide_content" -> BarrierMode.HIDE_CONTENT
+      "off", "none", "disabled" -> BarrierMode.OFF
+      else -> BarrierMode.HIDE_CONTENT
+    }
+  }
+
   private val mainHandler = Handler(Looper.getMainLooper())
   private var pendingTransactions = 0
   private var isBlocking = false
   private var preDrawListener: ViewTreeObserver.OnPreDrawListener? = null
   private var registeredObserver: ViewTreeObserver? = null
   private var timeoutRunnable: Runnable? = null
+  private var previousContentVisibility: Int? = null
 
   fun onMutationsQueued(reason: String? = null) {
+    if (mode == BarrierMode.OFF) return
     pendingTransactions++
     if (!isBlocking) {
       isBlocking = true
-      logDebug("RuneFrame", "surface=$surfaceId blocking pre-draw${reason?.let { " ($it)" } ?: ""}")
+      logDebug("RuneFrame", "surface=$surfaceId commit barrier start${reason?.let { " ($it)" } ?: ""} mode=$mode")
       tracer?.trace("frame_block:start", reason ?: "pending mutations")
-      attachPreDrawListener()
+      when (mode) {
+        BarrierMode.PREDRAW -> attachPreDrawListener()
+        BarrierMode.HIDE_CONTENT -> setContentHidden(true)
+        BarrierMode.OFF -> Unit
+      }
     }
     scheduleTimeout()
   }
@@ -56,6 +73,7 @@ internal class FrameCommitCoordinator(
   }
 
   private fun attachPreDrawListener() {
+    if (mode != BarrierMode.PREDRAW) return
     if (Looper.myLooper() != Looper.getMainLooper()) {
       rootView.post { attachPreDrawListener() }
       return
@@ -101,8 +119,39 @@ internal class FrameCommitCoordinator(
     if (!isBlocking) return
     isBlocking = false
     cancelTimeout()
-    detachPreDrawListener()
+    when (mode) {
+      BarrierMode.PREDRAW -> detachPreDrawListener()
+      BarrierMode.HIDE_CONTENT -> setContentHidden(false)
+      BarrierMode.OFF -> Unit
+    }
     requestNextFrame()
+  }
+
+  private fun setContentHidden(hidden: Boolean) {
+    if (Looper.myLooper() != Looper.getMainLooper()) {
+      rootView.post { setContentHidden(hidden) }
+      return
+    }
+    if (hidden) {
+      if (previousContentVisibility == null) {
+        previousContentVisibility = rootView.contentView.visibility
+      }
+      if (rootView.contentView.visibility != android.view.View.INVISIBLE) {
+        rootView.contentView.visibility = android.view.View.INVISIBLE
+      }
+      return
+    }
+    // Only restore visibility if the barrier itself is still holding the view in INVISIBLE.
+    // If something else (e.g. first-frame reveal) has already changed it, don't override.
+    if (rootView.contentView.visibility != android.view.View.INVISIBLE) {
+      previousContentVisibility = null
+      return
+    }
+    val restore = previousContentVisibility ?: android.view.View.VISIBLE
+    previousContentVisibility = null
+    if (rootView.contentView.visibility != restore) {
+      rootView.contentView.visibility = restore
+    }
   }
 
   private fun scheduleTimeout() {

@@ -15,6 +15,11 @@ class RuneRootView @JvmOverloads constructor(
 ) : FrameLayout(ctx) {
   val rootId: Int = explicitRootId ?: allocateRootId()
 
+  internal val contentView = FrameLayout(ctx).apply {
+    clipChildren = false
+    clipToPadding = false
+  }
+
   private val redBox = RuneRedBoxView(ctx).apply {
     visibility = View.GONE
   }
@@ -23,7 +28,10 @@ class RuneRootView @JvmOverloads constructor(
     // Default to overflow visible (no clipping) to match CSS behavior
     clipChildren = false
     clipToPadding = false
-    
+
+    // Rune content mounts into contentView so we can independently overlay debug UI (redBox)
+    // and optionally gate visibility without affecting the host hierarchy.
+    addView(contentView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
     addView(redBox, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
   }
 

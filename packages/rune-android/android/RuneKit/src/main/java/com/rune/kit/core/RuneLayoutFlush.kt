@@ -30,6 +30,11 @@ import com.rune.kit.core.TextStyleAttributes
  */
 private const val MAX_FLUSH_ITERATIONS = 4
 private const val FLUSH_ITERATION_WARN_THRESHOLD_MS = 12L
+private val MOUNT_HIDE_TIMEOUT_MS: Long by lazy {
+  // How long to keep newly inserted nodes hidden if they were inserted before their first props arrive.
+  // This trades "FOUC/flash" for "pop-in" on pathological batches where props are delayed.
+  System.getProperty("rune.mount.hideTimeoutMs")?.toLongOrNull()?.coerceAtLeast(0L) ?: 120L
+}
 private val routerPerfLoggingEnabled: Boolean by lazy {
   val property = System.getProperty("rune.router.perfLogs")?.lowercase()
   val propertyEnabled = property == "1" || property == "true" || property == "on"
@@ -47,6 +52,7 @@ internal class RuneLayoutFlush(
   private val pendingTextRebuild: LinkedHashSet<Int>,
   private val stickyFrameCarryover: MutableSet<Int>,
   private val isVirtualTextNode: (RuneUIManager.Node) -> Boolean,
+  private val removeNodeRecursive: (Int) -> Unit,
   private val applySetProp: (Int, String, String?, PropertyCategory) -> Unit,
   private val applySetText: (Int, String) -> Unit,
   private val applySetHandler: (Int, String, Long) -> Unit,
@@ -188,11 +194,9 @@ internal class RuneLayoutFlush(
         }
       }
       operationsByParent.forEach forEachParent@ { (parentId, operations) ->
-        val parentView = if (parentId == root.rootId) {
-          root
-        } else {
-          nodes.get(parentId)?.view as? ViewGroup
-        }
+        // Prefer the node's tracked view (this allows RuneRootView to mount content into a dedicated container).
+        val parentView = (nodes.get(parentId)?.view as? ViewGroup)
+          ?: (if (parentId == root.rootId) root else null)
 
         if (parentView == null) {
           operations.filterIsInstance<ViewOperation.Remove>().forEach { op ->
@@ -218,6 +222,9 @@ internal class RuneLayoutFlush(
                 (childView.parent as? ViewGroup)?.removeView(childView)
                 val safeIndex = operation.index.coerceIn(0, parentView.childCount)
                 parentView.addView(childView, safeIndex)
+                if (childNode.mountAwaitingFirstProps && childNode.mountStartTimeMs == 0L) {
+                  childNode.mountStartTimeMs = android.os.SystemClock.elapsedRealtime()
+                }
                 if (
                   !childNode.hasCompletedInitialMount &&
                   (childNode.type == TEXT_INPUT_TYPE || childNode.type == SECURE_TEXT_INPUT_TYPE)
@@ -228,6 +235,7 @@ internal class RuneLayoutFlush(
               }
               is ViewOperation.Remove -> {
                 detachChildView(operation.parentId, operation.node)
+                removeNodeRecursive(operation.node.id)
               }
             }
           }
@@ -472,7 +480,22 @@ internal class RuneLayoutFlush(
 
           // Update visibility based on frame size (combined with frame application)
           val hasSize = width > 0 && height > 0
-          node.view.visibility = if (hasSize) View.VISIBLE else View.INVISIBLE
+          val hideForMount = node.mountAwaitingFirstProps &&
+            !node.mountHasVisualProps &&
+            node.mountStartTimeMs > 0L &&
+            (android.os.SystemClock.elapsedRealtime() - node.mountStartTimeMs) < MOUNT_HIDE_TIMEOUT_MS
+          if (!hideForMount && node.mountAwaitingFirstProps && node.mountStartTimeMs > 0L) {
+            val elapsed = android.os.SystemClock.elapsedRealtime() - node.mountStartTimeMs
+            if (elapsed >= MOUNT_HIDE_TIMEOUT_MS) {
+              node.mountHasVisualProps = true
+              node.mountAwaitingFirstProps = false
+            }
+          }
+          val shouldBeVisible = hasSize && !hideForMount
+          node.view.visibility = if (shouldBeVisible) View.VISIBLE else View.INVISIBLE
+          if (shouldBeVisible && node.mountAwaitingFirstProps) {
+            node.mountAwaitingFirstProps = false
+          }
           if (hasSize) {
             node.label?.alpha = 1f
           }
@@ -666,10 +689,8 @@ internal class RuneLayoutFlush(
   }
 
   private fun detachChildView(parentId: Int, childNode: RuneUIManager.Node) {
-    val expectedParentView = when {
-      parentId == root.rootId -> root
-      else -> nodes.get(parentId)?.view as? ViewGroup
-    }
+    val expectedParentView = (nodes.get(parentId)?.view as? ViewGroup)
+      ?: (if (parentId == root.rootId) root else null)
     val childView = childNode.view
 
     var wasRemoved = false
@@ -730,7 +751,7 @@ internal class RuneLayoutFlush(
   private fun maybeDispatchFirstFrame() {
     if (hasDispatchedFirstFrame) return
     val callback = firstFrameCallback ?: return
-    val hasRenderableChildren = nodes.size() > 1 && root.childCount > 0
+    val hasRenderableChildren = nodes.size() > 1 && root.contentView.childCount > 0
     if (!hasRenderableChildren) return
     hasDispatchedFirstFrame = true
     firstFrameCallback = null

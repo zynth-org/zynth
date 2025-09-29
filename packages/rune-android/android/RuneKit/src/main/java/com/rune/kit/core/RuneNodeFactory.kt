@@ -173,7 +173,11 @@ internal class RuneNodeFactory(
     val node = RuneUIManager.Node(id, type, view, label)
     node.surfaceId = surfaceId
     node.cachedText = (label?.text?.toString() ?: "")
+    node.mountAwaitingFirstProps = true
+    node.mountHasVisualProps = false
+    node.mountStartTimeMs = 0L
     nodes.put(id, node)
+    manager.onNodeCreated(id, surfaceId)
     node.parentId = null
     engine.createNode(id)
 
@@ -243,6 +247,7 @@ internal class RuneNodeFactory(
 
     // Remove from our tracking maps
     nodes.remove(id)
+    manager.onNodeRemoved(id)
     node.parentId = null
 
     // Also clean up from any pending text rebuilds
