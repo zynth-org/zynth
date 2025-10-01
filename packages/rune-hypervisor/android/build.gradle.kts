@@ -29,6 +29,7 @@ android {
 
 dependencies {
     implementation(project(":RuneKit"))
+    implementation(project(":RuneAPIs"))
     implementation("org.jetbrains.kotlin:kotlin-stdlib:1.9.22")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }

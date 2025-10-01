@@ -1,8 +1,10 @@
 package dev.rune.apis
 
 import android.app.Activity
+import android.content.Context
 import android.util.Log
 import com.rune.kit.runtime.RuneRuntime
+import java.util.WeakHashMap
 
 /**
  * Public interface for RuneAPIs module.
@@ -10,7 +12,7 @@ import com.rune.kit.runtime.RuneRuntime
  */
 object RuneAPIs {
     private const val TAG = "RuneAPIs"
-    private var initialized = false
+    private val initializedRuntimes = WeakHashMap<RuneRuntime, Boolean>()
 
     /**
      * Initialize the APIs module with an Activity and RuneRuntime instance.
@@ -18,20 +20,29 @@ object RuneAPIs {
      */
     @JvmStatic
     fun initialize(activity: Activity, runtime: RuneRuntime) {
+        initialize(activity.applicationContext, runtime)
+    }
+
+    /**
+     * Initialize the APIs module with a Context and RuneRuntime instance.
+     * Use this when an Activity reference is not available (e.g., Views).
+     */
+    @JvmStatic
+    @Synchronized
+    fun initialize(context: Context, runtime: RuneRuntime) {
         Log.d(TAG, "RuneAPIs.initialize() called")
-        
-        if (initialized) {
-            Log.w(TAG, "Module already initialized - skipping")
+
+        if (initializedRuntimes.containsKey(runtime)) {
+            Log.w(TAG, "Runtime already initialized - skipping")
             return
         }
+        initializedRuntimes[runtime] = true
 
-        // Install FontModule
         Log.d(TAG, "Creating FontModule...")
-        val fontModule = FontModule(activity.applicationContext)
+        val fontModule = FontModule(context.applicationContext)
         Log.d(TAG, "Installing FontModule into runtime...")
         runtime.installModules(listOf(fontModule))
-        
-        initialized = true
+
         Log.d(TAG, "RuneAPIs initialized successfully with FontModule")
     }
 
@@ -40,6 +51,6 @@ object RuneAPIs {
      */
     @JvmStatic
     fun cleanup() {
-        initialized = false
+        initializedRuntimes.clear()
     }
 }

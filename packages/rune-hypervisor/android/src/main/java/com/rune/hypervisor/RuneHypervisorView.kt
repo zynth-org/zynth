@@ -7,6 +7,7 @@ import android.os.Looper
 import com.rune.kit.core.RuneRootView
 import com.rune.kit.core.RuneUIManager
 import com.rune.kit.runtime.RuneRuntime
+import dev.rune.apis.RuneAPIs
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
@@ -104,7 +105,7 @@ class RuneHypervisorView(context: Context) : FrameLayout(context) {
         val root = ensureGuestRootView()
 
         // Clean up previous runtime
-        val runtime = RuneRuntime(root)
+        val runtime = RuneRuntime(root, enableDevServer = false)
         
         // Install Hypervisor Module
         val hypervisorModule = RuneHypervisorModule(runtime) { message ->
@@ -117,6 +118,7 @@ class RuneHypervisorView(context: Context) : FrameLayout(context) {
         }
         runtime.installModules(listOf(hypervisorModule))
         runtime.installDefaultModules()
+        RuneAPIs.initialize(context, runtime)
         
         // Inject JS bridge for guest to communicate with native module
         runtime.load("globalThis.__RUNE_HYPERVISOR_BRIDGE__ = {\n" +

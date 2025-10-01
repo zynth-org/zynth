@@ -32,6 +32,7 @@ private const val TAG = "RuneRuntime"
 class RuneRuntime(
   internal val root: RuneRootView,  // internal for dev extension access
   var adapter: JSRuntimeAdapter = HermesAdapter(),  // public for extensions/hypervisor, and mutable for reloads
+  private val enableDevServer: Boolean = true,
 ) {
   val id = System.identityHashCode(this).toString(16)
   
@@ -89,7 +90,9 @@ class RuneRuntime(
 
   init {
     configureAdapter()
-    configureDevServer()  // Calls debug extension in DEBUG, no-op in RELEASE
+    if (enableDevServer) {
+      configureDevServer()  // Calls debug extension in DEBUG, no-op in RELEASE
+    }
   }
 
   fun installModules(modules: List<RuneModule>) {
