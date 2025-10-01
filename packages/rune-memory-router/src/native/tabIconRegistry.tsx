@@ -30,6 +30,8 @@ interface MountedIcon {
 const registry = new Map<string, RegistryEntry>();
 const mounted = new Map<number, MountedIcon>();
 const surfacesByKey = new Map<string, Set<number>>();
+const pendingByKey = new Map<string, Map<number, IconRenderProps>>();
+const pendingWarnedKeys = new Set<string>();
 
 function runWithSurface<T>(surfaceId: number, work: () => T): T {
   const previous = getActiveSurface();
@@ -214,7 +216,21 @@ export function renderNativeTabIcon(
   color: string
 ): boolean {
   const entry = registry.get(routeKey);
-  if (!entry) return false;
+  if (!entry) {
+    let pending = pendingByKey.get(routeKey);
+    if (!pending) {
+      pending = new Map();
+      pendingByKey.set(routeKey, pending);
+    }
+    pending.set(surfaceId, { active, color });
+    if (!pendingWarnedKeys.has(routeKey)) {
+      pendingWarnedKeys.add(routeKey);
+      console.warn(
+        `[tabIconRegistry] queued surface icon before factory registered routeKey=${routeKey} surfaceId=${surfaceId}`
+      );
+    }
+    return false;
+  }
   mountIcon(surfaceId, entry, { active, color });
   return true;
 }
@@ -234,10 +250,23 @@ export function registerNativeTabIcon(entry: RegistryEntry) {
   }
   registry.set(entry.routeKey, entry);
   rerenderMountedIcons(entry.routeKey);
+
+  const pending = pendingByKey.get(entry.routeKey);
+  if (pending && pending.size > 0) {
+    console.log(
+      `[tabIconRegistry] flushing ${pending.size} pending surfaces for routeKey=${entry.routeKey}`
+    );
+    for (const [surfaceId, props] of pending.entries()) {
+      mountIcon(surfaceId, entry, props);
+    }
+    pendingByKey.delete(entry.routeKey);
+  }
 }
 
 export function unregisterNativeTabIcon(routeKey: string) {
   registry.delete(routeKey);
+  pendingByKey.delete(routeKey);
+  pendingWarnedKeys.delete(routeKey);
   const surfaces = surfacesByKey.get(routeKey);
   if (surfaces) {
     for (const surfaceId of Array.from(surfaces.values())) {
