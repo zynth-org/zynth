@@ -440,11 +440,14 @@ class ScreenTabsContainerView(context: Context) : LinearLayout(context) {
              }
               
              // Add to the container if found, otherwise fallback to item view
+             itemView.clipChildren = false
+             itemView.clipToPadding = false
+
              if (iconContainer != null) {
                  iconContainer.clipChildren = false
                  iconContainer.clipToPadding = false
-                 iconContainer.minimumWidth = iconSizePx
-                 iconContainer.minimumHeight = iconSizePx
+                 iconContainer.minimumWidth = dpToPx(64f)
+                 iconContainer.minimumHeight = dpToPx(32f)
                  // Insert BEHIND the default icon (which has the Badge) but ON TOP of the active indicator
                  // Hierarchy: Indicator(0) -> Surface(1) -> DefaultIcon(2)
                  // DefaultIcon is transparent but carries the Badge Overlay.
@@ -501,6 +504,42 @@ class ScreenTabsContainerView(context: Context) : LinearLayout(context) {
                          Log.d(TAG, "forced measure/layout routeKey=$routeKey wrapper=${wrapper.width}x${wrapper.height} surface=${surfaceView.width}x${surfaceView.height}")
                      }
                  }
+
+                 // Fix for active indicator layout in hypervisor: force layout if 0x0
+                 val activeIndicator = itemView.findViewById<View>(com.google.android.material.R.id.navigation_bar_item_active_indicator_view)
+                if (activeIndicator != null && (activeIndicator.width == 0 || activeIndicator.height == 0)) {
+                    // Use fixed dimensions as requested: 64dp x 32dp
+                    val targetW = dpToPx(64f)
+                    val targetH = dpToPx(32f)
+
+                    val wSpec = MeasureSpec.makeMeasureSpec(targetW, MeasureSpec.EXACTLY)
+                    val hSpec = MeasureSpec.makeMeasureSpec(targetH, MeasureSpec.EXACTLY)
+
+                    runCatching {
+                        activeIndicator.measure(wSpec, hSpec)
+
+                        // Center within the container
+                        val parentW = if (iconContainer != null && iconContainer.width > 0) iconContainer.width else targetW
+                        val parentH = if (iconContainer != null && iconContainer.height > 0) iconContainer.height else targetH
+
+                        val left = (parentW - targetW) / 2
+                        val top = (parentH - targetH) / 2
+
+                        activeIndicator.layout(left, top, left + targetW, top + targetH)
+                        activeIndicator.translationY = dpToPx(1f).toFloat()
+
+                                                 // Only show if active
+                                                 if (index == selectedIndex) {
+                                                    activeIndicator.alpha = 1f
+                                                 } else {
+                                                    activeIndicator.alpha = 0f
+                                                 }
+                                                 activeIndicator.visibility = View.VISIBLE
+                                             }
+                    if (isDebugLoggingEnabled()) {
+                        Log.d(TAG, "Forced layout on activeIndicator for $routeKey: ${targetW}x${targetH}")
+                    }
+                }
              }
 
              manager.registerSurface(rootId, surfaceView)
