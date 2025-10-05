@@ -1,0 +1,25 @@
+{
+  "name": "@rune/skyhook",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/types/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.6.2",
+    "hono": "^4.5.6"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.10",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.2"
+  }
+}
