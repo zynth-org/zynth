@@ -11,14 +11,20 @@
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "db:generate": "tsc -p tsconfig.json && drizzle-kit generate --config drizzle.config.ts",
+    "db:migrate": "tsc -p tsconfig.json && drizzle-kit migrate --config drizzle.config.ts",
+    "db:studio": "tsc -p tsconfig.json && drizzle-kit studio --config drizzle.config.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.6.2",
-    "hono": "^4.5.6"
+    "drizzle-orm": "^0.45.1",
+    "hono": "^4.5.6",
+    "postgres": "^3.4.7"
   },
   "devDependencies": {
     "@types/node": "^20.16.10",
+    "drizzle-kit": "^0.31.8",
     "tsx": "^4.19.2",
     "typescript": "^5.6.2"
   }

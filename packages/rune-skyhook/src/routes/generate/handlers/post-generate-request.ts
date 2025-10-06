@@ -1,4 +1,7 @@
+import { randomUUID } from "node:crypto";
 import type { Context } from "hono";
+import { db } from "../../../db/client.js";
+import { generationRequests } from "../../../db/schema.js";
 import type { GenerateRequest } from "../../../types/generate.js";
 
 const postGenerateRequest = async (c: Context) => {
@@ -14,15 +17,49 @@ const postGenerateRequest = async (c: Context) => {
     return c.json({ error: "prompt is required" }, 400);
   }
 
-  return c.json(
-    {
-      status: "pending",
-      message: "Skyhook Stage 1 stub: generation pipeline not implemented yet.",
-      prompt: payload.prompt,
-      projectId: payload.projectId ?? null,
-    },
-    202,
-  );
+  const prompt = payload.prompt.trim();
+  const projectId = payload.projectId?.trim() || null;
+
+  if (projectId && !isUuid(projectId)) {
+    return c.json({ error: "projectId must be a valid UUID" }, 400);
+  }
+
+  try {
+    const requestId = randomUUID();
+
+    const [request] = await db
+      .insert(generationRequests)
+      .values({
+        id: requestId,
+        prompt,
+        projectId,
+        status: "pending",
+      })
+      .returning();
+
+    if (!request) {
+      return c.json({ error: "Failed to persist generation request" }, 500);
+    }
+
+    return c.json(
+      {
+        requestId,
+        status: request.status,
+        message: "Skyhook Stage 1 stub: orchestration pipeline not implemented yet.",
+        prompt: request.prompt,
+        projectId: request.projectId,
+        createdAt: request.createdAt?.toISOString() ?? null,
+      },
+      202,
+    );
+  } catch (error) {
+    console.error("[skyhook] failed to save generation request", error);
+    return c.json({ error: "Failed to persist generation request" }, 500);
+  }
 };
 
 export { postGenerateRequest };
+
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}

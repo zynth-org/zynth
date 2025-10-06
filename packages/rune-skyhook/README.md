@@ -160,6 +160,22 @@ packages/rune-skyhook/
 └── README.md (this file)
 ```
 
+## 🗄️ Database & Drizzle Setup
+
+The Skyhook server now persists `/api/generate` requests in PostgreSQL via Drizzle ORM so the orchestrator has a durable queue to pull from, plus `projects` (user-owned apps) and `agent_runs` (every sandbox execution attempt).
+
+Schemas live under `src/db/schema/` (one file per table) and `src/db/schema.ts` simply re-exports them for Drizzle. This keeps things scalable as we add more entities and lets us share enums between tables.
+
+1.  Make sure a PostgreSQL instance is available and export a `DATABASE_URL` the Node process can read (e.g. `export DATABASE_URL=postgres://postgres:postgres@localhost:5432/skyhook`).
+2.  Run migrations before starting the server: `yarn workspace @rune/skyhook db:migrate`.
+3.  Inspect or tweak the schema with the bundled scripts:
+
+    - `yarn workspace @rune/skyhook db:generate` — compiles the package and creates a new migration after editing anything in `src/db/schema/`.
+    - `yarn workspace @rune/skyhook db:migrate` — compiles the package and applies migrations.
+    - `yarn workspace @rune/skyhook db:studio` — compiles the package and launches Drizzle Studio for quick queries.
+
+The server refuses to boot if `DATABASE_URL` is missing so we fail fast instead of accepting requests we cannot persist. `projects.user_id` is nullable for now, but it’s the hook we’ll use once agent requests are authenticated per user.
+
 Organizing handlers per route folder makes it trivial to grow the API surface (Phase 1+ work) without bloating a single `server.ts`.
 
 The `/api/generate` route currently only validates input and returns a placeholder response. It is the entry point where we will wire in the agent loop, persistence, and sandbox orchestration during Phases 1–3.
