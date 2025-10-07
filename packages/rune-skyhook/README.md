@@ -208,6 +208,20 @@ export SKYHOOK_STORAGE_SECRET_KEY=rune-secret
 
 Then run `yarn workspace @rune/skyhook db:migrate && yarn workspace @rune/skyhook dev` and the service will create/read objects under keys such as `projects/<projectId>/runs/<runId>/snapshot.zip`.
 
+## 🧠 LLM Integration
+
+`/api/generate` now pings an LLM provider (mock / OpenAI / Gemini) to produce a short “preview” sentence describing the work it will attempt, proving end-to-end access to the chosen model.
+
+Set `SKYHOOK_LLM_PROVIDER` to `mock` (default), `openai`, or `gemini`, then export the related keys:
+
+| Provider | Required env vars | Optional env vars |
+| :------- | :---------------- | :---------------- |
+| `mock`   | —                 | —                 |
+| `openai` | `SKYHOOK_OPENAI_API_KEY` | `SKYHOOK_OPENAI_MODEL` (default `gpt-4o-mini`), `SKYHOOK_OPENAI_BASE_URL` |
+| `gemini` | `SKYHOOK_GEMINI_API_KEY` | `SKYHOOK_GEMINI_MODEL` (default `gemini-1.5-flash`), `SKYHOOK_GEMINI_BASE_URL` |
+
+Use `SKYHOOK_LLM_PROVIDER=mock` when you don’t have API keys handy—the server will still run and return a deterministic preview string. Once you supply a real key, the preview will come from the live model, so it’s easy to smoke test connectivity before we wire in the full ReAct loop.
+
 Organizing handlers per route folder makes it trivial to grow the API surface (Phase 1+ work) without bloating a single `server.ts`.
 
 The `/api/generate` route currently only validates input and returns a placeholder response. It is the entry point where we will wire in the agent loop, persistence, and sandbox orchestration during Phases 1–3.

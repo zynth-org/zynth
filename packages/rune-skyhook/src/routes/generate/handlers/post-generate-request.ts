@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Context } from "hono";
 import { db } from "../../../db/client.js";
 import { generationRequests } from "../../../db/schema.js";
+import { llmClient } from "../../../llm/index.js";
 import type { GenerateRequest } from "../../../types/generate.js";
 
 const postGenerateRequest = async (c: Context) => {
@@ -41,6 +42,11 @@ const postGenerateRequest = async (c: Context) => {
       return c.json({ error: "Failed to persist generation request" }, 500);
     }
 
+    const llmPreview = await requestPreviewFromLLM({
+      prompt,
+      requestId,
+    });
+
     return c.json(
       {
         requestId,
@@ -48,6 +54,7 @@ const postGenerateRequest = async (c: Context) => {
         message: "Skyhook Stage 1 stub: orchestration pipeline not implemented yet.",
         prompt: request.prompt,
         projectId: request.projectId,
+        llmPreview,
         createdAt: request.createdAt?.toISOString() ?? null,
       },
       202,
@@ -55,6 +62,28 @@ const postGenerateRequest = async (c: Context) => {
   } catch (error) {
     console.error("[skyhook] failed to save generation request", error);
     return c.json({ error: "Failed to persist generation request" }, 500);
+  }
+};
+
+const requestPreviewFromLLM = async ({
+  prompt,
+  requestId,
+}: {
+  prompt: string;
+  requestId: string;
+}) => {
+  try {
+    const result = await llmClient.generateText({
+      system:
+        "You are Rune Skyhook, an AI pair programmer that orchestrates autonomous app builds. Reply with a one sentence summary of how you plan to approach the request.",
+      prompt: `Request ID: ${requestId}\nUser Prompt: ${prompt}`,
+      temperature: 0.2,
+    });
+
+    return result.output;
+  } catch (error) {
+    console.error("[skyhook] Failed to fetch LLM preview", error);
+    return null;
   }
 };
 
