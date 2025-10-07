@@ -1,5 +1,6 @@
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.js";
+import "./storage/index.js";
 
 const app = createApp();
 const port = resolvePort();

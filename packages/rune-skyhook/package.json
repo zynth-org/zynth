@@ -17,6 +17,7 @@
     "db:studio": "tsc -p tsconfig.json && drizzle-kit studio --config drizzle.config.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.948.0",
     "@hono/node-server": "^1.6.2",
     "drizzle-orm": "^0.45.1",
     "hono": "^4.5.6",

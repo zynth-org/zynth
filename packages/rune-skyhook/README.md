@@ -176,6 +176,38 @@ Schemas live under `src/db/schema/` (one file per table) and `src/db/schema.ts` 
 
 The server refuses to boot if `DATABASE_URL` is missing so we fail fast instead of accepting requests we cannot persist. `projects.user_id` is nullable for now, but it’s the hook we’ll use once agent requests are authenticated per user.
 
+## 📦 Storage (MinIO / S3)
+
+Snapshots and rsbuild artifacts are stored in an S3-compatible bucket via MinIO. Configuration lives in `src/storage/` (`snapshots.ts` exposes `saveSnapshot`/`loadSnapshot` helpers) and we eagerly validate credentials at server startup.
+
+Set the following environment variables before running the server:
+
+| Variable                         | Description                                                                           | Default                 |
+| :------------------------------- | :------------------------------------------------------------------------------------ | :---------------------- |
+| `SKYHOOK_STORAGE_BUCKET`         | Target bucket name.                                                                   | — (required)            |
+| `SKYHOOK_STORAGE_ENDPOINT`       | HTTP/S endpoint for MinIO.                                                            | `http://127.0.0.1:9000` |
+| `SKYHOOK_STORAGE_REGION`         | Region identifier (used by AWS SDK signing).                                          | `us-east-1`             |
+| `SKYHOOK_STORAGE_ACCESS_KEY`     | Access key ID.                                                                        | — (required)            |
+| `SKYHOOK_STORAGE_SECRET_KEY`     | Secret key.                                                                           | — (required)            |
+| `SKYHOOK_STORAGE_FORCE_PATH_STYLE` | Force path-style URLs (`true` for MinIO). Set to `false` when using real S3 domains. | `true`                  |
+| `SKYHOOK_STORAGE_PUBLIC_BASE_URL` | Optional public CDN/base URL to compute download links.                              | —                       |
+
+Local bootstrap (replace creds/bucket as needed):
+
+```bash
+docker run -p 9000:9000 -p 9001:9001 \
+  -e MINIO_ROOT_USER=rune \
+  -e MINIO_ROOT_PASSWORD=rune-secret \
+  quay.io/minio/minio server /data --console-address ":9001"
+
+export SKYHOOK_STORAGE_BUCKET=rune-snapshots
+export SKYHOOK_STORAGE_ENDPOINT=http://127.0.0.1:9000
+export SKYHOOK_STORAGE_ACCESS_KEY=rune
+export SKYHOOK_STORAGE_SECRET_KEY=rune-secret
+```
+
+Then run `yarn workspace @rune/skyhook db:migrate && yarn workspace @rune/skyhook dev` and the service will create/read objects under keys such as `projects/<projectId>/runs/<runId>/snapshot.zip`.
+
 Organizing handlers per route folder makes it trivial to grow the API surface (Phase 1+ work) without bloating a single `server.ts`.
 
 The `/api/generate` route currently only validates input and returns a placeholder response. It is the entry point where we will wire in the agent loop, persistence, and sandbox orchestration during Phases 1–3.
