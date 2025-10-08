@@ -2,30 +2,46 @@
 
 This package is currently a **design/spec README** for the Skyhook server. It documents the intended architecture and workflows so we can align on “how it should work” before we implement it.
 
+Skyhook is built around a simple principle: **we orchestrate the sandbox and Rune-specific scaffolding, and we delegate the “coding agent” behavior to OpenCode** (running headlessly inside Docker).
+
+This keeps the hard parts in one place:
+
+- **Sandbox provisioning** (security + speed)
+- **Rune-specific scaffolding/tools/templates** (avoid React-vs-Solid confusion)
+- **Packaging + artifact delivery** (`rsbuild` → MinIO)
+
 ## 💡 The Vision: Autonomous App Creation
 
-The core mission of this server is to enable **autonomous application development** directly from a user prompt, mimicking the highly effective, iterative workflow of modern AI coding agents (like Gemini Code Assist, Copilot CLI, etc.).
+The core mission of this server is to enable **autonomous application development** directly from a user prompt, using a proven “coding agent” workflow (plan → edit → run → fix → deliver) **without us re-implementing an agent UI/UX**.
 
 **We are not just generating code; we are executing a complete developer session in the cloud.**
 
-### **The Agentic Workflow: Loop, Act, Reflect**
+### **Workflow: Skyhook Orchestrates, OpenCode Executes**
 
 When a user submits a prompt from our client application (e.g., "Create a to-do list app with a dark mode toggle"), the server initiates a structured, continuous loop:
 
-1.  **Orchestration (The Brain):** The backend creates an isolated, secure environment (usually a **Docker container**) to act as a virtual file system and terminal.
-2.  **LLM Reasoning (The Thought):** An LLM (e.g., Gemini) receives the prompt and begins a **ReAct (Reasoning + Acting) loop**.
-    - **Thought:** The LLM declares its next step (e.g., "I need to check the existing configuration files").
-    - **Action:** The LLM calls a restricted tool (e.g., `list_dir()`, `read_file()`, `run_command()`).
-3.  **Sandbox Execution (The Hands):** The server safely executes the tool's command inside the dedicated sandbox.
-4.  **Observation (The Feedback):** The output (file contents, command success/failure) is fed back to the LLM to inform its next step.
+1.  **Persist request (Skyhook):** Store the prompt + metadata in Postgres and create an `agent_runs` record.
+2.  **Provision sandbox (Skyhook):** Start an isolated Docker container that owns the workspace filesystem and runtime.
+3.  **Prepare workspace (Skyhook):**
+    - write a sandbox-local `AGENTS.md` with Rune + SolidJS rules
+    - inject private package access (framework artifacts / registry / read-only mount)
+    - provide deterministic scaffolding commands (e.g. `rune create-screen`, `rune create-route`)
+4.  **Execute agent (OpenCode):** Run `opencode run` headlessly against the workspace with `--format json`.
+5.  **Build (Skyhook):** Run `rsbuild build` inside the sandbox (same workspace) to validate output.
+6.  **Package + upload (Skyhook):** Zip `dist/` + logs + an optional workspace snapshot and upload to MinIO (S3).
 
-This loop continues, allowing the AI to progressively create, edit, test (`rsbuild`), and debug the application until it achieves the goal set in the initial prompt.
+This loop continues until the agent either succeeds (artifact uploaded) or fails (logs + workspace snapshot persisted).
+
+### What Skyhook owns vs. what OpenCode owns
+
+- **Skyhook owns:** sandbox lifecycle, file boundaries, Rune conventions, scaffolding, dependency strategy, final build, artifact persistence, and audit logs.
+- **OpenCode owns:** planning, editing, iterative command execution, and deciding what to change in the workspace to satisfy the task.
 
 ### **Client-Server Integration**
 
 The server's output is not just code; it is a deployable package for our client application:
 
-1.  **Creation:** The LLM finishes its work and signals completion (`finish()` tool call).
+1.  **Creation:** The agent finishes its work and signals completion (ideally via a clean process exit + final status report).
 2.  **Compilation:** The server performs a final, verified `rsbuild build` inside the sandbox.
 3.  **Delivery:** The server zips the final production bundle (`dist/` folder) and uploads it to **MinIO (S3)**.
 4.  **Client Loading:** The client application downloads this bundle and **mounts it dynamically**, allowing the user to instantly run the AI-generated application within the platform.
@@ -42,6 +58,7 @@ This architecture ensures high security (by isolating the LLM in the container) 
 | **Database**     | **PostgreSQL** (DrizzleORM)   | Persistence for projects and agent log history.         | Transactional and reliable.                         |
 | **Storage**      | **MinIO (S3)**                | Durable storage for project snapshots (`snapshot.zip`). | Centralized persistence layer.                      |
 | **Execution**    | **Docker** (Sysbox, optional) | Secure, ephemeral sandbox for the Agent.                | Prefer no host mounts in prod; use `:ro` in dev.    |
+| **Agent Runner** | **OpenCode**                  | Headless coding agent CLI in the sandbox.               | Run via `opencode run --format json` (or `serve`).  |
 | **Package Mgmt** | **pnpm** + **Verdaccio**      | Efficient dependency install and local caching.         | Verdaccio dramatically speeds up external installs. |
 | **Framework**    | **SolidJS** / **RSBuild**     | The target environment for the generated apps.          | Proprietary artifacts are injected securely.        |
 
@@ -87,6 +104,69 @@ In practice, **(2) is where Docker stays valuable even in dev**.
 - Persist a failed run: keep the workspace zip + rsbuild logs in MinIO under a predictable key (e.g. `projects/<id>/runs/<runId>/snapshot.zip`).
 
 ---
+
+## 🤖 Agent Runner: OpenCode
+
+Skyhook uses OpenCode as the execution engine for “plan → edit → run → fix” inside the sandbox. Skyhook never drives the TUI; it runs OpenCode headlessly and consumes machine-readable output.
+
+### Where it fits in orchestration
+
+OpenCode runs after the workspace is prepared (templates + private package access) and before the final build:
+
+1. Provision sandbox container
+2. Materialize workspace + write sandbox `AGENTS.md`
+3. Run OpenCode against that workspace
+4. Run `rsbuild build`
+5. Upload artifacts + logs to MinIO
+
+### How Skyhook runs OpenCode (headless)
+
+Inside the sandbox container (workspace mounted at `/app/workspace`):
+
+```bash
+opencode run \
+  --format json \
+  --agent rune-skyhook \
+  --model "$SKYHOOK_OPENCODE_MODEL" \
+  --file /app/workspace/AGENTS.md \
+  "Build a Rune/SolidJS app screen that..."
+```
+
+Skyhook should treat OpenCode’s JSON event stream as the canonical run log (persist it alongside stdout/stderr and any build logs).
+
+### Agent configuration (Rune-aligned)
+
+Skyhook should provide an agent named `rune-skyhook` that bakes in the “Rune way”:
+
+- SolidJS patterns (signals/memos, no React mental models)
+- allowed packages/import patterns (especially `@rune/*`)
+- instruction to prefer deterministic scaffolds (below) over inventing boilerplate
+- explicit limits: only touch files inside the workspace root
+
+This config can be injected via OpenCode config env vars (ideal for Docker):
+
+- `OPENCODE_CONFIG_CONTENT` — inline JSON config (agent defaults, model, etc.)
+- `OPENCODE_PERMISSION` — inline JSON permissions config (restrict what tools/commands can run)
+- `OPENCODE_DISABLE_AUTOUPDATE=true` — avoid update checks in sandboxed runs
+
+Provider credentials should be injected as environment variables into the sandbox (avoid writing credentials to container-local home directories in production).
+
+### Optional: `opencode serve` for faster runs
+
+If we want to avoid per-run startup costs, Skyhook can start a headless OpenCode server once per sandbox:
+
+1. `opencode serve --hostname 127.0.0.1 --port 4096`
+2. `opencode run --attach http://127.0.0.1:4096 ...`
+
+### Rune-specific scaffolding tools (deterministic)
+
+Expose simple commands in the sandbox so the agent doesn’t guess at conventions:
+
+- `rune create-screen <Name>` → SolidJS screen template wired to router conventions
+- `rune create-component <Name>` → Solid component template with Rune styling/import rules
+- `rune create-api <Name>` → typed API wrapper using `@rune/*` packages
+
+OpenCode should be instructed (via `AGENTS.md` + the `rune-skyhook` agent prompt) to prefer these tools whenever it needs new screens/components/routes.
 
 ## 📦 Private Package Artifacts (packages/\*)
 
@@ -139,7 +219,7 @@ yarn workspace @rune/skyhook dev
 The server listens on `SKYHOOK_PORT` (falls back to `PORT`, then `8787`). Helpful manual checks:
 
 - `curl http://localhost:8787/health` → `{ "status": "ok" }`
-- `curl -X POST http://localhost:8787/api/generate -d '{"prompt":"Hello"}' -H "Content-Type: application/json"` → `202` with a stub JSON payload
+- `curl -X POST http://localhost:8787/api/generate -d '{"prompt":"Hello"}' -H "Content-Type: application/json"` → `202` with a JSON payload including an LLM preview and `agentRun` steps
 
 ### Project layout
 
@@ -220,11 +300,19 @@ Set `SKYHOOK_LLM_PROVIDER` to `mock` (default), `openai`, or `gemini`, then expo
 | `openai` | `SKYHOOK_OPENAI_API_KEY` | `SKYHOOK_OPENAI_MODEL` (default `gpt-4o-mini`), `SKYHOOK_OPENAI_BASE_URL` |
 | `gemini` | `SKYHOOK_GEMINI_API_KEY` | `SKYHOOK_GEMINI_MODEL` (default `gemini-1.5-flash`), `SKYHOOK_GEMINI_BASE_URL` |
 
-Use `SKYHOOK_LLM_PROVIDER=mock` when you don’t have API keys handy—the server will still run and return a deterministic preview string. Once you supply a real key, the preview will come from the live model, so it’s easy to smoke test connectivity before we wire in the full ReAct loop.
+Use `SKYHOOK_LLM_PROVIDER=mock` when you don’t have API keys handy—the server will still run and return a deterministic preview string. Once you supply a real key, the preview will come from the live model, so it’s easy to smoke test connectivity before we rely on it for richer prompts and run summaries.
+
+## 🤖 Agent Execution (OpenCode)
+
+In production, Skyhook runs OpenCode headlessly inside the sandbox and treats the workspace as the source of truth (plus logs and artifacts persisted to MinIO).
+
+The current scaffold also includes a small in-process runner under `src/agent/` (`runAgentLoop`) to validate request/response shape and persistence without Docker. It uses an in-memory workspace plus mocked tools (`list_files`, `read_file`, `write_file`, `run_command`, `finish`).
+
+`/api/generate` currently returns `{ agentRun }` from that mock runner alongside the persistence/LLM preview payload, so we can inspect the orchestration steps via HTTP while the Docker + OpenCode runner is being wired in.
 
 Organizing handlers per route folder makes it trivial to grow the API surface (Phase 1+ work) without bloating a single `server.ts`.
 
-The `/api/generate` route currently only validates input and returns a placeholder response. It is the entry point where we will wire in the agent loop, persistence, and sandbox orchestration during Phases 1–3.
+`/api/generate` is the entry point where we wire the sandbox orchestration (Docker + OpenCode), final build/zip steps, and production hardening (resource limits, timeouts, and prompt-injection resistance).
 
 ---
 
@@ -252,7 +340,8 @@ The `/api/generate` route currently only validates input and returns a placehold
 | **2.2 Docker Setup**         | Implement the Multi-Stage `Dockerfile` (dependencies & runtime stages).                                                                                    |
 | **2.3 Local Caching**        | Setup Verdaccio in a local Docker Compose file. Configure the runtime image to use the local Verdaccio registry.                                           |
 | **2.4 Docker Orchestration** | Integrate **Docker API (e.g., `dockerode`)** into the Hono server. Implement `sandbox.create(id)`, `sandbox.exec(cmd)`, and `sandbox.persistAndDestroy()`. |
-| **2.5 Tool Implementation**  | Implement the core Agent tools that execute inside the container: `read_file`, `write_file`, `run_command`.                                                |
+| **2.5 Agent Runner**         | Integrate an external agent runner in the sandbox (start by evaluating OpenCode for non-interactive execution).                                             |
+| **2.6 Rune Tooling**         | Provide deterministic scaffolding commands in the sandbox (e.g. `rune create-screen`) so the agent stays aligned with Rune + SolidJS conventions.          |
 
 ### Phase 3: 🤖 AI Server & Productionization
 
