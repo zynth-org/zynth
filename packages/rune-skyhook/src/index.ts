@@ -1,8 +1,11 @@
 import { serve } from "@hono/node-server";
-import { createApp } from "./app.js";
-import "./storage/index.js";
-import "./llm/index.js";
+import { loadSkyhookEnv } from "./utils/load-env.js";
 
+loadSkyhookEnv();
+
+await import("./storage/index.js");
+
+const { createApp } = await import("./app.js");
 const app = createApp();
 const port = resolvePort();
 

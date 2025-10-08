@@ -51,3 +51,8 @@ packages/rune-android/**/.gradle/
 
 # Logs
 *.log
+
+# Environment files
+.env
+.env.*
+!.env.example

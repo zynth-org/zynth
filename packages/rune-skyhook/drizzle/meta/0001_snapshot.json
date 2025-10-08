@@ -1,6 +1,6 @@
 {
-  "id": "ad58d9f2-4627-426e-afc8-ea261b24a1bd",
-  "prevId": "b68f8465-d81f-4061-8af8-e2704824e62f",
+  "id": "98d449ad-3d61-4b37-95b2-45386e1b46ce",
+  "prevId": "7ade875d-2c28-4772-877e-97c46799ddac",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -105,6 +105,25 @@
           "primaryKey": false,
           "notNull": false
         },
+        "icon_url": {
+          "name": "icon_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "splash_url": {
+          "name": "splash_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "settings": {
+          "name": "settings",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'{}'::jsonb"
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -153,6 +172,72 @@
         "sandbox_id": {
           "name": "sandbox_id",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "runner": {
+          "name": "runner",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "workspace_path": {
+          "name": "workspace_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "artifacts_path": {
+          "name": "artifacts_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "current_step": {
+          "name": "current_step",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "runner_config": {
+          "name": "runner_config",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "runner_command": {
+          "name": "runner_command",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "runner_exit_code": {
+          "name": "runner_exit_code",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "runner_stdout": {
+          "name": "runner_stdout",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "runner_stderr": {
+          "name": "runner_stderr",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "runner_logs_url": {
+          "name": "runner_logs_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "runner_events": {
+          "name": "runner_events",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },

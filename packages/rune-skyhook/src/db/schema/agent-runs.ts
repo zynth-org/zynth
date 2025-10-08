@@ -1,4 +1,4 @@
-import { integer, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { integer, jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { generationRequests } from "./generation-requests.js";
 import { projects } from "./projects.js";
 
@@ -19,6 +19,17 @@ const agentRuns = pgTable("agent_runs", {
     onDelete: "set null",
   }),
   sandboxId: text("sandbox_id"),
+  runner: text("runner"),
+  workspacePath: text("workspace_path"),
+  artifactsPath: text("artifacts_path"),
+  currentStep: text("current_step"),
+  runnerConfig: jsonb("runner_config").$type<Record<string, unknown>>(),
+  runnerCommand: text("runner_command"),
+  runnerExitCode: integer("runner_exit_code"),
+  runnerStdout: text("runner_stdout"),
+  runnerStderr: text("runner_stderr"),
+  runnerLogsUrl: text("runner_logs_url"),
+  runnerEvents: jsonb("runner_events").$type<unknown[]>(),
   status: agentRunStatusEnum("status").default("queued").notNull(),
   llmModel: text("llm_model"),
   promptTokens: integer("prompt_tokens"),

@@ -1,12 +1,12 @@
 import { Hono } from "hono";
-import { registerGenerateRoutes } from "./routes/generate/index.js";
-import { registerHealthRoutes } from "./routes/health/index.js";
+import { postGenerateRequest } from "./controllers/generate.js";
+import { getHealth } from "./controllers/health.js";
 
 const createApp = () => {
   const app = new Hono();
 
-  registerHealthRoutes(app);
-  registerGenerateRoutes(app);
+  app.get("/health", getHealth);
+  app.post("/api/generate", postGenerateRequest);
 
   return app;
 };

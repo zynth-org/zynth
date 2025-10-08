@@ -328,7 +328,7 @@ Organizing handlers per route folder makes it trivial to grow the API surface (P
 | **1.2 DB Setup**           | Configure DrizzleORM (PostgreSQL). Create schemas for `projects` and `agent_runs`.                                                           |
 | **1.3 Storage Config**     | Setup MinIO client. Implement functions for `saveSnapshot(id, file)` and `loadSnapshot(id)`.                                                 |
 | **1.4 LLM Integration**    | Implement a simple LLM wrapper (`llm.ts`) that supports Gemini/OpenAI API.                                                                   |
-| **1.5 Agent Logic (Mock)** | Implement the core `runAgentLoop` function _without_ Docker. Use a mock file system (in-memory Map) to test the ReAct loop and tool parsing. |
+| **1.5 Agent Runner (OpenCode, local)** | Integrate OpenCode headless execution (no Docker yet): spawn `opencode run --format json` against a real on-disk workspace, capture/parse its JSON event stream, and persist logs/status in `agent_runs`. |
 
 ### Phase 2: 🐳 Secure Containerization
 
@@ -340,7 +340,7 @@ Organizing handlers per route folder makes it trivial to grow the API surface (P
 | **2.2 Docker Setup**         | Implement the Multi-Stage `Dockerfile` (dependencies & runtime stages).                                                                                    |
 | **2.3 Local Caching**        | Setup Verdaccio in a local Docker Compose file. Configure the runtime image to use the local Verdaccio registry.                                           |
 | **2.4 Docker Orchestration** | Integrate **Docker API (e.g., `dockerode`)** into the Hono server. Implement `sandbox.create(id)`, `sandbox.exec(cmd)`, and `sandbox.persistAndDestroy()`. |
-| **2.5 Agent Runner**         | Integrate an external agent runner in the sandbox (start by evaluating OpenCode for non-interactive execution).                                             |
+| **2.5 Agent Runner (Sandbox)** | Run OpenCode inside the Docker sandbox via `sandbox.exec(...)` (or a sidecar), stream `--format json` events back to the server, and persist stdout/stderr + event logs. |
 | **2.6 Rune Tooling**         | Provide deterministic scaffolding commands in the sandbox (e.g. `rune create-screen`) so the agent stays aligned with Rune + SolidJS conventions.          |
 
 ### Phase 3: 🤖 AI Server & Productionization

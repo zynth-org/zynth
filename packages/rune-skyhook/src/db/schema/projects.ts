@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 const projects = pgTable("projects", {
   id: uuid("id").primaryKey().notNull(),
@@ -7,6 +7,7 @@ const projects = pgTable("projects", {
   description: text("description"),
   iconUrl: text("icon_url"),
   splashUrl: text("splash_url"),
+  settings: jsonb("settings").$type<Record<string, unknown>>().default({}),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),

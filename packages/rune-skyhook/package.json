@@ -9,7 +9,7 @@
     "dist"
   ],
   "scripts": {
-    "dev": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "db:generate": "tsc -p tsconfig.json && drizzle-kit generate --config drizzle.config.ts",
@@ -19,11 +19,14 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.948.0",
     "@hono/node-server": "^1.6.2",
+    "dockerode": "^4.0.9",
     "drizzle-orm": "^0.45.1",
     "hono": "^4.5.6",
-    "postgres": "^3.4.7"
+    "postgres": "^3.4.7",
+    "valibot": "^1.2.0"
   },
   "devDependencies": {
+    "@types/dockerode": "^3.3.47",
     "@types/node": "^20.16.10",
     "drizzle-kit": "^0.31.8",
     "tsx": "^4.19.2",
