@@ -1,4 +1,4 @@
-import { createDockerClient } from "../sandbox/docker-client.js";
+import { createDockerClient } from "../utils/docker-client.js";
 
 type RunGooseInput = {
   containerId: string;
@@ -130,7 +130,15 @@ export async function runGooseAgent({
 
   // Construct the command
   // goose run --no-session --with-builtin developer -t "prompt"
-  const cmd = [goosePath, "run", "--no-session", "--with-builtin", "developer", "-t", prompt];
+  const cmd = [
+    goosePath,
+    "run",
+    "--no-session",
+    "--with-builtin",
+    "developer",
+    "-t",
+    prompt,
+  ];
 
   console.log(`[skyhook] Running goose agent: ${prompt}`);
 

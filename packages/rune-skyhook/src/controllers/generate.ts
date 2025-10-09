@@ -11,11 +11,11 @@ import {
   ensureSharedArtifacts,
 } from "../services/provisioning.js";
 import { uploadAgentLogs } from "../services/logs.js";
-import { provisionDockerSandbox } from "../sandbox/docker-sandbox.js";
 import { runGooseAgent } from "../agent/goose-runner.js";
 import { generateRequestSchema } from "../schemas/generate.js";
 import type { GenerateRequest } from "../types/generate.js";
 import { formatIssues, validate } from "../validation/valibot.js";
+import { provisionDockerSandbox } from "../utils/docker-sandbox.js";
 
 export const postGenerateRequest = async (c: Context) => {
   // 1. Validation
