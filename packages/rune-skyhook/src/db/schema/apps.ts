@@ -1,6 +1,6 @@
 import { jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
-const projects = pgTable("projects", {
+const apps = pgTable("apps", {
   id: uuid("id").primaryKey().notNull(),
   userId: text("user_id"),
   name: text("name").notNull(),
@@ -17,8 +17,8 @@ const projects = pgTable("projects", {
     .$onUpdate(() => new Date()),
 });
 
-type ProjectRow = typeof projects.$inferSelect;
-type NewProjectRow = typeof projects.$inferInsert;
+type AppRow = typeof apps.$inferSelect;
+type NewAppRow = typeof apps.$inferInsert;
 
-export { projects };
-export type { NewProjectRow, ProjectRow };
+export { apps };
+export type { NewAppRow, AppRow };

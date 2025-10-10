@@ -2,24 +2,29 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, readFile, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { spawn } from "node:child_process";
 import type { Context } from "hono";
 import { eq } from "drizzle-orm";
 import { db } from "../db/client.js";
-import { agentRuns, generationRequests, projects } from "../db/schema.js";
+import { agentRuns, generationRequests, apps } from "../db/schema.js";
 import {
   createProjectWorkspace,
   ensureSharedArtifacts,
 } from "../services/provisioning.js";
 import { uploadAgentLogs } from "../services/logs.js";
 import { runGooseAgent } from "../agent/goose-runner.js";
+import { loadSnapshot, saveSnapshot } from "../storage/snapshots.js";
 import { generateRequestSchema } from "../schemas/generate.js";
 import type { GenerateRequest } from "../types/generate.js";
 import { formatIssues, validate } from "../validation/valibot.js";
 import { provisionDockerSandbox } from "../utils/docker-sandbox.js";
 
-export const postGenerateRequest = async (c: Context) => {
-  // 1. Validation
-  let payload: GenerateRequest;
+// This controller handles updating an existing app.
+export const updateAppHandler = async (c: Context) => {
+  const appId = c.req.param("appId");
+
+  // 1. Validation (similar to generate, but appId is from URL param)
+  let payload: GenerateRequest; // Reuse generateRequestSchema for prompt, but appId is from URL
   try {
     const json = await c.req.json<unknown>();
     const result = validate(generateRequestSchema, json);
@@ -35,15 +40,15 @@ export const postGenerateRequest = async (c: Context) => {
   }
 
   const prompt = payload.prompt.trim();
-  const projectId = payload.projectId?.trim() || null;
   const requestId = randomUUID();
   const agentRunId = randomUUID();
 
   try {
-    // 2. Resolve Project & Persistence
-    const resolvedProjectId = await resolveProjectId({ projectId, prompt });
-    if (!resolvedProjectId)
-      return c.json({ error: "Failed to resolve project" }, 500);
+    // Ensure the app exists
+    const existingApp = await db.select().from(apps).where(eq(apps.id, appId));
+    if (existingApp.length === 0) {
+      return c.json({ error: "App not found" }, 404);
+    }
 
     const model =
       process.env.OPENROUTER_MODEL ?? "mistralai/devstral-2512:free";
@@ -51,43 +56,54 @@ export const postGenerateRequest = async (c: Context) => {
     await db.insert(generationRequests).values({
       id: requestId,
       prompt,
-      projectId: resolvedProjectId,
+      appId: appId,
       status: "pending",
     });
 
     await db.insert(agentRuns).values({
       id: agentRunId,
-      projectId: resolvedProjectId,
+      appId: appId,
       requestId,
       status: "queued",
       llmModel: model,
       currentStep: "initializing",
     });
 
-    // 3. Workspace Preparation
-    await updateRunStep(agentRunId, "provisioning_workspace");
+    // 2. Workspace Preparation: Load existing app from MinIO
+    await updateRunStep(agentRunId, "loading_snapshot");
+    const snapshot = await loadSnapshot({ appId, runId: "latest" }); // Assuming a "latest" snapshot or similar for update
+    // TODO: Determine how to get the 'runId' for the latest snapshot to load.
+    // For now, I'll use a placeholder 'latest'. This might need to be resolved
+    // by querying agentRuns table for the last successful run for this appId.
+
+    if (!snapshot) {
+      return c.json({ error: "No existing app snapshot found" }, 404);
+    }
+
     const workspaceRoot =
       process.env.SKYHOOK_WORKSPACES_DIR ??
       join(tmpdir(), "skyhook-workspaces");
     await mkdir(workspaceRoot, { recursive: true });
-
-    // Create unique dirs for this run
     const runDir = await mkdtemp(join(workspaceRoot, `run-${agentRunId}-`));
     const workspacePath = join(runDir, "workspace");
-    // const artifactsPath = join(runDir, "artifacts"); // REMOVED
+    await mkdir(workspacePath, { recursive: true });
 
-    // Copy templates
-    await createProjectWorkspace(workspacePath, {
-      name: deriveProjectName(prompt),
-      slug: `project-${resolvedProjectId.slice(0, 8)}`,
+    // Extract the snapshot to workspacePath
+    await new Promise<void>((resolve, reject) => {
+      const untar = spawn("tar", ["-xzf", "-"], { cwd: workspacePath });
+      untar.stderr.on("data", (d) =>
+        console.error(`[skyhook] untar stderr: ${d}`)
+      );
+      untar.on("close", (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`Untar failed with code ${code}`));
+      });
+      snapshot.stream.pipe(untar.stdin);
     });
 
-    // 4. Artifacts Preparation
+    // 3. Artifacts Preparation (same as generate)
     await updateRunStep(agentRunId, "provisioning_artifacts");
     const stagedArtifacts = await ensureSharedArtifacts();
-
-    // Determine the root of the shared artifacts to mount
-    // We assume all artifacts are under the same root
     const firstPath = Object.values(stagedArtifacts)[0];
     const sharedArtifactsRoot = firstPath ? join(firstPath, "..") : undefined;
 
@@ -95,8 +111,6 @@ export const postGenerateRequest = async (c: Context) => {
       throw new Error("Failed to resolve shared artifacts root");
     }
 
-    // Link artifacts in package.json
-    // We map the local artifacts path to the Docker mount path: /opt/rune-artifacts
     const dockerArtifactsRoot = "/opt/rune-artifacts";
     const packageJsonPath = join(workspacePath, "package.json");
     const packageJson = JSON.parse(await readFile(packageJsonPath, "utf-8"));
@@ -104,18 +118,15 @@ export const postGenerateRequest = async (c: Context) => {
     if (!packageJson.dependencies) packageJson.dependencies = {};
 
     for (const pkgName of Object.keys(stagedArtifacts)) {
-      // e.g. pkgName = @rune/core
-      // folderName = rune-core
       const folderName = pkgName.replace("@rune/", "rune-");
       packageJson.dependencies[pkgName] = `file:${join(
         dockerArtifactsRoot,
         folderName
       )}`;
     }
-
     await writeFile(packageJsonPath, JSON.stringify(packageJson, null, 2));
 
-    // 5. Docker Provisioning
+    // 4. Docker Provisioning (same as generate)
     await updateRunStep(agentRunId, "provisioning_sandbox");
     const sandbox = await provisionDockerSandbox({
       agentRunId,
@@ -123,14 +134,13 @@ export const postGenerateRequest = async (c: Context) => {
       artifactsPath: sharedArtifactsRoot,
     });
 
-    // 6. Run Goose Agent
+    // 5. Run Goose Agent (same as generate)
     await updateRunStep(agentRunId, "running_agent");
     const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
       throw new Error("OPENROUTER_API_KEY is not configured.");
     }
 
-    // Prepare Prompt
     const bootstrapPromptPath = join(
       process.cwd(),
       "src/agent/prompts/bootstrap.md"
@@ -144,7 +154,6 @@ export const postGenerateRequest = async (c: Context) => {
         e
       );
     }
-
     const combinedPrompt = `${bootstrapPrompt}\n\n# User Request\n${prompt}`;
 
     const runResult = await runGooseAgent({
@@ -158,12 +167,27 @@ export const postGenerateRequest = async (c: Context) => {
     // Upload logs to MinIO/S3
     const logsUrl = await uploadAgentLogs({
       agentRunId,
-      projectId: resolvedProjectId,
+      projectId: appId,
       stdout: runResult.stdout,
       stderr: runResult.stderr,
     });
 
     const succeeded = runResult.exitCode === 0;
+
+    let snapshotUrl: string | undefined;
+    if (succeeded) {
+      // 6. Save new snapshot
+      await updateRunStep(agentRunId, "saving_snapshot");
+      const tar = spawn("tar", ["-czf", "-", "-C", workspacePath, "."]);
+      tar.stderr.on("data", (d) => console.error(`[skyhook] tar stderr: ${d}`));
+
+      const snapshot = await saveSnapshot({
+        appId: appId,
+        runId: agentRunId,
+        body: tar.stdout,
+      });
+      snapshotUrl = snapshot.url;
+    }
 
     // 7. Update DB & Return
     await db
@@ -206,10 +230,11 @@ export const postGenerateRequest = async (c: Context) => {
           ? "Goose agent completed successfully."
           : "Goose agent failed.",
         prompt,
-        projectId: resolvedProjectId,
+        appId: appId,
         workspacePath,
         sandbox,
         artifactsMountPath: sandbox.artifactsMountPath,
+        snapshotUrl,
         runner: {
           stdout: runResult.stdout,
           stderr: runResult.stderr,
@@ -220,7 +245,7 @@ export const postGenerateRequest = async (c: Context) => {
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error(`[skyhook] Generation failed: ${message}`);
+    console.error(`[skyhook] App update failed: ${message}`);
 
     await db
       .update(agentRuns)
@@ -236,40 +261,9 @@ export const postGenerateRequest = async (c: Context) => {
       .set({ status: "failed", errorMessage: message })
       .where(eq(generationRequests.id, requestId));
 
-    return c.json({ error: "Generation failed", details: message }, 500);
+    return c.json({ error: "App update failed", details: message }, 500);
   }
 };
-
-// --- Helpers ---
-
-async function resolveProjectId({
-  projectId,
-  prompt,
-}: {
-  projectId: string | null;
-  prompt: string;
-}) {
-  if (projectId) {
-    const existing = await db
-      .select({ id: projects.id })
-      .from(projects)
-      .where(eq(projects.id, projectId));
-    return existing.length ? projectId : null;
-  }
-  const id = randomUUID();
-  const [created] = await db
-    .insert(projects)
-    .values({ id, name: deriveProjectName(prompt) })
-    .returning();
-  return created?.id ?? null;
-}
-
-function deriveProjectName(prompt: string) {
-  const trimmed = prompt.trim().replace(/\s+/g, " ");
-  return trimmed.length > 30
-    ? `${trimmed.slice(0, 27)}...`
-    : trimmed || "Untitled Project";
-}
 
 async function updateRunStep(runId: string, step: string) {
   await db

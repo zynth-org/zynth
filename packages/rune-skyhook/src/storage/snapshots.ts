@@ -15,7 +15,7 @@ type SnapshotLocation = {
 };
 
 type SaveSnapshotInput = {
-  projectId: string;
+  appId: string;
   runId: string;
   body: PutObjectCommandInput["Body"];
   contentType?: string;
@@ -23,7 +23,7 @@ type SaveSnapshotInput = {
 };
 
 type LoadSnapshotInput = {
-  projectId: string;
+  appId: string;
   runId: string;
 };
 
@@ -37,13 +37,13 @@ type LoadedSnapshot = {
 const SNAPSHOT_FILENAME = "snapshot.zip";
 
 const saveSnapshot = async ({
-  projectId,
+  appId,
   runId,
   body,
   contentType = "application/zip",
   metadata,
 }: SaveSnapshotInput): Promise<SnapshotLocation> => {
-  const key = buildSnapshotKey(projectId, runId);
+  const key = buildSnapshotKey(appId, runId);
 
   await s3Client.send(
     new PutObjectCommand({
@@ -65,10 +65,10 @@ const saveSnapshot = async ({
 };
 
 const loadSnapshot = async ({
-  projectId,
+  appId,
   runId,
 }: LoadSnapshotInput): Promise<LoadedSnapshot | null> => {
-  const key = buildSnapshotKey(projectId, runId);
+  const key = buildSnapshotKey(appId, runId);
 
   try {
     const result = await s3Client.send(
@@ -101,8 +101,8 @@ const loadSnapshot = async ({
   }
 };
 
-const buildSnapshotKey = (projectId: string, runId: string) => {
-  return `projects/${projectId}/runs/${runId}/${SNAPSHOT_FILENAME}`;
+const buildSnapshotKey = (appId: string, runId: string) => {
+  return `apps/${appId}/runs/${runId}/${SNAPSHOT_FILENAME}`;
 };
 
 const isNotFound = (error: unknown) => {

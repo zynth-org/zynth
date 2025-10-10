@@ -1,5 +1,5 @@
 import { pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
-import { projects } from "./projects.js";
+import { apps } from "./apps.js";
 
 const generationStatusEnum = pgEnum("generation_status", [
   "pending",
@@ -11,7 +11,7 @@ const generationStatusEnum = pgEnum("generation_status", [
 const generationRequests = pgTable("generation_requests", {
   id: uuid("id").primaryKey().notNull(),
   prompt: text("prompt").notNull(),
-  projectId: uuid("project_id").references(() => projects.id, {
+  appId: uuid("app_id").references(() => apps.id, {
     onDelete: "set null",
   }),
   status: generationStatusEnum("status").default("pending").notNull(),

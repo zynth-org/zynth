@@ -1,6 +1,6 @@
 import { integer, jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { generationRequests } from "./generation-requests.js";
-import { projects } from "./projects.js";
+import { apps } from "./apps.js";
 
 const agentRunStatusEnum = pgEnum("agent_run_status", [
   "queued",
@@ -12,9 +12,9 @@ const agentRunStatusEnum = pgEnum("agent_run_status", [
 
 const agentRuns = pgTable("agent_runs", {
   id: uuid("id").primaryKey().notNull(),
-  projectId: uuid("project_id")
+  appId: uuid("app_id")
     .notNull()
-    .references(() => projects.id, { onDelete: "cascade" }),
+    .references(() => apps.id, { onDelete: "cascade" }),
   requestId: uuid("request_id").references(() => generationRequests.id, {
     onDelete: "set null",
   }),

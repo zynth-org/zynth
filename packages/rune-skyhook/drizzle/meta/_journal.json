@@ -15,6 +15,13 @@
       "when": 1766014110980,
       "tag": "0001_watery_mathemanic",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1766029540691,
+      "tag": "0002_tranquil_gladiator",
+      "breakpoints": true
     }
   ]
 }
