@@ -13,6 +13,12 @@ export default defineConfig({
   },
   tools: {
     htmlPlugin: false,
+    rspack: (config) => {
+      config.optimization ||= {};
+      // This prevents Rspack from hoisting everything into a single scope
+      config.optimization.concatenateModules = false;
+      return config;
+    },
   },
   html: {
     inject: false,

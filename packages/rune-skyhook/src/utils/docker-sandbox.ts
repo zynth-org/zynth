@@ -23,8 +23,9 @@ async function provisionDockerSandbox({
   const docker = createDockerClient();
   await pingDocker(docker);
 
-  const image = process.env.SKYHOOK_SANDBOX_IMAGE ?? "ubuntu:24.04";
-  
+  const image =
+    process.env.SKYHOOK_SANDBOX_IMAGE ?? "rune-skyhook-sandbox:latest";
+
   await ensureImage(docker, image);
 
   const containerName = `skyhook-${agentRunId}`;

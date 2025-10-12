@@ -56,3 +56,6 @@ packages/rune-android/**/.gradle/
 .env
 .env.*
 !.env.example
+
+# Server vendor pre-bundled packages
+packages/rune-skyhook/vendor

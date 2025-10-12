@@ -5,6 +5,17 @@
   "main": "dist/esm/index.js",
   "module": "dist/esm/index.js",
   "types": "dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "types": "./dist/types/index.d.ts"
+    },
+    "./universal": {
+      "import": "./dist/esm/universal.js",
+      "types": "./dist/types/universal.d.ts"
+    },
+    "./package.json": "./package.json"
+  },
   "sideEffects": [
     "./src/polyfills/URLSearchParams.ts",
     "./src/index.ts",
@@ -24,7 +35,7 @@
   },
   "scripts": {
     "build": "yarn build:js && yarn build:types",
-    "build:js": "NODE_ENV=production rsbuild build --config rsbuild.config.ts",
+    "build:js": "tsc --project tsconfig.esm.json",
     "build:types": "tsc --project tsconfig.types.json"
   }
 }

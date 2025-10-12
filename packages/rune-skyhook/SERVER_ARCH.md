@@ -51,6 +51,23 @@ Skyhook exposes the following primary API endpoints for managing Rune applicatio
 -   **Workspace Provisioning**: The process of setting up isolated environments for agent execution, including copying templates and managing shared dependencies.
 -   **Docker Sandboxing**: Utilizes Docker containers to provide a secure and isolated environment for the Goose Agent to operate on application code.
 -   **MinIO/S3 Snapshots**: Used for persistent storage of application workspaces. After each successful agent run, the resulting workspace is zipped and saved to MinIO/S3, allowing for versioning and retrieval of application states.
+-   **Prebundled Artifacts**: A pre-install step collects JS `dist/` outputs from eligible packages into `packages/rune-skyhook/vendor/prebundle`. Skyhook mounts this directory into the Docker sandbox so agent workspaces can use `file:` dependencies without accessing the monorepo.
+
+### 4. Artifact Prebundle Workflow
+
+Skyhook expects a prebuilt artifacts directory to exist before the server starts.
+
+-   Run `yarn bundle` in the monorepo to generate `dist/` outputs.
+-   Run `node scripts/build-skyhook-artifacts.ts` to populate `packages/rune-skyhook/vendor/prebundle`.
+-   Optionally set `SKYHOOK_ARTIFACTS_DIR` to override the default path (useful for Docker images or mounted volumes).
+
+Packages can opt out of the prebundle by adding:
+
+```
+{
+  "runeSkyhook": { "artifacts": false }
+}
+```
 
 ### 3. Database Schema (Drizzle ORM)
 

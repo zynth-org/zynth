@@ -18,6 +18,7 @@ import { generateRequestSchema } from "../schemas/generate.js";
 import type { GenerateRequest } from "../types/generate.js";
 import { formatIssues, validate } from "../validation/valibot.js";
 import { provisionDockerSandbox } from "../utils/docker-sandbox.js";
+import { execInSandbox } from "../utils/docker-exec.js";
 
 export const createAppHandler = async (c: Context) => {
   // #region 1 — Validation
@@ -111,15 +112,25 @@ export const createAppHandler = async (c: Context) => {
     const packageJson = JSON.parse(await readFile(packageJsonPath, "utf-8"));
 
     if (!packageJson.dependencies) packageJson.dependencies = {};
+    delete packageJson.resolutions;
 
     for (const pkgName of Object.keys(stagedArtifacts)) {
       // e.g. pkgName = @rune/core
       // folderName = rune-core
       const folderName = pkgName.replace("@rune/", "rune-");
-      packageJson.dependencies[pkgName] = `file:${join(
-        dockerArtifactsRoot,
-        folderName
-      )}`;
+      const artifactPath = `file:${join(dockerArtifactsRoot, folderName)}`;
+      packageJson.dependencies[pkgName] = artifactPath;
+    }
+
+    // Drop @rune/* deps that aren't staged to avoid registry lookups in the sandbox.
+    for (const section of ["dependencies", "devDependencies"] as const) {
+      const deps = packageJson[section];
+      if (!deps) continue;
+      for (const depName of Object.keys(deps)) {
+        if (!depName.startsWith("@rune/")) continue;
+        if (stagedArtifacts[depName]) continue;
+        delete deps[depName];
+      }
     }
 
     await writeFile(packageJsonPath, JSON.stringify(packageJson, null, 2));
@@ -137,68 +148,92 @@ export const createAppHandler = async (c: Context) => {
 
     // #endregion 5 — Docker Provisioning
 
-    // #region 6 — Run Goose Agent
-    // 6. Run Goose Agent
-    await updateRunStep(agentRunId, "running_agent");
-    const apiKey = process.env.OPENROUTER_API_KEY;
-    if (!apiKey) {
-      throw new Error("OPENROUTER_API_KEY is not configured.");
-    }
+    // #region 6 — Run Goose Agent (disabled) / Build Bundle
+    // 6. Run Goose Agent (set to true to re-enable)
+    const runAgent = false;
+    let runResult: { exitCode: number; stdout: string; stderr: string };
+    let logsUrl: string | undefined;
+    let snapshotUrl: string | undefined;
 
-    // Prepare Prompt
-    const bootstrapPromptPath = join(
-      process.cwd(),
-      "src/agent/prompts/bootstrap.md"
-    );
-    let bootstrapPrompt = "";
-    try {
-      bootstrapPrompt = await readFile(bootstrapPromptPath, "utf-8");
-    } catch (e) {
-      console.warn(
-        `[skyhook] Failed to load bootstrap prompt from ${bootstrapPromptPath}`,
-        e
+    if (runAgent) {
+      await updateRunStep(agentRunId, "running_agent");
+      const apiKey = process.env.OPENROUTER_API_KEY;
+      if (!apiKey) {
+        throw new Error("OPENROUTER_API_KEY is not configured.");
+      }
+
+      // Prepare Prompt
+      const bootstrapPromptPath = join(
+        process.cwd(),
+        "src/agent/prompts/bootstrap.md"
       );
+      let bootstrapPrompt = "";
+      try {
+        bootstrapPrompt = await readFile(bootstrapPromptPath, "utf-8");
+      } catch (e) {
+        console.warn(
+          `[skyhook] Failed to load bootstrap prompt from ${bootstrapPromptPath}`,
+          e
+        );
+      }
+
+      const combinedPrompt = `${bootstrapPrompt}\n\n# User Request\n${prompt}`;
+
+      runResult = await runGooseAgent({
+        containerId: sandbox.sandboxId,
+        prompt: combinedPrompt,
+        openRouterApiKey: apiKey,
+        model,
+        workdir: "/app/workspace",
+      });
+
+      // Upload logs to MinIO/S3
+      logsUrl = await uploadAgentLogs({
+        agentRunId,
+        projectId: resolvedAppId,
+        stdout: runResult.stdout,
+        stderr: runResult.stderr,
+      });
+
+      if (runResult.exitCode === 0) {
+        // #region 7 — Save Snapshot
+        // 7. Save Snapshot
+        await updateRunStep(agentRunId, "saving_snapshot");
+        const tar = spawn("tar", ["-czf", "-", "-C", workspacePath, "."]);
+
+        // We don't await the tar process exit explicitly, the stream consumption by S3 should handle it?
+        // But it's safer to handle errors.
+        tar.stderr.on("data", (d) => console.error(`[skyhook] tar stderr: ${d}`));
+
+        const snapshot = await saveSnapshot({
+          appId: resolvedAppId,
+          runId: agentRunId,
+          body: tar.stdout,
+        });
+        snapshotUrl = snapshot.url;
+        // #endregion 7 — Save Snapshot
+      }
+    } else {
+      await updateRunStep(agentRunId, "building_bundle");
+      runResult = await execInSandbox({
+        containerId: sandbox.sandboxId,
+        cmd: ["sh", "-lc", "yarn install && yarn build"],
+        workdir: "/app/workspace",
+      });
     }
-
-    const combinedPrompt = `${bootstrapPrompt}\n\n# User Request\n${prompt}`;
-
-    const runResult = await runGooseAgent({
-      containerId: sandbox.sandboxId,
-      prompt: combinedPrompt,
-      openRouterApiKey: apiKey,
-      model,
-      workdir: "/app/workspace",
-    });
-
-    // Upload logs to MinIO/S3
-    const logsUrl = await uploadAgentLogs({
-      agentRunId,
-      projectId: resolvedAppId,
-      stdout: runResult.stdout,
-      stderr: runResult.stderr,
-    });
 
     const succeeded = runResult.exitCode === 0;
-
-    let snapshotUrl: string | undefined;
-    if (succeeded) {
-      // #region 7 — Save Snapshot
-      // 7. Save Snapshot
-      await updateRunStep(agentRunId, "saving_snapshot");
-      const tar = spawn("tar", ["-czf", "-", "-C", workspacePath, "."]);
-
-      // We don't await the tar process exit explicitly, the stream consumption by S3 should handle it?
-      // But it's safer to handle errors.
-      tar.stderr.on("data", (d) => console.error(`[skyhook] tar stderr: ${d}`));
-
-      const snapshot = await saveSnapshot({
-        appId: resolvedAppId,
-        runId: agentRunId,
-        body: tar.stdout,
-      });
-      snapshotUrl = snapshot.url;
-      // #endregion 7 — Save Snapshot
-    }
+    const runnerCommand = runAgent
+      ? "goose run ..."
+      : "yarn install && yarn build";
+    const runnerName = runAgent ? "goose" : "yarn-build";
+    const runnerMessage = runAgent
+      ? succeeded
+        ? "Goose agent completed successfully."
+        : "Goose agent failed."
+      : succeeded
+        ? "Build completed successfully."
+        : "Build failed.";
 
     // #region 8 — Update DB & Return
     // 8. Update DB & Return
@@ -208,19 +243,21 @@ export const createAppHandler = async (c: Context) => {
         status: succeeded ? "succeeded" : "failed",
         currentStep: "completed",
         sandboxId: sandbox.sandboxId,
-        runner: "goose",
+        runner: runnerName,
         workspacePath,
         artifactsPath: sharedArtifactsRoot,
         startedAt: new Date(),
         completedAt: new Date(),
-        runnerCommand: "goose run ...",
+        runnerCommand,
         runnerExitCode: runResult.exitCode,
         runnerStdout: runResult.stdout,
         runnerStderr: runResult.stderr,
         runnerLogsUrl: logsUrl,
         errorMessage: succeeded
           ? null
-          : `Goose exited with code ${runResult.exitCode}`,
+          : runAgent
+            ? `Goose exited with code ${runResult.exitCode}`
+            : `Build exited with code ${runResult.exitCode}`,
       })
       .where(eq(agentRuns.id, agentRunId));
 
@@ -228,7 +265,11 @@ export const createAppHandler = async (c: Context) => {
       .update(generationRequests)
       .set({
         status: succeeded ? "succeeded" : "failed",
-        errorMessage: succeeded ? null : `agent run failed (id=${agentRunId})`,
+        errorMessage: succeeded
+          ? null
+          : runAgent
+            ? `agent run failed (id=${agentRunId})`
+            : `build failed (id=${agentRunId})`,
       })
       .where(eq(generationRequests.id, requestId));
 
@@ -238,9 +279,7 @@ export const createAppHandler = async (c: Context) => {
         agentRunId,
         status: succeeded ? "succeeded" : "failed",
         step: "completed",
-        message: succeeded
-          ? "Goose agent completed successfully."
-          : "Goose agent failed.",
+        message: runnerMessage,
         prompt,
         appId: resolvedAppId,
         workspacePath,

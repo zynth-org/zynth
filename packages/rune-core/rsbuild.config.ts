@@ -7,6 +7,7 @@ export default defineConfig({
   source: {
     entry: {
       index: "./src/index.ts",
+      universal: "./src/universal.ts",
     },
   },
   dev: {
@@ -43,7 +44,7 @@ export default defineConfig({
       js: ".",
     },
     filename: {
-      js: "index.js",
+      js: "[name].js",
     },
     legalComments: "none",
     minify: false,

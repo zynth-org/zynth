@@ -1,0 +1,32 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    bash \
+    bzip2 \
+    git \
+    libxcb1 \
+    libxkbcommon-x11-0 \
+    xvfb \
+    libasound2t64 \
+    libgbm1 \
+    libnss3 \
+    libnspr4 \
+  && rm -rf /var/lib/apt/lists/*
+
+# Install Node.js (includes Corepack).
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends nodejs \
+  && rm -rf /var/lib/apt/lists/*
+
+# Install Yarn Classic to match local tooling.
+RUN npm install -g yarn@1.22.22
+
+# Install Goose once in the image.
+RUN curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | CONFIGURE=false bash
+
+ENV PATH="/root/.local/bin:${PATH}"
