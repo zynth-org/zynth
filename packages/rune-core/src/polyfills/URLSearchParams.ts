@@ -10,7 +10,7 @@
 
 // Small subset from whatwg-url: https://github.com/jsdom/whatwg-url/tree/master/src
 // The reference code bloat comes from Unicode issues with URLs, so those won't work here.
-export class URLSearchParams {
+const URLSearchParams = class URLSearchParamsPolyfill {
   _searchParams: Map<string, string[]> = new Map();
 
   get size(): number {
@@ -76,12 +76,14 @@ export class URLSearchParams {
     this._searchParams.set(name, [value]);
   }
 
-  keys(): Iterator<string> {
+  keys(): IterableIterator<string> {
     return this._searchParams.keys();
   }
 
-  values(): Iterator<string> {
-    function* generateValues(params: Map<string, string[]>): Iterator<string> {
+  values(): IterableIterator<string> {
+    function* generateValues(
+      params: Map<string, string[]>,
+    ): IterableIterator<string> {
       for (const valueArray of params.values()) {
         for (const value of valueArray) {
           yield value;
@@ -91,10 +93,10 @@ export class URLSearchParams {
     return generateValues(this._searchParams);
   }
 
-  entries(): Iterator<[string, string]> {
+  entries(): IterableIterator<[string, string]> {
     function* generateEntries(
       params: Map<string, string[]>,
-    ): Iterator<[string, string]> {
+    ): IterableIterator<[string, string]> {
       for (const [key, values] of params) {
         for (const value of values) {
           yield [key, value];
@@ -122,7 +124,7 @@ export class URLSearchParams {
   }
 
   // $FlowFixMe[unsupported-syntax]
-  [Symbol.iterator](): Iterator<[string, string]> {
+  [Symbol.iterator](): IterableIterator<[string, string]> {
     const entries: [string, string][] = [];
 
     for (const [key, values] of this._searchParams) {
@@ -148,7 +150,7 @@ export class URLSearchParams {
       )
       .join('&');
   }
-}
+};
 
 const globalObject =
   typeof globalThis !== "undefined"
@@ -163,3 +165,5 @@ if (globalObject && !globalObject.URLSearchParams) {
   console.log("[RuneCore] Polyfilling URLSearchParams");
   globalObject.URLSearchParams = URLSearchParams;
 }
+
+export { URLSearchParams };

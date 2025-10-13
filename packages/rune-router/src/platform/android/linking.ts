@@ -1,3 +1,4 @@
+import { URLSearchParams } from "@rune/core";
 import type { LinkingOptions, LinkingRouteConfig, NavigationState } from "../ios/core/types";
 import { dispatchNavigationAction } from "./nativeBridge";
 

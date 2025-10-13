@@ -33,7 +33,7 @@
   },
   "scripts": {
     "build": "yarn build:js && yarn build:types",
-    "build:js": "tsc --project tsconfig.esm.json",
+    "build:js": "rm -rf dist/esm && tsc --project tsconfig.esm.json",
     "build:types": "tsc --project tsconfig.types.json"
   }
 }

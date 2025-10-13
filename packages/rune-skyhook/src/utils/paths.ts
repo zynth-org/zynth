@@ -27,7 +27,13 @@ export async function findMonorepoRoot(
 
 export async function getTemplateDir(templateName: "app") {
   const root = await findMonorepoRoot();
-  return join(root, "packages", "rune-templates", templateName);
+  const skyhookTemplate = join(root, "packages", "rune-skyhook", "src", "templates", "basic");
+  try {
+    await stat(skyhookTemplate);
+    return skyhookTemplate;
+  } catch {
+    return join(root, "packages", "rune-templates", templateName);
+  }
 }
 
 export async function getPackageDir(packageName: string) {

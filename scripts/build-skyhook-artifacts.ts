@@ -98,6 +98,17 @@ async function buildArtifacts() {
     await mkdir(targetDir, { recursive: true });
     await cp(distDir, join(targetDir, "dist"), { recursive: true });
 
+    const srcDir = join(pkgDir, "src");
+    try {
+      const srcStat = await stat(srcDir);
+      if (srcStat.isDirectory()) {
+        await cp(srcDir, join(targetDir, "src"), { recursive: true });
+        await cp(srcDir, join(targetDir, "dist", "source"), { recursive: true });
+      }
+    } catch {
+      // No src directory; skip.
+    }
+
     const rewritten = rewriteInternalDeps(pkgJson, folderNamesByPackage);
     await writeFile(
       join(targetDir, "package.json"),

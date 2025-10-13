@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readFile, writeFile, mkdir } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
@@ -13,12 +13,12 @@ import {
 } from "../services/provisioning.js";
 import { uploadAgentLogs } from "../services/logs.js";
 import { runGooseAgent } from "../agent/goose-runner.js";
-import { saveSnapshot } from "../storage/snapshots.js";
 import { generateRequestSchema } from "../schemas/generate.js";
 import type { GenerateRequest } from "../types/generate.js";
 import { formatIssues, validate } from "../validation/valibot.js";
 import { provisionDockerSandbox } from "../utils/docker-sandbox.js";
-import { execInSandbox } from "../utils/docker-exec.js";
+import { runWorkspaceBuild } from "../dockport/build-runner.js";
+import { saveBundle } from "../storage/bundles.js";
 
 export const createAppHandler = async (c: Context) => {
   // #region 1 — Validation
@@ -72,6 +72,7 @@ export const createAppHandler = async (c: Context) => {
 
     // #region 3 — Workspace Preparation
     // 3. Workspace Preparation
+    console.log(`[skyhook] [${agentRunId}] Preparing workspace`);
     await updateRunStep(agentRunId, "provisioning_workspace");
     const workspaceRoot =
       process.env.SKYHOOK_WORKSPACES_DIR ??
@@ -93,6 +94,7 @@ export const createAppHandler = async (c: Context) => {
 
     // #region 4 — Artifacts Preparation
     // 4. Artifacts Preparation
+    console.log(`[skyhook] [${agentRunId}] Preparing artifacts`);
     await updateRunStep(agentRunId, "provisioning_artifacts");
     const stagedArtifacts = await ensureSharedArtifacts();
 
@@ -139,101 +141,156 @@ export const createAppHandler = async (c: Context) => {
 
     // #region 5 — Docker Provisioning
     // 5. Docker Provisioning
+    console.log(`[skyhook] [${agentRunId}] Provisioning agent sandbox`);
     await updateRunStep(agentRunId, "provisioning_sandbox");
     const sandbox = await provisionDockerSandbox({
       agentRunId,
       workspacePath,
-      artifactsPath: sharedArtifactsRoot,
     });
 
     // #endregion 5 — Docker Provisioning
 
     // #region 6 — Run Goose Agent (disabled) / Build Bundle
     // 6. Run Goose Agent (set to true to re-enable)
-    const runAgent = false;
-    let runResult: { exitCode: number; stdout: string; stderr: string };
+    const runAgent = process.env.SKYHOOK_RUN_AGENT === "true";
+    const maxRetries = Math.max(
+      0,
+      Number.parseInt(process.env.SKYHOOK_BUILD_RETRIES ?? "5", 10) || 5
+    );
+    let runResult: { exitCode: number; stdout: string; stderr: string } | null =
+      null;
     let logsUrl: string | undefined;
     let snapshotUrl: string | undefined;
+    let buildResult: { exitCode: number; stdout: string; stderr: string } | null =
+      null;
+    let bundleUrl: string | undefined;
+    let attempt = 0;
 
-    if (runAgent) {
-      await updateRunStep(agentRunId, "running_agent");
-      const apiKey = process.env.OPENROUTER_API_KEY;
-      if (!apiKey) {
-        throw new Error("OPENROUTER_API_KEY is not configured.");
-      }
-
-      // Prepare Prompt
-      const bootstrapPromptPath = join(
-        process.cwd(),
-        "src/agent/prompts/bootstrap.md"
+    const bootstrapPromptPath = join(
+      process.cwd(),
+      "src/agent/prompts/bootstrap.md"
+    );
+    let bootstrapPrompt = "";
+    try {
+      bootstrapPrompt = await readFile(bootstrapPromptPath, "utf-8");
+    } catch (e) {
+      console.warn(
+        `[skyhook] Failed to load bootstrap prompt from ${bootstrapPromptPath}`,
+        e
       );
-      let bootstrapPrompt = "";
-      try {
-        bootstrapPrompt = await readFile(bootstrapPromptPath, "utf-8");
-      } catch (e) {
-        console.warn(
-          `[skyhook] Failed to load bootstrap prompt from ${bootstrapPromptPath}`,
-          e
+    }
+
+    while (true) {
+      if (runAgent) {
+        console.log(
+          `[skyhook] [${agentRunId}] Running agent (attempt ${attempt + 1}/${maxRetries + 1})`
         );
+        await updateRunStep(
+          agentRunId,
+          attempt === 0 ? "running_agent" : "retrying_agent"
+        );
+        const apiKey = process.env.OPENROUTER_API_KEY;
+        if (!apiKey) {
+          throw new Error("OPENROUTER_API_KEY is not configured.");
+        }
+
+        const errorContext =
+          attempt > 0 && buildResult
+            ? `\n\n# Build Failed\nExit code: ${buildResult.exitCode}\n\nSTDOUT:\n${buildResult.stdout}\n\nSTDERR:\n${buildResult.stderr}`
+            : "";
+        const combinedPrompt = `${bootstrapPrompt}\n\n# User Request\n${prompt}${errorContext}`;
+
+        runResult = await runGooseAgent({
+          containerId: sandbox.sandboxId,
+          prompt: combinedPrompt,
+          openRouterApiKey: apiKey,
+          model,
+          workdir: "/app/workspace",
+        });
+        console.log(
+          `[skyhook] [${agentRunId}] Agent finished with exit code ${runResult.exitCode}`
+        );
+
+        logsUrl = await uploadAgentLogs({
+          agentRunId,
+          projectId: resolvedAppId,
+          stdout: runResult.stdout,
+          stderr: runResult.stderr,
+        });
+
+        if (runResult.exitCode !== 0) {
+          break;
+        }
       }
 
-      const combinedPrompt = `${bootstrapPrompt}\n\n# User Request\n${prompt}`;
-
-      runResult = await runGooseAgent({
-        containerId: sandbox.sandboxId,
-        prompt: combinedPrompt,
-        openRouterApiKey: apiKey,
-        model,
-        workdir: "/app/workspace",
+      await updateRunStep(agentRunId, "building_bundle");
+      console.log(`[skyhook] [${agentRunId}] Starting build container`);
+      buildResult = await runWorkspaceBuild({
+        appId: resolvedAppId,
+        runId: agentRunId,
+        workspacePath,
+        artifactsPath: sharedArtifactsRoot,
+        mode: "build",
       });
+      console.log(
+        `[skyhook] [${agentRunId}] Build finished with exit code ${buildResult.exitCode}`
+      );
 
-      // Upload logs to MinIO/S3
-      logsUrl = await uploadAgentLogs({
-        agentRunId,
-        projectId: resolvedAppId,
-        stdout: runResult.stdout,
-        stderr: runResult.stderr,
-      });
-
-      if (runResult.exitCode === 0) {
-        // #region 7 — Save Snapshot
-        // 7. Save Snapshot
-        await updateRunStep(agentRunId, "saving_snapshot");
-        const tar = spawn("tar", ["-czf", "-", "-C", workspacePath, "."]);
-
-        // We don't await the tar process exit explicitly, the stream consumption by S3 should handle it?
-        // But it's safer to handle errors.
+      if (buildResult.exitCode === 0) {
+        await updateRunStep(agentRunId, "saving_bundle");
+        const tar = spawn("tar", [
+          "-czf",
+          "-",
+          "-C",
+          join(workspacePath, "dist"),
+          ".",
+        ]);
         tar.stderr.on("data", (d) => console.error(`[skyhook] tar stderr: ${d}`));
 
-        const snapshot = await saveSnapshot({
+        const bundle = await saveBundle({
           appId: resolvedAppId,
           runId: agentRunId,
           body: tar.stdout,
         });
-        snapshotUrl = snapshot.url;
-        // #endregion 7 — Save Snapshot
+        bundleUrl = bundle.url;
+        console.log(
+          `[skyhook] [${agentRunId}] Bundle uploaded${bundleUrl ? `: ${bundleUrl}` : ""}`
+        );
+        break;
       }
-    } else {
-      await updateRunStep(agentRunId, "building_bundle");
-      runResult = await execInSandbox({
-        containerId: sandbox.sandboxId,
-        cmd: ["sh", "-lc", "yarn install && yarn build"],
-        workdir: "/app/workspace",
+
+      if (!runAgent || attempt >= maxRetries) {
+        break;
+      }
+
+      attempt += 1;
+      console.log(
+        `[skyhook] [${agentRunId}] Build failed, retrying agent (attempt ${attempt + 1}/${maxRetries + 1})`
+      );
+      await rm(join(workspacePath, "node_modules"), {
+        recursive: true,
+        force: true,
       });
     }
 
-    const succeeded = runResult.exitCode === 0;
-    const runnerCommand = runAgent
-      ? "goose run ..."
-      : "yarn install && yarn build";
-    const runnerName = runAgent ? "goose" : "yarn-build";
-    const runnerMessage = runAgent
-      ? succeeded
-        ? "Goose agent completed successfully."
-        : "Goose agent failed."
-      : succeeded
+    const primaryResult = buildResult ?? runResult;
+    if (!primaryResult) {
+      throw new Error("[skyhook] Build runner did not produce a result.");
+    }
+    const succeeded =
+      (runAgent ? runResult?.exitCode === 0 : true) &&
+      (buildResult ? buildResult.exitCode === 0 : runAgent);
+    const runnerCommand = buildResult
+      ? "yarn install && yarn build"
+      : "goose run ...";
+    const runnerName = buildResult ? "build-container" : "goose";
+    const runnerMessage = buildResult
+      ? buildResult.exitCode === 0
         ? "Build completed successfully."
-        : "Build failed.";
+        : "Build failed."
+      : runResult?.exitCode === 0
+        ? "Goose agent completed successfully."
+        : "Goose agent failed.";
 
     // #region 8 — Update DB & Return
     // 8. Update DB & Return
@@ -249,15 +306,15 @@ export const createAppHandler = async (c: Context) => {
         startedAt: new Date(),
         completedAt: new Date(),
         runnerCommand,
-        runnerExitCode: runResult.exitCode,
-        runnerStdout: runResult.stdout,
-        runnerStderr: runResult.stderr,
+        runnerExitCode: primaryResult.exitCode,
+        runnerStdout: primaryResult.stdout,
+        runnerStderr: primaryResult.stderr,
         runnerLogsUrl: logsUrl,
         errorMessage: succeeded
           ? null
-          : runAgent
-            ? `Goose exited with code ${runResult.exitCode}`
-            : `Build exited with code ${runResult.exitCode}`,
+          : buildResult
+            ? `Build exited with code ${primaryResult.exitCode}`
+            : `Goose exited with code ${primaryResult.exitCode}`,
       })
       .where(eq(agentRuns.id, agentRunId));
 
@@ -267,9 +324,9 @@ export const createAppHandler = async (c: Context) => {
         status: succeeded ? "succeeded" : "failed",
         errorMessage: succeeded
           ? null
-          : runAgent
-            ? `agent run failed (id=${agentRunId})`
-            : `build failed (id=${agentRunId})`,
+          : buildResult
+            ? `build failed (id=${agentRunId})`
+            : `agent run failed (id=${agentRunId})`,
       })
       .where(eq(generationRequests.id, requestId));
 
@@ -287,10 +344,11 @@ export const createAppHandler = async (c: Context) => {
         artifactsMountPath: sandbox.artifactsMountPath,
         snapshotUrl,
         runner: {
-          stdout: runResult.stdout,
-          stderr: runResult.stderr,
-          exitCode: runResult.exitCode,
+          stdout: primaryResult.stdout,
+          stderr: primaryResult.stderr,
+          exitCode: primaryResult.exitCode,
         },
+        bundleUrl,
       },
       succeeded ? 200 : 500
     );

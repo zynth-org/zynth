@@ -3,7 +3,12 @@ export * from "./renderer";
 export * from "./host/HostTypes";
 export { createIOSHost } from "./host/ios";
 export { createAndroidHost } from "./host/android";
-export * from "./nativeEmitter";
+export {
+  NativeEventEmitter,
+  ensureNativeEmitter,
+  sharedNativeEventEmitter,
+} from "./nativeEmitter";
+export { URLSearchParams } from "./polyfills/URLSearchParams";
 export { start } from "./start";
 export * from "./hmr";
 export { setActiveSurface, getActiveSurface } from "./surface";

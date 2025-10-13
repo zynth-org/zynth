@@ -8,7 +8,11 @@
     "declaration": false,
     "emitDeclarationOnly": false,
     "strict": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "solid-js"
   },
-  "include": ["src"]
+  "include": [
+    "src"
+  ]
 }
