@@ -1,4 +1,6 @@
 import "./polyfills/URLSearchParams";
+import "./polyfills/TextEncoding";
+import "./polyfills/fetch";
 export * from "./renderer";
 export * from "./host/HostTypes";
 export { createIOSHost } from "./host/ios";
@@ -9,6 +11,8 @@ export {
   sharedNativeEventEmitter,
 } from "./nativeEmitter";
 export { URLSearchParams } from "./polyfills/URLSearchParams";
+export { TextEncoder, TextDecoder } from "./polyfills/TextEncoding";
+export { fetch, Headers, Request, Response } from "./polyfills/fetch";
 export { start } from "./start";
 export * from "./hmr";
 export { setActiveSurface, getActiveSurface } from "./surface";

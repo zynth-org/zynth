@@ -1,0 +1,115 @@
+package com.rune.kit.runtime.modules
+
+import com.rune.kit.runtime.RuneModule
+import java.nio.ByteBuffer
+import java.util.concurrent.TimeUnit
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
+
+class FetchModule : RuneModule {
+    override val name: String = "Fetch"
+
+    private val client = OkHttpClient.Builder().build()
+
+    override fun call(method: String, args: Array<Any?>): JSONObject {
+        return when (method) {
+            "request" -> handleRequest(args.firstOrNull())
+            else -> errorResponse("unknown_method", method)
+        }
+    }
+
+    private fun handleRequest(payload: Any?): JSONObject {
+        val map = payload as? Map<*, *> ?: return errorResponse("invalid_arguments")
+        val url = map["url"]?.toString()?.takeIf { it.isNotBlank() }
+            ?: return errorResponse("invalid_url")
+
+        val method = map["method"]?.toString()?.uppercase() ?: "GET"
+        val headers = map["headers"] as? Map<*, *>
+        val timeoutSeconds = (map["timeout"] as? Number)?.toDouble() ?: 0.0
+
+        val builder = Request.Builder().url(url)
+        if (headers != null) {
+            for ((key, value) in headers) {
+                if (key != null && value != null) {
+                    builder.header(key.toString(), value.toString())
+                }
+            }
+        }
+
+        val body = map["body"]
+        if (body != null) {
+            val mediaType = headers?.get("Content-Type")?.toString()?.toMediaTypeOrNull()
+            val bytes = coerceBodyBytes(body)
+            if (bytes != null) {
+                builder.method(method, bytes.toRequestBody(mediaType))
+            } else if (body is String) {
+                val stringType = mediaType ?: "text/plain; charset=utf-8".toMediaTypeOrNull()
+                builder.method(method, body.toRequestBody(stringType))
+            } else {
+                return errorResponse("unsupported_body", body::class.java.name)
+            }
+        } else {
+            builder.method(method, if (method == "GET" || method == "HEAD") null else ByteArray(0).toRequestBody())
+        }
+
+        val callClient = if (timeoutSeconds > 0) {
+            client.newBuilder()
+                .callTimeout((timeoutSeconds * 1000.0).toLong(), TimeUnit.MILLISECONDS)
+                .build()
+        } else {
+            client
+        }
+
+        return try {
+            callClient.newCall(builder.build()).execute().use { response ->
+                val bodyBytes = response.body?.bytes() ?: ByteArray(0)
+                val headerMap = mutableMapOf<String, String>()
+                for (name in response.headers.names()) {
+                    val values = response.headers.values(name)
+                    headerMap[name] = values.joinToString(", ")
+                }
+                val result = JSONObject()
+                    .put("status", response.code)
+                    .put("statusText", response.message)
+                    .put("ok", response.isSuccessful)
+                    .put("url", response.request.url.toString())
+                    .put("redirected", response.priorResponse != null)
+                    .put("headers", JSONObject(headerMap))
+                    .put("body", bodyBytes)
+                JSONObject().put("result", result)
+            }
+        } catch (t: Throwable) {
+            errorResponse("network_error", t.message ?: "unknown")
+        }
+    }
+
+    private fun errorResponse(error: String, message: String? = null): JSONObject {
+        val obj = JSONObject().put("error", error)
+        if (message != null) obj.put("message", message)
+        return obj
+    }
+
+    private fun coerceBodyBytes(body: Any): ByteArray? {
+        return when (body) {
+            is ByteArray -> body
+            is ByteBuffer -> {
+                val duplicate = body.slice()
+                val bytes = ByteArray(duplicate.remaining())
+                duplicate.get(bytes)
+                bytes
+            }
+            is List<*> -> {
+                val bytes = ByteArray(body.size)
+                for (i in body.indices) {
+                    val value = body[i] as? Number ?: return null
+                    bytes[i] = value.toInt().toByte()
+                }
+                bytes
+            }
+            else -> null
+        }
+    }
+}

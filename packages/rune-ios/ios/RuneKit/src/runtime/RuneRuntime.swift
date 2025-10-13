@@ -99,6 +99,7 @@ public final class RuneRuntime: NSObject {
       RuneEnvModule(),
       RuneDeviceModule(),
       PerformanceModule(),
+      FetchModule(),
       RuneDimensionsModule(runtime: self, rootView: rootView),
     ])
 
