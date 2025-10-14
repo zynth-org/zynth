@@ -1,4 +1,5 @@
 import type { Headers } from "./Headers";
+import type { AbortSignal } from "../AbortController";
 
 export type HeaderInit =
   | Record<string, string>
@@ -10,6 +11,7 @@ export type RequestInit = {
   headers?: HeaderInit;
   body?: BodyInit;
   timeout?: number;
+  signal?: AbortSignal;
 };
 
 export type BodyInit = string | ArrayBuffer | Uint8Array | null | undefined;
@@ -21,7 +23,8 @@ export type FetchResult = {
   url: string;
   redirected: boolean;
   headers: Record<string, string>;
-  body: ArrayBuffer;
+  body?: ArrayBuffer;
+  streamId?: number;
 };
 
 export type FetchBridge = {
@@ -30,8 +33,10 @@ export type FetchBridge = {
 
 export type FetchPayload = {
   url: string;
+  requestId?: number;
   method?: string;
   headers?: Record<string, string>;
   body?: string | ArrayBuffer | Uint8Array | number[];
   timeout?: number;
+  stream?: boolean;
 };

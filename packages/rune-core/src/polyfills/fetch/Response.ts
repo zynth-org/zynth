@@ -2,6 +2,7 @@ import { Body } from "./Body";
 import { Headers } from "./Headers";
 
 export class Response extends Body {
+  readonly body: any | null;
   readonly status: number;
   readonly statusText: string;
   readonly ok: boolean;
@@ -18,9 +19,11 @@ export class Response extends Body {
       headers?: Record<string, string>;
       url: string;
       redirected: boolean;
-    }
+    },
+    stream?: any | null
   ) {
-    super(body ? new Uint8Array(body) : null);
+    super(body ? new Uint8Array(body) : null, stream ?? null);
+    this.body = stream ?? null;
     this.status = init.status;
     this.statusText = init.statusText;
     this.ok = init.ok;

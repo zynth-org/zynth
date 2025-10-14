@@ -2,9 +2,10 @@ import type { BodyInit } from "./types";
 
 export class Body {
   protected bodyBuffer: ArrayBuffer | null;
+  protected stream: any | null;
   bodyUsed: boolean = false;
 
-  constructor(body?: BodyInit) {
+  constructor(body?: BodyInit, stream?: any | null) {
     if (body == null) {
       this.bodyBuffer = null;
     } else if (typeof body === "string") {
@@ -18,11 +19,18 @@ export class Body {
     } else {
       this.bodyBuffer = null;
     }
+    this.stream = stream ?? null;
   }
 
   async arrayBuffer(): Promise<ArrayBuffer> {
     this.bodyUsed = true;
-    return this.bodyBuffer ? this.bodyBuffer.slice(0) : new ArrayBuffer(0);
+    if (this.bodyBuffer) {
+      return this.bodyBuffer.slice(0);
+    }
+    if (this.stream) {
+      return consumeStreamToArrayBuffer(this.stream);
+    }
+    return new ArrayBuffer(0);
   }
 
   async text(): Promise<string> {
@@ -34,4 +42,27 @@ export class Body {
     const text = await this.text();
     return JSON.parse(text);
   }
+}
+
+async function consumeStreamToArrayBuffer(stream: any): Promise<ArrayBuffer> {
+  if (!stream || typeof stream.getReader !== "function") {
+    return new ArrayBuffer(0);
+  }
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    const chunk = value instanceof Uint8Array ? value : new Uint8Array(value);
+    chunks.push(chunk);
+    total += chunk.byteLength;
+  }
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return merged.buffer;
 }

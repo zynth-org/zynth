@@ -1,6 +1,7 @@
 package com.rune.kit.runtime.modules
 
 import com.rune.kit.runtime.RuneModule
+import com.rune.kit.runtime.RuneRuntime
 import java.nio.ByteBuffer
 import java.util.concurrent.TimeUnit
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -9,26 +10,31 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 
-class FetchModule : RuneModule {
+class FetchModule(private val runtime: RuneRuntime) : RuneModule {
     override val name: String = "Fetch"
 
     private val client = OkHttpClient.Builder().build()
+    private val calls = java.util.concurrent.ConcurrentHashMap<Int, okhttp3.Call>()
 
     override fun call(method: String, args: Array<Any?>): JSONObject {
         return when (method) {
             "request" -> handleRequest(args.firstOrNull())
+            "cancel" -> handleCancel(args.firstOrNull())
             else -> errorResponse("unknown_method", method)
         }
     }
 
     private fun handleRequest(payload: Any?): JSONObject {
         val map = payload as? Map<*, *> ?: return errorResponse("invalid_arguments")
+        val requestId = (map["requestId"] as? Number)?.toInt()
+            ?: return errorResponse("missing_request_id")
         val url = map["url"]?.toString()?.takeIf { it.isNotBlank() }
             ?: return errorResponse("invalid_url")
 
         val method = map["method"]?.toString()?.uppercase() ?: "GET"
         val headers = map["headers"] as? Map<*, *>
         val timeoutSeconds = (map["timeout"] as? Number)?.toDouble() ?: 0.0
+        val wantsStream = map["stream"] as? Boolean ?: false
 
         val builder = Request.Builder().url(url)
         if (headers != null) {
@@ -64,8 +70,10 @@ class FetchModule : RuneModule {
         }
 
         return try {
-            callClient.newCall(builder.build()).execute().use { response ->
-                val bodyBytes = response.body?.bytes() ?: ByteArray(0)
+            val call = callClient.newCall(builder.build())
+            calls[requestId] = call
+            val response = call.execute()
+            if (wantsStream) {
                 val headerMap = mutableMapOf<String, String>()
                 for (name in response.headers.names()) {
                     val values = response.headers.values(name)
@@ -78,12 +86,82 @@ class FetchModule : RuneModule {
                     .put("url", response.request.url.toString())
                     .put("redirected", response.priorResponse != null)
                     .put("headers", JSONObject(headerMap))
-                    .put("body", bodyBytes)
+                    .put("streamId", requestId)
+                startStreamReader(requestId, requestId, response)
                 JSONObject().put("result", result)
+            } else {
+                response.use { closedResponse ->
+                    val bodyBytes = closedResponse.body?.bytes() ?: ByteArray(0)
+                    val headerMap = mutableMapOf<String, String>()
+                    for (name in closedResponse.headers.names()) {
+                        val values = closedResponse.headers.values(name)
+                        headerMap[name] = values.joinToString(", ")
+                    }
+                    val result = JSONObject()
+                        .put("status", closedResponse.code)
+                        .put("statusText", closedResponse.message)
+                        .put("ok", closedResponse.isSuccessful)
+                        .put("url", closedResponse.request.url.toString())
+                        .put("redirected", closedResponse.priorResponse != null)
+                        .put("headers", JSONObject(headerMap))
+                        .put("body", bodyBytes)
+                    JSONObject().put("result", result)
+                }
             }
         } catch (t: Throwable) {
-            errorResponse("network_error", t.message ?: "unknown")
+            if (t is java.io.IOException && (t.message?.contains("Canceled", true) == true)) {
+                errorResponse("aborted", "Request aborted")
+            } else {
+                errorResponse("network_error", t.message ?: "unknown")
+            }
+        } finally {
+            calls.remove(requestId)
         }
+    }
+
+    private fun handleCancel(payload: Any?): JSONObject {
+        val map = payload as? Map<*, *> ?: return errorResponse("invalid_arguments")
+        val requestId = (map["id"] as? Number)?.toInt()
+            ?: return errorResponse("missing_request_id")
+        calls.remove(requestId)?.cancel()
+        return JSONObject().put("result", true)
+    }
+
+    private fun startStreamReader(requestId: Int, streamId: Int, response: okhttp3.Response) {
+        val body = response.body
+        if (body == null) {
+            runtime.emitEvent(
+                "rune.fetch.stream",
+                mapOf("id" to streamId, "type" to "end"),
+            )
+            response.close()
+            calls.remove(requestId)
+            return
+        }
+        Thread {
+            val buffer = ByteArray(16 * 1024)
+            try {
+                val input = body.byteStream()
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count <= 0) break
+                    val chunk = buffer.copyOf(count)
+                    runtime.emitEvent(
+                        "rune.fetch.stream",
+                        mapOf("id" to streamId, "type" to "chunk", "chunk" to chunk),
+                    )
+                }
+                runtime.emitEvent("rune.fetch.stream", mapOf("id" to streamId, "type" to "end"))
+            } catch (t: Throwable) {
+                runtime.emitEvent(
+                    "rune.fetch.stream",
+                    mapOf("id" to streamId, "type" to "error", "message" to (t.message ?: "stream_error")),
+                )
+            } finally {
+                response.close()
+                calls.remove(requestId)
+            }
+        }.start()
     }
 
     private fun errorResponse(error: String, message: String? = null): JSONObject {

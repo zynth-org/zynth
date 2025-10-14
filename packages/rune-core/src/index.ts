@@ -1,5 +1,7 @@
 import "./polyfills/URLSearchParams";
 import "./polyfills/TextEncoding";
+import "./polyfills/AbortController";
+import "./polyfills/ReadableStream";
 import "./polyfills/fetch";
 export * from "./renderer";
 export * from "./host/HostTypes";
@@ -12,6 +14,8 @@ export {
 } from "./nativeEmitter";
 export { URLSearchParams } from "./polyfills/URLSearchParams";
 export { TextEncoder, TextDecoder } from "./polyfills/TextEncoding";
+export { AbortController, AbortSignal } from "./polyfills/AbortController";
+export { ReadableStream } from "./polyfills/ReadableStream";
 export { fetch, Headers, Request, Response } from "./polyfills/fetch";
 export { start } from "./start";
 export * from "./hmr";

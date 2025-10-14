@@ -111,7 +111,7 @@ class RuneRuntime(
       modulesToInstall.add(DimensionsModule(this, root))
     }
     if (!installedModules.containsKey("Fetch")) {
-      modulesToInstall.add(FetchModule())
+      modulesToInstall.add(FetchModule(this))
     }
     
     // Note: FontModule is installed by @rune/apis package via RuneAPIs.initialize()
