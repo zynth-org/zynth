@@ -2,7 +2,7 @@ import { Headers } from "./Headers";
 import { Request } from "./Request";
 import { Response } from "./Response";
 import { coerceBody, getGlobalObject } from "./utils";
-import type { FetchBridge, FetchPayload, RequestInit, FetchResult } from "./types";
+import type { FetchBridge, FetchPayload, RequestInit, FetchResult, BodyInit } from "./types";
 
 let nextRequestId = 1;
 
@@ -47,17 +47,28 @@ export async function fetch(
   }
 
   const supportsStream = typeof globalObject.ReadableStream === "function";
+  const rawBody = init?.body ?? request.getBodyForPayload();
+  const streamOverride = (init as any)?.stream;
+  const wantsStream =
+    supportsStream && (typeof streamOverride === "boolean" ? streamOverride : rawBody == null);
+  const headers = new Headers(request.headers);
   const payload: FetchPayload = {
     url: request.url,
     requestId,
     method: request.method,
-    headers: request.headers.toJSON(),
+    headers: headers.toJSON(),
     timeout: request.timeout,
-    stream: supportsStream,
+    stream: wantsStream,
   };
-  const body = coerceBody(init?.body ?? request.getBodyForPayload());
-  if (body !== undefined) {
-    payload.body = body;
+
+  const resolvedBody = await resolveBody(
+    rawBody,
+    headers,
+    globalObject
+  );
+  if (resolvedBody) {
+    payload.body = resolvedBody.body;
+    payload.headers = headers.toJSON();
   }
 
   let result: any;
@@ -85,7 +96,7 @@ export async function fetch(
     throw new Error("[fetch] Invalid native response");
   }
 
-  const stream = supportsStream && data.streamId
+  const stream = wantsStream && data.streamId
     ? createStreamFromEmitter(data.streamId, requestId, bridge, globalObject)
     : null;
 
@@ -133,4 +144,51 @@ function createStreamFromEmitter(
       } catch (_) {}
     },
   });
+}
+
+async function resolveBody(
+  body: BodyInit,
+  headers: Headers,
+  globalObject: any
+): Promise<{ body: FetchPayload["body"] } | null> {
+  if (body == null) {
+    return null;
+  }
+
+  const FormDataCtor = globalObject.FormData as any;
+  const BlobCtor = globalObject.Blob as any;
+  const URLSearchParamsCtor = globalObject.URLSearchParams as any;
+
+  if (FormDataCtor && body instanceof FormDataCtor) {
+    const payload = await (body as any).toPayload();
+    if (!headers.has("content-type")) {
+      headers.set("content-type", payload.contentType);
+    }
+    const buffer = payload.body.buffer.slice(0);
+    return { body: buffer };
+  }
+
+  if (URLSearchParamsCtor && body instanceof URLSearchParamsCtor) {
+    const encoded = (body as any).toString();
+    if (!headers.has("content-type")) {
+      headers.set("content-type", "application/x-www-form-urlencoded;charset=UTF-8");
+    }
+    return { body: encoded };
+  }
+
+  if (BlobCtor && body instanceof BlobCtor) {
+    const buffer = await (body as any).arrayBuffer();
+    const type = (body as any).type as string | undefined;
+    if (type && !headers.has("content-type")) {
+      headers.set("content-type", type);
+    }
+    return { body: buffer };
+  }
+
+  const raw = coerceBody(body);
+  if (raw !== undefined) {
+    return { body: raw };
+  }
+
+  return null;
 }

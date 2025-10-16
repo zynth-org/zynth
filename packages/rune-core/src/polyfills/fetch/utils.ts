@@ -17,6 +17,10 @@ export function coerceBody(body?: BodyInit): FetchPayload["body"] {
   if (body == null) return undefined;
   if (typeof body === "string") return body;
   if (body instanceof ArrayBuffer) return body;
-  if (body instanceof Uint8Array) return body;
+  if (body instanceof Uint8Array) {
+    const copy = new Uint8Array(body.byteLength);
+    copy.set(body);
+    return copy.buffer;
+  }
   return undefined;
 }

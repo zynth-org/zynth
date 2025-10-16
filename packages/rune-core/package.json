@@ -21,6 +21,8 @@
     "./src/polyfills/TextEncoding.ts",
     "./src/polyfills/AbortController.ts",
     "./src/polyfills/ReadableStream.ts",
+    "./src/polyfills/Blob.ts",
+    "./src/polyfills/FormData.ts",
     "./src/polyfills/fetch/index.ts",
     "./src/index.ts",
     "./dist/esm/index.js"

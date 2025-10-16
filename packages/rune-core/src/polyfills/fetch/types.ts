@@ -1,5 +1,7 @@
 import type { Headers } from "./Headers";
 import type { AbortSignal } from "../AbortController";
+import type { Blob } from "../Blob";
+import type { FormData } from "../FormData";
 
 export type HeaderInit =
   | Record<string, string>
@@ -14,7 +16,15 @@ export type RequestInit = {
   signal?: AbortSignal;
 };
 
-export type BodyInit = string | ArrayBuffer | Uint8Array | null | undefined;
+export type BodyInit =
+  | string
+  | ArrayBuffer
+  | Uint8Array
+  | Blob
+  | FormData
+  | URLSearchParams
+  | null
+  | undefined;
 
 export type FetchResult = {
   status: number;
