@@ -21,6 +21,8 @@ final class FetchModule: NSObject, RuneModule, URLSessionDataDelegate {
       return handleRequest(args: args)
     case "cancel":
       return handleCancel(args: args)
+    case "streamStart":
+      return handleStreamStart(args: args)
     default:
       return ["error": "unknown_method", "method": method]
     }
@@ -143,6 +145,25 @@ final class FetchModule: NSObject, RuneModule, URLSessionDataDelegate {
     return ["result": true]
   }
 
+  private func handleStreamStart(args: Any?) -> Any {
+    guard let payload = args as? [String: Any], let streamId = payload["id"] as? Int else {
+      return ["error": "invalid_arguments"]
+    }
+    taskQueue.sync {
+      for (id, state) in states where state.streamId == streamId {
+        var updated = state
+        updated.started = true
+        states[id] = updated
+        flushPending(state: updated)
+        if updated.pendingEnd || updated.pendingError != nil {
+          removeTaskUnsafe(id)
+        }
+        break
+      }
+    }
+    return ["result": true]
+  }
+
   private func storeTask(_ task: URLSessionDataTask, id: Int) {
     taskQueue.sync {
       tasks[id] = task
@@ -151,9 +172,13 @@ final class FetchModule: NSObject, RuneModule, URLSessionDataDelegate {
 
   private func removeTask(_ id: Int) {
     taskQueue.sync {
-      tasks.removeValue(forKey: id)
-      states.removeValue(forKey: id)
+      removeTaskUnsafe(id)
     }
+  }
+
+  private func removeTaskUnsafe(_ id: Int) {
+    tasks.removeValue(forKey: id)
+    states.removeValue(forKey: id)
   }
 }
 
@@ -164,6 +189,10 @@ private struct StreamState {
   let semaphore: DispatchSemaphore
   var result: [String: Any]?
   var error: [String: Any]?
+  var started: Bool
+  var pendingChunks: [Data]
+  var pendingEnd: Bool
+  var pendingError: String?
 }
 
 extension FetchModule {
@@ -175,7 +204,11 @@ extension FetchModule {
       urlString: urlString,
       semaphore: semaphore,
       result: nil,
-      error: nil
+      error: nil,
+      started: false,
+      pendingChunks: [],
+      pendingEnd: false,
+      pendingError: nil
     )
     taskQueue.sync {
       states[requestId] = state
@@ -240,12 +273,17 @@ extension FetchModule {
   func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
     taskQueue.sync {
       for (id, task) in tasks where task.taskIdentifier == dataTask.taskIdentifier {
-        if let state = states[id] {
-          emitEvent("rune.fetch.stream", [
-            "id": state.streamId,
-            "type": "chunk",
-            "chunk": data,
-          ])
+        if var state = states[id] {
+          if state.started {
+            emitEvent("rune.fetch.stream", [
+              "id": state.streamId,
+              "type": "chunk",
+              "chunk": data,
+            ])
+          } else {
+            state.pendingChunks.append(data)
+            states[id] = state
+          }
         }
         break
       }
@@ -262,11 +300,15 @@ extension FetchModule {
                 "error": "aborted",
                 "message": "Request aborted",
               ]
-              emitEvent("rune.fetch.stream", [
-                "id": state.streamId,
-                "type": "error",
-                "message": "Request aborted",
-              ])
+              if state.started {
+                emitEvent("rune.fetch.stream", [
+                  "id": state.streamId,
+                  "type": "error",
+                  "message": "Request aborted",
+                ])
+              } else {
+                state.pendingError = "Request aborted"
+              }
               state.semaphore.signal()
             } else if state.result == nil {
               state.error = [
@@ -275,26 +317,59 @@ extension FetchModule {
               ]
               state.semaphore.signal()
             } else {
-              emitEvent("rune.fetch.stream", [
-                "id": state.streamId,
-                "type": "error",
-                "message": error.localizedDescription,
-              ])
+              if state.started {
+                emitEvent("rune.fetch.stream", [
+                  "id": state.streamId,
+                  "type": "error",
+                  "message": error.localizedDescription,
+                ])
+              } else {
+                state.pendingError = error.localizedDescription
+              }
             }
           } else {
-            emitEvent("rune.fetch.stream", [
-              "id": state.streamId,
-              "type": "end",
-            ])
+            if state.started {
+              emitEvent("rune.fetch.stream", [
+                "id": state.streamId,
+                "type": "end",
+              ])
+            } else {
+              state.pendingEnd = true
+            }
           }
           states[id] = state
         }
-        if error == nil || states[id]?.result != nil {
-          tasks.removeValue(forKey: id)
-          states.removeValue(forKey: id)
+        if (error == nil || states[id]?.result != nil), states[id]?.started == true {
+          removeTaskUnsafe(id)
         }
         break
       }
+    }
+  }
+
+  private func flushPending(state: StreamState) {
+    if !state.pendingChunks.isEmpty {
+      for chunk in state.pendingChunks {
+        emitEvent("rune.fetch.stream", [
+          "id": state.streamId,
+          "type": "chunk",
+          "chunk": chunk,
+        ])
+      }
+    }
+    if let message = state.pendingError {
+      emitEvent("rune.fetch.stream", [
+        "id": state.streamId,
+        "type": "error",
+        "message": message,
+      ])
+      return
+    }
+    if state.pendingEnd {
+      emitEvent("rune.fetch.stream", [
+        "id": state.streamId,
+        "type": "end",
+      ])
     }
   }
 }

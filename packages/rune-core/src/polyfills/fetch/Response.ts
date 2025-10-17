@@ -2,7 +2,7 @@ import { Body } from "./Body";
 import { Headers } from "./Headers";
 
 export class Response extends Body {
-  readonly body: any | null;
+  body: any | null;
   readonly status: number;
   readonly statusText: string;
   readonly ok: boolean;
@@ -30,5 +30,36 @@ export class Response extends Body {
     this.headers = new Headers(init.headers);
     this.url = init.url;
     this.redirected = init.redirected;
+  }
+
+  clone(): Response {
+    if (this.bodyUsed) {
+      throw new TypeError("Cannot clone a Response after it is used");
+    }
+    if (this.hasStream()) {
+      const stream = this.body;
+      if (!stream || typeof stream.tee !== "function") {
+        throw new TypeError("Cannot clone a streaming Response body");
+      }
+      const [a, b] = stream.tee();
+      this.body = a;
+      this.setStream(a);
+      return new Response(null, {
+        status: this.status,
+        statusText: this.statusText,
+        ok: this.ok,
+        headers: this.headers.toJSON(),
+        url: this.url,
+        redirected: this.redirected,
+      }, b);
+    }
+    return new Response(this.cloneBuffer(), {
+      status: this.status,
+      statusText: this.statusText,
+      ok: this.ok,
+      headers: this.headers.toJSON(),
+      url: this.url,
+      redirected: this.redirected,
+    });
   }
 }

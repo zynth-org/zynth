@@ -14,6 +14,7 @@ export type RequestInit = {
   body?: BodyInit;
   timeout?: number;
   signal?: AbortSignal;
+  redirect?: "follow" | "error" | "manual";
 };
 
 export type BodyInit =

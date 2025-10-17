@@ -2,6 +2,8 @@ type ReadResult = { value?: any; done: boolean };
 
 declare const global: any;
 
+function debugLog(..._args: any[]): void {}
+
 type UnderlyingSource = {
   start?: (controller: ReadableStreamDefaultController) => void;
   pull?: (controller: ReadableStreamDefaultController) => void;
@@ -76,15 +78,18 @@ class ReadableStreamPolyfill {
     if (this.closed || this.errored) return;
     const pending = this.pending.shift();
     if (pending) {
+      debugLog("enqueue -> resolve pending");
       pending.resolve({ value: chunk, done: false });
       return;
     }
+    debugLog("enqueue -> queue");
     this.queue.push(chunk);
   }
 
   close(): void {
     if (this.closed || this.errored) return;
     this.closed = true;
+    debugLog("close");
     while (this.pending.length) {
       this.pending.shift()?.resolve({ done: true });
     }
@@ -104,11 +109,14 @@ class ReadableStreamPolyfill {
     }
     if (this.queue.length) {
       const value = this.queue.shift();
+      debugLog("read -> from queue");
       return Promise.resolve({ value, done: false });
     }
     if (this.closed) {
+      debugLog("read -> closed");
       return Promise.resolve({ done: true });
     }
+    debugLog("read -> pending");
     return new Promise((resolve, reject) => {
       this.pending.push({ resolve, reject });
       if (this.source?.pull) {
@@ -130,6 +138,86 @@ class ReadableStreamPolyfill {
       this.pending.shift()?.resolve({ done: true });
     }
     return Promise.resolve();
+  }
+
+  tee(): [ReadableStreamPolyfill, ReadableStreamPolyfill] {
+    debugLog("tee");
+    const reader = this.getReader();
+    const queueA: any[] = [];
+    const queueB: any[] = [];
+    let controllerA: ReadableStreamDefaultController | null = null;
+    let controllerB: ReadableStreamDefaultController | null = null;
+    let closed = false;
+    let reading = false;
+
+    const pump = () => {
+      if (reading || closed) return;
+      reading = true;
+      debugLog("tee pump -> read");
+      reader
+        .read()
+        .then(({ value, done }) => {
+          reading = false;
+          if (done) {
+            closed = true;
+            debugLog("tee pump -> done");
+            controllerA?.close();
+            controllerB?.close();
+            return;
+          }
+          debugLog("tee pump -> chunk");
+          if (controllerA) {
+            controllerA.enqueue(value);
+          } else {
+            queueA.push(value);
+          }
+          if (controllerB) {
+            controllerB.enqueue(value);
+          } else {
+            queueB.push(value);
+          }
+        })
+        .catch(() => {
+          reading = false;
+          closed = true;
+          debugLog("tee pump -> error");
+          controllerA?.error(new Error("ReadableStream tee error"));
+          controllerB?.error(new Error("ReadableStream tee error"));
+        });
+    };
+
+    const makeStream = (queue: any[], setController: (c: ReadableStreamDefaultController) => void) =>
+      new ReadableStreamPolyfill({
+        start(controller) {
+          setController(controller);
+          while (queue.length) {
+            controller.enqueue(queue.shift());
+          }
+        },
+        pull(controller) {
+          if (queue.length) {
+            controller.enqueue(queue.shift());
+            return;
+          }
+          if (closed) {
+            controller.close();
+            return;
+          }
+          pump();
+        },
+        cancel(reason) {
+          reader.cancel(reason);
+        },
+      });
+
+    return [
+      makeStream(queueA, controller => {
+        controllerA = controller;
+      }),
+      makeStream(queueB, controller => {
+        controllerB = controller;
+      }),
+    ];
   }
 }
 

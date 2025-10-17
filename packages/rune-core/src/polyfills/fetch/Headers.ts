@@ -70,6 +70,10 @@ export class Headers {
   [Symbol.iterator](): IterableIterator<[string, string]> {
     return this.entries();
   }
+
+  clone(): Headers {
+    return new Headers(this);
+  }
 }
 
 function normalizeHeaders(init?: HeaderInit): Record<string, string> {

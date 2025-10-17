@@ -2,7 +2,13 @@ import { Headers } from "./Headers";
 import { Request } from "./Request";
 import { Response } from "./Response";
 import { coerceBody, getGlobalObject } from "./utils";
-import type { FetchBridge, FetchPayload, RequestInit, FetchResult, BodyInit } from "./types";
+import type {
+  FetchBridge,
+  FetchPayload,
+  RequestInit,
+  FetchResult,
+  BodyInit,
+} from "./types";
 
 let nextRequestId = 1;
 
@@ -15,6 +21,12 @@ function createAbortError(): Error {
 function createStreamError(message: string): Error {
   const error = new Error(message);
   (error as any).name = "StreamError";
+  return error;
+}
+
+function createNetworkError(message: string): Error {
+  const error = new TypeError(message);
+  (error as any).name = "TypeError";
   return error;
 }
 
@@ -50,8 +62,10 @@ export async function fetch(
   const rawBody = init?.body ?? request.getBodyForPayload();
   const streamOverride = (init as any)?.stream;
   const wantsStream =
-    supportsStream && (typeof streamOverride === "boolean" ? streamOverride : rawBody == null);
+    supportsStream &&
+    (typeof streamOverride === "boolean" ? streamOverride : rawBody == null);
   const headers = new Headers(request.headers);
+  const redirectMode = init?.redirect ?? request.redirect ?? "follow";
   const payload: FetchPayload = {
     url: request.url,
     requestId,
@@ -61,11 +75,7 @@ export async function fetch(
     stream: wantsStream,
   };
 
-  const resolvedBody = await resolveBody(
-    rawBody,
-    headers,
-    globalObject
-  );
+  const resolvedBody = await resolveBody(rawBody, headers, globalObject);
   if (resolvedBody) {
     payload.body = resolvedBody.body;
     payload.headers = headers.toJSON();
@@ -85,7 +95,14 @@ export async function fetch(
       throw createAbortError();
     }
     const message = result.message ? `: ${result.message}` : "";
-    throw new Error(`[fetch] ${result.error}${message}`);
+    const code = `[fetch] ${result.error}${message}`;
+    if (
+      result.error === "network_error" ||
+      result.error === "invalid_response"
+    ) {
+      throw createNetworkError(code);
+    }
+    throw new Error(code);
   }
   if (aborted) {
     throw createAbortError();
@@ -96,18 +113,27 @@ export async function fetch(
     throw new Error("[fetch] Invalid native response");
   }
 
-  const stream = wantsStream && data.streamId
-    ? createStreamFromEmitter(data.streamId, requestId, bridge, globalObject)
-    : null;
+  if (redirectMode === "error" && data.redirected) {
+    throw createNetworkError("[fetch] Redirected response");
+  }
 
-  return new Response(data.body ?? null, {
-    status: data.status,
-    statusText: data.statusText,
-    ok: data.ok,
-    headers: data.headers,
-    url: data.url,
-    redirected: data.redirected,
-  }, stream);
+  const stream =
+    wantsStream && data.streamId
+      ? createStreamFromEmitter(data.streamId, requestId, bridge, globalObject)
+      : null;
+
+  return new Response(
+    data.body ?? null,
+    {
+      status: data.status,
+      statusText: data.statusText,
+      ok: data.ok,
+      headers: data.headers,
+      url: data.url,
+      redirected: data.redirected,
+    },
+    stream
+  );
 }
 
 export { Headers, Request, Response };
@@ -122,21 +148,34 @@ function createStreamFromEmitter(
   if (!emitter || typeof emitter.addListener !== "function") {
     throw createStreamError("Native event emitter not available");
   }
+  let started = false;
 
   return new globalObject.ReadableStream({
     start(controller: any) {
-      const subscription = emitter.addListener("rune.fetch.stream", (payload: any) => {
-        if (!payload || payload.id !== streamId) return;
-        if (payload.type === "chunk" && payload.chunk) {
-          controller.enqueue(new Uint8Array(payload.chunk));
-        } else if (payload.type === "end") {
-          subscription.remove();
-          controller.close();
-        } else if (payload.type === "error") {
-          subscription.remove();
-          controller.error(createStreamError(payload.message || "Stream error"));
+      const subscription = emitter.addListener(
+        "rune.fetch.stream",
+        (payload: any) => {
+          if (!payload || payload.id !== streamId) return;
+          if (payload.type === "chunk" && payload.chunk) {
+            controller.enqueue(new Uint8Array(payload.chunk));
+          } else if (payload.type === "end") {
+            subscription.remove();
+            controller.close();
+          } else if (payload.type === "error") {
+            subscription.remove();
+            controller.error(
+              createStreamError(payload.message || "Stream error")
+            );
+          }
         }
-      });
+      );
+    },
+    pull() {
+      if (started) return;
+      started = true;
+      try {
+        bridge.call("Fetch", "streamStart", { id: streamId, requestId });
+      } catch (_) {}
     },
     cancel() {
       try {
@@ -171,7 +210,10 @@ async function resolveBody(
   if (URLSearchParamsCtor && body instanceof URLSearchParamsCtor) {
     const encoded = (body as any).toString();
     if (!headers.has("content-type")) {
-      headers.set("content-type", "application/x-www-form-urlencoded;charset=UTF-8");
+      headers.set(
+        "content-type",
+        "application/x-www-form-urlencoded;charset=UTF-8"
+      );
     }
     return { body: encoded };
   }

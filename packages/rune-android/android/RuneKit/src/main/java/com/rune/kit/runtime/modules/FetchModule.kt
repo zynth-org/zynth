@@ -15,11 +15,16 @@ class FetchModule(private val runtime: RuneRuntime) : RuneModule {
 
     private val client = OkHttpClient.Builder().build()
     private val calls = java.util.concurrent.ConcurrentHashMap<Int, okhttp3.Call>()
+    private val pendingChunks = java.util.concurrent.ConcurrentHashMap<Int, MutableList<ByteArray>>()
+    private val pendingEnd = java.util.concurrent.ConcurrentHashMap<Int, Boolean>()
+    private val pendingError = java.util.concurrent.ConcurrentHashMap<Int, String>()
+    private val startedStreams = java.util.concurrent.ConcurrentHashMap<Int, Boolean>()
 
     override fun call(method: String, args: Array<Any?>): JSONObject {
         return when (method) {
             "request" -> handleRequest(args.firstOrNull())
             "cancel" -> handleCancel(args.firstOrNull())
+            "streamStart" -> handleStreamStart(args.firstOrNull())
             else -> errorResponse("unknown_method", method)
         }
     }
@@ -127,13 +132,19 @@ class FetchModule(private val runtime: RuneRuntime) : RuneModule {
         return JSONObject().put("result", true)
     }
 
+    private fun handleStreamStart(payload: Any?): JSONObject {
+        val map = payload as? Map<*, *> ?: return errorResponse("invalid_arguments")
+        val streamId = (map["id"] as? Number)?.toInt()
+            ?: return errorResponse("missing_request_id")
+        startedStreams[streamId] = true
+        flushPending(streamId)
+        return JSONObject().put("result", true)
+    }
+
     private fun startStreamReader(requestId: Int, streamId: Int, response: okhttp3.Response) {
         val body = response.body
         if (body == null) {
-            runtime.emitEvent(
-                "rune.fetch.stream",
-                mapOf("id" to streamId, "type" to "end"),
-            )
+            emitStream(streamId, mapOf("id" to streamId, "type" to "end"))
             response.close()
             calls.remove(requestId)
             return
@@ -146,15 +157,12 @@ class FetchModule(private val runtime: RuneRuntime) : RuneModule {
                     val count = input.read(buffer)
                     if (count <= 0) break
                     val chunk = buffer.copyOf(count)
-                    runtime.emitEvent(
-                        "rune.fetch.stream",
-                        mapOf("id" to streamId, "type" to "chunk", "chunk" to chunk),
-                    )
+                    emitStream(streamId, mapOf("id" to streamId, "type" to "chunk", "chunk" to chunk))
                 }
-                runtime.emitEvent("rune.fetch.stream", mapOf("id" to streamId, "type" to "end"))
+                emitStream(streamId, mapOf("id" to streamId, "type" to "end"))
             } catch (t: Throwable) {
-                runtime.emitEvent(
-                    "rune.fetch.stream",
+                emitStream(
+                    streamId,
                     mapOf("id" to streamId, "type" to "error", "message" to (t.message ?: "stream_error")),
                 )
             } finally {
@@ -162,6 +170,49 @@ class FetchModule(private val runtime: RuneRuntime) : RuneModule {
                 calls.remove(requestId)
             }
         }.start()
+    }
+
+    private fun emitStream(streamId: Int, payload: Map<String, Any>) {
+        if (startedStreams[streamId] == true) {
+            runtime.emitEvent("rune.fetch.stream", payload)
+            return
+        }
+        when (payload["type"]) {
+            "chunk" -> {
+                val list = pendingChunks.getOrPut(streamId) { mutableListOf() }
+                val chunk = payload["chunk"] as? ByteArray
+                if (chunk != null) {
+                    list.add(chunk)
+                }
+            }
+            "end" -> pendingEnd[streamId] = true
+            "error" -> {
+                val message = payload["message"]?.toString() ?: "stream_error"
+                pendingError[streamId] = message
+            }
+        }
+    }
+
+    private fun flushPending(streamId: Int) {
+        pendingChunks.remove(streamId)?.forEach { chunk ->
+            runtime.emitEvent(
+                "rune.fetch.stream",
+                mapOf("id" to streamId, "type" to "chunk", "chunk" to chunk),
+            )
+        }
+        pendingError.remove(streamId)?.let { message ->
+            runtime.emitEvent(
+                "rune.fetch.stream",
+                mapOf("id" to streamId, "type" to "error", "message" to message),
+            )
+            return
+        }
+        if (pendingEnd.remove(streamId) == true) {
+            runtime.emitEvent(
+                "rune.fetch.stream",
+                mapOf("id" to streamId, "type" to "end"),
+            )
+        }
     }
 
     private fun errorResponse(error: String, message: String? = null): JSONObject {

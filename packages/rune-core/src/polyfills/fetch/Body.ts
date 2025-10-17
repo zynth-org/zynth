@@ -23,6 +23,9 @@ export class Body {
   }
 
   async arrayBuffer(): Promise<ArrayBuffer> {
+    if (this.bodyUsed) {
+      throw new TypeError("Body has already been consumed");
+    }
     this.bodyUsed = true;
     if (this.bodyBuffer) {
       return this.bodyBuffer.slice(0);
@@ -41,6 +44,19 @@ export class Body {
   async json(): Promise<any> {
     const text = await this.text();
     return JSON.parse(text);
+  }
+
+  protected cloneBuffer(): ArrayBuffer | null {
+    if (!this.bodyBuffer) return null;
+    return this.bodyBuffer.slice(0);
+  }
+
+  protected hasStream(): boolean {
+    return Boolean(this.stream);
+  }
+
+  protected setStream(stream: any | null): void {
+    this.stream = stream ?? null;
   }
 }
 
