@@ -7,14 +7,16 @@ import android.util.Log
 import android.view.Choreographer
 import android.view.MotionEvent
 import android.view.View
+import android.view.View.OnLayoutChangeListener
 import android.view.View.MeasureSpec
 import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import androidx.core.widget.NestedScrollView
-import android.graphics.Outline
 import android.graphics.Color
+import android.graphics.Outline
+import android.graphics.Rect
 import android.view.ViewOutlineProvider
 import com.rune.kit.layout.Style
 import kotlin.math.abs
@@ -110,6 +112,14 @@ internal class RuneScrollView(
   private var snapPaddingTop = 0
   private var snapPaddingBottom = 0
   private var recyclerState: JSONObject? = null
+  private var contentUpdateScheduled = false
+  private val contentUpdateRunnable = Runnable {
+    contentUpdateScheduled = false
+    updateContentGeometry()
+  }
+  private val childLayoutListener = OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+    scheduleContentGeometryUpdate()
+  }
 
   fun setRecyclerState(value: Any?) {
     recyclerState = when (value) {
@@ -131,6 +141,8 @@ internal class RuneScrollView(
     isFocusable = false
     clipChildren = false
     clipToPadding = false
+    contentView.clipChildren = false
+    contentView.clipToPadding = false
 
     attachHost(verticalHost)
   }
@@ -177,6 +189,7 @@ internal class RuneScrollView(
 
     invalidate()
     requestLayout()
+    scheduleContentGeometryUpdate()
   }
 
   override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -194,6 +207,7 @@ internal class RuneScrollView(
     super.onLayout(changed, left, top, right, bottom)
     logState("onLayout changed=$changed frame=[$left,$top,$right,$bottom]")
     post { logState("postLayout") }
+    scheduleContentGeometryUpdate()
   }
 
   override fun addView(child: View?, index: Int, params: ViewGroup.LayoutParams?) {
@@ -203,6 +217,8 @@ internal class RuneScrollView(
       return
     }
     contentView.addView(child, index, params)
+    child.addOnLayoutChangeListener(childLayoutListener)
+    scheduleContentGeometryUpdate()
   }
 
   override fun removeView(view: View?) {
@@ -211,12 +227,17 @@ internal class RuneScrollView(
       super.removeView(view)
       return
     }
+    view.removeOnLayoutChangeListener(childLayoutListener)
     contentView.removeView(view)
+    scheduleContentGeometryUpdate()
   }
 
   override fun removeViewAt(index: Int) {
     if (index < 0 || index >= contentView.childCount) return
+    val child = contentView.getChildAt(index)
+    child?.removeOnLayoutChangeListener(childLayoutListener)
     contentView.removeViewAt(index)
+    scheduleContentGeometryUpdate()
   }
 
   fun setAxis(horizontal: Boolean) {
@@ -235,6 +256,7 @@ internal class RuneScrollView(
     if (snapEnabled) {
       scheduleSnapCheck(force = snapStrictness == "mandatory")
     }
+    scheduleContentGeometryUpdate()
   }
 
   fun setScrollEnabled(enabled: Boolean?) {
@@ -970,6 +992,60 @@ internal class RuneScrollView(
       "RuneScrollView",
       "[$label] node=$nodeId axis=$axis scrollY=${host.view.scrollY} hostH=${host.view.height} contentH=${contentView.height} children=${contentView.childCount} enabled=$scrollEnabled"
     )
+  }
+
+  private fun scheduleContentGeometryUpdate() {
+    if (contentUpdateScheduled) return
+    contentUpdateScheduled = true
+    post(contentUpdateRunnable)
+  }
+
+  private fun updateContentGeometry() {
+    val viewportWidth = if (width > 0) width else measuredWidth
+    val viewportHeight = if (height > 0) height else measuredHeight
+    if (viewportWidth <= 0 || viewportHeight <= 0) return
+
+    var contentWidth = viewportWidth
+    var contentHeight = viewportHeight
+    if (contentView.childCount > 0) {
+      val rect = Rect()
+      fun accumulate(view: View) {
+        rect.set(0, 0, view.width, view.height)
+        contentView.offsetDescendantRectToMyCoords(view, rect)
+        contentWidth = max(contentWidth, rect.right)
+        contentHeight = max(contentHeight, rect.bottom)
+        if (view is ViewGroup) {
+          for (i in 0 until view.childCount) {
+            accumulate(view.getChildAt(i))
+          }
+        }
+      }
+      for (i in 0 until contentView.childCount) {
+        accumulate(contentView.getChildAt(i))
+      }
+    }
+
+    if (axis == Axis.HORIZONTAL) {
+      contentHeight = max(contentHeight, viewportHeight)
+    } else {
+      contentWidth = max(contentWidth, viewportWidth)
+    }
+
+    val widthPx = contentWidth.coerceAtLeast(0)
+    val heightPx = contentHeight.coerceAtLeast(0)
+    val params = (contentView.layoutParams as? LayoutParams)
+      ?: LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
+    if (params.width != widthPx || params.height != heightPx) {
+      params.width = widthPx
+      params.height = heightPx
+      contentView.layoutParams = params
+    }
+    if (contentView.width != widthPx || contentView.height != heightPx) {
+      val widthSpec = MeasureSpec.makeMeasureSpec(widthPx, MeasureSpec.EXACTLY)
+      val heightSpec = MeasureSpec.makeMeasureSpec(heightPx, MeasureSpec.EXACTLY)
+      contentView.measure(widthSpec, heightSpec)
+      contentView.layout(0, 0, widthPx, heightPx)
+    }
   }
 
   private fun isNativeDebugEnabled(): Boolean {
