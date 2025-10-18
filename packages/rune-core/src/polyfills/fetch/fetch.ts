@@ -50,6 +50,9 @@ export async function fetch(
   let aborted = false;
   const onAbort = () => {
     aborted = true;
+    if (abortReject) {
+      abortReject(createAbortError());
+    }
     try {
       bridge.call("Fetch", "cancel", { id: requestId });
     } catch (_) {}
@@ -82,8 +85,16 @@ export async function fetch(
   }
 
   let result: any;
+  let abortReject: ((error: Error) => void) | null = null;
+  const abortPromise =
+    signal && typeof signal.addEventListener === "function"
+      ? new Promise((_, reject) => {
+          abortReject = reject as (error: Error) => void;
+        })
+      : null;
   try {
-    result = await Promise.resolve(bridge.call("Fetch", "request", payload));
+    const nativePromise = Promise.resolve(bridge.call("Fetch", "request", payload));
+    result = abortPromise ? await Promise.race([nativePromise, abortPromise]) : await nativePromise;
   } finally {
     if (signal && typeof signal.removeEventListener === "function") {
       signal.removeEventListener("abort", onAbort);
