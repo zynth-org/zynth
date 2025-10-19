@@ -90,7 +90,7 @@ class FetchModule(private val runtime: RuneRuntime) : RuneModule {
                     .put("ok", response.isSuccessful)
                     .put("url", response.request.url.toString())
                     .put("redirected", response.priorResponse != null)
-                    .put("headers", JSONObject(headerMap))
+                    .put("headers", JSONObject(headerMap as Map<*, *>))
                     .put("streamId", requestId)
                 startStreamReader(requestId, requestId, response)
                 JSONObject().put("result", result)
@@ -108,7 +108,7 @@ class FetchModule(private val runtime: RuneRuntime) : RuneModule {
                         .put("ok", closedResponse.isSuccessful)
                         .put("url", closedResponse.request.url.toString())
                         .put("redirected", closedResponse.priorResponse != null)
-                        .put("headers", JSONObject(headerMap))
+                        .put("headers", JSONObject(headerMap as Map<*, *>))
                         .put("body", bodyBytes)
                     JSONObject().put("result", result)
                 }
