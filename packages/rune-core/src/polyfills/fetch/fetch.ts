@@ -133,8 +133,9 @@ export async function fetch(
       ? createStreamFromEmitter(data.streamId, requestId, bridge, globalObject)
       : null;
 
+  const responseBody = normalizeResponseBody(data.body, globalObject);
   return new Response(
-    data.body ?? null,
+    responseBody,
     {
       status: data.status,
       statusText: data.statusText,
@@ -194,6 +195,34 @@ function createStreamFromEmitter(
       } catch (_) {}
     },
   });
+}
+
+function normalizeResponseBody(
+  body: FetchResult["body"],
+  globalObject: any
+): ArrayBuffer | null {
+  if (!body) return null;
+  if (body instanceof ArrayBuffer) return body;
+  if (body instanceof Uint8Array) {
+    const copy = new Uint8Array(body.byteLength);
+    copy.set(body);
+    return copy.buffer;
+  }
+  if (Array.isArray(body)) {
+    const bytes = new Uint8Array(body.length);
+    for (let i = 0; i < body.length; i += 1) {
+      bytes[i] = Number(body[i]) & 0xff;
+    }
+    return bytes.buffer;
+  }
+  if (typeof body === "string") {
+    return new TextEncoder().encode(body).buffer;
+  }
+  const ArrayBufferCtor = globalObject.ArrayBuffer;
+  if (ArrayBufferCtor && body instanceof ArrayBufferCtor) {
+    return body as ArrayBuffer;
+  }
+  return null;
 }
 
 async function resolveBody(

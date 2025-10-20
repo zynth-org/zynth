@@ -8,6 +8,7 @@ import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
 import org.json.JSONObject
 
 class FetchModule(private val runtime: RuneRuntime) : RuneModule {
@@ -93,10 +94,14 @@ class FetchModule(private val runtime: RuneRuntime) : RuneModule {
                     .put("headers", JSONObject(headerMap as Map<*, *>))
                     .put("streamId", requestId)
                 startStreamReader(requestId, requestId, response)
-                JSONObject().put("result", result)
+                return JSONObject().put("result", result)
             } else {
                 response.use { closedResponse ->
                     val bodyBytes = closedResponse.body?.bytes() ?: ByteArray(0)
+                    val bodyJson = JSONArray()
+                    for (byte in bodyBytes) {
+                        bodyJson.put(byte.toInt() and 0xff)
+                    }
                     val headerMap = mutableMapOf<String, String>()
                     for (name in closedResponse.headers.names()) {
                         val values = closedResponse.headers.values(name)
@@ -109,9 +114,10 @@ class FetchModule(private val runtime: RuneRuntime) : RuneModule {
                         .put("url", closedResponse.request.url.toString())
                         .put("redirected", closedResponse.priorResponse != null)
                         .put("headers", JSONObject(headerMap as Map<*, *>))
-                        .put("body", bodyBytes)
-                    JSONObject().put("result", result)
+                        .put("body", bodyJson)
+                    return JSONObject().put("result", result)
                 }
+                return errorResponse("network_error", "Response closed unexpectedly")
             }
         } catch (t: Throwable) {
             if (t is java.io.IOException && (t.message?.contains("Canceled", true) == true)) {
