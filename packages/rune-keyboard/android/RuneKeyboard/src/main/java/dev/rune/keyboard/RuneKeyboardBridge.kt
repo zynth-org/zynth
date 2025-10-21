@@ -14,8 +14,11 @@ class RuneKeyboardBridge(
     
     override val name: String = "RuneKeyboard"
 
+    override fun initialize() {
+        keyboardModule.installJSInterface()
+    }
+
     override fun call(method: String, args: Array<Any?>): JSONObject {
-        Log.d("RuneKeyboardBridge", "call($method)")
         return when (method) {
             "dismiss" -> handleDismiss()
             "getState" -> handleGetState()
@@ -24,7 +27,6 @@ class RuneKeyboardBridge(
     }
 
     private fun handleDismiss(): JSONObject {
-        Log.d("RuneKeyboardBridge", "handleDismiss() invoked from JS")
         keyboardModule.dismissKeyboard()
         return successResponse()
     }

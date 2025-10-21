@@ -35,9 +35,8 @@ class MainActivity : AppCompatActivity() {
       )
     }
 
-    // Disable automatic keyboard handling - let JS handle it via KeyboardAvoidingView
-    // This prevents the system from panning/resizing when keyboard appears
-    window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
+    // Ensure IME insets are reported consistently (required for keyboard detection).
+    window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
 
     // Initialize SoLoader for Yoga layout engine
     RuneRuntime.initialize(this)
