@@ -70,7 +70,7 @@ export interface KeyboardAvoidingViewProps {
 export const KeyboardAvoidingView: ParentComponent<
   KeyboardAvoidingViewProps
 > = (props) => {
-  if (Platform.OS === OS.ANDROID) {
+  if (Platform.OS === OS.ANDROID || Platform.OS === OS.IOS) {
     return (
       <rune-keyboard-avoiding-view
         style={props.style}

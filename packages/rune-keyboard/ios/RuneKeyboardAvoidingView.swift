@@ -6,6 +6,7 @@
 //
 
 import UIKit
+import RuneKit
 
 @objc public enum KeyboardAvoidingBehavior: Int {
   case padding = 0
@@ -26,6 +27,18 @@ public final class RuneKeyboardAvoidingView: UIView {
   private var currentKeyboardHeight: CGFloat = 0
   private var originalTransform: CGAffineTransform = .identity
   private var originalHeight: CGFloat = 0
+  private weak var manager: SNUIManager?
+  private weak var node: SNNode?
+  private var displayLink: CADisplayLink?
+  private var animationStartTime: CFTimeInterval = 0
+  private var animationDuration: CFTimeInterval = 0.25
+  private var animationCurve: UIView.AnimationCurve = .easeInOut
+  private var animationStartOverlap: CGFloat = 0
+  private var animationTargetOverlap: CGFloat = 0
+  private var currentOverlap: CGFloat = 0
+  private var baseStyleSnapshot: [String: Any]?
+  private var basePaddingBottom: CGFloat?
+  private var baseHeightValue: Any?
   
   // MARK: - Lifecycle
   
@@ -51,6 +64,17 @@ public final class RuneKeyboardAvoidingView: UIView {
   @objc public func cleanup() {
     stopObserving()
     resetLayout()
+    detachFromManager()
+  }
+
+  @objc public func attachToManager(_ manager: SNUIManager?, node: SNNode?) {
+    self.manager = manager
+    self.node = node
+  }
+
+  @objc public func detachFromManager() {
+    manager = nil
+    node = nil
   }
   
   // MARK: - Configuration
@@ -66,6 +90,9 @@ public final class RuneKeyboardAvoidingView: UIView {
     default:
       behavior = .padding
     }
+    baseStyleSnapshot = nil
+    basePaddingBottom = nil
+    baseHeightValue = nil
   }
   
   @objc public func setKeyboardVerticalOffset(_ offset: CGFloat) {
@@ -166,48 +193,32 @@ public final class RuneKeyboardAvoidingView: UIView {
     
     currentKeyboardHeight = isShowing ? endFrame.height : 0
     
-    // Animate the adjustment
-    let animator = UIViewPropertyAnimator(duration: duration, curve: curve) { [weak self] in
-      self?.applyAdjustment(overlap: overlap)
-    }
-    animator.startAnimation()
+    startKeyboardAnimation(to: overlap, duration: duration, curve: curve)
   }
   
   private func applyAdjustment(overlap: CGFloat) {
     switch behavior {
     case .padding:
-      // Adjust content inset / padding at the bottom
-      // Since we can't directly modify Yoga padding from here,
-      // we use a bottom constraint approach
-      if let lastSubview = subviews.last {
-        // We'll use a spacer approach - the JS side should handle this
-        // For now, we just expose the value
-      }
-      // Apply via layout margin or safe area
-      layoutMargins.bottom = overlap
-      setNeedsLayout()
+      applyYogaAdjustment(overlap: overlap)
       
     case .position:
       // Translate the view upward
       transform = overlap > 0 ? CGAffineTransform(translationX: 0, y: -overlap) : .identity
       
     case .height:
-      // Reduce the view's height
-      if originalHeight == 0 {
-        originalHeight = bounds.height
-      }
-      // This requires modifying the frame which may conflict with Yoga
-      // Best handled via the JS-side for now
-      layoutMargins.bottom = overlap
-      setNeedsLayout()
+      applyYogaAdjustment(overlap: overlap)
     }
   }
   
   private func resetLayout() {
     transform = .identity
-    layoutMargins.bottom = 0
+    stopKeyboardAnimation()
+    applyAdjustment(overlap: 0)
     currentKeyboardHeight = 0
-    setNeedsLayout()
+    currentOverlap = 0
+    baseStyleSnapshot = nil
+    basePaddingBottom = nil
+    baseHeightValue = nil
   }
   
   // MARK: - Intrinsic Content Size
@@ -218,5 +229,130 @@ public final class RuneKeyboardAvoidingView: UIView {
       size.height += currentKeyboardHeight + keyboardVerticalOffset
     }
     return size
+  }
+
+  // MARK: - Native Yoga Adjustment
+
+  private func applyYogaAdjustment(overlap: CGFloat) {
+    guard let manager, let node else {
+      layoutMargins.bottom = overlap
+      setNeedsLayout()
+      return
+    }
+
+    ensureBaseStyleSnapshot(node: node)
+
+    let rawStyle = baseStyleSnapshot ?? (node.latestStyle as? [String: Any] ?? [:])
+    var updated = rawStyle
+
+    if behavior == .padding {
+      let base = basePaddingBottom ?? 0
+      updated["paddingBottom"] = NSNumber(value: Double(base + overlap))
+    }
+
+    if behavior == .height {
+      if overlap <= 0 {
+        if let baseHeightValue {
+          updated["height"] = baseHeightValue
+        } else {
+          updated["height"] = NSNull()
+        }
+      } else {
+        let targetHeight = max(0, bounds.height - overlap)
+        updated["height"] = NSNumber(value: Double(targetHeight))
+      }
+    }
+
+    let style: [AnyHashable: Any] = Dictionary(
+      uniqueKeysWithValues: updated.map { (key, value) in
+        (key as AnyHashable, value)
+      }
+    )
+    manager.setStyle(NSNumber(value: node.nid), style: style)
+  }
+
+  private func ensureBaseStyleSnapshot(node: SNNode) {
+    if baseStyleSnapshot != nil || basePaddingBottom != nil || baseHeightValue != nil {
+      return
+    }
+
+    let style = node.latestStyle as? [String: Any] ?? [:]
+    baseStyleSnapshot = style
+    basePaddingBottom = resolvePaddingBottom(style: style)
+    baseHeightValue = style["height"]
+  }
+
+  private func resolvePaddingBottom(style: [String: Any]) -> CGFloat {
+    let bottom = style["paddingBottom"] ?? style["paddingVertical"] ?? style["padding"]
+    if let number = bottom as? NSNumber {
+      return CGFloat(truncating: number)
+    }
+    if let string = bottom as? String {
+      return CGFloat(Double(string) ?? 0)
+    }
+    return 0
+  }
+
+  // MARK: - Keyboard Animation
+
+  private func startKeyboardAnimation(to overlap: CGFloat, duration: Double, curve: UIView.AnimationCurve) {
+    if !isEnabled {
+      return
+    }
+
+    animationStartOverlap = currentOverlap
+    animationTargetOverlap = overlap
+    animationDuration = max(duration, 0.016)
+    animationCurve = curve
+    animationStartTime = CACurrentMediaTime()
+
+    if displayLink == nil {
+      let link = CADisplayLink(target: self, selector: #selector(handleDisplayLink(_:)))
+      link.add(to: .main, forMode: .common)
+      displayLink = link
+    }
+
+    if animationDuration <= 0 {
+      applyAdjustment(overlap: overlap)
+      currentOverlap = overlap
+      stopKeyboardAnimation()
+    }
+  }
+
+  private func stopKeyboardAnimation() {
+    displayLink?.invalidate()
+    displayLink = nil
+  }
+
+  @objc private func handleDisplayLink(_ link: CADisplayLink) {
+    let elapsed = CACurrentMediaTime() - animationStartTime
+    let progress = min(1, max(0, elapsed / animationDuration))
+    let eased = applyCurve(progress)
+    let overlap = animationStartOverlap + (animationTargetOverlap - animationStartOverlap) * CGFloat(eased)
+    applyAdjustment(overlap: overlap)
+    currentOverlap = overlap
+    if progress >= 1 {
+      stopKeyboardAnimation()
+      if animationTargetOverlap == 0 {
+        baseStyleSnapshot = nil
+        basePaddingBottom = nil
+        baseHeightValue = nil
+      }
+    }
+  }
+
+  private func applyCurve(_ progress: Double) -> Double {
+    switch animationCurve {
+    case .easeIn:
+      return progress * progress
+    case .easeOut:
+      return 1 - pow(1 - progress, 2)
+    case .easeInOut:
+      return progress * progress * (3 - 2 * progress)
+    case .linear:
+      return progress
+    @unknown default:
+      return progress
+    }
   }
 }

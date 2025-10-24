@@ -72,7 +72,9 @@ static NSString *RuneKeyboardParseString(NSString *rawJSON) {
       return [[RuneKeyboardAvoidingView alloc] init];
     };
     avoidingDescriptor.attach = ^(SNUIManager *manager, SNNode *node) {
-      // No special attachment needed
+      if ([node.view isKindOfClass:[RuneKeyboardAvoidingView class]]) {
+        [(RuneKeyboardAvoidingView *)node.view attachToManager:manager node:node];
+      }
     };
     avoidingDescriptor.cleanup = ^(SNUIManager *manager, SNNode *node) {
       if ([node.view isKindOfClass:[RuneKeyboardAvoidingView class]]) {
