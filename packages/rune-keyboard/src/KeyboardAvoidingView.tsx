@@ -1,4 +1,5 @@
 import { createMemo, type JSX, type ParentComponent } from "solid-js";
+import { Platform, OS } from "@rune/apis";
 import { View } from "@rune/components";
 import type { Style } from "@rune/core";
 import { useKeyboard } from "./hooks";
@@ -69,6 +70,21 @@ export interface KeyboardAvoidingViewProps {
 export const KeyboardAvoidingView: ParentComponent<
   KeyboardAvoidingViewProps
 > = (props) => {
+  if (Platform.OS === OS.ANDROID) {
+    return (
+      <rune-keyboard-avoiding-view
+        style={props.style}
+        behavior={props.behavior ?? "padding"}
+        keyboardVerticalOffset={props.keyboardVerticalOffset ?? 0}
+        enabled={props.enabled ?? true}
+        testID={props.testID}
+        data-testid={props.testID}
+      >
+        {props.children}
+      </rune-keyboard-avoiding-view>
+    );
+  }
+
   const keyboard = useKeyboard();
 
   const behavior = () => props.behavior ?? "padding";

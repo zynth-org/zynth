@@ -106,7 +106,7 @@ class RuneKeyboardStickyView(context: Context) : FrameLayout(context) {
         while (currentParent != null) {
             val currentView = currentParent as? View ?: break
             if (currentView is RuneKeyboardAvoidingView) {
-                return currentView.paddingBottom.toFloat()
+                return currentView.getCurrentOverlapPx()
             }
             currentParent = currentView.parent
         }

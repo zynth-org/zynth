@@ -10,7 +10,9 @@ object RuneKeyboardAvoidingViewDescriptor {
         return RuneComponentDescriptor(
             type = "rune-keyboard-avoiding-view",
             createView = { context, _ -> RuneKeyboardAvoidingView(context) },
-            onNodeCreated = { _, _ -> },
+            onNodeCreated = { manager, node ->
+                (node.view as? RuneKeyboardAvoidingView)?.attachManager(manager, node.id)
+            },
             applyProperty = { node, name, value ->
                 val view = node.view as? RuneKeyboardAvoidingView ?: return@RuneComponentDescriptor false
                 when (name) {

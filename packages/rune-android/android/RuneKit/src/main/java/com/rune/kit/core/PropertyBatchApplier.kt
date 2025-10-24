@@ -96,6 +96,14 @@ internal class PropertyBatchApplier(
   fun getAppliedStyle(nodeId: Int): Style? {
     return appliedStyles.get(nodeId)
   }
+
+  /**
+   * Store a fully resolved style as the latest applied style for a node.
+   * Used when styles are applied outside the batching path.
+   */
+  fun setAppliedStyle(nodeId: Int, style: Style) {
+    appliedStyles.put(nodeId, style)
+  }
   
   /**
    * Apply all pending batches for all nodes.

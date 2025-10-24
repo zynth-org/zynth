@@ -7,6 +7,7 @@ import android.widget.FrameLayout
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsAnimationCompat
 import androidx.core.view.WindowInsetsCompat
+import com.rune.kit.core.RuneUIManager
 
 enum class KeyboardAvoidingBehavior {
     PADDING,
@@ -21,6 +22,10 @@ class RuneKeyboardAvoidingView(context: Context) : FrameLayout(context) {
     private var isKeyboardEnabled: Boolean = true
     private var currentKeyboardHeight: Float = 0f
     private var isAttached = false
+    private var layoutManager: RuneUIManager? = null
+    private var nodeId: Int = -1
+    private var lastAppliedOverlapPx: Float = Float.NaN
+    private var lastAppliedBehavior: KeyboardAvoidingBehavior? = null
 
     init {
         clipChildren = true
@@ -36,6 +41,21 @@ class RuneKeyboardAvoidingView(context: Context) : FrameLayout(context) {
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
         isAttached = false
+        detachManager()
+    }
+
+    fun attachManager(manager: RuneUIManager, nodeId: Int) {
+        layoutManager = manager
+        this.nodeId = nodeId
+    }
+
+    fun detachManager() {
+        layoutManager = null
+        nodeId = -1
+    }
+
+    fun getCurrentOverlapPx(): Float {
+        return if (lastAppliedOverlapPx.isNaN()) 0f else lastAppliedOverlapPx
     }
 
     fun setBehavior(behaviorString: String) {
@@ -60,6 +80,7 @@ class RuneKeyboardAvoidingView(context: Context) : FrameLayout(context) {
 
     fun cleanup() {
         resetLayout()
+        detachManager()
     }
 
     private fun setupKeyboardListener() {
@@ -119,24 +140,42 @@ class RuneKeyboardAvoidingView(context: Context) : FrameLayout(context) {
     }
 
     private fun applyAdjustment(overlap: Float) {
-        val overlapPx = (overlap * resources.displayMetrics.density).toInt()
+        val overlapPx = overlap * resources.displayMetrics.density
+        val shouldSkip = lastAppliedBehavior == behavior && lastAppliedOverlapPx == overlapPx
+        if (shouldSkip) return
+        lastAppliedBehavior = behavior
+        lastAppliedOverlapPx = overlapPx
         
         when (behavior) {
             KeyboardAvoidingBehavior.PADDING -> {
-                setPadding(paddingLeft, paddingTop, paddingRight, overlapPx)
+                if (layoutManager != null && nodeId >= 0) {
+                    layoutManager?.applyKeyboardAvoidingAdjustment(nodeId, "padding", overlapPx)
+                } else {
+                    setPadding(paddingLeft, paddingTop, paddingRight, overlapPx.toInt())
+                }
             }
             KeyboardAvoidingBehavior.POSITION -> {
-                translationY = -overlapPx.toFloat()
+                translationY = -overlapPx
             }
             KeyboardAvoidingBehavior.HEIGHT -> {
-                setPadding(paddingLeft, paddingTop, paddingRight, overlapPx)
+                if (layoutManager != null && nodeId >= 0) {
+                    layoutManager?.applyKeyboardAvoidingAdjustment(nodeId, "height", overlapPx)
+                } else {
+                    setPadding(paddingLeft, paddingTop, paddingRight, overlapPx.toInt())
+                }
             }
         }
     }
 
     private fun resetLayout() {
         translationY = 0f
-        setPadding(paddingLeft, paddingTop, paddingRight, 0)
+        if (layoutManager != null && nodeId >= 0) {
+            layoutManager?.applyKeyboardAvoidingAdjustment(nodeId, behavior.name.lowercase(), 0f)
+        } else {
+            setPadding(paddingLeft, paddingTop, paddingRight, 0)
+        }
         currentKeyboardHeight = 0f
+        lastAppliedOverlapPx = Float.NaN
+        lastAppliedBehavior = null
     }
 }

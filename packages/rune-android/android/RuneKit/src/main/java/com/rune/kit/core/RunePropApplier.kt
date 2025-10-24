@@ -143,6 +143,10 @@ internal class RunePropApplier(
   internal fun flushAllBatchedProperties() {
     batchApplier.applyAllBatches()
   }
+
+  internal fun getAppliedStyle(nodeId: Int): Style? {
+    return batchApplier.getAppliedStyle(nodeId)
+  }
   
   /**
    * Apply the "style" property which contains multiple layout/style/text properties.
@@ -153,8 +157,10 @@ internal class RunePropApplier(
     val pixelStyle = style.toPixels(density)
     RuneComponentRegistry.getDescriptor(target.type)?.onStyleApplied?.invoke(target, pixelStyle)
     engine.setStyle(target.id, pixelStyle)
+    batchApplier.setAppliedStyle(target.id, pixelStyle)
     if (target.id != nodeId) {
       engine.setStyle(nodeId, Style())
+      batchApplier.setAppliedStyle(nodeId, Style())
     }
     applyBackgroundStyle(target.view, pixelStyle, target.type)
     applyShadowStyle(target.view, pixelStyle)

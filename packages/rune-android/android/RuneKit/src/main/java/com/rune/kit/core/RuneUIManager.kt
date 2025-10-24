@@ -505,6 +505,42 @@ class RuneUIManager(
   // Public accessor methods for component packages
   fun getRootView(): RuneRootView = surfaceStateOrNull(activeSurfaceId)?.rootView ?: root
   fun getLayoutEngine(): LayoutEngine = engine
+  internal fun getAppliedStyleForNode(nodeId: Int): Style? {
+    val surface = surfaceStateForNode(nodeId)
+    return propApplierCache[surface.id]?.getAppliedStyle(nodeId)
+  }
+
+  fun applyKeyboardAvoidingAdjustment(
+    nodeId: Int,
+    behavior: String,
+    overlapPx: Float,
+  ) = onMain {
+    val surface = surfaceStateForNode(nodeId)
+    val node = surface.nodes.get(nodeId) ?: return@onMain
+    val baseStyle = getAppliedStyleForNode(nodeId) ?: Style()
+    val resolvedOverlap = overlapPx.coerceAtLeast(0f)
+
+    val updatedStyle = when (behavior.lowercase()) {
+      "padding" -> {
+        val basePadding = resolvePaddingBottom(baseStyle)
+        baseStyle.copy(paddingBottom = basePadding + resolvedOverlap)
+      }
+      "height" -> {
+        if (resolvedOverlap <= 0f) {
+          baseStyle
+        } else {
+          val targetHeight = (node.view.height - resolvedOverlap).coerceAtLeast(0f)
+          baseStyle.copy(height = targetHeight, heightPercent = null, heightAuto = false)
+        }
+      }
+      else -> baseStyle
+    }
+
+    surface.engine.setStyle(nodeId, updatedStyle)
+    if (behavior.lowercase() == "padding" || behavior.lowercase() == "height") {
+      applyKeyboardAvoidingLayout(surface, nodeId, behavior, resolvedOverlap)
+    }
+  }
   
   private fun getEventManagerForNode(nodeId: Int): RuneEventManager {
     val surfaceId = surfaceStateForNode(nodeId).id
@@ -561,6 +597,115 @@ class RuneUIManager(
       surfaceNodes.get(childId)?.index = -1
       if (list.isEmpty()) parentNode.children = null
     }
+  }
+
+  private fun applyKeyboardAvoidingLayout(
+    surface: SurfaceState,
+    rootNodeId: Int,
+    behavior: String,
+    overlapPx: Float,
+  ) {
+    val rootNode = surface.nodes.get(rootNodeId) ?: return
+    val width = rootNode.view.width
+    val height = rootNode.view.height
+    if (width <= 0 || height <= 0) return
+
+    val targetHeight = if (behavior.lowercase() == "height" && overlapPx > 0f) {
+      (height - overlapPx).coerceAtLeast(0f)
+    } else {
+      height.toFloat()
+    }
+
+    surface.engine.calculateLayoutForNode(rootNodeId, width.toFloat(), targetHeight)
+
+    val queue = ArrayDeque<Int>()
+    queue.add(rootNodeId)
+    while (queue.isNotEmpty()) {
+      val nodeId = queue.removeFirst()
+      val node = surface.nodes.get(nodeId) ?: continue
+      if (surface.nodeFactory.isVirtualTextNode(node)) continue
+
+      if (nodeId == rootNodeId && behavior.lowercase() != "height") {
+        node.children?.forEach { childId -> queue.add(childId) }
+        continue
+      }
+
+      val frame = surface.engine.frame(nodeId)
+      val keepPosition = nodeId == rootNodeId
+      applyKeyboardAvoidingFrame(node, frame, keepPosition)
+      node.children?.forEach { childId -> queue.add(childId) }
+    }
+  }
+
+  private fun applyKeyboardAvoidingFrame(
+    node: Node,
+    frame: Rect,
+    keepPosition: Boolean,
+  ) {
+    val width = (frame.right - frame.left).coerceAtLeast(0)
+    val height = (frame.bottom - frame.top).coerceAtLeast(0)
+    val left = if (keepPosition) node.view.left else frame.left
+    val top = if (keepPosition) node.view.top else frame.top
+    val right = left + width
+    val bottom = top + height
+
+    val layoutParams = when (val current = node.view.layoutParams) {
+      is android.widget.FrameLayout.LayoutParams -> current
+      else -> android.widget.FrameLayout.LayoutParams(width, height)
+    }
+
+    var paramsChanged = false
+    if (layoutParams.width != width) {
+      layoutParams.width = width
+      paramsChanged = true
+    }
+    if (layoutParams.height != height) {
+      layoutParams.height = height
+      paramsChanged = true
+    }
+    if (layoutParams.leftMargin != left) {
+      layoutParams.leftMargin = left
+      paramsChanged = true
+    }
+    if (layoutParams.topMargin != top) {
+      layoutParams.topMargin = top
+      paramsChanged = true
+    }
+    if (layoutParams.gravity != (android.view.Gravity.START or android.view.Gravity.TOP)) {
+      layoutParams.gravity = android.view.Gravity.START or android.view.Gravity.TOP
+      paramsChanged = true
+    }
+    if (paramsChanged) {
+      node.view.layoutParams = layoutParams
+    }
+
+    val cachedFrame = node.measuredFrame
+    val frameChanged = cachedFrame == null ||
+      cachedFrame.left != left ||
+      cachedFrame.top != top ||
+      cachedFrame.right != right ||
+      cachedFrame.bottom != bottom
+
+    if (frameChanged) {
+      val targetWidthSpec = View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY)
+      val targetHeightSpec = View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY)
+      if (node.view.measuredWidth != width || node.view.measuredHeight != height) {
+        node.view.measure(targetWidthSpec, targetHeightSpec)
+      }
+      node.measuredFrame = Rect(left, top, right, bottom)
+    }
+
+    node.view.layout(left, top, right, bottom)
+    if (node.type != TEXT_TYPE) {
+      node.label?.layout(0, 0, width, height)
+    }
+  }
+
+  private fun resolvePaddingBottom(style: Style): Float {
+    return style.paddingBottom
+      ?: style.paddingVertical
+      ?: style.padding
+      ?: 0f
   }
 
   fun consumeEventPayload(nodeId: Int, event: String): JSONObject? {
