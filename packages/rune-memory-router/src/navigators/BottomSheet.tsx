@@ -37,6 +37,7 @@ import {
   DEFAULT_HEADER_HEIGHT,
   HeaderHeightContext,
 } from "../integration/insets";
+import { registerAndroidBackHandler } from "../native/androidBackHandler";
 import type {
   RouteParamList,
   NavigationState,
@@ -359,6 +360,11 @@ export function BottomSheetNavigator(
     navigatorType: "stack", // Treat as stack for internal logic
     isHydrated,
   }));
+
+  const canGoBack = createMemo(() => helpers.canGoBack());
+  registerAndroidBackHandler(canGoBack, () => {
+    helpers.goBack();
+  });
 
   const ScreensRenderer = () => {
     queueMicrotask(() => initializeState());

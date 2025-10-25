@@ -84,6 +84,8 @@ class ScreenView(context: Context) : FrameLayout(context) {
         visibility = View.GONE
         clipChildren = false
         clipToPadding = false
+        // Consume unhandled touches so taps don't bleed through to lower screens.
+        isClickable = true
     }
 
     override fun onAttachedToWindow() {

@@ -44,6 +44,7 @@ import {
   renderNativeTabIcon,
 } from "../native/tabIconRegistry";
 import type { ScreenTabBarItemDescriptor } from "@rune/screens";
+import { registerAndroidBackHandler } from "../native/androidBackHandler";
 
 // ============================================================================
 // Utility: Generate unique keys
@@ -442,6 +443,11 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
     navigatorType: "tabs",
     isHydrated,
   }));
+
+  const canGoBack = createMemo(() => helpers.canGoBack());
+  registerAndroidBackHandler(canGoBack, () => {
+    helpers.goBack();
+  });
 
   // Build descriptors for tab bar
   const descriptors = createMemo(() => {

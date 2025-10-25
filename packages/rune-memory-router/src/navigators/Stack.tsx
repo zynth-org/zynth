@@ -44,6 +44,7 @@ import {
   registerNativeHeaderAccessory,
   unregisterNativeHeaderAccessory,
 } from "../native/headerAccessoryRegistry";
+import { registerAndroidBackHandler } from "../native/androidBackHandler";
 
 // ============================================================================
 // Utility: Generate unique keys
@@ -387,6 +388,11 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
     navigatorType: "stack",
     isHydrated,
   }));
+
+  const canGoBack = createMemo(() => helpers.canGoBack());
+  registerAndroidBackHandler(canGoBack, () => {
+    helpers.goBack();
+  });
 
   // Inner component that renders after children have registered
   const ScreensRenderer = () => {
