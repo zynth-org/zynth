@@ -59,8 +59,9 @@ class FontModule(context: Context) : RuneModule {
             
             when (params) {
                 is JSONObject -> {
-                    fontFamily = params.optString("fontFamily", null)
-                    resourceName = params.optString("resourceName", null)
+                    // optString(key) returns an empty string when missing; convert empty strings to null
+                    fontFamily = params.optString("fontFamily").takeIf { it.isNotEmpty() }
+                    resourceName = params.optString("resourceName").takeIf { it.isNotEmpty() }
                 }
                 is Map<*, *> -> {
                     fontFamily = params["fontFamily"] as? String
