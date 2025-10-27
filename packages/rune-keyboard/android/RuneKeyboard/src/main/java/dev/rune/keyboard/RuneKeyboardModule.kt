@@ -180,11 +180,9 @@ class RuneKeyboardModule(
                         insets: WindowInsetsCompat,
                         runningAnimations: MutableList<WindowInsetsAnimationCompat>
                     ): WindowInsetsCompat {
-                        // Only process IME animations
-                        val imeAnimation = runningAnimations.find { 
-                            it.typeMask and WindowInsetsCompat.Type.ime() != 0 
-                        } ?: return insets
-                        
+// Only process IME animations — return early if none present
+                    if (runningAnimations.none { it.typeMask and WindowInsetsCompat.Type.ime() != 0 }) return insets
+
                         val state = buildStateFromInsets(insets, isAnimating = true, duration = 0.25f)
 
                         isKeyboardVisible = state.isVisible
