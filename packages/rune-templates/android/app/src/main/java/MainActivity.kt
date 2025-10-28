@@ -36,6 +36,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     // Ensure IME insets are reported consistently (required for keyboard detection).
+    @Suppress("DEPRECATION")
     window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
 
     // Initialize SoLoader for Yoga layout engine
@@ -46,7 +47,7 @@ class MainActivity : AppCompatActivity() {
 
     // Start loading bundle in background
     val launchIntent = intent
-    val preloadUrl = launchIntent?.getStringExtra("RUNE_DEV_SERVER_URL")
+    val preloadUrl = launchIntent.getStringExtra("RUNE_DEV_SERVER_URL")
     val loadThread = if (preloadUrl.isNullOrBlank()) {
       Thread {
         try {
@@ -68,10 +69,10 @@ class MainActivity : AppCompatActivity() {
 {{MODULE_INITIALIZERS}}
 
       val currentIntent = intent
-      val devServerUrl = currentIntent?.getStringExtra("RUNE_DEV_SERVER_URL")
+      val devServerUrl = currentIntent.getStringExtra("RUNE_DEV_SERVER_URL")
 
       if (!devServerUrl.isNullOrBlank()) {
-        val token = currentIntent?.getStringExtra("RUNE_DEV_SERVER_TOKEN")
+        val token = currentIntent.getStringExtra("RUNE_DEV_SERVER_TOKEN")
         runtime.connectDevServer(devServerUrl, token)
       } else {
         // Wait for background thread if needed
