@@ -55,7 +55,6 @@ class RuneRuntime(
   )
 
   private fun isNativeDebugEnabled(): Boolean {
-    return true
     return try {
       val debugValue = System.getProperty("__NATIVE_DEBUG__")
       debugValue?.toBoolean() ?: false

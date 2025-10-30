@@ -158,7 +158,7 @@ class DimensionsModule(
         }
     }
 
-    private fun emitIfChanged(reason: String) {
+    private fun emitIfChanged(@Suppress("UNUSED_PARAMETER") reason: String) {
         val payload = computePayload()
         if (lastEmitted == payload) {
             return

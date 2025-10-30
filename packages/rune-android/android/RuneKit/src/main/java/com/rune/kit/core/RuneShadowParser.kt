@@ -89,7 +89,8 @@ object RuneShadowParser {
     val blur = obj.optDouble("blurRadius", Double.NaN)
     val spread = obj.optDouble("spread", Double.NaN)
     val inset = obj.optBoolean("inset", false)
-    val colorString = obj.optString("color", null)
+    // optString returns an empty string when missing - normalize to null for parsing
+    val colorString = obj.optString("color").takeIf { it.isNotEmpty() }
     val color = RuneColorParser.parse(colorString) ?: DEFAULT_COLOR
     return ShadowLayer(
       offsetX = if (offsetX.isNaN()) 0f else offsetX.toFloat(),

@@ -357,7 +357,7 @@ internal class RunePropApplier(
 
     // Fallback to TextView handling
     if (node.view is TextView) {
-      val textView = node.view as TextView
+      val textView = node.view
       textView.text = text
       // Don't mark TEXT nodes dirty - they have measure functions
       logDebug("RuneUI", "Set text on view: ${textView.text}")

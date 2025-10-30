@@ -88,7 +88,7 @@ object RuneGradientParser {
           vertical == 0f && horizontal == 270f -> 315f
           vertical == 180f && horizontal == 90f -> 135f
           vertical == 180f && horizontal == 270f -> 225f
-          else -> vertical ?: horizontal
+          else -> vertical
         }
       }
       vertical != null -> vertical
@@ -104,7 +104,7 @@ object RuneGradientParser {
     var splitIndex = -1
     var depth = 0
     for (i in trimmed.indices) {
-      when (val c = trimmed[i]) {
+      when (trimmed[i]) {
         '(' -> depth++
         ')' -> if (depth > 0) depth--
         ' ', '\t' -> if (depth == 0) { splitIndex = i; break }

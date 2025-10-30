@@ -304,7 +304,7 @@ internal class RuneLayoutFlush(
     var totalLayoutCalcTime = 0L
     var totalApplyLayoutTime = 0L
     var iterationCapHit = false
-    var shouldContinue = false
+    var shouldContinue: Boolean
     var loopCount = 0
 
     trace("flush_start") {

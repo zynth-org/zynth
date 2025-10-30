@@ -117,10 +117,9 @@ class FetchModule(private val runtime: RuneRuntime) : RuneModule {
                         .put("body", bodyJson)
                     return JSONObject().put("result", result)
                 }
-                return errorResponse("network_error", "Response closed unexpectedly")
             }
         } catch (t: Throwable) {
-            if (t is java.io.IOException && (t.message?.contains("Canceled", true) == true)) {
+            return if (t is java.io.IOException && (t.message?.contains("Canceled", true) == true)) {
                 errorResponse("aborted", "Request aborted")
             } else {
                 errorResponse("network_error", t.message ?: "unknown")
