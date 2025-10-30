@@ -4,7 +4,6 @@ import android.content.Context
 import android.os.Build
 import android.util.DisplayMetrics
 import android.util.TypedValue
-import android.view.Display
 import android.view.WindowManager
 
 object RuneBottomSheetUtils {
@@ -18,13 +17,15 @@ object RuneBottomSheetUtils {
 
   fun screenHeight(context: Context): Int {
     val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
-    val metrics = DisplayMetrics()
-    val display: Display? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-      context.display
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+      // Use currentWindowMetrics on API 30+ which is the recommended API for window bounds
+      windowManager?.currentWindowMetrics?.bounds?.height()
+        ?: context.resources.displayMetrics.heightPixels
     } else {
-      windowManager?.defaultDisplay
+      val metrics = DisplayMetrics()
+      @Suppress("DEPRECATION")
+      windowManager?.defaultDisplay?.getMetrics(metrics)
+      metrics.heightPixels
     }
-    display?.getRealMetrics(metrics) ?: windowManager?.defaultDisplay?.getMetrics(metrics)
-    return metrics.heightPixels
   }
 }

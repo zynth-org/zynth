@@ -150,6 +150,7 @@ class RuneBottomSheetDialog(
     return nearest
   }
 
+  @Suppress("UNUSED_PARAMETER")
   private fun handleShow(dialog: DialogInterface) {
     screenHeight = RuneBottomSheetUtils.screenHeight(context)
     sheetContainer = findViewById(com.google.android.material.R.id.design_bottom_sheet)
@@ -215,6 +216,7 @@ class RuneBottomSheetDialog(
     behavior?.let { applyBehaviorConfiguration(it, animatePeek) }
   }
 
+  @Suppress("UNUSED_PARAMETER")
   private fun setStateForIndex(index: Int, animated: Boolean) {
     pendingIndex = index
     applyStateForIndex(index)
