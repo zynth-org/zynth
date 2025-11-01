@@ -94,7 +94,7 @@ class FetchModule(private val runtime: RuneRuntime) : RuneModule {
                     .put("headers", JSONObject(headerMap as Map<*, *>))
                     .put("streamId", requestId)
                 startStreamReader(requestId, requestId, response)
-                return JSONObject().put("result", result)
+                JSONObject().put("result", result)
             } else {
                 response.use { closedResponse ->
                     val bodyBytes = closedResponse.body?.bytes() ?: ByteArray(0)
@@ -115,7 +115,7 @@ class FetchModule(private val runtime: RuneRuntime) : RuneModule {
                         .put("redirected", closedResponse.priorResponse != null)
                         .put("headers", JSONObject(headerMap as Map<*, *>))
                         .put("body", bodyJson)
-                    return JSONObject().put("result", result)
+                    JSONObject().put("result", result)
                 }
             }
         } catch (t: Throwable) {
