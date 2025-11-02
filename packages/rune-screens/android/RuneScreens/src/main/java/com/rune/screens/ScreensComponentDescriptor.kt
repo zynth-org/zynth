@@ -21,17 +21,17 @@ fun createScreenContainerDescriptor(): RuneComponentDescriptor {
                 ViewGroup.LayoutParams.MATCH_PARENT,
             )
         },
-        applyProperty = { node, name, jsonValue ->
+        applyProperty = { _, _, _ ->
             // ScreenContainer doesn't have custom props currently
             false
         },
-        onStyleApplied = { node, style ->
+        onStyleApplied = { _, _ ->
             // Style is applied by the core system
         },
-        onSetHandler = { node, event ->
+        onSetHandler = { _, _ ->
             false
         },
-        onReset = { node ->
+        onReset = { _ ->
             // Nothing to reset
         }
     )
@@ -44,7 +44,7 @@ fun createScreenDescriptor(): RuneComponentDescriptor {
     return RuneComponentDescriptor(
         type = "rune-screen",
         createView = { context, _ -> ScreenView(context) },
-        onNodeCreated = { manager, node ->
+        onNodeCreated = { _, node ->
             node.view.layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -79,11 +79,11 @@ fun createScreenDescriptor(): RuneComponentDescriptor {
                 else -> false
             }
         },
-        onStyleApplied = { node, style ->
+        onStyleApplied = { _, _ ->
             // Style is applied by the core system
         },
         onSetHandler = { node, event ->
-            val screen = node.view as? ScreenView ?: return@RuneComponentDescriptor false
+            if (node.view !is ScreenView) return@RuneComponentDescriptor false
             
             when (event) {
                 "onWillAppear" -> {
@@ -112,7 +112,7 @@ fun createScreenTabsContainerDescriptor(): RuneComponentDescriptor {
     return RuneComponentDescriptor(
         type = "rune-screen-tabs-container",
         createView = { context, _ -> ScreenTabsContainerView(context) },
-        onNodeCreated = { manager, node ->
+        onNodeCreated = @Suppress("UNUSED_PARAMETER") { manager, node ->
             node.view.layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -157,15 +157,14 @@ fun createScreenTabsContainerDescriptor(): RuneComponentDescriptor {
                 else -> false
             }
         },
-        onStyleApplied = { node, style ->
+        onStyleApplied = { _, _ ->
             // Style is applied by the core system
         },
         onSetHandler = { node, event ->
-            val container = node.view as? ScreenTabsContainerView 
-                ?: return@RuneComponentDescriptor false
-            
+            if (node.view !is ScreenTabsContainerView) return@RuneComponentDescriptor false
+
             Log.d("ScreenTabsContainer", "onSetHandler: $event")
-            
+
             // Return false to let the core RunePropApplier register the handler in RuneEventManager.
             // Returning true implies we handled it (e.g. set a specific listener) and core might skip registration
             // depending on implementation details we can't see.

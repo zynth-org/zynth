@@ -342,14 +342,6 @@ class ScreenTabsContainerView(context: Context) : LinearLayout(context) {
 
              // Find the internal ImageView (which now holds the transparent drawable)
              // and its parent container to inject the surface there for correct alignment.
-             var defaultIcon: ImageView? = null
-             var iconContainer: ViewGroup? = null
-             
-             // Traverse children to find the icon view
-             // BottomNavigationItemView structure:
-             // - navigation_bar_item_icon_container (FrameLayout)
-             //   - navigation_bar_item_active_indicator_view
-             //   - navigation_bar_item_icon_view (ImageView)
              
              // Helper to find recursively if needed, but usually it's shallow
              fun findIconView(group: ViewGroup): ImageView? {
@@ -363,11 +355,9 @@ class ScreenTabsContainerView(context: Context) : LinearLayout(context) {
                  }
                  return null
              }
-             
-             defaultIcon = findIconView(itemView)
-             
-             // Prefer Material's real icon container id when available; fallback to defaultIcon parent.
-             iconContainer =
+
+             val defaultIcon: ImageView? = findIconView(itemView)
+             val iconContainer: ViewGroup? =
                  itemView.findViewById(com.google.android.material.R.id.navigation_bar_item_icon_container)
                      as? ViewGroup
                      ?: (defaultIcon?.parent as? ViewGroup)
