@@ -14,7 +14,7 @@ class RuneScrollViewRegistrar : RuneComponentRegistrar {
     registry.register(
       RuneComponentDescriptor(
         type = "scroll-view",
-        createView = { context: Context, nodeId: Int ->
+        createView = { context: Context, _ ->
           RuneScrollView(context).apply {
             layoutParams = layoutParams ?: FrameLayout.LayoutParams(
               FrameLayout.LayoutParams.MATCH_PARENT,
@@ -107,7 +107,7 @@ class RuneScrollViewRegistrar : RuneComponentRegistrar {
             }
           } ?: false
         },
-        onSetHandler = { node, event ->
+        onSetHandler = { _, _ ->
           // ScrollView events are handled automatically
           false
         },

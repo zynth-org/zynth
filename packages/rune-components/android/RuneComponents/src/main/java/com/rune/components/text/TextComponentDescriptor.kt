@@ -158,7 +158,7 @@ fun createTextComponentDescriptor(): RuneComponentDescriptor {
         )
       }
     },
-    onSetHandler = { node, event ->
+    onSetHandler = { _, _ ->
       // Text doesn't handle any specific events
       false
     },

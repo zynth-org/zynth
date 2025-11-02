@@ -26,7 +26,7 @@ class PressableComponentRegistrar : RuneComponentRegistrar {
           (node.view as? RunePressableView)?.let { pressable ->
             pressable.resetState()
             pressable.nodeId = node.id
-            pressable.listener = manager as? RunePressableEventListener
+            pressable.listener = manager
             pressable.setPointerEvents("auto")
             node.pointerEvents = "auto"
           }

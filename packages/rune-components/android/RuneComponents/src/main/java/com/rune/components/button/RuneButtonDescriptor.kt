@@ -126,7 +126,8 @@ class RuneButtonRegistrar : RuneComponentRegistrar {
                 "pressRetentionOffset" -> {
                   val obj = if (value != null) JSONObject(value) else JSONObject()
                   val offset = obj.optDouble(name, -1.0).takeIf { it >= 0 }
-                  button.setPressRetentionOffset(offset?.let { it as Number })
+                  // Double? is a Number; pass it directly (nullable)
+                  button.setPressRetentionOffset(offset)
                   true
                 }
                 "hitSlop" -> {
@@ -195,7 +196,7 @@ class RuneButtonRegistrar : RuneComponentRegistrar {
     return try {
       // First try as JSON object: {"propName": "value"}
       val obj = JSONObject(json)
-      if (obj.isNull(propName)) null else obj.optString(propName, null)
+      if (obj.isNull(propName)) null else obj.optString(propName)
     } catch (e: Exception) {
       // Fall back to raw string parsing
       try {

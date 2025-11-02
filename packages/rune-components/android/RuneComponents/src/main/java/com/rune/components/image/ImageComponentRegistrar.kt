@@ -17,7 +17,7 @@ class ImageComponentRegistrar : RuneComponentRegistrar {
     registry.register(
       RuneComponentDescriptor(
         type = "image",
-        createView = { context: Context, nodeId: Int ->
+        createView = { context: Context, _: Int ->
           ImageView(context).apply {
             layoutParams = FrameLayout.LayoutParams(
               FrameLayout.LayoutParams.WRAP_CONTENT,

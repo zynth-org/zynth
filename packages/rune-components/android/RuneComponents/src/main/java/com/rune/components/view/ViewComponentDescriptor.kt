@@ -13,11 +13,11 @@ fun createViewComponentDescriptor(): RuneComponentDescriptor {
   return RuneComponentDescriptor(
     type = "view",
     createView = { context, _ -> RuneViewContainer(context) },
-    onNodeCreated = { manager, node ->
+    onNodeCreated = { _, node ->
       val viewContainer = node.view as? RuneViewContainer ?: return@RuneComponentDescriptor
       
       // Set appropriate layout params - WRAP_CONTENT allows Yoga to control sizing
-      node.view.layoutParams = FrameLayout.LayoutParams(
+      viewContainer.layoutParams = FrameLayout.LayoutParams(
         ViewGroup.LayoutParams.WRAP_CONTENT,
         ViewGroup.LayoutParams.WRAP_CONTENT,
       )
@@ -56,7 +56,7 @@ fun createViewComponentDescriptor(): RuneComponentDescriptor {
       val borderRadius = style.borderRadius ?: 0f
       viewContainer.setClipRadius(borderRadius)
     },
-    onSetHandler = { node, event ->
+    onSetHandler = { _, _ ->
       // View doesn't handle any specific events directly
       // Events are handled by the core system
       false
