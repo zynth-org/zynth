@@ -71,9 +71,6 @@ internal open class RuneTextInputView @JvmOverloads constructor(
   private var styledPaddingTop = 0
   private var styledPaddingRight = 0
   private var styledPaddingBottom = 0
-  private var lastExactHeight = 0
-  private var resolvedExtraTopPadding = 0
-  private var resolvedExtraBottomPadding = 0
   private var applyingInternalPadding = false
 
   private var lengthFilter: InputFilter.LengthFilter? = null
@@ -260,17 +257,6 @@ internal open class RuneTextInputView @JvmOverloads constructor(
     isSingleLine = !multiline
     updateGravity()
     ensureBaselineConstraints()
-    if (this.multiline) {
-      applyCenteredPaddingForHeight(0)
-    } else {
-      val knownHeight = when {
-        height > 0 -> height
-        measuredHeight > 0 -> measuredHeight
-        lastExactHeight > 0 -> lastExactHeight
-        else -> styledPaddingTop + styledPaddingBottom + lineHeight
-      }
-      applyCenteredPaddingForHeight(knownHeight)
-    }
     manager?.markNodeDirty(nodeId)
   }
 
@@ -346,23 +332,8 @@ internal open class RuneTextInputView @JvmOverloads constructor(
     isFocusableInTouchMode = true
     isClickable = true
 
-    lastExactHeight = 0
-
-    try {
-        updateInputConfiguration(preserveSelection = true)
-        updateGravity()
-
-        post {
-            val currentHeight = if (height > 0) height else measuredHeight
-            if (currentHeight > 0) {
-                applyCenteredPaddingForHeight(currentHeight)
-            } else {
-                 applyCenteredPaddingForHeight(styledPaddingTop + styledPaddingBottom + lineHeight)
-            }
-        }
-    } finally {
-        // cleanup
-    }
+    updateInputConfiguration(preserveSelection = true)
+    updateGravity()
 
     manager?.markNodeDirty(nodeId)
   }
@@ -497,15 +468,10 @@ internal open class RuneTextInputView @JvmOverloads constructor(
     super.onLayout(changed, left, top, right, bottom)
     if (!multiline) {
       val totalHeight = bottom - top
-      applyCenteredPaddingForHeight(totalHeight)
       Log.d(
         "RuneTextInputView",
-        "onLayout singleLine height=$totalHeight paddingTop=$paddingTop paddingBottom=$paddingBottom baseline=$baseline scrollY=$scrollY extraTop=$resolvedExtraTopPadding extraBottom=$resolvedExtraBottomPadding",
+        "onLayout singleLine height=$totalHeight paddingTop=$paddingTop paddingBottom=$paddingBottom baseline=$baseline scrollY=$scrollY",
       )
-      val contentHeight = styledPaddingTop + styledPaddingBottom + lineHeight
-      if (totalHeight > contentHeight) {
-        lastExactHeight = totalHeight
-      }
     }
     val hasSize = (right - left) > 0 && (bottom - top) > 0
     if (hasSize && !hasCompletedFirstReveal) {
@@ -574,23 +540,16 @@ internal open class RuneTextInputView @JvmOverloads constructor(
 
     val intrinsicHeight = (styledPaddingTop + styledPaddingBottom + lineHeight).coerceAtLeast(1)
     val mode = View.MeasureSpec.getMode(heightMeasureSpec)
+    val size = View.MeasureSpec.getSize(heightMeasureSpec)
     val resolvedHeight = when (mode) {
-      View.MeasureSpec.EXACTLY -> {
-        val exactSize = View.MeasureSpec.getSize(heightMeasureSpec)
-        lastExactHeight = exactSize
-        exactSize
-      }
-      else -> {
-        lastExactHeight = 0
-        intrinsicHeight
-      }
+      View.MeasureSpec.EXACTLY -> size
+      View.MeasureSpec.AT_MOST -> intrinsicHeight.coerceAtMost(size)
+      else -> intrinsicHeight
     }
 
     if (measuredHeight != resolvedHeight) {
       setMeasuredDimension(measuredWidth, resolvedHeight)
     }
-
-    applyCenteredPaddingForHeight(resolvedHeight)
   }
 
   private fun handleEditorAction(actionId: Int, event: KeyEvent?): Boolean {
@@ -867,51 +826,8 @@ internal open class RuneTextInputView @JvmOverloads constructor(
     styledPaddingTop = top
     styledPaddingRight = right
     styledPaddingBottom = bottom
-    applyCurrentPadding()
-    if (!multiline && lastExactHeight > 0) {
-      applyCenteredPaddingForHeight(lastExactHeight)
-    }
+    setActualPadding(left, top, right, bottom)
     return changed
-  }
-
-  internal fun setExpectedExactHeight(height: Int) {
-    if (!multiline && height > 0) {
-      lastExactHeight = height
-      applyCenteredPaddingForHeight(height)
-    }
-  }
-
-  private fun applyCenteredPaddingForHeight(totalHeight: Int) {
-    if (multiline || totalHeight <= 0) {
-      if (resolvedExtraTopPadding != 0 || resolvedExtraBottomPadding != 0) {
-        resolvedExtraTopPadding = 0
-        resolvedExtraBottomPadding = 0
-        applyCurrentPadding()
-      }
-      return
-    }
-
-    val contentHeight = styledPaddingTop + styledPaddingBottom + lineHeight
-    val extraSpace = (totalHeight - contentHeight).coerceAtLeast(0)
-    val topOffset = extraSpace / 2
-    val bottomOffset = extraSpace - topOffset
-
-    if (topOffset != resolvedExtraTopPadding || bottomOffset != resolvedExtraBottomPadding) {
-      resolvedExtraTopPadding = topOffset
-      resolvedExtraBottomPadding = bottomOffset
-      applyCurrentPadding()
-    }
-  }
-
-  private fun applyCurrentPadding() {
-    val extraTop = if (multiline) 0 else resolvedExtraTopPadding
-    val extraBottom = if (multiline) 0 else resolvedExtraBottomPadding
-    setActualPadding(
-      styledPaddingLeft,
-      styledPaddingTop + extraTop,
-      styledPaddingRight,
-      styledPaddingBottom + extraBottom,
-    )
   }
 
   private fun setActualPadding(left: Int, top: Int, right: Int, bottom: Int) {
@@ -932,7 +848,7 @@ internal open class RuneTextInputView @JvmOverloads constructor(
     styledPaddingTop = top
     styledPaddingRight = right
     styledPaddingBottom = bottom
-    applyCurrentPadding()
+    setActualPadding(left, top, right, bottom)
   }
 
   private inner class RuneInputConnection(

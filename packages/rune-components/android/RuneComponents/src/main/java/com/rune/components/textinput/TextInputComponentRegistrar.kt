@@ -41,16 +41,16 @@ class TextInputComponentRegistrar : RuneComponentRegistrar {
       input.ensureBaselineConstraints()
       input.measure(widthSpec, heightSpec)
 
+      val paddingWidth = input.paddingLeft + input.paddingRight
+      val paddingHeight = input.paddingTop + input.paddingBottom
       val measuredWidth = input.measuredWidth.takeIf { it > 0 } ?: widthValue
       val rawMeasuredHeight = input.measuredHeight.takeIf { it > 0 }
-        ?: (input.lineHeight + input.paddingTop + input.paddingBottom)
+        ?: input.lineHeight
       val measuredHeight = rawMeasuredHeight.coerceAtLeast(1)
+      val contentWidth = (measuredWidth - paddingWidth).coerceAtLeast(0)
+      val contentHeight = (measuredHeight - paddingHeight).coerceAtLeast(0)
 
-      if (measuredHeight > 0) {
-        input.setExpectedExactHeight(measuredHeight)
-      }
-
-      measuredWidth.coerceAtLeast(1).toFloat() to measuredHeight.toFloat()
+      contentWidth.coerceAtLeast(1).toFloat() to contentHeight.coerceAtLeast(1).toFloat()
     }
   }
 
