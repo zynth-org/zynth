@@ -39,6 +39,8 @@ public final class RuneKeyboardAvoidingView: UIView {
   private var baseStyleSnapshot: [String: Any]?
   private var basePaddingBottom: CGFloat?
   private var baseHeightValue: Any?
+  private var transitionObservers: [NSObjectProtocol] = []
+  private var transitionFreezeCount: Int = 0
   
   // MARK: - Lifecycle
   
@@ -55,6 +57,7 @@ public final class RuneKeyboardAvoidingView: UIView {
   private func commonInit() {
     clipsToBounds = true
     startObserving()
+    startObservingTransitions()
   }
   
   deinit {
@@ -142,6 +145,36 @@ public final class RuneKeyboardAvoidingView: UIView {
       NotificationCenter.default.removeObserver(observer)
     }
     observers.removeAll()
+    stopObservingTransitions()
+  }
+
+  private func startObservingTransitions() {
+    let willObserver = NotificationCenter.default.addObserver(
+      forName: Notification.Name("RuneScreenTransitionWillBegin"),
+      object: nil,
+      queue: .main
+    ) { [weak self] _ in
+      self?.transitionFreezeCount += 1
+    }
+    transitionObservers.append(willObserver)
+
+    let didObserver = NotificationCenter.default.addObserver(
+      forName: Notification.Name("RuneScreenTransitionDidEnd"),
+      object: nil,
+      queue: .main
+    ) { [weak self] _ in
+      guard let self else { return }
+      self.transitionFreezeCount = max(0, self.transitionFreezeCount - 1)
+    }
+    transitionObservers.append(didObserver)
+  }
+
+  private func stopObservingTransitions() {
+    for observer in transitionObservers {
+      NotificationCenter.default.removeObserver(observer)
+    }
+    transitionObservers.removeAll()
+    transitionFreezeCount = 0
   }
   
   // MARK: - Keyboard Event Handlers
@@ -171,6 +204,11 @@ public final class RuneKeyboardAvoidingView: UIView {
   // MARK: - Layout Adjustment
   
   private func adjustForKeyboard(userInfo: [AnyHashable: Any], isShowing: Bool) {
+    if shouldFreezeForTransition() {
+      stopKeyboardAnimation()
+      return
+    }
+
     guard let endFrame = userInfo[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else {
       return
     }
@@ -194,6 +232,44 @@ public final class RuneKeyboardAvoidingView: UIView {
     currentKeyboardHeight = isShowing ? endFrame.height : 0
     
     startKeyboardAnimation(to: overlap, duration: duration, curve: curve)
+  }
+
+  private func shouldFreezeForTransition() -> Bool {
+    if transitionFreezeCount > 0 {
+      return true
+    }
+
+    guard let viewController = findContainingViewController() else { return false }
+    if viewController.isBeingDismissed || viewController.isMovingFromParent {
+      return true
+    }
+    if
+      let coordinator = viewController.transitionCoordinator,
+      coordinator.isAnimated,
+      coordinator.viewController(forKey: .from) === viewController
+    {
+      return true
+    }
+    if
+      let navigationController = viewController.navigationController,
+      let coordinator = navigationController.transitionCoordinator,
+      coordinator.isAnimated,
+      coordinator.viewController(forKey: .from) === viewController
+    {
+      return true
+    }
+    return false
+  }
+
+  private func findContainingViewController() -> UIViewController? {
+    var responder: UIResponder? = self
+    while let next = responder?.next {
+      if let controller = next as? UIViewController {
+        return controller
+      }
+      responder = next
+    }
+    return nil
   }
   
   private func applyAdjustment(overlap: CGFloat) {

@@ -6,6 +6,8 @@ public final class RuneScreenSheetContainerView: UIView, RuneScreenContainer {
   private var controllerMap: [ObjectIdentifier: RuneScreenViewController] = [:]
   private var activeController: RuneScreenViewController?
   private var pendingUpdate = false
+  private let transitionWillBeginName = Notification.Name("RuneScreenTransitionWillBegin")
+  private let transitionDidEndName = Notification.Name("RuneScreenTransitionDidEnd")
   
   private weak var parentViewController: UIViewController?
 
@@ -175,12 +177,24 @@ public final class RuneScreenSheetContainerView: UIView, RuneScreenContainer {
   }
 
   private func performAnimation(from: RuneScreenViewController?, to: RuneScreenViewController?, operation: UINavigationController.Operation, animationType: RuneScreenAnimation, completion: @escaping () -> Void) {
+     if operation == .pop {
+         NotificationCenter.default.post(name: transitionWillBeginName, object: nil)
+     }
+
      guard let toView = to?.view else {
          if let fromView = from?.view {
              UIView.animate(withDuration: 0.35, animations: {
                  fromView.alpha = 0
-             }) { _ in completion() }
+             }) { [weak self] _ in
+                 if operation == .pop, let self {
+                     NotificationCenter.default.post(name: self.transitionDidEndName, object: nil)
+                 }
+                 completion()
+             }
          } else {
+             if operation == .pop {
+                 NotificationCenter.default.post(name: self.transitionDidEndName, object: nil)
+             }
              completion()
          }
          return
@@ -244,9 +258,12 @@ public final class RuneScreenSheetContainerView: UIView, RuneScreenContainer {
             
             fromBlur?.alpha = 1
             toBlur?.alpha = 0
-        } completion: { _ in
+        } completion: { [weak self] _ in
             fromBlur?.removeFromSuperview()
             toBlur?.removeFromSuperview()
+            if operation == .pop, let self {
+                NotificationCenter.default.post(name: self.transitionDidEndName, object: nil)
+            }
             completion()
         }
         
@@ -276,9 +293,12 @@ public final class RuneScreenSheetContainerView: UIView, RuneScreenContainer {
             
             fromBlur?.alpha = 1
             toBlur?.alpha = 0
-        } completion: { _ in
+        } completion: { [weak self] _ in
             fromBlur?.removeFromSuperview()
             toBlur?.removeFromSuperview()
+            if operation == .pop, let self {
+                NotificationCenter.default.post(name: self.transitionDidEndName, object: nil)
+            }
             completion()
         }
      }

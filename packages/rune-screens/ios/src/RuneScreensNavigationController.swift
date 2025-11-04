@@ -4,6 +4,8 @@ final class RuneScreensNavigationController: UINavigationController, UINavigatio
   weak var screenContainer: RuneScreenContainerView?
   private var previousViewControllers: [UIViewController] = []
   private var isPerformingProgrammaticUpdate = false
+  private let transitionWillBeginName = Notification.Name("RuneScreenTransitionWillBegin")
+  private let transitionDidEndName = Notification.Name("RuneScreenTransitionDidEnd")
 
   override func viewDidLoad() {
     super.viewDidLoad()
@@ -54,6 +56,7 @@ final class RuneScreensNavigationController: UINavigationController, UINavigatio
 
     if let popped = poppedControllers.first {
       screenContainer?.handleNativePop(for: popped)
+      NotificationCenter.default.post(name: transitionDidEndName, object: nil)
     }
 
     previousViewControllers = navigationController.viewControllers
@@ -66,6 +69,10 @@ final class RuneScreensNavigationController: UINavigationController, UINavigatio
     from fromVC: UIViewController,
     to toVC: UIViewController
   ) -> UIViewControllerAnimatedTransitioning? {
+    if operation == .pop {
+      NotificationCenter.default.post(name: transitionWillBeginName, object: nil)
+    }
+
     guard
       let fromScreen = fromVC as? RuneScreenViewController,
       let toScreen = toVC as? RuneScreenViewController
