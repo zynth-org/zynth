@@ -1,18 +1,64 @@
 package com.rune.components.textinput
 
 import android.content.Context
-import android.widget.FrameLayout
+import android.graphics.Typeface
+import android.util.TypedValue
 import android.view.View.MeasureSpec
+import android.widget.FrameLayout
 import com.rune.kit.components.RuneComponentDescriptor
 import com.rune.kit.components.RuneComponentRegistrar
 import com.rune.kit.components.RuneComponentRegistry
 import com.rune.kit.core.RuneUIManager
 import com.rune.kit.layout.MeasureMode
 import com.rune.kit.layout.Style
+import com.rune.kit.runtime.FontRegistry
 import org.json.JSONObject
 import kotlin.math.roundToInt
 
 class TextInputComponentRegistrar : RuneComponentRegistrar {
+  private fun applyStyle(input: RuneTextInputView, style: Style) {
+    val left = (style.paddingLeft ?: style.paddingHorizontal ?: style.padding ?: 0f).toInt()
+    val right = (style.paddingRight ?: style.paddingHorizontal ?: style.padding ?: 0f).toInt()
+    val top = (style.paddingTop ?: style.paddingVertical ?: style.padding ?: 0f).toInt()
+    val bottom = (style.paddingBottom ?: style.paddingVertical ?: style.padding ?: 0f).toInt()
+
+    val currentPadding = input.getStyledPadding()
+    if (currentPadding.left != left || currentPadding.right != right ||
+      currentPadding.top != top || currentPadding.bottom != bottom
+    ) {
+      input.updateStylePadding(left, top, right, bottom)
+    }
+
+    style.fontSize?.let { fontSize ->
+      input.setTextSize(TypedValue.COMPLEX_UNIT_PX, fontSize)
+    }
+
+    style.color?.let { color ->
+      input.setTextColor(color)
+    }
+
+    val weight = style.fontWeight
+    val isBold = weight?.let {
+      it.equals("bold", ignoreCase = true) || it.toIntOrNull()?.let { w -> w >= 600 } == true
+    } ?: false
+    val isItalic = style.fontStyle?.equals("italic", ignoreCase = true) == true
+    val styleInt = when {
+      isBold && isItalic -> Typeface.BOLD_ITALIC
+      isBold -> Typeface.BOLD
+      isItalic -> Typeface.ITALIC
+      else -> Typeface.NORMAL
+    }
+
+    val family = style.fontFamily
+    val baseTypeface = if (family != null) {
+      FontRegistry.getTypeface(family) ?: Typeface.create(family, styleInt)
+    } else {
+      Typeface.DEFAULT
+    }
+
+    input.setTypeface(Typeface.create(baseTypeface, styleInt))
+  }
+
   private fun registerMeasureHandler(
     manager: RuneUIManager,
     node: RuneUIManager.Node,
@@ -78,19 +124,8 @@ class TextInputComponentRegistrar : RuneComponentRegistrar {
         },
         applyProperty = { node, name, value -> TextInputPropAdapter.apply(node, name, value) },
         onStyleApplied = { node, style ->
-          // Extract padding from style and apply it properly to avoid accumulation
           (node.view as? RuneTextInputView)?.let { input ->
-            val left = (style.paddingLeft ?: style.paddingHorizontal ?: style.padding ?: 0f).toInt()
-            val right = (style.paddingRight ?: style.paddingHorizontal ?: style.padding ?: 0f).toInt()
-            val top = (style.paddingTop ?: style.paddingVertical ?: style.padding ?: 0f).toInt()
-            val bottom = (style.paddingBottom ?: style.paddingVertical ?: style.padding ?: 0f).toInt()
-            
-            // Only update if padding has actually changed
-            val currentPadding = input.getStyledPadding()
-            if (currentPadding.left != left || currentPadding.right != right ||
-                currentPadding.top != top || currentPadding.bottom != bottom) {
-              input.updateStylePadding(left, top, right, bottom)
-            }
+            applyStyle(input, style)
           }
         },
         onSetHandler = { node, event ->
@@ -169,19 +204,8 @@ class TextInputComponentRegistrar : RuneComponentRegistrar {
         },
         applyProperty = { node, name, value -> TextInputPropAdapter.apply(node, name, value) },
         onStyleApplied = { node, style ->
-          // Extract padding from style and apply it properly to avoid accumulation
           (node.view as? RuneSecureTextInputView)?.let { input ->
-            val left = (style.paddingLeft ?: style.paddingHorizontal ?: style.padding ?: 0f).toInt()
-            val right = (style.paddingRight ?: style.paddingHorizontal ?: style.padding ?: 0f).toInt()
-            val top = (style.paddingTop ?: style.paddingVertical ?: style.padding ?: 0f).toInt()
-            val bottom = (style.paddingBottom ?: style.paddingVertical ?: style.padding ?: 0f).toInt()
-            
-            // Only update if padding has actually changed
-            val currentPadding = input.getStyledPadding()
-            if (currentPadding.left != left || currentPadding.right != right ||
-                currentPadding.top != top || currentPadding.bottom != bottom) {
-              input.updateStylePadding(left, top, right, bottom)
-            }
+            applyStyle(input, style)
           }
         },
         onSetHandler = { node, event ->
