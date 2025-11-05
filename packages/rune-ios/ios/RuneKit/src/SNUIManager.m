@@ -1124,7 +1124,20 @@ static void SNApplyEdges(NSDictionary *style,
   SNApplyBorderStyleToView(n.view, style, shouldClip);
   SNApplyGradientToView(n.view, gradient);
 
-  NSDictionary *shadowOffset = [style[@"shadowOffset"] isKindOfClass:[NSDictionary class]] ? style[@"shadowOffset"] : nil;
+  id shadowOffsetRaw = style[@"shadowOffset"];
+  NSDictionary *shadowOffset = nil;
+  if ([shadowOffsetRaw isKindOfClass:[NSDictionary class]]) {
+    shadowOffset = shadowOffsetRaw;
+  } else if ([shadowOffsetRaw isKindOfClass:[NSString class]]) {
+    NSString *trimmed = [(NSString *)shadowOffsetRaw stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if ([trimmed hasPrefix:@"{"]) {
+      NSData *data = [trimmed dataUsingEncoding:NSUTF8StringEncoding];
+      id parsed = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+      if ([parsed isKindOfClass:[NSDictionary class]]) {
+        shadowOffset = parsed;
+      }
+    }
+  }
   NSNumber *shadowOffsetX = [shadowOffset[@"width"] isKindOfClass:[NSNumber class]] ? shadowOffset[@"width"] : nil;
   NSNumber *shadowOffsetY = [shadowOffset[@"height"] isKindOfClass:[NSNumber class]] ? shadowOffset[@"height"] : nil;
   NSString *shadowColorString = [style[@"shadowColor"] isKindOfClass:[NSString class]] ? style[@"shadowColor"] : nil;
