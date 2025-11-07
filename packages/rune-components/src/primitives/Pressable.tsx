@@ -77,6 +77,8 @@ export type PressableProps = {
   stateLayerStyle?: Style | ((state: PressableState) => Style);
   style?: Style | ((state: PressableState) => Style);
   pointerEvents?: "auto" | "none" | "box-none" | "box-only";
+  enableGlassIOS?: boolean;
+  tintColor?: string;
   controller?: PressableController;
   asChild?: boolean;
   accessibilityLabel?: string;
@@ -203,6 +205,8 @@ export const Pressable: ParentComponent<PressableProps> = (props) => {
     "stateLayerStyle",
     "style",
     "pointerEvents",
+    "enableGlassIOS",
+    "tintColor",
     "controller",
     "asChild",
     "accessibilityLabel",
@@ -431,6 +435,8 @@ export const Pressable: ParentComponent<PressableProps> = (props) => {
       local.preventFocusOnPress ?? false
     );
     setProperty(node, "pointerEvents", pointerBehavior());
+    setProperty(node, "enableGlassIOS", local.enableGlassIOS ?? false);
+    setProperty(node, "tintColor", local.tintColor);
     setProperty(node, "accessibilityLabel", local.accessibilityLabel);
     setProperty(node, "accessibilityHint", local.accessibilityHint);
     setProperty(node, "testID", local.testID);

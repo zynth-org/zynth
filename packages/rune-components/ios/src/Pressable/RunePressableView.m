@@ -293,6 +293,7 @@ static const CFTimeInterval kRunePressableDefaultDoublePressWindowMs = 250.0;
     [self.delegate pressableView:self didPressIn:payload];
   }
   [self updateHighlightAnimated:YES];
+  [self rune_setGlassPressed:YES animated:YES];
 }
 
 - (void)firePressOutWithCancelled:(BOOL)cancelled {
@@ -301,6 +302,7 @@ static const CFTimeInterval kRunePressableDefaultDoublePressWindowMs = 250.0;
     [self.delegate pressableView:self didPressOut:payload cancelled:cancelled];
   }
   [self updateHighlightAnimated:YES];
+  [self rune_setGlassPressed:NO animated:YES];
 }
 
 - (void)schedulePressIn {
@@ -455,6 +457,7 @@ static const CFTimeInterval kRunePressableDefaultDoublePressWindowMs = 250.0;
       self.pressed = YES;
       self.lastTouch = nil;
       [self updateHighlightAnimated:YES];
+      [self rune_setGlassPressed:YES animated:YES];
       if ([self.delegate respondsToSelector:@selector(pressableView:didPressIn:)]) {
         [self.delegate pressableView:self didPressIn:@{ @"pointerType" : @"keyboard" }];
       }
@@ -478,6 +481,7 @@ static const CFTimeInterval kRunePressableDefaultDoublePressWindowMs = 250.0;
     }
     if (self.pressed) {
       self.pressed = NO;
+      [self rune_setGlassPressed:NO animated:YES];
       if ([self.delegate respondsToSelector:@selector(pressableView:didPress:)]) {
         [self.delegate pressableView:self didPress:@{ @"pointerType" : @"keyboard" }];
       }
@@ -500,6 +504,7 @@ static const CFTimeInterval kRunePressableDefaultDoublePressWindowMs = 250.0;
   }
   if (self.pressed) {
     self.pressed = NO;
+    [self rune_setGlassPressed:NO animated:YES];
     if ([self.delegate respondsToSelector:@selector(pressableView:didPressOut:cancelled:)]) {
       [self.delegate pressableView:self didPressOut:@{ @"pointerType" : @"keyboard" } cancelled:YES];
     }

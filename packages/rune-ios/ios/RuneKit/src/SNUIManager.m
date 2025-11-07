@@ -1122,6 +1122,10 @@ static void SNApplyEdges(NSDictionary *style,
     // If overflow is "hidden"/"scroll", clipsToBounds was already set to YES above
   }
   SNApplyBorderStyleToView(n.view, style, shouldClip);
+  SEL updateCorner = NSSelectorFromString(@"rune_updateConfigurationCornerRadiusIfNeeded");
+  if ([n.view respondsToSelector:updateCorner]) {
+    [(id)n.view performSelector:updateCorner];
+  }
   SNApplyGradientToView(n.view, gradient);
 
   id shadowOffsetRaw = style[@"shadowOffset"];
@@ -1635,6 +1639,10 @@ static void SNApplyEdges(NSDictionary *style,
   }
 
   SNApplyBorderStyleToView(view, style, overflowClip);
+  SEL updateCorner = NSSelectorFromString(@"rune_updateConfigurationCornerRadiusIfNeeded");
+  if ([view respondsToSelector:updateCorner]) {
+    [(id)view performSelector:updateCorner];
+  }
 }
 
 - (void)sn_applyShadowLayers:(NSArray<RuneShadowLayer *> *_Nullable)layers elevation:(NSNumber *_Nullable)elevation toView:(UIView *)view {

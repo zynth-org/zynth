@@ -1,6 +1,9 @@
 #import "RuneButtonView.h"
 #import "SNUIManager+Internal.h"
 #import <QuartzCore/QuartzCore.h>
+#if __has_include("RuneComponents-Swift.h")
+#import "RuneComponents-Swift.h"
+#endif
 
 static const CFTimeInterval kRuneButtonLongPressDuration = 0.5;
 
@@ -35,10 +38,37 @@ static const CFTimeInterval kRuneButtonLongPressDuration = 0.5;
 @property(nonatomic, strong, nullable) NSTimer *longPressTimer;
 @property(nonatomic, assign) CFTimeInterval pressStartTimestamp;
 @property(nonatomic, assign) BOOL longPressFired;
+@property(nonatomic, assign) BOOL runeGlassEnabled;
+@property(nonatomic, strong, nullable) UIView *glassEffectView;
+@property(nonatomic, strong, nullable) UIColor *glassTintColor;
 
 @end
 
 @implementation RuneButtonView
+
+- (BOOL)rune_shouldUseGlassConfiguration {
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 260000
+  if (@available(iOS 26.0, *)) {
+    return self.runeGlassEnabled;
+  }
+#endif
+  return NO;
+}
+
+- (void)updateConfigurationCornerRadiusIfNeeded {
+  if (!@available(iOS 15.0, *)) return;
+  UIButtonConfiguration *config = self.configuration;
+  if (!config || !config.background) return;
+  CGFloat radius = self.layer.cornerRadius;
+  if (radius <= 0.0) return;
+  config.cornerStyle = UIButtonConfigurationCornerStyleFixed;
+  config.background.cornerRadius = radius;
+  self.configuration = config;
+}
+
+- (void)rune_updateConfigurationCornerRadiusIfNeeded {
+  [self updateConfigurationCornerRadiusIfNeeded];
+}
 
 - (BOOL)isSystemSubview:(UIView *)subview {
   NSString *name = NSStringFromClass([subview class]);
@@ -78,6 +108,16 @@ static const CFTimeInterval kRuneButtonLongPressDuration = 0.5;
   return self;
 }
 
+- (void)layoutSubviews {
+  [super layoutSubviews];
+  if (self.glassEffectView) {
+    self.glassEffectView.frame = self.bounds;
+    [self sendSubviewToBack:self.glassEffectView];
+    [self updateGlassMask];
+  }
+  [self updateConfigurationCornerRadiusIfNeeded];
+}
+
 - (void)dealloc {
   [_longPressTimer invalidate];
 }
@@ -86,6 +126,131 @@ static const CFTimeInterval kRuneButtonLongPressDuration = 0.5;
   self.manager = manager;
   self.node = node;
   self.nodeId = node ? node.nid : -1;
+}
+
+- (UIVisualEffect *)rune_createGlassEffect {
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 260000
+  if (@available(iOS 26.0, *)) {
+    UIGlassEffect *effect =
+        [UIGlassEffect effectWithStyle:UIGlassEffectStyleRegular];
+    effect.interactive = YES;
+    effect.tintColor = self.glassTintColor;
+    return effect;
+  }
+#endif
+  return nil;
+}
+
+- (UIView *)rune_createGlassEffectView {
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 260000
+  if (@available(iOS 26.0, *)) {
+#if __has_include("RuneComponents-Swift.h")
+    RuneGlassEffectHostingView *hostingView =
+        [[RuneGlassEffectHostingView alloc] initWithFrame:self.bounds];
+    hostingView.userInteractionEnabled = NO;
+    hostingView.cornerRadius = self.layer.cornerRadius;
+    hostingView.cornerStyle =
+        (self.layer.cornerCurve == kCACornerCurveContinuous) ? @"continuous"
+                                                             : @"circular";
+    hostingView.glassType = @"regular";
+    hostingView.interactive = YES;
+    hostingView.glassTintColor = self.glassTintColor;
+    return hostingView;
+#endif
+    UIVisualEffect *effect = [self rune_createGlassEffect];
+    if (effect) {
+      UIVisualEffectView *glassView =
+          [[UIVisualEffectView alloc] initWithEffect:effect];
+      glassView.userInteractionEnabled = NO;
+      return glassView;
+    }
+  }
+#endif
+  return nil;
+}
+
+- (void)removeGlassEffectView {
+  if (!self.glassEffectView) return;
+  [self.glassEffectView removeFromSuperview];
+  self.glassEffectView = nil;
+}
+
+- (void)updateGlassMask {
+  if (!self.glassEffectView) return;
+#if __has_include("RuneComponents-Swift.h")
+  if ([self.glassEffectView isKindOfClass:[RuneGlassEffectHostingView class]]) {
+    RuneGlassEffectHostingView *hostingView =
+        (RuneGlassEffectHostingView *)self.glassEffectView;
+    hostingView.cornerRadius = self.layer.cornerRadius;
+    hostingView.cornerStyle =
+        (self.layer.cornerCurve == kCACornerCurveContinuous) ? @"continuous"
+                                                             : @"circular";
+  }
+#endif
+  self.glassEffectView.layer.cornerRadius = self.layer.cornerRadius;
+  self.glassEffectView.layer.maskedCorners = self.layer.maskedCorners;
+  if (@available(iOS 13.0, *)) {
+    self.glassEffectView.layer.cornerCurve = self.layer.cornerCurve;
+  }
+  BOOL shouldClip = self.layer.cornerRadius > 0.0;
+  self.glassEffectView.clipsToBounds = shouldClip;
+}
+
+- (void)updateGlassEffectView {
+  if (!self.runeGlassEnabled) {
+    [self removeGlassEffectView];
+    return;
+  }
+
+  if (!self.glassEffectView) {
+    UIView *glassView = [self rune_createGlassEffectView];
+    if (!glassView) {
+      [self removeGlassEffectView];
+      return;
+    }
+    glassView.frame = self.bounds;
+    glassView.autoresizingMask =
+        UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [self insertSubview:glassView atIndex:0];
+    self.glassEffectView = glassView;
+    [self updateGlassMask];
+    return;
+  }
+
+  if ([self.glassEffectView isKindOfClass:[UIVisualEffectView class]]) {
+    UIVisualEffect *effect = [self rune_createGlassEffect];
+    if (!effect) {
+      [self removeGlassEffectView];
+      return;
+    }
+    UIVisualEffectView *glassView =
+        (UIVisualEffectView *)self.glassEffectView;
+    glassView.effect = effect;
+  } else {
+    [self updateGlassMask];
+  }
+  [self sendSubviewToBack:self.glassEffectView];
+  [self updateGlassMask];
+}
+
+- (void)updateGlassPressed:(BOOL)pressed animated:(BOOL)animated {
+  if (!self.glassEffectView) return;
+  CGFloat scale = pressed ? 1.05 : 1.0;
+  CGAffineTransform transform = CGAffineTransformMakeScale(scale, scale);
+  if (!animated) {
+    self.glassEffectView.transform = transform;
+    return;
+  }
+  [UIView animateWithDuration:pressed ? 0.2 : 0.18
+                        delay:0
+       usingSpringWithDamping:0.7
+        initialSpringVelocity:0.2
+                      options:UIViewAnimationOptionBeginFromCurrentState |
+                              UIViewAnimationOptionAllowUserInteraction
+                   animations:^{
+                     self.glassEffectView.transform = transform;
+                   }
+                   completion:nil];
 }
 
 #pragma mark - Native Configuration (iOS 15+)
@@ -97,15 +262,36 @@ static const CFTimeInterval kRuneButtonLongPressDuration = 0.5;
 
   UIButtonConfiguration *config = nil;
   BOOL usesNativeContent = (self.buttonTitle != nil) || (self.buttonImage != nil);
+  BOOL useGlass = [self rune_shouldUseGlassConfiguration];
   
   // 1. Variant
-  if ([self.variant isEqualToString:@"filled"]) {
-    config = [UIButtonConfiguration filledButtonConfiguration];
-  } else if ([self.variant isEqualToString:@"tinted"]) {
-    config = [UIButtonConfiguration tintedButtonConfiguration];
-  } else if ([self.variant isEqualToString:@"gray"]) {
-    config = [UIButtonConfiguration grayButtonConfiguration];
+  if (useGlass) {
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 260000
+    if (@available(iOS 26.0, *)) {
+      if ([self.variant isEqualToString:@"filled"]) {
+        config = [UIButtonConfiguration prominentGlassButtonConfiguration];
+      } else if ([self.variant isEqualToString:@"plain"] ||
+                 [self.variant isEqualToString:@"text"] ||
+                 [self.variant isEqualToString:@"outlined"]) {
+        config = [UIButtonConfiguration clearGlassButtonConfiguration];
+      } else {
+        config = [UIButtonConfiguration glassButtonConfiguration];
+      }
+    }
+#endif
   } else {
+    if ([self.variant isEqualToString:@"filled"]) {
+      config = [UIButtonConfiguration filledButtonConfiguration];
+    } else if ([self.variant isEqualToString:@"tinted"]) {
+      config = [UIButtonConfiguration tintedButtonConfiguration];
+    } else if ([self.variant isEqualToString:@"gray"]) {
+      config = [UIButtonConfiguration grayButtonConfiguration];
+    } else {
+      config = [UIButtonConfiguration plainButtonConfiguration];
+    }
+  }
+
+  if (!config) {
     config = [UIButtonConfiguration plainButtonConfiguration];
   }
 
@@ -120,14 +306,18 @@ static const CFTimeInterval kRuneButtonLongPressDuration = 0.5;
     config.buttonSize = UIButtonConfigurationSizeMedium;
   }
 
-  // 3. Base Color
-  if (self.baseColor) {
-    if ([self.variant isEqualToString:@"filled"]) {
-      config.baseBackgroundColor = self.baseColor;
+  // 3. Base Color / Glass Tint
+  UIColor *resolvedGlassTint = self.glassTintColor ?: self.baseColor;
+  if (resolvedGlassTint) {
+    if (useGlass) {
+      config.baseBackgroundColor = resolvedGlassTint;
+      config.baseForegroundColor = nil;
+    } else if ([self.variant isEqualToString:@"filled"]) {
+      config.baseBackgroundColor = resolvedGlassTint;
       config.baseForegroundColor = nil;
     } else {
-      config.baseForegroundColor = self.baseColor;
-      config.baseBackgroundColor = nil; 
+      config.baseForegroundColor = resolvedGlassTint;
+      config.baseBackgroundColor = nil;
     }
   }
 
@@ -199,6 +389,13 @@ static const CFTimeInterval kRuneButtonLongPressDuration = 0.5;
 
   // Disabled State
   self.enabled = !self.runeDisabled;
+
+  if (useGlass) {
+    [self removeGlassEffectView];
+  } else {
+    [self updateGlassEffectView];
+  }
+  [self updateConfigurationCornerRadiusIfNeeded];
   
   [self setNeedsLayout];
 }
@@ -238,6 +435,17 @@ static const CFTimeInterval kRuneButtonLongPressDuration = 0.5;
 - (void)rune_setRounded:(NSString *)rounded {
   _rounded = rounded ?: @"md";
   [self updateNativeConfiguration];
+}
+
+- (void)rune_setEnableGlassIOS:(BOOL)enabled {
+  self.runeGlassEnabled = enabled;
+  [self updateNativeConfiguration];
+}
+
+- (void)rune_setGlassTintColor:(UIColor *)tintColor {
+  self.glassTintColor = tintColor;
+  [self updateNativeConfiguration];
+  [self updateGlassEffectView];
 }
 
 - (void)rune_setDisabled:(BOOL)disabled {
@@ -318,6 +526,7 @@ static const CFTimeInterval kRuneButtonLongPressDuration = 0.5;
   
   [self notifyPressIn];
   [self triggerHapticsIfNeeded];
+  [self updateGlassPressed:YES animated:YES];
 }
 
 - (void)handleTouchUp {
@@ -328,15 +537,18 @@ static const CFTimeInterval kRuneButtonLongPressDuration = 0.5;
   }
   
   [self notifyPressOutWithCancel:NO];
+  [self updateGlassPressed:NO animated:YES];
 }
 
 - (void)handleTouchCancel {
   [self cancelLongPressTimer];
   [self notifyPressOutWithCancel:YES];
+  [self updateGlassPressed:NO animated:YES];
 }
 
 - (void)handleTouchDragExit {
   [self cancelLongPressTimer];
+  [self updateGlassPressed:NO animated:YES];
 }
 
 #pragma mark - Long Press
@@ -432,6 +644,7 @@ static const CFTimeInterval kRuneButtonLongPressDuration = 0.5;
     case RunePointerEventsBoxNone: {
       // Pass through to children, but don't catch self
       for (UIView *subview in self.subviews.reverseObjectEnumerator) {
+        if (subview == self.glassEffectView) continue;
         CGPoint converted = [subview convertPoint:point fromView:self];
         UIView *hit = [subview hitTest:converted withEvent:event];
         if (hit) return hit;
@@ -445,7 +658,15 @@ static const CFTimeInterval kRuneButtonLongPressDuration = 0.5;
 
     case RunePointerEventsAuto:
     default:
-      return [super hitTest:point withEvent:event];
+      {
+        UIView *hit = [super hitTest:point withEvent:event];
+        if (!self.glassEffectView) return hit;
+        if (hit == self.glassEffectView ||
+            [hit isDescendantOfView:self.glassEffectView]) {
+          return self;
+        }
+        return hit;
+      }
   }
 }
 
@@ -465,15 +686,24 @@ static const CFTimeInterval kRuneButtonLongPressDuration = 0.5;
 - (void)bringCustomContentToFrontIfNeeded {
   if (self.buttonTitle || self.buttonImage) return;
   for (UIView *subview in self.subviews) {
+    if (subview == self.glassEffectView) continue;
     if (![self isSystemSubview:subview]) {
       subview.userInteractionEnabled = NO;
       [self bringSubviewToFront:subview];
     }
   }
+  if (self.glassEffectView) {
+    [self sendSubviewToBack:self.glassEffectView];
+  }
 }
 
 - (void)didAddSubview:(UIView *)subview {
   [super didAddSubview:subview];
+  if (subview == self.glassEffectView) {
+    subview.userInteractionEnabled = NO;
+    [self sendSubviewToBack:subview];
+    return;
+  }
   if (![self isSystemSubview:subview]) {
     subview.userInteractionEnabled = NO; // let touches reach the button
     if (!self.buttonTitle && !self.buttonImage) {

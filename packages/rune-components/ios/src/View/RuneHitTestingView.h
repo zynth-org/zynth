@@ -19,4 +19,9 @@
 
 @property (nonatomic, assign) RunePointerEventsMode pointerMode;
 
+- (void)rune_setEnableGlassIOS:(BOOL)enabled;
+- (void)rune_setGlassTintColor:(UIColor *_Nullable)tintColor;
+- (void)rune_setGlassPressed:(BOOL)pressed animated:(BOOL)animated;
+- (UIView *_Nullable)rune_glassEffectView;
+
 @end

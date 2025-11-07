@@ -110,6 +110,14 @@ const sizeFontMap: Record<Size, number> = {
   xl: 17,
 };
 
+const resolveStyleBackgroundColor = (style: Style | undefined) => {
+  const value = style?.backgroundColor;
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim();
+  if (!normalized) return undefined;
+  return value;
+};
+
 export function createButtonController(opts?: {
   disabled?: boolean;
   loading?: boolean;
@@ -216,6 +224,8 @@ export type ButtonProps = {
   pressBehavior?: PressBehavior;
   pendingBehavior?: PendingBehavior;
   style?: Style;
+  enableGlassIOS?: boolean;
+  tintColor?: string;
   labelStyle?: Style;
   iconStyle?: Style;
   pressedStyle?: Style;
@@ -316,6 +326,8 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     "pressBehavior",
     "pendingBehavior",
     "style",
+    "enableGlassIOS",
+    "tintColor",
     "labelStyle",
     "iconStyle",
     "pressedStyle",
@@ -649,11 +661,18 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     }
 
     // Base Color — let the system choose unless explicitly provided or destructive tone
+    const resolvedStyle = resolvedButtonStyle() as Style | undefined;
+    const shouldUseBackgroundBase =
+      !!local.enableGlassIOS || resolvedVariant() === "solid";
+    const styleBaseColor = shouldUseBackgroundBase
+      ? resolveStyleBackgroundColor(resolvedStyle)
+      : undefined;
     const color =
       local.baseColor ??
+      styleBaseColor ??
       (resolvedTone() === "danger" ? toneColorMap[resolvedTone()] : undefined);
 
-    setProperty(node, "style", resolvedButtonStyle());
+    setProperty(node, "style", resolvedStyle);
     setProperty(node, "type", resolvedType());
     setProperty(node, "disabled", resolvedDisabled());
     setProperty(node, "loading", computedLoading());
@@ -695,6 +714,8 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     setProperty(node, "pressRetentionOffset", local.pressRetentionOffset);
     setProperty(node, "hitSlop", resolvedHitSlop());
     setProperty(node, "minimumTouchSize", resolvedMinimumTouch());
+    setProperty(node, "enableGlassIOS", local.enableGlassIOS ?? false);
+    setProperty(node, "tintColor", local.tintColor);
     setProperty(
       node,
       "preventFocusOnPress",

@@ -36,6 +36,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)rune_setActivateKeys:(NSArray<NSString *> *_Nullable)keys;
 - (void)rune_setFocusable:(BOOL)focusable;
 - (void)rune_setPointerEvents:(NSString *_Nullable)pointerEvents;
+- (void)rune_setEnableGlassIOS:(BOOL)enabled;
 - (void)rune_setHasLongPressHandler:(BOOL)hasHandler;
 - (void)rune_handleCommand:(NSDictionary *_Nullable)command;
 

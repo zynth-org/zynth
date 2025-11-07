@@ -17,6 +17,8 @@ interface ViewElementProps {
   accessibilityHint?: string;
   accessibilityRole?: "button" | "header" | "link" | "none";
   pointerEvents?: "auto" | "none" | "box-none" | "box-only";
+  enableGlassIOS?: boolean;
+  tintColor?: string;
   testID?: string;
   key?: string | number;
   onLayout?: (event: {
@@ -29,6 +31,24 @@ interface ViewElementProps {
       };
     };
   }) => void;
+}
+
+interface GlassViewElementProps {
+  style?: Style;
+  children?: RuneChildren;
+  glassEffect?: "regular" | "clear" | "none";
+  interactive?: boolean;
+  tintColor?: string;
+  pointerEvents?: "auto" | "none" | "box-none" | "box-only";
+  testID?: string;
+}
+
+interface GlassContainerElementProps {
+  style?: Style;
+  children?: RuneChildren;
+  spacing?: number;
+  pointerEvents?: "auto" | "none" | "box-none" | "box-only";
+  testID?: string;
 }
 
 interface TextElementProps {
@@ -47,6 +67,8 @@ declare module "solid-js" {
       "scroll-view": ViewElementProps & { [key: string]: any };
       pressable: ViewElementProps & { [key: string]: any };
       button: SolidButtonProps & { testID?: string };
+      "glass-view": GlassViewElementProps & { [key: string]: any };
+      "glass-container": GlassContainerElementProps & { [key: string]: any };
       "progress-indicator": ProgressIndicatorProps & { [key: string]: any };
       "switch-view": SwitchProps & { [key: string]: any };
       "text-field": TextFieldProps & { [key: string]: any };

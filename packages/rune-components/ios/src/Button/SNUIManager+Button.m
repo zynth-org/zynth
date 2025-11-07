@@ -66,10 +66,25 @@ static BOOL RuneButtonHandleSetProp(SNUIManager *manager,
     [button rune_setBaseColor:color];
     return YES;
   }
+
+  if ([name isEqualToString:@"tintColor"]) {
+    UIColor *color = nil;
+    if ([value isKindOfClass:[NSString class]]) {
+      color = SNColorFromHex((NSString *)value);
+    }
+    [button rune_setGlassTintColor:color];
+    return YES;
+  }
   
   if ([name isEqualToString:@"pointerEvents"]) {
     NSString *mode = [value isKindOfClass:[NSString class]] ? (NSString *)value : nil;
     button.pointerMode = RunePointerEventsFromString(mode);
+    return YES;
+  }
+
+  if ([name isEqualToString:@"enableGlassIOS"]) {
+    BOOL enabled = value && value != (id)[NSNull null] ? [value boolValue] : NO;
+    [button rune_setEnableGlassIOS:enabled];
     return YES;
   }
 

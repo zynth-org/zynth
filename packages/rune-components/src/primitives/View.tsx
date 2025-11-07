@@ -23,6 +23,8 @@ export interface ViewProps {
   accessibilityHint?: string;
   accessibilityRole?: "button" | "header" | "link" | "none";
   pointerEvents?: "auto" | "none" | "box-none" | "box-only";
+  enableGlassIOS?: boolean;
+  tintColor?: string;
   testID?: string;
   key?: string | number;
 }
@@ -35,6 +37,8 @@ export const View: ParentComponent<ViewProps> = (props) => {
     "accessibilityHint",
     "accessibilityRole",
     "pointerEvents",
+    "enableGlassIOS",
+    "tintColor",
     "testID",
     "onLayout",
   ]);
@@ -54,6 +58,8 @@ export const View: ParentComponent<ViewProps> = (props) => {
       accessibilityHint={local.accessibilityHint}
       accessibilityRole={local.accessibilityRole}
       pointerEvents={local.pointerEvents}
+      enableGlassIOS={local.enableGlassIOS ?? false}
+      tintColor={local.tintColor}
       onLayout={local.onLayout}
       testID={local.testID}
     >

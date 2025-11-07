@@ -11,6 +11,8 @@ export * from "./primitives/ProgressIndicator";
 export * from "./primitives/Switch";
 export * from "./primitives/TextField";
 export * from "./primitives/Alert";
+export * from "./primitives/GlassView";
+export * from "./primitives/GlassContainer";
 export { useStyle, mergeStyles } from "./hooks/useStyle";
 export { createPressableController } from "./primitives/pressable/controller";
 export type { PressableController } from "./primitives/pressable/controller";

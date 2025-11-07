@@ -1,11 +1,13 @@
 #if __has_include(<RuneKit/RuneKit.h>)
 #import <RuneKit/RuneKit.h>
+#import <RuneKit/SNHexColor.h>
 #else
 #import "RuneKit.h"
 #import "RuneComponentRegistry.h"
 #import "RuneComponentAPI.h"
 #import "SNUIManager.h"
 #import "SNNode.h"
+#import "SNHexColor.h"
 #endif
 
 #import "RuneHitTestingView.h"
@@ -86,6 +88,23 @@
           }
         }
         
+        return YES;
+      }
+
+      if ([name isEqualToString:@"enableGlassIOS"]) {
+        BOOL enabled = value && value != (id)[NSNull null] ? [value boolValue] : NO;
+        RuneHitTestingView *view = (RuneHitTestingView *)node.view;
+        [view rune_setEnableGlassIOS:enabled];
+        return YES;
+      }
+
+      if ([name isEqualToString:@"tintColor"]) {
+        UIColor *color = nil;
+        if ([value isKindOfClass:[NSString class]]) {
+          color = SNColorFromHex((NSString *)value);
+        }
+        RuneHitTestingView *view = (RuneHitTestingView *)node.view;
+        [view rune_setGlassTintColor:color];
         return YES;
       }
       

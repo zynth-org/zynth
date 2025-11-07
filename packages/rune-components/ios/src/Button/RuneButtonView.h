@@ -32,6 +32,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)rune_setHapticsMode:(NSString *_Nullable)mode;
 - (void)rune_setHasLongPressHandler:(BOOL)hasHandler;
 - (void)rune_handleCommand:(NSDictionary *_Nullable)command;
+- (void)rune_setEnableGlassIOS:(BOOL)enabled;
+- (void)rune_updateConfigurationCornerRadiusIfNeeded;
+- (void)rune_setGlassTintColor:(UIColor *_Nullable)tintColor;
 
 // New Native Props
 - (void)rune_setVariant:(NSString *_Nullable)variant;

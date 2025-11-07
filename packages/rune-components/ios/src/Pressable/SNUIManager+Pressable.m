@@ -1,11 +1,13 @@
 #if __has_include(<RuneKit/RuneKit.h>)
 #import <RuneKit/RuneKit.h>
+#import <RuneKit/SNHexColor.h>
 #else
 #import "RuneKit.h"
 #import "RuneComponentRegistry.h"
 #import "RuneComponentAPI.h"
 #import "SNUIManager.h"
 #import "SNNode.h"
+#import "SNHexColor.h"
 #endif
 
 #import "RunePressableView.h"
@@ -108,6 +110,21 @@ static BOOL RunePressableHandleSetProp(SNUIManager *manager,
     [pressable rune_setPointerEvents:pointer];
     node.pointerEvents = pointer.length ? pointer : @"auto";
     [manager rune_updateInteractionStateForNode:node];
+    return YES;
+  }
+
+  if ([name isEqualToString:@"tintColor"]) {
+    UIColor *color = nil;
+    if ([value isKindOfClass:[NSString class]]) {
+      color = SNColorFromHex((NSString *)value);
+    }
+    [pressable rune_setGlassTintColor:color];
+    return YES;
+  }
+
+  if ([name isEqualToString:@"enableGlassIOS"]) {
+    BOOL enabled = value && value != (id)[NSNull null] ? [value boolValue] : NO;
+    [pressable rune_setEnableGlassIOS:enabled];
     return YES;
   }
 
