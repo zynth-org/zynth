@@ -65,6 +65,9 @@ export type {
   // Screen options
   ScreenOptions,
   ScreenOptionsInput,
+  ScreenHeaderBlurEffect,
+  ScreenHeaderStyle,
+  ScreenUserInterfaceStyle,
   ScreenPresentation,
   ScreenAnimation,
 

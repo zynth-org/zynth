@@ -3,6 +3,10 @@ import RuneKit
 import UIKit
 
 struct RuneScreenHeaderOptions: Equatable {
+  var headerStyle: RuneScreenHeaderStyle
+  var shadowVisible: Bool
+  var blurEffect: String?
+  var userInterfaceStyle: String?
   var title: String?
   var subtitle: String?
   var prefersLargeTitle: Bool
@@ -16,6 +20,10 @@ struct RuneScreenHeaderOptions: Equatable {
   var rightAccessory: RuneScreenHeaderAccessory?
 
   static let `default` = RuneScreenHeaderOptions(
+    headerStyle: .standard,
+    shadowVisible: true,
+    blurEffect: nil,
+    userInterfaceStyle: nil,
     title: nil,
     subtitle: nil,
     prefersLargeTitle: false,
@@ -28,6 +36,11 @@ struct RuneScreenHeaderOptions: Equatable {
     rightButton: nil,
     rightAccessory: nil
   )
+}
+
+enum RuneScreenHeaderStyle: String, Equatable {
+  case standard = "default"
+  case liquidGlass = "liquidGlass"
 }
 
 struct RuneScreenHeaderButtonOptions: Equatable {
@@ -129,6 +142,21 @@ public final class RuneScreenView: UIView {
   public func setHeaderOptions(from dictionary: NSDictionary?) {
     var options = RuneScreenHeaderOptions.default
     if let dict = dictionary {
+      if
+        let headerStyle = dict["headerStyle"] as? String,
+        let style = RuneScreenHeaderStyle(rawValue: headerStyle)
+      {
+        options.headerStyle = style
+      }
+      if let shadowVisible = dict["shadowVisible"] as? Bool {
+        options.shadowVisible = shadowVisible
+      }
+      if let blurEffect = dict["blurEffect"] as? String {
+        options.blurEffect = blurEffect
+      }
+      if let userInterfaceStyle = dict["userInterfaceStyle"] as? String {
+        options.userInterfaceStyle = userInterfaceStyle
+      }
       if let title = dict["title"] as? String {
         options.title = title
       }

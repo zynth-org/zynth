@@ -84,10 +84,16 @@ export interface ScreenOptions {
   headerTitleColor?: string;
   /** Header background color */
   headerBackgroundColor?: string;
+  /** Native header style (iOS only) */
+  headerStyle?: ScreenHeaderStyle;
+  /** Header blur effect (iOS only) */
+  headerBlurEffect?: ScreenHeaderBlurEffect;
   /** Transparent header */
   headerTransparent?: boolean;
   /** Header shadow visibility */
   headerShadowVisible?: boolean;
+  /** Preferred UI style (iOS only) */
+  userInterfaceStyle?: ScreenUserInterfaceStyle;
   /** Hide the default back button */
   headerBackVisible?: boolean;
   /** Custom header left component */
@@ -124,10 +130,17 @@ export interface ScreenOptions {
 
 export interface HeaderRightButtonOptions {
   title?: string;
-  style?: "plain" | "done" | "icon";
+  style?: "plain" | "done" | "icon" | "prominent";
   systemItem?: "close";
   onPress?: () => void;
 }
+
+export type ScreenHeaderStyle = "default" | "liquidGlass";
+export type ScreenHeaderBlurEffect =
+  | "systemUltraThin"
+  | "systemThin"
+  | "systemChromatic";
+export type ScreenUserInterfaceStyle = "dark" | "light" | "system";
 
 /**
  * Screen presentation styles

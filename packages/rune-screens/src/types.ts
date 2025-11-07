@@ -62,19 +62,31 @@ export interface ScreenHeaderOptions {
   title?: string;
   subtitle?: string;
   prefersLargeTitle?: boolean;
+  /** Native header style (iOS only) */
+  headerStyle?: ScreenHeaderStyle;
   visible?: boolean;
   backVisible?: boolean;
   tintColor?: string;
   titleColor?: string;
   backgroundColor?: string;
   transparent?: boolean;
+  shadowVisible?: boolean;
+  blurEffect?: ScreenHeaderBlurEffect;
+  userInterfaceStyle?: ScreenUserInterfaceStyle;
   rightButton?: ScreenHeaderButtonOptions;
   rightAccessory?: ScreenHeaderAccessoryDescriptor;
 }
 
+export type ScreenHeaderStyle = "default" | "liquidGlass";
+export type ScreenHeaderBlurEffect =
+  | "systemUltraThin"
+  | "systemThin"
+  | "systemChromatic";
+export type ScreenUserInterfaceStyle = "dark" | "light" | "system";
+
 export interface ScreenHeaderButtonOptions {
   title?: string;
-  style?: "plain" | "done" | "icon";
+  style?: "plain" | "done" | "icon" | "prominent";
   systemItem?: "close";
 }
 

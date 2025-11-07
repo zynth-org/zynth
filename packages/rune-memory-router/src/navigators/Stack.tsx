@@ -467,6 +467,7 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
                   title: resolvedTitle,
                   subtitle: opts?.subtitle,
                   prefersLargeTitle: opts?.largeTitle ?? false,
+                  headerStyle: opts?.headerStyle,
                   visible: headerVisible(),
                   backVisible: opts?.headerBackVisible ?? true,
                   tintColor: opts?.headerTintColor ?? DEFAULT_HEADER_TINT,
@@ -476,6 +477,9 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
                     DEFAULT_HEADER_TINT,
                   backgroundColor,
                   transparent,
+                  shadowVisible: opts?.headerShadowVisible ?? true,
+                  blurEffect: opts?.headerBlurEffect,
+                  userInterfaceStyle: opts?.userInterfaceStyle,
                   rightButton: buttonOptions
                     ? {
                         title: buttonOptions.title,
@@ -724,7 +728,8 @@ function HeaderBar(props: HeaderBarProps) {
               color: tintColor(),
               fontSize: 16,
               fontWeight:
-                props.options.headerRightButton?.style === "done"
+                props.options.headerRightButton?.style === "done" ||
+                props.options.headerRightButton?.style === "prominent"
                   ? "600"
                   : "500",
             }}

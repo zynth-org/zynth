@@ -63,17 +63,37 @@ final class RuneScreenViewController: UIViewController {
     navigationItem.prompt = options.subtitle
     navigationItem.largeTitleDisplayMode = options.prefersLargeTitle ? .automatic : .never
     updateBackItems(using: options)
+    applyUserInterfaceStyle(options.userInterfaceStyle)
 
+    let appearance = makeHeaderAppearance(using: options)
+
+    navigationItem.standardAppearance = appearance
+    navigationItem.scrollEdgeAppearance = appearance
+    navigationItem.compactAppearance = appearance
+
+    updateHeaderRightItems()
+    applyHeaderTint(using: options)
+  }
+
+  private func makeHeaderAppearance(using options: RuneScreenHeaderOptions) -> UINavigationBarAppearance {
     let appearance = UINavigationBarAppearance()
-    if options.isTransparent {
+    if options.headerStyle == .liquidGlass {
       appearance.configureWithTransparentBackground()
+    } else if options.isTransparent {
+      appearance.configureWithTransparentBackground()
+    } else if let blurStyle = blurEffectStyle(from: options.blurEffect) {
+      appearance.configureWithTransparentBackground()
+      appearance.backgroundEffect = UIBlurEffect(style: blurStyle)
+      appearance.backgroundColor = options.backgroundColor
     } else if let backgroundColor = options.backgroundColor {
       appearance.configureWithOpaqueBackground()
       appearance.backgroundColor = backgroundColor
     } else {
       appearance.configureWithDefaultBackground()
     }
-    appearance.shadowColor = nil
+    if !options.shadowVisible {
+      appearance.shadowColor = .clear
+    }
 
     let titleColor = options.titleColor ?? UIColor.label
     appearance.titleTextAttributes = [
@@ -82,17 +102,62 @@ final class RuneScreenViewController: UIViewController {
     appearance.largeTitleTextAttributes = [
       .foregroundColor: titleColor,
     ]
+    return appearance
+  }
 
-    navigationItem.standardAppearance = appearance
-    navigationItem.scrollEdgeAppearance = appearance
-    navigationItem.compactAppearance = appearance
-
-    if let tintColor = options.tintColor {
-      navigationController?.navigationBar.tintColor = tintColor
-    } else {
-      navigationController?.navigationBar.tintColor = nil
+  private func applyUserInterfaceStyle(_ style: String?) {
+    guard #available(iOS 13.0, *) else { return }
+    switch style?.lowercased() {
+    case "dark":
+      overrideUserInterfaceStyle = .dark
+    case "light":
+      overrideUserInterfaceStyle = .light
+    default:
+      overrideUserInterfaceStyle = .unspecified
     }
-    updateHeaderRightItems()
+  }
+
+  private func blurEffectStyle(from value: String?) -> UIBlurEffect.Style? {
+    guard let value else { return nil }
+    switch value {
+    case "systemUltraThin":
+      return .systemUltraThinMaterial
+    case "systemThin":
+      return .systemThinMaterial
+    case "systemChromatic":
+      if #available(iOS 15.0, *) {
+        return .systemChromeMaterial
+      }
+      return .systemMaterial
+    case "systemUltraThinMaterial":
+      return .systemUltraThinMaterial
+    case "systemThinMaterial":
+      return .systemThinMaterial
+    case "systemChromeMaterial":
+      if #available(iOS 15.0, *) {
+        return .systemChromeMaterial
+      }
+      return .systemMaterial
+    case "systemMaterial":
+      return .systemMaterial
+    default:
+      return nil
+    }
+  }
+
+  private func applyHeaderTint(using options: RuneScreenHeaderOptions) {
+    if options.headerStyle == .liquidGlass {
+      navigationController?.navigationBar.tintColor = nil
+      let tintColor = options.tintColor
+      navigationItem.rightBarButtonItem?.tintColor = tintColor
+      navigationItem.leftBarButtonItem?.tintColor = tintColor
+      modalCloseButton.tintColor = tintColor
+    } else {
+      navigationController?.navigationBar.tintColor = options.tintColor
+      navigationItem.rightBarButtonItem?.tintColor = nil
+      navigationItem.leftBarButtonItem?.tintColor = nil
+      modalCloseButton.tintColor = nil
+    }
   }
 
   private func updateBackItems(using options: RuneScreenHeaderOptions) {
@@ -138,8 +203,21 @@ final class RuneScreenViewController: UIViewController {
     if options.systemItem == "close" {
       return UIBarButtonItem(barButtonSystemItem: .close, target: self, action: #selector(handleHeaderRightButtonPress))
     }
-    let style: UIBarButtonItem.Style = options.style == "done" ? .done : .plain
-    let title = options.title ?? (style == .done ? "Done" : "More")
+    let style: UIBarButtonItem.Style
+    switch options.style {
+    case "done":
+      style = .done
+    case "prominent":
+      if #available(iOS 26.0, *) {
+        style = .prominent
+      } else {
+        style = .done
+      }
+    default:
+      style = .plain
+    }
+    let usesDoneTitle = options.style == "done" || options.style == "prominent"
+    let title = options.title ?? (usesDoneTitle ? "Done" : "More")
     let item = UIBarButtonItem(title: title, style: style, target: self, action: #selector(handleHeaderRightButtonPress))
     return item
   }
