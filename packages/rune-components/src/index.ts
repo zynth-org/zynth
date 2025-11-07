@@ -11,6 +11,7 @@ export * from "./primitives/ProgressIndicator";
 export * from "./primitives/Switch";
 export * from "./primitives/TextField";
 export * from "./primitives/Alert";
+export * from "./primitives/StatusBar";
 export * from "./primitives/GlassView";
 export * from "./primitives/GlassContainer";
 export { useStyle, mergeStyles } from "./hooks/useStyle";

@@ -2,13 +2,27 @@ import QuartzCore
 import RuneKit
 import UIKit
 
+final class RuneStatusBarNavigationController: UINavigationController {
+  override var preferredStatusBarStyle: UIStatusBarStyle {
+    RuneStatusBarState.shared.resolvedStyle
+  }
+
+  override var prefersStatusBarHidden: Bool {
+    RuneStatusBarState.shared.resolvedHidden
+  }
+
+  override var preferredStatusBarUpdateAnimation: UIStatusBarAnimation {
+    RuneStatusBarState.shared.animation
+  }
+}
+
 @objcMembers
 @objc(RNStackController)
 public final class RNStackController: UIViewController, UINavigationControllerDelegate,
   UIGestureRecognizerDelegate, UINavigationBarDelegate, UIBarPositioningDelegate,
   UIAdaptivePresentationControllerDelegate
 {
-  private let navigator = UINavigationController()
+  private let navigator = RuneStatusBarNavigationController()
   private let fallbackSurfaceHost = UIView()
   private var routeStack: [RouteRecord] = []
   private weak var routerModule: RuneRouterModule?
@@ -36,6 +50,7 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
   private var lastProgressByRoute: [String: (progress: Double, timestamp: CFTimeInterval)] = [:]
   private var pendingRenderCallbacks: [Int: () -> Void] = [:]
   private var pendingTransitionTeardowns: [RouteRecord] = []
+  private var statusBarObserver: NSObjectProtocol?
 
   public override func viewDidLoad() {
     super.viewDidLoad()
@@ -55,6 +70,34 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
     navigator.interactivePopGestureRecognizer?.delegate = self
     navigator.interactivePopGestureRecognizer?.addTarget(self, action: #selector(handleEdgePan(_:)))
     setRouterActive(false)
+    statusBarObserver = NotificationCenter.default.addObserver(
+      forName: RuneStatusBarState.didChangeNotification,
+      object: nil,
+      queue: .main
+    ) { [weak self] _ in
+      guard let self else { return }
+      self.setNeedsStatusBarAppearanceUpdate()
+      self.navigator.setNeedsStatusBarAppearanceUpdate()
+      self.presentedViewController?.setNeedsStatusBarAppearanceUpdate()
+    }
+  }
+
+  deinit {
+    if let observer = statusBarObserver {
+      NotificationCenter.default.removeObserver(observer)
+    }
+  }
+
+  public override var preferredStatusBarStyle: UIStatusBarStyle {
+    RuneStatusBarState.shared.resolvedStyle
+  }
+
+  public override var prefersStatusBarHidden: Bool {
+    RuneStatusBarState.shared.resolvedHidden
+  }
+
+  public override var preferredStatusBarUpdateAnimation: UIStatusBarAnimation {
+    RuneStatusBarState.shared.animation
   }
 
   func bindRouterModule(_ module: RuneRouterModule, emitter: RuneRouterEmitter) {
@@ -186,7 +229,7 @@ public final class RNStackController: UIViewController, UINavigationControllerDe
       guard self.routeStack.contains(where: { $0 === record }) else { return }
 
       if isModal {
-        let modalNav = UINavigationController(rootViewController: host)
+        let modalNav = RuneStatusBarNavigationController(rootViewController: host)
         modalNav.delegate = self
         modalNav.modalPresentationStyle = mapPresentationStyle(presentation)
         self.configureTransparentNav(modalNav)

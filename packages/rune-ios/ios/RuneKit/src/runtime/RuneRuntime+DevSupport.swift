@@ -848,7 +848,7 @@
       }
 
       if let host = components.host?.lowercased(), host == "localhost" {
-        components.host = "127.0.0.1"
+        components.host = "192.168.110.164"
       }
 
       return components.url ?? url

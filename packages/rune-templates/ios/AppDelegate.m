@@ -61,7 +61,7 @@
 #endif
 
   if (!routerAttached) {
-    UIViewController *vc = [UIViewController new];
+    RuneStatusBarHostController *vc = [RuneStatusBarHostController new];
     vc.view = self.surface;
     self.window.rootViewController = vc;
   }
