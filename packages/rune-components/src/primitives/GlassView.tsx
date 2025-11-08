@@ -30,7 +30,7 @@ export const GlassView: ParentComponent<GlassViewProps> = (props) => {
     <glass-view
       style={local.style as any}
       glassEffect={local.effect}
-      interactive={local.interactive}
+      interactive={local.interactive ?? true}
       tintColor={local.tintColor}
       pointerEvents={local.pointerEvents}
       testID={local.testID}

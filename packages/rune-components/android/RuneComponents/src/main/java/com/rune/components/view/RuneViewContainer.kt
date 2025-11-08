@@ -17,7 +17,7 @@ import android.widget.FrameLayout
  * - Nested views with overflow:visible can still render outside their parent
  * - Similar to React Native's ReactViewGroup implementation
  */
-class RuneViewContainer(context: Context) : FrameLayout(context) {
+open class RuneViewContainer(context: Context) : FrameLayout(context) {
   
   private var overflowHidden: Boolean = false
   private var clipPath: Path? = null
