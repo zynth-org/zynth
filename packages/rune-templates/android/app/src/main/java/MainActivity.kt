@@ -60,27 +60,28 @@ class MainActivity : AppCompatActivity() {
       null
     }
 
-    // Force a layout pass to ensure window insets are available
-    root.post {
-      val runtime = RuneRuntime(root)
-      runtime.installDefaultModules()
-      runtime.installModules(listOf(DeviceModule(), EnvModule(), PerformanceModule()))
+    val runtime = RuneRuntime(root)
+    this.runtime = runtime
+    runtime.installDefaultModules()
+    runtime.installModules(listOf(DeviceModule(), EnvModule(), PerformanceModule()))
 
 {{MODULE_INITIALIZERS}}
 
-      val currentIntent = intent
-      val devServerUrl = currentIntent.getStringExtra("RUNE_DEV_SERVER_URL")
+    val currentIntent = intent
+    val devServerUrl = currentIntent.getStringExtra("RUNE_DEV_SERVER_URL")
 
-      if (!devServerUrl.isNullOrBlank()) {
-        val token = currentIntent.getStringExtra("RUNE_DEV_SERVER_TOKEN")
-        runtime.connectDevServer(devServerUrl, token)
-      } else {
-        // Wait for background thread if needed
-        loadThread?.join()
-      }
+    if (!devServerUrl.isNullOrBlank()) {
+      val token = currentIntent.getStringExtra("RUNE_DEV_SERVER_TOKEN")
+      runtime.connectDevServer(devServerUrl, token)
+    } else {
+      // Wait for background thread if needed
+      loadThread?.join()
+    }
 
-      runtime.loadInitialBundle(assets, preloadedCode = bundleCode)
+    runtime.loadInitialBundle(assets, preloadedCode = bundleCode)
 
+    // Force a layout pass to ensure window insets are available
+    root.post {
       // Try to bootstrap router BEFORE starting runtime
       val routerAttached = try {
         bootstrapNativeRouter(runtime, root)
@@ -101,8 +102,6 @@ class MainActivity : AppCompatActivity() {
       // ALWAYS start the runtime - router or not
       Log.i("MainActivity", "Starting runtime (router=${routerAttached})")
       runtime.start(root.rootId)
-      
-      this.runtime = runtime
     }
   }
 
