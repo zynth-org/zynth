@@ -33,6 +33,8 @@ targets:
         # Using an asset-based launch screen avoids storyboard compilation.
         UILaunchScreen:
           UIColorName: LaunchBackground
+        NSCameraUsageDescription: "This app needs access to your camera to take photos."
+        NSPhotoLibraryUsageDescription: "This app needs access to your photo library to pick photos."
     settings:
       base:
         TARGETED_DEVICE_FAMILY: "1,2"

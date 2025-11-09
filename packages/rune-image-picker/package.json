@@ -23,6 +23,18 @@
     "build:types": "tsc --project tsconfig.types.json"
   },
   "runeNative": {
+    "ios": {
+      "pods": [
+        {
+          "name": "RuneImagePicker",
+          "podspec": "./RuneImagePicker.podspec"
+        }
+      ],
+      "initializer": {
+        "className": "RuneImagePicker",
+        "method": "initializeWith:"
+      }
+    },
     "android": {
       "modules": [
         {

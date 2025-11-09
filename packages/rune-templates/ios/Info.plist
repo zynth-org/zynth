@@ -20,5 +20,15 @@
 		<string>1</string>
 		<key>UIViewControllerBasedStatusBarAppearance</key>
 		<false />
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>This app needs access to your camera to take photos.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app needs access to your photo library to pick photos.</string>
+	<key>UIAppFonts</key>
 	</dict>
 </plist>
