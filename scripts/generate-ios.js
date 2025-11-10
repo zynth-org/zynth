@@ -37,7 +37,17 @@ function getAppConfig(appDir) {
     workspaceName: pkg.name || `@demo/${appName}`,
     displayName: appConfig.name || pkg.displayName || appName,
     version: appConfig.version || pkg.version || "1.0.0",
+    infoPlist: appConfig.ios?.infoPlist || {},
   };
+}
+
+function formatInfoPlistProperties(properties) {
+  if (!properties || Object.keys(properties).length === 0) {
+    return "";
+  }
+  return Object.entries(properties)
+    .map(([key, value]) => `        ${key}: "${value}"`)
+    .join("\n");
 }
 
 function safeReadJSON(filePath) {
@@ -198,6 +208,11 @@ function replacePlaceholders(content, config, extras = {}) {
     extras.moduleInitializers ?? ""
   );
 
+  output = output.replace(
+    /\{\{INFO_PLIST_PROPERTIES\}\}/g,
+    extras.infoPlistProperties ?? ""
+  );
+
   return output;
 }
 
@@ -260,6 +275,7 @@ function generateIOSProject(appDir, options = {}) {
   const componentPodBlock = formatComponentPodLines(componentPods, targetDir);
   const moduleImports = generateModuleImports(componentPods);
   const moduleInitializers = generateModuleInitializers(componentPods);
+  const infoPlistProperties = formatInfoPlistProperties(config.infoPlist);
   
   // Generate module config for dynamic loading (e.g. Hypervisor)
   generateNativeModulesConfig(componentPods, targetDir);
@@ -277,6 +293,7 @@ function generateIOSProject(appDir, options = {}) {
         componentPods: componentPodBlock,
         moduleImports,
         moduleInitializers,
+        infoPlistProperties,
       });
       fs.writeFileSync(targetFile, processedContent);
       console.log(`  ✓ ${file}`);
