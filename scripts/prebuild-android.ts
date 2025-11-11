@@ -1,14 +1,13 @@
-#!/usr/bin/env node
-
-const path = require("path");
-const { generateAndroidProject } = require("./generate-android.js");
-const fs = require("fs");
+import * as path from "path";
+import * as fs from "fs";
+import { execSync } from "child_process";
+import { generateAndroidProject } from "./generate-android";
 
 const templatesRoot = path.dirname(
   require.resolve("@rune/templates/package.json")
 );
 
-function main(options = {}) {
+export function main(options: any = {}): void {
   const appDir = process.cwd();
   console.log("🚀 Starting Android prebuild...");
   console.log(`📱 App directory: ${appDir}`);
@@ -44,11 +43,10 @@ function main(options = {}) {
 
       // Generate Hermes bytecode if hermesc is available
       try {
-        const { execSync } = require("child_process");
         console.log("🔄 Compiling to Hermes bytecode...");
 
         // Try to find hermesc in common locations
-        let hermescPath;
+        let hermescPath: string | undefined;
         const possiblePaths = [
           "hermesc", // In PATH
           "npx hermesc", // Via npm
@@ -86,7 +84,7 @@ function main(options = {}) {
             "⚠️  hermesc not found. HBC compilation skipped. Install hermes-engine or add hermesc to PATH."
           );
         }
-      } catch (error) {
+      } catch (error: any) {
         console.warn(
           `⚠️  HBC compilation failed: ${error.message}. Falling back to JS source.`
         );
@@ -103,7 +101,7 @@ function main(options = {}) {
     console.log("  ./gradlew :app:assembleDebug");
     console.log("  ./gradlew :app:installDebug");
     console.log(`  adb shell am start -n ${config.bundleId}/.MainActivity`);
-  } catch (error) {
+  } catch (error: any) {
     console.error("\n❌ Android prebuild failed:", error.message);
     process.exit(1);
   }
@@ -112,5 +110,3 @@ function main(options = {}) {
 if (require.main === module) {
   main();
 }
-
-module.exports = { main };

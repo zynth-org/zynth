@@ -135,8 +135,32 @@ function writeAndroidDevAsset(androidDir, payload) {
 }
 
 function getIOSConfig(root, appDir) {
-  const script = require(path.join(root, "scripts", "generate-ios.js"));
-  return script.getAppConfig(appDir);
+  const tsPath = path.join(root, "scripts", "config-utils.ts");
+  
+  if (fs.existsSync(tsPath)) {
+    try {
+      require("ts-node").register({
+        transpileOnly: true,
+        compilerOptions: { 
+          module: "commonjs",
+          moduleResolution: "node"
+        }
+      });
+      const script = require(tsPath);
+      return script.getAppConfig(appDir);
+    } catch (e) {
+      console.warn("⚠️  Failed to load config-utils.ts:", e.message);
+    }
+  }
+
+  // Fallback for legacy setups
+  const scriptPath = path.join(root, "scripts", "generate-ios.js");
+  if (fs.existsSync(scriptPath)) {
+      const script = require(scriptPath);
+      return script.getAppConfig(appDir);
+  }
+  
+  throw new Error("Could not load app config. Missing scripts/config-utils.ts or generate-ios.js");
 }
 
 function getAndroidConfig(root, appDir) {
@@ -147,10 +171,27 @@ function getAndroidConfig(root, appDir) {
 }
 
 function ensurePrebuild(root, appDir, platform, options = {}) {
-  const script = platform === "ios" ? "prebuild-ios.js" : "prebuild-android.js";
-  const scriptPath = path.join(root, "scripts", script);
-  if (!fs.existsSync(scriptPath)) {
-    throw new Error(`Missing ${script} at ${scriptPath}`);
+  const scriptName = platform === "ios" ? "prebuild-ios" : "prebuild-android";
+  const tsPath = path.join(root, "scripts", `${scriptName}.ts`);
+  const jsPath = path.join(root, "scripts", `${scriptName}.js`);
+  
+  let scriptPath = jsPath;
+  if (fs.existsSync(tsPath)) {
+    scriptPath = tsPath;
+    // Register ts-node if we're loading a TS file
+    try {
+      require("ts-node").register({
+        transpileOnly: true,
+        compilerOptions: { 
+          module: "commonjs",
+          moduleResolution: "node"
+        }
+      });
+    } catch (e) {
+      console.warn("⚠️  ts-node not found, trying to run TS script without registration might fail.");
+    }
+  } else if (!fs.existsSync(jsPath)) {
+    throw new Error(`Missing ${scriptName}.ts or ${scriptName}.js in ${path.join(root, "scripts")}`);
   }
 
   // Load and call the prebuild script with options

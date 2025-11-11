@@ -1,47 +1,9 @@
-#!/usr/bin/env node
+import * as fs from 'fs';
+import * as path from 'path';
+import { generateAssets } from "./generate-assets";
+import { getAppConfig, safeReadJSON, AppConfig } from './config-utils';
 
-const fs = require("fs");
-const path = require("path");
-
-// Configuration - parse app info from app.json (Rune-style) and package.json
-function getAppConfig(appDir) {
-  const pkgPath = path.join(appDir, "package.json");
-  const appJsonPath = path.join(appDir, "app.json");
-
-  if (!fs.existsSync(pkgPath)) {
-    throw new Error(`package.json not found at ${pkgPath}`);
-  }
-
-  const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
-  const appName = path.basename(appDir);
-
-  // Try to read app.json (Rune-style config)
-  let appConfig = {};
-  if (fs.existsSync(appJsonPath)) {
-    const appJson = JSON.parse(fs.readFileSync(appJsonPath, "utf8"));
-    appConfig = appJson.rune || appJson;
-  }
-
-  // Clean app name for Xcode (no spaces, special chars)
-  const cleanAppName = (appConfig.name || appName).replace(/[^a-zA-Z0-9]/g, "");
-
-  return {
-    appName: cleanAppName,
-    appNameCapitalized:
-      cleanAppName.charAt(0).toUpperCase() + cleanAppName.slice(1),
-    appDir: appName,
-    bundleId:
-      appConfig.ios?.bundleIdentifier ||
-      pkg.bundleId ||
-      `com.rune.${appName.replace(/-/g, "")}`,
-    workspaceName: pkg.name || `@demo/${appName}`,
-    displayName: appConfig.name || pkg.displayName || appName,
-    version: appConfig.version || pkg.version || "1.0.0",
-    infoPlist: appConfig.ios?.infoPlist || {},
-  };
-}
-
-function formatInfoPlistProperties(properties) {
+function formatInfoPlistProperties(properties: Record<string, string>): string {
   if (!properties || Object.keys(properties).length === 0) {
     return "";
   }
@@ -50,19 +12,11 @@ function formatInfoPlistProperties(properties) {
     .join("\n");
 }
 
-function safeReadJSON(filePath) {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, "utf8"));
-  } catch (error) {
-    return null;
-  }
-}
-
-function collectNativeIOSPods(appDir) {
+function collectNativeIOSPods(appDir: string): any[] {
   const podsByName = new Map();
   const appPackage = safeReadJSON(path.join(appDir, "package.json")) || {};
 
-  function registerPods(packageName, packageDir, iosConfig) {
+  function registerPods(packageName: string, packageDir: string, iosConfig: any) {
     if (!iosConfig || !Array.isArray(iosConfig.pods)) return;
     for (const pod of iosConfig.pods) {
       if (!pod || !pod.name) continue;
@@ -110,12 +64,12 @@ function collectNativeIOSPods(appDir) {
   return Array.from(podsByName.values());
 }
 
-function formatComponentPodLines(pods, targetDir) {
+function formatComponentPodLines(pods: any[], targetDir: string): string {
   if (!pods.length) {
     return "\n  # No additional Rune component pods detected";
   }
 
-  const lines = [];
+  const lines: string[] = [];
   for (const pod of pods) {
     if (pod.directoryPath && fs.existsSync(pod.directoryPath)) {
       const relative = path
@@ -149,8 +103,8 @@ function formatComponentPodLines(pods, targetDir) {
   return "\n" + lines.join("\n");
 }
 
-function generateModuleImports(pods) {
-  const imports = [];
+function generateModuleImports(pods: any[]): string {
+  const imports: string[] = [];
   for (const pod of pods) {
     if (pod.initializer && pod.initializer.className) {
       imports.push(`#import "${pod.name}-Swift.h"`);
@@ -161,8 +115,8 @@ function generateModuleImports(pods) {
     : "";
 }
 
-function generateModuleInitializers(pods) {
-  const initializers = [];
+function generateModuleInitializers(pods: any[]): string {
+  const initializers: string[] = [];
   for (const pod of pods) {
     if (
       pod.initializer &&
@@ -185,7 +139,7 @@ function generateModuleInitializers(pods) {
   return "  // Auto-generated module initializers\n" + initializers.join("\n");
 }
 
-function replacePlaceholders(content, config, extras = {}) {
+function replacePlaceholders(content: string, config: AppConfig, extras: any = {}): string {
   let output = content
     .replace(/\{\{APP_NAME\}\}/g, config.appNameCapitalized)
     .replace(/\{\{BUNDLE_ID\}\}/g, config.bundleId)
@@ -216,8 +170,8 @@ function replacePlaceholders(content, config, extras = {}) {
   return output;
 }
 
-function generateNativeModulesConfig(pods, targetDir) {
-  const modules = [];
+function generateNativeModulesConfig(pods: any[], targetDir: string) {
+  const modules: any[] = [];
   for (const pod of pods) {
     if (
       pod.initializer &&
@@ -240,7 +194,7 @@ const templatesRoot = path.dirname(
   require.resolve("@rune/templates/package.json")
 );
 
-function generateIOSProject(appDir, options = {}) {
+export function generateIOSProject(appDir: string, options: any = {}) {
   const { dev = true } = options; // Default to dev mode for backward compatibility
   const config = getAppConfig(appDir);
   const templateDir = path.join(templatesRoot, "ios");
@@ -300,6 +254,9 @@ function generateIOSProject(appDir, options = {}) {
     }
   }
 
+  // Generate assets (Icons, Splash)
+  generateAssets(appDir, 'ios');
+
   console.log(`✅ iOS project generated at ${targetDir}`);
   console.log("");
   console.log("Next steps:");
@@ -311,7 +268,7 @@ function generateIOSProject(appDir, options = {}) {
 }
 
 // CLI interface
-function main() {
+if (require.main === module) {
   const args = process.argv.slice(2);
 
   if (args.length === 0) {
@@ -329,14 +286,8 @@ function main() {
 
   try {
     generateIOSProject(appPath);
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error generating iOS project:", error.message);
     process.exit(1);
   }
 }
-
-if (require.main === module) {
-  main();
-}
-
-module.exports = { generateIOSProject, getAppConfig };

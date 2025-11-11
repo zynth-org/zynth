@@ -7,6 +7,7 @@ node_modules
 **/dist
 packages/**/dist
 apps/*/dist
+apps/*/assets/*
 apps/*/.rune
 
 # TypeScript incremental state

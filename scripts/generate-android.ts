@@ -1,8 +1,7 @@
-#!/usr/bin/env node
-
-const fs = require("fs");
-const path = require("path");
-const { getAppConfig } = require("./generate-ios.js");
+import * as fs from 'fs';
+import * as path from 'path';
+import { getAppConfig, safeReadJSON, AppConfig } from './config-utils';
+import { generateAssets } from "./generate-assets";
 
 const templatesRoot = path.dirname(
   require.resolve("@rune/templates/package.json")
@@ -17,17 +16,9 @@ const BINARY_EXTENSIONS = new Set([
   ".ico",
 ]);
 
-function safeReadJSON(filePath) {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, "utf8"));
-  } catch (_error) {
-    return null;
-  }
-}
-
-function generateAndroidModuleImports(modules) {
-  const imports = [];
-  const packages = new Set(); // Track unique packages to avoid duplicates
+function generateAndroidModuleImports(modules: any[]): string {
+  const imports: string[] = [];
+  const packages = new Set<string>(); // Track unique packages to avoid duplicates
 
   for (const module of modules) {
     if (
@@ -49,9 +40,9 @@ function generateAndroidModuleImports(modules) {
   return imports.length ? "\n" + imports.join("\n") : "";
 }
 
-function generateAndroidModuleInitializers(modules) {
-  const initializers = [];
-  const argMap = {
+function generateAndroidModuleInitializers(modules: any[]): string {
+  const initializers: string[] = [];
+  const argMap: Record<string, string> = {
     activity: "this",
     runtime: "runtime",
     rootView: "root",
@@ -70,7 +61,7 @@ function generateAndroidModuleInitializers(modules) {
         : null;
       const args =
         argsSpec && argsSpec.length
-          ? argsSpec.map((token) => argMap[token] || token).join(", ")
+          ? argsSpec.map((token: string) => argMap[token] || token).join(", ")
           : "this, runtime";
       initializers.push(
         `        ${className}.${method}(${args})`,
@@ -88,31 +79,49 @@ function generateAndroidModuleInitializers(modules) {
   );
 }
 
-function replacePlaceholders(content, config, extras = {}) {
+function formatActivityAttributes(androidConfig: any): string {
+  const attributes: string[] = [];
+  
+  // Default to adjustResize if not specified
+  const windowSoftInputMode = androidConfig?.windowSoftInputMode || "adjustResize";
+  attributes.push(`android:windowSoftInputMode="${windowSoftInputMode}"`);
+
+  // Add generic attributes if provided in 'activityAttributes' map
+  if (androidConfig?.activityAttributes) {
+    for (const [key, value] of Object.entries(androidConfig.activityAttributes)) {
+      attributes.push(`${key}="${value}"`);
+    }
+  }
+
+  return attributes.join("\n            ");
+}
+
+function replacePlaceholders(content: string, config: AppConfig, extras: any = {}): string {
   return content
-    .replace(/\{\{APP_NAME\}\}/g, config.appName)
-    .replace(/\{\{APP_DIR\}\}/g, config.appDir)
-    .replace(/\{\{BUNDLE_ID\}\}/g, config.bundleId)
-    .replace(/\{\{DISPLAY_NAME\}\}/g, config.displayName)
-    .replace(/\{\{WORKSPACE_NAME\}\}/g, config.workspaceName || config.appName)
+    .replace(/\{\{\s*APP_NAME\s*\}\}/g, config.appName)
+    .replace(/\{\{\s*APP_DIR\s*\}\}/g, config.appDir)
+    .replace(/\{\{\s*BUNDLE_ID\s*\}\}/g, config.bundleId)
+    .replace(/\{\{\s*DISPLAY_NAME\s*\}\}/g, config.displayName)
+    .replace(/\{\{\s*WORKSPACE_NAME\s*\}\}/g, config.workspaceName || config.appName)
     .replace(
-      /\{\{APP_NAME_CAP\}\}/g,
+      /\{\{\s*APP_NAME_CAP\s*\}\}/g,
       config.appNameCapitalized || config.appName
     )
     .replace(
-      /\{\{RUNE_COMPONENT_MODULE_INCLUDES\}\}/g,
+      /\{\{\s*RUNE_COMPONENT_MODULE_INCLUDES\s*\}\}/g,
       extras.componentIncludes ?? ""
     )
     .replace(
-      /\{\{RUNE_COMPONENT_MODULE_DEPENDENCIES\}\}/g,
+      /\{\{\s*RUNE_COMPONENT_MODULE_DEPENDENCIES\s*\}\}/g,
       extras.componentDependencies ?? ""
     )
-    .replace(/\{\{MODULE_IMPORTS\}\}/g, extras.moduleImports ?? "")
-    .replace(/\{\{MODULE_INITIALIZERS\}\}/g, extras.moduleInitializers ?? "");
+    .replace(/\{\{\s*MODULE_IMPORTS\s*\}\}/g, extras.moduleImports ?? "")
+    .replace(/\{\{\s*MODULE_INITIALIZERS\s*\}\}/g, extras.moduleInitializers ?? "")
+    .replace(/\{\{\s*ACTIVITY_ATTRIBUTES\s*\}\}/g, extras.activityAttributes ?? "");
 }
 
-function walk(dir) {
-  const result = [];
+function walk(dir: string): string[] {
+  const result: string[] = [];
   for (const entry of fs.readdirSync(dir)) {
     const full = path.join(dir, entry);
     const stat = fs.statSync(full);
@@ -125,19 +134,19 @@ function walk(dir) {
   return result;
 }
 
-function isBinary(filePath) {
+function isBinary(filePath: string): boolean {
   return BINARY_EXTENSIONS.has(path.extname(filePath).toLowerCase());
 }
 
-function ensureDir(dir) {
+function ensureDir(dir: string): void {
   fs.mkdirSync(dir, { recursive: true });
 }
 
-function collectNativeAndroidModules(appDir) {
+function collectNativeAndroidModules(appDir: string): any[] {
   const modulesByName = new Map();
   const appPackage = safeReadJSON(path.join(appDir, "package.json")) || {};
 
-  function registerModules(packageName, packageDir, androidConfig) {
+  function registerModules(packageName: string, packageDir: string, androidConfig: any) {
     if (!androidConfig || !Array.isArray(androidConfig.modules)) return;
     for (const module of androidConfig.modules) {
       if (!module || !module.name) continue;
@@ -191,7 +200,7 @@ function collectNativeAndroidModules(appDir) {
   return Array.from(modulesByName.values());
 }
 
-function formatAndroidSettingsBlock(modules, targetDir) {
+function formatAndroidSettingsBlock(modules: any[], targetDir: string): string {
   if (!modules.length) {
     return "\n// No additional Rune component modules detected";
   }
@@ -212,7 +221,7 @@ function formatAndroidSettingsBlock(modules, targetDir) {
   );
 }
 
-function formatAndroidDependencyBlock(modules) {
+function formatAndroidDependencyBlock(modules: any[]): string {
   if (!modules.length) {
     return "";
   }
@@ -224,7 +233,7 @@ function formatAndroidDependencyBlock(modules) {
   );
 }
 
-function generateAndroidProject(appDir, options = {}) {
+export function generateAndroidProject(appDir: string, options: any = {}): AppConfig {
   const { dev = true } = options; // Default to dev mode for backward compatibility
   const baseConfig = getAppConfig(appDir);
   const androidPackage = (
@@ -259,6 +268,7 @@ function generateAndroidProject(appDir, options = {}) {
   const moduleImports = generateAndroidModuleImports(componentModules);
   const moduleInitializers =
     generateAndroidModuleInitializers(componentModules);
+  const activityAttributes = formatActivityAttributes(baseConfig.androidConfig);
 
   if (fs.existsSync(targetDir)) {
     console.log("  Removing existing Android folder...");
@@ -325,6 +335,7 @@ function generateAndroidProject(appDir, options = {}) {
         componentDependencies,
         moduleImports,
         moduleInitializers,
+        activityAttributes,
       });
       fs.writeFileSync(targetPath, processed, "utf8");
     }
@@ -336,6 +347,8 @@ function generateAndroidProject(appDir, options = {}) {
     fs.chmodSync(gradlewPath, 0o755);
   }
 
+  generateAssets(appDir, 'android');
+
   console.log(`✅ Android project generated at ${targetDir}`);
   console.log("Next steps:");
   console.log(`  cd ${path.relative(process.cwd(), targetDir)}`);
@@ -344,7 +357,8 @@ function generateAndroidProject(appDir, options = {}) {
   return config;
 }
 
-function main() {
+// CLI interface
+if (require.main === module) {
   const args = process.argv.slice(2);
   if (args.length === 0) {
     console.error("Usage: node scripts/generate-android.js <app-path>");
@@ -357,14 +371,8 @@ function main() {
   }
   try {
     generateAndroidProject(appPath);
-  } catch (err) {
+  } catch (err: any) {
     console.error("Error generating Android project:", err.message);
     process.exit(1);
   }
 }
-
-if (require.main === module) {
-  main();
-}
-
-module.exports = { generateAndroidProject };
