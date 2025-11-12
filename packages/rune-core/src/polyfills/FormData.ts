@@ -31,7 +31,9 @@ class FormDataPolyfill {
   }
 
   getAll(name: string): Array<string | Blob> {
-    return this.items.filter((item) => item.name === name).map((item) => item.value);
+    return this.items
+      .filter((item) => item.name === name)
+      .map((item) => item.value);
   }
 
   has(name: string): boolean {
@@ -146,7 +148,7 @@ const globalObject =
     : ({} as any);
 
 if (globalObject && typeof globalObject.FormData !== "function") {
-  console.log("[RuneCore] Polyfilling FormData");
+  // console.log("[RuneCore] Polyfilling FormData");
   globalObject.FormData = FormDataPolyfill;
 }
 

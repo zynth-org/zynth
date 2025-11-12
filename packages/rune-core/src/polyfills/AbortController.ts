@@ -56,7 +56,7 @@ const globalObject =
     : ({} as any);
 
 if (globalObject && typeof globalObject.AbortController !== "function") {
-  console.log("[RuneCore] Polyfilling AbortController");
+  // console.log("[RuneCore] Polyfilling AbortController");
   globalObject.AbortController = AbortControllerPolyfill;
   globalObject.AbortSignal = AbortSignalPolyfill;
 }

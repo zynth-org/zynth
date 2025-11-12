@@ -186,7 +186,10 @@ class ReadableStreamPolyfill {
         });
     };
 
-    const makeStream = (queue: any[], setController: (c: ReadableStreamDefaultController) => void) =>
+    const makeStream = (
+      queue: any[],
+      setController: (c: ReadableStreamDefaultController) => void
+    ) =>
       new ReadableStreamPolyfill({
         start(controller) {
           setController(controller);
@@ -211,10 +214,10 @@ class ReadableStreamPolyfill {
       });
 
     return [
-      makeStream(queueA, controller => {
+      makeStream(queueA, (controller) => {
         controllerA = controller;
       }),
-      makeStream(queueB, controller => {
+      makeStream(queueB, (controller) => {
         controllerB = controller;
       }),
     ];
@@ -231,7 +234,7 @@ const globalObject =
     : ({} as any);
 
 if (globalObject && typeof globalObject.ReadableStream !== "function") {
-  console.log("[RuneCore] Polyfilling ReadableStream");
+  // console.log("[RuneCore] Polyfilling ReadableStream");
   globalObject.ReadableStream = ReadableStreamPolyfill;
 }
 

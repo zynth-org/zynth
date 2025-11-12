@@ -34,8 +34,14 @@ class BlobPolyfill {
     const size = this.size;
     const relativeStart = start ?? 0;
     const relativeEnd = end ?? size;
-    const clampedStart = Math.max(relativeStart < 0 ? size + relativeStart : relativeStart, 0);
-    const clampedEnd = Math.min(relativeEnd < 0 ? size + relativeEnd : relativeEnd, size);
+    const clampedStart = Math.max(
+      relativeStart < 0 ? size + relativeStart : relativeStart,
+      0
+    );
+    const clampedEnd = Math.min(
+      relativeEnd < 0 ? size + relativeEnd : relativeEnd,
+      size
+    );
     const span = Math.max(clampedEnd - clampedStart, 0);
 
     return new BlobPolyfill([this.sliceBytes(clampedStart, span)], {
@@ -129,7 +135,7 @@ const globalObject =
     : ({} as any);
 
 if (globalObject && typeof globalObject.Blob !== "function") {
-  console.log("[RuneCore] Polyfilling Blob");
+  // console.log("[RuneCore] Polyfilling Blob");
   globalObject.Blob = BlobPolyfill;
 }
 

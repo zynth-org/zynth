@@ -29,7 +29,10 @@ class TextEncoderPolyfill {
     return new Uint8Array(bytes);
   }
 
-  encodeInto(source: string, destination: Uint8Array): { read: number; written: number } {
+  encodeInto(
+    source: string,
+    destination: Uint8Array
+  ): { read: number; written: number } {
     const encoded = this.encode(source);
     const length = Math.min(encoded.length, destination.length);
     destination.set(encoded.subarray(0, length));
@@ -93,7 +96,11 @@ class TextDecoderPolyfill {
         const byte2 = bytes[i + 1];
         const byte3 = bytes[i + 2];
         const byte4 = bytes[i + 3];
-        if (!isContinuation(byte2) || !isContinuation(byte3) || !isContinuation(byte4)) {
+        if (
+          !isContinuation(byte2) ||
+          !isContinuation(byte3) ||
+          !isContinuation(byte4)
+        ) {
           result += replacementChar(this.fatal);
           continue;
         }
@@ -136,18 +143,19 @@ const globalObject =
     ? (globalThis as any)
     : typeof window !== "undefined"
     ? (window as any)
-    : typeof global !== "undefined"
-    ? (global as any)
     : ({} as any);
 
 if (globalObject && typeof globalObject.TextEncoder !== "function") {
-  console.log("[RuneCore] Polyfilling TextEncoder");
+  // console.log("[RuneCore] Polyfilling TextEncoder");
   globalObject.TextEncoder = TextEncoderPolyfill;
 }
 
 if (globalObject && typeof globalObject.TextDecoder !== "function") {
-  console.log("[RuneCore] Polyfilling TextDecoder");
+  // console.log("[RuneCore] Polyfilling TextDecoder");
   globalObject.TextDecoder = TextDecoderPolyfill;
 }
 
-export { TextEncoderPolyfill as TextEncoder, TextDecoderPolyfill as TextDecoder };
+export {
+  TextEncoderPolyfill as TextEncoder,
+  TextDecoderPolyfill as TextDecoder,
+};

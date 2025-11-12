@@ -24,24 +24,24 @@ const URLSearchParams = class URLSearchParamsPolyfill {
       return;
     }
 
-    if (typeof params === 'string') {
+    if (typeof params === "string") {
       // URLSearchParams("key1=value1&key2=value2");
       params
-        .replace(/^\?/, '')
-        .split('&')
-        .forEach(pair => {
+        .replace(/^\?/, "")
+        .split("&")
+        .forEach((pair) => {
           if (!pair) {
             return;
           }
           const [key, value] = pair
-            .split('=')
-            .map(part => decodeURIComponent(part.replace(/\+/g, ' ')));
+            .split("=")
+            .map((part) => decodeURIComponent(part.replace(/\+/g, " ")));
           this.append(key, value);
         });
     } else if (Array.isArray(params)) {
       //URLSearchParams([["key1", "value1"], ["key2", "value2"]]);
       params.forEach(([key, value]) => this.append(key, value));
-    } else if (typeof params === 'object') {
+    } else if (typeof params === "object") {
       //URLSearchParams({ key1: "value1", key2: "value2" });
       Object.entries(params).forEach(([key, value]) => this.append(key, value));
     }
@@ -82,7 +82,7 @@ const URLSearchParams = class URLSearchParamsPolyfill {
 
   values(): IterableIterator<string> {
     function* generateValues(
-      params: Map<string, string[]>,
+      params: Map<string, string[]>
     ): IterableIterator<string> {
       for (const valueArray of params.values()) {
         for (const value of valueArray) {
@@ -95,7 +95,7 @@ const URLSearchParams = class URLSearchParamsPolyfill {
 
   entries(): IterableIterator<[string, string]> {
     function* generateEntries(
-      params: Map<string, string[]>,
+      params: Map<string, string[]>
     ): IterableIterator<[string, string]> {
       for (const [key, values] of params) {
         for (const value of values) {
@@ -108,7 +108,7 @@ const URLSearchParams = class URLSearchParamsPolyfill {
   }
 
   forEach(
-    callback: (value: string, key: string, searchParams: this) => void,
+    callback: (value: string, key: string, searchParams: this) => void
   ): void {
     for (const [key, values] of this._searchParams) {
       for (const value of values) {
@@ -119,7 +119,7 @@ const URLSearchParams = class URLSearchParamsPolyfill {
 
   sort(): void {
     this._searchParams = new Map(
-      [...this._searchParams.entries()].sort(([a], [b]) => a.localeCompare(b)),
+      [...this._searchParams.entries()].sort(([a], [b]) => a.localeCompare(b))
     );
   }
 
@@ -141,14 +141,15 @@ const URLSearchParams = class URLSearchParamsPolyfill {
       .map(([key, values]) =>
         values
           .map(
-            value =>
-              `${encodeURIComponent(key).replace(/%20/g, '+')}=${encodeURIComponent(
-                value,
-              ).replace(/%20/g, '+')}`, // Convert only spaces to '+'
+            (value) =>
+              `${encodeURIComponent(key).replace(
+                /%20/g,
+                "+"
+              )}=${encodeURIComponent(value).replace(/%20/g, "+")}` // Convert only spaces to '+'
           )
-          .join('&'),
+          .join("&")
       )
-      .join('&');
+      .join("&");
   }
 };
 
@@ -162,7 +163,7 @@ const globalObject =
     : ({} as any);
 
 if (globalObject && !globalObject.URLSearchParams) {
-  console.log("[RuneCore] Polyfilling URLSearchParams");
+  // console.log("[RuneCore] Polyfilling URLSearchParams");
   globalObject.URLSearchParams = URLSearchParams;
 }
 

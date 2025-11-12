@@ -3,7 +3,7 @@ import { getGlobalObject } from "./utils";
 
 const globalObject = getGlobalObject();
 if (globalObject && typeof globalObject.fetch !== "function") {
-  console.log("[RuneCore] Polyfilling fetch");
+  // console.log("[RuneCore] Polyfilling fetch");
   globalObject.fetch = fetch;
   globalObject.Headers = Headers;
   globalObject.Request = Request;
