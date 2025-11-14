@@ -153,6 +153,10 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
     }];
     
     [[PerformanceProfiler shared] recordRenderEnd];
+
+    for (NSNumber *sid in surfaceIds) {
+      [self rune_dispatchSurfaceFirstFrameIfNeeded:sid.intValue];
+    }
   });
 }
 

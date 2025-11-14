@@ -37,6 +37,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (UIView *_Nullable)rune_rootViewForSurface:(int)surfaceId;
 - (YGNodeRef)rune_rootYogaForSurface:(int)surfaceId;
 - (int)rune_rootSurfaceId;
+- (void)rune_dispatchSurfaceFirstFrameIfNeeded:(int)surfaceId;
 
 - (void)sn_markNeedsFlush;
 - (void)sn_startDisplayLinkIfNeeded;

@@ -117,7 +117,27 @@ function replacePlaceholders(content: string, config: AppConfig, extras: any = {
     )
     .replace(/\{\{\s*MODULE_IMPORTS\s*\}\}/g, extras.moduleImports ?? "")
     .replace(/\{\{\s*MODULE_INITIALIZERS\s*\}\}/g, extras.moduleInitializers ?? "")
-    .replace(/\{\{\s*ACTIVITY_ATTRIBUTES\s*\}\}/g, extras.activityAttributes ?? "");
+    .replace(/\{\{\s*ACTIVITY_ATTRIBUTES\s*\}\}/g, extras.activityAttributes ?? "")
+    .replace(
+      /\{\{\s*SPLASH_ICON_DRAWABLE\s*\}\}/g,
+      extras.splashIconDrawable ?? "@mipmap/ic_launcher"
+    )
+    .replace(
+      /\{\{\s*SPLASH_WINDOW_BACKGROUND\s*\}\}/g,
+      extras.splashWindowBackground ?? "@drawable/rune_splash_screen"
+    )
+    .replace(
+      /\{\{\s*ACTIVITY_HOOK_IMPORTS\s*\}\}/g,
+      extras.activityHookImports ?? ""
+    )
+    .replace(
+      /\{\{\s*ACTIVITY_ON_CREATE_HOOKS\s*\}\}/g,
+      extras.activityOnCreateHooks ?? ""
+    )
+    .replace(
+      /\{\{\s*ACTIVITY_ON_FIRST_FRAME_HOOKS\s*\}\}/g,
+      extras.activityOnFirstFrameHooks ?? ""
+    );
 }
 
 function walk(dir: string): string[] {
@@ -200,6 +220,94 @@ function collectNativeAndroidModules(appDir: string): any[] {
   return Array.from(modulesByName.values());
 }
 
+type ActivityHooks = {
+  imports: string[];
+  onCreate: string[];
+  onFirstFrame: string[];
+};
+
+function normalizeHookLines(value: unknown): string[] {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item)).filter((item) => item.length > 0);
+  }
+  return [String(value)];
+}
+
+function mergeHookLines(
+  target: string[],
+  seen: Set<string>,
+  incoming: string[]
+): void {
+  for (const line of incoming) {
+    if (!line || seen.has(line)) continue;
+    seen.add(line);
+    target.push(line);
+  }
+}
+
+function collectAndroidActivityHooks(appDir: string): ActivityHooks {
+  const hooks: ActivityHooks = { imports: [], onCreate: [], onFirstFrame: [] };
+  const seenImports = new Set<string>();
+  const seenOnCreate = new Set<string>();
+  const seenOnFirstFrame = new Set<string>();
+  const appPackage = safeReadJSON(path.join(appDir, "package.json")) || {};
+
+  function registerHooks(androidConfig: any) {
+    if (!androidConfig || !androidConfig.activityHooks) return;
+    const activityHooks = androidConfig.activityHooks;
+    mergeHookLines(
+      hooks.imports,
+      seenImports,
+      normalizeHookLines(activityHooks.imports)
+    );
+    mergeHookLines(
+      hooks.onCreate,
+      seenOnCreate,
+      normalizeHookLines(activityHooks.onCreate)
+    );
+    mergeHookLines(
+      hooks.onFirstFrame,
+      seenOnFirstFrame,
+      normalizeHookLines(activityHooks.onFirstFrame)
+    );
+  }
+
+  if (appPackage.runeNative && appPackage.runeNative.android) {
+    registerHooks(appPackage.runeNative.android);
+  }
+
+  const dependencySources = [
+    appPackage.dependencies || {},
+    appPackage.devDependencies || {},
+  ];
+
+  for (const source of dependencySources) {
+    for (const depName of Object.keys(source)) {
+      try {
+        const pkgJsonPath = require.resolve(
+          path.join(depName, "package.json"),
+          {
+            paths: [appDir],
+          }
+        );
+        const depPackage = safeReadJSON(pkgJsonPath);
+        if (!depPackage || !depPackage.runeNative?.android) continue;
+        registerHooks(depPackage.runeNative.android);
+      } catch (_error) {
+        // Ignore resolution failures.
+      }
+    }
+  }
+
+  return hooks;
+}
+
+function formatHookBlock(lines: string[], indent: string): string {
+  if (!lines.length) return "";
+  return lines.map((line) => `${indent}${line}`).join("\n");
+}
+
 function formatAndroidSettingsBlock(modules: any[], targetDir: string): string {
   if (!modules.length) {
     return "\n// No additional Rune component modules detected";
@@ -269,6 +377,15 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
   const moduleInitializers =
     generateAndroidModuleInitializers(componentModules);
   const activityAttributes = formatActivityAttributes(baseConfig.androidConfig);
+  const splashIconDrawable = "@mipmap/ic_launcher";
+  const splashWindowBackground = "@drawable/rune_splash_screen";
+  const activityHooks = collectAndroidActivityHooks(appDir);
+  const activityHookImports = formatHookBlock(activityHooks.imports, "");
+  const activityOnCreateHooks = formatHookBlock(activityHooks.onCreate, "    ");
+  const activityOnFirstFrameHooks = formatHookBlock(
+    activityHooks.onFirstFrame,
+    "      "
+  );
 
   if (fs.existsSync(targetDir)) {
     console.log("  Removing existing Android folder...");
@@ -336,6 +453,11 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
         moduleImports,
         moduleInitializers,
         activityAttributes,
+        splashIconDrawable,
+        splashWindowBackground,
+        activityHookImports,
+        activityOnCreateHooks,
+        activityOnFirstFrameHooks,
       });
       fs.writeFileSync(targetPath, processed, "utf8");
     }

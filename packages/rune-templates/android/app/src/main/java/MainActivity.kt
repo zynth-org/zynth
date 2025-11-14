@@ -11,17 +11,17 @@ import {{BUNDLE_ID}}.modules.PerformanceModule
 import com.rune.kit.core.RuneRootView
 import com.rune.kit.runtime.RuneRuntime
 {{MODULE_IMPORTS}}
+{{ACTIVITY_HOOK_IMPORTS}}
 
 class MainActivity : AppCompatActivity() {
   private var runtime: RuneRuntime? = null
-  private var isReady = false
   @Volatile private var bundleCode: String? = null
 
   override fun onCreate(savedInstanceState: Bundle?) {
     val splashScreen = installSplashScreen()
     super.onCreate(savedInstanceState)
 
-    splashScreen.setKeepOnScreenCondition { !isReady }
+{{ACTIVITY_ON_CREATE_HOOKS}}
 
     // Enable edge-to-edge display
     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
@@ -95,9 +95,9 @@ class MainActivity : AppCompatActivity() {
         setContentView(root)
       }
 
-      runtime.addSurfaceFirstFrameListener(root.rootId) {
-        isReady = true
-      }
+    runtime.addSurfaceFirstFrameListener(root.rootId) {
+{{ACTIVITY_ON_FIRST_FRAME_HOOKS}}
+    }
       
       // ALWAYS start the runtime - router or not
       Log.i("MainActivity", "Starting runtime (router=${routerAttached})")

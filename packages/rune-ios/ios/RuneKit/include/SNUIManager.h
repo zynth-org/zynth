@@ -3,6 +3,7 @@
 
 #ifdef __OBJC__
 #import <Foundation/Foundation.h>
+#import <dispatch/dispatch.h>
 #if __has_include(<UIKit/UIKit.h>)
 #import <UIKit/UIKit.h>
 #else
@@ -33,6 +34,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)insertChild:(NSNumber *)parentId child:(NSNumber *)childId index:(NSNumber *)index;
 - (void)removeChild:(NSNumber *)parentId child:(NSNumber *)childId;
 - (void)flush; // layout + commit
+- (void)addSurfaceFirstFrameListener:(int)surfaceId listener:(dispatch_block_t)listener;
+- (void)removeSurfaceFirstFrameListener:(int)surfaceId listener:(dispatch_block_t)listener;
 - (NSDictionary *)dequeueEventPayloadForNode:(int)nodeId name:(NSString *)name;
 - (void)clearAllNodes; // Clear all nodes and views for HMR reload
 - (NSNumber *)registerSurfaceWithRootView:(UIView *)rootView;

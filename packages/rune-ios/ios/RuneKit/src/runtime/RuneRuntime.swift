@@ -306,6 +306,14 @@ public final class RuneRuntime: NSObject {
     return Int(manager.rootSurfaceId())
   }
 
+  @objc public func addSurfaceFirstFrameListener(_ surfaceId: Int, listener: @escaping () -> Void) {
+    manager.addSurfaceFirstFrameListener(Int32(surfaceId), listener: listener)
+  }
+
+  @objc public func removeSurfaceFirstFrameListener(_ surfaceId: Int, listener: @escaping () -> Void) {
+    manager.removeSurfaceFirstFrameListener(Int32(surfaceId), listener: listener)
+  }
+
   @objc public func loadInitialBundle(jsBundleURL: URL?) throws {
     #if DEBUG
       if loadDevBundleIfAvailable() {

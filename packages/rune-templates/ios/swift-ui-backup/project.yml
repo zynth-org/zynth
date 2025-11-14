@@ -30,9 +30,8 @@ targets:
       path: Info.plist
       properties:
         # Ensure a proper full-screen window is created before app code runs.
-        # Using an asset-based launch screen avoids storyboard compilation.
-        UILaunchScreen:
-          UIColorName: LaunchBackground
+        # Use a storyboard-based launch screen to control image content mode.
+        UILaunchStoryboardName: LaunchScreen
     settings:
       base:
         TARGETED_DEVICE_FAMILY: "1,2"

@@ -6,4 +6,12 @@
         <item name="android:navigationBarColor" tools:targetApi="l">@android:color/transparent</item>
         <item name="android:windowLightStatusBar" tools:targetApi="m">true</item>
     </style>
+
+    <style name="Theme.{{APP_NAME}}.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/rune_splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">{{SPLASH_ICON_DRAWABLE}}</item>
+        <item name="windowSplashScreenIconBackgroundColor">@color/rune_splash_background</item>
+        <item name="android:windowBackground">{{SPLASH_WINDOW_BACKGROUND}}</item>
+        <item name="postSplashScreenTheme">@style/Theme.{{APP_NAME}}</item>
+    </style>
 </resources>

@@ -167,6 +167,25 @@ function replacePlaceholders(content: string, config: AppConfig, extras: any = {
     extras.infoPlistProperties ?? ""
   );
 
+  output = output.replace(
+    /\{\{EXTRA_APP_DELEGATE_HEADER\}\}/g,
+    extras.extraAppDelegateHeader ?? ""
+  );
+
+  output = output.replace(
+    /\{\{EXTRA_APP_DELEGATE_INIT\}\}/g,
+    extras.extraAppDelegateInit ?? ""
+  );
+
+  output = output.replace(
+    /\{\{LAUNCH_SCREEN_IMAGE\}\}/g,
+    extras.launchScreenImage ?? ""
+  );
+  output = output.replace(
+    /\{\{SPLASH_CONTENT_MODE\}\}/g,
+    extras.splashContentMode ?? "scaleAspectFit"
+  );
+
   return output;
 }
 
@@ -197,6 +216,9 @@ const templatesRoot = path.dirname(
 export function generateIOSProject(appDir: string, options: any = {}) {
   const { dev = true } = options; // Default to dev mode for backward compatibility
   const config = getAppConfig(appDir);
+  const appJson = safeReadJSON(path.join(appDir, "app.json")) || {};
+  const runeConfig = appJson.rune || appJson || {};
+  const splashConfig = runeConfig.splash || {};
   const templateDir = path.join(templatesRoot, "ios");
   const targetDir = path.join(appDir, "ios");
 
@@ -230,6 +252,38 @@ export function generateIOSProject(appDir: string, options: any = {}) {
   const moduleImports = generateModuleImports(componentPods);
   const moduleInitializers = generateModuleInitializers(componentPods);
   const infoPlistProperties = formatInfoPlistProperties(config.infoPlist);
+  const hasSplash = Boolean(splashConfig.image || splashConfig.backgroundColor);
+  const splashImageName = splashConfig.image ? "LaunchImage" : "";
+  const splashBackgroundColor = splashConfig.backgroundColor || (splashConfig.image ? "#ffffff" : "");
+  const splashResizeMode = splashConfig.resizeMode || "contain";
+  const launchScreenImage = splashConfig.image ? "          UIImageName: LaunchImage" : "";
+  const splashContentMode = (() => {
+    const mode = String(splashResizeMode).trim().toLowerCase();
+    if (mode === "cover") return "scaleAspectFill";
+    if (mode === "stretch") return "scaleToFill";
+    return "scaleAspectFit";
+  })();
+
+  // Check if splash screen package is installed
+  const hasSplashScreenPackage = componentPods.some(p => p.name === 'RuneSplashScreen');
+  
+  let extraAppDelegateHeader = "";
+  let extraAppDelegateInit = "";
+
+  if (hasSplash && hasSplashScreenPackage) {
+    extraAppDelegateHeader = `
+#import "RuneSplashScreen-Swift.h"
+static NSString *const kRuneSplashImageName = @"${splashImageName}";
+static NSString *const kRuneSplashBackgroundColor = @"${splashBackgroundColor}";
+static NSString *const kRuneSplashResizeMode = @"${splashResizeMode}";`;
+
+    extraAppDelegateInit = `
+  [RuneSplashScreen setupWith:self.runtime 
+                       window:self.window 
+                    imageName:kRuneSplashImageName 
+              backgroundColor:kRuneSplashBackgroundColor 
+                   resizeMode:kRuneSplashResizeMode];`;
+  }
   
   // Generate module config for dynamic loading (e.g. Hypervisor)
   generateNativeModulesConfig(componentPods, targetDir);
@@ -248,6 +302,10 @@ export function generateIOSProject(appDir: string, options: any = {}) {
         moduleImports,
         moduleInitializers,
         infoPlistProperties,
+        extraAppDelegateHeader,
+        extraAppDelegateInit,
+        launchScreenImage,
+        splashContentMode,
       });
       fs.writeFileSync(targetFile, processedContent);
       console.log(`  ✓ ${file}`);

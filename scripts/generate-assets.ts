@@ -3,6 +3,35 @@ import * as path from 'path';
 import { execSync } from 'child_process';
 import { getAppConfig } from './config-utils';
 
+type RGBA = { r: number; g: number; b: number; a: number };
+
+function parseHexColor(value: string): RGBA | null {
+  if (!value) return null;
+  let hex = value.trim();
+  if (hex.startsWith('#')) {
+    hex = hex.slice(1);
+  }
+  if (hex.length === 3) {
+    hex = hex.split('').map((c) => c + c).join('') + 'ff';
+  } else if (hex.length === 4) {
+    hex = hex.split('').map((c) => c + c).join('');
+  } else if (hex.length === 6) {
+    hex = `${hex}ff`;
+  }
+  if (hex.length !== 8) return null;
+  const raw = Number.parseInt(hex, 16);
+  if (Number.isNaN(raw)) return null;
+  const r = ((raw >> 24) & 0xff) / 255;
+  const g = ((raw >> 16) & 0xff) / 255;
+  const b = ((raw >> 8) & 0xff) / 255;
+  const a = (raw & 0xff) / 255;
+  return { r, g, b, a };
+}
+
+function formatColorComponent(value: number): string {
+  return value.toFixed(3);
+}
+
 function resizeImage(input: string, output: string, width: number, height: number): void {
   try {
     if (process.platform === 'darwin') {
@@ -79,6 +108,60 @@ function generateIOSIcons(appDir: string, iconPath: string, appName: string): vo
   console.log('  ✓ Generated iOS App Icons');
 }
 
+function generateIOSSplashAssets(appDir: string, splash: any, appName: string): void {
+  const assetsDir = path.join(appDir, 'ios', appName, 'Images.xcassets');
+  fs.mkdirSync(assetsDir, { recursive: true });
+
+  const backgroundColor = splash?.backgroundColor || '#ffffff';
+  const rgba = parseHexColor(backgroundColor) || { r: 1, g: 1, b: 1, a: 1 };
+  const colorsetDir = path.join(assetsDir, 'LaunchBackground.colorset');
+  fs.rmSync(colorsetDir, { recursive: true, force: true });
+  fs.mkdirSync(colorsetDir, { recursive: true });
+  const colorset = {
+    colors: [
+      {
+        color: {
+          'color-space': 'srgb',
+          components: {
+            alpha: formatColorComponent(rgba.a),
+            blue: formatColorComponent(rgba.b),
+            green: formatColorComponent(rgba.g),
+            red: formatColorComponent(rgba.r),
+          },
+        },
+        idiom: 'universal',
+      },
+    ],
+    info: { version: 1, author: 'xcode' },
+  };
+  fs.writeFileSync(path.join(colorsetDir, 'Contents.json'), JSON.stringify(colorset, null, 2));
+
+  const splashImagePath = splash?.image ? path.resolve(appDir, splash.image) : null;
+  if (!splashImagePath || !fs.existsSync(splashImagePath)) {
+    if (splash?.image) {
+      console.warn(`⚠️  Splash image not found: ${splashImagePath}`);
+    }
+    return;
+  }
+
+  const imagesetDir = path.join(assetsDir, 'LaunchImage.imageset');
+  fs.rmSync(imagesetDir, { recursive: true, force: true });
+  fs.mkdirSync(imagesetDir, { recursive: true });
+  const ext = path.extname(splashImagePath) || '.png';
+  const filename = `splash${ext}`;
+  fs.copyFileSync(splashImagePath, path.join(imagesetDir, filename));
+  const imageset = {
+    images: [
+      { idiom: 'universal', filename, scale: '1x' },
+      { idiom: 'universal', filename, scale: '2x' },
+      { idiom: 'universal', filename, scale: '3x' },
+    ],
+    info: { version: 1, author: 'xcode' },
+  };
+  fs.writeFileSync(path.join(imagesetDir, 'Contents.json'), JSON.stringify(imageset, null, 2));
+  console.log('  ✓ Generated iOS Splash Assets');
+}
+
 function generateAndroidIcons(appDir: string, iconPath: string): void {
   if (!fs.existsSync(iconPath)) return;
 
@@ -148,6 +231,63 @@ function generateAndroidAdaptiveIcons(appDir: string, adaptive: { foregroundImag
     console.log('  ✓ Generated Android Adaptive Icons');
 }
 
+function normalizeAndroidColor(value: string | undefined): string {
+  if (!value) return "#ffffff";
+  const trimmed = value.trim();
+  if (!trimmed) return "#ffffff";
+  const normalized = trimmed.startsWith("#") ? trimmed : `#${trimmed}`;
+  return parseHexColor(normalized) ? normalized : "#ffffff";
+}
+
+function generateAndroidSplashAssets(appDir: string, splash: any): void {
+  const resDir = path.join(appDir, 'android', 'app', 'src', 'main', 'res');
+  const valuesDir = path.join(resDir, 'values');
+  const drawableDir = path.join(resDir, 'drawable');
+  fs.mkdirSync(valuesDir, { recursive: true });
+  fs.mkdirSync(drawableDir, { recursive: true });
+
+  const backgroundColor = normalizeAndroidColor(splash?.backgroundColor);
+  const colorsXml = `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="rune_splash_background">${backgroundColor}</color>
+</resources>`;
+  fs.writeFileSync(path.join(valuesDir, 'rune_splash.xml'), colorsXml);
+
+  const splashImagePath = splash?.image ? path.resolve(appDir, splash.image) : null;
+  const hasImage = splashImagePath && fs.existsSync(splashImagePath);
+  let imageRef = "";
+
+  if (hasImage) {
+    const ext = path.extname(splashImagePath as string) || '.png';
+    const filename = `rune_splash_image${ext}`;
+    fs.copyFileSync(splashImagePath as string, path.join(drawableDir, filename));
+    imageRef = "@drawable/rune_splash_image";
+  } else if (splash?.image) {
+    console.warn(`⚠️  Splash image not found: ${splashImagePath}`);
+  }
+
+  const resizeMode = String(splash?.resizeMode || "contain")
+    .trim()
+    .toLowerCase();
+  const gravity = resizeMode === "cover" || resizeMode === "stretch" ? "fill" : "center";
+
+  const drawableXml = hasImage
+    ? `<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/rune_splash_background" />
+    <item>
+        <bitmap android:src="${imageRef}" android:gravity="${gravity}" />
+    </item>
+</layer-list>`
+    : `<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/rune_splash_background" />
+</layer-list>`;
+
+  fs.writeFileSync(path.join(drawableDir, 'rune_splash_screen.xml'), drawableXml);
+  console.log('  ✓ Generated Android Splash Assets');
+}
+
 export function generateAssets(appDir: string, platform: 'ios' | 'android'): void {
   const config = getAppConfig(appDir);
   const appJsonPath = path.join(appDir, 'app.json');
@@ -164,6 +304,7 @@ export function generateAssets(appDir: string, platform: 'ios' | 'android'): voi
         const iconPath = path.resolve(appDir, appConfig.icon);
         generateIOSIcons(appDir, iconPath, cleanAppName);
       }
+      generateIOSSplashAssets(appDir, appConfig.splash || {}, cleanAppName);
   }
 
   if (platform === 'android') {
@@ -176,5 +317,6 @@ export function generateAssets(appDir: string, platform: 'ios' | 'android'): voi
           const iconPath = path.resolve(appDir, appConfig.icon);
           generateAndroidIcons(appDir, iconPath);
       }
+      generateAndroidSplashAssets(appDir, appConfig.splash || {});
   }
 }

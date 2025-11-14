@@ -12,6 +12,8 @@
 #define RUNE_ROUTER_AVAILABLE 0
 #endif
 
+{{EXTRA_APP_DELEGATE_HEADER}}
+
 @interface AppDelegate ()
 @property(nonatomic, strong) RuneRuntime *runtime;
 @property(nonatomic, strong) UIView *surface;
@@ -25,11 +27,16 @@
   self.window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
   self.surface = [[UIView alloc] initWithFrame:self.window.bounds];
   self.surface.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+  
+  // Default background while initializing (will be overridden by Splash if enabled)
   self.surface.backgroundColor = [UIColor colorWithRed:0.06 green:0.07 blue:0.09 alpha:1.0];
 
   self.runtime = [[RuneRuntime alloc] initWithRootView:self.surface];
 
 {{MODULE_INITIALIZERS}}
+
+  // Initialize extra modules (like Splash Screen) as early as possible
+{{EXTRA_APP_DELEGATE_INIT}}
 
 #if DEBUG
   NSString *devServer = [[NSProcessInfo processInfo] environment][@"RUNE_DEV_SERVER_URL"];
@@ -65,6 +72,7 @@
     vc.view = self.surface;
     self.window.rootViewController = vc;
   }
+  
   [self.window makeKeyAndVisible];
 
   NSLog(@"[Rune] Starting runtime with rootId 0");

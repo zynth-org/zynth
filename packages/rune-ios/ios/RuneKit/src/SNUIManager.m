@@ -41,6 +41,8 @@ static _Atomic int sNextGuestSurfaceId = kRuneSurfaceIdBase;
 @property(nonatomic, strong, nullable) CADisplayLink *displayLink;
 @property(nonatomic, assign) BOOL needsFlush;
 @property(nonatomic, strong) NSMutableDictionary<NSString *, NSDictionary *> *eventPayloads;
+@property(nonatomic, strong) NSMutableDictionary<NSNumber *, NSMutableArray<dispatch_block_t> *> *surfaceFirstFrameListeners;
+@property(nonatomic, strong) NSMutableSet<NSNumber *> *surfaceFirstFrameDispatched;
 @end
 
 @implementation SNNode
@@ -103,6 +105,8 @@ static _Atomic int sNextGuestSurfaceId = kRuneSurfaceIdBase;
     _surfaceRoots = [NSMutableDictionary new];
     _surfaceYoga = [NSMutableDictionary new];
     _surfaceIdSeed = kRuneSurfaceIdBase;
+    _surfaceFirstFrameListeners = [NSMutableDictionary new];
+    _surfaceFirstFrameDispatched = [NSMutableSet new];
 
     // For guest runtimes (e.g., Hypervisor), allocate a unique surface ID to avoid
     // conflicts with the host app's surface 0
@@ -196,6 +200,7 @@ static _Atomic int sNextGuestSurfaceId = kRuneSurfaceIdBase;
   YGNodeStyleSetAlignItems(yoga, YGAlignStretch);
   self.surfaceRoots[@(sid)] = rootView;
   self.surfaceYoga[@(sid)] = [NSValue valueWithPointer:yoga];
+  [self.surfaceFirstFrameDispatched removeObject:@(sid)];
   return @(sid);
 }
 
@@ -235,6 +240,8 @@ static _Atomic int sNextGuestSurfaceId = kRuneSurfaceIdBase;
   }
   [self.surfaceRoots removeObjectForKey:@(surfaceId)];
   [self.surfaceYoga removeObjectForKey:@(surfaceId)];
+  [self.surfaceFirstFrameListeners removeObjectForKey:@(surfaceId)];
+  [self.surfaceFirstFrameDispatched removeObject:@(surfaceId)];
   if (self.activeSurfaceId == surfaceId) {
     self.activeSurfaceId = self.rootSurfaceId;
   }
@@ -246,6 +253,64 @@ static _Atomic int sNextGuestSurfaceId = kRuneSurfaceIdBase;
     return;
   }
   self.activeSurfaceId = surfaceId;
+}
+
+- (void)addSurfaceFirstFrameListener:(int)surfaceId listener:(dispatch_block_t)listener {
+  if (!listener) return;
+  dispatch_block_t copied = [listener copy];
+  if (![NSThread isMainThread]) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+      [self addSurfaceFirstFrameListener:surfaceId listener:copied];
+    });
+    return;
+  }
+  NSNumber *key = @(surfaceId);
+  if ([self.surfaceFirstFrameDispatched containsObject:key]) {
+    copied();
+    return;
+  }
+  NSMutableArray<dispatch_block_t> *listeners = self.surfaceFirstFrameListeners[key];
+  if (!listeners) {
+    listeners = [NSMutableArray new];
+    self.surfaceFirstFrameListeners[key] = listeners;
+  }
+  [listeners addObject:copied];
+}
+
+- (void)removeSurfaceFirstFrameListener:(int)surfaceId listener:(dispatch_block_t)listener {
+  if (!listener) return;
+  if (![NSThread isMainThread]) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+      [self removeSurfaceFirstFrameListener:surfaceId listener:listener];
+    });
+    return;
+  }
+  NSNumber *key = @(surfaceId);
+  NSMutableArray<dispatch_block_t> *listeners = self.surfaceFirstFrameListeners[key];
+  if (!listeners) return;
+  [listeners removeObject:listener];
+  if (listeners.count == 0) {
+    [self.surfaceFirstFrameListeners removeObjectForKey:key];
+  }
+}
+
+- (void)rune_dispatchSurfaceFirstFrameIfNeeded:(int)surfaceId {
+  if (![NSThread isMainThread]) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+      [self rune_dispatchSurfaceFirstFrameIfNeeded:surfaceId];
+    });
+    return;
+  }
+  NSNumber *key = @(surfaceId);
+  if ([self.surfaceFirstFrameDispatched containsObject:key]) return;
+  UIView *rootView = [self rune_rootViewForSurface:surfaceId];
+  if (!rootView || !rootView.window) return;
+  [self.surfaceFirstFrameDispatched addObject:key];
+  NSArray<dispatch_block_t> *listeners = [self.surfaceFirstFrameListeners[key] copy];
+  [self.surfaceFirstFrameListeners removeObjectForKey:key];
+  for (dispatch_block_t callback in listeners) {
+    callback();
+  }
 }
 - (NSNumber *)createNode:(NSString *)type {
   int nid = _nextId++;
@@ -1573,6 +1638,8 @@ static void SNApplyEdges(NSDictionary *style,
   [self.nodes removeAllObjects];
   
   [self.eventPayloads removeAllObjects];
+  [self.surfaceFirstFrameListeners removeAllObjects];
+  [self.surfaceFirstFrameDispatched removeAllObjects];
   
   for (NSValue *value in self.surfaceYoga.allValues) {
     YGNodeRef yoga = (YGNodeRef)value.pointerValue;
