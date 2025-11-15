@@ -3,10 +3,22 @@ import RuneKit
 
 @objc(RuneSplashScreen)
 public class RuneSplashScreen: NSObject {
-    private static var splashView: UIView?
+    private static var splashWindow: UIWindow?
     private static var fadeDuration: TimeInterval = 0.25
-    private static var preventAutoHide = false
-    private static var bridgeInstalled = false
+    private static var hasBeenHidden = false
+    private static var pollTimer: Timer?
+    
+    // Thread-safe access to preventAutoHide
+    private static let lockQueue = DispatchQueue(label: "com.rune.splashscreen.lock", attributes: .concurrent)
+    private static var _preventAutoHide = false
+    private static var preventAutoHide: Bool {
+        get {
+            return lockQueue.sync { _preventAutoHide }
+        }
+        set {
+            lockQueue.async(flags: .barrier) { _preventAutoHide = newValue }
+        }
+    }
     
     /// Configures and shows the splash screen, then automatically hides it when the first frame is rendered.
     @objc public static func setup(with runtime: RuneRuntime, 
@@ -15,25 +27,48 @@ public class RuneSplashScreen: NSObject {
                                   backgroundColor: String, 
                                   resizeMode: String) {
         
-        print("[RuneSplashScreen] setup: mode='\(resizeMode)', image='\(imageName)', bg='\(backgroundColor)'")
-        
-        installBridgeIfNeeded(runtime: runtime)
+        // Always install bridge to ensure the runtime has access to the module
+        runtime.installModules([RuneSplashScreenBridge()])
 
         let bg = colorFromHex(backgroundColor) ?? .white
         
-        // Proactively set background colors to avoid flashes
+        // Proactively set background colors on the main window/root to avoid flashes behind the splash
         window.backgroundColor = bg
         runtime.rootView.backgroundColor = bg
         
-        show(in: window, imageName: imageName, backgroundColor: backgroundColor, resizeMode: resizeMode)
+        // We no longer rely on the passed window for hierarchy, but we use the shared setup flow.
+        // Using a dedicated window avoids issues with rootViewController replacements on the main window.
+        DispatchQueue.main.async {
+            show(imageName: imageName, backgroundColor: backgroundColor, resizeMode: resizeMode)
+        }
         
+        // Primary hide mechanism: Native "First Frame" event
         runtime.addSurfaceFirstFrameListener(runtime.rootSurfaceId) {
             DispatchQueue.main.async {
                 if preventAutoHide {
-                    print("[RuneSplashScreen] Auto-hide prevented; waiting for JS hide()")
                     return
                 }
                 hide()
+            }
+        }
+        
+        // Fallback mechanism: Poll for readiness
+        // This handles cases where the First Frame event might be missed or behavior is inconsistent.
+        DispatchQueue.main.async {
+            pollTimer?.invalidate()
+            pollTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { timer in
+                // If the user requested to wait, don't auto-hide via polling
+                if preventAutoHide {
+                    return
+                }
+                
+                // Check if the root view is attached to a window and has content (subviews)
+                if let rootWindow = runtime.rootView.window,
+                   !runtime.rootView.subviews.isEmpty {
+                    hide()
+                    timer.invalidate()
+                    pollTimer = nil
+                }
             }
         }
     }
@@ -42,13 +77,31 @@ public class RuneSplashScreen: NSObject {
                                  imageName: String, 
                                  backgroundColor: String, 
                                  resizeMode: String) {
-        guard splashView == nil else { return }
+        // Compatibility shim if called directly
+        show(imageName: imageName, backgroundColor: backgroundColor, resizeMode: resizeMode)
+    }
+
+    private static func show(imageName: String, 
+                             backgroundColor: String, 
+                             resizeMode: String) {
+        // Prevent showing if we've already hidden (race condition protection)
+        if hasBeenHidden {
+            return
+        }
         
-        // Use main screen bounds for absolute coverage
-        let splash = UIView(frame: UIScreen.main.bounds)
+        guard splashWindow == nil else { return }
+        
+        // Create a dedicated window for the splash screen
+        // We use the main screen bounds
+        let window = UIWindow(frame: UIScreen.main.bounds)
+        window.backgroundColor = .clear
+        
+        // Place it above the status bar and alerts to ensure visibility
+        window.windowLevel = .statusBar + 1
+        
         let bg = colorFromHex(backgroundColor) ?? .white
-        splash.backgroundColor = bg
-        splash.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        let splashVC = UIViewController()
+        splashVC.view.backgroundColor = bg
         
         if !imageName.isEmpty {
             if let image = UIImage(named: imageName) {
@@ -56,61 +109,55 @@ public class RuneSplashScreen: NSObject {
                 let mode = contentMode(from: resizeMode)
                 imageView.contentMode = mode
                 imageView.clipsToBounds = true
-                
-                // Use constraints to ensure it REALLY fills the splash container
                 imageView.translatesAutoresizingMaskIntoConstraints = false
-                splash.addSubview(imageView)
+                
+                splashVC.view.addSubview(imageView)
                 
                 NSLayoutConstraint.activate([
-                    imageView.topAnchor.constraint(equalTo: splash.topAnchor),
-                    imageView.bottomAnchor.constraint(equalTo: splash.bottomAnchor),
-                    imageView.leadingAnchor.constraint(equalTo: splash.leadingAnchor),
-                    imageView.trailingAnchor.constraint(equalTo: splash.trailingAnchor)
+                    imageView.topAnchor.constraint(equalTo: splashVC.view.topAnchor),
+                    imageView.bottomAnchor.constraint(equalTo: splashVC.view.bottomAnchor),
+                    imageView.leadingAnchor.constraint(equalTo: splashVC.view.leadingAnchor),
+                    imageView.trailingAnchor.constraint(equalTo: splashVC.view.trailingAnchor)
                 ])
-                print("[RuneSplashScreen] Image view added with contentMode: \(mode.rawValue) (2=AspectFill)")
             } else {
                 print("[RuneSplashScreen] ⚠️ Image '\(imageName)' not found in bundle")
             }
         }
         
-        self.splashView = splash
-        window.addSubview(splash)
-        window.bringSubviewToFront(splash)
+        window.rootViewController = splashVC
+        window.isHidden = false
         
-        // Update window background
-        window.backgroundColor = bg
+        self.splashWindow = window
     }
     
     @objc public static func hide() {
-        guard let splash = splashView else { return }
-        print("[RuneSplashScreen] Hiding splash screen")
-        splashView = nil
+        // Ensure timer is cleaned up
+        pollTimer?.invalidate()
+        pollTimer = nil
+        
+        hasBeenHidden = true
+        guard let window = splashWindow else { return }
         
         UIView.animate(withDuration: fadeDuration, animations: {
-            splash.alpha = 0
+            window.alpha = 0
         }) { _ in
-            splash.removeFromSuperview()
+            window.isHidden = true
+            window.rootViewController = nil
+            self.splashWindow = nil
         }
     }
 
     @objc public static func preventAutoHideJS() -> [String: Any] {
         preventAutoHide = true
-        print("[RuneSplashScreen] preventAutoHide() from JS")
         return ["success": true]
     }
 
     @objc public static func hideJS() -> [String: Any] {
-        print("[RuneSplashScreen] hide() from JS")
         preventAutoHide = false
-        hide()
+        DispatchQueue.main.async {
+            hide()
+        }
         return ["success": true]
-    }
-
-    private static func installBridgeIfNeeded(runtime: RuneRuntime) {
-        guard !bridgeInstalled else { return }
-        runtime.installModules([RuneSplashScreenBridge()])
-        bridgeInstalled = true
-        print("[RuneSplashScreen] JS bridge installed")
     }
     
     private static func colorFromHex(_ hex: String) -> UIColor? {
@@ -147,7 +194,6 @@ public class RuneSplashScreen: NSObject {
         case "stretch": return .scaleToFill
         case "contain": return .scaleAspectFit
         default: 
-            print("[RuneSplashScreen] Unknown or default resizeMode '\(mode)', using contain")
             return .scaleAspectFit
         }
     }
