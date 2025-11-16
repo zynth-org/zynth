@@ -726,7 +726,7 @@ internal fun RuneRuntime.restoreDevServerUrl() {
 
 private fun RuneRuntime.autoDiscoverDevServer() {
   discoveryExecutor.execute {
-    val hosts = listOf("10.0.2.2", "127.0.0.1", "localhost")
+    val hosts = listOf("192.168.110.164", "10.0.2.2", "127.0.0.1", "localhost")
     val ports = 8081..8085
     for (host in hosts) {
       for (port in ports) {

@@ -808,7 +808,10 @@ async function devAndroid(root, appDir, options = {}) {
 
   const portForReverse = hmrServer?.port || desiredPort;
   let runtimeDeviceUrl = hmrServer.deviceUrl;
-  if (!userDeviceHost && hasPhysicalDeviceInitial && portForReverse) {
+  if (config.devServerUrl) {
+    console.log(`⚠️  Using explicit dev server URL from app.json: ${config.devServerUrl}`);
+    runtimeDeviceUrl = config.devServerUrl;
+  } else if (!userDeviceHost && hasPhysicalDeviceInitial && portForReverse) {
     runtimeDeviceUrl = `http://127.0.0.1:${portForReverse}`;
   } else if (userDeviceHost) {
     runtimeDeviceUrl = `http://${userDeviceHost}:${portForReverse}`;
@@ -884,7 +887,9 @@ async function devAndroid(root, appDir, options = {}) {
     );
   }
 
-  if (shouldReverse) {
+  if (config.devServerUrl) {
+    runtimeDeviceUrl = config.devServerUrl;
+  } else if (shouldReverse) {
     runtimeDeviceUrl = `http://127.0.0.1:${portForReverse}`;
   } else if (userDeviceHost) {
     runtimeDeviceUrl = `http://${userDeviceHost}:${portForReverse}`;

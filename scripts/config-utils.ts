@@ -11,6 +11,7 @@ export interface AppConfig {
   version: string;
   infoPlist: Record<string, any>;
   androidConfig: any;
+  devServerUrl?: string;
 }
 
 export function safeReadJSON(filePath: string): any {
@@ -57,5 +58,6 @@ export function getAppConfig(appDir: string): AppConfig {
     version: appConfig.version || pkg.version || "1.0.0",
     infoPlist: appConfig.ios?.infoPlist || {},
     androidConfig: appConfig.android || {},
+    devServerUrl: appConfig.devServerUrl,
   };
 }
