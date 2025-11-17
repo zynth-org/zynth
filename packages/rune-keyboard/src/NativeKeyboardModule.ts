@@ -1,3 +1,4 @@
+import { sharedNativeEventEmitter } from "@rune/core";
 import type {
   KeyboardState,
   KeyboardChangeListener,
@@ -58,17 +59,100 @@ declare global {
   interface Window {
     __RUNE_KEYBOARD__?: NativeKeyboardModule;
   }
+  var NativeConstants: Record<string, unknown> | undefined;
 }
 
 /**
  * Get the native keyboard module
  * Returns null if not available
  */
-export function getNativeKeyboardModule(): NativeKeyboardModule | null {
-  if (typeof globalThis === "undefined") {
+const EVENT_NAME = "RuneKeyboard:change";
+const MODULE_KEY = "RuneKeyboard";
+
+function getGlobalObject(): Record<string, unknown> {
+  if (typeof globalThis !== "undefined") {
+    return globalThis as Record<string, unknown>;
+  }
+  try {
+    const fallback = Function("return this")();
+    if (fallback && typeof fallback === "object") {
+      return fallback as Record<string, unknown>;
+    }
+  } catch {
+    // ignore
+  }
+  return {};
+}
+
+function readNativeConstants(): KeyboardState | null {
+  const globalObj = getGlobalObject();
+  const constants = globalObj.NativeConstants as Record<string, unknown> | undefined;
+  if (!constants) return null;
+  const value = constants[MODULE_KEY];
+  if (!value || typeof value !== "object") return null;
+  return value as KeyboardState;
+}
+
+function getModulesBridge(): {
+  call?: (name: string, method: string, args?: unknown) => Promise<unknown> | unknown;
+} | null {
+  const globalObj = getGlobalObject();
+  const bridge = (globalObj as { __modules?: unknown }).__modules;
+  if (!bridge || typeof bridge !== "object") {
     return null;
   }
-  return (globalThis as any).__RUNE_KEYBOARD__ || null;
+  return bridge as { call?: (name: string, method: string, args?: unknown) => unknown };
+}
+
+function createEmitterModule(): NativeKeyboardModule | null {
+  const initial = readNativeConstants();
+  if (!initial) return null;
+  let latest = initial;
+
+  return {
+    getState() {
+      return latest;
+    },
+    isVisible() {
+      return latest.isVisible;
+    },
+    getHeight() {
+      return latest.height;
+    },
+    addChangeListener(listener: KeyboardChangeListener): KeyboardUnsubscribe {
+      const subscription = sharedNativeEventEmitter.addListener(
+        EVENT_NAME,
+        (payload) => {
+          if (payload && typeof payload === "object") {
+            latest = payload as KeyboardState;
+            listener(latest);
+          }
+        }
+      );
+      return () => subscription.remove();
+    },
+    dismiss() {
+      const bridge = getModulesBridge();
+      if (bridge?.call) {
+        bridge.call("RuneKeyboard", "dismiss", {});
+      }
+    },
+    _updateState(state: KeyboardState) {
+      latest = state;
+    },
+    _nativeDismiss: null,
+    _dismissRequested: undefined,
+  };
+}
+
+export function getNativeKeyboardModule(): NativeKeyboardModule | null {
+  const globalObj = getGlobalObject() as {
+    __RUNE_KEYBOARD__?: NativeKeyboardModule;
+  };
+  if (globalObj.__RUNE_KEYBOARD__) {
+    return globalObj.__RUNE_KEYBOARD__ || null;
+  }
+  return createEmitterModule();
 }
 
 /**

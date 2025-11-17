@@ -10,7 +10,6 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsAnimationCompat
 import androidx.core.view.WindowInsetsCompat
 import com.rune.kit.runtime.RuneRuntime
-import org.json.JSONObject
 
 /**
  * Monitors keyboard visibility and exposes state to JavaScript.
@@ -29,8 +28,6 @@ class RuneKeyboardModule(
 
     init {
         registerBridge()
-        // installJSInterface is now called by the bridge's initialize() method
-        // to ensure it runs on both initial load and runtime reloads.
         attachToRootView()
     }
 
@@ -48,62 +45,7 @@ class RuneKeyboardModule(
         rootView = null
     }
 
-    // MARK: - JS Interface
-
-    fun installJSInterface() {
-        val code = """
-            (function() {
-              const listeners = [];
-              let currentState = {
-                isVisible: false,
-                height: 0,
-                screenY: 0,
-                duration: 0,
-                easing: 'keyboard',
-                isAnimating: false
-              };
-              
-              globalThis.__RUNE_KEYBOARD__ = {
-                getState: function() {
-                  return currentState;
-                },
-                isVisible: function() {
-                  return currentState.isVisible;
-                },
-                getHeight: function() {
-                  return currentState.height;
-                },
-                addChangeListener: function(listener) {
-                  listeners.push(listener);
-                  return function() {
-                    const index = listeners.indexOf(listener);
-                    if (index >= 0) {
-                      listeners.splice(index, 1);
-                    }
-                  };
-                },
-                dismiss: function() {
-                  // Use the __modules bridge to call native dismiss
-                  if (globalThis.__modules && typeof globalThis.__modules.call === 'function') {
-                    globalThis.__modules.call('RuneKeyboard', 'dismiss', {});
-                  }
-                },
-                _updateState: function(state) {
-                  currentState = state;
-                  for (let i = 0; i < listeners.length; i++) {
-                    try {
-                      listeners[i](state);
-                    } catch (error) {
-                      console.error('[RuneKeyboard] Listener error:', error);
-                    }
-                  }
-                }
-              };
-            })();
-        """.trimIndent()
-
-        evaluateJavaScript(code)
-    }
+    // MARK: - Initial State
 
     /**
      * Dismiss the keyboard programmatically
@@ -144,9 +86,21 @@ class RuneKeyboardModule(
         }
     }
 
+    internal fun getInitialState(): KeyboardState {
+        lastState?.let { return it }
+        val view = rootView ?: activity.findViewById(android.R.id.content)
+        if (view != null) {
+            val insets = ViewCompat.getRootWindowInsets(view)
+            if (insets != null) {
+                return buildStateFromInsets(view, insets, isAnimating = false, duration = 0f)
+            }
+        }
+        return defaultState()
+    }
+
     private fun setupKeyboardListener(view: View) {
         val density = view.resources.displayMetrics.density
-        fun buildStateFromInsets(
+        fun buildStateFromInsetsLocal(
             insets: WindowInsetsCompat,
             isAnimating: Boolean,
             duration: Float
@@ -183,7 +137,7 @@ class RuneKeyboardModule(
 // Only process IME animations — return early if none present
                     if (runningAnimations.none { it.typeMask and WindowInsetsCompat.Type.ime() != 0 }) return insets
 
-                        val state = buildStateFromInsets(insets, isAnimating = true, duration = 0.25f)
+                        val state = buildStateFromInsetsLocal(insets, isAnimating = true, duration = 0.25f)
 
                         isKeyboardVisible = state.isVisible
                         keyboardHeight = state.height
@@ -199,7 +153,7 @@ class RuneKeyboardModule(
                         
                         // Get final state from the actual insets
                         val insets = ViewCompat.getRootWindowInsets(view) ?: return
-                        val state = buildStateFromInsets(insets, isAnimating = false, duration = 0f)
+                        val state = buildStateFromInsetsLocal(insets, isAnimating = false, duration = 0f)
 
                         isKeyboardVisible = state.isVisible
                         keyboardHeight = state.height
@@ -210,7 +164,7 @@ class RuneKeyboardModule(
             
             // Also listen for insets changes without animations (device/OEM differences).
             ViewCompat.setOnApplyWindowInsetsListener(view) { _, insets ->
-                val state = buildStateFromInsets(insets, isAnimating = false, duration = 0f)
+                val state = buildStateFromInsetsLocal(insets, isAnimating = false, duration = 0f)
 
                 if (state.isVisible != isKeyboardVisible || state.height != keyboardHeight) {
                     isKeyboardVisible = state.isVisible
@@ -294,43 +248,12 @@ class RuneKeyboardModule(
 
         lastState = state
 
-        val stateJSON = state.toJSON()
-        android.util.Log.d("RuneKeyboard", "Publishing state to JS: $stateJSON")
-
-        val code = """
-            (function() {
-              if (globalThis.__RUNE_KEYBOARD__) {
-                globalThis.__RUNE_KEYBOARD__._updateState($stateJSON);
-              }
-            })();
-        """.trimIndent()
-
-        evaluateJavaScriptAsync(code)
-    }
-
-    private fun evaluateJavaScriptAsync(code: String) {
-        try {
-            android.util.Log.d("RuneKeyboard", "Evaluating JavaScript async (${code.length} chars)")
-            // Use runtime.evaluateAsync which handles the adapter directly
-            runtime.evaluateAsync(code)
-        } catch (e: Exception) {
-            android.util.Log.e("RuneKeyboard", "Failed to evaluate JavaScript async: ${e.message}", e)
-        }
-    }
-
-    private fun evaluateJavaScript(code: String) {
-        try {
-            android.util.Log.d("RuneKeyboard", "Evaluating JavaScript (${code.length} chars)")
-            // Use runtime.adapter.evaluate directly (synchronous)
-            runtime.adapter.evaluate(code)
-        } catch (e: Exception) {
-            android.util.Log.e("RuneKeyboard", "Failed to evaluate JavaScript: ${e.message}", e)
-        }
+        runtime.emitEvent(EVENT_NAME, state.toMap())
     }
 
     // MARK: - Data Models
 
-    private data class KeyboardState(
+    internal data class KeyboardState(
         val isVisible: Boolean,
         val height: Float,
         val screenY: Float,
@@ -338,15 +261,52 @@ class RuneKeyboardModule(
         val easing: String,
         val isAnimating: Boolean
     ) {
-        fun toJSON(): String {
-            return JSONObject().apply {
-                put("isVisible", isVisible)
-                put("height", height.toDouble())
-                put("screenY", screenY.toDouble())
-                put("duration", duration.toDouble())
-                put("easing", easing)
-                put("isAnimating", isAnimating)
-            }.toString()
+        fun toMap(): Map<String, Any> {
+            return mapOf(
+                "isVisible" to isVisible,
+                "height" to height.toDouble(),
+                "screenY" to screenY.toDouble(),
+                "duration" to duration.toDouble(),
+                "easing" to easing,
+                "isAnimating" to isAnimating
+            )
         }
+    }
+
+    private fun buildStateFromInsets(
+        view: View,
+        insets: WindowInsetsCompat,
+        isAnimating: Boolean,
+        duration: Float
+    ): KeyboardState {
+        val density = view.resources.displayMetrics.density
+        val imeInsets = insets.getInsets(WindowInsetsCompat.Type.ime())
+        val imeHeight = imeInsets.bottom / density
+        val isVisible = imeHeight > 0
+        val screenHeight = view.height / density
+        val screenY = screenHeight - imeHeight
+        return KeyboardState(
+            isVisible = isVisible,
+            height = imeHeight,
+            screenY = screenY,
+            duration = duration,
+            easing = "keyboard",
+            isAnimating = isAnimating
+        )
+    }
+
+    private fun defaultState(): KeyboardState {
+        return KeyboardState(
+            isVisible = false,
+            height = 0f,
+            screenY = 0f,
+            duration = 0f,
+            easing = "keyboard",
+            isAnimating = false
+        )
+    }
+
+    companion object {
+        private const val EVENT_NAME = "RuneKeyboard:change"
     }
 }

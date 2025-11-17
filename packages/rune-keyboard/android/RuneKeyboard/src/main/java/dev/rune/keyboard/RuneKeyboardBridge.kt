@@ -1,6 +1,5 @@
 package dev.rune.keyboard
 
-import android.util.Log
 import com.rune.kit.runtime.RuneModule
 import org.json.JSONObject
 
@@ -14,9 +13,8 @@ class RuneKeyboardBridge(
     
     override val name: String = "RuneKeyboard"
 
-    override fun initialize() {
-        keyboardModule.installJSInterface()
-    }
+    override val constants: Map<String, Any>?
+        get() = keyboardModule.getInitialState().toMap()
 
     override fun call(method: String, args: Array<Any?>): JSONObject {
         return when (method) {

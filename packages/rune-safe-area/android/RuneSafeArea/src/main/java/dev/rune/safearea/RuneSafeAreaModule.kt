@@ -18,6 +18,8 @@ class RuneSafeAreaModule(
     private val runtime: RuneRuntime
 ) : RuneModule {
     override val name: String = "RuneSafeArea"
+    override val constants: Map<String, Any>?
+        get() = (getCurrentMetrics() ?: defaultMetrics()).toMap()
 
     override fun call(method: String, args: Array<Any?>): JSONObject {
         android.util.Log.w("RuneSafeArea", "Synchronous call to RuneSafeAreaModule for method '$method' not implemented.")
@@ -32,7 +34,6 @@ class RuneSafeAreaModule(
     override fun initialize() {
         android.util.Log.d("RuneSafeArea", "Module initialize() called")
         attachToRootView()
-        installJSInterface()
     }
 
     override fun invalidate() {
@@ -45,50 +46,6 @@ class RuneSafeAreaModule(
     }
 
     // MARK: - JS Interface
-
-    private fun installJSInterface() {
-        // Get initial metrics synchronously
-        val initialMetrics = getCurrentMetrics()
-        val initialMetricsJSON = initialMetrics?.toJSON() ?: "null"
-        
-        android.util.Log.d("RuneSafeArea", "Initial metrics: $initialMetricsJSON")
-        
-        val code = """
-            (function() {
-              const listeners = [];
-              let currentMetrics = $initialMetricsJSON;
-              
-              globalThis.__RUNE_SAFE_AREA__ = {
-                getInitialMetrics: function() {
-                  return currentMetrics;
-                },
-                addMetricsChangeListener: function(listener) {
-                  listeners.push(listener);
-                  return function() {
-                    const index = listeners.indexOf(listener);
-                    if (index >= 0) {
-                      listeners.splice(index, 1);
-                    }
-                  };
-                },
-                _updateMetrics: function(metrics) {
-                  currentMetrics = metrics;
-                  for (let i = 0; i < listeners.length; i++) {
-                    try {
-                      listeners[i](metrics);
-                    } catch (error) {
-                      console.error('[RuneSafeArea] Listener error:', error);
-                    }
-                  }
-                }
-              };
-              
-            //   console.log('[RuneSafeArea] Module installed with initial metrics:', JSON.stringify(currentMetrics));
-            })();
-        """.trimIndent()
-
-        evaluateJavaScript(code)
-    }
 
     // MARK: - Root View Attachment
 
@@ -210,8 +167,7 @@ class RuneSafeAreaModule(
     }
 
     private fun publishMetricsToJS(metrics: WindowMetrics) {
-        // Avoid adapter.evaluate() for now because it can freeze after render starts
-        android.util.Log.d("RuneSafeArea", "Would publish metrics: ${metrics.toJSON()}")
+        runtime.emitEvent(EVENT_NAME, metrics.toMap())
     }
     
     @Suppress("DEPRECATION")
@@ -256,46 +212,17 @@ class RuneSafeAreaModule(
         )
     }
     
-    private fun evaluateJavaScript(code: String) {
-        // Ensure we're on the main thread for Hermes
-        if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) {
-            android.os.Handler(android.os.Looper.getMainLooper()).post {
-                evaluateJavaScript(code)
-            }
-            return
-        }
-        
-        try {
-            android.util.Log.d("RuneSafeArea", "Evaluating JavaScript (${code.length} chars) on main thread")
-            
-            // Use reflection to access the adapter directly
-            val adapterField = runtime.javaClass.getDeclaredField("adapter")
-            adapterField.isAccessible = true
-            val adapter = adapterField.get(runtime)
-            
-            android.util.Log.d("RuneSafeArea", "Got adapter: ${adapter?.javaClass?.simpleName}")
-            
-            val evaluateMethod = adapter?.javaClass?.getMethod("evaluate", String::class.java)
-            evaluateMethod?.invoke(adapter, code)
-            
-            android.util.Log.d("RuneSafeArea", "JavaScript evaluation completed successfully")
-        } catch (e: Exception) {
-            android.util.Log.e("RuneSafeArea", "Failed to evaluate JavaScript: ${e.message}", e)
-            e.printStackTrace()
-        }
-    }
-
     // MARK: - Data Models
 
     private data class WindowMetrics(
         val insets: SafeAreaInsets,
         val frame: SafeAreaFrame
     ) {
-        fun toJSON(): String {
-            return JSONObject().apply {
-                put("insets", insets.toJSONObject())
-                put("frame", frame.toJSONObject())
-            }.toString()
+        fun toMap(): Map<String, Any> {
+            return mapOf(
+                "insets" to insets.toMap(),
+                "frame" to frame.toMap()
+            )
         }
     }
 
@@ -305,13 +232,13 @@ class RuneSafeAreaModule(
         val bottom: Float,
         val left: Float
     ) {
-        fun toJSONObject(): JSONObject {
-            return JSONObject().apply {
-                put("top", top.toDouble())
-                put("right", right.toDouble())
-                put("bottom", bottom.toDouble())
-                put("left", left.toDouble())
-            }
+        fun toMap(): Map<String, Any> {
+            return mapOf(
+                "top" to top.toDouble(),
+                "right" to right.toDouble(),
+                "bottom" to bottom.toDouble(),
+                "left" to left.toDouble()
+            )
         }
     }
 
@@ -321,13 +248,24 @@ class RuneSafeAreaModule(
         val width: Float,
         val height: Float
     ) {
-        fun toJSONObject(): JSONObject {
-            return JSONObject().apply {
-                put("x", x.toDouble())
-                put("y", y.toDouble())
-                put("width", width.toDouble())
-                put("height", height.toDouble())
-            }
+        fun toMap(): Map<String, Any> {
+            return mapOf(
+                "x" to x.toDouble(),
+                "y" to y.toDouble(),
+                "width" to width.toDouble(),
+                "height" to height.toDouble()
+            )
         }
+    }
+
+    private fun defaultMetrics(): WindowMetrics {
+        return WindowMetrics(
+            insets = SafeAreaInsets(0f, 0f, 0f, 0f),
+            frame = SafeAreaFrame(0f, 0f, 0f, 0f)
+        )
+    }
+
+    companion object {
+        private const val EVENT_NAME = "RuneSafeArea:change"
     }
 }
