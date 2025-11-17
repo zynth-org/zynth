@@ -29,6 +29,34 @@ android {
   kotlinOptions {
     jvmTarget = "17"
   }
+
+  packaging {
+    jniLibs {
+      excludes += setOf(
+        "**/libfabricjni.so",
+        "**/libreactnativejni.so",
+        "**/libreact_codegen_*.so",
+        "**/libreact_newarchdefaults.so",
+        "**/librrc_*.so",
+        "**/libuimanagerjni.so",
+        "**/libreact_render_*.so",
+        "**/librninstance.so",
+        "**/libreact_nativemodule_core.so",
+        "**/libnative-imagetranscoder.so",
+        "**/libimagepipeline.so",
+        "**/libnative-filters.so",
+        "**/libturbomodulejsijni.so",
+        "**/libreact_devsupportjni.so",
+        "**/libreact_featureflags*.so",
+        "**/libmapbufferjni.so",
+        "**/libhermes_executor.so",
+        "**/libhermesinstancejni.so",
+        "**/libjscexecutor.so",
+        "**/libjscinstance.so",
+        "**/libreactnativeblob.so"
+      )
+    }
+  }
 }
 
 dependencies {
