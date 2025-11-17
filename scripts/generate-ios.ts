@@ -251,6 +251,12 @@ export function generateIOSProject(appDir: string, options: any = {}) {
   const componentPodBlock = formatComponentPodLines(componentPods, targetDir);
   const moduleImports = generateModuleImports(componentPods);
   const moduleInitializers = generateModuleInitializers(componentPods);
+  
+  // Inject Dev Server URL into Info.plist if configured
+  if (config.devServerUrl) {
+    config.infoPlist["RuneDevServerURL"] = config.devServerUrl;
+  }
+  
   const infoPlistProperties = formatInfoPlistProperties(config.infoPlist);
   const hasSplash = Boolean(splashConfig.image || splashConfig.backgroundColor);
   const splashImageName = splashConfig.image ? "LaunchImage" : "";

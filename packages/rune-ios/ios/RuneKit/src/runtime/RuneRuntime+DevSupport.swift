@@ -199,7 +199,14 @@
       } else {
         devRuntimeName = "app"
       }
-      if let urlString = env["RUNE_DEV_SERVER_URL"], let rawURL = URL(string: urlString) {
+
+      // Check environment first, then Info.plist
+      var urlString = env["RUNE_DEV_SERVER_URL"]
+      if urlString == nil {
+        urlString = Bundle.main.object(forInfoDictionaryKey: "RuneDevServerURL") as? String
+      }
+
+      if let urlString, let rawURL = URL(string: urlString) {
         let url = normalizeDevServerURL(rawURL)
         devServerURL = url
         let tokenEnv = sanitizedToken(env["RUNE_DEV_SERVER_TOKEN"])
