@@ -20,6 +20,8 @@
       "@rune/core": ["packages/rune-core/src/index.ts"],
       "@rune/core/*": ["packages/rune-core/src/*"],
       "@rune/core/universal": ["packages/rune-core/src/universal.ts"],
+      "@rune/haptics": ["packages/rune-haptics/src/index.ts"],
+      "@rune/haptics/*": ["packages/rune-haptics/src/*"],
       "@rune/hypervisor": ["packages/rune-hypervisor/src/index.ts"],
       "@rune/hypervisor/*": ["packages/rune-hypervisor/src/*"],
       "@rune/icons": ["packages/rune-icons/src/index.ts"],
