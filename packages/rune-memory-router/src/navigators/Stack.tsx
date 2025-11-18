@@ -407,8 +407,12 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
       return resolveOptions(route.options, config?.options);
     });
     const useNativeHeader = Platform.OS === OS.IOS;
-    const headerShown = createMemo(() => currentOptions()?.headerShown !== false);
-    const shouldRenderHeaderBar = createMemo(() => headerShown() && !useNativeHeader);
+    const headerShown = createMemo(
+      () => currentOptions()?.headerShown !== false
+    );
+    const shouldRenderHeaderBar = createMemo(
+      () => headerShown() && !useNativeHeader
+    );
 
     return (
       <View style={{ flex: 1 }}>
@@ -455,52 +459,57 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
               const headerVisible = createMemo(
                 () => options()?.headerShown !== false
               );
-              const nativeHeaderOptions = createMemo<ScreenHeaderOptions>(() => {
-                const opts = options();
-                const resolvedTitle = opts?.title ?? route.name;
-                const transparent = opts?.headerTransparent ?? false;
-                const backgroundColor = transparent
-                  ? undefined
-                  : opts?.headerBackgroundColor ?? DEFAULT_HEADER_BACKGROUND;
-                const buttonOptions = opts?.headerRightButton;
-                return {
-                  title: resolvedTitle,
-                  subtitle: opts?.subtitle,
-                  prefersLargeTitle: opts?.largeTitle ?? false,
-                  headerStyle: opts?.headerStyle,
-                  visible: headerVisible(),
-                  backVisible: opts?.headerBackVisible ?? true,
-                  tintColor: opts?.headerTintColor ?? DEFAULT_HEADER_TINT,
-                  titleColor:
-                    opts?.headerTitleColor ??
-                    opts?.headerTintColor ??
-                    DEFAULT_HEADER_TINT,
-                  backgroundColor,
-                  transparent,
-                  shadowVisible: opts?.headerShadowVisible ?? true,
-                  blurEffect: opts?.headerBlurEffect,
-                  userInterfaceStyle: opts?.userInterfaceStyle,
-                  rightButton: buttonOptions
-                    ? {
-                        title: buttonOptions.title,
-                        style: buttonOptions.style,
-                        systemItem: buttonOptions.systemItem,
-                      }
-                    : undefined,
-                  rightAccessory:
-                    useNativeHeader && headerVisible() && opts?.headerRight
+              const nativeHeaderOptions = createMemo<ScreenHeaderOptions>(
+                () => {
+                  const opts = options();
+                  const resolvedTitle = opts?.title ?? route.name;
+                  const transparent = opts?.headerTransparent ?? false;
+                  const backgroundColor = transparent
+                    ? undefined
+                    : opts?.headerBackgroundColor ?? DEFAULT_HEADER_BACKGROUND;
+                  const buttonOptions = opts?.headerRightButton;
+                  return {
+                    title: resolvedTitle,
+                    subtitle: opts?.subtitle,
+                    prefersLargeTitle: opts?.largeTitle ?? false,
+                    headerStyle: opts?.headerStyle,
+                    visible: headerVisible(),
+                    backVisible: opts?.headerBackVisible ?? true,
+                    tintColor: opts?.headerTintColor ?? DEFAULT_HEADER_TINT,
+                    titleColor:
+                      opts?.headerTitleColor ??
+                      opts?.headerTintColor ??
+                      DEFAULT_HEADER_TINT,
+                    backgroundColor,
+                    transparent,
+                    shadowVisible: opts?.headerShadowVisible ?? true,
+                    blurEffect: opts?.headerBlurEffect,
+                    userInterfaceStyle: opts?.userInterfaceStyle,
+                    rightButton: buttonOptions
                       ? {
-                          type: "surface",
-                          routeKey: route.key,
-                          position: "right",
+                          title: buttonOptions.title,
+                          style: buttonOptions.style,
+                          systemItem: buttonOptions.systemItem,
                         }
                       : undefined,
-                };
-              });
-              const screenBackground = createMemo(
-                () => options()?.contentBackgroundColor ?? DEFAULT_SCREEN_BACKGROUND
+                    rightAccessory:
+                      useNativeHeader && headerVisible() && opts?.headerRight
+                        ? {
+                            type: "surface",
+                            routeKey: route.key,
+                            position: "right",
+                          }
+                        : undefined,
+                  };
+                }
               );
-              const headerRightButton = createMemo(() => options()?.headerRightButton);
+              const screenBackground = createMemo(
+                () =>
+                  options()?.contentBackgroundColor ?? DEFAULT_SCREEN_BACKGROUND
+              );
+              const headerRightButton = createMemo(
+                () => options()?.headerRightButton
+              );
               const handleNativeBack = () => {
                 helpers.goBack();
               };
@@ -625,6 +634,9 @@ function HeaderBar(props: HeaderBarProps) {
   const insetTop = insets.top;
   const baseHeight = insetTop + DEFAULT_HEADER_HEIGHT;
   const owner = getOwner();
+  createEffect(() => {
+    console.log("HeaderBar mounted with insets:", JSON.stringify(insets));
+  });
 
   const tintColor = () => props.options.headerTintColor ?? DEFAULT_HEADER_TINT;
   const titleColor = () =>

@@ -7,6 +7,7 @@ import androidx.core.graphics.Insets
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import com.rune.kit.runtime.RuneModule
+import com.rune.kit.runtime.RuneSyncModule
 import com.rune.kit.runtime.RuneRuntime
 import org.json.JSONObject
 
@@ -16,14 +17,26 @@ import org.json.JSONObject
 class RuneSafeAreaModule(
     private val activity: Activity,
     private val runtime: RuneRuntime
-) : RuneModule {
+) : RuneModule, RuneSyncModule {
     override val name: String = "RuneSafeArea"
     override val constants: Map<String, Any>?
         get() = (getCurrentMetrics() ?: defaultMetrics()).toMap()
 
     override fun call(method: String, args: Array<Any?>): JSONObject {
-        android.util.Log.w("RuneSafeArea", "Synchronous call to RuneSafeAreaModule for method '$method' not implemented.")
-        return JSONObject()
+        return when (method) {
+            "getCurrentMetrics" -> JSONObject().put("result", (getCurrentMetrics() ?: defaultMetrics()).toJSONObject())
+            else -> {
+                android.util.Log.w("RuneSafeArea", "Call to RuneSafeAreaModule for method '$method' not implemented.")
+                JSONObject()
+            }
+        }
+    }
+
+    override fun callSync(method: String, args: Array<Any?>): Any? {
+        return when (method) {
+            "getCurrentMetrics" -> (getCurrentMetrics() ?: defaultMetrics()).toJSONObject()
+            else -> null
+        }
     }
     private var lastMetrics: WindowMetrics? = null
     private var pendingUpdate = false
@@ -224,6 +237,13 @@ class RuneSafeAreaModule(
                 "frame" to frame.toMap()
             )
         }
+
+        fun toJSONObject(): JSONObject {
+            return JSONObject().apply {
+                put("insets", insets.toJSONObject())
+                put("frame", frame.toJSONObject())
+            }
+        }
     }
 
     private data class SafeAreaInsets(
@@ -240,6 +260,15 @@ class RuneSafeAreaModule(
                 "left" to left.toDouble()
             )
         }
+
+        fun toJSONObject(): JSONObject {
+            return JSONObject().apply {
+                put("top", top.toDouble())
+                put("right", right.toDouble())
+                put("bottom", bottom.toDouble())
+                put("left", left.toDouble())
+            }
+        }
     }
 
     private data class SafeAreaFrame(
@@ -255,6 +284,15 @@ class RuneSafeAreaModule(
                 "width" to width.toDouble(),
                 "height" to height.toDouble()
             )
+        }
+
+        fun toJSONObject(): JSONObject {
+            return JSONObject().apply {
+                put("x", x.toDouble())
+                put("y", y.toDouble())
+                put("width", width.toDouble())
+                put("height", height.toDouble())
+            }
         }
     }
 

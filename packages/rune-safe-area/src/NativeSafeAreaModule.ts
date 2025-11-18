@@ -58,16 +58,46 @@ function readNativeConstants(): WindowMetrics | null {
   return value as WindowMetrics;
 }
 
+function getModulesBridge(): {
+  callSync?: (name: string, method: string, args?: unknown) => unknown;
+} | null {
+  const globalObj = getGlobalObject();
+  const bridge = (globalObj as { __modules?: unknown }).__modules;
+  if (!bridge || typeof bridge !== "object") {
+    return null;
+  }
+  return bridge as {
+    callSync?: (name: string, method: string, args?: unknown) => unknown;
+  };
+}
+
+function readFromBridge(): WindowMetrics | null {
+  const bridge = getModulesBridge();
+  if (!bridge?.callSync) return null;
+  try {
+    const result = bridge.callSync(MODULE_KEY, "getCurrentMetrics", {});
+    if (!result || typeof result !== "object") return null;
+    return result as WindowMetrics;
+  } catch {
+    return null;
+  }
+}
+
 function createEmitterModule(): NativeSafeAreaModule | null {
-  const initial = readNativeConstants();
+  const initial = readNativeConstants() ?? readFromBridge();
   if (!initial) return null;
   let latest = initial;
 
   return {
     getInitialMetrics() {
-      return latest;
+      return readFromBridge() ?? latest;
     },
     addMetricsChangeListener(listener) {
+      const current = readFromBridge();
+      if (current) {
+        latest = current;
+        listener(current);
+      }
       const subscription = sharedNativeEventEmitter.addListener(
         EVENT_NAME,
         (payload) => {
