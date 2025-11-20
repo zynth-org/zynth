@@ -5,6 +5,7 @@
 #include <hermes/hermes.h>
 #include <jsi/jsi.h>
 
+#include <chrono>
 #include <cmath>
 #include <memory>
 #include <mutex>
@@ -126,6 +127,8 @@ struct RuntimeState {
   std::unordered_map<int, TimerEntry> timers;
   std::unordered_map<int, std::shared_ptr<facebook::jsi::Function>> animationFrames;
   std::unordered_map<int, PromiseEntry> promises;
+  std::unordered_map<std::string, double> consoleTimers;
+  double performanceOriginMs = 0.0;
 };
 
 std::mutex gStateMutex;
@@ -456,81 +459,178 @@ facebook::jsi::Value javaObjectToJsValue(
 void installConsole(std::shared_ptr<RuntimeState> state) {
   using namespace facebook::jsi;
   auto &rt = *state->runtime;
-  auto logFunction = Function::createFromHostFunction(
-      rt, PropNameID::forAscii(rt, "log"), 0,
-      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
-        std::string message;
-        for (size_t i = 0; i < count; ++i) {
-          if (i > 0) message += " ";
-          if (args[i].isString()) {
-            message += args[i].getString(rt).utf8(rt);
-          } else if (args[i].isNumber()) {
-            message += std::to_string(args[i].getNumber());
-          } else if (args[i].isBool()) {
-            message += args[i].getBool() ? "true" : "false";
-          } else if (args[i].isNull()) {
-            message += "null";
-          } else if (args[i].isUndefined()) {
-            message += "undefined";
-          } else {
-            message += "[object]";
+  auto weakState = std::weak_ptr<RuntimeState>(state);
+
+  auto nowMs = []() -> double {
+    using namespace std::chrono;
+    return duration_cast<duration<double, std::milli>>(
+               steady_clock::now().time_since_epoch())
+        .count();
+  };
+
+  auto stringifyValue = [](Runtime &rt, const Value &value) -> std::string {
+    if (value.isString()) {
+      return value.getString(rt).utf8(rt);
+    }
+    if (value.isNumber()) {
+      return std::to_string(value.getNumber());
+    }
+    if (value.isBool()) {
+      return value.getBool() ? "true" : "false";
+    }
+    if (value.isNull()) {
+      return "null";
+    }
+    if (value.isUndefined()) {
+      return "undefined";
+    }
+    if (value.isObject()) {
+      try {
+        auto global = rt.global();
+        if (global.hasProperty(rt, "JSON")) {
+          auto jsonObj = global.getPropertyAsObject(rt, "JSON");
+          if (jsonObj.hasProperty(rt, "stringify")) {
+            auto stringify = jsonObj.getPropertyAsFunction(rt, "stringify");
+            auto result = stringify.call(rt, value);
+            if (result.isString()) {
+              return result.getString(rt).utf8(rt);
+            }
           }
         }
+      } catch (...) {
+        // Fall through to default formatting.
+      }
+      try {
+        auto str = value.toString(rt);
+        return str.utf8(rt);
+      } catch (...) {
+        return "[object]";
+      }
+    }
+    return "[object]";
+  };
+
+  auto formatArgs = [stringifyValue](Runtime &rt, const Value *args, size_t count) {
+    std::string message;
+    for (size_t i = 0; i < count; ++i) {
+      if (i > 0) message += " ";
+      message += stringifyValue(rt, args[i]);
+    }
+    return message;
+  };
+  auto logFunction = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "log"), 0,
+      [formatArgs](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        std::string message = formatArgs(rt, args, count);
         BRIDGE_LOG(ANDROID_LOG_INFO, "%s", message.c_str());
         return Value::undefined();
       });
   auto warnFunction = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "warn"), 0,
-      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
-        std::string message;
-        for (size_t i = 0; i < count; ++i) {
-          if (i > 0) message += " ";
-          if (args[i].isString()) {
-            message += args[i].getString(rt).utf8(rt);
-          } else if (args[i].isNumber()) {
-            message += std::to_string(args[i].getNumber());
-          } else if (args[i].isBool()) {
-            message += args[i].getBool() ? "true" : "false";
-          } else if (args[i].isNull()) {
-            message += "null";
-          } else if (args[i].isUndefined()) {
-            message += "undefined";
-          } else {
-            message += "[object]";
-          }
-        }
+      [formatArgs](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        std::string message = formatArgs(rt, args, count);
         BRIDGE_LOG(ANDROID_LOG_WARN, "%s", message.c_str());
         return Value::undefined();
       });
   auto errorFunction = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "error"), 0,
-      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
-        std::string message;
-        for (size_t i = 0; i < count; ++i) {
-          if (i > 0) message += " ";
-          if (args[i].isString()) {
-            message += args[i].getString(rt).utf8(rt);
-          } else if (args[i].isNumber()) {
-            message += std::to_string(args[i].getNumber());
-          } else if (args[i].isBool()) {
-            message += args[i].getBool() ? "true" : "false";
-          } else if (args[i].isNull()) {
-            message += "null";
-          } else if (args[i].isUndefined()) {
-            message += "undefined";
-          } else {
-            message += "[object]";
-          }
-        }
+      [formatArgs](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        std::string message = formatArgs(rt, args, count);
         BRIDGE_LOG(ANDROID_LOG_ERROR, "%s", message.c_str());
         return Value::undefined();
       });
 
+  auto timeFunction = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "time"), 1,
+      [weakState, nowMs](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        auto state = weakState.lock();
+        if (!state) return Value::undefined();
+        std::string label = "default";
+        if (count > 0) {
+          label = args[0].isString() ? args[0].getString(rt).utf8(rt)
+                                    : "default";
+        }
+        state->consoleTimers[label] = nowMs();
+        return Value::undefined();
+      });
+
+  auto timeLogFunction = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "timeLog"), 1,
+      [weakState, nowMs](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        auto state = weakState.lock();
+        if (!state) return Value::undefined();
+        std::string label = "default";
+        if (count > 0) {
+          label = args[0].isString() ? args[0].getString(rt).utf8(rt)
+                                    : "default";
+        }
+        auto it = state->consoleTimers.find(label);
+        if (it == state->consoleTimers.end()) {
+          BRIDGE_LOG(ANDROID_LOG_WARN, "Timer \"%s\" does not exist", label.c_str());
+          return Value::undefined();
+        }
+        const double delta = nowMs() - it->second;
+        BRIDGE_LOG(ANDROID_LOG_INFO, "%s: %.3fms", label.c_str(), delta);
+        return Value::undefined();
+      });
+
+  auto timeEndFunction = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "timeEnd"), 1,
+      [weakState, nowMs](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        auto state = weakState.lock();
+        if (!state) return Value::undefined();
+        std::string label = "default";
+        if (count > 0) {
+          label = args[0].isString() ? args[0].getString(rt).utf8(rt)
+                                    : "default";
+        }
+        auto it = state->consoleTimers.find(label);
+        if (it == state->consoleTimers.end()) {
+          BRIDGE_LOG(ANDROID_LOG_WARN, "Timer \"%s\" does not exist", label.c_str());
+          return Value::undefined();
+        }
+        const double delta = nowMs() - it->second;
+        state->consoleTimers.erase(it);
+        BRIDGE_LOG(ANDROID_LOG_INFO, "%s: %.3fms", label.c_str(), delta);
+        return Value::undefined();
+      });
+
+  auto performanceNow = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "now"), 0,
+      [weakState, nowMs](Runtime &, const Value &, const Value *, size_t) -> Value {
+        auto state = weakState.lock();
+        if (!state) return Value::undefined();
+        if (state->performanceOriginMs == 0.0) {
+          state->performanceOriginMs = nowMs();
+        }
+        return Value(nowMs() - state->performanceOriginMs);
+      });
+
   Object console(rt);
+  auto global = rt.global();
+  if (global.hasProperty(rt, "console")) {
+    auto existing = global.getProperty(rt, "console");
+    if (existing.isObject()) {
+      console = existing.getObject(rt);
+    }
+  }
   console.setProperty(rt, "log", logFunction);
   console.setProperty(rt, "warn", warnFunction);
   console.setProperty(rt, "error", errorFunction);
-  rt.global().setProperty(rt, "console", console);
+  console.setProperty(rt, "time", timeFunction);
+  console.setProperty(rt, "timeLog", timeLogFunction);
+  console.setProperty(rt, "timeEnd", timeEndFunction);
+  global.setProperty(rt, "console", console);
+
+  Object performance(rt);
+  if (global.hasProperty(rt, "performance")) {
+    auto existing = global.getProperty(rt, "performance");
+    if (existing.isObject()) {
+      performance = existing.getObject(rt);
+    }
+  }
+  performance.setProperty(rt, "now", performanceNow);
+  global.setProperty(rt, "performance", performance);
 }
 
 void installPlatformFlag(std::shared_ptr<RuntimeState> state) {
@@ -1349,10 +1449,11 @@ void installModules(std::shared_ptr<RuntimeState> state) {
                 jstring jMethod = makeJString(env.get(), methodName);
 
                 jclass objectClass = env->FindClass("java/lang/Object");
-                jobjectArray argsArray = env->NewObjectArray(count > 2 ? 1 : 0, objectClass, nullptr);
-                if (count > 2) {
-                    jobject jniArg = jsiValueToJObject(runtime, env.get(), args[2]);
-                    env->SetObjectArrayElement(argsArray, 0, jniArg);
+                const size_t argCount = count > 2 ? (count - 2) : 0;
+                jobjectArray argsArray = env->NewObjectArray(static_cast<jsize>(argCount), objectClass, nullptr);
+                for (size_t i = 0; i < argCount; ++i) {
+                    jobject jniArg = jsiValueToJObject(runtime, env.get(), args[i + 2]);
+                    env->SetObjectArrayElement(argsArray, static_cast<jsize>(i), jniArg);
                     env->DeleteLocalRef(jniArg);
                 }
 
