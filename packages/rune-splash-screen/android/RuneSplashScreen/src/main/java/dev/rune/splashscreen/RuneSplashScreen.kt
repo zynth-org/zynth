@@ -4,6 +4,7 @@ import android.app.Activity
 import android.util.Log
 import androidx.core.splashscreen.SplashScreen
 import com.rune.kit.runtime.RuneRuntime
+import java.util.WeakHashMap
 
 /**
  * Public interface for RuneSplashScreen module.
@@ -11,17 +12,19 @@ import com.rune.kit.runtime.RuneRuntime
 object RuneSplashScreen {
     @Volatile private var preventAutoHide: Boolean = false
     @Volatile private var contentReady: Boolean = false
-    @Volatile private var bridgeInstalled: Boolean = false
+    private val initializedRuntimes = WeakHashMap<RuneRuntime, Boolean>()
 
     @JvmStatic
     fun initialize(activity: Activity, runtime: RuneRuntime) {
-        if (bridgeInstalled) {
-            Log.w("RuneSplashScreen", "Module already initialized")
-            return
+        synchronized(initializedRuntimes) {
+            if (initializedRuntimes.containsKey(runtime)) {
+                Log.w("RuneSplashScreen", "Runtime already initialized")
+                return
+            }
+            runtime.installModules(listOf(RuneSplashScreenModule()))
+            initializedRuntimes[runtime] = true
+            Log.d("RuneSplashScreen", "Module initialized")
         }
-        runtime.installModules(listOf(RuneSplashScreenModule()))
-        bridgeInstalled = true
-        Log.d("RuneSplashScreen", "Module initialized")
     }
 
     @JvmStatic
