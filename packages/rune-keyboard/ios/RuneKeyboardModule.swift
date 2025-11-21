@@ -16,7 +16,14 @@ public class RuneKeyboardModule: NSObject {
   private weak var runtime: RuneRuntime?
   private var observers: [NSObjectProtocol] = []
   private var lastState: KeyboardState?
-  private var pendingUpdate: Bool = false
+  private let defaultState = KeyboardState(
+    isVisible: false,
+    height: 0,
+    screenY: UIScreen.main.bounds.height,
+    duration: 0,
+    easing: "keyboard",
+    isAnimating: false
+  )
 
   // MARK: - Lifecycle
 
@@ -29,8 +36,6 @@ public class RuneKeyboardModule: NSObject {
   @objc public static func initialize(with runtime: RuneRuntime) -> RuneKeyboardModule {
     print("[RuneKeyboard] Initializing module")
     let module = RuneKeyboardModule(runtime: runtime)
-    print("[RuneKeyboard] Installing JS interface")
-    module.installJSInterface()
     print("[RuneKeyboard] Registering bridge")
     module.registerBridge()
     print("[RuneKeyboard] Starting observation")
@@ -49,70 +54,6 @@ public class RuneKeyboardModule: NSObject {
     let bridge = RuneKeyboardBridge(keyboardModule: self)
     runtime.installModules([bridge])
     print("[RuneKeyboard] Bridge registered with runtime")
-  }
-
-  // MARK: - JS Interface
-
-  private func installJSInterface() {
-    guard let runtime = runtime else { return }
-
-    // Install the native module interface with initial state
-    let code = """
-      (function() {
-        const listeners = [];
-        let currentState = {
-          isVisible: false,
-          height: 0,
-          screenY: 0,
-          duration: 0,
-          easing: 'keyboard'
-        };
-        
-        globalThis.__RUNE_KEYBOARD__ = {
-          getState: function() {
-            return currentState;
-          },
-          isVisible: function() {
-            return currentState.isVisible;
-          },
-          getHeight: function() {
-            return currentState.height;
-          },
-          addChangeListener: function(listener) {
-            listeners.push(listener);
-            return function() {
-              const index = listeners.indexOf(listener);
-              if (index >= 0) {
-                listeners.splice(index, 1);
-              }
-            };
-          },
-          dismiss: function() {
-            console.log('[RuneKeyboard][JS] dismiss() calling native via __modules');
-            // Use the __modules bridge to call native dismiss
-            if (globalThis.__modules && typeof globalThis.__modules.call === 'function') {
-              globalThis.__modules.call('RuneKeyboard', 'dismiss', {});
-            } else {
-              console.warn('[RuneKeyboard] __modules bridge not available');
-            }
-          },
-          _updateState: function(state) {
-            currentState = state;
-            for (let i = 0; i < listeners.length; i++) {
-              try {
-                listeners[i](state);
-              } catch (error) {
-                console.error('[RuneKeyboard] Listener error:', error);
-              }
-            }
-          }
-        };
-        
-        console.log('[RuneKeyboard] Module installed');
-      })();
-      """
-
-    evaluateJavaScript(code, in: runtime)
   }
 
   /// Dismiss the keyboard by resigning first responder
@@ -264,6 +205,10 @@ public class RuneKeyboardModule: NSObject {
     )
   }
 
+  func getInitialState() -> KeyboardState {
+    return lastState ?? defaultState
+  }
+
   private func curveToEasing(_ curve: UInt) -> String {
     // UIViewAnimationCurve values:
     // 0 = easeInOut, 1 = easeIn, 2 = easeOut, 3 = linear, 7 = keyboard
@@ -287,49 +232,13 @@ public class RuneKeyboardModule: NSObject {
     }
 
     lastState = state
-
-    let stateJSON = state.toJSON()
-    print("[RuneKeyboard] Publishing state to JS: \(stateJSON)")
-
-    let code = """
-      (function() {
-        if (globalThis.__RUNE_KEYBOARD__) {
-          globalThis.__RUNE_KEYBOARD__._updateState(\(stateJSON));
-        }
-      })();
-      """
-
-    evaluateJavaScript(code, in: runtime)
-  }
-
-  // MARK: - Helper to evaluate JavaScript
-
-  /// Dedicated queue for JS evaluation to avoid deadlock with Hermes's internal dispatch_sync
-  private static let jsEvalQueue = DispatchQueue(
-    label: "dev.rune.keyboard.jseval", qos: .userInteractive)
-
-  private func evaluateJavaScript(_ code: String, in runtime: RuneRuntime) {
-    let mirror = Mirror(reflecting: runtime)
-    for child in mirror.children {
-      if child.label == "runtime", let runtimeAdapter = child.value as? JSRuntimeAdapter {
-        // Dispatch to a dedicated background queue to avoid deadlock.
-        // HermesRuntimeHost.evaluateString uses dispatch_sync to its JS queue.
-        // If we're on main thread during a keyboard notification, and the JS queue
-        // is waiting for main thread, we get a deadlock.
-        // By dispatching to a separate background queue, we ensure the sync dispatch
-        // to the JS queue doesn't block the main thread.
-        RuneKeyboardModule.jsEvalQueue.async {
-          runtimeAdapter.evaluate(code: code)
-        }
-        return
-      }
-    }
+    runtime.emitEvent(name: "RuneKeyboard:change", payload: state.toDictionary())
   }
 }
 
 // MARK: - Data Models
 
-private struct KeyboardState: Equatable {
+struct KeyboardState: Equatable {
   let isVisible: Bool
   let height: CGFloat
   let screenY: CGFloat
@@ -337,16 +246,14 @@ private struct KeyboardState: Equatable {
   let easing: String
   let isAnimating: Bool
 
-  func toJSON() -> String {
-    """
-    {
-      "isVisible": \(isVisible),
-      "height": \(height),
-      "screenY": \(screenY),
-      "duration": \(duration),
-      "easing": "\(easing)",
-      "isAnimating": \(isAnimating)
-    }
-    """
+  func toDictionary() -> [String: Any] {
+    [
+      "isVisible": isVisible,
+      "height": height,
+      "screenY": screenY,
+      "duration": duration,
+      "easing": easing,
+      "isAnimating": isAnimating,
+    ]
   }
 }

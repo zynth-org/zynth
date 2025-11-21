@@ -22,7 +22,7 @@ public class RuneSafeArea: NSObject {
     }
     
     // Use the static initialize method from RuneSafeAreaModule
-    RuneSafeAreaModule.initialize(with: runtime)
+    moduleInstance = RuneSafeAreaModule.initialize(with: runtime)
     print("[RuneSafeArea] Module initialized")
   }
   

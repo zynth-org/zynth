@@ -105,14 +105,7 @@ public final class RuneRuntime: NSObject {
       RuneDimensionsModule(runtime: self, rootView: rootView),
     ])
 
-    let constants = registry.exportedConstants()
-    if !constants.isEmpty,
-      let constantsData = try? JSONSerialization.data(withJSONObject: constants, options: [])
-    {
-      let constantsJson = String(data: constantsData, encoding: .utf8) ?? "{}"
-      let script = "globalThis.NativeConstants = \(constantsJson);"
-      runtime.evaluate(code: script)
-    }
+    injectModuleConstants()
 
     runtime.evaluate(code: "globalThis.__RUNE_PLATFORM = \"ios\";")
     print("[RuneTrace] __RUNE_PLATFORM set to ios")
@@ -275,6 +268,7 @@ public final class RuneRuntime: NSObject {
 
   public func installModules(_ modules: [RuneModule]) {
     modules.forEach(registry.register)
+    injectModuleConstants()
   }
 
   @objc public func registerSurface(rootView: UIView) -> Int {
@@ -329,6 +323,19 @@ public final class RuneRuntime: NSObject {
       )
     }
     try load(jsBundleURL: url)
+  }
+
+  private func injectModuleConstants() {
+    let constants = registry.exportedConstants()
+    if constants.isEmpty {
+      runtime.evaluate(code: "globalThis.NativeConstants = globalThis.NativeConstants || {};")
+      return
+    }
+    if let constantsData = try? JSONSerialization.data(withJSONObject: constants, options: []) {
+      let constantsJson = String(data: constantsData, encoding: .utf8) ?? "{}"
+      let script = "globalThis.NativeConstants = \(constantsJson);"
+      runtime.evaluate(code: script)
+    }
   }
 
   public func load(jsBundleURL: URL) throws {

@@ -13,6 +13,9 @@ final class RuneKeyboardBridge: NSObject, RuneModule {
 
   let name = "RuneKeyboard"
   private weak var keyboardModule: RuneKeyboardModule?
+  var constantsToExport: [String: Any]? {
+    keyboardModule?.getInitialState().toDictionary()
+  }
 
   init(keyboardModule: RuneKeyboardModule) {
     self.keyboardModule = keyboardModule

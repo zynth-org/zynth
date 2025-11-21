@@ -33,6 +33,10 @@ declare global {
 
 const EVENT_NAME = "RuneSafeArea:change";
 const MODULE_KEY = "RuneSafeArea";
+const DEFAULT_METRICS: WindowMetrics = {
+  insets: { top: 0, right: 0, bottom: 0, left: 0 },
+  frame: { x: 0, y: 0, width: 0, height: 0 },
+};
 
 function getGlobalObject(): Record<string, unknown> {
   if (typeof globalThis !== "undefined") {
@@ -47,6 +51,12 @@ function getGlobalObject(): Record<string, unknown> {
     // ignore
   }
   return {};
+}
+
+function getPlatform(): string | null {
+  const globalObj = getGlobalObject();
+  const value = globalObj.__RUNE_PLATFORM;
+  return typeof value === "string" ? value : null;
 }
 
 function readNativeConstants(): WindowMetrics | null {
@@ -83,10 +93,9 @@ function readFromBridge(): WindowMetrics | null {
   }
 }
 
-function createEmitterModule(): NativeSafeAreaModule | null {
+function createEmitterModule(): NativeSafeAreaModule {
   const initial = readNativeConstants() ?? readFromBridge();
-  if (!initial) return null;
-  let latest = initial;
+  let latest = initial ?? DEFAULT_METRICS;
 
   return {
     getInitialMetrics() {
@@ -97,6 +106,21 @@ function createEmitterModule(): NativeSafeAreaModule | null {
       if (current) {
         latest = current;
         listener(current);
+      }
+      const maybeRetry = () => {
+        const retry = readFromBridge();
+        if (retry) {
+          latest = retry;
+          listener(retry);
+        }
+      };
+      if (!current && typeof globalThis !== "undefined") {
+        const schedule = (globalThis as any).setTimeout;
+        if (typeof schedule === "function") {
+          schedule(maybeRetry, 0);
+        } else {
+          maybeRetry();
+        }
       }
       const subscription = sharedNativeEventEmitter.addListener(
         EVENT_NAME,
@@ -123,5 +147,11 @@ export function getNativeSafeAreaModule(): NativeSafeAreaModule | null {
   if (globalObj.__RUNE_SAFE_AREA__) {
     return globalObj.__RUNE_SAFE_AREA__ || null;
   }
-  return createEmitterModule();
+  const platform = getPlatform();
+  if (platform === "ios" || platform === "android") {
+    return createEmitterModule();
+  }
+  const constants = readNativeConstants();
+  const bridge = getModulesBridge();
+  return constants || bridge ? createEmitterModule() : null;
 }

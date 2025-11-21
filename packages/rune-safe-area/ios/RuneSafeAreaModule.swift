@@ -23,64 +23,29 @@ public class RuneSafeAreaModule: NSObject {
     super.init()
   }
   
-  @objc public static func initialize(with runtime: RuneRuntime) {
+  @discardableResult
+  @objc public static func initialize(with runtime: RuneRuntime) -> RuneSafeAreaModule {
     print("[RuneSafeArea] Initializing module")
     let module = RuneSafeAreaModule(runtime: runtime)
-    print("[RuneSafeArea] Installing JS interface")
-    module.installJSInterface()
+    print("[RuneSafeArea] Registering bridge")
+    module.registerBridge()
     print("[RuneSafeArea] Starting observation")
     module.startObserving()
     print("[RuneSafeArea] Module initialized and observing")
+    return module
   }
   
   deinit {
     stopObserving()
   }
   
-  // MARK: - JS Interface
-  
-  private func installJSInterface() {
+  // MARK: - Bridge
+
+  private func registerBridge() {
     guard let runtime = runtime else { return }
-    
-    // Install the native module interface
-    let code = """
-    (function() {
-      const listeners = [];
-      let currentMetrics = null;
-      
-      globalThis.__RUNE_SAFE_AREA__ = {
-        getInitialMetrics: function() {
-          return currentMetrics;
-        },
-        addMetricsChangeListener: function(listener) {
-          listeners.push(listener);
-          return function() {
-            const index = listeners.indexOf(listener);
-            if (index >= 0) {
-              listeners.splice(index, 1);
-            }
-          };
-        },
-        _updateMetrics: function(metrics) {
-          currentMetrics = metrics;
-          for (let i = 0; i < listeners.length; i++) {
-            try {
-              listeners[i](metrics);
-            } catch (error) {
-              console.error('[RuneSafeArea] Listener error:', error);
-            }
-          }
-        }
-      };
-      
-      console.log('[RuneSafeArea] Module installed');
-    })();
-    """
-    
-    evaluateJavaScript(code, in: runtime)
-    
-    // Provide initial metrics immediately
-    updateMetrics(force: true)
+    let bridge = RuneSafeAreaBridge(module: self)
+    runtime.installModules([bridge])
+    print("[RuneSafeArea] Bridge registered with runtime")
   }
   
   // MARK: - Observation
@@ -188,6 +153,10 @@ public class RuneSafeAreaModule: NSObject {
       )
     )
   }
+
+  func getInitialMetrics() -> WindowMetrics {
+    return getCurrentMetrics() ?? defaultMetrics()
+  }
   
   private func getActiveWindow() -> UIWindow? {
     // Try to get the key window from active scene
@@ -255,91 +224,65 @@ public class RuneSafeAreaModule: NSObject {
   
   private func publishMetricsToJS(_ metrics: WindowMetrics) {
     guard let runtime = runtime else { return }
-    
-    let metricsJSON = metrics.toJSON()
-    print("[RuneSafeArea] Publishing metrics to JS:", metricsJSON)
-    let code = """
-    (function() {
-      if (globalThis.__RUNE_SAFE_AREA__) {
-        globalThis.__RUNE_SAFE_AREA__._updateMetrics(\(metricsJSON));
-        console.log('[RuneSafeArea] Metrics updated:', JSON.stringify(\(metricsJSON)));
-      } else {
-        console.warn('[RuneSafeArea] Module not installed, cannot update metrics');
-      }
-    })();
-    """
-    
-    evaluateJavaScript(code, in: runtime)
-  }
-  
-  // MARK: - Helper to evaluate JavaScript
-  
-  private func evaluateJavaScript(_ code: String, in runtime: RuneRuntime) {
-    // Access the internal runtime via reflection
-    // RuneRuntime.runtime is internal, so we use Mirror to access it
-    let mirror = Mirror(reflecting: runtime)
-    for child in mirror.children {
-      if child.label == "runtime", let runtimeAdapter = child.value as? JSRuntimeAdapter {
-        runtimeAdapter.evaluate(code: code)
-        return
-      }
-    }
+
+    runtime.emitEvent(name: "RuneSafeArea:change", payload: metrics.toDictionary())
   }
 }
 
 // MARK: - Data Models
 
-private struct WindowMetrics: Equatable {
+struct WindowMetrics: Equatable {
   let insets: SafeAreaInsets
   let frame: SafeAreaFrame
   
-  func toJSON() -> String {
-    """
-    {
-      "insets": \(insets.toJSON()),
-      "frame": \(frame.toJSON())
-    }
-    """
+  func toDictionary() -> [String: Any] {
+    [
+      "insets": insets.toDictionary(),
+      "frame": frame.toDictionary(),
+    ]
   }
 }
 
-private struct SafeAreaInsets: Equatable {
+struct SafeAreaInsets: Equatable {
   let top: CGFloat
   let right: CGFloat
   let bottom: CGFloat
   let left: CGFloat
   
-  func toJSON() -> String {
-    """
-    {
-      "top": \(top),
-      "right": \(right),
-      "bottom": \(bottom),
-      "left": \(left)
-    }
-    """
+  func toDictionary() -> [String: Any] {
+    [
+      "top": top,
+      "right": right,
+      "bottom": bottom,
+      "left": left,
+    ]
   }
 }
 
-private struct SafeAreaFrame: Equatable {
+struct SafeAreaFrame: Equatable {
   let x: CGFloat
   let y: CGFloat
   let width: CGFloat
   let height: CGFloat
   
-  func toJSON() -> String {
-    """
-    {
-      "x": \(x),
-      "y": \(y),
-      "width": \(width),
-      "height": \(height)
-    }
-    """
+  func toDictionary() -> [String: Any] {
+    [
+      "x": x,
+      "y": y,
+      "width": width,
+      "height": height,
+    ]
   }
 }
 
 // MARK: - Helper for rounding
+
+private func defaultMetrics() -> WindowMetrics {
+  WindowMetrics(
+    insets: SafeAreaInsets(top: 0, right: 0, bottom: 0, left: 0),
+    frame: SafeAreaFrame(x: 0, y: 0, width: 0, height: 0)
+  )
+}
 
 private func round(_ value: CGFloat) -> CGFloat {
   return Darwin.round(value)

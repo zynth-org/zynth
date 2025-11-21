@@ -39,6 +39,11 @@ public final class RuneKeyboardAvoidingView: UIView {
   private var baseStyleSnapshot: [String: Any]?
   private var basePaddingBottom: CGFloat?
   private var baseHeightValue: Any?
+  private var baseFlexValue: Any?
+  private var baseFlexGrowValue: Any?
+  private var baseFlexShrinkValue: Any?
+  private var baseFlexBasisValue: Any?
+  private var baseLayoutHeight: CGFloat?
   private var transitionObservers: [NSObjectProtocol] = []
   private var transitionFreezeCount: Int = 0
   
@@ -96,6 +101,11 @@ public final class RuneKeyboardAvoidingView: UIView {
     baseStyleSnapshot = nil
     basePaddingBottom = nil
     baseHeightValue = nil
+    baseFlexValue = nil
+    baseFlexGrowValue = nil
+    baseFlexShrinkValue = nil
+    baseFlexBasisValue = nil
+    baseLayoutHeight = nil
   }
   
   @objc public func setKeyboardVerticalOffset(_ offset: CGFloat) {
@@ -295,6 +305,11 @@ public final class RuneKeyboardAvoidingView: UIView {
     baseStyleSnapshot = nil
     basePaddingBottom = nil
     baseHeightValue = nil
+    baseFlexValue = nil
+    baseFlexGrowValue = nil
+    baseFlexShrinkValue = nil
+    baseFlexBasisValue = nil
+    baseLayoutHeight = nil
   }
   
   // MARK: - Intrinsic Content Size
@@ -328,14 +343,43 @@ public final class RuneKeyboardAvoidingView: UIView {
 
     if behavior == .height {
       if overlap <= 0 {
+        baseLayoutHeight = nil
         if let baseHeightValue {
           updated["height"] = baseHeightValue
         } else {
           updated["height"] = NSNull()
         }
+        if let baseFlexValue {
+          updated["flex"] = baseFlexValue
+        } else {
+          updated["flex"] = NSNull()
+        }
+        if let baseFlexGrowValue {
+          updated["flexGrow"] = baseFlexGrowValue
+        } else {
+          updated["flexGrow"] = NSNull()
+        }
+        if let baseFlexShrinkValue {
+          updated["flexShrink"] = baseFlexShrinkValue
+        } else {
+          updated["flexShrink"] = NSNull()
+        }
+        if let baseFlexBasisValue {
+          updated["flexBasis"] = baseFlexBasisValue
+        } else {
+          updated["flexBasis"] = NSNull()
+        }
       } else {
-        let targetHeight = max(0, bounds.height - overlap)
+        if baseLayoutHeight == nil {
+          baseLayoutHeight = bounds.height
+        }
+        let baseline = baseLayoutHeight ?? bounds.height
+        let targetHeight = max(0, baseline - overlap)
         updated["height"] = NSNumber(value: Double(targetHeight))
+        updated["flex"] = NSNumber(value: 0)
+        updated["flexGrow"] = NSNumber(value: 0)
+        updated["flexShrink"] = NSNumber(value: 0)
+        updated["flexBasis"] = NSNull()
       }
     }
 
@@ -356,6 +400,10 @@ public final class RuneKeyboardAvoidingView: UIView {
     baseStyleSnapshot = style
     basePaddingBottom = resolvePaddingBottom(style: style)
     baseHeightValue = style["height"]
+    baseFlexValue = style["flex"]
+    baseFlexGrowValue = style["flexGrow"]
+    baseFlexShrinkValue = style["flexShrink"]
+    baseFlexBasisValue = style["flexBasis"]
   }
 
   private func resolvePaddingBottom(style: [String: Any]) -> CGFloat {
