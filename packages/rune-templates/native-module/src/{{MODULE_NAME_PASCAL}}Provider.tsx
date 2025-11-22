@@ -7,6 +7,7 @@ import {
   type Component,
   type JSX,
 } from "solid-js";
+import { sharedNativeEventEmitter } from "@rune/core";
 import type { {{MODULE_NAME_PASCAL}}State } from "./types";
 
 /**
@@ -51,30 +52,87 @@ export const {{MODULE_NAME_PASCAL}}Provider: Component<{{MODULE_NAME_PASCAL}}Pro
     props.initialState ?? { value: 0, status: "idle", timestamp: 0 }
   );
 
+  function getGlobalObject(): Record<string, unknown> {
+    if (typeof globalThis !== "undefined") {
+      return globalThis as Record<string, unknown>;
+    }
+    try {
+      const fallback = Function("return this")();
+      if (fallback && typeof fallback === "object") {
+        return fallback as Record<string, unknown>;
+      }
+    } catch {
+      // ignore
+    }
+    return {};
+  }
+
+  function readNativeConstants(): {{MODULE_NAME_PASCAL}}State | null {
+    const globalObj = getGlobalObject();
+    const constants = globalObj.NativeConstants as Record<string, unknown> | undefined;
+    if (!constants) return null;
+    const value = constants["{{MODULE_NAME_PASCAL}}"];
+    if (!value || typeof value !== "object") return null;
+    return value as {{MODULE_NAME_PASCAL}}State;
+  }
+
+  function getModulesBridge(): {
+    callSync?: (name: string, method: string, args?: unknown) => unknown;
+  } | null {
+    const globalObj = getGlobalObject();
+    const bridge = (globalObj as { __modules?: unknown }).__modules;
+    if (!bridge || typeof bridge !== "object") {
+      return null;
+    }
+    return bridge as {
+      callSync?: (name: string, method: string, args?: unknown) => unknown;
+    };
+  }
+
+  function readFromBridge(): {{MODULE_NAME_PASCAL}}State | null {
+    const bridge = getModulesBridge();
+    if (!bridge?.callSync) return null;
+    try {
+      const result = bridge.callSync("{{MODULE_NAME_PASCAL}}", "getCurrentState", {});
+      if (!result || typeof result !== "object") return null;
+      return result as {{MODULE_NAME_PASCAL}}State;
+    } catch {
+      return null;
+    }
+  }
+
   createEffect(() => {
-    // Subscribe to native state changes
-    const nativeModule = globalThis.__{{MODULE_NAME_UPPER}}__;
-    
-    if (!nativeModule) {
-      console.warn("[{{MODULE_NAME_PASCAL}}] Native module not available");
-      return;
+    const initial = props.initialState ?? readNativeConstants() ?? readFromBridge();
+    if (initial) {
+      setState(initial);
     }
 
-    // Get initial state if not provided
-    if (!props.initialState) {
-      const initialState = nativeModule.getInitialState();
-      if (initialState) {
-        setState(initialState);
+    const maybeRetry = () => {
+      const next = readFromBridge();
+      if (next) {
+        setState(next);
+      }
+    };
+    if (!initial && typeof globalThis !== "undefined") {
+      const schedule = (globalThis as any).setTimeout;
+      if (typeof schedule === "function") {
+        schedule(maybeRetry, 0);
+      } else {
+        maybeRetry();
       }
     }
 
-    // Subscribe to updates
-    const unsubscribe = nativeModule.addChangeListener((newState) => {
-      setState(newState);
-    });
+    const subscription = sharedNativeEventEmitter.addListener(
+      "{{MODULE_NAME_PASCAL}}:change",
+      (payload) => {
+        if (payload && typeof payload === "object") {
+          setState(payload as {{MODULE_NAME_PASCAL}}State);
+        }
+      }
+    );
 
     onCleanup(() => {
-      unsubscribe();
+      subscription.remove();
     });
   });
 

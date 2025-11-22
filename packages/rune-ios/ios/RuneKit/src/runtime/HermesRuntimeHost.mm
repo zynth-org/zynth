@@ -393,6 +393,24 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
             try {
               if (args[i].isString()) {
                 part = args[i].getString(rt).utf8(rt);
+              } else if (args[i].isObject()) {
+                auto global = rt.global();
+                if (global.hasProperty(rt, "JSON")) {
+                  auto jsonObj = global.getPropertyAsObject(rt, "JSON");
+                  if (jsonObj.hasProperty(rt, "stringify")) {
+                    auto stringify = jsonObj.getPropertyAsFunction(rt, "stringify");
+                    auto result = stringify.call(rt, args[i]);
+                    if (result.isString()) {
+                      part = result.getString(rt).utf8(rt);
+                    } else {
+                      part = args[i].toString(rt).utf8(rt);
+                    }
+                  } else {
+                    part = args[i].toString(rt).utf8(rt);
+                  }
+                } else {
+                  part = args[i].toString(rt).utf8(rt);
+                }
               } else {
                 part = args[i].toString(rt).utf8(rt);
               }
@@ -929,7 +947,12 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
           id argsObject = nil;
 
           if (count > 2) {
-            argsObject = SNConvertJSIValueToNSObject(rt, a[2]);
+            NSMutableArray *argsArray = [NSMutableArray arrayWithCapacity:count - 2];
+            for (size_t i = 2; i < count; i++) {
+              id value = SNConvertJSIValueToNSObject(rt, a[i]);
+              [argsArray addObject:value ?: [NSNull null]];
+            }
+            argsObject = argsArray;
           }
 
           if (!host.moduleCallSyncHandler) {

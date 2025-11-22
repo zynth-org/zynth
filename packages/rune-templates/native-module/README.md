@@ -49,7 +49,7 @@ yarn install
 
 **TypeScript (`src/`):**
 
-- `types.ts` - Define your module's state interface and native bridge API
+- `types.ts` - Define your module's state interface
 - `*Provider.tsx` - Update the context provider with your state logic
 - `hooks.ts` - Already configured, but you can add more hooks
 
@@ -140,19 +140,32 @@ native-module/
 - **Never destructure**: `const { value } = state()` breaks reactivity
 - **Use createMemo**: For derived values that depend on state
 
-### Native Bridge
+### Native Bridge (NativeConstants + RuneNativeEmitter)
 
-- Module installs `globalThis.__YOUR_MODULE__` interface
-- Provides `getInitialState()` and `addChangeListener()`
-- Native side calls `_updateState()` to push updates
-- TypeScript types ensure type safety
+- Native side exports `constantsToExport` to `globalThis.NativeConstants`
+- Native side emits `{{MODULE_NAME_PASCAL}}:change` events
+- JS reads initial state from `NativeConstants` or `__modules.callSync("getCurrentState")`
+- JS subscribes to updates via `sharedNativeEventEmitter`
+
+Example subscription:
+
+```ts
+import { sharedNativeEventEmitter } from "@rune/core";
+
+const initial = (globalThis as any).NativeConstants?.{{MODULE_NAME_PASCAL}};
+const subscription = sharedNativeEventEmitter.addListener(
+  "{{MODULE_NAME_PASCAL}}:change",
+  (state) => {
+    console.log("[{{MODULE_NAME_PASCAL}}] update", state);
+  }
+);
+```
 
 ### Initialization
 
 - Module's `initialize(with:)` called after bundle load
-- Must install JS interface via `evaluateJavaScript`
-- Should publish initial state immediately
-- Use `force: true` for first update
+- Must register the bridge so `constantsToExport` is visible
+- Should publish initial state via `{{MODULE_NAME_PASCAL}}:change` when ready
 
 ## Common Patterns
 
