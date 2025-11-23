@@ -37,7 +37,10 @@ find . -type f -not -path "*/node_modules/*" -exec sed -i '' \
 mv "Rune{{MODULE_NAME_PASCAL}}.podspec" "RuneMyModule.podspec"
 mv "src/{{MODULE_NAME_PASCAL}}Provider.tsx" "src/MyModuleProvider.tsx"
 mv "ios/{{MODULE_NAME_PASCAL}}Module.swift" "ios/MyModuleModule.swift"
+mv "android/Rune{{MODULE_NAME_PASCAL}}" "android/RuneMyModule"
 ```
+
+Update the Android package/namespace in `android/RuneMyModule/build.gradle.kts` and the Kotlin `package` declarations to a valid identifier (e.g. `dev.rune.mymodule`).
 
 ### 3. Install Dependencies
 
@@ -61,7 +64,10 @@ yarn install
 
 **Android (`android/`):**
 
-- TODO: Create Android implementation following the iOS pattern
+- `android/Rune{{MODULE_NAME_PASCAL}}` contains the Android library module
+- Update the Kotlin package/namespace to a valid identifier (e.g. `dev.rune.mymodule`)
+- `{{MODULE_NAME_PASCAL}}Module.kt` handles state and emits `{{MODULE_NAME_PASCAL}}:change`
+- `{{MODULE_NAME_PASCAL}}Bridge.kt` exports constants and sync state access
 
 ### 5. Build
 
@@ -118,7 +124,7 @@ function MyComponent() {
 native-module/
 ├── package.json              # Package metadata with runeNative config
 ├── Rune*.podspec            # iOS CocoaPods specification
-├── rsbuild.config.ts        # Build configuration
+├── tsconfig.json            # ESM build config
 ├── tsconfig.json            # TypeScript compilation config
 ├── tsconfig.types.json      # Type declaration config
 ├── README.md                # This file
@@ -129,6 +135,8 @@ native-module/
 │   └── hooks.ts            # React-style hooks
 └── ios/
     └── *Module.swift       # iOS native implementation
+└── android/
+    └── Rune*              # Android native implementation
 ```
 
 ## Key Concepts
