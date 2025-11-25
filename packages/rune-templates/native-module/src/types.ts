@@ -1,7 +1,6 @@
 /**
- * State interface for {{MODULE_NAME_PASCAL}} module
- * 
- * TODO: Define your module's state shape here
+ * State interface for {{MODULE_NAME_PASCAL}} module.
+ * Keep it serializable; it is sent over the native bridge.
  */
 export interface {{MODULE_NAME_PASCAL}}State {
   // Example properties - customize for your module

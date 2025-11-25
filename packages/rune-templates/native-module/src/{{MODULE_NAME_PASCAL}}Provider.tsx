@@ -7,7 +7,6 @@ import {
   type Component,
   type JSX,
 } from "solid-js";
-import { sharedNativeEventEmitter } from "@rune/core";
 import type { {{MODULE_NAME_PASCAL}}State } from "./types";
 
 /**
@@ -15,14 +14,14 @@ import type { {{MODULE_NAME_PASCAL}}State } from "./types";
  * This preserves SolidJS reactivity
  */
 const {{MODULE_NAME_PASCAL}}Context = createContext<Accessor<{{MODULE_NAME_PASCAL}}State>>(
-  () => ({ value: 0, status: "idle", timestamp: 0 })
+  () => DEFAULT_STATE
 );
 
 export { {{MODULE_NAME_PASCAL}}Context };
 
 export interface {{MODULE_NAME_PASCAL}}ProviderProps {
   /**
-   * Initial state from native side (useful for SSR/initial render)
+   * Optional initial state (used before native constants/events arrive)
    */
   initialState?: {{MODULE_NAME_PASCAL}}State;
   
@@ -33,24 +32,35 @@ export interface {{MODULE_NAME_PASCAL}}ProviderProps {
 }
 
 /**
- * Provider component that manages module state and subscribes to native updates
- * 
- * Wrap your app or relevant subtree with this provider to enable
- * access to {{MODULE_NAME_PASCAL}} state via the use{{MODULE_NAME_PASCAL}}State hook
- * 
- * @example
- * ```tsx
- * <{{MODULE_NAME_PASCAL}}Provider initialState={initialState}>
- *   <App />
- * </{{MODULE_NAME_PASCAL}}Provider>
- * ```
+ * Provider component that wires NativeConstants + RuneNativeEmitter
+ * into SolidJS state.
+ *
+ * Wrap your app or relevant subtree with this provider to access
+ * {{MODULE_NAME_PASCAL}} state via use{{MODULE_NAME_PASCAL}}State.
  */
 export const {{MODULE_NAME_PASCAL}}Provider: Component<{{MODULE_NAME_PASCAL}}ProviderProps> = (
   props
 ) => {
   const [state, setState] = createSignal<{{MODULE_NAME_PASCAL}}State>(
-    props.initialState ?? { value: 0, status: "idle", timestamp: 0 }
+    props.initialState ?? DEFAULT_STATE
   );
+
+  function getNativeEmitter():
+    | {
+        addListener(event: string, listener: (payload: unknown) => void): {
+          remove(): void;
+        };
+      }
+    | null {
+    const globalObj = getGlobalObject() as {
+      RuneNativeEmitter?: {
+        addListener(event: string, listener: (payload: unknown) => void): {
+          remove(): void;
+        };
+      };
+    };
+    return globalObj.RuneNativeEmitter ?? null;
+  }
 
   function getGlobalObject(): Record<string, unknown> {
     if (typeof globalThis !== "undefined") {
@@ -76,21 +86,11 @@ export const {{MODULE_NAME_PASCAL}}Provider: Component<{{MODULE_NAME_PASCAL}}Pro
     return value as {{MODULE_NAME_PASCAL}}State;
   }
 
-  function getModulesBridge(): {
-    callSync?: (name: string, method: string, args?: unknown) => unknown;
-  } | null {
-    const globalObj = getGlobalObject();
-    const bridge = (globalObj as { __modules?: unknown }).__modules;
-    if (!bridge || typeof bridge !== "object") {
-      return null;
-    }
-    return bridge as {
-      callSync?: (name: string, method: string, args?: unknown) => unknown;
-    };
-  }
-
   function readFromBridge(): {{MODULE_NAME_PASCAL}}State | null {
-    const bridge = getModulesBridge();
+    const globalObj = getGlobalObject();
+    const bridge = (globalObj as { __modules?: unknown }).__modules as
+      | { callSync?: (name: string, method: string, args?: unknown) => unknown }
+      | undefined;
     if (!bridge?.callSync) return null;
     try {
       const result = bridge.callSync("{{MODULE_NAME_PASCAL}}", "getCurrentState", {});
@@ -122,7 +122,12 @@ export const {{MODULE_NAME_PASCAL}}Provider: Component<{{MODULE_NAME_PASCAL}}Pro
       }
     }
 
-    const subscription = sharedNativeEventEmitter.addListener(
+    const emitter = getNativeEmitter();
+    if (!emitter) {
+      return;
+    }
+
+    const subscription = emitter.addListener(
       "{{MODULE_NAME_PASCAL}}:change",
       (payload) => {
         if (payload && typeof payload === "object") {
@@ -141,4 +146,10 @@ export const {{MODULE_NAME_PASCAL}}Provider: Component<{{MODULE_NAME_PASCAL}}Pro
       {props.children}
     </{{MODULE_NAME_PASCAL}}Context.Provider>
   );
+};
+
+const DEFAULT_STATE: {{MODULE_NAME_PASCAL}}State = {
+  value: 0,
+  status: "idle",
+  timestamp: 0,
 };

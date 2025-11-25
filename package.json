@@ -17,7 +17,8 @@
     "bundle": "rune bundle all",
     "reset:ios": "yarn workspace @demo/sn-demo reset:ios",
     "reset:android": "yarn workspace @demo/sn-demo reset:android",
-    "sync-aliases": "node scripts/sync-workspace-aliases.js"
+    "sync-aliases": "node scripts/sync-workspace-aliases.js",
+    "new:package": "node --experimental-strip-types scripts/new-package.ts"
   },
   "devDependencies": {
     "@rune/cli": "*",
