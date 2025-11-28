@@ -133,7 +133,7 @@ public class {{MODULE_NAME_PASCAL}}Module: NSObject {
 final class {{MODULE_NAME_PASCAL}}Bridge: NSObject, RuneModule, RuneSyncModule {
   
   let name = "{{MODULE_NAME_PASCAL}}"
-  private weak var module: {{MODULE_NAME_PASCAL}}Module?
+  private var module: {{MODULE_NAME_PASCAL}}Module?
   
   init(module: {{MODULE_NAME_PASCAL}}Module) {
     self.module = module
