@@ -1,30 +1,18 @@
-import { useContext, type Accessor } from "solid-js";
-import { UiContext } from "./UiProvider";
-import type { UiState } from "./types";
+import { createMemo, useContext, type Accessor } from "solid-js";
+import { UIThemeContext } from "./UIThemeProvider";
+import type { ColorScheme, UITheme } from "./theme";
 
 /**
- * Hook to access Ui state
- * 
- * Returns an Accessor that must be called to get the current state.
- * This preserves SolidJS reactivity.
- * 
- * @example
- * ```tsx
- * const state = useUiState();
- * 
- * // Access properties by calling the accessor
- * console.log(state().value);
- * console.log(state().status);
- * 
- * // Use in JSX
- * <Text>{state().value}</Text>
- * 
- * // Use in createMemo for derived values
- * const displayText = createMemo(() => {
- *   return `Status: ${state().status}`;
- * });
- * ```
+ * Access the current UI theme as a reactive accessor.
  */
-export function useUiState(): Accessor<UiState> {
-  return useContext(UiContext);
+export function useUITheme(): Accessor<UITheme> {
+  return useContext(UIThemeContext);
+}
+
+/**
+ * Access the resolved color scheme (light/dark).
+ */
+export function useUIColorScheme(): Accessor<ColorScheme> {
+  const theme = useUITheme();
+  return createMemo(() => theme().scheme);
 }

@@ -1,7 +1,7 @@
 {
   "name": "@rune/ui",
   "version": "0.0.1",
-  "description": "Easy to use UI Module",
+  "description": "Theme system and UI primitives for Rune",
   "type": "module",
   "main": "dist/esm/index.js",
   "module": "dist/esm/index.js",
@@ -17,7 +17,7 @@
     "dist",
     "ios",
     "android",
-    "RuneUi.podspec"
+    "RuneUI.podspec"
   ],
   "scripts": {
     "build": "yarn build:js && yarn build:types",
@@ -28,6 +28,7 @@
   "keywords": [
     "rune",
     "ui",
+    "theme",
     "native-module"
   ],
   "license": "MIT",
@@ -43,24 +44,24 @@
     "ios": {
       "pods": [
         {
-          "name": "RuneUi",
-          "podspec": "./RuneUi.podspec"
+          "name": "RuneUI",
+          "podspec": "./RuneUI.podspec"
         }
       ],
       "initializer": {
-        "className": "UiModule",
+        "className": "RuneAppearanceModule",
         "method": "initializeWith:"
       }
     },
     "android": {
       "modules": [
         {
-          "name": "RuneUi",
-          "path": "./android/RuneUi"
+          "name": "RuneUI",
+          "path": "./android/RuneUI"
         }
       ],
       "initializer": {
-        "className": "Ui",
+        "className": "RuneAppearance",
         "method": "initialize",
         "package": "dev.rune.ui"
       }

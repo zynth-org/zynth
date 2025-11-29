@@ -1,7 +1,7 @@
 Pod::Spec.new do |s|
-  s.name         = "RuneUi"
+  s.name         = "RuneUI"
   s.version      = "0.0.1"
-  s.summary      = "Easy to use UI Module"
+  s.summary      = "Theme system and UI primitives for Rune"
   s.homepage     = "https://github.com/x64bits/rune"
   s.license      = "MIT"
   s.author       = { "x64Bits" => "hello@x64bits.com" }

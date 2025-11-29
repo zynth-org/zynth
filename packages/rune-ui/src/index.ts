@@ -1,3 +1,6 @@
-export { UiProvider } from "./UiProvider";
-export { useUiState } from "./hooks";
-export type { UiState } from "./types";
+export {
+  UIThemeProvider,
+  UIThemeProvider as UIProvider,
+} from "./UIThemeProvider";
+export { useUIColorScheme, useUITheme } from "./hooks";
+export * from "./theme";
