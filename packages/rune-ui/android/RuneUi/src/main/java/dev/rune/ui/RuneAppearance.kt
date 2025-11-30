@@ -5,10 +5,10 @@ import android.util.Log
 import com.rune.kit.runtime.RuneRuntime
 
 /**
- * Public interface for RuneUi module.
+ * Public interface for RuneAppearance module.
  */
-object Ui {
-    private var moduleInstance: UiModule? = null
+object RuneAppearance {
+    private var moduleInstance: RuneAppearanceModule? = null
 
     /**
      * Initialize the module with an Activity and RuneRuntime instance.
@@ -16,12 +16,12 @@ object Ui {
     @JvmStatic
     fun initialize(activity: Activity, runtime: RuneRuntime) {
         if (moduleInstance != null) {
-            Log.w("Ui", "Module already initialized")
-            return
+            Log.d("RuneAppearance", "Re-initializing module")
+            moduleInstance?.onDestroy()
         }
 
-        moduleInstance = UiModule(activity, runtime)
-        Log.d("Ui", "Module initialized")
+        moduleInstance = RuneAppearanceModule(activity, runtime)
+        Log.d("RuneAppearance", "Module initialized")
     }
 
     /**

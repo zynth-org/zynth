@@ -125,18 +125,21 @@ class HermesAdapter(
 
   fun destroy() {
     if (destroyed) return
-    runOnJS {
+    destroyed = true
+    
+    // cleanup on JS thread without blocking the caller
+    jsHandler.post {
       if (runtimePtr != 0L) {
         bridge.destroyHermesRuntime(runtimePtr)
         runtimePtr = 0L
       }
       timerShim.shutdown()
-    }
-    destroyed = true
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
-      jsThread.quitSafely()
-    } else {
-      jsThread.quit()
+      
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
+        jsThread.quitSafely()
+      } else {
+        jsThread.quit()
+      }
     }
   }
 

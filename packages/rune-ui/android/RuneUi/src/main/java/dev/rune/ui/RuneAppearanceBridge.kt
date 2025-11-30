@@ -5,12 +5,12 @@ import com.rune.kit.runtime.RuneSyncModule
 import org.json.JSONObject
 
 /**
- * Bridge module that exposes state to JavaScript via NativeConstants and __modules.
+ * Bridge module that exposes appearance state to JavaScript via NativeConstants.
  */
-class UiBridge(
-    private val module: UiModule
+class RuneAppearanceBridge(
+    private val module: RuneAppearanceModule
 ) : RuneModule, RuneSyncModule {
-    override val name: String = "Ui"
+    override val name: String = "RuneAppearance"
 
     override val constants: Map<String, Any>?
         get() = module.getInitialState().toMap()
@@ -25,7 +25,7 @@ class UiBridge(
 
     override fun callSync(method: String, args: Array<Any?>): Any? {
         return when (method) {
-            "getCurrentState" -> module.getInitialState().toMap()
+            "getCurrent" -> JSONObject(module.getCurrentState().toMap())
             else -> null
         }
     }
