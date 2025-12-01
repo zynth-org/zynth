@@ -10,6 +10,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 @property(nonatomic, weak, nullable) SNUIManager *manager;
 @property(nonatomic, weak, nullable) SNNode *node;
+@property(nonatomic, strong, nullable) UIColor *placeholderTextColor;
 @property(nonatomic, assign) UIEdgeInsets padding;
 
 // Prop-backed properties
@@ -26,6 +27,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, assign) BOOL hasOnFocus;
 @property(nonatomic, assign) BOOL hasOnBlur;
 
+- (void)applyPlaceholderTextColor:(NSString *_Nullable)hexString;
 - (void)applyCaretColor:(NSString *)hexString;
 - (void)applySelectionColor:(NSString *)hexString;
 - (void)applyPlaceholderToneFromTextColor;

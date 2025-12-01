@@ -175,6 +175,7 @@ export interface TextInputProps {
   selection?: Selection;
   selectionColor?: string;
   caretColor?: string;
+  placeholderTextColor?: string;
   clearButtonMode?: ClearButtonMode;
   showClearAccessory?: boolean;
   inputFilter?: (proposed: string, change: Selection) => string | false;
@@ -364,6 +365,7 @@ export const TextInput: Component<TextInputProps> = (props) => {
       ["selection", props.selection],
       ["selectionColor", props.selectionColor],
       ["caretColor", props.caretColor],
+      ["placeholderTextColor", props.placeholderTextColor],
       ["clearButtonMode", props.clearButtonMode],
       ["showClearAccessory", props.showClearAccessory],
       ["eventThrottleMs", props.eventThrottleMs],

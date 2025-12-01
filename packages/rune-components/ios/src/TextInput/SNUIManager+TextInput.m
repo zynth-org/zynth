@@ -240,6 +240,12 @@ static BOOL RuneTextInputHandleSetProp(SNUIManager *manager,
     return YES;
   }
 
+  if ([name isEqualToString:@"placeholderTextColor"]) {
+    NSString *hex = [value isKindOfClass:[NSString class]] ? value : nil;
+    [view applyPlaceholderTextColor:hex];
+    return YES;
+  }
+
   if ([name isEqualToString:@"eventThrottleMs"]) {
     double ms = [value respondsToSelector:@selector(doubleValue)] ? [value doubleValue] : 0.0;
     view.eventThrottle = ms / 1000.0;
@@ -362,6 +368,12 @@ static BOOL RuneSecureTextInputHandleSetProp(SNUIManager *manager,
   if ([name isEqualToString:@"caretColor"]) {
     NSString *hex = [value isKindOfClass:[NSString class]] ? value : nil;
     [view applyCaretColor:hex];
+    return YES;
+  }
+
+  if ([name isEqualToString:@"placeholderTextColor"]) {
+    NSString *hex = [value isKindOfClass:[NSString class]] ? value : nil;
+    [view applyPlaceholderTextColor:hex];
     return YES;
   }
 

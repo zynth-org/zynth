@@ -11,6 +11,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, weak) SNUIManager *manager;
 @property(nonatomic, weak) SNNode *node;
 @property(nonatomic, copy, nullable) NSString *placeholder;
+@property(nonatomic, strong, nullable) UIColor *placeholderTextColor;
 @property(nonatomic, assign) BOOL blurOnSubmit;
 @property(nonatomic, assign) BOOL multiline;
 @property(nonatomic, assign) NSInteger maxLength;
@@ -41,6 +42,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)applySpellCheck:(NSNumber *_Nullable)flag;
 - (void)applyReturnKeyType:(NSString *_Nullable)type;
 - (void)updatePlaceholderVisibility;
+- (void)applyPlaceholderTextColor:(NSString *_Nullable)hexString;
 - (void)applyCaretColor:(NSString *_Nullable)hexString;
 - (void)applySelectionColor:(NSString *_Nullable)hexString;
 - (void)applySecureEntry:(BOOL)secure;

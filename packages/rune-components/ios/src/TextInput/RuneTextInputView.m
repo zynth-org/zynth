@@ -142,7 +142,17 @@ static UIColor *RuneColorFromHexOrNil(NSString *hex) {
   }
 }
 
+- (void)applyPlaceholderTextColor:(NSString *)hexString {
+  NSLog(@"[RuneTextInputView] applyPlaceholderTextColor hex=%@", hexString);
+  self.placeholderTextColor = RuneColorFromHexOrNil(hexString);
+  [self applyPlaceholderToneFromTextColor];
+}
+
 - (void)applyPlaceholderToneFromTextColor {
+  if (self.placeholderTextColor) {
+    self.placeholderLabel.textColor = self.placeholderTextColor;
+    return;
+  }
   UIColor *base = self.textColor ?: [UIColor lightGrayColor];
   self.placeholderLabel.textColor = [base colorWithAlphaComponent:0.45];
 }

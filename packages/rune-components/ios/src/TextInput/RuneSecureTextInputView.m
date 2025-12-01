@@ -67,10 +67,18 @@ static UIColor *RuneColorFromHexOrNil(NSString *hex) {
     // The tintColor affects both the caret and the selection highlight.
 }
 
+- (void)applyPlaceholderTextColor:(NSString *)hexString {
+  self.placeholderTextColor = RuneColorFromHexOrNil(hexString);
+  [self applyPlaceholderToneFromTextColor];
+}
+
 - (void)applyPlaceholderToneFromTextColor {
     if (self.placeholder.length == 0) return;
-    UIColor *base = self.textColor ?: [UIColor lightGrayColor];
-    UIColor *placeholderColor = [base colorWithAlphaComponent:0.45];
+    UIColor *placeholderColor = self.placeholderTextColor;
+    if (!placeholderColor) {
+        UIColor *base = self.textColor ?: [UIColor lightGrayColor];
+        placeholderColor = [base colorWithAlphaComponent:0.45];
+    }
     self.attributedPlaceholder = [[NSAttributedString alloc] initWithString:self.placeholder attributes:@{NSForegroundColorAttributeName: placeholderColor}];
 }
 
