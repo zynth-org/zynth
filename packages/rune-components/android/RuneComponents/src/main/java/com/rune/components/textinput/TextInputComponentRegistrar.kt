@@ -96,7 +96,18 @@ class TextInputComponentRegistrar : RuneComponentRegistrar {
       val contentWidth = (measuredWidth - paddingWidth).coerceAtLeast(0)
       val contentHeight = (measuredHeight - paddingHeight).coerceAtLeast(0)
 
-      contentWidth.coerceAtLeast(1).toFloat() to contentHeight.coerceAtLeast(1).toFloat()
+      val resolvedWidth = when (measureInput.widthMode) {
+        MeasureMode.EXACTLY -> widthValue
+        MeasureMode.AT_MOST -> minOf(widthValue, contentWidth.coerceAtLeast(1))
+        MeasureMode.UNDEFINED -> contentWidth.coerceAtLeast(1)
+      }
+      val resolvedHeight = when (measureInput.heightMode) {
+        MeasureMode.EXACTLY -> heightValue
+        MeasureMode.AT_MOST -> minOf(heightValue, contentHeight.coerceAtLeast(1))
+        MeasureMode.UNDEFINED -> contentHeight.coerceAtLeast(1)
+      }
+
+      resolvedWidth.coerceAtLeast(1).toFloat() to resolvedHeight.coerceAtLeast(1).toFloat()
     }
   }
 

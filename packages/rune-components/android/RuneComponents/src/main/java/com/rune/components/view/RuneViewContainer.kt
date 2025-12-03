@@ -6,6 +6,7 @@ import android.graphics.Path
 import android.graphics.RectF
 import android.view.MotionEvent
 import android.widget.FrameLayout
+import com.rune.kit.core.RuneUIManager
 
 /**
  * Custom FrameLayout for the View component.
@@ -18,6 +19,10 @@ import android.widget.FrameLayout
  * - Similar to React Native's ReactViewGroup implementation
  */
 open class RuneViewContainer(context: Context) : FrameLayout(context) {
+
+  var manager: RuneUIManager? = null
+  var nodeId: Int = -1
+  var hasOnPressHandler: Boolean = false
   
   private var overflowHidden: Boolean = false
   private var clipPath: Path? = null

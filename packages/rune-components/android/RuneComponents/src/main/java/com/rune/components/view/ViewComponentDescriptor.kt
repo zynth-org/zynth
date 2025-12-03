@@ -13,7 +13,7 @@ fun createViewComponentDescriptor(): RuneComponentDescriptor {
   return RuneComponentDescriptor(
     type = "view",
     createView = { context, _ -> RuneViewContainer(context) },
-    onNodeCreated = { _, node ->
+    onNodeCreated = { manager, node ->
       val viewContainer = node.view as? RuneViewContainer ?: return@RuneComponentDescriptor
       
       // Set appropriate layout params - WRAP_CONTENT allows Yoga to control sizing
@@ -21,6 +21,8 @@ fun createViewComponentDescriptor(): RuneComponentDescriptor {
         ViewGroup.LayoutParams.WRAP_CONTENT,
         ViewGroup.LayoutParams.WRAP_CONTENT,
       )
+      viewContainer.manager = manager
+      viewContainer.nodeId = node.id
       // No default width applied - views shrink to fit content (standard CSS Flexbox behavior)
       // Parent's alignItems and child's alignSelf control cross-axis alignment
     },
@@ -56,16 +58,37 @@ fun createViewComponentDescriptor(): RuneComponentDescriptor {
       val borderRadius = style.borderRadius ?: 0f
       viewContainer.setClipRadius(borderRadius)
     },
-    onSetHandler = { _, _ ->
-      // View doesn't handle any specific events directly
-      // Events are handled by the core system
-      false
+    onSetHandler = { node, event ->
+      val viewContainer = node.view as? RuneViewContainer ?: return@RuneComponentDescriptor false
+      if (event == "onPress") {
+        viewContainer.hasOnPressHandler = true
+        viewContainer.setOnClickListener {
+          if (!viewContainer.hasOnPressHandler) return@setOnClickListener
+          val manager = viewContainer.manager ?: return@setOnClickListener
+          val nodeId = viewContainer.nodeId
+          if (nodeId >= 0) {
+            manager.dispatchEvent(nodeId, "onPress", null)
+          }
+        }
+        val mode = viewContainer.pointerMode
+        viewContainer.isClickable =
+          mode != RuneViewContainer.PointerEventsMode.NONE &&
+          mode != RuneViewContainer.PointerEventsMode.BOX_NONE
+        true
+      } else {
+        false
+      }
     },
     onReset = { node ->
       val viewContainer = node.view as? RuneViewContainer ?: return@RuneComponentDescriptor
       viewContainer.pointerMode = RuneViewContainer.PointerEventsMode.AUTO
       viewContainer.setOverflowHidden(false)
       viewContainer.setClipRadius(0f)
+      viewContainer.hasOnPressHandler = false
+      viewContainer.setOnClickListener(null)
+      viewContainer.isClickable = false
+      viewContainer.manager = null
+      viewContainer.nodeId = -1
     }
   )
 }

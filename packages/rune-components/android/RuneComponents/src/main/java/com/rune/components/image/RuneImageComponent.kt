@@ -357,6 +357,7 @@ internal class RuneImageComponent(
       }
 
       if (resId == 0) {
+        Log.w("RuneImage", "System image ${spec.name} not found")
         dispatchImageErrorEvent(node, "System image ${spec.name} not found")
         return@post
       }
@@ -368,6 +369,7 @@ internal class RuneImageComponent(
       }
 
       if (drawable == null) {
+        Log.w("RuneImage", "Unable to load system image ${spec.name}")
         dispatchImageErrorEvent(node, "Unable to load system image ${spec.name}")
         return@post
       }

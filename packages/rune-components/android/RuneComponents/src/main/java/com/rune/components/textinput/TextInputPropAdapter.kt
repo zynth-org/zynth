@@ -1,5 +1,6 @@
 package com.rune.components.textinput
 
+import android.graphics.Color
 import android.util.Log
 import com.rune.kit.core.RuneUIManager
 import org.json.JSONObject
@@ -103,6 +104,11 @@ object TextInputPropAdapter {
         input.applySelectionColor(color)
         true
       }
+      "placeholderTextColor" -> {
+        val color = parseColor(value)
+        input.applyPlaceholderTextColor(color)
+        true
+      }
       "caretColor" -> {
         val color = parseColor(value)
         input.applyCaretColor(color)
@@ -161,8 +167,7 @@ object TextInputPropAdapter {
     if (json == null || json == "null") return null
     return try {
       val colorStr = parseString(json) ?: return null
-      // Parse color hex string like "#FF0000"
-      java.lang.Long.parseLong(colorStr.trimStart('#'), 16).toInt()
+      Color.parseColor(colorStr)
     } catch (e: Exception) {
       null
     }

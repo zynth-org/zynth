@@ -87,6 +87,8 @@ internal open class RuneTextInputView @JvmOverloads constructor(
   private var postRevealDispatchScheduled = false
   private var pendingFocusEmission = false
 
+  private var placeholderTextColor: Int? = null
+
   private val changeWatcher = object : TextWatcher {
     override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {
       if (suppressNativeEvent) return
@@ -187,7 +189,6 @@ internal open class RuneTextInputView @JvmOverloads constructor(
     setMinHeight(0)
     setMinimumHeight(0)
     updateGravity()
-    applyBaselineAlignment()
 
     super.setOnFocusChangeListener(internalFocusListener)
     super.setOnEditorActionListener(internalEditorActionListener)
@@ -246,7 +247,6 @@ internal open class RuneTextInputView @JvmOverloads constructor(
     } else {
       multiline = enabled
     }
-    applyBaselineAlignment()
     updateInputConfiguration()
     val lines = when {
       multiline -> numberOfLinesHint.coerceAtLeast(1)
@@ -531,27 +531,6 @@ internal open class RuneTextInputView @JvmOverloads constructor(
     didEmitFocus = false
   }
 
-  override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-    super.onMeasure(widthMeasureSpec, heightMeasureSpec)
-    if (multiline) {
-      ensureBaselineConstraints()
-      return
-    }
-
-    val intrinsicHeight = (styledPaddingTop + styledPaddingBottom + lineHeight).coerceAtLeast(1)
-    val mode = View.MeasureSpec.getMode(heightMeasureSpec)
-    val size = View.MeasureSpec.getSize(heightMeasureSpec)
-    val resolvedHeight = when (mode) {
-      View.MeasureSpec.EXACTLY -> size
-      View.MeasureSpec.AT_MOST -> intrinsicHeight.coerceAtMost(size)
-      else -> intrinsicHeight
-    }
-
-    if (measuredHeight != resolvedHeight) {
-      setMeasuredDimension(measuredWidth, resolvedHeight)
-    }
-  }
-
   private fun handleEditorAction(actionId: Int, event: KeyEvent?): Boolean {
     val keyEvent = event?.takeIf { it.action == KeyEvent.ACTION_DOWN }
     val isEnterKey = keyEvent?.keyCode == KeyEvent.KEYCODE_ENTER
@@ -762,7 +741,17 @@ internal open class RuneTextInputView @JvmOverloads constructor(
     updateGravity()
   }
 
+  fun applyPlaceholderTextColor(hex: Int?) {
+    placeholderTextColor = hex
+    updatePlaceholderTone()
+  }
+
   private fun updatePlaceholderTone() {
+    val explicitColor = placeholderTextColor
+    if (explicitColor != null) {
+      setHintTextColor(explicitColor)
+      return
+    }
     val base = currentTextColor
     val hintColor = ColorUtils.setAlphaComponent(base, (Color.alpha(base) * 0.45f).toInt().coerceIn(0, 255))
     setHintTextColor(hintColor)
@@ -799,13 +788,12 @@ internal open class RuneTextInputView @JvmOverloads constructor(
     } else {
       Gravity.START or Gravity.CENTER_VERTICAL
     }
+    applyBaselineAlignment()
   }
 
   private fun applyBaselineAlignment() {
-    if (!multiline) {
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
-        textAlignment = View.TEXT_ALIGNMENT_VIEW_START
-      }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
+      textAlignment = View.TEXT_ALIGNMENT_GRAVITY
     }
   }
 
