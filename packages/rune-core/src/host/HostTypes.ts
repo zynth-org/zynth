@@ -57,7 +57,7 @@ export type Style = {
   marginBottom?: number;
   marginLeft?: number;
   flex?: number;
-  flexDirection?: "row" | "column";
+  flexDirection?: "row" | "row-reverse" | "column" | "column-reverse";
   flexWrap?: "nowrap" | "wrap" | "wrap-reverse";
   flexBasis?: number | string | "auto";
   justifyContent?:
