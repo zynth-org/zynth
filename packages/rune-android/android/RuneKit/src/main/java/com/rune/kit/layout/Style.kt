@@ -125,11 +125,16 @@ data class Style(
 ) {
   
   enum class FlexDirection {
-    COLUMN, ROW;
+    COLUMN,
+    ROW,
+    ROW_REVERSE,
+    COLUMN_REVERSE;
     
     fun toFlexDirection(): YogaFlexDirection = when (this) {
       COLUMN -> YogaFlexDirection.COLUMN
       ROW -> YogaFlexDirection.ROW
+      ROW_REVERSE -> YogaFlexDirection.ROW_REVERSE
+      COLUMN_REVERSE -> YogaFlexDirection.COLUMN_REVERSE
     }
   }
   
@@ -360,6 +365,8 @@ data class Style(
       return when (value.lowercase()) {
         "column" -> FlexDirection.COLUMN
         "row" -> FlexDirection.ROW
+        "row-reverse", "row_reverse" -> FlexDirection.ROW_REVERSE
+        "column-reverse", "column_reverse" -> FlexDirection.COLUMN_REVERSE
         else -> null
       }
     }
@@ -422,13 +429,13 @@ data class Style(
     }
   }
 
-  fun toPixels(density: Float): Style {
-    if (density == 1f) return this
-    fun Float?.scale(): Float? = this?.times(density)
-    return copy(
-      flexGrow = flexGrow,
-      flexShrink = flexShrink,
-      flexBasis = flexBasis.scale(),
+    fun toPixels(density: Float): Style {
+      if (density == 1f) return this
+      fun Float?.scale(): Float? = this?.times(density)
+      return copy(
+        flexGrow = flexGrow,
+        flexShrink = flexShrink,
+        flexBasis = flexBasis.scale(),
       width = width.scale(),
       height = height.scale(),
       minWidth = minWidth.scale(),

@@ -502,8 +502,10 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
   }
 
   private fun String.toFlexDirection(): YogaFlexDirection = when (trim().lowercase()) {
-    "row", "row-reverse" -> YogaFlexDirection.ROW
-    "column", "column-reverse" -> YogaFlexDirection.COLUMN
+    "row" -> YogaFlexDirection.ROW
+    "row-reverse", "row_reverse" -> YogaFlexDirection.ROW_REVERSE
+    "column" -> YogaFlexDirection.COLUMN
+    "column-reverse", "column_reverse" -> YogaFlexDirection.COLUMN_REVERSE
     else -> YogaFlexDirection.COLUMN
   }
 
