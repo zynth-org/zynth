@@ -6,6 +6,7 @@ import type { TextFieldProps } from "./primitives/TextField";
 import type { ProgressIndicatorProps } from "./primitives/ProgressIndicator";
 import type { SwitchProps } from "./primitives/Switch";
 import type { StatusBarProps } from "./primitives/StatusBar";
+import type { SliderProps } from "./primitives/Slider";
 
 type RuneChildren = JSX.Element | JSX.Element[] | null | undefined;
 type SolidButtonProps = JSX.HTMLAttributes<HTMLButtonElement>;
@@ -72,6 +73,7 @@ declare module "solid-js" {
       "glass-container": GlassContainerElementProps & { [key: string]: any };
       "progress-indicator": ProgressIndicatorProps & { [key: string]: any };
       "switch-view": SwitchProps & { [key: string]: any };
+      "slider-view": SliderProps & { [key: string]: any };
       "text-field": TextFieldProps & { [key: string]: any };
       "rune-alert": { [key: string]: any };
       "rune-status-bar": StatusBarProps & { [key: string]: any };

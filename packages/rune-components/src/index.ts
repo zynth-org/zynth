@@ -9,6 +9,7 @@ export * from "./primitives/Pressable";
 export * from "./primitives/FlatList";
 export * from "./primitives/ProgressIndicator";
 export * from "./primitives/Switch";
+export * from "./primitives/Slider";
 export * from "./primitives/TextField";
 export * from "./primitives/Alert";
 export * from "./primitives/StatusBar";
