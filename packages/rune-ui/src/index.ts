@@ -12,3 +12,4 @@ export * from "./components/TextInput";
 export * from "./components/Switch";
 export * from "./components/Checkbox";
 export * from "./components/Radio";
+export * from "./components/Slider";
