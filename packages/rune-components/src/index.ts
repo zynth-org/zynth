@@ -13,6 +13,7 @@ export * from "./primitives/Slider";
 export * from "./primitives/TextField";
 export * from "./primitives/Alert";
 export * from "./primitives/StatusBar";
+export * from "./primitives/Menu";
 export * from "./primitives/GlassView";
 export * from "./primitives/GlassContainer";
 export { useStyle, mergeStyles } from "./hooks/useStyle";

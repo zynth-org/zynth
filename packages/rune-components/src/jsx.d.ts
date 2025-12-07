@@ -77,6 +77,14 @@ declare module "solid-js" {
       "text-field": TextFieldProps & { [key: string]: any };
       "rune-alert": { [key: string]: any };
       "rune-status-bar": StatusBarProps & { [key: string]: any };
+      "menu-view": ViewElementProps & { [key: string]: any };
+      "menu-trigger-view": ViewElementProps & { [key: string]: any };
+      "menu-item-view": ViewElementProps & {
+        label?: string;
+        destructive?: boolean;
+        disabled?: boolean;
+        [key: string]: any;
+      };
     }
   }
 }
