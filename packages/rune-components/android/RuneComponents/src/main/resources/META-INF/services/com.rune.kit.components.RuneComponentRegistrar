@@ -13,3 +13,4 @@ com.rune.components.statusbar.RuneStatusBarRegistrar
 com.rune.components.glass.GlassComponentRegistrar
 com.rune.components.slider.SliderComponentRegistrar
 com.rune.components.menu.MenuComponentRegistrar
+com.rune.components.datepicker.DatePickerComponentRegistrar
