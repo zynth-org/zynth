@@ -1,0 +1,168 @@
+#if __has_include(<RuneComponents/RuneComponents-Swift.h>)
+#import <RuneComponents/RuneComponents-Swift.h>
+#else
+#import "RuneComponents-Swift.h"
+#endif
+
+#if __has_include(<RuneKit/RuneKit.h>)
+#import <RuneKit/RuneKit.h>
+#else
+#import "RuneKit.h"
+#import "RuneComponentAPI.h"
+#import "SNUIManager.h"
+#import "SNNode.h"
+#endif
+
+#import <yoga/Yoga.h>
+
+static NSString *RuneDatePickerNormalizeJSONString(NSString *value) {
+  if ([value rangeOfString:@"\\\""].location == NSNotFound) {
+    return value;
+  }
+  NSMutableString *normalized = [value mutableCopy];
+  [normalized replaceOccurrencesOfString:@"\\\"" withString:@"\"" options:0 range:NSMakeRange(0, normalized.length)];
+  return normalized;
+}
+
+static id RuneDatePickerParseJSON(NSString *rawJSON) {
+  if (rawJSON.length == 0) return nil;
+  NSString *value = [rawJSON stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+  if (value.length == 0 || [value isEqualToString:@"null"]) return nil;
+  NSString *normalized = RuneDatePickerNormalizeJSONString(value);
+  if ([normalized hasPrefix:@"\""] && [normalized hasSuffix:@"\""] && normalized.length >= 2) {
+    normalized = [normalized substringWithRange:NSMakeRange(1, normalized.length - 2)];
+    normalized = RuneDatePickerNormalizeJSONString(normalized);
+  }
+  NSData *data = [normalized dataUsingEncoding:NSUTF8StringEncoding];
+  if (!data) return nil;
+  NSError *error = nil;
+  id parsed = [NSJSONSerialization JSONObjectWithData:data options:NSJSONReadingAllowFragments error:&error];
+  if (error) {
+    return nil;
+  }
+  return parsed;
+}
+
+static NSNumber *RuneDatePickerNumberFromValue(id value) {
+  if ([value isKindOfClass:[NSNumber class]]) return value;
+  if ([value isKindOfClass:[NSString class]]) {
+    return @([(NSString *)value doubleValue]);
+  }
+  return nil;
+}
+
+static void RuneDatePickerApplyValue(RuneDatePickerView *view, id value, NSString *rawJSON) {
+  if (!view) return;
+  NSNumber *number = RuneDatePickerNumberFromValue(value);
+  if (number) {
+    [view setSelection:number];
+    return;
+  }
+
+  id parsed = RuneDatePickerParseJSON(rawJSON);
+  if ([parsed isKindOfClass:[NSDictionary class]]) {
+    NSDictionary *dict = (NSDictionary *)parsed;
+    NSNumber *start = RuneDatePickerNumberFromValue(dict[@"start"]);
+    NSNumber *end = RuneDatePickerNumberFromValue(dict[@"end"]);
+    [view setRangeSelectionWithStart:start end:end];
+    return;
+  }
+  if ([parsed isKindOfClass:[NSArray class]]) {
+    NSArray *array = (NSArray *)parsed;
+    NSNumber *start = array.count > 0 ? RuneDatePickerNumberFromValue(array[0]) : nil;
+    NSNumber *end = array.count > 1 ? RuneDatePickerNumberFromValue(array[1]) : nil;
+    [view setRangeSelectionWithStart:start end:end];
+  }
+}
+
+@implementation SNUIManager (DatePickerComponent)
+
++ (void)load {
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    // date-picker-view
+    RuneComponentDescriptor *pickerDesc = [[RuneComponentDescriptor alloc] initWithType:@"date-picker-view"];
+    pickerDesc.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+      return [RuneDatePickerView new];
+    };
+    pickerDesc.attach = ^(SNUIManager *manager, SNNode *node) {
+      if (![node.view isKindOfClass:[RuneDatePickerView class]]) return;
+      RuneDatePickerView *view = (RuneDatePickerView *)node.view;
+      [view bindWithManager:manager node:node];
+    };
+    pickerDesc.cleanup = ^(SNUIManager *manager, SNNode *node) {
+      if (![node.view isKindOfClass:[RuneDatePickerView class]]) return;
+      RuneDatePickerView *view = (RuneDatePickerView *)node.view;
+      [view reset];
+    };
+    pickerDesc.handleSetProp = ^BOOL(SNUIManager *manager,
+                                     SNNode *node,
+                                     NSString *name,
+                                     id value,
+                                     NSString *rawJSON) {
+      if (![node.view isKindOfClass:[RuneDatePickerView class]]) return NO;
+      RuneDatePickerView *view = (RuneDatePickerView *)node.view;
+
+      if ([name isEqualToString:@"mode"]) {
+        NSString *mode = [value isKindOfClass:[NSString class]] ? value : nil;
+        [view setMode:mode];
+        return YES;
+      }
+
+      if ([name isEqualToString:@"title"]) {
+        NSString *strValue = [value isKindOfClass:[NSString class]] ? value : nil;
+        [view setTitleText:strValue];
+        return YES;
+      }
+
+      if ([name isEqualToString:@"confirmText"]) {
+        NSString *strValue = [value isKindOfClass:[NSString class]] ? value : nil;
+        [view setConfirmText:strValue];
+        return YES;
+      }
+
+      if ([name isEqualToString:@"cancelText"]) {
+        NSString *strValue = [value isKindOfClass:[NSString class]] ? value : nil;
+        [view setCancelText:strValue];
+        return YES;
+      }
+
+      if ([name isEqualToString:@"value"]) {
+        RuneDatePickerApplyValue(view, value, rawJSON);
+        return YES;
+      }
+
+      if ([name isEqualToString:@"__command"]) {
+        id parsed = RuneDatePickerParseJSON(rawJSON);
+        if ([parsed isKindOfClass:[NSDictionary class]]) {
+          NSDictionary *command = (NSDictionary *)parsed;
+          NSString *type = command[@"type"];
+          if ([type isEqualToString:@"show"]) {
+            [view show];
+          } else if ([type isEqualToString:@"dismiss"]) {
+            [view dismiss];
+          }
+        }
+        return YES;
+      }
+
+      return NO;
+    };
+    pickerDesc.handleSetHandler = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name) {
+      return [name isEqualToString:@"onChange"] ||
+        [name isEqualToString:@"onRangeChange"] ||
+        [name isEqualToString:@"onCancel"] ||
+        [name isEqualToString:@"onDismiss"];
+    };
+    RuneRegisterComponentDescriptor(pickerDesc);
+
+    // date-picker-trigger-view
+    RuneComponentDescriptor *triggerDesc = [[RuneComponentDescriptor alloc] initWithType:@"date-picker-trigger-view"];
+    triggerDesc.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+      return [UIView new];
+    };
+    RuneRegisterComponentDescriptor(triggerDesc);
+  });
+}
+
+@end
