@@ -213,7 +213,7 @@ export type ButtonProps = {
   loadingPlacement?: "overlay" | "start" | "end";
   loadingAriaLabel?: string;
   haptics?: HapticsMode;
-  onPress?: (event: { synthetic?: boolean }) => void | Promise<void>;
+  onPress?: (event: { synthetic?: boolean }) => void | unknown | Promise<void>;
   onLongPress?: (event: { durationMs: number }) => void;
   onPressIn?: () => void;
   onPressOut?: () => void;

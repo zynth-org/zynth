@@ -85,6 +85,7 @@ declare module "solid-js" {
         disabled?: boolean;
         [key: string]: any;
       };
+      "rune-modal": ViewElementProps & { [key: string]: any };
     }
   }
 }
