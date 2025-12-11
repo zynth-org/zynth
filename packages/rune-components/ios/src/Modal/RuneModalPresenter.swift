@@ -222,6 +222,7 @@ private final class RuneModalAnimator: NSObject, UIViewControllerAnimatedTransit
     let overlayView = modalController?.overlayView
     let contentView = modalController?.contentHost ?? animatingView
     let overlayAlpha = modalController?.resolvedOverlayOpacity ?? 0
+    let usesViewFade = animation == .fade
 
     if isPresenting {
       guard let toViewController = transitionContext.viewController(forKey: .to) else {
@@ -249,33 +250,48 @@ private final class RuneModalAnimator: NSObject, UIViewControllerAnimatedTransit
     }
 
     if isPresenting {
-      overlayView?.alpha = 0
-      if animation == .fade || animation == .zoom {
-        contentView.alpha = 0
-      }
-      contentView.transform = initialTransform
-    }
-
-    let animations = {
-      if self.isPresenting {
+      if usesViewFade {
+        animatingView.alpha = 0
         overlayView?.alpha = overlayAlpha
         contentView.alpha = 1
         contentView.transform = finalTransform
       } else {
         overlayView?.alpha = 0
-        switch self.animation {
-        case .fade:
+        if animation == .zoom {
           contentView.alpha = 0
-          contentView.transform = finalTransform
-        case .slide:
+        }
+        contentView.transform = initialTransform
+      }
+    }
+
+    let animations = {
+      if self.isPresenting {
+        if usesViewFade {
+          animatingView.alpha = 1
+        } else {
+          overlayView?.alpha = overlayAlpha
           contentView.alpha = 1
-          contentView.transform = initialTransform
-        case .zoom:
-          contentView.alpha = 0
-          contentView.transform = initialTransform
-        case .none:
-          contentView.alpha = 1
           contentView.transform = finalTransform
+        }
+      } else {
+        if usesViewFade {
+          animatingView.alpha = 0
+        } else {
+          overlayView?.alpha = 0
+          switch self.animation {
+          case .fade:
+            contentView.alpha = 0
+            contentView.transform = finalTransform
+          case .slide:
+            contentView.alpha = 1
+            contentView.transform = initialTransform
+          case .zoom:
+            contentView.alpha = 0
+            contentView.transform = initialTransform
+          case .none:
+            contentView.alpha = 1
+            contentView.transform = finalTransform
+          }
         }
       }
     }
@@ -285,6 +301,7 @@ private final class RuneModalAnimator: NSObject, UIViewControllerAnimatedTransit
       if !self.isPresenting && finished {
         contentView.alpha = 1
         contentView.transform = finalTransform
+        animatingView.alpha = 1
       }
     }
 

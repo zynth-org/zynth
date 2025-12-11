@@ -136,12 +136,12 @@ private extension CGFloat {
 
 private final class RuneModalPassthroughView: UIView {
   override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
-    for subview in subviews {
+    for subview in subviews.reversed() {
       if subview.isHidden || subview.alpha == 0 || !subview.isUserInteractionEnabled {
         continue
       }
       let converted = convert(point, to: subview)
-      if subview.point(inside: converted, with: event) {
+      if subview.hitTest(converted, with: event) != nil {
         return true
       }
     }
