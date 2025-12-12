@@ -9,7 +9,8 @@ import {
 } from "solid-js";
 import type { HostNode, Style } from "@rune/core";
 import { setProperty } from "@rune/core";
-import { Dimensions } from "@rune/apis";
+import { Dimensions, OS, Platform } from "@rune/apis";
+import { View } from "./View";
 
 export type ModalAnimation = "fade" | "slide" | "zoom" | "none";
 
@@ -125,9 +126,7 @@ export const Modal: ParentComponent<ModalProps> = (props) => {
   const resolvedOverlayOpacity = () =>
     local.overlayOpacity ?? DEFAULT_OVERLAY_OPACITY;
 
-  const [windowSize, setWindowSize] = createSignal(
-    Dimensions.get("window")
-  );
+  const [windowSize, setWindowSize] = createSignal(Dimensions.get("window"));
 
   createEffect(() => {
     const unsubscribe = Dimensions.observe("window", (metrics) => {
@@ -141,6 +140,12 @@ export const Modal: ParentComponent<ModalProps> = (props) => {
       ...DEFAULT_MODAL_STYLE,
       ...local.style,
     };
+    if (Platform.OS === OS.ANDROID) {
+      style.width = 0;
+      style.height = 0;
+      style.display = resolvedOpen() ? "flex" : "none";
+      return style;
+    }
     const hasManualSizing =
       style.width != null ||
       style.height != null ||
@@ -152,6 +157,14 @@ export const Modal: ParentComponent<ModalProps> = (props) => {
     }
     return style;
   });
+
+  const androidContentStyle = createMemo<Style>(() => ({
+    position: "absolute",
+    top: 0,
+    left: 0,
+    width: windowSize().width,
+    height: windowSize().height,
+  }));
 
   const controller = asInternalController(local.controller);
 
@@ -206,7 +219,13 @@ export const Modal: ParentComponent<ModalProps> = (props) => {
 
   return (
     <rune-modal ref={attachHost} style={modalStyle()}>
-      {local.children}
+      {Platform.OS === OS.ANDROID ? (
+        <View style={androidContentStyle()} pointerEvents="box-none">
+          {local.children}
+        </View>
+      ) : (
+        local.children
+      )}
     </rune-modal>
   );
 };
