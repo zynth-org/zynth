@@ -6,6 +6,7 @@
 #import <CoreFoundation/CoreFoundation.h>
 #import <UIKit/UIKit.h>
 #import <objc/message.h>
+#import <RuneKit/RuneComponentAPI.h>
 
 #if __has_include(<RuneKit/RuneKit-Swift.h>)
 #import <RuneKit/RuneKit-Swift.h>
@@ -21,6 +22,9 @@ extern "C" void RuneDiagnosticsReport(const char *phase, const char *message, co
 #import <functional>
 #import <string>
 #import <vector>
+#import <cmath>
+#import <mutex>
+#import <algorithm>
 #import <utility>
 #import <exception>
 #include <cstring>
@@ -64,6 +68,109 @@ struct Timer {
   dispatch_source_t source;
   bool isInterval;
   int64_t intervalNs;
+};
+
+static const char *kRuneSharedValueKey = "__rune_shared_value";
+
+enum class RuneSharedAnimationKind {
+  Timing,
+  Spring,
+};
+
+enum class RuneSharedEasing {
+  Linear,
+  Ease,
+  EaseIn,
+  EaseOut,
+  EaseInOut,
+  EaseOutCubic,
+};
+
+static RuneSharedEasing RuneParseEasing(const std::string &name) {
+  if (name == "linear") return RuneSharedEasing::Linear;
+  if (name == "ease") return RuneSharedEasing::Ease;
+  if (name == "easeIn") return RuneSharedEasing::EaseIn;
+  if (name == "easeOut") return RuneSharedEasing::EaseOut;
+  if (name == "easeInOut") return RuneSharedEasing::EaseInOut;
+  if (name == "easeOutCubic") return RuneSharedEasing::EaseOutCubic;
+  return RuneSharedEasing::EaseOutCubic;
+}
+
+static double RuneApplyEasing(RuneSharedEasing easing, double t) {
+  double clamped = std::max(0.0, std::min(1.0, t));
+  switch (easing) {
+    case RuneSharedEasing::Linear:
+      return clamped;
+    case RuneSharedEasing::Ease:
+      return clamped * clamped * (3.0 - 2.0 * clamped);
+    case RuneSharedEasing::EaseIn:
+      return clamped * clamped;
+    case RuneSharedEasing::EaseOut: {
+      double inv = 1.0 - clamped;
+      return 1.0 - inv * inv;
+    }
+    case RuneSharedEasing::EaseInOut:
+      if (clamped < 0.5) {
+        return 2.0 * clamped * clamped;
+      } else {
+        double inv = 1.0 - clamped;
+        return 1.0 - 2.0 * inv * inv;
+      }
+    case RuneSharedEasing::EaseOutCubic: {
+      double inv = 1.0 - clamped;
+      return 1.0 - inv * inv * inv;
+    }
+  }
+}
+
+struct RuneSharedValueAnimation {
+  RuneSharedAnimationKind kind;
+  double fromValue = 0.0;
+  double toValue = 0.0;
+  double startTime = 0.0;
+  double duration = 0.0;
+  double delay = 0.0;
+  RuneSharedEasing easing = RuneSharedEasing::EaseOutCubic;
+  double velocity = 0.0;
+  double damping = 20.0;
+  double stiffness = 150.0;
+  double mass = 1.0;
+  double restSpeed = 0.001;
+  double restDisplacement = 0.001;
+  bool overshootClamping = false;
+  double lastTime = 0.0;
+};
+
+struct RuneSharedValue {
+  double value = 0.0;
+  bool animating = false;
+  RuneSharedValueAnimation animation;
+};
+
+struct RuneMappedValue {
+  bool hasValue = false;
+  bool isShared = false;
+  bool isAngle = false;
+  int sharedId = 0;
+  double numberValue = 0.0;
+};
+
+struct RuneStyleMapper {
+  int id = 0;
+  int nodeId = 0;
+  RuneMappedValue opacity;
+  RuneMappedValue translateX;
+  RuneMappedValue translateY;
+  RuneMappedValue scale;
+  RuneMappedValue scaleX;
+  RuneMappedValue scaleY;
+  RuneMappedValue rotate;
+  double baseOpacity = 1.0;
+  double baseTranslateX = 0.0;
+  double baseTranslateY = 0.0;
+  double baseScaleX = 1.0;
+  double baseScaleY = 1.0;
+  double baseRotate = 0.0;
 };
 
 // GLOBAL STATICS REMOVED - Moved to instance variables
@@ -131,6 +238,77 @@ Value SNMakePromise(Runtime &rt, std::function<void(Function &&resolve, Function
       });
 
   return promiseCtor.callAsConstructor(rt, executor);
+}
+
+static double RuneDegreesToRadians(double degrees) {
+  return degrees * M_PI / 180.0;
+}
+
+static bool RuneParseAngleString(const std::string &input, double &outRadians) {
+  if (input.size() >= 3 && input.compare(input.size() - 3, 3, "deg") == 0) {
+    std::string raw = input.substr(0, input.size() - 3);
+    try {
+      outRadians = RuneDegreesToRadians(std::stod(raw));
+      return true;
+    } catch (...) {
+      return false;
+    }
+  }
+  if (input.size() >= 3 && input.compare(input.size() - 3, 3, "rad") == 0) {
+    std::string raw = input.substr(0, input.size() - 3);
+    try {
+      outRadians = std::stod(raw);
+      return true;
+    } catch (...) {
+      return false;
+    }
+  }
+  try {
+    outRadians = RuneDegreesToRadians(std::stod(input));
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+static bool RuneExtractSharedValueId(Runtime &rt, const Value &value, int &outId) {
+  if (!value.isObject()) return false;
+  auto obj = value.getObject(rt);
+  if (!obj.hasProperty(rt, kRuneSharedValueKey)) return false;
+  auto idValue = obj.getProperty(rt, kRuneSharedValueKey);
+  if (!idValue.isNumber()) return false;
+  outId = static_cast<int>(idValue.asNumber());
+  return true;
+}
+
+static bool RuneParseMappedValue(Runtime &rt, const Value &value, RuneMappedValue &out, bool isAngle = false) {
+  int sharedId = 0;
+  if (RuneExtractSharedValueId(rt, value, sharedId)) {
+    out.hasValue = true;
+    out.isShared = true;
+    out.isAngle = isAngle;
+    out.sharedId = sharedId;
+    return true;
+  }
+  if (value.isNumber()) {
+    out.hasValue = true;
+    out.isShared = false;
+    out.isAngle = isAngle;
+    out.numberValue = isAngle ? RuneDegreesToRadians(value.asNumber()) : value.asNumber();
+    return true;
+  }
+  if (isAngle && value.isString()) {
+    auto text = value.getString(rt).utf8(rt);
+    double radians = 0.0;
+    if (RuneParseAngleString(text, radians)) {
+      out.hasValue = true;
+      out.isShared = false;
+      out.isAngle = isAngle;
+      out.numberValue = radians;
+      return true;
+    }
+  }
+  return false;
 }
 
 static bool SNNSNumberIsBool(NSNumber *number) {
@@ -312,6 +490,11 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
   std::atomic<int> _nextAnimationFrame;
   std::unordered_map<int, std::shared_ptr<Function>> _animationFrames;
   CADisplayLink *_animationDisplayLink;
+  std::atomic<int> _nextSharedValueId;
+  std::atomic<int> _nextStyleMapperId;
+  std::unordered_map<int, RuneSharedValue> _sharedValues;
+  std::unordered_map<int, RuneStyleMapper> _styleMappers;
+  std::mutex _animateMutex;
 }
 @property(nonatomic, strong) SNUIManager *manager;
 - (void)reportExceptionWithContext:(NSString *)context message:(const std::string &)message stack:(const std::string &)stack;
@@ -320,6 +503,11 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
 - (void)stopAnimationDisplayLink;
 - (void)onAnimationFrame:(CADisplayLink *)link;
 - (void)flushAnimationFrames:(CFTimeInterval)timestamp;
+- (void)installAnimateBridge;
+- (BOOL)hasActiveNativeAnimations;
+- (void)stepNativeAnimations:(CFTimeInterval)timestamp;
+- (double)resolveMappedValue:(const RuneMappedValue &)value fallback:(double)fallback;
+- (void)applyStyleMapperLocked:(const RuneStyleMapper &)mapper;
 @end
 
 @implementation HermesRuntimeHost
@@ -334,6 +522,8 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
     _nextTimer = 1;
     _nextAnimationFrame = 1;
     _animationDisplayLink = nil;
+    _nextSharedValueId = 1;
+    _nextStyleMapperId = 1;
 
     dispatch_sync(_jsQueue, ^{
       _rt = facebook::hermes::makeHermesRuntime();
@@ -341,6 +531,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
       [self installConsole];
       [self installUIBridge];
       [self installModulesBridge];
+      [self installAnimateBridge];
       [self installTimers];
       [self installUnhandledPromiseReporting];
     });
@@ -995,6 +1186,458 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
   rt.global().setProperty(rt, "__runeCallSync", hostCallSync);
 }
 
+- (BOOL)hasActiveNativeAnimations {
+  std::lock_guard<std::mutex> lock(_animateMutex);
+  for (const auto &entry : _sharedValues) {
+    if (entry.second.animating) {
+      return YES;
+    }
+  }
+  return NO;
+}
+
+- (double)resolveMappedValue:(const RuneMappedValue &)value fallback:(double)fallback {
+  if (!value.hasValue) {
+    return fallback;
+  }
+  if (value.isShared) {
+    auto it = _sharedValues.find(value.sharedId);
+    if (it != _sharedValues.end()) {
+      return value.isAngle ? RuneDegreesToRadians(it->second.value) : it->second.value;
+    }
+    return fallback;
+  }
+  return value.numberValue;
+}
+
+- (void)applyStyleMapperLocked:(const RuneStyleMapper &)mapper {
+  SNNode *node = [_manager rune_nodeForId:@(mapper.nodeId)];
+  if (!node || !node.view) return;
+
+  double opacity = [self resolveMappedValue:mapper.opacity fallback:mapper.baseOpacity];
+  double translateX = [self resolveMappedValue:mapper.translateX fallback:mapper.baseTranslateX];
+  double translateY = [self resolveMappedValue:mapper.translateY fallback:mapper.baseTranslateY];
+  double baseScaleX = mapper.baseScaleX;
+  double baseScaleY = mapper.baseScaleY;
+  double scale = mapper.scale.hasValue ? [self resolveMappedValue:mapper.scale fallback:1.0] : 0.0;
+  double scaleX = mapper.scaleX.hasValue
+      ? [self resolveMappedValue:mapper.scaleX fallback:baseScaleX]
+      : (mapper.scale.hasValue ? scale : baseScaleX);
+  double scaleY = mapper.scaleY.hasValue
+      ? [self resolveMappedValue:mapper.scaleY fallback:baseScaleY]
+      : (mapper.scale.hasValue ? scale : baseScaleY);
+  double rotate = [self resolveMappedValue:mapper.rotate fallback:mapper.baseRotate];
+
+  UIView *view = node.view;
+  view.alpha = (CGFloat)opacity;
+  CGAffineTransform transform = CGAffineTransformIdentity;
+  transform = CGAffineTransformTranslate(transform, (CGFloat)translateX, (CGFloat)translateY);
+  transform = CGAffineTransformRotate(transform, (CGFloat)rotate);
+  transform = CGAffineTransformScale(transform, (CGFloat)scaleX, (CGFloat)scaleY);
+  view.transform = transform;
+}
+
+- (void)stepNativeAnimations:(CFTimeInterval)timestamp {
+  std::lock_guard<std::mutex> lock(_animateMutex);
+  if (_sharedValues.empty()) return;
+
+  bool hasActive = false;
+  for (auto &entry : _sharedValues) {
+    auto &shared = entry.second;
+    if (!shared.animating) continue;
+    auto &anim = shared.animation;
+    double now = timestamp;
+    if (now < anim.startTime) {
+      hasActive = true;
+      continue;
+    }
+
+    if (anim.kind == RuneSharedAnimationKind::Timing) {
+      double duration = std::max(anim.duration, 0.0001);
+      double elapsed = now - anim.startTime;
+      double progress = std::min(elapsed / duration, 1.0);
+      double eased = RuneApplyEasing(anim.easing, progress);
+      shared.value = anim.fromValue + (anim.toValue - anim.fromValue) * eased;
+      if (progress >= 1.0) {
+        shared.value = anim.toValue;
+        shared.animating = false;
+      } else {
+        hasActive = true;
+      }
+    } else {
+      if (anim.lastTime == 0.0) {
+        anim.lastTime = now;
+        hasActive = true;
+        continue;
+      }
+      double delta = std::min(now - anim.lastTime, 0.064);
+      anim.lastTime = now;
+      double displacement = shared.value - anim.toValue;
+      double springForce = -anim.stiffness * displacement;
+      double dampingForce = -anim.damping * anim.velocity;
+      double acceleration = (springForce + dampingForce) / anim.mass;
+      anim.velocity += acceleration * delta;
+      shared.value += anim.velocity * delta;
+
+      if (anim.overshootClamping) {
+        if ((anim.toValue - anim.fromValue) > 0.0 && shared.value > anim.toValue) {
+          shared.value = anim.toValue;
+          anim.velocity = 0.0;
+        } else if ((anim.toValue - anim.fromValue) < 0.0 && shared.value < anim.toValue) {
+          shared.value = anim.toValue;
+          anim.velocity = 0.0;
+        }
+      }
+
+      if (std::abs(anim.velocity) <= anim.restSpeed &&
+          std::abs(displacement) <= anim.restDisplacement) {
+        shared.value = anim.toValue;
+        shared.animating = false;
+      } else {
+        hasActive = true;
+      }
+    }
+  }
+
+  for (const auto &entry : _styleMappers) {
+    [self applyStyleMapperLocked:entry.second];
+  }
+
+  if (hasActive) {
+    [self ensureAnimationDisplayLink];
+  }
+}
+
+- (void)installAnimateBridge {
+  auto &rt = *_rt;
+  HermesRuntimeHost *host = self;
+
+  auto createSharedValue = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "createSharedValue"), 1,
+      [host](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        double initial = (count > 0 && args[0].isNumber()) ? args[0].asNumber() : 0.0;
+        int id = host->_nextSharedValueId++;
+        {
+          std::lock_guard<std::mutex> lock(host->_animateMutex);
+          RuneSharedValue shared;
+          shared.value = initial;
+          host->_sharedValues[id] = shared;
+        }
+        return Value((double)id);
+      });
+
+  auto getSharedValue = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "getSharedValue"), 1,
+      [host](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isNumber()) {
+          return Value::undefined();
+        }
+        int id = static_cast<int>(args[0].asNumber());
+        std::lock_guard<std::mutex> lock(host->_animateMutex);
+        auto it = host->_sharedValues.find(id);
+        if (it == host->_sharedValues.end()) {
+          return Value::undefined();
+        }
+        return Value(it->second.value);
+      });
+
+  auto setSharedValue = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "setSharedValue"), 2,
+      [host](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 2 || !args[0].isNumber() || !args[1].isNumber()) {
+          return Value::undefined();
+        }
+        int id = static_cast<int>(args[0].asNumber());
+        double value = args[1].asNumber();
+        {
+          std::lock_guard<std::mutex> lock(host->_animateMutex);
+          auto it = host->_sharedValues.find(id);
+          if (it == host->_sharedValues.end()) {
+            return Value::undefined();
+          }
+          it->second.value = value;
+          it->second.animating = false;
+        }
+        SNRunOnMain(^{
+          std::lock_guard<std::mutex> lock(host->_animateMutex);
+          for (const auto &entry : host->_styleMappers) {
+            [host applyStyleMapperLocked:entry.second];
+          }
+        });
+        return Value::undefined();
+      });
+
+  auto cancelSharedValue = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "cancelSharedValue"), 1,
+      [host](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isNumber()) {
+          return Value::undefined();
+        }
+        int id = static_cast<int>(args[0].asNumber());
+        std::lock_guard<std::mutex> lock(host->_animateMutex);
+        auto it = host->_sharedValues.find(id);
+        if (it != host->_sharedValues.end()) {
+          it->second.animating = false;
+        }
+        return Value::undefined();
+      });
+
+  auto animateSharedValue = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "animateSharedValue"), 2,
+      [host](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 2 || !args[0].isNumber() || !args[1].isObject()) {
+          return Value::undefined();
+        }
+        int id = static_cast<int>(args[0].asNumber());
+        auto config = args[1].getObject(rt);
+
+        auto typeValue = config.getProperty(rt, "type");
+        if (!typeValue.isString()) {
+          return Value::undefined();
+        }
+        std::string type = typeValue.getString(rt).utf8(rt);
+
+        auto toValueValue = config.getProperty(rt, "toValue");
+        if (!toValueValue.isNumber()) {
+          return Value::undefined();
+        }
+        double toValue = toValueValue.asNumber();
+
+        RuneSharedValueAnimation animation;
+        animation.fromValue = 0.0;
+        animation.toValue = toValue;
+        animation.startTime = CACurrentMediaTime();
+        animation.delay = 0.0;
+        animation.duration = 0.3;
+
+        if (config.hasProperty(rt, "delay")) {
+          auto delayValue = config.getProperty(rt, "delay");
+          if (delayValue.isNumber()) {
+            animation.delay = delayValue.asNumber() / 1000.0;
+          }
+        }
+        if (config.hasProperty(rt, "duration")) {
+          auto durationValue = config.getProperty(rt, "duration");
+          if (durationValue.isNumber()) {
+            animation.duration = std::max(durationValue.asNumber() / 1000.0, 0.0);
+          }
+        }
+        if (config.hasProperty(rt, "easing")) {
+          auto easingValue = config.getProperty(rt, "easing");
+          if (easingValue.isString()) {
+            animation.easing = RuneParseEasing(easingValue.getString(rt).utf8(rt));
+          }
+        }
+
+        animation.startTime += animation.delay;
+
+        {
+          std::lock_guard<std::mutex> lock(host->_animateMutex);
+          auto it = host->_sharedValues.find(id);
+          if (it == host->_sharedValues.end()) {
+            return Value::undefined();
+          }
+          animation.fromValue = it->second.value;
+          if (type == "timing") {
+            animation.kind = RuneSharedAnimationKind::Timing;
+          } else {
+            animation.kind = RuneSharedAnimationKind::Spring;
+            if (config.hasProperty(rt, "damping")) {
+              auto value = config.getProperty(rt, "damping");
+              if (value.isNumber()) animation.damping = value.asNumber();
+            }
+            if (config.hasProperty(rt, "stiffness")) {
+              auto value = config.getProperty(rt, "stiffness");
+              if (value.isNumber()) animation.stiffness = value.asNumber();
+            }
+            if (config.hasProperty(rt, "mass")) {
+              auto value = config.getProperty(rt, "mass");
+              if (value.isNumber()) animation.mass = value.asNumber();
+            }
+            if (config.hasProperty(rt, "velocity")) {
+              auto value = config.getProperty(rt, "velocity");
+              if (value.isNumber()) animation.velocity = value.asNumber();
+            }
+            if (config.hasProperty(rt, "restSpeedThreshold")) {
+              auto value = config.getProperty(rt, "restSpeedThreshold");
+              if (value.isNumber()) animation.restSpeed = value.asNumber();
+            }
+            if (config.hasProperty(rt, "restDisplacementThreshold")) {
+              auto value = config.getProperty(rt, "restDisplacementThreshold");
+              if (value.isNumber()) animation.restDisplacement = value.asNumber();
+            }
+            if (config.hasProperty(rt, "overshootClamping")) {
+              auto value = config.getProperty(rt, "overshootClamping");
+              if (value.isBool()) animation.overshootClamping = value.getBool();
+            }
+          }
+          it->second.animation = animation;
+          it->second.animating = true;
+        }
+
+        [host ensureAnimationDisplayLink];
+        return Value::undefined();
+      });
+
+  auto createStyleMapper = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "createStyleMapper"), 2,
+      [host](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 2 || !args[0].isNumber() || !args[1].isObject()) {
+          return Value::undefined();
+        }
+        int nodeId = static_cast<int>(args[0].asNumber());
+        auto styleObj = args[1].getObject(rt);
+
+        RuneStyleMapper mapper;
+        mapper.id = host->_nextStyleMapperId++;
+        mapper.nodeId = nodeId;
+
+        if (styleObj.hasProperty(rt, "opacity")) {
+          RuneParseMappedValue(rt, styleObj.getProperty(rt, "opacity"), mapper.opacity);
+        }
+        if (styleObj.hasProperty(rt, "transform")) {
+          auto transformValue = styleObj.getProperty(rt, "transform");
+          if (transformValue.isObject() && transformValue.getObject(rt).isArray(rt)) {
+            auto array = transformValue.getObject(rt).getArray(rt);
+            size_t length = array.size(rt);
+            for (size_t i = 0; i < length; ++i) {
+              auto entryValue = array.getValueAtIndex(rt, i);
+              if (!entryValue.isObject()) continue;
+              auto entry = entryValue.getObject(rt);
+              auto keys = entry.getPropertyNames(rt);
+              size_t keyCount = keys.size(rt);
+              for (size_t k = 0; k < keyCount; ++k) {
+                auto keyValue = keys.getValueAtIndex(rt, k);
+                if (!keyValue.isString()) continue;
+                std::string key = keyValue.getString(rt).utf8(rt);
+                auto propValue = entry.getProperty(rt, key.c_str());
+                if (key == "translateX") RuneParseMappedValue(rt, propValue, mapper.translateX);
+                else if (key == "translateY") RuneParseMappedValue(rt, propValue, mapper.translateY);
+                else if (key == "scale") RuneParseMappedValue(rt, propValue, mapper.scale);
+                else if (key == "scaleX") RuneParseMappedValue(rt, propValue, mapper.scaleX);
+                else if (key == "scaleY") RuneParseMappedValue(rt, propValue, mapper.scaleY);
+                else if (key == "rotate" || key == "rotateZ") RuneParseMappedValue(rt, propValue, mapper.rotate, true);
+              }
+            }
+          }
+        }
+
+        __block RuneStyleMapper mapperRef = mapper;
+        SNRunOnMain(^{
+          SNNode *node = [host.manager rune_nodeForId:@(nodeId)];
+          if (!node || !node.view) return;
+          CGAffineTransform transform = node.view.transform;
+          double translateX = transform.tx;
+          double translateY = transform.ty;
+          double scaleX = sqrt(transform.a * transform.a + transform.c * transform.c);
+          double scaleY = sqrt(transform.b * transform.b + transform.d * transform.d);
+          double rotation = atan2(transform.b, transform.a);
+
+          mapperRef.baseOpacity = node.view.alpha;
+          mapperRef.baseTranslateX = translateX;
+          mapperRef.baseTranslateY = translateY;
+          mapperRef.baseScaleX = scaleX;
+          mapperRef.baseScaleY = scaleY;
+          mapperRef.baseRotate = rotation;
+
+          std::lock_guard<std::mutex> lock(host->_animateMutex);
+          host->_styleMappers[mapperRef.id] = mapperRef;
+          [host applyStyleMapperLocked:mapperRef];
+        });
+
+        return Value((double)mapper.id);
+      });
+
+  auto updateStyleMapper = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "updateStyleMapper"), 2,
+      [host](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 2 || !args[0].isNumber() || !args[1].isObject()) {
+          return Value::undefined();
+        }
+        int mapperId = static_cast<int>(args[0].asNumber());
+        auto styleObj = args[1].getObject(rt);
+
+        RuneStyleMapper updated;
+        {
+          std::lock_guard<std::mutex> lock(host->_animateMutex);
+          auto it = host->_styleMappers.find(mapperId);
+          if (it == host->_styleMappers.end()) {
+            return Value::undefined();
+          }
+          updated = it->second;
+        }
+
+        updated.opacity = RuneMappedValue();
+        updated.translateX = RuneMappedValue();
+        updated.translateY = RuneMappedValue();
+        updated.scale = RuneMappedValue();
+        updated.scaleX = RuneMappedValue();
+        updated.scaleY = RuneMappedValue();
+        updated.rotate = RuneMappedValue();
+
+        if (styleObj.hasProperty(rt, "opacity")) {
+          RuneParseMappedValue(rt, styleObj.getProperty(rt, "opacity"), updated.opacity);
+        }
+        if (styleObj.hasProperty(rt, "transform")) {
+          auto transformValue = styleObj.getProperty(rt, "transform");
+          if (transformValue.isObject() && transformValue.getObject(rt).isArray(rt)) {
+            auto array = transformValue.getObject(rt).getArray(rt);
+            size_t length = array.size(rt);
+            for (size_t i = 0; i < length; ++i) {
+              auto entryValue = array.getValueAtIndex(rt, i);
+              if (!entryValue.isObject()) continue;
+              auto entry = entryValue.getObject(rt);
+              auto keys = entry.getPropertyNames(rt);
+              size_t keyCount = keys.size(rt);
+              for (size_t k = 0; k < keyCount; ++k) {
+                auto keyValue = keys.getValueAtIndex(rt, k);
+                if (!keyValue.isString()) continue;
+                std::string key = keyValue.getString(rt).utf8(rt);
+                auto propValue = entry.getProperty(rt, key.c_str());
+                if (key == "translateX") RuneParseMappedValue(rt, propValue, updated.translateX);
+                else if (key == "translateY") RuneParseMappedValue(rt, propValue, updated.translateY);
+                else if (key == "scale") RuneParseMappedValue(rt, propValue, updated.scale);
+                else if (key == "scaleX") RuneParseMappedValue(rt, propValue, updated.scaleX);
+                else if (key == "scaleY") RuneParseMappedValue(rt, propValue, updated.scaleY);
+                else if (key == "rotate" || key == "rotateZ") RuneParseMappedValue(rt, propValue, updated.rotate, true);
+              }
+            }
+          }
+        }
+
+        SNRunOnMain(^{
+          std::lock_guard<std::mutex> lock(host->_animateMutex);
+          host->_styleMappers[mapperId] = updated;
+          [host applyStyleMapperLocked:updated];
+        });
+
+        return Value::undefined();
+      });
+
+  auto removeStyleMapper = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "removeStyleMapper"), 1,
+      [host](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isNumber()) {
+          return Value::undefined();
+        }
+        int mapperId = static_cast<int>(args[0].asNumber());
+        std::lock_guard<std::mutex> lock(host->_animateMutex);
+        host->_styleMappers.erase(mapperId);
+        return Value::undefined();
+      });
+
+  Object animate(rt);
+  animate.setProperty(rt, "createSharedValue", createSharedValue);
+  animate.setProperty(rt, "getSharedValue", getSharedValue);
+  animate.setProperty(rt, "setSharedValue", setSharedValue);
+  animate.setProperty(rt, "animateSharedValue", animateSharedValue);
+  animate.setProperty(rt, "cancelSharedValue", cancelSharedValue);
+  animate.setProperty(rt, "createStyleMapper", createStyleMapper);
+  animate.setProperty(rt, "updateStyleMapper", updateStyleMapper);
+  animate.setProperty(rt, "removeStyleMapper", removeStyleMapper);
+  rt.global().setProperty(rt, "__rune_animate", animate);
+}
+
 - (void)emitEventWithName:(NSString *)name body:(id)body {
   if (name.length == 0) {
     return;
@@ -1360,6 +2003,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
 
 - (void)onAnimationFrame:(CADisplayLink *)link {
   CFTimeInterval timestamp = link.timestamp;
+  [self stepNativeAnimations:timestamp];
   __weak HermesRuntimeHost *weakSelf = self;
   dispatch_async(_jsQueue, ^{
     [weakSelf flushAnimationFrames:timestamp];
@@ -1388,7 +2032,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
     }
   }
 
-  if (_animationFrames.empty()) {
+  if (_animationFrames.empty() && ![self hasActiveNativeAnimations]) {
     [self stopAnimationDisplayLink];
   } else {
     [self ensureAnimationDisplayLink];

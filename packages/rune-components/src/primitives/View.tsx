@@ -1,6 +1,6 @@
 import { children as resolveChildren, splitProps } from "solid-js";
 import type { JSX, ParentComponent } from "solid-js";
-import type { Style } from "@rune/core";
+import type { HostNode, Style } from "@rune/core";
 
 export type LayoutRectangle = {
   x: number;
@@ -27,7 +27,10 @@ export interface ViewProps {
   tintColor?: string;
   testID?: string;
   key?: string | number;
+  ref?: (node: HostNode | null) => void;
 }
+
+const noopRef = () => {};
 
 export const View: ParentComponent<ViewProps> = (props) => {
   const [local] = splitProps(props, [
@@ -41,6 +44,7 @@ export const View: ParentComponent<ViewProps> = (props) => {
     "tintColor",
     "testID",
     "onLayout",
+    "ref",
   ]);
   const resolvedChildren = resolveChildren(() => props.children);
   const resolvedPointer = local.pointerEvents ?? "auto";
@@ -49,6 +53,7 @@ export const View: ParentComponent<ViewProps> = (props) => {
   };
   const shouldEnablePress = resolvedPointer !== "none";
   const appliedPressHandlers = shouldEnablePress ? pressHandlers : {};
+  const refProp = local.ref ?? noopRef;
 
   return (
     <view
@@ -62,6 +67,7 @@ export const View: ParentComponent<ViewProps> = (props) => {
       tintColor={local.tintColor}
       onLayout={local.onLayout}
       testID={local.testID}
+      ref={refProp}
     >
       {resolvedChildren()}
     </view>

@@ -41,6 +41,20 @@ object JSBridge {
     fun dequeueEventPayload(nodeId: Int, event: String): String?
     fun setSurface(surfaceId: Int)
     fun applyBatch(batchJson: String)
+    
+    /**
+     * Apply animated style properties directly to a view, bypassing the batching system.
+     * Used by native animations for immediate visual feedback.
+     */
+    fun applyAnimatedStyle(
+      nodeId: Int,
+      opacity: Float,
+      translateX: Float,
+      translateY: Float,
+      scaleX: Float,
+      scaleY: Float,
+      rotate: Float,
+    )
   }
 
   interface ModulesShim {
@@ -124,15 +138,13 @@ object JSBridge {
         if (!isShutdown && frameCallbacks.remove(frameId) != null) {
           val runtimePtr = runtimePtrProvider()
           if (runtimePtr != 0L) {
-            // Convert nanoseconds to milliseconds for JS timestamp
-            val frameTimeMs = frameTimeNanos / 1_000_000.0
-            
             // CRITICAL: Post back to JS thread! JSI calls must be on the JS thread
             handler.post {
               // Re-check runtime ptr in case it was destroyed while posting
               val currentPtr = runtimePtrProvider()
               if (currentPtr != 0L && currentPtr == runtimePtr) {
-                onAnimationFrame(runtimePtr, frameId, frameTimeMs.toLong())
+                // Pass nanoseconds directly - JNI side converts to milliseconds
+                onAnimationFrame(runtimePtr, frameId, frameTimeNanos)
               }
             }
           }

@@ -504,6 +504,10 @@ class RuneUIManager(
   // Public accessor methods for component packages
   fun getRootView(): RuneRootView = surfaceStateOrNull(activeSurfaceId)?.rootView ?: root
   fun getLayoutEngine(): LayoutEngine = engine
+  fun getNodeView(nodeId: Int): View? {
+    val surface = surfaceStateForNode(nodeId)
+    return surface.nodes.get(nodeId)?.view
+  }
   internal fun getAppliedStyleForNode(nodeId: Int): Style? {
     val surface = surfaceStateForNode(nodeId)
     return propApplierCache[surface.id]?.getAppliedStyle(nodeId)
@@ -984,6 +988,48 @@ class RuneUIManager(
         }
       }
     }
+  }
+
+  /**
+   * Apply animated style properties directly to a view, bypassing the batching system.
+   * This is called from native animations (via JNI) for immediate visual feedback.
+   * Must be called on the main thread for immediate application.
+   */
+  override fun applyAnimatedStyle(
+    nodeId: Int,
+    opacity: Float,
+    translateX: Float,
+    translateY: Float,
+    scaleX: Float,
+    scaleY: Float,
+    rotate: Float,
+  ) {
+    // Run on main thread for immediate view updates
+    if (Looper.myLooper() != Looper.getMainLooper()) {
+      handler.post {
+        applyAnimatedStyleInternal(nodeId, opacity, translateX, translateY, scaleX, scaleY, rotate)
+      }
+    } else {
+      applyAnimatedStyleInternal(nodeId, opacity, translateX, translateY, scaleX, scaleY, rotate)
+    }
+  }
+
+  private fun applyAnimatedStyleInternal(
+    nodeId: Int,
+    opacity: Float,
+    translateX: Float,
+    translateY: Float,
+    scaleX: Float,
+    scaleY: Float,
+    rotate: Float,
+  ) {
+    val view = getNodeView(nodeId) ?: return
+    view.alpha = opacity
+    view.translationX = translateX * density
+    view.translationY = translateY * density
+    view.scaleX = scaleX
+    view.scaleY = scaleY
+    view.rotation = rotate
   }
 
   private fun encodeBatchValue(value: Any?): String? {

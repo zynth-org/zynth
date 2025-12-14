@@ -14,6 +14,7 @@ public final class RuneRuntime: NSObject {
   internal var lastRootId: Int?
 
   public let enableDevServer: Bool
+  public var uiManager: RuneUIManager { manager }
 
   public init(rootView: UIView, runtime: JSRuntimeAdapter? = nil, enableDevServer: Bool = true) {
     self.rootView = rootView

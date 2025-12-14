@@ -7,9 +7,11 @@
 
 #include <chrono>
 #include <cmath>
+#include <algorithm>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <time.h>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -68,6 +70,7 @@ struct UIShimMethods {
   jmethodID dequeueEventPayload = nullptr;
   jmethodID setSurface = nullptr;
   jmethodID applyBatch = nullptr;
+  jmethodID applyAnimatedStyle = nullptr;
 };
 
 struct ModulesShimMethods {
@@ -104,6 +107,64 @@ struct PromiseEntry {
   std::shared_ptr<facebook::jsi::Function> reject;
 };
 
+constexpr const char *kRuneSharedValueKey = "__rune_shared_value";
+
+enum class RuneSharedAnimationKind {
+  Timing,
+  Spring,
+};
+
+enum class RuneSharedEasing {
+  Linear,
+  Ease,
+  EaseIn,
+  EaseOut,
+  EaseInOut,
+  EaseOutCubic,
+};
+
+struct RuneSharedValueAnimation {
+  RuneSharedAnimationKind kind = RuneSharedAnimationKind::Timing;
+  RuneSharedEasing easing = RuneSharedEasing::EaseOutCubic;
+  double fromValue = 0.0;
+  double toValue = 0.0;
+  double startTimeMs = 0.0;
+  double durationMs = 0.0;
+  double velocity = 0.0;
+  double damping = 20.0;
+  double stiffness = 150.0;
+  double mass = 1.0;
+  double restSpeed = 0.001;
+  double restDisplacement = 0.001;
+  bool overshootClamping = false;
+  double lastTimeMs = 0.0;
+};
+
+struct RuneSharedValue {
+  double value = 0.0;
+  bool animating = false;
+  RuneSharedValueAnimation animation;
+};
+
+struct RuneMappedValue {
+  bool hasValue = false;
+  bool isShared = false;
+  int sharedId = 0;
+  double numberValue = 0.0;
+};
+
+struct RuneStyleMapper {
+  int id = 0;
+  int nodeId = 0;
+  RuneMappedValue opacity;
+  RuneMappedValue translateX;
+  RuneMappedValue translateY;
+  RuneMappedValue scale;
+  RuneMappedValue scaleX;
+  RuneMappedValue scaleY;
+  RuneMappedValue rotate;
+};
+
 struct RuntimeState {
   facebook::hermes::HermesRuntime *runtime = nullptr;
   jobject uiShim = nullptr;
@@ -123,11 +184,17 @@ struct RuntimeState {
   int nextTimerId = 1;
   int nextAnimationFrameId = 1;
   int nextPromiseId = 1;
+  int nextSharedValueId = 1;
+  int nextStyleMapperId = 1;
+  int nativeAnimationFrameId = -1000;
+  bool nativeAnimationScheduled = false;
   std::unordered_map<long, HandlerEntry> handlers;
   std::unordered_map<int, TimerEntry> timers;
   std::unordered_map<int, std::shared_ptr<facebook::jsi::Function>> animationFrames;
   std::unordered_map<int, PromiseEntry> promises;
   std::unordered_map<std::string, double> consoleTimers;
+  std::unordered_map<int, RuneSharedValue> sharedValues;
+  std::unordered_map<int, RuneStyleMapper> styleMappers;
   double performanceOriginMs = 0.0;
 };
 
@@ -231,6 +298,121 @@ std::string toJsonString(facebook::jsi::Runtime &rt, const facebook::jsi::Value 
     return tmp.getString(rt).utf8(rt);
   }
   return "{}";
+}
+
+static RuneSharedEasing parseEasing(const std::string &name) {
+  if (name == "linear") return RuneSharedEasing::Linear;
+  if (name == "ease") return RuneSharedEasing::Ease;
+  if (name == "easeIn") return RuneSharedEasing::EaseIn;
+  if (name == "easeOut") return RuneSharedEasing::EaseOut;
+  if (name == "easeInOut") return RuneSharedEasing::EaseInOut;
+  if (name == "easeOutCubic") return RuneSharedEasing::EaseOutCubic;
+  return RuneSharedEasing::EaseOutCubic;
+}
+
+static double applyEasing(RuneSharedEasing easing, double t) {
+  double clamped = std::max(0.0, std::min(1.0, t));
+  switch (easing) {
+    case RuneSharedEasing::Linear:
+      return clamped;
+    case RuneSharedEasing::Ease:
+      return clamped * clamped * (3.0 - 2.0 * clamped);
+    case RuneSharedEasing::EaseIn:
+      return clamped * clamped;
+    case RuneSharedEasing::EaseOut: {
+      double inv = 1.0 - clamped;
+      return 1.0 - inv * inv;
+    }
+    case RuneSharedEasing::EaseInOut:
+      if (clamped < 0.5) {
+        return 2.0 * clamped * clamped;
+      } else {
+        double inv = 1.0 - clamped;
+        return 1.0 - 2.0 * inv * inv;
+      }
+    case RuneSharedEasing::EaseOutCubic: {
+      double inv = 1.0 - clamped;
+      return 1.0 - inv * inv * inv;
+    }
+  }
+}
+
+static bool extractSharedValueId(
+    facebook::jsi::Runtime &rt,
+    const facebook::jsi::Value &value,
+    int &outId) {
+  if (!value.isObject()) return false;
+  auto obj = value.getObject(rt);
+  if (!obj.hasProperty(rt, kRuneSharedValueKey)) return false;
+  auto idValue = obj.getProperty(rt, kRuneSharedValueKey);
+  if (!idValue.isNumber()) return false;
+  outId = static_cast<int>(idValue.asNumber());
+  return true;
+}
+
+static bool parseAngleString(const std::string &input, double &outDegrees) {
+  if (input.size() >= 3 && input.compare(input.size() - 3, 3, "deg") == 0) {
+    std::string raw = input.substr(0, input.size() - 3);
+    try {
+      outDegrees = std::stod(raw);
+      return true;
+    } catch (...) {
+      return false;
+    }
+  }
+  if (input.size() >= 3 && input.compare(input.size() - 3, 3, "rad") == 0) {
+    std::string raw = input.substr(0, input.size() - 3);
+    try {
+      outDegrees = std::stod(raw) * 180.0 / M_PI;
+      return true;
+    } catch (...) {
+      return false;
+    }
+  }
+  try {
+    outDegrees = std::stod(input);
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+static bool parseMappedValue(
+    facebook::jsi::Runtime &rt,
+    const facebook::jsi::Value &value,
+    RuneMappedValue &out,
+    bool isAngle = false) {
+  int sharedId = 0;
+  if (extractSharedValueId(rt, value, sharedId)) {
+    out.hasValue = true;
+    out.isShared = true;
+    out.sharedId = sharedId;
+    return true;
+  }
+  if (value.isNumber()) {
+    out.hasValue = true;
+    out.isShared = false;
+    out.numberValue = value.asNumber();
+    return true;
+  }
+  if (isAngle && value.isString()) {
+    auto text = value.getString(rt).utf8(rt);
+    double degrees = 0.0;
+    if (parseAngleString(text, degrees)) {
+      out.hasValue = true;
+      out.isShared = false;
+      out.numberValue = degrees;
+      return true;
+    }
+  }
+  return false;
+}
+
+static double monotonicTimeMs() {
+  timespec ts{};
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (static_cast<double>(ts.tv_sec) * 1000.0) +
+      (static_cast<double>(ts.tv_nsec) / 1e6);
 }
 
 facebook::jsi::Value parseJson(facebook::jsi::Runtime &rt, const std::string &json) {
@@ -1296,6 +1478,553 @@ void installTimers(std::shared_ptr<RuntimeState> state) {
   rt.global().setProperty(rt, "__hostClearInterval", hostClearIntervalFn);
 }
 
+static double resolveMappedValue(
+    const RuneMappedValue &value,
+    const std::unordered_map<int, double> &sharedValues,
+    double fallback) {
+  if (!value.hasValue) return fallback;
+  if (value.isShared) {
+    auto it = sharedValues.find(value.sharedId);
+    if (it != sharedValues.end()) {
+      return it->second;
+    }
+    return fallback;
+  }
+  return value.numberValue;
+}
+
+static void applyStyleMapper(
+    facebook::jsi::Runtime &rt,
+    const std::shared_ptr<RuntimeState> &state,
+    const RuneStyleMapper &mapper,
+    const std::unordered_map<int, double> &sharedValues) {
+  if (!state || !state->uiShim || !state->uiMethods.applyAnimatedStyle) {
+    BRIDGE_LOG(ANDROID_LOG_WARN, "animate: applyStyleMapper missing UI shim or applyAnimatedStyle");
+    return;
+  }
+
+  bool hasOpacity = mapper.opacity.hasValue;
+  bool hasTransform =
+      mapper.translateX.hasValue || mapper.translateY.hasValue ||
+      mapper.scale.hasValue || mapper.scaleX.hasValue || mapper.scaleY.hasValue ||
+      mapper.rotate.hasValue;
+
+  if (!hasOpacity && !hasTransform) {
+    BRIDGE_LOG(ANDROID_LOG_WARN, "animate: applyStyleMapper no mapped props");
+    return;
+  }
+
+  // Resolve all animated values
+  float opacity = hasOpacity ? static_cast<float>(resolveMappedValue(mapper.opacity, sharedValues, 1.0)) : 1.0f;
+  float translateX = mapper.translateX.hasValue ? static_cast<float>(resolveMappedValue(mapper.translateX, sharedValues, 0.0)) : 0.0f;
+  float translateY = mapper.translateY.hasValue ? static_cast<float>(resolveMappedValue(mapper.translateY, sharedValues, 0.0)) : 0.0f;
+  
+  // Handle scale: uniform scale or individual scaleX/scaleY
+  float scaleX = 1.0f;
+  float scaleY = 1.0f;
+  if (mapper.scale.hasValue) {
+    float uniformScale = static_cast<float>(resolveMappedValue(mapper.scale, sharedValues, 1.0));
+    scaleX = uniformScale;
+    scaleY = uniformScale;
+  }
+  if (mapper.scaleX.hasValue) {
+    scaleX = static_cast<float>(resolveMappedValue(mapper.scaleX, sharedValues, 1.0));
+  }
+  if (mapper.scaleY.hasValue) {
+    scaleY = static_cast<float>(resolveMappedValue(mapper.scaleY, sharedValues, 1.0));
+  }
+  
+  float rotate = mapper.rotate.hasValue ? static_cast<float>(resolveMappedValue(mapper.rotate, sharedValues, 0.0)) : 0.0f;
+
+  JniEnv env;
+  if (!env.valid()) {
+    BRIDGE_LOG(ANDROID_LOG_WARN, "animate: applyStyleMapper JNI env unavailable");
+    return;
+  }
+  
+  // Call applyAnimatedStyle directly - bypasses the batching system for immediate visual feedback
+  env->CallVoidMethod(
+      state->uiShim,
+      state->uiMethods.applyAnimatedStyle,
+      mapper.nodeId,
+      opacity,
+      translateX,
+      translateY,
+      scaleX,
+      scaleY,
+      rotate
+  );
+  logJniException(env.get(), "UIShim.applyAnimatedStyle");
+}
+
+static void ensureNativeAnimationFrame(const std::shared_ptr<RuntimeState> &state) {
+  if (!state) {
+    BRIDGE_LOG(ANDROID_LOG_WARN, "animate: ensureNativeAnimationFrame no state");
+    return;
+  }
+  if (state->nativeAnimationScheduled) return;
+  JniEnv env;
+  if (!env.valid() || !state->timerMethods.requestAnimationFrame) {
+    BRIDGE_LOG(ANDROID_LOG_WARN, "animate: ensureNativeAnimationFrame no JNI/timer");
+    return;
+  }
+  state->nativeAnimationScheduled = true;
+  BRIDGE_LOG(ANDROID_LOG_INFO, "animate: schedule native frame id=%d", state->nativeAnimationFrameId);
+  env->CallVoidMethod(state->timerShim, state->timerMethods.requestAnimationFrame, state->nativeAnimationFrameId);
+  logJniException(env.get(), "TimerShim.requestAnimationFrame(native)");
+}
+
+static void stepNativeAnimations(
+    facebook::jsi::Runtime &rt,
+    const std::shared_ptr<RuntimeState> &state,
+    double frameTimeMs) {
+  if (!state) return;
+
+  std::vector<RuneStyleMapper> mappers;
+  std::unordered_map<int, double> sharedSnapshot;
+  bool hasActive = false;
+
+  {
+    std::lock_guard<std::mutex> lock(state->mutex);
+    if (state->sharedValues.empty()) {
+      BRIDGE_LOG(ANDROID_LOG_INFO, "animate: stepNativeAnimations no shared values");
+    }
+    for (auto &entry : state->sharedValues) {
+      auto &shared = entry.second;
+      if (!shared.animating) continue;
+      auto &anim = shared.animation;
+      if (frameTimeMs < anim.startTimeMs) {
+        hasActive = true;
+        continue;
+      }
+
+      if (anim.kind == RuneSharedAnimationKind::Timing) {
+        double duration = std::max(anim.durationMs, 1.0);
+        double elapsed = frameTimeMs - anim.startTimeMs;
+        double progress = std::min(elapsed / duration, 1.0);
+        double eased = applyEasing(anim.easing, progress);
+        shared.value = anim.fromValue + (anim.toValue - anim.fromValue) * eased;
+        if (progress >= 1.0) {
+          shared.value = anim.toValue;
+          shared.animating = false;
+        } else {
+          hasActive = true;
+        }
+      } else {
+        if (anim.lastTimeMs == 0.0) {
+          anim.lastTimeMs = frameTimeMs;
+          hasActive = true;
+          continue;
+        }
+        double delta = std::min(frameTimeMs - anim.lastTimeMs, 64.0);
+        anim.lastTimeMs = frameTimeMs;
+        double dt = delta / 1000.0;
+        double displacement = shared.value - anim.toValue;
+        double springForce = -anim.stiffness * displacement;
+        double dampingForce = -anim.damping * anim.velocity;
+        double acceleration = (springForce + dampingForce) / anim.mass;
+        anim.velocity += acceleration * dt;
+        shared.value += anim.velocity * dt;
+
+        if (anim.overshootClamping) {
+          if ((anim.toValue - anim.fromValue) > 0.0 && shared.value > anim.toValue) {
+            shared.value = anim.toValue;
+            anim.velocity = 0.0;
+          } else if ((anim.toValue - anim.fromValue) < 0.0 && shared.value < anim.toValue) {
+            shared.value = anim.toValue;
+            anim.velocity = 0.0;
+          }
+        }
+
+        if (std::abs(anim.velocity) <= anim.restSpeed &&
+            std::abs(displacement) <= anim.restDisplacement) {
+          shared.value = anim.toValue;
+          shared.animating = false;
+        } else {
+          hasActive = true;
+        }
+      }
+    }
+
+    for (const auto &entry : state->sharedValues) {
+      sharedSnapshot.emplace(entry.first, entry.second.value);
+    }
+    for (const auto &entry : state->styleMappers) {
+      mappers.push_back(entry.second);
+    }
+  }
+
+  for (const auto &mapper : mappers) {
+    applyStyleMapper(rt, state, mapper, sharedSnapshot);
+  }
+
+  if (hasActive) {
+    ensureNativeAnimationFrame(state);
+  } else {
+    BRIDGE_LOG(ANDROID_LOG_INFO, "animate: stepNativeAnimations completed");
+  }
+}
+
+void installAnimateBindings(std::shared_ptr<RuntimeState> state) {
+  using namespace facebook::jsi;
+  auto weakState = std::weak_ptr<RuntimeState>(state);
+  auto &rt = *state->runtime;
+
+  auto createSharedValue = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "createSharedValue"), 1,
+      [weakState](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        auto state = weakState.lock();
+        if (!state) {
+          BRIDGE_LOG(ANDROID_LOG_WARN, "animate: createSharedValue no state");
+          return Value::undefined();
+        }
+        double initial = (count > 0 && args[0].isNumber()) ? args[0].asNumber() : 0.0;
+        int id;
+        {
+          std::lock_guard<std::mutex> lock(state->mutex);
+          id = state->nextSharedValueId++;
+          RuneSharedValue shared;
+          shared.value = initial;
+          state->sharedValues[id] = shared;
+        }
+        BRIDGE_LOG(ANDROID_LOG_INFO, "animate: createSharedValue id=%d initial=%.3f", id, initial);
+        return Value(static_cast<double>(id));
+      });
+
+  auto getSharedValue = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "getSharedValue"), 1,
+      [weakState](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        auto state = weakState.lock();
+        if (!state || count < 1 || !args[0].isNumber()) {
+          BRIDGE_LOG(ANDROID_LOG_WARN, "animate: getSharedValue invalid args/state");
+          return Value::undefined();
+        }
+        int id = static_cast<int>(args[0].asNumber());
+        std::lock_guard<std::mutex> lock(state->mutex);
+        auto it = state->sharedValues.find(id);
+        if (it == state->sharedValues.end()) {
+          BRIDGE_LOG(ANDROID_LOG_WARN, "animate: getSharedValue missing id=%d", id);
+          return Value::undefined();
+        }
+        return Value(it->second.value);
+      });
+
+  auto setSharedValue = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "setSharedValue"), 2,
+      [weakState](Runtime &runtime, const Value &, const Value *args, size_t count) -> Value {
+        auto state = weakState.lock();
+        if (!state || count < 2 || !args[0].isNumber() || !args[1].isNumber()) {
+          BRIDGE_LOG(ANDROID_LOG_WARN, "animate: setSharedValue invalid args/state");
+          return Value::undefined();
+        }
+        int id = static_cast<int>(args[0].asNumber());
+        double value = args[1].asNumber();
+        {
+          std::lock_guard<std::mutex> lock(state->mutex);
+          auto it = state->sharedValues.find(id);
+          if (it == state->sharedValues.end()) {
+            BRIDGE_LOG(ANDROID_LOG_WARN, "animate: setSharedValue missing id=%d", id);
+            return Value::undefined();
+          }
+          it->second.value = value;
+          it->second.animating = false;
+        }
+        BRIDGE_LOG(ANDROID_LOG_INFO, "animate: setSharedValue id=%d value=%.3f", id, value);
+        std::vector<RuneStyleMapper> mappers;
+        std::unordered_map<int, double> snapshot;
+        {
+          std::lock_guard<std::mutex> lock(state->mutex);
+          for (const auto &entry : state->sharedValues) {
+            snapshot.emplace(entry.first, entry.second.value);
+          }
+          for (const auto &entry : state->styleMappers) {
+            mappers.push_back(entry.second);
+          }
+        }
+        for (const auto &mapper : mappers) {
+          applyStyleMapper(runtime, state, mapper, snapshot);
+        }
+        return Value::undefined();
+      });
+
+  auto cancelSharedValue = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "cancelSharedValue"), 1,
+      [weakState](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        auto state = weakState.lock();
+        if (!state || count < 1 || !args[0].isNumber()) {
+          BRIDGE_LOG(ANDROID_LOG_WARN, "animate: cancelSharedValue invalid args/state");
+          return Value::undefined();
+        }
+        int id = static_cast<int>(args[0].asNumber());
+        std::lock_guard<std::mutex> lock(state->mutex);
+        auto it = state->sharedValues.find(id);
+        if (it != state->sharedValues.end()) {
+          it->second.animating = false;
+        }
+        BRIDGE_LOG(ANDROID_LOG_INFO, "animate: cancelSharedValue id=%d", id);
+        return Value::undefined();
+      });
+
+  auto animateSharedValue = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "animateSharedValue"), 2,
+      [weakState](Runtime &runtime, const Value &, const Value *args, size_t count) -> Value {
+        auto state = weakState.lock();
+        if (!state || count < 2 || !args[0].isNumber() || !args[1].isObject()) {
+          BRIDGE_LOG(ANDROID_LOG_WARN, "animate: animateSharedValue invalid args/state");
+          return Value::undefined();
+        }
+        int id = static_cast<int>(args[0].asNumber());
+        auto config = args[1].getObject(runtime);
+
+        auto typeValue = config.getProperty(runtime, "type");
+        auto toValueValue = config.getProperty(runtime, "toValue");
+        if (!typeValue.isString() || !toValueValue.isNumber()) {
+          BRIDGE_LOG(ANDROID_LOG_WARN, "animate: animateSharedValue missing type/toValue");
+          return Value::undefined();
+        }
+        std::string type = typeValue.getString(runtime).utf8(runtime);
+        double toValue = toValueValue.asNumber();
+
+        RuneSharedValueAnimation animation;
+        animation.toValue = toValue;
+        animation.startTimeMs = monotonicTimeMs();
+
+        if (config.hasProperty(runtime, "delay")) {
+          auto delayValue = config.getProperty(runtime, "delay");
+          if (delayValue.isNumber()) animation.startTimeMs += delayValue.asNumber();
+        }
+        if (config.hasProperty(runtime, "duration")) {
+          auto durationValue = config.getProperty(runtime, "duration");
+          if (durationValue.isNumber()) animation.durationMs = std::max(durationValue.asNumber(), 0.0);
+        } else {
+          animation.durationMs = 300.0;
+        }
+        if (config.hasProperty(runtime, "easing")) {
+          auto easingValue = config.getProperty(runtime, "easing");
+          if (easingValue.isString()) animation.easing = parseEasing(easingValue.getString(runtime).utf8(runtime));
+        }
+
+        {
+          std::lock_guard<std::mutex> lock(state->mutex);
+          auto it = state->sharedValues.find(id);
+          if (it == state->sharedValues.end()) {
+            BRIDGE_LOG(ANDROID_LOG_WARN, "animate: animateSharedValue missing id=%d", id);
+            return Value::undefined();
+          }
+          animation.fromValue = it->second.value;
+          if (type == "timing") {
+            animation.kind = RuneSharedAnimationKind::Timing;
+          } else {
+            animation.kind = RuneSharedAnimationKind::Spring;
+            if (config.hasProperty(runtime, "damping")) {
+              auto value = config.getProperty(runtime, "damping");
+              if (value.isNumber()) animation.damping = value.asNumber();
+            }
+            if (config.hasProperty(runtime, "stiffness")) {
+              auto value = config.getProperty(runtime, "stiffness");
+              if (value.isNumber()) animation.stiffness = value.asNumber();
+            }
+            if (config.hasProperty(runtime, "mass")) {
+              auto value = config.getProperty(runtime, "mass");
+              if (value.isNumber()) animation.mass = value.asNumber();
+            }
+            if (config.hasProperty(runtime, "velocity")) {
+              auto value = config.getProperty(runtime, "velocity");
+              if (value.isNumber()) animation.velocity = value.asNumber();
+            }
+            if (config.hasProperty(runtime, "restSpeedThreshold")) {
+              auto value = config.getProperty(runtime, "restSpeedThreshold");
+              if (value.isNumber()) animation.restSpeed = value.asNumber();
+            }
+            if (config.hasProperty(runtime, "restDisplacementThreshold")) {
+              auto value = config.getProperty(runtime, "restDisplacementThreshold");
+              if (value.isNumber()) animation.restDisplacement = value.asNumber();
+            }
+            if (config.hasProperty(runtime, "overshootClamping")) {
+              auto value = config.getProperty(runtime, "overshootClamping");
+              if (value.isBool()) animation.overshootClamping = value.getBool();
+            }
+          }
+          it->second.animation = animation;
+          it->second.animating = true;
+        }
+
+        BRIDGE_LOG(ANDROID_LOG_INFO, "animate: animateSharedValue id=%d type=%s to=%.3f", id, type.c_str(), toValue);
+        ensureNativeAnimationFrame(state);
+        return Value::undefined();
+      });
+
+  auto createStyleMapper = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "createStyleMapper"), 2,
+      [weakState](Runtime &runtime, const Value &, const Value *args, size_t count) -> Value {
+        auto state = weakState.lock();
+        if (!state || count < 2 || !args[0].isNumber() || !args[1].isObject()) {
+          BRIDGE_LOG(ANDROID_LOG_WARN, "animate: createStyleMapper invalid args/state");
+          return Value::undefined();
+        }
+        int nodeId = static_cast<int>(args[0].asNumber());
+        auto styleObj = args[1].getObject(runtime);
+
+        RuneStyleMapper mapper;
+        {
+          std::lock_guard<std::mutex> lock(state->mutex);
+          mapper.id = state->nextStyleMapperId++;
+        }
+        mapper.nodeId = nodeId;
+
+        if (styleObj.hasProperty(runtime, "opacity")) {
+          parseMappedValue(runtime, styleObj.getProperty(runtime, "opacity"), mapper.opacity);
+        }
+        if (styleObj.hasProperty(runtime, "transform")) {
+          auto transformValue = styleObj.getProperty(runtime, "transform");
+          if (transformValue.isObject() && transformValue.getObject(runtime).isArray(runtime)) {
+            auto array = transformValue.getObject(runtime).getArray(runtime);
+            size_t length = array.size(runtime);
+            for (size_t i = 0; i < length; ++i) {
+              auto entryValue = array.getValueAtIndex(runtime, i);
+              if (!entryValue.isObject()) continue;
+              auto entry = entryValue.getObject(runtime);
+              auto keys = entry.getPropertyNames(runtime);
+              size_t keyCount = keys.size(runtime);
+              for (size_t k = 0; k < keyCount; ++k) {
+                auto keyValue = keys.getValueAtIndex(runtime, k);
+                if (!keyValue.isString()) continue;
+                std::string key = keyValue.getString(runtime).utf8(runtime);
+                auto propValue = entry.getProperty(runtime, key.c_str());
+                if (key == "translateX") parseMappedValue(runtime, propValue, mapper.translateX);
+                else if (key == "translateY") parseMappedValue(runtime, propValue, mapper.translateY);
+                else if (key == "scale") parseMappedValue(runtime, propValue, mapper.scale);
+                else if (key == "scaleX") parseMappedValue(runtime, propValue, mapper.scaleX);
+                else if (key == "scaleY") parseMappedValue(runtime, propValue, mapper.scaleY);
+                else if (key == "rotate" || key == "rotateZ") parseMappedValue(runtime, propValue, mapper.rotate, true);
+              }
+            }
+          }
+        }
+
+        {
+          std::lock_guard<std::mutex> lock(state->mutex);
+          state->styleMappers[mapper.id] = mapper;
+        }
+        BRIDGE_LOG(ANDROID_LOG_INFO, "animate: createStyleMapper id=%d node=%d", mapper.id, nodeId);
+
+        std::unordered_map<int, double> snapshot;
+        {
+          std::lock_guard<std::mutex> lock(state->mutex);
+          for (const auto &entry : state->sharedValues) {
+            snapshot.emplace(entry.first, entry.second.value);
+          }
+        }
+        applyStyleMapper(runtime, state, mapper, snapshot);
+
+        return Value(static_cast<double>(mapper.id));
+      });
+
+  auto updateStyleMapper = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "updateStyleMapper"), 2,
+      [weakState](Runtime &runtime, const Value &, const Value *args, size_t count) -> Value {
+        auto state = weakState.lock();
+        if (!state || count < 2 || !args[0].isNumber() || !args[1].isObject()) {
+          BRIDGE_LOG(ANDROID_LOG_WARN, "animate: updateStyleMapper invalid args/state");
+          return Value::undefined();
+        }
+        int mapperId = static_cast<int>(args[0].asNumber());
+        auto styleObj = args[1].getObject(runtime);
+
+        RuneStyleMapper mapper;
+        {
+          std::lock_guard<std::mutex> lock(state->mutex);
+          auto it = state->styleMappers.find(mapperId);
+          if (it == state->styleMappers.end()) {
+            BRIDGE_LOG(ANDROID_LOG_WARN, "animate: updateStyleMapper missing id=%d", mapperId);
+            return Value::undefined();
+          }
+          mapper = it->second;
+        }
+
+        mapper.opacity = RuneMappedValue();
+        mapper.translateX = RuneMappedValue();
+        mapper.translateY = RuneMappedValue();
+        mapper.scale = RuneMappedValue();
+        mapper.scaleX = RuneMappedValue();
+        mapper.scaleY = RuneMappedValue();
+        mapper.rotate = RuneMappedValue();
+
+        if (styleObj.hasProperty(runtime, "opacity")) {
+          parseMappedValue(runtime, styleObj.getProperty(runtime, "opacity"), mapper.opacity);
+        }
+        if (styleObj.hasProperty(runtime, "transform")) {
+          auto transformValue = styleObj.getProperty(runtime, "transform");
+          if (transformValue.isObject() && transformValue.getObject(runtime).isArray(runtime)) {
+            auto array = transformValue.getObject(runtime).getArray(runtime);
+            size_t length = array.size(runtime);
+            for (size_t i = 0; i < length; ++i) {
+              auto entryValue = array.getValueAtIndex(runtime, i);
+              if (!entryValue.isObject()) continue;
+              auto entry = entryValue.getObject(runtime);
+              auto keys = entry.getPropertyNames(runtime);
+              size_t keyCount = keys.size(runtime);
+              for (size_t k = 0; k < keyCount; ++k) {
+                auto keyValue = keys.getValueAtIndex(runtime, k);
+                if (!keyValue.isString()) continue;
+                std::string key = keyValue.getString(runtime).utf8(runtime);
+                auto propValue = entry.getProperty(runtime, key.c_str());
+                if (key == "translateX") parseMappedValue(runtime, propValue, mapper.translateX);
+                else if (key == "translateY") parseMappedValue(runtime, propValue, mapper.translateY);
+                else if (key == "scale") parseMappedValue(runtime, propValue, mapper.scale);
+                else if (key == "scaleX") parseMappedValue(runtime, propValue, mapper.scaleX);
+                else if (key == "scaleY") parseMappedValue(runtime, propValue, mapper.scaleY);
+                else if (key == "rotate" || key == "rotateZ") parseMappedValue(runtime, propValue, mapper.rotate, true);
+              }
+            }
+          }
+        }
+
+        {
+          std::lock_guard<std::mutex> lock(state->mutex);
+          state->styleMappers[mapperId] = mapper;
+        }
+        BRIDGE_LOG(ANDROID_LOG_INFO, "animate: updateStyleMapper id=%d", mapperId);
+
+        std::unordered_map<int, double> snapshot;
+        {
+          std::lock_guard<std::mutex> lock(state->mutex);
+          for (const auto &entry : state->sharedValues) {
+            snapshot.emplace(entry.first, entry.second.value);
+          }
+        }
+        applyStyleMapper(runtime, state, mapper, snapshot);
+
+        return Value::undefined();
+      });
+
+  auto removeStyleMapper = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "removeStyleMapper"), 1,
+      [weakState](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        auto state = weakState.lock();
+        if (!state || count < 1 || !args[0].isNumber()) {
+          BRIDGE_LOG(ANDROID_LOG_WARN, "animate: removeStyleMapper invalid args/state");
+          return Value::undefined();
+        }
+        int mapperId = static_cast<int>(args[0].asNumber());
+        std::lock_guard<std::mutex> lock(state->mutex);
+        state->styleMappers.erase(mapperId);
+        BRIDGE_LOG(ANDROID_LOG_INFO, "animate: removeStyleMapper id=%d", mapperId);
+        return Value::undefined();
+      });
+
+  Object animate(rt);
+  animate.setProperty(rt, "createSharedValue", createSharedValue);
+  animate.setProperty(rt, "getSharedValue", getSharedValue);
+  animate.setProperty(rt, "setSharedValue", setSharedValue);
+  animate.setProperty(rt, "animateSharedValue", animateSharedValue);
+  animate.setProperty(rt, "cancelSharedValue", cancelSharedValue);
+  animate.setProperty(rt, "createStyleMapper", createStyleMapper);
+  animate.setProperty(rt, "updateStyleMapper", updateStyleMapper);
+  animate.setProperty(rt, "removeStyleMapper", removeStyleMapper);
+  rt.global().setProperty(rt, "__rune_animate", animate);
+}
+
 jobject jsiValueToJObject(facebook::jsi::Runtime &rt, JNIEnv *env, const facebook::jsi::Value &value);
 
 jobjectArray jsiArrayToJObjectArray(facebook::jsi::Runtime &rt, JNIEnv *env, const facebook::jsi::Array &array) {
@@ -1627,6 +2356,7 @@ void installBindings(
   state->uiMethods.dequeueEventPayload = env->GetMethodID(state->uiClass, "dequeueEventPayload", "(ILjava/lang/String;)Ljava/lang/String;");
   state->uiMethods.setSurface = env->GetMethodID(state->uiClass, "setSurface", "(I)V");
   state->uiMethods.applyBatch = env->GetMethodID(state->uiClass, "applyBatch", "(Ljava/lang/String;)V");
+  state->uiMethods.applyAnimatedStyle = env->GetMethodID(state->uiClass, "applyAnimatedStyle", "(IFFFFFF)V");
 
   state->moduleMethods.getConstants = env->GetMethodID(state->modulesClass, "getConstants", "()Ljava/lang/String;");
   state->moduleMethods.invoke = env->GetMethodID(state->modulesClass, "invoke", "(Ljava/lang/String;Ljava/lang/String;[Ljava/lang/Object;I)V");
@@ -1659,6 +2389,7 @@ void installBindings(
   installPlatformFlag(state);
   installUIBindings(state);
   installModules(state);
+  installAnimateBindings(state);
   installTimers(state);
   installUnhandledPromiseReporting(state);
 
@@ -1881,6 +2612,13 @@ void onAnimationFrame(
   auto state = getState(runtime);
   if (!state) {
     BRIDGE_LOG(ANDROID_LOG_WARN, "onAnimationFrame: state not found for runtime");
+    return;
+  }
+
+  if (frameId == state->nativeAnimationFrameId) {
+    BRIDGE_LOG(ANDROID_LOG_INFO, "animate: onAnimationFrame native id=%d time=%.2f", frameId, frameTimeMs);
+    state->nativeAnimationScheduled = false;
+    stepNativeAnimations(*runtime, state, frameTimeMs);
     return;
   }
   

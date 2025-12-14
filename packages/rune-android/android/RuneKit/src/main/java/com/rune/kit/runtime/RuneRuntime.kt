@@ -53,6 +53,8 @@ class RuneRuntime(
     eventDispatcher = { id, name -> dispatchHandler(id, name) },
     handlerListener = { id, name, handlerRef -> onHandlerAttached(id, name, handlerRef) },
   )
+  fun getUIManager(): RuneUIManager = manager
+  fun getRootView(): RuneRootView = root
 
   private fun isNativeDebugEnabled(): Boolean {
     return try {
@@ -526,6 +528,18 @@ class RuneRuntime(
 
       override fun applyBatch(batchJson: String) {
         manager.applyBatch(batchJson)
+      }
+
+      override fun applyAnimatedStyle(
+        nodeId: Int,
+        opacity: Float,
+        translateX: Float,
+        translateY: Float,
+        scaleX: Float,
+        scaleY: Float,
+        rotate: Float,
+      ) {
+        manager.applyAnimatedStyle(nodeId, opacity, translateX, translateY, scaleX, scaleY, rotate)
       }
     }
 
