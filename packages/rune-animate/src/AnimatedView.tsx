@@ -2,6 +2,7 @@ import { View, mergeStyles, type ViewProps } from "@rune/components";
 import type { HostNode, Style, StyleProp } from "@rune/core";
 import { sharedNativeEventEmitter } from "@rune/core";
 import {
+  batch,
   children,
   createEffect,
   createSignal,
@@ -54,19 +55,18 @@ export const AnimatedView: ParentComponent<AnimatedViewProps> = (props) => {
 
   const resolvedChildren = children(() => local.children);
   const initialVisible = local.visible !== false;
-  const initialEntering = resolveStyleAnimation(local.entering);
   const isNative = isNativePlatform();
 
   const [isMounted, setIsMounted] = createSignal(initialVisible);
   const [isExiting, setIsExiting] = createSignal(false);
   const [overrideStyle, setOverrideStyle] = createSignal<Style | undefined>(
-    initialEntering ? getInitialStyle(initialEntering) : undefined
+    undefined
   );
   const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
 
   let cancelAnimation: (() => void) | null = null;
   let activeAnimationId: number | null = null;
-  let didStartEnter = false;
+  let didStartEnter = initialVisible;
   let styleMapperId: number | null = null;
 
   const stopAnimation = (): void => {
@@ -155,13 +155,19 @@ export const AnimatedView: ParentComponent<AnimatedViewProps> = (props) => {
     if (!resolved) {
       setOverrideStyle(undefined);
       if (phase === "exit") {
-        setIsExiting(false);
-        setIsMounted(false);
+        batch(() => {
+          setIsExiting(false);
+          setIsMounted(false);
+        });
       }
       return;
     }
 
-    setOverrideStyle(resolved.from);
+    if (phase === "enter") {
+      setOverrideStyle(resolved.from);
+    } else {
+      setOverrideStyle(undefined);
+    }
     const animationId = nextAnimationId++;
     activeAnimationId = animationId;
 
@@ -184,18 +190,41 @@ export const AnimatedView: ParentComponent<AnimatedViewProps> = (props) => {
         (payload) => {
           if (!payload || typeof payload !== "object") return;
           const data = payload as {
-            nodeId?: number;
-            animationId?: number;
+            nodeId?: number | string;
+            animationId?: number | string;
             phase?: string;
           };
           const nodeId = hostNode()?.id;
-          if (!nodeId || data.nodeId !== nodeId) return;
-          if (data.animationId !== activeAnimationId) return;
+          if (!nodeId) return;
+          const payloadNodeId =
+            typeof data.nodeId === "string"
+              ? Number(data.nodeId)
+              : data.nodeId;
+          const payloadAnimationId =
+            typeof data.animationId === "string"
+              ? Number(data.animationId)
+              : data.animationId;
+          if (
+            typeof payloadNodeId !== "number" ||
+            Number.isNaN(payloadNodeId) ||
+            payloadNodeId !== nodeId
+          ) {
+            return;
+          }
+          if (
+            typeof payloadAnimationId !== "number" ||
+            Number.isNaN(payloadAnimationId) ||
+            payloadAnimationId !== activeAnimationId
+          ) {
+            return;
+          }
           if (data.phase === "enter") {
             setOverrideStyle(undefined);
           } else if (data.phase === "exit") {
-            setIsExiting(false);
-            setIsMounted(false);
+            batch(() => {
+              setIsExiting(false);
+              setIsMounted(false);
+            });
           }
         }
       );
@@ -203,8 +232,6 @@ export const AnimatedView: ParentComponent<AnimatedViewProps> = (props) => {
       onCleanup(() => {
         subscription.remove();
       });
-    } else if (initialVisible && initialEntering) {
-      startAnimation(initialEntering);
     }
   });
 
@@ -228,8 +255,10 @@ export const AnimatedView: ParentComponent<AnimatedViewProps> = (props) => {
         }
         setIsExiting(true);
         startAnimation(exiting, () => {
-          setIsExiting(false);
-          setIsMounted(false);
+          batch(() => {
+            setIsExiting(false);
+            setIsMounted(false);
+          });
         });
       }
       return;
