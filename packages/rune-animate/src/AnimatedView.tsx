@@ -116,6 +116,11 @@ export const AnimatedView: ParentComponent<AnimatedViewProps> = (props) => {
   ): {
     from?: Style;
     to?: Style;
+    frames?: Array<{
+      at: number;
+      style: Style;
+      easing?: ReturnType<typeof resolveNativeEasing>;
+    }>;
     duration: number;
     delay: number;
     easing: ReturnType<typeof resolveNativeEasing>;
@@ -129,9 +134,14 @@ export const AnimatedView: ParentComponent<AnimatedViewProps> = (props) => {
       return {
         from: first,
         to: last,
+        frames: built.frames.map((frame) => ({
+          at: frame.at,
+          style: frame.style,
+          easing: frame.easing ? resolveNativeEasing(frame.easing) : undefined,
+        })),
         duration: built.duration,
         delay: built.delay,
-        easing: "easeOutCubic",
+        easing: "linear",
       };
     }
 
@@ -177,6 +187,7 @@ export const AnimatedView: ParentComponent<AnimatedViewProps> = (props) => {
       phase,
       from: resolved.from,
       to: resolved.to,
+      frames: resolved.frames,
       duration: resolved.duration,
       delay: resolved.delay,
       easing: resolved.easing,

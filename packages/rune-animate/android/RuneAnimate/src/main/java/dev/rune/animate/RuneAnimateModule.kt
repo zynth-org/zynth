@@ -79,12 +79,19 @@ private data class ResolvedStyle(
     val rotate: Float,
 )
 
+private data class ResolvedKeyframe(
+    val at: Float,
+    val style: ResolvedStyle,
+    val easing: Easing? = null,
+)
+
 private data class StyleAnimation(
     val nodeId: Int,
     val animationId: Int,
     val phase: String,
     val from: ResolvedStyle,
     val to: ResolvedStyle,
+    val frames: List<ResolvedKeyframe>? = null,
     val startTimeMs: Long,
     val durationMs: Long,
     val easing: Easing,
@@ -129,11 +136,25 @@ class RuneAnimateModule(
 
         val fromStyle = parseStyle(getParam(params, "from"))
         val toStyle = parseStyle(getParam(params, "to"))
+        val frameSpecs = parseKeyframes(getParam(params, "frames"))
 
         runOnMain {
             val view = runtime.getUIManager().getNodeView(nodeId) ?: return@runOnMain
-            val resolvedFrom = resolveStyle(fromStyle, toStyle, view)
-            val resolvedTo = resolveStyle(toStyle, fromStyle, view)
+            val resolvedFrames = if (frameSpecs.isNotEmpty()) {
+                frameSpecs.map { frame ->
+                    ResolvedKeyframe(
+                        at = frame.at,
+                        style = resolveStyle(frame.style, null, view),
+                        easing = frame.easing,
+                    )
+                }.sortedBy { it.at }
+            } else {
+                null
+            }
+            val resolvedFrom = resolvedFrames?.firstOrNull()?.style
+                ?: resolveStyle(fromStyle, toStyle, view)
+            val resolvedTo = resolvedFrames?.lastOrNull()?.style
+                ?: resolveStyle(toStyle, fromStyle, view)
 
             val startTime = SystemClock.uptimeMillis() + delayMs
             val animation = StyleAnimation(
@@ -142,6 +163,7 @@ class RuneAnimateModule(
                 phase = phase,
                 from = resolvedFrom,
                 to = resolvedTo,
+                frames = resolvedFrames,
                 startTimeMs = startTime,
                 durationMs = max(durationMs, 0L),
                 easing = easing,
@@ -203,8 +225,14 @@ class RuneAnimateModule(
                 continue
             }
 
-            val interpolated = interpolate(animation.from, animation.to, eased)
-            applyStyle(interpolated, view)
+            val frames = animation.frames
+            if (frames != null && frames.isNotEmpty()) {
+                val interpolated = resolveKeyframe(frames, progress)
+                applyStyle(interpolated, view)
+            } else {
+                val interpolated = interpolate(animation.from, animation.to, eased)
+                applyStyle(interpolated, view)
+            }
 
             if (progress >= 1f) {
                 finishAnimation(animation)
@@ -236,9 +264,10 @@ class RuneAnimateModule(
     }
 
     private fun applyStyle(style: ResolvedStyle, view: View) {
+        val density = view.resources.displayMetrics.density.takeIf { it > 0f } ?: 1f
         view.alpha = style.opacity
-        view.translationX = style.translateX
-        view.translationY = style.translateY
+        view.translationX = style.translateX * density
+        view.translationY = style.translateY * density
         view.scaleX = style.scaleX
         view.scaleY = style.scaleY
         view.rotation = style.rotate
@@ -256,11 +285,36 @@ class RuneAnimateModule(
         )
     }
 
+    private fun resolveKeyframe(frames: List<ResolvedKeyframe>, progress: Float): ResolvedStyle {
+        val clamped = min(1f, max(0f, progress))
+        val first = frames.first()
+        val last = frames.last()
+        if (clamped <= first.at) {
+            return first.style
+        }
+        if (clamped >= last.at) {
+            return last.style
+        }
+        for (i in 1 until frames.size) {
+            val current = frames[i]
+            if (clamped <= current.at) {
+                val prev = frames[i - 1]
+                val span = max(current.at - prev.at, 0.0001f)
+                val segmentProgress = (clamped - prev.at) / span
+                val easing = current.easing ?: Easing.LINEAR
+                val eased = easing.apply(segmentProgress)
+                return interpolate(prev.style, current.style, eased)
+            }
+        }
+        return last.style
+    }
+
     private fun resolveStyle(from: AnimatedStyle?, to: AnimatedStyle?, view: View): ResolvedStyle {
+        val density = view.resources.displayMetrics.density.takeIf { it > 0f } ?: 1f
         val base = decomposeTransform(view)
         val opacity = resolveValue(from?.opacity, to?.opacity, view.alpha)
-        val translateX = resolveValue(from?.translateX, to?.translateX, base.translateX)
-        val translateY = resolveValue(from?.translateY, to?.translateY, base.translateY)
+        val translateX = resolveValue(from?.translateX, to?.translateX, base.translateX / density)
+        val translateY = resolveValue(from?.translateY, to?.translateY, base.translateY / density)
         val scaleX = resolveValue(from?.scaleX ?: from?.scale, to?.scaleX ?: to?.scale, base.scaleX)
         val scaleY = resolveValue(from?.scaleY ?: from?.scale, to?.scaleY ?: to?.scale, base.scaleY)
         val rotate = resolveValue(from?.rotate, to?.rotate, base.rotation)
@@ -316,6 +370,7 @@ class RuneAnimateModule(
         val transforms = when (transformValue) {
             is JSONArray -> jsonArrayToList(transformValue)
             is List<*> -> transformValue
+            is Array<*> -> transformValue.toList()
             else -> emptyList()
         }
 
@@ -347,6 +402,42 @@ class RuneAnimateModule(
             scaleY = scaleY,
             rotate = rotate,
         )
+    }
+
+    private data class KeyframeSpec(
+        val at: Float,
+        val style: AnimatedStyle?,
+        val easing: Easing? = null,
+    )
+
+    private fun parseKeyframes(value: Any?): List<KeyframeSpec> {
+        val list = when (value) {
+            is JSONArray -> jsonArrayToList(value)
+            is List<*> -> value
+            is Array<*> -> value.toList()
+            else -> emptyList()
+        }
+        if (list.isEmpty()) return emptyList()
+        val frames = mutableListOf<KeyframeSpec>()
+        for (entry in list) {
+            val item = when (entry) {
+                is JSONObject -> jsonToMap(entry)
+                is Map<*, *> -> entry
+                else -> null
+            } ?: continue
+            val at = getFloat(item, "at") ?: continue
+            val style = parseStyle(item["style"])
+            val easingName = getStringParam(item, "easing")
+            val easing = easingName?.let { Easing.fromName(it) }
+            frames.add(
+                KeyframeSpec(
+                    at = at.coerceIn(0f, 1f),
+                    style = style,
+                    easing = easing,
+                )
+            )
+        }
+        return frames
     }
 
     private fun parseAngle(value: Any?): Float? {

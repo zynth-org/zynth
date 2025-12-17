@@ -9,6 +9,11 @@ export type NativeTransitionConfig = {
   phase: NativeTransitionPhase;
   from?: Style;
   to?: Style;
+  frames?: Array<{
+    at: number;
+    style: Style;
+    easing?: EasingName;
+  }>;
   duration?: number;
   delay?: number;
   easing?: EasingName;

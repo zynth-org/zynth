@@ -62,12 +62,19 @@ private struct RuneResolvedStyle {
   var rotate: CGFloat
 }
 
+private struct RuneResolvedKeyframe {
+  let at: CGFloat
+  let style: RuneResolvedStyle
+  let easing: RuneAnimateEasing?
+}
+
 private struct RuneStyleAnimation {
   let nodeId: Int
   let animationId: Int
   let phase: String
   let from: RuneResolvedStyle
   let to: RuneResolvedStyle
+  let frames: [RuneResolvedKeyframe]?
   let startTime: CFTimeInterval
   let duration: CFTimeInterval
   let easing: RuneAnimateEasing
@@ -113,14 +120,29 @@ final class RuneAnimateBridge: NSObject, RuneModule {
 
     let fromStyle = parseStyle(params["from"])
     let toStyle = parseStyle(params["to"])
+    let frameSpecs = parseKeyframes(params["frames"])
 
     runOnMain { [weak self] in
       guard let self, let runtime = self.runtime else { return }
       guard let node = runtime.uiManager.rune_node(forId: NSNumber(value: nodeId)) else { return }
       let view = node.view
 
-      let resolvedFrom = self.resolveStyle(from: fromStyle, to: toStyle, view: view)
-      let resolvedTo = self.resolveStyle(from: toStyle, to: fromStyle, view: view)
+      let resolvedFrames: [RuneResolvedKeyframe]? = {
+        guard !frameSpecs.isEmpty else { return nil }
+        return frameSpecs
+          .map { frame in
+            RuneResolvedKeyframe(
+              at: CGFloat(min(1.0, max(0.0, frame.at))),
+              style: self.resolveStyle(from: frame.style, to: nil, view: view),
+              easing: frame.easing
+            )
+          }
+          .sorted { $0.at < $1.at }
+      }()
+      let resolvedFrom = resolvedFrames?.first?.style
+        ?? self.resolveStyle(from: fromStyle, to: toStyle, view: view)
+      let resolvedTo = resolvedFrames?.last?.style
+        ?? self.resolveStyle(from: toStyle, to: fromStyle, view: view)
 
       let startTime = CACurrentMediaTime() + (delayMs / 1000.0)
       let animation = RuneStyleAnimation(
@@ -129,6 +151,7 @@ final class RuneAnimateBridge: NSObject, RuneModule {
         phase: phase,
         from: resolvedFrom,
         to: resolvedTo,
+        frames: resolvedFrames,
         startTime: startTime,
         duration: max(durationMs / 1000.0, 0.0),
         easing: easing
@@ -195,8 +218,13 @@ final class RuneAnimateBridge: NSObject, RuneModule {
         continue
       }
 
-      let interpolated = interpolate(from: animation.from, to: animation.to, progress: eased)
-      applyStyle(interpolated, to: node.view)
+      if let frames = animation.frames, !frames.isEmpty {
+        let interpolated = resolveKeyframe(frames: frames, progress: CGFloat(progress))
+        applyStyle(interpolated, to: node.view)
+      } else {
+        let interpolated = interpolate(from: animation.from, to: animation.to, progress: eased)
+        applyStyle(interpolated, to: node.view)
+      }
 
       if progress >= 1.0 {
         finishAnimation(animation)
@@ -248,6 +276,34 @@ final class RuneAnimateBridge: NSObject, RuneModule {
       scaleY: from.scaleY + (to.scaleY - from.scaleY) * t,
       rotate: from.rotate + (to.rotate - from.rotate) * t
     )
+  }
+
+  private func resolveKeyframe(
+    frames: [RuneResolvedKeyframe],
+    progress: CGFloat
+  ) -> RuneResolvedStyle {
+    let clamped = max(0.0, min(1.0, progress))
+    guard let first = frames.first, let last = frames.last else {
+      return RuneResolvedStyle(opacity: 1, translateX: 0, translateY: 0, scaleX: 1, scaleY: 1, rotate: 0)
+    }
+    if clamped <= first.at {
+      return first.style
+    }
+    if clamped >= last.at {
+      return last.style
+    }
+    for index in 1..<frames.count {
+      let current = frames[index]
+      if clamped <= current.at {
+        let prev = frames[index - 1]
+        let span = max(current.at - prev.at, 0.0001)
+        let segmentProgress = (clamped - prev.at) / span
+        let easing = current.easing ?? .linear
+        let eased = easing.apply(Double(segmentProgress))
+        return interpolate(from: prev.style, to: current.style, progress: eased)
+      }
+    }
+    return last.style
   }
 
   private func resolveStyle(
@@ -321,6 +377,35 @@ final class RuneAnimateBridge: NSObject, RuneModule {
     }
 
     return style
+  }
+
+  private struct RuneKeyframeSpec {
+    let at: Double
+    let style: RuneAnimatedStyle?
+    let easing: RuneAnimateEasing?
+  }
+
+  private func parseKeyframes(_ value: Any?) -> [RuneKeyframeSpec] {
+    let list: [Any]
+    if let array = value as? [Any] {
+      list = array
+    } else if let array = value as? NSArray {
+      list = array.compactMap { $0 }
+    } else {
+      return []
+    }
+    if list.isEmpty { return [] }
+    var frames: [RuneKeyframeSpec] = []
+    for entry in list {
+      let item = entry as? [String: Any] ?? (entry as? NSDictionary as? [String: Any])
+      guard let dict = item else { continue }
+      guard let at = getDouble(dict["at"]) else { continue }
+      let style = parseStyle(dict["style"])
+      let easingName = dict["easing"] as? String
+      let easing = easingName.flatMap { RuneAnimateEasing(rawValue: $0) }
+      frames.append(RuneKeyframeSpec(at: at, style: style, easing: easing))
+    }
+    return frames
   }
 
   private func parseAngle(_ value: Any?) -> CGFloat? {
