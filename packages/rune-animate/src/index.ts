@@ -15,12 +15,16 @@ export {
 export type { AnimationCallback, SharedValue, SpringConfig, TimingConfig } from "./sharedValue";
 
 export {
+  AnimationBuilder,
+  createEntryExitAnimation,
   FadeIn,
   FadeOut,
   Keyframe,
+  resolveEntryExitAnimation,
   resolveStyleAnimation,
   resolveNativeEasing,
   type EntryExitAnimation,
+  type EntryExitAnimationLike,
   type KeyframeFrame,
   type KeyframeStyle,
   type ResolvedStyleAnimation,

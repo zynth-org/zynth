@@ -16,6 +16,48 @@ export type EntryExitAnimation = {
   easing?: EasingFunction | EasingName;
 };
 
+export class AnimationBuilder {
+  private readonly config: EntryExitAnimation;
+
+  constructor(config: EntryExitAnimation) {
+    this.config = config;
+  }
+
+  build(): EntryExitAnimation {
+    return { ...this.config };
+  }
+
+  with(config: EntryExitAnimation): AnimationBuilder {
+    return new AnimationBuilder({ ...this.config, ...config });
+  }
+
+  duration(duration: number): AnimationBuilder {
+    return new AnimationBuilder({ ...this.config, duration });
+  }
+
+  delay(delay: number): AnimationBuilder {
+    return new AnimationBuilder({ ...this.config, delay });
+  }
+
+  easing(easing: EasingFunction | EasingName): AnimationBuilder {
+    return new AnimationBuilder({ ...this.config, easing });
+  }
+
+  from(from: Style): AnimationBuilder {
+    return new AnimationBuilder({ ...this.config, from });
+  }
+
+  to(to: Style): AnimationBuilder {
+    return new AnimationBuilder({ ...this.config, to });
+  }
+}
+
+export const createEntryExitAnimation = (
+  config: EntryExitAnimation
+): AnimationBuilder => {
+  return new AnimationBuilder(config);
+};
+
 export type KeyframeStyle = Style & {
   easing?: EasingFunction | EasingName;
 };
@@ -86,18 +128,30 @@ export class Keyframe {
   }
 }
 
+export type EntryExitAnimationLike = EntryExitAnimation | AnimationBuilder;
+
+export function resolveEntryExitAnimation(
+  input?: EntryExitAnimationLike
+): EntryExitAnimation | null {
+  if (!input) return null;
+  if (input instanceof AnimationBuilder) return input.build();
+  return input;
+}
+
 export function resolveStyleAnimation(
-  input?: EntryExitAnimation | Keyframe
+  input?: EntryExitAnimationLike | Keyframe
 ): ResolvedStyleAnimation | null {
   if (!input) return null;
   if (input instanceof Keyframe) return input.build();
+  const resolved = resolveEntryExitAnimation(input);
+  if (!resolved) return null;
   return {
     kind: "timing",
-    from: input.from ?? {},
-    to: input.to ?? {},
-    duration: input.duration ?? 300,
-    delay: input.delay ?? 0,
-    easing: resolveEasing(input.easing),
+    from: resolved.from ?? {},
+    to: resolved.to ?? {},
+    duration: resolved.duration ?? 300,
+    delay: resolved.delay ?? 0,
+    easing: resolveEasing(resolved.easing),
   };
 }
 
@@ -203,19 +257,19 @@ export function runStyleAnimation(
   };
 }
 
-export const FadeIn: EntryExitAnimation = {
+export const FadeIn: AnimationBuilder = createEntryExitAnimation({
   from: { opacity: 0 },
   to: { opacity: 1 },
   duration: 200,
   easing: "easeOutCubic",
-};
+});
 
-export const FadeOut: EntryExitAnimation = {
+export const FadeOut: AnimationBuilder = createEntryExitAnimation({
   from: { opacity: 1 },
   to: { opacity: 0 },
   duration: 200,
   easing: "easeOutCubic",
-};
+});
 
 export const resolveNativeEasing = (
   easing?: EasingFunction | EasingName

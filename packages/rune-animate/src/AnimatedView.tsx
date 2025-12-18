@@ -15,11 +15,12 @@ import {
 import {
   getFinalStyle,
   getInitialStyle,
+  resolveEntryExitAnimation,
   resolveNativeEasing,
   resolveStyleAnimation,
   runStyleAnimation,
   Keyframe,
-  type EntryExitAnimation,
+  type EntryExitAnimationLike,
   type ResolvedStyleAnimation,
 } from "./styleAnimations";
 import {
@@ -39,8 +40,8 @@ export type AnimatedStyleProp = StyleProp | Accessor<StyleProp | undefined>;
 
 export interface AnimatedViewProps extends Omit<ViewProps, "style"> {
   style?: AnimatedStyleProp;
-  entering?: EntryExitAnimation | Keyframe;
-  exiting?: EntryExitAnimation | Keyframe;
+  entering?: EntryExitAnimationLike | Keyframe;
+  exiting?: EntryExitAnimationLike | Keyframe;
   visible?: boolean;
 }
 
@@ -112,7 +113,7 @@ export const AnimatedView: ParentComponent<AnimatedViewProps> = (props) => {
   };
 
   const resolveNativeTransition = (
-    input?: EntryExitAnimation | Keyframe
+    input?: EntryExitAnimationLike | Keyframe
   ): {
     from?: Style;
     to?: Style;
@@ -145,7 +146,8 @@ export const AnimatedView: ParentComponent<AnimatedViewProps> = (props) => {
       };
     }
 
-    const animation = input as EntryExitAnimation;
+    const animation = resolveEntryExitAnimation(input as EntryExitAnimationLike);
+    if (!animation) return null;
     return {
       from: animation.from ?? {},
       to: animation.to ?? {},
