@@ -276,11 +276,9 @@ final class RuneAnimateBridge: NSObject, RuneModule {
     if style.rotate != 0 {
       transform = CATransform3DRotate(transform, style.rotate, 0, 0, 1)
     }
-    if style.rotateY != 0 {
-      transform = CATransform3DRotate(transform, -style.rotateY, 0, 1, 0)
-    }
-    if style.rotateX != 0 {
-      transform = CATransform3DRotate(transform, -style.rotateX, 1, 0, 0)
+    if style.rotateX != 0 || style.rotateY != 0 {
+      let rotateXY = makeRotateXYMatrix(x: -style.rotateX, y: -style.rotateY)
+      transform = CATransform3DConcat(transform, rotateXY)
     }
     if style.skewX != 0 || style.skewY != 0 {
       var skew = CATransform3DIdentity
@@ -290,6 +288,34 @@ final class RuneAnimateBridge: NSObject, RuneModule {
     }
     transform = CATransform3DScale(transform, style.scaleX, style.scaleY, 1)
     view.layer.transform = transform
+  }
+
+  private func makeRotateXYMatrix(x: CGFloat, y: CGFloat) -> CATransform3D {
+    let rotateX = makeRotateXMatrix(x)
+    let rotateY = makeRotateYMatrix(y)
+    return CATransform3DConcat(rotateY, rotateX)
+  }
+
+  private func makeRotateXMatrix(_ radians: CGFloat) -> CATransform3D {
+    var transform = CATransform3DIdentity
+    let cosValue = cos(radians)
+    let sinValue = sin(radians)
+    transform.m22 = cosValue
+    transform.m23 = sinValue
+    transform.m32 = -sinValue
+    transform.m33 = cosValue
+    return transform
+  }
+
+  private func makeRotateYMatrix(_ radians: CGFloat) -> CATransform3D {
+    var transform = CATransform3DIdentity
+    let cosValue = cos(radians)
+    let sinValue = sin(radians)
+    transform.m11 = cosValue
+    transform.m13 = -sinValue
+    transform.m31 = sinValue
+    transform.m33 = cosValue
+    return transform
   }
 
   private func interpolate(

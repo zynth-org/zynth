@@ -255,6 +255,34 @@ static double RuneDegreesToRadians(double degrees) {
   return degrees * M_PI / 180.0;
 }
 
+static CATransform3D RuneRotateXMatrix(double radians) {
+  CATransform3D transform = CATransform3DIdentity;
+  double cosValue = cos(radians);
+  double sinValue = sin(radians);
+  transform.m22 = cosValue;
+  transform.m23 = sinValue;
+  transform.m32 = -sinValue;
+  transform.m33 = cosValue;
+  return transform;
+}
+
+static CATransform3D RuneRotateYMatrix(double radians) {
+  CATransform3D transform = CATransform3DIdentity;
+  double cosValue = cos(radians);
+  double sinValue = sin(radians);
+  transform.m11 = cosValue;
+  transform.m13 = -sinValue;
+  transform.m31 = sinValue;
+  transform.m33 = cosValue;
+  return transform;
+}
+
+static CATransform3D RuneRotateXYMatrix(double rotateX, double rotateY) {
+  CATransform3D rotateXMatrix = RuneRotateXMatrix(rotateX);
+  CATransform3D rotateYMatrix = RuneRotateYMatrix(rotateY);
+  return CATransform3DConcat(rotateYMatrix, rotateXMatrix);
+}
+
 static bool RuneParseAngleString(const std::string &input, double &outRadians) {
   if (input.size() >= 3 && input.compare(input.size() - 3, 3, "deg") == 0) {
     std::string raw = input.substr(0, input.size() - 3);
@@ -1258,11 +1286,9 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
   if (rotate != 0.0) {
     transform = CATransform3DRotate(transform, (CGFloat)rotate, 0.0, 0.0, 1.0);
   }
-  if (rotateY != 0.0) {
-    transform = CATransform3DRotate(transform, (CGFloat)-rotateY, 0.0, 1.0, 0.0);
-  }
-  if (rotateX != 0.0) {
-    transform = CATransform3DRotate(transform, (CGFloat)-rotateX, 1.0, 0.0, 0.0);
+  if (rotateX != 0.0 || rotateY != 0.0) {
+    CATransform3D rotateXY = RuneRotateXYMatrix(-rotateX, -rotateY);
+    transform = CATransform3DConcat(transform, rotateXY);
   }
   if (skewX != 0.0 || skewY != 0.0) {
     CATransform3D skew = CATransform3DIdentity;

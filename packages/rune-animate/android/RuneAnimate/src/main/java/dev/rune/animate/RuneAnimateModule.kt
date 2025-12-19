@@ -13,7 +13,6 @@ import kotlin.math.max
 import kotlin.math.min
 
 private const val DEFAULT_PERSPECTIVE = 500f
-private const val PERSPECTIVE_SCALE = 3200f / DEFAULT_PERSPECTIVE
 
 private enum class Easing {
     LINEAR,
@@ -284,15 +283,22 @@ class RuneAnimateModule(
         view.translationY = style.translateY * density
         view.scaleX = style.scaleX
         view.scaleY = style.scaleY
-        view.rotation = style.rotate
-        view.rotationX = -style.rotateX
-        view.rotationY = -style.rotateY
         val has3dRotation = kotlin.math.abs(style.rotateX) > 0.001f || kotlin.math.abs(style.rotateY) > 0.001f
+        if (has3dRotation) {
+            val euler = computeEulerForRotateXY(style.rotateX, style.rotateY)
+            view.rotationX = -euler.x
+            view.rotationY = -euler.y
+            view.rotation = if (style.rotate == 0f) euler.z else style.rotate
+        } else {
+            view.rotation = style.rotate
+            view.rotationX = -style.rotateX
+            view.rotationY = -style.rotateY
+        }
         if (style.hasPerspective && style.perspective > 0f) {
-            view.cameraDistance = style.perspective * density * PERSPECTIVE_SCALE
+            view.cameraDistance = style.perspective * density
         } else if (has3dRotation) {
             // Align default 3D perspective with iOS/CSS when not explicitly provided.
-            view.cameraDistance = DEFAULT_PERSPECTIVE * density * PERSPECTIVE_SCALE
+            view.cameraDistance = DEFAULT_PERSPECTIVE * density
         }
 
         val hasSkew = kotlin.math.abs(style.skewX) > 0.001f || kotlin.math.abs(style.skewY) > 0.001f
@@ -389,7 +395,7 @@ class RuneAnimateModule(
         val perspective = resolveValue(
             from?.perspective,
             to?.perspective,
-            base.perspective / (density * PERSPECTIVE_SCALE),
+            base.perspective / density,
         )
         val hasPerspective = from?.perspective != null || to?.perspective != null
 
@@ -436,6 +442,84 @@ class RuneAnimateModule(
         val rotationY: Float,
         val perspective: Float,
     )
+
+    private data class EulerAngles(val x: Float, val y: Float, val z: Float)
+
+    private fun computeEulerForRotateXY(rotateX: Float, rotateY: Float): EulerAngles {
+        val rx = Math.toRadians(rotateX.toDouble())
+        val ry = Math.toRadians(rotateY.toDouble())
+        val rotateXMatrix = identityMatrix().apply { applyRotateX(this, rx) }
+        val rotateYMatrix = identityMatrix().apply { applyRotateY(this, ry) }
+
+        // CSS/RN order: transforms are applied in reverse list order.
+        val combined = multiplyMatrices(rotateYMatrix, rotateXMatrix)
+        return extractEulerFromMatrix(combined)
+    }
+
+    private fun identityMatrix(): DoubleArray {
+        return doubleArrayOf(
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
+        )
+    }
+
+    private fun applyRotateX(matrix: DoubleArray, radians: Double) {
+        val cos = kotlin.math.cos(radians)
+        val sin = kotlin.math.sin(radians)
+        matrix[5] = cos
+        matrix[6] = sin
+        matrix[9] = -sin
+        matrix[10] = cos
+    }
+
+    private fun applyRotateY(matrix: DoubleArray, radians: Double) {
+        val cos = kotlin.math.cos(radians)
+        val sin = kotlin.math.sin(radians)
+        matrix[0] = cos
+        matrix[2] = -sin
+        matrix[8] = sin
+        matrix[10] = cos
+    }
+
+    private fun multiplyMatrices(a: DoubleArray, b: DoubleArray): DoubleArray {
+        val out = DoubleArray(16)
+        for (c in 0..3) {
+            val cIndex = c * 4
+            for (r in 0..3) {
+                out[cIndex + r] =
+                    a[r + 0] * b[cIndex + 0] +
+                        a[r + 4] * b[cIndex + 1] +
+                        a[r + 8] * b[cIndex + 2] +
+                        a[r + 12] * b[cIndex + 3]
+            }
+        }
+        return out
+    }
+
+    private fun extractEulerFromMatrix(matrix: DoubleArray): EulerAngles {
+        val r00 = matrix[0]
+        val r01 = matrix[4]
+        val r02 = matrix[8]
+        val r12 = matrix[9]
+        val r22 = matrix[10]
+
+        val sinRy = -r02
+        val ry = kotlin.math.asin(sinRy.coerceIn(-1.0, 1.0))
+        val rx = if (kotlin.math.abs(sinRy) >= 1.0) {
+            kotlin.math.atan2(sinRy * r01, sinRy * r02)
+        } else {
+            kotlin.math.atan2(r12, r22)
+        }
+        val rz = kotlin.math.atan2(r01, r00)
+
+        return EulerAngles(
+            x = Math.toDegrees(rx).toFloat(),
+            y = Math.toDegrees(ry).toFloat(),
+            z = Math.toDegrees(rz).toFloat(),
+        )
+    }
 
     private fun parseStyle(value: Any?): AnimatedStyle? {
         val map = when (value) {

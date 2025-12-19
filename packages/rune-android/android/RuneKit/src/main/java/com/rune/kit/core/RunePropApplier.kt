@@ -189,6 +189,7 @@ internal class RunePropApplier(
       var skewY = 0f
       var hasSkew = false
       var hasPerspective = false
+      var perspectiveValue = Float.NaN
       
       for (op in transform) {
         when (op) {
@@ -213,11 +214,10 @@ internal class RunePropApplier(
             hasSkew = true
           }
           is TransformOperation.Perspective -> {
-             val d = target.view.resources.displayMetrics.density
-             if (op.value > 0f) {
-               target.view.cameraDistance = op.value * d * PERSPECTIVE_SCALE
-               hasPerspective = true
-             }
+            if (op.value > 0f) {
+              perspectiveValue = op.value
+              hasPerspective = true
+            }
           }
         }
       }
@@ -227,12 +227,22 @@ internal class RunePropApplier(
       target.view.translationY = ty
       target.view.scaleX = sx
       target.view.scaleY = sy
-      target.view.rotation = rot
-      target.view.rotationX = -rotX
-      target.view.rotationY = -rotY
-      if (!hasPerspective && (kotlin.math.abs(rotX) > 0.001f || kotlin.math.abs(rotY) > 0.001f)) {
-        val d = target.view.resources.displayMetrics.density
-        target.view.cameraDistance = DEFAULT_PERSPECTIVE * d * PERSPECTIVE_SCALE
+      val has3dRotation = kotlin.math.abs(rotX) > 0.001f || kotlin.math.abs(rotY) > 0.001f
+      if (has3dRotation) {
+        val euler = computeEulerForRotateXY(rotX, rotY)
+        target.view.rotationX = -euler.x
+        target.view.rotationY = -euler.y
+        target.view.rotation = if (rot == 0f) euler.z else rot
+      } else {
+        target.view.rotation = rot
+        target.view.rotationX = -rotX
+        target.view.rotationY = -rotY
+      }
+      val viewDensity = target.view.resources.displayMetrics.density.takeIf { it > 0f } ?: density
+      if (hasPerspective) {
+        target.view.cameraDistance = perspectiveValue * viewDensity
+      } else if (has3dRotation) {
+        target.view.cameraDistance = DEFAULT_PERSPECTIVE * viewDensity
       }
       
       // Apply skew using Matrix if needed
@@ -692,9 +702,86 @@ internal class RunePropApplier(
     )
   }
 
+  private data class EulerAngles(val x: Float, val y: Float, val z: Float)
+
+  private fun computeEulerForRotateXY(rotateX: Float, rotateY: Float): EulerAngles {
+    val rx = Math.toRadians(rotateX.toDouble())
+    val ry = Math.toRadians(rotateY.toDouble())
+    val rotateXMatrix = identityMatrix().apply { applyRotateX(this, rx) }
+    val rotateYMatrix = identityMatrix().apply { applyRotateY(this, ry) }
+
+    // CSS/RN order: transforms are applied in reverse list order.
+    val combined = multiplyMatrices(rotateYMatrix, rotateXMatrix)
+    return extractEulerFromMatrix(combined)
+  }
+
+  private fun identityMatrix(): DoubleArray {
+    return doubleArrayOf(
+      1.0, 0.0, 0.0, 0.0,
+      0.0, 1.0, 0.0, 0.0,
+      0.0, 0.0, 1.0, 0.0,
+      0.0, 0.0, 0.0, 1.0,
+    )
+  }
+
+  private fun applyRotateX(matrix: DoubleArray, radians: Double) {
+    val cos = kotlin.math.cos(radians)
+    val sin = kotlin.math.sin(radians)
+    matrix[5] = cos
+    matrix[6] = sin
+    matrix[9] = -sin
+    matrix[10] = cos
+  }
+
+  private fun applyRotateY(matrix: DoubleArray, radians: Double) {
+    val cos = kotlin.math.cos(radians)
+    val sin = kotlin.math.sin(radians)
+    matrix[0] = cos
+    matrix[2] = -sin
+    matrix[8] = sin
+    matrix[10] = cos
+  }
+
+  private fun multiplyMatrices(a: DoubleArray, b: DoubleArray): DoubleArray {
+    val out = DoubleArray(16)
+    for (c in 0..3) {
+      val cIndex = c * 4
+      for (r in 0..3) {
+        out[cIndex + r] =
+          a[r + 0] * b[cIndex + 0] +
+            a[r + 4] * b[cIndex + 1] +
+            a[r + 8] * b[cIndex + 2] +
+            a[r + 12] * b[cIndex + 3]
+      }
+    }
+    return out
+  }
+
+  private fun extractEulerFromMatrix(matrix: DoubleArray): EulerAngles {
+    val r00 = matrix[0]
+    val r01 = matrix[4]
+    val r02 = matrix[8]
+    val r12 = matrix[9]
+    val r22 = matrix[10]
+
+    val sinRy = -r02
+    val ry = kotlin.math.asin(sinRy.coerceIn(-1.0, 1.0))
+    val rx = if (kotlin.math.abs(sinRy) >= 1.0) {
+      kotlin.math.atan2(sinRy * r01, sinRy * r02)
+    } else {
+      kotlin.math.atan2(r12, r22)
+    }
+    val rz = kotlin.math.atan2(r01, r00)
+
+    return EulerAngles(
+      x = Math.toDegrees(rx).toFloat(),
+      y = Math.toDegrees(ry).toFloat(),
+      z = Math.toDegrees(rz).toFloat(),
+    )
+  }
+
   companion object {
     private const val TEXT_TYPE = "text"
     private const val DEFAULT_PERSPECTIVE = 500f
-    private const val PERSPECTIVE_SCALE = 3200f / DEFAULT_PERSPECTIVE
   }
 }
