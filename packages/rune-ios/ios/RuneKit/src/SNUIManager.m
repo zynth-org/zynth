@@ -334,6 +334,7 @@ static _Atomic int sNextGuestSurfaceId = kRuneSurfaceIdBase;
   n.children = [NSMutableArray new];
   n.parentId = -1;
   n.pointerEvents = @"auto"; // Default pointerEvents state
+  n.layoutTransition = nil;
   n.type = type;
   n.surfaceId = self.activeSurfaceId;
 
@@ -1387,6 +1388,19 @@ static void SNApplyEdges(NSDictionary *style,
     pointerEventsHandled = YES;
   }
 
+  if ([name isEqualToString:@"layout"]) {
+    if (!value || value == (id)kCFNull) {
+      n.layoutTransition = nil;
+    } else if ([value isKindOfClass:[NSNumber class]] && ![(NSNumber *)value boolValue]) {
+      n.layoutTransition = nil;
+    } else if ([value isKindOfClass:[NSDictionary class]]) {
+      n.layoutTransition = (NSDictionary *)value;
+    } else {
+      n.layoutTransition = nil;
+    }
+    return;
+  }
+
   if ([name isEqualToString:@"testID"]) {
     n.view.accessibilityIdentifier = stringValue;
     return;
@@ -1536,6 +1550,14 @@ static void SNApplyEdges(NSDictionary *style,
     int i = (int)index.intValue;
     i = MAX(0, MIN(i, (int)p.view.subviews.count));
 
+    NSUInteger existingIdx = [p.children indexOfObject:childId];
+    if (existingIdx != NSNotFound) {
+      [p.children removeObjectAtIndex:existingIdx];
+      if ((int)existingIdx < i) {
+        i = MAX(0, i - 1);
+      }
+    }
+
     // Check if parent is a scroll view component
     BOOL isScrollViewParent = [p.view respondsToSelector:@selector(insertContentSubview:atIndex:)];
     if (isScrollViewParent) {
@@ -1551,7 +1573,9 @@ static void SNApplyEdges(NSDictionary *style,
       if (owner) {
         YGNodeRemoveChild(owner, c.yoga);
       }
-      YGNodeInsertChild(p.yoga, c.yoga, (uint32_t)i);
+      int yogaCount = (int)YGNodeGetChildCount(p.yoga);
+      int yogaIndex = MIN(i, yogaCount);
+      YGNodeInsertChild(p.yoga, c.yoga, (uint32_t)yogaIndex);
     }
   }
   [self rune_markNeedsFlush];

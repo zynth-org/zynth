@@ -120,6 +120,7 @@ object PropertyCategoryMap {
     put("accessibilityRole", PropertyCategory.VIEW)
     put("testID", PropertyCategory.VIEW)
     put("pointerEvents", PropertyCategory.VIEW)
+    put("layout", PropertyCategory.VIEW)
     
     // TextInput properties
     put("value", PropertyCategory.TEXT_INPUT)

@@ -2,6 +2,7 @@
 #import "RuneUIManager+Events.h"
 #import "SNUIManager+Internal.h"
 #import "utils/RuneGradientParser.h"
+#import <math.h>
 
 extern void SNApplyGradientToView(UIView *view, RuneLinearGradient *gradient);
 
@@ -12,6 +13,43 @@ extern void SNApplyGradientToView(UIView *view, RuneLinearGradient *gradient);
 #endif
 
 static NSString *const kRuneBorderLayerName = @"rune-border-style";
+static NSTimeInterval const kRuneLayoutDefaultDuration = 0.3;
+
+static NSString *RuneLayoutTransitionString(id value) {
+  return [value isKindOfClass:[NSString class]] ? (NSString *)value : nil;
+}
+
+static NSTimeInterval RuneLayoutTransitionDuration(NSDictionary *config) {
+  id value = config[@"duration"];
+  if ([value isKindOfClass:[NSNumber class]]) {
+    return MAX(0.0, [(NSNumber *)value doubleValue] / 1000.0);
+  }
+  return kRuneLayoutDefaultDuration;
+}
+
+static NSTimeInterval RuneLayoutTransitionDelay(NSDictionary *config) {
+  id value = config[@"delay"];
+  if ([value isKindOfClass:[NSNumber class]]) {
+    return MAX(0.0, [(NSNumber *)value doubleValue] / 1000.0);
+  }
+  return 0.0;
+}
+
+static UIViewAnimationOptions RuneLayoutTransitionOptions(NSDictionary *config) {
+  NSString *easing = RuneLayoutTransitionString(config[@"easing"]);
+  if ([easing isEqualToString:@"linear"]) return UIViewAnimationOptionCurveLinear;
+  if ([easing isEqualToString:@"easeIn"]) return UIViewAnimationOptionCurveEaseIn;
+  if ([easing isEqualToString:@"easeOut"]) return UIViewAnimationOptionCurveEaseOut;
+  if ([easing isEqualToString:@"easeInOut"]) return UIViewAnimationOptionCurveEaseInOut;
+  if ([easing isEqualToString:@"ease"]) return UIViewAnimationOptionCurveEaseInOut;
+  if ([easing isEqualToString:@"easeOutCubic"]) return UIViewAnimationOptionCurveEaseOut;
+  return UIViewAnimationOptionCurveEaseOut;
+}
+
+static BOOL RuneLayoutTransitionIsLinear(NSDictionary *config) {
+  NSString *type = RuneLayoutTransitionString(config[@"type"]) ?: @"linear";
+  return [type isEqualToString:@"linear"];
+}
 
 @implementation SNUIManager (RuneLayout)
 
@@ -51,6 +89,12 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
       return;
     }
     NSArray<NSNumber *> *surfaceIds = [self rune_allSurfaceIds];
+    NSMutableDictionary<NSNumber *, NSValue *> *previousFrames = [NSMutableDictionary new];
+    [self.nodes enumerateKeysAndObjectsUsingBlock:^(NSNumber *key, SNNode *obj, BOOL *stop) {
+      if (!obj || !obj.view) return;
+      if (!obj.view.superview || obj.view.hidden) return;
+      previousFrames[key] = [NSValue valueWithCGRect:obj.view.frame];
+    }];
     for (NSNumber *sid in surfaceIds) {
       int surfaceId = sid.intValue;
       UIView *rootView = [self rune_rootViewForSurface:surfaceId];
@@ -116,6 +160,46 @@ static NSString *const kRuneBorderLayerName = @"rune-border-style";
         if (!CGPointEqualToPoint(obj.view.center, center) || !CGRectEqualToRect(obj.view.bounds, bounds)) {
           obj.view.center = center;
           obj.view.bounds = bounds;
+        }
+
+        NSDictionary *layoutTransition = obj.layoutTransition;
+        if (layoutTransition && RuneLayoutTransitionIsLinear(layoutTransition)) {
+          NSValue *previousValue = previousFrames[key];
+          if (previousValue) {
+            CGRect previousFrame = previousValue.CGRectValue;
+            CGRect nextFrame = obj.view.frame;
+            CGFloat prevWidth = CGRectGetWidth(previousFrame);
+            CGFloat prevHeight = CGRectGetHeight(previousFrame);
+            CGFloat nextWidth = CGRectGetWidth(nextFrame);
+            CGFloat nextHeight = CGRectGetHeight(nextFrame);
+            if (prevWidth > 0.f && prevHeight > 0.f && nextWidth > 0.f && nextHeight > 0.f) {
+              CGFloat prevCenterX = CGRectGetMidX(previousFrame);
+              CGFloat prevCenterY = CGRectGetMidY(previousFrame);
+              CGFloat nextCenterX = CGRectGetMidX(nextFrame);
+              CGFloat nextCenterY = CGRectGetMidY(nextFrame);
+              CGFloat deltaX = prevCenterX - nextCenterX;
+              CGFloat deltaY = prevCenterY - nextCenterY;
+              CGFloat scaleX = prevWidth / nextWidth;
+              CGFloat scaleY = prevHeight / nextHeight;
+              if (fabs(deltaX) > 0.5 || fabs(deltaY) > 0.5 || fabs(scaleX - 1.0) > 0.01 || fabs(scaleY - 1.0) > 0.01) {
+                [obj.view.layer removeAllAnimations];
+                CGAffineTransform startTransform = CGAffineTransformIdentity;
+                startTransform = CGAffineTransformTranslate(startTransform, deltaX, deltaY);
+                startTransform = CGAffineTransformScale(startTransform, scaleX, scaleY);
+                obj.view.transform = startTransform;
+                NSTimeInterval duration = RuneLayoutTransitionDuration(layoutTransition);
+                NSTimeInterval delay = RuneLayoutTransitionDelay(layoutTransition);
+                UIViewAnimationOptions options = RuneLayoutTransitionOptions(layoutTransition);
+                [UIView animateWithDuration:duration
+                                      delay:delay
+                                    options:options
+                                 animations:^{
+                                   obj.view.transform = CGAffineTransformIdentity;
+                                 }
+                                 completion:nil];
+              }
+            }
+          }
         }
         
         [self rune_dispatchLayoutEventForNode:obj force:NO];

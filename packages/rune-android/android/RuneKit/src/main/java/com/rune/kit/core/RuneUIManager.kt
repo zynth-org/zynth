@@ -177,6 +177,8 @@ class RuneUIManager(
     var layoutListener: OnLayoutChangeListener? = null,
     var surfaceId: Int = 0,
     var textStyle: TextStyleAttributes? = null,
+    var layoutTransition: LayoutTransitionConfig? = null,
+    var layoutAnimator: android.view.ViewPropertyAnimator? = null,
     // Mount gating to prevent "unstyled first frame" when nodes are inserted before props land.
     var mountStartTimeMs: Long = 0L,
     var mountAwaitingFirstProps: Boolean = false,
@@ -572,9 +574,16 @@ class RuneUIManager(
 
     if (parentNode.children == null) parentNode.children = ArrayList()
     val list = parentNode.children!!
-    val insertPos = if (atIndex < 0 || atIndex > list.size) list.size else atIndex
-    // remove existing occurrence (defensive)
-    list.remove(childId)
+    var insertPos = if (atIndex < 0 || atIndex > list.size) list.size else atIndex
+    // remove existing occurrence (defensive) and adjust index if needed
+    val existingIndex = list.indexOf(childId)
+    if (existingIndex >= 0) {
+      list.removeAt(existingIndex)
+      if (existingIndex < insertPos) {
+        insertPos = (insertPos - 1).coerceAtLeast(0)
+      }
+    }
+    if (insertPos > list.size) insertPos = list.size
     list.add(insertPos, childId)
 
     childNode.parentId = parentId

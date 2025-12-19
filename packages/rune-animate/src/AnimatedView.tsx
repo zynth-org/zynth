@@ -24,6 +24,10 @@ import {
   type ResolvedStyleAnimation,
 } from "./styleAnimations";
 import {
+  resolveLayoutTransition,
+  type LayoutTransitionLike,
+} from "./layoutTransitions";
+import {
   isNativePlatform,
   createNativeStyleMapper,
   updateNativeStyleMapper,
@@ -42,6 +46,7 @@ export interface AnimatedViewProps extends Omit<ViewProps, "style"> {
   style?: AnimatedStyleProp;
   entering?: EntryExitAnimationLike | Keyframe;
   exiting?: EntryExitAnimationLike | Keyframe;
+  layout?: LayoutTransitionLike;
   visible?: boolean;
 }
 
@@ -50,6 +55,7 @@ export const AnimatedView: ParentComponent<AnimatedViewProps> = (props) => {
     "style",
     "entering",
     "exiting",
+    "layout",
     "visible",
     "children",
   ]);
@@ -347,13 +353,21 @@ export const AnimatedView: ParentComponent<AnimatedViewProps> = (props) => {
 
   const baseStyle = mergeStyles(resolveStyle);
   const mergedStyle = mergeStyles(resolveStyle, overrideStyle);
+  const resolvedLayout = (): ReturnType<typeof resolveLayoutTransition> => {
+    return resolveLayoutTransition(local.layout);
+  };
 
   if (!isMounted()) {
     return null;
   }
 
   return (
-    <View {...rest} ref={setHostNode} style={mergedStyle()}>
+    <View
+      {...rest}
+      ref={setHostNode}
+      style={mergedStyle()}
+      layout={resolvedLayout() ?? undefined}
+    >
       {resolvedChildren()}
     </View>
   );

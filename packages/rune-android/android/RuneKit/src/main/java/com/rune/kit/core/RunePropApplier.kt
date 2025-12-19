@@ -325,6 +325,9 @@ internal class RunePropApplier(
           }
         }
       }
+      "layout" -> {
+        target.layoutTransition = parseLayoutTransition(parseJsonValue(jsonValue))
+      }
     }
   }
 
@@ -622,6 +625,59 @@ internal class RunePropApplier(
     
     if (value is Int) return value
     return RuneColorParser.parse(value as String)
+  }
+
+  private fun parseLayoutTransition(raw: Any?): LayoutTransitionConfig? {
+    when (raw) {
+      null -> return null
+      is Boolean -> {
+        return if (raw) {
+          LayoutTransitionConfig(
+            type = "linear",
+            durationMs = 300L,
+            delayMs = 0L,
+            easing = LayoutEasing.EASE_OUT_CUBIC,
+          )
+        } else {
+          null
+        }
+      }
+    }
+
+    val map = when (raw) {
+      is JSONObject -> raw
+      is Map<*, *> -> raw
+      else -> return null
+    }
+
+    val mapObj = map as? Map<*, *>
+    val type = when (map) {
+      is JSONObject -> map.optString("type", "linear")
+      else -> (mapObj?.get("type") as? String) ?: "linear"
+    }
+    val durationMs = when (map) {
+      is JSONObject -> map.optLong("duration", 300L)
+      else -> (mapObj?.get("duration") as? Number)?.toLong()
+        ?: mapObj?.get("duration")?.toString()?.toLongOrNull()
+        ?: 300L
+    }
+    val delayMs = when (map) {
+      is JSONObject -> map.optLong("delay", 0L)
+      else -> (mapObj?.get("delay") as? Number)?.toLong()
+        ?: mapObj?.get("delay")?.toString()?.toLongOrNull()
+        ?: 0L
+    }
+    val easingName = when (map) {
+      is JSONObject -> map.optString("easing", null)
+      else -> mapObj?.get("easing") as? String
+    }
+
+    return LayoutTransitionConfig(
+      type = type,
+      durationMs = durationMs,
+      delayMs = delayMs,
+      easing = LayoutEasing.fromName(easingName),
+    )
   }
 
   companion object {

@@ -30,6 +30,14 @@ export {
   type ResolvedStyleAnimation,
 } from "./styleAnimations";
 
+export {
+  LinearTransition,
+  type LayoutTransitionConfig,
+  type LayoutTransitionLike,
+  type ResolvedLayoutTransition,
+  resolveLayoutTransition,
+} from "./layoutTransitions";
+
 export const Animated = {
   View: AnimatedView,
 };

@@ -61,19 +61,24 @@ class YogaLayoutEngine(private val rootId: Int = 0) : LayoutEngine {
   override fun insertChild(parent: Int, child: Int, index: Int) {
     val parentNode = getNode(parent)
     val childNode = getNode(child)
-    val targetIndex = index.coerceIn(0, parentNode.childCount)
+    var targetIndex = index.coerceIn(0, parentNode.childCount)
     
     @Suppress("DEPRECATION")
     if (childNode.parent == parentNode) {
       val currentIndex = parentNode.indexOf(childNode)
       if (currentIndex == targetIndex) return
       parentNode.removeChildAt(currentIndex)
+      if (currentIndex < targetIndex) {
+        targetIndex = (targetIndex - 1).coerceAtLeast(0)
+      }
     }
     childNode.owner?.let { owner ->
       val idx = owner.indexOf(childNode)
       if (idx >= 0) owner.removeChildAt(idx)
     }
-    
+    if (targetIndex > parentNode.childCount) {
+      targetIndex = parentNode.childCount
+    }
     parentNode.addChildAt(childNode, targetIndex)
   }
 

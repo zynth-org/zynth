@@ -33,8 +33,10 @@ export interface ViewProps {
 const noopRef = () => {};
 
 export const View: ParentComponent<ViewProps> = (props) => {
-  const [local] = splitProps(props, [
+  const internalProps = props as ViewProps & { layout?: unknown };
+  const [local] = splitProps(internalProps, [
     "style",
+    "layout",
     "onPress",
     "accessibilityLabel",
     "accessibilityHint",
@@ -54,10 +56,10 @@ export const View: ParentComponent<ViewProps> = (props) => {
   const shouldEnablePress = resolvedPointer !== "none";
   const appliedPressHandlers = shouldEnablePress ? pressHandlers : {};
   const refProp = local.ref ?? noopRef;
-
   return (
     <view
       style={local.style as any}
+      layout={local.layout as any}
       onPress={appliedPressHandlers.onPress}
       accessibilityLabel={local.accessibilityLabel}
       accessibilityHint={local.accessibilityHint}

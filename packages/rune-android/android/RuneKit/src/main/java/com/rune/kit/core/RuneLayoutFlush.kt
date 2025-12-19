@@ -16,6 +16,7 @@ import com.rune.kit.layout.Rect
 import java.util.concurrent.CountDownLatch
 import com.rune.kit.core.TextComposer
 import com.rune.kit.core.TextStyleAttributes
+import kotlin.math.abs
 
 /**
  * RuneLayoutFlush handles all layout flushing, frame scheduling, and view operation batching.
@@ -478,6 +479,10 @@ internal class RuneLayoutFlush(
             node.label?.layout(0, 0, width, height)
           }
 
+          if (frameChanged) {
+            maybeStartLayoutTransition(node, previous, appliedFrame, width, height)
+          }
+
           // Update visibility based on frame size (combined with frame application)
           val hasSize = width > 0 && height > 0
           val hideForMount = node.mountAwaitingFirstProps &&
@@ -608,6 +613,59 @@ internal class RuneLayoutFlush(
         hasPendingOperations -> scheduleFlush()
       }
     }
+  }
+
+  private fun maybeStartLayoutTransition(
+    node: RuneUIManager.Node,
+    previous: Rect?,
+    appliedFrame: Rect,
+    width: Int,
+    height: Int,
+  ) {
+    val transition = node.layoutTransition ?: return
+    if (transition.type != "linear") return
+    if (previous == null) return
+    val prevWidth = previous.right - previous.left
+    val prevHeight = previous.bottom - previous.top
+    if (prevWidth <= 0 || prevHeight <= 0 || width <= 0 || height <= 0) return
+
+    val prevCenterX = previous.left + prevWidth / 2f
+    val prevCenterY = previous.top + prevHeight / 2f
+    val newCenterX = appliedFrame.left + width / 2f
+    val newCenterY = appliedFrame.top + height / 2f
+
+    val deltaX = prevCenterX - newCenterX
+    val deltaY = prevCenterY - newCenterY
+    val scaleX = prevWidth.toFloat() / width.toFloat()
+    val scaleY = prevHeight.toFloat() / height.toFloat()
+
+    if (abs(deltaX) < 0.5f && abs(deltaY) < 0.5f && abs(scaleX - 1f) < 0.01f && abs(scaleY - 1f) < 0.01f) {
+      return
+    }
+
+    node.layoutAnimator?.cancel()
+    node.layoutAnimator = null
+
+    val view = node.view
+    view.translationX = deltaX
+    view.translationY = deltaY
+    view.scaleX = scaleX
+    view.scaleY = scaleY
+
+    val duration = transition.durationMs.coerceAtLeast(0L)
+    val delay = transition.delayMs.coerceAtLeast(0L)
+    val animator = view.animate()
+      .translationX(0f)
+      .translationY(0f)
+      .scaleX(1f)
+      .scaleY(1f)
+      .setStartDelay(delay)
+      .setDuration(duration)
+      .setInterpolator(transition.easing.toInterpolator())
+      .withEndAction { node.layoutAnimator = null }
+
+    node.layoutAnimator = animator
+    animator.start()
   }
 
   // ==================== Layout Helpers ====================
