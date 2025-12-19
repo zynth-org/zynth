@@ -30,6 +30,7 @@ import com.rune.kit.layout.MeasureInput
 import com.rune.kit.layout.MeasureMode
 import com.rune.kit.layout.Rect
 import com.rune.kit.layout.Style
+import com.rune.kit.layout.TransformOrigin
 import com.rune.kit.layout.YogaLayoutEngine
 import com.rune.kit.runtime.JSBridge
 import org.json.JSONException
@@ -179,6 +180,7 @@ class RuneUIManager(
     var textStyle: TextStyleAttributes? = null,
     var layoutTransition: LayoutTransitionConfig? = null,
     var layoutAnimator: android.view.ViewPropertyAnimator? = null,
+    var transformOrigin: TransformOrigin? = null,
     // Mount gating to prevent "unstyled first frame" when nodes are inserted before props land.
     var mountStartTimeMs: Long = 0L,
     var mountAwaitingFirstProps: Boolean = false,
@@ -1012,14 +1014,45 @@ class RuneUIManager(
     scaleX: Float,
     scaleY: Float,
     rotate: Float,
+    rotateX: Float,
+    rotateY: Float,
+    skewX: Float,
+    skewY: Float,
+    perspective: Float,
   ) {
     // Run on main thread for immediate view updates
     if (Looper.myLooper() != Looper.getMainLooper()) {
       handler.post {
-        applyAnimatedStyleInternal(nodeId, opacity, translateX, translateY, scaleX, scaleY, rotate)
+        applyAnimatedStyleInternal(
+          nodeId,
+          opacity,
+          translateX,
+          translateY,
+          scaleX,
+          scaleY,
+          rotate,
+          rotateX,
+          rotateY,
+          skewX,
+          skewY,
+          perspective,
+        )
       }
     } else {
-      applyAnimatedStyleInternal(nodeId, opacity, translateX, translateY, scaleX, scaleY, rotate)
+      applyAnimatedStyleInternal(
+        nodeId,
+        opacity,
+        translateX,
+        translateY,
+        scaleX,
+        scaleY,
+        rotate,
+        rotateX,
+        rotateY,
+        skewX,
+        skewY,
+        perspective,
+      )
     }
   }
 
@@ -1031,6 +1064,11 @@ class RuneUIManager(
     scaleX: Float,
     scaleY: Float,
     rotate: Float,
+    rotateX: Float,
+    rotateY: Float,
+    skewX: Float,
+    skewY: Float,
+    perspective: Float,
   ) {
     val view = getNodeView(nodeId) ?: return
     view.alpha = opacity
@@ -1039,6 +1077,49 @@ class RuneUIManager(
     view.scaleX = scaleX
     view.scaleY = scaleY
     view.rotation = rotate
+    view.rotationX = -rotateX
+    view.rotationY = -rotateY
+    val has3dRotation = kotlin.math.abs(rotateX) > 0.001f || kotlin.math.abs(rotateY) > 0.001f
+    if (!perspective.isNaN() && perspective > 0f) {
+      view.cameraDistance = perspective * density * PERSPECTIVE_SCALE
+    } else if (has3dRotation) {
+      // Align default 3D perspective with iOS/CSS when not explicitly provided.
+      view.cameraDistance = DEFAULT_PERSPECTIVE * density * PERSPECTIVE_SCALE
+    }
+    val hasSkew = kotlin.math.abs(skewX) > 0.001f || kotlin.math.abs(skewY) > 0.001f
+    if (hasSkew) {
+      val matrix = android.graphics.Matrix()
+      val radX = Math.toRadians(skewX.toDouble()).toFloat()
+      val radY = Math.toRadians(skewY.toDouble()).toFloat()
+      
+      // Pivot logic to match View rotation/scale behavior
+      val px = view.pivotX
+      val py = view.pivotY
+      matrix.setTranslate(-px, -py)
+      
+      val skew = android.graphics.Matrix()
+      skew.setValues(
+        floatArrayOf(
+          1f,
+          Math.tan(radX.toDouble()).toFloat(),
+          0f,
+          Math.tan(radY.toDouble()).toFloat(),
+          1f,
+          0f,
+          0f,
+          0f,
+          1f,
+        )
+      )
+      matrix.postConcat(skew)
+      matrix.postTranslate(px, py)
+      
+      view.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+      view.setAnimationMatrix(matrix)
+    } else {
+      view.setAnimationMatrix(null)
+      view.setLayerType(View.LAYER_TYPE_NONE, null)
+    }
   }
 
   private fun encodeBatchValue(value: Any?): String? {
@@ -1469,6 +1550,8 @@ class RuneUIManager(
     private const val SECURE_TEXT_INPUT_TYPE = "secure-text-input"
     private const val SCROLL_VIEW_TYPE = "scroll-view"
     private const val BUTTON_TYPE = "button"
+    private const val DEFAULT_PERSPECTIVE = 500f
+    private const val PERSPECTIVE_SCALE = 3200f / DEFAULT_PERSPECTIVE
     private var testIdWarningLogged = false
     private val TEXT_INPUT_MEASURE_PROPS = setOf(
       "style",

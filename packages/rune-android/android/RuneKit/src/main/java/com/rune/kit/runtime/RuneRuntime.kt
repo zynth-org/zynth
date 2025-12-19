@@ -538,8 +538,26 @@ class RuneRuntime(
         scaleX: Float,
         scaleY: Float,
         rotate: Float,
+        rotateX: Float,
+        rotateY: Float,
+        skewX: Float,
+        skewY: Float,
+        perspective: Float,
       ) {
-        manager.applyAnimatedStyle(nodeId, opacity, translateX, translateY, scaleX, scaleY, rotate)
+        manager.applyAnimatedStyle(
+          nodeId,
+          opacity,
+          translateX,
+          translateY,
+          scaleX,
+          scaleY,
+          rotate,
+          rotateX,
+          rotateY,
+          skewX,
+          skewY,
+          perspective,
+        )
       }
     }
 

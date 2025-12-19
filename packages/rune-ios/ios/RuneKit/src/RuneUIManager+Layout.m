@@ -51,6 +51,165 @@ static BOOL RuneLayoutTransitionIsLinear(NSDictionary *config) {
   return [type isEqualToString:@"linear"];
 }
 
+static BOOL RuneOriginTokenIsHorizontal(NSString *token) {
+  return [token isEqualToString:@"left"] || [token isEqualToString:@"right"];
+}
+
+static BOOL RuneOriginTokenIsVertical(NSString *token) {
+  return [token isEqualToString:@"top"] || [token isEqualToString:@"bottom"];
+}
+
+static BOOL RuneParseOriginToken(NSString *token, BOOL isX, CGFloat *outValue, BOOL *outIsPercent) {
+  if (!token) return NO;
+  NSString *value = token.lowercaseString;
+  if ([value isEqualToString:@"center"]) {
+    *outValue = 0.5;
+    *outIsPercent = YES;
+    return YES;
+  }
+  if (isX) {
+    if ([value isEqualToString:@"left"]) {
+      *outValue = 0.0;
+      *outIsPercent = YES;
+      return YES;
+    }
+    if ([value isEqualToString:@"right"]) {
+      *outValue = 1.0;
+      *outIsPercent = YES;
+      return YES;
+    }
+  } else {
+    if ([value isEqualToString:@"top"]) {
+      *outValue = 0.0;
+      *outIsPercent = YES;
+      return YES;
+    }
+    if ([value isEqualToString:@"bottom"]) {
+      *outValue = 1.0;
+      *outIsPercent = YES;
+      return YES;
+    }
+  }
+  if ([value hasSuffix:@"%"]) {
+    NSString *raw = [value substringToIndex:value.length - 1];
+    *outValue = raw.doubleValue / 100.0;
+    *outIsPercent = YES;
+    return YES;
+  }
+  if ([value hasSuffix:@"px"]) {
+    NSString *raw = [value substringToIndex:value.length - 2];
+    *outValue = raw.doubleValue;
+    *outIsPercent = NO;
+    return YES;
+  }
+  *outValue = value.doubleValue;
+  *outIsPercent = NO;
+  return YES;
+}
+
+static CGPoint RuneResolveTransformOriginPoint(id origin, CGSize size) {
+  CGFloat defaultX = size.width * 0.5;
+  CGFloat defaultY = size.height * 0.5;
+  if (!origin || origin == (id)kCFNull) {
+    return CGPointMake(defaultX, defaultY);
+  }
+
+  NSString *originString = nil;
+  NSArray *originArray = nil;
+  if ([origin isKindOfClass:[NSString class]]) {
+    originString = (NSString *)origin;
+  } else if ([origin isKindOfClass:[NSArray class]]) {
+    originArray = (NSArray *)origin;
+  }
+
+  NSString *xToken = nil;
+  NSString *yToken = nil;
+  id xRaw = nil;
+  id yRaw = nil;
+
+  if (originArray.count > 0) {
+    xRaw = originArray.count > 0 ? originArray[0] : nil;
+    yRaw = originArray.count > 1 ? originArray[1] : nil;
+  } else if (originString.length > 0) {
+    NSArray<NSString *> *parts = [originString componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+    NSMutableArray<NSString *> *tokens = [NSMutableArray array];
+    for (NSString *part in parts) {
+      if (part.length > 0) [tokens addObject:part];
+    }
+    if (tokens.count == 1) {
+      NSString *token = tokens.firstObject.lowercaseString;
+      if (RuneOriginTokenIsVertical(token)) {
+        xToken = @"center";
+        yToken = token;
+      } else {
+        xToken = token;
+        yToken = @"center";
+      }
+    } else if (tokens.count > 1) {
+      NSString *first = tokens[0].lowercaseString;
+      NSString *second = tokens[1].lowercaseString;
+      if (RuneOriginTokenIsVertical(first) && RuneOriginTokenIsHorizontal(second)) {
+        xToken = second;
+        yToken = first;
+      } else {
+        xToken = first;
+        yToken = second;
+      }
+    }
+  }
+
+  CGFloat xValue = 0.5;
+  CGFloat yValue = 0.5;
+  BOOL xIsPercent = YES;
+  BOOL yIsPercent = YES;
+
+  if (xRaw) {
+    if ([xRaw isKindOfClass:[NSNumber class]]) {
+      xValue = [(NSNumber *)xRaw doubleValue];
+      xIsPercent = NO;
+    } else if ([xRaw isKindOfClass:[NSString class]]) {
+      RuneParseOriginToken((NSString *)xRaw, YES, &xValue, &xIsPercent);
+    }
+  } else if (xToken) {
+    RuneParseOriginToken(xToken, YES, &xValue, &xIsPercent);
+  }
+
+  if (yRaw) {
+    if ([yRaw isKindOfClass:[NSNumber class]]) {
+      yValue = [(NSNumber *)yRaw doubleValue];
+      yIsPercent = NO;
+    } else if ([yRaw isKindOfClass:[NSString class]]) {
+      RuneParseOriginToken((NSString *)yRaw, NO, &yValue, &yIsPercent);
+    }
+  } else if (yToken) {
+    RuneParseOriginToken(yToken, NO, &yValue, &yIsPercent);
+  }
+
+  CGFloat resolvedX = xIsPercent ? xValue * size.width : xValue;
+  CGFloat resolvedY = yIsPercent ? yValue * size.height : yValue;
+  return CGPointMake(resolvedX, resolvedY);
+}
+
+static void RuneApplyTransformOrigin(UIView *view, id origin) {
+  CGSize size = view.bounds.size;
+  if (size.width <= 0 || size.height <= 0) return;
+  CGPoint point = RuneResolveTransformOriginPoint(origin, size);
+  CGFloat anchorX = size.width > 0 ? point.x / size.width : 0.5;
+  CGFloat anchorY = size.height > 0 ? point.y / size.height : 0.5;
+  anchorX = MAX(0.0, MIN(1.0, anchorX));
+  anchorY = MAX(0.0, MIN(1.0, anchorY));
+
+  CGPoint currentAnchor = view.layer.anchorPoint;
+  if (fabs(currentAnchor.x - anchorX) < 0.0001 && fabs(currentAnchor.y - anchorY) < 0.0001) {
+    return;
+  }
+  CGPoint position = view.layer.position;
+  position.x += (anchorX - currentAnchor.x) * size.width;
+  position.y += (anchorY - currentAnchor.y) * size.height;
+  view.layer.anchorPoint = CGPointMake(anchorX, anchorY);
+  view.layer.position = position;
+}
+
 @implementation SNUIManager (RuneLayout)
 
 - (void)rune_startDisplayLinkIfNeeded {
@@ -154,13 +313,16 @@ static BOOL RuneLayoutTransitionIsLinear(NSDictionary *config) {
         }
 
         // Using center/bounds instead of frame to support transform
-        CGPoint center = CGPointMake(x + w / 2.0, y + h / 2.0);
+        CGPoint anchor = obj.view.layer.anchorPoint;
+        CGPoint center = CGPointMake(x + w * anchor.x, y + h * anchor.y);
         CGRect bounds = CGRectMake(0, 0, w, h);
 
         if (!CGPointEqualToPoint(obj.view.center, center) || !CGRectEqualToRect(obj.view.bounds, bounds)) {
           obj.view.center = center;
           obj.view.bounds = bounds;
         }
+
+        RuneApplyTransformOrigin(obj.view, obj.transformOrigin);
 
         NSDictionary *layoutTransition = obj.layoutTransition;
         if (layoutTransition && RuneLayoutTransitionIsLinear(layoutTransition)) {

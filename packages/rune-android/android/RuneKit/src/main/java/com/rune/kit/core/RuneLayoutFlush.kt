@@ -479,6 +479,8 @@ internal class RuneLayoutFlush(
             node.label?.layout(0, 0, width, height)
           }
 
+          TransformOriginApplier.apply(node.view, node.transformOrigin, width, height)
+
           if (frameChanged) {
             maybeStartLayoutTransition(node, previous, appliedFrame, width, height)
           }

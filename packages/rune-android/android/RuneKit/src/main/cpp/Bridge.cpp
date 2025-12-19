@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cmath>
 #include <algorithm>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -163,6 +164,11 @@ struct RuneStyleMapper {
   RuneMappedValue scaleX;
   RuneMappedValue scaleY;
   RuneMappedValue rotate;
+  RuneMappedValue rotateX;
+  RuneMappedValue rotateY;
+  RuneMappedValue skewX;
+  RuneMappedValue skewY;
+  RuneMappedValue perspective;
 };
 
 struct RuntimeState {
@@ -1507,7 +1513,8 @@ static void applyStyleMapper(
   bool hasTransform =
       mapper.translateX.hasValue || mapper.translateY.hasValue ||
       mapper.scale.hasValue || mapper.scaleX.hasValue || mapper.scaleY.hasValue ||
-      mapper.rotate.hasValue;
+      mapper.rotate.hasValue || mapper.rotateX.hasValue || mapper.rotateY.hasValue ||
+      mapper.skewX.hasValue || mapper.skewY.hasValue || mapper.perspective.hasValue;
 
   if (!hasOpacity && !hasTransform) {
     BRIDGE_LOG(ANDROID_LOG_WARN, "animate: applyStyleMapper no mapped props");
@@ -1535,6 +1542,13 @@ static void applyStyleMapper(
   }
   
   float rotate = mapper.rotate.hasValue ? static_cast<float>(resolveMappedValue(mapper.rotate, sharedValues, 0.0)) : 0.0f;
+  float rotateX = mapper.rotateX.hasValue ? static_cast<float>(resolveMappedValue(mapper.rotateX, sharedValues, 0.0)) : 0.0f;
+  float rotateY = mapper.rotateY.hasValue ? static_cast<float>(resolveMappedValue(mapper.rotateY, sharedValues, 0.0)) : 0.0f;
+  float skewX = mapper.skewX.hasValue ? static_cast<float>(resolveMappedValue(mapper.skewX, sharedValues, 0.0)) : 0.0f;
+  float skewY = mapper.skewY.hasValue ? static_cast<float>(resolveMappedValue(mapper.skewY, sharedValues, 0.0)) : 0.0f;
+  float perspective = mapper.perspective.hasValue
+      ? static_cast<float>(resolveMappedValue(mapper.perspective, sharedValues, 0.0))
+      : std::numeric_limits<float>::quiet_NaN();
 
   JniEnv env;
   if (!env.valid()) {
@@ -1552,7 +1566,12 @@ static void applyStyleMapper(
       translateY,
       scaleX,
       scaleY,
-      rotate
+      rotate,
+      rotateX,
+      rotateY,
+      skewX,
+      skewY,
+      perspective
   );
   logJniException(env.get(), "UIShim.applyAnimatedStyle");
 }
@@ -1897,6 +1916,11 @@ void installAnimateBindings(std::shared_ptr<RuntimeState> state) {
                 else if (key == "scaleX") parseMappedValue(runtime, propValue, mapper.scaleX);
                 else if (key == "scaleY") parseMappedValue(runtime, propValue, mapper.scaleY);
                 else if (key == "rotate" || key == "rotateZ") parseMappedValue(runtime, propValue, mapper.rotate, true);
+                else if (key == "rotateX") parseMappedValue(runtime, propValue, mapper.rotateX, true);
+                else if (key == "rotateY") parseMappedValue(runtime, propValue, mapper.rotateY, true);
+                else if (key == "skewX") parseMappedValue(runtime, propValue, mapper.skewX, true);
+                else if (key == "skewY") parseMappedValue(runtime, propValue, mapper.skewY, true);
+                else if (key == "perspective") parseMappedValue(runtime, propValue, mapper.perspective);
               }
             }
           }
@@ -1949,6 +1973,11 @@ void installAnimateBindings(std::shared_ptr<RuntimeState> state) {
         mapper.scaleX = RuneMappedValue();
         mapper.scaleY = RuneMappedValue();
         mapper.rotate = RuneMappedValue();
+        mapper.rotateX = RuneMappedValue();
+        mapper.rotateY = RuneMappedValue();
+        mapper.skewX = RuneMappedValue();
+        mapper.skewY = RuneMappedValue();
+        mapper.perspective = RuneMappedValue();
 
         if (styleObj.hasProperty(runtime, "opacity")) {
           parseMappedValue(runtime, styleObj.getProperty(runtime, "opacity"), mapper.opacity);
@@ -1975,6 +2004,11 @@ void installAnimateBindings(std::shared_ptr<RuntimeState> state) {
                 else if (key == "scaleX") parseMappedValue(runtime, propValue, mapper.scaleX);
                 else if (key == "scaleY") parseMappedValue(runtime, propValue, mapper.scaleY);
                 else if (key == "rotate" || key == "rotateZ") parseMappedValue(runtime, propValue, mapper.rotate, true);
+                else if (key == "rotateX") parseMappedValue(runtime, propValue, mapper.rotateX, true);
+                else if (key == "rotateY") parseMappedValue(runtime, propValue, mapper.rotateY, true);
+                else if (key == "skewX") parseMappedValue(runtime, propValue, mapper.skewX, true);
+                else if (key == "skewY") parseMappedValue(runtime, propValue, mapper.skewY, true);
+                else if (key == "perspective") parseMappedValue(runtime, propValue, mapper.perspective);
               }
             }
           }
@@ -2356,7 +2390,7 @@ void installBindings(
   state->uiMethods.dequeueEventPayload = env->GetMethodID(state->uiClass, "dequeueEventPayload", "(ILjava/lang/String;)Ljava/lang/String;");
   state->uiMethods.setSurface = env->GetMethodID(state->uiClass, "setSurface", "(I)V");
   state->uiMethods.applyBatch = env->GetMethodID(state->uiClass, "applyBatch", "(Ljava/lang/String;)V");
-  state->uiMethods.applyAnimatedStyle = env->GetMethodID(state->uiClass, "applyAnimatedStyle", "(IFFFFFF)V");
+  state->uiMethods.applyAnimatedStyle = env->GetMethodID(state->uiClass, "applyAnimatedStyle", "(IFFFFFFFFFFF)V");
 
   state->moduleMethods.getConstants = env->GetMethodID(state->modulesClass, "getConstants", "()Ljava/lang/String;");
   state->moduleMethods.invoke = env->GetMethodID(state->modulesClass, "invoke", "(Ljava/lang/String;Ljava/lang/String;[Ljava/lang/Object;I)V");

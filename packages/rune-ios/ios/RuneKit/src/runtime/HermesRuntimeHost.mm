@@ -7,6 +7,7 @@
 #import <UIKit/UIKit.h>
 #import <objc/message.h>
 #import <RuneKit/RuneComponentAPI.h>
+#import <math.h>
 
 #if __has_include(<RuneKit/RuneKit-Swift.h>)
 #import <RuneKit/RuneKit-Swift.h>
@@ -165,12 +166,22 @@ struct RuneStyleMapper {
   RuneMappedValue scaleX;
   RuneMappedValue scaleY;
   RuneMappedValue rotate;
+  RuneMappedValue rotateX;
+  RuneMappedValue rotateY;
+  RuneMappedValue skewX;
+  RuneMappedValue skewY;
+  RuneMappedValue perspective;
   double baseOpacity = 1.0;
   double baseTranslateX = 0.0;
   double baseTranslateY = 0.0;
   double baseScaleX = 1.0;
   double baseScaleY = 1.0;
   double baseRotate = 0.0;
+  double baseRotateX = 0.0;
+  double baseRotateY = 0.0;
+  double baseSkewX = 0.0;
+  double baseSkewY = 0.0;
+  double basePerspective = 0.0;
 };
 
 // GLOBAL STATICS REMOVED - Moved to instance variables
@@ -1227,14 +1238,40 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
       ? [self resolveMappedValue:mapper.scaleY fallback:baseScaleY]
       : (mapper.scale.hasValue ? scale : baseScaleY);
   double rotate = [self resolveMappedValue:mapper.rotate fallback:mapper.baseRotate];
+  double rotateX = [self resolveMappedValue:mapper.rotateX fallback:mapper.baseRotateX];
+  double rotateY = [self resolveMappedValue:mapper.rotateY fallback:mapper.baseRotateY];
+  double skewX = [self resolveMappedValue:mapper.skewX fallback:mapper.baseSkewX];
+  double skewY = [self resolveMappedValue:mapper.skewY fallback:mapper.baseSkewY];
+  double perspective = [self resolveMappedValue:mapper.perspective fallback:mapper.basePerspective];
 
   UIView *view = node.view;
   view.alpha = (CGFloat)opacity;
-  CGAffineTransform transform = CGAffineTransformIdentity;
-  transform = CGAffineTransformTranslate(transform, (CGFloat)translateX, (CGFloat)translateY);
-  transform = CGAffineTransformRotate(transform, (CGFloat)rotate);
-  transform = CGAffineTransformScale(transform, (CGFloat)scaleX, (CGFloat)scaleY);
-  view.transform = transform;
+  CATransform3D transform = CATransform3DIdentity;
+  if (perspective != 0.0) {
+    transform.m34 = -1.0 / perspective;
+  } else if (rotateX != 0.0 || rotateY != 0.0) {
+    // Apply default perspective to match Android's default camera distance
+    // if 3D rotation is used without explicit perspective.
+    transform.m34 = -1.0 / 500.0;
+  }
+  transform = CATransform3DTranslate(transform, (CGFloat)translateX, (CGFloat)translateY, 0.0);
+  if (rotate != 0.0) {
+    transform = CATransform3DRotate(transform, (CGFloat)rotate, 0.0, 0.0, 1.0);
+  }
+  if (rotateY != 0.0) {
+    transform = CATransform3DRotate(transform, (CGFloat)-rotateY, 0.0, 1.0, 0.0);
+  }
+  if (rotateX != 0.0) {
+    transform = CATransform3DRotate(transform, (CGFloat)-rotateX, 1.0, 0.0, 0.0);
+  }
+  if (skewX != 0.0 || skewY != 0.0) {
+    CATransform3D skew = CATransform3DIdentity;
+    skew.m21 = tan(skewX);
+    skew.m12 = tan(skewY);
+    transform = CATransform3DConcat(transform, skew);
+  }
+  transform = CATransform3DScale(transform, (CGFloat)scaleX, (CGFloat)scaleY, 1.0);
+  view.layer.transform = transform;
 }
 
 - (void)stepNativeAnimations:(CFTimeInterval)timestamp {
@@ -1517,6 +1554,11 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
                 else if (key == "scaleX") RuneParseMappedValue(rt, propValue, mapper.scaleX);
                 else if (key == "scaleY") RuneParseMappedValue(rt, propValue, mapper.scaleY);
                 else if (key == "rotate" || key == "rotateZ") RuneParseMappedValue(rt, propValue, mapper.rotate, true);
+                else if (key == "rotateX") RuneParseMappedValue(rt, propValue, mapper.rotateX, true);
+                else if (key == "rotateY") RuneParseMappedValue(rt, propValue, mapper.rotateY, true);
+                else if (key == "skewX") RuneParseMappedValue(rt, propValue, mapper.skewX, true);
+                else if (key == "skewY") RuneParseMappedValue(rt, propValue, mapper.skewY, true);
+                else if (key == "perspective") RuneParseMappedValue(rt, propValue, mapper.perspective);
               }
             }
           }
@@ -1524,23 +1566,23 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
 
         __block RuneStyleMapper mapperRef = mapper;
         SNRunOnMain(^{
-          SNNode *node = [host.manager rune_nodeForId:@(nodeId)];
-          if (!node || !node.view) return;
-          CGAffineTransform transform = node.view.transform;
-          double translateX = transform.tx;
-          double translateY = transform.ty;
-          double scaleX = sqrt(transform.a * transform.a + transform.c * transform.c);
-          double scaleY = sqrt(transform.b * transform.b + transform.d * transform.d);
-          double rotation = atan2(transform.b, transform.a);
+        SNNode *node = [host.manager rune_nodeForId:@(nodeId)];
+        if (!node || !node.view) return;
+        CATransform3D transform = node.view.layer.transform;
+        double translateX = transform.m41;
+        double translateY = transform.m42;
+        double scaleX = sqrt(transform.m11 * transform.m11 + transform.m12 * transform.m12 + transform.m13 * transform.m13);
+        double scaleY = sqrt(transform.m21 * transform.m21 + transform.m22 * transform.m22 + transform.m23 * transform.m23);
+        double rotation = atan2(transform.m12, transform.m11);
+        double perspective = (transform.m34 != 0.0) ? (-1.0 / transform.m34) : 0.0;
 
-          mapperRef.baseOpacity = node.view.alpha;
-          mapperRef.baseTranslateX = translateX;
-          mapperRef.baseTranslateY = translateY;
-          mapperRef.baseScaleX = scaleX;
-          mapperRef.baseScaleY = scaleY;
-          mapperRef.baseRotate = rotation;
-
-          std::lock_guard<std::mutex> lock(host->_animateMutex);
+                            mapperRef.baseOpacity = node.view.alpha;
+                            mapperRef.baseTranslateX = translateX;
+                            mapperRef.baseTranslateY = translateY;
+                            mapperRef.baseScaleX = scaleX;
+                            mapperRef.baseScaleY = scaleY;
+                            mapperRef.baseRotate = rotation;
+                            mapperRef.basePerspective = perspective;          std::lock_guard<std::mutex> lock(host->_animateMutex);
           host->_styleMappers[mapperRef.id] = mapperRef;
           [host applyStyleMapperLocked:mapperRef];
         });
@@ -1574,6 +1616,11 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
         updated.scaleX = RuneMappedValue();
         updated.scaleY = RuneMappedValue();
         updated.rotate = RuneMappedValue();
+        updated.rotateX = RuneMappedValue();
+        updated.rotateY = RuneMappedValue();
+        updated.skewX = RuneMappedValue();
+        updated.skewY = RuneMappedValue();
+        updated.perspective = RuneMappedValue();
 
         if (styleObj.hasProperty(rt, "opacity")) {
           RuneParseMappedValue(rt, styleObj.getProperty(rt, "opacity"), updated.opacity);
@@ -1600,6 +1647,11 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
                 else if (key == "scaleX") RuneParseMappedValue(rt, propValue, updated.scaleX);
                 else if (key == "scaleY") RuneParseMappedValue(rt, propValue, updated.scaleY);
                 else if (key == "rotate" || key == "rotateZ") RuneParseMappedValue(rt, propValue, updated.rotate, true);
+                else if (key == "rotateX") RuneParseMappedValue(rt, propValue, updated.rotateX, true);
+                else if (key == "rotateY") RuneParseMappedValue(rt, propValue, updated.rotateY, true);
+                else if (key == "skewX") RuneParseMappedValue(rt, propValue, updated.skewX, true);
+                else if (key == "skewY") RuneParseMappedValue(rt, propValue, updated.skewY, true);
+                else if (key == "perspective") RuneParseMappedValue(rt, propValue, updated.perspective);
               }
             }
           }

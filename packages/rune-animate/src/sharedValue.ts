@@ -349,11 +349,18 @@ function resolveTokenValue(value: unknown): { value: unknown; token?: SharedValu
   return { value };
 }
 
-function isRotateKey(key: string): boolean {
-  return key === "rotate" || key === "rotateZ";
+function isAngleKey(key: string): boolean {
+  return (
+    key === "rotate" ||
+    key === "rotateZ" ||
+    key === "rotateX" ||
+    key === "rotateY" ||
+    key === "skewX" ||
+    key === "skewY"
+  );
 }
 
-function normalizeRotateValue(value: unknown): unknown {
+function normalizeAngleValue(value: unknown): unknown {
   if (typeof value === "number" && !Number.isNaN(value)) {
     return `${value}deg`;
   }
@@ -390,16 +397,16 @@ function buildNativeStyleMapping(style: Style): {
 
       for (const [key, rawValue] of Object.entries(entry)) {
         const { value, token } = resolveTokenValue(rawValue);
-        const resolvedValue = isRotateKey(key)
-          ? normalizeRotateValue(value)
+        const resolvedValue = isAngleKey(key)
+          ? normalizeAngleValue(value)
           : value;
         nextResolved[key] = resolvedValue;
         if (token) {
           nextMapped[key] = { [SHARED_VALUE_MARKER]: token[SHARED_VALUE_MARKER] };
           hasMapping = true;
         } else {
-          const mappedValue = isRotateKey(key)
-            ? normalizeRotateValue(value)
+          const mappedValue = isAngleKey(key)
+            ? normalizeAngleValue(value)
             : value;
           nextMapped[key] = mappedValue as NativeStyleMapperConfig["opacity"];
         }

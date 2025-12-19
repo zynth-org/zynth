@@ -12,6 +12,9 @@ import org.json.JSONObject
 import kotlin.math.max
 import kotlin.math.min
 
+private const val DEFAULT_PERSPECTIVE = 500f
+private const val PERSPECTIVE_SCALE = 3200f / DEFAULT_PERSPECTIVE
+
 private enum class Easing {
     LINEAR,
     EASE,
@@ -68,6 +71,11 @@ private data class AnimatedStyle(
     val scaleX: Float? = null,
     val scaleY: Float? = null,
     val rotate: Float? = null,
+    val rotateX: Float? = null,
+    val rotateY: Float? = null,
+    val skewX: Float? = null,
+    val skewY: Float? = null,
+    val perspective: Float? = null,
 )
 
 private data class ResolvedStyle(
@@ -77,6 +85,12 @@ private data class ResolvedStyle(
     val scaleX: Float,
     val scaleY: Float,
     val rotate: Float,
+    val rotateX: Float,
+    val rotateY: Float,
+    val skewX: Float,
+    val skewY: Float,
+    val perspective: Float,
+    val hasPerspective: Boolean,
 )
 
 private data class ResolvedKeyframe(
@@ -271,6 +285,50 @@ class RuneAnimateModule(
         view.scaleX = style.scaleX
         view.scaleY = style.scaleY
         view.rotation = style.rotate
+        view.rotationX = -style.rotateX
+        view.rotationY = -style.rotateY
+        val has3dRotation = kotlin.math.abs(style.rotateX) > 0.001f || kotlin.math.abs(style.rotateY) > 0.001f
+        if (style.hasPerspective && style.perspective > 0f) {
+            view.cameraDistance = style.perspective * density * PERSPECTIVE_SCALE
+        } else if (has3dRotation) {
+            // Align default 3D perspective with iOS/CSS when not explicitly provided.
+            view.cameraDistance = DEFAULT_PERSPECTIVE * density * PERSPECTIVE_SCALE
+        }
+
+        val hasSkew = kotlin.math.abs(style.skewX) > 0.001f || kotlin.math.abs(style.skewY) > 0.001f
+        if (hasSkew) {
+            val matrix = android.graphics.Matrix()
+            val radX = Math.toRadians(style.skewX.toDouble()).toFloat()
+            val radY = Math.toRadians(style.skewY.toDouble()).toFloat()
+
+            // Pivot logic to match View rotation/scale behavior
+            val px = view.pivotX
+            val py = view.pivotY
+            matrix.setTranslate(-px, -py)
+
+            val skew = android.graphics.Matrix()
+            skew.setValues(
+                floatArrayOf(
+                    1f,
+                    Math.tan(radX.toDouble()).toFloat(),
+                    0f,
+                    Math.tan(radY.toDouble()).toFloat(),
+                    1f,
+                    0f,
+                    0f,
+                    0f,
+                    1f,
+                )
+            )
+            matrix.postConcat(skew)
+            matrix.postTranslate(px, py)
+
+            view.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+            view.setAnimationMatrix(matrix)
+        } else {
+            view.setAnimationMatrix(null)
+            view.setLayerType(View.LAYER_TYPE_NONE, null)
+        }
     }
 
     private fun interpolate(from: ResolvedStyle, to: ResolvedStyle, progress: Float): ResolvedStyle {
@@ -282,6 +340,12 @@ class RuneAnimateModule(
             scaleX = from.scaleX + (to.scaleX - from.scaleX) * t,
             scaleY = from.scaleY + (to.scaleY - from.scaleY) * t,
             rotate = from.rotate + (to.rotate - from.rotate) * t,
+            rotateX = from.rotateX + (to.rotateX - from.rotateX) * t,
+            rotateY = from.rotateY + (to.rotateY - from.rotateY) * t,
+            skewX = from.skewX + (to.skewX - from.skewX) * t,
+            skewY = from.skewY + (to.skewY - from.skewY) * t,
+            perspective = from.perspective + (to.perspective - from.perspective) * t,
+            hasPerspective = from.hasPerspective || to.hasPerspective,
         )
     }
 
@@ -318,6 +382,16 @@ class RuneAnimateModule(
         val scaleX = resolveValue(from?.scaleX ?: from?.scale, to?.scaleX ?: to?.scale, base.scaleX)
         val scaleY = resolveValue(from?.scaleY ?: from?.scale, to?.scaleY ?: to?.scale, base.scaleY)
         val rotate = resolveValue(from?.rotate, to?.rotate, base.rotation)
+        val rotateX = resolveValue(from?.rotateX, to?.rotateX, -base.rotationX)
+        val rotateY = resolveValue(from?.rotateY, to?.rotateY, -base.rotationY)
+        val skewX = resolveValue(from?.skewX, to?.skewX, 0f)
+        val skewY = resolveValue(from?.skewY, to?.skewY, 0f)
+        val perspective = resolveValue(
+            from?.perspective,
+            to?.perspective,
+            base.perspective / (density * PERSPECTIVE_SCALE),
+        )
+        val hasPerspective = from?.perspective != null || to?.perspective != null
 
         return ResolvedStyle(
             opacity = opacity,
@@ -326,6 +400,12 @@ class RuneAnimateModule(
             scaleX = scaleX,
             scaleY = scaleY,
             rotate = rotate,
+            rotateX = rotateX,
+            rotateY = rotateY,
+            skewX = skewX,
+            skewY = skewY,
+            perspective = perspective,
+            hasPerspective = hasPerspective,
         )
     }
 
@@ -340,6 +420,9 @@ class RuneAnimateModule(
             scaleX = view.scaleX,
             scaleY = view.scaleY,
             rotation = view.rotation,
+            rotationX = view.rotationX,
+            rotationY = view.rotationY,
+            perspective = view.cameraDistance,
         )
     }
 
@@ -349,6 +432,9 @@ class RuneAnimateModule(
         val scaleX: Float,
         val scaleY: Float,
         val rotation: Float,
+        val rotationX: Float,
+        val rotationY: Float,
+        val perspective: Float,
     )
 
     private fun parseStyle(value: Any?): AnimatedStyle? {
@@ -365,6 +451,11 @@ class RuneAnimateModule(
         var scaleX: Float? = null
         var scaleY: Float? = null
         var rotate: Float? = null
+        var rotateX: Float? = null
+        var rotateY: Float? = null
+        var skewX: Float? = null
+        var skewY: Float? = null
+        var perspective: Float? = null
 
         val transformValue = map["transform"]
         val transforms = when (transformValue) {
@@ -389,6 +480,11 @@ class RuneAnimateModule(
                     "scaleX" -> scaleX = parseNumber(rawValue)
                     "scaleY" -> scaleY = parseNumber(rawValue)
                     "rotate", "rotateZ" -> rotate = parseAngle(rawValue)
+                    "rotateX" -> rotateX = parseAngle(rawValue)
+                    "rotateY" -> rotateY = parseAngle(rawValue)
+                    "skewX" -> skewX = parseAngle(rawValue)
+                    "skewY" -> skewY = parseAngle(rawValue)
+                    "perspective" -> perspective = parseNumber(rawValue)
                 }
             }
         }
@@ -401,6 +497,11 @@ class RuneAnimateModule(
             scaleX = scaleX,
             scaleY = scaleY,
             rotate = rotate,
+            rotateX = rotateX,
+            rotateY = rotateY,
+            skewX = skewX,
+            skewY = skewY,
+            perspective = perspective,
         )
     }
 

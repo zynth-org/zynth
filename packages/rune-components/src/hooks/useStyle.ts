@@ -54,7 +54,7 @@ export const useStyle = (
 export const mergeStyles = (
   ...styles: (StyleProp | Accessor<StyleProp | undefined>)[]
 ): Accessor<Style> => {
-  return createMemo(() => {
+  const memo = createMemo(() => {
     const result: Style = {};
 
     for (const style of styles) {
@@ -81,4 +81,25 @@ export const mergeStyles = (
 
     return result;
   });
+
+  (memo as any).__runeAnimatedStyle = {
+    getMapping: () => {
+      let mergedMapping: any = null;
+      for (const style of styles) {
+        if (typeof style === "function") {
+          const animated = (style as any).__runeAnimatedStyle;
+          if (animated && animated.getMapping) {
+            const mapping = animated.getMapping();
+            if (mapping) {
+              if (!mergedMapping) mergedMapping = {};
+              Object.assign(mergedMapping, mapping);
+            }
+          }
+        }
+      }
+      return mergedMapping;
+    },
+  };
+
+  return memo;
 };

@@ -335,6 +335,7 @@ static _Atomic int sNextGuestSurfaceId = kRuneSurfaceIdBase;
   n.parentId = -1;
   n.pointerEvents = @"auto"; // Default pointerEvents state
   n.layoutTransition = nil;
+  n.transformOrigin = nil;
   n.type = type;
   n.surfaceId = self.activeSurfaceId;
 
@@ -1110,6 +1111,7 @@ static void SNApplyEdges(NSDictionary *style,
   }
 
   id transform = style[@"transform"];
+  n.transformOrigin = style[@"transformOrigin"];
   if (transform) {
     n.view.layer.transform = [RuneTransformParser parse:transform];
   } else {

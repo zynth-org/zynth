@@ -54,6 +54,11 @@ object JSBridge {
       scaleX: Float,
       scaleY: Float,
       rotate: Float,
+      rotateX: Float,
+      rotateY: Float,
+      skewX: Float,
+      skewY: Float,
+      perspective: Float,
     )
   }
 

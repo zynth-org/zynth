@@ -10,6 +10,7 @@ import com.rune.kit.core.TransformOperation
 import com.facebook.yoga.YogaAlign
 import com.facebook.yoga.YogaFlexDirection
 import com.facebook.yoga.YogaJustify
+import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONException
 
@@ -122,6 +123,7 @@ data class Style(
   
   // Transform properties
   val transform: List<TransformOperation>? = null,
+  val transformOrigin: TransformOrigin? = null,
 ) {
   
   enum class FlexDirection {
@@ -343,6 +345,7 @@ data class Style(
           hyphenation = hyphenation,
           
           transform = RuneTransformParser.parse(json.opt("transform")),
+          transformOrigin = parseTransformOrigin(json.opt("transformOrigin")),
         )
       } catch (e: JSONException) {
         // Return empty style if parsing fails
@@ -493,7 +496,111 @@ data class Style(
           )
           else -> op
         }
-      }
+      },
+      transformOrigin = transformOrigin?.toPixels(density),
     )
   }
+}
+
+data class TransformOriginValue(val value: Float, val isPercent: Boolean) {
+  fun resolve(size: Int): Float {
+    val clamped = if (size < 0) 0 else size
+    return if (isPercent) clamped * value else value
+  }
+
+  fun toPixels(density: Float): TransformOriginValue {
+    return if (isPercent) this else TransformOriginValue(value * density, false)
+  }
+}
+
+data class TransformOrigin(
+  val x: TransformOriginValue,
+  val y: TransformOriginValue,
+) {
+  fun toPixels(density: Float): TransformOrigin {
+    return TransformOrigin(
+      x = x.toPixels(density),
+      y = y.toPixels(density),
+    )
+  }
+}
+
+private enum class OriginAxis {
+  X,
+  Y,
+}
+
+private fun parseTransformOrigin(raw: Any?): TransformOrigin? {
+  if (raw == null || raw == JSONObject.NULL) return null
+  return when (raw) {
+    is JSONArray -> {
+      val x = parseOriginValue(raw.opt(0), OriginAxis.X) ?: TransformOriginValue(0.5f, true)
+      val y = parseOriginValue(raw.opt(1), OriginAxis.Y) ?: TransformOriginValue(0.5f, true)
+      TransformOrigin(x, y)
+    }
+    is String -> parseTransformOriginString(raw)
+    else -> null
+  }
+}
+
+private fun parseTransformOriginString(raw: String): TransformOrigin? {
+  val tokens = raw.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+  if (tokens.isEmpty()) return null
+  if (tokens.size == 1) {
+    val x = parseOriginToken(tokens[0], OriginAxis.X) ?: TransformOriginValue(0.5f, true)
+    val y = TransformOriginValue(0.5f, true)
+    return TransformOrigin(x, y)
+  }
+  val first = tokens[0]
+  val second = tokens[1]
+  val xDirect = parseOriginToken(first, OriginAxis.X)
+  val yDirect = parseOriginToken(second, OriginAxis.Y)
+  if (xDirect != null && yDirect != null) {
+    return TransformOrigin(xDirect, yDirect)
+  }
+  val xSwap = parseOriginToken(second, OriginAxis.X)
+  val ySwap = parseOriginToken(first, OriginAxis.Y)
+  if (xSwap != null && ySwap != null) {
+    return TransformOrigin(xSwap, ySwap)
+  }
+  return TransformOrigin(
+    x = xDirect ?: TransformOriginValue(0.5f, true),
+    y = yDirect ?: TransformOriginValue(0.5f, true),
+  )
+}
+
+private fun parseOriginValue(raw: Any?, axis: OriginAxis): TransformOriginValue? {
+  return when (raw) {
+    is Number -> TransformOriginValue(raw.toFloat(), false)
+    is String -> parseOriginToken(raw, axis)
+    else -> null
+  }
+}
+
+private fun parseOriginToken(token: String, axis: OriginAxis): TransformOriginValue? {
+  val value = token.trim().lowercase()
+  when (value) {
+    "center" -> return TransformOriginValue(0.5f, true)
+  }
+  if (axis == OriginAxis.X) {
+    when (value) {
+      "left" -> return TransformOriginValue(0f, true)
+      "right" -> return TransformOriginValue(1f, true)
+    }
+  } else {
+    when (value) {
+      "top" -> return TransformOriginValue(0f, true)
+      "bottom" -> return TransformOriginValue(1f, true)
+    }
+  }
+  if (value.endsWith("%")) {
+    val number = value.removeSuffix("%").toFloatOrNull() ?: return null
+    return TransformOriginValue(number / 100f, true)
+  }
+  if (value.endsWith("px")) {
+    val number = value.removeSuffix("px").toFloatOrNull() ?: return null
+    return TransformOriginValue(number, false)
+  }
+  val number = value.toFloatOrNull() ?: return null
+  return TransformOriginValue(number, false)
 }

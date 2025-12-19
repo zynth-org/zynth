@@ -47,6 +47,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, copy, nullable) NSArray<RuneShadowLayer *> *latestShadowLayers;
 @property(nonatomic, strong, nullable) NSNumber *latestElevation;
 @property(nonatomic, copy, nullable) NSDictionary *layoutTransition;
+@property(nonatomic, copy, nullable) id transformOrigin;
 
 @end
 

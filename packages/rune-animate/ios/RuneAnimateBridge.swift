@@ -51,6 +51,11 @@ private struct RuneAnimatedStyle {
   var scaleX: CGFloat?
   var scaleY: CGFloat?
   var rotate: CGFloat?
+  var rotateX: CGFloat?
+  var rotateY: CGFloat?
+  var skewX: CGFloat?
+  var skewY: CGFloat?
+  var perspective: CGFloat?
 }
 
 private struct RuneResolvedStyle {
@@ -60,6 +65,11 @@ private struct RuneResolvedStyle {
   var scaleX: CGFloat
   var scaleY: CGFloat
   var rotate: CGFloat
+  var rotateX: CGFloat
+  var rotateY: CGFloat
+  var skewX: CGFloat
+  var skewY: CGFloat
+  var perspective: CGFloat
 }
 
 private struct RuneResolvedKeyframe {
@@ -255,11 +265,31 @@ final class RuneAnimateBridge: NSObject, RuneModule {
 
   private func applyStyle(_ style: RuneResolvedStyle, to view: UIView) {
     view.alpha = style.opacity
-    var transform = CGAffineTransform.identity
-    transform = transform.translatedBy(x: style.translateX, y: style.translateY)
-    transform = transform.rotated(by: style.rotate)
-    transform = transform.scaledBy(x: style.scaleX, y: style.scaleY)
-    view.transform = transform
+    var transform = CATransform3DIdentity
+    if style.perspective != 0 {
+      transform.m34 = -1.0 / style.perspective
+    } else if style.rotateX != 0 || style.rotateY != 0 {
+      // Default perspective for 3D rotations to match Android
+      transform.m34 = -1.0 / 500.0
+    }
+    transform = CATransform3DTranslate(transform, style.translateX, style.translateY, 0)
+    if style.rotate != 0 {
+      transform = CATransform3DRotate(transform, style.rotate, 0, 0, 1)
+    }
+    if style.rotateY != 0 {
+      transform = CATransform3DRotate(transform, -style.rotateY, 0, 1, 0)
+    }
+    if style.rotateX != 0 {
+      transform = CATransform3DRotate(transform, -style.rotateX, 1, 0, 0)
+    }
+    if style.skewX != 0 || style.skewY != 0 {
+      var skew = CATransform3DIdentity
+      skew.m21 = tan(style.skewX)
+      skew.m12 = tan(style.skewY)
+      transform = CATransform3DConcat(transform, skew)
+    }
+    transform = CATransform3DScale(transform, style.scaleX, style.scaleY, 1)
+    view.layer.transform = transform
   }
 
   private func interpolate(
@@ -274,7 +304,12 @@ final class RuneAnimateBridge: NSObject, RuneModule {
       translateY: from.translateY + (to.translateY - from.translateY) * t,
       scaleX: from.scaleX + (to.scaleX - from.scaleX) * t,
       scaleY: from.scaleY + (to.scaleY - from.scaleY) * t,
-      rotate: from.rotate + (to.rotate - from.rotate) * t
+      rotate: from.rotate + (to.rotate - from.rotate) * t,
+      rotateX: from.rotateX + (to.rotateX - from.rotateX) * t,
+      rotateY: from.rotateY + (to.rotateY - from.rotateY) * t,
+      skewX: from.skewX + (to.skewX - from.skewX) * t,
+      skewY: from.skewY + (to.skewY - from.skewY) * t,
+      perspective: from.perspective + (to.perspective - from.perspective) * t
     )
   }
 
@@ -284,7 +319,19 @@ final class RuneAnimateBridge: NSObject, RuneModule {
   ) -> RuneResolvedStyle {
     let clamped = max(0.0, min(1.0, progress))
     guard let first = frames.first, let last = frames.last else {
-      return RuneResolvedStyle(opacity: 1, translateX: 0, translateY: 0, scaleX: 1, scaleY: 1, rotate: 0)
+      return RuneResolvedStyle(
+        opacity: 1,
+        translateX: 0,
+        translateY: 0,
+        scaleX: 1,
+        scaleY: 1,
+        rotate: 0,
+        rotateX: 0,
+        rotateY: 0,
+        skewX: 0,
+        skewY: 0,
+        perspective: 0
+      )
     }
     if clamped <= first.at {
       return first.style
@@ -311,13 +358,18 @@ final class RuneAnimateBridge: NSObject, RuneModule {
     to: RuneAnimatedStyle?,
     view: UIView
   ) -> RuneResolvedStyle {
-    let base = decomposeTransform(view.transform)
+    let base = decomposeTransform(view.layer.transform)
     let opacity = resolveValue(from?.opacity, to?.opacity, view.alpha)
     let translateX = resolveValue(from?.translateX, to?.translateX, base.translateX)
     let translateY = resolveValue(from?.translateY, to?.translateY, base.translateY)
     let scaleX = resolveValue(from?.scaleX ?? from?.scale, to?.scaleX ?? to?.scale, base.scaleX)
     let scaleY = resolveValue(from?.scaleY ?? from?.scale, to?.scaleY ?? to?.scale, base.scaleY)
     let rotate = resolveValue(from?.rotate, to?.rotate, base.rotation)
+    let rotateX = resolveValue(from?.rotateX, to?.rotateX, 0)
+    let rotateY = resolveValue(from?.rotateY, to?.rotateY, 0)
+    let skewX = resolveValue(from?.skewX, to?.skewX, 0)
+    let skewY = resolveValue(from?.skewY, to?.skewY, 0)
+    let perspective = resolveValue(from?.perspective, to?.perspective, base.perspective)
 
     return RuneResolvedStyle(
       opacity: opacity,
@@ -325,7 +377,12 @@ final class RuneAnimateBridge: NSObject, RuneModule {
       translateY: translateY,
       scaleX: scaleX,
       scaleY: scaleY,
-      rotate: rotate
+      rotate: rotate,
+      rotateX: rotateX,
+      rotateY: rotateY,
+      skewX: skewX,
+      skewY: skewY,
+      perspective: perspective
     )
   }
 
@@ -333,13 +390,16 @@ final class RuneAnimateBridge: NSObject, RuneModule {
     return primary ?? secondary ?? fallback
   }
 
-  private func decomposeTransform(_ transform: CGAffineTransform) -> (translateX: CGFloat, translateY: CGFloat, scaleX: CGFloat, scaleY: CGFloat, rotation: CGFloat) {
-    let tx = transform.tx
-    let ty = transform.ty
-    let scaleX = sqrt(transform.a * transform.a + transform.c * transform.c)
-    let scaleY = sqrt(transform.b * transform.b + transform.d * transform.d)
-    let rotation = atan2(transform.b, transform.a)
-    return (tx, ty, scaleX, scaleY, rotation)
+  private func decomposeTransform(
+    _ transform: CATransform3D
+  ) -> (translateX: CGFloat, translateY: CGFloat, scaleX: CGFloat, scaleY: CGFloat, rotation: CGFloat, perspective: CGFloat) {
+    let tx = transform.m41
+    let ty = transform.m42
+    let scaleX = sqrt(transform.m11 * transform.m11 + transform.m12 * transform.m12 + transform.m13 * transform.m13)
+    let scaleY = sqrt(transform.m21 * transform.m21 + transform.m22 * transform.m22 + transform.m23 * transform.m23)
+    let rotation = atan2(transform.m12, transform.m11)
+    let perspective = transform.m34 != 0 ? -1.0 / transform.m34 : 0
+    return (tx, ty, scaleX, scaleY, rotation, perspective)
   }
 
   private func parseStyle(_ value: Any?) -> RuneAnimatedStyle? {
@@ -369,6 +429,16 @@ final class RuneAnimateBridge: NSObject, RuneModule {
             if let num = getDouble(rawValue) { style.scaleY = CGFloat(num) }
           case "rotate", "rotateZ":
             if let radians = parseAngle(rawValue) { style.rotate = radians }
+          case "rotateX":
+            if let radians = parseAngle(rawValue) { style.rotateX = radians }
+          case "rotateY":
+            if let radians = parseAngle(rawValue) { style.rotateY = radians }
+          case "skewX":
+            if let radians = parseAngle(rawValue) { style.skewX = radians }
+          case "skewY":
+            if let radians = parseAngle(rawValue) { style.skewY = radians }
+          case "perspective":
+            if let num = getDouble(rawValue) { style.perspective = CGFloat(num) }
           default:
             continue
           }

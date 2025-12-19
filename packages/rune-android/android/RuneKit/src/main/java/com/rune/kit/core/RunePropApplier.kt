@@ -170,6 +170,10 @@ internal class RunePropApplier(
     if (zIndex != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
       target.view.translationZ = zIndex
     }
+
+    val transformOrigin = pixelStyle.transformOrigin
+    target.transformOrigin = transformOrigin
+    TransformOriginApplier.apply(target.view, transformOrigin)
     
     // Apply Transform
     val transform = pixelStyle.transform
@@ -184,6 +188,7 @@ internal class RunePropApplier(
       var skewX = 0f
       var skewY = 0f
       var hasSkew = false
+      var hasPerspective = false
       
       for (op in transform) {
         when (op) {
@@ -209,7 +214,10 @@ internal class RunePropApplier(
           }
           is TransformOperation.Perspective -> {
              val d = target.view.resources.displayMetrics.density
-             target.view.cameraDistance = op.value * d
+             if (op.value > 0f) {
+               target.view.cameraDistance = op.value * d * PERSPECTIVE_SCALE
+               hasPerspective = true
+             }
           }
         }
       }
@@ -220,8 +228,12 @@ internal class RunePropApplier(
       target.view.scaleX = sx
       target.view.scaleY = sy
       target.view.rotation = rot
-      target.view.rotationX = rotX
-      target.view.rotationY = rotY
+      target.view.rotationX = -rotX
+      target.view.rotationY = -rotY
+      if (!hasPerspective && (kotlin.math.abs(rotX) > 0.001f || kotlin.math.abs(rotY) > 0.001f)) {
+        val d = target.view.resources.displayMetrics.density
+        target.view.cameraDistance = DEFAULT_PERSPECTIVE * d * PERSPECTIVE_SCALE
+      }
       
       // Apply skew using Matrix if needed
       if (hasSkew) {
@@ -682,5 +694,7 @@ internal class RunePropApplier(
 
   companion object {
     private const val TEXT_TYPE = "text"
+    private const val DEFAULT_PERSPECTIVE = 500f
+    private const val PERSPECTIVE_SCALE = 3200f / DEFAULT_PERSPECTIVE
   }
 }
