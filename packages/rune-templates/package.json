@@ -5,8 +5,10 @@
   "license": "MIT",
   "files": [
     "app",
+    "app-module",
     "ios",
-    "android"
+    "android",
+    "native-module"
   ],
   "keywords": ["rune", "templates", "solid"],
   "repository": {

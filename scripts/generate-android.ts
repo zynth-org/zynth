@@ -166,6 +166,27 @@ function collectNativeAndroidModules(appDir: string): any[] {
   const modulesByName = new Map();
   const appPackage = safeReadJSON(path.join(appDir, "package.json")) || {};
 
+  function collectAppModules(): { packageDir: string; packageName: string; packageJson: any }[] {
+    const modulesDir = path.join(appDir, "modules");
+    if (!fs.existsSync(modulesDir)) return [];
+    const entries = fs.readdirSync(modulesDir, { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => {
+        const packageDir = path.join(modulesDir, entry.name);
+        const packageJsonPath = path.join(packageDir, "package.json");
+        if (!fs.existsSync(packageJsonPath)) return null;
+        const packageJson = safeReadJSON(packageJsonPath);
+        if (!packageJson) return null;
+        return {
+          packageDir,
+          packageName: packageJson.name || entry.name,
+          packageJson,
+        };
+      })
+      .filter(Boolean) as { packageDir: string; packageName: string; packageJson: any }[];
+  }
+
   function registerModules(packageName: string, packageDir: string, androidConfig: any) {
     if (!androidConfig || !Array.isArray(androidConfig.modules)) return;
     for (const module of androidConfig.modules) {
@@ -217,6 +238,17 @@ function collectNativeAndroidModules(appDir: string): any[] {
     }
   }
 
+  const appModules = collectAppModules();
+  for (const module of appModules) {
+    if (module.packageJson?.runeNative?.android) {
+      registerModules(
+        module.packageName,
+        module.packageDir,
+        module.packageJson.runeNative.android
+      );
+    }
+  }
+
   return Array.from(modulesByName.values());
 }
 
@@ -252,6 +284,27 @@ function collectAndroidActivityHooks(appDir: string): ActivityHooks {
   const seenOnCreate = new Set<string>();
   const seenOnFirstFrame = new Set<string>();
   const appPackage = safeReadJSON(path.join(appDir, "package.json")) || {};
+
+  function collectAppModules(): { packageDir: string; packageName: string; packageJson: any }[] {
+    const modulesDir = path.join(appDir, "modules");
+    if (!fs.existsSync(modulesDir)) return [];
+    const entries = fs.readdirSync(modulesDir, { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => {
+        const packageDir = path.join(modulesDir, entry.name);
+        const packageJsonPath = path.join(packageDir, "package.json");
+        if (!fs.existsSync(packageJsonPath)) return null;
+        const packageJson = safeReadJSON(packageJsonPath);
+        if (!packageJson) return null;
+        return {
+          packageDir,
+          packageName: packageJson.name || entry.name,
+          packageJson,
+        };
+      })
+      .filter(Boolean) as { packageDir: string; packageName: string; packageJson: any }[];
+  }
 
   function registerHooks(androidConfig: any) {
     if (!androidConfig || !androidConfig.activityHooks) return;
@@ -298,6 +351,12 @@ function collectAndroidActivityHooks(appDir: string): ActivityHooks {
         // Ignore resolution failures.
       }
     }
+  }
+
+  const appModules = collectAppModules();
+  for (const module of appModules) {
+    if (!module.packageJson?.runeNative?.android) continue;
+    registerHooks(module.packageJson.runeNative.android);
   }
 
   return hooks;

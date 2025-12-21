@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promises as fs } from "node:fs";
+import { createRequire } from "node:module";
 
 import {
   defineConfig,
@@ -21,6 +22,13 @@ const IMAGE_ASSET_LOADER_PATH = path.join(
   __dirname,
   "loaders/image-asset-loader.js"
 );
+const require = createRequire(import.meta.url);
+let solidJsxRuntime: string | null = null;
+try {
+  solidJsxRuntime = require.resolve("solid-js/h/jsx-runtime");
+} catch {
+  solidJsxRuntime = null;
+}
 
 const DEFAULT_ARTIFACT_RELATIVE_PATH = ".rune/artifacts.json";
 
@@ -375,6 +383,10 @@ async function ensureAliases(
     "@rsbuild/rsbuild/dist/client/hmr.js": HMR_SHIM_PATH,
     "@rsbuild/rsbuild/dist/client/overlay.js": OVERLAY_SHIM_PATH,
   };
+  if (solidJsxRuntime) {
+    staticAliases["solid-js/jsx-runtime"] = solidJsxRuntime;
+    staticAliases["solid-js/jsx-dev-runtime"] = solidJsxRuntime;
+  }
 
   // Apply discovered aliases first (lowest priority)
   for (const [key, value] of Object.entries(discoveredAliases)) {

@@ -16,6 +16,27 @@ function collectNativeIOSPods(appDir: string): any[] {
   const podsByName = new Map();
   const appPackage = safeReadJSON(path.join(appDir, "package.json")) || {};
 
+  function collectAppModules(): { packageDir: string; packageName: string; packageJson: any }[] {
+    const modulesDir = path.join(appDir, "modules");
+    if (!fs.existsSync(modulesDir)) return [];
+    const entries = fs.readdirSync(modulesDir, { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => {
+        const packageDir = path.join(modulesDir, entry.name);
+        const packageJsonPath = path.join(packageDir, "package.json");
+        if (!fs.existsSync(packageJsonPath)) return null;
+        const packageJson = safeReadJSON(packageJsonPath);
+        if (!packageJson) return null;
+        return {
+          packageDir,
+          packageName: packageJson.name || entry.name,
+          packageJson,
+        };
+      })
+      .filter(Boolean) as { packageDir: string; packageName: string; packageJson: any }[];
+  }
+
   function registerPods(packageName: string, packageDir: string, iosConfig: any) {
     if (!iosConfig || !Array.isArray(iosConfig.pods)) return;
     for (const pod of iosConfig.pods) {
@@ -58,6 +79,13 @@ function collectNativeIOSPods(appDir: string): any[] {
       } catch (_error) {
         // Ignore resolvable failures; dependency may be optional for native
       }
+    }
+  }
+
+  const appModules = collectAppModules();
+  for (const module of appModules) {
+    if (module.packageJson?.runeNative?.ios) {
+      registerPods(module.packageName, module.packageDir, module.packageJson.runeNative.ios);
     }
   }
 
