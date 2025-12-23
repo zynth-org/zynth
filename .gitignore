@@ -60,3 +60,5 @@ packages/rune-android/**/.gradle/
 
 # Server vendor pre-bundled packages
 packages/rune-skyhook/vendor
+apps/**/modules/ios/.build
+apps/**/modules/**/android/**/build/
