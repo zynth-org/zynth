@@ -4,6 +4,10 @@ import RuneKit
 @objc(RuneSplashScreen)
 public class RuneSplashScreen: NSObject {
     private static var splashWindow: UIWindow?
+    private static var mainWindow: UIWindow?
+    private static var rootView: UIView?
+    private static var previousWindowBackground: UIColor?
+    private static var previousRootBackground: UIColor?
     private static var fadeDuration: TimeInterval = 0.25
     private static var hasBeenHidden = false
     private static var pollTimer: Timer?
@@ -33,6 +37,10 @@ public class RuneSplashScreen: NSObject {
         let bg = colorFromHex(backgroundColor) ?? .white
         
         // Proactively set background colors on the main window/root to avoid flashes behind the splash
+        mainWindow = window
+        rootView = runtime.rootView
+        previousWindowBackground = window.backgroundColor
+        previousRootBackground = runtime.rootView.backgroundColor
         window.backgroundColor = bg
         runtime.rootView.backgroundColor = bg
         
@@ -136,6 +144,7 @@ public class RuneSplashScreen: NSObject {
         pollTimer = nil
         
         hasBeenHidden = true
+        restoreAppBackgrounds()
         guard let window = splashWindow else { return }
         
         UIView.animate(withDuration: fadeDuration, animations: {
@@ -150,6 +159,19 @@ public class RuneSplashScreen: NSObject {
     @objc public static func preventAutoHideJS() -> [String: Any] {
         preventAutoHide = true
         return ["success": true]
+    }
+
+    private static func restoreAppBackgrounds() {
+        if let window = mainWindow {
+            window.backgroundColor = previousWindowBackground
+        }
+        if let rootView = rootView {
+            rootView.backgroundColor = previousRootBackground
+        }
+        mainWindow = nil
+        rootView = nil
+        previousWindowBackground = nil
+        previousRootBackground = nil
     }
 
     @objc public static func hideJS() -> [String: Any] {
