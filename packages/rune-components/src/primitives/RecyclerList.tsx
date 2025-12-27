@@ -22,7 +22,10 @@ export type ItemSeparatorProps<T> = {
 
 export type RecyclerListProps<T> = {
   data: T[];
-  renderItem: (info: { item: T; index: number }) => JSX.Element;
+  renderItem: (info: {
+    item: Accessor<T | null>;
+    index: Accessor<number>;
+  }) => JSX.Element;
   keyExtractor: (item: T, index: number) => string;
   estimatedItemSize?: number;
   poolSize?: number;
@@ -664,54 +667,6 @@ export function RecyclerList<T>(props: RecyclerListProps<T>) {
           <Index each={poolSlots()}>
             {(slot) => {
               const slotData = slot();
-              const itemProxy = new Proxy(
-                {},
-                {
-                  get(_, prop) {
-                    const item = slotData.item();
-                    if (item == null) return undefined;
-                    const value = Reflect.get(item as any, prop, item);
-                    return typeof value === "function"
-                      ? value.bind(item)
-                      : value;
-                  },
-                  has(_, prop) {
-                    const item = slotData.item();
-                    if (item == null) return false;
-                    if (
-                      typeof item !== "object" &&
-                      typeof item !== "function"
-                    ) {
-                      return false;
-                    }
-                    return prop in (item as object);
-                  },
-                  ownKeys() {
-                    const item = slotData.item();
-                    return item ? Reflect.ownKeys(item) : [];
-                  },
-                  getOwnPropertyDescriptor(_, prop) {
-                    const item = slotData.item();
-                    if (!item) return undefined;
-                    const descriptor = Object.getOwnPropertyDescriptor(
-                      item,
-                      prop
-                    );
-                    if (!descriptor) return undefined;
-                    return { ...descriptor, configurable: true };
-                  },
-                }
-              ) as T;
-
-              const indexValue = {
-                valueOf: () => slotData.index(),
-                toString: () => String(slotData.index()),
-                [Symbol.toPrimitive](hint: string) {
-                  const value = slotData.index();
-                  return hint === "string" ? String(value) : value;
-                },
-              } as unknown as number;
-
               let slotContent: JSX.Element | null = null;
               let disposeSlot: (() => void) | null = null;
 
@@ -721,8 +676,8 @@ export function RecyclerList<T>(props: RecyclerListProps<T>) {
                 slotContent = createRoot((dispose) => {
                   disposeSlot = dispose;
                   const itemElement = props.renderItem({
-                    item: itemProxy,
-                    index: indexValue,
+                    item: slotData.item,
+                    index: slotData.index,
                   });
                   const SeparatorWrapper = () => {
                     if (!SeparatorComponent) return null;
