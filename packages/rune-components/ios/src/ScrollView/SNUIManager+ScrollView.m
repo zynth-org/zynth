@@ -62,6 +62,51 @@ static BOOL RuneScrollViewHandleSetProp(SNUIManager *manager,
     return YES;
   }
 
+  if ([name isEqualToString:@"bounces"]) {
+    BOOL enabled = value && value != (id)[NSNull null] ? [value boolValue] : YES;
+    [scrollView rune_setBounces:enabled];
+    return YES;
+  }
+
+  if ([name isEqualToString:@"decelerationRate"]) {
+    [scrollView rune_setDecelerationRate:value];
+    return YES;
+  }
+
+  if ([name isEqualToString:@"contentInset"]) {
+    if ([value isKindOfClass:[NSDictionary class]]) {
+      [scrollView rune_setContentInset:(NSDictionary *)value];
+    } else {
+      [scrollView rune_setContentInset:nil];
+    }
+    return YES;
+  }
+
+  if ([name isEqualToString:@"eventThrottleMs"]) {
+    [scrollView rune_setEventThrottleMs:value];
+    return YES;
+  }
+
+  if ([name isEqualToString:@"eventMinDisplacementPx"]) {
+    [scrollView rune_setEventMinDisplacement:value];
+    return YES;
+  }
+
+  if ([name isEqualToString:@"bridgeCoalescing"]) {
+    BOOL enabled = value && value != (id)[NSNull null] ? [value boolValue] : NO;
+    [scrollView rune_setBridgeCoalescing:enabled];
+    return YES;
+  }
+
+  if ([name isEqualToString:@"scrollGuardConfig"]) {
+    if ([value isKindOfClass:[NSDictionary class]]) {
+      [scrollView rune_setScrollGuardConfig:(NSDictionary *)value];
+    } else {
+      [scrollView rune_setScrollGuardConfig:nil];
+    }
+    return YES;
+  }
+
   if ([name isEqualToString:@"scrollSnapType"]) {
     [scrollView rune_setScrollSnapType:value];
     return YES;

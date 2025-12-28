@@ -10,13 +10,42 @@
 #import "utils/RuneShadowParser.h"
 #import <Yoga/Yoga.h>
 #import <QuartzCore/QuartzCore.h>
-#import <JavaScriptCore/JavaScriptCore.h>
 #import <objc/message.h>
 #import <stdatomic.h>
 
 static NSString *const kRuneBorderLayerName = @"rune-border-style";
 static NSString *const kRuneGradientLayerName = @"rune-background-gradient";
 static const int kRuneSurfaceIdBase = 1 << 20;
+
+static NSString *SNJSONStringForBatchValue(id value) {
+  if (!value || value == [NSNull null]) {
+    return @"null";
+  }
+
+  if ([NSJSONSerialization isValidJSONObject:value]) {
+    NSError *error = nil;
+    NSData *data = [NSJSONSerialization dataWithJSONObject:value options:0 error:&error];
+    if (data && !error) {
+      return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    }
+  }
+
+  id boxable = value;
+  if (![value isKindOfClass:[NSString class]] && ![value isKindOfClass:[NSNumber class]]) {
+    boxable = [value description] ?: @"";
+  }
+
+  NSError *primitiveError = nil;
+  NSData *wrapped = [NSJSONSerialization dataWithJSONObject:@[boxable] options:0 error:&primitiveError];
+  if (wrapped && !primitiveError) {
+    NSString *arrayJSON = [[NSString alloc] initWithData:wrapped encoding:NSUTF8StringEncoding];
+    if (arrayJSON.length >= 2) {
+      return [arrayJSON substringWithRange:NSMakeRange(1, arrayJSON.length - 2)];
+    }
+  }
+
+  return @"null";
+}
 
 // Atomic counter for allocating unique guest surface IDs (mirrors Android's NEXT_ROOT_ID)
 static _Atomic int sNextGuestSurfaceId = kRuneSurfaceIdBase;
@@ -226,7 +255,6 @@ static _Atomic int sNextGuestSurfaceId = kRuneSurfaceIdBase;
     for (UIGestureRecognizer *gr in node.view.gestureRecognizers.copy) {
       [node.view removeGestureRecognizer:gr];
     }
-    node.onPressCallback = nil;
     node.hasOnPressHandler = NO;
     [node.view removeFromSuperview];
     [self.nodes removeObjectForKey:key];
@@ -1433,37 +1461,6 @@ static void SNApplyEdges(NSDictionary *style,
   [self rune_markNeedsFlush];
 }
 
-- (void)setPropCallback:(NSNumber *)nodeId name:(NSString *)name callback:(JSValue *)callback {
-  SNNode *n = _nodes[nodeId];
-  if (!n || !n.view) return;
-
-  RuneComponentDescriptor *componentDescriptor = [self.componentRegistry getDescriptor:n.type];
-  
-  if (componentDescriptor && componentDescriptor.handleSetPropCallback) {
-    if (componentDescriptor.handleSetPropCallback(self, n, name, callback)) {
-      return;
-    }
-  }
-  
-  if ([name isEqualToString:@"onPress"]) {
-    BOOL validCallback = callback && ![callback isUndefined] && ![callback isNull];
-    if (validCallback) {
-      n.onPressCallback = callback;
-      [self rune_attachTapRecognizerForNode:n];
-    } else {
-      n.onPressCallback = nil;
-      n.hasOnPressHandler = NO;
-      for (UIGestureRecognizer *gr in n.view.gestureRecognizers.copy) {
-        if ([gr isKindOfClass:[UITapGestureRecognizer class]]) {
-          [n.view removeGestureRecognizer:gr];
-        }
-      }
-      [self rune_updateInteractionStateForNode:n];
-    }
-    return;
-  }
-}
-
 - (void)setHandler:(NSNumber *)nodeId name:(NSString *)name {
   SNNode *n = _nodes[nodeId];
   if (!n || !n.view) return;
@@ -1477,7 +1474,6 @@ static void SNApplyEdges(NSDictionary *style,
   }
 
   if ([name isEqualToString:@"onPress"]) {
-    n.onPressCallback = nil;
     [self rune_attachTapRecognizerForNode:n];
     return;
   }
@@ -1518,6 +1514,108 @@ static void SNApplyEdges(NSDictionary *style,
     }
   }
   [self rune_markNeedsFlush];
+}
+
+- (void)applyBatch:(NSString *)batchJSON {
+  if (!batchJSON.length) return;
+
+  void (^applyBlock)(void) = ^{
+    NSData *data = [batchJSON dataUsingEncoding:NSUTF8StringEncoding];
+    if (!data) return;
+
+    NSError *error = nil;
+    id payload = [NSJSONSerialization JSONObjectWithData:data options:0 error:&error];
+    if (!payload || ![payload isKindOfClass:[NSDictionary class]]) return;
+
+    NSArray *operations = ((NSDictionary *)payload)[@"operations"];
+    if (![operations isKindOfClass:[NSArray class]]) return;
+
+    for (id entry in operations) {
+      if (![entry isKindOfClass:[NSDictionary class]]) continue;
+      NSDictionary *op = (NSDictionary *)entry;
+      NSString *type = [op[@"type"] isKindOfClass:[NSString class]] ? op[@"type"] : nil;
+      if (type.length == 0) continue;
+
+      if ([type isEqualToString:@"setProp"]) {
+        NSNumber *nodeId = [op[@"nodeId"] isKindOfClass:[NSNumber class]] ? op[@"nodeId"] : nil;
+        NSString *name = [op[@"name"] isKindOfClass:[NSString class]] ? op[@"name"] : nil;
+        if (!nodeId || name.length == 0) continue;
+        NSString *jsonValue = SNJSONStringForBatchValue(op[@"value"]);
+        [self setProp:nodeId name:name valueJSON:jsonValue];
+        continue;
+      }
+
+      if ([type isEqualToString:@"setText"]) {
+        NSNumber *nodeId = [op[@"nodeId"] isKindOfClass:[NSNumber class]] ? op[@"nodeId"] : nil;
+        if (!nodeId) continue;
+        id value = op[@"value"];
+        NSString *text = nil;
+        if ([value isKindOfClass:[NSString class]]) {
+          text = (NSString *)value;
+        } else if ([value isKindOfClass:[NSNumber class]]) {
+          text = [(NSNumber *)value stringValue];
+        } else if (value == (id)[NSNull null] || value == nil) {
+          text = @"";
+        } else {
+          text = [value description] ?: @"";
+        }
+        [self setText:nodeId text:text];
+        continue;
+      }
+
+      if ([type isEqualToString:@"insertChild"]) {
+        NSNumber *parentId = [op[@"parentId"] isKindOfClass:[NSNumber class]] ? op[@"parentId"] : nil;
+        NSNumber *childId = [op[@"childId"] isKindOfClass:[NSNumber class]] ? op[@"childId"] : nil;
+        NSNumber *index = [op[@"index"] isKindOfClass:[NSNumber class]] ? op[@"index"] : nil;
+        if (!parentId || !childId || !index) continue;
+        [self insertChild:parentId child:childId index:index];
+        continue;
+      }
+
+      if ([type isEqualToString:@"removeChild"]) {
+        NSNumber *parentId = [op[@"parentId"] isKindOfClass:[NSNumber class]] ? op[@"parentId"] : nil;
+        NSNumber *childId = [op[@"childId"] isKindOfClass:[NSNumber class]] ? op[@"childId"] : nil;
+        if (!parentId || !childId) continue;
+        [self removeChild:parentId child:childId];
+        continue;
+      }
+
+      if ([type isEqualToString:@"createNode"]) {
+        NSString *tag = [op[@"tag"] isKindOfClass:[NSString class]] ? op[@"tag"] : nil;
+        if (!tag) {
+          tag = [op[@"type"] isKindOfClass:[NSString class]] ? op[@"type"] : nil;
+        }
+        if (tag.length == 0) continue;
+
+        NSNumber *nodeId = [op[@"nodeId"] isKindOfClass:[NSNumber class]] ? op[@"nodeId"] : nil;
+        if (!nodeId) {
+          [self createNode:tag];
+          continue;
+        }
+
+        int desired = nodeId.intValue;
+        if (desired < _nextId) {
+          NSLog(@"[SNUIManager] applyBatch createNode skipped; nodeId=%d already used", desired);
+          continue;
+        }
+
+        int originalNext = _nextId;
+        _nextId = desired;
+        [self createNode:tag];
+        _nextId = MAX(_nextId, desired + 1);
+        if (_nextId < originalNext) {
+          _nextId = originalNext;
+        }
+        continue;
+      }
+    }
+  };
+
+  if ([NSThread isMainThread]) {
+    applyBlock();
+  } else {
+    dispatch_async(dispatch_get_main_queue(), applyBlock);
+  }
 }
 
 - (void)insertChild:(NSNumber *)parentId child:(NSNumber *)childId index:(NSNumber *)index {
@@ -1595,7 +1693,6 @@ static void SNApplyEdges(NSDictionary *style,
   for (UIGestureRecognizer *gr in c.view.gestureRecognizers.copy) {
     [c.view removeGestureRecognizer:gr];
   }
-  c.onPressCallback = nil;
   c.hasOnPressHandler = NO;
 
   if ([self rune_isSurfaceRootId:parentId]) {

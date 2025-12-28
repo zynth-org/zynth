@@ -1,5 +1,4 @@
 import Foundation
-import JavaScriptCore
 import UIKit
 
 public typealias RuneUIManager = SNUIManager
@@ -201,17 +200,6 @@ public final class RuneRuntime: NSObject {
         return try self.registry.callSync(name, method: method, args: args)
       }
       return
-    }
-
-    runtime.evaluate(code: "globalThis.console = globalThis.console || {};")
-    runtime.setGlobalFunction("__runeConsoleLog") { (args: [Any]) -> Any? in
-      print("JS:", args)
-      return nil
-    }
-    runtime.evaluate(code: "globalThis.console.log = __runeConsoleLog;")
-
-    if let jsc = (runtime as? JSCAdapter)?.rawContext {
-      RuneInstallBindings(jsc, manager)
     }
 
     let modules: [String: Any] = [

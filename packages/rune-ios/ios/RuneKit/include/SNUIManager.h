@@ -9,12 +9,10 @@
 #else
 @class UIView;
 #endif
-#import <JavaScriptCore/JavaScriptCore.h>
 #import "RuneJSInvoker.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
-@class JSContext;
 
 @interface SNUIManager : NSObject
 
@@ -26,13 +24,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (instancetype)initWithRootView:(UIView *)rootView isGuest:(BOOL)isGuest;
 - (NSNumber *)createNode:(NSString *)type; // returns nodeId
 - (void)setProp:(NSNumber *)nodeId name:(NSString *)name valueJSON:(NSString *)json;
-- (void)setPropCallback:(NSNumber *)nodeId name:(NSString *)name callback:(JSValue *)callback;
 - (void)setHandler:(NSNumber *)nodeId name:(NSString *)name;
 - (void)setActiveSurface:(int)surfaceId;
 - (void)setStyle:(NSNumber *)nodeId style:(NSDictionary *)style;
 - (void)setText:(NSNumber *)nodeId text:(NSString *)text;
 - (void)insertChild:(NSNumber *)parentId child:(NSNumber *)childId index:(NSNumber *)index;
 - (void)removeChild:(NSNumber *)parentId child:(NSNumber *)childId;
+- (void)applyBatch:(NSString *)batchJSON;
 - (void)flush; // layout + commit
 - (void)addSurfaceFirstFrameListener:(int)surfaceId listener:(dispatch_block_t)listener;
 - (void)removeSurfaceFirstFrameListener:(int)surfaceId listener:(dispatch_block_t)listener;
@@ -45,18 +43,6 @@ NS_ASSUME_NONNULL_BEGIN
 @end
 
 NS_ASSUME_NONNULL_END
-#endif
-
-/// Install __ui object into a JSContext (JavaScriptCore)
-#ifdef __cplusplus
-extern "C" {
-#endif
-#ifdef __OBJC__
-void SNInstallBindings(JSContext *ctx, SNUIManager *mgr);
-void RuneInstallBindings(JSContext *ctx, SNUIManager *mgr); // TODO: remove SNInstallBindings shim once call sites migrate
-#endif
-#ifdef __cplusplus
-}
 #endif
 
 #endif /* SNUIMANAGER_H */

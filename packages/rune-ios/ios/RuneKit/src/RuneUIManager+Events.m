@@ -54,23 +54,6 @@
     [self.jsInvoker invokeHandlerForNode:node.nid name:name];
     return;
   }
-
-  JSValue *callback = nil;
-  if ([name isEqualToString:@"onLoad"]) {
-    callback = node.onLoadCallback;
-  } else if ([name isEqualToString:@"onError"]) {
-    callback = node.onErrorCallback;
-  }
-
-  if (!callback || [callback isUndefined] || [callback isNull]) {
-    return;
-  }
-
-  if (normalized.count > 0) {
-    [callback callWithArguments:@[normalized]];
-  } else {
-    [callback callWithArguments:@[]];
-  }
 }
 
 @end

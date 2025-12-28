@@ -102,9 +102,7 @@
     invoked = YES;
   }
 
-  if (!invoked && node.onPressCallback && ![node.onPressCallback isUndefined]) {
-    [node.onPressCallback callWithArguments:@[]];
-  }
+  (void)invoked;
 }
 
 @end

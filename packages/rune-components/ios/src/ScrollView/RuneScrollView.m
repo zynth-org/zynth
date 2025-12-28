@@ -9,6 +9,17 @@ static NSTimeInterval RuneScrollCurrentTime(void) {
   return CACurrentMediaTime();
 }
 
+static const CGFloat kRuneScrollGuardVelocityThreshold = 7000.0;
+static const CGFloat kRuneScrollGuardDistanceMultiplier = 6.0;
+static const CGFloat kRuneScrollGuardMinDistance = 2500.0;
+static const NSTimeInterval kRuneScrollGuardCooldown = 0.140;
+static const NSTimeInterval kRuneScrollGuardGestureWindow = 0.900;
+static const CGFloat kRuneScrollGuardFallbackViewport = 960.0;
+static const CGFloat kRuneScrollGuardRearmFraction = 0.05;
+static const BOOL kRuneScrollGuardRequiresDistance = YES;
+static const NSTimeInterval kRuneScrollProgrammaticInstantGrace = 0.120;
+static const NSTimeInterval kRuneScrollProgrammaticAnimatedGrace = 0.600;
+
 @interface RuneScrollView ()
 @property(nonatomic, weak) SNUIManager *manager;
 @property(nonatomic, weak) SNNode *node;
@@ -42,6 +53,19 @@ static NSTimeInterval RuneScrollCurrentTime(void) {
 @property(nonatomic, assign) NSInteger snapPaddingBottom;
 @property(nonatomic, assign) BOOL snapPendingCheck;
 @property(nonatomic, assign) BOOL snapPendingForce;
+@property(nonatomic, assign) BOOL contentUpdateScheduled;
+@property(nonatomic, assign) CGPoint lastStableOffset;
+@property(nonatomic, assign) NSTimeInterval lastGestureTimestamp;
+@property(nonatomic, assign) NSTimeInterval lastManualStopTimestamp;
+@property(nonatomic, assign) NSTimeInterval programmaticScrollGraceDeadline;
+@property(nonatomic, assign) CGFloat stopVelocityThreshold;
+@property(nonatomic, assign) CGFloat stopDistanceMultiplier;
+@property(nonatomic, assign) CGFloat stopMinDistance;
+@property(nonatomic, assign) NSTimeInterval stopCooldownInterval;
+@property(nonatomic, assign) NSTimeInterval stopGestureWindowInterval;
+@property(nonatomic, assign) CGFloat stopFallbackViewport;
+@property(nonatomic, assign) CGFloat stopRearmFraction;
+@property(nonatomic, assign) BOOL stopRequiresDistance;
 @end
 
 @implementation RuneScrollView
@@ -98,6 +122,14 @@ static NSTimeInterval RuneScrollCurrentTime(void) {
   _snapPaddingEnd = 0;
   _snapPaddingTop = 0;
   _snapPaddingBottom = 0;
+  _stopVelocityThreshold = kRuneScrollGuardVelocityThreshold;
+  _stopDistanceMultiplier = kRuneScrollGuardDistanceMultiplier;
+  _stopMinDistance = kRuneScrollGuardMinDistance;
+  _stopCooldownInterval = kRuneScrollGuardCooldown;
+  _stopGestureWindowInterval = kRuneScrollGuardGestureWindow;
+  _stopFallbackViewport = kRuneScrollGuardFallbackViewport;
+  _stopRearmFraction = kRuneScrollGuardRearmFraction;
+  _stopRequiresDistance = kRuneScrollGuardRequiresDistance;
 }
 
 - (void)dealloc {
@@ -119,11 +151,13 @@ static NSTimeInterval RuneScrollCurrentTime(void) {
   NSInteger safeIndex = MAX(0, MIN(index, (NSInteger)_contentView.subviews.count));
   [_contentView insertSubview:view atIndex:safeIndex];
   [self setNeedsLayout];
+  [self scheduleContentGeometryUpdate];
 }
 
 - (void)removeContentSubview:(UIView *)view {
   [view removeFromSuperview];
   [self setNeedsLayout];
+  [self scheduleContentGeometryUpdate];
 }
 
 - (void)updateContentGeometry {
@@ -153,6 +187,100 @@ static NSTimeInterval RuneScrollCurrentTime(void) {
 
   _contentView.frame = CGRectMake(0, 0, contentWidth, contentHeight);
   _scrollView.contentSize = CGSizeMake(contentWidth, contentHeight);
+}
+
+- (void)scheduleContentGeometryUpdate {
+  if (self.contentUpdateScheduled) return;
+  self.contentUpdateScheduled = YES;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    self.contentUpdateScheduled = NO;
+    [self updateContentGeometry];
+  });
+}
+
+- (void)registerProgrammaticScroll:(BOOL)animated {
+  NSTimeInterval now = RuneScrollCurrentTime();
+  NSTimeInterval grace = animated ? kRuneScrollProgrammaticAnimatedGrace
+                                  : kRuneScrollProgrammaticInstantGrace;
+  self.programmaticScrollGraceDeadline =
+      MAX(self.programmaticScrollGraceDeadline, now + grace);
+}
+
+- (BOOL)isProgrammaticScrollActive {
+  if (self.programmaticScrollGraceDeadline <= 0) return NO;
+  return RuneScrollCurrentTime() <= self.programmaticScrollGraceDeadline;
+}
+
+- (void)recordStableOffset:(CGPoint)offset {
+  self.lastStableOffset = offset;
+}
+
+- (void)evaluateManualFlingGuard {
+  if ([self isProgrammaticScrollActive]) {
+    return;
+  }
+  if (self.isDraggingState) {
+    [self recordStableOffset:self.scrollView.contentOffset];
+    return;
+  }
+  if (!self.isDeceleratingState) {
+    return;
+  }
+
+  NSTimeInterval now = RuneScrollCurrentTime();
+  if (now - self.lastGestureTimestamp > self.stopGestureWindowInterval) {
+    return;
+  }
+  if (now - self.lastManualStopTimestamp < self.stopCooldownInterval) {
+    return;
+  }
+
+  CGFloat velocity = (self.axis == RuneScrollAxisHorizontal)
+                         ? fabs(self.lastVelocity.x)
+                         : fabs(self.lastVelocity.y);
+  CGFloat viewport =
+      (self.axis == RuneScrollAxisHorizontal)
+          ? self.scrollView.bounds.size.width
+          : self.scrollView.bounds.size.height;
+  if (viewport <= 0) {
+    viewport = self.stopFallbackViewport;
+  }
+
+  CGPoint currentOffset = self.scrollView.contentOffset;
+  CGFloat distance =
+      (self.axis == RuneScrollAxisHorizontal)
+          ? fabs(currentOffset.x - self.lastStableOffset.x)
+          : fabs(currentOffset.y - self.lastStableOffset.y);
+
+  CGFloat distanceThreshold =
+      MAX(self.stopMinDistance, viewport * self.stopDistanceMultiplier);
+
+  BOOL stopDueToDistance = distance >= distanceThreshold;
+  BOOL stopDueToVelocity = velocity >= self.stopVelocityThreshold;
+  BOOL allowVelocityOnly = !self.stopRequiresDistance;
+
+  if (stopDueToDistance || (allowVelocityOnly && stopDueToVelocity)) {
+    [self.scrollView.layer removeAllAnimations];
+    [self.scrollView setContentOffset:self.scrollView.contentOffset animated:NO];
+    self.lastManualStopTimestamp = now;
+    [self recordStableOffset:self.scrollView.contentOffset];
+    return;
+  }
+
+  if (distance >= viewport * self.stopRearmFraction) {
+    [self recordStableOffset:currentOffset];
+  }
+}
+
+- (BOOL)shouldDeferContentGeometryForOffset:(CGPoint)offset {
+  CGSize viewport = self.scrollView.bounds.size;
+  CGSize contentSize = self.scrollView.contentSize;
+  if (self.axis == RuneScrollAxisHorizontal) {
+    CGFloat maxOffset = MAX(0.0, contentSize.width - viewport.width);
+    return offset.x < -0.5 || offset.x > maxOffset + 0.5;
+  }
+  CGFloat maxOffset = MAX(0.0, contentSize.height - viewport.height);
+  return offset.y < -0.5 || offset.y > maxOffset + 0.5;
 }
 
 #pragma mark - Property setters
@@ -281,6 +409,61 @@ static NSTimeInterval RuneScrollCurrentTime(void) {
   if ([bottom respondsToSelector:@selector(doubleValue)]) e.bottom = [bottom doubleValue];
   if ([right respondsToSelector:@selector(doubleValue)]) e.right = [right doubleValue];
   _scrollView.contentInset = e;
+}
+
+- (void)resetScrollGuardConfig {
+  self.stopVelocityThreshold = kRuneScrollGuardVelocityThreshold;
+  self.stopDistanceMultiplier = kRuneScrollGuardDistanceMultiplier;
+  self.stopMinDistance = kRuneScrollGuardMinDistance;
+  self.stopCooldownInterval = kRuneScrollGuardCooldown;
+  self.stopGestureWindowInterval = kRuneScrollGuardGestureWindow;
+  self.stopFallbackViewport = kRuneScrollGuardFallbackViewport;
+  self.stopRearmFraction = kRuneScrollGuardRearmFraction;
+  self.stopRequiresDistance = kRuneScrollGuardRequiresDistance;
+}
+
+- (void)rune_setScrollGuardConfig:(NSDictionary *_Nullable)config {
+  if (!config || config == (id)[NSNull null] || ![config isKindOfClass:[NSDictionary class]]) {
+    [self resetScrollGuardConfig];
+    return;
+  }
+
+  [self resetScrollGuardConfig];
+
+  NSDictionary *dict = (NSDictionary *)config;
+  id value = dict[@"stopVelocityThreshold"] ?: dict[@"manualStopVelocityThreshold"];
+  if ([value respondsToSelector:@selector(doubleValue)]) {
+    self.stopVelocityThreshold = MAX(0.0, [value doubleValue]);
+  }
+  value = dict[@"stopDistanceMultiplier"] ?: dict[@"manualStopDistanceMultiplier"];
+  if ([value respondsToSelector:@selector(doubleValue)]) {
+    self.stopDistanceMultiplier = MAX(0.0, [value doubleValue]);
+  }
+  value = dict[@"stopMinDistancePx"] ?: dict[@"manualStopMinDistancePx"];
+  if ([value respondsToSelector:@selector(doubleValue)]) {
+    self.stopMinDistance = MAX(0.0, [value doubleValue]);
+  }
+  value = dict[@"stopCooldownMs"] ?: dict[@"manualStopCooldownMs"];
+  if ([value respondsToSelector:@selector(doubleValue)]) {
+    self.stopCooldownInterval = MAX(0.0, [value doubleValue]) / 1000.0;
+  }
+  value = dict[@"stopGestureWindowMs"] ?: dict[@"manualStopGestureWindowMs"];
+  if ([value respondsToSelector:@selector(doubleValue)]) {
+    self.stopGestureWindowInterval = MAX(0.0, [value doubleValue]) / 1000.0;
+  }
+  value = dict[@"stopFallbackViewport"] ?: dict[@"manualStopFallbackViewport"];
+  if ([value respondsToSelector:@selector(doubleValue)]) {
+    self.stopFallbackViewport = MAX(0.0, [value doubleValue]);
+  }
+  value = dict[@"stopRearmFraction"] ?: dict[@"manualStopRearmFraction"];
+  if ([value respondsToSelector:@selector(doubleValue)]) {
+    CGFloat fraction = (CGFloat)[value doubleValue];
+    self.stopRearmFraction = MIN(1.0, MAX(0.0, fraction));
+  }
+  value = dict[@"stopRequiresDistance"];
+  if ([value respondsToSelector:@selector(boolValue)]) {
+    self.stopRequiresDistance = [value boolValue];
+  }
 }
 
 - (void)rune_setScrollSnapType:(id)value {
@@ -417,6 +600,7 @@ static NSTimeInterval RuneScrollCurrentTime(void) {
     CGFloat targetX = xValue ? [xValue doubleValue] : self.scrollView.contentOffset.x;
     CGFloat targetY = yValue ? [yValue doubleValue] : self.scrollView.contentOffset.y;
     CGPoint offset = CGPointMake(targetX, targetY);
+    [self registerProgrammaticScroll:animated];
     [self.scrollView setContentOffset:offset animated:animated];
     if (!animated) {
       [self emitScrollEventNamed:@"onScroll" force:YES];
@@ -430,6 +614,7 @@ static NSTimeInterval RuneScrollCurrentTime(void) {
     CGFloat dy = [command[@"dy"] respondsToSelector:@selector(doubleValue)] ? [command[@"dy"] doubleValue] : 0;
     CGPoint current = self.scrollView.contentOffset;
     CGPoint offset = CGPointMake(current.x + dx, current.y + dy);
+    [self registerProgrammaticScroll:animated];
     [self.scrollView setContentOffset:offset animated:animated];
     if (!animated) {
       [self emitScrollEventNamed:@"onScroll" force:YES];
@@ -477,6 +662,8 @@ static NSTimeInterval RuneScrollCurrentTime(void) {
 - (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView {
   self.isDraggingState = YES;
   self.isDeceleratingState = NO;
+  self.lastGestureTimestamp = RuneScrollCurrentTime();
+  [self recordStableOffset:scrollView.contentOffset];
   [self emitScrollEventNamed:@"onScrollBeginDrag" force:YES];
 }
 
@@ -496,12 +683,16 @@ static NSTimeInterval RuneScrollCurrentTime(void) {
   }
 
   [self updateVelocity];
+  [self evaluateManualFlingGuard];
   [self emitScrollEventNamed:@"onScroll" force:NO];
-  [self updateContentGeometry];
+  if (![self shouldDeferContentGeometryForOffset:scrollView.contentOffset]) {
+    [self scheduleContentGeometryUpdate];
+  }
 }
 
 - (void)scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate {
   self.isDraggingState = NO;
+  self.lastGestureTimestamp = RuneScrollCurrentTime();
   [self emitScrollEventNamed:@"onScrollEndDrag" force:YES];
   if (!decelerate) {
     self.isDeceleratingState = NO;
@@ -512,12 +703,14 @@ static NSTimeInterval RuneScrollCurrentTime(void) {
 
 - (void)scrollViewWillBeginDecelerating:(UIScrollView *)scrollView {
   self.isDeceleratingState = YES;
+  self.lastGestureTimestamp = RuneScrollCurrentTime();
   [self emitScrollEventNamed:@"onMomentumScrollBegin" force:YES];
 }
 
 - (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView {
   if (self.isDeceleratingState) {
     self.isDeceleratingState = NO;
+    [self recordStableOffset:scrollView.contentOffset];
     [self emitScrollEventNamed:@"onMomentumScrollEnd" force:YES];
     [self scheduleSnapCheckWithForce:YES];
   }

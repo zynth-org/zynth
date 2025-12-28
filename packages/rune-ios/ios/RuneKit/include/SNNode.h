@@ -10,7 +10,6 @@
 @class UIColor;
 #endif
 @class RuneShadowLayer;
-#import <JavaScriptCore/JavaScriptCore.h>
 #import <Yoga/Yoga.h>
 
 NS_ASSUME_NONNULL_BEGIN
@@ -27,9 +26,6 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, strong) UIView *view;
 @property(nonatomic, assign) YGNodeRef yoga;
 @property(nonatomic, strong) NSMutableArray<NSNumber *> *children;
-@property(nonatomic, strong, nullable) JSValue *onPressCallback;
-@property(nonatomic, strong, nullable) JSValue *onLoadCallback;
-@property(nonatomic, strong, nullable) JSValue *onErrorCallback;
 @property(nonatomic, assign) BOOL hasOnPressHandler;
 @property(nonatomic, assign) BOOL hasOnLoadHandler;
 @property(nonatomic, assign) BOOL hasOnErrorHandler;

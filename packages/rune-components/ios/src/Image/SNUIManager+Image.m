@@ -489,8 +489,6 @@ static void RuneImageCleanup(SNUIManager *manager, SNNode *node) {
   node.imageSourceToken = nil;
   node.hasOnLoadHandler = NO;
   node.hasOnErrorHandler = NO;
-  node.onLoadCallback = nil;
-  node.onErrorCallback = nil;
   node.imageTintColor = nil;
 
   UIImageView *imageView = (UIImageView *)node.view;
@@ -603,4 +601,3 @@ static YGSize SNMeasureImageFunc(YGNodeConstRef yogaNode,
 
 #endif // __has_include(<UIKit/UIKit.h>)
 #endif
-

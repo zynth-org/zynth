@@ -7,7 +7,6 @@
 @class UIImageView;
 @class UIColor;
 #endif
-#import <JavaScriptCore/JavaScriptCore.h>
 #import <Yoga/Yoga.h>
 #import "SNUIManager.h"
 #import "SNNode.h"

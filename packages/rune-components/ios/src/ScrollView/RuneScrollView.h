@@ -32,6 +32,7 @@ typedef NS_ENUM(NSInteger, RuneScrollAxis) {
 - (void)rune_setEventMinDisplacement:(NSNumber *_Nullable)value;
 - (void)rune_setBridgeCoalescing:(BOOL)enabled;
 - (void)rune_setContentInset:(NSDictionary *_Nullable)inset;
+- (void)rune_setScrollGuardConfig:(NSDictionary *_Nullable)config;
 - (void)rune_setScrollSnapType:(id _Nullable)value;
 - (void)rune_setScrollSnapAlign:(id _Nullable)value;
 - (void)rune_setScrollSnapStop:(id _Nullable)value;

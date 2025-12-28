@@ -10,8 +10,13 @@ import {
 import type { Accessor, Setter } from "solid-js";
 import type { Style } from "@rune/core";
 import { ScrollView, createScrollController } from "./ScrollView";
-import type { ScrollEvent, MaintainVisibleContentPosition } from "./ScrollView";
+import type {
+  ScrollEvent,
+  MaintainVisibleContentPosition,
+  ScrollViewConfig,
+} from "./ScrollView";
 import { View, type LayoutChangeEvent } from "./View";
+import type { RecyclerListController } from "./recyclerlist/controller";
 
 export type ItemSeparatorProps<T> = {
   leadingItem: T;
@@ -20,20 +25,31 @@ export type ItemSeparatorProps<T> = {
   trailingIndex?: number;
 };
 
+export type RecyclerListRenderItemInfo<T> = {
+  item: T;
+  index: number;
+  itemSignal: Accessor<T | null>;
+  indexSignal: Accessor<number>;
+};
+
 export type RecyclerListProps<T> = {
   data: T[];
-  renderItem: (info: {
-    item: Accessor<T | null>;
-    index: Accessor<number>;
-  }) => JSX.Element;
+  renderItem: (info: RecyclerListRenderItemInfo<T>) => JSX.Element;
   keyExtractor: (item: T, index: number) => string;
   estimatedItemSize?: number;
   poolSize?: number;
   overscan?: number | { multiple?: number; main?: number };
+  inverted?: boolean;
+  extraData?: unknown;
   horizontal?: boolean;
   style?: Style;
   contentContainerStyle?: Style;
   maintainVisibleContentPosition?: MaintainVisibleContentPosition;
+  controller?: RecyclerListController;
+  scrollViewConfig?: ScrollViewConfig;
+  scrollEventThrottleMs?: number;
+  scrollEventMinDisplacementPx?: number;
+  scrollBridgeCoalescing?: boolean;
   ItemSeparatorComponent?: (info: ItemSeparatorProps<T>) => JSX.Element;
   ListHeaderComponent?: JSX.Element | (() => JSX.Element);
   ListFooterComponent?: JSX.Element | (() => JSX.Element);
@@ -158,6 +174,24 @@ export function RecyclerList<T>(props: RecyclerListProps<T>) {
   let lastOffset = 0;
   let lastViewport = 0;
 
+  const isInverted = createMemo(() => props.inverted ?? false);
+
+  createEffect(() => {
+    const controller = props.controller as any;
+    if (!controller) return;
+    if (typeof controller.__setScrollController === "function") {
+      controller.__setScrollController(scrollController);
+    }
+    onCleanup(() => {
+      if (typeof controller.__setScrollController === "function") {
+        controller.__setScrollController(null);
+      }
+      if (typeof controller.__setLayoutResolver === "function") {
+        controller.__setLayoutResolver(null);
+      }
+    });
+  });
+
   const estimatedItemSize = createMemo(() => {
     const estimate = props.estimatedItemSize;
     if (typeof estimate === "number" && estimate > 0) {
@@ -275,6 +309,38 @@ export function RecyclerList<T>(props: RecyclerListProps<T>) {
     const value = sizeTree.value(index);
     return value > 0 ? value : estimatedItemSize();
   };
+  const getTotalSize = () => sizeTree.total();
+  const getLogicalOffset = (rawOffset: number, viewport: number) => {
+    if (!isInverted()) return rawOffset;
+    const maxOffset = Math.max(0, getTotalSize() - viewport);
+    return Math.max(0, maxOffset - rawOffset);
+  };
+  const getRawOffset = (logicalOffset: number, viewport: number) => {
+    if (!isInverted()) return Math.max(0, logicalOffset);
+    const maxOffset = Math.max(0, getTotalSize() - viewport);
+    return Math.max(0, maxOffset - logicalOffset);
+  };
+  const getItemPosition = (index: number) => {
+    const base = getOffsetForIndex(index);
+    if (!isInverted()) return base;
+    const size = getSizeForIndex(index);
+    return Math.max(0, getTotalSize() - base - size);
+  };
+
+  createEffect(() => {
+    const controller = props.controller as any;
+    if (!controller || typeof controller.__setLayoutResolver !== "function") {
+      return;
+    }
+    controller.__setLayoutResolver({
+      getOffset: (index: number) => getOffsetForIndex(index),
+      getSize: (index: number) => getSizeForIndex(index),
+      getTotal: () => getTotalSize(),
+      getLength: () => props.data.length,
+      isHorizontal: () => !!props.horizontal,
+      isInverted: () => isInverted(),
+    });
+  });
 
   let lastRangeStart = -1;
   let lastRangeEnd = -1;
@@ -323,9 +389,10 @@ export function RecyclerList<T>(props: RecyclerListProps<T>) {
     }
 
     const overscan = overscanMainDistance();
-    const total = sizeTree.total();
-    const startOffset = Math.max(0, offset - overscan);
-    const endOffset = Math.min(total, offset + viewport + overscan);
+    const total = getTotalSize();
+    const logicalOffset = getLogicalOffset(offset, viewport);
+    const startOffset = Math.max(0, logicalOffset - overscan);
+    const endOffset = Math.min(total, logicalOffset + viewport + overscan);
 
     let startIndex = sizeTree.findIndexByOffset(startOffset);
     let endIndex = sizeTree.findIndexByOffset(
@@ -399,22 +466,23 @@ export function RecyclerList<T>(props: RecyclerListProps<T>) {
 
   const handleBoundaryEvents = (offset: number, viewport: number) => {
     if (!props.onStartReached && !props.onEndReached) return;
-    const total = sizeTree.total();
+    const total = getTotalSize();
     if (total <= 0 || viewport <= 0) return;
+    const logicalOffset = getLogicalOffset(offset, viewport);
 
     if (props.onStartReached) {
       const threshold = (props.onStartReachedThreshold ?? 0.1) * viewport;
-      if (!startFired() && offset <= threshold) {
+      if (!startFired() && logicalOffset <= threshold) {
         setStartFired(true);
         startRearmThreshold = threshold * 1.5;
         setTimeout(() => props.onStartReached?.(), 0);
-      } else if (startFired() && offset > startRearmThreshold) {
+      } else if (startFired() && logicalOffset > startRearmThreshold) {
         setStartFired(false);
       }
     }
 
     if (props.onEndReached) {
-      const distanceToEnd = Math.max(0, total - viewport - offset);
+      const distanceToEnd = Math.max(0, total - viewport - logicalOffset);
       const threshold = (props.onEndReachedThreshold ?? 0.1) * viewport;
       if (!endFired() && distanceToEnd <= threshold) {
         setEndFired(true);
@@ -432,7 +500,7 @@ export function RecyclerList<T>(props: RecyclerListProps<T>) {
   let initialBottomScrollApplied = false;
   let previousKeys: string[] = [];
 
-  const updateAnchor = (offset: number) => {
+  const updateAnchor = (offset: number, viewport: number) => {
     const config = props.maintainVisibleContentPosition;
     if (!config || config.disabled) {
       anchorKey = null;
@@ -446,7 +514,8 @@ export function RecyclerList<T>(props: RecyclerListProps<T>) {
       anchorOffsetWithinItem = 0;
       return;
     }
-    const idx = sizeTree.findIndexByOffset(offset);
+    const logicalOffset = getLogicalOffset(offset, viewport);
+    const idx = sizeTree.findIndexByOffset(logicalOffset);
     if (idx < 0 || idx >= dataKeys.length) return;
     const key = dataKeys[idx];
     if (!key) return;
@@ -458,21 +527,23 @@ export function RecyclerList<T>(props: RecyclerListProps<T>) {
     anchorOffsetWithinItem = Math.max(0, Math.min(remainder, size));
   };
 
-  const scheduleScrollTo = (offset: number, animated: boolean) => {
-    const clamped = Math.max(0, offset);
+  const scheduleScrollTo = (logicalOffset: number, animated: boolean) => {
+    const viewport = lastViewport || effectiveViewport();
+    const rawOffset = getRawOffset(logicalOffset, viewport);
     if (props.horizontal) {
-      scrollController.scrollTo({ x: clamped, animated });
+      scrollController.scrollTo({ x: rawOffset, animated });
     } else {
-      scrollController.scrollTo({ y: clamped, animated });
+      scrollController.scrollTo({ y: rawOffset, animated });
     }
   };
 
-  const scheduleScrollBy = (delta: number) => {
-    if (!delta || Math.abs(delta) < 0.5) return;
+  const scheduleScrollBy = (logicalDelta: number) => {
+    if (!logicalDelta || Math.abs(logicalDelta) < 0.5) return;
+    const rawDelta = isInverted() ? -logicalDelta : logicalDelta;
     if (props.horizontal) {
-      scrollController.scrollBy({ dx: delta, animated: false });
+      scrollController.scrollBy({ dx: rawDelta, animated: false });
     } else {
-      scrollController.scrollBy({ dy: delta, animated: false });
+      scrollController.scrollBy({ dy: rawDelta, animated: false });
     }
   };
 
@@ -526,7 +597,8 @@ export function RecyclerList<T>(props: RecyclerListProps<T>) {
     }
 
     const viewport = effectiveViewport();
-    const total = sizeTree.total();
+    const total = getTotalSize();
+    const logicalOffset = getLogicalOffset(lastOffset, viewport);
 
     if (config.startRenderingFromBottom && !initialBottomScrollApplied) {
       scheduleScrollTo(Math.max(0, total - viewport), false);
@@ -539,14 +611,14 @@ export function RecyclerList<T>(props: RecyclerListProps<T>) {
         const nextIndex = keys.indexOf(anchorKey);
         if (nextIndex !== -1 && nextIndex !== anchorIndex) {
           const nextOffset = getOffsetForIndex(nextIndex) + anchorOffsetWithinItem;
-          const delta = nextOffset - lastOffset;
+          const delta = nextOffset - logicalOffset;
           scheduleScrollBy(delta);
         }
       }
     }
 
     if (appendedCount > 0) {
-      const distanceToBottom = Math.max(0, total - viewport - lastOffset);
+      const distanceToBottom = Math.max(0, total - viewport - logicalOffset);
       const threshold = config.autoscrollToBottomThreshold;
       if (typeof threshold === "number") {
         const thresholdPx =
@@ -579,6 +651,7 @@ export function RecyclerList<T>(props: RecyclerListProps<T>) {
   };
 
   createEffect(() => {
+    const _extra = props.extraData;
     const keys = props.data.map((item, index) => props.keyExtractor(item, index));
     rebuildLayout(keys);
     refreshBindings();
@@ -601,7 +674,7 @@ export function RecyclerList<T>(props: RecyclerListProps<T>) {
     }
     updateBindingsForOffset(offset, viewport > 0 ? viewport : effectiveViewport());
     handleBoundaryEvents(offset, viewport > 0 ? viewport : effectiveViewport());
-    updateAnchor(offset);
+    updateAnchor(offset, viewport > 0 ? viewport : effectiveViewport());
     props.onScroll?.(event);
   };
 
@@ -658,6 +731,10 @@ export function RecyclerList<T>(props: RecyclerListProps<T>) {
       style={mergedScrollViewStyle()}
       contentContainerStyle={sanitizedContentContainerStyle()}
       controller={scrollController}
+      config={props.scrollViewConfig}
+      eventThrottleMs={props.scrollEventThrottleMs}
+      eventMinDisplacementPx={props.scrollEventMinDisplacementPx}
+      bridgeCoalescing={props.scrollBridgeCoalescing}
       testID={props.testID}
       onScroll={handleScroll}
     >
@@ -667,6 +744,53 @@ export function RecyclerList<T>(props: RecyclerListProps<T>) {
           <Index each={poolSlots()}>
             {(slot) => {
               const slotData = slot();
+              const itemProxy = new Proxy(
+                {},
+                {
+                  get(_, prop) {
+                    const item = slotData.item();
+                    if (item == null) return undefined;
+                    const value = Reflect.get(item as any, prop, item);
+                    return typeof value === "function"
+                      ? value.bind(item)
+                      : value;
+                  },
+                  has(_, prop) {
+                    const item = slotData.item();
+                    if (item == null) return false;
+                    if (
+                      typeof item !== "object" &&
+                      typeof item !== "function"
+                    ) {
+                      return false;
+                    }
+                    return prop in (item as object);
+                  },
+                  ownKeys() {
+                    const item = slotData.item();
+                    return item ? Reflect.ownKeys(item) : [];
+                  },
+                  getOwnPropertyDescriptor(_, prop) {
+                    const item = slotData.item();
+                    if (!item) return undefined;
+                    const descriptor = Object.getOwnPropertyDescriptor(
+                      item,
+                      prop
+                    );
+                    if (!descriptor) return undefined;
+                    return { ...descriptor, configurable: true };
+                  },
+                }
+              ) as T;
+
+              const indexValue = {
+                valueOf: () => slotData.index(),
+                toString: () => String(slotData.index()),
+                [Symbol.toPrimitive](hint: string) {
+                  const value = slotData.index();
+                  return hint === "string" ? String(value) : value;
+                },
+              } as unknown as number;
               let slotContent: JSX.Element | null = null;
               let disposeSlot: (() => void) | null = null;
 
@@ -676,8 +800,10 @@ export function RecyclerList<T>(props: RecyclerListProps<T>) {
                 slotContent = createRoot((dispose) => {
                   disposeSlot = dispose;
                   const itemElement = props.renderItem({
-                    item: slotData.item,
-                    index: slotData.index,
+                    item: itemProxy,
+                    index: indexValue,
+                    itemSignal: slotData.item,
+                    indexSignal: slotData.index,
                   });
                   const SeparatorWrapper = () => {
                     if (!SeparatorComponent) return null;
@@ -718,7 +844,7 @@ export function RecyclerList<T>(props: RecyclerListProps<T>) {
                 layoutVersion();
                 const idx = slotData.index();
                 if (idx < 0) return -9999;
-                return getOffsetForIndex(idx);
+                return getItemPosition(idx);
               });
 
               const extent = createMemo(() => {

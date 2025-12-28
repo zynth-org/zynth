@@ -998,6 +998,44 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
         return Value::undefined();
       });
 
+  auto hostApplyBatch = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "applyBatch"), 1,
+      [host](Runtime &rt, const Value &, const Value *a, size_t count) -> Value {
+        try {
+          if (count < 1) {
+            return Value::undefined();
+          }
+
+          std::string payload;
+          if (a[0].isString()) {
+            payload = a[0].getString(rt).utf8(rt);
+          } else {
+            auto JSON = rt.global().getPropertyAsObject(rt, "JSON");
+            auto stringify = JSON.getPropertyAsFunction(rt, "stringify");
+            Value stringified = stringify.call(rt, a[0]);
+            if (stringified.isString()) {
+              payload = stringified.getString(rt).utf8(rt);
+            } else {
+              payload = a[0].toString(rt).utf8(rt);
+            }
+          }
+
+          if (payload.empty()) {
+            return Value::undefined();
+          }
+
+          NSString *json = [NSString stringWithUTF8String:payload.c_str()];
+          SNRunOnMain(^{ 
+            [[host manager] applyBatch:json];
+          });
+        } catch (const facebook::jsi::JSError &error) {
+          RuneReportJSIError(rt, error, "__ui.applyBatch");
+        } catch (const std::exception &ex) {
+          [host reportStdException:ex context:@"__ui.applyBatch"];
+        }
+        return Value::undefined();
+      });
+
   Object ui(rt);
   ui.setProperty(rt, "createNode", hostCreateNode);
   ui.setProperty(rt, "setProp", hostSetProp);
@@ -1007,6 +1045,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
   ui.setProperty(rt, "setSurface", hostSetSurface);
   ui.setProperty(rt, "setHandler", hostSetHandler);
   ui.setProperty(rt, "flush", hostFlush);
+  ui.setProperty(rt, "applyBatch", hostApplyBatch);
   rt.global().setProperty(rt, "__ui", ui);
 }
 
