@@ -7,7 +7,6 @@ export * from "./primitives/ScrollView";
 export * from "./primitives/Button";
 export * from "./primitives/Pressable";
 export * from "./primitives/FlatList";
-export * from "./primitives/RecyclerList";
 export * from "./primitives/ProgressIndicator";
 export * from "./primitives/Switch";
 export * from "./primitives/Slider";
