@@ -54,6 +54,8 @@ static const NSTimeInterval kRuneScrollProgrammaticAnimatedGrace = 0.600;
 @property(nonatomic, assign) BOOL snapPendingCheck;
 @property(nonatomic, assign) BOOL snapPendingForce;
 @property(nonatomic, assign) BOOL contentUpdateScheduled;
+@property(nonatomic, assign) BOOL contentGeometryDirty;
+@property(nonatomic, assign) CGSize lastContentSize;
 @property(nonatomic, assign) CGPoint lastStableOffset;
 @property(nonatomic, assign) NSTimeInterval lastGestureTimestamp;
 @property(nonatomic, assign) NSTimeInterval lastManualStopTimestamp;
@@ -144,23 +146,27 @@ static const NSTimeInterval kRuneScrollProgrammaticAnimatedGrace = 0.600;
 - (void)layoutSubviews {
   [super layoutSubviews];
   _scrollView.frame = self.bounds;
-  [self updateContentGeometry];
+  self.contentGeometryDirty = YES;
+  [self scheduleContentGeometryUpdate];
 }
 
 - (void)insertContentSubview:(UIView *)view atIndex:(NSInteger)index {
   NSInteger safeIndex = MAX(0, MIN(index, (NSInteger)_contentView.subviews.count));
   [_contentView insertSubview:view atIndex:safeIndex];
   [self setNeedsLayout];
+  self.contentGeometryDirty = YES;
   [self scheduleContentGeometryUpdate];
 }
 
 - (void)removeContentSubview:(UIView *)view {
   [view removeFromSuperview];
   [self setNeedsLayout];
+  self.contentGeometryDirty = YES;
   [self scheduleContentGeometryUpdate];
 }
 
 - (void)updateContentGeometry {
+  self.contentGeometryDirty = NO;
   CGSize boundsSize = self.bounds.size;
   __block CGFloat contentWidth = boundsSize.width;
   __block CGFloat contentHeight = boundsSize.height;
@@ -185,16 +191,25 @@ static const NSTimeInterval kRuneScrollProgrammaticAnimatedGrace = 0.600;
     contentWidth = MAX(contentWidth, boundsSize.width);
   }
 
-  _contentView.frame = CGRectMake(0, 0, contentWidth, contentHeight);
-  _scrollView.contentSize = CGSizeMake(contentWidth, contentHeight);
+  CGSize nextContentSize = CGSizeMake(contentWidth, contentHeight);
+  CGFloat epsilon = 0.5f;
+  if (fabs(nextContentSize.width - self.lastContentSize.width) > epsilon ||
+      fabs(nextContentSize.height - self.lastContentSize.height) > epsilon) {
+    _contentView.frame = CGRectMake(0, 0, nextContentSize.width, nextContentSize.height);
+    _scrollView.contentSize = nextContentSize;
+    self.lastContentSize = nextContentSize;
+  }
 }
 
 - (void)scheduleContentGeometryUpdate {
+  if (!self.contentGeometryDirty) return;
   if (self.contentUpdateScheduled) return;
   self.contentUpdateScheduled = YES;
   dispatch_async(dispatch_get_main_queue(), ^{
     self.contentUpdateScheduled = NO;
-    [self updateContentGeometry];
+    if (self.contentGeometryDirty) {
+      [self updateContentGeometry];
+    }
   });
 }
 
