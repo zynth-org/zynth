@@ -38,6 +38,7 @@ export type RecyclerListProps<T> = {
   keyExtractor: (item: T, index: number) => string;
   estimatedItemSize?: number;
   poolSize?: number;
+  // Number = item count; config.main = px; config.multiple = item-size multiplier.
   overscan?: number | { multiple?: number; main?: number };
   inverted?: boolean;
   extraData?: unknown;
@@ -223,7 +224,7 @@ export function FlatList<T>(props: RecyclerListProps<T>) {
   const overscanMainDistance = createMemo(() => {
     const config = props.overscan;
     if (typeof config === "number") {
-      return Math.max(0, config);
+      return Math.max(0, config * estimatedItemSize());
     }
     if (config && typeof config.main === "number") {
       return Math.max(0, config.main);

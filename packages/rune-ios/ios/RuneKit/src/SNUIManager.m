@@ -16,6 +16,8 @@
 static NSString *const kRuneBorderLayerName = @"rune-border-style";
 static NSString *const kRuneGradientLayerName = @"rune-background-gradient";
 static const int kRuneSurfaceIdBase = 1 << 20;
+static const double kRuneBatchTimeBudgetMs = 4.0;
+static const NSUInteger kRuneBatchMaxOps = 200;
 
 static NSString *SNJSONStringForBatchValue(id value) {
   if (!value || value == [NSNull null]) {
@@ -393,6 +395,83 @@ static BOOL SNValueIsPercentString(id value) {
 
 static BOOL SNIsNullish(id value) {
   return value == nil || value == (id)kCFNull;
+}
+
+static BOOL SNStyleValueEqual(id a, id b) {
+  if (SNIsNullish(a) && SNIsNullish(b)) return YES;
+  if (a == nil || a == (id)kCFNull) return NO;
+  return [a isEqual:b];
+}
+
+static NSArray<NSString *> *SNViewStyleKeys(void) {
+  static NSArray<NSString *> *keys = nil;
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    keys = @[
+      @"background",
+      @"backgroundImage",
+      @"backgroundColor",
+      @"borderColor",
+      @"borderWidth",
+      @"borderRadius",
+      @"borderStyle",
+      @"borderTopWidth",
+      @"borderRightWidth",
+      @"borderBottomWidth",
+      @"borderLeftWidth",
+      @"borderTopLeftRadius",
+      @"borderTopRightRadius",
+      @"borderBottomRightRadius",
+      @"borderBottomLeftRadius",
+      @"borderTopColor",
+      @"borderRightColor",
+      @"borderBottomColor",
+      @"borderLeftColor",
+      @"boxShadow",
+      @"shadowColor",
+      @"shadowOpacity",
+      @"shadowRadius",
+      @"shadowOffset",
+      @"elevation",
+      @"opacity",
+      @"zIndex",
+      @"transform",
+      @"transformOrigin",
+      @"fontFamily",
+      @"fontSize",
+      @"fontWeight",
+      @"fontStyle",
+      @"color",
+      @"textAlign",
+      @"textDecorationLine",
+      @"textTransform",
+      @"letterSpacing",
+      @"lineHeight",
+      @"lineSpacing",
+      @"paragraphSpacing",
+      @"baselineShift",
+      @"minimumFontScale",
+      @"padding",
+      @"paddingHorizontal",
+      @"paddingVertical",
+      @"paddingTop",
+      @"paddingRight",
+      @"paddingBottom",
+      @"paddingLeft",
+      @"overflow",
+    ];
+  });
+  return keys;
+}
+
+static BOOL SNStyleMatchesKeys(NSDictionary *a, NSDictionary *b, NSArray<NSString *> *keys) {
+  if (!a || !b) return NO;
+  for (NSString *key in keys) {
+    if (!SNStyleValueEqual(a[key], b[key])) {
+      return NO;
+    }
+  }
+  return YES;
 }
 
 static void SNApplyDimensionValue(
@@ -921,6 +1000,12 @@ static void SNApplyEdges(NSDictionary *style,
   if (!style || !n || !n.view) return;
   if (![style isKindOfClass:[NSDictionary class]] || !n.yoga) return;
 
+  if (n.latestStyle && [n.latestStyle isEqualToDictionary:style]) {
+    return;
+  }
+
+  BOOL viewStyleDirty = !n.latestStyle || !SNStyleMatchesKeys(n.latestStyle, style, SNViewStyleKeys());
+
   SNApplyDimensionValue(
       n.yoga,
       style[@"width"],
@@ -1108,250 +1193,253 @@ static void SNApplyEdges(NSDictionary *style,
   YGNodeStyleSetBorder(n.yoga, YGEdgeAll, borderWidthValue ? (float)SNNum(borderWidthValue) : 0.f);
 
   n.latestStyle = style;
-  id backgroundValue = style[@"background"] ?: style[@"backgroundImage"];
-  RuneLinearGradient *gradient = [RuneGradientParser parse:backgroundValue];
-  NSString *bg = style[@"backgroundColor"];
-  if (!bg && !gradient && [backgroundValue isKindOfClass:[NSString class]]) {
-    bg = (NSString *)backgroundValue;
-  }
-  if (bg) {
-    n.view.backgroundColor = SNColorFromHex(bg);
-  } else if (gradient) {
-    n.view.backgroundColor = [UIColor clearColor];
-  } else {
-    n.view.backgroundColor = [UIColor clearColor];
-  }
-  // Background color is handled in SNApplyBorderStyleToView now
-  NSNumber *opacityValue = style[@"opacity"];
-  if (opacityValue) {
-    CGFloat resolvedOpacity = (CGFloat)SNNum(opacityValue);
-    resolvedOpacity = MAX(0.f, MIN(1.f, resolvedOpacity));
-    n.view.alpha = resolvedOpacity;
-  } else {
-    n.view.alpha = 1.f;
-  }
 
-  NSNumber *zIndexValue = style[@"zIndex"];
-  if (zIndexValue) {
-    n.view.layer.zPosition = (CGFloat)SNNum(zIndexValue);
-  } else {
-    n.view.layer.zPosition = 0.f;
-  }
-
-  id transform = style[@"transform"];
-  n.transformOrigin = style[@"transformOrigin"];
-  if (transform) {
-    n.view.layer.transform = [RuneTransformParser parse:transform];
-  } else {
-    n.view.layer.transform = CATransform3DIdentity;
-  }
-
-  // Font handling (applies to text-capable views)
-  NSString *fontFamily = [style objectForKey:@"fontFamily"];
-  NSNumber *fontSizeValue = [style objectForKey:@"fontSize"];
-  NSString *fontWeightValue = [style objectForKey:@"fontWeight"];
-  NSString *fontStyleValue = [style objectForKey:@"fontStyle"];
-
-  CGFloat baseSize = fontSizeValue ? (CGFloat)SNNum(fontSizeValue) : 0.0;
-  if (baseSize <= 0.0 && [n.view respondsToSelector:@selector(font)]) {
-    UIFont *current = [(id)n.view font];
-    baseSize = current ? current.pointSize : 16.0;
-  } else if (baseSize <= 0.0) {
-    baseSize = 16.0;
-  }
-
-  UIFontWeight targetWeight = UIFontWeightRegular;
-  if (fontWeightValue) {
-    NSDictionary *weights = @{@"normal":@(UIFontWeightRegular),@"bold":@(UIFontWeightBold),
-                              @"100":@(UIFontWeightUltraLight),@"200":@(UIFontWeightThin),@"300":@(UIFontWeightLight),@"400":@(UIFontWeightRegular),
-                              @"500":@(UIFontWeightMedium),@"600":@(UIFontWeightSemibold),@"700":@(UIFontWeightBold),@"800":@(UIFontWeightHeavy),@"900":@(UIFontWeightBlack)};
-    NSNumber *mapped = weights[fontWeightValue];
-    if (mapped) {
-      targetWeight = (CGFloat)mapped.doubleValue;
+  if (viewStyleDirty) {
+    id backgroundValue = style[@"background"] ?: style[@"backgroundImage"];
+    RuneLinearGradient *gradient = [RuneGradientParser parse:backgroundValue];
+    NSString *bg = style[@"backgroundColor"];
+    if (!bg && !gradient && [backgroundValue isKindOfClass:[NSString class]]) {
+      bg = (NSString *)backgroundValue;
     }
-  }
-
-  UIFont *targetFont = nil;
-  if (fontFamily.length > 0) {
-    targetFont = [UIFont fontWithName:fontFamily size:baseSize];
-    if (!targetFont) {
-      // Try known variants (e.g., PostScript names)
-      NSString *regularName = [fontFamily stringByAppendingString:@"Regular"];
-      targetFont = [UIFont fontWithName:regularName size:baseSize];
-    }
-    if (!targetFont) {
-      NSArray<NSString *> *familyMembers = [UIFont fontNamesForFamilyName:fontFamily];
-      if (familyMembers.count > 0) {
-        targetFont = [UIFont fontWithName:familyMembers.firstObject size:baseSize];
-      }
-    }
-  }
-  if (!targetFont) {
-    BOOL italic = fontStyleValue && [[fontStyleValue lowercaseString] isEqualToString:@"italic"];
-    if (italic) {
-      targetFont = [UIFont italicSystemFontOfSize:baseSize];
+    if (bg) {
+      n.view.backgroundColor = SNColorFromHex(bg);
+    } else if (gradient) {
+      n.view.backgroundColor = [UIColor clearColor];
     } else {
-      targetFont = [UIFont systemFontOfSize:baseSize weight:targetWeight];
+      n.view.backgroundColor = [UIColor clearColor];
     }
-  }
-  if (targetFont && [n.view respondsToSelector:@selector(setFont:)]) {
-    [(id)n.view setFont:targetFont];
-  }
-
-  NSNumber *br = style[@"borderRadius"];
-  NSString *overflowForClip = style[@"overflow"];
-  if (br) {
-    n.view.layer.cornerRadius = (CGFloat)SNNum(br);
-    // borderRadius requires clipping to show rounded corners, BUT respect explicit overflow setting
-    // If overflow is explicitly "visible", don't clip even with borderRadius
-    // If overflow is "hidden" or "scroll", clip (already set above)
-    // If overflow is not set, enable clipping for borderRadius to work visually
-    if (overflowForClip && [overflowForClip isEqualToString:@"visible"]) {
-      // User explicitly wants visible - don't clip, corners won't show but that's their choice
-      n.view.clipsToBounds = NO;
-      shouldClip = NO;
-    } else if (!overflowForClip) {
-      // No overflow set but has borderRadius - need clipping for rounded corners
-      n.view.clipsToBounds = YES;
-      shouldClip = YES;
+    // Background color is handled in SNApplyBorderStyleToView now
+    NSNumber *opacityValue = style[@"opacity"];
+    if (opacityValue) {
+      CGFloat resolvedOpacity = (CGFloat)SNNum(opacityValue);
+      resolvedOpacity = MAX(0.f, MIN(1.f, resolvedOpacity));
+      n.view.alpha = resolvedOpacity;
+    } else {
+      n.view.alpha = 1.f;
     }
-    // If overflow is "hidden"/"scroll", clipsToBounds was already set to YES above
-  }
-  SNApplyBorderStyleToView(n.view, style, shouldClip);
-  SEL updateCorner = NSSelectorFromString(@"rune_updateConfigurationCornerRadiusIfNeeded");
-  if ([n.view respondsToSelector:updateCorner]) {
-    [(id)n.view performSelector:updateCorner];
-  }
-  SNApplyGradientToView(n.view, gradient);
 
-  id shadowOffsetRaw = style[@"shadowOffset"];
-  NSDictionary *shadowOffset = nil;
-  if ([shadowOffsetRaw isKindOfClass:[NSDictionary class]]) {
-    shadowOffset = shadowOffsetRaw;
-  } else if ([shadowOffsetRaw isKindOfClass:[NSString class]]) {
-    NSString *trimmed = [(NSString *)shadowOffsetRaw stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-    if ([trimmed hasPrefix:@"{"]) {
-      NSData *data = [trimmed dataUsingEncoding:NSUTF8StringEncoding];
-      id parsed = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
-      if ([parsed isKindOfClass:[NSDictionary class]]) {
-        shadowOffset = parsed;
-      }
+    NSNumber *zIndexValue = style[@"zIndex"];
+    if (zIndexValue) {
+      n.view.layer.zPosition = (CGFloat)SNNum(zIndexValue);
+    } else {
+      n.view.layer.zPosition = 0.f;
     }
-  }
-  NSNumber *shadowOffsetX = [shadowOffset[@"width"] isKindOfClass:[NSNumber class]] ? shadowOffset[@"width"] : nil;
-  NSNumber *shadowOffsetY = [shadowOffset[@"height"] isKindOfClass:[NSNumber class]] ? shadowOffset[@"height"] : nil;
-  NSString *shadowColorString = [style[@"shadowColor"] isKindOfClass:[NSString class]] ? style[@"shadowColor"] : nil;
-  UIColor *shadowColor = shadowColorString ? SNColorFromHex(shadowColorString) : nil;
-  NSNumber *shadowOpacity = [style[@"shadowOpacity"] isKindOfClass:[NSNumber class]] ? style[@"shadowOpacity"] : nil;
-  NSNumber *shadowRadius = [style[@"shadowRadius"] isKindOfClass:[NSNumber class]] ? style[@"shadowRadius"] : nil;
-  NSNumber *elevation = [style[@"elevation"] isKindOfClass:[NSNumber class]] ? style[@"elevation"] : nil;
-  NSArray<RuneShadowLayer *> *cssShadow = [RuneShadowParser parse:style[@"boxShadow"]];
-  NSArray<RuneShadowLayer *> *rnShadow = [RuneShadowParser fromReactNativeColor:shadowColor
-                                                                        opacity:shadowOpacity
-                                                                         radius:shadowRadius
-                                                                        offsetX:shadowOffsetX
-                                                                        offsetY:shadowOffsetY];
-  NSArray<RuneShadowLayer *> *shadows = [RuneShadowParser merged:cssShadow fallback:rnShadow];
-  n.latestShadowLayers = shadows;
-  n.latestElevation = elevation;
-  SNApplyShadowStyleToView(n.view, shadows, elevation);
 
-  // TextInput-specific styling - done via selector check to avoid import
-  if ([n.view respondsToSelector:@selector(applyPlaceholderToneFromTextColor)]) {
-    NSNumber *fs = style[@"fontSize"];
-    CGFloat currentSize = [n.view respondsToSelector:@selector(font)] ? ((UITextView *)n.view).font.pointSize : 16.0;
-    CGFloat targetSize = fs ? (CGFloat)SNNum(fs) : currentSize;
-    CGFloat targetWeight = UIFontWeightRegular;
+    id transform = style[@"transform"];
+    n.transformOrigin = style[@"transformOrigin"];
+    if (transform) {
+      n.view.layer.transform = [RuneTransformParser parse:transform];
+    } else {
+      n.view.layer.transform = CATransform3DIdentity;
+    }
 
-    NSString *fw = style[@"fontWeight"];
-    if (fw) {
+    // Font handling (applies to text-capable views)
+    NSString *fontFamily = [style objectForKey:@"fontFamily"];
+    NSNumber *fontSizeValue = [style objectForKey:@"fontSize"];
+    NSString *fontWeightValue = [style objectForKey:@"fontWeight"];
+    NSString *fontStyleValue = [style objectForKey:@"fontStyle"];
+
+    CGFloat baseSize = fontSizeValue ? (CGFloat)SNNum(fontSizeValue) : 0.0;
+    if (baseSize <= 0.0 && [n.view respondsToSelector:@selector(font)]) {
+      UIFont *current = [(id)n.view font];
+      baseSize = current ? current.pointSize : 16.0;
+    } else if (baseSize <= 0.0) {
+      baseSize = 16.0;
+    }
+
+    UIFontWeight targetWeight = UIFontWeightRegular;
+    if (fontWeightValue) {
       NSDictionary *weights = @{@"normal":@(UIFontWeightRegular),@"bold":@(UIFontWeightBold),
                                 @"100":@(UIFontWeightUltraLight),@"200":@(UIFontWeightThin),@"300":@(UIFontWeightLight),@"400":@(UIFontWeightRegular),
                                 @"500":@(UIFontWeightMedium),@"600":@(UIFontWeightSemibold),@"700":@(UIFontWeightBold),@"800":@(UIFontWeightHeavy),@"900":@(UIFontWeightBlack)};
-      NSNumber *mapped = weights[fw];
+      NSNumber *mapped = weights[fontWeightValue];
       if (mapped) {
         targetWeight = (CGFloat)mapped.doubleValue;
       }
     }
 
-    if ([n.view respondsToSelector:@selector(setFont:)]) {
-      ((UITextView *)n.view).font = [UIFont systemFontOfSize:targetSize weight:targetWeight];
+    UIFont *targetFont = nil;
+    if (fontFamily.length > 0) {
+      targetFont = [UIFont fontWithName:fontFamily size:baseSize];
+      if (!targetFont) {
+        // Try known variants (e.g., PostScript names)
+        NSString *regularName = [fontFamily stringByAppendingString:@"Regular"];
+        targetFont = [UIFont fontWithName:regularName size:baseSize];
+      }
+      if (!targetFont) {
+        NSArray<NSString *> *familyMembers = [UIFont fontNamesForFamilyName:fontFamily];
+        if (familyMembers.count > 0) {
+          targetFont = [UIFont fontWithName:familyMembers.firstObject size:baseSize];
+        }
+      }
+    }
+    if (!targetFont) {
+      BOOL italic = fontStyleValue && [[fontStyleValue lowercaseString] isEqualToString:@"italic"];
+      if (italic) {
+        targetFont = [UIFont italicSystemFontOfSize:baseSize];
+      } else {
+        targetFont = [UIFont systemFontOfSize:baseSize weight:targetWeight];
+      }
+    }
+    if (targetFont && [n.view respondsToSelector:@selector(setFont:)]) {
+      [(id)n.view setFont:targetFont];
     }
 
-    NSString *color = style[@"color"];
-    if (color && [n.view respondsToSelector:@selector(setTextColor:)]) {
-      ((UITextView *)n.view).textColor = SNColorFromHex(color);
-      [n.view performSelector:@selector(applyPlaceholderToneFromTextColor)];
+    NSNumber *br = style[@"borderRadius"];
+    NSString *overflowForClip = style[@"overflow"];
+    if (br) {
+      n.view.layer.cornerRadius = (CGFloat)SNNum(br);
+      // borderRadius requires clipping to show rounded corners, BUT respect explicit overflow setting
+      // If overflow is explicitly "visible", don't clip even with borderRadius
+      // If overflow is "hidden" or "scroll", clip (already set above)
+      // If overflow is not set, enable clipping for borderRadius to work visually
+      if (overflowForClip && [overflowForClip isEqualToString:@"visible"]) {
+        // User explicitly wants visible - don't clip, corners won't show but that's their choice
+        n.view.clipsToBounds = NO;
+        shouldClip = NO;
+      } else if (!overflowForClip) {
+        // No overflow set but has borderRadius - need clipping for rounded corners
+        n.view.clipsToBounds = YES;
+        shouldClip = YES;
+      }
+      // If overflow is "hidden"/"scroll", clipsToBounds was already set to YES above
     }
+    SNApplyBorderStyleToView(n.view, style, shouldClip);
+    SEL updateCorner = NSSelectorFromString(@"rune_updateConfigurationCornerRadiusIfNeeded");
+    if ([n.view respondsToSelector:updateCorner]) {
+      [(id)n.view performSelector:updateCorner];
+    }
+    SNApplyGradientToView(n.view, gradient);
+
+    id shadowOffsetRaw = style[@"shadowOffset"];
+    NSDictionary *shadowOffset = nil;
+    if ([shadowOffsetRaw isKindOfClass:[NSDictionary class]]) {
+      shadowOffset = shadowOffsetRaw;
+    } else if ([shadowOffsetRaw isKindOfClass:[NSString class]]) {
+      NSString *trimmed = [(NSString *)shadowOffsetRaw stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+      if ([trimmed hasPrefix:@"{"]) {
+        NSData *data = [trimmed dataUsingEncoding:NSUTF8StringEncoding];
+        id parsed = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+        if ([parsed isKindOfClass:[NSDictionary class]]) {
+          shadowOffset = parsed;
+        }
+      }
+    }
+    NSNumber *shadowOffsetX = [shadowOffset[@"width"] isKindOfClass:[NSNumber class]] ? shadowOffset[@"width"] : nil;
+    NSNumber *shadowOffsetY = [shadowOffset[@"height"] isKindOfClass:[NSNumber class]] ? shadowOffset[@"height"] : nil;
+    NSString *shadowColorString = [style[@"shadowColor"] isKindOfClass:[NSString class]] ? style[@"shadowColor"] : nil;
+    UIColor *shadowColor = shadowColorString ? SNColorFromHex(shadowColorString) : nil;
+    NSNumber *shadowOpacity = [style[@"shadowOpacity"] isKindOfClass:[NSNumber class]] ? style[@"shadowOpacity"] : nil;
+    NSNumber *shadowRadius = [style[@"shadowRadius"] isKindOfClass:[NSNumber class]] ? style[@"shadowRadius"] : nil;
+    NSNumber *elevation = [style[@"elevation"] isKindOfClass:[NSNumber class]] ? style[@"elevation"] : nil;
+    NSArray<RuneShadowLayer *> *cssShadow = [RuneShadowParser parse:style[@"boxShadow"]];
+    NSArray<RuneShadowLayer *> *rnShadow = [RuneShadowParser fromReactNativeColor:shadowColor
+                                                                          opacity:shadowOpacity
+                                                                           radius:shadowRadius
+                                                                          offsetX:shadowOffsetX
+                                                                          offsetY:shadowOffsetY];
+    NSArray<RuneShadowLayer *> *shadows = [RuneShadowParser merged:cssShadow fallback:rnShadow];
+    n.latestShadowLayers = shadows;
+    n.latestElevation = elevation;
+    SNApplyShadowStyleToView(n.view, shadows, elevation);
+
+    // TextInput-specific styling - done via selector check to avoid import
+    if ([n.view respondsToSelector:@selector(applyPlaceholderToneFromTextColor)]) {
+      NSNumber *fs = style[@"fontSize"];
+      CGFloat currentSize = [n.view respondsToSelector:@selector(font)] ? ((UITextView *)n.view).font.pointSize : 16.0;
+      CGFloat targetSize = fs ? (CGFloat)SNNum(fs) : currentSize;
+      CGFloat targetWeight = UIFontWeightRegular;
+
+      NSString *fw = style[@"fontWeight"];
+      if (fw) {
+        NSDictionary *weights = @{@"normal":@(UIFontWeightRegular),@"bold":@(UIFontWeightBold),
+                                  @"100":@(UIFontWeightUltraLight),@"200":@(UIFontWeightThin),@"300":@(UIFontWeightLight),@"400":@(UIFontWeightRegular),
+                                  @"500":@(UIFontWeightMedium),@"600":@(UIFontWeightSemibold),@"700":@(UIFontWeightBold),@"800":@(UIFontWeightHeavy),@"900":@(UIFontWeightBlack)};
+        NSNumber *mapped = weights[fw];
+        if (mapped) {
+          targetWeight = (CGFloat)mapped.doubleValue;
+        }
+      }
+
+      if ([n.view respondsToSelector:@selector(setFont:)]) {
+        ((UITextView *)n.view).font = [UIFont systemFontOfSize:targetSize weight:targetWeight];
+      }
+
+      NSString *color = style[@"color"];
+      if (color && [n.view respondsToSelector:@selector(setTextColor:)]) {
+        ((UITextView *)n.view).textColor = SNColorFromHex(color);
+        [n.view performSelector:@selector(applyPlaceholderToneFromTextColor)];
+      }
       
-    CGFloat top = [style[@"paddingTop"] ?: style[@"paddingVertical"] ?: style[@"padding"] floatValue];
-    CGFloat left = [style[@"paddingLeft"] ?: style[@"paddingHorizontal"] ?: style[@"padding"] floatValue];
-    CGFloat bottom = [style[@"paddingBottom"] ?: style[@"paddingVertical"] ?: style[@"padding"] floatValue];
-    CGFloat right = [style[@"paddingRight"] ?: style[@"paddingHorizontal"] ?: style[@"padding"] floatValue];
+      CGFloat top = [style[@"paddingTop"] ?: style[@"paddingVertical"] ?: style[@"padding"] floatValue];
+      CGFloat left = [style[@"paddingLeft"] ?: style[@"paddingHorizontal"] ?: style[@"padding"] floatValue];
+      CGFloat bottom = [style[@"paddingBottom"] ?: style[@"paddingVertical"] ?: style[@"padding"] floatValue];
+      CGFloat right = [style[@"paddingRight"] ?: style[@"paddingHorizontal"] ?: style[@"padding"] floatValue];
     
-    if ([n.view respondsToSelector:@selector(setTextContainerInset:)]) {
-      ((UITextView *)n.view).textContainerInset = UIEdgeInsetsMake(top, left, bottom, right);
-    }
+      if ([n.view respondsToSelector:@selector(setTextContainerInset:)]) {
+        ((UITextView *)n.view).textContainerInset = UIEdgeInsetsMake(top, left, bottom, right);
+      }
 
-    if ([n.view respondsToSelector:@selector(placeholderLeadingConstraint)]) {
-        NSLayoutConstraint *constraint = [n.view performSelector:@selector(placeholderLeadingConstraint)];
-        if (constraint) {
-            constraint.constant = left;
-        }
-    }
-    if ([n.view respondsToSelector:@selector(placeholderTopConstraint)]) {
-        NSLayoutConstraint *constraint = [n.view performSelector:@selector(placeholderTopConstraint)];
-        if (constraint) {
-            constraint.constant = top;
-        }
-    }
+      if ([n.view respondsToSelector:@selector(placeholderLeadingConstraint)]) {
+          NSLayoutConstraint *constraint = [n.view performSelector:@selector(placeholderLeadingConstraint)];
+          if (constraint) {
+              constraint.constant = left;
+          }
+      }
+      if ([n.view respondsToSelector:@selector(placeholderTopConstraint)]) {
+          NSLayoutConstraint *constraint = [n.view performSelector:@selector(placeholderTopConstraint)];
+          if (constraint) {
+              constraint.constant = top;
+          }
+      }
 
-    if (n.yoga && YGNodeGetOwner(n.yoga)) {
-      YGNodeMarkDirty(n.yoga);
-    }
-  }
-    
-  // SecureTextInput-specific styling - done via selector check to avoid import
-  if ([n.view respondsToSelector:@selector(applyPlaceholderToneFromTextColor)] && 
-      [n.view respondsToSelector:@selector(padding)]) {
-    NSNumber *fs = style[@"fontSize"];
-    CGFloat currentSize = [n.view respondsToSelector:@selector(font)] ? ((UITextField *)n.view).font.pointSize : 16.0;
-    CGFloat targetSize = fs ? (CGFloat)SNNum(fs) : currentSize;
-    CGFloat targetWeight = UIFontWeightRegular;
-
-    NSString *fw = style[@"fontWeight"];
-    if (fw) {
-      NSDictionary *weights = @{@"normal":@(UIFontWeightRegular),@"bold":@(UIFontWeightBold),
-                                @"100":@(UIFontWeightUltraLight),@"200":@(UIFontWeightThin),@"300":@(UIFontWeightLight),@"400":@(UIFontWeightRegular),
-                                @"500":@(UIFontWeightMedium),@"600":@(UIFontWeightSemibold),@"700":@(UIFontWeightBold),@"800":@(UIFontWeightHeavy),@"900":@(UIFontWeightBlack)};
-      NSNumber *mapped = weights[fw];
-      if (mapped) {
-        targetWeight = (CGFloat)mapped.doubleValue;
+      if (n.yoga && YGNodeGetOwner(n.yoga)) {
+        YGNodeMarkDirty(n.yoga);
       }
     }
-
-    if ([n.view respondsToSelector:@selector(setFont:)]) {
-      ((UITextField *)n.view).font = [UIFont systemFontOfSize:targetSize weight:targetWeight];
-    }
-
-    NSString *color = style[@"color"];
-    if (color && [n.view respondsToSelector:@selector(setTextColor:)]) {
-      ((UITextField *)n.view).textColor = SNColorFromHex(color);
-      [n.view performSelector:@selector(applyPlaceholderToneFromTextColor)];
-    }
-
-    CGFloat top = [style[@"paddingTop"] ?: style[@"paddingVertical"] ?: style[@"padding"] floatValue];
-    CGFloat left = [style[@"paddingLeft"] ?: style[@"paddingHorizontal"] ?: style[@"padding"] floatValue];
-    CGFloat bottom = [style[@"paddingBottom"] ?: style[@"paddingVertical"] ?: style[@"padding"] floatValue];
-    CGFloat right = [style[@"paddingRight"] ?: style[@"paddingHorizontal"] ?: style[@"padding"] floatValue];
     
-    if ([n.view respondsToSelector:@selector(setPadding:)]) {
-      [n.view performSelector:@selector(setPadding:) 
-                 withObject:[NSValue valueWithUIEdgeInsets:UIEdgeInsetsMake(top, left, bottom, right)]];
-    }
+    // SecureTextInput-specific styling - done via selector check to avoid import
+    if ([n.view respondsToSelector:@selector(applyPlaceholderToneFromTextColor)] && 
+        [n.view respondsToSelector:@selector(padding)]) {
+      NSNumber *fs = style[@"fontSize"];
+      CGFloat currentSize = [n.view respondsToSelector:@selector(font)] ? ((UITextField *)n.view).font.pointSize : 16.0;
+      CGFloat targetSize = fs ? (CGFloat)SNNum(fs) : currentSize;
+      CGFloat targetWeight = UIFontWeightRegular;
 
-    if (n.yoga && YGNodeGetOwner(n.yoga)) {
-      YGNodeMarkDirty(n.yoga);
+      NSString *fw = style[@"fontWeight"];
+      if (fw) {
+        NSDictionary *weights = @{@"normal":@(UIFontWeightRegular),@"bold":@(UIFontWeightBold),
+                                  @"100":@(UIFontWeightUltraLight),@"200":@(UIFontWeightThin),@"300":@(UIFontWeightLight),@"400":@(UIFontWeightRegular),
+                                  @"500":@(UIFontWeightMedium),@"600":@(UIFontWeightSemibold),@"700":@(UIFontWeightBold),@"800":@(UIFontWeightHeavy),@"900":@(UIFontWeightBlack)};
+        NSNumber *mapped = weights[fw];
+        if (mapped) {
+          targetWeight = (CGFloat)mapped.doubleValue;
+        }
+      }
+
+      if ([n.view respondsToSelector:@selector(setFont:)]) {
+        ((UITextField *)n.view).font = [UIFont systemFontOfSize:targetSize weight:targetWeight];
+      }
+
+      NSString *color = style[@"color"];
+      if (color && [n.view respondsToSelector:@selector(setTextColor:)]) {
+        ((UITextField *)n.view).textColor = SNColorFromHex(color);
+        [n.view performSelector:@selector(applyPlaceholderToneFromTextColor)];
+      }
+
+      CGFloat top = [style[@"paddingTop"] ?: style[@"paddingVertical"] ?: style[@"padding"] floatValue];
+      CGFloat left = [style[@"paddingLeft"] ?: style[@"paddingHorizontal"] ?: style[@"padding"] floatValue];
+      CGFloat bottom = [style[@"paddingBottom"] ?: style[@"paddingVertical"] ?: style[@"padding"] floatValue];
+      CGFloat right = [style[@"paddingRight"] ?: style[@"paddingHorizontal"] ?: style[@"padding"] floatValue];
+    
+      if ([n.view respondsToSelector:@selector(setPadding:)]) {
+        [n.view performSelector:@selector(setPadding:) 
+                   withObject:[NSValue valueWithUIEdgeInsets:UIEdgeInsetsMake(top, left, bottom, right)]];
+      }
+
+      if (n.yoga && YGNodeGetOwner(n.yoga)) {
+        YGNodeMarkDirty(n.yoga);
+      }
     }
   }
 }
@@ -1366,6 +1454,10 @@ static void SNApplyEdges(NSDictionary *style,
   if ([name isEqualToString:@"style"]) {
     NSData *data = [json dataUsingEncoding:NSUTF8StringEncoding];
     NSDictionary *s = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+    // Ensure component-specific style handlers run for batched style updates.
+    if (componentDescriptor && componentDescriptor.applyStyle) {
+      componentDescriptor.applyStyle(self, n, s);
+    }
     [self sn_applyStyleDictionary:s toNode:n];
     [self rune_markNeedsFlush];
     return;
@@ -1519,18 +1611,24 @@ static void SNApplyEdges(NSDictionary *style,
 - (void)applyBatch:(NSString *)batchJSON {
   if (!batchJSON.length) return;
 
-  void (^applyBlock)(void) = ^{
-    NSData *data = [batchJSON dataUsingEncoding:NSUTF8StringEncoding];
-    if (!data) return;
-
-    NSError *error = nil;
-    id payload = [NSJSONSerialization JSONObjectWithData:data options:0 error:&error];
-    if (!payload || ![payload isKindOfClass:[NSDictionary class]]) return;
-
-    NSArray *operations = ((NSDictionary *)payload)[@"operations"];
-    if (![operations isKindOfClass:[NSArray class]]) return;
-
-    for (id entry in operations) {
+  __block void (^applyOperations)(NSArray *operations, NSUInteger startIndex);
+  applyOperations = ^(NSArray *operations, NSUInteger startIndex) {
+    NSUInteger count = operations.count;
+    if (startIndex >= count) {
+      return;
+    }
+    CFAbsoluteTime startTime = CFAbsoluteTimeGetCurrent();
+    NSUInteger end = startIndex;
+    for (; end < count; end++) {
+      if ((end - startIndex) >= kRuneBatchMaxOps) {
+        break;
+      }
+      double elapsedMs = (CFAbsoluteTimeGetCurrent() - startTime) * 1000.0;
+      if (elapsedMs >= kRuneBatchTimeBudgetMs) {
+        break;
+      }
+      NSUInteger i = end;
+      id entry = operations[i];
       if (![entry isKindOfClass:[NSDictionary class]]) continue;
       NSDictionary *op = (NSDictionary *)entry;
       NSString *type = [op[@"type"] isKindOfClass:[NSString class]] ? op[@"type"] : nil;
@@ -1609,6 +1707,25 @@ static void SNApplyEdges(NSDictionary *style,
         continue;
       }
     }
+
+    if (end < count) {
+      dispatch_async(dispatch_get_main_queue(), ^{
+        applyOperations(operations, end);
+      });
+    }
+  };
+
+  void (^applyBlock)(void) = ^{
+    NSData *data = [batchJSON dataUsingEncoding:NSUTF8StringEncoding];
+    if (!data) return;
+
+    NSError *error = nil;
+    id payload = [NSJSONSerialization JSONObjectWithData:data options:0 error:&error];
+    if (!payload || ![payload isKindOfClass:[NSDictionary class]]) return;
+
+    NSArray *operations = ((NSDictionary *)payload)[@"operations"];
+    if (![operations isKindOfClass:[NSArray class]]) return;
+    applyOperations(operations, 0);
   };
 
   if ([NSThread isMainThread]) {

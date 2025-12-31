@@ -317,7 +317,8 @@ static void RuneApplyTransformOrigin(UIView *view, id origin) {
         CGPoint center = CGPointMake(x + w * anchor.x, y + h * anchor.y);
         CGRect bounds = CGRectMake(0, 0, w, h);
 
-        if (!CGPointEqualToPoint(obj.view.center, center) || !CGRectEqualToRect(obj.view.bounds, bounds)) {
+        BOOL frameChanged = !CGPointEqualToPoint(obj.view.center, center) || !CGRectEqualToRect(obj.view.bounds, bounds);
+        if (frameChanged) {
           obj.view.center = center;
           obj.view.bounds = bounds;
         }
@@ -366,22 +367,24 @@ static void RuneApplyTransformOrigin(UIView *view, id origin) {
         
         [self rune_dispatchLayoutEventForNode:obj force:NO];
 
-        // Re-apply border style to update layer paths based on new frame
-        if (obj.latestStyle) {
+        // Re-apply frame-dependent styles only when geometry changes.
+        if (frameChanged) {
+          if (obj.latestStyle) {
             [self sn_applyBorderStyle:obj.latestStyle toView:obj.view];
-        }
-        if (obj.latestStyle) {
+          }
+          if (obj.latestStyle) {
             id bgValue = obj.latestStyle[@"background"] ?: obj.latestStyle[@"backgroundImage"];
             RuneLinearGradient *gradient = [RuneGradientParser parse:bgValue];
             if (!gradient && [bgValue isKindOfClass:[NSString class]]) {
-                gradient = [RuneGradientParser parse:bgValue];
+              gradient = [RuneGradientParser parse:bgValue];
             }
             if (gradient) {
-                SNApplyGradientToView(obj.view, gradient);
+              SNApplyGradientToView(obj.view, gradient);
             }
-        }
-        if (obj.latestShadowLayers || obj.latestElevation) {
+          }
+          if (obj.latestShadowLayers || obj.latestElevation) {
             [self sn_applyShadowLayers:obj.latestShadowLayers elevation:obj.latestElevation toView:obj.view];
+          }
         }
       } @catch (NSException *exception) {
         NSLog(@"[SN] Exception applying frame for nid=%d: %@", obj.nid, exception);

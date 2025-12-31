@@ -8,6 +8,7 @@
 #import <objc/message.h>
 #import <RuneKit/RuneComponentAPI.h>
 #import <math.h>
+#import <os/lock.h>
 
 #if __has_include(<RuneKit/RuneKit-Swift.h>)
 #import <RuneKit/RuneKit-Swift.h>
@@ -43,6 +44,49 @@ static inline void SNRunOnMain(void (^block)(void)) {
   }
 }
 
+static os_unfair_lock sUIQueueLock = OS_UNFAIR_LOCK_INIT;
+static NSMutableArray<dispatch_block_t> *sUIQueue = nil;
+static BOOL sUIQueueScheduled = NO;
+
+static void SNEnqueueOnMain(dispatch_block_t block) {
+  if (!block) {
+    return;
+  }
+  if ([NSThread isMainThread]) {
+    block();
+    return;
+  }
+
+  dispatch_block_t copied = [block copy];
+  BOOL shouldSchedule = NO;
+  os_unfair_lock_lock(&sUIQueueLock);
+  if (!sUIQueue) {
+    sUIQueue = [[NSMutableArray alloc] init];
+  }
+  [sUIQueue addObject:copied];
+  if (!sUIQueueScheduled) {
+    sUIQueueScheduled = YES;
+    shouldSchedule = YES;
+  }
+  os_unfair_lock_unlock(&sUIQueueLock);
+
+  if (!shouldSchedule) {
+    return;
+  }
+
+  dispatch_async(dispatch_get_main_queue(), ^{
+    NSArray<dispatch_block_t> *pending = nil;
+    os_unfair_lock_lock(&sUIQueueLock);
+    pending = [sUIQueue copy];
+    [sUIQueue removeAllObjects];
+    sUIQueueScheduled = NO;
+    os_unfair_lock_unlock(&sUIQueueLock);
+
+    for (dispatch_block_t queued in pending) {
+      queued();
+    }
+  });
+}
 namespace {
 struct NSDataBuffer final : public facebook::jsi::Buffer {
   NSData *data_;
@@ -823,14 +867,14 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
               copyObject(key);
             }
 
-            SNRunOnMain(^{ 
+            SNEnqueueOnMain(^{ 
               [[host manager] setStyle:@(id) style:styleDict];
             });
             return Value::undefined();
           }
 
           if (propValue.isUndefined() || (propValue.isObject() && propValue.asObject(rt).isFunction(rt))) {
-            SNRunOnMain(^{ 
+            SNEnqueueOnMain(^{ 
               [[host manager] setProp:@(id)
                                         name:nameStr
                                    valueJSON:@"null"];
@@ -843,7 +887,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
           Value stringified = stringify.call(rt, propValue);
           if (!stringified.isString()) {
             std::string fallback = propValue.toString(rt).utf8(rt);
-            SNRunOnMain(^{ 
+            SNEnqueueOnMain(^{ 
               [[host manager] setProp:@(id)
                                         name:nameStr
                                    valueJSON:[NSString stringWithUTF8String:fallback.c_str()]] ;
@@ -851,7 +895,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
             return Value::undefined();
           }
           std::string jsonUTF8 = stringified.getString(rt).utf8(rt);
-          SNRunOnMain(^{ 
+          SNEnqueueOnMain(^{ 
             [[host manager] setProp:@(id)
                                       name:nameStr
                                  valueJSON:[NSString stringWithUTF8String:jsonUTF8.c_str()]] ;
@@ -885,7 +929,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
             }
           }
           // Log text value
-          SNRunOnMain(^{ 
+          SNEnqueueOnMain(^{ 
             // NSLog(@"[RuneTrace] __ui.setText id=%d text='%s'", id, text.c_str());
             [[host manager] setText:@(id) text:[NSString stringWithUTF8String:text.c_str()]];
           });
@@ -907,7 +951,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
           int parentId = (int)a[0].asNumber();
           int childId = (int)a[1].asNumber();
           int index = (int)a[2].asNumber();
-          SNRunOnMain(^{ 
+          SNEnqueueOnMain(^{ 
             // NSLog(@"[RuneTrace] __ui.insertChild parent=%d child=%d index=%d", parentId, childId, index);
             [[host manager] insertChild:@(parentId)
                                    child:@(childId)
@@ -930,10 +974,10 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
           }
           int parentId = (int)a[0].asNumber();
           int childId = (int)a[1].asNumber();
-          SNRunOnMain(^{ 
+          [host sn_removeHandlersForNode:childId];
+          SNEnqueueOnMain(^{ 
             // NSLog(@"[RuneTrace] __ui.removeChild parent=%d child=%d", parentId, childId);
             [[host manager] removeChild:@(parentId) child:@(childId)];
-            [host sn_removeHandlersForNode:childId];
           });
         } catch (const facebook::jsi::JSError &error) {
           RuneReportJSIError(rt, error, "__ui.removeChild");
@@ -973,7 +1017,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
           std::string name = a[1].getString(rt).utf8(rt);
           auto fn = a[2].asObject(rt).asFunction(rt);
           host->_handlers[{id, name}] = std::make_shared<Function>(std::move(fn));
-          SNRunOnMain(^{ 
+          SNEnqueueOnMain(^{ 
             [[host manager] setHandler:@(id) name:[NSString stringWithUTF8String:name.c_str()]];
           });
         } catch (const facebook::jsi::JSError &error) {
@@ -987,7 +1031,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
   auto hostFlush = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "flush"), 0,
       [host](Runtime &, const Value &, const Value *, size_t) -> Value {
-        SNRunOnMain(^{ 
+        SNEnqueueOnMain(^{ 
           @try {
             [[host manager] flush];
           } @catch (NSException *exception) {
@@ -1025,7 +1069,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
           }
 
           NSString *json = [NSString stringWithUTF8String:payload.c_str()];
-          SNRunOnMain(^{ 
+          SNEnqueueOnMain(^{ 
             [[host manager] applyBatch:json];
           });
         } catch (const facebook::jsi::JSError &error) {
