@@ -1,0 +1,72 @@
+{
+  "name": "@rune/async-storage",
+  "version": "0.0.1",
+  "description": "High-performance AsyncStorage for the Rune framework",
+  "type": "module",
+  "main": "dist/esm/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "types": "./dist/types/index.d.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "ios",
+    "android",
+    "RuneAsyncStorage.podspec"
+  ],
+  "scripts": {
+    "build": "yarn build:js && yarn build:types",
+    "build:js": "rm -rf dist/esm && tsc --project tsconfig.esm.json",
+    "build:types": "tsc --project tsconfig.types.json",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "rune",
+    "async-storage",
+    "storage",
+    "jsi",
+    "ios",
+    "android"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "solid-js": ">=1.8.0"
+  },
+  "devDependencies": {
+    "@rsbuild/core": "^1.5.0",
+    "@rune/rsbuild-plugin": "*",
+    "typescript": "^5.6.3"
+  },
+  "runeNative": {
+    "ios": {
+      "pods": [
+        {
+          "name": "RuneAsyncStorage",
+          "podspec": "./RuneAsyncStorage.podspec"
+        }
+      ],
+      "initializer": {
+        "className": "RuneAsyncStorage",
+        "method": "initializeWith:"
+      }
+    },
+    "android": {
+      "modules": [
+        {
+          "name": "RuneAsyncStorage",
+          "path": "./android/RuneAsyncStorage"
+        }
+      ],
+      "initializer": {
+        "className": "RuneAsyncStorage",
+        "method": "initialize",
+        "package": "dev.rune.asyncstorage"
+      }
+    }
+  }
+}
