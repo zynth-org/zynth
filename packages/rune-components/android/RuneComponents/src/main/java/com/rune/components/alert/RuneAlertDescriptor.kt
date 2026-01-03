@@ -59,7 +59,11 @@ object RuneAlertDescriptor {
   private fun parseString(value: String?): String? {
     val trimmed = value?.trim() ?: return null
     if (trimmed.isEmpty() || trimmed == "null") return null
-    
+
+    if (!trimmed.startsWith("{") && !trimmed.startsWith("[") && !trimmed.startsWith("\"")) {
+      return trimmed
+    }
+
     return try {
       val token = JSONTokener(trimmed).nextValue()
       when {

@@ -49,7 +49,9 @@
       "@rune/ui": ["packages/rune-ui/src/index.ts"],
       "@rune/ui/*": ["packages/rune-ui/src/*"],
       "@rune/async-storage": ["packages/rune-async-storage/src/index.ts"],
-      "@rune/async-storage/*": ["packages/rune-async-storage/src/*"]
+      "@rune/async-storage/*": ["packages/rune-async-storage/src/*"],
+      "@rune/secure-store": ["packages/rune-secure-store/src/index.ts"],
+      "@rune/secure-store/*": ["packages/rune-secure-store/src/*"]
     }
   }
 }

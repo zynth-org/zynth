@@ -105,7 +105,7 @@ export interface TextFieldProps {
 
   // Events
   /** Called when the text changes */
-  onChange?: (event: { value: string }) => void;
+  onChange?: (value: string) => void;
   /** Called when the text field gains focus */
   onFocus?: () => void;
   /** Called when the text field loses focus */
@@ -154,7 +154,7 @@ export const TextField: Component<TextFieldProps> = (props) => {
   // Handle text change from native
   const handleChange = (event: TextFieldEvent<{ value: string }>) => {
     local.controller?.__setTextFromNative?.(event.value);
-    local.onChange?.({ value: event.value });
+    local.onChange?.(event.value);
   };
 
   // Handle focus from native
