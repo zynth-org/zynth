@@ -103,6 +103,9 @@ public final class RuneRuntime: NSObject {
         self?.emitEvent(name: name, payload: payload)
       }),
       RuneDimensionsModule(runtime: self, rootView: rootView),
+#if DEBUG
+      RuneDevtoolsModule(),
+#endif
     ])
 
     injectModuleConstants()

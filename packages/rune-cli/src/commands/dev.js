@@ -34,6 +34,16 @@ module.exports = {
       type: "boolean",
       default: false,
     });
+    yargs.option("devtools", {
+      describe: "Start the devtools event hub and connect the runtime",
+      type: "boolean",
+      default: true,
+    });
+    yargs.option("devtools-port", {
+      describe: "Port for the devtools WebSocket server",
+      type: "number",
+      default: 8091,
+    });
   },
   handler: async (argv) => {
     const root = findWorkspaceRoot(process.cwd());
@@ -46,11 +56,15 @@ module.exports = {
         devices: argv.devices,
         local: argv.local,
         hmrNetwork: argv.hmrNetwork,
+        devtools: argv.devtools,
+        devtoolsPort: argv.devtoolsPort,
       });
     } else {
       await devAndroid(root, appDir, {
         local: argv.local,
         hmrNetwork: argv.hmrNetwork,
+        devtools: argv.devtools,
+        devtoolsPort: argv.devtoolsPort,
       });
     }
   },

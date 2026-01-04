@@ -3,6 +3,7 @@ const path = require("path");
 const os = require("os");
 const http = require("http");
 const { spawn, spawnSync } = require("child_process");
+const { createDevtoolsHub } = require("./devtools/hub");
 
 function readJSON(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
@@ -422,6 +423,21 @@ function getLocalIp() {
   return "127.0.0.1";
 }
 
+async function startRuneDevtoolsHub({ host, port }) {
+  const hub = createDevtoolsHub({ host, port, print: true, json: false });
+  const server = await hub.start();
+  console.log(
+    `🔌 Rune devtools hub listening at ws://${server.host}:${server.port}`
+  );
+  return server;
+}
+
+function buildDevtoolsUrl({ deviceHost, port, override }) {
+  if (override) return override;
+  if (!deviceHost || !port) return null;
+  return `ws://${deviceHost}:${port}`;
+}
+
 async function startRuneHMRServer(appDir, platform, options = {}) {
   const defaultPort = 8081;
   const port = Number(process.env.RUNE_HMR_PORT || options.port || defaultPort);
@@ -500,6 +516,12 @@ async function devIOS(root, appDir, options = {}) {
   const config = getIOSConfig(root, appDir);
   const iosDir = path.join(appDir, "ios");
   let targetDevice = null;
+  const devtoolsEnabled = options.devtools !== false;
+  const devtoolsPort = Number(
+    process.env.RUNE_DEVTOOLS_PORT || options.devtoolsPort || 8091
+  );
+  const devtoolsUrlOverride = process.env.RUNE_DEVTOOLS_URL;
+  const devtoolsToken = process.env.RUNE_DEVTOOLS_TOKEN;
 
   if (options.devices) {
     const availableDevices = getConnectedIOSDevices();
@@ -654,6 +676,21 @@ async function devIOS(root, appDir, options = {}) {
     process.exit(1);
   }
 
+  let devtoolsServer = null;
+  if (devtoolsEnabled && !devtoolsUrlOverride) {
+    devtoolsServer = await startRuneDevtoolsHub({
+      host: "0.0.0.0",
+      port: devtoolsPort,
+    });
+  }
+  const devtoolsUrl = devtoolsEnabled
+    ? buildDevtoolsUrl({
+        deviceHost: hmrServer.deviceHost,
+        port: devtoolsPort,
+        override: devtoolsUrlOverride,
+      })
+    : null;
+
   const serverReady = await waitForDevServer(hmrServer.localUrl);
   if (!serverReady) {
     console.error(
@@ -679,6 +716,12 @@ async function devIOS(root, appDir, options = {}) {
     const hmrToken = await waitForHMRToken(appDir);
     if (hmrToken) {
       launchArgs.push(`--RUNE_DEV_SERVER_TOKEN ${hmrToken}`);
+    }
+    if (devtoolsUrl) {
+      launchArgs.push(`--RUNE_DEVTOOLS_URL ${devtoolsUrl}`);
+      if (devtoolsToken) {
+        launchArgs.push(`--RUNE_DEVTOOLS_TOKEN ${devtoolsToken}`);
+      }
     }
     runCommand("ios-deploy", launchArgs);
   } else {
@@ -720,6 +763,28 @@ async function devIOS(root, appDir, options = {}) {
       "RUNE_DEV_SERVER_URL",
       hmrServer.deviceUrl,
     ]);
+    if (devtoolsUrl) {
+      runCommand("xcrun", [
+        "simctl",
+        "spawn",
+        targetDevice.udid,
+        "launchctl",
+        "setenv",
+        "RUNE_DEVTOOLS_URL",
+        devtoolsUrl,
+      ]);
+      if (devtoolsToken) {
+        runCommand("xcrun", [
+          "simctl",
+          "spawn",
+          targetDevice.udid,
+          "launchctl",
+          "setenv",
+          "RUNE_DEVTOOLS_TOKEN",
+          devtoolsToken,
+        ]);
+      }
+    }
 
     console.log("🚀 Launching application on simulator...");
     runCommand("xcrun", [
@@ -745,6 +810,9 @@ async function devIOS(root, appDir, options = {}) {
       "🔥 Rsbuild dev server running. Leave this session open for hot reloading."
     );
   }
+  if (devtoolsServer && devtoolsUrl) {
+    console.log(`📡 Devtools URL: ${devtoolsUrl}`);
+  }
 
   await new Promise(() => {});
 }
@@ -754,6 +822,12 @@ async function devAndroid(root, appDir, options = {}) {
   const androidDir = path.join(appDir, "android");
   const userDeviceHost = process.env.RUNE_DEVICE_HOST;
   const { local, hmrNetwork } = options;
+  const devtoolsEnabled = options.devtools !== false;
+  const devtoolsPort = Number(
+    process.env.RUNE_DEVTOOLS_PORT || options.devtoolsPort || 8091
+  );
+  const devtoolsUrlOverride = process.env.RUNE_DEVTOOLS_URL;
+  const devtoolsToken = process.env.RUNE_DEVTOOLS_TOKEN || null;
 
   ensurePrebuild(root, appDir, "android", { dev: true });
 
@@ -787,6 +861,14 @@ async function devAndroid(root, appDir, options = {}) {
     process.exit(1);
   }
 
+  let devtoolsServer = null;
+  if (devtoolsEnabled && !devtoolsUrlOverride) {
+    devtoolsServer = await startRuneDevtoolsHub({
+      host: "0.0.0.0",
+      port: devtoolsPort,
+    });
+  }
+
   const serverReady = await waitForDevServer(hmrServer.localUrl);
   if (!serverReady) {
     console.error(
@@ -808,6 +890,13 @@ async function devAndroid(root, appDir, options = {}) {
 
   const portForReverse = hmrServer?.port || desiredPort;
   let runtimeDeviceUrl = hmrServer.deviceUrl;
+  let devtoolsDeviceUrl = devtoolsEnabled
+    ? buildDevtoolsUrl({
+        deviceHost: hmrServer.deviceHost,
+        port: devtoolsPort,
+        override: devtoolsUrlOverride,
+      })
+    : null;
   if (config.devServerUrl) {
     console.log(`⚠️  Using explicit dev server URL from app.json: ${config.devServerUrl}`);
     runtimeDeviceUrl = config.devServerUrl;
@@ -816,11 +905,29 @@ async function devAndroid(root, appDir, options = {}) {
   } else if (userDeviceHost) {
     runtimeDeviceUrl = `http://${userDeviceHost}:${portForReverse}`;
   }
+  if (
+    devtoolsEnabled &&
+    !devtoolsUrlOverride &&
+    !userDeviceHost &&
+    hasPhysicalDeviceInitial
+  ) {
+    devtoolsDeviceUrl = buildDevtoolsUrl({
+      deviceHost: "127.0.0.1",
+      port: devtoolsPort,
+    });
+  } else if (devtoolsEnabled && !devtoolsUrlOverride && userDeviceHost) {
+    devtoolsDeviceUrl = buildDevtoolsUrl({
+      deviceHost: userDeviceHost,
+      port: devtoolsPort,
+    });
+  }
 
   let runtimeConfig = {
     url: runtimeDeviceUrl,
     token: hmrToken || null,
     updatedAt: new Date().toISOString(),
+    devtoolsUrl: devtoolsDeviceUrl,
+    devtoolsToken: devtoolsToken,
   };
   let serializedConfig = `${JSON.stringify(runtimeConfig)}\n`;
 
@@ -860,6 +967,11 @@ async function devAndroid(root, appDir, options = {}) {
     portForReverse &&
     ((!userDeviceHost && hasPhysicalDeviceConnected) ||
       userDeviceHost === "127.0.0.1");
+  const shouldReverseDevtools =
+    devtoolsEnabled &&
+    devtoolsDeviceUrl &&
+    ((!userDeviceHost && hasPhysicalDeviceConnected) ||
+      userDeviceHost === "127.0.0.1");
 
   if (shouldReverse) {
     for (const deviceId of devices) {
@@ -886,6 +998,22 @@ async function devAndroid(root, appDir, options = {}) {
       "⚠️  Physical device detected. Use USB (adb reverse) or set RUNE_DEVICE_HOST to your LAN IP."
     );
   }
+  if (shouldReverseDevtools) {
+    for (const deviceId of devices) {
+      const result = spawnSync("adb", [
+        "-s",
+        deviceId,
+        "reverse",
+        `tcp:${devtoolsPort}`,
+        `tcp:${devtoolsPort}`,
+      ]);
+      if (result.status !== 0) {
+        console.warn(
+          `⚠️  Failed to reverse devtools port ${devtoolsPort} for ${deviceId}`
+        );
+      }
+    }
+  }
 
   if (config.devServerUrl) {
     runtimeDeviceUrl = config.devServerUrl;
@@ -901,6 +1029,8 @@ async function devAndroid(root, appDir, options = {}) {
     url: runtimeDeviceUrl,
     token: hmrToken || null,
     updatedAt: runtimeConfig.updatedAt,
+    devtoolsUrl: devtoolsDeviceUrl,
+    devtoolsToken: devtoolsToken,
   };
   serializedConfig = `${JSON.stringify(runtimeConfig)}\n`;
 
@@ -941,6 +1071,10 @@ async function devAndroid(root, appDir, options = {}) {
   );
   if (runtimeDeviceUrl && runtimeDeviceUrl !== hmrServer.deviceUrl) {
     console.log(`  ↳ Device URL: ${runtimeDeviceUrl}`);
+  }
+  if (devtoolsServer && devtoolsDeviceUrl) {
+    console.log(`📡 Devtools URL: ${devtoolsDeviceUrl}`);
+    await new Promise(() => {});
   }
 }
 

@@ -24,6 +24,7 @@ export { fetch, Headers, Request, Response } from "./polyfills/fetch";
 export { start } from "./start";
 export * from "./hmr";
 export { setActiveSurface, getActiveSurface } from "./surface";
+export { ensureDevtoolsBridge, emitDevtoolsEvent } from "./devtools";
 // Re-export select core helpers so Babel can import from @rune/core when targeting universal
 export { createComponent, mergeProps, untrack } from "solid-js";
 

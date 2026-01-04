@@ -16,6 +16,7 @@ import com.rune.kit.dev.RuneDevBundleFetcher
 import com.rune.kit.runtime.modules.DimensionsModule
 import com.rune.kit.runtime.modules.FetchModule
 import com.rune.kit.runtime.modules.BackHandlerModule
+import com.rune.kit.runtime.modules.DevtoolsModule
 import java.util.LinkedHashMap
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -117,6 +118,9 @@ class RuneRuntime(
     }
     if (!installedModules.containsKey("BackHandler")) {
       modulesToInstall.add(BackHandlerModule(this, root))
+    }
+    if (!installedModules.containsKey("Devtools")) {
+      modulesToInstall.add(DevtoolsModule(root.context))
     }
     
     // Note: FontModule is installed by @rune/apis package via RuneAPIs.initialize()

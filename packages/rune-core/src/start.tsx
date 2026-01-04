@@ -8,6 +8,7 @@ import {
   wrapRuneAppFns,
 } from "./hmr";
 import { setActiveSurface } from "./surface";
+import { ensureDevtoolsBridge } from "./devtools";
 
 if (typeof globalThis.queueMicrotask !== "function") {
   globalThis.queueMicrotask = function (callback) {
@@ -35,6 +36,7 @@ let disposeCurrentApp: (() => void) | null = null;
 
 export function start(App: () => any): () => void {
   ensureNativeHMRHooks();
+  ensureDevtoolsBridge();
   const g = globalThis as any;
 
   currentApp = App;
