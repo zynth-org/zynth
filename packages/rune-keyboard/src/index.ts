@@ -19,7 +19,7 @@ export {
 } from "./hooks";
 
 // Controller (imperative API)
-export { KeyboardController } from "./KeyboardController";
+export { KeyboardController as Keyboard } from "./KeyboardController";
 
 // Native module (for advanced use)
 export {
