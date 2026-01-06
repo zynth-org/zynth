@@ -3,7 +3,14 @@ const path = require("path");
 const os = require("os");
 const http = require("http");
 const { spawn, spawnSync } = require("child_process");
+const chalk = require("chalk");
+const readline = require("readline");
+
+const BUILD_SHIMMER_START = Date.now();
 const { createDevtoolsHub } = require("./devtools/hub");
+const { IOS_BUILD_NOISE_PATTERNS } = require("./ios-build-filters");
+
+let devtoolsPublish = null;
 
 function readJSON(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
@@ -55,6 +62,178 @@ function runCommand(command, args, options = {}) {
     const code = result.status == null ? 1 : result.status;
     process.exit(code);
   }
+}
+
+function runCommandFiltered(command, args, options = {}) {
+  const child = spawn(command, args, {
+    stdio: ["ignore", "pipe", "pipe"],
+    shell: false,
+    ...options,
+  });
+
+  const buildIndicator = createBuildIndicator("Building native artifacts");
+  buildIndicator.start();
+  let resumeTimer = null;
+  let lastOutputAt = 0;
+  function writeBuildLine(stream, line) {
+    buildIndicator.clearLine(stream);
+    stream.write(`📦 ${line}\n`);
+    buildIndicator.renderOnce();
+  }
+  let lastDiagnosticAt = 0;
+  const noisePatterns = IOS_BUILD_NOISE_PATTERNS;
+  const reportedPackages = new Set();
+
+  function tryReportPackage(line) {
+    const match = line.match(/packages[\\/](rune-[^\\/]+)/);
+    const name = match ? match[1] : null;
+    if (!name || reportedPackages.has(name)) return;
+    reportedPackages.add(name);
+    writeBuildLine(process.stdout, `• ${name.replace(/^rune-/, "")} built`);
+  }
+
+  function shouldSkip(line) {
+    return noisePatterns.some((pattern) => pattern.test(line));
+  }
+
+  function isDiagnostic(line) {
+    return (
+      /\berror:/i.test(line) ||
+      /\bwarning:/i.test(line) ||
+      /fatal error:/i.test(line)
+    );
+  }
+
+  function shouldPrint(line) {
+    if (shouldSkip(line)) return false;
+    if (isDiagnostic(line)) {
+      lastDiagnosticAt = Date.now();
+      return true;
+    }
+    if (/\bnote:/i.test(line) && Date.now() - lastDiagnosticAt < 1000) {
+      return true;
+    }
+    return false;
+  }
+
+  function handleData(data, stream) {
+    const text = data.toString();
+    const lines = text.split(/\r?\n/);
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      lastOutputAt = Date.now();
+      if (resumeTimer) {
+        clearTimeout(resumeTimer);
+      }
+      if (
+        line.includes("packages/rune-") &&
+        (line.includes("Compile") ||
+          line.includes("SwiftEmitModule") ||
+          line.includes("ProcessInfoPlistFile") ||
+          line.includes("ProcessPCH") ||
+          line.includes("CompileAssetCatalog") ||
+          line.includes("Ld "))
+      ) {
+        tryReportPackage(line);
+      }
+      if (shouldPrint(line)) {
+        writeBuildLine(stream, line);
+      }
+    }
+  }
+
+  child.stdout.on("data", (data) => handleData(data, process.stdout));
+  child.stderr.on("data", (data) => handleData(data, process.stderr));
+
+  return new Promise((resolve) => {
+    child.on("close", (code, signal) => {
+      buildIndicator.stop();
+      resolve({ code, signal });
+    });
+  });
+}
+
+function createBuildIndicator(label) {
+  const text = String(label);
+  let timer = null;
+  let lastWidth = 0;
+
+  function renderShimmer() {
+    const width = text.length;
+    if (width === 0) return;
+    const padding = 10;
+    const period = width + padding * 2;
+    const sweepSeconds = 2.0;
+    const elapsedSeconds = (Date.now() - BUILD_SHIMMER_START) / 1000;
+    const pos =
+      ((elapsedSeconds % sweepSeconds) / sweepSeconds) * period;
+    const bandHalfWidth = 5.0;
+    const hasTrueColor = Boolean(chalk.supportsColor?.has16m);
+    const base = { r: 128, g: 128, b: 128 };
+    const highlight = { r: 255, g: 255, b: 255 };
+    let output = "";
+    for (let i = 0; i < width; i += 1) {
+      const iPos = i + padding;
+      const dist = Math.abs(iPos - pos);
+      const t =
+        dist <= bandHalfWidth
+          ? 0.5 * (1 + Math.cos(Math.PI * (dist / bandHalfWidth)))
+          : 0;
+      if (hasTrueColor) {
+        const color = mixColor(base, highlight, t * 0.9);
+        output += chalk.rgb(color.r, color.g, color.b).bold(text[i]);
+      } else if (t < 0.2) {
+        output += chalk.dim(text[i]);
+      } else if (t < 0.6) {
+        output += text[i];
+      } else {
+        output += chalk.bold(text[i]);
+      }
+    }
+    const pad = lastWidth > output.length ? " ".repeat(lastWidth - output.length) : "";
+    lastWidth = output.length;
+    process.stdout.write(`\r${output}${pad}`);
+  }
+
+  function clearLine(stream = process.stdout) {
+    if (!stream.isTTY) return;
+    readline.clearLine(stream, 0);
+    readline.cursorTo(stream, 0);
+  }
+
+  return {
+    start() {
+      if (!process.stdout.isTTY) {
+        process.stdout.write(`${text}\n`);
+        return;
+      }
+      if (timer) return;
+      process.stdout.write("\u001b[?25l");
+      renderShimmer();
+      timer = setInterval(renderShimmer, 80);
+    },
+    renderOnce() {
+      if (!process.stdout.isTTY) return;
+      renderShimmer();
+    },
+    stop() {
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+      clearLine();
+      process.stdout.write("\u001b[?25h");
+    },
+    clearLine,
+  };
+}
+
+function mixColor(a, b, t) {
+  return {
+    r: Math.round(a.r + (b.r - a.r) * t),
+    g: Math.round(a.g + (b.g - a.g) * t),
+    b: Math.round(a.b + (b.b - a.b) * t),
+  };
 }
 
 function runNode(scriptPath, args = [], options = {}) {
@@ -212,7 +391,29 @@ function ensureBundle(appDir) {
 
 function removeDirectory(targetPath) {
   if (fs.existsSync(targetPath)) {
-    fs.rmSync(targetPath, { recursive: true, force: true });
+    removeDirectoryWithRetries(targetPath);
+  }
+}
+
+function removeDirectoryWithRetries(targetPath, retries = 5) {
+  const sleep = (ms) => {
+    const buffer = new SharedArrayBuffer(4);
+    const view = new Int32Array(buffer);
+    Atomics.wait(view, 0, 0, ms);
+  };
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      fs.rmSync(targetPath, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      if (attempt === retries) {
+        throw error;
+      }
+      if (!["ENOTEMPTY", "EBUSY", "EPERM"].includes(error.code)) {
+        throw error;
+      }
+      sleep(50 * (attempt + 1));
+    }
   }
 }
 
@@ -387,10 +588,44 @@ function startIOSLogs(config) {
         "--predicate",
         `process == "${config.appNameCapitalized}" AND (eventMessage BEGINSWITH "[Rune]" OR eventMessage CONTAINS "JS[error]" OR eventMessage CONTAINS "JS[log]")`,
       ],
-      {
-        stdio: "inherit",
-      }
+      { stdio: ["ignore", "pipe", "pipe"] }
     );
+    const noisePatterns = [
+      /getpwuid_r did not find a match for uid/i,
+      /^Filtering the log data using/i,
+    ];
+    const handleLine = (line) => {
+      if (!line.trim()) return;
+      if (noisePatterns.some((pattern) => pattern.test(line))) {
+        return;
+      }
+      line = line.replace(/^\s*[A-Z]{3}\s+/, "");
+      if (/^Timestamp\s+Ty\s+Process/i.test(line)) {
+        return;
+      }
+      line = line.replace(
+        /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+\s+\w+\s+[^ ]+\[\d+:[^\]]+\]\s+\([^)]+\)\s+/,
+        ""
+      );
+      if (typeof devtoolsPublish === "function") {
+        devtoolsPublish({
+          topic: "log/ios",
+          level: "info",
+          tag: "ios",
+          data: line,
+        });
+        return;
+      }
+      process.stdout.write(`${line}\n`);
+    };
+    const handleData = (data) => {
+      const lines = data.toString().split(/\r?\n/);
+      for (const line of lines) {
+        handleLine(line);
+      }
+    };
+    child.stdout.on("data", handleData);
+    child.stderr.on("data", handleData);
     const dispose = () => {
       if (!child.killed) {
         child.kill("SIGTERM");
@@ -426,6 +661,7 @@ function getLocalIp() {
 async function startRuneDevtoolsHub({ host, port }) {
   const hub = createDevtoolsHub({ host, port, print: true, json: false });
   const server = await hub.start();
+  devtoolsPublish = hub.publish;
   console.log(
     `🔌 Rune devtools hub listening at ws://${server.host}:${server.port}`
   );
@@ -625,7 +861,15 @@ async function devIOS(root, appDir, options = {}) {
     }
   }
 
-  runCommand("xcodebuild", buildArgs, { cwd: iosDir });
+  const buildResult = await runCommandFiltered("xcodebuild", buildArgs, {
+    cwd: iosDir,
+  });
+  if (buildResult.code !== 0) {
+    console.error("❌ iOS build failed.");
+    process.exit(buildResult.code || 1);
+  } else {
+    console.log("✅ iOS build finished.");
+  }
 
   const appBundlePath = path.join(
     buildDir,

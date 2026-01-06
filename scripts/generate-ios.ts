@@ -241,6 +241,29 @@ const templatesRoot = path.dirname(
   require.resolve("@rune/templates/package.json")
 );
 
+function removeDirectoryWithRetries(targetDir: string, retries = 5): void {
+  const sleep = (ms: number) => {
+    const buffer = new SharedArrayBuffer(4);
+    const view = new Int32Array(buffer);
+    Atomics.wait(view, 0, 0, ms);
+  };
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      fs.rmSync(targetDir, { recursive: true, force: true });
+      return;
+    } catch (error: any) {
+      if (attempt === retries) {
+        throw error;
+      }
+      const code = error?.code;
+      if (code !== "ENOTEMPTY" && code !== "EBUSY" && code !== "EPERM") {
+        throw error;
+      }
+      sleep(50 * (attempt + 1));
+    }
+  }
+}
+
 export function generateIOSProject(appDir: string, options: any = {}) {
   const { dev = true } = options; // Default to dev mode for backward compatibility
   const config = getAppConfig(appDir);
@@ -270,7 +293,7 @@ export function generateIOSProject(appDir: string, options: any = {}) {
   // Remove existing iOS folder if it exists
   if (fs.existsSync(targetDir)) {
     console.log("  Removing existing iOS folder...");
-    fs.rmSync(targetDir, { recursive: true, force: true });
+    removeDirectoryWithRetries(targetDir);
   }
 
   // Create target directory

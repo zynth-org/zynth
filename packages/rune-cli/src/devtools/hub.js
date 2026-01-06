@@ -114,6 +114,13 @@ function createDevtoolsHub({
       process.stdout.write(`${parts.join(" ")}\n`);
       return;
     }
+    if (topic === "log/ios" || tag === "ios") {
+      const parts = [];
+      if (prefix) parts.push(prefix);
+      parts.push(styledLevel, message);
+      process.stdout.write(`${parts.join(" ")}\n`);
+      return;
+    }
     const parts = [];
     if (prefix) parts.push(prefix);
     parts.push(styledLevel, tag, topic, message);
@@ -126,6 +133,18 @@ function createDevtoolsHub({
     if (history.length > replayLimit) {
       history.shift();
     }
+  }
+
+  function publish(event) {
+    const topic = event?.topic;
+    if (typeof topic !== "string") return;
+    const payload = JSON.stringify({
+      type: "event",
+      event,
+    });
+    recordEvent(event);
+    fanout(topic, payload);
+    logEvent(event);
   }
 
   function replayEvents(client, subscription, limit) {
@@ -188,13 +207,7 @@ function createDevtoolsHub({
           const event = message.event || {};
           const topic = event.topic || message.topic;
           if (typeof topic !== "string") return;
-          const payload = JSON.stringify({
-            type: "event",
-            event,
-          });
-          recordEvent(event);
-          fanout(topic, payload);
-          logEvent(event);
+          publish({ ...event, topic });
           break;
         }
         case "ping": {
@@ -233,7 +246,7 @@ function createDevtoolsHub({
     });
   }
 
-  return { start };
+  return { start, publish };
 }
 
 function formatLevel(level) {

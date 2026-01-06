@@ -95,7 +95,7 @@ public final class RuneRuntime: NSObject {
     #if DEBUG
       print("[RuneRuntime] Installing default modules")
     #endif
-    installModules([
+    var modules: [RuneModule] = [
       RuneEnvModule(),
       RuneDeviceModule(),
       PerformanceModule(),
@@ -103,10 +103,11 @@ public final class RuneRuntime: NSObject {
         self?.emitEvent(name: name, payload: payload)
       }),
       RuneDimensionsModule(runtime: self, rootView: rootView),
+    ]
 #if DEBUG
-      RuneDevtoolsModule(),
+    modules.append(RuneDevtoolsModule())
 #endif
-    ])
+    installModules(modules)
 
     injectModuleConstants()
 
@@ -205,7 +206,7 @@ public final class RuneRuntime: NSObject {
       return
     }
 
-    let modules: [String: Any] = [
+    let moduleBridge: [String: Any] = [
       "call": { [weak self] (args: [Any]) -> Any in
         guard let self else { return ["error": "runtime_deallocated"] }
         guard args.count >= 3,
@@ -254,7 +255,7 @@ public final class RuneRuntime: NSObject {
         }
       },
     ]
-    runtime.setGlobalObject("__modules", modules)
+    runtime.setGlobalObject("__modules", moduleBridge)
 
   }
 
