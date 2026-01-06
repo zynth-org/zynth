@@ -45,9 +45,6 @@ class DevtoolsModule(private val context: Context) : RuneModule {
           is JSONObject -> payload
           else -> return error("invalid_arguments")
         }
-        if (!event.has("ts")) {
-          event.put("ts", System.currentTimeMillis())
-        }
         if (!event.has("topic")) {
           return error("missing_topic")
         }

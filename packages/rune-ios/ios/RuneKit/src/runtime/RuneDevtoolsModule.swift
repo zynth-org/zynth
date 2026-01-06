@@ -40,9 +40,6 @@ final class RuneDevtoolsModule: RuneModule {
       guard var event = args as? [String: Any] else {
         return ["error": "invalid_arguments"]
       }
-      if event["ts"] == nil {
-        event["ts"] = Date().timeIntervalSince1970 * 1000
-      }
       if event["topic"] == nil {
         return ["error": "missing_topic"]
       }

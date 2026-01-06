@@ -1,4 +1,5 @@
 const http = require("http");
+const chalk = require("chalk");
 const { WebSocketServer } = require("ws");
 
 function createDevtoolsHub({
@@ -96,7 +97,7 @@ function createDevtoolsHub({
       process.stdout.write(`${JSON.stringify(event)}\n`);
       return;
     }
-    const level = event.level ? String(event.level).toUpperCase() : "INFO";
+    const level = event.level ? String(event.level).toUpperCase() : "LOG";
     const tag = event.tag ? String(event.tag) : "devtools";
     const topic = event.topic ? String(event.topic) : "unknown";
     const message =
@@ -105,9 +106,18 @@ function createDevtoolsHub({
         : JSON.stringify(event.data ?? "");
     const ts = event.ts ? new Date(event.ts).toISOString() : "";
     const prefix = ts ? `[${ts}]` : "";
-    process.stdout.write(
-      `${prefix} ${level} ${tag} ${topic} ${message}\n`
-    );
+    const styledLevel = formatLevel(level);
+    if (topic === "log/console" || tag === "console") {
+      const parts = [];
+      if (prefix) parts.push(prefix);
+      parts.push(styledLevel, message);
+      process.stdout.write(`${parts.join(" ")}\n`);
+      return;
+    }
+    const parts = [];
+    if (prefix) parts.push(prefix);
+    parts.push(styledLevel, tag, topic, message);
+    process.stdout.write(`${parts.join(" ")}\n`);
   }
 
   function recordEvent(event) {
@@ -123,7 +133,11 @@ function createDevtoolsHub({
     const sliceLimit =
       typeof limit === "number" && limit > 0 ? limit : history.length;
     const matches = [];
-    for (let i = history.length - 1; i >= 0 && matches.length < sliceLimit; i -= 1) {
+    for (
+      let i = history.length - 1;
+      i >= 0 && matches.length < sliceLimit;
+      i -= 1
+    ) {
       const event = history[i];
       if (matchesTopic(subscription, String(event.topic || ""))) {
         matches.push(event);
@@ -220,6 +234,22 @@ function createDevtoolsHub({
   }
 
   return { start };
+}
+
+function formatLevel(level) {
+  switch (level) {
+    case "ERROR":
+      return chalk.bgRed.white.bold(` ${level} `);
+    case "WARN":
+      return chalk.bgYellow.white.bold(` ${level} `);
+    case "INFO":
+      return chalk.bgBlue.white.bold(` INF `);
+    case "DEBUG":
+      return chalk.bgMagenta.white.bold(` ${level} `);
+    case "LOG":
+    default:
+      return chalk.bgWhiteBright.black.bold(` ${level} `);
+  }
 }
 
 module.exports = { createDevtoolsHub };

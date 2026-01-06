@@ -63,6 +63,49 @@ export function ensureDevtoolsBridge(): RuneDevtoolsBridge | null {
   return bridge;
 }
 
+function formatConsoleArgs(args: unknown[]): string {
+  return args
+    .map((arg) => {
+      if (typeof arg === "string") return arg;
+      if (typeof arg === "number" || typeof arg === "boolean") {
+        return String(arg);
+      }
+      if (arg == null) return String(arg);
+      try {
+        return JSON.stringify(arg);
+      } catch {
+        return String(arg);
+      }
+    })
+    .join(" ");
+}
+
+export function installDevtoolsConsole(): void {
+  const bridge = ensureDevtoolsBridge();
+  if (!bridge) return;
+  const g = globalThis as any;
+  if (g.__RUNE_DEVTOOLS_CONSOLE_INSTALLED__) return;
+  g.__RUNE_DEVTOOLS_CONSOLE_INSTALLED__ = true;
+
+  const consoleObj = (g.console ||= {});
+  const levels = ["log", "info", "warn", "error", "debug"] as const;
+
+  for (const level of levels) {
+    const original = consoleObj[level];
+    consoleObj[level] = (...args: unknown[]) => {
+      bridge.emit({
+        topic: "log/console",
+        level,
+        tag: "console",
+        data: formatConsoleArgs(args),
+      });
+      if (g.__RUNE_DEVTOOLS_CONSOLE_PASSTHROUGH__ && typeof original === "function") {
+        original(...args);
+      }
+    };
+  }
+}
+
 export function emitDevtoolsEvent(event: RuneDevtoolsEvent): void {
   ensureDevtoolsBridge()?.emit(event);
 }
