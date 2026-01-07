@@ -1,6 +1,9 @@
 import * as path from "path";
 import * as fs from "fs";
 import { execSync } from "child_process";
+function dim(text: string): string {
+  return `\u001b[2m${text}\u001b[0m`;
+}
 import { generateAndroidProject } from "./generate-android";
 
 const templatesRoot = path.dirname(
@@ -9,12 +12,25 @@ const templatesRoot = path.dirname(
 
 export function main(options: any = {}): void {
   const appDir = process.cwd();
-  console.log("🚀 Starting Android prebuild...");
-  console.log(`📱 App directory: ${appDir}`);
+  const quiet = Boolean(options.quiet);
+  if (!quiet) {
+    console.log("🚀 Starting Android prebuild...");
+    console.log(`📱 App directory: ${appDir}`);
+  }
 
   try {
-    console.log("\n📦 Generating Android project from template...");
+    console.log("◆ Generating Android project from template...");
+    if (quiet) {
+      process.env.RUNE_QUIET_PREBUILD = "1";
+    }
     const config = generateAndroidProject(appDir, options);
+    if (quiet) {
+      delete process.env.RUNE_QUIET_PREBUILD;
+      console.log("  ├─ Generated Android Legacy Icons");
+      console.log("  ├─ Generated Android Splash Assets");
+      console.log(`✔ Android project generated at ${dim(path.join(appDir, "android"))}`);
+      console.log("");
+    }
 
     const androidDir = path.join(appDir, "android");
     const gradlePropsSrc = path.join(
@@ -37,13 +53,17 @@ export function main(options: any = {}): void {
 
     if (fs.existsSync(bundleSrc)) {
       fs.copyFileSync(bundleSrc, bundleDest);
-      console.log(
-        `\n📄 Copied JS bundle to ${path.relative(appDir, bundleDest)}`
-      );
+      if (!quiet) {
+        console.log(
+          `\n📄 Copied JS bundle to ${path.relative(appDir, bundleDest)}`
+        );
+      }
 
       // Generate Hermes bytecode if hermesc is available
       try {
-        console.log("🔄 Compiling to Hermes bytecode...");
+        if (!quiet) {
+          console.log("🔄 Compiling to Hermes bytecode...");
+        }
 
         // Try to find hermesc in common locations
         let hermescPath: string | undefined;
@@ -76,31 +96,44 @@ export function main(options: any = {}): void {
             `${hermescPath} -emit-binary -out "${hbcDest}" "${bundleSrc}"`,
             { stdio: "inherit" }
           );
-          console.log(
-            `📦 Generated Hermes bytecode: ${path.relative(appDir, hbcDest)}`
-          );
+          if (!quiet) {
+            console.log(
+              `📦 Generated Hermes bytecode: ${path.relative(appDir, hbcDest)}`
+            );
+          }
         } else {
-          console.warn(
-            "⚠️  hermesc not found. HBC compilation skipped. Install hermes-engine or add hermesc to PATH."
-          );
+          if (!quiet) {
+            console.warn(
+              "⚠️  hermesc not found. HBC compilation skipped. Install hermes-engine or add hermesc to PATH."
+            );
+          }
         }
       } catch (error: any) {
-        console.warn(
-          `⚠️  HBC compilation failed: ${error.message}. Falling back to JS source.`
-        );
+        if (!quiet) {
+          console.warn(
+            `⚠️  HBC compilation failed: ${error.message}. Falling back to JS source.`
+          );
+        }
       }
     } else {
-      console.warn(
-        "\n⚠️  JS bundle not found (dist/main.js). Run the JS build before prebuild."
-      );
+      if (!quiet) {
+        console.warn(
+          "\n⚠️  JS bundle not found (dist/main.js). Run the JS build before prebuild."
+        );
+      }
     }
-    console.log("\n✅ Android project ready.");
-    console.log("Next steps:");
-    const relativePath = path.relative(process.cwd(), androidDir);
-    console.log(`  cd ${relativePath || "."}`);
-    console.log("  ./gradlew :app:assembleDebug");
-    console.log("  ./gradlew :app:installDebug");
-    console.log(`  adb shell am start -n ${config.bundleId}/.MainActivity`);
+    if (!quiet) {
+      console.log("\n✅ Android project ready.");
+      console.log("Next steps:");
+      const relativePath = path.relative(process.cwd(), androidDir);
+      console.log(`  cd ${relativePath || "."}`);
+      console.log("  ./gradlew :app:assembleDebug");
+      console.log("  ./gradlew :app:installDebug");
+      console.log(`  adb shell am start -n ${config.bundleId}/.MainActivity`);
+    } else {
+      console.log("✔ Android prebuild completed successfully!");
+      console.log("");
+    }
   } catch (error: any) {
     console.error("\n❌ Android prebuild failed:", error.message);
     process.exit(1);

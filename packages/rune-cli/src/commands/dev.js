@@ -61,6 +61,7 @@ module.exports = {
       });
     } else {
       await devAndroid(root, appDir, {
+        prebuild: argv.prebuild,
         local: argv.local,
         hmrNetwork: argv.hmrNetwork,
         devtools: argv.devtools,

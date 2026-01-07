@@ -401,7 +401,7 @@ function formatAndroidDependencyBlock(modules: any[]): string {
 }
 
 export function generateAndroidProject(appDir: string, options: any = {}): AppConfig {
-  const { dev = true } = options; // Default to dev mode for backward compatibility
+  const { dev = true, quiet = false } = options; // Default to dev mode for backward compatibility
   const baseConfig = getAppConfig(appDir);
   const androidPackage = (
     baseConfig.bundleId || `com.rune.${baseConfig.appDir.replace(/-/g, "")}`
@@ -411,18 +411,22 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
     bundleId: androidPackage,
   };
 
-  console.log(`Generating Android project for ${config.displayName}...`);
-  console.log(`  Package: ${androidPackage}`);
-  console.log(`  Mode: ${dev ? "Development" : "Production"}`);
+  if (!quiet) {
+    console.log(`Generating Android project for ${config.displayName}...`);
+    console.log(`  Package: ${androidPackage}`);
+    console.log(`  Mode: ${dev ? "Development" : "Production"}`);
+  }
 
   const componentModules = collectNativeAndroidModules(appDir);
-  if (componentModules.length) {
-    console.log("  Native component modules:");
-    componentModules.forEach((module) => {
-      console.log(`    • ${module.name} (${module.packageName})`);
-    });
-  } else {
-    console.log("  Native component modules: none detected");
+  if (!quiet) {
+    if (componentModules.length) {
+      console.log("  Native component modules:");
+      componentModules.forEach((module) => {
+        console.log(`    • ${module.name} (${module.packageName})`);
+      });
+    } else {
+      console.log("  Native component modules: none detected");
+    }
   }
 
   const templateDir = path.join(templatesRoot, "android");
@@ -447,7 +451,9 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
   );
 
   if (fs.existsSync(targetDir)) {
-    console.log("  Removing existing Android folder...");
+    if (!quiet) {
+      console.log("  Removing existing Android folder...");
+    }
     fs.rmSync(targetDir, { recursive: true, force: true });
   }
   ensureDir(targetDir);
@@ -528,13 +534,15 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
     fs.chmodSync(gradlewPath, 0o755);
   }
 
-  generateAssets(appDir, 'android');
+  generateAssets(appDir, "android");
 
-  console.log(`✅ Android project generated at ${targetDir}`);
-  console.log("Next steps:");
-  console.log(`  cd ${path.relative(process.cwd(), targetDir)}`);
-  console.log("  ./gradlew :app:assembleDebug");
-  console.log("  ./gradlew :app:installDebug");
+  if (!quiet) {
+    console.log(`✅ Android project generated at ${targetDir}`);
+    console.log("Next steps:");
+    console.log(`  cd ${path.relative(process.cwd(), targetDir)}`);
+    console.log("  ./gradlew :app:assembleDebug");
+    console.log("  ./gradlew :app:installDebug");
+  }
   return config;
 }
 

@@ -6,6 +6,8 @@ const IOS_BUILD_NOISE_PATTERNS = [
   /built for newer 'iOS-simulator' version/i,
   /ld: warning: object file .* built for newer/i,
   /ld: warning: object file .*Build\/Products/i,
+  /ld: warning: object file .*\/Users\/.*\/code\/rune\/a/i,
+  /warning: object file .*\/Users\//i,
   /ld: warning: object file .*Build\/Products\/Debug-iphonesimu/i,
   /ExtractAppIntentsMetadata/,
   /RegisterExecutionPolicyException/,
@@ -107,6 +109,8 @@ const IOS_BUILD_NOISE_PATTERNS = [
   /RuneComponentAPI\.m:\d+:\d+: warning: method definition for 'rune_.*' not found/i,
   /RuneComponentAPI\.h:\d+:\d+: note: method 'rune_.*' declared here/i,
   /RuneSplashScreen\.swift:\d+:\d+: warning: immutable value 'rootWindow' was never used/i,
+  /^\s*\|.*warning:/i,
+  /^\s*\|.*note:/i,
 ];
 
 module.exports = {

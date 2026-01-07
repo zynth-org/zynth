@@ -3,7 +3,6 @@ const path = require("path");
 const os = require("os");
 const http = require("http");
 const { spawn, spawnSync } = require("child_process");
-const chalk = require("chalk");
 const readline = require("readline");
 
 const BUILD_SHIMMER_START = Date.now();
@@ -64,6 +63,18 @@ function runCommand(command, args, options = {}) {
   }
 }
 
+function runCommandQuiet(command, args, options = {}) {
+  const result = spawnSync(command, args, {
+    stdio: "ignore",
+    shell: false,
+    ...options,
+  });
+  if (result.status !== 0) {
+    const code = result.status == null ? 1 : result.status;
+    process.exit(code);
+  }
+}
+
 function runCommandFiltered(command, args, options = {}) {
   const child = spawn(command, args, {
     stdio: ["ignore", "pipe", "pipe"],
@@ -75,9 +86,9 @@ function runCommandFiltered(command, args, options = {}) {
   buildIndicator.start();
   let resumeTimer = null;
   let lastOutputAt = 0;
-  function writeBuildLine(stream, line) {
+  function writeBuildLine(stream, line, prefix = "  ! ") {
     buildIndicator.clearLine(stream);
-    stream.write(`📦 ${line}\n`);
+    stream.write(`${prefix}${line}\n`);
     buildIndicator.renderOnce();
   }
   let lastDiagnosticAt = 0;
@@ -89,7 +100,7 @@ function runCommandFiltered(command, args, options = {}) {
     const name = match ? match[1] : null;
     if (!name || reportedPackages.has(name)) return;
     reportedPackages.add(name);
-    writeBuildLine(process.stdout, `• ${name.replace(/^rune-/, "")} built`);
+    writeBuildLine(process.stdout, `${name.replace(/^rune-/, "")}`, "  λ ");
   }
 
   function shouldSkip(line) {
@@ -153,6 +164,73 @@ function runCommandFiltered(command, args, options = {}) {
   });
 }
 
+function runCommandFilteredAndroid(command, args, options = {}) {
+  const child = spawn(command, args, {
+    stdio: ["ignore", "pipe", "pipe"],
+    shell: false,
+    ...options,
+  });
+
+  const buildIndicator = createBuildIndicator("Building native artifacts");
+  buildIndicator.start();
+
+  let resumeTimer = null;
+  const reportedPackages = new Set();
+
+  function writeBuildLine(stream, line, prefix = "  ! ") {
+    buildIndicator.clearLine(stream);
+    stream.write(`${prefix}${line}\n`);
+    buildIndicator.renderOnce();
+  }
+
+  function tryReportPackage(line) {
+    // Gradle task pattern: > Task :PackageName:taskName
+    const match = line.match(/> Task :([^:]+):/);
+    const name = match ? match[1] : null;
+    // Filter out generic app tasks or common non-package modules if needed
+    if (!name || name === "app" || reportedPackages.has(name)) return;
+    reportedPackages.add(name);
+    const displayName = name.replace(/^Rune/, "").toLowerCase();
+    writeBuildLine(process.stdout, displayName, "  λ ");
+  }
+
+  function isDiagnostic(line) {
+    return (
+      /\bFAILURE\b/i.test(line) ||
+      /\bBUILD FAILED\b/i.test(line) ||
+      /\bERROR\b/i.test(line) ||
+      /\bException\b/i.test(line) ||
+      /^\s*w:/i.test(line) ||
+      /^\s*e:/i.test(line)
+    );
+  }
+
+  function handleData(data, stream) {
+    const text = data.toString();
+    const lines = text.split(/\r?\n/);
+    for (const line of lines) {
+      if (!line.trim()) continue;
+
+      // Check for package tasks
+      tryReportPackage(line);
+
+      if (isDiagnostic(line)) {
+        writeBuildLine(stream, line);
+      }
+    }
+  }
+
+  child.stdout.on("data", (data) => handleData(data, process.stdout));
+  child.stderr.on("data", (data) => handleData(data, process.stderr));
+
+  return new Promise((resolve) => {
+    child.on("close", (code, signal) => {
+      buildIndicator.stop();
+      resolve({ code, signal });
+    });
+  });
+}
+
 function createBuildIndicator(label) {
   const text = String(label);
   let timer = null;
@@ -165,10 +243,9 @@ function createBuildIndicator(label) {
     const period = width + padding * 2;
     const sweepSeconds = 2.0;
     const elapsedSeconds = (Date.now() - BUILD_SHIMMER_START) / 1000;
-    const pos =
-      ((elapsedSeconds % sweepSeconds) / sweepSeconds) * period;
+    const pos = ((elapsedSeconds % sweepSeconds) / sweepSeconds) * period;
     const bandHalfWidth = 5.0;
-    const hasTrueColor = Boolean(chalk.supportsColor?.has16m);
+    const hasTrueColor = supportsTrueColor();
     const base = { r: 128, g: 128, b: 128 };
     const highlight = { r: 255, g: 255, b: 255 };
     let output = "";
@@ -181,16 +258,17 @@ function createBuildIndicator(label) {
           : 0;
       if (hasTrueColor) {
         const color = mixColor(base, highlight, t * 0.9);
-        output += chalk.rgb(color.r, color.g, color.b).bold(text[i]);
+        output += colorize(text[i], color, true);
       } else if (t < 0.2) {
-        output += chalk.dim(text[i]);
+        output += dim(text[i]);
       } else if (t < 0.6) {
         output += text[i];
       } else {
-        output += chalk.bold(text[i]);
+        output += bold(text[i]);
       }
     }
-    const pad = lastWidth > output.length ? " ".repeat(lastWidth - output.length) : "";
+    const pad =
+      lastWidth > output.length ? " ".repeat(lastWidth - output.length) : "";
     lastWidth = output.length;
     process.stdout.write(`\r${output}${pad}`);
   }
@@ -236,6 +314,36 @@ function mixColor(a, b, t) {
   };
 }
 
+function supportsTrueColor() {
+  const depth =
+    typeof process.stdout?.getColorDepth === "function"
+      ? process.stdout.getColorDepth()
+      : 0;
+  if (depth >= 24) return true;
+  const colorterm = process.env.COLORTERM || "";
+  return colorterm.toLowerCase().includes("truecolor");
+}
+
+function ansiWrap(text, open, close = "\x1b[0m") {
+  return `${open}${text}${close}`;
+}
+
+function bold(text) {
+  return ansiWrap(text, "\x1b[1m");
+}
+
+function dim(text) {
+  return ansiWrap(text, "\x1b[2m");
+}
+
+function colorize(text, color, makeBold) {
+  const code = `\x1b[38;2;${color.r};${color.g};${color.b}m`;
+  if (makeBold) {
+    return ansiWrap(text, `\x1b[1m${code}`);
+  }
+  return ansiWrap(text, code);
+}
+
 function runNode(scriptPath, args = [], options = {}) {
   runCommand(process.execPath, [scriptPath, ...args], options);
 }
@@ -262,7 +370,7 @@ function writeDeviceDevConfig(deviceId, bundleId, jsonPayload) {
       "shell",
       "run-as",
       bundleId,
-      "/system/bin/mkdir",
+      "mkdir",
       "-p",
       "files/.rune",
     ],
@@ -271,11 +379,10 @@ function writeDeviceDevConfig(deviceId, bundleId, jsonPayload) {
 
   if (ensureDir.status !== 0) {
     const output = ensureDir.stderr || ensureDir.stdout || "unknown error";
-    // Ignore benign "File exists" errors, surface everything else for visibility.
+    // Ignore benign "File exists" errors
     if (!/File exists/i.test(output || "")) {
-      console.warn(
-        `⚠️  Failed to prepare dev config directory on ${deviceId}: ${output.trim()}`
-      );
+      // Suppress mkdir errors as they often just mean the app isn't installed/debuggable yet
+      // which is fine as this is a best-effort pre-launch config
     }
   }
 
@@ -298,11 +405,13 @@ function writeDeviceDevConfig(deviceId, bundleId, jsonPayload) {
   );
 
   if (result.status !== 0) {
-    console.warn(
-      `⚠️  Failed to write dev config to ${deviceId}: ${
-        result.stderr || result.stdout || "unknown error"
-      }`
-    );
+    const output = result.stderr || result.stdout || "unknown error";
+    // Filter out "No such file or directory" which happens on fresh installs
+    if (!/No such file or directory/i.test(output)) {
+      console.warn(
+        `  ! Failed to write dev config to ${deviceId}: ${output.trim()}`
+      );
+    }
   }
 }
 
@@ -316,15 +425,15 @@ function writeAndroidDevAsset(androidDir, payload) {
 
 function getIOSConfig(root, appDir) {
   const tsPath = path.join(root, "scripts", "config-utils.ts");
-  
+
   if (fs.existsSync(tsPath)) {
     try {
       require("ts-node").register({
         transpileOnly: true,
-        compilerOptions: { 
+        compilerOptions: {
           module: "commonjs",
-          moduleResolution: "node"
-        }
+          moduleResolution: "node",
+        },
       });
       const script = require(tsPath);
       return script.getAppConfig(appDir);
@@ -336,11 +445,13 @@ function getIOSConfig(root, appDir) {
   // Fallback for legacy setups
   const scriptPath = path.join(root, "scripts", "generate-ios.js");
   if (fs.existsSync(scriptPath)) {
-      const script = require(scriptPath);
-      return script.getAppConfig(appDir);
+    const script = require(scriptPath);
+    return script.getAppConfig(appDir);
   }
-  
-  throw new Error("Could not load app config. Missing scripts/config-utils.ts or generate-ios.js");
+
+  throw new Error(
+    "Could not load app config. Missing scripts/config-utils.ts or generate-ios.js"
+  );
 }
 
 function getAndroidConfig(root, appDir) {
@@ -354,7 +465,7 @@ function ensurePrebuild(root, appDir, platform, options = {}) {
   const scriptName = platform === "ios" ? "prebuild-ios" : "prebuild-android";
   const tsPath = path.join(root, "scripts", `${scriptName}.ts`);
   const jsPath = path.join(root, "scripts", `${scriptName}.js`);
-  
+
   let scriptPath = jsPath;
   if (fs.existsSync(tsPath)) {
     scriptPath = tsPath;
@@ -362,16 +473,23 @@ function ensurePrebuild(root, appDir, platform, options = {}) {
     try {
       require("ts-node").register({
         transpileOnly: true,
-        compilerOptions: { 
+        compilerOptions: {
           module: "commonjs",
-          moduleResolution: "node"
-        }
+          moduleResolution: "node",
+        },
       });
     } catch (e) {
-      console.warn("⚠️  ts-node not found, trying to run TS script without registration might fail.");
+      console.warn(
+        "⚠️  ts-node not found, trying to run TS script without registration might fail."
+      );
     }
   } else if (!fs.existsSync(jsPath)) {
-    throw new Error(`Missing ${scriptName}.ts or ${scriptName}.js in ${path.join(root, "scripts")}`);
+    throw new Error(
+      `Missing ${scriptName}.ts or ${scriptName}.js in ${path.join(
+        root,
+        "scripts"
+      )}`
+    );
   }
 
   // Load and call the prebuild script with options
@@ -638,7 +756,71 @@ function startIOSLogs(config) {
     });
     return child;
   } catch (error) {
-    console.warn("⚠️  Failed to start iOS logs:", error.message);
+    console.warn("  ! Failed to start iOS logs:", error.message);
+    return null;
+  }
+}
+
+function startAndroidLogs(config, deviceId) {
+  try {
+    // Clear logs first to avoid replay of old history
+    const clearArgs = ["logcat", "-c"];
+    if (deviceId) {
+      clearArgs.unshift("-s", deviceId);
+    }
+    spawnSync("adb", clearArgs);
+
+    const args = ["logcat", "-v", "time", "-s", "Rune:V", "RuneNative:V", "ReactNative:V", "ReactNativeJS:V", "Hermes:V", "RuneDevtoolsClient:V"];
+    if (deviceId) {
+      args.unshift("-s", deviceId);
+    }
+
+    const child = spawn("adb", args, { stdio: ["ignore", "pipe", "pipe"] });
+
+    const handleLine = (line) => {
+      if (!line.trim()) return;
+      // Android log format: MM-DD HH:MM:SS.mmm V/Tag(PID): Message
+      // We want to clean this up
+      
+      // Strip timestamp and metadata if possible for cleaner output
+      // specific regex for "time" format: 01-10 12:34:56.789 V/Tag( 123): msg
+      const cleanLine = line.replace(/^\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d+\s+[A-Z]\/[^(]+\(\s*\d+\):\s+/, "");
+
+      if (typeof devtoolsPublish === "function") {
+        devtoolsPublish({
+          topic: "log/android",
+          level: "info",
+          tag: "android",
+          data: cleanLine,
+        });
+        return;
+      }
+      process.stdout.write(`${cleanLine}\n`);
+    };
+
+    const handleData = (data) => {
+      const lines = data.toString().split(/\r?\n/);
+      for (const line of lines) {
+        handleLine(line);
+      }
+    };
+
+    child.stdout.on("data", handleData);
+    child.stderr.on("data", handleData);
+
+    const dispose = () => {
+      if (!child.killed) {
+        child.kill("SIGTERM");
+      }
+    };
+    process.on("exit", dispose);
+    process.on("SIGINT", () => {
+      dispose();
+      process.exit(0);
+    });
+    return child;
+  } catch (error) {
+    console.warn("  ! Failed to start Android logs:", error.message);
     return null;
   }
 }
@@ -658,13 +840,15 @@ function getLocalIp() {
   return "127.0.0.1";
 }
 
-async function startRuneDevtoolsHub({ host, port }) {
+async function startRuneDevtoolsHub({ host, port, quiet }) {
   const hub = createDevtoolsHub({ host, port, print: true, json: false });
   const server = await hub.start();
   devtoolsPublish = hub.publish;
-  console.log(
-    `🔌 Rune devtools hub listening at ws://${server.host}:${server.port}`
-  );
+  if (!quiet) {
+    console.log(
+      `🔌 Rune devtools hub listening at ws://${server.host}:${server.port}`
+    );
+  }
   return server;
 }
 
@@ -698,10 +882,6 @@ async function startRuneHMRServer(appDir, platform, options = {}) {
   }
   const args = ["rsbuild", "dev", "--port", String(port), "--host", bindHost];
 
-  console.log(
-    `🔥 Starting Rsbuild dev server (port ${port}, host ${bindHost})...`
-  );
-
   const command = process.platform === "win32" ? "npx.cmd" : "npx";
   const child = spawn(command, args, {
     cwd: appDir,
@@ -713,7 +893,7 @@ async function startRuneHMRServer(appDir, platform, options = {}) {
   });
 
   child.on("error", (error) => {
-    console.error("❌ Failed to launch Rsbuild dev server:", error.message);
+    console.error("  ! Failed to launch Rsbuild dev server:", error.message);
   });
 
   const cleanup = () => {
@@ -732,12 +912,14 @@ async function startRuneHMRServer(appDir, platform, options = {}) {
   const localUrl = `http://${localHost}:${port}`;
   const deviceUrl = `http://${deviceHost}:${port}`;
 
-  console.log(`✓ Rsbuild dev server spawned`);
-  console.log(`  Local:   ${localUrl}`);
-  console.log(`  Device:  ${deviceUrl}`);
-  console.log(`  Bundle:  ${deviceUrl}/main.js`);
-  console.log(`  Updates: ${deviceUrl}/bundle/app.hot-update.json`);
-  console.log(`  Socket:  ws://${deviceHost}:${port}/rsbuild-hmr`);
+  console.log(`» Rsbuild dev server spawned`);
+  if (!options.quietLogs) {
+    console.log(`  Local:   ${localUrl}`);
+    console.log(`  Device:  ${deviceUrl}`);
+    console.log(`  Bundle:  ${deviceUrl}/main.js`);
+    console.log(`  Updates: ${deviceUrl}/bundle/app.hot-update.json`);
+    console.log(`  Socket:  ws://${deviceHost}:${port}/rsbuild-hmr`);
+  }
 
   return {
     process: child,
@@ -752,6 +934,7 @@ async function devIOS(root, appDir, options = {}) {
   const config = getIOSConfig(root, appDir);
   const iosDir = path.join(appDir, "ios");
   let targetDevice = null;
+  const quietOutput = Boolean(options.quietOutput ?? options.prebuild);
   const devtoolsEnabled = options.devtools !== false;
   const devtoolsPort = Number(
     process.env.RUNE_DEVTOOLS_PORT || options.devtoolsPort || 8091
@@ -801,9 +984,11 @@ async function devIOS(root, appDir, options = {}) {
   }
 
   if (options.prebuild) {
-    console.log("♻️  Regenerating iOS project (--prebuild)");
+    if (!quietOutput) {
+      console.log("♻️  Regenerating iOS project (--prebuild)");
+    }
     removeDirectory(iosDir);
-    ensurePrebuild(root, appDir, "ios", { dev: true });
+    ensurePrebuild(root, appDir, "ios", { dev: true, quiet: quietOutput });
   }
 
   if (!fs.existsSync(iosDir)) {
@@ -828,10 +1013,6 @@ async function devIOS(root, appDir, options = {}) {
   const sdk = isPhysicalDevice ? "iphoneos" : "iphonesimulator";
   const buildConfiguration = "Debug";
   const buildDir = path.join(iosDir, ".build");
-
-  console.log(
-    `🛠️  Building ${config.appNameCapitalized} for ${targetDevice.name} (${sdk})...`
-  );
 
   const buildArgs = [
     "-workspace",
@@ -861,16 +1042,16 @@ async function devIOS(root, appDir, options = {}) {
     }
   }
 
+  console.log(`◆ Building ${config.appNameCapitalized} (${sdk})...`);
   const buildResult = await runCommandFiltered("xcodebuild", buildArgs, {
     cwd: iosDir,
   });
   if (buildResult.code !== 0) {
-    console.error("❌ iOS build failed.");
+    console.error("✖ iOS build failed.");
     process.exit(buildResult.code || 1);
   } else {
-    console.log("✅ iOS build finished.");
+    console.log("✔ iOS build finished.");
   }
-
   const appBundlePath = path.join(
     buildDir,
     "Build",
@@ -885,8 +1066,9 @@ async function devIOS(root, appDir, options = {}) {
     process.exit(1);
   }
 
+  console.log("");
   if (isPhysicalDevice) {
-    console.log(`📥 Installing build to ${targetDevice.name}...`);
+    console.log(`◆ Installing build to ${targetDevice.name}...`);
     // `ios-deploy` is a common tool for this. Assumes it's installed.
     // You can install it with `npm install -g ios-deploy`
     runCommand("ios-deploy", [
@@ -897,7 +1079,7 @@ async function devIOS(root, appDir, options = {}) {
       "--verbose",
     ]);
   } else {
-    console.log("📥 Installing build to simulator...");
+    console.log("◆ Installing build to simulator...");
     runCommand("xcrun", [
       "simctl",
       "install",
@@ -913,6 +1095,7 @@ async function devIOS(root, appDir, options = {}) {
     isPhysicalDevice: isPhysicalDevice,
     local: options.local,
     hmrNetwork: options.hmrNetwork,
+    quietLogs: quietOutput,
   });
 
   if (!hmrServer) {
@@ -925,6 +1108,7 @@ async function devIOS(root, appDir, options = {}) {
     devtoolsServer = await startRuneDevtoolsHub({
       host: "0.0.0.0",
       port: devtoolsPort,
+      quiet: quietOutput,
     });
   }
   const devtoolsUrl = devtoolsEnabled
@@ -972,7 +1156,9 @@ async function devIOS(root, appDir, options = {}) {
     // Simulator-specific logic
     const hmrToken = await waitForHMRToken(appDir);
     if (hmrToken) {
-      console.log("🔐 Injecting HMR token into simulator environment");
+      if (!quietOutput) {
+        console.log("🔐 Injecting HMR token into simulator environment");
+      }
       process.env.RUNE_DEV_SERVER_TOKEN = hmrToken;
       runCommand("xcrun", [
         "simctl",
@@ -1030,17 +1216,26 @@ async function devIOS(root, appDir, options = {}) {
       }
     }
 
-    console.log("🚀 Launching application on simulator...");
-    runCommand("xcrun", [
-      "simctl",
-      "launch",
-      targetDevice.udid,
-      config.bundleId,
-    ]);
+    if (!quietOutput) {
+      console.log("🚀 Launching application on simulator...");
+      runCommand("xcrun", [
+        "simctl",
+        "launch",
+        targetDevice.udid,
+        config.bundleId,
+      ]);
+    } else {
+      runCommandQuiet("xcrun", [
+        "simctl",
+        "launch",
+        targetDevice.udid,
+        config.bundleId,
+      ]);
+    }
   }
 
   const logProcess = startIOSLogs(config);
-  if (logProcess) {
+  if (logProcess && !quietOutput) {
     console.log("📖 iOS logs streaming. Press Ctrl+C to stop.");
     logProcess.on("exit", (code, signal) => {
       if (signal !== "SIGTERM") {
@@ -1049,12 +1244,12 @@ async function devIOS(root, appDir, options = {}) {
     });
   }
 
-  if (hmrServer) {
+  if (hmrServer && !quietOutput) {
     console.log(
       "🔥 Rsbuild dev server running. Leave this session open for hot reloading."
     );
   }
-  if (devtoolsServer && devtoolsUrl) {
+  if (devtoolsServer && devtoolsUrl && !quietOutput) {
     console.log(`📡 Devtools URL: ${devtoolsUrl}`);
   }
 
@@ -1072,13 +1267,14 @@ async function devAndroid(root, appDir, options = {}) {
   );
   const devtoolsUrlOverride = process.env.RUNE_DEVTOOLS_URL;
   const devtoolsToken = process.env.RUNE_DEVTOOLS_TOKEN || null;
+  const quietOutput = Boolean(options.quietOutput ?? options.prebuild);
 
-  ensurePrebuild(root, appDir, "android", { dev: true });
+  ensurePrebuild(root, appDir, "android", { dev: true, quiet: quietOutput });
 
   const devicesBeforeBuild = getConnectedAndroidDevices();
   if (!devicesBeforeBuild.length) {
     console.warn(
-      "⚠️  No Android devices or emulators detected. Skipping install."
+      "  ! No Android devices or emulators detected. Skipping install."
     );
     console.warn(
       "    Launch an emulator or connect a device, then rerun this command."
@@ -1090,51 +1286,93 @@ async function devAndroid(root, appDir, options = {}) {
     (id) => !id.startsWith("emulator-")
   );
 
+  console.log(`◆ Building ${config.appNameCapitalized} (debug)...`);
+  const assembleResult = await runCommandFilteredAndroid(
+    "./gradlew",
+    [":app:assembleDebug"],
+    { cwd: androidDir }
+  );
+  if (assembleResult.code !== 0) {
+    console.error("✖ Android build failed.");
+    process.exit(assembleResult.code || 1);
+  } else {
+    console.log("✔ Android build finished.");
+  }
+
+  const devicesForInstall = getConnectedAndroidDevices();
+  if (!devicesForInstall.length) {
+    console.warn(
+      "  ! No Android devices or emulators detected. Skipping install."
+    );
+    console.warn(
+      "    Launch an emulator or connect a device, then rerun this command."
+    );
+    return;
+  }
+
+  console.log("");
+  console.log("◆ Installing build to device...");
+  const installResult = await runCommandFilteredAndroid(
+    "./gradlew",
+    [":app:installDebug", "-q"],
+    { cwd: androidDir }
+  );
+  if (installResult.code !== 0) {
+    console.error("✖ Android install failed.");
+    process.exit(installResult.code || 1);
+  }
+
+  let hmrServer = null;
+  let devtoolsServer = null;
+  let hmrToken = null;
+  let runtimeDeviceUrl = null;
+  let devtoolsDeviceUrl = null;
+  let runtimeConfig = null;
+  let serializedConfig = "";
+  let portForReverse = null;
+
   const desiredPort = Number(process.env.RUNE_HMR_PORT || 8081);
-  const hmrServer = await startRuneHMRServer(appDir, "android", {
+  hmrServer = await startRuneHMRServer(appDir, "android", {
     port: desiredPort,
     deviceHostOverride:
       userDeviceHost || (hasPhysicalDeviceInitial ? "127.0.0.1" : undefined),
     isPhysicalDevice: hasPhysicalDeviceInitial,
     local: local,
     hmrNetwork: hmrNetwork,
+    quietLogs: quietOutput,
   });
 
   if (!hmrServer) {
-    console.error("❌ Failed to start Rsbuild dev server. Aborting.");
+    console.error("✖ Failed to start Rsbuild dev server. Aborting.");
     process.exit(1);
   }
 
-  let devtoolsServer = null;
   if (devtoolsEnabled && !devtoolsUrlOverride) {
     devtoolsServer = await startRuneDevtoolsHub({
       host: "0.0.0.0",
       port: devtoolsPort,
+      quiet: quietOutput,
     });
   }
 
   const serverReady = await waitForDevServer(hmrServer.localUrl);
   if (!serverReady) {
     console.error(
-      "❌ Rsbuild dev server did not respond within the expected time window."
+      "✖ Rsbuild dev server did not respond within the expected time window."
     );
     process.exit(1);
   }
 
-  const hmrToken = await waitForHMRToken(appDir);
+  hmrToken = await waitForHMRToken(appDir);
   if (hmrToken) {
-    console.log("🔐 Passing HMR token to Android runtime");
     process.env.RUNE_DEV_SERVER_TOKEN = hmrToken;
   } else {
-    console.warn(
-      "⚠️  HMR token not detected; continuing without authentication"
-    );
     delete process.env.RUNE_DEV_SERVER_TOKEN;
   }
 
-  const portForReverse = hmrServer?.port || desiredPort;
-  let runtimeDeviceUrl = hmrServer.deviceUrl;
-  let devtoolsDeviceUrl = devtoolsEnabled
+  portForReverse = hmrServer?.port || desiredPort;
+  runtimeDeviceUrl = hmrServer.deviceUrl;
+  devtoolsDeviceUrl = devtoolsEnabled
     ? buildDevtoolsUrl({
         deviceHost: hmrServer.deviceHost,
         port: devtoolsPort,
@@ -1142,7 +1380,6 @@ async function devAndroid(root, appDir, options = {}) {
       })
     : null;
   if (config.devServerUrl) {
-    console.log(`⚠️  Using explicit dev server URL from app.json: ${config.devServerUrl}`);
     runtimeDeviceUrl = config.devServerUrl;
   } else if (!userDeviceHost && hasPhysicalDeviceInitial && portForReverse) {
     runtimeDeviceUrl = `http://127.0.0.1:${portForReverse}`;
@@ -1166,38 +1403,21 @@ async function devAndroid(root, appDir, options = {}) {
     });
   }
 
-  let runtimeConfig = {
+  runtimeConfig = {
     url: runtimeDeviceUrl,
     token: hmrToken || null,
     updatedAt: new Date().toISOString(),
     devtoolsUrl: devtoolsDeviceUrl,
     devtoolsToken: devtoolsToken,
   };
-  let serializedConfig = `${JSON.stringify(runtimeConfig)}\n`;
+  serializedConfig = `${JSON.stringify(runtimeConfig)}\n`;
 
   writeAndroidDevAsset(androidDir, serializedConfig.trim());
-
-  console.log("🛠️  Assembling Android debug build...");
-  runCommand("./gradlew", [":app:assembleDebug"], { cwd: androidDir });
-
-  const devicesForInstall = getConnectedAndroidDevices();
-  if (!devicesForInstall.length) {
-    console.warn(
-      "⚠️  No Android devices or emulators detected. Skipping install."
-    );
-    console.warn(
-      "    Launch an emulator or connect a device, then rerun this command."
-    );
-    return;
-  }
-
-  console.log("📥 Installing Android build...");
-  runCommand("./gradlew", [":app:installDebug"], { cwd: androidDir });
 
   const devices = getConnectedAndroidDevices();
   if (!devices.length) {
     console.warn(
-      "⚠️  No Android devices or emulators detected. Skipping launch."
+      "  ! No Android devices or emulators detected. Skipping launch."
     );
     console.warn("    Install/launch manually once a device is available.");
     return;
@@ -1228,18 +1448,13 @@ async function devAndroid(root, appDir, options = {}) {
       ]);
       if (result.status !== 0) {
         console.warn(
-          `⚠️  Failed to reverse port ${portForReverse} for ${deviceId}`
+          `  ! Failed to reverse port ${portForReverse} for ${deviceId}`
         );
       }
     }
-    if (!userDeviceHost && hasPhysicalDeviceConnected) {
-      console.log(
-        "🔄 Enabled adb reverse for connected device(s); tunneling via localhost."
-      );
-    }
   } else if (hasPhysicalDeviceConnected && !userDeviceHost) {
     console.warn(
-      "⚠️  Physical device detected. Use USB (adb reverse) or set RUNE_DEVICE_HOST to your LAN IP."
+      "  ! Physical device detected. Use USB (adb reverse) or set RUNE_DEVICE_HOST to your LAN IP."
     );
   }
   if (shouldReverseDevtools) {
@@ -1253,7 +1468,7 @@ async function devAndroid(root, appDir, options = {}) {
       ]);
       if (result.status !== 0) {
         console.warn(
-          `⚠️  Failed to reverse devtools port ${devtoolsPort} for ${deviceId}`
+          `  ! Failed to reverse devtools port ${devtoolsPort} for ${deviceId}`
         );
       }
     }
@@ -1308,16 +1523,48 @@ async function devAndroid(root, appDir, options = {}) {
   if (hmrToken) {
     launchArgs.push("--es", "RUNE_DEV_SERVER_TOKEN", hmrToken);
   }
-  runCommand("adb", launchArgs);
-
-  console.log(
-    "🔥 Rune HMR server running. Leave this session open for hot reloading."
-  );
-  if (runtimeDeviceUrl && runtimeDeviceUrl !== hmrServer.deviceUrl) {
-    console.log(`  ↳ Device URL: ${runtimeDeviceUrl}`);
+  if (devtoolsDeviceUrl) {
+    launchArgs.push("--es", "RUNE_DEVTOOLS_URL", devtoolsDeviceUrl);
+    if (devtoolsToken) {
+      launchArgs.push("--es", "RUNE_DEVTOOLS_TOKEN", devtoolsToken);
+    }
   }
+
+  if (quietOutput) {
+    runCommandQuiet("adb", launchArgs);
+  } else {
+    runCommand("adb", launchArgs);
+  }
+
+  // Start logs for the first device
+  const targetDevice = devices[0];
+  const logProcess = startAndroidLogs(config, targetDevice);
+
+  if (!quietOutput) {
+    console.log(
+      "🔥 Rune HMR server running. Leave this session open for hot reloading."
+    );
+    if (runtimeDeviceUrl && runtimeDeviceUrl !== hmrServer.deviceUrl) {
+      console.log(`  ↳ Device URL: ${runtimeDeviceUrl}`);
+    }
+    if (devtoolsServer && devtoolsDeviceUrl) {
+      console.log(`📡 Devtools URL: ${devtoolsDeviceUrl}`);
+    }
+
+    if (logProcess) {
+      console.log("📖 Android logs streaming. Press Ctrl+C to stop.");
+    }
+  }
+
+  if (logProcess) {
+    logProcess.on("exit", (code, signal) => {
+      if (signal !== "SIGTERM") {
+        console.log(`ℹ️  Log stream ended (${signal || code})`);
+      }
+    });
+  }
+
   if (devtoolsServer && devtoolsDeviceUrl) {
-    console.log(`📡 Devtools URL: ${devtoolsDeviceUrl}`);
     await new Promise(() => {});
   }
 }
@@ -1407,6 +1654,7 @@ module.exports = {
   ensureBundle,
   getConnectedAndroidDevices,
   startIOSLogs,
+  startAndroidLogs,
   getIOSConfig,
   getLocalIp,
   getAndroidConfig,

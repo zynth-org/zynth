@@ -91,7 +91,7 @@ class RuneUIManager(
 
   private fun logDebug(tag: String, message: String) {
     if (!isNativeDebugEnabled()) return
-    Log.d(tag, message)
+    // Log.d(tag, message)
   }
 
   fun registerSurface(surfaceId: Int, surfaceRoot: RuneRootView) = onMain {
@@ -948,7 +948,7 @@ class RuneUIManager(
     val payload = runCatching { JSONObject(batchJson) }.getOrNull() ?: return@onMain
     val operations = payload.optJSONArray("operations") ?: return@onMain
     
-    Log.d("RuneNative", "applyBatch processing ${operations.length()} ops")
+    // Log.d("RuneNative", "applyBatch processing ${operations.length()} ops")
 
     recyclerHost.onBatch(payload.optJSONObject("meta"), operations)
 

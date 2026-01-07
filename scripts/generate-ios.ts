@@ -265,7 +265,7 @@ function removeDirectoryWithRetries(targetDir: string, retries = 5): void {
 }
 
 export function generateIOSProject(appDir: string, options: any = {}) {
-  const { dev = true } = options; // Default to dev mode for backward compatibility
+  const { dev = true, quiet = false } = options; // Default to dev mode for backward compatibility
   const config = getAppConfig(appDir);
   const appJson = safeReadJSON(path.join(appDir, "app.json")) || {};
   const runeConfig = appJson.rune || appJson || {};
@@ -273,26 +273,32 @@ export function generateIOSProject(appDir: string, options: any = {}) {
   const templateDir = path.join(templatesRoot, "ios");
   const targetDir = path.join(appDir, "ios");
 
-  console.log(`Generating iOS project for ${config.displayName}...`);
-  console.log(`  App Name: ${config.appName} (${config.displayName})`);
-  console.log(`  Bundle ID: ${config.bundleId}`);
-  console.log(`  Version: ${config.version}`);
-  console.log(`  Mode: ${dev ? "Development" : "Production"}`);
-  console.log(`  Target: ${targetDir}`);
+  if (!quiet) {
+    console.log(`Generating iOS project for ${config.displayName}...`);
+    console.log(`  App Name: ${config.appName} (${config.displayName})`);
+    console.log(`  Bundle ID: ${config.bundleId}`);
+    console.log(`  Version: ${config.version}`);
+    console.log(`  Mode: ${dev ? "Development" : "Production"}`);
+    console.log(`  Target: ${targetDir}`);
+  }
 
   const componentPods = collectNativeIOSPods(appDir);
-  if (componentPods.length) {
-    console.log("  Native component pods:");
-    componentPods.forEach((pod) => {
-      console.log(`    • ${pod.name} (${pod.packageName})`);
-    });
-  } else {
-    console.log("  Native component pods: none detected");
+  if (!quiet) {
+    if (componentPods.length) {
+      console.log("  Native component pods:");
+      componentPods.forEach((pod) => {
+        console.log(`    • ${pod.name} (${pod.packageName})`);
+      });
+    } else {
+      console.log("  Native component pods: none detected");
+    }
   }
 
   // Remove existing iOS folder if it exists
   if (fs.existsSync(targetDir)) {
-    console.log("  Removing existing iOS folder...");
+    if (!quiet) {
+      console.log("  Removing existing iOS folder...");
+    }
     removeDirectoryWithRetries(targetDir);
   }
 
@@ -365,21 +371,29 @@ static NSString *const kRuneSplashResizeMode = @"${splashResizeMode}";`;
         splashContentMode,
       });
       fs.writeFileSync(targetFile, processedContent);
-      console.log(`  ✓ ${file}`);
+      if (!quiet) {
+        console.log(`  ✓ ${file}`);
+      }
     }
   }
 
   // Generate assets (Icons, Splash)
-  generateAssets(appDir, 'ios');
+  generateAssets(appDir, "ios");
+  if (quiet) {
+    console.log("  ├─ Generated iOS App Icons");
+    console.log("  ├─ Generated iOS Splash Assets");
+  }
 
-  console.log(`✅ iOS project generated at ${targetDir}`);
-  console.log("");
-  console.log("Next steps:");
-  console.log(`  cd ${path.relative(process.cwd(), targetDir)}`);
-  console.log("  pod install");
-  console.log("  xcodegen generate");
-  console.log("");
-  console.log("Or run: yarn ios:init && yarn ios:dev");
+  if (!quiet) {
+    console.log(`✅ iOS project generated at ${targetDir}`);
+    console.log("");
+    console.log("Next steps:");
+    console.log(`  cd ${path.relative(process.cwd(), targetDir)}`);
+    console.log("  pod install");
+    console.log("  xcodegen generate");
+    console.log("");
+    console.log("Or run: yarn ios:init && yarn ios:dev");
+  }
 }
 
 // CLI interface

@@ -1,5 +1,4 @@
 const http = require("http");
-const chalk = require("chalk");
 const { WebSocketServer } = require("ws");
 
 function createDevtoolsHub({
@@ -114,7 +113,7 @@ function createDevtoolsHub({
       process.stdout.write(`${parts.join(" ")}\n`);
       return;
     }
-    if (topic === "log/ios" || tag === "ios") {
+    if (topic === "log/ios" || tag === "ios" || topic === "log/android" || tag === "android") {
       const parts = [];
       if (prefix) parts.push(prefix);
       parts.push(styledLevel, message);
@@ -252,17 +251,21 @@ function createDevtoolsHub({
 function formatLevel(level) {
   switch (level) {
     case "ERROR":
-      return chalk.bgRed.white.bold(` ${level} `);
+      return styleLevel(` ${level} `, 41);
     case "WARN":
-      return chalk.bgYellow.white.bold(` ${level} `);
+      return styleLevel(` ${level} `, 43);
     case "INFO":
-      return chalk.bgBlue.white.bold(` INF `);
+      return styleLevel(" INF ", 44);
     case "DEBUG":
-      return chalk.bgMagenta.white.bold(` ${level} `);
+      return styleLevel(` ${level} `, 45);
     case "LOG":
     default:
-      return chalk.bgWhiteBright.black.bold(` ${level} `);
+      return styleLevel(` ${level} `, 107, 30);
   }
+}
+
+function styleLevel(text, bgCode, fgCode = 37) {
+  return `\u001b[${fgCode}m\u001b[${bgCode}m\u001b[1m${text}\u001b[0m`;
 }
 
 module.exports = { createDevtoolsHub };
