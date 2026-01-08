@@ -445,9 +445,26 @@ private fun RuneRuntime.savePersistedDevServerConfig(url: String, token: String?
     }
     val configFile = File(runeDir, "dev-server.json")
     val json = JSONObject()
+    val existing = runCatching {
+      if (configFile.exists()) JSONObject(configFile.readText(Charset.forName("UTF-8"))) else null
+    }.getOrNull()
+    val devtoolsUrl =
+      System.getProperty("RUNE_DEVTOOLS_URL")
+        ?.takeIf { it.isNotBlank() }
+        ?: existing?.optString("devtoolsUrl", "")?.takeIf { it.isNotBlank() }
+    val devtoolsToken =
+      System.getProperty("RUNE_DEVTOOLS_TOKEN")
+        ?.takeIf { it.isNotBlank() }
+        ?: existing?.optString("devtoolsToken", "")?.takeIf { it.isNotBlank() }
     json.put("url", url)
     if (token != null) {
       json.put("token", token)
+    }
+    if (devtoolsUrl != null) {
+      json.put("devtoolsUrl", devtoolsUrl)
+    }
+    if (devtoolsToken != null) {
+      json.put("devtoolsToken", devtoolsToken)
     }
     configFile.writeText(json.toString(), Charset.forName("UTF-8"))
   }.onFailure { error ->

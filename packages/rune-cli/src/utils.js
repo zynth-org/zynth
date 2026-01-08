@@ -100,7 +100,7 @@ function runCommandFiltered(command, args, options = {}) {
     const name = match ? match[1] : null;
     if (!name || reportedPackages.has(name)) return;
     reportedPackages.add(name);
-    writeBuildLine(process.stdout, `${name.replace(/^rune-/, "")}`, "  λ ");
+    writeBuildLine(process.stdout, `${name.replace(/^rune-/, "")}`, "  ■ ");
   }
 
   function shouldSkip(line) {
@@ -191,7 +191,7 @@ function runCommandFilteredAndroid(command, args, options = {}) {
     if (!name || name === "app" || reportedPackages.has(name)) return;
     reportedPackages.add(name);
     const displayName = name.replace(/^Rune/, "").toLowerCase();
-    writeBuildLine(process.stdout, displayName, "  λ ");
+    writeBuildLine(process.stdout, displayName, "  ■ ");
   }
 
   function isDiagnostic(line) {
@@ -364,16 +364,7 @@ function readCommandOutput(command, args, options = {}) {
 function writeDeviceDevConfig(deviceId, bundleId, jsonPayload) {
   const ensureDir = spawnSync(
     "adb",
-    [
-      "-s",
-      deviceId,
-      "shell",
-      "run-as",
-      bundleId,
-      "mkdir",
-      "-p",
-      "files/.rune",
-    ],
+    ["-s", deviceId, "shell", "run-as", bundleId, "mkdir", "-p", "files/.rune"],
     { encoding: "utf8" }
   );
 
@@ -770,7 +761,18 @@ function startAndroidLogs(config, deviceId) {
     }
     spawnSync("adb", clearArgs);
 
-    const args = ["logcat", "-v", "time", "-s", "Rune:V", "RuneNative:V", "ReactNative:V", "ReactNativeJS:V", "Hermes:V", "RuneDevtoolsClient:V"];
+    const args = [
+      "logcat",
+      "-v",
+      "time",
+      "-s",
+      "Rune:V",
+      "RuneNative:V",
+      "ReactNative:V",
+      "ReactNativeJS:V",
+      "Hermes:V",
+      "RuneDevtoolsClient:V",
+    ];
     if (deviceId) {
       args.unshift("-s", deviceId);
     }
@@ -781,10 +783,13 @@ function startAndroidLogs(config, deviceId) {
       if (!line.trim()) return;
       // Android log format: MM-DD HH:MM:SS.mmm V/Tag(PID): Message
       // We want to clean this up
-      
+
       // Strip timestamp and metadata if possible for cleaner output
       // specific regex for "time" format: 01-10 12:34:56.789 V/Tag( 123): msg
-      const cleanLine = line.replace(/^\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d+\s+[A-Z]\/[^(]+\(\s*\d+\):\s+/, "");
+      const cleanLine = line.replace(
+        /^\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d+\s+[A-Z]\/[^(]+\(\s*\d+\):\s+/,
+        ""
+      );
 
       if (typeof devtoolsPublish === "function") {
         devtoolsPublish({
@@ -1234,16 +1239,6 @@ async function devIOS(root, appDir, options = {}) {
     }
   }
 
-  const logProcess = startIOSLogs(config);
-  if (logProcess && !quietOutput) {
-    console.log("📖 iOS logs streaming. Press Ctrl+C to stop.");
-    logProcess.on("exit", (code, signal) => {
-      if (signal !== "SIGTERM") {
-        console.log(`ℹ️  Log stream ended (${signal || code})`);
-      }
-    });
-  }
-
   if (hmrServer && !quietOutput) {
     console.log(
       "🔥 Rsbuild dev server running. Leave this session open for hot reloading."
@@ -1251,6 +1246,7 @@ async function devIOS(root, appDir, options = {}) {
   }
   if (devtoolsServer && devtoolsUrl && !quietOutput) {
     console.log(`📡 Devtools URL: ${devtoolsUrl}`);
+    console.log("📖 Devtools events streaming. Press Ctrl+C to stop.");
   }
 
   await new Promise(() => {});
@@ -1285,6 +1281,8 @@ async function devAndroid(root, appDir, options = {}) {
   const hasPhysicalDeviceInitial = devicesBeforeBuild.some(
     (id) => !id.startsWith("emulator-")
   );
+  const preferLanForEmulator = !hasPhysicalDeviceInitial && !userDeviceHost;
+  const lanHost = preferLanForEmulator ? getLocalIp() : null;
 
   console.log(`◆ Building ${config.appNameCapitalized} (debug)...`);
   const assembleResult = await runCommandFilteredAndroid(
@@ -1335,7 +1333,8 @@ async function devAndroid(root, appDir, options = {}) {
   hmrServer = await startRuneHMRServer(appDir, "android", {
     port: desiredPort,
     deviceHostOverride:
-      userDeviceHost || (hasPhysicalDeviceInitial ? "127.0.0.1" : undefined),
+      userDeviceHost ||
+      (hasPhysicalDeviceInitial ? "127.0.0.1" : lanHost || undefined),
     isPhysicalDevice: hasPhysicalDeviceInitial,
     local: local,
     hmrNetwork: hmrNetwork,
@@ -1374,7 +1373,7 @@ async function devAndroid(root, appDir, options = {}) {
   runtimeDeviceUrl = hmrServer.deviceUrl;
   devtoolsDeviceUrl = devtoolsEnabled
     ? buildDevtoolsUrl({
-        deviceHost: hmrServer.deviceHost,
+        deviceHost: lanHost || hmrServer.deviceHost,
         port: devtoolsPort,
         override: devtoolsUrlOverride,
       })
@@ -1383,6 +1382,8 @@ async function devAndroid(root, appDir, options = {}) {
     runtimeDeviceUrl = config.devServerUrl;
   } else if (!userDeviceHost && hasPhysicalDeviceInitial && portForReverse) {
     runtimeDeviceUrl = `http://127.0.0.1:${portForReverse}`;
+  } else if (lanHost) {
+    runtimeDeviceUrl = `http://${lanHost}:${portForReverse}`;
   } else if (userDeviceHost) {
     runtimeDeviceUrl = `http://${userDeviceHost}:${portForReverse}`;
   }
@@ -1394,6 +1395,11 @@ async function devAndroid(root, appDir, options = {}) {
   ) {
     devtoolsDeviceUrl = buildDevtoolsUrl({
       deviceHost: "127.0.0.1",
+      port: devtoolsPort,
+    });
+  } else if (devtoolsEnabled && !devtoolsUrlOverride && lanHost) {
+    devtoolsDeviceUrl = buildDevtoolsUrl({
+      deviceHost: lanHost,
       port: devtoolsPort,
     });
   } else if (devtoolsEnabled && !devtoolsUrlOverride && userDeviceHost) {
@@ -1478,6 +1484,8 @@ async function devAndroid(root, appDir, options = {}) {
     runtimeDeviceUrl = config.devServerUrl;
   } else if (shouldReverse) {
     runtimeDeviceUrl = `http://127.0.0.1:${portForReverse}`;
+  } else if (lanHost) {
+    runtimeDeviceUrl = `http://${lanHost}:${portForReverse}`;
   } else if (userDeviceHost) {
     runtimeDeviceUrl = `http://${userDeviceHost}:${portForReverse}`;
   } else {
@@ -1536,10 +1544,6 @@ async function devAndroid(root, appDir, options = {}) {
     runCommand("adb", launchArgs);
   }
 
-  // Start logs for the first device
-  const targetDevice = devices[0];
-  const logProcess = startAndroidLogs(config, targetDevice);
-
   if (!quietOutput) {
     console.log(
       "🔥 Rune HMR server running. Leave this session open for hot reloading."
@@ -1549,22 +1553,11 @@ async function devAndroid(root, appDir, options = {}) {
     }
     if (devtoolsServer && devtoolsDeviceUrl) {
       console.log(`📡 Devtools URL: ${devtoolsDeviceUrl}`);
-    }
-
-    if (logProcess) {
-      console.log("📖 Android logs streaming. Press Ctrl+C to stop.");
+      console.log("📖 Devtools events streaming. Press Ctrl+C to stop.");
     }
   }
 
-  if (logProcess) {
-    logProcess.on("exit", (code, signal) => {
-      if (signal !== "SIGTERM") {
-        console.log(`ℹ️  Log stream ended (${signal || code})`);
-      }
-    });
-  }
-
-  if (devtoolsServer && devtoolsDeviceUrl) {
+  if (devtoolsEnabled) {
     await new Promise(() => {});
   }
 }

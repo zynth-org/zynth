@@ -10,6 +10,8 @@ import {{BUNDLE_ID}}.modules.EnvModule
 import {{BUNDLE_ID}}.modules.PerformanceModule
 import com.rune.kit.core.RuneRootView
 import com.rune.kit.runtime.RuneRuntime
+import java.io.File
+import org.json.JSONObject
 {{MODULE_IMPORTS}}
 {{ACTIVITY_HOOK_IMPORTS}}
 
@@ -45,9 +47,23 @@ class MainActivity : AppCompatActivity() {
     val root = RuneRootView(this, explicitRootId = 0)
     setContentView(root)
 
-    // Start loading bundle in background
+    // Capture dev server + devtools intent extras early so native modules can read them.
     val launchIntent = intent
-    val preloadUrl = launchIntent.getStringExtra("RUNE_DEV_SERVER_URL")
+    val devServerUrl = launchIntent.getStringExtra("RUNE_DEV_SERVER_URL")
+    val devServerToken = launchIntent.getStringExtra("RUNE_DEV_SERVER_TOKEN")
+    val devtoolsUrl = launchIntent.getStringExtra("RUNE_DEVTOOLS_URL")
+    val devtoolsToken = launchIntent.getStringExtra("RUNE_DEVTOOLS_TOKEN")
+
+    if (!devtoolsUrl.isNullOrBlank()) {
+      System.setProperty("RUNE_DEVTOOLS_URL", devtoolsUrl)
+    }
+    if (!devtoolsToken.isNullOrBlank()) {
+      System.setProperty("RUNE_DEVTOOLS_TOKEN", devtoolsToken)
+    }
+    persistDevConfig(devServerUrl, devServerToken, devtoolsUrl, devtoolsToken)
+
+    // Start loading bundle in background
+    val preloadUrl = devServerUrl
     val loadThread = if (preloadUrl.isNullOrBlank()) {
       Thread {
         try {
@@ -67,12 +83,8 @@ class MainActivity : AppCompatActivity() {
 
 {{MODULE_INITIALIZERS}}
 
-    val currentIntent = intent
-    val devServerUrl = currentIntent.getStringExtra("RUNE_DEV_SERVER_URL")
-
     if (!devServerUrl.isNullOrBlank()) {
-      val token = currentIntent.getStringExtra("RUNE_DEV_SERVER_TOKEN")
-      runtime.connectDevServer(devServerUrl, token)
+      runtime.connectDevServer(devServerUrl, devServerToken)
     } else {
       // Wait for background thread if needed
       loadThread?.join()
@@ -163,5 +175,37 @@ class MainActivity : AppCompatActivity() {
       Log.w("MainActivity", "Bootstrap failed", error)
     }
     return false
+  }
+
+  private fun persistDevConfig(
+    devServerUrl: String?,
+    devServerToken: String?,
+    devtoolsUrl: String?,
+    devtoolsToken: String?
+  ) {
+    if (devServerUrl.isNullOrBlank() && devtoolsUrl.isNullOrBlank()) return
+    try {
+      val runeDir = File(filesDir, ".rune")
+      if (!runeDir.exists()) {
+        runeDir.mkdirs()
+      }
+      val configFile = File(runeDir, "dev-server.json")
+      val json = JSONObject()
+      if (!devServerUrl.isNullOrBlank()) {
+        json.put("url", devServerUrl)
+      }
+      if (!devServerToken.isNullOrBlank()) {
+        json.put("token", devServerToken)
+      }
+      if (!devtoolsUrl.isNullOrBlank()) {
+        json.put("devtoolsUrl", devtoolsUrl)
+      }
+      if (!devtoolsToken.isNullOrBlank()) {
+        json.put("devtoolsToken", devtoolsToken)
+      }
+      configFile.writeText(json.toString())
+    } catch (error: Exception) {
+      Log.w("MainActivity", "Failed to persist dev config", error)
+    }
   }
 }
