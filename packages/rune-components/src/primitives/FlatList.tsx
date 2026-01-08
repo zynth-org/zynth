@@ -878,9 +878,9 @@ export function FlatList<T>(props: RecyclerListProps<T>) {
                     position: "absolute",
                     left: position(),
                     top: 0,
-                    width: size,
+                    width: ready ? size : undefined,
                     height: "100%",
-                    overflow: ready ? "visible" : "hidden",
+                    overflow: "visible",
                   };
                 }
                 return {
@@ -888,8 +888,8 @@ export function FlatList<T>(props: RecyclerListProps<T>) {
                   top: position(),
                   left: 0,
                   width: "100%",
-                  height: size,
-                  overflow: ready ? "visible" : "hidden",
+                  height: ready ? size : undefined,
+                  overflow: "visible",
                 };
               });
 
