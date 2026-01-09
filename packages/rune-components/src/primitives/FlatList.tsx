@@ -8,6 +8,7 @@ import {
   onCleanup,
 } from "solid-js";
 import type { Accessor, Setter } from "solid-js";
+import { Platform, OS } from "@rune/apis";
 import type { Style } from "@rune/core";
 import { ScrollView, createScrollController } from "./ScrollView";
 import type {
@@ -51,6 +52,7 @@ export type RecyclerListProps<T> = {
   scrollEventThrottleMs?: number;
   scrollEventMinDisplacementPx?: number;
   scrollBridgeCoalescing?: boolean;
+  decelerationRate?: "normal" | "fast" | number;
   ItemSeparatorComponent?: (info: ItemSeparatorProps<T>) => JSX.Element;
   ListHeaderComponent?: JSX.Element | (() => JSX.Element);
   ListFooterComponent?: JSX.Element | (() => JSX.Element);
@@ -61,6 +63,7 @@ export type RecyclerListProps<T> = {
   onEndReached?: () => void;
   onEndReachedThreshold?: number;
   onScroll?: (event: ScrollEvent) => void;
+  debug?: boolean;
 };
 
 type PoolSlot<T> = {
@@ -169,6 +172,12 @@ const createPoolSlot = <T,>(slotIndex: number): PoolSlot<T> => {
 };
 
 export function FlatList<T>(props: RecyclerListProps<T>) {
+  const log = (msg: string, ...args: any[]) => {
+    if (props.debug) {
+      console.log(`[FlatList] ${msg}`, ...args);
+    }
+  };
+
   const scrollController = createScrollController();
 
   const [viewportSize, setViewportSize] = createSignal(0);
@@ -271,6 +280,7 @@ export function FlatList<T>(props: RecyclerListProps<T>) {
     setPoolSlots(next);
     lastRangeStart = -1;
     lastRangeEnd = -1;
+    log(`Pool grown to ${size} slots`);
     return true;
   };
 
@@ -359,7 +369,7 @@ export function FlatList<T>(props: RecyclerListProps<T>) {
     const item = props.data[dataIndex];
     const key = item ? props.keyExtractor(item, dataIndex) : null;
     slot.setIndex(dataIndex);
-    slot.setItem(item ?? null);
+    slot.setItem((item ?? null) as any);
     slot.setKey(key);
   };
 
@@ -406,6 +416,12 @@ export function FlatList<T>(props: RecyclerListProps<T>) {
     const maxIndex = dataLength - 1;
     startIndex = Math.max(0, Math.min(startIndex, maxIndex));
     endIndex = Math.max(startIndex, Math.min(endIndex, maxIndex));
+
+    if (props.debug) {
+      log(
+        `updateBindings: off=${offset.toFixed(1)} vp=${viewport.toFixed(1)} logOff=${logicalOffset.toFixed(1)} total=${total.toFixed(1)} range=[${startIndex}, ${endIndex}]`
+      );
+    }
 
     const targetBindings = Math.min(poolSlotsRef.length, dataLength);
     if (targetBindings > 0 && endIndex - startIndex + 1 < targetBindings) {
@@ -673,6 +689,18 @@ export function FlatList<T>(props: RecyclerListProps<T>) {
       ? event.layoutMeasurement?.width ?? 0
       : event.layoutMeasurement?.height ?? 0;
 
+    // Protection against spurious 0-offset events (e.g. from race conditions or layout invalidation)
+    // that cause the list to momentarily render at the top, creating a "disappearing" flicker.
+    // We only block this if we were significantly scrolled down (> viewport) and suddenly jumped to 0.
+    if (offset === 0 && lastOffset > (lastViewport || 500)) {
+      if (props.debug) {
+        log(
+          `Ignoring suspicious scroll jump to 0. lastOffset=${lastOffset.toFixed(1)}`
+        );
+      }
+      return;
+    }
+
     lastOffset = offset;
     lastViewport = viewport > 0 ? viewport : lastViewport;
     if (viewport > 0) {
@@ -742,8 +770,13 @@ export function FlatList<T>(props: RecyclerListProps<T>) {
       controller={scrollController}
       config={props.scrollViewConfig}
       eventThrottleMs={props.scrollEventThrottleMs}
-      eventMinDisplacementPx={props.scrollEventMinDisplacementPx}
+      eventMinDisplacementPx={
+        props.scrollEventMinDisplacementPx ?? (Platform.OS === OS.IOS ? 1.0 : 0)
+      }
       bridgeCoalescing={props.scrollBridgeCoalescing}
+      decelerationRate={
+        props.decelerationRate ?? (Platform.OS === OS.IOS ? "normal" : "normal")
+      }
       testID={props.testID}
       onScroll={handleScroll}
     >

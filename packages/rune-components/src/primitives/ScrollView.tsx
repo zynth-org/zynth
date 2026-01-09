@@ -327,6 +327,7 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
     "eventThrottleMs",
     "eventMinDisplacementPx",
     "bridgeCoalescing",
+    "decelerationRate",
     "config",
     "scrollSnapType",
     "scrollSnapAlign",
@@ -504,6 +505,9 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
     }
     if (local.testID) {
       setProperty(node, "testID", local.testID);
+    }
+    if (local.decelerationRate !== undefined) {
+      setProperty(node, "decelerationRate", local.decelerationRate);
     }
 
     setProperty(node, "onScroll", handleScroll);
