@@ -285,12 +285,31 @@ function looksLikeAppModule(moduleId: string) {
   );
 }
 
-function resolveAppModule(
-  updatedExports?: { default?: unknown },
-  preferredModuleId?: string
-) {
-  if (typeof updatedExports?.default === "function") {
-    return updatedExports.default as () => any;
+function pickAppExport(updatedExports?: unknown): (() => any) | undefined {
+  if (typeof updatedExports === "function") {
+    return updatedExports as () => any;
+  }
+  if (
+    !updatedExports ||
+    (typeof updatedExports !== "object" && typeof updatedExports !== "function")
+  ) {
+    return undefined;
+  }
+  const maybeDefault = (updatedExports as { default?: unknown }).default;
+  if (typeof maybeDefault === "function") {
+    return maybeDefault as () => any;
+  }
+  const maybeNamed = (updatedExports as { App?: unknown }).App;
+  if (typeof maybeNamed === "function") {
+    return maybeNamed as () => any;
+  }
+  return undefined;
+}
+
+function resolveAppModule(updatedExports?: unknown, preferredModuleId?: string) {
+  const direct = pickAppExport(updatedExports);
+  if (direct) {
+    return direct;
   }
 
   if (preferredModuleId) {
@@ -303,15 +322,26 @@ function resolveAppModule(
     return undefined;
   }
 
+  const g = globalThis as any;
+  const moduleFactories =
+    (runtimeRequire as any).m ?? (g.__webpack_modules__ as Record<string, any>);
+  const hasFactory =
+    moduleFactories && typeof moduleFactories === "object"
+      ? (id: string) => Object.prototype.hasOwnProperty.call(moduleFactories, id)
+      : undefined;
+
   const candidates = new Set<string>(APP_MODULE_CANDIDATES);
   if (preferredModuleId) {
     candidates.add(preferredModuleId);
   }
 
   for (const id of candidates) {
+    if (hasFactory && !hasFactory(id)) {
+      continue;
+    }
     try {
       const exports = runtimeRequire(id);
-      const next = (exports as { default?: unknown })?.default;
+      const next = pickAppExport(exports);
       if (typeof next === "function") {
         registerAppModuleCandidate(id);
         return next as () => any;
@@ -333,10 +363,7 @@ function handleAppHotUpdate(moduleId: string, updatedExports?: unknown) {
     return;
   }
 
-  const nextApp = resolveAppModule(
-    updatedExports as { default?: unknown } | undefined,
-    moduleId
-  );
+  const nextApp = resolveAppModule(updatedExports, moduleId);
 
   if (typeof nextApp === "function") {
     if (typeof g.__rune_updateApp === "function") {
