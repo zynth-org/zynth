@@ -1,10 +1,11 @@
 export enum OS {
   IOS = "ios",
   ANDROID = "android",
+  WEB = "web",
 }
 
 const PLATFORM_GLOBAL_KEY = "__RUNE_PLATFORM";
-const DEFAULT_OS = OS.IOS;
+const DEFAULT_OS = OS.WEB;
 
 type PlatformKey = `${OS}`;
 
@@ -18,6 +19,10 @@ function resolveOS(): OS {
   }
   const value = (globalThis as Record<string, unknown>)[PLATFORM_GLOBAL_KEY];
   if (typeof value !== "string") {
+    // Check for browser environment
+    if (typeof window !== "undefined" && typeof document !== "undefined") {
+      return OS.WEB;
+    }
     return DEFAULT_OS;
   }
   const normalized = value.toLowerCase();
@@ -32,6 +37,9 @@ function getSpecValue<T>(spec: PlatformSelectSpec<T>, os: OS): T {
   }
   if (os === OS.IOS && spec.ios !== undefined) {
     return spec.ios;
+  }
+  if (os === OS.WEB && spec.web !== undefined) {
+    return spec.web;
   }
   if (spec.default !== undefined) {
     return spec.default;

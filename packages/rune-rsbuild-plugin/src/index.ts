@@ -47,6 +47,7 @@ export interface RuneRsbuildPluginOptions {
 
 export interface DefineRuneConfigOptions {
   plugin?: RuneRsbuildPluginOptions;
+  platform?: "ios" | "android" | "web";
   babel?: {
     enable?: boolean;
     targets?: {
@@ -73,7 +74,7 @@ const DEFAULT_CONFIG: RsbuildConfig = {
     },
     target: "web",
     minify: false,
-    emitCss: false,
+    emitCss: true,
   },
   server: {
     port: 8081,
@@ -90,7 +91,7 @@ const DEFAULT_CONFIG: RsbuildConfig = {
   },
   html: {
     scriptLoading: "module",
-    inject: false,
+    inject: true,
   },
   performance: {
     chunkSplit: {
@@ -98,7 +99,7 @@ const DEFAULT_CONFIG: RsbuildConfig = {
     },
   },
   tools: {
-    htmlPlugin: false,
+    htmlPlugin: true,
   },
 };
 
@@ -106,6 +107,10 @@ export function defineRuneConfig(
   userConfig: RsbuildConfig = {},
   options: DefineRuneConfigOptions = {}
 ) {
+  const platform =
+    options.platform || (process.env?.RUNE_PLATFORM as any) || "ios";
+  const isWeb = platform === "web";
+
   const { plugin: pluginOptions, babel } = options;
   const userPlugins = (userConfig.plugins ?? []) as RsbuildPlugins;
   const sanitizedUserConfig: RsbuildConfig = {
@@ -119,7 +124,46 @@ export function defineRuneConfig(
     arrayMerge: (_destinationArray, sourceArray) => sourceArray,
   }) as RsbuildConfig;
 
-  const plugins: RsbuildPlugins = [createRuneRsbuildPlugin(pluginOptions)];
+  // Adjust config for Native platforms (Hermes)
+  if (!isWeb) {
+    merged.html = { inject: false };
+    merged.tools = { ...merged.tools, htmlPlugin: false };
+    merged.output = { ...merged.output, emitCss: false };
+  } else {
+    // For Web, we want a normal build
+    console.log("[rune-rsbuild-plugin] Web configuration active");
+    merged.html = {
+      scriptLoading: "module",
+      inject: true,
+      template: path.join(process.cwd(), "public/index.html"),
+    };
+    merged.tools = { ...merged.tools, htmlPlugin: true };
+    merged.output = {
+      ...merged.output,
+      filename: {
+        js: "[name].[contenthash:8].js",
+      },
+    };
+    
+    // Rename entry 'app' to 'index' to generate index.html
+    if (merged.source?.entry && (merged.source.entry as any).app) {
+      const appEntry = (merged.source.entry as any).app;
+      delete (merged.source.entry as any).app;
+      (merged.source.entry as any).index = appEntry;
+    }
+
+    // Enable public directory serving
+    merged.server = { ...merged.server, publicDir: { name: "public" } };
+    // Disable writeToDisk for web dev server performance
+    merged.dev = { ...merged.dev, writeToDisk: false };
+  }
+
+  const plugins: RsbuildPlugins = [
+    createRuneRsbuildPlugin({
+      ...pluginOptions,
+      hermesCompat: !isWeb && (pluginOptions?.hermesCompat ?? true),
+    }),
+  ];
 
   if (babel?.enable ?? true) {
     plugins.push(createRuneBabelPlugin(babel));
@@ -264,7 +308,9 @@ export function createRuneRsbuildPlugin(
           };
         });
       }
-      if (!writeArtifacts || api.context.action !== "dev") {
+
+      const isWeb = process.env?.RUNE_PLATFORM === "web";
+      if (!writeArtifacts || api.context.action !== "dev" || isWeb) {
         return;
       }
 

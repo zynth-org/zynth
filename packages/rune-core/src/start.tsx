@@ -2,6 +2,7 @@ import { Platform, OS } from "@rune/apis";
 import { render, setHost } from "./renderer";
 import { createIOSHost } from "./host/ios";
 import { createAndroidHost } from "./host/android";
+import { createWebHost } from "./host/web";
 import {
   ensureNativeHMRHooks,
   setupEntryPointHMR,
@@ -35,6 +36,25 @@ let currentApp: (() => any) | null = null;
 let disposeCurrentApp: (() => void) | null = null;
 
 export function start(App: () => any): () => void {
+  // Web Platform Initialization
+  if (Platform.OS === OS.WEB) {
+    setHost(createWebHost());
+    currentApp = App;
+    
+    // Auto-mount on Web
+    const dispose = render(() => currentApp!(), undefined);
+    
+    disposeCurrentApp = dispose;
+    
+    // HMR for Web (basic)
+    if (import.meta.webpackHot) {
+      import.meta.webpackHot.accept();
+    }
+    
+    return dispose;
+  }
+
+  // Native Platform Initialization
   ensureNativeHMRHooks();
   ensureDevtoolsBridge();
   installDevtoolsConsole();
@@ -100,9 +120,7 @@ export function start(App: () => any): () => void {
     const rootId = args[0];
 
     const platform = Platform.OS;
-    setHost(
-      platform === OS.ANDROID ? createAndroidHost() : createIOSHost()
-    );
+    setHost(platform === OS.ANDROID ? createAndroidHost() : createIOSHost());
 
     if (typeof rootId !== "number" || isNaN(rootId)) {
       console.error(`Invalid rootId received: ${rootId}`);
