@@ -18,6 +18,10 @@ import {
   type UITheme,
   type UIThemeOverride,
 } from "./theme";
+import { getWebThemeProxy } from "./theme/webProxy";
+import "./themes/variables.css";
+import "./themes/ios.css";
+import "./themes/android.css";
 
 const UIThemeContext = createContext<Accessor<UITheme>>(() => uiThemeLight);
 
@@ -28,6 +32,7 @@ export interface UIThemeProviderProps {
   theme?: UIThemeOverride;
   colorScheme?: ThemeMode;
   followSystem?: boolean;
+  webTheme?: "ios" | "android";
 }
 
 const resolveExplicitScheme = (mode: ThemeMode | undefined): ColorScheme => {
@@ -87,7 +92,37 @@ export const UIThemeProvider: Component<UIThemeProviderProps> = (props) => {
     return resolveExplicitScheme(props.colorScheme);
   });
 
+  createEffect(() => {
+    if (typeof document === "undefined") return;
+
+    const root = document.body;
+    const currentScheme = scheme();
+
+    // Toggle Scheme class
+    if (currentScheme === "dark") {
+      root.classList.add("rune-scheme-dark");
+      root.classList.remove("rune-scheme-light");
+    } else {
+      root.classList.add("rune-scheme-light");
+      root.classList.remove("rune-scheme-dark");
+    }
+
+    // Toggle Web Theme class
+    if (props.webTheme) {
+      if (props.webTheme === "ios") {
+        root.classList.add("rune-theme-ios");
+        root.classList.remove("rune-theme-android");
+      } else if (props.webTheme === "android") {
+        root.classList.add("rune-theme-android");
+        root.classList.remove("rune-theme-ios");
+      }
+    }
+  });
+
   const theme = createMemo<UITheme>(() => {
+    if (props.webTheme) {
+      return getWebThemeProxy(scheme());
+    }
     return createUITheme(scheme(), props.theme);
   });
 

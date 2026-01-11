@@ -86,6 +86,20 @@ function applyStyle(element: HTMLElement, style: Style | Style[]) {
   }
 }
 
+
+const CLASS_MAP: Record<string, string> = {
+  view: "rune-view",
+  pressable: "rune-view", // pressable is usually a view
+  text: "rune-text",
+  image: "rune-image",
+  "text-input": "rune-text-input",
+  "secure-text-input": "rune-text-input",
+  button: "rune-button",
+  "scroll-view": "rune-scroll-view",
+  switch: "rune-switch",
+  slider: "rune-slider",
+};
+
 export function createWebHost(): Host {
   return {
     createRootContainer(container: unknown): HostNode {
@@ -96,10 +110,11 @@ export function createWebHost(): Host {
       } else {
         rootElement = document.getElementById("root") || document.body;
       }
-      
+
       // Clear root content for fresh render
       rootElement.innerHTML = "";
-      
+      rootElement.classList.add("rune-root");
+
       // Ensure root acts as a flex container
       rootElement.style.display = "flex";
       rootElement.style.flexDirection = "column";
@@ -147,7 +162,10 @@ export function createWebHost(): Host {
               props.onChange({
                 textAfter: target.value,
                 composing: false, // basic support
-                range: { start: target.selectionStart, end: target.selectionEnd },
+                range: {
+                  start: target.selectionStart,
+                  end: target.selectionEnd,
+                },
               });
             }
           });
@@ -158,7 +176,7 @@ export function createWebHost(): Host {
         case "scroll-view":
           element = document.createElement("div");
           element.style.overflow = "auto";
-          element.style.webkitOverflowScrolling = "touch";
+          (element.style as any).webkitOverflowScrolling = "touch";
           break;
         case "switch":
           element = document.createElement("input");
@@ -192,33 +210,46 @@ export function createWebHost(): Host {
       NODES.set(id, element);
       DOM_TO_ID.set(element, id);
 
+      if (CLASS_MAP[type]) {
+        element.classList.add(CLASS_MAP[type]);
+      }
+
       if (props) {
         if (props.style) applyStyle(element, props.style);
-        
+
         for (const [key, value] of Object.entries(props)) {
           if (key === "style") continue;
-          
+
           if (key.startsWith("on") && typeof value === "function") {
             const eventName = key.toLowerCase().replace(/^on/, "");
             if (eventName === "press") {
               element.addEventListener("click", value as any);
-            } else if (["changetext", "change", "valuechange"].includes(eventName)) {
+            } else if (
+              ["changetext", "change", "valuechange"].includes(eventName)
+            ) {
               // These are handled by the generic listeners above using __rune_props
             } else {
               element.addEventListener(eventName, value as any);
             }
-          } else if (key === "source" && type === "image" && typeof value === "object") {
-             if ((value as any).uri) {
-               (element as HTMLImageElement).src = (value as any).uri;
-             }
-          } else if (key === "value" && (element instanceof HTMLInputElement)) {
-             element.value = String(value);
-          } else if (key === "placeholder" && (element instanceof HTMLInputElement)) {
-             element.placeholder = String(value);
+          } else if (
+            key === "source" &&
+            type === "image" &&
+            typeof value === "object"
+          ) {
+            if ((value as any).uri) {
+              (element as HTMLImageElement).src = (value as any).uri;
+            }
+          } else if (key === "value" && element instanceof HTMLInputElement) {
+            element.value = String(value);
+          } else if (
+            key === "placeholder" &&
+            element instanceof HTMLInputElement
+          ) {
+            element.placeholder = String(value);
           } else {
-             if (typeof value === "string" || typeof value === "number") {
-                element.setAttribute(key, String(value));
-             }
+            if (typeof value === "string" || typeof value === "number") {
+              element.setAttribute(key, String(value));
+            }
           }
         }
       }
@@ -242,32 +273,38 @@ export function createWebHost(): Host {
       // Update stored props
       (element as any).__rune_props = {
         ...((element as any).__rune_props || {}),
-        [name]: value
+        [name]: value,
       };
 
       if (name === "style") {
         applyStyle(element, value);
       } else if (name.startsWith("on") && typeof value === "function") {
-          const eventName = name.toLowerCase().replace(/^on/, "");
-          if (eventName === "press") {
-            element.addEventListener("click", value as any);
-          } else if (["changetext", "change", "valuechange"].includes(eventName)) {
-            // Handled via __rune_props
-          } else {
-            element.addEventListener(eventName, value as any);
-          }
-      } else if (name === "value" && (element instanceof HTMLInputElement)) {
-          element.value = String(value);
-      } else if (name === "source" && element.tagName === "IMG" && typeof value === "object") {
-          if ((value as any)?.uri) {
-             (element as HTMLImageElement).src = (value as any).uri;
-          }
+        const eventName = name.toLowerCase().replace(/^on/, "");
+        if (eventName === "press") {
+          element.addEventListener("click", value as any);
+        } else if (
+          ["changetext", "change", "valuechange"].includes(eventName)
+        ) {
+          // Handled via __rune_props
+        } else {
+          element.addEventListener(eventName, value as any);
+        }
+      } else if (name === "value" && element instanceof HTMLInputElement) {
+        element.value = String(value);
+      } else if (
+        name === "source" &&
+        element.tagName === "IMG" &&
+        typeof value === "object"
+      ) {
+        if ((value as any)?.uri) {
+          (element as HTMLImageElement).src = (value as any).uri;
+        }
       } else {
-         if (value === null || value === undefined) {
-             element.removeAttribute(name);
-         } else {
-             element.setAttribute(name, String(value));
-         }
+        if (value === null || value === undefined) {
+          element.removeAttribute(name);
+        } else {
+          element.setAttribute(name, String(value));
+        }
       }
     },
 
@@ -282,7 +319,7 @@ export function createWebHost(): Host {
       // console.log(`[Web Host] insertNode parent=${parent.id} node=${node.id}`);
       const parentEl = NODES.get(parent.id);
       const childEl = NODES.get(node.id);
-      
+
       if (!parentEl) {
         console.error(`[Web Host] Parent node ${parent.id} not found`);
         return;
@@ -299,7 +336,7 @@ export function createWebHost(): Host {
           return;
         }
       }
-      
+
       parentEl.appendChild(childEl);
     },
 
@@ -317,7 +354,7 @@ export function createWebHost(): Host {
       const parentId = DOM_TO_ID.get(el.parentNode);
       if (parentId === undefined) return null;
       // We don't store types in DOM_TO_ID, assume view/root
-      return { id: parentId, type: "view" }; 
+      return { id: parentId, type: "view" };
     },
 
     getFirstChild(node) {
@@ -327,16 +364,16 @@ export function createWebHost(): Host {
       if (childId === undefined) return null;
       // Identify text nodes
       const type = el.firstChild.nodeType === 3 ? "text" : "view";
-      return { id: childId, type }; 
+      return { id: childId, type };
     },
 
     getNextSibling(node) {
-       const el = NODES.get(node.id);
-       if (!el || !el.nextSibling) return null;
-       const sibId = DOM_TO_ID.get(el.nextSibling);
-       if (sibId === undefined) return null;
-       const type = el.nextSibling.nodeType === 3 ? "text" : "view";
-       return { id: sibId, type };
+      const el = NODES.get(node.id);
+      if (!el || !el.nextSibling) return null;
+      const sibId = DOM_TO_ID.get(el.nextSibling);
+      if (sibId === undefined) return null;
+      const type = el.nextSibling.nodeType === 3 ? "text" : "view";
+      return { id: sibId, type };
     },
 
     getText(node) {

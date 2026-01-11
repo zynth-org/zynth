@@ -9,6 +9,7 @@
     "types": ["rune-jsx"],
     "strict": true,
     "skipLibCheck": true,
+    "noEmit": true,
     "baseUrl": ".",
     "paths": {
       "@rune/apis": ["packages/rune-apis/src/index.ts"],

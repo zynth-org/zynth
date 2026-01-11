@@ -18,6 +18,7 @@ import * as rspack from "@rspack/core";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HMR_SHIM_PATH = path.join(__dirname, "shims/hmr-client-empty.js");
 const OVERLAY_SHIM_PATH = path.join(__dirname, "shims/overlay-empty.js");
+const CSS_SHIM_PATH = path.join(__dirname, "shims/css-empty.js");
 const IMAGE_ASSET_LOADER_PATH = path.join(
   __dirname,
   "loaders/image-asset-loader.js"
@@ -281,7 +282,8 @@ export function createRuneRsbuildPlugin(
             new rspack.NormalModuleReplacementPlugin(
               /@rsbuild[\\/](core|rsbuild)[\\/]dist[\\/]client[\\/]overlay\.js$/,
               OVERLAY_SHIM_PATH
-            )
+            ),
+            new rspack.NormalModuleReplacementPlugin(/\.css$/, CSS_SHIM_PATH)
           );
         }
       });
@@ -369,18 +371,19 @@ function createStaticAssetMiddleware() {
       return next();
     }
 
+    const encodedPath = fsMatch[1];
+    // Decode each segment separately to handle special characters
+    const filePath = encodedPath
+      .split("/")
+      .map((segment: string) => decodeURIComponent(segment))
+      .join("/");
+
+    // Add leading slash back for absolute paths on Unix systems
+    const absolutePath = filePath.startsWith("/") ? filePath : "/" + filePath;
+
+    console.log(`[rune-rsbuild-plugin] Serving asset: ${absolutePath}`);
+
     try {
-      // Decode the file path
-      const encodedPath = fsMatch[1];
-      // Decode each segment separately to handle special characters
-      const filePath = encodedPath
-        .split("/")
-        .map((segment: string) => decodeURIComponent(segment))
-        .join("/");
-
-      // Add leading slash back for absolute paths on Unix systems
-      const absolutePath = filePath.startsWith("/") ? filePath : "/" + filePath;
-
       // Read and serve the file
       const content = await fs.readFile(absolutePath);
 
