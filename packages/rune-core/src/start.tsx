@@ -37,7 +37,7 @@ let disposeCurrentApp: (() => void) | null = null;
 
 export function start(App: () => any): () => void {
   // Web Platform Initialization
-  if (Platform.OS === OS.WEB) {
+  if (Platform.OS === (OS as any).WEB) {
     setHost(createWebHost());
     currentApp = App;
     
@@ -47,8 +47,8 @@ export function start(App: () => any): () => void {
     disposeCurrentApp = dispose;
     
     // HMR for Web (basic)
-    if (import.meta.webpackHot) {
-      import.meta.webpackHot.accept();
+    if ((import.meta as any).webpackHot) {
+      (import.meta as any).webpackHot.accept();
     }
     
     return dispose;

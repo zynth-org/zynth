@@ -34,7 +34,7 @@ export type FetchResult = {
   url: string;
   redirected: boolean;
   headers: Record<string, string>;
-  body?: ArrayBuffer;
+  body?: ArrayBuffer | Uint8Array | number[] | string;
   streamId?: number;
 };
 

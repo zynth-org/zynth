@@ -9,7 +9,7 @@ export * from "./renderer";
 export * from "./host/HostTypes";
 export { createIOSHost } from "./host/ios";
 export { createAndroidHost } from "./host/android";
-export { createWebHost } from "./host/web";
+export { createWebHost, registerWebComponent } from "./host/web";
 export {
   NativeEventEmitter,
   ensureNativeEmitter,

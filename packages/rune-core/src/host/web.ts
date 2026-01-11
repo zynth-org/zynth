@@ -5,6 +5,36 @@ const NODES = new Map<number, HTMLElement | Text>();
 const DOM_TO_ID = new WeakMap<Node, number>();
 let nextId = 1;
 
+export interface WebComponentHandler {
+  create: (props: any) => HTMLElement;
+  updateProp?: (element: HTMLElement, key: string, value: any) => boolean;
+  insertChild?: (
+    parent: HTMLElement,
+    child: HTMLElement | Text,
+    anchor?: HTMLElement | Text | null
+  ) => void;
+  removeChild?: (parent: HTMLElement, child: HTMLElement | Text) => void;
+}
+
+const GLOBAL_REGISTRY_KEY = "__RUNE_WEB_REGISTRY__";
+if (!(globalThis as any)[GLOBAL_REGISTRY_KEY]) {
+  (globalThis as any)[GLOBAL_REGISTRY_KEY] = new Map<
+    string,
+    WebComponentHandler
+  >();
+}
+const COMPONENT_REGISTRY = (globalThis as any)[
+  GLOBAL_REGISTRY_KEY
+] as Map<string, WebComponentHandler>;
+
+export function registerWebComponent(
+  type: string,
+  handler: WebComponentHandler
+) {
+  // console.log(`[Rune Web Host] Registered component: ${type}`);
+  COMPONENT_REGISTRY.set(type, handler);
+}
+
 function getDomNode(id: number): HTMLElement | Text {
   const node = NODES.get(id);
   if (!node) throw new Error(`[Web Host] Node with id ${id} not found`);
@@ -45,24 +75,35 @@ const UNIT_PROPS = new Set([
   "columnGap",
 ]);
 
+function normalizeStyle(style: any): any {
+  if (!style || typeof style !== "object") return style;
+  if (Array.isArray(style)) {
+    return style.map(normalizeStyle);
+  }
+  const next: any = {};
+  for (const [key, value] of Object.entries(style)) {
+    if (value === undefined || value === null) {
+      next[key] = "";
+      continue;
+    }
+    if (typeof value === "number" && UNIT_PROPS.has(key)) {
+      next[key] = `${value}px`;
+    } else {
+      next[key] = value;
+    }
+  }
+  return next;
+}
+
 function applyStyle(element: HTMLElement, style: Style | Style[]) {
   if (Array.isArray(style)) {
     style.forEach((s) => s && applyStyle(element, s));
     return;
   }
 
-  for (const [key, value] of Object.entries(style)) {
-    if (value === undefined || value === null) {
-      (element.style as any)[key] = "";
-      continue;
-    }
-
-    let normalizedValue = value;
-    if (typeof value === "number" && UNIT_PROPS.has(key)) {
-      normalizedValue = `${value}px`;
-    }
-
-    (element.style as any)[key] = normalizedValue;
+  const normalized = normalizeStyle(style);
+  for (const [key, value] of Object.entries(normalized)) {
+    (element.style as any)[key] = value;
   }
 
   // Default display to flex to mimic Yoga
@@ -85,20 +126,6 @@ function applyStyle(element: HTMLElement, style: Style | Style[]) {
     element.style.minWidth = "0";
   }
 }
-
-
-const CLASS_MAP: Record<string, string> = {
-  view: "rune-view",
-  pressable: "rune-view", // pressable is usually a view
-  text: "rune-text",
-  image: "rune-image",
-  "text-input": "rune-text-input",
-  "secure-text-input": "rune-text-input",
-  button: "rune-button",
-  "scroll-view": "rune-scroll-view",
-  switch: "rune-switch",
-  slider: "rune-slider",
-};
 
 export function createWebHost(): Host {
   return {
@@ -132,93 +159,42 @@ export function createWebHost(): Host {
       // console.log(`[Web Host] createNode ${type} id=${id}`);
       let element: HTMLElement;
 
-      switch (type) {
-        case "view":
-        case "pressable":
-          element = document.createElement("div");
-          break;
-        case "text":
-          element = document.createElement("span");
-          element.style.display = "inline-block";
-          break;
-        case "image":
-          element = document.createElement("img");
-          break;
-        case "text-input":
-        case "secure-text-input":
-          element = document.createElement("input");
-          if (type === "secure-text-input") {
-            (element as HTMLInputElement).type = "password";
-          }
-          // Handle native Rune events for input
-          element.addEventListener("input", (e) => {
-            const target = e.target as HTMLInputElement;
-            // Use internal storage for handlers because they are passed as props, not DOM events
-            const props = (element as any).__rune_props || {};
-            if (typeof props.onChangeText === "function") {
-              props.onChangeText({ text: target.value });
-            }
-            if (typeof props.onChange === "function") {
-              props.onChange({
-                textAfter: target.value,
-                composing: false, // basic support
-                range: {
-                  start: target.selectionStart,
-                  end: target.selectionEnd,
-                },
-              });
-            }
-          });
-          break;
-        case "button":
-          element = document.createElement("button");
-          break;
-        case "scroll-view":
-          element = document.createElement("div");
-          element.style.overflow = "auto";
-          (element.style as any).webkitOverflowScrolling = "touch";
-          break;
-        case "switch":
-          element = document.createElement("input");
-          (element as HTMLInputElement).type = "checkbox";
-          element.addEventListener("change", (e) => {
-            const target = e.target as HTMLInputElement;
-            const props = (element as any).__rune_props || {};
-            if (typeof props.onValueChange === "function") {
-              props.onValueChange(target.checked);
-            }
-          });
-          break;
-        case "slider":
-          element = document.createElement("input");
-          (element as HTMLInputElement).type = "range";
-          element.addEventListener("input", (e) => {
-            const target = e.target as HTMLInputElement;
-            const props = (element as any).__rune_props || {};
-            if (typeof props.onValueChange === "function") {
-              props.onValueChange(Number(target.value));
-            }
-          });
-          break;
-        default:
-          element = document.createElement("div");
-          element.dataset.type = type;
-          break;
+      // Normalize style prop if present before passing to handler
+      if (props && props.style) {
+        props = { ...props, style: normalizeStyle(props.style) };
+      }
+
+      const handler = COMPONENT_REGISTRY.get(type);
+
+      if (handler) {
+        element = handler.create(props);
+      } else {
+        console.warn(
+          `[Rune Web Host] Missing handler for component: ${type}. Registry has: ${Array.from(
+            COMPONENT_REGISTRY.keys()
+          ).join(", ")}`
+        );
+        // Fallback for unregistered components or simple divs
+        element = document.createElement("div");
+        element.dataset.type = type;
       }
 
       (element as any).__rune_props = props || {};
       NODES.set(id, element);
       DOM_TO_ID.set(element, id);
 
-      if (CLASS_MAP[type]) {
-        element.classList.add(CLASS_MAP[type]);
-      }
-
       if (props) {
         if (props.style) applyStyle(element, props.style);
 
         for (const [key, value] of Object.entries(props)) {
           if (key === "style") continue;
+
+          // If we have a handler, let it try to handle the prop update first
+          if (handler && handler.updateProp) {
+            if (handler.updateProp(element, key, value)) {
+              continue;
+            }
+          }
 
           if (key.startsWith("on") && typeof value === "function") {
             const eventName = key.toLowerCase().replace(/^on/, "");
@@ -231,21 +207,8 @@ export function createWebHost(): Host {
             } else {
               element.addEventListener(eventName, value as any);
             }
-          } else if (
-            key === "source" &&
-            type === "image" &&
-            typeof value === "object"
-          ) {
-            if ((value as any).uri) {
-              (element as HTMLImageElement).src = (value as any).uri;
-            }
           } else if (key === "value" && element instanceof HTMLInputElement) {
             element.value = String(value);
-          } else if (
-            key === "placeholder" &&
-            element instanceof HTMLInputElement
-          ) {
-            element.placeholder = String(value);
           } else {
             if (typeof value === "string" || typeof value === "number") {
               element.setAttribute(key, String(value));
@@ -270,11 +233,22 @@ export function createWebHost(): Host {
       const element = NODES.get(node.id);
       if (!element || !(element instanceof HTMLElement)) return;
 
+      if (name === "style") {
+        value = normalizeStyle(value);
+      }
+
       // Update stored props
       (element as any).__rune_props = {
         ...((element as any).__rune_props || {}),
         [name]: value,
       };
+
+      const handler = COMPONENT_REGISTRY.get(node.type);
+      if (handler && handler.updateProp) {
+        if (handler.updateProp(element, name, value)) {
+          return;
+        }
+      }
 
       if (name === "style") {
         applyStyle(element, value);
@@ -291,14 +265,6 @@ export function createWebHost(): Host {
         }
       } else if (name === "value" && element instanceof HTMLInputElement) {
         element.value = String(value);
-      } else if (
-        name === "source" &&
-        element.tagName === "IMG" &&
-        typeof value === "object"
-      ) {
-        if ((value as any)?.uri) {
-          (element as HTMLImageElement).src = (value as any).uri;
-        }
       } else {
         if (value === null || value === undefined) {
           element.removeAttribute(name);
@@ -320,12 +286,19 @@ export function createWebHost(): Host {
       const parentEl = NODES.get(parent.id);
       const childEl = NODES.get(node.id);
 
-      if (!parentEl) {
-        console.error(`[Web Host] Parent node ${parent.id} not found`);
+      if (!parentEl || !(parentEl instanceof HTMLElement)) {
+        console.error(`[Web Host] Parent node ${parent.id} not found or invalid`);
         return;
       }
       if (!childEl) {
         console.error(`[Web Host] Child node ${node.id} not found`);
+        return;
+      }
+
+      const handler = COMPONENT_REGISTRY.get(parent.type);
+      if (handler && handler.insertChild) {
+        const anchorEl = anchor ? NODES.get(anchor.id) : null;
+        handler.insertChild(parentEl, childEl, anchorEl as any);
         return;
       }
 
@@ -343,8 +316,20 @@ export function createWebHost(): Host {
     removeNode(parent, node) {
       const parentEl = NODES.get(parent.id);
       const childEl = NODES.get(node.id);
-      if (parentEl && childEl) {
-        parentEl.removeChild(childEl);
+      if (parentEl && parentEl instanceof HTMLElement && childEl) {
+        const handler = COMPONENT_REGISTRY.get(parent.type);
+        if (handler && handler.removeChild) {
+          handler.removeChild(parentEl, childEl);
+          return;
+        }
+        // Fallback safety: ensure child is actually a child of parent before removing
+        if (childEl.parentNode === parentEl) {
+          parentEl.removeChild(childEl);
+        } else if (childEl.parentNode) {
+           // If child is in a slot (not direct child), and no handler, we might have an issue.
+           // But normally removing from parentNode works if we know the node.
+           childEl.parentNode.removeChild(childEl);
+        }
       }
     },
 

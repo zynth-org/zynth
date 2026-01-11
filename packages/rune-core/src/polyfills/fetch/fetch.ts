@@ -219,7 +219,7 @@ function normalizeResponseBody(
     return new TextEncoder().encode(body).buffer;
   }
   const ArrayBufferCtor = globalObject.ArrayBuffer;
-  if (ArrayBufferCtor && body instanceof ArrayBufferCtor) {
+  if (ArrayBufferCtor && (body as any) instanceof ArrayBufferCtor) {
     return body as ArrayBuffer;
   }
   return null;
