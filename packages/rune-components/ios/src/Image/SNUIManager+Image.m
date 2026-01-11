@@ -1,5 +1,7 @@
 #import "SNUIManager+Image.h"
 #import "SNUIManager+Internal.h"
+#import <SDWebImage/SDWebImage.h>
+#import <SDWebImageSVGCoder/SDWebImageSVGCoder.h>
 
 #ifdef __OBJC__
 #if __has_include(<UIKit/UIKit.h>)
@@ -315,27 +317,31 @@ static void SNImageLoadURI(NSString *uri, NSDictionary * _Nullable info, SNNode 
     return;
   }
 
-  NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
-  NSString *method = [info[@"method"] isKindOfClass:[NSString class]] ? info[@"method"] : nil;
-  if (method.length > 0) {
-    request.HTTPMethod = method;
-  }
+  SDWebImageContext *context = nil;
+  
   NSDictionary *headers = [info[@"headers"] isKindOfClass:[NSDictionary class]] ? info[@"headers"] : nil;
-  [headers enumerateKeysAndObjectsUsingBlock:^(id key, id obj, BOOL *stop) {
-    if (![key isKindOfClass:[NSString class]] || ![obj isKindOfClass:[NSString class]]) return;
-    [request setValue:obj forHTTPHeaderField:key];
-  }];
-  NSString *body = [info[@"body"] isKindOfClass:[NSString class]] ? info[@"body"] : nil;
-  if (body.length > 0) {
-    request.HTTPBody = [body dataUsingEncoding:NSUTF8StringEncoding];
+  if (headers.count > 0) {
+      SDWebImageDownloaderRequestModifier *modifier = [SDWebImageDownloaderRequestModifier requestModifierWithBlock:^NSURLRequest * _Nullable(NSURLRequest * _Nonnull request) {
+          NSMutableURLRequest *mutableRequest = [request mutableCopy];
+          for (NSString *key in headers) {
+              id val = headers[key];
+              if ([val isKindOfClass:[NSString class]]) {
+                  [mutableRequest setValue:(NSString *)val forHTTPHeaderField:key];
+              }
+          }
+          return mutableRequest;
+      }];
+      context = @{SDWebImageContextDownloadRequestModifier: modifier};
   }
 
   __weak SNNode *weakNode = node;
   __weak SNUIManager *weakManager = manager;
-  NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:request
-                                                               completionHandler:^(NSData * _Nullable data,
-                                                                                   NSURLResponse * _Nullable response,
-                                                                                   NSError * _Nullable error) {
+  
+  id<SDWebImageOperation> operation = [[SDWebImageManager sharedManager] loadImageWithURL:url
+                                                   options:SDWebImageRetryFailed
+                                                   context:context
+                                                  progress:nil
+                                                 completed:^(UIImage * _Nullable image, NSData * _Nullable data, NSError * _Nullable error, SDImageCacheType cacheType, BOOL finished, NSURL * _Nullable imageURL) {
     dispatch_async(dispatch_get_main_queue(), ^{
       SNNode *strongNode = weakNode;
       SNUIManager *strongManager = weakManager;
@@ -343,26 +349,27 @@ static void SNImageLoadURI(NSString *uri, NSDictionary * _Nullable info, SNNode 
       if (![strongNode.imageSourceToken isEqualToString:token]) {
         return;
       }
-      strongNode.imageTask = nil;
+      // Only clear task if finished
+      if (finished) {
+          strongNode.imageTask = nil;
+      }
+      
       if (error) {
         SNImageEmitError(error.localizedDescription ?: @"Image request failed", strongNode, strongManager);
         return;
       }
-      if (!data) {
+      if (!image && finished) {
         SNImageEmitError(@"Image request returned no data", strongNode, strongManager);
         return;
       }
-      UIImage *image = [UIImage imageWithData:data];
-      if (!image) {
-        SNImageEmitError(@"Unable to decode image data", strongNode, strongManager);
-        return;
+      if (image) {
+          // Re-apply to ensure proper sizing/event dispatch
+          SNImageApplyImage(image, strongNode, token, strongManager);
       }
-      SNImageApplyImage(image, strongNode, token, strongManager);
     });
   }];
 
-  node.imageTask = task;
-  [task resume];
+  node.imageTask = operation;
 }
 
 static void SNImageApplySourceValue(id value, SNNode *node, SNUIManager *manager) {
@@ -562,6 +569,8 @@ static YGSize SNMeasureImageFunc(YGNodeConstRef yogaNode,
 + (void)load {
   static dispatch_once_t onceToken;
   dispatch_once(&onceToken, ^{
+    [SDImageCodersManager.sharedManager addCoder:[SDImageSVGCoder sharedCoder]];
+
     RuneComponentDescriptor *descriptor = [[RuneComponentDescriptor alloc] initWithType:@"image"];
     descriptor.createView = ^UIView *(SNUIManager *manager, NSString *type) {
       UIImageView *imageView = [UIImageView new];

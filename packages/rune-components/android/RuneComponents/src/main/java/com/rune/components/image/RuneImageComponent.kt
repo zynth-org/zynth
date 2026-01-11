@@ -2,12 +2,7 @@ package com.rune.components.image
 
 import android.content.Context
 import android.content.res.ColorStateList
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.BlendMode
-import android.graphics.BlendModeColorFilter
-import android.graphics.Color
-import android.graphics.PorterDuff
+import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -16,6 +11,10 @@ import android.util.Base64
 import android.util.Log
 import android.widget.ImageView
 import androidx.core.widget.ImageViewCompat
+import coil.ImageLoader
+import coil.decode.SvgDecoder
+import coil.request.Disposable
+import coil.request.ImageRequest
 import com.rune.kit.core.ImageState
 import com.rune.kit.core.RuneRootView
 import com.rune.kit.core.RuneUIManager
@@ -24,14 +23,8 @@ import com.rune.kit.layout.MeasureInput
 import com.rune.kit.layout.MeasureMode
 import com.rune.kit.layout.Style
 import java.io.File
-import java.io.InputStream
-import java.net.HttpURLConnection
-import java.net.URL
 import java.util.Locale
 import java.util.UUID
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
-import java.util.concurrent.Future
 import kotlin.math.min
 import kotlin.math.roundToInt
 import org.json.JSONArray
@@ -51,9 +44,11 @@ internal class RuneImageComponent(
   private val storeEventPayload: (Int, String, JSONObject?) -> Unit,
 ) {
   private val handler = Handler(Looper.getMainLooper())
-  private val imageExecutor: ExecutorService = Executors.newFixedThreadPool(4) { runnable ->
-    Thread(runnable, "RuneImageLoader").apply { isDaemon = true }
-  }
+  private val imageLoader = ImageLoader.Builder(root.context)
+    .components {
+      add(SvgDecoder.Factory())
+    }
+    .build()
 
   fun initializeNode(node: RuneUIManager.Node) {
     if (node.imageState == null) {
@@ -273,7 +268,10 @@ internal class RuneImageComponent(
   }
 
   private fun cancelImageRequest(state: ImageState) {
-    state.job?.cancel(true)
+    val job = state.job
+    if (job is Disposable) {
+      job.dispose()
+    }
     state.job = null
   }
 
@@ -310,27 +308,30 @@ internal class RuneImageComponent(
     }
   }
 
-  private fun loadInlineData(node: RuneUIManager.Node, spec: ImageSourceSpec.InlineData, token: String) {
+  private fun loadWithCoil(node: RuneUIManager.Node, data: Any?, token: String, scale: Float = 1f) {
     val state = ensureState(node)
-    state.job = imageExecutor.submit {
-      try {
-        val payload = spec.payload
-        val bytes = decodeInlineData(payload)
-        if (bytes == null) {
-          postImageError(node, token, "Failed to decode image data")
-          return@submit
+    val request = ImageRequest.Builder(root.context)
+      .data(data)
+      .target(
+        onSuccess = { result ->
+          postImageSuccess(node, token, result, scale)
+        },
+        onError = {
+          postImageError(node, token, "Image load failed")
         }
-        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-        if (bitmap == null) {
-          postImageError(node, token, "Unable to decode image bytes")
-          return@submit
-        }
-        val scale = spec.scale?.takeIf { it > 0f } ?: 1f
-        postImageSuccess(node, token, bitmap, scale)
-      } catch (t: Throwable) {
-        postImageError(node, token, t.message ?: "Image decode failed")
-      }
+      )
+      .build()
+    state.job = imageLoader.enqueue(request)
+  }
+
+  private fun loadInlineData(node: RuneUIManager.Node, spec: ImageSourceSpec.InlineData, token: String) {
+    val bytes = decodeInlineData(spec.payload)
+    if (bytes == null) {
+      postImageError(node, token, "Failed to decode image data")
+      return
     }
+    val scale = spec.scale?.takeIf { it > 0f } ?: 1f
+    loadWithCoil(node, bytes, token, scale)
   }
 
   private fun decodeInlineData(raw: String): ByteArray? {
@@ -343,237 +344,46 @@ internal class RuneImageComponent(
   }
 
   private fun loadSystemImage(node: RuneUIManager.Node, spec: ImageSourceSpec.SystemData, token: String) {
-    val state = ensureState(node)
-    handler.post {
-      if (state.requestToken != token) return@post
+    val context = root.context
+    val resources = context.resources
+    val pkg = context.packageName
 
-      val context = root.context
-      val resources = context.resources
-      val pkg = context.packageName
-
-      var resId = resources.getIdentifier(spec.name, "drawable", pkg)
-      if (resId == 0) {
-        resId = resources.getIdentifier(spec.name, "drawable", "android")
-      }
-
-      if (resId == 0) {
-        Log.w("RuneImage", "System image ${spec.name} not found")
-        dispatchImageErrorEvent(node, "System image ${spec.name} not found")
-        return@post
-      }
-
-      val drawable = try {
-        androidx.core.content.ContextCompat.getDrawable(context, resId)
-      } catch (e: Exception) {
-        null
-      }
-
-      if (drawable == null) {
-        Log.w("RuneImage", "Unable to load system image ${spec.name}")
-        dispatchImageErrorEvent(node, "Unable to load system image ${spec.name}")
-        return@post
-      }
-
-      val imageView = node.view as? ImageView
-      if (imageView != null) {
-        imageView.setImageDrawable(drawable)
-        val width = drawable.intrinsicWidth
-        val height = drawable.intrinsicHeight
-        state.intrinsicWidth = if (width > 0) width else 1
-        state.intrinsicHeight = if (height > 0) height else 1
-        setTint(imageView, state.tintColor)
-        engine.markDirty(node.id)
-        scheduleFlush()
-        dispatchImageLoadEvent(node, state.intrinsicWidth.toFloat(), state.intrinsicHeight.toFloat())
-      }
+    var resId = resources.getIdentifier(spec.name, "drawable", pkg)
+    if (resId == 0) {
+      resId = resources.getIdentifier(spec.name, "drawable", "android")
     }
+
+    if (resId == 0) {
+      postImageError(node, token, "System image ${spec.name} not found")
+      return
+    }
+
+    loadWithCoil(node, resId, token, 1f)
   }
 
   private fun loadAssetImage(node: RuneUIManager.Node, spec: ImageSourceSpec.AssetData, token: String) {
-    val state = ensureState(node)
-    state.job = imageExecutor.submit {
-      try {
-        val stream = openAssetStream(spec)
-        if (stream == null) {
-          postImageError(node, token, "Asset ${spec.name} not found")
-          return@submit
-        }
-        stream.use {
-          val bytes = it.readBytes()
-          val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-          if (bitmap == null) {
-            postImageError(node, token, "Unable to decode asset ${spec.name}")
-            return@use
-          }
-          val scale = spec.scale?.takeIf { it > 0f } ?: 1f
-          postImageSuccess(node, token, bitmap, scale)
-        }
-      } catch (t: Throwable) {
-        postImageError(node, token, t.message ?: "Asset load failed")
-      }
-    }
-  }
-
-  private fun openAssetStream(spec: ImageSourceSpec.AssetData): InputStream? {
-    val context = root.context
-    val candidates = buildList {
-      if (!spec.bundle.isNullOrBlank()) add("${spec.bundle}/${spec.name}")
-      add(spec.name)
-    }
-    val assets = context.assets
-    for (path in candidates) {
-      try {
-        return assets.open(path)
-      } catch (_: Exception) {
-        // try next candidate
-      }
-    }
-    val resources = context.resources
-    val pkg = context.packageName
-    val resourceName = spec.name.substringBeforeLast('.')
-    val resId = resources.getIdentifier(resourceName, "drawable", pkg)
-    return if (resId != 0) resources.openRawResource(resId) else null
+    val path = if (!spec.bundle.isNullOrBlank()) "${spec.bundle}/${spec.name}" else spec.name
+    val uri = "file:///android_asset/$path"
+    val scale = spec.scale?.takeIf { it > 0f } ?: 1f
+    loadWithCoil(node, uri, token, scale)
   }
 
   private fun loadRemoteImage(node: RuneUIManager.Node, spec: ImageSourceSpec.RemoteData, token: String) {
-    val state = ensureState(node)
-    state.job = imageExecutor.submit {
-      try {
-        val uri = spec.uri
-        val lower = uri.lowercase(Locale.US)
-        when {
-          lower.startsWith("file:") -> {
-            val file = File(Uri.parse(uri).path ?: uri.removePrefix("file:"))
-            if (!file.exists()) {
-              postImageError(node, token, "File ${file.path} not found")
-              return@submit
-            }
-            val bitmap = BitmapFactory.decodeFile(file.absolutePath)
-            if (bitmap == null) {
-              postImageError(node, token, "Unable to decode file image")
-              return@submit
-            }
-            val scale = spec.info?.optDouble("scale", Double.NaN)?.takeIf { !it.isNaN() && it > 0 }?.toFloat() ?: 1f
-            postImageSuccess(node, token, bitmap, scale)
-            return@submit
-          }
-          lower.startsWith("content:") -> {
-            val resolver = root.context.contentResolver
-            val stream = resolver.openInputStream(Uri.parse(uri))
-            if (stream == null) {
-              postImageError(node, token, "Content URI not accessible")
-              return@submit
-            }
-            stream.use {
-              val bytes = it.readBytes()
-              val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-              if (bitmap == null) {
-                postImageError(node, token, "Unable to decode content URI")
-                return@use
-              }
-              val scale = spec.info?.optDouble("scale", Double.NaN)?.takeIf { !it.isNaN() && it > 0 }?.toFloat() ?: 1f
-              postImageSuccess(node, token, bitmap, scale)
-            }
-            return@submit
-          }
-          lower.startsWith("/") -> {
-            val file = File(uri)
-            if (!file.exists()) {
-              postImageError(node, token, "Image at ${file.path} not found")
-              return@submit
-            }
-            val bitmap = BitmapFactory.decodeFile(file.absolutePath)
-            if (bitmap == null) {
-              postImageError(node, token, "Unable to decode image at ${file.path}")
-              return@submit
-            }
-            val scale = spec.info?.optDouble("scale", Double.NaN)?.takeIf { !it.isNaN() && it > 0 }?.toFloat() ?: 1f
-            postImageSuccess(node, token, bitmap, scale)
-            return@submit
-          }
-        }
-        val download = downloadRemoteBytes(uri, spec.info)
-        val bytes = download.bytes
-        if (bytes == null) {
-          postImageError(node, token, download.error ?: "Image request failed")
-          return@submit
-        }
-        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-        if (bitmap == null) {
-          postImageError(node, token, "Unable to decode image data")
-          return@submit
-        }
-        val scale = spec.info?.optDouble("scale", Double.NaN)?.takeIf { !it.isNaN() && it > 0 }?.toFloat() ?: 1f
-        postImageSuccess(node, token, bitmap, scale)
-      } catch (t: Throwable) {
-        postImageError(node, token, t.message ?: "Image request failed")
-      }
-    }
+    val scale = spec.info?.optDouble("scale", Double.NaN)?.takeIf { !it.isNaN() && it > 0 }?.toFloat() ?: 1f
+    loadWithCoil(node, spec.uri, token, scale)
   }
 
-  private data class DownloadResult(
-    val bytes: ByteArray? = null,
-    val error: String? = null,
-  )
-
-  private fun downloadRemoteBytes(uri: String, info: JSONObject?): DownloadResult {
-    var connection: HttpURLConnection? = null
-    return try {
-      val url = URL(uri)
-      connection = (url.openConnection() as? HttpURLConnection)
-        ?: return DownloadResult(error = "Image request failed: unsupported protocol")
-      connection.connectTimeout = 15000
-      connection.readTimeout = 30000
-      val method = (info?.optString("method", "") ?: "").takeIf { it.isNotBlank() }?.uppercase(Locale.US) ?: "GET"
-      connection.requestMethod = method
-      val headers = info?.optJSONObject("headers")
-      if (headers != null) {
-        val keys = headers.keys()
-        while (keys.hasNext()) {
-          val key = keys.next()
-          val value = headers.optString(key, "")
-          if (key.isNotBlank() && value.isNotBlank()) {
-            connection.setRequestProperty(key, value)
-          }
-        }
-      }
-      val body = info?.optString("body", "") ?: ""
-      if (body.isNotEmpty() && method != "GET" && method != "HEAD") {
-        connection.doOutput = true
-        connection.outputStream.use { it.write(body.toByteArray()) }
-      }
-      connection.instanceFollowRedirects = true
-      connection.connect()
-      val code = connection.responseCode
-      if (code < 200 || code >= 300) {
-        Log.w("RuneUI", "Image request $uri failed with HTTP $code")
-        DownloadResult(error = "Image request failed with HTTP $code")
-      } else {
-        DownloadResult(bytes = connection.inputStream.use { it.readBytes() })
-      }
-    } catch (t: Throwable) {
-      Log.e("RuneUI", "Image download failed for $uri", t)
-      val message = t.message ?: t.javaClass.simpleName
-      DownloadResult(error = "Image request failed: $message")
-    } finally {
-      connection?.disconnect()
-    }
-  }
-
-  private fun postImageSuccess(node: RuneUIManager.Node, token: String, bitmap: Bitmap, scale: Float) {
+  private fun postImageSuccess(node: RuneUIManager.Node, token: String, drawable: Drawable, scale: Float) {
     handler.post {
       val state = node.imageState ?: return@post
       if (state.requestToken != token) {
-        if (!bitmap.isRecycled) {
-          bitmap.recycle()
-        }
         return@post
       }
       state.job = null
       val imageView = node.view as? ImageView ?: return@post
-      imageView.setImageBitmap(bitmap)
-      val widthPoints = if (scale > 0f) bitmap.width / scale else bitmap.width.toFloat()
-      val heightPoints = if (scale > 0f) bitmap.height / scale else bitmap.height.toFloat()
+      imageView.setImageDrawable(drawable)
+      val widthPoints = if (scale > 0f) drawable.intrinsicWidth / scale else drawable.intrinsicWidth.toFloat()
+      val heightPoints = if (scale > 0f) drawable.intrinsicHeight / scale else drawable.intrinsicHeight.toFloat()
       state.intrinsicWidth = widthPoints.roundToInt().coerceAtLeast(1)
       state.intrinsicHeight = heightPoints.roundToInt().coerceAtLeast(1)
       setTint(imageView, state.tintColor)

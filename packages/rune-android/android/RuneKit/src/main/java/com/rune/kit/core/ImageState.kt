@@ -8,7 +8,7 @@ import java.util.concurrent.Future
  */
 data class ImageState(
   var requestToken: String = "",
-  var job: Future<*>? = null,
+  var job: Any? = null,
   var tintColor: Int? = null,
   var hasOnLoadHandler: Boolean = false,
   var hasOnErrorHandler: Boolean = false,

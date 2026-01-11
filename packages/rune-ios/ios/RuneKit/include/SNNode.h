@@ -29,7 +29,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, assign) BOOL hasOnPressHandler;
 @property(nonatomic, assign) BOOL hasOnLoadHandler;
 @property(nonatomic, assign) BOOL hasOnErrorHandler;
-@property(nonatomic, strong, nullable) NSURLSessionDataTask *imageTask;
+@property(nonatomic, strong, nullable) id imageTask;
 @property(nonatomic, copy, nullable) NSString *imageSourceToken;
 @property(nonatomic, strong, nullable) UIColor *imageTintColor;
 @property(nonatomic, assign) int parentId;

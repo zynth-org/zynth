@@ -1948,7 +1948,10 @@ static void SNApplyEdges(NSDictionary *style,
   SNApplyBorderStyleToView(view, style, overflowClip);
   SEL updateCorner = NSSelectorFromString(@"rune_updateConfigurationCornerRadiusIfNeeded");
   if ([view respondsToSelector:updateCorner]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
     [(id)view performSelector:updateCorner];
+#pragma clang diagnostic pop
   }
 }
 
