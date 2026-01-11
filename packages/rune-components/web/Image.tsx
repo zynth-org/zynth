@@ -113,7 +113,6 @@ const Image = (props: {
   source: ImageSource | ImageSource[];
   style?: Style | Style[];
   resizeMode?: ImageResizeMode;
-  tintColor?: string;
   onLoad?: (event: ImageLoadEvent) => void;
   onError?: (event: ImageErrorEvent) => void;
   [key: string]: any;
@@ -123,14 +122,10 @@ const Image = (props: {
     "class",
     "style",
     "resizeMode",
-    "tintColor",
-    "tintcolor",
     "onLoad",
     "onError",
   ]);
-  const resolvedTintColor = createMemo(
-    () => (local.tintColor as string | undefined) ?? (local as any).tintcolor
-  );
+
   const [currentSourceIndex, setCurrentSourceIndex] = createSignal(0);
 
   const normalizedSources = createMemo(() => {
@@ -147,20 +142,6 @@ const Image = (props: {
 
   const resolved = createMemo(() => resolveSource(currentSource()));
   const objectFit = createMemo(() => resolveObjectFit(local.resizeMode));
-  const maskSize = createMemo(() => {
-    switch (local.resizeMode) {
-      case "cover":
-        return "cover";
-      case "contain":
-        return "contain";
-      case "stretch":
-        return "100% 100%";
-      case "center":
-        return "auto";
-      default:
-        return "contain";
-    }
-  });
 
   const baseStyle = createMemo(() => {
     const merged = mergeStyle(local.style) ?? {};
@@ -170,23 +151,6 @@ const Image = (props: {
         merged.objectPosition = "center";
       }
     }
-    return merged;
-  });
-
-  const isTinted = createMemo(() => !!resolvedTintColor() && !!resolved().src);
-
-  const maskStyle = createMemo(() => {
-    const merged = { ...(baseStyle() ?? {}) } as Record<string, any>;
-    merged.display = merged.display ?? "inline-block";
-    merged.backgroundColor = resolvedTintColor();
-    merged.WebkitMaskImage = `url("${resolved().src}")`;
-    merged.maskImage = `url("${resolved().src}")`;
-    merged.WebkitMaskRepeat = "no-repeat";
-    merged.maskRepeat = "no-repeat";
-    merged.WebkitMaskPosition = "center";
-    merged.maskPosition = "center";
-    merged.WebkitMaskSize = maskSize();
-    merged.maskSize = maskSize();
     return merged;
   });
 
@@ -216,24 +180,6 @@ const Image = (props: {
     local.source;
     setCurrentSourceIndex(0);
   });
-
-  if (isTinted()) {
-    return (
-      <span
-        class={`rune-image${local.class ? ` ${local.class}` : ""}`}
-        data-system-name={resolved().systemName}
-        style={maskStyle()}
-        {...rest}
-      >
-        <img
-          src={resolved().src}
-          style={{ display: "none" }}
-          onLoad={handleLoad}
-          onError={handleError}
-        />
-      </span>
-    );
-  }
 
   return (
     <img
