@@ -75,6 +75,23 @@ const UNIT_PROPS = new Set([
   "columnGap",
 ]);
 
+const PROP_ALIASES = new Map<string, string>([
+  ["tintcolor", "tintColor"],
+  ["resizemode", "resizeMode"],
+]);
+
+function normalizePropName(name: string): string {
+  return PROP_ALIASES.get(name) ?? name;
+}
+
+function normalizeProps(props: Record<string, any>): Record<string, any> {
+  const normalized: Record<string, any> = {};
+  for (const [key, value] of Object.entries(props)) {
+    normalized[normalizePropName(key)] = value;
+  }
+  return normalized;
+}
+
 function normalizeStyle(style: any): any {
   if (!style || typeof style !== "object") return style;
   if (Array.isArray(style)) {
@@ -163,6 +180,9 @@ export function createWebHost(): Host {
       if (props && props.style) {
         props = { ...props, style: normalizeStyle(props.style) };
       }
+      if (props) {
+        props = normalizeProps(props as Record<string, any>);
+      }
 
       const handler = COMPONENT_REGISTRY.get(type);
 
@@ -186,7 +206,8 @@ export function createWebHost(): Host {
       if (props) {
         if (props.style) applyStyle(element, props.style);
 
-        for (const [key, value] of Object.entries(props)) {
+        for (const [rawKey, value] of Object.entries(props)) {
+          const key = normalizePropName(rawKey);
           if (key === "style") continue;
 
           // If we have a handler, let it try to handle the prop update first
@@ -233,6 +254,7 @@ export function createWebHost(): Host {
       const element = NODES.get(node.id);
       if (!element || !(element instanceof HTMLElement)) return;
 
+      name = normalizePropName(name);
       if (name === "style") {
         value = normalizeStyle(value);
       }

@@ -502,6 +502,11 @@ export const insert = (r as any).insert as (
   marker?: any,
   initial?: any
 ) => void;
+export const spread = (r as any).spread as (
+  node: any,
+  accessor: any,
+  skipChildren?: boolean
+) => any;
 export const use = (r as any).use as (
   fn: (value: any, arg: any) => any,
   element: any,

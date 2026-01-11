@@ -25,10 +25,13 @@ const IMAGE_ASSET_LOADER_PATH = path.join(
 );
 const require = createRequire(import.meta.url);
 let solidJsxRuntime: string | null = null;
+let solidJsxDevRuntime: string | null = null;
 try {
   solidJsxRuntime = require.resolve("solid-js/h/jsx-runtime");
+  solidJsxDevRuntime = require.resolve("solid-js/h/jsx-dev-runtime");
 } catch {
   solidJsxRuntime = null;
+  solidJsxDevRuntime = null;
 }
 
 const DEFAULT_ARTIFACT_RELATIVE_PATH = ".rune/artifacts.json";
@@ -167,7 +170,7 @@ export function defineRuneConfig(
   ];
 
   if (babel?.enable ?? true) {
-    plugins.push(createRuneBabelPlugin(babel));
+    plugins.push(createRuneBabelPlugin(babel, isWeb));
   }
 
   if (Array.isArray(userPlugins)) {
@@ -182,7 +185,8 @@ export function defineRuneConfig(
 }
 
 function createRuneBabelPlugin(
-  babelOptions?: DefineRuneConfigOptions["babel"]
+  babelOptions: DefineRuneConfigOptions["babel"] | undefined,
+  isWeb: boolean
 ) {
   const defaultTargets: Record<string, string> = {
     android: "9.0",
@@ -194,7 +198,10 @@ function createRuneBabelPlugin(
   };
 
   return pluginBabel({
-    include: [/[\\/]src[\\/].*\.(t|j)sx?$/],
+    include: [
+      /[\\/]src[\\/].*\.(t|j)sx?$/,
+      /[\\/]web[\\/].*\.(t|j)sx?$/,
+    ],
     babelLoaderOptions: (options) => {
       options.presets = [
         [
@@ -204,19 +211,40 @@ function createRuneBabelPlugin(
             modules: false,
           },
         ],
-        [
-          "babel-preset-solid",
-          {
-            generate: "universal",
-            moduleName: "@rune/core/universal",
-          },
-        ],
         "@babel/preset-typescript",
       ];
+      const overrides = [...(options.overrides ?? [])];
+      overrides.push({
+        test: /[\\/]src[\\/].*\.(t|j)sx?$/,
+        presets: [
+          [
+            "babel-preset-solid",
+            {
+              generate: "universal",
+              moduleName: "@rune/core/universal",
+            },
+          ],
+        ],
+      });
+      if (isWeb) {
+        overrides.push({
+          test: /[\\/]web[\\/].*\.(t|j)sx?$/,
+          presets: [
+            [
+              "babel-preset-solid",
+              {
+                generate: "dom",
+                moduleName: "solid-js/web",
+              },
+            ],
+          ],
+        });
+      }
+      options.overrides = overrides;
       const isDev =
         typeof process !== "undefined" &&
         process.env?.NODE_ENV !== "production";
-      if (isDev) {
+      if (isDev && !isWeb) {
         options.plugins = [
           ...(options.plugins ?? []),
           ["solid-refresh/babel", { bundler: "standard" }],
@@ -417,10 +445,22 @@ async function ensureAliases(
   extraAliases?: Record<string, string | false | (string | false)[]>
 ) {
   config.resolve ??= {};
-  const alias = (config.resolve.alias ??= {}) as Record<
-    string,
-    string | false | (string | false)[]
-  >;
+  const aliasConfig = config.resolve.alias;
+  let alias: Record<string, string | false | (string | false)[]> = {};
+  if (Array.isArray(aliasConfig)) {
+    for (const entry of aliasConfig) {
+      if (!entry || typeof entry !== "object") continue;
+      const name = (entry as { name?: string }).name;
+      const value = (entry as { alias?: any }).alias;
+      if (typeof name === "string") {
+        alias[name] = value as string | false | (string | false)[];
+      }
+    }
+  } else if (aliasConfig && typeof aliasConfig === "object") {
+    alias = {
+      ...(aliasConfig as Record<string, string | false | (string | false)[]>),
+    };
+  }
 
   // Auto-discover all @rune/* packages from the workspace
   const discoveredAliases = await discoverRunePackageAliases(repoRoot);
@@ -434,7 +474,10 @@ async function ensureAliases(
   };
   if (solidJsxRuntime) {
     staticAliases["solid-js/jsx-runtime"] = solidJsxRuntime;
-    staticAliases["solid-js/jsx-dev-runtime"] = solidJsxRuntime;
+  }
+  const resolvedDevRuntime = solidJsxDevRuntime ?? solidJsxRuntime;
+  if (resolvedDevRuntime) {
+    staticAliases["solid-js/jsx-dev-runtime"] = resolvedDevRuntime;
   }
 
   // Apply discovered aliases first (lowest priority)
@@ -457,6 +500,8 @@ async function ensureAliases(
       alias[key] = value;
     }
   }
+
+  config.resolve.alias = alias;
 }
 
 async function discoverRunePackageAliases(

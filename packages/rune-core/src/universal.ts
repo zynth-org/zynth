@@ -17,6 +17,7 @@ export {
   getNodeValue,
   isTextNode,
   insert, // <-- Added this export
+  spread,
   use,
 } from "./renderer";
 

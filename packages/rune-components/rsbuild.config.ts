@@ -24,7 +24,10 @@ export default defineConfig({
   },
   plugins: [
     pluginBabel({
-      include: [/[\\/]src[\\/].*\.(t|j)sx?$/],
+      include: [
+        /[\\/]src[\\/].*\.(t|j)sx?$/,
+        /[\\/]web[\\/].*\.(t|j)sx?$/,
+      ],
       babelLoaderOptions: (options) => {
         options.presets = [
           [
