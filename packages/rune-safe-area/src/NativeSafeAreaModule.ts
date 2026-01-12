@@ -38,6 +38,85 @@ const DEFAULT_METRICS: WindowMetrics = {
   frame: { x: 0, y: 0, width: 0, height: 0 },
 };
 
+let webMeasureNode: HTMLDivElement | null = null;
+
+function ensureWebMeasureNode(): HTMLDivElement | null {
+  if (typeof document === "undefined") return null;
+  if (webMeasureNode && document.body?.contains(webMeasureNode)) {
+    return webMeasureNode;
+  }
+  if (!document.body) return null;
+  const node = document.createElement("div");
+  node.style.position = "absolute";
+  node.style.top = "0";
+  node.style.left = "0";
+  node.style.visibility = "hidden";
+  node.style.pointerEvents = "none";
+  node.style.padding = "env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)";
+  document.body.appendChild(node);
+  webMeasureNode = node;
+  return node;
+}
+
+function readWebInsets(): WindowMetrics["insets"] {
+  const node = ensureWebMeasureNode();
+  if (!node || typeof getComputedStyle !== "function") {
+    return { ...DEFAULT_METRICS.insets };
+  }
+  const styles = getComputedStyle(node);
+  const top = parseFloat(styles.paddingTop) || 0;
+  const right = parseFloat(styles.paddingRight) || 0;
+  const bottom = parseFloat(styles.paddingBottom) || 0;
+  const left = parseFloat(styles.paddingLeft) || 0;
+  return { top, right, bottom, left };
+}
+
+function getWebMetrics(): WindowMetrics {
+  if (typeof window === "undefined") return DEFAULT_METRICS;
+  return {
+    insets: readWebInsets(),
+    frame: {
+      x: 0,
+      y: 0,
+      width: window.innerWidth || 0,
+      height: window.innerHeight || 0,
+    },
+  };
+}
+
+function createWebModule(): NativeSafeAreaModule {
+  return {
+    getInitialMetrics() {
+      return getWebMetrics();
+    },
+    addMetricsChangeListener(listener) {
+      const emit = () => listener(getWebMetrics());
+      emit();
+      const handle = () => emit();
+      if (typeof window !== "undefined") {
+        window.addEventListener("resize", handle);
+        window.addEventListener("orientationchange", handle);
+        const viewport = window.visualViewport;
+        if (viewport) {
+          viewport.addEventListener("resize", handle);
+          viewport.addEventListener("scroll", handle);
+        }
+      }
+      return () => {
+        if (typeof window !== "undefined") {
+          window.removeEventListener("resize", handle);
+          window.removeEventListener("orientationchange", handle);
+          const viewport = window.visualViewport;
+          if (viewport) {
+            viewport.removeEventListener("resize", handle);
+            viewport.removeEventListener("scroll", handle);
+          }
+        }
+      };
+    },
+  };
+}
+
 function getGlobalObject(): Record<string, unknown> {
   if (typeof globalThis !== "undefined") {
     return globalThis as Record<string, unknown>;
@@ -148,8 +227,14 @@ export function getNativeSafeAreaModule(): NativeSafeAreaModule | null {
     return globalObj.__RUNE_SAFE_AREA__ || null;
   }
   const platform = getPlatform();
+  if (platform === "web") {
+    return createWebModule();
+  }
   if (platform === "ios" || platform === "android") {
     return createEmitterModule();
+  }
+  if (typeof window !== "undefined" && typeof document !== "undefined") {
+    return createWebModule();
   }
   const constants = readNativeConstants();
   const bridge = getModulesBridge();
