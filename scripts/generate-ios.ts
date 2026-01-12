@@ -3,6 +3,41 @@ import * as path from 'path';
 import { generateAssets } from "./generate-assets";
 import { getAppConfig, safeReadJSON, AppConfig } from './config-utils';
 
+function resolvePackageJson(depName: string, appDir: string): string | null {
+  try {
+    return require.resolve(path.join(depName, "package.json"), {
+      paths: [appDir],
+    });
+  } catch (_error) {
+    // fall through to entry-resolution fallback
+  }
+
+  try {
+    const entryPath = require.resolve(depName, { paths: [appDir] });
+    let dir = path.dirname(entryPath);
+    while (true) {
+      const candidate = path.join(dir, "package.json");
+      if (fs.existsSync(candidate)) return candidate;
+      const parent = path.dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
+  } catch (_error) {
+    // Ignore resolution failures; dependency may be optional for native
+  }
+
+  let current = appDir;
+  while (true) {
+    const candidate = path.join(current, "node_modules", depName, "package.json");
+    if (fs.existsSync(candidate)) return candidate;
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+
+  return null;
+}
+
 function formatInfoPlistProperties(properties: Record<string, string>): string {
   if (!properties || Object.keys(properties).length === 0) {
     return "";
@@ -66,10 +101,8 @@ function collectNativeIOSPods(appDir: string): any[] {
   for (const source of dependencySources) {
     for (const depName of Object.keys(source)) {
       try {
-        const pkgJsonPath = require.resolve(
-          path.join(depName, "package.json"),
-          { paths: [appDir] }
-        );
+        const pkgJsonPath = resolvePackageJson(depName, appDir);
+        if (!pkgJsonPath) continue;
         const packageDir = path.dirname(pkgJsonPath);
         const depPackage = safeReadJSON(pkgJsonPath);
         if (!depPackage) continue;

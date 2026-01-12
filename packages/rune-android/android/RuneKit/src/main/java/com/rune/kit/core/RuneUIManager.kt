@@ -91,7 +91,7 @@ class RuneUIManager(
 
   private fun logDebug(tag: String, message: String) {
     if (!isNativeDebugEnabled()) return
-    // Log.d(tag, message)
+    Log.d(tag, message)
   }
 
   fun registerSurface(surfaceId: Int, surfaceRoot: RuneRootView) = onMain {

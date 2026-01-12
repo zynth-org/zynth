@@ -5,13 +5,6 @@
 #import "dev-helper.h"
 {{MODULE_IMPORTS}}
 
-#if __has_include("RuneRouter-Swift.h")
-#import "RuneRouter-Swift.h"
-#define RUNE_ROUTER_AVAILABLE 1
-#else
-#define RUNE_ROUTER_AVAILABLE 0
-#endif
-
 {{EXTRA_APP_DELEGATE_HEADER}}
 
 @interface AppDelegate ()
@@ -62,16 +55,9 @@
     return NO;
   }
 
-  BOOL routerAttached = NO;
-#if RUNE_ROUTER_AVAILABLE
-  routerAttached = [RuneRouterHost bootstrapWithWindow:self.window runtime:self.runtime];
-#endif
-
-  if (!routerAttached) {
-    RuneStatusBarHostController *vc = [RuneStatusBarHostController new];
-    vc.view = self.surface;
-    self.window.rootViewController = vc;
-  }
+  RuneStatusBarHostController *vc = [RuneStatusBarHostController new];
+  vc.view = self.surface;
+  self.window.rootViewController = vc;
   
   [self.window makeKeyAndVisible];
 

@@ -690,7 +690,7 @@ internal class RunePropApplier(
         ?: 0L
     }
     val easingName = when (map) {
-      is JSONObject -> map.optString("easing", null)
+      is JSONObject -> map.optString("easing", "").takeIf { it.isNotBlank() }
       else -> mapObj?.get("easing") as? String
     }
 

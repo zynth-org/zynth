@@ -15,6 +15,7 @@ object RuneSplashScreen {
     private val initializedRuntimes = WeakHashMap<RuneRuntime, Boolean>()
 
     @JvmStatic
+    @Suppress("UNUSED_PARAMETER")
     fun initialize(activity: Activity, runtime: RuneRuntime) {
         synchronized(initializedRuntimes) {
             if (initializedRuntimes.containsKey(runtime)) {

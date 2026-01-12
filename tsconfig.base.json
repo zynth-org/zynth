@@ -35,8 +35,6 @@
       "@rune/keyboard/*": ["packages/rune-keyboard/src/*"],
       "@rune/memory-router": ["packages/rune-memory-router/src/index.ts"],
       "@rune/memory-router/*": ["packages/rune-memory-router/src/*"],
-      "@rune/router": ["packages/rune-router/src/index.ts"],
-      "@rune/router/*": ["packages/rune-router/src/*"],
       "@rune/rsbuild-plugin": ["packages/rune-rsbuild-plugin/src/index.ts"],
       "@rune/rsbuild-plugin/*": ["packages/rune-rsbuild-plugin/src/*"],
       "@rune/safe-area": ["packages/rune-safe-area/src/index.ts"],

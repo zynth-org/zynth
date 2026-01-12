@@ -13,6 +13,10 @@
 #import <objc/message.h>
 #import <stdatomic.h>
 
+@protocol RunePlaceholderTone <NSObject>
+- (void)applyPlaceholderToneFromTextColor;
+@end
+
 static NSString *const kRuneBorderLayerName = @"rune-border-style";
 static NSString *const kRuneGradientLayerName = @"rune-background-gradient";
 static const int kRuneSurfaceIdBase = 1 << 20;
@@ -1368,7 +1372,7 @@ static void SNApplyEdges(NSDictionary *style,
       NSString *color = style[@"color"];
       if (color && [n.view respondsToSelector:@selector(setTextColor:)]) {
         ((UITextView *)n.view).textColor = SNColorFromHex(color);
-        [n.view performSelector:@selector(applyPlaceholderToneFromTextColor)];
+        [(id<RunePlaceholderTone>)n.view applyPlaceholderToneFromTextColor];
       }
       
       CGFloat top = [style[@"paddingTop"] ?: style[@"paddingVertical"] ?: style[@"padding"] floatValue];
@@ -1424,7 +1428,7 @@ static void SNApplyEdges(NSDictionary *style,
       NSString *color = style[@"color"];
       if (color && [n.view respondsToSelector:@selector(setTextColor:)]) {
         ((UITextField *)n.view).textColor = SNColorFromHex(color);
-        [n.view performSelector:@selector(applyPlaceholderToneFromTextColor)];
+        [(id<RunePlaceholderTone>)n.view applyPlaceholderToneFromTextColor];
       }
 
       CGFloat top = [style[@"paddingTop"] ?: style[@"paddingVertical"] ?: style[@"padding"] floatValue];
