@@ -19,7 +19,7 @@ registerWebComponent("progress-indicator", {
   },
 });
 
-["rune-status-bar", "rune-alert"].forEach((type) => {
+["rune-status-bar"].forEach((type) => {
   registerWebComponent(type, {
     create: () => {
       const element = document.createElement("div");

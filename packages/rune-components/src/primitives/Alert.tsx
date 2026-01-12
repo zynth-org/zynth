@@ -56,9 +56,11 @@ export interface AlertProps {
   controller?: AlertController;
 }
 
+let cmdSeq = 0;
 const sendCommand = (host: HostNode | null, command: AlertCommand) => {
   if (!host) return;
-  setProperty(host, "__command", JSON.stringify(command));
+  cmdSeq++;
+  setProperty(host, "__command", JSON.stringify({ ...command, _seq: cmdSeq }));
 };
 
 const asInternalController = (
