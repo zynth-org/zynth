@@ -5,6 +5,7 @@ import "./TextInput";
 import "./Slider";
 import "./Switch";
 import "./Alert";
+import "./DatePicker";
 import "./Input";
 import "./Overlay";
 import "./ScrollView";
