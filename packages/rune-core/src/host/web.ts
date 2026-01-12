@@ -154,6 +154,8 @@ function applyStyle(element: HTMLElement, style: Style | Style[]) {
   }
 
   const normalized = normalizeStyle(style);
+  if (!normalized || typeof normalized !== "object") return;
+  
   for (const [key, value] of Object.entries(normalized)) {
     element.style.setProperty(key, String(value));
   }

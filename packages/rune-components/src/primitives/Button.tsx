@@ -542,13 +542,13 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
   const shouldHideContentForOverlay = createMemo(() => {
     if (!computedLoading()) return false;
     if (resolvedLoadingPlacement() !== "overlay") return false;
-    if (
-      local.loadingIndicator !== undefined &&
-      local.loadingIndicator !== null
-    ) {
-      return true;
-    }
-    return !!local.loadingAriaLabel;
+    
+    // Only hide content if we have a custom element as indicator or an aria-label
+    const isCustomIndicator = local.loadingIndicator !== undefined && 
+                              local.loadingIndicator !== null && 
+                              typeof local.loadingIndicator !== "boolean";
+                              
+    return isCustomIndicator || !!local.loadingAriaLabel;
   });
 
   const [debounceHandle, setDebounceHandle] = createSignal<ReturnType<
@@ -722,6 +722,7 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
       local.preventFocusOnPress ?? false
     );
     setProperty(node, "loadingPlacement", resolvedLoadingPlacement());
+    setProperty(node, "loadingIndicator", local.loadingIndicator);
     setProperty(node, "loadingAriaLabel", local.loadingAriaLabel);
     setProperty(node, "haptics", local.haptics ?? "none");
     // labelStyle, iconStyle, pressedStyle etc might not be needed for native text,

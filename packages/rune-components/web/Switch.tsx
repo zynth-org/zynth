@@ -58,7 +58,7 @@ export const Switch = (props: any) => {
       onClick={toggle}
       {...rest}
     >
-      <div style={thumbStyle()} />
+      <div style={thumbStyle() as any} />
     </div>
   );
 };

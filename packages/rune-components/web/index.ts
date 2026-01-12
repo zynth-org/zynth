@@ -8,5 +8,6 @@ import "./Alert";
 import "./DatePicker";
 import "./Menu";
 import "./Input";
+import "./ProgressIndicator";
 
 console.log("[Rune Web] Registering web components...");

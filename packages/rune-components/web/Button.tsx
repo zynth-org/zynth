@@ -1,10 +1,20 @@
 /** @jsxImportSource solid-js */
+// cspell:ignore testid
 import { createMemo, splitProps, JSX, Show } from "solid-js";
 import { registerComponent } from "./utils";
+import { ProgressIndicator } from "./ProgressIndicator";
 import type { Style } from "@rune/core";
 
 export type ButtonType = "button" | "submit";
-export type Variant = "solid" | "outline" | "ghost" | "link";
+export type Variant =
+  | "solid"
+  | "outline"
+  | "ghost"
+  | "link"
+  // Native variant aliases that might flow through.
+  | "filled"
+  | "outlined"
+  | "text";
 export type Tone =
   | "primary"
   | "secondary"
@@ -13,6 +23,7 @@ export type Tone =
   | "danger"
   | "neutral";
 export type Size = "xs" | "sm" | "md" | "lg" | "xl";
+export type NativeSize = "mini" | "small" | "medium" | "large";
 
 export type ButtonProps = {
   children?: JSX.Element;
@@ -25,7 +36,7 @@ export type ButtonProps = {
   loading?: boolean;
   variant?: Variant;
   tone?: Tone;
-  size?: Size;
+  size?: Size | NativeSize;
   fullWidth?: boolean;
   rounded?: "none" | "sm" | "md" | "lg" | "pill" | "full";
   onPress?: (event: { synthetic?: boolean }) => void;
@@ -81,6 +92,9 @@ const Button = (props: ButtonProps) => {
     "labelStyle",
     "testID",
     "class",
+    "loadingIndicator",
+    "loadingPlacement",
+    "loadingAriaLabel",
   ]);
 
   const resolvedVariant = createMemo(() => local.variant ?? "solid");
@@ -188,44 +202,91 @@ const Button = (props: ButtonProps) => {
     local.onPress?.({ synthetic: true });
   };
 
+  const resolvedLoadingPlacement = createMemo(
+    () => local.loadingPlacement ?? "overlay"
+  );
+
+  const shouldShowSpinner = createMemo(() => {
+    if (!local.loading) return false;
+    if (local.loadingIndicator === false) return false;
+    return true;
+  });
+
+  const shouldHideContentForOverlay = createMemo(() => {
+    if (!shouldShowSpinner()) return false;
+    if (resolvedLoadingPlacement() !== "overlay") return false;
+
+    const isCustomIndicator =
+      local.loadingIndicator !== undefined &&
+      local.loadingIndicator !== null &&
+      typeof local.loadingIndicator !== "boolean";
+
+    return isCustomIndicator || !!local.loadingAriaLabel;
+  });
+
+  const renderSpinner = () => (
+    <div
+      class="rune-button-loading-container"
+      style={{
+        display: "inline-flex",
+        "align-items": "center",
+        "justify-content": "center",
+        "margin-left": (resolvedLoadingPlacement() === "end" && !shouldHideContentForOverlay()) ? "8px" : "0",
+        "margin-right": (resolvedLoadingPlacement() === "start" && !shouldHideContentForOverlay()) ? "8px" : "0",
+        ...(resolvedLoadingPlacement() === "overlay" ? {
+          position: "absolute",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          width: "100%",
+          height: "100%",
+          "pointer-events": "none"
+        } : {})
+      }}
+    >
+      <Show 
+        when={local.loadingIndicator && typeof local.loadingIndicator !== "boolean"} 
+        fallback={<ProgressIndicator size="small" color="currentColor" />}
+      >
+        {local.loadingIndicator}
+      </Show>
+    </div>
+  );
+
   return (
     <button
       type={local.type ?? "button"}
-      style={mergedStyle()}
+      style={{
+        ...mergedStyle(),
+        position: (resolvedLoadingPlacement() === "overlay" && shouldShowSpinner()) ? "relative" : mergedStyle().position
+      }}
       disabled={local.disabled || local.loading}
       onClick={handleClick}
       data-testid={local.testID}
       class={`rune-button${local.class ? ` ${local.class}` : ""}`}
       {...rest}
     >
-      <span data-rune-slot style="display: contents" />
+      <Show when={shouldShowSpinner() && resolvedLoadingPlacement() === "start"}>
+        {renderSpinner()}
+      </Show>
 
-      <Show when={local.loading && props.loadingIndicator !== null}>
-        <span
-          class="rune-button-spinner"
-          style={{
-            width: "1em",
-            height: "1em",
-            border: "2px solid currentColor",
-            "border-right-color": "transparent",
-            "border-radius": "50%",
-            animation: "rune-spin 0.75s linear infinite",
-            display: "inline-block",
-            "margin-left": "8px",
-          }}
-        />
-        <style>
-          {`
-            @keyframes rune-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-            .rune-button:active:not(:disabled) { opacity: 0.75 !important; transform: scale(0.98); }
-          `}
-        </style>
+      <div style={{ 
+        display: "contents", 
+        visibility: shouldHideContentForOverlay() ? "hidden" : "visible",
+        opacity: shouldHideContentForOverlay() ? "0" : "1"
+      }}>
+        <span data-rune-slot style="display: contents" />
+      </div>
+
+      <Show when={shouldShowSpinner() && (resolvedLoadingPlacement() === "overlay" || resolvedLoadingPlacement() === "end")}>
+        {renderSpinner()}
       </Show>
-      <Show when={!local.loading}>
-        <style>
-          {`.rune-button:active:not(:disabled) { opacity: 0.75 !important; transform: scale(0.98); }`}
-        </style>
-      </Show>
+      
+      <style>
+        {`
+          .rune-button:active:not(:disabled) { opacity: 0.75 !important; transform: scale(0.98); }
+        `}
+      </style>
     </button>
   );
 };
