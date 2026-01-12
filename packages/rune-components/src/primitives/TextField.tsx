@@ -84,6 +84,8 @@ export interface TextFieldProps {
   defaultValue?: string;
   /** Placeholder text (used as label on Material 3, placeholder on iOS) */
   placeholder?: string;
+  /** Placeholder text color */
+  placeholderColor?: string;
   /** Whether the text field is disabled */
   disabled?: boolean;
   /** Whether the text field is editable (default: true) */
@@ -131,6 +133,7 @@ export const TextField: Component<TextFieldProps> = (props) => {
     "value",
     "defaultValue",
     "placeholder",
+    "placeholderColor",
     "disabled",
     "editable",
     "secureTextEntry",
@@ -252,8 +255,10 @@ export const TextField: Component<TextFieldProps> = (props) => {
     if (style.color !== undefined) {
       setProperty(node, "textColor", style.color);
     }
-    if (style.placeholderColor !== undefined) {
-      setProperty(node, "placeholderColor", style.placeholderColor);
+    const placeholderColor =
+      local.placeholderColor ?? style.placeholderColor ?? undefined;
+    if (placeholderColor !== undefined) {
+      setProperty(node, "placeholderColor", placeholderColor);
     }
   });
 
