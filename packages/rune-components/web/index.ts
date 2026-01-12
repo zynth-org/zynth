@@ -9,5 +9,6 @@ import "./DatePicker";
 import "./Menu";
 import "./Input";
 import "./ProgressIndicator";
+import "./Modal";
 
 console.log("[Rune Web] Registering web components...");
