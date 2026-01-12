@@ -4,6 +4,9 @@ import type { Host, HostNode, Style } from "./HostTypes";
 const NODES = new Map<number, HTMLElement | Text>();
 const DOM_TO_ID = new WeakMap<Node, number>();
 let nextId = 1;
+const LAYOUT_OBSERVER_KEY = "__rune_layout_observer";
+const LAYOUT_RESIZE_KEY = "__rune_layout_resize";
+const LAYOUT_CALLBACK_KEY = "__rune_layout_callback";
 
 export interface WebComponentHandler {
   create: (props: any) => HTMLElement;
@@ -155,6 +158,36 @@ function applyStyle(element: HTMLElement, style: Style | Style[]) {
 
   const normalized = normalizeStyle(style);
   if (!normalized || typeof normalized !== "object") return;
+
+  const hasAnyBorder =
+    "border" in normalized ||
+    "border-width" in normalized ||
+    "border-color" in normalized;
+  const hasTopBorder =
+    "border-top-width" in normalized || "border-top-color" in normalized;
+  const hasRightBorder =
+    "border-right-width" in normalized || "border-right-color" in normalized;
+  const hasBottomBorder =
+    "border-bottom-width" in normalized ||
+    "border-bottom-color" in normalized;
+  const hasLeftBorder =
+    "border-left-width" in normalized || "border-left-color" in normalized;
+
+  if (hasAnyBorder && !("border-style" in normalized)) {
+    (normalized as any)["border-style"] = "solid";
+  }
+  if (hasTopBorder && !("border-top-style" in normalized)) {
+    (normalized as any)["border-top-style"] = "solid";
+  }
+  if (hasRightBorder && !("border-right-style" in normalized)) {
+    (normalized as any)["border-right-style"] = "solid";
+  }
+  if (hasBottomBorder && !("border-bottom-style" in normalized)) {
+    (normalized as any)["border-bottom-style"] = "solid";
+  }
+  if (hasLeftBorder && !("border-left-style" in normalized)) {
+    (normalized as any)["border-left-style"] = "solid";
+  }
   
   for (const [key, value] of Object.entries(normalized)) {
     element.style.setProperty(key, String(value));
@@ -179,6 +212,59 @@ function applyStyle(element: HTMLElement, style: Style | Style[]) {
   if (!element.style.minWidth) {
     element.style.minWidth = "0";
   }
+}
+
+function emitLayout(element: HTMLElement, callback: (payload: any) => void) {
+  const rect = element.getBoundingClientRect();
+  callback({
+    nativeEvent: {
+      layout: {
+        x: rect.left,
+        y: rect.top,
+        width: rect.width,
+        height: rect.height,
+      },
+    },
+  });
+}
+
+function setLayoutHandler(element: HTMLElement, handler?: (payload: any) => void) {
+  const existingObserver = (element as any)[LAYOUT_OBSERVER_KEY] as ResizeObserver | undefined;
+  const existingResize = (element as any)[LAYOUT_RESIZE_KEY] as (() => void) | undefined;
+
+  if (existingObserver) {
+    existingObserver.disconnect();
+    delete (element as any)[LAYOUT_OBSERVER_KEY];
+  }
+  if (existingResize) {
+    window.removeEventListener("resize", existingResize);
+    delete (element as any)[LAYOUT_RESIZE_KEY];
+  }
+
+  if (!handler) {
+    delete (element as any)[LAYOUT_CALLBACK_KEY];
+    return;
+  }
+
+  (element as any)[LAYOUT_CALLBACK_KEY] = handler;
+  const emit = () => emitLayout(element, handler);
+
+  if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(emit);
+  } else {
+    setTimeout(emit, 0);
+  }
+
+  if (typeof ResizeObserver !== "undefined") {
+    const observer = new ResizeObserver(() => emit());
+    observer.observe(element);
+    (element as any)[LAYOUT_OBSERVER_KEY] = observer;
+    return;
+  }
+
+  const handleResize = () => emit();
+  window.addEventListener("resize", handleResize);
+  (element as any)[LAYOUT_RESIZE_KEY] = handleResize;
 }
 
 export function createWebHost(): Host {
@@ -250,7 +336,9 @@ export function createWebHost(): Host {
             }
           }
 
-          if (key.startsWith("on") && typeof value === "function") {
+          if (key === "onLayout" && typeof value === "function") {
+            setLayoutHandler(element, value as any);
+          } else if (key.startsWith("on") && typeof value === "function") {
             const eventName = key.toLowerCase().replace(/^on/, "");
             if (eventName === "press") {
               element.addEventListener("click", value as any);
@@ -304,6 +392,8 @@ export function createWebHost(): Host {
 
       if (name === "style") {
         applyStyle(element, value);
+      } else if (name === "onLayout") {
+        setLayoutHandler(element, value as any);
       } else if (name.startsWith("on") && typeof value === "function") {
         const eventName = name.toLowerCase().replace(/^on/, "");
         if (eventName === "press") {
