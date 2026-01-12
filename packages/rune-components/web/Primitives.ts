@@ -5,10 +5,6 @@ const divComponents = [
   "pressable",
   "glass-view",
   "glass-container",
-  "menu-view",
-  "menu-trigger-view",
-  "date-picker-view",
-  "date-picker-trigger-view",
 ];
 
 divComponents.forEach((type) => {

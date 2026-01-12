@@ -6,9 +6,7 @@ import "./Slider";
 import "./Switch";
 import "./Alert";
 import "./DatePicker";
+import "./Menu";
 import "./Input";
-import "./Overlay";
-import "./ScrollView";
-import "./MenuItemView";
 
 console.log("[Rune Web] Registering web components...");

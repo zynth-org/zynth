@@ -77,6 +77,7 @@ const MenuItem: Component<MenuItemProps> = (props) => {
       label={local.label}
       destructive={local.destructive}
       disabled={local.disabled}
+      slot="items"
       style={{
         display: "none",
         position: "absolute",

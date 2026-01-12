@@ -104,6 +104,10 @@ export function registerComponent(
         initialProps.style = normalizeStyle(initialProps.style);
       }
 
+      if (initialProps && initialProps.slot) {
+        container.setAttribute("slot", initialProps.slot);
+      }
+
       const [props, setProps] = createStore(initialProps || {});
       (container as any).__setProps = setProps;
 
@@ -112,6 +116,9 @@ export function registerComponent(
       return container;
     },
     updateProp: (element, key, value) => {
+      if (key === "slot") {
+        element.setAttribute("slot", value);
+      }
       const setProps = (element as any).__setProps;
       if (setProps) {
         const finalValue = key === "style" ? normalizeStyle(value) : value;
@@ -121,7 +128,17 @@ export function registerComponent(
       return false;
     },
     insertChild: (parent, child, anchor) => {
-      const slot = parent.querySelector("[data-rune-slot]") || parent;
+      let slot = parent.querySelector("[data-rune-slot]") as HTMLElement | null;
+      
+      // Support named slots: if child has a 'slot' attribute, find matching data-rune-slot
+      if (child instanceof HTMLElement && child.getAttribute("slot")) {
+        const name = child.getAttribute("slot");
+        const namedSlot = parent.querySelector(`[data-rune-slot="${name}"]`) as HTMLElement | null;
+        if (namedSlot) slot = namedSlot;
+      }
+
+      slot = slot || parent;
+
       if (anchor && anchor.parentNode === slot) {
         slot.insertBefore(child, anchor);
       } else {
