@@ -2,6 +2,7 @@ import "./Primitives";
 import "./Image";
 import "./Button";
 import "./TextInput";
+import "./ScrollView";
 import "./Slider";
 import "./Switch";
 import "./Alert";
