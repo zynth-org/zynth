@@ -57,11 +57,15 @@ const UNIT_PROPS = new Set([
   "marginRight",
   "marginBottom",
   "marginLeft",
+  "marginHorizontal",
+  "marginVertical",
   "padding",
   "paddingTop",
   "paddingRight",
   "paddingBottom",
   "paddingLeft",
+  "paddingHorizontal",
+  "paddingVertical",
   "borderRadius",
   "borderWidth",
   "borderTopWidth",
@@ -92,6 +96,10 @@ function normalizeProps(props: Record<string, any>): Record<string, any> {
   return normalized;
 }
 
+function camelToKebab(str: string): string {
+  return str.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
+}
+
 function normalizeStyle(style: any): any {
   if (!style || typeof style !== "object") return style;
   if (Array.isArray(style)) {
@@ -100,13 +108,40 @@ function normalizeStyle(style: any): any {
   const next: any = {};
   for (const [key, value] of Object.entries(style)) {
     if (value === undefined || value === null) {
-      next[key] = "";
+      next[camelToKebab(key)] = "";
       continue;
     }
+
+    if (key === "paddingHorizontal") {
+      const v = typeof value === "number" ? `${value}px` : value;
+      next["padding-left"] = v;
+      next["padding-right"] = v;
+      continue;
+    }
+    if (key === "paddingVertical") {
+      const v = typeof value === "number" ? `${value}px` : value;
+      next["padding-top"] = v;
+      next["padding-bottom"] = v;
+      continue;
+    }
+    if (key === "marginHorizontal") {
+      const v = typeof value === "number" ? `${value}px` : value;
+      next["margin-left"] = v;
+      next["margin-right"] = v;
+      continue;
+    }
+    if (key === "marginVertical") {
+      const v = typeof value === "number" ? `${value}px` : value;
+      next["margin-top"] = v;
+      next["margin-bottom"] = v;
+      continue;
+    }
+
+    const kebabKey = camelToKebab(key);
     if (typeof value === "number" && UNIT_PROPS.has(key)) {
-      next[key] = `${value}px`;
+      next[kebabKey] = `${value}px`;
     } else {
-      next[key] = value;
+      next[kebabKey] = value;
     }
   }
   return next;
@@ -120,7 +155,7 @@ function applyStyle(element: HTMLElement, style: Style | Style[]) {
 
   const normalized = normalizeStyle(style);
   for (const [key, value] of Object.entries(normalized)) {
-    (element.style as any)[key] = value;
+    element.style.setProperty(key, String(value));
   }
 
   // Default display to flex to mimic Yoga
@@ -176,10 +211,6 @@ export function createWebHost(): Host {
       // console.log(`[Web Host] createNode ${type} id=${id}`);
       let element: HTMLElement;
 
-      // Normalize style prop if present before passing to handler
-      if (props && props.style) {
-        props = { ...props, style: normalizeStyle(props.style) };
-      }
       if (props) {
         props = normalizeProps(props as Record<string, any>);
       }
@@ -255,9 +286,6 @@ export function createWebHost(): Host {
       if (!element || !(element instanceof HTMLElement)) return;
 
       name = normalizePropName(name);
-      if (name === "style") {
-        value = normalizeStyle(value);
-      }
 
       // Update stored props
       (element as any).__rune_props = {
