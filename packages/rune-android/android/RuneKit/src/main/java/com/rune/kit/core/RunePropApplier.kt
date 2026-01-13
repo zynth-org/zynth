@@ -543,6 +543,8 @@ internal class RunePropApplier(
     val needsRoundedBackground = hasAnyBorderRadius
     // Also create RuneBorderDrawable when elevation is set to ensure proper shadow outline
     val shouldUseGradient = needsRoundedBackground || backgroundColor != null || backgroundGradient != null || hasAnyBorderWidth || hasAnyBorderColor || hasElevation || hasBoxShadow
+    val shouldClipOverflow = style.overflow?.lowercase() == "hidden" || style.overflow?.lowercase() == "scroll"
+    val shouldClipForImage = nodeType == "image"
     
     // TextInput components manage their own padding through onStyleApplied to handle visual insets
     val isTextInput = nodeType == "text-input" || nodeType == "secure-text-input"
@@ -574,9 +576,9 @@ internal class RunePropApplier(
 
       ViewCompat.setBackground(view, drawable)
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-        // clipToOutline only affects the view's own shadow/outline clipping, not children
-        // Overflow clipping is handled by RuneViewContainer.setOverflowHidden()
-        view.clipToOutline = needsRoundedBackground
+        // Only clip to outline when overflow demands clipping.
+        // Rounded backgrounds without overflow:hidden should not clip children (match CSS/iOS).
+        view.clipToOutline = needsRoundedBackground && (shouldClipOverflow || shouldClipForImage)
       }
     } else {
       when (view.background) {

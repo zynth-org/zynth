@@ -1309,6 +1309,10 @@ static void SNApplyEdges(NSDictionary *style,
       // If overflow is "hidden"/"scroll", clipsToBounds was already set to YES above
     }
     SNApplyBorderStyleToView(n.view, style, shouldClip);
+    if ([n.view isKindOfClass:[UIImageView class]] && br && (CGFloat)SNNum(br) > 0) {
+      n.view.clipsToBounds = YES;
+      n.view.layer.masksToBounds = YES;
+    }
     SEL updateCorner = NSSelectorFromString(@"rune_updateConfigurationCornerRadiusIfNeeded");
     if ([n.view respondsToSelector:updateCorner]) {
       [(id)n.view performSelector:updateCorner];

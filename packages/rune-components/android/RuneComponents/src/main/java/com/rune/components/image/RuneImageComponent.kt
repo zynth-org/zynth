@@ -13,6 +13,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Base64
 import android.util.Log
+import android.view.ViewOutlineProvider
 import android.widget.ImageView
 import androidx.core.widget.ImageViewCompat
 import coil.ImageLoader
@@ -171,6 +172,17 @@ internal class RuneImageComponent(
     val state = ensureState(node)
     state.preferredWidth = style.width
     state.preferredHeight = style.height
+    val imageView = node.view as? ImageView
+    if (imageView != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+      val defaultRadius = style.borderRadius ?: 0f
+      val hasRadius =
+        (style.borderTopLeftRadius ?: defaultRadius) > 0f ||
+        (style.borderTopRightRadius ?: defaultRadius) > 0f ||
+        (style.borderBottomRightRadius ?: defaultRadius) > 0f ||
+        (style.borderBottomLeftRadius ?: defaultRadius) > 0f
+      imageView.outlineProvider = ViewOutlineProvider.BACKGROUND
+      imageView.clipToOutline = hasRadius
+    }
     engine.markDirty(node.id)
     scheduleFlush()
   }

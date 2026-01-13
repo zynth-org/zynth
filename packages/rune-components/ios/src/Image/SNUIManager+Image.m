@@ -7,6 +7,22 @@
 #if __has_include(<UIKit/UIKit.h>)
 #import <UIKit/UIKit.h>
 
+@interface RuneImageView : UIImageView
+@end
+
+@implementation RuneImageView
+- (void)layoutSubviews {
+  [super layoutSubviews];
+  self.clipsToBounds = YES;
+  self.layer.masksToBounds = YES;
+  for (CALayer *sublayer in self.layer.sublayers) {
+    if ([sublayer.name isEqualToString:@"tintColorLayer"]) {
+      sublayer.frame = self.bounds;
+    }
+  }
+}
+@end
+
 static id SNImageParseJSON(NSString *json) {
   if (!json || json.length == 0) return nil;
   NSData *data = [json dataUsingEncoding:NSUTF8StringEncoding];
@@ -573,7 +589,7 @@ static YGSize SNMeasureImageFunc(YGNodeConstRef yogaNode,
 
     RuneComponentDescriptor *descriptor = [[RuneComponentDescriptor alloc] initWithType:@"image"];
     descriptor.createView = ^UIView *(SNUIManager *manager, NSString *type) {
-      UIImageView *imageView = [UIImageView new];
+      UIImageView *imageView = [RuneImageView new];
       imageView.clipsToBounds = YES;
       imageView.contentMode = UIViewContentModeScaleAspectFill;
       return imageView;
