@@ -64,8 +64,8 @@ const sizeMetrics: Record<
 };
 
 const toneColorMap: Record<Tone, string> = {
-  primary: "#7c3aed",
-  secondary: "#6366f1",
+  primary: "#4a4a4a",
+  secondary: "#616161",
   success: "#16a34a",
   warning: "#f59e0b",
   danger: "#dc2626",
@@ -231,21 +231,32 @@ export const Button = (props: ButtonProps) => {
         display: "inline-flex",
         "align-items": "center",
         "justify-content": "center",
-        "margin-left": (resolvedLoadingPlacement() === "end" && !shouldHideContentForOverlay()) ? "8px" : "0",
-        "margin-right": (resolvedLoadingPlacement() === "start" && !shouldHideContentForOverlay()) ? "8px" : "0",
-        ...(resolvedLoadingPlacement() === "overlay" ? {
-          position: "absolute",
-          top: "50%",
-          left: "50%",
-          transform: "translate(-50%, -50%)",
-          width: "100%",
-          height: "100%",
-          "pointer-events": "none"
-        } : {})
+        "margin-left":
+          resolvedLoadingPlacement() === "end" && !shouldHideContentForOverlay()
+            ? "8px"
+            : "0",
+        "margin-right":
+          resolvedLoadingPlacement() === "start" &&
+          !shouldHideContentForOverlay()
+            ? "8px"
+            : "0",
+        ...(resolvedLoadingPlacement() === "overlay"
+          ? {
+              position: "absolute",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+              width: "100%",
+              height: "100%",
+              "pointer-events": "none",
+            }
+          : {}),
       }}
     >
-      <Show 
-        when={local.loadingIndicator && typeof local.loadingIndicator !== "boolean"} 
+      <Show
+        when={
+          local.loadingIndicator && typeof local.loadingIndicator !== "boolean"
+        }
         fallback={<ProgressIndicator size="small" color="currentColor" />}
       >
         {local.loadingIndicator}
@@ -258,7 +269,10 @@ export const Button = (props: ButtonProps) => {
       type={local.type ?? "button"}
       style={{
         ...mergedStyle(),
-        position: (resolvedLoadingPlacement() === "overlay" && shouldShowSpinner()) ? "relative" : mergedStyle().position
+        position:
+          resolvedLoadingPlacement() === "overlay" && shouldShowSpinner()
+            ? "relative"
+            : mergedStyle().position,
       }}
       disabled={local.disabled || local.loading}
       onClick={handleClick}
@@ -266,22 +280,32 @@ export const Button = (props: ButtonProps) => {
       class={`rune-button${local.class ? ` ${local.class}` : ""}`}
       {...rest}
     >
-      <Show when={shouldShowSpinner() && resolvedLoadingPlacement() === "start"}>
+      <Show
+        when={shouldShowSpinner() && resolvedLoadingPlacement() === "start"}
+      >
         {renderSpinner()}
       </Show>
 
-      <div style={{ 
-        display: "contents", 
-        visibility: shouldHideContentForOverlay() ? "hidden" : "visible",
-        opacity: shouldHideContentForOverlay() ? "0" : "1"
-      }}>
+      <div
+        style={{
+          display: "contents",
+          visibility: shouldHideContentForOverlay() ? "hidden" : "visible",
+          opacity: shouldHideContentForOverlay() ? "0" : "1",
+        }}
+      >
         <span data-rune-slot style="display: contents" />
       </div>
 
-      <Show when={shouldShowSpinner() && (resolvedLoadingPlacement() === "overlay" || resolvedLoadingPlacement() === "end")}>
+      <Show
+        when={
+          shouldShowSpinner() &&
+          (resolvedLoadingPlacement() === "overlay" ||
+            resolvedLoadingPlacement() === "end")
+        }
+      >
         {renderSpinner()}
       </Show>
-      
+
       <style>
         {`
           .rune-button:active:not(:disabled) { opacity: 0.75 !important; transform: scale(0.98); }
@@ -292,5 +316,3 @@ export const Button = (props: ButtonProps) => {
 };
 
 registerComponent("button", Button);
-
-
