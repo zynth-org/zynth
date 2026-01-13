@@ -265,23 +265,25 @@ function applyStyle(element: HTMLElement, style: Style | Style[]) {
     element.style.setProperty(key, String(value));
   }
 
-  // Default display to flex to mimic Yoga
+  const isContents = element.style.display === "contents";
+
+  // Default display to flex to mimic Yoga, but only if not display: contents
   if (!element.style.display) {
     element.style.display = "flex";
   }
-  if (!element.style.flexDirection) {
+  if (!element.style.flexDirection && !isContents) {
     element.style.flexDirection = "column";
   }
-  if (!element.style.position) {
+  if (!element.style.position && !isContents) {
     element.style.position = "relative";
   }
-  if (!element.style.boxSizing) {
+  if (!element.style.boxSizing && !isContents) {
     element.style.boxSizing = "border-box";
   }
-  if (!element.style.minHeight) {
+  if (!element.style.minHeight && !isContents) {
     element.style.minHeight = "0";
   }
-  if (!element.style.minWidth) {
+  if (!element.style.minWidth && !isContents) {
     element.style.minWidth = "0";
   }
 }
@@ -357,7 +359,7 @@ export function createWebHost(): Host {
       // Ensure root acts as a flex container
       rootElement.style.display = "flex";
       rootElement.style.flexDirection = "column";
-      rootElement.style.height = "100vh";
+      rootElement.style.height = "100dvh";
       rootElement.style.overflow = "hidden";
 
       const id = 0;
@@ -369,7 +371,7 @@ export function createWebHost(): Host {
     createNode(type, props): HostNode {
       const id = nextId++;
       // console.log(`[Web Host] createNode ${type} id=${id}`);
-      let element: HTMLElement;
+      let element: Element;
 
       if (props) {
         props = normalizeProps(props as Record<string, any>);
@@ -387,29 +389,27 @@ export function createWebHost(): Host {
         );
         // Fallback for unregistered components or simple divs
         element = document.createElement("div");
-        element.dataset.type = type;
+        (element as HTMLElement).dataset.type = type;
       }
 
       (element as any).__rune_props = props || {};
-      NODES.set(id, element);
+      NODES.set(id, element as HTMLElement);
       DOM_TO_ID.set(element, id);
 
       if (props) {
-        if (props.style) applyStyle(element, props.style);
-
         for (const [rawKey, value] of Object.entries(props)) {
           const key = normalizePropName(rawKey);
           if (key === "style") continue;
 
           // If we have a handler, let it try to handle the prop update first
           if (handler && handler.updateProp) {
-            if (handler.updateProp(element, key, value)) {
+            if (handler.updateProp(element as HTMLElement, key, value)) {
               continue;
             }
           }
 
           if (key === "onLayout" && typeof value === "function") {
-            setLayoutHandler(element, value as any);
+            setLayoutHandler(element as HTMLElement, value as any);
           } else if (key.startsWith("on") && typeof value === "function") {
             const eventName = key.toLowerCase().replace(/^on/, "");
             if (eventName === "press") {
@@ -429,6 +429,9 @@ export function createWebHost(): Host {
             }
           }
         }
+
+        // Apply style LAST so it can override anything set by attributes or handlers
+        if (props.style) applyStyle(element as HTMLElement, props.style);
       }
 
       return { id, type };
@@ -445,7 +448,7 @@ export function createWebHost(): Host {
 
     setProperty(node, name, value) {
       const element = NODES.get(node.id);
-      if (!element || !(element instanceof HTMLElement)) return;
+      if (!element || !(element instanceof Element)) return;
 
       name = normalizePropName(name);
 
@@ -457,15 +460,15 @@ export function createWebHost(): Host {
 
       const handler = COMPONENT_REGISTRY.get(node.type);
       if (handler && handler.updateProp) {
-        if (handler.updateProp(element, name, value)) {
+        if (handler.updateProp(element as HTMLElement, name, value)) {
           return;
         }
       }
 
       if (name === "style") {
-        applyStyle(element, value);
+        applyStyle(element as HTMLElement, value);
       } else if (name === "onLayout") {
-        setLayoutHandler(element, value as any);
+        setLayoutHandler(element as HTMLElement, value as any);
       } else if (name.startsWith("on") && typeof value === "function") {
         const eventName = name.toLowerCase().replace(/^on/, "");
         if (eventName === "press") {
@@ -500,7 +503,7 @@ export function createWebHost(): Host {
       const parentEl = NODES.get(parent.id);
       const childEl = NODES.get(node.id);
 
-      if (!parentEl || !(parentEl instanceof HTMLElement)) {
+      if (!parentEl || !(parentEl instanceof Element)) {
         console.error(`[Web Host] Parent node ${parent.id} not found or invalid`);
         return;
       }
@@ -511,8 +514,8 @@ export function createWebHost(): Host {
 
       const handler = COMPONENT_REGISTRY.get(parent.type);
       if (handler && handler.insertChild) {
-        const anchorEl = anchor ? NODES.get(anchor.id) : null;
-        handler.insertChild(parentEl, childEl, anchorEl as any);
+        const anchorEl = anchor ? (NODES.get(anchor.id) as HTMLElement | Text) : null;
+        handler.insertChild(parentEl as HTMLElement, childEl as HTMLElement | Text, anchorEl as any);
         return;
       }
 

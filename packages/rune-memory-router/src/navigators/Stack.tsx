@@ -209,9 +209,15 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
         return {
           ...prev,
           index: newIndex,
-          routes: prev.routes.slice(0, newIndex + 1),
         };
       });
+      // Delay removal of routes to allow exit animations to play
+      setTimeout(() => {
+        setState((prev) => ({
+          ...prev,
+          routes: prev.routes.slice(0, prev.index + 1),
+        }));
+      }, 500);
     },
     goBack() {
       setHasNavigated(true);
@@ -221,13 +227,18 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
       setHasNavigated(true);
       setState((prev) => {
         if (prev.index === 0) return prev;
-        const routes = [prev.routes[0]];
         return {
           ...prev,
           index: 0,
-          routes,
         };
       });
+      // Delay removal of routes
+      setTimeout(() => {
+        setState((prev) => ({
+          ...prev,
+          routes: [prev.routes[0]],
+        }));
+      }, 500);
     },
     replace(name, params) {
       setHasNavigated(true);
@@ -411,7 +422,7 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
       () => currentOptions()?.headerShown !== false
     );
     const shouldRenderHeaderBar = createMemo(
-      () => headerShown() && !useNativeHeader
+      () => headerShown() && (!useNativeHeader || Platform.OS === OS.WEB)
     );
 
     return (
@@ -425,6 +436,23 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
               const currentIndex = createMemo(() => state().index);
               const isFocused = createMemo(() => index() === currentIndex());
               const isInStack = createMemo(() => index() <= currentIndex());
+              
+              const isCovered = createMemo(() => {
+                const currentIdx = currentIndex();
+                const myIdx = index();
+                if (myIdx >= currentIdx) return false;
+                
+                // If the screen immediately above this one (up to the current focus) 
+                // is a modal, then this screen is "covered" and should scale down.
+                for (let i = myIdx + 1; i <= currentIdx; i++) {
+                  const r = state().routes[i];
+                  const cfg = screenRegistry.get(r.name);
+                  const opts = resolveOptions(r.options, cfg?.options);
+                  if (resolveScreenAnimation(opts) === "modal") return true;
+                }
+                return false;
+              });
+
               const options = createMemo(() =>
                 resolveOptions(route.options, config.options)
               );
@@ -545,6 +573,7 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
                 <ScreenPrimitive
                   screenKey={route.key}
                   active={isInStack()}
+                  covered={isCovered()}
                   animation={
                     route.key === initialRouteKey()
                       ? "none"
@@ -629,6 +658,23 @@ const DEFAULT_HEADER_TINT = "#111827";
 const DEFAULT_TITLE_SIZE = 22;
 const DEFAULT_SCREEN_BACKGROUND = "#ffffff";
 
+const BackArrowIcon = (props: { color: string; style?: any }) => (
+  <svg
+    fill={props.color}
+    stroke-width="0"
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 448 512"
+    style={{
+      width: "1em",
+      height: "1em",
+      ...props.style,
+      overflow: "visible",
+    }}
+  >
+    <path d="M9.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.2 288H416c17.7 0 32-14.3 32-32s-14.3-32-32-32H109.3l105.3-105.4c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z" />
+  </svg>
+);
+
 function HeaderBar(props: HeaderBarProps) {
   const insets = createSafeAreaInsets();
   const insetTop = insets.top;
@@ -682,17 +728,25 @@ function HeaderBar(props: HeaderBarProps) {
           opacity: !props.canGoBack || !backVisible() ? 0 : 1,
         }}
       >
-        <SystemIcon
-          name={Platform.select({
-            ios: "chevron.left",
-            android: "ic_arrow_back",
-          })}
-          tintColor={tintColor()}
-          style={{
-            width: 24,
-            height: 24,
-          }}
-        />
+        {Platform.OS === OS.WEB ? (
+          <BackArrowIcon
+            color={tintColor()}
+            style={{ width: 20, height: 20 }}
+          />
+        ) : (
+          <SystemIcon
+            name={Platform.select({
+              ios: "chevron.left",
+              android: "ic_arrow_back",
+              default: "chevron.left",
+            })}
+            tintColor={tintColor()}
+            style={{
+              width: 24,
+              height: 24,
+            }}
+          />
+        )}
       </Button>
     );
   };
@@ -704,8 +758,8 @@ function HeaderBar(props: HeaderBarProps) {
         <Text
           style={{
             color: titleColor(),
-            fontSize: DEFAULT_TITLE_SIZE,
-            fontWeight: "500",
+            fontSize: 20,
+            fontWeight: "600",
           }}
           numberOfLines={1}
         >
@@ -730,7 +784,7 @@ function HeaderBar(props: HeaderBarProps) {
           style={{
             paddingHorizontal: 12,
             paddingVertical: 6,
-            minWidth: 56,
+            minWidth: 48,
             alignSelf: "stretch",
             justifyContent: "center",
           }}
@@ -738,12 +792,8 @@ function HeaderBar(props: HeaderBarProps) {
           <Text
             style={{
               color: tintColor(),
-              fontSize: 16,
-              fontWeight:
-                props.options.headerRightButton?.style === "done" ||
-                props.options.headerRightButton?.style === "prominent"
-                  ? "600"
-                  : "500",
+              fontSize: 15,
+              fontWeight: "500",
             }}
           >
             {props.options.headerRightButton?.title ??
@@ -768,21 +818,25 @@ function HeaderBar(props: HeaderBarProps) {
         backgroundColor: backgroundColor(),
         flexDirection: "row",
         alignItems: "center",
-        paddingHorizontal: 12,
+        paddingHorizontal: 4,
+        borderBottomWidth: props.options.headerShadowVisible ? 1 : 0,
+        borderBottomColor: "#e5e7eb",
+        zIndex: 1000,
       }}
     >
       <View
         style={{
           flexDirection: "row",
           alignItems: "center",
-          justifyContent: "flex-start",
           flex: 1,
+          height: "100%",
         }}
       >
         <View
           style={{
-            minWidth: 64,
-            flexDirection: "row",
+            minWidth: 48,
+            height: "100%",
+            justifyContent: "center",
             alignItems: "center",
           }}
         >
@@ -790,9 +844,9 @@ function HeaderBar(props: HeaderBarProps) {
         </View>
         <View
           style={{
-            alignItems: "center",
-            paddingHorizontal: 8,
-            height: "100%",
+            flex: 1,
+            justifyContent: "center",
+            paddingLeft: 8,
           }}
         >
           {renderTitle()}
@@ -800,10 +854,11 @@ function HeaderBar(props: HeaderBarProps) {
       </View>
       <View
         style={{
-          minWidth: 64,
-          alignItems: "flex-end",
+          minWidth: 48,
+          height: "100%",
+          alignItems: "center",
           justifyContent: "center",
-          background: "#796868",
+          paddingRight: 8,
         }}
       >
         {renderRight()}

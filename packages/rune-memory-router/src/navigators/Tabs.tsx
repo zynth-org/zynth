@@ -4,7 +4,6 @@ import {
   createContext,
   useContext,
   Index,
-  For,
   Show,
   onMount,
   onCleanup,
@@ -14,7 +13,7 @@ import {
   children as resolveChildren,
   createEffect,
 } from "solid-js";
-import { View, Text, Pressable, Button } from "@rune/components";
+import { View, Text, Button } from "@rune/components";
 import { ScreenTabsContainer } from "@rune/screens";
 import { Platform, OS } from "@rune/apis";
 import {
@@ -45,6 +44,7 @@ import {
 } from "../native/tabIconRegistry";
 import type { ScreenTabBarItemDescriptor } from "@rune/screens";
 import { registerAndroidBackHandler } from "../native/androidBackHandler";
+import { useTabBarMetrics } from "../integration/insets";
 
 // ============================================================================
 // Utility: Generate unique keys
@@ -100,6 +100,8 @@ function DefaultTabBar(
   const navContext = useNavigationContextUnsafe();
   const hydrationReady = createMemo(() => navContext?.isHydrated?.() ?? false);
   const navigationState = createMemo(() => props.state());
+  const tabBarMetrics = useTabBarMetrics();
+
   const {
     tabBarBackgroundColor = "#ffffff",
     tabBarActiveTintColor = "#007AFF",
@@ -114,9 +116,10 @@ function DefaultTabBar(
         flexDirection: "row",
         justifyContent: "space-around",
         backgroundColor: tabBarBackgroundColor,
-        paddingBottom: 20,
+        paddingBottom: tabBarMetrics().inset > 0 ? tabBarMetrics().inset : 8,
         paddingHorizontal: 5,
         paddingTop: 8,
+        height: tabBarMetrics().height + 16,
       }}
     >
       <Index each={navigationState().routes}>

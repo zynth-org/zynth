@@ -5,17 +5,29 @@
   "main": "dist/esm/index.js",
   "module": "dist/esm/index.js",
   "types": "dist/types/index.d.ts",
-  "sideEffects": false,
+  "sideEffects": [
+    "./src/**/*",
+    "./web/**/*",
+    "./dist/**/*"
+  ],
   "license": "MIT",
   "files": [
     "dist",
     "android",
     "ios",
     "src",
+    "web",
     "package.json",
     "README.md",
     "RuneScreens.podspec"
   ],
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "types": "./dist/types/index.d.ts"
+    },
+    "./web": "./web/index.ts"
+  },
   "peerDependencies": {
     "solid-js": ">=1.8.0",
     "@rune/core": "0.0.1"

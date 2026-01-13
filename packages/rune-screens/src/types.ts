@@ -24,6 +24,9 @@ export interface ScreenProps {
   /** Whether this screen is active (visible in the stack) */
   active: boolean;
 
+  /** Whether this screen is covered by another screen (e.g. a modal) */
+  covered?: boolean;
+
   /** Animation type for enter/exit transitions */
   animation?: ScreenAnimationType;
 

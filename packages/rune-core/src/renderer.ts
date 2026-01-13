@@ -469,7 +469,7 @@ export function setProperty(n: any, k: any, v: any) {
 }
 declare const __RUNE_DEBUG_MARKERS: boolean | undefined;
 export function insertNode(p: any, n: any, a?: any) {
-  if (__RUNE_DEBUG_MARKERS) {
+  if (typeof __RUNE_DEBUG_MARKERS !== "undefined" && __RUNE_DEBUG_MARKERS) {
     console.log("[rune] insertNode", {
       parent: p?.id,
       node: n?.id,

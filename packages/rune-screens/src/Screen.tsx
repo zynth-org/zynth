@@ -36,6 +36,7 @@ export const Screen: ParentComponent<ScreenProps> = (props) => {
   const [local] = splitProps(merged, [
     "screenKey",
     "active",
+    "covered",
     "animation",
     "gestureEnabled",
     "headerOptions",
@@ -68,6 +69,7 @@ export const Screen: ParentComponent<ScreenProps> = (props) => {
     <rune-screen
       screenKey={local.screenKey}
       active={local.active}
+      covered={local.covered}
       animation={local.animation}
       gestureEnabled={local.gestureEnabled}
       headerOptions={local.headerOptions}

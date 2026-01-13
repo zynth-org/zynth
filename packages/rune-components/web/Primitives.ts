@@ -35,3 +35,29 @@ registerWebComponent("text", {
     return element;
   },
 });
+
+const svgComponents = [
+  "svg",
+  "path",
+  "circle",
+  "rect",
+  "polyline",
+  "polygon",
+  "g",
+  "line",
+  "ellipse",
+  "defs",
+  "mask",
+  "symbol",
+  "use",
+];
+
+svgComponents.forEach((type) => {
+  registerWebComponent(type, {
+    create: () => {
+      const element = document.createElementNS("http://www.w3.org/2000/svg", type);
+      // Ensure SVG elements have correct pointer-events behavior if needed
+      return element as any;
+    },
+  });
+});
