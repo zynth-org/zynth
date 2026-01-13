@@ -35,6 +35,12 @@ export const Font = {
     fontFamily: string,
     resourceName: string
   ): Promise<void> => {
+    // Check for web environment
+    if (typeof document !== "undefined") {
+      // TODO: Implement web font loading logic
+      return;
+    }
+
     const bridge = getModulesBridge();
     if (!bridge || !bridge.call) {
       console.warn(

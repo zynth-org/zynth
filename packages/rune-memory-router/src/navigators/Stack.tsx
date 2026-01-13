@@ -436,13 +436,13 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
               const currentIndex = createMemo(() => state().index);
               const isFocused = createMemo(() => index() === currentIndex());
               const isInStack = createMemo(() => index() <= currentIndex());
-              
+
               const isCovered = createMemo(() => {
                 const currentIdx = currentIndex();
                 const myIdx = index();
                 if (myIdx >= currentIdx) return false;
-                
-                // If the screen immediately above this one (up to the current focus) 
+
+                // If the screen immediately above this one (up to the current focus)
                 // is a modal, then this screen is "covered" and should scale down.
                 for (let i = myIdx + 1; i <= currentIdx; i++) {
                   const r = state().routes[i];
@@ -680,9 +680,6 @@ function HeaderBar(props: HeaderBarProps) {
   const insetTop = insets.top;
   const baseHeight = insetTop + DEFAULT_HEADER_HEIGHT;
   const owner = getOwner();
-  createEffect(() => {
-    console.log("HeaderBar mounted with insets:", JSON.stringify(insets));
-  });
 
   const tintColor = () => props.options.headerTintColor ?? DEFAULT_HEADER_TINT;
   const titleColor = () =>

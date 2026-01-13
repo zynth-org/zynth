@@ -72,7 +72,7 @@ const toneColorMap: Record<Tone, string> = {
   neutral: "#4b5563",
 };
 
-const Button = (props: ButtonProps) => {
+export const Button = (props: ButtonProps) => {
   const [local, rest] = splitProps(props, [
     "children",
     "label",
@@ -292,3 +292,5 @@ const Button = (props: ButtonProps) => {
 };
 
 registerComponent("button", Button);
+
+

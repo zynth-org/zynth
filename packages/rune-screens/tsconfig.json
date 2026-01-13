@@ -2,15 +2,20 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "./dist/esm",
-    "rootDir": "./src",
+    "rootDir": ".",
     "jsx": "preserve",
     "jsxImportSource": "solid-js",
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "declaration": false,
     "declarationMap": false,
-    "noEmit": true
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@rune/core": ["../rune-core/dist/types/index.d.ts"],
+      "@rune/core/*": ["../rune-core/dist/types/*"]
+    }
   },
-  "include": ["./src/**/*.ts", "./src/**/*.tsx"],
+  "include": ["./src/**/*.ts", "./src/**/*.tsx", "./web/**/*.ts", "./web/**/*.tsx"],
   "exclude": ["node_modules", "dist"]
 }

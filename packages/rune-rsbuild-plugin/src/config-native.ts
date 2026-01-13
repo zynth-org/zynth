@@ -1,0 +1,157 @@
+import {
+  defineConfig,
+  type RsbuildConfig,
+  type RsbuildPlugins,
+} from "@rsbuild/core";
+import { pluginBabel } from "@rsbuild/plugin-babel";
+import deepmerge from "deepmerge";
+import type { DefineRuneConfigOptions } from "./types.js";
+import { createRuneRsbuildPlugin } from "./plugin.js";
+
+const DEFAULT_NATIVE_CONFIG: RsbuildConfig = {
+  source: {
+    entry: {
+      app: "./src/index.tsx",
+    },
+  },
+  output: {
+    distPath: {
+      root: "./dist",
+      js: ".",
+    },
+    filename: {
+      js: "main.js",
+    },
+    target: "web", // Native uses Hermes which is JS-like, but we shim it
+    minify: false,
+    emitCss: false, // No CSS in native
+  },
+  server: {
+    port: 8081,
+    host: "0.0.0.0",
+    publicDir: false,
+    printUrls: true,
+  },
+  dev: {
+    hmr: true,
+    writeToDisk: true,
+    client: {
+      overlay: false,
+    },
+  },
+  html: {
+    inject: false,
+  },
+  performance: {
+    chunkSplit: {
+      strategy: "all-in-one",
+    },
+  },
+  tools: {
+    htmlPlugin: false,
+    rspack: {
+      output: {},
+    },
+  },
+};
+
+export function getNativeConfig(
+  userConfig: RsbuildConfig,
+  options: DefineRuneConfigOptions
+): RsbuildConfig {
+  const { plugin: pluginOptions, babel } = options;
+  const platform = options.platform || (process.env?.RUNE_PLATFORM as any) || "ios";
+  const userPlugins = (userConfig.plugins ?? []) as RsbuildPlugins;
+
+  const sanitizedUserConfig: RsbuildConfig = { ...userConfig };
+  if ("plugins" in sanitizedUserConfig) {
+    delete (sanitizedUserConfig as Record<string, unknown>).plugins;
+  }
+
+  const merged = deepmerge(DEFAULT_NATIVE_CONFIG, sanitizedUserConfig, {
+    arrayMerge: (_destinationArray, sourceArray) => sourceArray,
+  }) as RsbuildConfig;
+
+  // Native specific defines
+  merged.source ??= {};
+  merged.source.define ??= {};
+  const defines = merged.source.define as Record<string, any>;
+  defines.__RUNE_PLATFORM__ = JSON.stringify(platform);
+  defines["globalThis.__RUNE_PLATFORM__"] = JSON.stringify(platform);
+
+  const plugins: RsbuildPlugins = [
+    createRuneRsbuildPlugin({
+      ...pluginOptions,
+      hermesCompat: pluginOptions?.hermesCompat ?? true,
+      isWeb: false,
+    }),
+  ];
+
+  if (babel?.enable ?? true) {
+    plugins.push(createNativeBabelPlugin(babel));
+  }
+
+  if (Array.isArray(userPlugins)) {
+    plugins.push(...userPlugins);
+  } else {
+    plugins.push(userPlugins);
+  }
+
+  merged.plugins = plugins;
+
+  return defineConfig(merged);
+}
+
+function createNativeBabelPlugin(
+  babelOptions: DefineRuneConfigOptions["babel"] | undefined
+) {
+  const defaultTargets: Record<string, string> = {
+    android: "9.0",
+    ios: "13.0",
+  };
+  const targets = {
+    ...defaultTargets,
+    ...(babelOptions?.targets ?? {}),
+  };
+
+  return pluginBabel({
+    include: [/[\\/]src[\\/].*\.(t|j)sx?$/],
+    babelLoaderOptions: (options) => {
+      options.presets = [
+        [
+          "@babel/preset-env",
+          {
+            targets,
+            modules: false,
+          },
+        ],
+        "@babel/preset-typescript",
+      ];
+      
+      const overrides = [...(options.overrides ?? [])];
+      overrides.push({
+        test: /[\\/]src[\\/].*\.(t|j)sx?$/,
+        presets: [
+          [
+            "babel-preset-solid",
+            {
+              generate: "universal",
+              moduleName: "@rune/core/universal",
+            },
+          ],
+        ],
+      });
+      
+      options.overrides = overrides;
+      
+      const isDev = typeof process !== "undefined" && process.env?.NODE_ENV !== "production";
+      if (isDev) {
+        options.plugins = [
+          ...(options.plugins ?? []),
+          ["solid-refresh/babel", { bundler: "standard" }],
+        ];
+      }
+      return options;
+    },
+  });
+}

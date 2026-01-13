@@ -5,7 +5,17 @@
   "main": "dist/esm/index.js",
   "module": "dist/esm/index.js",
   "types": "dist/types/index.d.ts",
-  "sideEffects": false,
+  "sideEffects": [
+    "./src/index.web.ts",
+    "./web/**/*"
+  ],
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "types": "./dist/types/index.d.ts"
+    },
+    "./web": "./web/index.ts"
+  },
   "license": "MIT",
   "files": [
     "dist",

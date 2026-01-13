@@ -2,6 +2,7 @@ import { Platform, OS } from "@rune/apis";
 import { render, setHost } from "./renderer";
 import { createIOSHost } from "./host/ios";
 import { createAndroidHost } from "./host/android";
+import { createWebHost } from "./host/web";
 import {
   ensureNativeHMRHooks,
   setupEntryPointHMR,
@@ -35,6 +36,44 @@ let currentApp: (() => any) | null = null;
 let disposeCurrentApp: (() => void) | null = null;
 
 export function start(App: () => any): () => void {
+  // Web Platform Initialization
+  if (Platform.OS === (OS as any).WEB) {
+    setHost(createWebHost());
+    currentApp = App;
+
+    const registryPromises = (globalThis as any)
+      .__rune_web_registry_promises as Promise<unknown>[] | undefined;
+    const ready = registryPromises?.length
+      ? Promise.all(registryPromises)
+      : Promise.resolve();
+
+    let dispose: (() => void) | null = null;
+    let disposeRequested = false;
+
+    ready
+      .then(() => {
+        if (disposeRequested) {
+          return;
+        }
+        // Auto-mount on Web once registries are ready
+        dispose = render(() => currentApp!(), undefined);
+        disposeCurrentApp = dispose;
+
+        // HMR for Web (basic)
+        if ((import.meta as any).webpackHot) {
+          (import.meta as any).webpackHot.accept();
+        }
+      })
+      .catch((error) => {
+        console.error("[RuneRuntime] failed to load web registries", error);
+      });
+
+    return () => {
+      disposeRequested = true;
+      dispose?.();
+    };
+  }
+
   // Native Platform Initialization
   ensureNativeHMRHooks();
   ensureDevtoolsBridge();

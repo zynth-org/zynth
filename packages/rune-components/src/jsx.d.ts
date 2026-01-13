@@ -23,6 +23,7 @@ interface ViewElementProps {
   tintColor?: string;
   testID?: string;
   key?: string | number;
+  ref?: (node: any) => void;
   onLayout?: (event: {
     nativeEvent: {
       layout: {
@@ -79,12 +80,16 @@ declare module "solid-js" {
       "rune-status-bar": StatusBarProps & { [key: string]: any };
       "menu-view": ViewElementProps & { [key: string]: any };
       "menu-trigger-view": ViewElementProps & { [key: string]: any };
+      svg: { [key: string]: any };
+      path: { [key: string]: any };
       "menu-item-view": ViewElementProps & {
         label?: string;
         destructive?: boolean;
         disabled?: boolean;
         [key: string]: any;
       };
+      "date-picker-view": { [key: string]: any };
+      "date-picker-trigger-view": { [key: string]: any };
       "rune-modal": ViewElementProps & { [key: string]: any };
     }
   }

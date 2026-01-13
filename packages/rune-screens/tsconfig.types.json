@@ -2,14 +2,20 @@
   "compilerOptions": {
     "target": "ES2020",
     "module": "ESNext",
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "strict": true,
     "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@rune/core": ["../rune-core/dist/types/index.d.ts"],
+      "@rune/core/*": ["../rune-core/dist/types/*"]
+    },
     "declaration": true,
     "emitDeclarationOnly": true,
     "outDir": "dist/types",
     "jsx": "preserve",
     "jsxImportSource": "solid-js"
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/index.web.ts"]
 }

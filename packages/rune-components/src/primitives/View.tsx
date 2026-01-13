@@ -59,7 +59,7 @@ export const View: ParentComponent<ViewProps> = (props) => {
   return (
     <view
       style={local.style as any}
-      layout={local.layout as any}
+      onLayout={local.onLayout}
       onPress={appliedPressHandlers.onPress}
       accessibilityLabel={local.accessibilityLabel}
       accessibilityHint={local.accessibilityHint}
@@ -67,7 +67,6 @@ export const View: ParentComponent<ViewProps> = (props) => {
       pointerEvents={local.pointerEvents}
       enableGlassIOS={local.enableGlassIOS ?? false}
       tintColor={local.tintColor}
-      onLayout={local.onLayout}
       testID={local.testID}
       ref={refProp}
     >

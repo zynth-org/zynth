@@ -894,6 +894,8 @@ async function startRuneHMRServer(appDir, platform, options = {}) {
     env: {
       ...process.env,
       RUNE_HMR_PORT: String(port),
+      BASELINE_BROWSER_MAPPING_IGNORE_OLD_DATA: "true",
+      BROWSERSLIST_IGNORE_OLD_DATA: "true",
     },
   });
 

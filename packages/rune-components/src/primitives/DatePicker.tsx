@@ -148,7 +148,7 @@ const DatePickerRoot: ParentComponent<DatePickerProps> = (props) => {
         (local.value ?? local.defaultValue) as DateRangeValue | [number, number]
       );
     }
-    return toTimestamp(local.value ?? local.defaultValue);
+    return toTimestamp((local.value ?? local.defaultValue) as number | Date | null | undefined);
   };
 
   const wrapChange =

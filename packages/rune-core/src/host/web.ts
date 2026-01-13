@@ -34,7 +34,6 @@ export function registerWebComponent(
   type: string,
   handler: WebComponentHandler
 ) {
-  // console.log(`[Rune Web Host] Registered component: ${type}`);
   COMPONENT_REGISTRY.set(type, handler);
 }
 
@@ -370,7 +369,6 @@ export function createWebHost(): Host {
 
     createNode(type, props): HostNode {
       const id = nextId++;
-      // console.log(`[Web Host] createNode ${type} id=${id}`);
       let element: Element;
 
       if (props) {
@@ -382,11 +380,6 @@ export function createWebHost(): Host {
       if (handler) {
         element = handler.create(props);
       } else {
-        console.warn(
-          `[Rune Web Host] Missing handler for component: ${type}. Registry has: ${Array.from(
-            COMPONENT_REGISTRY.keys()
-          ).join(", ")}`
-        );
         // Fallback for unregistered components or simple divs
         element = document.createElement("div");
         (element as HTMLElement).dataset.type = type;
@@ -508,7 +501,6 @@ export function createWebHost(): Host {
         return;
       }
       if (!childEl) {
-        console.error(`[Web Host] Child node ${node.id} not found`);
         return;
       }
 

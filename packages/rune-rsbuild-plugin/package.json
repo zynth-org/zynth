@@ -34,6 +34,7 @@
   "peerDependencies": {
     "@rsbuild/core": ">=1.5.0",
     "@rsbuild/plugin-babel": ">=1.0.0",
+    "baseline-browser-mapping": "^2.9.14",
     "@rspack/core": ">=1.0.0"
   },
   "devDependencies": {

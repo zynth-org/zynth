@@ -2,7 +2,12 @@
   "compilerOptions": {
     "target": "ES2020",
     "module": "ESNext",
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
+    "baseUrl": ".",
+    "paths": {
+      "@rune/core": ["../rune-core/dist/types/index.d.ts"],
+      "@rune/core/*": ["../rune-core/dist/types/*"]
+    },
     "rootDir": "src",
     "outDir": "dist/esm",
     "declaration": false,
@@ -14,5 +19,8 @@
   },
   "include": [
     "src"
+  ],
+  "exclude": [
+    "src/index.web.ts"
   ]
 }

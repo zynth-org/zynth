@@ -6,9 +6,8 @@
   "module": "dist/esm/index.js",
   "types": "dist/types/index.d.ts",
   "sideEffects": [
-    "./src/**/*",
-    "./web/**/*",
-    "./dist/**/*"
+    "./src/index.web.ts",
+    "./web/**/*"
   ],
   "license": "MIT",
   "files": [

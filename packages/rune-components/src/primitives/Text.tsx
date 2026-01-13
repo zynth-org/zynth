@@ -11,5 +11,5 @@ export interface TextProps {
 export const Text: ParentComponent<TextProps> = (props) => {
   const resolvedChildren = resolveChildren(() => props.children);
   const style = useStyle(() => props.style);
-  return <text style={style()}>{resolvedChildren}</text>;
+  return <text style={style()}>{resolvedChildren()}</text>;
 };

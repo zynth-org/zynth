@@ -15,6 +15,7 @@ declare module "solid-js" {
       "rune-screen": {
         screenKey?: string;
         active?: boolean;
+        covered?: boolean;
         animation?: string;
         gestureEnabled?: boolean;
         headerOptions?: Record<string, any>;
