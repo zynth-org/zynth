@@ -47,10 +47,25 @@ final class RuneScreenHeaderAccessoryHostView: UIView {
     renderAccessory()
   }
 
-  func teardown() {
+  func teardown(isDeinit: Bool = false) {
     let token = nextRenderToken()
     guard let surfaceId, let runtime else { return }
     let rootSurface = runtime.rootSurfaceId
+
+    if isDeinit {
+      let queue = renderQueue
+      queue.async { [weak runtime] in
+        guard let runtime else { return }
+        runtime.callGlobal("__rune_disposeHeaderAccessory", args: [surfaceId])
+        DispatchQueue.main.async { [weak runtime] in
+          guard let runtime else { return }
+          runtime.setActiveSurface(rootSurface)
+          runtime.unregisterSurface(id: surfaceId)
+        }
+      }
+      return
+    }
+
     renderQueue.async { [weak self, weak runtime] in
       guard let self, let runtime else { return }
       runtime.callGlobal("__rune_disposeHeaderAccessory", args: [surfaceId])
@@ -65,7 +80,7 @@ final class RuneScreenHeaderAccessoryHostView: UIView {
   }
 
   deinit {
-    teardown()
+    teardown(isDeinit: true)
   }
 
   private func ensureSurface() -> Int? {
