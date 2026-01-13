@@ -1,4 +1,5 @@
 import { createEffect, createSignal, type Component } from "solid-js";
+import { Platform, OS } from "@rune/apis";
 import type {
   Style,
   ImageAssetSource as CoreImageAssetSource,
@@ -146,6 +147,9 @@ function normalizeSingleSource(source: ImageSource): ImageSource {
     typeof source === "object" &&
     (source as any).type === "asset"
   ) {
+    if (Platform.OS === OS.WEB) {
+      return source as ImageDescriptorSource;
+    }
     return descriptorToNativeSource(source as ImageDescriptorSource);
   }
   return source;

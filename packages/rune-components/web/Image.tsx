@@ -28,7 +28,9 @@ function encodeDevPath(filePath: string): string {
 }
 
 function descriptorToWebSource(descriptor: ImageDescriptorSource): ImageSource {
-  const devUrl = (globalThis as any).__RUNE_DEV_SERVER_URL;
+  const devUrl =
+    (globalThis as any).__RUNE_DEV_SERVER_URL ||
+    (typeof window !== "undefined" ? window.location.origin : undefined);
   if (devUrl && descriptor.devPath) {
     const encodedPath = encodeDevPath(descriptor.devPath);
     return {
@@ -146,9 +148,9 @@ const Image = (props: {
   const baseStyle = createMemo(() => {
     const merged = mergeStyle(local.style) ?? {};
     if (objectFit()) {
-      merged.objectFit = objectFit();
+      merged["object-fit"] = objectFit();
       if (local.resizeMode === "center") {
-        merged.objectPosition = "center";
+        merged["object-position"] = "center";
       }
     }
     return merged;

@@ -148,7 +148,7 @@ export function defineRuneConfig(
         js: "[name].[contenthash:8].js",
       },
     };
-    
+
     // Rename entry 'app' to 'index' to generate index.html
     if (merged.source?.entry && (merged.source.entry as any).app) {
       const appEntry = (merged.source.entry as any).app;
@@ -198,10 +198,7 @@ function createRuneBabelPlugin(
   };
 
   return pluginBabel({
-    include: [
-      /[\\/]src[\\/].*\.(t|j)sx?$/,
-      /[\\/]web[\\/].*\.(t|j)sx?$/,
-    ],
+    include: [/[\\/]src[\\/].*\.(t|j)sx?$/, /[\\/]web[\\/].*\.(t|j)sx?$/],
     babelLoaderOptions: (options) => {
       options.presets = [
         [
@@ -328,8 +325,10 @@ export function createRuneRsbuildPlugin(
 
           config.source ??= {};
           config.source.define ??= {};
-          (config.source.define as Record<string, any>).__RUNE_DEV_SERVER_URL =
+          const defines = config.source.define as Record<string, any>;
+          defines["globalThis.__RUNE_DEV_SERVER_URL"] =
             JSON.stringify(devServerUrl);
+          defines.__RUNE_DEV_SERVER_URL = JSON.stringify(devServerUrl);
 
           config.dev ??= {};
           config.dev.setupMiddlewares = (middlewares: any) => {
@@ -408,8 +407,6 @@ function createStaticAssetMiddleware() {
 
     // Add leading slash back for absolute paths on Unix systems
     const absolutePath = filePath.startsWith("/") ? filePath : "/" + filePath;
-
-    console.log(`[rune-rsbuild-plugin] Serving asset: ${absolutePath}`);
 
     try {
       // Read and serve the file

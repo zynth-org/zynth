@@ -17,7 +17,10 @@ interface ImageAssetDescriptor {
  * In production, includes a hash for bundled assets.
  */
 export default function imageAssetLoader(this: any, content: Buffer): string {
-  const isDev = this.mode === "development";
+  const mode =
+    this.mode || this._compilation?.options?.mode || process.env?.NODE_ENV;
+  const isDev = mode !== "production";
+  const isWeb = process.env?.RUNE_PLATFORM === "web";
   const absolutePath = this.resourcePath;
   const parsed = path.parse(absolutePath);
 
@@ -44,9 +47,10 @@ export default function imageAssetLoader(this: any, content: Buffer): string {
   // In development, include the absolute path for dev server serving
   if (isDev) {
     descriptor.devPath = absolutePath;
-  } else {
-    // In production, you might want to add relative path for asset bundling
-    descriptor.relativePath = path.relative(this.rootContext, absolutePath);
+  } else if (isWeb) {
+    const fileName = `assets/${baseName}-${hash}.${parsed.ext.slice(1)}`;
+    this.emitFile(fileName, content);
+    descriptor.relativePath = fileName;
   }
 
   // Return the descriptor as a module export
