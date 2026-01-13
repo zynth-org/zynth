@@ -103,7 +103,7 @@ function camelToKebab(str: string): string {
   return str.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
 }
 
-function normalizeStyle(style: any): any {
+export function normalizeStyle(style: any): any {
   if (!style || typeof style !== "object") return style;
   if (Array.isArray(style)) {
     return style.map(normalizeStyle);
@@ -148,6 +148,78 @@ function normalizeStyle(style: any): any {
     }
   }
   return next;
+}
+
+import { createStore } from "solid-js/store";
+import { render } from "solid-js/web";
+import { createComponent } from "solid-js";
+
+/**
+ * High-level helper to register a Solid component as a Rune web component.
+ * This is used for components that need internal Solid state/reactivity
+ * but are rendered by the native host (e.g. Screens, Modals, complex Primitives).
+ */
+export function registerComponent(
+  type: string,
+  Component: (props: any) => any
+) {
+  registerWebComponent(type, {
+    create: (initialProps) => {
+      const container = document.createElement("rune-web-host");
+      container.style.display = "contents";
+      container.setAttribute("data-type", type);
+
+      if (initialProps && initialProps.style) {
+        initialProps.style = normalizeStyle(initialProps.style);
+      }
+
+      if (initialProps && initialProps.slot) {
+        container.setAttribute("slot", initialProps.slot);
+      }
+
+      const [props, setProps] = createStore(initialProps || {});
+      (container as any).__setProps = setProps;
+
+      render(() => createComponent(Component, props), container);
+
+      return container;
+    },
+    updateProp: (element, key, value) => {
+      if (key === "slot") {
+        element.setAttribute("slot", value);
+      }
+      const setProps = (element as any).__setProps;
+      if (setProps) {
+        const finalValue = key === "style" ? normalizeStyle(value) : value;
+        setProps({ [key]: finalValue });
+        return true;
+      }
+      return false;
+    },
+    insertChild: (parent, child, anchor) => {
+      let slot = parent.querySelector("[data-rune-slot]") as HTMLElement | null;
+      
+      // Support named slots: if child has a 'slot' attribute, find matching data-rune-slot
+      if (child instanceof HTMLElement && child.getAttribute("slot")) {
+        const name = child.getAttribute("slot");
+        const namedSlot = parent.querySelector(`[data-rune-slot="${name}"]`) as HTMLElement | null;
+        if (namedSlot) slot = namedSlot;
+      }
+
+      slot = slot || parent;
+
+      if (anchor && anchor.parentNode === slot) {
+        slot.insertBefore(child, anchor);
+      } else {
+        slot.appendChild(child);
+      }
+    },
+    removeChild: (parent, child) => {
+      if (child.parentNode) {
+        child.parentNode.removeChild(child);
+      }
+    },
+  });
 }
 
 function applyStyle(element: HTMLElement, style: Style | Style[]) {

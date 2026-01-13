@@ -1,6 +1,6 @@
 /** @jsxImportSource solid-js */
 import { createMemo, splitProps } from "solid-js";
-import { registerComponent } from "./utils";
+import { registerComponent } from "@rune/core";
 
 const resolvePointerEvents = (value: string | undefined) => {
   if (value === "none") return "none";

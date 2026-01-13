@@ -1,6 +1,6 @@
 /** @jsxImportSource solid-js */
 import { createMemo, splitProps, createEffect, on } from "solid-js";
-import { registerComponent } from "./utils";
+import { registerComponent } from "@rune/core";
 import type { Style } from "@rune/core";
 
 export const TextInput = (props: any) => {

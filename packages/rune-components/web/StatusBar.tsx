@@ -1,5 +1,5 @@
 /** @jsxImportSource solid-js */
-import { registerComponent } from "./utils";
+import { registerComponent } from "@rune/core";
 
 export const StatusBar = () => {
   return <div style="display: none" aria-hidden="true" />;

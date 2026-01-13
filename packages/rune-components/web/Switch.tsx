@@ -1,6 +1,6 @@
 /** @jsxImportSource solid-js */
 import { createMemo, splitProps } from "solid-js";
-import { registerComponent } from "./utils";
+import { registerComponent } from "@rune/core";
 
 export const Switch = (props: any) => {
   const [local, rest] = splitProps(props, [

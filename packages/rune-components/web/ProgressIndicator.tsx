@@ -1,5 +1,5 @@
 /** @jsxImportSource solid-js */
-import { registerComponent } from "./utils";
+import { registerComponent } from "@rune/core";
 
 export const ProgressIndicator = (props: any) => {
   const size = () => (props.size === "large" ? "36px" : "20px");

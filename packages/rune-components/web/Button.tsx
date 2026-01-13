@@ -1,7 +1,7 @@
 /** @jsxImportSource solid-js */
 // cspell:ignore testid
 import { createMemo, splitProps, JSX, Show } from "solid-js";
-import { registerComponent } from "./utils";
+import { registerComponent } from "@rune/core";
 import { ProgressIndicator } from "./ProgressIndicator";
 import type { Style } from "@rune/core";
 

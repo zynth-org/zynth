@@ -1,6 +1,6 @@
 /** @jsxImportSource solid-js */
 import { createSignal, createEffect, For, Show, createMemo, onCleanup } from "solid-js";
-import { registerComponent } from "./utils";
+import { registerComponent } from "@rune/core";
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",

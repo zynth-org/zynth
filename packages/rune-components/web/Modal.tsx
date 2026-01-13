@@ -6,7 +6,7 @@ import {
   onCleanup,
   type JSX,
 } from "solid-js";
-import { registerComponent } from "./utils";
+import { registerComponent } from "@rune/core";
 
 const DEFAULT_ANIMATION = "fade";
 const DEFAULT_OVERLAY_COLOR = "#000000";

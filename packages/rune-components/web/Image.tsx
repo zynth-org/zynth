@@ -1,6 +1,6 @@
 /** @jsxImportSource solid-js */
 import { createEffect, createMemo, createSignal, splitProps } from "solid-js";
-import { registerComponent } from "./utils";
+import { registerComponent } from "@rune/core";
 import type {
   ImageErrorEvent,
   ImageLoadEvent,

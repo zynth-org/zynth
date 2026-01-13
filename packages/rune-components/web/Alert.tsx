@@ -1,6 +1,6 @@
 /** @jsxImportSource solid-js */
 import { createSignal, createEffect, For, Show, createMemo } from "solid-js";
-import { registerComponent } from "./utils";
+import { registerComponent } from "@rune/core";
 
 export const Alert = (props: any) => {
   const [visible, setVisible] = createSignal(false);
