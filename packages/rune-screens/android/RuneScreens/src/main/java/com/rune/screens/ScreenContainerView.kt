@@ -67,7 +67,9 @@ class ScreenContainerView(context: Context) : FrameLayout(context) {
         // Only animate the screen that currently sits on top of the stack. When popping multiple
         // screens at once (e.g. popToTop), lower routes may be removed first due to diff ordering,
         // and trying to animate them causes the native stack to lose its foreground content.
-        val shouldAnimate = isTopScreen
+        // If the screen has already been deactivated and finished its exit animation, don't
+        // re-run the exit animation when the view is removed from the hierarchy.
+        val shouldAnimate = isTopScreen && (screen.isScreenActive || screen.isInTransition)
 
         if (shouldAnimate) {
             if (!detachingScreens.contains(screen)) {
