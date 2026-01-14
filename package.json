@@ -17,6 +17,7 @@
     "bundle": "rune bundle all",
     "reset:ios": "yarn workspace @demo/sn-demo reset:ios",
     "reset:android": "yarn workspace @demo/sn-demo reset:android",
+    "generate": "node --experimental-strip-types scripts/generate.ts",
     "sync-aliases": "node scripts/sync-workspace-aliases.js",
     "new:package": "node --experimental-strip-types scripts/new-package.ts"
   },

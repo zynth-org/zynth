@@ -8,6 +8,13 @@ type ModulesBridge = {
 
 type WebFontSources = Record<string, string>;
 const webLoadedFonts = new Set<string>();
+const fontLoadState = new Map<string, "loading" | "loaded" | "error">();
+const fontLoadPromises = new Map<string, Promise<void>>();
+const fontLoadListeners = new Map<string, Set<() => void>>();
+const fontRegistry = new Map<
+  string,
+  { resourceName?: string; webSource?: string }
+>();
 
 function getGlobalObject(): Record<string, unknown> {
   if (typeof globalThis !== "undefined") {
@@ -64,6 +71,29 @@ function resolveWebFontSource(
   }
 
   return sources[fontFamily] ?? sources[resourceName] ?? null;
+}
+
+function registerWebFontSource(
+  fontFamily: string,
+  webSource: string
+): void {
+  const globalObj = getGlobalObject();
+  const sources = ((globalObj as any).__rune_web_font_sources ??=
+    {}) as WebFontSources;
+  sources[fontFamily] = webSource;
+}
+
+function resolveResourceName(fontFamily: string, resourceName?: string): string {
+  if (resourceName) return resourceName;
+  const registered = fontRegistry.get(fontFamily);
+  if (registered?.resourceName) return registered.resourceName;
+  return `${fontFamily}.ttf`;
+}
+
+function notifyFontLoaded(fontFamily: string) {
+  const listeners = fontLoadListeners.get(fontFamily);
+  if (!listeners) return;
+  listeners.forEach((cb) => cb());
 }
 
 async function loadWebFont(
@@ -134,13 +164,66 @@ export const Font = {
       return;
     }
 
-    try {
-      await bridge.call("Font", "loadAsync", {
-        fontFamily,
-        resourceName,
-      });
-    } catch (error) {
-      throw error;
+    await bridge.call("Font", "loadAsync", {
+      fontFamily,
+      resourceName,
+    });
+  },
+  register: (
+    fontFamily: string,
+    options: { resourceName?: string; webSource?: string }
+  ) => {
+    fontRegistry.set(fontFamily, {
+      resourceName: options.resourceName,
+      webSource: options.webSource,
+    });
+    if (options.webSource) {
+      registerWebFontSource(fontFamily, options.webSource);
     }
+  },
+  isLoaded: (fontFamily: string) => fontLoadState.get(fontFamily) === "loaded",
+  subscribe: (fontFamily: string, callback: () => void) => {
+    let listeners = fontLoadListeners.get(fontFamily);
+    if (!listeners) {
+      listeners = new Set();
+      fontLoadListeners.set(fontFamily, listeners);
+    }
+    listeners.add(callback);
+    return () => listeners!.delete(callback);
+  },
+  ensureLoaded: async (
+    fontFamily: string,
+    options?: { resourceName?: string; webSource?: string }
+  ): Promise<void> => {
+    if (fontLoadState.get(fontFamily) === "loaded") return;
+    if (fontLoadState.get(fontFamily) === "loading") {
+      await fontLoadPromises.get(fontFamily);
+      return;
+    }
+
+    if (options?.webSource) {
+      registerWebFontSource(fontFamily, options.webSource);
+    }
+    if (options?.resourceName || options?.webSource) {
+      fontRegistry.set(fontFamily, {
+        resourceName: options.resourceName,
+        webSource: options.webSource,
+      });
+    }
+
+    fontLoadState.set(fontFamily, "loading");
+    const resourceName = resolveResourceName(fontFamily, options?.resourceName);
+    const promise = Font.loadAsync(fontFamily, resourceName)
+      .then(() => {
+        fontLoadState.set(fontFamily, "loaded");
+        notifyFontLoaded(fontFamily);
+      })
+      .catch((error) => {
+        fontLoadState.set(fontFamily, "error");
+        throw error;
+      });
+
+    fontLoadPromises.set(fontFamily, promise);
+    await promise;
   },
 };

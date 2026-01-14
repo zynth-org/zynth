@@ -9,6 +9,9 @@ Pod::Spec.new do |s|
 
   s.source       = { :git => "https://github.com/rune/rune.git", :branch => "main" }
   s.source_files = "ios/src/**/*.{h,m,mm,swift}"
+  s.resource_bundles = {
+    'RuneComponents' => ['ios/Fonts/*.{ttf,otf}']
+  }
 
   s.dependency   "RuneKit"
   s.dependency   "SDWebImage", "~> 5.18"

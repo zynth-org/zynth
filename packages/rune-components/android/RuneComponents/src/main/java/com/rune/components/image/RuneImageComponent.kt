@@ -2,10 +2,13 @@ package com.rune.components.image
 
 import android.content.Context
 import android.content.res.ColorStateList
+import android.graphics.Bitmap
 import android.graphics.BlendMode
 import android.graphics.BlendModeColorFilter
+import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.PorterDuff
+import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Build
@@ -13,8 +16,10 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Base64
 import android.util.Log
+import android.util.LruCache
 import android.view.ViewOutlineProvider
 import android.widget.ImageView
+import androidx.core.graphics.drawable.DrawableCompat
 import androidx.core.widget.ImageViewCompat
 import coil.ImageLoader
 import coil.decode.SvgDecoder
@@ -54,6 +59,7 @@ internal class RuneImageComponent(
       add(SvgDecoder.Factory())
     }
     .build()
+  private val systemTintCache = LruCache<String, BitmapDrawable>(48)
 
   fun initializeNode(node: RuneUIManager.Node) {
     if (node.imageState == null) {
@@ -157,6 +163,8 @@ internal class RuneImageComponent(
     state.requestToken = ""
     state.hasOnLoadHandler = false
     state.hasOnErrorHandler = false
+    state.isSystemSource = false
+    state.systemName = null
     state.preferredWidth = null
     state.preferredHeight = null
     storeEventPayload(node.id, "onLoad", null)
@@ -164,7 +172,7 @@ internal class RuneImageComponent(
     val imageView = node.view as? ImageView
     handler.post {
       imageView?.setImageDrawable(null)
-      imageView?.let { setTint(it, null) }
+      imageView?.let { setTint(it, null, state.isSystemSource, state.systemName) }
     }
   }
 
@@ -296,6 +304,8 @@ internal class RuneImageComponent(
     val state = ensureState(node)
     cancelImageRequest(state)
     val spec = normalizeImageSource(rawValue)
+    state.isSystemSource = spec is ImageSourceSpec.SystemData
+    state.systemName = (spec as? ImageSourceSpec.SystemData)?.name
     if (spec == null) {
       state.requestToken = ""
       clearImage(node)
@@ -316,7 +326,7 @@ internal class RuneImageComponent(
     val state = ensureState(node)
     handler.post {
       imageView.setImageDrawable(null)
-      setTint(imageView, state.tintColor)
+      setTint(imageView, state.tintColor, state.isSystemSource, state.systemName)
       state.intrinsicWidth = 0
       state.intrinsicHeight = 0
       engine.markDirty(node.id)
@@ -402,7 +412,7 @@ internal class RuneImageComponent(
       val heightPoints = if (scale > 0f) drawable.intrinsicHeight / scale else drawable.intrinsicHeight.toFloat()
       state.intrinsicWidth = widthPoints.roundToInt().coerceAtLeast(1)
       state.intrinsicHeight = heightPoints.roundToInt().coerceAtLeast(1)
-      setTint(imageView, state.tintColor)
+      setTint(imageView, state.tintColor, state.isSystemSource, state.systemName)
       engine.markDirty(node.id)
       scheduleFlush()
       dispatchImageLoadEvent(node, widthPoints, heightPoints)
@@ -480,7 +490,38 @@ internal class RuneImageComponent(
     imageView.scaleType = scaleType
   }
 
-  private fun setTint(imageView: ImageView, color: Int?) {
+  private fun setTint(imageView: ImageView, color: Int?, forceOpaque: Boolean, systemName: String?) {
+    if (forceOpaque && color != null) {
+      val cacheKey = if (!systemName.isNullOrBlank()) {
+        "system:$systemName:${Integer.toHexString(color)}"
+      } else {
+        null
+      }
+      if (cacheKey != null) {
+        val cached = systemTintCache.get(cacheKey)
+        if (cached != null) {
+          val drawable =
+            cached.constantState?.newDrawable(root.context.resources) ?: cached
+          imageView.setImageDrawable(drawable)
+          imageView.colorFilter = null
+          return
+        }
+      }
+      val drawable = imageView.drawable
+      if (drawable != null) {
+        val tinted = DrawableCompat.wrap(drawable.mutate())
+        DrawableCompat.setTint(tinted, color)
+        DrawableCompat.setTintMode(tinted, PorterDuff.Mode.SRC_IN)
+        val alpha = Color.alpha(color)
+        val opaque = forceOpaqueDrawable(tinted, alpha)
+        if (cacheKey != null) {
+          systemTintCache.put(cacheKey, opaque)
+        }
+        imageView.setImageDrawable(opaque)
+        imageView.colorFilter = null
+        return
+      }
+    }
     if (color != null) {
       // Use ColorFilter with SRC_ATOP mode to blend the tint with the image
       // This allows the image to show through the tint color
@@ -495,6 +536,25 @@ internal class RuneImageComponent(
     }
   }
 
+  private fun forceOpaqueDrawable(drawable: Drawable, alpha: Int): BitmapDrawable {
+    val width = drawable.intrinsicWidth.takeIf { it > 0 } ?: 1
+    val height = drawable.intrinsicHeight.takeIf { it > 0 } ?: 1
+    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    drawable.setBounds(0, 0, width, height)
+    drawable.draw(canvas)
+    val pixels = IntArray(width * height)
+    bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+    val targetAlpha = alpha.coerceIn(0, 255)
+    for (i in pixels.indices) {
+      if ((pixels[i] ushr 24) != 0) {
+        pixels[i] = (targetAlpha shl 24) or (pixels[i] and 0x00FFFFFF)
+      }
+    }
+    bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
+    return BitmapDrawable(root.context.resources, bitmap)
+  }
+
   private fun applyTintColor(node: RuneUIManager.Node, imageView: ImageView, value: Any?) {
     val state = ensureState(node)
     val color = when (value) {
@@ -502,7 +562,7 @@ internal class RuneImageComponent(
       else -> null
     }
     state.tintColor = color
-    setTint(imageView, color)
+    setTint(imageView, color, state.isSystemSource, state.systemName)
   }
 
   private fun parseColorString(raw: String?): Int? {

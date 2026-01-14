@@ -11,7 +11,15 @@ import {
   type JSX,
   type Accessor,
 } from "solid-js";
-import { View, Text, Button, SystemIcon } from "@rune/components";
+import {
+  View,
+  Text,
+  Button,
+  Pressable,
+  SystemIcon,
+  SystemGlyph,
+} from "@rune/components";
+import { FaSolidArrowLeft } from "@rune/icons/fa";
 import { createSafeAreaInsets } from "@rune/safe-area";
 import { Platform, OS } from "@rune/apis";
 import {
@@ -709,42 +717,59 @@ function HeaderBar(props: HeaderBarProps) {
   };
 
   const renderLeft = () => {
-    const canBack = () => props.canGoBack || backVisible();
+    const canBack = () => props.canGoBack && backVisible();
     if (props.options.headerLeft) return props.options.headerLeft();
+    if (!canBack()) {
+      return (
+        <View
+          style={{
+            backgroundColor: "transparent",
+            paddingHorizontal: 8,
+            paddingVertical: 6,
+            minWidth: 56,
+            minHeight: 56,
+          }}
+        />
+      );
+    }
     return (
-      <Button
-        onPress={canBack() ? invokeBack : undefined}
-        variant="ghost"
-        iconOnly
-        rounded="pill"
+      <Pressable
+        onPress={invokeBack}
+        pressEffect="ripple"
+        hitSlop={8}
         style={{
           backgroundColor: "transparent",
           paddingHorizontal: 8,
           paddingVertical: 6,
           minWidth: 56,
-          opacity: !props.canGoBack || !backVisible() ? 0 : 1,
+          minHeight: 56,
+          alignItems: "center",
+          justifyContent: "center",
+          opacity: 1,
+        }}
+        stateLayerStyle={{
+          backgroundColor: "rgba(0, 0, 0, 0.08)",
+          borderRadius: 999,
         }}
       >
         {Platform.OS === OS.WEB ? (
           <BackArrowIcon
             color={tintColor()}
-            style={{ width: 20, height: 20 }}
+            style={{ width: 24, height: 24, zIndex: 999 }}
           />
         ) : (
-          <SystemIcon
-            name={Platform.select({
-              ios: "chevron.left",
-              android: "ic_arrow_back",
-              default: "chevron.left",
-            })}
-            tintColor={tintColor()}
+          <SystemGlyph
+            name="BsArrowLeftShort"
+            size={32}
+            color={tintColor()}
             style={{
-              width: 24,
-              height: 24,
+              textAlign: "center",
+              alignContent: "center",
+              justifyContent: "center",
             }}
           />
         )}
-      </Button>
+      </Pressable>
     );
   };
 
