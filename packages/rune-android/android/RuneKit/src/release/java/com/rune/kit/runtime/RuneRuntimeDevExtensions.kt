@@ -54,3 +54,28 @@ internal fun RuneRuntime.installDevServerGlobal(url: String, token: String?) {
 internal fun RuneRuntime.restoreDevServerUrl() {
   // No-op in release builds
 }
+
+// Release-only stubs for dev-only properties referenced from main sources.
+internal var RuneRuntime.devServerUrl: String?
+  get() = null
+  set(value) {
+    // No-op in release
+  }
+
+internal var RuneRuntime.hasSuccessfulDevBundle: Boolean
+  get() = false
+  set(value) {
+    // No-op in release
+  }
+
+internal var RuneRuntime.lastDevBundle: RuneDevBundle?
+  get() = null
+  set(value) {
+    // No-op in release
+  }
+
+// Release stub for dev-only bundle type.
+internal class RuneDevBundle(
+  val url: String = "",
+  val code: String = "",
+)

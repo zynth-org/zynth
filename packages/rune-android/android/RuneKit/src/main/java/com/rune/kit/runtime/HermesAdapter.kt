@@ -5,6 +5,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
 import android.util.Log
+import com.rune.kit.BuildConfig
 import java.util.concurrent.CountDownLatch
 import org.json.JSONArray
 import org.json.JSONObject
@@ -89,16 +90,17 @@ class HermesAdapter(
     }
   }
 
+  fun prefersHermesBytecode(): Boolean {
+    val override = System.getProperty("RUNE_USE_HBC")?.trim()?.lowercase()
+    if (!override.isNullOrBlank()) {
+      return override == "1" || override == "true" || override == "yes" || override == "on"
+    }
+    return BuildConfig.RUNE_USE_HBC
+  }
+
   fun loadMainBundle(assets: android.content.res.AssetManager) {
-    // Check for HBC debug flag in system properties or BuildConfig
-    val useHbc = System.getProperty("RUNE_USE_HBC") == "1" || 
-                 try {
-                   val buildConfigClass = Class.forName("${javaClass.packageName}.BuildConfig")
-                   val field = buildConfigClass.getDeclaredField("RUNE_USE_HBC")
-                   field.getBoolean(null)
-                 } catch (e: Exception) {
-                   false
-                 }
+    // Prefer HBC when enabled; fall back to JS source if missing or invalid.
+    val useHbc = prefersHermesBytecode()
 
     if (useHbc) {
       try {

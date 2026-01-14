@@ -28,10 +28,12 @@ android {
   buildTypes {
     getByName("release") {
       isMinifyEnabled = false
+      buildConfigField("boolean", "RUNE_USE_HBC", "true")
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
     }
     getByName("debug") {
       isJniDebuggable = true
+      buildConfigField("boolean", "RUNE_USE_HBC", "false")
     }
   }
 
@@ -45,6 +47,7 @@ android {
 
   buildFeatures {
     prefab = true
+    buildConfig = true
   }
 
   testOptions {

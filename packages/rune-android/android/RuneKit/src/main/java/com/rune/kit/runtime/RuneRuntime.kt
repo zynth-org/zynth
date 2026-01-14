@@ -189,6 +189,15 @@ class RuneRuntime(
       return
     }
 
+    val runtimeAdapter = adapter
+    if (runtimeAdapter is HermesAdapter && assetName == "main.js") {
+      val preferHbc = runtimeAdapter.prefersHermesBytecode()
+      if (preferHbc || preloadedCode == null) {
+        runtimeAdapter.loadMainBundle(assets)
+        return
+      }
+    }
+
     // No dev bundle available, load from assets or use preloaded code
     val code = preloadedCode ?: assets.open(assetName).use { it.bufferedReader().readText() }
     load(code)

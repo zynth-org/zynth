@@ -59,6 +59,16 @@ class JniEnv {
   bool attached_;
 };
 
+class BytecodeBuffer final : public facebook::jsi::Buffer {
+ public:
+  BytecodeBuffer(const uint8_t *data, size_t length) : bytes_(data, data + length) {}
+  size_t size() const override { return bytes_.size(); }
+  const uint8_t *data() const override { return bytes_.data(); }
+
+ private:
+  std::vector<uint8_t> bytes_;
+};
+
 struct UIShimMethods {
   jmethodID createNode = nullptr;
   jmethodID setProp = nullptr;
@@ -2474,10 +2484,17 @@ void evaluateBytecode(
     size_t length,
     const std::string &sourceUrl) {
   if (!runtime || !data || length == 0) return;
-  // TODO: Support Hermes bytecode evaluation (HBC).
-  auto buffer = std::make_shared<facebook::jsi::StringBuffer>(std::string(reinterpret_cast<const char *>(data), length));
+  const std::string url = sourceUrl.empty() ? "<unknown>" : sourceUrl;
+  if (!facebook::hermes::HermesRuntime::isHermesBytecode(data, length)) {
+    std::string code(reinterpret_cast<const char *>(data), length);
+    evaluateString(runtime, code, url);
+    return;
+  }
+
+  facebook::hermes::HermesRuntime::prefetchHermesBytecode(data, length);
+  auto buffer = std::make_shared<BytecodeBuffer>(data, length);
   try {
-    runtime->evaluateJavaScript(buffer, sourceUrl);
+    runtime->evaluateJavaScript(buffer, url);
   } catch (const facebook::jsi::JSError &err) {
     BRIDGE_LOG(ANDROID_LOG_ERROR, "Hermes evaluateBytecode error: %s", err.getMessage().c_str());
     auto state = getState(runtime);

@@ -14,7 +14,7 @@ This document tracks the implementation status of core features for the Android 
 - **Renderer:** ✅ **Complete**. The renderer batches UI updates and flushes them once per frame using Android's `Choreographer`. A manual `__ui.flush()` is also exposed for debugging.
 - **Diagnostics:** ✅ **Complete**. A unified error pipeline is in place. `Bridge.cpp` catches JSI errors and forwards them to a Kotlin-side handler (`RuneDiagnostics`) that displays a RedBox.
 - **Modules:** ✅ **Complete**. The `__modules.call` function is Promise-based. The `HermesModulesShim` executes module logic on a background `ExecutorService` to avoid blocking the JS or main threads.
-- **Hermes Bytecode (HBC):** ✅ **Complete**. `HermesAdapter.kt`'s `loadMainBundle` method checks for a system property (`RUNE_USE_HBC`) to decide whether to load `main.hbc` or fall back to `main.js`.
+- **Hermes Bytecode (HBC):** ✅ **Complete**. `HermesAdapter.kt`'s `loadMainBundle` method prefers `main.hbc` when enabled (default on in release via `BuildConfig.RUNE_USE_HBC`, overridable with `RUNE_USE_HBC`), and falls back to `main.js`.
 - **Handler Hygiene:** ✅ **Complete**. The `RuneUIManager` correctly manages the lifecycle of click listeners, ensuring they are added and removed as `onPress` props change to prevent leaks or duplicate invocations.
 
 ---
