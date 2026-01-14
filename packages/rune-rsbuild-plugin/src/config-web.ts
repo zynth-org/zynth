@@ -1,4 +1,5 @@
 import path from "node:path";
+import fs from "node:fs";
 import {
   defineConfig,
   type RsbuildConfig,
@@ -64,6 +65,34 @@ const DEFAULT_WEB_CONFIG: RsbuildConfig = {
   },
 };
 
+function findWorkspaceRoot(start: string): string {
+  let current = path.resolve(start);
+  while (true) {
+    const pkgPath = path.join(current, "package.json");
+    try {
+      const raw = fs.readFileSync(pkgPath, "utf8");
+      if (JSON.parse(raw).workspaces) return current;
+    } catch {
+      // keep walking
+    }
+    const parent = path.dirname(current);
+    if (parent === current) return start;
+    current = parent;
+  }
+}
+
+function normalizeCopyPatterns(
+  copy: RsbuildConfig["output"] extends { copy?: infer C } ? C : unknown
+): (string | { from: string; to?: string })[] {
+  if (!copy) return [];
+  if (Array.isArray(copy)) return [...copy];
+  if (typeof copy === "object" && "patterns" in (copy as any)) {
+    const patterns = (copy as any).patterns;
+    return Array.isArray(patterns) ? [...patterns] : [];
+  }
+  return [];
+}
+
 export function getWebConfig(
   userConfig: RsbuildConfig,
   options: DefineRuneConfigOptions
@@ -87,6 +116,32 @@ export function getWebConfig(
   const merged = deepmerge(DEFAULT_WEB_CONFIG, sanitizedUserConfig, {
     arrayMerge: (_destinationArray, sourceArray) => sourceArray,
   }) as RsbuildConfig;
+
+  const workspaceRoot = findWorkspaceRoot(process.cwd());
+  const iconsFontsDir = path.join(
+    workspaceRoot,
+    "packages",
+    "rune-icons",
+    "assets",
+    "fonts"
+  );
+  if (fs.existsSync(iconsFontsDir)) {
+    const patterns = normalizeCopyPatterns(merged.output?.copy);
+    const alreadyIncluded = patterns.some((pattern) => {
+      if (typeof pattern === "string") {
+        return path.resolve(pattern) === path.resolve(iconsFontsDir);
+      }
+      return (
+        typeof pattern === "object" &&
+        path.resolve(pattern.from) === path.resolve(iconsFontsDir)
+      );
+    });
+    if (!alreadyIncluded) {
+      patterns.push({ from: iconsFontsDir, to: "assets/fonts" });
+    }
+    merged.output = merged.output ?? {};
+    merged.output.copy = patterns;
+  }
 
   // Ensure absolute path for template if it relies on default
   if (merged.html && merged.html.template === "./public/index.html") {

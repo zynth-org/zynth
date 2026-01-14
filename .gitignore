@@ -42,6 +42,9 @@ packages/rune-android/**/build/
 packages/**/android/**/build/
 packages/rune-android/**/.cxx/
 packages/rune-android/**/.gradle/
+packages/rune-icons/assets/fonts/*.ttf
+packages/rune-icons/ios/Fonts/*.ttf
+packages/rune-icons/android/src/main/assets/fonts/*.ttf
 
 # macOS
 .DS_Store

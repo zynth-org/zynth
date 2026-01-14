@@ -12,7 +12,9 @@ Icon font pack generated from [`solid-icons`](https://www.npmjs.com/package/soli
   - `dist/fonts/<pack>/<FontName>.ttf`
   - `dist/fonts/<pack>/glyph-map.json`
   - `dist/fonts/<pack>/info.json`
-- TTF files are copied to `ios/Fonts` and `android/src/main/assets/fonts`.
+- TTF files are copied to `assets/fonts` (single source for web) and to the native folders:
+  - `ios/Fonts`
+  - `android/src/main/assets/fonts`
 - An index export is regenerated at `src/index.ts`. Metadata is stored at `dist/icons-meta/solid-icons.json`.
 
 ## What ships

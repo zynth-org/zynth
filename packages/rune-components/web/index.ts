@@ -15,5 +15,3 @@ import "./Modal";
 import "./GlassView";
 import "./GlassContainer";
 import "./StatusBar";
-
-console.log("[Rune Web] Registering web components...");

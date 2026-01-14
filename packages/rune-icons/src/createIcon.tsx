@@ -7,7 +7,34 @@ const fontLoadState = new Map<string, "loading" | "loaded" | "error">();
 const fontLoadPromises = new Map<string, Promise<void>>();
 const fontLoadListeners = new Map<string, Set<() => void>>();
 
+type WebFontSources = Record<string, string>;
+
+function ensureWebFontSource(fontFamily: string) {
+  if (typeof document === "undefined") {
+    return;
+  }
+
+  const docBase = (document as Document).baseURI || "";
+  const baseUrl = docBase.startsWith("http") ? docBase : import.meta.url || "";
+  if (!baseUrl) {
+    return;
+  }
+
+  const globalObj =
+    typeof globalThis !== "undefined" ? (globalThis as any) : (window as any);
+  const sources = (globalObj.__rune_web_font_sources ??=
+    {}) as WebFontSources;
+
+  if (!sources[fontFamily]) {
+    sources[fontFamily] = new URL(
+      `../assets/fonts/${fontFamily}.ttf`,
+      baseUrl
+    ).toString();
+  }
+}
+
 function loadFont(fontFamily: string): Promise<void> {
+  ensureWebFontSource(fontFamily);
   const state = fontLoadState.get(fontFamily);
 
   if (state === "loaded") {
