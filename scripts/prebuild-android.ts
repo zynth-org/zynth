@@ -46,12 +46,19 @@ export function main(options: any = {}): void {
     const assetsDir = path.join(androidDir, "app", "src", "main", "assets");
     const bundleDest = path.join(assetsDir, "main.js");
     const hbcDest = path.join(assetsDir, "main.hbc");
+    const isDev = Boolean(options.dev);
 
     if (!fs.existsSync(assetsDir)) {
       fs.mkdirSync(assetsDir, { recursive: true });
     }
 
-    if (fs.existsSync(bundleSrc)) {
+    if (isDev) {
+      if (!quiet) {
+        console.log(
+          "\n⚡ Dev prebuild skips copying the JS bundle (served via Rsbuild dev server)."
+        );
+      }
+    } else if (fs.existsSync(bundleSrc)) {
       fs.copyFileSync(bundleSrc, bundleDest);
       if (!quiet) {
         console.log(
@@ -115,12 +122,10 @@ export function main(options: any = {}): void {
           );
         }
       }
-    } else {
-      if (!quiet) {
-        console.warn(
-          "\n⚠️  JS bundle not found (dist/main.js). Run the JS build before prebuild."
-        );
-      }
+    } else if (!quiet) {
+      console.warn(
+        "\n⚠️  JS bundle not found (dist/main.js). Run the JS build before prebuild."
+      );
     }
     if (!quiet) {
       console.log("\n✅ Android project ready.");
