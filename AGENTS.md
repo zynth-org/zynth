@@ -3,7 +3,7 @@
 ## Project Structure & Module Organization
 
 - Monorepo driven by Yarn workspaces: runtime packages live in `packages/`, example app in `apps/components/`, shared helpers in `scripts/`.
-- Key packages: `rune-core` (renderer), `rune-ios` / `rune-android` (native bridges), `rune-router`, `rune-components`, `rune-apis`, `rune-cli`, and `rune-templates`.
+- Key packages: `rune-core` (renderer), `rune-ios` / `rune-android` (native bridges), `rune-components`, `rune-apis`, `rune-cli`, and `rune-templates`.
 - `apps/components` is the primary dev harness; it consumes packages directly from `node_modules` and hosts the iOS/Android workspaces.
 - Type roots are in `types/`; path aliases are defined in `tsconfig.base.json` and mirrored by `scripts/sync-workspace-aliases.js`.
 

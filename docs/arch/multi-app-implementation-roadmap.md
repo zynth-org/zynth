@@ -152,7 +152,7 @@ This feature requires significant changes to the core engine to support multiple
 
 **Goal:** Ensure Guest navigation doesn't break Host navigation.
 
-- **`rune-router`**:
+- **`rune-memory-router`**:
   - Refactor to avoid global `window.history` or shared native controllers if possible.
   - Ensure the Guest router pushes view controllers (iOS) or Fragments (Android) _inside_ the HypervisorView hierarchy, not the root `UINavigationController`.
   - _Challenge:_ Modal presentation inside a guest (should it cover the guest area or the whole screen? Default to guest area).
