@@ -1,0 +1,17 @@
+{
+  "name": "@zynth/android",
+  "version": "0.0.1",
+  "description": "Zynth Android native SDK",
+  "license": "MIT",
+  "files": [
+    "android"
+  ],
+  "keywords": ["zynth", "solid", "native", "android"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zynth/zynth"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

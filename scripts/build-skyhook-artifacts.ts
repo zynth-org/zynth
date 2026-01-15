@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 
 type PackageJson = {
   name?: string;
-  runeSkyhook?: { artifacts?: boolean };
+  zynthSkyhook?: { artifacts?: boolean };
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
   peerDependencies?: Record<string, string>;
@@ -50,7 +50,7 @@ async function buildArtifacts() {
   const outputFlag = process.argv.find((arg) => arg.startsWith("--output="));
   const outputDir = outputFlag
     ? resolve(outputFlag.replace("--output=", ""))
-    : join(root, "packages", "rune-skyhook", "vendor", "prebundle");
+    : join(root, "packages", "zynth-skyhook", "vendor", "prebundle");
 
   if (!skipBundle) {
     await runYarnBundle(root);
@@ -78,7 +78,7 @@ async function buildArtifacts() {
 
     const pkgName = pkgJson.name;
     if (!pkgName) continue;
-    if (pkgJson.runeSkyhook?.artifacts === false) continue;
+    if (pkgJson.zynthSkyhook?.artifacts === false) continue;
 
     const distDir = join(pkgDir, "dist");
     try {
@@ -88,8 +88,8 @@ async function buildArtifacts() {
       continue;
     }
 
-    const folderName = pkgName.startsWith("@rune/")
-      ? pkgName.replace("@rune/", "rune-")
+    const folderName = pkgName.startsWith("@zynth/")
+      ? pkgName.replace("@zynth/", "zynth-")
       : entry.name;
     const targetDir = join(outputDir, folderName);
 
@@ -147,8 +147,8 @@ function rewriteInternalDeps(pkgJson: PackageJson, folderMap: Record<string, str
     const rewritten: Record<string, string> = { ...deps };
 
     for (const depName of Object.keys(rewritten)) {
-      if (!depName.startsWith("@rune/")) continue;
-      const folderName = folderMap[depName] ?? depName.replace("@rune/", "rune-");
+      if (!depName.startsWith("@zynth/")) continue;
+      const folderName = folderMap[depName] ?? depName.replace("@zynth/", "zynth-");
       rewritten[depName] = `file:../${folderName}`;
     }
 

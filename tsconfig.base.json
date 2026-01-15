@@ -10,141 +10,141 @@
       "./node_modules/@types"
     ],
     "types": [
-      "rune-jsx"
+      "zynth-jsx"
     ],
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
     "baseUrl": ".",
     "paths": {
-      "@rune/animate": [
-        "packages/rune-animate/src/index.ts"
+      "@zynth/animate": [
+        "packages/zynth-animate/src/index.ts"
       ],
-      "@rune/animate/*": [
-        "packages/rune-animate/src/*"
+      "@zynth/animate/*": [
+        "packages/zynth-animate/src/*"
       ],
-      "@rune/apis": [
-        "packages/rune-apis/src/index.ts"
+      "@zynth/apis": [
+        "packages/zynth-apis/src/index.ts"
       ],
-      "@rune/apis/*": [
-        "packages/rune-apis/src/*"
+      "@zynth/apis/*": [
+        "packages/zynth-apis/src/*"
       ],
-      "@rune/async-storage": [
-        "packages/rune-async-storage/src/index.ts"
+      "@zynth/async-storage": [
+        "packages/zynth-async-storage/src/index.ts"
       ],
-      "@rune/async-storage/*": [
-        "packages/rune-async-storage/src/*"
+      "@zynth/async-storage/*": [
+        "packages/zynth-async-storage/src/*"
       ],
-      "@rune/bottom-sheet": [
-        "packages/rune-bottom-sheet/src/index.ts"
+      "@zynth/bottom-sheet": [
+        "packages/zynth-bottom-sheet/src/index.ts"
       ],
-      "@rune/bottom-sheet/*": [
-        "packages/rune-bottom-sheet/src/*"
+      "@zynth/bottom-sheet/*": [
+        "packages/zynth-bottom-sheet/src/*"
       ],
-      "@rune/components": [
-        "packages/rune-components/src/index.ts"
+      "@zynth/components": [
+        "packages/zynth-components/src/index.ts"
       ],
-      "@rune/components/*": [
-        "packages/rune-components/src/*"
+      "@zynth/components/*": [
+        "packages/zynth-components/src/*"
       ],
-      "@rune/core": [
-        "packages/rune-core/src/index.ts"
+      "@zynth/core": [
+        "packages/zynth-core/src/index.ts"
       ],
-      "@rune/core/*": [
-        "packages/rune-core/src/*"
+      "@zynth/core/*": [
+        "packages/zynth-core/src/*"
       ],
-      "@rune/core/universal": [
-        "packages/rune-core/src/universal.ts"
+      "@zynth/core/universal": [
+        "packages/zynth-core/src/universal.ts"
       ],
-      "@rune/filesystem": [
-        "packages/rune-filesystem/src/index.ts"
+      "@zynth/filesystem": [
+        "packages/zynth-filesystem/src/index.ts"
       ],
-      "@rune/filesystem/*": [
-        "packages/rune-filesystem/src/*"
+      "@zynth/filesystem/*": [
+        "packages/zynth-filesystem/src/*"
       ],
-      "@rune/haptics": [
-        "packages/rune-haptics/src/index.ts"
+      "@zynth/haptics": [
+        "packages/zynth-haptics/src/index.ts"
       ],
-      "@rune/haptics/*": [
-        "packages/rune-haptics/src/*"
+      "@zynth/haptics/*": [
+        "packages/zynth-haptics/src/*"
       ],
-      "@rune/hypervisor": [
-        "packages/rune-hypervisor/src/index.ts"
+      "@zynth/hypervisor": [
+        "packages/zynth-hypervisor/src/index.ts"
       ],
-      "@rune/hypervisor/*": [
-        "packages/rune-hypervisor/src/*"
+      "@zynth/hypervisor/*": [
+        "packages/zynth-hypervisor/src/*"
       ],
-      "@rune/icons": [
-        "packages/rune-icons/src/index.ts"
+      "@zynth/icons": [
+        "packages/zynth-icons/src/index.ts"
       ],
-      "@rune/icons/*": [
-        "packages/rune-icons/src/*"
+      "@zynth/icons/*": [
+        "packages/zynth-icons/src/*"
       ],
-      "@rune/image-picker": [
-        "packages/rune-image-picker/src/index.ts"
+      "@zynth/image-picker": [
+        "packages/zynth-image-picker/src/index.ts"
       ],
-      "@rune/image-picker/*": [
-        "packages/rune-image-picker/src/*"
+      "@zynth/image-picker/*": [
+        "packages/zynth-image-picker/src/*"
       ],
-      "@rune/keyboard": [
-        "packages/rune-keyboard/src/index.ts"
+      "@zynth/keyboard": [
+        "packages/zynth-keyboard/src/index.ts"
       ],
-      "@rune/keyboard/*": [
-        "packages/rune-keyboard/src/*"
+      "@zynth/keyboard/*": [
+        "packages/zynth-keyboard/src/*"
       ],
-      "@rune/memory-router": [
-        "packages/rune-memory-router/src/index.ts"
+      "@zynth/memory-router": [
+        "packages/zynth-memory-router/src/index.ts"
       ],
-      "@rune/memory-router/*": [
-        "packages/rune-memory-router/src/*"
+      "@zynth/memory-router/*": [
+        "packages/zynth-memory-router/src/*"
       ],
-      "@rune/rsbuild-plugin": [
-        "packages/rune-rsbuild-plugin/src/index.ts"
+      "@zynth/rsbuild-plugin": [
+        "packages/zynth-rsbuild-plugin/src/index.ts"
       ],
-      "@rune/rsbuild-plugin/*": [
-        "packages/rune-rsbuild-plugin/src/*"
+      "@zynth/rsbuild-plugin/*": [
+        "packages/zynth-rsbuild-plugin/src/*"
       ],
-      "@rune/safe-area": [
-        "packages/rune-safe-area/src/index.ts"
+      "@zynth/safe-area": [
+        "packages/zynth-safe-area/src/index.ts"
       ],
-      "@rune/safe-area/*": [
-        "packages/rune-safe-area/src/*"
+      "@zynth/safe-area/*": [
+        "packages/zynth-safe-area/src/*"
       ],
-      "@rune/screens": [
-        "packages/rune-screens/src/index.ts"
+      "@zynth/screens": [
+        "packages/zynth-screens/src/index.ts"
       ],
-      "@rune/screens/*": [
-        "packages/rune-screens/src/*"
+      "@zynth/screens/*": [
+        "packages/zynth-screens/src/*"
       ],
-      "@rune/secure-store": [
-        "packages/rune-secure-store/src/index.ts"
+      "@zynth/secure-store": [
+        "packages/zynth-secure-store/src/index.ts"
       ],
-      "@rune/secure-store/*": [
-        "packages/rune-secure-store/src/*"
+      "@zynth/secure-store/*": [
+        "packages/zynth-secure-store/src/*"
       ],
-      "@rune/skyhook": [
-        "packages/rune-skyhook/src/index.ts"
+      "@zynth/skyhook": [
+        "packages/zynth-skyhook/src/index.ts"
       ],
-      "@rune/skyhook/*": [
-        "packages/rune-skyhook/src/*"
+      "@zynth/skyhook/*": [
+        "packages/zynth-skyhook/src/*"
       ],
-      "@rune/splash-screen": [
-        "packages/rune-splash-screen/src/index.ts"
+      "@zynth/splash-screen": [
+        "packages/zynth-splash-screen/src/index.ts"
       ],
-      "@rune/splash-screen/*": [
-        "packages/rune-splash-screen/src/*"
+      "@zynth/splash-screen/*": [
+        "packages/zynth-splash-screen/src/*"
       ],
-      "@rune/ui": [
-        "packages/rune-ui/src/index.ts"
+      "@zynth/ui": [
+        "packages/zynth-ui/src/index.ts"
       ],
-      "@rune/ui/*": [
-        "packages/rune-ui/src/*"
+      "@zynth/ui/*": [
+        "packages/zynth-ui/src/*"
       ],
-      "@rune/webserver": [
-        "packages/rune-webserver/src/index.ts"
+      "@zynth/webserver": [
+        "packages/zynth-webserver/src/index.ts"
       ],
-      "@rune/webserver/*": [
-        "packages/rune-webserver/src/*"
+      "@zynth/webserver/*": [
+        "packages/zynth-webserver/src/*"
       ]
     }
   }

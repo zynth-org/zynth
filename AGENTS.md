@@ -1,10 +1,10 @@
-# Agent Guidelines: Rune Core Engineer
+# Agent Guidelines: Zynth Core Engineer
 
-You are an expert software engineer specializing in the **Rune Framework**. Your goal is to build, maintain, and refine this high-performance hybrid runtime.
+You are an expert software engineer specializing in the **Zynth Framework**. Your goal is to build, maintain, and refine this high-performance hybrid runtime.
 
 ## Core Philosophy
 
-1.  **Performance First:** Every abstraction comes with a cost. Rune minimizes this cost by using **SolidJS** (no VDOM) and **JSI** (synchronous bridging). Prefer direct native calls over complex JS logic when performance is critical.
+1.  **Performance First:** Every abstraction comes with a cost. Zynth minimizes this cost by using **SolidJS** (no VDOM) and **JSI** (synchronous bridging). Prefer direct native calls over complex JS logic when performance is critical.
 2.  **Native Fidelity:** The end result must feel indistinguishable from a native iOS/Android app. Use platform-specific primitives (`UINavigationController`, `HapticFeedback`) whenever possible.
 3.  **Developer Experience:** The API should be intuitive. Follow "Convention over Configuration".
 
@@ -36,8 +36,8 @@ Before starting any task, consult:
 
 ### Adding a New Native Feature
 1.  **Define Interface:** Create the TS type definition in the appropriate package.
-2.  **Implement iOS:** Write the Swift/Obj-C code in `packages/rune-ios` or the package's `ios/` folder.
-3.  **Implement Android:** Write the Kotlin/C++ code in `packages/rune-android` or the package's `android/` folder.
+2.  **Implement iOS:** Write the Swift/Obj-C code in `packages/zynth-ios` or the package's `ios/` folder.
+3.  **Implement Android:** Write the Kotlin/C++ code in `packages/zynth-android` or the package's `android/` folder.
 4.  **Bridge:** Expose via JSI or the Module system.
 5.  **Test:** Add an example to `apps/components` and run `yarn dev:ios` / `yarn dev:android`.
 

@@ -1,0 +1,70 @@
+{
+  "name": "@zynth/ui",
+  "version": "0.0.1",
+  "description": "Theme system and UI primitives for Zynth",
+  "type": "module",
+  "main": "dist/esm/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "types": "./dist/types/index.d.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "ios",
+    "android",
+    "ZynthUI.podspec"
+  ],
+  "scripts": {
+    "build": "yarn build:js && yarn build:types",
+    "build:js": "rm -rf dist/esm && tsc --project tsconfig.json && cp -R src/themes dist/esm/themes",
+    "build:types": "tsc --project tsconfig.types.json",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "zynth",
+    "ui",
+    "theme",
+    "native-module"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "@zynth/core": ">=0.0.1",
+    "@zynth/components": ">=0.0.1",
+    "solid-js": ">=1.8.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  },
+  "zynthNative": {
+    "ios": {
+      "pods": [
+        {
+          "name": "ZynthUI",
+          "podspec": "./ZynthUI.podspec"
+        }
+      ],
+      "initializer": {
+        "className": "ZynthAppearanceModule",
+        "method": "initializeWith:"
+      }
+    },
+    "android": {
+      "modules": [
+        {
+          "name": "ZynthUI",
+          "path": "./android/ZynthUI"
+        }
+      ],
+      "initializer": {
+        "className": "ZynthAppearance",
+        "method": "initialize",
+        "package": "dev.zynth.ui"
+      }
+    }
+  }
+}

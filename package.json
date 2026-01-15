@@ -1,5 +1,5 @@
 {
-  "name": "runejs",
+  "name": "zynth",
   "private": true,
   "workspaces": [
     "packages/*",
@@ -12,9 +12,9 @@
     "prebuild:android": "yarn workspace @demo/sn-demo prebuild:android",
     "ios:dev": "yarn workspace @demo/sn-demo ios:dev",
     "android:dev": "yarn workspace @demo/sn-demo android:dev",
-    "bundle:apps": "rune bundle apps",
-    "bundle:packages": "rune bundle packages",
-    "bundle": "rune bundle all",
+    "bundle:apps": "zynth bundle apps",
+    "bundle:packages": "zynth bundle packages",
+    "bundle": "zynth bundle all",
     "reset:ios": "yarn workspace @demo/sn-demo reset:ios",
     "reset:android": "yarn workspace @demo/sn-demo reset:android",
     "generate": "node --experimental-strip-types scripts/generate.ts",
@@ -22,8 +22,8 @@
     "new:package": "node --experimental-strip-types scripts/new-package.ts"
   },
   "devDependencies": {
-    "@rune/cli": "*",
-    "@rune/templates": "*",
+    "@zynth/cli": "*",
+    "@zynth/templates": "*",
     "@types/node": "^25.0.3",
     "baseline-browser-mapping": "^2.9.14",
     "solid-refresh": "^0.7.5",

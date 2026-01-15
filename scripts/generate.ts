@@ -16,7 +16,7 @@ if (target !== "icons") {
 }
 
 const runtime = rest.includes("--runtime");
-const cmdArgs = ["workspace", "@rune/icons", "generate"];
+const cmdArgs = ["workspace", "@zynth/icons", "generate"];
 if (runtime) {
   cmdArgs.push("runtime");
 }

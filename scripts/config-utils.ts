@@ -22,7 +22,7 @@ export function safeReadJSON(filePath: string): any {
   }
 }
 
-// Configuration - parse app info from app.json (Rune-style) and package.json
+// Configuration - parse app info from app.json (Zynth-style) and package.json
 export function getAppConfig(appDir: string): AppConfig {
   const pkgPath = path.join(appDir, "package.json");
   const appJsonPath = path.join(appDir, "app.json");
@@ -34,11 +34,11 @@ export function getAppConfig(appDir: string): AppConfig {
   const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
   const appName = path.basename(appDir);
 
-  // Try to read app.json (Rune-style config)
+  // Try to read app.json (Zynth-style config)
   let appConfig: any = {};
   if (fs.existsSync(appJsonPath)) {
     const appJson = JSON.parse(fs.readFileSync(appJsonPath, "utf8"));
-    appConfig = appJson.rune || appJson;
+    appConfig = appJson.zynth || appJson;
   }
 
   // Clean app name for Xcode (no spaces, special chars)
@@ -52,7 +52,7 @@ export function getAppConfig(appDir: string): AppConfig {
     bundleId:
       appConfig.ios?.bundleIdentifier ||
       pkg.bundleId ||
-      `com.rune.${appName.replace(/-/g, "")}`,
+      `com.zynth.${appName.replace(/-/g, "")}`,
     workspaceName: pkg.name || `@demo/${appName}`,
     displayName: appConfig.name || pkg.displayName || appName,
     version: appConfig.version || pkg.version || "1.0.0",

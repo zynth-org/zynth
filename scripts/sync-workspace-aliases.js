@@ -2,7 +2,7 @@
 
 /**
  * Auto-sync workspace package aliases to tsconfig.base.json
- * Run this after adding new @rune/* packages
+ * Run this after adding new @zynth/* packages
  */
 
 import { readdir, readFile, writeFile } from "node:fs/promises";
@@ -15,7 +15,7 @@ const packagesDir = join(repoRoot, "packages");
 const tsconfigPath = join(repoRoot, "tsconfig.base.json");
 
 async function main() {
-  console.log("🔍 Discovering @rune/* packages...");
+  console.log("🔍 Discovering @zynth/* packages...");
 
   const entries = await readdir(packagesDir, { withFileTypes: true });
   const paths = {};
@@ -30,7 +30,7 @@ async function main() {
       const raw = await readFile(packageJsonPath, "utf8");
       const pkg = JSON.parse(raw);
 
-      if (pkg.name?.startsWith("@rune/")) {
+      if (pkg.name?.startsWith("@zynth/")) {
         // Check if src/index.ts exists
         const srcIndex = join(packageDir, "src/index.ts");
         try {
@@ -40,15 +40,15 @@ async function main() {
           paths[`${pkg.name}/*`] = [`packages/${entry.name}/src/*`];
           console.log(`  ✓ ${pkg.name}`);
 
-          // Special case for @rune/core/universal
-          if (pkg.name === "@rune/core") {
+          // Special case for @zynth/core/universal
+          if (pkg.name === "@zynth/core") {
             try {
               const universalPath = join(packageDir, "src/universal.ts");
               await readFile(universalPath);
-              paths["@rune/core/universal"] = [
+              paths["@zynth/core/universal"] = [
                 `packages/${entry.name}/src/universal.ts`,
               ];
-              console.log(`  ✓ @rune/core/universal`);
+              console.log(`  ✓ @zynth/core/universal`);
             } catch {
               // No universal.ts, skip
             }

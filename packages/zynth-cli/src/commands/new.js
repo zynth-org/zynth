@@ -1,0 +1,144 @@
+const fs = require("fs");
+const path = require("path");
+const prompts = require("prompts");
+const chalk = require("chalk");
+const { findWorkspaceRoot, readJSON } = require("../utils");
+
+async function createNewApp(argv) {
+  const root = findWorkspaceRoot(process.cwd());
+  const { directory, path: customPath } = argv;
+
+  const baseDir = customPath ? path.resolve(customPath) : process.cwd();
+
+  if (directory && fs.existsSync(path.join(baseDir, directory))) {
+    console.error(
+      chalk.red(`Directory '${directory}' already exists in '${baseDir}'.`)
+    );
+    process.exit(1);
+  }
+
+  let appDirectory = directory;
+  if (!appDirectory) {
+    const response = await prompts({
+      type: "text",
+      name: "directory",
+      message: "Enter the directory name for your new app:",
+      validate: (value) =>
+        fs.existsSync(path.join(baseDir, value))
+          ? "Directory already exists"
+          : true,
+    });
+    appDirectory = response.directory;
+  }
+
+  if (!appDirectory) {
+    console.error(chalk.red("App directory is required."));
+    process.exit(1);
+  }
+
+  const appPath = path.join(baseDir, appDirectory);
+  const appName = path.basename(appPath);
+  const templatesDir = path.join(root, "packages", "zynth-templates");
+  const appTemplateDir = path.join(templatesDir, "app");
+
+  const questions = [
+    {
+      type: "text",
+      name: "displayName",
+      message: "Enter the display name for your app:",
+      initial: appName,
+    },
+    {
+      type: "text",
+      name: "slug",
+      message: "Enter the slug for your app:",
+      initial: appName.toLowerCase().replace(/\s+/g, "-"),
+    },
+  ];
+
+  const { displayName, slug } = await prompts(questions);
+
+  if (!displayName || !slug) {
+    console.error(chalk.red("App name and slug are required."));
+    process.exit(1);
+  }
+
+  console.log(chalk.cyan(`Creating a new Zynth app in ${appPath}`));
+
+  fs.mkdirSync(appPath, { recursive: true });
+
+  // Copy app templates
+  fs.cpSync(appTemplateDir, appPath, { recursive: true });
+
+  // Create src folder and files
+  const srcDir = path.join(appPath, "src");
+  fs.mkdirSync(srcDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(srcDir, "index.tsx"),
+    `import { start } from "@zynth/core";
+import App from "./App";
+
+start(App);`
+  );
+  fs.writeFileSync(
+    path.join(srcDir, "App.tsx"),
+    `import { View, Text } from "@zynth/components";
+
+export default function App() {
+  return (
+    <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+      <Text>Welcome to Zynth</Text>
+    </View>
+  );
+}`
+  );
+
+  // Update app.json
+  const appJsonPath = path.join(appPath, "app.json");
+  const appJson = readJSON(appJsonPath);
+  appJson.name = displayName;
+  appJson.slug = slug;
+  if (!appJson.zynth || typeof appJson.zynth !== "object") {
+    appJson.zynth = {};
+  }
+  appJson.zynth.name = displayName;
+  appJson.zynth.slug = slug;
+  fs.writeFileSync(appJsonPath, JSON.stringify(appJson, null, 2));
+
+  // Update package.json
+  const packageJsonPath = path.join(appPath, "package.json");
+  const packageJson = readJSON(packageJsonPath);
+  packageJson.name = slug;
+  fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
+
+  console.log(chalk.green("✅ App created successfully!"));
+  console.log(
+    chalk.cyan(`To get started, run:
+
+  cd ${directory}
+  zynth dev ios`)
+  );
+}
+
+module.exports = {
+  command: "new [directory]",
+  describe: "Create a new Zynth app",
+  builder: (yargs) => {
+    yargs
+      .positional("directory", {
+        describe: "The directory to create the app in",
+        type: "string",
+      })
+      .option("path", {
+        alias: "p",
+        type: "string",
+        description: "The path to create the app in",
+      });
+  },
+  handler: (argv) => {
+    createNewApp(argv).catch((err) => {
+      console.error(chalk.red(err.stack));
+      process.exit(1);
+    });
+  },
+};

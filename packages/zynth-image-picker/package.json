@@ -1,0 +1,52 @@
+{
+  "name": "@zynth/image-picker",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "dist/esm/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
+  "sideEffects": false,
+  "license": "MIT",
+  "files": [
+    "dist",
+    "android",
+    "src",
+    "package.json"
+  ],
+  "devDependencies": {
+    "@rsbuild/core": "^1.0.1",
+    "typescript": "^5.6.2"
+  },
+  "scripts": {
+    "build": "yarn build:js && yarn build:types",
+    "build:js": "rm -rf dist/esm && tsc --project tsconfig.esm.json",
+    "build:types": "tsc --project tsconfig.types.json"
+  },
+  "zynthNative": {
+    "ios": {
+      "pods": [
+        {
+          "name": "ZynthImagePicker",
+          "podspec": "./ZynthImagePicker.podspec"
+        }
+      ],
+      "initializer": {
+        "className": "ZynthImagePicker",
+        "method": "initializeWith:"
+      }
+    },
+    "android": {
+      "modules": [
+        {
+          "name": "ZynthImagePicker",
+          "path": "./android"
+        }
+      ],
+      "initializer": {
+        "className": "ZynthImagePicker",
+        "method": "initialize",
+        "package": "dev.zynth.imagepicker"
+      }
+    }
+  }
+}

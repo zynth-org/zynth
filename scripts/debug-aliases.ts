@@ -14,7 +14,7 @@ async function pickFirstExisting(paths: string[]): Promise<string | null> {
   return null;
 }
 
-async function discoverRunePackageAliases(
+async function discoverZynthPackageAliases(
   repoRoot: string,
   isWeb: boolean
 ): Promise<Record<string, string>> {
@@ -36,8 +36,8 @@ async function discoverRunePackageAliases(
         const raw = await fs.readFile(packageJsonPath, "utf8");
         const pkg = JSON.parse(raw) as { name?: string };
 
-        // Only process @rune/* packages
-        if (pkg.name?.startsWith("@rune/")) {
+        // Only process @zynth/* packages
+        if (pkg.name?.startsWith("@zynth/")) {
           const srcDir = path.join(packageDir, "src");
           const candidates = [
             ...(isWeb ? ["index.web.ts", "index.web.tsx"] : []),
@@ -58,7 +58,7 @@ async function discoverRunePackageAliases(
     }
   } catch (error) {
     console.warn(
-      `[rune-rsbuild-plugin] Could not discover packages in ${packagesDir}:`,
+      `[zynth-rsbuild-plugin] Could not discover packages in ${packagesDir}:`,
       error
     );
   }
@@ -69,6 +69,6 @@ async function discoverRunePackageAliases(
 // Run it
 const root = process.cwd();
 console.log("Root:", root);
-discoverRunePackageAliases(root, true).then((aliases) => {
+discoverZynthPackageAliases(root, true).then((aliases) => {
   console.log("Aliases for WEB:", aliases);
 });

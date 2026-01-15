@@ -1,0 +1,248 @@
+#if __has_include(<ZynthKit/ZynthKit.h>)
+#import <ZynthKit/ZynthKit.h>
+#import <ZynthKit/SNHexColor.h>
+#else
+#import "ZynthKit.h"
+#import "ZynthComponentAPI.h"
+#import "SNUIManager.h"
+#import "SNNode.h"
+#import "SNHexColor.h"
+#import "ZynthViewHost.h"
+#endif
+
+#import "ZynthButtonView.h"
+
+static BOOL ZynthButtonHandleSetProp(SNUIManager *manager,
+                                    SNNode *node,
+                                    NSString *name,
+                                    id value,
+                                    NSString *rawJSON) {
+  if (!node || ![node.view isKindOfClass:[ZynthButtonView class]]) {
+    return NO;
+  }
+  ZynthButtonView *button = (ZynthButtonView *)node.view;
+
+  if ([name isEqualToString:@"disabled"]) {
+    BOOL disabled = value && value != (id)[NSNull null] ? [value boolValue] : NO;
+    [button zynth_setDisabled:disabled];
+    return YES;
+  }
+
+  if ([name isEqualToString:@"loading"]) {
+    BOOL loading = value && value != (id)[NSNull null] ? [value boolValue] : NO;
+    [button zynth_setLoading:loading];
+    return YES;
+  }
+
+  if ([name isEqualToString:@"variant"]) {
+    NSString *variant = [value isKindOfClass:[NSString class]] ? (NSString *)value : nil;
+    [button zynth_setVariant:variant];
+    return YES;
+  }
+  
+  if ([name isEqualToString:@"role"]) {
+    NSString *role = [value isKindOfClass:[NSString class]] ? (NSString *)value : nil;
+    [button zynth_setRole:role];
+    return YES;
+  }
+  
+  if ([name isEqualToString:@"size"]) {
+    NSString *size = [value isKindOfClass:[NSString class]] ? (NSString *)value : nil;
+    [button zynth_setSize:size];
+    return YES;
+  }
+  
+  if ([name isEqualToString:@"title"]) {
+    NSString *title = [value isKindOfClass:[NSString class]] ? (NSString *)value : nil;
+    [button zynth_setTitle:title];
+    return YES;
+  }
+  
+  if ([name isEqualToString:@"baseColor"]) {
+    UIColor *color = nil;
+    if ([value isKindOfClass:[NSString class]]) {
+      color = SNColorFromHex((NSString *)value);
+    }
+    [button zynth_setBaseColor:color];
+    return YES;
+  }
+
+  if ([name isEqualToString:@"tintColor"]) {
+    UIColor *color = nil;
+    if ([value isKindOfClass:[NSString class]]) {
+      color = SNColorFromHex((NSString *)value);
+    }
+    [button zynth_setGlassTintColor:color];
+    return YES;
+  }
+  
+  if ([name isEqualToString:@"pointerEvents"]) {
+    NSString *mode = [value isKindOfClass:[NSString class]] ? (NSString *)value : nil;
+    button.pointerMode = ZynthPointerEventsFromString(mode);
+    return YES;
+  }
+
+  if ([name isEqualToString:@"enableGlassIOS"]) {
+    BOOL enabled = value && value != (id)[NSNull null] ? [value boolValue] : NO;
+    [button zynth_setEnableGlassIOS:enabled];
+    return YES;
+  }
+
+  if ([name isEqualToString:@"pressEffect"]) {
+    NSString *effect = [value isKindOfClass:[NSString class]] ? (NSString *)value : nil;
+    [button zynth_setPressEffect:effect];
+    return YES;
+  }
+
+  if ([name isEqualToString:@"pressRetentionOffset"]) {
+    if ([value isKindOfClass:[NSNumber class]]) {
+      [button zynth_setPressRetentionOffset:(NSNumber *)value];
+    }
+    return YES;
+  }
+
+  if ([name isEqualToString:@"hitSlop"]) {
+    [button zynth_setHitSlop:value];
+    return YES;
+  }
+
+  if ([name isEqualToString:@"minimumTouchSize"]) {
+    [button zynth_setMinimumTouchSize:value];
+    return YES;
+  }
+
+  if ([name isEqualToString:@"rounded"]) {
+    NSString *rounded = [value isKindOfClass:[NSString class]] ? (NSString *)value : nil;
+    [button zynth_setRounded:rounded];
+    return YES;
+  }
+
+  if ([name isEqualToString:@"preventFocusOnPress"]) {
+    BOOL prevent = value && value != (id)[NSNull null] ? [value boolValue] : NO;
+    [button zynth_setPreventFocusOnPress:prevent];
+    return YES;
+  }
+
+  if ([name isEqualToString:@"haptics"]) {
+    NSString *mode = [value isKindOfClass:[NSString class]] ? (NSString *)value : nil;
+    [button zynth_setHapticsMode:mode];
+    return YES;
+  }
+
+  if ([name isEqualToString:@"__buttonCommand"]) {
+    if ([value isKindOfClass:[NSDictionary class]]) {
+      [button zynth_handleCommand:(NSDictionary *)value];
+    }
+    return YES;
+  }
+
+  return NO;
+}
+
+static BOOL ZynthButtonHandleSetHandler(SNUIManager *manager,
+                                       SNNode *node,
+                                       NSString *name) {
+  if (!node || ![node.view isKindOfClass:[ZynthButtonView class]]) {
+    return NO;
+  }
+  ZynthButtonView *button = (ZynthButtonView *)node.view;
+
+  if ([name isEqualToString:@"onPress"]) {
+    node.hasOnPressHandler = YES;
+    return YES;
+  }
+
+  if ([name isEqualToString:@"onPressIn"] ||
+      [name isEqualToString:@"onPressOut"] ||
+      [name isEqualToString:@"onFocus"] ||
+      [name isEqualToString:@"onBlur"] ||
+      [name isEqualToString:@"onKeyDown"] ||
+      [name isEqualToString:@"onKeyUp"]) {
+    return YES;
+  }
+
+  if ([name isEqualToString:@"onLongPress"]) {
+    [button zynth_setHasLongPressHandler:YES];
+    return YES;
+  }
+
+  return NO;
+}
+
+@interface SNUIManager (ButtonComponent) <ZynthButtonViewDelegate>
+@end
+
+@implementation SNUIManager (ButtonComponent)
+
++ (void)load {
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    ZynthComponentDescriptor *descriptor = [[ZynthComponentDescriptor alloc] initWithType:@"button"];
+    descriptor.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+      ZynthButtonView *button = [ZynthButtonView new];
+      return button;
+    };
+    descriptor.attach = ^(SNUIManager *manager, SNNode *node) {
+      if (![node.view isKindOfClass:[ZynthButtonView class]]) return;
+      ZynthButtonView *button = (ZynthButtonView *)node.view;
+      button.delegate = manager;
+      [button attachToManager:manager node:node];
+    };
+    descriptor.handleSetProp = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name, id value, NSString *rawJSON) {
+      return ZynthButtonHandleSetProp(manager, node, name, value, rawJSON);
+    };
+    descriptor.handleSetHandler = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name) {
+      return ZynthButtonHandleSetHandler(manager, node, name);
+    };
+    ZynthRegisterComponentDescriptor(descriptor);
+  });
+}
+
+#pragma mark - ZynthButtonViewDelegate
+
+- (void)buttonViewDidPressIn:(ZynthButtonView *)button {
+  SNNode *node = [self zynth_nodeForId:@(button.nodeId)];
+  if (!node) return;
+  [self zynth_dispatchEvent:@"onPressIn" payload:@{} toNode:node];
+}
+
+- (void)buttonViewDidPressOut:(ZynthButtonView *)button cancelled:(BOOL)cancelled {
+  SNNode *node = [self zynth_nodeForId:@(button.nodeId)];
+  if (!node) return;
+  NSDictionary *payload = @{@"cancelled" : @(cancelled)};
+  [self zynth_dispatchEvent:@"onPressOut" payload:payload toNode:node];
+}
+
+- (void)buttonViewDidActivate:(ZynthButtonView *)button {
+  SNNode *node = [self zynth_nodeForId:@(button.nodeId)];
+  if (!node) return;
+  [self zynth_dispatchEvent:@"onPress" payload:@{} toNode:node];
+}
+
+- (void)buttonView:(ZynthButtonView *)button didLongPressWithDuration:(CFTimeInterval)duration {
+  SNNode *node = [self zynth_nodeForId:@(button.nodeId)];
+  if (!node) return;
+  NSDictionary *payload = @{@"durationMs" : @(duration)};
+  [self zynth_dispatchEvent:@"onLongPress" payload:payload toNode:node];
+}
+
+- (void)buttonViewDidFocus:(ZynthButtonView *)button {
+  SNNode *node = [self zynth_nodeForId:@(button.nodeId)];
+  if (!node) return;
+  [self zynth_dispatchEvent:@"onFocus" payload:@{} toNode:node];
+}
+
+- (void)buttonViewDidBlur:(ZynthButtonView *)button {
+  SNNode *node = [self zynth_nodeForId:@(button.nodeId)];
+  if (!node) return;
+  [self zynth_dispatchEvent:@"onBlur" payload:@{} toNode:node];
+}
+
+- (void)buttonView:(ZynthButtonView *)button didEmitKeyEvent:(NSString *)phase key:(NSString *)key {
+  SNNode *node = [self zynth_nodeForId:@(button.nodeId)];
+  if (!node) return;
+  NSDictionary *payload = key.length ? @{@"key" : key} : @{};
+  [self zynth_dispatchEvent:phase payload:payload toNode:node];
+}
+
+@end

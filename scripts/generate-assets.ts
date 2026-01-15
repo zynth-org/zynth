@@ -105,7 +105,7 @@ function generateIOSIcons(appDir: string, iconPath: string, appName: string): vo
   });
 
   fs.writeFileSync(path.join(iconSetDir, 'Contents.json'), JSON.stringify(contents, null, 2));
-  const quiet = Boolean(process.env.RUNE_QUIET_PREBUILD);
+  const quiet = Boolean(process.env.ZYNTH_QUIET_PREBUILD);
   if (!quiet) {
     console.log('  ✓ Generated iOS App Icons');
   }
@@ -162,7 +162,7 @@ function generateIOSSplashAssets(appDir: string, splash: any, appName: string): 
     info: { version: 1, author: 'xcode' },
   };
   fs.writeFileSync(path.join(imagesetDir, 'Contents.json'), JSON.stringify(imageset, null, 2));
-  const quiet = Boolean(process.env.RUNE_QUIET_PREBUILD);
+  const quiet = Boolean(process.env.ZYNTH_QUIET_PREBUILD);
   if (!quiet) {
     console.log('  ✓ Generated iOS Splash Assets');
   }
@@ -188,7 +188,7 @@ function generateAndroidIcons(appDir: string, iconPath: string): void {
     resizeImage(iconPath, path.join(targetDir, 'ic_launcher.png'), size, size);
     resizeImage(iconPath, path.join(targetDir, 'ic_launcher_round.png'), size, size);
   }
-  const quiet = Boolean(process.env.RUNE_QUIET_PREBUILD);
+  const quiet = Boolean(process.env.ZYNTH_QUIET_PREBUILD);
   if (!quiet) {
     console.log('  ✓ Generated Android Legacy Icons');
   }
@@ -237,7 +237,7 @@ function generateAndroidAdaptiveIcons(appDir: string, adaptive: { foregroundImag
     fs.writeFileSync(path.join(anydpiDir, 'ic_launcher.xml'), iconXml);
     fs.writeFileSync(path.join(anydpiDir, 'ic_launcher_round.xml'), iconXml);
     
-  const quiet = Boolean(process.env.RUNE_QUIET_PREBUILD);
+  const quiet = Boolean(process.env.ZYNTH_QUIET_PREBUILD);
   if (!quiet) {
     console.log('  ✓ Generated Android Adaptive Icons');
   }
@@ -261,9 +261,9 @@ function generateAndroidSplashAssets(appDir: string, splash: any): void {
   const backgroundColor = normalizeAndroidColor(splash?.backgroundColor);
   const colorsXml = `<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="rune_splash_background">${backgroundColor}</color>
+    <color name="zynth_splash_background">${backgroundColor}</color>
 </resources>`;
-  fs.writeFileSync(path.join(valuesDir, 'rune_splash.xml'), colorsXml);
+  fs.writeFileSync(path.join(valuesDir, 'zynth_splash.xml'), colorsXml);
 
   const splashImagePath = splash?.image ? path.resolve(appDir, splash.image) : null;
   const hasImage = splashImagePath && fs.existsSync(splashImagePath);
@@ -271,9 +271,9 @@ function generateAndroidSplashAssets(appDir: string, splash: any): void {
 
   if (hasImage) {
     const ext = path.extname(splashImagePath as string) || '.png';
-    const filename = `rune_splash_image${ext}`;
+    const filename = `zynth_splash_image${ext}`;
     fs.copyFileSync(splashImagePath as string, path.join(drawableDir, filename));
-    imageRef = "@drawable/rune_splash_image";
+    imageRef = "@drawable/zynth_splash_image";
   } else if (splash?.image) {
     console.warn(`⚠️  Splash image not found: ${splashImagePath}`);
   }
@@ -286,17 +286,17 @@ function generateAndroidSplashAssets(appDir: string, splash: any): void {
   const drawableXml = hasImage
     ? `<?xml version="1.0" encoding="utf-8"?>
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="@color/rune_splash_background" />
+    <item android:drawable="@color/zynth_splash_background" />
     <item>
         <bitmap android:src="${imageRef}" android:gravity="${gravity}" />
     </item>
 </layer-list>`
     : `<?xml version="1.0" encoding="utf-8"?>
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="@color/rune_splash_background" />
+    <item android:drawable="@color/zynth_splash_background" />
 </layer-list>`;
 
-  fs.writeFileSync(path.join(drawableDir, 'rune_splash_screen.xml'), drawableXml);
+  fs.writeFileSync(path.join(drawableDir, 'zynth_splash_screen.xml'), drawableXml);
   console.log('  ✓ Generated Android Splash Assets');
 }
 
@@ -306,7 +306,7 @@ export function generateAssets(appDir: string, platform: 'ios' | 'android'): voi
   let appConfig: any = {};
   if (fs.existsSync(appJsonPath)) {
       const json = JSON.parse(fs.readFileSync(appJsonPath, 'utf8'));
-      appConfig = json.rune || json;
+      appConfig = json.zynth || json;
   }
   
   const cleanAppName = config.appName;

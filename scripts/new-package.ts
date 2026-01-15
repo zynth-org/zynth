@@ -35,7 +35,7 @@ function findWorkspaceRoot(startDir: string): string {
     const parent = path.dirname(current);
     if (parent === current) {
       throw new Error(
-        "Workspace root not found. Run this command inside a Rune workspace."
+        "Workspace root not found. Run this command inside a Zynth workspace."
       );
     }
     current = parent;
@@ -45,11 +45,11 @@ function findWorkspaceRoot(startDir: string): string {
 function normalizeModuleName(input: string | null | undefined): string {
   if (!input) return "";
   let name = String(input).trim();
-  if (name.startsWith("@rune/")) {
-    name = name.slice("@rune/".length);
+  if (name.startsWith("@zynth/")) {
+    name = name.slice("@zynth/".length);
   }
-  if (name.startsWith("rune-")) {
-    name = name.slice("rune-".length);
+  if (name.startsWith("zynth-")) {
+    name = name.slice("zynth-".length);
   }
   name = name
     .toLowerCase()
@@ -109,12 +109,12 @@ function replaceInFiles(
     content = applyTemplate(content, replacements);
     if (androidPackageName !== replacements.moduleName) {
       content = content.replace(
-        new RegExp(`dev\\.rune\\.${replacements.moduleName}`, "g"),
-        `dev.rune.${androidPackageName}`
+        new RegExp(`dev\\.zynth\\.${replacements.moduleName}`, "g"),
+        `dev.zynth.${androidPackageName}`
       );
       content = content.replace(
-        new RegExp(`dev/rune/${replacements.moduleName}`, "g"),
-        `dev/rune/${androidPackageName}`
+        new RegExp(`dev/zynth/${replacements.moduleName}`, "g"),
+        `dev/zynth/${androidPackageName}`
       );
     }
     fs.writeFileSync(filePath, content);
@@ -143,23 +143,23 @@ function renameAndroidPackageDir(
   const current = path.join(
     targetDir,
     "android",
-    `Rune${moduleNamePascal}`,
+    `Zynth${moduleNamePascal}`,
     "src",
     "main",
     "java",
     "dev",
-    "rune",
+    "zynth",
     moduleName
   );
   const next = path.join(
     targetDir,
     "android",
-    `Rune${moduleNamePascal}`,
+    `Zynth${moduleNamePascal}`,
     "src",
     "main",
     "java",
     "dev",
-    "rune",
+    "zynth",
     androidPackageName
   );
   if (fs.existsSync(current) && !fs.existsSync(next)) {
@@ -204,10 +204,10 @@ function updateTsconfigPaths(rootDir: string, moduleName: string): void {
   if (!tsconfig.compilerOptions.paths) tsconfig.compilerOptions.paths = {};
 
   const paths = tsconfig.compilerOptions.paths as Record<string, string[]>;
-  const baseKey = `@rune/${moduleName}`;
-  const baseValue = [`packages/rune-${moduleName}/src/index.ts`];
-  const globKey = `@rune/${moduleName}/*`;
-  const globValue = [`packages/rune-${moduleName}/src/*`];
+  const baseKey = `@zynth/${moduleName}`;
+  const baseValue = [`packages/zynth-${moduleName}/src/index.ts`];
+  const globKey = `@zynth/${moduleName}/*`;
+  const globValue = [`packages/zynth-${moduleName}/src/*`];
 
   let changed = false;
   if (!paths[baseKey]) {
@@ -236,7 +236,7 @@ async function main(): Promise<void> {
   const templatesDir = path.join(
     root,
     "packages",
-    "rune-templates",
+    "zynth-templates",
     "native-module"
   );
 
@@ -256,7 +256,7 @@ async function main(): Promise<void> {
     const response = await prompts({
       type: "text",
       name: "moduleName",
-      message: "Package name (kebab-case, without @rune/ or rune-):",
+      message: "Package name (kebab-case, without @zynth/ or zynth-):",
       validate: (value: string) => {
         const normalized = normalizeModuleName(value);
         if (!normalized) return "Package name is required";
@@ -294,7 +294,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const packageDirName = `rune-${moduleName}`;
+  const packageDirName = `zynth-${moduleName}`;
   const targetDir = path.join(baseDir, packageDirName);
 
   if (fs.existsSync(targetDir)) {

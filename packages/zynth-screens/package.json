@@ -1,0 +1,66 @@
+{
+  "name": "@zynth/screens",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "dist/esm/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
+  "sideEffects": [
+    "./src/index.web.ts",
+    "./web/**/*"
+  ],
+  "license": "MIT",
+  "files": [
+    "dist",
+    "android",
+    "ios",
+    "src",
+    "web",
+    "package.json",
+    "README.md",
+    "ZynthScreens.podspec"
+  ],
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "types": "./dist/types/index.d.ts"
+    },
+    "./web": "./web/index.ts"
+  },
+  "peerDependencies": {
+    "solid-js": ">=1.8.0",
+    "@zynth/core": "0.0.1"
+  },
+  "devDependencies": {
+    "@babel/preset-env": "^7.24.7",
+    "@babel/preset-typescript": "^7.24.7",
+    "@rsbuild/core": "^1.0.1",
+    "@rsbuild/plugin-babel": "^1.0.1",
+    "babel-preset-solid": "^1.8.0",
+    "solid-js": "^1.8.0",
+    "typescript": "^5.6.2"
+  },
+  "scripts": {
+    "build": "yarn build:js && yarn build:types",
+    "build:js": "rm -rf dist/esm && tsc --project tsconfig.esm.json",
+    "build:types": "tsc --project tsconfig.types.json"
+  },
+  "zynthNative": {
+    "ios": {
+      "pods": [
+        {
+          "name": "ZynthScreens",
+          "podspec": "./ZynthScreens.podspec"
+        }
+      ]
+    },
+    "android": {
+      "modules": [
+        {
+          "name": "ZynthScreens",
+          "path": "./android/ZynthScreens"
+        }
+      ]
+    }
+  }
+}

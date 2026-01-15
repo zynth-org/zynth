@@ -1,0 +1,21 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist/esm",
+    "rootDir": ".",
+    "jsx": "preserve",
+    "jsxImportSource": "solid-js",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "declaration": false,
+    "declarationMap": false,
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@zynth/core": ["../zynth-core/dist/types/index.d.ts"],
+      "@zynth/core/*": ["../zynth-core/dist/types/*"]
+    }
+  },
+  "include": ["./src/**/*.ts", "./src/**/*.tsx", "./web/**/*.ts", "./web/**/*.tsx"],
+  "exclude": ["node_modules", "dist"]
+}

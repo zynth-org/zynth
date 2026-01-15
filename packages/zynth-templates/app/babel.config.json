@@ -1,0 +1,13 @@
+{
+  "presets": [
+    [
+      "solid",
+      {
+        "generate": "universal",
+        "hydratable": false,
+        "moduleName": "@zynth/renderer"
+      }
+    ],
+    ["@babel/preset-typescript", { "allowDeclareFields": true }]
+  ]
+}

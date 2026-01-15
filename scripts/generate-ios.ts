@@ -89,8 +89,8 @@ function collectNativeIOSPods(appDir: string): any[] {
     }
   }
 
-  if (appPackage.runeNative && appPackage.runeNative.ios) {
-    registerPods(appPackage.name || "(app)", appDir, appPackage.runeNative.ios);
+  if (appPackage.zynthNative && appPackage.zynthNative.ios) {
+    registerPods(appPackage.name || "(app)", appDir, appPackage.zynthNative.ios);
   }
 
   const dependencySources = [
@@ -106,8 +106,8 @@ function collectNativeIOSPods(appDir: string): any[] {
         const packageDir = path.dirname(pkgJsonPath);
         const depPackage = safeReadJSON(pkgJsonPath);
         if (!depPackage) continue;
-        if (depPackage.runeNative && depPackage.runeNative.ios) {
-          registerPods(depName, packageDir, depPackage.runeNative.ios);
+        if (depPackage.zynthNative && depPackage.zynthNative.ios) {
+          registerPods(depName, packageDir, depPackage.zynthNative.ios);
         }
       } catch (_error) {
         // Ignore resolvable failures; dependency may be optional for native
@@ -117,8 +117,8 @@ function collectNativeIOSPods(appDir: string): any[] {
 
   const appModules = collectAppModules();
   for (const module of appModules) {
-    if (module.packageJson?.runeNative?.ios) {
-      registerPods(module.packageName, module.packageDir, module.packageJson.runeNative.ios);
+    if (module.packageJson?.zynthNative?.ios) {
+      registerPods(module.packageName, module.packageDir, module.packageJson.zynthNative.ios);
     }
   }
 
@@ -127,7 +127,7 @@ function collectNativeIOSPods(appDir: string): any[] {
 
 function formatComponentPodLines(pods: any[], targetDir: string): string {
   if (!pods.length) {
-    return "\n  # No additional Rune component pods detected";
+    return "\n  # No additional Zynth component pods detected";
   }
 
   const lines: string[] = [];
@@ -158,7 +158,7 @@ function formatComponentPodLines(pods: any[], targetDir: string): string {
   }
 
   if (!lines.length) {
-    return "\n  # No additional Rune component pods detected";
+    return "\n  # No additional Zynth component pods detected";
   }
 
   return "\n" + lines.join("\n");
@@ -188,7 +188,7 @@ function generateModuleInitializers(pods: any[]): string {
       const method = pod.initializer.method;
       initializers.push(
         `  [${className} ${method}self.runtime];`,
-        `  NSLog(@"[Rune] ${className} initialized");`
+        `  NSLog(@"[Zynth] ${className} initialized");`
       );
     }
   }
@@ -209,7 +209,7 @@ function replacePlaceholders(content: string, config: AppConfig, extras: any = {
     .replace(/\{\{DISPLAY_NAME\}\}/g, config.displayName);
 
   output = output.replace(
-    /\{\{RUNE_COMPONENT_PODS\}\}/g,
+    /\{\{ZYNTH_COMPONENT_PODS\}\}/g,
     extras.componentPods ?? ""
   );
 
@@ -266,12 +266,12 @@ function generateNativeModulesConfig(pods: any[], targetDir: string) {
   }
 
   const jsonContent = JSON.stringify(modules, null, 2);
-  fs.writeFileSync(path.join(targetDir, "RuneNativeModules.json"), jsonContent);
+  fs.writeFileSync(path.join(targetDir, "ZynthNativeModules.json"), jsonContent);
 }
 
 // Copy template files and replace placeholders
 const templatesRoot = path.dirname(
-  require.resolve("@rune/templates/package.json")
+  require.resolve("@zynth/templates/package.json")
 );
 
 function removeDirectoryWithRetries(targetDir: string, retries = 5): void {
@@ -301,8 +301,8 @@ export function generateIOSProject(appDir: string, options: any = {}) {
   const { dev = true, quiet = false } = options; // Default to dev mode for backward compatibility
   const config = getAppConfig(appDir);
   const appJson = safeReadJSON(path.join(appDir, "app.json")) || {};
-  const runeConfig = appJson.rune || appJson || {};
-  const splashConfig = runeConfig.splash || {};
+  const zynthConfig = appJson.zynth || appJson || {};
+  const splashConfig = zynthConfig.splash || {};
   const templateDir = path.join(templatesRoot, "ios");
   const targetDir = path.join(appDir, "ios");
 
@@ -344,7 +344,7 @@ export function generateIOSProject(appDir: string, options: any = {}) {
   
   // Inject Dev Server URL into Info.plist if configured
   if (config.devServerUrl) {
-    config.infoPlist["RuneDevServerURL"] = config.devServerUrl;
+    config.infoPlist["ZynthDevServerURL"] = config.devServerUrl;
   }
   
   const infoPlistProperties = formatInfoPlistProperties(config.infoPlist);
@@ -361,24 +361,24 @@ export function generateIOSProject(appDir: string, options: any = {}) {
   })();
 
   // Check if splash screen package is installed
-  const hasSplashScreenPackage = componentPods.some(p => p.name === 'RuneSplashScreen');
+  const hasSplashScreenPackage = componentPods.some(p => p.name === 'ZynthSplashScreen');
   
   let extraAppDelegateHeader = "";
   let extraAppDelegateInit = "";
 
   if (hasSplash && hasSplashScreenPackage) {
     extraAppDelegateHeader = `
-#import "RuneSplashScreen-Swift.h"
-static NSString *const kRuneSplashImageName = @"${splashImageName}";
-static NSString *const kRuneSplashBackgroundColor = @"${splashBackgroundColor}";
-static NSString *const kRuneSplashResizeMode = @"${splashResizeMode}";`;
+#import "ZynthSplashScreen-Swift.h"
+static NSString *const kZynthSplashImageName = @"${splashImageName}";
+static NSString *const kZynthSplashBackgroundColor = @"${splashBackgroundColor}";
+static NSString *const kZynthSplashResizeMode = @"${splashResizeMode}";`;
 
     extraAppDelegateInit = `
-  [RuneSplashScreen setupWith:self.runtime 
+  [ZynthSplashScreen setupWith:self.runtime 
                        window:self.window 
-                    imageName:kRuneSplashImageName 
-              backgroundColor:kRuneSplashBackgroundColor 
-                   resizeMode:kRuneSplashResizeMode];`;
+                    imageName:kZynthSplashImageName 
+              backgroundColor:kZynthSplashBackgroundColor 
+                   resizeMode:kZynthSplashResizeMode];`;
   }
   
   // Generate module config for dynamic loading (e.g. Hypervisor)

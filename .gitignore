@@ -8,7 +8,7 @@ node_modules
 packages/**/dist
 apps/*/dist
 apps/*/assets/*
-apps/*/.rune
+apps/*/.zynth
 
 # TypeScript incremental state
 *.tsbuildinfo
@@ -38,14 +38,14 @@ projects/**/ios/Pods/**
 # Android (generated projects - not templates)
 apps/*/android/
 !templates/android/
-packages/rune-android/**/build/
+packages/zynth-android/**/build/
 packages/**/android/**/build/
-packages/rune-android/**/.cxx/
-packages/rune-webserver/android/**/.cxx/
-packages/rune-android/**/.gradle/
-packages/rune-icons/assets/fonts/*.ttf
-packages/rune-icons/ios/Fonts/*.ttf
-packages/rune-icons/android/src/main/assets/fonts/*.ttf
+packages/zynth-android/**/.cxx/
+packages/zynth-webserver/android/**/.cxx/
+packages/zynth-android/**/.gradle/
+packages/zynth-icons/assets/fonts/*.ttf
+packages/zynth-icons/ios/Fonts/*.ttf
+packages/zynth-icons/android/src/main/assets/fonts/*.ttf
 
 # macOS
 .DS_Store
@@ -63,6 +63,6 @@ packages/rune-icons/android/src/main/assets/fonts/*.ttf
 !.env.example
 
 # Server vendor pre-bundled packages
-packages/rune-skyhook/vendor
+packages/zynth-skyhook/vendor
 apps/**/modules/ios/.build
 apps/**/modules/**/android/**/build/

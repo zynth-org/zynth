@@ -7,7 +7,7 @@ function dim(text: string): string {
 import { generateAndroidProject } from "./generate-android";
 
 const templatesRoot = path.dirname(
-  require.resolve("@rune/templates/package.json")
+  require.resolve("@zynth/templates/package.json")
 );
 
 export function main(options: any = {}): void {
@@ -21,11 +21,11 @@ export function main(options: any = {}): void {
   try {
     console.log("◆ Generating Android project from template...");
     if (quiet) {
-      process.env.RUNE_QUIET_PREBUILD = "1";
+      process.env.ZYNTH_QUIET_PREBUILD = "1";
     }
     const config = generateAndroidProject(appDir, options);
     if (quiet) {
-      delete process.env.RUNE_QUIET_PREBUILD;
+      delete process.env.ZYNTH_QUIET_PREBUILD;
       console.log("  ├─ Generated Android Legacy Icons");
       console.log("  ├─ Generated Android Splash Assets");
       console.log(`✔ Android project generated at ${dim(path.join(appDir, "android"))}`);

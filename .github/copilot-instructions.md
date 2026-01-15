@@ -1,19 +1,19 @@
-You're working on a project in Rune, a cross-platform framework for iOS and Android using SolidJS. We have native platform folders and other packages in `packages`, including Android and iOS components, and the ephemeral code for test apps in `apps`.
+You're working on a project in Zynth, a cross-platform framework for iOS and Android using SolidJS. We have native platform folders and other packages in `packages`, including Android and iOS components, and the ephemeral code for test apps in `apps`.
 
 # Repository Guidelines
 
 ## Project Structure & Module Organization
 
 - Monorepo driven by Yarn workspaces: runtime packages live in `packages/`, example app in `apps/components/`, shared helpers in `scripts/`.
-- Key packages: `rune-core` (renderer), `rune-ios` / `rune-android` (native bridges), `rune-components`, `rune-apis`, `rune-cli`, and `rune-templates`.
+- Key packages: `zynth-core` (renderer), `zynth-ios` / `zynth-android` (native bridges), `zynth-components`, `zynth-apis`, `zynth-cli`, and `zynth-templates`.
 - `apps/components` is the primary dev harness; it consumes packages directly from `node_modules` and hosts the iOS/Android workspaces.
 - Type roots are in `types/`; path aliases are defined in `tsconfig.base.json` and mirrored by `scripts/sync-workspace-aliases.js`.
 
 ## Build, Test, and Development Commands
 
-- Root builds: `yarn build` builds all workspaces; `yarn bundle` / `bundle:apps` / `bundle:packages` use the Rune CLI to produce JS bundles.
+- Root builds: `yarn build` builds all workspaces; `yarn bundle` / `bundle:apps` / `bundle:packages` use the Zynth CLI to produce JS bundles.
 - Native prep: `yarn prebuild:ios` or `yarn prebuild:android` regenerate native projects from templates; `yarn reset:ios` / `reset:android` wipe derived native artifacts.
-- Dev loops (demo app): from the root, `yarn rune dev ios --prebuild` or `yarn rune dev android --prebuild` run bundling plus the platform pipeline. Inside `apps/components`, use `yarn rune dev` for the same paired flows, or `yarn dev` for JS-only dev server.
+- Dev loops (demo app): from the root, `yarn zynth dev ios --prebuild` or `yarn zynth dev android --prebuild` run bundling plus the platform pipeline. Inside `apps/components`, use `yarn zynth dev` for the same paired flows, or `yarn dev` for JS-only dev server.
 - Keep `yarn sync-aliases` handy after adding new workspace packages or path aliases.
 
 ## Coding Style & Naming Conventions

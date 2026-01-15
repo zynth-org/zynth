@@ -1,0 +1,73 @@
+{
+  "name": "@zynth/haptics",
+  "version": "0.0.1",
+  "description": "Haptics feedback for Zynth framework",
+  "type": "module",
+  "main": "dist/esm/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "types": "./dist/types/index.d.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "ios",
+    "android",
+    "ZynthHaptics.podspec"
+  ],
+  "scripts": {
+    "build": "yarn build:js && yarn build:types",
+    "build:js": "rm -rf dist/esm && tsc --project tsconfig.esm.json",
+    "build:types": "tsc --project tsconfig.types.json",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "zynth",
+    "haptics",
+    "vibration",
+    "ios",
+    "android",
+    "web"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "@zynth/core": ">=0.0.1",
+    "solid-js": ">=1.9.9"
+  },
+  "devDependencies": {
+    "@rsbuild/core": "^1.5.0",
+    "@zynth/rsbuild-plugin": "*",
+    "typescript": "^5.6.3"
+  },
+  "zynthNative": {
+    "ios": {
+      "pods": [
+        {
+          "name": "ZynthHaptics",
+          "podspec": "./ZynthHaptics.podspec"
+        }
+      ],
+      "initializer": {
+        "className": "ZynthHaptics",
+        "method": "initializeWith:"
+      }
+    },
+    "android": {
+      "modules": [
+        {
+          "name": "ZynthHaptics",
+          "path": "./android/ZynthHaptics"
+        }
+      ],
+      "initializer": {
+        "className": "ZynthHaptics",
+        "method": "initialize",
+        "package": "dev.zynth.haptics"
+      }
+    }
+  }
+}

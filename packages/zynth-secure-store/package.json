@@ -1,0 +1,72 @@
+{
+  "name": "@zynth/secure-store",
+  "version": "0.0.1",
+  "description": "Secure key-value storage for the Zynth framework",
+  "type": "module",
+  "main": "dist/esm/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "types": "./dist/types/index.d.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "ios",
+    "android",
+    "ZynthSecureStore.podspec"
+  ],
+  "scripts": {
+    "build": "yarn build:js && yarn build:types",
+    "build:js": "rm -rf dist/esm && tsc --project tsconfig.esm.json",
+    "build:types": "tsc --project tsconfig.types.json",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "zynth",
+    "secure-store",
+    "keystore",
+    "keychain",
+    "ios",
+    "android"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "solid-js": ">=1.8.0"
+  },
+  "devDependencies": {
+    "@rsbuild/core": "^1.5.0",
+    "@zynth/rsbuild-plugin": "*",
+    "typescript": "^5.6.3"
+  },
+  "zynthNative": {
+    "ios": {
+      "pods": [
+        {
+          "name": "ZynthSecureStore",
+          "podspec": "./ZynthSecureStore.podspec"
+        }
+      ],
+      "initializer": {
+        "className": "ZynthSecureStore",
+        "method": "initializeWith:"
+      }
+    },
+    "android": {
+      "modules": [
+        {
+          "name": "ZynthSecureStore",
+          "path": "./android/ZynthSecureStore"
+        }
+      ],
+      "initializer": {
+        "className": "ZynthSecureStore",
+        "method": "initialize",
+        "package": "dev.zynth.securestore"
+      }
+    }
+  }
+}

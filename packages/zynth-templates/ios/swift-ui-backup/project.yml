@@ -1,0 +1,54 @@
+name: { { APP_NAME } }
+options:
+  minimumXcodeGenVersion: 2.38.0
+  deploymentTarget:
+    iOS: "14.0"
+settings:
+  base:
+    PRODUCT_BUNDLE_IDENTIFIER: { { BUNDLE_ID } }
+    SWIFT_VERSION: "5.0"
+    CLANG_ENABLE_MODULES: YES
+    CODE_SIGN_STYLE: Automatic
+targets:
+  { { APP_NAME } }:
+    type: application
+    platform: iOS
+    sources:
+      - path: .
+        excludes:
+          - project.yml
+          - Podfile
+          - Podfile.lock
+          - Manifest.lock
+          - Pods/**
+          - "{{APP_NAME}}.xcworkspace/**"
+          - Info.plist
+          - build/**
+          - .build/**
+          - .xcodegen/**
+    info:
+      path: Info.plist
+      properties:
+        # Ensure a proper full-screen window is created before app code runs.
+        # Use a storyboard-based launch screen to control image content mode.
+        UILaunchStoryboardName: LaunchScreen
+    settings:
+      base:
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_OBJC_BRIDGING_HEADER: ""
+        LD_RUNPATH_SEARCH_PATHS: "@executable_path/Frameworks"
+    prebuildScripts:
+      - name: BundleJS
+        basedOnDependencyAnalysis: false
+        script: |
+          set -e
+          # Build all workspaces so @zynth/core dist exists
+          cd "$PROJECT_DIR/../../../"
+          yarn bundle:packages
+          # Build the demo bundle
+          yarn workspace {{WORKSPACE_NAME}} build
+          # Copy bundle into app resources
+          mkdir -p "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
+          cp apps/{{APP_DIR}}/dist/main.js "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/main.js"
+    dependencies:
+      - sdk: JavaScriptCore.framework

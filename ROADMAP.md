@@ -1,6 +1,6 @@
-# Rune Development Roadmap
+# Zynth Development Roadmap
 
-This document outlines the current status and future development plan for the Rune framework.
+This document outlines the current status and future development plan for the Zynth framework.
 
 ---
 
@@ -8,51 +8,59 @@ This document outlines the current status and future development plan for the Ru
 
 ### Core Runtime
 
-[x] @rune/core: Universal renderer and bridge protocol.
-[x] @rune/android: Native Android runtime (RuneKit).
-[x] @rune/ios: Native iOS runtime (RuneKit).
-[x] @rune/hypervisor: Isolated guest runtime hosting.
+[x] @zynth/core: Universal renderer and bridge protocol.
+[x] @zynth/android: Native Android runtime (ZynthKit).
+[x] @zynth/ios: Native iOS runtime (ZynthKit).
+[x] @zynth/hypervisor: Isolated guest runtime hosting.
 
 ### UI & Layout
 
-[x] @rune/components: Core native primitives (View, Text, FlatList, etc).
-[x] @rune/ui: Themed high-level components.
-[x] @rune/animate: Shared value animation system.
-[x] @rune/icons: Font-based multi-set icon library.
-[x] @rune/safe-area: Native inset handling.
-[x] @rune/keyboard: Keyboard avoidance and management.
-[x] @rune/bottom-sheet: Native gesture-driven sheets.
+[x] @zynth/components: Core native primitives (View, Text, FlatList, etc).
+[x] @zynth/ui: Themed high-level components.
+[x] @zynth/animate: Shared value animation system.
+[x] @zynth/icons: Font-based multi-set icon library.
+[x] @zynth/safe-area: Native inset handling.
+[x] @zynth/keyboard: Keyboard avoidance and management.
+[x] @zynth/bottom-sheet: Native gesture-driven sheets.
 
 ### Navigation
 
-[x] @rune/memory-router: JS-state navigation (Stack, Tabs, BottomSheet).
-[x] @rune/screens: Native screen container primitives.
+[x] @zynth/memory-router: JS-state navigation (Stack, Tabs, BottomSheet).
+[x] @zynth/screens: Native screen container primitives.
 
 ### System APIs
 
-[x] @rune/apis: Platform, Dimensions, and Font management.
-[x] @rune/filesystem: Native file and directory access.
-[x] @rune/async-storage: Persistent unencrypted storage.
-[x] @rune/secure-store: Encrypted keychain storage.
-[x] @rune/haptics: Native vibration feedback.
-[x] @rune/image-picker: Camera and gallery access.
-[x] @rune/webserver: Embedded HTTP server.
-[x] @rune/splash-screen: Boot screen control.
+[x] @zynth/apis: Platform, Dimensions, and Font management.
+[x] @zynth/filesystem: Native file and directory access.
+[x] @zynth/async-storage: Persistent unencrypted storage.
+[x] @zynth/secure-store: Encrypted keychain storage.
+[x] @zynth/haptics: Native vibration feedback.
+[x] @zynth/image-picker: Camera and gallery access.
+[x] @zynth/webserver: Embedded HTTP server.
+[x] @zynth/splash-screen: Boot screen control.
 
 ### Tooling
 
-[x] @rune/cli: Project management and build orchestration.
-[x] @rune/rsbuild-plugin: Build configuration for Native/Web.
-[x] @rune/templates: Project scaffolding blueprints.
-[x] @rune/skyhook: AI-powered generation backend.
+[x] @zynth/cli: Project management and build orchestration.
+[x] @zynth/rsbuild-plugin: Build configuration for Native/Web.
+[x] @zynth/templates: Project scaffolding blueprints.
+[x] @zynth/skyhook: AI-powered generation backend.
 
 ---
 
 ## Pending Tasks
 
+## Bad Behaviors
+
+[ ] Improve bundle monorepo to a setup script with steps and order build commands.
+[ ] Keyboard Avoiding View: Fix inconsistent behavior on Android when set `height` as `bahavior`
+[ ] zynth-ui TextInput use SytemGlyphs for icons on Android.
+[ ] zynth-ui Custom slider doesn't keep on the selected position when released on Android.
+[ ] When load Menu using HMR we have `[unhandled] Module Font resource 'ZynthIconsBS.ttf' not found in any bundle. not found.
+
 ### Core Framework
 
-[ ] Lean Core Refactor: Ensure @rune/core contains ZERO components, only the engine.
+[ ] Lean Core Refactor: Ensure @zynth/core contains ZERO components, only the engine.
 [ ] StyleSheet API: Implement a StyleSheet.create for style de-duplication and native optimization.
 [ ] Hermes Intl: Enable native Intl support on Android (fbjni initialization).
 
@@ -66,8 +74,8 @@ This document outlines the current status and future development plan for the Ru
 
 ### System APIs
 
-[ ] @rune/apis expansion: - [ ] AppState (active/background detection). - [ ] Network (connectivity monitoring). - [ ] Device (model, version, serial info).
-[ ] Unified Permissions: Create @rune/permissions for a single API to request all system access.
+[ ] @zynth/apis expansion: - [ ] AppState (active/background detection). - [ ] Network (connectivity monitoring). - [ ] Device (model, version, serial info).
+[ ] Unified Permissions: Create @zynth/permissions for a single API to request all system access.
 
 ---
 

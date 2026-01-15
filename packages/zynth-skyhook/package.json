@@ -1,0 +1,40 @@
+{
+  "name": "@zynth/skyhook",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/types/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "prebundle": "node ../../scripts/build-skyhook-artifacts.ts",
+    "build:sandbox-image": "docker build -f Dockerfile.sandbox -t zynth-skyhook-sandbox .",
+    "db:generate": "tsc -p tsconfig.json && drizzle-kit generate --config drizzle.config.ts",
+    "db:migrate": "tsc -p tsconfig.json && drizzle-kit migrate --config drizzle.config.ts",
+    "db:studio": "tsc -p tsconfig.json && drizzle-kit studio --config drizzle.config.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.948.0",
+    "@hono/node-server": "^1.6.2",
+    "dockerode": "^4.0.9",
+    "drizzle-orm": "^0.45.1",
+    "hono": "^4.5.6",
+    "postgres": "^3.4.7",
+    "valibot": "^1.2.0"
+  },
+  "devDependencies": {
+    "@types/dockerode": "^3.3.47",
+    "@types/node": "^20.16.10",
+    "drizzle-kit": "^0.31.8",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.2"
+  },
+  "zynthSkyhook": {
+    "artifacts": false
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "name": "@zynth/core",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "dist/esm/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "types": "./dist/types/index.d.ts"
+    },
+    "./universal": {
+      "import": "./dist/esm/universal.js",
+      "types": "./dist/types/universal.d.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": [
+    "./src/polyfills/URLSearchParams.ts",
+    "./src/polyfills/TextEncoding.ts",
+    "./src/polyfills/AbortController.ts",
+    "./src/polyfills/ReadableStream.ts",
+    "./src/polyfills/Blob.ts",
+    "./src/polyfills/FormData.ts",
+    "./src/polyfills/fetch/index.ts",
+    "./src/index.ts",
+    "./dist/esm/index.js"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "solid-js": ">=1.8.0"
+  },
+  "dependencies": {
+    "@zynth/apis": "0.0.1"
+  },
+  "devDependencies": {
+    "@rsbuild/core": "^1.0.1",
+    "solid-js": "^1.8.0",
+    "typescript": "^5.6.2"
+  },
+  "scripts": {
+    "build": "yarn build:js && yarn build:types",
+    "build:js": "rm -rf dist/esm && tsc --project tsconfig.esm.json",
+    "build:types": "tsc --project tsconfig.types.json"
+  }
+}

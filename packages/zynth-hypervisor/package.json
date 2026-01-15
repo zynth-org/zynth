@@ -1,0 +1,59 @@
+{
+  "name": "@zynth/hypervisor",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "dist/esm/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
+  "sideEffects": false,
+  "license": "MIT",
+  "files": [
+    "dist",
+    "android",
+    "ios",
+    "src",
+    "package.json",
+    "ZynthHypervisor.podspec"
+  ],
+  "peerDependencies": {
+    "solid-js": ">=1.8.0",
+    "@zynth/core": "0.0.1",
+    "@zynth/apis": "0.0.1"
+  },
+  "devDependencies": {
+    "@babel/preset-env": "^7.24.7",
+    "@babel/preset-typescript": "^7.24.7",
+    "@rsbuild/core": "^1.0.1",
+    "@rsbuild/plugin-babel": "^1.0.1",
+    "@zynth/apis": "0.0.1",
+    "babel-preset-solid": "^1.8.0",
+    "solid-js": "^1.8.0",
+    "typescript": "^5.6.2"
+  },
+  "scripts": {
+    "build": "yarn build:js && yarn build:types",
+    "build:js": "NODE_ENV=production rsbuild build --config rsbuild.config.ts",
+    "build:types": "tsc --project tsconfig.types.json"
+  },
+  "zynthNative": {
+    "ios": {
+      "pods": [
+        {
+          "name": "ZynthHypervisor",
+          "podspec": "./ZynthHypervisor.podspec"
+        }
+      ]
+    },
+    "android": {
+      "modules": [
+        {
+          "name": "ZynthHypervisor",
+          "path": "./android"
+        }
+      ]
+    }
+  },
+  "zynthSkyhook": {
+    "artifacts": false
+  }
+}

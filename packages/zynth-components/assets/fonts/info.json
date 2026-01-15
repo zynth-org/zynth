@@ -1,0 +1,14 @@
+{
+  "BsArrowLeftShort": {
+    "encodedCode": "\\ea01",
+    "prefix": "ZynthRuntimeIcons",
+    "className": "ZynthRuntimeIcons-BsArrowLeftShort",
+    "unicode": "&#59905;"
+  },
+  "BsThreeDotsVertical": {
+    "encodedCode": "\\ea02",
+    "prefix": "ZynthRuntimeIcons",
+    "className": "ZynthRuntimeIcons-BsThreeDotsVertical",
+    "unicode": "&#59906;"
+  }
+}

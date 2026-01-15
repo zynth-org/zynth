@@ -39,7 +39,7 @@ function resolvePackageJson(depName: string, appDir: string): string | null {
 }
 
 const templatesRoot = path.dirname(
-  require.resolve("@rune/templates/package.json")
+  require.resolve("@zynth/templates/package.json")
 );
 const BINARY_EXTENSIONS = new Set([
   ".jar",
@@ -100,7 +100,7 @@ function generateAndroidModuleInitializers(modules: any[]): string {
           : "this, runtime";
       initializers.push(
         `        ${className}.${method}(${args})`,
-        `        Log.d("Rune", "${className} initialized")`
+        `        Log.d("Zynth", "${className} initialized")`
       );
     }
   }
@@ -143,11 +143,11 @@ function replacePlaceholders(content: string, config: AppConfig, extras: any = {
       config.appNameCapitalized || config.appName
     )
     .replace(
-      /\{\{\s*RUNE_COMPONENT_MODULE_INCLUDES\s*\}\}/g,
+      /\{\{\s*ZYNTH_COMPONENT_MODULE_INCLUDES\s*\}\}/g,
       extras.componentIncludes ?? ""
     )
     .replace(
-      /\{\{\s*RUNE_COMPONENT_MODULE_DEPENDENCIES\s*\}\}/g,
+      /\{\{\s*ZYNTH_COMPONENT_MODULE_DEPENDENCIES\s*\}\}/g,
       extras.componentDependencies ?? ""
     )
     .replace(/\{\{\s*MODULE_IMPORTS\s*\}\}/g, extras.moduleImports ?? "")
@@ -159,7 +159,7 @@ function replacePlaceholders(content: string, config: AppConfig, extras: any = {
     )
     .replace(
       /\{\{\s*SPLASH_WINDOW_BACKGROUND\s*\}\}/g,
-      extras.splashWindowBackground ?? "@drawable/rune_splash_screen"
+      extras.splashWindowBackground ?? "@drawable/zynth_splash_screen"
     )
     .replace(
       /\{\{\s*ACTIVITY_HOOK_IMPORTS\s*\}\}/g,
@@ -239,11 +239,11 @@ function collectNativeAndroidModules(appDir: string): any[] {
     }
   }
 
-  if (appPackage.runeNative && appPackage.runeNative.android) {
+  if (appPackage.zynthNative && appPackage.zynthNative.android) {
     registerModules(
       appPackage.name || "(app)",
       appDir,
-      appPackage.runeNative.android
+      appPackage.zynthNative.android
     );
   }
 
@@ -260,8 +260,8 @@ function collectNativeAndroidModules(appDir: string): any[] {
         const packageDir = path.dirname(pkgJsonPath);
         const depPackage = safeReadJSON(pkgJsonPath);
         if (!depPackage) continue;
-        if (depPackage.runeNative && depPackage.runeNative.android) {
-          registerModules(depName, packageDir, depPackage.runeNative.android);
+        if (depPackage.zynthNative && depPackage.zynthNative.android) {
+          registerModules(depName, packageDir, depPackage.zynthNative.android);
         }
       } catch (_error) {
         // Dependency might not provide native modules; ignore resolution errors
@@ -271,11 +271,11 @@ function collectNativeAndroidModules(appDir: string): any[] {
 
   const appModules = collectAppModules();
   for (const module of appModules) {
-    if (module.packageJson?.runeNative?.android) {
+    if (module.packageJson?.zynthNative?.android) {
       registerModules(
         module.packageName,
         module.packageDir,
-        module.packageJson.runeNative.android
+        module.packageJson.zynthNative.android
       );
     }
   }
@@ -357,8 +357,8 @@ function collectAndroidActivityHooks(appDir: string): ActivityHooks {
     );
   }
 
-  if (appPackage.runeNative && appPackage.runeNative.android) {
-    registerHooks(appPackage.runeNative.android);
+  if (appPackage.zynthNative && appPackage.zynthNative.android) {
+    registerHooks(appPackage.zynthNative.android);
   }
 
   const dependencySources = [
@@ -372,8 +372,8 @@ function collectAndroidActivityHooks(appDir: string): ActivityHooks {
         const pkgJsonPath = resolvePackageJson(depName, appDir);
         if (!pkgJsonPath) continue;
         const depPackage = safeReadJSON(pkgJsonPath);
-        if (!depPackage || !depPackage.runeNative?.android) continue;
-        registerHooks(depPackage.runeNative.android);
+        if (!depPackage || !depPackage.zynthNative?.android) continue;
+        registerHooks(depPackage.zynthNative.android);
       } catch (_error) {
         // Ignore resolution failures.
       }
@@ -382,8 +382,8 @@ function collectAndroidActivityHooks(appDir: string): ActivityHooks {
 
   const appModules = collectAppModules();
   for (const module of appModules) {
-    if (!module.packageJson?.runeNative?.android) continue;
-    registerHooks(module.packageJson.runeNative.android);
+    if (!module.packageJson?.zynthNative?.android) continue;
+    registerHooks(module.packageJson.zynthNative.android);
   }
 
   return hooks;
@@ -396,7 +396,7 @@ function formatHookBlock(lines: string[], indent: string): string {
 
 function formatAndroidSettingsBlock(modules: any[], targetDir: string): string {
   if (!modules.length) {
-    return "\n// No additional Rune component modules detected";
+    return "\n// No additional Zynth component modules detected";
   }
   return (
     "\n" +
@@ -431,7 +431,7 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
   const { dev = true, quiet = false } = options; // Default to dev mode for backward compatibility
   const baseConfig = getAppConfig(appDir);
   const androidPackage = (
-    baseConfig.bundleId || `com.rune.${baseConfig.appDir.replace(/-/g, "")}`
+    baseConfig.bundleId || `com.zynth.${baseConfig.appDir.replace(/-/g, "")}`
   ).toLowerCase();
   const config = {
     ...baseConfig,
@@ -468,7 +468,7 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
     generateAndroidModuleInitializers(componentModules);
   const activityAttributes = formatActivityAttributes(baseConfig.androidConfig);
   const splashIconDrawable = "@mipmap/ic_launcher";
-  const splashWindowBackground = "@drawable/rune_splash_screen";
+  const splashWindowBackground = "@drawable/zynth_splash_screen";
   const activityHooks = collectAndroidActivityHooks(appDir);
   const activityHookImports = formatHookBlock(activityHooks.imports, "");
   const activityOnCreateHooks = formatHookBlock(activityHooks.onCreate, "    ");

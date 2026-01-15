@@ -1,0 +1,70 @@
+{
+  "name": "@zynth/filesystem",
+  "version": "0.0.1",
+  "description": "File system utilities for Zynth",
+  "type": "module",
+  "main": "dist/esm/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "types": "./dist/types/index.d.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "ios",
+    "android",
+    "ZynthFileSystem.podspec"
+  ],
+  "scripts": {
+    "build": "yarn build:js && yarn build:types",
+    "build:js": "rm -rf dist/esm && tsc --project tsconfig.esm.json",
+    "build:types": "tsc --project tsconfig.types.json",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "zynth",
+    "filesystem",
+    "files",
+    "storage",
+    "ios",
+    "android"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "solid-js": ">=1.8.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  },
+  "zynthNative": {
+    "ios": {
+      "pods": [
+        {
+          "name": "ZynthFileSystem",
+          "podspec": "./ZynthFileSystem.podspec"
+        }
+      ],
+      "initializer": {
+        "className": "ZynthFileSystem",
+        "method": "initializeWith:"
+      }
+    },
+    "android": {
+      "modules": [
+        {
+          "name": "ZynthFileSystem",
+          "path": "./android/ZynthFileSystem"
+        }
+      ],
+      "initializer": {
+        "className": "ZynthFileSystem",
+        "method": "initialize",
+        "package": "dev.zynth.filesystem"
+      }
+    }
+  }
+}

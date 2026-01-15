@@ -17,11 +17,11 @@ export function main(options: any = {}): void {
   try {
     console.log("◆ Generating iOS project from template...");
     if (quiet) {
-      process.env.RUNE_QUIET_PREBUILD = "1";
+      process.env.ZYNTH_QUIET_PREBUILD = "1";
     }
     generateIOSProject(appDir, options);
     if (quiet) {
-      delete process.env.RUNE_QUIET_PREBUILD;
+      delete process.env.ZYNTH_QUIET_PREBUILD;
     }
     if (quiet) {
       const projectPath = path.join(appDir, "ios");

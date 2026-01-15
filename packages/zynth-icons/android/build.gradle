@@ -1,0 +1,16 @@
+apply plugin: 'com.android.library'
+
+android {
+    namespace "dev.zynth.icons"
+    compileSdkVersion 34
+
+    defaultConfig {
+        minSdkVersion 21
+    }
+
+    sourceSets {
+        main {
+            assets.srcDirs = ['src/main/assets']
+        }
+    }
+}
