@@ -6,6 +6,11 @@ type AppearanceSnapshot = {
   scheme?: ColorScheme;
 };
 
+type NativeBridge = {
+  callSync?: (name: string, method: string, args?: unknown) => unknown;
+  call?: (name: string, method: string, args?: unknown) => unknown;
+};
+
 type NativeAppearanceModule = {
   getColorScheme?: () => ColorScheme | null;
   addColorSchemeListener?: (listener: (scheme: ColorScheme) => void) => () => void;
@@ -58,8 +63,7 @@ function readNativeConstants(): ColorScheme | null {
 function readFromBridge(): ColorScheme | null {
   const globalObj = getGlobalObject();
   const bridge = (globalObj as { __modules?: unknown }).__modules as
-    | { callSync?: (name: string, method: string, args?: unknown) => unknown }
-    | { call?: (name: string, method: string, args?: unknown) => unknown }
+    | NativeBridge
     | undefined;
   console.log("[UITheme] __modules", bridge ? Object.keys(bridge as object) : null);
   if (!bridge?.callSync) return null;

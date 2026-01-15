@@ -133,6 +133,13 @@ export type Style = {
     | "900";
   fontFamily?: string;
   fontStyle?: "normal" | "italic";
+  fontVariant?: Array<
+    | "small-caps"
+    | "oldstyle-nums"
+    | "lining-nums"
+    | "tabular-nums"
+    | "proportional-nums"
+  >;
   textAlign?: "left" | "center" | "right" | "justify";
   lineHeight?: number;
   lineSpacing?: number;

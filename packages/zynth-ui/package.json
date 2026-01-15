@@ -21,7 +21,7 @@
   ],
   "scripts": {
     "build": "yarn build:js && yarn build:types",
-    "build:js": "rm -rf dist/esm && tsc --project tsconfig.json && cp -R src/themes dist/esm/themes",
+    "build:js": "rm -rf dist/esm && tsc --project tsconfig.esm.json && cp -R src/themes dist/esm/themes",
     "build:types": "tsc --project tsconfig.types.json",
     "clean": "rm -rf dist"
   },

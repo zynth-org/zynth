@@ -1,8 +1,10 @@
 {
-  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "baseUrl": ".",
-    "paths": {},
+    "paths": {
+      "@zynth/bottom-sheet": ["../zynth-bottom-sheet/dist/types/index.d.ts"],
+      "@zynth/bottom-sheet/*": ["../zynth-bottom-sheet/dist/types/*"]
+    },
     "target": "ES2020",
     "module": "ESNext",
     "moduleResolution": "node",

@@ -4,11 +4,13 @@
     "module": "ESNext",
     "moduleResolution": "node",
     "rootDir": "src",
+    "outDir": "dist/esm",
+    "declaration": false,
+    "emitDeclarationOnly": false,
     "strict": true,
     "skipLibCheck": true,
-    "jsx": "preserve",
-    "jsxImportSource": "solid-js",
-    "noEmit": true
+    "jsx": "react-jsx",
+    "jsxImportSource": "solid-js"
   },
   "include": ["src"]
 }
