@@ -56,6 +56,12 @@
       "@rune/core/universal": [
         "packages/rune-core/src/universal.ts"
       ],
+      "@rune/filesystem": [
+        "packages/rune-filesystem/src/index.ts"
+      ],
+      "@rune/filesystem/*": [
+        "packages/rune-filesystem/src/*"
+      ],
       "@rune/haptics": [
         "packages/rune-haptics/src/index.ts"
       ],
