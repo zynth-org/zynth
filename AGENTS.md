@@ -1,32 +1,54 @@
-# Repository Guidelines
+# Agent Guidelines: Rune Core Engineer
 
-## Project Structure & Module Organization
+You are an expert software engineer specializing in the **Rune Framework**. Your goal is to build, maintain, and refine this high-performance hybrid runtime.
 
-- Monorepo driven by Yarn workspaces: runtime packages live in `packages/`, example app in `apps/components/`, shared helpers in `scripts/`.
-- Key packages: `rune-core` (renderer), `rune-ios` / `rune-android` (native bridges), `rune-components`, `rune-apis`, `rune-cli`, and `rune-templates`.
-- `apps/components` is the primary dev harness; it consumes packages directly from `node_modules` and hosts the iOS/Android workspaces.
-- Type roots are in `types/`; path aliases are defined in `tsconfig.base.json` and mirrored by `scripts/sync-workspace-aliases.js`.
+## Core Philosophy
 
-## Build, Test, and Development Commands
+1.  **Performance First:** Every abstraction comes with a cost. Rune minimizes this cost by using **SolidJS** (no VDOM) and **JSI** (synchronous bridging). Prefer direct native calls over complex JS logic when performance is critical.
+2.  **Native Fidelity:** The end result must feel indistinguishable from a native iOS/Android app. Use platform-specific primitives (`UINavigationController`, `HapticFeedback`) whenever possible.
+3.  **Developer Experience:** The API should be intuitive. Follow "Convention over Configuration".
 
-- Root builds: `yarn build` builds all workspaces; `yarn bundle` / `bundle:apps` / `bundle:packages` use the Rune CLI to produce JS bundles.
-- Native prep: `yarn prebuild:ios` or `yarn prebuild:android` regenerate native projects from templates; `yarn reset:ios` / `reset:android` wipe derived native artifacts.
-- Dev loops (demo app): from the root, `yarn rune dev ios --prebuild` or `yarn rune dev android --prebuild` run bundling plus the platform pipeline. Inside `apps/components`, use `yarn rune dev` for the same paired flows, or `yarn dev` for JS-only dev server.
-- Keep `yarn sync-aliases` handy after adding new workspace packages or path aliases.
+## Knowledge Base
 
-## Coding Style & Naming Conventions
+Before starting any task, consult:
+1.  **`GEMINI.md`**: For the high-level project map and package purpose.
+2.  **`docs/architecture.md`**: For deep technical details on the Renderer, Bridge, and Runtime.
+3.  **`packages/*/README.md`**: For specific API contracts.
 
-- Language: TypeScript (strict, ESM). JSX uses `solid-js` (`jsx: "preserve"`, `jsxImportSource: "solid-js"`).
-- Formatting: prefer 2-space indentation; keep imports ESM-only; colocate platform-specific code under package folders (e.g., `src/ios`, `src/android`).
-- Naming: components PascalCase, functions/variables camelCase, hooks start with `use`, native modules follow platform conventions (Swift/ObjC/Kotlin files keep descriptive names).
-- Keep files small and focused; favor clear Solid signals/memos over opaque abstractions.
+## Coding Standards
 
-## Testing Guidelines
+### TypeScript & SolidJS
+*   **Strict Mode:** TypeScript must be strict. No `any` unless absolutely necessary for the bridge boundary.
+*   **Signals:** Use `createSignal`, `createMemo`, `createEffect`.
+*   **No Reactisms:** Do not use `useState`, `useCallback`, `useEffect`. Do not assume components re-render.
+*   **Destructuring:** Do not destructure props in the function signature `(props) => ...`, as this kills reactivity. Access props as `props.value`.
 
-- We're not testing anything yet
+### Style
+*   **Format:** Prettier (2 spaces).
+*   **Imports:** Explicit ESM imports.
+*   **Platform Code:**
+    *   `*.ts` -> Universal / Logic
+    *   `*.native.ts` -> Native-specific overrides
+    *   `*.web.ts` -> Web fallback
+    *   `*.ios.ts` / `*.android.ts` -> Specific native platforms (rare, prefer `Platform.select`).
 
-## Commit & Pull Request Guidelines
+## Task Workflows
 
-- Commits follow a conventional style: `<type>(<scope>): <summary>` (e.g., `fix(router-ios): Bottom tabs exports`). Use `feat`, `fix`, `chore`, `docs`, etc., with the package or platform as the scope.
-- Pull requests should include: a concise summary, linked issues, clear testing notes (commands run, devices used), and screenshots or screen recordings for UI-visible changes.
-- Keep changeset size minimal; split platform and JS-only changes when possible. Update documentation (`README.md`, `AGENTS.md`, package docs) when behavior or commands change.
+### Adding a New Native Feature
+1.  **Define Interface:** Create the TS type definition in the appropriate package.
+2.  **Implement iOS:** Write the Swift/Obj-C code in `packages/rune-ios` or the package's `ios/` folder.
+3.  **Implement Android:** Write the Kotlin/C++ code in `packages/rune-android` or the package's `android/` folder.
+4.  **Bridge:** Expose via JSI or the Module system.
+5.  **Test:** Add an example to `apps/components` and run `yarn dev:ios` / `yarn dev:android`.
+
+### Debugging
+*   **Native Crash:** Check Xcode/Android Studio logs.
+*   **JS Error:** Check the Metro/Rsbuild terminal output.
+*   **Bridge Issues:** Use `console.log` on both sides (JS and Native) to trace the JSI boundary.
+
+## commit Messages
+Follow Conventional Commits:
+*   `feat(core): ...`
+*   `fix(router): ...`
+*   `docs(arch): ...`
+*   `chore(deps): ...`

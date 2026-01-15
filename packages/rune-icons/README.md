@@ -1,34 +1,34 @@
 # @rune/icons
 
-Icon font pack generated from [`solid-icons`](https://www.npmjs.com/package/solid-icons), bundled for Rune native apps.
+Extensive icon library for Rune applications.
 
-## How generation works
+This package provides thousands of icons from popular icon sets (FontAwesome, Ionicons, Material Design, etc.), optimized for the Rune native runtime. It uses font-based rendering for crisp, scalable icons that respect text styling.
 
-- Run `yarn workspace @rune/icons generate` (or `node --experimental-strip-types scripts/generate.ts`).
-- The script reads every `solid-icons/<pack>/index.cjs`, stubs `IconTemplate`, and captures each icon’s SVG definition.
-- Icons with opacity/two-tone markers are **skipped** (fonts can’t represent them cleanly).
-- Remaining icons are written as Solid components in `src/<pack>.tsx`, each using `createIcon` with a glyph + font family.
-- `svgtofont` builds a font per pack. Outputs are pruned to only:
-  - `dist/fonts/<pack>/<FontName>.ttf`
-  - `dist/fonts/<pack>/glyph-map.json`
-  - `dist/fonts/<pack>/info.json`
-- TTF files are copied to `assets/fonts` (single source for web) and to the native folders:
-  - `ios/Fonts`
-  - `android/src/main/assets/fonts`
-- An index export is regenerated at `src/index.ts`. Metadata is stored at `dist/icons-meta/solid-icons.json`.
+## Features
 
-## What ships
-
-- Runtime components import from `@rune/icons/<pack>` and render a `<Text>` with the pack font.
-- Fonts are **per pack**, but tree-shaking does **not** remove unused TTFs once copied to the native assets folders. To slim size, limit which packs you generate or delete unused packs before packaging.
-- JS exports are tree-shakeable; the fonts themselves are not automatically pruned by bundlers.
+*   **Multiple Sets**: Includes Ai, Bi, Bs, Cg, Fa, Fi, Hi, Im, Io, Oc, Ri, Si, Tb, Ti, Vs, Wi sets.
+*   **Dynamic Loading**: Only the font for the used icon set is loaded into memory.
+*   **Style Integration**: Since they are font-based, you can style them using standard `Text` props like `color` and `fontSize`.
 
 ## Usage
 
 ```tsx
-import { AiFillAlipayCircle } from "@rune/icons/ai";
+import { FaUser, IoSettings } from "@rune/icons";
 
-<AiFillAlipayCircle style={{ fontSize: 24, color: "#222" }} />;
+function MyHeader() {
+  return (
+    <View style={{ flexDirection: "row" }}>
+      <FaUser style={{ color: "blue", fontSize: 24 }} />
+      <IoSettings style={{ color: "gray", fontSize: 24 }} />
+    </View>
+  );
+}
 ```
 
-After generation, ensure the native projects pick up the copied fonts (already placed under `ios/Fonts` and `android/src/main/assets/fonts`).
+## Supported Icon Sets
+
+*   `Fa`: Font Awesome
+*   `Io`: Ionicons
+*   `Ai`: Ant Design
+*   `Bs`: Bootstrap Icons
+*   ...and many more.

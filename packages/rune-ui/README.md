@@ -1,68 +1,73 @@
-# Rune UI
+# @rune/ui
 
-Theme system and higher-level UI primitives for Rune.
+A cohesive, themeable UI component library for Rune.
 
-## Install
+This package provides a set of high-level, opinionated components (`Card`, `Button`, `Badge`, etc.) built on top of `@rune/components`. It includes a theming system to enforce design consistency across your application.
 
-```bash
-yarn add @rune/ui
-```
+## Setup
 
-## Usage
+Wrap your application root in `UIThemeProvider`.
 
 ```tsx
-import { UIThemeProvider } from "@rune/ui";
+import { UIThemeProvider, createTheme } from "@rune/ui";
 
-function App() {
-  return (
-    <UIThemeProvider>
-      <Root />
-    </UIThemeProvider>
-  );
-}
-```
-
-## Theme Overrides
-
-```tsx
-import { UIThemeProvider } from "@rune/ui";
-
-const theme = {
+const theme = createTheme({
   colors: {
-    accent: "#0EA5E9",
-    background: "#F8FAFC",
-  },
-  typography: {
-    fontFamily: "System",
-  },
-};
+    accent: "#6200ee",
+    background: "#f5f5f5",
+    // ...
+  }
+});
 
 function App() {
   return (
-    <UIThemeProvider theme={theme} colorScheme="system">
-      <Root />
+    <UIThemeProvider theme={theme}>
+      <MainScreen />
     </UIThemeProvider>
   );
 }
 ```
 
-## Color Scheme Resolution
+## Components
 
-- Default: `system` (falls back to light if no system signal is available).
-- Listens for native `RuneAppearance:change` when available.
-- Uses `matchMedia("(prefers-color-scheme: dark)")` on web.
+### `Card`
+A versatile container for grouping content.
 
-## Tokens
+| Prop | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `variant` | `'elevated' \| 'outlined' \| 'flat'` | `'elevated'` | Visual style of the card. |
+| `padding` | `'none' \| 'sm' \| 'md' \| 'lg'` | `'md'` | Internal spacing. |
 
-Theme tokens are plain objects and are kept serializable:
+```tsx
+import { Card, Text } from "@rune/ui";
 
-- `colors`
-- `typography`
-- `spacing`
-- `radii`
-- `sizes`
+<Card variant="elevated" padding="lg">
+  <Text>Card Content</Text>
+</Card>
+```
 
-## Notes
+### `Button`
+Extends the native `@rune/components` Button with theme integration.
 
-- Tokens are designed to be platform-aware but override-friendly.
-- DateTimePicker and other UI components will consume these tokens directly.
+```tsx
+import { Button } from "@rune/ui";
+
+<Button tone="primary" onPress={submit}>
+  Submit
+</Button>
+```
+
+### `Badge`, `Checkbox`, `Radio`, `Switch`, `TextInput`
+Standard form components and indicators that automatically consume the current theme's palette (success, warning, danger, etc.).
+
+## Hooks
+
+### `useUITheme()`
+Returns the current theme object.
+
+```tsx
+import { useUITheme } from "@rune/ui";
+
+const theme = useUITheme();
+console.log(theme().colors.accent);
+```

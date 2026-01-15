@@ -2,77 +2,93 @@
 
 ## Project Overview
 
-**Rune** is an experimental hybrid UI runtime that brings **SolidJS-style reactivity** to native platforms (iOS and Android). It allows developers to build native applications using SolidJS, providing fine-grained reactivity without a virtual DOM, while rendering to true native UI components.
-
-The project is a **monorepo** managed with Yarn Workspaces.
+**Rune** is a high-performance hybrid UI runtime that brings **SolidJS** to native mobile platforms. Unlike React Native, Rune uses a **Universal Renderer** approach with **fine-grained reactivity**, eliminating the Virtual DOM entirely for surgical updates.
 
 ### Core Architecture
 
-- **Reactive Engine:** SolidJS (running in a JS environment, likely JavaScriptCore on iOS / Hermes on Android).
-- **Renderer:** `@rune/core` implements a custom solid-js universal renderer that bridges calls to native modules.
-- **Native SDKs:**
-  - `packages/rune-ios`: Swift/Objective-C implementation (`RuneKit`).
-  - `packages/rune-android`: Kotlin/C++ implementation.
-- **Router:** `@rune/router` provides native navigation primitives (Stacks, Modals, Tabs) that integrate with the native view controller hierarchies (`UINavigationController`, `FragmentTransaction`, etc.).
-- **CLI:** `@rune/cli` orchestrates the build, prebuild, and bundle processes, copying templates and resolving native dependencies.
+- **Engine:** [Hermes](https://hermesengine.dev/) on both iOS and Android. Supports bytecode precompilation and JSI.
+- **Bridge:** Synchronous C++ **JSI (JavaScript Interface)**. No asynchronous JSON serialization overhead.
+- **Renderer:** `@rune/core` acts as the SolidJS Host, translating reactive updates into native `createNode` / `setProp` instructions.
+- **Layout:** [Yoga](https://yogalayout.dev/) (Flexbox) implemented natively.
+- **Navigation:**
+    - **State:** `@rune/memory-router` (Pure JS, React Navigation-like API).
+    - **Views:** `@rune/screens` (Native `UINavigationController` / `Fragment` integration).
+    - **Multi-App:** `@rune/hypervisor` allows embedding isolated Rune apps (Guests) inside a Host app.
 
-## Key Directories
+## Package Map
 
-- `apps/`
-  - `apps/components`: The primary testbed/demo application. Contains examples of all components and router features.
-- `packages/`
-  - `rune-core`: Platform-agnostic renderer logic.
-  - `rune-memory-router`: Cross-platform native router implementation.
-  - `rune-ios` / `rune-android`: Core native bridges.
-  - `rune-components`: Core UI components (View, Text, Image, ScrollView).
-  - `rune-cli`: The `rune` command-line tool.
-- `scripts/`: Helper scripts for generation and synchronization.
+| Package | Purpose |
+| :--- | :--- |
+| **Core** | |
+| `@rune/core` | The SolidJS renderer, bridge protocol, and batched update queue. |
+| `@rune/ios` | Native iOS runtime (Swift/ObjC/C++). "RuneKit". |
+| `@rune/android` | Native Android runtime (Kotlin/C++). "RuneKit". |
+| **UI & Interaction** | |
+| `@rune/components` | Native primitives: `View`, `Text`, `Image`, `ScrollView`, `FlatList` (recycled). |
+| `@rune/ui` | Themed component kit (`Card`, `Button`) and `UIThemeProvider`. |
+| `@rune/animate` | 60fps animations on the UI thread (`useSharedValue`, `withSpring`). |
+| `@rune/icons` | Font-based icon sets (FontAwesome, Ionicons, etc.). |
+| **Navigation** | |
+| `@rune/memory-router`| Stack/Tab/BottomSheet routers. Holds state in JS memory. |
+| `@rune/screens` | Native container primitives for screen transitions. |
+| `@rune/safe-area` | Insets for notches and home indicators. |
+| **System Capabilities** | |
+| `@rune/apis` | `Platform`, `Dimensions`, `Font`. |
+| `@rune/filesystem` | Native file access (`read`, `write`, reactive signals). |
+| `@rune/haptics` | Taptic engine feedback. |
+| `@rune/keyboard` | Keyboard avoidance and observation. |
+| `@rune/secure-store` | Keychain/Keystore access. |
+| `@rune/splash-screen`| Startup screen control. |
+| `@rune/image-picker` | Camera and Photo Library access. |
+| `@rune/webserver` | Embedded HTTP server for local file sharing/uploads. |
+| **Tooling & Platform** | |
+| `@rune/cli` | The `rune` command (`dev`, `build`, `bundle`). |
+| `@rune/rsbuild-plugin`| Rsbuild config for Native (Hermes) and Web targeting. |
+| `@rune/templates` | Scaffolding for `rune create`. |
+| `@rune/skyhook` | AI-powered backend for generating apps from prompts. |
+| `@rune/hypervisor` | Runtime for loading dynamic bundles (Skyhook apps). |
 
 ## Development Workflow
 
-### Building and Running
+### Primary Workspace: `apps/components`
 
-Most commands should be run from the root or the specific app directory (`apps/components`).
+This is the main testbed. It consumes the SDK packages from source (symlinked via Yarn Workspaces).
 
-**From `apps/components`:**
+**Commands (run from project root or `apps/components`):**
 
-- **Start JS Dev Server & Open iOS:**
-  ```bash
-  yarn dev:ios
-  ```
-- **Start JS Dev Server & Open Android:**
-  ```bash
-  yarn dev:android
-  ```
-- **Regenerate Native Projects (Prebuild):**
-  Use this when adding new native packages or changing configuration.
-  ```bash
-  yarn prebuild:ios
-  yarn prebuild:android
-  ```
-- **Reset Native Projects:**
-  Cleans and recreates the `ios` and `android` folders from templates.
-  ```bash
-  yarn reset:ios
-  yarn reset:android
-  ```
+*   **iOS Development:**
+    ```bash
+    yarn dev:ios
+    ```
+    *Bundles JS, generates Xcode project, installs pods, launches Simulator.*
 
-### Common Tasks
+*   **Android Development:**
+    ```bash
+    yarn dev:android
+    ```
+    *Bundles JS, generates Gradle project, installs APK, launches Emulator.*
 
-- **Adding a new Component:**
+*   **Prebuild Only:**
+    ```bash
+    yarn prebuild:ios      # Regenerate ios/ folder
+    yarn prebuild:android  # Regenerate android/ folder
+    ```
 
-  1.  Define the JS interface in `packages/rune-components`.
-  2.  Implement the native view in `packages/rune-components/ios` (Swift) and `packages/rune-components/android` (Kotlin).
-  3.  Register the view manager in the respective native SDKs.
+*   **Clean/Reset:**
+    ```bash
+    yarn reset:ios
+    yarn reset:android
+    ```
 
-- **Router Debugging:**
-  - **iOS:** `packages/rune-memory-router/ios/RuneRouter/RNStackController.swift` manages the navigation stack.
-  - **Android:** `packages/rune-android-router/android` manages Fragments/Activities.
-  - **JS:** `packages/rune-memory-router/src` contains the SolidJS context and actions.
+## Critical Mental Models
 
-## Conventions
+1.  **Solid, Not React:** Do not use `useState` or `useEffect`. Use `createSignal`, `createMemo`, and `createEffect`. Components run once; the reactivity graph stays alive.
+2.  **No CSS:** Styles are JavaScript objects passed to the `style` prop. They map to Yoga properties (Flexbox).
+3.  **Batching:** `rune-core` batches UI updates into microtasks. Native calls happen in chunks to maximize throughput.
+4.  **Recycling:** `FlatList` recycles native views. Be careful when storing state in component instances within a list; it may be reset or reused.
+5.  **Hypervisor:** Apps are not always "global". In a Hypervisor context, your app might be a small card inside another app. Avoid relying on global singletons if possible.
 
-- **Code Style:** Prettier is used for JS/TS.
-- **Native Modules:** Distributed as source packages. `node_modules` paths are resolved at build time and linked into the native projects.
-- **Safe Area:** Always use `@rune/safe-area` for handling notches and home indicators.
-- **View Managers:** Follow the pattern of `RuneNativeView` (iOS) and `RuneNativeView` (Android) for properties and event bridging.
+## Documentation References
+
+*   **Architecture:** `docs/architecture.md` (Deep dive into internals)
+*   **APIs:** See individual `packages/*/README.md` files.
