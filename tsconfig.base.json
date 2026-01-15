@@ -5,52 +5,141 @@
     "moduleResolution": "bundler",
     "jsx": "preserve",
     "jsxImportSource": "solid-js",
-    "typeRoots": ["./types", "./node_modules/@types"],
-    "types": ["rune-jsx"],
+    "typeRoots": [
+      "./types",
+      "./node_modules/@types"
+    ],
+    "types": [
+      "rune-jsx"
+    ],
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
     "baseUrl": ".",
     "paths": {
-      "@rune/apis": ["packages/rune-apis/src/index.ts"],
-      "@rune/apis/*": ["packages/rune-apis/src/*"],
-      "@rune/animate": ["packages/rune-animate/src/index.ts"],
-      "@rune/animate/*": ["packages/rune-animate/src/*"],
-      "@rune/bottom-sheet": ["packages/rune-bottom-sheet/src/index.ts"],
-      "@rune/bottom-sheet/*": ["packages/rune-bottom-sheet/src/*"],
-      "@rune/components": ["packages/rune-components/src/index.ts"],
-      "@rune/components/*": ["packages/rune-components/src/*"],
-      "@rune/core": ["packages/rune-core/src/index.ts"],
-      "@rune/core/*": ["packages/rune-core/src/*"],
-      "@rune/core/universal": ["packages/rune-core/src/universal.ts"],
-      "@rune/haptics": ["packages/rune-haptics/src/index.ts"],
-      "@rune/haptics/*": ["packages/rune-haptics/src/*"],
-      "@rune/hypervisor": ["packages/rune-hypervisor/src/index.ts"],
-      "@rune/hypervisor/*": ["packages/rune-hypervisor/src/*"],
-      "@rune/icons": ["packages/rune-icons/src/index.ts"],
-      "@rune/icons/*": ["packages/rune-icons/src/*"],
-      "@rune/image-picker": ["packages/rune-image-picker/src/index.ts"],
-      "@rune/image-picker/*": ["packages/rune-image-picker/src/*"],
-      "@rune/keyboard": ["packages/rune-keyboard/src/index.ts"],
-      "@rune/keyboard/*": ["packages/rune-keyboard/src/*"],
-      "@rune/memory-router": ["packages/rune-memory-router/src/index.ts"],
-      "@rune/memory-router/*": ["packages/rune-memory-router/src/*"],
-      "@rune/rsbuild-plugin": ["packages/rune-rsbuild-plugin/src/index.ts"],
-      "@rune/rsbuild-plugin/*": ["packages/rune-rsbuild-plugin/src/*"],
-      "@rune/safe-area": ["packages/rune-safe-area/src/index.ts"],
-      "@rune/safe-area/*": ["packages/rune-safe-area/src/*"],
-      "@rune/screens": ["packages/rune-screens/src/index.ts"],
-      "@rune/screens/*": ["packages/rune-screens/src/*"],
-      "@rune/skyhook": ["packages/rune-skyhook/src/index.ts"],
-      "@rune/skyhook/*": ["packages/rune-skyhook/src/*"],
-      "@rune/splash-screen": ["packages/rune-splash-screen/src/index.ts"],
-      "@rune/splash-screen/*": ["packages/rune-splash-screen/src/*"],
-      "@rune/ui": ["packages/rune-ui/src/index.ts"],
-      "@rune/ui/*": ["packages/rune-ui/src/*"],
-      "@rune/async-storage": ["packages/rune-async-storage/src/index.ts"],
-      "@rune/async-storage/*": ["packages/rune-async-storage/src/*"],
-      "@rune/secure-store": ["packages/rune-secure-store/src/index.ts"],
-      "@rune/secure-store/*": ["packages/rune-secure-store/src/*"]
+      "@rune/animate": [
+        "packages/rune-animate/src/index.ts"
+      ],
+      "@rune/animate/*": [
+        "packages/rune-animate/src/*"
+      ],
+      "@rune/apis": [
+        "packages/rune-apis/src/index.ts"
+      ],
+      "@rune/apis/*": [
+        "packages/rune-apis/src/*"
+      ],
+      "@rune/async-storage": [
+        "packages/rune-async-storage/src/index.ts"
+      ],
+      "@rune/async-storage/*": [
+        "packages/rune-async-storage/src/*"
+      ],
+      "@rune/bottom-sheet": [
+        "packages/rune-bottom-sheet/src/index.ts"
+      ],
+      "@rune/bottom-sheet/*": [
+        "packages/rune-bottom-sheet/src/*"
+      ],
+      "@rune/components": [
+        "packages/rune-components/src/index.ts"
+      ],
+      "@rune/components/*": [
+        "packages/rune-components/src/*"
+      ],
+      "@rune/core": [
+        "packages/rune-core/src/index.ts"
+      ],
+      "@rune/core/*": [
+        "packages/rune-core/src/*"
+      ],
+      "@rune/core/universal": [
+        "packages/rune-core/src/universal.ts"
+      ],
+      "@rune/haptics": [
+        "packages/rune-haptics/src/index.ts"
+      ],
+      "@rune/haptics/*": [
+        "packages/rune-haptics/src/*"
+      ],
+      "@rune/hypervisor": [
+        "packages/rune-hypervisor/src/index.ts"
+      ],
+      "@rune/hypervisor/*": [
+        "packages/rune-hypervisor/src/*"
+      ],
+      "@rune/icons": [
+        "packages/rune-icons/src/index.ts"
+      ],
+      "@rune/icons/*": [
+        "packages/rune-icons/src/*"
+      ],
+      "@rune/image-picker": [
+        "packages/rune-image-picker/src/index.ts"
+      ],
+      "@rune/image-picker/*": [
+        "packages/rune-image-picker/src/*"
+      ],
+      "@rune/keyboard": [
+        "packages/rune-keyboard/src/index.ts"
+      ],
+      "@rune/keyboard/*": [
+        "packages/rune-keyboard/src/*"
+      ],
+      "@rune/memory-router": [
+        "packages/rune-memory-router/src/index.ts"
+      ],
+      "@rune/memory-router/*": [
+        "packages/rune-memory-router/src/*"
+      ],
+      "@rune/rsbuild-plugin": [
+        "packages/rune-rsbuild-plugin/src/index.ts"
+      ],
+      "@rune/rsbuild-plugin/*": [
+        "packages/rune-rsbuild-plugin/src/*"
+      ],
+      "@rune/safe-area": [
+        "packages/rune-safe-area/src/index.ts"
+      ],
+      "@rune/safe-area/*": [
+        "packages/rune-safe-area/src/*"
+      ],
+      "@rune/screens": [
+        "packages/rune-screens/src/index.ts"
+      ],
+      "@rune/screens/*": [
+        "packages/rune-screens/src/*"
+      ],
+      "@rune/secure-store": [
+        "packages/rune-secure-store/src/index.ts"
+      ],
+      "@rune/secure-store/*": [
+        "packages/rune-secure-store/src/*"
+      ],
+      "@rune/skyhook": [
+        "packages/rune-skyhook/src/index.ts"
+      ],
+      "@rune/skyhook/*": [
+        "packages/rune-skyhook/src/*"
+      ],
+      "@rune/splash-screen": [
+        "packages/rune-splash-screen/src/index.ts"
+      ],
+      "@rune/splash-screen/*": [
+        "packages/rune-splash-screen/src/*"
+      ],
+      "@rune/ui": [
+        "packages/rune-ui/src/index.ts"
+      ],
+      "@rune/ui/*": [
+        "packages/rune-ui/src/*"
+      ],
+      "@rune/webserver": [
+        "packages/rune-webserver/src/index.ts"
+      ],
+      "@rune/webserver/*": [
+        "packages/rune-webserver/src/*"
+      ]
     }
   }
 }
