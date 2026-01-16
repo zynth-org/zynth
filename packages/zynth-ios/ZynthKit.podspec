@@ -26,7 +26,7 @@ Pod::Spec.new do |s|
     'HEADER_SEARCH_PATHS' => '$(inherited) ${PODS_TARGET_SRCROOT}/ios/ZynthKit ${PODS_TARGET_SRCROOT}/ios/ZynthKit/include ${PODS_TARGET_SRCROOT}/ios/ZynthKit/src'
   }
   s.user_target_xcconfig = {
-    'HEADER_SEARCH_PATHS' => '$(inherited) ${PODS_ROOT}/Headers/Public ${PODS_ROOT}/Headers/Public/ZynthKit ${PODS_ROOT}/../node_modules/@zynth/ios/ios/ZynthKit/include ${PODS_ROOT}/../../node_modules/@zynth/ios/ios/ZynthKit/include ${PODS_ROOT}/../../../node_modules/@zynth/ios/ios/ZynthKit/include ${PODS_ROOT}/../../../../node_modules/@zynth/ios/ios/ZynthKit/include',
+    'HEADER_SEARCH_PATHS' => '$(inherited) ${PODS_ROOT}/Headers/Public ${PODS_ROOT}/Headers/Public/ZynthKit ${PODS_ROOT}/hermes-engine/destroot/include ${PODS_ROOT}/../node_modules/@zynth/ios/ios/ZynthKit/include ${PODS_ROOT}/../../node_modules/@zynth/ios/ios/ZynthKit/include ${PODS_ROOT}/../../../node_modules/@zynth/ios/ios/ZynthKit/include ${PODS_ROOT}/../../../../node_modules/@zynth/ios/ios/ZynthKit/include',
     'OTHER_LDFLAGS' => '$(inherited) -lc++'
   }
 end

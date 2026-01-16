@@ -1,5 +1,8 @@
-platform :ios, '15.0'
+platform :ios, '15.1'
 use_frameworks! :linkage => :static
+
+ENV['RCT_HERMES_V1_ENABLED'] = '1'
+hermes_podspec_path = File.expand_path('../../../packages/zynth-ios/hermes-engine/hermes-engine.podspec', __dir__)
 
 zynth_ios_candidates = [
   File.expand_path('../node_modules/@zynth/ios', __dir__),
@@ -11,6 +14,7 @@ zynth_ios_path = zynth_ios_candidates.find { |candidate| File.exist?(candidate) 
 raise "Unable to locate @zynth/ios in node_modules (looked in #{zynth_ios_candidates.join(', ')})" unless zynth_ios_path
 
 target '{{APP_NAME}}' do
+  pod 'hermes-engine', :podspec => hermes_podspec_path
   pod 'Yoga'
   pod 'ZynthKit', :path => zynth_ios_path
 {{ZYNTH_COMPONENT_PODS}}
@@ -19,7 +23,7 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |t|
     t.build_configurations.each do |config|
-      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.1'
       config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++17'
       config.build_settings['CLANG_CXX_LIBRARY'] = 'libc++'
 

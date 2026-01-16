@@ -18,6 +18,7 @@ find_package(fbjni REQUIRED CONFIG)
 target_include_directories(zynth_kit
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/main/cpp
+        $<TARGET_PROPERTY:ReactAndroid::jsi,INTERFACE_INCLUDE_DIRECTORIES>
 )
 
 target_compile_options(zynth_kit
@@ -33,9 +34,17 @@ set_target_properties(zynth_kit PROPERTIES
     VISIBILITY_INLINES_HIDDEN ON
 )
 
+if(TARGET hermes-engine::hermesvm)
+    set(ZYNTH_HERMES_TARGET hermes-engine::hermesvm)
+elseif(TARGET hermes-engine::libhermes)
+    set(ZYNTH_HERMES_TARGET hermes-engine::libhermes)
+else()
+    message(FATAL_ERROR "No Hermes prefab target found (expected hermes-engine::hermesvm or hermes-engine::libhermes)")
+endif()
+
 target_link_libraries(zynth_kit
     PRIVATE
-        hermes-engine::libhermes
+        ${ZYNTH_HERMES_TARGET}
         ReactAndroid::jsi
         fbjni::fbjni
         log

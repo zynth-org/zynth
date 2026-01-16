@@ -2485,13 +2485,18 @@ void evaluateBytecode(
     const std::string &sourceUrl) {
   if (!runtime || !data || length == 0) return;
   const std::string url = sourceUrl.empty() ? "<unknown>" : sourceUrl;
-  if (!facebook::hermes::HermesRuntime::isHermesBytecode(data, length)) {
+  auto *rootApiCast = facebook::hermes::makeHermesRootAPI();
+  auto *rootApi = facebook::jsi::castInterface<facebook::hermes::IHermesRootAPI>(rootApiCast);
+  const bool isBytecode = rootApi ? rootApi->isHermesBytecode(data, length) : false;
+  if (!isBytecode) {
     std::string code(reinterpret_cast<const char *>(data), length);
     evaluateString(runtime, code, url);
     return;
   }
 
-  facebook::hermes::HermesRuntime::prefetchHermesBytecode(data, length);
+  if (rootApi) {
+    rootApi->prefetchHermesBytecode(data, length);
+  }
   auto buffer = std::make_shared<BytecodeBuffer>(data, length);
   try {
     runtime->evaluateJavaScript(buffer, url);

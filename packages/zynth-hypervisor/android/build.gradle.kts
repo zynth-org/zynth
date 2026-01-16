@@ -30,6 +30,6 @@ android {
 dependencies {
     implementation(project(":ZynthKit"))
     implementation(project(":ZynthAPIs"))
-    implementation("org.jetbrains.kotlin:kotlin-stdlib:1.9.22")
+    implementation("org.jetbrains.kotlin:kotlin-stdlib:2.1.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }

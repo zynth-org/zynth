@@ -2311,7 +2311,10 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
     try {
       const uint8_t *bytes = (const uint8_t *)data.bytes;
       size_t len = (size_t)data.length;
-      if (!facebook::hermes::HermesRuntime::isHermesBytecode(bytes, len)) {
+      auto *rootApiCast = facebook::hermes::makeHermesRootAPI();
+      auto *rootApi = facebook::jsi::castInterface<facebook::hermes::IHermesRootAPI>(rootApiCast);
+      const bool isBytecode = rootApi ? rootApi->isHermesBytecode(bytes, len) : false;
+      if (!isBytecode) {
         // Fallback: try to decode as UTF-8 source
         NSString *code = [[NSString alloc] initWithData:(NSData *)data encoding:NSUTF8StringEncoding];
         if (code.length > 0) {
@@ -2319,7 +2322,9 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
           return;
         }
       } else {
-        facebook::hermes::HermesRuntime::prefetchHermesBytecode(bytes, len);
+        if (rootApi) {
+          rootApi->prefetchHermesBytecode(bytes, len);
+        }
       }
 
       auto buffer = std::make_shared<NSDataBuffer>(data);

@@ -57,12 +57,32 @@ This document outlines the current status and future development plan for the Zy
 [ ] zynth-ui TextInput use SytemGlyphs for icons on Android.
 [ ] zynth-ui Custom slider doesn't keep on the selected position when released on Android.
 [ ] When load Menu using HMR we have `[unhandled] Module Font resource 'ZynthIconsBS.ttf' not found in any bundle. not found.
+[ ] TextInput on iOS don't center the text when declare `paddingVertical`.
+[ ] ProgressIndicator on iOS display a glitch when return from stop, first frame display it on 0x0 on his parent container.
+[ ] Android ScrollView/VerticalFeed demo has a visual issue when scroll down, the content go outside of the container, as vertical overflow, only on Controller API, FlatList demo doesn't have this issue.
+[ ] Horizontal snap demo doesn't work on Android, it display the items but doesn't allow scroll on them.
+[ ] Android: Resolve Pressable vs ScrollView gesture conflicts.
+[ ] Android: Pressable ripple effect is not clipped on the component, and show outside like a circle.
+[ ] iOS|Android: Pressable Doesn't cancel/blur the focus imperative.
+[ ] Android: BottomSheet doesn't remove the backdrop when is set.
+[ ] Create a new BottomSheet from scratch.
+[ ] Elevation discrepancy between iOS and Android.
+[ ] Individual Rounded corners have discrepancy between iOS and Android.
+[ ] iOS: Nested text are not displaying bold styles.
+[ ] iOS: Reload Hypervisor doesn't clean the redbox.
+[ ] iOS: Icon didn't display when we add a new provider on `TwoFAManager.tsx`example.
+[ ] Android: AppHub weather asset image didn't display, Local image doesn't works on Android.
+[ ] GlassView overflow on`AppHub` example.
+[ ] iOS: Nested modal on iOS have a double animation, the animation repeat when it finish the first one.
 
 ### Core Framework
 
 [ ] Lean Core Refactor: Ensure @zynth/core contains ZERO components, only the engine.
 [ ] StyleSheet API: Implement a StyleSheet.create for style de-duplication and native optimization.
 [ ] Hermes Intl: Enable native Intl support on Android (fbjni initialization).
+[ ] Brand new RedBox.
+[ ] Dev information strip.
+[ ] iOS connect to HRM dev Android server.
 
 ### Component Refinements
 

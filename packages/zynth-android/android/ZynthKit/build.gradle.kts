@@ -1,9 +1,12 @@
-val reactNativeVersion = "0.74.3"
+val reactNativeVersion = "0.84.0-rc.1"
+val hermesVersion = "250829098.0.6"
+val yogaVersion = "3.2.1"
 
 plugins {
   id("com.android.library")
   id("org.jetbrains.kotlin.android")
 }
+
 
 android {
   namespace = "com.zynth.kit"
@@ -67,13 +70,14 @@ android {
       excludes += setOf(
         "**/libc++_shared.so",
         "**/libhermes.so",
+        "**/libhermesvm.so",
         "**/libhermes-executor-debug.so",
         "**/libhermes-executor-release.so",
-        "**/libjsi.so",
         "**/libfbjni.so"
       )
     }
   }
+
 }
 
 dependencies {
@@ -83,8 +87,9 @@ dependencies {
 
   implementation(kotlin("stdlib"))
 
-  implementation("com.facebook.react:hermes-android:$reactNativeVersion")
-  implementation("com.facebook.react:react-android:$reactNativeVersion")
+  implementation("com.facebook.hermes:hermes-android:$hermesVersion")
+  compileOnly("com.facebook.react:react-android:$reactNativeVersion")
+  implementation("com.facebook.yoga:yoga:$yogaVersion")
   implementation("com.facebook.soloader:soloader:0.10.5")
   implementation("com.squareup.okhttp3:okhttp:4.11.0")
 
