@@ -41,6 +41,7 @@ apps/*/android/
 packages/zynth-android/**/build/
 packages/**/android/**/build/
 packages/zynth-android/**/.cxx/
+packages/**/android/**/.cxx/
 packages/zynth-webserver/android/**/.cxx/
 packages/zynth-android/**/.gradle/
 packages/zynth-icons/assets/fonts/*.ttf

@@ -92,6 +92,12 @@
       "@zynth/keyboard/*": [
         "packages/zynth-keyboard/src/*"
       ],
+      "@zynth/markdown": [
+        "packages/zynth-markdown/src/index.ts"
+      ],
+      "@zynth/markdown/*": [
+        "packages/zynth-markdown/src/*"
+      ],
       "@zynth/memory-router": [
         "packages/zynth-memory-router/src/index.ts"
       ],
