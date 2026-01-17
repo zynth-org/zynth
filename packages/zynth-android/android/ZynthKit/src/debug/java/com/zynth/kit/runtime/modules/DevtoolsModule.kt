@@ -10,7 +10,14 @@ import org.json.JSONObject
 class DevtoolsModule(private val context: Context) : ZynthModule {
   override val name: String = "Devtools"
 
-  private val client = ZynthDevtoolsClient()
+  companion object {
+    private val client = ZynthDevtoolsClient()
+
+    @JvmStatic
+    fun emitNative(payload: String) {
+      client.publish(payload)
+    }
+  }
 
   override fun initialize() {
     val envUrl = readSystemValue("ZYNTH_DEVTOOLS_URL")

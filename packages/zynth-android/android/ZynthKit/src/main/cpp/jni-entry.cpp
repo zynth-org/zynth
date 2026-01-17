@@ -40,6 +40,8 @@ void resolvePromise(facebook::hermes::HermesRuntime *runtime, int promiseId, con
 void rejectPromise(facebook::hermes::HermesRuntime *runtime, int promiseId, const std::string &message);
 void invokeHandler(facebook::hermes::HermesRuntime *runtime, long handlerId, int nodeId, const std::string &event);
 void emitEvent(facebook::hermes::HermesRuntime *runtime, const std::string &eventName, const std::string &payloadJson);
+void registerWorkletOnUIRuntime(facebook::hermes::HermesRuntime *runtime, int workletId);
+void runWorkletOnUIRuntime(facebook::hermes::HermesRuntime *runtime, int workletId);
 
 namespace {
 constexpr const char *kTag = "ZynthKitNative";
@@ -211,6 +213,26 @@ Java_com_zynth_kit_runtime_JSBridge_invokeHandler(
     jstring eventName) {
   auto *runtime = zynth::kit::fromPtr(runtimePtr);
   zynth::kit::invokeHandler(runtime, handlerId, nodeId, ::toStdString(env, eventName));
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_zynth_kit_runtime_JSBridge_registerWorkletOnUiRuntime(
+    JNIEnv *,
+    jclass,
+    jlong runtimePtr,
+    jint workletId) {
+  auto *runtime = zynth::kit::fromPtr(runtimePtr);
+  zynth::kit::registerWorkletOnUIRuntime(runtime, workletId);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_zynth_kit_runtime_JSBridge_runWorkletOnUiRuntime(
+    JNIEnv *,
+    jclass,
+    jlong runtimePtr,
+    jint workletId) {
+  auto *runtime = zynth::kit::fromPtr(runtimePtr);
+  zynth::kit::runWorkletOnUIRuntime(runtime, workletId);
 }
 
 extern "C" JNIEXPORT void JNICALL

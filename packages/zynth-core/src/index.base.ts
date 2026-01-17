@@ -25,6 +25,10 @@ export * from "./hmr";
 export { setActiveSurface, getActiveSurface } from "./surface";
 export { ensureDevtoolsBridge, emitDevtoolsEvent } from "./devtools";
 export { registerWebAdapter } from "./webRegistry";
+export { createSharedSignal, captureSharedSignals } from "./sharedSignal";
+export type { SharedSignalAccessor, SharedSignalToken } from "./sharedSignal";
+export { createWorklet } from "./worklet";
+export type { WorkletFunction, WorkletMetadata, WorkletPayload } from "./worklet";
 // Re-export select core helpers so Babel can import from @zynth/core when targeting universal
 export { createComponent, mergeProps, untrack } from "solid-js";
 

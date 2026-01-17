@@ -10,6 +10,8 @@ object JSBridge {
     System.loadLibrary("zynth_kit")
   }
 
+  private val workletHandler = Handler(Looper.getMainLooper())
+
   external fun createHermesRuntime(): Long
   external fun destroyHermesRuntime(runtimePtr: Long)
   external fun installBindings(
@@ -28,6 +30,33 @@ object JSBridge {
   external fun rejectPromise(runtimePtr: Long, promiseId: Int, errorMessage: String?)
   external fun invokeHandler(runtimePtr: Long, handlerId: Long, nodeId: Int, event: String)
   external fun emitEvent(runtimePtr: Long, name: String, payloadJson: String?)
+  external fun registerWorkletOnUiRuntime(runtimePtr: Long, workletId: Int)
+  external fun runWorkletOnUiRuntime(runtimePtr: Long, workletId: Int)
+
+  @JvmStatic
+  fun postRegisterWorklet(runtimePtr: Long, workletId: Int) {
+    if (runtimePtr == 0L) return
+    workletHandler.post {
+      if (runtimePtr != 0L) {
+        registerWorkletOnUiRuntime(runtimePtr, workletId)
+      }
+    }
+  }
+
+  @JvmStatic
+  fun postRunWorklet(runtimePtr: Long, workletId: Int, delayMs: Long) {
+    if (runtimePtr == 0L) return
+    val runnable = Runnable {
+      if (runtimePtr != 0L) {
+        runWorkletOnUiRuntime(runtimePtr, workletId)
+      }
+    }
+    if (delayMs <= 0L) {
+      workletHandler.post(runnable)
+    } else {
+      workletHandler.postDelayed(runnable, delayMs)
+    }
+  }
 
   interface UIShim {
     fun createNode(type: String): Int

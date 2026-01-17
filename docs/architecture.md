@@ -164,6 +164,45 @@ Animations in Zynth are physics-based and interruptible. To avoid the latency of
 *   The native driver updates the view's property directly on the UI thread for every frame.
 *   The JS thread is only notified when the animation finishes (or if it's polling).
 
+### Worklets and UI Thread
+
+Worklets are compiler-marked functions that can read shared signals without bridge hops. They are intended to run on the UI thread once a native worklet runtime is available, but are safe to execute on the JS thread as a fallback.
+
+*   `createSharedSignal(initial)` creates a Solid-style signal backed by a JSI shared value when available.
+*   `createWorklet(() => { "worklet"; ... })` strips the directive at compile time and attaches metadata.
+*   The native runtime exposes `__zynth_shared_signals` as an alias to the core native shared-value store. This is a runtime-level bridge so multiple systems can read the same native values without extra serialization.
+
+#### Native Signals Mental Model
+
+Native signals are the "spearhead" concept: Solid-style signals that live in shared native storage and can be read synchronously by the UI thread. This collapses the typical "JS -> bridge -> UI" latency into a direct read.
+
+**The pipeline:**
+
+1. **Create:** `createSharedSignal(0)` allocates a native shared slot and returns `[get, set]` in JS.
+2. **Update:** Calling `set(42)` writes the value directly to the native slot via JSI.
+3. **Run:** `createWorklet(() => { "worklet"; ... })` is compiled into a serializable payload (code + captured inputs).
+4. **Bind:** The native runtime registers the worklet and maps captured shared signals to host functions that read the shared slot.
+5. **Execute:** The UI thread runs the worklet, pulling values synchronously without waiting for JS.
+
+**Why this is fast:**
+
+- No JSON serialization or async message passing.
+- UI thread reads a native memory value directly.
+- Solid's fine-grained reactivity keeps updates narrowly scoped.
+
+**Example:**
+
+```ts
+const [offset, setOffset] = createSharedSignal(0);
+
+createWorklet(() => {
+  "worklet";
+  view.setTranslationX(offset());
+});
+
+setOffset(60);
+```
+
 ## Notes about Bundling
 
 ### Rsbuild and Dual-Targeting

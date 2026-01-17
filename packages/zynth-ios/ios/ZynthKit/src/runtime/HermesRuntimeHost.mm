@@ -228,6 +228,21 @@ struct ZynthStyleMapper {
   double basePerspective = 0.0;
 };
 
+struct ZynthWorkletClosureValue {
+  enum class Kind {
+    Shared,
+    Number,
+    Bool,
+    String,
+  };
+  std::string name;
+  Kind kind = Kind::Number;
+  int sharedId = 0;
+  double numberValue = 0.0;
+  bool boolValue = false;
+  std::string stringValue;
+};
+
 // GLOBAL STATICS REMOVED - Moved to instance variables
 // static std::atomic<int> gNextTimer{1};
 // static std::unordered_map<int, std::unique_ptr<Timer>> gTimers;
@@ -578,6 +593,11 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
   std::unordered_map<int, ZynthSharedValue> _sharedValues;
   std::unordered_map<int, ZynthStyleMapper> _styleMappers;
   std::mutex _animateMutex;
+  std::unique_ptr<facebook::hermes::HermesRuntime> _uiRt;
+  std::atomic<int> _nextWorkletId;
+  std::unordered_map<int, std::shared_ptr<Function>> _uiWorklets;
+  std::unordered_map<int, std::vector<ZynthWorkletClosureValue>> _uiWorkletClosures;
+  std::mutex _uiWorkletMutex;
 }
 @property(nonatomic, strong) SNUIManager *manager;
 - (void)reportExceptionWithContext:(NSString *)context message:(const std::string &)message stack:(const std::string &)stack;
@@ -587,10 +607,23 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
 - (void)onAnimationFrame:(CADisplayLink *)link;
 - (void)flushAnimationFrames:(CFTimeInterval)timestamp;
 - (void)installAnimateBridge;
+- (void)installWorkletsBridge;
 - (BOOL)hasActiveNativeAnimations;
 - (void)stepNativeAnimations:(CFTimeInterval)timestamp;
 - (double)resolveMappedValue:(const ZynthMappedValue &)value fallback:(double)fallback;
 - (void)applyStyleMapperLocked:(const ZynthStyleMapper &)mapper;
+- (void)ensureUIRuntime;
+- (void)installConsoleOnRuntime:(facebook::jsi::Runtime &)rt;
+- (void)installSharedSignalsOnRuntime:(facebook::jsi::Runtime &)rt;
+- (void)emitDevtoolsEventWithTopic:(NSString *)topic
+                             level:(NSString *)level
+                               tag:(NSString *)tag
+                              data:(NSDictionary *)data;
+- (void)registerWorkletOnUIRuntime:(int)workletId
+                               code:(const std::string &)code
+                           location:(const std::string &)location
+                            closure:(const std::vector<ZynthWorkletClosureValue> &)closure;
+- (void)runWorkletOnUIRuntime:(int)workletId;
 @end
 
 @implementation HermesRuntimeHost
@@ -607,6 +640,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
     _animationDisplayLink = nil;
     _nextSharedValueId = 1;
     _nextStyleMapperId = 1;
+    _nextWorkletId = 1;
 
     dispatch_sync(_jsQueue, ^{
       _rt = facebook::hermes::makeHermesRuntime();
@@ -615,6 +649,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
       [self installUIBridge];
       [self installModulesBridge];
       [self installAnimateBridge];
+      [self installWorkletsBridge];
       [self installTimers];
       [self installUnhandledPromiseReporting];
     });
@@ -654,13 +689,25 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
 }
 
 - (void)installConsole {
-  auto &rt = *_rt;
+  if (_rt) {
+    [self installConsoleOnRuntime:*_rt];
+  }
+}
+
+- (void)installConsoleOnRuntime:(facebook::jsi::Runtime &)rt {
+
+  HermesRuntimeHost *host = self;
+  bool isUIRuntime = false;
+  if (_uiRt) {
+    isUIRuntime = (&rt == static_cast<facebook::jsi::Runtime *>(_uiRt.get()));
+  }
+  NSString *runtimeLabel = isUIRuntime ? @"ui" : @"js";
 
   auto makeConsoleFunction = [&](const char *methodName) {
     std::string level = methodName ? methodName : "log";
     return Function::createFromHostFunction(
         rt, PropNameID::forAscii(rt, methodName), 0,
-        [level](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        [host, level, runtimeLabel](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
           std::string message;
           for (size_t i = 0; i < count; ++i) {
             std::string part;
@@ -698,6 +745,15 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
           }
 
           NSLog(@"JS[%s] %s", level.c_str(), message.c_str());
+          if (host) {
+            NSString *levelString = [NSString stringWithUTF8String:level.c_str()];
+            NSString *messageString = [NSString stringWithUTF8String:message.c_str()];
+            [host emitDevtoolsEventWithTopic:@"log/console"
+                                       level:levelString
+                                         tag:@"console"
+                                        data:@{@"message": messageString ?: @"",
+                                               @"runtime": runtimeLabel ?: @""}];
+          }
 
           if (level == "error") {
             ZynthDiagnosticsReport("console.error", message.c_str(), "");
@@ -722,6 +778,28 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
   console.setProperty(rt, "error", consoleError);
   console.setProperty(rt, "trace", consoleTrace);
   rt.global().setProperty(rt, "console", console);
+}
+
+- (void)emitDevtoolsEventWithTopic:(NSString *)topic
+                             level:(NSString *)level
+                               tag:(NSString *)tag
+                              data:(NSDictionary *)data {
+  if (!self.moduleCallHandler || topic.length == 0) {
+    return;
+  }
+  NSMutableDictionary *event = [NSMutableDictionary dictionary];
+  event[@"topic"] = topic;
+  if (level.length > 0) {
+    event[@"level"] = level;
+  }
+  if (tag.length > 0) {
+    event[@"tag"] = tag;
+  }
+  if (data) {
+    event[@"data"] = data;
+  }
+  NSError *error = nil;
+  self.moduleCallHandler(@"Devtools", @"emit", event, &error);
 }
 
 - (void)installUIBridge {
@@ -1787,16 +1865,316 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
         return Value::undefined();
       });
 
-  Object animate(rt);
-  animate.setProperty(rt, "createSharedValue", createSharedValue);
-  animate.setProperty(rt, "getSharedValue", getSharedValue);
-  animate.setProperty(rt, "setSharedValue", setSharedValue);
-  animate.setProperty(rt, "animateSharedValue", animateSharedValue);
-  animate.setProperty(rt, "cancelSharedValue", cancelSharedValue);
-  animate.setProperty(rt, "createStyleMapper", createStyleMapper);
-  animate.setProperty(rt, "updateStyleMapper", updateStyleMapper);
-  animate.setProperty(rt, "removeStyleMapper", removeStyleMapper);
-  rt.global().setProperty(rt, "__zynth_animate", animate);
+  Object sharedStore(rt);
+  sharedStore.setProperty(rt, "createSharedValue", createSharedValue);
+  sharedStore.setProperty(rt, "getSharedValue", getSharedValue);
+  sharedStore.setProperty(rt, "setSharedValue", setSharedValue);
+  sharedStore.setProperty(rt, "animateSharedValue", animateSharedValue);
+  sharedStore.setProperty(rt, "cancelSharedValue", cancelSharedValue);
+  sharedStore.setProperty(rt, "createStyleMapper", createStyleMapper);
+  sharedStore.setProperty(rt, "updateStyleMapper", updateStyleMapper);
+  sharedStore.setProperty(rt, "removeStyleMapper", removeStyleMapper);
+  rt.global().setProperty(rt, "__zynth_animate", sharedStore);
+  rt.global().setProperty(rt, "__zynth_shared_signals", sharedStore);
+}
+
+- (void)installSharedSignalsOnRuntime:(facebook::jsi::Runtime &)rt {
+  HermesRuntimeHost *host = self;
+
+  auto getSharedValue = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "getSharedValue"), 1,
+      [host](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isNumber()) {
+          return Value::undefined();
+        }
+        int id = static_cast<int>(args[0].asNumber());
+        std::lock_guard<std::mutex> lock(host->_animateMutex);
+        auto it = host->_sharedValues.find(id);
+        if (it == host->_sharedValues.end()) {
+          return Value::undefined();
+        }
+        return Value(it->second.value);
+      });
+
+  auto setSharedValue = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "setSharedValue"), 2,
+      [host](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 2 || !args[0].isNumber() || !args[1].isNumber()) {
+          return Value::undefined();
+        }
+        int id = static_cast<int>(args[0].asNumber());
+        double value = args[1].asNumber();
+        {
+          std::lock_guard<std::mutex> lock(host->_animateMutex);
+          auto it = host->_sharedValues.find(id);
+          if (it == host->_sharedValues.end()) {
+            return Value::undefined();
+          }
+          it->second.value = value;
+          it->second.animating = false;
+        }
+        SNEnqueueOnMain(^{
+          std::lock_guard<std::mutex> lock(host->_animateMutex);
+          for (const auto &entry : host->_styleMappers) {
+            [host applyStyleMapperLocked:entry.second];
+          }
+        });
+        return Value::undefined();
+      });
+
+  Object shared(rt);
+  shared.setProperty(rt, "getSharedValue", getSharedValue);
+  shared.setProperty(rt, "setSharedValue", setSharedValue);
+  rt.global().setProperty(rt, "__zynth_shared_signals", shared);
+}
+
+- (void)ensureUIRuntime {
+  if (_uiRt) {
+    return;
+  }
+  _uiRt = facebook::hermes::makeHermesRuntime();
+  [self installConsoleOnRuntime:*_uiRt];
+  [self installSharedSignalsOnRuntime:*_uiRt];
+}
+
+- (void)registerWorkletOnUIRuntime:(int)workletId
+                               code:(const std::string &)code
+                           location:(const std::string &)location
+                            closure:(const std::vector<ZynthWorkletClosureValue> &)closure {
+  [self ensureUIRuntime];
+  if (!_uiRt) {
+    return;
+  }
+  auto &rt = *_uiRt;
+  try {
+    std::string source = "(" + code + ")";
+    source.append("\n//# sourceURL=zynth-worklet.js");
+    auto buffer = std::make_shared<StringBuffer>(source.c_str());
+    auto result = rt.evaluateJavaScript(buffer, "zynth-worklet.js");
+    if (!result.isObject() || !result.getObject(rt).isFunction(rt)) {
+      return;
+    }
+    auto fn = std::make_shared<Function>(result.getObject(rt).getFunction(rt));
+    std::lock_guard<std::mutex> lock(_uiWorkletMutex);
+    _uiWorklets[workletId] = fn;
+    _uiWorkletClosures[workletId] = closure;
+    [self emitDevtoolsEventWithTopic:@"worklet/ios"
+                               level:@"debug"
+                                 tag:@"worklet"
+                                data:@{
+                                  @"phase": @"register",
+                                  @"id": @(workletId),
+                                  @"location": [NSString stringWithUTF8String:location.c_str()],
+                                  @"isMainThread": @([NSThread isMainThread])
+                                }];
+  } catch (const facebook::jsi::JSError &error) {
+    ZynthReportJSIError(rt, error, "WorkletRegister");
+  } catch (const std::exception &ex) {
+    [self reportStdException:ex context:@"WorkletRegister"];
+  }
+}
+
+- (void)runWorkletOnUIRuntime:(int)workletId {
+  [self ensureUIRuntime];
+  if (!_uiRt) {
+    return;
+  }
+  HermesRuntimeHost *host = self;
+  auto &rt = *_uiRt;
+  std::shared_ptr<Function> fn;
+  std::vector<ZynthWorkletClosureValue> closure;
+  {
+    std::lock_guard<std::mutex> lock(_uiWorkletMutex);
+    auto it = _uiWorklets.find(workletId);
+    if (it == _uiWorklets.end()) {
+      return;
+    }
+    fn = it->second;
+    auto closureIt = _uiWorkletClosures.find(workletId);
+    if (closureIt != _uiWorkletClosures.end()) {
+      closure = closureIt->second;
+    }
+  }
+
+  auto global = rt.global();
+  for (const auto &entry : closure) {
+    auto propId = PropNameID::forUtf8(rt, entry.name);
+    switch (entry.kind) {
+      case ZynthWorkletClosureValue::Kind::Shared: {
+        int sharedId = entry.sharedId;
+        auto getter = Function::createFromHostFunction(
+            rt, propId, 0,
+            [host, sharedId](Runtime &rt, const Value &, const Value *, size_t) -> Value {
+              std::lock_guard<std::mutex> lock(host->_animateMutex);
+              auto it = host->_sharedValues.find(sharedId);
+              if (it == host->_sharedValues.end()) {
+                return Value::undefined();
+              }
+              return Value(it->second.value);
+            });
+        global.setProperty(rt, propId, std::move(getter));
+        break;
+      }
+      case ZynthWorkletClosureValue::Kind::Number:
+        global.setProperty(rt, propId, Value(entry.numberValue));
+        break;
+      case ZynthWorkletClosureValue::Kind::Bool:
+        global.setProperty(rt, propId, Value(entry.boolValue));
+        break;
+      case ZynthWorkletClosureValue::Kind::String:
+        global.setProperty(
+            rt,
+            propId,
+            String::createFromUtf8(rt, entry.stringValue));
+        break;
+    }
+  }
+
+  try {
+    [self emitDevtoolsEventWithTopic:@"worklet/ios"
+                               level:@"debug"
+                                 tag:@"worklet"
+                                data:@{
+                                  @"phase": @"run",
+                                  @"id": @(workletId),
+                                  @"isMainThread": @([NSThread isMainThread])
+                                }];
+    fn->call(rt);
+  } catch (const facebook::jsi::JSError &error) {
+    ZynthReportJSIError(rt, error, "WorkletRun");
+  } catch (const std::exception &ex) {
+    [self reportStdException:ex context:@"WorkletRun"];
+  }
+}
+
+- (void)installWorkletsBridge {
+  auto &rt = *_rt;
+  HermesRuntimeHost *host = self;
+
+  auto registerWorklet = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "register"), 1,
+      [host](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isObject()) {
+          return Value::undefined();
+        }
+        auto payload = args[0].getObject(rt);
+        if (!payload.hasProperty(rt, "code")) {
+          return Value::undefined();
+        }
+        auto codeValue = payload.getProperty(rt, "code");
+        if (!codeValue.isString()) {
+          return Value::undefined();
+        }
+        std::string code = codeValue.getString(rt).utf8(rt);
+        std::string location;
+        if (payload.hasProperty(rt, "location")) {
+          auto locValue = payload.getProperty(rt, "location");
+          if (locValue.isString()) {
+            location = locValue.getString(rt).utf8(rt);
+          }
+        }
+        std::vector<ZynthWorkletClosureValue> closure;
+
+        if (payload.hasProperty(rt, "closure")) {
+          auto closureValue = payload.getProperty(rt, "closure");
+          if (closureValue.isObject()) {
+            auto closureObj = closureValue.getObject(rt);
+            auto keys = closureObj.getPropertyNames(rt);
+            size_t keyCount = keys.size(rt);
+            for (size_t i = 0; i < keyCount; ++i) {
+              auto keyValue = keys.getValueAtIndex(rt, i);
+              if (!keyValue.isString()) continue;
+              std::string name = keyValue.getString(rt).utf8(rt);
+              auto entryValue = closureObj.getProperty(rt, name.c_str());
+              if (entryValue.isObject()) {
+                auto entryObj = entryValue.getObject(rt);
+                if (entryObj.hasProperty(rt, kZynthSharedValueKey)) {
+                  auto idValue = entryObj.getProperty(rt, kZynthSharedValueKey);
+                  if (idValue.isNumber()) {
+                    ZynthWorkletClosureValue entry;
+                    entry.name = name;
+                    entry.kind = ZynthWorkletClosureValue::Kind::Shared;
+                    entry.sharedId = static_cast<int>(idValue.asNumber());
+                    closure.push_back(entry);
+                  }
+                }
+              } else if (entryValue.isNumber()) {
+                ZynthWorkletClosureValue entry;
+                entry.name = name;
+                entry.kind = ZynthWorkletClosureValue::Kind::Number;
+                entry.numberValue = entryValue.asNumber();
+                closure.push_back(entry);
+              } else if (entryValue.isBool()) {
+                ZynthWorkletClosureValue entry;
+                entry.name = name;
+                entry.kind = ZynthWorkletClosureValue::Kind::Bool;
+                entry.boolValue = entryValue.getBool();
+                closure.push_back(entry);
+              } else if (entryValue.isString()) {
+                ZynthWorkletClosureValue entry;
+                entry.name = name;
+                entry.kind = ZynthWorkletClosureValue::Kind::String;
+                entry.stringValue = entryValue.getString(rt).utf8(rt);
+                closure.push_back(entry);
+              }
+            }
+          }
+        }
+
+        int workletId = host->_nextWorkletId++;
+        auto codeCopy = std::make_shared<std::string>(code);
+        auto locationCopy = std::make_shared<std::string>(location);
+        auto closureCopy = std::make_shared<std::vector<ZynthWorkletClosureValue>>(closure);
+
+        SNRunOnMain(^{
+          HermesRuntimeHost *strongHost = host;
+          if (!strongHost) return;
+          [strongHost registerWorkletOnUIRuntime:workletId
+                                           code:*codeCopy
+                                       location:*locationCopy
+                                        closure:*closureCopy];
+        });
+
+        return Value(static_cast<double>(workletId));
+      });
+
+  auto runWorklet = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "run"), 1,
+      [host](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isNumber()) {
+          return Value::undefined();
+        }
+        int workletId = static_cast<int>(args[0].asNumber());
+        SNEnqueueOnMain(^{
+          HermesRuntimeHost *strongHost = host;
+          if (!strongHost) return;
+          [strongHost runWorkletOnUIRuntime:workletId];
+        });
+        return Value::undefined();
+      });
+  auto runAfter = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "runAfter"), 2,
+      [host](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 2 || !args[0].isNumber() || !args[1].isNumber()) {
+          return Value::undefined();
+        }
+        int workletId = static_cast<int>(args[0].asNumber());
+        double delayMs = args[1].asNumber();
+        HermesRuntimeHost *strongHost = host;
+        if (!strongHost) return Value::undefined();
+        int64_t delayNanos = (int64_t)(delayMs * NSEC_PER_MSEC);
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, delayNanos),
+                       dispatch_get_main_queue(), ^{
+          [strongHost runWorkletOnUIRuntime:workletId];
+        });
+        return Value::undefined();
+      });
+
+  Object worklets(rt);
+  worklets.setProperty(rt, "register", registerWorklet);
+  worklets.setProperty(rt, "run", runWorklet);
+  worklets.setProperty(rt, "runAfter", runAfter);
+  rt.global().setProperty(rt, "__zynth_worklets", worklets);
 }
 
 - (void)emitEventWithName:(NSString *)name body:(id)body {

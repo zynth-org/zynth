@@ -9,6 +9,7 @@ import { pluginBabel } from "@rsbuild/plugin-babel";
 import deepmerge from "deepmerge";
 import type { DefineZynthConfigOptions } from "./types.js";
 import { createZynthRsbuildPlugin } from "./plugin.js";
+import { createWorkletBabelPlugin } from "./babel/worklet-plugin.js";
 
 const DEFAULT_WEB_CONFIG: RsbuildConfig = {
   source: {
@@ -195,6 +196,7 @@ function createWebBabelPlugin(babelOptions: DefineZynthConfigOptions["babel"] | 
       // Universal/Native Components
       overrides.push({
         test: /[\\/]src[\\/].*\.(t|j)sx?$/,
+        plugins: [createWorkletBabelPlugin()],
         presets: [
           [
             "babel-preset-solid",
@@ -221,6 +223,10 @@ function createWebBabelPlugin(babelOptions: DefineZynthConfigOptions["babel"] | 
       });
 
       options.overrides = overrides;
+
+      const basePlugins = [...(options.plugins ?? [])];
+      basePlugins.unshift(createWorkletBabelPlugin());
+      options.plugins = basePlugins;
       return options;
     },
   });

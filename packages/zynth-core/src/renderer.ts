@@ -467,15 +467,7 @@ export function replaceText(n: any, v: any) {
 export function setProperty(n: any, k: any, v: any) {
   return H().setProperty(n, k, v);
 }
-declare const __ZYNTH_DEBUG_MARKERS: boolean | undefined;
 export function insertNode(p: any, n: any, a?: any) {
-  if (typeof __ZYNTH_DEBUG_MARKERS !== "undefined" && __ZYNTH_DEBUG_MARKERS) {
-    console.log("[zynth] insertNode", {
-      parent: p?.id,
-      node: n?.id,
-      anchor: a?.id,
-    });
-  }
   return H().insertNode(p, n, a ?? null);
 }
 export function removeNode(p: any, n: any) {

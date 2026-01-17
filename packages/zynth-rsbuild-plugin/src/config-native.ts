@@ -7,6 +7,7 @@ import { pluginBabel } from "@rsbuild/plugin-babel";
 import deepmerge from "deepmerge";
 import type { DefineZynthConfigOptions } from "./types.js";
 import { createZynthRsbuildPlugin } from "./plugin.js";
+import { createWorkletBabelPlugin } from "./babel/worklet-plugin.js";
 
 const DEFAULT_NATIVE_CONFIG: RsbuildConfig = {
   source: {
@@ -131,6 +132,7 @@ function createNativeBabelPlugin(
       const overrides = [...(options.overrides ?? [])];
       overrides.push({
         test: /[\\/]src[\\/].*\.(t|j)sx?$/,
+        plugins: [createWorkletBabelPlugin()],
         presets: [
           [
             "babel-preset-solid",
@@ -143,6 +145,10 @@ function createNativeBabelPlugin(
       });
       
       options.overrides = overrides;
+
+      const basePlugins = [...(options.plugins ?? [])];
+      basePlugins.unshift(createWorkletBabelPlugin());
+      options.plugins = basePlugins;
       
       const isDev = typeof process !== "undefined" && process.env?.NODE_ENV !== "production";
       if (isDev) {

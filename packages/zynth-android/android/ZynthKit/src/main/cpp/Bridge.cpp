@@ -181,6 +181,27 @@ struct ZynthStyleMapper {
   ZynthMappedValue perspective;
 };
 
+struct ZynthWorkletClosureValue {
+  enum class Kind {
+    Shared,
+    Number,
+    Bool,
+    String,
+  };
+  std::string name;
+  Kind kind = Kind::Number;
+  int sharedId = 0;
+  double numberValue = 0.0;
+  bool boolValue = false;
+  std::string stringValue;
+};
+
+struct ZynthWorkletDefinition {
+  std::string code;
+  std::string location;
+  std::vector<ZynthWorkletClosureValue> closure;
+};
+
 struct RuntimeState {
   facebook::hermes::HermesRuntime *runtime = nullptr;
   jobject uiShim = nullptr;
@@ -191,17 +212,24 @@ struct RuntimeState {
   jclass modulesClass = nullptr;
   jclass timerClass = nullptr;
   jclass errorHandlerClass = nullptr;
+  jclass jsBridgeClass = nullptr;
+  jclass devtoolsClass = nullptr;
   UIShimMethods uiMethods;
   ModulesShimMethods moduleMethods;
   TimerShimMethods timerMethods;
   jmethodID reportError = nullptr;
+  jmethodID postRegisterWorklet = nullptr;
+  jmethodID postRunWorklet = nullptr;
+  jmethodID devtoolsEmitNative = nullptr;
   std::mutex mutex;
+  std::mutex workletMutex;
   long nextHandlerId = 1;
   int nextTimerId = 1;
   int nextAnimationFrameId = 1;
   int nextPromiseId = 1;
   int nextSharedValueId = 1;
   int nextStyleMapperId = 1;
+  int nextWorkletId = 1;
   int nativeAnimationFrameId = -1000;
   bool nativeAnimationScheduled = false;
   std::unordered_map<long, HandlerEntry> handlers;
@@ -211,6 +239,10 @@ struct RuntimeState {
   std::unordered_map<std::string, double> consoleTimers;
   std::unordered_map<int, ZynthSharedValue> sharedValues;
   std::unordered_map<int, ZynthStyleMapper> styleMappers;
+  std::unique_ptr<facebook::hermes::HermesRuntime> uiRuntime;
+  std::unordered_map<int, std::shared_ptr<facebook::jsi::Function>> uiWorklets;
+  std::unordered_map<int, std::vector<ZynthWorkletClosureValue>> uiWorkletClosures;
+  std::unordered_map<int, ZynthWorkletDefinition> pendingWorklets;
   double performanceOriginMs = 0.0;
 };
 
@@ -261,6 +293,192 @@ std::string getUtfString(JNIEnv *env, jstring str) {
   std::string result = chars ? chars : "";
   if (chars) env->ReleaseStringUTFChars(str, chars);
   return result;
+}
+
+std::string jsonEscape(const std::string &input) {
+  std::string out;
+  out.reserve(input.size() + 8);
+  for (const char ch : input) {
+    switch (ch) {
+      case '\\': out.append("\\\\"); break;
+      case '"': out.append("\\\""); break;
+      case '\n': out.append("\\n"); break;
+      case '\r': out.append("\\r"); break;
+      case '\t': out.append("\\t"); break;
+      default: out.push_back(ch); break;
+    }
+  }
+  return out;
+}
+
+template <typename T>
+jobject boxValue(JNIEnv *env, jclass cls, jmethodID ctor, T value) {
+  return env->NewObject(cls, ctor, value);
+}
+
+jobject createHashMap(JNIEnv *env) {
+  jclass mapClass = env->FindClass("java/util/HashMap");
+  jmethodID mapCtor = env->GetMethodID(mapClass, "<init>", "()V");
+  jobject map = env->NewObject(mapClass, mapCtor);
+  env->DeleteLocalRef(mapClass);
+  return map;
+}
+
+void hashMapPut(JNIEnv *env, jobject map, const char *key, jobject value) {
+  jclass mapClass = env->FindClass("java/util/HashMap");
+  jmethodID putMethod =
+      env->GetMethodID(mapClass, "put", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
+  jstring jKey = env->NewStringUTF(key);
+  env->CallObjectMethod(map, putMethod, jKey, value);
+  env->DeleteLocalRef(jKey);
+  env->DeleteLocalRef(mapClass);
+}
+
+void hashMapPutString(JNIEnv *env, jobject map, const char *key, const std::string &value) {
+  jstring jValue = env->NewStringUTF(value.c_str());
+  hashMapPut(env, map, key, jValue);
+  env->DeleteLocalRef(jValue);
+}
+
+void hashMapPutDouble(JNIEnv *env, jobject map, const char *key, double value) {
+  jclass doubleClass = env->FindClass("java/lang/Double");
+  jmethodID doubleCtor = env->GetMethodID(doubleClass, "<init>", "(D)V");
+  jobject boxed = boxValue(env, doubleClass, doubleCtor, value);
+  hashMapPut(env, map, key, boxed);
+  env->DeleteLocalRef(boxed);
+  env->DeleteLocalRef(doubleClass);
+}
+
+void hashMapPutBool(JNIEnv *env, jobject map, const char *key, bool value) {
+  jclass boolClass = env->FindClass("java/lang/Boolean");
+  jmethodID boolCtor = env->GetMethodID(boolClass, "<init>", "(Z)V");
+  jobject boxed = boxValue(env, boolClass, boolCtor, static_cast<jboolean>(value));
+  hashMapPut(env, map, key, boxed);
+  env->DeleteLocalRef(boxed);
+  env->DeleteLocalRef(boolClass);
+}
+
+void emitDevtoolsEvent(
+    const std::shared_ptr<RuntimeState> &state,
+    const std::string &topic,
+    const std::string &level,
+    const std::string &tag,
+    const std::string &message,
+    const std::string &runtimeLabel) {
+  if (!state) return;
+  JniEnv env;
+  if (!env.valid()) return;
+
+  if (state->devtoolsEmitNative && state->devtoolsClass) {
+    std::string payload =
+        std::string("{\"type\":\"pub\",\"event\":{") +
+        "\"topic\":\"" + jsonEscape(topic) + "\"," +
+        "\"level\":\"" + jsonEscape(level) + "\"," +
+        "\"tag\":\"" + jsonEscape(tag) + "\"," +
+        "\"data\":{\"message\":\"" + jsonEscape(message) + "\"," +
+        "\"runtime\":\"" + jsonEscape(runtimeLabel) + "\"}}}";
+    jstring jPayload = env->NewStringUTF(payload.c_str());
+    env->CallStaticVoidMethod(state->devtoolsClass, state->devtoolsEmitNative, jPayload);
+    logJniException(env.get(), "Devtools.emitNative");
+    env->DeleteLocalRef(jPayload);
+    return;
+  }
+
+  if (!state->modulesShim || !state->moduleMethods.callSync) {
+    return;
+  }
+  jobject eventMap = createHashMap(env.get());
+  hashMapPutString(env.get(), eventMap, "topic", topic);
+  if (!level.empty()) {
+    hashMapPutString(env.get(), eventMap, "level", level);
+  }
+  if (!tag.empty()) {
+    hashMapPutString(env.get(), eventMap, "tag", tag);
+  }
+
+  jobject dataMap = createHashMap(env.get());
+  hashMapPutString(env.get(), dataMap, "message", message);
+  hashMapPutString(env.get(), dataMap, "runtime", runtimeLabel);
+  hashMapPut(env.get(), eventMap, "data", dataMap);
+  env->DeleteLocalRef(dataMap);
+
+  jclass objectClass = env->FindClass("java/lang/Object");
+  jobjectArray argsArray = env->NewObjectArray(1, objectClass, nullptr);
+  env->SetObjectArrayElement(argsArray, 0, eventMap);
+  env->DeleteLocalRef(objectClass);
+
+  jstring moduleName = env->NewStringUTF("Devtools");
+  jstring methodName = env->NewStringUTF("emit");
+  env->CallObjectMethod(state->modulesShim, state->moduleMethods.callSync, moduleName, methodName, argsArray);
+  logJniException(env.get(), "Devtools.emit");
+
+  env->DeleteLocalRef(moduleName);
+  env->DeleteLocalRef(methodName);
+  env->DeleteLocalRef(argsArray);
+  env->DeleteLocalRef(eventMap);
+}
+
+void emitWorkletEvent(
+    const std::shared_ptr<RuntimeState> &state,
+    const std::string &phase,
+    int workletId,
+    const std::string &location) {
+  if (!state) return;
+  JniEnv env;
+  if (!env.valid()) return;
+
+  if (state->devtoolsEmitNative && state->devtoolsClass) {
+    std::string payload =
+        std::string("{\"type\":\"pub\",\"event\":{") +
+        "\"topic\":\"worklet/android\"," +
+        "\"level\":\"debug\"," +
+        "\"tag\":\"worklet\"," +
+        "\"data\":{"
+        "\"phase\":\"" + jsonEscape(phase) + "\"," +
+        "\"id\":" + std::to_string(workletId) + "," +
+        (location.empty() ? "" : "\"location\":\"" + jsonEscape(location) + "\",") +
+        "\"isMainThread\":true," +
+        "\"runtime\":\"ui\"}}}";
+    jstring jPayload = env->NewStringUTF(payload.c_str());
+    env->CallStaticVoidMethod(state->devtoolsClass, state->devtoolsEmitNative, jPayload);
+    logJniException(env.get(), "Devtools.emitNative(worklet)");
+    env->DeleteLocalRef(jPayload);
+    return;
+  }
+
+  if (!state->modulesShim || !state->moduleMethods.callSync) {
+    return;
+  }
+  jobject eventMap = createHashMap(env.get());
+  hashMapPutString(env.get(), eventMap, "topic", "worklet/android");
+  hashMapPutString(env.get(), eventMap, "level", "debug");
+  hashMapPutString(env.get(), eventMap, "tag", "worklet");
+
+  jobject dataMap = createHashMap(env.get());
+  hashMapPutString(env.get(), dataMap, "phase", phase);
+  hashMapPutDouble(env.get(), dataMap, "id", static_cast<double>(workletId));
+  if (!location.empty()) {
+    hashMapPutString(env.get(), dataMap, "location", location);
+  }
+  hashMapPutBool(env.get(), dataMap, "isMainThread", true);
+  hashMapPutString(env.get(), dataMap, "runtime", "ui");
+  hashMapPut(env.get(), eventMap, "data", dataMap);
+  env->DeleteLocalRef(dataMap);
+
+  jclass objectClass = env->FindClass("java/lang/Object");
+  jobjectArray argsArray = env->NewObjectArray(1, objectClass, nullptr);
+  env->SetObjectArrayElement(argsArray, 0, eventMap);
+  env->DeleteLocalRef(objectClass);
+
+  jstring moduleName = env->NewStringUTF("Devtools");
+  jstring methodName = env->NewStringUTF("emit");
+  env->CallObjectMethod(state->modulesShim, state->moduleMethods.callSync, moduleName, methodName, argsArray);
+  logJniException(env.get(), "Devtools.emit(worklet)");
+
+  env->DeleteLocalRef(moduleName);
+  env->DeleteLocalRef(methodName);
+  env->DeleteLocalRef(argsArray);
+  env->DeleteLocalRef(eventMap);
 }
 
 std::string getThrowableMessage(JNIEnv *env, jthrowable throwable) {
@@ -654,9 +872,11 @@ facebook::jsi::Value javaObjectToJsValue(
   return Value::undefined();
 }
 
-void installConsole(std::shared_ptr<RuntimeState> state) {
+void installConsoleOnRuntime(
+    const std::shared_ptr<RuntimeState> &state,
+    facebook::jsi::Runtime &rt,
+    const char *runtimeLabel) {
   using namespace facebook::jsi;
-  auto &rt = *state->runtime;
   auto weakState = std::weak_ptr<RuntimeState>(state);
 
   auto nowMs = []() -> double {
@@ -718,23 +938,35 @@ void installConsole(std::shared_ptr<RuntimeState> state) {
   };
   auto logFunction = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "log"), 0,
-      [formatArgs](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+      [formatArgs, runtimeLabel, weakState](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
         std::string message = formatArgs(rt, args, count);
-        BRIDGE_LOG(ANDROID_LOG_INFO, "%s", message.c_str());
+        BRIDGE_LOG(ANDROID_LOG_INFO, "console[%s] %s", runtimeLabel, message.c_str());
+        auto state = weakState.lock();
+        if (state) {
+          emitDevtoolsEvent(state, "log/console", "log", "console", message, runtimeLabel);
+        }
         return Value::undefined();
       });
   auto warnFunction = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "warn"), 0,
-      [formatArgs](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+      [formatArgs, runtimeLabel, weakState](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
         std::string message = formatArgs(rt, args, count);
-        BRIDGE_LOG(ANDROID_LOG_WARN, "%s", message.c_str());
+        BRIDGE_LOG(ANDROID_LOG_WARN, "console[%s] %s", runtimeLabel, message.c_str());
+        auto state = weakState.lock();
+        if (state) {
+          emitDevtoolsEvent(state, "log/console", "warn", "console", message, runtimeLabel);
+        }
         return Value::undefined();
       });
   auto errorFunction = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "error"), 0,
-      [formatArgs](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+      [formatArgs, runtimeLabel, weakState](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
         std::string message = formatArgs(rt, args, count);
-        BRIDGE_LOG(ANDROID_LOG_ERROR, "%s", message.c_str());
+        BRIDGE_LOG(ANDROID_LOG_ERROR, "console[%s] %s", runtimeLabel, message.c_str());
+        auto state = weakState.lock();
+        if (state) {
+          emitDevtoolsEvent(state, "log/console", "error", "console", message, runtimeLabel);
+        }
         return Value::undefined();
       });
 
@@ -829,6 +1061,11 @@ void installConsole(std::shared_ptr<RuntimeState> state) {
   }
   performance.setProperty(rt, "now", performanceNow);
   global.setProperty(rt, "performance", performance);
+}
+
+void installConsole(std::shared_ptr<RuntimeState> state) {
+  if (!state || !state->runtime) return;
+  installConsoleOnRuntime(state, *state->runtime, "js");
 }
 
 void installPlatformFlag(std::shared_ptr<RuntimeState> state) {
@@ -2057,16 +2294,338 @@ void installAnimateBindings(std::shared_ptr<RuntimeState> state) {
         return Value::undefined();
       });
 
-  Object animate(rt);
-  animate.setProperty(rt, "createSharedValue", createSharedValue);
-  animate.setProperty(rt, "getSharedValue", getSharedValue);
-  animate.setProperty(rt, "setSharedValue", setSharedValue);
-  animate.setProperty(rt, "animateSharedValue", animateSharedValue);
-  animate.setProperty(rt, "cancelSharedValue", cancelSharedValue);
-  animate.setProperty(rt, "createStyleMapper", createStyleMapper);
-  animate.setProperty(rt, "updateStyleMapper", updateStyleMapper);
-  animate.setProperty(rt, "removeStyleMapper", removeStyleMapper);
-  rt.global().setProperty(rt, "__zynth_animate", animate);
+  Object sharedStore(rt);
+  sharedStore.setProperty(rt, "createSharedValue", createSharedValue);
+  sharedStore.setProperty(rt, "getSharedValue", getSharedValue);
+  sharedStore.setProperty(rt, "setSharedValue", setSharedValue);
+  sharedStore.setProperty(rt, "animateSharedValue", animateSharedValue);
+  sharedStore.setProperty(rt, "cancelSharedValue", cancelSharedValue);
+  sharedStore.setProperty(rt, "createStyleMapper", createStyleMapper);
+  sharedStore.setProperty(rt, "updateStyleMapper", updateStyleMapper);
+  sharedStore.setProperty(rt, "removeStyleMapper", removeStyleMapper);
+  rt.global().setProperty(rt, "__zynth_animate", sharedStore);
+  rt.global().setProperty(rt, "__zynth_shared_signals", sharedStore);
+}
+
+void installSharedSignalsOnRuntime(
+    const std::shared_ptr<RuntimeState> &state,
+    facebook::jsi::Runtime &rt) {
+  using namespace facebook::jsi;
+  auto weakState = std::weak_ptr<RuntimeState>(state);
+
+  auto getSharedValue = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "getSharedValue"), 1,
+      [weakState](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        auto state = weakState.lock();
+        if (!state || count < 1 || !args[0].isNumber()) {
+          return Value::undefined();
+        }
+        int id = static_cast<int>(args[0].asNumber());
+        std::lock_guard<std::mutex> lock(state->mutex);
+        auto it = state->sharedValues.find(id);
+        if (it == state->sharedValues.end()) {
+          return Value::undefined();
+        }
+        return Value(it->second.value);
+      });
+
+  auto setSharedValue = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "setSharedValue"), 2,
+      [weakState](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        auto state = weakState.lock();
+        if (!state || count < 2 || !args[0].isNumber() || !args[1].isNumber()) {
+          return Value::undefined();
+        }
+        int id = static_cast<int>(args[0].asNumber());
+        double value = args[1].asNumber();
+        {
+          std::lock_guard<std::mutex> lock(state->mutex);
+          auto it = state->sharedValues.find(id);
+          if (it == state->sharedValues.end()) {
+            return Value::undefined();
+          }
+          it->second.value = value;
+        }
+        return Value::undefined();
+      });
+
+  Object shared(rt);
+  shared.setProperty(rt, "getSharedValue", getSharedValue);
+  shared.setProperty(rt, "setSharedValue", setSharedValue);
+  rt.global().setProperty(rt, "__zynth_shared_signals", shared);
+}
+
+void ensureUIRuntime(const std::shared_ptr<RuntimeState> &state) {
+  if (!state || state->uiRuntime) return;
+  state->uiRuntime = facebook::hermes::makeHermesRuntime(
+      hermes::vm::RuntimeConfig::Builder().build());
+  installConsoleOnRuntime(state, *state->uiRuntime, "ui");
+  installSharedSignalsOnRuntime(state, *state->uiRuntime);
+}
+
+bool postRegisterWorkletToMain(const std::shared_ptr<RuntimeState> &state, int workletId) {
+  if (!state || !state->postRegisterWorklet || !state->jsBridgeClass) {
+    BRIDGE_LOG(ANDROID_LOG_WARN, "worklet: missing postRegisterWorklet bridge");
+    return false;
+  }
+  JniEnv env;
+  if (!env.valid()) return false;
+  env->CallStaticVoidMethod(
+      state->jsBridgeClass,
+      state->postRegisterWorklet,
+      reinterpret_cast<jlong>(state->runtime),
+      static_cast<jint>(workletId));
+  logJniException(env.get(), "JSBridge.postRegisterWorklet");
+  return true;
+}
+
+bool postRunWorkletToMain(
+    const std::shared_ptr<RuntimeState> &state,
+    int workletId,
+    double delayMs) {
+  if (!state || !state->postRunWorklet || !state->jsBridgeClass) {
+    BRIDGE_LOG(ANDROID_LOG_WARN, "worklet: missing postRunWorklet bridge");
+    return false;
+  }
+  JniEnv env;
+  if (!env.valid()) return false;
+  jlong delay = delayMs <= 0 ? 0 : static_cast<jlong>(delayMs);
+  env->CallStaticVoidMethod(
+      state->jsBridgeClass,
+      state->postRunWorklet,
+      reinterpret_cast<jlong>(state->runtime),
+      static_cast<jint>(workletId),
+      delay);
+  logJniException(env.get(), "JSBridge.postRunWorklet");
+  return true;
+}
+
+void registerWorkletOnUIRuntimeInternal(
+    const std::shared_ptr<RuntimeState> &state,
+    int workletId) {
+  if (!state) return;
+  ensureUIRuntime(state);
+  if (!state->uiRuntime) return;
+
+  ZynthWorkletDefinition definition;
+  {
+    std::lock_guard<std::mutex> lock(state->workletMutex);
+    auto it = state->pendingWorklets.find(workletId);
+    if (it == state->pendingWorklets.end()) {
+      BRIDGE_LOG(ANDROID_LOG_WARN, "worklet: missing definition id=%d", workletId);
+      return;
+    }
+    definition = std::move(it->second);
+    state->pendingWorklets.erase(it);
+  }
+
+  auto &rt = *state->uiRuntime;
+  try {
+    std::string source = "(" + definition.code + ")";
+    source.append("\n//# sourceURL=zynth-worklet.js");
+    auto buffer = std::make_shared<facebook::jsi::StringBuffer>(source);
+    auto result = rt.evaluateJavaScript(buffer, "zynth-worklet.js");
+    if (!result.isObject() || !result.getObject(rt).isFunction(rt)) {
+      BRIDGE_LOG(ANDROID_LOG_WARN, "worklet: code did not evaluate to function");
+      return;
+    }
+    auto fn = std::make_shared<facebook::jsi::Function>(result.getObject(rt).getFunction(rt));
+    std::lock_guard<std::mutex> lock(state->workletMutex);
+    state->uiWorklets[workletId] = fn;
+    state->uiWorkletClosures[workletId] = std::move(definition.closure);
+    BRIDGE_LOG(ANDROID_LOG_INFO, "worklet: registered id=%d location=%s", workletId, definition.location.c_str());
+    emitWorkletEvent(state, "register", workletId, definition.location);
+  } catch (const facebook::jsi::JSError &err) {
+    ZynthReportJSIError(rt, err, "WorkletRegister");
+  } catch (const std::exception &ex) {
+    BRIDGE_LOG(ANDROID_LOG_ERROR, "worklet: register exception %s", ex.what());
+  }
+}
+
+void runWorkletOnUIRuntimeInternal(
+    const std::shared_ptr<RuntimeState> &state,
+    int workletId) {
+  if (!state || !state->uiRuntime) return;
+  auto &rt = *state->uiRuntime;
+  std::shared_ptr<facebook::jsi::Function> fn;
+  std::vector<ZynthWorkletClosureValue> closure;
+  {
+    std::lock_guard<std::mutex> lock(state->workletMutex);
+    auto it = state->uiWorklets.find(workletId);
+    if (it == state->uiWorklets.end()) {
+      BRIDGE_LOG(ANDROID_LOG_WARN, "worklet: run missing id=%d", workletId);
+      return;
+    }
+    fn = it->second;
+    auto closureIt = state->uiWorkletClosures.find(workletId);
+    if (closureIt != state->uiWorkletClosures.end()) {
+      closure = closureIt->second;
+    }
+  }
+
+  auto global = rt.global();
+  for (const auto &entry : closure) {
+    auto propId = facebook::jsi::PropNameID::forUtf8(rt, entry.name);
+    switch (entry.kind) {
+      case ZynthWorkletClosureValue::Kind::Shared: {
+        int sharedId = entry.sharedId;
+        auto getter = facebook::jsi::Function::createFromHostFunction(
+            rt, propId, 0,
+            [state, sharedId](facebook::jsi::Runtime &, const facebook::jsi::Value &,
+                              const facebook::jsi::Value *, size_t) -> facebook::jsi::Value {
+              if (!state) return facebook::jsi::Value::undefined();
+              std::lock_guard<std::mutex> lock(state->mutex);
+              auto it = state->sharedValues.find(sharedId);
+              if (it == state->sharedValues.end()) {
+                return facebook::jsi::Value::undefined();
+              }
+              return facebook::jsi::Value(it->second.value);
+            });
+        global.setProperty(rt, propId, std::move(getter));
+        break;
+      }
+      case ZynthWorkletClosureValue::Kind::Number:
+        global.setProperty(rt, propId, facebook::jsi::Value(entry.numberValue));
+        break;
+      case ZynthWorkletClosureValue::Kind::Bool:
+        global.setProperty(rt, propId, facebook::jsi::Value(entry.boolValue));
+        break;
+      case ZynthWorkletClosureValue::Kind::String:
+        global.setProperty(rt, propId,
+                           facebook::jsi::String::createFromUtf8(rt, entry.stringValue));
+        break;
+    }
+  }
+
+  try {
+    fn->call(rt);
+    emitWorkletEvent(state, "run", workletId, "");
+  } catch (const facebook::jsi::JSError &err) {
+    ZynthReportJSIError(rt, err, "WorkletRun");
+  } catch (const std::exception &ex) {
+    BRIDGE_LOG(ANDROID_LOG_ERROR, "worklet: run exception %s", ex.what());
+  }
+}
+
+void installWorkletsBindings(std::shared_ptr<RuntimeState> state) {
+  using namespace facebook::jsi;
+  auto weakState = std::weak_ptr<RuntimeState>(state);
+  auto &rt = *state->runtime;
+
+  auto registerWorklet = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "register"), 1,
+      [weakState](Runtime &runtime, const Value &, const Value *args, size_t count) -> Value {
+        auto state = weakState.lock();
+        if (!state || count < 1 || !args[0].isObject()) {
+          return Value::undefined();
+        }
+        auto payload = args[0].getObject(runtime);
+        if (!payload.hasProperty(runtime, "code")) {
+          return Value::undefined();
+        }
+        auto codeValue = payload.getProperty(runtime, "code");
+        if (!codeValue.isString()) {
+          return Value::undefined();
+        }
+        std::string code = codeValue.getString(runtime).utf8(runtime);
+        std::string location;
+        if (payload.hasProperty(runtime, "location")) {
+          auto locValue = payload.getProperty(runtime, "location");
+          if (locValue.isString()) {
+            location = locValue.getString(runtime).utf8(runtime);
+          }
+        }
+        std::vector<ZynthWorkletClosureValue> closure;
+        if (payload.hasProperty(runtime, "closure")) {
+          auto closureValue = payload.getProperty(runtime, "closure");
+          if (closureValue.isObject()) {
+            auto closureObj = closureValue.getObject(runtime);
+            auto keys = closureObj.getPropertyNames(runtime);
+            size_t keyCount = keys.size(runtime);
+            for (size_t i = 0; i < keyCount; ++i) {
+              auto keyValue = keys.getValueAtIndex(runtime, i);
+              if (!keyValue.isString()) continue;
+              std::string name = keyValue.getString(runtime).utf8(runtime);
+              auto entryValue = closureObj.getProperty(runtime, name.c_str());
+              if (entryValue.isObject()) {
+                auto entryObj = entryValue.getObject(runtime);
+                if (entryObj.hasProperty(runtime, kZynthSharedValueKey)) {
+                  auto idValue = entryObj.getProperty(runtime, kZynthSharedValueKey);
+                  if (idValue.isNumber()) {
+                    ZynthWorkletClosureValue entry;
+                    entry.name = name;
+                    entry.kind = ZynthWorkletClosureValue::Kind::Shared;
+                    entry.sharedId = static_cast<int>(idValue.asNumber());
+                    closure.push_back(entry);
+                  }
+                }
+              } else if (entryValue.isNumber()) {
+                ZynthWorkletClosureValue entry;
+                entry.name = name;
+                entry.kind = ZynthWorkletClosureValue::Kind::Number;
+                entry.numberValue = entryValue.asNumber();
+                closure.push_back(entry);
+              } else if (entryValue.isBool()) {
+                ZynthWorkletClosureValue entry;
+                entry.name = name;
+                entry.kind = ZynthWorkletClosureValue::Kind::Bool;
+                entry.boolValue = entryValue.getBool();
+                closure.push_back(entry);
+              } else if (entryValue.isString()) {
+                ZynthWorkletClosureValue entry;
+                entry.name = name;
+                entry.kind = ZynthWorkletClosureValue::Kind::String;
+                entry.stringValue = entryValue.getString(runtime).utf8(runtime);
+                closure.push_back(entry);
+              }
+            }
+          }
+        }
+
+        int workletId;
+        {
+          std::lock_guard<std::mutex> lock(state->workletMutex);
+          workletId = state->nextWorkletId++;
+          ZynthWorkletDefinition definition;
+          definition.code = std::move(code);
+          definition.location = std::move(location);
+          definition.closure = std::move(closure);
+          state->pendingWorklets[workletId] = std::move(definition);
+        }
+        postRegisterWorkletToMain(state, workletId);
+        return Value(static_cast<double>(workletId));
+      });
+
+  auto runWorklet = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "run"), 1,
+      [weakState](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        auto state = weakState.lock();
+        if (!state || count < 1 || !args[0].isNumber()) {
+          return Value::undefined();
+        }
+        int workletId = static_cast<int>(args[0].asNumber());
+        postRunWorkletToMain(state, workletId, 0);
+        return Value::undefined();
+      });
+
+  auto runAfter = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "runAfter"), 2,
+      [weakState](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        auto state = weakState.lock();
+        if (!state || count < 2 || !args[0].isNumber() || !args[1].isNumber()) {
+          return Value::undefined();
+        }
+        int workletId = static_cast<int>(args[0].asNumber());
+        double delayMs = args[1].asNumber();
+        postRunWorkletToMain(state, workletId, delayMs);
+        return Value::undefined();
+      });
+
+  Object worklets(rt);
+  worklets.setProperty(rt, "register", registerWorklet);
+  worklets.setProperty(rt, "run", runWorklet);
+  worklets.setProperty(rt, "runAfter", runAfter);
+  rt.global().setProperty(rt, "__zynth_worklets", worklets);
 }
 
 jobject jsiValueToJObject(facebook::jsi::Runtime &rt, JNIEnv *env, const facebook::jsi::Value &value);
@@ -2283,6 +2842,8 @@ void cleanupState(std::shared_ptr<RuntimeState> state) {
   if (state->modulesClass) env->DeleteGlobalRef(state->modulesClass);
   if (state->timerClass) env->DeleteGlobalRef(state->timerClass);
   if (state->errorHandlerClass) env->DeleteGlobalRef(state->errorHandlerClass);
+  if (state->jsBridgeClass) env->DeleteGlobalRef(state->jsBridgeClass);
+  if (state->devtoolsClass) env->DeleteGlobalRef(state->devtoolsClass);
 }
 
 } // namespace
@@ -2415,6 +2976,20 @@ void installBindings(
 
   state->reportError = env->GetMethodID(state->errorHandlerClass, "report", "(Ljava/lang/String;Ljava/lang/String;)V");
 
+  jclass localJsBridge = env->FindClass("com/zynth/kit/runtime/JSBridge");
+  if (localJsBridge) {
+    state->jsBridgeClass = static_cast<jclass>(env->NewGlobalRef(localJsBridge));
+    state->postRegisterWorklet = env->GetStaticMethodID(state->jsBridgeClass, "postRegisterWorklet", "(JI)V");
+    state->postRunWorklet = env->GetStaticMethodID(state->jsBridgeClass, "postRunWorklet", "(JIJ)V");
+    env->DeleteLocalRef(localJsBridge);
+  }
+  jclass localDevtools = env->FindClass("com/zynth/kit/runtime/modules/DevtoolsModule");
+  if (localDevtools) {
+    state->devtoolsClass = static_cast<jclass>(env->NewGlobalRef(localDevtools));
+    state->devtoolsEmitNative = env->GetStaticMethodID(state->devtoolsClass, "emitNative", "(Ljava/lang/String;)V");
+    env->DeleteLocalRef(localDevtools);
+  }
+
   storeState(runtime, state);
 
   if (state->moduleMethods.getConstants) {
@@ -2434,6 +3009,7 @@ void installBindings(
   installUIBindings(state);
   installModules(state);
   installAnimateBindings(state);
+  installWorkletsBindings(state);
   installTimers(state);
   installUnhandledPromiseReporting(state);
 
@@ -2857,6 +3433,18 @@ void emitEvent(
     BRIDGE_LOG(ANDROID_LOG_ERROR, "emitEvent exception: %s", ex.what());
     reportJsError(state, ex.what(), "");
   }
+}
+
+void registerWorkletOnUIRuntime(facebook::hermes::HermesRuntime *runtime, int workletId) {
+  auto state = getState(runtime);
+  if (!state) return;
+  registerWorkletOnUIRuntimeInternal(state, workletId);
+}
+
+void runWorkletOnUIRuntime(facebook::hermes::HermesRuntime *runtime, int workletId) {
+  auto state = getState(runtime);
+  if (!state) return;
+  runWorkletOnUIRuntimeInternal(state, workletId);
 }
 
 void invokeHandler(facebook::hermes::HermesRuntime *runtime, long handlerId, int nodeId, const std::string &event) {

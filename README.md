@@ -8,6 +8,7 @@ Zynth brings fine-grained reactivity to native mobile development. By combining 
 
 - **No Virtual DOM:** Updates are surgical. When a signal changes, Zynth updates _only_ the specific native property that needs to change, bypassing the heavy diffing process found in React Native.
 - **Synchronous Bridge (JSI):** Communication between JavaScript and Native (C++/Swift/Kotlin) happens synchronously via the JavaScript Interface (JSI), eliminating bridge serialization overhead.
+- **Native Signals:** `createSharedSignal` exposes Solid-style signals backed by native shared storage so the UI thread can read values without async hops.
 - **True Native Navigation:** Screens and transitions are backed by native controllers (`UINavigationController` / Fragments), ensuring 100% authentic feel and gesture support.
 - **Shared Value Animations:** Physics-based animations run on the UI thread, driven by a native loop, keeping interactions buttery smooth even if the JS thread is busy.
 - **Modular Architecture:** Everything is a package. Core logic, UI components, and native APIs are split into small, tree-shakeable modules (`@zynth/core`, `@zynth/components`, `@zynth/animate`).

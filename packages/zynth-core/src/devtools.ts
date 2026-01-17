@@ -38,7 +38,11 @@ export function ensureDevtoolsBridge(): ZynthDevtoolsBridge | null {
     emit(event) {
       if (!event || typeof event !== "object") return;
       if (typeof g.__modules?.call === "function") {
-        g.__modules.call("Devtools", "emit", event);
+        try {
+          g.__modules.call("Devtools", "emit", event);
+        } catch {
+          // Devtools transport failures should not break runtime behavior.
+        }
       }
     },
     isConnected() {
@@ -93,19 +97,31 @@ export function installDevtoolsConsole(): void {
   for (const level of levels) {
     const original = consoleObj[level];
     consoleObj[level] = (...args: unknown[]) => {
-      bridge.emit({
-        topic: "log/console",
-        level,
-        tag: "console",
-        data: formatConsoleArgs(args),
-      });
+      try {
+        bridge.emit({
+          topic: "log/console",
+          level,
+          tag: "console",
+          data: formatConsoleArgs(args),
+        });
+      } catch {
+        // Ignore console bridge failures.
+      }
       if (g.__ZYNTH_DEVTOOLS_CONSOLE_PASSTHROUGH__ && typeof original === "function") {
-        original(...args);
+        try {
+          original(...args);
+        } catch {
+          // Ignore console passthrough failures.
+        }
       }
     };
   }
 }
 
 export function emitDevtoolsEvent(event: ZynthDevtoolsEvent): void {
-  ensureDevtoolsBridge()?.emit(event);
+  try {
+    ensureDevtoolsBridge()?.emit(event);
+  } catch {
+    // Ignore devtools failures.
+  }
 }

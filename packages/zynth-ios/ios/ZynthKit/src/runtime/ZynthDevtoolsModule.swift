@@ -65,6 +65,8 @@ final class ZynthDevtoolsClient: NSObject {
   private var token: String?
   private var pending: [String] = []
   private var stopped = false
+  private var reconnectAttempts = 0
+  private var reconnectWorkItem: DispatchWorkItem?
   private let maxQueue = 256
 
   var isConnected: Bool {
@@ -77,7 +79,7 @@ final class ZynthDevtoolsClient: NSObject {
     configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
     configuration.timeoutIntervalForRequest = 30
     configuration.timeoutIntervalForResource = 30
-    session = URLSession(configuration: configuration, delegate: nil, delegateQueue: nil)
+    session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
   }
 
   func connect(url: URL, token: String?) {
@@ -86,6 +88,7 @@ final class ZynthDevtoolsClient: NSObject {
       self.baseURL = url
       self.token = token
       self.stopped = false
+      self.reconnectAttempts = 0
       self.openSocket()
     }
   }
@@ -94,6 +97,8 @@ final class ZynthDevtoolsClient: NSObject {
     queue.async { [weak self] in
       guard let self else { return }
       self.stopped = true
+      self.reconnectWorkItem?.cancel()
+      self.reconnectWorkItem = nil
       self.socket?.cancel(with: .goingAway, reason: nil)
       self.socket = nil
     }
@@ -113,6 +118,7 @@ final class ZynthDevtoolsClient: NSObject {
         return
       }
       self.enqueue(json)
+      self.ensureConnected()
       self.flushIfPossible()
     }
   }
@@ -130,8 +136,22 @@ final class ZynthDevtoolsClient: NSObject {
     }
     while !pending.isEmpty {
       let message = pending.removeFirst()
-      socket.send(.string(message)) { _ in }
+      socket.send(.string(message)) { [weak self] error in
+        guard let self else { return }
+        if let _ = error {
+          self.queue.async {
+            self.enqueue(message)
+            self.scheduleReconnect()
+          }
+        }
+      }
     }
+  }
+
+  private func ensureConnected() {
+    if stopped { return }
+    if socket?.state == .running { return }
+    openSocket()
   }
 
   private func openSocket() {
@@ -146,10 +166,31 @@ final class ZynthDevtoolsClient: NSObject {
 
   private func receiveNextMessage() {
     guard let socket else { return }
-    socket.receive { [weak self] _ in
+    socket.receive { [weak self] result in
       guard let self else { return }
-      self.receiveNextMessage()
+      switch result {
+      case .success:
+        self.receiveNextMessage()
+      case .failure:
+        self.queue.async {
+          self.scheduleReconnect()
+        }
+      }
     }
+  }
+
+  private func scheduleReconnect() {
+    if stopped { return }
+    reconnectWorkItem?.cancel()
+    let attempt = min(reconnectAttempts, 6)
+    let delay = min(pow(2.0, Double(attempt)) * 0.5, 10.0)
+    reconnectAttempts = attempt + 1
+    let workItem = DispatchWorkItem { [weak self] in
+      guard let self else { return }
+      self.openSocket()
+    }
+    reconnectWorkItem = workItem
+    queue.asyncAfter(deadline: .now() + delay, execute: workItem)
   }
 
   private func makeWebSocketURL(from url: URL, token: String?) -> URL? {
@@ -168,5 +209,33 @@ final class ZynthDevtoolsClient: NSObject {
     return components.url
   }
 
+}
+
+extension ZynthDevtoolsClient: URLSessionWebSocketDelegate {
+  func urlSession(
+    _ session: URLSession,
+    webSocketTask: URLSessionWebSocketTask,
+    didCloseWith closeCode: URLSessionWebSocketTask.CloseCode,
+    reason: Data?
+  ) {
+    queue.async { [weak self] in
+      guard let self else { return }
+      self.socket = nil
+      if !self.stopped {
+        self.scheduleReconnect()
+      }
+    }
+  }
+
+  func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+    guard error != nil else { return }
+    queue.async { [weak self] in
+      guard let self else { return }
+      self.socket = nil
+      if !self.stopped {
+        self.scheduleReconnect()
+      }
+    }
+  }
 }
 #endif
