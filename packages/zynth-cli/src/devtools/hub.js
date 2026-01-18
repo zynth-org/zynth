@@ -74,6 +74,10 @@ function createDevtoolsHub({
 
   function shouldPrintEvent(event) {
     if (!print) return false;
+    if (filters.hideDebug) {
+      const level = String(event.level || "").toLowerCase();
+      if (level === "debug") return false;
+    }
     if (filters.topics && filters.topics.length > 0) {
       const topic = String(event.topic || "");
       const match = filters.topics.some((entry) => matchesTopic(entry, topic));

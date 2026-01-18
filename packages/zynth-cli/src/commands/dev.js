@@ -44,6 +44,11 @@ module.exports = {
       type: "number",
       default: 8091,
     });
+    yargs.option("verbose", {
+      describe: "Print raw native build output without filtering",
+      type: "boolean",
+      default: false,
+    });
   },
   handler: async (argv) => {
     const root = findWorkspaceRoot(process.cwd());
@@ -58,6 +63,7 @@ module.exports = {
         hmrNetwork: argv.hmrNetwork,
         devtools: argv.devtools,
         devtoolsPort: argv.devtoolsPort,
+        verbose: argv.verbose,
       });
     } else {
       await devAndroid(root, appDir, {
@@ -66,6 +72,7 @@ module.exports = {
         hmrNetwork: argv.hmrNetwork,
         devtools: argv.devtools,
         devtoolsPort: argv.devtoolsPort,
+        verbose: argv.verbose,
       });
     }
   },

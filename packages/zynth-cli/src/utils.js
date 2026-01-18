@@ -76,6 +76,18 @@ function runCommandQuiet(command, args, options = {}) {
 }
 
 function runCommandFiltered(command, args, options = {}) {
+  if (options.verbose) {
+    const child = spawn(command, args, {
+      stdio: "inherit",
+      shell: false,
+      ...options,
+    });
+    return new Promise((resolve) => {
+      child.on("close", (code, signal) => {
+        resolve({ code, signal });
+      });
+    });
+  }
   const child = spawn(command, args, {
     stdio: ["ignore", "pipe", "pipe"],
     shell: false,
@@ -165,6 +177,18 @@ function runCommandFiltered(command, args, options = {}) {
 }
 
 function runCommandFilteredAndroid(command, args, options = {}) {
+  if (options.verbose) {
+    const child = spawn(command, args, {
+      stdio: "inherit",
+      shell: false,
+      ...options,
+    });
+    return new Promise((resolve) => {
+      child.on("close", (code, signal) => {
+        resolve({ code, signal });
+      });
+    });
+  }
   const child = spawn(command, args, {
     stdio: ["ignore", "pipe", "pipe"],
     shell: false,
@@ -846,7 +870,15 @@ function getLocalIp() {
 }
 
 async function startZynthDevtoolsHub({ host, port, quiet }) {
-  const hub = createDevtoolsHub({ host, port, print: true, json: false });
+  const env = process.env.ZYNTH_DEVTOOLS_DEBUG || "";
+  const hideDebug = !(env === "1" || env === "true");
+  const hub = createDevtoolsHub({
+    host,
+    port,
+    print: true,
+    json: false,
+    filters: { hideDebug },
+  });
   const server = await hub.start();
   devtoolsPublish = hub.publish;
   if (!quiet) {
@@ -948,6 +980,7 @@ async function devIOS(root, appDir, options = {}) {
   );
   const devtoolsUrlOverride = process.env.ZYNTH_DEVTOOLS_URL;
   const devtoolsToken = process.env.ZYNTH_DEVTOOLS_TOKEN;
+  const verboseBuild = Boolean(options.verbose);
 
   if (options.devices) {
     const availableDevices = getConnectedIOSDevices();
@@ -1052,6 +1085,7 @@ async function devIOS(root, appDir, options = {}) {
   console.log(`◆ Building ${config.appNameCapitalized} (${sdk})...`);
   const buildResult = await runCommandFiltered("xcodebuild", buildArgs, {
     cwd: iosDir,
+    verbose: verboseBuild,
   });
   if (buildResult.code !== 0) {
     console.error("✖ iOS build failed.");
@@ -1266,6 +1300,7 @@ async function devAndroid(root, appDir, options = {}) {
   const devtoolsUrlOverride = process.env.ZYNTH_DEVTOOLS_URL;
   const devtoolsToken = process.env.ZYNTH_DEVTOOLS_TOKEN || null;
   const quietOutput = Boolean(options.quietOutput ?? options.prebuild);
+  const verboseBuild = Boolean(options.verbose);
 
   ensurePrebuild(root, appDir, "android", { dev: true, quiet: quietOutput });
 
@@ -1290,7 +1325,7 @@ async function devAndroid(root, appDir, options = {}) {
   const assembleResult = await runCommandFilteredAndroid(
     "./gradlew",
     [":app:assembleDebug"],
-    { cwd: androidDir }
+    { cwd: androidDir, verbose: verboseBuild }
   );
   if (assembleResult.code !== 0) {
     console.error("✖ Android build failed.");
@@ -1315,7 +1350,7 @@ async function devAndroid(root, appDir, options = {}) {
   const installResult = await runCommandFilteredAndroid(
     "./gradlew",
     [":app:installDebug", "-q"],
-    { cwd: androidDir }
+    { cwd: androidDir, verbose: verboseBuild }
   );
   if (installResult.code !== 0) {
     console.error("✖ Android install failed.");
