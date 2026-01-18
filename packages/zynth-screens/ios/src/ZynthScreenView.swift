@@ -104,6 +104,10 @@ public final class ZynthScreenView: UIView {
     self.runtime = ZynthRuntimeManagerRegistry.shared.runtime(for: manager)
     self.node = node
   }
+  
+  @objc public func zynth_shouldIgnoreLayoutUpdates() -> Bool {
+    return container != nil
+  }
 
   public func prepareForReuse() {
     manager = nil

@@ -299,6 +299,14 @@ static void ZynthApplyTransformOrigin(UIView *view, id origin) {
       if (!obj.view.superview) {
         return;
       }
+      
+      SEL ignoreSelector = NSSelectorFromString(@"zynth_shouldIgnoreLayoutUpdates");
+      if ([obj.view respondsToSelector:ignoreSelector] && ((BOOL (*)(id, SEL))[obj.view methodForSelector:ignoreSelector])(obj.view, ignoreSelector)) {
+          // If the view explicitly requests to be ignored by the layout engine (e.g. it's managed by a native Navigator),
+          // we only dispatch the layout event but DO NOT touch its frame/center/bounds.
+          [self zynth_dispatchLayoutEventForNode:obj force:NO];
+          return;
+      }
 
       @try {
         CGFloat x = YGNodeLayoutGetLeft(obj.yoga);

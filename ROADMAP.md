@@ -73,7 +73,7 @@ This document outlines the current status and future development plan for the Zy
 [ ] iOS: Icon didn't display when we add a new provider on `TwoFAManager.tsx`example.
 [ ] Android: AppHub weather asset image didn't display, Local image doesn't works on Android.
 [ ] GlassView overflow on`AppHub` example.
-[ ] iOS: Nested modal on iOS have a double animation, the animation repeat when it finish the first one.
+[x] iOS: Nested modal on iOS have a double animation, the animation repeat when it finish the first one.
 [x] iOS: Border radius clip element on high values.
 
 ### Core Framework
