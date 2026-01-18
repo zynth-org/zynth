@@ -61,6 +61,7 @@ object JSBridge {
   interface UIShim {
     fun createNode(type: String): Int
     fun setProp(nodeId: Int, name: String, jsonValue: String?)
+    fun setPropImmediate(nodeId: Int, name: String, jsonValue: String?)
     fun setText(nodeId: Int, text: String)
     fun insertChild(parentId: Int, childId: Int, index: Int)
     fun removeChild(parentId: Int, childId: Int)

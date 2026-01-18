@@ -29,6 +29,16 @@ export { createSharedSignal, captureSharedSignals } from "./sharedSignal";
 export type { SharedSignalAccessor, SharedSignalToken } from "./sharedSignal";
 export { createWorklet } from "./worklet";
 export type { WorkletFunction, WorkletMetadata, WorkletPayload } from "./worklet";
+export { shareSignalRef, isSignalRef, getSignalRefId } from "./signalRef";
+export type { SignalRef, SignalRefKind } from "./signalRef";
+export {
+  createSignalRuntime,
+  getRuntimeKind,
+  isWorklet,
+  scheduleOnUI,
+  scheduleOnUIAfter,
+} from "./nativeRuntime";
+export type { SignalRuntime, SignalRuntimeKind } from "./nativeRuntime";
 // Re-export select core helpers so Babel can import from @zynth/core when targeting universal
 export { createComponent, mergeProps, untrack } from "solid-js";
 

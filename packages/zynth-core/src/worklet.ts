@@ -1,4 +1,5 @@
 import { emitDevtoolsEvent } from "./devtools";
+import { getSignalRefId } from "./signalRef";
 
 type WorkletMetadata = {
   code?: string;
@@ -82,6 +83,11 @@ export function createWorklet<T extends (...args: unknown[]) => unknown>(
 
   if (closure && typeof closure === "object") {
     for (const [key, value] of Object.entries(closure)) {
+      const signalRefId = getSignalRefId(value);
+      if (typeof signalRefId === "number") {
+        payloadClosure[key] = signalRefId;
+        continue;
+      }
       if (value && typeof value === "function") {
         const sharedId = (value as { __zynth_shared_signal_id?: unknown })
           .__zynth_shared_signal_id;

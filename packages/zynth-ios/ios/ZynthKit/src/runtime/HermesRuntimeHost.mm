@@ -15,6 +15,7 @@
 #elif __has_include("ZynthKit-Swift.h")
 #import "ZynthKit-Swift.h"
 #endif
+#import "ZynthUICommandsRegistry.h"
 
 extern "C" void ZynthDiagnosticsReport(const char *phase, const char *message, const char *stack) noexcept;
 
@@ -1935,6 +1936,7 @@ static Value SNConvertNSObjectToJSI(Runtime &rt, id object) {
   _uiRt = facebook::hermes::makeHermesRuntime();
   [self installConsoleOnRuntime:*_uiRt];
   [self installSharedSignalsOnRuntime:*_uiRt];
+  ZynthInstallUICommandsRegistry(self, *_uiRt);
 }
 
 - (void)registerWorkletOnUIRuntime:(int)workletId

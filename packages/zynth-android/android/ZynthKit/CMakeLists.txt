@@ -9,6 +9,8 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 add_library(zynth_kit SHARED
     src/main/cpp/jni-entry.cpp
     src/main/cpp/Bridge.cpp
+    src/main/cpp/UICommandsRegistry.cpp
+    src/main/cpp/ScrollViewUICommands.cpp
 )
 
 find_package(hermes-engine REQUIRED CONFIG)

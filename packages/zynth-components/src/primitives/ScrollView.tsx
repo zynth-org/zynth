@@ -8,7 +8,7 @@ import {
 } from "solid-js";
 import type { ParentComponent } from "solid-js";
 import type { HostNode, Style } from "@zynth/core";
-import { setProperty } from "@zynth/core";
+import { scheduleOnUIAfter, setProperty, shareSignalRef } from "@zynth/core";
 import { View } from "./View";
 
 export type Axis = "vertical" | "horizontal";
@@ -41,6 +41,14 @@ export type ScrollController = {
   isDragging: () => boolean;
   isDecelerating: () => boolean;
   scrollTo: (opts: { x?: number; y?: number; animated?: boolean }) => void;
+  ui: {
+    scrollTo: (opts: {
+      x?: number;
+      y?: number;
+      animated?: boolean;
+      delayMs?: number;
+    }) => void;
+  };
   scrollBy: (opts: { dx?: number; dy?: number; animated?: boolean }) => void;
   stop: () => void;
   flashScrollIndicators: () => void;
@@ -81,6 +89,50 @@ export function createScrollController(): ScrollController {
     });
   };
 
+  const scrollToUI = (opts: {
+    x?: number;
+    y?: number;
+    animated?: boolean;
+    delayMs?: number;
+  }) => {
+    if (!host) return;
+    const sharedRef = shareSignalRef(host, "node");
+    if (!sharedRef) return;
+    const nodeId = Number(sharedRef);
+    if (!Number.isFinite(nodeId)) return;
+    const hasX = typeof opts.x === "number";
+    const hasY = typeof opts.y === "number";
+    const x = hasX ? opts.x : 0;
+    const y = hasY ? opts.y : 0;
+    const animated = opts.animated ?? true;
+    const delayMs = opts.delayMs ?? 0;
+
+    scheduleOnUIAfter(() => {
+      "worklet";
+      const ui = globalThis.__zynth_ui_commands;
+      if (ui && typeof ui.scrollTo === "function") {
+        ui.scrollTo(
+          nodeId,
+          hasX ? x : undefined,
+          hasY ? y : undefined,
+          animated
+        );
+        return;
+      }
+      const bridge = globalThis.__ui;
+      if (bridge && typeof bridge.setProp === "function") {
+        const command = {
+          type: "scrollTo",
+          x: hasX ? x : undefined,
+          y: hasY ? y : undefined,
+          animated,
+          seq: Date.now(),
+        };
+        bridge.setProp(nodeId, "__scrollCommand", command);
+      }
+    }, delayMs);
+  };
+
   const controller: InternalScrollController = {
     metrics,
     isDragging: dragging,
@@ -92,6 +144,9 @@ export function createScrollController(): ScrollController {
         y: opts.y,
         animated: opts.animated,
       });
+    },
+    ui: {
+      scrollTo: scrollToUI,
     },
     scrollBy(opts) {
       issueCommand({

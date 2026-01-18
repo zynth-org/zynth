@@ -38,6 +38,10 @@ export type ZynthWorkletsBridge = {
   runAfter?: (id: number, delayMs: number) => void;
 };
 
+export type ZynthUICommandsBridge = {
+  scrollTo: (nodeId: number, x?: number, y?: number, animated?: boolean) => void;
+};
+
 declare global {
   var __ui: ZynthUIBridge;
   var __modules: ZynthModulesBridge;
@@ -45,4 +49,5 @@ declare global {
   var ZynthNativeEmitter: ZynthNativeEmitterBridge;
   var __zynth_shared_signals: ZynthSharedSignalsBridge;
   var __zynth_worklets: ZynthWorkletsBridge;
+  var __zynth_ui_commands: ZynthUICommandsBridge;
 }

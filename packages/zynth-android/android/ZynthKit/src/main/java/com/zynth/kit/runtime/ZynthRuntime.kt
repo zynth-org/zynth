@@ -506,6 +506,10 @@ class ZynthRuntime(
         manager.setProp(nodeId, name, jsonValue ?: "{}")
       }
 
+      override fun setPropImmediate(nodeId: Int, name: String, jsonValue: String?) {
+        manager.setPropImmediate(nodeId, name, jsonValue ?: "{}")
+      }
+
       override fun setText(nodeId: Int, text: String) {
         manager.setText(nodeId, text)
       }

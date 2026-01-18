@@ -18,6 +18,8 @@
 #include <utility>
 #include <vector>
 
+#include "UICommandsRegistry.h"
+
 namespace zynth::kit {
 namespace {
 
@@ -72,6 +74,7 @@ class BytecodeBuffer final : public facebook::jsi::Buffer {
 struct UIShimMethods {
   jmethodID createNode = nullptr;
   jmethodID setProp = nullptr;
+  jmethodID setPropImmediate = nullptr;
   jmethodID setText = nullptr;
   jmethodID insertChild = nullptr;
   jmethodID removeChild = nullptr;
@@ -2361,6 +2364,7 @@ void ensureUIRuntime(const std::shared_ptr<RuntimeState> &state) {
       hermes::vm::RuntimeConfig::Builder().build());
   installConsoleOnRuntime(state, *state->uiRuntime, "ui");
   installSharedSignalsOnRuntime(state, *state->uiRuntime);
+  installUICommandsRegistry(state, *state->uiRuntime);
 }
 
 bool postRegisterWorkletToMain(const std::shared_ptr<RuntimeState> &state, int workletId) {
@@ -2848,6 +2852,24 @@ void cleanupState(std::shared_ptr<RuntimeState> state) {
 
 } // namespace
 
+void uiCommandSetProp(
+    const UICommandsState &state,
+    int nodeId,
+    const std::string &name,
+    const std::string &value) {
+  if (!state) return;
+  auto resolved = std::static_pointer_cast<RuntimeState>(state);
+  if (!resolved) return;
+  JniEnv env;
+  if (!env.valid()) return;
+  jstring jName = makeJString(env.get(), name);
+  jstring jValue = makeJString(env.get(), value);
+  env->CallVoidMethod(resolved->uiShim, resolved->uiMethods.setPropImmediate, nodeId, jName, jValue);
+  env->DeleteLocalRef(jName);
+  env->DeleteLocalRef(jValue);
+  logJniException(env.get(), "UICommands.setProp");
+}
+
 void installUnhandledPromiseReporting(std::shared_ptr<RuntimeState> state) {
   using namespace facebook::jsi;
   auto &rt = *state->runtime;
@@ -2952,6 +2974,7 @@ void installBindings(
 
   state->uiMethods.createNode = env->GetMethodID(state->uiClass, "createNode", "(Ljava/lang/String;)I");
   state->uiMethods.setProp = env->GetMethodID(state->uiClass, "setProp", "(ILjava/lang/String;Ljava/lang/String;)V");
+  state->uiMethods.setPropImmediate = env->GetMethodID(state->uiClass, "setPropImmediate", "(ILjava/lang/String;Ljava/lang/String;)V");
   state->uiMethods.setText = env->GetMethodID(state->uiClass, "setText", "(ILjava/lang/String;)V");
   state->uiMethods.insertChild = env->GetMethodID(state->uiClass, "insertChild", "(III)V");
   state->uiMethods.removeChild = env->GetMethodID(state->uiClass, "removeChild", "(II)V");

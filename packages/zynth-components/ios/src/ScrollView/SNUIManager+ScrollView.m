@@ -8,6 +8,7 @@
 #endif
 
 #import "ZynthScrollView.h"
+#import "ScrollViewUICommands.h"
 
 static BOOL ZynthScrollViewHandleSetProp(SNUIManager *manager,
                                         SNNode *node,
@@ -160,6 +161,7 @@ static BOOL ZynthScrollViewHandleSetHandler(SNUIManager *manager,
 + (void)load {
   static dispatch_once_t onceToken;
   dispatch_once(&onceToken, ^{
+    ZynthScrollViewRegisterUICommands();
     ZynthComponentDescriptor *descriptor = [[ZynthComponentDescriptor alloc] initWithType:@"scroll-view"];
     descriptor.createView = ^UIView *(SNUIManager *manager, NSString *type) {
       ZynthScrollView *scrollView = [ZynthScrollView new];

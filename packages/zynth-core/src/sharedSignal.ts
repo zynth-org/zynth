@@ -47,7 +47,20 @@ function getGlobalObject(): Record<string, unknown> {
   return {};
 }
 
+function shouldDebugSharedSignals(): boolean {
+  const g = getGlobalObject() as {
+    __ZYNTH_SHARED_SIGNAL_DEBUG__?: boolean;
+    process?: { env?: Record<string, string | undefined> };
+  };
+  if (g.__ZYNTH_SHARED_SIGNAL_DEBUG__ === true) return true;
+  const env = g.process?.env;
+  if (!env) return false;
+  const flag = env.ZYNTH_SHARED_SIGNAL_DEBUG;
+  return flag === "1" || flag === "true";
+}
+
 function debugLog(message: string, data?: Record<string, unknown>): void {
+  if (!shouldDebugSharedSignals()) return;
   if (data) {
     console.log(`[ZynthSharedSignal] ${message}`, data);
     emitDevtoolsEvent({

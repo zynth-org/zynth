@@ -1213,6 +1213,18 @@ class ZynthUIManager(
     scheduleFlush(surface = surface)
   }
 
+  override fun setPropImmediate(nodeId: Int, name: String, jsonValue: String?) = onMain {
+    val surface = surfaceStateForNode(nodeId)
+    val targetNode = surface.nodes.get(nodeId)
+    targetNode?.mountHasVisualProps = true
+    if (name == "style" && targetNode?.type == TEXT_TYPE) {
+      surface.nodeFactory.propagateTextChange(targetNode)
+    }
+    val propApplier = propApplierCache[surface.id] ?: return@onMain
+    val category = PropertyCategoryMap.getCategory(name)
+    propApplier.applySetProp(nodeId, name, jsonValue, category)
+  }
+
   override fun setText(nodeId: Int, text: String) = onMain {
     val surface = surfaceStateForNode(nodeId)
     logSurfaceEvent(surface.id, "setText", "node=$nodeId length=${text.length}")
