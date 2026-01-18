@@ -6,10 +6,15 @@ import { useStyle } from "../hooks/useStyle";
 export interface TextProps {
   style?: StyleProp;
   numberOfLines?: number;
+  text?: string;
 }
 
 export const Text: ParentComponent<TextProps> = (props) => {
   const resolvedChildren = resolveChildren(() => props.children);
   const style = useStyle(() => props.style);
-  return <text style={style()}>{resolvedChildren()}</text>;
+  return (
+    <text style={style()} text={props.text}>
+      {resolvedChildren()}
+    </text>
+  );
 };

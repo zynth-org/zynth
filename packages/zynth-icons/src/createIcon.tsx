@@ -132,13 +132,12 @@ export function createIcon(glyph: string, fontFamily: string) {
     return (
       <Text
         {...props}
+        text={isReady() ? glyph : " "}
         style={{
           ...mergedStyle(),
-          fontFamily: isReady() ? fontFamily : undefined,
+          fontFamily,
         }}
-      >
-        {isReady() ? glyph : " "}
-      </Text>
+      />
     );
   };
 }

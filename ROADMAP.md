@@ -70,7 +70,7 @@ This document outlines the current status and future development plan for the Zy
 [ ] Individual Rounded corners have discrepancy between iOS and Android.
 [ ] iOS: Nested text are not displaying bold styles.
 [ ] iOS: Reload Hypervisor doesn't clean the redbox.
-[ ] iOS: Icon didn't display when we add a new provider on `TwoFAManager.tsx`example.
+[x] iOS: Icon didn't display when we add a new provider on `TwoFAManager.tsx`example.
 [ ] Android: AppHub weather asset image didn't display, Local image doesn't works on Android.
 [x] GlassView overflow on`AppHub` example.
 [x] iOS: Nested modal on iOS have a double animation, the animation repeat when it finish the first one.

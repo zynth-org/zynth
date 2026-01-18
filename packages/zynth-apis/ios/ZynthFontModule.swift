@@ -109,7 +109,7 @@ public class ZynthFontModule: ZynthModule {
                 }
             }
         }
-        
+
         return true
     }
 }

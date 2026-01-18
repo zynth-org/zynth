@@ -40,6 +40,38 @@ ZynthMergeAttributes(NSDictionary<NSAttributedStringKey, id> *parent,
   return merged;
 }
 
+static BOOL ZynthTextContainsPrivateUseGlyph(NSString *text);
+
+static UIFont *ZynthResolveFontFamily(NSString *fontFamily,
+                                      CGFloat size,
+                                      UIFontDescriptorSymbolicTraits traits) {
+  if (![fontFamily isKindOfClass:[NSString class]] || fontFamily.length == 0) {
+    return nil;
+  }
+
+  UIFont *font = [UIFont fontWithName:fontFamily size:size];
+  if (!font) {
+    NSString *regularName = [fontFamily stringByAppendingString:@"Regular"];
+    font = [UIFont fontWithName:regularName size:size];
+  }
+  if (!font) {
+    NSArray<NSString *> *familyMembers = [UIFont fontNamesForFamilyName:fontFamily];
+    if (familyMembers.count > 0) {
+      font = [UIFont fontWithName:familyMembers.firstObject size:size];
+    }
+  }
+  if (font && traits != 0) {
+    UIFontDescriptor *descriptor = [font.fontDescriptor fontDescriptorWithSymbolicTraits:traits];
+    if (descriptor) {
+      UIFont *traitFont = [UIFont fontWithDescriptor:descriptor size:size];
+      if (traitFont) {
+        font = traitFont;
+      }
+    }
+  }
+  return font;
+}
+
 static NSAttributedString *ZynthBuildAttributedText(SNUIManager *manager,
                                                    SNNode *node,
                                                    NSDictionary<NSAttributedStringKey, id> *inherited) {
@@ -57,6 +89,15 @@ static NSAttributedString *ZynthBuildAttributedText(SNUIManager *manager,
   UIFont *parentFont = inherited[NSFontAttributeName];
   UIFont *ownFont = ownAttributes[NSFontAttributeName];
   NSMutableDictionary *adjustedOwn = [ownAttributes mutableCopy];
+
+  if (!ownFont && textView.zynth_hasExplicitFontFamily && textView.zynth_explicitFontFamily.length > 0) {
+    CGFloat fallbackSize = textView.font ? textView.font.pointSize : 17.0;
+    UIFont *resolvedFont = ZynthResolveFontFamily(textView.zynth_explicitFontFamily, fallbackSize, 0);
+    if (resolvedFont) {
+      ownFont = resolvedFont;
+      adjustedOwn[NSFontAttributeName] = resolvedFont;
+    }
+  }
   
   if (textView.zynth_hasExplicitFontFamily) {
     // Child has explicit fontFamily (e.g., icon font) - preserve it completely
@@ -92,7 +133,7 @@ static NSAttributedString *ZynthBuildAttributedText(SNUIManager *manager,
       UIFont *defaultFont = textView.font ?: [UIFont systemFontOfSize:17.0];
       finalAttrs[NSFontAttributeName] = defaultFont;
     }
-    
+
     return [[NSAttributedString alloc] initWithString:transformed attributes:finalAttrs];
   }
 
@@ -125,6 +166,13 @@ static void ZynthTextRefreshLabelNode(SNUIManager *manager, SNNode *node) {
 
   NSAttributedString *composed = ZynthBuildAttributedText(manager, node, nil);
   textView.attributedText = composed;
+  
+  if (ZynthTextContainsPrivateUseGlyph(composed.string)) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+      textView.attributedText = composed;
+      [textView setNeedsDisplay];
+    });
+  }
   
   // Force layout update to ensure the new attributed text is rendered
   [textView setNeedsDisplay];
@@ -229,6 +277,22 @@ static CGFloat ZynthTextNum(id x) {
   return x && ![x isKindOfClass:[NSNull class]] ? [x doubleValue] : NAN;
 }
 
+static BOOL ZynthTextContainsPrivateUseGlyph(NSString *text) {
+  if (!text.length) return NO;
+  __block BOOL found = NO;
+  [text enumerateSubstringsInRange:NSMakeRange(0, text.length)
+                           options:NSStringEnumerationByComposedCharacterSequences
+                        usingBlock:^(NSString *substring, NSRange substringRange, NSRange enclosingRange, BOOL *stop) {
+    if (substring.length == 0) return;
+    unichar ch = [substring characterAtIndex:0];
+    if (ch >= 0xE000 && ch <= 0xF8FF) {
+      found = YES;
+      *stop = YES;
+    }
+  }];
+  return found;
+}
+
 static BOOL ZynthTextHandleSetProp(SNUIManager *manager,
                                   SNNode *node,
                                   NSString *name,
@@ -302,17 +366,25 @@ static void ZynthTextHandleStyle(SNUIManager *manager, SNNode *node, NSDictionar
     traits |= UIFontDescriptorTraitItalic;
   }
 
-  UIFontDescriptor *descriptor;
-  if ([fontFamily isKindOfClass:[NSString class]] && fontFamily.length > 0) {
-    descriptor = [UIFontDescriptor fontDescriptorWithName:fontFamily size:resolvedSize];
-  } else {
-    descriptor = [UIFont systemFontOfSize:resolvedSize weight:(CGFloat)[weightNum doubleValue]].fontDescriptor;
-  }
-  if (traits != 0) {
-    descriptor = [descriptor fontDescriptorWithSymbolicTraits:traits];
-  }
   BOOL hasCustomFontProp = fontSize || (fontFamily && fontFamily.length > 0) || fontWeight || traits != 0;
-  UIFont *font = hasCustomFontProp ? [UIFont fontWithDescriptor:descriptor size:resolvedSize] : nil;
+  UIFont *font = nil;
+  if (hasCustomFontProp) {
+    if ([fontFamily isKindOfClass:[NSString class]] && fontFamily.length > 0) {
+      font = ZynthResolveFontFamily(fontFamily, resolvedSize, traits);
+    } else {
+      UIFont *baseFont = [UIFont systemFontOfSize:resolvedSize weight:(CGFloat)[weightNum doubleValue]];
+      if (traits != 0) {
+        UIFontDescriptor *descriptor = [baseFont.fontDescriptor fontDescriptorWithSymbolicTraits:traits];
+        if (descriptor) {
+          UIFont *traitFont = [UIFont fontWithDescriptor:descriptor size:resolvedSize];
+          if (traitFont) {
+            baseFont = traitFont;
+          }
+        }
+      }
+      font = baseFont;
+    }
+  }
 
   NSMutableParagraphStyle *paragraph = [[NSMutableParagraphStyle alloc] init];
   NSString *textAlign = style[@"textAlign"];
