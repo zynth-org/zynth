@@ -9,6 +9,8 @@
 #else
 #import "SNUIManager+Internal.h"
 #endif
+#import <Yoga/Yoga.h>
+#import "SNNode.h"
 
 static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
   if (![hex isKindOfClass:[NSString class]] || hex.length == 0) {
@@ -46,6 +48,28 @@ static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
   self.padding = UIEdgeInsetsZero;
 
   [self addTarget:self action:@selector(textFieldDidChange:) forControlEvents:UIControlEventEditingChanged];
+}
+
+- (void)layoutSubviews {
+  [super layoutSubviews];
+  [self syncPaddingFromYoga];
+}
+
+- (void)syncPaddingFromYoga {
+  if (!self.node || !self.node.yoga) return;
+  YGNodeRef yoga = self.node.yoga;
+  
+  float top = YGNodeLayoutGetPadding(yoga, YGEdgeTop);
+  float left = YGNodeLayoutGetPadding(yoga, YGEdgeLeft);
+  float bottom = YGNodeLayoutGetPadding(yoga, YGEdgeBottom);
+  float right = YGNodeLayoutGetPadding(yoga, YGEdgeRight);
+  
+  UIEdgeInsets newInsets = UIEdgeInsetsMake(top, left, bottom, right);
+  if (!UIEdgeInsetsEqualToEdgeInsets(self.padding, newInsets)) {
+    self.padding = newInsets;
+    [self setNeedsDisplay]; 
+    [self setNeedsLayout];
+  }
 }
 
 - (void)setPlaceholder:(NSString *)placeholder {
@@ -97,13 +121,28 @@ static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
     return UIEdgeInsetsInsetRect(bounds, self.padding);
 }
 
+- (CGRect)placeholderRectForBounds:(CGRect)bounds {
+    return UIEdgeInsetsInsetRect(bounds, self.padding);
+}
+
 - (CGSize)measureForWidth:(CGFloat)width height:(CGFloat)height widthMode:(YGMeasureMode)widthMode heightMode:(YGMeasureMode)heightMode {
   CGSize constraint = CGSizeMake(CGFLOAT_MAX, CGFLOAT_MAX);
   if (widthMode == YGMeasureModeExactly || widthMode == YGMeasureModeAtMost) {
     constraint.width = width;
   }
 
+  // Yoga expects the measure function to return the *content* size.
+  // Yoga itself adds the padding to the result to determine the node size.
+  // However, UITextField's sizeThatFits (via our textRectForBounds overrides) 
+  // includes our custom padding in its result.
+  // To avoid double-counting padding (once by UITextField, once by Yoga),
+  // we temporarily zero out the padding during measurement.
+  UIEdgeInsets originalPadding = self.padding;
+  self.padding = UIEdgeInsetsZero;
+
   CGSize fitted = [self sizeThatFits:constraint];
+
+  self.padding = originalPadding;
 
   CGFloat finalWidth = fitted.width;
   if (widthMode == YGMeasureModeExactly) finalWidth = width;

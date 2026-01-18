@@ -9,6 +9,8 @@
 #else
 #import "SNUIManager+Internal.h"
 #endif
+#import <Yoga/Yoga.h>
+#import "SNNode.h"
 
 static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
   if (![hex isKindOfClass:[NSString class]] || hex.length == 0) {
@@ -90,6 +92,25 @@ static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
 - (void)layoutSubviews {
   [super layoutSubviews];
   [self updatePlaceholderVisibility];
+  [self syncPaddingFromYoga];
+}
+
+- (void)syncPaddingFromYoga {
+  if (!self.node || !self.node.yoga) return;
+  YGNodeRef yoga = self.node.yoga;
+  
+  float top = YGNodeLayoutGetPadding(yoga, YGEdgeTop);
+  float left = YGNodeLayoutGetPadding(yoga, YGEdgeLeft);
+  float bottom = YGNodeLayoutGetPadding(yoga, YGEdgeBottom);
+  float right = YGNodeLayoutGetPadding(yoga, YGEdgeRight);
+  
+  UIEdgeInsets newInsets = UIEdgeInsetsMake(top, left, bottom, right);
+  if (!UIEdgeInsetsEqualToEdgeInsets(self.textContainerInset, newInsets)) {
+    self.textContainerInset = newInsets;
+    // Update placeholder constraints to match padding
+    self.placeholderLeadingConstraint.constant = left + 2; // +2 for slight offset or strict matching? Original was constant:2
+    self.placeholderTopConstraint.constant = top + 2;
+  }
 }
 
 - (void)setText:(NSString *)text {
@@ -436,7 +457,18 @@ static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
     constraint.height = height;
   }
 
+  // Yoga expects the measure function to return the *content* size.
+  // Yoga itself adds the padding to the result to determine the node size.
+  // However, UITextView's sizeThatFits includes textContainerInset (padding) in its result.
+  // To avoid double-counting padding (once by UITextView, once by Yoga),
+  // we temporarily zero out the insets during measurement.
+  UIEdgeInsets originalInsets = self.textContainerInset;
+  self.textContainerInset = UIEdgeInsetsZero;
+  
   CGSize fitted = [self sizeThatFits:constraint];
+  
+  self.textContainerInset = originalInsets;
+
   CGFloat finalWidth = fitted.width;
   if (widthMode == YGMeasureModeExactly) finalWidth = width;
   else if (widthMode == YGMeasureModeAtMost) finalWidth = MIN(width, fitted.width);
