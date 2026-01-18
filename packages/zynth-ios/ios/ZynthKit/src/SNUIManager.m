@@ -766,6 +766,30 @@ static void SNApplyBorderStyleToView(UIView *view, NSDictionary *style, BOOL ove
   CGFloat borderTopRightRadius = style[@"borderTopRightRadius"] ? (CGFloat)SNNum(style[@"borderTopRightRadius"]) : defaultRadius;
   CGFloat borderBottomRightRadius = style[@"borderBottomRightRadius"] ? (CGFloat)SNNum(style[@"borderBottomRightRadius"]) : defaultRadius;
   CGFloat borderBottomLeftRadius = style[@"borderBottomLeftRadius"] ? (CGFloat)SNNum(style[@"borderBottomLeftRadius"]) : defaultRadius;
+
+  // Clamp border radii to view dimensions (CSS standard)
+  CGSize size = view.bounds.size;
+  if (size.width > 0 && size.height > 0) {
+      CGFloat factor = 1.0;
+      CGFloat topSum = borderTopLeftRadius + borderTopRightRadius;
+      if (topSum > size.width) factor = MIN(factor, size.width / topSum);
+      
+      CGFloat bottomSum = borderBottomLeftRadius + borderBottomRightRadius;
+      if (bottomSum > size.width) factor = MIN(factor, size.width / bottomSum);
+      
+      CGFloat leftSum = borderTopLeftRadius + borderBottomLeftRadius;
+      if (leftSum > size.height) factor = MIN(factor, size.height / leftSum);
+      
+      CGFloat rightSum = borderTopRightRadius + borderBottomRightRadius;
+      if (rightSum > size.height) factor = MIN(factor, size.height / rightSum);
+      
+      if (factor < 1.0) {
+          borderTopLeftRadius *= factor;
+          borderTopRightRadius *= factor;
+          borderBottomRightRadius *= factor;
+          borderBottomLeftRadius *= factor;
+      }
+  }
   
   BOOL hasAnyRadius = borderTopLeftRadius > 0 || borderTopRightRadius > 0 || borderBottomRightRadius > 0 || borderBottomLeftRadius > 0;
   BOOL uniformRadius = (borderTopLeftRadius == borderTopRightRadius) &&
