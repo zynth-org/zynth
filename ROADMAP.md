@@ -68,7 +68,7 @@ This document outlines the current status and future development plan for the Zy
 [ ] Create a new BottomSheet from scratch.
 [ ] Elevation discrepancy between iOS and Android.
 [ ] Individual Rounded corners have discrepancy between iOS and Android.
-[ ] iOS: Nested text are not displaying bold styles.
+[x] iOS: Nested text are not displaying bold styles.
 [ ] iOS: Reload Hypervisor doesn't clean the redbox.
 [x] iOS: Icon didn't display when we add a new provider on `TwoFAManager.tsx`example.
 [ ] Android: AppHub weather asset image didn't display, Local image doesn't works on Android.

@@ -115,8 +115,8 @@ static NSAttributedString *ZynthBuildAttributedText(SNUIManager *manager,
     effective = ZynthMergeAttributes(filteredInherited, adjustedOwn);
   } else if (ownFont && parentFont && !textView.zynth_hasExplicitFontSize) {
     // Child has font but no explicit size - adopt parent's size
-    UIFontDescriptor *descriptor = [ownFont.fontDescriptor fontDescriptorWithSize:parentFont.pointSize];
-    adjustedOwn[NSFontAttributeName] = [UIFont fontWithDescriptor:descriptor size:parentFont.pointSize];
+    // Use fontWithSize: to preserve weight/traits of the child's font (especially system fonts)
+    adjustedOwn[NSFontAttributeName] = [ownFont fontWithSize:parentFont.pointSize];
     effective = ZynthMergeAttributes(inherited, adjustedOwn);
   } else if (adjustedOwn) {
     effective = ZynthMergeAttributes(inherited, adjustedOwn);
@@ -173,6 +173,14 @@ static void ZynthTextRefreshLabelNode(SNUIManager *manager, SNNode *node) {
       [textView setNeedsDisplay];
     });
   }
+
+  // "Second tick" pass to fix race conditions where styles might be lost
+  // during rapid layout updates or initial render.
+  dispatch_async(dispatch_get_main_queue(), ^{
+    NSAttributedString *recomposed = ZynthBuildAttributedText(manager, node, nil);
+    textView.attributedText = recomposed;
+    [textView setNeedsDisplay];
+  });
   
   // Force layout update to ensure the new attributed text is rendered
   [textView setNeedsDisplay];
@@ -341,7 +349,13 @@ static void ZynthTextHandleStyle(SNUIManager *manager, SNNode *node, NSDictionar
 
   NSString *fontFamily = style[@"fontFamily"];
   NSString *fontStyle = style[@"fontStyle"];
-  NSString *fontWeight = style[@"fontWeight"];
+  id fontWeightValue = style[@"fontWeight"];
+  NSString *fontWeight = nil;
+  if ([fontWeightValue isKindOfClass:[NSNumber class]]) {
+    fontWeight = [(NSNumber *)fontWeightValue stringValue];
+  } else if ([fontWeightValue isKindOfClass:[NSString class]]) {
+    fontWeight = (NSString *)fontWeightValue;
+  }
   
   // Track if this node has an explicit fontFamily (crucial for icon fonts)
   textView.zynth_hasExplicitFontFamily = ([fontFamily isKindOfClass:[NSString class]] && fontFamily.length > 0);
