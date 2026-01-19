@@ -641,9 +641,6 @@ class ZynthUIManager(
     val width = rootNode.view.width
     // Use stable available height if provided, else current view height
     val height = availableHeightPx?.toInt() ?: rootNode.view.height
-    
-    // Debug logging for keyboard animation issues
-    Log.d("ZynthDebug", "KAV Layout: behavior=$behavior overlap=$overlapPx viewH=$height width=$width availableH=$availableHeightPx")
 
     if (width <= 0 || height <= 0) return
 
