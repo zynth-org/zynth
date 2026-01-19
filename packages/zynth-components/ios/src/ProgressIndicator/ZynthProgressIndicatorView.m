@@ -7,6 +7,7 @@ static const CGFloat kZynthProgressIndicatorLargeSize = 37.0;
 @interface ZynthProgressIndicatorView ()
 @property(nonatomic, strong, nullable) UIColor *customColor;
 @property(nonatomic, copy) NSString *sizeMode;
+@property(nonatomic, assign) BOOL shouldAnimate;
 @end
 
 @implementation ZynthProgressIndicatorView
@@ -20,10 +21,35 @@ static const CGFloat kZynthProgressIndicatorLargeSize = 37.0;
   if (self = [super initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium]) {
     _sizeMode = @"small";
     _pointerMode = ZynthPointerEventsAuto;
+    _shouldAnimate = YES;
     self.hidesWhenStopped = NO;
-    [self startAnimating];
+    
+    // Position way off-screen and hide initially to avoid a flash at (0,0)
+    // before the first layout flush from Yoga.
+    self.frame = CGRectMake(-9999, -9999, 0, 0);
+    self.hidden = YES;
   }
   return self;
+}
+
+#pragma mark - Layout Overrides
+
+- (void)setBounds:(CGRect)bounds {
+  [super setBounds:bounds];
+  [self _checkInitialLayout];
+}
+
+- (void)setCenter:(CGPoint)center {
+  [super setCenter:center];
+  [self _checkInitialLayout];
+}
+
+- (void)_checkInitialLayout {
+  // If we have a superview and non-zero bounds, it's likely we've been positioned by Yoga.
+  if (self.hidden && self.superview && self.bounds.size.width > 0) {
+    self.hidden = NO;
+    [self _updateAnimationState];
+  }
 }
 
 #pragma mark - Intrinsic Size
@@ -56,13 +82,22 @@ static const CGFloat kZynthProgressIndicatorLargeSize = 37.0;
   
   _sizeMode = size;
   
-  BOOL wasAnimating = self.isAnimating;
-  
-  if ([size isEqualToString:@"large"]) {
-    self.activityIndicatorViewStyle = UIActivityIndicatorViewStyleLarge;
+  if (self.hidden) {
+    // Still waiting for initial layout, keep it hidden and away
+    if ([size isEqualToString:@"large"]) {
+      self.activityIndicatorViewStyle = UIActivityIndicatorViewStyleLarge;
+    } else {
+      self.activityIndicatorViewStyle = UIActivityIndicatorViewStyleMedium;
+    }
+    self.frame = CGRectMake(-9999, -9999, 0, 0);
   } else {
-    // "small" or default
-    self.activityIndicatorViewStyle = UIActivityIndicatorViewStyleMedium;
+    CGRect currentFrame = self.frame;
+    if ([size isEqualToString:@"large"]) {
+      self.activityIndicatorViewStyle = UIActivityIndicatorViewStyleLarge;
+    } else {
+      self.activityIndicatorViewStyle = UIActivityIndicatorViewStyleMedium;
+    }
+    self.frame = currentFrame;
   }
   
   // Restore color after style change (style change resets color)
@@ -71,16 +106,20 @@ static const CGFloat kZynthProgressIndicatorLargeSize = 37.0;
   }
   
   // Restore animation state
-  if (wasAnimating) {
-    [self startAnimating];
-  }
+  [self _updateAnimationState];
   
   // Invalidate intrinsic content size
   [self invalidateIntrinsicContentSize];
 }
 
 - (void)zynth_setAnimating:(BOOL)animating {
-  if (animating) {
+  _shouldAnimate = animating;
+  [self _updateAnimationState];
+}
+
+- (void)_updateAnimationState {
+  // Only actually start animating if we are visible (layout done) and should animate.
+  if (_shouldAnimate && !self.hidden) {
     [self startAnimating];
   } else {
     [self stopAnimating];
