@@ -7,6 +7,7 @@ import com.zynth.kit.components.ZynthComponentRegistrar
 import com.zynth.kit.components.ZynthComponentRegistry
 import com.zynth.kit.core.ZynthUIManager
 import com.zynth.kit.layout.Style
+import org.json.JSONArray
 import org.json.JSONObject
 
 class ZynthScrollViewRegistrar : ZynthComponentRegistrar {
@@ -35,69 +36,84 @@ class ZynthScrollViewRegistrar : ZynthComponentRegistrar {
             try {
               when (name) {
                 "horizontal" -> {
-                  val obj = if (value != null) JSONObject(value) else JSONObject()
-                  val horizontal = obj.optBoolean(name, false)
-                  scrollView.setAxis(horizontal)
+                  scrollView.setAxis(value.toString().toBoolean())
                   true
                 }
                 "scrollEnabled" -> {
-                  val obj = if (value != null) JSONObject(value) else JSONObject()
-                  scrollView.setScrollEnabled(obj.optBoolean(name, true))
+                  scrollView.setScrollEnabled(value.toString().toBoolean())
                   true
                 }
                 "directionalLockEnabled" -> {
-                  val obj = if (value != null) JSONObject(value) else JSONObject()
-                  scrollView.setDirectionalLockEnabled(obj.optBoolean(name, true))
+                  scrollView.setDirectionalLockEnabled(value.toString().toBoolean())
                   true
                 }
                 "showsVerticalScrollIndicator" -> {
-                  val obj = if (value != null) JSONObject(value) else JSONObject()
-                  scrollView.setShowsVerticalScrollIndicator(obj.optBoolean(name, true))
+                  scrollView.setShowsVerticalScrollIndicator(value.toString().toBoolean())
                   true
                 }
                 "showsHorizontalScrollIndicator" -> {
-                  val obj = if (value != null) JSONObject(value) else JSONObject()
-                  scrollView.setShowsHorizontalScrollIndicator(obj.optBoolean(name, true))
+                  scrollView.setShowsHorizontalScrollIndicator(value.toString().toBoolean())
                   true
                 }
                 "indicatorStyle" -> {
-                  val obj = if (value != null) JSONObject(value) else JSONObject()
-                  scrollView.setIndicatorStyle(obj.optString(name))
+                  scrollView.setIndicatorStyle(value?.toString())
                   true
                 }
                 "overScrollBehavior" -> {
-                  val obj = if (value != null) JSONObject(value) else JSONObject()
-                  scrollView.setOverScrollBehavior(obj.optString(name))
+                  scrollView.setOverScrollBehavior(value?.toString())
                   true
                 }
                 "scrollSnapType" -> {
-                  val obj = if (value != null) JSONObject(value) else JSONObject()
-                  scrollView.setScrollSnapType(obj.opt(name))
+                  val str = value?.toString()
+                  val arg = if (str != null && str.trim().startsWith("{")) {
+                    try { JSONObject(str) } catch (e: Exception) { str }
+                  } else {
+                    str
+                  }
+                  scrollView.setScrollSnapType(arg)
                   true
                 }
                 "scrollSnapAlign" -> {
-                  val obj = if (value != null) JSONObject(value) else JSONObject()
-                  scrollView.setScrollSnapAlign(obj.opt(name))
+                  val str = value?.toString()
+                  val arg = if (str != null && str.trim().startsWith("[")) {
+                    try { JSONArray(str) } catch (e: Exception) { str }
+                  } else {
+                    str
+                  }
+                  scrollView.setScrollSnapAlign(arg)
                   true
                 }
                 "scrollSnapStop" -> {
-                  val obj = if (value != null) JSONObject(value) else JSONObject()
-                  scrollView.setScrollSnapStop(obj.opt(name))
+                  scrollView.setScrollSnapStop(value?.toString())
                   true
                 }
                 "scrollPadding" -> {
-                  val obj = if (value != null) JSONObject(value) else JSONObject()
-                  scrollView.setScrollPadding(obj.opt(name))
+                  val str = value?.toString()
+                  val arg = if (str != null && str.trim().startsWith("{")) {
+                    try { JSONObject(str) } catch (e: Exception) { str }
+                  } else {
+                    str
+                  }
+                  scrollView.setScrollPadding(arg)
                   true
                 }
                 "scrollGuardConfig" -> {
-                  val obj = if (value != null) JSONObject(value) else JSONObject()
-                  scrollView.setScrollGuardConfig(obj.opt(name))
+                  val str = value?.toString()
+                  val arg = if (str != null && str.trim().startsWith("{")) {
+                    try { JSONObject(str) } catch (e: Exception) { null }
+                  } else {
+                    null
+                  }
+                  scrollView.setScrollGuardConfig(arg)
                   true
                 }
                 "__scrollCommand" -> {
-                  val obj = if (value != null) JSONObject(value) else null
-                  obj?.let { scrollView.applyCommand(it) }
+                  val str = value?.toString()
+                  if (str != null) {
+                    try {
+                      scrollView.applyCommand(JSONObject(str))
+                    } catch (_: Exception) {}
+                  }
                   true
                 }
                 else -> false
