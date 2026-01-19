@@ -2,6 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promises as fs } from "node:fs";
 import { createRequire } from "node:module";
+import os from "node:os";
 
 import type { RsbuildPlugin } from "@rsbuild/core";
 import * as rspack from "@rspack/core";
@@ -13,7 +14,7 @@ const OVERLAY_SHIM_PATH = path.join(__dirname, "shims/overlay-empty.js");
 const CSS_SHIM_PATH = path.join(__dirname, "shims/css-empty.js");
 const IMAGE_ASSET_LOADER_PATH = path.join(
   __dirname,
-  "loaders/image-asset-loader.js"
+  "loaders/image-asset-loader.js",
 );
 const require = createRequire(import.meta.url);
 
@@ -34,7 +35,7 @@ export interface InternalPluginOptions extends ZynthRsbuildPluginOptions {
 }
 
 export function createZynthRsbuildPlugin(
-  options: InternalPluginOptions
+  options: InternalPluginOptions,
 ): RsbuildPlugin {
   const {
     artifactPath = DEFAULT_ARTIFACT_RELATIVE_PATH,
@@ -51,10 +52,10 @@ export function createZynthRsbuildPlugin(
       const repoRoot = workspaceRoot
         ? path.resolve(workspaceRoot)
         : await findWorkspaceRoot(api.context.rootPath);
-      
+
       const discoveredAliases = await discoverZynthPackageAliases(
         repoRoot,
-        isWeb
+        isWeb,
       );
 
       // Special handling for @zynth/core in Web
@@ -65,7 +66,10 @@ export function createZynthRsbuildPlugin(
         ]);
         if (coreWebEntry) {
           discoveredAliases["@zynth/core$"] = coreWebEntry;
-          discoveredAliases["@zynth/core"] = path.join(repoRoot, "packages/zynth-core/src");
+          discoveredAliases["@zynth/core"] = path.join(
+            repoRoot,
+            "packages/zynth-core/src",
+          );
         }
       }
 
@@ -105,15 +109,13 @@ export function createZynthRsbuildPlugin(
           config.plugins?.push(
             new rspack.NormalModuleReplacementPlugin(
               /@rsbuild[\\/](core|rsbuild)[\\/]dist[\\/]client[\\/]hmr.js$/,
-              HMR_SHIM_PATH
+              HMR_SHIM_PATH,
             ),
             new rspack.NormalModuleReplacementPlugin(
               /@rsbuild[\\/](core|rsbuild)[\\/]dist[\\/]client[\\/]overlay.js$/,
-              OVERLAY_SHIM_PATH
+              OVERLAY_SHIM_PATH,
             ),
-            new rspack.NormalModuleReplacementPlugin(/\.css$/,
-              CSS_SHIM_PATH
-            )
+            new rspack.NormalModuleReplacementPlugin(/\.css$/, CSS_SHIM_PATH),
           );
         }
       });
@@ -124,14 +126,19 @@ export function createZynthRsbuildPlugin(
           // Inject dev server URL
           const devServerHost = config.server?.host || "0.0.0.0";
           const devServerPort = config.server?.port || 8081;
-          const devServerUrl = `http://${
-            devServerHost === "0.0.0.0" ? "localhost" : devServerHost
-          }:${devServerPort}`;
+
+          let hostForUrl = devServerHost;
+          if (hostForUrl === "0.0.0.0") {
+            hostForUrl = getLocalIpAddress() || "localhost";
+          }
+
+          const devServerUrl = `http://${hostForUrl}:${devServerPort}`;
 
           config.source ??= {};
           config.source.define ??= {};
           const defines = config.source.define as Record<string, any>;
-          defines["globalThis.__ZYNTH_DEV_SERVER_URL"] = JSON.stringify(devServerUrl);
+          defines["globalThis.__ZYNTH_DEV_SERVER_URL"] =
+            JSON.stringify(devServerUrl);
           defines.__ZYNTH_DEV_SERVER_URL = JSON.stringify(devServerUrl);
 
           config.dev ??= {};
@@ -153,13 +160,9 @@ export function createZynthRsbuildPlugin(
         return;
       }
 
-      const writeTokenArtifact = createArtifactWriter(
-        artifactFile
-      );
+      const writeTokenArtifact = createArtifactWriter(artifactFile);
 
-      const handleEnvironments = async (
-        environments: Record<string, any>
-      ) => {
+      const handleEnvironments = async (environments: Record<string, any>) => {
         const token = pickFirstToken(environments);
         if (!token) {
           return;
@@ -168,7 +171,7 @@ export function createZynthRsbuildPlugin(
       };
 
       api.onAfterStartDevServer(({ environments }) =>
-        handleEnvironments(environments)
+        handleEnvironments(environments),
       );
       api.onAfterDevCompile(async ({ environments }) => {
         await handleEnvironments(environments);
@@ -183,8 +186,7 @@ function configureImageAssets(config: rspack.Configuration) {
   config.module.rules.unshift({
     test: /\.(png|jpe?g|gif|webp|avif|svg)$/i,
     type: "javascript/auto",
-    resourceQuery: { not: [/url/]
-     },
+    resourceQuery: { not: [/url/] },
     use: [
       {
         loader: IMAGE_ASSET_LOADER_PATH,
@@ -220,7 +222,10 @@ function createStaticAssetMiddleware() {
         ".avif": "image/avif",
         ".svg": "image/svg+xml",
       };
-      res.setHeader("Content-Type", contentTypes[ext] || "application/octet-stream");
+      res.setHeader(
+        "Content-Type",
+        contentTypes[ext] || "application/octet-stream",
+      );
       res.setHeader("Cache-Control", "no-cache");
       res.end(content);
     } catch (error) {
@@ -233,12 +238,12 @@ function createStaticAssetMiddleware() {
 function ensureAliases(
   config: rspack.Configuration,
   extraAliases?: Record<string, string | false | (string | false)[]>,
-  discoveredAliases?: Record<string, string>
+  discoveredAliases?: Record<string, string>,
 ) {
   config.resolve ??= {};
   const aliasConfig = config.resolve.alias;
   let alias: Record<string, string | false | (string | false)[]> = {};
-  
+
   if (Array.isArray(aliasConfig)) {
     for (const entry of aliasConfig) {
       if (!entry || typeof entry !== "object") continue;
@@ -263,15 +268,16 @@ function ensureAliases(
     "@rsbuild/rsbuild/dist/client/hmr.js": HMR_SHIM_PATH,
     "@rsbuild/rsbuild/dist/client/overlay.js": OVERLAY_SHIM_PATH,
   };
-  
+
   if (solidJsxRuntime) staticAliases["solid-js/jsx-runtime"] = solidJsxRuntime;
   const resolvedDevRuntime = solidJsxDevRuntime ?? solidJsxRuntime;
-  if (resolvedDevRuntime) staticAliases["solid-js/jsx-dev-runtime"] = resolvedDevRuntime;
+  if (resolvedDevRuntime)
+    staticAliases["solid-js/jsx-dev-runtime"] = resolvedDevRuntime;
 
   for (const [key, value] of Object.entries(staticAliases)) {
     if (alias[key] === undefined) alias[key] = value;
   }
-  
+
   if (extraAliases) {
     for (const [key, value] of Object.entries(extraAliases)) {
       alias[key] = value;
@@ -283,13 +289,15 @@ function ensureAliases(
 
 async function discoverZynthPackageAliases(
   repoRoot: string,
-  isWeb: boolean
+  isWeb: boolean,
 ): Promise<Record<string, string>> {
   const aliases: Record<string, string> = {};
   const packagesDir = path.join(repoRoot, "packages");
 
   try {
-    const entries = (await fs.readdir(packagesDir, { withFileTypes: true })) as import("node:fs").Dirent[];
+    const entries = (await fs.readdir(packagesDir, {
+      withFileTypes: true,
+    })) as import("node:fs").Dirent[];
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
       const packageDir = path.join(packagesDir, entry.name);
@@ -304,7 +312,9 @@ async function discoverZynthPackageAliases(
             "index.ts",
             "index.tsx",
           ];
-          const entryFile = await pickFirstExisting(candidates.map(f => path.join(srcDir, f)));
+          const entryFile = await pickFirstExisting(
+            candidates.map((f) => path.join(srcDir, f)),
+          );
           if (entryFile) {
             // Exact match for the package
             aliases[`${pkg.name}$`] = entryFile;
@@ -312,10 +322,10 @@ async function discoverZynthPackageAliases(
             aliases[pkg.name] = srcDir;
 
             if (pkg.name === "@zynth/core") {
-                const universalPath = path.join(packageDir, "src/universal.ts");
-                if (await exists(universalPath)) {
-                  aliases["@zynth/core/universal"] = universalPath;
-                }
+              const universalPath = path.join(packageDir, "src/universal.ts");
+              if (await exists(universalPath)) {
+                aliases["@zynth/core/universal"] = universalPath;
+              }
             }
           }
         }
@@ -327,13 +337,21 @@ async function discoverZynthPackageAliases(
 
 async function pickFirstExisting(paths: string[]) {
   for (const p of paths) {
-    try { await fs.access(p); return p; } catch {}
+    try {
+      await fs.access(p);
+      return p;
+    } catch {}
   }
   return null;
 }
 
 async function exists(p: string) {
-  try { await fs.access(p); return true; } catch { return false; }
+  try {
+    await fs.access(p);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function findWorkspaceRoot(start: string): Promise<string> {
@@ -360,8 +378,27 @@ function createArtifactWriter(filePath: string) {
   return async (token: string) => {
     try {
       await fs.mkdir(path.dirname(filePath), { recursive: true });
-      const data = { hmrServerToken: token, updatedAt: new Date().toISOString() };
+
+      const data = {
+        hmrServerToken: token,
+        updatedAt: new Date().toISOString(),
+      };
+
       await fs.writeFile(filePath, JSON.stringify(data, null, 2));
     } catch {}
   };
+}
+
+function getLocalIpAddress() {
+  const interfaces = os.networkInterfaces();
+
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]!) {
+      if (iface.family === "IPv4" && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+
+  return null;
 }
