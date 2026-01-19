@@ -62,7 +62,7 @@ This document outlines the current status and future development plan for the Zy
 [x] Android ScrollView/VerticalFeed demo has a visual issue when scroll down, the content go outside of the container, as vertical overflow, only on Controller API, FlatList demo doesn't have this issue.
 [x] Android: Horizontal snap demo doesn't work, it display the items but doesn't allow scroll on them.
 [x] Android: Resolve Pressable vs ScrollView gesture conflicts.
-[ ] Android: Pressable ripple effect is not clipped on the component, and show outside like a circle.
+[x] Android: Pressable ripple effect is not clipped on the component, and show outside like a circle.
 [x] iOS|Android: Pressable Doesn't cancel/blur the focus imperative.
 [ ] Android: BottomSheet doesn't remove the backdrop when is set.
 [ ] Create a new BottomSheet from scratch.

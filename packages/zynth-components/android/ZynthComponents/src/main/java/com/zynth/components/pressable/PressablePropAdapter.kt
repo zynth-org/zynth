@@ -141,6 +141,11 @@ internal object PressablePropAdapter {
         // Reserved for future styling enhancements
         return true
       }
+      "borderRadius" -> {
+        val number = parsed as? Number
+        pressable.setBorderRadius(number?.toFloat() ?: 0f)
+        return true
+      }
     }
 
     return false

@@ -2,7 +2,12 @@ package com.zynth.components.pressable
 
 import android.content.Context
 import android.content.res.ColorStateList
+import android.graphics.Color
+import android.graphics.Outline
 import android.graphics.Rect
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.Drawable
+import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
 import android.os.Build
 import android.os.Handler
@@ -12,8 +17,11 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.TouchDelegate
 import android.view.View
+import android.view.ViewOutlineProvider
 import android.widget.FrameLayout
+import com.zynth.kit.core.ZynthBorderDrawable
 import com.zynth.kit.core.ZynthPressableEventListener
+import java.util.Arrays
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -48,6 +56,8 @@ class ZynthPressableView(context: Context) : FrameLayout(context) {
   private var hitSlop: Rect? = null
   private var pointerEvents: String = "auto"
   private var lastCommandSeq: Long = -1L
+  private var borderRadius: Float = 0f
+  private var lastRadii: FloatArray? = null
 
   private var pressedDown = false
   private var pressVisible = false
@@ -248,6 +258,7 @@ class ZynthPressableView(context: Context) : FrameLayout(context) {
   private fun beginPress(event: MotionEvent) {
     if (!shouldHandleInteraction()) return
     pressedDown = true
+    isPressed = true
     longPressTriggered = false
     lastDownEvent = MotionEvent.obtain(event)
     schedulePressIn(event)
@@ -261,6 +272,20 @@ class ZynthPressableView(context: Context) : FrameLayout(context) {
   private fun endPress(event: MotionEvent?, cancelled: Boolean) {
     if (!pressedDown) return
     pressedDown = false
+    
+    val minDuration = 150L
+    val elapsed = SystemClock.uptimeMillis() - pressStartTimeMs
+    if (!cancelled && elapsed < minDuration) {
+      mainHandler.postDelayed({
+        // Only unset if we haven't started a new press
+        if (!pressedDown) {
+          isPressed = false
+        }
+      }, minDuration - elapsed)
+    } else {
+      isPressed = false
+    }
+
     cancelPressIn()
     cancelLongPress()
     val payload = createPayload(event)
@@ -294,9 +319,17 @@ class ZynthPressableView(context: Context) : FrameLayout(context) {
       MotionEvent.ACTION_DOWN -> {
         downX = event.x
         downY = event.y
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+          drawableHotspotChanged(event.x, event.y)
+          foreground?.setHotspot(event.x, event.y)
+        }
         beginPress(event)
       }
       MotionEvent.ACTION_MOVE -> {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+          drawableHotspotChanged(event.x, event.y)
+          foreground?.setHotspot(event.x, event.y)
+        }
         val dx = event.x - downX
         val dy = event.y - downY
         val distance = hypot(dx, dy)
@@ -339,11 +372,13 @@ class ZynthPressableView(context: Context) : FrameLayout(context) {
     listener?.onPressableKeyEvent(nodeId, phase, payload)
     if (event.action == KeyEvent.ACTION_DOWN && !pressedDown) {
       pressedDown = true
+      isPressed = true
       pressVisible = true
       updatePressVisualState(animated = true)
       listener?.onPressablePressIn(nodeId, payload)
     } else if (event.action == KeyEvent.ACTION_UP && pressedDown) {
       pressedDown = false
+      isPressed = false
       pressVisible = false
       updatePressVisualState(animated = true)
       listener?.onPressablePressOut(nodeId, payload, false)
@@ -391,8 +426,7 @@ class ZynthPressableView(context: Context) : FrameLayout(context) {
       }
       "ripple" -> {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-          val rippleColor = ColorStateList.valueOf(0x33FFFFFF)
-          foreground = RippleDrawable(rippleColor, null, null)
+          updateRippleMask()
         } else {
           pressEffect = "highlight"
           foreground = null
@@ -460,6 +494,70 @@ class ZynthPressableView(context: Context) : FrameLayout(context) {
     )
     if (isAttachedToWindow) {
       applyHitSlop()
+    }
+  }
+
+  fun setBorderRadius(radius: Float) {
+    if (borderRadius == radius) return
+    borderRadius = radius
+    updateRippleMask()
+  }
+
+  override fun setBackground(background: Drawable?) {
+    super.setBackground(background)
+    updateRippleMask()
+  }
+
+  private fun updateRippleMask() {
+    if (pressEffect != "ripple" || Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return
+
+    var currentRadii: FloatArray? = null
+    val mask: Drawable = if (background is ZynthBorderDrawable) {
+      val borderDrawable = background as ZynthBorderDrawable
+      val radii = floatArrayOf(
+        borderDrawable.borderTopLeftRadius, borderDrawable.borderTopLeftRadius,
+        borderDrawable.borderTopRightRadius, borderDrawable.borderTopRightRadius,
+        borderDrawable.borderBottomRightRadius, borderDrawable.borderBottomRightRadius,
+        borderDrawable.borderBottomLeftRadius, borderDrawable.borderBottomLeftRadius
+      )
+      currentRadii = radii
+      GradientDrawable().apply {
+        setColor(Color.WHITE)
+        cornerRadii = radii
+      }
+    } else if (borderRadius > 0) {
+      val r = borderRadius
+      val radii = floatArrayOf(r, r, r, r, r, r, r, r)
+      currentRadii = radii
+       GradientDrawable().apply {
+        setColor(Color.WHITE)
+        cornerRadius = borderRadius
+      }
+    } else {
+      currentRadii = floatArrayOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f)
+      ColorDrawable(Color.WHITE)
+    }
+
+    if (lastRadii != null && currentRadii != null && Arrays.equals(lastRadii, currentRadii)) {
+      return
+    }
+    lastRadii = currentRadii
+
+    val states = arrayOf(
+      intArrayOf(android.R.attr.state_pressed),
+      intArrayOf()
+    )
+    val colors = intArrayOf(
+      0x33FFFFFF,
+      0x00FFFFFF
+    )
+    val rippleColor = ColorStateList(states, colors)
+    foreground = RippleDrawable(rippleColor, null, mask)
+    
+    // If we are currently pressed, we must restore the hotspot on the new drawable
+    // otherwise the ripple will restart from center.
+    if (pressedDown && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+      foreground?.setHotspot(downX, downY)
     }
   }
 
