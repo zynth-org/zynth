@@ -547,6 +547,9 @@ static const CFTimeInterval kZynthPressableDefaultDoublePressWindowMs = 250.0;
   }
   if ([type isEqualToString:@"cancel"]) {
     [self cancelCurrentPress:YES];
+    if ([self isFirstResponder]) {
+      [self resignFirstResponder];
+    }
   }
 }
 

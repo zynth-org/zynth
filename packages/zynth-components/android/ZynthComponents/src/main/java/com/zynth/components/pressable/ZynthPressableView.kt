@@ -532,6 +532,9 @@ class ZynthPressableView(context: Context) : FrameLayout(context) {
       }
       "cancel" -> {
         cancelCurrentPress(true, null)
+        if (hasFocus()) {
+          clearFocus()
+        }
         val payload = createPayload(null)
         listener?.onPressableCancel(nodeId, payload)
       }

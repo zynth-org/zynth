@@ -53,7 +53,7 @@ This document outlines the current status and future development plan for the Zy
 ## Bad Behaviors
 
 [ ] Improve bundle monorepo to a setup script with steps and order build commands.
-[ ] Keyboard Avoiding View: Fix inconsistent behavior on Android when set `height` as `bahavior`
+[ ] Android: Keyboard Avoiding View: Fix inconsistent behavior on Android when set `height` as `bahavior`
 [ ] zynth-ui TextInput use SytemGlyphs for icons on Android.
 [ ] zynth-ui Custom slider doesn't keep on the selected position when released on Android.
 [x] When load Menu using HMR we have `[unhandled] Module Font resource 'ZynthIconsBS.ttf' not found in any bundle. not found.
@@ -63,7 +63,7 @@ This document outlines the current status and future development plan for the Zy
 [ ] Horizontal snap demo doesn't work on Android, it display the items but doesn't allow scroll on them.
 [ ] Android: Resolve Pressable vs ScrollView gesture conflicts.
 [ ] Android: Pressable ripple effect is not clipped on the component, and show outside like a circle.
-[ ] iOS|Android: Pressable Doesn't cancel/blur the focus imperative.
+[x] iOS|Android: Pressable Doesn't cancel/blur the focus imperative.
 [ ] Android: BottomSheet doesn't remove the backdrop when is set.
 [ ] Create a new BottomSheet from scratch.
 [ ] Elevation discrepancy between iOS and Android.
