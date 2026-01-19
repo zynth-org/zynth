@@ -83,6 +83,9 @@ class ZynthKeyboardAvoidingView(context: Context) : FrameLayout(context) {
         detachManager()
     }
 
+    private var imeAnimationActive = false
+    private var stableHeight: Float? = null
+
     private fun setupKeyboardListener() {
         val density = resources.displayMetrics.density
 
@@ -91,6 +94,35 @@ class ZynthKeyboardAvoidingView(context: Context) : FrameLayout(context) {
             ViewCompat.setWindowInsetsAnimationCallback(
                 this,
                 object : WindowInsetsAnimationCompat.Callback(DISPATCH_MODE_CONTINUE_ON_SUBTREE) {
+                    override fun onPrepare(animation: WindowInsetsAnimationCompat) {
+                        super.onPrepare(animation)
+                        if (animation.typeMask and WindowInsetsCompat.Type.ime() != 0) {
+                            imeAnimationActive = true
+                        }
+                    }
+
+                    override fun onStart(
+                        animation: WindowInsetsAnimationCompat,
+                        bounds: WindowInsetsAnimationCompat.BoundsCompat
+                    ): WindowInsetsAnimationCompat.BoundsCompat {
+                        if (animation.typeMask and WindowInsetsCompat.Type.ime() != 0) {
+                            // Capture the stable height before animation affects the view size.
+                            val density = resources.displayMetrics.density
+                            var baseHeight = this@ZynthKeyboardAvoidingView.height.toFloat()
+                            
+                            // If we are currently in 'height' behavior and the keyboard is reportedly open (currentKeyboardHeight > 0),
+                            // it means our current height is likely shrunken by the previous adjustment. 
+                            // We need to restore the full height to use as a stable base for the closing animation.
+                            if (behavior == KeyboardAvoidingBehavior.HEIGHT && currentKeyboardHeight > 0f) {
+                                val overlapDp = currentKeyboardHeight + keyboardVerticalOffset
+                                baseHeight += (overlapDp * density)
+                            }
+                            
+                            stableHeight = baseHeight
+                        }
+                        return super.onStart(animation, bounds)
+                    }
+
                     override fun onProgress(
                         insets: WindowInsetsCompat,
                         runningAnimations: MutableList<WindowInsetsAnimationCompat>
@@ -99,10 +131,11 @@ class ZynthKeyboardAvoidingView(context: Context) : FrameLayout(context) {
 
                         val imeInsets = insets.getInsets(WindowInsetsCompat.Type.ime())
                         val imeHeight = imeInsets.bottom / density
-                        val isVisible = insets.isVisible(WindowInsetsCompat.Type.ime())
-
-                        currentKeyboardHeight = if (isVisible) imeHeight else 0f
-                        applyAdjustment(currentKeyboardHeight + keyboardVerticalOffset)
+                        
+                        // Only apply during progress if the IME animation is active
+                        if (runningAnimations.any { it.typeMask and WindowInsetsCompat.Type.ime() != 0 }) {
+                            applyAdjustment(imeHeight + keyboardVerticalOffset)
+                        }
 
                         return insets
                     }
@@ -110,6 +143,11 @@ class ZynthKeyboardAvoidingView(context: Context) : FrameLayout(context) {
                     override fun onEnd(animation: WindowInsetsAnimationCompat) {
                         super.onEnd(animation)
                         
+                        if (animation.typeMask and WindowInsetsCompat.Type.ime() != 0) {
+                            imeAnimationActive = false
+                            stableHeight = null
+                        }
+
                         if (!isKeyboardEnabled) return
 
                         val insets = ViewCompat.getRootWindowInsets(this@ZynthKeyboardAvoidingView) ?: return
@@ -126,6 +164,14 @@ class ZynthKeyboardAvoidingView(context: Context) : FrameLayout(context) {
 
         // Fallback for older APIs
         ViewCompat.setOnApplyWindowInsetsListener(this) { _, insets ->
+            // On Android R+, we rely on the WindowInsetsAnimationCallback to handle
+            // both the animation and the final state (in onEnd).
+            // Applying insets here on R+ causes a race condition where the final state
+            // is applied immediately before the animation starts from 0, causing a visual jump.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                return@setOnApplyWindowInsetsListener insets
+            }
+
             if (!isKeyboardEnabled) return@setOnApplyWindowInsetsListener insets
 
             val imeInsets = insets.getInsets(WindowInsetsCompat.Type.ime())
@@ -149,7 +195,7 @@ class ZynthKeyboardAvoidingView(context: Context) : FrameLayout(context) {
         when (behavior) {
             KeyboardAvoidingBehavior.PADDING -> {
                 if (layoutManager != null && nodeId >= 0) {
-                    layoutManager?.applyKeyboardAvoidingAdjustment(nodeId, "padding", overlapPx)
+                    layoutManager?.applyKeyboardAvoidingAdjustment(nodeId, "padding", overlapPx, stableHeight)
                 } else {
                     setPadding(paddingLeft, paddingTop, paddingRight, overlapPx.toInt())
                 }
@@ -159,7 +205,7 @@ class ZynthKeyboardAvoidingView(context: Context) : FrameLayout(context) {
             }
             KeyboardAvoidingBehavior.HEIGHT -> {
                 if (layoutManager != null && nodeId >= 0) {
-                    layoutManager?.applyKeyboardAvoidingAdjustment(nodeId, "height", overlapPx)
+                    layoutManager?.applyKeyboardAvoidingAdjustment(nodeId, "height", overlapPx, stableHeight)
                 } else {
                     setPadding(paddingLeft, paddingTop, paddingRight, overlapPx.toInt())
                 }

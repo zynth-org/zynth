@@ -521,6 +521,7 @@ class ZynthUIManager(
     nodeId: Int,
     behavior: String,
     overlapPx: Float,
+    availableHeightPx: Float? = null,
   ) = onMain {
     val surface = surfaceStateForNode(nodeId)
     val node = surface.nodes.get(nodeId) ?: return@onMain
@@ -536,8 +537,20 @@ class ZynthUIManager(
         if (resolvedOverlap <= 0f) {
           baseStyle
         } else {
-          val targetHeight = (node.view.height - resolvedOverlap).coerceAtLeast(0f)
-          baseStyle.copy(height = targetHeight, heightPercent = null, heightAuto = false)
+          // Use stable base height from style if available, otherwise use marginBottom
+          // to shrink the view. This avoids using node.view.height which changes during
+          // animation and causes compounding calculation errors (flickering).
+          val baseHeight = baseStyle.height
+          if (baseHeight != null && baseHeight > 0f) {
+            baseStyle.copy(
+              height = (baseHeight - resolvedOverlap).coerceAtLeast(0f),
+              heightPercent = null,
+              heightAuto = false
+            )
+          } else {
+            val baseMargin = resolveMarginBottom(baseStyle)
+            baseStyle.copy(marginBottom = baseMargin + resolvedOverlap)
+          }
         }
       }
       else -> baseStyle
@@ -545,7 +558,7 @@ class ZynthUIManager(
 
     surface.engine.setStyle(nodeId, updatedStyle)
     if (behavior.lowercase() == "padding" || behavior.lowercase() == "height") {
-      applyKeyboardAvoidingLayout(surface, nodeId, behavior, resolvedOverlap)
+      applyKeyboardAvoidingLayout(surface, nodeId, behavior, resolvedOverlap, availableHeightPx)
     }
   }
   
@@ -618,19 +631,24 @@ class ZynthUIManager(
     rootNodeId: Int,
     behavior: String,
     overlapPx: Float,
+    availableHeightPx: Float? = null,
   ) {
     val rootNode = surface.nodes.get(rootNodeId) ?: return
+
+    // Use the view's current dimensions as the layout constraint.
+    // Using parent dimensions was causing overflow because it ignored parent padding (e.g. SafeArea).
+    // The view's dimensions already account for parent constraints and system resizing.
     val width = rootNode.view.width
-    val height = rootNode.view.height
+    // Use stable available height if provided, else current view height
+    val height = availableHeightPx?.toInt() ?: rootNode.view.height
+    
+    // Debug logging for keyboard animation issues
+    Log.d("ZynthDebug", "KAV Layout: behavior=$behavior overlap=$overlapPx viewH=$height width=$width availableH=$availableHeightPx")
+
     if (width <= 0 || height <= 0) return
 
-    val targetHeight = if (behavior.lowercase() == "height" && overlapPx > 0f) {
-      (height - overlapPx).coerceAtLeast(0f)
-    } else {
-      height.toFloat()
-    }
-
-    surface.engine.calculateLayoutForNode(rootNodeId, width.toFloat(), targetHeight)
+    // Calculate layout using the current view dimensions.
+    surface.engine.calculateLayoutForNode(rootNodeId, width.toFloat(), height.toFloat())
 
     val queue = ArrayDeque<Int>()
     queue.add(rootNodeId)
@@ -719,6 +737,12 @@ class ZynthUIManager(
     return style.paddingBottom
       ?: style.paddingVertical
       ?: style.padding
+      ?: 0f
+  }
+
+  private fun resolveMarginBottom(style: Style): Float {
+    return style.marginBottom
+      ?: style.margin
       ?: 0f
   }
 
