@@ -85,12 +85,12 @@ export const Image: Component<ImageProps> = (props) => {
     const sourceList = sources();
     const nextIndex = currentSourceIndex() + 1;
 
-    console.log(
-      "[Image] Error loading source",
-      currentSourceIndex(),
-      "of",
-      sourceList.length
-    );
+    // console.log(
+    //   "[Image] Error loading source",
+    //   currentSourceIndex(),
+    //   "of",
+    //   sourceList.length
+    // );
 
     // Try next source if available
     if (nextIndex < sourceList.length) {
@@ -130,7 +130,7 @@ export const Image: Component<ImageProps> = (props) => {
 };
 
 function normalizeImageSource(
-  input: ImageSource | ImageSource[]
+  input: ImageSource | ImageSource[],
 ): ImageSource | ImageSource[] {
   if (Array.isArray(input)) {
     return input.map(normalizeSingleSource);
@@ -156,7 +156,7 @@ function normalizeSingleSource(source: ImageSource): ImageSource {
 }
 
 function descriptorToNativeSource(
-  descriptor: ImageDescriptorSource
+  descriptor: ImageDescriptorSource,
 ): ImageSource {
   const devUrl = (globalThis as any).__ZYNTH_DEV_SERVER_URL;
   console.log("[Image] descriptorToNativeSource", {
