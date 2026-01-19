@@ -139,8 +139,22 @@ internal class ZynthScrollView(
   init {
     isClickable = false
     isFocusable = false
-    clipChildren = false
-    clipToPadding = false
+    
+    // Default to clipping so content doesn't spill out of the scroll view area
+    clipChildren = true
+    clipToPadding = true
+
+    // Enforce stricter clipping using outline provider on supported versions
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+      outlineProvider = ViewOutlineProvider.BOUNDS
+      clipToOutline = true
+    }
+    
+    // Hosts (viewports) must also clip
+    verticalHost.clipChildren = true
+    horizontalHost.clipChildren = true
+
+    // Content view should NOT clip, allowing items to cast shadows or overlap slightly within the scrollable area
     contentView.clipChildren = false
     contentView.clipToPadding = false
 
@@ -177,15 +191,20 @@ internal class ZynthScrollView(
       }
     }
 
-    style.overflow?.let { overflow ->
-      val shouldClip = !overflow.equals("visible", ignoreCase = true)
-      clipChildren = shouldClip
-      clipToPadding = shouldClip
-      host.view.clipChildren = shouldClip
-      host.view.clipToPadding = shouldClip
-      contentView.clipChildren = shouldClip
-      contentView.clipToPadding = shouldClip
-    }
+    // Default to hidden (clipping) unless explicitly set to "visible"
+    val overflow = style.overflow ?: "hidden"
+    val shouldClip = !overflow.equals("visible", ignoreCase = true)
+    
+    clipChildren = shouldClip
+    clipToPadding = shouldClip
+    
+    // Ensure the host (viewport) clips
+    host.view.clipChildren = shouldClip
+    host.view.clipToPadding = shouldClip
+    
+    // Ensure the content container clips (crucial for fixing the spill-over issue)
+    contentView.clipChildren = shouldClip
+    contentView.clipToPadding = shouldClip
 
     invalidate()
     requestLayout()
@@ -193,14 +212,23 @@ internal class ZynthScrollView(
   }
 
   override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-    super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+    val finalHeightSpec = if (declaredHeight != null) {
+      MeasureSpec.makeMeasureSpec(declaredHeight!!, MeasureSpec.EXACTLY)
+    } else {
+      heightMeasureSpec
+    }
+
+    super.onMeasure(widthMeasureSpec, finalHeightSpec)
+
     var measuredWidth = measuredWidth
     var measuredHeight = measuredHeight
+
     declaredHeight?.let { measuredHeight = it }
     declaredMaxHeight?.let { measuredHeight = measuredHeight.coerceAtMost(it) }
     declaredMinHeight?.let { measuredHeight = measuredHeight.coerceAtLeast(it) }
+
     setMeasuredDimension(measuredWidth, measuredHeight)
-    logState("onMeasure w=${MeasureSpec.toString(widthMeasureSpec)} h=${MeasureSpec.toString(heightMeasureSpec)}")
+    logState("onMeasure w=${MeasureSpec.toString(widthMeasureSpec)} h=${MeasureSpec.toString(heightMeasureSpec)} finalH=${MeasureSpec.toString(finalHeightSpec)}")
   }
 
   override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
