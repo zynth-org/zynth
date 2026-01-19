@@ -53,7 +53,7 @@ This document outlines the current status and future development plan for the Zy
 ## Bad Behaviors
 
 [ ] Improve bundle monorepo to a setup script with steps and order build commands.
-[ ] Android: Keyboard Avoiding View: Fix inconsistent behavior on Android when set `height` as `bahavior`
+[x] Android: Keyboard Avoiding View: Fix inconsistent behavior on Android when set `height` as `bahavior`
 [ ] zynth-ui TextInput use SytemGlyphs for icons on Android.
 [ ] zynth-ui Custom slider doesn't keep on the selected position when released on Android.
 [x] When load Menu using HMR we have `[unhandled] Module Font resource 'ZynthIconsBS.ttf' not found in any bundle. not found.
