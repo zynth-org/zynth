@@ -292,7 +292,6 @@ class ZynthPressableView(context: Context) : FrameLayout(context) {
     if (!shouldHandleInteraction()) return false
     when (event.actionMasked) {
       MotionEvent.ACTION_DOWN -> {
-        parent?.requestDisallowInterceptTouchEvent(true)
         downX = event.x
         downY = event.y
         beginPress(event)

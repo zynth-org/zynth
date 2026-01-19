@@ -59,9 +59,9 @@ This document outlines the current status and future development plan for the Zy
 [x] When load Menu using HMR we have `[unhandled] Module Font resource 'ZynthIconsBS.ttf' not found in any bundle. not found.
 [x] TextInput on iOS don't center the text when declare `paddingVertical`.
 [x] ProgressIndicator on iOS display a glitch when return from stop, first frame display it on 0x0 on his parent container.
-[ ] Android ScrollView/VerticalFeed demo has a visual issue when scroll down, the content go outside of the container, as vertical overflow, only on Controller API, FlatList demo doesn't have this issue.
+[x] Android ScrollView/VerticalFeed demo has a visual issue when scroll down, the content go outside of the container, as vertical overflow, only on Controller API, FlatList demo doesn't have this issue.
 [x] Android: Horizontal snap demo doesn't work, it display the items but doesn't allow scroll on them.
-[ ] Android: Resolve Pressable vs ScrollView gesture conflicts.
+[x] Android: Resolve Pressable vs ScrollView gesture conflicts.
 [ ] Android: Pressable ripple effect is not clipped on the component, and show outside like a circle.
 [x] iOS|Android: Pressable Doesn't cancel/blur the focus imperative.
 [ ] Android: BottomSheet doesn't remove the backdrop when is set.
