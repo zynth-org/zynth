@@ -9,17 +9,6 @@ static NSTimeInterval ZynthScrollCurrentTime(void) {
   return CACurrentMediaTime();
 }
 
-static const CGFloat kZynthScrollGuardVelocityThreshold = 7000.0;
-static const CGFloat kZynthScrollGuardDistanceMultiplier = 6.0;
-static const CGFloat kZynthScrollGuardMinDistance = 2500.0;
-static const NSTimeInterval kZynthScrollGuardCooldown = 0.140;
-static const NSTimeInterval kZynthScrollGuardGestureWindow = 0.900;
-static const CGFloat kZynthScrollGuardFallbackViewport = 960.0;
-static const CGFloat kZynthScrollGuardRearmFraction = 0.05;
-static const BOOL kZynthScrollGuardRequiresDistance = YES;
-static const NSTimeInterval kZynthScrollProgrammaticInstantGrace = 0.120;
-static const NSTimeInterval kZynthScrollProgrammaticAnimatedGrace = 0.600;
-
 @interface ZynthScrollView ()
 @property(nonatomic, weak) SNUIManager *manager;
 @property(nonatomic, weak) SNNode *node;
@@ -56,18 +45,7 @@ static const NSTimeInterval kZynthScrollProgrammaticAnimatedGrace = 0.600;
 @property(nonatomic, assign) BOOL contentUpdateScheduled;
 @property(nonatomic, assign) BOOL contentGeometryDirty;
 @property(nonatomic, assign) CGSize lastContentSize;
-@property(nonatomic, assign) CGPoint lastStableOffset;
 @property(nonatomic, assign) NSTimeInterval lastGestureTimestamp;
-@property(nonatomic, assign) NSTimeInterval lastManualStopTimestamp;
-@property(nonatomic, assign) NSTimeInterval programmaticScrollGraceDeadline;
-@property(nonatomic, assign) CGFloat stopVelocityThreshold;
-@property(nonatomic, assign) CGFloat stopDistanceMultiplier;
-@property(nonatomic, assign) CGFloat stopMinDistance;
-@property(nonatomic, assign) NSTimeInterval stopCooldownInterval;
-@property(nonatomic, assign) NSTimeInterval stopGestureWindowInterval;
-@property(nonatomic, assign) CGFloat stopFallbackViewport;
-@property(nonatomic, assign) CGFloat stopRearmFraction;
-@property(nonatomic, assign) BOOL stopRequiresDistance;
 @end
 
 @implementation ZynthScrollView
@@ -124,14 +102,6 @@ static const NSTimeInterval kZynthScrollProgrammaticAnimatedGrace = 0.600;
   _snapPaddingEnd = 0;
   _snapPaddingTop = 0;
   _snapPaddingBottom = 0;
-  _stopVelocityThreshold = kZynthScrollGuardVelocityThreshold;
-  _stopDistanceMultiplier = kZynthScrollGuardDistanceMultiplier;
-  _stopMinDistance = kZynthScrollGuardMinDistance;
-  _stopCooldownInterval = kZynthScrollGuardCooldown;
-  _stopGestureWindowInterval = kZynthScrollGuardGestureWindow;
-  _stopFallbackViewport = kZynthScrollGuardFallbackViewport;
-  _stopRearmFraction = kZynthScrollGuardRearmFraction;
-  _stopRequiresDistance = kZynthScrollGuardRequiresDistance;
 }
 
 - (void)dealloc {
@@ -203,6 +173,7 @@ static const NSTimeInterval kZynthScrollProgrammaticAnimatedGrace = 0.600;
 
 - (void)scheduleContentGeometryUpdate {
   if (!self.contentGeometryDirty) return;
+  if ([self shouldDeferContentGeometryForOffset:self.scrollView.contentOffset]) return;
   if (self.contentUpdateScheduled) return;
   self.contentUpdateScheduled = YES;
   dispatch_async(dispatch_get_main_queue(), ^{
@@ -213,81 +184,8 @@ static const NSTimeInterval kZynthScrollProgrammaticAnimatedGrace = 0.600;
   });
 }
 
-- (void)registerProgrammaticScroll:(BOOL)animated {
-  NSTimeInterval now = ZynthScrollCurrentTime();
-  NSTimeInterval grace = animated ? kZynthScrollProgrammaticAnimatedGrace
-                                  : kZynthScrollProgrammaticInstantGrace;
-  self.programmaticScrollGraceDeadline =
-      MAX(self.programmaticScrollGraceDeadline, now + grace);
-}
-
-- (BOOL)isProgrammaticScrollActive {
-  if (self.programmaticScrollGraceDeadline <= 0) return NO;
-  return ZynthScrollCurrentTime() <= self.programmaticScrollGraceDeadline;
-}
-
-- (void)recordStableOffset:(CGPoint)offset {
-  self.lastStableOffset = offset;
-}
-
-- (void)evaluateManualFlingGuard {
-  if ([self isProgrammaticScrollActive]) {
-    return;
-  }
-  if (self.isDraggingState) {
-    [self recordStableOffset:self.scrollView.contentOffset];
-    return;
-  }
-  if (!self.isDeceleratingState) {
-    return;
-  }
-
-  NSTimeInterval now = ZynthScrollCurrentTime();
-  if (now - self.lastGestureTimestamp > self.stopGestureWindowInterval) {
-    return;
-  }
-  if (now - self.lastManualStopTimestamp < self.stopCooldownInterval) {
-    return;
-  }
-
-  CGFloat velocity = (self.axis == ZynthScrollAxisHorizontal)
-                         ? fabs(self.lastVelocity.x)
-                         : fabs(self.lastVelocity.y);
-  CGFloat viewport =
-      (self.axis == ZynthScrollAxisHorizontal)
-          ? self.scrollView.bounds.size.width
-          : self.scrollView.bounds.size.height;
-  if (viewport <= 0) {
-    viewport = self.stopFallbackViewport;
-  }
-
-  CGPoint currentOffset = self.scrollView.contentOffset;
-  CGFloat distance =
-      (self.axis == ZynthScrollAxisHorizontal)
-          ? fabs(currentOffset.x - self.lastStableOffset.x)
-          : fabs(currentOffset.y - self.lastStableOffset.y);
-
-  CGFloat distanceThreshold =
-      MAX(self.stopMinDistance, viewport * self.stopDistanceMultiplier);
-
-  BOOL stopDueToDistance = distance >= distanceThreshold;
-  BOOL stopDueToVelocity = velocity >= self.stopVelocityThreshold;
-  BOOL allowVelocityOnly = !self.stopRequiresDistance;
-
-  if (stopDueToDistance || (allowVelocityOnly && stopDueToVelocity)) {
-    [self.scrollView.layer removeAllAnimations];
-    [self.scrollView setContentOffset:self.scrollView.contentOffset animated:NO];
-    self.lastManualStopTimestamp = now;
-    [self recordStableOffset:self.scrollView.contentOffset];
-    return;
-  }
-
-  if (distance >= viewport * self.stopRearmFraction) {
-    [self recordStableOffset:currentOffset];
-  }
-}
-
 - (BOOL)shouldDeferContentGeometryForOffset:(CGPoint)offset {
+  if (self.isDraggingState) return YES;
   CGSize viewport = self.scrollView.bounds.size;
   CGSize contentSize = self.scrollView.contentSize;
   if (self.axis == ZynthScrollAxisHorizontal) {
@@ -426,59 +324,8 @@ static const NSTimeInterval kZynthScrollProgrammaticAnimatedGrace = 0.600;
   _scrollView.contentInset = e;
 }
 
-- (void)resetScrollGuardConfig {
-  self.stopVelocityThreshold = kZynthScrollGuardVelocityThreshold;
-  self.stopDistanceMultiplier = kZynthScrollGuardDistanceMultiplier;
-  self.stopMinDistance = kZynthScrollGuardMinDistance;
-  self.stopCooldownInterval = kZynthScrollGuardCooldown;
-  self.stopGestureWindowInterval = kZynthScrollGuardGestureWindow;
-  self.stopFallbackViewport = kZynthScrollGuardFallbackViewport;
-  self.stopRearmFraction = kZynthScrollGuardRearmFraction;
-  self.stopRequiresDistance = kZynthScrollGuardRequiresDistance;
-}
-
 - (void)zynth_setScrollGuardConfig:(NSDictionary *_Nullable)config {
-  if (!config || config == (id)[NSNull null] || ![config isKindOfClass:[NSDictionary class]]) {
-    [self resetScrollGuardConfig];
-    return;
-  }
-
-  [self resetScrollGuardConfig];
-
-  NSDictionary *dict = (NSDictionary *)config;
-  id value = dict[@"stopVelocityThreshold"] ?: dict[@"manualStopVelocityThreshold"];
-  if ([value respondsToSelector:@selector(doubleValue)]) {
-    self.stopVelocityThreshold = MAX(0.0, [value doubleValue]);
-  }
-  value = dict[@"stopDistanceMultiplier"] ?: dict[@"manualStopDistanceMultiplier"];
-  if ([value respondsToSelector:@selector(doubleValue)]) {
-    self.stopDistanceMultiplier = MAX(0.0, [value doubleValue]);
-  }
-  value = dict[@"stopMinDistancePx"] ?: dict[@"manualStopMinDistancePx"];
-  if ([value respondsToSelector:@selector(doubleValue)]) {
-    self.stopMinDistance = MAX(0.0, [value doubleValue]);
-  }
-  value = dict[@"stopCooldownMs"] ?: dict[@"manualStopCooldownMs"];
-  if ([value respondsToSelector:@selector(doubleValue)]) {
-    self.stopCooldownInterval = MAX(0.0, [value doubleValue]) / 1000.0;
-  }
-  value = dict[@"stopGestureWindowMs"] ?: dict[@"manualStopGestureWindowMs"];
-  if ([value respondsToSelector:@selector(doubleValue)]) {
-    self.stopGestureWindowInterval = MAX(0.0, [value doubleValue]) / 1000.0;
-  }
-  value = dict[@"stopFallbackViewport"] ?: dict[@"manualStopFallbackViewport"];
-  if ([value respondsToSelector:@selector(doubleValue)]) {
-    self.stopFallbackViewport = MAX(0.0, [value doubleValue]);
-  }
-  value = dict[@"stopRearmFraction"] ?: dict[@"manualStopRearmFraction"];
-  if ([value respondsToSelector:@selector(doubleValue)]) {
-    CGFloat fraction = (CGFloat)[value doubleValue];
-    self.stopRearmFraction = MIN(1.0, MAX(0.0, fraction));
-  }
-  value = dict[@"stopRequiresDistance"];
-  if ([value respondsToSelector:@selector(boolValue)]) {
-    self.stopRequiresDistance = [value boolValue];
-  }
+  // No-op: Scroll guard removed to restore vanilla UIScrollView behavior.
 }
 
 - (void)zynth_setScrollSnapType:(id)value {
@@ -615,7 +462,6 @@ static const NSTimeInterval kZynthScrollProgrammaticAnimatedGrace = 0.600;
     CGFloat targetX = xValue ? [xValue doubleValue] : self.scrollView.contentOffset.x;
     CGFloat targetY = yValue ? [yValue doubleValue] : self.scrollView.contentOffset.y;
     CGPoint offset = CGPointMake(targetX, targetY);
-    [self registerProgrammaticScroll:animated];
     [self.scrollView setContentOffset:offset animated:animated];
     if (!animated) {
       [self emitScrollEventNamed:@"onScroll" force:YES];
@@ -629,7 +475,6 @@ static const NSTimeInterval kZynthScrollProgrammaticAnimatedGrace = 0.600;
     CGFloat dy = [command[@"dy"] respondsToSelector:@selector(doubleValue)] ? [command[@"dy"] doubleValue] : 0;
     CGPoint current = self.scrollView.contentOffset;
     CGPoint offset = CGPointMake(current.x + dx, current.y + dy);
-    [self registerProgrammaticScroll:animated];
     [self.scrollView setContentOffset:offset animated:animated];
     if (!animated) {
       [self emitScrollEventNamed:@"onScroll" force:YES];
@@ -678,7 +523,6 @@ static const NSTimeInterval kZynthScrollProgrammaticAnimatedGrace = 0.600;
   self.isDraggingState = YES;
   self.isDeceleratingState = NO;
   self.lastGestureTimestamp = ZynthScrollCurrentTime();
-  [self recordStableOffset:scrollView.contentOffset];
   [self emitScrollEventNamed:@"onScrollBeginDrag" force:YES];
 }
 
@@ -698,7 +542,6 @@ static const NSTimeInterval kZynthScrollProgrammaticAnimatedGrace = 0.600;
   }
 
   [self updateVelocity];
-  [self evaluateManualFlingGuard];
   [self emitScrollEventNamed:@"onScroll" force:NO];
   if (![self shouldDeferContentGeometryForOffset:scrollView.contentOffset]) {
     [self scheduleContentGeometryUpdate];
@@ -713,6 +556,7 @@ static const NSTimeInterval kZynthScrollProgrammaticAnimatedGrace = 0.600;
     self.isDeceleratingState = NO;
     [self emitScrollEventNamed:@"onMomentumScrollEnd" force:YES];
     [self scheduleSnapCheckWithForce:[self.snapStrictness isEqualToString:@"mandatory"]];
+    [self scheduleContentGeometryUpdate];
   }
 }
 
@@ -725,9 +569,9 @@ static const NSTimeInterval kZynthScrollProgrammaticAnimatedGrace = 0.600;
 - (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView {
   if (self.isDeceleratingState) {
     self.isDeceleratingState = NO;
-    [self recordStableOffset:scrollView.contentOffset];
     [self emitScrollEventNamed:@"onMomentumScrollEnd" force:YES];
     [self scheduleSnapCheckWithForce:YES];
+    [self scheduleContentGeometryUpdate];
   }
 }
 
@@ -737,6 +581,7 @@ static const NSTimeInterval kZynthScrollProgrammaticAnimatedGrace = 0.600;
     [self emitScrollEventNamed:@"onMomentumScrollEnd" force:YES];
   }
   [self scheduleSnapCheckWithForce:YES];
+  [self scheduleContentGeometryUpdate];
 }
 
 #pragma mark - Event helpers

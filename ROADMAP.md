@@ -56,7 +56,7 @@ This document outlines the current status and future development plan for the Zy
 [ ] Keyboard Avoiding View: Fix inconsistent behavior on Android when set `height` as `bahavior`
 [ ] zynth-ui TextInput use SytemGlyphs for icons on Android.
 [ ] zynth-ui Custom slider doesn't keep on the selected position when released on Android.
-[ ] When load Menu using HMR we have `[unhandled] Module Font resource 'ZynthIconsBS.ttf' not found in any bundle. not found.
+[x] When load Menu using HMR we have `[unhandled] Module Font resource 'ZynthIconsBS.ttf' not found in any bundle. not found.
 [x] TextInput on iOS don't center the text when declare `paddingVertical`.
 [ ] ProgressIndicator on iOS display a glitch when return from stop, first frame display it on 0x0 on his parent container.
 [ ] Android ScrollView/VerticalFeed demo has a visual issue when scroll down, the content go outside of the container, as vertical overflow, only on Controller API, FlatList demo doesn't have this issue.
