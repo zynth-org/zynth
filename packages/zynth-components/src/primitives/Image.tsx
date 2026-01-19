@@ -159,16 +159,16 @@ function descriptorToNativeSource(
   descriptor: ImageDescriptorSource,
 ): ImageSource {
   const devUrl = (globalThis as any).__ZYNTH_DEV_SERVER_URL;
-  console.log("[Image] descriptorToNativeSource", {
-    devUrl,
-    descriptor,
-    hasDevPath: !!descriptor.devPath,
-  });
+  // console.log("[Image] descriptorToNativeSource", {
+  //   devUrl,
+  //   descriptor,
+  //   hasDevPath: !!descriptor.devPath,
+  // });
 
   if (devUrl && descriptor.devPath) {
     const encodedPath = encodeDevPath(descriptor.devPath);
     const uri = `${devUrl}/@fs/${encodedPath}?hash=${descriptor.hash}`;
-    console.log("[Image] Using dev server URL:", uri);
+    // console.log("[Image] Using dev server URL:", uri);
     return {
       uri,
     } satisfies ImageUriSource;
