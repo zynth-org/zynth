@@ -259,6 +259,24 @@ The runtime must expose the following globals via JSI HostObjects:
 
 - Core primitives and demo app work in `apps/components` using new runtime.
 
+**Known Style Gaps (Yoga/Style Parity)**
+
+The following style keys are not fully supported yet and must be covered in Phase 4+
+before declaring parity with the legacy runtime:
+
+- Numeric: `shadowOpacity`, `shadowRadius`, `elevation`, `zIndex`, `lineHeight`,
+  `lineSpacing`, `paragraphSpacing`, `baselineShift`, `minimumFontScale`,
+  `borderTopWidth`, `borderRightWidth`, `borderBottomWidth`, `borderLeftWidth`,
+  `borderTopLeftRadius`, `borderTopRightRadius`, `borderBottomRightRadius`,
+  `borderBottomLeftRadius`.
+- String: `background`, `backgroundImage`, `borderStyle`, `position` (full enum set),
+  `display` (full enum set), `overflow` (full enum set), `pointerEvents`,
+  `borderTopColor`, `borderRightColor`, `borderBottomColor`, `borderLeftColor`,
+  `shadowColor`, `boxShadow`, `fontFamily`, `fontStyle`, `textAlign`,
+  `textDecorationLine`, `textTransform`, `hyphenation`.
+- Object: `transform`, `transformOrigin`, `shadowOffset`, `boxShadow`,
+  `background`, `backgroundImage`.
+
 ---
 
 ### Phase 5: Native Signals + Worklets
