@@ -17,6 +17,7 @@ struct RuntimeState {
   jobject uiManager = nullptr;
   jclass uiClass = nullptr;
   jmethodID createNode = nullptr;
+  jmethodID createNodeWithId = nullptr;
   jmethodID setProp = nullptr;
   jmethodID setText = nullptr;
   jmethodID insertChild = nullptr;
@@ -39,28 +40,88 @@ JNIEnv *getEnv() {
   return env;
 }
 
+void callSetProp(JNIEnv *env, RuntimeState *state, jint nodeId, const std::string &name,
+                 const std::string &value) {
+  jstring jName = env->NewStringUTF(name.c_str());
+  jstring jValue = env->NewStringUTF(value.c_str());
+  env->CallVoidMethod(state->uiManager, state->setProp, nodeId, jName, jValue);
+  env->DeleteLocalRef(jName);
+  env->DeleteLocalRef(jValue);
+}
+
+void applyStyle(Runtime &rt, RuntimeState *state, JNIEnv *env, jint nodeId, const Object &style) {
+  static const char *numericKeys[] = {
+      "width", "height", "flex", "flexGrow", "flexShrink", "flexBasis",
+      "padding", "paddingHorizontal", "paddingVertical", "paddingTop", "paddingRight",
+      "paddingBottom", "paddingLeft", "margin", "marginHorizontal", "marginVertical",
+      "marginTop", "marginRight", "marginBottom", "marginLeft", "borderRadius",
+      "borderWidth", "fontSize", "top", "right", "bottom", "left", "opacity",
+      "shadowOpacity", "shadowRadius", "elevation", "zIndex", "gap", "rowGap",
+      "columnGap", "minWidth", "minHeight", "maxWidth", "maxHeight", "aspectRatio",
+      "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth",
+      "borderTopLeftRadius", "borderTopRightRadius", "borderBottomRightRadius",
+      "borderBottomLeftRadius", "lineHeight", "lineSpacing", "paragraphSpacing",
+      "letterSpacing", "baselineShift", "minimumFontScale"
+  };
+
+  static const char *stringKeys[] = {
+      "flexDirection", "justifyContent", "alignItems", "alignSelf", "alignContent",
+      "flexWrap", "background", "backgroundImage", "backgroundColor", "borderColor",
+      "borderStyle", "fontWeight", "color", "position", "display", "overflow",
+      "pointerEvents", "borderTopColor", "borderRightColor", "borderBottomColor",
+      "borderLeftColor", "shadowColor", "boxShadow", "fontFamily", "fontStyle",
+      "textAlign", "textDecorationLine", "textTransform", "hyphenation"
+  };
+
+  static const char *objectKeys[] = {
+      "transform", "transformOrigin", "shadowOffset", "boxShadow",
+      "background", "backgroundImage"
+  };
+
+  for (const char *key : numericKeys) {
+    if (!style.hasProperty(rt, key)) continue;
+    Value v = style.getProperty(rt, key);
+    if (v.isNumber()) {
+      callSetProp(env, state, nodeId, key, std::to_string(v.asNumber()));
+    } else if (v.isString()) {
+      callSetProp(env, state, nodeId, key, v.asString(rt).utf8(rt));
+    }
+  }
+
+  for (const char *key : stringKeys) {
+    if (!style.hasProperty(rt, key)) continue;
+    Value v = style.getProperty(rt, key);
+    if (v.isString()) {
+      callSetProp(env, state, nodeId, key, v.asString(rt).utf8(rt));
+    }
+  }
+
+  for (const char *key : objectKeys) {
+    if (!style.hasProperty(rt, key)) continue;
+    Value v = style.getProperty(rt, key);
+    if (v.isString()) {
+      callSetProp(env, state, nodeId, key, v.asString(rt).utf8(rt));
+    }
+  }
+}
+
+void applyProp(Runtime &rt, RuntimeState *state, JNIEnv *env, jint nodeId, const std::string &name,
+               const Value &value) {
+  if (name == "style" && value.isObject()) {
+    applyStyle(rt, state, env, nodeId, value.asObject(rt));
+    return;
+  }
+  if (value.isString()) {
+    callSetProp(env, state, nodeId, name, value.asString(rt).utf8(rt));
+  }
+}
+
 void installConsole(Runtime &rt) {
   auto logFn = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "log"), 1,
       [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
-        std::string out;
-        for (size_t i = 0; i < count; i++) {
-          if (i > 0) out += " ";
-          if (args[i].isString()) {
-            out += args[i].asString(rt).utf8(rt);
-          } else if (args[i].isNumber()) {
-            out += std::to_string(args[i].asNumber());
-          } else if (args[i].isBool()) {
-            out += args[i].getBool() ? "true" : "false";
-          } else if (args[i].isNull()) {
-            out += "null";
-          } else if (args[i].isUndefined()) {
-            out += "undefined";
-          } else {
-            out += "[object]";
-          }
-        }
-        __android_log_print(ANDROID_LOG_INFO, "ZynthJS", "%s", out.c_str());
+        count;
+        rt;
         return Value::undefined();
       });
 
@@ -89,6 +150,39 @@ void installGlobals(Runtime &rt) {
   globalThis.setProperty(rt, "global", globalThis);
   globalThis.setProperty(rt, "self", globalThis);
   globalThis.setProperty(rt, "window", globalThis);
+
+  auto queueMicrotaskFn = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "queueMicrotask"), 1,
+      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isObject() || !args[0].asObject(rt).isFunction(rt)) {
+          return Value::undefined();
+        }
+        Function fn = args[0].asObject(rt).asFunction(rt);
+        try {
+          rt.queueMicrotask(std::move(fn));
+        } catch (...) {
+          fn.call(rt);
+        }
+        return Value::undefined();
+      });
+
+  auto setImmediateFn = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "setImmediate"), 1,
+      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isObject() || !args[0].asObject(rt).isFunction(rt)) {
+          return Value::undefined();
+        }
+        Function fn = args[0].asObject(rt).asFunction(rt);
+        try {
+          rt.queueMicrotask(std::move(fn));
+        } catch (...) {
+          fn.call(rt);
+        }
+        return Value::undefined();
+      });
+
+  globalThis.setProperty(rt, "queueMicrotask", queueMicrotaskFn);
+  globalThis.setProperty(rt, "setImmediate", setImmediateFn);
 }
 
 RuntimeState *stateFor(facebook::hermes::HermesRuntime *runtime) {
@@ -124,12 +218,7 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
         if (!env) return Value::undefined();
         jint nodeId = static_cast<jint>(args[0].asNumber());
         std::string name = args[1].asString(rt).utf8(rt);
-        std::string json = args[2].isString() ? args[2].asString(rt).utf8(rt) : "";
-        jstring jName = env->NewStringUTF(name.c_str());
-        jstring jValue = env->NewStringUTF(json.c_str());
-        env->CallVoidMethod(state->uiManager, state->setProp, nodeId, jName, jValue);
-        env->DeleteLocalRef(jName);
-        env->DeleteLocalRef(jValue);
+        applyProp(rt, state, env, nodeId, name, args[2]);
         return Value::undefined();
       });
 
@@ -214,6 +303,89 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
         return Value::undefined();
       });
 
+  auto applyBatchTyped = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "applyBatchTyped"), 1,
+      [runtime](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isObject()) return Value::undefined();
+        RuntimeState *state = stateFor(runtime);
+        if (!state) return Value::undefined();
+        JNIEnv *env = getEnv();
+        if (!env) return Value::undefined();
+        Object payload = args[0].asObject(rt);
+        Value opsVal = payload.getProperty(rt, "operations");
+        if (!opsVal.isObject()) return Value::undefined();
+        Array ops = opsVal.asObject(rt).asArray(rt);
+        const size_t opCount = ops.length(rt);
+        for (size_t i = 0; i < opCount; i++) {
+          Value opVal = ops.getValueAtIndex(rt, i);
+          if (!opVal.isObject()) continue;
+          Object op = opVal.asObject(rt);
+          Value typeVal = op.getProperty(rt, "type");
+          if (!typeVal.isString()) continue;
+          std::string type = typeVal.asString(rt).utf8(rt);
+          if (type == "createNode") {
+            Value idVal = op.getProperty(rt, "nodeId");
+            Value tagVal = op.getProperty(rt, "tag");
+            if (!tagVal.isString()) continue;
+            jint nodeId = idVal.isNumber() ? static_cast<jint>(idVal.asNumber()) : 0;
+            std::string tag = tagVal.asString(rt).utf8(rt);
+            jstring jTag = env->NewStringUTF(tag.c_str());
+            if (state->createNodeWithId) {
+              env->CallVoidMethod(state->uiManager, state->createNodeWithId, jTag, nodeId);
+            } else {
+              env->CallIntMethod(state->uiManager, state->createNode, jTag);
+            }
+            env->DeleteLocalRef(jTag);
+            continue;
+          }
+          if (type == "setProp") {
+            Value idVal = op.getProperty(rt, "nodeId");
+            Value nameVal = op.getProperty(rt, "name");
+            Value valueVal = op.getProperty(rt, "value");
+            if (!idVal.isNumber() || !nameVal.isString()) continue;
+            applyProp(rt, state, env, static_cast<jint>(idVal.asNumber()),
+                      nameVal.asString(rt).utf8(rt), valueVal);
+            continue;
+          }
+          if (type == "setText") {
+            Value idVal = op.getProperty(rt, "nodeId");
+            Value valueVal = op.getProperty(rt, "value");
+            if (!idVal.isNumber()) continue;
+            std::string text;
+            if (valueVal.isString()) {
+              text = valueVal.asString(rt).utf8(rt);
+            } else if (valueVal.isNumber()) {
+              text = std::to_string(valueVal.asNumber());
+            }
+            jstring jText = env->NewStringUTF(text.c_str());
+            env->CallVoidMethod(state->uiManager, state->setText, static_cast<jint>(idVal.asNumber()), jText);
+            env->DeleteLocalRef(jText);
+            continue;
+          }
+          if (type == "insertChild") {
+            Value parentVal = op.getProperty(rt, "parentId");
+            Value childVal = op.getProperty(rt, "childId");
+            Value indexVal = op.getProperty(rt, "index");
+            if (!parentVal.isNumber() || !childVal.isNumber() || !indexVal.isNumber()) continue;
+            env->CallVoidMethod(state->uiManager, state->insertChild,
+                                static_cast<jint>(parentVal.asNumber()),
+                                static_cast<jint>(childVal.asNumber()),
+                                static_cast<jint>(indexVal.asNumber()));
+            continue;
+          }
+          if (type == "removeChild") {
+            Value parentVal = op.getProperty(rt, "parentId");
+            Value childVal = op.getProperty(rt, "childId");
+            if (!parentVal.isNumber() || !childVal.isNumber()) continue;
+            env->CallVoidMethod(state->uiManager, state->removeChild,
+                                static_cast<jint>(parentVal.asNumber()),
+                                static_cast<jint>(childVal.asNumber()));
+            continue;
+          }
+        }
+        return Value::undefined();
+      });
+
   auto setSurface = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "setSurface"), 1,
       [runtime](Runtime &, const Value &, const Value *args, size_t count) -> Value {
@@ -245,8 +417,11 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
   ui.setProperty(rt, "removeChild", removeChild);
   ui.setProperty(rt, "setHandler", setHandler);
   ui.setProperty(rt, "applyBatch", applyBatch);
+  ui.setProperty(rt, "applyBatchTyped", applyBatchTyped);
   ui.setProperty(rt, "setSurface", setSurface);
   ui.setProperty(rt, "flush", flush);
+  ui.setProperty(rt, "__supportsTypedProps", true);
+  ui.setProperty(rt, "__supportsTypedBatch", true);
   rt.global().setProperty(rt, "__ui", ui);
 }
 } // namespace
@@ -290,6 +465,8 @@ Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlon
   state.uiManager = env->NewGlobalRef(uiManager);
   state.uiClass = static_cast<jclass>(env->NewGlobalRef(env->GetObjectClass(uiManager)));
   state.createNode = env->GetMethodID(state.uiClass, "createNode", "(Ljava/lang/String;)I");
+  state.createNodeWithId =
+      env->GetMethodID(state.uiClass, "createNodeWithId", "(Ljava/lang/String;I)V");
   state.setProp = env->GetMethodID(state.uiClass, "setProp", "(ILjava/lang/String;Ljava/lang/String;)V");
   state.setText = env->GetMethodID(state.uiClass, "setText", "(ILjava/lang/String;)V");
   state.insertChild = env->GetMethodID(state.uiClass, "insertChild", "(III)V");
@@ -321,7 +498,11 @@ Java_com_zynth_kit_runtime_JSBridge_evaluateScript(JNIEnv *env, jobject, jlong p
   env->ReleaseStringUTFChars(code, utf8);
   const char *source = sourceUrl ? env->GetStringUTFChars(sourceUrl, nullptr) : nullptr;
   auto buffer = std::make_shared<StringBuffer>(script);
-  runtime->evaluateJavaScript(buffer, source ? source : "<android>");
+  try {
+    runtime->evaluateJavaScript(buffer, source ? source : "<android>");
+  } catch (...) {
+    return;
+  }
   if (sourceUrl && source) env->ReleaseStringUTFChars(sourceUrl, source);
 }
 
@@ -340,5 +521,9 @@ Java_com_zynth_kit_runtime_JSBridge_callGlobalDouble(JNIEnv *env, jobject, jlong
   Function fn = fnVal.asObject(rt).asFunction(rt);
   Value arg(static_cast<double>(value));
   auto callFn = static_cast<Value (Function::*)(Runtime&, const Value*, size_t) const>(&Function::call);
-  (fn.*callFn)(rt, &arg, 1);
+  try {
+    (fn.*callFn)(rt, &arg, 1);
+  } catch (...) {
+    return;
+  }
 }

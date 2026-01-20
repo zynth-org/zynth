@@ -8,6 +8,8 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.zynth.kit.core.ZynthRootView
 import com.zynth.kit.runtime.ZynthRuntime
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 import org.json.JSONObject
 {{RUNTIME_MODULE_IMPORTS}}
 {{MODULE_IMPORTS}}
@@ -47,10 +49,28 @@ class MainActivity : AppCompatActivity() {
 
     // Capture dev server + devtools intent extras early so native modules can read them.
     val launchIntent = intent
-    val devServerUrl = launchIntent.getStringExtra("ZYNTH_DEV_SERVER_URL")
-    val devServerToken = launchIntent.getStringExtra("ZYNTH_DEV_SERVER_TOKEN")
-    val devtoolsUrl = launchIntent.getStringExtra("ZYNTH_DEVTOOLS_URL")
-    val devtoolsToken = launchIntent.getStringExtra("ZYNTH_DEVTOOLS_TOKEN")
+    var devServerUrl = launchIntent.getStringExtra("ZYNTH_DEV_SERVER_URL")
+    var devServerToken = launchIntent.getStringExtra("ZYNTH_DEV_SERVER_TOKEN")
+    var devtoolsUrl = launchIntent.getStringExtra("ZYNTH_DEVTOOLS_URL")
+    var devtoolsToken = launchIntent.getStringExtra("ZYNTH_DEVTOOLS_TOKEN")
+
+    val persistedConfig = loadPersistedDevConfig()
+    if (devServerUrl.isNullOrBlank()) {
+      devServerUrl = persistedConfig?.url
+    }
+    if (devServerToken.isNullOrBlank()) {
+      devServerToken = persistedConfig?.token
+    }
+    if (devtoolsUrl.isNullOrBlank()) {
+      devtoolsUrl = persistedConfig?.devtoolsUrl
+    }
+    if (devtoolsToken.isNullOrBlank()) {
+      devtoolsToken = persistedConfig?.devtoolsToken
+    }
+
+    if (devServerUrl.isNullOrBlank()) {
+      devServerUrl = if (isEmulator()) "http://10.0.2.2:8081" else null
+    }
 
     if (!devServerUrl.isNullOrBlank()) {
       System.setProperty("ZYNTH_DEV_SERVER_URL", devServerUrl)
@@ -68,17 +88,23 @@ class MainActivity : AppCompatActivity() {
 
     // Start loading bundle in background
     val preloadUrl = devServerUrl
-    val loadThread = if (preloadUrl.isNullOrBlank()) {
-      Thread {
-        try {
-          bundleCode = assets.open("main.js").use { it.bufferedReader().readText() }
-        } catch (e: Exception) {
-          Log.e("MainActivity", "Failed to load bundle", e)
+    val loadThread = Thread {
+      try {
+        bundleCode = if (!preloadUrl.isNullOrBlank()) {
+          val bundleUrl = URL("${preloadUrl.trimEnd('/')}/main.js")
+          val connection = bundleUrl.openConnection() as HttpURLConnection
+          connection.connectTimeout = 8000
+          connection.readTimeout = 8000
+          connection.inputStream.use { input ->
+            input.bufferedReader().readText()
+          }
+        } else {
+          assets.open("main.js").use { it.bufferedReader().readText() }
         }
-      }.apply { start() }
-    } else {
-      null
-    }
+      } catch (e: Exception) {
+        Log.e("MainActivity", "Failed to load bundle", e)
+      }
+    }.apply { start() }
 
     val runtime = ZynthRuntime(root)
     this.runtime = runtime
@@ -88,10 +114,8 @@ class MainActivity : AppCompatActivity() {
 
     if (!devServerUrl.isNullOrBlank()) {
       runtime.connectDevServer(devServerUrl, devServerToken)
-    } else {
-      // Wait for background thread if needed
-      loadThread?.join()
     }
+    loadThread.join()
 
     runtime.loadInitialBundle(assets, preloadedCode = bundleCode)
 
@@ -142,5 +166,40 @@ class MainActivity : AppCompatActivity() {
     } catch (error: Exception) {
       Log.w("MainActivity", "Failed to persist dev config", error)
     }
+  }
+
+  private data class DevConfig(
+    val url: String?,
+    val token: String?,
+    val devtoolsUrl: String?,
+    val devtoolsToken: String?
+  )
+
+  private fun loadPersistedDevConfig(): DevConfig? {
+    return try {
+      val configFile = File(filesDir, ".zynth/dev-server.json")
+      if (!configFile.exists()) {
+        return null
+      }
+      val json = JSONObject(configFile.readText())
+      DevConfig(
+        url = json.optString("url").takeIf { it.isNotBlank() },
+        token = json.optString("token").takeIf { it.isNotBlank() },
+        devtoolsUrl = json.optString("devtoolsUrl").takeIf { it.isNotBlank() },
+        devtoolsToken = json.optString("devtoolsToken").takeIf { it.isNotBlank() }
+      )
+    } catch (error: Exception) {
+      Log.w("MainActivity", "Failed to read dev config", error)
+      null
+    }
+  }
+
+  private fun isEmulator(): Boolean {
+    val fingerprint = android.os.Build.FINGERPRINT.lowercase()
+    val model = android.os.Build.MODEL.lowercase()
+    return fingerprint.contains("generic") ||
+      fingerprint.contains("emulator") ||
+      model.contains("emulator") ||
+      model.contains("android sdk built for")
   }
 }

@@ -1,6 +1,5 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { promises as fs } from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 
@@ -120,6 +119,7 @@ export function createZynthRsbuildPlugin(
         }
       });
 
+
       // Add middleware to serve static files via /@fs/ routes (for dev mode)
       if (api.context.action === "dev") {
         api.modifyRsbuildConfig((config) => {
@@ -234,6 +234,7 @@ function createStaticAssetMiddleware() {
     }
   };
 }
+
 
 function ensureAliases(
   config: rspack.Configuration,

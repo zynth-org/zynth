@@ -8,6 +8,7 @@
 using namespace facebook::jsi;
 
 namespace {
+static bool DEBUG_RUNTIME = false;
 struct NSDataBuffer final : public Buffer {
   NSData *data_;
   explicit NSDataBuffer(NSData *data) : data_(data) {}
@@ -62,6 +63,39 @@ static void installGlobals(Runtime &rt) {
   globalThis.setProperty(rt, "global", globalThis);
   globalThis.setProperty(rt, "self", globalThis);
   globalThis.setProperty(rt, "window", globalThis);
+
+  auto queueMicrotaskFn = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "queueMicrotask"), 1,
+      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isObject() || !args[0].asObject(rt).isFunction(rt)) {
+          return Value::undefined();
+        }
+        Function fn = args[0].asObject(rt).asFunction(rt);
+        try {
+          rt.queueMicrotask(std::move(fn));
+        } catch (...) {
+          fn.call(rt);
+        }
+        return Value::undefined();
+      });
+
+  auto setImmediateFn = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "setImmediate"), 1,
+      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isObject() || !args[0].asObject(rt).isFunction(rt)) {
+          return Value::undefined();
+        }
+        Function fn = args[0].asObject(rt).asFunction(rt);
+        try {
+          rt.queueMicrotask(std::move(fn));
+        } catch (...) {
+          fn.call(rt);
+        }
+        return Value::undefined();
+      });
+
+  globalThis.setProperty(rt, "queueMicrotask", queueMicrotaskFn);
+  globalThis.setProperty(rt, "setImmediate", setImmediateFn);
 }
 } // namespace
 
@@ -153,7 +187,25 @@ static void installGlobals(Runtime &rt) {
     }
   }
   const Value *argsPtr = callArgs.empty() ? nullptr : callArgs.data();
-  fn.call(rt, argsPtr, callArgs.size());
+  try {
+    fn.call(rt, argsPtr, callArgs.size());
+  } catch (const JSError &error) {
+    if (DEBUG_RUNTIME) {
+      NSString *message = [NSString stringWithUTF8String:error.getMessage().c_str()];
+      NSString *stack = [NSString stringWithUTF8String:error.getStack().c_str()];
+      NSLog(@"[ZynthJS] callGlobal error for %@: %@", name, message);
+      if (stack.length > 0) {
+        NSLog(@"[ZynthJS] stack: %@", stack);
+      }
+    }
+    return nil;
+  } catch (const std::exception &ex) {
+    if (DEBUG_RUNTIME) {
+      NSString *message = [NSString stringWithUTF8String:ex.what()];
+      NSLog(@"[ZynthJS] callGlobal exception for %@: %@", name, message);
+    }
+    return nil;
+  }
   return nil;
 }
 

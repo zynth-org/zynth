@@ -31,6 +31,7 @@
   // Initialize extra modules (like Splash Screen) as early as possible
 {{EXTRA_APP_DELEGATE_INIT}}
 
+  NSURL *bundleURL = [[NSBundle mainBundle] URLForResource:@"main" withExtension:@"js"];
 #if DEBUG
   NSString *devServer = [[NSProcessInfo processInfo] environment][@"ZYNTH_DEV_SERVER_URL"];
   if (devServer.length == 0) {
@@ -40,12 +41,12 @@
   if (!ready) {
     NSLog(@"[Zynth] ⚠️ Dev server at %@ not reachable; startup may fail", devServer);
   }
+  NSString *devBundle = [NSString stringWithFormat:@"%@/main.js", devServer];
+  bundleURL = [NSURL URLWithString:devBundle];
 #endif
 
-  NSURL *fallbackBundleURL = [[NSBundle mainBundle] URLForResource:@"main" withExtension:@"js"];
-
   NSError *loadError = nil;
-  if (![self.runtime loadInitialBundleWithJsBundleURL:fallbackBundleURL error:&loadError]) {
+  if (![self.runtime loadInitialBundleWithJsBundleURL:bundleURL error:&loadError]) {
     NSLog(@"[Zynth] Failed to load bundle: %@", loadError);
 {{RUNTIME_LOAD_FAILURE}}
     return NO;

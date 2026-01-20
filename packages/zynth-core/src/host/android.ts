@@ -7,6 +7,7 @@ import type {
   RecyclingContext,
 } from "./HostTypes";
 import type { ZynthUIBridge } from "../bridge";
+import { ENABLE_JSON_OPS, ENABLE_TYPED_OPS } from "../flags";
 
 export function createAndroidHost(): Host {
   const g: any =
@@ -79,6 +80,11 @@ export function createAndroidHost(): Host {
     return true;
   };
 
+  const supportsTypedProps =
+    ENABLE_TYPED_OPS && (ui as any).__supportsTypedProps === true;
+  const supportsTypedBatch =
+    ENABLE_TYPED_OPS && typeof (ui as any).applyBatchTyped === "function";
+
   const runFlush = () => {
     flushScheduled = false;
     try {
@@ -94,7 +100,9 @@ export function createAndroidHost(): Host {
             operations: batchAccumulator,
           };
 
-          if (typeof ui.applyBatch === "function") {
+          if (supportsTypedBatch) {
+            (ui as any).applyBatchTyped(payload);
+          } else if (ENABLE_JSON_OPS && typeof ui.applyBatch === "function") {
             ui.applyBatch(JSON.stringify(payload));
           } else {
             for (const op of batchAccumulator) {
@@ -109,7 +117,11 @@ export function createAndroidHost(): Host {
                   ui.removeChild(op.parentId, op.childId);
                   break;
                 case "setProp":
-                  ui.setProp(op.nodeId, op.name, op.value);
+                  if (supportsTypedProps) {
+                    ui.setProp(op.nodeId, op.name, op.value);
+                  } else {
+                    ui.setProp(op.nodeId, op.name, op.value);
+                  }
                   break;
                 case "setText":
                   ui.setText(op.nodeId, op.value);
@@ -654,7 +666,12 @@ export function createAndroidHost(): Host {
         meta: context.meta,
         operations: context.operations,
       };
-      if (typeof ui.applyBatch === "function") {
+      if (supportsTypedBatch) {
+        if (isSuppressed()) return;
+        (ui as any).applyBatchTyped(payload);
+        return;
+      }
+      if (ENABLE_JSON_OPS && typeof ui.applyBatch === "function") {
         if (isSuppressed()) return;
         const serialized =
           typeof payload === "string" ? payload : JSON.stringify(payload);
@@ -674,7 +691,11 @@ export function createAndroidHost(): Host {
             ui.removeChild(op.parentId, op.childId);
             break;
           case "setProp":
-            ui.setProp(op.nodeId, op.name, op.value);
+            if (supportsTypedProps) {
+              ui.setProp(op.nodeId, op.name, op.value);
+            } else {
+              ui.setProp(op.nodeId, op.name, op.value);
+            }
             break;
           case "setText":
             ui.setText(op.nodeId, op.value);

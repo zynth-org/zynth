@@ -7,6 +7,7 @@ import type {
   RecyclingContext,
 } from "./HostTypes";
 import type { ZynthUIBridge } from "../bridge";
+import { ENABLE_JSON_OPS, ENABLE_TYPED_OPS } from "../flags";
 import { ensureNativeEmitter } from "../nativeEmitter";
 
 export function createIOSHost(): Host {
@@ -78,6 +79,11 @@ export function createIOSHost(): Host {
     return true;
   };
 
+  const supportsTypedProps =
+    ENABLE_TYPED_OPS && (ui as any).__supportsTypedProps === true;
+  const supportsTypedBatch =
+    ENABLE_TYPED_OPS && typeof (ui as any).applyBatchTyped === "function";
+
   const runFlush = () => {
     flushScheduled = false;
     rafHandle = null;
@@ -95,13 +101,19 @@ export function createIOSHost(): Host {
             operations: batchAccumulator,
           };
 
-          if (typeof ui.applyBatch === "function") {
+          if (supportsTypedBatch) {
+            (ui as any).applyBatchTyped(payload);
+          } else if (ENABLE_JSON_OPS && typeof ui.applyBatch === "function") {
             ui.applyBatch(JSON.stringify(payload));
           } else {
             // Fallback for runtimes without applyBatch
             for (const op of batchAccumulator) {
               if (op.type === "setProp") {
-                ui.setProp(op.nodeId, op.name, op.value);
+                if (supportsTypedProps) {
+                  ui.setProp(op.nodeId, op.name, op.value);
+                } else {
+                  ui.setProp(op.nodeId, op.name, op.value);
+                }
               } else {
                 ui.setText(op.nodeId, op.value);
               }
@@ -607,7 +619,12 @@ export function createIOSHost(): Host {
         ),
       };
 
-      if (typeof ui.applyBatch === "function") {
+      if (supportsTypedBatch) {
+        if (isSuppressed()) return;
+        (ui as any).applyBatchTyped(payload);
+        return;
+      }
+      if (ENABLE_JSON_OPS && typeof ui.applyBatch === "function") {
         if (isSuppressed()) return;
         const serialized =
           typeof payload === "string" ? payload : JSON.stringify(payload);

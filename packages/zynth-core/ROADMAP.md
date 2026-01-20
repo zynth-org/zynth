@@ -162,6 +162,10 @@ The runtime must expose the following globals via JSI HostObjects:
 
 - Can run `yarn zynth dev --prebuild --new-runtime` and see a blank root view.
 
+**Status**
+
+- Completed. Both platforms boot via `--new-runtime` and render a minimal root.
+
 ---
 
 ### Phase 2: Minimal Renderer Path (iOS)
@@ -184,6 +188,22 @@ The runtime must expose the following globals via JSI HostObjects:
 - `@zynth/components` renders basic UI via the new runtime.
 - Benchmarks show parity or improvement vs legacy for mount/update cycles.
 
+**Status**
+
+- In progress.
+- Completed:
+  - JSI `__ui` host object in ObjC++.
+  - Typed batch path (`applyBatchTyped`) wired.
+  - UIKit + Yoga node creation, layout pass, and text measurement.
+  - `createNode`, `setProp`, `setText`, `insertChild`, `removeChild` working for `view` and `text`.
+  - Native `queueMicrotask`/`setImmediate` hooks installed; JS shim removed.
+- Pending for Phase 2 completion:
+  - Frame scheduling + budget enforcement (CADisplayLink) with profiling hooks.
+  - Event dispatch + pointer/touch handling.
+  - Surface management behavior (multi-root readiness).
+  - Remove any bridge-only helpers (e.g., `createNodeWithId` in native) once JS typed ops are final.
+  - Benchmark harness integration and perf reporting for iOS.
+
 ---
 
 ### Phase 3: Minimal Renderer Path (Android)
@@ -204,6 +224,22 @@ The runtime must expose the following globals via JSI HostObjects:
 
 - Same basic UI renders on Android using the new runtime.
 - Comparable benchmark results to iOS.
+
+**Status**
+
+- In progress.
+- Completed:
+  - JSI `__ui` host object via JNI + Kotlin.
+  - Typed batch path (`applyBatchTyped`) wired.
+  - Yoga layout pass and text measurement.
+  - `createNode`, `setProp`, `setText`, `insertChild`, `removeChild` working for `view` and `text`.
+  - Native `queueMicrotask`/`setImmediate` hooks installed; JS shim removed.
+- Pending for Phase 3 completion:
+  - Choreographer frame scheduler with 14ms budget hooks.
+  - Event dispatch + pointer/touch handling.
+  - Surface management behavior (multi-root readiness).
+  - Remove bridge-only helpers (e.g., `createNodeWithId`) once JS typed ops are final.
+  - Benchmark harness integration and perf reporting for Android.
 
 ---
 
@@ -259,6 +295,15 @@ The runtime must expose the following globals via JSI HostObjects:
 **Exit Criteria**
 
 - Renderer operations consistently under 14ms on baseline devices.
+
+**Status**
+
+- Not started.
+- Performance blockers to track:
+  - Replace JS object batches with a typed opcode buffer + string table (no JSON).
+  - String interning for prop keys/event names across the JSI boundary.
+  - Native microtask scheduler is installed, but needs profiling/latency targets (no JS fallback).
+  - Layout batching and minimal allocations per flush (reuse buffers, avoid per-op object creation).
 
 ---
 

@@ -2,19 +2,18 @@ package com.zynth.kit.runtime
 
 import android.content.Context
 import android.content.res.AssetManager
-import android.util.Log
+import com.facebook.soloader.SoLoader
 import com.zynth.kit.core.ZynthRootView
 import com.zynth.kit.core.ZynthUIManager
 
 class ZynthRuntime(private val root: ZynthRootView) {
-  private val uiManager = ZynthUIManager()
+  private val uiManager = ZynthUIManager(root)
   private val runtimePtr: Long = JSBridge.createHermesRuntime()
 
   companion object {
     @JvmStatic
     fun initialize(context: Context) {
-      // Phase 1 scaffold.
-      context.applicationContext
+      SoLoader.init(context, false)
     }
   }
 
@@ -38,13 +37,19 @@ class ZynthRuntime(private val root: ZynthRootView) {
     if (preloadedCode == null) {
       val devServerUrl = System.getProperty("ZYNTH_DEV_SERVER_URL")
       if (!devServerUrl.isNullOrBlank()) {
-        Log.d("ZynthRuntime", "Dev server configured; skipping asset bundle load.")
         return
       }
     }
-    val code = preloadedCode ?: assets.open("main.js").use { it.bufferedReader().readText() }
+    val code = preloadedCode ?: run {
+      try {
+        assets.open("main.js").use { it.bufferedReader().readText() }
+      } catch (error: Exception) {
+        return
+      }
+    }
     JSBridge.evaluateScript(runtimePtr, code, "main.js")
   }
+
 
   fun addSurfaceFirstFrameListener(surfaceId: Int, listener: () -> Unit) {
     // Phase 1 scaffold.
