@@ -32,6 +32,10 @@ android {
 
   packaging {
     jniLibs {
+      pickFirsts += setOf(
+        "**/libc++_shared.so",
+        "**/libhermesvm.so"
+      )
       excludes += setOf(
         "**/libfabricjni.so",
         "**/libreactnativejni.so",

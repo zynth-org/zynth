@@ -1,63 +1,120 @@
-# @zynth/core
+# Zynth Core Runtime
 
-The core renderer and bridge interface for the Zynth framework.
+Zynth Core is the next-generation native runtime and renderer for the Zynth framework. It lives in `packages/zynth-core` and focuses only on high-performance native rendering and the minimal host contract used by `@zynth/core`.
 
-This package connects SolidJS's fine-grained reactivity to the native Zynth runtime (iOS and Android). It implements a custom SolidJS universal renderer that translates reactive updates into optimized native commands.
+Legacy runtimes remain in `packages/zynth-ios` and `packages/zynth-android`. Zynth Core is enabled only via an explicit build flag (`--new-runtime`).
 
-## Architecture
+---
 
-`@zynth/core` acts as the "Host" in the SolidJS Universal Renderer architecture. It is responsible for:
+## Goals
 
-1.  **Reactivity Adapter**: `createZynthRenderer` (in `src/renderer.ts`) maps SolidJS primitives (`createNode`, `insertNode`, `setProperty`, etc.) to the platform-specific host.
-2.  **Bridge Interface**: Defines the contract (`src/bridge.ts`) that the native environment must provide.
-    - `global.__ui`: The UI mutation bridge (create nodes, update props).
-    - `global.__modules`: The native module invocation bridge.
-3.  **Host Implementation**: Platform-specific implementations (`src/host/android.ts`, `src/host/ios.ts`) that manage the command queue.
+- Native-first, platform-specific renderers with no shared renderer base.
+- JSI-first bridge (Hermes V1), avoiding serialized JSON where possible.
+- Minimal runtime contract: small, auditable, and easy to benchmark.
+- Clear module lifecycle that survives HMR and runtime restarts.
+- SolidJS parity: fine-grained updates with zero re-render assumptions.
+- Performance-first language choices: use ObjC/ObjC++/C++ for hot paths; Swift is allowed when it does not impact critical paths.
 
-## Features
+---
 
-### Batched Updates
+## Scope
 
-To minimize the overhead of the JavaScript-to-Native bridge (JSI), `@zynth/core` aggregates multiple DOM operations into a single batch.
+Zynth Core only contains:
 
-- **Queueing**: Operations like `setProp` or `insertNode` are pushed to a microtask queue or managed via `requestAnimationFrame`.
-- **Flushing**: The queue is flushed at the end of the JavaScript event loop, sending a single JSON payload or performing a block of JSI calls via `applyBatch`.
+- Native runtime + renderer implementation for iOS and Android.
+- The `__ui` host API required by `@zynth/core`.
+- The `__modules` host API with a standardized native registry.
+- Optional native signals and worklets (installed by `@zynth/animate`).
+- Built-in performance instrumentation for renderer benchmarks.
 
-### Node Recycling
+Out of scope (moved to modules): devtools, status bar, dimensions, diagnosis, environment, dev client, fetch, redbox.
+During the refactor, the new runtime should not reintroduce these APIs.
 
-Zynth implements a JS-side recycling mechanism to handle large lists efficiently, similar to Android's `RecyclerView` or iOS `UITableView`.
+---
 
-- **Pools**: Removed nodes are kept in a pool instead of being destroyed.
-- **Rehydration**: When a new item is rendered (e.g., in a `<For>` loop), a node is claimed from the pool and re-bound with new data, avoiding expensive native view creation.
+## Architecture (Refined)
 
-### Platform Agnostic
+### 1. Renderer Contract (JS)
 
-While primarily designed for Native, `zynth-core` includes a Web host (`src/host/web.ts`) allowing Zynth components to run in standard web browsers by mapping to the DOM.
+`@zynth/core` drives the renderer via `__ui` operations. The runtime provides the minimum host contract and a high-performance batch path.
 
-### Native Signals (Worklets)
+### 2. Native Runtime (Per Platform)
 
-Native signals are Solid-style signals that live in shared native storage and can be read synchronously by the UI thread. The compiler marks worklet functions, and the runtime registers them so the UI thread can run the worklet with direct access to shared signal values.
+Each platform implements its own runtime and renderer:
 
-**Note:** `__zynth_shared_signals` is a runtime-level alias to the native shared-value store. The runtime simply exposes a single native store so multiple systems can read/write the same values.
+- **iOS**: ObjC++ runtime that owns UIKit views and Yoga nodes.
+- **Android**: Kotlin runtime that owns Android Views and Yoga nodes.
 
-**Mental model:**
+There is no shared renderer base between platforms. Shared logic is limited to conceptual parity and testing strategy.
+Performance-critical paths should prefer ObjC/ObjC++ (iOS) and Kotlin/Java (Android). Swift is permitted when it does not impact hot paths.
 
-1. `createSharedSignal()` allocates a native slot and returns a normal Solid-style getter/setter.
-2. `set()` writes to native storage immediately via JSI.
-3. `createWorklet()` serializes the function and captured inputs for the UI runtime.
-4. The UI runtime executes the worklet and reads shared signals synchronously.
+### 3. Module Registry
 
-**Example:**
+A standardized native module registry provides:
 
-```ts
-import { createSharedSignal, createWorklet } from "@zynth/core";
+- Deterministic install/uninstall per runtime instance.
+- HMR-safe lifecycle reset with no leaks.
+- Explicit module constants and sync/async calls.
 
-const [offset, setOffset] = createSharedSignal(0);
+### 4. Optional Runtime Features
 
-createWorklet(() => {
-  "worklet";
-  view.setTranslationX(offset());
-});
+- Native signals and worklets are treated as installable capabilities.
+- Animation drivers live in `@zynth/animate` and install their runtime hooks.
 
-setOffset(60);
-```
+---
+
+## Minimal Runtime Contract
+
+Globals installed by the runtime:
+
+- `__ui`: native renderer operations (`createNode`, `setProp`, `setText`, `insertChild`, `removeChild`, `setHandler`, `applyBatch`, `setSurface`, `flush`).
+- `__modules`: native module invocation (`call`, `callSync`).
+- Scheduler hooks when required by `@zynth/core` (`queueMicrotask`, `requestAnimationFrame`, `cancelAnimationFrame`).
+
+Batching must avoid JSON on hot paths. The preferred payload is a typed op buffer with a string table.
+
+---
+
+## Module Lifecycle (HMR-safe)
+
+Runtime reloads must not leak handlers or native references.
+
+- `RuntimeRegistry.install(module)`
+- `RuntimeRegistry.uninstall(name)`
+- `RuntimeRegistry.reset()`
+
+Each module must implement:
+
+- `install(runtimeContext)`
+- `uninstall(runtimeContext)`
+- `getConstants()`
+
+---
+
+## Build and Selection
+
+Zynth Core is opt-in:
+
+- `yarn zynth dev --prebuild --new-runtime`
+- `yarn zynth prebuild --new-runtime`
+
+The CLI/template wiring must link to `packages/zynth-core/ios` and `packages/zynth-core/android` when the flag is set, and fall back to legacy runtimes otherwise.
+Hermes configuration should remain aligned with the proven legacy setup in the Podfile and Android Gradle configuration.
+
+---
+
+## Performance Strategy
+
+- Strict 14ms frame budget during layout/flush.
+- Renderer benchmarks built into `apps/components`.
+- Profile per batch: JS time, native time, layout time, and allocations.
+- Minimal allocations in hot paths; reuse buffers and intern strings.
+- Preserve proven utility/style systems from the legacy runtime when they are performant (e.g., existing `packages/zynth-ios/ios/ZynthKit/src/utils` styling and parsers).
+
+---
+
+## Reference
+
+- Roadmap: `packages/zynth-core/ROADMAP.md`
+- Architecture baseline: `docs/architecture.md`
+- Renderer host API: `packages/zynth-core/src`

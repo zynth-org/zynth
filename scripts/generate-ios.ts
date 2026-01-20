@@ -209,6 +209,36 @@ function replacePlaceholders(content: string, config: AppConfig, extras: any = {
     .replace(/\{\{DISPLAY_NAME\}\}/g, config.displayName);
 
   output = output.replace(
+    /\{\{ZYNTH_IOS_RUNTIME_PACKAGE\}\}/g,
+    extras.iosRuntimePackage ?? "@zynth/ios"
+  );
+
+  output = output.replace(
+    /\{\{ZYNTH_IOS_RUNTIME_DIR\}\}/g,
+    extras.iosRuntimeDir ?? "zynth-ios"
+  );
+
+  output = output.replace(
+    /\{\{ZYNTH_IOS_HERMES_DIR\}\}/g,
+    extras.iosHermesDir ?? "zynth-ios"
+  );
+
+  output = output.replace(
+    /\{\{RUNTIME_IMPORTS\}\}/g,
+    extras.runtimeImports ?? ""
+  );
+
+  output = output.replace(
+    /\{\{RUNTIME_LOAD_FAILURE\}\}/g,
+    extras.runtimeLoadFailure ?? ""
+  );
+
+  output = output.replace(
+    /\{\{RUNTIME_ROOT_CONTROLLER\}\}/g,
+    extras.runtimeRootController ?? ""
+  );
+
+  output = output.replace(
     /\{\{ZYNTH_COMPONENT_PODS\}\}/g,
     extras.componentPods ?? ""
   );
@@ -299,6 +329,17 @@ function removeDirectoryWithRetries(targetDir: string, retries = 5): void {
 
 export function generateIOSProject(appDir: string, options: any = {}) {
   const { dev = true, quiet = false } = options; // Default to dev mode for backward compatibility
+  const useNewRuntime = Boolean(options.newRuntime);
+  const iosRuntimePackage = useNewRuntime ? "@zynth/core" : "@zynth/ios";
+  const iosRuntimeDir = useNewRuntime ? "zynth-core" : "zynth-ios";
+  const iosHermesDir = "zynth-ios";
+  const runtimeImports = useNewRuntime ? "" : '#import "ZynthKit-Swift.h"';
+  const runtimeLoadFailure = useNewRuntime
+    ? ""
+    : `    if (loadError) {\n      [DevRedBox showWithTitle:@"Bundle Load Failed"\n                       message:loadError.localizedDescription\n                         stack:nil];\n    }`;
+  const runtimeRootController = useNewRuntime
+    ? "  UIViewController *vc = [UIViewController new];\n  vc.view = self.surface;\n  self.window.rootViewController = vc;"
+    : "  ZynthStatusBarHostController *vc = [ZynthStatusBarHostController new];\n  vc.view = self.surface;\n  self.window.rootViewController = vc;";
   const config = getAppConfig(appDir);
   const appJson = safeReadJSON(path.join(appDir, "app.json")) || {};
   const zynthConfig = appJson.zynth || appJson || {};
@@ -312,10 +353,11 @@ export function generateIOSProject(appDir: string, options: any = {}) {
     console.log(`  Bundle ID: ${config.bundleId}`);
     console.log(`  Version: ${config.version}`);
     console.log(`  Mode: ${dev ? "Development" : "Production"}`);
+    console.log(`  Runtime: ${useNewRuntime ? "New" : "Legacy"}`);
     console.log(`  Target: ${targetDir}`);
   }
 
-  const componentPods = collectNativeIOSPods(appDir);
+  const componentPods = useNewRuntime ? [] : collectNativeIOSPods(appDir);
   if (!quiet) {
     if (componentPods.length) {
       console.log("  Native component pods:");
@@ -382,7 +424,9 @@ static NSString *const kZynthSplashResizeMode = @"${splashResizeMode}";`;
   }
   
   // Generate module config for dynamic loading (e.g. Hypervisor)
-  generateNativeModulesConfig(componentPods, targetDir);
+  if (!useNewRuntime) {
+    generateNativeModulesConfig(componentPods, targetDir);
+  }
 
   // Copy and process template files
   const templateFiles = fs.readdirSync(templateDir);
@@ -402,6 +446,12 @@ static NSString *const kZynthSplashResizeMode = @"${splashResizeMode}";`;
         extraAppDelegateInit,
         launchScreenImage,
         splashContentMode,
+        iosRuntimePackage,
+        iosRuntimeDir,
+        iosHermesDir,
+        runtimeImports,
+        runtimeLoadFailure,
+        runtimeRootController,
       });
       fs.writeFileSync(targetFile, processedContent);
       if (!quiet) {

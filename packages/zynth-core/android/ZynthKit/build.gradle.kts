@@ -1,0 +1,47 @@
+val reactNativeVersion = "0.84.0-rc.1"
+val hermesVersion = "250829098.0.6"
+
+plugins {
+  id("com.android.library")
+  id("org.jetbrains.kotlin.android")
+}
+
+android {
+  namespace = "com.zynth.kit"
+  compileSdk = 34
+
+  defaultConfig {
+    minSdk = 24
+    consumerProguardFiles("consumer-rules.pro")
+    externalNativeBuild {
+      cmake {
+        cppFlags("-fexceptions", "-frtti", "-std=c++17")
+        arguments("-DANDROID_STL=c++_shared")
+      }
+    }
+  }
+
+  compileOptions {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+  }
+  kotlinOptions {
+    jvmTarget = "17"
+  }
+
+  buildFeatures {
+    prefab = true
+  }
+
+  externalNativeBuild {
+    cmake {
+      path = file("CMakeLists.txt")
+    }
+  }
+}
+
+dependencies {
+  implementation("androidx.core:core-ktx:1.12.0")
+  implementation("com.facebook.hermes:hermes-android:$hermesVersion")
+  compileOnly("com.facebook.react:react-android:$reactNativeVersion")
+}

@@ -24,7 +24,7 @@ val zynthAndroidDir = listOf(
   File(rootDir, "../../node_modules"),
   File(rootDir, "../../../node_modules"),
   File(rootDir, "../../../../node_modules")
-).map { File(it, "@zynth/android/android/ZynthKit") }
+).map { File(it, "{{ZYNTH_ANDROID_RUNTIME_PACKAGE}}/{{ZYNTH_ANDROID_RUNTIME_SUBDIR}}") }
   .firstOrNull { it.exists() }
   ?: error("Unable to locate @zynth/android package from $rootDir")
 

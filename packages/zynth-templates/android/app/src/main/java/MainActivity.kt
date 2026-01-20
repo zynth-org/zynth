@@ -5,13 +5,11 @@ import android.util.Log
 import android.view.WindowManager
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
-import {{BUNDLE_ID}}.modules.DeviceModule
-import {{BUNDLE_ID}}.modules.EnvModule
-import {{BUNDLE_ID}}.modules.PerformanceModule
 import com.zynth.kit.core.ZynthRootView
 import com.zynth.kit.runtime.ZynthRuntime
 import java.io.File
 import org.json.JSONObject
+{{RUNTIME_MODULE_IMPORTS}}
 {{MODULE_IMPORTS}}
 {{ACTIVITY_HOOK_IMPORTS}}
 
@@ -54,6 +52,12 @@ class MainActivity : AppCompatActivity() {
     val devtoolsUrl = launchIntent.getStringExtra("ZYNTH_DEVTOOLS_URL")
     val devtoolsToken = launchIntent.getStringExtra("ZYNTH_DEVTOOLS_TOKEN")
 
+    if (!devServerUrl.isNullOrBlank()) {
+      System.setProperty("ZYNTH_DEV_SERVER_URL", devServerUrl)
+    }
+    if (!devServerToken.isNullOrBlank()) {
+      System.setProperty("ZYNTH_DEV_SERVER_TOKEN", devServerToken)
+    }
     if (!devtoolsUrl.isNullOrBlank()) {
       System.setProperty("ZYNTH_DEVTOOLS_URL", devtoolsUrl)
     }
@@ -78,8 +82,7 @@ class MainActivity : AppCompatActivity() {
 
     val runtime = ZynthRuntime(root)
     this.runtime = runtime
-    runtime.installDefaultModules()
-    runtime.installModules(listOf(DeviceModule(), EnvModule(), PerformanceModule()))
+{{RUNTIME_MODULE_INSTALLS}}
 
 {{MODULE_INITIALIZERS}}
 

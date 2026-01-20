@@ -1,8 +1,8 @@
 #import "AppDelegate.h"
 #import <UIKit/UIKit.h>
 #import "ZynthKit.h"
-#import "ZynthKit-Swift.h"
 #import "dev-helper.h"
+{{RUNTIME_IMPORTS}}
 {{MODULE_IMPORTS}}
 
 {{EXTRA_APP_DELEGATE_HEADER}}
@@ -47,17 +47,11 @@
   NSError *loadError = nil;
   if (![self.runtime loadInitialBundleWithJsBundleURL:fallbackBundleURL error:&loadError]) {
     NSLog(@"[Zynth] Failed to load bundle: %@", loadError);
-    if (loadError) {
-      [DevRedBox showWithTitle:@"Bundle Load Failed"
-                       message:loadError.localizedDescription
-                         stack:nil];
-    }
+{{RUNTIME_LOAD_FAILURE}}
     return NO;
   }
 
-  ZynthStatusBarHostController *vc = [ZynthStatusBarHostController new];
-  vc.view = self.surface;
-  self.window.rootViewController = vc;
+{{RUNTIME_ROOT_CONTROLLER}}
   
   [self.window makeKeyAndVisible];
 

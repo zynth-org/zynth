@@ -150,8 +150,24 @@ function replacePlaceholders(content: string, config: AppConfig, extras: any = {
       /\{\{\s*ZYNTH_COMPONENT_MODULE_DEPENDENCIES\s*\}\}/g,
       extras.componentDependencies ?? ""
     )
+    .replace(
+      /\{\{\s*ZYNTH_ANDROID_RUNTIME_PACKAGE\s*\}\}/g,
+      extras.androidRuntimePackage ?? "@zynth/android"
+    )
+    .replace(
+      /\{\{\s*ZYNTH_ANDROID_RUNTIME_SUBDIR\s*\}\}/g,
+      extras.androidRuntimeSubdir ?? "android/ZynthKit"
+    )
     .replace(/\{\{\s*MODULE_IMPORTS\s*\}\}/g, extras.moduleImports ?? "")
     .replace(/\{\{\s*MODULE_INITIALIZERS\s*\}\}/g, extras.moduleInitializers ?? "")
+    .replace(
+      /\{\{\s*RUNTIME_MODULE_IMPORTS\s*\}\}/g,
+      extras.runtimeModuleImports ?? ""
+    )
+    .replace(
+      /\{\{\s*RUNTIME_MODULE_INSTALLS\s*\}\}/g,
+      extras.runtimeModuleInstalls ?? ""
+    )
     .replace(/\{\{\s*ACTIVITY_ATTRIBUTES\s*\}\}/g, extras.activityAttributes ?? "")
     .replace(
       /\{\{\s*SPLASH_ICON_DRAWABLE\s*\}\}/g,
@@ -429,6 +445,9 @@ function formatAndroidDependencyBlock(modules: any[]): string {
 
 export function generateAndroidProject(appDir: string, options: any = {}): AppConfig {
   const { dev = true, quiet = false } = options; // Default to dev mode for backward compatibility
+  const useNewRuntime = Boolean(options.newRuntime);
+  const androidRuntimePackage = useNewRuntime ? "@zynth/core" : "@zynth/android";
+  const androidRuntimeSubdir = "android/ZynthKit";
   const baseConfig = getAppConfig(appDir);
   const androidPackage = (
     baseConfig.bundleId || `com.zynth.${baseConfig.appDir.replace(/-/g, "")}`
@@ -442,9 +461,10 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
     console.log(`Generating Android project for ${config.displayName}...`);
     console.log(`  Package: ${androidPackage}`);
     console.log(`  Mode: ${dev ? "Development" : "Production"}`);
+    console.log(`  Runtime: ${useNewRuntime ? "New" : "Legacy"}`);
   }
 
-  const componentModules = collectNativeAndroidModules(appDir);
+  const componentModules = useNewRuntime ? [] : collectNativeAndroidModules(appDir);
   if (!quiet) {
     if (componentModules.length) {
       console.log("  Native component modules:");
@@ -469,13 +489,21 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
   const activityAttributes = formatActivityAttributes(baseConfig.androidConfig);
   const splashIconDrawable = "@mipmap/ic_launcher";
   const splashWindowBackground = "@drawable/zynth_splash_screen";
-  const activityHooks = collectAndroidActivityHooks(appDir);
+  const activityHooks = useNewRuntime
+    ? { imports: [], onCreate: [], onFirstFrame: [] }
+    : collectAndroidActivityHooks(appDir);
   const activityHookImports = formatHookBlock(activityHooks.imports, "");
   const activityOnCreateHooks = formatHookBlock(activityHooks.onCreate, "    ");
   const activityOnFirstFrameHooks = formatHookBlock(
     activityHooks.onFirstFrame,
     "      "
   );
+  const runtimeModuleImports = useNewRuntime
+    ? ""
+    : `import ${androidPackage}.modules.DeviceModule\nimport ${androidPackage}.modules.EnvModule\nimport ${androidPackage}.modules.PerformanceModule`;
+  const runtimeModuleInstalls = useNewRuntime
+    ? "    // No default modules for new runtime"
+    : "    runtime.installDefaultModules()\n    runtime.installModules(listOf(DeviceModule(), EnvModule(), PerformanceModule()))";
 
   if (fs.existsSync(targetDir)) {
     if (!quiet) {
@@ -490,6 +518,10 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
 
   for (const file of files) {
     const rel = path.relative(templateDir, file);
+    const modulesDir = path.join("app", "src", "main", "java", "modules");
+    if (useNewRuntime && rel.startsWith(modulesDir + path.sep)) {
+      continue;
+    }
     const targetPath = (() => {
       const javaDir = path.join("app", "src", "main", "java");
       const mainActivityPath = path.join(javaDir, "MainActivity.kt");
@@ -550,6 +582,10 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
         activityHookImports,
         activityOnCreateHooks,
         activityOnFirstFrameHooks,
+        androidRuntimePackage,
+        androidRuntimeSubdir,
+        runtimeModuleImports,
+        runtimeModuleInstalls,
       });
       fs.writeFileSync(targetPath, processed, "utf8");
     }

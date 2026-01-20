@@ -2,16 +2,16 @@ platform :ios, '15.1'
 use_frameworks! :linkage => :static
 
 ENV['RCT_HERMES_V1_ENABLED'] = '1'
-hermes_podspec_path = File.expand_path('../../../packages/zynth-ios/hermes-engine/hermes-engine.podspec', __dir__)
+hermes_podspec_path = File.expand_path('../../../packages/{{ZYNTH_IOS_HERMES_DIR}}/hermes-engine/hermes-engine.podspec', __dir__)
 
 zynth_ios_candidates = [
-  File.expand_path('../node_modules/@zynth/ios', __dir__),
-  File.expand_path('../../node_modules/@zynth/ios', __dir__),
-  File.expand_path('../../../node_modules/@zynth/ios', __dir__)
+  File.expand_path('../node_modules/{{ZYNTH_IOS_RUNTIME_PACKAGE}}', __dir__),
+  File.expand_path('../../node_modules/{{ZYNTH_IOS_RUNTIME_PACKAGE}}', __dir__),
+  File.expand_path('../../../node_modules/{{ZYNTH_IOS_RUNTIME_PACKAGE}}', __dir__)
 ]
 
 zynth_ios_path = zynth_ios_candidates.find { |candidate| File.exist?(candidate) }
-raise "Unable to locate @zynth/ios in node_modules (looked in #{zynth_ios_candidates.join(', ')})" unless zynth_ios_path
+raise "Unable to locate {{ZYNTH_IOS_RUNTIME_PACKAGE}} in node_modules (looked in #{zynth_ios_candidates.join(', ')})" unless zynth_ios_path
 
 target '{{APP_NAME}}' do
   pod 'hermes-engine', :podspec => hermes_podspec_path

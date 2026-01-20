@@ -694,6 +694,7 @@ async function waitForHMRToken(appDir, timeoutMs = 15000) {
 function getConnectedAndroidDevices() {
   const output = readCommandOutput("adb", ["devices"]);
   if (!output) {
+    console.warn("  ! adb not available or failed to run. Ensure Android platform tools are installed and adb is on PATH.");
     return [];
   }
   return output
@@ -1028,7 +1029,11 @@ async function devIOS(root, appDir, options = {}) {
       console.log("♻️  Regenerating iOS project (--prebuild)");
     }
     removeDirectory(iosDir);
-    ensurePrebuild(root, appDir, "ios", { dev: true, quiet: quietOutput });
+    ensurePrebuild(root, appDir, "ios", {
+      dev: true,
+      quiet: quietOutput,
+      newRuntime: options.newRuntime,
+    });
   }
 
   if (!fs.existsSync(iosDir)) {
@@ -1302,7 +1307,11 @@ async function devAndroid(root, appDir, options = {}) {
   const quietOutput = Boolean(options.quietOutput ?? options.prebuild);
   const verboseBuild = Boolean(options.verbose);
 
-  ensurePrebuild(root, appDir, "android", { dev: true, quiet: quietOutput });
+  ensurePrebuild(root, appDir, "android", {
+    dev: true,
+    quiet: quietOutput,
+    newRuntime: options.newRuntime,
+  });
 
   const devicesBeforeBuild = getConnectedAndroidDevices();
   if (!devicesBeforeBuild.length) {

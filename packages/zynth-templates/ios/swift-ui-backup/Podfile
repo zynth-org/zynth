@@ -2,13 +2,13 @@ platform :ios, '15.0'
 use_frameworks! :linkage => :static
 
 zynth_ios_candidates = [
-  File.expand_path('../node_modules/@zynth/ios', __dir__),
-  File.expand_path('../../node_modules/@zynth/ios', __dir__),
-  File.expand_path('../../../node_modules/@zynth/ios', __dir__)
+  File.expand_path('../node_modules/{{ZYNTH_IOS_RUNTIME_PACKAGE}}', __dir__),
+  File.expand_path('../../node_modules/{{ZYNTH_IOS_RUNTIME_PACKAGE}}', __dir__),
+  File.expand_path('../../../node_modules/{{ZYNTH_IOS_RUNTIME_PACKAGE}}', __dir__)
 ]
 
 zynth_ios_path = zynth_ios_candidates.find { |candidate| File.exist?(candidate) }
-raise "Unable to locate @zynth/ios in node_modules (looked in #{zynth_ios_candidates.join(', ')})" unless zynth_ios_path
+raise "Unable to locate {{ZYNTH_IOS_RUNTIME_PACKAGE}} in node_modules (looked in #{zynth_ios_candidates.join(', ')})" unless zynth_ios_path
 
 target '{{APP_NAME}}' do
   pod 'Yoga'

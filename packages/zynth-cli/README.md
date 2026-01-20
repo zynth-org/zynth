@@ -12,3 +12,7 @@ This tool orchestrates the development, build, and bundling process for Zynth ap
 *   `zynth bundle`: Bundles the JavaScript application into a single file for production.
 *   `zynth reset`: Cleans and regenerates the native directories from scratch.
 *   `zynth create`: Scaffolds a new Zynth application.
+
+### Runtime Selection
+
+Use `--new-runtime` with `zynth dev` or `zynth prebuild` to generate native projects wired to the new runtime in `@zynth/core` instead of the legacy `@zynth/ios` and `@zynth/android` runtimes.
