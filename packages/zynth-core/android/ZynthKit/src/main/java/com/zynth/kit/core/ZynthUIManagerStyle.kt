@@ -1,5 +1,6 @@
 package com.zynth.kit.core
 
+import android.graphics.Matrix
 import android.os.Build
 import android.view.View
 import android.widget.TextView
@@ -354,6 +355,10 @@ private fun applyTransform(manager: ZynthUIManager, view: View, state: ZynthView
     view.rotation = 0f
     view.rotationX = 0f
     view.rotationY = 0f
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+      view.animationMatrix = null
+    }
+    view.setLayerType(View.LAYER_TYPE_NONE, null)
     return
   }
   var tx = 0f
@@ -363,6 +368,11 @@ private fun applyTransform(manager: ZynthUIManager, view: View, state: ZynthView
   var rz = 0f
   var rx = 0f
   var ry = 0f
+  var skewX = 0f
+  var skewY = 0f
+  var hasSkew = false
+  var hasPerspective = false
+  var perspectiveValue = Float.NaN
   for (op in ops) {
     when (op) {
       is TransformOperation.Translate -> {
@@ -377,7 +387,20 @@ private fun applyTransform(manager: ZynthUIManager, view: View, state: ZynthView
       is TransformOperation.RotateZ -> rz += op.degrees
       is TransformOperation.RotateX -> rx += op.degrees
       is TransformOperation.RotateY -> ry += op.degrees
-      else -> Unit
+      is TransformOperation.SkewX -> {
+        skewX += op.degrees
+        hasSkew = true
+      }
+      is TransformOperation.SkewY -> {
+        skewY += op.degrees
+        hasSkew = true
+      }
+      is TransformOperation.Perspective -> {
+        if (op.value > 0f) {
+          perspectiveValue = op.value
+          hasPerspective = true
+        }
+      }
     }
   }
   view.translationX = tx
@@ -387,7 +410,49 @@ private fun applyTransform(manager: ZynthUIManager, view: View, state: ZynthView
   view.rotation = rz
   view.rotationX = rx
   view.rotationY = ry
+  val has3dRotation = kotlin.math.abs(rx) > 0.001f || kotlin.math.abs(ry) > 0.001f
+  val viewDensity = view.resources.displayMetrics.density.takeIf { it > 0f } ?: manager.density
+  if (hasPerspective) {
+    view.cameraDistance = perspectiveValue * viewDensity
+  } else if (has3dRotation) {
+    view.cameraDistance = DEFAULT_PERSPECTIVE * viewDensity
+  }
+  if (hasSkew) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+      val radX = Math.toRadians(skewX.toDouble()).toFloat()
+      val radY = Math.toRadians(skewY.toDouble()).toFloat()
+      val px = view.pivotX
+      val py = view.pivotY
+      val matrix = Matrix()
+      matrix.setTranslate(-px, -py)
+      val skew = Matrix()
+      skew.setValues(
+        floatArrayOf(
+          1f,
+          Math.tan(radX.toDouble()).toFloat(),
+          0f,
+          Math.tan(radY.toDouble()).toFloat(),
+          1f,
+          0f,
+          0f,
+          0f,
+          1f,
+        )
+      )
+      matrix.postConcat(skew)
+      matrix.postTranslate(px, py)
+      view.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+      view.animationMatrix = matrix
+    }
+  } else {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+      view.animationMatrix = null
+    }
+    view.setLayerType(View.LAYER_TYPE_NONE, null)
+  }
 }
+
+private const val DEFAULT_PERSPECTIVE = 2000f
 
 private fun parseTransformOrigin(value: String): Pair<OriginValue, OriginValue> {
   val tokens = value.trim().split(Regex("\\s+")).filter { it.isNotBlank() }

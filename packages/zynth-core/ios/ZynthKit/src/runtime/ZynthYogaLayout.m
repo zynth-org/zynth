@@ -366,8 +366,13 @@ static YGSize ZynthMeasureText(YGNodeConstRef node,
       if (w <= 0.0 || h <= 0.0) {
         continue;
       }
-      CGRect frame = CGRectMake(x, y, w, h);
-      view.frame = frame;
+      CGPoint anchor = view.layer.anchorPoint;
+      CGPoint center = CGPointMake(x + w * anchor.x, y + h * anchor.y);
+      CGRect bounds = CGRectMake(0, 0, w, h);
+      if (!CGPointEqualToPoint(view.center, center) || !CGRectEqualToRect(view.bounds, bounds)) {
+        view.center = center;
+        view.bounds = bounds;
+      }
     }
   };
   if ([NSThread isMainThread]) {

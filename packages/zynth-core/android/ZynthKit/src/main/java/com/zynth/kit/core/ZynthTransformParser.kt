@@ -21,7 +21,7 @@ object ZynthTransformParser {
 
         return when (value) {
             is JSONArray -> parseArray(value)
-            is String -> parseString(value)
+            is String -> parseStringOrJsonArray(value)
             else -> null
         }
     }
@@ -53,6 +53,16 @@ object ZynthTransformParser {
             }
         }
         return ops
+    }
+
+    private fun parseStringOrJsonArray(value: String): List<TransformOperation> {
+        val trimmed = value.trim()
+        if (trimmed.startsWith("[")) {
+            runCatching { JSONArray(trimmed) }
+                .getOrNull()
+                ?.let { return parseArray(it) }
+        }
+        return parseString(trimmed)
     }
 
     private fun parseString(value: String): List<TransformOperation> {

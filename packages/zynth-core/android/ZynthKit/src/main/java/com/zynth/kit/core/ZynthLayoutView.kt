@@ -12,6 +12,12 @@ open class ZynthLayoutView @JvmOverloads constructor(
   private var yogaWidth = -1
   private var yogaHeight = -1
 
+  init {
+    clipChildren = false
+    clipToPadding = false
+    clipToOutline = false
+  }
+
   fun updateYogaLayout(width: Int, height: Int) {
     yogaWidth = width
     yogaHeight = height
