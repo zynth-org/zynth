@@ -381,6 +381,96 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
         JNIEnv *env = getEnv();
         if (!env) return Value::undefined();
         Object payload = args[0].asObject(rt);
+        Value opsPackedVal = payload.getProperty(rt, "ops");
+        Value stringTableVal = payload.getProperty(rt, "stringTable");
+        if (opsPackedVal.isObject() && stringTableVal.isObject()) {
+          Array opsPacked = opsPackedVal.asObject(rt).asArray(rt);
+          Array stringTable = stringTableVal.asObject(rt).asArray(rt);
+          const size_t stringCount = stringTable.length(rt);
+          std::vector<std::string> strings;
+          strings.reserve(stringCount);
+          for (size_t i = 0; i < stringCount; i++) {
+            Value entry = stringTable.getValueAtIndex(rt, i);
+            if (entry.isString()) {
+              strings.push_back(entry.asString(rt).utf8(rt));
+            } else {
+              strings.emplace_back();
+            }
+          }
+          const size_t opCount = opsPacked.length(rt);
+          size_t i = 0;
+          auto getString = [&strings](size_t index) -> const std::string & {
+            static const std::string empty;
+            if (index >= strings.size()) return empty;
+            return strings[index];
+          };
+          while (i < opCount) {
+            Value opVal = opsPacked.getValueAtIndex(rt, i++);
+            if (!opVal.isNumber()) break;
+            int opcode = static_cast<int>(opVal.asNumber());
+            switch (opcode) {
+              case 1: { // setProp
+                if (i + 3 >= opCount) { i = opCount; break; }
+                int nodeId = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
+                int keyIndex = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
+                int valueType = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
+                double payloadVal = opsPacked.getValueAtIndex(rt, i++).asNumber();
+                const std::string &key = getString(static_cast<size_t>(keyIndex));
+                switch (valueType) {
+                  case 1: {
+                    callSetProp(env, state, nodeId, key, std::to_string(payloadVal));
+                    break;
+                  }
+                  case 2: {
+                    const std::string &value = getString(static_cast<size_t>(payloadVal));
+                    callSetProp(env, state, nodeId, key, value);
+                    break;
+                  }
+                  case 3: {
+                    callSetProp(env, state, nodeId, key, payloadVal != 0 ? "true" : "false");
+                    break;
+                  }
+                  case 0:
+                  default:
+                    callSetProp(env, state, nodeId, key, "null");
+                    break;
+                }
+                break;
+              }
+              case 2: { // setText
+                if (i + 1 >= opCount) { i = opCount; break; }
+                int nodeId = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
+                int textIndex = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
+                const std::string &text = getString(static_cast<size_t>(textIndex));
+                jstring jText = env->NewStringUTF(text.c_str());
+                env->CallVoidMethod(state->uiManager, state->setText, nodeId, jText);
+                env->DeleteLocalRef(jText);
+                break;
+              }
+              case 3: { // insertChild
+                if (i + 2 >= opCount) { i = opCount; break; }
+                int parentId = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
+                int childId = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
+                int index = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
+                env->CallVoidMethod(state->uiManager, state->insertChild, parentId, childId, index);
+                break;
+              }
+              case 4: { // removeChild
+                if (i + 1 >= opCount) { i = opCount; break; }
+                int parentId = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
+                int childId = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
+                removeHandlersForNode(childId);
+                env->CallVoidMethod(state->uiManager, state->removeChild, parentId, childId);
+                break;
+              }
+              default:
+                // Unknown opcode; stop processing to avoid desync.
+                i = opCount;
+                break;
+            }
+          }
+          return Value::undefined();
+        }
         Value opsVal = payload.getProperty(rt, "operations");
         if (!opsVal.isObject()) return Value::undefined();
         Array ops = opsVal.asObject(rt).asArray(rt);
@@ -624,6 +714,46 @@ Java_com_zynth_kit_runtime_JSBridge_callGlobalFrame(JNIEnv *env,
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_com_zynth_kit_runtime_JSBridge_emitEvent(JNIEnv *env,
+                                              jobject,
+                                              jlong ptr,
+                                              jstring name,
+                                              jstring payloadJson) {
+  auto *runtime = reinterpret_cast<facebook::hermes::HermesRuntime *>(ptr);
+  if (!runtime || !name) return;
+  const char *utf8 = env->GetStringUTFChars(name, nullptr);
+  std::string eventName = utf8 ? utf8 : "";
+  env->ReleaseStringUTFChars(name, utf8);
+  if (eventName.empty()) return;
+  Runtime &rt = *runtime;
+  if (!rt.global().hasProperty(rt, "ZynthNativeEmitter")) return;
+  Object emitter = rt.global().getPropertyAsObject(rt, "ZynthNativeEmitter");
+  if (!emitter.hasProperty(rt, "emit")) return;
+  Function emitFn = emitter.getPropertyAsFunction(rt, "emit");
+  Value payload = Value::undefined();
+  if (payloadJson) {
+    const char *payloadUtf8 = env->GetStringUTFChars(payloadJson, nullptr);
+    std::string payloadStr = payloadUtf8 ? payloadUtf8 : "";
+    env->ReleaseStringUTFChars(payloadJson, payloadUtf8);
+    if (!payloadStr.empty()) {
+      try {
+        Object json = rt.global().getPropertyAsObject(rt, "JSON");
+        Function parse = json.getPropertyAsFunction(rt, "parse");
+        String jsonStr = String::createFromUtf8(rt, payloadStr);
+        payload = parse.call(rt, jsonStr);
+      } catch (...) {
+        payload = Value::undefined();
+      }
+    }
+  }
+  try {
+    emitFn.call(rt, String::createFromUtf8(rt, eventName), payload);
+  } catch (...) {
+    return;
+  }
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_com_zynth_kit_runtime_JSBridge_invokePressEvent(JNIEnv *env,
                                                      jobject,
                                                      jint nodeId,
@@ -664,6 +794,51 @@ Java_com_zynth_kit_runtime_JSBridge_invokePressEvent(JNIEnv *env,
   payload.setProperty(rt, "canceled", cancelled == JNI_TRUE);
   try {
     handler->call(rt, payload);
+  } catch (...) {
+    return;
+  }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_zynth_kit_runtime_JSBridge_invokeEvent(JNIEnv *env,
+                                                jobject,
+                                                jint nodeId,
+                                                jstring name,
+                                                jstring payloadJson) {
+  if (!name) return;
+  const char *utf8 = env->GetStringUTFChars(name, nullptr);
+  std::string eventName = utf8 ? utf8 : "";
+  env->ReleaseStringUTFChars(name, utf8);
+  if (eventName.empty()) return;
+  facebook::hermes::HermesRuntime *runtime = nullptr;
+  std::shared_ptr<Function> handler;
+  {
+    std::lock_guard<std::mutex> lock(gHandlerMutex);
+    auto it = gHandlers.find(HandlerKey{static_cast<int>(nodeId), eventName});
+    if (it == gHandlers.end()) return;
+    runtime = it->second.runtime;
+    handler = it->second.handler;
+  }
+  if (!runtime || !handler) return;
+  Runtime &rt = *runtime;
+  Value arg = Value::undefined();
+  if (payloadJson) {
+    const char *payloadUtf8 = env->GetStringUTFChars(payloadJson, nullptr);
+    std::string payload = payloadUtf8 ? payloadUtf8 : "";
+    env->ReleaseStringUTFChars(payloadJson, payloadUtf8);
+    if (!payload.empty()) {
+      try {
+        Object json = rt.global().getPropertyAsObject(rt, "JSON");
+        Function parse = json.getPropertyAsFunction(rt, "parse");
+        String jsonStr = String::createFromUtf8(rt, payload);
+        arg = parse.call(rt, jsonStr);
+      } catch (...) {
+        arg = Value::undefined();
+      }
+    }
+  }
+  try {
+    handler->call(rt, arg);
   } catch (...) {
     return;
   }

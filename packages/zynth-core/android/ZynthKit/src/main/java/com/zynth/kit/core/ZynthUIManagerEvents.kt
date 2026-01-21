@@ -229,6 +229,11 @@ internal fun ZynthUIManager.dispatchLayoutEvents() {
 }
 
 internal fun ZynthUIManager.cleanupNode(id: Int) {
+  val node = nodeStates[id]
+  if (node != null) {
+    val descriptor = com.zynth.kit.components.ZynthComponentRegistry.getDescriptor(node.type)
+    descriptor?.onReset?.invoke(node)
+  }
   pointerEvents.remove(id)
   pressNodes.remove(id)
   longPressNodes.remove(id)
@@ -246,6 +251,7 @@ internal fun ZynthUIManager.cleanupNode(id: Int) {
   styleDirtyNodes.remove(id)
   styleStates.remove(id)
   textStyleStates.remove(id)
+  nodeStates.remove(id)
   nodeSurfaces.remove(id)
   val runnable = longPressRunnables.remove(id)
   if (runnable != null) {

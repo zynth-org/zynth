@@ -5,7 +5,7 @@ import android.widget.FrameLayout
 import com.zynth.kit.components.ZynthComponentDescriptor
 import com.zynth.kit.components.ZynthComponentRegistrar
 import com.zynth.kit.components.ZynthComponentRegistry
-import com.zynth.kit.core.ZynthPressableEventListener
+import com.zynth.kit.core.ZynthEventSink
 import com.zynth.kit.core.ZynthUIManager
 
 class PressableComponentRegistrar : ZynthComponentRegistrar {
@@ -26,7 +26,7 @@ class PressableComponentRegistrar : ZynthComponentRegistrar {
           (node.view as? ZynthPressableView)?.let { pressable ->
             pressable.resetState()
             pressable.nodeId = node.id
-            pressable.listener = manager
+            pressable.listener = manager as? ZynthEventSink
             pressable.setPointerEvents("auto")
             node.pointerEvents = "auto"
           }

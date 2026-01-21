@@ -250,10 +250,12 @@ The runtime must expose the following globals via JSI HostObjects:
 - SolidJS host semantics: text handling, event dispatch, pointer events, layout events.
 - Surface management parity (multi-surface or hypervisor-ready, if needed).
 - View recycling hooks for `FlatList`.
+- Native component registry + module/event compatibility layer so `@zynth/components` can plug in (Text/View descriptors, module constants, event dispatch).
 
 **Exit Criteria**
 
 - Core primitives and demo app work in `apps/components` using new runtime.
+- `@zynth/components` native descriptors can be discovered and used by the new runtime (Text/View working end-to-end).
 
 **Known Style Gaps (Yoga/Style Parity)**
 

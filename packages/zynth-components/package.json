@@ -64,6 +64,13 @@
           "name": "ZynthComponents",
           "path": "./android/ZynthComponents"
         }
+      ],
+      "gradleProjects": [
+        {
+          "name": "ZynthAPIs",
+          "package": "@zynth/apis",
+          "path": "./android"
+        }
       ]
     }
   }

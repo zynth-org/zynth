@@ -22,6 +22,8 @@ internal object JSBridge {
     overBudget: Boolean,
     nodeCount: Int
   )
+  external fun emitEvent(runtimePtr: Long, name: String, payloadJson: String?)
+  external fun invokeEvent(nodeId: Int, name: String, payloadJson: String?)
   external fun invokePressEvent(
     nodeId: Int,
     name: String,

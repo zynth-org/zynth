@@ -5,7 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Path
 import android.graphics.RectF
 import android.view.MotionEvent
-import android.widget.FrameLayout
+import com.zynth.kit.core.ZynthLayoutView
 import com.zynth.kit.core.ZynthUIManager
 
 /**
@@ -18,7 +18,7 @@ import com.zynth.kit.core.ZynthUIManager
  * - Nested views with overflow:visible can still render outside their parent
  * - Similar to React Native's ReactViewGroup implementation
  */
-open class ZynthViewContainer(context: Context) : FrameLayout(context) {
+open class ZynthViewContainer(context: Context) : ZynthLayoutView(context) {
 
   var manager: ZynthUIManager? = null
   var nodeId: Int = -1

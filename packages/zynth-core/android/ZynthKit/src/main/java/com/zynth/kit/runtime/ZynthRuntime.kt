@@ -5,10 +5,13 @@ import android.content.res.AssetManager
 import com.facebook.soloader.SoLoader
 import com.zynth.kit.core.ZynthRootView
 import com.zynth.kit.core.ZynthUIManager
+import org.json.JSONArray
+import org.json.JSONObject
 
 class ZynthRuntime(private val root: ZynthRootView) {
   private val uiManager = ZynthUIManager(root)
   private val runtimePtr: Long = JSBridge.createHermesRuntime()
+  private val registry = ZynthModuleRegistry()
   init {
     uiManager.setFrameProfiler { frameMs, layoutMs, overBudget, nodeCount ->
       JSBridge.callGlobalFrame(runtimePtr, "__zynth_reportFrame", frameMs, layoutMs, overBudget, nodeCount)
@@ -27,8 +30,9 @@ class ZynthRuntime(private val root: ZynthRootView) {
   }
 
   fun installModules(modules: List<ZynthModule>) {
-    // Phase 1 scaffold.
-    modules.size
+    for (module in modules) {
+      registry.register(module)
+    }
   }
 
   fun connectDevServer(url: String, token: String? = null) {
@@ -55,6 +59,19 @@ class ZynthRuntime(private val root: ZynthRootView) {
     JSBridge.evaluateScript(runtimePtr, code, "main.js")
   }
 
+  fun emitEvent(name: String, payload: Any?) {
+    val trimmed = name.trim()
+    if (trimmed.isEmpty()) return
+    val payloadJson = when (payload) {
+      null -> null
+      is JSONObject -> payload.toString()
+      is JSONArray -> payload.toString()
+      else -> JSONObject.wrap(payload)?.toString()
+    }
+    runCatching {
+      JSBridge.emitEvent(runtimePtr, trimmed, payloadJson)
+    }
+  }
 
   fun addSurfaceFirstFrameListener(surfaceId: Int, listener: () -> Unit) {
     // Phase 1 scaffold.

@@ -299,6 +299,75 @@ function collectNativeAndroidModules(appDir: string): any[] {
   return Array.from(modulesByName.values());
 }
 
+function collectAndroidGradleProjects(appDir: string): any[] {
+  const projectsByName = new Map<string, { name: string; directoryPath: string; packageName: string }>();
+  const appPackage = safeReadJSON(path.join(appDir, "package.json")) || {};
+
+  function registerProjects(packageName: string, packageDir: string, androidConfig: any) {
+    if (!androidConfig || !Array.isArray(androidConfig.gradleProjects)) return;
+    for (const project of androidConfig.gradleProjects) {
+      if (!project || !project.name) continue;
+      let baseDir = packageDir;
+      if (project.package) {
+        const resolved = resolvePackageJson(project.package, appDir);
+        if (resolved) {
+          baseDir = path.dirname(resolved);
+        }
+      }
+      const directoryPath = project.path
+        ? path.resolve(baseDir, project.path)
+        : baseDir;
+      projectsByName.set(project.name, {
+        name: project.name,
+        packageName,
+        directoryPath,
+      });
+    }
+  }
+
+  if (appPackage.zynthNative && appPackage.zynthNative.android) {
+    registerProjects(appPackage.name || "(app)", appDir, appPackage.zynthNative.android);
+  }
+
+  const dependencySources = [
+    appPackage.dependencies || {},
+    appPackage.devDependencies || {},
+  ];
+
+  for (const source of dependencySources) {
+    for (const depName of Object.keys(source)) {
+      try {
+        const pkgJsonPath = resolvePackageJson(depName, appDir);
+        if (!pkgJsonPath) continue;
+        const packageDir = path.dirname(pkgJsonPath);
+        const depPackage = safeReadJSON(pkgJsonPath);
+        if (!depPackage) continue;
+        if (depPackage.zynthNative && depPackage.zynthNative.android) {
+          registerProjects(depName, packageDir, depPackage.zynthNative.android);
+        }
+      } catch (_error) {
+        // Dependency might not provide gradle projects; ignore resolution errors
+      }
+    }
+  }
+
+  const modulesDir = path.join(appDir, "modules");
+  if (fs.existsSync(modulesDir)) {
+    const entries = fs.readdirSync(modulesDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const packageDir = path.join(modulesDir, entry.name);
+      const packageJsonPath = path.join(packageDir, "package.json");
+      if (!fs.existsSync(packageJsonPath)) continue;
+      const packageJson = safeReadJSON(packageJsonPath);
+      if (!packageJson?.zynthNative?.android) continue;
+      registerProjects(packageJson.name || entry.name, packageDir, packageJson.zynthNative.android);
+    }
+  }
+
+  return Array.from(projectsByName.values());
+}
+
 type ActivityHooks = {
   imports: string[];
   onCreate: string[];
@@ -464,7 +533,8 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
     console.log(`  Runtime: ${useNewRuntime ? "New" : "Legacy"}`);
   }
 
-  const componentModules = useNewRuntime ? [] : collectNativeAndroidModules(appDir);
+  const componentModules = collectNativeAndroidModules(appDir);
+  const gradleProjects = collectAndroidGradleProjects(appDir);
   if (!quiet) {
     if (componentModules.length) {
       console.log("  Native component modules:");
@@ -478,8 +548,17 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
 
   const templateDir = path.join(templatesRoot, "android");
   const targetDir = path.join(appDir, "android");
+  const settingsProjects = new Map<string, any>();
+  for (const module of componentModules) {
+    settingsProjects.set(module.name, module);
+  }
+  for (const project of gradleProjects) {
+    if (!settingsProjects.has(project.name)) {
+      settingsProjects.set(project.name, project);
+    }
+  }
   const componentIncludes = formatAndroidSettingsBlock(
-    componentModules,
+    Array.from(settingsProjects.values()),
     targetDir
   );
   const componentDependencies = formatAndroidDependencyBlock(componentModules);
@@ -489,9 +568,7 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
   const activityAttributes = formatActivityAttributes(baseConfig.androidConfig);
   const splashIconDrawable = "@mipmap/ic_launcher";
   const splashWindowBackground = "@drawable/zynth_splash_screen";
-  const activityHooks = useNewRuntime
-    ? { imports: [], onCreate: [], onFirstFrame: [] }
-    : collectAndroidActivityHooks(appDir);
+  const activityHooks = collectAndroidActivityHooks(appDir);
   const activityHookImports = formatHookBlock(activityHooks.imports, "");
   const activityOnCreateHooks = formatHookBlock(activityHooks.onCreate, "    ");
   const activityOnFirstFrameHooks = formatHookBlock(

@@ -20,7 +20,7 @@ import android.view.View
 import android.view.ViewOutlineProvider
 import android.widget.FrameLayout
 import com.zynth.kit.core.ZynthBorderDrawable
-import com.zynth.kit.core.ZynthPressableEventListener
+import com.zynth.kit.core.ZynthEventSink
 import java.util.Arrays
 import kotlin.math.hypot
 import kotlin.math.max
@@ -35,7 +35,7 @@ private const val PRESS_FADE_ANIMATION_MS = 120L
 class ZynthPressableView(context: Context) : FrameLayout(context) {
 
   var nodeId: Int = -1
-  var listener: ZynthPressableEventListener? = null
+  var listener: ZynthEventSink? = null
 
   private val density = resources.displayMetrics.density
   private val mainHandler = Handler(Looper.getMainLooper())
@@ -84,9 +84,9 @@ class ZynthPressableView(context: Context) : FrameLayout(context) {
     setOnFocusChangeListener { _, hasFocus ->
       if (nodeId < 0) return@setOnFocusChangeListener
       if (hasFocus) {
-        listener?.onPressableFocus(nodeId)
+        listener?.dispatchEvent(nodeId, "onFocus", null)
       } else {
-        listener?.onPressableBlur(nodeId)
+        listener?.dispatchEvent(nodeId, "onBlur", null)
       }
     }
     updatePressVisualState(animated = false)
@@ -154,7 +154,7 @@ class ZynthPressableView(context: Context) : FrameLayout(context) {
       if (!pressedDown) return@Runnable
       pressVisible = true
       updatePressVisualState(animated = true)
-      listener?.onPressablePressIn(nodeId, payload)
+      listener?.dispatchEvent(nodeId, "onPressIn", payload)
     }
     pressInRunnable = runnable
     if (delayPressInMs <= 0L) {
@@ -173,7 +173,8 @@ class ZynthPressableView(context: Context) : FrameLayout(context) {
     cancelPressOut()
     val payload = createPayload(event)
     val runnable = Runnable {
-      listener?.onPressablePressOut(nodeId, payload, cancelled)
+      payload.put("cancelled", cancelled)
+      listener?.dispatchEvent(nodeId, "onPressOut", payload)
       updatePressVisualState(animated = true)
     }
     pressOutRunnable = runnable
@@ -199,7 +200,8 @@ class ZynthPressableView(context: Context) : FrameLayout(context) {
       if (!shouldHandleInteraction()) return@Runnable
       longPressTriggered = true
       val duration = max(SystemClock.uptimeMillis() - start, delayLongPressMs)
-      listener?.onPressableLongPress(nodeId, duration, payload)
+      payload.put("durationMs", duration)
+      listener?.dispatchEvent(nodeId, "onLongPress", payload)
     }
     pressStartTimeMs = start
     mainHandler.postDelayed(longPressRunnable!!, delayLongPressMs)
@@ -290,11 +292,11 @@ class ZynthPressableView(context: Context) : FrameLayout(context) {
     cancelLongPress()
     val payload = createPayload(event)
     if (!longPressTriggered && !cancelled) {
-      listener?.onPressablePress(nodeId, payload)
+      listener?.dispatchEvent(nodeId, "onPress", payload)
       if (enableDoublePress) {
         val now = SystemClock.uptimeMillis()
         if (lastPressUpTimeMs > 0 && now - lastPressUpTimeMs <= doublePressWindowMs) {
-          listener?.onPressableDoublePress(nodeId, payload)
+          listener?.dispatchEvent(nodeId, "onDoublePress", payload)
         }
         lastPressUpTimeMs = now
       }
@@ -350,8 +352,8 @@ class ZynthPressableView(context: Context) : FrameLayout(context) {
   override fun onHoverEvent(event: MotionEvent): Boolean {
     if (!shouldHandleInteraction()) return super.onHoverEvent(event)
     when (event.actionMasked) {
-      MotionEvent.ACTION_HOVER_ENTER -> listener?.onPressableHover(nodeId, true)
-      MotionEvent.ACTION_HOVER_EXIT -> listener?.onPressableHover(nodeId, false)
+      MotionEvent.ACTION_HOVER_ENTER -> listener?.dispatchEvent(nodeId, "onHoverIn", null)
+      MotionEvent.ACTION_HOVER_EXIT -> listener?.dispatchEvent(nodeId, "onHoverOut", null)
     }
     return super.onHoverEvent(event)
   }
@@ -369,27 +371,28 @@ class ZynthPressableView(context: Context) : FrameLayout(context) {
       put("repeat", event.repeatCount > 0)
     }
     val phase = if (event.action == KeyEvent.ACTION_DOWN) "onKeyDown" else "onKeyUp"
-    listener?.onPressableKeyEvent(nodeId, phase, payload)
+    listener?.dispatchEvent(nodeId, phase, payload)
     if (event.action == KeyEvent.ACTION_DOWN && !pressedDown) {
       pressedDown = true
       isPressed = true
       pressVisible = true
       updatePressVisualState(animated = true)
-      listener?.onPressablePressIn(nodeId, payload)
+      listener?.dispatchEvent(nodeId, "onPressIn", payload)
     } else if (event.action == KeyEvent.ACTION_UP && pressedDown) {
       pressedDown = false
       isPressed = false
       pressVisible = false
       updatePressVisualState(animated = true)
-      listener?.onPressablePressOut(nodeId, payload, false)
-      listener?.onPressablePress(nodeId, payload)
+      payload.put("cancelled", false)
+      listener?.dispatchEvent(nodeId, "onPressOut", payload)
+      listener?.dispatchEvent(nodeId, "onPress", payload)
     }
     return true
   }
 
   override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
     return if (focusableSurface && keyCode == KeyEvent.KEYCODE_ENTER) {
-      listener?.onPressablePress(nodeId, createPayload(null))
+      listener?.dispatchEvent(nodeId, "onPress", createPayload(null))
       true
     } else {
       super.onKeyDown(keyCode, event)
@@ -623,17 +626,16 @@ class ZynthPressableView(context: Context) : FrameLayout(context) {
       }
       "click" -> {
         val payload = createPayload(null)
-        listener?.onPressablePressIn(nodeId, payload)
-        listener?.onPressablePress(nodeId, payload)
-        listener?.onPressablePressOut(nodeId, payload, false)
+        listener?.dispatchEvent(nodeId, "onPressIn", payload)
+        listener?.dispatchEvent(nodeId, "onPress", payload)
+        payload.put("cancelled", false)
+        listener?.dispatchEvent(nodeId, "onPressOut", payload)
       }
       "cancel" -> {
         cancelCurrentPress(true, null)
         if (hasFocus()) {
           clearFocus()
         }
-        val payload = createPayload(null)
-        listener?.onPressableCancel(nodeId, payload)
       }
     }
   }

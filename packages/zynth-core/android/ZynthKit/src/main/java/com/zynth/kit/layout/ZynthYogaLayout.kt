@@ -25,6 +25,7 @@ class ZynthYogaLayout {
     setUseWebDefaults(false)
   }
   private val nodes = HashMap<Int, YogaNode>()
+  private val measureHandlers = HashMap<Int, MeasureHandler>()
   private val rootNode: YogaNode = YogaNodeFactory.create(config).apply {
     flexDirection = YogaFlexDirection.COLUMN
     alignItems = YogaAlign.STRETCH
@@ -33,7 +34,10 @@ class ZynthYogaLayout {
   fun ensureNode(id: Int, view: View) {
     if (nodes.containsKey(id)) return
     val node = YogaNodeFactory.create(config)
-    if (view is TextView) {
+    val handler = measureHandlers[id]
+    if (handler != null) {
+      attachMeasureHandler(node, handler)
+    } else if (view is TextView) {
       node.setMeasureFunction(createTextMeasure(view))
     }
     nodes[id] = node
@@ -76,7 +80,8 @@ class ZynthYogaLayout {
 
   fun markDirty(id: Int) {
     val node = nodes[id] ?: return
-    if (!node.isMeasureDefined) return
+    val hasMeasure = measureHandlers.containsKey(id) || node.isMeasureDefined
+    if (!hasMeasure) return
     if (node.childCount != 0) return
     if (node.owner == null) return
     try {
@@ -84,6 +89,18 @@ class ZynthYogaLayout {
     } catch (_: Throwable) {
       // Ignore Yoga exceptions for safety.
     }
+  }
+
+  fun setMeasureHandler(id: Int, handler: MeasureHandler?) {
+    val node = nodes[id] ?: return
+    if (handler == null) {
+      measureHandlers.remove(id)
+      if (!node.isMeasureDefined) return
+      node.setMeasureFunction(null)
+      return
+    }
+    measureHandlers[id] = handler
+    attachMeasureHandler(node, handler)
   }
 
   fun setStyle(id: Int, name: String, value: String?) {
@@ -201,6 +218,19 @@ class ZynthYogaLayout {
     }
   }
 
+  private fun attachMeasureHandler(node: YogaNode, handler: MeasureHandler) {
+    node.setMeasureFunction { _, width, widthMode, height, heightMode ->
+      val input = MeasureInput(
+        width = width,
+        widthMode = widthMode.toMeasureMode(),
+        height = height,
+        heightMode = heightMode.toMeasureMode(),
+      )
+      val (measuredWidth, measuredHeight) = handler(input)
+      YogaMeasureOutput.make(measuredWidth, measuredHeight)
+    }
+  }
+
   private fun makeMeasureSpec(size: Float, mode: YogaMeasureMode): Int {
     val intSize = if (size.isNaN()) 0 else size.toInt()
     return when (mode) {
@@ -209,6 +239,14 @@ class ZynthYogaLayout {
       YogaMeasureMode.AT_MOST ->
         View.MeasureSpec.makeMeasureSpec(intSize, View.MeasureSpec.AT_MOST)
       else -> View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+    }
+  }
+
+  private fun YogaMeasureMode.toMeasureMode(): MeasureMode {
+    return when (this) {
+      YogaMeasureMode.EXACTLY -> MeasureMode.EXACTLY
+      YogaMeasureMode.AT_MOST -> MeasureMode.AT_MOST
+      else -> MeasureMode.UNDEFINED
     }
   }
 

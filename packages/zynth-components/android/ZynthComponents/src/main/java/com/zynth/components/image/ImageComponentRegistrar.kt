@@ -11,7 +11,7 @@ import com.zynth.kit.core.ZynthUIManager
 class ImageComponentRegistrar : ZynthComponentRegistrar {
   override fun register(registry: ZynthComponentRegistry) {
     // Create a single shared instance for all nodes - this is lifecycle independent
-    // since the component itself doesn't hold node-specific state (it's stored in node.imageState)
+    // since the component itself doesn't hold node-specific state (it's stored in node.attachments)
     var imageComponent: ZynthImageComponent? = null
 
     registry.register(

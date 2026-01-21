@@ -15,6 +15,8 @@ import com.zynth.kit.runtime.FontRegistry
 import org.json.JSONObject
 import kotlin.math.roundToInt
 
+private const val TEXT_INPUT_STATE_KEY = "textInputState"
+
 class TextInputComponentRegistrar : ZynthComponentRegistrar {
   private fun applyStyle(input: ZynthTextInputView, style: Style) {
     val left = (style.paddingLeft ?: style.paddingHorizontal ?: style.padding ?: 0f).toInt()
@@ -126,7 +128,9 @@ class TextInputComponentRegistrar : ZynthComponentRegistrar {
         },
         onNodeCreated = { manager: ZynthUIManager, node: ZynthUIManager.Node ->
           (node.view as? ZynthTextInputView)?.let { input ->
-            node.textInputState = node.textInputState ?: ZynthUIManager.TextInputState()
+            if (node.attachments[TEXT_INPUT_STATE_KEY] == null) {
+              node.attachments[TEXT_INPUT_STATE_KEY] = TextInputState()
+            }
             input.manager = manager
             input.nodeId = node.id
             input.clearHandlers()
@@ -206,7 +210,9 @@ class TextInputComponentRegistrar : ZynthComponentRegistrar {
         },
         onNodeCreated = { manager: ZynthUIManager, node: ZynthUIManager.Node ->
           (node.view as? ZynthSecureTextInputView)?.let { input ->
-            node.textInputState = node.textInputState ?: ZynthUIManager.TextInputState()
+            if (node.attachments[TEXT_INPUT_STATE_KEY] == null) {
+              node.attachments[TEXT_INPUT_STATE_KEY] = TextInputState()
+            }
             input.manager = manager
             input.nodeId = node.id
             input.clearHandlers()

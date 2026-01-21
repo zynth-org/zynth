@@ -25,7 +25,6 @@ import coil.ImageLoader
 import coil.decode.SvgDecoder
 import coil.request.Disposable
 import coil.request.ImageRequest
-import com.zynth.kit.core.ImageState
 import com.zynth.kit.core.ZynthRootView
 import com.zynth.kit.core.ZynthUIManager
 import com.zynth.kit.layout.LayoutEngine
@@ -53,6 +52,9 @@ internal class ZynthImageComponent(
   private val scheduleFlush: () -> Unit,
   private val storeEventPayload: (Int, String, JSONObject?) -> Unit,
 ) {
+  private companion object {
+    const val IMAGE_STATE_KEY = "imageState"
+  }
   private val handler = Handler(Looper.getMainLooper())
   private val imageLoader = ImageLoader.Builder(root.context)
     .components {
@@ -62,13 +64,13 @@ internal class ZynthImageComponent(
   private val systemTintCache = LruCache<String, BitmapDrawable>(48)
 
   fun initializeNode(node: ZynthUIManager.Node) {
-    if (node.imageState == null) {
-      node.imageState = ImageState()
+    if (node.attachments[IMAGE_STATE_KEY] == null) {
+      node.attachments[IMAGE_STATE_KEY] = ImageState()
     }
   }
 
   fun measure(node: ZynthUIManager.Node, input: MeasureInput): Pair<Float, Float> {
-    val state = node.imageState
+    val state = node.attachments[IMAGE_STATE_KEY] as? ImageState
     val imageView = node.view as? ImageView
     val drawable = imageView?.drawable
     val placeholderWidth = state?.preferredWidth?.takeIf { it > 0f }
@@ -158,7 +160,7 @@ internal class ZynthImageComponent(
   }
 
   fun cleanup(node: ZynthUIManager.Node) {
-    val state = node.imageState ?: return
+    val state = node.attachments[IMAGE_STATE_KEY] as? ImageState ?: return
     cancelImageRequest(state)
     state.requestToken = ""
     state.hasOnLoadHandler = false
@@ -196,10 +198,10 @@ internal class ZynthImageComponent(
   }
 
   private fun ensureState(node: ZynthUIManager.Node): ImageState {
-    val existing = node.imageState
+    val existing = node.attachments[IMAGE_STATE_KEY] as? ImageState
     if (existing != null) return existing
     val newState = ImageState()
-    node.imageState = newState
+    node.attachments[IMAGE_STATE_KEY] = newState
     return newState
   }
 
@@ -401,7 +403,7 @@ internal class ZynthImageComponent(
 
   private fun postImageSuccess(node: ZynthUIManager.Node, token: String, drawable: Drawable, scale: Float) {
     handler.post {
-      val state = node.imageState ?: return@post
+      val state = node.attachments[IMAGE_STATE_KEY] as? ImageState ?: return@post
       if (state.requestToken != token) {
         return@post
       }
@@ -421,7 +423,7 @@ internal class ZynthImageComponent(
 
   private fun postImageError(node: ZynthUIManager.Node, token: String, message: String) {
     handler.post {
-      val state = node.imageState ?: return@post
+      val state = node.attachments[IMAGE_STATE_KEY] as? ImageState ?: return@post
       if (state.requestToken != token) {
         return@post
       }
@@ -431,7 +433,7 @@ internal class ZynthImageComponent(
   }
 
   private fun dispatchImageLoadEvent(node: ZynthUIManager.Node, width: Float, height: Float) {
-    val state = node.imageState ?: return
+    val state = node.attachments[IMAGE_STATE_KEY] as? ImageState ?: return
     if (!state.hasOnLoadHandler) {
       storeEventPayload(node.id, "onLoad", null)
       return
@@ -449,7 +451,7 @@ internal class ZynthImageComponent(
   }
 
   private fun dispatchImageErrorEvent(node: ZynthUIManager.Node, message: String?) {
-    val state = node.imageState ?: return
+    val state = node.attachments[IMAGE_STATE_KEY] as? ImageState ?: return
     if (!state.hasOnErrorHandler) {
       storeEventPayload(node.id, "onError", null)
       return

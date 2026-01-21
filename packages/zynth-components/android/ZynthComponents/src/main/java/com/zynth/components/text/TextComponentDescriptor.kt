@@ -12,7 +12,6 @@ import android.widget.TextView
 import com.zynth.kit.components.ZynthComponentDescriptor
 import com.zynth.kit.components.ZynthComponentRegistrar
 import com.zynth.kit.core.ZynthUIManager
-import com.zynth.kit.core.TextStyleAttributes
 import com.zynth.kit.runtime.FontRegistry
 import com.zynth.kit.layout.MeasureMode
 import com.zynth.kit.layout.Style
@@ -33,6 +32,8 @@ private fun parseString(json: String?): String? {
  * Creates and returns the Text component descriptor.
  */
 fun createTextComponentDescriptor(): ZynthComponentDescriptor {
+  val textStyleKey = "textStyle"
+  val textManagerKey = "textManager"
   return ZynthComponentDescriptor(
     type = "text",
     createView = { context, _ -> ZynthTextView(context) },
@@ -83,6 +84,7 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
         ViewGroup.LayoutParams.WRAP_CONTENT,
         ViewGroup.LayoutParams.WRAP_CONTENT,
       )
+      node.attachments[textManagerKey] = manager
     },
     applyProperty = { node, name, jsonValue ->
       val textView = node.view as? TextView
@@ -94,7 +96,7 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
             val startNs = SystemClock.elapsedRealtimeNanos()
             val text = parseString(jsonValue) ?: ""
             node.cachedText = text
-            // Text will be set during style application or setText
+            updateComposedText(node, textStyleKey, textManagerKey)
             val durationMs = (SystemClock.elapsedRealtimeNanos() - startNs) / 1_000_000.0
             if (durationMs > 4) {
               Log.w(
@@ -117,13 +119,15 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
       val styleStart = SystemClock.elapsedRealtimeNanos()
 
       // Always capture text style attributes for composition (even for virtual text nodes)
-      node.textStyle = TextStyleAttributes.fromStyle(style)
+      node.attachments[textStyleKey] = TextStyleAttributes.fromStyle(style)
 
       // Apply text-specific styling to TextView (only for non-virtual text nodes)
       val textView = node.view as? TextView
       if (textView != null) {
         style.fontSize?.let { fontSize ->
-          textView.setTextSize(TypedValue.COMPLEX_UNIT_PX, fontSize)
+          val density = textView.resources.displayMetrics.density
+          val scaled = if (density == 0f) fontSize else fontSize * density
+          textView.setTextSize(TypedValue.COMPLEX_UNIT_PX, scaled)
         }
         
         style.color?.let { color ->
@@ -150,6 +154,7 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
         }
       }
 
+      updateComposedText(node, textStyleKey, textManagerKey)
       val durationMs = (SystemClock.elapsedRealtimeNanos() - styleStart) / 1_000_000.0
       if (durationMs > 4) {
         Log.w(
@@ -167,9 +172,38 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
       textView.text = ""
       node.cachedText = ""
       node.textChildren.clear()
-      node.textStyle = null
+      node.attachments.remove(textStyleKey)
+      node.attachments.remove(textManagerKey)
     }
   )
+}
+
+private fun updateComposedText(
+  node: ZynthUIManager.Node,
+  textStyleKey: String,
+  textManagerKey: String,
+) {
+  val manager = node.attachments[textManagerKey] as? ZynthUIManager ?: return
+  val root = findTextRoot(node, manager)
+  val textView = root.view as? TextView ?: return
+  val density = manager.getRootView().resources.displayMetrics.density
+  val composer = TextComposer(density, textStyleKey) { id ->
+    manager.getNodeState(id)
+  }
+  val composed = composer.compose(root)
+  textView.text = composed.text
+  manager.markNodeDirty(root.id)
+}
+
+private fun findTextRoot(node: ZynthUIManager.Node, manager: ZynthUIManager): ZynthUIManager.Node {
+  var current = node
+  while (true) {
+    val parentId = manager.getParentId(current.id) ?: break
+    val parent = manager.getNodeState(parentId) ?: break
+    if (parent.type != "text") break
+    current = parent
+  }
+  return current
 }
 
 /**

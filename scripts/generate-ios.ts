@@ -357,7 +357,7 @@ export function generateIOSProject(appDir: string, options: any = {}) {
     console.log(`  Target: ${targetDir}`);
   }
 
-  const componentPods = useNewRuntime ? [] : collectNativeIOSPods(appDir);
+  const componentPods = collectNativeIOSPods(appDir);
   if (!quiet) {
     if (componentPods.length) {
       console.log("  Native component pods:");
@@ -424,9 +424,7 @@ static NSString *const kZynthSplashResizeMode = @"${splashResizeMode}";`;
   }
   
   // Generate module config for dynamic loading (e.g. Hypervisor)
-  if (!useNewRuntime) {
-    generateNativeModulesConfig(componentPods, targetDir);
-  }
+  generateNativeModulesConfig(componentPods, targetDir);
 
   // Copy and process template files
   const templateFiles = fs.readdirSync(templateDir);
