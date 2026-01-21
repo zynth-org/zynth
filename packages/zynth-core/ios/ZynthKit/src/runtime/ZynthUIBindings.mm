@@ -2,11 +2,146 @@
 #import "ZynthUIManager.h"
 
 #import <jsi/jsi.h>
+#include <memory>
+#include <mutex>
 #include <string>
+#include <unordered_map>
 
 using namespace facebook::jsi;
 
 static bool DEBUG_RUNTIME = false;
+
+namespace {
+struct HandlerKey {
+  int nodeId;
+  std::string name;
+
+  bool operator==(const HandlerKey &other) const {
+    return nodeId == other.nodeId && name == other.name;
+  }
+};
+
+struct HandlerKeyHash {
+  size_t operator()(const HandlerKey &key) const {
+    size_t h1 = std::hash<int>()(key.nodeId);
+    size_t h2 = std::hash<std::string>()(key.name);
+    return h1 ^ (h2 << 1);
+  }
+};
+
+struct HandlerEntry {
+  Runtime *runtime = nullptr;
+  std::shared_ptr<Function> handler;
+};
+
+static std::unordered_map<HandlerKey, HandlerEntry, HandlerKeyHash> sHandlers;
+static std::mutex sHandlersMutex;
+
+static void registerHandler(Runtime &rt, int nodeId, const std::string &name, Function &&fn) {
+  std::lock_guard<std::mutex> lock(sHandlersMutex);
+  HandlerKey key{nodeId, name};
+  sHandlers[key] = HandlerEntry{&rt, std::make_shared<Function>(std::move(fn))};
+}
+} // namespace
+
+extern "C" void ZynthUIInvokePressEvent(int nodeId,
+                                        const char *name,
+                                        double x,
+                                        double y,
+                                        double screenX,
+                                        double screenY,
+                                        double durationMs,
+                                        double timestampMs,
+                                        bool cancelled) {
+  std::string eventName = name ? name : "";
+  if (eventName.empty()) return;
+  Runtime *runtime = nullptr;
+  std::shared_ptr<Function> handler;
+  {
+    std::lock_guard<std::mutex> lock(sHandlersMutex);
+    HandlerKey key{nodeId, eventName};
+    auto it = sHandlers.find(key);
+    if (it == sHandlers.end()) return;
+    runtime = it->second.runtime;
+    handler = it->second.handler;
+  }
+  if (!runtime || !handler) return;
+  Runtime &rt = *runtime;
+  Object payload(rt);
+  payload.setProperty(rt, "x", x);
+  payload.setProperty(rt, "y", y);
+  payload.setProperty(rt, "screenX", screenX);
+  payload.setProperty(rt, "screenY", screenY);
+  if (durationMs >= 0) {
+    payload.setProperty(rt, "durationMs", durationMs);
+  }
+  payload.setProperty(rt, "timestamp", timestampMs);
+  payload.setProperty(rt, "pointerType", String::createFromUtf8(rt, "touch"));
+  payload.setProperty(rt, "canceled", cancelled);
+  try {
+    handler->call(rt, payload);
+  } catch (const JSError &error) {
+    if (DEBUG_RUNTIME) {
+      NSString *message = [NSString stringWithUTF8String:error.getMessage().c_str()];
+      NSString *stack = [NSString stringWithUTF8String:error.getStack().c_str()];
+      NSLog(@"[ZynthUI] press handler error for %d/%s: %@", nodeId, eventName.c_str(), message);
+      if (stack.length > 0) {
+        NSLog(@"[ZynthUI] stack: %@", stack);
+      }
+    }
+  } catch (const std::exception &ex) {
+    if (DEBUG_RUNTIME) {
+      NSString *message = [NSString stringWithUTF8String:ex.what()];
+      NSLog(@"[ZynthUI] press handler exception for %d/%s: %@", nodeId, eventName.c_str(), message);
+    }
+  }
+}
+
+extern "C" void ZynthUIInvokeLayoutEvent(int nodeId,
+                                         double x,
+                                         double y,
+                                         double width,
+                                         double height) {
+  std::string eventName = "onLayout";
+  Runtime *runtime = nullptr;
+  std::shared_ptr<Function> handler;
+  {
+    std::lock_guard<std::mutex> lock(sHandlersMutex);
+    HandlerKey key{nodeId, eventName};
+    auto it = sHandlers.find(key);
+    if (it == sHandlers.end()) return;
+    runtime = it->second.runtime;
+    handler = it->second.handler;
+  }
+  if (!runtime || !handler) return;
+  Runtime &rt = *runtime;
+  Object payload(rt);
+  Object nativeEvent(rt);
+  Object layout(rt);
+  layout.setProperty(rt, "x", x);
+  layout.setProperty(rt, "y", y);
+  layout.setProperty(rt, "width", width);
+  layout.setProperty(rt, "height", height);
+  nativeEvent.setProperty(rt, "layout", layout);
+  payload.setProperty(rt, "nativeEvent", nativeEvent);
+  try {
+    handler->call(rt, payload);
+  } catch (const JSError &error) {
+    if (DEBUG_RUNTIME) {
+      NSString *message = [NSString stringWithUTF8String:error.getMessage().c_str()];
+      NSString *stack = [NSString stringWithUTF8String:error.getStack().c_str()];
+      NSLog(@"[ZynthUI] layout handler error for %d: %@", nodeId, message);
+      if (stack.length > 0) {
+        NSLog(@"[ZynthUI] stack: %@", stack);
+      }
+    }
+  } catch (const std::exception &ex) {
+    if (DEBUG_RUNTIME) {
+      NSString *message = [NSString stringWithUTF8String:ex.what()];
+      NSLog(@"[ZynthUI] layout handler exception for %d: %@", nodeId, message);
+    }
+  }
+}
 
 static void ZynthApplyStyleObject(Runtime &rt, ZynthUIManager *manager, int nodeId, const Object &style) {
   static const char *numericKeys[] = {
@@ -107,8 +242,15 @@ void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
           ZynthApplyStyleObject(rt, manager, nodeId, args[2].asObject(rt));
           return Value::undefined();
         }
+        std::string value;
         if (args[2].isString()) {
-          std::string value = args[2].asString(rt).utf8(rt);
+          value = args[2].asString(rt).utf8(rt);
+        } else if (args[2].isNumber()) {
+          value = std::to_string(args[2].asNumber());
+        } else if (args[2].isBool()) {
+          value = args[2].getBool() ? "true" : "false";
+        }
+        if (!value.empty()) {
           [manager setProp:@(nodeId)
                       name:[NSString stringWithUTF8String:name.c_str()]
                      value:[NSString stringWithUTF8String:value.c_str()]];
@@ -176,6 +318,10 @@ void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
         }
         int nodeId = (int)args[0].asNumber();
         std::string name = args[1].asString(rt).utf8(rt);
+        if (count >= 3 && args[2].isObject() && args[2].asObject(rt).isFunction(rt)) {
+          Function fn = args[2].asObject(rt).asFunction(rt);
+          registerHandler(rt, nodeId, name, std::move(fn));
+        }
         [manager setHandler:@(nodeId) name:[NSString stringWithUTF8String:name.c_str()]];
         return Value::undefined();
       });
@@ -240,8 +386,15 @@ void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
               ZynthApplyStyleObject(rt, manager, nodeId, valueVal.asObject(rt));
               continue;
             }
+            std::string value;
             if (valueVal.isString()) {
-              std::string value = valueVal.asString(rt).utf8(rt);
+              value = valueVal.asString(rt).utf8(rt);
+            } else if (valueVal.isNumber()) {
+              value = std::to_string(valueVal.asNumber());
+            } else if (valueVal.isBool()) {
+              value = valueVal.getBool() ? "true" : "false";
+            }
+            if (!value.empty()) {
               [manager setProp:@(nodeId)
                           name:[NSString stringWithUTF8String:name.c_str()]
                          value:[NSString stringWithUTF8String:value.c_str()]];

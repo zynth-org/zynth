@@ -31,6 +31,31 @@ struct RuntimeState {
 std::mutex gStateMutex;
 std::unordered_map<facebook::hermes::HermesRuntime *, RuntimeState> gStates;
 
+struct HandlerKey {
+  int nodeId;
+  std::string name;
+
+  bool operator==(const HandlerKey &other) const {
+    return nodeId == other.nodeId && name == other.name;
+  }
+};
+
+struct HandlerKeyHash {
+  size_t operator()(const HandlerKey &key) const {
+    size_t h1 = std::hash<int>()(key.nodeId);
+    size_t h2 = std::hash<std::string>()(key.name);
+    return h1 ^ (h2 << 1);
+  }
+};
+
+struct HandlerEntry {
+  facebook::hermes::HermesRuntime *runtime = nullptr;
+  std::shared_ptr<Function> handler;
+};
+
+std::mutex gHandlerMutex;
+std::unordered_map<HandlerKey, HandlerEntry, HandlerKeyHash> gHandlers;
+
 JNIEnv *getEnv() {
   if (!gVm) return nullptr;
   JNIEnv *env = nullptr;
@@ -113,6 +138,14 @@ void applyProp(Runtime &rt, RuntimeState *state, JNIEnv *env, jint nodeId, const
   }
   if (value.isString()) {
     callSetProp(env, state, nodeId, name, value.asString(rt).utf8(rt));
+    return;
+  }
+  if (value.isNumber()) {
+    callSetProp(env, state, nodeId, name, std::to_string(value.asNumber()));
+    return;
+  }
+  if (value.isBool()) {
+    callSetProp(env, state, nodeId, name, value.getBool() ? "true" : "false");
   }
 }
 
@@ -272,7 +305,7 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
   auto setHandler = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "setHandler"), 3,
       [runtime](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
-        if (count < 3 || !args[0].isNumber() || !args[1].isString() || !args[2].isNumber()) {
+        if (count < 2 || !args[0].isNumber() || !args[1].isString()) {
           return Value::undefined();
         }
         RuntimeState *state = stateFor(runtime);
@@ -282,8 +315,13 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
         jint nodeId = static_cast<jint>(args[0].asNumber());
         std::string name = args[1].asString(rt).utf8(rt);
         jstring jName = env->NewStringUTF(name.c_str());
-        jlong handlerId = static_cast<jlong>(args[2].asNumber());
-        env->CallVoidMethod(state->uiManager, state->setHandler, nodeId, jName, handlerId);
+        if (count >= 3 && args[2].isObject() && args[2].asObject(rt).isFunction(rt)) {
+          Function fn = args[2].asObject(rt).asFunction(rt);
+          std::lock_guard<std::mutex> lock(gHandlerMutex);
+          gHandlers[HandlerKey{nodeId, name}] = HandlerEntry{
+              runtime, std::make_shared<Function>(std::move(fn))};
+        }
+        env->CallVoidMethod(state->uiManager, state->setHandler, nodeId, jName);
         env->DeleteLocalRef(jName);
         return Value::undefined();
       });
@@ -471,7 +509,7 @@ Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlon
   state.setText = env->GetMethodID(state.uiClass, "setText", "(ILjava/lang/String;)V");
   state.insertChild = env->GetMethodID(state.uiClass, "insertChild", "(III)V");
   state.removeChild = env->GetMethodID(state.uiClass, "removeChild", "(II)V");
-  state.setHandler = env->GetMethodID(state.uiClass, "setHandler", "(ILjava/lang/String;J)V");
+  state.setHandler = env->GetMethodID(state.uiClass, "setHandler", "(ILjava/lang/String;)V");
   state.applyBatch = env->GetMethodID(state.uiClass, "applyBatch", "(Ljava/lang/String;)V");
   state.setSurface = env->GetMethodID(state.uiClass, "setSurface", "(I)V");
   state.flush = env->GetMethodID(state.uiClass, "flush", "()V");
@@ -523,6 +561,87 @@ Java_com_zynth_kit_runtime_JSBridge_callGlobalDouble(JNIEnv *env, jobject, jlong
   auto callFn = static_cast<Value (Function::*)(Runtime&, const Value*, size_t) const>(&Function::call);
   try {
     (fn.*callFn)(rt, &arg, 1);
+  } catch (...) {
+    return;
+  }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_zynth_kit_runtime_JSBridge_invokePressEvent(JNIEnv *env,
+                                                     jobject,
+                                                     jint nodeId,
+                                                     jstring name,
+                                                     jdouble x,
+                                                     jdouble y,
+                                                     jdouble screenX,
+                                                     jdouble screenY,
+                                                     jdouble durationMs,
+                                                     jdouble timestampMs,
+                                                     jboolean cancelled) {
+  if (!name) return;
+  const char *utf8 = env->GetStringUTFChars(name, nullptr);
+  std::string eventName = utf8 ? utf8 : "";
+  env->ReleaseStringUTFChars(name, utf8);
+  if (eventName.empty()) return;
+  facebook::hermes::HermesRuntime *runtime = nullptr;
+  std::shared_ptr<Function> handler;
+  {
+    std::lock_guard<std::mutex> lock(gHandlerMutex);
+    auto it = gHandlers.find(HandlerKey{static_cast<int>(nodeId), eventName});
+    if (it == gHandlers.end()) return;
+    runtime = it->second.runtime;
+    handler = it->second.handler;
+  }
+  if (!runtime || !handler) return;
+  Runtime &rt = *runtime;
+  Object payload(rt);
+  payload.setProperty(rt, "x", static_cast<double>(x));
+  payload.setProperty(rt, "y", static_cast<double>(y));
+  payload.setProperty(rt, "screenX", static_cast<double>(screenX));
+  payload.setProperty(rt, "screenY", static_cast<double>(screenY));
+  if (durationMs >= 0) {
+    payload.setProperty(rt, "durationMs", static_cast<double>(durationMs));
+  }
+  payload.setProperty(rt, "timestamp", static_cast<double>(timestampMs));
+  payload.setProperty(rt, "pointerType", String::createFromUtf8(rt, "touch"));
+  payload.setProperty(rt, "canceled", cancelled == JNI_TRUE);
+  try {
+    handler->call(rt, payload);
+  } catch (...) {
+    return;
+  }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_zynth_kit_runtime_JSBridge_invokeLayoutEvent(JNIEnv *,
+                                                      jobject,
+                                                      jint nodeId,
+                                                      jdouble x,
+                                                      jdouble y,
+                                                      jdouble width,
+                                                      jdouble height) {
+  facebook::hermes::HermesRuntime *runtime = nullptr;
+  std::shared_ptr<Function> handler;
+  {
+    std::lock_guard<std::mutex> lock(gHandlerMutex);
+    auto it = gHandlers.find(HandlerKey{static_cast<int>(nodeId), "onLayout"});
+    if (it == gHandlers.end()) return;
+    runtime = it->second.runtime;
+    handler = it->second.handler;
+  }
+  if (!runtime || !handler) return;
+  Runtime &rt = *runtime;
+  Object payload(rt);
+  Object nativeEvent(rt);
+  Object layout(rt);
+  layout.setProperty(rt, "x", static_cast<double>(x));
+  layout.setProperty(rt, "y", static_cast<double>(y));
+  layout.setProperty(rt, "width", static_cast<double>(width));
+  layout.setProperty(rt, "height", static_cast<double>(height));
+  nativeEvent.setProperty(rt, "layout", layout);
+  payload.setProperty(rt, "nativeEvent", nativeEvent);
+  try {
+    handler->call(rt, payload);
   } catch (...) {
     return;
   }

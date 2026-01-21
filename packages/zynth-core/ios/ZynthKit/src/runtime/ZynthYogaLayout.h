@@ -12,6 +12,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)removeChild:(NSNumber *)parentId child:(NSNumber *)childId;
 - (void)markDirty:(NSNumber *)nodeId;
 - (void)applyLayout;
+- (NSUInteger)nodeCount;
 
 @end
 

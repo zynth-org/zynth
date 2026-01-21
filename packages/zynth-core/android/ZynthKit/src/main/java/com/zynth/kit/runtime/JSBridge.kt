@@ -14,4 +14,16 @@ internal object JSBridge {
   external fun installUIBindings(runtimePtr: Long, manager: com.zynth.kit.core.ZynthUIManager)
   external fun evaluateScript(runtimePtr: Long, code: String, sourceUrl: String?)
   external fun callGlobalDouble(runtimePtr: Long, name: String, value: Double)
+  external fun invokePressEvent(
+    nodeId: Int,
+    name: String,
+    x: Double,
+    y: Double,
+    screenX: Double,
+    screenY: Double,
+    durationMs: Double,
+    timestampMs: Double,
+    cancelled: Boolean
+  )
+  external fun invokeLayoutEvent(nodeId: Int, x: Double, y: Double, width: Double, height: Double)
 }

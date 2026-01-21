@@ -330,7 +330,10 @@ static YGSize ZynthMeasureText(YGNodeConstRef node,
 - (void)applyLayout {
   UIView *rootView = _rootView;
   if (!rootView) return;
-  dispatch_async(dispatch_get_main_queue(), ^{
+  __weak typeof(self) weakSelf = self;
+  void (^layoutBlock)(void) = ^{
+    __strong typeof(self) strongSelf = weakSelf;
+    if (!strongSelf) return;
     CGSize size = rootView.bounds.size;
     if (size.width <= 0 || size.height <= 0) {
       UIView *superview = rootView.superview;
@@ -342,12 +345,12 @@ static YGSize ZynthMeasureText(YGNodeConstRef node,
     }
     if (size.width <= 0 || size.height <= 0) return;
     NSLog(@"[ZynthYoga] layout rootSize=%.1fx%.1f", size.width, size.height);
-    YGNodeStyleSetWidth(_rootNode, (float)size.width);
-    YGNodeStyleSetHeight(_rootNode, (float)size.height);
-    YGNodeCalculateLayout(_rootNode, YGUndefined, YGUndefined, YGDirectionLTR);
-    for (NSNumber *nodeId in _nodes) {
-      UIView *view = [self viewForNode:nodeId];
-      YGNodeRef node = [self yogaForNode:nodeId];
+    YGNodeStyleSetWidth(strongSelf->_rootNode, (float)size.width);
+    YGNodeStyleSetHeight(strongSelf->_rootNode, (float)size.height);
+    YGNodeCalculateLayout(strongSelf->_rootNode, YGUndefined, YGUndefined, YGDirectionLTR);
+    for (NSNumber *nodeId in strongSelf->_nodes) {
+      UIView *view = [strongSelf viewForNode:nodeId];
+      YGNodeRef node = [strongSelf yogaForNode:nodeId];
       if (!view || !node) continue;
       CGFloat x = YGNodeLayoutGetLeft(node);
       CGFloat y = YGNodeLayoutGetTop(node);
@@ -362,7 +365,16 @@ static YGSize ZynthMeasureText(YGNodeConstRef node,
       CGRect frame = CGRectMake(x, y, w, h);
       view.frame = frame;
     }
-  });
+  };
+  if ([NSThread isMainThread]) {
+    layoutBlock();
+  } else {
+    dispatch_async(dispatch_get_main_queue(), layoutBlock);
+  }
+}
+
+- (NSUInteger)nodeCount {
+  return _nodes.count;
 }
 
 - (YGNodeRef)yogaForNode:(NSNumber *)nodeId {

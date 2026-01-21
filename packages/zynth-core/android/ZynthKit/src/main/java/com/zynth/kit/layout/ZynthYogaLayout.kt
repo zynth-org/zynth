@@ -182,6 +182,8 @@ class ZynthYogaLayout {
     }
   }
 
+  fun nodeCount(): Int = nodes.size
+
   private fun createTextMeasure(view: TextView): YogaMeasureFunction {
     return YogaMeasureFunction { _, width, widthMode, height, heightMode ->
       val widthSpec = makeMeasureSpec(width, widthMode)
