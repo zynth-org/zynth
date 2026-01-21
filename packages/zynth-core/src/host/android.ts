@@ -155,6 +155,14 @@ export function createAndroidHost(): Host {
           }
           continue;
         }
+        if (Array.isArray(value)) {
+          try {
+            encodeProp(nodeId, key, JSON.stringify(value));
+          } catch {
+            continue;
+          }
+          continue;
+        }
         if (typeof value === "object" && value != null) {
           // Skip unsupported structured values to avoid JSON serialization.
           continue;
