@@ -42,6 +42,17 @@ static void registerHandler(Runtime &rt, int nodeId, const std::string &name, Fu
   HandlerKey key{nodeId, name};
   sHandlers[key] = HandlerEntry{&rt, std::make_shared<Function>(std::move(fn))};
 }
+
+static void removeHandlersForNode(int nodeId) {
+  std::lock_guard<std::mutex> lock(sHandlersMutex);
+  for (auto it = sHandlers.begin(); it != sHandlers.end();) {
+    if (it->first.nodeId == nodeId) {
+      it = sHandlers.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
 } // namespace
 
 extern "C" void ZynthUIInvokePressEvent(int nodeId,
@@ -300,6 +311,7 @@ void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
         if (count < 2 || !args[0].isNumber() || !args[1].isNumber()) {
           return Value::undefined();
         }
+        removeHandlersForNode((int)args[1].asNumber());
         [manager removeChild:@((int)args[0].asNumber())
                         child:@((int)args[1].asNumber())];
         if (DEBUG_RUNTIME) {
@@ -441,6 +453,7 @@ void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
             Value parentVal = op.getProperty(rt, "parentId");
             Value childVal = op.getProperty(rt, "childId");
             if (!parentVal.isNumber() || !childVal.isNumber()) continue;
+            removeHandlersForNode((int)childVal.asNumber());
             [manager removeChild:@((int)parentVal.asNumber())
                             child:@((int)childVal.asNumber())];
             if (DEBUG_RUNTIME) {

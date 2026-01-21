@@ -56,6 +56,17 @@ struct HandlerEntry {
 std::mutex gHandlerMutex;
 std::unordered_map<HandlerKey, HandlerEntry, HandlerKeyHash> gHandlers;
 
+void removeHandlersForNode(int nodeId) {
+  std::lock_guard<std::mutex> lock(gHandlerMutex);
+  for (auto it = gHandlers.begin(); it != gHandlers.end();) {
+    if (it->first.nodeId == nodeId) {
+      it = gHandlers.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
 JNIEnv *getEnv() {
   if (!gVm) return nullptr;
   JNIEnv *env = nullptr;
@@ -292,6 +303,7 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
       rt, PropNameID::forAscii(rt, "removeChild"), 2,
       [runtime](Runtime &, const Value &, const Value *args, size_t count) -> Value {
         if (count < 2 || !args[0].isNumber() || !args[1].isNumber()) return Value::undefined();
+        removeHandlersForNode(static_cast<int>(args[1].asNumber()));
         RuntimeState *state = stateFor(runtime);
         if (!state) return Value::undefined();
         JNIEnv *env = getEnv();
@@ -415,6 +427,7 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
             Value parentVal = op.getProperty(rt, "parentId");
             Value childVal = op.getProperty(rt, "childId");
             if (!parentVal.isNumber() || !childVal.isNumber()) continue;
+            removeHandlersForNode(static_cast<int>(childVal.asNumber()));
             env->CallVoidMethod(state->uiManager, state->removeChild,
                                 static_cast<jint>(parentVal.asNumber()),
                                 static_cast<jint>(childVal.asNumber()));
