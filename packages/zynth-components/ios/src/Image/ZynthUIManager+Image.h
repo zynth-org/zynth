@@ -3,9 +3,9 @@
 #else
 #import "ZynthKit.h"
 #import "ZynthComponentAPI.h"
-#import "SNUIManager.h"
-#import "SNNode.h"
+#import "ZynthUIManager.h"
+#import "ZynthNode.h"
 #endif
 
-@interface SNUIManager (ImageComponent)
+@interface ZynthUIManager (ImageComponent)
 @end

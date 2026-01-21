@@ -1,22 +1,22 @@
 #import "ZynthSecureTextInputView.h"
-#if __has_include(<ZynthKit/SNHexColor.h>)
-#import <ZynthKit/SNHexColor.h>
+#if __has_include(<ZynthKit/ZynthHexColor.h>)
+#import <ZynthKit/ZynthHexColor.h>
 #else
-#import "SNHexColor.h"
+#import "ZynthHexColor.h"
 #endif
-#if __has_include(<ZynthKit/SNUIManager+Internal.h>)
-#import <ZynthKit/SNUIManager+Internal.h>
+#if __has_include(<ZynthKit/ZynthUIManager+Internal.h>)
+#import <ZynthKit/ZynthUIManager+Internal.h>
 #else
-#import "SNUIManager+Internal.h"
+#import "ZynthUIManager+Internal.h"
 #endif
 #import <Yoga/Yoga.h>
-#import "SNNode.h"
+#import "ZynthNode.h"
 
 static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
   if (![hex isKindOfClass:[NSString class]] || hex.length == 0) {
     return nil;
   }
-  return SNColorFromHex(hex);
+  return ZynthColorFromHex(hex);
 }
 
 @interface ZynthSecureTextInputView () <UITextFieldDelegate>
@@ -172,14 +172,14 @@ static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
   if (!self.hasOnFocus || self.didEmitFocus) return;
   self.didEmitFocus = YES;
   if (!self.manager || !self.node) return;
-  [self.manager sn_dispatchEvent:@"onFocus" payload:@{} toNode:self.node];
+  [self.manager zynth_dispatchEvent:@"onFocus" payload:@{} toNode:self.node];
 }
 
 - (void)emitBlurIfNeeded {
   if (!self.hasOnBlur || !self.didEmitFocus) return;
   self.didEmitFocus = NO;
   if (!self.manager || !self.node) return;
-  [self.manager sn_dispatchEvent:@"onBlur" payload:@{} toNode:self.node];
+  [self.manager zynth_dispatchEvent:@"onBlur" payload:@{} toNode:self.node];
 }
 
 - (void)emitChange {
@@ -187,7 +187,7 @@ static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
 
     if (self.hasOnChangeText) {
         NSDictionary *textPayload = @{@"text": self.text ?: @""};
-        [self.manager sn_dispatchEvent:@"onChangeText" payload:textPayload toNode:self.node];
+        [self.manager zynth_dispatchEvent:@"onChangeText" payload:textPayload toNode:self.node];
     }
     [self recordEventDispatch];
 }
@@ -206,7 +206,7 @@ static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
 - (BOOL)textFieldShouldReturn:(UITextField *)textField {
     if (self.hasOnSubmitEditing) {
         NSDictionary *payload = @{@"text": self.text ?: @""};
-        [self.manager sn_dispatchEvent:@"onSubmitEditing" payload:payload toNode:self.node];
+        [self.manager zynth_dispatchEvent:@"onSubmitEditing" payload:payload toNode:self.node];
     }
 
     if (self.blurOnSubmit) {

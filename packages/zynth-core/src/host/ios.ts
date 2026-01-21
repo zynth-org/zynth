@@ -40,6 +40,8 @@ export function createIOSHost(): Host {
 
   // NEW: Structured Queue System
   type BatchOperation =
+    | { type: "insertChild"; parentId: number; childId: number; index: number }
+    | { type: "removeChild"; parentId: number; childId: number }
     | { type: "setProp"; nodeId: number; name: string; value: any }
     | { type: "setText"; nodeId: number; value: any };
 
@@ -57,6 +59,142 @@ export function createIOSHost(): Host {
   const enqueueBatchOp = (op: BatchOperation) => {
     if (isSuppressed()) return;
     queue.push({ type: "batch", op });
+  };
+
+  const encodeTypedBatch = (ops: BatchOperation[]) => {
+    const stringTable: string[] = [];
+    const stringIndex = new Map<string, number>();
+    const encoded: number[] = [];
+
+    const addString = (value: string): number => {
+      const existing = stringIndex.get(value);
+      if (existing !== undefined) return existing;
+      const nextIndex = stringTable.length;
+      stringTable.push(value);
+      stringIndex.set(value, nextIndex);
+      return nextIndex;
+    };
+
+    const normalizeTransform = (value: unknown): string | null => {
+      if (value == null) return null;
+      if (typeof value === "string") return value;
+      if (!Array.isArray(value)) return null;
+      const parts: string[] = [];
+      for (const entry of value) {
+        if (!entry || typeof entry !== "object") continue;
+        for (const [key, raw] of Object.entries(entry as Record<string, any>)) {
+          let arg: string | null = null;
+          if (Array.isArray(raw) && raw.length >= 2 && key === "translate") {
+            arg = `${raw[0]}, ${raw[1]}`;
+          } else if (typeof raw === "number") {
+            if (key.startsWith("rotate") || key.startsWith("skew")) {
+              arg = `${raw}deg`;
+            } else {
+              arg = String(raw);
+            }
+          } else if (typeof raw === "string") {
+            arg = raw;
+          }
+          if (arg != null) {
+            parts.push(`${key}(${arg})`);
+          }
+        }
+      }
+      return parts.length ? parts.join(" ") : null;
+    };
+
+    const normalizeShadowOffset = (value: unknown): string | null => {
+      if (value == null) return null;
+      if (typeof value === "string") return value;
+      if (Array.isArray(value) && value.length >= 2) {
+        return `${value[0]} ${value[1]}`;
+      }
+      if (typeof value === "object") {
+        const width = (value as any).width ?? 0;
+        const height = (value as any).height ?? 0;
+        return `${width} ${height}`;
+      }
+      return null;
+    };
+
+    const encodeProp = (nodeId: number, name: string, value: any) => {
+      if (value == null) {
+        encoded.push(1, nodeId, addString(name), 0, 0);
+        return;
+      }
+      switch (typeof value) {
+        case "number":
+          encoded.push(1, nodeId, addString(name), 1, value);
+          return;
+        case "boolean":
+          encoded.push(1, nodeId, addString(name), 3, value ? 1 : 0);
+          return;
+        case "string":
+          encoded.push(1, nodeId, addString(name), 2, addString(value));
+          return;
+        default:
+          return;
+      }
+    };
+
+    const encodeStyle = (nodeId: number, style: any) => {
+      if (!style) return;
+      const resolved = Array.isArray(style)
+        ? style.reduce((acc, item) => (item ? { ...acc, ...item } : acc), {})
+        : style;
+      if (!resolved || typeof resolved !== "object") return;
+      for (const [key, value] of Object.entries(resolved)) {
+        if (key === "transform") {
+          const normalized = normalizeTransform(value);
+          if (normalized != null) {
+            encodeProp(nodeId, key, normalized);
+          }
+          continue;
+        }
+        if (key === "shadowOffset") {
+          const normalized = normalizeShadowOffset(value);
+          if (normalized != null) {
+            encodeProp(nodeId, key, normalized);
+          }
+          continue;
+        }
+        if (typeof value === "object" && value != null) {
+          // Skip unsupported structured values to avoid JSON serialization.
+          continue;
+        }
+        encodeProp(nodeId, key, value);
+      }
+    };
+
+    for (const op of ops) {
+      switch (op.type) {
+        case "setProp": {
+          if (op.name === "style") {
+            encodeStyle(op.nodeId, op.value);
+          } else {
+            encodeProp(op.nodeId, op.name, op.value);
+          }
+          break;
+        }
+        case "setText": {
+          const textValue = op.value == null ? "" : String(op.value);
+          encoded.push(2, op.nodeId, addString(textValue));
+          break;
+        }
+        case "insertChild":
+          encoded.push(3, op.parentId, op.childId, op.index);
+          break;
+        case "removeChild":
+          encoded.push(4, op.parentId, op.childId);
+          break;
+      }
+    }
+
+    return {
+      meta: { kind: "flush", scope: "global" },
+      stringTable,
+      ops: encoded,
+    };
   };
 
   let rafHandle: number | null = null;
@@ -79,10 +217,10 @@ export function createIOSHost(): Host {
     return true;
   };
 
-  const supportsTypedProps =
-    ENABLE_TYPED_OPS && (ui as any).__supportsTypedProps === true;
   const supportsTypedBatch =
-    ENABLE_TYPED_OPS && typeof (ui as any).applyBatchTyped === "function";
+    ENABLE_TYPED_OPS &&
+    typeof (ui as any).applyBatchTyped === "function" &&
+    (ui as any).__supportsTypedBatch === true;
 
   const runFlush = () => {
     flushScheduled = false;
@@ -95,30 +233,10 @@ export function createIOSHost(): Host {
         const flushBatch = () => {
           if (!batchAccumulator.length) return;
 
-          // Prepare payload with a global/flush scope
-          const payload = {
-            meta: { kind: "flush", scope: "global" },
-            operations: batchAccumulator,
-          };
-
-          if (supportsTypedBatch) {
-            (ui as any).applyBatchTyped(payload);
-          } else if (ENABLE_JSON_OPS && typeof ui.applyBatch === "function") {
-            ui.applyBatch(JSON.stringify(payload));
-          } else {
-            // Fallback for runtimes without applyBatch
-            for (const op of batchAccumulator) {
-              if (op.type === "setProp") {
-                if (supportsTypedProps) {
-                  ui.setProp(op.nodeId, op.name, op.value);
-                } else {
-                  ui.setProp(op.nodeId, op.name, op.value);
-                }
-              } else {
-                ui.setText(op.nodeId, op.value);
-              }
-            }
+          if (!supportsTypedBatch) {
+            throw new Error("Typed batch is required for iOS host");
           }
+          (ui as any).applyBatchTyped(encodeTypedBatch(batchAccumulator));
           batchAccumulator = [];
         };
 
@@ -504,8 +622,17 @@ export function createIOSHost(): Host {
       kids.splice(logicalAt, 0, node.id);
       PARENTS.set(node.id, parent.id);
 
-      if (!isMarkerId(node.id))
-        enqueueOperation(() => ui.insertChild(parent.id, node.id, physIdx));
+      if (!isMarkerId(node.id)) {
+        const op = {
+          type: "insertChild" as const,
+          parentId: parent.id,
+          childId: node.id,
+          index: physIdx,
+        };
+        if (!tryEnqueueBatch(op)) {
+          enqueueBatchOp(op);
+        }
+      }
       schedule();
     },
     removeNode(parent, node) {
@@ -513,20 +640,25 @@ export function createIOSHost(): Host {
       const i = kids.indexOf(node.id);
       if (i < 0) return;
 
-      const nonMarkerBefore = (() => {
-        let n = 0;
-        for (let j = 0; j < i; j++) if (!isMarkerId(kids[j])) n++;
-        return n;
-      })();
-
       const contextId = NODE_TO_CONTEXT.get(node.id);
       const shouldRecycle = contextId && RECYCLING_CONTEXTS.has(contextId);
+
+      const enqueueRemoveOp = () => {
+        const op = {
+          type: "removeChild" as const,
+          parentId: parent.id,
+          childId: node.id,
+        };
+        if (!tryEnqueueBatch(op)) {
+          enqueueBatchOp(op);
+        }
+      };
 
       if (shouldRecycle) {
         kids.splice(i, 1);
         PARENTS.set(node.id, null);
         if (!isMarkerId(node.id)) {
-          enqueueOperation(() => ui.removeChild(parent.id, node.id));
+          enqueueRemoveOp();
           returnNodeToPool(contextId!, node.id);
         }
         schedule();
@@ -538,7 +670,7 @@ export function createIOSHost(): Host {
       if (!isMarkerId(node.id)) {
         TYPES.delete(node.id);
         NODE_TO_CONTEXT.delete(node.id);
-        enqueueOperation(() => ui.removeChild(parent.id, node.id));
+        enqueueRemoveOp();
       } else if (contextId) {
         NODE_TO_CONTEXT.delete(node.id);
       }
@@ -601,44 +733,11 @@ export function createIOSHost(): Host {
       }
       if (!context.operations.length) return;
 
-      const payload = {
-        meta: context.meta,
-        operations: context.operations.map((op) =>
-          op.type === "setProp"
-            ? {
-                type: "setProp" as const,
-                nodeId: op.nodeId,
-                name: op.name,
-                value: op.value,
-              }
-            : {
-                type: "setText" as const,
-                nodeId: op.nodeId,
-                value: op.value,
-              }
-        ),
-      };
-
-      if (supportsTypedBatch) {
-        if (isSuppressed()) return;
-        (ui as any).applyBatchTyped(payload);
-        return;
-      }
-      if (ENABLE_JSON_OPS && typeof ui.applyBatch === "function") {
-        if (isSuppressed()) return;
-        const serialized =
-          typeof payload === "string" ? payload : JSON.stringify(payload);
-        ui.applyBatch(serialized);
-        return;
+      if (!supportsTypedBatch) {
+        throw new Error("Typed batch is required for iOS host");
       }
       if (isSuppressed()) return;
-      for (const op of context.operations) {
-        if (op.type === "setProp") {
-          ui.setProp(op.nodeId, op.name, op.value);
-        } else {
-          ui.setText(op.nodeId, op.value);
-        }
-      }
+      (ui as any).applyBatchTyped(encodeTypedBatch(context.operations));
     },
     enableRecycling(containerId: number, config: RecyclingConfig): string {
       const contextId = `recycling-${containerId}-${nextContextId++}`;

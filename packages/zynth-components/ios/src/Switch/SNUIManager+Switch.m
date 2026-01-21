@@ -1,12 +1,12 @@
 #if __has_include(<ZynthKit/ZynthKit.h>)
 #import <ZynthKit/ZynthKit.h>
-#import <ZynthKit/SNHexColor.h>
+#import <ZynthKit/ZynthHexColor.h>
 #else
 #import "ZynthKit.h"
 #import "ZynthComponentAPI.h"
-#import "SNUIManager.h"
-#import "SNNode.h"
-#import "SNHexColor.h"
+#import "ZynthUIManager.h"
+#import "ZynthNode.h"
+#import "ZynthHexColor.h"
 #import "ZynthViewHost.h"
 #endif
 
@@ -47,8 +47,8 @@ static YGSize ZynthSwitchMeasureFunc(YGNodeConstRef node,
 
 #pragma mark - Property Handling
 
-static BOOL ZynthSwitchHandleSetProp(SNUIManager *manager,
-                                    SNNode *node,
+static BOOL ZynthSwitchHandleSetProp(ZynthUIManager *manager,
+                                    ZynthNode *node,
                                     NSString *name,
                                     id value,
                                     NSString *rawJSON) {
@@ -72,7 +72,7 @@ static BOOL ZynthSwitchHandleSetProp(SNUIManager *manager,
   if ([name isEqualToString:@"trackColor"]) {
     UIColor *color = nil;
     if ([value isKindOfClass:[NSString class]]) {
-      color = SNColorFromHex((NSString *)value);
+      color = ZynthColorFromHex((NSString *)value);
     }
     [switchView zynth_setTrackColor:color];
     return YES;
@@ -81,7 +81,7 @@ static BOOL ZynthSwitchHandleSetProp(SNUIManager *manager,
   if ([name isEqualToString:@"thumbColor"]) {
     UIColor *color = nil;
     if ([value isKindOfClass:[NSString class]]) {
-      color = SNColorFromHex((NSString *)value);
+      color = ZynthColorFromHex((NSString *)value);
     }
     [switchView zynth_setThumbColor:color];
     return YES;
@@ -96,19 +96,19 @@ static BOOL ZynthSwitchHandleSetProp(SNUIManager *manager,
   return NO;
 }
 
-static BOOL ZynthSwitchHandleSetHandler(SNUIManager *manager,
-                                       SNNode *node,
+static BOOL ZynthSwitchHandleSetHandler(ZynthUIManager *manager,
+                                       ZynthNode *node,
                                        NSString *name) {
   if (!node || ![node.view isKindOfClass:[ZynthSwitchView class]]) return NO;
   ZynthSwitchView *switchView = (ZynthSwitchView *)node.view;
 
   if ([name isEqualToString:@"onValueChange"]) {
-    __weak SNUIManager *weakManager = manager;
-    __weak SNNode *weakNode = node;
+    __weak ZynthUIManager *weakManager = manager;
+    __weak ZynthNode *weakNode = node;
     
     switchView.onValueChange = ^(BOOL value) {
-      SNUIManager *strongManager = weakManager;
-      SNNode *strongNode = weakNode;
+      ZynthUIManager *strongManager = weakManager;
+      ZynthNode *strongNode = weakNode;
       if (!strongManager || !strongNode) return;
       
       NSDictionary *payload = @{@"value": @(value)};
@@ -120,17 +120,17 @@ static BOOL ZynthSwitchHandleSetHandler(SNUIManager *manager,
   return NO;
 }
 
-@implementation SNUIManager (SwitchComponent)
+@implementation ZynthUIManager (SwitchComponent)
 
 + (void)load {
   static dispatch_once_t onceToken;
   dispatch_once(&onceToken, ^{
     ZynthComponentDescriptor *descriptor = [[ZynthComponentDescriptor alloc] initWithType:@"switch-view"];
-    descriptor.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+    descriptor.createView = ^UIView *(ZynthUIManager *manager, NSString *type) {
       ZynthSwitchView *switchView = [ZynthSwitchView new];
       return switchView;
     };
-    descriptor.attach = ^(SNUIManager *manager, SNNode *node) {
+    descriptor.attach = ^(ZynthUIManager *manager, ZynthNode *node) {
       if (![node.view isKindOfClass:[ZynthSwitchView class]]) return;
       ZynthSwitchView *switchView = (ZynthSwitchView *)node.view;
       switchView.nodeId = node ? node.nid : -1;
@@ -141,10 +141,10 @@ static BOOL ZynthSwitchHandleSetHandler(SNUIManager *manager,
         YGNodeSetMeasureFunc(node.yoga, ZynthSwitchMeasureFunc);
       }
     };
-    descriptor.handleSetProp = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name, id value, NSString *rawJSON) {
+    descriptor.handleSetProp = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name, id value, NSString *rawJSON) {
       return ZynthSwitchHandleSetProp(manager, node, name, value, rawJSON);
     };
-    descriptor.handleSetHandler = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name) {
+    descriptor.handleSetHandler = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name) {
       return ZynthSwitchHandleSetHandler(manager, node, name);
     };
     ZynthRegisterComponentDescriptor(descriptor);

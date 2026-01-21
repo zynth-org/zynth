@@ -1,12 +1,12 @@
 #if __has_include(<ZynthKit/ZynthKit.h>)
 #import <ZynthKit/ZynthKit.h>
-#import <ZynthKit/SNHexColor.h>
+#import <ZynthKit/ZynthHexColor.h>
 #else
 #import "ZynthKit.h"
 #import "ZynthComponentAPI.h"
-#import "SNUIManager.h"
-#import "SNNode.h"
-#import "SNHexColor.h"
+#import "ZynthUIManager.h"
+#import "ZynthNode.h"
+#import "ZynthHexColor.h"
 #import "ZynthViewHost.h"
 #endif
 
@@ -16,8 +16,8 @@
 
 #pragma mark - Menu View
 
-static BOOL ZynthMenuHandleSetProp(SNUIManager *manager,
-                                  SNNode *node,
+static BOOL ZynthMenuHandleSetProp(ZynthUIManager *manager,
+                                  ZynthNode *node,
                                   NSString *name,
                                   id value,
                                   NSString *rawJSON) {
@@ -29,8 +29,8 @@ static BOOL ZynthMenuHandleSetProp(SNUIManager *manager,
   return NO;
 }
 
-static BOOL ZynthMenuHandleSetHandler(SNUIManager *manager,
-                                     SNNode *node,
+static BOOL ZynthMenuHandleSetHandler(ZynthUIManager *manager,
+                                     ZynthNode *node,
                                      NSString *name) {
    // Implementation for events if needed
    return NO;
@@ -38,8 +38,8 @@ static BOOL ZynthMenuHandleSetHandler(SNUIManager *manager,
 
 #pragma mark - Menu Item View
 
-static BOOL ZynthMenuItemHandleSetProp(SNUIManager *manager,
-                                      SNNode *node,
+static BOOL ZynthMenuItemHandleSetProp(ZynthUIManager *manager,
+                                      ZynthNode *node,
                                       NSString *name,
                                       id value,
                                       NSString *rawJSON) {
@@ -64,18 +64,18 @@ static BOOL ZynthMenuItemHandleSetProp(SNUIManager *manager,
   return NO;
 }
 
-static BOOL ZynthMenuItemHandleSetHandler(SNUIManager *manager,
-                                         SNNode *node,
+static BOOL ZynthMenuItemHandleSetHandler(ZynthUIManager *manager,
+                                         ZynthNode *node,
                                          NSString *name) {
   if (!node || ![node.view isKindOfClass:[ZynthMenuItemView class]]) return NO;
   ZynthMenuItemView *itemView = (ZynthMenuItemView *)node.view;
 
   if ([name isEqualToString:@"onPress"]) {
-    __weak SNUIManager *weakManager = manager;
-    __weak SNNode *weakNode = node;
+    __weak ZynthUIManager *weakManager = manager;
+    __weak ZynthNode *weakNode = node;
     itemView.onPress = ^{
-      SNUIManager *strongManager = weakManager;
-      SNNode *strongNode = weakNode;
+      ZynthUIManager *strongManager = weakManager;
+      ZynthNode *strongNode = weakNode;
       if (strongManager && strongNode) {
         [strongManager zynth_dispatchEvent:@"onPress" payload:@{} toNode:strongNode];
       }
@@ -85,7 +85,7 @@ static BOOL ZynthMenuItemHandleSetHandler(SNUIManager *manager,
   return NO;
 }
 
-@implementation SNUIManager (MenuComponent)
+@implementation ZynthUIManager (MenuComponent)
 
 + (void)load {
   static dispatch_once_t onceToken;
@@ -93,10 +93,10 @@ static BOOL ZynthMenuItemHandleSetHandler(SNUIManager *manager,
     
     // 1. menu-view
     ZynthComponentDescriptor *menuDesc = [[ZynthComponentDescriptor alloc] initWithType:@"menu-view"];
-    menuDesc.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+    menuDesc.createView = ^UIView *(ZynthUIManager *manager, NSString *type) {
       return [ZynthMenuView new];
     };
-    menuDesc.handleSetProp = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name, id value, NSString *rawJSON) {
+    menuDesc.handleSetProp = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name, id value, NSString *rawJSON) {
       return ZynthMenuHandleSetProp(manager, node, name, value, rawJSON);
     };
     // Standard attach logic
@@ -104,17 +104,17 @@ static BOOL ZynthMenuItemHandleSetHandler(SNUIManager *manager,
 
     // 2. menu-item-view
     ZynthComponentDescriptor *itemDesc = [[ZynthComponentDescriptor alloc] initWithType:@"menu-item-view"];
-    itemDesc.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+    itemDesc.createView = ^UIView *(ZynthUIManager *manager, NSString *type) {
       return [ZynthMenuItemView new];
     };
-    itemDesc.handleSetProp = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name, id value, NSString *rawJSON) {
+    itemDesc.handleSetProp = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name, id value, NSString *rawJSON) {
       return ZynthMenuItemHandleSetProp(manager, node, name, value, rawJSON);
     };
-    itemDesc.handleSetHandler = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name) {
+    itemDesc.handleSetHandler = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name) {
       return ZynthMenuItemHandleSetHandler(manager, node, name);
     };
     // Ensure items don't affect layout
-    itemDesc.attach = ^(SNUIManager *manager, SNNode *node) {
+    itemDesc.attach = ^(ZynthUIManager *manager, ZynthNode *node) {
         if (node.yoga) {
             YGNodeStyleSetDisplay(node.yoga, YGDisplayNone);
         }
@@ -124,7 +124,7 @@ static BOOL ZynthMenuItemHandleSetHandler(SNUIManager *manager,
     // 3. menu-trigger-view
     // Acts as a simple container
     ZynthComponentDescriptor *triggerDesc = [[ZynthComponentDescriptor alloc] initWithType:@"menu-trigger-view"];
-    triggerDesc.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+    triggerDesc.createView = ^UIView *(ZynthUIManager *manager, NSString *type) {
       return [UIView new];
     };
     ZynthRegisterComponentDescriptor(triggerDesc);

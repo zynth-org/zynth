@@ -1,15 +1,15 @@
 #import <UIKit/UIKit.h>
 #import <Yoga/Yoga.h>
 
-@class SNUIManager;
-@class SNNode;
+@class ZynthUIManager;
+@class ZynthNode;
 
 NS_ASSUME_NONNULL_BEGIN
 
 @interface ZynthTextInputView : UITextView <UITextViewDelegate>
 
-@property(nonatomic, weak) SNUIManager *manager;
-@property(nonatomic, weak) SNNode *node;
+@property(nonatomic, weak) ZynthUIManager *manager;
+@property(nonatomic, weak) ZynthNode *node;
 @property(nonatomic, copy, nullable) NSString *placeholder;
 @property(nonatomic, strong, nullable) UIColor *placeholderTextColor;
 @property(nonatomic, assign) BOOL blurOnSubmit;

@@ -1,12 +1,11 @@
 #import <UIKit/UIKit.h>
 
-#import "ZynthUIManager+View.h"
 #import "ZynthHitTestingView.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
-@class SNUIManager;
-@class SNNode;
+@class ZynthUIManager;
+@class ZynthNode;
 
 typedef NS_ENUM(NSInteger, ZynthScrollAxis) {
   ZynthScrollAxisVertical,
@@ -15,7 +14,7 @@ typedef NS_ENUM(NSInteger, ZynthScrollAxis) {
 
 @interface ZynthScrollView : ZynthHitTestingView <UIScrollViewDelegate>
 
-- (void)attachToManager:(nullable SNUIManager *)manager node:(nullable SNNode *)node;
+- (void)attachToManager:(nullable ZynthUIManager *)manager node:(nullable ZynthNode *)node;
 - (void)insertContentSubview:(UIView *)view atIndex:(NSInteger)index;
 - (void)removeContentSubview:(UIView *)view;
 

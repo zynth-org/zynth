@@ -1,31 +1,31 @@
 #if __has_include(<ZynthKit/ZynthKit.h>)
 #import <ZynthKit/ZynthKit.h>
-#import <ZynthKit/SNHexColor.h>
+#import <ZynthKit/ZynthHexColor.h>
 #else
 #import "ZynthKit.h"
 #import "ZynthComponentRegistry.h"
 #import "ZynthComponentAPI.h"
-#import "SNUIManager.h"
-#import "SNNode.h"
-#import "SNHexColor.h"
+#import "ZynthUIManager.h"
+#import "ZynthNode.h"
+#import "ZynthHexColor.h"
 #endif
 
 #import "ZynthHitTestingView.h"
 
-@implementation SNUIManager (ViewComponent)
+@implementation ZynthUIManager (ViewComponent)
 
 + (void)load {
   static dispatch_once_t onceToken;
   dispatch_once(&onceToken, ^{
     ZynthComponentDescriptor *descriptor = [[ZynthComponentDescriptor alloc] initWithType:@"view"];
     
-    descriptor.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+    descriptor.createView = ^UIView *(ZynthUIManager *manager, NSString *type) {
       ZynthHitTestingView *view = [[ZynthHitTestingView alloc] init];
       view.pointerMode = ZynthPointerEventsAuto;
       return view;
     };
     
-    descriptor.attach = ^(SNUIManager *manager, SNNode *node) {
+    descriptor.attach = ^(ZynthUIManager *manager, ZynthNode *node) {
       if (![node.view isKindOfClass:[ZynthHitTestingView class]]) return;
       
       // Initialize pointer events
@@ -43,7 +43,7 @@
       }
     };
     
-    descriptor.handleSetProp = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name, id value, NSString *rawJSON) {
+    descriptor.handleSetProp = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name, id value, NSString *rawJSON) {
       if (![node.view isKindOfClass:[ZynthHitTestingView class]]) return NO;
       
       if ([name isEqualToString:@"pointerEvents"]) {
@@ -101,7 +101,7 @@
       if ([name isEqualToString:@"tintColor"]) {
         UIColor *color = nil;
         if ([value isKindOfClass:[NSString class]]) {
-          color = SNColorFromHex((NSString *)value);
+          color = ZynthColorFromHex((NSString *)value);
         }
         ZynthHitTestingView *view = (ZynthHitTestingView *)node.view;
         [view zynth_setGlassTintColor:color];

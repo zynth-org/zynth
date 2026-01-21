@@ -3,8 +3,8 @@ import UIKit
 
 @objcMembers
 public final class ZynthModalView: UIView {
-  private weak var manager: SNUIManager?
-  private weak var node: SNNode?
+  private weak var manager: ZynthUIManager?
+  private weak var node: ZynthNode?
 
   private let contentHost: UIView = {
     let view = ZynthModalPassthroughView()
@@ -55,7 +55,7 @@ public final class ZynthModalView: UIView {
     contentHost.frame = bounds
   }
 
-  public func bind(manager: SNUIManager, node: SNNode) {
+  public func bind(manager: ZynthUIManager, node: ZynthNode) {
     self.manager = manager
     self.node = node
   }
@@ -122,7 +122,7 @@ public final class ZynthModalView: UIView {
     guard let manager = manager, let node = node else { return }
     let selector = NSSelectorFromString("zynth_dispatchEvent:payload:toNode:")
     guard let method = manager.method(for: selector) else { return }
-    typealias Imp = @convention(c) (AnyObject, Selector, NSString, NSDictionary?, SNNode) -> Void
+    typealias Imp = @convention(c) (AnyObject, Selector, NSString, NSDictionary?, ZynthNode) -> Void
     let function = unsafeBitCast(method, to: Imp.self)
     function(manager, selector, name as NSString, payload as NSDictionary?, node)
   }

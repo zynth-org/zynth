@@ -9,8 +9,8 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-@class SNUIManager;
-@class SNNode;
+@class ZynthUIManager;
+@class ZynthNode;
 
 @protocol ZynthPressableViewDelegate;
 
@@ -18,9 +18,9 @@ NS_ASSUME_NONNULL_BEGIN
 
 @property(nonatomic, weak, nullable) id<ZynthPressableViewDelegate> delegate;
 @property(nonatomic, assign) int nodeId;
-@property(nonatomic, weak, nullable, readonly) SNNode *zynth_node;
+@property(nonatomic, weak, nullable, readonly) ZynthNode *zynth_node;
 
-- (void)attachToManager:(nullable SNUIManager *)manager node:(nullable SNNode *)node;
+- (void)attachToManager:(nullable ZynthUIManager *)manager node:(nullable ZynthNode *)node;
 - (void)zynth_setDisabled:(BOOL)disabled;
 - (void)zynth_setPressEffect:(NSString *_Nullable)effect;
 - (void)zynth_setPressRetentionOffset:(NSNumber *_Nullable)offset;

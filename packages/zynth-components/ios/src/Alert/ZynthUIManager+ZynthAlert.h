@@ -4,6 +4,6 @@
 #import "ZynthKit.h"
 #endif
 
-@interface SNUIManager (ZynthAlert)
+@interface ZynthUIManager (ZynthAlert)
 
 @end

@@ -3,15 +3,15 @@
 #else
 #import "ZynthKit.h"
 #import "ZynthComponentAPI.h"
-#import "SNUIManager.h"
-#import "SNNode.h"
+#import "ZynthUIManager.h"
+#import "ZynthNode.h"
 #endif
 
 #import "ZynthScrollView.h"
 #import "ScrollViewUICommands.h"
 
-static BOOL ZynthScrollViewHandleSetProp(SNUIManager *manager,
-                                        SNNode *node,
+static BOOL ZynthScrollViewHandleSetProp(ZynthUIManager *manager,
+                                        ZynthNode *node,
                                         NSString *name,
                                         id value,
                                         NSString *rawJSON) {
@@ -138,8 +138,8 @@ static BOOL ZynthScrollViewHandleSetProp(SNUIManager *manager,
   return NO;
 }
 
-static BOOL ZynthScrollViewHandleSetHandler(SNUIManager *manager,
-                                           SNNode *node,
+static BOOL ZynthScrollViewHandleSetHandler(ZynthUIManager *manager,
+                                           ZynthNode *node,
                                            NSString *name) {
   if (!node || ![node.view isKindOfClass:[ZynthScrollView class]]) {
     return NO;
@@ -156,26 +156,26 @@ static BOOL ZynthScrollViewHandleSetHandler(SNUIManager *manager,
   return NO;
 }
 
-@implementation SNUIManager (ScrollViewComponent)
+@implementation ZynthUIManager (ScrollViewComponent)
 
 + (void)load {
   static dispatch_once_t onceToken;
   dispatch_once(&onceToken, ^{
     ZynthScrollViewRegisterUICommands();
     ZynthComponentDescriptor *descriptor = [[ZynthComponentDescriptor alloc] initWithType:@"scroll-view"];
-    descriptor.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+    descriptor.createView = ^UIView *(ZynthUIManager *manager, NSString *type) {
       ZynthScrollView *scrollView = [ZynthScrollView new];
       return scrollView;
     };
-    descriptor.attach = ^(SNUIManager *manager, SNNode *node) {
+    descriptor.attach = ^(ZynthUIManager *manager, ZynthNode *node) {
       if (![node.view isKindOfClass:[ZynthScrollView class]]) return;
       ZynthScrollView *scrollView = (ZynthScrollView *)node.view;
       [scrollView attachToManager:manager node:node];
     };
-    descriptor.handleSetProp = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name, id value, NSString *rawJSON) {
+    descriptor.handleSetProp = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name, id value, NSString *rawJSON) {
       return ZynthScrollViewHandleSetProp(manager, node, name, value, rawJSON);
     };
-    descriptor.handleSetHandler = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name) {
+    descriptor.handleSetHandler = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name) {
       return ZynthScrollViewHandleSetHandler(manager, node, name);
     };
     ZynthRegisterComponentDescriptor(descriptor);

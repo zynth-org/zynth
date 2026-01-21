@@ -1,22 +1,27 @@
 #import "ZynthTextInputView.h"
-#if __has_include(<ZynthKit/SNHexColor.h>)
-#import <ZynthKit/SNHexColor.h>
+#if __has_include(<ZynthKit/ZynthHexColor.h>)
+#import <ZynthKit/ZynthHexColor.h>
 #else
-#import "SNHexColor.h"
+#import "ZynthHexColor.h"
 #endif
-#if __has_include(<ZynthKit/SNUIManager+Internal.h>)
-#import <ZynthKit/SNUIManager+Internal.h>
+#if __has_include(<ZynthKit/ZynthUIManager+Internal.h>)
+#import <ZynthKit/ZynthUIManager+Internal.h>
 #else
-#import "SNUIManager+Internal.h"
+#import "ZynthUIManager+Internal.h"
+#endif
+#if __has_include(<ZynthKit/ZynthUIManager+Components.h>)
+#import <ZynthKit/ZynthUIManager+Components.h>
+#else
+#import "ZynthUIManager+Components.h"
 #endif
 #import <Yoga/Yoga.h>
-#import "SNNode.h"
+#import "ZynthNode.h"
 
 static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
   if (![hex isKindOfClass:[NSString class]] || hex.length == 0) {
     return nil;
   }
-  return SNColorFromHex(hex);
+  return ZynthColorFromHex(hex);
 }
 
 @interface ZynthTextInputView ()
@@ -381,7 +386,7 @@ static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
   if (!self.hasOnFocus || self.didEmitFocus) return;
   self.didEmitFocus = YES;
   if (!self.manager || !self.node) return;
-  [self.manager sn_dispatchEvent:@"onFocus" payload:@{} toNode:self.node];
+  [self.manager zynth_dispatchEvent:@"onFocus" payload:@{} toNode:self.node];
   if (self.manager.jsInvoker) {
     [self.manager.jsInvoker invokeHandlerForNode:self.node.nid name:@"onFocus"];
   }
@@ -391,7 +396,7 @@ static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
   if (!self.hasOnBlur || !self.didEmitFocus) return;
   self.didEmitFocus = NO;
   if (!self.manager || !self.node) return;
-  [self.manager sn_dispatchEvent:@"onBlur" payload:@{} toNode:self.node];
+  [self.manager zynth_dispatchEvent:@"onBlur" payload:@{} toNode:self.node];
   if (self.manager.jsInvoker) {
     [self.manager.jsInvoker invokeHandlerForNode:self.node.nid name:@"onBlur"];
   }
@@ -401,7 +406,7 @@ static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
   if (!self.manager || !self.node) return;
   NSDictionary *payload = @{@"selection": [self currentSelectionPayload]};
   if (self.hasOnSelectionChange) {
-    [self.manager sn_dispatchEvent:@"onSelectionChange" payload:payload toNode:self.node];
+    [self.manager zynth_dispatchEvent:@"onSelectionChange" payload:payload toNode:self.node];
     if (self.manager.jsInvoker) {
       [self.manager.jsInvoker invokeHandlerForNode:self.node.nid name:@"onSelectionChange"];
     }
@@ -412,7 +417,7 @@ static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
   if (!self.hasOnKeyPress || !self.manager || !self.node) return;
   NSString *key = replacement.length == 0 ? @"Backspace" : replacement;
   NSDictionary *payload = @{@"key": key ?: @"", @"repeat": @(NO)};
-  [self.manager sn_dispatchEvent:@"onKeyPress" payload:payload toNode:self.node];
+  [self.manager zynth_dispatchEvent:@"onKeyPress" payload:payload toNode:self.node];
   if (self.manager.jsInvoker) {
     [self.manager.jsInvoker invokeHandlerForNode:self.node.nid name:@"onKeyPress"];
   }
@@ -428,7 +433,7 @@ static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
   payload[@"composing"] = @(self.isComposing);
 
   if (self.hasOnChange) {
-    [self.manager sn_dispatchEvent:@"onChange" payload:payload toNode:self.node];
+    [self.manager zynth_dispatchEvent:@"onChange" payload:payload toNode:self.node];
     if (self.manager.jsInvoker) {
       [self.manager.jsInvoker invokeHandlerForNode:self.node.nid name:@"onChange"];
     }
@@ -436,7 +441,7 @@ static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
 
   if (self.hasOnChangeText) {
     NSDictionary *textPayload = @{@"text": self.text ?: @""};
-    [self.manager sn_dispatchEvent:@"onChangeText" payload:textPayload toNode:self.node];
+    [self.manager zynth_dispatchEvent:@"onChangeText" payload:textPayload toNode:self.node];
     if (self.manager.jsInvoker) {
       [self.manager.jsInvoker invokeHandlerForNode:self.node.nid name:@"onChangeText"];
     }
@@ -500,7 +505,7 @@ static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
 
     if (shouldSubmit && self.hasOnSubmitEditing) {
       NSDictionary *payload = @{@"text": current ?: @""};
-      [self.manager sn_dispatchEvent:@"onSubmitEditing" payload:payload toNode:self.node];
+      [self.manager zynth_dispatchEvent:@"onSubmitEditing" payload:payload toNode:self.node];
       if (self.manager.jsInvoker) {
         [self.manager.jsInvoker invokeHandlerForNode:self.node.nid name:@"onSubmitEditing"];
       }
@@ -543,7 +548,7 @@ static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
     if (self.node && self.node.yoga && YGNodeGetOwner(self.node.yoga)) {
       YGNodeMarkDirty(self.node.yoga);
     }
-    [self.manager sn_markNeedsFlush];
+    [self.manager zynth_markNeedsFlush];
     return;
   }
   [self updatePlaceholderVisibility];
@@ -563,7 +568,7 @@ static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
   if (self.node && self.node.yoga && YGNodeGetOwner(self.node.yoga)) {
     YGNodeMarkDirty(self.node.yoga);
   }
-  [self.manager sn_markNeedsFlush];
+  [self.manager zynth_markNeedsFlush];
   NSLog(@"[ZynthTextInputView] textViewDidChange finished text=%@", textView.text);
 
   BOOL nowComposing = self.markedTextRange != nil;
@@ -603,14 +608,14 @@ static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
   if (starting) {
     if (!self.hasOnCompositionStart || self.didEmitCompositionStart) return;
     self.didEmitCompositionStart = YES;
-    [self.manager sn_dispatchEvent:@"onCompositionStart" payload:@{} toNode:self.node];
+    [self.manager zynth_dispatchEvent:@"onCompositionStart" payload:@{} toNode:self.node];
     if (self.manager.jsInvoker) {
       [self.manager.jsInvoker invokeHandlerForNode:self.node.nid name:@"onCompositionStart"];
     }
   } else {
     if (!self.hasOnCompositionEnd || !self.didEmitCompositionStart) return;
     self.didEmitCompositionStart = NO;
-    [self.manager sn_dispatchEvent:@"onCompositionEnd" payload:@{} toNode:self.node];
+    [self.manager zynth_dispatchEvent:@"onCompositionEnd" payload:@{} toNode:self.node];
     if (self.manager.jsInvoker) {
       [self.manager.jsInvoker invokeHandlerForNode:self.node.nid name:@"onCompositionEnd"];
     }

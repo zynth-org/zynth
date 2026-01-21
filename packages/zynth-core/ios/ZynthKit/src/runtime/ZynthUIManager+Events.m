@@ -248,6 +248,13 @@
 }
 
 - (void)cleanupNode:(NSNumber *)nodeId {
+  ZynthNode *node = _nodeStates[nodeId];
+  if (node) {
+    ZynthComponentDescriptor *descriptor = ZynthGetComponentDescriptor(node.type);
+    if (descriptor && descriptor.cleanup) {
+      descriptor.cleanup((ZynthUIManager *)self, node);
+    }
+  }
   [_pointerEvents removeObjectForKey:nodeId];
   [_pressNodes removeObject:nodeId];
   [_longPressNodes removeObject:nodeId];

@@ -18,6 +18,7 @@ void ZynthUIInvokePressEvent(int nodeId,
                              double durationMs,
                              double timestampMs,
                              bool cancelled);
+void ZynthUIInvokeEvent(int nodeId, const char *name, NSDictionary *payload);
 void ZynthUIInvokeLayoutEvent(int nodeId, double x, double y, double width, double height);
 #ifdef __cplusplus
 }

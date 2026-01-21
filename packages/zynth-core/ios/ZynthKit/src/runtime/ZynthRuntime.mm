@@ -61,6 +61,13 @@
   [self.runtime callGlobal:@"__startApp" args:@[ @(rootId) ]];
 }
 
+- (void)emitEventWithName:(NSString *)name payload:(id)payload {
+  NSString *trimmed = [name stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+  if (trimmed.length == 0) return;
+  id body = payload ?: [NSNull null];
+  [self.runtime callGlobal:@"ZynthNativeEmitter.emit" args:@[ trimmed, body ]];
+}
+
 - (void)destroy {
   // Phase 1 scaffold.
 }

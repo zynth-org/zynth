@@ -2,7 +2,7 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-@class SNNode;
+@class ZynthNode;
 
 /**
  * A custom UILabel subclass that supports text composition from nested text nodes.
@@ -11,8 +11,8 @@ NS_ASSUME_NONNULL_BEGIN
  */
 @interface ZynthTextView : UILabel
 
-/// Reference to the owning SNNode for traversing children during text composition
-@property (nonatomic, weak, nullable) SNNode *zynth_node;
+/// Reference to the owning ZynthNode for traversing children during text composition
+@property (nonatomic, weak, nullable) ZynthNode *zynth_node;
 /// Base text attributes derived from this node's style
 @property (nonatomic, strong, nullable) NSDictionary<NSAttributedStringKey, id> *zynth_baseTextAttributes;
 /// Optional text transform ("uppercase" | "lowercase" | "capitalize")

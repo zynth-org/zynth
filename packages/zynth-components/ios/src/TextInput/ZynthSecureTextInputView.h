@@ -3,13 +3,13 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-@class SNNode;
-@class SNUIManager;
+@class ZynthNode;
+@class ZynthUIManager;
 
 @interface ZynthSecureTextInputView : UITextField
 
-@property(nonatomic, weak, nullable) SNUIManager *manager;
-@property(nonatomic, weak, nullable) SNNode *node;
+@property(nonatomic, weak, nullable) ZynthUIManager *manager;
+@property(nonatomic, weak, nullable) ZynthNode *node;
 @property(nonatomic, strong, nullable) UIColor *placeholderTextColor;
 @property(nonatomic, assign) UIEdgeInsets padding;
 

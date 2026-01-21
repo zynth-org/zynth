@@ -6,13 +6,13 @@
 
 #if __has_include(<ZynthKit/ZynthKit.h>)
 #import <ZynthKit/ZynthKit.h>
-#import <ZynthKit/SNHexColor.h>
+#import <ZynthKit/ZynthHexColor.h>
 #else
 #import "ZynthKit.h"
 #import "ZynthComponentAPI.h"
-#import "SNUIManager.h"
-#import "SNNode.h"
-#import "SNHexColor.h"
+#import "ZynthUIManager.h"
+#import "ZynthNode.h"
+#import "ZynthHexColor.h"
 #endif
 
 static NSString *ZynthModalNormalizeJSONString(NSString *value) {
@@ -68,27 +68,27 @@ static BOOL ZynthModalParseBoolean(NSString *rawJSON, BOOL fallback) {
   return fallback;
 }
 
-@implementation SNUIManager (ModalComponent)
+@implementation ZynthUIManager (ModalComponent)
 
 + (void)load {
   static dispatch_once_t onceToken;
   dispatch_once(&onceToken, ^{
     ZynthComponentDescriptor *descriptor = [[ZynthComponentDescriptor alloc] initWithType:@"zynth-modal"];
-    descriptor.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+    descriptor.createView = ^UIView *(ZynthUIManager *manager, NSString *type) {
       return [[ZynthModalView alloc] init];
     };
-    descriptor.attach = ^(SNUIManager *manager, SNNode *node) {
+    descriptor.attach = ^(ZynthUIManager *manager, ZynthNode *node) {
       if (![node.view isKindOfClass:[ZynthModalView class]]) return;
       ZynthModalView *view = (ZynthModalView *)node.view;
       [view bindWithManager:manager node:node];
     };
-    descriptor.cleanup = ^(SNUIManager *manager, SNNode *node) {
+    descriptor.cleanup = ^(ZynthUIManager *manager, ZynthNode *node) {
       if (![node.view isKindOfClass:[ZynthModalView class]]) return;
       ZynthModalView *view = (ZynthModalView *)node.view;
       [view reset];
     };
-    descriptor.handleSetProp = ^BOOL(SNUIManager *manager,
-                                     SNNode *node,
+    descriptor.handleSetProp = ^BOOL(ZynthUIManager *manager,
+                                     ZynthNode *node,
                                      NSString *name,
                                      id value,
                                      NSString *rawJSON) {
@@ -128,7 +128,7 @@ static BOOL ZynthModalParseBoolean(NSString *rawJSON, BOOL fallback) {
           }
         }
         if (colorString) {
-          UIColor *color = SNColorFromHex(colorString);
+          UIColor *color = ZynthColorFromHex(colorString);
           [view setOverlayColor:color];
         }
         return YES;
@@ -158,7 +158,7 @@ static BOOL ZynthModalParseBoolean(NSString *rawJSON, BOOL fallback) {
 
       return NO;
     };
-    descriptor.handleSetHandler = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name) {
+    descriptor.handleSetHandler = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name) {
       return [name isEqualToString:@"onOpenChange"] ||
              [name isEqualToString:@"onRequestClose"] ||
              [name isEqualToString:@"onDismiss"];

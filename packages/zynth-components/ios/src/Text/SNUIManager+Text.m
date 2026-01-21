@@ -4,9 +4,9 @@
 #import "ZynthKit.h"
 #import "ZynthComponentRegistry.h"
 #import "ZynthComponentAPI.h"
-#import "SNUIManager.h"
-#import "SNNode.h"
-#import "SNHexColor.h"
+#import "ZynthUIManager.h"
+#import "ZynthNode.h"
+#import "ZynthHexColor.h"
 #endif
 
 #import "ZynthTextView.h"
@@ -72,8 +72,8 @@ static UIFont *ZynthResolveFontFamily(NSString *fontFamily,
   return font;
 }
 
-static NSAttributedString *ZynthBuildAttributedText(SNUIManager *manager,
-                                                   SNNode *node,
+static NSAttributedString *ZynthBuildAttributedText(ZynthUIManager *manager,
+                                                   ZynthNode *node,
                                                    NSDictionary<NSAttributedStringKey, id> *inherited) {
   if (!node || ![node.view isKindOfClass:[ZynthTextView class]]) {
     return [[NSAttributedString alloc] initWithString:@""];
@@ -139,7 +139,7 @@ static NSAttributedString *ZynthBuildAttributedText(SNUIManager *manager,
 
   NSMutableAttributedString *builder = [[NSMutableAttributedString alloc] init];
   for (NSNumber *childId in node.children) {
-    SNNode *child = [manager zynth_nodeForId:childId];
+    ZynthNode *child = [manager zynth_nodeForId:childId];
     if (!child || ![child.view isKindOfClass:[ZynthTextView class]]) continue;
     NSAttributedString *childText = ZynthBuildAttributedText(manager, child, effective);
     [builder appendAttributedString:childText];
@@ -159,7 +159,7 @@ static NSAttributedString *ZynthBuildAttributedText(SNUIManager *manager,
 }
 
 // Helper function to refresh text for a label node by composing from children
-static void ZynthTextRefreshLabelNode(SNUIManager *manager, SNNode *node) {
+static void ZynthTextRefreshLabelNode(ZynthUIManager *manager, ZynthNode *node) {
   if (!node || ![node.view isKindOfClass:[ZynthTextView class]]) return;
 
   ZynthTextView *textView = (ZynthTextView *)node.view;
@@ -192,12 +192,12 @@ static void ZynthTextRefreshLabelNode(SNUIManager *manager, SNNode *node) {
 }
 
 // Helper function to propagate text changes up the tree
-static void ZynthTextPropagateChange(SNUIManager *manager, SNNode *node) {
+static void ZynthTextPropagateChange(ZynthUIManager *manager, ZynthNode *node) {
   if (!node) return;
 
   int parentId = node.parentId;
   while (parentId > 0) {
-    SNNode *parent = [manager zynth_nodeForId:@(parentId)];
+    ZynthNode *parent = [manager zynth_nodeForId:@(parentId)];
     if (!parent || ![parent.view isKindOfClass:[ZynthTextView class]]) break;
 
     ZynthTextRefreshLabelNode(manager, parent);
@@ -206,9 +206,9 @@ static void ZynthTextPropagateChange(SNUIManager *manager, SNNode *node) {
 }
 
 // Helper function to handle text insertion
-static BOOL ZynthTextHandleInsertion(SNUIManager *manager,
-                                    SNNode *parent,
-                                    SNNode *child,
+static BOOL ZynthTextHandleInsertion(ZynthUIManager *manager,
+                                    ZynthNode *parent,
+                                    ZynthNode *child,
                                     NSNumber *childId,
                                     NSUInteger index) {
   if (!parent || ![parent.view isKindOfClass:[ZynthTextView class]]) return NO;
@@ -227,9 +227,9 @@ static BOOL ZynthTextHandleInsertion(SNUIManager *manager,
 }
 
 // Helper function to handle text removal
-static BOOL ZynthTextHandleRemoval(SNUIManager *manager,
-                                  SNNode *parent,
-                                  SNNode *child,
+static BOOL ZynthTextHandleRemoval(ZynthUIManager *manager,
+                                  ZynthNode *parent,
+                                  ZynthNode *child,
                                   NSNumber *childId) {
   if (!parent || ![parent.view isKindOfClass:[ZynthTextView class]]) return NO;
 
@@ -301,8 +301,8 @@ static BOOL ZynthTextContainsPrivateUseGlyph(NSString *text) {
   return found;
 }
 
-static BOOL ZynthTextHandleSetProp(SNUIManager *manager,
-                                  SNNode *node,
+static BOOL ZynthTextHandleSetProp(ZynthUIManager *manager,
+                                  ZynthNode *node,
                                   NSString *name,
                                   id value,
                                   NSString *rawJSON) {
@@ -338,7 +338,7 @@ static BOOL ZynthTextHandleSetProp(SNUIManager *manager,
   return NO;
 }
 
-static void ZynthTextHandleStyle(SNUIManager *manager, SNNode *node, NSDictionary *style) {
+static void ZynthTextHandleStyle(ZynthUIManager *manager, ZynthNode *node, NSDictionary *style) {
   if (!node || ![node.view isKindOfClass:[ZynthTextView class]] || !style) return;
   
   ZynthTextView *textView = (ZynthTextView *)node.view;
@@ -433,7 +433,7 @@ static void ZynthTextHandleStyle(SNUIManager *manager, SNNode *node, NSDictionar
 
   NSString *color = style[@"color"];
   if (color) {
-    UIColor *uicolor = SNColorFromHex(color);
+    UIColor *uicolor = ZynthColorFromHex(color);
     textView.textColor = uicolor;
     attrs[NSForegroundColorAttributeName] = uicolor;
   }
@@ -470,19 +470,19 @@ static void ZynthTextHandleStyle(SNUIManager *manager, SNNode *node, NSDictionar
   }
 }
 
-@implementation SNUIManager (TextComponent)
+@implementation ZynthUIManager (TextComponent)
 
 + (void)load {
   static dispatch_once_t onceToken;
   dispatch_once(&onceToken, ^{
     ZynthComponentDescriptor *descriptor = [[ZynthComponentDescriptor alloc] initWithType:@"text"];
     
-    descriptor.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+    descriptor.createView = ^UIView *(ZynthUIManager *manager, NSString *type) {
       ZynthTextView *textView = [[ZynthTextView alloc] init];
       return textView;
     };
     
-    descriptor.attach = ^(SNUIManager *manager, SNNode *node) {
+    descriptor.attach = ^(ZynthUIManager *manager, ZynthNode *node) {
       if (![node.view isKindOfClass:[ZynthTextView class]]) return;
       
       ZynthTextView *textView = (ZynthTextView *)node.view;
@@ -495,21 +495,21 @@ static void ZynthTextHandleStyle(SNUIManager *manager, SNNode *node, NSDictionar
       }
     };
     
-    descriptor.handleSetProp = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name, id value, NSString *rawJSON) {
+    descriptor.handleSetProp = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name, id value, NSString *rawJSON) {
       return ZynthTextHandleSetProp(manager, node, name, value, rawJSON);
     };
     
-    descriptor.applyStyle = ^(SNUIManager *manager, SNNode *node, NSDictionary *style) {
+    descriptor.applyStyle = ^(ZynthUIManager *manager, ZynthNode *node, NSDictionary *style) {
       ZynthTextHandleStyle(manager, node, style);
     };
     
     // Custom insertion handler for text composition
-    descriptor.handleInsertChild = ^BOOL(SNUIManager *manager, SNNode *parent, SNNode *child, NSNumber *childId, NSUInteger index) {
+    descriptor.handleInsertChild = ^BOOL(ZynthUIManager *manager, ZynthNode *parent, ZynthNode *child, NSNumber *childId, NSUInteger index) {
       return ZynthTextHandleInsertion(manager, parent, child, childId, index);
     };
     
     // Custom removal handler for text composition
-    descriptor.handleRemoveChild = ^BOOL(SNUIManager *manager, SNNode *parent, SNNode *child, NSNumber *childId) {
+    descriptor.handleRemoveChild = ^BOOL(ZynthUIManager *manager, ZynthNode *parent, ZynthNode *child, NSNumber *childId) {
       return ZynthTextHandleRemoval(manager, parent, child, childId);
     };
     

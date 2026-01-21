@@ -3,7 +3,7 @@
 #if __has_include(<ZynthKit/ZynthKit.h>)
 #import <ZynthKit/ZynthKit.h>
 #else
-#import "SNNode.h"
+#import "ZynthNode.h"
 #endif
 
 @implementation ZynthTextView
@@ -21,7 +21,7 @@
 }
 
 - (void)zynth_refreshComposedText {
-  SNNode *node = self.zynth_node;
+  ZynthNode *node = self.zynth_node;
   if (!node) return;
   
   if (node.children.count == 0) {

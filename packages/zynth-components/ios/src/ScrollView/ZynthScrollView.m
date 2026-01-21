@@ -1,7 +1,7 @@
 #import "ZynthScrollView.h"
 
-#import "SNUIManager+Internal.h"
-#import "SNUIManager.h"
+#import "ZynthUIManager+Internal.h"
+#import "ZynthUIManager.h"
 
 #import <QuartzCore/QuartzCore.h>
 
@@ -10,8 +10,8 @@ static NSTimeInterval ZynthScrollCurrentTime(void) {
 }
 
 @interface ZynthScrollView ()
-@property(nonatomic, weak) SNUIManager *manager;
-@property(nonatomic, weak) SNNode *node;
+@property(nonatomic, weak) ZynthUIManager *manager;
+@property(nonatomic, weak) ZynthNode *node;
 @property(nonatomic, strong) UIScrollView *scrollView;
 @property(nonatomic, strong) UIView *contentView;
 @property(nonatomic, assign) ZynthScrollAxis axis;
@@ -108,7 +108,7 @@ static NSTimeInterval ZynthScrollCurrentTime(void) {
   _scrollView.delegate = nil;
 }
 
-- (void)attachToManager:(SNUIManager *_Nullable)manager node:(SNNode *_Nullable)node {
+- (void)attachToManager:(ZynthUIManager *_Nullable)manager node:(ZynthNode *_Nullable)node {
   self.manager = manager;
   self.node = node;
 }
@@ -659,12 +659,12 @@ static NSTimeInterval ZynthScrollCurrentTime(void) {
         NSDictionary *pending = self.pendingPayload;
         self.pendingPayload = nil;
         if (pending) {
-          [self.manager sn_dispatchEvent:@"onScroll" payload:pending toNode:self.node];
+          [self.manager zynth_dispatchEvent:@"onScroll" payload:pending toNode:self.node];
         }
       });
     }
   } else {
-    [self.manager sn_dispatchEvent:name payload:payload toNode:self.node];
+    [self.manager zynth_dispatchEvent:name payload:payload toNode:self.node];
   }
 }
 

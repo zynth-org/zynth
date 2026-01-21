@@ -1,4 +1,4 @@
-#import "SNUIManager+ZynthAlert.h"
+#import "ZynthUIManager+ZynthAlert.h"
 
 #if __has_include(<ZynthComponents/ZynthComponents-Swift.h>)
 #import <ZynthComponents/ZynthComponents-Swift.h>
@@ -13,7 +13,7 @@
 #endif
 
 #import "ZynthComponentRegistry.h"
-#import "SNNode.h"
+#import "ZynthNode.h"
 
 static NSString *ZynthAlertNormalizeJSONString(NSString *value) {
   if ([value rangeOfString:@"\\\""].location == NSNotFound) {
@@ -43,32 +43,32 @@ static id ZynthAlertParseJSON(NSString *rawJSON) {
   return parsed;
 }
 
-@implementation SNUIManager (ZynthAlert)
+@implementation ZynthUIManager (ZynthAlert)
 
 + (void)load {
   static dispatch_once_t onceToken;
   dispatch_once(&onceToken, ^{
     ZynthComponentDescriptor *descriptor = [[ZynthComponentDescriptor alloc] initWithType:@"zynth-alert"];
     
-    descriptor.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+    descriptor.createView = ^UIView *(ZynthUIManager *manager, NSString *type) {
       ZynthAlertView *view = [[ZynthAlertView alloc] init];
       return view;
     };
     
-    descriptor.attach = ^(SNUIManager *manager, SNNode *node) {
+    descriptor.attach = ^(ZynthUIManager *manager, ZynthNode *node) {
       if (![node.view isKindOfClass:[ZynthAlertView class]]) return;
       ZynthAlertView *view = (ZynthAlertView *)node.view;
       [view bindWithManager:manager node:node];
     };
     
-    descriptor.cleanup = ^(SNUIManager *manager, SNNode *node) {
+    descriptor.cleanup = ^(ZynthUIManager *manager, ZynthNode *node) {
       if (![node.view isKindOfClass:[ZynthAlertView class]]) return;
       ZynthAlertView *view = (ZynthAlertView *)node.view;
       [view reset];
     };
     
-    descriptor.handleSetProp = ^BOOL(SNUIManager *manager,
-                                     SNNode *node,
+    descriptor.handleSetProp = ^BOOL(ZynthUIManager *manager,
+                                     ZynthNode *node,
                                      NSString *name,
                                      id value,
                                      NSString *rawJSON) {
@@ -117,7 +117,7 @@ static id ZynthAlertParseJSON(NSString *rawJSON) {
       return NO;
     };
     
-    descriptor.handleSetHandler = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name) {
+    descriptor.handleSetHandler = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name) {
       return [name isEqualToString:@"onButtonPress"] || [name isEqualToString:@"onDismiss"];
     };
     

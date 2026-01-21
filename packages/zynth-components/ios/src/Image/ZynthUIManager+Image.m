@@ -1,5 +1,5 @@
-#import "SNUIManager+Image.h"
-#import "SNUIManager+Internal.h"
+#import "ZynthUIManager+Image.h"
+#import "ZynthUIManager+Internal.h"
 #import <SDWebImage/SDWebImage.h>
 #import <SDWebImageSVGCoder/SDWebImageSVGCoder.h>
 
@@ -22,6 +22,24 @@
   }
 }
 @end
+
+static NSString *const kSNImageTaskKey = @"imageTask";
+static NSString *const kSNImageSourceTokenKey = @"imageSourceToken";
+static NSString *const kSNImageTintColorKey = @"imageTintColor";
+
+static id SNImageAttachment(ZynthNode *node, NSString *key) {
+  if (!node || !key) return nil;
+  return node.attachments[key];
+}
+
+static void SNImageSetAttachment(ZynthNode *node, NSString *key, id value) {
+  if (!node || !key) return;
+  if (value) {
+    node.attachments[key] = value;
+  } else {
+    [node.attachments removeObjectForKey:key];
+  }
+}
 
 static id SNImageParseJSON(NSString *json) {
   if (!json || json.length == 0) return nil;
@@ -89,11 +107,11 @@ static NSString *SNImageNextToken(void) {
   return [[NSUUID UUID] UUIDString];
 }
 
-static BOOL SNImageIsImageNode(SNNode *node) {
+static BOOL SNImageIsImageNode(ZynthNode *node) {
   return node && [node.view isKindOfClass:[UIImageView class]];
 }
 
-static void SNImageApplyResizeMode(id value, SNNode *node, SNUIManager *manager) {
+static void SNImageApplyResizeMode(id value, ZynthNode *node, ZynthUIManager *manager) {
   if (!SNImageIsImageNode(node)) return;
   UIImageView *imageView = (UIImageView *)node.view;
   NSString *mode = [value isKindOfClass:[NSString class]] ? (NSString *)value : @"";
@@ -108,15 +126,15 @@ static void SNImageApplyResizeMode(id value, SNNode *node, SNUIManager *manager)
   } else {
     imageView.contentMode = UIViewContentModeScaleAspectFill;
   }
-  [manager sn_markNeedsFlush];
+  [manager zynth_markNeedsFlush];
 }
 
-static void SNImageApplyTintColor(id value, SNNode *node, SNUIManager *manager) {
+static void SNImageApplyTintColor(id value, ZynthNode *node, ZynthUIManager *manager) {
   if (!SNImageIsImageNode(node)) return;
 
   UIImageView *imageView = (UIImageView *)node.view;
   UIColor *color = SNImageColorFromValue(value);
-  node.imageTintColor = color;
+  SNImageSetAttachment(node, kSNImageTintColorKey, color);
 
   // Apply color as a CALayer filter instead of tintColor to blend with the image
   if (color) {
@@ -154,12 +172,14 @@ static void SNImageApplyTintColor(id value, SNNode *node, SNUIManager *manager) 
       imageView.image = [imageView.image imageWithRenderingMode:UIImageRenderingModeAlwaysOriginal];
     }
   }
-  [manager sn_markNeedsFlush];
+  [manager zynth_markNeedsFlush];
 }
 
-static void SNImageApplyImage(UIImage * _Nullable image, SNNode *node, NSString *token, SNUIManager *manager) {
+static void SNImageApplyImage(UIImage * _Nullable image, ZynthNode *node, NSString *token, ZynthUIManager *manager) {
   if (!SNImageIsImageNode(node)) return;
-  if (token.length == 0 || ![node.imageSourceToken isEqualToString:token]) {
+  NSString *currentToken = SNImageAttachment(node, kSNImageSourceTokenKey);
+  if (token.length == 0 || ![currentToken isKindOfClass:[NSString class]] ||
+      ![currentToken isEqualToString:token]) {
     return;
   }
 
@@ -172,7 +192,7 @@ static void SNImageApplyImage(UIImage * _Nullable image, SNNode *node, NSString 
         YGNodeMarkDirty(node.yoga);
       }
     }
-    [manager sn_markNeedsFlush];
+    [manager zynth_markNeedsFlush];
     return;
   }
 
@@ -181,7 +201,7 @@ static void SNImageApplyImage(UIImage * _Nullable image, SNNode *node, NSString 
   imageView.image = finalImage;
   
   // Reapply tint color if present
-  if (node.imageTintColor) {
+  if (SNImageAttachment(node, kSNImageTintColorKey)) {
     // Update tint layer frame to match new image bounds
     for (CALayer *sublayer in imageView.layer.sublayers) {
       if ([sublayer.name isEqualToString:@"tintColorLayer"]) {
@@ -195,20 +215,20 @@ static void SNImageApplyImage(UIImage * _Nullable image, SNNode *node, NSString 
       YGNodeMarkDirty(node.yoga);
     }
   }
-  [manager sn_markNeedsFlush];
+  [manager zynth_markNeedsFlush];
 
   NSDictionary *payload = @{ @"target": @(node.nid),
                               @"width": @(image.size.width),
                               @"height": @(image.size.height) };
-  [manager sn_dispatchEvent:@"onLoad" payload:payload toNode:node];
+  [manager zynth_dispatchEvent:@"onLoad" payload:payload toNode:node];
 }
 
-static void SNImageEmitError(NSString *message, SNNode *node, SNUIManager *manager) {
+static void SNImageEmitError(NSString *message, ZynthNode *node, ZynthUIManager *manager) {
   NSDictionary *payload = message.length > 0 ? @{ @"target": @(node.nid), @"message": message } : @{ @"target": @(node.nid) };
-  [manager sn_dispatchEvent:@"onError" payload:payload toNode:node];
+  [manager zynth_dispatchEvent:@"onError" payload:payload toNode:node];
 }
 
-static void SNImageLoadBase64(NSString *data, id scaleValue, SNNode *node, NSString *token, SNUIManager *manager) {
+static void SNImageLoadBase64(NSString *data, id scaleValue, ZynthNode *node, NSString *token, ZynthUIManager *manager) {
   NSString *payload = data;
   NSRange comma = [payload rangeOfString:@","];
   if (comma.location != NSNotFound) {
@@ -238,7 +258,7 @@ static void SNImageLoadBase64(NSString *data, id scaleValue, SNNode *node, NSStr
   SNImageApplyImage(image, node, token, manager);
 }
 
-static void SNImageLoadAsset(NSString *asset, id bundleValue, id scaleValue, SNNode *node, NSString *token, SNUIManager *manager) {
+static void SNImageLoadAsset(NSString *asset, id bundleValue, id scaleValue, ZynthNode *node, NSString *token, ZynthUIManager *manager) {
   NSBundle *bundle = [NSBundle mainBundle];
   if ([bundleValue isKindOfClass:[NSString class]]) {
     NSString *bundlePath = [[NSBundle mainBundle] pathForResource:bundleValue ofType:nil];
@@ -266,7 +286,7 @@ static void SNImageLoadAsset(NSString *asset, id bundleValue, id scaleValue, SNN
   SNImageApplyImage(image, node, token, manager);
 }
 
-static void SNImageLoadSystem(NSString *name, SNNode *node, NSString *token, SNUIManager *manager) {
+static void SNImageLoadSystem(NSString *name, ZynthNode *node, NSString *token, ZynthUIManager *manager) {
   NSLog(@"[SNImageLoadSystem] Loading system icon: '%@'", name);
   if (@available(iOS 13.0, *)) {
     UIImage *image = [UIImage systemImageNamed:name];
@@ -281,7 +301,7 @@ static void SNImageLoadSystem(NSString *name, SNNode *node, NSString *token, SNU
   }
 }
 
-static void SNImageLoadURI(NSString *uri, NSDictionary * _Nullable info, SNNode *node, NSString *token, SNUIManager *manager) {
+static void SNImageLoadURI(NSString *uri, NSDictionary * _Nullable info, ZynthNode *node, NSString *token, ZynthUIManager *manager) {
   NSString *lower = uri.lowercaseString;
   if ([lower hasPrefix:@"data:"]) {
     SNImageLoadBase64(uri, info[@"scale"], node, token, manager);
@@ -350,8 +370,8 @@ static void SNImageLoadURI(NSString *uri, NSDictionary * _Nullable info, SNNode 
       context = @{SDWebImageContextDownloadRequestModifier: modifier};
   }
 
-  __weak SNNode *weakNode = node;
-  __weak SNUIManager *weakManager = manager;
+  __weak ZynthNode *weakNode = node;
+  __weak ZynthUIManager *weakManager = manager;
   
   id<SDWebImageOperation> operation = [[SDWebImageManager sharedManager] loadImageWithURL:url
                                                    options:SDWebImageRetryFailed
@@ -359,15 +379,16 @@ static void SNImageLoadURI(NSString *uri, NSDictionary * _Nullable info, SNNode 
                                                   progress:nil
                                                  completed:^(UIImage * _Nullable image, NSData * _Nullable data, NSError * _Nullable error, SDImageCacheType cacheType, BOOL finished, NSURL * _Nullable imageURL) {
     dispatch_async(dispatch_get_main_queue(), ^{
-      SNNode *strongNode = weakNode;
-      SNUIManager *strongManager = weakManager;
+      ZynthNode *strongNode = weakNode;
+      ZynthUIManager *strongManager = weakManager;
       if (!strongManager || !strongNode) return;
-      if (![strongNode.imageSourceToken isEqualToString:token]) {
+      NSString *strongToken = SNImageAttachment(strongNode, kSNImageSourceTokenKey);
+      if (![strongToken isKindOfClass:[NSString class]] || ![strongToken isEqualToString:token]) {
         return;
       }
       // Only clear task if finished
       if (finished) {
-          strongNode.imageTask = nil;
+          SNImageSetAttachment(strongNode, kSNImageTaskKey, nil);
       }
       
       if (error) {
@@ -385,19 +406,21 @@ static void SNImageLoadURI(NSString *uri, NSDictionary * _Nullable info, SNNode 
     });
   }];
 
-  node.imageTask = operation;
+  SNImageSetAttachment(node, kSNImageTaskKey, operation);
 }
 
-static void SNImageApplySourceValue(id value, SNNode *node, SNUIManager *manager) {
-  if (node.imageTask) {
-    [node.imageTask cancel];
-    node.imageTask = nil;
+static void SNImageApplySourceValue(id value, ZynthNode *node, ZynthUIManager *manager) {
+  id<SDWebImageOperation> existing = SNImageAttachment(node, kSNImageTaskKey);
+  if (existing) {
+    [existing cancel];
+    SNImageSetAttachment(node, kSNImageTaskKey, nil);
   }
 
-  node.imageSourceToken = SNImageNextToken();
+  NSString *token = SNImageNextToken();
+  SNImageSetAttachment(node, kSNImageSourceTokenKey, token);
 
   if (!value) {
-    SNImageApplyImage(nil, node, node.imageSourceToken, manager);
+    SNImageApplyImage(nil, node, token, manager);
     return;
   }
 
@@ -410,7 +433,7 @@ static void SNImageApplySourceValue(id value, SNNode *node, SNUIManager *manager
 
   id first = candidates.firstObject;
   if (!first || [first isKindOfClass:[NSNull class]]) {
-    SNImageApplyImage(nil, node, node.imageSourceToken, manager);
+    SNImageApplyImage(nil, node, token, manager);
     return;
   }
 
@@ -422,36 +445,36 @@ static void SNImageApplySourceValue(id value, SNNode *node, SNUIManager *manager
     NSString *data = dict[@"data"];
 
     if (data.length > 0) {
-      SNImageLoadBase64(data, dict[@"scale"], node, node.imageSourceToken, manager);
+      SNImageLoadBase64(data, dict[@"scale"], node, token, manager);
       return;
     }
 
     if (system.length > 0) {
-      SNImageLoadSystem(system, node, node.imageSourceToken, manager);
+      SNImageLoadSystem(system, node, token, manager);
       return;
     }
 
     if (asset.length > 0) {
-      SNImageLoadAsset(asset, dict[@"bundle"], dict[@"scale"], node, node.imageSourceToken, manager);
+      SNImageLoadAsset(asset, dict[@"bundle"], dict[@"scale"], node, token, manager);
       return;
     }
 
     if (uri.length > 0) {
-      SNImageLoadURI(uri, dict, node, node.imageSourceToken, manager);
+      SNImageLoadURI(uri, dict, node, token, manager);
       return;
     }
   }
 
   if ([first isKindOfClass:[NSString class]]) {
-    SNImageLoadURI(first, nil, node, node.imageSourceToken, manager);
+    SNImageLoadURI(first, nil, node, token, manager);
     return;
   }
 
   SNImageEmitError(@"Unsupported image source", node, manager);
 }
 
-static BOOL ZynthImageHandleSetProp(SNUIManager *manager,
-                                   SNNode *node,
+static BOOL ZynthImageHandleSetProp(ZynthUIManager *manager,
+                                   ZynthNode *node,
                                    NSString *name,
                                    id value,
                                    NSString *rawJSON) {
@@ -480,8 +503,8 @@ static BOOL ZynthImageHandleSetProp(SNUIManager *manager,
   return NO;
 }
 
-static BOOL ZynthImageHandleSetHandler(SNUIManager *manager,
-                                      SNNode *node,
+static BOOL ZynthImageHandleSetHandler(ZynthUIManager *manager,
+                                      ZynthNode *node,
                                       NSString *name) {
   if (!SNImageIsImageNode(node)) {
     return NO;
@@ -500,26 +523,27 @@ static BOOL ZynthImageHandleSetHandler(SNUIManager *manager,
   return NO;
 }
 
-static void ZynthImageCleanup(SNUIManager *manager, SNNode *node) {
+static void ZynthImageCleanup(ZynthUIManager *manager, ZynthNode *node) {
   if (!SNImageIsImageNode(node)) {
     return;
   }
 
-  if (node.imageTask) {
-    [node.imageTask cancel];
-    node.imageTask = nil;
+  id<SDWebImageOperation> task = SNImageAttachment(node, kSNImageTaskKey);
+  if (task) {
+    [task cancel];
+    SNImageSetAttachment(node, kSNImageTaskKey, nil);
   }
-  node.imageSourceToken = nil;
+  SNImageSetAttachment(node, kSNImageSourceTokenKey, nil);
   node.hasOnLoadHandler = NO;
   node.hasOnErrorHandler = NO;
-  node.imageTintColor = nil;
+  SNImageSetAttachment(node, kSNImageTintColorKey, nil);
 
   UIImageView *imageView = (UIImageView *)node.view;
   imageView.image = nil;
   imageView.tintColor = nil;
 
-  [manager sn_storeEventPayload:nil forNode:node name:@"onLoad"];
-  [manager sn_storeEventPayload:nil forNode:node name:@"onError"];
+  [manager zynth_storeEventPayload:nil forNode:node name:@"onLoad"];
+  [manager zynth_storeEventPayload:nil forNode:node name:@"onError"];
 }
 
 static YGSize SNMeasureImageFunc(YGNodeConstRef yogaNode,
@@ -580,7 +604,7 @@ static YGSize SNMeasureImageFunc(YGNodeConstRef yogaNode,
   return (YGSize){.width = MAX(1, outW), .height = MAX(1, outH)};
 }
 
-@implementation SNUIManager (ImageComponent)
+@implementation ZynthUIManager (ImageComponent)
 
 + (void)load {
   static dispatch_once_t onceToken;
@@ -588,25 +612,25 @@ static YGSize SNMeasureImageFunc(YGNodeConstRef yogaNode,
     [SDImageCodersManager.sharedManager addCoder:[SDImageSVGCoder sharedCoder]];
 
     ZynthComponentDescriptor *descriptor = [[ZynthComponentDescriptor alloc] initWithType:@"image"];
-    descriptor.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+    descriptor.createView = ^UIView *(ZynthUIManager *manager, NSString *type) {
       UIImageView *imageView = [ZynthImageView new];
       imageView.clipsToBounds = YES;
       imageView.contentMode = UIViewContentModeScaleAspectFill;
       return imageView;
     };
-    descriptor.attach = ^(SNUIManager *manager, SNNode *node) {
+    descriptor.attach = ^(ZynthUIManager *manager, ZynthNode *node) {
       if (![node.view isKindOfClass:[UIImageView class]]) return;
       if (!node.yoga) return;
       YGNodeSetContext(node.yoga, (__bridge void *)node.view);
       YGNodeSetMeasureFunc(node.yoga, SNMeasureImageFunc);
     };
-    descriptor.handleSetProp = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name, id value, NSString *rawJSON) {
+    descriptor.handleSetProp = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name, id value, NSString *rawJSON) {
       return ZynthImageHandleSetProp(manager, node, name, value, rawJSON);
     };
-    descriptor.handleSetHandler = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name) {
+    descriptor.handleSetHandler = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name) {
       return ZynthImageHandleSetHandler(manager, node, name);
     };
-    descriptor.cleanup = ^(SNUIManager *manager, SNNode *node) {
+    descriptor.cleanup = ^(ZynthUIManager *manager, ZynthNode *node) {
       ZynthImageCleanup(manager, node);
     };
     ZynthRegisterComponentDescriptor(descriptor);
@@ -617,7 +641,7 @@ static YGSize SNMeasureImageFunc(YGNodeConstRef yogaNode,
 
 #else
 
-@implementation SNUIManager (ImageComponent)
+@implementation ZynthUIManager (ImageComponent)
 
 + (void)load {
 }

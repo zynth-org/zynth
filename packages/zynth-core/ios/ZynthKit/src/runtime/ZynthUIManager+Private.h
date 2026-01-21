@@ -1,5 +1,7 @@
 #import "ZynthUIManager.h"
 #import "ZynthYogaLayout.h"
+#import "ZynthNode.h"
+#import "ZynthComponentRegistry.h"
 #import <QuartzCore/QuartzCore.h>
 #import <UIKit/UIKit.h>
 
@@ -11,6 +13,8 @@ NS_ASSUME_NONNULL_BEGIN
 @interface ZynthUIManager () {
   __weak UIView *_rootView;
   NSMutableDictionary<NSNumber *, UIView *> *_nodes;
+  NSMutableDictionary<NSNumber *, ZynthNode *> *_nodeStates;
+  NSMutableDictionary<NSString *, NSDictionary *> *_eventPayloads;
   NSMutableDictionary<NSNumber *, NSNumber *> *_parents;
   NSMutableDictionary<NSNumber *, NSNumber *> *_nodeSurfaces;
   NSMutableDictionary<NSNumber *, UIView *> *_surfaceRoots;

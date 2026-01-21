@@ -1,19 +1,19 @@
 #if __has_include(<ZynthKit/ZynthKit.h>)
 #import <ZynthKit/ZynthKit.h>
-#import <ZynthKit/SNHexColor.h>
+#import <ZynthKit/ZynthHexColor.h>
 #else
 #import "ZynthKit.h"
 #import "ZynthComponentRegistry.h"
 #import "ZynthComponentAPI.h"
-#import "SNUIManager.h"
-#import "SNNode.h"
-#import "SNHexColor.h"
+#import "ZynthUIManager.h"
+#import "ZynthNode.h"
+#import "ZynthHexColor.h"
 #endif
 
 #import "ZynthPressableView.h"
 
-static BOOL ZynthPressableHandleSetProp(SNUIManager *manager,
-                                       SNNode *node,
+static BOOL ZynthPressableHandleSetProp(ZynthUIManager *manager,
+                                       ZynthNode *node,
                                        NSString *name,
                                        id value,
                                        NSString *rawJSON) {
@@ -116,7 +116,7 @@ static BOOL ZynthPressableHandleSetProp(SNUIManager *manager,
   if ([name isEqualToString:@"tintColor"]) {
     UIColor *color = nil;
     if ([value isKindOfClass:[NSString class]]) {
-      color = SNColorFromHex((NSString *)value);
+      color = ZynthColorFromHex((NSString *)value);
     }
     [pressable zynth_setGlassTintColor:color];
     return YES;
@@ -145,8 +145,8 @@ static BOOL ZynthPressableHandleSetProp(SNUIManager *manager,
   return NO;
 }
 
-static BOOL ZynthPressableHandleSetHandler(SNUIManager *manager,
-                                          SNNode *node,
+static BOOL ZynthPressableHandleSetHandler(ZynthUIManager *manager,
+                                          ZynthNode *node,
                                           NSString *name) {
   if (!node || ![node.view isKindOfClass:[ZynthPressableView class]]) {
     return NO;
@@ -175,29 +175,29 @@ static BOOL ZynthPressableHandleSetHandler(SNUIManager *manager,
   return NO;
 }
 
-@interface SNUIManager (PressableComponent) <ZynthPressableViewDelegate>
+@interface ZynthUIManager (PressableComponent) <ZynthPressableViewDelegate>
 @end
 
-@implementation SNUIManager (PressableComponent)
+@implementation ZynthUIManager (PressableComponent)
 
 + (void)load {
   static dispatch_once_t onceToken;
   dispatch_once(&onceToken, ^{
     ZynthComponentDescriptor *descriptor = [[ZynthComponentDescriptor alloc] initWithType:@"pressable"];
-    descriptor.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+    descriptor.createView = ^UIView *(ZynthUIManager *manager, NSString *type) {
       ZynthPressableView *pressable = [ZynthPressableView new];
       return pressable;
     };
-    descriptor.attach = ^(SNUIManager *manager, SNNode *node) {
+    descriptor.attach = ^(ZynthUIManager *manager, ZynthNode *node) {
       if (![node.view isKindOfClass:[ZynthPressableView class]]) return;
       ZynthPressableView *pressable = (ZynthPressableView *)node.view;
       pressable.delegate = manager;
       [pressable attachToManager:manager node:node];
     };
-    descriptor.handleSetProp = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name, id value, NSString *rawJSON) {
+    descriptor.handleSetProp = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name, id value, NSString *rawJSON) {
       return ZynthPressableHandleSetProp(manager, node, name, value, rawJSON);
     };
-    descriptor.handleSetHandler = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name) {
+    descriptor.handleSetHandler = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name) {
       return ZynthPressableHandleSetHandler(manager, node, name);
     };
     ZynthRegisterComponentDescriptor(descriptor);
@@ -207,13 +207,13 @@ static BOOL ZynthPressableHandleSetHandler(SNUIManager *manager,
 #pragma mark - ZynthPressableViewDelegate
 
 - (void)pressableView:(ZynthPressableView *)view didPressIn:(NSDictionary *)payload {
-  SNNode *node = view.zynth_node;
+  ZynthNode *node = view.zynth_node;
   if (!node) return;
   [self zynth_dispatchEvent:@"onPressIn" payload:payload ?: @{} toNode:node];
 }
 
 - (void)pressableView:(ZynthPressableView *)view didPressOut:(NSDictionary *)payload cancelled:(BOOL)cancelled {
-  SNNode *node = view.zynth_node;
+  ZynthNode *node = view.zynth_node;
   if (!node) return;
   NSMutableDictionary *data = [payload mutableCopy] ?: [NSMutableDictionary new];
   data[@"cancelled"] = @(cancelled);
@@ -221,13 +221,13 @@ static BOOL ZynthPressableHandleSetHandler(SNUIManager *manager,
 }
 
 - (void)pressableView:(ZynthPressableView *)view didPress:(NSDictionary *)payload {
-  SNNode *node = view.zynth_node;
+  ZynthNode *node = view.zynth_node;
   if (!node) return;
   [self zynth_dispatchEvent:@"onPress" payload:payload ?: @{} toNode:node];
 }
 
 - (void)pressableView:(ZynthPressableView *)view didLongPress:(NSDictionary *)payload duration:(CFTimeInterval)duration {
-  SNNode *node = view.zynth_node;
+  ZynthNode *node = view.zynth_node;
   if (!node) return;
   NSMutableDictionary *data = [payload mutableCopy] ?: [NSMutableDictionary new];
   data[@"durationMs"] = @(duration);
@@ -235,32 +235,32 @@ static BOOL ZynthPressableHandleSetHandler(SNUIManager *manager,
 }
 
 - (void)pressableView:(ZynthPressableView *)view didDoublePress:(NSDictionary *)payload {
-  SNNode *node = view.zynth_node;
+  ZynthNode *node = view.zynth_node;
   if (!node) return;
   [self zynth_dispatchEvent:@"onDoublePress" payload:payload ?: @{} toNode:node];
 }
 
 - (void)pressableViewDidHover:(ZynthPressableView *)view hovering:(BOOL)hovering {
-  SNNode *node = view.zynth_node;
+  ZynthNode *node = view.zynth_node;
   if (!node) return;
   NSString *event = hovering ? @"onHoverIn" : @"onHoverOut";
   [self zynth_dispatchEvent:event payload:@{} toNode:node];
 }
 
 - (void)pressableViewDidFocus:(ZynthPressableView *)view {
-  SNNode *node = view.zynth_node;
+  ZynthNode *node = view.zynth_node;
   if (!node) return;
   [self zynth_dispatchEvent:@"onFocus" payload:@{} toNode:node];
 }
 
 - (void)pressableViewDidBlur:(ZynthPressableView *)view {
-  SNNode *node = view.zynth_node;
+  ZynthNode *node = view.zynth_node;
   if (!node) return;
   [self zynth_dispatchEvent:@"onBlur" payload:@{} toNode:node];
 }
 
 - (void)pressableView:(ZynthPressableView *)view didEmitKeyEvent:(NSString *)phase payload:(NSDictionary *)payload {
-  SNNode *node = view.zynth_node;
+  ZynthNode *node = view.zynth_node;
   if (!node) return;
   [self zynth_dispatchEvent:phase payload:payload ?: @{} toNode:node];
 }

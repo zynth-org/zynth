@@ -11,27 +11,27 @@
 #endif
 
 #import "ZynthComponentRegistry.h"
-#import "SNNode.h"
+#import "ZynthNode.h"
 
-@implementation SNUIManager (ZynthStatusBar)
+@implementation ZynthUIManager (ZynthStatusBar)
 
 + (void)load {
   static dispatch_once_t onceToken;
   dispatch_once(&onceToken, ^{
     ZynthComponentDescriptor *descriptor = [[ZynthComponentDescriptor alloc] initWithType:@"zynth-status-bar"];
 
-    descriptor.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+    descriptor.createView = ^UIView *(ZynthUIManager *manager, NSString *type) {
       return [[ZynthStatusBarView alloc] init];
     };
 
-    descriptor.cleanup = ^(SNUIManager *manager, SNNode *node) {
+    descriptor.cleanup = ^(ZynthUIManager *manager, ZynthNode *node) {
       if (![node.view isKindOfClass:[ZynthStatusBarView class]]) return;
       ZynthStatusBarView *view = (ZynthStatusBarView *)node.view;
       [view reset];
     };
 
-    descriptor.handleSetProp = ^BOOL(SNUIManager *manager,
-                                     SNNode *node,
+    descriptor.handleSetProp = ^BOOL(ZynthUIManager *manager,
+                                     ZynthNode *node,
                                      NSString *name,
                                      id value,
                                      NSString *rawJSON) {

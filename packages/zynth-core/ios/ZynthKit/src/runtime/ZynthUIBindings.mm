@@ -6,6 +6,7 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 using namespace facebook::jsi;
 
@@ -36,6 +37,8 @@ struct HandlerEntry {
 
 static std::unordered_map<HandlerKey, HandlerEntry, HandlerKeyHash> sHandlers;
 static std::mutex sHandlersMutex;
+
+static Value ZynthConvertToJSI(Runtime &rt, id value);
 
 static void registerHandler(Runtime &rt, int nodeId, const std::string &name, Function &&fn) {
   std::lock_guard<std::mutex> lock(sHandlersMutex);
@@ -72,6 +75,42 @@ static NSString *ZynthStringifyStyleValue(Runtime &rt, const Value &value) {
     return nil;
   }
   return nil;
+}
+
+static Value ZynthConvertToJSI(Runtime &rt, id value) {
+  if (!value || value == (id)kCFNull) {
+    return Value::null();
+  }
+  if ([value isKindOfClass:[NSString class]]) {
+    NSString *str = (NSString *)value;
+    return Value(String::createFromUtf8(rt, str.UTF8String));
+  }
+  if ([value isKindOfClass:[NSNumber class]]) {
+    NSNumber *num = (NSNumber *)value;
+    if (CFGetTypeID((__bridge CFTypeRef)num) == CFBooleanGetTypeID()) {
+      return Value((bool)num.boolValue);
+    }
+    return Value((double)num.doubleValue);
+  }
+  if ([value isKindOfClass:[NSArray class]]) {
+    NSArray *array = (NSArray *)value;
+    Array jsArray(rt, array.count);
+    for (NSUInteger i = 0; i < array.count; i++) {
+      jsArray.setValueAtIndex(rt, i, ZynthConvertToJSI(rt, array[i]));
+    }
+    return Value(std::move(jsArray));
+  }
+  if ([value isKindOfClass:[NSDictionary class]]) {
+    NSDictionary *dict = (NSDictionary *)value;
+    Object obj(rt);
+    for (id key in dict) {
+      if (![key isKindOfClass:[NSString class]]) continue;
+      NSString *keyString = (NSString *)key;
+      obj.setProperty(rt, keyString.UTF8String, ZynthConvertToJSI(rt, dict[key]));
+    }
+    return Value(std::move(obj));
+  }
+  return Value::undefined();
 }
 } // namespace
 
@@ -170,6 +209,45 @@ extern "C" void ZynthUIInvokeLayoutEvent(int nodeId,
     if (DEBUG_RUNTIME) {
       NSString *message = [NSString stringWithUTF8String:ex.what()];
       NSLog(@"[ZynthUI] layout handler exception for %d: %@", nodeId, message);
+    }
+  }
+}
+
+extern "C" void ZynthUIInvokeEvent(int nodeId, const char *name, NSDictionary *payload) {
+  std::string eventName = name ? name : "";
+  if (eventName.empty()) return;
+  Runtime *runtime = nullptr;
+  std::shared_ptr<Function> handler;
+  {
+    std::lock_guard<std::mutex> lock(sHandlersMutex);
+    HandlerKey key{nodeId, eventName};
+    auto it = sHandlers.find(key);
+    if (it == sHandlers.end()) return;
+    runtime = it->second.runtime;
+    handler = it->second.handler;
+  }
+  if (!runtime || !handler) return;
+  Runtime &rt = *runtime;
+  Value payloadValue = ZynthConvertToJSI(rt, payload);
+  try {
+    if (payloadValue.isUndefined() || payloadValue.isNull()) {
+      handler->call(rt);
+    } else {
+      handler->call(rt, payloadValue);
+    }
+  } catch (const JSError &error) {
+    if (DEBUG_RUNTIME) {
+      NSString *message = [NSString stringWithUTF8String:error.getMessage().c_str()];
+      NSString *stack = [NSString stringWithUTF8String:error.getStack().c_str()];
+      NSLog(@"[ZynthUI] handler error for %d/%s: %@", nodeId, eventName.c_str(), message);
+      if (stack.length > 0) {
+        NSLog(@"[ZynthUI] stack: %@", stack);
+      }
+    }
+  } catch (const std::exception &ex) {
+    if (DEBUG_RUNTIME) {
+      NSString *message = [NSString stringWithUTF8String:ex.what()];
+      NSLog(@"[ZynthUI] handler exception for %d/%s: %@", nodeId, eventName.c_str(), message);
     }
   }
 }
@@ -374,6 +452,108 @@ void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
       [manager](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
         if (count < 1 || !args[0].isObject()) return Value::undefined();
         Object payload = args[0].asObject(rt);
+        Value opsPackedVal = payload.getProperty(rt, "ops");
+        Value stringTableVal = payload.getProperty(rt, "stringTable");
+        if (opsPackedVal.isObject() && stringTableVal.isObject()) {
+          Array opsPacked = opsPackedVal.asObject(rt).asArray(rt);
+          Array stringTable = stringTableVal.asObject(rt).asArray(rt);
+          const size_t stringCount = stringTable.length(rt);
+          std::vector<std::string> strings;
+          strings.reserve(stringCount);
+          for (size_t i = 0; i < stringCount; i++) {
+            Value entry = stringTable.getValueAtIndex(rt, i);
+            if (entry.isString()) {
+              strings.push_back(entry.asString(rt).utf8(rt));
+            } else {
+              strings.emplace_back();
+            }
+          }
+          const size_t opCount = opsPacked.length(rt);
+          size_t i = 0;
+          auto getString = [&strings](size_t index) -> const std::string & {
+            static const std::string empty;
+            if (index >= strings.size()) return empty;
+            return strings[index];
+          };
+          while (i < opCount) {
+            Value opVal = opsPacked.getValueAtIndex(rt, i++);
+            if (!opVal.isNumber()) break;
+            int opcode = static_cast<int>(opVal.asNumber());
+            switch (opcode) {
+              case 1: { // setProp
+                if (i + 3 >= opCount) { i = opCount; break; }
+                int nodeId = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
+                int keyIndex = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
+                int valueType = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
+                double payloadVal = opsPacked.getValueAtIndex(rt, i++).asNumber();
+                const std::string &key = getString(static_cast<size_t>(keyIndex));
+                switch (valueType) {
+                  case 1: {
+                    std::string value = std::to_string(payloadVal);
+                    [manager setProp:@(nodeId)
+                                name:[NSString stringWithUTF8String:key.c_str()]
+                               value:[NSString stringWithUTF8String:value.c_str()]];
+                    break;
+                  }
+                  case 2: {
+                    const std::string &value = getString(static_cast<size_t>(payloadVal));
+                    [manager setProp:@(nodeId)
+                                name:[NSString stringWithUTF8String:key.c_str()]
+                               value:[NSString stringWithUTF8String:value.c_str()]];
+                    break;
+                  }
+                  case 3: {
+                    const char *boolValue = payloadVal != 0 ? "true" : "false";
+                    [manager setProp:@(nodeId)
+                                name:[NSString stringWithUTF8String:key.c_str()]
+                               value:[NSString stringWithUTF8String:boolValue]];
+                    break;
+                  }
+                  case 0:
+                  default: {
+                    [manager setProp:@(nodeId)
+                                name:[NSString stringWithUTF8String:key.c_str()]
+                               value:@"null"];
+                    break;
+                  }
+                }
+                break;
+              }
+              case 2: { // setText
+                if (i + 1 >= opCount) { i = opCount; break; }
+                int nodeId = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
+                int textIndex = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
+                const std::string &text = getString(static_cast<size_t>(textIndex));
+                [manager setText:@(nodeId)
+                            text:[NSString stringWithUTF8String:text.c_str()]];
+                break;
+              }
+              case 3: { // insertChild
+                if (i + 2 >= opCount) { i = opCount; break; }
+                int parentId = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
+                int childId = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
+                int index = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
+                [manager insertChild:@(parentId)
+                               child:@(childId)
+                               index:@(index)];
+                break;
+              }
+              case 4: { // removeChild
+                if (i + 1 >= opCount) { i = opCount; break; }
+                int parentId = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
+                int childId = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
+                removeHandlersForNode(childId);
+                [manager removeChild:@(parentId)
+                                child:@(childId)];
+                break;
+              }
+              default:
+                i = opCount;
+                break;
+            }
+          }
+          return Value::undefined();
+        }
         Value opsVal = payload.getProperty(rt, "operations");
         if (!opsVal.isObject()) return Value::undefined();
         Array ops = opsVal.asObject(rt).asArray(rt);

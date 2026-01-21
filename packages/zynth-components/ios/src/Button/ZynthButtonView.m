@@ -1,5 +1,5 @@
 #import "ZynthButtonView.h"
-#import "SNUIManager+Internal.h"
+#import "ZynthUIManager+Internal.h"
 #import <QuartzCore/QuartzCore.h>
 #if __has_include("ZynthComponents-Swift.h")
 #import "ZynthComponents-Swift.h"
@@ -8,8 +8,8 @@
 static const CFTimeInterval kZynthButtonLongPressDuration = 0.5;
 
 @interface ZynthButtonView ()
-@property(nonatomic, weak, nullable) SNUIManager *manager;
-@property(nonatomic, weak, nullable) SNNode *node;
+@property(nonatomic, weak, nullable) ZynthUIManager *manager;
+@property(nonatomic, weak, nullable) ZynthNode *node;
 
 // State
 @property(nonatomic, assign) BOOL zynthDisabled;
@@ -122,7 +122,7 @@ static const CFTimeInterval kZynthButtonLongPressDuration = 0.5;
   [_longPressTimer invalidate];
 }
 
-- (void)attachToManager:(SNUIManager *)manager node:(SNNode *)node {
+- (void)attachToManager:(ZynthUIManager *)manager node:(ZynthNode *)node {
   self.manager = manager;
   self.node = node;
   self.nodeId = node ? node.nid : -1;

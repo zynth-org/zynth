@@ -1,12 +1,12 @@
 #if __has_include(<ZynthKit/ZynthKit.h>)
 #import <ZynthKit/ZynthKit.h>
-#import <ZynthKit/SNHexColor.h>
+#import <ZynthKit/ZynthHexColor.h>
 #else
 #import "ZynthKit.h"
 #import "ZynthComponentAPI.h"
-#import "SNUIManager.h"
-#import "SNNode.h"
-#import "SNHexColor.h"
+#import "ZynthUIManager.h"
+#import "ZynthNode.h"
+#import "ZynthHexColor.h"
 #import "ZynthViewHost.h"
 #endif
 
@@ -46,8 +46,8 @@ static YGSize ZynthProgressIndicatorMeasureFunc(YGNodeConstRef node,
 
 #pragma mark - Property Handling
 
-static BOOL ZynthProgressIndicatorHandleSetProp(SNUIManager *manager,
-                                               SNNode *node,
+static BOOL ZynthProgressIndicatorHandleSetProp(ZynthUIManager *manager,
+                                               ZynthNode *node,
                                                NSString *name,
                                                id value,
                                                NSString *rawJSON) {
@@ -59,7 +59,7 @@ static BOOL ZynthProgressIndicatorHandleSetProp(SNUIManager *manager,
   if ([name isEqualToString:@"color"]) {
     UIColor *color = nil;
     if ([value isKindOfClass:[NSString class]]) {
-      color = SNColorFromHex((NSString *)value);
+      color = ZynthColorFromHex((NSString *)value);
     }
     [indicator zynth_setColor:color];
     return YES;
@@ -91,17 +91,17 @@ static BOOL ZynthProgressIndicatorHandleSetProp(SNUIManager *manager,
   return NO;
 }
 
-@implementation SNUIManager (ProgressIndicatorComponent)
+@implementation ZynthUIManager (ProgressIndicatorComponent)
 
 + (void)load {
   static dispatch_once_t onceToken;
   dispatch_once(&onceToken, ^{
     ZynthComponentDescriptor *descriptor = [[ZynthComponentDescriptor alloc] initWithType:@"progress-indicator"];
-    descriptor.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+    descriptor.createView = ^UIView *(ZynthUIManager *manager, NSString *type) {
       ZynthProgressIndicatorView *indicator = [ZynthProgressIndicatorView new];
       return indicator;
     };
-    descriptor.attach = ^(SNUIManager *manager, SNNode *node) {
+    descriptor.attach = ^(ZynthUIManager *manager, ZynthNode *node) {
       if (![node.view isKindOfClass:[ZynthProgressIndicatorView class]]) return;
       ZynthProgressIndicatorView *indicator = (ZynthProgressIndicatorView *)node.view;
       indicator.nodeId = node ? node.nid : -1;
@@ -112,7 +112,7 @@ static BOOL ZynthProgressIndicatorHandleSetProp(SNUIManager *manager,
         YGNodeSetMeasureFunc(node.yoga, ZynthProgressIndicatorMeasureFunc);
       }
     };
-    descriptor.handleSetProp = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name, id value, NSString *rawJSON) {
+    descriptor.handleSetProp = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name, id value, NSString *rawJSON) {
       return ZynthProgressIndicatorHandleSetProp(manager, node, name, value, rawJSON);
     };
     ZynthRegisterComponentDescriptor(descriptor);

@@ -2,9 +2,12 @@
 #import <ZynthKit/ZynthKit.h>
 #else
 #import "ZynthKit.h"
-#import "SNUIManager.h"
+#import "ZynthUIManager.h"
 #import "ZynthUICommandsRegistry.h"
 #endif
+
+#import "ZynthScrollView.h"
+#import "ZynthNode.h"
 
 #import <jsi/jsi.h>
 #import <sstream>
@@ -12,50 +15,11 @@
 
 using namespace facebook::jsi;
 
-@interface HermesRuntimeHost (ZynthUICommands)
-@property(nonatomic, strong) SNUIManager *manager;
+@interface ZynthHermesRuntimeHost (ZynthUICommands)
+@property(nonatomic, strong) ZynthUIManager *manager;
 @end
 
-static std::string ZynthFormatNumber(double value) {
-  std::ostringstream stream;
-  stream.setf(std::ios::fixed);
-  stream << std::setprecision(15) << value;
-  std::string out = stream.str();
-  if (out.find('.') != std::string::npos) {
-    while (!out.empty() && out.back() == '0') {
-      out.pop_back();
-    }
-    if (!out.empty() && out.back() == '.') {
-      out.pop_back();
-    }
-  }
-  if (out.empty()) {
-    return "0";
-  }
-  return out;
-}
-
-static std::string ZynthBuildScrollToJSON(bool hasX,
-                                          double x,
-                                          bool hasY,
-                                          double y,
-                                          bool animated,
-                                          double seq) {
-  std::string json = "{\"type\":\"scrollTo\"";
-  if (hasX) {
-    json += ",\"x\":" + ZynthFormatNumber(x);
-  }
-  if (hasY) {
-    json += ",\"y\":" + ZynthFormatNumber(y);
-  }
-  json += ",\"animated\":";
-  json += animated ? "true" : "false";
-  json += ",\"seq\":" + ZynthFormatNumber(seq);
-  json += "}";
-  return json;
-}
-
-static void ZynthInstallScrollViewUICommands(HermesRuntimeHost *host, Runtime &rt) {
+static void ZynthInstallScrollViewUICommands(ZynthHermesRuntimeHost *host, Runtime &rt) {
   auto scrollTo = Function::createFromHostFunction(
       rt,
       PropNameID::forAscii(rt, "scrollTo"),
@@ -74,10 +38,23 @@ static void ZynthInstallScrollViewUICommands(HermesRuntimeHost *host, Runtime &r
           animated = args[3].getBool();
         }
         double seq = CFAbsoluteTimeGetCurrent() * 1000.0;
-        std::string json = ZynthBuildScrollToJSON(hasX, x, hasY, y, animated, seq);
-        NSString *payload = [NSString stringWithUTF8String:json.c_str()];
         dispatch_async(dispatch_get_main_queue(), ^{
-          [[host manager] setProp:@(nodeId) name:@"__scrollCommand" valueJSON:payload];
+          ZynthUIManager *manager = [host manager];
+          ZynthNode *node = [manager getNodeState:@(nodeId)];
+          if (!node || ![node.view isKindOfClass:[ZynthScrollView class]]) {
+            return;
+          }
+          NSMutableDictionary *command = [NSMutableDictionary dictionary];
+          command[@"type"] = @"scrollTo";
+          if (hasX) {
+            command[@"x"] = @(x);
+          }
+          if (hasY) {
+            command[@"y"] = @(y);
+          }
+          command[@"animated"] = @(animated);
+          command[@"seq"] = @(seq);
+          [(ZynthScrollView *)node.view zynth_applyCommand:command];
         });
         return Value::undefined();
       });

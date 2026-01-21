@@ -9,8 +9,8 @@
 #else
 #import "ZynthKit.h"
 #import "ZynthComponentAPI.h"
-#import "SNUIManager.h"
-#import "SNNode.h"
+#import "ZynthUIManager.h"
+#import "ZynthNode.h"
 #endif
 
 #import <yoga/Yoga.h>
@@ -75,28 +75,28 @@ static void ZynthDatePickerApplyValue(ZynthDatePickerView *view, id value, NSStr
   }
 }
 
-@implementation SNUIManager (DatePickerComponent)
+@implementation ZynthUIManager (DatePickerComponent)
 
 + (void)load {
   static dispatch_once_t onceToken;
   dispatch_once(&onceToken, ^{
     // date-picker-view
     ZynthComponentDescriptor *pickerDesc = [[ZynthComponentDescriptor alloc] initWithType:@"date-picker-view"];
-    pickerDesc.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+    pickerDesc.createView = ^UIView *(ZynthUIManager *manager, NSString *type) {
       return [ZynthDatePickerView new];
     };
-    pickerDesc.attach = ^(SNUIManager *manager, SNNode *node) {
+    pickerDesc.attach = ^(ZynthUIManager *manager, ZynthNode *node) {
       if (![node.view isKindOfClass:[ZynthDatePickerView class]]) return;
       ZynthDatePickerView *view = (ZynthDatePickerView *)node.view;
       [view bindWithManager:manager node:node];
     };
-    pickerDesc.cleanup = ^(SNUIManager *manager, SNNode *node) {
+    pickerDesc.cleanup = ^(ZynthUIManager *manager, ZynthNode *node) {
       if (![node.view isKindOfClass:[ZynthDatePickerView class]]) return;
       ZynthDatePickerView *view = (ZynthDatePickerView *)node.view;
       [view reset];
     };
-    pickerDesc.handleSetProp = ^BOOL(SNUIManager *manager,
-                                     SNNode *node,
+    pickerDesc.handleSetProp = ^BOOL(ZynthUIManager *manager,
+                                     ZynthNode *node,
                                      NSString *name,
                                      id value,
                                      NSString *rawJSON) {
@@ -148,7 +148,7 @@ static void ZynthDatePickerApplyValue(ZynthDatePickerView *view, id value, NSStr
 
       return NO;
     };
-    pickerDesc.handleSetHandler = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name) {
+    pickerDesc.handleSetHandler = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name) {
       return [name isEqualToString:@"onChange"] ||
         [name isEqualToString:@"onRangeChange"] ||
         [name isEqualToString:@"onCancel"] ||
@@ -158,7 +158,7 @@ static void ZynthDatePickerApplyValue(ZynthDatePickerView *view, id value, NSStr
 
     // date-picker-trigger-view
     ZynthComponentDescriptor *triggerDesc = [[ZynthComponentDescriptor alloc] initWithType:@"date-picker-trigger-view"];
-    triggerDesc.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+    triggerDesc.createView = ^UIView *(ZynthUIManager *manager, NSString *type) {
       return [UIView new];
     };
     ZynthRegisterComponentDescriptor(triggerDesc);

@@ -1,12 +1,12 @@
 #if __has_include(<ZynthKit/ZynthKit.h>)
 #import <ZynthKit/ZynthKit.h>
-#import <ZynthKit/SNHexColor.h>
+#import <ZynthKit/ZynthHexColor.h>
 #else
 #import "ZynthKit.h"
 #import "ZynthComponentAPI.h"
-#import "SNUIManager.h"
-#import "SNNode.h"
-#import "SNHexColor.h"
+#import "ZynthUIManager.h"
+#import "ZynthNode.h"
+#import "ZynthHexColor.h"
 #import "ZynthViewHost.h"
 #endif
 
@@ -53,8 +53,8 @@ static double ZynthSliderParseDouble(id value) {
   return 0.0;
 }
 
-static BOOL ZynthSliderHandleSetProp(SNUIManager *manager,
-                                    SNNode *node,
+static BOOL ZynthSliderHandleSetProp(ZynthUIManager *manager,
+                                    ZynthNode *node,
                                     NSString *name,
                                     id value,
                                     NSString *rawJSON) {
@@ -90,7 +90,7 @@ static BOOL ZynthSliderHandleSetProp(SNUIManager *manager,
   if ([name isEqualToString:@"minimumTrackTintColor"]) {
     UIColor *color = nil;
     if ([value isKindOfClass:[NSString class]]) {
-      color = SNColorFromHex((NSString *)value);
+      color = ZynthColorFromHex((NSString *)value);
     }
     [sliderView zynth_setMinimumTrackColor:color];
     return YES;
@@ -99,7 +99,7 @@ static BOOL ZynthSliderHandleSetProp(SNUIManager *manager,
   if ([name isEqualToString:@"maximumTrackTintColor"]) {
     UIColor *color = nil;
     if ([value isKindOfClass:[NSString class]]) {
-      color = SNColorFromHex((NSString *)value);
+      color = ZynthColorFromHex((NSString *)value);
     }
     [sliderView zynth_setMaximumTrackColor:color];
     return YES;
@@ -108,7 +108,7 @@ static BOOL ZynthSliderHandleSetProp(SNUIManager *manager,
   if ([name isEqualToString:@"thumbTintColor"]) {
     UIColor *color = nil;
     if ([value isKindOfClass:[NSString class]]) {
-      color = SNColorFromHex((NSString *)value);
+      color = ZynthColorFromHex((NSString *)value);
     }
     [sliderView zynth_setThumbTintColor:color];
     return YES;
@@ -123,18 +123,18 @@ static BOOL ZynthSliderHandleSetProp(SNUIManager *manager,
   return NO;
 }
 
-static BOOL ZynthSliderHandleSetHandler(SNUIManager *manager,
-                                       SNNode *node,
+static BOOL ZynthSliderHandleSetHandler(ZynthUIManager *manager,
+                                       ZynthNode *node,
                                        NSString *name) {
   if (!node || ![node.view isKindOfClass:[ZynthSliderView class]]) return NO;
   ZynthSliderView *sliderView = (ZynthSliderView *)node.view;
 
   if ([name isEqualToString:@"onValueChange"]) {
-    __weak SNUIManager *weakManager = manager;
-    __weak SNNode *weakNode = node;
+    __weak ZynthUIManager *weakManager = manager;
+    __weak ZynthNode *weakNode = node;
     sliderView.onValueChange = ^(double value) {
-      SNUIManager *strongManager = weakManager;
-      SNNode *strongNode = weakNode;
+      ZynthUIManager *strongManager = weakManager;
+      ZynthNode *strongNode = weakNode;
       if (!strongManager || !strongNode) return;
 
       double sanitized = [sliderView snapValue:value];
@@ -146,11 +146,11 @@ static BOOL ZynthSliderHandleSetHandler(SNUIManager *manager,
   }
 
   if ([name isEqualToString:@"onSlidingComplete"]) {
-    __weak SNUIManager *weakManager = manager;
-    __weak SNNode *weakNode = node;
+    __weak ZynthUIManager *weakManager = manager;
+    __weak ZynthNode *weakNode = node;
     sliderView.onSlidingComplete = ^(double value) {
-      SNUIManager *strongManager = weakManager;
-      SNNode *strongNode = weakNode;
+      ZynthUIManager *strongManager = weakManager;
+      ZynthNode *strongNode = weakNode;
       if (!strongManager || !strongNode) return;
 
       double sanitized = [sliderView snapValue:value];
@@ -164,16 +164,16 @@ static BOOL ZynthSliderHandleSetHandler(SNUIManager *manager,
   return NO;
 }
 
-@implementation SNUIManager (SliderComponent)
+@implementation ZynthUIManager (SliderComponent)
 
 + (void)load {
   static dispatch_once_t onceToken;
   dispatch_once(&onceToken, ^{
     ZynthComponentDescriptor *descriptor = [[ZynthComponentDescriptor alloc] initWithType:@"slider-view"];
-    descriptor.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+    descriptor.createView = ^UIView *(ZynthUIManager *manager, NSString *type) {
       return [ZynthSliderView new];
     };
-    descriptor.attach = ^(SNUIManager *manager, SNNode *node) {
+    descriptor.attach = ^(ZynthUIManager *manager, ZynthNode *node) {
       if (![node.view isKindOfClass:[ZynthSliderView class]]) return;
       ZynthSliderView *sliderView = (ZynthSliderView *)node.view;
       sliderView.nodeId = node ? node.nid : -1;
@@ -183,10 +183,10 @@ static BOOL ZynthSliderHandleSetHandler(SNUIManager *manager,
         YGNodeSetMeasureFunc(node.yoga, ZynthSliderMeasureFunc);
       }
     };
-    descriptor.handleSetProp = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name, id value, NSString *rawJSON) {
+    descriptor.handleSetProp = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name, id value, NSString *rawJSON) {
       return ZynthSliderHandleSetProp(manager, node, name, value, rawJSON);
     };
-    descriptor.handleSetHandler = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name) {
+    descriptor.handleSetHandler = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name) {
       return ZynthSliderHandleSetHandler(manager, node, name);
     };
     ZynthRegisterComponentDescriptor(descriptor);

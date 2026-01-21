@@ -47,6 +47,11 @@ static YGSize ZynthMeasureText(YGNodeConstRef node,
   _nodes[nodeId] = [NSValue valueWithPointer:node];
 }
 
+- (YGNodeRef)yogaForNode:(NSNumber *)nodeId {
+  NSValue *value = _nodes[nodeId];
+  return value ? (YGNodeRef)value.pointerValue : NULL;
+}
+
 - (void)setStyle:(NSNumber *)nodeId name:(NSString *)name value:(NSString *_Nullable)value {
   YGNodeRef node = [self yogaForNode:nodeId];
   if (!node || name.length == 0) return;
@@ -384,11 +389,6 @@ static YGSize ZynthMeasureText(YGNodeConstRef node,
 
 - (NSUInteger)nodeCount {
   return _nodes.count;
-}
-
-- (YGNodeRef)yogaForNode:(NSNumber *)nodeId {
-  NSValue *value = _nodes[nodeId];
-  return value ? (YGNodeRef)value.pointerValue : NULL;
 }
 
 - (UIView *)viewForNode:(NSNumber *)nodeId {

@@ -1,12 +1,12 @@
 #if __has_include(<ZynthKit/ZynthKit.h>)
 #import <ZynthKit/ZynthKit.h>
-#import <ZynthKit/SNHexColor.h>
+#import <ZynthKit/ZynthHexColor.h>
 #else
 #import "ZynthKit.h"
 #import "ZynthComponentAPI.h"
-#import "SNUIManager.h"
-#import "SNNode.h"
-#import "SNHexColor.h"
+#import "ZynthUIManager.h"
+#import "ZynthNode.h"
+#import "ZynthHexColor.h"
 #import "ZynthViewHost.h"
 #endif
 
@@ -51,8 +51,8 @@ static YGSize ZynthTextFieldMeasureFunc(YGNodeConstRef node,
 
 #pragma mark - Property Handling
 
-static BOOL ZynthTextFieldHandleSetProp(SNUIManager *manager,
-                                       SNNode *node,
+static BOOL ZynthTextFieldHandleSetProp(ZynthUIManager *manager,
+                                       ZynthNode *node,
                                        NSString *name,
                                        id value,
                                        NSString *rawJSON) {
@@ -159,7 +159,7 @@ static BOOL ZynthTextFieldHandleSetProp(SNUIManager *manager,
       if ([colorStr isEqualToString:@"transparent"]) {
         color = [UIColor clearColor];
       } else {
-        color = SNColorFromHex(colorStr);
+        color = ZynthColorFromHex(colorStr);
       }
     }
     [textFieldView zynth_setBackgroundColor:color];
@@ -181,7 +181,7 @@ static BOOL ZynthTextFieldHandleSetProp(SNUIManager *manager,
   if ([name isEqualToString:@"borderColor"]) {
     UIColor *color = nil;
     if ([value isKindOfClass:[NSString class]]) {
-      color = SNColorFromHex((NSString *)value);
+      color = ZynthColorFromHex((NSString *)value);
     }
     [textFieldView zynth_setBorderColor:color];
     return YES;
@@ -190,7 +190,7 @@ static BOOL ZynthTextFieldHandleSetProp(SNUIManager *manager,
   if ([name isEqualToString:@"textColor"]) {
     UIColor *color = nil;
     if ([value isKindOfClass:[NSString class]]) {
-      color = SNColorFromHex((NSString *)value);
+      color = ZynthColorFromHex((NSString *)value);
     }
     [textFieldView zynth_setTextColor:color];
     return YES;
@@ -199,7 +199,7 @@ static BOOL ZynthTextFieldHandleSetProp(SNUIManager *manager,
   if ([name isEqualToString:@"placeholderColor"]) {
     UIColor *color = nil;
     if ([value isKindOfClass:[NSString class]]) {
-      color = SNColorFromHex((NSString *)value);
+      color = ZynthColorFromHex((NSString *)value);
     }
     [textFieldView zynth_setPlaceholderColor:color];
     return YES;
@@ -214,19 +214,19 @@ static BOOL ZynthTextFieldHandleSetProp(SNUIManager *manager,
   return NO;
 }
 
-static BOOL ZynthTextFieldHandleSetHandler(SNUIManager *manager,
-                                          SNNode *node,
+static BOOL ZynthTextFieldHandleSetHandler(ZynthUIManager *manager,
+                                          ZynthNode *node,
                                           NSString *name) {
   if (!node || ![node.view isKindOfClass:[ZynthTextFieldView class]]) return NO;
   ZynthTextFieldView *textFieldView = (ZynthTextFieldView *)node.view;
 
   if ([name isEqualToString:@"onChange"]) {
-    __weak SNUIManager *weakManager = manager;
-    __weak SNNode *weakNode = node;
+    __weak ZynthUIManager *weakManager = manager;
+    __weak ZynthNode *weakNode = node;
     
     textFieldView.onChange = ^(NSString *value) {
-      SNUIManager *strongManager = weakManager;
-      SNNode *strongNode = weakNode;
+      ZynthUIManager *strongManager = weakManager;
+      ZynthNode *strongNode = weakNode;
       if (!strongManager || !strongNode) return;
       
       NSDictionary *payload = @{@"value": value ?: @""};
@@ -236,12 +236,12 @@ static BOOL ZynthTextFieldHandleSetHandler(SNUIManager *manager,
   }
 
   if ([name isEqualToString:@"onFocus"]) {
-    __weak SNUIManager *weakManager = manager;
-    __weak SNNode *weakNode = node;
+    __weak ZynthUIManager *weakManager = manager;
+    __weak ZynthNode *weakNode = node;
     
     textFieldView.onFocus = ^{
-      SNUIManager *strongManager = weakManager;
-      SNNode *strongNode = weakNode;
+      ZynthUIManager *strongManager = weakManager;
+      ZynthNode *strongNode = weakNode;
       if (!strongManager || !strongNode) return;
       
       [strongManager zynth_dispatchEvent:@"onFocus" payload:@{} toNode:strongNode];
@@ -250,12 +250,12 @@ static BOOL ZynthTextFieldHandleSetHandler(SNUIManager *manager,
   }
 
   if ([name isEqualToString:@"onBlur"]) {
-    __weak SNUIManager *weakManager = manager;
-    __weak SNNode *weakNode = node;
+    __weak ZynthUIManager *weakManager = manager;
+    __weak ZynthNode *weakNode = node;
     
     textFieldView.onBlur = ^{
-      SNUIManager *strongManager = weakManager;
-      SNNode *strongNode = weakNode;
+      ZynthUIManager *strongManager = weakManager;
+      ZynthNode *strongNode = weakNode;
       if (!strongManager || !strongNode) return;
       
       [strongManager zynth_dispatchEvent:@"onBlur" payload:@{} toNode:strongNode];
@@ -264,12 +264,12 @@ static BOOL ZynthTextFieldHandleSetHandler(SNUIManager *manager,
   }
 
   if ([name isEqualToString:@"onSubmit"]) {
-    __weak SNUIManager *weakManager = manager;
-    __weak SNNode *weakNode = node;
+    __weak ZynthUIManager *weakManager = manager;
+    __weak ZynthNode *weakNode = node;
     
     textFieldView.onSubmit = ^(NSString *value) {
-      SNUIManager *strongManager = weakManager;
-      SNNode *strongNode = weakNode;
+      ZynthUIManager *strongManager = weakManager;
+      ZynthNode *strongNode = weakNode;
       if (!strongManager || !strongNode) return;
       
       NSDictionary *payload = @{@"value": value ?: @""};
@@ -281,17 +281,17 @@ static BOOL ZynthTextFieldHandleSetHandler(SNUIManager *manager,
   return NO;
 }
 
-@implementation SNUIManager (TextFieldComponent)
+@implementation ZynthUIManager (TextFieldComponent)
 
 + (void)load {
   static dispatch_once_t onceToken;
   dispatch_once(&onceToken, ^{
     ZynthComponentDescriptor *descriptor = [[ZynthComponentDescriptor alloc] initWithType:@"text-field"];
-    descriptor.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+    descriptor.createView = ^UIView *(ZynthUIManager *manager, NSString *type) {
       ZynthTextFieldView *textFieldView = [ZynthTextFieldView new];
       return textFieldView;
     };
-    descriptor.attach = ^(SNUIManager *manager, SNNode *node) {
+    descriptor.attach = ^(ZynthUIManager *manager, ZynthNode *node) {
       if (![node.view isKindOfClass:[ZynthTextFieldView class]]) return;
       ZynthTextFieldView *textFieldView = (ZynthTextFieldView *)node.view;
       textFieldView.nodeId = node ? node.nid : -1;
@@ -302,10 +302,10 @@ static BOOL ZynthTextFieldHandleSetHandler(SNUIManager *manager,
         YGNodeSetMeasureFunc(node.yoga, ZynthTextFieldMeasureFunc);
       }
     };
-    descriptor.handleSetProp = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name, id value, NSString *rawJSON) {
+    descriptor.handleSetProp = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name, id value, NSString *rawJSON) {
       return ZynthTextFieldHandleSetProp(manager, node, name, value, rawJSON);
     };
-    descriptor.handleSetHandler = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name) {
+    descriptor.handleSetHandler = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name) {
       return ZynthTextFieldHandleSetHandler(manager, node, name);
     };
     ZynthRegisterComponentDescriptor(descriptor);

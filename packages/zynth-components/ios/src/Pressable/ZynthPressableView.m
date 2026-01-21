@@ -6,8 +6,8 @@
 #else
 #import "ZynthKit.h"
 #import "ZynthComponentAPI.h"
-#import "SNUIManager.h"
-#import "SNNode.h"
+#import "ZynthUIManager.h"
+#import "ZynthNode.h"
 #endif
 
 static const CFTimeInterval kZynthPressableDefaultLongPressMs = 500.0;
@@ -15,8 +15,8 @@ static const CGFloat kZynthPressableDefaultRetention = 20.0;
 static const CFTimeInterval kZynthPressableDefaultDoublePressWindowMs = 250.0;
 
 @interface ZynthPressableView ()
-@property(nonatomic, weak, nullable) SNUIManager *manager;
-@property(nonatomic, weak, nullable) SNNode *node;
+@property(nonatomic, weak, nullable) ZynthUIManager *manager;
+@property(nonatomic, weak, nullable) ZynthNode *node;
 @property(nonatomic, assign) BOOL disabled;
 @property(nonatomic, assign) BOOL pressed;
 @property(nonatomic, assign) BOOL longPressFired;
@@ -76,7 +76,7 @@ static const CFTimeInterval kZynthPressableDefaultDoublePressWindowMs = 250.0;
   return self;
 }
 
-- (SNNode *)zynth_node {
+- (ZynthNode *)zynth_node {
   return self.node;
 }
 
@@ -90,7 +90,7 @@ static const CFTimeInterval kZynthPressableDefaultDoublePressWindowMs = 250.0;
   return self.focusable;
 }
 
-- (void)attachToManager:(SNUIManager *)manager node:(SNNode *)node {
+- (void)attachToManager:(ZynthUIManager *)manager node:(ZynthNode *)node {
   self.manager = manager;
   self.node = node;
   self.nodeId = node ? node.nid : -1;

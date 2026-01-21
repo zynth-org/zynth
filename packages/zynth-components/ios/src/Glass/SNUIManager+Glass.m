@@ -1,20 +1,20 @@
 #if __has_include(<ZynthKit/ZynthKit.h>)
 #import <ZynthKit/ZynthKit.h>
-#import <ZynthKit/SNHexColor.h>
+#import <ZynthKit/ZynthHexColor.h>
 #else
 #import "ZynthKit.h"
 #import "ZynthComponentRegistry.h"
 #import "ZynthComponentAPI.h"
-#import "SNUIManager.h"
-#import "SNNode.h"
-#import "SNHexColor.h"
+#import "ZynthUIManager.h"
+#import "ZynthNode.h"
+#import "ZynthHexColor.h"
 #endif
 
 #import "ZynthGlassEffectView.h"
 #import "ZynthGlassContainerView.h"
 
-static BOOL ZynthGlassViewHandleSetProp(SNUIManager *manager,
-                                       SNNode *node,
+static BOOL ZynthGlassViewHandleSetProp(ZynthUIManager *manager,
+                                       ZynthNode *node,
                                        NSString *name,
                                        id value,
                                        NSString *rawJSON) {
@@ -39,7 +39,7 @@ static BOOL ZynthGlassViewHandleSetProp(SNUIManager *manager,
   if ([name isEqualToString:@"tintColor"]) {
     UIColor *color = nil;
     if ([value isKindOfClass:[NSString class]]) {
-      color = SNColorFromHex((NSString *)value);
+      color = ZynthColorFromHex((NSString *)value);
     }
     [glassView zynth_setTintColor:color];
     return YES;
@@ -56,8 +56,8 @@ static BOOL ZynthGlassViewHandleSetProp(SNUIManager *manager,
   return NO;
 }
 
-static BOOL ZynthGlassContainerHandleSetProp(SNUIManager *manager,
-                                            SNNode *node,
+static BOOL ZynthGlassContainerHandleSetProp(ZynthUIManager *manager,
+                                            ZynthNode *node,
                                             NSString *name,
                                             id value,
                                             NSString *rawJSON) {
@@ -87,18 +87,18 @@ static BOOL ZynthGlassContainerHandleSetProp(SNUIManager *manager,
   return NO;
 }
 
-@implementation SNUIManager (GlassComponents)
+@implementation ZynthUIManager (GlassComponents)
 
 + (void)load {
   static dispatch_once_t onceToken;
   dispatch_once(&onceToken, ^{
     ZynthComponentDescriptor *glassDescriptor =
         [[ZynthComponentDescriptor alloc] initWithType:@"glass-view"];
-    glassDescriptor.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+    glassDescriptor.createView = ^UIView *(ZynthUIManager *manager, NSString *type) {
       ZynthGlassEffectView *view = [ZynthGlassEffectView new];
       return view;
     };
-    glassDescriptor.attach = ^(SNUIManager *manager, SNNode *node) {
+    glassDescriptor.attach = ^(ZynthUIManager *manager, ZynthNode *node) {
       if (![node.view isKindOfClass:[ZynthGlassEffectView class]]) return;
       if (!node.pointerEvents) {
         node.pointerEvents = @"auto";
@@ -106,16 +106,16 @@ static BOOL ZynthGlassContainerHandleSetProp(SNUIManager *manager,
       ZynthGlassEffectView *view = (ZynthGlassEffectView *)node.view;
       [view zynth_setPointerEvents:node.pointerEvents];
     };
-    glassDescriptor.handleSetProp = ^BOOL(SNUIManager *manager,
-                                          SNNode *node,
+    glassDescriptor.handleSetProp = ^BOOL(ZynthUIManager *manager,
+                                          ZynthNode *node,
                                           NSString *name,
                                           id value,
                                           NSString *rawJSON) {
       return ZynthGlassViewHandleSetProp(manager, node, name, value, rawJSON);
     };
-    glassDescriptor.handleInsertChild = ^BOOL(SNUIManager *manager,
-                                              SNNode *parent,
-                                              SNNode *child,
+    glassDescriptor.handleInsertChild = ^BOOL(ZynthUIManager *manager,
+                                              ZynthNode *parent,
+                                              ZynthNode *child,
                                               NSNumber *childId,
                                               NSUInteger index) {
       if (![parent.view isKindOfClass:[ZynthGlassEffectView class]]) return NO;
@@ -142,11 +142,11 @@ static BOOL ZynthGlassContainerHandleSetProp(SNUIManager *manager,
 
     ZynthComponentDescriptor *containerDescriptor =
         [[ZynthComponentDescriptor alloc] initWithType:@"glass-container"];
-    containerDescriptor.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+    containerDescriptor.createView = ^UIView *(ZynthUIManager *manager, NSString *type) {
       ZynthGlassContainerView *view = [ZynthGlassContainerView new];
       return view;
     };
-    containerDescriptor.attach = ^(SNUIManager *manager, SNNode *node) {
+    containerDescriptor.attach = ^(ZynthUIManager *manager, ZynthNode *node) {
       if (![node.view isKindOfClass:[ZynthGlassContainerView class]]) return;
       if (!node.pointerEvents) {
         node.pointerEvents = @"auto";
@@ -154,16 +154,16 @@ static BOOL ZynthGlassContainerHandleSetProp(SNUIManager *manager,
       ZynthGlassContainerView *view = (ZynthGlassContainerView *)node.view;
       [view zynth_setPointerEvents:node.pointerEvents];
     };
-    containerDescriptor.handleSetProp = ^BOOL(SNUIManager *manager,
-                                              SNNode *node,
+    containerDescriptor.handleSetProp = ^BOOL(ZynthUIManager *manager,
+                                              ZynthNode *node,
                                               NSString *name,
                                               id value,
                                               NSString *rawJSON) {
       return ZynthGlassContainerHandleSetProp(manager, node, name, value, rawJSON);
     };
-    containerDescriptor.handleInsertChild = ^BOOL(SNUIManager *manager,
-                                                  SNNode *parent,
-                                                  SNNode *child,
+    containerDescriptor.handleInsertChild = ^BOOL(ZynthUIManager *manager,
+                                                  ZynthNode *parent,
+                                                  ZynthNode *child,
                                                   NSNumber *childId,
                                                   NSUInteger index) {
       if (![parent.view isKindOfClass:[ZynthGlassContainerView class]]) return NO;

@@ -4,15 +4,15 @@ import UIKit
 @objcMembers
 public class ZynthAlertView: UIView {
   
-  private var manager: SNUIManager?
-  private var node: SNNode?
+  private var manager: ZynthUIManager?
+  private var node: ZynthNode?
   
   private var alertTitle: String?
   private var alertMessage: String?
   private var buttonsConfig: [[String: Any]] = []
   private var alertController: UIAlertController?
   
-  public func bind(manager: SNUIManager, node: SNNode) {
+  public func bind(manager: ZynthUIManager, node: ZynthNode) {
     self.manager = manager
     self.node = node
   }
@@ -107,7 +107,7 @@ public class ZynthAlertView: UIView {
     guard let manager = manager, let node = node else { return }
     let selector = NSSelectorFromString("zynth_dispatchEvent:payload:toNode:")
     guard let method = manager.method(for: selector) else { return }
-    typealias Imp = @convention(c) (AnyObject, Selector, NSString, NSDictionary?, SNNode) -> Void
+    typealias Imp = @convention(c) (AnyObject, Selector, NSString, NSDictionary?, ZynthNode) -> Void
     let function = unsafeBitCast(method, to: Imp.self)
     function(manager, selector, name as NSString, payload as NSDictionary?, node)
   }

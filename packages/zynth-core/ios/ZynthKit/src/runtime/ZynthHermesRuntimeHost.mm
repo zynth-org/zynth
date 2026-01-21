@@ -1,6 +1,7 @@
 #import "ZynthHermesRuntimeHost.h"
 #import "ZynthUIBindings.h"
 #import "ZynthUIManager.h"
+#import "ZynthUICommandsRegistry.h"
 
 #import <hermes/hermes.h>
 #import <jsi/jsi.h>
@@ -116,6 +117,7 @@ static void installGlobals(Runtime &rt) {
     installGlobals(*_runtime);
     installModulesStub(*_runtime);
     ZynthInstallUIBindings(*_runtime, manager);
+    ZynthInstallUICommandsRegistry(self, *_runtime);
     _runtime->global().setProperty(
         *_runtime, "__ZYNTH_PLATFORM", String::createFromUtf8(*_runtime, "ios"));
   }

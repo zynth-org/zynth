@@ -8,8 +8,8 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-@class SNUIManager;
-@class SNNode;
+@class ZynthUIManager;
+@class ZynthNode;
 
 @protocol ZynthButtonViewDelegate;
 
@@ -19,7 +19,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, assign) int nodeId;
 @property(nonatomic, assign) ZynthPointerEventsMode pointerMode;
 
-- (void)attachToManager:(nullable SNUIManager *)manager node:(nullable SNNode *)node;
+- (void)attachToManager:(nullable ZynthUIManager *)manager node:(nullable ZynthNode *)node;
 
 // Existing props
 - (void)zynth_setDisabled:(BOOL)disabled;

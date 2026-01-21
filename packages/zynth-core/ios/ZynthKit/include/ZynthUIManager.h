@@ -3,6 +3,8 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+@class ZynthNode;
+
 @interface ZynthUIManager : NSObject
 
 - (instancetype)initWithRootView:(UIView *)rootView;
@@ -19,6 +21,9 @@ NS_ASSUME_NONNULL_BEGIN
                                             NSTimeInterval layoutMs,
                                             BOOL overBudget,
                                             NSUInteger nodeCount))profiler;
+- (ZynthNode *_Nullable)getNodeState:(NSNumber *)nodeId;
+- (NSNumber *_Nullable)getParentId:(NSNumber *)nodeId;
+- (void)markNodeDirty:(NSNumber *)nodeId;
 
 @end
 

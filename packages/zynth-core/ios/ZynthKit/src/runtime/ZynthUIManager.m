@@ -18,6 +18,8 @@
   if (self) {
     _rootView = rootView;
     _nodes = [NSMutableDictionary dictionary];
+    _nodeStates = [NSMutableDictionary dictionary];
+    _eventPayloads = [NSMutableDictionary dictionary];
     _parents = [NSMutableDictionary dictionary];
     _nodeSurfaces = [NSMutableDictionary dictionary];
     _surfaceRoots = [NSMutableDictionary dictionary];
@@ -59,19 +61,37 @@
 
 - (NSNumber *)createNode:(NSString *)type {
   int nid = _nextId++;
+  ZynthComponentDescriptor *descriptor = ZynthGetComponentDescriptor(type);
   UIView *view = nil;
-  if ([type isEqualToString:@"text"]) {
-    UILabel *label = [[UILabel alloc] initWithFrame:CGRectZero];
-    label.numberOfLines = 0;
-    view = label;
-  } else {
-    view = [[UIView alloc] initWithFrame:CGRectZero];
+  if (descriptor && descriptor.createView) {
+    view = descriptor.createView((ZynthUIManager *)self, type);
+  }
+  if (!view) {
+    if ([type isEqualToString:@"text"]) {
+      UILabel *label = [[UILabel alloc] initWithFrame:CGRectZero];
+      label.numberOfLines = 0;
+      view = label;
+    } else {
+      view = [[UIView alloc] initWithFrame:CGRectZero];
+    }
   }
   _nodes[@(nid)] = view;
   _pointerEvents[@(nid)] = @"auto";
   _nodeSurfaces[@(nid)] = @(_activeSurfaceId);
+  ZynthNode *node = [[ZynthNode alloc] init];
+  node.nid = nid;
+  node.view = view;
+  node.type = type ?: @"";
+  node.parentId = 0;
+  node.surfaceId = _activeSurfaceId;
+  node.pointerEvents = @"auto";
+  _nodeStates[@(nid)] = node;
   ZynthYogaLayout *layout = [self yogaForSurface:_activeSurfaceId];
   [layout createNodeWithId:@(nid) type:type view:view];
+  node.yoga = [layout yogaForNode:@(nid)];
+  if (descriptor && descriptor.attach) {
+    descriptor.attach((ZynthUIManager *)self, node);
+  }
   [self markSurfaceDirty:_activeSurfaceId];
   return @(nid);
 }
@@ -79,7 +99,65 @@
 - (void)setProp:(NSNumber *)nodeId name:(NSString *)name value:(NSString *)value {
   UIView *view = _nodes[nodeId];
   if (!view || name.length == 0) return;
+  ZynthNode *node = _nodeStates[nodeId];
+  ZynthComponentDescriptor *descriptor = node ? ZynthGetComponentDescriptor(node.type) : nil;
+  id parsedValue = value;
+  if ([value isKindOfClass:[NSString class]]) {
+    NSString *trimmed = [value stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if ([trimmed isEqualToString:@"true"] || [trimmed isEqualToString:@"false"]) {
+      parsedValue = @([trimmed isEqualToString:@"true"]);
+    } else {
+      NSScanner *scanner = [NSScanner scannerWithString:trimmed];
+      double number = 0;
+      if ([scanner scanDouble:&number] && scanner.isAtEnd) {
+        parsedValue = @(number);
+      } else if (([trimmed hasPrefix:@"{"] && [trimmed hasSuffix:@"}"]) ||
+                 ([trimmed hasPrefix:@"["] && [trimmed hasSuffix:@"]"])) {
+        NSData *data = [trimmed dataUsingEncoding:NSUTF8StringEncoding];
+        if (data) {
+          id json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+          if (json) {
+            parsedValue = json;
+          }
+        }
+      }
+    }
+  }
+  if (node && descriptor && descriptor.handleSetProp) {
+    if (descriptor.handleSetProp((ZynthUIManager *)self, node, name, parsedValue, value)) {
+      return;
+    }
+  }
+  BOOL isStyleKey = [@[
+    @"fontSize",
+    @"fontFamily",
+    @"fontWeight",
+    @"fontStyle",
+    @"color",
+    @"textAlign",
+    @"lineHeight",
+    @"lineSpacing",
+    @"paragraphSpacing",
+    @"letterSpacing",
+    @"textDecorationLine",
+    @"textTransform",
+    @"hyphenation",
+    @"minimumFontScale"
+  ] containsObject:name];
   if ([self applyStyleProp:nodeId view:view name:name value:value]) {
+    if (node && descriptor && descriptor.applyStyle && isStyleKey) {
+      NSMutableDictionary *style = node.attachments[@"style"];
+      if (!style) {
+        style = [NSMutableDictionary dictionary];
+        node.attachments[@"style"] = style;
+      }
+      if (parsedValue && parsedValue != (id)kCFNull) {
+        style[name] = parsedValue;
+      } else {
+        [style removeObjectForKey:name];
+      }
+      descriptor.applyStyle((ZynthUIManager *)self, node, style.copy);
+    }
     return;
   }
   if ([name isEqualToString:@"backgroundColor"]) {
@@ -93,6 +171,19 @@
       UILabel *label = (UILabel *)view;
       label.textColor = color;
       [self applyTextValue:nodeId label:label text:label.text ?: @""];
+    }
+    if (node && descriptor && descriptor.applyStyle && isStyleKey) {
+      NSMutableDictionary *style = node.attachments[@"style"];
+      if (!style) {
+        style = [NSMutableDictionary dictionary];
+        node.attachments[@"style"] = style;
+      }
+      if (parsedValue && parsedValue != (id)kCFNull) {
+        style[name] = parsedValue;
+      } else {
+        [style removeObjectForKey:name];
+      }
+      descriptor.applyStyle((ZynthUIManager *)self, node, style.copy);
     }
     return;
   }
@@ -149,8 +240,10 @@
   if ([name isEqualToString:@"pointerEvents"]) {
     if (value.length > 0) {
       _pointerEvents[nodeId] = value;
+      if (node) node.pointerEvents = value;
     } else {
       [_pointerEvents removeObjectForKey:nodeId];
+      if (node) node.pointerEvents = @"auto";
     }
     [self updateInteractionStateForNode:nodeId];
     return;
@@ -161,6 +254,19 @@
     UIFont *font = label.font ?: [UIFont systemFontOfSize:size];
     label.font = [font fontWithSize:size];
     [self applyTextValue:nodeId label:label text:label.text ?: @""];
+    if (node && descriptor && descriptor.applyStyle && isStyleKey) {
+      NSMutableDictionary *style = node.attachments[@"style"];
+      if (!style) {
+        style = [NSMutableDictionary dictionary];
+        node.attachments[@"style"] = style;
+      }
+      if (parsedValue && parsedValue != (id)kCFNull) {
+        style[name] = parsedValue;
+      } else {
+        [style removeObjectForKey:name];
+      }
+      descriptor.applyStyle((ZynthUIManager *)self, node, style.copy);
+    }
     return;
   }
   if ([name isEqualToString:@"fontWeight"] && [view isKindOfClass:[UILabel class]]) {
@@ -172,6 +278,19 @@
     else if ([value isEqualToString:@"500"]) weight = UIFontWeightMedium;
     label.font = [UIFont systemFontOfSize:fontSize weight:weight];
     [self applyTextValue:nodeId label:label text:label.text ?: @""];
+    if (node && descriptor && descriptor.applyStyle && isStyleKey) {
+      NSMutableDictionary *style = node.attachments[@"style"];
+      if (!style) {
+        style = [NSMutableDictionary dictionary];
+        node.attachments[@"style"] = style;
+      }
+      if (parsedValue && parsedValue != (id)kCFNull) {
+        style[name] = parsedValue;
+      } else {
+        [style removeObjectForKey:name];
+      }
+      descriptor.applyStyle((ZynthUIManager *)self, node, style.copy);
+    }
     return;
   }
   if ([name isEqualToString:@"fontFamily"] && [view isKindOfClass:[UILabel class]]) {
@@ -180,6 +299,19 @@
     if (font) {
       label.font = font;
       [self applyTextValue:nodeId label:label text:label.text ?: @""];
+    }
+    if (node && descriptor && descriptor.applyStyle && isStyleKey) {
+      NSMutableDictionary *style = node.attachments[@"style"];
+      if (!style) {
+        style = [NSMutableDictionary dictionary];
+        node.attachments[@"style"] = style;
+      }
+      if (parsedValue && parsedValue != (id)kCFNull) {
+        style[name] = parsedValue;
+      } else {
+        [style removeObjectForKey:name];
+      }
+      descriptor.applyStyle((ZynthUIManager *)self, node, style.copy);
     }
     return;
   }
@@ -192,6 +324,19 @@
         [self applyTextValue:nodeId label:label text:label.text ?: @""];
       }
     }
+    if (node && descriptor && descriptor.applyStyle && isStyleKey) {
+      NSMutableDictionary *style = node.attachments[@"style"];
+      if (!style) {
+        style = [NSMutableDictionary dictionary];
+        node.attachments[@"style"] = style;
+      }
+      if (parsedValue && parsedValue != (id)kCFNull) {
+        style[name] = parsedValue;
+      } else {
+        [style removeObjectForKey:name];
+      }
+      descriptor.applyStyle((ZynthUIManager *)self, node, style.copy);
+    }
     return;
   }
   if ([name isEqualToString:@"textAlign"] && [view isKindOfClass:[UILabel class]]) {
@@ -200,6 +345,19 @@
     else if ([value isEqualToString:@"right"]) label.textAlignment = NSTextAlignmentRight;
     else if ([value isEqualToString:@"left"]) label.textAlignment = NSTextAlignmentLeft;
     else label.textAlignment = NSTextAlignmentNatural;
+    if (node && descriptor && descriptor.applyStyle && isStyleKey) {
+      NSMutableDictionary *style = node.attachments[@"style"];
+      if (!style) {
+        style = [NSMutableDictionary dictionary];
+        node.attachments[@"style"] = style;
+      }
+      if (parsedValue && parsedValue != (id)kCFNull) {
+        style[name] = parsedValue;
+      } else {
+        [style removeObjectForKey:name];
+      }
+      descriptor.applyStyle((ZynthUIManager *)self, node, style.copy);
+    }
     return;
   }
   if ([name isEqualToString:@"width"]) {
@@ -251,8 +409,21 @@
   }
   UIView *parent = parentId.intValue == 0 ? [self rootViewForSurface:surfaceId] : _nodes[parentId];
   if (!parent) return;
+  ZynthNode *parentNode = _nodeStates[parentId];
+  ZynthNode *childNode = _nodeStates[childId];
   _parents[childId] = parentId;
   _nodeSurfaces[childId] = @(surfaceId);
+  if (childNode) {
+    childNode.parentId = parentId.intValue;
+    childNode.surfaceId = surfaceId;
+  }
+  if (parentNode) {
+    ZynthComponentDescriptor *descriptor = ZynthGetComponentDescriptor(parentNode.type);
+    if (descriptor && descriptor.handleInsertChild &&
+        descriptor.handleInsertChild((ZynthUIManager *)self, parentNode, childNode, childId, index.unsignedIntegerValue)) {
+      return;
+    }
+  }
   if ([parent isKindOfClass:[UILabel class]]) {
     if ([child isKindOfClass:[UILabel class]]) {
       ((UILabel *)parent).text = ((UILabel *)child).text ?: @"";
@@ -263,6 +434,16 @@
   }
   NSInteger idx = MAX(0, MIN(index.integerValue, (NSInteger)parent.subviews.count));
   [parent insertSubview:child atIndex:(NSUInteger)idx];
+  if (parentNode && childId) {
+    NSUInteger existing = [parentNode.children indexOfObject:childId];
+    if (existing != NSNotFound) {
+      [parentNode.children removeObjectAtIndex:existing];
+      if ((NSInteger)existing < idx) {
+        idx = MAX(0, idx - 1);
+      }
+    }
+    [parentNode.children insertObject:childId atIndex:(NSUInteger)idx];
+  }
   [[self yogaForSurface:surfaceId] insertChild:parentId child:childId index:index];
   [self markSurfaceDirty:surfaceId];
 }
@@ -270,6 +451,19 @@
 - (void)removeChild:(NSNumber *)parentId child:(NSNumber *)childId {
   UIView *child = _nodes[childId];
   if (!child) return;
+  ZynthNode *parentNode = _nodeStates[parentId];
+  ZynthNode *childNode = _nodeStates[childId];
+  if (parentNode) {
+    ZynthComponentDescriptor *descriptor = ZynthGetComponentDescriptor(parentNode.type);
+    if (descriptor && descriptor.handleRemoveChild &&
+        descriptor.handleRemoveChild((ZynthUIManager *)self, parentNode, childNode, childId)) {
+      return;
+    }
+    NSUInteger existing = [parentNode.children indexOfObject:childId];
+    if (existing != NSNotFound) {
+      [parentNode.children removeObjectAtIndex:existing];
+    }
+  }
   [self cleanupNode:childId];
   [_parents removeObjectForKey:childId];
   [child removeFromSuperview];
@@ -280,6 +474,22 @@
 - (void)setHandler:(NSNumber *)nodeId name:(NSString *)name {
   UIView *view = _nodes[nodeId];
   if (!view || name.length == 0) return;
+  ZynthNode *node = _nodeStates[nodeId];
+  if (node) {
+    ZynthComponentDescriptor *descriptor = ZynthGetComponentDescriptor(node.type);
+    if (descriptor && descriptor.handleSetHandler &&
+        descriptor.handleSetHandler((ZynthUIManager *)self, node, name)) {
+      return;
+    }
+    if ([name isEqualToString:@"onPress"] || [name isEqualToString:@"onPressIn"] ||
+        [name isEqualToString:@"onPressOut"] || [name isEqualToString:@"onLongPress"] ||
+        [name isEqualToString:@"onDoublePress"]) {
+      node.hasOnPressHandler = YES;
+    }
+    if ([name isEqualToString:@"onLayout"]) {
+      node.hasOnLayoutHandler = YES;
+    }
+  }
   if ([name isEqualToString:@"onPress"] || [name isEqualToString:@"onPressIn"] ||
       [name isEqualToString:@"onPressOut"] || [name isEqualToString:@"onLongPress"] ||
       [name isEqualToString:@"onDoublePress"]) {
@@ -323,6 +533,19 @@
                                    BOOL,
                                    NSUInteger))profiler {
   [self zynth_setFrameProfilerInternal:profiler];
+}
+
+- (ZynthNode *)getNodeState:(NSNumber *)nodeId {
+  return _nodeStates[nodeId];
+}
+
+- (NSNumber *)getParentId:(NSNumber *)nodeId {
+  return _parents[nodeId];
+}
+
+- (void)markNodeDirty:(NSNumber *)nodeId {
+  [[self yogaForNode:nodeId] markDirty:nodeId];
+  [self markSurfaceDirtyForNode:nodeId];
 }
 
 - (void)dealloc {

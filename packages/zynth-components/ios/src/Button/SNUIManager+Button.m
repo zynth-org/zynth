@@ -1,19 +1,19 @@
 #if __has_include(<ZynthKit/ZynthKit.h>)
 #import <ZynthKit/ZynthKit.h>
-#import <ZynthKit/SNHexColor.h>
+#import <ZynthKit/ZynthHexColor.h>
 #else
 #import "ZynthKit.h"
 #import "ZynthComponentAPI.h"
-#import "SNUIManager.h"
-#import "SNNode.h"
-#import "SNHexColor.h"
+#import "ZynthUIManager.h"
+#import "ZynthNode.h"
+#import "ZynthHexColor.h"
 #import "ZynthViewHost.h"
 #endif
 
 #import "ZynthButtonView.h"
 
-static BOOL ZynthButtonHandleSetProp(SNUIManager *manager,
-                                    SNNode *node,
+static BOOL ZynthButtonHandleSetProp(ZynthUIManager *manager,
+                                    ZynthNode *node,
                                     NSString *name,
                                     id value,
                                     NSString *rawJSON) {
@@ -61,7 +61,7 @@ static BOOL ZynthButtonHandleSetProp(SNUIManager *manager,
   if ([name isEqualToString:@"baseColor"]) {
     UIColor *color = nil;
     if ([value isKindOfClass:[NSString class]]) {
-      color = SNColorFromHex((NSString *)value);
+      color = ZynthColorFromHex((NSString *)value);
     }
     [button zynth_setBaseColor:color];
     return YES;
@@ -70,7 +70,7 @@ static BOOL ZynthButtonHandleSetProp(SNUIManager *manager,
   if ([name isEqualToString:@"tintColor"]) {
     UIColor *color = nil;
     if ([value isKindOfClass:[NSString class]]) {
-      color = SNColorFromHex((NSString *)value);
+      color = ZynthColorFromHex((NSString *)value);
     }
     [button zynth_setGlassTintColor:color];
     return YES;
@@ -139,8 +139,8 @@ static BOOL ZynthButtonHandleSetProp(SNUIManager *manager,
   return NO;
 }
 
-static BOOL ZynthButtonHandleSetHandler(SNUIManager *manager,
-                                       SNNode *node,
+static BOOL ZynthButtonHandleSetHandler(ZynthUIManager *manager,
+                                       ZynthNode *node,
                                        NSString *name) {
   if (!node || ![node.view isKindOfClass:[ZynthButtonView class]]) {
     return NO;
@@ -169,29 +169,29 @@ static BOOL ZynthButtonHandleSetHandler(SNUIManager *manager,
   return NO;
 }
 
-@interface SNUIManager (ButtonComponent) <ZynthButtonViewDelegate>
+@interface ZynthUIManager (ButtonComponent) <ZynthButtonViewDelegate>
 @end
 
-@implementation SNUIManager (ButtonComponent)
+@implementation ZynthUIManager (ButtonComponent)
 
 + (void)load {
   static dispatch_once_t onceToken;
   dispatch_once(&onceToken, ^{
     ZynthComponentDescriptor *descriptor = [[ZynthComponentDescriptor alloc] initWithType:@"button"];
-    descriptor.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+    descriptor.createView = ^UIView *(ZynthUIManager *manager, NSString *type) {
       ZynthButtonView *button = [ZynthButtonView new];
       return button;
     };
-    descriptor.attach = ^(SNUIManager *manager, SNNode *node) {
+    descriptor.attach = ^(ZynthUIManager *manager, ZynthNode *node) {
       if (![node.view isKindOfClass:[ZynthButtonView class]]) return;
       ZynthButtonView *button = (ZynthButtonView *)node.view;
       button.delegate = manager;
       [button attachToManager:manager node:node];
     };
-    descriptor.handleSetProp = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name, id value, NSString *rawJSON) {
+    descriptor.handleSetProp = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name, id value, NSString *rawJSON) {
       return ZynthButtonHandleSetProp(manager, node, name, value, rawJSON);
     };
-    descriptor.handleSetHandler = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name) {
+    descriptor.handleSetHandler = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name) {
       return ZynthButtonHandleSetHandler(manager, node, name);
     };
     ZynthRegisterComponentDescriptor(descriptor);
@@ -201,45 +201,45 @@ static BOOL ZynthButtonHandleSetHandler(SNUIManager *manager,
 #pragma mark - ZynthButtonViewDelegate
 
 - (void)buttonViewDidPressIn:(ZynthButtonView *)button {
-  SNNode *node = [self zynth_nodeForId:@(button.nodeId)];
+  ZynthNode *node = [self zynth_nodeForId:@(button.nodeId)];
   if (!node) return;
   [self zynth_dispatchEvent:@"onPressIn" payload:@{} toNode:node];
 }
 
 - (void)buttonViewDidPressOut:(ZynthButtonView *)button cancelled:(BOOL)cancelled {
-  SNNode *node = [self zynth_nodeForId:@(button.nodeId)];
+  ZynthNode *node = [self zynth_nodeForId:@(button.nodeId)];
   if (!node) return;
   NSDictionary *payload = @{@"cancelled" : @(cancelled)};
   [self zynth_dispatchEvent:@"onPressOut" payload:payload toNode:node];
 }
 
 - (void)buttonViewDidActivate:(ZynthButtonView *)button {
-  SNNode *node = [self zynth_nodeForId:@(button.nodeId)];
+  ZynthNode *node = [self zynth_nodeForId:@(button.nodeId)];
   if (!node) return;
   [self zynth_dispatchEvent:@"onPress" payload:@{} toNode:node];
 }
 
 - (void)buttonView:(ZynthButtonView *)button didLongPressWithDuration:(CFTimeInterval)duration {
-  SNNode *node = [self zynth_nodeForId:@(button.nodeId)];
+  ZynthNode *node = [self zynth_nodeForId:@(button.nodeId)];
   if (!node) return;
   NSDictionary *payload = @{@"durationMs" : @(duration)};
   [self zynth_dispatchEvent:@"onLongPress" payload:payload toNode:node];
 }
 
 - (void)buttonViewDidFocus:(ZynthButtonView *)button {
-  SNNode *node = [self zynth_nodeForId:@(button.nodeId)];
+  ZynthNode *node = [self zynth_nodeForId:@(button.nodeId)];
   if (!node) return;
   [self zynth_dispatchEvent:@"onFocus" payload:@{} toNode:node];
 }
 
 - (void)buttonViewDidBlur:(ZynthButtonView *)button {
-  SNNode *node = [self zynth_nodeForId:@(button.nodeId)];
+  ZynthNode *node = [self zynth_nodeForId:@(button.nodeId)];
   if (!node) return;
   [self zynth_dispatchEvent:@"onBlur" payload:@{} toNode:node];
 }
 
 - (void)buttonView:(ZynthButtonView *)button didEmitKeyEvent:(NSString *)phase key:(NSString *)key {
-  SNNode *node = [self zynth_nodeForId:@(button.nodeId)];
+  ZynthNode *node = [self zynth_nodeForId:@(button.nodeId)];
   if (!node) return;
   NSDictionary *payload = key.length ? @{@"key" : key} : @{};
   [self zynth_dispatchEvent:phase payload:payload toNode:node];

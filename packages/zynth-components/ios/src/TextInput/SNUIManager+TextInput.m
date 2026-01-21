@@ -4,8 +4,8 @@
 #import "ZynthKit.h"
 #import "ZynthComponentRegistry.h"
 #import "ZynthComponentAPI.h"
-#import "SNUIManager.h"
-#import "SNNode.h"
+#import "ZynthUIManager.h"
+#import "ZynthNode.h"
 #endif
 
 #import "ZynthTextInputView.h"
@@ -54,7 +54,7 @@ static YGSize SNMeasureSecureTextInput(YGNodeConstRef node,
 
 static const void *kSNTextInputStatesKey = &kSNTextInputStatesKey;
 
-static NSMutableDictionary<NSNumber *, SNTextInputState *> *SNTextInputStateMap(SNUIManager *manager) {
+static NSMutableDictionary<NSNumber *, SNTextInputState *> *SNTextInputStateMap(ZynthUIManager *manager) {
   NSMutableDictionary *states = objc_getAssociatedObject(manager, kSNTextInputStatesKey);
   if (!states) {
     states = [NSMutableDictionary new];
@@ -63,7 +63,7 @@ static NSMutableDictionary<NSNumber *, SNTextInputState *> *SNTextInputStateMap(
   return states;
 }
 
-static SNTextInputState *SNTextInputStateForNode(SNUIManager *manager, SNNode *node, BOOL create) {
+static SNTextInputState *SNTextInputStateForNode(ZynthUIManager *manager, ZynthNode *node, BOOL create) {
   if (!node) return nil;
   NSMutableDictionary *states = SNTextInputStateMap(manager);
   SNTextInputState *state = states[@(node.nid)];
@@ -77,8 +77,8 @@ static SNTextInputState *SNTextInputStateForNode(SNUIManager *manager, SNNode *n
   return state;
 }
 
-static BOOL ZynthTextInputHandleSetProp(SNUIManager *manager,
-                                       SNNode *node,
+static BOOL ZynthTextInputHandleSetProp(ZynthUIManager *manager,
+                                       ZynthNode *node,
                                        NSString *name,
                                        id value,
                                        NSString *rawJSON) {
@@ -259,8 +259,8 @@ static BOOL ZynthTextInputHandleSetProp(SNUIManager *manager,
   return NO;
 }
 
-static BOOL ZynthTextInputHandleSetHandler(SNUIManager *manager,
-                                          SNNode *node,
+static BOOL ZynthTextInputHandleSetHandler(ZynthUIManager *manager,
+                                          ZynthNode *node,
                                           NSString *name) {
   if (!node || ![node.view isKindOfClass:[ZynthTextInputView class]]) return NO;
   ZynthTextInputView *view = (ZynthTextInputView *)node.view;
@@ -313,8 +313,8 @@ static BOOL ZynthTextInputHandleSetHandler(SNUIManager *manager,
   return NO;
 }
 
-static BOOL ZynthSecureTextInputHandleSetProp(SNUIManager *manager,
-                                             SNNode *node,
+static BOOL ZynthSecureTextInputHandleSetProp(ZynthUIManager *manager,
+                                             ZynthNode *node,
                                              NSString *name,
                                              id value,
                                              NSString *rawJSON) {
@@ -392,8 +392,8 @@ static BOOL ZynthSecureTextInputHandleSetProp(SNUIManager *manager,
   return NO;
 }
 
-static BOOL ZynthSecureTextInputHandleSetHandler(SNUIManager *manager,
-                                                SNNode *node,
+static BOOL ZynthSecureTextInputHandleSetHandler(ZynthUIManager *manager,
+                                                ZynthNode *node,
                                                 NSString *name) {
   if (!node || ![node.view isKindOfClass:[ZynthSecureTextInputView class]]) return NO;
   ZynthSecureTextInputView *view = (ZynthSecureTextInputView *)node.view;
@@ -421,21 +421,21 @@ static BOOL ZynthSecureTextInputHandleSetHandler(SNUIManager *manager,
   return NO;
 }
 
-@interface SNUIManager (TextInputComponent)
+@interface ZynthUIManager (TextInputComponent)
 @end
 
-@implementation SNUIManager (TextInputComponent)
+@implementation ZynthUIManager (TextInputComponent)
 
 + (void)load {
   static dispatch_once_t textInputToken;
   dispatch_once(&textInputToken, ^{
     ZynthComponentDescriptor *descriptor = [[ZynthComponentDescriptor alloc] initWithType:@"text-input"];
-    descriptor.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+    descriptor.createView = ^UIView *(ZynthUIManager *manager, NSString *type) {
       ZynthTextInputView *view = [[ZynthTextInputView alloc] initWithFrame:CGRectZero];
       view.backgroundColor = [UIColor clearColor];
       return view;
     };
-    descriptor.attach = ^(SNUIManager *manager, SNNode *node) {
+    descriptor.attach = ^(ZynthUIManager *manager, ZynthNode *node) {
       if (![node.view isKindOfClass:[ZynthTextInputView class]]) return;
       ZynthTextInputView *view = (ZynthTextInputView *)node.view;
       SNTextInputState *state = SNTextInputStateForNode(manager, node, YES);
@@ -457,10 +457,10 @@ static BOOL ZynthSecureTextInputHandleSetHandler(SNUIManager *manager,
       }
       state.mounting = NO;
     };
-    descriptor.handleSetProp = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name, id value, NSString *rawJSON) {
+    descriptor.handleSetProp = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name, id value, NSString *rawJSON) {
       return ZynthTextInputHandleSetProp(manager, node, name, value, rawJSON);
     };
-    descriptor.handleSetHandler = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name) {
+    descriptor.handleSetHandler = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name) {
       return ZynthTextInputHandleSetHandler(manager, node, name);
     };
     ZynthRegisterComponentDescriptor(descriptor);
@@ -469,12 +469,12 @@ static BOOL ZynthSecureTextInputHandleSetHandler(SNUIManager *manager,
   static dispatch_once_t secureTextInputToken;
   dispatch_once(&secureTextInputToken, ^{
     ZynthComponentDescriptor *descriptor = [[ZynthComponentDescriptor alloc] initWithType:@"secure-text-input"];
-    descriptor.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+    descriptor.createView = ^UIView *(ZynthUIManager *manager, NSString *type) {
       ZynthSecureTextInputView *view = [[ZynthSecureTextInputView alloc] initWithFrame:CGRectZero];
       view.backgroundColor = [UIColor clearColor];
       return view;
     };
-    descriptor.attach = ^(SNUIManager *manager, SNNode *node) {
+    descriptor.attach = ^(ZynthUIManager *manager, ZynthNode *node) {
       if (![node.view isKindOfClass:[ZynthSecureTextInputView class]]) return;
       ZynthSecureTextInputView *view = (ZynthSecureTextInputView *)node.view;
       view.manager = manager;
@@ -486,10 +486,10 @@ static BOOL ZynthSecureTextInputHandleSetHandler(SNUIManager *manager,
         YGNodeStyleSetWidthPercent(node.yoga, 100.0f);
       }
     };
-    descriptor.handleSetProp = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name, id value, NSString *rawJSON) {
+    descriptor.handleSetProp = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name, id value, NSString *rawJSON) {
       return ZynthSecureTextInputHandleSetProp(manager, node, name, value, rawJSON);
     };
-    descriptor.handleSetHandler = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name) {
+    descriptor.handleSetHandler = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name) {
       return ZynthSecureTextInputHandleSetHandler(manager, node, name);
     };
     ZynthRegisterComponentDescriptor(descriptor);
