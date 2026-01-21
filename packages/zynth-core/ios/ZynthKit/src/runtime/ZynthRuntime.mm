@@ -16,6 +16,21 @@
     _rootView = rootView;
     _manager = [[ZynthUIManager alloc] initWithRootView:rootView];
     _runtime = [[ZynthHermesRuntimeHost alloc] initWithUIManager:_manager];
+    __weak ZynthHermesRuntimeHost *weakRuntime = _runtime;
+    [_manager setFrameProfiler:^(NSTimeInterval frameMs,
+                                 NSTimeInterval layoutMs,
+                                 BOOL overBudget,
+                                 NSUInteger nodeCount) {
+      ZynthHermesRuntimeHost *strongRuntime = weakRuntime;
+      if (!strongRuntime) return;
+      [strongRuntime callGlobal:@"__zynth_reportFrame"
+                           args:@[
+                             @(frameMs),
+                             @(layoutMs),
+                             @(overBudget),
+                             @(nodeCount),
+                           ]];
+    }];
   }
   return self;
 }

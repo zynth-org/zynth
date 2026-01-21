@@ -9,6 +9,11 @@ import com.zynth.kit.core.ZynthUIManager
 class ZynthRuntime(private val root: ZynthRootView) {
   private val uiManager = ZynthUIManager(root)
   private val runtimePtr: Long = JSBridge.createHermesRuntime()
+  init {
+    uiManager.setFrameProfiler { frameMs, layoutMs, overBudget, nodeCount ->
+      JSBridge.callGlobalFrame(runtimePtr, "__zynth_reportFrame", frameMs, layoutMs, overBudget, nodeCount)
+    }
+  }
 
   companion object {
     @JvmStatic

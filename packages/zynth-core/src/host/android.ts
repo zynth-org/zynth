@@ -31,12 +31,10 @@ export function createAndroidHost(): Host {
   const NODE_TO_CONTEXT = new Map<number, string>(); // track which context owns each node
   const CONTAINER_TO_CONTEXT = new Map<number, string>(); // map container nodeId -> contextId
   let nextContextId = 0;
-  let nextNodeId = 10000; // high range to avoid conflicting with native-generated ids
   let activeRecyclingContext: string | null = null; // Currently active context for createNode
 
   // NEW: Structured Queue System
   type BatchOperation =
-    | { type: "createNode"; nodeId: number; tag: string }
     | { type: "insertChild"; parentId: number; childId: number; index: number }
     | { type: "removeChild"; parentId: number; childId: number }
     | { type: "setProp"; nodeId: number; name: string; value: any }
@@ -107,9 +105,6 @@ export function createAndroidHost(): Host {
           } else {
             for (const op of batchAccumulator) {
               switch (op.type) {
-                case "createNode":
-                  ui.createNode(op.tag);
-                  break;
                 case "insertChild":
                   ui.insertChild(op.parentId, op.childId, op.index);
                   break;
@@ -349,11 +344,7 @@ export function createAndroidHost(): Host {
       }
 
       if (id === null) {
-        id = nextNodeId++;
-        const op = { type: "createNode" as const, nodeId: id, tag: type };
-        if (!tryEnqueueBatch(op)) {
-          enqueueBatchOp(op);
-        }
+        id = ui.createNode(type);
       }
 
       PARENTS.set(id, null);
@@ -414,12 +405,7 @@ export function createAndroidHost(): Host {
       return { id, type } as HostNode;
     },
     createText(value) {
-      let id = nextNodeId++;
-      const op = { type: "createNode" as const, nodeId: id, tag: "text" };
-      if (!tryEnqueueBatch(op)) {
-        enqueueBatchOp(op);
-      }
-
+      const id: number = ui.createNode("text");
       enqueueBatchOp({ type: "setText", nodeId: id, value: value ?? "" });
       PARENTS.set(id, null);
       CHILDREN.set(id, []);
@@ -681,9 +667,6 @@ export function createAndroidHost(): Host {
       if (isSuppressed()) return;
       for (const op of context.operations) {
         switch (op.type) {
-          case "createNode":
-            ui.createNode(op.tag);
-            break;
           case "insertChild":
             ui.insertChild(op.parentId, op.childId, op.index);
             break;

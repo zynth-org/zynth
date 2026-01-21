@@ -71,28 +71,6 @@
   return @(nid);
 }
 
-- (NSNumber *)createNodeWithId:(NSNumber *)nodeId type:(NSString *)type {
-  int nid = nodeId.intValue > 0 ? nodeId.intValue : _nextId++;
-  if (nid >= _nextId) {
-    _nextId = nid + 1;
-  }
-  UIView *view = nil;
-  if ([type isEqualToString:@"text"]) {
-    UILabel *label = [[UILabel alloc] initWithFrame:CGRectZero];
-    label.numberOfLines = 0;
-    view = label;
-  } else {
-    view = [[UIView alloc] initWithFrame:CGRectZero];
-  }
-  _nodes[@(nid)] = view;
-  _pointerEvents[@(nid)] = @"auto";
-  _nodeSurfaces[@(nid)] = @(_activeSurfaceId);
-  ZynthYogaLayout *layout = [self yogaForSurface:_activeSurfaceId];
-  [layout createNodeWithId:@(nid) type:type view:view];
-  [self markSurfaceDirty:_activeSurfaceId];
-  return @(nid);
-}
-
 - (void)setProp:(NSNumber *)nodeId name:(NSString *)name value:(NSString *)value {
   UIView *view = _nodes[nodeId];
   if (!view || name.length == 0) return;

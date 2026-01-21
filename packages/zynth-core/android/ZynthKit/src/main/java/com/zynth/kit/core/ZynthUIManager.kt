@@ -89,23 +89,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) {
     return id
   }
 
-  fun createNodeWithId(type: String, id: Int) {
-    val resolvedId = if (id > 0) id else nextId++
-    if (resolvedId >= nextId) {
-      nextId = resolvedId + 1
-    }
-    val view = if (type == "text") {
-      TextView(rootView.context).apply { text = "" }
-    } else {
-      ZynthLayoutView(rootView.context)
-    }
-    nodes[resolvedId] = view
-    pointerEvents[resolvedId] = "auto"
-    nodeSurfaces[resolvedId] = activeSurfaceId
-    yogaForSurface(activeSurfaceId).ensureNode(resolvedId, view)
-    markSurfaceDirty(activeSurfaceId)
-  }
-
   fun setProp(id: Int, name: String, value: String?) {
     val view = nodes[id] ?: return
     if (name == "backgroundColor") {

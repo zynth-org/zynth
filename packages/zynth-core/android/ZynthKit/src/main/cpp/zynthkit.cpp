@@ -17,7 +17,6 @@ struct RuntimeState {
   jobject uiManager = nullptr;
   jclass uiClass = nullptr;
   jmethodID createNode = nullptr;
-  jmethodID createNodeWithId = nullptr;
   jmethodID setProp = nullptr;
   jmethodID setText = nullptr;
   jmethodID insertChild = nullptr;
@@ -374,18 +373,11 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
           if (!typeVal.isString()) continue;
           std::string type = typeVal.asString(rt).utf8(rt);
           if (type == "createNode") {
-            Value idVal = op.getProperty(rt, "nodeId");
             Value tagVal = op.getProperty(rt, "tag");
-            if (!tagVal.isString()) continue;
-            jint nodeId = idVal.isNumber() ? static_cast<jint>(idVal.asNumber()) : 0;
-            std::string tag = tagVal.asString(rt).utf8(rt);
-            jstring jTag = env->NewStringUTF(tag.c_str());
-            if (state->createNodeWithId) {
-              env->CallVoidMethod(state->uiManager, state->createNodeWithId, jTag, nodeId);
-            } else {
-              env->CallIntMethod(state->uiManager, state->createNode, jTag);
+            if (tagVal.isString()) {
+              __android_log_print(ANDROID_LOG_WARN, "ZynthUI",
+                                  "applyBatchTyped createNode op is unsupported on Android");
             }
-            env->DeleteLocalRef(jTag);
             continue;
           }
           if (type == "setProp") {
@@ -516,8 +508,6 @@ Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlon
   state.uiManager = env->NewGlobalRef(uiManager);
   state.uiClass = static_cast<jclass>(env->NewGlobalRef(env->GetObjectClass(uiManager)));
   state.createNode = env->GetMethodID(state.uiClass, "createNode", "(Ljava/lang/String;)I");
-  state.createNodeWithId =
-      env->GetMethodID(state.uiClass, "createNodeWithId", "(Ljava/lang/String;I)V");
   state.setProp = env->GetMethodID(state.uiClass, "setProp", "(ILjava/lang/String;Ljava/lang/String;)V");
   state.setText = env->GetMethodID(state.uiClass, "setText", "(ILjava/lang/String;)V");
   state.insertChild = env->GetMethodID(state.uiClass, "insertChild", "(III)V");
@@ -574,6 +564,40 @@ Java_com_zynth_kit_runtime_JSBridge_callGlobalDouble(JNIEnv *env, jobject, jlong
   auto callFn = static_cast<Value (Function::*)(Runtime&, const Value*, size_t) const>(&Function::call);
   try {
     (fn.*callFn)(rt, &arg, 1);
+  } catch (...) {
+    return;
+  }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_zynth_kit_runtime_JSBridge_callGlobalFrame(JNIEnv *env,
+                                                    jobject,
+                                                    jlong ptr,
+                                                    jstring name,
+                                                    jdouble frameMs,
+                                                    jdouble layoutMs,
+                                                    jboolean overBudget,
+                                                    jint nodeCount) {
+  auto *runtime = reinterpret_cast<facebook::hermes::HermesRuntime *>(ptr);
+  if (!runtime || !name) return;
+  const char *utf8 = env->GetStringUTFChars(name, nullptr);
+  std::string propName = utf8 ? utf8 : "";
+  env->ReleaseStringUTFChars(name, utf8);
+  Runtime &rt = *runtime;
+  auto propId = PropNameID::forAscii(rt, propName.c_str());
+  if (!rt.global().hasProperty(rt, propId)) return;
+  Value fnVal = rt.global().getProperty(rt, propId);
+  if (!fnVal.isObject() || !fnVal.asObject(rt).isFunction(rt)) return;
+  Function fn = fnVal.asObject(rt).asFunction(rt);
+  Value args[] = {
+    Value((double)frameMs),
+    Value((double)layoutMs),
+    Value((bool)(overBudget == JNI_TRUE)),
+    Value((double)nodeCount),
+  };
+  auto callFn = static_cast<Value (Function::*)(Runtime&, const Value*, size_t) const>(&Function::call);
+  try {
+    (fn.*callFn)(rt, args, 4);
   } catch (...) {
     return;
   }

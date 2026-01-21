@@ -379,11 +379,16 @@ void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
             Value tagVal = op.getProperty(rt, "tag");
             if (!tagVal.isString()) continue;
             std::string tag = tagVal.asString(rt).utf8(rt);
-            NSNumber *nodeId = [manager createNodeWithId:@(idVal.asNumber())
-                                                    type:[NSString stringWithUTF8String:tag.c_str()]];
-            (void)nodeId;
+            NSNumber *nodeId = [manager createNode:[NSString stringWithUTF8String:tag.c_str()]];
+            if (DEBUG_RUNTIME && idVal.isNumber()) {
+              int expected = (int)idVal.asNumber();
+              if (nodeId.intValue != expected) {
+                NSLog(@"[ZynthUI] createNode id mismatch expected=%d actual=%d",
+                      expected, nodeId.intValue);
+              }
+            }
             if (DEBUG_RUNTIME) {
-              NSLog(@"[ZynthUI] createNode id=%d type=%s (explicit)", nodeId.intValue, tag.c_str());
+              NSLog(@"[ZynthUI] createNode id=%d type=%s (batch)", nodeId.intValue, tag.c_str());
             }
             continue;
           }
