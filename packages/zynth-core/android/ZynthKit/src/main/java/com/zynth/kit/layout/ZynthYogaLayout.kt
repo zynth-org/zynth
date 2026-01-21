@@ -159,8 +159,16 @@ class ZynthYogaLayout {
       "rowGap" -> value?.toFloatOrNull()?.let { node.setGap(com.facebook.yoga.YogaGutter.ROW, it) }
       "columnGap" -> value?.toFloatOrNull()?.let { node.setGap(com.facebook.yoga.YogaGutter.COLUMN, it) }
       "aspectRatio" -> value?.toFloatOrNull()?.let { node.aspectRatio = it }
-      "overflow" -> node.overflow = if (value == "hidden") YogaOverflow.HIDDEN else YogaOverflow.VISIBLE
-      "display" -> node.display = if (value == "none") com.facebook.yoga.YogaDisplay.NONE else com.facebook.yoga.YogaDisplay.FLEX
+      "overflow" -> node.overflow = when (value) {
+        "hidden" -> YogaOverflow.HIDDEN
+        "scroll" -> YogaOverflow.SCROLL
+        else -> YogaOverflow.VISIBLE
+      }
+      "display" -> node.display = when (value) {
+        "none" -> com.facebook.yoga.YogaDisplay.NONE
+        "flex" -> com.facebook.yoga.YogaDisplay.FLEX
+        else -> com.facebook.yoga.YogaDisplay.FLEX
+      }
     }
   }
 

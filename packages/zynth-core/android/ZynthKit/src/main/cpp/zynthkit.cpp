@@ -5,6 +5,7 @@
 
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -113,6 +114,24 @@ void applyStyle(Runtime &rt, RuntimeState *state, JNIEnv *env, jint nodeId, cons
       "background", "backgroundImage"
   };
 
+  auto stringifyValue = [&rt](const Value &value) -> std::optional<std::string> {
+    if (value.isString()) {
+      return value.asString(rt).utf8(rt);
+    }
+    if (!value.isObject()) return std::nullopt;
+    try {
+      Object json = rt.global().getPropertyAsObject(rt, "JSON");
+      Function stringify = json.getPropertyAsFunction(rt, "stringify");
+      Value result = stringify.call(rt, value);
+      if (result.isString()) {
+        return result.asString(rt).utf8(rt);
+      }
+    } catch (...) {
+      return std::nullopt;
+    }
+    return std::nullopt;
+  };
+
   for (const char *key : numericKeys) {
     if (!style.hasProperty(rt, key)) continue;
     Value v = style.getProperty(rt, key);
@@ -134,8 +153,9 @@ void applyStyle(Runtime &rt, RuntimeState *state, JNIEnv *env, jint nodeId, cons
   for (const char *key : objectKeys) {
     if (!style.hasProperty(rt, key)) continue;
     Value v = style.getProperty(rt, key);
-    if (v.isString()) {
-      callSetProp(env, state, nodeId, key, v.asString(rt).utf8(rt));
+    auto value = stringifyValue(v);
+    if (value) {
+      callSetProp(env, state, nodeId, key, *value);
     }
   }
 }

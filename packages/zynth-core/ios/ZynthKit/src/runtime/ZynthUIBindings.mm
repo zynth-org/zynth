@@ -53,6 +53,26 @@ static void removeHandlersForNode(int nodeId) {
     }
   }
 }
+
+static NSString *ZynthStringifyStyleValue(Runtime &rt, const Value &value) {
+  if (value.isString()) {
+    std::string str = value.asString(rt).utf8(rt);
+    return [NSString stringWithUTF8String:str.c_str()];
+  }
+  if (!value.isObject()) return nil;
+  try {
+    Object json = rt.global().getPropertyAsObject(rt, "JSON");
+    Function stringify = json.getPropertyAsFunction(rt, "stringify");
+    Value result = stringify.call(rt, value);
+    if (result.isString()) {
+      std::string str = result.asString(rt).utf8(rt);
+      return [NSString stringWithUTF8String:str.c_str()];
+    }
+  } catch (...) {
+    return nil;
+  }
+  return nil;
+}
 } // namespace
 
 extern "C" void ZynthUIInvokePressEvent(int nodeId,
@@ -213,12 +233,11 @@ static void ZynthApplyStyleObject(Runtime &rt, ZynthUIManager *manager, int node
   for (const char *key : objectKeys) {
     if (!style.hasProperty(rt, key)) continue;
     Value v = style.getProperty(rt, key);
-    if (v.isString()) {
-      std::string str = v.asString(rt).utf8(rt);
-      [manager setProp:@(nodeId)
-                  name:[NSString stringWithUTF8String:key]
-                 value:[NSString stringWithUTF8String:str.c_str()]];
-    }
+    NSString *value = ZynthStringifyStyleValue(rt, v);
+    if (!value) continue;
+    [manager setProp:@(nodeId)
+                name:[NSString stringWithUTF8String:key]
+               value:value];
   }
 }
 

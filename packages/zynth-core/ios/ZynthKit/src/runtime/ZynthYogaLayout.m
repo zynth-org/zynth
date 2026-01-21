@@ -277,6 +277,8 @@ static YGSize ZynthMeasureText(YGNodeConstRef node,
   if ([name isEqualToString:@"overflow"]) {
     if ([value isEqualToString:@"hidden"]) {
       YGNodeStyleSetOverflow(node, YGOverflowHidden);
+    } else if ([value isEqualToString:@"scroll"]) {
+      YGNodeStyleSetOverflow(node, YGOverflowScroll);
     } else {
       YGNodeStyleSetOverflow(node, YGOverflowVisible);
     }
@@ -285,6 +287,8 @@ static YGSize ZynthMeasureText(YGNodeConstRef node,
   if ([name isEqualToString:@"display"]) {
     if ([value isEqualToString:@"none"]) {
       YGNodeStyleSetDisplay(node, YGDisplayNone);
+    } else if ([value isEqualToString:@"flex"]) {
+      YGNodeStyleSetDisplay(node, YGDisplayFlex);
     } else {
       YGNodeStyleSetDisplay(node, YGDisplayFlex);
     }

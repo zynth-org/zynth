@@ -5,6 +5,9 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+@class ZynthViewStyleState;
+@class ZynthTextStyleState;
+
 @interface ZynthUIManager () {
   __weak UIView *_rootView;
   NSMutableDictionary<NSNumber *, UIView *> *_nodes;
@@ -30,6 +33,9 @@ NS_ASSUME_NONNULL_BEGIN
   NSMutableSet<NSNumber *> *_layoutNodes;
   NSMutableSet<NSNumber *> *_layoutPending;
   NSMutableDictionary<NSNumber *, NSValue *> *_layoutFrames;
+  NSMutableDictionary<NSNumber *, ZynthViewStyleState *> *_styleStates;
+  NSMutableSet<NSNumber *> *_styleDirtyNodes;
+  NSMutableDictionary<NSNumber *, ZynthTextStyleState *> *_textStyleStates;
   int _nextId;
   CADisplayLink *_displayLink;
   BOOL _needsLayout;

@@ -46,6 +46,7 @@ internal fun ZynthUIManager.handleFrame() {
   val dirty = dirtySurfaces.toSet()
   dirtySurfaces.clear()
   performLayoutInternal(dirty)
+  applyStyleLayoutIfNeeded()
   val endNs = System.nanoTime()
   lastFrameMs = (endNs - startNs) / 1_000_000.0
   lastLayoutMs = lastFrameMs

@@ -2,6 +2,7 @@
 #import "ZynthUIManager+Scheduler.h"
 #import "ZynthUIManager+Surface.h"
 #import "ZynthUIManager+Events.h"
+#import "ZynthUIManager+Style.h"
 
 @implementation ZynthUIManager (Scheduler)
 
@@ -66,6 +67,7 @@
     ZynthYogaLayout *layout = [self yogaForSurface:key.intValue];
     [layout applyLayout];
   }
+  [self applyStyleLayoutIfNeeded];
   CFTimeInterval frameEnd = CACurrentMediaTime();
   _lastFrameMs = (frameEnd - frameStart) * 1000.0;
   _lastLayoutMs = _lastFrameMs;

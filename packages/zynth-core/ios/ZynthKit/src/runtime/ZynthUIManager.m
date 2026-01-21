@@ -4,6 +4,8 @@
 #import "ZynthUIManager+Scheduler.h"
 #import "ZynthUIManager+Surface.h"
 #import "ZynthUIManager+Events.h"
+#import "ZynthUIManager+Style.h"
+#import "ZynthColorParser.h"
 #import <dispatch/dispatch.h>
 #import <math.h>
 #import <QuartzCore/QuartzCore.h>
@@ -38,6 +40,9 @@
     _layoutNodes = [NSMutableSet set];
     _layoutPending = [NSMutableSet set];
     _layoutFrames = [NSMutableDictionary dictionary];
+    _styleStates = [NSMutableDictionary dictionary];
+    _styleDirtyNodes = [NSMutableSet set];
+    _textStyleStates = [NSMutableDictionary dictionary];
     _nextId = 1;
     _needsLayout = NO;
     _frameInProgress = NO;
@@ -74,14 +79,21 @@
 - (void)setProp:(NSNumber *)nodeId name:(NSString *)name value:(NSString *)value {
   UIView *view = _nodes[nodeId];
   if (!view || name.length == 0) return;
+  if ([self applyStyleProp:nodeId view:view name:name value:value]) {
+    return;
+  }
   if ([name isEqualToString:@"backgroundColor"]) {
-    UIColor *color = [self colorFromString:value];
+    UIColor *color = [ZynthColorParser parseColor:value];
     if (color) view.backgroundColor = color;
     return;
   }
   if ([name isEqualToString:@"color"] && [view isKindOfClass:[UILabel class]]) {
-    UIColor *color = [self colorFromString:value];
-    if (color) ((UILabel *)view).textColor = color;
+    UIColor *color = [ZynthColorParser parseColor:value];
+    if (color) {
+      UILabel *label = (UILabel *)view;
+      label.textColor = color;
+      [self applyTextValue:nodeId label:label text:label.text ?: @""];
+    }
     return;
   }
   if ([name isEqualToString:@"opacity"]) {
@@ -102,7 +114,7 @@
     return;
   }
   if ([name isEqualToString:@"borderColor"]) {
-    UIColor *color = [self colorFromString:value];
+    UIColor *color = [ZynthColorParser parseColor:value];
     if (color) view.layer.borderColor = color.CGColor;
     return;
   }
@@ -148,6 +160,7 @@
     CGFloat size = (CGFloat)[value doubleValue];
     UIFont *font = label.font ?: [UIFont systemFontOfSize:size];
     label.font = [font fontWithSize:size];
+    [self applyTextValue:nodeId label:label text:label.text ?: @""];
     return;
   }
   if ([name isEqualToString:@"fontWeight"] && [view isKindOfClass:[UILabel class]]) {
@@ -158,19 +171,26 @@
     else if ([value isEqualToString:@"600"]) weight = UIFontWeightSemibold;
     else if ([value isEqualToString:@"500"]) weight = UIFontWeightMedium;
     label.font = [UIFont systemFontOfSize:fontSize weight:weight];
+    [self applyTextValue:nodeId label:label text:label.text ?: @""];
     return;
   }
   if ([name isEqualToString:@"fontFamily"] && [view isKindOfClass:[UILabel class]]) {
     UILabel *label = (UILabel *)view;
     UIFont *font = [UIFont fontWithName:value size:label.font.pointSize];
-    if (font) label.font = font;
+    if (font) {
+      label.font = font;
+      [self applyTextValue:nodeId label:label text:label.text ?: @""];
+    }
     return;
   }
   if ([name isEqualToString:@"fontStyle"] && [view isKindOfClass:[UILabel class]]) {
     UILabel *label = (UILabel *)view;
     if ([value isEqualToString:@"italic"]) {
       UIFontDescriptor *descriptor = [label.font.fontDescriptor fontDescriptorWithSymbolicTraits:UIFontDescriptorTraitItalic];
-      if (descriptor) label.font = [UIFont fontWithDescriptor:descriptor size:label.font.pointSize];
+      if (descriptor) {
+        label.font = [UIFont fontWithDescriptor:descriptor size:label.font.pointSize];
+        [self applyTextValue:nodeId label:label text:label.text ?: @""];
+      }
     }
     return;
   }
@@ -180,14 +200,6 @@
     else if ([value isEqualToString:@"right"]) label.textAlignment = NSTextAlignmentRight;
     else if ([value isEqualToString:@"left"]) label.textAlignment = NSTextAlignmentLeft;
     else label.textAlignment = NSTextAlignmentNatural;
-    return;
-  }
-  if ([name isEqualToString:@"letterSpacing"] && [view isKindOfClass:[UILabel class]]) {
-    UILabel *label = (UILabel *)view;
-    NSString *text = label.text ?: @"";
-    NSMutableAttributedString *attr = [[NSMutableAttributedString alloc] initWithString:text];
-    [attr addAttribute:NSKernAttributeName value:@([value doubleValue]) range:NSMakeRange(0, attr.length)];
-    label.attributedText = attr;
     return;
   }
   if ([name isEqualToString:@"width"]) {
@@ -212,14 +224,16 @@
 - (void)setText:(NSNumber *)nodeId text:(NSString *)text {
   UIView *view = _nodes[nodeId];
   if ([view isKindOfClass:[UILabel class]]) {
-    ((UILabel *)view).text = text ?: @"";
+    UILabel *label = (UILabel *)view;
+    [self applyTextValue:nodeId label:label text:text ?: @""];
     [[self yogaForNode:nodeId] markDirty:nodeId];
     [self markSurfaceDirtyForNode:nodeId];
     NSNumber *parentId = _parents[nodeId];
     if (parentId) {
       UIView *parent = _nodes[parentId];
       if ([parent isKindOfClass:[UILabel class]]) {
-        ((UILabel *)parent).text = text ?: @"";
+        UILabel *parentLabel = (UILabel *)parent;
+        [self applyTextValue:parentId label:parentLabel text:text ?: @""];
         [[self yogaForNode:parentId] markDirty:parentId];
         [self markSurfaceDirtyForNode:parentId];
       }
@@ -327,33 +341,6 @@
     [_displayLink invalidate];
     _displayLink = nil;
   }
-}
-
-- (UIColor *)colorFromString:(NSString *)value {
-  if (value.length == 0) return nil;
-  value = [value stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-  if (![value hasPrefix:@"#"]) return nil;
-  NSString *hex = [value substringFromIndex:1];
-  unsigned long long parsed = 0;
-  NSScanner *scanner = [NSScanner scannerWithString:hex];
-  if (![scanner scanHexLongLong:&parsed]) return nil;
-  CGFloat a = 1.0;
-  CGFloat r = 0.0;
-  CGFloat g = 0.0;
-  CGFloat b = 0.0;
-  if (hex.length == 6) {
-    r = ((parsed >> 16) & 0xFF) / 255.0;
-    g = ((parsed >> 8) & 0xFF) / 255.0;
-    b = (parsed & 0xFF) / 255.0;
-  } else if (hex.length == 8) {
-    a = ((parsed >> 24) & 0xFF) / 255.0;
-    r = ((parsed >> 16) & 0xFF) / 255.0;
-    g = ((parsed >> 8) & 0xFF) / 255.0;
-    b = (parsed & 0xFF) / 255.0;
-  } else {
-    return nil;
-  }
-  return [UIColor colorWithRed:r green:g blue:b alpha:a];
 }
 
 @end

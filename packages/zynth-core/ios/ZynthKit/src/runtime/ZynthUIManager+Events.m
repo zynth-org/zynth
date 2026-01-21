@@ -262,6 +262,9 @@
   [_layoutNodes removeObject:nodeId];
   [_layoutPending removeObject:nodeId];
   [_layoutFrames removeObjectForKey:nodeId];
+  [_styleDirtyNodes removeObject:nodeId];
+  [_styleStates removeObjectForKey:nodeId];
+  [_textStyleStates removeObjectForKey:nodeId];
   dispatch_source_t timer = _longPressTimers[nodeId];
   if (timer) {
     dispatch_source_cancel(timer);

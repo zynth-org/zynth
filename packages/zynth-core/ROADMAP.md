@@ -190,7 +190,7 @@ The runtime must expose the following globals via JSI HostObjects:
 
 **Status**
 
-- In progress.
+- Core complete; benchmarks pending. Focus now shifts to Phase 3.
 - Completed:
   - JSI `__ui` host object in ObjC++.
   - Typed batch path (`applyBatchTyped`) wired.
@@ -198,10 +198,6 @@ The runtime must expose the following globals via JSI HostObjects:
   - `createNode`, `setProp`, `setText`, `insertChild`, `removeChild` working for `view` and `text`.
   - Native `queueMicrotask`/`setImmediate` hooks installed; JS shim removed.
 - Pending for Phase 2 completion:
-  - Frame scheduling + budget enforcement (CADisplayLink) with profiling hooks.
-  - Event dispatch + pointer/touch handling.
-  - Surface management behavior (multi-root readiness).
-  - Remove any bridge-only helpers (e.g., `createNodeWithId` in native) once JS typed ops are final.
   - Benchmark harness integration and perf reporting for iOS.
 
 ---
@@ -227,18 +223,18 @@ The runtime must expose the following globals via JSI HostObjects:
 
 **Status**
 
-- In progress.
+- Core complete; benchmarks pending.
 - Completed:
   - JSI `__ui` host object via JNI + Kotlin.
   - Typed batch path (`applyBatchTyped`) wired.
   - Yoga layout pass and text measurement.
   - `createNode`, `setProp`, `setText`, `insertChild`, `removeChild` working for `view` and `text`.
   - Native `queueMicrotask`/`setImmediate` hooks installed; JS shim removed.
-- Pending for Phase 3 completion:
   - Choreographer frame scheduler with 14ms budget hooks.
   - Event dispatch + pointer/touch handling.
   - Surface management behavior (multi-root readiness).
   - Remove bridge-only helpers (e.g., `createNodeWithId`) once JS typed ops are final.
+- Pending for Phase 3 completion:
   - Benchmark harness integration and perf reporting for Android.
 
 ---
@@ -261,21 +257,12 @@ The runtime must expose the following globals via JSI HostObjects:
 
 **Known Style Gaps (Yoga/Style Parity)**
 
-The following style keys are not fully supported yet and must be covered in Phase 4+
-before declaring parity with the legacy runtime:
+Core support now covers the Phase 4 style list with a few remaining caveats:
 
-- Numeric: `shadowOpacity`, `shadowRadius`, `elevation`, `zIndex`, `lineHeight`,
-  `lineSpacing`, `paragraphSpacing`, `baselineShift`, `minimumFontScale`,
-  `borderTopWidth`, `borderRightWidth`, `borderBottomWidth`, `borderLeftWidth`,
-  `borderTopLeftRadius`, `borderTopRightRadius`, `borderBottomRightRadius`,
-  `borderBottomLeftRadius`.
-- String: `background`, `backgroundImage`, `borderStyle`, `position` (full enum set),
-  `display` (full enum set), `overflow` (full enum set), `pointerEvents`,
-  `borderTopColor`, `borderRightColor`, `borderBottomColor`, `borderLeftColor`,
-  `shadowColor`, `boxShadow`, `fontFamily`, `fontStyle`, `textAlign`,
-  `textDecorationLine`, `textTransform`, `hyphenation`.
-- Object: `transform`, `transformOrigin`, `shadowOffset`, `boxShadow`,
-  `background`, `backgroundImage`.
+- `backgroundImage` supports `linear-gradient(...)` strings only (no bitmap/image URLs yet).
+- `boxShadow` is first-layer only; Android maps to elevation/text shadow.
+- `paragraphSpacing` is a no-op on Android.
+- `transform` ignores `skew*` and `perspective` on Android for now.
 
 ---
 

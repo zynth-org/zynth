@@ -1,8 +1,6 @@
 package com.zynth.kit.core
 
-import android.graphics.Color
 import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
 import android.view.Choreographer
@@ -14,6 +12,7 @@ import com.zynth.kit.layout.ZynthYogaLayout
 
 class ZynthUIManager(internal val rootView: ZynthRootView) {
   internal val mainHandler = Handler(Looper.getMainLooper())
+  internal val density = rootView.resources.displayMetrics.density
   internal var nextId = 1
   internal val nodes = HashMap<Int, View>()
   internal val parents = HashMap<Int, Int>()
@@ -23,9 +22,9 @@ class ZynthUIManager(internal val rootView: ZynthRootView) {
   internal val dirtySurfaces = HashSet<Int>()
   internal val surfaceSizes = HashMap<Int, Pair<Int, Int>>()
   internal var activeSurfaceId = 0
-  internal val backgrounds = HashMap<Int, GradientDrawable>()
-  internal val borderWidths = HashMap<Int, Int>()
-  internal val borderColors = HashMap<Int, Int>()
+  internal val styleStates = HashMap<Int, ZynthViewStyleState>()
+  internal val styleDirtyNodes = HashSet<Int>()
+  internal val textStyleStates = HashMap<Int, ZynthTextStyleState>()
   internal val pointerEvents = HashMap<Int, String>()
   internal val pressNodes = HashSet<Int>()
   internal val longPressNodes = HashSet<Int>()
@@ -91,44 +90,11 @@ class ZynthUIManager(internal val rootView: ZynthRootView) {
 
   fun setProp(id: Int, name: String, value: String?) {
     val view = nodes[id] ?: return
-    if (name == "backgroundColor") {
-      parseColor(value)?.let { color ->
-        val drawable = backgrounds.getOrPut(id) { GradientDrawable() }
-        drawable.setColor(color)
-        runOnMain { view.background = drawable }
-      }
-      return
-    }
+    if (applyStyleProp(id, view, name, value)) return
     if (name == "color" && view is TextView) {
-      parseColor(value)?.let { color ->
+      ZynthColorParser.parse(value)?.let { color ->
         runOnMain { view.setTextColor(color) }
       }
-      return
-    }
-    if (name == "borderRadius") {
-      val radius = value?.toFloatOrNull() ?: return
-      val drawable = backgrounds.getOrPut(id) { GradientDrawable() }
-      drawable.cornerRadius = radius
-      runOnMain { view.background = drawable }
-      return
-    }
-    if (name == "borderWidth") {
-      val width = value?.toFloatOrNull() ?: return
-      val drawable = backgrounds.getOrPut(id) { GradientDrawable() }
-      val color = borderColors[id] ?: Color.TRANSPARENT
-      val widthPx = width.toInt()
-      borderWidths[id] = widthPx
-      drawable.setStroke(widthPx, color)
-      runOnMain { view.background = drawable }
-      return
-    }
-    if (name == "borderColor") {
-      val color = parseColor(value) ?: return
-      val drawable = backgrounds.getOrPut(id) { GradientDrawable() }
-      borderColors[id] = color
-      val widthPx = borderWidths[id] ?: 0
-      drawable.setStroke(widthPx, color)
-      runOnMain { view.background = drawable }
       return
     }
     if (name == "pointerEvents") {
@@ -172,19 +138,9 @@ class ZynthUIManager(internal val rootView: ZynthRootView) {
       runOnMain { view.alpha = alpha }
       return
     }
-    if (name == "zIndex") {
-      val z = value?.toFloatOrNull() ?: return
-      runOnMain { view.translationZ = z }
-      return
-    }
-    if (name == "elevation") {
-      val elevation = value?.toFloatOrNull() ?: return
-      runOnMain { view.elevation = elevation }
-      return
-    }
     if (view is TextView && name == "fontSize") {
       val size = value?.toFloatOrNull() ?: return
-      runOnMain { view.textSize = size }
+      runOnMain { view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, dpToPx(size)) }
       return
     }
     if (view is TextView && name == "fontWeight") {
@@ -217,18 +173,13 @@ class ZynthUIManager(internal val rootView: ZynthRootView) {
       runOnMain { view.gravity = gravity }
       return
     }
-    if (view is TextView && name == "letterSpacing") {
-      val spacing = value?.toFloatOrNull() ?: return
-      runOnMain { view.letterSpacing = spacing }
-      return
-    }
     if (name == "width") {
-      yogaForNode(id).setStyle(id, "width", value)
+      yogaForNode(id).setStyle(id, "width", scaleYogaValue(name, value))
       markSurfaceDirtyForNode(id)
       return
     }
     if (name == "height") {
-      yogaForNode(id).setStyle(id, "height", value)
+      yogaForNode(id).setStyle(id, "height", scaleYogaValue(name, value))
       markSurfaceDirtyForNode(id)
       return
     }
@@ -237,21 +188,21 @@ class ZynthUIManager(internal val rootView: ZynthRootView) {
       markSurfaceDirtyForNode(id)
       return
     }
-    yogaForNode(id).setStyle(id, name, value)
+    yogaForNode(id).setStyle(id, name, scaleYogaValue(name, value))
     markSurfaceDirtyForNode(id)
   }
 
   fun setText(id: Int, text: String) {
     val view = nodes[id]
     if (view is TextView) {
-      runOnMain { view.text = text }
+      runOnMain { applyTextValue(id, view, text) }
       yogaForNode(id).markDirty(id)
       markSurfaceDirtyForNode(id)
       val parentId = parents[id]
       if (parentId != null) {
         val parent = nodes[parentId]
         if (parent is TextView) {
-          runOnMain { parent.text = text }
+          runOnMain { applyTextValue(parentId, parent, text) }
           yogaForNode(parentId).markDirty(parentId)
           markSurfaceDirtyForNode(parentId)
         }
@@ -343,13 +294,25 @@ class ZynthUIManager(internal val rootView: ZynthRootView) {
     ensureChoreographerInternal()
   }
 
-  private fun parseColor(value: String?): Int? {
-    if (value.isNullOrBlank()) return null
-    return try {
-      Color.parseColor(value)
-    } catch (_: Throwable) {
-      null
+  internal fun dpToPx(value: Float): Float = if (density == 0f) value else value * density
+
+  internal fun pxToDp(value: Float): Double = if (density == 0f) value.toDouble() else (value / density).toDouble()
+
+  private fun scaleYogaValue(name: String, value: String?): String? {
+    if (value.isNullOrBlank()) return value
+    val trimmed = value.trim()
+    if (trimmed == "auto" || trimmed.endsWith("%")) return value
+    val numeric = trimmed.removeSuffix("px").toFloatOrNull() ?: return value
+    val shouldScale = when (name) {
+      "width", "height", "minWidth", "minHeight", "maxWidth", "maxHeight",
+      "flexBasis", "top", "right", "bottom", "left",
+      "padding", "paddingHorizontal", "paddingVertical", "paddingTop", "paddingRight",
+      "paddingBottom", "paddingLeft", "margin", "marginHorizontal", "marginVertical",
+      "marginTop", "marginRight", "marginBottom", "marginLeft", "gap", "rowGap",
+      "columnGap" -> true
+      else -> false
     }
+    return if (shouldScale) dpToPx(numeric).toString() else value
   }
 
 }
