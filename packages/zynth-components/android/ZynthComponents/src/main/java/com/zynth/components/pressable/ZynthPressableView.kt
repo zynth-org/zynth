@@ -541,7 +541,7 @@ class ZynthPressableView(context: Context) : FrameLayout(context) {
       ColorDrawable(Color.WHITE)
     }
 
-    if (lastRadii != null && currentRadii != null && Arrays.equals(lastRadii, currentRadii)) {
+    if (lastRadii != null && Arrays.equals(lastRadii, currentRadii)) {
       return
     }
     lastRadii = currentRadii
