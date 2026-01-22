@@ -34,6 +34,18 @@ static BOOL ZynthButtonHandleSetProp(ZynthUIManager *manager,
     return YES;
   }
 
+  if ([name isEqualToString:@"loadingAriaLabel"]) {
+    NSString *text = [value isKindOfClass:[NSString class]] ? (NSString *)value : nil;
+    [button zynth_setLoadingText:text];
+    return YES;
+  }
+
+  if ([name isEqualToString:@"loadingPlacement"]) {
+    NSString *placement = [value isKindOfClass:[NSString class]] ? (NSString *)value : nil;
+    [button zynth_setLoadingPlacement:placement];
+    return YES;
+  }
+
   if ([name isEqualToString:@"variant"]) {
     NSString *variant = [value isKindOfClass:[NSString class]] ? (NSString *)value : nil;
     [button zynth_setVariant:variant];

@@ -17,7 +17,18 @@
   }
   if (!root) return;
   _surfaceRoots[key] = root;
-  _surfaceYoga[key] = [[ZynthYogaLayout alloc] initWithRootView:root];
+  ZynthYogaLayout *layout = [[ZynthYogaLayout alloc] initWithRootView:root];
+  __weak typeof(self) weakSelf = self;
+  layout.layoutDidUpdate = ^(NSNumber *nodeId, CGRect bounds, BOOL changed) {
+    if (!changed) return;
+    __strong typeof(self) strongSelf = weakSelf;
+    if (!strongSelf) return;
+    if (strongSelf->_styleStates[nodeId]) {
+      [strongSelf->_styleLayoutDirtyNodes addObject:nodeId];
+      strongSelf->_styleLayoutFrames[nodeId] = [NSValue valueWithCGRect:bounds];
+    }
+  };
+  _surfaceYoga[key] = layout;
   _surfaceSizes[key] = [NSValue valueWithCGSize:root.bounds.size];
 }
 

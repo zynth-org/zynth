@@ -44,6 +44,8 @@
     _layoutFrames = [NSMutableDictionary dictionary];
     _styleStates = [NSMutableDictionary dictionary];
     _styleDirtyNodes = [NSMutableSet set];
+    _styleLayoutFrames = [NSMutableDictionary dictionary];
+    _styleLayoutDirtyNodes = [NSMutableSet set];
     _textStyleStates = [NSMutableDictionary dictionary];
     _nextId = 1;
     _needsLayout = NO;
@@ -96,7 +98,7 @@
   return @(nid);
 }
 
-- (void)setProp:(NSNumber *)nodeId name:(NSString *)name value:(NSString *)value {
+- (void)setProp:(NSNumber *)nodeId name:(NSString *)name value:(NSString *_Nullable)value {
   UIView *view = _nodes[nodeId];
   if (!view || name.length == 0) return;
   ZynthNode *node = _nodeStates[nodeId];
@@ -381,20 +383,26 @@
 
 - (void)setText:(NSNumber *)nodeId text:(NSString *)text {
   UIView *view = _nodes[nodeId];
-  if ([view isKindOfClass:[UILabel class]]) {
-    UILabel *label = (UILabel *)view;
-    [self applyTextValue:nodeId label:label text:text ?: @""];
-    [[self yogaForNode:nodeId] markDirty:nodeId];
-    [self markSurfaceDirtyForNode:nodeId];
-    NSNumber *parentId = _parents[nodeId];
-    if (parentId) {
-      UIView *parent = _nodes[parentId];
-      if ([parent isKindOfClass:[UILabel class]]) {
-        UILabel *parentLabel = (UILabel *)parent;
-        [self applyTextValue:parentId label:parentLabel text:text ?: @""];
-        [[self yogaForNode:parentId] markDirty:parentId];
-        [self markSurfaceDirtyForNode:parentId];
-      }
+  if (!view || ![view isKindOfClass:[UILabel class]]) return;
+  ZynthNode *node = _nodeStates[nodeId];
+  ZynthComponentDescriptor *descriptor = node ? ZynthGetComponentDescriptor(node.type) : nil;
+  if (node && descriptor && descriptor.handleSetProp) {
+    if (descriptor.handleSetProp((ZynthUIManager *)self, node, @"text", text ?: @"", text)) {
+      return;
+    }
+  }
+  UILabel *label = (UILabel *)view;
+  [self applyTextValue:nodeId label:label text:text ?: @""];
+  [[self yogaForNode:nodeId] markDirty:nodeId];
+  [self markSurfaceDirtyForNode:nodeId];
+  NSNumber *parentId = _parents[nodeId];
+  if (parentId) {
+    UIView *parent = _nodes[parentId];
+    if ([parent isKindOfClass:[UILabel class]]) {
+      UILabel *parentLabel = (UILabel *)parent;
+      [self applyTextValue:parentId label:parentLabel text:text ?: @""];
+      [[self yogaForNode:parentId] markDirty:parentId];
+      [self markSurfaceDirtyForNode:parentId];
     }
   }
 }
@@ -424,6 +432,7 @@
       return;
     }
   }
+  [self markSurfaceDirtyForNode:parentId];
   if ([parent isKindOfClass:[UILabel class]]) {
     if ([child isKindOfClass:[UILabel class]]) {
       ((UILabel *)parent).text = ((UILabel *)child).text ?: @"";

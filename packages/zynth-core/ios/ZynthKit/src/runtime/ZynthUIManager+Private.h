@@ -39,6 +39,8 @@ NS_ASSUME_NONNULL_BEGIN
   NSMutableDictionary<NSNumber *, NSValue *> *_layoutFrames;
   NSMutableDictionary<NSNumber *, ZynthViewStyleState *> *_styleStates;
   NSMutableSet<NSNumber *> *_styleDirtyNodes;
+  NSMutableDictionary<NSNumber *, NSValue *> *_styleLayoutFrames;
+  NSMutableSet<NSNumber *> *_styleLayoutDirtyNodes;
   NSMutableDictionary<NSNumber *, ZynthTextStyleState *> *_textStyleStates;
   int _nextId;
   CADisplayLink *_displayLink;

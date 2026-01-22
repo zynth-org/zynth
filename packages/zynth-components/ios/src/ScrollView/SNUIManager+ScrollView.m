@@ -178,6 +178,43 @@ static BOOL ZynthScrollViewHandleSetHandler(ZynthUIManager *manager,
     descriptor.handleSetHandler = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name) {
       return ZynthScrollViewHandleSetHandler(manager, node, name);
     };
+    descriptor.handleInsertChild = ^BOOL(ZynthUIManager *manager,
+                                         ZynthNode *parent,
+                                         ZynthNode *child,
+                                         NSNumber *childId,
+                                         NSUInteger index) {
+      if (!parent || ![parent.view isKindOfClass:[ZynthScrollView class]]) return NO;
+      ZynthScrollView *scrollView = (ZynthScrollView *)parent.view;
+      if (!child.view) return YES;
+      NSUInteger target = MIN(index, parent.children.count);
+      [scrollView insertContentSubview:child.view atIndex:(NSInteger)target];
+      [parent.children insertObject:childId atIndex:target];
+      if (child.yoga && parent.yoga) {
+        YGNodeRef owner = YGNodeGetOwner(child.yoga);
+        if (owner) {
+          YGNodeRemoveChild(owner, child.yoga);
+        }
+        YGNodeInsertChild(parent.yoga, child.yoga, (uint32_t)target);
+      }
+      [manager zynth_markNeedsFlush];
+      return YES;
+    };
+    descriptor.handleRemoveChild = ^BOOL(ZynthUIManager *manager,
+                                         ZynthNode *parent,
+                                         ZynthNode *child,
+                                         NSNumber *childId) {
+      if (!parent || ![parent.view isKindOfClass:[ZynthScrollView class]]) return NO;
+      ZynthScrollView *scrollView = (ZynthScrollView *)parent.view;
+      if (child.view) {
+        [scrollView removeContentSubview:child.view];
+      }
+      [parent.children removeObject:childId];
+      if (child.yoga && parent.yoga) {
+        YGNodeRemoveChild(parent.yoga, child.yoga);
+      }
+      [manager zynth_markNeedsFlush];
+      return YES;
+    };
     ZynthRegisterComponentDescriptor(descriptor);
   });
 }

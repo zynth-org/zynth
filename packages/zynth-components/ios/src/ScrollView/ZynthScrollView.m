@@ -48,6 +48,18 @@ static NSTimeInterval ZynthScrollCurrentTime(void) {
 @property(nonatomic, assign) NSTimeInterval lastGestureTimestamp;
 @end
 
+@interface ZynthInternalScrollView : UIScrollView
+@end
+
+@implementation ZynthInternalScrollView
+- (BOOL)touchesShouldCancelInContentView:(UIView *)view {
+  if ([view isKindOfClass:[UIControl class]]) {
+    return NO;
+  }
+  return [super touchesShouldCancelInContentView:view];
+}
+@end
+
 @implementation ZynthScrollView
 
 - (instancetype)init {
@@ -69,9 +81,9 @@ static NSTimeInterval ZynthScrollCurrentTime(void) {
 }
 
 - (void)commonInit {
-  _scrollView = [[UIScrollView alloc] initWithFrame:CGRectZero];
+  _scrollView = [[ZynthInternalScrollView alloc] initWithFrame:CGRectZero];
   _scrollView.delegate = self;
-  _scrollView.delaysContentTouches = NO;
+  _scrollView.delaysContentTouches = YES;
   _scrollView.canCancelContentTouches = YES;
   _scrollView.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
   _scrollView.showsVerticalScrollIndicator = YES;

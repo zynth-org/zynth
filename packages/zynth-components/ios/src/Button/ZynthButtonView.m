@@ -21,6 +21,8 @@ static const CFTimeInterval kZynthButtonLongPressDuration = 0.5;
 @property(nonatomic, copy) NSString *zynthRole;
 @property(nonatomic, copy) NSString *size;
 @property(nonatomic, copy) NSString *buttonTitle;
+@property(nonatomic, copy) NSString *loadingText;
+@property(nonatomic, copy) NSString *loadingPlacement;
 @property(nonatomic, copy) NSString *rounded;
 @property(nonatomic, strong, nullable) UIImage *buttonImage;
 @property(nonatomic, strong, nullable) UIColor *baseColor;
@@ -115,6 +117,7 @@ static const CFTimeInterval kZynthButtonLongPressDuration = 0.5;
     [self sendSubviewToBack:self.glassEffectView];
     [self updateGlassMask];
   }
+  [self zynth_applyRoundedCorners];
   [self updateConfigurationCornerRadiusIfNeeded];
 }
 
@@ -255,6 +258,38 @@ static const CFTimeInterval kZynthButtonLongPressDuration = 0.5;
 
 #pragma mark - Native Configuration (iOS 15+)
 
+- (CGFloat)zynth_resolvedCornerRadius {
+  if ([self.rounded isEqualToString:@"pill"] || [self.rounded isEqualToString:@"full"]) {
+    return CGRectGetHeight(self.bounds) * 0.5;
+  }
+  if ([self.rounded isEqualToString:@"none"]) {
+    return 0.0;
+  }
+  if ([self.rounded isEqualToString:@"sm"]) {
+    return 4.0;
+  }
+  if ([self.rounded isEqualToString:@"lg"]) {
+    return 16.0;
+  }
+  return 8.0;
+}
+
+- (void)zynth_applyRoundedCorners {
+  CGFloat radius = [self zynth_resolvedCornerRadius];
+  self.layer.cornerRadius = radius;
+  self.layer.masksToBounds = radius > 0.0;
+}
+
+- (void)zynth_updateCustomSubviewsVisibility {
+  BOOL hidden = self.zynthLoading;
+  for (UIView *subview in self.subviews) {
+    if (subview == self.glassEffectView) continue;
+    if (![self isSystemSubview:subview]) {
+      subview.hidden = hidden;
+    }
+  }
+}
+
 - (void)updateNativeConfiguration {
   if (!@available(iOS 15.0, *)) {
     return;
@@ -346,8 +381,14 @@ static const CFTimeInterval kZynthButtonLongPressDuration = 0.5;
   }
   
   // 5. Loading State
-  // Only show native spinner when using native title/image; otherwise it interferes with custom layout.
-  config.showsActivityIndicator = self.zynthLoading && usesNativeContent;
+  if (self.zynthLoading) {
+    config.showsActivityIndicator = YES;
+    if (self.loadingText) {
+      config.title = self.loadingText;
+    }
+  } else {
+    config.showsActivityIndicator = NO;
+  }
 
   // 6. Corner Style
   if ([self.rounded isEqualToString:@"pill"] || [self.rounded isEqualToString:@"full"]) {
@@ -364,6 +405,7 @@ static const CFTimeInterval kZynthButtonLongPressDuration = 0.5;
 
   // Apply Configuration
   self.configuration = config;
+  [self zynth_applyRoundedCorners];
   if (usesNativeContent) {
     self.contentHorizontalAlignment = UIControlContentHorizontalAlignmentCenter;
     self.contentVerticalAlignment = UIControlContentVerticalAlignmentCenter;
@@ -396,6 +438,7 @@ static const CFTimeInterval kZynthButtonLongPressDuration = 0.5;
     [self updateGlassEffectView];
   }
   [self updateConfigurationCornerRadiusIfNeeded];
+  [self zynth_updateCustomSubviewsVisibility];
   
   [self setNeedsLayout];
 }
@@ -455,6 +498,16 @@ static const CFTimeInterval kZynthButtonLongPressDuration = 0.5;
 
 - (void)zynth_setLoading:(BOOL)loading {
   _zynthLoading = loading;
+  [self updateNativeConfiguration];
+}
+
+- (void)zynth_setLoadingText:(NSString *)text {
+  _loadingText = text;
+  [self updateNativeConfiguration];
+}
+
+- (void)zynth_setLoadingPlacement:(NSString *)placement {
+  _loadingPlacement = placement;
   [self updateNativeConfiguration];
 }
 
@@ -527,6 +580,7 @@ static const CFTimeInterval kZynthButtonLongPressDuration = 0.5;
   [self notifyPressIn];
   [self triggerHapticsIfNeeded];
   [self updateGlassPressed:YES animated:YES];
+  self.highlighted = YES;
 }
 
 - (void)handleTouchUp {
@@ -538,17 +592,20 @@ static const CFTimeInterval kZynthButtonLongPressDuration = 0.5;
   
   [self notifyPressOutWithCancel:NO];
   [self updateGlassPressed:NO animated:YES];
+  self.highlighted = NO;
 }
 
 - (void)handleTouchCancel {
   [self cancelLongPressTimer];
   [self notifyPressOutWithCancel:YES];
   [self updateGlassPressed:NO animated:YES];
+  self.highlighted = NO;
 }
 
 - (void)handleTouchDragExit {
   [self cancelLongPressTimer];
   [self updateGlassPressed:NO animated:YES];
+  self.highlighted = NO;
 }
 
 #pragma mark - Long Press
@@ -706,6 +763,7 @@ static const CFTimeInterval kZynthButtonLongPressDuration = 0.5;
   }
   if (![self isSystemSubview:subview]) {
     subview.userInteractionEnabled = NO; // let touches reach the button
+    subview.hidden = self.zynthLoading;
     if (!self.buttonTitle && !self.buttonImage) {
       [self bringSubviewToFront:subview];
     }

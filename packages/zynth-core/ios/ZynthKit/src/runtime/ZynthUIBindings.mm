@@ -513,7 +513,7 @@ void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
                   default: {
                     [manager setProp:@(nodeId)
                                 name:[NSString stringWithUTF8String:key.c_str()]
-                               value:@"null"];
+                               value:nil];
                     break;
                   }
                 }

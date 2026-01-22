@@ -35,6 +35,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)zynth_setEnableGlassIOS:(BOOL)enabled;
 - (void)zynth_updateConfigurationCornerRadiusIfNeeded;
 - (void)zynth_setGlassTintColor:(UIColor *_Nullable)tintColor;
+- (void)zynth_setLoadingText:(NSString *_Nullable)text;
+- (void)zynth_setLoadingPlacement:(NSString *_Nullable)placement;
 
 // New Native Props
 - (void)zynth_setVariant:(NSString *_Nullable)variant;

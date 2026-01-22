@@ -340,14 +340,19 @@ static CGSize ZynthParseOffset(NSString *value) {
 }
 
 - (void)applyStyleLayoutIfNeeded {
-  if (_styleDirtyNodes.count == 0) return;
-  NSSet<NSNumber *> *dirty = [_styleDirtyNodes copy];
+  if (_styleStates.count == 0) return;
+  if (_styleDirtyNodes.count == 0 && _styleLayoutDirtyNodes.count == 0) return;
+  NSMutableSet<NSNumber *> *targets = [NSMutableSet set];
+  [targets unionSet:_styleDirtyNodes];
+  [targets unionSet:_styleLayoutDirtyNodes];
   [_styleDirtyNodes removeAllObjects];
-  for (NSNumber *nodeId in dirty) {
+  [_styleLayoutDirtyNodes removeAllObjects];
+  for (NSNumber *nodeId in targets) {
     UIView *view = _nodes[nodeId];
     ZynthViewStyleState *state = _styleStates[nodeId];
     if (!view || !state) continue;
     [state applyLayoutToView:view];
+    _styleLayoutFrames[nodeId] = [NSValue valueWithCGRect:view.bounds];
   }
 }
 

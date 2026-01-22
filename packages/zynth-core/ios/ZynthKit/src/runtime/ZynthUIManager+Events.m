@@ -271,6 +271,8 @@
   [_layoutFrames removeObjectForKey:nodeId];
   [_styleDirtyNodes removeObject:nodeId];
   [_styleStates removeObjectForKey:nodeId];
+  [_styleLayoutFrames removeObjectForKey:nodeId];
+  [_styleLayoutDirtyNodes removeObject:nodeId];
   [_textStyleStates removeObjectForKey:nodeId];
   dispatch_source_t timer = _longPressTimers[nodeId];
   if (timer) {

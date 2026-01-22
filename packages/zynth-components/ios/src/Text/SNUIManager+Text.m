@@ -166,6 +166,7 @@ static void ZynthTextRefreshLabelNode(ZynthUIManager *manager, ZynthNode *node) 
 
   NSAttributedString *composed = ZynthBuildAttributedText(manager, node, nil);
   textView.attributedText = composed;
+  [manager markNodeDirty:@(node.nid)];
   
   if (ZynthTextContainsPrivateUseGlyph(composed.string)) {
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -180,6 +181,7 @@ static void ZynthTextRefreshLabelNode(ZynthUIManager *manager, ZynthNode *node) 
     NSAttributedString *recomposed = ZynthBuildAttributedText(manager, node, nil);
     textView.attributedText = recomposed;
     [textView setNeedsDisplay];
+    [manager markNodeDirty:@(node.nid)];
   });
   
   // Force layout update to ensure the new attributed text is rendered
@@ -222,7 +224,7 @@ static BOOL ZynthTextHandleInsertion(ZynthUIManager *manager,
 
   ZynthTextRefreshLabelNode(manager, parent);
   ZynthTextPropagateChange(manager, parent);
-  [manager zynth_markNeedsFlush];
+  [manager markNodeDirty:@(parent.nid)];
   return YES;
 }
 
@@ -240,7 +242,7 @@ static BOOL ZynthTextHandleRemoval(ZynthUIManager *manager,
 
   ZynthTextRefreshLabelNode(manager, parent);
   ZynthTextPropagateChange(manager, parent);
-  [manager zynth_markNeedsFlush];
+  [manager markNodeDirty:@(parent.nid)];
   return YES;
 }
 
@@ -324,7 +326,7 @@ static BOOL ZynthTextHandleSetProp(ZynthUIManager *manager,
       }
     }
     ZynthTextPropagateChange(manager, node);
-    [manager zynth_markNeedsFlush];
+    [manager markNodeDirty:@(node.nid)];
     return YES;
   }
 

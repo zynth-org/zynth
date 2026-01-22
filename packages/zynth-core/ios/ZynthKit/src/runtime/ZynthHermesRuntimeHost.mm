@@ -6,6 +6,9 @@
 #import <hermes/hermes.h>
 #import <jsi/jsi.h>
 
+#import <atomic>
+#import <unordered_map>
+
 using namespace facebook::jsi;
 
 namespace {
@@ -102,20 +105,32 @@ static void installGlobals(Runtime &rt) {
 
 @interface ZynthHermesRuntimeHost ()
 @property(nonatomic, strong) ZynthUIManager *manager;
+- (void)installTimers;
 @end
 
 @implementation ZynthHermesRuntimeHost {
   std::unique_ptr<facebook::hermes::HermesRuntime> _runtime;
+  struct Timer {
+    int id;
+    dispatch_source_t source;
+    std::shared_ptr<Function> fn;
+    std::vector<Value> args;
+    bool isInterval;
+  };
+  std::unordered_map<int, std::unique_ptr<Timer>> _timers;
+  std::atomic<int> _nextTimer;
 }
 
 - (instancetype)initWithUIManager:(ZynthUIManager *)manager {
   self = [super init];
   if (self) {
     _manager = manager;
+    _nextTimer = 1;
     _runtime = facebook::hermes::makeHermesRuntime();
     installConsole(*_runtime);
     installGlobals(*_runtime);
     installModulesStub(*_runtime);
+    [self installTimers];
     ZynthInstallUIBindings(*_runtime, manager);
     ZynthInstallUICommandsRegistry(self, *_runtime);
     _runtime->global().setProperty(
@@ -209,6 +224,199 @@ static void installGlobals(Runtime &rt) {
     return nil;
   }
   return nil;
+}
+
+- (void)installTimers {
+  Runtime &rt = *_runtime;
+  __weak ZynthHermesRuntimeHost *weakHost = self;
+
+  auto hostSetTimeout = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "__hostSetTimeout"), 3,
+      [weakHost](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        ZynthHermesRuntimeHost *host = weakHost;
+        if (!host) return Value::undefined();
+        if (count < 2 || !args[0].isObject()) return Value::undefined();
+        Object fnObject = args[0].asObject(rt);
+        if (!fnObject.isFunction(rt)) return Value::undefined();
+
+        int delayMs = (count > 1 && args[1].isNumber())
+                          ? static_cast<int>(args[1].asNumber())
+                          : 0;
+        std::vector<Value> callArgs;
+        if (count > 2 && args[2].isObject()) {
+          Object maybeArray = args[2].asObject(rt);
+          if (maybeArray.isArray(rt)) {
+            Array array = maybeArray.asArray(rt);
+            size_t length = array.size(rt);
+            callArgs.reserve(length);
+            for (size_t i = 0; i < length; i++) {
+              callArgs.emplace_back(Value(rt, array.getValueAtIndex(rt, i)));
+            }
+          }
+        }
+
+        int timerId = host->_nextTimer.fetch_add(1);
+        auto timer = std::make_unique<Timer>();
+        timer->id = timerId;
+        timer->fn = std::make_shared<Function>(fnObject.asFunction(rt));
+        timer->args = std::move(callArgs);
+        timer->isInterval = false;
+        timer->source =
+            dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
+
+        dispatch_source_t source = timer->source;
+        host->_timers.emplace(timerId, std::move(timer));
+
+        int64_t delayNs = delayMs < 0 ? 0 : (int64_t)delayMs * NSEC_PER_MSEC;
+        dispatch_source_set_timer(
+            source, dispatch_time(DISPATCH_TIME_NOW, delayNs), DISPATCH_TIME_FOREVER, 0);
+
+        dispatch_source_set_event_handler(source, ^{
+          auto it = host->_timers.find(timerId);
+          if (it == host->_timers.end()) return;
+          auto &timerRef = *it->second;
+          const Value *argsPtr =
+              timerRef.args.empty() ? nullptr : timerRef.args.data();
+          try {
+            timerRef.fn->call(rt, argsPtr, timerRef.args.size());
+          } catch (const JSError &error) {
+            if (DEBUG_RUNTIME) {
+              NSString *message = [NSString stringWithUTF8String:error.getMessage().c_str()];
+              NSString *stack = [NSString stringWithUTF8String:error.getStack().c_str()];
+              NSLog(@"[ZynthJS] setTimeout error: %@", message);
+              if (stack.length > 0) {
+                NSLog(@"[ZynthJS] stack: %@", stack);
+              }
+            }
+          } catch (const std::exception &ex) {
+            if (DEBUG_RUNTIME) {
+              NSString *message = [NSString stringWithUTF8String:ex.what()];
+              NSLog(@"[ZynthJS] setTimeout exception: %@", message);
+            }
+          }
+          dispatch_source_cancel(timerRef.source);
+          host->_timers.erase(it);
+        });
+
+        dispatch_resume(source);
+        return Value(static_cast<double>(timerId));
+      });
+
+  auto hostSetInterval = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "__hostSetInterval"), 3,
+      [weakHost](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        ZynthHermesRuntimeHost *host = weakHost;
+        if (!host) return Value::undefined();
+        if (count < 2 || !args[0].isObject()) return Value::undefined();
+        Object fnObject = args[0].asObject(rt);
+        if (!fnObject.isFunction(rt)) return Value::undefined();
+
+        int delayMs = (count > 1 && args[1].isNumber())
+                          ? static_cast<int>(args[1].asNumber())
+                          : 0;
+        if (delayMs < 1) delayMs = 1;
+
+        std::vector<Value> callArgs;
+        if (count > 2 && args[2].isObject()) {
+          Object maybeArray = args[2].asObject(rt);
+          if (maybeArray.isArray(rt)) {
+            Array array = maybeArray.asArray(rt);
+            size_t length = array.size(rt);
+            callArgs.reserve(length);
+            for (size_t i = 0; i < length; i++) {
+              callArgs.emplace_back(Value(rt, array.getValueAtIndex(rt, i)));
+            }
+          }
+        }
+
+        int timerId = host->_nextTimer.fetch_add(1);
+        int64_t intervalNs = (int64_t)delayMs * NSEC_PER_MSEC;
+        auto timer = std::make_unique<Timer>();
+        timer->id = timerId;
+        timer->fn = std::make_shared<Function>(fnObject.asFunction(rt));
+        timer->args = std::move(callArgs);
+        timer->isInterval = true;
+        timer->source =
+            dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
+
+        dispatch_source_t source = timer->source;
+        host->_timers.emplace(timerId, std::move(timer));
+
+        dispatch_source_set_timer(
+            source, dispatch_time(DISPATCH_TIME_NOW, intervalNs), intervalNs, 0);
+
+        dispatch_source_set_event_handler(source, ^{
+          auto it = host->_timers.find(timerId);
+          if (it == host->_timers.end()) return;
+          auto &timerRef = *it->second;
+          const Value *argsPtr =
+              timerRef.args.empty() ? nullptr : timerRef.args.data();
+          try {
+            timerRef.fn->call(rt, argsPtr, timerRef.args.size());
+          } catch (const JSError &error) {
+            if (DEBUG_RUNTIME) {
+              NSString *message = [NSString stringWithUTF8String:error.getMessage().c_str()];
+              NSString *stack = [NSString stringWithUTF8String:error.getStack().c_str()];
+              NSLog(@"[ZynthJS] setInterval error: %@", message);
+              if (stack.length > 0) {
+                NSLog(@"[ZynthJS] stack: %@", stack);
+              }
+            }
+          } catch (const std::exception &ex) {
+            if (DEBUG_RUNTIME) {
+              NSString *message = [NSString stringWithUTF8String:ex.what()];
+              NSLog(@"[ZynthJS] setInterval exception: %@", message);
+            }
+          }
+        });
+
+        dispatch_resume(source);
+        return Value(static_cast<double>(timerId));
+      });
+
+  auto hostClearTimeout = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "__hostClearTimeout"), 1,
+      [weakHost](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        ZynthHermesRuntimeHost *host = weakHost;
+        if (!host) return Value::undefined();
+        if (count < 1 || !args[0].isNumber()) return Value::undefined();
+        int timerId = static_cast<int>(args[0].asNumber());
+        auto it = host->_timers.find(timerId);
+        if (it == host->_timers.end()) return Value::undefined();
+        dispatch_source_cancel(it->second->source);
+        host->_timers.erase(it);
+        return Value::undefined();
+      });
+
+  auto hostClearInterval = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "__hostClearInterval"), 1,
+      [weakHost](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        ZynthHermesRuntimeHost *host = weakHost;
+        if (!host) return Value::undefined();
+        if (count < 1 || !args[0].isNumber()) return Value::undefined();
+        int timerId = static_cast<int>(args[0].asNumber());
+        auto it = host->_timers.find(timerId);
+        if (it == host->_timers.end()) return Value::undefined();
+        dispatch_source_cancel(it->second->source);
+        host->_timers.erase(it);
+        return Value::undefined();
+      });
+
+  rt.global().setProperty(rt, "__hostSetTimeout", hostSetTimeout);
+  rt.global().setProperty(rt, "__hostSetInterval", hostSetInterval);
+  rt.global().setProperty(rt, "__hostClearTimeout", hostClearTimeout);
+  rt.global().setProperty(rt, "__hostClearInterval", hostClearInterval);
+
+  static const char *timerScript =
+      "globalThis.setTimeout=(fn,ms,...a)=>__hostSetTimeout(fn,ms|0,a);"
+      "globalThis.clearTimeout=(id)=>__hostClearTimeout(id);"
+      "globalThis.setInterval=(fn,ms,...a)=>__hostSetInterval(fn,ms|0,a);"
+      "globalThis.clearInterval=(id)=>__hostClearInterval(id);"
+      "globalThis.setImmediate=(fn,...a)=>__hostSetTimeout(fn,0,a);"
+      "globalThis.clearImmediate=(id)=>__hostClearTimeout(id);";
+
+  auto buffer = std::make_shared<StringBuffer>(timerScript);
+  _runtime->evaluateJavaScript(buffer, "timers.js");
 }
 
 @end

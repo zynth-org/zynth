@@ -6,6 +6,10 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface ZynthYogaLayout : NSObject
 
+@property (nonatomic, copy, nullable) void (^layoutDidUpdate)(NSNumber *nodeId,
+                                                              CGRect bounds,
+                                                              BOOL changed);
+
 - (instancetype)initWithRootView:(UIView *)rootView;
 - (void)createNodeWithId:(NSNumber *)nodeId type:(NSString *)type view:(UIView *)view;
 - (YGNodeRef)yogaForNode:(NSNumber *)nodeId;

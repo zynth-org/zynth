@@ -374,9 +374,14 @@ static YGSize ZynthMeasureText(YGNodeConstRef node,
       CGPoint anchor = view.layer.anchorPoint;
       CGPoint center = CGPointMake(x + w * anchor.x, y + h * anchor.y);
       CGRect bounds = CGRectMake(0, 0, w, h);
-      if (!CGPointEqualToPoint(view.center, center) || !CGRectEqualToRect(view.bounds, bounds)) {
+      BOOL frameChanged = !CGPointEqualToPoint(view.center, center) ||
+                          !CGRectEqualToRect(view.bounds, bounds);
+      if (frameChanged) {
         view.center = center;
         view.bounds = bounds;
+      }
+      if (self.layoutDidUpdate) {
+        self.layoutDidUpdate(nodeId, bounds, frameChanged);
       }
     }
   };
