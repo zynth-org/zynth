@@ -2,6 +2,7 @@ package com.zynth.components.scrollview
 
 import android.content.Context
 import android.widget.FrameLayout
+import android.util.Log
 import com.zynth.kit.components.ZynthComponentDescriptor
 import com.zynth.kit.components.ZynthComponentRegistrar
 import com.zynth.kit.components.ZynthComponentRegistry
@@ -12,6 +13,7 @@ import org.json.JSONObject
 
 class ZynthScrollViewRegistrar : ZynthComponentRegistrar {
   override fun register(registry: ZynthComponentRegistry) {
+    Log.d("ZynthComponents", "Registered ScrollView component")
     registry.register(
       ZynthComponentDescriptor(
         type = "scroll-view",

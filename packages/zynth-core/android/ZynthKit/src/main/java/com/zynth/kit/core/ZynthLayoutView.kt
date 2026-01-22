@@ -39,5 +39,10 @@ open class ZynthLayoutView @JvmOverloads constructor(
 
   override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
     // Yoga drives layout via explicit view.layout calls.
+    // However, during Android layout passes (e.g. inside ScrollView), we must confirm children.
+    for (i in 0 until childCount) {
+      val child = getChildAt(i)
+      child.layout(child.left, child.top, child.right, child.bottom)
+    }
   }
 }

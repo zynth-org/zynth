@@ -163,7 +163,11 @@ internal class ZynthScrollView(
 
   private class ScrollContentView(context: Context) : FrameLayout(context) {
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
-      // Yoga drives child layouts; avoid FrameLayout relayout that can override Yoga frames.
+      // Yoga drives child layouts; ensure children are confirmed at their current bounds.
+      for (i in 0 until childCount) {
+        val child = getChildAt(i)
+        child.layout(child.left, child.top, child.right, child.bottom)
+      }
     }
   }
 
@@ -237,13 +241,22 @@ internal class ZynthScrollView(
     logState("onMeasure w=${MeasureSpec.toString(widthMeasureSpec)} h=${MeasureSpec.toString(heightMeasureSpec)} finalH=${MeasureSpec.toString(finalHeightSpec)}")
   }
 
-  override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
-    super.onLayout(changed, left, top, right, bottom)
-    logState("onLayout changed=$changed frame=[$left,$top,$right,$bottom]")
-    post { logState("postLayout") }
-    scheduleContentGeometryUpdate()
-  }
-
+      override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+        // Yoga drives layout via explicit view.layout calls, bypassing onMeasure.
+        // We must manually measure the hosts to ensure they match our frame.
+        val width = right - left
+        val height = bottom - top
+        if (width > 0 && height > 0) {
+          val wSpec = MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY)
+          val hSpec = MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY)
+          verticalHost.measure(wSpec, hSpec)
+          horizontalHost.measure(wSpec, hSpec)
+        }
+        super.onLayout(changed, left, top, right, bottom)
+        logState("onLayout changed=$changed frame=[$left,$top,$right,$bottom]")
+        post { logState("postLayout") }
+        scheduleContentGeometryUpdate()
+      }
   override fun addView(child: View?, index: Int, params: ViewGroup.LayoutParams?) {
     if (child == null) return
     if (child === verticalHost.view || child === horizontalHost.view) {
@@ -1113,7 +1126,7 @@ internal class ZynthScrollView(
     private var intercepting = false
 
     init {
-      isFillViewport = false
+      isFillViewport = true
       isVerticalScrollBarEnabled = true
       overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
       setOnTouchListener { _, event ->
@@ -1131,6 +1144,10 @@ internal class ZynthScrollView(
         }
         false
       }
+    }
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+      super.onMeasure(widthMeasureSpec, heightMeasureSpec)
     }
 
     override fun onScrollChanged(l: Int, t: Int, oldl: Int, oldt: Int) {
