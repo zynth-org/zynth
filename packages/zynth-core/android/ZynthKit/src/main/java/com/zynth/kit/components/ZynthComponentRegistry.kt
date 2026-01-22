@@ -23,6 +23,8 @@ data class ZynthComponentDescriptor(
   val onSetHandler: (node: ZynthUIManager.Node, event: String) -> Boolean = { _, _ -> false },
   val onStyleApplied: (node: ZynthUIManager.Node, style: Style) -> Unit = { _, _ -> },
   val onReset: (node: ZynthUIManager.Node) -> Unit = { _ -> },
+  val onChildInserted: (manager: ZynthUIManager, parent: ZynthUIManager.Node, child: ZynthUIManager.Node, index: Int) -> Unit = { _, _, _, _ -> },
+  val onChildRemoved: (manager: ZynthUIManager, parent: ZynthUIManager.Node, child: ZynthUIManager.Node) -> Unit = { _, _, _ -> },
 )
 
 /**

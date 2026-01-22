@@ -174,6 +174,12 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
       node.textChildren.clear()
       node.attachments.remove(textStyleKey)
       node.attachments.remove(textManagerKey)
+    },
+    onChildInserted = { manager, parent, _, _ ->
+      updateComposedText(parent, textStyleKey, textManagerKey)
+    },
+    onChildRemoved = { manager, parent, _ ->
+      updateComposedText(parent, textStyleKey, textManagerKey)
     }
   )
 }

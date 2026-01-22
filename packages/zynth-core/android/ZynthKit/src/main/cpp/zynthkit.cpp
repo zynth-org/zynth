@@ -8,11 +8,24 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <atomic>
 
 using namespace facebook::jsi;
 
 namespace {
 JavaVM *gVm = nullptr;
+
+struct TimerEntry {
+  std::shared_ptr<Function> callback;
+  std::vector<Value> args;
+  bool repeat;
+};
+
+struct TimerContext {
+  std::atomic<int> nextTimerId{1};
+  std::mutex mutex;
+  std::unordered_map<int, TimerEntry> timers;
+};
 
 struct RuntimeState {
   jobject uiManager = nullptr;
@@ -26,6 +39,9 @@ struct RuntimeState {
   jmethodID applyBatch = nullptr;
   jmethodID setSurface = nullptr;
   jmethodID flush = nullptr;
+  jmethodID scheduleTimer = nullptr;
+  jmethodID cancelTimer = nullptr;
+  std::shared_ptr<TimerContext> timerContext = std::make_shared<TimerContext>();
 };
 
 std::mutex gStateMutex;
@@ -319,6 +335,151 @@ RuntimeState *stateFor(facebook::hermes::HermesRuntime *runtime) {
   auto it = gStates.find(runtime);
   if (it == gStates.end()) return nullptr;
   return &it->second;
+}
+
+void installTimers(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
+  auto hostSetTimeout = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "__hostSetTimeout"), 3,
+      [runtime](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 2 || !args[0].isObject()) return Value::undefined();
+        Object fnObject = args[0].asObject(rt);
+        if (!fnObject.isFunction(rt)) return Value::undefined();
+
+        RuntimeState *state = stateFor(runtime);
+        if (!state) return Value::undefined();
+        JNIEnv *env = getEnv();
+        if (!env) return Value::undefined();
+
+        int delayMs = (count > 1 && args[1].isNumber())
+                          ? static_cast<int>(args[1].asNumber())
+                          : 0;
+        
+        std::vector<Value> callArgs;
+        if (count > 2 && args[2].isObject()) {
+          Object maybeArray = args[2].asObject(rt);
+          if (maybeArray.isArray(rt)) {
+            Array array = maybeArray.asArray(rt);
+            size_t length = array.size(rt);
+            callArgs.reserve(length);
+            for (size_t i = 0; i < length; i++) {
+              callArgs.emplace_back(Value(rt, array.getValueAtIndex(rt, i)));
+            }
+          }
+        }
+
+        int timerId = state->timerContext->nextTimerId.fetch_add(1);
+        {
+          std::lock_guard<std::mutex> lock(state->timerContext->mutex);
+          state->timerContext->timers[timerId] = {
+              std::make_shared<Function>(fnObject.asFunction(rt)),
+              std::move(callArgs),
+              false
+          };
+        }
+
+        env->CallVoidMethod(state->uiManager, state->scheduleTimer,
+                            reinterpret_cast<jlong>(runtime), timerId, delayMs, false);
+        return Value(static_cast<double>(timerId));
+      });
+
+  auto hostSetInterval = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "__hostSetInterval"), 3,
+      [runtime](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 2 || !args[0].isObject()) return Value::undefined();
+        Object fnObject = args[0].asObject(rt);
+        if (!fnObject.isFunction(rt)) return Value::undefined();
+
+        RuntimeState *state = stateFor(runtime);
+        if (!state) return Value::undefined();
+        JNIEnv *env = getEnv();
+        if (!env) return Value::undefined();
+
+        int delayMs = (count > 1 && args[1].isNumber())
+                          ? static_cast<int>(args[1].asNumber())
+                          : 0;
+        if (delayMs < 1) delayMs = 1;
+
+        std::vector<Value> callArgs;
+        if (count > 2 && args[2].isObject()) {
+          Object maybeArray = args[2].asObject(rt);
+          if (maybeArray.isArray(rt)) {
+            Array array = maybeArray.asArray(rt);
+            size_t length = array.size(rt);
+            callArgs.reserve(length);
+            for (size_t i = 0; i < length; i++) {
+              callArgs.emplace_back(Value(rt, array.getValueAtIndex(rt, i)));
+            }
+          }
+        }
+
+        int timerId = state->timerContext->nextTimerId.fetch_add(1);
+        {
+          std::lock_guard<std::mutex> lock(state->timerContext->mutex);
+          state->timerContext->timers[timerId] = {
+              std::make_shared<Function>(fnObject.asFunction(rt)),
+              std::move(callArgs),
+              true
+          };
+        }
+
+        env->CallVoidMethod(state->uiManager, state->scheduleTimer,
+                            reinterpret_cast<jlong>(runtime), timerId, delayMs, true);
+        return Value(static_cast<double>(timerId));
+      });
+
+  auto hostClearTimeout = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "__hostClearTimeout"), 1,
+      [runtime](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isNumber()) return Value::undefined();
+        RuntimeState *state = stateFor(runtime);
+        if (!state) return Value::undefined();
+        JNIEnv *env = getEnv();
+        if (!env) return Value::undefined();
+        
+        int timerId = static_cast<int>(args[0].asNumber());
+        {
+          std::lock_guard<std::mutex> lock(state->timerContext->mutex);
+          state->timerContext->timers.erase(timerId);
+        }
+        
+        env->CallVoidMethod(state->uiManager, state->cancelTimer, timerId);
+        return Value::undefined();
+      });
+
+  auto hostClearInterval = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "__hostClearInterval"), 1,
+      [runtime](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isNumber()) return Value::undefined();
+        RuntimeState *state = stateFor(runtime);
+        if (!state) return Value::undefined();
+        JNIEnv *env = getEnv();
+        if (!env) return Value::undefined();
+        
+        int timerId = static_cast<int>(args[0].asNumber());
+        {
+          std::lock_guard<std::mutex> lock(state->timerContext->mutex);
+          state->timerContext->timers.erase(timerId);
+        }
+        
+        env->CallVoidMethod(state->uiManager, state->cancelTimer, timerId);
+        return Value::undefined();
+      });
+
+  rt.global().setProperty(rt, "__hostSetTimeout", hostSetTimeout);
+  rt.global().setProperty(rt, "__hostSetInterval", hostSetInterval);
+  rt.global().setProperty(rt, "__hostClearTimeout", hostClearTimeout);
+  rt.global().setProperty(rt, "__hostClearInterval", hostClearInterval);
+
+  static const char *timerScript =
+      "globalThis.setTimeout=(fn,ms,...a)=>__hostSetTimeout(fn,ms|0,a);"
+      "globalThis.clearTimeout=(id)=>__hostClearTimeout(id);"
+      "globalThis.setInterval=(fn,ms,...a)=>__hostSetInterval(fn,ms|0,a);"
+      "globalThis.clearInterval=(id)=>__hostClearInterval(id);"
+      "globalThis.setImmediate=(fn,...a)=>__hostSetTimeout(fn,0,a);"
+      "globalThis.clearImmediate=(id)=>__hostClearTimeout(id);";
+
+  auto buffer = std::make_shared<StringBuffer>(timerScript);
+  runtime->evaluateJavaScript(buffer, "timers.js");
 }
 
 void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
@@ -692,6 +853,8 @@ Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlon
   state.applyBatch = env->GetMethodID(state.uiClass, "applyBatch", "(Ljava/lang/String;)V");
   state.setSurface = env->GetMethodID(state.uiClass, "setSurface", "(I)V");
   state.flush = env->GetMethodID(state.uiClass, "flush", "()V");
+  state.scheduleTimer = env->GetMethodID(state.uiClass, "scheduleTimer", "(JIIZ)V");
+  state.cancelTimer = env->GetMethodID(state.uiClass, "cancelTimer", "(I)V");
 
   {
     std::lock_guard<std::mutex> lock(gStateMutex);
@@ -701,6 +864,7 @@ Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlon
   installConsole(*runtime);
   installGlobals(*runtime);
   installModulesStub(*runtime);
+  installTimers(*runtime, runtime);
   installUIBindings(*runtime, runtime);
   runtime->global().setProperty(
       *runtime, "__ZYNTH_PLATFORM", String::createFromUtf8(*runtime, "android"));
@@ -907,6 +1071,60 @@ Java_com_zynth_kit_runtime_JSBridge_invokeEvent(JNIEnv *env,
     handler->call(rt, arg);
   } catch (...) {
     return;
+  }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_zynth_kit_runtime_JSBridge_invokeTimer(JNIEnv *,
+                                                jobject,
+                                                jlong ptr,
+                                                jint timerId) {
+  auto *runtime = reinterpret_cast<facebook::hermes::HermesRuntime *>(ptr);
+  if (!runtime) return;
+  
+  std::shared_ptr<Function> callback;
+  std::vector<Value> args;
+  bool isInterval = false;
+
+  {
+    std::shared_ptr<TimerContext> ctx;
+    {
+      std::lock_guard<std::mutex> lock(gStateMutex);
+      auto it = gStates.find(runtime);
+      if (it != gStates.end()) {
+        ctx = it->second.timerContext;
+      }
+    }
+    
+    if (ctx) {
+      std::lock_guard<std::mutex> lock(ctx->mutex);
+      auto &timers = ctx->timers;
+      auto tit = timers.find(timerId);
+      if (tit != timers.end()) {
+        callback = tit->second.callback;
+        Runtime &rt = *runtime;
+        for (const auto &v : tit->second.args) {
+          args.emplace_back(Value(rt, v));
+        }
+        isInterval = tit->second.repeat;
+        
+        if (!isInterval) {
+          timers.erase(tit);
+        }
+      }
+    }
+  }
+
+  if (callback) {
+    Runtime &rt = *runtime;
+    const Value *argsPtr = args.empty() ? nullptr : args.data();
+    try {
+      callback->call(rt, argsPtr, args.size());
+    } catch (const JSError &error) {
+      __android_log_print(ANDROID_LOG_ERROR, "ZynthJS", "Timer error: %s", error.getMessage().c_str());
+    } catch (...) {
+      __android_log_print(ANDROID_LOG_ERROR, "ZynthJS", "Timer exception");
+    }
   }
 }
 

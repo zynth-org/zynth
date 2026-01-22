@@ -62,6 +62,28 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal var frameProfiler: ((Double, Double, Boolean, Int) -> Unit)? = null
   internal val frameCallback = Choreographer.FrameCallback { handleFrame() }
   private val layoutEngine: LayoutEngine = LayoutEngineAdapter()
+  private val timerRunnables = HashMap<Int, Runnable>()
+
+  fun scheduleTimer(runtimePtr: Long, timerId: Int, delayMs: Int, repeat: Boolean) {
+    val runnable = object : Runnable {
+      override fun run() {
+        JSBridge.invokeTimer(runtimePtr, timerId)
+        if (repeat) {
+          mainHandler.postDelayed(this, delayMs.toLong())
+        } else {
+          timerRunnables.remove(timerId)
+        }
+      }
+    }
+    timerRunnables[timerId] = runnable
+    mainHandler.postDelayed(runnable, delayMs.toLong())
+  }
+
+  fun cancelTimer(timerId: Int) {
+    timerRunnables.remove(timerId)?.let {
+      mainHandler.removeCallbacks(it)
+    }
+  }
 
   data class Node(
     val id: Int,
@@ -287,8 +309,14 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     val parent = if (parentId == 0) rootViewForSurface(surfaceId) else nodes[parentId]
     parents[childId] = parentId
     nodeSurfaces[childId] = surfaceId
+
+    val descriptor = parentState?.let { ZynthComponentRegistry.getDescriptor(it.type) }
+    if (descriptor != null && parentState != null && nodeStates[childId] != null) {
+      descriptor.onChildInserted(this, parentState, nodeStates[childId]!!, index)
+    }
+
     if (parent is TextView && child is TextView) {
-      runOnMain { parent.text = child.text }
+      // Text composition is handled by the descriptor via updateComposedText
       yogaForNode(parentId).markDirty(parentId)
       markSurfaceDirty(surfaceId)
       return
@@ -308,6 +336,13 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
 
   fun removeChild(parentId: Int, childId: Int) {
     val child = nodes[childId] ?: return
+    val parentState = nodeStates[parentId]
+    
+    val descriptor = parentState?.let { ZynthComponentRegistry.getDescriptor(it.type) }
+    if (descriptor != null && parentState != null && nodeStates[childId] != null) {
+      descriptor.onChildRemoved(this, parentState, nodeStates[childId]!!)
+    }
+
     nodeStates[parentId]?.textChildren?.remove(childId)
     cleanupNode(childId)
     parents.remove(childId)

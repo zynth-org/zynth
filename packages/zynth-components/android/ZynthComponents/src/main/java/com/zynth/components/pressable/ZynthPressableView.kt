@@ -129,6 +129,16 @@ class ZynthPressableView(context: Context) : FrameLayout(context) {
     lastCommandSeq = -1L
   }
 
+  override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+    // Yoga drives layout via explicit view.layout calls.
+    // However, during Android layout passes, we must confirm children positions
+    // to prevent FrameLayout from overwriting them with 0x0 (since onMeasure might be skipped).
+    for (i in 0 until childCount) {
+      val child = getChildAt(i)
+      child.layout(child.left, child.top, child.right, child.bottom)
+    }
+  }
+
   override fun onAttachedToWindow() {
     super.onAttachedToWindow()
     applyHitSlop()

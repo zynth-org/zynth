@@ -36,4 +36,5 @@ internal object JSBridge {
     cancelled: Boolean
   )
   external fun invokeLayoutEvent(nodeId: Int, x: Double, y: Double, width: Double, height: Double)
+  external fun invokeTimer(runtimePtr: Long, timerId: Int)
 }
