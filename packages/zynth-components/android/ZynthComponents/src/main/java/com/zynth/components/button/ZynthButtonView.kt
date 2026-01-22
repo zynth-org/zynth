@@ -217,6 +217,19 @@ class ZynthButtonView(context: Context) : FrameLayout(context) {
     return materialButton.dispatchTouchEvent(event)
   }
 
+  override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+    // Yoga drives layout via explicit setFrame, bypassing onMeasure.
+    // We must manually measure the internal MaterialButton to match our size.
+    val width = right - left
+    val height = bottom - top
+    if (width > 0 && height > 0) {
+      val wSpec = MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY)
+      val hSpec = MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY)
+      materialButton.measure(wSpec, hSpec)
+    }
+    super.onLayout(changed, left, top, right, bottom)
+  }
+
   override fun onAttachedToWindow() {
     super.onAttachedToWindow()
     applyHitSlop()
