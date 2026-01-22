@@ -296,7 +296,7 @@ static const CFTimeInterval kZynthButtonLongPressDuration = 0.5;
   }
 
   UIButtonConfiguration *config = nil;
-  BOOL usesNativeContent = (self.buttonTitle != nil) || (self.buttonImage != nil);
+  BOOL usesNativeContent = (self.buttonTitle != nil) || (self.buttonImage != nil) || self.zynthLoading;
   BOOL useGlass = [self zynth_shouldUseGlassConfiguration];
   
   // 1. Variant
