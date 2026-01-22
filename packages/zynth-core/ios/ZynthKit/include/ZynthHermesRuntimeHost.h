@@ -4,6 +4,8 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+@protocol ZynthModuleBridge;
+
 @interface ZynthHermesRuntimeHost : NSObject
 
 - (instancetype)initWithUIManager:(ZynthUIManager *)manager;
@@ -14,6 +16,8 @@ NS_ASSUME_NONNULL_BEGIN
                sourceURL:(NSString *)sourceURL
                   error:(NSError *_Nullable *_Nullable)error;
 - (id _Nullable)callGlobal:(NSString *)name args:(NSArray *)args;
+
+- (void)installModuleBridge:(id<ZynthModuleBridge>)bridge constants:(NSDictionary<NSString *, id> *)constants;
 
 @end
 

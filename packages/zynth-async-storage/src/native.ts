@@ -1,15 +1,12 @@
 import type { AsyncStorageEntry, AsyncStoragePair } from "./types";
-
-type ModulesBridge = {
-  call?(name: string, method: string, args?: unknown): Promise<unknown> | unknown;
-  callSync?(name: string, method: string, args?: unknown): unknown;
-};
-
-type ErrorResult = {
-  error?: string;
-  message?: string;
-  code?: string;
-};
+import {
+  callNative,
+  callNativeSync,
+  getGlobalObject,
+  getModulesBridge,
+  getNativeModule,
+  unwrapNativeResult,
+} from "@zynth/core";
 
 type NativeAsyncStorageJSI = {
   getItem(key: string): string | null;
@@ -43,43 +40,17 @@ const PLATFORM_GLOBAL_KEY = "__ZYNTH_PLATFORM";
 const memoryStore = new Map<string, string>();
 let warnedMissing = false;
 
-function getGlobalObject(): Record<string, unknown> {
-  if (typeof globalThis !== "undefined") {
-    return globalThis as Record<string, unknown>;
-  }
-  try {
-    const fallback = Function("return this")();
-    if (fallback && typeof fallback === "object") {
-      return fallback as Record<string, unknown>;
-    }
-  } catch {
-    // ignore
-  }
-  return {};
-}
+// Removed getGlobalObject
 
 function getPlatform(): string | null {
-  const globalObj = getGlobalObject();
-  const value = globalObj[PLATFORM_GLOBAL_KEY];
+  const value = getNativeModule<string>(PLATFORM_GLOBAL_KEY);
   return typeof value === "string" ? value.toLowerCase() : null;
 }
 
-function getModulesBridge(): ModulesBridge | null {
-  const globalObj = getGlobalObject();
-  const maybeBridge = (globalObj as { __modules?: unknown }).__modules;
-  if (!maybeBridge || typeof maybeBridge !== "object") {
-    return null;
-  }
-  return maybeBridge as ModulesBridge;
-}
+// Removed getModulesBridge
 
 function getNativeJSI(): NativeAsyncStorageJSI | null {
-  const globalObj = getGlobalObject();
-  const native = globalObj[JSI_GLOBAL_KEY];
-  if (!native || typeof native !== "object") {
-    return null;
-  }
-  return native as NativeAsyncStorageJSI;
+  return getNativeModule<NativeAsyncStorageJSI>(JSI_GLOBAL_KEY);
 }
 
 function warnMissingNativeOnce(): void {
@@ -93,27 +64,7 @@ function warnMissingNativeOnce(): void {
   }
 }
 
-function isErrorResult(value: unknown): value is ErrorResult {
-  if (!value || typeof value !== "object") return false;
-  return typeof (value as ErrorResult).error === "string";
-}
-
-function unwrapResult<T>(value: unknown): T {
-  if (isErrorResult(value)) {
-    const message = value.message || value.error || "Unknown error";
-    throw new Error(message);
-  }
-  if (value && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    if ("result" in record) {
-      return record.result as T;
-    }
-    if ("data" in record) {
-      return record.data as T;
-    }
-  }
-  return value as T;
-}
+// Removed isErrorResult, unwrapResult
 
 function normalizeItemValue(value: unknown): string | null {
   if (value === null || value === undefined) return null;
@@ -282,53 +233,49 @@ function createBridgeAdapter(): StorageAdapter | null {
     return null;
   }
 
-  const callNative = async <T>(method: string, args?: unknown): Promise<T> => {
+  const callNativeStorage = async <T>(method: string, args?: unknown): Promise<T> => {
     if (bridge.callSync) {
-      return unwrapResult<T>(bridge.callSync(MODULE_NAME, method, args));
+      return callNativeSync<T>(MODULE_NAME, method, args);
     }
-    if (bridge.call) {
-      const result = await Promise.resolve(bridge.call(MODULE_NAME, method, args));
-      return unwrapResult<T>(result);
-    }
-    throw new Error("Native modules bridge not available");
+    return callNative<T>(MODULE_NAME, method, args);
   };
 
   return {
     async getItem(key) {
-      const value = await callNative<unknown>("getItem", { key });
+      const value = await callNativeStorage<unknown>("getItem", { key });
       return normalizeItemValue(value);
     },
     async setItem(key, value) {
-      await callNative<void>("setItem", { key, value });
+      await callNativeStorage<void>("setItem", { key, value });
     },
     async removeItem(key) {
-      await callNative<void>("removeItem", { key });
+      await callNativeStorage<void>("removeItem", { key });
     },
     async mergeItem(key, value) {
-      await callNative<void>("mergeItem", { key, value });
+      await callNativeStorage<void>("mergeItem", { key, value });
     },
     async clear() {
-      await callNative<void>("clear", {});
+      await callNativeStorage<void>("clear", {});
     },
     async getAllKeys() {
-      const keys = await callNative<unknown>("getAllKeys", {});
+      const keys = await callNativeStorage<unknown>("getAllKeys", {});
       if (Array.isArray(keys)) {
         return keys.map((key) => String(key));
       }
       return [];
     },
     async multiGet(keys) {
-      const result = await callNative<unknown>("multiGet", { keys });
+      const result = await callNativeStorage<unknown>("multiGet", { keys });
       return normalizeEntries(result, keys);
     },
     async multiSet(pairs) {
-      await callNative<void>("multiSet", { pairs });
+      await callNativeStorage<void>("multiSet", { pairs });
     },
     async multiRemove(keys) {
-      await callNative<void>("multiRemove", { keys });
+      await callNativeStorage<void>("multiRemove", { keys });
     },
     async multiMerge(pairs) {
-      await callNative<void>("multiMerge", { pairs });
+      await callNativeStorage<void>("multiMerge", { pairs });
     },
   };
 }

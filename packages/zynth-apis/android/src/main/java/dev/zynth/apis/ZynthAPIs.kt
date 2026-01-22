@@ -8,7 +8,7 @@ import java.util.WeakHashMap
 
 /**
  * Public interface for ZynthAPIs module.
- * Provides Font loading and other core APIs to JavaScript.
+ * Provides Font, Dimensions, Fetch, and BackHandler APIs to JavaScript.
  */
 object ZynthAPIs {
     private const val TAG = "ZynthAPIs"
@@ -38,12 +38,16 @@ object ZynthAPIs {
         }
         initializedRuntimes[runtime] = true
 
-        Log.d(TAG, "Creating FontModule...")
+        Log.d(TAG, "Creating modules...")
         val fontModule = FontModule(context.applicationContext)
-        Log.d(TAG, "Installing FontModule into runtime...")
-        runtime.installModules(listOf(fontModule))
+        val dimensionsModule = DimensionsModule(runtime, runtime.root)
+        val fetchModule = FetchModule(runtime)
+        val backHandlerModule = BackHandlerModule(runtime, runtime.root)
 
-        Log.d(TAG, "ZynthAPIs initialized successfully with FontModule")
+        Log.d(TAG, "Installing modules into runtime...")
+        runtime.installModules(listOf(fontModule, dimensionsModule, fetchModule, backHandlerModule))
+
+        Log.d(TAG, "ZynthAPIs initialized successfully with Font, Dimensions, Fetch, BackHandler")
     }
 
     /**

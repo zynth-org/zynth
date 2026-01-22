@@ -1,3 +1,10 @@
+import {
+  callNative,
+  callNativeSync,
+  getGlobalObject,
+  getModulesBridge,
+} from "@zynth/core";
+
 const DIMENSIONS_EVENT = "zynth.dimensions.change";
 const EPSILON = 0.01;
 
@@ -35,29 +42,9 @@ type NativeEmitter = {
   removeListener?(event: string, listener: (payload: unknown) => void): void;
 };
 
-type ModulesBridge = {
-  call?(name: string, method: string, args?: unknown): Promise<unknown> | unknown;
-  callSync?(name: string, method: string, args?: unknown): unknown;
-};
-
 type DimensionsInitOptions = {
   source: DimensionsUpdateSource;
 };
-
-function getGlobalObject(): Record<string, unknown> {
-  if (typeof globalThis !== "undefined") {
-    return globalThis as any;
-  }
-  try {
-    const fallback = Function("return this")();
-    if (fallback && typeof fallback === "object") {
-      return fallback as Record<string, unknown>;
-    }
-  } catch {
-    // ignore
-  }
-  return {};
-}
 
 function approxEqual(a: number, b: number): boolean {
   return a === b || Math.abs(a - b) <= EPSILON;
@@ -127,7 +114,7 @@ function normalizeSnapshot(input: unknown): DimensionsSnapshot | null {
   };
 }
 
-function unwrapNativeResult(value: unknown): DimensionsSnapshot | null {
+function parseNativeResult(value: unknown): DimensionsSnapshot | null {
   const direct = normalizeSnapshot(value);
   if (direct) return direct;
 
@@ -146,7 +133,7 @@ function unwrapNativeResult(value: unknown): DimensionsSnapshot | null {
   if (typeof value === "string") {
     try {
       const parsed = JSON.parse(value);
-      return unwrapNativeResult(parsed);
+      return parseNativeResult(parsed);
     } catch {
       return null;
     }
@@ -274,21 +261,14 @@ function updateState(
   return currentSnapshot;
 }
 
-function getModulesBridge(): ModulesBridge | null {
-  const globalObj = getGlobalObject();
-  const maybeBridge = globalObj.__modules;
-  if (!maybeBridge || typeof maybeBridge !== "object") {
-    return null;
-  }
-  return maybeBridge as ModulesBridge;
-}
-
 async function requestNativeSnapshot(): Promise<DimensionsSnapshot | null> {
   const bridge = getModulesBridge();
+  
+  // Try sync first if available
   if (bridge?.callSync) {
     try {
-      const result = bridge.callSync("Dimensions", "current");
-      const snapshot = unwrapNativeResult(result);
+      const result = callNativeSync("Dimensions", "current");
+      const snapshot = parseNativeResult(result);
       if (snapshot) {
         return snapshot;
       }
@@ -297,18 +277,15 @@ async function requestNativeSnapshot(): Promise<DimensionsSnapshot | null> {
     }
   }
 
-  if (bridge?.call) {
-    try {
-      const maybeResult = bridge.call("Dimensions", "current", null);
-      const result =
-        maybeResult instanceof Promise ? await maybeResult : await Promise.resolve(maybeResult);
-      const snapshot = unwrapNativeResult(result);
-      if (snapshot) {
-        return snapshot;
-      }
-    } catch (error) {
-      console.warn("[Dimensions] call failed", error);
+  // Fallback to async
+  try {
+    const result = await callNative("Dimensions", "current");
+    const snapshot = parseNativeResult(result);
+    if (snapshot) {
+      return snapshot;
     }
+  } catch (error) {
+    console.warn("[Dimensions] call failed", error);
   }
 
   return readNativeConstants();
@@ -321,7 +298,7 @@ function attachNativeEmitter(): NativeEmitterSubscription | null {
   }
 
   const subscription = emitter.addListener(DIMENSIONS_EVENT, (payload: unknown) => {
-    const snapshot = unwrapNativeResult(payload);
+    const snapshot = parseNativeResult(payload);
     if (!snapshot) {
       return;
     }

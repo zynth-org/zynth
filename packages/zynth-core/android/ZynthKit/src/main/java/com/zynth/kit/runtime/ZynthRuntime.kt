@@ -8,7 +8,7 @@ import com.zynth.kit.core.ZynthUIManager
 import org.json.JSONArray
 import org.json.JSONObject
 
-class ZynthRuntime(private val root: ZynthRootView) {
+class ZynthRuntime(val root: ZynthRootView) {
   private val uiManager = ZynthUIManager(root)
   private val runtimePtr: Long = JSBridge.createHermesRuntime()
   private val registry = ZynthModuleRegistry()

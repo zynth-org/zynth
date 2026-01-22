@@ -1,70 +1,34 @@
 package dev.zynth.{{MODULE_NAME}}
 
-import android.app.Activity
-import android.util.Log
-import com.zynth.kit.runtime.ZynthRuntime
+import com.zynth.kit.runtime.ZynthModule
+import com.zynth.kit.runtime.ZynthSyncModule
+import org.json.JSONObject
 
-class {{MODULE_NAME_PASCAL}}Module(
-    private val activity: Activity,
-    private val runtime: ZynthRuntime
-) {
-    private var lastState: ModuleState? = null
+class {{MODULE_NAME_PASCAL}}Module : ZynthModule, ZynthSyncModule {
+    override val name = "{{MODULE_NAME_PASCAL}}"
 
-    init {
-        registerBridge()
-        startObserving()
+    override val constants: Map<String, Any>?
+        get() = mapOf("exampleConstant" to "Hello from Android")
+
+    override fun initialize() {
+        // Module setup
     }
 
-    fun onDestroy() {
-        // TODO: remove observers if needed
+    override fun invalidate() {
+        // Cleanup
     }
 
-    private fun registerBridge() {
-        runtime.installModules(listOf({{MODULE_NAME_PASCAL}}Bridge(this)))
-    }
-
-    private fun startObserving() {
-        // TODO: add listeners/observers here
-        updateState(force = true)
-    }
-
-    fun getInitialState(): ModuleState {
-        return lastState ?: getCurrentState()
-    }
-
-    private fun getCurrentState(): ModuleState {
-        // TODO: implement your state calculation logic
-        return ModuleState(
-            value = 0,
-            status = "active",
-            timestamp = System.currentTimeMillis()
-        )
-    }
-
-    private fun updateState(force: Boolean) {
-        val newState = getCurrentState()
-        if (!force && newState == lastState) {
-            return
+    override fun call(method: String, args: Array<Any?>): JSONObject {
+        return when (method) {
+            "exampleMethod" -> JSONObject().put("result", "Async result")
+            else -> JSONObject().put("error", "unknown_method")
         }
-        lastState = newState
-        publishState(newState)
     }
 
-    private fun publishState(state: ModuleState) {
-        runtime.emitEvent("{{MODULE_NAME_PASCAL}}:change", state.toMap())
-    }
-
-    data class ModuleState(
-        val value: Int,
-        val status: String,
-        val timestamp: Long
-    ) {
-        fun toMap(): Map<String, Any> {
-            return mapOf(
-                "value" to value,
-                "status" to status,
-                "timestamp" to timestamp
-            )
+    override fun callSync(method: String, args: Array<Any?>): Any? {
+        return when (method) {
+            "exampleSyncMethod" -> "Sync result"
+            else -> null
         }
     }
 }

@@ -32,6 +32,8 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal var activeSurfaceId = 0
   internal val styleStates = HashMap<Int, ZynthViewStyleState>()
   internal val styleDirtyNodes = HashSet<Int>()
+  internal val styleLayoutDirtyNodes = HashSet<Int>()
+  internal val styleLayoutFrames = HashMap<Int, android.graphics.Rect>()
   internal val textStyleStates = HashMap<Int, ZynthTextStyleState>()
   internal val pointerEvents = HashMap<Int, String>()
   internal val pressNodes = HashSet<Int>()

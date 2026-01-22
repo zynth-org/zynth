@@ -1,4 +1,10 @@
-import { sharedNativeEventEmitter } from "@zynth/core";
+import {
+  sharedNativeEventEmitter,
+  getGlobalObject,
+  getModulesBridge,
+  getNativeModule,
+  callNativeSync,
+} from "@zynth/core";
 import type { WindowMetrics } from "./types";
 
 /**
@@ -117,24 +123,10 @@ function createWebModule(): NativeSafeAreaModule {
   };
 }
 
-function getGlobalObject(): Record<string, unknown> {
-  if (typeof globalThis !== "undefined") {
-    return globalThis as Record<string, unknown>;
-  }
-  try {
-    const fallback = Function("return this")();
-    if (fallback && typeof fallback === "object") {
-      return fallback as Record<string, unknown>;
-    }
-  } catch {
-    // ignore
-  }
-  return {};
-}
+// Removed getGlobalObject
 
 function getPlatform(): string | null {
-  const globalObj = getGlobalObject();
-  const value = globalObj.__ZYNTH_PLATFORM;
+  const value = getNativeModule<string>("__ZYNTH_PLATFORM");
   return typeof value === "string" ? value : null;
 }
 
@@ -147,24 +139,13 @@ function readNativeConstants(): WindowMetrics | null {
   return value as WindowMetrics;
 }
 
-function getModulesBridge(): {
-  callSync?: (name: string, method: string, args?: unknown) => unknown;
-} | null {
-  const globalObj = getGlobalObject();
-  const bridge = (globalObj as { __modules?: unknown }).__modules;
-  if (!bridge || typeof bridge !== "object") {
-    return null;
-  }
-  return bridge as {
-    callSync?: (name: string, method: string, args?: unknown) => unknown;
-  };
-}
+// Removed getModulesBridge
 
 function readFromBridge(): WindowMetrics | null {
   const bridge = getModulesBridge();
   if (!bridge?.callSync) return null;
   try {
-    const result = bridge.callSync(MODULE_KEY, "getCurrentMetrics", {});
+    const result = callNativeSync(MODULE_KEY, "getCurrentMetrics", {});
     if (!result || typeof result !== "object") return null;
     return result as WindowMetrics;
   } catch {
@@ -220,12 +201,12 @@ function createEmitterModule(): NativeSafeAreaModule {
  * Returns null if not available (dev warning will be emitted)
  */
 export function getNativeSafeAreaModule(): NativeSafeAreaModule | null {
-  const globalObj = getGlobalObject() as {
-    __ZYNTH_SAFE_AREA__?: NativeSafeAreaModule;
-  };
-  if (globalObj.__ZYNTH_SAFE_AREA__) {
-    return globalObj.__ZYNTH_SAFE_AREA__ || null;
+  // Use core helper for JSI module
+  const jsiModule = getNativeModule<NativeSafeAreaModule>("__ZYNTH_SAFE_AREA__");
+  if (jsiModule) {
+    return jsiModule;
   }
+
   const platform = getPlatform();
   if (platform === "web") {
     return createWebModule();

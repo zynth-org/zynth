@@ -1,3 +1,20 @@
-export { {{MODULE_NAME_PASCAL}}Provider } from "./{{MODULE_NAME_PASCAL}}Provider";
-export { use{{MODULE_NAME_PASCAL}}State } from "./hooks";
-export type { {{MODULE_NAME_PASCAL}}State } from "./types";
+import {
+  callNative,
+  callNativeSync,
+  getNativeModule,
+  unwrapNativeResult
+} from "@zynth/core";
+
+const MODULE_NAME = "{{MODULE_NAME_PASCAL}}";
+
+export const {{MODULE_NAME_PASCAL}} = {
+  async exampleMethod() {
+    const result = await callNative(MODULE_NAME, "exampleMethod");
+    return unwrapNativeResult(result);
+  },
+
+  exampleSyncMethod() {
+    const result = callNativeSync(MODULE_NAME, "exampleSyncMethod");
+    return unwrapNativeResult(result);
+  }
+};

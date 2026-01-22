@@ -3,7 +3,16 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+@class ZynthRuntime;
+
+@protocol ZynthModuleBridge <NSObject>
+- (id _Nullable)callModule:(NSString *)moduleName method:(NSString *)methodName args:(id _Nullable)args;
+- (id _Nullable)callModuleSync:(NSString *)moduleName method:(NSString *)methodName args:(id _Nullable)args;
+@end
+
 @interface ZynthRuntime : NSObject
+
+@property (nonatomic, weak, readonly) UIView *rootView;
 
 - (instancetype)initWithRootView:(UIView *)rootView;
 - (BOOL)loadInitialBundleWithJsBundleURL:(NSURL *_Nullable)url
@@ -11,6 +20,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)startWithRootId:(int)rootId;
 - (void)emitEventWithName:(NSString *)name payload:(id _Nullable)payload;
 - (void)destroy;
+
+- (void)installModuleBridge:(id<ZynthModuleBridge>)bridge constants:(NSDictionary<NSString *, id> *)constants NS_SWIFT_NAME(installModuleBridge(_:constants:));
 
 @end
 

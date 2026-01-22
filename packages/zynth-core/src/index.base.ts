@@ -44,3 +44,20 @@ export { createComponent, mergeProps, untrack } from "solid-js";
 
 // Export image types for use in type declarations
 export type { ImageAssetDescriptor } from "./host/HostTypes";
+
+export {
+  getGlobalObject,
+  getModulesBridge,
+  getNativeModule,
+  unwrapNativeResult,
+  callNative,
+  callNativeSync,
+} from "./bridge";
+
+export type {
+  ZynthUIBridge,
+  ZynthModulesBridge,
+  ZynthSharedSignalsBridge,
+  ZynthWorkletsBridge,
+  ZynthUICommandsBridge,
+} from "./bridge";

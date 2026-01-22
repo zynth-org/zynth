@@ -290,14 +290,19 @@ internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, va
 }
 
 internal fun ZynthUIManager.applyStyleLayoutIfNeeded() {
-  if (styleDirtyNodes.isEmpty()) return
-  val dirty = styleDirtyNodes.toList()
+  if (styleDirtyNodes.isEmpty() && styleLayoutDirtyNodes.isEmpty()) return
+  val dirty = HashSet<Int>(styleDirtyNodes.size + styleLayoutDirtyNodes.size).apply {
+    addAll(styleDirtyNodes)
+    addAll(styleLayoutDirtyNodes)
+  }
   styleDirtyNodes.clear()
+  styleLayoutDirtyNodes.clear()
   for (id in dirty) {
     val view = nodes[id] ?: continue
     val state = styleStates[id] ?: continue
     applyTransformOrigin(this, view, state)
     view.invalidate()
+    styleLayoutFrames[id] = android.graphics.Rect(view.left, view.top, view.right, view.bottom)
   }
 }
 

@@ -179,19 +179,85 @@ void applyProp(Runtime &rt, RuntimeState *state, JNIEnv *env, jint nodeId, const
   }
 }
 
+static std::string valueToString(Runtime &rt, const Value &value) {
+  if (value.isString()) {
+    return value.asString(rt).utf8(rt);
+  }
+  if (value.isNumber()) {
+    // Remove trailing zeros/dot if integer-like
+    std::string s = std::to_string(value.asNumber());
+    s.erase(s.find_last_not_of('0') + 1, std::string::npos); 
+    if(s.back() == '.') s.pop_back();
+    return s;
+  }
+  if (value.isBool()) {
+    return value.getBool() ? "true" : "false";
+  }
+  if (value.isNull()) {
+    return "null";
+  }
+  if (value.isUndefined()) {
+    return "undefined";
+  }
+  if (value.isObject()) {
+    try {
+      Object json = rt.global().getPropertyAsObject(rt, "JSON");
+      Function stringify = json.getPropertyAsFunction(rt, "stringify");
+      Value result = stringify.call(rt, value);
+      if (result.isString()) {
+        return result.asString(rt).utf8(rt);
+      }
+    } catch (...) {
+      // ignore
+    }
+    return "[object Object]";
+  }
+  return "";
+}
+
 void installConsole(Runtime &rt) {
   auto logFn = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "log"), 1,
       [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
-        count;
-        rt;
+        std::string message;
+        for (size_t i = 0; i < count; i++) {
+          if (i > 0) message += " ";
+          message += valueToString(rt, args[i]);
+        }
+        __android_log_print(ANDROID_LOG_DEBUG, "ZynthJS", "%s", message.c_str());
+        return Value::undefined();
+      });
+
+  auto warnFn = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "warn"), 1,
+      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        std::string message;
+        for (size_t i = 0; i < count; i++) {
+          if (i > 0) message += " ";
+          message += valueToString(rt, args[i]);
+        }
+        __android_log_print(ANDROID_LOG_WARN, "ZynthJS", "%s", message.c_str());
+        return Value::undefined();
+      });
+
+  auto errorFn = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "error"), 1,
+      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        std::string message;
+        for (size_t i = 0; i < count; i++) {
+          if (i > 0) message += " ";
+          message += valueToString(rt, args[i]);
+        }
+        __android_log_print(ANDROID_LOG_ERROR, "ZynthJS", "%s", message.c_str());
         return Value::undefined();
       });
 
   Object console(rt);
   console.setProperty(rt, "log", logFn);
-  console.setProperty(rt, "warn", logFn);
-  console.setProperty(rt, "error", logFn);
+  console.setProperty(rt, "info", logFn);
+  console.setProperty(rt, "debug", logFn);
+  console.setProperty(rt, "warn", warnFn);
+  console.setProperty(rt, "error", errorFn);
   rt.global().setProperty(rt, "console", console);
 }
 

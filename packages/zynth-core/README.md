@@ -75,19 +75,9 @@ Batching must avoid JSON on hot paths. The preferred payload is a typed op buffe
 
 ---
 
-## Module Lifecycle (HMR-safe)
+## Native Modules
 
-Runtime reloads must not leak handlers or native references.
-
-- `RuntimeRegistry.install(module)`
-- `RuntimeRegistry.uninstall(name)`
-- `RuntimeRegistry.reset()`
-
-Each module must implement:
-
-- `install(runtimeContext)`
-- `uninstall(runtimeContext)`
-- `getConstants()`
+For comprehensive documentation on creating, registering, and using Native Modules in Zynth Core, please refer to the [Native Module Template Documentation](../zynth-templates/native-module/README.md).
 
 ---
 

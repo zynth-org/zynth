@@ -1,5 +1,6 @@
 package com.zynth.kit.core
 
+import android.graphics.Rect
 import android.util.Log
 import android.view.ViewGroup
 import com.zynth.kit.layout.ZynthYogaLayout
@@ -82,7 +83,14 @@ internal fun ZynthUIManager.ensureSurface(surfaceId: Int) {
     }
   }
   surfaceRoots[surfaceId] = root
-  surfaceYoga[surfaceId] = ZynthYogaLayout()
+  val layout = ZynthYogaLayout()
+  layout.layoutDidUpdate = { nodeId, left, top, right, bottom, changed ->
+    if (changed && styleStates.containsKey(nodeId)) {
+      styleLayoutDirtyNodes.add(nodeId)
+      styleLayoutFrames[nodeId] = Rect(left, top, right, bottom)
+    }
+  }
+  surfaceYoga[surfaceId] = layout
   surfaceSizes[surfaceId] = (root.width to root.height)
 }
 

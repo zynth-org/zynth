@@ -17,6 +17,8 @@ public extension ZynthRuntime {
     for module in modules {
       zynthModuleRegistry.register(module)
     }
+    // Register the registry as the bridge and inject constants
+    installModuleBridge(zynthModuleRegistry, constants: zynthModuleRegistry.exportedConstants())
   }
 
   func emitEvent(name: String, payload: Any?) {

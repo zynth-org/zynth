@@ -1,4 +1,5 @@
 #import "ZynthHermesRuntimeHost.h"
+#import "ZynthRuntime.h"
 #import "ZynthUIBindings.h"
 #import "ZynthUIManager.h"
 #import "ZynthUICommandsRegistry.h"
@@ -29,6 +30,55 @@ static std::string valueToString(Runtime &rt, const Value &value) {
   return "[object]";
 }
 
+static id jsValueToObjC(Runtime &rt, const Value &value) {
+  if (value.isBool()) return @(value.getBool());
+  if (value.isNumber()) return @(value.asNumber());
+  if (value.isString()) return [NSString stringWithUTF8String:value.asString(rt).utf8(rt).c_str()];
+  if (value.isNull() || value.isUndefined()) return [NSNull null];
+  if (value.isObject()) {
+    Object obj = value.asObject(rt);
+    if (obj.isArray(rt)) {
+      Array arr = obj.asArray(rt);
+      size_t len = arr.size(rt);
+      NSMutableArray *res = [NSMutableArray arrayWithCapacity:len];
+      for (size_t i = 0; i < len; i++) {
+        [res addObject:jsValueToObjC(rt, arr.getValueAtIndex(rt, i))];
+      }
+      return res;
+    }
+    try {
+      Object json = rt.global().getPropertyAsObject(rt, "JSON");
+      Function stringify = json.getPropertyAsFunction(rt, "stringify");
+      Value jsonStr = stringify.call(rt, value);
+      if (jsonStr.isString()) {
+        std::string s = jsonStr.asString(rt).utf8(rt);
+        NSData *d = [NSData dataWithBytes:s.c_str() length:s.length()];
+        return [NSJSONSerialization JSONObjectWithData:d options:0 error:nil];
+      }
+    } catch (...) {}
+  }
+  return nil;
+}
+
+static Value objCToJSValue(Runtime &rt, id obj) {
+  if (obj == nil || [obj isKindOfClass:[NSNull class]]) return Value::null();
+  if ([obj isKindOfClass:[NSString class]]) return String::createFromUtf8(rt, [obj UTF8String]);
+  if ([obj isKindOfClass:[NSNumber class]]) return Value([obj doubleValue]);
+  if ([obj isKindOfClass:[NSArray class]] || [obj isKindOfClass:[NSDictionary class]]) {
+     NSError *error = nil;
+     NSData *data = [NSJSONSerialization dataWithJSONObject:obj options:0 error:&error];
+     if (data) {
+       std::string s((const char*)[data bytes], [data length]);
+       try {
+         Object json = rt.global().getPropertyAsObject(rt, "JSON");
+         Function parse = json.getPropertyAsFunction(rt, "parse");
+         return parse.call(rt, String::createFromUtf8(rt, s));
+       } catch (...) {}
+     }
+  }
+  return Value::undefined();
+}
+
 static void installConsole(Runtime &rt) {
   auto logFn = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "log"), 1,
@@ -49,7 +99,8 @@ static void installConsole(Runtime &rt) {
   rt.global().setProperty(rt, "console", console);
 }
 
-static void installModulesStub(Runtime &rt) {
+static void installModuleBridge(Runtime &rt) {
+  // Stub implementation; replaced when registerModuleBridge is called
   auto noop = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "call"), 0,
       [](Runtime &, const Value &, const Value *, size_t) -> Value {
@@ -129,7 +180,7 @@ static void installGlobals(Runtime &rt) {
     _runtime = facebook::hermes::makeHermesRuntime();
     installConsole(*_runtime);
     installGlobals(*_runtime);
-    installModulesStub(*_runtime);
+    installModuleBridge(*_runtime);
     [self installTimers];
     ZynthInstallUIBindings(*_runtime, manager);
     ZynthInstallUICommandsRegistry(self, *_runtime);
@@ -137,6 +188,50 @@ static void installGlobals(Runtime &rt) {
         *_runtime, "__ZYNTH_PLATFORM", String::createFromUtf8(*_runtime, "ios"));
   }
   return self;
+}
+
+- (void)installModuleBridge:(id<ZynthModuleBridge>)bridge constants:(NSDictionary<NSString *,id> *)constants {
+  Runtime &rt = *_runtime;
+  
+  __weak id<ZynthModuleBridge> weakBridge = bridge;
+  
+  auto callFn = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "call"), 3,
+      [weakBridge](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 2) return Value::undefined();
+        std::string moduleName = args[0].asString(rt).utf8(rt);
+        std::string methodName = args[1].asString(rt).utf8(rt);
+        id argObj = (count > 2) ? jsValueToObjC(rt, args[2]) : nil;
+        
+        id result = [weakBridge callModule:[NSString stringWithUTF8String:moduleName.c_str()]
+                                    method:[NSString stringWithUTF8String:methodName.c_str()]
+                                      args:argObj];
+        return objCToJSValue(rt, result);
+      });
+
+  auto callSyncFn = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "callSync"), 3,
+      [weakBridge](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 2) return Value::undefined();
+        std::string moduleName = args[0].asString(rt).utf8(rt);
+        std::string methodName = args[1].asString(rt).utf8(rt);
+        id argObj = (count > 2) ? jsValueToObjC(rt, args[2]) : nil;
+        
+        id result = [weakBridge callModuleSync:[NSString stringWithUTF8String:moduleName.c_str()]
+                                        method:[NSString stringWithUTF8String:methodName.c_str()]
+                                          args:argObj];
+        return objCToJSValue(rt, result);
+      });
+
+  Object modules(rt);
+  modules.setProperty(rt, "call", callFn);
+  modules.setProperty(rt, "callSync", callSyncFn);
+  rt.global().setProperty(rt, "__modules", modules);
+
+  if (constants) {
+    Value constantsVal = objCToJSValue(rt, constants);
+    rt.global().setProperty(rt, "NativeConstants", constantsVal);
+  }
 }
 
 - (BOOL)evaluateString:(NSString *)code

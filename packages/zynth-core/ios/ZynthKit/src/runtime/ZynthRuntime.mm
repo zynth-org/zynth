@@ -68,6 +68,10 @@
   [self.runtime callGlobal:@"ZynthNativeEmitter.emit" args:@[ trimmed, body ]];
 }
 
+- (void)installModuleBridge:(id<ZynthModuleBridge>)bridge constants:(NSDictionary<NSString *,id> *)constants {
+  [self.runtime installModuleBridge:bridge constants:constants];
+}
+
 - (void)destroy {
   // Phase 1 scaffold.
 }

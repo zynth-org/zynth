@@ -39,7 +39,7 @@ internal class ZynthScrollView(
 
   private val verticalHost = ZynthVerticalScrollHost(context)
   private val horizontalHost = ZynthHorizontalScrollHost(context)
-  private val contentView = FrameLayout(context)
+  private val contentView = ScrollContentView(context)
   private var host: ScrollHost = verticalHost
 
   private val choreographer by lazy(LazyThreadSafetyMode.NONE) { Choreographer.getInstance() }
@@ -159,6 +159,12 @@ internal class ZynthScrollView(
     contentView.clipToPadding = false
 
     attachHost(verticalHost)
+  }
+
+  private class ScrollContentView(context: Context) : FrameLayout(context) {
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+      // Yoga drives child layouts; avoid FrameLayout relayout that can override Yoga frames.
+    }
   }
 
   fun bind(manager: com.zynth.kit.core.ZynthUIManager, nodeId: Int) {

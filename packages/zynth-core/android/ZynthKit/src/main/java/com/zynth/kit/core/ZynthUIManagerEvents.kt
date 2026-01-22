@@ -250,6 +250,8 @@ internal fun ZynthUIManager.cleanupNode(id: Int) {
   layoutFrames.remove(id)
   styleDirtyNodes.remove(id)
   styleStates.remove(id)
+  styleLayoutDirtyNodes.remove(id)
+  styleLayoutFrames.remove(id)
   textStyleStates.remove(id)
   nodeStates.remove(id)
   nodeSurfaces.remove(id)

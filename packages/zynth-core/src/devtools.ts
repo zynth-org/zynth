@@ -107,7 +107,7 @@ export function installDevtoolsConsole(): void {
       } catch {
         // Ignore console bridge failures.
       }
-      if (g.__ZYNTH_DEVTOOLS_CONSOLE_PASSTHROUGH__ && typeof original === "function") {
+      if (typeof original === "function") {
         try {
           original(...args);
         } catch {

@@ -30,6 +30,7 @@ class ZynthYogaLayout {
     flexDirection = YogaFlexDirection.COLUMN
     alignItems = YogaAlign.STRETCH
   }
+  var layoutDidUpdate: ((id: Int, left: Int, top: Int, right: Int, bottom: Int, changed: Boolean) -> Unit)? = null
 
   fun ensureNode(id: Int, view: View) {
     if (nodes.containsKey(id)) return
@@ -200,10 +201,17 @@ class ZynthYogaLayout {
       val top = node.layoutY.toInt()
       val width = node.layoutWidth.toInt()
       val height = node.layoutHeight.toInt()
+      val right = left + width
+      val bottom = top + height
+      val frameChanged =
+        view.left != left || view.top != top || view.right != right || view.bottom != bottom
       if (view is ZynthLayoutView) {
         view.updateYogaLayout(width, height)
       }
-      view.layout(left, top, left + width, top + height)
+      if (frameChanged) {
+        view.layout(left, top, right, bottom)
+      }
+      layoutDidUpdate?.invoke(id, left, top, right, bottom, frameChanged)
     }
   }
 
