@@ -9,11 +9,19 @@ static NSTimeInterval ZynthScrollCurrentTime(void) {
   return CACurrentMediaTime();
 }
 
+@class ZynthScrollView;
+
+// Forward declare the content view class
+@interface ZynthScrollViewContentView : UIView
+@property(nonatomic, weak) ZynthScrollView *scrollView;
+@end
+
+// Declare private properties and methods for ZynthScrollView FIRST
 @interface ZynthScrollView ()
 @property(nonatomic, weak) ZynthUIManager *manager;
 @property(nonatomic, weak) ZynthNode *node;
 @property(nonatomic, strong) UIScrollView *scrollView;
-@property(nonatomic, strong) UIView *contentView;
+@property(nonatomic, strong) ZynthScrollViewContentView *contentView;
 @property(nonatomic, assign) ZynthScrollAxis axis;
 @property(nonatomic, assign) BOOL scrollEnabled;
 @property(nonatomic, assign) BOOL directionalLockEnabled;
@@ -45,7 +53,37 @@ static NSTimeInterval ZynthScrollCurrentTime(void) {
 @property(nonatomic, assign) BOOL contentUpdateScheduled;
 @property(nonatomic, assign) BOOL contentGeometryDirty;
 @property(nonatomic, assign) CGSize lastContentSize;
+@property(nonatomic, assign) CGSize manualContentSize;
 @property(nonatomic, assign) NSTimeInterval lastGestureTimestamp;
+
+- (void)scheduleContentGeometryUpdate;
+@end
+
+// Implementation of the content view
+@implementation ZynthScrollViewContentView
+
+- (void)didAddSubview:(UIView *)subview {
+  [super didAddSubview:subview];
+  [subview addObserver:self forKeyPath:@"center" options:NSKeyValueObservingOptionNew context:nil];
+  [subview addObserver:self forKeyPath:@"bounds" options:NSKeyValueObservingOptionNew context:nil];
+  [self.scrollView scheduleContentGeometryUpdate];
+}
+
+- (void)willRemoveSubview:(UIView *)subview {
+  [super willRemoveSubview:subview];
+  [subview removeObserver:self forKeyPath:@"center"];
+  [subview removeObserver:self forKeyPath:@"bounds"];
+  [self.scrollView scheduleContentGeometryUpdate];
+}
+
+- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary<NSKeyValueChangeKey,id> *)change context:(void *)context {
+  if ([keyPath isEqualToString:@"center"] || [keyPath isEqualToString:@"bounds"]) {
+    [self.scrollView scheduleContentGeometryUpdate];
+  } else {
+    [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
+  }
+}
+
 @end
 
 @interface ZynthInternalScrollView : UIScrollView
@@ -93,7 +131,8 @@ static NSTimeInterval ZynthScrollCurrentTime(void) {
   _scrollView.bounces = YES;
   _scrollView.scrollsToTop = NO;
 
-  _contentView = [[UIView alloc] initWithFrame:CGRectZero];
+  _contentView = [[ZynthScrollViewContentView alloc] initWithFrame:CGRectZero];
+  _contentView.scrollView = self;
   _contentView.clipsToBounds = NO;
   _contentView.backgroundColor = UIColor.clearColor;
 
@@ -150,6 +189,26 @@ static NSTimeInterval ZynthScrollCurrentTime(void) {
 - (void)updateContentGeometry {
   self.contentGeometryDirty = NO;
   CGSize boundsSize = self.bounds.size;
+  
+  // 1. If manual size is provided, use it directly.
+  if (self.manualContentSize.width > 0 || self.manualContentSize.height > 0) {
+    CGFloat w = MAX(self.manualContentSize.width, boundsSize.width);
+    CGFloat h = MAX(self.manualContentSize.height, boundsSize.height);
+    CGSize nextContentSize = CGSizeMake(w, h);
+    
+    // Always update the content view frame to match the scrollable area
+    _contentView.frame = CGRectMake(0, 0, nextContentSize.width, nextContentSize.height);
+    
+    CGFloat epsilon = 0.5f;
+    if (fabs(nextContentSize.width - self.lastContentSize.width) > epsilon ||
+        fabs(nextContentSize.height - self.lastContentSize.height) > epsilon) {
+      _scrollView.contentSize = nextContentSize;
+      self.lastContentSize = nextContentSize;
+    }
+    return;
+  }
+
+  // 2. Otherwise, calculate from subviews (legacy behavior)
   __block CGFloat contentWidth = boundsSize.width;
   __block CGFloat contentHeight = boundsSize.height;
 
@@ -184,6 +243,13 @@ static NSTimeInterval ZynthScrollCurrentTime(void) {
 }
 
 - (void)scheduleContentGeometryUpdate {
+  // If we have a manual size, update immediately (no deferral needed)
+  if (self.manualContentSize.width > 0 || self.manualContentSize.height > 0) {
+    self.contentGeometryDirty = YES;
+    [self updateContentGeometry];
+    return;
+  }
+
   if (!self.contentGeometryDirty) return;
   if ([self shouldDeferContentGeometryForOffset:self.scrollView.contentOffset]) return;
   if (self.contentUpdateScheduled) return;
@@ -197,15 +263,10 @@ static NSTimeInterval ZynthScrollCurrentTime(void) {
 }
 
 - (BOOL)shouldDeferContentGeometryForOffset:(CGPoint)offset {
-  if (self.isDraggingState) return YES;
-  CGSize viewport = self.scrollView.bounds.size;
-  CGSize contentSize = self.scrollView.contentSize;
-  if (self.axis == ZynthScrollAxisHorizontal) {
-    CGFloat maxOffset = MAX(0.0, contentSize.width - viewport.width);
-    return offset.x < -0.5 || offset.x > maxOffset + 0.5;
-  }
-  CGFloat maxOffset = MAX(0.0, contentSize.height - viewport.height);
-  return offset.y < -0.5 || offset.y > maxOffset + 0.5;
+  // Only defer if the user is actively dragging.
+  // We used to defer if overscrolling, but that causes deadlocks when the content size
+  // needs to grow/shrink while the user is pulling against the edge.
+  return self.isDraggingState;
 }
 
 #pragma mark - Property setters
@@ -459,6 +520,18 @@ static NSTimeInterval ZynthScrollCurrentTime(void) {
     self.snapPaddingStart = [left respondsToSelector:@selector(doubleValue)] ? (NSInteger)MAX(0.0, [left doubleValue]) : 0;
     return;
   }
+}
+
+- (void)zynth_setManualContentSize:(NSDictionary *_Nullable)size {
+  if (![size isKindOfClass:[NSDictionary class]]) {
+    self.manualContentSize = CGSizeZero;
+  } else {
+    CGFloat width = [size[@"width"] respondsToSelector:@selector(doubleValue)] ? [size[@"width"] doubleValue] : 0;
+    CGFloat height = [size[@"height"] respondsToSelector:@selector(doubleValue)] ? [size[@"height"] doubleValue] : 0;
+    self.manualContentSize = CGSizeMake(width, height);
+  }
+  self.contentGeometryDirty = YES;
+  [self updateContentGeometry];
 }
 
 - (void)zynth_applyCommand:(NSDictionary *_Nullable)command {

@@ -8,6 +8,7 @@
 #endif
 
 #import "ZynthScrollView.h"
+#import "ZynthRecyclerScrollView.h"
 #import "ScrollViewUICommands.h"
 
 static BOOL ZynthScrollViewHandleSetProp(ZynthUIManager *manager,
@@ -128,6 +129,15 @@ static BOOL ZynthScrollViewHandleSetProp(ZynthUIManager *manager,
     return YES;
   }
 
+  if ([name isEqualToString:@"contentSize"]) {
+    if ([value isKindOfClass:[NSDictionary class]]) {
+      [scrollView zynth_setManualContentSize:(NSDictionary *)value];
+    } else {
+      [scrollView zynth_setManualContentSize:nil];
+    }
+    return YES;
+  }
+
   if ([name isEqualToString:@"__scrollCommand"]) {
     if ([value isKindOfClass:[NSDictionary class]]) {
       [scrollView zynth_applyCommand:(NSDictionary *)value];
@@ -216,6 +226,18 @@ static BOOL ZynthScrollViewHandleSetHandler(ZynthUIManager *manager,
       return YES;
     };
     ZynthRegisterComponentDescriptor(descriptor);
+
+    // Register RecyclerScrollView
+    ZynthComponentDescriptor *recyclerDescriptor = [[ZynthComponentDescriptor alloc] initWithType:@"recycler-scroll-view"];
+    recyclerDescriptor.createView = ^UIView *(ZynthUIManager *manager, NSString *type) {
+      return [ZynthRecyclerScrollView new];
+    };
+    recyclerDescriptor.attach = descriptor.attach;
+    recyclerDescriptor.handleSetProp = descriptor.handleSetProp;
+    recyclerDescriptor.handleSetHandler = descriptor.handleSetHandler;
+    recyclerDescriptor.handleInsertChild = descriptor.handleInsertChild;
+    recyclerDescriptor.handleRemoveChild = descriptor.handleRemoveChild;
+    ZynthRegisterComponentDescriptor(recyclerDescriptor);
   });
 }
 

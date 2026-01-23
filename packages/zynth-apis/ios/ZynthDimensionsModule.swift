@@ -43,7 +43,7 @@ final class ZynthDimensionsModule: NSObject, ZynthModule, ZynthSyncModule {
   private var fontScaleObserver: NSObjectProtocol?
   private var lastPayload: DimensionsPayload?
 
-  init(runtime: ZynthRuntime, rootView: UIView) {
+  init(runtime: ZynthRuntime, rootView: UIView?) {
     self.runtime = runtime
     self.rootView = rootView
     super.init()

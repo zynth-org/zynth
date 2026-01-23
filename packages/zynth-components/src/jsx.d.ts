@@ -58,6 +58,7 @@ interface GlassContainerElementProps {
 interface TextElementProps {
   style?: Style;
   children?: ZynthChildren;
+  text?: string;
 }
 
 declare module "solid-js" {
@@ -69,6 +70,7 @@ declare module "solid-js" {
       "text-input": TextInputProps & { [key: string]: any };
       "secure-text-input": TextInputProps & { [key: string]: any };
       "scroll-view": ViewElementProps & { [key: string]: any };
+      "recycler-scroll-view": ViewElementProps & { [key: string]: any };
       pressable: ViewElementProps & { [key: string]: any };
       button: SolidButtonProps & { testID?: string };
       "glass-view": GlassViewElementProps & { [key: string]: any };

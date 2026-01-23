@@ -6,6 +6,7 @@ import {
   onCleanup,
   splitProps,
 } from "solid-js";
+import { Platform, OS } from "@zynth/apis";
 import type { ParentComponent } from "solid-js";
 import type { HostNode, Style } from "@zynth/core";
 import { scheduleOnUIAfter, setProperty, shareSignalRef } from "@zynth/core";
@@ -56,7 +57,7 @@ export type ScrollController = {
   lockAxis: (axis: Axis | null) => void;
 };
 
-type InternalScrollController = ScrollController & {
+export type InternalScrollController = ScrollController & {
   __setHost?: (node: HostNode | null) => void;
   __applyMetrics?: (
     metrics: ScrollMetrics,
@@ -64,7 +65,7 @@ type InternalScrollController = ScrollController & {
   ) => void;
 };
 
-const INITIAL_METRICS: ScrollMetrics = {
+export const INITIAL_METRICS: ScrollMetrics = {
   offset: { x: 0, y: 0 },
   velocity: null,
   contentSize: { width: 0, height: 0 },
@@ -331,10 +332,12 @@ export type ScrollViewProps = {
   controller?: ScrollController;
   /** Optional native scroll guard overrides produced by `ScrollView.config(...)`. */
   config?: ScrollViewConfig;
+  /** Manual content size override (width, height) for virtualized lists. */
+  contentSize?: { width: number; height: number };
   testID?: string;
 };
 
-const normalizeEvent = (event: any): ScrollEvent => ({
+export const normalizeEvent = (event: any): ScrollEvent => ({
   contentOffset: event?.contentOffset ?? { x: 0, y: 0 },
   contentSize: event?.contentSize ?? { width: 0, height: 0 },
   layoutMeasurement: event?.layoutMeasurement ?? { width: 0, height: 0 },
@@ -350,7 +353,7 @@ const normalizeEvent = (event: any): ScrollEvent => ({
   zoomScale: event?.zoomScale ?? 1,
 });
 
-const makeMetricsFromEvent = (event: ScrollEvent): ScrollMetrics => ({
+export const makeMetricsFromEvent = (event: ScrollEvent): ScrollMetrics => ({
   offset: {
     x: event.contentOffset?.x ?? 0,
     y: event.contentOffset?.y ?? 0,
@@ -395,6 +398,7 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
     "onMomentumScrollBegin",
     "onMomentumScrollEnd",
     "onContentSizeChange",
+    "contentSize",
     "testID",
     "children",
   ]);
@@ -558,6 +562,9 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
     if (local.indicatorStyle) {
       setProperty(node, "indicatorStyle", local.indicatorStyle);
     }
+    if (local.contentSize) {
+      setProperty(node, "contentSize", local.contentSize);
+    }
     if (local.testID) {
       setProperty(node, "testID", local.testID);
     }
@@ -575,6 +582,17 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
   onCleanup(() => {
     controller()?.__setHost?.(null);
   });
+
+  if (Platform.OS === OS.IOS && local.contentSize) {
+    return (
+      <recycler-scroll-view
+        ref={(node: any) => setHostNode((node as unknown as HostNode) ?? null)}
+        testID={local.testID}
+      >
+        <View style={containerStyle()}>{resolvedChildren()}</View>
+      </recycler-scroll-view>
+    );
+  }
 
   return (
     <scroll-view

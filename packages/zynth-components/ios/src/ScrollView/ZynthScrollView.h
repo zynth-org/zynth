@@ -38,6 +38,8 @@ typedef NS_ENUM(NSInteger, ZynthScrollAxis) {
 - (void)zynth_setScrollPadding:(id _Nullable)value;
 - (void)zynth_applyCommand:(NSDictionary *_Nullable)command;
 
+- (void)zynth_setManualContentSize:(NSDictionary *_Nullable)size;
+
 - (void)zynth_lockAxis:(NSString *_Nullable)axisName;
 
 @end

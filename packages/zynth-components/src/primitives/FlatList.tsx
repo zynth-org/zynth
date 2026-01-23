@@ -256,11 +256,11 @@ export function FlatList<T>(props: RecyclerListProps<T>) {
     const visibleCount = Math.max(1, Math.ceil(viewport / estimate));
     const overscanCount = Math.max(
       0,
-      Math.ceil(overscanMainDistance() / estimate)
+      Math.ceil(overscanMainDistance() / estimate),
     );
     const calculated = Math.max(
       DEFAULT_MIN_POOL_ITEMS,
-      visibleCount + overscanCount * 2
+      visibleCount + overscanCount * 2,
     );
     return Math.min(calculated, dataLength);
   });
@@ -407,7 +407,7 @@ export function FlatList<T>(props: RecyclerListProps<T>) {
 
     let startIndex = sizeTree.findIndexByOffset(startOffset);
     let endIndex = sizeTree.findIndexByOffset(
-      Math.max(0, endOffset - OFFSET_EPSILON)
+      Math.max(0, endOffset - OFFSET_EPSILON),
     );
 
     if (startIndex < 0) startIndex = 0;
@@ -419,7 +419,7 @@ export function FlatList<T>(props: RecyclerListProps<T>) {
 
     if (props.debug) {
       log(
-        `updateBindings: off=${offset.toFixed(1)} vp=${viewport.toFixed(1)} logOff=${logicalOffset.toFixed(1)} total=${total.toFixed(1)} range=[${startIndex}, ${endIndex}]`
+        `updateBindings: off=${offset.toFixed(1)} vp=${viewport.toFixed(1)} logOff=${logicalOffset.toFixed(1)} total=${total.toFixed(1)} range=[${startIndex}, ${endIndex}]`,
       );
     }
 
@@ -643,7 +643,7 @@ export function FlatList<T>(props: RecyclerListProps<T>) {
         if (distanceToBottom <= thresholdPx) {
           scheduleScrollTo(
             Math.max(0, total - viewport),
-            config.animateAutoScroll ?? false
+            config.animateAutoScroll ?? false,
           );
         }
       } else if (config.startRenderingFromBottom) {
@@ -673,7 +673,7 @@ export function FlatList<T>(props: RecyclerListProps<T>) {
   createEffect(() => {
     const _extra = props.extraData;
     const keys = props.data.map((item, index) =>
-      props.keyExtractor(item, index)
+      props.keyExtractor(item, index),
     );
     rebuildLayout(keys);
     refreshBindings();
@@ -683,11 +683,11 @@ export function FlatList<T>(props: RecyclerListProps<T>) {
 
   const handleScroll = (event: ScrollEvent) => {
     const offset = props.horizontal
-      ? event.contentOffset?.x ?? 0
-      : event.contentOffset?.y ?? 0;
+      ? (event.contentOffset?.x ?? 0)
+      : (event.contentOffset?.y ?? 0);
     const viewport = props.horizontal
-      ? event.layoutMeasurement?.width ?? 0
-      : event.layoutMeasurement?.height ?? 0;
+      ? (event.layoutMeasurement?.width ?? 0)
+      : (event.layoutMeasurement?.height ?? 0);
 
     // Protection against spurious 0-offset events (e.g. from race conditions or layout invalidation)
     // that cause the list to momentarily render at the top, creating a "disappearing" flicker.
@@ -695,7 +695,7 @@ export function FlatList<T>(props: RecyclerListProps<T>) {
     if (offset === 0 && lastOffset > (lastViewport || 500)) {
       if (props.debug) {
         log(
-          `Ignoring suspicious scroll jump to 0. lastOffset=${lastOffset.toFixed(1)}`
+          `Ignoring suspicious scroll jump to 0. lastOffset=${lastOffset.toFixed(1)}`,
         );
       }
       return;
@@ -708,7 +708,7 @@ export function FlatList<T>(props: RecyclerListProps<T>) {
     }
     updateBindingsForOffset(
       offset,
-      viewport > 0 ? viewport : effectiveViewport()
+      viewport > 0 ? viewport : effectiveViewport(),
     );
     handleBoundaryEvents(offset, viewport > 0 ? viewport : effectiveViewport());
     updateAnchor(offset, viewport > 0 ? viewport : effectiveViewport());
@@ -755,6 +755,14 @@ export function FlatList<T>(props: RecyclerListProps<T>) {
 
   const hasData = createMemo(() => props.data.length > 0);
 
+  const manualContentSize = createMemo(() => {
+    const total = contentSize();
+    if (props.horizontal) {
+      return { width: total, height: 0 };
+    }
+    return { width: 0, height: total };
+  });
+
   const renderDecorator = (
     decorator: JSX.Element | (() => JSX.Element) | undefined
   ) => {
@@ -777,6 +785,7 @@ export function FlatList<T>(props: RecyclerListProps<T>) {
       decelerationRate={
         props.decelerationRate ?? (Platform.OS === OS.IOS ? "normal" : "normal")
       }
+      contentSize={manualContentSize()}
       testID={props.testID}
       onScroll={handleScroll}
     >
@@ -817,12 +826,12 @@ export function FlatList<T>(props: RecyclerListProps<T>) {
                     if (!item) return undefined;
                     const descriptor = Object.getOwnPropertyDescriptor(
                       item,
-                      prop
+                      prop,
                     );
                     if (!descriptor) return undefined;
                     return { ...descriptor, configurable: true };
                   },
-                }
+                },
               ) as T;
 
               const indexValue = {
@@ -915,6 +924,9 @@ export function FlatList<T>(props: RecyclerListProps<T>) {
                     height: "100%",
                     overflow: "visible",
                   };
+                }
+                if ((itemProxy as any)?.id === "row-999") {
+                  console.log(position(), size);
                 }
                 return {
                   position: "absolute",

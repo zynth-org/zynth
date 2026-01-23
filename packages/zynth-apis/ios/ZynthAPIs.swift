@@ -13,12 +13,8 @@ public class ZynthAPIs: NSObject {
         // If rootView is nil (e.g. headless), Dimensions might fail gracefully or return empty.
         var modules: [ZynthModule] = [fontModule, fetchModule]
         
-        if let rootView = runtime.rootView {
-            let dimensionsModule = ZynthDimensionsModule(runtime: runtime, rootView: rootView)
-            modules.append(dimensionsModule)
-        } else {
-            print("[ZynthAPIs] Warning: Runtime has no rootView; Dimensions module not installed.")
-        }
+        let dimensionsModule = ZynthDimensionsModule(runtime: runtime, rootView: runtime.rootView)
+        modules.append(dimensionsModule)
 
         runtime.installModules(modules)
         print("[ZynthAPIs] Initialized modules: Font, Fetch, Dimensions")

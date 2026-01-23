@@ -89,9 +89,8 @@ class DimensionsModule(
         }
 
     override fun initialize() {
-        // Don't start observing immediately during module registration
-        // The runtime may not be fully initialized yet
-        // Instead, we'll start observing on the first access
+        // Start observing immediately to capture layout changes (e.g. from 0 to screen size)
+        ensureObserving()
     }
 
     override fun invalidate() {
@@ -184,17 +183,21 @@ class DimensionsModule(
 
         val windowWidthPx = max(rootView.width, 0)
         val windowHeightPx = max(rootView.height, 0)
-        val fallbackWidthPx = resources.displayMetrics.widthPixels
-        val fallbackHeightPx = resources.displayMetrics.heightPixels
-
-        val actualWidthPx = if (windowWidthPx > 0) windowWidthPx else fallbackWidthPx
-        val actualHeightPx = if (windowHeightPx > 0) windowHeightPx else fallbackHeightPx
         
-        // android.util.Log.d("DimensionsModule", "computePayload: widthPx=$actualWidthPx, heightPx=$actualHeightPx")
+        var wPx = if (windowWidthPx > 0) windowWidthPx else resources.displayMetrics.widthPixels
+        var hPx = if (windowHeightPx > 0) windowHeightPx else resources.displayMetrics.heightPixels
+
+        if (wPx <= 0 || hPx <= 0) {
+            val sys = android.content.res.Resources.getSystem().displayMetrics
+            if (wPx <= 0) wPx = sys.widthPixels
+            if (hPx <= 0) hPx = sys.heightPixels
+        }
+        
+        // android.util.Log.d("DimensionsModule", "computePayload: widthPx=$wPx, heightPx=$hPx")
 
         val windowMetrics = DimensionMetrics(
-            width = actualWidthPx.toDouble() / density,
-            height = actualHeightPx.toDouble() / density,
+            width = wPx.toDouble() / density,
+            height = hPx.toDouble() / density,
             scale = density,
             fontScale = fontScale,
         )
@@ -232,7 +235,12 @@ class DimensionsModule(
         }
 
         val metrics = rootView.resources.displayMetrics
-        return metrics.widthPixels to metrics.heightPixels
+        if (metrics.widthPixels > 0 && metrics.heightPixels > 0) {
+            return metrics.widthPixels to metrics.heightPixels
+        }
+
+        val systemMetrics = android.content.res.Resources.getSystem().displayMetrics
+        return systemMetrics.widthPixels to systemMetrics.heightPixels
     }
 
     private fun computeFallbackPayload(): DimensionsPayload {
@@ -248,9 +256,18 @@ class DimensionsModule(
             fontScale = fontScale,
         )
 
+        var wPx = resources.displayMetrics.widthPixels
+        var hPx = resources.displayMetrics.heightPixels
+        
+        if (wPx <= 0 || hPx <= 0) {
+            val sys = android.content.res.Resources.getSystem().displayMetrics
+            if (wPx <= 0) wPx = sys.widthPixels
+            if (hPx <= 0) hPx = sys.heightPixels
+        }
+
         val windowMetrics = DimensionMetrics(
-            width = resources.displayMetrics.widthPixels.toDouble() / density,
-            height = resources.displayMetrics.heightPixels.toDouble() / density,
+            width = wPx.toDouble() / density,
+            height = hPx.toDouble() / density,
             scale = density,
             fontScale = fontScale,
         )

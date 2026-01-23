@@ -43,6 +43,13 @@ class ZynthRuntime(val root: ZynthRootView) {
 
   fun loadInitialBundle(assets: AssetManager, preloadedCode: String? = null) {
     JSBridge.installUIBindings(runtimePtr, uiManager)
+
+    val constants = registry.exportedConstants()
+    if (constants.isNotEmpty()) {
+      val json = JSONObject(constants as Map<*, *>).toString()
+      JSBridge.evaluateScript(runtimePtr, "globalThis.NativeConstants = $json;", "constants.js")
+    }
+
     if (preloadedCode == null) {
       val devServerUrl = System.getProperty("ZYNTH_DEV_SERVER_URL")
       if (!devServerUrl.isNullOrBlank()) {
