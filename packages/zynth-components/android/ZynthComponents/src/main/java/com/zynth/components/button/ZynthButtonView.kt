@@ -16,8 +16,6 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.color.MaterialColors
-import com.google.android.material.progressindicator.CircularProgressIndicatorSpec
-import com.google.android.material.progressindicator.IndeterminateDrawable
 import org.json.JSONObject
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -66,11 +64,6 @@ class ZynthButtonView(context: Context) : FrameLayout(context) {
   private var lastCommandSeq: Long = -1L
   private var isReady = true
 
-  // Loading state
-  private var loadingAriaLabel: String? = null
-  private var originalTitle: String? = null
-  private var loadingDrawable: IndeterminateDrawable<CircularProgressIndicatorSpec>? = null
-
   // Configuration
   private var currentVariant: String = "filled"
   private var currentTone: String = "primary"
@@ -85,6 +78,10 @@ class ZynthButtonView(context: Context) : FrameLayout(context) {
   private var longPressTriggered = false
   private var pressRetentionOffsetPx = DEFAULT_PRESS_RETENTION_DP * density
   private var hitSlop: Rect? = null
+
+  fun setShowLoadingSpinner(show: Boolean) {
+    // No-op
+  }
 
   init {
     // Ensure children can render outside bounds when their overflow is visible
@@ -110,6 +107,10 @@ class ZynthButtonView(context: Context) : FrameLayout(context) {
     // Add the button as the first child (background layer)
     super.addView(materialButton, 0, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
 
+    // Disable ZynthButtonView's own touch handling to let MaterialButton handle it naturally
+    isClickable = false
+    isFocusable = false
+
     // Set up click listener on the MaterialButton
     materialButton.setOnClickListener {
       if (!shouldHandleInteraction() || nodeId < 0) return@setOnClickListener
@@ -117,6 +118,27 @@ class ZynthButtonView(context: Context) : FrameLayout(context) {
         triggerHaptics()
         listener?.onPress(nodeId)
       }
+    }
+
+    // Set up touch listener for press tracking
+    materialButton.setOnTouchListener { _, event ->
+      when (event.action) {
+        MotionEvent.ACTION_DOWN -> {
+          if (shouldHandleInteraction() && nodeId >= 0) {
+            longPressTriggered = false
+            pressStartTimeMs = SystemClock.uptimeMillis()
+            listener?.onPressIn(nodeId)
+            scheduleLongPress()
+          }
+        }
+        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+          if (nodeId >= 0) {
+            cancelLongPressTimer()
+            listener?.onPressOut(nodeId, event.action == MotionEvent.ACTION_CANCEL)
+          }
+        }
+      }
+      false // Don't consume, let MaterialButton handle the rest (ripples, etc)
     }
 
     // Long click for onLongPress
@@ -183,39 +205,7 @@ class ZynthButtonView(context: Context) : FrameLayout(context) {
     }
   }
 
-  /**
-   * Intercept touch events and forward them to the MaterialButton.
-   * This ensures that even if children are on top, the button gets the touch.
-   */
-  override fun onInterceptTouchEvent(ev: MotionEvent?): Boolean {
-    // Always intercept - we'll dispatch to MaterialButton ourselves
-    return true
-  }
 
-  override fun onTouchEvent(event: MotionEvent?): Boolean {
-    if (event == null) return super.onTouchEvent(event)
-    
-    // Track press state for our callbacks
-    when (event.action) {
-      MotionEvent.ACTION_DOWN -> {
-        if (shouldHandleInteraction() && nodeId >= 0) {
-          longPressTriggered = false
-          pressStartTimeMs = SystemClock.uptimeMillis()
-          listener?.onPressIn(nodeId)
-          scheduleLongPress()
-        }
-      }
-      MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-        if (nodeId >= 0) {
-          cancelLongPressTimer()
-          listener?.onPressOut(nodeId, event.action == MotionEvent.ACTION_CANCEL)
-        }
-      }
-    }
-    
-    // Forward the touch event to the MaterialButton
-    return materialButton.dispatchTouchEvent(event)
-  }
 
   override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
     // Yoga drives layout via explicit setFrame, bypassing onMeasure.
@@ -277,28 +267,22 @@ class ZynthButtonView(context: Context) : FrameLayout(context) {
     else
       getThemeColor(com.google.android.material.R.attr.colorOnPrimary)
 
-    materialButton.backgroundTintList = ColorStateList.valueOf(bgColor)
-    materialButton.setTextColor(fgColor)
-    materialButton.iconTint = ColorStateList.valueOf(fgColor)
+    updateButtonColors(bgColor, fgColor)
     materialButton.strokeWidth = 0
     materialButton.strokeColor = null
     materialButton.elevation = 0f
     materialButton.stateListAnimator = null
-    materialButton.rippleColor = ColorStateList.valueOf(adjustAlpha(fgColor, 0.16f))
   }
 
   private fun applyTonalStyle() {
     val bgColor = getThemeColor(com.google.android.material.R.attr.colorSecondaryContainer)
     val fgColor = getThemeColor(com.google.android.material.R.attr.colorOnSecondaryContainer)
 
-    materialButton.backgroundTintList = ColorStateList.valueOf(bgColor)
-    materialButton.setTextColor(fgColor)
-    materialButton.iconTint = ColorStateList.valueOf(fgColor)
+    updateButtonColors(bgColor, fgColor)
     materialButton.strokeWidth = 0
     materialButton.strokeColor = null
     materialButton.elevation = 0f
     materialButton.stateListAnimator = null
-    materialButton.rippleColor = ColorStateList.valueOf(adjustAlpha(fgColor, 0.16f))
   }
 
   private fun applyOutlinedStyle() {
@@ -612,14 +596,7 @@ class ZynthButtonView(context: Context) : FrameLayout(context) {
   }
 
   fun setTitle(title: String?) {
-    // Store original title for loading state restoration
-    if (!loading) {
-      originalTitle = title
-      materialButton.text = title
-    } else {
-      // While loading, only store for later - don't change displayed text
-      originalTitle = title
-    }
+    materialButton.text = title
   }
 
   fun setIconOnly(value: Boolean) {
@@ -635,64 +612,12 @@ class ZynthButtonView(context: Context) : FrameLayout(context) {
   }
 
   fun setLoading(value: Boolean) {
-    val wasLoading = loading
     loading = value
     applyEnabledState()
-    
-    if (value && !wasLoading) {
-      // Starting to load - save original title, show spinner
-      if (originalTitle == null) {
-        originalTitle = materialButton.text?.toString()
-      }
-      showLoadingState()
-    } else if (!value && wasLoading) {
-      // Loading finished - restore original state
-      hideLoadingState()
-    }
   }
 
   fun setLoadingAriaLabel(label: String?) {
-    loadingAriaLabel = label
-    // Update if currently loading
-    if (loading) {
-      showLoadingState()
-    }
-  }
-
-  private fun showLoadingState() {
-    // Only show loading UI if there's native title content
-    val hasNativeContent = materialButton.text?.isNotEmpty() == true || originalTitle?.isNotEmpty() == true
-    if (!hasNativeContent) return
-    
-    // Create and show spinner as icon
-    if (loadingDrawable == null) {
-      val spec = CircularProgressIndicatorSpec(context, null, 0,
-        com.google.android.material.R.style.Widget_Material3_CircularProgressIndicator_ExtraSmall)
-      spec.indicatorSize = (16 * density).roundToInt()
-      spec.trackThickness = (2 * density).roundToInt()
-      loadingDrawable = IndeterminateDrawable.createCircularDrawable(context, spec)
-    }
-    
-    // Set the spinner color to match the text color
-    val textColor = materialButton.textColors?.defaultColor ?: Color.WHITE
-    loadingDrawable?.setTint(textColor)
-    
-    materialButton.icon = loadingDrawable
-    loadingDrawable?.start()
-    
-    // Change title if loadingAriaLabel is set
-    if (loadingAriaLabel != null) {
-      materialButton.text = loadingAriaLabel
-    }
-  }
-
-  private fun hideLoadingState() {
-    // Stop and remove spinner
-    loadingDrawable?.stop()
-    materialButton.icon = null
-    
-    // Restore original title
-    materialButton.text = originalTitle
+    // No-op
   }
 
   fun setPressRetentionOffset(value: Number?) {
@@ -807,12 +732,6 @@ class ZynthButtonView(context: Context) : FrameLayout(context) {
     pressRetentionOffsetPx = DEFAULT_PRESS_RETENTION_DP * density
     hitSlop = null
     
-    // Reset loading state
-    loadingAriaLabel = null
-    originalTitle = null
-    loadingDrawable?.stop()
-    materialButton.icon = null
-    
     materialButton.text = null
     materialButton.isEnabled = true
     alpha = 1f
@@ -906,7 +825,41 @@ class ZynthButtonView(context: Context) : FrameLayout(context) {
   private fun applyEnabledState() {
     val enabled = isReady && !disabled && !loading
     materialButton.isEnabled = enabled
-    alpha = if (enabled) 1f else 0.5f
-    isClickable = enabled
+    
+    // Ensure the button doesn't intercept or show feedback when disabled
+    materialButton.isClickable = enabled
+    materialButton.isFocusable = enabled
+    
+    // Visual feedback for disabled state
+    alpha = if (enabled) 1f else 0.6f
+    
+    // Force a redraw to update the visual state (ripples should disappear)
+    materialButton.invalidate()
+  }
+
+  // Helper to create state-aware color lists
+  private fun createEnabledStateList(enabledColor: Int): ColorStateList {
+    val states = arrayOf(
+      intArrayOf(-android.R.attr.state_enabled),
+      intArrayOf()
+    )
+    val disabledColor = adjustAlpha(enabledColor, 0.38f)
+    val colors = intArrayOf(disabledColor, enabledColor)
+    return ColorStateList(states, colors)
+  }
+
+  // Update styling methods to use state lists...
+  private fun updateButtonColors(bgColor: Int, fgColor: Int) {
+    val disabledBg = getThemeColor(com.google.android.material.R.attr.colorOnSurface)
+    val bgStates = arrayOf(intArrayOf(-android.R.attr.state_enabled), intArrayOf())
+    val bgColors = intArrayOf(adjustAlpha(disabledBg, 0.12f), bgColor)
+    materialButton.backgroundTintList = ColorStateList(bgStates, bgColors)
+
+    val fgStates = arrayOf(intArrayOf(-android.R.attr.state_enabled), intArrayOf())
+    val fgColors = intArrayOf(adjustAlpha(disabledBg, 0.38f), fgColor)
+    val fgList = ColorStateList(fgStates, fgColors)
+    materialButton.setTextColor(fgList)
+    materialButton.iconTint = fgList
+    materialButton.rippleColor = ColorStateList.valueOf(adjustAlpha(fgColor, 0.16f))
   }
 }

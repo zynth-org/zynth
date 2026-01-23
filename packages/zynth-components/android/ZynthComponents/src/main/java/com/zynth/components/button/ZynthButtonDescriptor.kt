@@ -117,6 +117,22 @@ class ZynthButtonRegistrar : ZynthComponentRegistrar {
                   button.setLoadingAriaLabel(label)
                   true
                 }
+                "loadingIndicator" -> {
+                  // If value is boolean false, disable native spinner.
+                  // If null or true (or custom view which we don't support as native prop yet), enable it.
+                  val show = if (value != null) {
+                    val obj = try { JSONObject(value) } catch (e: Exception) { null }
+                    if (obj == null && (value == "false" || value == "0")) {
+                      false
+                    } else {
+                      true // Default to true if it's an object or "true"
+                    }
+                  } else {
+                    true
+                  }
+                  button.setShowLoadingSpinner(show)
+                  true
+                }
                 "pressEffect" -> {
                   val obj = if (value != null) JSONObject(value) else JSONObject()
                   val effect = obj.optString(name)

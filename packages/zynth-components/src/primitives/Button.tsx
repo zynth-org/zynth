@@ -14,6 +14,7 @@ import type { HostNode, Style } from "@zynth/core";
 import { setProperty } from "@zynth/core";
 import { Text } from "./Text";
 import { View } from "./View";
+import { ProgressIndicator } from "./ProgressIndicator";
 
 export type ButtonType = "button" | "submit";
 export type Variant = "solid" | "outline" | "ghost" | "link";
@@ -541,14 +542,14 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
 
   const shouldHideContentForOverlay = createMemo(() => {
     if (!computedLoading()) return false;
+    
+    // If native indicator is disabled, we must show the content (custom indicator)
+    if (local.loadingIndicator === false) return false;
+
     if (resolvedLoadingPlacement() !== "overlay") return false;
     
-    // Only hide content if we have a custom element as indicator or an aria-label
-    const isCustomIndicator = local.loadingIndicator !== undefined && 
-                              local.loadingIndicator !== null && 
-                              typeof local.loadingIndicator !== "boolean";
-                              
-    return isCustomIndicator || !!local.loadingAriaLabel;
+    // Hide content when loading in overlay mode to allow native spinner to center
+    return true;
   });
 
   const [debounceHandle, setDebounceHandle] = createSignal<ReturnType<
@@ -722,7 +723,8 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
       local.preventFocusOnPress ?? false
     );
     setProperty(node, "loadingPlacement", resolvedLoadingPlacement());
-    setProperty(node, "loadingIndicator", local.loadingIndicator);
+    // We handle loading indicator in JS now, so disable native spinner always
+    setProperty(node, "loadingIndicator", false);
     setProperty(node, "loadingAriaLabel", local.loadingAriaLabel);
     setProperty(node, "haptics", local.haptics ?? "none");
     // labelStyle, iconStyle, pressedStyle etc might not be needed for native text,
@@ -810,6 +812,31 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
       testID={local.testID}
     >
       <View style={contentStyle()}>
+        {shouldHideContentForOverlay() && local.loadingIndicator !== false ? (
+          <>
+            {local.loadingIndicator ?? (
+              <ProgressIndicator
+                color={resolvedTextColor()}
+                size={
+                  resolvedSize() === "xs" || resolvedSize() === "sm"
+                    ? "small"
+                    : "small"
+                }
+              />
+            )}
+            {local.loadingAriaLabel ? (
+              <Text
+                style={{
+                  fontSize: sizeFontMap[resolvedSize()] ?? sizeFontMap.md,
+                  color: resolvedTextColor(),
+                  ...((local.labelStyle as Style) ?? {}),
+                }}
+              >
+                {local.loadingAriaLabel}
+              </Text>
+            ) : null}
+          </>
+        ) : null}
         {!shouldHideContentForOverlay() ? local.startIcon : null}
         {!shouldHideContentForOverlay() ? renderContent() : null}
         {!shouldHideContentForOverlay() ? local.endIcon : null}

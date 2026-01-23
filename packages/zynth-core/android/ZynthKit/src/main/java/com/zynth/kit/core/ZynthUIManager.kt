@@ -311,8 +311,8 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     nodeSurfaces[childId] = surfaceId
 
     val descriptor = parentState?.let { ZynthComponentRegistry.getDescriptor(it.type) }
-    if (descriptor != null && parentState != null && nodeStates[childId] != null) {
-      descriptor.onChildInserted(this, parentState, nodeStates[childId]!!, index)
+    if (descriptor != null && nodeStates[childId] != null) {
+      descriptor.onChildInserted(this, parentState!!, nodeStates[childId]!!, index)
     }
 
     if (parent is TextView && child is TextView) {
@@ -339,8 +339,8 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     val parentState = nodeStates[parentId]
     
     val descriptor = parentState?.let { ZynthComponentRegistry.getDescriptor(it.type) }
-    if (descriptor != null && parentState != null && nodeStates[childId] != null) {
-      descriptor.onChildRemoved(this, parentState, nodeStates[childId]!!)
+    if (descriptor != null && nodeStates[childId] != null) {
+      descriptor.onChildRemoved(this, parentState!!, nodeStates[childId]!!)
     }
 
     nodeStates[parentId]?.textChildren?.remove(childId)
