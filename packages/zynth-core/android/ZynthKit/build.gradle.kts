@@ -39,6 +39,19 @@ android {
       path = file("CMakeLists.txt")
     }
   }
+
+  packaging {
+    jniLibs {
+      excludes += setOf(
+        "**/libc++_shared.so",
+        "**/libhermes.so",
+        "**/libhermesvm.so",
+        "**/libhermes-executor-debug.so",
+        "**/libhermes-executor-release.so",
+        "**/libfbjni.so"
+      )
+    }
+  }
 }
 
 dependencies {

@@ -1,5 +1,6 @@
 #include <jni.h>
 #include <android/log.h>
+#include <fbjni/fbjni.h>
 #include <hermes/hermes.h>
 #include <jsi/jsi.h>
 
@@ -84,12 +85,7 @@ void removeHandlersForNode(int nodeId) {
 }
 
 JNIEnv *getEnv() {
-  if (!gVm) return nullptr;
-  JNIEnv *env = nullptr;
-  if (gVm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6) != JNI_OK) {
-    if (gVm->AttachCurrentThread(&env, nullptr) != JNI_OK) return nullptr;
-  }
-  return env;
+  return facebook::jni::Environment::current();
 }
 
 void callSetProp(JNIEnv *env, RuntimeState *state, jint nodeId, const std::string &name,
@@ -808,7 +804,7 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
 
 extern "C" jint JNI_OnLoad(JavaVM *vm, void *) {
   gVm = vm;
-  return JNI_VERSION_1_6;
+  return facebook::jni::initialize(vm, [] {});
 }
 
 extern "C" JNIEXPORT jlong JNICALL

@@ -53,14 +53,14 @@ export interface DatePickerController {
   __attachHost?: (node: HostNode | null) => void;
 }
 
-type DatePickerCommand = { type: "show" } | { type: "dismiss" };
+type DatePickerCommand = { type: "show"; __ts?: number } | { type: "dismiss"; __ts?: number };
 
 export function createDatePickerController(): DatePickerController {
   let host: HostNode | null = null;
 
   const issueCommand = (command: DatePickerCommand) => {
     if (!host) return;
-    setProperty(host, "__command", command);
+    setProperty(host, "__command", { ...command, __ts: Date.now() });
   };
 
   const controller: DatePickerController = {

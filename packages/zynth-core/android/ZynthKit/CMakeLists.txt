@@ -10,6 +10,7 @@ add_library(zynthkit SHARED src/main/cpp/zynthkit.cpp)
 
 find_package(hermes-engine REQUIRED CONFIG)
 find_package(ReactAndroid REQUIRED CONFIG)
+find_package(fbjni REQUIRED CONFIG)
 
 target_include_directories(zynthkit
   PRIVATE
@@ -29,5 +30,6 @@ target_link_libraries(zynthkit
   PRIVATE
     ${ZYNTH_HERMES_TARGET}
     ReactAndroid::jsi
+    fbjni::fbjni
     log
 )

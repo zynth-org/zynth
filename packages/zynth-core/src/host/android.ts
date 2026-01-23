@@ -129,6 +129,19 @@ export function createAndroidHost(): Host {
         case "string":
           encoded.push(1, nodeId, addString(name), 2, addString(value));
           return;
+        case "object":
+          try {
+            encoded.push(
+              1,
+              nodeId,
+              addString(name),
+              2,
+              addString(JSON.stringify(value))
+            );
+          } catch (e) {
+            // ignore serialization error
+          }
+          return;
         default:
           return;
       }
