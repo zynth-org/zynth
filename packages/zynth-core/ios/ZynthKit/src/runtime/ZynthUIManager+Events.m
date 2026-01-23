@@ -225,7 +225,9 @@
 
 - (void)dispatchLayoutEvents {
   if (_layoutNodes.count == 0) return;
-  for (NSNumber *nodeId in _layoutNodes) {
+  NSArray *nodes = [_layoutNodes allObjects];
+  for (NSNumber *nodeId in nodes) {
+    if (![_layoutNodes containsObject:nodeId]) continue;
     UIView *view = _nodes[nodeId];
     if (!view) continue;
     CGRect frame = view.frame;
