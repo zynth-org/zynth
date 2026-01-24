@@ -422,7 +422,8 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
             alignSelf: "flex-start",
           }
         : { flexShrink: 0 };
-    return userStyle ? [base, userStyle] : base;
+    if (!userStyle) return base;
+    return [base, ...(Array.isArray(userStyle) ? userStyle : [userStyle])] as StyleProp;
   });
 
   const [hostNode, setHostNode] = createSignal<HostNode | null>(null);

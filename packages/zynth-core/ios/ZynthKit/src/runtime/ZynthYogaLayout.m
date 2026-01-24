@@ -19,7 +19,7 @@ static YGSize ZynthMeasureText(YGNodeConstRef node,
   UILabel *label = (UILabel *)view;
   CGFloat maxWidth = widthMode == YGMeasureModeUndefined ? CGFLOAT_MAX : width;
   CGSize size = [label sizeThatFits:CGSizeMake(maxWidth, CGFLOAT_MAX)];
-  NSLog(@"[ZynthYoga] measure text '%@' => %.1fx%.1f", label.text, size.width, size.height);
+  // NSLog(@"[ZynthYoga] measure text '%@' => %.1fx%.1f", label.text, size.width, size.height);
   return (YGSize){size.width, size.height};
 }
 
@@ -353,7 +353,7 @@ static YGSize ZynthMeasureText(YGNodeConstRef node,
       }
     }
     if (size.width <= 0 || size.height <= 0) return;
-    NSLog(@"[ZynthYoga] layout rootSize=%.1fx%.1f", size.width, size.height);
+    // NSLog(@"[ZynthYoga] layout rootSize=%.1fx%.1f", size.width, size.height);
     YGNodeStyleSetWidth(strongSelf->_rootNode, (float)size.width);
     YGNodeStyleSetHeight(strongSelf->_rootNode, (float)size.height);
     YGNodeCalculateLayout(strongSelf->_rootNode, YGUndefined, YGUndefined, YGDirectionLTR);
