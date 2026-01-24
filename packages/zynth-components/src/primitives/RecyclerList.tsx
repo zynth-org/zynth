@@ -941,13 +941,12 @@ export function RecyclerList<T>(props: RecyclerListProps<T>) {
               });
 
               const contentStyle = createMemo((): Style => {
-                const ready = measurementReady();
-                if (!ready) return {};
                 const size = extent();
+                const ready = measurementReady();
                 if (props.horizontal) {
-                  return { minWidth: size };
+                  return { minWidth: ready ? size : 0 };
                 }
-                return { minHeight: size };
+                return { minHeight: ready ? size : 0 };
               });
 
               const itemStyle = createMemo((): Style => {
