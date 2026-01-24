@@ -255,7 +255,7 @@ export function RecyclerList<T>(props: RecyclerListProps<T>) {
   const overscanMainDistance = createMemo(() => {
     const config = props.overscan;
     if (typeof config === "number") {
-      return Math.max(0, config * estimatedItemSize());
+      return Math.max(0, config * layoutEstimate());
     }
     if (config && typeof config.main === "number") {
       return Math.max(0, config.main);
@@ -264,7 +264,7 @@ export function RecyclerList<T>(props: RecyclerListProps<T>) {
       config && typeof config.multiple === "number"
         ? config.multiple
         : DEFAULT_OVERSCAN_MULTIPLE;
-    return Math.max(0, estimatedItemSize() * multiple);
+    return Math.max(0, layoutEstimate() * multiple);
   });
 
   const desiredPoolSize = createMemo(() => {
@@ -273,7 +273,7 @@ export function RecyclerList<T>(props: RecyclerListProps<T>) {
     }
     const dataLength = props.data.length;
     if (dataLength === 0) return 0;
-    const estimate = estimatedItemSize();
+    const estimate = layoutEstimate();
     const viewport = effectiveViewport();
     const visibleCount = Math.max(1, Math.ceil(viewport / estimate));
     const overscanCount = Math.max(
@@ -453,6 +453,11 @@ export function RecyclerList<T>(props: RecyclerListProps<T>) {
     const maxIndex = dataLength - 1;
     startIndex = Math.max(0, Math.min(startIndex, maxIndex));
     endIndex = Math.max(startIndex, Math.min(endIndex, maxIndex));
+
+    const rangeCount = endIndex - startIndex + 1;
+    if (rangeCount > poolSlotsRef.length) {
+      ensurePoolSize(Math.min(dataLength, rangeCount));
+    }
 
     if (props.debug) {
       log(
