@@ -8,9 +8,10 @@ import {
 } from "solid-js";
 import { Platform, OS } from "@zynth/apis";
 import type { ParentComponent } from "solid-js";
-import type { HostNode, Style } from "@zynth/core";
+import type { HostNode, Style, StyleProp } from "@zynth/core";
 import { scheduleOnUIAfter, setProperty, shareSignalRef } from "@zynth/core";
 import { View } from "./View";
+import type { LayoutChangeEvent } from "./View";
 
 export type Axis = "vertical" | "horizontal";
 
@@ -279,8 +280,8 @@ export type MaintainVisibleContentPosition = {
 export type ScrollViewProps = {
   horizontal?: boolean;
   scrollEnabled?: boolean;
-  style?: Style;
-  contentContainerStyle?: Style;
+  style?: StyleProp;
+  contentContainerStyle?: StyleProp;
   showsVerticalScrollIndicator?: boolean;
   showsHorizontalScrollIndicator?: boolean;
   indicatorStyle?: IndicatorStyle;
@@ -289,6 +290,7 @@ export type ScrollViewProps = {
   directionalLockEnabled?: boolean;
   keyboardDismissMode?: KeyboardDismissMode;
   keyboardShouldPersistTaps?: KeyboardShouldPersistTaps;
+  onLayout?: (event: LayoutChangeEvent) => void;
   contentInset?: {
     top?: number;
     left?: number;
@@ -398,6 +400,7 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
     "onMomentumScrollBegin",
     "onMomentumScrollEnd",
     "onContentSizeChange",
+    "onLayout",
     "contentSize",
     "testID",
     "children",
@@ -407,9 +410,9 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
     local.horizontal ? "horizontal" : "vertical"
   );
   const resolvedChildren = resolveChildren(() => local.children);
-  const containerStyle = createMemo<Style>(() => {
+  const containerStyle = createMemo<StyleProp>(() => {
     const axisValue = axis();
-    const userStyle = local.contentContainerStyle as Style | undefined;
+    const userStyle = local.contentContainerStyle;
     const base: Style =
       axisValue === "horizontal"
         ? {
@@ -419,7 +422,7 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
             alignSelf: "flex-start",
           }
         : { flexShrink: 0 };
-    return userStyle ? { ...base, ...userStyle } : base;
+    return userStyle ? [base, userStyle] : base;
   });
 
   const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
@@ -577,6 +580,7 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
     setProperty(node, "onScrollEndDrag", handleScrollEndDrag);
     setProperty(node, "onMomentumScrollBegin", handleMomentumScrollBegin);
     setProperty(node, "onMomentumScrollEnd", handleMomentumScrollEnd);
+    setProperty(node, "onLayout", local.onLayout);
   });
 
   onCleanup(() => {

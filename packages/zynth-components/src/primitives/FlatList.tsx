@@ -26,16 +26,16 @@ export type ItemSeparatorProps<T> = {
   trailingIndex?: number;
 };
 
-export type RecyclerListRenderItemInfo<T> = {
+export type FlatListRenderItemInfo<T> = {
   item: T;
   index: number;
   itemSignal: Accessor<T | null>;
   indexSignal: Accessor<number>;
 };
 
-export type RecyclerListProps<T> = {
+export type FlatListProps<T> = {
   data: T[];
-  renderItem: (info: RecyclerListRenderItemInfo<T>) => JSX.Element;
+  renderItem: (info: FlatListRenderItemInfo<T>) => JSX.Element;
   keyExtractor: (item: T, index: number) => string;
   estimatedItemSize?: number;
   poolSize?: number;
@@ -74,6 +74,8 @@ type PoolSlot<T> = {
   setItem: Setter<T | null>;
   key: Accessor<string | null>;
   setKey: Setter<string | null>;
+  layoutToken: Accessor<number>;
+  setLayoutToken: Setter<number>;
 };
 
 const DEFAULT_ESTIMATED_ITEM_SIZE = 64;
@@ -81,6 +83,8 @@ const DEFAULT_MIN_POOL_ITEMS = 15;
 const DEFAULT_OVERSCAN_MULTIPLE = 2;
 const MEASUREMENT_EPSILON = 0.5;
 const OFFSET_EPSILON = 0.01;
+const ADAPTIVE_ESTIMATE_SAMPLES = 8;
+const ADAPTIVE_ESTIMATE_THRESHOLD = 0.1;
 
 class FenwickTree {
   private size = 0;
@@ -160,6 +164,7 @@ const createPoolSlot = <T,>(slotIndex: number): PoolSlot<T> => {
   const [index, setIndex] = createSignal(-1);
   const [item, setItem] = createSignal<T | null>(null);
   const [key, setKey] = createSignal<string | null>(null);
+  const [layoutToken, setLayoutToken] = createSignal(0);
   return {
     slotIndex,
     index,
@@ -168,10 +173,12 @@ const createPoolSlot = <T,>(slotIndex: number): PoolSlot<T> => {
     setItem,
     key,
     setKey,
+    layoutToken,
+    setLayoutToken,
   };
 };
 
-export function FlatList<T>(props: RecyclerListProps<T>) {
+export function FlatList<T>(props: FlatListProps<T>) {
   const log = (msg: string, ...args: any[]) => {
     if (props.debug) {
       console.log(`[FlatList] ${msg}`, ...args);
@@ -208,6 +215,19 @@ export function FlatList<T>(props: RecyclerListProps<T>) {
       return estimate;
     }
     return DEFAULT_ESTIMATED_ITEM_SIZE;
+  });
+
+  const [layoutEstimate, setLayoutEstimate] =
+    createSignal(estimatedItemSize());
+  let adaptiveLocked = false;
+  let measuredSum = 0;
+  let measuredCount = 0;
+  let dataKeyToIndex = new Map<string, number>();
+
+  createEffect(() => {
+    const estimate = estimatedItemSize();
+    setLayoutEstimate(estimate);
+    adaptiveLocked = false;
   });
 
   const defaultScrollViewStyle: Style = { overflow: "hidden" as const };
@@ -298,15 +318,29 @@ export function FlatList<T>(props: RecyclerListProps<T>) {
   const [layoutVersion, setLayoutVersion] = createSignal(0);
 
   const rebuildLayout = (nextKeys: string[]) => {
-    const estimate = estimatedItemSize();
+    const estimate = layoutEstimate();
     const nextSizes = new Array(nextKeys.length);
+    let nextMeasuredSum = 0;
+    let nextMeasuredCount = 0;
+    const nextKeyToIndex = new Map<string, number>();
     for (let i = 0; i < nextKeys.length; i += 1) {
-      const cached = measurementCache.get(nextKeys[i]);
-      nextSizes[i] = cached && cached > 0 ? cached : estimate;
+      const key = nextKeys[i];
+      nextKeyToIndex.set(key, i);
+      const cached = measurementCache.get(key);
+      if (cached && cached > 0) {
+        nextSizes[i] = cached;
+        nextMeasuredSum += cached;
+        nextMeasuredCount += 1;
+      } else {
+        nextSizes[i] = estimate;
+      }
     }
     sizeTree.reset(nextSizes);
     layoutTotal = sizeTree.total();
     dataKeys = nextKeys;
+    dataKeyToIndex = nextKeyToIndex;
+    measuredSum = nextMeasuredSum;
+    measuredCount = nextMeasuredCount;
     setLayoutVersion((prev) => prev + 1);
     lastRangeStart = -1;
     lastRangeEnd = -1;
@@ -315,10 +349,10 @@ export function FlatList<T>(props: RecyclerListProps<T>) {
   const getOffsetForIndex = (index: number) => sizeTree.prefixSum(index - 1);
   const getSizeForIndex = (index: number) => {
     if (index < 0 || index >= dataKeys.length) {
-      return estimatedItemSize();
+      return layoutEstimate();
     }
     const value = sizeTree.value(index);
-    return value > 0 ? value : estimatedItemSize();
+    return value > 0 ? value : layoutEstimate();
   };
   const getTotalSize = () => sizeTree.total();
   const getLogicalOffset = (rawOffset: number, viewport: number) => {
@@ -360,6 +394,7 @@ export function FlatList<T>(props: RecyclerListProps<T>) {
     const slot = poolSlotsRef[slotIndex];
     if (!slot) return;
     slotBindings[slotIndex] = dataIndex;
+    slot.setLayoutToken((value) => value + 1);
     if (dataIndex < 0 || dataIndex >= props.data.length) {
       slot.setIndex(-1);
       slot.setItem(null);
@@ -663,11 +698,42 @@ export function FlatList<T>(props: RecyclerListProps<T>) {
     if (prev !== undefined && Math.abs(prev - size) < MEASUREMENT_EPSILON) {
       return;
     }
+    if (prev !== undefined && size + MEASUREMENT_EPSILON < prev) {
+      // Avoid shrinking cached sizes from stale/recycled measurements.
+      return;
+    }
+    const mappedIndex = dataKeyToIndex.get(key);
+    if (mappedIndex === undefined) return;
     measurementCache.set(key, size);
-    sizeTree.update(index, size);
+    if (prev === undefined) {
+      measuredSum += size;
+      measuredCount += 1;
+    } else {
+      measuredSum += size - prev;
+    }
+    sizeTree.update(mappedIndex, size);
     layoutTotal = sizeTree.total();
     setLayoutVersion((prevVersion) => prevVersion + 1);
     updateBindingsForOffset(lastOffset, lastViewport);
+
+    if (
+      !adaptiveLocked &&
+      measuredCount >= ADAPTIVE_ESTIMATE_SAMPLES &&
+      dataKeys.length > 0
+    ) {
+      const avg = measuredSum / measuredCount;
+      const base = layoutEstimate();
+      if (Number.isFinite(avg) && avg > 0 && base > 0) {
+        const delta = Math.abs(avg - base) / base;
+        if (delta >= ADAPTIVE_ESTIMATE_THRESHOLD) {
+          adaptiveLocked = true;
+          setLayoutEstimate(avg);
+          rebuildLayout(dataKeys);
+          refreshBindings();
+          updateBindingsForOffset(lastOffset, lastViewport);
+        }
+      }
+    }
   };
 
   createEffect(() => {
@@ -675,6 +741,7 @@ export function FlatList<T>(props: RecyclerListProps<T>) {
     const keys = props.data.map((item, index) =>
       props.keyExtractor(item, index),
     );
+    adaptiveLocked = false;
     rebuildLayout(keys);
     refreshBindings();
     updateBindingsForOffset(lastOffset, effectiveViewport());
@@ -764,7 +831,7 @@ export function FlatList<T>(props: RecyclerListProps<T>) {
   });
 
   const renderDecorator = (
-    decorator: JSX.Element | (() => JSX.Element) | undefined
+    decorator: JSX.Element | (() => JSX.Element) | undefined,
   ) => {
     if (!decorator) return null;
     return typeof decorator === "function" ? decorator() : decorator;
@@ -912,6 +979,16 @@ export function FlatList<T>(props: RecyclerListProps<T>) {
                 return measurementCache.has(key);
               });
 
+              const contentStyle = createMemo((): Style => {
+                const ready = measurementReady();
+                if (!ready) return {};
+                const size = extent();
+                if (props.horizontal) {
+                  return { minWidth: size };
+                }
+                return { minHeight: size };
+              });
+
               const itemStyle = createMemo((): Style => {
                 const size = extent();
                 const ready = measurementReady();
@@ -920,38 +997,43 @@ export function FlatList<T>(props: RecyclerListProps<T>) {
                     position: "absolute",
                     left: position(),
                     top: 0,
-                    width: ready ? size : undefined,
+                    minWidth: ready ? size : 0,
                     height: "100%",
                     overflow: "visible",
                   };
-                }
-                if ((itemProxy as any)?.id === "row-999") {
-                  console.log(position(), size);
                 }
                 return {
                   position: "absolute",
                   top: position(),
                   left: 0,
                   width: "100%",
-                  height: ready ? size : undefined,
+                  minHeight: ready ? size : 0,
                   overflow: "visible",
                 };
               });
 
-              const handleLayout = (event: LayoutChangeEvent) => {
-                const idx = slotData.index();
-                if (idx < 0 || idx >= dataKeys.length) return;
-                const key = slotData.key();
-                if (!key) return;
-                const layout = event?.nativeEvent?.layout;
-                if (!layout) return;
-                const size = props.horizontal ? layout.width : layout.height;
-                recordMeasurement(key, idx, size);
-              };
+              const handleLayout = createMemo(() => {
+                const token = slotData.layoutToken();
+                return (event: LayoutChangeEvent) => {
+                  if (slotData.layoutToken() !== token) return;
+                  const idx = slotData.index();
+                  if (idx < 0 || idx >= dataKeys.length) return;
+                  const key = slotData.key();
+                  if (!key) return;
+                  const layout = event?.nativeEvent?.layout;
+                  if (!layout) return;
+                  const size = props.horizontal ? layout.width : layout.height;
+                  recordMeasurement(key, idx, size);
+                };
+              });
 
               return (
-                <View style={itemStyle()}>
-                  <View onLayout={handleLayout}>
+                <View style={itemStyle}>
+                  <View
+                    key={slotData.key() ?? slotData.layoutToken()}
+                    style={contentStyle}
+                    onLayout={handleLayout()}
+                  >
                     {slotData.item() ? ensureSlotContent() : null}
                   </View>
                 </View>
