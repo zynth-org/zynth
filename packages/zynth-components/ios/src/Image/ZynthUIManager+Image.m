@@ -44,17 +44,6 @@ static void SNImageSetAttachment(ZynthNode *node, NSString *key, id value) {
   }
 }
 
-static id SNImageParseJSON(NSString *json) {
-  if (!json || json.length == 0) return nil;
-  NSData *data = [json dataUsingEncoding:NSUTF8StringEncoding];
-  if (!data) return nil;
-  NSError *error = nil;
-  id value = [NSJSONSerialization JSONObjectWithData:data options:NSJSONReadingAllowFragments error:&error];
-  if (error) return nil;
-  if ([value isKindOfClass:[NSNull class]]) return nil;
-  return value;
-}
-
 static UIColor *SNImageColorFromHex(NSString *hex) {
   if (!hex || ![hex isKindOfClass:[NSString class]]) return nil;
   hex = [hex stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
