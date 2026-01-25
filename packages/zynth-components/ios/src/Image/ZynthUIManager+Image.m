@@ -18,6 +18,9 @@
   for (CALayer *sublayer in self.layer.sublayers) {
     if ([sublayer.name isEqualToString:@"tintColorLayer"]) {
       sublayer.frame = self.bounds;
+      if (sublayer.mask) {
+        sublayer.mask.frame = self.bounds;
+      }
     }
   }
 }
@@ -115,17 +118,36 @@ static void SNImageApplyResizeMode(id value, ZynthNode *node, ZynthUIManager *ma
   if (!SNImageIsImageNode(node)) return;
   UIImageView *imageView = (UIImageView *)node.view;
   NSString *mode = [value isKindOfClass:[NSString class]] ? (NSString *)value : @"";
+  
+  UIViewContentMode targetMode = UIViewContentModeScaleAspectFill;
+  NSString *gravity = kCAGravityResizeAspectFill;
+  
   if ([mode isEqualToString:@"cover"]) {
-    imageView.contentMode = UIViewContentModeScaleAspectFill;
+    targetMode = UIViewContentModeScaleAspectFill;
+    gravity = kCAGravityResizeAspectFill;
   } else if ([mode isEqualToString:@"contain"]) {
-    imageView.contentMode = UIViewContentModeScaleAspectFit;
+    targetMode = UIViewContentModeScaleAspectFit;
+    gravity = kCAGravityResizeAspect;
   } else if ([mode isEqualToString:@"stretch"]) {
-    imageView.contentMode = UIViewContentModeScaleToFill;
+    targetMode = UIViewContentModeScaleToFill;
+    gravity = kCAGravityResize;
   } else if ([mode isEqualToString:@"center"]) {
-    imageView.contentMode = UIViewContentModeCenter;
-  } else {
-    imageView.contentMode = UIViewContentModeScaleAspectFill;
+    targetMode = UIViewContentModeCenter;
+    gravity = kCAGravityCenter;
   }
+  
+  if (imageView.contentMode != targetMode) {
+    imageView.contentMode = targetMode;
+    [imageView setNeedsDisplay];
+    
+    // Update tint mask gravity
+    for (CALayer *sublayer in imageView.layer.sublayers) {
+      if ([sublayer.name isEqualToString:@"tintColorLayer"] && sublayer.mask) {
+        sublayer.mask.contentsGravity = gravity;
+      }
+    }
+  }
+  
   [manager zynth_markNeedsFlush];
 }
 
@@ -136,42 +158,64 @@ static void SNImageApplyTintColor(id value, ZynthNode *node, ZynthUIManager *man
   UIColor *color = SNImageColorFromValue(value);
   SNImageSetAttachment(node, kSNImageTintColorKey, color);
 
-  // Apply color as a CALayer filter instead of tintColor to blend with the image
-  if (color) {
-    // Create a color overlay layer that blends with the image
-    CALayer *colorLayer = [CALayer layer];
-    colorLayer.frame = imageView.bounds;
-    colorLayer.backgroundColor = color.CGColor;
-    
-    // Use multiply blend mode to tint the image (allows image to show through)
-    colorLayer.compositingFilter = @"multiplyBlendMode";
-    colorLayer.name = @"tintColorLayer";
-    
-    // Remove any existing tint layer
-    for (CALayer *sublayer in imageView.layer.sublayers.copy) {
-      if ([sublayer.name isEqualToString:@"tintColorLayer"]) {
-        [sublayer removeFromSuperlayer];
-      }
+  imageView.tintColor = color; // Keep this for system behavior if needed
+
+  // Remove existing tint layer
+  CALayer *tintLayer = nil;
+  for (CALayer *sublayer in imageView.layer.sublayers.copy) {
+    if ([sublayer.name isEqualToString:@"tintColorLayer"]) {
+      tintLayer = sublayer;
+      break;
+    }
+  }
+
+  if (color && imageView.image) {
+    if (!tintLayer) {
+      tintLayer = [CALayer layer];
+      tintLayer.name = @"tintColorLayer";
+      tintLayer.frame = imageView.bounds;
+      [imageView.layer addSublayer:tintLayer];
     }
     
-    [imageView.layer addSublayer:colorLayer];
+    tintLayer.backgroundColor = color.CGColor;
     
-    // Ensure image uses original rendering mode
-    if (imageView.image) {
-      imageView.image = [imageView.image imageWithRenderingMode:UIImageRenderingModeAlwaysOriginal];
+    // Create or update mask to match image
+    CALayer *maskLayer = tintLayer.mask;
+    if (!maskLayer) {
+      maskLayer = [CALayer layer];
+      maskLayer.frame = tintLayer.bounds;
+      tintLayer.mask = maskLayer;
     }
+    
+    maskLayer.contents = (id)imageView.image.CGImage;
+    
+    // Match gravity
+    switch (imageView.contentMode) {
+      case UIViewContentModeScaleAspectFit:
+        maskLayer.contentsGravity = kCAGravityResizeAspect;
+        break;
+      case UIViewContentModeScaleToFill:
+        maskLayer.contentsGravity = kCAGravityResize;
+        break;
+      case UIViewContentModeCenter:
+        maskLayer.contentsGravity = kCAGravityCenter;
+        break;
+      case UIViewContentModeScaleAspectFill:
+      default:
+        maskLayer.contentsGravity = kCAGravityResizeAspectFill;
+        break;
+    }
+    
+    // Ensure image uses original rendering mode so it shows through transparent tint
+    imageView.image = [imageView.image imageWithRenderingMode:UIImageRenderingModeAlwaysOriginal];
+    
   } else {
-    // Remove tint layer
-    for (CALayer *sublayer in imageView.layer.sublayers.copy) {
-      if ([sublayer.name isEqualToString:@"tintColorLayer"]) {
-        [sublayer removeFromSuperlayer];
-      }
-    }
-    
+    [tintLayer removeFromSuperlayer];
     if (imageView.image) {
       imageView.image = [imageView.image imageWithRenderingMode:UIImageRenderingModeAlwaysOriginal];
     }
   }
+  
   [manager zynth_markNeedsFlush];
 }
 
@@ -187,6 +231,12 @@ static void SNImageApplyImage(UIImage * _Nullable image, ZynthNode *node, NSStri
 
   if (!image) {
     imageView.image = nil;
+    // Remove tint layer if no image
+    for (CALayer *sublayer in imageView.layer.sublayers.copy) {
+        if ([sublayer.name isEqualToString:@"tintColorLayer"]) {
+            [sublayer removeFromSuperlayer];
+        }
+    }
     if (node.yoga && YGNodeHasMeasureFunc(node.yoga)) {
       if (YGNodeGetOwner(node.yoga)) {
         YGNodeMarkDirty(node.yoga);
@@ -196,18 +246,54 @@ static void SNImageApplyImage(UIImage * _Nullable image, ZynthNode *node, NSStri
     return;
   }
 
-  // Always use original rendering mode - tint is applied via layer
-  UIImage *finalImage = [image imageWithRenderingMode:UIImageRenderingModeAlwaysOriginal];
-  imageView.image = finalImage;
+  // Always use original rendering mode
+  imageView.image = [image imageWithRenderingMode:UIImageRenderingModeAlwaysOriginal];
   
   // Reapply tint color if present
-  if (SNImageAttachment(node, kSNImageTintColorKey)) {
-    // Update tint layer frame to match new image bounds
-    for (CALayer *sublayer in imageView.layer.sublayers) {
-      if ([sublayer.name isEqualToString:@"tintColorLayer"]) {
-        sublayer.frame = imageView.bounds;
+  UIColor *tintColor = SNImageAttachment(node, kSNImageTintColorKey);
+  if (tintColor) {
+      // Reuse logic from ApplyTintColor to ensure layer/mask consistency
+      SNImageApplyTintColor(node.attachments[kSNImageTintColorKey] /* pass raw color obj if needed, but here we invoke logic manually or refactor. */, node, manager);
+      
+      // Since ApplyTintColor expects 'id value' which might be a string, let's just do the layer update directly here:
+      CALayer *tintLayer = nil;
+      for (CALayer *sublayer in imageView.layer.sublayers) {
+          if ([sublayer.name isEqualToString:@"tintColorLayer"]) {
+              tintLayer = sublayer;
+              break;
+          }
       }
-    }
+      
+      if (!tintLayer) {
+          tintLayer = [CALayer layer];
+          tintLayer.name = @"tintColorLayer";
+          tintLayer.frame = imageView.bounds;
+          tintLayer.backgroundColor = tintColor.CGColor;
+          [imageView.layer addSublayer:tintLayer];
+      }
+      
+      CALayer *maskLayer = tintLayer.mask;
+      if (!maskLayer) {
+          maskLayer = [CALayer layer];
+          maskLayer.frame = tintLayer.bounds;
+          tintLayer.mask = maskLayer;
+      }
+      maskLayer.contents = (id)image.CGImage;
+       switch (imageView.contentMode) {
+        case UIViewContentModeScaleAspectFit:
+          maskLayer.contentsGravity = kCAGravityResizeAspect;
+          break;
+        case UIViewContentModeScaleToFill:
+          maskLayer.contentsGravity = kCAGravityResize;
+          break;
+        case UIViewContentModeCenter:
+          maskLayer.contentsGravity = kCAGravityCenter;
+          break;
+        case UIViewContentModeScaleAspectFill:
+        default:
+          maskLayer.contentsGravity = kCAGravityResizeAspectFill;
+          break;
+      }
   }
 
   if (node.yoga && YGNodeHasMeasureFunc(node.yoga)) {
@@ -483,20 +569,18 @@ static BOOL ZynthImageHandleSetProp(ZynthUIManager *manager,
   }
 
   if ([name isEqualToString:@"source"]) {
-    id parsedValue = SNImageParseJSON(rawJSON);
-    SNImageApplySourceValue(parsedValue, node, manager);
+    // value is already parsed by ZynthUIManager if it's JSON
+    SNImageApplySourceValue(value, node, manager);
     return YES;
   }
 
   if ([name isEqualToString:@"resizeMode"]) {
-    id parsedValue = SNImageParseJSON(rawJSON);
-    SNImageApplyResizeMode(parsedValue, node, manager);
+    SNImageApplyResizeMode(value, node, manager);
     return YES;
   }
 
   if ([name isEqualToString:@"tintColor"]) {
-    id parsedValue = SNImageParseJSON(rawJSON);
-    SNImageApplyTintColor(parsedValue, node, manager);
+    SNImageApplyTintColor(value, node, manager);
     return YES;
   }
 
