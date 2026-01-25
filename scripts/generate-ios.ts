@@ -333,12 +333,12 @@ export function generateIOSProject(appDir: string, options: any = {}) {
   const iosRuntimePackage = useNewRuntime ? "@zynth/core" : "@zynth/ios";
   const iosRuntimeDir = useNewRuntime ? "zynth-core" : "zynth-ios";
   const iosHermesDir = "zynth-ios";
-  const runtimeImports = useNewRuntime ? "" : '#import "ZynthKit-Swift.h"';
+  const runtimeImports = '#import "ZynthKit-Swift.h"';
   const runtimeLoadFailure = useNewRuntime
     ? ""
     : `    if (loadError) {\n      [DevRedBox showWithTitle:@"Bundle Load Failed"\n                       message:loadError.localizedDescription\n                         stack:nil];\n    }`;
   const runtimeRootController = useNewRuntime
-    ? "  UIViewController *vc = [UIViewController new];\n  vc.view = self.surface;\n  self.window.rootViewController = vc;"
+    ? "  ZynthViewController *vc = [ZynthViewController new];\n  vc.view = self.surface;\n  self.window.rootViewController = vc;"
     : "  ZynthStatusBarHostController *vc = [ZynthStatusBarHostController new];\n  vc.view = self.surface;\n  self.window.rootViewController = vc;";
   const config = getAppConfig(appDir);
   const appJson = safeReadJSON(path.join(appDir, "app.json")) || {};

@@ -139,6 +139,14 @@ class ZynthStatusBarView(context: Context) : View(context) {
     return try {
       when {
         value.equals("transparent", ignoreCase = true) -> Color.TRANSPARENT
+        // Handle #RRGGBBAA -> #AARRGGBB
+        value.startsWith("#") && value.length == 9 -> {
+          val rr = value.substring(1, 3)
+          val gg = value.substring(3, 5)
+          val bb = value.substring(5, 7)
+          val aa = value.substring(7, 9)
+          Color.parseColor("#$aa$rr$gg$bb")
+        }
         value.startsWith("#") -> Color.parseColor(value)
         else -> Color.parseColor("#$value")
       }

@@ -192,10 +192,10 @@ public final class ZynthStatusBarView: UIView {
 
     let a, r, g, b: UInt64
     if hex.count == 8 {
-      a = (valueInt & 0xFF000000) >> 24
-      r = (valueInt & 0x00FF0000) >> 16
-      g = (valueInt & 0x0000FF00) >> 8
-      b = (valueInt & 0x000000FF)
+      r = (valueInt & 0xFF000000) >> 24
+      g = (valueInt & 0x00FF0000) >> 16
+      b = (valueInt & 0x0000FF00) >> 8
+      a = (valueInt & 0x000000FF)
     } else {
       a = 255
       r = (valueInt & 0xFF0000) >> 16
