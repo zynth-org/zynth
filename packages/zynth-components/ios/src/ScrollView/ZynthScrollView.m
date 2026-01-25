@@ -217,6 +217,13 @@ static NSTimeInterval ZynthScrollCurrentTime(void) {
     CGRect rect = [view convertRect:view.bounds toView:self.contentView];
     contentWidth = MAX(contentWidth, CGRectGetMaxX(rect));
     contentHeight = MAX(contentHeight, CGRectGetMaxY(rect));
+    
+    // Stop recursion for controls (Switch, Slider, etc.) to avoid measuring 
+    // their internal implementation subviews which may have erratic frames.
+    if ([view isKindOfClass:[UIControl class]]) {
+      return;
+    }
+    
     for (UIView *child in view.subviews) {
       accumulate(child);
     }
