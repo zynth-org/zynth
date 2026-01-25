@@ -437,7 +437,8 @@ export function FlatList<T>(props: FlatListProps<T>) {
 
     const overscan = overscanMainDistance();
     const total = getTotalSize();
-    const logicalOffset = getLogicalOffset(offset, viewport);
+    const listOffset = getListOffset(offset, viewport);
+    const logicalOffset = getLogicalOffset(listOffset, viewport);
     const startOffset = Math.max(0, logicalOffset - overscan);
     const endOffset = Math.min(total, logicalOffset + viewport + overscan);
 
@@ -521,12 +522,33 @@ export function FlatList<T>(props: FlatListProps<T>) {
   const [endFired, setEndFired] = createSignal(false);
   let startRearmThreshold = 0;
   let endRearmThreshold = 0;
+  const [headerExtent, setHeaderExtent] = createSignal(0);
+  const [footerExtent, setFooterExtent] = createSignal(0);
+
+  createEffect(() => {
+    if (!props.ListHeaderComponent) setHeaderExtent(0);
+    if (!props.ListFooterComponent) setFooterExtent(0);
+  });
+
+  const getHeaderExtent = () =>
+    props.ListHeaderComponent ? headerExtent() : 0;
+  const getFooterExtent = () =>
+    props.ListFooterComponent ? footerExtent() : 0;
+
+  const getListOffset = (rawOffset: number, viewport: number) => {
+    const adjusted = Math.max(0, rawOffset - getHeaderExtent());
+    const maxOffset = Math.max(0, getTotalSize() - viewport);
+    return Math.min(adjusted, maxOffset);
+  };
 
   const handleBoundaryEvents = (offset: number, viewport: number) => {
     if (!props.onStartReached && !props.onEndReached) return;
     const total = getTotalSize();
     if (total <= 0 || viewport <= 0) return;
-    const logicalOffset = getLogicalOffset(offset, viewport);
+    const logicalOffset = getLogicalOffset(
+      getListOffset(offset, viewport),
+      viewport,
+    );
 
     if (props.onStartReached) {
       const threshold = (props.onStartReachedThreshold ?? 0.1) * viewport;
@@ -572,7 +594,10 @@ export function FlatList<T>(props: FlatListProps<T>) {
       anchorOffsetWithinItem = 0;
       return;
     }
-    const logicalOffset = getLogicalOffset(offset, viewport);
+    const logicalOffset = getLogicalOffset(
+      getListOffset(offset, viewport),
+      viewport,
+    );
     const idx = sizeTree.findIndexByOffset(logicalOffset);
     if (idx < 0 || idx >= dataKeys.length) return;
     const key = dataKeys[idx];
@@ -656,7 +681,10 @@ export function FlatList<T>(props: FlatListProps<T>) {
 
     const viewport = effectiveViewport();
     const total = getTotalSize();
-    const logicalOffset = getLogicalOffset(lastOffset, viewport);
+    const logicalOffset = getLogicalOffset(
+      getListOffset(lastOffset, viewport),
+      viewport,
+    );
 
     if (config.startRenderingFromBottom && !initialBottomScrollApplied) {
       scheduleScrollTo(Math.max(0, total - viewport), false);
@@ -804,6 +832,10 @@ export function FlatList<T>(props: FlatListProps<T>) {
     return layoutTotal;
   });
 
+  const scrollContentSize = createMemo(() => {
+    return contentSize() + getHeaderExtent() + getFooterExtent();
+  });
+
   const requiredContentStyle = createMemo<Style>(() => ({
     position: "relative",
     [props.horizontal ? "width" : "height"]: contentSize(),
@@ -829,7 +861,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
   const hasData = createMemo(() => props.data.length > 0);
 
   const manualContentSize = createMemo(() => {
-    const total = contentSize();
+    const total = scrollContentSize();
     if (props.horizontal) {
       return { width: total, height: 0 };
     }
@@ -841,6 +873,44 @@ export function FlatList<T>(props: FlatListProps<T>) {
   ) => {
     if (!decorator) return null;
     return typeof decorator === "function" ? decorator() : decorator;
+  };
+
+  const renderHeader = () => {
+    const content = renderDecorator(props.ListHeaderComponent);
+    if (!content) return null;
+    return (
+      <View
+        onLayout={(event) => {
+          const layout = event?.nativeEvent?.layout;
+          if (!layout) return;
+          const size = props.horizontal ? layout.width : layout.height;
+          if (Number.isFinite(size) && size > 0) {
+            setHeaderExtent(size);
+          }
+        }}
+      >
+        {content}
+      </View>
+    );
+  };
+
+  const renderFooter = () => {
+    const content = renderDecorator(props.ListFooterComponent);
+    if (!content) return null;
+    return (
+      <View
+        onLayout={(event) => {
+          const layout = event?.nativeEvent?.layout;
+          if (!layout) return;
+          const size = props.horizontal ? layout.width : layout.height;
+          if (Number.isFinite(size) && size > 0) {
+            setFooterExtent(size);
+          }
+        }}
+      >
+        {content}
+      </View>
+    );
   };
 
   return (
@@ -862,7 +932,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
       testID={props.testID}
       onScroll={handleScroll}
     >
-      {renderDecorator(props.ListHeaderComponent)}
+      {renderHeader()}
       {hasData() ? (
         <View style={requiredContentStyle()}>
           <Index each={poolSlots()}>
@@ -1043,7 +1113,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
       ) : (
         renderDecorator(props.ListEmptyComponent)
       )}
-      {renderDecorator(props.ListFooterComponent)}
+      {renderFooter()}
     </ScrollView>
   );
 }
