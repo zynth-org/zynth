@@ -57,6 +57,9 @@ fun createViewComponentDescriptor(): ZynthComponentDescriptor {
       // Set corner radius for rounded clipping if needed
       val borderRadius = style.borderRadius ?: 0f
       viewContainer.setClipRadius(borderRadius)
+
+      // Apply background color
+      style.backgroundColor?.let { viewContainer.setBackgroundColor(it) }
     },
     onSetHandler = { node, event ->
       val viewContainer = node.view as? ZynthViewContainer ?: return@ZynthComponentDescriptor false

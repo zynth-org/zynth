@@ -26,18 +26,44 @@ internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, va
     "background", "backgroundImage" -> {
       val gradient = ZynthGradientParser.parse(value)
       val drawable = ensureBorderDrawable(id, view)
+      val color = ZynthColorParser.parse(value)
       if (gradient != null) {
         drawable.backgroundGradient = gradient
       } else {
         drawable.backgroundGradient = null
-        ZynthColorParser.parse(value)?.let { drawable.backgroundColor = it }
+        color?.let { drawable.backgroundColor = it }
       }
+      
+      // If this is a surface root node, also apply to the surface root view itself
+      if (surfaceRoots.containsKey(id)) {
+        surfaceRoots[id]?.let { root ->
+          if (root !== view) {
+            val rootDrawable = (root.background as? ZynthBorderDrawable) ?: ZynthBorderDrawable().also { root.background = it }
+            rootDrawable.backgroundGradient = drawable.backgroundGradient
+            rootDrawable.backgroundColor = drawable.backgroundColor
+          }
+        }
+      }
+
       styleDirtyNodes.add(id)
       return true
     }
     "backgroundColor" -> {
       val drawable = ensureBorderDrawable(id, view)
-      ZynthColorParser.parse(value)?.let { drawable.backgroundColor = it }
+      val color = ZynthColorParser.parse(value)
+      if (color != null) {
+        drawable.backgroundColor = color
+        
+        // If this is a surface root node, also apply to the surface root view itself
+        if (surfaceRoots.containsKey(id)) {
+           surfaceRoots[id]?.let { root ->
+              if (root !== view) {
+                 val rootDrawable = (root.background as? ZynthBorderDrawable) ?: ZynthBorderDrawable().also { root.background = it }
+                 rootDrawable.backgroundColor = color
+              }
+           }
+        }
+      }
       return true
     }
     "borderWidth" -> {
