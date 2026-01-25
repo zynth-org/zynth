@@ -18,7 +18,7 @@ import type {
   ScrollViewConfig,
 } from "./ScrollView";
 import { View, type LayoutChangeEvent } from "./View";
-import type { RecyclerListController } from "./recyclerlist/controller";
+import type { FlatListController } from "./flatlist/controller";
 
 export type ItemSeparatorProps<T> = {
   leadingItem: T;
@@ -49,7 +49,7 @@ export type FlatListProps<T> = {
   style?: Style;
   contentContainerStyle?: Style;
   maintainVisibleContentPosition?: MaintainVisibleContentPosition;
-  controller?: RecyclerListController;
+  controller?: FlatListController;
   scrollViewConfig?: ScrollViewConfig;
   scrollEventThrottleMs?: number;
   scrollEventMinDisplacementPx?: number;
@@ -208,6 +208,16 @@ export function FlatList<T>(props: FlatListProps<T>) {
       if (typeof controller.__setLayoutResolver === "function") {
         controller.__setLayoutResolver(null);
       }
+    });
+  });
+
+  createEffect(() => {
+    const controller = props.controller as any;
+    if (!controller || typeof controller.__setMetadata !== "function") return;
+    controller.__setMetadata({
+      itemSize: layoutEstimate(),
+      horizontal: !!props.horizontal,
+      dataLength: props.data.length,
     });
   });
 
@@ -386,6 +396,15 @@ export function FlatList<T>(props: FlatListProps<T>) {
       isHorizontal: () => !!props.horizontal,
       isInverted: () => isInverted(),
     });
+  });
+
+  createEffect(() => {
+    const controller = props.controller as any;
+    if (!controller || typeof controller.__triggerRecompute !== "function") {
+      return;
+    }
+    controller.__triggerRecompute();
+    updateBindingsForOffset(lastOffset, lastViewport || effectiveViewport());
   });
 
   let lastRangeStart = -1;
