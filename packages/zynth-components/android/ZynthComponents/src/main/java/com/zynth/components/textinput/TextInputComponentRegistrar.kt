@@ -19,20 +19,57 @@ private const val TEXT_INPUT_STATE_KEY = "textInputState"
 
 class TextInputComponentRegistrar : ZynthComponentRegistrar {
   private fun applyStyle(input: ZynthTextInputView, style: Style) {
-    val left = (style.paddingLeft ?: style.paddingHorizontal ?: style.padding ?: 0f).toInt()
-    val right = (style.paddingRight ?: style.paddingHorizontal ?: style.padding ?: 0f).toInt()
-    val top = (style.paddingTop ?: style.paddingVertical ?: style.padding ?: 0f).toInt()
-    val bottom = (style.paddingBottom ?: style.paddingVertical ?: style.padding ?: 0f).toInt()
+    val state = input.manager?.getNodeState(input.nodeId)?.attachments?.get(TEXT_INPUT_STATE_KEY) as? TextInputState
+    if (state != null) {
+      if (style.padding != null) {
+        state.padding = style.padding
+        state.paddingHorizontal = null
+        state.paddingVertical = null
+        state.paddingLeft = null
+        state.paddingRight = null
+        state.paddingTop = null
+        state.paddingBottom = null
+      }
+      if (style.paddingHorizontal != null) {
+        state.paddingHorizontal = style.paddingHorizontal
+        state.paddingLeft = null
+        state.paddingRight = null
+      }
+      if (style.paddingVertical != null) {
+        state.paddingVertical = style.paddingVertical
+        state.paddingTop = null
+        state.paddingBottom = null
+      }
+      if (style.paddingLeft != null) state.paddingLeft = style.paddingLeft
+      if (style.paddingRight != null) state.paddingRight = style.paddingRight
+      if (style.paddingTop != null) state.paddingTop = style.paddingTop
+      if (style.paddingBottom != null) state.paddingBottom = style.paddingBottom
 
-    val currentPadding = input.getStyledPadding()
-    if (currentPadding.left != left || currentPadding.right != right ||
-      currentPadding.top != top || currentPadding.bottom != bottom
-    ) {
-      input.updateStylePadding(left, top, right, bottom)
+      val density = input.resources.displayMetrics.density
+      val p = state.padding
+      val ph = state.paddingHorizontal
+      val pv = state.paddingVertical
+
+      val leftVal = state.paddingLeft ?: ph ?: p ?: 0f
+      val rightVal = state.paddingRight ?: ph ?: p ?: 0f
+      val topVal = state.paddingTop ?: pv ?: p ?: 0f
+      val bottomVal = state.paddingBottom ?: pv ?: p ?: 0f
+
+      val left = (leftVal * density).roundToInt()
+      val right = (rightVal * density).roundToInt()
+      val top = (topVal * density).roundToInt()
+      val bottom = (bottomVal * density).roundToInt()
+
+      val currentPadding = input.getStyledPadding()
+      if (currentPadding.left != left || currentPadding.right != right ||
+        currentPadding.top != top || currentPadding.bottom != bottom
+      ) {
+        input.updateStylePadding(left, top, right, bottom)
+      }
     }
 
     style.fontSize?.let { fontSize ->
-      input.setTextSize(TypedValue.COMPLEX_UNIT_PX, fontSize)
+      input.setTextSize(TypedValue.COMPLEX_UNIT_SP, fontSize)
     }
 
     style.color?.let { color ->
@@ -95,21 +132,22 @@ class TextInputComponentRegistrar : ZynthComponentRegistrar {
       val rawMeasuredHeight = input.measuredHeight.takeIf { it > 0 }
         ?: input.lineHeight
       val measuredHeight = rawMeasuredHeight.coerceAtLeast(1)
+
       val contentWidth = (measuredWidth - paddingWidth).coerceAtLeast(0)
       val contentHeight = (measuredHeight - paddingHeight).coerceAtLeast(0)
 
       val resolvedWidth = when (measureInput.widthMode) {
-        MeasureMode.EXACTLY -> widthValue
-        MeasureMode.AT_MOST -> minOf(widthValue, contentWidth.coerceAtLeast(1))
-        MeasureMode.UNDEFINED -> contentWidth.coerceAtLeast(1)
+        MeasureMode.EXACTLY -> widthValue.toFloat()
+        MeasureMode.AT_MOST -> minOf(widthValue.toFloat(), contentWidth.toFloat())
+        MeasureMode.UNDEFINED -> contentWidth.toFloat()
       }
       val resolvedHeight = when (measureInput.heightMode) {
-        MeasureMode.EXACTLY -> heightValue
-        MeasureMode.AT_MOST -> minOf(heightValue, contentHeight.coerceAtLeast(1))
-        MeasureMode.UNDEFINED -> contentHeight.coerceAtLeast(1)
+        MeasureMode.EXACTLY -> heightValue.toFloat()
+        MeasureMode.AT_MOST -> minOf(heightValue.toFloat(), contentHeight.toFloat())
+        MeasureMode.UNDEFINED -> contentHeight.toFloat()
       }
 
-      resolvedWidth.coerceAtLeast(1).toFloat() to resolvedHeight.coerceAtLeast(1).toFloat()
+      resolvedWidth.coerceAtLeast(1f) to resolvedHeight.coerceAtLeast(1f)
     }
   }
 

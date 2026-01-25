@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.Typeface
+import android.graphics.drawable.Drawable
 import android.os.Build
 import android.os.SystemClock
 import android.text.Editable
@@ -209,6 +210,13 @@ internal open class ZynthTextInputView @JvmOverloads constructor(
   override fun setOnEditorActionListener(l: TextView.OnEditorActionListener?) {
     externalEditorActionListener = l
     super.setOnEditorActionListener(internalEditorActionListener)
+  }
+
+  override fun setBackground(background: Drawable?) {
+    super.setBackground(background)
+    if (!applyingInternalPadding) {
+      setActualPadding(styledPaddingLeft, styledPaddingTop, styledPaddingRight, styledPaddingBottom)
+    }
   }
 
   fun getStyledPadding(): PaddingValues {
