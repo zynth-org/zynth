@@ -140,25 +140,13 @@ export const Modal: ParentComponent<ModalProps> = (props) => {
       ...DEFAULT_MODAL_STYLE,
       ...local.style,
     };
-    if (Platform.OS === OS.ANDROID) {
-      style.width = 0;
-      style.height = 0;
-      style.display = resolvedOpen() ? "flex" : "none";
-      return style;
-    }
-    const hasManualSizing =
-      style.width != null ||
-      style.height != null ||
-      style.right != null ||
-      style.bottom != null;
-    if (!hasManualSizing) {
-      style.width = windowSize().width;
-      style.height = windowSize().height;
-    }
+    style.width = 0;
+    style.height = 0;
+    style.display = resolvedOpen() ? "flex" : "none";
     return style;
   });
 
-  const androidContentStyle = createMemo<Style>(() => ({
+  const contentWrapperStyle = createMemo<Style>(() => ({
     position: "absolute",
     top: 0,
     left: 0,
@@ -219,13 +207,9 @@ export const Modal: ParentComponent<ModalProps> = (props) => {
 
   return (
     <zynth-modal ref={attachHost} style={modalStyle()}>
-      {Platform.OS === OS.ANDROID ? (
-        <View style={androidContentStyle()} pointerEvents="box-none">
-          {local.children}
-        </View>
-      ) : (
-        local.children
-      )}
+      <View style={contentWrapperStyle()} pointerEvents="box-none">
+        {local.children}
+      </View>
     </zynth-modal>
   );
 };
