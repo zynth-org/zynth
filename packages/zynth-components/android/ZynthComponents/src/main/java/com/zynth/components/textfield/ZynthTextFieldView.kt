@@ -248,12 +248,14 @@ class ZynthTextFieldView(context: Context) : FrameLayout(context) {
   fun setMaxLength(maxLen: Int) {
     maxLength = if (maxLen > 0) maxLen else Int.MAX_VALUE
     
-    val filters = if (maxLength < Int.MAX_VALUE) {
-      arrayOf<InputFilter>(InputFilter.LengthFilter(maxLength))
-    } else {
-      arrayOf()
+    // Preserve existing filters, removing any old LengthFilter
+    val currentFilters = textInputEditText.filters.filter { it !is InputFilter.LengthFilter }.toMutableList()
+    
+    if (maxLength < Int.MAX_VALUE) {
+      currentFilters.add(InputFilter.LengthFilter(maxLength))
     }
-    textInputEditText.filters = filters
+    
+    textInputEditText.filters = currentFilters.toTypedArray()
   }
 
   fun requestFocusField() {

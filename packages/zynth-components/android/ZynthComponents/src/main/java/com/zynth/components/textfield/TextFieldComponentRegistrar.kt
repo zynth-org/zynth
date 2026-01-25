@@ -328,9 +328,10 @@ class TextFieldComponentRegistrar : ZynthComponentRegistrar {
       // Not a JSON object
     }
 
-    // Try parsing as raw integer
+    // Try parsing as raw number
     return try {
-      json.trim().toInt()
+      // Handle potential floating point strings (e.g. "10.0") by parsing as Double first
+      json.trim().toDouble().toInt()
     } catch (e: Exception) {
       default
     }
