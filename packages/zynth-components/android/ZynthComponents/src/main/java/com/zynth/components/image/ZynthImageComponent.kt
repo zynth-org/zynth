@@ -17,8 +17,10 @@ import android.os.Looper
 import android.util.Base64
 import android.util.Log
 import android.util.LruCache
+import android.view.View
 import android.view.ViewOutlineProvider
 import android.widget.ImageView
+import android.graphics.Outline
 import androidx.core.graphics.drawable.DrawableCompat
 import androidx.core.widget.ImageViewCompat
 import coil.ImageLoader
@@ -180,18 +182,26 @@ internal class ZynthImageComponent(
 
   fun onStyleApplied(node: ZynthUIManager.Node, style: Style) {
     val state = ensureState(node)
-    state.preferredWidth = style.width
-    state.preferredHeight = style.height
+    if (style.width != null) state.preferredWidth = style.width
+    if (style.height != null) state.preferredHeight = style.height
+    if (style.borderRadius != null) state.borderRadius = style.borderRadius
+
     val imageView = node.view as? ImageView
     if (imageView != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-      val defaultRadius = style.borderRadius ?: 0f
-      val hasRadius =
-        (style.borderTopLeftRadius ?: defaultRadius) > 0f ||
-        (style.borderTopRightRadius ?: defaultRadius) > 0f ||
-        (style.borderBottomRightRadius ?: defaultRadius) > 0f ||
-        (style.borderBottomLeftRadius ?: defaultRadius) > 0f
-      imageView.outlineProvider = ViewOutlineProvider.BACKGROUND
-      imageView.clipToOutline = hasRadius
+      val density = root.context.resources.displayMetrics.density
+      val radius = (state.borderRadius ?: 0f) * density
+      
+      if (radius > 0f) {
+        imageView.outlineProvider = object : ViewOutlineProvider() {
+          override fun getOutline(view: View, outline: Outline) {
+            outline.setRoundRect(0, 0, view.width, view.height, radius)
+          }
+        }
+        imageView.clipToOutline = true
+      } else {
+        imageView.outlineProvider = ViewOutlineProvider.BACKGROUND
+        imageView.clipToOutline = false
+      }
     }
     engine.markDirty(node.id)
     scheduleFlush()

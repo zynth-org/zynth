@@ -15,4 +15,5 @@ data class ImageState(
   var intrinsicHeight: Int = 0,
   var preferredWidth: Float? = null,
   var preferredHeight: Float? = null,
+  var borderRadius: Float? = null,
 )
