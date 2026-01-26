@@ -70,10 +70,9 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   private val mainQueue = ArrayDeque<() -> Unit>()
   private var mainQueueScheduled = false
   private val mainQueueLock = Any()
-  private val mainQueueMinOpsPerTick = 200
-  private val mainQueueMaxOpsPerTick = 2000
-  private val mainQueueMaxMsPerTick = 6.0
-  private val traceEnabled = true
+  private val mainQueueMaxOpsPerTick = 100000
+  private val mainQueueMaxMsPerTick = 1000.0
+  private val traceEnabled = false
   private val traceIntervalMs = 500L
   private var traceStartMs = SystemClock.uptimeMillis()
   private var traceLastLogMs = traceStartMs
@@ -164,7 +163,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       op()
       processed += 1
       val elapsedMs = (System.nanoTime() - startNs) / 1_000_000.0
-      if (processed >= mainQueueMinOpsPerTick && elapsedMs >= mainQueueMaxMsPerTick) {
+      if (elapsedMs >= mainQueueMaxMsPerTick) {
         break
       }
     }
