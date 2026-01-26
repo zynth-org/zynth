@@ -5,6 +5,10 @@ import android.content.res.AssetManager
 import com.facebook.soloader.SoLoader
 import com.zynth.kit.core.ZynthRootView
 import com.zynth.kit.core.ZynthUIManager
+import android.os.Handler
+import android.os.HandlerThread
+import android.os.Looper
+import java.util.concurrent.CountDownLatch
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -12,9 +16,16 @@ class ZynthRuntime(val root: ZynthRootView) {
   private val uiManager = ZynthUIManager(root)
   private val runtimePtr: Long = JSBridge.createHermesRuntime()
   private val registry = ZynthModuleRegistry()
+  private val jsThread = HandlerThread("ZynthJS")
+  private val jsHandler: Handler
   init {
+    jsThread.start()
+    jsHandler = Handler(jsThread.looper)
+    uiManager.setJSHandler(jsHandler)
     uiManager.setFrameProfiler { frameMs, layoutMs, overBudget, nodeCount ->
-      JSBridge.callGlobalFrame(runtimePtr, "__zynth_reportFrame", frameMs, layoutMs, overBudget, nodeCount)
+      runOnJS {
+        JSBridge.callGlobalFrame(runtimePtr, "__zynth_reportFrame", frameMs, layoutMs, overBudget, nodeCount)
+      }
     }
   }
 
@@ -42,12 +53,16 @@ class ZynthRuntime(val root: ZynthRootView) {
   }
 
   fun loadInitialBundle(assets: AssetManager, preloadedCode: String? = null) {
-    JSBridge.installUIBindings(runtimePtr, uiManager)
+    runOnJSSync {
+      JSBridge.installUIBindings(runtimePtr, uiManager)
+    }
 
     val constants = registry.exportedConstants()
     if (constants.isNotEmpty()) {
       val json = JSONObject(constants as Map<*, *>).toString()
-      JSBridge.evaluateScript(runtimePtr, "globalThis.NativeConstants = $json;", "constants.js")
+      runOnJSSync {
+        JSBridge.evaluateScript(runtimePtr, "globalThis.NativeConstants = $json;", "constants.js")
+      }
     }
 
     if (preloadedCode == null) {
@@ -63,7 +78,9 @@ class ZynthRuntime(val root: ZynthRootView) {
         return
       }
     }
-    JSBridge.evaluateScript(runtimePtr, code, "main.js")
+    runOnJSSync {
+      JSBridge.evaluateScript(runtimePtr, code, "main.js")
+    }
   }
 
   fun emitEvent(name: String, payload: Any?) {
@@ -75,8 +92,10 @@ class ZynthRuntime(val root: ZynthRootView) {
       is JSONArray -> payload.toString()
       else -> JSONObject.wrap(payload)?.toString()
     }
-    runCatching {
-      JSBridge.emitEvent(runtimePtr, trimmed, payloadJson)
+    runOnJS {
+      runCatching {
+        JSBridge.emitEvent(runtimePtr, trimmed, payloadJson)
+      }
     }
   }
 
@@ -87,10 +106,39 @@ class ZynthRuntime(val root: ZynthRootView) {
   }
 
   fun start(rootId: Int) {
-    JSBridge.callGlobalDouble(runtimePtr, "__startApp", rootId.toDouble())
+    runOnJS {
+      JSBridge.callGlobalDouble(runtimePtr, "__startApp", rootId.toDouble())
+    }
   }
 
   fun destroy() {
-    JSBridge.destroyHermesRuntime(runtimePtr)
+    runOnJSSync {
+      JSBridge.destroyHermesRuntime(runtimePtr)
+    }
+    jsThread.quitSafely()
+  }
+
+  private fun runOnJS(block: () -> Unit) {
+    if (Looper.myLooper() == jsHandler.looper) {
+      block()
+    } else {
+      jsHandler.post(block)
+    }
+  }
+
+  private fun runOnJSSync(block: () -> Unit) {
+    if (Looper.myLooper() == jsHandler.looper) {
+      block()
+      return
+    }
+    val latch = CountDownLatch(1)
+    jsHandler.post {
+      try {
+        block()
+      } finally {
+        latch.countDown()
+      }
+    }
+    latch.await()
   }
 }

@@ -50,17 +50,19 @@ internal fun ZynthUIManager.handleTouchEvent(id: Int, view: View, event: MotionE
       val localY = pxToDp(event.y)
       val screenX = pxToDp(event.rawX)
       val screenY = pxToDp(event.rawY)
-      JSBridge.invokePressEvent(
-        id,
-        "onPressIn",
-        localX,
-        localY,
-        screenX,
-        screenY,
-        -1.0,
-        System.currentTimeMillis().toDouble(),
-        false
-      )
+      runOnJS {
+        JSBridge.invokePressEvent(
+          id,
+          "onPressIn",
+          localX,
+          localY,
+          screenX,
+          screenY,
+          -1.0,
+          System.currentTimeMillis().toDouble(),
+          false
+        )
+      }
       return true
     }
     MotionEvent.ACTION_MOVE -> {
@@ -79,34 +81,38 @@ internal fun ZynthUIManager.handleTouchEvent(id: Int, view: View, event: MotionE
         val localY = pxToDp(event.y)
         val screenX = pxToDp(event.rawX)
         val screenY = pxToDp(event.rawY)
-        JSBridge.invokePressEvent(
-          id,
-          "onPress",
-          localX,
-          localY,
-          screenX,
-          screenY,
-          -1.0,
-          System.currentTimeMillis().toDouble(),
-          false
-        )
+        runOnJS {
+          JSBridge.invokePressEvent(
+            id,
+            "onPress",
+            localX,
+            localY,
+            screenX,
+            screenY,
+            -1.0,
+            System.currentTimeMillis().toDouble(),
+            false
+          )
+        }
         maybeDispatchDoublePress(id, event)
       }
       val outLocalX = pxToDp(event.x)
       val outLocalY = pxToDp(event.y)
       val outScreenX = pxToDp(event.rawX)
       val outScreenY = pxToDp(event.rawY)
-      JSBridge.invokePressEvent(
-        id,
-        "onPressOut",
-        outLocalX,
-        outLocalY,
-        outScreenX,
-        outScreenY,
-        -1.0,
-        System.currentTimeMillis().toDouble(),
-        !inside
-      )
+      runOnJS {
+        JSBridge.invokePressEvent(
+          id,
+          "onPressOut",
+          outLocalX,
+          outLocalY,
+          outScreenX,
+          outScreenY,
+          -1.0,
+          System.currentTimeMillis().toDouble(),
+          !inside
+        )
+      }
       return true
     }
     MotionEvent.ACTION_CANCEL -> {
@@ -116,17 +122,19 @@ internal fun ZynthUIManager.handleTouchEvent(id: Int, view: View, event: MotionE
       val localY = pxToDp(event.y)
       val screenX = pxToDp(event.rawX)
       val screenY = pxToDp(event.rawY)
-      JSBridge.invokePressEvent(
-        id,
-        "onPressOut",
-        localX,
-        localY,
-        screenX,
-        screenY,
-        -1.0,
-        System.currentTimeMillis().toDouble(),
-        true
-      )
+      runOnJS {
+        JSBridge.invokePressEvent(
+          id,
+          "onPressOut",
+          localX,
+          localY,
+          screenX,
+          screenY,
+          -1.0,
+          System.currentTimeMillis().toDouble(),
+          true
+        )
+      }
       return true
     }
   }
@@ -159,17 +167,19 @@ internal fun ZynthUIManager.scheduleLongPress(id: Int) {
     longPressFired.add(id)
     val local = pressLocalPoints[id] ?: (0f to 0f)
     val screen = pressScreenPoints[id] ?: (0f to 0f)
-    JSBridge.invokePressEvent(
-      id,
-      "onLongPress",
-      pxToDp(local.first),
-      pxToDp(local.second),
-      pxToDp(screen.first),
-      pxToDp(screen.second),
-      delayMs,
-      System.currentTimeMillis().toDouble(),
-      false
-    )
+    runOnJS {
+      JSBridge.invokePressEvent(
+        id,
+        "onLongPress",
+        pxToDp(local.first),
+        pxToDp(local.second),
+        pxToDp(screen.first),
+        pxToDp(screen.second),
+        delayMs,
+        System.currentTimeMillis().toDouble(),
+        false
+      )
+    }
     cancelLongPress(id)
   }
   longPressRunnables[id] = runnable
@@ -194,39 +204,68 @@ internal fun ZynthUIManager.maybeDispatchDoublePress(id: Int, event: MotionEvent
   if (last == null) return
   val delta = timestamp - last
   if (delta < 0 || delta > doublePressWindowFor(id)) return
-  JSBridge.invokePressEvent(
-    id,
-    "onDoublePress",
-    pxToDp(event.x),
-    pxToDp(event.y),
-    pxToDp(event.rawX),
-    pxToDp(event.rawY),
-    -1.0,
-    timestamp,
-    false
-  )
+  runOnJS {
+    JSBridge.invokePressEvent(
+      id,
+      "onDoublePress",
+      pxToDp(event.x),
+      pxToDp(event.y),
+      pxToDp(event.rawX),
+      pxToDp(event.rawY),
+      -1.0,
+      timestamp,
+      false
+    )
+  }
 }
 
 internal fun ZynthUIManager.dispatchLayoutEvents() {
   if (layoutNodes.isEmpty()) return
+  val events = ArrayList<LayoutEvent>()
   for (id in layoutNodes) {
     val view = nodes[id] ?: continue
     val frame = android.graphics.Rect(view.left, view.top, view.right, view.bottom)
     val previous = layoutFrames[id]
-    val changed = previous == null || !previous.equals(frame)
+    val changed = previous == null ||
+      previous.width() != frame.width() ||
+      previous.height() != frame.height()
     val force = layoutPending.contains(id)
     if (!force && !changed) continue
     layoutFrames[id] = frame
     layoutPending.remove(id)
-    JSBridge.invokeLayoutEvent(
-      id,
-      pxToDp(frame.left.toFloat()),
-      pxToDp(frame.top.toFloat()),
-      pxToDp(frame.width().toFloat()),
-      pxToDp(frame.height().toFloat())
+    events.add(
+      LayoutEvent(
+        id,
+        pxToDp(frame.left.toFloat()),
+        pxToDp(frame.top.toFloat()),
+        pxToDp(frame.width().toFloat()),
+        pxToDp(frame.height().toFloat())
+      )
     )
   }
+  if (events.isNotEmpty()) {
+    runOnJS {
+      val payload = DoubleArray(events.size * 5)
+      var index = 0
+      for (event in events) {
+        payload[index++] = event.id.toDouble()
+        payload[index++] = event.x
+        payload[index++] = event.y
+        payload[index++] = event.width
+        payload[index++] = event.height
+      }
+      JSBridge.invokeLayoutEventsBatch(payload)
+    }
+  }
 }
+
+private data class LayoutEvent(
+  val id: Int,
+  val x: Double,
+  val y: Double,
+  val width: Double,
+  val height: Double
+)
 
 internal fun ZynthUIManager.cleanupNode(id: Int) {
   val node = nodeStates[id]

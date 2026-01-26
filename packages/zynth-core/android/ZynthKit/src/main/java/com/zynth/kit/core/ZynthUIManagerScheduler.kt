@@ -45,24 +45,28 @@ internal fun ZynthUIManager.handleFrame() {
   }
   val dirty = dirtySurfaces.toSet()
   dirtySurfaces.clear()
+  val layoutStartNs = System.nanoTime()
   performLayoutInternal(dirty)
+  tracePhase("layout", System.nanoTime() - layoutStartNs)
+  val styleStartNs = System.nanoTime()
   applyStyleLayoutIfNeeded()
+  tracePhase("style", System.nanoTime() - styleStartNs)
   val endNs = System.nanoTime()
   lastFrameMs = (endNs - startNs) / 1_000_000.0
   lastLayoutMs = lastFrameMs
 
   val overBudget = lastFrameMs > 14.0
   val nodeCount = surfaceYoga.values.sumOf { it.nodeCount() }
-  Log.d(
-    "ZynthUI",
-    "frame summary %.2fms layout=%.2fms surfaces=%d nodes=%d overBudget=%b".format(
-      lastFrameMs,
-      lastLayoutMs,
-      dirty.size,
-      nodeCount,
-      overBudget
-    )
-  )
+  // Log.d(
+  //   "ZynthUI",
+  //   "frame summary %.2fms layout=%.2fms surfaces=%d nodes=%d overBudget=%b".format(
+  //     lastFrameMs,
+  //     lastLayoutMs,
+  //     dirty.size,
+  //     nodeCount,
+  //     overBudget
+  //   )
+  // )
   if (overBudget) {
     budgetOverruns += 1
     Log.w(
@@ -76,7 +80,9 @@ internal fun ZynthUIManager.handleFrame() {
     )
   }
   frameProfiler?.invoke(lastFrameMs, lastLayoutMs, overBudget, nodeCount)
+  val layoutEventStartNs = System.nanoTime()
   dispatchLayoutEvents()
+  tracePhase("layoutEvents", System.nanoTime() - layoutEventStartNs)
   frameInProgress = false
   if (needsLayout && dirtySurfaces.isNotEmpty()) {
     frameCallbackPosted = true

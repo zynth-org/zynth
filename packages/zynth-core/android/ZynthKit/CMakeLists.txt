@@ -6,7 +6,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-add_library(zynthkit SHARED src/main/cpp/zynthkit.cpp)
+add_library(zynthkit SHARED
+  src/main/cpp/zynthkit.cpp
+  src/main/cpp/UICommandsRegistry.cpp
+  src/main/cpp/ScrollViewUICommands.cpp
+)
 
 find_package(hermes-engine REQUIRED CONFIG)
 find_package(ReactAndroid REQUIRED CONFIG)

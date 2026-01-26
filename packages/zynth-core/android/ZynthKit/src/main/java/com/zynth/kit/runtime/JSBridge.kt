@@ -36,5 +36,29 @@ internal object JSBridge {
     cancelled: Boolean
   )
   external fun invokeLayoutEvent(nodeId: Int, x: Double, y: Double, width: Double, height: Double)
+  external fun invokeLayoutEventsBatch(payload: DoubleArray)
   external fun invokeTimer(runtimePtr: Long, timerId: Int)
+  external fun registerWorkletOnUiRuntime(runtimePtr: Long, workletId: Int)
+  external fun runWorkletOnUiRuntime(runtimePtr: Long, workletId: Int)
+
+  private val workletHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+  @JvmStatic
+  fun postRegisterWorklet(runtimePtr: Long, workletId: Int) {
+    workletHandler.post {
+      registerWorkletOnUiRuntime(runtimePtr, workletId)
+    }
+  }
+
+  @JvmStatic
+  fun postRunWorklet(runtimePtr: Long, workletId: Int, delayMs: Long) {
+    val runnable = Runnable {
+      runWorkletOnUiRuntime(runtimePtr, workletId)
+    }
+    if (delayMs <= 0L) {
+      workletHandler.post(runnable)
+    } else {
+      workletHandler.postDelayed(runnable, delayMs)
+    }
+  }
 }

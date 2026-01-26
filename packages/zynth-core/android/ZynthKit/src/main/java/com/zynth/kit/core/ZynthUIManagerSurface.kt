@@ -17,6 +17,10 @@ internal fun ZynthUIManager.markSurfaceDirty(surfaceId: Int) {
     if (DEBUG_SURFACE) {
       Log.d("ZynthUI", "markSurfaceDirty surface=$surfaceId")
     }
+    if (isBatching()) {
+      markBatchNeedsLayout()
+      return@runOnMain
+    }
     if (!frameCallbackPosted) {
       frameCallbackPosted = true
       choreographer?.postFrameCallback(frameCallback)
@@ -39,6 +43,10 @@ internal fun ZynthUIManager.markAllSurfacesDirty() {
     needsLayout = true
     if (DEBUG_SURFACE) {
       Log.d("ZynthUI", "markAllSurfacesDirty count=${surfaceRoots.size}")
+    }
+    if (isBatching()) {
+      markBatchNeedsLayout()
+      return@runOnMain
     }
     if (!frameCallbackPosted) {
       frameCallbackPosted = true
