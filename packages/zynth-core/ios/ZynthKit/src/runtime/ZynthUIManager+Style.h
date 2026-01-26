@@ -7,7 +7,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (BOOL)applyStyleProp:(NSNumber *)nodeId
                   view:(UIView *)view
                   name:(NSString *)name
-                 value:(NSString *)value;
+                 value:(id _Nullable)value;
 - (void)applyStyleLayoutIfNeeded;
 - (void)applyTextValue:(NSNumber *)nodeId label:(UILabel *)label text:(NSString *)text;
 

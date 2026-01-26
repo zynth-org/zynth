@@ -138,7 +138,7 @@ export function createIOSHost(): Host {
               nodeId,
               addString(name),
               2,
-              addString(JSON.stringify(value))
+              addString(JSON.stringify(value)),
             );
           } catch (e) {
             // ignore serialization error
@@ -213,7 +213,7 @@ export function createIOSHost(): Host {
     return {
       meta: { kind: "flush", scope: "global" },
       stringTable,
-      ops: encoded,
+      ops: new Float64Array(encoded).buffer,
     };
   };
 
@@ -248,7 +248,7 @@ export function createIOSHost(): Host {
         const flushBatch = () => {
           if (!batchAccumulator.length) return;
           if (typeof (ui as any).applyBatchTyped !== "function") {
-             throw new Error("Typed batch is required for iOS host");
+            throw new Error("Typed batch is required for iOS host");
           }
           (ui as any).applyBatchTyped(encodeTypedBatch(batchAccumulator));
           batchAccumulator = [];
@@ -267,7 +267,7 @@ export function createIOSHost(): Host {
       }
       ui.flush();
     } catch (e) {
-      console.error("Flush error:", e);
+      console.error("Flush error:", JSON.stringify(e));
     }
   };
 
@@ -292,7 +292,7 @@ export function createIOSHost(): Host {
         .then(runFlush)
         .catch((err) => {
           flushScheduled = false;
-          console.error("Flush error:", err);
+          console.error("Flush error:", JSON.stringify(err));
         });
       return;
     }
@@ -331,7 +331,7 @@ export function createIOSHost(): Host {
 
   const findAvailableNodeInPool = (
     contextId: string,
-    type: HostNode["type"]
+    type: HostNode["type"],
   ): number | null => {
     const context = RECYCLING_CONTEXTS.get(contextId);
     if (!context) return null;
@@ -398,7 +398,7 @@ export function createIOSHost(): Host {
     assign("eventThrottleMs", props.eventThrottleMs);
     assign(
       "allowProgrammaticJumpDuringEdit",
-      props.allowProgrammaticJumpDuringEdit
+      props.allowProgrammaticJumpDuringEdit,
     );
     assign("testID", props.testID);
 
@@ -741,18 +741,18 @@ export function createIOSHost(): Host {
       }
       if (batchStack.length) {
         batchStack[batchStack.length - 1].operations.push(
-          ...context.operations
+          ...context.operations,
         );
         return;
       }
       if (!context.operations.length) return;
 
       if (typeof (ui as any).applyBatchTyped === "function") {
-         if (isSuppressed()) return;
-         (ui as any).applyBatchTyped(encodeTypedBatch(context.operations));
-         return;
+        if (isSuppressed()) return;
+        (ui as any).applyBatchTyped(encodeTypedBatch(context.operations));
+        return;
       }
-      
+
       throw new Error("Typed batch is required for iOS host");
     },
     enableRecycling(containerId: number, config: RecyclingConfig): string {
@@ -812,7 +812,7 @@ export function createIOSHost(): Host {
       contextId: string,
       type: HostNode["type"],
       itemKey: string,
-      itemIndex: number
+      itemIndex: number,
     ): HostNode | null {
       const context = RECYCLING_CONTEXTS.get(contextId);
       if (!context) return null;
@@ -838,7 +838,7 @@ export function createIOSHost(): Host {
       node: HostNode,
       itemKey: string,
       itemIndex: number,
-      props: Record<string, any>
+      props: Record<string, any>,
     ) {
       const contextId = NODE_TO_CONTEXT.get(node.id);
       if (!contextId) return;

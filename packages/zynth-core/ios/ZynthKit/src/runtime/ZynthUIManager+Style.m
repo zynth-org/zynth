@@ -8,24 +8,24 @@
 #import "ZynthTransformParser.h"
 #import "ZynthViewStyleState.h"
 
-static CGSize ZynthParseOffset(NSString *value) {
-  NSString *trimmed = [value stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+static CGSize ZynthParseOffset(id value) {
+  if ([value isKindOfClass:[NSDictionary class]]) {
+    NSDictionary *dict = (NSDictionary *)value;
+    return CGSizeMake([dict[@"width"] doubleValue], [dict[@"height"] doubleValue]);
+  }
+  if ([value isKindOfClass:[NSArray class]]) {
+    NSArray *arr = (NSArray *)value;
+    CGFloat x = arr.count > 0 ? [arr[0] doubleValue] : 0.0;
+    CGFloat y = arr.count > 1 ? [arr[1] doubleValue] : 0.0;
+    return CGSizeMake(x, y);
+  }
+  if (![value isKindOfClass:[NSString class]]) return CGSizeZero;
+  NSString *trimmed = [(NSString *)value stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
   if (trimmed.length == 0) return CGSizeZero;
   if ([trimmed hasPrefix:@"["] || [trimmed hasPrefix:@"{"]) {
     NSData *data = [trimmed dataUsingEncoding:NSUTF8StringEncoding];
     id json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
-    if ([json isKindOfClass:[NSArray class]]) {
-      NSArray *arr = (NSArray *)json;
-      CGFloat x = arr.count > 0 ? [arr[0] doubleValue] : 0.0;
-      CGFloat y = arr.count > 1 ? [arr[1] doubleValue] : 0.0;
-      return CGSizeMake(x, y);
-    }
-    if ([json isKindOfClass:[NSDictionary class]]) {
-      NSDictionary *dict = (NSDictionary *)json;
-      CGFloat x = [dict[@"width"] doubleValue];
-      CGFloat y = [dict[@"height"] doubleValue];
-      return CGSizeMake(x, y);
-    }
+    return ZynthParseOffset(json);
   }
   NSArray<NSString *> *parts = [trimmed componentsSeparatedByCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@", "]];
   NSMutableArray<NSString *> *tokens = [NSMutableArray array];
@@ -60,7 +60,7 @@ static CGSize ZynthParseOffset(NSString *value) {
 - (BOOL)applyStyleProp:(NSNumber *)nodeId
                   view:(UIView *)view
                   name:(NSString *)name
-                 value:(NSString *)value {
+                 value:(id _Nullable)value {
   if (name.length == 0 || !view) return NO;
 
   if ([name isEqualToString:@"background"] || [name isEqualToString:@"backgroundImage"]) {
@@ -254,7 +254,7 @@ static CGSize ZynthParseOffset(NSString *value) {
   }
 
   if ([name isEqualToString:@"overflow"]) {
-    if ([value isEqualToString:@"hidden"] || [value isEqualToString:@"scroll"]) {
+    if ([value isKindOfClass:[NSString class]] && ([value isEqualToString:@"hidden"] || [value isEqualToString:@"scroll"])) {
       view.clipsToBounds = YES;
     } else {
       view.clipsToBounds = NO;

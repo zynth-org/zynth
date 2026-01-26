@@ -52,9 +52,28 @@ static YGSize ZynthMeasureText(YGNodeConstRef node,
   return value ? (YGNodeRef)value.pointerValue : NULL;
 }
 
-- (void)setStyle:(NSNumber *)nodeId name:(NSString *)name value:(NSString *_Nullable)value {
+- (BOOL)isValidValue:(id)value {
+  if (!value) return NO;
+  if ([value isKindOfClass:[NSString class]]) {
+    return [(NSString *)value length] > 0;
+  }
+  return YES;
+}
+
+- (double)doubleValue:(id)value {
+  if ([value respondsToSelector:@selector(doubleValue)]) {
+    return [value doubleValue];
+  }
+  return 0.0;
+}
+
+- (void)setStyle:(NSNumber *)nodeId name:(NSString *)name value:(id _Nullable)value {
   YGNodeRef node = [self yogaForNode:nodeId];
   if (!node || name.length == 0) return;
+  
+  // Helper to ensure we only process valid strings for enums
+  NSString *strValue = [value isKindOfClass:[NSString class]] ? (NSString *)value : nil;
+
   if ([name isEqualToString:@"width"]) {
     [self applyDimension:value
                     node:node
@@ -104,15 +123,15 @@ static YGSize ZynthMeasureText(YGNodeConstRef node,
     return;
   }
   if ([name isEqualToString:@"flex"]) {
-    if (value.length > 0) YGNodeStyleSetFlex(node, (float)[value doubleValue]);
+    if ([self isValidValue:value]) YGNodeStyleSetFlex(node, (float)[self doubleValue:value]);
     return;
   }
   if ([name isEqualToString:@"flexGrow"]) {
-    if (value.length > 0) YGNodeStyleSetFlexGrow(node, (float)[value doubleValue]);
+    if ([self isValidValue:value]) YGNodeStyleSetFlexGrow(node, (float)[self doubleValue:value]);
     return;
   }
   if ([name isEqualToString:@"flexShrink"]) {
-    if (value.length > 0) YGNodeStyleSetFlexShrink(node, (float)[value doubleValue]);
+    if ([self isValidValue:value]) YGNodeStyleSetFlexShrink(node, (float)[self doubleValue:value]);
     return;
   }
   if ([name isEqualToString:@"flexBasis"]) {
@@ -124,11 +143,11 @@ static YGSize ZynthMeasureText(YGNodeConstRef node,
     return;
   }
   if ([name isEqualToString:@"flexDirection"]) {
-    if ([value isEqualToString:@"row"]) {
+    if ([strValue isEqualToString:@"row"]) {
       YGNodeStyleSetFlexDirection(node, YGFlexDirectionRow);
-    } else if ([value isEqualToString:@"column-reverse"]) {
+    } else if ([strValue isEqualToString:@"column-reverse"]) {
       YGNodeStyleSetFlexDirection(node, YGFlexDirectionColumnReverse);
-    } else if ([value isEqualToString:@"row-reverse"]) {
+    } else if ([strValue isEqualToString:@"row-reverse"]) {
       YGNodeStyleSetFlexDirection(node, YGFlexDirectionRowReverse);
     } else {
       YGNodeStyleSetFlexDirection(node, YGFlexDirectionColumn);
@@ -136,9 +155,9 @@ static YGSize ZynthMeasureText(YGNodeConstRef node,
     return;
   }
   if ([name isEqualToString:@"flexWrap"]) {
-    if ([value isEqualToString:@"wrap"]) {
+    if ([strValue isEqualToString:@"wrap"]) {
       YGNodeStyleSetFlexWrap(node, YGWrapWrap);
-    } else if ([value isEqualToString:@"wrap-reverse"]) {
+    } else if ([strValue isEqualToString:@"wrap-reverse"]) {
       YGNodeStyleSetFlexWrap(node, YGWrapWrapReverse);
     } else {
       YGNodeStyleSetFlexWrap(node, YGWrapNoWrap);
@@ -147,11 +166,11 @@ static YGSize ZynthMeasureText(YGNodeConstRef node,
   }
   if ([name isEqualToString:@"justifyContent"]) {
     YGJustify j = YGJustifyFlexStart;
-    if ([value isEqualToString:@"flex-end"]) j = YGJustifyFlexEnd;
-    else if ([value isEqualToString:@"center"]) j = YGJustifyCenter;
-    else if ([value isEqualToString:@"space-between"]) j = YGJustifySpaceBetween;
-    else if ([value isEqualToString:@"space-around"]) j = YGJustifySpaceAround;
-    else if ([value isEqualToString:@"space-evenly"]) j = YGJustifySpaceEvenly;
+    if ([strValue isEqualToString:@"flex-end"]) j = YGJustifyFlexEnd;
+    else if ([strValue isEqualToString:@"center"]) j = YGJustifyCenter;
+    else if ([strValue isEqualToString:@"space-between"]) j = YGJustifySpaceBetween;
+    else if ([strValue isEqualToString:@"space-around"]) j = YGJustifySpaceAround;
+    else if ([strValue isEqualToString:@"space-evenly"]) j = YGJustifySpaceEvenly;
     YGNodeStyleSetJustifyContent(node, j);
     return;
   }
@@ -168,7 +187,7 @@ static YGSize ZynthMeasureText(YGNodeConstRef node,
     return;
   }
   if ([name isEqualToString:@"position"]) {
-    if ([value isEqualToString:@"absolute"]) {
+    if ([strValue isEqualToString:@"absolute"]) {
       YGNodeStyleSetPositionType(node, YGPositionTypeAbsolute);
     } else {
       YGNodeStyleSetPositionType(node, YGPositionTypeRelative);
@@ -176,113 +195,113 @@ static YGSize ZynthMeasureText(YGNodeConstRef node,
     return;
   }
   if ([name isEqualToString:@"top"]) {
-    if (value.length > 0) YGNodeStyleSetPosition(node, YGEdgeTop, (float)[value doubleValue]);
+    if ([self isValidValue:value]) YGNodeStyleSetPosition(node, YGEdgeTop, (float)[self doubleValue:value]);
     return;
   }
   if ([name isEqualToString:@"right"]) {
-    if (value.length > 0) YGNodeStyleSetPosition(node, YGEdgeRight, (float)[value doubleValue]);
+    if ([self isValidValue:value]) YGNodeStyleSetPosition(node, YGEdgeRight, (float)[self doubleValue:value]);
     return;
   }
   if ([name isEqualToString:@"bottom"]) {
-    if (value.length > 0) YGNodeStyleSetPosition(node, YGEdgeBottom, (float)[value doubleValue]);
+    if ([self isValidValue:value]) YGNodeStyleSetPosition(node, YGEdgeBottom, (float)[self doubleValue:value]);
     return;
   }
   if ([name isEqualToString:@"left"]) {
-    if (value.length > 0) YGNodeStyleSetPosition(node, YGEdgeLeft, (float)[value doubleValue]);
+    if ([self isValidValue:value]) YGNodeStyleSetPosition(node, YGEdgeLeft, (float)[self doubleValue:value]);
     return;
   }
   if ([name isEqualToString:@"padding"]) {
-    if (value.length > 0) YGNodeStyleSetPadding(node, YGEdgeAll, (float)[value doubleValue]);
+    if ([self isValidValue:value]) YGNodeStyleSetPadding(node, YGEdgeAll, (float)[self doubleValue:value]);
     return;
   }
   if ([name isEqualToString:@"paddingHorizontal"]) {
-    if (value.length > 0) {
-      float v = (float)[value doubleValue];
+    if ([self isValidValue:value]) {
+      float v = (float)[self doubleValue:value];
       YGNodeStyleSetPadding(node, YGEdgeLeft, v);
       YGNodeStyleSetPadding(node, YGEdgeRight, v);
     }
     return;
   }
   if ([name isEqualToString:@"paddingVertical"]) {
-    if (value.length > 0) {
-      float v = (float)[value doubleValue];
+    if ([self isValidValue:value]) {
+      float v = (float)[self doubleValue:value];
       YGNodeStyleSetPadding(node, YGEdgeTop, v);
       YGNodeStyleSetPadding(node, YGEdgeBottom, v);
     }
     return;
   }
   if ([name isEqualToString:@"paddingTop"]) {
-    if (value.length > 0) YGNodeStyleSetPadding(node, YGEdgeTop, (float)[value doubleValue]);
+    if ([self isValidValue:value]) YGNodeStyleSetPadding(node, YGEdgeTop, (float)[self doubleValue:value]);
     return;
   }
   if ([name isEqualToString:@"paddingRight"]) {
-    if (value.length > 0) YGNodeStyleSetPadding(node, YGEdgeRight, (float)[value doubleValue]);
+    if ([self isValidValue:value]) YGNodeStyleSetPadding(node, YGEdgeRight, (float)[self doubleValue:value]);
     return;
   }
   if ([name isEqualToString:@"paddingBottom"]) {
-    if (value.length > 0) YGNodeStyleSetPadding(node, YGEdgeBottom, (float)[value doubleValue]);
+    if ([self isValidValue:value]) YGNodeStyleSetPadding(node, YGEdgeBottom, (float)[self doubleValue:value]);
     return;
   }
   if ([name isEqualToString:@"paddingLeft"]) {
-    if (value.length > 0) YGNodeStyleSetPadding(node, YGEdgeLeft, (float)[value doubleValue]);
+    if ([self isValidValue:value]) YGNodeStyleSetPadding(node, YGEdgeLeft, (float)[self doubleValue:value]);
     return;
   }
   if ([name isEqualToString:@"margin"]) {
-    if (value.length > 0) YGNodeStyleSetMargin(node, YGEdgeAll, (float)[value doubleValue]);
+    if ([self isValidValue:value]) YGNodeStyleSetMargin(node, YGEdgeAll, (float)[self doubleValue:value]);
     return;
   }
   if ([name isEqualToString:@"marginHorizontal"]) {
-    if (value.length > 0) {
-      float v = (float)[value doubleValue];
+    if ([self isValidValue:value]) {
+      float v = (float)[self doubleValue:value];
       YGNodeStyleSetMargin(node, YGEdgeLeft, v);
       YGNodeStyleSetMargin(node, YGEdgeRight, v);
     }
     return;
   }
   if ([name isEqualToString:@"marginVertical"]) {
-    if (value.length > 0) {
-      float v = (float)[value doubleValue];
+    if ([self isValidValue:value]) {
+      float v = (float)[self doubleValue:value];
       YGNodeStyleSetMargin(node, YGEdgeTop, v);
       YGNodeStyleSetMargin(node, YGEdgeBottom, v);
     }
     return;
   }
   if ([name isEqualToString:@"marginTop"]) {
-    if (value.length > 0) YGNodeStyleSetMargin(node, YGEdgeTop, (float)[value doubleValue]);
+    if ([self isValidValue:value]) YGNodeStyleSetMargin(node, YGEdgeTop, (float)[self doubleValue:value]);
     return;
   }
   if ([name isEqualToString:@"marginRight"]) {
-    if (value.length > 0) YGNodeStyleSetMargin(node, YGEdgeRight, (float)[value doubleValue]);
+    if ([self isValidValue:value]) YGNodeStyleSetMargin(node, YGEdgeRight, (float)[self doubleValue:value]);
     return;
   }
   if ([name isEqualToString:@"marginBottom"]) {
-    if (value.length > 0) YGNodeStyleSetMargin(node, YGEdgeBottom, (float)[value doubleValue]);
+    if ([self isValidValue:value]) YGNodeStyleSetMargin(node, YGEdgeBottom, (float)[self doubleValue:value]);
     return;
   }
   if ([name isEqualToString:@"marginLeft"]) {
-    if (value.length > 0) YGNodeStyleSetMargin(node, YGEdgeLeft, (float)[value doubleValue]);
+    if ([self isValidValue:value]) YGNodeStyleSetMargin(node, YGEdgeLeft, (float)[self doubleValue:value]);
     return;
   }
   if ([name isEqualToString:@"gap"]) {
-    if (value.length > 0) YGNodeStyleSetGap(node, YGGutterAll, (float)[value doubleValue]);
+    if ([self isValidValue:value]) YGNodeStyleSetGap(node, YGGutterAll, (float)[self doubleValue:value]);
     return;
   }
   if ([name isEqualToString:@"rowGap"]) {
-    if (value.length > 0) YGNodeStyleSetGap(node, YGGutterRow, (float)[value doubleValue]);
+    if ([self isValidValue:value]) YGNodeStyleSetGap(node, YGGutterRow, (float)[self doubleValue:value]);
     return;
   }
   if ([name isEqualToString:@"columnGap"]) {
-    if (value.length > 0) YGNodeStyleSetGap(node, YGGutterColumn, (float)[value doubleValue]);
+    if ([self isValidValue:value]) YGNodeStyleSetGap(node, YGGutterColumn, (float)[self doubleValue:value]);
     return;
   }
   if ([name isEqualToString:@"aspectRatio"]) {
-    if (value.length > 0) YGNodeStyleSetAspectRatio(node, (float)[value doubleValue]);
+    if ([self isValidValue:value]) YGNodeStyleSetAspectRatio(node, (float)[self doubleValue:value]);
     return;
   }
   if ([name isEqualToString:@"overflow"]) {
-    if ([value isEqualToString:@"hidden"]) {
+    if ([strValue isEqualToString:@"hidden"]) {
       YGNodeStyleSetOverflow(node, YGOverflowHidden);
-    } else if ([value isEqualToString:@"scroll"]) {
+    } else if ([strValue isEqualToString:@"scroll"]) {
       YGNodeStyleSetOverflow(node, YGOverflowScroll);
     } else {
       YGNodeStyleSetOverflow(node, YGOverflowVisible);
@@ -290,9 +309,9 @@ static YGSize ZynthMeasureText(YGNodeConstRef node,
     return;
   }
   if ([name isEqualToString:@"display"]) {
-    if ([value isEqualToString:@"none"]) {
+    if ([strValue isEqualToString:@"none"]) {
       YGNodeStyleSetDisplay(node, YGDisplayNone);
-    } else if ([value isEqualToString:@"flex"]) {
+    } else if ([strValue isEqualToString:@"flex"]) {
       YGNodeStyleSetDisplay(node, YGDisplayFlex);
     } else {
       YGNodeStyleSetDisplay(node, YGDisplayFlex);
@@ -403,33 +422,43 @@ static YGSize ZynthMeasureText(YGNodeConstRef node,
   return ctx ? (__bridge UIView *)ctx : nil;
 }
 
-- (void)applyDimension:(NSString *_Nullable)value
+- (void)applyDimension:(id _Nullable)value
                   node:(YGNodeRef)node
                    set:(void (^)(float))set
             setPercent:(void (^_Nullable)(float))setPercent
                setAuto:(void (^_Nullable)(void))setAuto {
-  if (value.length == 0) return;
-  if ([value isEqualToString:@"auto"]) {
-    if (setAuto) setAuto();
+  if (!value) return;
+  if ([value isKindOfClass:[NSNumber class]]) {
+    set(((NSNumber *)value).floatValue);
     return;
   }
-  if ([value hasSuffix:@"%"] && setPercent) {
-    NSString *trimmed = [value substringToIndex:value.length - 1];
-    double percent = [trimmed doubleValue];
-    setPercent((float)percent);
+  if ([value isKindOfClass:[NSString class]]) {
+    NSString *str = (NSString *)value;
+    if (str.length == 0) return;
+    if ([str isEqualToString:@"auto"]) {
+      if (setAuto) setAuto();
+      return;
+    }
+    if ([str hasSuffix:@"%"] && setPercent) {
+      NSString *trimmed = [str substringToIndex:str.length - 1];
+      setPercent((float)[trimmed doubleValue]);
+      return;
+    }
+    set((float)[str doubleValue]);
     return;
   }
-  set((float)[value doubleValue]);
 }
 
-- (YGAlign)parseAlign:(NSString *_Nullable)value {
-  if ([value isEqualToString:@"flex-start"]) return YGAlignFlexStart;
-  if ([value isEqualToString:@"flex-end"]) return YGAlignFlexEnd;
-  if ([value isEqualToString:@"center"]) return YGAlignCenter;
-  if ([value isEqualToString:@"baseline"]) return YGAlignBaseline;
-  if ([value isEqualToString:@"space-between"]) return YGAlignSpaceBetween;
-  if ([value isEqualToString:@"space-around"]) return YGAlignSpaceAround;
-  if ([value isEqualToString:@"stretch"]) return YGAlignStretch;
+- (YGAlign)parseAlign:(id _Nullable)value {
+  if (![value isKindOfClass:[NSString class]]) return YGAlignStretch;
+  NSString *str = (NSString *)value;
+  if ([str isEqualToString:@"flex-start"]) return YGAlignFlexStart;
+  if ([str isEqualToString:@"flex-end"]) return YGAlignFlexEnd;
+  if ([str isEqualToString:@"center"]) return YGAlignCenter;
+  if ([str isEqualToString:@"baseline"]) return YGAlignBaseline;
+  if ([str isEqualToString:@"space-between"]) return YGAlignSpaceBetween;
+  if ([str isEqualToString:@"space-around"]) return YGAlignSpaceAround;
+  if ([str isEqualToString:@"stretch"]) return YGAlignStretch;
   return YGAlignStretch;
 }
 

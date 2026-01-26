@@ -99,6 +99,10 @@
 }
 
 - (void)setProp:(NSNumber *)nodeId name:(NSString *)name value:(NSString *_Nullable)value {
+  [self setProp:nodeId name:name valueAny:value];
+}
+
+- (void)setProp:(NSNumber *)nodeId name:(NSString *)name valueAny:(id _Nullable)value {
   UIView *view = _nodes[nodeId];
   if (!view || name.length == 0) return;
   ZynthNode *node = _nodeStates[nodeId];
@@ -126,26 +130,31 @@
     }
   }
   if (node && descriptor && descriptor.handleSetProp) {
-    if (descriptor.handleSetProp((ZynthUIManager *)self, node, name, parsedValue, value)) {
+    if (descriptor.handleSetProp((ZynthUIManager *)self, node, name, parsedValue, [value isKindOfClass:[NSString class]] ? value : nil)) {
       return;
     }
   }
-  BOOL isStyleKey = [@[
-    @"fontSize",
-    @"fontFamily",
-    @"fontWeight",
-    @"fontStyle",
-    @"color",
-    @"textAlign",
-    @"lineHeight",
-    @"lineSpacing",
-    @"paragraphSpacing",
-    @"letterSpacing",
-    @"textDecorationLine",
-    @"textTransform",
-    @"hyphenation",
-    @"minimumFontScale"
-  ] containsObject:name];
+  static NSSet *styleKeys = nil;
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    styleKeys = [NSSet setWithArray:@[
+      @"fontSize",
+      @"fontFamily",
+      @"fontWeight",
+      @"fontStyle",
+      @"color",
+      @"textAlign",
+      @"lineHeight",
+      @"lineSpacing",
+      @"paragraphSpacing",
+      @"letterSpacing",
+      @"textDecorationLine",
+      @"textTransform",
+      @"hyphenation",
+      @"minimumFontScale"
+    ]];
+  });
+  BOOL isStyleKey = [styleKeys containsObject:name];
   if ([self applyStyleProp:nodeId view:view name:name value:value]) {
     if (node && descriptor && descriptor.applyStyle && isStyleKey) {
       NSMutableDictionary *style = node.attachments[@"style"];
@@ -163,12 +172,12 @@
     return;
   }
   if ([name isEqualToString:@"backgroundColor"]) {
-    UIColor *color = [ZynthColorParser parseColor:value];
+    UIColor *color = [value isKindOfClass:[UIColor class]] ? value : [ZynthColorParser parseColor:value];
     if (color) view.backgroundColor = color;
     return;
   }
   if ([name isEqualToString:@"color"] && [view isKindOfClass:[UILabel class]]) {
-    UIColor *color = [ZynthColorParser parseColor:value];
+    UIColor *color = [value isKindOfClass:[UIColor class]] ? value : [ZynthColorParser parseColor:value];
     if (color) {
       UILabel *label = (UILabel *)view;
       label.textColor = color;
@@ -207,46 +216,31 @@
     return;
   }
   if ([name isEqualToString:@"borderColor"]) {
-    UIColor *color = [ZynthColorParser parseColor:value];
+    UIColor *color = [value isKindOfClass:[UIColor class]] ? value : [ZynthColorParser parseColor:value];
     if (color) view.layer.borderColor = color.CGColor;
     return;
   }
   if ([name isEqualToString:@"delayLongPressMs"]) {
-    if (value.length > 0) {
-      _longPressDurations[nodeId] = @([value doubleValue]);
-    } else {
-      [_longPressDurations removeObjectForKey:nodeId];
-    }
+    _longPressDurations[nodeId] = @([value doubleValue]);
     return;
   }
   if ([name isEqualToString:@"doublePressWindowMs"]) {
-    if (value.length > 0) {
-      _doublePressWindows[nodeId] = @([value doubleValue]);
-    } else {
-      [_doublePressWindows removeObjectForKey:nodeId];
-    }
+    _doublePressWindows[nodeId] = @([value doubleValue]);
     return;
   }
   if ([name isEqualToString:@"enableDoublePress"]) {
-    if (value.length > 0) {
-      NSString *lower = [value lowercaseString];
-      BOOL enabled = [lower isEqualToString:@"true"] || [lower isEqualToString:@"1"];
-      if (enabled) {
-        [_doublePressNodes addObject:nodeId];
-      } else {
-        [_doublePressNodes removeObject:nodeId];
-      }
+    BOOL enabled = [value boolValue];
+    if (enabled) {
+      [_doublePressNodes addObject:nodeId];
+    } else {
+      [_doublePressNodes removeObject:nodeId];
     }
     return;
   }
   if ([name isEqualToString:@"pointerEvents"]) {
-    if (value.length > 0) {
-      _pointerEvents[nodeId] = value;
-      if (node) node.pointerEvents = value;
-    } else {
-      [_pointerEvents removeObjectForKey:nodeId];
-      if (node) node.pointerEvents = @"auto";
-    }
+    NSString *pe = [value isKindOfClass:[NSString class]] ? value : @"auto";
+    _pointerEvents[nodeId] = pe;
+    if (node) node.pointerEvents = pe;
     [self updateInteractionStateForNode:nodeId];
     return;
   }
@@ -275,9 +269,10 @@
     UILabel *label = (UILabel *)view;
     CGFloat fontSize = label.font ? label.font.pointSize : 14.0;
     UIFontWeight weight = UIFontWeightRegular;
-    if ([value isEqualToString:@"bold"] || [value isEqualToString:@"700"]) weight = UIFontWeightBold;
-    else if ([value isEqualToString:@"600"]) weight = UIFontWeightSemibold;
-    else if ([value isEqualToString:@"500"]) weight = UIFontWeightMedium;
+    NSString *valStr = [value description];
+    if ([valStr isEqualToString:@"bold"] || [valStr isEqualToString:@"700"]) weight = UIFontWeightBold;
+    else if ([valStr isEqualToString:@"600"]) weight = UIFontWeightSemibold;
+    else if ([valStr isEqualToString:@"500"]) weight = UIFontWeightMedium;
     label.font = [UIFont systemFontOfSize:fontSize weight:weight];
     [self applyTextValue:nodeId label:label text:label.text ?: @""];
     if (node && descriptor && descriptor.applyStyle && isStyleKey) {
@@ -297,7 +292,7 @@
   }
   if ([name isEqualToString:@"fontFamily"] && [view isKindOfClass:[UILabel class]]) {
     UILabel *label = (UILabel *)view;
-    UIFont *font = [UIFont fontWithName:value size:label.font.pointSize];
+    UIFont *font = [UIFont fontWithName:[value description] size:label.font.pointSize];
     if (font) {
       label.font = font;
       [self applyTextValue:nodeId label:label text:label.text ?: @""];
@@ -319,7 +314,7 @@
   }
   if ([name isEqualToString:@"fontStyle"] && [view isKindOfClass:[UILabel class]]) {
     UILabel *label = (UILabel *)view;
-    if ([value isEqualToString:@"italic"]) {
+    if ([[value description] isEqualToString:@"italic"]) {
       UIFontDescriptor *descriptor = [label.font.fontDescriptor fontDescriptorWithSymbolicTraits:UIFontDescriptorTraitItalic];
       if (descriptor) {
         label.font = [UIFont fontWithDescriptor:descriptor size:label.font.pointSize];
@@ -343,9 +338,10 @@
   }
   if ([name isEqualToString:@"textAlign"] && [view isKindOfClass:[UILabel class]]) {
     UILabel *label = (UILabel *)view;
-    if ([value isEqualToString:@"center"]) label.textAlignment = NSTextAlignmentCenter;
-    else if ([value isEqualToString:@"right"]) label.textAlignment = NSTextAlignmentRight;
-    else if ([value isEqualToString:@"left"]) label.textAlignment = NSTextAlignmentLeft;
+    NSString *valStr = [value description];
+    if ([valStr isEqualToString:@"center"]) label.textAlignment = NSTextAlignmentCenter;
+    else if ([valStr isEqualToString:@"right"]) label.textAlignment = NSTextAlignmentRight;
+    else if ([valStr isEqualToString:@"left"]) label.textAlignment = NSTextAlignmentLeft;
     else label.textAlignment = NSTextAlignmentNatural;
     if (node && descriptor && descriptor.applyStyle && isStyleKey) {
       NSMutableDictionary *style = node.attachments[@"style"];
@@ -362,18 +358,8 @@
     }
     return;
   }
-  if ([name isEqualToString:@"width"]) {
-    [[self yogaForNode:nodeId] setStyle:nodeId name:@"width" value:value];
-    [self markSurfaceDirtyForNode:nodeId];
-    return;
-  }
-  if ([name isEqualToString:@"height"]) {
-    [[self yogaForNode:nodeId] setStyle:nodeId name:@"height" value:value];
-    [self markSurfaceDirtyForNode:nodeId];
-    return;
-  }
-  if ([name isEqualToString:@"flexDirection"]) {
-    [[self yogaForNode:nodeId] setStyle:nodeId name:@"flexDirection" value:value];
+  if ([name isEqualToString:@"width"] || [name isEqualToString:@"height"] || [name isEqualToString:@"flexDirection"]) {
+    [[self yogaForNode:nodeId] setStyle:nodeId name:name value:value];
     [self markSurfaceDirtyForNode:nodeId];
     return;
   }

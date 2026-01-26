@@ -116,26 +116,6 @@ static void removeHandlersForNode(int nodeId) {
   }
 }
 
-static NSString *ZynthStringifyStyleValue(Runtime &rt, const Value &value) {
-  if (value.isString()) {
-    std::string str = value.asString(rt).utf8(rt);
-    return [NSString stringWithUTF8String:str.c_str()];
-  }
-  if (!value.isObject()) return nil;
-  try {
-    Object json = rt.global().getPropertyAsObject(rt, "JSON");
-    Function stringify = json.getPropertyAsFunction(rt, "stringify");
-    Value result = stringify.call(rt, value);
-    if (result.isString()) {
-      std::string str = result.asString(rt).utf8(rt);
-      return [NSString stringWithUTF8String:str.c_str()];
-    }
-  } catch (...) {
-    return nil;
-  }
-  return nil;
-}
-
 static Value ZynthConvertToJSI(Runtime &rt, id value) {
   if (!value || value == (id)kCFNull) {
     return Value::null();
@@ -170,6 +150,38 @@ static Value ZynthConvertToJSI(Runtime &rt, id value) {
     return Value(std::move(obj));
   }
   return Value::undefined();
+}
+
+static id ZynthConvertValueToObjC(Runtime &rt, const Value &value) {
+  if (value.isUndefined() || value.isNull()) return nil;
+  if (value.isBool()) return @(value.getBool());
+  if (value.isNumber()) return @(value.asNumber());
+  if (value.isString()) return [NSString stringWithUTF8String:value.asString(rt).utf8(rt).c_str()];
+  if (value.isObject()) {
+    Object obj = value.asObject(rt);
+    if (obj.isArray(rt)) {
+      Array arr = obj.asArray(rt);
+      size_t len = arr.size(rt);
+      NSMutableArray *res = [NSMutableArray arrayWithCapacity:len];
+      for (size_t i = 0; i < len; i++) {
+        id val = ZynthConvertValueToObjC(rt, arr.getValueAtIndex(rt, i));
+        [res addObject:val ?: [NSNull null]];
+      }
+      return res;
+    }
+    auto names = obj.getPropertyNames(rt);
+    size_t len = names.size(rt);
+    NSMutableDictionary *res = [NSMutableDictionary dictionaryWithCapacity:len];
+    for (size_t i = 0; i < len; i++) {
+      String name = names.getValueAtIndex(rt, i).asString(rt);
+      std::string nameStr = name.utf8(rt);
+      id val = ZynthConvertValueToObjC(rt, obj.getProperty(rt, name));
+      [res setObject:val ?: [NSNull null]
+              forKey:[NSString stringWithUTF8String:nameStr.c_str()]];
+    }
+    return res;
+  }
+  return nil;
 }
 } // namespace
 
@@ -365,23 +377,16 @@ static void ZynthApplyStyleObject(Runtime &rt, ZynthUIManager *manager, int node
       "background", "backgroundImage"
   };
 
+  NSMutableDictionary *styleDict = [NSMutableDictionary dictionary];
+
   for (const char *key : numericKeys) {
     if (!style.hasProperty(rt, key)) continue;
     Value v = style.getProperty(rt, key);
+    NSString *nsKey = [NSString stringWithUTF8String:key];
     if (v.isNumber()) {
-      std::string str = std::to_string(v.asNumber());
-      NSString *name = [NSString stringWithUTF8String:key];
-      NSString *value = [NSString stringWithUTF8String:str.c_str()];
-      ZynthRunOnMainAsync(^{
-        [manager setProp:@(nodeId) name:name value:value];
-      });
+      styleDict[nsKey] = @(v.asNumber());
     } else if (v.isString()) {
-      std::string str = v.asString(rt).utf8(rt);
-      NSString *name = [NSString stringWithUTF8String:key];
-      NSString *value = [NSString stringWithUTF8String:str.c_str()];
-      ZynthRunOnMainAsync(^{
-        [manager setProp:@(nodeId) name:name value:value];
-      });
+      styleDict[nsKey] = [NSString stringWithUTF8String:v.asString(rt).utf8(rt).c_str()];
     }
   }
 
@@ -389,25 +394,24 @@ static void ZynthApplyStyleObject(Runtime &rt, ZynthUIManager *manager, int node
     if (!style.hasProperty(rt, key)) continue;
     Value v = style.getProperty(rt, key);
     if (v.isString()) {
-      std::string str = v.asString(rt).utf8(rt);
-      NSString *name = [NSString stringWithUTF8String:key];
-      NSString *value = [NSString stringWithUTF8String:str.c_str()];
-      ZynthRunOnMainAsync(^{
-        [manager setProp:@(nodeId) name:name value:value];
-      });
+      styleDict[[NSString stringWithUTF8String:key]] = [NSString stringWithUTF8String:v.asString(rt).utf8(rt).c_str()];
     }
   }
 
   for (const char *key : objectKeys) {
     if (!style.hasProperty(rt, key)) continue;
     Value v = style.getProperty(rt, key);
-    NSString *value = ZynthStringifyStyleValue(rt, v);
-    if (!value) continue;
-    NSString *name = [NSString stringWithUTF8String:key];
-    ZynthRunOnMainAsync(^{
-      [manager setProp:@(nodeId) name:name value:value];
-    });
+    // For legacy reasons, stringify complex objects if they are NOT dictionaries yet.
+    // Ideally we convert to NSDictionary directly.
+    id val = ZynthConvertValueToObjC(rt, v);
+    if (val) {
+      styleDict[[NSString stringWithUTF8String:key]] = val;
+    }
   }
+
+  ZynthRunOnMainAsync(^{
+    [manager setProp:@(nodeId) name:@"style" valueAny:styleDict];
+  });
 }
 
 void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
@@ -448,23 +452,16 @@ void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
           ZynthApplyStyleObject(rt, manager, nodeId, args[2].asObject(rt));
           return Value::undefined();
         }
-        std::string value;
-        if (args[2].isString()) {
-          value = args[2].asString(rt).utf8(rt);
-        } else if (args[2].isNumber()) {
-          value = std::to_string(args[2].asNumber());
-        } else if (args[2].isBool()) {
-          value = args[2].getBool() ? "true" : "false";
-        }
-        if (!value.empty()) {
-          NSString *propName = [NSString stringWithUTF8String:name.c_str()];
-          NSString *propValue = [NSString stringWithUTF8String:value.c_str()];
-          ZynthRunOnMainAsync(^{
-            [manager setProp:@(nodeId) name:propName value:propValue];
-          });
-          if (DEBUG_RUNTIME) {
-            NSLog(@"[ZynthUI] setProp id=%d name=%s value=%s", nodeId, name.c_str(), value.c_str());
-          }
+        
+        id value = ZynthConvertValueToObjC(rt, args[2]);
+        NSString *propName = [NSString stringWithUTF8String:name.c_str()];
+        
+        ZynthRunOnMainAsync(^{
+          [manager setProp:@(nodeId) name:propName valueAny:value];
+        });
+        
+        if (DEBUG_RUNTIME) {
+          NSLog(@"[ZynthUI] setProp id=%d name=%s value=%@", nodeId, name.c_str(), value);
         }
         return Value::undefined();
       });
@@ -588,154 +585,97 @@ void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
         Object payload = args[0].asObject(rt);
         Value opsPackedVal = payload.getProperty(rt, "ops");
         Value stringTableVal = payload.getProperty(rt, "stringTable");
+        
         if (opsPackedVal.isObject() && stringTableVal.isObject()) {
-          Array opsPacked = opsPackedVal.asObject(rt).asArray(rt);
-          Array stringTable = stringTableVal.asObject(rt).asArray(rt);
-          const size_t stringCount = stringTable.length(rt);
-          std::vector<std::string> strings;
-          strings.reserve(stringCount);
+          // 1. String Interning
+          Array stringTableArr = stringTableVal.asObject(rt).asArray(rt);
+          const size_t stringCount = stringTableArr.length(rt);
+          NSMutableArray<NSString *> *internedStrings = [NSMutableArray arrayWithCapacity:stringCount];
           for (size_t i = 0; i < stringCount; i++) {
-            Value entry = stringTable.getValueAtIndex(rt, i);
+            Value entry = stringTableArr.getValueAtIndex(rt, i);
             if (entry.isString()) {
-              strings.push_back(entry.asString(rt).utf8(rt));
+              [internedStrings addObject:[NSString stringWithUTF8String:entry.asString(rt).utf8(rt).c_str()]];
             } else {
-              strings.emplace_back();
+              [internedStrings addObject:@""];
             }
           }
-          const size_t opCount = opsPacked.length(rt);
-          size_t i = 0;
-          auto getString = [&strings](size_t index) -> const std::string & {
-            static const std::string empty;
-            if (index >= strings.size()) return empty;
-            return strings[index];
-          };
-          std::vector<ZynthBatchOp> ops;
-          while (i < opCount) {
-            Value opVal = opsPacked.getValueAtIndex(rt, i++);
-            if (!opVal.isNumber()) break;
-            int opcode = static_cast<int>(opVal.asNumber());
-            switch (opcode) {
-              case 1: { // setProp
-                if (i + 3 >= opCount) { i = opCount; break; }
-                int nodeId = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
-                int keyIndex = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
-                int valueType = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
-                double payloadVal = opsPacked.getValueAtIndex(rt, i++).asNumber();
-                const std::string &key = getString(static_cast<size_t>(keyIndex));
-                switch (valueType) {
-                  case 1: {
-                    ZynthBatchOp op;
-                    op.kind = ZynthBatchOp::Kind::SetProp;
-                    op.nodeId = nodeId;
-                    op.name = key;
-                    op.value = std::to_string(payloadVal);
-                    op.hasValue = true;
-                    ops.push_back(op);
-                    break;
-                  }
-                  case 2: {
-                    ZynthBatchOp op;
-                    op.kind = ZynthBatchOp::Kind::SetProp;
-                    op.nodeId = nodeId;
-                    op.name = key;
-                    op.value = getString(static_cast<size_t>(payloadVal));
-                    op.hasValue = true;
-                    ops.push_back(op);
-                    break;
-                  }
-                  case 3: {
-                    ZynthBatchOp op;
-                    op.kind = ZynthBatchOp::Kind::SetProp;
-                    op.nodeId = nodeId;
-                    op.name = key;
-                    op.value = payloadVal != 0 ? "true" : "false";
-                    op.hasValue = true;
-                    ops.push_back(op);
-                    break;
-                  }
-                  case 0:
-                  default: {
-                    ZynthBatchOp op;
-                    op.kind = ZynthBatchOp::Kind::SetProp;
-                    op.nodeId = nodeId;
-                    op.name = key;
-                    op.hasValue = false;
-                    ops.push_back(op);
-                    break;
-                  }
-                }
-                break;
-              }
-              case 2: { // setText
-                if (i + 1 >= opCount) { i = opCount; break; }
-                int nodeId = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
-                int textIndex = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
-                ZynthBatchOp op;
-                op.kind = ZynthBatchOp::Kind::SetText;
-                op.nodeId = nodeId;
-                op.value = getString(static_cast<size_t>(textIndex));
-                ops.push_back(op);
-                break;
-              }
-              case 3: { // insertChild
-                if (i + 2 >= opCount) { i = opCount; break; }
-                int parentId = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
-                int childId = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
-                int index = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
-                ZynthBatchOp op;
-                op.kind = ZynthBatchOp::Kind::InsertChild;
-                op.parentId = parentId;
-                op.childId = childId;
-                op.index = index;
-                ops.push_back(op);
-                break;
-              }
-              case 4: { // removeChild
-                if (i + 1 >= opCount) { i = opCount; break; }
-                int parentId = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
-                int childId = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
-                ZynthBatchOp op;
-                op.kind = ZynthBatchOp::Kind::RemoveChild;
-                op.parentId = parentId;
-                op.childId = childId;
-                ops.push_back(op);
-                break;
-              }
-              default:
-                i = opCount;
-                break;
+
+          // 2. Fast Buffer Access
+          std::vector<double> ops;
+          if (opsPackedVal.asObject(rt).isArrayBuffer(rt)) {
+            auto buffer = opsPackedVal.asObject(rt).getArrayBuffer(rt);
+            size_t size = buffer.size(rt);
+            ops.resize(size / sizeof(double));
+            memcpy(ops.data(), buffer.data(rt), size);
+          } else {
+            Array opsPacked = opsPackedVal.asObject(rt).asArray(rt);
+            const size_t opCount = opsPacked.length(rt);
+            ops.reserve(opCount);
+            for (size_t i = 0; i < opCount; i++) {
+              ops.push_back(opsPacked.getValueAtIndex(rt, i).asNumber());
             }
           }
+
           if (!ops.empty()) {
             ZynthRunOnMainAsync(^{
-              for (const auto &op : ops) {
-                switch (op.kind) {
-                  case ZynthBatchOp::Kind::SetProp: {
-                    NSString *name = [NSString stringWithUTF8String:op.name.c_str()];
-                    NSString *value = op.hasValue ? [NSString stringWithUTF8String:op.value.c_str()] : nil;
-                    [manager setProp:@(op.nodeId) name:name value:value];
+              size_t i = 0;
+              const size_t total = ops.size();
+              while (i < total) {
+                int opcode = (int)ops[i++];
+                switch (opcode) {
+                  case 1: { // setProp [nodeId, nameIdx, valType, val]
+                    if (i + 3 >= total) { i = total; break; }
+                    int nodeId = (int)ops[i++];
+                    int keyIndex = (int)ops[i++];
+                    int valueType = (int)ops[i++];
+                    double payloadVal = ops[i++];
+                    
+                    NSString *name = (keyIndex >= 0 && keyIndex < internedStrings.count) ? internedStrings[keyIndex] : nil;
+                    if (!name) continue;
+                    
+                    id value = nil;
+                    if (valueType == 1) value = @(payloadVal);
+                    else if (valueType == 2) value = ((int)payloadVal >= 0 && (int)payloadVal < internedStrings.count) ? internedStrings[(int)payloadVal] : @"";
+                    else if (valueType == 3) value = @(payloadVal != 0);
+                    
+                    [manager setProp:@(nodeId) name:name valueAny:value];
                     break;
                   }
-                  case ZynthBatchOp::Kind::SetText: {
-                    NSString *text = [NSString stringWithUTF8String:op.value.c_str()];
-                    [manager setText:@(op.nodeId) text:text];
+                  case 2: { // setText [nodeId, textIndex]
+                    if (i + 1 >= total) { i = total; break; }
+                    int nodeId = (int)ops[i++];
+                    int textIndex = (int)ops[i++];
+                    NSString *text = (textIndex >= 0 && textIndex < internedStrings.count) ? internedStrings[textIndex] : @"";
+                    [manager setText:@(nodeId) text:text];
                     break;
                   }
-                  case ZynthBatchOp::Kind::InsertChild:
-                    [manager insertChild:@(op.parentId) child:@(op.childId) index:@(op.index)];
+                  case 3: { // insertChild [parentId, childId, index]
+                    if (i + 2 >= total) { i = total; break; }
+                    int parentId = (int)ops[i++];
+                    int childId = (int)ops[i++];
+                    int index = (int)ops[i++];
+                    [manager insertChild:@(parentId) child:@(childId) index:@(index)];
                     break;
-                  case ZynthBatchOp::Kind::RemoveChild:
-                    removeHandlersForNode(op.childId);
-                    [manager removeChild:@(op.parentId) child:@(op.childId)];
+                  }
+                  case 4: { // removeChild [parentId, childId]
+                    if (i + 1 >= total) { i = total; break; }
+                    int parentId = (int)ops[i++];
+                    int childId = (int)ops[i++];
+                    removeHandlersForNode(childId);
+                    [manager removeChild:@(parentId) child:@(childId)];
                     break;
-                  case ZynthBatchOp::Kind::CreateNode:
+                  }
+                  default:
+                    i = total;
                     break;
                 }
               }
+              [manager flush];
             });
           }
           return Value::undefined();
         }
+        // Legacy fallback...
         Value opsVal = payload.getProperty(rt, "operations");
         if (!opsVal.isObject()) return Value::undefined();
         Array ops = opsVal.asObject(rt).asArray(rt);
@@ -861,7 +801,7 @@ void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
                 case ZynthBatchOp::Kind::SetProp: {
                   NSString *name = [NSString stringWithUTF8String:op.name.c_str()];
                   NSString *value = op.hasValue ? [NSString stringWithUTF8String:op.value.c_str()] : nil;
-                  [manager setProp:@(op.nodeId) name:name value:value];
+                  [manager setProp:@(op.nodeId) name:name valueAny:value];
                   if (DEBUG_RUNTIME) {
                     NSLog(@"[ZynthUI] setProp id=%d name=%s value=%s", op.nodeId, op.name.c_str(), op.value.c_str());
                   }
