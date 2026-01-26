@@ -440,6 +440,9 @@ export function FlatList<T>(props: FlatListProps<T>) {
     }
   };
 
+  const [isFlowLayout, setIsFlowLayout] = createSignal(true);
+  const [flowOffset, setFlowOffset] = createSignal(0);
+
   const updateBindingsForOffset = (offset: number, viewport: number) => {
     const dataLength = props.data.length;
     if (dataLength !== dataKeys.length) return;
@@ -534,6 +537,33 @@ export function FlatList<T>(props: FlatListProps<T>) {
       if (availableSlot === -1) break;
       bindSlot(availableSlot, dataIndex);
       boundIndices.add(dataIndex);
+    }
+
+    // Check for flow layout eligibility (contiguous sorted slots)
+    let isFlow = true;
+    let lastBound = -1;
+    let firstBound = -1;
+    for (let i = 0; i < slotBindings.length; i++) {
+      const idx = slotBindings[i];
+      if (idx === -1) continue;
+      if (firstBound === -1) firstBound = idx;
+      
+      if (lastBound !== -1 && idx !== lastBound + 1) {
+        isFlow = false;
+        break;
+      }
+      lastBound = idx;
+    }
+    // Also check if the DOM order (slots) matches Data order.
+    // Since we iterate poolSlotsRef (DOM order) and check if indices are increasing,
+    // this correctly verifies that DOM Slot 0 has Index K, Slot 1 has Index K+1, etc.
+    
+    if (isFlow && firstBound !== -1) {
+      setIsFlowLayout(true);
+      setFlowOffset(getOffsetForIndex(firstBound));
+    } else {
+      setIsFlowLayout(false);
+      setFlowOffset(0);
     }
   };
 
@@ -855,11 +885,23 @@ export function FlatList<T>(props: FlatListProps<T>) {
     return contentSize() + getHeaderExtent() + getFooterExtent();
   });
 
-  const requiredContentStyle = createMemo<Style>(() => ({
-    position: "relative",
-    [props.horizontal ? "width" : "height"]: contentSize(),
-    [props.horizontal ? "height" : "width"]: "100%",
-  }));
+  const requiredContentStyle = createMemo<Style>(() => {
+    const isFlow = isFlowLayout();
+    const offset = flowOffset();
+    const base: Style = {
+      position: "relative",
+      [props.horizontal ? "width" : "height"]: contentSize(),
+      [props.horizontal ? "height" : "width"]: "100%",
+    };
+    if (isFlow) {
+      if (props.horizontal) {
+        base.paddingLeft = offset;
+      } else {
+        base.paddingTop = offset;
+      }
+    }
+    return base;
+  });
 
   const sanitizedContentContainerStyle = createMemo<Style | undefined>(() => {
     const user = props.contentContainerStyle as Style | undefined;
@@ -1045,13 +1087,35 @@ export function FlatList<T>(props: FlatListProps<T>) {
               const itemStyle = createMemo((): Style => {
                 const size = extent();
                 const ready = measurementReady();
+                const isFlow = isFlowLayout();
+                
                 if (props.horizontal) {
+                  if (isFlow) {
+                    return {
+                      position: "relative",
+                      left: 0,
+                      top: 0,
+                      minWidth: ready ? size : 0,
+                      height: "100%",
+                      overflow: "visible",
+                    };
+                  }
                   return {
                     position: "absolute",
                     left: position(),
                     top: 0,
                     minWidth: ready ? size : 0,
                     height: "100%",
+                    overflow: "visible",
+                  };
+                }
+                if (isFlow) {
+                  return {
+                    position: "relative",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    minHeight: ready ? size : 0,
                     overflow: "visible",
                   };
                 }
