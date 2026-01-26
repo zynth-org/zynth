@@ -135,7 +135,7 @@ export function createAndroidHost(): Host {
               nodeId,
               addString(name),
               2,
-              addString(JSON.stringify(value))
+              addString(JSON.stringify(value)),
             );
           } catch (e) {
             // ignore serialization error
@@ -210,7 +210,7 @@ export function createAndroidHost(): Host {
     return {
       meta: { kind: "flush", scope: "global" },
       stringTable,
-      ops: encoded,
+      ops: new Float64Array(encoded).buffer,
     };
   };
 
@@ -244,7 +244,7 @@ export function createAndroidHost(): Host {
         const flushBatch = () => {
           if (!batchAccumulator.length) return;
           if (typeof (ui as any).applyBatchTyped !== "function") {
-             throw new Error("Typed batch is required for Android host");
+            throw new Error("Typed batch is required for Android host");
           }
           (ui as any).applyBatchTyped(encodeTypedBatch(batchAccumulator));
           batchAccumulator = [];
@@ -262,7 +262,7 @@ export function createAndroidHost(): Host {
       }
       ui.flush();
     } catch (e) {
-      console.error("Flush error:", e);
+      console.error("Flush error:", JSON.stringify(e));
     }
   };
 
@@ -280,7 +280,7 @@ export function createAndroidHost(): Host {
         .then(runFlush)
         .catch((err) => {
           flushScheduled = false;
-          console.error("Flush error:", err);
+          console.error("Flush error:", JSON.stringify(err));
         });
       return;
     }
@@ -402,12 +402,12 @@ export function createAndroidHost(): Host {
 
   const findAvailableNodeInPool = (
     contextId: string,
-    type: HostNode["type"]
+    type: HostNode["type"],
   ): number | null => {
     const context = RECYCLING_CONTEXTS.get(contextId);
     if (!context) {
       console.log(
-        `[Host/findAvailableNodeInPool] ❌ Context ${contextId} not found`
+        `[Host/findAvailableNodeInPool] ❌ Context ${contextId} not found`,
       );
       return null;
     }
@@ -766,12 +766,12 @@ export function createAndroidHost(): Host {
       }
       if (batchStack.length) {
         batchStack[batchStack.length - 1].operations.push(
-          ...context.operations
+          ...context.operations,
         );
         return;
       }
       if (!context.operations.length) return;
-      
+
       const payload = {
         meta: context.meta,
         operations: context.operations,
@@ -783,7 +783,7 @@ export function createAndroidHost(): Host {
         (ui as any).applyBatchTyped(payload);
         return;
       }
-      
+
       throw new Error("Typed batch is required for Android host");
     },
 
@@ -802,7 +802,7 @@ export function createAndroidHost(): Host {
 
       console.log(
         `[Host/Recycling] 🔍 Container ${containerId} has ${containerChildren.length} children:`,
-        containerChildren.map((id) => `${id}(${TYPES.get(id)})`).join(", ")
+        containerChildren.map((id) => `${id}(${TYPES.get(id)})`).join(", "),
       );
 
       let markedCount = 0;
@@ -859,7 +859,7 @@ export function createAndroidHost(): Host {
       contextId: string,
       type: HostNode["type"],
       itemKey: string,
-      itemIndex: number
+      itemIndex: number,
     ): HostNode | null {
       const context = RECYCLING_CONTEXTS.get(contextId);
       if (!context) {
@@ -896,7 +896,7 @@ export function createAndroidHost(): Host {
       node: HostNode,
       itemKey: string,
       itemIndex: number,
-      props: Record<string, any>
+      props: Record<string, any>,
     ) {
       const contextId = NODE_TO_CONTEXT.get(node.id);
       if (!contextId) {

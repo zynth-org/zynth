@@ -3,6 +3,8 @@ package com.zynth.kit.core
 import android.graphics.Typeface
 import android.os.Handler
 import android.os.Looper
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import android.os.SystemClock
 import android.view.Choreographer
 import android.view.Gravity
@@ -600,6 +602,63 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
           if (i + 1 >= ops.size) return
           val parentId = ops[i++].toInt()
           val childId = ops[i++].toInt()
+          removeChild(parentId, childId)
+        }
+        else -> return
+      }
+    }
+    endBatch()
+  }
+
+  fun applyBatchTypedBuffer(buffer: ByteBuffer, opCount: Int, strings: Array<String?>) {
+    val ops = buffer.order(ByteOrder.nativeOrder())
+    if (Looper.myLooper() != Looper.getMainLooper()) {
+      val copied = DoubleArray(opCount)
+      for (i in 0 until opCount) {
+        copied[i] = ops.getDouble(i * 8)
+      }
+      runOnMain { applyBatchTypedPacked(copied, strings) }
+      return
+    }
+    beginBatch()
+    var i = 0
+    fun read(idx: Int): Double = ops.getDouble(idx * 8)
+    while (i < opCount) {
+      val opcode = read(i++).toInt()
+      when (opcode) {
+        1 -> { // setProp
+          if (i + 3 >= opCount) return
+          val nodeId = read(i++).toInt()
+          val keyIndex = read(i++).toInt()
+          val valueType = read(i++).toInt()
+          val payload = read(i++)
+          val key = strings.getOrNull(keyIndex) ?: ""
+          val value = when (valueType) {
+            1 -> payload.toString()
+            2 -> strings.getOrNull(payload.toInt())
+            3 -> if (payload != 0.0) "true" else "false"
+            else -> "null"
+          }
+          setProp(nodeId, key, value)
+        }
+        2 -> { // setText
+          if (i + 1 >= opCount) return
+          val nodeId = read(i++).toInt()
+          val textIndex = read(i++).toInt()
+          val text = strings.getOrNull(textIndex) ?: ""
+          setText(nodeId, text)
+        }
+        3 -> { // insertChild
+          if (i + 2 >= opCount) return
+          val parentId = read(i++).toInt()
+          val childId = read(i++).toInt()
+          val index = read(i++).toInt()
+          insertChild(parentId, childId, index)
+        }
+        4 -> { // removeChild
+          if (i + 1 >= opCount) return
+          val parentId = read(i++).toInt()
+          val childId = read(i++).toInt()
           removeChild(parentId, childId)
         }
         else -> return

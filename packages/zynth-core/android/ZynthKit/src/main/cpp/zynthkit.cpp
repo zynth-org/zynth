@@ -12,6 +12,7 @@
 #include <string>
 #include <unordered_map>
 #include <atomic>
+#include <cstring>
 #include <vector>
 
 using namespace facebook::jsi;
@@ -64,6 +65,7 @@ struct RuntimeState {
   jmethodID setHandler = nullptr;
   jmethodID applyBatch = nullptr;
   jmethodID applyBatchTypedPacked = nullptr;
+  jmethodID applyBatchTypedBuffer = nullptr;
   jmethodID setSurface = nullptr;
   jmethodID flush = nullptr;
   jmethodID scheduleTimer = nullptr;
@@ -944,19 +946,64 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
         Value opsPackedVal = payload.getProperty(rt, "ops");
         Value stringTableVal = payload.getProperty(rt, "stringTable");
         if (opsPackedVal.isObject() && stringTableVal.isObject()) {
-          if (!state->applyBatchTypedPacked) return Value::undefined();
-          Array opsPacked = opsPackedVal.asObject(rt).asArray(rt);
-          Array stringTable = stringTableVal.asObject(rt).asArray(rt);
+          Object opsObject = opsPackedVal.asObject(rt);
+          Object stringTableObject = stringTableVal.asObject(rt);
+          if (!stringTableObject.isArray(rt)) return Value::undefined();
+          Array stringTable = stringTableObject.asArray(rt);
           const size_t stringCount = stringTable.length(rt);
-          const size_t opCount = opsPacked.length(rt);
-          jdoubleArray jOps = env->NewDoubleArray(static_cast<jsize>(opCount));
-          if (!jOps) return Value::undefined();
-          std::vector<jdouble> opsBuffer(opCount);
-          for (size_t i = 0; i < opCount; i++) {
-            Value opVal = opsPacked.getValueAtIndex(rt, i);
-            opsBuffer[i] = opVal.isNumber() ? opVal.asNumber() : 0.0;
+          jdoubleArray jOps = nullptr;
+          if (opsObject.isArrayBuffer(rt)) {
+            ArrayBuffer buffer = opsObject.getArrayBuffer(rt);
+            const size_t byteLength = buffer.size(rt);
+            const size_t opCount = byteLength / sizeof(double);
+            if (state->applyBatchTypedBuffer) {
+              jobject jBuffer = env->NewDirectByteBuffer(buffer.data(rt), static_cast<jlong>(byteLength));
+              if (!jBuffer) return Value::undefined();
+
+              jclass stringClass = env->FindClass("java/lang/String");
+              jobjectArray jStrings = env->NewObjectArray(static_cast<jsize>(stringCount), stringClass, nullptr);
+              env->DeleteLocalRef(stringClass);
+              for (size_t i = 0; i < stringCount; i++) {
+                Value entry = stringTable.getValueAtIndex(rt, i);
+                if (entry.isString()) {
+                  std::string utf8 = entry.asString(rt).utf8(rt);
+                  jstring jStr = env->NewStringUTF(utf8.c_str());
+                  env->SetObjectArrayElement(jStrings, static_cast<jsize>(i), jStr);
+                  env->DeleteLocalRef(jStr);
+                }
+              }
+
+              env->CallVoidMethod(state->uiManager, state->applyBatchTypedBuffer, jBuffer,
+                                  static_cast<jint>(opCount), jStrings);
+              env->DeleteLocalRef(jBuffer);
+              env->DeleteLocalRef(jStrings);
+              return Value::undefined();
+            }
+
+            if (!state->applyBatchTypedPacked) return Value::undefined();
+            jOps = env->NewDoubleArray(static_cast<jsize>(opCount));
+            if (!jOps) return Value::undefined();
+            if (opCount > 0) {
+              const auto *data = reinterpret_cast<const uint8_t *>(buffer.data(rt));
+              std::vector<jdouble> opsBuffer(opCount);
+              std::memcpy(opsBuffer.data(), data, opCount * sizeof(double));
+              env->SetDoubleArrayRegion(jOps, 0, static_cast<jsize>(opCount), opsBuffer.data());
+            }
+          } else if (opsObject.isArray(rt)) {
+            if (!state->applyBatchTypedPacked) return Value::undefined();
+            Array opsPacked = opsObject.asArray(rt);
+            const size_t opCount = opsPacked.length(rt);
+            jOps = env->NewDoubleArray(static_cast<jsize>(opCount));
+            if (!jOps) return Value::undefined();
+            std::vector<jdouble> opsBuffer(opCount);
+            for (size_t i = 0; i < opCount; i++) {
+              Value opVal = opsPacked.getValueAtIndex(rt, i);
+              opsBuffer[i] = opVal.isNumber() ? opVal.asNumber() : 0.0;
+            }
+            env->SetDoubleArrayRegion(jOps, 0, static_cast<jsize>(opCount), opsBuffer.data());
+          } else {
+            return Value::undefined();
           }
-          env->SetDoubleArrayRegion(jOps, 0, static_cast<jsize>(opCount), opsBuffer.data());
 
           jclass stringClass = env->FindClass("java/lang/String");
           jobjectArray jStrings = env->NewObjectArray(static_cast<jsize>(stringCount), stringClass, nullptr);
@@ -1154,6 +1201,8 @@ Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlon
   state->applyBatch = env->GetMethodID(state->uiClass, "applyBatch", "(Ljava/lang/String;)V");
   state->applyBatchTypedPacked =
       env->GetMethodID(state->uiClass, "applyBatchTypedPacked", "([D[Ljava/lang/String;)V");
+  state->applyBatchTypedBuffer =
+      env->GetMethodID(state->uiClass, "applyBatchTypedBuffer", "(Ljava/nio/ByteBuffer;I[Ljava/lang/String;)V");
   state->setSurface = env->GetMethodID(state->uiClass, "setSurface", "(I)V");
   state->flush = env->GetMethodID(state->uiClass, "flush", "()V");
   state->scheduleTimer = env->GetMethodID(state->uiClass, "scheduleTimer", "(JIIZ)V");
