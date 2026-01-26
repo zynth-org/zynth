@@ -617,7 +617,11 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     batchDepth -= 1
     if (batchDepth == 0 && batchNeedsLayout) {
       batchNeedsLayout = false
-      requestLayout()
+      if (Looper.myLooper() == Looper.getMainLooper()) {
+        handleFrame()
+      } else {
+        requestLayout()
+      }
     }
   }
 

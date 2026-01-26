@@ -35,6 +35,7 @@ class ZynthYogaLayout {
   fun ensureNode(id: Int, view: View) {
     if (nodes.containsKey(id)) return
     val node = YogaNodeFactory.create(config)
+    node.data = view
     val handler = measureHandlers[id]
     if (handler != null) {
       attachMeasureHandler(node, handler)
@@ -54,6 +55,7 @@ class ZynthYogaLayout {
   fun removeNode(id: Int) {
     val node = nodes.remove(id) ?: return
     node.owner?.removeChildAt(node.owner?.indexOf(node) ?: 0)
+    node.data = null
     node.reset()
   }
 
@@ -196,7 +198,7 @@ class ZynthYogaLayout {
     rootNode.setHeight(rootHeight.toFloat())
     rootNode.calculateLayout(rootWidth.toFloat(), rootHeight.toFloat())
     for ((id, node) in nodes) {
-      val view = views[id] ?: continue
+      val view = node.data as? View ?: continue
       val left = node.layoutX.toInt()
       val top = node.layoutY.toInt()
       val width = node.layoutWidth.toInt()
