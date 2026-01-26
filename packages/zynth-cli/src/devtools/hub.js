@@ -100,13 +100,35 @@ function createDevtoolsHub({
       process.stdout.write(`${JSON.stringify(event)}\n`);
       return;
     }
+    const data = event.data;
+    const dataIsObject = data && typeof data === "object";
+    const dataMessage =
+      dataIsObject && typeof data.message === "string" ? data.message : null;
+    const dataStack =
+      dataIsObject && typeof data.stack === "string" ? data.stack : null;
+    const dataContext =
+      dataIsObject && typeof data.context === "string" ? data.context : null;
+    const dataRuntime =
+      dataIsObject && typeof data.runtime === "string" ? data.runtime : null;
     const level = event.level ? String(event.level).toUpperCase() : "LOG";
     const tag = event.tag ? String(event.tag) : "devtools";
     const topic = event.topic ? String(event.topic) : "unknown";
-    const message =
-      typeof event.data === "string"
-        ? event.data
-        : JSON.stringify(event.data ?? "");
+    let message;
+    if (dataMessage) {
+      const contextSuffix = dataContext ? ` (${dataContext})` : "";
+      const stackSuffix = dataStack ? `\n${dataStack}` : "";
+      message = `${dataMessage}${contextSuffix}${stackSuffix}`;
+    } else if (typeof data === "string") {
+      message = data;
+    } else if (dataIsObject) {
+      try {
+        message = JSON.stringify(data);
+      } catch {
+        message = String(data);
+      }
+    } else {
+      message = String(data ?? "");
+    }
     const ts = event.ts ? new Date(event.ts).toISOString() : "";
     const prefix = ts ? `[${ts}]` : "";
     const styledLevel = formatLevel(level);

@@ -8,7 +8,11 @@ import {
   wrapZynthAppFns,
 } from "./hmr";
 import { setActiveSurface } from "./surface";
-import { ensureDevtoolsBridge, installDevtoolsConsole } from "./devtools";
+import {
+  ensureDevtoolsBridge,
+  installDevtoolsConsole,
+  installDevtoolsErrorHandlers,
+} from "./devtools";
 
 if (typeof globalThis.queueMicrotask !== "function") {
   globalThis.queueMicrotask = function (callback) {
@@ -39,6 +43,7 @@ export function start(App: () => any): () => void {
   ensureNativeHMRHooks();
   ensureDevtoolsBridge();
   installDevtoolsConsole();
+  installDevtoolsErrorHandlers();
   const g = globalThis as any;
 
   currentApp = App;

@@ -2,6 +2,10 @@
 #import "ZynthHermesRuntimeHost.h"
 #import "ZynthUIManager.h"
 
+@interface ZynthRuntime (Modules)
+- (void)installDefaultModules;
+@end
+
 @interface ZynthRuntime ()
 @property(nonatomic, weak) UIView *rootView;
 @property(nonatomic, strong) ZynthUIManager *manager;
@@ -16,6 +20,7 @@
     _rootView = rootView;
     _manager = [[ZynthUIManager alloc] initWithRootView:rootView];
     _runtime = [[ZynthHermesRuntimeHost alloc] initWithUIManager:_manager];
+    [self installDefaultModules];
     __weak ZynthHermesRuntimeHost *weakRuntime = _runtime;
     [_manager setFrameProfiler:^(NSTimeInterval frameMs,
                                  NSTimeInterval layoutMs,

@@ -7,7 +7,6 @@
 #import "ZynthViewHost.h"
 #import "ZynthHexColor.h"
 #import "ZynthUIManager+Components.h"
-#import "ZynthUIManager+Internal.h"
 #import "ZynthNode.h"
 #import "ZynthComponentRegistry.h"
 #import "ZynthComponentAPI.h"

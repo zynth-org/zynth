@@ -18,6 +18,10 @@ NS_ASSUME_NONNULL_BEGIN
 - (id _Nullable)callGlobal:(NSString *)name args:(NSArray *)args;
 
 - (void)installModuleBridge:(id<ZynthModuleBridge>)bridge constants:(NSDictionary<NSString *, id> *)constants;
+- (void)emitDevtoolsEventWithTopic:(NSString *)topic
+                             level:(NSString *_Nullable)level
+                               tag:(NSString *_Nullable)tag
+                              data:(NSDictionary *_Nullable)data;
 
 @end
 

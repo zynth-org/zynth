@@ -1,4 +1,6 @@
 #import "ZynthUIBindings.h"
+#import "ZynthHermesRuntimeHost.h"
+#import "ZynthRuntimeHostRegistry.h"
 #import "ZynthUIManager.h"
 
 #import <jsi/jsi.h>
@@ -223,6 +225,20 @@ extern "C" void ZynthUIInvokePressEvent(int nodeId,
     try {
       handler->call(rt, payload);
     } catch (const JSError &error) {
+      ZynthHermesRuntimeHost *host = ZynthGetCurrentRuntimeHost();
+      if (host) {
+        NSString *message = [NSString stringWithUTF8String:error.getMessage().c_str()];
+        NSString *stack = [NSString stringWithUTF8String:error.getStack().c_str()];
+        NSString *event = [NSString stringWithUTF8String:eventName.c_str()];
+        [host emitDevtoolsEventWithTopic:@"error/js"
+                                   level:@"error"
+                                     tag:@"js"
+                                    data:@{
+                                      @"context": event ?: @"press",
+                                      @"message": message ?: @"JS error",
+                                      @"stack": stack ?: @"",
+                                    }];
+      }
       if (DEBUG_RUNTIME) {
         NSString *message = [NSString stringWithUTF8String:error.getMessage().c_str()];
         NSString *stack = [NSString stringWithUTF8String:error.getStack().c_str()];
@@ -277,6 +293,19 @@ extern "C" void ZynthUIInvokeLayoutEvent(int nodeId,
     try {
       handler->call(rt, payload);
     } catch (const JSError &error) {
+      ZynthHermesRuntimeHost *host = ZynthGetCurrentRuntimeHost();
+      if (host) {
+        NSString *message = [NSString stringWithUTF8String:error.getMessage().c_str()];
+        NSString *stack = [NSString stringWithUTF8String:error.getStack().c_str()];
+        [host emitDevtoolsEventWithTopic:@"error/js"
+                                   level:@"error"
+                                     tag:@"js"
+                                    data:@{
+                                      @"context": @"onLayout",
+                                      @"message": message ?: @"JS error",
+                                      @"stack": stack ?: @"",
+                                    }];
+      }
       if (DEBUG_RUNTIME) {
         NSString *message = [NSString stringWithUTF8String:error.getMessage().c_str()];
         NSString *stack = [NSString stringWithUTF8String:error.getStack().c_str()];
@@ -325,6 +354,20 @@ extern "C" void ZynthUIInvokeEvent(int nodeId, const char *name, NSDictionary *p
         handler->call(rt, payloadValue);
       }
     } catch (const JSError &error) {
+      ZynthHermesRuntimeHost *host = ZynthGetCurrentRuntimeHost();
+      if (host) {
+        NSString *message = [NSString stringWithUTF8String:error.getMessage().c_str()];
+        NSString *stack = [NSString stringWithUTF8String:error.getStack().c_str()];
+        NSString *event = [NSString stringWithUTF8String:eventName.c_str()];
+        [host emitDevtoolsEventWithTopic:@"error/js"
+                                   level:@"error"
+                                     tag:@"js"
+                                    data:@{
+                                      @"context": event ?: @"event",
+                                      @"message": message ?: @"JS error",
+                                      @"stack": stack ?: @"",
+                                    }];
+      }
       if (DEBUG_RUNTIME) {
         NSString *message = [NSString stringWithUTF8String:error.getMessage().c_str()];
         NSString *stack = [NSString stringWithUTF8String:error.getStack().c_str()];

@@ -19,9 +19,6 @@ Pod::Spec.new do |s|
       ${PODS_CONFIGURATION_BUILD_DIR}/ZynthKit/ZynthKit.framework/Headers
       ${PODS_ROOT}/Headers/Public/ZynthKit
       ${PODS_ROOT}/Headers/Private/ZynthKit
-      ${PODS_TARGET_SRCROOT}/../zynth-ios/ios/ZynthKit/include
-      ${PODS_TARGET_SRCROOT}/../zynth-ios/ios/ZynthKit/src
-      ${PODS_TARGET_SRCROOT}/../zynth-ios/ios/ZynthKit
     ].join(' ')
   }
 end

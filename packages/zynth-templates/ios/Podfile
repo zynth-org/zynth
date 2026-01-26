@@ -32,6 +32,29 @@ post_install do |installer|
       config.build_settings['OTHER_CPLUSPLUSFLAGS'] = "#{other_cxx} -std=c++17 -Wno-error"
       config.build_settings['OTHER_CFLAGS'] = "#{other_c} -Wno-error"
       config.build_settings['GCC_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
+
+      header_paths = config.build_settings['HEADER_SEARCH_PATHS']
+      if header_paths
+        cleaned = header_paths
+          .to_s
+          .split(' ')
+          .reject { |p| p.include?('ZynthKit/include') }
+          .reject { |p| p.include?('packages/zynth-core/ios/ZynthKit') }
+          .join(' ')
+        config.build_settings['HEADER_SEARCH_PATHS'] = cleaned
+      end
+
+      if t.name == 'ZynthKit'
+        # Force ZynthKit to compile only against its source headers to avoid
+        # picking up its own built framework headers during the same build.
+        config.build_settings['HEADER_SEARCH_PATHS'] = %w[
+          $(inherited)
+          ${PODS_TARGET_SRCROOT}/ios/ZynthKit
+          ${PODS_TARGET_SRCROOT}/ios/ZynthKit/include
+          ${PODS_TARGET_SRCROOT}/ios/ZynthKit/src
+          ${PODS_ROOT}/hermes-engine/destroot/include
+        ].join(' ')
+      end
     end
   end
 

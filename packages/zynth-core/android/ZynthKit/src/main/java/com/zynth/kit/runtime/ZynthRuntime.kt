@@ -5,6 +5,7 @@ import android.content.res.AssetManager
 import com.facebook.soloader.SoLoader
 import com.zynth.kit.core.ZynthRootView
 import com.zynth.kit.core.ZynthUIManager
+import com.zynth.kit.runtime.modules.DevtoolsModule
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
@@ -27,9 +28,13 @@ class ZynthRuntime(val root: ZynthRootView) {
         JSBridge.callGlobalFrame(runtimePtr, "__zynth_reportFrame", frameMs, layoutMs, overBudget, nodeCount)
       }
     }
+    installDefaultModules()
+    installCrashHandler()
   }
 
   companion object {
+    @Volatile private var crashHandlerInstalled = false
+
     @JvmStatic
     fun initialize(context: Context) {
       SoLoader.init(context, false)
@@ -37,7 +42,28 @@ class ZynthRuntime(val root: ZynthRootView) {
   }
 
   fun installDefaultModules() {
-    // Phase 1 scaffold.
+    DevtoolsModule.start(root.context)
+    installModules(listOf(DevtoolsModule(root.context)))
+  }
+
+  private fun installCrashHandler() {
+    if (crashHandlerInstalled) return
+    crashHandlerInstalled = true
+    val previous = Thread.getDefaultUncaughtExceptionHandler()
+    Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+      val message = throwable.message ?: "Uncaught exception"
+      val stack = throwable.stackTraceToString()
+      val event = JSONObject()
+        .put("topic", "crash/java")
+        .put("level", "error")
+        .put("tag", "crash")
+        .put("data", "$message\n$stack")
+      val envelope = JSONObject()
+        .put("type", "pub")
+        .put("event", event)
+      DevtoolsModule.emitNativeEvent(envelope.toString())
+      previous?.uncaughtException(thread, throwable)
+    }
   }
 
   fun installModules(modules: List<ZynthModule>) {

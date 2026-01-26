@@ -1,4 +1,5 @@
 #import "ZynthUICommandsRegistry.h"
+#import "ZynthRuntimeHostRegistry.h"
 #import <jsi/jsi.h>
 
 using namespace facebook::jsi;
@@ -8,19 +9,18 @@ static std::vector<ZynthUICommandsInstaller> &ZynthUICommandsInstallers() {
   return installers;
 }
 
-static ZynthHermesRuntimeHost *gCurrentHost = nullptr;
 static Runtime *gCurrentRuntime = nullptr;
 
 void ZynthRegisterUICommandsInstaller(ZynthUICommandsInstaller installer) {
   if (!installer) return;
   ZynthUICommandsInstallers().push_back(installer);
-  if (gCurrentHost && gCurrentRuntime) {
-    installer(gCurrentHost, *gCurrentRuntime);
+  ZynthHermesRuntimeHost *host = ZynthGetCurrentRuntimeHost();
+  if (host && gCurrentRuntime) {
+    installer(host, *gCurrentRuntime);
   }
 }
 
 void ZynthInstallUICommandsRegistry(ZynthHermesRuntimeHost *host, Runtime &rt) {
-  gCurrentHost = host;
   gCurrentRuntime = &rt;
   Object commands(rt);
   rt.global().setProperty(rt, "__zynth_ui_commands", commands);

@@ -1,4 +1,5 @@
 #import "ZynthHermesRuntimeHost.h"
+#import "ZynthRuntimeHostRegistry.h"
 #import "ZynthRuntime.h"
 #import "ZynthUIBindings.h"
 #import "ZynthUIManager.h"
@@ -81,16 +82,28 @@ static Value objCToJSValue(Runtime &rt, id obj) {
   return Value::undefined();
 }
 
-static void installConsole(Runtime &rt) {
+static void installConsole(Runtime &rt, ZynthHermesRuntimeHost *host, NSString *runtimeLabel) {
   auto logFn = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "log"), 1,
-      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+      [host, runtimeLabel](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
         NSMutableArray<NSString *> *parts = [NSMutableArray arrayWithCapacity:count];
         for (size_t i = 0; i < count; i++) {
           std::string str = valueToString(rt, args[i]);
           [parts addObject:[NSString stringWithUTF8String:str.c_str()]];
         }
-        NSLog(@"[ZynthJS] %@", [parts componentsJoinedByString:@" "]);
+        NSString *message = [parts componentsJoinedByString:@" "];
+        NSLog(@"[ZynthJS] %@", message);
+        if (host) {
+          NSMutableDictionary *data = [NSMutableDictionary dictionary];
+          data[@"message"] = message ?: @"";
+          if (runtimeLabel) {
+            data[@"runtime"] = runtimeLabel;
+          }
+          [host emitDevtoolsEventWithTopic:@"log/console"
+                                     level:@"log"
+                                       tag:@"console"
+                                      data:data];
+        }
         return Value::undefined();
       });
 
@@ -99,6 +112,8 @@ static void installConsole(Runtime &rt) {
   console.setProperty(rt, "warn", logFn);
   console.setProperty(rt, "error", logFn);
   rt.global().setProperty(rt, "console", console);
+  // Mark that console already emits to devtools natively to avoid double-emission in JS.
+  rt.global().setProperty(rt, "__ZYNTH_NATIVE_CONSOLE_DEVTOOLS__", Value(true));
 }
 
 static void installModuleBridge(Runtime &rt) {
@@ -165,6 +180,7 @@ static void installGlobals(Runtime &rt) {
   std::unique_ptr<facebook::hermes::HermesRuntime> _runtime;
   ZynthWorklets *_worklets;
   dispatch_queue_t _jsQueue;
+  __weak id<ZynthModuleBridge> _moduleBridge;
   struct Timer {
     int id;
     dispatch_source_t source;
@@ -186,7 +202,8 @@ static void installGlobals(Runtime &rt) {
     ZynthUISetJSQueue(_jsQueue);
     dispatch_sync(_jsQueue, ^{
       _runtime = facebook::hermes::makeHermesRuntime();
-      installConsole(*_runtime);
+      ZynthSetCurrentRuntimeHost(self);
+      installConsole(*_runtime, self, @"js");
       installGlobals(*_runtime);
       installModuleBridge(*_runtime);
       [self installTimers];
@@ -202,6 +219,10 @@ static void installGlobals(Runtime &rt) {
   return self;
 }
 
+- (void)dealloc {
+  ZynthSetCurrentRuntimeHost(nil);
+}
+
 - (void)installModuleBridge:(id<ZynthModuleBridge>)bridge constants:(NSDictionary<NSString *,id> *)constants {
   if (dispatch_get_specific(kZynthJSQueueKey) != kZynthJSQueueKey) {
     dispatch_sync(_jsQueue, ^{
@@ -209,6 +230,7 @@ static void installGlobals(Runtime &rt) {
     });
     return;
   }
+  _moduleBridge = bridge;
   Runtime &rt = *_runtime;
 
   __weak id<ZynthModuleBridge> weakBridge = bridge;
@@ -252,6 +274,28 @@ static void installGlobals(Runtime &rt) {
   }
 }
 
+- (void)emitDevtoolsEventWithTopic:(NSString *)topic
+                             level:(NSString *)level
+                               tag:(NSString *)tag
+                              data:(NSDictionary *)data {
+  id<ZynthModuleBridge> bridge = _moduleBridge;
+  if (!bridge || topic.length == 0) {
+    return;
+  }
+  NSMutableDictionary *event = [NSMutableDictionary dictionary];
+  event[@"topic"] = topic;
+  if (level.length > 0) {
+    event[@"level"] = level;
+  }
+  if (tag.length > 0) {
+    event[@"tag"] = tag;
+  }
+  if (data) {
+    event[@"data"] = data;
+  }
+  [bridge callModule:@"Devtools" method:@"emit" args:event];
+}
+
 - (BOOL)evaluateString:(NSString *)code
              sourceURL:(NSString *)sourceURL
                 error:(NSError *_Nullable *_Nullable)error {
@@ -277,6 +321,15 @@ static void installGlobals(Runtime &rt) {
       ok = YES;
     } catch (const JSError &ex) {
       NSString *message = [NSString stringWithUTF8String:ex.getMessage().c_str()];
+      NSString *stack = [NSString stringWithUTF8String:ex.getStack().c_str()];
+      [strongSelf emitDevtoolsEventWithTopic:@"error/js"
+                                       level:@"error"
+                                         tag:@"js"
+                                        data:@{
+                                          @"context": sourceURL ?: @"<inline>",
+                                          @"message": message ?: @"JS error",
+                                          @"stack": stack ?: @"",
+                                        }];
       NSDictionary *info = @{ NSLocalizedDescriptionKey : message ?: @"JS error" };
       localError = [NSError errorWithDomain:@"ZynthHermes" code:1 userInfo:info];
       ok = NO;
@@ -365,9 +418,17 @@ static void installGlobals(Runtime &rt) {
   try {
     fn.call(rt, argsPtr, callArgs.size());
   } catch (const JSError &error) {
+    NSString *message = [NSString stringWithUTF8String:error.getMessage().c_str()];
+    NSString *stack = [NSString stringWithUTF8String:error.getStack().c_str()];
+    [self emitDevtoolsEventWithTopic:@"error/js"
+                               level:@"error"
+                                 tag:@"js"
+                                data:@{
+                                  @"context": name ?: @"callGlobal",
+                                  @"message": message ?: @"JS error",
+                                  @"stack": stack ?: @"",
+                                }];
     if (DEBUG_RUNTIME) {
-      NSString *message = [NSString stringWithUTF8String:error.getMessage().c_str()];
-      NSString *stack = [NSString stringWithUTF8String:error.getStack().c_str()];
       NSLog(@"[ZynthJS] callGlobal error for %@: %@", name, message);
       if (stack.length > 0) {
         NSLog(@"[ZynthJS] stack: %@", stack);
@@ -439,9 +500,17 @@ static void installGlobals(Runtime &rt) {
           try {
             timerRef.fn->call(rt, argsPtr, timerRef.args.size());
           } catch (const JSError &error) {
+            NSString *message = [NSString stringWithUTF8String:error.getMessage().c_str()];
+            NSString *stack = [NSString stringWithUTF8String:error.getStack().c_str()];
+            [host emitDevtoolsEventWithTopic:@"error/js"
+                                       level:@"error"
+                                         tag:@"js"
+                                        data:@{
+                                          @"context": @"setTimeout",
+                                          @"message": message ?: @"JS error",
+                                          @"stack": stack ?: @"",
+                                        }];
             if (DEBUG_RUNTIME) {
-              NSString *message = [NSString stringWithUTF8String:error.getMessage().c_str()];
-              NSString *stack = [NSString stringWithUTF8String:error.getStack().c_str()];
               NSLog(@"[ZynthJS] setTimeout error: %@", message);
               if (stack.length > 0) {
                 NSLog(@"[ZynthJS] stack: %@", stack);
@@ -513,9 +582,17 @@ static void installGlobals(Runtime &rt) {
           try {
             timerRef.fn->call(rt, argsPtr, timerRef.args.size());
           } catch (const JSError &error) {
+            NSString *message = [NSString stringWithUTF8String:error.getMessage().c_str()];
+            NSString *stack = [NSString stringWithUTF8String:error.getStack().c_str()];
+            [host emitDevtoolsEventWithTopic:@"error/js"
+                                       level:@"error"
+                                         tag:@"js"
+                                        data:@{
+                                          @"context": @"setInterval",
+                                          @"message": message ?: @"JS error",
+                                          @"stack": stack ?: @"",
+                                        }];
             if (DEBUG_RUNTIME) {
-              NSString *message = [NSString stringWithUTF8String:error.getMessage().c_str()];
-              NSString *stack = [NSString stringWithUTF8String:error.getStack().c_str()];
               NSLog(@"[ZynthJS] setInterval error: %@", message);
               if (stack.length > 0) {
                 NSLog(@"[ZynthJS] stack: %@", stack);

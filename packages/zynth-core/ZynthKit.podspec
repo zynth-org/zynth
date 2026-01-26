@@ -10,7 +10,6 @@ Pod::Spec.new do |s|
   s.source       = { :git => "https://github.com/zynth/zynth.git", :tag => s.version.to_s }
   s.source_files = "ios/ZynthKit/include/**/*.{h}", "ios/ZynthKit/src/**/*.{h,m,mm,cpp,c,swift}"
   s.public_header_files = "ios/ZynthKit/include/**/*.h"
-  s.header_mappings_dir = "ios/ZynthKit/include"
 
   s.frameworks   = "UIKit", "Foundation"
   s.dependency   "Yoga"
@@ -22,11 +21,10 @@ Pod::Spec.new do |s|
     'DEFINES_MODULE' => 'YES',
     'CLANG_CXX_LANGUAGE_STANDARD' => 'c++17',
     'CLANG_CXX_LIBRARY' => 'libc++',
-    'OTHER_CFLAGS' => '-DHERMES_ENABLE_DEBUGGER=0',
-    'HEADER_SEARCH_PATHS' => '$(inherited) ${PODS_TARGET_SRCROOT}/ios/ZynthKit ${PODS_TARGET_SRCROOT}/ios/ZynthKit/include ${PODS_TARGET_SRCROOT}/ios/ZynthKit/src'
+    'OTHER_CFLAGS' => '-DHERMES_ENABLE_DEBUGGER=0'
   }
   s.user_target_xcconfig = {
-    'HEADER_SEARCH_PATHS' => '$(inherited) ${PODS_ROOT}/Headers/Public ${PODS_ROOT}/Headers/Public/ZynthKit ${PODS_ROOT}/hermes-engine/destroot/include ${PODS_ROOT}/../node_modules/@zynth/core/ios/ZynthKit/include ${PODS_ROOT}/../../node_modules/@zynth/core/ios/ZynthKit/include ${PODS_ROOT}/../../../node_modules/@zynth/core/ios/ZynthKit/include ${PODS_ROOT}/../../../../node_modules/@zynth/core/ios/ZynthKit/include',
+    'HEADER_SEARCH_PATHS' => '$(inherited) ${PODS_ROOT}/Headers/Public ${PODS_ROOT}/Headers/Public/ZynthKit ${PODS_ROOT}/hermes-engine/destroot/include',
     'OTHER_LDFLAGS' => '$(inherited) -lc++'
   }
 end

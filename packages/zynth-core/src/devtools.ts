@@ -1,3 +1,5 @@
+import { getGlobalObject, getModulesBridge, getNativeModule } from "./bridge";
+
 export type ZynthDevtoolsEvent = {
   topic: string;
   ts?: number;
@@ -18,8 +20,8 @@ function shouldEnableDevtools(): boolean {
   if (typeof __DEV__ !== "undefined") {
     return Boolean(__DEV__);
   }
-  const g = globalThis as any;
-  const proc = g.process;
+  const g = getGlobalObject() as any;
+  const proc = g?.process;
   if (proc?.env?.NODE_ENV) {
     return proc.env.NODE_ENV !== "production";
   }
@@ -28,27 +30,56 @@ function shouldEnableDevtools(): boolean {
 
 export function ensureDevtoolsBridge(): ZynthDevtoolsBridge | null {
   if (!shouldEnableDevtools()) return null;
-  const g = globalThis as any;
+  const g = getGlobalObject() as any;
   const existing = g.__ZYNTH_DEVTOOLS__ as ZynthDevtoolsBridge | undefined;
   if (existing?.emit) {
     return existing;
   }
+  const nativeEmitCandidate = getNativeModule<unknown>("__zynth_devtools_emit");
+  const nativeEmit =
+    typeof nativeEmitCandidate === "function"
+      ? (nativeEmitCandidate as (event: ZynthDevtoolsEvent) => void)
+      : null;
+  const nativeIsConnectedCandidate = getNativeModule<unknown>(
+    "__zynth_devtools_isConnected"
+  );
+  const nativeIsConnected =
+    typeof nativeIsConnectedCandidate === "function"
+      ? (nativeIsConnectedCandidate as () => boolean)
+      : null;
 
   const bridge: ZynthDevtoolsBridge = {
     emit(event) {
       if (!event || typeof event !== "object") return;
-      if (typeof g.__modules?.call === "function") {
+      const modulesBridge = getModulesBridge();
+      if (modulesBridge?.call) {
         try {
-          g.__modules.call("Devtools", "emit", event);
+          modulesBridge.call("Devtools", "emit", event);
+          return;
+        } catch {
+          // Devtools transport failures should not break runtime behavior.
+        }
+      }
+      if (nativeEmit) {
+        try {
+          nativeEmit(event);
         } catch {
           // Devtools transport failures should not break runtime behavior.
         }
       }
     },
     isConnected() {
-      if (typeof g.__modules?.callSync === "function") {
+      const modulesBridge = getModulesBridge();
+      if (modulesBridge?.callSync) {
         try {
-          return Boolean(g.__modules.callSync("Devtools", "isConnected", null));
+          return Boolean(modulesBridge.callSync("Devtools", "isConnected", null));
+        } catch {
+          return false;
+        }
+      }
+      if (nativeIsConnected) {
+        try {
+          return Boolean(nativeIsConnected());
         } catch {
           return false;
         }
@@ -87,25 +118,28 @@ function formatConsoleArgs(args: unknown[]): string {
 export function installDevtoolsConsole(): void {
   const bridge = ensureDevtoolsBridge();
   if (!bridge) return;
-  const g = globalThis as any;
+  const g = getGlobalObject() as any;
   if (g.__ZYNTH_DEVTOOLS_CONSOLE_INSTALLED__) return;
   g.__ZYNTH_DEVTOOLS_CONSOLE_INSTALLED__ = true;
 
   const consoleObj = (g.console ||= {});
+  const nativeConsoleOwnsDevtools = Boolean(g.__ZYNTH_NATIVE_CONSOLE_DEVTOOLS__);
   const levels = ["log", "info", "warn", "error", "debug"] as const;
 
   for (const level of levels) {
     const original = consoleObj[level];
     consoleObj[level] = (...args: unknown[]) => {
-      try {
-        bridge.emit({
-          topic: "log/console",
-          level,
-          tag: "console",
-          data: formatConsoleArgs(args),
-        });
-      } catch {
-        // Ignore console bridge failures.
+      if (!nativeConsoleOwnsDevtools) {
+        try {
+          bridge.emit({
+            topic: "log/console",
+            level,
+            tag: "console",
+            data: formatConsoleArgs(args),
+          });
+        } catch {
+          // Ignore console bridge failures.
+        }
       }
       if (typeof original === "function") {
         try {
@@ -123,5 +157,75 @@ export function emitDevtoolsEvent(event: ZynthDevtoolsEvent): void {
     ensureDevtoolsBridge()?.emit(event);
   } catch {
     // Ignore devtools failures.
+  }
+}
+
+
+export function installDevtoolsErrorHandlers(): void {
+  const bridge = ensureDevtoolsBridge();
+  if (!bridge) return;
+  const g = getGlobalObject() as any;
+  if (g.__ZYNTH_DEVTOOLS_ERRORS_INSTALLED__) return;
+  g.__ZYNTH_DEVTOOLS_ERRORS_INSTALLED__ = true;
+
+  const report = (error: unknown, source?: string) => {
+    const err = error as any;
+    const message = String(err?.message || err || "Unknown error");
+    const stack = err?.stack ? String(err.stack) : undefined;
+    bridge.emit({
+      topic: "error/js",
+      level: "error",
+      tag: "js",
+      data: stack ? { message, stack, source } : { message, source },
+    });
+  };
+
+  if (g.ErrorUtils && typeof g.ErrorUtils.setGlobalHandler === "function") {
+    const previous =
+      typeof g.ErrorUtils.getGlobalHandler === "function"
+        ? g.ErrorUtils.getGlobalHandler()
+        : null;
+    g.ErrorUtils.setGlobalHandler((error: unknown, isFatal?: boolean) => {
+      report(error, isFatal ? "fatal" : "nonfatal");
+      if (typeof previous === "function") {
+        try {
+          previous(error, isFatal);
+        } catch {
+          // Ignore error handler failures.
+        }
+      }
+    });
+  }
+
+  if (typeof g.addEventListener === "function") {
+    g.addEventListener("error", (event: any) => {
+      report(event?.error || event?.message || event, "window.error");
+    });
+    g.addEventListener("unhandledrejection", (event: any) => {
+      report(event?.reason || event, "unhandledrejection");
+    });
+    return;
+  }
+
+  if ("onerror" in g) {
+    const previousOnError = g.onerror;
+    g.onerror = (...args: any[]) => {
+      report(args[0], "onerror");
+      if (typeof previousOnError === "function") {
+        return previousOnError(...args);
+      }
+      return false;
+    };
+  }
+
+  if ("onunhandledrejection" in g) {
+    const previousOnRejection = g.onunhandledrejection;
+    g.onunhandledrejection = (event: any) => {
+      report(event?.reason || event, "onunhandledrejection");
+      if (typeof previousOnRejection === "function") {
+        return previousOnRejection(event);
+      }
+      return undefined;
+    };
   }
 }

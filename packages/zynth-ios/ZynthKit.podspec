@@ -1,5 +1,5 @@
 Pod::Spec.new do |s|
-  s.name         = "ZynthKit"
+  s.name         = "ZynthKitLegacy"
   s.version      = "0.0.1"
   s.summary      = "Zynth iOS Host runtime"
   s.license      = { :type => "MIT" }

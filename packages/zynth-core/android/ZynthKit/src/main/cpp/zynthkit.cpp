@@ -13,12 +13,20 @@
 #include <unordered_map>
 #include <atomic>
 #include <cstring>
+#include <signal.h>
+#include <thread>
+#include <unistd.h>
 #include <vector>
 
 using namespace facebook::jsi;
 
 namespace {
 JavaVM *gVm = nullptr;
+int gCrashPipe[2] = {-1, -1};
+std::atomic<bool> gCrashHandlerInstalled{false};
+std::atomic<bool> gCrashThreadStarted{false};
+jclass gDevtoolsClass = nullptr;
+jmethodID gDevtoolsEmitMethod = nullptr;
 
 struct TimerEntry {
   std::shared_ptr<Function> callback;
@@ -57,6 +65,7 @@ struct RuntimeState {
   jobject uiManager = nullptr;
   jclass uiClass = nullptr;
   jclass jsBridgeClass = nullptr;
+  jclass devtoolsClass = nullptr;
   jmethodID createNode = nullptr;
   jmethodID setProp = nullptr;
   jmethodID setText = nullptr;
@@ -72,6 +81,8 @@ struct RuntimeState {
   jmethodID cancelTimer = nullptr;
   jmethodID postRegisterWorklet = nullptr;
   jmethodID postRunWorklet = nullptr;
+  jmethodID devtoolsEmit = nullptr;
+  jmethodID devtoolsIsConnected = nullptr;
   std::shared_ptr<TimerContext> timerContext = std::make_shared<TimerContext>();
   std::shared_ptr<facebook::hermes::HermesRuntime> uiRuntime;
   std::atomic<int> nextWorkletId{1};
@@ -266,40 +277,175 @@ static std::string valueToString(Runtime &rt, const Value &value) {
   return "";
 }
 
-void installConsole(Runtime &rt) {
+std::string jsonEscape(const std::string &value) {
+  std::string out;
+  out.reserve(value.size() + 8);
+  for (unsigned char ch : value) {
+    switch (ch) {
+      case '\"':
+        out += "\\\"";
+        break;
+      case '\\':
+        out += "\\\\";
+        break;
+      case '\b':
+        out += "\\b";
+        break;
+      case '\f':
+        out += "\\f";
+        break;
+      case '\n':
+        out += "\\n";
+        break;
+      case '\r':
+        out += "\\r";
+        break;
+      case '\t':
+        out += "\\t";
+        break;
+      default:
+        if (ch < 0x20) {
+          char buf[7];
+          snprintf(buf, sizeof(buf), "\\u%04x", ch);
+          out += buf;
+        } else {
+          out.push_back(static_cast<char>(ch));
+        }
+        break;
+    }
+  }
+  return out;
+}
+
+void emitDevtoolsEvent(RuntimeState *state,
+                       const std::string &topic,
+                       const std::string &level,
+                       const std::string &tag,
+                       const std::string &data) {
+  if (!state || !state->devtoolsClass || !state->devtoolsEmit) return;
+  JNIEnv *env = getEnv();
+  if (!env) return;
+  std::string payload = std::string("{\"topic\":\"") + jsonEscape(topic) +
+                        "\",\"level\":\"" + jsonEscape(level) +
+                        "\",\"tag\":\"" + jsonEscape(tag) +
+                        "\",\"data\":\"" + jsonEscape(data) + "\"}";
+  jstring jPayload = env->NewStringUTF(payload.c_str());
+  env->CallStaticVoidMethod(state->devtoolsClass, state->devtoolsEmit, jPayload);
+  env->DeleteLocalRef(jPayload);
+}
+
+const char *signalName(int sig) {
+  switch (sig) {
+    case SIGSEGV:
+      return "SIGSEGV";
+    case SIGABRT:
+      return "SIGABRT";
+    case SIGBUS:
+      return "SIGBUS";
+    case SIGILL:
+      return "SIGILL";
+    case SIGFPE:
+      return "SIGFPE";
+    default:
+      return "SIGNAL";
+  }
+}
+
+void crashSignalHandler(int sig, siginfo_t *, void *) {
+  if (gCrashPipe[1] != -1) {
+    char buf[64];
+    int len = snprintf(buf, sizeof(buf), "%s(%d)\n", signalName(sig), sig);
+    if (len > 0) {
+      write(gCrashPipe[1], buf, static_cast<size_t>(len));
+    }
+  }
+  signal(sig, SIG_DFL);
+  raise(sig);
+}
+
+void startCrashWatcherThread() {
+  if (gCrashThreadStarted.exchange(true)) return;
+  std::thread([]() {
+    if (gVm == nullptr) return;
+    JNIEnv *env = nullptr;
+    if (gVm->AttachCurrentThread(&env, nullptr) != JNI_OK || !env) return;
+    char buf[128];
+    while (true) {
+      ssize_t readBytes = read(gCrashPipe[0], buf, sizeof(buf) - 1);
+      if (readBytes <= 0) {
+        break;
+      }
+      buf[readBytes] = '\0';
+      if (!gDevtoolsClass || !gDevtoolsEmitMethod) {
+        continue;
+      }
+      std::string data(buf);
+      std::string payload =
+          std::string("{\"topic\":\"crash/native\",\"level\":\"error\",\"tag\":\"crash\",\"data\":\"") +
+          jsonEscape(data) + "\"}";
+      jstring jPayload = env->NewStringUTF(payload.c_str());
+      env->CallStaticVoidMethod(gDevtoolsClass, gDevtoolsEmitMethod, jPayload);
+      env->DeleteLocalRef(jPayload);
+    }
+    gVm->DetachCurrentThread();
+  }).detach();
+}
+
+void installCrashSignalHandlers() {
+  if (gCrashHandlerInstalled.exchange(true)) return;
+  if (pipe(gCrashPipe) != 0) {
+    return;
+  }
+  startCrashWatcherThread();
+  struct sigaction action;
+  memset(&action, 0, sizeof(action));
+  action.sa_sigaction = crashSignalHandler;
+  sigemptyset(&action.sa_mask);
+  action.sa_flags = SA_SIGINFO | SA_ONSTACK;
+  sigaction(SIGSEGV, &action, nullptr);
+  sigaction(SIGABRT, &action, nullptr);
+  sigaction(SIGBUS, &action, nullptr);
+  sigaction(SIGILL, &action, nullptr);
+  sigaction(SIGFPE, &action, nullptr);
+}
+
+void installConsole(Runtime &rt, RuntimeState *state) {
   auto logFn = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "log"), 1,
-      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+      [state](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
         std::string message;
         for (size_t i = 0; i < count; i++) {
           if (i > 0) message += " ";
           message += valueToString(rt, args[i]);
         }
         __android_log_print(ANDROID_LOG_DEBUG, "ZynthJS", "%s", message.c_str());
+        emitDevtoolsEvent(state, "log/console", "log", "console", message);
         return Value::undefined();
       });
 
   auto warnFn = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "warn"), 1,
-      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+      [state](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
         std::string message;
         for (size_t i = 0; i < count; i++) {
           if (i > 0) message += " ";
           message += valueToString(rt, args[i]);
         }
         __android_log_print(ANDROID_LOG_WARN, "ZynthJS", "%s", message.c_str());
+        emitDevtoolsEvent(state, "log/console", "warn", "console", message);
         return Value::undefined();
       });
 
   auto errorFn = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "error"), 1,
-      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+      [state](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
         std::string message;
         for (size_t i = 0; i < count; i++) {
           if (i > 0) message += " ";
           message += valueToString(rt, args[i]);
         }
         __android_log_print(ANDROID_LOG_ERROR, "ZynthJS", "%s", message.c_str());
+        emitDevtoolsEvent(state, "log/console", "error", "console", message);
         return Value::undefined();
       });
 
@@ -363,6 +509,66 @@ void installGlobals(Runtime &rt) {
 
   globalThis.setProperty(rt, "queueMicrotask", queueMicrotaskFn);
   globalThis.setProperty(rt, "setImmediate", setImmediateFn);
+}
+
+std::optional<std::string> stringifyDevtoolsPayload(Runtime &rt, const Value &value) {
+  if (value.isString()) return value.asString(rt).utf8(rt);
+  if (value.isNumber()) return std::to_string(value.asNumber());
+  if (value.isBool()) return value.getBool() ? "true" : "false";
+  if (value.isNull()) return "null";
+  if (value.isUndefined()) return std::nullopt;
+  if (value.isObject()) {
+    try {
+      Object json = rt.global().getPropertyAsObject(rt, "JSON");
+      Function stringify = json.getPropertyAsFunction(rt, "stringify");
+      Value jsonStr = stringify.call(rt, value);
+      if (jsonStr.isString()) {
+        return jsonStr.asString(rt).utf8(rt);
+      }
+    } catch (...) {
+      return std::nullopt;
+    }
+  }
+  return std::nullopt;
+}
+
+void installDevtoolsBridge(Runtime &rt, RuntimeState *state) {
+  if (!state) return;
+  Object globalThis = rt.global();
+
+  auto emitFn = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "__zynth_devtools_emit"), 1,
+      [state](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (!state || !state->devtoolsClass || !state->devtoolsEmit || count < 1) {
+          __android_log_print(ANDROID_LOG_WARN, "ZynthDevtools", "emit skipped (no class/method or args)");
+          return Value::undefined();
+        }
+        auto payload = stringifyDevtoolsPayload(rt, args[0]);
+        if (!payload || payload->empty()) return Value::undefined();
+        JNIEnv *env = getEnv();
+        if (!env) return Value::undefined();
+        jstring jPayload = env->NewStringUTF(payload->c_str());
+        __android_log_print(ANDROID_LOG_DEBUG, "ZynthDevtools", "emit payload=%s", payload->c_str());
+        env->CallStaticVoidMethod(state->devtoolsClass, state->devtoolsEmit, jPayload);
+        env->DeleteLocalRef(jPayload);
+        return Value::undefined();
+      });
+
+  auto isConnectedFn = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "__zynth_devtools_isConnected"), 0,
+      [state](Runtime &, const Value &, const Value *, size_t) -> Value {
+        if (!state || !state->devtoolsClass || !state->devtoolsIsConnected) {
+          return Value(false);
+        }
+        JNIEnv *env = getEnv();
+        if (!env) return Value(false);
+        jboolean connected =
+            env->CallStaticBooleanMethod(state->devtoolsClass, state->devtoolsIsConnected);
+        return Value(static_cast<bool>(connected));
+      });
+
+  globalThis.setProperty(rt, "__zynth_devtools_emit", emitFn);
+  globalThis.setProperty(rt, "__zynth_devtools_isConnected", isConnectedFn);
 }
 
 std::shared_ptr<RuntimeState> sharedStateFor(facebook::hermes::HermesRuntime *runtime) {
@@ -595,7 +801,7 @@ void ensureUIRuntime(const std::shared_ptr<RuntimeState> &state) {
   if (!state) return;
   if (state->uiRuntime) return;
   state->uiRuntime = facebook::hermes::makeHermesRuntime();
-  installConsole(*state->uiRuntime);
+  installConsole(*state->uiRuntime, state.get());
   installGlobals(*state->uiRuntime);
   installSharedSignals(*state->uiRuntime, state.get());
   zynth::kit::installUICommandsRegistry(state, *state->uiRuntime);
@@ -1177,6 +1383,7 @@ Java_com_zynth_kit_runtime_JSBridge_destroyHermesRuntime(JNIEnv *, jobject, jlon
         if (it->second->uiManager) env->DeleteGlobalRef(it->second->uiManager);
         if (it->second->uiClass) env->DeleteGlobalRef(it->second->uiClass);
         if (it->second->jsBridgeClass) env->DeleteGlobalRef(it->second->jsBridgeClass);
+        if (it->second->devtoolsClass) env->DeleteGlobalRef(it->second->devtoolsClass);
       }
       gStates.erase(it);
     }
@@ -1214,14 +1421,27 @@ Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlon
     state->postRegisterWorklet = env->GetStaticMethodID(state->jsBridgeClass, "postRegisterWorklet", "(JI)V");
     state->postRunWorklet = env->GetStaticMethodID(state->jsBridgeClass, "postRunWorklet", "(JIJ)V");
   }
+  jclass devtoolsClass = env->FindClass("com/zynth/kit/runtime/modules/DevtoolsModule");
+  if (devtoolsClass) {
+    state->devtoolsClass = static_cast<jclass>(env->NewGlobalRef(devtoolsClass));
+    env->DeleteLocalRef(devtoolsClass);
+    state->devtoolsEmit = env->GetStaticMethodID(state->devtoolsClass, "emitNativeEvent", "(Ljava/lang/String;)V");
+    state->devtoolsIsConnected = env->GetStaticMethodID(state->devtoolsClass, "isConnected", "()Z");
+    if (!gDevtoolsClass) {
+      gDevtoolsClass = static_cast<jclass>(env->NewGlobalRef(state->devtoolsClass));
+      gDevtoolsEmitMethod = state->devtoolsEmit;
+    }
+  }
 
   {
     std::lock_guard<std::mutex> lock(gStateMutex);
     gStates[runtime] = state;
   }
 
-  installConsole(*runtime);
+  installConsole(*runtime, state.get());
   installGlobals(*runtime);
+  installDevtoolsBridge(*runtime, state.get());
+  installCrashSignalHandlers();
   installModulesStub(*runtime);
   installTimers(*runtime, runtime);
   installUIBindings(*runtime, runtime);
@@ -1389,6 +1609,12 @@ Java_com_zynth_kit_runtime_JSBridge_invokePressEvent(JNIEnv *env,
   payload.setProperty(rt, "canceled", cancelled == JNI_TRUE);
   try {
     handler->call(rt, payload);
+  } catch (const JSError &error) {
+    auto state = sharedStateFor(runtime);
+    std::string message = error.getMessage();
+    std::string stack = error.getStack();
+    std::string combined = stack.empty() ? message : (message + "\n" + stack);
+    emitDevtoolsEvent(state.get(), "error/js", "error", "js", combined);
   } catch (...) {
     return;
   }
@@ -1434,6 +1660,12 @@ Java_com_zynth_kit_runtime_JSBridge_invokeEvent(JNIEnv *env,
   }
   try {
     handler->call(rt, arg);
+  } catch (const JSError &error) {
+    auto state = sharedStateFor(runtime);
+    std::string message = error.getMessage();
+    std::string stack = error.getStack();
+    std::string combined = stack.empty() ? message : (message + "\n" + stack);
+    emitDevtoolsEvent(state.get(), "error/js", "error", "js", combined);
   } catch (...) {
     return;
   }
@@ -1487,6 +1719,11 @@ Java_com_zynth_kit_runtime_JSBridge_invokeTimer(JNIEnv *,
       callback->call(rt, argsPtr, args.size());
     } catch (const JSError &error) {
       __android_log_print(ANDROID_LOG_ERROR, "ZynthJS", "Timer error: %s", error.getMessage().c_str());
+      auto state = sharedStateFor(runtime);
+      std::string message = error.getMessage();
+      std::string stack = error.getStack();
+      std::string combined = stack.empty() ? message : (message + "\n" + stack);
+      emitDevtoolsEvent(state.get(), "error/js", "error", "js", combined);
     } catch (...) {
       __android_log_print(ANDROID_LOG_ERROR, "ZynthJS", "Timer exception");
     }
@@ -1547,6 +1784,12 @@ Java_com_zynth_kit_runtime_JSBridge_invokeLayoutEvent(JNIEnv *,
   payload.setProperty(rt, "nativeEvent", nativeEvent);
   try {
     handler->call(rt, payload);
+  } catch (const JSError &error) {
+    auto state = sharedStateFor(runtime);
+    std::string message = error.getMessage();
+    std::string stack = error.getStack();
+    std::string combined = stack.empty() ? message : (message + "\n" + stack);
+    emitDevtoolsEvent(state.get(), "error/js", "error", "js", combined);
   } catch (...) {
     return;
   }
@@ -1590,6 +1833,12 @@ Java_com_zynth_kit_runtime_JSBridge_invokeLayoutEventsBatch(JNIEnv *env,
     payloadObj.setProperty(rt, "nativeEvent", nativeEvent);
     try {
       handler->call(rt, payloadObj);
+    } catch (const JSError &error) {
+      auto state = sharedStateFor(runtime);
+      std::string message = error.getMessage();
+      std::string stack = error.getStack();
+      std::string combined = stack.empty() ? message : (message + "\n" + stack);
+      emitDevtoolsEvent(state.get(), "error/js", "error", "js", combined);
     } catch (...) {
       continue;
     }
