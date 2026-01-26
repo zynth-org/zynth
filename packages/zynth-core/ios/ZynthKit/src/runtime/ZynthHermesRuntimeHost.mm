@@ -3,6 +3,7 @@
 #import "ZynthUIBindings.h"
 #import "ZynthUIManager.h"
 #import "ZynthUICommandsRegistry.h"
+#import "ZynthWorklets.h"
 
 #import <hermes/hermes.h>
 #import <jsi/jsi.h>
@@ -14,6 +15,7 @@ using namespace facebook::jsi;
 
 namespace {
 static bool DEBUG_RUNTIME = false;
+static void *kZynthJSQueueKey = &kZynthJSQueueKey;
 struct NSDataBuffer final : public Buffer {
   NSData *data_;
   explicit NSDataBuffer(NSData *data) : data_(data) {}
@@ -161,6 +163,8 @@ static void installGlobals(Runtime &rt) {
 
 @implementation ZynthHermesRuntimeHost {
   std::unique_ptr<facebook::hermes::HermesRuntime> _runtime;
+  ZynthWorklets *_worklets;
+  dispatch_queue_t _jsQueue;
   struct Timer {
     int id;
     dispatch_source_t source;
@@ -177,24 +181,38 @@ static void installGlobals(Runtime &rt) {
   if (self) {
     _manager = manager;
     _nextTimer = 1;
-    _runtime = facebook::hermes::makeHermesRuntime();
-    installConsole(*_runtime);
-    installGlobals(*_runtime);
-    installModuleBridge(*_runtime);
-    [self installTimers];
-    ZynthInstallUIBindings(*_runtime, manager);
-    ZynthInstallUICommandsRegistry(self, *_runtime);
-    _runtime->global().setProperty(
-        *_runtime, "__ZYNTH_PLATFORM", String::createFromUtf8(*_runtime, "ios"));
+    _jsQueue = dispatch_queue_create("zynth.js", DISPATCH_QUEUE_SERIAL);
+    dispatch_queue_set_specific(_jsQueue, kZynthJSQueueKey, kZynthJSQueueKey, NULL);
+    ZynthUISetJSQueue(_jsQueue);
+    dispatch_sync(_jsQueue, ^{
+      _runtime = facebook::hermes::makeHermesRuntime();
+      installConsole(*_runtime);
+      installGlobals(*_runtime);
+      installModuleBridge(*_runtime);
+      [self installTimers];
+      ZynthInstallUIBindings(*_runtime, manager);
+      ZynthInstallUICommandsRegistry(self, *_runtime);
+      _worklets = [[ZynthWorklets alloc] initWithHost:self];
+      [_worklets installSharedSignalsOnRuntime:*_runtime];
+      [_worklets installWorkletsBridgeOnRuntime:*_runtime];
+      _runtime->global().setProperty(
+          *_runtime, "__ZYNTH_PLATFORM", String::createFromUtf8(*_runtime, "ios"));
+    });
   }
   return self;
 }
 
 - (void)installModuleBridge:(id<ZynthModuleBridge>)bridge constants:(NSDictionary<NSString *,id> *)constants {
+  if (dispatch_get_specific(kZynthJSQueueKey) != kZynthJSQueueKey) {
+    dispatch_sync(_jsQueue, ^{
+      [self installModuleBridge:bridge constants:constants];
+    });
+    return;
+  }
   Runtime &rt = *_runtime;
-  
+
   __weak id<ZynthModuleBridge> weakBridge = bridge;
-  
+
   auto callFn = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "call"), 3,
       [weakBridge](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
@@ -202,7 +220,7 @@ static void installGlobals(Runtime &rt) {
         std::string moduleName = args[0].asString(rt).utf8(rt);
         std::string methodName = args[1].asString(rt).utf8(rt);
         id argObj = (count > 2) ? jsValueToObjC(rt, args[2]) : nil;
-        
+
         id result = [weakBridge callModule:[NSString stringWithUTF8String:moduleName.c_str()]
                                     method:[NSString stringWithUTF8String:methodName.c_str()]
                                       args:argObj];
@@ -216,7 +234,7 @@ static void installGlobals(Runtime &rt) {
         std::string moduleName = args[0].asString(rt).utf8(rt);
         std::string methodName = args[1].asString(rt).utf8(rt);
         id argObj = (count > 2) ? jsValueToObjC(rt, args[2]) : nil;
-        
+
         id result = [weakBridge callModuleSync:[NSString stringWithUTF8String:moduleName.c_str()]
                                         method:[NSString stringWithUTF8String:methodName.c_str()]
                                           args:argObj];
@@ -238,47 +256,92 @@ static void installGlobals(Runtime &rt) {
              sourceURL:(NSString *)sourceURL
                 error:(NSError *_Nullable *_Nullable)error {
   if (!code) return NO;
-  NSData *data = [code dataUsingEncoding:NSUTF8StringEncoding];
-  if (!data) return NO;
-  try {
-    auto buffer = std::make_shared<NSDataBuffer>(data);
-    const char *source = sourceURL ? sourceURL.UTF8String : "<inline>";
-    _runtime->evaluateJavaScript(buffer, source);
-    return YES;
-  } catch (const JSError &ex) {
-    if (error) {
+  __block BOOL ok = NO;
+  __block NSError *localError = nil;
+  __weak ZynthHermesRuntimeHost *weakSelf = self;
+  auto evalBlock = ^{
+    ZynthHermesRuntimeHost *strongSelf = weakSelf;
+    if (!strongSelf) {
+      ok = NO;
+      return;
+    }
+    NSData *data = [code dataUsingEncoding:NSUTF8StringEncoding];
+    if (!data) {
+      ok = NO;
+      return;
+    }
+    try {
+      auto buffer = std::make_shared<NSDataBuffer>(data);
+      const char *source = sourceURL ? sourceURL.UTF8String : "<inline>";
+      strongSelf->_runtime->evaluateJavaScript(buffer, source);
+      ok = YES;
+    } catch (const JSError &ex) {
       NSString *message = [NSString stringWithUTF8String:ex.getMessage().c_str()];
       NSDictionary *info = @{ NSLocalizedDescriptionKey : message ?: @"JS error" };
-      *error = [NSError errorWithDomain:@"ZynthHermes" code:1 userInfo:info];
-    }
-    return NO;
-  } catch (const std::exception &ex) {
-    if (error) {
+      localError = [NSError errorWithDomain:@"ZynthHermes" code:1 userInfo:info];
+      ok = NO;
+    } catch (const std::exception &ex) {
       NSString *message = [NSString stringWithUTF8String:ex.what()];
       NSDictionary *info = @{ NSLocalizedDescriptionKey : message ?: @"Runtime error" };
-      *error = [NSError errorWithDomain:@"ZynthHermes" code:2 userInfo:info];
+      localError = [NSError errorWithDomain:@"ZynthHermes" code:2 userInfo:info];
+      ok = NO;
     }
-    return NO;
+  };
+  if (dispatch_get_specific(kZynthJSQueueKey) == kZynthJSQueueKey) {
+    evalBlock();
+  } else {
+    dispatch_sync(_jsQueue, evalBlock);
   }
+  if (error) {
+    *error = localError;
+  }
+  return ok;
 }
 
 - (BOOL)evaluateBytecode:(NSData *)data
                sourceURL:(NSString *)sourceURL
                   error:(NSError *_Nullable *_Nullable)error {
   if (!data) return NO;
-  NSString *string = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-  if (!string) {
-    if (error) {
-      NSDictionary *info = @{ NSLocalizedDescriptionKey : @"Invalid UTF-8 bytecode payload" };
-      *error = [NSError errorWithDomain:@"ZynthHermes" code:3 userInfo:info];
+  __block BOOL ok = NO;
+  __block NSError *localError = nil;
+  __weak ZynthHermesRuntimeHost *weakSelf = self;
+  auto evalBlock = ^{
+    ZynthHermesRuntimeHost *strongSelf = weakSelf;
+    if (!strongSelf) {
+      ok = NO;
+      return;
     }
-    return NO;
+    NSString *string = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    if (!string) {
+      NSDictionary *info = @{ NSLocalizedDescriptionKey : @"Invalid UTF-8 bytecode payload" };
+      localError = [NSError errorWithDomain:@"ZynthHermes" code:3 userInfo:info];
+      ok = NO;
+      return;
+    }
+    ok = [strongSelf evaluateString:string sourceURL:sourceURL error:&localError];
+  };
+  if (dispatch_get_specific(kZynthJSQueueKey) == kZynthJSQueueKey) {
+    evalBlock();
+  } else {
+    dispatch_sync(_jsQueue, evalBlock);
   }
-  return [self evaluateString:string sourceURL:sourceURL error:error];
+  if (error) {
+    *error = localError;
+  }
+  return ok;
 }
 
 - (id _Nullable)callGlobal:(NSString *)name args:(NSArray *)args {
   if (!name) return nil;
+  if (dispatch_get_specific(kZynthJSQueueKey) != kZynthJSQueueKey) {
+    __weak ZynthHermesRuntimeHost *weakSelf = self;
+    dispatch_async(_jsQueue, ^{
+      ZynthHermesRuntimeHost *strongSelf = weakSelf;
+      if (!strongSelf) return;
+      [strongSelf callGlobal:name args:args];
+    });
+    return nil;
+  }
   Runtime &rt = *_runtime;
   auto propId = PropNameID::forAscii(rt, name.UTF8String);
   if (!rt.global().hasProperty(rt, propId)) return nil;
@@ -324,10 +387,11 @@ static void installGlobals(Runtime &rt) {
 - (void)installTimers {
   Runtime &rt = *_runtime;
   __weak ZynthHermesRuntimeHost *weakHost = self;
+  dispatch_queue_t jsQueue = _jsQueue;
 
   auto hostSetTimeout = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "__hostSetTimeout"), 3,
-      [weakHost](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+      [weakHost, jsQueue](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
         ZynthHermesRuntimeHost *host = weakHost;
         if (!host) return Value::undefined();
         if (count < 2 || !args[0].isObject()) return Value::undefined();
@@ -357,7 +421,7 @@ static void installGlobals(Runtime &rt) {
         timer->args = std::move(callArgs);
         timer->isInterval = false;
         timer->source =
-            dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
+            dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, jsQueue);
 
         dispatch_source_t source = timer->source;
         host->_timers.emplace(timerId, std::move(timer));
@@ -399,7 +463,7 @@ static void installGlobals(Runtime &rt) {
 
   auto hostSetInterval = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "__hostSetInterval"), 3,
-      [weakHost](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+      [weakHost, jsQueue](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
         ZynthHermesRuntimeHost *host = weakHost;
         if (!host) return Value::undefined();
         if (count < 2 || !args[0].isObject()) return Value::undefined();
@@ -432,7 +496,7 @@ static void installGlobals(Runtime &rt) {
         timer->args = std::move(callArgs);
         timer->isInterval = true;
         timer->source =
-            dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
+            dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, jsQueue);
 
         dispatch_source_t source = timer->source;
         host->_timers.emplace(timerId, std::move(timer));
@@ -508,7 +572,9 @@ static void installGlobals(Runtime &rt) {
       "globalThis.setInterval=(fn,ms,...a)=>__hostSetInterval(fn,ms|0,a);"
       "globalThis.clearInterval=(id)=>__hostClearInterval(id);"
       "globalThis.setImmediate=(fn,...a)=>__hostSetTimeout(fn,0,a);"
-      "globalThis.clearImmediate=(id)=>__hostClearTimeout(id);";
+      "globalThis.clearImmediate=(id)=>__hostClearTimeout(id);"
+      "globalThis.requestAnimationFrame=(fn)=>__hostSetTimeout(fn,16,[]);"
+      "globalThis.cancelAnimationFrame=(id)=>__hostClearTimeout(id);";
 
   auto buffer = std::make_shared<StringBuffer>(timerScript);
   _runtime->evaluateJavaScript(buffer, "timers.js");

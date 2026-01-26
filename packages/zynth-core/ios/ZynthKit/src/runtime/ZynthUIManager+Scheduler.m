@@ -76,6 +76,12 @@
   for (NSNumber *key in _surfaceYoga) {
     nodeCount += [_surfaceYoga[key] nodeCount];
   }
+  NSLog(@"[ZynthUI] frame summary %.2fms layout=%.2fms surfaces=%lu nodes=%lu overBudget=%@",
+        _lastFrameMs,
+        _lastLayoutMs,
+        (unsigned long)dirtySurfaces.count,
+        (unsigned long)nodeCount,
+        overBudget ? @"true" : @"false");
   if (overBudget) {
     _budgetOverruns += 1;
     NSLog(@"[ZynthUI] frame over budget %.2fms (budget %.2fms, nodes %lu, overruns %lu)",

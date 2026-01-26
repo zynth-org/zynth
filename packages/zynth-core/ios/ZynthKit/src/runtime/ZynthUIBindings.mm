@@ -2,6 +2,7 @@
 #import "ZynthUIManager.h"
 
 #import <jsi/jsi.h>
+#import <dispatch/dispatch.h>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -11,6 +12,64 @@
 using namespace facebook::jsi;
 
 static bool DEBUG_RUNTIME = false;
+
+static dispatch_queue_t sJSQueue = nil;
+static void *kZynthJSQueueKey = &kZynthJSQueueKey;
+static std::mutex sMainOpMutex;
+static std::vector<dispatch_block_t> sMainOps;
+static BOOL sMainOpsScheduled = NO;
+
+static inline bool ZynthIsOnJSQueue() {
+  return sJSQueue && dispatch_get_specific(kZynthJSQueueKey) == kZynthJSQueueKey;
+}
+
+void ZynthUISetJSQueue(dispatch_queue_t queue) {
+  sJSQueue = queue;
+  if (queue) {
+    dispatch_queue_set_specific(queue, kZynthJSQueueKey, kZynthJSQueueKey, NULL);
+  }
+}
+
+static inline void ZynthRunOnMainSync(dispatch_block_t block) {
+  if (!block) return;
+  if ([NSThread isMainThread]) {
+    block();
+  } else {
+    dispatch_sync(dispatch_get_main_queue(), block);
+  }
+}
+
+static inline void ZynthRunOnMainAsync(dispatch_block_t block) {
+  if (!block) return;
+  if ([NSThread isMainThread]) {
+    block();
+    return;
+  }
+  dispatch_block_t copied = [block copy];
+  BOOL shouldSchedule = NO;
+  {
+    std::lock_guard<std::mutex> lock(sMainOpMutex);
+    sMainOps.push_back(copied);
+    if (!sMainOpsScheduled) {
+      sMainOpsScheduled = YES;
+      shouldSchedule = YES;
+    }
+  }
+  if (!shouldSchedule) {
+    return;
+  }
+  dispatch_async(dispatch_get_main_queue(), ^{
+    std::vector<dispatch_block_t> pending;
+    {
+      std::lock_guard<std::mutex> lock(sMainOpMutex);
+      pending.swap(sMainOps);
+      sMainOpsScheduled = NO;
+    }
+    for (const auto &op : pending) {
+      op();
+    }
+  });
+}
 
 namespace {
 struct HandlerKey {
@@ -137,33 +196,41 @@ extern "C" void ZynthUIInvokePressEvent(int nodeId,
   }
   if (!runtime || !handler) return;
   Runtime &rt = *runtime;
-  Object payload(rt);
-  payload.setProperty(rt, "x", x);
-  payload.setProperty(rt, "y", y);
-  payload.setProperty(rt, "screenX", screenX);
-  payload.setProperty(rt, "screenY", screenY);
-  if (durationMs >= 0) {
-    payload.setProperty(rt, "durationMs", durationMs);
-  }
-  payload.setProperty(rt, "timestamp", timestampMs);
-  payload.setProperty(rt, "pointerType", String::createFromUtf8(rt, "touch"));
-  payload.setProperty(rt, "canceled", cancelled);
-  try {
-    handler->call(rt, payload);
-  } catch (const JSError &error) {
-    if (DEBUG_RUNTIME) {
-      NSString *message = [NSString stringWithUTF8String:error.getMessage().c_str()];
-      NSString *stack = [NSString stringWithUTF8String:error.getStack().c_str()];
-      NSLog(@"[ZynthUI] press handler error for %d/%s: %@", nodeId, eventName.c_str(), message);
-      if (stack.length > 0) {
-        NSLog(@"[ZynthUI] stack: %@", stack);
+  auto invoke = ^{
+    Object payload(rt);
+    payload.setProperty(rt, "x", x);
+    payload.setProperty(rt, "y", y);
+    payload.setProperty(rt, "screenX", screenX);
+    payload.setProperty(rt, "screenY", screenY);
+    if (durationMs >= 0) {
+      payload.setProperty(rt, "durationMs", durationMs);
+    }
+    payload.setProperty(rt, "timestamp", timestampMs);
+    payload.setProperty(rt, "pointerType", String::createFromUtf8(rt, "touch"));
+    payload.setProperty(rt, "canceled", cancelled);
+    try {
+      handler->call(rt, payload);
+    } catch (const JSError &error) {
+      if (DEBUG_RUNTIME) {
+        NSString *message = [NSString stringWithUTF8String:error.getMessage().c_str()];
+        NSString *stack = [NSString stringWithUTF8String:error.getStack().c_str()];
+        NSLog(@"[ZynthUI] press handler error for %d/%s: %@", nodeId, eventName.c_str(), message);
+        if (stack.length > 0) {
+          NSLog(@"[ZynthUI] stack: %@", stack);
+        }
+      }
+    } catch (const std::exception &ex) {
+      if (DEBUG_RUNTIME) {
+        NSString *message = [NSString stringWithUTF8String:ex.what()];
+        NSLog(@"[ZynthUI] press handler exception for %d/%s: %@", nodeId, eventName.c_str(), message);
       }
     }
-  } catch (const std::exception &ex) {
-    if (DEBUG_RUNTIME) {
-      NSString *message = [NSString stringWithUTF8String:ex.what()];
-      NSLog(@"[ZynthUI] press handler exception for %d/%s: %@", nodeId, eventName.c_str(), message);
-    }
+  };
+
+  if (sJSQueue && !ZynthIsOnJSQueue()) {
+    dispatch_async(sJSQueue, invoke);
+  } else {
+    invoke();
   }
 }
 
@@ -185,31 +252,39 @@ extern "C" void ZynthUIInvokeLayoutEvent(int nodeId,
   }
   if (!runtime || !handler) return;
   Runtime &rt = *runtime;
-  Object payload(rt);
-  Object nativeEvent(rt);
-  Object layout(rt);
-  layout.setProperty(rt, "x", x);
-  layout.setProperty(rt, "y", y);
-  layout.setProperty(rt, "width", width);
-  layout.setProperty(rt, "height", height);
-  nativeEvent.setProperty(rt, "layout", layout);
-  payload.setProperty(rt, "nativeEvent", nativeEvent);
-  try {
-    handler->call(rt, payload);
-  } catch (const JSError &error) {
-    if (DEBUG_RUNTIME) {
-      NSString *message = [NSString stringWithUTF8String:error.getMessage().c_str()];
-      NSString *stack = [NSString stringWithUTF8String:error.getStack().c_str()];
-      NSLog(@"[ZynthUI] layout handler error for %d: %@", nodeId, message);
-      if (stack.length > 0) {
-        NSLog(@"[ZynthUI] stack: %@", stack);
+  auto invoke = ^{
+    Object payload(rt);
+    Object nativeEvent(rt);
+    Object layout(rt);
+    layout.setProperty(rt, "x", x);
+    layout.setProperty(rt, "y", y);
+    layout.setProperty(rt, "width", width);
+    layout.setProperty(rt, "height", height);
+    nativeEvent.setProperty(rt, "layout", layout);
+    payload.setProperty(rt, "nativeEvent", nativeEvent);
+    try {
+      handler->call(rt, payload);
+    } catch (const JSError &error) {
+      if (DEBUG_RUNTIME) {
+        NSString *message = [NSString stringWithUTF8String:error.getMessage().c_str()];
+        NSString *stack = [NSString stringWithUTF8String:error.getStack().c_str()];
+        NSLog(@"[ZynthUI] layout handler error for %d: %@", nodeId, message);
+        if (stack.length > 0) {
+          NSLog(@"[ZynthUI] stack: %@", stack);
+        }
+      }
+    } catch (const std::exception &ex) {
+      if (DEBUG_RUNTIME) {
+        NSString *message = [NSString stringWithUTF8String:ex.what()];
+        NSLog(@"[ZynthUI] layout handler exception for %d: %@", nodeId, message);
       }
     }
-  } catch (const std::exception &ex) {
-    if (DEBUG_RUNTIME) {
-      NSString *message = [NSString stringWithUTF8String:ex.what()];
-      NSLog(@"[ZynthUI] layout handler exception for %d: %@", nodeId, message);
-    }
+  };
+
+  if (sJSQueue && !ZynthIsOnJSQueue()) {
+    dispatch_async(sJSQueue, invoke);
+  } else {
+    invoke();
   }
 }
 
@@ -228,27 +303,36 @@ extern "C" void ZynthUIInvokeEvent(int nodeId, const char *name, NSDictionary *p
   }
   if (!runtime || !handler) return;
   Runtime &rt = *runtime;
-  Value payloadValue = ZynthConvertToJSI(rt, payload);
-  try {
-    if (payloadValue.isUndefined() || payloadValue.isNull()) {
-      handler->call(rt);
-    } else {
-      handler->call(rt, payloadValue);
-    }
-  } catch (const JSError &error) {
-    if (DEBUG_RUNTIME) {
-      NSString *message = [NSString stringWithUTF8String:error.getMessage().c_str()];
-      NSString *stack = [NSString stringWithUTF8String:error.getStack().c_str()];
-      NSLog(@"[ZynthUI] handler error for %d/%s: %@", nodeId, eventName.c_str(), message);
-      if (stack.length > 0) {
-        NSLog(@"[ZynthUI] stack: %@", stack);
+  NSDictionary *payloadCopy = payload;
+  auto invoke = ^{
+    Value payloadValue = ZynthConvertToJSI(rt, payloadCopy);
+    try {
+      if (payloadValue.isUndefined() || payloadValue.isNull()) {
+        handler->call(rt);
+      } else {
+        handler->call(rt, payloadValue);
+      }
+    } catch (const JSError &error) {
+      if (DEBUG_RUNTIME) {
+        NSString *message = [NSString stringWithUTF8String:error.getMessage().c_str()];
+        NSString *stack = [NSString stringWithUTF8String:error.getStack().c_str()];
+        NSLog(@"[ZynthUI] handler error for %d/%s: %@", nodeId, eventName.c_str(), message);
+        if (stack.length > 0) {
+          NSLog(@"[ZynthUI] stack: %@", stack);
+        }
+      }
+    } catch (const std::exception &ex) {
+      if (DEBUG_RUNTIME) {
+        NSString *message = [NSString stringWithUTF8String:ex.what()];
+        NSLog(@"[ZynthUI] handler exception for %d/%s: %@", nodeId, eventName.c_str(), message);
       }
     }
-  } catch (const std::exception &ex) {
-    if (DEBUG_RUNTIME) {
-      NSString *message = [NSString stringWithUTF8String:ex.what()];
-      NSLog(@"[ZynthUI] handler exception for %d/%s: %@", nodeId, eventName.c_str(), message);
-    }
+  };
+
+  if (sJSQueue && !ZynthIsOnJSQueue()) {
+    dispatch_async(sJSQueue, invoke);
+  } else {
+    invoke();
   }
 }
 
@@ -286,14 +370,18 @@ static void ZynthApplyStyleObject(Runtime &rt, ZynthUIManager *manager, int node
     Value v = style.getProperty(rt, key);
     if (v.isNumber()) {
       std::string str = std::to_string(v.asNumber());
-      [manager setProp:@(nodeId)
-                  name:[NSString stringWithUTF8String:key]
-                 value:[NSString stringWithUTF8String:str.c_str()]];
+      NSString *name = [NSString stringWithUTF8String:key];
+      NSString *value = [NSString stringWithUTF8String:str.c_str()];
+      ZynthRunOnMainAsync(^{
+        [manager setProp:@(nodeId) name:name value:value];
+      });
     } else if (v.isString()) {
       std::string str = v.asString(rt).utf8(rt);
-      [manager setProp:@(nodeId)
-                  name:[NSString stringWithUTF8String:key]
-                 value:[NSString stringWithUTF8String:str.c_str()]];
+      NSString *name = [NSString stringWithUTF8String:key];
+      NSString *value = [NSString stringWithUTF8String:str.c_str()];
+      ZynthRunOnMainAsync(^{
+        [manager setProp:@(nodeId) name:name value:value];
+      });
     }
   }
 
@@ -302,9 +390,11 @@ static void ZynthApplyStyleObject(Runtime &rt, ZynthUIManager *manager, int node
     Value v = style.getProperty(rt, key);
     if (v.isString()) {
       std::string str = v.asString(rt).utf8(rt);
-      [manager setProp:@(nodeId)
-                  name:[NSString stringWithUTF8String:key]
-                 value:[NSString stringWithUTF8String:str.c_str()]];
+      NSString *name = [NSString stringWithUTF8String:key];
+      NSString *value = [NSString stringWithUTF8String:str.c_str()];
+      ZynthRunOnMainAsync(^{
+        [manager setProp:@(nodeId) name:name value:value];
+      });
     }
   }
 
@@ -313,9 +403,10 @@ static void ZynthApplyStyleObject(Runtime &rt, ZynthUIManager *manager, int node
     Value v = style.getProperty(rt, key);
     NSString *value = ZynthStringifyStyleValue(rt, v);
     if (!value) continue;
-    [manager setProp:@(nodeId)
-                name:[NSString stringWithUTF8String:key]
-               value:value];
+    NSString *name = [NSString stringWithUTF8String:key];
+    ZynthRunOnMainAsync(^{
+      [manager setProp:@(nodeId) name:name value:value];
+    });
   }
 }
 
@@ -331,7 +422,14 @@ void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
           return Value::undefined();
         }
         std::string type = args[0].asString(rt).utf8(rt);
-        NSNumber *nodeId = [manager createNode:[NSString stringWithUTF8String:type.c_str()]];
+        NSString *typeName = [NSString stringWithUTF8String:type.c_str()];
+        __block NSNumber *nodeId = nil;
+        ZynthRunOnMainSync(^{
+          nodeId = [manager createNode:typeName];
+        });
+        if (!nodeId) {
+          return Value::undefined();
+        }
         if (DEBUG_RUNTIME) {
           NSLog(@"[ZynthUI] createNode id=%d type=%s", nodeId.intValue, type.c_str());
         }
@@ -359,9 +457,11 @@ void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
           value = args[2].getBool() ? "true" : "false";
         }
         if (!value.empty()) {
-          [manager setProp:@(nodeId)
-                      name:[NSString stringWithUTF8String:name.c_str()]
-                     value:[NSString stringWithUTF8String:value.c_str()]];
+          NSString *propName = [NSString stringWithUTF8String:name.c_str()];
+          NSString *propValue = [NSString stringWithUTF8String:value.c_str()];
+          ZynthRunOnMainAsync(^{
+            [manager setProp:@(nodeId) name:propName value:propValue];
+          });
           if (DEBUG_RUNTIME) {
             NSLog(@"[ZynthUI] setProp id=%d name=%s value=%s", nodeId, name.c_str(), value.c_str());
           }
@@ -377,7 +477,10 @@ void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
         }
         int nodeId = (int)args[0].asNumber();
         std::string text = args[1].isString() ? args[1].asString(rt).utf8(rt) : "";
-        [manager setText:@(nodeId) text:[NSString stringWithUTF8String:text.c_str()]];
+        NSString *textValue = [NSString stringWithUTF8String:text.c_str()];
+        ZynthRunOnMainAsync(^{
+          [manager setText:@(nodeId) text:textValue];
+        });
         if (DEBUG_RUNTIME) {
           NSLog(@"[ZynthUI] setText id=%d text=%s", nodeId, text.c_str());
         }
@@ -390,14 +493,17 @@ void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
         if (count < 3 || !args[0].isNumber() || !args[1].isNumber() || !args[2].isNumber()) {
           return Value::undefined();
         }
-        [manager insertChild:@((int)args[0].asNumber())
-                       child:@((int)args[1].asNumber())
-                       index:@((int)args[2].asNumber())];
+        int parentId = (int)args[0].asNumber();
+        int childId = (int)args[1].asNumber();
+        int index = (int)args[2].asNumber();
+        ZynthRunOnMainAsync(^{
+          [manager insertChild:@(parentId) child:@(childId) index:@(index)];
+        });
         if (DEBUG_RUNTIME) {
           NSLog(@"[ZynthUI] insertChild parent=%d child=%d index=%d",
-                (int)args[0].asNumber(),
-                (int)args[1].asNumber(),
-                (int)args[2].asNumber());
+                parentId,
+                childId,
+                index);
         }
         return Value::undefined();
       });
@@ -408,13 +514,16 @@ void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
         if (count < 2 || !args[0].isNumber() || !args[1].isNumber()) {
           return Value::undefined();
         }
-        removeHandlersForNode((int)args[1].asNumber());
-        [manager removeChild:@((int)args[0].asNumber())
-                        child:@((int)args[1].asNumber())];
+        int parentId = (int)args[0].asNumber();
+        int childId = (int)args[1].asNumber();
+        removeHandlersForNode(childId);
+        ZynthRunOnMainAsync(^{
+          [manager removeChild:@(parentId) child:@(childId)];
+        });
         if (DEBUG_RUNTIME) {
           NSLog(@"[ZynthUI] removeChild parent=%d child=%d",
-                (int)args[0].asNumber(),
-                (int)args[1].asNumber());
+                parentId,
+                childId);
         }
         return Value::undefined();
       });
@@ -431,7 +540,10 @@ void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
           Function fn = args[2].asObject(rt).asFunction(rt);
           registerHandler(rt, nodeId, name, std::move(fn));
         }
-        [manager setHandler:@(nodeId) name:[NSString stringWithUTF8String:name.c_str()]];
+        NSString *handlerName = [NSString stringWithUTF8String:name.c_str()];
+        ZynthRunOnMainAsync(^{
+          [manager setHandler:@(nodeId) name:handlerName];
+        });
         return Value::undefined();
       });
 
@@ -443,9 +555,31 @@ void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
           NSLog(@"[ZynthUI] applyBatch invoked");
         }
         std::string json = args[0].isString() ? args[0].asString(rt).utf8(rt) : "";
-        [manager applyBatch:[NSString stringWithUTF8String:json.c_str()]];
+        NSString *payload = [NSString stringWithUTF8String:json.c_str()];
+        ZynthRunOnMainAsync(^{
+          [manager applyBatch:payload];
+        });
         return Value::undefined();
       });
+
+  struct ZynthBatchOp {
+    enum class Kind {
+      CreateNode,
+      SetProp,
+      SetText,
+      InsertChild,
+      RemoveChild,
+    };
+    Kind kind = Kind::SetProp;
+    int nodeId = 0;
+    int parentId = 0;
+    int childId = 0;
+    int index = 0;
+    std::string name;
+    std::string value;
+    bool hasValue = false;
+    std::string tag;
+  };
 
   auto applyBatchTyped = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "applyBatchTyped"), 1,
@@ -475,6 +609,7 @@ void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
             if (index >= strings.size()) return empty;
             return strings[index];
           };
+          std::vector<ZynthBatchOp> ops;
           while (i < opCount) {
             Value opVal = opsPacked.getValueAtIndex(rt, i++);
             if (!opVal.isNumber()) break;
@@ -489,31 +624,43 @@ void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
                 const std::string &key = getString(static_cast<size_t>(keyIndex));
                 switch (valueType) {
                   case 1: {
-                    std::string value = std::to_string(payloadVal);
-                    [manager setProp:@(nodeId)
-                                name:[NSString stringWithUTF8String:key.c_str()]
-                               value:[NSString stringWithUTF8String:value.c_str()]];
+                    ZynthBatchOp op;
+                    op.kind = ZynthBatchOp::Kind::SetProp;
+                    op.nodeId = nodeId;
+                    op.name = key;
+                    op.value = std::to_string(payloadVal);
+                    op.hasValue = true;
+                    ops.push_back(op);
                     break;
                   }
                   case 2: {
-                    const std::string &value = getString(static_cast<size_t>(payloadVal));
-                    [manager setProp:@(nodeId)
-                                name:[NSString stringWithUTF8String:key.c_str()]
-                               value:[NSString stringWithUTF8String:value.c_str()]];
+                    ZynthBatchOp op;
+                    op.kind = ZynthBatchOp::Kind::SetProp;
+                    op.nodeId = nodeId;
+                    op.name = key;
+                    op.value = getString(static_cast<size_t>(payloadVal));
+                    op.hasValue = true;
+                    ops.push_back(op);
                     break;
                   }
                   case 3: {
-                    const char *boolValue = payloadVal != 0 ? "true" : "false";
-                    [manager setProp:@(nodeId)
-                                name:[NSString stringWithUTF8String:key.c_str()]
-                               value:[NSString stringWithUTF8String:boolValue]];
+                    ZynthBatchOp op;
+                    op.kind = ZynthBatchOp::Kind::SetProp;
+                    op.nodeId = nodeId;
+                    op.name = key;
+                    op.value = payloadVal != 0 ? "true" : "false";
+                    op.hasValue = true;
+                    ops.push_back(op);
                     break;
                   }
                   case 0:
                   default: {
-                    [manager setProp:@(nodeId)
-                                name:[NSString stringWithUTF8String:key.c_str()]
-                               value:nil];
+                    ZynthBatchOp op;
+                    op.kind = ZynthBatchOp::Kind::SetProp;
+                    op.nodeId = nodeId;
+                    op.name = key;
+                    op.hasValue = false;
+                    ops.push_back(op);
                     break;
                   }
                 }
@@ -523,9 +670,11 @@ void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
                 if (i + 1 >= opCount) { i = opCount; break; }
                 int nodeId = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
                 int textIndex = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
-                const std::string &text = getString(static_cast<size_t>(textIndex));
-                [manager setText:@(nodeId)
-                            text:[NSString stringWithUTF8String:text.c_str()]];
+                ZynthBatchOp op;
+                op.kind = ZynthBatchOp::Kind::SetText;
+                op.nodeId = nodeId;
+                op.value = getString(static_cast<size_t>(textIndex));
+                ops.push_back(op);
                 break;
               }
               case 3: { // insertChild
@@ -533,24 +682,57 @@ void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
                 int parentId = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
                 int childId = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
                 int index = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
-                [manager insertChild:@(parentId)
-                               child:@(childId)
-                               index:@(index)];
+                ZynthBatchOp op;
+                op.kind = ZynthBatchOp::Kind::InsertChild;
+                op.parentId = parentId;
+                op.childId = childId;
+                op.index = index;
+                ops.push_back(op);
                 break;
               }
               case 4: { // removeChild
                 if (i + 1 >= opCount) { i = opCount; break; }
                 int parentId = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
                 int childId = static_cast<int>(opsPacked.getValueAtIndex(rt, i++).asNumber());
-                removeHandlersForNode(childId);
-                [manager removeChild:@(parentId)
-                                child:@(childId)];
+                ZynthBatchOp op;
+                op.kind = ZynthBatchOp::Kind::RemoveChild;
+                op.parentId = parentId;
+                op.childId = childId;
+                ops.push_back(op);
                 break;
               }
               default:
                 i = opCount;
                 break;
             }
+          }
+          if (!ops.empty()) {
+            ZynthRunOnMainAsync(^{
+              for (const auto &op : ops) {
+                switch (op.kind) {
+                  case ZynthBatchOp::Kind::SetProp: {
+                    NSString *name = [NSString stringWithUTF8String:op.name.c_str()];
+                    NSString *value = op.hasValue ? [NSString stringWithUTF8String:op.value.c_str()] : nil;
+                    [manager setProp:@(op.nodeId) name:name value:value];
+                    break;
+                  }
+                  case ZynthBatchOp::Kind::SetText: {
+                    NSString *text = [NSString stringWithUTF8String:op.value.c_str()];
+                    [manager setText:@(op.nodeId) text:text];
+                    break;
+                  }
+                  case ZynthBatchOp::Kind::InsertChild:
+                    [manager insertChild:@(op.parentId) child:@(op.childId) index:@(op.index)];
+                    break;
+                  case ZynthBatchOp::Kind::RemoveChild:
+                    removeHandlersForNode(op.childId);
+                    [manager removeChild:@(op.parentId) child:@(op.childId)];
+                    break;
+                  case ZynthBatchOp::Kind::CreateNode:
+                    break;
+                }
+              }
+            });
           }
           return Value::undefined();
         }
@@ -562,6 +744,7 @@ void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
           NSLog(@"[ZynthUI] applyBatchTyped ops=%zu", opCount);
         }
         size_t loggedOps = 0;
+        std::vector<ZynthBatchOp> operations;
         for (size_t i = 0; i < opCount; i++) {
           Value opVal = ops.getValueAtIndex(rt, i);
           if (!opVal.isObject()) continue;
@@ -578,17 +761,11 @@ void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
             Value tagVal = op.getProperty(rt, "tag");
             if (!tagVal.isString()) continue;
             std::string tag = tagVal.asString(rt).utf8(rt);
-            NSNumber *nodeId = [manager createNode:[NSString stringWithUTF8String:tag.c_str()]];
-            if (DEBUG_RUNTIME && idVal.isNumber()) {
-              int expected = (int)idVal.asNumber();
-              if (nodeId.intValue != expected) {
-                NSLog(@"[ZynthUI] createNode id mismatch expected=%d actual=%d",
-                      expected, nodeId.intValue);
-              }
-            }
-            if (DEBUG_RUNTIME) {
-              NSLog(@"[ZynthUI] createNode id=%d type=%s (batch)", nodeId.intValue, tag.c_str());
-            }
+            ZynthBatchOp opEntry;
+            opEntry.kind = ZynthBatchOp::Kind::CreateNode;
+            opEntry.nodeId = idVal.isNumber() ? (int)idVal.asNumber() : 0;
+            opEntry.tag = tag;
+            operations.push_back(opEntry);
             continue;
           }
           if (type == "setProp") {
@@ -611,12 +788,13 @@ void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
               value = valueVal.getBool() ? "true" : "false";
             }
             if (!value.empty()) {
-              [manager setProp:@(nodeId)
-                          name:[NSString stringWithUTF8String:name.c_str()]
-                         value:[NSString stringWithUTF8String:value.c_str()]];
-              if (DEBUG_RUNTIME) {
-                NSLog(@"[ZynthUI] setProp id=%d name=%s value=%s", nodeId, name.c_str(), value.c_str());
-              }
+              ZynthBatchOp opEntry;
+              opEntry.kind = ZynthBatchOp::Kind::SetProp;
+              opEntry.nodeId = nodeId;
+              opEntry.name = name;
+              opEntry.value = value;
+              opEntry.hasValue = true;
+              operations.push_back(opEntry);
             }
             continue;
           }
@@ -630,11 +808,11 @@ void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
             } else if (valueVal.isNumber()) {
               text = std::to_string(valueVal.asNumber());
             }
-            [manager setText:@((int)idVal.asNumber())
-                        text:[NSString stringWithUTF8String:text.c_str()]];
-            if (DEBUG_RUNTIME) {
-              NSLog(@"[ZynthUI] setText id=%d text=%s", (int)idVal.asNumber(), text.c_str());
-            }
+            ZynthBatchOp opEntry;
+            opEntry.kind = ZynthBatchOp::Kind::SetText;
+            opEntry.nodeId = (int)idVal.asNumber();
+            opEntry.value = text;
+            operations.push_back(opEntry);
             continue;
           }
           if (type == "insertChild") {
@@ -642,31 +820,79 @@ void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
             Value childVal = op.getProperty(rt, "childId");
             Value indexVal = op.getProperty(rt, "index");
             if (!parentVal.isNumber() || !childVal.isNumber() || !indexVal.isNumber()) continue;
-            [manager insertChild:@((int)parentVal.asNumber())
-                           child:@((int)childVal.asNumber())
-                           index:@((int)indexVal.asNumber())];
-            if (DEBUG_RUNTIME) {
-              NSLog(@"[ZynthUI] insertChild parent=%d child=%d index=%d",
-                    (int)parentVal.asNumber(),
-                    (int)childVal.asNumber(),
-                    (int)indexVal.asNumber());
-            }
+            ZynthBatchOp opEntry;
+            opEntry.kind = ZynthBatchOp::Kind::InsertChild;
+            opEntry.parentId = (int)parentVal.asNumber();
+            opEntry.childId = (int)childVal.asNumber();
+            opEntry.index = (int)indexVal.asNumber();
+            operations.push_back(opEntry);
             continue;
           }
           if (type == "removeChild") {
             Value parentVal = op.getProperty(rt, "parentId");
             Value childVal = op.getProperty(rt, "childId");
             if (!parentVal.isNumber() || !childVal.isNumber()) continue;
-            removeHandlersForNode((int)childVal.asNumber());
-            [manager removeChild:@((int)parentVal.asNumber())
-                            child:@((int)childVal.asNumber())];
-            if (DEBUG_RUNTIME) {
-              NSLog(@"[ZynthUI] removeChild parent=%d child=%d",
-                    (int)parentVal.asNumber(),
-                    (int)childVal.asNumber());
-            }
+            ZynthBatchOp opEntry;
+            opEntry.kind = ZynthBatchOp::Kind::RemoveChild;
+            opEntry.parentId = (int)parentVal.asNumber();
+            opEntry.childId = (int)childVal.asNumber();
+            operations.push_back(opEntry);
             continue;
           }
+        }
+        if (!operations.empty()) {
+          ZynthRunOnMainAsync(^{
+            for (const auto &op : operations) {
+              switch (op.kind) {
+                case ZynthBatchOp::Kind::CreateNode: {
+                  NSString *tag = [NSString stringWithUTF8String:op.tag.c_str()];
+                  NSNumber *nodeId = [manager createNode:tag];
+                  if (DEBUG_RUNTIME && op.nodeId != 0) {
+                    if (nodeId.intValue != op.nodeId) {
+                      NSLog(@"[ZynthUI] createNode id mismatch expected=%d actual=%d",
+                            op.nodeId, nodeId.intValue);
+                    }
+                  }
+                  if (DEBUG_RUNTIME) {
+                    NSLog(@"[ZynthUI] createNode id=%d type=%s (batch)", nodeId.intValue, op.tag.c_str());
+                  }
+                  break;
+                }
+                case ZynthBatchOp::Kind::SetProp: {
+                  NSString *name = [NSString stringWithUTF8String:op.name.c_str()];
+                  NSString *value = op.hasValue ? [NSString stringWithUTF8String:op.value.c_str()] : nil;
+                  [manager setProp:@(op.nodeId) name:name value:value];
+                  if (DEBUG_RUNTIME) {
+                    NSLog(@"[ZynthUI] setProp id=%d name=%s value=%s", op.nodeId, op.name.c_str(), op.value.c_str());
+                  }
+                  break;
+                }
+                case ZynthBatchOp::Kind::SetText: {
+                  NSString *text = [NSString stringWithUTF8String:op.value.c_str()];
+                  [manager setText:@(op.nodeId) text:text];
+                  if (DEBUG_RUNTIME) {
+                    NSLog(@"[ZynthUI] setText id=%d text=%s", op.nodeId, op.value.c_str());
+                  }
+                  break;
+                }
+                case ZynthBatchOp::Kind::InsertChild:
+                  [manager insertChild:@(op.parentId) child:@(op.childId) index:@(op.index)];
+                  if (DEBUG_RUNTIME) {
+                    NSLog(@"[ZynthUI] insertChild parent=%d child=%d index=%d",
+                          op.parentId, op.childId, op.index);
+                  }
+                  break;
+                case ZynthBatchOp::Kind::RemoveChild:
+                  removeHandlersForNode(op.childId);
+                  [manager removeChild:@(op.parentId) child:@(op.childId)];
+                  if (DEBUG_RUNTIME) {
+                    NSLog(@"[ZynthUI] removeChild parent=%d child=%d",
+                          op.parentId, op.childId);
+                  }
+                  break;
+              }
+            }
+          });
         }
         return Value::undefined();
       });
@@ -677,14 +903,19 @@ void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
         if (count < 1 || !args[0].isNumber()) {
           return Value::undefined();
         }
-        [manager setSurface:@((int)args[0].asNumber())];
+        int surfaceId = (int)args[0].asNumber();
+        ZynthRunOnMainAsync(^{
+          [manager setSurface:@(surfaceId)];
+        });
         return Value::undefined();
       });
 
   auto flush = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "flush"), 0,
       [manager](Runtime &, const Value &, const Value *, size_t) -> Value {
-        [manager flush];
+        ZynthRunOnMainAsync(^{
+          [manager flush];
+        });
         return Value::undefined();
       });
 
