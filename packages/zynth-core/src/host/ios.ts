@@ -7,7 +7,6 @@ import type {
   RecyclingContext,
 } from "./HostTypes";
 import type { ZynthUIBridge } from "../bridge";
-import { ENABLE_JSON_OPS, ENABLE_TYPED_OPS } from "../flags";
 import { ensureNativeEmitter } from "../nativeEmitter";
 
 export function createIOSHost(): Host {
@@ -238,11 +237,6 @@ export function createIOSHost(): Host {
     return true;
   };
 
-  const supportsTypedBatch =
-    ENABLE_TYPED_OPS &&
-    typeof (ui as any).applyBatchTyped === "function" &&
-    (ui as any).__supportsTypedBatch === true;
-
   const runFlush = () => {
     flushScheduled = false;
     rafHandle = null;
@@ -253,9 +247,8 @@ export function createIOSHost(): Host {
 
         const flushBatch = () => {
           if (!batchAccumulator.length) return;
-
-          if (!supportsTypedBatch) {
-            throw new Error("Typed batch is required for iOS host");
+          if (typeof (ui as any).applyBatchTyped !== "function") {
+             throw new Error("Typed batch is required for iOS host");
           }
           (ui as any).applyBatchTyped(encodeTypedBatch(batchAccumulator));
           batchAccumulator = [];
@@ -754,11 +747,13 @@ export function createIOSHost(): Host {
       }
       if (!context.operations.length) return;
 
-      if (!supportsTypedBatch) {
-        throw new Error("Typed batch is required for iOS host");
+      if (typeof (ui as any).applyBatchTyped === "function") {
+         if (isSuppressed()) return;
+         (ui as any).applyBatchTyped(encodeTypedBatch(context.operations));
+         return;
       }
-      if (isSuppressed()) return;
-      (ui as any).applyBatchTyped(encodeTypedBatch(context.operations));
+      
+      throw new Error("Typed batch is required for iOS host");
     },
     enableRecycling(containerId: number, config: RecyclingConfig): string {
       const contextId = `recycling-${containerId}-${nextContextId++}`;

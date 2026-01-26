@@ -7,7 +7,6 @@ import type {
   RecyclingContext,
 } from "./HostTypes";
 import type { ZynthUIBridge } from "../bridge";
-import { ENABLE_JSON_OPS, ENABLE_TYPED_OPS } from "../flags";
 
 export function createAndroidHost(): Host {
   const g: any =
@@ -235,13 +234,6 @@ export function createAndroidHost(): Host {
     return true;
   };
 
-  const supportsTypedProps =
-    ENABLE_TYPED_OPS && (ui as any).__supportsTypedProps === true;
-  const supportsTypedBatch =
-    ENABLE_TYPED_OPS &&
-    typeof (ui as any).applyBatchTyped === "function" &&
-    (ui as any).__supportsTypedBatch === true;
-
   const runFlush = () => {
     flushScheduled = false;
     try {
@@ -251,9 +243,8 @@ export function createAndroidHost(): Host {
 
         const flushBatch = () => {
           if (!batchAccumulator.length) return;
-
-          if (!supportsTypedBatch) {
-            throw new Error("Typed batch is required for Android host");
+          if (typeof (ui as any).applyBatchTyped !== "function") {
+             throw new Error("Typed batch is required for Android host");
           }
           (ui as any).applyBatchTyped(encodeTypedBatch(batchAccumulator));
           batchAccumulator = [];
@@ -780,43 +771,20 @@ export function createAndroidHost(): Host {
         return;
       }
       if (!context.operations.length) return;
+      
       const payload = {
         meta: context.meta,
         operations: context.operations,
       };
-      if (supportsTypedBatch) {
-        if (isSuppressed()) return;
+
+      if (isSuppressed()) return;
+
+      if (typeof (ui as any).applyBatchTyped === "function") {
         (ui as any).applyBatchTyped(payload);
         return;
       }
-      if (ENABLE_JSON_OPS && typeof ui.applyBatch === "function") {
-        if (isSuppressed()) return;
-        const serialized =
-          typeof payload === "string" ? payload : JSON.stringify(payload);
-        ui.applyBatch(serialized);
-        return;
-      }
-      if (isSuppressed()) return;
-      for (const op of context.operations) {
-        switch (op.type) {
-          case "insertChild":
-            ui.insertChild(op.parentId, op.childId, op.index);
-            break;
-          case "removeChild":
-            ui.removeChild(op.parentId, op.childId);
-            break;
-          case "setProp":
-            if (supportsTypedProps) {
-              ui.setProp(op.nodeId, op.name, op.value);
-            } else {
-              ui.setProp(op.nodeId, op.name, op.value);
-            }
-            break;
-          case "setText":
-            ui.setText(op.nodeId, op.value);
-            break;
-        }
-      }
+      
+      throw new Error("Typed batch is required for Android host");
     },
 
     enableRecycling(containerId: number, config: RecyclingConfig): string {
