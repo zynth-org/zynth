@@ -67,12 +67,32 @@ class ZynthModuleRegistry {
     fun callSync(name: String, method: String, args: Array<Any?>): Any? {
         Log.i(TAG, "callSync(name=$name, method=$method)")
         val module = modules[name]
-            ?: throw IllegalStateException("Module $name not found. Available: ${modules.keys}")
-
-        if (module !is ZynthSyncModule) {
-            throw UnsupportedOperationException("Module $name does not support synchronous method $method")
+        if (module == null) {
+            val message = "Module $name not found. Available: ${modules.keys}"
+            Log.w(TAG, message)
+            return mapOf(
+                "error" to "module_not_found",
+                "message" to message,
+            )
         }
 
-        return module.callSync(method, args)
+        if (module !is ZynthSyncModule) {
+            val message = "Module $name does not support synchronous method $method"
+            Log.w(TAG, message)
+            return mapOf(
+                "error" to "sync_not_supported",
+                "message" to message,
+            )
+        }
+
+        return try {
+            module.callSync(method, args)
+        } catch (t: Throwable) {
+            Log.e(TAG, "Exception calling sync $name.$method", t)
+            mapOf(
+                "error" to "exception",
+                "message" to (t.message ?: "unknown"),
+            )
+        }
     }
 }
