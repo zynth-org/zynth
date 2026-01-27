@@ -1,6 +1,5 @@
-import { Pressable, ScrollView, Text, View } from "@zynth/components";
+import { Modal, Pressable, ScrollView, Text, View } from "@zynth/components";
 import { createMemo, createSignal } from "solid-js";
-
 declare const __DEV__: boolean | undefined;
 
 export type DevtoolsEvent = {
@@ -39,8 +38,11 @@ type OverlayState = {
 
 const OVERLAY_STATE_KEY = "__ZYNTH_ERROR_OVERLAY_STATE__";
 const MAX_WARNINGS = 50;
+const IGNORE_WINDOW_MS = 8000;
 
 let nextEntryId = 1;
+let ignoredFatal: { topic: string; message: string; until: number } | null =
+  null;
 
 function shouldEnableOverlay(): boolean {
   if (typeof __DEV__ !== "undefined") {
@@ -121,6 +123,18 @@ function truncate(text: string, max: number): string {
   return `${text.slice(0, max - 1)}…`;
 }
 
+function shouldIgnoreFatal(event: DevtoolsEvent): boolean {
+  const ignored = ignoredFatal;
+  if (!ignored) return false;
+  if (Date.now() >= ignored.until) {
+    ignoredFatal = null;
+    return false;
+  }
+  if (event.topic !== ignored.topic) return false;
+  const parts = readMessageParts(event.data);
+  return parts.message === ignored.message;
+}
+
 function handleDevtoolsEvent(state: OverlayState, event: DevtoolsEvent): void {
   if (!event || typeof event.topic !== "string") return;
 
@@ -140,6 +154,7 @@ function handleDevtoolsEvent(state: OverlayState, event: DevtoolsEvent): void {
   const isErrorTopic =
     event.topic.startsWith("error/") || event.topic.startsWith("crash/");
   if (!isErrorTopic) return;
+  if (shouldIgnoreFatal(event)) return;
 
   const kind: OverlayKind = event.topic.startsWith("crash/")
     ? "crash"
@@ -213,94 +228,428 @@ function reloadApp(): void {
   console.warn("[ZynthErrorOverlay] __zynth_rerenderApp not available");
 }
 
-function FatalOverlay(props: { entry: OverlayEntry; onDismiss: () => void }) {
+function splitStack(stack: string | undefined): string[] {
+  if (!stack) return [];
+  return stack
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+function deriveLocation(entry: OverlayEntry): {
+  component: string;
+  line: string;
+} {
+  const source = entry.source ?? entry.topic;
+  const match = source.match(/([^/\\]+):(\d+)/);
+  if (match) {
+    const component = match[1] ?? source;
+    const line = match[2] ?? "?";
+    return { component, line };
+  }
+  return { component: source, line: "?" };
+}
+
+function FatalOverlay(props: {
+  entry: OverlayEntry;
+  onDismiss: (reason: "dismiss" | "ignore", entry: OverlayEntry) => void;
+}) {
   const entry = () => props.entry;
   const header = () =>
     entry().kind === "crash" ? "Native Crash" : "Runtime Error";
-  const stackText = () => entry().stack ?? "";
-  const sourceText = () => entry().source ?? entry().topic;
+  const stackLines = createMemo(() => splitStack(entry().stack));
+  const location = createMemo(() => deriveLocation(entry()));
+  const [copied, setCopied] = createSignal(false);
+
+  const errorSummary = createMemo(() => {
+    const lines = stackLines();
+    const firstStack = lines.length > 0 ? lines[0] : "";
+    const loc = location();
+    const stackText =
+      lines.length > 0 ? lines.join("\n") : "No stack trace available.";
+    return `${entry().message}\n\nLocation: ${loc.component}:${loc.line}\n\nStack Trace:\n${stackText}\n\nTopic: ${entry().topic}`;
+  });
+
+  function handleCopy(): void {
+    const text = errorSummary();
+    const nav = (globalThis as any).navigator as
+      | { clipboard?: { writeText?: (value: string) => Promise<void> } }
+      | undefined;
+    const writeText = nav?.clipboard?.writeText;
+    if (typeof writeText === "function") {
+      writeText(text)
+        .then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        })
+        .catch((error) => {
+          console.warn("[ZynthErrorOverlay] clipboard write failed", error);
+        });
+      return;
+    }
+    console.warn("[ZynthErrorOverlay] clipboard API not available");
+  }
 
   return (
-    <View
-      style={{
-        position: "absolute",
-        top: 0,
-        right: 0,
-        bottom: 0,
-        left: 0,
-        zIndex: 9999,
-        backgroundColor: "#f8879c",
-        paddingTop: 56,
-        paddingBottom: 28,
-        paddingHorizontal: 16,
-        gap: 12,
-      }}
+    <Modal
+      open
+      transparent
+      dismissOnOverlayPress={false}
+      overlayColor="#18181b"
+      overlayOpacity={1}
     >
-      <Text style={{ color: "#fff", fontSize: 18, fontWeight: "700" }}>
-        {header()}
-      </Text>
-      <Text style={{ color: "#ffe4e6", fontSize: 12 }}>{sourceText()}</Text>
-
       <View
         style={{
-          backgroundColor: "#7f1d1d",
-          borderRadius: 12,
-          padding: 12,
-          gap: 6,
-        }}
-      >
-        <Text style={{ color: "#fff", fontSize: 15, fontWeight: "600" }}>
-          {entry().message}
-        </Text>
-      </View>
-
-      <ScrollView
-        style={{
           flex: 1,
-          backgroundColor: "#450a0a",
-          borderRadius: 12,
-          padding: 12,
+          paddingTop: 64,
+          paddingHorizontal: 20,
+          paddingBottom: 140,
         }}
-        contentContainerStyle={{ paddingBottom: 24 }}
       >
-        <Text style={{ color: "#fecaca", fontSize: 12 }}>
-          {stackText().length > 0 ? stackText() : "No stack trace available."}
-        </Text>
-      </ScrollView>
+        <View style={{ gap: 6, paddingBottom: 18 }}>
+          <View
+            style={{
+              alignSelf: "flex-start",
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 6,
+              paddingHorizontal: 10,
+              paddingVertical: 6,
+              borderRadius: 999,
+              backgroundColor: "rgba(239,68,68,0.12)",
+              borderWidth: 1,
+              borderColor: "rgba(239,68,68,0.28)",
+            }}
+          >
+            <View
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: 3,
+                backgroundColor: "#ef4444",
+              }}
+            />
+            <Text
+              style={{
+                color: "#ef4444",
+                fontSize: 10,
+                fontWeight: "800",
+                textTransform: "uppercase",
+                letterSpacing: 0.6,
+              }}
+            >
+              {header()}
+            </Text>
+          </View>
+
+          <Text
+            style={{
+              color: "#fafafa",
+              fontSize: 22,
+              fontWeight: "700",
+              lineHeight: 28,
+            }}
+          >
+            Something went wrong in the app
+          </Text>
+          <Text
+            style={{
+              color: "#a1a1aa",
+              fontSize: 13,
+              lineHeight: 19,
+            }}
+          >
+            A JavaScript exception was detected that prevents the app from
+            continuing normally.
+          </Text>
+        </View>
+
+        <View style={{ flex: 1, gap: 16 }}>
+          <View
+            style={{
+              padding: 16,
+              borderRadius: 24,
+              backgroundColor: "#0f0f12",
+              borderWidth: 1,
+              borderColor: "#27272a",
+              gap: 12,
+            }}
+          >
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <View
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 14,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: "rgba(239,68,68,0.18)",
+                }}
+              >
+                <Text
+                  style={{
+                    color: "#f87171",
+                    fontSize: 16,
+                    fontWeight: "800",
+                  }}
+                >
+                  {"</>"}
+                </Text>
+              </View>
+              <View style={{ flex: 1, gap: 4 }}>
+                <Text
+                  style={{
+                    color: "#71717a",
+                    fontSize: 11,
+                    fontWeight: "700",
+                    textTransform: "uppercase",
+                    letterSpacing: 0.4,
+                  }}
+                >
+                  Message
+                </Text>
+                <Text
+                  style={{
+                    color: "#f87171",
+                    fontSize: 13,
+                    fontFamily: "Menlo",
+                  }}
+                >
+                  {entry().message}
+                </Text>
+              </View>
+            </View>
+
+            <View
+              style={{
+                paddingTop: 12,
+                borderTopWidth: 1,
+                borderTopColor: "#27272a",
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+              }}
+            >
+              <View>
+                <Text
+                  style={{
+                    color: "#71717a",
+                    fontSize: 11,
+                    fontWeight: "700",
+                  }}
+                >
+                  Location
+                </Text>
+                <Text
+                  style={{
+                    marginTop: 2,
+                    color: "#e4e4e7",
+                    fontSize: 11,
+                    fontFamily: "Menlo",
+                  }}
+                >
+                  {location().component}:{location().line}
+                </Text>
+              </View>
+              <View
+                style={{
+                  paddingHorizontal: 8,
+                  paddingVertical: 6,
+                  borderRadius: 10,
+                  backgroundColor: "rgba(245,158,11,0.12)",
+                  borderWidth: 1,
+                  borderColor: "rgba(245,158,11,0.32)",
+                }}
+              >
+                <Text
+                  style={{
+                    color: "#f59e0b",
+                    fontSize: 10,
+                    fontWeight: "800",
+                  }}
+                >
+                  Warning: Unstable State
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={{ gap: 8 }}>
+            <View
+              style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
+            >
+              <Text
+                style={{ color: "#71717a", fontSize: 12, fontWeight: "900" }}
+              >
+                {">"}
+              </Text>
+              <Text
+                style={{
+                  color: "#71717a",
+                  fontSize: 11,
+                  fontWeight: "900",
+                  textTransform: "uppercase",
+                  letterSpacing: 0.6,
+                }}
+              >
+                Stack Trace
+              </Text>
+            </View>
+            <View
+              style={{
+                borderRadius: 18,
+                borderWidth: 1,
+                borderColor: "#27272a",
+                backgroundColor: "rgba(24,24,27,0.7)",
+                overflow: "hidden",
+                maxHeight: 220,
+              }}
+            >
+              <ScrollView
+                style={{
+                  paddingHorizontal: 12,
+                  paddingVertical: 12,
+                  maxHeight: 150,
+                }}
+                contentContainerStyle={{ paddingBottom: 12, gap: 6 }}
+              >
+                {stackLines().length > 0 ? (
+                  stackLines().map((line, index) => (
+                    <View
+                      key={`${index}-${line}`}
+                      style={{ flexDirection: "row" }}
+                    >
+                      <Text
+                        style={{
+                          width: 22,
+                          color: "rgba(161,161,170,0.45)",
+                          fontSize: 11,
+                          fontFamily: "Menlo",
+                        }}
+                      >
+                        {index + 1}
+                      </Text>
+                      <Text
+                        style={{
+                          flex: 1,
+                          color: index === 0 ? "#e4e4e7" : "#a1a1aa",
+                          fontSize: 11,
+                          fontFamily: "Menlo",
+                        }}
+                      >
+                        {line}
+                      </Text>
+                    </View>
+                  ))
+                ) : (
+                  <Text
+                    style={{
+                      color: "#a1a1aa",
+                      fontSize: 11,
+                      fontFamily: "Menlo",
+                    }}
+                  >
+                    No stack trace available.
+                  </Text>
+                )}
+              </ScrollView>
+            </View>
+          </View>
+        </View>
+      </View>
 
       <View style={{ flexDirection: "row", gap: 8 }}>
-        <Pressable
-          onPress={() => {
-            props.onDismiss();
-          }}
+        <View
           style={{
-            flex: 1,
-            paddingVertical: 12,
-            borderRadius: 10,
-            backgroundColor: "#111827",
-            alignItems: "center",
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            paddingHorizontal: 20,
+            paddingBottom: 24,
+            paddingTop: 28,
+            gap: 10,
+            zIndex: 999,
+            backgroundColor: "rgba(24,24,27,0.98)",
+            borderTopWidth: 1,
+            borderTopColor: "#27272a",
           }}
         >
-          <Text style={{ color: "#fff", fontWeight: "600" }}>Dismiss</Text>
-        </Pressable>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <Pressable
+              onPress={handleCopy}
+              style={{
+                flex: 1,
+                paddingVertical: 13,
+                borderRadius: 16,
+                backgroundColor: "#27272a",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Text
+                style={{ color: "#e4e4e7", fontSize: 13, fontWeight: "700" }}
+              >
+                {copied() ? "Copied" : "Copy"}
+              </Text>
+            </Pressable>
 
-        <Pressable
-          onPress={() => {
-            props.onDismiss();
-            reloadApp();
-          }}
-          style={{
-            flex: 1,
-            paddingVertical: 12,
-            borderRadius: 10,
-            backgroundColor: "#0ea5e9",
-            alignItems: "center",
-          }}
-        >
-          <Text style={{ color: "#06283a", fontWeight: "700" }}>Reload</Text>
-        </Pressable>
+            <Pressable
+              onPress={() => {
+                console.log("Press ignore on entry:", entry());
+                props.onDismiss("ignore", entry());
+              }}
+              style={{
+                flex: 1,
+                paddingVertical: 13,
+                borderRadius: 16,
+                backgroundColor: "#27272a",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Text
+                style={{ color: "#e4e4e7", fontSize: 13, fontWeight: "700" }}
+              >
+                Ignore
+              </Text>
+            </Pressable>
+          </View>
+
+          <Pressable
+            onPress={() => {
+              props.onDismiss("dismiss", entry());
+              reloadApp();
+            }}
+            style={{
+              width: "100%",
+              paddingVertical: 15,
+              borderRadius: 18,
+              backgroundColor: "#dc2626",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Text style={{ color: "#fff", fontSize: 14, fontWeight: "900" }}>
+              Reload Application
+            </Text>
+          </Pressable>
+
+          <View
+            style={{
+              alignSelf: "center",
+              marginTop: 6,
+              width: 120,
+              height: 5,
+              borderRadius: 999,
+              backgroundColor: "#3f3f46",
+              opacity: 0.45,
+            }}
+          />
+        </View>
       </View>
-    </View>
+    </Modal>
   );
 }
 
@@ -366,7 +715,16 @@ function ErrorOverlayLayer() {
       {fatalEntry() ? (
         <FatalOverlay
           entry={fatalEntry()!}
-          onDismiss={() => state.setFatal(null)}
+          onDismiss={(reason, entry) => {
+            if (reason === "ignore") {
+              ignoredFatal = {
+                topic: entry.topic,
+                message: entry.message,
+                until: Date.now() + IGNORE_WINDOW_MS,
+              };
+            }
+            state.setFatal(null);
+          }}
         />
       ) : null}
     </>
