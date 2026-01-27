@@ -83,34 +83,40 @@ static Value objCToJSValue(Runtime &rt, id obj) {
 }
 
 static void installConsole(Runtime &rt, ZynthHermesRuntimeHost *host, NSString *runtimeLabel) {
-  auto logFn = Function::createFromHostFunction(
-      rt, PropNameID::forAscii(rt, "log"), 1,
-      [host, runtimeLabel](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
-        NSMutableArray<NSString *> *parts = [NSMutableArray arrayWithCapacity:count];
-        for (size_t i = 0; i < count; i++) {
-          std::string str = valueToString(rt, args[i]);
-          [parts addObject:[NSString stringWithUTF8String:str.c_str()]];
-        }
-        NSString *message = [parts componentsJoinedByString:@" "];
-        NSLog(@"[ZynthJS] %@", message);
-        if (host) {
-          NSMutableDictionary *data = [NSMutableDictionary dictionary];
-          data[@"message"] = message ?: @"";
-          if (runtimeLabel) {
-            data[@"runtime"] = runtimeLabel;
+  auto makeConsoleFn = [&](const char *name, NSString *levelLabel) {
+    return Function::createFromHostFunction(
+        rt, PropNameID::forAscii(rt, name), 1,
+        [host, runtimeLabel, levelLabel](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+          NSMutableArray<NSString *> *parts = [NSMutableArray arrayWithCapacity:count];
+          for (size_t i = 0; i < count; i++) {
+            std::string str = valueToString(rt, args[i]);
+            [parts addObject:[NSString stringWithUTF8String:str.c_str()]];
           }
-          [host emitDevtoolsEventWithTopic:@"log/console"
-                                     level:@"log"
-                                       tag:@"console"
-                                      data:data];
-        }
-        return Value::undefined();
-      });
+          NSString *message = [parts componentsJoinedByString:@" "];
+          NSLog(@"[ZynthJS] %@", message);
+          if (host) {
+            NSMutableDictionary *data = [NSMutableDictionary dictionary];
+            data[@"message"] = message ?: @"";
+            if (runtimeLabel) {
+              data[@"runtime"] = runtimeLabel;
+            }
+            [host emitDevtoolsEventWithTopic:@"log/console"
+                                       level:levelLabel ?: @"log"
+                                         tag:@"console"
+                                        data:data];
+          }
+          return Value::undefined();
+        });
+  };
+
+  auto logFn = makeConsoleFn("log", @"log");
+  auto warnFn = makeConsoleFn("warn", @"warn");
+  auto errorFn = makeConsoleFn("error", @"error");
 
   Object console(rt);
   console.setProperty(rt, "log", logFn);
-  console.setProperty(rt, "warn", logFn);
-  console.setProperty(rt, "error", logFn);
+  console.setProperty(rt, "warn", warnFn);
+  console.setProperty(rt, "error", errorFn);
   rt.global().setProperty(rt, "console", console);
   // Mark that console already emits to devtools natively to avoid double-emission in JS.
   rt.global().setProperty(rt, "__ZYNTH_NATIVE_CONSOLE_DEVTOOLS__", Value(true));
@@ -292,6 +298,35 @@ static void installGlobals(Runtime &rt) {
   }
   if (data) {
     event[@"data"] = data;
+  }
+
+  // Forward devtools events into JS so in-app overlays can react without
+  // relying on networked devtools.
+  @try {
+    NSError *jsonError = nil;
+    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:event options:0 error:&jsonError];
+    if (jsonData != nil && jsonError == nil) {
+      NSString *jsonString = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+      if (jsonString.length > 0 && _runtime != nullptr) {
+        Runtime &rt = *_runtime;
+        auto handlerId = PropNameID::forAscii(rt, "__zynth_onDevtoolsEventRaw");
+        if (rt.global().hasProperty(rt, handlerId)) {
+          Value handlerVal = rt.global().getProperty(rt, handlerId);
+          if (handlerVal.isObject()) {
+            Object handlerObj = handlerVal.asObject(rt);
+            if (handlerObj.isFunction(rt)) {
+              Function handlerFn = handlerObj.asFunction(rt);
+              const char *utf8 = jsonString.UTF8String;
+              if (utf8 != nullptr) {
+                handlerFn.call(rt, String::createFromUtf8(rt, utf8));
+              }
+            }
+          }
+        }
+      }
+    }
+  } @catch (NSException *) {
+    // Never allow diagnostics forwarding to crash the runtime.
   }
   [bridge callModule:@"Devtools" method:@"emit" args:event];
 }

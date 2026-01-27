@@ -62,6 +62,7 @@ struct ZynthWorkletDefinition {
 };
 
 struct RuntimeState {
+  facebook::hermes::HermesRuntime *runtime = nullptr;
   jobject uiManager = nullptr;
   jclass uiClass = nullptr;
   jclass jsBridgeClass = nullptr;
@@ -332,6 +333,23 @@ void emitDevtoolsEvent(RuntimeState *state,
   jstring jPayload = env->NewStringUTF(payload.c_str());
   env->CallStaticVoidMethod(state->devtoolsClass, state->devtoolsEmit, jPayload);
   env->DeleteLocalRef(jPayload);
+
+  // Also forward devtools events into JS so in-app overlays can react without
+  // relying on networked devtools.
+  if (!state->runtime) return;
+  try {
+    Runtime &rt = *state->runtime;
+    if (!rt.global().hasProperty(rt, "__zynth_onDevtoolsEventRaw")) return;
+    Value handlerVal = rt.global().getProperty(rt, "__zynth_onDevtoolsEventRaw");
+    if (!handlerVal.isObject()) return;
+    Object handlerObj = handlerVal.asObject(rt);
+    if (!handlerObj.isFunction(rt)) return;
+    Function handlerFn = handlerObj.asFunction(rt);
+    handlerFn.call(rt, String::createFromUtf8(rt, payload));
+  } catch (...) {
+    // Never allow diagnostics forwarding to crash the runtime.
+    return;
+  }
 }
 
 const char *signalName(int sig) {
@@ -1397,6 +1415,7 @@ Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlon
   if (!runtime || !uiManager) return;
 
   auto state = std::make_shared<RuntimeState>();
+  state->runtime = runtime;
   state->uiManager = env->NewGlobalRef(uiManager);
   state->uiClass = static_cast<jclass>(env->NewGlobalRef(env->GetObjectClass(uiManager)));
   state->createNode = env->GetMethodID(state->uiClass, "createNode", "(Ljava/lang/String;)I");

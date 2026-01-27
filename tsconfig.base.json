@@ -56,6 +56,12 @@
       "@zynth/core/universal": [
         "packages/zynth-core/src/universal.ts"
       ],
+      "@zynth/error-overlay": [
+        "packages/zynth-error-overlay/src/index.ts"
+      ],
+      "@zynth/error-overlay/*": [
+        "packages/zynth-error-overlay/src/*"
+      ],
       "@zynth/filesystem": [
         "packages/zynth-filesystem/src/index.ts"
       ],

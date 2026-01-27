@@ -23,7 +23,7 @@ export { FormData } from "./polyfills/FormData";
 export { fetch, Headers, Request, Response } from "./polyfills/fetch";
 export * from "./hmr";
 export { setActiveSurface, getActiveSurface } from "./surface";
-export { ensureDevtoolsBridge, emitDevtoolsEvent } from "./devtools";
+export { ensureDevtoolsBridge, emitDevtoolsEvent, addDevtoolsListener } from "./devtools";
 export { registerWebAdapter } from "./webRegistry";
 export { createSharedSignal, captureSharedSignals } from "./sharedSignal";
 export type { SharedSignalAccessor, SharedSignalToken } from "./sharedSignal";

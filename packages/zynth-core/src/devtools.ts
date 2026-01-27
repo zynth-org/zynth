@@ -14,7 +14,75 @@ export type ZynthDevtoolsBridge = {
   isConnected?: () => boolean;
 };
 
+export type ZynthDevtoolsListener = (event: ZynthDevtoolsEvent) => void;
+
 declare const __DEV__: boolean | undefined;
+
+const devtoolsListeners = new Set<ZynthDevtoolsListener>();
+
+function notifyDevtoolsListeners(event: ZynthDevtoolsEvent): void {
+  if (!event || typeof event !== "object") return;
+  if (devtoolsListeners.size === 0) return;
+  const snapshot = Array.from(devtoolsListeners);
+  for (const listener of snapshot) {
+    try {
+      listener(event);
+    } catch {
+      // Listener failures must never break runtime behavior.
+    }
+  }
+}
+
+export function addDevtoolsListener(listener: ZynthDevtoolsListener): () => void {
+  if (typeof listener !== "function") {
+    return () => {};
+  }
+  devtoolsListeners.add(listener);
+  return () => {
+    devtoolsListeners.delete(listener);
+  };
+}
+
+function parseDevtoolsEvent(raw: unknown): ZynthDevtoolsEvent | null {
+  if (!raw) return null;
+  let candidate: unknown = raw;
+  if (typeof raw === "string") {
+    try {
+      candidate = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  if (!candidate || typeof candidate !== "object") return null;
+  const event = candidate as ZynthDevtoolsEvent;
+  if (typeof event.topic !== "string" || event.topic.length === 0) {
+    return null;
+  }
+  return event;
+}
+
+function installDevtoolsReceiver(): void {
+  const g = getGlobalObject() as any;
+  if (g.__ZYNTH_DEVTOOLS_RECEIVER_INSTALLED__) return;
+  g.__ZYNTH_DEVTOOLS_RECEIVER_INSTALLED__ = true;
+
+  const handler = (raw: unknown) => {
+    try {
+      const event = parseDevtoolsEvent(raw);
+      if (!event) return;
+      notifyDevtoolsListeners(event);
+    } catch {
+      // Never allow devtools receiver failures to crash the runtime.
+    }
+  };
+
+  Object.defineProperty(g, "__zynth_onDevtoolsEventRaw", {
+    configurable: true,
+    enumerable: false,
+    writable: true,
+    value: handler,
+  });
+}
 
 function shouldEnableDevtools(): boolean {
   if (typeof __DEV__ !== "undefined") {
@@ -31,6 +99,7 @@ function shouldEnableDevtools(): boolean {
 export function ensureDevtoolsBridge(): ZynthDevtoolsBridge | null {
   if (!shouldEnableDevtools()) return null;
   const g = getGlobalObject() as any;
+  installDevtoolsReceiver();
   const existing = g.__ZYNTH_DEVTOOLS__ as ZynthDevtoolsBridge | undefined;
   if (existing?.emit) {
     return existing;
@@ -51,6 +120,7 @@ export function ensureDevtoolsBridge(): ZynthDevtoolsBridge | null {
   const bridge: ZynthDevtoolsBridge = {
     emit(event) {
       if (!event || typeof event !== "object") return;
+      notifyDevtoolsListeners(event);
       const modulesBridge = getModulesBridge();
       if (modulesBridge?.call) {
         try {
