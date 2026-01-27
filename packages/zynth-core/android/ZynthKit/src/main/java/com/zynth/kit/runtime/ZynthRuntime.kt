@@ -41,6 +41,9 @@ class ZynthRuntime(val root: ZynthRootView) {
     }
   }
 
+  val rootSurfaceId: Int
+    get() = root.rootId
+
   fun installDefaultModules() {
     DevtoolsModule.start(root.context)
     installModules(listOf(DevtoolsModule(root.context)))
@@ -123,6 +126,23 @@ class ZynthRuntime(val root: ZynthRootView) {
         JSBridge.emitEvent(runtimePtr, trimmed, payloadJson)
       }
     }
+  }
+
+  fun registerSurface(rootView: ZynthRootView): Int {
+    uiManager.registerSurface(rootView.rootId, rootView)
+    return rootView.rootId
+  }
+
+  fun unregisterSurface(surfaceId: Int) {
+    uiManager.unregisterSurface(surfaceId)
+  }
+
+  fun setActiveSurface(surfaceId: Int) {
+    uiManager.setSurface(surfaceId)
+  }
+
+  fun flush() {
+    uiManager.flush()
   }
 
   fun addSurfaceFirstFrameListener(surfaceId: Int, listener: () -> Unit) {

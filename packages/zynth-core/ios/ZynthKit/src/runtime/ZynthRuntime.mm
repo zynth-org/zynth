@@ -1,6 +1,7 @@
 #import "ZynthRuntime.h"
 #import "ZynthHermesRuntimeHost.h"
 #import "ZynthUIManager.h"
+#import "ZynthUIManager+Surface.h"
 
 @interface ZynthRuntime (Modules)
 - (void)installDefaultModules;
@@ -40,6 +41,10 @@
   return self;
 }
 
+- (int)rootSurfaceId {
+  return [self.manager rootSurfaceId];
+}
+
 - (BOOL)loadInitialBundleWithJsBundleURL:(NSURL *_Nullable)url
                                    error:(NSError *_Nullable *_Nullable)error {
   if (!url) {
@@ -71,6 +76,27 @@
   if (trimmed.length == 0) return;
   id body = payload ?: [NSNull null];
   [self.runtime callGlobal:@"ZynthNativeEmitter.emit" args:@[ trimmed, body ]];
+}
+
+- (int)registerSurfaceWithRootView:(UIView *)rootView {
+  return [self.manager registerSurfaceWithRootView:rootView].intValue;
+}
+
+- (void)unregisterSurfaceWithId:(int)surfaceId {
+  [self.manager unregisterSurface:surfaceId];
+}
+
+- (void)setActiveSurface:(int)surfaceId {
+  [self.manager setSurface:@(surfaceId)];
+}
+
+- (void)callGlobal:(NSString *)name args:(NSArray *)args {
+  NSArray *payload = args ?: @[];
+  [self.runtime callGlobal:name args:payload];
+}
+
+- (void)flush {
+  [self.manager flush];
 }
 
 - (void)installModuleBridge:(id<ZynthModuleBridge>)bridge constants:(NSDictionary<NSString *,id> *)constants {

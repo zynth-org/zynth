@@ -26,6 +26,9 @@
     _surfaceYoga = [NSMutableDictionary dictionary];
     _dirtySurfaces = [NSMutableSet set];
     _surfaceSizes = [NSMutableDictionary dictionary];
+    _ownedSurfaces = [NSMutableSet set];
+    _surfaceObserved = [NSHashTable weakObjectsHashTable];
+    _surfaceIdSeed = 1 << 20;
     _activeSurfaceId = 0;
     _pointerEvents = [NSMutableDictionary dictionary];
     _pressNodes = [NSMutableSet set];
@@ -396,12 +399,17 @@
 - (void)insertChild:(NSNumber *)parentId child:(NSNumber *)childId index:(NSNumber *)index {
   UIView *child = _nodes[childId];
   if (!child) return;
+  BOOL isSurfaceRoot = [self isSurfaceRootId:parentId];
   int surfaceId = _activeSurfaceId;
-  if (parentId.intValue != 0) {
+  if (isSurfaceRoot) {
+    surfaceId = parentId.intValue;
+  } else if (parentId.intValue != 0) {
     NSNumber *parentSurface = _nodeSurfaces[parentId];
     if (parentSurface) surfaceId = parentSurface.intValue;
   }
-  UIView *parent = parentId.intValue == 0 ? [self rootViewForSurface:surfaceId] : _nodes[parentId];
+  UIView *parent = (parentId.intValue == 0 || isSurfaceRoot)
+                       ? [self rootViewForSurface:surfaceId]
+                       : _nodes[parentId];
   if (!parent) return;
   ZynthNode *parentNode = _nodeStates[parentId];
   ZynthNode *childNode = _nodeStates[childId];
@@ -439,7 +447,8 @@
     }
     [parentNode.children insertObject:childId atIndex:(NSUInteger)idx];
   }
-  [[self yogaForSurface:surfaceId] insertChild:parentId child:childId index:index];
+  NSNumber *yogaParentId = isSurfaceRoot ? @(0) : parentId;
+  [[self yogaForSurface:surfaceId] insertChild:yogaParentId child:childId index:index];
   [self markSurfaceDirty:surfaceId];
 }
 
@@ -462,7 +471,8 @@
   [self cleanupNode:childId];
   [_parents removeObjectForKey:childId];
   [child removeFromSuperview];
-  [[self yogaForNode:childId] removeChild:parentId child:childId];
+  NSNumber *yogaParentId = [self isSurfaceRootId:parentId] ? @(0) : parentId;
+  [[self yogaForNode:childId] removeChild:yogaParentId child:childId];
   [self markSurfaceDirtyForNode:childId];
 }
 
@@ -549,6 +559,15 @@
       [_rootView removeObserver:self forKeyPath:@"bounds"];
     } @catch (__unused NSException *exception) {
     }
+  }
+  if (_surfaceObserved) {
+    for (UIView *view in _surfaceObserved.allObjects) {
+      @try {
+        [view removeObserver:self forKeyPath:@"bounds"];
+      } @catch (__unused NSException *exception) {
+      }
+    }
+    [_surfaceObserved removeAllObjects];
   }
   for (NSNumber *key in _longPressTimers) {
     dispatch_source_t timer = _longPressTimers[key];

@@ -34,6 +34,8 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal val surfaceYoga = HashMap<Int, ZynthYogaLayout>()
   internal val dirtySurfaces = HashSet<Int>()
   internal val surfaceSizes = HashMap<Int, Pair<Int, Int>>()
+  internal val surfaceLayoutListeners = HashMap<Int, View.OnLayoutChangeListener>()
+  internal val ownedSurfaces = HashSet<Int>()
   internal var activeSurfaceId = 0
   internal val styleStates = HashMap<Int, ZynthViewStyleState>()
   internal val styleDirtyNodes = HashSet<Int>()
@@ -124,7 +126,8 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   )
 
   init {
-    ensureSurface(0)
+    activeSurfaceId = rootView.rootId
+    registerSurfaceInternal(rootView.rootId, rootView, owned = false)
     rootView.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
       if (left != oldLeft || top != oldTop || right != oldRight || bottom != oldBottom) {
         markAllSurfacesDirty()
@@ -422,12 +425,13 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     if (parentState != null && parentState.type == "text") {
       parentState.textChildren.add(childId)
     }
-    val surfaceId = if (parentId == 0) {
-      activeSurfaceId
-    } else {
-      nodeSurfaces[parentId] ?: activeSurfaceId
+    val isSurfaceRoot = isSurfaceRootId(parentId)
+    val surfaceId = when {
+      isSurfaceRoot -> parentId
+      parentId == 0 -> activeSurfaceId
+      else -> nodeSurfaces[parentId] ?: activeSurfaceId
     }
-    val parent = if (parentId == 0) rootViewForSurface(surfaceId) else nodes[parentId]
+    val parent = if (parentId == 0 || isSurfaceRoot) rootViewForSurface(surfaceId) else nodes[parentId]
     parents[childId] = parentId
     nodeSurfaces[childId] = surfaceId
 
@@ -445,14 +449,16 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     }
     val group = parent as? ViewGroup
     if (group == null) {
-      yogaForSurface(surfaceId).insertChild(parentId, childId, index)
+      val yogaParentId = if (isSurfaceRoot) 0 else parentId
+      yogaForSurface(surfaceId).insertChild(yogaParentId, childId, index)
       return
     }
     runOnMain {
       val targetIndex = index.coerceIn(0, group.childCount)
       group.addView(child, targetIndex)
     }
-    yogaForSurface(surfaceId).insertChild(parentId, childId, index)
+    val yogaParentId = if (isSurfaceRoot) 0 else parentId
+    yogaForSurface(surfaceId).insertChild(yogaParentId, childId, index)
     markSurfaceDirty(surfaceId)
     traceOp("insertChild", parentState?.type, startNs)
   }
@@ -475,7 +481,8 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     cleanupNode(childId)
     parents.remove(childId)
     runOnMain { (child.parent as? ViewGroup)?.removeView(child) }
-    yogaForNode(childId).removeChild(parentId, childId)
+    val yogaParentId = if (isSurfaceRootId(parentId)) 0 else parentId
+    yogaForNode(childId).removeChild(yogaParentId, childId)
     markSurfaceDirtyForNode(childId)
     traceOp("removeChild", parentState?.type, startNs)
   }
@@ -690,6 +697,14 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     batchNeedsLayout = true
   }
 
+  fun registerSurface(surfaceId: Int, surfaceRoot: ViewGroup) {
+    runOnMain { registerSurfaceInternal(surfaceId, surfaceRoot, owned = false) }
+  }
+
+  fun unregisterSurface(surfaceId: Int) {
+    runOnMain { unregisterSurfaceInternal(surfaceId) }
+  }
+
   fun setSurface(surfaceId: Int) {
     if (Looper.myLooper() != Looper.getMainLooper()) {
       runOnMain { setSurface(surfaceId) }
@@ -707,6 +722,10 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     }
     markSurfaceDirty(activeSurfaceId)
     requestLayout()
+  }
+
+  private fun isSurfaceRootId(nodeId: Int): Boolean {
+    return surfaceRoots.containsKey(nodeId)
   }
 
   internal fun tracePhase(name: String, durationNs: Long) {

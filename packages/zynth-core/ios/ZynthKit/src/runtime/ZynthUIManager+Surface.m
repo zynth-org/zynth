@@ -1,8 +1,117 @@
 #import "ZynthUIManager+Private.h"
 #import "ZynthUIManager+Scheduler.h"
 #import "ZynthUIManager+Surface.h"
+#import "ZynthUIManager+Events.h"
+
+static const int kZynthSurfaceIdBase = 1 << 20;
 
 @implementation ZynthUIManager (Surface)
+
+- (int)rootSurfaceId {
+  return 0;
+}
+
+- (BOOL)isSurfaceRootId:(NSNumber *)nodeId {
+  if (!nodeId) return NO;
+  return _surfaceRoots[nodeId] != nil;
+}
+
+- (BOOL)hasSurface:(int)surfaceId {
+  return _surfaceRoots[@(surfaceId)] != nil;
+}
+
+- (int)allocateSurfaceId {
+  int candidate = _surfaceIdSeed;
+  int minSafe = _nextId + kZynthSurfaceIdBase;
+  if (candidate < minSafe) {
+    candidate = minSafe;
+  }
+  while (_surfaceRoots[@(candidate)] != nil) {
+    candidate += kZynthSurfaceIdBase;
+  }
+  _surfaceIdSeed = candidate + 1;
+  return candidate;
+}
+
+- (NSNumber *)registerSurfaceWithRootView:(UIView *)rootView {
+  if (!rootView) return nil;
+  if (![NSThread isMainThread]) {
+    __block NSNumber *result = nil;
+    dispatch_sync(dispatch_get_main_queue(), ^{
+      result = [self registerSurfaceWithRootView:rootView];
+    });
+    return result;
+  }
+  for (NSNumber *key in _surfaceRoots) {
+    if (_surfaceRoots[key] == rootView) {
+      return key;
+    }
+  }
+  int surfaceId = [self allocateSurfaceId];
+  if (_surfaceRoots[@(surfaceId)]) {
+    return @(surfaceId);
+  }
+  if (_nextId <= surfaceId) {
+    _nextId = surfaceId + 1;
+  }
+  _surfaceRoots[@(surfaceId)] = rootView;
+  ZynthYogaLayout *layout = [[ZynthYogaLayout alloc] initWithRootView:rootView];
+  __weak typeof(self) weakSelf = self;
+  layout.layoutDidUpdate = ^(NSNumber *nodeId, CGRect bounds, BOOL changed) {
+    if (!changed) return;
+    __strong typeof(self) strongSelf = weakSelf;
+    if (!strongSelf) return;
+    if (strongSelf->_styleStates[nodeId]) {
+      [strongSelf->_styleLayoutDirtyNodes addObject:nodeId];
+      strongSelf->_styleLayoutFrames[nodeId] = [NSValue valueWithCGRect:bounds];
+    }
+  };
+  _surfaceYoga[@(surfaceId)] = layout;
+  _surfaceSizes[@(surfaceId)] = [NSValue valueWithCGSize:rootView.bounds.size];
+  if (rootView != _rootView && ![_surfaceObserved containsObject:rootView]) {
+    [rootView addObserver:self forKeyPath:@"bounds" options:NSKeyValueObservingOptionNew context:nil];
+    [_surfaceObserved addObject:rootView];
+  }
+  [self markSurfaceDirty:surfaceId];
+  return @(surfaceId);
+}
+
+- (void)unregisterSurface:(int)surfaceId {
+  if (surfaceId == 0) return;
+  UIView *rootView = _surfaceRoots[@(surfaceId)];
+  if (!rootView) return;
+  NSArray<NSNumber *> *allKeys = [_nodeStates allKeys];
+  for (NSNumber *key in allKeys) {
+    ZynthNode *node = _nodeStates[key];
+    if (!node || node.surfaceId != surfaceId) continue;
+    UIView *view = node.view;
+    if (view) {
+      [view removeFromSuperview];
+    }
+    [self cleanupNode:key];
+    [_nodes removeObjectForKey:key];
+    [_nodeStates removeObjectForKey:key];
+    [_parents removeObjectForKey:key];
+  }
+  if ([_ownedSurfaces containsObject:@(surfaceId)]) {
+    [rootView removeFromSuperview];
+  }
+  [_ownedSurfaces removeObject:@(surfaceId)];
+  [_surfaceRoots removeObjectForKey:@(surfaceId)];
+  [_surfaceYoga removeObjectForKey:@(surfaceId)];
+  [_surfaceSizes removeObjectForKey:@(surfaceId)];
+  [_dirtySurfaces removeObject:@(surfaceId)];
+  if ([_surfaceObserved containsObject:rootView]) {
+    @try {
+      [rootView removeObserver:self forKeyPath:@"bounds"];
+    } @catch (__unused NSException *exception) {
+    }
+    [_surfaceObserved removeObject:rootView];
+  }
+  if (_activeSurfaceId == surfaceId) {
+    _activeSurfaceId = 0;
+  }
+}
 
 - (void)ensureSurface:(int)surfaceId {
   NSNumber *key = @(surfaceId);
@@ -30,6 +139,9 @@
   };
   _surfaceYoga[key] = layout;
   _surfaceSizes[key] = [NSValue valueWithCGSize:root.bounds.size];
+  if (surfaceId != 0) {
+    [_ownedSurfaces addObject:key];
+  }
 }
 
 - (UIView *)rootViewForSurface:(int)surfaceId {
@@ -74,12 +186,20 @@
 
 - (void)syncSurfaceRootSize:(int)surfaceId rootView:(UIView *)rootView {
   if (!rootView) return;
-  CGSize size = _rootView.bounds.size;
+  CGSize size = rootView.bounds.size;
+  if (size.width <= 0 || size.height <= 0) {
+    UIView *superview = rootView.superview;
+    if (superview) {
+      size = superview.bounds.size;
+    }
+  }
   if (size.width <= 0 || size.height <= 0) return;
   NSNumber *key = @(surfaceId);
   NSValue *prev = _surfaceSizes[key];
   if (!prev || !CGSizeEqualToSize(prev.CGSizeValue, size)) {
-    rootView.frame = CGRectMake(0, 0, size.width, size.height);
+    if ([_ownedSurfaces containsObject:key]) {
+      rootView.frame = CGRectMake(0, 0, size.width, size.height);
+    }
     _surfaceSizes[key] = [NSValue valueWithCGSize:size];
     [_dirtySurfaces addObject:key];
   }
@@ -89,12 +209,21 @@
                       ofObject:(id)object
                         change:(NSDictionary<NSKeyValueChangeKey, id> *)change
                        context:(void *)context {
-  if (object == _rootView && [keyPath isEqualToString:@"bounds"]) {
-    for (NSNumber *key in _surfaceRoots) {
-      [self markSurfaceDirty:key.intValue];
+  if ([keyPath isEqualToString:@"bounds"]) {
+    if (object == _rootView) {
+      for (NSNumber *key in _surfaceRoots) {
+        [self markSurfaceDirty:key.intValue];
+      }
+      [self requestLayout];
+      return;
     }
-    [self requestLayout];
-    return;
+    for (NSNumber *key in _surfaceRoots) {
+      if (_surfaceRoots[key] == object) {
+        [self markSurfaceDirty:key.intValue];
+        [self requestLayout];
+        return;
+      }
+    }
   }
   [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
 }
