@@ -5,6 +5,7 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import com.zynth.kit.components.ZynthComponentDescriptor
 import com.zynth.kit.components.ZynthComponentRegistrar
+import com.zynth.kit.core.ZynthBorderDrawable
 
 /**
  * Creates and returns the View component descriptor.
@@ -56,10 +57,15 @@ fun createViewComponentDescriptor(): ZynthComponentDescriptor {
       
       // Set corner radius for rounded clipping if needed
       val borderRadius = style.borderRadius ?: 0f
-      viewContainer.setClipRadius(borderRadius)
+      viewContainer.setBorderRadii(borderRadius, borderRadius, borderRadius, borderRadius)
 
       // Apply background color
-      style.backgroundColor?.let { viewContainer.setBackgroundColor(it) }
+      style.backgroundColor?.let { color ->
+        val drawable = (viewContainer.background as? ZynthBorderDrawable) ?: ZynthBorderDrawable().also {
+          viewContainer.background = it
+        }
+        drawable.backgroundColor = color
+      }
     },
     onSetHandler = { node, event ->
       val viewContainer = node.view as? ZynthViewContainer ?: return@ZynthComponentDescriptor false
@@ -86,7 +92,7 @@ fun createViewComponentDescriptor(): ZynthComponentDescriptor {
       val viewContainer = node.view as? ZynthViewContainer ?: return@ZynthComponentDescriptor
       viewContainer.pointerMode = ZynthViewContainer.PointerEventsMode.AUTO
       viewContainer.setOverflowHidden(false)
-      viewContainer.setClipRadius(0f)
+      viewContainer.setBorderRadii(0f, 0f, 0f, 0f)
       viewContainer.hasOnPressHandler = false
       viewContainer.setOnClickListener(null)
       viewContainer.isClickable = false

@@ -64,6 +64,7 @@ internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, va
            }
         }
       }
+      styleDirtyNodes.add(id)
       return true
     }
     "borderWidth" -> {
@@ -93,6 +94,10 @@ internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, va
       drawable.borderTopRightRadius = radius
       drawable.borderBottomRightRadius = radius
       drawable.borderBottomLeftRadius = radius
+      (view as? ZynthLayoutView)?.setBorderRadii(radius, radius, radius, radius)
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        view.invalidateOutline()
+      }
       styleDirtyNodes.add(id)
       return true
     }
@@ -147,24 +152,60 @@ internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, va
     "borderTopLeftRadius" -> {
       val drawable = ensureBorderDrawable(id, view)
       drawable.borderTopLeftRadius = dpToPx(value.toFloatOrNull() ?: 0f)
+      (view as? ZynthLayoutView)?.setBorderRadii(
+        drawable.borderTopLeftRadius,
+        drawable.borderTopRightRadius,
+        drawable.borderBottomRightRadius,
+        drawable.borderBottomLeftRadius
+      )
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        view.invalidateOutline()
+      }
       styleDirtyNodes.add(id)
       return true
     }
     "borderTopRightRadius" -> {
       val drawable = ensureBorderDrawable(id, view)
       drawable.borderTopRightRadius = dpToPx(value.toFloatOrNull() ?: 0f)
+      (view as? ZynthLayoutView)?.setBorderRadii(
+        drawable.borderTopLeftRadius,
+        drawable.borderTopRightRadius,
+        drawable.borderBottomRightRadius,
+        drawable.borderBottomLeftRadius
+      )
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        view.invalidateOutline()
+      }
       styleDirtyNodes.add(id)
       return true
     }
     "borderBottomRightRadius" -> {
       val drawable = ensureBorderDrawable(id, view)
       drawable.borderBottomRightRadius = dpToPx(value.toFloatOrNull() ?: 0f)
+      (view as? ZynthLayoutView)?.setBorderRadii(
+        drawable.borderTopLeftRadius,
+        drawable.borderTopRightRadius,
+        drawable.borderBottomRightRadius,
+        drawable.borderBottomLeftRadius
+      )
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        view.invalidateOutline()
+      }
       styleDirtyNodes.add(id)
       return true
     }
     "borderBottomLeftRadius" -> {
       val drawable = ensureBorderDrawable(id, view)
       drawable.borderBottomLeftRadius = dpToPx(value.toFloatOrNull() ?: 0f)
+      (view as? ZynthLayoutView)?.setBorderRadii(
+        drawable.borderTopLeftRadius,
+        drawable.borderTopRightRadius,
+        drawable.borderBottomRightRadius,
+        drawable.borderBottomLeftRadius
+      )
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        view.invalidateOutline()
+      }
       styleDirtyNodes.add(id)
       return true
     }
@@ -234,10 +275,16 @@ internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, va
     }
     "overflow" -> {
       val clip = value == "hidden" || value == "scroll"
-      view.clipToOutline = clip
-      if (view is android.view.ViewGroup) {
-        view.clipToPadding = clip
-        view.clipChildren = clip
+      if (view is ZynthLayoutView) {
+        view.setOverflowHidden(clip)
+        view.clipToOutline = false
+        view.clipChildren = false
+      } else {
+        view.clipToOutline = clip
+        if (view is android.view.ViewGroup) {
+          view.clipToPadding = clip
+          view.clipChildren = clip
+        }
       }
       return true
     }

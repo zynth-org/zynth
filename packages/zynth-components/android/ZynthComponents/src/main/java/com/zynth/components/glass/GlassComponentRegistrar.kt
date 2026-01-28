@@ -48,14 +48,14 @@ fun createGlassViewDescriptor(): ZynthComponentDescriptor {
             view.setOverflowHidden(shouldClip)
             
             val borderRadius = style.borderRadius ?: 0f
-            view.setClipRadius(borderRadius)
+            view.setBorderRadii(borderRadius, borderRadius, borderRadius, borderRadius)
         },
         onReset = { node ->
              val view = node.view as? ZynthGlassView ?: return@ZynthComponentDescriptor
              view.setInteractive(true)
              view.pointerMode = ZynthViewContainer.PointerEventsMode.AUTO
              view.setOverflowHidden(false)
-             view.setClipRadius(0f)
+             view.setBorderRadii(0f, 0f, 0f, 0f)
         }
     )
 }

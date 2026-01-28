@@ -2,7 +2,10 @@ package com.zynth.kit.core
 
 import android.content.Context
 import android.util.AttributeSet
+import android.graphics.Canvas
+import android.graphics.Path
 import android.graphics.Rect
+import android.graphics.RectF
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
@@ -16,10 +19,98 @@ open class ZynthLayoutView @JvmOverloads constructor(
   private var yogaWidth = -1
   private var yogaHeight = -1
 
+  private var overflowHidden: Boolean = false
+  private var clipPath: Path? = null
+  private var clipRect: RectF? = null
+  
+  protected var borderTopLeftRadius: Float = 0f
+  protected var borderTopRightRadius: Float = 0f
+  protected var borderBottomRightRadius: Float = 0f
+  protected var borderBottomLeftRadius: Float = 0f
+
   init {
     clipChildren = false
     clipToPadding = false
     clipToOutline = false
+  }
+
+  open fun setOverflowHidden(hidden: Boolean) {
+    if (overflowHidden != hidden) {
+      overflowHidden = hidden
+      invalidate()
+    }
+  }
+
+  open fun setBorderRadii(tl: Float, tr: Float, br: Float, bl: Float) {
+    if (borderTopLeftRadius != tl || borderTopRightRadius != tr || 
+        borderBottomRightRadius != br || borderBottomLeftRadius != bl) {
+      borderTopLeftRadius = tl
+      borderTopRightRadius = tr
+      borderBottomRightRadius = br
+      borderBottomLeftRadius = bl
+      clipPath = null
+      invalidate()
+    }
+  }
+
+  private fun getOrCreateClipPath(): Path {
+    var path = clipPath
+    if (path == null || path.isEmpty) {
+      path = Path()
+      clipPath = path
+    }
+    path.reset()
+    
+    val hasRadius = borderTopLeftRadius > 0f || borderTopRightRadius > 0f || 
+                    borderBottomRightRadius > 0f || borderBottomLeftRadius > 0f
+                    
+    if (hasRadius) {
+      val radii = floatArrayOf(
+        borderTopLeftRadius, borderTopLeftRadius,
+        borderTopRightRadius, borderTopRightRadius,
+        borderBottomRightRadius, borderBottomRightRadius,
+        borderBottomLeftRadius, borderBottomLeftRadius
+      )
+      path.addRoundRect(
+        RectF(0f, 0f, width.toFloat(), height.toFloat()),
+        radii,
+        Path.Direction.CW
+      )
+    } else {
+      path.addRect(0f, 0f, width.toFloat(), height.toFloat(), Path.Direction.CW)
+    }
+    return path
+  }
+  
+  private fun getOrCreateClipRect(): RectF {
+    var rect = clipRect
+    if (rect == null) {
+      rect = RectF()
+      clipRect = rect
+    }
+    rect.set(0f, 0f, width.toFloat(), height.toFloat())
+    return rect
+  }
+
+  override fun dispatchDraw(canvas: Canvas) {
+    if (overflowHidden && width > 0 && height > 0) {
+      val saveCount = canvas.save()
+      
+      val hasRadius = borderTopLeftRadius > 0f || borderTopRightRadius > 0f || 
+                      borderBottomRightRadius > 0f || borderBottomLeftRadius > 0f
+      
+      if (hasRadius) {
+        canvas.clipPath(getOrCreateClipPath())
+      } else {
+        val rect = getOrCreateClipRect()
+        canvas.clipRect(rect.left, rect.top, rect.right, rect.bottom)
+      }
+      
+      super.dispatchDraw(canvas)
+      canvas.restoreToCount(saveCount)
+    } else {
+      super.dispatchDraw(canvas)
+    }
   }
 
   fun updateYogaLayout(width: Int, height: Int) {

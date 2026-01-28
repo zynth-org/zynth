@@ -38,7 +38,7 @@ if (typeof globalThis.queueMicrotask !== "function") {
             if (stack) console.error("[microtask-unhandled:stack]", stack);
             throw err;
           }
-        }, 0)
+        }, 0),
       );
   };
 }
@@ -81,47 +81,8 @@ function mountErrorOverlaySurface(rootId: number) {
   const surfaceId = getOverlaySurfaceId(rootId);
   overlaySurfaceId = surfaceId;
   disposeOverlay = render(
-    () =>
-      runWithSurface(surfaceId, () => (
-        <View
-          style={{ width: "100%", height: "100%", position: "absolute" }}
-          pointerEvents="none"
-        >
-          <ErrorOverlayLayer />
-        </View>
-      )),
-    { id: surfaceId, type: "root" } as any
-  );
-}
-
-function mountDevBannerSurface(rootId: number) {
-  if (!isErrorOverlayEnabled()) return;
-  if (disposeDevBanner) return;
-  const surfaceId = getOverlaySurfaceId(rootId) + 1;
-  devBannerSurfaceId = surfaceId;
-  disposeDevBanner = render(
-    () =>
-      runWithSurface(surfaceId, () => (
-        <View
-          style={{
-            position: "absolute",
-            left: 0,
-            right: 0,
-            bottom: 0,
-            height: 24,
-            backgroundColor: "#111827",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 9999,
-          }}
-          pointerEvents="none"
-        >
-          <Text style={{ color: "#f59e0b", fontSize: 12, fontWeight: "700" }}>
-            DEV MODE
-          </Text>
-        </View>
-      )),
-    { id: surfaceId, type: "root" } as any
+    () => runWithSurface(surfaceId, () => <ErrorOverlayLayer />),
+    { id: surfaceId, type: "root" } as any,
   );
 }
 
@@ -221,7 +182,6 @@ export function start(App: () => any): () => void {
 
     setActiveSurface(rootId);
     mountErrorOverlaySurface(rootId);
-    mountDevBannerSurface(rootId);
     console.log(`Starting render with rootId: ${rootId}`);
     if (typeof currentApp !== "function") {
       console.error("[__startApp] no app registered for rendering");

@@ -21,28 +21,86 @@ import kotlin.math.sin
 class ZynthBorderDrawable : Drawable() {
 
     var backgroundColor: Int = Color.TRANSPARENT
+        set(value) {
+            field = value
+            invalidateSelf()
+        }
+
     var backgroundGradient: ZynthLinearGradient? = null
         set(value) {
             field = value
             updateShader()
             invalidateSelf()
         }
+
     var borderTopWidth: Float = 0f
+        set(value) {
+            field = value
+            invalidateSelf()
+        }
     var borderRightWidth: Float = 0f
+        set(value) {
+            field = value
+            invalidateSelf()
+        }
     var borderBottomWidth: Float = 0f
+        set(value) {
+            field = value
+            invalidateSelf()
+        }
     var borderLeftWidth: Float = 0f
+        set(value) {
+            field = value
+            invalidateSelf()
+        }
 
     var borderTopColor: Int = Color.TRANSPARENT
+        set(value) {
+            field = value
+            invalidateSelf()
+        }
     var borderRightColor: Int = Color.TRANSPARENT
+        set(value) {
+            field = value
+            invalidateSelf()
+        }
     var borderBottomColor: Int = Color.TRANSPARENT
+        set(value) {
+            field = value
+            invalidateSelf()
+        }
     var borderLeftColor: Int = Color.TRANSPARENT
+        set(value) {
+            field = value
+            invalidateSelf()
+        }
 
     var borderTopLeftRadius: Float = 0f
+        set(value) {
+            field = value
+            invalidateSelf()
+        }
     var borderTopRightRadius: Float = 0f
+        set(value) {
+            field = value
+            invalidateSelf()
+        }
     var borderBottomRightRadius: Float = 0f
+        set(value) {
+            field = value
+            invalidateSelf()
+        }
     var borderBottomLeftRadius: Float = 0f
+        set(value) {
+            field = value
+            invalidateSelf()
+        }
 
     var borderStyle: String? = null
+        set(value) {
+            field = value
+            invalidateSelf()
+        }
 
     private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }

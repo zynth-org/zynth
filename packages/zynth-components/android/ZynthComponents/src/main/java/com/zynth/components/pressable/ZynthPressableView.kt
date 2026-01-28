@@ -21,6 +21,7 @@ import android.view.ViewOutlineProvider
 import android.widget.FrameLayout
 import com.zynth.kit.core.ZynthBorderDrawable
 import com.zynth.kit.core.ZynthEventSink
+import com.zynth.kit.core.ZynthLayoutView
 import java.util.Arrays
 import kotlin.math.hypot
 import kotlin.math.max
@@ -32,7 +33,7 @@ private const val DEFAULT_LONG_PRESS_MS = 500L
 private const val DEFAULT_DOUBLE_PRESS_WINDOW_MS = 250L
 private const val PRESS_FADE_ANIMATION_MS = 120L
 
-class ZynthPressableView(context: Context) : FrameLayout(context) {
+class ZynthPressableView(context: Context) : ZynthLayoutView(context) {
 
   var nodeId: Int = -1
   var listener: ZynthEventSink? = null
@@ -56,7 +57,6 @@ class ZynthPressableView(context: Context) : FrameLayout(context) {
   private var hitSlop: Rect? = null
   private var pointerEvents: String = "auto"
   private var lastCommandSeq: Long = -1L
-  private var borderRadius: Float = 0f
   private var lastRadii: FloatArray? = null
 
   private var pressedDown = false
@@ -77,8 +77,6 @@ class ZynthPressableView(context: Context) : FrameLayout(context) {
     isClickable = true
     isFocusable = true
     isFocusableInTouchMode = true
-    clipToPadding = false
-    clipChildren = false
     importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
 
     setOnFocusChangeListener { _, hasFocus ->
@@ -510,9 +508,8 @@ class ZynthPressableView(context: Context) : FrameLayout(context) {
     }
   }
 
-  fun setBorderRadius(radius: Float) {
-    if (borderRadius == radius) return
-    borderRadius = radius
+  override fun setBorderRadii(tl: Float, tr: Float, br: Float, bl: Float) {
+    super.setBorderRadii(tl, tr, br, bl)
     updateRippleMask()
   }
 
@@ -538,17 +535,25 @@ class ZynthPressableView(context: Context) : FrameLayout(context) {
         setColor(Color.WHITE)
         cornerRadii = radii
       }
-    } else if (borderRadius > 0) {
-      val r = borderRadius
-      val radii = floatArrayOf(r, r, r, r, r, r, r, r)
-      currentRadii = radii
-       GradientDrawable().apply {
-        setColor(Color.WHITE)
-        cornerRadius = borderRadius
-      }
     } else {
-      currentRadii = floatArrayOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f)
-      ColorDrawable(Color.WHITE)
+      val hasRadius = borderTopLeftRadius > 0f || borderTopRightRadius > 0f ||
+              borderBottomRightRadius > 0f || borderBottomLeftRadius > 0f
+      if (hasRadius) {
+        val radii = floatArrayOf(
+          borderTopLeftRadius, borderTopLeftRadius,
+          borderTopRightRadius, borderTopRightRadius,
+          borderBottomRightRadius, borderBottomRightRadius,
+          borderBottomLeftRadius, borderBottomLeftRadius
+        )
+        currentRadii = radii
+        GradientDrawable().apply {
+          setColor(Color.WHITE)
+          cornerRadii = radii
+        }
+      } else {
+        currentRadii = floatArrayOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f)
+        ColorDrawable(Color.WHITE)
+      }
     }
 
     if (lastRadii != null && Arrays.equals(lastRadii, currentRadii)) {
