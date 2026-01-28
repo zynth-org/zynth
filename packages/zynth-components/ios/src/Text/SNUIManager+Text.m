@@ -13,7 +13,46 @@
 #import <Yoga/Yoga.h>
 #import <CoreText/CoreText.h>
 
-static YGSize ZynthTextMeasureFunc(YGNodeConstRef node, float width, YGMeasureMode widthMode, float height, YGMeasureMode heightMode);
+static CGFloat ZynthTextNum(id x) {
+  return x && ![x isKindOfClass:[NSNull class]] ? [x doubleValue] : NAN;
+}
+
+// Helper function for Yoga measure
+static YGSize ZynthTextMeasureFunc(YGNodeConstRef node,
+                                  float width,
+                                  YGMeasureMode widthMode,
+                                  float height,
+                                  YGMeasureMode heightMode) {
+  UILabel *label = (__bridge UILabel *)YGNodeGetContext(node);
+  if (![label isKindOfClass:[UILabel class]]) {
+    return (YGSize){.width = 0, .height = 0};
+  }
+  
+  CGFloat maxW;
+  switch (widthMode) {
+    case YGMeasureModeExactly: maxW = width; break;
+    case YGMeasureModeAtMost: maxW = width; break;
+    default: maxW = CGFLOAT_MAX; break;
+  }
+  
+  CGSize fit = [label sizeThatFits:CGSizeMake(maxW, CGFLOAT_MAX)];
+  
+  float outW;
+  switch (widthMode) {
+    case YGMeasureModeExactly: outW = width; break;
+    case YGMeasureModeAtMost: outW = MIN((float)fit.width, width); break;
+    default: outW = (float)fit.width; break;
+  }
+  
+  float outH;
+  switch (heightMode) {
+    case YGMeasureModeExactly: outH = height; break;
+    case YGMeasureModeAtMost: outH = MIN((float)fit.height, height); break;
+    default: outH = (float)fit.height; break;
+  }
+  
+  return (YGSize){.width = outW, .height = outH};
+}
 
 // Helper function to refresh text for a label node by composing from children
 static NSString *ZynthTextApplyTransform(NSString *text, NSString *transform) {
@@ -247,46 +286,6 @@ static BOOL ZynthTextHandleRemoval(ZynthUIManager *manager,
   return YES;
 }
 
-// Helper function for Yoga measure
-static YGSize ZynthTextMeasureFunc(YGNodeConstRef node,
-                                  float width,
-                                  YGMeasureMode widthMode,
-                                  float height,
-                                  YGMeasureMode heightMode) {
-  UILabel *label = (__bridge UILabel *)YGNodeGetContext(node);
-  if (![label isKindOfClass:[UILabel class]]) {
-    return (YGSize){.width = 0, .height = 0};
-  }
-  
-  CGFloat maxW;
-  switch (widthMode) {
-    case YGMeasureModeExactly: maxW = width; break;
-    case YGMeasureModeAtMost: maxW = width; break;
-    default: maxW = CGFLOAT_MAX; break;
-  }
-  
-  CGSize fit = [label sizeThatFits:CGSizeMake(maxW, CGFLOAT_MAX)];
-  
-  float outW;
-  switch (widthMode) {
-    case YGMeasureModeExactly: outW = width; break;
-    case YGMeasureModeAtMost: outW = MIN((float)fit.width, width); break;
-    default: outW = (float)fit.width; break;
-  }
-  
-  float outH;
-  switch (heightMode) {
-    case YGMeasureModeExactly: outH = height; break;
-    case YGMeasureModeAtMost: outH = MIN((float)fit.height, height); break;
-    default: outH = (float)fit.height; break;
-  }
-  
-  return (YGSize){.width = outW, .height = outH};
-}
-
-static CGFloat ZynthTextNum(id x) {
-  return x && ![x isKindOfClass:[NSNull class]] ? [x doubleValue] : NAN;
-}
 
 static BOOL ZynthTextContainsPrivateUseGlyph(NSString *text) {
   if (!text.length) return NO;
