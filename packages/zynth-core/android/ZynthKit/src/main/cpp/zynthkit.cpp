@@ -80,6 +80,8 @@ struct RuntimeState {
   jmethodID flush = nullptr;
   jmethodID scheduleTimer = nullptr;
   jmethodID cancelTimer = nullptr;
+  jmethodID scheduleAnimationFrame = nullptr;
+  jmethodID cancelAnimationFrame = nullptr;
   jmethodID postRegisterWorklet = nullptr;
   jmethodID postRunWorklet = nullptr;
   jmethodID devtoolsEmit = nullptr;
@@ -706,50 +708,99 @@ void installTimers(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
           state->timerContext->timers.erase(timerId);
         }
         
-        env->CallVoidMethod(state->uiManager, state->cancelTimer, timerId);
-        return Value::undefined();
-      });
-
-  auto hostClearInterval = Function::createFromHostFunction(
-      rt, PropNameID::forAscii(rt, "__hostClearInterval"), 1,
-      [runtime](Runtime &, const Value &, const Value *args, size_t count) -> Value {
-        if (count < 1 || !args[0].isNumber()) return Value::undefined();
-        RuntimeState *state = stateFor(runtime);
-        if (!state) return Value::undefined();
-        JNIEnv *env = getEnv();
-        if (!env) return Value::undefined();
+                env->CallVoidMethod(state->uiManager, state->cancelTimer, timerId);
+                return Value::undefined();
+              });
         
-        int timerId = static_cast<int>(args[0].asNumber());
-        {
-          std::lock_guard<std::mutex> lock(state->timerContext->mutex);
-          state->timerContext->timers.erase(timerId);
+          auto hostClearInterval = Function::createFromHostFunction(
+              rt, PropNameID::forAscii(rt, "__hostClearInterval"), 1,
+              [runtime](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+                if (count < 1 || !args[0].isNumber()) return Value::undefined();
+                RuntimeState *state = stateFor(runtime);
+                if (!state) return Value::undefined();
+                JNIEnv *env = getEnv();
+                if (!env) return Value::undefined();
+                
+                int timerId = static_cast<int>(args[0].asNumber());
+                {
+                  std::lock_guard<std::mutex> lock(state->timerContext->mutex);
+                  state->timerContext->timers.erase(timerId);
+                }
+                
+                env->CallVoidMethod(state->uiManager, state->cancelTimer, timerId);
+                return Value::undefined();
+              });
+        
+          auto hostRequestAnimationFrame = Function::createFromHostFunction(
+              rt, PropNameID::forAscii(rt, "__hostRequestAnimationFrame"), 1,
+              [runtime](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+                if (count < 1 || !args[0].isObject()) return Value::undefined();
+                Object fnObject = args[0].asObject(rt);
+                if (!fnObject.isFunction(rt)) return Value::undefined();
+        
+                RuntimeState *state = stateFor(runtime);
+                if (!state) return Value::undefined();
+                JNIEnv *env = getEnv();
+                if (!env) return Value::undefined();
+        
+                int timerId = state->timerContext->nextTimerId.fetch_add(1);
+                {
+                  std::lock_guard<std::mutex> lock(state->timerContext->mutex);
+                  state->timerContext->timers[timerId] = {
+                      std::make_shared<Function>(fnObject.asFunction(rt)),
+                      {}, 
+                      false
+                  };
+                }
+        
+                env->CallVoidMethod(state->uiManager, state->scheduleAnimationFrame,
+                                    reinterpret_cast<jlong>(runtime), timerId);
+                return Value(static_cast<double>(timerId));
+              });
+        
+          auto hostCancelAnimationFrame = Function::createFromHostFunction(
+              rt, PropNameID::forAscii(rt, "__hostCancelAnimationFrame"), 1,
+              [runtime](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+                if (count < 1 || !args[0].isNumber()) return Value::undefined();
+                RuntimeState *state = stateFor(runtime);
+                if (!state) return Value::undefined();
+                JNIEnv *env = getEnv();
+                if (!env) return Value::undefined();
+                
+                int timerId = static_cast<int>(args[0].asNumber());
+                {
+                  std::lock_guard<std::mutex> lock(state->timerContext->mutex);
+                  state->timerContext->timers.erase(timerId);
+                }
+                
+                env->CallVoidMethod(state->uiManager, state->cancelAnimationFrame, timerId);
+                return Value::undefined();
+              });
+        
+          rt.global().setProperty(rt, "__hostSetTimeout", hostSetTimeout);
+          rt.global().setProperty(rt, "__hostSetInterval", hostSetInterval);
+          rt.global().setProperty(rt, "__hostClearTimeout", hostClearTimeout);
+          rt.global().setProperty(rt, "__hostClearInterval", hostClearInterval);
+          rt.global().setProperty(rt, "__hostRequestAnimationFrame", hostRequestAnimationFrame);
+          rt.global().setProperty(rt, "__hostCancelAnimationFrame", hostCancelAnimationFrame);
+        
+          static const char *timerScript =
+              "globalThis.setTimeout=(fn,ms,...a)=>__hostSetTimeout(fn,ms|0,a);"
+              "globalThis.clearTimeout=(id)=>__hostClearTimeout(id);"
+              "globalThis.setInterval=(fn,ms,...a)=>__hostSetInterval(fn,ms|0,a);"
+              "globalThis.clearInterval=(id)=>__hostClearInterval(id);"
+              "globalThis.setImmediate=(fn,...a)=>__hostSetTimeout(fn,0,a);"
+              "globalThis.clearImmediate=(id)=>__hostClearTimeout(id);"
+              "globalThis.requestAnimationFrame=(fn)=>__hostRequestAnimationFrame(fn);"
+              "globalThis.cancelAnimationFrame=(id)=>__hostCancelAnimationFrame(id);";
+        
+          auto buffer = std::make_shared<StringBuffer>(timerScript);
+          runtime->evaluateJavaScript(buffer, "timers.js");
         }
         
-        env->CallVoidMethod(state->uiManager, state->cancelTimer, timerId);
-        return Value::undefined();
-      });
-
-  rt.global().setProperty(rt, "__hostSetTimeout", hostSetTimeout);
-  rt.global().setProperty(rt, "__hostSetInterval", hostSetInterval);
-  rt.global().setProperty(rt, "__hostClearTimeout", hostClearTimeout);
-  rt.global().setProperty(rt, "__hostClearInterval", hostClearInterval);
-
-  static const char *timerScript =
-      "globalThis.setTimeout=(fn,ms,...a)=>__hostSetTimeout(fn,ms|0,a);"
-      "globalThis.clearTimeout=(id)=>__hostClearTimeout(id);"
-      "globalThis.setInterval=(fn,ms,...a)=>__hostSetInterval(fn,ms|0,a);"
-      "globalThis.clearInterval=(id)=>__hostClearInterval(id);"
-      "globalThis.setImmediate=(fn,...a)=>__hostSetTimeout(fn,0,a);"
-      "globalThis.clearImmediate=(id)=>__hostClearTimeout(id);";
-
-  auto buffer = std::make_shared<StringBuffer>(timerScript);
-  runtime->evaluateJavaScript(buffer, "timers.js");
-}
-
-static const char *kZynthSharedValueKey = "__zynth_shared_value";
-
-void installSharedSignals(Runtime &rt, RuntimeState *state) {
-  if (!state) return;
+        static const char *kZynthSharedValueKey = "__zynth_shared_value";
+        
+        void installSharedSignals(Runtime &rt, RuntimeState *state) {  if (!state) return;
   auto createSharedSignal = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "createSharedSignal"), 1,
       [state](Runtime &, const Value &, const Value *args, size_t count) -> Value {
@@ -1377,6 +1428,56 @@ void uiCommandSetProp(
 
 } // namespace zynth::kit
 
+extern "C" JNIEXPORT void JNICALL
+Java_com_zynth_kit_runtime_JSBridge_invokeAnimationFrame(JNIEnv *,
+                                                jobject,
+                                                jlong ptr,
+                                                jint callbackId,
+                                                jdouble timestampMs) {
+  auto *runtime = reinterpret_cast<facebook::hermes::HermesRuntime *>(ptr);
+  if (!runtime) return;
+  
+  std::shared_ptr<Function> callback;
+
+  {
+    std::shared_ptr<TimerContext> ctx;
+    {
+      std::lock_guard<std::mutex> lock(gStateMutex);
+      auto it = gStates.find(runtime);
+      if (it != gStates.end() && it->second) {
+        ctx = it->second->timerContext;
+      }
+    }
+    
+    if (ctx) {
+      std::lock_guard<std::mutex> lock(ctx->mutex);
+      auto &timers = ctx->timers;
+      auto tit = timers.find(callbackId);
+      if (tit != timers.end()) {
+        callback = tit->second.callback;
+        timers.erase(tit); // RAF is one-shot
+      }
+    }
+  }
+
+  if (callback) {
+    Runtime &rt = *runtime;
+    Value arg(timestampMs);
+    try {
+      callback->call(rt, arg);
+    } catch (const JSError &error) {
+       __android_log_print(ANDROID_LOG_ERROR, "ZynthJS", "RAF error: %s", error.getMessage().c_str());
+       auto state = sharedStateFor(runtime);
+       std::string message = error.getMessage();
+       std::string stack = error.getStack();
+       std::string combined = stack.empty() ? message : (message + "\n" + stack);
+       emitDevtoolsEvent(state.get(), "error/js", "error", "js", combined);
+    } catch (...) {
+       __android_log_print(ANDROID_LOG_ERROR, "ZynthJS", "RAF exception");
+    }
+  }
+}
+
 extern "C" jint JNI_OnLoad(JavaVM *vm, void *) {
   gVm = vm;
   return facebook::jni::initialize(vm, [] {});
@@ -1433,6 +1534,8 @@ Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlon
   state->flush = env->GetMethodID(state->uiClass, "flush", "()V");
   state->scheduleTimer = env->GetMethodID(state->uiClass, "scheduleTimer", "(JIIZ)V");
   state->cancelTimer = env->GetMethodID(state->uiClass, "cancelTimer", "(I)V");
+  state->scheduleAnimationFrame = env->GetMethodID(state->uiClass, "scheduleAnimationFrame", "(JI)V");
+  state->cancelAnimationFrame = env->GetMethodID(state->uiClass, "cancelAnimationFrame", "(I)V");
   jclass bridgeClass = env->FindClass("com/zynth/kit/runtime/JSBridge");
   if (bridgeClass) {
     state->jsBridgeClass = static_cast<jclass>(env->NewGlobalRef(bridgeClass));

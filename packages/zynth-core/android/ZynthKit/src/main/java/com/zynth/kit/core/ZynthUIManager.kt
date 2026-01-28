@@ -72,6 +72,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal val frameCallback = Choreographer.FrameCallback { handleFrame() }
   private val layoutEngine: LayoutEngine = LayoutEngineAdapter()
   private val timerRunnables = HashMap<Int, Runnable>()
+  private val animationFrameCallbacks = HashMap<Int, Choreographer.FrameCallback>()
   internal var jsHandler: Handler? = null
   private val mainQueue = ArrayDeque<() -> Unit>()
   private var mainQueueScheduled = false
@@ -111,6 +112,35 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   fun cancelTimer(timerId: Int) {
     timerRunnables.remove(timerId)?.let {
       mainHandler.removeCallbacks(it)
+    }
+  }
+
+  fun scheduleAnimationFrame(runtimePtr: Long, callbackId: Int) {
+    if (Looper.myLooper() != Looper.getMainLooper()) {
+      runOnMain { scheduleAnimationFrame(runtimePtr, callbackId) }
+      return
+    }
+    ensureChoreographer()
+    val callback = object : Choreographer.FrameCallback {
+      override fun doFrame(frameTimeNanos: Long) {
+        animationFrameCallbacks.remove(callbackId)
+        val timestampMs = frameTimeNanos / 1_000_000.0
+        runOnJS {
+          JSBridge.invokeAnimationFrame(runtimePtr, callbackId, timestampMs)
+        }
+      }
+    }
+    animationFrameCallbacks[callbackId] = callback
+    choreographer?.postFrameCallback(callback)
+  }
+
+  fun cancelAnimationFrame(callbackId: Int) {
+    if (Looper.myLooper() != Looper.getMainLooper()) {
+      runOnMain { cancelAnimationFrame(callbackId) }
+      return
+    }
+    animationFrameCallbacks.remove(callbackId)?.let {
+      choreographer?.removeFrameCallback(it)
     }
   }
 

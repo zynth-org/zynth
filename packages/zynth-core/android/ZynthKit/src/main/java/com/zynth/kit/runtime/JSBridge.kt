@@ -38,6 +38,7 @@ internal object JSBridge {
   external fun invokeLayoutEvent(nodeId: Int, x: Double, y: Double, width: Double, height: Double)
   external fun invokeLayoutEventsBatch(payload: DoubleArray)
   external fun invokeTimer(runtimePtr: Long, timerId: Int)
+  external fun invokeAnimationFrame(runtimePtr: Long, callbackId: Int, timestampMs: Double)
   external fun registerWorkletOnUiRuntime(runtimePtr: Long, workletId: Int)
   external fun runWorkletOnUiRuntime(runtimePtr: Long, workletId: Int)
 
