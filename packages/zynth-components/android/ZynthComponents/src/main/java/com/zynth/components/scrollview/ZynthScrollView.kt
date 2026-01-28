@@ -163,10 +163,11 @@ internal class ZynthScrollView(
 
   private class ScrollContentView(context: Context) : FrameLayout(context) {
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
-      // Yoga drives child layouts; ensure children are confirmed at their current bounds.
+      val w = right - left
+      val h = bottom - top
       for (i in 0 until childCount) {
         val child = getChildAt(i)
-        child.layout(child.left, child.top, child.right, child.bottom)
+        child.layout(0, 0, w, h)
       }
     }
   }
@@ -263,7 +264,19 @@ internal class ZynthScrollView(
       super.addView(child, index, params)
       return
     }
-    contentView.addView(child, index, params)
+    val childParams = (params as? LayoutParams)?.let { LayoutParams(it) }
+      ?: LayoutParams(
+        LayoutParams.MATCH_PARENT,
+        LayoutParams.WRAP_CONTENT,
+      )
+    if (axis == Axis.HORIZONTAL) {
+      childParams.width = LayoutParams.WRAP_CONTENT
+      childParams.height = LayoutParams.MATCH_PARENT
+    } else {
+      childParams.width = LayoutParams.MATCH_PARENT
+      childParams.height = LayoutParams.WRAP_CONTENT
+    }
+    contentView.addView(child, index, childParams)
     child.addOnLayoutChangeListener(childLayoutListener)
     scheduleContentGeometryUpdate()
   }
@@ -1057,7 +1070,9 @@ internal class ZynthScrollView(
     if (contentView.childCount > 0) {
       val rect = Rect()
       fun accumulate(view: View) {
-        rect.set(0, 0, view.width, view.height)
+        val measuredW = if (view.measuredWidth > 0) view.measuredWidth else view.width
+        val measuredH = if (view.measuredHeight > 0) view.measuredHeight else view.height
+        rect.set(0, 0, measuredW, measuredH)
         contentView.offsetDescendantRectToMyCoords(view, rect)
         contentWidth = max(contentWidth, rect.right)
         contentHeight = max(contentHeight, rect.bottom)

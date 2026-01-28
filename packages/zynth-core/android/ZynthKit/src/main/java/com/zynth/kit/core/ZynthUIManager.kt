@@ -29,6 +29,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal val nodes = HashMap<Int, View>()
   internal val nodeStates = HashMap<Int, Node>()
   internal val parents = HashMap<Int, Int>()
+  internal val children = HashMap<Int, MutableList<Int>>()
   internal val nodeSurfaces = HashMap<Int, Int>()
   internal val surfaceRoots = HashMap<Int, ViewGroup>()
   internal val surfaceYoga = HashMap<Int, ZynthYogaLayout>()
@@ -443,6 +444,13 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     }
     val parent = if (parentId == 0 || isSurfaceRoot) rootViewForSurface(surfaceId) else nodes[parentId]
     parents[childId] = parentId
+    val siblings = children.getOrPut(parentId) { mutableListOf() }
+    val existingIndex = siblings.indexOf(childId)
+    if (existingIndex >= 0) {
+      siblings.removeAt(existingIndex)
+    }
+    val insertIndex = index.coerceIn(0, siblings.size)
+    siblings.add(insertIndex, childId)
     val previousSurfaceId = nodeSurfaces[childId]
     if (previousSurfaceId != surfaceId) {
       moveSubtreeToSurface(childId, surfaceId, parentId, index)
@@ -494,6 +502,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     }
 
     nodeStates[parentId]?.textChildren?.remove(childId)
+    children[parentId]?.remove(childId)
     cleanupNode(childId)
     parents.remove(childId)
     runOnMain { (child.parent as? ViewGroup)?.removeView(child) }
@@ -858,19 +867,10 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     val yogaParentId = if (parentId == 0 || isSurfaceRootId(parentId)) 0 else parentId
     layout.insertChild(yogaParentId, nodeId, index)
 
-    val group = view as? ViewGroup ?: return
-    for (i in 0 until group.childCount) {
-      val childView = group.getChildAt(i)
-      val childId = findNodeIdByView(childView) ?: continue
-      moveSubtreeToSurface(childId, surfaceId, nodeId, i)
+    val childIds = children[nodeId]?.toList() ?: return
+    for ((childIndex, childId) in childIds.withIndex()) {
+      moveSubtreeToSurface(childId, surfaceId, nodeId, childIndex)
     }
-  }
-
-  private fun findNodeIdByView(view: View): Int? {
-    for ((id, nodeView) in nodes) {
-      if (nodeView === view) return id
-    }
-    return null
   }
 
   private inner class LayoutEngineAdapter : LayoutEngine {

@@ -1,9 +1,20 @@
-import { Modal, Pressable, ScrollView, Text, View } from "@zynth/components";
-import { createMemo, createSignal } from "solid-js";
+import {
+  Button,
+  Modal,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from "@zynth/components";
+import {
+  For,
+  createEffect,
+  createMemo,
+  createSignal,
+  onCleanup,
+} from "solid-js";
 import { Dimensions } from "@zynth/apis";
 declare const __DEV__: boolean | undefined;
-
-const windowHeight = Dimensions.get("window").height;
 
 export type DevtoolsEvent = {
   topic: string;
@@ -263,6 +274,16 @@ function FatalOverlay(props: {
   const stackLines = createMemo(() => splitStack(entry().stack));
   const location = createMemo(() => deriveLocation(entry()));
   const [copied, setCopied] = createSignal(false);
+  const [windowSize, setWindowSize] = createSignal(Dimensions.get("window"));
+  createEffect(() => {
+    const unsubscribe = Dimensions.observe("window", (metrics) => {
+      setWindowSize(metrics);
+    });
+    onCleanup(unsubscribe);
+  });
+  const windowHeight = () => windowSize().height;
+  const windowWidth = () => windowSize().width;
+  const contentContainerWidth = () => Math.max(windowWidth() - 80, 0);
 
   const errorSummary = createMemo(() => {
     const lines = stackLines();
@@ -296,21 +317,21 @@ function FatalOverlay(props: {
   return (
     <View
       style={{
-        height: windowHeight,
+        height: windowHeight(),
         position: "absolute",
         top: 0,
         left: 0,
         right: 0,
-        backgroundColor: "rgba(24,24,27,0.95)",
+        backgroundColor: "rgba(24,24,27,1)",
         zIndex: 9999,
       }}
     >
       <View
         style={{
-          flex: 1,
           paddingTop: 64,
           paddingHorizontal: 20,
-          paddingBottom: 140,
+          flex: 1,
+          paddingBottom: 32,
         }}
       >
         <View style={{ gap: 6, paddingBottom: 18 }}>
@@ -324,8 +345,8 @@ function FatalOverlay(props: {
               paddingVertical: 6,
               borderRadius: 999,
               backgroundColor: "rgba(239,68,68,0.12)",
-              // borderWidth: 1,
-              // borderColor: "rgba(239,68,68,0.28)",
+              borderWidth: 1,
+              borderColor: "rgba(239,68,68,0.28)",
             }}
           >
             <View
@@ -482,7 +503,7 @@ function FatalOverlay(props: {
             </View>
           </View>
 
-          <View style={{ gap: 8 }}>
+          <View style={{ flex: 1, gap: 8 }}>
             <View
               style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
             >
@@ -505,54 +526,55 @@ function FatalOverlay(props: {
             </View>
             <View
               style={{
+                flex: 1,
                 borderRadius: 18,
                 borderWidth: 1,
                 borderColor: "#27272a",
                 backgroundColor: "rgba(24,24,27,0.7)",
-                overflow: "hidden",
-                maxHeight: 220,
+                height: 220,
               }}
             >
               <ScrollView
                 style={{
-                  paddingHorizontal: 12,
                   paddingVertical: 12,
                   minHeight: 220,
                 }}
                 contentContainerStyle={{
                   paddingBottom: 12,
+                  paddingHorizontal: 12,
                   gap: 6,
-                  minHeight: 150,
                 }}
               >
                 {stackLines().length > 0 ? (
-                  stackLines().map((line, index) => (
-                    <View
-                      key={`${index}-${line}`}
-                      style={{ flexDirection: "row" }}
-                    >
-                      <Text
-                        style={{
-                          width: 22,
-                          color: "rgba(161,161,170,0.45)",
-                          fontSize: 11,
-                          fontFamily: "Menlo",
-                        }}
+                  <For each={stackLines()}>
+                    {(line, index) => (
+                      <View
+                        key={`${index}-${line}`}
+                        style={{ flexDirection: "row" }}
                       >
-                        {index + 1}
-                      </Text>
-                      <Text
-                        style={{
-                          flex: 1,
-                          color: index === 0 ? "#e4e4e7" : "#a1a1aa",
-                          fontSize: 11,
-                          fontFamily: "Menlo",
-                        }}
-                      >
-                        {line}
-                      </Text>
-                    </View>
-                  ))
+                        <Text
+                          style={{
+                            width: 22,
+                            color: "rgba(161,161,170,0.45)",
+                            fontSize: 11,
+                            fontFamily: "Menlo",
+                          }}
+                        >
+                          {index() + 1}
+                        </Text>
+                        <Text
+                          style={{
+                            flex: 1,
+                            color: index() === 0 ? "#e4e4e7" : "#a1a1aa",
+                            fontSize: 11,
+                            fontFamily: "Menlo",
+                          }}
+                        >
+                          {line}
+                        </Text>
+                      </View>
+                    )}
+                  </For>
                 ) : (
                   <Text
                     style={{
@@ -570,95 +592,75 @@ function FatalOverlay(props: {
         </View>
       </View>
 
-      <View style={{ flexDirection: "row", gap: 8, flex: 1 }}>
-        <View
-          style={{
-            position: "absolute",
-            left: 0,
-            right: 0,
-            bottom: 0,
-            paddingHorizontal: 20,
-            paddingBottom: 24,
-            paddingTop: 28,
-            gap: 10,
-            zIndex: 999,
-            backgroundColor: "rgba(24,24,27,0.98)",
-            borderTopWidth: 1,
-            borderTopColor: "#27272a",
-          }}
-        >
-          <View style={{ flexDirection: "row", gap: 8 }}>
-            <Pressable
-              onPress={handleCopy}
-              style={{
-                flex: 1,
-                paddingVertical: 13,
-                borderRadius: 16,
-                backgroundColor: "#27272a",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Text
-                style={{ color: "#e4e4e7", fontSize: 13, fontWeight: "700" }}
-              >
-                {copied() ? "Copied" : "Copy"}
-              </Text>
-            </Pressable>
-
-            <Pressable
-              onPress={() => {
-                console.log("Press ignore on entry:", entry());
-                props.onDismiss("ignore", entry());
-              }}
-              style={{
-                flex: 1,
-                paddingVertical: 13,
-                borderRadius: 16,
-                backgroundColor: "#27272a",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Text
-                style={{ color: "#e4e4e7", fontSize: 13, fontWeight: "700" }}
-              >
-                Ignore
-              </Text>
-            </Pressable>
-          </View>
-
-          <Pressable
-            onPress={() => {
-              props.onDismiss("dismiss", entry());
-              reloadApp();
-            }}
+      <View
+        style={{
+          paddingHorizontal: 20,
+          paddingBottom: 24,
+          paddingTop: 28,
+          gap: 10,
+          backgroundColor: "rgba(24,24,27,0.98)",
+          borderTopWidth: 1,
+          borderTopColor: "#27272a",
+        }}
+      >
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <Button
+            onPress={handleCopy}
+            enableGlassIOS
             style={{
-              width: "100%",
-              paddingVertical: 15,
-              borderRadius: 18,
-              backgroundColor: "#dc2626",
+              flex: 1,
+              paddingVertical: 13,
+              borderRadius: 16,
+              backgroundColor: "#27272a",
               alignItems: "center",
               justifyContent: "center",
             }}
           >
-            <Text style={{ color: "#fff", fontSize: 14, fontWeight: "900" }}>
-              Reload Application
+            <Text style={{ color: "#e4e4e7", fontSize: 13, fontWeight: "700" }}>
+              {copied() ? "Copied" : "Copy"}
             </Text>
-          </Pressable>
+          </Button>
 
-          <View
-            style={{
-              alignSelf: "center",
-              marginTop: 6,
-              width: 120,
-              height: 5,
-              borderRadius: 999,
-              backgroundColor: "#3f3f46",
-              opacity: 0.45,
+          <Button
+            onPress={() => {
+              console.log("Press ignore on entry:", entry());
+              props.onDismiss("ignore", entry());
             }}
-          />
+            enableGlassIOS
+            style={{
+              flex: 1,
+              paddingVertical: 13,
+              borderRadius: 16,
+              backgroundColor: "#27272a",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Text style={{ color: "#e4e4e7", fontSize: 13, fontWeight: "700" }}>
+              Ignore
+            </Text>
+          </Button>
         </View>
+
+        <Button
+          onPress={() => {
+            props.onDismiss("dismiss", entry());
+            reloadApp();
+          }}
+          enableGlassIOS
+          style={{
+            width: "100%",
+            paddingVertical: 15,
+            borderRadius: 18,
+            backgroundColor: "#dc2626",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Text style={{ color: "#fff", fontSize: 14, fontWeight: "900" }}>
+            Reload Application
+          </Text>
+        </Button>
       </View>
     </View>
   );
