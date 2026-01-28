@@ -13,6 +13,8 @@
 #import <Yoga/Yoga.h>
 #import <CoreText/CoreText.h>
 
+static YGSize ZynthTextMeasureFunc(YGNodeConstRef node, float width, YGMeasureMode widthMode, float height, YGMeasureMode heightMode);
+
 // Helper function to refresh text for a label node by composing from children
 static NSString *ZynthTextApplyTransform(NSString *text, NSString *transform) {
   if (!transform || text.length == 0) return text;
@@ -186,9 +188,8 @@ static void ZynthTextRefreshLabelNode(ZynthUIManager *manager, ZynthNode *node) 
   
   // Force layout update to ensure the new attributed text is rendered
   [textView setNeedsDisplay];
-  [textView.superview setNeedsLayout];
-
   if (node.yoga && YGNodeGetChildCount(node.yoga) == 0 && YGNodeGetOwner(node.yoga)) {
+    YGNodeSetMeasureFunc(node.yoga, ZynthTextMeasureFunc);
     YGNodeMarkDirty(node.yoga);
   }
 }
