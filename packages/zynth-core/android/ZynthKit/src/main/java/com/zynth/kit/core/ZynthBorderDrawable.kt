@@ -112,9 +112,33 @@ class ZynthBorderDrawable : Drawable() {
         val bounds = bounds
         if (bounds.isEmpty) return
 
+        val w = bounds.width().toFloat()
+        val h = bounds.height().toFloat()
+
+        // CSS-like radius constraint scaling
+        var scale = 1f
+        if (borderTopLeftRadius + borderTopRightRadius > w) {
+            scale = minOf(scale, w / (borderTopLeftRadius + borderTopRightRadius))
+        }
+        if (borderTopRightRadius + borderBottomRightRadius > h) {
+            scale = minOf(scale, h / (borderTopRightRadius + borderBottomRightRadius))
+        }
+        if (borderBottomRightRadius + borderBottomLeftRadius > w) {
+            scale = minOf(scale, w / (borderBottomRightRadius + borderBottomLeftRadius))
+        }
+        if (borderBottomLeftRadius + borderTopLeftRadius > h) {
+            scale = minOf(scale, h / (borderBottomLeftRadius + borderTopLeftRadius))
+        }
+
+        val effTopLeft = (borderTopLeftRadius * scale).coerceAtLeast(0f)
+        val effTopRight = (borderTopRightRadius * scale).coerceAtLeast(0f)
+        val effBottomRight = (borderBottomRightRadius * scale).coerceAtLeast(0f)
+        val effBottomLeft = (borderBottomLeftRadius * scale).coerceAtLeast(0f)
+
         val hasAnyBorderWidth = borderTopWidth > 0f || borderRightWidth > 0f || borderBottomWidth > 0f || borderLeftWidth > 0f
         val hasAnyBorderColor = borderTopColor != Color.TRANSPARENT || borderRightColor != Color.TRANSPARENT || borderBottomColor != Color.TRANSPARENT || borderLeftColor != Color.TRANSPARENT
-        val hasAnyBorderRadius = borderTopLeftRadius > 0f || borderTopRightRadius > 0f || borderBottomRightRadius > 0f || borderBottomLeftRadius > 0f
+        val hasAnyBorderRadius = effTopLeft > 0f || effTopRight > 0f || effBottomRight > 0f || effBottomLeft > 0f
+        
         if (backgroundGradient != null || backgroundColor != Color.TRANSPARENT || hasAnyBorderRadius) {
             backgroundPaint.color = backgroundColor
             backgroundPaint.alpha = if (backgroundGradient != null) 255 else Color.alpha(backgroundColor)
@@ -122,10 +146,10 @@ class ZynthBorderDrawable : Drawable() {
             rectF.set(bounds)
             if (hasAnyBorderRadius) {
                 val radii = floatArrayOf(
-                    borderTopLeftRadius, borderTopLeftRadius,
-                    borderTopRightRadius, borderTopRightRadius,
-                    borderBottomRightRadius, borderBottomRightRadius,
-                    borderBottomLeftRadius, borderBottomLeftRadius
+                    effTopLeft, effTopLeft,
+                    effTopRight, effTopRight,
+                    effBottomRight, effBottomRight,
+                    effBottomLeft, effBottomLeft
                 )
                 path.addRoundRect(rectF, radii, Path.Direction.CW)
             } else {
@@ -140,19 +164,14 @@ class ZynthBorderDrawable : Drawable() {
             val halfBottom = borderBottomWidth / 2f
             val halfLeft = borderLeftWidth / 2f
 
-            val effectiveTopLeftRadius = borderTopLeftRadius.coerceAtLeast(0f)
-            val effectiveTopRightRadius = borderTopRightRadius.coerceAtLeast(0f)
-            val effectiveBottomRightRadius = borderBottomRightRadius.coerceAtLeast(0f)
-            val effectiveBottomLeftRadius = borderBottomLeftRadius.coerceAtLeast(0f)
-
             if (borderTopWidth > 0f && borderTopColor != Color.TRANSPARENT) {
                 borderPaint.color = borderTopColor
                 borderPaint.strokeWidth = borderTopWidth
                 applyBorderStyle(borderPaint, borderTopWidth, borderStyle)
                 canvas.drawLine(
-                    bounds.left + effectiveTopLeftRadius,
+                    bounds.left + effTopLeft,
                     bounds.top + halfTop,
-                    bounds.right - effectiveTopRightRadius,
+                    bounds.right - effTopRight,
                     bounds.top + halfTop,
                     borderPaint
                 )
@@ -164,9 +183,9 @@ class ZynthBorderDrawable : Drawable() {
                 applyBorderStyle(borderPaint, borderRightWidth, borderStyle)
                 canvas.drawLine(
                     bounds.right - halfRight,
-                    bounds.top + effectiveTopRightRadius,
+                    bounds.top + effTopRight,
                     bounds.right - halfRight,
-                    bounds.bottom - effectiveBottomRightRadius,
+                    bounds.bottom - effBottomRight,
                     borderPaint
                 )
             }
@@ -176,9 +195,9 @@ class ZynthBorderDrawable : Drawable() {
                 borderPaint.strokeWidth = borderBottomWidth
                 applyBorderStyle(borderPaint, borderBottomWidth, borderStyle)
                 canvas.drawLine(
-                    bounds.left + effectiveBottomLeftRadius,
+                    bounds.left + effBottomLeft,
                     bounds.bottom - halfBottom,
-                    bounds.right - effectiveBottomRightRadius,
+                    bounds.right - effBottomRight,
                     bounds.bottom - halfBottom,
                     borderPaint
                 )
@@ -190,59 +209,59 @@ class ZynthBorderDrawable : Drawable() {
                 applyBorderStyle(borderPaint, borderLeftWidth, borderStyle)
                 canvas.drawLine(
                     bounds.left + halfLeft,
-                    bounds.top + effectiveTopLeftRadius,
+                    bounds.top + effTopLeft,
                     bounds.left + halfLeft,
-                    bounds.bottom - effectiveBottomLeftRadius,
+                    bounds.bottom - effBottomLeft,
                     borderPaint
                 )
             }
-            if (effectiveTopLeftRadius > 0f && borderTopWidth > 0f && borderLeftWidth > 0f && borderTopColor != Color.TRANSPARENT && borderLeftColor != Color.TRANSPARENT) {
+            if (effTopLeft > 0f && borderTopWidth > 0f && borderLeftWidth > 0f && borderTopColor != Color.TRANSPARENT && borderLeftColor != Color.TRANSPARENT) {
                 borderPaint.color = borderTopColor
                 borderPaint.strokeWidth = borderTopWidth.coerceAtLeast(borderLeftWidth)
                 applyBorderStyle(borderPaint, borderTopWidth.coerceAtLeast(borderLeftWidth), borderStyle)
                 rectF.set(
                     bounds.left + halfLeft,
                     bounds.top + halfTop,
-                    bounds.left + effectiveTopLeftRadius * 2,
-                    bounds.top + effectiveTopLeftRadius * 2
+                    bounds.left + effTopLeft * 2,
+                    bounds.top + effTopLeft * 2
                 )
                 canvas.drawArc(rectF, 180f, 90f, false, borderPaint)
             }
 
-            if (effectiveTopRightRadius > 0f && borderTopWidth > 0f && borderRightWidth > 0f && borderTopColor != Color.TRANSPARENT && borderRightColor != Color.TRANSPARENT) {
+            if (effTopRight > 0f && borderTopWidth > 0f && borderRightWidth > 0f && borderTopColor != Color.TRANSPARENT && borderRightColor != Color.TRANSPARENT) {
                 borderPaint.color = borderTopColor
                 borderPaint.strokeWidth = borderTopWidth.coerceAtLeast(borderRightWidth)
                 applyBorderStyle(borderPaint, borderTopWidth.coerceAtLeast(borderRightWidth), borderStyle)
                 rectF.set(
-                    bounds.right - effectiveTopRightRadius * 2,
+                    bounds.right - effTopRight * 2,
                     bounds.top + halfTop,
                     bounds.right - halfRight,
-                    bounds.top + effectiveTopRightRadius * 2
+                    bounds.top + effTopRight * 2
                 )
                 canvas.drawArc(rectF, 270f, 90f, false, borderPaint)
             }
 
-            if (effectiveBottomRightRadius > 0f && borderBottomWidth > 0f && borderRightWidth > 0f && borderBottomColor != Color.TRANSPARENT && borderRightColor != Color.TRANSPARENT) {
+            if (effBottomRight > 0f && borderBottomWidth > 0f && borderRightWidth > 0f && borderBottomColor != Color.TRANSPARENT && borderRightColor != Color.TRANSPARENT) {
                 borderPaint.color = borderBottomColor
                 borderPaint.strokeWidth = borderBottomWidth.coerceAtLeast(borderRightWidth)
                 applyBorderStyle(borderPaint, borderBottomWidth.coerceAtLeast(borderRightWidth), borderStyle)
                 rectF.set(
-                    bounds.right - effectiveBottomRightRadius * 2,
-                    bounds.bottom - effectiveBottomRightRadius * 2,
+                    bounds.right - effBottomRight * 2,
+                    bounds.bottom - effBottomRight * 2,
                     bounds.right - halfRight,
                     bounds.bottom - halfBottom
                 )
                 canvas.drawArc(rectF, 0f, 90f, false, borderPaint)
             }
 
-            if (effectiveBottomLeftRadius > 0f && borderBottomWidth > 0f && borderLeftWidth > 0f && borderBottomColor != Color.TRANSPARENT && borderLeftColor != Color.TRANSPARENT) {
+            if (effBottomLeft > 0f && borderBottomWidth > 0f && borderLeftWidth > 0f && borderBottomColor != Color.TRANSPARENT && borderLeftColor != Color.TRANSPARENT) {
                 borderPaint.color = borderBottomColor
                 borderPaint.strokeWidth = borderBottomWidth.coerceAtLeast(borderLeftWidth)
                 applyBorderStyle(borderPaint, borderBottomWidth.coerceAtLeast(borderLeftWidth), borderStyle)
                 rectF.set(
                     bounds.left + halfLeft,
-                    bounds.bottom - effectiveBottomLeftRadius * 2,
-                    bounds.left + effectiveBottomLeftRadius * 2,
+                    bounds.bottom - effBottomLeft * 2,
+                    bounds.left + effBottomLeft * 2,
                     bounds.bottom - halfBottom
                 )
                 canvas.drawArc(rectF, 90f, 90f, false, borderPaint)
