@@ -45,6 +45,7 @@ NS_ASSUME_NONNULL_BEGIN
   NSMutableDictionary<NSNumber *, NSValue *> *_styleLayoutFrames;
   NSMutableSet<NSNumber *> *_styleLayoutDirtyNodes;
   NSMutableDictionary<NSNumber *, ZynthTextStyleState *> *_textStyleStates;
+  NSMutableDictionary<NSNumber *, NSMutableDictionary<NSString *, id> *> *_yogaStyleCache;
   int _nextId;
   CADisplayLink *_displayLink;
   BOOL _needsLayout;

@@ -68,11 +68,19 @@ internal fun ZynthUIManager.syncSurfaceRootSize(
   height: Int
 ) {
   if (width <= 0 || height <= 0) return
+  if (surfaceId != rootView.rootId) {
+    val hasChildren = root.childCount > 0
+    root.isClickable = hasChildren
+    root.isFocusable = hasChildren
+  }
   val prev = surfaceSizes[surfaceId]
   val next = width to height
   if (prev == null || prev.first != width || prev.second != height) {
     surfaceSizes[surfaceId] = next
     root.layout(0, 0, width, height)
+    val wSpec = View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY)
+    val hSpec = View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY)
+    root.measure(wSpec, hSpec)
     dirtySurfaces.add(surfaceId)
   }
 }
@@ -96,6 +104,15 @@ internal fun ZynthUIManager.registerSurfaceInternal(
     ownedSurfaces.add(surfaceId)
   } else {
     ownedSurfaces.remove(surfaceId)
+  }
+  if (surfaceId != rootView.rootId) {
+    if (root.layoutParams == null) {
+      root.layoutParams = ViewGroup.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        ViewGroup.LayoutParams.MATCH_PARENT
+      )
+    }
+    ZynthPointerEvents.set(root, ZynthPointerEvents.Mode.BOX_NONE)
   }
   surfaceLayoutListeners.remove(surfaceId)?.let { root.removeOnLayoutChangeListener(it) }
   if (root !== rootView) {

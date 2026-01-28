@@ -5,6 +5,7 @@
 #import "ZynthUIManager+Surface.h"
 #import "ZynthUIManager+Events.h"
 #import "ZynthUIManager+Style.h"
+#import "ZynthPointerEventsView.h"
 #import "ZynthColorParser.h"
 #import <dispatch/dispatch.h>
 #import <math.h>
@@ -50,6 +51,7 @@
     _styleLayoutFrames = [NSMutableDictionary dictionary];
     _styleLayoutDirtyNodes = [NSMutableSet set];
     _textStyleStates = [NSMutableDictionary dictionary];
+    _yogaStyleCache = [NSMutableDictionary dictionary];
     _nextId = 1;
     _needsLayout = NO;
     _frameInProgress = NO;
@@ -77,7 +79,7 @@
       label.numberOfLines = 0;
       view = label;
     } else {
-      view = [[UIView alloc] initWithFrame:CGRectZero];
+      view = [[ZynthPointerEventsView alloc] initWithFrame:CGRectZero];
     }
   }
   _nodes[@(nid)] = view;
@@ -244,6 +246,10 @@
     NSString *pe = [value isKindOfClass:[NSString class]] ? value : @"auto";
     _pointerEvents[nodeId] = pe;
     if (node) node.pointerEvents = pe;
+    if ([view respondsToSelector:@selector(setPointerMode:)]) {
+      ZynthPointerEventsMode mode = ZynthPointerEventsFromString(pe);
+      [(id)view setPointerMode:mode];
+    }
     [self updateInteractionStateForNode:nodeId];
     return;
   }
@@ -362,10 +368,12 @@
     return;
   }
   if ([name isEqualToString:@"width"] || [name isEqualToString:@"height"] || [name isEqualToString:@"flexDirection"]) {
+    [self cacheYogaStyle:nodeId name:name value:value];
     [[self yogaForNode:nodeId] setStyle:nodeId name:name value:value];
     [self markSurfaceDirtyForNode:nodeId];
     return;
   }
+  [self cacheYogaStyle:nodeId name:name value:value];
   [[self yogaForNode:nodeId] setStyle:nodeId name:name value:value];
   [self markSurfaceDirtyForNode:nodeId];
 }
@@ -414,7 +422,12 @@
   ZynthNode *parentNode = _nodeStates[parentId];
   ZynthNode *childNode = _nodeStates[childId];
   _parents[childId] = parentId;
-  _nodeSurfaces[childId] = @(surfaceId);
+  NSNumber *previousSurface = _nodeSurfaces[childId];
+  if (!previousSurface || previousSurface.intValue != surfaceId) {
+    [self moveSubtree:childId toSurface:surfaceId parentId:parentId index:index];
+  } else {
+    _nodeSurfaces[childId] = @(surfaceId);
+  }
   if (childNode) {
     childNode.parentId = parentId.intValue;
     childNode.surfaceId = surfaceId;
@@ -450,6 +463,55 @@
   NSNumber *yogaParentId = isSurfaceRoot ? @(0) : parentId;
   [[self yogaForSurface:surfaceId] insertChild:yogaParentId child:childId index:index];
   [self markSurfaceDirty:surfaceId];
+}
+
+- (void)cacheYogaStyle:(NSNumber *)nodeId name:(NSString *)name value:(id)value {
+  if (!nodeId || name.length == 0) return;
+  NSMutableDictionary<NSString *, id> *styles = _yogaStyleCache[nodeId];
+  if (!styles) {
+    styles = [NSMutableDictionary dictionary];
+    _yogaStyleCache[nodeId] = styles;
+  }
+  if (value) {
+    styles[name] = value;
+  } else {
+    [styles removeObjectForKey:name];
+  }
+}
+
+- (void)reapplyYogaStyles:(NSNumber *)nodeId surfaceId:(int)surfaceId {
+  NSMutableDictionary<NSString *, id> *styles = _yogaStyleCache[nodeId];
+  if (!styles) return;
+  ZynthYogaLayout *layout = [self yogaForSurface:surfaceId];
+  for (NSString *name in styles) {
+    [layout setStyle:nodeId name:name value:styles[name]];
+  }
+}
+
+- (void)moveSubtree:(NSNumber *)nodeId toSurface:(int)surfaceId parentId:(NSNumber *)parentId index:(NSNumber *)index {
+  UIView *view = _nodes[nodeId];
+  if (!view) return;
+  NSNumber *previousSurface = _nodeSurfaces[nodeId];
+  if (previousSurface && previousSurface.intValue != surfaceId) {
+    ZynthYogaLayout *previousLayout = _surfaceYoga[previousSurface];
+    if (previousLayout) {
+      [previousLayout removeNode:nodeId];
+    }
+  }
+  _nodeSurfaces[nodeId] = @(surfaceId);
+  ZynthYogaLayout *layout = [self yogaForSurface:surfaceId];
+  [layout createNodeWithId:nodeId type:_nodeStates[nodeId].type view:view];
+  [self reapplyYogaStyles:nodeId surfaceId:surfaceId];
+  NSNumber *yogaParentId = ([self isSurfaceRootId:parentId] || parentId.intValue == 0) ? @(0) : parentId;
+  [layout insertChild:yogaParentId child:nodeId index:index];
+
+  ZynthNode *node = _nodeStates[nodeId];
+  if (!node) return;
+  node.surfaceId = surfaceId;
+  for (NSUInteger i = 0; i < node.children.count; i++) {
+    NSNumber *childId = node.children[i];
+    [self moveSubtree:childId toSurface:surfaceId parentId:nodeId index:@(i)];
+  }
 }
 
 - (void)removeChild:(NSNumber *)parentId child:(NSNumber *)childId {

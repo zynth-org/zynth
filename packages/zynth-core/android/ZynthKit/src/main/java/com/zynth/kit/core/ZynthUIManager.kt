@@ -42,6 +42,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal val styleLayoutDirtyNodes = HashSet<Int>()
   internal val styleLayoutFrames = HashMap<Int, android.graphics.Rect>()
   internal val textStyleStates = HashMap<Int, ZynthTextStyleState>()
+  internal val yogaStyleCache = HashMap<Int, MutableMap<String, String?>>()
   internal val pointerEvents = HashMap<Int, String>()
   internal val pressNodes = HashSet<Int>()
   internal val longPressNodes = HashSet<Int>()
@@ -266,9 +267,11 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       if (value.isNullOrBlank()) {
         pointerEvents.remove(id)
         nodeStates[id]?.pointerEvents = "auto"
+        ZynthPointerEvents.set(view, ZynthPointerEvents.Mode.AUTO)
       } else {
         pointerEvents[id] = value
         nodeStates[id]?.pointerEvents = value
+        ZynthPointerEvents.set(view, ZynthPointerEvents.fromString(value))
       }
       updateInteractionState(id)
       maybeNotifyStyle(descriptor, node, name, value)
@@ -358,27 +361,34 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       return
     }
     if (name == "width") {
-      yogaForNode(id).setStyle(id, "width", scaleYogaValue(name, value))
+      val scaled = scaleYogaValue(name, value)
+      cacheYogaStyle(id, "width", scaled)
+      yogaForNode(id).setStyle(id, "width", scaled)
       markSurfaceDirtyForNode(id)
       maybeNotifyStyle(descriptor, node, name, value)
       traceOp("setProp", node?.type, startNs)
       return
     }
     if (name == "height") {
-      yogaForNode(id).setStyle(id, "height", scaleYogaValue(name, value))
+      val scaled = scaleYogaValue(name, value)
+      cacheYogaStyle(id, "height", scaled)
+      yogaForNode(id).setStyle(id, "height", scaled)
       markSurfaceDirtyForNode(id)
       maybeNotifyStyle(descriptor, node, name, value)
       traceOp("setProp", node?.type, startNs)
       return
     }
     if (name == "flexDirection") {
+      cacheYogaStyle(id, "flexDirection", value)
       yogaForNode(id).setStyle(id, "flexDirection", value)
       markSurfaceDirtyForNode(id)
       maybeNotifyStyle(descriptor, node, name, value)
       traceOp("setProp", node?.type, startNs)
       return
     }
-    yogaForNode(id).setStyle(id, name, scaleYogaValue(name, value))
+    val scaled = scaleYogaValue(name, value)
+    cacheYogaStyle(id, name, scaled)
+    yogaForNode(id).setStyle(id, name, scaled)
     markSurfaceDirtyForNode(id)
     maybeNotifyStyle(descriptor, node, name, value)
     traceOp("setProp", node?.type, startNs)
@@ -433,7 +443,13 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     }
     val parent = if (parentId == 0 || isSurfaceRoot) rootViewForSurface(surfaceId) else nodes[parentId]
     parents[childId] = parentId
-    nodeSurfaces[childId] = surfaceId
+    val previousSurfaceId = nodeSurfaces[childId]
+    if (previousSurfaceId != surfaceId) {
+      moveSubtreeToSurface(childId, surfaceId, parentId, index)
+    } else {
+      nodeSurfaces[childId] = surfaceId
+      yogaForSurface(surfaceId).ensureNode(childId, child)
+    }
 
     val descriptor = parentState?.let { ZynthComponentRegistry.getDescriptor(it.type) }
     if (descriptor != null && nodeStates[childId] != null) {
@@ -814,6 +830,47 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       else -> false
     }
     return if (shouldScale) dpToPx(numeric).toString() else value
+  }
+
+  private fun cacheYogaStyle(id: Int, name: String, value: String?) {
+    val styles = yogaStyleCache.getOrPut(id) { HashMap() }
+    styles[name] = value
+  }
+
+  private fun reapplyYogaStyles(id: Int, surfaceId: Int) {
+    val styles = yogaStyleCache[id] ?: return
+    val layout = yogaForSurface(surfaceId)
+    for ((name, value) in styles) {
+      layout.setStyle(id, name, value)
+    }
+  }
+
+  private fun moveSubtreeToSurface(nodeId: Int, surfaceId: Int, parentId: Int, index: Int) {
+    val view = nodes[nodeId] ?: return
+    val previousSurfaceId = nodeSurfaces[nodeId]
+    if (previousSurfaceId != null && previousSurfaceId != surfaceId) {
+      surfaceYoga[previousSurfaceId]?.removeNode(nodeId)
+    }
+    nodeSurfaces[nodeId] = surfaceId
+    val layout = yogaForSurface(surfaceId)
+    layout.ensureNode(nodeId, view)
+    reapplyYogaStyles(nodeId, surfaceId)
+    val yogaParentId = if (parentId == 0 || isSurfaceRootId(parentId)) 0 else parentId
+    layout.insertChild(yogaParentId, nodeId, index)
+
+    val group = view as? ViewGroup ?: return
+    for (i in 0 until group.childCount) {
+      val childView = group.getChildAt(i)
+      val childId = findNodeIdByView(childView) ?: continue
+      moveSubtreeToSurface(childId, surfaceId, nodeId, i)
+    }
+  }
+
+  private fun findNodeIdByView(view: View): Int? {
+    for ((id, nodeView) in nodes) {
+      if (nodeView === view) return id
+    }
+    return null
   }
 
   private inner class LayoutEngineAdapter : LayoutEngine {

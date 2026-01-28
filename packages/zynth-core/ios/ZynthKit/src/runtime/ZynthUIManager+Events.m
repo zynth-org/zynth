@@ -276,6 +276,7 @@
   [_styleLayoutFrames removeObjectForKey:nodeId];
   [_styleLayoutDirtyNodes removeObject:nodeId];
   [_textStyleStates removeObjectForKey:nodeId];
+  [_yogaStyleCache removeObjectForKey:nodeId];
   dispatch_source_t timer = _longPressTimers[nodeId];
   if (timer) {
     dispatch_source_cancel(timer);

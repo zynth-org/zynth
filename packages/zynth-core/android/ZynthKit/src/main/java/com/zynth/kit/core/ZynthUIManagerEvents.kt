@@ -292,6 +292,7 @@ internal fun ZynthUIManager.cleanupNode(id: Int) {
   styleLayoutDirtyNodes.remove(id)
   styleLayoutFrames.remove(id)
   textStyleStates.remove(id)
+  yogaStyleCache.remove(id)
   nodeStates.remove(id)
   nodeSurfaces.remove(id)
   val runnable = longPressRunnables.remove(id)

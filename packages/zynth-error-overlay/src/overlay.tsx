@@ -1,6 +1,9 @@
 import { Modal, Pressable, ScrollView, Text, View } from "@zynth/components";
 import { createMemo, createSignal } from "solid-js";
+import { Dimensions } from "@zynth/apis";
 declare const __DEV__: boolean | undefined;
+
+const windowHeight = Dimensions.get("window").height;
 
 export type DevtoolsEvent = {
   topic: string;
@@ -44,7 +47,7 @@ let nextEntryId = 1;
 let ignoredFatal: { topic: string; message: string; until: number } | null =
   null;
 
-function shouldEnableOverlay(): boolean {
+export function isErrorOverlayEnabled(): boolean {
   if (typeof __DEV__ !== "undefined") {
     return Boolean(__DEV__);
   }
@@ -210,7 +213,7 @@ function getOverlayState(): OverlayState {
 export function installErrorOverlayDiagnostics(
   addListener: DevtoolsListenerAdd,
 ): void {
-  if (!shouldEnableOverlay()) return;
+  if (!isErrorOverlayEnabled()) return;
   const state = getOverlayState();
   state.ensureInstalled(addListener);
 }
@@ -291,12 +294,16 @@ function FatalOverlay(props: {
   }
 
   return (
-    <Modal
-      open
-      transparent
-      dismissOnOverlayPress={false}
-      overlayColor="#18181b"
-      overlayOpacity={1}
+    <View
+      style={{
+        height: windowHeight,
+        position: "absolute",
+        top: 0,
+        left: 0,
+        right: 0,
+        backgroundColor: "rgba(24,24,27,0.95)",
+        zIndex: 9999,
+      }}
     >
       <View
         style={{
@@ -317,8 +324,8 @@ function FatalOverlay(props: {
               paddingVertical: 6,
               borderRadius: 999,
               backgroundColor: "rgba(239,68,68,0.12)",
-              borderWidth: 1,
-              borderColor: "rgba(239,68,68,0.28)",
+              // borderWidth: 1,
+              // borderColor: "rgba(239,68,68,0.28)",
             }}
           >
             <View
@@ -510,9 +517,13 @@ function FatalOverlay(props: {
                 style={{
                   paddingHorizontal: 12,
                   paddingVertical: 12,
-                  maxHeight: 150,
+                  minHeight: 220,
                 }}
-                contentContainerStyle={{ paddingBottom: 12, gap: 6 }}
+                contentContainerStyle={{
+                  paddingBottom: 12,
+                  gap: 6,
+                  minHeight: 150,
+                }}
               >
                 {stackLines().length > 0 ? (
                   stackLines().map((line, index) => (
@@ -559,7 +570,7 @@ function FatalOverlay(props: {
         </View>
       </View>
 
-      <View style={{ flexDirection: "row", gap: 8 }}>
+      <View style={{ flexDirection: "row", gap: 8, flex: 1 }}>
         <View
           style={{
             position: "absolute",
@@ -649,7 +660,7 @@ function FatalOverlay(props: {
           />
         </View>
       </View>
-    </Modal>
+    </View>
   );
 }
 
@@ -732,7 +743,7 @@ function ErrorOverlayLayer() {
 }
 
 export function wrapWithErrorOverlay(App: () => any): () => any {
-  if (!shouldEnableOverlay()) return App;
+  if (!isErrorOverlayEnabled()) return App;
 
   const WrappedApp = () => {
     return (
@@ -745,3 +756,5 @@ export function wrapWithErrorOverlay(App: () => any): () => any {
 
   return WrappedApp;
 }
+
+export { ErrorOverlayLayer };

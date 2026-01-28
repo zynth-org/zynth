@@ -3,4 +3,9 @@ export type {
   DevtoolsListener,
   DevtoolsListenerAdd,
 } from "./overlay";
-export { installErrorOverlayDiagnostics, wrapWithErrorOverlay } from "./overlay";
+export {
+  installErrorOverlayDiagnostics,
+  isErrorOverlayEnabled,
+  wrapWithErrorOverlay,
+  ErrorOverlayLayer,
+} from "./overlay";

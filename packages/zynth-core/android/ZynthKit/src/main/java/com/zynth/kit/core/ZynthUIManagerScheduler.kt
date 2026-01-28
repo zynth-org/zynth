@@ -96,8 +96,12 @@ internal fun ZynthUIManager.performLayoutInternal(dirty: Set<Int>) {
   for (surfaceId in dirty) {
     val layout = surfaceYoga[surfaceId] ?: continue
     val root = surfaceRoots[surfaceId] ?: rootView
-    val width = root.width.takeIf { it > 0 } ?: root.measuredWidth
-    val height = root.height.takeIf { it > 0 } ?: root.measuredHeight
+    var width = root.width.takeIf { it > 0 } ?: root.measuredWidth
+    var height = root.height.takeIf { it > 0 } ?: root.measuredHeight
+    if ((width <= 0 || height <= 0) && root !== rootView) {
+      width = rootView.width.takeIf { it > 0 } ?: rootView.measuredWidth
+      height = rootView.height.takeIf { it > 0 } ?: rootView.measuredHeight
+    }
     syncSurfaceRootSize(surfaceId, root, width, height)
     layout.layout(width, height, nodes)
   }

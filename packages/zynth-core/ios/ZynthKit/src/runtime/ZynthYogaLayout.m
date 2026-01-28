@@ -37,6 +37,7 @@ static YGSize ZynthMeasureText(YGNodeConstRef node,
 
 - (void)createNodeWithId:(NSNumber *)nodeId type:(NSString *)type view:(UIView *)view {
   if (!nodeId || !view) return;
+  if (_nodes[nodeId]) return;
   YGNodeRef node = YGNodeNew();
   YGNodeStyleSetFlexDirection(node, YGFlexDirectionColumn);
   YGNodeStyleSetAlignItems(node, YGAlignStretch);
@@ -50,6 +51,31 @@ static YGSize ZynthMeasureText(YGNodeConstRef node,
 - (YGNodeRef)yogaForNode:(NSNumber *)nodeId {
   NSValue *value = _nodes[nodeId];
   return value ? (YGNodeRef)value.pointerValue : NULL;
+}
+
+- (void)removeNode:(NSNumber *)nodeId {
+  NSValue *value = _nodes[nodeId];
+  if (!value) return;
+  YGNodeRef node = (YGNodeRef)value.pointerValue;
+  if (!node) {
+    [_nodes removeObjectForKey:nodeId];
+    return;
+  }
+  while (YGNodeGetChildCount(node) > 0) {
+    YGNodeRef child = YGNodeGetChild(node, 0);
+    if (child) {
+      YGNodeRemoveChild(node, child);
+    } else {
+      break;
+    }
+  }
+  YGNodeRef parent = YGNodeGetParent(node);
+  if (parent) {
+    YGNodeRemoveChild(parent, node);
+  }
+  YGNodeSetContext(node, NULL);
+  YGNodeFree(node);
+  [_nodes removeObjectForKey:nodeId];
 }
 
 - (BOOL)isValidValue:(id)value {

@@ -54,6 +54,11 @@ class ZynthYogaLayout {
 
   fun removeNode(id: Int) {
     val node = nodes.remove(id) ?: return
+    if (node.childCount > 0) {
+      for (i in node.childCount - 1 downTo 0) {
+        node.removeChildAt(i)
+      }
+    }
     node.owner?.removeChildAt(node.owner?.indexOf(node) ?: 0)
     node.data = null
     node.reset()

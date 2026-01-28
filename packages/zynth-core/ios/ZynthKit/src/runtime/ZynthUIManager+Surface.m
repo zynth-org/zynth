@@ -2,6 +2,7 @@
 #import "ZynthUIManager+Scheduler.h"
 #import "ZynthUIManager+Surface.h"
 #import "ZynthUIManager+Events.h"
+#import "ZynthPointerEventsView.h"
 
 static const int kZynthSurfaceIdBase = 1 << 20;
 
@@ -72,6 +73,9 @@ static const int kZynthSurfaceIdBase = 1 << 20;
     [rootView addObserver:self forKeyPath:@"bounds" options:NSKeyValueObservingOptionNew context:nil];
     [_surfaceObserved addObject:rootView];
   }
+  if ([rootView respondsToSelector:@selector(setPointerMode:)] && surfaceId != 0) {
+    [(id)rootView setPointerMode:ZynthPointerEventsBoxNone];
+  }
   [self markSurfaceDirty:surfaceId];
   return @(surfaceId);
 }
@@ -120,7 +124,8 @@ static const int kZynthSurfaceIdBase = 1 << 20;
   if (surfaceId == 0) {
     root = _rootView;
   } else {
-    root = [[UIView alloc] initWithFrame:_rootView.bounds];
+    root = [[ZynthPointerEventsView alloc] initWithFrame:_rootView.bounds];
+    ((ZynthPointerEventsView *)root).pointerMode = ZynthPointerEventsBoxNone;
     root.backgroundColor = UIColor.clearColor;
     [_rootView addSubview:root];
   }
@@ -194,6 +199,10 @@ static const int kZynthSurfaceIdBase = 1 << 20;
     }
   }
   if (size.width <= 0 || size.height <= 0) return;
+  if (surfaceId != 0) {
+    BOOL hasChildren = rootView.subviews.count > 0;
+    rootView.userInteractionEnabled = hasChildren;
+  }
   NSNumber *key = @(surfaceId);
   NSValue *prev = _surfaceSizes[key];
   if (!prev || !CGSizeEqualToSize(prev.CGSizeValue, size)) {
