@@ -6,7 +6,7 @@ const EXTERNAL_PACKAGES = [
   "@zynth/core",
   "@zynth/screens",
   "@zynth/components",
-  "@zynth/safe-area",
+  "@zynth/apis",
 ];
 
 export default defineConfig({

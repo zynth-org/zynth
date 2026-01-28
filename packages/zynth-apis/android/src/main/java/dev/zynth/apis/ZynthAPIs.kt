@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.util.Log
 import com.zynth.kit.runtime.ZynthRuntime
+import dev.zynth.apis.safearea.ZynthSafeAreaModule
 import java.util.WeakHashMap
 
 /**
@@ -43,11 +44,12 @@ object ZynthAPIs {
         val dimensionsModule = DimensionsModule(runtime, runtime.root)
         val fetchModule = FetchModule(runtime)
         val backHandlerModule = BackHandlerModule(runtime, runtime.root)
+        val safeAreaModule = ZynthSafeAreaModule(runtime.root, runtime)
 
         Log.d(TAG, "Installing modules into runtime...")
-        runtime.installModules(listOf(fontModule, dimensionsModule, fetchModule, backHandlerModule))
+        runtime.installModules(listOf(fontModule, dimensionsModule, fetchModule, backHandlerModule, safeAreaModule))
 
-        Log.d(TAG, "ZynthAPIs initialized successfully with Font, Dimensions, Fetch, BackHandler")
+        Log.d(TAG, "ZynthAPIs initialized successfully with Font, Dimensions, Fetch, BackHandler, SafeArea")
     }
 
     /**

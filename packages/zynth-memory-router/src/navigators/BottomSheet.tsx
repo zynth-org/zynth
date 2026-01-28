@@ -13,8 +13,7 @@ import {
   type Accessor,
 } from "solid-js";
 import { View, Text, Button, SystemIcon } from "@zynth/components";
-import { createSafeAreaInsets } from "@zynth/safe-area";
-import { Platform, OS } from "@zynth/apis";
+import { Platform, OS, createSafeAreaInsets } from "@zynth/apis";
 import {
   BottomSheet as ZynthBottomSheet,
   createBottomSheetController,
@@ -83,7 +82,7 @@ const BottomSheetNavigatorContext =
 
 export function BottomSheetScreen<
   ParamList extends RouteParamList = RouteParamList,
-  RouteName extends keyof ParamList & string = keyof ParamList & string
+  RouteName extends keyof ParamList & string = keyof ParamList & string,
 >(props: BottomSheetScreenProps<ParamList, RouteName>): JSX.Element {
   const ctx = useContext(BottomSheetNavigatorContext);
   if (ctx) {
@@ -101,7 +100,7 @@ export function BottomSheetScreen<
 // ============================================================================
 
 export function BottomSheetNavigator(
-  props: BottomSheetNavigatorProps
+  props: BottomSheetNavigatorProps,
 ): JSX.Element {
   // Capture parent navigation context for nested navigators
   const parentContext = useNavigationContextUnsafe();
@@ -115,7 +114,7 @@ export function BottomSheetNavigator(
   // Track if we've initialized state
   const [initialized, setInitialized] = createSignal(false);
   const [initialRouteKey, setInitialRouteKey] = createSignal<string | null>(
-    null
+    null,
   );
   const [hasNavigated, setHasNavigated] = createSignal(false);
 
@@ -177,7 +176,7 @@ export function BottomSheetNavigator(
           return;
         }
         console.warn(
-          `[BottomSheet Navigator] Screen '${name}' not found in navigator '${navigatorId}'`
+          `[BottomSheet Navigator] Screen '${name}' not found in navigator '${navigatorId}'`,
         );
         return;
       }
@@ -248,7 +247,7 @@ export function BottomSheetNavigator(
         ...prev,
         index: resetState.index ?? resetState.routes.length - 1,
         routes: resetState.routes.map((r) =>
-          createRoute(r.name, r.params as object)
+          createRoute(r.name, r.params as object),
         ),
       }));
     },
@@ -321,16 +320,16 @@ export function BottomSheetNavigator(
 
   function resolveOptions(
     routeOptions?: ScreenOptions,
-    screenOptions?: ScreenOptionsInput
+    screenOptions?: ScreenOptionsInput,
   ): ScreenOptions {
     const defaultOpts =
       typeof props.screenOptions === "function"
-        ? props.screenOptions() ?? {}
-        : props.screenOptions ?? {};
+        ? (props.screenOptions() ?? {})
+        : (props.screenOptions ?? {});
     const screenOpts =
       typeof screenOptions === "function"
-        ? screenOptions() ?? {}
-        : screenOptions ?? {};
+        ? (screenOptions() ?? {})
+        : (screenOptions ?? {});
     const merged = { ...defaultOpts, ...screenOpts, ...routeOptions };
     return {
       headerShown: merged.headerShown ?? true,
@@ -402,13 +401,13 @@ export function BottomSheetNavigator(
     // ... inside ScreensRenderer component ...
 
     const headerShown = createMemo(
-      () => currentOptions()?.headerShown !== false
+      () => currentOptions()?.headerShown !== false,
     );
 
     // On iOS, we use the native header provided by the navigation controller (via ScreenPrimitive props).
     // On Android, we currently render a JS-based header.
     const shouldRenderHeaderBar = createMemo(
-      () => headerShown() && Platform.OS === OS.ANDROID
+      () => headerShown() && Platform.OS === OS.ANDROID,
     );
 
     // Provide a static header height (no safe area) to children if we are rendering a custom header
@@ -428,7 +427,7 @@ export function BottomSheetNavigator(
           <ZynthBottomSheet
             snapPoints={bottomSheetOptions().snapPoints as any}
             initialSnapIndex={untrack(
-              () => bottomSheetOptions().initialSnapIndex
+              () => bottomSheetOptions().initialSnapIndex,
             )}
             controller={bsController}
             open={true} // Always open as a navigator
@@ -447,13 +446,13 @@ export function BottomSheetNavigator(
                     if (!config) return null;
                     const currentIndex = createMemo(() => state().index);
                     const isInStack = createMemo(
-                      () => index() <= currentIndex()
+                      () => index() <= currentIndex(),
                     );
                     const options = createMemo(() =>
-                      resolveOptions(route.options, config.options)
+                      resolveOptions(route.options, config.options),
                     );
                     const [params, setParams] = createSignal(
-                      route.params ?? {}
+                      route.params ?? {},
                     );
 
                     const [screenOptions, setScreenOptions] =
@@ -565,7 +564,7 @@ function HeaderBar(props: HeaderBarProps) {
   const backgroundColor = () =>
     props.options.headerTransparent
       ? "transparent"
-      : props.options.headerBackgroundColor ?? DEFAULT_HEADER_BACKGROUND;
+      : (props.options.headerBackgroundColor ?? DEFAULT_HEADER_BACKGROUND);
   const backVisible = () => props.options.headerBackVisible ?? true;
   const invokeBack = () => {
     if (owner) {

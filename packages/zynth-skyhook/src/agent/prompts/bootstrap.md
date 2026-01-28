@@ -14,7 +14,7 @@ This prompt helps an AI agent understand the Zynth monorepo and how to develop c
   - `@zynth/components` — cross-platform primitives (View, Text, Button, Image, ScrollView, TextField, etc.)
   - `@zynth/memory-router` — navigation primitives
   - `@zynth/components` (examples live in `apps/components/src/components/`)
-  - `@zynth/keyboard`, `@zynth/safe-area`, `@zynth/icons`, `@zynth/bottom-sheet`, `@zynth/apis`
+  - `@zynth/keyboard`, `@zynth/apis`, `@zynth/icons`, `@zynth/bottom-sheet`, `@zynth/apis`
 
 ---
 

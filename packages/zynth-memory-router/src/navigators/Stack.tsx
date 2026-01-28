@@ -12,8 +12,7 @@ import {
   type Accessor,
 } from "solid-js";
 import { View, Text, Button, Pressable, SystemGlyph } from "@zynth/components";
-import { createSafeAreaInsets } from "@zynth/safe-area";
-import { Platform, OS } from "@zynth/apis";
+import { Platform, OS, createSafeAreaInsets } from "@zynth/apis";
 import {
   ScreenContainer,
   Screen as ScreenPrimitive,
@@ -77,7 +76,7 @@ const StackNavigatorContext = createContext<StackNavigatorContextValue>();
 
 export function StackScreen<
   ParamList extends RouteParamList = RouteParamList,
-  RouteName extends keyof ParamList & string = keyof ParamList & string
+  RouteName extends keyof ParamList & string = keyof ParamList & string,
 >(props: StackScreenProps<ParamList, RouteName>): JSX.Element {
   const ctx = useContext(StackNavigatorContext);
   if (ctx) {
@@ -107,7 +106,7 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
   // Track if we've initialized state
   const [initialized, setInitialized] = createSignal(false);
   const [initialRouteKey, setInitialRouteKey] = createSignal<string | null>(
-    null
+    null,
   );
   const [hasNavigated, setHasNavigated] = createSignal(false);
 
@@ -169,7 +168,7 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
         }
         // No parent and screen not found - log warning
         console.warn(
-          `[Stack Navigator] Screen '${name}' not found in navigator '${navigatorId}' and no parent navigator available.`
+          `[Stack Navigator] Screen '${name}' not found in navigator '${navigatorId}' and no parent navigator available.`,
         );
         return;
       }
@@ -254,7 +253,7 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
         ...prev,
         index: resetState.index ?? resetState.routes.length - 1,
         routes: resetState.routes.map((r) =>
-          createRoute(r.name, r.params as object)
+          createRoute(r.name, r.params as object),
         ),
       }));
     },
@@ -330,16 +329,16 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
   // Resolve screen options
   function resolveOptions(
     routeOptions?: ScreenOptions,
-    screenOptions?: ScreenOptionsInput
+    screenOptions?: ScreenOptionsInput,
   ): ScreenOptions {
     const defaultOpts =
       typeof props.screenOptions === "function"
-        ? props.screenOptions() ?? {}
-        : props.screenOptions ?? {};
+        ? (props.screenOptions() ?? {})
+        : (props.screenOptions ?? {});
     const screenOpts =
       typeof screenOptions === "function"
-        ? screenOptions() ?? {}
-        : screenOptions ?? {};
+        ? (screenOptions() ?? {})
+        : (screenOptions ?? {});
     const merged = { ...defaultOpts, ...screenOpts, ...routeOptions };
     return {
       headerShown: merged.headerShown ?? true,
@@ -419,10 +418,10 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
     });
     const useNativeHeader = Platform.OS === OS.IOS;
     const headerShown = createMemo(
-      () => currentOptions()?.headerShown !== false
+      () => currentOptions()?.headerShown !== false,
     );
     const shouldRenderHeaderBar = createMemo(
-      () => headerShown() && (!useNativeHeader || Platform.OS === OS.WEB)
+      () => headerShown() && (!useNativeHeader || Platform.OS === OS.WEB),
     );
 
     return (
@@ -454,7 +453,7 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
               });
 
               const options = createMemo(() =>
-                resolveOptions(route.options, config.options)
+                resolveOptions(route.options, config.options),
               );
               const localOwner = getOwner();
 
@@ -485,7 +484,7 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
               const [screenOptions, setScreenOptions] =
                 createSignal<ScreenOptions>(options());
               const headerVisible = createMemo(
-                () => options()?.headerShown !== false
+                () => options()?.headerShown !== false,
               );
               const nativeHeaderOptions = createMemo<ScreenHeaderOptions>(
                 () => {
@@ -494,7 +493,8 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
                   const transparent = opts?.headerTransparent ?? false;
                   const backgroundColor = transparent
                     ? undefined
-                    : opts?.headerBackgroundColor ?? DEFAULT_HEADER_BACKGROUND;
+                    : (opts?.headerBackgroundColor ??
+                      DEFAULT_HEADER_BACKGROUND);
                   const buttonOptions = opts?.headerRightButton;
                   return {
                     title: resolvedTitle,
@@ -529,14 +529,15 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
                           }
                         : undefined,
                   };
-                }
+                },
               );
               const screenBackground = createMemo(
                 () =>
-                  options()?.contentBackgroundColor ?? DEFAULT_SCREEN_BACKGROUND
+                  options()?.contentBackgroundColor ??
+                  DEFAULT_SCREEN_BACKGROUND,
               );
               const headerRightButton = createMemo(
-                () => options()?.headerRightButton
+                () => options()?.headerRightButton,
               );
               const handleNativeBack = () => {
                 helpers.goBack();
@@ -689,7 +690,7 @@ function HeaderBar(props: HeaderBarProps) {
   const backgroundColor = () =>
     props.options.headerTransparent
       ? "transparent"
-      : props.options.headerBackgroundColor ?? DEFAULT_HEADER_BACKGROUND;
+      : (props.options.headerBackgroundColor ?? DEFAULT_HEADER_BACKGROUND);
   const backVisible = () => props.options.headerBackVisible ?? true;
   const invokeBack = () => {
     if (owner) {

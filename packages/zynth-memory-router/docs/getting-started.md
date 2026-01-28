@@ -12,7 +12,7 @@ The router automatically includes its dependencies:
 
 - `@zynth/screens` - Screen primitives for transitions
 - `@zynth/components` - UI components
-- `@zynth/safe-area` - Safe area handling
+- `@zynth/apis` - Safe area handling
 
 ## Basic Setup
 

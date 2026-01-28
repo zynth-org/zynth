@@ -20,7 +20,7 @@
     "@zynth/core": "0.0.1",
     "@zynth/screens": "0.0.1",
     "@zynth/components": "0.0.1",
-    "@zynth/safe-area": "0.0.1",
+    "@zynth/apis": "0.0.1",
     "@zynth/bottom-sheet": "0.0.1"
   },
   "devDependencies": {

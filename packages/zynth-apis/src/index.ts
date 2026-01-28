@@ -12,3 +12,5 @@ export type {
   DimensionsUpdateSource,
   DimensionsListener,
 } from "./dimensions";
+
+export * from "./safe-area";

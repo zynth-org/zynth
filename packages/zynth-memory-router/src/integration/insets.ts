@@ -1,5 +1,5 @@
 import { createMemo, createContext, useContext } from "solid-js";
-import { createSafeAreaInsets } from "@zynth/safe-area";
+import { createSafeAreaInsets } from "@zynth/apis";
 
 // Default header height (similar to iOS navigation bar)
 export const DEFAULT_HEADER_HEIGHT = 56;

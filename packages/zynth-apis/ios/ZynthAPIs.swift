@@ -16,7 +16,13 @@ public class ZynthAPIs: NSObject {
         let dimensionsModule = ZynthDimensionsModule(runtime: runtime, rootView: runtime.rootView)
         modules.append(dimensionsModule)
 
+        // Initialize Safe Area and include its bridge in the module registry
+        let safeAreaModule = ZynthSafeAreaModule(runtime: runtime)
+        let safeAreaBridge = safeAreaModule.makeBridge()
+        safeAreaModule.start()
+        modules.append(safeAreaBridge)
+
         runtime.installModules(modules)
-        print("[ZynthAPIs] Initialized modules: Font, Fetch, Dimensions")
+        print("[ZynthAPIs] Initialized modules: Font, Fetch, Dimensions, SafeArea")
     }
 }

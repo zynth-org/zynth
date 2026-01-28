@@ -17,7 +17,14 @@
   ],
   "devDependencies": {
     "@rsbuild/core": "^1.0.1",
+    "@zynth/components": "*",
+    "solid-js": ">=1.8.0",
     "typescript": "^5.6.2"
+  },
+  "peerDependencies": {
+    "@zynth/core": ">=0.0.1",
+    "@zynth/components": ">=0.0.1",
+    "solid-js": ">=1.8.0"
   },
   "scripts": {
     "build": "yarn build:js && yarn build:types",
