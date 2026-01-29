@@ -395,6 +395,7 @@ class ZynthButtonView(context: Context) : FrameLayout(context) {
         val textColor = if (isColorDark(color)) Color.WHITE else Color.BLACK
         materialButton.setTextColor(textColor)
         materialButton.iconTint = ColorStateList.valueOf(textColor)
+        materialButton.rippleColor = ColorStateList.valueOf(adjustAlpha(textColor, 0.16f))
       }
       else -> {
         materialButton.setTextColor(color)
@@ -402,6 +403,7 @@ class ZynthButtonView(context: Context) : FrameLayout(context) {
         if (currentVariant.lowercase() in listOf("tinted", "outline", "outlined")) {
           materialButton.strokeColor = ColorStateList.valueOf(color)
         }
+        materialButton.rippleColor = ColorStateList.valueOf(adjustAlpha(color, 0.16f))
       }
     }
   }

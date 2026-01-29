@@ -673,7 +673,15 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
       styleBaseColor ??
       (resolvedTone() === "danger" ? toneColorMap[resolvedTone()] : undefined);
 
-    setProperty(node, "style", resolvedStyle);
+    // If we extracted the background color to use as the button's base color (native tint),
+    // we should remove it from the container view's style to prevent it from rendering
+    // a square background behind the rounded button (which causes "disappearing corners").
+    const styleToPass = resolvedStyle ? { ...resolvedStyle } : undefined;
+    if (shouldUseBackgroundBase && styleBaseColor && styleToPass) {
+      delete styleToPass.backgroundColor;
+    }
+
+    setProperty(node, "style", styleToPass);
     setProperty(node, "type", resolvedType());
     setProperty(node, "disabled", resolvedDisabled());
     setProperty(node, "loading", computedLoading());
