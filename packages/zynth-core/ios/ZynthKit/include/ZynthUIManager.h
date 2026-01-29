@@ -27,6 +27,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (ZynthNode *_Nullable)getNodeState:(NSNumber *)nodeId;
 - (NSNumber *_Nullable)getParentId:(NSNumber *)nodeId;
 - (void)markNodeDirty:(NSNumber *)nodeId;
+- (void)zynth_recursiveRemoveNode:(NSNumber *)nodeId;
 
 @end
 

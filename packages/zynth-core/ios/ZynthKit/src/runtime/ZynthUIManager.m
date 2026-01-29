@@ -501,6 +501,11 @@
   _nodeSurfaces[nodeId] = @(surfaceId);
   ZynthYogaLayout *layout = [self yogaForSurface:surfaceId];
   [layout createNodeWithId:nodeId type:_nodeStates[nodeId].type view:view];
+  
+  // CRITICAL FIX: Update ZynthNode.yoga pointer after recreating the node in the new layout.
+  // Previous implementation left node.yoga pointing to the old (freed) node.
+  _nodeStates[nodeId].yoga = [layout yogaForNode:nodeId];
+  
   [self reapplyYogaStyles:nodeId surfaceId:surfaceId];
   NSNumber *yogaParentId = ([self isSurfaceRootId:parentId] || parentId.intValue == 0) ? @(0) : parentId;
   [layout insertChild:yogaParentId child:nodeId index:index];
@@ -530,12 +535,51 @@
       [parentNode.children removeObjectAtIndex:existing];
     }
   }
-  [self cleanupNode:childId];
-  [_parents removeObjectForKey:childId];
-  [child removeFromSuperview];
+
+  // Unparent in Yoga before recursive removal
   NSNumber *yogaParentId = [self isSurfaceRootId:parentId] ? @(0) : parentId;
   [[self yogaForNode:childId] removeChild:yogaParentId child:childId];
-  [self markSurfaceDirtyForNode:childId];
+
+  [self zynth_recursiveRemoveNode:childId];
+  [self markSurfaceDirtyForNode:parentId];
+}
+
+- (void)zynth_recursiveRemoveNode:(NSNumber *)nodeId {
+  ZynthNode *node = _nodeStates[nodeId];
+  if (!node) return;
+
+  // Recursively remove children
+  NSArray<NSNumber *> *children = [node.children copy];
+  for (NSNumber *childId in children) {
+    [self zynth_recursiveRemoveNode:childId];
+  }
+
+  // Retrieve layout BEFORE cleanupNode wipes _nodeSurfaces
+  ZynthYogaLayout *layout = [self yogaForNode:nodeId];
+
+  // Cleanup component-specific state (this removes _nodeSurfaces[nodeId])
+  [self cleanupNode:nodeId];
+
+  // Free Yoga node and null out pointer to prevent use-after-free
+  if (layout) {
+    [layout removeNode:nodeId];
+  }
+  node.yoga = NULL;
+
+  // Remove native view
+  UIView *view = node.view;
+  if (view) {
+    [view removeFromSuperview];
+  }
+
+  // Final cleanup from manager dictionaries
+  [_nodes removeObjectForKey:nodeId];
+  [_nodeStates removeObjectForKey:nodeId];
+  [_parents removeObjectForKey:nodeId];
+  // [_nodeSurfaces removeObjectForKey:nodeId]; // Already done in cleanupNode
+  [_layoutNodes removeObject:nodeId];
+  [_layoutPending removeObject:nodeId];
+  [_yogaStyleCache removeObjectForKey:nodeId];
 }
 
 - (void)setHandler:(NSNumber *)nodeId name:(NSString *)name {
@@ -616,6 +660,12 @@
 }
 
 - (void)dealloc {
+  // Unregister all surfaces to trigger recursive node cleanup
+  NSArray<NSNumber *> *surfaceIds = [_surfaceRoots allKeys];
+  for (NSNumber *sid in surfaceIds) {
+    [self unregisterSurface:sid.intValue];
+  }
+
   if (_rootView) {
     @try {
       [_rootView removeObserver:self forKeyPath:@"bounds"];

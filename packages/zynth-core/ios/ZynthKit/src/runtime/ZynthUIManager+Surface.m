@@ -88,14 +88,7 @@ static const int kZynthSurfaceIdBase = 1 << 20;
   for (NSNumber *key in allKeys) {
     ZynthNode *node = _nodeStates[key];
     if (!node || node.surfaceId != surfaceId) continue;
-    UIView *view = node.view;
-    if (view) {
-      [view removeFromSuperview];
-    }
-    [self cleanupNode:key];
-    [_nodes removeObjectForKey:key];
-    [_nodeStates removeObjectForKey:key];
-    [_parents removeObjectForKey:key];
+    [self zynth_recursiveRemoveNode:key];
   }
   if ([_ownedSurfaces containsObject:@(surfaceId)]) {
     [rootView removeFromSuperview];

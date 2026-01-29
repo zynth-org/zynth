@@ -35,6 +35,13 @@ static YGSize ZynthMeasureText(YGNodeConstRef node,
   return self;
 }
 
+- (void)dealloc {
+  if (_rootNode) {
+    YGNodeFreeRecursive(_rootNode);
+    _rootNode = NULL;
+  }
+}
+
 - (void)createNodeWithId:(NSNumber *)nodeId type:(NSString *)type view:(UIView *)view {
   if (!nodeId || !view) return;
   if (_nodes[nodeId]) return;
