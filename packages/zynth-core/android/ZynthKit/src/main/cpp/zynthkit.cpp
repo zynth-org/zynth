@@ -86,6 +86,16 @@ struct RuntimeState {
   jmethodID postRunWorklet = nullptr;
   jmethodID devtoolsEmit = nullptr;
   jmethodID devtoolsIsConnected = nullptr;
+  jobject moduleRegistry = nullptr;
+  jclass moduleRegistryClass = nullptr;
+  jmethodID moduleCall = nullptr;
+  jmethodID moduleCallSync = nullptr;
+  jclass jsonObjectClass = nullptr;
+  jmethodID jsonObjectConstructor = nullptr;
+  jclass doubleClass = nullptr;
+  jmethodID doubleConstructor = nullptr;
+  jclass booleanClass = nullptr;
+  jmethodID booleanConstructor = nullptr;
   std::shared_ptr<TimerContext> timerContext = std::make_shared<TimerContext>();
   std::shared_ptr<facebook::hermes::HermesRuntime> uiRuntime;
   std::atomic<int> nextWorkletId{1};
@@ -1966,4 +1976,136 @@ Java_com_zynth_kit_runtime_JSBridge_invokeLayoutEventsBatch(JNIEnv *env,
     }
   }
   env->ReleaseDoubleArrayElements(payload, data, JNI_ABORT);
+}
+
+static jobject jsValueToJava(JNIEnv *env, Runtime &rt, RuntimeState *state, const Value &value) {
+  if (value.isString()) {
+    return env->NewStringUTF(value.asString(rt).utf8(rt).c_str());
+  }
+  if (value.isNumber()) {
+    if (!state->doubleClass || !state->doubleConstructor) return nullptr;
+    return env->NewObject(state->doubleClass, state->doubleConstructor, value.asNumber());
+  }
+  if (value.isBool()) {
+    if (!state->booleanClass || !state->booleanConstructor) return nullptr;
+    return env->NewObject(state->booleanClass, state->booleanConstructor, value.getBool());
+  }
+  if (value.isObject()) {
+    if (!state->jsonObjectClass || !state->jsonObjectConstructor) return nullptr;
+    // JSON.stringify the object
+    try {
+      Object json = rt.global().getPropertyAsObject(rt, "JSON");
+      Function stringify = json.getPropertyAsFunction(rt, "stringify");
+      Value result = stringify.call(rt, value);
+      if (result.isString()) {
+        jstring jsonStr = env->NewStringUTF(result.asString(rt).utf8(rt).c_str());
+        jobject jsonObj = env->NewObject(state->jsonObjectClass, state->jsonObjectConstructor, jsonStr);
+        env->DeleteLocalRef(jsonStr);
+        return jsonObj;
+      }
+    } catch (...) {
+      return nullptr;
+    }
+  }
+  return nullptr; // null/undefined
+}
+
+static Value javaJsonToJs(JNIEnv *env, Runtime &rt, jobject jsonObject) {
+  if (!jsonObject) return Value::null();
+  jmethodID toString = env->GetMethodID(env->GetObjectClass(jsonObject), "toString", "()Ljava/lang/String;");
+  jstring jsonStr = (jstring)env->CallObjectMethod(jsonObject, toString);
+  if (!jsonStr) return Value::null();
+  
+  const char *utf8 = env->GetStringUTFChars(jsonStr, nullptr);
+  std::string str = utf8 ? utf8 : "";
+  env->ReleaseStringUTFChars(jsonStr, utf8);
+  env->DeleteLocalRef(jsonStr);
+
+  try {
+    Object json = rt.global().getPropertyAsObject(rt, "JSON");
+    Function parse = json.getPropertyAsFunction(rt, "parse");
+    return parse.call(rt, String::createFromUtf8(rt, str));
+  } catch (...) {
+    return Value::undefined();
+  }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_zynth_kit_runtime_JSBridge_installModuleRegistry(JNIEnv *env, jobject, jlong ptr, jobject registry) {
+  auto *runtime = reinterpret_cast<facebook::hermes::HermesRuntime *>(ptr);
+  if (!runtime || !registry) return;
+  auto state = sharedStateFor(runtime);
+  if (!state) return;
+
+  state->moduleRegistry = env->NewGlobalRef(registry);
+  jclass regClass = env->GetObjectClass(registry);
+  state->moduleRegistryClass = static_cast<jclass>(env->NewGlobalRef(regClass));
+  state->moduleCall = env->GetMethodID(state->moduleRegistryClass, "call", "(Ljava/lang/String;Ljava/lang/String;[Ljava/lang/Object;)Lorg/json/JSONObject;");
+  // callSync not fully implemented yet in bridge, relying on call for now or similar pattern
+
+  jclass jsonCls = env->FindClass("org/json/JSONObject");
+  state->jsonObjectClass = static_cast<jclass>(env->NewGlobalRef(jsonCls));
+  state->jsonObjectConstructor = env->GetMethodID(state->jsonObjectClass, "<init>", "(Ljava/lang/String;)V");
+  env->DeleteLocalRef(jsonCls);
+
+  jclass doubleCls = env->FindClass("java/lang/Double");
+  state->doubleClass = static_cast<jclass>(env->NewGlobalRef(doubleCls));
+  state->doubleConstructor = env->GetMethodID(state->doubleClass, "<init>", "(D)V");
+  env->DeleteLocalRef(doubleCls);
+
+  jclass boolCls = env->FindClass("java/lang/Boolean");
+  state->booleanClass = static_cast<jclass>(env->NewGlobalRef(boolCls));
+  state->booleanConstructor = env->GetMethodID(state->booleanClass, "<init>", "(Z)V");
+  env->DeleteLocalRef(boolCls);
+
+  Runtime &rt = *runtime;
+
+  auto callFn = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "call"), 2,
+      [state, runtime](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (!state || !state->moduleRegistry || !state->moduleCall) return Value::undefined();
+        if (count < 2 || !args[0].isString() || !args[1].isString()) return Value::undefined();
+        
+        JNIEnv *env = getEnv();
+        if (!env) return Value::undefined();
+
+        std::string moduleName = args[0].asString(rt).utf8(rt);
+        std::string methodName = args[1].asString(rt).utf8(rt);
+        jstring jModule = env->NewStringUTF(moduleName.c_str());
+        jstring jMethod = env->NewStringUTF(methodName.c_str());
+
+        // Marshal args
+        size_t argCount = count > 2 ? count - 2 : 0;
+        jobjectArray jArgs = nullptr;
+        if (argCount > 0) {
+          jclass objCls = env->FindClass("java/lang/Object");
+          jArgs = env->NewObjectArray(static_cast<jsize>(argCount), objCls, nullptr);
+          env->DeleteLocalRef(objCls);
+          
+          for (size_t i = 0; i < argCount; i++) {
+            jobject jArg = jsValueToJava(env, rt, state.get(), args[i + 2]);
+            env->SetObjectArrayElement(jArgs, static_cast<jsize>(i), jArg);
+            if (jArg) env->DeleteLocalRef(jArg);
+          }
+        } else {
+             jclass objCls = env->FindClass("java/lang/Object");
+             jArgs = env->NewObjectArray(0, objCls, nullptr);
+             env->DeleteLocalRef(objCls);
+        }
+
+        jobject resultObj = env->CallObjectMethod(state->moduleRegistry, state->moduleCall, jModule, jMethod, jArgs);
+        
+        env->DeleteLocalRef(jModule);
+        env->DeleteLocalRef(jMethod);
+        env->DeleteLocalRef(jArgs);
+
+        Value result = javaJsonToJs(env, rt, resultObj);
+        if (resultObj) env->DeleteLocalRef(resultObj);
+        return result;
+      });
+
+  Object modules(rt);
+  modules.setProperty(rt, "call", callFn);
+  // sync call stub or impl if needed
+  rt.global().setProperty(rt, "__modules", modules);
 }

@@ -3,6 +3,7 @@ import {
   Modal,
   Pressable,
   ScrollView,
+  SystemGlyph,
   Text,
   View,
 } from "@zynth/components";
@@ -414,15 +415,15 @@ function FatalOverlay(props: {
                   backgroundColor: "rgba(239,68,68,0.18)",
                 }}
               >
-                <Text
+                <SystemGlyph
+                  name="RiDevelopmentTerminalBoxLine"
+                  size={25}
+                  color="#f87171"
                   style={{
-                    color: "#f87171",
-                    fontSize: 16,
-                    fontWeight: "800",
+                    justifyContent: "center",
+                    alignItems: "center",
                   }}
-                >
-                  {"</>"}
-                </Text>
+                />
               </View>
               <View style={{ flex: 1, gap: 4 }}>
                 <Text

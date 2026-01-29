@@ -10,7 +10,7 @@ Pod::Spec.new do |s|
   s.source       = { :git => "https://github.com/zynth/zynth.git", :branch => "main" }
   s.source_files = "ios/src/**/*.{h,m,mm,swift}"
   s.resource_bundles = {
-    'ZynthComponents' => ['ios/Fonts/*.{ttf,otf}']
+    'ZynthComponents' => ['assets/fonts/*.{ttf,otf}']
   }
 
   s.dependency   "ZynthKit"

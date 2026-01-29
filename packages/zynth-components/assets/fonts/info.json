@@ -1,14 +1,62 @@
 {
-  "BsArrowLeftShort": {
+  "BiRegularDotsVertical": {
     "encodedCode": "\\ea01",
-    "prefix": "ZynthRuntimeIcons",
-    "className": "ZynthRuntimeIcons-BsArrowLeftShort",
+    "prefix": "ZynthRuntime",
+    "className": "ZynthRuntime-BiRegularDotsVertical",
     "unicode": "&#59905;"
   },
-  "BsThreeDotsVertical": {
+  "IoArrowBackOutline": {
     "encodedCode": "\\ea02",
-    "prefix": "ZynthRuntimeIcons",
-    "className": "ZynthRuntimeIcons-BsThreeDotsVertical",
+    "prefix": "ZynthRuntime",
+    "className": "ZynthRuntime-IoArrowBackOutline",
     "unicode": "&#59906;"
+  },
+  "RiArrowsArrowLeftLine": {
+    "encodedCode": "\\ea03",
+    "prefix": "ZynthRuntime",
+    "className": "ZynthRuntime-RiArrowsArrowLeftLine",
+    "unicode": "&#59907;"
+  },
+  "RiArrowsArrowRightSLine": {
+    "encodedCode": "\\ea04",
+    "prefix": "ZynthRuntime",
+    "className": "ZynthRuntime-RiArrowsArrowRightSLine",
+    "unicode": "&#59908;"
+  },
+  "RiArrowsArrowUpSLine": {
+    "encodedCode": "\\ea05",
+    "prefix": "ZynthRuntime",
+    "className": "ZynthRuntime-RiArrowsArrowUpSLine",
+    "unicode": "&#59909;"
+  },
+  "RiDevelopmentTerminalBoxLine": {
+    "encodedCode": "\\ea06",
+    "prefix": "ZynthRuntime",
+    "className": "ZynthRuntime-RiDevelopmentTerminalBoxLine",
+    "unicode": "&#59910;"
+  },
+  "RiDocumentFileCopyLine": {
+    "encodedCode": "\\ea07",
+    "prefix": "ZynthRuntime",
+    "className": "ZynthRuntime-RiDocumentFileCopyLine",
+    "unicode": "&#59911;"
+  },
+  "RiSystemAlertLine": {
+    "encodedCode": "\\ea08",
+    "prefix": "ZynthRuntime",
+    "className": "ZynthRuntime-RiSystemAlertLine",
+    "unicode": "&#59912;"
+  },
+  "RiSystemCloseLine": {
+    "encodedCode": "\\ea09",
+    "prefix": "ZynthRuntime",
+    "className": "ZynthRuntime-RiSystemCloseLine",
+    "unicode": "&#59913;"
+  },
+  "RiSystemRefreshLine": {
+    "encodedCode": "\\ea0a",
+    "prefix": "ZynthRuntime",
+    "className": "ZynthRuntime-RiSystemRefreshLine",
+    "unicode": "&#59914;"
   }
 }

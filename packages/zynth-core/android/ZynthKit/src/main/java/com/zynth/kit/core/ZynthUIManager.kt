@@ -22,6 +22,9 @@ import com.zynth.kit.runtime.JSBridge
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
 
+// TODO: Move this to a separate file or optimize
+private const val TRACE_TAG = "ZynthUIManager"
+
 class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal val mainHandler = Handler(Looper.getMainLooper())
   internal val density = rootView.resources.displayMetrics.density
@@ -91,6 +94,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   private val opStats = HashMap<String, OpStats>()
   private val typeStats = HashMap<String, OpStats>()
   private val phaseStats = HashMap<String, OpStats>()
+  var assetProvider: AssetProvider? = null
 
   fun scheduleTimer(runtimePtr: Long, timerId: Int, delayMs: Int, repeat: Boolean) {
     val runnable = object : Runnable {
@@ -374,7 +378,15 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     }
     if (view is TextView && name == "fontFamily") {
       val family = value ?: return
-      runOnMain { view.typeface = Typeface.create(family, view.typeface?.style ?: Typeface.NORMAL) }
+      runOnMain {
+        val custom = assetProvider?.getTypeface(family)
+        val style = view.typeface?.style ?: Typeface.NORMAL
+        if (custom != null) {
+          view.typeface = Typeface.create(custom, style)
+        } else {
+          view.typeface = Typeface.create(family, style)
+        }
+      }
       maybeNotifyStyle(descriptor, node, name, value)
       traceOp("setProp", node?.type, startNs)
       return

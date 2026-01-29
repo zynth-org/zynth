@@ -142,7 +142,14 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
 
         val family = style.fontFamily
         val baseTypeface = if (family != null) {
-          FontRegistry.getTypeface(family) ?: Typeface.create(family, styleInt)
+          val cached = FontRegistry.getTypeface(family)
+          if (cached != null) {
+              Log.d("ZynthText", "Using cached typeface for family: $family")
+              cached
+          } else {
+              Log.w("ZynthText", "FontRegistry miss for family: $family, falling back to system")
+              Typeface.create(family, styleInt)
+          }
         } else {
           Typeface.DEFAULT
         }

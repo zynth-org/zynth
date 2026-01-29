@@ -3,6 +3,7 @@ package com.zynth.kit.runtime
 import android.content.Context
 import android.graphics.Typeface
 import android.util.Log
+import com.zynth.kit.core.AssetProvider
 import java.util.concurrent.ConcurrentHashMap
 
 private const val TAG = "FontRegistry"
@@ -13,12 +14,16 @@ private const val TAG = "FontRegistry"
  *
  * This is shared between ZynthKit text rendering and FontModule (in zynth-apis).
  */
-object FontRegistry {
+object FontRegistry : AssetProvider {
   private val loadedFonts = ConcurrentHashMap<String, Typeface>()
   private var appContext: Context? = null
 
   fun initialize(context: Context) {
     appContext = context.applicationContext
+  }
+
+  override fun getTypeface(family: String): Typeface? {
+    return loadedFonts[family]
   }
 
   /**
@@ -27,7 +32,7 @@ object FontRegistry {
    */
   fun loadFont(fontFamily: String, resourceName: String): Boolean {
     if (loadedFonts.containsKey(fontFamily)) {
-      Log.d(TAG, "Font '$fontFamily' already loaded")
+      // Log.d(TAG, "Font '$fontFamily' already loaded")
       return true
     }
 
@@ -41,24 +46,16 @@ object FontRegistry {
       // resourceName is the font filename, e.g., "zynth-icons.ttf"
       // Load from assets/fonts/ directory
       val assetPath = "fonts/$resourceName"
-      Log.d(TAG, "Loading font '$fontFamily' from assets: $assetPath")
-
+      // Log.d(TAG, "Loading font '$fontFamily' from assets: $assetPath")
+      
       val typeface = Typeface.createFromAsset(ctx.assets, assetPath)
       loadedFonts[fontFamily] = typeface
-      Log.d(TAG, "Successfully loaded font '$fontFamily'")
+      // Log.d(TAG, "Successfully loaded font '$fontFamily'")
       true
     } catch (e: Exception) {
       Log.e(TAG, "Failed to load font '$fontFamily' from '$resourceName': ${e.message}")
       false
     }
-  }
-
-  /**
-   * Get a loaded font by family name.
-   * Returns null if the font hasn't been loaded.
-   */
-  fun getTypeface(fontFamily: String): Typeface? {
-    return loadedFonts[fontFamily]
   }
 
   /**

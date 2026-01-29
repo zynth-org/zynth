@@ -12,6 +12,7 @@ internal object JSBridge {
   external fun createHermesRuntime(): Long
   external fun destroyHermesRuntime(runtimePtr: Long)
   external fun installUIBindings(runtimePtr: Long, manager: com.zynth.kit.core.ZynthUIManager)
+  external fun installModuleRegistry(runtimePtr: Long, registry: ZynthModuleRegistry)
   external fun evaluateScript(runtimePtr: Long, code: String, sourceUrl: String?)
   external fun callGlobalDouble(runtimePtr: Long, name: String, value: Double)
   external fun callGlobalFrame(

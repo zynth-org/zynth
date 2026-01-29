@@ -32,27 +32,35 @@ public class ZynthFontModule: ZynthModule {
              print("[ZynthFontModule] Found in Main Bundle: \(url.path)")
         }
         
-        // 2. If not found, look for it in specific bundles (like ZynthIcons.bundle)
+        // 2. If not found, look for it in specific bundles (like ZynthIcons.bundle or ZynthComponents.bundle)
         if fontURL == nil {
-            if resourceName.contains("ZynthIcons") {
-                print("[ZynthFontModule] Searching for ZynthIcons.bundle...")
-                if let bundleURL = Bundle.main.url(forResource: "ZynthIcons", withExtension: "bundle") {
-                     print("[ZynthFontModule] Found ZynthIcons.bundle at: \(bundleURL.path)")
+            let bundleNames = ["ZynthIcons", "ZynthComponents"]
+            for bundleName in bundleNames {
+                print("[ZynthFontModule] Searching for \(bundleName).bundle...")
+                if let bundleURL = Bundle.main.url(forResource: bundleName, withExtension: "bundle") {
+                     print("[ZynthFontModule] Found \(bundleName).bundle at: \(bundleURL.path)")
                      if let bundle = Bundle(url: bundleURL) {
                         fontURL = bundle.url(forResource: resourceName, withExtension: nil)
                         if let url = fontURL {
-                             print("[ZynthFontModule] Found file in ZynthIcons.bundle root: \(url.path)")
+                             print("[ZynthFontModule] Found file in \(bundleName).bundle root: \(url.path)")
+                             break
                         } else {
                              fontURL = bundle.url(forResource: resourceName, withExtension: nil, subdirectory: "Fonts")
                              if let url = fontURL {
-                                 print("[ZynthFontModule] Found file in ZynthIcons.bundle/Fonts: \(url.path)")
+                                 print("[ZynthFontModule] Found file in \(bundleName).bundle/Fonts: \(url.path)")
+                                 break
                              } else {
-                                 print("[ZynthFontModule] File not found in ZynthIcons.bundle")
+                                 // Try assets/fonts too since that's where we just pointed the podspec
+                                 fontURL = bundle.url(forResource: resourceName, withExtension: nil, subdirectory: "assets/fonts")
+                                 if let url = fontURL {
+                                     print("[ZynthFontModule] Found file in \(bundleName).bundle/assets/fonts: \(url.path)")
+                                     break
+                                 } else {
+                                     print("[ZynthFontModule] File not found in \(bundleName).bundle")
+                                 }
                              }
                         }
                      }
-                } else {
-                    print("[ZynthFontModule] ZynthIcons.bundle not found in Main Bundle.")
                 }
             }
         }

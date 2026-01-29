@@ -3,6 +3,7 @@ package dev.zynth.apis
 import android.app.Activity
 import android.content.Context
 import android.util.Log
+import com.zynth.kit.runtime.FontRegistry
 import com.zynth.kit.runtime.ZynthRuntime
 import dev.zynth.apis.safearea.ZynthSafeAreaModule
 import java.util.WeakHashMap
@@ -31,7 +32,7 @@ object ZynthAPIs {
     @JvmStatic
     @Synchronized
     fun initialize(context: Context, runtime: ZynthRuntime) {
-        Log.d(TAG, "ZynthAPIs.initialize() called")
+        // Log.d(TAG, "ZynthAPIs.initialize() called")
 
         if (initializedRuntimes.containsKey(runtime)) {
             Log.w(TAG, "Runtime already initialized - skipping")
@@ -39,17 +40,20 @@ object ZynthAPIs {
         }
         initializedRuntimes[runtime] = true
 
-        Log.d(TAG, "Creating modules...")
+        // Log.d(TAG, "Creating modules...")
         val fontModule = FontModule(context.applicationContext)
         val dimensionsModule = DimensionsModule(runtime, runtime.root)
         val fetchModule = FetchModule(runtime)
         val backHandlerModule = BackHandlerModule(runtime, runtime.root)
         val safeAreaModule = ZynthSafeAreaModule(runtime.root, runtime)
 
-        Log.d(TAG, "Installing modules into runtime...")
+        // Log.d(TAG, "Installing modules into runtime...")
         runtime.installModules(listOf(fontModule, dimensionsModule, fetchModule, backHandlerModule, safeAreaModule))
 
-        Log.d(TAG, "ZynthAPIs initialized successfully with Font, Dimensions, Fetch, BackHandler, SafeArea")
+        // Register the FontRegistry as the asset provider for the core renderer
+        runtime.setAssetProvider(FontRegistry)
+
+        // Log.d(TAG, "ZynthAPIs initialized successfully with Font, Dimensions, Fetch, BackHandler, SafeArea")
     }
 
     /**

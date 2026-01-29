@@ -3,6 +3,7 @@ package com.zynth.kit.runtime
 import android.content.Context
 import android.content.res.AssetManager
 import com.facebook.soloader.SoLoader
+import com.zynth.kit.core.AssetProvider
 import com.zynth.kit.core.ZynthRootView
 import com.zynth.kit.core.ZynthUIManager
 import com.zynth.kit.runtime.modules.DevtoolsModule
@@ -75,6 +76,10 @@ class ZynthRuntime(val root: ZynthRootView) {
     }
   }
 
+  fun setAssetProvider(provider: AssetProvider) {
+    uiManager.assetProvider = provider
+  }
+
   fun connectDevServer(url: String, token: String? = null) {
     // Phase 1 scaffold.
     url.length
@@ -84,6 +89,7 @@ class ZynthRuntime(val root: ZynthRootView) {
   fun loadInitialBundle(assets: AssetManager, preloadedCode: String? = null) {
     runOnJSSync {
       JSBridge.installUIBindings(runtimePtr, uiManager)
+      JSBridge.installModuleRegistry(runtimePtr, registry)
     }
 
     val constants = registry.exportedConstants()
