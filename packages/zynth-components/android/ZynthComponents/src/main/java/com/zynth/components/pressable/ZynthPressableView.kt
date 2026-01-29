@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Outline
+import android.graphics.Path
 import android.graphics.Rect
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
@@ -511,11 +512,52 @@ class ZynthPressableView(context: Context) : ZynthLayoutView(context) {
   override fun setBorderRadii(tl: Float, tr: Float, br: Float, bl: Float) {
     super.setBorderRadii(tl, tr, br, bl)
     updateRippleMask()
+    updateOutline()
   }
 
   override fun setBackground(background: Drawable?) {
     super.setBackground(background)
     updateRippleMask()
+    updateOutline()
+  }
+
+  private fun updateOutline() {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+      val tl = borderTopLeftRadius
+      val tr = borderTopRightRadius
+      val br = borderBottomRightRadius
+      val bl = borderBottomLeftRadius
+
+      val hasRadius = tl > 0f || tr > 0f || br > 0f || bl > 0f
+      if (hasRadius) {
+        outlineProvider = object : ViewOutlineProvider() {
+          override fun getOutline(view: View, outline: Outline) {
+            val width = view.width
+            val height = view.height
+            if (tl == tr && tr == br && br == bl) {
+              outline.setRoundRect(0, 0, width, height, tl)
+            } else {
+              val path = Path()
+              path.addRoundRect(
+                0f, 0f, width.toFloat(), height.toFloat(),
+                floatArrayOf(tl, tl, tr, tr, br, br, bl, bl),
+                Path.Direction.CW
+              )
+              if (path.isConvex) {
+                outline.setConvexPath(path)
+              } else {
+                outline.setRoundRect(0, 0, width, height, max(max(tl, tr), max(br, bl)))
+              }
+            }
+          }
+        }
+        clipToOutline = true
+      } else {
+        outlineProvider = ViewOutlineProvider.BACKGROUND
+        clipToOutline = false
+      }
+      invalidateOutline()
+    }
   }
 
   private fun updateRippleMask() {
