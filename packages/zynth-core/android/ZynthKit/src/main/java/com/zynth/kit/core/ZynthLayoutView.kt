@@ -142,6 +142,9 @@ open class ZynthLayoutView @JvmOverloads constructor(
   }
 
   override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+    if (onInterceptTouchEvent(ev)) {
+      return super.dispatchTouchEvent(ev)
+    }
     if (childCount == 0) return super.dispatchTouchEvent(ev)
     val x = ev.x.toInt()
     val y = ev.y.toInt()

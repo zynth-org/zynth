@@ -543,10 +543,16 @@ class ZynthPressableView(context: Context) : ZynthLayoutView(context) {
                 floatArrayOf(tl, tl, tr, tr, br, br, bl, bl),
                 Path.Direction.CW
               )
-              if (path.isConvex) {
-                outline.setConvexPath(path)
+              if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                outline.setPath(path)
               } else {
-                outline.setRoundRect(0, 0, width, height, max(max(tl, tr), max(br, bl)))
+                @Suppress("DEPRECATION")
+                if (path.isConvex) {
+                  @Suppress("DEPRECATION")
+                  outline.setConvexPath(path)
+                } else {
+                  outline.setRoundRect(0, 0, width, height, max(max(tl, tr), max(br, bl)))
+                }
               }
             }
           }
