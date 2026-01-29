@@ -150,12 +150,19 @@ public class ZynthSafeAreaModule: NSObject {
   }
 
   func getInitialMetrics() -> WindowMetrics {
+    if !Thread.isMainThread {
+      return DispatchQueue.main.sync {
+        return self.getInitialMetrics()
+      }
+    }
     return getCurrentMetrics() ?? defaultMetrics()
   }
 
   func refreshMetrics() {
     print("[ZynthSafeArea] Forced refresh requested")
-    updateMetrics(force: true)
+    DispatchQueue.main.async { [weak self] in
+      self?.updateMetrics(force: true)
+    }
   }
   
   private func getActiveWindow() -> UIWindow? {
