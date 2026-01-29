@@ -90,7 +90,8 @@
   CGFloat br = self.borderBottomRightRadius;
   CGFloat bl = self.borderBottomLeftRadius;
   if (tl == tr && tl == br && tl == bl && tl > 0) {
-    self.gradientLayer.cornerRadius = tl;
+    CGFloat maxRadius = MIN(view.bounds.size.width, view.bounds.size.height) / 2.0;
+    self.gradientLayer.cornerRadius = MIN(tl, maxRadius);
   } else {
     self.gradientLayer.cornerRadius = 0;
   }
@@ -140,7 +141,8 @@
       view.layer.mask = nil;
       self.maskLayer = nil;
     }
-    view.layer.cornerRadius = tl;
+    CGFloat maxRadius = MIN(view.bounds.size.width, view.bounds.size.height) / 2.0;
+    view.layer.cornerRadius = MIN(tl, maxRadius);
     return;
   }
 
@@ -393,10 +395,11 @@
     shape.lineDashPattern = nil;
   }
 
-  CGFloat tl = self.borderTopLeftRadius;
-  CGFloat tr = self.borderTopRightRadius;
-  CGFloat br = self.borderBottomRightRadius;
-  CGFloat bl = self.borderBottomLeftRadius;
+  CGFloat maxRadius = MIN(bounds.size.width, bounds.size.height) / 2.0;
+  CGFloat tl = MIN(self.borderTopLeftRadius, maxRadius);
+  CGFloat tr = MIN(self.borderTopRightRadius, maxRadius);
+  CGFloat br = MIN(self.borderBottomRightRadius, maxRadius);
+  CGFloat bl = MIN(self.borderBottomLeftRadius, maxRadius);
 
   UIBezierPath *path = [UIBezierPath bezierPath];
   CGFloat minX = CGRectGetMinX(bounds);
