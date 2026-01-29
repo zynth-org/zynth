@@ -17,46 +17,58 @@
     "className": "ZynthRuntime-RiArrowsArrowLeftLine",
     "unicode": "&#59907;"
   },
-  "RiArrowsArrowRightSLine": {
+  "RiArrowsArrowLeftSLine": {
     "encodedCode": "\\ea04",
     "prefix": "ZynthRuntime",
-    "className": "ZynthRuntime-RiArrowsArrowRightSLine",
+    "className": "ZynthRuntime-RiArrowsArrowLeftSLine",
     "unicode": "&#59908;"
   },
-  "RiArrowsArrowUpSLine": {
+  "RiArrowsArrowRightSLine": {
     "encodedCode": "\\ea05",
     "prefix": "ZynthRuntime",
-    "className": "ZynthRuntime-RiArrowsArrowUpSLine",
+    "className": "ZynthRuntime-RiArrowsArrowRightSLine",
     "unicode": "&#59909;"
   },
-  "RiDevelopmentTerminalBoxLine": {
+  "RiArrowsArrowUpSLine": {
     "encodedCode": "\\ea06",
     "prefix": "ZynthRuntime",
-    "className": "ZynthRuntime-RiDevelopmentTerminalBoxLine",
+    "className": "ZynthRuntime-RiArrowsArrowUpSLine",
     "unicode": "&#59910;"
   },
-  "RiDocumentFileCopyLine": {
+  "RiDevelopmentTerminalBoxLine": {
     "encodedCode": "\\ea07",
     "prefix": "ZynthRuntime",
-    "className": "ZynthRuntime-RiDocumentFileCopyLine",
+    "className": "ZynthRuntime-RiDevelopmentTerminalBoxLine",
     "unicode": "&#59911;"
   },
-  "RiSystemAlertLine": {
+  "RiDocumentFileCopyLine": {
     "encodedCode": "\\ea08",
     "prefix": "ZynthRuntime",
-    "className": "ZynthRuntime-RiSystemAlertLine",
+    "className": "ZynthRuntime-RiDocumentFileCopyLine",
     "unicode": "&#59912;"
   },
-  "RiSystemCloseLine": {
+  "RiSystemAlertLine": {
     "encodedCode": "\\ea09",
     "prefix": "ZynthRuntime",
-    "className": "ZynthRuntime-RiSystemCloseLine",
+    "className": "ZynthRuntime-RiSystemAlertLine",
     "unicode": "&#59913;"
   },
-  "RiSystemRefreshLine": {
+  "RiSystemCloseLine": {
     "encodedCode": "\\ea0a",
     "prefix": "ZynthRuntime",
-    "className": "ZynthRuntime-RiSystemRefreshLine",
+    "className": "ZynthRuntime-RiSystemCloseLine",
     "unicode": "&#59914;"
+  },
+  "RiSystemDeleteBin2Line": {
+    "encodedCode": "\\ea0b",
+    "prefix": "ZynthRuntime",
+    "className": "ZynthRuntime-RiSystemDeleteBin2Line",
+    "unicode": "&#59915;"
+  },
+  "RiSystemRefreshLine": {
+    "encodedCode": "\\ea0c",
+    "prefix": "ZynthRuntime",
+    "className": "ZynthRuntime-RiSystemRefreshLine",
+    "unicode": "&#59916;"
   }
 }

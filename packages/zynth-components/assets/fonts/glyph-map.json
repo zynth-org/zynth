@@ -2,11 +2,13 @@
   "BiRegularDotsVertical": "",
   "IoArrowBackOutline": "",
   "RiArrowsArrowLeftLine": "",
-  "RiArrowsArrowRightSLine": "",
-  "RiArrowsArrowUpSLine": "",
-  "RiDevelopmentTerminalBoxLine": "",
-  "RiDocumentFileCopyLine": "",
-  "RiSystemAlertLine": "",
-  "RiSystemCloseLine": "",
-  "RiSystemRefreshLine": ""
+  "RiArrowsArrowLeftSLine": "",
+  "RiArrowsArrowRightSLine": "",
+  "RiArrowsArrowUpSLine": "",
+  "RiDevelopmentTerminalBoxLine": "",
+  "RiDocumentFileCopyLine": "",
+  "RiSystemAlertLine": "",
+  "RiSystemCloseLine": "",
+  "RiSystemDeleteBin2Line": "",
+  "RiSystemRefreshLine": ""
 }

@@ -3,18 +3,24 @@ import {
   Modal,
   Pressable,
   ScrollView,
+  StatusBar,
   SystemGlyph,
   Text,
   View,
 } from "@zynth/components";
 import {
   For,
+  Show,
   createEffect,
   createMemo,
   createSignal,
   onCleanup,
 } from "solid-js";
-import { Dimensions } from "@zynth/apis";
+import {
+  createSafeAreaInsets,
+  Dimensions,
+  SafeAreaProvider,
+} from "@zynth/apis";
 declare const __DEV__: boolean | undefined;
 
 export type DevtoolsEvent = {
@@ -265,13 +271,47 @@ function deriveLocation(entry: OverlayEntry): {
   return { component: source, line: "?" };
 }
 
-function FatalOverlay(props: {
+const THEME = {
+  error: {
+    badgeBg: "rgba(239,68,68,0.12)",
+    badgeBorder: "rgba(239,68,68,0.28)",
+    badgeDot: "#ef4444",
+    badgeText: "#ef4444",
+    iconBg: "rgba(239,68,68,0.18)",
+    iconColor: "#f87171",
+    messageColor: "#f87171",
+  },
+  warning: {
+    badgeBg: "rgba(234,179,8,0.12)",
+    badgeBorder: "rgba(234,179,8,0.28)",
+    badgeDot: "#eab308",
+    badgeText: "#eab308",
+    iconBg: "rgba(234,179,8,0.18)",
+    iconColor: "#facc15",
+    messageColor: "#facc15",
+  },
+};
+
+function DetailOverlay(props: {
   entry: OverlayEntry;
   onDismiss: (reason: "dismiss" | "ignore", entry: OverlayEntry) => void;
+  onClear?: () => void;
+  navigation?: {
+    index: number;
+    total: number;
+    onPrev: () => void;
+    onNext: () => void;
+  };
 }) {
   const entry = () => props.entry;
-  const header = () =>
-    entry().kind === "crash" ? "Native Crash" : "Runtime Error";
+  const isError = () => entry().kind === "error" || entry().kind === "crash";
+  const theme = () => (isError() ? THEME.error : THEME.warning);
+
+  const header = () => {
+    if (entry().kind === "crash") return "Native Crash";
+    if (entry().kind === "error") return "Runtime Error";
+    return "Performance Warning";
+  };
   const stackLines = createMemo(() => splitStack(entry().stack));
   const location = createMemo(() => deriveLocation(entry()));
   const [copied, setCopied] = createSignal(false);
@@ -282,17 +322,18 @@ function FatalOverlay(props: {
     });
     onCleanup(unsubscribe);
   });
+  const insets = createSafeAreaInsets();
   const windowHeight = () => windowSize().height;
   const windowWidth = () => windowSize().width;
-  const contentContainerWidth = () => Math.max(windowWidth() - 80, 0);
 
   const errorSummary = createMemo(() => {
     const lines = stackLines();
-    const firstStack = lines.length > 0 ? lines[0] : "";
     const loc = location();
     const stackText =
       lines.length > 0 ? lines.join("\n") : "No stack trace available.";
-    return `${entry().message}\n\nLocation: ${loc.component}:${loc.line}\n\nStack Trace:\n${stackText}\n\nTopic: ${entry().topic}`;
+    return `${entry().message}\n\nLocation: ${loc.component}:${
+      loc.line
+    }\n\nStack Trace:\n${stackText}\n\nTopic: ${entry().topic}`;
   });
 
   function handleCopy(): void {
@@ -327,9 +368,10 @@ function FatalOverlay(props: {
         zIndex: 9999,
       }}
     >
+      <StatusBar barStyle="light-content" />
       <View
         style={{
-          paddingTop: 64,
+          paddingTop: insets.top + 16,
           paddingHorizontal: 20,
           flex: 1,
           paddingBottom: 32,
@@ -338,37 +380,100 @@ function FatalOverlay(props: {
         <View style={{ gap: 6, paddingBottom: 18 }}>
           <View
             style={{
-              alignSelf: "flex-start",
               flexDirection: "row",
+              justifyContent: "space-between",
               alignItems: "center",
-              gap: 6,
-              paddingHorizontal: 10,
-              paddingVertical: 6,
-              borderRadius: 999,
-              backgroundColor: "rgba(239,68,68,0.12)",
-              borderWidth: 1,
-              borderColor: "rgba(239,68,68,0.28)",
             }}
           >
             <View
               style={{
-                width: 6,
-                height: 6,
-                borderRadius: 3,
-                backgroundColor: "#ef4444",
-              }}
-            />
-            <Text
-              style={{
-                color: "#ef4444",
-                fontSize: 10,
-                fontWeight: "800",
-                textTransform: "uppercase",
-                letterSpacing: 0.6,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 6,
+                paddingHorizontal: 10,
+                paddingVertical: 6,
+                borderRadius: 999,
+                backgroundColor: theme().badgeBg,
+                borderWidth: 1,
+                borderColor: theme().badgeBorder,
               }}
             >
-              {header()}
-            </Text>
+              <View
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: 3,
+                  backgroundColor: theme().badgeDot,
+                }}
+              />
+              <Text
+                style={{
+                  color: theme().badgeText,
+                  fontSize: 10,
+                  fontWeight: "800",
+                  textTransform: "uppercase",
+                  letterSpacing: 0.6,
+                }}
+              >
+                {header()}
+              </Text>
+            </View>
+
+            <Show when={props.navigation && props.navigation.total > 1}>
+              <View
+                style={{ flexDirection: "row", alignItems: "center", gap: 12 }}
+              >
+                <Button
+                  onPress={props.navigation!.onPrev}
+                  // disabled={props.navigation!.index === 0}
+                  enableGlassIOS
+                  rounded="pill"
+                  size="sm"
+                  style={{
+                    opacity: props.navigation!.index === 0 ? 0.3 : 1,
+                    backgroundColor: "transparent",
+                  }}
+                >
+                  <SystemGlyph
+                    name="RiArrowsArrowLeftSLine"
+                    size={24}
+                    color={theme().badgeText}
+                  />
+                </Button>
+                <Text
+                  style={{
+                    color: theme().badgeText,
+                    fontSize: 13,
+                    fontWeight: "700",
+                    fontVariant: ["tabular-nums"],
+                  }}
+                >
+                  {props.navigation!.index + 1} / {props.navigation!.total}
+                </Text>
+                <Button
+                  onPress={props.navigation!.onNext}
+                  enableGlassIOS
+                  rounded="pill"
+                  size="sm"
+                  disabled={
+                    props.navigation!.index === props.navigation!.total - 1
+                  }
+                  style={{
+                    backgroundColor: "transparent",
+                    opacity:
+                      props.navigation!.index === props.navigation!.total - 1
+                        ? 0.3
+                        : 1,
+                  }}
+                >
+                  <SystemGlyph
+                    name="RiArrowsArrowRightSLine"
+                    size={24}
+                    color={theme().badgeText}
+                  />
+                </Button>
+              </View>
+            </Show>
           </View>
 
           <Text
@@ -379,7 +484,9 @@ function FatalOverlay(props: {
               lineHeight: 28,
             }}
           >
-            Something went wrong in the app
+            {isError()
+              ? "Something went wrong in the app"
+              : "Potential performance issue detected"}
           </Text>
           <Text
             style={{
@@ -388,8 +495,9 @@ function FatalOverlay(props: {
               lineHeight: 19,
             }}
           >
-            A JavaScript exception was detected that prevents the app from
-            continuing normally.
+            {isError()
+              ? "A JavaScript exception was detected that prevents the app from continuing normally."
+              : "This warning indicates a condition that might lead to unexpected behavior or performance degradation."}
           </Text>
         </View>
 
@@ -412,13 +520,13 @@ function FatalOverlay(props: {
                   borderRadius: 14,
                   alignItems: "center",
                   justifyContent: "center",
-                  backgroundColor: "rgba(239,68,68,0.18)",
+                  backgroundColor: theme().iconBg,
                 }}
               >
                 <SystemGlyph
                   name="RiDevelopmentTerminalBoxLine"
                   size={25}
-                  color="#f87171"
+                  color={theme().iconColor}
                   style={{
                     justifyContent: "center",
                     alignItems: "center",
@@ -439,7 +547,7 @@ function FatalOverlay(props: {
                 </Text>
                 <Text
                   style={{
-                    color: "#f87171",
+                    color: theme().messageColor,
                     fontSize: 13,
                     fontFamily: "Menlo",
                   }}
@@ -481,38 +589,63 @@ function FatalOverlay(props: {
                   {location().component}:{location().line}
                 </Text>
               </View>
-              <View
-                style={{
-                  paddingHorizontal: 8,
-                  paddingVertical: 6,
-                  borderRadius: 10,
-                  backgroundColor: "rgba(245,158,11,0.12)",
-                  borderWidth: 1,
-                  borderColor: "rgba(245,158,11,0.32)",
-                }}
-              >
-                <Text
+              <Show when={!isError()}>
+                <View
                   style={{
-                    color: "#f59e0b",
-                    fontSize: 10,
-                    fontWeight: "800",
+                    paddingHorizontal: 8,
+                    paddingVertical: 6,
+                    borderRadius: 10,
+                    backgroundColor: "rgba(245,158,11,0.12)",
+                    borderWidth: 1,
+                    borderColor: "rgba(245,158,11,0.32)",
                   }}
                 >
-                  Warning: Unstable State
-                </Text>
-              </View>
+                  <Text
+                    style={{
+                      color: "#f59e0b",
+                      fontSize: 10,
+                      fontWeight: "800",
+                    }}
+                  >
+                    Warning: Check Console
+                  </Text>
+                </View>
+              </Show>
+              <Show when={isError()}>
+                <View
+                  style={{
+                    paddingHorizontal: 8,
+                    paddingVertical: 6,
+                    borderRadius: 10,
+                    backgroundColor: "rgba(239,68,68,0.12)",
+                    borderWidth: 1,
+                    borderColor: "rgba(239,68,68,0.32)",
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: "#ef4444",
+                      fontSize: 10,
+                      fontWeight: "800",
+                    }}
+                  >
+                    Unstable State
+                  </Text>
+                </View>
+              </Show>
             </View>
           </View>
 
           <View style={{ flex: 1, gap: 8 }}>
             <View
-              style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
+              style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
             >
-              <Text
-                style={{ color: "#71717a", fontSize: 12, fontWeight: "900" }}
-              >
-                {">"}
-              </Text>
+              <SystemGlyph
+                name="RiArrowsArrowRightSLine"
+                size={12}
+                color="#71717a"
+                style={{ marginTop: 2 }}
+              />
               <Text
                 style={{
                   color: "#71717a",
@@ -617,14 +750,37 @@ function FatalOverlay(props: {
               justifyContent: "center",
             }}
           >
-            <Text style={{ color: "#e4e4e7", fontSize: 13, fontWeight: "700" }}>
-              {copied() ? "Copied" : "Copy"}
-            </Text>
+            <View
+              style={{
+                alignItems: "center",
+                flexDirection: "row",
+                gap: 4,
+              }}
+            >
+              <Show when={!copied()}>
+                <SystemGlyph
+                  name="RiDocumentFileCopyLine"
+                  size={18}
+                  color="#e4e4e7"
+                />
+              </Show>
+              <Text
+                style={{
+                  color: "#e4e4e7",
+                  fontSize: 13,
+                  fontWeight: "700",
+                  gap: 4,
+                  flexDirection: "row",
+                  alignItems: "center",
+                }}
+              >
+                {copied() ? "Copied" : "Copy"}
+              </Text>
+            </View>
           </Button>
 
           <Button
             onPress={() => {
-              console.log("Press ignore on entry:", entry());
               props.onDismiss("ignore", entry());
             }}
             enableGlassIOS
@@ -637,68 +793,154 @@ function FatalOverlay(props: {
               justifyContent: "center",
             }}
           >
+            <SystemGlyph name="RiSystemCloseLine" size={22} color="#e4e4e7" />
             <Text style={{ color: "#e4e4e7", fontSize: 13, fontWeight: "700" }}>
-              Ignore
+              {isError() ? "Ignore" : "Close"}
             </Text>
           </Button>
         </View>
 
-        <Button
-          onPress={() => {
-            props.onDismiss("dismiss", entry());
-            reloadApp();
-          }}
-          enableGlassIOS
-          style={{
-            width: "100%",
-            paddingVertical: 15,
-            borderRadius: 18,
-            backgroundColor: "#dc2626",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <Text style={{ color: "#fff", fontSize: 14, fontWeight: "900" }}>
-            Reload Application
-          </Text>
-        </Button>
+        <Show when={isError()}>
+          <Button
+            onPress={() => {
+              props.onDismiss("dismiss", entry());
+              reloadApp();
+            }}
+            enableGlassIOS
+            style={{
+              width: "100%",
+              paddingVertical: 15,
+              borderRadius: 18,
+              backgroundColor: "#dc2626",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <SystemGlyph name="RiSystemRefreshLine" size={22} color="#e4e4e7" />
+            <Text style={{ color: "#fff", fontSize: 14, fontWeight: "900" }}>
+              Reload Application
+            </Text>
+          </Button>
+        </Show>
+
+        <Show when={!isError()}>
+          <Button
+            onPress={() => {
+              if (props.onClear) props.onClear();
+            }}
+            enableGlassIOS
+            style={{
+              width: "100%",
+              paddingVertical: 15,
+              borderRadius: 18,
+              backgroundColor: "#ca8a04",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <SystemGlyph
+              name="RiSystemDeleteBin2Line"
+              size={22}
+              color="#e4e4e7"
+            />
+            <Text style={{ color: "#fff", fontSize: 14, fontWeight: "900" }}>
+              Dismiss All Warnings
+            </Text>
+          </Button>
+        </Show>
       </View>
     </View>
   );
 }
 
-function WarningBanner(props: {
+function WarningToast(props: {
   count: number;
   lastMessage: string;
-  onClear: () => void;
+  onExpand: () => void;
+  onClose: () => void;
 }) {
-  const countText = () =>
-    props.count === 1 ? "1 warning" : `${props.count} warnings`;
-  const subtitle = () => truncate(props.lastMessage, 140);
-
   return (
-    <Pressable
-      onPress={() => props.onClear()}
+    <View
       style={{
         position: "absolute",
-        bottom: 16,
-        left: 16,
-        right: 16,
+        bottom: 32,
+        left: 20,
+        right: 20,
         zIndex: 9998,
-        backgroundColor: "#f59e0b",
-        borderRadius: 12,
-        paddingVertical: 10,
-        paddingHorizontal: 12,
-        gap: 2,
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        paddingRight: 16,
+        backgroundColor: "#242014",
+        borderRadius: 48,
+        borderWidth: 2,
+        borderColor: "#695511",
         shadowColor: "#000",
-        shadowOpacity: 0.25,
-        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.2,
+        shadowRadius: 20,
       }}
     >
-      <Text style={{ color: "#1f2937", fontWeight: "800" }}>{countText()}</Text>
-      <Text style={{ color: "#4b5563", fontSize: 12 }}>{subtitle()}</Text>
-      <Text style={{ color: "#374151", fontSize: 11 }}>Tap to clear</Text>
-    </Pressable>
+      <Pressable
+        onPress={props.onExpand}
+        style={{
+          flex: 1,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 16,
+          paddingVertical: 16,
+          paddingHorizontal: 16,
+        }}
+      >
+        <View
+          style={{
+            backgroundColor: "#eab308", // bg-yellow-500
+            padding: 8,
+            borderRadius: 999,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <SystemGlyph name="RiSystemAlertLine" size={16} color="#09090b" />
+        </View>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text
+            style={{
+              fontSize: 12,
+              fontWeight: "700",
+              color: "#fef08a", // text-yellow-200
+            }}
+          >
+            Performance Warning {props.count > 1 ? `(${props.count})` : ""}
+          </Text>
+          <Text
+            numberOfLines={1}
+            style={{
+              fontSize: 10,
+              color: "rgba(250, 204, 21, 0.8)", // text-yellow-400/80
+            }}
+          >
+            {props.lastMessage}
+          </Text>
+        </View>
+      </Pressable>
+
+      <Pressable
+        onPress={props.onClose}
+        style={{
+          width: 35,
+          height: 35,
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 8,
+          borderRadius: 999,
+          backgroundColor: "rgba(255, 255, 255, 0.12)",
+          marginLeft: 8,
+        }}
+      >
+        <SystemGlyph name="RiSystemCloseLine" size={24} color="#facc15" />
+      </Pressable>
+    </View>
   );
 }
 
@@ -706,28 +948,62 @@ function ErrorOverlayLayer() {
   const state = getOverlayState();
   const fatalEntry = state.fatal;
   const warnings = state.warnings;
+  const [warningExpanded, setWarningExpanded] = createSignal(false);
+  const [selectedIndex, setSelectedIndex] = createSignal(0);
 
   const warningCount = () => warnings().length;
-  const lastWarning = createMemo(() => {
+  const currentWarning = createMemo(() => {
     const list = warnings();
     if (list.length === 0) return null;
+    if (warningExpanded()) {
+      const idx = Math.min(Math.max(0, selectedIndex()), list.length - 1);
+      return list[idx];
+    }
     return list[list.length - 1] ?? null;
   });
 
   const showWarnings = () => fatalEntry() == null && warningCount() > 0;
 
   return (
-    <>
-      {showWarnings() && lastWarning() ? (
-        <WarningBanner
-          count={warningCount()}
-          lastMessage={lastWarning()!.message}
-          onClear={() => state.setWarnings(() => [])}
-        />
+    <SafeAreaProvider>
+      {showWarnings() && currentWarning() ? (
+        <Show
+          when={warningExpanded()}
+          fallback={
+            <WarningToast
+              count={warningCount()}
+              lastMessage={currentWarning()!.message}
+              onExpand={() => {
+                setSelectedIndex(warnings().length - 1);
+                setWarningExpanded(true);
+              }}
+              onClose={() => state.setWarnings(() => [])}
+            />
+          }
+        >
+          <DetailOverlay
+            entry={currentWarning()!}
+            onDismiss={() => setWarningExpanded(false)}
+            onClear={() => {
+              setWarningExpanded(false);
+              state.setWarnings(() => []);
+            }}
+            navigation={{
+              index: Math.min(
+                Math.max(0, selectedIndex()),
+                warnings().length - 1,
+              ),
+              total: warnings().length,
+              onPrev: () => setSelectedIndex((i) => Math.max(0, i - 1)),
+              onNext: () =>
+                setSelectedIndex((i) => Math.min(warnings().length - 1, i + 1)),
+            }}
+          />
+        </Show>
       ) : null}
 
       {fatalEntry() ? (
-        <FatalOverlay
+        <DetailOverlay
           entry={fatalEntry()!}
           onDismiss={(reason, entry) => {
             if (reason === "ignore") {
@@ -741,7 +1017,7 @@ function ErrorOverlayLayer() {
           }}
         />
       ) : null}
-    </>
+    </SafeAreaProvider>
   );
 }
 

@@ -3,13 +3,15 @@ export const runtimeGlyphMap: Record<string, string> = {
   "BiRegularDotsVertical": "",
   "IoArrowBackOutline": "",
   "RiArrowsArrowLeftLine": "",
-  "RiArrowsArrowRightSLine": "",
-  "RiArrowsArrowUpSLine": "",
-  "RiDevelopmentTerminalBoxLine": "",
-  "RiDocumentFileCopyLine": "",
-  "RiSystemAlertLine": "",
-  "RiSystemCloseLine": "",
-  "RiSystemRefreshLine": ""
+  "RiArrowsArrowLeftSLine": "",
+  "RiArrowsArrowRightSLine": "",
+  "RiArrowsArrowUpSLine": "",
+  "RiDevelopmentTerminalBoxLine": "",
+  "RiDocumentFileCopyLine": "",
+  "RiSystemAlertLine": "",
+  "RiSystemCloseLine": "",
+  "RiSystemDeleteBin2Line": "",
+  "RiSystemRefreshLine": ""
 };
 export const runtimeFontFamily = "ZynthRuntime";
 export const runtimeFontFile = "ZynthRuntime.ttf";
