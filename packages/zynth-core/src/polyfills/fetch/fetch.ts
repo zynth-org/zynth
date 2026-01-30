@@ -84,17 +84,40 @@ export async function fetch(
     payload.headers = headers.toJSON();
   }
 
+  // Ensure ArrayBuffer is converted to number[] for bridge compatibility
+  if (payload.body instanceof ArrayBuffer) {
+    payload.body = Array.from(new Uint8Array(payload.body));
+  }
+
+  const emitter = globalObject.ZynthNativeEmitter;
+  if (!emitter) {
+    throw new Error("[fetch] Native event emitter not available");
+  }
+
   let result: any;
   let abortReject: ((error: Error) => void) | null = null;
+  
+  const responsePromise = new Promise((resolve, reject) => {
+    const subscription = emitter.addListener("zynth.fetch.response", (data: any) => {
+      if (data && data.requestId === requestId) {
+        subscription.remove();
+        resolve(data);
+      }
+    });
+    // Add safety timeout or rely on native timeout?
+    // Native timeout should trigger an error event.
+  });
+
   const abortPromise =
     signal && typeof signal.addEventListener === "function"
       ? new Promise((_, reject) => {
           abortReject = reject as (error: Error) => void;
         })
       : null;
+
   try {
-    const nativePromise = Promise.resolve(bridge.call("Fetch", "request", payload));
-    result = abortPromise ? await Promise.race([nativePromise, abortPromise]) : await nativePromise;
+    bridge.call("Fetch", "request", payload);
+    result = abortPromise ? await Promise.race([responsePromise, abortPromise]) : await responsePromise;
   } finally {
     if (signal && typeof signal.removeEventListener === "function") {
       signal.removeEventListener("abort", onAbort);

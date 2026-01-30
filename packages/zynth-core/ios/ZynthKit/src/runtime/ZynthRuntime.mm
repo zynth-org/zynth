@@ -75,7 +75,7 @@
   NSString *trimmed = [name stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
   if (trimmed.length == 0) return;
   id body = payload ?: [NSNull null];
-  [self.runtime callGlobal:@"ZynthNativeEmitter.emit" args:@[ trimmed, body ]];
+  [self.runtime callGlobalObjectMethod:@"ZynthNativeEmitter" method:@"emit" args:@[ trimmed, body ]];
 }
 
 - (int)registerSurfaceWithRootView:(UIView *)rootView {

@@ -1,4 +1,4 @@
-package dev.zynth.apis
+package com.zynth.kit.runtime.modules
 
 import com.zynth.kit.runtime.ZynthModule
 import com.zynth.kit.runtime.ZynthRuntime
@@ -31,31 +31,33 @@ class FetchModule(private val runtime: ZynthRuntime) : ZynthModule {
     }
 
     private fun handleRequest(payload: Any?): JSONObject {
-        val map = payload as? Map<*, *> ?: return errorResponse("invalid_arguments")
-        val requestId = (map["requestId"] as? Number)?.toInt()
-            ?: return errorResponse("missing_request_id")
-        val url = map["url"]?.toString()?.takeIf { it.isNotBlank() }
-            ?: return errorResponse("invalid_url")
+        val params = payload as? JSONObject ?: return errorResponse("invalid_arguments")
+        if (!params.has("requestId")) return errorResponse("missing_request_id")
+        val requestId = params.getInt("requestId")
+        
+        val url = params.optString("url")
+        if (url.isBlank()) return errorResponse("invalid_url")
 
-        val method = map["method"]?.toString()?.uppercase() ?: "GET"
-        val headers = map["headers"] as? Map<*, *>
-        val timeoutSeconds = (map["timeout"] as? Number)?.toDouble() ?: 0.0
-        val wantsStream = map["stream"] as? Boolean ?: false
+        val method = params.optString("method", "GET").uppercase()
+        val headers = params.optJSONObject("headers")
+        val timeoutSeconds = params.optDouble("timeout", 0.0)
+        val wantsStream = params.optBoolean("stream", false)
 
         val builder = Request.Builder().url(url)
         if (headers != null) {
-            for (entry in headers.entries) {
-                val key = entry.key
-                val value = entry.value
-                if (key != null && value != null) {
-                    builder.header(key.toString(), value.toString())
+            val keys = headers.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                val value = headers.optString(key)
+                if (value.isNotEmpty()) {
+                    builder.header(key, value)
                 }
             }
         }
 
-        val body = map["body"]
-        if (body != null) {
-            val mediaType = headers?.get("Content-Type")?.toString()?.toMediaTypeOrNull()
+        if (params.has("body")) {
+            val body = params.get("body")
+            val mediaType = headers?.optString("Content-Type")?.toMediaTypeOrNull()
             val bytes = coerceBodyBytes(body)
             if (bytes != null) {
                 builder.method(method, bytes.toRequestBody(mediaType))
@@ -77,72 +79,79 @@ class FetchModule(private val runtime: ZynthRuntime) : ZynthModule {
             client
         }
 
-        return try {
-            val call = callClient.newCall(builder.build())
-            calls[requestId] = call
-            val response = call.execute()
-            if (wantsStream) {
-                val headerMap = mutableMapOf<String, String>()
-                for (name in response.headers.names()) {
-                    val values = response.headers.values(name)
-                    headerMap[name] = values.joinToString(", ")
+        val call = callClient.newCall(builder.build())
+        calls[requestId] = call
+
+        call.enqueue(object : okhttp3.Callback {
+            override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {
+                calls.remove(requestId)
+                val error = if (call.isCanceled()) {
+                     mapOf("error" to "aborted", "message" to "Request aborted")
+                } else {
+                     mapOf("error" to "network_error", "message" to (e.message ?: "unknown"))
                 }
-                val result = JSONObject()
-                    .put("status", response.code)
-                    .put("statusText", response.message)
-                    .put("ok", response.isSuccessful)
-                    .put("url", response.request.url.toString())
-                    .put("redirected", response.priorResponse != null)
-                    .put("headers", JSONObject(headerMap as Map<*, *>))
-                    .put("streamId", requestId)
-                startStreamReader(requestId, requestId, response)
-                JSONObject().put("result", result)
-            } else {
-                response.use { closedResponse ->
-                    val bodyBytes = closedResponse.body?.bytes() ?: ByteArray(0)
-                    val bodyJson = JSONArray()
-                    for (byte in bodyBytes) {
-                        bodyJson.put(byte.toInt() and 0xff)
-                    }
-                    val headerMap = mutableMapOf<String, String>()
-                    for (name in closedResponse.headers.names()) {
-                        val values = closedResponse.headers.values(name)
-                        headerMap[name] = values.joinToString(", ")
+                runtime.emitEvent("zynth.fetch.response", error + mapOf("requestId" to requestId))
+            }
+
+            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                if (wantsStream) {
+                    val headerMap = JSONObject()
+                    for (name in response.headers.names()) {
+                        val values = response.headers.values(name)
+                        headerMap.put(name, values.joinToString(", "))
                     }
                     val result = JSONObject()
-                        .put("status", closedResponse.code)
-                        .put("statusText", closedResponse.message)
-                        .put("ok", closedResponse.isSuccessful)
-                        .put("url", closedResponse.request.url.toString())
-                        .put("redirected", closedResponse.priorResponse != null)
-                        .put("headers", JSONObject(headerMap as Map<*, *>))
-                        .put("body", bodyJson)
-                    JSONObject().put("result", result)
+                        .put("status", response.code)
+                        .put("statusText", response.message)
+                        .put("ok", response.isSuccessful)
+                        .put("url", response.request.url.toString())
+                        .put("redirected", response.priorResponse != null)
+                        .put("headers", headerMap)
+                        .put("streamId", requestId)
+                    startStreamReader(requestId, requestId, response)
+                    runtime.emitEvent("zynth.fetch.response", mapOf("requestId" to requestId, "result" to result))
+                } else {
+                    response.use { closedResponse ->
+                        val bodyBytes = closedResponse.body?.bytes() ?: ByteArray(0)
+                        val bodyJson = JSONArray()
+                        for (byte in bodyBytes) {
+                            bodyJson.put(byte.toInt() and 0xff)
+                        }
+                        val headerMap = JSONObject()
+                        for (name in closedResponse.headers.names()) {
+                            val values = closedResponse.headers.values(name)
+                            headerMap.put(name, values.joinToString(", "))
+                        }
+                        val result = JSONObject()
+                            .put("status", closedResponse.code)
+                            .put("statusText", closedResponse.message)
+                            .put("ok", closedResponse.isSuccessful)
+                            .put("url", closedResponse.request.url.toString())
+                            .put("redirected", closedResponse.priorResponse != null)
+                            .put("headers", headerMap)
+                            .put("body", bodyJson)
+                        runtime.emitEvent("zynth.fetch.response", mapOf("requestId" to requestId, "result" to result))
+                    }
+                    calls.remove(requestId)
                 }
             }
-        } catch (t: Throwable) {
-            return if (t is java.io.IOException && (t.message?.contains("Canceled", true) == true)) {
-                errorResponse("aborted", "Request aborted")
-            } else {
-                errorResponse("network_error", t.message ?: "unknown")
-            }
-        } finally {
-            calls.remove(requestId)
-        }
+        })
+
+        return JSONObject().put("requestId", requestId)
     }
 
     private fun handleCancel(payload: Any?): JSONObject {
-        val map = payload as? Map<*, *> ?: return errorResponse("invalid_arguments")
-        val requestId = (map["id"] as? Number)?.toInt()
-            ?: return errorResponse("missing_request_id")
+        val params = payload as? JSONObject ?: return errorResponse("invalid_arguments")
+        if (!params.has("id")) return errorResponse("missing_request_id")
+        val requestId = params.getInt("id")
         calls.remove(requestId)?.cancel()
         return JSONObject().put("result", true)
     }
 
     private fun handleStreamStart(payload: Any?): JSONObject {
-        val map = payload as? Map<*, *> ?: return errorResponse("invalid_arguments")
-        val streamId = (map["id"] as? Number)?.toInt()
-            ?: return errorResponse("missing_request_id")
+        val params = payload as? JSONObject ?: return errorResponse("invalid_arguments")
+        if (!params.has("id")) return errorResponse("missing_request_id")
+        val streamId = params.getInt("id")
         startedStreams[streamId] = true
         flushPending(streamId)
         return JSONObject().put("result", true)
@@ -231,6 +240,13 @@ class FetchModule(private val runtime: ZynthRuntime) : ZynthModule {
     private fun coerceBodyBytes(body: Any): ByteArray? {
         return when (body) {
             is ByteArray -> body
+            is JSONArray -> {
+                val bytes = ByteArray(body.length())
+                for (i in 0 until body.length()) {
+                    bytes[i] = body.getInt(i).toByte()
+                }
+                bytes
+            }
             is ByteBuffer -> {
                 val duplicate = body.slice()
                 val bytes = ByteArray(duplicate.remaining())

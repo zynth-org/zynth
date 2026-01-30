@@ -15,7 +15,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 @property(nonatomic, assign) int nid;
 @property(nonatomic, strong) UIView *view;
-@property(nonatomic, assign) YGNodeRef yoga;
+@property(nonatomic, assign, nullable) YGNodeRef yoga;
 @property(nonatomic, strong) NSMutableArray<NSNumber *> *children;
 @property(nonatomic, assign) int parentId;
 @property(nonatomic, copy) NSString *type;

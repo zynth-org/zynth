@@ -59,5 +59,5 @@ dependencies {
   implementation("com.facebook.hermes:hermes-android:$hermesVersion")
   implementation("com.facebook.yoga:yoga:$yogaVersion")
   compileOnly("com.facebook.react:react-android:$reactNativeVersion")
-  debugImplementation("com.squareup.okhttp3:okhttp:4.11.0")
+  implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }

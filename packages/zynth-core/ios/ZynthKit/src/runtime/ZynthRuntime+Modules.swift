@@ -90,10 +90,15 @@ public extension ZynthRuntime {
   }
 
   @objc func installDefaultModules() {
+    let fetch = FetchModule { [weak self] name, data in
+      self?.emitEvent(name: name, payload: data)
+    }
+    var modules: [ZynthModule] = [fetch]
 #if DEBUG
-    installModules([ZynthDevtoolsModule()])
+    modules.append(ZynthDevtoolsModule())
     installDevtoolsCrashHandlersIfNeeded()
 #endif
+    installModules(modules)
   }
 
   func emitEvent(name: String, payload: Any?) {

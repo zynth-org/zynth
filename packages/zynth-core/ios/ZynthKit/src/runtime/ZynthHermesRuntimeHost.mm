@@ -480,6 +480,53 @@ static void installGlobals(Runtime &rt) {
   return nil;
 }
 
+- (id _Nullable)callGlobalObjectMethod:(NSString *)objectName
+                                method:(NSString *)methodName
+                                  args:(NSArray *)args {
+  if (!objectName || !methodName) return nil;
+  if (dispatch_get_specific(kZynthJSQueueKey) != kZynthJSQueueKey) {
+    __weak ZynthHermesRuntimeHost *weakSelf = self;
+    dispatch_async(_jsQueue, ^{
+      ZynthHermesRuntimeHost *strongSelf = weakSelf;
+      if (!strongSelf) return;
+      [strongSelf callGlobalObjectMethod:objectName method:methodName args:args];
+    });
+    return nil;
+  }
+  Runtime &rt = *_runtime;
+  auto objPropId = PropNameID::forAscii(rt, objectName.UTF8String);
+  if (!rt.global().hasProperty(rt, objPropId)) return nil;
+  
+  Value objVal = rt.global().getProperty(rt, objPropId);
+  if (!objVal.isObject()) return nil;
+  Object obj = objVal.asObject(rt);
+
+  auto methodPropId = PropNameID::forAscii(rt, methodName.UTF8String);
+  if (!obj.hasProperty(rt, methodPropId)) return nil;
+
+  Value methodVal = obj.getProperty(rt, methodPropId);
+  if (!methodVal.isObject()) return nil;
+  Object methodObj = methodVal.asObject(rt);
+  if (!methodObj.isFunction(rt)) return nil;
+  
+  Function fn = methodObj.asFunction(rt);
+  std::vector<Value> callArgs;
+  for (id arg in args) {
+    callArgs.push_back(objCToJSValue(rt, arg));
+  }
+  
+  const Value *argsPtr = callArgs.empty() ? nullptr : callArgs.data();
+  try {
+    fn.callWithThis(rt, obj, argsPtr, callArgs.size());
+  } catch (const JSError &error) {
+    if (DEBUG_RUNTIME) {
+       NSLog(@"[ZynthJS] callGlobalObjectMethod error: %s", error.getMessage().c_str());
+    }
+  } catch (...) {}
+  
+  return nil;
+}
+
 - (void)installTimers {
   Runtime &rt = *_runtime;
   __weak ZynthHermesRuntimeHost *weakHost = self;

@@ -7,6 +7,7 @@ import com.zynth.kit.core.AssetProvider
 import com.zynth.kit.core.ZynthRootView
 import com.zynth.kit.core.ZynthUIManager
 import com.zynth.kit.runtime.modules.DevtoolsModule
+import com.zynth.kit.runtime.modules.FetchModule
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
@@ -47,7 +48,7 @@ class ZynthRuntime(val root: ZynthRootView) {
 
   fun installDefaultModules() {
     DevtoolsModule.start(root.context)
-    installModules(listOf(DevtoolsModule(root.context)))
+    installModules(listOf(DevtoolsModule(root.context), FetchModule(this)))
   }
 
   private fun installCrashHandler() {

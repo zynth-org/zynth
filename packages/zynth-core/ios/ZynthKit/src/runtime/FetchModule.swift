@@ -1,5 +1,4 @@
 import Foundation
-import ZynthKit
 
 @objc(FetchModule)
 final class FetchModule: NSObject, ZynthModule, URLSessionDataDelegate {
@@ -77,34 +76,34 @@ final class FetchModule: NSObject, ZynthModule, URLSessionDataDelegate {
       return handleStreamRequest(requestId: requestId, urlString: urlString, request: request)
     }
 
-    let semaphore = DispatchSemaphore(value: 0)
-    var result: [String: Any]?
-    var errorResult: [String: Any]?
-
     let task = session.dataTask(with: request) { [weak self] data, response, error in
-      defer { semaphore.signal() }
-      self?.removeTask(requestId)
+      guard let self else { return }
+      self.removeTask(requestId)
 
       if let error {
+        var errorResult: [String: Any]
         if (error as NSError).code == NSURLErrorCancelled {
           errorResult = [
             "error": "aborted",
             "message": "Request aborted",
           ]
-          return
+        } else {
+          errorResult = [
+            "error": "network_error",
+            "message": error.localizedDescription,
+          ]
         }
-        errorResult = [
-          "error": "network_error",
-          "message": error.localizedDescription,
-        ]
+        errorResult["requestId"] = requestId
+        self.emitEvent("zynth.fetch.response", errorResult)
         return
       }
 
       guard let httpResponse = response as? HTTPURLResponse else {
-        errorResult = [
+        self.emitEvent("zynth.fetch.response", [
+          "requestId": requestId,
           "error": "invalid_response",
           "message": "Response was not HTTPURLResponse",
-        ]
+        ])
         return
       }
 
@@ -114,7 +113,11 @@ final class FetchModule: NSObject, ZynthModule, URLSessionDataDelegate {
       let responseUrl = httpResponse.url?.absoluteString ?? urlString
       let redirected = responseUrl != urlString
 
-      result = [
+      // Convert body to number array for bridge
+      let bodyData = data ?? Data()
+      let bodyBytes = [UInt8](bodyData)
+
+      let result: [String: Any] = [
         "result": [
           "status": status,
           "statusText": statusText,
@@ -122,19 +125,17 @@ final class FetchModule: NSObject, ZynthModule, URLSessionDataDelegate {
           "url": responseUrl,
           "redirected": redirected,
           "headers": responseHeaders,
-          "body": data ?? Data(),
+          "body": bodyBytes,
         ],
+        "requestId": requestId,
       ]
+      self.emitEvent("zynth.fetch.response", result)
     }
 
     storeTask(task, id: requestId)
     task.resume()
-    semaphore.wait()
 
-    if let errorResult {
-      return errorResult
-    }
-    return result ?? ["error": "unknown_error"]
+    return ["requestId": requestId]
   }
 
   private func handleCancel(args: Any?) -> Any {
@@ -188,7 +189,6 @@ private struct StreamState {
   let requestId: Int
   let streamId: Int
   let urlString: String
-  let semaphore: DispatchSemaphore
   var result: [String: Any]?
   var error: [String: Any]?
   var started: Bool
@@ -199,12 +199,10 @@ private struct StreamState {
 
 extension FetchModule {
   private func handleStreamRequest(requestId: Int, urlString: String, request: URLRequest) -> Any {
-    let semaphore = DispatchSemaphore(value: 0)
     let state = StreamState(
       requestId: requestId,
       streamId: requestId,
       urlString: urlString,
-      semaphore: semaphore,
       result: nil,
       error: nil,
       started: false,
@@ -219,18 +217,11 @@ extension FetchModule {
     let task = session.dataTask(with: request)
     storeTask(task, id: requestId)
     task.resume()
-    semaphore.wait()
-
-    let stateResult = taskQueue.sync { states[requestId] }
-    if let error = stateResult?.error {
-      removeTask(requestId)
-      return error
-    }
-    if let result = stateResult?.result {
-      return result
-    }
-    removeTask(requestId)
-    return ["error": "unknown_error"]
+    
+    // For streams, the initial response is handled in didReceive response delegate
+    // But we need to ensure we emit 'zynth.fetch.response' when we get headers.
+    
+    return ["requestId": requestId]
   }
 
   func urlSession(
@@ -252,7 +243,8 @@ extension FetchModule {
           let statusText = HTTPURLResponse.localizedString(forStatusCode: status)
           let responseUrl = httpResponse.url?.absoluteString ?? state.urlString
           let redirected = responseUrl != state.urlString
-          state.result = [
+          
+          let result: [String: Any] = [
             "result": [
               "status": status,
               "statusText": statusText,
@@ -262,9 +254,13 @@ extension FetchModule {
               "headers": responseHeaders,
               "streamId": state.streamId,
             ],
+            "requestId": state.requestId,
           ]
+          
+          emitEvent("zynth.fetch.response", result)
+          
+          state.result = result // Keep for reference if needed, though mostly unused now
           states[id] = state
-          state.semaphore.signal()
         }
         break
       }
@@ -272,90 +268,190 @@ extension FetchModule {
     completionHandler(.allow)
   }
 
-  func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-    taskQueue.sync {
-      for (id, task) in tasks where task.taskIdentifier == dataTask.taskIdentifier {
-        if var state = states[id] {
-          if state.started {
-            emitEvent("zynth.fetch.stream", [
-              "id": state.streamId,
-              "type": "chunk",
-              "chunk": data,
-            ])
-          } else {
-            state.pendingChunks.append(data)
-            states[id] = state
-          }
-        }
-        break
-      }
-    }
-  }
+      func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
 
-  func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-    taskQueue.sync {
-      for (id, storedTask) in tasks where storedTask.taskIdentifier == task.taskIdentifier {
-        if var state = states[id] {
-          if let error {
-            if (error as NSError).code == NSURLErrorCancelled {
-              state.error = [
-                "error": "aborted",
-                "message": "Request aborted",
-              ]
+        taskQueue.sync {
+
+          for (id, task) in tasks where task.taskIdentifier == dataTask.taskIdentifier {
+
+            if var state = states[id] {
+
               if state.started {
+
+                let bytes = [UInt8](data)
+
                 emitEvent("zynth.fetch.stream", [
+
                   "id": state.streamId,
-                  "type": "error",
-                  "message": "Request aborted",
+
+                  "type": "chunk",
+
+                  "chunk": bytes,
+
                 ])
+
               } else {
-                state.pendingError = "Request aborted"
+
+                state.pendingChunks.append(data)
+
+                states[id] = state
+
               }
-              state.semaphore.signal()
-            } else if state.result == nil {
-              state.error = [
-                "error": "network_error",
-                "message": error.localizedDescription,
-              ]
-              state.semaphore.signal()
-            } else {
-              if state.started {
-                emitEvent("zynth.fetch.stream", [
-                  "id": state.streamId,
-                  "type": "error",
-                  "message": error.localizedDescription,
-                ])
-              } else {
-                state.pendingError = error.localizedDescription
-              }
+
             }
-          } else {
-            if state.started {
-              emitEvent("zynth.fetch.stream", [
-                "id": state.streamId,
-                "type": "end",
-              ])
-            } else {
-              state.pendingEnd = true
-            }
+
+            break
+
           }
-          states[id] = state
+
         }
-        if (error == nil || states[id]?.result != nil), states[id]?.started == true {
-          removeTaskUnsafe(id)
-        }
-        break
+
       }
+
+    
+
+      func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+
+        taskQueue.sync {
+
+          for (id, storedTask) in tasks where storedTask.taskIdentifier == task.taskIdentifier {
+
+            if var state = states[id] {
+
+              if let error {
+
+                            if (error as NSError).code == NSURLErrorCancelled {
+
+                              state.error = [
+
+                                "error": "aborted",
+
+                                "message": "Request aborted",
+
+                              ]
+
+                              if state.started {
+
+                                emitEvent("zynth.fetch.stream", [
+
+                                  "id": state.streamId,
+
+                                  "type": "error",
+
+                                  "message": "Request aborted",
+
+                                ])
+
+                              } else {
+
+                                state.pendingError = "Request aborted"
+
+                                // If cancelled before start, emit response error
+
+                                 emitEvent("zynth.fetch.response", [
+
+                                    "requestId": state.requestId,
+
+                                    "error": "aborted",
+
+                                    "message": "Request aborted",
+
+                                 ])
+
+                              }
+
+                            } else if state.result == nil {
+
+                              state.error = [
+
+                                "error": "network_error",
+
+                                "message": error.localizedDescription,
+
+                              ]
+
+                              // Emit error as response if not yet started
+
+                               emitEvent("zynth.fetch.response", [
+
+                                  "requestId": state.requestId,
+
+                                  "error": "network_error",
+
+                                  "message": error.localizedDescription,
+
+                               ])
+
+                            } else {
+
+                if state.started {
+
+                  emitEvent("zynth.fetch.stream", [
+
+                    "id": state.streamId,
+
+                    "type": "error",
+
+                    "message": error.localizedDescription,
+
+                  ])
+
+                } else {
+
+                  state.pendingError = error.localizedDescription
+
+                }
+
+              }
+
+            } else {
+
+              if state.started {
+
+                emitEvent("zynth.fetch.stream", [
+
+                  "id": state.streamId,
+
+                  "type": "end",
+
+                ])
+
+              }
+
+              else {
+
+                state.pendingEnd = true
+
+              }
+
+            }
+
+            states[id] = state
+
+          }
+
+          if (error == nil || states[id]?.result != nil), states[id]?.started == true {
+
+            removeTaskUnsafe(id)
+
+          }
+
+          break
+
+        }
+
+      }
+
     }
-  }
 
   private func flushPending(state: StreamState) {
     if !state.pendingChunks.isEmpty {
       for chunk in state.pendingChunks {
+        let bytes = [UInt8](chunk)
         emitEvent("zynth.fetch.stream", [
           "id": state.streamId,
           "type": "chunk",
-          "chunk": chunk,
+          "chunk": bytes,
         ])
       }
     }
