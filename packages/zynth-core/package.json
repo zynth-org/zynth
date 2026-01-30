@@ -18,6 +18,7 @@
   },
   "sideEffects": [
     "./src/polyfills/URLSearchParams.ts",
+    "./src/polyfills/URL.ts",
     "./src/polyfills/TextEncoding.ts",
     "./src/polyfills/AbortController.ts",
     "./src/polyfills/ReadableStream.ts",

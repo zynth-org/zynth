@@ -1,4 +1,5 @@
 import "./polyfills/URLSearchParams";
+import "./polyfills/URL";
 import "./polyfills/TextEncoding";
 import "./polyfills/AbortController";
 import "./polyfills/ReadableStream";
@@ -15,6 +16,7 @@ export {
   sharedNativeEventEmitter,
 } from "./nativeEmitter";
 export { URLSearchParams } from "./polyfills/URLSearchParams";
+export { URL } from "./polyfills/URL";
 export { TextEncoder, TextDecoder } from "./polyfills/TextEncoding";
 export { AbortController, AbortSignal } from "./polyfills/AbortController";
 export { ReadableStream } from "./polyfills/ReadableStream";

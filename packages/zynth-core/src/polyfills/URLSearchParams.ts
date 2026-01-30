@@ -10,7 +10,7 @@
 
 // Small subset from whatwg-url: https://github.com/jsdom/whatwg-url/tree/master/src
 // The reference code bloat comes from Unicode issues with URLs, so those won't work here.
-const URLSearchParams = class URLSearchParamsPolyfill {
+class URLSearchParams {
   _searchParams: Map<string, string[]> = new Map();
 
   get size(): number {
@@ -151,7 +151,7 @@ const URLSearchParams = class URLSearchParamsPolyfill {
       )
       .join("&");
   }
-};
+}
 
 const globalObject =
   typeof globalThis !== "undefined"
