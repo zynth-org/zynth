@@ -82,15 +82,14 @@ class ZynthRuntime(val root: ZynthRootView) {
   }
 
   fun connectDevServer(url: String, token: String? = null) {
-    // Phase 1 scaffold.
-    url.length
-    token?.length
+    connectDevServerInternal(url, token)
   }
 
   fun loadInitialBundle(assets: AssetManager, preloadedCode: String? = null) {
     runOnJSSync {
       JSBridge.installUIBindings(runtimePtr, uiManager)
       JSBridge.installModuleRegistry(runtimePtr, registry)
+      installHmrShim()
     }
 
     val constants = registry.exportedConstants()
@@ -171,6 +170,12 @@ class ZynthRuntime(val root: ZynthRootView) {
     jsThread.quitSafely()
   }
 
+  internal fun evaluateScript(code: String, sourceUrl: String? = null) {
+    runOnJSSync {
+      JSBridge.evaluateScript(runtimePtr, code, sourceUrl)
+    }
+  }
+
   private fun runOnJS(block: () -> Unit) {
     if (Looper.myLooper() == jsHandler.looper) {
       block()
@@ -193,5 +198,9 @@ class ZynthRuntime(val root: ZynthRootView) {
       }
     }
     latch.await()
+  }
+
+  internal fun handleDevMessage(payload: String) {
+    handleDevMessageInternal(payload)
   }
 }

@@ -1,6 +1,7 @@
 const __HMR_DEBUG = (function () {
   const g = globalThis as any;
-  const enabled = g.__ZYNTH_HMR_DEBUG ?? true;
+  const enabled =
+    g.__ZYNTH_HMR_DEBUG === true || g.__ZYNTH_HMR_DEBUG === "true";
   function timestamp() {
     try {
       return new Date().toISOString().split("T")[1];
@@ -8,12 +9,27 @@ const __HMR_DEBUG = (function () {
       return "";
     }
   }
+  function formatArg(value: any): any {
+    if (value == null) return value;
+    const t = typeof value;
+    if (t === "string" || t === "number" || t === "boolean") return value;
+    try {
+      return JSON.stringify(value);
+    } catch {
+      try {
+        return String(value);
+      } catch {
+        return "[unprintable]";
+      }
+    }
+  }
   function emit(level: "log" | "warn" | "error", tag: string, ...args: any[]) {
     if (!enabled) {
       return;
     }
-    // const prefix = `[HMR-DEBUG ${timestamp()} ${tag}]`;
-    // (console as any)[level](prefix, ...args);
+    const prefix = `[HMR-DEBUG ${timestamp()} ${tag}]`;
+    const formatted = args.map((arg) => formatArg(arg));
+    (console as any)[level](prefix, ...formatted);
   }
   function channel(tag: string) {
     return {
@@ -135,13 +151,13 @@ export function onNativeHMR(listener: ZynthHMRListener): () => void {
     nativeListeners.delete(listener);
     NATIVE_LOG.log(
       "onNativeHMR: remove listener (total)",
-      nativeListeners.size
+      nativeListeners.size,
     );
   };
 }
 
 export function setFallbackFullReload(
-  handler: (payload: ZynthHMRPayload) => void
+  handler: (payload: ZynthHMRPayload) => void,
 ) {
   const g = globalThis as any;
   g.__zynth_requestFullReload = handler;
@@ -154,7 +170,7 @@ declare const module: {
   hot?: {
     accept(
       deps?: string | string[],
-      callback?: (updatedModule?: { default?: unknown }) => void
+      callback?: (updatedModule?: { default?: unknown }) => void,
     ): void;
   };
 };
@@ -306,7 +322,10 @@ function pickAppExport(updatedExports?: unknown): (() => any) | undefined {
   return undefined;
 }
 
-function resolveAppModule(updatedExports?: unknown, preferredModuleId?: string) {
+function resolveAppModule(
+  updatedExports?: unknown,
+  preferredModuleId?: string,
+) {
   const direct = pickAppExport(updatedExports);
   if (direct) {
     return direct;
@@ -327,7 +346,8 @@ function resolveAppModule(updatedExports?: unknown, preferredModuleId?: string) 
     (runtimeRequire as any).m ?? (g.__webpack_modules__ as Record<string, any>);
   const hasFactory =
     moduleFactories && typeof moduleFactories === "object"
-      ? (id: string) => Object.prototype.hasOwnProperty.call(moduleFactories, id)
+      ? (id: string) =>
+          Object.prototype.hasOwnProperty.call(moduleFactories, id)
       : undefined;
 
   const candidates = new Set<string>(APP_MODULE_CANDIDATES);
@@ -354,13 +374,16 @@ function resolveAppModule(updatedExports?: unknown, preferredModuleId?: string) 
   return undefined;
 }
 
-function handleAppHotUpdate(moduleId: string, updatedExports?: unknown) {
+function handleAppHotUpdate(
+  moduleId: string,
+  updatedExports?: unknown,
+): boolean {
   const g = globalThis as any;
   if (looksLikeAppModule(moduleId)) {
     registerAppModuleCandidate(moduleId);
   } else if (!APP_MODULE_CANDIDATES.has(moduleId)) {
-    UPDATE_LOG.log("Ignoring hot update for", moduleId);
-    return;
+    UPDATE_LOG.log("Module update handled via fallback rerender", moduleId);
+    return false;
   }
 
   const nextApp = resolveAppModule(updatedExports, moduleId);
@@ -370,7 +393,7 @@ function handleAppHotUpdate(moduleId: string, updatedExports?: unknown) {
       try {
         g.__zynth_updateApp(nextApp);
         UPDATE_LOG.log("__zynth_updateApp invoked for", moduleId);
-        return;
+        return true;
       } catch (error) {
         UPDATE_LOG.error("__zynth_updateApp failed", error);
       }
@@ -379,7 +402,7 @@ function handleAppHotUpdate(moduleId: string, updatedExports?: unknown) {
       try {
         g.__zynth_rerenderApp();
         UPDATE_LOG.log("__zynth_rerenderApp invoked for", moduleId);
-        return;
+        return true;
       } catch (error) {
         UPDATE_LOG.error("__zynth_rerenderApp failed", error);
       }
@@ -389,13 +412,14 @@ function handleAppHotUpdate(moduleId: string, updatedExports?: unknown) {
   console.warn(
     "[Zynth HMR] No suitable update handler for",
     moduleId,
-    typeof nextApp
+    typeof nextApp,
   );
+  return false;
 }
 
 function processUpdatedModules(
   moreModules: Record<string, any> | undefined,
-  runtimeHandlers?: any
+  runtimeHandlers?: any,
 ) {
   const g = globalThis as any;
   const runtimeRequire = ensureModuleTables();
@@ -415,6 +439,7 @@ function processUpdatedModules(
     (g.__webpack_require__ as any)?.hmrD ??
     undefined) as Record<string, unknown> | undefined;
 
+  let hasSelfAccepted = false;
   for (const moduleId of updatedIds) {
     const factory = moreModules?.[moduleId];
     if (factory) {
@@ -425,6 +450,13 @@ function processUpdatedModules(
     if (!cached) continue;
 
     const hotState = cached.hot;
+    if (
+      hotState &&
+      hotState._selfAccepted &&
+      hotState._selfInvalidated !== true
+    ) {
+      hasSelfAccepted = true;
+    }
     if (hotState && Array.isArray(hotState._disposeHandlers)) {
       const data = (hotState.data = hotState.data ?? {});
       for (const dispose of hotState._disposeHandlers) {
@@ -444,11 +476,20 @@ function processUpdatedModules(
     delete moduleCache[moduleId];
   }
 
+  const anyAppUpdate = updatedIds.some((id) => looksLikeAppModule(id));
+  if (!anyAppUpdate && !hasSelfAccepted) {
+    for (const candidate of APP_MODULE_CANDIDATES) {
+      if (moduleCache[candidate]) {
+        delete moduleCache[candidate];
+      }
+    }
+  }
+
   const runtimeFns = Array.isArray(runtimeHandlers)
     ? runtimeHandlers
     : runtimeHandlers
-    ? [runtimeHandlers]
-    : [];
+      ? [runtimeHandlers]
+      : [];
   for (const fn of runtimeFns) {
     if (typeof fn === "function") {
       try {
@@ -459,6 +500,7 @@ function processUpdatedModules(
     }
   }
 
+  let handledAny = false;
   for (const moduleId of updatedIds) {
     let updatedModuleExports: unknown;
     try {
@@ -466,14 +508,40 @@ function processUpdatedModules(
     } catch (error) {
       console.error(
         `[HMR] Failed to evaluate updated module ${moduleId}`,
-        error
+        error,
       );
     }
 
     try {
-      handleAppHotUpdate(moduleId, updatedModuleExports);
+      if (handleAppHotUpdate(moduleId, updatedModuleExports)) {
+        handledAny = true;
+      }
     } catch (error) {
       console.error(`[HMR] handleHotUpdate failed for ${moduleId}`, error);
+    }
+  }
+
+  if (!handledAny && !hasSelfAccepted) {
+    const nextApp = resolveAppModule(undefined);
+    if (
+      typeof nextApp === "function" &&
+      typeof g.__zynth_updateApp === "function"
+    ) {
+      try {
+        g.__zynth_updateApp(nextApp);
+        UPDATE_LOG.log("Fallback updateApp invoked for updated modules");
+        return;
+      } catch (error) {
+        UPDATE_LOG.error("Fallback updateApp failed", error);
+      }
+    }
+    if (typeof g.__zynth_rerenderApp === "function") {
+      try {
+        g.__zynth_rerenderApp();
+        UPDATE_LOG.log("Fallback rerender invoked for updated modules");
+      } catch (error) {
+        UPDATE_LOG.error("Fallback rerender failed", error);
+      }
     }
   }
 }
@@ -486,14 +554,14 @@ function installWebpackHotUpdateHook() {
   g.webpackHotUpdate = function (
     chunkId: any,
     moreModules: Record<string, any> | undefined,
-    runtime?: any
+    runtime?: any,
   ) {
     ensureModuleTables();
     BUNDLE_LOG.log(
       "webpackHotUpdate invoked:",
       chunkId,
       "ids",
-      moreModules ? Object.keys(moreModules) : "none"
+      moreModules ? Object.keys(moreModules) : "none",
     );
     if (!originalHotUpdateFailed && typeof original === "function") {
       try {
@@ -501,9 +569,9 @@ function installWebpackHotUpdateHook() {
       } catch (error) {
         originalHotUpdateFailed = true;
         if (__HMR_DEBUG.on) {
-          BUNDLE_LOG.warn(
+          BUNDLE_LOG.log(
             "original webpackHotUpdate threw; falling back to custom handler",
-            error
+            error,
           );
         }
       }
@@ -518,7 +586,7 @@ function installWebpackHotUpdateHook() {
 
   BUNDLE_LOG.log(
     "webpackHotUpdate wrapper installed?",
-    typeof g.webpackHotUpdate
+    typeof g.webpackHotUpdate,
   );
 }
 
@@ -538,7 +606,7 @@ function setupModuleHotAccept(hot: any) {
           "hot.accept callback for",
           id,
           "default?",
-          typeof updated?.default
+          typeof updated?.default,
         );
         handleAppHotUpdate(id, updated);
       });
@@ -590,6 +658,7 @@ export function setupEntryPointHMR(): (() => void) | undefined {
 
   installWebpackHotUpdateHook();
   setupModuleHotAccept(hot);
+  BOOT_LOG.log("HMR bootstrap ready");
 
   return () => {
     disposeNativeWarningListener();

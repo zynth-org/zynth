@@ -24,6 +24,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)unregisterSurfaceWithId:(int)surfaceId NS_SWIFT_NAME(unregisterSurface(id:));
 - (void)setActiveSurface:(int)surfaceId;
 - (void)callGlobal:(NSString *)name args:(NSArray *)args;
+- (BOOL)evaluateScript:(NSString *)code
+             sourceURL:(NSString *_Nullable)sourceURL
+                 error:(NSError *_Nullable *_Nullable)error;
 - (void)flush;
 - (void)destroy;
 

@@ -2,6 +2,9 @@
 #import "ZynthHermesRuntimeHost.h"
 #import "ZynthUIManager.h"
 #import "ZynthUIManager+Surface.h"
+#if DEBUG
+#import <objc/message.h>
+#endif
 
 @interface ZynthRuntime (Modules)
 - (void)installDefaultModules;
@@ -22,6 +25,17 @@
     _manager = [[ZynthUIManager alloc] initWithRootView:rootView];
     _runtime = [[ZynthHermesRuntimeHost alloc] initWithUIManager:_manager];
     [self installDefaultModules];
+#if DEBUG
+    NSLog(@"[ZynthRuntime] DEBUG init: attempting ZynthDevSupport hook");
+    Class devSupport = NSClassFromString(@"ZynthDevSupport");
+    SEL selector = @selector(configureWithRuntime:);
+    if (devSupport && [devSupport respondsToSelector:selector]) {
+      ((void (*)(id, SEL, id))objc_msgSend)(devSupport, selector, self);
+      NSLog(@"[ZynthRuntime] ZynthDevSupport configured");
+    } else {
+      NSLog(@"[ZynthRuntime] ZynthDevSupport not found in runtime");
+    }
+#endif
     __weak ZynthHermesRuntimeHost *weakRuntime = _runtime;
     [_manager setFrameProfiler:^(NSTimeInterval frameMs,
                                  NSTimeInterval layoutMs,
@@ -93,6 +107,12 @@
 - (void)callGlobal:(NSString *)name args:(NSArray *)args {
   NSArray *payload = args ?: @[];
   [self.runtime callGlobal:name args:payload];
+}
+
+- (BOOL)evaluateScript:(NSString *)code
+             sourceURL:(NSString *_Nullable)sourceURL
+                 error:(NSError *_Nullable *_Nullable)error {
+  return [self.runtime evaluateString:code sourceURL:sourceURL error:error];
 }
 
 - (void)flush {
