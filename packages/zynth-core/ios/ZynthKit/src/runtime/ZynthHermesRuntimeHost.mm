@@ -93,10 +93,37 @@ static void installConsole(Runtime &rt, ZynthHermesRuntimeHost *host, NSString *
             [parts addObject:[NSString stringWithUTF8String:str.c_str()]];
           }
           NSString *message = [parts componentsJoinedByString:@" "];
-          NSLog(@"[ZynthJS] %@", message);
+          std::string messageUtf8 = message ? [message UTF8String] : "";
+          std::string stackUtf8;
+          if (levelLabel && [levelLabel isEqualToString:@"warn"]) {
+            const char *needle =
+                "computations created outside a `createRoot` or `render` will never be disposed";
+            if (messageUtf8.find(needle) != std::string::npos) {
+              try {
+                Function errorCtor = rt.global().getPropertyAsFunction(rt, "Error");
+                Object errObj = errorCtor.callAsConstructor(
+                                      rt, String::createFromUtf8(rt, "Solid warning stack"))
+                                      .asObject(rt);
+                Value stackValue = errObj.getProperty(rt, "stack");
+                if (stackValue.isString()) {
+                  stackUtf8 = stackValue.asString(rt).utf8(rt);
+                }
+              } catch (...) {
+                // Ignore stack capture failures.
+              }
+            }
+          }
+          if (!stackUtf8.empty()) {
+            NSLog(@"[ZynthJS] %@\n%@", message, [NSString stringWithUTF8String:stackUtf8.c_str()]);
+          } else {
+            NSLog(@"[ZynthJS] %@", message);
+          }
           if (host) {
             NSMutableDictionary *data = [NSMutableDictionary dictionary];
             data[@"message"] = message ?: @"";
+            if (!stackUtf8.empty()) {
+              data[@"stack"] = [NSString stringWithUTF8String:stackUtf8.c_str()] ?: @"";
+            }
             if (runtimeLabel) {
               data[@"runtime"] = runtimeLabel;
             }

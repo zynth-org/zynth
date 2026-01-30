@@ -34,5 +34,8 @@
     "build:js": "rm -rf dist/esm && tsc --project tsconfig.esm.json",
     "build:types": "tsc --project tsconfig.types.json",
     "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "source-map-js": "^1.2.1"
   }
 }

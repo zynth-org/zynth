@@ -1,6 +1,5 @@
 import {
   Button,
-  Modal,
   Pressable,
   ScrollView,
   StatusBar,
@@ -14,6 +13,7 @@ import {
   createEffect,
   createMemo,
   createSignal,
+  createRoot,
   onCleanup,
 } from "solid-js";
 import {
@@ -21,6 +21,7 @@ import {
   Dimensions,
   SafeAreaProvider,
 } from "@zynth/apis";
+import { symbolicateStackTrace } from "./symbolicate";
 declare const __DEV__: boolean | undefined;
 
 export type DevtoolsEvent = {
@@ -180,7 +181,22 @@ function handleDevtoolsEvent(state: OverlayState, event: DevtoolsEvent): void {
   const kind: OverlayKind = event.topic.startsWith("crash/")
     ? "crash"
     : "error";
-  state.setFatal(eventToEntry(event, kind));
+
+  const entry = eventToEntry(event, kind);
+  state.setFatal(entry);
+
+  if (entry.stack) {
+    symbolicateStackTrace(entry.stack)
+      .then((newStack) => {
+        const current = state.fatal();
+        if (current && current.id === entry.id) {
+          state.setFatal({ ...current, stack: newStack });
+        }
+      })
+      .catch(() => {
+        // Ignore symbolication failures
+      });
+  }
 }
 
 function getOverlayState(): OverlayState {
@@ -188,44 +204,46 @@ function getOverlayState(): OverlayState {
   const existing = g[OVERLAY_STATE_KEY] as OverlayState | undefined;
   if (existing) return existing;
 
-  const [fatal, setFatal] = createSignal<OverlayEntry | null>(null);
-  const [warnings, setWarningsSignal] = createSignal<OverlayEntry[]>([]);
+  return createRoot(() => {
+    const [fatal, setFatal] = createSignal<OverlayEntry | null>(null);
+    const [warnings, setWarningsSignal] = createSignal<OverlayEntry[]>([]);
 
-  let unsubscribe: (() => void) | null = null;
-  let lastAddListener: DevtoolsListenerAdd | null = null;
+    let unsubscribe: (() => void) | null = null;
+    let lastAddListener: DevtoolsListenerAdd | null = null;
 
-  const state: OverlayState = {
-    fatal,
-    setFatal,
-    warnings,
-    setWarnings(updater) {
-      const prev = warnings();
-      const next = updater(prev);
-      setWarningsSignal(next);
-    },
-    ensureInstalled(addListener) {
-      if (unsubscribe && lastAddListener === addListener) return;
-      if (unsubscribe && lastAddListener !== addListener) {
-        try {
-          unsubscribe();
-        } catch {
-          // Ignore listener cleanup failures.
+    const state: OverlayState = {
+      fatal,
+      setFatal,
+      warnings,
+      setWarnings(updater) {
+        const prev = warnings();
+        const next = updater(prev);
+        setWarningsSignal(next);
+      },
+      ensureInstalled(addListener) {
+        if (unsubscribe && lastAddListener === addListener) return;
+        if (unsubscribe && lastAddListener !== addListener) {
+          try {
+            unsubscribe();
+          } catch {
+            // Ignore listener cleanup failures.
+          }
+          unsubscribe = null;
         }
-        unsubscribe = null;
-      }
-      lastAddListener = addListener;
-      unsubscribe = addListener((event) => {
-        try {
-          handleDevtoolsEvent(state, event);
-        } catch {
-          // Never allow diagnostics handling to crash the app.
-        }
-      });
-    },
-  };
+        lastAddListener = addListener;
+        unsubscribe = addListener((event) => {
+          try {
+            handleDevtoolsEvent(state, event);
+          } catch {
+            // Never allow diagnostics handling to crash the app.
+          }
+        });
+      },
+    };
 
-  g[OVERLAY_STATE_KEY] = state;
-  return state;
+    g[OVERLAY_STATE_KEY] = state;
+    return state;
+  });
 }
 
 export function installErrorOverlayDiagnostics(
