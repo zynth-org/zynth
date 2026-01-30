@@ -56,6 +56,8 @@ export function createZynthRsbuildPlugin(
         repoRoot,
         isWeb,
       );
+      const solidAliases = resolveSolidAliases(repoRoot);
+      const mergedAliases = { ...discoveredAliases, ...solidAliases };
 
       // Special handling for @zynth/core in Web
       if (isWeb) {
@@ -64,8 +66,8 @@ export function createZynthRsbuildPlugin(
           path.join(repoRoot, "packages/zynth-core/src/index.web.tsx"),
         ]);
         if (coreWebEntry) {
-          discoveredAliases["@zynth/core$"] = coreWebEntry;
-          discoveredAliases["@zynth/core"] = path.join(
+          mergedAliases["@zynth/core$"] = coreWebEntry;
+          mergedAliases["@zynth/core"] = path.join(
             repoRoot,
             "packages/zynth-core/src",
           );
@@ -83,13 +85,17 @@ export function createZynthRsbuildPlugin(
           .exclude.add(/\.(png|jpe?g|gif|webp|avif|svg)$/i);
 
         // Apply aliases (high priority via chain)
-        for (const [key, value] of Object.entries(discoveredAliases)) {
+        for (const [key, value] of Object.entries(mergedAliases)) {
           chain.resolve.alias.set(key, value);
         }
       });
 
       api.modifyRspackConfig((config) => {
-        ensureAliases(config, extraAliases, discoveredAliases);
+        const mergedExtraAliases = {
+          ...solidAliases,
+          ...(extraAliases ?? {}),
+        };
+        ensureAliases(config, mergedExtraAliases, mergedAliases);
         configureImageAssets(config);
 
         if (hermesCompat) {
@@ -334,6 +340,44 @@ async function discoverZynthPackageAliases(
     }
   } catch {}
   return aliases;
+}
+
+function resolveSolidAliases(repoRoot: string): Record<string, string> {
+  const aliases: Record<string, string> = {};
+  const rootRequire = createRequire(path.join(repoRoot, "package.json"));
+
+  const solidMain = safeResolve(rootRequire, "solid-js");
+  const solidWeb = safeResolve(rootRequire, "solid-js/web");
+  const solidStore = safeResolve(rootRequire, "solid-js/store");
+  const solidJsxRuntimeFromRoot = safeResolve(
+    rootRequire,
+    "solid-js/h/jsx-runtime",
+  );
+  const solidJsxDevRuntimeFromRoot = safeResolve(
+    rootRequire,
+    "solid-js/h/jsx-dev-runtime",
+  );
+
+  if (solidMain) aliases["solid-js$"] = solidMain;
+  if (solidWeb) aliases["solid-js/web"] = solidWeb;
+  if (solidStore) aliases["solid-js/store"] = solidStore;
+  if (solidJsxRuntimeFromRoot)
+    aliases["solid-js/jsx-runtime"] = solidJsxRuntimeFromRoot;
+  if (solidJsxDevRuntimeFromRoot)
+    aliases["solid-js/jsx-dev-runtime"] = solidJsxDevRuntimeFromRoot;
+
+  return aliases;
+}
+
+function safeResolve(
+  resolver: NodeRequire,
+  request: string,
+): string | null {
+  try {
+    return resolver.resolve(request);
+  } catch {
+    return null;
+  }
 }
 
 async function pickFirstExisting(paths: string[]) {
