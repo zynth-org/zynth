@@ -486,6 +486,8 @@ void installConsole(Runtime &rt, RuntimeState *state) {
   console.setProperty(rt, "warn", warnFn);
   console.setProperty(rt, "error", errorFn);
   rt.global().setProperty(rt, "console", console);
+  rt.global().setProperty(
+      rt, "__ZYNTH_NATIVE_CONSOLE_DEVTOOLS__", Value(true));
 }
 
 void installModulesStub(Runtime &rt) {

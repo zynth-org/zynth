@@ -21,6 +21,7 @@ class ZynthRuntime(val root: ZynthRootView) {
   private val registry = ZynthModuleRegistry()
   private val jsThread = HandlerThread("ZynthJS")
   private val jsHandler: Handler
+  private var hasStarted: Boolean = false
   init {
     jsThread.start()
     jsHandler = Handler(jsThread.looper)
@@ -116,6 +117,7 @@ class ZynthRuntime(val root: ZynthRootView) {
     runOnJSSync {
       JSBridge.evaluateScript(runtimePtr, code, "main.js")
     }
+    hasStarted = false
   }
 
   fun emitEvent(name: String, payload: Any?) {
@@ -158,6 +160,10 @@ class ZynthRuntime(val root: ZynthRootView) {
   }
 
   fun start(rootId: Int) {
+    if (hasStarted) {
+      return
+    }
+    hasStarted = true
     runOnJS {
       JSBridge.callGlobalDouble(runtimePtr, "__startApp", rootId.toDouble())
     }

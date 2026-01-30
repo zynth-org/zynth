@@ -50,6 +50,8 @@ let disposeOverlay: (() => void) | null = null;
 let overlaySurfaceId: number | null = null;
 let disposeDevBanner: (() => void) | null = null;
 let devBannerSurfaceId: number | null = null;
+let hasStarted = false;
+const gStart = globalThis as any;
 
 const SURFACE_ID_OFFSET = 1 << 20;
 
@@ -180,6 +182,11 @@ export function start(App: () => any): () => void {
       return;
     }
 
+    if (hasStarted && lastRootId === rootId) {
+      console.log("[ZynthRuntime] __startApp ignored (already started)");
+      return;
+    }
+    hasStarted = true;
     setActiveSurface(rootId);
     mountErrorOverlaySurface(rootId);
     console.log(`Starting render with rootId: ${rootId}`);
