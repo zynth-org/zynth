@@ -104,6 +104,14 @@
   [self.manager setSurface:@(surfaceId)];
 }
 
+- (void)addSurfaceFirstFrameListener:(int)surfaceId listener:(dispatch_block_t)listener {
+  [self.manager addSurfaceFirstFrameListener:surfaceId listener:listener];
+}
+
+- (void)removeSurfaceFirstFrameListener:(int)surfaceId listener:(dispatch_block_t)listener {
+  [self.manager removeSurfaceFirstFrameListener:surfaceId listener:listener];
+}
+
 - (void)callGlobal:(NSString *)name args:(NSArray *)args {
   NSArray *payload = args ?: @[];
   [self.runtime callGlobal:name args:payload];

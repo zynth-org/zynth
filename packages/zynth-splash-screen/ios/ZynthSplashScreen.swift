@@ -40,9 +40,11 @@ public class ZynthSplashScreen: NSObject {
         mainWindow = window
         rootView = runtime.rootView
         previousWindowBackground = window.backgroundColor
-        previousRootBackground = runtime.rootView.backgroundColor
+        if let rootView = runtime.rootView {
+            previousRootBackground = rootView.backgroundColor
+            rootView.backgroundColor = bg
+        }
         window.backgroundColor = bg
-        runtime.rootView.backgroundColor = bg
         
         // We no longer rely on the passed window for hierarchy, but we use the shared setup flow.
         // Using a dedicated window avoids issues with rootViewController replacements on the main window.
@@ -71,8 +73,9 @@ public class ZynthSplashScreen: NSObject {
                 }
                 
                 // Check if the root view is attached to a window and has content (subviews)
-                if let rootWindow = runtime.rootView.window,
-                   !runtime.rootView.subviews.isEmpty {
+                if let rootView = runtime.rootView,
+                   rootView.window != nil,
+                   !rootView.subviews.isEmpty {
                     hide()
                     timer.invalidate()
                     pollTimer = nil

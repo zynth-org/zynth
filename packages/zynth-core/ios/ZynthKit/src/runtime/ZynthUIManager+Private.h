@@ -21,6 +21,8 @@ NS_ASSUME_NONNULL_BEGIN
   NSMutableDictionary<NSNumber *, ZynthYogaLayout *> *_surfaceYoga;
   NSMutableSet<NSNumber *> *_dirtySurfaces;
   NSMutableDictionary<NSNumber *, NSValue *> *_surfaceSizes;
+  NSMutableDictionary<NSNumber *, NSMutableArray<dispatch_block_t> *> *_surfaceFirstFrameListeners;
+  NSMutableSet<NSNumber *> *_surfaceFirstFrameDispatched;
   NSMutableSet<NSNumber *> *_ownedSurfaces;
   NSHashTable<UIView *> *_surfaceObserved;
   int _surfaceIdSeed;

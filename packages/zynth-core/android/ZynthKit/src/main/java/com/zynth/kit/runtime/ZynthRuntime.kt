@@ -6,6 +6,7 @@ import com.facebook.soloader.SoLoader
 import com.zynth.kit.core.AssetProvider
 import com.zynth.kit.core.ZynthRootView
 import com.zynth.kit.core.ZynthUIManager
+import com.zynth.kit.core.addSurfaceFirstFrameListener
 import com.zynth.kit.runtime.modules.DevtoolsModule
 import com.zynth.kit.runtime.modules.FetchModule
 import android.os.Handler
@@ -154,9 +155,7 @@ class ZynthRuntime(val root: ZynthRootView) {
   }
 
   fun addSurfaceFirstFrameListener(surfaceId: Int, listener: () -> Unit) {
-    // Phase 1 scaffold.
-    surfaceId
-    listener()
+    uiManager.addSurfaceFirstFrameListener(surfaceId, listener)
   }
 
   fun start(rootId: Int) {

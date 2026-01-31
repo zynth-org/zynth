@@ -51,6 +51,9 @@ internal fun ZynthUIManager.handleFrame() {
   val styleStartNs = System.nanoTime()
   applyStyleLayoutIfNeeded()
   tracePhase("style", System.nanoTime() - styleStartNs)
+  for (surfaceId in dirty) {
+    dispatchSurfaceFirstFrameIfNeeded(surfaceId)
+  }
   val endNs = System.nanoTime()
   lastFrameMs = (endNs - startNs) / 1_000_000.0
   lastLayoutMs = lastFrameMs

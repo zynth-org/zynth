@@ -39,6 +39,9 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal val dirtySurfaces = HashSet<Int>()
   internal val surfaceSizes = HashMap<Int, Pair<Int, Int>>()
   internal val surfaceLayoutListeners = HashMap<Int, View.OnLayoutChangeListener>()
+  internal val surfaceFirstFrameListeners = HashMap<Int, MutableList<() -> Unit>>()
+  internal val surfaceFirstFrameDispatched = HashSet<Int>()
+  internal val surfaceFirstFramePending = HashSet<Int>()
   internal val ownedSurfaces = HashSet<Int>()
   internal var activeSurfaceId = 0
   internal val styleStates = HashMap<Int, ZynthViewStyleState>()

@@ -1,5 +1,6 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
+#import <dispatch/dispatch.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -23,6 +24,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (int)registerSurfaceWithRootView:(UIView *)rootView NS_SWIFT_NAME(registerSurface(rootView:));
 - (void)unregisterSurfaceWithId:(int)surfaceId NS_SWIFT_NAME(unregisterSurface(id:));
 - (void)setActiveSurface:(int)surfaceId;
+- (void)addSurfaceFirstFrameListener:(int)surfaceId listener:(dispatch_block_t)listener NS_SWIFT_NAME(addSurfaceFirstFrameListener(_:listener:));
+- (void)removeSurfaceFirstFrameListener:(int)surfaceId listener:(dispatch_block_t)listener NS_SWIFT_NAME(removeSurfaceFirstFrameListener(_:listener:));
 - (void)callGlobal:(NSString *)name args:(NSArray *)args;
 - (BOOL)evaluateScript:(NSString *)code
              sourceURL:(NSString *_Nullable)sourceURL

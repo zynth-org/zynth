@@ -1,5 +1,6 @@
 #import "ZynthUIManager.h"
 #import "ZynthYogaLayout.h"
+#import <dispatch/dispatch.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -16,6 +17,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)markSurfaceDirty:(int)surfaceId;
 - (void)markSurfaceDirtyForNode:(NSNumber *)nodeId;
 - (void)syncSurfaceRootSize:(int)surfaceId rootView:(UIView *)rootView;
+- (void)addSurfaceFirstFrameListener:(int)surfaceId listener:(dispatch_block_t)listener;
+- (void)removeSurfaceFirstFrameListener:(int)surfaceId listener:(dispatch_block_t)listener;
+- (void)dispatchSurfaceFirstFrameIfNeeded:(int)surfaceId;
 
 @end
 

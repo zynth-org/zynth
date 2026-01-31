@@ -56,6 +56,8 @@ static const int kZynthSurfaceIdBase = 1 << 20;
     _nextId = surfaceId + 1;
   }
   _surfaceRoots[@(surfaceId)] = rootView;
+  [_surfaceFirstFrameListeners removeObjectForKey:@(surfaceId)];
+  [_surfaceFirstFrameDispatched removeObject:@(surfaceId)];
   ZynthYogaLayout *layout = [[ZynthYogaLayout alloc] initWithRootView:rootView];
   __weak typeof(self) weakSelf = self;
   layout.layoutDidUpdate = ^(NSNumber *nodeId, CGRect bounds, BOOL changed) {
@@ -98,6 +100,8 @@ static const int kZynthSurfaceIdBase = 1 << 20;
   [_surfaceYoga removeObjectForKey:@(surfaceId)];
   [_surfaceSizes removeObjectForKey:@(surfaceId)];
   [_dirtySurfaces removeObject:@(surfaceId)];
+  [_surfaceFirstFrameListeners removeObjectForKey:@(surfaceId)];
+  [_surfaceFirstFrameDispatched removeObject:@(surfaceId)];
   if ([_surfaceObserved containsObject:rootView]) {
     @try {
       [rootView removeObserver:self forKeyPath:@"bounds"];
@@ -124,6 +128,8 @@ static const int kZynthSurfaceIdBase = 1 << 20;
   }
   if (!root) return;
   _surfaceRoots[key] = root;
+  [_surfaceFirstFrameListeners removeObjectForKey:key];
+  [_surfaceFirstFrameDispatched removeObject:key];
   ZynthYogaLayout *layout = [[ZynthYogaLayout alloc] initWithRootView:root];
   __weak typeof(self) weakSelf = self;
   layout.layoutDidUpdate = ^(NSNumber *nodeId, CGRect bounds, BOOL changed) {
@@ -139,6 +145,59 @@ static const int kZynthSurfaceIdBase = 1 << 20;
   _surfaceSizes[key] = [NSValue valueWithCGSize:root.bounds.size];
   if (surfaceId != 0) {
     [_ownedSurfaces addObject:key];
+  }
+}
+
+- (void)addSurfaceFirstFrameListener:(int)surfaceId listener:(dispatch_block_t)listener {
+  if (!listener) return;
+  if (![NSThread isMainThread]) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+      [self addSurfaceFirstFrameListener:surfaceId listener:listener];
+    });
+    return;
+  }
+  NSNumber *key = @(surfaceId);
+  if ([_surfaceFirstFrameDispatched containsObject:key]) {
+    listener();
+    return;
+  }
+  NSMutableArray<dispatch_block_t> *listeners = _surfaceFirstFrameListeners[key];
+  if (!listeners) {
+    listeners = [NSMutableArray array];
+    _surfaceFirstFrameListeners[key] = listeners;
+  }
+  [listeners addObject:listener];
+}
+
+- (void)removeSurfaceFirstFrameListener:(int)surfaceId listener:(dispatch_block_t)listener {
+  if (!listener) return;
+  if (![NSThread isMainThread]) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+      [self removeSurfaceFirstFrameListener:surfaceId listener:listener];
+    });
+    return;
+  }
+  NSNumber *key = @(surfaceId);
+  NSMutableArray<dispatch_block_t> *listeners = _surfaceFirstFrameListeners[key];
+  if (!listeners) return;
+  [listeners removeObject:listener];
+  if (listeners.count == 0) {
+    [_surfaceFirstFrameListeners removeObjectForKey:key];
+  }
+}
+
+- (void)dispatchSurfaceFirstFrameIfNeeded:(int)surfaceId {
+  NSNumber *key = @(surfaceId);
+  if ([_surfaceFirstFrameDispatched containsObject:key]) return;
+  UIView *root = [self rootViewForSurface:surfaceId];
+  if (!root || !root.window) return;
+  if (root.subviews.count == 0) return;
+  [_surfaceFirstFrameDispatched addObject:key];
+  NSArray<dispatch_block_t> *callbacks = [_surfaceFirstFrameListeners[key] copy];
+  [_surfaceFirstFrameListeners removeObjectForKey:key];
+  for (dispatch_block_t callback in callbacks) {
+    if (!callback) continue;
+    callback();
   }
 }
 

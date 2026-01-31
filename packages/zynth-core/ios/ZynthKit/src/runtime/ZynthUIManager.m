@@ -27,6 +27,8 @@
     _surfaceYoga = [NSMutableDictionary dictionary];
     _dirtySurfaces = [NSMutableSet set];
     _surfaceSizes = [NSMutableDictionary dictionary];
+    _surfaceFirstFrameListeners = [NSMutableDictionary dictionary];
+    _surfaceFirstFrameDispatched = [NSMutableSet set];
     _ownedSurfaces = [NSMutableSet set];
     _surfaceObserved = [NSHashTable weakObjectsHashTable];
     _surfaceIdSeed = 1 << 20;

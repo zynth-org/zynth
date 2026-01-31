@@ -68,6 +68,9 @@
     [layout applyLayout];
   }
   [self applyStyleLayoutIfNeeded];
+  for (NSNumber *key in dirtySurfaces) {
+    [self dispatchSurfaceFirstFrameIfNeeded:key.intValue];
+  }
   CFTimeInterval frameEnd = CACurrentMediaTime();
   _lastFrameMs = (frameEnd - frameStart) * 1000.0;
   _lastLayoutMs = _lastFrameMs;

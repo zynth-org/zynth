@@ -100,6 +100,9 @@ internal fun ZynthUIManager.registerSurfaceInternal(
     return
   }
   surfaceRoots[surfaceId] = root
+  surfaceFirstFrameListeners.remove(surfaceId)
+  surfaceFirstFrameDispatched.remove(surfaceId)
+  surfaceFirstFramePending.remove(surfaceId)
   if (owned) {
     ownedSurfaces.add(surfaceId)
   } else {
@@ -140,6 +143,9 @@ internal fun ZynthUIManager.unregisterSurfaceInternal(surfaceId: Int) {
   val root = surfaceRoots[surfaceId] ?: return
 
   surfaceLayoutListeners.remove(surfaceId)?.let { root.removeOnLayoutChangeListener(it) }
+  surfaceFirstFrameListeners.remove(surfaceId)
+  surfaceFirstFrameDispatched.remove(surfaceId)
+  surfaceFirstFramePending.remove(surfaceId)
 
   val nodeIds = nodeSurfaces.filterValues { it == surfaceId }.keys.toList()
   for (nodeId in nodeIds) {
@@ -165,6 +171,69 @@ internal fun ZynthUIManager.unregisterSurfaceInternal(surfaceId: Int) {
   if (activeSurfaceId == surfaceId) {
     activeSurfaceId = rootView.rootId
   }
+}
+
+internal fun ZynthUIManager.addSurfaceFirstFrameListener(surfaceId: Int, listener: () -> Unit) {
+  runOnMain {
+    if (surfaceFirstFrameDispatched.contains(surfaceId)) {
+      listener()
+      return@runOnMain
+    }
+    val listeners = surfaceFirstFrameListeners.getOrPut(surfaceId) { mutableListOf() }
+    listeners.add(listener)
+  }
+}
+
+internal fun ZynthUIManager.removeSurfaceFirstFrameListener(surfaceId: Int, listener: () -> Unit) {
+  runOnMain {
+    val listeners = surfaceFirstFrameListeners[surfaceId] ?: return@runOnMain
+    listeners.remove(listener)
+    if (listeners.isEmpty()) {
+      surfaceFirstFrameListeners.remove(surfaceId)
+    }
+  }
+}
+
+internal fun ZynthUIManager.dispatchSurfaceFirstFrameIfNeeded(surfaceId: Int) {
+  val root = surfaceRoots[surfaceId] ?: rootView
+  if (!root.isAttachedToWindow) return
+  if (root.childCount == 0) return
+  if (!root.hasVisibleContent()) return
+  if (surfaceFirstFrameDispatched.contains(surfaceId)) return
+  if (!surfaceFirstFramePending.add(surfaceId)) return
+  val observer = root.viewTreeObserver
+  if (!observer.isAlive) {
+    surfaceFirstFramePending.remove(surfaceId)
+    return
+  }
+  val listener = object : android.view.ViewTreeObserver.OnPreDrawListener {
+    override fun onPreDraw(): Boolean {
+      if (observer.isAlive) {
+        observer.removeOnPreDrawListener(this)
+      }
+      surfaceFirstFramePending.remove(surfaceId)
+      if (surfaceFirstFrameDispatched.contains(surfaceId)) return true
+      if (!root.isAttachedToWindow || root.childCount == 0 || !root.hasVisibleContent()) return true
+      surfaceFirstFrameDispatched.add(surfaceId)
+      val callbacks = surfaceFirstFrameListeners.remove(surfaceId) ?: return true
+      for (callback in callbacks) {
+        runCatching { callback() }.onFailure {
+          Log.w("ZynthUI", "Surface $surfaceId first-frame callback failed", it)
+        }
+      }
+      return true
+    }
+  }
+  observer.addOnPreDrawListener(listener)
+}
+
+private fun ViewGroup.hasVisibleContent(): Boolean {
+  for (i in 0 until childCount) {
+    val child = getChildAt(i)
+    if (child.visibility != View.VISIBLE) continue
+    if (child.width > 0 && child.height > 0) return true
+  }
+  return false
 }
 
 internal fun ZynthUIManager.ensureSurface(surfaceId: Int) {
