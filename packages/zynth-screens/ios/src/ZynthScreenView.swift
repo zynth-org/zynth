@@ -70,9 +70,9 @@ public final class ZynthScreenView: UIView {
   @objc public private(set) var gestureEnabled: Bool = true
   var headerOptions: ZynthScreenHeaderOptions = .default
 
-  weak var manager: SNUIManager?
+  weak var manager: ZynthUIManager?
   weak var runtime: ZynthRuntime?
-  private weak var node: SNNode?
+  private weak var node: ZynthNode?
 
   private var pendingActiveState: Bool?
 
@@ -99,9 +99,10 @@ public final class ZynthScreenView: UIView {
     }
   }
 
-  public func bind(manager: SNUIManager, node: SNNode) {
+  public func bind(manager: ZynthUIManager, node: ZynthNode) {
     self.manager = manager
-    self.runtime = ZynthRuntimeManagerRegistry.shared.runtime(for: manager)
+    self.runtime =
+      manager.zynthRuntime ?? ZynthRuntimeManagerRegistry.shared.runtime(for: manager)
     self.node = node
   }
   
@@ -266,7 +267,7 @@ public final class ZynthScreenView: UIView {
       return
     }
 
-    typealias Imp = @convention(c) (AnyObject, Selector, NSString, NSDictionary?, SNNode) -> Void
+    typealias Imp = @convention(c) (AnyObject, Selector, NSString, NSDictionary?, ZynthNode) -> Void
     let function = unsafeBitCast(method, to: Imp.self)
     function(manager, selector, name as NSString, nil, node)
   }

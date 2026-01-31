@@ -4,7 +4,7 @@ import UIKit
 final class ZynthScreenHeaderAccessoryHostView: UIView {
   private let contentView = UIView()
   private weak var runtime: ZynthRuntime?
-  private var surfaceId: Int?
+  private var surfaceId: Int32?
   private var accessory: ZynthScreenHeaderAccessory?
   private let renderQueue = DispatchQueue(label: "dev.zynth.headerAccessory.render", qos: .userInitiated)
   private var renderToken = 0
@@ -50,16 +50,17 @@ final class ZynthScreenHeaderAccessoryHostView: UIView {
   func teardown(isDeinit: Bool = false) {
     let token = nextRenderToken()
     guard let surfaceId, let runtime else { return }
-    let rootSurface = runtime.rootSurfaceId
 
     if isDeinit {
       let queue = renderQueue
       queue.async { [weak runtime] in
         guard let runtime else { return }
+#if DEBUG
+        NSLog("[ZynthHeaderAccessoryHost] teardown(deinit) surface=%d", surfaceId)
+#endif
         runtime.callGlobal("__zynth_disposeHeaderAccessory", args: [surfaceId])
         DispatchQueue.main.async { [weak runtime] in
           guard let runtime else { return }
-          runtime.setActiveSurface(rootSurface)
           runtime.unregisterSurface(id: surfaceId)
         }
       }
@@ -68,11 +69,13 @@ final class ZynthScreenHeaderAccessoryHostView: UIView {
 
     renderQueue.async { [weak self, weak runtime] in
       guard let self, let runtime else { return }
+#if DEBUG
+      NSLog("[ZynthHeaderAccessoryHost] teardown surface=%d", surfaceId)
+#endif
       runtime.callGlobal("__zynth_disposeHeaderAccessory", args: [surfaceId])
       DispatchQueue.main.async { [weak self, weak runtime] in
         guard let self, let runtime else { return }
         guard token == self.renderToken else { return }
-        runtime.setActiveSurface(rootSurface)
         runtime.unregisterSurface(id: surfaceId)
         self.surfaceId = nil
       }
@@ -83,7 +86,7 @@ final class ZynthScreenHeaderAccessoryHostView: UIView {
     teardown(isDeinit: true)
   }
 
-  private func ensureSurface() -> Int? {
+  private func ensureSurface() -> Int32? {
     if let surfaceId {
       return surfaceId
     }
@@ -96,24 +99,16 @@ final class ZynthScreenHeaderAccessoryHostView: UIView {
   private func renderAccessory() {
     let token = nextRenderToken()
     guard let surfaceId = ensureSurface(), let runtime, let accessory else { return }
-    let rootSurface = runtime.rootSurfaceId
-    DispatchQueue.main.async { [weak self, weak runtime] in
-      guard let self, let runtime else { return }
-      guard token == self.renderToken else { return }
-      runtime.setActiveSurface(surfaceId)
-    }
     renderQueue.async { [weak self, weak runtime] in
       guard let self, let runtime else { return }
       guard token == self.renderToken else { return }
+#if DEBUG
+      NSLog("[ZynthHeaderAccessoryHost] render surface=%d route=%@", surfaceId, accessory.routeKey)
+#endif
       runtime.callGlobal(
         "__zynth_renderHeaderAccessory",
         args: [surfaceId, accessory.routeKey, accessory.position]
       )
-      DispatchQueue.main.async { [weak self, weak runtime] in
-        guard let self, let runtime else { return }
-        guard token == self.renderToken else { return }
-        runtime.setActiveSurface(rootSurface)
-      }
     }
   }
 

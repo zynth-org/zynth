@@ -182,6 +182,9 @@ final class ZynthScreenViewController: UIViewController {
 
   private func updateHeaderRightItems() {
     if let accessory = screenView.headerOptions.rightAccessory {
+#if DEBUG
+      NSLog("[ZynthScreens] header accessory route=%@ position=%@", accessory.routeKey, accessory.position)
+#endif
       let host = rightAccessoryHost ?? ZynthScreenHeaderAccessoryHostView()
       host.configure(with: accessory, screenView: screenView)
       navigationItem.rightBarButtonItem = UIBarButtonItem(customView: host)

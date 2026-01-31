@@ -9,9 +9,12 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+@class ZynthRuntime;
+
 @interface ZynthUIManager (Components)
 
 @property(nonatomic, weak) id<ZynthJSInvoker> jsInvoker;
+@property(nonatomic, weak, nullable) ZynthRuntime *zynthRuntime;
 
 @end
 

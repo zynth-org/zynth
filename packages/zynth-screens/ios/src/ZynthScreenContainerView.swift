@@ -137,6 +137,11 @@ public final class ZynthScreenContainerView: UIView, ZynthScreenContainer {
     let activeScreens = orderedScreens.filter { $0.isScreenActive }
     let desiredControllers = activeScreens.compactMap { controller(for: $0) }
     let currentControllers = navController.viewControllers.compactMap { $0 as? ZynthScreenViewController }
+#if DEBUG
+    if orderedScreens.count > 0 && activeScreens.isEmpty {
+      NSLog("[ZynthScreens] No active screens (ordered=%d)", orderedScreens.count)
+    }
+#endif
 
     let finalizeUpdate: (Bool) -> Void = { animated in
       navController.updateNavigationBarHiddenState(animated: animated)

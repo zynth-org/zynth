@@ -215,6 +215,9 @@ export function renderNativeTabIcon(
   active: boolean,
   color: string
 ): boolean {
+  console.log(
+    `[tabIconRegistry] render surface=${surfaceId} route=${routeKey} active=${active} color=${color}`
+  );
   const entry = registry.get(routeKey);
   if (!entry) {
     let pending = pendingByKey.get(routeKey);

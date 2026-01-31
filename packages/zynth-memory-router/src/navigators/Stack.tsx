@@ -752,7 +752,7 @@ function HeaderBar(props: HeaderBarProps) {
           />
         ) : (
           <SystemGlyph
-            name="BsArrowLeftShort"
+            name="RiArrowsArrowLeftLine"
             size={32}
             color={tintColor()}
             style={{

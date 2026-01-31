@@ -25,6 +25,7 @@ interface MountedAccessory {
 const registry = new Map<string, RegistryEntry>();
 const mounted = new Map<number, MountedAccessory>();
 const surfacesByKey = new Map<string, Set<number>>();
+const pendingByKey = new Map<string, Set<number>>();
 
 function makeKey(routeKey: string, position: HeaderAccessoryPosition): string {
   return `${routeKey}:${position}`;
@@ -130,11 +131,20 @@ function renderNativeHeaderAccessory(
   routeKey: string,
   position: HeaderAccessoryPosition
 ) {
+  console.log(
+    `[headerAccessoryRegistry] render surface=${surfaceId} route=${routeKey} position=${position}`
+  );
   const key = makeKey(routeKey, position);
   const entry = registry.get(key);
   if (!entry) {
+    let pending = pendingByKey.get(key);
+    if (!pending) {
+      pending = new Set();
+      pendingByKey.set(key, pending);
+    }
+    pending.add(surfaceId);
     console.warn(
-      `[ZynthMemoryRouter] Missing header accessory factory for route '${routeKey}' (${position}).`
+      `[ZynthMemoryRouter] Missing header accessory factory for route '${routeKey}' (${position}). Queued surface=${surfaceId}`
     );
     return false;
   }
@@ -150,6 +160,13 @@ export function registerNativeHeaderAccessory(entry: RegistryEntry) {
   const key = makeKey(entry.routeKey, entry.position);
   registry.set(key, entry);
   rerenderMountedAccessories(key);
+  const pending = pendingByKey.get(key);
+  if (pending && pending.size > 0) {
+    for (const surfaceId of pending.values()) {
+      mountAccessory(surfaceId, key, entry);
+    }
+    pendingByKey.delete(key);
+  }
 }
 
 export function unregisterNativeHeaderAccessory(
@@ -158,6 +175,7 @@ export function unregisterNativeHeaderAccessory(
 ) {
   const key = makeKey(routeKey, position);
   registry.delete(key);
+  pendingByKey.delete(key);
   const surfaces = surfacesByKey.get(key);
   if (surfaces && surfaces.size > 0) {
     for (const surfaceId of Array.from(surfaces.values())) {

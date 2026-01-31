@@ -4,7 +4,7 @@ import UIKit
 final class ZynthTabIconHostView: UIView {
   private let contentView = UIView()
   private weak var runtime: ZynthRuntime?
-  private var surfaceId: Int?
+  private var surfaceId: Int32?
   private var routeKey: String?
   private var renderToken = 0
   private let renderQueue = DispatchQueue(label: "dev.zynth.tabIcon.render", qos: .userInitiated)
@@ -48,39 +48,31 @@ final class ZynthTabIconHostView: UIView {
   func renderIcon(active: Bool, tintColor: UIColor) {
     guard let routeKey, let runtime = runtime, let surfaceId = ensureSurface() else { return }
     let token = nextRenderToken()
-    let rootSurface = runtime.rootSurfaceId
     let colorHex = UIColor.zynth_hexString(from: tintColor)
-
-    DispatchQueue.main.async { [weak self] in
-      guard let self else { return }
-      guard token == self.renderToken else { return }
-      runtime.setActiveSurface(surfaceId)
-    }
 
     renderQueue.async { [weak self] in
       guard let self else { return }
       guard token == self.renderToken else { return }
+#if DEBUG
+      NSLog("[ZynthTabIconHost] render surface=%d route=%@", surfaceId, routeKey)
+#endif
       runtime.callGlobal(
         "__zynth_renderTabIcon",
         args: [surfaceId, routeKey, active, colorHex]
       )
-      DispatchQueue.main.async { [weak self] in
-        guard let self else { return }
-        guard token == self.renderToken else { return }
-        runtime.setActiveSurface(rootSurface)
-      }
     }
   }
 
   func teardown() {
     _ = nextRenderToken()
     guard let runtime = runtime, let surfaceId = surfaceId else { return }
-    let rootSurface = runtime.rootSurfaceId
     self.surfaceId = nil
     renderQueue.async {
+#if DEBUG
+      NSLog("[ZynthTabIconHost] teardown surface=%d", surfaceId)
+#endif
       runtime.callGlobal("__zynth_disposeTabIcon", args: [surfaceId])
       DispatchQueue.main.async {
-        runtime.setActiveSurface(rootSurface)
         runtime.unregisterSurface(id: surfaceId)
       }
     }
@@ -90,7 +82,7 @@ final class ZynthTabIconHostView: UIView {
     teardown()
   }
 
-  private func ensureSurface() -> Int? {
+  private func ensureSurface() -> Int32? {
     if let surfaceId {
       return surfaceId
     }

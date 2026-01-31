@@ -15,8 +15,7 @@
 #import <Yoga/Yoga.h>
 
 #import "ZynthComponentRegistry.h"
-#import "ZynthUIManager+Layout.h"
-#import "SNNode.h"
+#import "ZynthComponentAPI.h"
 
 static NSString *ZynthScreensNormalizeJSONString(NSString *value) {
   if ([value rangeOfString:@"\\\""].location == NSNotFound) {
@@ -39,6 +38,23 @@ static NSString *ZynthScreensParseString(NSString *rawJSON) {
   return normalized;
 }
 
+static NSString *ZynthScreensValueAsString(id value) {
+  if ([value isKindOfClass:[NSString class]]) {
+    return (NSString *)value;
+  }
+  if ([value isKindOfClass:[NSNumber class]]) {
+    return [(NSNumber *)value stringValue];
+  }
+  return nil;
+}
+
+static NSString *ZynthScreensParseStringValue(id value, NSString *rawJSON) {
+  if (rawJSON.length > 0) {
+    return ZynthScreensParseString(rawJSON);
+  }
+  return ZynthScreensValueAsString(value);
+}
+
 static BOOL ZynthScreensParseBoolean(NSString *rawJSON, BOOL fallback) {
   if (rawJSON.length == 0) return fallback;
   NSString *value = [rawJSON stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
@@ -49,11 +65,37 @@ static BOOL ZynthScreensParseBoolean(NSString *rawJSON, BOOL fallback) {
   return fallback;
 }
 
+static BOOL ZynthScreensParseBooleanValue(id value, NSString *rawJSON, BOOL fallback) {
+  if (rawJSON.length > 0) {
+    return ZynthScreensParseBoolean(rawJSON, fallback);
+  }
+  if ([value isKindOfClass:[NSNumber class]]) {
+    return [(NSNumber *)value boolValue];
+  }
+  if ([value isKindOfClass:[NSString class]]) {
+    return ZynthScreensParseBoolean((NSString *)value, fallback);
+  }
+  return fallback;
+}
+
 static NSInteger ZynthScreensParseInteger(NSString *rawJSON, NSInteger fallback) {
   if (rawJSON.length == 0) return fallback;
   NSString *value = [rawJSON stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
   if (value.length == 0 || [value isEqualToString:@"null"]) return fallback;
   return value.integerValue;
+}
+
+static NSInteger ZynthScreensParseIntegerValue(id value, NSString *rawJSON, NSInteger fallback) {
+  if (rawJSON.length > 0) {
+    return ZynthScreensParseInteger(rawJSON, fallback);
+  }
+  if ([value isKindOfClass:[NSNumber class]]) {
+    return [(NSNumber *)value integerValue];
+  }
+  if ([value isKindOfClass:[NSString class]]) {
+    return ZynthScreensParseInteger((NSString *)value, fallback);
+  }
+  return fallback;
 }
 
 static NSDictionary *ZynthScreensParseObject(NSString *rawJSON) {
@@ -79,6 +121,19 @@ static NSDictionary *ZynthScreensParseObject(NSString *rawJSON) {
 
   if ([parsed isKindOfClass:[NSDictionary class]]) {
     return (NSDictionary *)parsed;
+  }
+  return nil;
+}
+
+static NSDictionary *ZynthScreensParseObjectValue(id value, NSString *rawJSON) {
+  if (rawJSON.length > 0) {
+    return ZynthScreensParseObject(rawJSON);
+  }
+  if ([value isKindOfClass:[NSDictionary class]]) {
+    return (NSDictionary *)value;
+  }
+  if ([value isKindOfClass:[NSString class]]) {
+    return ZynthScreensParseObject((NSString *)value);
   }
   return nil;
 }
@@ -110,18 +165,31 @@ static NSArray *ZynthScreensParseArray(NSString *rawJSON) {
   return nil;
 }
 
-@implementation SNUIManager (ZynthScreens)
+static NSArray *ZynthScreensParseArrayValue(id value, NSString *rawJSON) {
+  if (rawJSON.length > 0) {
+    return ZynthScreensParseArray(rawJSON);
+  }
+  if ([value isKindOfClass:[NSArray class]]) {
+    return (NSArray *)value;
+  }
+  if ([value isKindOfClass:[NSString class]]) {
+    return ZynthScreensParseArray((NSString *)value);
+  }
+  return nil;
+}
+
+@implementation ZynthUIManager (ZynthScreens)
 
 + (void)load {
   static dispatch_once_t onceToken;
   dispatch_once(&onceToken, ^{
     ZynthComponentDescriptor *containerDescriptor = [[ZynthComponentDescriptor alloc] initWithType:@"zynth-screen-container"];
-    containerDescriptor.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+    containerDescriptor.createView = ^UIView *(ZynthUIManager *manager, NSString *type) {
       return [[ZynthScreenContainerView alloc] init];
     };
-    containerDescriptor.handleInsertChild = ^BOOL(SNUIManager *manager,
-                                                  SNNode *parent,
-                                                  SNNode *child,
+    containerDescriptor.handleInsertChild = ^BOOL(ZynthUIManager *manager,
+                                                  ZynthNode *parent,
+                                                  ZynthNode *child,
                                                   NSNumber *childId,
                                                   NSUInteger index) {
       if (![parent.view isKindOfClass:[ZynthScreenContainerView class]]) {
@@ -136,6 +204,12 @@ static NSArray *ZynthScreensParseArray(NSString *rawJSON) {
 
       child.parentId = parent.nid;
       child.surfaceId = parent.surfaceId;
+#if DEBUG
+      NSLog(@"[ZynthScreens] insert screen parent=%d child=%d surface=%d",
+            parent.nid,
+            child.nid,
+            parent.surfaceId);
+#endif
 
       NSUInteger clamped = MIN(index, parent.children.count);
       [parent.children insertObject:childId atIndex:clamped];
@@ -153,9 +227,9 @@ static NSArray *ZynthScreensParseArray(NSString *rawJSON) {
       return YES;
     };
 
-    containerDescriptor.handleRemoveChild = ^BOOL(SNUIManager *manager,
-                                                  SNNode *parent,
-                                                  SNNode *child,
+    containerDescriptor.handleRemoveChild = ^BOOL(ZynthUIManager *manager,
+                                                  ZynthNode *parent,
+                                                  ZynthNode *child,
                                                   NSNumber *childId) {
       if (![parent.view isKindOfClass:[ZynthScreenContainerView class]]) {
         return NO;
@@ -187,12 +261,12 @@ static NSArray *ZynthScreensParseArray(NSString *rawJSON) {
     ZynthRegisterComponentDescriptor(containerDescriptor);
 
     ZynthComponentDescriptor *sheetContainerDescriptor = [[ZynthComponentDescriptor alloc] initWithType:@"zynth-screen-sheet-container"];
-    sheetContainerDescriptor.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+    sheetContainerDescriptor.createView = ^UIView *(ZynthUIManager *manager, NSString *type) {
       return [[ZynthScreenSheetContainerView alloc] init];
     };
-    sheetContainerDescriptor.handleInsertChild = ^BOOL(SNUIManager *manager,
-                                                       SNNode *parent,
-                                                       SNNode *child,
+    sheetContainerDescriptor.handleInsertChild = ^BOOL(ZynthUIManager *manager,
+                                                       ZynthNode *parent,
+                                                       ZynthNode *child,
                                                        NSNumber *childId,
                                                        NSUInteger index) {
       if (![parent.view isKindOfClass:[ZynthScreenSheetContainerView class]]) {
@@ -207,6 +281,12 @@ static NSArray *ZynthScreensParseArray(NSString *rawJSON) {
 
       child.parentId = parent.nid;
       child.surfaceId = parent.surfaceId;
+#if DEBUG
+      NSLog(@"[ZynthScreens] insert sheet screen parent=%d child=%d surface=%d",
+            parent.nid,
+            child.nid,
+            parent.surfaceId);
+#endif
 
       NSUInteger clamped = MIN(index, parent.children.count);
       [parent.children insertObject:childId atIndex:clamped];
@@ -224,9 +304,9 @@ static NSArray *ZynthScreensParseArray(NSString *rawJSON) {
       return YES;
     };
 
-    sheetContainerDescriptor.handleRemoveChild = ^BOOL(SNUIManager *manager,
-                                                       SNNode *parent,
-                                                       SNNode *child,
+    sheetContainerDescriptor.handleRemoveChild = ^BOOL(ZynthUIManager *manager,
+                                                       ZynthNode *parent,
+                                                       ZynthNode *child,
                                                        NSNumber *childId) {
       if (![parent.view isKindOfClass:[ZynthScreenSheetContainerView class]]) {
         return NO;
@@ -258,21 +338,21 @@ static NSArray *ZynthScreensParseArray(NSString *rawJSON) {
     ZynthRegisterComponentDescriptor(sheetContainerDescriptor);
 
     ZynthComponentDescriptor *screenDescriptor = [[ZynthComponentDescriptor alloc] initWithType:@"zynth-screen"];
-    screenDescriptor.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+    screenDescriptor.createView = ^UIView *(ZynthUIManager *manager, NSString *type) {
       return [[ZynthScreenView alloc] init];
     };
-    screenDescriptor.attach = ^(SNUIManager *manager, SNNode *node) {
+    screenDescriptor.attach = ^(ZynthUIManager *manager, ZynthNode *node) {
       if (![node.view isKindOfClass:[ZynthScreenView class]]) return;
       ZynthScreenView *view = (ZynthScreenView *)node.view;
       [view bindWithManager:manager node:node];
     };
-    screenDescriptor.cleanup = ^(SNUIManager *manager, SNNode *node) {
+    screenDescriptor.cleanup = ^(ZynthUIManager *manager, ZynthNode *node) {
       if (![node.view isKindOfClass:[ZynthScreenView class]]) return;
       ZynthScreenView *view = (ZynthScreenView *)node.view;
       [view prepareForReuse];
     };
-    screenDescriptor.handleSetProp = ^BOOL(SNUIManager *manager,
-                                           SNNode *node,
+    screenDescriptor.handleSetProp = ^BOOL(ZynthUIManager *manager,
+                                           ZynthNode *node,
                                            NSString *name,
                                            id value,
                                            NSString *rawJSON) {
@@ -280,38 +360,38 @@ static NSArray *ZynthScreensParseArray(NSString *rawJSON) {
       ZynthScreenView *view = (ZynthScreenView *)node.view;
 
       if ([name isEqualToString:@"screenKey"]) {
-        NSString *key = ZynthScreensParseString(rawJSON) ?: @"";
+        NSString *key = ZynthScreensParseStringValue(value, rawJSON) ?: @"";
         [view setScreenKeyValue:key];
         return YES;
       }
 
       if ([name isEqualToString:@"active"]) {
-        BOOL active = ZynthScreensParseBoolean(rawJSON, NO);
+        BOOL active = ZynthScreensParseBooleanValue(value, rawJSON, NO);
         [view setActiveStateValue:@(active)];
         return YES;
       }
 
       if ([name isEqualToString:@"animation"]) {
-        NSString *anim = ZynthScreensParseString(rawJSON);
+        NSString *anim = ZynthScreensParseStringValue(value, rawJSON);
         [view setAnimationTypeString:anim];
         return YES;
       }
 
       if ([name isEqualToString:@"gestureEnabled"]) {
-        BOOL enabled = ZynthScreensParseBoolean(rawJSON, YES);
+        BOOL enabled = ZynthScreensParseBooleanValue(value, rawJSON, YES);
         [view setGestureEnabledValue:@(enabled)];
         return YES;
       }
 
       if ([name isEqualToString:@"headerOptions"]) {
-        NSDictionary *options = ZynthScreensParseObject(rawJSON);
+        NSDictionary *options = ZynthScreensParseObjectValue(value, rawJSON);
         [view setHeaderOptionsFromDictionary:options];
         return YES;
       }
 
       return NO;
     };
-    screenDescriptor.handleSetHandler = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name) {
+    screenDescriptor.handleSetHandler = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name) {
       if (![node.view isKindOfClass:[ZynthScreenView class]]) return NO;
       return [name isEqualToString:@"onWillAppear"] ||
              [name isEqualToString:@"onDidAppear"] ||
@@ -323,12 +403,12 @@ static NSArray *ZynthScreensParseArray(NSString *rawJSON) {
     ZynthRegisterComponentDescriptor(screenDescriptor);
 
     ZynthComponentDescriptor *tabsDescriptor = [[ZynthComponentDescriptor alloc] initWithType:@"zynth-screen-tabs-container"];
-    tabsDescriptor.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+    tabsDescriptor.createView = ^UIView *(ZynthUIManager *manager, NSString *type) {
       return [[ZynthScreenTabsContainerView alloc] init];
     };
-    tabsDescriptor.handleInsertChild = ^BOOL(SNUIManager *manager,
-                                             SNNode *parent,
-                                             SNNode *child,
+    tabsDescriptor.handleInsertChild = ^BOOL(ZynthUIManager *manager,
+                                             ZynthNode *parent,
+                                             ZynthNode *child,
                                              NSNumber *childId,
                                              NSUInteger index) {
       if (![parent.view isKindOfClass:[ZynthScreenTabsContainerView class]]) {
@@ -342,6 +422,12 @@ static NSArray *ZynthScreensParseArray(NSString *rawJSON) {
 
       child.parentId = parent.nid;
       child.surfaceId = parent.surfaceId;
+#if DEBUG
+      NSLog(@"[ZynthScreens] insert tabs child parent=%d child=%d surface=%d",
+            parent.nid,
+            child.nid,
+            parent.surfaceId);
+#endif
 
       NSUInteger clamped = MIN(index, parent.children.count);
       [parent.children insertObject:childId atIndex:clamped];
@@ -358,9 +444,9 @@ static NSArray *ZynthScreensParseArray(NSString *rawJSON) {
       [manager zynth_markNeedsFlush];
       return YES;
     };
-    tabsDescriptor.handleRemoveChild = ^BOOL(SNUIManager *manager,
-                                             SNNode *parent,
-                                             SNNode *child,
+    tabsDescriptor.handleRemoveChild = ^BOOL(ZynthUIManager *manager,
+                                             ZynthNode *parent,
+                                             ZynthNode *child,
                                              NSNumber *childId) {
       if (![parent.view isKindOfClass:[ZynthScreenTabsContainerView class]]) {
         return NO;
@@ -387,18 +473,18 @@ static NSArray *ZynthScreensParseArray(NSString *rawJSON) {
       [manager zynth_markNeedsFlush];
       return YES;
     };
-    tabsDescriptor.attach = ^(SNUIManager *manager, SNNode *node) {
+    tabsDescriptor.attach = ^(ZynthUIManager *manager, ZynthNode *node) {
       if (![node.view isKindOfClass:[ZynthScreenTabsContainerView class]]) return;
       ZynthScreenTabsContainerView *view = (ZynthScreenTabsContainerView *)node.view;
       [view bindWithManager:manager node:node];
     };
-    tabsDescriptor.cleanup = ^(SNUIManager *manager, SNNode *node) {
+    tabsDescriptor.cleanup = ^(ZynthUIManager *manager, ZynthNode *node) {
       if (![node.view isKindOfClass:[ZynthScreenTabsContainerView class]]) return;
       ZynthScreenTabsContainerView *view = (ZynthScreenTabsContainerView *)node.view;
       [view prepareForReuse];
     };
-    tabsDescriptor.handleSetProp = ^BOOL(SNUIManager *manager,
-                                         SNNode *node,
+    tabsDescriptor.handleSetProp = ^BOOL(ZynthUIManager *manager,
+                                         ZynthNode *node,
                                          NSString *name,
                                          id value,
                                          NSString *rawJSON) {
@@ -406,38 +492,38 @@ static NSArray *ZynthScreensParseArray(NSString *rawJSON) {
       ZynthScreenTabsContainerView *view = (ZynthScreenTabsContainerView *)node.view;
 
       if ([name isEqualToString:@"selectedIndex"]) {
-        NSInteger index = ZynthScreensParseInteger(rawJSON, 0);
+        NSInteger index = ZynthScreensParseIntegerValue(value, rawJSON, 0);
         [view setSelectedIndexValue:@(index)];
         return YES;
       }
 
       if ([name isEqualToString:@"tabAnimation"]) {
-        NSString *anim = ZynthScreensParseString(rawJSON);
+        NSString *anim = ZynthScreensParseStringValue(value, rawJSON);
         [view setTabAnimationType:anim];
         return YES;
       }
 
       if ([name isEqualToString:@"tabBarOptions"]) {
-        NSDictionary *options = ZynthScreensParseObject(rawJSON);
+        NSDictionary *options = ZynthScreensParseObjectValue(value, rawJSON);
         [view setTabBarOptionsFromDictionary:options];
         return YES;
       }
 
       if ([name isEqualToString:@"tabBarItems"]) {
-        NSArray *items = ZynthScreensParseArray(rawJSON);
+        NSArray *items = ZynthScreensParseArrayValue(value, rawJSON);
         [view setTabItemsFromArray:items];
         return YES;
       }
 
       if ([name isEqualToString:@"nativeTabBarEnabled"]) {
-        BOOL enabled = ZynthScreensParseBoolean(rawJSON, NO);
+        BOOL enabled = ZynthScreensParseBooleanValue(value, rawJSON, NO);
         [view setNativeTabBarEnabledValue:@(enabled)];
         return YES;
       }
 
       return NO;
     };
-    tabsDescriptor.handleSetHandler = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name) {
+    tabsDescriptor.handleSetHandler = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name) {
       if (![node.view isKindOfClass:[ZynthScreenTabsContainerView class]]) return NO;
       return [name isEqualToString:@"onNativeTabSelect"];
     };

@@ -73,8 +73,8 @@ public final class ZynthScreenTabsContainerView: UIView, UITabBarControllerDeleg
   }
   private var selectedIndex: Int = 0
   private var nativeTabBarEnabled = false
-  private weak var manager: SNUIManager?
-  private weak var node: SNNode?
+  private weak var manager: ZynthUIManager?
+  private weak var node: ZynthNode?
   private weak var runtime: ZynthRuntime?
   private weak var hostingController: UIViewController?
   private var tabBarController: UITabBarController?
@@ -154,10 +154,11 @@ public final class ZynthScreenTabsContainerView: UIView, UITabBarControllerDeleg
   }
 
   @objc(bindWithManager:node:)
-  public func bind(withManager manager: SNUIManager, node: SNNode) {
+  public func bind(withManager manager: ZynthUIManager, node: ZynthNode) {
     self.manager = manager
     self.node = node
-    self.runtime = ZynthRuntimeManagerRegistry.shared.runtime(for: manager)
+    self.runtime =
+      manager.zynthRuntime ?? ZynthRuntimeManagerRegistry.shared.runtime(for: manager)
   }
 
   public func prepareForReuse() {
@@ -307,6 +308,9 @@ public final class ZynthScreenTabsContainerView: UIView, UITabBarControllerDeleg
       guard let dict = element as? [String: Any] else { return nil }
       return ZynthNativeTabBarItem(dictionary: dict)
     }
+#if DEBUG
+    NSLog("[ZynthScreenTabs] setTabItems count=%d", descriptors.count)
+#endif
     guard tabDescriptors != descriptors else { return }
     tabDescriptors = descriptors
   }
@@ -1474,7 +1478,7 @@ public final class ZynthScreenTabsContainerView: UIView, UITabBarControllerDeleg
     guard manager.responds(to: selector), let method = manager.method(for: selector) else {
       return
     }
-    typealias Imp = @convention(c) (AnyObject, Selector, NSString, NSDictionary?, SNNode) -> Void
+    typealias Imp = @convention(c) (AnyObject, Selector, NSString, NSDictionary?, ZynthNode) -> Void
     let function = unsafeBitCast(method, to: Imp.self)
     function(manager, selector, name as NSString, payload, node)
   }

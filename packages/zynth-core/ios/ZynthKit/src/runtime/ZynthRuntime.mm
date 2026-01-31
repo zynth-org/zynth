@@ -1,7 +1,11 @@
 #import "ZynthRuntime.h"
 #import "ZynthHermesRuntimeHost.h"
 #import "ZynthUIManager.h"
+#import "ZynthUIManager+Components.h"
 #import "ZynthUIManager+Surface.h"
+#if __has_include("ZynthKit-Swift.h")
+#import "ZynthKit-Swift.h"
+#endif
 #if DEBUG
 #import <objc/message.h>
 #endif
@@ -23,7 +27,11 @@
   if (self) {
     _rootView = rootView;
     _manager = [[ZynthUIManager alloc] initWithRootView:rootView];
+    _manager.zynthRuntime = self;
     _runtime = [[ZynthHermesRuntimeHost alloc] initWithUIManager:_manager];
+#if __has_include("ZynthKit-Swift.h")
+    [[ZynthRuntimeManagerRegistry shared] setRuntime:self for:_manager];
+#endif
     [self installDefaultModules];
 #if DEBUG
     NSLog(@"[ZynthRuntime] DEBUG init: attempting ZynthDevSupport hook");

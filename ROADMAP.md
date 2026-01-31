@@ -62,6 +62,7 @@ This document outlines the current status and future development plan for the Zy
 - [ ] iOS: Reload Hypervisor doesn't clean the redbox.
 - [ ] iOS: Transparency buttons doesn't works.
 - [ ] iOS: DatePicker imperative won't open.
+- [ ] iOS: Stack Modal bug that return to details with.
 
 - [x] Android: Keyboard Avoiding View: Fix inconsistent behavior on Android when set `height` as `bahavior`
 - [x] When load Menu using HMR we have `[unhandled] Module Font resource 'ZynthIconsBS.ttf' not found in any bundle. not found.
