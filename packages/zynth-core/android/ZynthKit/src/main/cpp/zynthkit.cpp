@@ -1505,6 +1505,19 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_zynth_kit_runtime_JSBridge_destroyHermesRuntime(JNIEnv *, jobject, jlong ptr) {
   auto *runtime = reinterpret_cast<facebook::hermes::HermesRuntime *>(ptr);
   if (!runtime) return;
+
+  // Cleanup handlers associated with this runtime to avoid crash in ~Function
+  {
+    std::lock_guard<std::mutex> lock(gHandlerMutex);
+    for (auto it = gHandlers.begin(); it != gHandlers.end();) {
+      if (it->second.runtime == runtime) {
+        it = gHandlers.erase(it);
+      } else {
+        ++it;
+      }
+    }
+  }
+
   {
     std::lock_guard<std::mutex> lock(gStateMutex);
     auto it = gStates.find(runtime);
