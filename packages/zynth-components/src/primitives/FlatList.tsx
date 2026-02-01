@@ -90,6 +90,43 @@ const OFFSET_EPSILON = 0.01;
 const ADAPTIVE_ESTIMATE_SAMPLES = 8;
 const ADAPTIVE_ESTIMATE_THRESHOLD = 0.1;
 
+const resolvePadding = (style?: Style | Style[]) => {
+  const merged: Style = {};
+  if (Array.isArray(style)) {
+    for (const entry of style) {
+      if (entry) Object.assign(merged, entry);
+    }
+  } else if (style) {
+    Object.assign(merged, style);
+  }
+
+  const hasNumber = (value: unknown): value is number =>
+    typeof value === "number" && Number.isFinite(value);
+
+  const padding = hasNumber(merged.padding) ? merged.padding : 0;
+
+  let top = padding;
+  let bottom = padding;
+  let left = padding;
+  let right = padding;
+
+  if (hasNumber(merged.paddingVertical)) {
+    top = merged.paddingVertical;
+    bottom = merged.paddingVertical;
+  }
+  if (hasNumber(merged.paddingHorizontal)) {
+    left = merged.paddingHorizontal;
+    right = merged.paddingHorizontal;
+  }
+
+  if (hasNumber(merged.paddingTop)) top = merged.paddingTop;
+  if (hasNumber(merged.paddingBottom)) bottom = merged.paddingBottom;
+  if (hasNumber(merged.paddingLeft)) left = merged.paddingLeft;
+  if (hasNumber(merged.paddingRight)) right = merged.paddingRight;
+
+  return { top, bottom, left, right };
+};
+
 class FenwickTree {
   private size = 0;
   private tree: number[] = [];
@@ -886,8 +923,16 @@ export function FlatList<T>(props: FlatListProps<T>) {
     return layoutTotal;
   });
 
+  const contentContainerPadding = createMemo(() => {
+    return resolvePadding(props.contentContainerStyle as Style | Style[]);
+  });
+
   const scrollContentSize = createMemo(() => {
-    return contentSize() + getHeaderExtent() + getFooterExtent();
+    const padding = contentContainerPadding();
+    const paddingMain = props.horizontal
+      ? padding.left + padding.right
+      : padding.top + padding.bottom;
+    return contentSize() + getHeaderExtent() + getFooterExtent() + paddingMain;
   });
 
   const requiredContentStyle = createMemo<Style>(() => {
