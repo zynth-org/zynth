@@ -216,6 +216,9 @@ function ensureDir(dir: string): void {
 function collectNativeAndroidModules(appDir: string): any[] {
   const modulesByName = new Map();
   const appPackage = safeReadJSON(path.join(appDir, "package.json")) || {};
+  const excludedModules = new Set<string>(
+    appPackage?.zynthNative?.android?.excludeModules || []
+  );
 
   function collectAppModules(): { packageDir: string; packageName: string; packageJson: any }[] {
     const modulesDir = path.join(appDir, "modules");
@@ -242,6 +245,7 @@ function collectNativeAndroidModules(appDir: string): any[] {
     if (!androidConfig || !Array.isArray(androidConfig.modules)) return;
     for (const module of androidConfig.modules) {
       if (!module || !module.name) continue;
+      if (excludedModules.has(module.name)) continue;
       const record = {
         name: module.name,
         packageName,
@@ -302,11 +306,15 @@ function collectNativeAndroidModules(appDir: string): any[] {
 function collectAndroidGradleProjects(appDir: string): any[] {
   const projectsByName = new Map<string, { name: string; directoryPath: string; packageName: string }>();
   const appPackage = safeReadJSON(path.join(appDir, "package.json")) || {};
+  const excludedProjects = new Set<string>(
+    appPackage?.zynthNative?.android?.excludeProjects || []
+  );
 
   function registerProjects(packageName: string, packageDir: string, androidConfig: any) {
     if (!androidConfig || !Array.isArray(androidConfig.gradleProjects)) return;
     for (const project of androidConfig.gradleProjects) {
       if (!project || !project.name) continue;
+      if (excludedProjects.has(project.name)) continue;
       let baseDir = packageDir;
       if (project.package) {
         const resolved = resolvePackageJson(project.package, appDir);

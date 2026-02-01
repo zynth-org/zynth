@@ -215,9 +215,6 @@ export function renderNativeTabIcon(
   active: boolean,
   color: string
 ): boolean {
-  console.log(
-    `[tabIconRegistry] render surface=${surfaceId} route=${routeKey} active=${active} color=${color}`
-  );
   const entry = registry.get(routeKey);
   if (!entry) {
     let pending = pendingByKey.get(routeKey);
@@ -256,9 +253,6 @@ export function registerNativeTabIcon(entry: RegistryEntry) {
 
   const pending = pendingByKey.get(entry.routeKey);
   if (pending && pending.size > 0) {
-    console.log(
-      `[tabIconRegistry] flushing ${pending.size} pending surfaces for routeKey=${entry.routeKey}`
-    );
     for (const [surfaceId, props] of pending.entries()) {
       mountIcon(surfaceId, entry, props);
     }

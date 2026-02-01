@@ -549,12 +549,6 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
     if (!useNativeTabBar) return;
     const { surfaceId, routeKey } = event;
 
-    // Debug logging
-    console.log(
-      `[Tabs] handleNativeTabUpdate surface=${surfaceId} route=${routeKey} activeInEvent=${
-        event.active
-      } currentIndex=${state().index}`
-    );
 
     const active =
       event.active ??
@@ -565,9 +559,6 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
       ? props.tabBarOptions?.tabBarActiveTintColor ?? "#007AFF"
       : props.tabBarOptions?.tabBarInactiveTintColor ?? "#8E8E93";
 
-    console.log(
-      `[Tabs] Updating icon: ${routeKey} active=${active} color=${color}`
-    );
 
     renderNativeTabIcon(surfaceId, routeKey, active, color);
   };
@@ -736,7 +727,7 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
                         left: 0,
                         right: 0,
                         bottom: 0,
-                        display: isActive() ? "flex" : "none",
+                        display: useNativeTabBar ? "flex" : isActive() ? "flex" : "none",
                       }}
                     >
                       <NavigationContext.Provider
