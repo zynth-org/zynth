@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.zynth.kit.runtime.FontRegistry
 import com.zynth.kit.runtime.ZynthModule
+import com.zynth.kit.runtime.ZynthRuntime
 import org.json.JSONObject
 
 private const val TAG = "FontModule"
@@ -15,24 +16,25 @@ private const val TAG = "FontModule"
  * Fonts are loaded from the app's assets/fonts directory and registered in the
  * FontRegistry (in ZynthKit) for use by TextComposer when rendering text.
  */
-class FontModule(context: Context) : ZynthModule {
+class FontModule(context: Context, private val runtime: ZynthRuntime? = null) : ZynthModule {
     override val name = "Font"
     
     private val appContext = context.applicationContext
 
     init {
-        // Log.d(TAG, "FontModule constructor called")
+        Log.d(TAG, "FontModule constructor called")
     }
 
     override fun initialize() {
         // Initialize the FontRegistry with app context
-        // Log.d(TAG, "FontModule.initialize() called - initializing FontRegistry")
+        Log.d(TAG, "FontModule.initialize() called - initializing FontRegistry")
         FontRegistry.initialize(appContext)
-        // Log.d(TAG, "FontModule initialized successfully")
+        runtime?.setAssetProvider(FontRegistry)
+        Log.d(TAG, "FontModule initialized successfully. Runtime provided: ${runtime != null}")
     }
 
     override fun call(method: String, args: Array<Any?>): JSONObject {
-        // Log.d(TAG, "FontModule.call() - method: $method, args count: ${args.size}")
+        Log.d(TAG, "FontModule.call() - method: $method, args count: ${args.size}")
         
         return when (method) {
             "loadAsync" -> loadAsync(args)
@@ -49,7 +51,7 @@ class FontModule(context: Context) : ZynthModule {
         try {
             // args[0] is the object { fontFamily: string, resourceName: string }
             val params = args.getOrNull(0)
-            // Log.d(TAG, "loadAsync params: $params (type: ${params?.javaClass?.simpleName})")
+            Log.d(TAG, "loadAsync params: $params (type: ${params?.javaClass?.simpleName})")
             
             val fontFamily: String?
             val resourceName: String?
@@ -79,12 +81,12 @@ class FontModule(context: Context) : ZynthModule {
                 }
             }
 
-            // Log.d(TAG, "Loading font: '$fontFamily' from '$resourceName'")
+            Log.d(TAG, "Loading font: '$fontFamily' from '$resourceName'")
             
             val success = FontRegistry.loadFont(fontFamily, resourceName)
             
             return if (success) {
-                // Log.d(TAG, "Successfully loaded font: $fontFamily")
+                Log.d(TAG, "Successfully loaded font: $fontFamily")
                 JSONObject().apply {
                     put("success", true)
                 }

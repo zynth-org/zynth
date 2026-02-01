@@ -12,10 +12,13 @@ import android.text.style.MetricAffectingSpan
 import android.text.style.StrikethroughSpan
 import android.text.style.StyleSpan
 import android.text.style.UnderlineSpan
+import android.util.Log
 import com.zynth.kit.core.ZynthUIManager
 import com.zynth.kit.runtime.FontRegistry
 
 internal data class ComposedText(val text: CharSequence, val effectiveStyle: TextStyleAttributes?)
+
+private const val DEBUG_TEXT = true
 
 internal class TextComposer(
   private val density: Float,
@@ -23,6 +26,10 @@ internal class TextComposer(
   private val nodeForId: (Int) -> ZynthUIManager.Node?
 ) {
   private val textType = "text"
+
+  private fun isIconFontFamily(family: String): Boolean {
+    return family.contains("Icon")
+  }
 
   fun compose(node: ZynthUIManager.Node, inherited: TextStyleAttributes? = null): ComposedText {
     val ownStyle = node.attachments[styleKey] as? TextStyleAttributes
@@ -76,13 +83,23 @@ internal class TextComposer(
       weight.equals("bold", ignoreCase = true) || weight.toIntOrNull()?.let { it >= 600 } == true
     } ?: false
     val isItalic = style.fontStyle?.equals("italic", ignoreCase = true) == true
-    when {
-      isBold && isItalic -> builder.setSpan(StyleSpan(Typeface.BOLD_ITALIC), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-      isBold -> builder.setSpan(StyleSpan(Typeface.BOLD), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-      isItalic -> builder.setSpan(StyleSpan(Typeface.ITALIC), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+    val isIconFont = style.fontFamily?.let { isIconFontFamily(it) } == true
+    if (!isIconFont) {
+      when {
+        isBold && isItalic -> builder.setSpan(StyleSpan(Typeface.BOLD_ITALIC), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        isBold -> builder.setSpan(StyleSpan(Typeface.BOLD), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        isItalic -> builder.setSpan(StyleSpan(Typeface.ITALIC), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+      }
     }
     buildTypeface(style)?.let { tf ->
       builder.setSpan(CustomTypefaceSpan(tf), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+      if (DEBUG_TEXT && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+        val text = builder.toString()
+        if (text.isNotEmpty()) {
+          val p = android.graphics.Paint().apply { typeface = tf }
+          Log.d("ZynthText", "applySpans hasGlyph=${p.hasGlyph(text)} family=${style.fontFamily}")
+        }
+      }
     }
 
     style.textDecorationLine?.let { deco ->
@@ -119,12 +136,20 @@ internal class TextComposer(
     return if (family != null) {
       val customTypeface = FontRegistry.getTypeface(family)
       if (customTypeface != null) {
-        if (tfStyle != Typeface.NORMAL) {
+        if (isIconFontFamily(family)) {
+          if (DEBUG_TEXT) {
+            Log.d("ZynthText", "buildTypeface icon family=$family (custom)")
+          }
+          customTypeface
+        } else if (tfStyle != Typeface.NORMAL) {
           Typeface.create(customTypeface, tfStyle)
         } else {
           customTypeface
         }
       } else {
+        if (DEBUG_TEXT) {
+          Log.d("ZynthText", "buildTypeface system family=$family style=$tfStyle")
+        }
         Typeface.create(family, tfStyle)
       }
     } else if (tfStyle != Typeface.NORMAL) {

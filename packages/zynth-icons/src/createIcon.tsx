@@ -22,13 +22,12 @@ function ensureWebFontSource(fontFamily: string) {
 
   const globalObj =
     typeof globalThis !== "undefined" ? (globalThis as any) : (window as any);
-  const sources = (globalObj.__zynth_web_font_sources ??=
-    {}) as WebFontSources;
+  const sources = (globalObj.__zynth_web_font_sources ??= {}) as WebFontSources;
 
   if (!sources[fontFamily]) {
     sources[fontFamily] = new URL(
       `../assets/fonts/${fontFamily}.ttf`,
-      baseUrl
+      baseUrl,
     ).toString();
   }
 }
@@ -61,7 +60,7 @@ function loadFont(fontFamily: string): Promise<void> {
       fontLoadState.set(fontFamily, "error");
       console.log(
         `Failed to load icon font ${fontFamily}:`,
-        JSON.stringify(err)
+        JSON.stringify(err),
       );
       throw err;
     });
@@ -86,7 +85,7 @@ export function createIcon(glyph: string, fontFamily: string) {
 
   return (props: TextProps) => {
     const [isReady, setIsReady] = createSignal(
-      fontLoadState.get(fontFamily) === "loaded"
+      fontLoadState.get(fontFamily) === "loaded",
     );
 
     onMount(() => {
@@ -135,7 +134,7 @@ export function createIcon(glyph: string, fontFamily: string) {
         text={isReady() ? glyph : " "}
         style={{
           ...mergedStyle(),
-          fontFamily,
+          fontFamily: isReady() ? fontFamily : undefined,
         }}
       />
     );

@@ -23,7 +23,9 @@ object FontRegistry : AssetProvider {
   }
 
   override fun getTypeface(family: String): Typeface? {
-    return loadedFonts[family]
+    val typeface = loadedFonts[family]
+    Log.d(TAG, "getTypeface('$family') -> ${if (typeface != null) "Found" else "Not Found"}. Loaded fonts: ${loadedFonts.keys}")
+    return typeface
   }
 
   /**
@@ -32,7 +34,7 @@ object FontRegistry : AssetProvider {
    */
   fun loadFont(fontFamily: String, resourceName: String): Boolean {
     if (loadedFonts.containsKey(fontFamily)) {
-      // Log.d(TAG, "Font '$fontFamily' already loaded")
+      Log.d(TAG, "Font '$fontFamily' already loaded")
       return true
     }
 
@@ -46,11 +48,11 @@ object FontRegistry : AssetProvider {
       // resourceName is the font filename, e.g., "zynth-icons.ttf"
       // Load from assets/fonts/ directory
       val assetPath = "fonts/$resourceName"
-      // Log.d(TAG, "Loading font '$fontFamily' from assets: $assetPath")
+      Log.d(TAG, "Loading font '$fontFamily' from assets: $assetPath")
       
       val typeface = Typeface.createFromAsset(ctx.assets, assetPath)
       loadedFonts[fontFamily] = typeface
-      // Log.d(TAG, "Successfully loaded font '$fontFamily'")
+      Log.d(TAG, "Successfully loaded font '$fontFamily'")
       true
     } catch (e: Exception) {
       Log.e(TAG, "Failed to load font '$fontFamily' from '$resourceName': ${e.message}")

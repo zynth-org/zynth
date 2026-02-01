@@ -172,6 +172,8 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
         markAllSurfacesDirty()
       }
     }
+    Log.e("ZynthBuildCheck", "If you see this, the new ZynthUIManager is running!")
+    // throw java.lang.RuntimeException("ZynthBuildCheck: Crashing to verify source usage")
   }
 
   internal fun runOnMain(block: () -> Unit) {
@@ -298,6 +300,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       ZynthColorParser.parse(value)?.let { color ->
         runOnMain { view.setTextColor(color) }
       }
+      maybeNotifyStyle(descriptor, node, name, value)
       traceOp("setProp", node?.type, startNs)
       return
     }
@@ -380,12 +383,33 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       return
     }
     if (view is TextView && name == "fontFamily") {
-      val family = value ?: return
+      if (value == null) {
+        runOnMain { view.typeface = Typeface.DEFAULT }
+        maybeNotifyStyle(descriptor, node, name, value)
+        traceOp("setProp", node?.type, startNs)
+        return
+      }
+      val family = value
       runOnMain {
         val custom = assetProvider?.getTypeface(family)
         val style = view.typeface?.style ?: Typeface.NORMAL
+        Log.d(TRACE_TAG, "setProp(fontFamily='$family') - assetProvider=${assetProvider}, customTypeface=${if (custom != null) "FOUND" else "NULL"}, style=$style")
         if (custom != null) {
-          view.typeface = Typeface.create(custom, style)
+          // If it's an icon font, we MUST use the typeface directly.
+          // Typeface.create(custom, style) can fail to preserve the glyphs if the style (e.g. Bold) isn't supported by the font file.
+          if (family.contains("Icon")) {
+             view.typeface = custom
+             // Debug: check if this typeface supports the cached text
+             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                 val text = nodeStates[id]?.cachedText ?: ""
+                 if (text.isNotEmpty() && text[0].code > 0xE000) {
+                     val p = android.graphics.Paint().apply { typeface = custom }
+                     Log.d(TRACE_TAG, "setProp check: Typeface has glyph '${text}' (code ${Integer.toHexString(text[0].code)}): ${p.hasGlyph(text)}")
+                 }
+             }
+          } else {
+             view.typeface = Typeface.create(custom, style)
+          }
         } else {
           view.typeface = Typeface.create(family, style)
         }
@@ -447,6 +471,21 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     }
     val startNs = System.nanoTime()
     val view = nodes[id]
+    
+    // Log text content for debugging icons
+    if (text.isNotEmpty()) {
+        val firstCode = text[0].code
+        if (firstCode > 0xE000 || text.length > 1) {
+             val hex = text.map { Integer.toHexString(it.code) }.joinToString(" ")
+             val hasGlyph = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M && view is TextView) {
+                 view.typeface?.run { 
+                     android.graphics.Paint().also { it.typeface = this }.hasGlyph(text) 
+                 }
+             } else "unknown"
+             Log.d(TRACE_TAG, "setText($id): '$text' codes=[$hex] hasGlyph=$hasGlyph typeface=${(view as? TextView)?.typeface}")
+        }
+    }
+    
     nodeStates[id]?.cachedText = text
     val node = nodeStates[id]
     val descriptor = node?.let { ZynthComponentRegistry.getDescriptor(it.type) }
@@ -689,11 +728,11 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
           val valueType = ops[i++].toInt()
           val payload = ops[i++]
           val key = strings.getOrNull(keyIndex) ?: ""
-          val value = when (valueType) {
+          val value: String? = when (valueType) {
             1 -> payload.toString()
             2 -> strings.getOrNull(payload.toInt())
             3 -> if (payload != 0.0) "true" else "false"
-            else -> "null"
+            else -> null
           }
           setProp(nodeId, key, value)
         }
@@ -746,11 +785,11 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
           val valueType = read(i++).toInt()
           val payload = read(i++)
           val key = strings.getOrNull(keyIndex) ?: ""
-          val value = when (valueType) {
+          val value: String? = when (valueType) {
             1 -> payload.toString()
             2 -> strings.getOrNull(payload.toInt())
             3 -> if (payload != 0.0) "true" else "false"
-            else -> "null"
+            else -> null
           }
           setProp(nodeId, key, value)
         }

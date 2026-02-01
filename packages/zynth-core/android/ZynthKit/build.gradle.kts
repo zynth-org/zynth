@@ -61,3 +61,5 @@ dependencies {
   compileOnly("com.facebook.react:react-android:$reactNativeVersion")
   implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }
+
+// Force rebuild of ZynthKit - gemini-fix-font-loading

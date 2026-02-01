@@ -41,7 +41,7 @@ object ZynthAPIs {
         initializedRuntimes[runtime] = true
 
         // Log.d(TAG, "Creating modules...")
-        val fontModule = FontModule(context.applicationContext)
+        val fontModule = FontModule(context.applicationContext, runtime)
         val dimensionsModule = DimensionsModule(runtime, runtime.root)
         val backHandlerModule = BackHandlerModule(runtime, runtime.root)
         val safeAreaModule = ZynthSafeAreaModule(runtime.root, runtime)
@@ -50,8 +50,8 @@ object ZynthAPIs {
         runtime.installModules(listOf(fontModule, dimensionsModule, backHandlerModule, safeAreaModule))
 
         // Register the FontRegistry as the asset provider for the core renderer
-        runtime.setAssetProvider(FontRegistry)
-
+        // runtime.setAssetProvider(FontRegistry) - Handled by FontModule now
+        
         // Log.d(TAG, "ZynthAPIs initialized successfully with Font, Dimensions, BackHandler, SafeArea")
     }
 

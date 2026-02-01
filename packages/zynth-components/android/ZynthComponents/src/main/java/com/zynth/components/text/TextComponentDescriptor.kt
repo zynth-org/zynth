@@ -3,6 +3,8 @@ package com.zynth.components.text
 import android.graphics.Typeface
 import android.util.Log
 import android.os.SystemClock
+import android.os.Handler
+import android.os.Looper
 import android.util.TypedValue
 import android.view.View
 import android.view.View.MeasureSpec
@@ -26,6 +28,63 @@ private fun parseString(json: String?): String? {
     return json.substring(1, json.length - 1)
   }
   return json
+}
+
+private const val DEBUG_TEXT = true
+
+private fun isIconFontFamily(family: String): Boolean {
+  return family.contains("Icon")
+}
+
+private object TextRebuildScheduler {
+  private data class Queue(
+    val pending: LinkedHashSet<Int>,
+    var scheduled: Boolean,
+    val composer: TextComposer,
+  )
+
+  private val mainHandler = Handler(Looper.getMainLooper())
+  private val queues = java.util.WeakHashMap<ZynthUIManager, Queue>()
+
+  fun enqueue(manager: ZynthUIManager, rootId: Int, styleKey: String) {
+    val queue = queues.getOrPut(manager) {
+      val density = manager.getRootView().resources.displayMetrics.density
+      Queue(
+        pending = LinkedHashSet(),
+        scheduled = false,
+        composer = TextComposer(density, styleKey) { id -> manager.getNodeState(id) },
+      )
+    }
+    queue.pending.add(rootId)
+    if (queue.scheduled) return
+    queue.scheduled = true
+    mainHandler.post { drain(manager) }
+  }
+
+  private fun drain(manager: ZynthUIManager) {
+    val queue = queues[manager] ?: return
+    queue.scheduled = false
+    if (queue.pending.isEmpty()) return
+    val toProcess = queue.pending.toList()
+    queue.pending.clear()
+    for (rootId in toProcess) {
+      val root = manager.getNodeState(rootId) ?: continue
+      if (root.type != "text") continue
+      val composed = queue.composer.compose(root)
+      val textView = root.view as? TextView ?: continue
+      if (DEBUG_TEXT) {
+        val text = composed.text.toString()
+        val sample = text.take(16).map { Integer.toHexString(it.code) }.joinToString(" ")
+        val family = composed.effectiveStyle?.fontFamily
+        Log.d(
+          "ZynthText",
+          "rebuild root=${root.id} len=${text.length} sample=[$sample] family=$family",
+        )
+      }
+      textView.text = composed.text
+      manager.markNodeDirty(root.id)
+    }
+  }
 }
 
 /**
@@ -96,6 +155,10 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
             val startNs = SystemClock.elapsedRealtimeNanos()
             val text = parseString(jsonValue) ?: ""
             node.cachedText = text
+            if (DEBUG_TEXT) {
+              val sample = text.take(16).map { Integer.toHexString(it.code) }.joinToString(" ")
+              Log.d("ZynthText", "setProp text node=${node.id} len=${text.length} sample=[$sample]")
+            }
             updateComposedText(node, textStyleKey, textManagerKey)
             val durationMs = (SystemClock.elapsedRealtimeNanos() - startNs) / 1_000_000.0
             if (durationMs > 4) {
@@ -118,8 +181,15 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
     onStyleApplied = { node, style ->
       val styleStart = SystemClock.elapsedRealtimeNanos()
 
-      // Always capture text style attributes for composition (even for virtual text nodes)
-      node.attachments[textStyleKey] = TextStyleAttributes.fromStyle(style)
+      // Always capture text style attributes for composition (even for virtual text nodes).
+      // Merge with existing to preserve previously-set props because style is applied per-key.
+      val nextAttrs = TextStyleAttributes.fromStyle(style)
+      val existing = node.attachments[textStyleKey] as? TextStyleAttributes
+      node.attachments[textStyleKey] = if (existing != null) {
+        nextAttrs.mergeWith(existing)
+      } else {
+        nextAttrs
+      }
 
       // Apply text-specific styling to TextView (only for non-virtual text nodes)
       val textView = node.view as? TextView
@@ -141,21 +211,29 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
         val styleInt = if (isBold) Typeface.BOLD else Typeface.NORMAL
 
         val family = style.fontFamily
-        val baseTypeface = if (family != null) {
-          val cached = FontRegistry.getTypeface(family)
-          if (cached != null) {
+        val cachedTypeface = family?.let { FontRegistry.getTypeface(it) }
+        val baseTypeface = when {
+          family == null -> Typeface.DEFAULT
+          cachedTypeface != null -> {
+            if (DEBUG_TEXT) {
               Log.d("ZynthText", "Using cached typeface for family: $family")
-              cached
-          } else {
-              Log.w("ZynthText", "FontRegistry miss for family: $family, falling back to system")
-              Typeface.create(family, styleInt)
+            }
+            cachedTypeface
           }
-        } else {
-          Typeface.DEFAULT
+          else -> {
+            if (DEBUG_TEXT) {
+              Log.w("ZynthText", "FontRegistry miss for family: $family, falling back to system")
+            }
+            Typeface.create(family, styleInt)
+          }
         }
-        
+
         if (baseTypeface != null) {
-          textView.setTypeface(Typeface.create(baseTypeface, styleInt))
+          if (family != null && cachedTypeface != null && isIconFontFamily(family)) {
+            textView.typeface = baseTypeface
+          } else {
+            textView.setTypeface(Typeface.create(baseTypeface, styleInt))
+          }
         } else {
           textView.setTypeface(Typeface.DEFAULT, styleInt)
         }
@@ -198,14 +276,7 @@ private fun updateComposedText(
 ) {
   val manager = node.attachments[textManagerKey] as? ZynthUIManager ?: return
   val root = findTextRoot(node, manager)
-  val textView = root.view as? TextView ?: return
-  val density = manager.getRootView().resources.displayMetrics.density
-  val composer = TextComposer(density, textStyleKey) { id ->
-    manager.getNodeState(id)
-  }
-  val composed = composer.compose(root)
-  textView.text = composed.text
-  manager.markNodeDirty(root.id)
+  TextRebuildScheduler.enqueue(manager, root.id, textStyleKey)
 }
 
 private fun findTextRoot(node: ZynthUIManager.Node, manager: ZynthUIManager): ZynthUIManager.Node {
