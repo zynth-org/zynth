@@ -4,6 +4,6 @@
 #import "ZynthKit.h"
 #endif
 
-@interface SNUIManager (ZynthKeyboardAvoidingView)
+@interface ZynthUIManager (ZynthKeyboardAvoidingView)
 
 @end

@@ -89,11 +89,9 @@ class ZynthKeyboardModule(
     internal fun getInitialState(): KeyboardState {
         lastState?.let { return it }
         val view = rootView ?: activity.findViewById(android.R.id.content)
-        if (view != null) {
-            val insets = ViewCompat.getRootWindowInsets(view)
-            if (insets != null) {
-                return buildStateFromInsets(view, insets, isAnimating = false, duration = 0f)
-            }
+        val insets = ViewCompat.getRootWindowInsets(view)
+        if (insets != null) {
+            return buildStateFromInsets(view, insets, isAnimating = false, duration = 0f)
         }
         return defaultState()
     }

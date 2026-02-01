@@ -14,6 +14,10 @@
 - (void)installDefaultModules;
 @end
 
+@protocol ZynthDevSupportProtocol <NSObject>
++ (void)configureWithRuntime:(id)runtime;
+@end
+
 @interface ZynthRuntime ()
 @property(nonatomic, weak) UIView *rootView;
 @property(nonatomic, strong) ZynthUIManager *manager;

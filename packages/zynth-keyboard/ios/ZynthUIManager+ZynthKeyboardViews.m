@@ -1,4 +1,4 @@
-#import "SNUIManager+ZynthKeyboardViews.h"
+#import "ZynthUIManager+ZynthKeyboardViews.h"
 #import "ZynthKeyboardAwareScrollView.h"
 
 #if __has_include(<ZynthKeyboard/ZynthKeyboard-Swift.h>)
@@ -14,7 +14,7 @@
 #endif
 
 #import "ZynthComponentRegistry.h"
-#import "SNNode.h"
+#import "ZynthNode.h"
 
 static id ZynthKeyboardParseJSON(NSString *rawJSON) {
   if (rawJSON.length == 0) return nil;
@@ -58,31 +58,34 @@ static NSString *ZynthKeyboardParseString(NSString *rawJSON) {
   if ([parsed isKindOfClass:[NSString class]]) {
     return (NSString *)parsed;
   }
+  if (rawJSON.length > 0 && ![rawJSON isEqualToString:@"null"]) {
+    return rawJSON;
+  }
   return nil;
 }
 
-@implementation SNUIManager (ZynthKeyboardAvoidingView)
+@implementation ZynthUIManager (ZynthKeyboardAvoidingView)
 
 + (void)load {
   static dispatch_once_t onceToken;
   dispatch_once(&onceToken, ^{
     // Register KeyboardAvoidingView
     ZynthComponentDescriptor *avoidingDescriptor = [[ZynthComponentDescriptor alloc] initWithType:@"zynth-keyboard-avoiding-view"];
-    avoidingDescriptor.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+    avoidingDescriptor.createView = ^UIView *(ZynthUIManager *manager, NSString *type) {
       return [[ZynthKeyboardAvoidingView alloc] init];
     };
-    avoidingDescriptor.attach = ^(SNUIManager *manager, SNNode *node) {
+    avoidingDescriptor.attach = ^(ZynthUIManager *manager, ZynthNode *node) {
       if ([node.view isKindOfClass:[ZynthKeyboardAvoidingView class]]) {
         [(ZynthKeyboardAvoidingView *)node.view attachToManager:manager node:node];
       }
     };
-    avoidingDescriptor.cleanup = ^(SNUIManager *manager, SNNode *node) {
+    avoidingDescriptor.cleanup = ^(ZynthUIManager *manager, ZynthNode *node) {
       if ([node.view isKindOfClass:[ZynthKeyboardAvoidingView class]]) {
         [(ZynthKeyboardAvoidingView *)node.view cleanup];
       }
     };
-    avoidingDescriptor.handleSetProp = ^BOOL(SNUIManager *manager,
-                                              SNNode *node,
+    avoidingDescriptor.handleSetProp = ^BOOL(ZynthUIManager *manager,
+                                              ZynthNode *node,
                                               NSString *name,
                                               id value,
                                               NSString *rawJSON) {
@@ -115,19 +118,19 @@ static NSString *ZynthKeyboardParseString(NSString *rawJSON) {
     
     // Register KeyboardStickyView
     ZynthComponentDescriptor *stickyDescriptor = [[ZynthComponentDescriptor alloc] initWithType:@"zynth-keyboard-sticky-view"];
-    stickyDescriptor.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+    stickyDescriptor.createView = ^UIView *(ZynthUIManager *manager, NSString *type) {
       return [[ZynthKeyboardStickyView alloc] init];
     };
-    stickyDescriptor.attach = ^(SNUIManager *manager, SNNode *node) {
+    stickyDescriptor.attach = ^(ZynthUIManager *manager, ZynthNode *node) {
       // No special attachment needed
     };
-    stickyDescriptor.cleanup = ^(SNUIManager *manager, SNNode *node) {
+    stickyDescriptor.cleanup = ^(ZynthUIManager *manager, ZynthNode *node) {
       if ([node.view isKindOfClass:[ZynthKeyboardStickyView class]]) {
         [(ZynthKeyboardStickyView *)node.view cleanup];
       }
     };
-    stickyDescriptor.handleSetProp = ^BOOL(SNUIManager *manager,
-                                            SNNode *node,
+    stickyDescriptor.handleSetProp = ^BOOL(ZynthUIManager *manager,
+                                            ZynthNode *node,
                                             NSString *name,
                                             id value,
                                             NSString *rawJSON) {
@@ -146,24 +149,24 @@ static NSString *ZynthKeyboardParseString(NSString *rawJSON) {
     
     // Register KeyboardAwareScrollView
     ZynthComponentDescriptor *scrollDescriptor = [[ZynthComponentDescriptor alloc] initWithType:@"zynth-keyboard-aware-scroll-view"];
-    scrollDescriptor.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+    scrollDescriptor.createView = ^UIView *(ZynthUIManager *manager, NSString *type) {
       return [[ZynthKeyboardAwareScrollView alloc] init];
     };
-    scrollDescriptor.attach = ^(SNUIManager *manager, SNNode *node) {
+    scrollDescriptor.attach = ^(ZynthUIManager *manager, ZynthNode *node) {
       if ([node.view isKindOfClass:[ZynthKeyboardAwareScrollView class]]) {
         [(ZynthKeyboardAwareScrollView *)node.view attachToManager:manager node:node];
       }
     };
-    scrollDescriptor.cleanup = ^(SNUIManager *manager, SNNode *node) {
+    scrollDescriptor.cleanup = ^(ZynthUIManager *manager, ZynthNode *node) {
       if ([node.view isKindOfClass:[ZynthKeyboardAwareScrollView class]]) {
         [(ZynthKeyboardAwareScrollView *)node.view cleanup];
       }
     };
     // NOTE: We don't set handleInsertChild/handleRemoveChild because the default
-    // behavior in SNUIManager already detects insertContentSubview:atIndex: and
+    // behavior in ZynthUIManager already detects insertContentSubview:atIndex: and
     // handles both view and Yoga node insertion correctly.
-    scrollDescriptor.handleSetProp = ^BOOL(SNUIManager *manager,
-                                            SNNode *node,
+    scrollDescriptor.handleSetProp = ^BOOL(ZynthUIManager *manager,
+                                            ZynthNode *node,
                                             NSString *name,
                                             id value,
                                             NSString *rawJSON) {

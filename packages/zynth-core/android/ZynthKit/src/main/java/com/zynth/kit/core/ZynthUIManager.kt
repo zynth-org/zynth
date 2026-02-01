@@ -607,6 +607,42 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
 
   fun getRootView(): ZynthRootView = rootView
 
+  fun applyKeyboardAvoidingAdjustment(
+    nodeId: Int,
+    behavior: String,
+    overlapPx: Float,
+    availableHeightPx: Float? = null
+  ) {
+    if (Looper.myLooper() != Looper.getMainLooper()) {
+      runOnMain { applyKeyboardAvoidingAdjustment(nodeId, behavior, overlapPx, availableHeightPx) }
+      return
+    }
+    val cached = yogaStyleCache[nodeId]
+    val yoga = yogaForNode(nodeId)
+    val overlap = overlapPx.coerceAtLeast(0f)
+
+    if (overlap <= 0f) {
+      if (behavior == "padding") {
+        val original = cached?.get("paddingBottom") ?: "0"
+        yoga.setStyle(nodeId, "paddingBottom", original)
+      } else if (behavior == "height") {
+        val original = cached?.get("marginBottom") ?: "0"
+        yoga.setStyle(nodeId, "marginBottom", original)
+      }
+      markSurfaceDirtyForNode(nodeId)
+      return
+    }
+
+    if (behavior == "padding") {
+      val base = cached?.get("paddingBottom")?.toFloatOrNull() ?: 0f
+      yoga.setStyle(nodeId, "paddingBottom", (base + overlap).toString())
+    } else if (behavior == "height") {
+       val base = cached?.get("marginBottom")?.toFloatOrNull() ?: 0f
+       yoga.setStyle(nodeId, "marginBottom", (base + overlap).toString())
+    }
+    markSurfaceDirtyForNode(nodeId)
+  }
+
   fun getNodeState(nodeId: Int): Node? = nodeStates[nodeId]
 
   fun getParentId(nodeId: Int): Int? = parents[nodeId]

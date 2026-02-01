@@ -661,6 +661,40 @@
   [self markSurfaceDirtyForNode:nodeId];
 }
 
+- (void)applyKeyboardAvoidingAdjustment:(NSNumber *)nodeId behavior:(NSString *)behavior overlap:(CGFloat)overlap availableHeight:(NSNumber *_Nullable)availableHeight {
+  if (![NSThread isMainThread]) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+      [self applyKeyboardAvoidingAdjustment:nodeId behavior:behavior overlap:overlap availableHeight:availableHeight];
+    });
+    return;
+  }
+  
+  NSMutableDictionary *cached = _yogaStyleCache[nodeId];
+  ZynthYogaLayout *yoga = [self yogaForNode:nodeId];
+  CGFloat safeOverlap = MAX(0, overlap);
+  
+  if (safeOverlap <= 0) {
+    if ([behavior isEqualToString:@"padding"]) {
+      id original = cached[@"paddingBottom"] ?: @"0";
+      [yoga setStyle:nodeId name:@"paddingBottom" value:original];
+    } else if ([behavior isEqualToString:@"height"]) {
+      id original = cached[@"marginBottom"] ?: @"0";
+      [yoga setStyle:nodeId name:@"marginBottom" value:original];
+    }
+    [self markSurfaceDirtyForNode:nodeId];
+    return;
+  }
+  
+  if ([behavior isEqualToString:@"padding"]) {
+    CGFloat base = [cached[@"paddingBottom"] doubleValue];
+    [yoga setStyle:nodeId name:@"paddingBottom" value:@(base + safeOverlap)];
+  } else if ([behavior isEqualToString:@"height"]) {
+    CGFloat base = [cached[@"marginBottom"] doubleValue];
+    [yoga setStyle:nodeId name:@"marginBottom" value:@(base + safeOverlap)];
+  }
+  [self markSurfaceDirtyForNode:nodeId];
+}
+
 - (void)dealloc {
   // Unregister all surfaces to trigger recursive node cleanup
   NSArray<NSNumber *> *surfaceIds = [_surfaceRoots allKeys];

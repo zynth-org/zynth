@@ -7,12 +7,12 @@
 //
 
 #import "ZynthKeyboardAwareScrollView.h"
-#import "SNUIManager+Internal.h"
-#import "SNUIManager.h"
+#import "ZynthUIManager+Internal.h"
+#import "ZynthUIManager.h"
 
 @interface ZynthKeyboardAwareScrollView ()
-@property(nonatomic, weak) SNUIManager *manager;
-@property(nonatomic, weak) SNNode *node;
+@property(nonatomic, weak) ZynthUIManager *manager;
+@property(nonatomic, weak) ZynthNode *node;
 @property(nonatomic, strong) UIScrollView *scrollView;
 @property(nonatomic, strong) UIView *contentView;
 
@@ -87,7 +87,7 @@
   [self resetContentInset];
 }
 
-- (void)attachToManager:(SNUIManager *_Nullable)manager node:(SNNode *_Nullable)node {
+- (void)attachToManager:(ZynthUIManager *_Nullable)manager node:(ZynthNode *_Nullable)node {
   self.manager = manager;
   self.node = node;
 }

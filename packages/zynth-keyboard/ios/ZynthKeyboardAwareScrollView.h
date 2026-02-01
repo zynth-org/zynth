@@ -10,12 +10,12 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-@class SNUIManager;
-@class SNNode;
+@class ZynthUIManager;
+@class ZynthNode;
 
 @interface ZynthKeyboardAwareScrollView : UIView <UIScrollViewDelegate>
 
-- (void)attachToManager:(nullable SNUIManager *)manager node:(nullable SNNode *)node;
+- (void)attachToManager:(nullable ZynthUIManager *)manager node:(nullable ZynthNode *)node;
 - (void)insertContentSubview:(UIView *)view atIndex:(NSInteger)index;
 - (void)removeContentSubview:(UIView *)view;
 

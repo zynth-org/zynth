@@ -27,8 +27,8 @@ public final class ZynthKeyboardAvoidingView: UIView {
   private var currentKeyboardHeight: CGFloat = 0
   private var originalTransform: CGAffineTransform = .identity
   private var originalHeight: CGFloat = 0
-  private weak var manager: SNUIManager?
-  private weak var node: SNNode?
+  private weak var manager: ZynthUIManager?
+  private weak var node: ZynthNode?
   private var displayLink: CADisplayLink?
   private var animationStartTime: CFTimeInterval = 0
   private var animationDuration: CFTimeInterval = 0.25
@@ -36,13 +36,6 @@ public final class ZynthKeyboardAvoidingView: UIView {
   private var animationStartOverlap: CGFloat = 0
   private var animationTargetOverlap: CGFloat = 0
   private var currentOverlap: CGFloat = 0
-  private var baseStyleSnapshot: [String: Any]?
-  private var basePaddingBottom: CGFloat?
-  private var baseHeightValue: Any?
-  private var baseFlexValue: Any?
-  private var baseFlexGrowValue: Any?
-  private var baseFlexShrinkValue: Any?
-  private var baseFlexBasisValue: Any?
   private var baseLayoutHeight: CGFloat?
   private var transitionObservers: [NSObjectProtocol] = []
   private var transitionFreezeCount: Int = 0
@@ -75,7 +68,7 @@ public final class ZynthKeyboardAvoidingView: UIView {
     detachFromManager()
   }
 
-  @objc public func attachToManager(_ manager: SNUIManager?, node: SNNode?) {
+  @objc public func attachToManager(_ manager: ZynthUIManager?, node: ZynthNode?) {
     self.manager = manager
     self.node = node
   }
@@ -98,13 +91,6 @@ public final class ZynthKeyboardAvoidingView: UIView {
     default:
       behavior = .padding
     }
-    baseStyleSnapshot = nil
-    basePaddingBottom = nil
-    baseHeightValue = nil
-    baseFlexValue = nil
-    baseFlexGrowValue = nil
-    baseFlexShrinkValue = nil
-    baseFlexBasisValue = nil
     baseLayoutHeight = nil
   }
   
@@ -229,7 +215,11 @@ public final class ZynthKeyboardAvoidingView: UIView {
     
     // Calculate keyboard overlap with this view
     let viewFrameInWindow = convert(bounds, to: nil)
-    let viewBottom = viewFrameInWindow.maxY
+    // If we are in 'height' mode (margin adjustment), the view has physically shrunk.
+    // We need to calculate overlap based on where the view WOULD be if it wasn't shrunk.
+    // currentOverlap represents the amount we have already 'pushed' the bottom up.
+    let adjustment = (behavior == .height) ? currentOverlap : 0
+    let viewBottom = viewFrameInWindow.maxY + adjustment
     let keyboardTop = endFrame.origin.y
     
     let overlap: CGFloat
@@ -302,13 +292,6 @@ public final class ZynthKeyboardAvoidingView: UIView {
     applyAdjustment(overlap: 0)
     currentKeyboardHeight = 0
     currentOverlap = 0
-    baseStyleSnapshot = nil
-    basePaddingBottom = nil
-    baseHeightValue = nil
-    baseFlexValue = nil
-    baseFlexGrowValue = nil
-    baseFlexShrinkValue = nil
-    baseFlexBasisValue = nil
     baseLayoutHeight = nil
   }
   
@@ -331,90 +314,26 @@ public final class ZynthKeyboardAvoidingView: UIView {
       return
     }
 
-    ensureBaseStyleSnapshot(node: node)
-
-    let rawStyle = baseStyleSnapshot ?? (node.latestStyle as? [String: Any] ?? [:])
-    var updated = rawStyle
-
-    if behavior == .padding {
-      let base = basePaddingBottom ?? 0
-      updated["paddingBottom"] = NSNumber(value: Double(base + overlap))
-    }
-
+    var stableHeight: NSNumber? = nil
     if behavior == .height {
-      if overlap <= 0 {
-        baseLayoutHeight = nil
-        if let baseHeightValue {
-          updated["height"] = baseHeightValue
-        } else {
-          updated["height"] = NSNull()
-        }
-        if let baseFlexValue {
-          updated["flex"] = baseFlexValue
-        } else {
-          updated["flex"] = NSNull()
-        }
-        if let baseFlexGrowValue {
-          updated["flexGrow"] = baseFlexGrowValue
-        } else {
-          updated["flexGrow"] = NSNull()
-        }
-        if let baseFlexShrinkValue {
-          updated["flexShrink"] = baseFlexShrinkValue
-        } else {
-          updated["flexShrink"] = NSNull()
-        }
-        if let baseFlexBasisValue {
-          updated["flexBasis"] = baseFlexBasisValue
-        } else {
-          updated["flexBasis"] = NSNull()
-        }
-      } else {
+      if overlap > 0 {
         if baseLayoutHeight == nil {
           baseLayoutHeight = bounds.height
         }
-        let baseline = baseLayoutHeight ?? bounds.height
-        let targetHeight = max(0, baseline - overlap)
-        updated["height"] = NSNumber(value: Double(targetHeight))
-        updated["flex"] = NSNumber(value: 0)
-        updated["flexGrow"] = NSNumber(value: 0)
-        updated["flexShrink"] = NSNumber(value: 0)
-        updated["flexBasis"] = NSNull()
+        if let h = baseLayoutHeight {
+          stableHeight = NSNumber(value: Double(h))
+        }
+      } else {
+        baseLayoutHeight = nil
       }
     }
 
-    let style: [AnyHashable: Any] = Dictionary(
-      uniqueKeysWithValues: updated.map { (key, value) in
-        (key as AnyHashable, value)
-      }
+    manager.applyKeyboardAvoidingAdjustment(
+      NSNumber(value: node.nid),
+      behavior: behavior == .padding ? "padding" : "height",
+      overlap: overlap,
+      availableHeight: stableHeight
     )
-    manager.setStyle(NSNumber(value: node.nid), style: style)
-  }
-
-  private func ensureBaseStyleSnapshot(node: SNNode) {
-    if baseStyleSnapshot != nil || basePaddingBottom != nil || baseHeightValue != nil {
-      return
-    }
-
-    let style = node.latestStyle as? [String: Any] ?? [:]
-    baseStyleSnapshot = style
-    basePaddingBottom = resolvePaddingBottom(style: style)
-    baseHeightValue = style["height"]
-    baseFlexValue = style["flex"]
-    baseFlexGrowValue = style["flexGrow"]
-    baseFlexShrinkValue = style["flexShrink"]
-    baseFlexBasisValue = style["flexBasis"]
-  }
-
-  private func resolvePaddingBottom(style: [String: Any]) -> CGFloat {
-    let bottom = style["paddingBottom"] ?? style["paddingVertical"] ?? style["padding"]
-    if let number = bottom as? NSNumber {
-      return CGFloat(truncating: number)
-    }
-    if let string = bottom as? String {
-      return CGFloat(Double(string) ?? 0)
-    }
-    return 0
   }
 
   // MARK: - Keyboard Animation
@@ -458,9 +377,7 @@ public final class ZynthKeyboardAvoidingView: UIView {
     if progress >= 1 {
       stopKeyboardAnimation()
       if animationTargetOverlap == 0 {
-        baseStyleSnapshot = nil
-        basePaddingBottom = nil
-        baseHeightValue = nil
+        // No cleanup needed
       }
     }
   }

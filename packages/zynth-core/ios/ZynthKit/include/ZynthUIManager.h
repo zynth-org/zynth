@@ -28,6 +28,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (NSNumber *_Nullable)getParentId:(NSNumber *)nodeId;
 - (void)markNodeDirty:(NSNumber *)nodeId;
 - (void)zynth_recursiveRemoveNode:(NSNumber *)nodeId;
+- (void)applyKeyboardAvoidingAdjustment:(NSNumber *)nodeId behavior:(NSString *)behavior overlap:(CGFloat)overlap availableHeight:(NSNumber *_Nullable)availableHeight;
 
 @end
 
