@@ -91,24 +91,34 @@ final class ZynthScreenModalTransitionAnimator: NSObject, UIViewControllerAnimat
       return
     }
 
-    let startFrame = resolvedInitialFrame(for: fromViewController, context: context, fallback: fromView.frame)
-    var targetFrame = startFrame
-    targetFrame.origin.y = containerView.bounds.height
+    var startFrame = fromView.frame
+    if startFrame == .zero {
+      startFrame = resolvedInitialFrame(for: fromViewController, context: context, fallback: containerView.bounds)
+    }
+    if startFrame == .zero {
+      startFrame = containerView.bounds
+    }
+    fromView.frame = startFrame
+
+    let targetY = containerView.bounds.height
+    let offsetY = max(0, targetY - startFrame.origin.y)
 
     let toTargetFrame = resolvedFinalFrame(for: toViewController, context: context, fallback: containerView.bounds)
     toView.frame = toTargetFrame
     containerView.insertSubview(toView, belowSubview: fromView)
 
+    fromView.transform = .identity
     UIView.animate(
       withDuration: duration,
       delay: 0,
       options: [.curveEaseInOut, .allowUserInteraction]
     ) {
-      fromView.frame = targetFrame
+      fromView.transform = CGAffineTransform(translationX: 0, y: offsetY)
     } completion: { _ in
       let cancelled = context.transitionWasCancelled
       if cancelled {
         fromView.frame = startFrame
+        fromView.transform = .identity
       }
       context.completeTransition(!cancelled)
     }
