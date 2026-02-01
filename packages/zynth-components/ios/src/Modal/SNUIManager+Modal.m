@@ -96,7 +96,9 @@ static BOOL ZynthModalParseBoolean(NSString *rawJSON, BOOL fallback) {
       ZynthModalView *view = (ZynthModalView *)node.view;
 
       if ([name isEqualToString:@"open"]) {
-        BOOL isOpen = ZynthModalParseBoolean(rawJSON, NO);
+        BOOL isOpen = [value isKindOfClass:[NSNumber class]]
+          ? ((NSNumber *)value).boolValue
+          : ZynthModalParseBoolean(rawJSON, NO);
         [view setOpenState:@(isOpen)];
         return YES;
       }
@@ -114,7 +116,9 @@ static BOOL ZynthModalParseBoolean(NSString *rawJSON, BOOL fallback) {
       }
 
       if ([name isEqualToString:@"transparent"]) {
-        BOOL transparent = ZynthModalParseBoolean(rawJSON, NO);
+        BOOL transparent = [value isKindOfClass:[NSNumber class]]
+          ? ((NSNumber *)value).boolValue
+          : ZynthModalParseBoolean(rawJSON, NO);
         [view setTransparent:@(transparent)];
         return YES;
       }
@@ -135,7 +139,9 @@ static BOOL ZynthModalParseBoolean(NSString *rawJSON, BOOL fallback) {
       }
 
       if ([name isEqualToString:@"overlayOpacity"]) {
-        CGFloat opacity = ZynthModalParseCGFloat(rawJSON, NAN);
+        CGFloat opacity = [value isKindOfClass:[NSNumber class]]
+          ? ((NSNumber *)value).doubleValue
+          : ZynthModalParseCGFloat(rawJSON, NAN);
         if (!isnan(opacity)) {
           [view setOverlayOpacity:@(opacity)];
         }
@@ -143,16 +149,24 @@ static BOOL ZynthModalParseBoolean(NSString *rawJSON, BOOL fallback) {
       }
 
       if ([name isEqualToString:@"dismissOnOverlayPress"]) {
-        BOOL dismiss = ZynthModalParseBoolean(rawJSON, YES);
+        BOOL dismiss = [value isKindOfClass:[NSNumber class]]
+          ? ((NSNumber *)value).boolValue
+          : ZynthModalParseBoolean(rawJSON, YES);
         [view setDismissOnOverlayPress:@(dismiss)];
         return YES;
       }
 
       if ([name isEqualToString:@"__command"]) {
-        id parsed = ZynthModalParseJSON(rawJSON);
-        if ([parsed isKindOfClass:[NSDictionary class]]) {
-          [view handleCommand:(NSDictionary *)parsed];
+        NSDictionary *command = nil;
+        if ([value isKindOfClass:[NSDictionary class]]) {
+          command = (NSDictionary *)value;
+        } else {
+          id parsed = ZynthModalParseJSON(rawJSON);
+          if ([parsed isKindOfClass:[NSDictionary class]]) {
+            command = (NSDictionary *)parsed;
+          }
         }
+        if (command) [view handleCommand:command];
         return YES;
       }
 
