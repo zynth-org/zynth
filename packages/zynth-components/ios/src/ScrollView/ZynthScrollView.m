@@ -66,6 +66,7 @@ static NSTimeInterval ZynthScrollCurrentTime(void) {
   [super didAddSubview:subview];
   [subview addObserver:self forKeyPath:@"center" options:NSKeyValueObservingOptionNew context:nil];
   [subview addObserver:self forKeyPath:@"bounds" options:NSKeyValueObservingOptionNew context:nil];
+  self.scrollView.contentGeometryDirty = YES;
   [self.scrollView scheduleContentGeometryUpdate];
 }
 
@@ -73,11 +74,13 @@ static NSTimeInterval ZynthScrollCurrentTime(void) {
   [super willRemoveSubview:subview];
   [subview removeObserver:self forKeyPath:@"center"];
   [subview removeObserver:self forKeyPath:@"bounds"];
+  self.scrollView.contentGeometryDirty = YES;
   [self.scrollView scheduleContentGeometryUpdate];
 }
 
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary<NSKeyValueChangeKey,id> *)change context:(void *)context {
   if ([keyPath isEqualToString:@"center"] || [keyPath isEqualToString:@"bounds"]) {
+    self.scrollView.contentGeometryDirty = YES;
     [self.scrollView scheduleContentGeometryUpdate];
   } else {
     [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
