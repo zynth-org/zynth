@@ -67,8 +67,26 @@ function isErrorResult(value: unknown): value is ErrorResult {
   return typeof (value as ErrorResult).error === "string";
 }
 
+function createMissingModuleError(): Error {
+  return new Error(
+    `[ZynthSecureStore] Native module not found. ` +
+      `Ensure @zynth/secure-store is installed, linked, and your native project has been regenerated for this platform.`
+  );
+}
+
+function isModuleNotFound(error: ErrorResult): boolean {
+  const message = `${error.message ?? ""} ${error.error ?? ""} ${error.code ?? ""}`;
+  return (
+    message.toLowerCase().includes("module_not_found") ||
+    message.includes(`Module ${MODULE_NAME} not found`)
+  );
+}
+
 function unwrapResult<T>(value: unknown): T {
   if (isErrorResult(value)) {
+    if (isModuleNotFound(value)) {
+      throw createMissingModuleError();
+    }
     const message = value.message || value.error || "Unknown error";
     throw new Error(message);
   }
