@@ -63,6 +63,24 @@ This document outlines the current status and future development plan for the Zy
 - [ ] iOS: Transparency buttons doesn't works.
 - [ ] iOS: DatePicker imperative won't open.
 - [ ] iOS: Stack Modal bug that return to details with.
+- [ ] Migrate zynth-animate to new Runtime
+- [x] Migrate zynth-apis to new Runtime
+- [ ] Migrate zynth-async-storage to new Runtime
+- [ ] Migrate zynth-bottom-sheet to new Runtime
+- [x] Migrate zynth-components to new Runtime
+- [ ] Migrate zynth-filesystem to new Runtime
+- [ ] Migrate zynth-haptics to new Runtime
+- [ ] Migrate zynth-hypervisor to new Runtime
+- [x] Migrate zynth-icons to new Runtime
+- [ ] Migrate zynth-image-picker to new Runtime
+- [x] Migrate zynth-keyboard to new Runtime
+- [ ] Migrate zynth-markdown to new Runtime
+- [x] Migrate zynth-memory-router to new Runtime
+- [ ] Migrate zynth-screens to new Runtime
+- [ ] Migrate zynth-secure-store to new Runtime
+- [x] Migrate zynth-splash-screen to new Runtime
+- [ ] Migrate zynth-ui to new Runtime
+- [ ] Migrate zynth-webserver to new Runtime
 
 - [x] Android: Keyboard Avoiding View: Fix inconsistent behavior on Android when set `height` as `bahavior`
 - [x] When load Menu using HMR we have `[unhandled] Module Font resource 'ZynthIconsBS.ttf' not found in any bundle. not found.
