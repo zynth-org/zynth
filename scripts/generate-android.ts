@@ -168,6 +168,14 @@ function replacePlaceholders(content: string, config: AppConfig, extras: any = {
       /\{\{\s*RUNTIME_MODULE_INSTALLS\s*\}\}/g,
       extras.runtimeModuleInstalls ?? ""
     )
+    .replace(
+      /\{\{\s*ZYNTH_DEV_SERVER_URL\s*\}\}/g,
+      extras.devServerUrlBuildConfig ?? "\"\""
+    )
+    .replace(
+      /\{\{\s*ZYNTH_DEV_SERVER_TOKEN\s*\}\}/g,
+      extras.devServerTokenBuildConfig ?? "\"\""
+    )
     .replace(/\{\{\s*ACTIVITY_ATTRIBUTES\s*\}\}/g, extras.activityAttributes ?? "")
     .replace(
       /\{\{\s*SPLASH_ICON_DRAWABLE\s*\}\}/g,
@@ -583,6 +591,11 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
     activityHooks.onFirstFrame,
     "      "
   );
+  const devServerUrlBuildConfig = JSON.stringify(config.devServerUrl ?? "");
+  const devArtifacts = safeReadJSON(path.join(appDir, ".zynth", "artifacts.json")) || {};
+  const devServerTokenBuildConfig = JSON.stringify(
+    typeof devArtifacts.hmrServerToken === "string" ? devArtifacts.hmrServerToken : ""
+  );
   const runtimeModuleImports = useNewRuntime
     ? ""
     : `import ${androidPackage}.modules.DeviceModule\nimport ${androidPackage}.modules.EnvModule\nimport ${androidPackage}.modules.PerformanceModule`;
@@ -671,6 +684,8 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
         androidRuntimeSubdir,
         runtimeModuleImports,
         runtimeModuleInstalls,
+        devServerUrlBuildConfig,
+        devServerTokenBuildConfig,
       });
       fs.writeFileSync(targetPath, processed, "utf8");
     }

@@ -76,13 +76,21 @@ extension ZynthRuntime {
       devRuntimeName = runtimeOverride
     }
 
-    guard let urlString = env["ZYNTH_DEV_SERVER_URL"],
+    let envUrlString = env["ZYNTH_DEV_SERVER_URL"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let plistUrlString = (Bundle.main.object(forInfoDictionaryKey: "ZynthDevServerURL") as? String)?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let urlString = envUrlString?.isEmpty == false ? envUrlString : plistUrlString
+
+    guard let urlString,
+          !urlString.isEmpty,
           let rawURL = URL(string: urlString) else {
       print("[ZynthRuntime] ℹ️ ZYNTH_DEV_SERVER_URL not set; HMR disabled")
       return
     }
 
-    let token = sanitizeToken(env["ZYNTH_DEV_SERVER_TOKEN"])
+    let envToken = sanitizeToken(env["ZYNTH_DEV_SERVER_TOKEN"])
+    let plistToken = sanitizeToken(Bundle.main.object(forInfoDictionaryKey: "ZynthDevServerToken") as? String)
+    let token = envToken ?? plistToken
     print("[ZynthRuntime] 🌐 HMR dev server =", rawURL.absoluteString, "token?", token != nil)
     connectToDevServer(rawURL, token: token)
   }

@@ -34,30 +34,65 @@
   NSURL *bundleURL = [[NSBundle mainBundle] URLForResource:@"main" withExtension:@"js"];
 #if DEBUG
   NSString *devServer = [[NSProcessInfo processInfo] environment][@"ZYNTH_DEV_SERVER_URL"];
+  BOOL usesEnv = devServer.length > 0;
+  if (devServer.length == 0) {
+    id plistValue = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"ZynthDevServerURL"];
+    if ([plistValue isKindOfClass:[NSString class]]) {
+      devServer = (NSString *)plistValue;
+    }
+  }
   if (devServer.length == 0) {
     devServer = @"http://localhost:8081";
   }
-  BOOL ready = zynth_wait_for_dev_server(devServer, 15.0);
-  if (!ready) {
-    NSLog(@"[Zynth] ⚠️ Dev server at %@ not reachable; startup may fail", devServer);
+  if (usesEnv) {
+    BOOL ready = zynth_wait_for_dev_server(devServer, 15.0);
+    if (!ready) {
+      NSLog(@"[Zynth] ⚠️ Dev server at %@ not reachable; startup may fail", devServer);
+    }
   }
   NSString *devBundle = [NSString stringWithFormat:@"%@/main.js", devServer];
   bundleURL = [NSURL URLWithString:devBundle];
 #endif
 
-  NSError *loadError = nil;
-  if (![self.runtime loadInitialBundleWithJsBundleURL:bundleURL error:&loadError]) {
-    NSLog(@"[Zynth] Failed to load bundle: %@", loadError);
-{{RUNTIME_LOAD_FAILURE}}
-    return NO;
-  }
-
 {{RUNTIME_ROOT_CONTROLLER}}
   
   [self.window makeKeyAndVisible];
 
-  NSLog(@"[Zynth] Starting runtime with rootId 0");
-  [self.runtime startWithRootId:0];
+  if (bundleURL && bundleURL.scheme && ![bundleURL isFileURL]) {
+    NSURLSession *session = [NSURLSession sharedSession];
+    NSURLSessionDataTask *task =
+      [session dataTaskWithURL:bundleURL
+             completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+               dispatch_async(dispatch_get_main_queue(), ^{
+                 NSError *loadError = error;
+                 if (!loadError && data.length > 0) {
+                   NSString *code = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+                   if (!code) {
+                     loadError = [NSError errorWithDomain:@"ZynthRuntime" code:3 userInfo:nil];
+                   } else {
+                     [self.runtime evaluateScript:code sourceURL:bundleURL.absoluteString error:&loadError];
+                   }
+                 }
+                 if (loadError) {
+                   NSLog(@"[Zynth] Failed to load bundle: %@", loadError);
+{{RUNTIME_LOAD_FAILURE}}
+                   return;
+                 }
+                 NSLog(@"[Zynth] Starting runtime with rootId 0");
+                 [self.runtime startWithRootId:0];
+               });
+             }];
+    [task resume];
+  } else {
+    NSError *loadError = nil;
+    if (![self.runtime loadInitialBundleWithJsBundleURL:bundleURL error:&loadError]) {
+      NSLog(@"[Zynth] Failed to load bundle: %@", loadError);
+{{RUNTIME_LOAD_FAILURE}}
+      return NO;
+    }
+    NSLog(@"[Zynth] Starting runtime with rootId 0");
+    [self.runtime startWithRootId:0];
+  }
 
   return YES;
 }

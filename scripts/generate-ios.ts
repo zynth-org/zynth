@@ -341,6 +341,10 @@ export function generateIOSProject(appDir: string, options: any = {}) {
     ? "  ZynthViewController *vc = [ZynthViewController new];\n  vc.view = self.surface;\n  self.window.rootViewController = vc;"
     : "  ZynthStatusBarHostController *vc = [ZynthStatusBarHostController new];\n  vc.view = self.surface;\n  self.window.rootViewController = vc;";
   const config = getAppConfig(appDir);
+  const devArtifacts = safeReadJSON(path.join(appDir, ".zynth", "artifacts.json")) || {};
+  const devServerToken = typeof devArtifacts.hmrServerToken === "string"
+    ? devArtifacts.hmrServerToken
+    : undefined;
   const appJson = safeReadJSON(path.join(appDir, "app.json")) || {};
   const zynthConfig = appJson.zynth || appJson || {};
   const splashConfig = zynthConfig.splash || {};
@@ -387,6 +391,9 @@ export function generateIOSProject(appDir: string, options: any = {}) {
   // Inject Dev Server URL into Info.plist if configured
   if (config.devServerUrl) {
     config.infoPlist["ZynthDevServerURL"] = config.devServerUrl;
+  }
+  if (devServerToken) {
+    config.infoPlist["ZynthDevServerToken"] = devServerToken;
   }
   
   const infoPlistProperties = formatInfoPlistProperties(config.infoPlist);

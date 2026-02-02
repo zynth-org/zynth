@@ -68,6 +68,15 @@ class MainActivity : AppCompatActivity() {
       devtoolsToken = persistedConfig?.devtoolsToken
     }
 
+    val buildConfigDevServerUrl = BuildConfig.ZYNTH_DEV_SERVER_URL.takeIf { it.isNotBlank() }
+    if (devServerUrl.isNullOrBlank()) {
+      devServerUrl = buildConfigDevServerUrl
+    }
+    val buildConfigDevServerToken = BuildConfig.ZYNTH_DEV_SERVER_TOKEN.takeIf { it.isNotBlank() }
+    if (devServerToken.isNullOrBlank()) {
+      devServerToken = buildConfigDevServerToken
+    }
+
     if (devServerUrl.isNullOrBlank()) {
       devServerUrl = if (isEmulator()) "http://10.0.2.2:8081" else null
     }
