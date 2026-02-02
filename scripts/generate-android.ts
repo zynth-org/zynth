@@ -591,10 +591,12 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
     activityHooks.onFirstFrame,
     "      "
   );
-  const devServerUrlBuildConfig = JSON.stringify(config.devServerUrl ?? "");
+  const devServerUrlBuildConfig = JSON.stringify(
+    config.devServerUrl ? `"${config.devServerUrl}"` : ""
+  );
   const devArtifacts = safeReadJSON(path.join(appDir, ".zynth", "artifacts.json")) || {};
   const devServerTokenBuildConfig = JSON.stringify(
-    typeof devArtifacts.hmrServerToken === "string" ? devArtifacts.hmrServerToken : ""
+    typeof devArtifacts.hmrServerToken === "string" ? `"${devArtifacts.hmrServerToken}"` : ""
   );
   const runtimeModuleImports = useNewRuntime
     ? ""
