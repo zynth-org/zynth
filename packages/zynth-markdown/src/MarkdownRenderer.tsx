@@ -43,14 +43,22 @@ export function MarkdownRenderer(props: MarkdownRendererProps): JSX.Element {
   const renderListItem = (
     node: MarkdownNode,
     ordered: boolean,
-    index: number
+    index: number,
   ): JSX.Element => {
     const checkbox =
       typeof node.checked === "boolean" ? (node.checked ? "[x]" : "[ ]") : null;
     const prefix = ordered ? `${index}.` : "•";
     return (
-      <View style={{ flexDirection: "row", marginBottom: 6 }}>
-        <Text style={{ width: 28 }}>{checkbox ?? prefix}</Text>
+      <View
+        style={{
+          flexDirection: "row",
+          marginBottom: 6,
+          alignItems: "flex-start",
+        }}
+      >
+        <Text style={{ paddingRight: 6 }}>
+          {checkbox ?? prefix}
+        </Text>
         <View style={{ flex: 1 }}>{renderChildren(node)}</View>
       </View>
     );
@@ -68,22 +76,40 @@ export function MarkdownRenderer(props: MarkdownRendererProps): JSX.Element {
       case "text":
         return node.literal ?? "";
       case "emphasis":
-        return (
-          <Text style={{ fontStyle: "italic" }}>
-            {children}
-          </Text>
-        );
+        if (node.children?.length === 1 && node.children[0].type === "strong") {
+          return (
+            <Text
+              style={{
+                fontStyle: "italic",
+                fontWeight: "700",
+              }}
+            >
+              {renderChildren(node.children[0])}
+            </Text>
+          );
+        }
+        return <Text style={{ fontStyle: "italic" }}>{children}</Text>;
       case "strong":
-        return (
-          <Text style={{ fontWeight: "700" }}>
-            {children}
-          </Text>
-        );
+        if (
+          node.children?.length === 1 &&
+          node.children[0].type === "emphasis"
+        ) {
+          return (
+            <Text
+              style={{
+                fontWeight: "700",
+                fontStyle: "italic",
+                color: "cyan",
+              }}
+            >
+              {renderChildren(node.children[0])}
+            </Text>
+          );
+        }
+        return <Text style={{ fontWeight: "700" }}>{children}</Text>;
       case "strikethrough":
         return (
-          <Text style={{ textDecorationLine: "line-through" }}>
-            {children}
-          </Text>
+          <Text style={{ textDecorationLine: "line-through" }}>{children}</Text>
         );
       case "code":
         return (
@@ -153,7 +179,8 @@ export function MarkdownRenderer(props: MarkdownRendererProps): JSX.Element {
           <View style={{ marginBottom: 12 }}>
             <For each={items}>
               {(child, index) =>
-                renderListItem(child, ordered, start + index())}
+                renderListItem(child, ordered, start + index())
+              }
             </For>
           </View>
         );

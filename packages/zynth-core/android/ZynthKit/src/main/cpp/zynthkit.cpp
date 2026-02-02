@@ -97,6 +97,7 @@ struct RuntimeState {
   jmethodID doubleConstructor = nullptr;
   jclass booleanClass = nullptr;
   jmethodID booleanConstructor = nullptr;
+  jclass stringClass = nullptr;
   std::shared_ptr<TimerContext> timerContext = std::make_shared<TimerContext>();
   std::shared_ptr<facebook::hermes::HermesRuntime> uiRuntime;
   std::atomic<int> nextWorkletId{1};
@@ -2067,7 +2068,7 @@ Java_com_zynth_kit_runtime_JSBridge_installModuleRegistry(JNIEnv *env, jobject, 
   jclass regClass = env->GetObjectClass(registry);
   state->moduleRegistryClass = static_cast<jclass>(env->NewGlobalRef(regClass));
   state->moduleCall = env->GetMethodID(state->moduleRegistryClass, "call", "(Ljava/lang/String;Ljava/lang/String;[Ljava/lang/Object;)Lorg/json/JSONObject;");
-  // callSync not fully implemented yet in bridge, relying on call for now or similar pattern
+  state->moduleCallSync = env->GetMethodID(state->moduleRegistryClass, "callSync", "(Ljava/lang/String;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/Object;");
 
   jclass jsonCls = env->FindClass("org/json/JSONObject");
   state->jsonObjectClass = static_cast<jclass>(env->NewGlobalRef(jsonCls));
@@ -2083,6 +2084,10 @@ Java_com_zynth_kit_runtime_JSBridge_installModuleRegistry(JNIEnv *env, jobject, 
   state->booleanClass = static_cast<jclass>(env->NewGlobalRef(boolCls));
   state->booleanConstructor = env->GetMethodID(state->booleanClass, "<init>", "(Z)V");
   env->DeleteLocalRef(boolCls);
+
+  jclass stringCls = env->FindClass("java/lang/String");
+  state->stringClass = static_cast<jclass>(env->NewGlobalRef(stringCls));
+  env->DeleteLocalRef(stringCls);
 
   Runtime &rt = *runtime;
 
@@ -2130,8 +2135,62 @@ Java_com_zynth_kit_runtime_JSBridge_installModuleRegistry(JNIEnv *env, jobject, 
         return result;
       });
 
+  auto callSyncFn = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "callSync"), 2,
+      [state, runtime](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (!state || !state->moduleRegistry || !state->moduleCallSync) return Value::undefined();
+        if (count < 2 || !args[0].isString() || !args[1].isString()) return Value::undefined();
+        
+        JNIEnv *env = getEnv();
+        if (!env) return Value::undefined();
+
+        std::string moduleName = args[0].asString(rt).utf8(rt);
+        std::string methodName = args[1].asString(rt).utf8(rt);
+        jstring jModule = env->NewStringUTF(moduleName.c_str());
+        jstring jMethod = env->NewStringUTF(methodName.c_str());
+
+        // Marshal args
+        size_t argCount = count > 2 ? count - 2 : 0;
+        jobjectArray jArgs = nullptr;
+        if (argCount > 0) {
+          jclass objCls = env->FindClass("java/lang/Object");
+          jArgs = env->NewObjectArray(static_cast<jsize>(argCount), objCls, nullptr);
+          env->DeleteLocalRef(objCls);
+          
+          for (size_t i = 0; i < argCount; i++) {
+            jobject jArg = jsValueToJava(env, rt, state.get(), args[i + 2]);
+            env->SetObjectArrayElement(jArgs, static_cast<jsize>(i), jArg);
+            if (jArg) env->DeleteLocalRef(jArg);
+          }
+        } else {
+             jclass objCls = env->FindClass("java/lang/Object");
+             jArgs = env->NewObjectArray(0, objCls, nullptr);
+             env->DeleteLocalRef(objCls);
+        }
+
+        jobject resultObj = env->CallObjectMethod(state->moduleRegistry, state->moduleCallSync, jModule, jMethod, jArgs);
+        
+        env->DeleteLocalRef(jModule);
+        env->DeleteLocalRef(jMethod);
+        env->DeleteLocalRef(jArgs);
+
+        if (!resultObj) return Value::null();
+
+        if (env->IsInstanceOf(resultObj, state->stringClass)) {
+            const char *utf8 = env->GetStringUTFChars((jstring)resultObj, nullptr);
+            auto val = String::createFromUtf8(rt, utf8 ? utf8 : "");
+            if (utf8) env->ReleaseStringUTFChars((jstring)resultObj, utf8);
+            env->DeleteLocalRef(resultObj);
+            return val;
+        }
+
+        Value result = javaJsonToJs(env, rt, resultObj);
+        env->DeleteLocalRef(resultObj);
+        return result;
+      });
+
   Object modules(rt);
   modules.setProperty(rt, "call", callFn);
-  // sync call stub or impl if needed
+  modules.setProperty(rt, "callSync", callSyncFn);
   rt.global().setProperty(rt, "__modules", modules);
 }

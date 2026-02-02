@@ -74,7 +74,7 @@ This document outlines the current status and future development plan for the Zy
 - [x] Migrate zynth-icons to new Runtime
 - [x] Migrate zynth-image-picker to new Runtime
 - [x] Migrate zynth-keyboard to new Runtime
-- [ ] Migrate zynth-markdown to new Runtime
+- [x] Migrate zynth-markdown to new Runtime
 - [x] Migrate zynth-memory-router to new Runtime
 - [ ] Migrate zynth-screens to new Runtime
 - [x] Migrate zynth-secure-store to new Runtime

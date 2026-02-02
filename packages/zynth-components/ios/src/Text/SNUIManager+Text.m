@@ -381,6 +381,22 @@ static void ZynthTextHandleStyle(ZynthUIManager *manager, ZynthNode *node, NSDic
   if ([fontStyle isKindOfClass:[NSString class]] && [fontStyle isEqualToString:@"italic"]) {
     traits |= UIFontDescriptorTraitItalic;
   }
+  
+  // Map fontWeight to bold trait if applicable
+  BOOL isBold = NO;
+  if (fontWeight) {
+    if ([fontWeight isEqualToString:@"bold"] || 
+        [fontWeight isEqualToString:@"700"] || 
+        [fontWeight isEqualToString:@"800"] || 
+        [fontWeight isEqualToString:@"900"]) {
+      isBold = YES;
+    } else if ([fontWeight integerValue] >= 600) {
+      isBold = YES;
+    }
+  }
+  if (isBold) {
+    traits |= UIFontDescriptorTraitBold;
+  }
 
   BOOL hasCustomFontProp = fontSize || (fontFamily && fontFamily.length > 0) || fontWeight || traits != 0;
   UIFont *font = nil;
