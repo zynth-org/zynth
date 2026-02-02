@@ -10,5 +10,9 @@
   "RiSystemAlertLine": "",
   "RiSystemCloseLine": "",
   "RiSystemDeleteBin2Line": "",
-  "RiSystemRefreshLine": ""
+  "RiSystemEyeCloseLine": "",
+  "RiSystemEyeLine": "",
+  "RiSystemRefreshLine": "",
+  "RiSystemSearchLine": "",
+  "RiUserFacesUserLine": ""
 }

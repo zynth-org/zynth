@@ -65,10 +65,34 @@
     "className": "ZynthRuntime-RiSystemDeleteBin2Line",
     "unicode": "&#59915;"
   },
-  "RiSystemRefreshLine": {
+  "RiSystemEyeCloseLine": {
     "encodedCode": "\\ea0c",
     "prefix": "ZynthRuntime",
-    "className": "ZynthRuntime-RiSystemRefreshLine",
+    "className": "ZynthRuntime-RiSystemEyeCloseLine",
     "unicode": "&#59916;"
+  },
+  "RiSystemEyeLine": {
+    "encodedCode": "\\ea0d",
+    "prefix": "ZynthRuntime",
+    "className": "ZynthRuntime-RiSystemEyeLine",
+    "unicode": "&#59917;"
+  },
+  "RiSystemRefreshLine": {
+    "encodedCode": "\\ea0e",
+    "prefix": "ZynthRuntime",
+    "className": "ZynthRuntime-RiSystemRefreshLine",
+    "unicode": "&#59918;"
+  },
+  "RiSystemSearchLine": {
+    "encodedCode": "\\ea0f",
+    "prefix": "ZynthRuntime",
+    "className": "ZynthRuntime-RiSystemSearchLine",
+    "unicode": "&#59919;"
+  },
+  "RiUserFacesUserLine": {
+    "encodedCode": "\\ea10",
+    "prefix": "ZynthRuntime",
+    "className": "ZynthRuntime-RiUserFacesUserLine",
+    "unicode": "&#59920;"
   }
 }

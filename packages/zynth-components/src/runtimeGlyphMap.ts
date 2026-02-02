@@ -11,7 +11,11 @@ export const runtimeGlyphMap: Record<string, string> = {
   "RiSystemAlertLine": "",
   "RiSystemCloseLine": "",
   "RiSystemDeleteBin2Line": "",
-  "RiSystemRefreshLine": ""
+  "RiSystemEyeCloseLine": "",
+  "RiSystemEyeLine": "",
+  "RiSystemRefreshLine": "",
+  "RiSystemSearchLine": "",
+  "RiUserFacesUserLine": ""
 };
 export const runtimeFontFamily = "ZynthRuntime";
 export const runtimeFontFile = "ZynthRuntime.ttf";

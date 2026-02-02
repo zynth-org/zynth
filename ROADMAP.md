@@ -68,7 +68,7 @@ This document outlines the current status and future development plan for the Zy
 - [x] Migrate zynth-async-storage to new Runtime
 - [ ] Migrate zynth-bottom-sheet to new Runtime
 - [x] Migrate zynth-components to new Runtime
-- [ ] Migrate zynth-filesystem to new Runtime
+- [x] Migrate zynth-filesystem to new Runtime
 - [x] Migrate zynth-haptics to new Runtime
 - [x] Migrate zynth-hypervisor to new Runtime
 - [x] Migrate zynth-icons to new Runtime
@@ -79,8 +79,8 @@ This document outlines the current status and future development plan for the Zy
 - [ ] Migrate zynth-screens to new Runtime
 - [x] Migrate zynth-secure-store to new Runtime
 - [x] Migrate zynth-splash-screen to new Runtime
-- [ ] Migrate zynth-ui to new Runtime
-- [ ] Migrate zynth-webserver to new Runtime
+- [x] Migrate zynth-ui to new Runtime
+- [x] Migrate zynth-webserver to new Runtime
 
 - [x] Android: Keyboard Avoiding View: Fix inconsistent behavior on Android when set `height` as `bahavior`
 - [x] When load Menu using HMR we have `[unhandled] Module Font resource 'ZynthIconsBS.ttf' not found in any bundle. not found.

@@ -33,29 +33,10 @@ export const TextInput: ParentComponent<TextInputProps> = (props) => {
   const theme = useUITheme();
   const [isFocused, setIsFocused] = createSignal(false);
 
-  const inputLayoutStyle = () => {
-    if (Platform.OS !== "android") return {};
-    return {
-      alignSelf: "stretch",
-      height: "100%",
-      minHeight: theme().sizes.controlMd,
-    } satisfies StyleProp;
-  };
-
-  const inputWrapperStyle = () => {
-    const t = theme();
-    return {
-      flex: 1,
-      paddingHorizontal: Platform.OS === "android" ? t.spacing.md : 0,
-      alignSelf: "stretch",
-      minHeight: t.sizes.controlMd,
-    } satisfies StyleProp;
-  };
-
   const resolvedStyle = () => {
     const t = theme();
     const variant = local.variant ?? "outlined";
-    const tone = local.error ? "danger" : local.tone ?? "default";
+    const tone = local.error ? "danger" : (local.tone ?? "default");
 
     let base: StyleProp = {
       fontFamily: t.typography.fontFamily,
@@ -113,12 +94,12 @@ export const TextInput: ParentComponent<TextInputProps> = (props) => {
 
     return {
       // Input specific styles (text mostly)
+      flex: 1,
       color: t.colors.text,
       fontSize: t.typography.fontSizes.md,
       fontFamily: t.typography.fontFamily,
       padding: 0, // Reset padding as container handles it
       backgroundColor: "transparent",
-      ...(inputLayoutStyle() as object),
       ...((local.style as object) ?? {}),
     };
   };
@@ -126,7 +107,7 @@ export const TextInput: ParentComponent<TextInputProps> = (props) => {
   const containerStyle = () => {
     const t = theme();
     const variant = local.variant ?? "outlined";
-    const tone = local.error ? "danger" : local.tone ?? "default";
+    const tone = local.error ? "danger" : (local.tone ?? "default");
 
     let base: StyleProp = {
       flexDirection: "row",
@@ -135,6 +116,8 @@ export const TextInput: ParentComponent<TextInputProps> = (props) => {
       paddingHorizontal: t.spacing.md,
       minHeight: t.sizes.controlMd,
       gap: t.spacing.sm,
+      width: "100%",
+      alignContent: "space-between",
     };
 
     let borderColor = t.colors.border;
@@ -207,27 +190,14 @@ export const TextInput: ParentComponent<TextInputProps> = (props) => {
 
       <View style={containerStyle()}>
         {local.startContent}
-        {Platform.OS === "android" ? (
-          <View style={inputWrapperStyle()}>
-            <NativeTextInput
-              style={{ flex: 1, ...(resolvedStyle() as any) }}
-              placeholderTextColor={theme().colors.textMuted} // Default placeholder color
-              selectionColor={theme().colors.accent}
-              onFocus={handleFocus}
-              onBlur={handleBlur}
-              {...others}
-            />
-          </View>
-        ) : (
-          <NativeTextInput
-            style={{ flex: 1, ...(resolvedStyle() as any) }}
-            placeholderTextColor={theme().colors.textMuted} // Default placeholder color
-            selectionColor={theme().colors.accent}
-            onFocus={handleFocus}
-            onBlur={handleBlur}
-            {...others}
-          />
-        )}
+        <NativeTextInput
+          style={{ ...(resolvedStyle() as any) }}
+          placeholderTextColor={theme().colors.textMuted} // Default placeholder color
+          selectionColor={theme().colors.accent}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          {...others}
+        />
         {local.endContent}
       </View>
 

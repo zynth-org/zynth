@@ -16,7 +16,7 @@ public class ZynthAppearanceModule: NSObject {
   private var traitObserver: TraitObserverView?
   private var lastState: AppearanceState?
   private var pendingUpdate: Bool = false
-  private var surfaceId: Int?
+  private var surfaceId: Int32?
   private var firstFrameListener: (() -> Void)?
 
   struct AppearanceState: Equatable {

@@ -39,7 +39,11 @@ static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
   self.delegate = self;
   self.borderStyle = UITextBorderStyleNone;
   self.backgroundColor = [UIColor clearColor];
-  self.textColor = [UIColor whiteColor];
+  if (@available(iOS 13.0, *)) {
+    self.textColor = [UIColor labelColor];
+  } else {
+    self.textColor = [UIColor blackColor];
+  }
   self.font = [UIFont systemFontOfSize:16 weight:UIFontWeightRegular];
   self.lastChangeDispatch = [NSDate dateWithTimeIntervalSince1970:0];
   self.submitBehavior = @"submit";

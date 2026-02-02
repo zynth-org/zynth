@@ -313,6 +313,154 @@ static BOOL ZynthTextInputHandleSetHandler(ZynthUIManager *manager,
   return NO;
 }
 
+static CGFloat ZynthTextNum(id x) {
+  return x && ![x isKindOfClass:[NSNull class]] ? [x doubleValue] : NAN;
+}
+
+static UIFont *ZynthResolveFontFamily(NSString *fontFamily,
+                                      CGFloat size,
+                                      UIFontDescriptorSymbolicTraits traits) {
+  if (![fontFamily isKindOfClass:[NSString class]] || fontFamily.length == 0) {
+    return nil;
+  }
+
+  UIFont *font = [UIFont fontWithName:fontFamily size:size];
+  if (!font) {
+    NSString *regularName = [fontFamily stringByAppendingString:@"Regular"];
+    font = [UIFont fontWithName:regularName size:size];
+  }
+  if (!font) {
+    NSArray<NSString *> *familyMembers = [UIFont fontNamesForFamilyName:fontFamily];
+    if (familyMembers.count > 0) {
+      font = [UIFont fontWithName:familyMembers.firstObject size:size];
+    }
+  }
+  if (font && traits != 0) {
+    UIFontDescriptor *descriptor = [font.fontDescriptor fontDescriptorWithSymbolicTraits:traits];
+    if (descriptor) {
+      UIFont *traitFont = [UIFont fontWithDescriptor:descriptor size:size];
+      if (traitFont) {
+        font = traitFont;
+      }
+    }
+  }
+  return font;
+}
+
+static void ZynthTextInputHandleStyle(ZynthUIManager *manager, ZynthNode *node, NSDictionary *style) {
+  if (!node || !style) return;
+  
+  // Both ZynthTextInputView (UITextView) and ZynthSecureTextInputView (UITextField) 
+  // share the properties we care about: font, textColor, textAlignment.
+  // We use `id` casting or specific checks to apply them.
+  
+  UIView *view = node.view;
+  BOOL isTextView = [view isKindOfClass:[ZynthTextInputView class]];
+  BOOL isTextField = [view isKindOfClass:[ZynthSecureTextInputView class]];
+  
+  if (!isTextView && !isTextField) return;
+
+  // Font Size
+  CGFloat defaultSize = 16.0; // Default system size
+  NSNumber *fontSize = style[@"fontSize"];
+  CGFloat resolvedSize = fontSize ? (CGFloat)ZynthTextNum(fontSize) : defaultSize;
+
+  // Font Family & Weight
+  NSString *fontFamily = style[@"fontFamily"];
+  NSString *fontStyle = style[@"fontStyle"];
+  id fontWeightValue = style[@"fontWeight"];
+  NSString *fontWeight = nil;
+  if ([fontWeightValue isKindOfClass:[NSNumber class]]) {
+    fontWeight = [(NSNumber *)fontWeightValue stringValue];
+  } else if ([fontWeightValue isKindOfClass:[NSString class]]) {
+    fontWeight = (NSString *)fontWeightValue;
+  }
+
+  NSDictionary *weights = @{
+    @"normal": @(UIFontWeightRegular),
+    @"bold": @(UIFontWeightBold),
+    @"100": @(UIFontWeightUltraLight),
+    @"200": @(UIFontWeightThin),
+    @"300": @(UIFontWeightLight),
+    @"400": @(UIFontWeightRegular),
+    @"500": @(UIFontWeightMedium),
+    @"600": @(UIFontWeightSemibold),
+    @"700": @(UIFontWeightBold),
+    @"800": @(UIFontWeightHeavy),
+    @"900": @(UIFontWeightBlack)
+  };
+  NSNumber *weightNum = weights[fontWeight ?: @""] ?: @(UIFontWeightRegular);
+  UIFontDescriptorSymbolicTraits traits = 0;
+  if ([fontStyle isKindOfClass:[NSString class]] && [fontStyle isEqualToString:@"italic"]) {
+    traits |= UIFontDescriptorTraitItalic;
+  }
+  
+  BOOL isBold = NO;
+  if (fontWeight) {
+    if ([fontWeight isEqualToString:@"bold"] || 
+        [fontWeight isEqualToString:@"700"] || 
+        [fontWeight isEqualToString:@"800"] || 
+        [fontWeight isEqualToString:@"900"]) {
+      isBold = YES;
+    } else if ([fontWeight integerValue] >= 600) {
+      isBold = YES;
+    }
+  }
+  if (isBold) {
+    traits |= UIFontDescriptorTraitBold;
+  }
+
+  UIFont *font = nil;
+  BOOL hasCustomFontProp = fontSize || (fontFamily && fontFamily.length > 0) || fontWeight || traits != 0;
+  
+  if (hasCustomFontProp) {
+    if ([fontFamily isKindOfClass:[NSString class]] && fontFamily.length > 0) {
+      font = ZynthResolveFontFamily(fontFamily, resolvedSize, traits);
+    } else {
+      UIFont *baseFont = [UIFont systemFontOfSize:resolvedSize weight:(CGFloat)[weightNum doubleValue]];
+      if (traits != 0) {
+        UIFontDescriptor *descriptor = [baseFont.fontDescriptor fontDescriptorWithSymbolicTraits:traits];
+        if (descriptor) {
+          UIFont *traitFont = [UIFont fontWithDescriptor:descriptor size:resolvedSize];
+          if (traitFont) {
+            baseFont = traitFont;
+          }
+        }
+      }
+      font = baseFont;
+    }
+  } else {
+    font = [UIFont systemFontOfSize:resolvedSize];
+  }
+  
+  if (font) {
+    if (isTextView) ((ZynthTextInputView *)view).font = font;
+    if (isTextField) ((ZynthSecureTextInputView *)view).font = font;
+  }
+
+  // Color
+  NSString *color = style[@"color"];
+  if (color) {
+    UIColor *uicolor = ZynthColorFromHex(color);
+    if (isTextView) ((ZynthTextInputView *)view).textColor = uicolor;
+    if (isTextField) ((ZynthSecureTextInputView *)view).textColor = uicolor;
+  }
+  
+  // Text Align
+  NSString *textAlign = style[@"textAlign"];
+  NSTextAlignment alignment = NSTextAlignmentLeft;
+  BOOL hasAlign = NO;
+  if ([textAlign isEqualToString:@"center"]) { alignment = NSTextAlignmentCenter; hasAlign = YES; }
+  else if ([textAlign isEqualToString:@"right"]) { alignment = NSTextAlignmentRight; hasAlign = YES; }
+  else if ([textAlign isEqualToString:@"justify"]) { alignment = NSTextAlignmentJustified; hasAlign = YES; }
+  else if ([textAlign isEqualToString:@"left"]) { alignment = NSTextAlignmentLeft; hasAlign = YES; }
+  
+  if (hasAlign) {
+    if (isTextView) ((ZynthTextInputView *)view).textAlignment = alignment;
+    if (isTextField) ((ZynthSecureTextInputView *)view).textAlignment = alignment;
+  }
+}
+
 static BOOL ZynthSecureTextInputHandleSetProp(ZynthUIManager *manager,
                                              ZynthNode *node,
                                              NSString *name,
@@ -463,6 +611,9 @@ static BOOL ZynthSecureTextInputHandleSetHandler(ZynthUIManager *manager,
     descriptor.handleSetHandler = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name) {
       return ZynthTextInputHandleSetHandler(manager, node, name);
     };
+    descriptor.applyStyle = ^(ZynthUIManager *manager, ZynthNode *node, NSDictionary *style) {
+      ZynthTextInputHandleStyle(manager, node, style);
+    };
     ZynthRegisterComponentDescriptor(descriptor);
   });
 
@@ -491,6 +642,9 @@ static BOOL ZynthSecureTextInputHandleSetHandler(ZynthUIManager *manager,
     };
     descriptor.handleSetHandler = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name) {
       return ZynthSecureTextInputHandleSetHandler(manager, node, name);
+    };
+    descriptor.applyStyle = ^(ZynthUIManager *manager, ZynthNode *node, NSDictionary *style) {
+      ZynthTextInputHandleStyle(manager, node, style);
     };
     ZynthRegisterComponentDescriptor(descriptor);
   });
