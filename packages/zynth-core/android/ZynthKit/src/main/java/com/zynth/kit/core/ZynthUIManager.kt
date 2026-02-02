@@ -26,6 +26,7 @@ import java.util.concurrent.ConcurrentHashMap
 private const val TRACE_TAG = "ZynthUIManager"
 
 class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
+  internal var runtimePtr: Long = 0L
   internal val mainHandler = Handler(Looper.getMainLooper())
   internal val density = rootView.resources.displayMetrics.density
   internal var nextId = 1
@@ -236,6 +237,10 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
 
   fun setJSHandler(handler: Handler?) {
     jsHandler = handler
+  }
+
+  fun setRuntimePtr(ptr: Long) {
+    runtimePtr = ptr
   }
 
   fun setFrameProfiler(profiler: ((frameMs: Double, layoutMs: Double, overBudget: Boolean, nodeCount: Int) -> Unit)?) {
@@ -637,7 +642,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     val json = payload?.toString()
     runOnJS {
       runCatching {
-        JSBridge.invokeEvent(nodeId, event, json)
+        JSBridge.invokeEvent(runtimePtr, nodeId, event, json)
       }
     }
   }

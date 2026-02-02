@@ -19,9 +19,29 @@ void ZynthUIInvokePressEvent(int nodeId,
                              double durationMs,
                              double timestampMs,
                              bool cancelled);
-void ZynthUIInvokeEvent(int nodeId, const char *name, NSDictionary *payload);
-void ZynthUIInvokeLayoutEvent(int nodeId, double x, double y, double width, double height);
+void ZynthUIInvokePressEventWithRuntime(void *runtimePtr,
+                                        int nodeId,
+                                        const char *name,
+                                        double x,
+                                        double y,
+                                        double screenX,
+                                        double screenY,
+                                        double durationMs,
+                                        double timestampMs,
+                                        bool cancelled);
+void ZynthUIInvokeEventWithRuntime(void *runtimePtr,
+                                   int nodeId,
+                                   const char *name,
+                                   NSDictionary *payload);
+void ZynthUIInvokeLayoutEventWithRuntime(void *runtimePtr,
+                                         int nodeId,
+                                         double x,
+                                         double y,
+                                         double width,
+                                         double height);
 void ZynthUISetJSQueue(dispatch_queue_t _Nullable queue);
+void ZynthUIRegisterRuntimeForManager(ZynthUIManager *manager, void *runtimePtr);
+void *ZynthUIRuntimeForManager(ZynthUIManager *manager);
 #ifdef __cplusplus
 }
 

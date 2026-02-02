@@ -24,8 +24,9 @@ internal object JSBridge {
     nodeCount: Int
   )
   external fun emitEvent(runtimePtr: Long, name: String, payloadJson: String?)
-  external fun invokeEvent(nodeId: Int, name: String, payloadJson: String?)
+  external fun invokeEvent(runtimePtr: Long, nodeId: Int, name: String, payloadJson: String?)
   external fun invokePressEvent(
+    runtimePtr: Long,
     nodeId: Int,
     name: String,
     x: Double,
@@ -36,8 +37,8 @@ internal object JSBridge {
     timestampMs: Double,
     cancelled: Boolean
   )
-  external fun invokeLayoutEvent(nodeId: Int, x: Double, y: Double, width: Double, height: Double)
-  external fun invokeLayoutEventsBatch(payload: DoubleArray)
+  external fun invokeLayoutEvent(runtimePtr: Long, nodeId: Int, x: Double, y: Double, width: Double, height: Double)
+  external fun invokeLayoutEventsBatch(runtimePtr: Long, payload: DoubleArray)
   external fun invokeTimer(runtimePtr: Long, timerId: Int)
   external fun invokeAnimationFrame(runtimePtr: Long, callbackId: Int, timestampMs: Double)
   external fun registerWorkletOnUiRuntime(runtimePtr: Long, workletId: Int)

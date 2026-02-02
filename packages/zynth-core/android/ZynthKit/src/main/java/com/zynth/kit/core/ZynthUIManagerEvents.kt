@@ -52,6 +52,7 @@ internal fun ZynthUIManager.handleTouchEvent(id: Int, view: View, event: MotionE
       val screenY = pxToDp(event.rawY)
       runOnJS {
         JSBridge.invokePressEvent(
+          runtimePtr,
           id,
           "onPressIn",
           localX,
@@ -81,11 +82,12 @@ internal fun ZynthUIManager.handleTouchEvent(id: Int, view: View, event: MotionE
         val localY = pxToDp(event.y)
         val screenX = pxToDp(event.rawX)
         val screenY = pxToDp(event.rawY)
-        runOnJS {
-          JSBridge.invokePressEvent(
-            id,
-            "onPress",
-            localX,
+      runOnJS {
+        JSBridge.invokePressEvent(
+          runtimePtr,
+          id,
+          "onPress",
+          localX,
             localY,
             screenX,
             screenY,
@@ -102,6 +104,7 @@ internal fun ZynthUIManager.handleTouchEvent(id: Int, view: View, event: MotionE
       val outScreenY = pxToDp(event.rawY)
       runOnJS {
         JSBridge.invokePressEvent(
+          runtimePtr,
           id,
           "onPressOut",
           outLocalX,
@@ -124,6 +127,7 @@ internal fun ZynthUIManager.handleTouchEvent(id: Int, view: View, event: MotionE
       val screenY = pxToDp(event.rawY)
       runOnJS {
         JSBridge.invokePressEvent(
+          runtimePtr,
           id,
           "onPressOut",
           localX,
@@ -169,6 +173,7 @@ internal fun ZynthUIManager.scheduleLongPress(id: Int) {
     val screen = pressScreenPoints[id] ?: (0f to 0f)
     runOnJS {
       JSBridge.invokePressEvent(
+        runtimePtr,
         id,
         "onLongPress",
         pxToDp(local.first),
@@ -204,11 +209,12 @@ internal fun ZynthUIManager.maybeDispatchDoublePress(id: Int, event: MotionEvent
   if (last == null) return
   val delta = timestamp - last
   if (delta < 0 || delta > doublePressWindowFor(id)) return
-  runOnJS {
-    JSBridge.invokePressEvent(
-      id,
-      "onDoublePress",
-      pxToDp(event.x),
+    runOnJS {
+      JSBridge.invokePressEvent(
+        runtimePtr,
+        id,
+        "onDoublePress",
+        pxToDp(event.x),
       pxToDp(event.y),
       pxToDp(event.rawX),
       pxToDp(event.rawY),
@@ -254,7 +260,7 @@ internal fun ZynthUIManager.dispatchLayoutEvents() {
         payload[index++] = event.width
         payload[index++] = event.height
       }
-      JSBridge.invokeLayoutEventsBatch(payload)
+      JSBridge.invokeLayoutEventsBatch(runtimePtr, payload)
     }
   }
 }

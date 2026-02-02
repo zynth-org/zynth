@@ -19,6 +19,7 @@ import kotlin.math.hypot
 import kotlin.math.sin
 
 class ZynthBorderDrawable : Drawable() {
+    var renderBorderOnTop: Boolean = false
 
     var backgroundColor: Int = Color.TRANSPARENT
         set(value) {
@@ -109,6 +110,15 @@ class ZynthBorderDrawable : Drawable() {
     private val tempOutlineRect = Rect()
 
     override fun draw(canvas: Canvas) {
+        render(canvas, drawBackground = true, drawBorder = !renderBorderOnTop)
+    }
+
+    fun drawBorder(canvas: Canvas) {
+        if (!renderBorderOnTop) return
+        render(canvas, drawBackground = false, drawBorder = true)
+    }
+
+    private fun render(canvas: Canvas, drawBackground: Boolean, drawBorder: Boolean) {
         val bounds = bounds
         if (bounds.isEmpty) return
 
@@ -139,7 +149,7 @@ class ZynthBorderDrawable : Drawable() {
         val hasAnyBorderColor = borderTopColor != Color.TRANSPARENT || borderRightColor != Color.TRANSPARENT || borderBottomColor != Color.TRANSPARENT || borderLeftColor != Color.TRANSPARENT
         val hasAnyBorderRadius = effTopLeft > 0f || effTopRight > 0f || effBottomRight > 0f || effBottomLeft > 0f
         
-        if (backgroundGradient != null || backgroundColor != Color.TRANSPARENT || hasAnyBorderRadius) {
+        if (drawBackground && (backgroundGradient != null || backgroundColor != Color.TRANSPARENT || hasAnyBorderRadius)) {
             backgroundPaint.color = backgroundColor
             backgroundPaint.alpha = if (backgroundGradient != null) 255 else Color.alpha(backgroundColor)
             path.reset()
@@ -158,7 +168,7 @@ class ZynthBorderDrawable : Drawable() {
             canvas.drawPath(path, backgroundPaint)
         }
 
-        if (hasAnyBorderWidth && hasAnyBorderColor) {
+        if (drawBorder && hasAnyBorderWidth && hasAnyBorderColor) {
             val halfTop = borderTopWidth / 2f
             val halfRight = borderRightWidth / 2f
             val halfBottom = borderBottomWidth / 2f

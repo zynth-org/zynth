@@ -75,19 +75,21 @@ static inline void ZynthRunOnMainAsync(dispatch_block_t block) {
 
 namespace {
 struct HandlerKey {
+  Runtime *runtime;
   int nodeId;
   std::string name;
 
   bool operator==(const HandlerKey &other) const {
-    return nodeId == other.nodeId && name == other.name;
+    return runtime == other.runtime && nodeId == other.nodeId && name == other.name;
   }
 };
 
 struct HandlerKeyHash {
   size_t operator()(const HandlerKey &key) const {
+    size_t h0 = std::hash<uintptr_t>()(reinterpret_cast<uintptr_t>(key.runtime));
     size_t h1 = std::hash<int>()(key.nodeId);
     size_t h2 = std::hash<std::string>()(key.name);
-    return h1 ^ (h2 << 1);
+    return h0 ^ (h1 << 1) ^ (h2 << 2);
   }
 };
 
@@ -98,24 +100,40 @@ struct HandlerEntry {
 
 static std::unordered_map<HandlerKey, HandlerEntry, HandlerKeyHash> sHandlers;
 static std::mutex sHandlersMutex;
+static std::unordered_map<void *, Runtime *> sManagerRuntime;
+static std::mutex sManagerRuntimeMutex;
 
 static Value ZynthConvertToJSI(Runtime &rt, id value);
 
 static void registerHandler(Runtime &rt, int nodeId, const std::string &name, Function &&fn) {
   std::lock_guard<std::mutex> lock(sHandlersMutex);
-  HandlerKey key{nodeId, name};
+  HandlerKey key{&rt, nodeId, name};
   sHandlers[key] = HandlerEntry{&rt, std::make_shared<Function>(std::move(fn))};
 }
 
-static void removeHandlersForNode(int nodeId) {
+static void removeHandlersForNode(Runtime &rt, int nodeId) {
   std::lock_guard<std::mutex> lock(sHandlersMutex);
   for (auto it = sHandlers.begin(); it != sHandlers.end();) {
-    if (it->first.nodeId == nodeId) {
+    if (it->first.runtime == &rt && it->first.nodeId == nodeId) {
       it = sHandlers.erase(it);
     } else {
       ++it;
     }
   }
+}
+
+static void ZynthUIRegisterRuntimeForManagerInternal(ZynthUIManager *manager, void *runtimePtr) {
+  if (!manager || !runtimePtr) return;
+  std::lock_guard<std::mutex> lock(sManagerRuntimeMutex);
+  sManagerRuntime[(__bridge void *)manager] = reinterpret_cast<Runtime *>(runtimePtr);
+}
+
+static void *ZynthUIRuntimeForManagerInternal(ZynthUIManager *manager) {
+  if (!manager) return nullptr;
+  std::lock_guard<std::mutex> lock(sManagerRuntimeMutex);
+  auto it = sManagerRuntime.find((__bridge void *)manager);
+  if (it == sManagerRuntime.end()) return nullptr;
+  return it->second;
 }
 
 static Value ZynthConvertToJSI(Runtime &rt, id value) {
@@ -187,6 +205,14 @@ static id ZynthConvertValueToObjC(Runtime &rt, const Value &value) {
 }
 } // namespace
 
+extern "C" void ZynthUIRegisterRuntimeForManager(ZynthUIManager *manager, void *runtimePtr) {
+  ZynthUIRegisterRuntimeForManagerInternal(manager, runtimePtr);
+}
+
+extern "C" void *ZynthUIRuntimeForManager(ZynthUIManager *manager) {
+  return ZynthUIRuntimeForManagerInternal(manager);
+}
+
 extern "C" void ZynthUIInvokePressEvent(int nodeId,
                                         const char *name,
                                         double x,
@@ -196,19 +222,41 @@ extern "C" void ZynthUIInvokePressEvent(int nodeId,
                                         double durationMs,
                                         double timestampMs,
                                         bool cancelled) {
+  ZynthUIInvokePressEventWithRuntime(nullptr,
+                                     nodeId,
+                                     name,
+                                     x,
+                                     y,
+                                     screenX,
+                                     screenY,
+                                     durationMs,
+                                     timestampMs,
+                                     cancelled);
+}
+
+extern "C" void ZynthUIInvokePressEventWithRuntime(void *runtimePtr,
+                                                   int nodeId,
+                                                   const char *name,
+                                                   double x,
+                                                   double y,
+                                                   double screenX,
+                                                   double screenY,
+                                                   double durationMs,
+                                                   double timestampMs,
+                                                   bool cancelled) {
   std::string eventName = name ? name : "";
   if (eventName.empty()) return;
-  Runtime *runtime = nullptr;
+  Runtime *runtime = reinterpret_cast<Runtime *>(runtimePtr);
+  if (!runtime) return;
   std::shared_ptr<Function> handler;
   {
     std::lock_guard<std::mutex> lock(sHandlersMutex);
-    HandlerKey key{nodeId, eventName};
+    HandlerKey key{runtime, nodeId, eventName};
     auto it = sHandlers.find(key);
     if (it == sHandlers.end()) return;
-    runtime = it->second.runtime;
     handler = it->second.handler;
   }
-  if (!runtime || !handler) return;
+  if (!handler) return;
   Runtime &rt = *runtime;
   auto invoke = ^{
     Object payload(rt);
@@ -267,18 +315,27 @@ extern "C" void ZynthUIInvokeLayoutEvent(int nodeId,
                                          double y,
                                          double width,
                                          double height) {
+  ZynthUIInvokeLayoutEventWithRuntime(nullptr, nodeId, x, y, width, height);
+}
+
+extern "C" void ZynthUIInvokeLayoutEventWithRuntime(void *runtimePtr,
+                                                    int nodeId,
+                                                    double x,
+                                                    double y,
+                                                    double width,
+                                                    double height) {
   std::string eventName = "onLayout";
-  Runtime *runtime = nullptr;
+  Runtime *runtime = reinterpret_cast<Runtime *>(runtimePtr);
+  if (!runtime) return;
   std::shared_ptr<Function> handler;
   {
     std::lock_guard<std::mutex> lock(sHandlersMutex);
-    HandlerKey key{nodeId, eventName};
+    HandlerKey key{runtime, nodeId, eventName};
     auto it = sHandlers.find(key);
     if (it == sHandlers.end()) return;
-    runtime = it->second.runtime;
     handler = it->second.handler;
   }
-  if (!runtime || !handler) return;
+  if (!handler) return;
   Runtime &rt = *runtime;
   auto invoke = ^{
     Object payload(rt);
@@ -330,19 +387,26 @@ extern "C" void ZynthUIInvokeLayoutEvent(int nodeId,
 }
 
 extern "C" void ZynthUIInvokeEvent(int nodeId, const char *name, NSDictionary *payload) {
+  ZynthUIInvokeEventWithRuntime(nullptr, nodeId, name, payload);
+}
+
+extern "C" void ZynthUIInvokeEventWithRuntime(void *runtimePtr,
+                                              int nodeId,
+                                              const char *name,
+                                              NSDictionary *payload) {
   std::string eventName = name ? name : "";
   if (eventName.empty()) return;
-  Runtime *runtime = nullptr;
+  Runtime *runtime = reinterpret_cast<Runtime *>(runtimePtr);
+  if (!runtime) return;
   std::shared_ptr<Function> handler;
   {
     std::lock_guard<std::mutex> lock(sHandlersMutex);
-    HandlerKey key{nodeId, eventName};
+    HandlerKey key{runtime, nodeId, eventName};
     auto it = sHandlers.find(key);
     if (it == sHandlers.end()) return;
-    runtime = it->second.runtime;
     handler = it->second.handler;
   }
-  if (!runtime || !handler) return;
+  if (!handler) return;
   Runtime &rt = *runtime;
   NSDictionary *payloadCopy = payload;
   auto invoke = ^{
@@ -459,6 +523,7 @@ static void ZynthApplyStyleObject(Runtime &rt, ZynthUIManager *manager, int node
 
 void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
   if (!manager) return;
+  ZynthUIRegisterRuntimeForManagerInternal(manager, &rt);
 
   Object ui(rt);
 
@@ -550,13 +615,13 @@ void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
 
   auto removeChild = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "removeChild"), 2,
-      [manager](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+      [manager](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
         if (count < 2 || !args[0].isNumber() || !args[1].isNumber()) {
           return Value::undefined();
         }
         int parentId = (int)args[0].asNumber();
         int childId = (int)args[1].asNumber();
-        removeHandlersForNode(childId);
+        removeHandlersForNode(rt, childId);
         ZynthRunOnMainAsync(^{
           [manager removeChild:@(parentId) child:@(childId)];
         });
@@ -704,7 +769,7 @@ void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
                     if (i + 1 >= total) { i = total; break; }
                     int parentId = (int)ops[i++];
                     int childId = (int)ops[i++];
-                    removeHandlersForNode(childId);
+                    removeHandlersForNode(rt, childId);
                     [manager removeChild:@(parentId) child:@(childId)];
                     break;
                   }
@@ -866,7 +931,7 @@ void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
                   }
                   break;
                 case ZynthBatchOp::Kind::RemoveChild:
-                  removeHandlersForNode(op.childId);
+                  removeHandlersForNode(rt, op.childId);
                   [manager removeChild:@(op.parentId) child:@(op.childId)];
                   if (DEBUG_RUNTIME) {
                     NSLog(@"[ZynthUI] removeChild parent=%d child=%d",

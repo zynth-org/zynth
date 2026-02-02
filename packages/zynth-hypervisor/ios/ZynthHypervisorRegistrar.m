@@ -3,8 +3,8 @@
 #import <ZynthKit/ZynthKit.h>
 #else
 #import "ZynthComponentRegistry.h"
-#import "SNUIManager.h"
-#import "SNNode.h"
+#import "ZynthUIManager.h"
+#import "ZynthNode.h"
 #endif
 
 // Forward declare the Swift-exposed view to avoid Swift header import issues.
@@ -15,7 +15,7 @@
 // Minimal interface to call into the Swift view without relying on generated headers
 @interface ZynthHypervisorView : UIView
 @property(nonatomic, strong) NSDictionary *source;
-- (void)bindWithManager:(SNUIManager *)manager node:(SNNode *)node;
+- (void)bindWithManager:(ZynthUIManager *)manager node:(ZynthNode *)node;
 - (void)reload;
 - (void)destroy;
 - (void)postMessage:(id)message;
@@ -28,17 +28,17 @@
     dispatch_once(&onceToken, ^{
         ZynthComponentDescriptor *descriptor = [[ZynthComponentDescriptor alloc] initWithType:@"zynth-hypervisor-view"];
         
-        descriptor.createView = ^UIView * _Nullable(SNUIManager * _Nonnull manager, NSString * _Nonnull type) {
+        descriptor.createView = ^UIView * _Nullable(ZynthUIManager * _Nonnull manager, NSString * _Nonnull type) {
             return [[ZynthHypervisorView alloc] init];
         };
         
-        descriptor.attach = ^(SNUIManager * _Nonnull manager, SNNode * _Nonnull node) {
+        descriptor.attach = ^(ZynthUIManager * _Nonnull manager, ZynthNode * _Nonnull node) {
             if ([node.view isKindOfClass:[ZynthHypervisorView class]]) {
                 [(ZynthHypervisorView *)node.view bindWithManager:manager node:node];
             }
         };
         
-        descriptor.handleSetProp = ^BOOL(SNUIManager * _Nonnull manager, SNNode * _Nonnull node, NSString * _Nonnull name, id  _Nullable value, NSString * _Nonnull rawJSON) {
+        descriptor.handleSetProp = ^BOOL(ZynthUIManager * _Nonnull manager, ZynthNode * _Nonnull node, NSString * _Nonnull name, id  _Nullable value, NSString * _Nonnull rawJSON) {
             if (![node.view isKindOfClass:[ZynthHypervisorView class]]) {
                 return NO;
             }
@@ -75,7 +75,7 @@
         };
         
         // Cleanup block for when the node is removed
-        descriptor.cleanup = ^(SNUIManager * _Nonnull manager, SNNode * _Nonnull node) {
+        descriptor.cleanup = ^(ZynthUIManager * _Nonnull manager, ZynthNode * _Nonnull node) {
             if ([node.view isKindOfClass:[ZynthHypervisorView class]]) {
                 [(ZynthHypervisorView *)node.view destroy];
             }

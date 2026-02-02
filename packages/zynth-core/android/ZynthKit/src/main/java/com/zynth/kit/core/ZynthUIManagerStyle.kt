@@ -278,7 +278,6 @@ internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, va
       if (view is ZynthLayoutView) {
         view.setOverflowHidden(clip)
         view.clipToOutline = false
-        view.clipChildren = false
       } else {
         view.clipToOutline = clip
         if (view is android.view.ViewGroup) {
@@ -394,6 +393,7 @@ private fun ZynthUIManager.ensureBorderDrawable(id: Int, view: View): ZynthBorde
   val drawable = state.borderDrawable ?: ZynthBorderDrawable().also {
     state.borderDrawable = it
   }
+  drawable.renderBorderOnTop = view is ZynthLayoutView
   if (view.background !== drawable) {
     view.background = drawable
   }

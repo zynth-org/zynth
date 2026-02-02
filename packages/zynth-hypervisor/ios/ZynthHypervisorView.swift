@@ -7,8 +7,8 @@ import UIKit
 public class ZynthHypervisorView: UIView {
     private var runtime: ZynthRuntime?
     private var guestRootView: UIView?
-    private weak var manager: SNUIManager?
-    private weak var node: SNNode?
+    private weak var manager: ZynthUIManager?
+    private weak var node: ZynthNode?
     private var isDestroyed: Bool = false
     
     // Callbacks to JS
@@ -50,13 +50,14 @@ public class ZynthHypervisorView: UIView {
     private func destroyRuntime() {
         if let runtime = runtime {
             NotificationCenter.default.removeObserver(self, name: .didReceiveGuestMessage, object: runtime)
+            runtime.destroy()
         }
         runtime = nil
         guestRootView?.removeFromSuperview()
         guestRootView = nil
     }
 
-    func bind(manager: SNUIManager, node: SNNode) {
+    func bind(manager: ZynthUIManager, node: ZynthNode) {
         self.manager = manager
         self.node = node
     }
@@ -79,12 +80,7 @@ public class ZynthHypervisorView: UIView {
         
         // Use isGuest: true to allocate a unique surface ID for this guest runtime
         // The runtime constructor expects a view to attach the "Root Surface" (id=1) to.
-        let newRuntime = ZynthRuntime(
-          rootView: root,
-          runtime: nil,
-          enableDevServer: false,
-          isGuest: true
-        )
+        let newRuntime = ZynthRuntime(rootView: root)
         
         // Register Hypervisor Module for Guest -> Host communication
         let hypervisorModule = ZynthHypervisorModule(runtime: newRuntime)
@@ -111,13 +107,13 @@ public class ZynthHypervisorView: UIView {
         }
 
         // Inject JS bridge for guest to communicate with native module
-        newRuntime.evaluate(code: """
+        _ = try? newRuntime.evaluateScript("""
           globalThis.__ZYNTH_HYPERVISOR_BRIDGE__ = {
             postMessage: (message) => {
               globalThis.__modules.call('ZynthHypervisor', 'postMessage', [JSON.parse(message)]);
             }
           };
-        """)
+        """, sourceURL: "zynth://hypervisor/bridge.js")
         
         NotificationCenter.default.addObserver(
             self,
@@ -133,9 +129,13 @@ public class ZynthHypervisorView: UIView {
             loadBundle(from: url, runtime: newRuntime)
         } else if let code = source["code"] as? String {
             DispatchQueue.main.async {
-                newRuntime.evaluate(code: code)
-                newRuntime.start(rootId: newRuntime.rootSurfaceId)
-                self.notifyLoad()
+                do {
+                    _ = try newRuntime.evaluateScript(code, sourceURL: "zynth://hypervisor/source.js")
+                    newRuntime.start(withRootId: newRuntime.rootSurfaceId)
+                    self.notifyLoad()
+                } catch {
+                    self.notifyError("Failed to evaluate code: \(error.localizedDescription)")
+                }
             }
         } else {
             notifyError("Invalid source provided (neither uri nor code)")
@@ -179,9 +179,13 @@ public class ZynthHypervisorView: UIView {
         if url.isFileURL {
             do {
                 let code = try String(contentsOf: url, encoding: .utf8)
-                runtime.evaluate(code: code)
-                runtime.start(rootId: runtime.rootSurfaceId)
-                notifyLoad()
+                do {
+                    _ = try runtime.evaluateScript(code, sourceURL: url.absoluteString)
+                    runtime.start(withRootId: runtime.rootSurfaceId)
+                    notifyLoad()
+                } catch {
+                    notifyError("Failed to evaluate bundle: \(error.localizedDescription)")
+                }
             } catch {
                 print("[ZynthHypervisor] Failed to load bundle from file URL: \(error)")
                 notifyError("Failed to load bundle from file: \(error.localizedDescription)")
@@ -206,9 +210,13 @@ public class ZynthHypervisorView: UIView {
             }
             DispatchQueue.main.async {
                 guard self.runtime === currentRuntime else { return }
-                runtime.evaluate(code: code)
-                runtime.start(rootId: runtime.rootSurfaceId)
-                self.notifyLoad()
+                do {
+                    _ = try runtime.evaluateScript(code, sourceURL: url.absoluteString)
+                    runtime.start(withRootId: runtime.rootSurfaceId)
+                    self.notifyLoad()
+                } catch {
+                    self.notifyError("Failed to evaluate bundle: \(error.localizedDescription)")
+                }
             }
         }.resume()
     }

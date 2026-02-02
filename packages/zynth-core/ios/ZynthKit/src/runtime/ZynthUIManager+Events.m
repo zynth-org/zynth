@@ -4,6 +4,10 @@
 
 @implementation ZynthUIManager (Events)
 
+static inline void *ZynthRuntimePtrForManager(ZynthUIManager *manager) {
+  return ZynthUIRuntimeForManager(manager);
+}
+
 - (NSString *)pointerEventsForNode:(NSNumber *)nodeId {
   NSString *mode = _pointerEvents[nodeId];
   if (mode.length == 0) return @"auto";
@@ -79,7 +83,9 @@
     [_activePressNodes addObject:@(nodeId)];
     [_longPressFired removeObject:@(nodeId)];
     [self scheduleLongPressTimerForNode:@(nodeId)];
-    ZynthUIInvokePressEvent(nodeId,
+    void *runtimePtr = ZynthRuntimePtrForManager(self);
+    ZynthUIInvokePressEventWithRuntime(runtimePtr,
+                                       nodeId,
                             "onPressIn",
                             local.x,
                             local.y,
@@ -95,7 +101,9 @@
     [_activePressNodes removeObject:@(nodeId)];
     BOOL longPressed = [_longPressFired containsObject:@(nodeId)];
     if (inside && !longPressed) {
-      ZynthUIInvokePressEvent(nodeId,
+      void *runtimePtr = ZynthRuntimePtrForManager(self);
+      ZynthUIInvokePressEventWithRuntime(runtimePtr,
+                                         nodeId,
                               "onPress",
                               local.x,
                               local.y,
@@ -106,7 +114,9 @@
                               false);
       [self maybeDispatchDoublePressForNode:@(nodeId) timestampMs:timestampMs];
     }
-    ZynthUIInvokePressEvent(nodeId,
+    void *runtimePtr = ZynthRuntimePtrForManager(self);
+    ZynthUIInvokePressEventWithRuntime(runtimePtr,
+                                       nodeId,
                             "onPressOut",
                             local.x,
                             local.y,
@@ -121,7 +131,9 @@
       recognizer.state == UIGestureRecognizerStateFailed) {
     [self cancelLongPressTimerForNode:@(nodeId)];
     [_activePressNodes removeObject:@(nodeId)];
-    ZynthUIInvokePressEvent(nodeId,
+    void *runtimePtr = ZynthRuntimePtrForManager(self);
+    ZynthUIInvokePressEventWithRuntime(runtimePtr,
+                                       nodeId,
                             "onPressOut",
                             local.x,
                             local.y,
@@ -181,7 +193,9 @@
     CGPoint local = localVal ? localVal.CGPointValue : CGPointZero;
     CGPoint screen = screenVal ? screenVal.CGPointValue : CGPointZero;
     double timestampMs = [[NSDate date] timeIntervalSince1970] * 1000.0;
-    ZynthUIInvokePressEvent(nodeId.intValue,
+    void *runtimePtr = ZynthRuntimePtrForManager(self);
+    ZynthUIInvokePressEventWithRuntime(runtimePtr,
+                                       nodeId.intValue,
                             "onLongPress",
                             local.x,
                             local.y,
@@ -212,7 +226,9 @@
   NSValue *screenVal = _pressScreenPoints[nodeId];
   CGPoint local = localVal ? localVal.CGPointValue : CGPointZero;
   CGPoint screen = screenVal ? screenVal.CGPointValue : CGPointZero;
-  ZynthUIInvokePressEvent(nodeId.intValue,
+  void *runtimePtr = ZynthRuntimePtrForManager(self);
+  ZynthUIInvokePressEventWithRuntime(runtimePtr,
+                                     nodeId.intValue,
                           "onDoublePress",
                           local.x,
                           local.y,
@@ -241,7 +257,9 @@
     if (!force && !changed) continue;
     _layoutFrames[nodeId] = [NSValue valueWithCGRect:frame];
     [_layoutPending removeObject:nodeId];
-    ZynthUIInvokeLayoutEvent(nodeId.intValue,
+    void *runtimePtr = ZynthRuntimePtrForManager(self);
+    ZynthUIInvokeLayoutEventWithRuntime(runtimePtr,
+                                        nodeId.intValue,
                              frame.origin.x,
                              frame.origin.y,
                              frame.size.width,

@@ -17,7 +17,8 @@
                    payload:(NSDictionary *_Nullable)payload
                     toNode:(ZynthNode *)node {
   if (!node || name.length == 0) return;
-  ZynthUIInvokeEvent(node.nid, name.UTF8String, payload);
+  void *runtimePtr = ZynthUIRuntimeForManager(self);
+  ZynthUIInvokeEventWithRuntime(runtimePtr, node.nid, name.UTF8String, payload);
 }
 
 - (void)zynth_markNeedsFlush {

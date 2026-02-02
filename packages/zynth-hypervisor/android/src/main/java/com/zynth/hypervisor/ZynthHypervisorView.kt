@@ -1,9 +1,10 @@
 package com.zynth.hypervisor
 
 import android.content.Context
-import android.widget.FrameLayout
 import android.os.Handler
 import android.os.Looper
+import android.view.View
+import com.zynth.kit.core.ZynthLayoutView
 import com.zynth.kit.core.ZynthRootView
 import com.zynth.kit.core.ZynthUIManager
 import com.zynth.kit.runtime.ZynthRuntime
@@ -14,7 +15,7 @@ import org.json.JSONObject
 import java.io.File
 import java.io.IOException
 
-class ZynthHypervisorView(context: Context) : FrameLayout(context) {
+class ZynthHypervisorView(context: Context) : ZynthLayoutView(context) {
     private var guestRuntime: ZynthRuntime? = null
     private var guestRootView: ZynthRootView? = null
     private var currentSource: JSONObject? = null
@@ -36,6 +37,15 @@ class ZynthHypervisorView(context: Context) : FrameLayout(context) {
     var onLoad: (() -> Unit)? = null
     var onError: ((message: String) -> Unit)? = null
     var onMessage: ((message: JSONObject) -> Unit)? = null // For Phase 4
+    private val hypervisorPrelude = """
+        globalThis.__ZYNTH_HYPERVISOR_BRIDGE__ = {
+          postMessage: (message) => {
+            globalThis.__modules.call('ZynthHypervisor', 'postMessage', [JSON.parse(message)]);
+          }
+        };
+    """.trimIndent()
+    private var lastLayoutWidth = 0
+    private var lastLayoutHeight = 0
 
     init {
         ensureGuestRootView()
@@ -71,6 +81,8 @@ class ZynthHypervisorView(context: Context) : FrameLayout(context) {
         if (removeRoot) {
             guestRootView?.let { removeView(it) }
             guestRootView = null
+            lastLayoutWidth = 0
+            lastLayoutHeight = 0
         }
         currentSource = if (clearSource) null else preservedSource
     }
@@ -105,7 +117,7 @@ class ZynthHypervisorView(context: Context) : FrameLayout(context) {
         val root = ensureGuestRootView()
 
         // Clean up previous runtime
-        val runtime = ZynthRuntime(root, enableDevServer = false)
+        val runtime = ZynthRuntime(root)
         
         // Install Hypervisor Module
         val hypervisorModule = ZynthHypervisorModule(runtime) { message ->
@@ -117,17 +129,10 @@ class ZynthHypervisorView(context: Context) : FrameLayout(context) {
             emitEvent("onMessage", jsonMsg)
         }
         runtime.installModules(listOf(hypervisorModule))
-        runtime.installDefaultModules()
         ZynthAPIs.initialize(context, runtime)
         
-        // Inject JS bridge for guest to communicate with native module
-        runtime.load("globalThis.__ZYNTH_HYPERVISOR_BRIDGE__ = {\n" +
-                         "    postMessage: (message) => {\n" +
-                         "      globalThis.__modules.call('ZynthHypervisor', 'postMessage', [JSON.parse(message)]);\n" +
-                         "    }\n" +
-                         "  };")
-        
         guestRuntime = runtime
+        syncRootToHostSize(force = true)
 
         val uri = source.optString("uri")
         val code = source.optString("code")
@@ -194,8 +199,10 @@ class ZynthHypervisorView(context: Context) : FrameLayout(context) {
             if (sourceSignature != currentSource?.toString()) return@post
             if (guestRuntime != runtime) return@post
             try {
-                runtime.load(code)
-                runtime.start(runtime.getRootSurfaceId())
+                val combinedCode = "${hypervisorPrelude}\n$code"
+                runtime.loadInitialBundle(context.assets, preloadedCode = combinedCode)
+                runtime.start(runtime.rootSurfaceId)
+                runtime.flush()
                 notifyLoad()
             } catch (e: Exception) {
                 android.util.Log.e("ZynthHypervisor", "Failed to evaluate code for hypervisor", e)
@@ -226,7 +233,39 @@ class ZynthHypervisorView(context: Context) : FrameLayout(context) {
             root = ZynthRootView(context)
             guestRootView = root
             addView(root, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+            root.requestLayout()
+            requestLayout()
+            invalidate()
         }
         return root
+    }
+
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+        super.onLayout(changed, left, top, right, bottom)
+        val width = right - left
+        val height = bottom - top
+        if (width <= 0 || height <= 0) return
+        val changedSize = width != lastLayoutWidth || height != lastLayoutHeight
+        lastLayoutWidth = width
+        lastLayoutHeight = height
+        syncRootToHostSize(force = changedSize)
+    }
+
+    private fun syncRootToHostSize(force: Boolean) {
+        val root = guestRootView ?: return
+        val width = if (width > 0) width else lastLayoutWidth
+        val height = if (height > 0) height else lastLayoutHeight
+        if (width <= 0 || height <= 0) return
+        if (force || root.measuredWidth != width || root.measuredHeight != height) {
+            val wSpec = MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY)
+            val hSpec = MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY)
+            root.measure(wSpec, hSpec)
+        }
+        if (force || root.left != 0 || root.top != 0 || root.right != width || root.bottom != height) {
+            root.layout(0, 0, width, height)
+        }
+        if (force) {
+            guestRuntime?.flush()
+        }
     }
 }

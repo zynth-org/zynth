@@ -37,6 +37,8 @@ open class ZynthLayoutView @JvmOverloads constructor(
   open fun setOverflowHidden(hidden: Boolean) {
     if (overflowHidden != hidden) {
       overflowHidden = hidden
+      clipChildren = hidden
+      clipToPadding = hidden
       invalidate()
     }
   }
@@ -93,6 +95,7 @@ open class ZynthLayoutView @JvmOverloads constructor(
   }
 
   override fun dispatchDraw(canvas: Canvas) {
+    val borderDrawable = background as? ZynthBorderDrawable
     if (overflowHidden && width > 0 && height > 0) {
       val saveCount = canvas.save()
       
@@ -111,6 +114,7 @@ open class ZynthLayoutView @JvmOverloads constructor(
     } else {
       super.dispatchDraw(canvas)
     }
+    borderDrawable?.drawBorder(canvas)
   }
 
   fun updateYogaLayout(width: Int, height: Int) {

@@ -27,6 +27,7 @@ class ZynthRuntime(val root: ZynthRootView) {
     jsThread.start()
     jsHandler = Handler(jsThread.looper)
     uiManager.setJSHandler(jsHandler)
+    uiManager.setRuntimePtr(runtimePtr)
     uiManager.setFrameProfiler { frameMs, layoutMs, overBudget, nodeCount ->
       runOnJS {
         JSBridge.callGlobalFrame(runtimePtr, "__zynth_reportFrame", frameMs, layoutMs, overBudget, nodeCount)
