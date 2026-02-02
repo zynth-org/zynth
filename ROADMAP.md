@@ -70,7 +70,7 @@ This document outlines the current status and future development plan for the Zy
 - [x] Migrate zynth-components to new Runtime
 - [ ] Migrate zynth-filesystem to new Runtime
 - [x] Migrate zynth-haptics to new Runtime
-- [ ] Migrate zynth-hypervisor to new Runtime
+- [x] Migrate zynth-hypervisor to new Runtime
 - [x] Migrate zynth-icons to new Runtime
 - [x] Migrate zynth-image-picker to new Runtime
 - [x] Migrate zynth-keyboard to new Runtime

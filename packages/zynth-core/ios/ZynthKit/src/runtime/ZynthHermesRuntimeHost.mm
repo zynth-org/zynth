@@ -254,6 +254,17 @@ static void installGlobals(Runtime &rt) {
 
 - (void)dealloc {
   ZynthSetCurrentRuntimeHost(nil);
+  if (_runtime) {
+    facebook::hermes::HermesRuntime *rt = _runtime.release();
+    dispatch_queue_t queue = _jsQueue;
+    if (queue) {
+      dispatch_async(queue, ^{
+        delete rt;
+      });
+    } else {
+      delete rt;
+    }
+  }
 }
 
 - (void)installModuleBridge:(id<ZynthModuleBridge>)bridge constants:(NSDictionary<NSString *,id> *)constants {
@@ -601,8 +612,10 @@ static void installGlobals(Runtime &rt) {
             source, dispatch_time(DISPATCH_TIME_NOW, delayNs), DISPATCH_TIME_FOREVER, 0);
 
         dispatch_source_set_event_handler(source, ^{
-          auto it = host->_timers.find(timerId);
-          if (it == host->_timers.end()) return;
+          ZynthHermesRuntimeHost *strongHost = weakHost;
+          if (!strongHost) return;
+          auto it = strongHost->_timers.find(timerId);
+          if (it == strongHost->_timers.end()) return;
           auto &timerRef = *it->second;
           const Value *argsPtr =
               timerRef.args.empty() ? nullptr : timerRef.args.data();
@@ -611,7 +624,7 @@ static void installGlobals(Runtime &rt) {
           } catch (const JSError &error) {
             NSString *message = [NSString stringWithUTF8String:error.getMessage().c_str()];
             NSString *stack = [NSString stringWithUTF8String:error.getStack().c_str()];
-            [host emitDevtoolsEventWithTopic:@"error/js"
+            [strongHost emitDevtoolsEventWithTopic:@"error/js"
                                        level:@"error"
                                          tag:@"js"
                                         data:@{
@@ -632,7 +645,7 @@ static void installGlobals(Runtime &rt) {
             }
           }
           dispatch_source_cancel(timerRef.source);
-          host->_timers.erase(it);
+          strongHost->_timers.erase(it);
         });
 
         dispatch_resume(source);
@@ -683,8 +696,10 @@ static void installGlobals(Runtime &rt) {
             source, dispatch_time(DISPATCH_TIME_NOW, intervalNs), intervalNs, 0);
 
         dispatch_source_set_event_handler(source, ^{
-          auto it = host->_timers.find(timerId);
-          if (it == host->_timers.end()) return;
+          ZynthHermesRuntimeHost *strongHost = weakHost;
+          if (!strongHost) return;
+          auto it = strongHost->_timers.find(timerId);
+          if (it == strongHost->_timers.end()) return;
           auto &timerRef = *it->second;
           const Value *argsPtr =
               timerRef.args.empty() ? nullptr : timerRef.args.data();
@@ -693,7 +708,7 @@ static void installGlobals(Runtime &rt) {
           } catch (const JSError &error) {
             NSString *message = [NSString stringWithUTF8String:error.getMessage().c_str()];
             NSString *stack = [NSString stringWithUTF8String:error.getStack().c_str()];
-            [host emitDevtoolsEventWithTopic:@"error/js"
+            [strongHost emitDevtoolsEventWithTopic:@"error/js"
                                        level:@"error"
                                          tag:@"js"
                                         data:@{
