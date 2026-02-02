@@ -12,9 +12,7 @@ object TextInputPropAdapter {
     return when (name) {
       "value" -> {
         val textValue = parseString(value)
-        input.performProgrammaticUpdate {
-          input.setText(textValue)
-        }
+        input.updateTextSync(textValue)
         true
       }
       "defaultValue" -> {

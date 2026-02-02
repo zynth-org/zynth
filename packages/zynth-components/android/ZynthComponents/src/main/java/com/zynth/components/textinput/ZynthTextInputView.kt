@@ -236,6 +236,32 @@ internal open class ZynthTextInputView @JvmOverloads constructor(
     }
   }
 
+  fun updateTextSync(newValue: String?) {
+    val current = text?.toString()
+    if (current == newValue) return
+
+    val start = selectionStart
+    val end = selectionEnd
+
+    performProgrammaticUpdate {
+      setText(newValue)
+      if (start >= 0 && end >= 0) {
+        val len = text?.length ?: 0
+        val newStart = start.coerceIn(0, len)
+        val newEnd = end.coerceIn(0, len)
+
+        val previous = selectionWatcherEnabled
+        selectionWatcherEnabled = false
+        try {
+          setSelection(newStart, newEnd)
+        } catch (_: Throwable) {
+        } finally {
+          selectionWatcherEnabled = previous
+        }
+      }
+    }
+  }
+
   fun applyPlaceholder(text: String?) {
     hint = text
     updatePlaceholderTone()
