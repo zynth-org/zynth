@@ -15,4 +15,4 @@ This tool orchestrates the development, build, and bundling process for Zynth ap
 
 ### Runtime Selection
 
-Use `--new-runtime` with `zynth dev` or `zynth prebuild` to generate native projects wired to the new runtime in `@zynth/core` instead of the legacy `@zynth/ios` and `@zynth/android` runtimes.
+Zynth now defaults to the core runtime in `@zynth/core`; the legacy runtimes are no longer used by the CLI.

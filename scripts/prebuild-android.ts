@@ -7,7 +7,7 @@ function dim(text: string): string {
 import { generateAndroidProject } from "./generate-android";
 
 const templatesRoot = path.dirname(
-  require.resolve("@zynth/templates/package.json")
+  require.resolve("@zynth/templates/package.json"),
 );
 
 export function main(options: any = {}): void {
@@ -28,7 +28,9 @@ export function main(options: any = {}): void {
       delete process.env.ZYNTH_QUIET_PREBUILD;
       console.log("  ├─ Generated Android Legacy Icons");
       console.log("  ├─ Generated Android Splash Assets");
-      console.log(`✔ Android project generated at ${dim(path.join(appDir, "android"))}`);
+      console.log(
+        `✔ Android project generated at ${dim(path.join(appDir, "android"))}`,
+      );
       console.log("");
     }
 
@@ -36,7 +38,7 @@ export function main(options: any = {}): void {
     const gradlePropsSrc = path.join(
       templatesRoot,
       "android",
-      "gradle.properties"
+      "gradle.properties",
     );
     const gradlePropsDest = path.join(androidDir, "gradle.properties");
     if (fs.existsSync(gradlePropsSrc)) {
@@ -55,14 +57,14 @@ export function main(options: any = {}): void {
     if (isDev) {
       if (!quiet) {
         console.log(
-          "\n⚡ Dev prebuild skips copying the JS bundle (served via Rsbuild dev server)."
+          "\n⚡ Dev prebuild skips copying the JS bundle (served via Rsbuild dev server).",
         );
       }
     } else if (fs.existsSync(bundleSrc)) {
       fs.copyFileSync(bundleSrc, bundleDest);
       if (!quiet) {
         console.log(
-          `\n📄 Copied JS bundle to ${path.relative(appDir, bundleDest)}`
+          `\n📄 Copied JS bundle to ${path.relative(appDir, bundleDest)}`,
         );
       }
 
@@ -84,7 +86,7 @@ export function main(options: any = {}): void {
             "node_modules",
             "hermes-engine",
             "bin",
-            "hermesc"
+            "hermesc",
           ), // Local
         ];
 
@@ -101,30 +103,30 @@ export function main(options: any = {}): void {
         if (hermescPath) {
           execSync(
             `${hermescPath} -emit-binary -out "${hbcDest}" "${bundleSrc}"`,
-            { stdio: "inherit" }
+            { stdio: "inherit" },
           );
           if (!quiet) {
             console.log(
-              `📦 Generated Hermes bytecode: ${path.relative(appDir, hbcDest)}`
+              `📦 Generated Hermes bytecode: ${path.relative(appDir, hbcDest)}`,
             );
           }
         } else {
           if (!quiet) {
             console.warn(
-              "⚠️  hermesc not found. HBC compilation skipped. Install hermes-engine or add hermesc to PATH."
+              "⚠️  hermesc not found. HBC compilation skipped. Install hermes-engine or add hermesc to PATH.",
             );
           }
         }
       } catch (error: any) {
         if (!quiet) {
           console.warn(
-            `⚠️  HBC compilation failed: ${error.message}. Falling back to JS source.`
+            `⚠️  HBC compilation failed: ${error.message}. Falling back to JS source.`,
           );
         }
       }
     } else if (!quiet) {
       console.warn(
-        "\n⚠️  JS bundle not found (dist/main.js). Run the JS build before prebuild."
+        "\n⚠️  JS bundle not found (dist/main.js). Run the JS build before prebuild.",
       );
     }
     if (!quiet) {
@@ -140,7 +142,7 @@ export function main(options: any = {}): void {
       console.log("");
     }
   } catch (error: any) {
-    console.error("\n❌ Android prebuild failed:", error.message);
+    console.error("\n! Android prebuild failed:", error.message);
     process.exit(1);
   }
 }

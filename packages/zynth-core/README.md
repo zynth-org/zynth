@@ -1,8 +1,6 @@
 # Zynth Core Runtime
 
-Zynth Core is the next-generation native runtime and renderer for the Zynth framework. It lives in `packages/zynth-core` and focuses only on high-performance native rendering and the minimal host contract used by `@zynth/core`.
-
-Legacy runtimes remain in `packages/zynth-core/ios` and `packages/zynth-core/android`. Zynth Core is enabled only via an explicit build flag (`--new-runtime`).
+Zynth Core is the native runtime and renderer for the Zynth framework. It lives in `packages/zynth-core` and focuses only on high-performance native rendering and the minimal host contract used by `@zynth/core`.
 
 ---
 
@@ -83,10 +81,10 @@ For comprehensive documentation on creating, registering, and using Native Modul
 
 ## Build and Selection
 
-Zynth Core is opt-in:
+Zynth Core is the default runtime:
 
-- `yarn zynth dev --prebuild --new-runtime`
-- `yarn zynth prebuild --new-runtime`
+- `yarn zynth dev ios --prebuild`
+- `yarn zynth prebuild ios`
 
 The CLI/template wiring must link to `packages/zynth-core/ios` and `packages/zynth-core/android` when the flag is set, and fall back to legacy runtimes otherwise.
 Hermes configuration should remain aligned with the proven legacy setup in the Podfile and Android Gradle configuration.

@@ -152,7 +152,7 @@ function replacePlaceholders(content: string, config: AppConfig, extras: any = {
     )
     .replace(
       /\{\{\s*ZYNTH_ANDROID_RUNTIME_PACKAGE\s*\}\}/g,
-      extras.androidRuntimePackage ?? "@zynth/android"
+      extras.androidRuntimePackage ?? "@zynth/core"
     )
     .replace(
       /\{\{\s*ZYNTH_ANDROID_RUNTIME_SUBDIR\s*\}\}/g,
@@ -530,8 +530,7 @@ function formatAndroidDependencyBlock(modules: any[]): string {
 
 export function generateAndroidProject(appDir: string, options: any = {}): AppConfig {
   const { dev = true, quiet = false } = options; // Default to dev mode for backward compatibility
-  const useNewRuntime = Boolean(options.newRuntime);
-  const androidRuntimePackage = useNewRuntime ? "@zynth/core" : "@zynth/android";
+  const androidRuntimePackage = "@zynth/core";
   const androidRuntimeSubdir = "android/ZynthKit";
   const baseConfig = getAppConfig(appDir);
   const androidPackage = (
@@ -546,7 +545,7 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
     console.log(`Generating Android project for ${config.displayName}...`);
     console.log(`  Package: ${androidPackage}`);
     console.log(`  Mode: ${dev ? "Development" : "Production"}`);
-    console.log(`  Runtime: ${useNewRuntime ? "New" : "Legacy"}`);
+    console.log("  Runtime: Core");
   }
 
   const componentModules = collectNativeAndroidModules(appDir);
@@ -598,12 +597,9 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
   const devServerTokenBuildConfig = JSON.stringify(
     typeof devArtifacts.hmrServerToken === "string" ? `"${devArtifacts.hmrServerToken}"` : ""
   );
-  const runtimeModuleImports = useNewRuntime
-    ? ""
-    : `import ${androidPackage}.modules.DeviceModule\nimport ${androidPackage}.modules.EnvModule\nimport ${androidPackage}.modules.PerformanceModule`;
-  const runtimeModuleInstalls = useNewRuntime
-    ? "    // No default modules for new runtime"
-    : "    runtime.installDefaultModules()\n    runtime.installModules(listOf(DeviceModule(), EnvModule(), PerformanceModule()))";
+  const runtimeModuleImports = "";
+  const runtimeModuleInstalls = "    // No default modules for core runtime";
+  const skipLegacyModules = true;
 
   if (fs.existsSync(targetDir)) {
     if (!quiet) {
@@ -619,7 +615,7 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
   for (const file of files) {
     const rel = path.relative(templateDir, file);
     const modulesDir = path.join("app", "src", "main", "java", "modules");
-    if (useNewRuntime && rel.startsWith(modulesDir + path.sep)) {
+    if (skipLegacyModules && rel.startsWith(modulesDir + path.sep)) {
       continue;
     }
     const targetPath = (() => {

@@ -1032,7 +1032,6 @@ async function devIOS(root, appDir, options = {}) {
     ensurePrebuild(root, appDir, "ios", {
       dev: true,
       quiet: quietOutput,
-      newRuntime: options.newRuntime,
     });
   }
 
@@ -1310,7 +1309,6 @@ async function devAndroid(root, appDir, options = {}) {
   ensurePrebuild(root, appDir, "android", {
     dev: true,
     quiet: quietOutput,
-    newRuntime: options.newRuntime,
   });
 
   const devicesBeforeBuild = getConnectedAndroidDevices();

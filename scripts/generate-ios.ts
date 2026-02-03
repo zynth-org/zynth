@@ -210,17 +210,17 @@ function replacePlaceholders(content: string, config: AppConfig, extras: any = {
 
   output = output.replace(
     /\{\{ZYNTH_IOS_RUNTIME_PACKAGE\}\}/g,
-    extras.iosRuntimePackage ?? "@zynth/ios"
+    extras.iosRuntimePackage ?? "@zynth/core"
   );
 
   output = output.replace(
     /\{\{ZYNTH_IOS_RUNTIME_DIR\}\}/g,
-    extras.iosRuntimeDir ?? "zynth-ios"
+    extras.iosRuntimeDir ?? "zynth-core"
   );
 
   output = output.replace(
     /\{\{ZYNTH_IOS_HERMES_DIR\}\}/g,
-    extras.iosHermesDir ?? "zynth-ios"
+    extras.iosHermesDir ?? "zynth-core/ios"
   );
 
   output = output.replace(
@@ -329,17 +329,13 @@ function removeDirectoryWithRetries(targetDir: string, retries = 5): void {
 
 export function generateIOSProject(appDir: string, options: any = {}) {
   const { dev = true, quiet = false } = options; // Default to dev mode for backward compatibility
-  const useNewRuntime = Boolean(options.newRuntime);
-  const iosRuntimePackage = useNewRuntime ? "@zynth/core" : "@zynth/ios";
-  const iosRuntimeDir = useNewRuntime ? "zynth-core" : "zynth-ios";
-  const iosHermesDir = useNewRuntime ? "zynth-core/ios" : "zynth-ios";
+  const iosRuntimePackage = "@zynth/core";
+  const iosRuntimeDir = "zynth-core";
+  const iosHermesDir = "zynth-core/ios";
   const runtimeImports = '#import "ZynthKit-Swift.h"';
-  const runtimeLoadFailure = useNewRuntime
-    ? ""
-    : `    if (loadError) {\n      [DevRedBox showWithTitle:@"Bundle Load Failed"\n                       message:loadError.localizedDescription\n                         stack:nil];\n    }`;
-  const runtimeRootController = useNewRuntime
-    ? "  ZynthViewController *vc = [ZynthViewController new];\n  vc.view = self.surface;\n  self.window.rootViewController = vc;"
-    : "  ZynthStatusBarHostController *vc = [ZynthStatusBarHostController new];\n  vc.view = self.surface;\n  self.window.rootViewController = vc;";
+  const runtimeLoadFailure = "";
+  const runtimeRootController =
+    "  ZynthViewController *vc = [ZynthViewController new];\n  vc.view = self.surface;\n  self.window.rootViewController = vc;";
   const config = getAppConfig(appDir);
   const devArtifacts = safeReadJSON(path.join(appDir, ".zynth", "artifacts.json")) || {};
   const devServerToken = typeof devArtifacts.hmrServerToken === "string"
@@ -357,7 +353,7 @@ export function generateIOSProject(appDir: string, options: any = {}) {
     console.log(`  Bundle ID: ${config.bundleId}`);
     console.log(`  Version: ${config.version}`);
     console.log(`  Mode: ${dev ? "Development" : "Production"}`);
-    console.log(`  Runtime: ${useNewRuntime ? "New" : "Legacy"}`);
+    console.log("  Runtime: Core");
     console.log(`  Target: ${targetDir}`);
   }
 

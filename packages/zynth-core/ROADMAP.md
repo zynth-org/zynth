@@ -110,7 +110,7 @@ The runtime must expose the following globals via JSI HostObjects:
 
 ## Build/Prebuild Selection Strategy
 
-- Add a `--new-runtime` flag to `zynth dev` and `zynth prebuild`.
+- Make the core runtime the default for `zynth dev` and `zynth prebuild`.
 - When enabled, templates should link to `packages/zynth-core/ios` and `packages/zynth-core/android` instead of `packages/zynth-core/ios` and `packages/zynth-core/android`.
 - This allows side-by-side legacy and new runtime without breaking existing apps.
 - Hermes configuration should remain aligned with the proven legacy setup in the Podfile and Android Gradle configuration.
@@ -155,16 +155,16 @@ The runtime must expose the following globals via JSI HostObjects:
   - `packages/zynth-core/ios`
   - `packages/zynth-core/android`
   - `packages/zynth-core/README.md`
-- CLI/build flag wired (new-runtime selection).
+- CLI/build defaults wired to core runtime (no flag).
 - Minimal bootstrapping in both platforms (load JS, install `__ui`, render a root view).
 
 **Exit Criteria**
 
-- Can run `yarn zynth dev --prebuild --new-runtime` and see a blank root view.
+- Can run `yarn zynth dev ios --prebuild` and see a blank root view.
 
 **Status**
 
-- Completed. Both platforms boot via `--new-runtime` and render a minimal root.
+- Completed. Both platforms boot via the core runtime by default and render a minimal root.
 
 ---
 
@@ -322,7 +322,7 @@ Core support now covers the Phase 4 style list with a few remaining caveats:
 
 **Deliverables**
 
-- Documentation for `--new-runtime` workflow.
+- Documentation for the default core runtime workflow.
 - Compatibility notes for any behavioral changes.
 - Module install guidelines for teams.
 
@@ -374,5 +374,5 @@ Core support now covers the Phase 4 style list with a few remaining caveats:
 ## Immediate Next Actions (Suggested)
 
 - Create `packages/zynth-core/README.md` with scope and design summary.
-- Add `--new-runtime` flag to `@zynth/cli` and `@zynth/rsbuild-plugin`.
+- Remove runtime selection flag from `@zynth/cli` and `@zynth/rsbuild-plugin`.
 - Define the first benchmark harness in `apps/components`.

@@ -19,11 +19,6 @@ module.exports = {
       type: "boolean",
       default: false,
     });
-    yargs.option("new-runtime", {
-      describe: "Use the new runtime from @zynth/core during prebuild",
-      type: "boolean",
-      default: false,
-    });
     yargs.option("devices", {
       describe: "Select a device to launch on from a list (iOS only)",
       type: "boolean",
@@ -63,7 +58,6 @@ module.exports = {
     if (argv.platform === "ios") {
       await devIOS(root, appDir, {
         prebuild: argv.prebuild,
-        newRuntime: argv.newRuntime,
         devices: argv.devices,
         local: argv.local,
         hmrNetwork: argv.hmrNetwork,
@@ -74,7 +68,6 @@ module.exports = {
     } else {
       await devAndroid(root, appDir, {
         prebuild: argv.prebuild,
-        newRuntime: argv.newRuntime,
         local: argv.local,
         hmrNetwork: argv.hmrNetwork,
         devtools: argv.devtools,
