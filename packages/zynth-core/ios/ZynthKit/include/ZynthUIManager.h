@@ -16,6 +16,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)setText:(NSNumber *)nodeId text:(NSString *)text;
 - (void)insertChild:(NSNumber *)parentId child:(NSNumber *)childId index:(NSNumber *)index;
 - (void)removeChild:(NSNumber *)parentId child:(NSNumber *)childId;
+- (void)dropNode:(NSNumber *)nodeId;
 - (void)setHandler:(NSNumber *)nodeId name:(NSString *)name;
 - (void)applyBatch:(NSString *)batchJSON;
 - (void)setSurface:(NSNumber *)surfaceId;

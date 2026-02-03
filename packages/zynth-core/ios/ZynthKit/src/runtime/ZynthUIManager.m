@@ -559,25 +559,39 @@
   NSNumber *yogaParentId = [self isSurfaceRootId:parentId] ? @(0) : parentId;
   [[self yogaForNode:childId] removeChild:yogaParentId child:childId];
 
-  [self zynth_recursiveRemoveNode:childId];
+  // Safe Detach Logic (Move Support)
+  [self detachNode:childId];
+  UIView *childView = _nodes[childId];
+  [childView removeFromSuperview];
+
   [self markSurfaceDirtyForNode:parentId];
 }
 
-- (void)zynth_recursiveRemoveNode:(NSNumber *)nodeId {
+- (void)dropNode:(NSNumber *)nodeId {
+  if (![NSThread isMainThread]) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+      [self dropNode:nodeId];
+    });
+    return;
+  }
+  [self zynth_recursiveDestroyNode:nodeId];
+}
+
+- (void)zynth_recursiveDestroyNode:(NSNumber *)nodeId {
   ZynthNode *node = _nodeStates[nodeId];
   if (!node) return;
 
-  // Recursively remove children
+  // Recursively destroy children
   NSArray<NSNumber *> *children = [node.children copy];
   for (NSNumber *childId in children) {
-    [self zynth_recursiveRemoveNode:childId];
+    [self zynth_recursiveDestroyNode:childId];
   }
 
-  // Retrieve layout BEFORE cleanupNode wipes _nodeSurfaces
+  // Retrieve layout BEFORE destroyNode wipes _nodeSurfaces
   ZynthYogaLayout *layout = [self yogaForNode:nodeId];
 
-  // Cleanup component-specific state (this removes _nodeSurfaces[nodeId])
-  [self cleanupNode:nodeId];
+  // Cleanup component-specific state
+  [self destroyNode:nodeId];
 
   // Free Yoga node and null out pointer to prevent use-after-free
   if (layout) {
@@ -595,7 +609,7 @@
   [_nodes removeObjectForKey:nodeId];
   [_nodeStates removeObjectForKey:nodeId];
   [_parents removeObjectForKey:nodeId];
-  // [_nodeSurfaces removeObjectForKey:nodeId]; // Already done in cleanupNode
+  // [_nodeSurfaces removeObjectForKey:nodeId]; // Already done in destroyNode
   [_layoutNodes removeObject:nodeId];
   [_layoutPending removeObject:nodeId];
   [_yogaStyleCache removeObjectForKey:nodeId];

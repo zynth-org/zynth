@@ -769,8 +769,15 @@ void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
                     if (i + 1 >= total) { i = total; break; }
                     int parentId = (int)ops[i++];
                     int childId = (int)ops[i++];
-                    removeHandlersForNode(rt, childId);
+                    // Handlers are preserved on Detach (Move)
                     [manager removeChild:@(parentId) child:@(childId)];
+                    break;
+                  }
+                  case 5: { // dropNode [nodeId]
+                    if (i + 1 >= total) { i = total; break; }
+                    int nodeId = (int)ops[i++];
+                    removeHandlersForNode(rt, nodeId);
+                    [manager dropNode:@(nodeId)];
                     break;
                   }
                   default:

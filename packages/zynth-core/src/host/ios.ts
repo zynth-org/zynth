@@ -34,6 +34,16 @@ export function createIOSHost(): Host {
   const CONTAINER_TO_CONTEXT = new Map<number, string>();
   let nextContextId = 0;
 
+  // FinalizationRegistry for safe destruction
+  const registry =
+    typeof (globalThis as any).FinalizationRegistry !== "undefined"
+      ? new (globalThis as any).FinalizationRegistry((heldId: number) => {
+          // When HostNode is GC'd, we can safely destroy the native node
+          enqueueBatchOp({ type: "dropNode", nodeId: heldId });
+          schedule();
+        })
+      : null;
+
   const suppressionKey = "__zynthSuppressNativeMutations";
   const isSuppressed = () => Boolean((g as any)[suppressionKey]);
 
@@ -41,6 +51,7 @@ export function createIOSHost(): Host {
   type BatchOperation =
     | { type: "insertChild"; parentId: number; childId: number; index: number }
     | { type: "removeChild"; parentId: number; childId: number }
+    | { type: "dropNode"; nodeId: number }
     | { type: "setProp"; nodeId: number; name: string; value: any }
     | { type: "setText"; nodeId: number; value: any };
 
@@ -207,6 +218,9 @@ export function createIOSHost(): Host {
           break;
         case "removeChild":
           encoded.push(4, op.parentId, op.childId);
+          break;
+        case "dropNode":
+          encoded.push(5, op.nodeId);
           break;
       }
     }
@@ -478,6 +492,11 @@ export function createIOSHost(): Host {
 
       if (id === null) {
         id = ui.createNode(type);
+      }
+
+      const node = { id, type } as HostNode;
+      if (registry) {
+        registry.register(node, id);
       }
 
       PARENTS.set(id, null);

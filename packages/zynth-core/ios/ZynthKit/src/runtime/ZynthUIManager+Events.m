@@ -267,7 +267,19 @@ static inline void *ZynthRuntimePtrForManager(ZynthUIManager *manager) {
   }
 }
 
-- (void)cleanupNode:(NSNumber *)nodeId {
+- (void)detachNode:(NSNumber *)nodeId {
+  // Cancel active animations/timers but preserve node state
+  dispatch_source_t timer = _longPressTimers[nodeId];
+  if (timer) {
+    dispatch_source_cancel(timer);
+    [_longPressTimers removeObjectForKey:nodeId];
+  }
+  [_nodeSurfaces removeObjectForKey:nodeId];
+}
+
+- (void)destroyNode:(NSNumber *)nodeId {
+  [self detachNode:nodeId];
+  
   ZynthNode *node = _nodeStates[nodeId];
   if (node) {
     ZynthComponentDescriptor *descriptor = ZynthGetComponentDescriptor(node.type);
@@ -295,11 +307,7 @@ static inline void *ZynthRuntimePtrForManager(ZynthUIManager *manager) {
   [_styleLayoutDirtyNodes removeObject:nodeId];
   [_textStyleStates removeObjectForKey:nodeId];
   [_yogaStyleCache removeObjectForKey:nodeId];
-  dispatch_source_t timer = _longPressTimers[nodeId];
-  if (timer) {
-    dispatch_source_cancel(timer);
-    [_longPressTimers removeObjectForKey:nodeId];
-  }
+  
   UIView *view = _nodes[nodeId];
   if (view) {
     for (UIGestureRecognizer *recognizer in view.gestureRecognizers.copy) {
@@ -308,7 +316,6 @@ static inline void *ZynthRuntimePtrForManager(ZynthUIManager *manager) {
       [view removeGestureRecognizer:recognizer];
     }
   }
-  [_nodeSurfaces removeObjectForKey:nodeId];
 }
 
 @end

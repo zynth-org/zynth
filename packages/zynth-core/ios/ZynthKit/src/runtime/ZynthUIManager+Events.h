@@ -14,7 +14,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)scheduleLongPressTimerForNode:(NSNumber *)nodeId;
 - (void)maybeDispatchDoublePressForNode:(NSNumber *)nodeId timestampMs:(double)timestampMs;
 - (void)dispatchLayoutEvents;
-- (void)cleanupNode:(NSNumber *)nodeId;
+- (void)detachNode:(NSNumber *)nodeId;
+- (void)destroyNode:(NSNumber *)nodeId;
 
 @end
 
