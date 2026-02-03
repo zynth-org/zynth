@@ -332,7 +332,7 @@ export function generateIOSProject(appDir: string, options: any = {}) {
   const useNewRuntime = Boolean(options.newRuntime);
   const iosRuntimePackage = useNewRuntime ? "@zynth/core" : "@zynth/ios";
   const iosRuntimeDir = useNewRuntime ? "zynth-core" : "zynth-ios";
-  const iosHermesDir = "zynth-ios";
+  const iosHermesDir = useNewRuntime ? "zynth-core/ios" : "zynth-ios";
   const runtimeImports = '#import "ZynthKit-Swift.h"';
   const runtimeLoadFailure = useNewRuntime
     ? ""
