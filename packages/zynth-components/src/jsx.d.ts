@@ -7,6 +7,7 @@ import type { ProgressIndicatorProps } from "./primitives/ProgressIndicator";
 import type { SwitchProps } from "./primitives/Switch";
 import type { StatusBarProps } from "./primitives/StatusBar";
 import type { SliderProps } from "./primitives/Slider";
+import type { BottomSheetProps } from "./primitives/BottomSheet";
 
 type ZynthChildren = JSX.Element | JSX.Element[] | null | undefined;
 type SolidButtonProps = JSX.HTMLAttributes<HTMLButtonElement>;
@@ -94,6 +95,7 @@ declare module "solid-js" {
       "date-picker-view": { [key: string]: any };
       "date-picker-trigger-view": { [key: string]: any };
       "zynth-modal": ViewElementProps & { [key: string]: any };
+      "zynth-bottom-sheet": BottomSheetProps & { [key: string]: any };
     }
   }
 }

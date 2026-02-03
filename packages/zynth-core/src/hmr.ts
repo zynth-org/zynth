@@ -508,7 +508,7 @@ function processUpdatedModules(
     } catch (error) {
       console.error(
         `[HMR] Failed to evaluate updated module ${moduleId}`,
-        error,
+        JSON.stringify(error),
       );
     }
 
