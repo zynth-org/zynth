@@ -63,10 +63,10 @@ This document outlines the current status and future development plan for the Zy
 - [ ] iOS: Transparency buttons doesn't works.
 - [ ] iOS: DatePicker imperative won't open.
 - [ ] iOS: Stack Modal bug that return to details with.
-- [ ] Migrate zynth-animate to new Runtime
+- [x] Migrate zynth-animate to new Runtime
 - [x] Migrate zynth-apis to new Runtime
 - [x] Migrate zynth-async-storage to new Runtime
-- [ ] Migrate zynth-bottom-sheet to new Runtime
+- [x] Migrate zynth-bottom-sheet to new Runtime
 - [x] Migrate zynth-components to new Runtime
 - [x] Migrate zynth-filesystem to new Runtime
 - [x] Migrate zynth-haptics to new Runtime
