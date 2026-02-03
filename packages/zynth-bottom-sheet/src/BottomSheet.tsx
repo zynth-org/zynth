@@ -42,6 +42,7 @@ type BottomSheetCommand =
 type InternalController = BottomSheetController & {
   __attachHost: (node: HostNode | null) => void;
   __updateIndex: (index: number) => void;
+  __setOpenState?: (open: boolean) => void;
 };
 
 export interface BottomSheetProps {
@@ -118,12 +119,14 @@ export const createBottomSheetController = (): BottomSheetController => {
 
   const controller: InternalController = {
     open: (index) => {
+      controller.__setOpenState?.(true);
       sendCommand(
         host,
         index != null ? { type: "open", index } : { type: "open" }
       );
     },
     close: () => {
+      controller.__setOpenState?.(false);
       sendCommand(host, { type: "close" });
     },
     snapTo: (index) => {
@@ -229,6 +232,14 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
   };
 
   const controller = asInternalController(local.controller);
+
+  if (controller) {
+    controller.__setOpenState = (open) => {
+      if (!isControlled()) {
+        setUncontrolledOpen(open);
+      }
+    };
+  }
 
   const attachHost = (node: HostNode | null) => {
     host = node;

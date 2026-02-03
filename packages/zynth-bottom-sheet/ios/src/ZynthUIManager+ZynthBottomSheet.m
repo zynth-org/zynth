@@ -1,4 +1,4 @@
-#import "SNUIManager+ZynthBottomSheet.h"
+#import "ZynthUIManager+ZynthBottomSheet.h"
 
 #if __has_include(<ZynthBottomSheet/ZynthBottomSheet-Swift.h>)
 #import <ZynthBottomSheet/ZynthBottomSheet-Swift.h>
@@ -13,7 +13,7 @@
 #endif
 
 #import "ZynthComponentRegistry.h"
-#import "SNNode.h"
+#import "ZynthNode.h"
 
 static NSString *ZynthBottomSheetNormalizeJSONString(NSString *value) {
   if ([value rangeOfString:@"\\\""].location == NSNotFound) {
@@ -80,13 +80,13 @@ static BOOL ZynthBottomSheetParseBoolean(NSString *rawJSON, BOOL fallback) {
   return fallback;
 }
 
-@implementation SNUIManager (ZynthBottomSheet)
+@implementation ZynthUIManager (ZynthBottomSheet)
 
 + (void)load {
   static dispatch_once_t onceToken;
   dispatch_once(&onceToken, ^{
     ZynthComponentDescriptor *descriptor = [[ZynthComponentDescriptor alloc] initWithType:@"zynth-bottom-sheet"];
-    descriptor.createView = ^UIView *(SNUIManager *manager, NSString *type) {
+    descriptor.createView = ^UIView *(ZynthUIManager *manager, NSString *type) {
       if (@available(iOS 16.0, *)) {
         ZynthBottomSheetView *view = [[ZynthBottomSheetView alloc] init];
         return view;
@@ -94,22 +94,22 @@ static BOOL ZynthBottomSheetParseBoolean(NSString *rawJSON, BOOL fallback) {
       
       return [UIView new];
     };
-    descriptor.attach = ^(SNUIManager *manager, SNNode *node) {
+    descriptor.attach = ^(ZynthUIManager *manager, ZynthNode *node) {
       if (@available(iOS 16.0, *)) {
         if (![node.view isKindOfClass:[ZynthBottomSheetView class]]) return;
         ZynthBottomSheetView *view = (ZynthBottomSheetView *)node.view;
         [view bindWithManager:manager node:node];
       }
     };
-    descriptor.cleanup = ^(SNUIManager *manager, SNNode *node) {
+    descriptor.cleanup = ^(ZynthUIManager *manager, ZynthNode *node) {
       if (@available(iOS 16.0, *)) {
         if (![node.view isKindOfClass:[ZynthBottomSheetView class]]) return;
         ZynthBottomSheetView *view = (ZynthBottomSheetView *)node.view;
         [view reset];
       }
     };
-    descriptor.handleSetProp = ^BOOL(SNUIManager *manager,
-                                     SNNode *node,
+    descriptor.handleSetProp = ^BOOL(ZynthUIManager *manager,
+                                     ZynthNode *node,
                                      NSString *name,
                                      id value,
                                      NSString *rawJSON) {
@@ -201,7 +201,7 @@ static BOOL ZynthBottomSheetParseBoolean(NSString *rawJSON, BOOL fallback) {
       return NO;
     };
 
-    descriptor.handleSetHandler = ^BOOL(SNUIManager *manager, SNNode *node, NSString *name) {
+    descriptor.handleSetHandler = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name) {
       if (@available(iOS 16.0, *)) {
         return [name isEqualToString:@"onSnapChange"] ||
                [name isEqualToString:@"onDismiss"] ||

@@ -12,9 +12,10 @@ public final class ZynthBottomSheetView: UIView {
   }()
 
   private lazy var presenter = ZynthBottomSheetPresenter(contentHost: contentHost, host: self)
-  private var manager: SNUIManager?
-  private var node: SNNode?
+  private var manager: ZynthUIManager?
+  private var node: ZynthNode?
   private var options = ZynthBottomSheetOptions()
+  private var pendingOpenState: Bool?
 
   public override init(frame: CGRect) {
     super.init(frame: frame)
@@ -55,7 +56,16 @@ public final class ZynthBottomSheetView: UIView {
     contentHost.frame = bounds
   }
 
-  @objc public func bind(manager: SNUIManager, node: SNNode) {
+  public override func didMoveToWindow() {
+    super.didMoveToWindow()
+    guard window != nil else { return }
+    if let pending = pendingOpenState {
+      pendingOpenState = nil
+      presenter.setOpenState(pending, preferredIndex: options.initialSnapIndex)
+    }
+  }
+
+  @objc public func bind(manager: ZynthUIManager, node: ZynthNode) {
     self.manager = manager
     self.node = node
   }
@@ -65,6 +75,7 @@ public final class ZynthBottomSheetView: UIView {
     manager = nil
     node = nil
     options = ZynthBottomSheetOptions()
+    pendingOpenState = nil
     presenter.updateOptions(options)
   }
 
@@ -72,7 +83,7 @@ public final class ZynthBottomSheetView: UIView {
     guard let manager = manager, let node = node else { return }
     let selector = NSSelectorFromString("zynth_dispatchEvent:payload:toNode:")
     guard let method = manager.method(for: selector) else { return }
-    typealias Imp = @convention(c) (AnyObject, Selector, NSString, NSDictionary?, SNNode) -> Void
+    typealias Imp = @convention(c) (AnyObject, Selector, NSString, NSDictionary?, ZynthNode) -> Void
     let function = unsafeBitCast(method, to: Imp.self)
     function(manager, selector, name as NSString, payload as NSDictionary?, node)
   }
@@ -135,6 +146,10 @@ public final class ZynthBottomSheetView: UIView {
   @objc public func setOpenState(_ value: NSNumber?) {
 
     guard let value = value else { return }
+    if window == nil {
+      pendingOpenState = value.boolValue
+      return
+    }
     presenter.setOpenState(value.boolValue, preferredIndex: options.initialSnapIndex)
   }
 

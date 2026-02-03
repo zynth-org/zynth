@@ -4,6 +4,6 @@
 #import "ZynthKit.h"
 #endif
 
-@interface SNUIManager (ZynthBottomSheet)
+@interface ZynthUIManager (ZynthBottomSheet)
 
 @end

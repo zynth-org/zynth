@@ -26,8 +26,17 @@ class ZynthBottomSheetLayout @JvmOverloads constructor(
   private var nodeId: Int = -1
   private var currentOptions = ZynthBottomSheetOptions()
   private var isOpen = false
+  private var pendingOpenIndex: Int? = null
+  private var isAttached = false
 
   init {
+    // Host view should not participate in layout/hit-testing; the dialog owns the UI.
+    isClickable = false
+    isFocusable = false
+    isFocusableInTouchMode = false
+    isEnabled = false
+    setWillNotDraw(true)
+    visibility = View.GONE
     dialog.listener = object : ZynthBottomSheetDialog.Listener {
       override fun onShow() {
         updateOpenState(true)
@@ -86,10 +95,15 @@ class ZynthBottomSheetLayout @JvmOverloads constructor(
 
   fun open(index: Int? = null) {
     val targetIndex = index ?: currentOptions.initialSnapIndex
+    if (!isAttached) {
+      pendingOpenIndex = targetIndex.coerceAtLeast(0)
+      return
+    }
     dialog.present(targetIndex.coerceAtLeast(0))
   }
 
   fun close() {
+    pendingOpenIndex = null
     dialog.dismissSheet()
   }
 
@@ -100,7 +114,22 @@ class ZynthBottomSheetLayout @JvmOverloads constructor(
   fun reset() {
     dialog.dismissSheet()
     isOpen = false
+    pendingOpenIndex = null
     applyLayoutOptions(null)
+  }
+
+  override fun onAttachedToWindow() {
+    super.onAttachedToWindow()
+    isAttached = true
+    pendingOpenIndex?.let { index ->
+      pendingOpenIndex = null
+      post { dialog.present(index) }
+    }
+  }
+
+  override fun onDetachedFromWindow() {
+    super.onDetachedFromWindow()
+    isAttached = false
   }
 
   private fun handleSlide(sheet: View, slideOffset: Float) {
