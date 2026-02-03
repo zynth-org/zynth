@@ -156,7 +156,7 @@ internal fun ZynthUIManager.unregisterSurfaceInternal(surfaceId: Int) {
     if (view != null) {
       runOnMain { (view.parent as? ViewGroup)?.removeView(view) }
     }
-    cleanupNode(nodeId)
+    destroyNode(nodeId)
     parents.remove(nodeId)
     nodes.remove(nodeId)
     surfaceYoga[surfaceId]?.removeNode(nodeId)

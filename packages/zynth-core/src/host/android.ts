@@ -32,10 +32,21 @@ export function createAndroidHost(): Host {
   let nextContextId = 0;
   let activeRecyclingContext: string | null = null; // Currently active context for createNode
 
+  // FinalizationRegistry for safe destruction
+  const registry =
+    typeof (globalThis as any).FinalizationRegistry !== "undefined"
+      ? new (globalThis as any).FinalizationRegistry((heldId: number) => {
+          // When HostNode is GC'd, we can safely destroy the native node
+          enqueueBatchOp({ type: "dropNode", nodeId: heldId });
+          schedule();
+        })
+      : null;
+
   // NEW: Structured Queue System
   type BatchOperation =
     | { type: "insertChild"; parentId: number; childId: number; index: number }
     | { type: "removeChild"; parentId: number; childId: number }
+    | { type: "dropNode"; nodeId: number }
     | { type: "setProp"; nodeId: number; name: string; value: any }
     | { type: "setText"; nodeId: number; value: any };
 
@@ -204,6 +215,9 @@ export function createAndroidHost(): Host {
           break;
         case "removeChild":
           encoded.push(4, op.parentId, op.childId);
+          break;
+        case "dropNode":
+          encoded.push(5, op.nodeId);
           break;
       }
     }
@@ -483,6 +497,11 @@ export function createAndroidHost(): Host {
 
       if (id === null) {
         id = ui.createNode(type);
+      }
+
+      const node = { id, type } as HostNode;
+      if (registry && !recycled) {
+        registry.register(node, id);
       }
 
       PARENTS.set(id, null);

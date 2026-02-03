@@ -275,13 +275,25 @@ private data class LayoutEvent(
   val height: Double
 )
 
-internal fun ZynthUIManager.cleanupNode(id: Int) {
+internal fun ZynthUIManager.detachNode(id: Int) {
+  val node = nodeStates[id]
+  if (node != null) {
+    node.layoutAnimator?.cancel()
+    node.layoutAnimator = null
+  }
+  nodeSurfaces.remove(id)
+  val runnable = longPressRunnables.remove(id)
+  if (runnable != null) {
+    mainHandler.removeCallbacks(runnable)
+  }
+}
+
+internal fun ZynthUIManager.destroyNode(id: Int) {
+  detachNode(id)
   val node = nodeStates[id]
   if (node != null) {
     val descriptor = com.zynth.kit.components.ZynthComponentRegistry.getDescriptor(node.type)
     descriptor?.onReset?.invoke(node)
-    node.layoutAnimator?.cancel()
-    node.layoutAnimator = null
   }
   pointerEvents.remove(id)
   pressNodes.remove(id)
@@ -306,14 +318,10 @@ internal fun ZynthUIManager.cleanupNode(id: Int) {
   yogaStyleCache.remove(id)
   children.remove(id)
   nodeStates.remove(id)
-  nodeSurfaces.remove(id)
-  val runnable = longPressRunnables.remove(id)
-  if (runnable != null) {
-    mainHandler.removeCallbacks(runnable)
-  }
   val listener = touchListeners.remove(id)
   val view = nodes[id]
   if (listener != null && view != null) {
     runOnMain { view.setOnTouchListener(null) }
   }
+  nodes.remove(id)
 }

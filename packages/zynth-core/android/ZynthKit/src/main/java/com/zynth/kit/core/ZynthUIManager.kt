@@ -558,12 +558,12 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     val currentCenterX = current.left + width / 2f
     val currentCenterY = current.top + height / 2f
     val prevCenterX = if (hasActiveTransform) {
-      currentCenterX + view.translationX
+      previous.left + previous.width() / 2f + view.translationX
     } else {
       previous.left + previous.width() / 2f
     }
     val prevCenterY = if (hasActiveTransform) {
-      currentCenterY + view.translationY
+      previous.top + previous.height() / 2f + view.translationY
     } else {
       previous.top + previous.height() / 2f
     }
@@ -738,13 +738,21 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
 
     nodeStates[parentId]?.textChildren?.remove(childId)
     children[parentId]?.remove(childId)
-    cleanupNode(childId)
+    detachNode(childId)
     parents.remove(childId)
     runOnMain { (child.parent as? ViewGroup)?.removeView(child) }
     val yogaParentId = if (isSurfaceRootId(parentId)) 0 else parentId
     yogaForNode(childId).removeChild(yogaParentId, childId)
     markSurfaceDirtyForNode(childId)
     traceOp("removeChild", parentState?.type, startNs)
+  }
+
+  fun dropNode(nodeId: Int) {
+    if (Looper.myLooper() != Looper.getMainLooper()) {
+      runOnMain { dropNode(nodeId) }
+      return
+    }
+    destroyNode(nodeId)
   }
 
   fun setHandler(id: Int, name: String) {
@@ -907,6 +915,11 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
           val childId = ops[i++].toInt()
           removeChild(parentId, childId)
         }
+        5 -> { // dropNode
+          if (i + 1 >= ops.size) return
+          val nodeId = ops[i++].toInt()
+          dropNode(nodeId)
+        }
         else -> return
       }
     }
@@ -963,6 +976,11 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
           val parentId = read(i++).toInt()
           val childId = read(i++).toInt()
           removeChild(parentId, childId)
+        }
+        5 -> { // dropNode
+          if (i + 1 >= opCount) return
+          val nodeId = read(i++).toInt()
+          dropNode(nodeId)
         }
         else -> return
       }
