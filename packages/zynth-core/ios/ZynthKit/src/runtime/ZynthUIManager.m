@@ -1,5 +1,6 @@
 #import "ZynthUIManager.h"
 #import "ZynthUIBindings.h"
+#import "ZynthLayoutTransition.h"
 #import "ZynthUIManager+Private.h"
 #import "ZynthUIManager+Scheduler.h"
 #import "ZynthUIManager+Surface.h"
@@ -13,6 +14,10 @@
 #import <UIKit/UIKit.h>
 
 @implementation ZynthUIManager
+
+- (UIView *)viewForNodeId:(NSNumber *)nodeId {
+  return _nodes[nodeId];
+}
 
 - (instancetype)initWithRootView:(UIView *)rootView {
   self = [super init];
@@ -175,6 +180,15 @@
         [style removeObjectForKey:name];
       }
       descriptor.applyStyle((ZynthUIManager *)self, node, style.copy);
+    }
+    return;
+  }
+  if ([name isEqualToString:@"layout"]) {
+    if (node) {
+      node.layoutTransition = [ZynthLayoutTransitionConfig fromValue:parsedValue];
+      if (!node.layoutTransition) {
+        [view.layer removeAnimationForKey:@"zynth_layout"];
+      }
     }
     return;
   }
@@ -449,6 +463,9 @@
       [self markSurfaceDirty:surfaceId];
     }
     return;
+  }
+  if (child.superview == parent) {
+    [child removeFromSuperview];
   }
   NSInteger idx = MAX(0, MIN(index.integerValue, (NSInteger)parent.subviews.count));
   [parent insertSubview:child atIndex:(NSUInteger)idx];

@@ -1,13 +1,20 @@
 #import "ZynthWorklets.h"
 #import "ZynthHermesRuntimeHost.h"
 #import "ZynthUICommandsRegistry.h"
+#import "ZynthUIManager+Private.h"
+
+#import <QuartzCore/QuartzCore.h>
+#import <UIKit/UIKit.h>
 
 #import <hermes/hermes.h>
 #import <jsi/jsi.h>
 
 #import <atomic>
+#import <algorithm>
+#import <cmath>
 #import <memory>
 #import <mutex>
+#import <limits>
 #import <string>
 #import <unordered_map>
 #import <vector>
@@ -87,6 +94,9 @@ static void installGlobals(Runtime &rt) {
 }
 } // namespace
 
+namespace {
+} // namespace
+
 struct ZynthWorkletClosureValue {
   enum class Kind {
     Shared,
@@ -133,6 +143,37 @@ struct ZynthWorkletClosureValue {
   return self;
 }
 
+- (int)createSharedSignalWithValue:(double)initialValue {
+  int signalId = _nextSharedSignalId.fetch_add(1);
+  {
+    std::lock_guard<std::mutex> lock(_sharedSignalsMutex);
+    _sharedSignals[signalId] = initialValue;
+  }
+  return signalId;
+}
+
+- (double)sharedSignalValueForId:(int)signalId {
+  std::lock_guard<std::mutex> lock(_sharedSignalsMutex);
+  auto it = _sharedSignals.find(signalId);
+  if (it == _sharedSignals.end()) {
+    return std::numeric_limits<double>::quiet_NaN();
+  }
+  return it->second;
+}
+
+- (BOOL)setSharedSignalValue:(int)signalId value:(double)value {
+  {
+    std::lock_guard<std::mutex> lock(_sharedSignalsMutex);
+    auto it = _sharedSignals.find(signalId);
+    if (it == _sharedSignals.end()) {
+      return NO;
+    }
+    it->second = value;
+  }
+  return YES;
+}
+
+
 - (void)installSharedSignalsOnRuntime:(facebook::jsi::Runtime &)rt {
   auto createSharedSignal = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "createSharedSignal"), 1,
@@ -142,11 +183,7 @@ struct ZynthWorkletClosureValue {
           return Value::undefined();
         }
         double initialValue = args[0].asNumber();
-        int signalId = _nextSharedSignalId.fetch_add(1);
-        {
-          std::lock_guard<std::mutex> lock(_sharedSignalsMutex);
-          _sharedSignals[signalId] = initialValue;
-        }
+        int signalId = [self createSharedSignalWithValue:initialValue];
         NSLog(@"[ZynthWorklets] createSharedSignal id=%d value=%.3f", signalId, initialValue);
         return Value(static_cast<double>(signalId));
       });
@@ -159,13 +196,12 @@ struct ZynthWorkletClosureValue {
           return Value::undefined();
         }
         int signalId = static_cast<int>(args[0].asNumber());
-        std::lock_guard<std::mutex> lock(_sharedSignalsMutex);
-        auto it = _sharedSignals.find(signalId);
-        if (it == _sharedSignals.end()) {
+        double value = [self sharedSignalValueForId:signalId];
+        if (std::isnan(value)) {
           NSLog(@"[ZynthWorklets] getSharedSignal missing id=%d", signalId);
           return Value::undefined();
         }
-        return Value(it->second);
+        return Value(value);
       });
 
   auto setSharedSignal = Function::createFromHostFunction(
@@ -177,14 +213,9 @@ struct ZynthWorkletClosureValue {
         }
         int signalId = static_cast<int>(args[0].asNumber());
         double value = args[1].asNumber();
-        {
-          std::lock_guard<std::mutex> lock(_sharedSignalsMutex);
-          auto it = _sharedSignals.find(signalId);
-          if (it == _sharedSignals.end()) {
-            NSLog(@"[ZynthWorklets] setSharedSignal missing id=%d", signalId);
-            return Value::undefined();
-          }
-          it->second = value;
+        if (![self setSharedSignalValue:signalId value:value]) {
+          NSLog(@"[ZynthWorklets] setSharedSignal missing id=%d", signalId);
+          return Value::undefined();
         }
         NSLog(@"[ZynthWorklets] setSharedSignal id=%d value=%.3f", signalId, value);
         return Value::undefined();
@@ -355,6 +386,7 @@ struct ZynthWorkletClosureValue {
   rt.global().setProperty(rt, "__zynth_worklets", worklets);
   NSLog(@"[ZynthWorklets] worklets bridge installed");
 }
+
 
 - (void)ensureUIRuntime {
   if (_uiRuntime) return;

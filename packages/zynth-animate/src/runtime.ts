@@ -31,10 +31,11 @@ export function now(): number {
   return Date.now();
 }
 
-function tick(time: number): void {
+function tick(_time: number): void {
   rafId = null;
+  const current = now();
   for (const step of Array.from(activeSteps)) {
-    const done = step(time);
+    const done = step(current);
     if (done) {
       activeSteps.delete(step);
     }

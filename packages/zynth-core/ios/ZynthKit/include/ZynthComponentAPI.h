@@ -14,7 +14,7 @@ NS_ASSUME_NONNULL_BEGIN
                    payload:(NSDictionary *_Nullable)payload
                     toNode:(ZynthNode *)node;
 - (void)zynth_markNeedsFlush;
-- (ZynthNode *_Nullable)zynth_nodeForId:(NSNumber *)nodeId;
+- (ZynthNode *_Nullable)zynth_nodeForId:(NSNumber *)nodeId NS_SWIFT_NAME(zynth_node(forId:));
 - (void)zynth_storeEventPayload:(NSDictionary *_Nullable)payload
                         forNode:(ZynthNode *)node
                            name:(NSString *)name;

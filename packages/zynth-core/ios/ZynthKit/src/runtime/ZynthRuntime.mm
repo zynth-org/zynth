@@ -20,7 +20,7 @@
 
 @interface ZynthRuntime ()
 @property(nonatomic, weak) UIView *rootView;
-@property(nonatomic, strong) ZynthUIManager *manager;
+@property(nonatomic, strong) ZynthUIManager *uiManager;
 @property(nonatomic, strong) ZynthHermesRuntimeHost *runtime;
 @end
 
@@ -30,11 +30,11 @@
   self = [super init];
   if (self) {
     _rootView = rootView;
-    _manager = [[ZynthUIManager alloc] initWithRootView:rootView];
-    _manager.zynthRuntime = self;
-    _runtime = [[ZynthHermesRuntimeHost alloc] initWithUIManager:_manager];
+    _uiManager = [[ZynthUIManager alloc] initWithRootView:rootView];
+    _uiManager.zynthRuntime = self;
+    _runtime = [[ZynthHermesRuntimeHost alloc] initWithUIManager:_uiManager];
 #if __has_include("ZynthKit-Swift.h")
-    [[ZynthRuntimeManagerRegistry shared] setRuntime:self for:_manager];
+    [[ZynthRuntimeManagerRegistry shared] setRuntime:self for:_uiManager];
 #endif
     [self installDefaultModules];
 #if DEBUG
@@ -49,7 +49,7 @@
     }
 #endif
     __weak ZynthHermesRuntimeHost *weakRuntime = _runtime;
-    [_manager setFrameProfiler:^(NSTimeInterval frameMs,
+    [_uiManager setFrameProfiler:^(NSTimeInterval frameMs,
                                  NSTimeInterval layoutMs,
                                  BOOL overBudget,
                                  NSUInteger nodeCount) {
@@ -68,7 +68,7 @@
 }
 
 - (int)rootSurfaceId {
-  return [self.manager rootSurfaceId];
+  return [self.uiManager rootSurfaceId];
 }
 
 - (BOOL)loadInitialBundleWithJsBundleURL:(NSURL *_Nullable)url
@@ -105,23 +105,23 @@
 }
 
 - (int)registerSurfaceWithRootView:(UIView *)rootView {
-  return [self.manager registerSurfaceWithRootView:rootView].intValue;
+  return [self.uiManager registerSurfaceWithRootView:rootView].intValue;
 }
 
 - (void)unregisterSurfaceWithId:(int)surfaceId {
-  [self.manager unregisterSurface:surfaceId];
+  [self.uiManager unregisterSurface:surfaceId];
 }
 
 - (void)setActiveSurface:(int)surfaceId {
-  [self.manager setSurface:@(surfaceId)];
+  [self.uiManager setSurface:@(surfaceId)];
 }
 
 - (void)addSurfaceFirstFrameListener:(int)surfaceId listener:(dispatch_block_t)listener {
-  [self.manager addSurfaceFirstFrameListener:surfaceId listener:listener];
+  [self.uiManager addSurfaceFirstFrameListener:surfaceId listener:listener];
 }
 
 - (void)removeSurfaceFirstFrameListener:(int)surfaceId listener:(dispatch_block_t)listener {
-  [self.manager removeSurfaceFirstFrameListener:surfaceId listener:listener];
+  [self.uiManager removeSurfaceFirstFrameListener:surfaceId listener:listener];
 }
 
 - (void)callGlobal:(NSString *)name args:(NSArray *)args {
@@ -136,7 +136,7 @@
 }
 
 - (void)flush {
-  [self.manager flush];
+  [self.uiManager flush];
 }
 
 - (void)installModuleBridge:(id<ZynthModuleBridge>)bridge constants:(NSDictionary<NSString *,id> *)constants {

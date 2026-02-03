@@ -44,6 +44,7 @@ export function createAndroidHost(): Host {
     | { type: "batch"; op: BatchOperation };
 
   const queue: QueueItem[] = [];
+  const pendingRemovals = new Map<number, number>();
   const suppressionKey = "__zynthSuppressNativeMutations";
   const isSuppressed = () => Boolean((g as any)[suppressionKey]);
 
@@ -237,7 +238,7 @@ export function createAndroidHost(): Host {
   const runFlush = () => {
     flushScheduled = false;
     try {
-      if (queue.length) {
+      if (queue.length || pendingRemovals.size) {
         const pending = queue.splice(0);
         let batchAccumulator: BatchOperation[] = [];
 
@@ -257,6 +258,16 @@ export function createAndroidHost(): Host {
             flushBatch();
             item.func();
           }
+        }
+        if (pendingRemovals.size) {
+          for (const [childId, parentId] of pendingRemovals) {
+            batchAccumulator.push({
+              type: "removeChild",
+              parentId,
+              childId,
+            });
+          }
+          pendingRemovals.clear();
         }
         flushBatch();
       }
@@ -297,6 +308,10 @@ export function createAndroidHost(): Host {
     CHILDREN.has(id)
       ? CHILDREN.get(id)!
       : (CHILDREN.set(id, []), CHILDREN.get(id)!);
+
+  const recordPendingRemoval = (parentId: number, childId: number) => {
+    pendingRemovals.set(childId, parentId);
+  };
 
   const applyTextInputInitialProps = (id: number, props: any) => {
     if (!props) return;
@@ -590,6 +605,19 @@ export function createAndroidHost(): Host {
       schedule();
     },
     insertNode(parent, node, anchor) {
+      if (anchor && anchor.id === node.id) return;
+      if (pendingRemovals.has(node.id)) {
+        pendingRemovals.delete(node.id);
+      }
+      const prevParentId = PARENTS.get(node.id);
+      if (prevParentId != null) {
+        const prevKids = ensure(prevParentId);
+        const prevIndex = prevKids.indexOf(node.id);
+        if (prevIndex >= 0) {
+          prevKids.splice(prevIndex, 1);
+        }
+      }
+
       const kids = ensure(parent.id);
       const aIdx = anchor ? kids.indexOf(anchor.id) : -1;
       const logicalAt = aIdx >= 0 ? aIdx : kids.length;
@@ -681,14 +709,7 @@ export function createAndroidHost(): Host {
         contextId && RECYCLING_CONTEXTS.has(contextId) && node.type !== "text";
 
       const enqueueRemoveOp = () => {
-        const op = {
-          type: "removeChild" as const,
-          parentId: parent.id,
-          childId: node.id,
-        };
-        if (!tryEnqueueBatch(op)) {
-          enqueueBatchOp(op);
-        }
+        recordPendingRemoval(parent.id, node.id);
       };
 
       if (shouldRecycle) {

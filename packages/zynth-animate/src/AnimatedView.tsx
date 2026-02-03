@@ -361,11 +361,14 @@ export const AnimatedView: ParentComponent<AnimatedViewProps> = (props) => {
     return null;
   }
 
+  const styleProp =
+    typeof local.style === "function" ? (mergedStyle as AnimatedStyleProp) : mergedStyle();
+
   return (
     <View
       {...rest}
       ref={setHostNode}
-      style={mergedStyle()}
+      style={styleProp}
       layout={resolvedLayout() ?? undefined}
     >
       {resolvedChildren()}

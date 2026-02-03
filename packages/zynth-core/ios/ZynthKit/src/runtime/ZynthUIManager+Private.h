@@ -62,6 +62,8 @@ NS_ASSUME_NONNULL_BEGIN
                          NSUInteger nodeCount);
 }
 
+- (UIView *_Nullable)viewForNodeId:(NSNumber *)nodeId;
+
 @end
 
 NS_ASSUME_NONNULL_END

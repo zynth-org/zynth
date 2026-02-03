@@ -1,4 +1,5 @@
 #import "ZynthUIManager+Private.h"
+#import "ZynthLayoutTransition.h"
 #import "ZynthUIManager+Scheduler.h"
 #import "ZynthUIManager+Surface.h"
 #import "ZynthUIManager+Events.h"
@@ -7,6 +8,50 @@
 static const int kZynthSurfaceIdBase = 1 << 20;
 
 @implementation ZynthUIManager (Surface)
+
+- (void)handleLayoutTransitionForNode:(NSNumber *)nodeId changed:(BOOL)changed {
+  if (!nodeId || !changed) return;
+  ZynthNode *node = _nodeStates[nodeId];
+  if (!node) return;
+  UIView *view = _nodes[nodeId];
+  if (!view) return;
+
+  CGRect frame = view.frame;
+  BOOL hasPrevious = node.hasDispatchedLayout;
+  CGRect previous = node.lastLayoutFrame;
+  node.hasDispatchedLayout = YES;
+  node.lastLayoutFrame = frame;
+
+  ZynthLayoutTransitionConfig *transition = node.layoutTransition;
+  if (!transition || !hasPrevious) return;
+  if (![transition.type isEqualToString:@"linear"]) return;
+  if (transition.duration <= 0.0) return;
+  if (frame.size.width <= 0.0 || frame.size.height <= 0.0 ||
+      previous.size.width <= 0.0 || previous.size.height <= 0.0) {
+    return;
+  }
+  if (CGRectEqualToRect(previous, frame)) return;
+
+  [view.layer removeAnimationForKey:@"zynth_layout"];
+
+  CABasicAnimation *position = [CABasicAnimation animationWithKeyPath:@"position"];
+  position.fromValue = [NSValue valueWithCGPoint:CGPointMake(CGRectGetMidX(previous), CGRectGetMidY(previous))];
+  position.toValue = [NSValue valueWithCGPoint:view.layer.position];
+
+  CABasicAnimation *bounds = [CABasicAnimation animationWithKeyPath:@"bounds"];
+  bounds.fromValue = [NSValue valueWithCGRect:CGRectMake(0, 0, previous.size.width, previous.size.height)];
+  bounds.toValue = [NSValue valueWithCGRect:view.layer.bounds];
+
+  CAAnimationGroup *group = [CAAnimationGroup animation];
+  group.animations = @[position, bounds];
+  group.duration = transition.duration;
+  group.beginTime = CACurrentMediaTime() + transition.delay;
+  group.timingFunction = [transition timingFunction];
+  group.fillMode = kCAFillModeBoth;
+  group.removedOnCompletion = YES;
+
+  [view.layer addAnimation:group forKey:@"zynth_layout"];
+}
 
 - (int)rootSurfaceId {
   return 0;
@@ -68,6 +113,7 @@ static const int kZynthSurfaceIdBase = 1 << 20;
       [strongSelf->_styleLayoutDirtyNodes addObject:nodeId];
       strongSelf->_styleLayoutFrames[nodeId] = [NSValue valueWithCGRect:bounds];
     }
+    [strongSelf handleLayoutTransitionForNode:nodeId changed:changed];
   };
   _surfaceYoga[@(surfaceId)] = layout;
   _surfaceSizes[@(surfaceId)] = [NSValue valueWithCGSize:rootView.bounds.size];
@@ -140,6 +186,7 @@ static const int kZynthSurfaceIdBase = 1 << 20;
       [strongSelf->_styleLayoutDirtyNodes addObject:nodeId];
       strongSelf->_styleLayoutFrames[nodeId] = [NSValue valueWithCGRect:bounds];
     }
+    [strongSelf handleLayoutTransitionForNode:nodeId changed:changed];
   };
   _surfaceYoga[key] = layout;
   _surfaceSizes[key] = [NSValue valueWithCGSize:root.bounds.size];

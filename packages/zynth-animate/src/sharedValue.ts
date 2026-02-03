@@ -1,15 +1,19 @@
-import { createMemo, createSignal, untrack, type Accessor } from "solid-js";
+import { createMemo, untrack, type Accessor } from "solid-js";
+import {
+  captureSharedSignals,
+  createSharedSignal,
+  readSharedSignal,
+  type SharedSignalAccessor,
+  type SharedSignalToken,
+} from "@zynth/core";
 import type { Style } from "@zynth/core";
 import { Easing, type EasingFunction } from "./easing";
 import {
   SHARED_VALUE_MARKER,
   animateNativeSharedValue,
   cancelNativeSharedValue,
-  createNativeSharedValue,
-  getNativeSharedValue,
   hasNativeAnimate,
   isNativePlatform,
-  setNativeSharedValue,
   type NativeStyleMapperConfig,
 } from "./native";
 import { now, startAnimation } from "./runtime";
@@ -55,18 +59,7 @@ export type SharedValue<T> = {
   cancelAnimation: () => void;
 };
 
-type SharedValueToken = {
-  [SHARED_VALUE_MARKER]: number;
-  __zynth_shared_value_current: number;
-  valueOf: () => number;
-  toString: () => string;
-};
-
-type CaptureContext = {
-  tokens: Map<number, SharedValueToken>;
-};
-
-let captureContext: CaptureContext | null = null;
+type SharedValueToken = SharedSignalToken;
 
 const DEFAULT_DURATION = 300;
 const DEFAULT_DAMPING = 20;
@@ -78,37 +71,41 @@ const DEFAULT_REST_DISPLACEMENT = 0.001;
 function isTimingAnimation(value: unknown): value is TimingAnimation {
   return Boolean(
     value &&
-      typeof value === "object" &&
-      (value as TimingAnimation).__kind === "timing"
+    typeof value === "object" &&
+    (value as TimingAnimation).__kind === "timing",
   );
 }
 
 function isSpringAnimation(value: unknown): value is SpringAnimation {
   return Boolean(
     value &&
-      typeof value === "object" &&
-      (value as SpringAnimation).__kind === "spring"
+    typeof value === "object" &&
+    (value as SpringAnimation).__kind === "spring",
   );
 }
 
-export function withTiming(toValue: number, config?: TimingConfig): TimingAnimation {
+export function withTiming(
+  toValue: number,
+  config?: TimingConfig,
+): TimingAnimation {
   return { __kind: "timing", toValue, config } as TimingAnimation;
 }
 
-export function withSpring(toValue: number, config?: SpringConfig): SpringAnimation {
+export function withSpring(
+  toValue: number,
+  config?: SpringConfig,
+): SpringAnimation {
   return { __kind: "spring", toValue, config } as SpringAnimation;
 }
 
 export function useSharedValue<T>(initialValue: T): SharedValue<T> {
-  const nativeEnabled = isNativePlatform() && hasNativeAnimate();
-  let nativeId: number | null = null;
+  const [signal, setSignal] = createSharedSignal(initialValue);
+  const nativeId =
+    typeof initialValue === "number"
+      ? ((signal as SharedSignalAccessor<number>).__zynth_shared_signal_id ??
+        null)
+      : null;
   let cachedValue = initialValue;
-
-  if (nativeEnabled && typeof initialValue === "number") {
-    nativeId = createNativeSharedValue(initialValue);
-  }
-
-  const [value, setValue] = createSignal<T>(initialValue);
   let cancelActive: (() => void) | null = null;
   let finishCallback: AnimationCallback | null = null;
 
@@ -125,16 +122,13 @@ export function useSharedValue<T>(initialValue: T): SharedValue<T> {
 
   const setImmediate = (next: T): void => {
     cancelAnimation(false);
-    setValue(() => next);
+    setSignal(() => next);
     cachedValue = next;
-    if (nativeId !== null && typeof next === "number") {
-      setNativeSharedValue(nativeId, next);
-    }
   };
 
   const startTiming = (request: TimingAnimation): void => {
     cancelAnimation(false);
-    const from = untrack(value);
+    const from = readSharedSignal(signal);
     const to = request.toValue;
     const config = request.config;
     const duration = config?.duration ?? DEFAULT_DURATION;
@@ -144,7 +138,7 @@ export function useSharedValue<T>(initialValue: T): SharedValue<T> {
 
     const fromValue = typeof from === "number" ? from : NaN;
     if (Number.isNaN(fromValue) || duration <= 0) {
-      setValue(() => to as T);
+      setSignal(() => to as T);
       cancelAnimation(true);
       return;
     }
@@ -156,7 +150,12 @@ export function useSharedValue<T>(initialValue: T): SharedValue<T> {
       const progress = Math.min(elapsed / duration, 1);
       const eased = easing(progress);
       const nextValue = fromValue + (to - fromValue) * eased;
-      setValue(() => nextValue as T);
+      if (!Number.isFinite(nextValue)) {
+        setSignal(() => to as T);
+        cancelAnimation(true);
+        return true;
+      }
+      setSignal(() => nextValue as T);
       if (progress >= 1) {
         cancelAnimation(true);
         return true;
@@ -167,7 +166,7 @@ export function useSharedValue<T>(initialValue: T): SharedValue<T> {
 
   const startSpring = (request: SpringAnimation): void => {
     cancelAnimation(false);
-    const from = untrack(value);
+    const from = readSharedSignal(signal);
     const to = request.toValue;
     const config = request.config;
     const damping = config?.damping ?? DEFAULT_DAMPING;
@@ -182,7 +181,7 @@ export function useSharedValue<T>(initialValue: T): SharedValue<T> {
 
     const fromValue = typeof from === "number" ? from : NaN;
     if (Number.isNaN(fromValue)) {
-      setValue(() => to as T);
+      setSignal(() => to as T);
       cancelAnimation(true);
       return;
     }
@@ -197,7 +196,7 @@ export function useSharedValue<T>(initialValue: T): SharedValue<T> {
       if (time < startTime) return false;
       if (lastTime === 0) {
         lastTime = time;
-        setValue(() => position as T);
+        setSignal(() => position as T);
         return false;
       }
       const deltaMs = Math.min(time - lastTime, 64);
@@ -209,6 +208,11 @@ export function useSharedValue<T>(initialValue: T): SharedValue<T> {
       const acceleration = (springForce + dampingForce) / mass;
       velocity += acceleration * delta;
       position += velocity * delta;
+      if (!Number.isFinite(position)) {
+        setSignal(() => to as T);
+        cancelAnimation(true);
+        return true;
+      }
 
       if (overshootClamping && direction !== 0) {
         if (direction > 0 && position > to) {
@@ -220,13 +224,13 @@ export function useSharedValue<T>(initialValue: T): SharedValue<T> {
         }
       }
 
-      setValue(() => position as T);
+      setSignal(() => position as T);
 
       if (
         Math.abs(velocity) <= restSpeed &&
         Math.abs(displacement) <= restDisplacement
       ) {
-        setValue(() => to as T);
+        setSignal(() => to as T);
         cancelAnimation(true);
         return true;
       }
@@ -236,24 +240,7 @@ export function useSharedValue<T>(initialValue: T): SharedValue<T> {
 
   const shared: SharedValue<T> = {
     get value() {
-      if (nativeId !== null && captureContext && typeof cachedValue === "number") {
-        const token: SharedValueToken = {
-          [SHARED_VALUE_MARKER]: nativeId,
-          __zynth_shared_value_current: cachedValue,
-          valueOf: () => cachedValue as number,
-          toString: () => String(cachedValue),
-        };
-        captureContext.tokens.set(nativeId, token);
-        return token as T;
-      }
-      if (nativeId !== null && typeof cachedValue === "number") {
-        const nativeValue = getNativeSharedValue(nativeId);
-        if (typeof nativeValue === "number" && !Number.isNaN(nativeValue)) {
-          cachedValue = nativeValue as T;
-          return nativeValue as T;
-        }
-      }
-      return value();
+      return signal();
     },
     set value(next: T) {
       const animationRequest = isTimingAnimation(next)
@@ -261,7 +248,7 @@ export function useSharedValue<T>(initialValue: T): SharedValue<T> {
         : isSpringAnimation(next)
           ? next
           : null;
-      if (nativeId !== null && animationRequest) {
+      if (nativeId !== null && animationRequest && hasNativeAnimate()) {
         const config = animationRequest.config ?? {};
         const payload: Record<string, unknown> = {
           type: animationRequest.__kind,
@@ -293,7 +280,8 @@ export function useSharedValue<T>(initialValue: T): SharedValue<T> {
             payload.restSpeedThreshold = springConfig.restSpeedThreshold;
           }
           if (typeof springConfig.restDisplacementThreshold === "number") {
-            payload.restDisplacementThreshold = springConfig.restDisplacementThreshold;
+            payload.restDisplacementThreshold =
+              springConfig.restDisplacementThreshold;
           }
           if (typeof springConfig.overshootClamping === "boolean") {
             payload.overshootClamping = springConfig.overshootClamping;
@@ -323,28 +311,29 @@ export function useSharedValue<T>(initialValue: T): SharedValue<T> {
   return shared;
 }
 
-function captureSharedValues<T>(fn: () => T): { result: T; tokens: SharedValueToken[] } {
-  captureContext = { tokens: new Map() };
-  try {
-    const result = fn();
-    const tokens = Array.from(captureContext.tokens.values());
-    return { result, tokens };
-  } finally {
-    captureContext = null;
-  }
+function captureSharedValues<T>(fn: () => T): {
+  result: T;
+  tokens: SharedValueToken[];
+} {
+  const captured = captureSharedSignals(fn);
+  const tokens = captured.tokens as SharedSignalToken[];
+  return { result: captured.result, tokens: tokens as SharedValueToken[] };
 }
 
 function isSharedValueToken(value: unknown): value is SharedValueToken {
   return Boolean(
     value &&
-      typeof value === "object" &&
-      typeof (value as SharedValueToken)[SHARED_VALUE_MARKER] === "number"
+    typeof value === "object" &&
+    typeof (value as SharedValueToken)[SHARED_VALUE_MARKER] === "number",
   );
 }
 
-function resolveTokenValue(value: unknown): { value: unknown; token?: SharedValueToken } {
+function resolveTokenValue(value: unknown): {
+  value: unknown;
+  token?: SharedValueToken;
+} {
   if (isSharedValueToken(value)) {
-    return { value: value.__zynth_shared_value_current, token: value };
+    return { value: value.__zynth_shared_signal_current, token: value };
   }
   return { value };
 }
@@ -402,7 +391,9 @@ function buildNativeStyleMapping(style: Style): {
           : value;
         nextResolved[key] = resolvedValue;
         if (token) {
-          nextMapped[key] = { [SHARED_VALUE_MARKER]: token[SHARED_VALUE_MARKER] };
+          nextMapped[key] = {
+            [SHARED_VALUE_MARKER]: token[SHARED_VALUE_MARKER],
+          };
           hasMapping = true;
         } else {
           const mappedValue = isAngleKey(key)
@@ -424,7 +415,8 @@ function buildNativeStyleMapping(style: Style): {
       resolved.transform = resolvedTransforms as typeof style.transform;
     }
     if (mappedTransforms.length > 0) {
-      mapping.transform = mappedTransforms as NativeStyleMapperConfig["transform"];
+      mapping.transform =
+        mappedTransforms as NativeStyleMapperConfig["transform"];
     }
   }
 
@@ -443,7 +435,9 @@ type AnimatedStyleAccessor = Accessor<Style> & {
 export function useAnimatedStyle(getStyle: () => Style): AnimatedStyleAccessor {
   const nativeEnabled = isNativePlatform() && hasNativeAnimate();
   if (!nativeEnabled) {
-    return createMemo(() => buildNativeStyleMapping(getStyle()).resolved) as AnimatedStyleAccessor;
+    return createMemo(
+      () => buildNativeStyleMapping(getStyle()).resolved,
+    ) as AnimatedStyleAccessor;
   }
 
   const memo = createMemo(() => {
@@ -451,7 +445,8 @@ export function useAnimatedStyle(getStyle: () => Style): AnimatedStyleAccessor {
     return buildNativeStyleMapping(result);
   });
 
-  const accessor: AnimatedStyleAccessor = (() => memo().resolved) as AnimatedStyleAccessor;
+  const accessor: AnimatedStyleAccessor = (() =>
+    memo().resolved) as AnimatedStyleAccessor;
   accessor.__zynthAnimatedStyle = {
     getMapping: () => memo().mapping,
   };

@@ -133,6 +133,9 @@ internal fun ZynthUIManager.registerSurfaceInternal(
       styleLayoutDirtyNodes.add(nodeId)
       styleLayoutFrames[nodeId] = Rect(left, top, right, bottom)
     }
+    if (changed) {
+      maybeStartLayoutTransition(nodeId, left, top, right, bottom)
+    }
   }
   surfaceYoga[surfaceId] = layout
   surfaceSizes[surfaceId] = (root.width to root.height)

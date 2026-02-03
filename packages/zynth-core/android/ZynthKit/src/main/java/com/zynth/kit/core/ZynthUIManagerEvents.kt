@@ -233,6 +233,8 @@ internal fun ZynthUIManager.dispatchLayoutEvents() {
     val frame = android.graphics.Rect(view.left, view.top, view.right, view.bottom)
     val previous = layoutFrames[id]
     val changed = previous == null ||
+      previous.left != frame.left ||
+      previous.top != frame.top ||
       previous.width() != frame.width() ||
       previous.height() != frame.height()
     val force = layoutPending.contains(id)
@@ -278,6 +280,8 @@ internal fun ZynthUIManager.cleanupNode(id: Int) {
   if (node != null) {
     val descriptor = com.zynth.kit.components.ZynthComponentRegistry.getDescriptor(node.type)
     descriptor?.onReset?.invoke(node)
+    node.layoutAnimator?.cancel()
+    node.layoutAnimator = null
   }
   pointerEvents.remove(id)
   pressNodes.remove(id)
@@ -293,6 +297,7 @@ internal fun ZynthUIManager.cleanupNode(id: Int) {
   layoutNodes.remove(id)
   layoutPending.remove(id)
   layoutFrames.remove(id)
+  layoutTransitionFrames.remove(id)
   styleDirtyNodes.remove(id)
   styleStates.remove(id)
   styleLayoutDirtyNodes.remove(id)

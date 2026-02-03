@@ -5,6 +5,7 @@
 #include <jsi/jsi.h>
 
 #include "UICommandsRegistry.h"
+#include "ZynthJSIPluginRegistry.h"
 
 #include <memory>
 #include <mutex>
@@ -18,6 +19,7 @@
 #include <thread>
 #include <unistd.h>
 #include <vector>
+#include <limits>
 
 using namespace facebook::jsi;
 
@@ -28,6 +30,8 @@ std::atomic<bool> gCrashHandlerInstalled{false};
 std::atomic<bool> gCrashThreadStarted{false};
 jclass gDevtoolsClass = nullptr;
 jmethodID gDevtoolsEmitMethod = nullptr;
+std::mutex gPluginMutex;
+std::vector<ZynthJSIPluginInstaller> gPluginInstallers;
 
 struct TimerEntry {
   std::shared_ptr<Function> callback;
@@ -83,6 +87,7 @@ struct RuntimeState {
   jmethodID cancelTimer = nullptr;
   jmethodID scheduleAnimationFrame = nullptr;
   jmethodID cancelAnimationFrame = nullptr;
+  jmethodID applyAnimatedStyle = nullptr;
   jmethodID postRegisterWorklet = nullptr;
   jmethodID postRunWorklet = nullptr;
   jmethodID devtoolsEmit = nullptr;
@@ -617,6 +622,102 @@ std::shared_ptr<RuntimeState> sharedStateFor(facebook::hermes::HermesRuntime *ru
 RuntimeState *stateFor(facebook::hermes::HermesRuntime *runtime) {
   auto shared = sharedStateFor(runtime);
   return shared ? shared.get() : nullptr;
+}
+
+static void installJSIPlugins(Runtime &rt, RuntimeState *state) {
+  std::vector<ZynthJSIPluginInstaller> installers;
+  {
+    std::lock_guard<std::mutex> lock(gPluginMutex);
+    installers = gPluginInstallers;
+  }
+  for (auto installer : installers) {
+    if (!installer) continue;
+    installer(rt, state);
+  }
+}
+
+extern "C" void ZynthRegisterJSIPluginInstaller(ZynthJSIPluginInstaller installer) {
+  if (!installer) return;
+  std::lock_guard<std::mutex> lock(gPluginMutex);
+  gPluginInstallers.push_back(installer);
+}
+
+extern "C" int ZynthCreateSharedSignal(void *state, double initialValue) {
+  auto *runtimeState = reinterpret_cast<RuntimeState *>(state);
+  if (!runtimeState) return 0;
+  int id = runtimeState->nextSharedSignalId.fetch_add(1);
+  {
+    std::lock_guard<std::mutex> lock(runtimeState->sharedSignalsMutex);
+    runtimeState->sharedSignals[id] = initialValue;
+  }
+  return id;
+}
+
+extern "C" double ZynthGetSharedSignal(void *state, int signalId, bool *found) {
+  auto *runtimeState = reinterpret_cast<RuntimeState *>(state);
+  if (!runtimeState) {
+    if (found) *found = false;
+    return std::numeric_limits<double>::quiet_NaN();
+  }
+  std::lock_guard<std::mutex> lock(runtimeState->sharedSignalsMutex);
+  auto it = runtimeState->sharedSignals.find(signalId);
+  if (it == runtimeState->sharedSignals.end()) {
+    if (found) *found = false;
+    return std::numeric_limits<double>::quiet_NaN();
+  }
+  if (found) *found = true;
+  return it->second;
+}
+
+extern "C" bool ZynthSetSharedSignal(void *state, int signalId, double value) {
+  auto *runtimeState = reinterpret_cast<RuntimeState *>(state);
+  if (!runtimeState) return false;
+  {
+    std::lock_guard<std::mutex> lock(runtimeState->sharedSignalsMutex);
+    auto it = runtimeState->sharedSignals.find(signalId);
+    if (it == runtimeState->sharedSignals.end()) {
+      return false;
+    }
+    it->second = value;
+  }
+  return true;
+}
+
+extern "C" void ZynthApplyAnimatedStyle(
+    void *state,
+    int nodeId,
+    float opacity,
+    float translateX,
+    float translateY,
+    float scaleX,
+    float scaleY,
+    float rotate,
+    float rotateX,
+    float rotateY,
+    float skewX,
+    float skewY,
+    float perspective) {
+  auto *runtimeState = reinterpret_cast<RuntimeState *>(state);
+  if (!runtimeState || !runtimeState->uiManager || !runtimeState->applyAnimatedStyle) {
+    return;
+  }
+  JNIEnv *env = getEnv();
+  if (!env) return;
+  env->CallVoidMethod(
+      runtimeState->uiManager,
+      runtimeState->applyAnimatedStyle,
+      nodeId,
+      opacity,
+      translateX,
+      translateY,
+      scaleX,
+      scaleY,
+      rotate,
+      rotateX,
+      rotateY,
+      skewX,
+      skewY,
+      perspective);
 }
 
 void installTimers(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
@@ -1561,6 +1662,8 @@ Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlon
       env->GetMethodID(state->uiClass, "applyBatchTypedBuffer", "(Ljava/nio/ByteBuffer;I[Ljava/lang/String;)V");
   state->setSurface = env->GetMethodID(state->uiClass, "setSurface", "(I)V");
   state->flush = env->GetMethodID(state->uiClass, "flush", "()V");
+  state->applyAnimatedStyle =
+      env->GetMethodID(state->uiClass, "applyAnimatedStyle", "(IFFFFFFFFFFF)V");
   state->scheduleTimer = env->GetMethodID(state->uiClass, "scheduleTimer", "(JIIZ)V");
   state->cancelTimer = env->GetMethodID(state->uiClass, "cancelTimer", "(I)V");
   state->scheduleAnimationFrame = env->GetMethodID(state->uiClass, "scheduleAnimationFrame", "(JI)V");
@@ -1604,6 +1707,7 @@ Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlon
   }
   runtime->global().setProperty(
       *runtime, "__ZYNTH_PLATFORM", String::createFromUtf8(*runtime, "android"));
+  installJSIPlugins(*runtime, state.get());
 }
 
 extern "C" JNIEXPORT void JNICALL

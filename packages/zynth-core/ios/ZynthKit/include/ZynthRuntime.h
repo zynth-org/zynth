@@ -5,6 +5,7 @@
 NS_ASSUME_NONNULL_BEGIN
 
 @class ZynthRuntime;
+@class ZynthUIManager;
 
 @protocol ZynthModuleBridge <NSObject>
 - (id _Nullable)callModule:(NSString *)moduleName method:(NSString *)methodName args:(id _Nullable)args;
@@ -15,6 +16,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 @property (nonatomic, weak, readonly) UIView *rootView;
 @property (nonatomic, assign, readonly) int rootSurfaceId;
+@property (nonatomic, strong, readonly) ZynthUIManager *uiManager;
 
 - (instancetype)initWithRootView:(UIView *)rootView;
 - (BOOL)loadInitialBundleWithJsBundleURL:(NSURL *_Nullable)url

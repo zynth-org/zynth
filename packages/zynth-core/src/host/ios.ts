@@ -49,6 +49,7 @@ export function createIOSHost(): Host {
     | { type: "batch"; op: BatchOperation };
 
   const queue: QueueItem[] = [];
+  const pendingRemovals = new Map<number, number>();
 
   const enqueueOperation = (operation: () => void) => {
     if (isSuppressed()) return;
@@ -241,7 +242,7 @@ export function createIOSHost(): Host {
     flushScheduled = false;
     rafHandle = null;
     try {
-      if (queue.length) {
+      if (queue.length || pendingRemovals.size) {
         const pending = queue.splice(0);
         let batchAccumulator: BatchOperation[] = [];
 
@@ -262,6 +263,16 @@ export function createIOSHost(): Host {
             flushBatch();
             item.func();
           }
+        }
+        if (pendingRemovals.size) {
+          for (const [childId, parentId] of pendingRemovals) {
+            batchAccumulator.push({
+              type: "removeChild",
+              parentId,
+              childId,
+            });
+          }
+          pendingRemovals.clear();
         }
         flushBatch();
       }
@@ -308,6 +319,10 @@ export function createIOSHost(): Host {
     CHILDREN.has(id)
       ? CHILDREN.get(id)!
       : (CHILDREN.set(id, []), CHILDREN.get(id)!);
+
+  const recordPendingRemoval = (parentId: number, childId: number) => {
+    pendingRemovals.set(childId, parentId);
+  };
 
   const resetNodeToDefault = (nodeId: number, type: HostNode["type"]) => {
     // Reset style with explicit position reset to prevent position from persisting
@@ -597,6 +612,19 @@ export function createIOSHost(): Host {
       schedule();
     },
     insertNode(parent, node, anchor) {
+      if (anchor && anchor.id === node.id) return;
+      if (pendingRemovals.has(node.id)) {
+        pendingRemovals.delete(node.id);
+      }
+      const prevParentId = PARENTS.get(node.id);
+      if (prevParentId != null) {
+        const prevKids = ensure(prevParentId);
+        const prevIndex = prevKids.indexOf(node.id);
+        if (prevIndex >= 0) {
+          prevKids.splice(prevIndex, 1);
+        }
+      }
+
       const kids = ensure(parent.id);
       const aIdx = anchor ? kids.indexOf(anchor.id) : -1;
       const logicalAt = aIdx >= 0 ? aIdx : kids.length;
@@ -658,14 +686,7 @@ export function createIOSHost(): Host {
       const shouldRecycle = contextId && RECYCLING_CONTEXTS.has(contextId);
 
       const enqueueRemoveOp = () => {
-        const op = {
-          type: "removeChild" as const,
-          parentId: parent.id,
-          childId: node.id,
-        };
-        if (!tryEnqueueBatch(op)) {
-          enqueueBatchOp(op);
-        }
+        recordPendingRemoval(parent.id, node.id);
       };
 
       if (shouldRecycle) {

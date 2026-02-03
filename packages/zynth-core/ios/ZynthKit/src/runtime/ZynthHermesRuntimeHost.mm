@@ -4,6 +4,7 @@
 #import "ZynthUIBindings.h"
 #import "ZynthUIManager.h"
 #import "ZynthUICommandsRegistry.h"
+#import "ZynthJSIPluginRegistry.h"
 #import "ZynthWorklets.h"
 
 #import <hermes/hermes.h>
@@ -247,9 +248,18 @@ static void installGlobals(Runtime &rt) {
       [_worklets installWorkletsBridgeOnRuntime:*_runtime];
       _runtime->global().setProperty(
           *_runtime, "__ZYNTH_PLATFORM", String::createFromUtf8(*_runtime, "ios"));
+      ZynthInstallJSIPlugins(self, *_runtime);
     });
   }
   return self;
+}
+
+- (ZynthUIManager *)uiManager {
+  return _manager;
+}
+
+- (ZynthWorklets *)worklets {
+  return _worklets;
 }
 
 - (void)dealloc {

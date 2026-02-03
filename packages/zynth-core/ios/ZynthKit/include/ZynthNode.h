@@ -8,6 +8,8 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+@class ZynthLayoutTransitionConfig;
+
 /**
  Lightweight node wrapper exposed to native component descriptors.
  */
@@ -27,6 +29,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, assign) BOOL hasOnLayoutHandler;
 @property(nonatomic, assign) BOOL hasDispatchedLayout;
 @property(nonatomic, assign) CGRect lastLayoutFrame;
+@property(nonatomic, strong, nullable) ZynthLayoutTransitionConfig *layoutTransition;
 @property(nonatomic, strong) NSMutableDictionary<NSString *, id> *attachments;
 
 @end

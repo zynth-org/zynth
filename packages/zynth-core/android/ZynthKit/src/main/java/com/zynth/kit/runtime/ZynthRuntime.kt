@@ -49,6 +49,10 @@ class ZynthRuntime(val root: ZynthRootView) {
   val rootSurfaceId: Int
     get() = root.rootId
 
+  fun getUIManager(): ZynthUIManager {
+    return uiManager
+  }
+
   fun installDefaultModules() {
     DevtoolsModule.start(root.context)
     installModules(listOf(DevtoolsModule(root.context), FetchModule(this)))

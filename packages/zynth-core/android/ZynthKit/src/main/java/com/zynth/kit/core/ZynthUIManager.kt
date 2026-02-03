@@ -10,6 +10,7 @@ import android.view.Choreographer
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewPropertyAnimator
 import android.widget.TextView
 import android.util.Log
 import com.zynth.kit.components.ZynthComponentRegistry
@@ -20,10 +21,13 @@ import com.zynth.kit.layout.Style
 import com.zynth.kit.layout.ZynthYogaLayout
 import com.zynth.kit.runtime.JSBridge
 import org.json.JSONObject
+import org.json.JSONTokener
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.abs
 
 // TODO: Move this to a separate file or optimize
 private const val TRACE_TAG = "ZynthUIManager"
+private const val DEFAULT_PERSPECTIVE = 500f
 
 class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal var runtimePtr: Long = 0L
@@ -67,6 +71,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal val layoutNodes = ConcurrentHashMap.newKeySet<Int>()
   internal val layoutPending = ConcurrentHashMap.newKeySet<Int>()
   internal val layoutFrames = HashMap<Int, android.graphics.Rect>()
+  internal val layoutTransitionFrames = HashMap<Int, android.graphics.Rect>()
   internal var choreographer: Choreographer? = null
   internal var frameCallbackPosted = false
   internal var needsLayout = false
@@ -163,6 +168,8 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     val attachments: MutableMap<String, Any?> = mutableMapOf(),
     var mountHasVisualProps: Boolean = false,
     var mountAwaitingFirstProps: Boolean = false,
+    var layoutTransition: LayoutTransitionConfig? = null,
+    var layoutAnimator: ViewPropertyAnimator? = null,
   )
 
   init {
@@ -298,6 +305,20 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     }
     if (applyStyleProp(id, view, name, value)) {
       maybeNotifyStyle(descriptor, node, name, value)
+      traceOp("setProp", node?.type, startNs)
+      return
+    }
+    if (name == "layout") {
+      if (node != null) {
+        node.layoutTransition = parseLayoutTransition(value)
+        if (node.layoutTransition != null) {
+          layoutTransitionFrames[id] = android.graphics.Rect(view.left, view.top, view.right, view.bottom)
+        } else {
+          layoutTransitionFrames.remove(id)
+          node.layoutAnimator?.cancel()
+          node.layoutAnimator = null
+        }
+      }
       traceOp("setProp", node?.type, startNs)
       return
     }
@@ -469,6 +490,125 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     traceOp("setProp", node?.type, startNs)
   }
 
+  private fun parseLayoutTransition(raw: String?): LayoutTransitionConfig? {
+    if (raw == null) return null
+    val trimmed = raw.trim()
+    if (trimmed.isEmpty() || trimmed == "null") return null
+    if (trimmed == "true") {
+      return LayoutTransitionConfig(
+        type = "linear",
+        durationMs = 300L,
+        delayMs = 0L,
+        easing = LayoutEasing.EASE_OUT_CUBIC,
+      )
+    }
+    if (trimmed == "false") return null
+
+    val parsed = runCatching { JSONTokener(trimmed).nextValue() }.getOrNull() ?: return null
+    val map = parsed as? JSONObject ?: return null
+    val type = map.optString("type", "linear")
+    val durationMs = map.optLong("duration", 300L)
+    val delayMs = map.optLong("delay", 0L)
+    val easingName = map.optString("easing", "")
+    return LayoutTransitionConfig(
+      type = type,
+      durationMs = durationMs,
+      delayMs = delayMs,
+      easing = LayoutEasing.fromName(easingName),
+    )
+  }
+
+  internal fun maybeStartLayoutTransition(
+    nodeId: Int,
+    left: Int,
+    top: Int,
+    right: Int,
+    bottom: Int,
+  ) {
+    val node = nodeStates[nodeId] ?: return
+    val transition = node.layoutTransition ?: run {
+      layoutTransitionFrames.remove(nodeId)
+      return
+    }
+    if (transition.type != "linear") {
+      layoutTransitionFrames.remove(nodeId)
+      return
+    }
+    val current = android.graphics.Rect(left, top, right, bottom)
+    val previous = layoutTransitionFrames[nodeId]
+    layoutTransitionFrames[nodeId] = current
+    if (previous == null) return
+
+    val width = current.width()
+    val height = current.height()
+    if (width <= 0 || height <= 0) return
+
+    val view = node.view
+    val hasActiveTransform =
+      node.layoutAnimator != null ||
+        kotlin.math.abs(view.translationX) > 0.5f ||
+        kotlin.math.abs(view.translationY) > 0.5f ||
+        kotlin.math.abs(view.scaleX - 1f) > 0.01f ||
+        kotlin.math.abs(view.scaleY - 1f) > 0.01f
+
+    val prevWidth = if (hasActiveTransform) width * view.scaleX else previous.width().toFloat()
+    val prevHeight = if (hasActiveTransform) height * view.scaleY else previous.height().toFloat()
+    if (prevWidth <= 0f || prevHeight <= 0f) return
+
+    val currentCenterX = current.left + width / 2f
+    val currentCenterY = current.top + height / 2f
+    val prevCenterX = if (hasActiveTransform) {
+      currentCenterX + view.translationX
+    } else {
+      previous.left + previous.width() / 2f
+    }
+    val prevCenterY = if (hasActiveTransform) {
+      currentCenterY + view.translationY
+    } else {
+      previous.top + previous.height() / 2f
+    }
+
+    val deltaX = prevCenterX - currentCenterX
+    val deltaY = prevCenterY - currentCenterY
+    val scaleX = prevWidth / width.toFloat()
+    val scaleY = prevHeight / height.toFloat()
+
+    if (abs(deltaX) < 0.5f && abs(deltaY) < 0.5f &&
+      abs(scaleX - 1f) < 0.01f && abs(scaleY - 1f) < 0.01f
+    ) {
+      if (hasActiveTransform) {
+        node.layoutAnimator?.cancel()
+        node.layoutAnimator = null
+        view.translationX = 0f
+        view.translationY = 0f
+        view.scaleX = 1f
+        view.scaleY = 1f
+      }
+      return
+    }
+
+    node.layoutAnimator?.cancel()
+    node.layoutAnimator = null
+
+    view.translationX = deltaX
+    view.translationY = deltaY
+    view.scaleX = scaleX
+    view.scaleY = scaleY
+
+    val animator = view.animate()
+      .translationX(0f)
+      .translationY(0f)
+      .scaleX(1f)
+      .scaleY(1f)
+      .setStartDelay(transition.delayMs.coerceAtLeast(0L))
+      .setDuration(transition.durationMs.coerceAtLeast(0L))
+      .setInterpolator(transition.easing.toInterpolator())
+      .withEndAction { node.layoutAnimator = null }
+
+    node.layoutAnimator = animator
+    animator.start()
+  }
+
   fun setText(id: Int, text: String) {
     if (Looper.myLooper() != Looper.getMainLooper()) {
       runOnMain { setText(id, text) }
@@ -532,6 +672,12 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       else -> nodeSurfaces[parentId] ?: activeSurfaceId
     }
     val parent = if (parentId == 0 || isSurfaceRoot) rootViewForSurface(surfaceId) else nodes[parentId]
+    val previousParentId = parents[childId]
+    if (previousParentId != null && previousParentId != parentId) {
+      children[previousParentId]?.remove(childId)
+      nodeStates[previousParentId]?.textChildren?.remove(childId)
+    }
+    (child.parent as? ViewGroup)?.removeView(child)
     parents[childId] = parentId
     val siblings = children.getOrPut(parentId) { mutableListOf() }
     val existingIndex = siblings.indexOf(childId)
@@ -996,6 +1142,206 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     for ((childIndex, childId) in childIds.withIndex()) {
       moveSubtreeToSurface(childId, surfaceId, nodeId, childIndex)
     }
+  }
+
+  fun getNodeView(nodeId: Int): View? {
+    return nodes[nodeId]
+  }
+
+  fun applyAnimatedStyle(
+    nodeId: Int,
+    opacity: Float,
+    translateX: Float,
+    translateY: Float,
+    scaleX: Float,
+    scaleY: Float,
+    rotate: Float,
+    rotateX: Float,
+    rotateY: Float,
+    skewX: Float,
+    skewY: Float,
+    perspective: Float,
+  ) {
+    if (Looper.myLooper() != Looper.getMainLooper()) {
+      runOnMain {
+        applyAnimatedStyleInternal(
+          nodeId,
+          opacity,
+          translateX,
+          translateY,
+          scaleX,
+          scaleY,
+          rotate,
+          rotateX,
+          rotateY,
+          skewX,
+          skewY,
+          perspective,
+        )
+      }
+      return
+    }
+    applyAnimatedStyleInternal(
+      nodeId,
+      opacity,
+      translateX,
+      translateY,
+      scaleX,
+      scaleY,
+      rotate,
+      rotateX,
+      rotateY,
+      skewX,
+      skewY,
+      perspective,
+    )
+  }
+
+  private fun applyAnimatedStyleInternal(
+    nodeId: Int,
+    opacity: Float,
+    translateX: Float,
+    translateY: Float,
+    scaleX: Float,
+    scaleY: Float,
+    rotate: Float,
+    rotateX: Float,
+    rotateY: Float,
+    skewX: Float,
+    skewY: Float,
+    perspective: Float,
+  ) {
+    val view = nodes[nodeId] ?: return
+    view.alpha = opacity
+    view.translationX = translateX * density
+    view.translationY = translateY * density
+    view.scaleX = scaleX
+    view.scaleY = scaleY
+    val has3dRotation = kotlin.math.abs(rotateX) > 0.001f || kotlin.math.abs(rotateY) > 0.001f
+    if (has3dRotation) {
+      val euler = computeEulerForRotateXY(rotateX, rotateY)
+      view.rotationX = -euler.x
+      view.rotationY = -euler.y
+      view.rotation = if (rotate == 0f) euler.z else rotate
+    } else {
+      view.rotation = rotate
+      view.rotationX = -rotateX
+      view.rotationY = -rotateY
+    }
+    val viewDensity = view.resources.displayMetrics.density.takeIf { it > 0f } ?: 1f
+    if (!perspective.isNaN() && perspective > 0f) {
+      view.cameraDistance = perspective * viewDensity
+    } else if (has3dRotation) {
+      view.cameraDistance = DEFAULT_PERSPECTIVE * viewDensity
+    }
+    val hasSkew = kotlin.math.abs(skewX) > 0.001f || kotlin.math.abs(skewY) > 0.001f
+    if (hasSkew) {
+      val matrix = android.graphics.Matrix()
+      val radX = Math.toRadians(skewX.toDouble()).toFloat()
+      val radY = Math.toRadians(skewY.toDouble()).toFloat()
+      val px = view.pivotX
+      val py = view.pivotY
+      matrix.setTranslate(-px, -py)
+      val skewMatrix = android.graphics.Matrix()
+      skewMatrix.setValues(
+        floatArrayOf(
+          1f,
+          Math.tan(radX.toDouble()).toFloat(),
+          0f,
+          Math.tan(radY.toDouble()).toFloat(),
+          1f,
+          0f,
+          0f,
+          0f,
+          1f,
+        )
+      )
+      matrix.postConcat(skewMatrix)
+      matrix.postTranslate(px, py)
+      view.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+      view.setAnimationMatrix(matrix)
+    } else {
+      view.setAnimationMatrix(null)
+      view.setLayerType(View.LAYER_TYPE_NONE, null)
+    }
+  }
+
+  private data class EulerAngles(val x: Float, val y: Float, val z: Float)
+
+  private fun computeEulerForRotateXY(rotateX: Float, rotateY: Float): EulerAngles {
+    val rx = Math.toRadians(rotateX.toDouble())
+    val ry = Math.toRadians(rotateY.toDouble())
+    val rotateXMatrix = identityMatrix().apply { applyRotateX(this, rx) }
+    val rotateYMatrix = identityMatrix().apply { applyRotateY(this, ry) }
+    val combined = multiplyMatrices(rotateYMatrix, rotateXMatrix)
+    return extractEulerFromMatrix(combined)
+  }
+
+  private fun identityMatrix(): DoubleArray {
+    return doubleArrayOf(
+      1.0, 0.0, 0.0, 0.0,
+      0.0, 1.0, 0.0, 0.0,
+      0.0, 0.0, 1.0, 0.0,
+      0.0, 0.0, 0.0, 1.0,
+    )
+  }
+
+  private fun applyRotateX(matrix: DoubleArray, radians: Double) {
+    val cos = kotlin.math.cos(radians)
+    val sin = kotlin.math.sin(radians)
+    matrix[5] = cos
+    matrix[6] = sin
+    matrix[9] = -sin
+    matrix[10] = cos
+  }
+
+  private fun applyRotateY(matrix: DoubleArray, radians: Double) {
+    val cos = kotlin.math.cos(radians)
+    val sin = kotlin.math.sin(radians)
+    matrix[0] = cos
+    matrix[2] = -sin
+    matrix[8] = sin
+    matrix[10] = cos
+  }
+
+  private fun multiplyMatrices(a: DoubleArray, b: DoubleArray): DoubleArray {
+    val result = DoubleArray(16)
+    var row = 0
+    while (row < 4) {
+      var col = 0
+      while (col < 4) {
+        result[row * 4 + col] =
+          a[row * 4] * b[col] +
+            a[row * 4 + 1] * b[col + 4] +
+            a[row * 4 + 2] * b[col + 8] +
+            a[row * 4 + 3] * b[col + 12]
+        col += 1
+      }
+      row += 1
+    }
+    return result
+  }
+
+  private fun extractEulerFromMatrix(m: DoubleArray): EulerAngles {
+    val sy = Math.sqrt(m[0] * m[0] + m[4] * m[4])
+    val singular = sy < 1e-6
+    val x: Double
+    val y: Double
+    val z: Double
+    if (!singular) {
+      x = Math.atan2(m[9], m[10])
+      y = Math.atan2(-m[8], sy)
+      z = Math.atan2(m[4], m[0])
+    } else {
+      x = Math.atan2(-m[6], m[5])
+      y = Math.atan2(-m[8], sy)
+      z = 0.0
+    }
+    return EulerAngles(
+      Math.toDegrees(x).toFloat(),
+      Math.toDegrees(y).toFloat(),
+      Math.toDegrees(z).toFloat(),
+    )
   }
 
   private inner class LayoutEngineAdapter : LayoutEngine {

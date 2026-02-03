@@ -27,7 +27,7 @@ export * from "./hmr";
 export { setActiveSurface, getActiveSurface } from "./surface";
 export { ensureDevtoolsBridge, emitDevtoolsEvent, addDevtoolsListener } from "./devtools";
 export { registerWebAdapter } from "./webRegistry";
-export { createSharedSignal, captureSharedSignals } from "./sharedSignal";
+export { createSharedSignal, captureSharedSignals, readSharedSignal } from "./sharedSignal";
 export type { SharedSignalAccessor, SharedSignalToken } from "./sharedSignal";
 export { createWorklet } from "./worklet";
 export type { WorkletFunction, WorkletMetadata, WorkletPayload } from "./worklet";

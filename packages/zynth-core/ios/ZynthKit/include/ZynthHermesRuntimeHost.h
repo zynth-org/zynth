@@ -2,6 +2,7 @@
 #import "ZynthRuntime.h"
 
 @class ZynthUIManager;
+@class ZynthWorklets;
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -21,6 +22,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (id _Nullable)callGlobalObjectMethod:(NSString *)objectName
                                 method:(NSString *)methodName
                                   args:(NSArray *)args;
+
+- (ZynthUIManager *)uiManager;
+- (ZynthWorklets *)worklets;
 
 - (void)emitDevtoolsEventWithTopic:(NSString *)topic
                              level:(NSString *)level

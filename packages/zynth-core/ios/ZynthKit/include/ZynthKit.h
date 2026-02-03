@@ -13,3 +13,4 @@
 #import "ZynthJSInvoker.h"
 #import "ZynthHermesRuntimeHost.h"
 #import "ZynthUICommandsRegistry.h"
+#import "ZynthJSIPluginRegistry.h"

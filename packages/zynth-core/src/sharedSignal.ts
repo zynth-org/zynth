@@ -27,6 +27,7 @@ type SharedSignalBridge = {
 
 export type SharedSignalAccessor<T> = Accessor<T> & {
   __zynth_shared_signal_id?: number;
+  __zynth_shared_signal_current?: T;
 };
 
 let captureContext: SharedSignalCaptureContext | null = null;
@@ -157,7 +158,9 @@ function setNativeSharedSignal(id: number, value: number): boolean {
   return false;
 }
 
-export function createSharedSignal<T>(initialValue: T): [SharedSignalAccessor<T>, Setter<T>] {
+export function createSharedSignal<T>(
+  initialValue: T,
+): [SharedSignalAccessor<T>, Setter<T>] {
   const [value, setValue] = createSignal(initialValue);
   let cachedValue = initialValue;
   let nativeId: number | null = null;
@@ -167,13 +170,20 @@ export function createSharedSignal<T>(initialValue: T): [SharedSignalAccessor<T>
     if (nativeId === null) {
       debugLog("native bridge unavailable", { initialValue });
     } else {
-      debugLog("created native shared signal", { id: nativeId, initialValue });
+      debugLog(
+        "created native shared signal",
+        JSON.stringify({ id: nativeId, initialValue }) as any,
+      );
     }
   }
 
   const accessor: SharedSignalAccessor<T> = (() => {
     const trackedValue = value();
-    if (nativeId !== null && captureContext && typeof cachedValue === "number") {
+    if (
+      nativeId !== null &&
+      captureContext &&
+      typeof cachedValue === "number"
+    ) {
       const token: SharedSignalToken = {
         [SHARED_SIGNAL_MARKER]: nativeId,
         __zynth_shared_signal_current: cachedValue,
@@ -187,6 +197,7 @@ export function createSharedSignal<T>(initialValue: T): [SharedSignalAccessor<T>
   }) as SharedSignalAccessor<T>;
 
   accessor.__zynth_shared_signal_id = nativeId ?? undefined;
+  accessor.__zynth_shared_signal_current = cachedValue;
 
   const setter = ((...args: [T | ((prev: T) => T)] | []) => {
     const next = args.length > 0 ? args[0] : (undefined as T);
@@ -195,14 +206,18 @@ export function createSharedSignal<T>(initialValue: T): [SharedSignalAccessor<T>
         ? (next as (prev: T) => T)(untrack(value))
         : next;
     cachedValue = resolved as T;
+    accessor.__zynth_shared_signal_current = cachedValue;
     setValue(() => resolved as T);
     if (nativeId !== null && typeof resolved === "number") {
       const applied = setNativeSharedSignal(nativeId, resolved);
-      debugLog("set shared signal", {
-        id: nativeId,
-        value: resolved,
-        applied,
-      });
+      debugLog(
+        "set shared signal",
+        JSON.stringify({
+          id: nativeId,
+          value: resolved,
+          applied,
+        }) as any,
+      );
     }
     return resolved as T;
   }) as Setter<T>;
@@ -221,6 +236,19 @@ export function captureSharedSignals<T>(fn: () => T): {
     return { result, tokens };
   } finally {
     captureContext = null;
+  }
+}
+
+export function readSharedSignal<T>(signal: SharedSignalAccessor<T>): T {
+  if (signal.__zynth_shared_signal_current !== undefined) {
+    return signal.__zynth_shared_signal_current as T;
+  }
+  const previous = captureContext;
+  captureContext = null;
+  try {
+    return signal() as T;
+  } finally {
+    captureContext = previous;
   }
 }
 
