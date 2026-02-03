@@ -577,6 +577,16 @@
   [self zynth_recursiveDestroyNode:nodeId];
 }
 
+- (void)zynth_recursiveRemoveNode:(NSNumber *)nodeId {
+  if (![NSThread isMainThread]) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+      [self zynth_recursiveRemoveNode:nodeId];
+    });
+    return;
+  }
+  [self zynth_recursiveDestroyNode:nodeId];
+}
+
 - (void)zynth_recursiveDestroyNode:(NSNumber *)nodeId {
   ZynthNode *node = _nodeStates[nodeId];
   if (!node) return;
