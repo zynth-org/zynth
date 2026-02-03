@@ -40,8 +40,8 @@ Before starting any task, consult:
 ### Adding a New Native Feature
 
 1.  **Define Interface:** Create the TS type definition in the appropriate package.
-2.  **Implement iOS:** Write the Swift/Obj-C code in `packages/zynth-ios` or the package's `ios/` folder.
-3.  **Implement Android:** Write the Kotlin/C++ code in `packages/zynth-android` or the package's `android/` folder.
+2.  **Implement iOS:** Write the Swift/Obj-C code in `packages/zynth-core/ios` or the package's `ios/` folder.
+3.  **Implement Android:** Write the Kotlin/C++ code in `packages/zynth-core/android` or the package's `android/` folder.
 4.  **Bridge:** Expose via JSI or the Module system.
 5.  **Test:** Add an example to `apps/components` and run `yarn dev:ios` / `yarn dev:android`.
 

@@ -135,8 +135,8 @@ bridge is missing or when code metadata is not available.
 - Core helpers: `packages/zynth-core/src/nativeRuntime.ts`
 - Signal refs: `packages/zynth-core/src/signalRef.ts`
 - Worklet registration: `packages/zynth-core/src/worklet.ts`
-- UI commands registry (iOS): `packages/zynth-ios/ios/ZynthKit/src/runtime/ZynthUICommandsRegistry.mm`
-- UI commands registry (Android): `packages/zynth-android/android/ZynthKit/src/main/cpp/UICommandsRegistry.cpp`
+- UI commands registry (iOS): `packages/zynth-core/ios/ZynthKit/src/runtime/ZynthUICommandsRegistry.mm`
+- UI commands registry (Android): `packages/zynth-core/android/ZynthKit/src/main/cpp/UICommandsRegistry.cpp`
 - ScrollView UI commands (iOS): `packages/zynth-components/ios/src/ScrollView/ScrollViewUICommands.mm`
-- ScrollView UI commands (Android): `packages/zynth-android/android/ZynthKit/src/main/cpp/ScrollViewUICommands.cpp`
+- ScrollView UI commands (Android): `packages/zynth-core/android/ZynthKit/src/main/cpp/ScrollViewUICommands.cpp`
 - ScrollView controller: `packages/zynth-components/src/primitives/ScrollView.tsx`

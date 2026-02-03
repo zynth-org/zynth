@@ -1,6 +1,6 @@
 # Zynth Core Runtime Roadmap
 
-This roadmap defines a phased plan to build a new minimalist native runtime renderer in `packages/zynth-core`, while preserving the legacy runtimes in `packages/zynth-ios` and `packages/zynth-android` behind an opt-in flag.
+This roadmap defines a phased plan to build a new minimalist native runtime renderer in `packages/zynth-core`, while preserving the legacy runtimes in `packages/zynth-core/ios` and `packages/zynth-core/android` behind an opt-in flag.
 
 The focus is performance, clarity, SolidJS-native reactivity parity, and a runtime that is easy to audit.
 
@@ -111,7 +111,7 @@ The runtime must expose the following globals via JSI HostObjects:
 ## Build/Prebuild Selection Strategy
 
 - Add a `--new-runtime` flag to `zynth dev` and `zynth prebuild`.
-- When enabled, templates should link to `packages/zynth-core/ios` and `packages/zynth-core/android` instead of `packages/zynth-ios` and `packages/zynth-android`.
+- When enabled, templates should link to `packages/zynth-core/ios` and `packages/zynth-core/android` instead of `packages/zynth-core/ios` and `packages/zynth-core/android`.
 - This allows side-by-side legacy and new runtime without breaking existing apps.
 - Hermes configuration should remain aligned with the proven legacy setup in the Podfile and Android Gradle configuration.
 
@@ -181,7 +181,7 @@ The runtime must expose the following globals via JSI HostObjects:
 - `createNode`, `setProp`, `insertChild`, `removeChild`, `setText`, `setHandler` wired to UIKit views + Yoga nodes.
 - Frame scheduler (CADisplayLink) with strict 14ms budget policy.
 - No devtools, no fetch, no environment, no diagnostics.
-- Reuse proven utilities/styles from the legacy runtime when they are performant (e.g., existing `packages/zynth-ios/ios/ZynthKit/src/utils`).
+- Reuse proven utilities/styles from the legacy runtime when they are performant (e.g., existing `packages/zynth-core/ios/ZynthKit/src/utils`).
 
 **Exit Criteria**
 

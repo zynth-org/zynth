@@ -2,7 +2,7 @@
 
 Zynth Core is the next-generation native runtime and renderer for the Zynth framework. It lives in `packages/zynth-core` and focuses only on high-performance native rendering and the minimal host contract used by `@zynth/core`.
 
-Legacy runtimes remain in `packages/zynth-ios` and `packages/zynth-android`. Zynth Core is enabled only via an explicit build flag (`--new-runtime`).
+Legacy runtimes remain in `packages/zynth-core/ios` and `packages/zynth-core/android`. Zynth Core is enabled only via an explicit build flag (`--new-runtime`).
 
 ---
 
@@ -99,7 +99,7 @@ Hermes configuration should remain aligned with the proven legacy setup in the P
 - Renderer benchmarks built into `apps/components`.
 - Profile per batch: JS time, native time, layout time, and allocations.
 - Minimal allocations in hot paths; reuse buffers and intern strings.
-- Preserve proven utility/style systems from the legacy runtime when they are performant (e.g., existing `packages/zynth-ios/ios/ZynthKit/src/utils` styling and parsers).
+- Preserve proven utility/style systems from the legacy runtime when they are performant (e.g., existing `packages/zynth-core/ios/ZynthKit/src/utils` styling and parsers).
 
 ---
 

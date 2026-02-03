@@ -5,7 +5,7 @@ You're working on a project in Zynth, a cross-platform framework for iOS and And
 ## Project Structure & Module Organization
 
 - Monorepo driven by Yarn workspaces: runtime packages live in `packages/`, example app in `apps/components/`, shared helpers in `scripts/`.
-- Key packages: `zynth-core` (renderer), `zynth-ios` / `zynth-android` (native bridges), `zynth-components`, `zynth-apis`, `zynth-cli`, and `zynth-templates`.
+- Key packages: `zynth-core` (renderer), `zynth-core/ios` / `zynth-core/android` (native bridges), `zynth-components`, `zynth-apis`, `zynth-cli`, and `zynth-templates`.
 - `apps/components` is the primary dev harness; it consumes packages directly from `node_modules` and hosts the iOS/Android workspaces.
 - Type roots are in `types/`; path aliases are defined in `tsconfig.base.json` and mirrored by `scripts/sync-workspace-aliases.js`.
 
