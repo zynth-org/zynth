@@ -92,7 +92,7 @@ class ZynthRuntime(val root: ZynthRootView) {
     connectDevServerInternal(url, token)
   }
 
-  fun loadInitialBundle(assets: AssetManager, preloadedCode: String? = null) {
+  fun loadInitialBundle(assets: AssetManager, preloadedCode: String? = null, preloadedBytecode: ByteArray? = null) {
     runOnJSSync {
       JSBridge.installUIBindings(runtimePtr, uiManager)
       JSBridge.installModuleRegistry(runtimePtr, registry)
@@ -107,21 +107,28 @@ class ZynthRuntime(val root: ZynthRootView) {
       }
     }
 
-    if (preloadedCode == null) {
+    if (preloadedCode == null && preloadedBytecode == null) {
       val devServerUrl = System.getProperty("ZYNTH_DEV_SERVER_URL")
       if (!devServerUrl.isNullOrBlank()) {
         return
       }
     }
-    val code = preloadedCode ?: run {
-      try {
-        assets.open("main.js").use { it.bufferedReader().readText() }
-      } catch (error: Exception) {
-        return
+
+    if (preloadedBytecode != null) {
+      runOnJSSync {
+        JSBridge.loadBytecode(runtimePtr, preloadedBytecode, "main.hbc")
       }
-    }
-    runOnJSSync {
-      JSBridge.evaluateScript(runtimePtr, code, "main.js")
+    } else {
+      val code = preloadedCode ?: run {
+        try {
+          assets.open("main.js").use { it.bufferedReader().readText() }
+        } catch (error: Exception) {
+          return
+        }
+      }
+      runOnJSSync {
+        JSBridge.evaluateScript(runtimePtr, code, "main.js")
+      }
     }
     hasStarted = false
   }

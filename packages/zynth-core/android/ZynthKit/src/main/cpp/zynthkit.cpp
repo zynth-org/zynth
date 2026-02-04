@@ -1727,6 +1727,46 @@ Java_com_zynth_kit_runtime_JSBridge_evaluateScript(JNIEnv *env, jobject, jlong p
   if (sourceUrl && source) env->ReleaseStringUTFChars(sourceUrl, source);
 }
 
+class ZynthBytecodeBuffer : public facebook::jsi::Buffer {
+public:
+    ZynthBytecodeBuffer(std::vector<uint8_t> data) : data_(std::move(data)) {}
+    const uint8_t *data() const override { return data_.data(); }
+    size_t size() const override { return data_.size(); }
+private:
+    std::vector<uint8_t> data_;
+};
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_zynth_kit_runtime_JSBridge_loadBytecode(JNIEnv *env, jobject, jlong ptr, jbyteArray bytecode, jstring sourceUrl) {
+  auto *runtime = reinterpret_cast<facebook::hermes::HermesRuntime *>(ptr);
+  if (!runtime || !bytecode) return;
+
+  jsize len = env->GetArrayLength(bytecode);
+  if (len == 0) return;
+
+  jbyte *bytes = env->GetByteArrayElements(bytecode, nullptr);
+  if (!bytes) return;
+
+  std::vector<uint8_t> data(len);
+  std::memcpy(data.data(), bytes, len);
+  
+  env->ReleaseByteArrayElements(bytecode, bytes, JNI_ABORT);
+
+  const char *source = sourceUrl ? env->GetStringUTFChars(sourceUrl, nullptr) : nullptr;
+  
+  auto buffer = std::make_shared<ZynthBytecodeBuffer>(std::move(data));
+  try {
+    runtime->evaluateJavaScript(buffer, source ? source : "main.hbc");
+  } catch (const facebook::jsi::JSError &e) {
+    __android_log_print(ANDROID_LOG_ERROR, "ZynthRuntime", "Failed to load bytecode: %s", e.getMessage().c_str());
+  } catch (const std::exception &e) {
+    __android_log_print(ANDROID_LOG_ERROR, "ZynthRuntime", "Failed to load bytecode: %s", e.what());
+  } catch (...) {
+    __android_log_print(ANDROID_LOG_ERROR, "ZynthRuntime", "Failed to load bytecode: Unknown error");
+  }
+  if (sourceUrl && source) env->ReleaseStringUTFChars(sourceUrl, source);
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_zynth_kit_runtime_JSBridge_callGlobalDouble(JNIEnv *env, jobject, jlong ptr, jstring name, jdouble value) {
   auto *runtime = reinterpret_cast<facebook::hermes::HermesRuntime *>(ptr);

@@ -3,11 +3,29 @@ plugins {
   id("org.jetbrains.kotlin.android")
 }
 
+import java.util.Properties
+import java.io.FileInputStream
+
 android {
   namespace = "{{BUNDLE_ID}}"
   compileSdk = 34
   buildFeatures {
     buildConfig = true
+  }
+
+  signingConfigs {
+    create("release") {
+      val keystorePropertiesFile = rootProject.file("keystore.properties")
+      val keystoreProperties = Properties()
+      if (keystorePropertiesFile.exists()) {
+        keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+      }
+
+      keyAlias = keystoreProperties["keyAlias"] as String? ?: System.getenv("ZYNTH_KEY_ALIAS")
+      keyPassword = keystoreProperties["keyPassword"] as String? ?: System.getenv("ZYNTH_KEY_PASSWORD")
+      storeFile = (keystoreProperties["storeFile"] as String?)?.let { file(it) } ?: System.getenv("ZYNTH_KEYSTORE_FILE")?.let { file(it) }
+      storePassword = keystoreProperties["storePassword"] as String? ?: System.getenv("ZYNTH_KEYSTORE_PASSWORD")
+    }
   }
 
   defaultConfig {
@@ -24,6 +42,9 @@ android {
     release {
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+      if (signingConfigs.getByName("release").storeFile != null) {
+        signingConfig = signingConfigs.getByName("release")
+      }
     }
   }
 

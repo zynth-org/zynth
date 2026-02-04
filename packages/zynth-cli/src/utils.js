@@ -1306,10 +1306,19 @@ async function devAndroid(root, appDir, options = {}) {
   const quietOutput = Boolean(options.quietOutput ?? options.prebuild);
   const verboseBuild = Boolean(options.verbose);
 
-  ensurePrebuild(root, appDir, "android", {
-    dev: true,
-    quiet: quietOutput,
-  });
+  if (options.prebuild) {
+    ensurePrebuild(root, appDir, "android", {
+      dev: true,
+      quiet: quietOutput,
+    });
+  } else if (!fs.existsSync(androidDir)) {
+    // If android dir is missing, we must prebuild regardless of flag
+    console.log("⚠️  Android directory missing. Running prebuild...");
+    ensurePrebuild(root, appDir, "android", {
+      dev: true,
+      quiet: quietOutput,
+    });
+  }
 
   const devicesBeforeBuild = getConnectedAndroidDevices();
   if (!devicesBeforeBuild.length) {

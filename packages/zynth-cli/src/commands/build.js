@@ -218,7 +218,21 @@ async function buildAndroid(root, appDir) {
   console.log("📦 Building Android Release APK...");
 
   const androidDir = path.join(appDir, "android");
-  runCommand("./gradlew", [":app:assembleRelease"], { cwd: androidDir });
+  
+  const env = { ...process.env };
+  const signing = config.androidConfig?.signing;
+  if (signing) {
+    if (signing.storeFile) {
+      env.ZYNTH_KEYSTORE_FILE = path.resolve(appDir, signing.storeFile);
+    }
+    if (signing.keyAlias) env.ZYNTH_KEY_ALIAS = signing.keyAlias;
+    if (signing.storePassword) env.ZYNTH_KEYSTORE_PASSWORD = signing.storePassword;
+    if (signing.keyPassword) env.ZYNTH_KEY_PASSWORD = signing.keyPassword;
+    
+    console.log("🔐 Using signing config from app.json");
+  }
+
+  runCommand("./gradlew", [":app:assembleRelease"], { cwd: androidDir, env });
 
   console.log("✅ Android Release build completed!");
   console.log("📂 APK: android/app/build/outputs/apk/release/app-release.apk");

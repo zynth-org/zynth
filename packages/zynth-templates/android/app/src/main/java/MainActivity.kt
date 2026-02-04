@@ -18,6 +18,7 @@ import org.json.JSONObject
 class MainActivity : AppCompatActivity() {
   private var runtime: ZynthRuntime? = null
   @Volatile private var bundleCode: String? = null
+  @Volatile private var bundleBytecode: ByteArray? = null
 
   override fun onCreate(savedInstanceState: Bundle?) {
     val splashScreen = installSplashScreen()
@@ -77,8 +78,23 @@ class MainActivity : AppCompatActivity() {
       devServerToken = buildConfigDevServerToken
     }
 
-    if (devServerUrl.isNullOrBlank()) {
-      devServerUrl = if (isEmulator()) "http://10.0.2.2:8081" else null
+    // Allow forcing local bundle loading via Intent extra (useful for testing bytecode in Debug)
+    if (launchIntent.getBooleanExtra("ZYNTH_FORCE_LOCAL_BUNDLE", false)) {
+      Log.i("MainActivity", "ZYNTH_FORCE_LOCAL_BUNDLE is set. Ignoring dev server URL.")
+      devServerUrl = null
+    }
+
+    if (!BuildConfig.DEBUG) {
+      // In release builds, force dev server URL to null to ensure we load from assets (bytecode/bundle)
+      // unless it was explicitly passed via Intent (e.g. for specialized testing).
+      // The Intent check happened earlier; if launchIntent didn't have it, we clear it here.
+      if (launchIntent.getStringExtra("ZYNTH_DEV_SERVER_URL").isNullOrBlank()) {
+        devServerUrl = null
+      }
+    } else {
+      if (devServerUrl.isNullOrBlank()) {
+        devServerUrl = if (isEmulator()) "http://10.0.2.2:8081" else null
+      }
     }
 
     if (!devServerUrl.isNullOrBlank()) {
@@ -99,16 +115,29 @@ class MainActivity : AppCompatActivity() {
     val preloadUrl = devServerUrl
     val loadThread = Thread {
       try {
-        bundleCode = if (!preloadUrl.isNullOrBlank()) {
+        if (!preloadUrl.isNullOrBlank()) {
           val bundleUrl = URL("${preloadUrl.trimEnd('/')}/main.js")
           val connection = bundleUrl.openConnection() as HttpURLConnection
           connection.connectTimeout = 8000
           connection.readTimeout = 8000
           connection.inputStream.use { input ->
-            input.bufferedReader().readText()
+            bundleCode = input.bufferedReader().readText()
           }
         } else {
-          assets.open("main.js").use { it.bufferedReader().readText() }
+          // Try loading bytecode first
+          try {
+            assets.open("main.hbc").use { bundleBytecode = it.readBytes() }
+            Log.i("MainActivity", "Loaded main.hbc from assets")
+          } catch (e: java.io.IOException) {
+            // Fallback to JS bundle
+            try {
+              assets.open("main.js").use { bundleCode = it.bufferedReader().readText() }
+              Log.i("MainActivity", "Loaded main.js from assets (bytecode not found)")
+            } catch (e2: java.io.IOException) {
+              Log.e("MainActivity", "Failed to load both main.hbc and main.js from assets", e2)
+              throw e2 // Rethrow to hit outer catch if needed, though we already logged it
+            }
+          }
         }
       } catch (e: Exception) {
         Log.e("MainActivity", "Failed to load bundle", e)
@@ -126,7 +155,7 @@ class MainActivity : AppCompatActivity() {
     }
     loadThread.join()
 
-    runtime.loadInitialBundle(assets, preloadedCode = bundleCode)
+    runtime.loadInitialBundle(assets, preloadedCode = bundleCode, preloadedBytecode = bundleBytecode)
 
     // Force a layout pass to ensure window insets are available
     root.post {

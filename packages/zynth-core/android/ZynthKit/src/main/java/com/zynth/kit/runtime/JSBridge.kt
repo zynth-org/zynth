@@ -14,6 +14,7 @@ internal object JSBridge {
   external fun installUIBindings(runtimePtr: Long, manager: com.zynth.kit.core.ZynthUIManager)
   external fun installModuleRegistry(runtimePtr: Long, registry: ZynthModuleRegistry)
   external fun evaluateScript(runtimePtr: Long, code: String, sourceUrl: String?)
+  external fun loadBytecode(runtimePtr: Long, bytecode: ByteArray, sourceUrl: String?)
   external fun callGlobalDouble(runtimePtr: Long, name: String, value: Double)
   external fun callGlobalFrame(
     runtimePtr: Long,
