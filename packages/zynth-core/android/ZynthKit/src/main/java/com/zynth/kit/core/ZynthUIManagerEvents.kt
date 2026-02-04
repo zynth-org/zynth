@@ -225,14 +225,19 @@ internal fun ZynthUIManager.maybeDispatchDoublePress(id: Int, event: MotionEvent
   }
 }
 
+private val layoutEventBuffer = ArrayList<LayoutEvent>(64)
+private var layoutPayloadBuffer = DoubleArray(320)
+
 internal fun ZynthUIManager.dispatchLayoutEvents() {
   if (layoutNodes.isEmpty()) return
   if (layoutPending.isEmpty() && layoutDirtyNodes.isEmpty()) return
-  val events = ArrayList<LayoutEvent>()
+  
+  layoutEventBuffer.clear()
   val ids = LinkedHashSet<Int>()
   ids.addAll(layoutPending)
   ids.addAll(layoutDirtyNodes)
   layoutDirtyNodes.removeAll(ids)
+  
   for (id in ids) {
     val view = nodes[id] ?: continue
     val frame = android.graphics.Rect(view.left, view.top, view.right, view.bottom)
@@ -246,7 +251,7 @@ internal fun ZynthUIManager.dispatchLayoutEvents() {
     if (!force && !changed) continue
     layoutFrames[id] = frame
     layoutPending.remove(id)
-    events.add(
+    layoutEventBuffer.add(
       LayoutEvent(
         id,
         pxToDp(frame.left.toFloat()),
@@ -256,18 +261,22 @@ internal fun ZynthUIManager.dispatchLayoutEvents() {
       )
     )
   }
-  if (events.isNotEmpty()) {
+  
+  if (layoutEventBuffer.isNotEmpty()) {
     runOnJS {
-      val payload = DoubleArray(events.size * 5)
-      var index = 0
-      for (event in events) {
-        payload[index++] = event.id.toDouble()
-        payload[index++] = event.x
-        payload[index++] = event.y
-        payload[index++] = event.width
-        payload[index++] = event.height
+      val requiredSize = layoutEventBuffer.size * 5
+      if (layoutPayloadBuffer.size < requiredSize) {
+        layoutPayloadBuffer = DoubleArray(requiredSize * 2)
       }
-      JSBridge.invokeLayoutEventsBatch(runtimePtr, payload)
+      var index = 0
+      for (event in layoutEventBuffer) {
+        layoutPayloadBuffer[index++] = event.id.toDouble()
+        layoutPayloadBuffer[index++] = event.x
+        layoutPayloadBuffer[index++] = event.y
+        layoutPayloadBuffer[index++] = event.width
+        layoutPayloadBuffer[index++] = event.height
+      }
+      JSBridge.invokeLayoutEventsBatch(runtimePtr, layoutPayloadBuffer.copyOf(requiredSize))
     }
   }
 }

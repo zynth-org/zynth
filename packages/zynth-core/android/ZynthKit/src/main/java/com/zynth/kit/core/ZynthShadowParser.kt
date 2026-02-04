@@ -24,20 +24,32 @@ data class ShadowLayer(
 }
 
 object ZynthShadowParser {
+  private val shadowCache = android.util.LruCache<String, List<ShadowLayer>>(128)
+  
   private val COLOR_TOKEN = Regex(
     "(#(?:[0-9a-fA-F]{3,8})|rgba?\\([^)]*\\)|hsla?\\([^)]*\\)|hwb\\([^)]*\\))"
   )
 
   fun parse(value: Any?): List<ShadowLayer>? {
-    return when (value) {
-      is String -> {
-        val trimmed = value.trim()
-        if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
-          runCatching { JSONArray(trimmed) }.getOrNull()?.let { return parseArray(it) }
-          runCatching { JSONObject(trimmed) }.getOrNull()?.let { return listOfNotNull(parseObject(it)) }
-        }
+    if (value is String) {
+      val cached = shadowCache.get(value)
+      if (cached != null) return cached
+      
+      val trimmed = value.trim()
+      val result = if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
+        runCatching { JSONArray(trimmed) }.getOrNull()?.let { parseArray(it) }
+          ?: runCatching { JSONObject(trimmed) }.getOrNull()?.let { listOfNotNull(parseObject(it)) }
+      } else {
         parseStringList(trimmed)
       }
+      
+      if (result != null && result.isNotEmpty()) {
+        shadowCache.put(value, result)
+      }
+      return result?.takeIf { it.isNotEmpty() }
+    }
+    
+    return when (value) {
       is JSONArray -> parseArray(value)
       is JSONObject -> listOfNotNull(parseObject(value))
       else -> null

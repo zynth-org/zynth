@@ -6,6 +6,8 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 object ZynthColorParser {
+    private val colorCache = android.util.LruCache<String, Int>(256)
+    
     private val NAMED_COLORS = mapOf(
         "aliceblue" to 0xfff0f8ff.toInt(),
         "antiquewhite" to 0xfffaebd7.toInt(),
@@ -161,15 +163,21 @@ object ZynthColorParser {
 
     fun parse(value: String?): Int? {
         if (value.isNullOrBlank()) return null
-        val trimmed = value.trim().lowercase(Locale.ROOT)
-        if (trimmed.startsWith("#")) {
-            return parseHex(trimmed)
+        val trimmed = value.trim()
+        val cached = colorCache.get(trimmed)
+        if (cached != null) return cached
+        
+        val lowered = trimmed.lowercase(Locale.ROOT)
+        val result = if (lowered.startsWith("#")) {
+            parseHex(lowered)
+        } else {
+            NAMED_COLORS[lowered] ?: parseRgb(lowered) ?: parseHsl(lowered) ?: parseHwb(lowered)
         }
-        NAMED_COLORS[trimmed]?.let { return it }
-        parseRgb(trimmed)?.let { return it }
-        parseHsl(trimmed)?.let { return it }
-        parseHwb(trimmed)?.let { return it }
-        return null
+        
+        if (result != null) {
+            colorCache.put(trimmed, result)
+        }
+        return result
     }
 
     private fun parseHex(value: String): Int? {
