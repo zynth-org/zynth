@@ -225,9 +225,6 @@ internal fun ZynthUIManager.maybeDispatchDoublePress(id: Int, event: MotionEvent
   }
 }
 
-private val layoutEventBuffer = ArrayList<LayoutEvent>(64)
-private var layoutPayloadBuffer = DoubleArray(320)
-
 internal fun ZynthUIManager.dispatchLayoutEvents() {
   if (layoutNodes.isEmpty()) return
   if (layoutPending.isEmpty() && layoutDirtyNodes.isEmpty()) return
@@ -252,7 +249,7 @@ internal fun ZynthUIManager.dispatchLayoutEvents() {
     layoutFrames[id] = frame
     layoutPending.remove(id)
     layoutEventBuffer.add(
-      LayoutEvent(
+      ZynthUIManager.LayoutEvent(
         id,
         pxToDp(frame.left.toFloat()),
         pxToDp(frame.top.toFloat()),
@@ -263,13 +260,16 @@ internal fun ZynthUIManager.dispatchLayoutEvents() {
   }
   
   if (layoutEventBuffer.isNotEmpty()) {
+    // Copy events to a new list to avoid ConcurrentModificationException
+    // when runOnJS executes later and layoutEventBuffer is modified by the next frame.
+    val eventsSnapshot = ArrayList(layoutEventBuffer)
     runOnJS {
-      val requiredSize = layoutEventBuffer.size * 5
+      val requiredSize = eventsSnapshot.size * 5
       if (layoutPayloadBuffer.size < requiredSize) {
         layoutPayloadBuffer = DoubleArray(requiredSize * 2)
       }
       var index = 0
-      for (event in layoutEventBuffer) {
+      for (event in eventsSnapshot) {
         layoutPayloadBuffer[index++] = event.id.toDouble()
         layoutPayloadBuffer[index++] = event.x
         layoutPayloadBuffer[index++] = event.y
@@ -281,13 +281,6 @@ internal fun ZynthUIManager.dispatchLayoutEvents() {
   }
 }
 
-private data class LayoutEvent(
-  val id: Int,
-  val x: Double,
-  val y: Double,
-  val width: Double,
-  val height: Double
-)
 
 internal fun ZynthUIManager.detachNode(id: Int) {
   val node = nodeStates[id]

@@ -20,6 +20,7 @@ internal data class ZynthViewStyleState(
 internal data class OriginValue(val value: Float, val isPercent: Boolean)
 
 internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, value: Double): Boolean {
+  val isTextNode = view is TextView && nodeStates[id]?.type == "text"
   val floatVal = value.toFloat()
   when (name) {
     "borderWidth" -> {
@@ -147,6 +148,22 @@ internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, va
   }
 
   if (view is TextView) {
+    if (isTextNode) {
+      when (name) {
+        "lineHeight",
+        "lineSpacing",
+        "paragraphSpacing",
+        "baselineShift",
+        "letterSpacing",
+        "minimumFontScale",
+        "textDecorationLine",
+        "textTransform",
+        "hyphenation",
+        "fontSize" -> {
+          return true
+        }
+      }
+    }
     val textState = textStyleStates.getOrPut(id) { ZynthTextStyleState() }
     when (name) {
       "lineHeight" -> {
@@ -203,6 +220,7 @@ internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, va
 
 internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, value: String?): Boolean {
   if (value == null) return false
+  val isTextNode = view is TextView && nodeStates[id]?.type == "text"
   val state = styleStates.getOrPut(id) { ZynthViewStyleState() }
   when (name) {
     "background", "backgroundImage" -> {
@@ -472,6 +490,22 @@ internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, va
   }
 
   if (view is TextView) {
+    if (isTextNode) {
+      when (name) {
+        "lineHeight",
+        "lineSpacing",
+        "paragraphSpacing",
+        "baselineShift",
+        "letterSpacing",
+        "minimumFontScale",
+        "textDecorationLine",
+        "textTransform",
+        "hyphenation",
+        "fontSize" -> {
+          return true
+        }
+      }
+    }
     val textState = textStyleStates.getOrPut(id) { ZynthTextStyleState() }
     when (name) {
       "lineHeight" -> {

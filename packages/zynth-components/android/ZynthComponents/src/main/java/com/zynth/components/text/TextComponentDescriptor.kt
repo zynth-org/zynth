@@ -70,9 +70,6 @@ private object TextRebuildScheduler {
 
   private val mainHandler = Handler(Looper.getMainLooper())
   private val queues = java.util.WeakHashMap<ZynthUIManager, Queue>()
-  private val precomputeExecutor = Executors.newSingleThreadExecutor { runnable ->
-    Thread(runnable, "ZynthTextPrecompute").apply { isDaemon = true }
-  }
 
   fun enqueue(manager: ZynthUIManager, rootId: Int, styleKey: String) {
     val queue = queues.getOrPut(manager) {
@@ -109,7 +106,7 @@ private object TextRebuildScheduler {
           "rebuild root=${root.id} len=${text.length} sample=[$sample] family=$family",
         )
       }
-      applyPrecomputedText(textView, composed.text, precomputeExecutor)
+      applyTextSynchronously(textView, composed.text)
       manager.markNodeDirty(root.id)
     }
   }
@@ -431,22 +428,11 @@ private fun applyTransform(text: String, transform: String?): String {
   }
 }
 
-private fun applyPrecomputedText(
+private fun applyTextSynchronously(
   textView: TextView,
-  text: CharSequence,
-  executor: java.util.concurrent.Executor
+  text: CharSequence
 ) {
-  if (text.isEmpty()) {
-    textView.text = text
-    return
-  }
-  val params = TextViewCompat.getTextMetricsParams(textView)
-  executor.execute {
-    val precomputed = PrecomputedTextCompat.create(text, params)
-    textView.post {
-      TextViewCompat.setPrecomputedText(textView, precomputed)
-    }
-  }
+  textView.text = text
 }
 
 /**

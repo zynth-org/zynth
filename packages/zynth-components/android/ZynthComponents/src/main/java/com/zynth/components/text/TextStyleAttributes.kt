@@ -36,7 +36,12 @@ data class TextStyleAttributes(
   }
 
   fun requiresSpans(): Boolean {
-    return textDecorationLine != null ||
+    return fontSize != null ||
+      fontWeight != null ||
+      fontFamily != null ||
+      fontStyle != null ||
+      color != null ||
+      textDecorationLine != null ||
       letterSpacing != null ||
       lineHeight != null ||
       lineSpacing != null ||

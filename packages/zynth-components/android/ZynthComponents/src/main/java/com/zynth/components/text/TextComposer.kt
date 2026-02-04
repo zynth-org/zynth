@@ -156,7 +156,8 @@ internal class TextComposer(
     override fun updateDrawState(tp: TextPaint) = apply(tp)
     override fun updateMeasureState(tp: TextPaint) = apply(tp)
     private fun apply(tp: TextPaint) {
-      val base = if (tp.textSize != 0f) tp.textSize else 1f
+      // Guard against invalid text size to prevent invisible text (NaN/Infinity)
+      val base = if (tp.textSize > 1f) tp.textSize else 16f * tp.density
       tp.letterSpacing = spacingPx / base
     }
   }
@@ -171,10 +172,27 @@ internal class TextComposer(
       fm: Paint.FontMetricsInt,
     ) {
       val originHeight = fm.descent - fm.ascent
-      if (originHeight <= 0) return
+      if (originHeight <= 0) {
+        // Fallback for invalid metrics
+        fm.ascent = -heightPx.toInt()
+        fm.descent = 0
+        fm.top = fm.ascent
+        fm.bottom = fm.descent
+        return
+      }
+
+      // Preserve baseline ratio
       val ratio = heightPx / originHeight
       fm.ascent = (fm.ascent * ratio).toInt()
-      fm.descent = fm.ascent + heightPx.toInt()
+      fm.descent = (fm.descent * ratio).toInt()
+
+      // Adjust for rounding errors to ensure exact height
+      val newHeight = fm.descent - fm.ascent
+      val diff = heightPx.toInt() - newHeight
+      if (diff != 0) {
+        fm.descent += diff
+      }
+
       fm.top = fm.ascent
       fm.bottom = fm.descent
     }

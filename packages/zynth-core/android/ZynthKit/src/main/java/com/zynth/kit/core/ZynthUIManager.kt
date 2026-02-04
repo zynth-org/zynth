@@ -75,6 +75,17 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal val layoutDirtyNodes = ConcurrentHashMap.newKeySet<Int>()
   internal val layoutFrames = HashMap<Int, android.graphics.Rect>()
   internal val layoutTransitionFrames = HashMap<Int, android.graphics.Rect>()
+  internal val layoutEventBuffer = ArrayList<LayoutEvent>(64)
+  internal var layoutPayloadBuffer = DoubleArray(320)
+
+  internal data class LayoutEvent(
+    val id: Int,
+    val x: Double,
+    val y: Double,
+    val width: Double,
+    val height: Double
+  )
+
   internal var choreographer: Choreographer? = null
   internal var frameCallbackPosted = false
   internal var needsLayout = false
@@ -326,6 +337,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     val startNs = System.nanoTime()
     val view = nodes[id] ?: return
     val node = nodeStates[id]
+    val descriptor = node?.let { ZynthComponentRegistry.getDescriptor(it.type) }
     
     val isLayoutProp = when (name) {
       "width", "height", "minWidth", "minHeight", "maxWidth", "maxHeight",
@@ -352,6 +364,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     }
 
     if (applyStyleProp(id, view, name, value)) {
+      maybeNotifyStyle(descriptor, node, name, value.toString())
       traceOp("setProp", node?.type, startNs)
       return
     }
