@@ -11,19 +11,22 @@ static std::vector<UICommandsInstaller> &UICommandsInstallers() {
   return installers;
 }
 
-static UICommandsState gCurrentState;
+static std::weak_ptr<void> gCurrentStateWeak;
 static Runtime *gCurrentRuntime = nullptr;
 
 void registerUICommandsInstaller(UICommandsInstaller installer) {
   if (!installer) return;
   UICommandsInstallers().push_back(installer);
   if (gCurrentRuntime) {
-    installer(gCurrentState, *gCurrentRuntime);
+    auto state = gCurrentStateWeak.lock();
+    if (state) {
+      installer(state, *gCurrentRuntime);
+    }
   }
 }
 
 void installUICommandsRegistry(const UICommandsState &state, Runtime &rt) {
-  gCurrentState = state;
+  gCurrentStateWeak = state;
   gCurrentRuntime = &rt;
   Object commands(rt);
   rt.global().setProperty(rt, "__zynth_ui_commands", commands);
