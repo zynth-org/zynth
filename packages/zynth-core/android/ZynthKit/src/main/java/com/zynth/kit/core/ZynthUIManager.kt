@@ -93,13 +93,30 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   private var mainQueueScheduled = false
   private val mainQueueLock = Any()
   private val mainQueueMaxOpsPerTick = 100000
-  private val mainQueueMaxMsPerTick = 1000.0
+  private val mainQueueMaxMsPerTick = 16.0
+  internal val layoutApplyBudgetMs = 8.0
   private val traceEnabled = false
   private val traceIntervalMs = 500L
   private var traceStartMs = SystemClock.uptimeMillis()
   private var traceLastLogMs = traceStartMs
   private var lastDrainOps = 0
   private var lastDrainMs = 0.0
+  internal var perfFrameCount = 0
+  internal var perfLastLogMs = traceStartMs
+  internal var perfLayoutMs = 0.0
+  internal var perfStyleMs = 0.0
+  internal var perfLayoutEventsMs = 0.0
+  internal var perfMeasures = 0
+  internal var perfChanged = 0
+  internal var perfNodes = 0
+  internal var perfSurfaces = 0
+  internal var perfMaxLayoutMs = 0.0
+  internal var perfMaxStyleMs = 0.0
+  internal var perfMaxLayoutEventsMs = 0.0
+  internal var perfMaxMeasureCount = 0
+  internal var perfMaxChangedCount = 0
+  internal var perfMaxNodes = 0
+  internal var perfMaxSurfaces = 0
   private var batchDepth = 0
   private var batchNeedsLayout = false
   private data class OpStats(var count: Int = 0, var ns: Long = 0L)
@@ -208,6 +225,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
 
   private fun drainMainQueue() {
     val startNs = System.nanoTime()
+    val maxMs = mainQueueMaxMsPerTick
     var processed = 0
     while (processed < mainQueueMaxOpsPerTick) {
       val op = synchronized(mainQueueLock) {
@@ -220,7 +238,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       op()
       processed += 1
       val elapsedMs = (System.nanoTime() - startNs) / 1_000_000.0
-      if (elapsedMs >= mainQueueMaxMsPerTick) {
+      if (elapsedMs >= maxMs) {
         break
       }
     }
@@ -228,7 +246,17 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     lastDrainOps = processed
     lastDrainMs = elapsedMs
     maybeLogTrace("drain")
-    mainHandler.post { drainMainQueue() }
+    val shouldContinue = synchronized(mainQueueLock) {
+      if (mainQueue.isEmpty()) {
+        mainQueueScheduled = false
+        false
+      } else {
+        true
+      }
+    }
+    if (shouldContinue) {
+      mainHandler.post { drainMainQueue() }
+    }
   }
 
 

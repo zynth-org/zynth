@@ -26,6 +26,14 @@ class ZynthYogaLayout {
   }
   private val nodes = HashMap<Int, YogaNode>()
   private val measureHandlers = HashMap<Int, MeasureHandler>()
+  private var measureCount = 0
+  private var lastMeasureCount = 0
+  private var lastChangedCount = 0
+  private var pendingApplyIds: IntArray? = null
+  private var pendingApplyIndex = 0
+  private var pendingApplyRootWidth = 0
+  private var pendingApplyRootHeight = 0
+  private var pendingApplyDirty = false
   private val rootNode: YogaNode = YogaNodeFactory.create(config).apply {
     flexDirection = YogaFlexDirection.COLUMN
     alignItems = YogaAlign.STRETCH
@@ -34,6 +42,7 @@ class ZynthYogaLayout {
 
   fun ensureNode(id: Int, view: View) {
     if (nodes.containsKey(id)) return
+    pendingApplyDirty = true
     val node = YogaNodeFactory.create(config)
     node.data = view
     val handler = measureHandlers[id]
@@ -48,12 +57,14 @@ class ZynthYogaLayout {
   fun ensureRootChild(id: Int) {
     val node = nodes[id] ?: return
     if (node.owner == null) {
+      pendingApplyDirty = true
       rootNode.addChildAt(node, rootNode.childCount)
     }
   }
 
   fun removeNode(id: Int) {
     val node = nodes.remove(id) ?: return
+    pendingApplyDirty = true
     if (node.childCount > 0) {
       for (i in node.childCount - 1 downTo 0) {
         node.removeChildAt(i)
@@ -69,6 +80,7 @@ class ZynthYogaLayout {
     val parent = if (parentId == 0) rootNode else nodes[parentId]
     if (parent == null) return
     if (parent.isMeasureDefined) return
+    pendingApplyDirty = true
     if (child.owner != null) {
       child.owner?.removeChildAt(child.owner?.indexOf(child) ?: 0)
     }
@@ -82,6 +94,7 @@ class ZynthYogaLayout {
     if (parent == null) return
     val idx = parent.indexOf(child)
     if (idx >= 0) {
+      pendingApplyDirty = true
       parent.removeChildAt(idx)
     }
   }
@@ -92,6 +105,7 @@ class ZynthYogaLayout {
     if (!hasMeasure) return
     if (node.childCount != 0) return
     if (node.owner == null) return
+    pendingApplyDirty = true
     try {
       node.dirty()
     } catch (_: Throwable) {
@@ -101,6 +115,7 @@ class ZynthYogaLayout {
 
   fun setMeasureHandler(id: Int, handler: MeasureHandler?) {
     val node = nodes[id] ?: return
+    pendingApplyDirty = true
     if (handler == null) {
       measureHandlers.remove(id)
       if (!node.isMeasureDefined) return
@@ -113,6 +128,7 @@ class ZynthYogaLayout {
 
   fun setStyle(id: Int, name: String, value: String?) {
     val node = nodes[id] ?: return
+    pendingApplyDirty = true
     when (name) {
       "width" -> applyDimension(value, node::setWidth, node::setWidthPercent, node::setWidthAuto)
       "height" -> applyDimension(value, node::setHeight, node::setHeightPercent, node::setHeightAuto)
@@ -197,12 +213,46 @@ class ZynthYogaLayout {
     }
   }
 
-  fun layout(rootWidth: Int, rootHeight: Int, views: Map<Int, View>) {
-    if (rootWidth <= 0 || rootHeight <= 0) return
-    rootNode.setWidth(rootWidth.toFloat())
-    rootNode.setHeight(rootHeight.toFloat())
-    rootNode.calculateLayout(rootWidth.toFloat(), rootHeight.toFloat())
-    for ((id, node) in nodes) {
+  fun layout(rootWidth: Int, rootHeight: Int, views: Map<Int, View>, applyBudgetMs: Double): Boolean {
+    if (rootWidth <= 0 || rootHeight <= 0) return true
+    val canResume =
+      pendingApplyIds != null &&
+        !pendingApplyDirty &&
+        pendingApplyRootWidth == rootWidth &&
+        pendingApplyRootHeight == rootHeight
+    if (!canResume) {
+      rootNode.setWidth(rootWidth.toFloat())
+      rootNode.setHeight(rootHeight.toFloat())
+      measureCount = 0
+      lastChangedCount = 0
+      rootNode.calculateLayout(rootWidth.toFloat(), rootHeight.toFloat())
+      pendingApplyIds = nodes.keys.toIntArray()
+      pendingApplyIndex = 0
+      pendingApplyRootWidth = rootWidth
+      pendingApplyRootHeight = rootHeight
+      pendingApplyDirty = false
+    }
+    val completed = applyPending(applyBudgetMs)
+    if (completed) {
+      lastMeasureCount = measureCount
+    }
+    return completed
+  }
+
+  fun nodeCount(): Int = nodes.size
+  fun lastLayoutMeasureCount(): Int = lastMeasureCount
+  fun lastLayoutChangedCount(): Int = lastChangedCount
+
+  private fun applyPending(applyBudgetMs: Double): Boolean {
+    val ids = pendingApplyIds ?: return true
+    val budgetNs =
+      if (applyBudgetMs <= 0) 0L else (applyBudgetMs * 1_000_000.0).toLong()
+    val startNs = System.nanoTime()
+    val total = ids.size
+    while (pendingApplyIndex < total) {
+      val id = ids[pendingApplyIndex]
+      pendingApplyIndex += 1
+      val node = nodes[id] ?: continue
       val view = node.data as? View ?: continue
       val left = node.layoutX.toInt()
       val top = node.layoutY.toInt()
@@ -217,15 +267,24 @@ class ZynthYogaLayout {
       }
       if (frameChanged) {
         view.layout(left, top, right, bottom)
+        lastChangedCount += 1
+        layoutDidUpdate?.invoke(id, left, top, right, bottom, true)
       }
-      layoutDidUpdate?.invoke(id, left, top, right, bottom, frameChanged)
+      if (budgetNs > 0 && System.nanoTime() - startNs >= budgetNs) {
+        break
+      }
     }
+    if (pendingApplyIndex >= total) {
+      pendingApplyIds = null
+      pendingApplyIndex = 0
+      return true
+    }
+    return false
   }
-
-  fun nodeCount(): Int = nodes.size
 
   private fun createTextMeasure(view: TextView): YogaMeasureFunction {
     return YogaMeasureFunction { _, width, widthMode, height, heightMode ->
+      measureCount += 1
       val widthSpec = makeMeasureSpec(width, widthMode)
       val heightSpec = makeMeasureSpec(height, heightMode)
       view.measure(widthSpec, heightSpec)
@@ -235,6 +294,7 @@ class ZynthYogaLayout {
 
   private fun attachMeasureHandler(node: YogaNode, handler: MeasureHandler) {
     node.setMeasureFunction { _, width, widthMode, height, heightMode ->
+      measureCount += 1
       val input = MeasureInput(
         width = width,
         widthMode = widthMode.toMeasureMode(),

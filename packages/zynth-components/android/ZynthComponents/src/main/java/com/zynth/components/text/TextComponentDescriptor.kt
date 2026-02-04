@@ -11,12 +11,15 @@ import android.view.View.MeasureSpec
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.TextView
+import androidx.core.text.PrecomputedTextCompat
+import androidx.core.widget.TextViewCompat
 import com.zynth.kit.components.ZynthComponentDescriptor
 import com.zynth.kit.components.ZynthComponentRegistrar
 import com.zynth.kit.core.ZynthUIManager
 import com.zynth.kit.runtime.FontRegistry
 import com.zynth.kit.layout.MeasureMode
 import com.zynth.kit.layout.Style
+import java.util.concurrent.Executors
 import kotlin.math.roundToInt
 
 /**
@@ -67,6 +70,9 @@ private object TextRebuildScheduler {
 
   private val mainHandler = Handler(Looper.getMainLooper())
   private val queues = java.util.WeakHashMap<ZynthUIManager, Queue>()
+  private val precomputeExecutor = Executors.newSingleThreadExecutor { runnable ->
+    Thread(runnable, "ZynthTextPrecompute").apply { isDaemon = true }
+  }
 
   fun enqueue(manager: ZynthUIManager, rootId: Int, styleKey: String) {
     val queue = queues.getOrPut(manager) {
@@ -103,7 +109,7 @@ private object TextRebuildScheduler {
           "rebuild root=${root.id} len=${text.length} sample=[$sample] family=$family",
         )
       }
-      textView.text = composed.text
+      applyPrecomputedText(textView, composed.text, precomputeExecutor)
       manager.markNodeDirty(root.id)
     }
   }
@@ -422,6 +428,24 @@ private fun applyTransform(text: String, transform: String?): String {
       part.lowercase().replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
     }
     else -> text
+  }
+}
+
+private fun applyPrecomputedText(
+  textView: TextView,
+  text: CharSequence,
+  executor: java.util.concurrent.Executor
+) {
+  if (text.isEmpty()) {
+    textView.text = text
+    return
+  }
+  val params = TextViewCompat.getTextMetricsParams(textView)
+  executor.execute {
+    val precomputed = PrecomputedTextCompat.create(text, params)
+    textView.post {
+      TextViewCompat.setPrecomputedText(textView, precomputed)
+    }
   }
 }
 

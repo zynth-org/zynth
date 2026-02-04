@@ -43,6 +43,7 @@ export type FlatListProps<T> = {
   recycle?: boolean;
   estimatedItemSize?: number;
   poolSize?: number;
+  maxPoolSize?: number;
   // Number = item count; config.main = px; config.multiple = item-size multiplier.
   overscan?: number | { multiple?: number; main?: number };
   inverted?: boolean;
@@ -85,7 +86,9 @@ type PoolSlot<T> = {
 const DEFAULT_ESTIMATED_ITEM_SIZE = 64;
 const DEFAULT_MIN_POOL_ITEMS = 15;
 const DEFAULT_OVERSCAN_MULTIPLE = 2;
+const DEFAULT_POOL_GROWTH_CHUNK = 12;
 const MEASUREMENT_EPSILON = 0.5;
+const LAYOUT_TOTAL_EPSILON = 0.5;
 const OFFSET_EPSILON = 0.01;
 const ADAPTIVE_ESTIMATE_SAMPLES = 8;
 const ADAPTIVE_ESTIMATE_THRESHOLD = 0.1;
@@ -317,8 +320,12 @@ export function FlatList<T>(props: FlatListProps<T>) {
   });
 
   const desiredPoolSize = createMemo(() => {
+    const maxPoolSize =
+      typeof props.maxPoolSize === "number"
+        ? Math.max(0, props.maxPoolSize)
+        : Number.POSITIVE_INFINITY;
     if (typeof props.poolSize === "number") {
-      return Math.max(0, props.poolSize);
+      return Math.min(Math.max(0, props.poolSize), maxPoolSize);
     }
     const dataLength = props.data.length;
     if (dataLength === 0) return 0;
@@ -333,12 +340,16 @@ export function FlatList<T>(props: FlatListProps<T>) {
       DEFAULT_MIN_POOL_ITEMS,
       visibleCount + overscanCount * 2,
     );
-    return Math.min(calculated, dataLength);
+    return Math.min(calculated, dataLength, maxPoolSize);
   });
 
   const [poolSlots, setPoolSlots] = createSignal<PoolSlot<T>[]>([]);
   let poolSlotsRef: PoolSlot<T>[] = [];
   const slotBindings: number[] = [];
+  let pendingPoolTarget = 0;
+  let poolGrowScheduled = false;
+  let isScrolling = false;
+  let scrollIdleTimer: ReturnType<typeof setTimeout> | null = null;
 
   const ensurePoolSize = (size: number) => {
     if (size <= poolSlotsRef.length) return false;
@@ -351,15 +362,51 @@ export function FlatList<T>(props: FlatListProps<T>) {
     setPoolSlots(next);
     lastRangeStart = -1;
     lastRangeEnd = -1;
+    lastBindingsOffset = Number.NaN;
+    lastBindingsViewport = Number.NaN;
+    lastBindingsTotal = Number.NaN;
     log(`Pool grown to ${size} slots`);
     return true;
   };
 
-  createEffect(() => {
-    const didGrow = ensurePoolSize(desiredPoolSize());
-    if (didGrow) {
-      updateBindingsForOffset(lastOffset, effectiveViewport());
+  const schedulePoolGrowth = (target: number) => {
+    if (target <= poolSlotsRef.length) return;
+    pendingPoolTarget = Math.max(pendingPoolTarget, target);
+    if (!isScrolling) {
+      const didGrow = ensurePoolSize(pendingPoolTarget);
+      pendingPoolTarget = 0;
+      if (didGrow) {
+        updateBindingsForOffset(lastOffset, effectiveViewport());
+      }
+      return;
     }
+    if (poolGrowScheduled) return;
+    poolGrowScheduled = true;
+    const grow = () => {
+      poolGrowScheduled = false;
+      const current = poolSlotsRef.length;
+      if (pendingPoolTarget <= current) return;
+      const nextSize = Math.min(
+        pendingPoolTarget,
+        current + DEFAULT_POOL_GROWTH_CHUNK,
+      );
+      const didGrow = ensurePoolSize(nextSize);
+      if (didGrow) {
+        updateBindingsForOffset(lastOffset, effectiveViewport());
+      }
+      if (poolSlotsRef.length < pendingPoolTarget) {
+        schedulePoolGrowth(pendingPoolTarget);
+      }
+    };
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(() => grow());
+    } else {
+      Promise.resolve().then(grow);
+    }
+  };
+
+  createEffect(() => {
+    schedulePoolGrowth(desiredPoolSize());
   });
 
   const measurementCache = new Map<string, number>();
@@ -367,6 +414,13 @@ export function FlatList<T>(props: FlatListProps<T>) {
   let dataKeys: string[] = [];
   let layoutTotal = 0;
   const [layoutVersion, setLayoutVersion] = createSignal(0);
+  let lastBindingsOffset = Number.NaN;
+  let lastBindingsViewport = Number.NaN;
+  let lastBindingsTotal = Number.NaN;
+  let pendingBindingsMicrotask = false;
+  let pendingBindingsFrame = false;
+  let pendingBindingsOffset = 0;
+  let pendingBindingsViewport = 0;
 
   const rebuildLayout = (nextKeys: string[]) => {
     const estimate = layoutEstimate();
@@ -395,6 +449,9 @@ export function FlatList<T>(props: FlatListProps<T>) {
     setLayoutVersion((prev) => prev + 1);
     lastRangeStart = -1;
     lastRangeEnd = -1;
+    lastBindingsOffset = Number.NaN;
+    lastBindingsViewport = Number.NaN;
+    lastBindingsTotal = Number.NaN;
   };
 
   const getOffsetForIndex = (index: number) => sizeTree.prefixSum(index - 1);
@@ -499,6 +556,15 @@ export function FlatList<T>(props: FlatListProps<T>) {
 
     const overscan = overscanMainDistance();
     const total = getTotalSize();
+    if (
+      lastRangeStart !== -1 &&
+      lastRangeEnd !== -1 &&
+      Math.abs(offset - lastBindingsOffset) < OFFSET_EPSILON &&
+      Math.abs(viewport - lastBindingsViewport) < OFFSET_EPSILON &&
+      Math.abs(total - lastBindingsTotal) < LAYOUT_TOTAL_EPSILON
+    ) {
+      return;
+    }
     const listOffset = getListOffset(offset, viewport);
     const logicalOffset = getLogicalOffset(listOffset, viewport);
     const startOffset = Math.max(0, logicalOffset - overscan);
@@ -518,13 +584,15 @@ export function FlatList<T>(props: FlatListProps<T>) {
 
     const rangeCount = endIndex - startIndex + 1;
     if (rangeCount > poolSlotsRef.length) {
-      ensurePoolSize(Math.min(dataLength, rangeCount));
-    }
-
-    if (props.debug) {
-      log(
-        `updateBindings: off=${offset.toFixed(1)} vp=${viewport.toFixed(1)} logOff=${logicalOffset.toFixed(1)} total=${total.toFixed(1)} range=[${startIndex}, ${endIndex}]`,
-      );
+      const maxPoolSize =
+        typeof props.maxPoolSize === "number"
+          ? Math.max(0, props.maxPoolSize)
+          : Number.POSITIVE_INFINITY;
+      const nextSize = Math.min(dataLength, rangeCount, maxPoolSize);
+      if (nextSize === dataLength && props.debug) {
+        log(`Pool expanded to dataLength=${dataLength} (rangeCount=${rangeCount.toFixed(0)})`);
+      }
+      schedulePoolGrowth(nextSize);
     }
 
     const targetBindings = Math.min(poolSlotsRef.length, dataLength);
@@ -548,10 +616,22 @@ export function FlatList<T>(props: FlatListProps<T>) {
     }
 
     if (startIndex === lastRangeStart && endIndex === lastRangeEnd) {
+      lastBindingsOffset = offset;
+      lastBindingsViewport = viewport;
+      lastBindingsTotal = total;
       return;
     }
     lastRangeStart = startIndex;
     lastRangeEnd = endIndex;
+    lastBindingsOffset = offset;
+    lastBindingsViewport = viewport;
+    lastBindingsTotal = total;
+
+    if (props.debug) {
+      log(
+        `updateBindings: off=${offset.toFixed(1)} vp=${viewport.toFixed(1)} logOff=${logicalOffset.toFixed(1)} total=${total.toFixed(1)} range=[${startIndex}, ${endIndex}]`,
+      );
+    }
 
     const needed = new Set<number>();
     for (let i = startIndex; i <= endIndex; i += 1) {
@@ -604,6 +684,38 @@ export function FlatList<T>(props: FlatListProps<T>) {
     } else {
       setIsFlowLayout(false);
       setFlowOffset(0);
+    }
+  };
+
+  const scheduleBindingsUpdate = (
+    offset: number,
+    viewport: number,
+    useFrame: boolean,
+  ) => {
+    pendingBindingsOffset = offset;
+    pendingBindingsViewport = viewport;
+    if (useFrame && typeof requestAnimationFrame === "function") {
+      if (pendingBindingsFrame) return;
+      pendingBindingsFrame = true;
+      requestAnimationFrame(() => {
+        pendingBindingsFrame = false;
+        updateBindingsForOffset(
+          pendingBindingsOffset,
+          pendingBindingsViewport,
+        );
+      });
+      return;
+    }
+    if (pendingBindingsMicrotask) return;
+    pendingBindingsMicrotask = true;
+    const flush = () => {
+      pendingBindingsMicrotask = false;
+      updateBindingsForOffset(pendingBindingsOffset, pendingBindingsViewport);
+    };
+    if (typeof queueMicrotask === "function") {
+      queueMicrotask(flush);
+    } else {
+      Promise.resolve().then(flush);
     }
   };
 
@@ -837,7 +949,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
     sizeTree.update(mappedIndex, size);
     layoutTotal = sizeTree.total();
     setLayoutVersion((prevVersion) => prevVersion + 1);
-    updateBindingsForOffset(lastOffset, lastViewport);
+    scheduleBindingsUpdate(lastOffset, lastViewport, false);
 
     if (
       !adaptiveLocked &&
@@ -853,7 +965,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
           setLayoutEstimate(avg);
           rebuildLayout(dataKeys);
           refreshBindings();
-          updateBindingsForOffset(lastOffset, lastViewport);
+          scheduleBindingsUpdate(lastOffset, lastViewport, false);
         }
       }
     }
@@ -873,6 +985,11 @@ export function FlatList<T>(props: FlatListProps<T>) {
 
   const handleScroll = (event: ScrollEvent) => {
     runWithOwner(owner, () => {
+      isScrolling = true;
+      if (scrollIdleTimer) clearTimeout(scrollIdleTimer);
+      scrollIdleTimer = setTimeout(() => {
+        isScrolling = false;
+      }, 120);
       const offset = props.horizontal
         ? (event.contentOffset?.x ?? 0)
         : (event.contentOffset?.y ?? 0);
@@ -897,9 +1014,10 @@ export function FlatList<T>(props: FlatListProps<T>) {
       if (viewport > 0) {
         setViewportSize(viewport);
       }
-      updateBindingsForOffset(
+      scheduleBindingsUpdate(
         offset,
         viewport > 0 ? viewport : effectiveViewport(),
+        true,
       );
       handleBoundaryEvents(offset, viewport > 0 ? viewport : effectiveViewport());
       updateAnchor(offset, viewport > 0 ? viewport : effectiveViewport());

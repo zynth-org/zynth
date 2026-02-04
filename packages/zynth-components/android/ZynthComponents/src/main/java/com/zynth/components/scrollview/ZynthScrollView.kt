@@ -67,7 +67,9 @@ internal class ZynthScrollView(
   private var lastVelocityX = 0f
   private var lastVelocityY = 0f
 
-  private var coalescedPayload: JSONObject? = null
+  private var coalescedX: Int = 0
+  private var coalescedY: Int = 0
+  private var hasCoalescedScroll = false
   private var coalesceScheduled = false
   private var pendingMomentumEndCheck = false
   private var snapPendingCheck = false
@@ -101,6 +103,9 @@ internal class ZynthScrollView(
   private var lastGestureTimestamp = 0L
   private var lastManualStopTimestamp = 0L
   private var programmaticScrollGraceDeadline = 0L
+  private var perfLastLogMs = SystemClock.uptimeMillis()
+  private var perfScrollDispatchMaxMs = 0L
+  private var perfScrollHandleMaxMs = 0L
 
   private var snapEnabled = false
   private var snapAxisMode: String = "both"
@@ -130,10 +135,11 @@ internal class ZynthScrollView(
   }
   private val coalesceCallback = Choreographer.FrameCallback {
     coalesceScheduled = false
-    coalescedPayload?.let { payload ->
+    if (hasCoalescedScroll) {
+      val payload = buildPayload(coalescedX, coalescedY)
       dispatchScrollEventInternal("onScroll", payload, force = true)
     }
-    coalescedPayload = null
+    hasCoalescedScroll = false
   }
 
   init {
@@ -478,8 +484,9 @@ internal class ZynthScrollView(
         choreographer.removeFrameCallback(coalesceCallback)
         coalesceScheduled = false
       }
-      coalescedPayload?.let { payload ->
-        coalescedPayload = null
+      if (hasCoalescedScroll) {
+        hasCoalescedScroll = false
+        val payload = buildPayload(coalescedX, coalescedY)
         dispatchScrollEventInternal("onScroll", payload, force = true)
       }
     }
@@ -681,7 +688,6 @@ internal class ZynthScrollView(
     val vy = ((y - lastDispatchedY) / dt.toFloat()) * 1000f
     lastVelocityX = vx
     lastVelocityY = vy
-    val payload = buildPayload(x, y)
     if (host.view.width > 0) {
       lastKnownViewportWidth = host.view.width
     }
@@ -690,19 +696,23 @@ internal class ZynthScrollView(
     }
     evaluateManualFlingGuard(x, y)
     if (bridgeCoalescing) {
-      coalescedPayload = payload
+      coalescedX = x
+      coalescedY = y
+      hasCoalescedScroll = true
       if (!coalesceScheduled) {
         coalesceScheduled = true
         choreographer.postFrameCallback(coalesceCallback)
       }
     } else {
+      val payload = buildPayload(x, y)
       dispatchScrollEventInternal("onScroll", payload, force = true)
     }
     
     val handleTime = SystemClock.uptimeMillis() - handleStart
-    if (handleTime > 5) {
-      Log.w("ZynthPerf", "⚠️ handleScrollChanged took ${handleTime}ms for offset ($x, $y)")
+    if (handleTime > perfScrollHandleMaxMs) {
+      perfScrollHandleMaxMs = handleTime
     }
+    logPerfSummaryIfNeeded()
   }
 
   fun setScrollGuardConfig(value: Any?) {
@@ -991,11 +1001,24 @@ internal class ZynthScrollView(
     manager?.dispatchEvent(nodeId, event, payload)
     
     val dispatchTime = SystemClock.uptimeMillis() - dispatchStart
-    if (dispatchTime > 5) {
-      val offset = payload.optJSONObject("contentOffset")
-      val y = offset?.optDouble("y") ?: 0.0
-      Log.w("ZynthPerf", "⚠️ dispatchScrollEvent took ${dispatchTime}ms for offset y=$y")
+    if (dispatchTime > perfScrollDispatchMaxMs) {
+      perfScrollDispatchMaxMs = dispatchTime
     }
+    logPerfSummaryIfNeeded()
+  }
+
+  private fun logPerfSummaryIfNeeded() {
+    val now = SystemClock.uptimeMillis()
+    if (now - perfLastLogMs < 1000L) return
+    if (perfScrollDispatchMaxMs > 0L || perfScrollHandleMaxMs > 0L) {
+      Log.d(
+        "ZynthPerf",
+        "scroll max dispatch=${perfScrollDispatchMaxMs}ms handle=${perfScrollHandleMaxMs}ms"
+      )
+    }
+    perfScrollDispatchMaxMs = 0L
+    perfScrollHandleMaxMs = 0L
+    perfLastLogMs = now
   }
 
   private fun attachHost(host: ScrollHost) {

@@ -3,13 +3,13 @@ package com.zynth.components.text
 import android.content.Context
 import android.graphics.Color
 import android.view.Gravity
-import android.widget.TextView
+import androidx.appcompat.widget.AppCompatTextView
 
 /**
  * Custom TextView for the Text component.
  * Handles text composition from nested text nodes and styling.
  */
-class ZynthTextView(context: Context) : TextView(context) {
+class ZynthTextView(context: Context) : AppCompatTextView(context) {
   init {
     textSize = 16f
     setTextColor(Color.BLACK) // Default to black text
