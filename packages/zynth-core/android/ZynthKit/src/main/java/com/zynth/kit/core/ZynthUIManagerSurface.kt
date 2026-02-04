@@ -143,10 +143,6 @@ internal fun ZynthUIManager.registerSurfaceInternal(
   }
   surfaceYoga[surfaceId] = layout
   surfaceSizes[surfaceId] = (root.width to root.height)
-  val afterCount = surfaceRoots.size
-  if (afterCount > 2 && afterCount != beforeCount) {
-    android.util.Log.w("ZynthPerf", "surfaceRoots size=$afterCount (surfaceId=$surfaceId)")
-  }
 }
 
 internal fun ZynthUIManager.unregisterSurfaceInternal(surfaceId: Int) {

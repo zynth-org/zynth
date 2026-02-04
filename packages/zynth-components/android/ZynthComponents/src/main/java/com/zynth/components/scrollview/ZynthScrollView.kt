@@ -1010,12 +1010,12 @@ internal class ZynthScrollView(
   private fun logPerfSummaryIfNeeded() {
     val now = SystemClock.uptimeMillis()
     if (now - perfLastLogMs < 1000L) return
-    if (perfScrollDispatchMaxMs > 0L || perfScrollHandleMaxMs > 0L) {
-      Log.d(
-        "ZynthPerf",
-        "scroll max dispatch=${perfScrollDispatchMaxMs}ms handle=${perfScrollHandleMaxMs}ms"
-      )
-    }
+    // if (perfScrollDispatchMaxMs > 0L || perfScrollHandleMaxMs > 0L) {
+    //   Log.d(
+    //     "ZynthPerf",
+    //     "scroll max dispatch=${perfScrollDispatchMaxMs}ms handle=${perfScrollHandleMaxMs}ms"
+    //   )
+    // }
     perfScrollDispatchMaxMs = 0L
     perfScrollHandleMaxMs = 0L
     perfLastLogMs = now

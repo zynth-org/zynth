@@ -151,6 +151,7 @@ private fun ZynthUIManager.recordPerfSample(
   val shouldLog = nowMs - perfLastLogMs >= 1000L
   if (!shouldLog) return
   val frames = perfFrameCount.coerceAtLeast(1)
+  /*
   Log.d(
     "ZynthPerf",
     "frames=%d layout=%.2fms(max=%.2f) style=%.2fms(max=%.2f) events=%.2fms(max=%.2f) measures=%d(max=%d) changed=%d(max=%d) nodes=%d(max=%d) surfaces=%d(max=%d)".format(
@@ -172,6 +173,7 @@ private fun ZynthUIManager.recordPerfSample(
       perfMaxSurfaces
     )
   )
+  */
   perfFrameCount = 0
   perfLayoutMs = 0.0
   perfStyleMs = 0.0

@@ -19,6 +19,188 @@ internal data class ZynthViewStyleState(
 
 internal data class OriginValue(val value: Float, val isPercent: Boolean)
 
+internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, value: Double): Boolean {
+  val floatVal = value.toFloat()
+  when (name) {
+    "borderWidth" -> {
+      val width = dpToPx(floatVal)
+      val drawable = ensureBorderDrawable(id, view)
+      drawable.borderTopWidth = width
+      drawable.borderRightWidth = width
+      drawable.borderBottomWidth = width
+      drawable.borderLeftWidth = width
+      styleDirtyNodes.add(id)
+      return true
+    }
+    "borderRadius" -> {
+      val radius = dpToPx(floatVal)
+      val drawable = ensureBorderDrawable(id, view)
+      drawable.borderTopLeftRadius = radius
+      drawable.borderTopRightRadius = radius
+      drawable.borderBottomRightRadius = radius
+      drawable.borderBottomLeftRadius = radius
+      (view as? ZynthLayoutView)?.setBorderRadii(radius, radius, radius, radius)
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        view.invalidateOutline()
+      }
+      styleDirtyNodes.add(id)
+      return true
+    }
+    "borderTopWidth" -> {
+      val drawable = ensureBorderDrawable(id, view)
+      drawable.borderTopWidth = dpToPx(floatVal)
+      styleDirtyNodes.add(id)
+      return true
+    }
+    "borderRightWidth" -> {
+      val drawable = ensureBorderDrawable(id, view)
+      drawable.borderRightWidth = dpToPx(floatVal)
+      styleDirtyNodes.add(id)
+      return true
+    }
+    "borderBottomWidth" -> {
+      val drawable = ensureBorderDrawable(id, view)
+      drawable.borderBottomWidth = dpToPx(floatVal)
+      styleDirtyNodes.add(id)
+      return true
+    }
+    "borderLeftWidth" -> {
+      val drawable = ensureBorderDrawable(id, view)
+      drawable.borderLeftWidth = dpToPx(floatVal)
+      styleDirtyNodes.add(id)
+      return true
+    }
+    "borderTopLeftRadius" -> {
+      val drawable = ensureBorderDrawable(id, view)
+      drawable.borderTopLeftRadius = dpToPx(floatVal)
+      (view as? ZynthLayoutView)?.setBorderRadii(
+        drawable.borderTopLeftRadius,
+        drawable.borderTopRightRadius,
+        drawable.borderBottomRightRadius,
+        drawable.borderBottomLeftRadius
+      )
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        view.invalidateOutline()
+      }
+      styleDirtyNodes.add(id)
+      return true
+    }
+    "borderTopRightRadius" -> {
+      val drawable = ensureBorderDrawable(id, view)
+      drawable.borderTopRightRadius = dpToPx(floatVal)
+      (view as? ZynthLayoutView)?.setBorderRadii(
+        drawable.borderTopLeftRadius,
+        drawable.borderTopRightRadius,
+        drawable.borderBottomRightRadius,
+        drawable.borderBottomLeftRadius
+      )
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        view.invalidateOutline()
+      }
+      styleDirtyNodes.add(id)
+      return true
+    }
+    "borderBottomRightRadius" -> {
+      val drawable = ensureBorderDrawable(id, view)
+      drawable.borderBottomRightRadius = dpToPx(floatVal)
+      (view as? ZynthLayoutView)?.setBorderRadii(
+        drawable.borderTopLeftRadius,
+        drawable.borderTopRightRadius,
+        drawable.borderBottomRightRadius,
+        drawable.borderBottomLeftRadius
+      )
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        view.invalidateOutline()
+      }
+      styleDirtyNodes.add(id)
+      return true
+    }
+    "borderBottomLeftRadius" -> {
+      val drawable = ensureBorderDrawable(id, view)
+      drawable.borderBottomLeftRadius = dpToPx(floatVal)
+      (view as? ZynthLayoutView)?.setBorderRadii(
+        drawable.borderTopLeftRadius,
+        drawable.borderTopRightRadius,
+        drawable.borderBottomRightRadius,
+        drawable.borderBottomLeftRadius
+      )
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        view.invalidateOutline()
+      }
+      styleDirtyNodes.add(id)
+      return true
+    }
+    "elevation" -> {
+      view.elevation = dpToPx(floatVal)
+      return true
+    }
+    "zIndex" -> {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        view.z = floatVal
+      }
+      return true
+    }
+    "opacity" -> {
+      view.alpha = floatVal
+      return true
+    }
+  }
+
+  if (view is TextView) {
+    val textState = textStyleStates.getOrPut(id) { ZynthTextStyleState() }
+    when (name) {
+      "lineHeight" -> {
+        textState.lineHeight = dpToPx(floatVal)
+        textState.applyTo(view)
+        yogaForNode(id).markDirty(id)
+        markSurfaceDirtyForNode(id)
+        return true
+      }
+      "lineSpacing" -> {
+        textState.lineSpacing = dpToPx(floatVal)
+        textState.applyTo(view)
+        yogaForNode(id).markDirty(id)
+        markSurfaceDirtyForNode(id)
+        return true
+      }
+      "paragraphSpacing" -> {
+        textState.paragraphSpacing = dpToPx(floatVal)
+        textState.applyTo(view)
+        yogaForNode(id).markDirty(id)
+        markSurfaceDirtyForNode(id)
+        return true
+      }
+      "baselineShift" -> {
+        textState.baselineShift = dpToPx(floatVal)
+        textState.applyTo(view)
+        yogaForNode(id).markDirty(id)
+        markSurfaceDirtyForNode(id)
+        return true
+      }
+      "letterSpacing" -> {
+        textState.letterSpacing = dpToPx(floatVal)
+        textState.applyTo(view)
+        yogaForNode(id).markDirty(id)
+        markSurfaceDirtyForNode(id)
+        return true
+      }
+      "minimumFontScale" -> {
+        textState.minimumFontScale = floatVal
+        textState.applyTo(view)
+        yogaForNode(id).markDirty(id)
+        markSurfaceDirtyForNode(id)
+        return true
+      }
+      "fontSize" -> {
+        view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, dpToPx(floatVal))
+        return true
+      }
+    }
+  }
+
+  return false
+}
+
 internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, value: String?): Boolean {
   if (value == null) return false
   val state = styleStates.getOrPut(id) { ZynthViewStyleState() }

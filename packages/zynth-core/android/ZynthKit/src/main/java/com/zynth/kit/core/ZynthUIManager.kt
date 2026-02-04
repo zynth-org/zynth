@@ -56,7 +56,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal val styleLayoutDirtyNodes = HashSet<Int>()
   internal val styleLayoutFrames = HashMap<Int, android.graphics.Rect>()
   internal val textStyleStates = HashMap<Int, ZynthTextStyleState>()
-  internal val yogaStyleCache = HashMap<Int, MutableMap<String, String?>>()
+  internal val yogaStyleCache = HashMap<Int, MutableMap<String, Any?>>()
   internal val pointerEvents = HashMap<Int, String>()
   internal val pressNodes = HashSet<Int>()
   internal val longPressNodes = HashSet<Int>()
@@ -200,8 +200,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
         markAllSurfacesDirty()
       }
     }
-    Log.e("ZynthBuildCheck", "If you see this, the new ZynthUIManager is running!")
-    // throw java.lang.RuntimeException("ZynthBuildCheck: Crashing to verify source usage")
   }
 
   internal fun runOnMain(block: () -> Unit) {
@@ -346,22 +344,14 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       } else {
         floatVal
       }
-      cacheYogaStyle(id, name, scaled.toString())
+      cacheYogaStyle(id, name, scaled)
       yogaForNode(id).setStyle(id, name, scaled)
       markSurfaceDirtyForNode(id)
       traceOp("setProp", node?.type, startNs)
       return
     }
 
-    if (name == "opacity") {
-      runOnMain { view.alpha = value.toFloat() }
-      traceOp("setProp", node?.type, startNs)
-      return
-    }
-    
-    if (view is TextView && name == "fontSize") {
-      val size = value.toFloat()
-      runOnMain { view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, dpToPx(size)) }
+    if (applyStyleProp(id, view, name, value)) {
       traceOp("setProp", node?.type, startNs)
       return
     }
@@ -499,20 +489,11 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       runOnMain {
         val custom = assetProvider?.getTypeface(family)
         val style = view.typeface?.style ?: Typeface.NORMAL
-        Log.d(TRACE_TAG, "setProp(fontFamily='$family') - assetProvider=${assetProvider}, customTypeface=${if (custom != null) "FOUND" else "NULL"}, style=$style")
         if (custom != null) {
           // If it's an icon font, we MUST use the typeface directly.
           // Typeface.create(custom, style) can fail to preserve the glyphs if the style (e.g. Bold) isn't supported by the font file.
           if (family.contains("Icon")) {
              view.typeface = custom
-             // Debug: check if this typeface supports the cached text
-             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-                 val text = nodeStates[id]?.cachedText ?: ""
-                 if (text.isNotEmpty() && text[0].code > 0xE000) {
-                     val p = android.graphics.Paint().apply { typeface = custom }
-                     Log.d(TRACE_TAG, "setProp check: Typeface has glyph '${text}' (code ${Integer.toHexString(text[0].code)}): ${p.hasGlyph(text)}")
-                 }
-             }
           } else {
              view.typeface = Typeface.create(custom, style)
           }
@@ -894,30 +875,48 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       runOnMain { applyKeyboardAvoidingAdjustment(nodeId, behavior, overlapPx, availableHeightPx) }
       return
     }
-    val cached = yogaStyleCache[nodeId]
     val yoga = yogaForNode(nodeId)
     val overlap = overlapPx.coerceAtLeast(0f)
 
     if (overlap <= 0f) {
       if (behavior == "padding") {
-        val original = cached?.get("paddingBottom") ?: "0"
-        yoga.setStyle(nodeId, "paddingBottom", original)
+        val original = yogaStyleCache[nodeId]?.get("paddingBottom")
+        when (original) {
+          is Float -> yoga.setStyle(nodeId, "paddingBottom", original)
+          is String -> yoga.setStyle(nodeId, "paddingBottom", original)
+          else -> yoga.setStyle(nodeId, "paddingBottom", "0")
+        }
       } else if (behavior == "height") {
-        val original = cached?.get("marginBottom") ?: "0"
-        yoga.setStyle(nodeId, "marginBottom", original)
+        val original = yogaStyleCache[nodeId]?.get("marginBottom")
+        when (original) {
+          is Float -> yoga.setStyle(nodeId, "marginBottom", original)
+          is String -> yoga.setStyle(nodeId, "marginBottom", original)
+          else -> yoga.setStyle(nodeId, "marginBottom", "0")
+        }
       }
       markSurfaceDirtyForNode(nodeId)
       return
     }
 
     if (behavior == "padding") {
-      val base = cached?.get("paddingBottom")?.toFloatOrNull() ?: 0f
-      yoga.setStyle(nodeId, "paddingBottom", (base + overlap).toString())
+      val base = getCachedFloat(nodeId, "paddingBottom")
+      yoga.setStyle(nodeId, "paddingBottom", base + overlap)
     } else if (behavior == "height") {
-       val base = cached?.get("marginBottom")?.toFloatOrNull() ?: 0f
-       yoga.setStyle(nodeId, "marginBottom", (base + overlap).toString())
+       val base = getCachedFloat(nodeId, "marginBottom")
+       yoga.setStyle(nodeId, "marginBottom", base + overlap)
     }
     markSurfaceDirtyForNode(nodeId)
+  }
+
+  private fun getCachedFloat(nodeId: Int, name: String): Float {
+    val value = yogaStyleCache[nodeId]?.get(name) ?: return 0f
+    return when (value) {
+      is Float -> value
+      is String -> value.toFloatOrNull() ?: 0f
+      is Double -> value.toFloat()
+      is Int -> value.toFloat()
+      else -> 0f
+    }
   }
 
   fun getNodeState(nodeId: Int): Node? = nodeStates[nodeId]
@@ -1218,7 +1217,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     return if (shouldScale) dpToPx(numeric).toString() else value
   }
 
-  private fun cacheYogaStyle(id: Int, name: String, value: String?) {
+  private fun cacheYogaStyle(id: Int, name: String, value: Any?) {
     val styles = yogaStyleCache.getOrPut(id) { HashMap() }
     styles[name] = value
   }
@@ -1227,7 +1226,10 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     val styles = yogaStyleCache[id] ?: return
     val layout = yogaForSurface(surfaceId)
     for ((name, value) in styles) {
-      layout.setStyle(id, name, value)
+      when (value) {
+        is Float -> layout.setStyle(id, name, value)
+        is String -> layout.setStyle(id, name, value)
+      }
     }
   }
 
