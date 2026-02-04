@@ -22,6 +22,7 @@ open class ZynthLayoutView @JvmOverloads constructor(
   private var overflowHidden: Boolean = false
   private var clipPath: Path? = null
   private var clipRect: RectF? = null
+  private var pathDirty = true
   
   protected var borderTopLeftRadius: Float = 0f
   protected var borderTopRightRadius: Float = 0f
@@ -32,6 +33,21 @@ open class ZynthLayoutView @JvmOverloads constructor(
     clipChildren = false
     clipToPadding = false
     clipToOutline = false
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+      outlineProvider = object : android.view.ViewOutlineProvider() {
+        override fun getOutline(view: View, outline: android.graphics.Outline) {
+          val hasUniformRadius = borderTopLeftRadius == borderTopRightRadius &&
+                                 borderTopLeftRadius == borderBottomRightRadius &&
+                                 borderTopLeftRadius == borderBottomLeftRadius
+          if (hasUniformRadius && borderTopLeftRadius > 0f) {
+            outline.setRoundRect(0, 0, view.width, view.height, borderTopLeftRadius)
+          } else {
+            outline.setRect(0, 0, view.width, view.height)
+          }
+          outline.alpha = if (overflowHidden) 1.0f else 0.0f
+        }
+      }
+    }
   }
 
   open fun setOverflowHidden(hidden: Boolean) {
@@ -39,6 +55,13 @@ open class ZynthLayoutView @JvmOverloads constructor(
       overflowHidden = hidden
       clipChildren = hidden
       clipToPadding = hidden
+      if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+        val hasUniformRadius = borderTopLeftRadius == borderTopRightRadius &&
+                               borderTopLeftRadius == borderBottomRightRadius &&
+                               borderTopLeftRadius == borderBottomLeftRadius
+        clipToOutline = hidden && hasUniformRadius
+        invalidateOutline()
+      }
       invalidate()
     }
   }
@@ -50,14 +73,23 @@ open class ZynthLayoutView @JvmOverloads constructor(
       borderTopRightRadius = tr
       borderBottomRightRadius = br
       borderBottomLeftRadius = bl
-      clipPath = null
+      pathDirty = true
+      if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+        val hasUniformRadius = borderTopLeftRadius == borderTopRightRadius &&
+                               borderTopLeftRadius == borderBottomRightRadius &&
+                               borderTopLeftRadius == borderBottomLeftRadius
+        clipToOutline = overflowHidden && hasUniformRadius
+        invalidateOutline()
+      }
       invalidate()
     }
   }
 
-  private fun getOrCreateClipPath(): Path {
+  private fun updateClipPath() {
+    if (!pathDirty && clipPath != null) return
+    
     var path = clipPath
-    if (path == null || path.isEmpty) {
+    if (path == null) {
       path = Path()
       clipPath = path
     }
@@ -81,7 +113,7 @@ open class ZynthLayoutView @JvmOverloads constructor(
     } else {
       path.addRect(0f, 0f, width.toFloat(), height.toFloat(), Path.Direction.CW)
     }
-    return path
+    pathDirty = false
   }
   
   private fun getOrCreateClipRect(): RectF {
@@ -94,16 +126,25 @@ open class ZynthLayoutView @JvmOverloads constructor(
     return rect
   }
 
+  override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+    super.onSizeChanged(w, h, oldw, oldh)
+    pathDirty = true
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+      invalidateOutline()
+    }
+  }
+
   override fun dispatchDraw(canvas: Canvas) {
     val borderDrawable = background as? ZynthBorderDrawable
-    if (overflowHidden && width > 0 && height > 0) {
+    if (overflowHidden && width > 0 && height > 0 && !clipToOutline) {
       val saveCount = canvas.save()
       
       val hasRadius = borderTopLeftRadius > 0f || borderTopRightRadius > 0f || 
                       borderBottomRightRadius > 0f || borderBottomLeftRadius > 0f
       
       if (hasRadius) {
-        canvas.clipPath(getOrCreateClipPath())
+        updateClipPath()
+        clipPath?.let { canvas.clipPath(it) }
       } else {
         val rect = getOrCreateClipRect()
         canvas.clipRect(rect.left, rect.top, rect.right, rect.bottom)

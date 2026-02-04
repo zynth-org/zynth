@@ -25,11 +25,12 @@ class ZynthYogaLayout {
     setUseWebDefaults(false)
   }
   private val nodes = HashMap<Int, YogaNode>()
+  private val nodeIds = ArrayList<Int>()
   private val measureHandlers = HashMap<Int, MeasureHandler>()
   private var measureCount = 0
   private var lastMeasureCount = 0
   private var lastChangedCount = 0
-  private var pendingApplyIds: IntArray? = null
+  private var pendingApplyIds: List<Int>? = null
   private var pendingApplyIndex = 0
   private var pendingApplyRootWidth = 0
   private var pendingApplyRootHeight = 0
@@ -52,6 +53,7 @@ class ZynthYogaLayout {
       node.setMeasureFunction(createTextMeasure(view))
     }
     nodes[id] = node
+    nodeIds.add(id)
   }
 
   fun ensureRootChild(id: Int) {
@@ -64,6 +66,7 @@ class ZynthYogaLayout {
 
   fun removeNode(id: Int) {
     val node = nodes.remove(id) ?: return
+    nodeIds.remove(id)
     pendingApplyDirty = true
     if (node.childCount > 0) {
       for (i in node.childCount - 1 downTo 0) {
@@ -124,6 +127,57 @@ class ZynthYogaLayout {
     }
     measureHandlers[id] = handler
     attachMeasureHandler(node, handler)
+  }
+
+  fun setStyle(id: Int, name: String, value: Float) {
+    val node = nodes[id] ?: return
+    pendingApplyDirty = true
+    when (name) {
+      "width" -> node.setWidth(value)
+      "height" -> node.setHeight(value)
+      "minWidth" -> node.setMinWidth(value)
+      "minHeight" -> node.setMinHeight(value)
+      "maxWidth" -> node.setMaxWidth(value)
+      "maxHeight" -> node.setMaxHeight(value)
+      "flex" -> node.flex = value
+      "flexGrow" -> node.flexGrow = value
+      "flexShrink" -> node.flexShrink = value
+      "flexBasis" -> node.setFlexBasis(value)
+      "top" -> node.setPosition(YogaEdge.TOP, value)
+      "right" -> node.setPosition(YogaEdge.RIGHT, value)
+      "bottom" -> node.setPosition(YogaEdge.BOTTOM, value)
+      "left" -> node.setPosition(YogaEdge.LEFT, value)
+      "padding" -> node.setPadding(YogaEdge.ALL, value)
+      "paddingHorizontal" -> {
+        node.setPadding(YogaEdge.LEFT, value)
+        node.setPadding(YogaEdge.RIGHT, value)
+      }
+      "paddingVertical" -> {
+        node.setPadding(YogaEdge.TOP, value)
+        node.setPadding(YogaEdge.BOTTOM, value)
+      }
+      "paddingTop" -> node.setPadding(YogaEdge.TOP, value)
+      "paddingRight" -> node.setPadding(YogaEdge.RIGHT, value)
+      "paddingBottom" -> node.setPadding(YogaEdge.BOTTOM, value)
+      "paddingLeft" -> node.setPadding(YogaEdge.LEFT, value)
+      "margin" -> node.setMargin(YogaEdge.ALL, value)
+      "marginHorizontal" -> {
+        node.setMargin(YogaEdge.LEFT, value)
+        node.setMargin(YogaEdge.RIGHT, value)
+      }
+      "marginVertical" -> {
+        node.setMargin(YogaEdge.TOP, value)
+        node.setMargin(YogaEdge.BOTTOM, value)
+      }
+      "marginTop" -> node.setMargin(YogaEdge.TOP, value)
+      "marginRight" -> node.setMargin(YogaEdge.RIGHT, value)
+      "marginBottom" -> node.setMargin(YogaEdge.BOTTOM, value)
+      "marginLeft" -> node.setMargin(YogaEdge.LEFT, value)
+      "gap" -> node.setGap(YogaGutter.ALL, value)
+      "rowGap" -> node.setGap(YogaGutter.ROW, value)
+      "columnGap" -> node.setGap(YogaGutter.COLUMN, value)
+      "aspectRatio" -> node.aspectRatio = value
+    }
   }
 
   fun setStyle(id: Int, name: String, value: String?) {
@@ -226,7 +280,7 @@ class ZynthYogaLayout {
       measureCount = 0
       lastChangedCount = 0
       rootNode.calculateLayout(rootWidth.toFloat(), rootHeight.toFloat())
-      pendingApplyIds = nodes.keys.toIntArray()
+      pendingApplyIds = ArrayList(nodeIds)
       pendingApplyIndex = 0
       pendingApplyRootWidth = rootWidth
       pendingApplyRootHeight = rootHeight
@@ -270,7 +324,9 @@ class ZynthYogaLayout {
         lastChangedCount += 1
         layoutDidUpdate?.invoke(id, left, top, right, bottom, true)
       }
-      if (budgetNs > 0 && System.nanoTime() - startNs >= budgetNs) {
+      
+      // Check budget every 16 nodes to reduce System.nanoTime overhead
+      if (budgetNs > 0 && (pendingApplyIndex % 16 == 0) && System.nanoTime() - startNs >= budgetNs) {
         break
       }
     }

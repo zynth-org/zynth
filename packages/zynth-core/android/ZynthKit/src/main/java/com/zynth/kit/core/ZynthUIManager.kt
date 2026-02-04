@@ -320,6 +320,55 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     return id
   }
 
+  fun setProp(id: Int, name: String, value: Double) {
+    if (Looper.myLooper() != Looper.getMainLooper()) {
+      runOnMain { setProp(id, name, value) }
+      return
+    }
+    val startNs = System.nanoTime()
+    val view = nodes[id] ?: return
+    val node = nodeStates[id]
+    
+    val isLayoutProp = when (name) {
+      "width", "height", "minWidth", "minHeight", "maxWidth", "maxHeight",
+      "flex", "flexGrow", "flexShrink", "flexBasis", "top", "right", "bottom", "left",
+      "padding", "paddingHorizontal", "paddingVertical", "paddingTop", "paddingRight",
+      "paddingBottom", "paddingLeft", "margin", "marginHorizontal", "marginVertical",
+      "marginTop", "marginRight", "marginBottom", "marginLeft", "gap", "rowGap",
+      "columnGap", "aspectRatio" -> true
+      else -> false
+    }
+
+    if (isLayoutProp) {
+      val floatVal = value.toFloat()
+      val scaled = if (name != "flex" && name != "flexGrow" && name != "flexShrink" && name != "aspectRatio") {
+        dpToPx(floatVal)
+      } else {
+        floatVal
+      }
+      cacheYogaStyle(id, name, scaled.toString())
+      yogaForNode(id).setStyle(id, name, scaled)
+      markSurfaceDirtyForNode(id)
+      traceOp("setProp", node?.type, startNs)
+      return
+    }
+
+    if (name == "opacity") {
+      runOnMain { view.alpha = value.toFloat() }
+      traceOp("setProp", node?.type, startNs)
+      return
+    }
+    
+    if (view is TextView && name == "fontSize") {
+      val size = value.toFloat()
+      runOnMain { view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, dpToPx(size)) }
+      traceOp("setProp", node?.type, startNs)
+      return
+    }
+
+    setProp(id, name, value.toString())
+  }
+
   fun setProp(id: Int, name: String, value: String?) {
     if (Looper.myLooper() != Looper.getMainLooper()) {
       runOnMain { setProp(id, name, value) }
@@ -920,13 +969,16 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
           val valueType = ops[i++].toInt()
           val payload = ops[i++]
           val key = strings.getOrNull(keyIndex) ?: ""
-          val value: String? = when (valueType) {
-            1 -> payload.toString()
-            2 -> strings.getOrNull(payload.toInt())
-            3 -> if (payload != 0.0) "true" else "false"
-            else -> null
+          if (valueType == 1) {
+            setProp(nodeId, key, payload)
+          } else {
+            val value: String? = when (valueType) {
+              2 -> strings.getOrNull(payload.toInt())
+              3 -> if (payload != 0.0) "true" else "false"
+              else -> null
+            }
+            setProp(nodeId, key, value)
           }
-          setProp(nodeId, key, value)
         }
         2 -> { // setText
           if (i + 1 >= ops.size) return
@@ -982,13 +1034,16 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
           val valueType = read(i++).toInt()
           val payload = read(i++)
           val key = strings.getOrNull(keyIndex) ?: ""
-          val value: String? = when (valueType) {
-            1 -> payload.toString()
-            2 -> strings.getOrNull(payload.toInt())
-            3 -> if (payload != 0.0) "true" else "false"
-            else -> null
+          if (valueType == 1) {
+            setProp(nodeId, key, payload)
+          } else {
+            val value: String? = when (valueType) {
+              2 -> strings.getOrNull(payload.toInt())
+              3 -> if (payload != 0.0) "true" else "false"
+              else -> null
+            }
+            setProp(nodeId, key, value)
           }
-          setProp(nodeId, key, value)
         }
         2 -> { // setText
           if (i + 1 >= opCount) return
