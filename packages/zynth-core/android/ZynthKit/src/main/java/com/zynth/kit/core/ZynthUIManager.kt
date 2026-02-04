@@ -28,6 +28,8 @@ import kotlin.math.abs
 // TODO: Move this to a separate file or optimize
 private const val TRACE_TAG = "ZynthUIManager"
 private const val DEFAULT_PERSPECTIVE = 500f
+private const val DEBUG_TEXT = false
+private const val DEBUG_TEXT_DIRTY = false
 
 class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal var runtimePtr: Long = 0L
@@ -70,6 +72,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal val touchListeners = HashMap<Int, View.OnTouchListener>()
   internal val layoutNodes = ConcurrentHashMap.newKeySet<Int>()
   internal val layoutPending = ConcurrentHashMap.newKeySet<Int>()
+  internal val layoutDirtyNodes = ConcurrentHashMap.newKeySet<Int>()
   internal val layoutFrames = HashMap<Int, android.graphics.Rect>()
   internal val layoutTransitionFrames = HashMap<Int, android.graphics.Rect>()
   internal var choreographer: Choreographer? = null
@@ -617,18 +620,17 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     val startNs = System.nanoTime()
     val view = nodes[id]
     
-    // Log text content for debugging icons
-    if (text.isNotEmpty()) {
-        val firstCode = text[0].code
-        if (firstCode > 0xE000 || text.length > 1) {
-             val hex = text.map { Integer.toHexString(it.code) }.joinToString(" ")
-             val hasGlyph = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M && view is TextView) {
-                 view.typeface?.run { 
-                     android.graphics.Paint().also { it.typeface = this }.hasGlyph(text) 
-                 }
-             } else "unknown"
-             Log.d(TRACE_TAG, "setText($id): '$text' codes=[$hex] hasGlyph=$hasGlyph typeface=${(view as? TextView)?.typeface}")
-        }
+    if (DEBUG_TEXT && text.isNotEmpty()) {
+      val firstCode = text[0].code
+      if (firstCode > 0xE000 || text.length > 1) {
+        val hex = text.map { Integer.toHexString(it.code) }.joinToString(" ")
+        val hasGlyph = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M && view is TextView) {
+          view.typeface?.run {
+            android.graphics.Paint().also { it.typeface = this }.hasGlyph(text)
+          }
+        } else "unknown"
+        Log.d(TRACE_TAG, "setText($id): '$text' codes=[$hex] hasGlyph=$hasGlyph typeface=${(view as? TextView)?.typeface}")
+      }
     }
     
     nodeStates[id]?.cachedText = text
@@ -857,6 +859,9 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
    * Used by components when text or content changes.
    */
   fun markNodeDirty(nodeId: Int) {
+    if (DEBUG_TEXT_DIRTY) {
+      Log.d("ZynthText", "markNodeDirty node=$nodeId\n${Throwable().stackTraceToString()}")
+    }
     layoutEngine.markDirty(nodeId)
     requestLayout()
   }

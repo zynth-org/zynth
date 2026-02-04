@@ -10,7 +10,6 @@ import android.text.style.ForegroundColorSpan
 import android.text.style.LineHeightSpan
 import android.text.style.MetricAffectingSpan
 import android.text.style.StrikethroughSpan
-import android.text.style.StyleSpan
 import android.text.style.UnderlineSpan
 import android.util.Log
 import com.zynth.kit.core.ZynthUIManager
@@ -18,7 +17,7 @@ import com.zynth.kit.runtime.FontRegistry
 
 internal data class ComposedText(val text: CharSequence, val effectiveStyle: TextStyleAttributes?)
 
-private const val DEBUG_TEXT = true
+private const val DEBUG_TEXT = false
 
 internal class TextComposer(
   private val density: Float,
@@ -26,6 +25,7 @@ internal class TextComposer(
   private val nodeForId: (Int) -> ZynthUIManager.Node?
 ) {
   private val textType = "text"
+  private val typefaceCache = HashMap<String, Typeface>()
 
   private fun isIconFontFamily(family: String): Boolean {
     return family.contains("Icon")
@@ -79,18 +79,6 @@ internal class TextComposer(
       builder.setSpan(AbsoluteSizeSpan(dpToPx(size).toInt()), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
     }
 
-    val isBold = style.fontWeight?.let { weight ->
-      weight.equals("bold", ignoreCase = true) || weight.toIntOrNull()?.let { it >= 600 } == true
-    } ?: false
-    val isItalic = style.fontStyle?.equals("italic", ignoreCase = true) == true
-    val isIconFont = style.fontFamily?.let { isIconFontFamily(it) } == true
-    if (!isIconFont) {
-      when {
-        isBold && isItalic -> builder.setSpan(StyleSpan(Typeface.BOLD_ITALIC), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-        isBold -> builder.setSpan(StyleSpan(Typeface.BOLD), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-        isItalic -> builder.setSpan(StyleSpan(Typeface.ITALIC), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-      }
-    }
     buildTypeface(style)?.let { tf ->
       builder.setSpan(CustomTypefaceSpan(tf), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
       if (DEBUG_TEXT && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
@@ -133,6 +121,11 @@ internal class TextComposer(
       else -> Typeface.NORMAL
     }
     val family = style.fontFamily
+    val cacheKey = "${family ?: "default"}|$tfStyle"
+    val canCache = family == null || FontRegistry.isLoaded(family)
+    if (canCache) {
+      typefaceCache[cacheKey]?.let { return it }
+    }
     return if (family != null) {
       val customTypeface = FontRegistry.getTypeface(family)
       if (customTypeface != null) {
@@ -140,20 +133,20 @@ internal class TextComposer(
           if (DEBUG_TEXT) {
             Log.d("ZynthText", "buildTypeface icon family=$family (custom)")
           }
-          customTypeface
+          customTypeface.also { if (canCache) typefaceCache[cacheKey] = it }
         } else if (tfStyle != Typeface.NORMAL) {
-          Typeface.create(customTypeface, tfStyle)
+          Typeface.create(customTypeface, tfStyle).also { if (canCache) typefaceCache[cacheKey] = it }
         } else {
-          customTypeface
+          customTypeface.also { if (canCache) typefaceCache[cacheKey] = it }
         }
       } else {
         if (DEBUG_TEXT) {
           Log.d("ZynthText", "buildTypeface system family=$family style=$tfStyle")
         }
-        Typeface.create(family, tfStyle)
+        Typeface.create(family, tfStyle).also { if (canCache) typefaceCache[cacheKey] = it }
       }
     } else if (tfStyle != Typeface.NORMAL) {
-      Typeface.create(Typeface.DEFAULT, tfStyle)
+      Typeface.create(Typeface.DEFAULT, tfStyle).also { if (canCache) typefaceCache[cacheKey] = it }
     } else null
   }
 

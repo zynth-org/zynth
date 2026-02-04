@@ -227,8 +227,13 @@ internal fun ZynthUIManager.maybeDispatchDoublePress(id: Int, event: MotionEvent
 
 internal fun ZynthUIManager.dispatchLayoutEvents() {
   if (layoutNodes.isEmpty()) return
+  if (layoutPending.isEmpty() && layoutDirtyNodes.isEmpty()) return
   val events = ArrayList<LayoutEvent>()
-  for (id in layoutNodes) {
+  val ids = LinkedHashSet<Int>()
+  ids.addAll(layoutPending)
+  ids.addAll(layoutDirtyNodes)
+  layoutDirtyNodes.removeAll(ids)
+  for (id in ids) {
     val view = nodes[id] ?: continue
     val frame = android.graphics.Rect(view.left, view.top, view.right, view.bottom)
     val previous = layoutFrames[id]
@@ -308,6 +313,7 @@ internal fun ZynthUIManager.destroyNode(id: Int) {
   pressScreenPoints.remove(id)
   layoutNodes.remove(id)
   layoutPending.remove(id)
+  layoutDirtyNodes.remove(id)
   layoutFrames.remove(id)
   layoutTransitionFrames.remove(id)
   styleDirtyNodes.remove(id)

@@ -134,6 +134,9 @@ internal fun ZynthUIManager.registerSurfaceInternal(
       styleLayoutFrames[nodeId] = Rect(left, top, right, bottom)
     }
     if (changed) {
+      if (layoutNodes.contains(nodeId)) {
+        layoutDirtyNodes.add(nodeId)
+      }
       maybeStartLayoutTransition(nodeId, left, top, right, bottom)
     }
   }

@@ -30,10 +30,32 @@ private fun parseString(json: String?): String? {
   return json
 }
 
-private const val DEBUG_TEXT = true
+private const val DEBUG_TEXT = false
 
 private fun isIconFontFamily(family: String): Boolean {
   return family.contains("Icon")
+}
+
+private data class TextMeasureCache(
+  val key: Int,
+  val width: Float,
+  val height: Float,
+)
+
+private fun hashMeasureKey(
+  text: CharSequence,
+  textView: TextView,
+  widthSpec: Int,
+  heightSpec: Int,
+): Int {
+  var result = text.hashCode()
+  result = 31 * result + textView.textSize.toBits()
+  result = 31 * result + (textView.typeface?.hashCode() ?: 0)
+  result = 31 * result + textView.letterSpacing.toBits()
+  result = 31 * result + textView.maxLines
+  result = 31 * result + widthSpec
+  result = 31 * result + heightSpec
+  return result
 }
 
 private object TextRebuildScheduler {
@@ -93,6 +115,7 @@ private object TextRebuildScheduler {
 fun createTextComponentDescriptor(): ZynthComponentDescriptor {
   val textStyleKey = "textStyle"
   val textManagerKey = "textManager"
+  val textMeasureCacheKey = "textMeasureCache"
   return ZynthComponentDescriptor(
     type = "text",
     createView = { context, _ -> ZynthTextView(context) },
@@ -125,9 +148,28 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
           MeasureMode.UNDEFINED -> MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
         }
         
+        val currentText = textView.text ?: ""
+        val cacheKey = hashMeasureKey(currentText, textView, widthSpec, heightSpec)
+        val cached = node.attachments[textMeasureCacheKey] as? TextMeasureCache
+        if (cached != null && cached.key == cacheKey) {
+          return@setMeasureHandler cached.width to cached.height
+        }
+
+        if (currentText.isEmpty()) {
+          val measuredWidth = 0f
+          val measuredHeight = (textView.textSize * 1.2f).coerceAtLeast(1f)
+          node.attachments[textMeasureCacheKey] =
+            TextMeasureCache(cacheKey, measuredWidth, measuredHeight)
+          return@setMeasureHandler measuredWidth to measuredHeight
+        }
+
         textView.measure(widthSpec, heightSpec)
-        val measuredWidth = textView.measuredWidth.coerceAtLeast(1)
-        val measuredHeight = textView.measuredHeight.coerceAtLeast((textView.textSize * 1.2f).roundToInt())
+        val measuredWidth = textView.measuredWidth.coerceAtLeast(1).toFloat()
+        val measuredHeight = textView.measuredHeight
+          .coerceAtLeast((textView.textSize * 1.2f).roundToInt())
+          .toFloat()
+        node.attachments[textMeasureCacheKey] =
+          TextMeasureCache(cacheKey, measuredWidth, measuredHeight)
         val durationMs = (SystemClock.elapsedRealtimeNanos() - measureStart) / 1_000_000.0
         if (durationMs > 8) {
           Log.w(
@@ -135,7 +177,7 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
             "Slow text measure: node=${node.id} text='${node.cachedText.take(24)}' duration=${"%.2f".format(durationMs)}ms",
           )
         }
-        measuredWidth.toFloat() to measuredHeight.toFloat()
+        measuredWidth to measuredHeight
       }
       
       // Set appropriate layout params
@@ -154,6 +196,9 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
           "text" -> {
             val startNs = SystemClock.elapsedRealtimeNanos()
             val text = parseString(jsonValue) ?: ""
+            if (text == node.cachedText) {
+              return@ZynthComponentDescriptor true
+            }
             node.cachedText = text
             if (DEBUG_TEXT) {
               val sample = text.take(16).map { Integer.toHexString(it.code) }.joinToString(" ")
@@ -185,61 +230,86 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
       // Merge with existing to preserve previously-set props because style is applied per-key.
       val nextAttrs = TextStyleAttributes.fromStyle(style)
       val existing = node.attachments[textStyleKey] as? TextStyleAttributes
-      node.attachments[textStyleKey] = if (existing != null) {
+      if (nextAttrs.isEmpty()) {
+        return@ZynthComponentDescriptor
+      }
+      val merged = if (existing != null) {
         nextAttrs.mergeWith(existing)
       } else {
         nextAttrs
       }
+      val didChange = existing == null || merged != existing
+      if (didChange) {
+        node.attachments[textStyleKey] = merged
+      }
 
       // Apply text-specific styling to TextView (only for non-virtual text nodes)
       val textView = node.view as? TextView
-      if (textView != null) {
-        style.fontSize?.let { fontSize ->
-          val density = textView.resources.displayMetrics.density
-          val scaled = if (density == 0f) fontSize else fontSize * density
-          textView.setTextSize(TypedValue.COMPLEX_UNIT_PX, scaled)
+      if (textView != null && didChange) {
+        if (existing?.fontSize != merged.fontSize) {
+          merged.fontSize?.let { fontSize ->
+            val density = textView.resources.displayMetrics.density
+            val scaled = if (density == 0f) fontSize else fontSize * density
+            textView.setTextSize(TypedValue.COMPLEX_UNIT_PX, scaled)
+          }
         }
-        
-        style.color?.let { color ->
-          textView.setTextColor(color)
+
+        if (existing?.color != merged.color) {
+          merged.color?.let { color ->
+            textView.setTextColor(color)
+          }
         }
-        
-        val weight = style.fontWeight
+
+        val weight = merged.fontWeight
         val isBold = weight?.let {
           it.equals("bold", ignoreCase = true) || it.toIntOrNull()?.let { w -> w >= 600 } == true
         } ?: false
-        val styleInt = if (isBold) Typeface.BOLD else Typeface.NORMAL
-
-        val family = style.fontFamily
-        val cachedTypeface = family?.let { FontRegistry.getTypeface(it) }
-        val baseTypeface = when {
-          family == null -> Typeface.DEFAULT
-          cachedTypeface != null -> {
-            if (DEBUG_TEXT) {
-              Log.d("ZynthText", "Using cached typeface for family: $family")
-            }
-            cachedTypeface
-          }
-          else -> {
-            if (DEBUG_TEXT) {
-              Log.w("ZynthText", "FontRegistry miss for family: $family, falling back to system")
-            }
-            Typeface.create(family, styleInt)
-          }
+        val isItalic = merged.fontStyle?.equals("italic", ignoreCase = true) == true
+        val styleInt = when {
+          isBold && isItalic -> Typeface.BOLD_ITALIC
+          isBold -> Typeface.BOLD
+          isItalic -> Typeface.ITALIC
+          else -> Typeface.NORMAL
         }
 
-        if (baseTypeface != null) {
-          if (family != null && cachedTypeface != null && isIconFontFamily(family)) {
-            textView.typeface = baseTypeface
-          } else {
-            textView.setTypeface(Typeface.create(baseTypeface, styleInt))
+        val typefaceChanged = existing == null ||
+          existing.fontFamily != merged.fontFamily ||
+          existing.fontWeight != merged.fontWeight ||
+          existing.fontStyle != merged.fontStyle
+        if (typefaceChanged) {
+          val family = merged.fontFamily
+          val cachedTypeface = family?.let { FontRegistry.getTypeface(it) }
+          val baseTypeface = when {
+            family == null -> Typeface.DEFAULT
+            cachedTypeface != null -> {
+              if (DEBUG_TEXT) {
+                Log.d("ZynthText", "Using cached typeface for family: $family")
+              }
+              cachedTypeface
+            }
+            else -> {
+              if (DEBUG_TEXT) {
+                Log.w("ZynthText", "FontRegistry miss for family: $family, falling back to system")
+              }
+              Typeface.create(family, styleInt)
+            }
           }
-        } else {
-          textView.setTypeface(Typeface.DEFAULT, styleInt)
+
+          if (baseTypeface != null) {
+            if (family != null && cachedTypeface != null && isIconFontFamily(family)) {
+              textView.typeface = baseTypeface
+            } else {
+              textView.setTypeface(Typeface.create(baseTypeface, styleInt))
+            }
+          } else {
+            textView.setTypeface(Typeface.DEFAULT, styleInt)
+          }
         }
       }
 
-      updateComposedText(node, textStyleKey, textManagerKey)
+      if (didChange) {
+        updateComposedText(node, textStyleKey, textManagerKey)
+      }
       val durationMs = (SystemClock.elapsedRealtimeNanos() - styleStart) / 1_000_000.0
       if (durationMs > 4) {
         Log.w(
@@ -276,6 +346,17 @@ private fun updateComposedText(
 ) {
   val manager = node.attachments[textManagerKey] as? ZynthUIManager ?: return
   val root = findTextRoot(node, manager)
+  val rootTextView = root.view as? TextView
+  if (rootTextView != null) {
+    val immediateText = buildRawText(root, manager, textStyleKey)
+    if (rootTextView.text.toString() != immediateText) {
+      rootTextView.text = immediateText
+      manager.markNodeDirty(root.id)
+    }
+  }
+  if (!subtreeNeedsSpans(root, manager, textStyleKey)) {
+    return
+  }
   TextRebuildScheduler.enqueue(manager, root.id, textStyleKey)
 }
 
@@ -288,6 +369,60 @@ private fun findTextRoot(node: ZynthUIManager.Node, manager: ZynthUIManager): Zy
     current = parent
   }
   return current
+}
+
+private fun subtreeNeedsSpans(
+  node: ZynthUIManager.Node,
+  manager: ZynthUIManager,
+  textStyleKey: String,
+): Boolean {
+  val style = node.attachments[textStyleKey] as? TextStyleAttributes
+  if (style?.requiresSpans() == true) return true
+  for (childId in node.textChildren) {
+    val child = manager.getNodeState(childId) ?: continue
+    if (child.type != "text") continue
+    if (subtreeNeedsSpans(child, manager, textStyleKey)) return true
+  }
+  return false
+}
+
+private fun buildRawText(
+  node: ZynthUIManager.Node,
+  manager: ZynthUIManager,
+  textStyleKey: String,
+  inherited: TextStyleAttributes? = null,
+  builder: StringBuilder = StringBuilder(),
+): String {
+  val ownStyle = node.attachments[textStyleKey] as? TextStyleAttributes
+  val merged = when {
+    ownStyle != null && inherited != null -> ownStyle.mergeWith(inherited)
+    ownStyle != null -> ownStyle
+    else -> inherited
+  }
+
+  if (node.textChildren.isEmpty()) {
+    val text = applyTransform(node.cachedText, merged?.textTransform)
+    builder.append(text)
+    return builder.toString()
+  }
+
+  for (childId in node.textChildren) {
+    val child = manager.getNodeState(childId) ?: continue
+    if (child.type != "text") continue
+    buildRawText(child, manager, textStyleKey, merged, builder)
+  }
+  return builder.toString()
+}
+
+private fun applyTransform(text: String, transform: String?): String {
+  return when (transform) {
+    "uppercase" -> text.uppercase()
+    "lowercase" -> text.lowercase()
+    "capitalize" -> text.split(" ").joinToString(" ") { part ->
+      part.lowercase().replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+    }
+    else -> text
+  }
 }
 
 /**

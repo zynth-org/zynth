@@ -18,6 +18,32 @@ data class TextStyleAttributes(
   val baselineShift: Float? = null,
   val hyphenation: String? = null,
 ) {
+  fun isEmpty(): Boolean {
+    return fontSize == null &&
+      fontWeight == null &&
+      fontFamily == null &&
+      fontStyle == null &&
+      color == null &&
+      lineHeight == null &&
+      lineSpacing == null &&
+      paragraphSpacing == null &&
+      letterSpacing == null &&
+      textDecorationLine == null &&
+      textTransform == null &&
+      minimumFontScale == null &&
+      baselineShift == null &&
+      hyphenation == null
+  }
+
+  fun requiresSpans(): Boolean {
+    return textDecorationLine != null ||
+      letterSpacing != null ||
+      lineHeight != null ||
+      lineSpacing != null ||
+      paragraphSpacing != null ||
+      baselineShift != null
+  }
+
   fun mergeWith(parent: TextStyleAttributes?): TextStyleAttributes {
     if (parent == null) return this
     return TextStyleAttributes(
