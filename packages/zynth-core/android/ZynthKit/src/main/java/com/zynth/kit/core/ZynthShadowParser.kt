@@ -39,6 +39,7 @@ object ZynthShadowParser {
       val result = if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
         runCatching { JSONArray(trimmed) }.getOrNull()?.let { parseArray(it) }
           ?: runCatching { JSONObject(trimmed) }.getOrNull()?.let { listOfNotNull(parseObject(it)) }
+          ?: parseStringList(trimmed)
       } else {
         parseStringList(trimmed)
       }
