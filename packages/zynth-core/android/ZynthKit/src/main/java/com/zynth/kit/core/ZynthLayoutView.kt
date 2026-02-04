@@ -44,7 +44,7 @@ open class ZynthLayoutView @JvmOverloads constructor(
           } else {
             outline.setRect(0, 0, view.width, view.height)
           }
-          outline.alpha = if (overflowHidden) 1.0f else 0.0f
+          outline.alpha = 1.0f
         }
       }
     }
