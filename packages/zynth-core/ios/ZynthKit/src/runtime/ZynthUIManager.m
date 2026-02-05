@@ -167,20 +167,21 @@
     ]];
   });
   BOOL isStyleKey = [styleKeys containsObject:name];
-  if ([self applyStyleProp:nodeId view:view name:name value:value]) {
-    if (node && descriptor && descriptor.applyStyle && isStyleKey) {
-      NSMutableDictionary *style = node.attachments[@"style"];
-      if (!style) {
-        style = [NSMutableDictionary dictionary];
-        node.attachments[@"style"] = style;
-      }
-      if (parsedValue && parsedValue != (id)kCFNull) {
-        style[name] = parsedValue;
-      } else {
-        [style removeObjectForKey:name];
-      }
-      descriptor.applyStyle((ZynthUIManager *)self, node, style.copy);
+  BOOL didApplyStyleProp = [self applyStyleProp:nodeId view:view name:name value:value];
+  if (node && descriptor && descriptor.applyStyle && isStyleKey) {
+    NSMutableDictionary *style = node.attachments[@"style"];
+    if (!style) {
+      style = [NSMutableDictionary dictionary];
+      node.attachments[@"style"] = style;
     }
+    if (parsedValue && parsedValue != (id)kCFNull) {
+      style[name] = parsedValue;
+    } else {
+      [style removeObjectForKey:name];
+    }
+    descriptor.applyStyle((ZynthUIManager *)self, node, style.copy);
+  }
+  if (didApplyStyleProp) {
     return;
   }
   if ([name isEqualToString:@"layout"]) {
@@ -203,19 +204,6 @@
       UILabel *label = (UILabel *)view;
       label.textColor = color;
       [self applyTextValue:nodeId label:label text:label.text ?: @""];
-    }
-    if (node && descriptor && descriptor.applyStyle && isStyleKey) {
-      NSMutableDictionary *style = node.attachments[@"style"];
-      if (!style) {
-        style = [NSMutableDictionary dictionary];
-        node.attachments[@"style"] = style;
-      }
-      if (parsedValue && parsedValue != (id)kCFNull) {
-        style[name] = parsedValue;
-      } else {
-        [style removeObjectForKey:name];
-      }
-      descriptor.applyStyle((ZynthUIManager *)self, node, style.copy);
     }
     return;
   }
