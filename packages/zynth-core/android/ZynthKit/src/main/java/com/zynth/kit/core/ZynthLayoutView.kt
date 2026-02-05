@@ -136,9 +136,11 @@ open class ZynthLayoutView @JvmOverloads constructor(
 
   override fun dispatchDraw(canvas: Canvas) {
     val borderDrawable = background as? ZynthBorderDrawable
-    if (overflowHidden && width > 0 && height > 0 && !clipToOutline) {
+    if (overflowHidden && width > 0 && height > 0) {
       val saveCount = canvas.save()
-      
+
+      // Always clip children when overflow is hidden. clipToOutline does not
+      // reliably clip ViewGroup children across Android versions.
       val hasRadius = borderTopLeftRadius > 0f || borderTopRightRadius > 0f || 
                       borderBottomRightRadius > 0f || borderBottomLeftRadius > 0f
       

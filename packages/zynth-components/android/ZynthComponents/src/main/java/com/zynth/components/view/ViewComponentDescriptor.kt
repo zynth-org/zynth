@@ -51,13 +51,12 @@ fun createViewComponentDescriptor(): ZynthComponentDescriptor {
     onStyleApplied = { node, style ->
       val viewContainer = node.view as? ZynthViewContainer ?: return@ZynthComponentDescriptor
       // CSS overflow behavior: only clip THIS container's content, not propagate to descendants
-      val overflow = style.overflow ?: "visible"
-      val shouldClip = overflow.equals("hidden", ignoreCase = true) || overflow.equals("scroll", ignoreCase = true)
-      viewContainer.setOverflowHidden(shouldClip)
-      
-      // Set corner radius for rounded clipping if needed
-      val borderRadius = style.borderRadius ?: 0f
-      viewContainer.setBorderRadii(borderRadius, borderRadius, borderRadius, borderRadius)
+      style.overflow?.let { overflow ->
+        val shouldClip =
+          overflow.equals("hidden", ignoreCase = true) ||
+            overflow.equals("scroll", ignoreCase = true)
+        viewContainer.setOverflowHidden(shouldClip)
+      }
 
       // Apply background color
       style.backgroundColor?.let { color ->
