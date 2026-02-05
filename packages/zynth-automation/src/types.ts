@@ -4,8 +4,13 @@ export type AutomationReadOptions = {
   maxDepth?: number;
   includeYogaStyles?: boolean;
   includeResolvedStyles?: boolean;
+  includeComponentState?: boolean;
   includeGlobalFrame?: boolean;
   includeText?: boolean;
+};
+
+export type AutomationConfig = {
+  enableProductionInspection?: boolean;
 };
 
 export type AutomationRect = {
@@ -28,6 +33,7 @@ export type AutomationNodeSnapshot = {
   alpha: number;
   yogaStyles?: Record<string, unknown>;
   resolvedStyles?: Record<string, unknown>;
+  componentState?: Record<string, unknown>;
   text?: string;
 };
 
@@ -45,4 +51,44 @@ export type AutomationSnapshot = {
   density: number;
   surfaces: AutomationSurfaceSnapshot[];
   warnings: string[];
+};
+
+export type AutomationExpectedNode = {
+  id: number;
+  type?: string;
+  surfaceId?: number;
+  parentId?: number | null;
+  childIds?: number[];
+  visibility?: "visible" | "invisible" | "gone/hidden";
+  alpha?: number;
+  text?: string;
+  yogaStyles?: Record<string, unknown>;
+  resolvedStyles?: Record<string, unknown>;
+  componentState?: Record<string, unknown>;
+};
+
+export type AutomationExpectedSurface = {
+  surfaceId: number;
+  rootChildren?: number[];
+  nodes: AutomationExpectedNode[];
+};
+
+export type AutomationExpectedSnapshot = {
+  surfaces: AutomationExpectedSurface[];
+};
+
+export type AutomationDiffIssue = {
+  kind:
+    | "missing_surface"
+    | "missing_node"
+    | "unexpected_type"
+    | "unexpected_value"
+    | "missing_child"
+    | "unexpected_child";
+  message: string;
+  surfaceId?: number;
+  nodeId?: number;
+  field?: string;
+  expected?: unknown;
+  actual?: unknown;
 };

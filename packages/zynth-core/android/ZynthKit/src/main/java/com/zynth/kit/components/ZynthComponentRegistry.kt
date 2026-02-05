@@ -25,6 +25,9 @@ data class ZynthComponentDescriptor(
   val onReset: (node: ZynthUIManager.Node) -> Unit = { _ -> },
   val onChildInserted: (manager: ZynthUIManager, parent: ZynthUIManager.Node, child: ZynthUIManager.Node, index: Int) -> Unit = { _, _, _, _ -> },
   val onChildRemoved: (manager: ZynthUIManager, parent: ZynthUIManager.Node, child: ZynthUIManager.Node) -> Unit = { _, _, _ -> },
+  val inspectState: (manager: ZynthUIManager, node: ZynthUIManager.Node) -> Map<String, Any?>? = { _, node ->
+    (node.view as? ZynthInspectableComponent)?.inspectState()
+  },
 )
 
 /**
@@ -34,6 +37,14 @@ data class ZynthComponentDescriptor(
  */
 interface ZynthComponentRegistrar {
   fun register(registry: ZynthComponentRegistry)
+}
+
+/**
+ * Optional protocol for views/components that can expose native inspection data.
+ * Snapshot tooling can consume this without per-component custom wiring.
+ */
+interface ZynthInspectableComponent {
+  fun inspectState(): Map<String, Any?>
 }
 
 /**

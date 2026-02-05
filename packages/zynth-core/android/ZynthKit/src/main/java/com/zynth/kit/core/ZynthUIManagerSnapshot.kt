@@ -3,6 +3,7 @@ package com.zynth.kit.core
 import android.os.Looper
 import android.view.View
 import android.widget.TextView
+import com.zynth.kit.components.ZynthComponentRegistry
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import org.json.JSONArray
@@ -29,6 +30,7 @@ private fun ZynthUIManager.buildScreenSnapshotOnMain(options: JSONObject?): JSON
   val includeGlobalFrame = options?.optBoolean("includeGlobalFrame", true) ?: true
   val includeYogaStyles = options?.optBoolean("includeYogaStyles", true) ?: true
   val includeResolvedStyles = options?.optBoolean("includeResolvedStyles", false) ?: false
+  val includeComponentState = options?.optBoolean("includeComponentState", false) ?: false
   val includeText = options?.optBoolean("includeText", false) ?: false
   val maxDepth = parseMaxDepth(options?.opt("maxDepth"))
   val rootNodeId = options?.opt("rootNodeId").toIntOrNull()
@@ -110,6 +112,15 @@ private fun ZynthUIManager.buildScreenSnapshotOnMain(options: JSONObject?): JSON
       }
       if (includeResolvedStyles) {
         nodeJson.put("resolvedStyles", resolvedStylesForNode(nodeId, view))
+      }
+      if (includeComponentState) {
+        val componentState = ZynthComponentRegistry
+          .getDescriptor(nodeState.type)
+          ?.inspectState
+          ?.invoke(this, nodeState)
+        if (componentState != null) {
+          nodeJson.put("componentState", jsonFromMap(componentState))
+        }
       }
       if (includeText && view is TextView) {
         nodeJson.put("text", view.text?.toString() ?: "")

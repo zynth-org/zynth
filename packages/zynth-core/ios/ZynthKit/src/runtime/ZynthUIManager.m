@@ -748,6 +748,7 @@ static NSString *ZynthVisibility(UIView *view) {
   BOOL includeGlobalFrame = opts[@"includeGlobalFrame"] ? [opts[@"includeGlobalFrame"] boolValue] : YES;
   BOOL includeYogaStyles = opts[@"includeYogaStyles"] ? [opts[@"includeYogaStyles"] boolValue] : YES;
   BOOL includeResolvedStyles = opts[@"includeResolvedStyles"] ? [opts[@"includeResolvedStyles"] boolValue] : NO;
+  BOOL includeComponentState = opts[@"includeComponentState"] ? [opts[@"includeComponentState"] boolValue] : NO;
   BOOL includeText = opts[@"includeText"] ? [opts[@"includeText"] boolValue] : NO;
   NSInteger maxDepth = ZynthParseMaxDepth(opts[@"maxDepth"]);
   NSNumber *rootNodeId = ZynthParseNodeId(opts[@"rootNodeId"]);
@@ -903,6 +904,19 @@ static NSString *ZynthVisibility(UIView *view) {
         }
 
         nodeJson[@"resolvedStyles"] = styles;
+      }
+      if (includeComponentState) {
+        ZynthComponentDescriptor *descriptor = ZynthGetComponentDescriptor(node.type);
+        NSDictionary *componentState = nil;
+        if (descriptor.inspectState) {
+          componentState = descriptor.inspectState((ZynthUIManager *)self, node);
+        } else if ([view conformsToProtocol:@protocol(ZynthInspectableComponent)] &&
+                   [view respondsToSelector:@selector(zynthInspectState)]) {
+          componentState = [(id<ZynthInspectableComponent>)view zynthInspectState];
+        }
+        if ([componentState isKindOfClass:[NSDictionary class]] && componentState.count > 0) {
+          nodeJson[@"componentState"] = componentState;
+        }
       }
       if (includeText && [view respondsToSelector:@selector(text)]) {
         NSString *text = [view valueForKey:@"text"];

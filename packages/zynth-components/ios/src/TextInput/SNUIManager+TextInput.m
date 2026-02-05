@@ -614,6 +614,40 @@ static BOOL ZynthSecureTextInputHandleSetHandler(ZynthUIManager *manager,
     descriptor.applyStyle = ^(ZynthUIManager *manager, ZynthNode *node, NSDictionary *style) {
       ZynthTextInputHandleStyle(manager, node, style);
     };
+    descriptor.inspectState = ^NSDictionary *(ZynthUIManager *__unused manager, ZynthNode *node) {
+      ZynthTextInputView *view = [node.view isKindOfClass:[ZynthTextInputView class]] ? (ZynthTextInputView *)node.view : nil;
+      if (!view) return nil;
+      NSDictionary *selection = [view currentSelectionPayload] ?: @{};
+      return @{
+        @"nodeId": @(node.nid),
+        @"text": view.text ?: @"",
+        @"placeholder": view.placeholder ?: @"",
+        @"selection": selection,
+        @"multiline": @(view.multiline),
+        @"isEditableProp": @(view.isEditableProp),
+        @"maxLength": @(view.maxLength),
+        @"numberOfLinesHint": @(view.numberOfLinesHint),
+        @"eventThrottle": @(view.eventThrottle),
+        @"blurOnSubmit": @(view.blurOnSubmit),
+        @"submitBehavior": view.submitBehavior ?: @"submit",
+        @"isComposing": @(view.isComposing),
+        @"onChange": @(view.hasOnChange),
+        @"onChangeText": @(view.hasOnChangeText),
+        @"onSelectionChange": @(view.hasOnSelectionChange),
+        @"onFocus": @(view.hasOnFocus),
+        @"onBlur": @(view.hasOnBlur),
+        @"onSubmitEditing": @(view.hasOnSubmitEditing),
+        @"onKeyPress": @(view.hasOnKeyPress),
+        @"onCompositionStart": @(view.hasOnCompositionStart),
+        @"onCompositionEnd": @(view.hasOnCompositionEnd),
+        @"textContainerInset": @{
+          @"top": @(view.textContainerInset.top),
+          @"left": @(view.textContainerInset.left),
+          @"bottom": @(view.textContainerInset.bottom),
+          @"right": @(view.textContainerInset.right),
+        },
+      };
+    };
     ZynthRegisterComponentDescriptor(descriptor);
   });
 
@@ -645,6 +679,33 @@ static BOOL ZynthSecureTextInputHandleSetHandler(ZynthUIManager *manager,
     };
     descriptor.applyStyle = ^(ZynthUIManager *manager, ZynthNode *node, NSDictionary *style) {
       ZynthTextInputHandleStyle(manager, node, style);
+    };
+    descriptor.inspectState = ^NSDictionary *(ZynthUIManager *__unused manager, ZynthNode *node) {
+      ZynthSecureTextInputView *view = [node.view isKindOfClass:[ZynthSecureTextInputView class]] ? (ZynthSecureTextInputView *)node.view : nil;
+      if (!view) return nil;
+      return @{
+        @"nodeId": @(node.nid),
+        @"text": view.text ?: @"",
+        @"placeholder": view.placeholder ?: @"",
+        @"secureTextEntry": @(view.secureTextEntry),
+        @"enabled": @(view.enabled),
+        @"eventThrottle": @(view.eventThrottle),
+        @"blurOnSubmit": @(view.blurOnSubmit),
+        @"submitBehavior": view.submitBehavior ?: @"submit",
+        @"padding": @{
+          @"top": @(view.padding.top),
+          @"left": @(view.padding.left),
+          @"bottom": @(view.padding.bottom),
+          @"right": @(view.padding.right),
+        },
+        @"onChange": @(view.hasOnChange),
+        @"onChangeText": @(view.hasOnChangeText),
+        @"onSelectionChange": @(view.hasOnSelectionChange),
+        @"onFocus": @(view.hasOnFocus),
+        @"onBlur": @(view.hasOnBlur),
+        @"onSubmitEditing": @(view.hasOnSubmitEditing),
+        @"onKeyPress": @(view.hasOnKeyPress),
+      };
     };
     ZynthRegisterComponentDescriptor(descriptor);
   });

@@ -236,8 +236,19 @@ Examples:
 
 Recommended extension points:
 
-- Android: extend `ZynthComponentDescriptor` with optional inspector callback
-- iOS: extend `ZynthComponentDescriptor` with optional inspection block
+- Android: `ZynthComponentDescriptor.inspectState` and/or `ZynthInspectableComponent`
+- iOS: `ZynthComponentDescriptor.inspectState` and/or `ZynthInspectableComponent`
+
+Status:
+
+- Implemented in core descriptors on both platforms.
+- Snapshot option `includeComponentState` now includes `componentState` per node.
+- `text-input` and `secure-text-input` now provide component-level inspector output.
+
+Precedent for new components:
+
+- Every new component should expose inspector data via descriptor `inspectState` (preferred).
+- If a component has reusable view internals, implement `ZynthInspectableComponent` on the view as a default fallback.
 
 ## Phase 4: JS Diff + Tooling Integration
 
@@ -324,4 +335,3 @@ But these should come **after** snapshot reliability is strong.
 3. Filters: `surfaceId`, `rootNodeId`, `maxDepth`.
 4. JS helper in test tooling package to call module and assert tree.
 5. One end-to-end regression test for TextInput padding mismatch scenario.
-

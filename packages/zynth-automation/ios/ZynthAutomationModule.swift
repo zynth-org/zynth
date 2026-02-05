@@ -5,6 +5,7 @@ final class ZynthAutomationModule: NSObject, ZynthModule, ZynthSyncModule {
   let name: String = "Automation"
 
   private weak var runtime: ZynthRuntime?
+  private var productionInspectionEnabled = false
 
   init(runtime: ZynthRuntime) {
     self.runtime = runtime
@@ -15,6 +16,8 @@ final class ZynthAutomationModule: NSObject, ZynthModule, ZynthSyncModule {
     switch method {
     case "read":
       return ["result": readSnapshot(args: args)]
+    case "configure":
+      return ["result": configure(args: args)]
     default:
       return [
         "error": "unknown_method",
@@ -27,6 +30,8 @@ final class ZynthAutomationModule: NSObject, ZynthModule, ZynthSyncModule {
     switch method {
     case "read":
       return readSnapshot(args: args)
+    case "configure":
+      return configure(args: args)
     default:
       return [
         "error": "unknown_method",
@@ -39,7 +44,27 @@ final class ZynthAutomationModule: NSObject, ZynthModule, ZynthSyncModule {
     guard let runtime else {
       return ["error": "runtime_deallocated"]
     }
-    let options = args as? [String: Any]
+    var options = (args as? [String: Any]) ?? [:]
+    if !isDebugBuild && !productionInspectionEnabled {
+      // Heavy fields are disabled in production by default to reduce overhead.
+      options["includeResolvedStyles"] = false
+      options["includeComponentState"] = false
+      options["includeText"] = false
+    }
     return runtime.uiManager.snapshot(options) as? [String: Any] ?? [:]
+  }
+
+  private func configure(args: Any?) -> [String: Any] {
+    let config = args as? [String: Any]
+    productionInspectionEnabled = config?["enableProductionInspection"] as? Bool ?? false
+    return ["productionInspectionEnabled": productionInspectionEnabled]
+  }
+
+  private var isDebugBuild: Bool {
+#if DEBUG
+    return true
+#else
+    return false
+#endif
   }
 }

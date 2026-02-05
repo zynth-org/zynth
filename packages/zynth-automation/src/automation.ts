@@ -1,5 +1,5 @@
-import { readNative, readSyncNative } from "./native";
-import type { AutomationReadOptions, AutomationSnapshot } from "./types";
+import { configureNative, readNative, readSyncNative } from "./native";
+import type { AutomationConfig, AutomationReadOptions, AutomationSnapshot } from "./types";
 
 export const Automation = {
   read(options?: AutomationReadOptions): Promise<AutomationSnapshot> {
@@ -7,5 +7,8 @@ export const Automation = {
   },
   readSync(options?: AutomationReadOptions): AutomationSnapshot {
     return readSyncNative(options);
+  },
+  configure(config: AutomationConfig): { productionInspectionEnabled: boolean } {
+    return configureNative(config);
   },
 };

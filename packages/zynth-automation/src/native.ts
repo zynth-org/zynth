@@ -1,4 +1,4 @@
-import type { AutomationReadOptions, AutomationSnapshot } from "./types";
+import type { AutomationConfig, AutomationReadOptions, AutomationSnapshot } from "./types";
 
 type ModulesBridge = {
   call?(name: string, method: string, args?: unknown): Promise<unknown> | unknown;
@@ -51,4 +51,14 @@ export async function readNative(options?: AutomationReadOptions): Promise<Autom
   }
   const value = await Promise.resolve(bridge.call(MODULE_NAME, "read", options));
   return unwrap<AutomationSnapshot>(value);
+}
+
+export function configureNative(config: AutomationConfig): { productionInspectionEnabled: boolean } {
+  const bridge = getBridge();
+  if (!bridge?.callSync) {
+    throw new Error("Native sync modules bridge not available");
+  }
+  return unwrap<{ productionInspectionEnabled: boolean }>(
+    bridge.callSync(MODULE_NAME, "configure", config)
+  );
 }

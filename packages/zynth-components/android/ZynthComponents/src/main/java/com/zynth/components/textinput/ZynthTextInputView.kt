@@ -25,6 +25,7 @@ import androidx.appcompat.widget.AppCompatEditText
 import androidx.core.graphics.ColorUtils
 import androidx.core.graphics.drawable.DrawableCompat
 import androidx.core.view.ViewCompat
+import com.zynth.kit.components.ZynthInspectableComponent
 import com.zynth.kit.core.ZynthUIManager
 import org.json.JSONObject
 import java.util.ArrayDeque
@@ -32,7 +33,7 @@ import java.util.ArrayDeque
 internal open class ZynthTextInputView @JvmOverloads constructor(
   context: Context,
   attrs: AttributeSet? = null,
-) : AppCompatEditText(context, attrs) {
+) : AppCompatEditText(context, attrs), ZynthInspectableComponent {
 
   internal var manager: ZynthUIManager? = null
   internal var nodeId: Int = -1
@@ -224,6 +225,48 @@ internal open class ZynthTextInputView @JvmOverloads constructor(
   }
 
   data class PaddingValues(val left: Int, val top: Int, val right: Int, val bottom: Int)
+
+  override fun inspectState(): Map<String, Any?> {
+    val styled = getStyledPadding()
+    return mapOf(
+      "nodeId" to nodeId,
+      "text" to (text?.toString() ?: ""),
+      "hint" to (hint?.toString() ?: ""),
+      "selectionStart" to selectionStart,
+      "selectionEnd" to selectionEnd,
+      "multiline" to multiline,
+      "secureTextEntry" to secureEntry,
+      "editable" to isEnabled,
+      "maxLength" to maxLength,
+      "eventThrottleMs" to eventThrottleMs,
+      "blurOnSubmit" to blurOnSubmit,
+      "submitBehavior" to submitBehavior,
+      "onChange" to hasOnChange,
+      "onChangeText" to hasOnChangeText,
+      "onSelectionChange" to hasOnSelectionChange,
+      "onFocus" to hasOnFocus,
+      "onBlur" to hasOnBlur,
+      "onSubmitEditing" to hasOnSubmitEditing,
+      "onKeyPress" to hasOnKeyPress,
+      "onCompositionStart" to hasOnCompositionStart,
+      "onCompositionEnd" to hasOnCompositionEnd,
+      "gravity" to gravity,
+      "styledPadding" to mapOf(
+        "left" to styled.left,
+        "top" to styled.top,
+        "right" to styled.right,
+        "bottom" to styled.bottom,
+      ),
+      "actualPadding" to mapOf(
+        "left" to paddingLeft,
+        "top" to paddingTop,
+        "right" to paddingRight,
+        "bottom" to paddingBottom,
+      ),
+      "lineCount" to lineCount,
+      "isComposing" to isComposing(),
+    )
+  }
 
   fun performProgrammaticUpdate(block: () -> Unit) {
     val previous = suppressNativeEvent

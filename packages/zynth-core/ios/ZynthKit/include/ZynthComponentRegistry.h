@@ -9,6 +9,10 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+@protocol ZynthInspectableComponent <NSObject>
+- (NSDictionary *)zynthInspectState;
+@end
+
 typedef UIView *_Nullable (^ZynthComponentViewFactory)(ZynthUIManager *manager, NSString *type);
 typedef void (^ZynthComponentAttachBlock)(ZynthUIManager *manager, ZynthNode *node);
 typedef BOOL (^ZynthComponentSetPropBlock)(ZynthUIManager *manager,
@@ -30,6 +34,8 @@ typedef BOOL (^ZynthComponentRemoveChildBlock)(ZynthUIManager *manager,
 typedef void (^ZynthComponentApplyStyleBlock)(ZynthUIManager *manager,
                                               ZynthNode *node,
                                               NSDictionary *style);
+typedef NSDictionary *_Nullable (^ZynthComponentInspectStateBlock)(ZynthUIManager *manager,
+                                                                   ZynthNode *node);
 
 @interface ZynthComponentDescriptor : NSObject
 
@@ -45,6 +51,7 @@ typedef void (^ZynthComponentApplyStyleBlock)(ZynthUIManager *manager,
 @property(nonatomic, copy, nullable) ZynthComponentInsertChildBlock handleInsertChild;
 @property(nonatomic, copy, nullable) ZynthComponentRemoveChildBlock handleRemoveChild;
 @property(nonatomic, copy, nullable) ZynthComponentApplyStyleBlock applyStyle;
+@property(nonatomic, copy, nullable) ZynthComponentInspectStateBlock inspectState;
 
 @end
 
