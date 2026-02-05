@@ -56,6 +56,8 @@ This document outlines the current status and future development plan for the Zy
 - [ ] zynth-ui TextInput use SytemGlyphs for icons on Android.
 - [ ] zynth-ui Custom slider doesn't keep on the selected position when released on Android.
 - [ ] Android: BottomSheet doesn't remove the backdrop when is set.
+- [ ] Android: AsyncStorage sometimes didn't load/set on startup
+- [ ] Android: WARN [KeyboardProvider] Native keyboard module not found. Keyboard state will show as hidden. Make sure the native platform has initialized the module.
 - [ ] Create a new BottomSheet from scratch.
 - [ ] Elevation discrepancy between iOS and Android.
 - [ ] Individual Rounded corners have discrepancy between iOS and Android.
@@ -63,6 +65,7 @@ This document outlines the current status and future development plan for the Zy
 - [ ] iOS: Transparency buttons doesn't works.
 - [ ] iOS: DatePicker imperative won't open.
 - [ ] iOS: Stack Modal bug that return to details with.
+- [ ] Migrate zynth-screens to new Runtime
 - [x] Migrate zynth-animate to new Runtime
 - [x] Migrate zynth-apis to new Runtime
 - [x] Migrate zynth-async-storage to new Runtime
@@ -76,7 +79,6 @@ This document outlines the current status and future development plan for the Zy
 - [x] Migrate zynth-keyboard to new Runtime
 - [x] Migrate zynth-markdown to new Runtime
 - [x] Migrate zynth-memory-router to new Runtime
-- [ ] Migrate zynth-screens to new Runtime
 - [x] Migrate zynth-secure-store to new Runtime
 - [x] Migrate zynth-splash-screen to new Runtime
 - [x] Migrate zynth-ui to new Runtime

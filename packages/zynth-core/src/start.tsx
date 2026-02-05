@@ -1,6 +1,6 @@
 import { Platform, OS } from "@zynth/apis";
 import { Text, View } from "@zynth/components";
-import { render, setHost } from "./renderer";
+import { render, setHost, withHostBatch } from "./renderer";
 import { createIOSHost } from "./host/ios";
 import { createAndroidHost } from "./host/android";
 import {
@@ -100,6 +100,14 @@ export function start(App: () => any): () => void {
   currentApp = isErrorOverlayEnabled() ? App : wrapWithErrorOverlay(App);
 
   g.__zynth_rerenderApp = () => {
+    if ((globalThis as any).__ZYNTH_HMR_TRACE === true) {
+      console.log("[HMR-TRACE] __zynth_rerenderApp called");
+      try {
+        throw new Error("[HMR-TRACE] stack");
+      } catch (error) {
+        console.log(String((error as any)?.stack || error));
+      }
+    }
     if (lastRootId == null) {
       console.warn("[ZynthRuntime] rerender requested before root id set");
       return;
@@ -109,11 +117,13 @@ export function start(App: () => any): () => void {
       return;
     }
     try {
-      disposeCurrentApp?.();
-      disposeCurrentApp = render(() => currentApp!(), {
-        id: lastRootId,
-        type: "root",
-      } as any);
+      withHostBatch({ kind: "hmr", scope: "app" }, () => {
+        disposeCurrentApp?.();
+        disposeCurrentApp = render(() => currentApp!(), {
+          id: lastRootId,
+          type: "root",
+        } as any);
+      });
       console.log("[ZynthRuntime] rerender completed");
     } catch (error) {
       const msg = String((error as any)?.message || error);
@@ -125,6 +135,14 @@ export function start(App: () => any): () => void {
   };
 
   g.__zynth_updateApp = (NextApp: () => any) => {
+    if ((globalThis as any).__ZYNTH_HMR_TRACE === true) {
+      console.log("[HMR-TRACE] __zynth_updateApp called");
+      try {
+        throw new Error("[HMR-TRACE] stack");
+      } catch (error) {
+        console.log(String((error as any)?.stack || error));
+      }
+    }
     if (typeof NextApp !== "function") {
       console.warn("[ZynthRuntime] updateApp received non-function", NextApp);
       return;
@@ -171,6 +189,14 @@ export function start(App: () => any): () => void {
   };
 
   g.__startApp = (...args: any[]) => {
+    if ((globalThis as any).__ZYNTH_HMR_TRACE === true) {
+      console.log("[HMR-TRACE] __startApp called with", args[0]);
+      try {
+        throw new Error("[HMR-TRACE] stack");
+      } catch (error) {
+        console.log(String((error as any)?.stack || error));
+      }
+    }
     console.log("__startApp called!");
     const rootId = args[0];
 
@@ -196,11 +222,13 @@ export function start(App: () => any): () => void {
     }
 
     try {
-      disposeCurrentApp?.();
-      disposeCurrentApp = render(() => currentApp!(), {
-        id: rootId,
-        type: "root",
-      } as any);
+      withHostBatch({ kind: "start", scope: "app" }, () => {
+        disposeCurrentApp?.();
+        disposeCurrentApp = render(() => currentApp!(), {
+          id: rootId,
+          type: "root",
+        } as any);
+      });
       lastRootId = rootId;
       console.log("Render completed successfully");
     } catch (error) {

@@ -13,7 +13,9 @@ type NativeBridge = {
 
 type NativeAppearanceModule = {
   getColorScheme?: () => ColorScheme | null;
-  addColorSchemeListener?: (listener: (scheme: ColorScheme) => void) => () => void;
+  addColorSchemeListener?: (
+    listener: (scheme: ColorScheme) => void,
+  ) => () => void;
 };
 
 const MODULE_KEY = "ZynthAppearance";
@@ -48,8 +50,10 @@ function normalizeScheme(value: unknown): ColorScheme | null {
 
 function readNativeConstants(): ColorScheme | null {
   const globalObj = getGlobalObject();
-  const constants = globalObj.NativeConstants as Record<string, unknown> | undefined;
-  console.log("[UITheme] NativeConstants", constants ? Object.keys(constants) : null);
+  const constants = globalObj.NativeConstants as
+    | Record<string, unknown>
+    | undefined;
+  // console.log("[UITheme] NativeConstants", constants ? Object.keys(constants) : null);
   if (!constants) return null;
 
   const snapshot =
@@ -65,11 +69,11 @@ function readFromBridge(): ColorScheme | null {
   const bridge = (globalObj as { __modules?: unknown }).__modules as
     | NativeBridge
     | undefined;
-  console.log("[UITheme] __modules", bridge ? Object.keys(bridge as object) : null);
+  // console.log("[UITheme] __modules", bridge ? Object.keys(bridge as object) : null);
   if (!bridge?.callSync) return null;
   try {
     const result = bridge.callSync(MODULE_KEY, "getCurrent");
-    console.log("[UITheme] bridge result", result);
+    // console.log("[UITheme] bridge result", result);
     if (!result || typeof result !== "object") return null;
     const snapshot = result as AppearanceSnapshot;
     return normalizeScheme(snapshot.colorScheme ?? snapshot.scheme);
@@ -78,7 +82,7 @@ function readFromBridge(): ColorScheme | null {
     try {
       if (bridge?.call) {
         const result = bridge.call(MODULE_KEY, "getCurrent", null);
-        console.log("[UITheme] bridge call result", result);
+        // console.log("[UITheme] bridge call result", result);
         if (result && typeof result === "object") {
           const snapshot = result as AppearanceSnapshot;
           return normalizeScheme(snapshot.colorScheme ?? snapshot.scheme);
@@ -122,19 +126,19 @@ export function getSystemColorScheme(): ColorScheme {
     fromMatchMedia ??
     "light";
 
-  console.log("[UITheme] system scheme", {
-    resolved,
-    fromNativeModule,
-    fromConstants,
-    fromBridge,
-    fromMatchMedia,
-  });
+  // console.log("[UITheme] system scheme", {
+  //   resolved,
+  //   fromNativeModule,
+  //   fromConstants,
+  //   fromBridge,
+  //   fromMatchMedia,
+  // });
 
   return resolved;
 }
 
 export function subscribeToSystemColorScheme(
-  listener: (scheme: ColorScheme) => void
+  listener: (scheme: ColorScheme) => void,
 ): () => void {
   const unsubscribers: Array<() => void> = [];
 
@@ -149,7 +153,7 @@ export function subscribeToSystemColorScheme(
   const subscription = sharedNativeEventEmitter.addListener(
     EVENT_NAME,
     (payload) => {
-      console.log("[UITheme] native event", EVENT_NAME, payload);
+      // console.log("[UITheme] native event", EVENT_NAME, payload);
       if (!payload) return;
       if (typeof payload === "string") {
         const scheme = normalizeScheme(payload);
@@ -161,7 +165,7 @@ export function subscribeToSystemColorScheme(
         const scheme = normalizeScheme(snapshot.colorScheme ?? snapshot.scheme);
         if (scheme) listener(scheme);
       }
-    }
+    },
   );
   unsubscribers.push(() => subscription.remove());
 
