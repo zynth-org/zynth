@@ -359,6 +359,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       cacheYogaStyle(id, name, scaled)
       yogaForNode(id).setStyle(id, name, scaled)
       markSurfaceDirtyForNode(id)
+      maybeNotifyStyle(descriptor, node, name, value.toString())
       traceOp("setProp", node?.type, startNs)
       return
     }
