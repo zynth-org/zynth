@@ -8,10 +8,60 @@
 #import "ZynthUIManager+Style.h"
 #import "ZynthPointerEventsView.h"
 #import "ZynthColorParser.h"
+#import "ZynthTextStyleState.h"
+#import "ZynthViewStyleState.h"
 #import <dispatch/dispatch.h>
 #import <math.h>
 #import <QuartzCore/QuartzCore.h>
 #import <UIKit/UIKit.h>
+
+static NSInteger ZynthParseMaxDepth(id value) {
+  if (!value || value == (id)kCFNull) return NSIntegerMax;
+  if ([value respondsToSelector:@selector(integerValue)]) {
+    NSInteger depth = [value integerValue];
+    return depth < 0 ? NSIntegerMax : depth;
+  }
+  return NSIntegerMax;
+}
+
+static NSNumber *_Nullable ZynthParseNodeId(id value) {
+  if (!value || value == (id)kCFNull) return nil;
+  if ([value isKindOfClass:[NSNumber class]]) return value;
+  if ([value isKindOfClass:[NSString class]]) {
+    NSInteger intValue = [(NSString *)value integerValue];
+    return @(intValue);
+  }
+  return nil;
+}
+
+static NSDictionary *ZynthLocalFrame(UIView *view) {
+  return @{
+    @"x": @(CGRectGetMinX(view.frame)),
+    @"y": @(CGRectGetMinY(view.frame)),
+    @"width": @(CGRectGetWidth(view.frame)),
+    @"height": @(CGRectGetHeight(view.frame)),
+  };
+}
+
+static NSDictionary *ZynthGlobalFrame(UIView *view) {
+  UIWindow *window = view.window;
+  CGRect frame = view.frame;
+  if (window) {
+    frame = [view convertRect:view.bounds toView:window];
+  }
+  return @{
+    @"x": @(CGRectGetMinX(frame)),
+    @"y": @(CGRectGetMinY(frame)),
+    @"width": @(CGRectGetWidth(frame)),
+    @"height": @(CGRectGetHeight(frame)),
+  };
+}
+
+static NSString *ZynthVisibility(UIView *view) {
+  if (view.hidden) return @"gone/hidden";
+  if (view.alpha <= 0.01) return @"invisible";
+  return @"visible";
+}
 
 @implementation ZynthUIManager
 
@@ -683,6 +733,212 @@
 
 - (NSNumber *)getParentId:(NSNumber *)nodeId {
   return _parents[nodeId];
+}
+
+- (NSDictionary *)snapshot:(NSDictionary *_Nullable)options {
+  if (![NSThread isMainThread]) {
+    __block NSDictionary *result = nil;
+    dispatch_sync(dispatch_get_main_queue(), ^{
+      result = [self snapshot:options];
+    });
+    return result ?: @{};
+  }
+
+  NSDictionary *opts = [options isKindOfClass:[NSDictionary class]] ? options : @{};
+  BOOL includeGlobalFrame = opts[@"includeGlobalFrame"] ? [opts[@"includeGlobalFrame"] boolValue] : YES;
+  BOOL includeYogaStyles = opts[@"includeYogaStyles"] ? [opts[@"includeYogaStyles"] boolValue] : YES;
+  BOOL includeResolvedStyles = opts[@"includeResolvedStyles"] ? [opts[@"includeResolvedStyles"] boolValue] : NO;
+  BOOL includeText = opts[@"includeText"] ? [opts[@"includeText"] boolValue] : NO;
+  NSInteger maxDepth = ZynthParseMaxDepth(opts[@"maxDepth"]);
+  NSNumber *rootNodeId = ZynthParseNodeId(opts[@"rootNodeId"]);
+  NSNumber *filterSurfaceId = ZynthParseNodeId(opts[@"surfaceId"]);
+
+  NSMutableArray<NSString *> *warnings = [NSMutableArray array];
+  NSMutableArray<NSDictionary *> *surfaces = [NSMutableArray array];
+
+  NSArray<NSNumber *> *allSurfaceIds = [[_surfaceRoots allKeys] sortedArrayUsingSelector:@selector(compare:)];
+  NSMutableArray<NSNumber *> *targetSurfaceIds = [NSMutableArray array];
+  if (filterSurfaceId) {
+    if (_surfaceRoots[filterSurfaceId] != nil) {
+      [targetSurfaceIds addObject:filterSurfaceId];
+    } else {
+      [warnings addObject:[NSString stringWithFormat:@"surface_not_found:%@", filterSurfaceId]];
+    }
+  } else {
+    [targetSurfaceIds addObjectsFromArray:allSurfaceIds];
+  }
+
+  if (rootNodeId && _nodeStates[rootNodeId] == nil) {
+    [warnings addObject:[NSString stringWithFormat:@"root_node_not_found:%@", rootNodeId]];
+    rootNodeId = nil;
+  }
+
+  for (NSNumber *surfaceId in targetSurfaceIds) {
+    UIView *surfaceRoot = _surfaceRoots[surfaceId];
+    if (!surfaceRoot) continue;
+
+    NSMutableSet<NSNumber *> *surfaceNodeIds = [NSMutableSet set];
+    for (NSNumber *nodeId in _nodeSurfaces) {
+      NSNumber *sid = _nodeSurfaces[nodeId];
+      if ([sid isEqualToNumber:surfaceId]) {
+        [surfaceNodeIds addObject:nodeId];
+      }
+    }
+
+    NSMutableArray<NSNumber *> *rootCandidates = [NSMutableArray array];
+    for (NSNumber *nodeId in _parents) {
+      NSNumber *parentId = _parents[nodeId];
+      NSNumber *sid = _nodeSurfaces[nodeId];
+      if (parentId.integerValue == 0 && [sid isEqualToNumber:surfaceId]) {
+        [rootCandidates addObject:nodeId];
+      }
+    }
+    [rootCandidates sortUsingSelector:@selector(compare:)];
+
+    NSMutableSet<NSNumber *> *includeIds = [NSMutableSet set];
+    NSMutableArray<NSArray<NSNumber *> *> *queue = [NSMutableArray array];
+    if (rootNodeId) {
+      if ([_nodeSurfaces[rootNodeId] isEqualToNumber:surfaceId]) {
+        [queue addObject:@[rootNodeId, @0]];
+      }
+    } else {
+      for (NSNumber *candidate in rootCandidates) {
+        [queue addObject:@[candidate, @0]];
+      }
+    }
+
+    while (queue.count > 0) {
+      NSArray<NSNumber *> *entry = queue.firstObject;
+      [queue removeObjectAtIndex:0];
+      NSNumber *nodeId = entry[0];
+      NSInteger depth = entry[1].integerValue;
+      if (![surfaceNodeIds containsObject:nodeId]) continue;
+      if ([includeIds containsObject:nodeId]) continue;
+      [includeIds addObject:nodeId];
+      if (depth >= maxDepth) continue;
+      ZynthNode *node = _nodeStates[nodeId];
+      if (!node) continue;
+      for (NSNumber *childId in node.children) {
+        [queue addObject:@[childId, @(depth + 1)]];
+      }
+    }
+
+    if (rootNodeId && includeIds.count == 0) {
+      continue;
+    }
+
+    NSMutableDictionary<NSString *, NSDictionary *> *nodes = [NSMutableDictionary dictionary];
+    NSArray<NSNumber *> *sortedIds = [[includeIds allObjects] sortedArrayUsingSelector:@selector(compare:)];
+    for (NSNumber *nodeId in sortedIds) {
+      ZynthNode *node = _nodeStates[nodeId];
+      UIView *view = _nodes[nodeId];
+      if (!node || !view) continue;
+
+      NSMutableDictionary *nodeJson = [NSMutableDictionary dictionary];
+      nodeJson[@"id"] = nodeId;
+      nodeJson[@"type"] = node.type ?: @"";
+      nodeJson[@"surfaceId"] = _nodeSurfaces[nodeId] ?: surfaceId;
+      nodeJson[@"parentId"] = _parents[nodeId] ?: [NSNull null];
+      nodeJson[@"childIds"] = node.children ?: @[];
+      nodeJson[@"viewClass"] = NSStringFromClass(view.class);
+      nodeJson[@"frameLocal"] = ZynthLocalFrame(view);
+      if (includeGlobalFrame) {
+        nodeJson[@"frameGlobal"] = ZynthGlobalFrame(view);
+      }
+      nodeJson[@"visibility"] = ZynthVisibility(view);
+      nodeJson[@"alpha"] = @(view.alpha);
+      if (includeYogaStyles) {
+        nodeJson[@"yogaStyles"] = _yogaStyleCache[nodeId] ?: @{};
+      }
+      if (includeResolvedStyles) {
+        NSMutableDictionary *styles = [NSMutableDictionary dictionary];
+        styles[@"opacity"] = @(view.alpha);
+        styles[@"zIndex"] = @(view.layer.zPosition);
+        styles[@"cornerRadius"] = @(view.layer.cornerRadius);
+        styles[@"borderWidth"] = @(view.layer.borderWidth);
+        styles[@"clipsToBounds"] = @(view.clipsToBounds);
+        styles[@"hasShadowPath"] = @(view.layer.shadowPath != nil);
+        styles[@"shadowOpacity"] = @(view.layer.shadowOpacity);
+        styles[@"shadowRadius"] = @(view.layer.shadowRadius);
+        styles[@"shadowOffsetX"] = @(view.layer.shadowOffset.width);
+        styles[@"shadowOffsetY"] = @(view.layer.shadowOffset.height);
+        styles[@"shadowColor"] = view.layer.shadowColor ? @YES : @NO;
+        styles[@"hasTransform"] = @(!CATransform3DIsIdentity(view.layer.transform));
+        styles[@"pointerEvents"] = node.pointerEvents ?: @"auto";
+
+        ZynthViewStyleState *viewState = _styleStates[nodeId];
+        if (viewState) {
+          styles[@"hasBackgroundColor"] = @(viewState.backgroundColor != nil);
+          styles[@"hasBackgroundGradient"] = @(viewState.backgroundGradient != nil);
+          styles[@"borderTopWidth"] = @(viewState.borderTopWidth);
+          styles[@"borderRightWidth"] = @(viewState.borderRightWidth);
+          styles[@"borderBottomWidth"] = @(viewState.borderBottomWidth);
+          styles[@"borderLeftWidth"] = @(viewState.borderLeftWidth);
+          styles[@"borderTopLeftRadius"] = @(viewState.borderTopLeftRadius);
+          styles[@"borderTopRightRadius"] = @(viewState.borderTopRightRadius);
+          styles[@"borderBottomRightRadius"] = @(viewState.borderBottomRightRadius);
+          styles[@"borderBottomLeftRadius"] = @(viewState.borderBottomLeftRadius);
+          styles[@"borderStyle"] = viewState.borderStyle ?: [NSNull null];
+          styles[@"hasBoxShadow"] = @(viewState.boxShadow.count > 0);
+          styles[@"hasShadowColor"] = @(viewState.shadowColor != nil);
+          styles[@"styleShadowOpacity"] = viewState.shadowOpacity ?: [NSNull null];
+          styles[@"styleShadowRadius"] = viewState.shadowRadius ?: [NSNull null];
+          styles[@"styleShadowOffsetX"] = @(viewState.shadowOffset.width);
+          styles[@"styleShadowOffsetY"] = @(viewState.shadowOffset.height);
+          styles[@"hasStyleTransform"] = @(viewState.hasTransform);
+          styles[@"transformOrigin"] = viewState.transformOrigin ?: [NSNull null];
+        }
+
+        ZynthTextStyleState *textState = _textStyleStates[nodeId];
+        if (textState) {
+          styles[@"lineHeight"] = textState.hasLineHeight ? @(textState.lineHeight) : [NSNull null];
+          styles[@"lineSpacing"] = textState.hasLineSpacing ? @(textState.lineSpacing) : [NSNull null];
+          styles[@"paragraphSpacing"] = textState.hasParagraphSpacing ? @(textState.paragraphSpacing) : [NSNull null];
+          styles[@"baselineShift"] = textState.hasBaselineShift ? @(textState.baselineShift) : [NSNull null];
+          styles[@"letterSpacing"] = textState.hasLetterSpacing ? @(textState.letterSpacing) : [NSNull null];
+          styles[@"minimumFontScale"] = textState.hasMinimumFontScale ? @(textState.minimumFontScale) : [NSNull null];
+          styles[@"textDecorationLine"] = textState.textDecorationLine ?: [NSNull null];
+          styles[@"textTransform"] = textState.textTransform ?: [NSNull null];
+          styles[@"hyphenation"] = textState.hyphenation ?: [NSNull null];
+        }
+
+        nodeJson[@"resolvedStyles"] = styles;
+      }
+      if (includeText && [view respondsToSelector:@selector(text)]) {
+        NSString *text = [view valueForKey:@"text"];
+        nodeJson[@"text"] = text ?: @"";
+      }
+
+      nodes[nodeId.stringValue] = nodeJson;
+    }
+
+    NSMutableArray<NSNumber *> *rootChildren = [NSMutableArray array];
+    if (rootNodeId) {
+      [rootChildren addObject:rootNodeId];
+    } else {
+      for (NSNumber *candidate in rootCandidates) {
+        if ([includeIds containsObject:candidate]) {
+          [rootChildren addObject:candidate];
+        }
+      }
+    }
+
+    [surfaces addObject:@{
+      @"surfaceId": surfaceId,
+      @"rootViewFrameGlobal": includeGlobalFrame ? ZynthGlobalFrame(surfaceRoot) : ZynthLocalFrame(surfaceRoot),
+      @"rootChildren": rootChildren,
+      @"nodes": nodes,
+    }];
+  }
+
+  return @{
+    @"version": @1,
+    @"platform": @"ios",
+    @"timestampMs": @((long long)([[NSDate date] timeIntervalSince1970] * 1000.0)),
+    @"density": @(UIScreen.mainScreen.scale),
+    @"surfaces": surfaces,
+    @"warnings": warnings,
+  };
 }
 
 - (void)markNodeDirty:(NSNumber *)nodeId {

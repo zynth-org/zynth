@@ -879,6 +879,10 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
 
   fun getRootView(): ZynthRootView = rootView
 
+  fun snapshot(options: JSONObject? = null): JSONObject {
+    return buildScreenSnapshot(options)
+  }
+
   fun applyKeyboardAvoidingAdjustment(
     nodeId: Int,
     behavior: String,

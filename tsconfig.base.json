@@ -5,159 +5,62 @@
     "moduleResolution": "bundler",
     "jsx": "preserve",
     "jsxImportSource": "solid-js",
-    "typeRoots": [
-      "./types",
-      "./node_modules/@types"
-    ],
-    "types": [
-      "zynth-jsx"
-    ],
+    "typeRoots": ["./types", "./node_modules/@types"],
+    "types": ["zynth-jsx"],
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
     "baseUrl": ".",
     "paths": {
-      "@zynth/animate": [
-        "packages/zynth-animate/src/index.ts"
-      ],
-      "@zynth/animate/*": [
-        "packages/zynth-animate/src/*"
-      ],
-      "@zynth/apis": [
-        "packages/zynth-apis/src/index.ts"
-      ],
-      "@zynth/apis/*": [
-        "packages/zynth-apis/src/*"
-      ],
-      "@zynth/async-storage": [
-        "packages/zynth-async-storage/src/index.ts"
-      ],
-      "@zynth/async-storage/*": [
-        "packages/zynth-async-storage/src/*"
-      ],
-      "@zynth/bottom-sheet": [
-        "packages/zynth-bottom-sheet/src/index.ts"
-      ],
-      "@zynth/bottom-sheet/*": [
-        "packages/zynth-bottom-sheet/src/*"
-      ],
-      "@zynth/components": [
-        "packages/zynth-components/src/index.ts"
-      ],
-      "@zynth/components/*": [
-        "packages/zynth-components/src/*"
-      ],
-      "@zynth/core": [
-        "packages/zynth-core/src/index.ts"
-      ],
-      "@zynth/core/*": [
-        "packages/zynth-core/src/*"
-      ],
-      "@zynth/core/universal": [
-        "packages/zynth-core/src/universal.ts"
-      ],
-      "@zynth/error-overlay": [
-        "packages/zynth-error-overlay/src/index.ts"
-      ],
-      "@zynth/error-overlay/*": [
-        "packages/zynth-error-overlay/src/*"
-      ],
-      "@zynth/filesystem": [
-        "packages/zynth-filesystem/src/index.ts"
-      ],
-      "@zynth/filesystem/*": [
-        "packages/zynth-filesystem/src/*"
-      ],
-      "@zynth/haptics": [
-        "packages/zynth-haptics/src/index.ts"
-      ],
-      "@zynth/haptics/*": [
-        "packages/zynth-haptics/src/*"
-      ],
-      "@zynth/hypervisor": [
-        "packages/zynth-hypervisor/src/index.ts"
-      ],
-      "@zynth/hypervisor/*": [
-        "packages/zynth-hypervisor/src/*"
-      ],
-      "@zynth/icons": [
-        "packages/zynth-icons/src/index.ts"
-      ],
-      "@zynth/icons/*": [
-        "packages/zynth-icons/src/*"
-      ],
-      "@zynth/image-picker": [
-        "packages/zynth-image-picker/src/index.ts"
-      ],
-      "@zynth/image-picker/*": [
-        "packages/zynth-image-picker/src/*"
-      ],
-      "@zynth/keyboard": [
-        "packages/zynth-keyboard/src/index.ts"
-      ],
-      "@zynth/keyboard/*": [
-        "packages/zynth-keyboard/src/*"
-      ],
-      "@zynth/markdown": [
-        "packages/zynth-markdown/src/index.ts"
-      ],
-      "@zynth/markdown/*": [
-        "packages/zynth-markdown/src/*"
-      ],
-      "@zynth/memory-router": [
-        "packages/zynth-memory-router/src/index.ts"
-      ],
-      "@zynth/memory-router/*": [
-        "packages/zynth-memory-router/src/*"
-      ],
-      "@zynth/rsbuild-plugin": [
-        "packages/zynth-rsbuild-plugin/src/index.ts"
-      ],
-      "@zynth/rsbuild-plugin/*": [
-        "packages/zynth-rsbuild-plugin/src/*"
-      ],
-      "@zynth/safe-area": [
-        "packages/zynth-safe-area/src/index.ts"
-      ],
-      "@zynth/safe-area/*": [
-        "packages/zynth-safe-area/src/*"
-      ],
-      "@zynth/screens": [
-        "packages/zynth-screens/src/index.ts"
-      ],
-      "@zynth/screens/*": [
-        "packages/zynth-screens/src/*"
-      ],
-      "@zynth/secure-store": [
-        "packages/zynth-secure-store/src/index.ts"
-      ],
-      "@zynth/secure-store/*": [
-        "packages/zynth-secure-store/src/*"
-      ],
-      "@zynth/skyhook": [
-        "packages/zynth-skyhook/src/index.ts"
-      ],
-      "@zynth/skyhook/*": [
-        "packages/zynth-skyhook/src/*"
-      ],
-      "@zynth/splash-screen": [
-        "packages/zynth-splash-screen/src/index.ts"
-      ],
-      "@zynth/splash-screen/*": [
-        "packages/zynth-splash-screen/src/*"
-      ],
-      "@zynth/ui": [
-        "packages/zynth-ui/src/index.ts"
-      ],
-      "@zynth/ui/*": [
-        "packages/zynth-ui/src/*"
-      ],
-      "@zynth/webserver": [
-        "packages/zynth-webserver/src/index.ts"
-      ],
-      "@zynth/webserver/*": [
-        "packages/zynth-webserver/src/*"
-      ]
+      "@zynth/animate": ["packages/zynth-animate/src/index.ts"],
+      "@zynth/animate/*": ["packages/zynth-animate/src/*"],
+      "@zynth/automation": ["packages/zynth-automation/src/index.ts"],
+      "@zynth/automation/*": ["packages/zynth-automation/src/*"],
+      "@zynth/apis": ["packages/zynth-apis/src/index.ts"],
+      "@zynth/apis/*": ["packages/zynth-apis/src/*"],
+      "@zynth/async-storage": ["packages/zynth-async-storage/src/index.ts"],
+      "@zynth/async-storage/*": ["packages/zynth-async-storage/src/*"],
+      "@zynth/bottom-sheet": ["packages/zynth-bottom-sheet/src/index.ts"],
+      "@zynth/bottom-sheet/*": ["packages/zynth-bottom-sheet/src/*"],
+      "@zynth/components": ["packages/zynth-components/src/index.ts"],
+      "@zynth/components/*": ["packages/zynth-components/src/*"],
+      "@zynth/core": ["packages/zynth-core/src/index.ts"],
+      "@zynth/core/*": ["packages/zynth-core/src/*"],
+      "@zynth/core/universal": ["packages/zynth-core/src/universal.ts"],
+      "@zynth/error-overlay": ["packages/zynth-error-overlay/src/index.ts"],
+      "@zynth/error-overlay/*": ["packages/zynth-error-overlay/src/*"],
+      "@zynth/filesystem": ["packages/zynth-filesystem/src/index.ts"],
+      "@zynth/filesystem/*": ["packages/zynth-filesystem/src/*"],
+      "@zynth/haptics": ["packages/zynth-haptics/src/index.ts"],
+      "@zynth/haptics/*": ["packages/zynth-haptics/src/*"],
+      "@zynth/hypervisor": ["packages/zynth-hypervisor/src/index.ts"],
+      "@zynth/hypervisor/*": ["packages/zynth-hypervisor/src/*"],
+      "@zynth/icons": ["packages/zynth-icons/src/index.ts"],
+      "@zynth/icons/*": ["packages/zynth-icons/src/*"],
+      "@zynth/image-picker": ["packages/zynth-image-picker/src/index.ts"],
+      "@zynth/image-picker/*": ["packages/zynth-image-picker/src/*"],
+      "@zynth/keyboard": ["packages/zynth-keyboard/src/index.ts"],
+      "@zynth/keyboard/*": ["packages/zynth-keyboard/src/*"],
+      "@zynth/markdown": ["packages/zynth-markdown/src/index.ts"],
+      "@zynth/markdown/*": ["packages/zynth-markdown/src/*"],
+      "@zynth/memory-router": ["packages/zynth-memory-router/src/index.ts"],
+      "@zynth/memory-router/*": ["packages/zynth-memory-router/src/*"],
+      "@zynth/rsbuild-plugin": ["packages/zynth-rsbuild-plugin/src/index.ts"],
+      "@zynth/rsbuild-plugin/*": ["packages/zynth-rsbuild-plugin/src/*"],
+      "@zynth/safe-area": ["packages/zynth-safe-area/src/index.ts"],
+      "@zynth/safe-area/*": ["packages/zynth-safe-area/src/*"],
+      "@zynth/screens": ["packages/zynth-screens/src/index.ts"],
+      "@zynth/screens/*": ["packages/zynth-screens/src/*"],
+      "@zynth/secure-store": ["packages/zynth-secure-store/src/index.ts"],
+      "@zynth/secure-store/*": ["packages/zynth-secure-store/src/*"],
+      "@zynth/skyhook": ["packages/zynth-skyhook/src/index.ts"],
+      "@zynth/skyhook/*": ["packages/zynth-skyhook/src/*"],
+      "@zynth/splash-screen": ["packages/zynth-splash-screen/src/index.ts"],
+      "@zynth/splash-screen/*": ["packages/zynth-splash-screen/src/*"],
+      "@zynth/ui": ["packages/zynth-ui/src/index.ts"],
+      "@zynth/ui/*": ["packages/zynth-ui/src/*"],
+      "@zynth/webserver": ["packages/zynth-webserver/src/index.ts"],
+      "@zynth/webserver/*": ["packages/zynth-webserver/src/*"]
     }
   }
 }

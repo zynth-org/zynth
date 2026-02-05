@@ -27,6 +27,7 @@ NS_ASSUME_NONNULL_BEGIN
                                             NSUInteger nodeCount))profiler;
 - (ZynthNode *_Nullable)getNodeState:(NSNumber *)nodeId;
 - (NSNumber *_Nullable)getParentId:(NSNumber *)nodeId;
+- (NSDictionary *)snapshot:(NSDictionary *_Nullable)options;
 - (void)markNodeDirty:(NSNumber *)nodeId;
 - (void)zynth_recursiveRemoveNode:(NSNumber *)nodeId;
 - (void)applyKeyboardAvoidingAdjustment:(NSNumber *)nodeId behavior:(NSString *)behavior overlap:(CGFloat)overlap availableHeight:(NSNumber *_Nullable)availableHeight;

@@ -1,0 +1,66 @@
+{
+  "name": "@zynth/automation",
+  "version": "0.0.1",
+  "description": "Native screen automation primitives for Zynth (inspection + execution)",
+  "type": "module",
+  "main": "dist/esm/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "types": "./dist/types/index.d.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "ios",
+    "android",
+    "src",
+    "package.json",
+    "ZynthAutomation.podspec"
+  ],
+  "scripts": {
+    "build": "yarn build:js && yarn build:types",
+    "build:js": "rm -rf dist/esm && tsc --project tsconfig.esm.json",
+    "build:types": "tsc --project tsconfig.types.json",
+    "clean": "rm -rf dist"
+  },
+  "license": "MIT",
+  "peerDependencies": {
+    "@zynth/core": ">=0.0.1",
+    "solid-js": ">=1.8.0"
+  },
+  "devDependencies": {
+    "@rsbuild/core": "^1.5.0",
+    "typescript": "^5.6.3"
+  },
+  "zynthNative": {
+    "ios": {
+      "pods": [
+        {
+          "name": "ZynthAutomation",
+          "podspec": "./ZynthAutomation.podspec"
+        }
+      ],
+      "initializer": {
+        "className": "ZynthAutomation",
+        "method": "initializeWith:"
+      }
+    },
+    "android": {
+      "modules": [
+        {
+          "name": "ZynthAutomation",
+          "path": "./android"
+        }
+      ],
+      "initializer": {
+        "className": "ZynthAutomation",
+        "method": "initialize",
+        "package": "dev.zynth.automation"
+      }
+    }
+  }
+}
