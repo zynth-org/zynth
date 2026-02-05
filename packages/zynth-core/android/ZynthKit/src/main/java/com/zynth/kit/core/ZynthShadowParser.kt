@@ -44,10 +44,10 @@ object ZynthShadowParser {
         parseStringList(trimmed)
       }
       
-      if (result != null && result.isNotEmpty()) {
+      if (result.isNotEmpty()) {
         shadowCache.put(value, result)
       }
-      return result?.takeIf { it.isNotEmpty() }
+      return result.takeIf { it.isNotEmpty() }
     }
     
     return when (value) {
