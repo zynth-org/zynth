@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
@@ -48,6 +49,7 @@ export function createZynthRsbuildPlugin(
   return {
     name: "@zynth/rsbuild-plugin",
     async setup(api) {
+      const isDev = api.context.action === "dev";
       const repoRoot = workspaceRoot
         ? path.resolve(workspaceRoot)
         : await findWorkspaceRoot(api.context.rootPath);
@@ -97,6 +99,9 @@ export function createZynthRsbuildPlugin(
         };
         ensureAliases(config, mergedExtraAliases, mergedAliases);
         configureImageAssets(config);
+        if (isDev) {
+          ensureResolveCondition(config, "development");
+        }
 
         if (hermesCompat) {
           config.target = ["electron-renderer", "es5"];
@@ -184,6 +189,21 @@ export function createZynthRsbuildPlugin(
       });
     },
   };
+}
+
+function ensureResolveCondition(
+  config: rspack.Configuration,
+  condition: string,
+) {
+  config.resolve ??= {};
+  const existing = config.resolve.conditionNames;
+  const base =
+    existing && existing.length > 0
+      ? existing
+      : ["import", "module", "browser", "default"];
+  if (!base.includes(condition)) {
+    config.resolve.conditionNames = [...base, condition];
+  }
 }
 
 function configureImageAssets(config: rspack.Configuration) {
@@ -346,9 +366,6 @@ function resolveSolidAliases(repoRoot: string): Record<string, string> {
   const aliases: Record<string, string> = {};
   const rootRequire = createRequire(path.join(repoRoot, "package.json"));
 
-  const solidMain = safeResolve(rootRequire, "solid-js");
-  const solidWeb = safeResolve(rootRequire, "solid-js/web");
-  const solidStore = safeResolve(rootRequire, "solid-js/store");
   const solidJsxRuntimeFromRoot = safeResolve(
     rootRequire,
     "solid-js/h/jsx-runtime",
@@ -358,9 +375,6 @@ function resolveSolidAliases(repoRoot: string): Record<string, string> {
     "solid-js/h/jsx-dev-runtime",
   );
 
-  if (solidMain) aliases["solid-js$"] = solidMain;
-  if (solidWeb) aliases["solid-js/web"] = solidWeb;
-  if (solidStore) aliases["solid-js/store"] = solidStore;
   if (solidJsxRuntimeFromRoot)
     aliases["solid-js/jsx-runtime"] = solidJsxRuntimeFromRoot;
   if (solidJsxDevRuntimeFromRoot)

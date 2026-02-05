@@ -50,9 +50,8 @@ import org.json.JSONTokener
 internal class ZynthImageComponent(
   private val root: ZynthRootView,
   private val engine: LayoutEngine,
-  private val eventDispatcher: (Int, String) -> Unit,
+  private val eventDispatcher: (Int, String, JSONObject?) -> Unit,
   private val scheduleFlush: () -> Unit,
-  private val storeEventPayload: (Int, String, JSONObject?) -> Unit,
 ) {
   private companion object {
     const val IMAGE_STATE_KEY = "imageState"
@@ -138,14 +137,12 @@ internal class ZynthImageComponent(
       "onLoad" -> {
         if (jsonValue == null || jsonValue == "null") {
           state.hasOnLoadHandler = false
-          storeEventPayload(node.id, "onLoad", null)
         }
         true
       }
       "onError" -> {
         if (jsonValue == null || jsonValue == "null") {
           state.hasOnErrorHandler = false
-          storeEventPayload(node.id, "onError", null)
         }
         true
       }
@@ -171,8 +168,6 @@ internal class ZynthImageComponent(
     state.systemName = null
     state.preferredWidth = null
     state.preferredHeight = null
-    storeEventPayload(node.id, "onLoad", null)
-    storeEventPayload(node.id, "onError", null)
     val imageView = node.view as? ImageView
     handler.post {
       imageView?.setImageDrawable(null)
@@ -445,7 +440,6 @@ internal class ZynthImageComponent(
   private fun dispatchImageLoadEvent(node: ZynthUIManager.Node, width: Float, height: Float) {
     val state = node.attachments[IMAGE_STATE_KEY] as? ImageState ?: return
     if (!state.hasOnLoadHandler) {
-      storeEventPayload(node.id, "onLoad", null)
       return
     }
     try {
@@ -455,15 +449,13 @@ internal class ZynthImageComponent(
       payload.put("height", height.toDouble())
       dispatchImageEvent(node, "onLoad", payload)
     } catch (_: JSONException) {
-      storeEventPayload(node.id, "onLoad", null)
-      eventDispatcher(node.id, "onLoad")
+      eventDispatcher(node.id, "onLoad", null)
     }
   }
 
   private fun dispatchImageErrorEvent(node: ZynthUIManager.Node, message: String?) {
     val state = node.attachments[IMAGE_STATE_KEY] as? ImageState ?: return
     if (!state.hasOnErrorHandler) {
-      storeEventPayload(node.id, "onError", null)
       return
     }
     try {
@@ -474,8 +466,7 @@ internal class ZynthImageComponent(
       }
       dispatchImageEvent(node, "onError", payload)
     } catch (_: JSONException) {
-      storeEventPayload(node.id, "onError", null)
-      eventDispatcher(node.id, "onError")
+      eventDispatcher(node.id, "onError", null)
     }
   }
 
@@ -487,8 +478,7 @@ internal class ZynthImageComponent(
         // ignore
       }
     }
-    storeEventPayload(node.id, event, payload)
-    eventDispatcher(node.id, event)
+    eventDispatcher(node.id, event, payload)
   }
 
   private fun applyResizeMode(imageView: ImageView, value: String?) {

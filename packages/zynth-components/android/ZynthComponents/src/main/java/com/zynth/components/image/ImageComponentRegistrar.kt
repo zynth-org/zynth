@@ -31,9 +31,8 @@ class ImageComponentRegistrar : ZynthComponentRegistrar {
             imageComponent = ZynthImageComponent(
               root = manager.getRootView(),
               engine = manager.getLayoutEngine(),
-              eventDispatcher = { nodeId, event -> manager.dispatchEvent(nodeId, event, null) },
+              eventDispatcher = { nodeId, event, payload -> manager.dispatchEvent(nodeId, event, payload) },
               scheduleFlush = { manager.flush() },
-              storeEventPayload = { nodeId, event, payload -> manager.dispatchEvent(nodeId, event, payload) },
             )
           }
 
