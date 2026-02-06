@@ -52,8 +52,8 @@ This document outlines the current status and future development plan for the Zy
 
 ## Bad Behaviors
 
-- [ ] Improve bundle monorepo to a setup script with steps and order build commands.
-- [ ] zynth-ui TextInput use SytemGlyphs for icons on Android.
+- [ ] Improve zynth-cli
+- [x] zynth-ui TextInput use SytemGlyphs for icons on Android.
 - [ ] zynth-ui Custom slider doesn't keep on the selected position when released on Android.
 - [ ] Android: BottomSheet doesn't remove the backdrop when is set.
 - [ ] Android: AsyncStorage sometimes didn't load/set on startup
