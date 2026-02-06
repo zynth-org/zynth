@@ -8,13 +8,13 @@ final class ZynthDeviceModule: NSObject, ZynthModule, ZynthSyncModule {
   let name: String = "Device"
 
   var constantsToExport: [String: Any]? {
-    deviceInfo()
+    deviceInfo() as [String: Any]
   }
 
   func call(method: String, args: Any?) throws -> Any? {
     switch method {
     case "getInfo", "current":
-      return ["result": deviceInfo()]
+      return ["result": deviceInfo() as [String: Any]]
     default:
       return ["error": "unknown_method"]
     }
@@ -23,7 +23,7 @@ final class ZynthDeviceModule: NSObject, ZynthModule, ZynthSyncModule {
   func callSync(method: String, args: Any?) throws -> Any? {
     switch method {
     case "getInfo", "current":
-      return deviceInfo()
+      return deviceInfo() as [String: Any]
     default:
       throw ZynthModuleError.syncNotSupported(module: name, method: method)
     }
