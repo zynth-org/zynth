@@ -3,7 +3,7 @@ package dev.zynth.apis
 import android.app.Activity
 import android.content.Context
 import android.util.Log
-import com.zynth.kit.runtime.FontRegistry
+import androidx.lifecycle.LifecycleOwner
 import com.zynth.kit.runtime.ZynthRuntime
 import dev.zynth.apis.safearea.ZynthSafeAreaModule
 import java.util.WeakHashMap
@@ -22,7 +22,7 @@ object ZynthAPIs {
      */
     @JvmStatic
     fun initialize(activity: Activity, runtime: ZynthRuntime) {
-        initialize(activity.applicationContext, runtime)
+        initializeInternal(activity.applicationContext, runtime, activity as? LifecycleOwner)
     }
 
     /**
@@ -32,6 +32,15 @@ object ZynthAPIs {
     @JvmStatic
     @Synchronized
     fun initialize(context: Context, runtime: ZynthRuntime) {
+        initializeInternal(context, runtime, null)
+    }
+
+    @Synchronized
+    private fun initializeInternal(
+        context: Context,
+        runtime: ZynthRuntime,
+        lifecycleOwner: LifecycleOwner?,
+    ) {
         // Log.d(TAG, "ZynthAPIs.initialize() called")
 
         if (initializedRuntimes.containsKey(runtime)) {
@@ -44,10 +53,23 @@ object ZynthAPIs {
         val fontModule = FontModule(context.applicationContext, runtime)
         val dimensionsModule = DimensionsModule(runtime, runtime.root)
         val backHandlerModule = BackHandlerModule(runtime, runtime.root)
+        val appStateModule = AppStateModule(runtime, runtime.root, lifecycleOwner)
+        val networkModule = NetworkModule(context.applicationContext, runtime)
+        val deviceModule = DeviceModule(context.applicationContext)
         val safeAreaModule = ZynthSafeAreaModule(runtime.root, runtime)
 
         // Log.d(TAG, "Installing modules into runtime...")
-        runtime.installModules(listOf(fontModule, dimensionsModule, backHandlerModule, safeAreaModule))
+        runtime.installModules(
+            listOf(
+                fontModule,
+                dimensionsModule,
+                backHandlerModule,
+                appStateModule,
+                networkModule,
+                deviceModule,
+                safeAreaModule,
+            ),
+        )
 
         // Register the FontRegistry as the asset provider for the core renderer
         // runtime.setAssetProvider(FontRegistry) - Handled by FontModule now

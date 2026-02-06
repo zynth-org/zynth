@@ -121,10 +121,20 @@ function formatActivityAttributes(androidConfig: any): string {
   const windowSoftInputMode = androidConfig?.windowSoftInputMode || "adjustResize";
   attributes.push(`android:windowSoftInputMode="${windowSoftInputMode}"`);
 
+  // Default configChanges to prevent activity restarts
+  const configChanges = androidConfig?.configChanges || "keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode";
+  attributes.push(`android:configChanges="${configChanges}"`);
+
+  // Default launchMode to singleTask to ensure the app resumes from the icon
+  const launchMode = androidConfig?.launchMode || "singleTask";
+  attributes.push(`android:launchMode="${launchMode}"`);
+
   // Add generic attributes if provided in 'activityAttributes' map
   if (androidConfig?.activityAttributes) {
     for (const [key, value] of Object.entries(androidConfig.activityAttributes)) {
-      attributes.push(`${key}="${value}"`);
+      if (key !== "android:configChanges" && key !== "configChanges") {
+         attributes.push(`${key}="${value}"`);
+      }
     }
   }
 

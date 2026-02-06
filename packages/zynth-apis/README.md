@@ -55,3 +55,43 @@ if (Font.isLoaded("MyCustomFont")) {
   // Use the font
 }
 ```
+
+### `AppState`
+Track whether the app is active, inactive, or in the background.
+
+```tsx
+import { AppState } from "@zynth/apis";
+
+console.log(AppState.currentState);
+
+const subscription = AppState.addEventListener("change", (state) => {
+  console.log("App state changed:", state);
+});
+
+subscription.remove();
+```
+
+### `Network`
+Observe connectivity changes and inspect current network status.
+
+```tsx
+import { Network } from "@zynth/apis";
+
+console.log(Network.currentState);
+
+const unsubscribe = Network.subscribe((state) => {
+  console.log("Network state:", state.type, state.isConnected);
+});
+
+unsubscribe();
+```
+
+### `Device`
+Read device details such as model, platform, OS version, and runtime identifiers.
+
+```tsx
+import { Device } from "@zynth/apis";
+
+const info = Device.getInfo();
+console.log(info.model, info.osName, info.osVersion);
+```

@@ -102,7 +102,7 @@ This document outlines the current status and future development plan for the Zy
 
 ### Core Framework
 
-- [ ] Lean Core Refactor: Ensure @zynth/core contains ZERO components, only the engine.
+- [x] Lean Core Refactor: Ensure @zynth/core contains ZERO components, only the engine.
 - [ ] StyleSheet API: Implement a StyleSheet.create for style de-duplication and native optimization.
 - [ ] Hermes Intl: Enable native Intl support on Android (fbjni initialization).
 - [ ] Brand new RedBox.
@@ -111,7 +111,6 @@ This document outlines the current status and future development plan for the Zy
 
 ### Component Refinements
 
-- [ ] TextInput iOS: Fix toggle blink issues.
 - [ ] ScrollView Parity: Resolve height (iOS) vs minHeight (Android) declaration requirements.
 
 ### System APIs
