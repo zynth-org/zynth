@@ -62,7 +62,7 @@ class ZynthButtonView(context: Context) : FrameLayout(context) {
   private var hasLongPressHandler = false
   private var hapticsMode: String = "none"
   private var lastCommandSeq: Long = -1L
-  private var isReady = true
+  private var isReady = false
 
   // Configuration
   private var currentVariant: String = "filled"
@@ -566,28 +566,37 @@ class ZynthButtonView(context: Context) : FrameLayout(context) {
   // ─────────────────────────────────────────────────────────────────────────────
 
   fun setVariant(variant: String?) {
-    currentVariant = variant ?: "filled"
+    val next = variant ?: "filled"
+    if (currentVariant == next) return
+    currentVariant = next
     applyMaterialStyle()
     applyToneColor()
   }
 
   fun setTone(tone: String?) {
-    currentTone = tone ?: "primary"
+    val next = tone ?: "primary"
+    if (currentTone == next) return
+    currentTone = next
     applyMaterialStyle()
     applyToneColor()
   }
 
   fun setButtonSize(size: String?) {
-    currentSize = size ?: "medium"
+    val next = size ?: "medium"
+    if (currentSize == next) return
+    currentSize = next
     applySize()
   }
 
   fun setRounded(rounded: String?) {
-    currentRounded = rounded ?: "md"
+    val next = rounded ?: "md"
+    if (currentRounded == next) return
+    currentRounded = next
     applyCornerRadius()
   }
 
   fun setBaseColor(color: Int?) {
+    if (currentBaseColor == color) return
     currentBaseColor = color
     if (color != null) {
       applyBaseColorOverride(color)
@@ -731,6 +740,7 @@ class ZynthButtonView(context: Context) : FrameLayout(context) {
     currentRounded = "md"
     currentBaseColor = null
     isIconOnly = false
+    isReady = false
     pressRetentionOffsetPx = DEFAULT_PRESS_RETENTION_DP * density
     hitSlop = null
     
@@ -747,6 +757,7 @@ class ZynthButtonView(context: Context) : FrameLayout(context) {
     clearHitSlop()
     cancelLongPressTimer()
     applyMaterialStyle()
+    updateReadyVisibility()
   }
 
   // ─────────────────────────────────────────────────────────────────────────────

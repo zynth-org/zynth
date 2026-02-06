@@ -92,7 +92,7 @@ class ZynthButtonRegistrar : ZynthComponentRegistrar {
                   true
                 }
                 "iconOnly" -> {
-                  val iconOnly = if (value != null) JSONObject(value).optBoolean(name, false) else false
+                  val iconOnly = parseBooleanValue(value, name, false)
                   button.setIconOnly(iconOnly)
                   true
                 }
@@ -103,12 +103,12 @@ class ZynthButtonRegistrar : ZynthComponentRegistrar {
                   true
                 }
                 "disabled" -> {
-                  val disabled = if (value != null) JSONObject(value).optBoolean(name, false) else false
+                  val disabled = parseBooleanValue(value, name, false)
                   button.setDisabled(disabled)
                   true
                 }
                 "loading" -> {
-                  val loading = if (value != null) JSONObject(value).optBoolean(name, false) else false
+                  val loading = parseBooleanValue(value, name, false)
                   button.setLoading(loading)
                   true
                 }
@@ -134,30 +134,27 @@ class ZynthButtonRegistrar : ZynthComponentRegistrar {
                   true
                 }
                 "pressEffect" -> {
-                  val obj = if (value != null) JSONObject(value) else JSONObject()
-                  val effect = obj.optString(name)
+                  val effect = parseStringValue(value, name)
                   button.setPressEffect(effect)
                   true
                 }
                 "pressRetentionOffset" -> {
-                  val obj = if (value != null) JSONObject(value) else JSONObject()
-                  val offset = obj.optDouble(name, -1.0).takeIf { it >= 0 }
-                  // Double? is a Number; pass it directly (nullable)
+                  val offset = parseDoubleValue(value, name)?.takeIf { it >= 0 }
                   button.setPressRetentionOffset(offset)
                   true
                 }
                 "hitSlop" -> {
-                  val hitSlop = if (value != null) JSONObject(value).optJSONObject(name) else null
+                  val hitSlop = parseHitSlopValue(value, name)
                   button.setHitSlop(hitSlop)
                   true
                 }
                 "minimumTouchSize" -> {
-                  val size = if (value != null) JSONObject(value).optJSONObject(name) else null
+                  val size = parseObjectValue(value, name)
                   button.setMinimumTouchSize(size)
                   true
                 }
                 "preventFocusOnPress" -> {
-                  val prevent = if (value != null) JSONObject(value).optBoolean(name, false) else false
+                  val prevent = parseBooleanValue(value, name, false)
                   button.setPreventFocusOnPress(prevent)
                   true
                 }
@@ -168,7 +165,7 @@ class ZynthButtonRegistrar : ZynthComponentRegistrar {
                   true
                 }
                 "ready" -> {
-                  val ready = if (value != null) JSONObject(value).optBoolean(name, true) else true
+                  val ready = parseBooleanValue(value, name, true)
                   button.setReady(ready)
                   true
                 }
@@ -224,6 +221,58 @@ class ZynthButtonRegistrar : ZynthComponentRegistrar {
         json.trim('"')
       }
     }
+  }
+
+  private fun parseBooleanValue(json: String?, propName: String, defaultValue: Boolean): Boolean {
+    if (json == null || json == "null") return defaultValue
+    val trimmed = json.trim()
+    when {
+      trimmed.equals("true", ignoreCase = true) -> return true
+      trimmed.equals("false", ignoreCase = true) -> return false
+      trimmed == "1" -> return true
+      trimmed == "0" -> return false
+    }
+
+    return try {
+      val obj = JSONObject(trimmed)
+      if (!obj.isNull(propName)) obj.optBoolean(propName, defaultValue) else defaultValue
+    } catch (e: Exception) {
+      defaultValue
+    }
+  }
+
+  private fun parseDoubleValue(json: String?, propName: String): Double? {
+    if (json == null || json == "null") return null
+    val trimmed = json.trim()
+    trimmed.toDoubleOrNull()?.let { return it }
+
+    return try {
+      val obj = JSONObject(trimmed)
+      if (!obj.isNull(propName)) obj.optDouble(propName) else null
+    } catch (e: Exception) {
+      null
+    }
+  }
+
+  private fun parseObjectValue(json: String?, propName: String): JSONObject? {
+    if (json == null || json == "null") return null
+    return try {
+      val obj = JSONObject(json)
+      obj.optJSONObject(propName) ?: obj
+    } catch (e: Exception) {
+      null
+    }
+  }
+
+  private fun parseHitSlopValue(json: String?, propName: String): JSONObject? {
+    val obj = parseObjectValue(json, propName)
+    if (obj != null) return obj
+    val uniform = parseDoubleValue(json, propName) ?: return null
+    return JSONObject()
+      .put("top", uniform)
+      .put("left", uniform)
+      .put("bottom", uniform)
+      .put("right", uniform)
   }
 
   private fun parseColor(colorStr: String): Int? {

@@ -759,9 +759,9 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     setProperty(node, "onKeyUp", (payload: { key: string }) => {
       handleKeyUp(payload?.key ?? "");
     });
-    if (local.ready !== undefined) {
-      setProperty(node, "ready", !!local.ready);
-    }
+    // Keep Android button hidden until all prop mutations in this pass are applied.
+    // `ready` is set last so native can reveal only after final visual state is configured.
+    setProperty(node, "ready", local.ready ?? true);
   });
 
   const renderLoadingIndicator = () => {
