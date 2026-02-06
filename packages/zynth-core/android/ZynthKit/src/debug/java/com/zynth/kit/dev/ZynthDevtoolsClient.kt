@@ -10,6 +10,8 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import org.json.JSONArray
+import org.json.JSONObject
 
 private const val TAG = "ZynthDevtoolsClient"
 
@@ -27,6 +29,7 @@ class ZynthDevtoolsClient : WebSocketListener() {
   private var socket: WebSocket? = null
   private val queue = ArrayDeque<String>()
   private val maxQueue = 256
+  @Volatile private var inboundListener: ((String) -> Unit)? = null
 
   val isConnected: Boolean
     get() = socket != null
@@ -40,6 +43,10 @@ class ZynthDevtoolsClient : WebSocketListener() {
     stopped = false
     reconnectAttempts = 0
     openSocket()
+  }
+
+  fun setInboundListener(listener: ((String) -> Unit)?) {
+    inboundListener = listener
   }
 
   fun disconnect() {
@@ -62,7 +69,21 @@ class ZynthDevtoolsClient : WebSocketListener() {
   override fun onOpen(webSocket: WebSocket, response: Response) {
     reconnectAttempts = 0
     socket = webSocket
+    subscribeAutomationTopics(webSocket)
     flushIfPossible()
+  }
+
+  override fun onMessage(webSocket: WebSocket, text: String) {
+    val envelope = runCatching { JSONObject(text) }.getOrNull() ?: return
+    if (envelope.optString("type") != "event") return
+    val event = envelope.opt("event")
+    val eventJson = when (event) {
+      is JSONObject -> event.toString()
+      is Map<*, *> -> JSONObject(event).toString()
+      is String -> runCatching { JSONObject(event) }.getOrNull()?.toString()
+      else -> null
+    } ?: return
+    inboundListener?.invoke(eventJson)
   }
 
   override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
@@ -84,6 +105,13 @@ class ZynthDevtoolsClient : WebSocketListener() {
     val url = wsUrl ?: return
     val request = Request.Builder().url(url).build()
     socket = client.newWebSocket(request, this)
+  }
+
+  private fun subscribeAutomationTopics(webSocket: WebSocket) {
+    val payload = JSONObject()
+      .put("type", "sub")
+      .put("topics", JSONArray().put("automation/discover").put("automation/request"))
+    webSocket.send(payload.toString())
   }
 
   private fun flushIfPossible() {

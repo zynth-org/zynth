@@ -5,10 +5,20 @@ final class ZynthDevtoolsModule: ZynthModule {
 
 #if DEBUG
   private let client = ZynthDevtoolsClient()
+  private weak var runtime: ZynthRuntime?
 #endif
+
+  init(runtime: ZynthRuntime? = nil) {
+#if DEBUG
+    self.runtime = runtime
+#endif
+  }
 
   func initialize() {
 #if DEBUG
+    client.setInboundSink { [weak self] event in
+      self?.forwardInboundDevtoolsEvent(event)
+    }
     let env = ProcessInfo.processInfo.environment
     if let urlString = env["ZYNTH_DEVTOOLS_URL"], let url = URL(string: urlString) {
       let token = env["ZYNTH_DEVTOOLS_TOKEN"]
@@ -19,6 +29,7 @@ final class ZynthDevtoolsModule: ZynthModule {
 
   func invalidate() {
 #if DEBUG
+    client.setInboundSink(nil)
     client.disconnect()
 #endif
   }
@@ -37,7 +48,7 @@ final class ZynthDevtoolsModule: ZynthModule {
       client.connect(url: url, token: token)
       return ["result": true]
     case "emit":
-      guard var event = args as? [String: Any] else {
+      guard let event = args as? [String: Any] else {
         return ["error": "invalid_arguments"]
       }
       if event["topic"] == nil {
@@ -54,9 +65,22 @@ final class ZynthDevtoolsModule: ZynthModule {
     return ["result": false]
 #endif
   }
+
+  private func forwardInboundDevtoolsEvent(_ event: [String: Any]) {
+#if DEBUG
+    guard let runtime else { return }
+    guard let data = try? JSONSerialization.data(withJSONObject: event, options: []),
+          let json = String(data: data, encoding: .utf8)
+    else {
+      return
+    }
+    runtime.callGlobal("__zynth_onDevtoolsEventRaw", args: [json])
+#endif
+  }
 }
 
 #if DEBUG
+
 final class ZynthDevtoolsClient: NSObject {
   private let queue = DispatchQueue(label: "dev.zynth.devtools")
   private var session: URLSession!
@@ -68,6 +92,7 @@ final class ZynthDevtoolsClient: NSObject {
   private var reconnectAttempts = 0
   private var reconnectWorkItem: DispatchWorkItem?
   private let maxQueue = 256
+  private var inboundSink: (([String: Any]) -> Void)?
 
   var isConnected: Bool {
     return socket?.state == .running
@@ -90,6 +115,12 @@ final class ZynthDevtoolsClient: NSObject {
       self.stopped = false
       self.reconnectAttempts = 0
       self.openSocket()
+    }
+  }
+
+  func setInboundSink(_ sink: (([String: Any]) -> Void)?) {
+    queue.async { [weak self] in
+      self?.inboundSink = sink
     }
   }
 
@@ -160,6 +191,7 @@ final class ZynthDevtoolsClient: NSObject {
     socket?.cancel(with: .goingAway, reason: nil)
     socket = session.webSocketTask(with: socketURL)
     socket?.resume()
+    subscribeAutomationTopics()
     flushIfPossible()
     receiveNextMessage()
   }
@@ -169,7 +201,8 @@ final class ZynthDevtoolsClient: NSObject {
     socket.receive { [weak self] result in
       guard let self else { return }
       switch result {
-      case .success:
+      case .success(let message):
+        self.handleInboundMessage(message)
         self.receiveNextMessage()
       case .failure:
         self.queue.async {
@@ -177,6 +210,59 @@ final class ZynthDevtoolsClient: NSObject {
         }
       }
     }
+  }
+
+  private func handleInboundMessage(_ message: URLSessionWebSocketTask.Message) {
+    let text: String
+    switch message {
+    case .string(let payload):
+      text = payload
+    case .data(let payload):
+      guard let decoded = String(data: payload, encoding: .utf8) else { return }
+      text = decoded
+    @unknown default:
+      return
+    }
+
+    guard let data = text.data(using: .utf8),
+          let json = try? JSONSerialization.jsonObject(with: data, options: []),
+          let envelope = json as? [String: Any],
+          let type = envelope["type"] as? String,
+          type == "event"
+    else {
+      return
+    }
+
+    let event = envelope["event"]
+    let eventDict: [String: Any]?
+    if let parsed = event as? [String: Any] {
+      eventDict = parsed
+    } else if let raw = event as? String,
+              let rawData = raw.data(using: .utf8),
+              let parsed = try? JSONSerialization.jsonObject(with: rawData, options: []) as? [String: Any] {
+      eventDict = parsed
+    } else {
+      eventDict = nil
+    }
+    guard let eventDict else { return }
+
+    queue.async { [weak self] in
+      self?.inboundSink?(eventDict)
+    }
+  }
+
+  private func subscribeAutomationTopics() {
+    guard let socket else { return }
+    let payload: [String: Any] = [
+      "type": "sub",
+      "topics": ["automation/discover", "automation/request"],
+    ]
+    guard let data = try? JSONSerialization.data(withJSONObject: payload, options: []),
+          let json = String(data: data, encoding: .utf8)
+    else {
+      return
+    }
+    socket.send(.string(json)) { _ in }
   }
 
   private func scheduleReconnect() {

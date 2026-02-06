@@ -36,6 +36,11 @@ module.exports = {
       type: "array",
       describe: "Only print events matching these tags",
     });
+    yargs.option("show-automation", {
+      type: "boolean",
+      default: false,
+      describe: "Print automation transport events (automation/* topics)",
+    });
     yargs.option("replay-limit", {
       type: "number",
       default: 200,
@@ -53,6 +58,7 @@ module.exports = {
         topics: (argv.topic || []).map(String),
         levels: (argv.level || []).map((value) => String(value).toLowerCase()),
         tags: (argv.tag || []).map(String),
+        hideAutomation: !argv.showAutomation,
       },
     });
     const server = await hub.start();

@@ -263,6 +263,41 @@ Use this as the base for:
 - debug overlays
 - external transport (Flipper plugin / Maestro adapter)
 
+CLI contract (implemented):
+
+- `zynth automation list`
+  - discovers connected runtimes through the devtools hub.
+- `zynth automation read`
+  - reads one target runtime snapshot.
+  - fails if target is ambiguous, so CI/agents are deterministic.
+
+Recommended target resolution order:
+
+1. `--runtime <runtimeId>` (most precise)
+2. `--app-id <appId> --platform <ios|android>`
+
+Read filters (performance-oriented):
+
+- `--surface <id>`
+- `--root-node <id>`
+- `--max-depth <n>`
+- `--styles`
+- `--resolved-styles`
+- `--component-state`
+- `--text`
+- `--global-frame=false`
+
+Diff/assertion behavior for test workflows:
+
+- `--expect <path/to/expected.json>` compares snapshot against expected subset.
+- `--strict` also fails on unexpected surfaces/nodes (close to snapshot-test semantics).
+- non-zero exit code on mismatch, suitable for Vitest/Jest wrappers.
+
+Install/runtime requirement:
+
+- CLI communicates over the devtools hub; target app must import `@zynth/automation`.
+- if no runtime is discovered, command prints actionable error and exits non-zero.
+
 ---
 
 ## Platform-Specific Risks

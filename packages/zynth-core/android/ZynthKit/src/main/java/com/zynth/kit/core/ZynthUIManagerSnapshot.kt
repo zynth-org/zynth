@@ -4,12 +4,16 @@ import android.os.Looper
 import android.view.View
 import android.widget.TextView
 import com.zynth.kit.components.ZynthComponentRegistry
+import kotlin.math.roundToInt
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import org.json.JSONArray
 import org.json.JSONObject
 
 private const val SNAPSHOT_TIMEOUT_MS = 250L
+private const val SHADOW_BOOST_BLUR_MULTIPLIER = 2.5f
+private const val SHADOW_BOOST_OFFSET_MULTIPLIER = 1.6f
+private const val SHADOW_BOOST_ALPHA_MULTIPLIER = 12.0f
 
 internal fun ZynthUIManager.buildScreenSnapshot(options: JSONObject?): JSONObject {
   if (Looper.myLooper() == Looper.getMainLooper()) {
@@ -246,9 +250,12 @@ private fun Any?.toIntOrNull(): Int? {
 }
 
 private fun ZynthUIManager.resolvedStylesForNode(nodeId: Int, view: View): JSONObject {
+  val configuredElevation = yogaStyleCache[nodeId]?.get("elevation").asDoubleOrNull()
   val output = JSONObject()
     .put("opacity", view.alpha.toDouble())
     .put("elevation", view.elevation.toDouble())
+    .put("renderElevation", view.elevation.toDouble())
+    .put("configuredElevation", configuredElevation ?: JSONObject.NULL)
     .put("zIndex", view.z.toDouble())
     .put("rotation", view.rotation.toDouble())
     .put("rotationX", view.rotationX.toDouble())
@@ -262,14 +269,36 @@ private fun ZynthUIManager.resolvedStylesForNode(nodeId: Int, view: View): JSONO
 
   val state = styleStates[nodeId]
   if (state != null) {
+    val hasRnShadowProps = state.shadowColor != null ||
+      state.shadowOpacity != null ||
+      state.shadowRadius != null ||
+      state.shadowOffsetX != null ||
+      state.shadowOffsetY != null
+    val hasBoxShadowLayers = !state.shadowLayers.isNullOrEmpty()
+    val effectiveShadow = effectiveShadowForState(state, density, view.elevation.toDouble())
     output
       .put("hasBorderDrawable", state.borderDrawable != null)
-      .put("hasShadowLayers", state.shadowLayers != null)
+      .put("hasShadowLayers", hasBoxShadowLayers)
+      .put("hasShadow", hasBoxShadowLayers || hasRnShadowProps || view.elevation > 0f)
       .put("shadowColor", state.shadowColor ?: JSONObject.NULL)
       .put("shadowOpacity", state.shadowOpacity ?: JSONObject.NULL)
       .put("shadowRadius", state.shadowRadius ?: JSONObject.NULL)
       .put("shadowOffsetX", state.shadowOffsetX ?: JSONObject.NULL)
       .put("shadowOffsetY", state.shadowOffsetY ?: JSONObject.NULL)
+      .put("shadowSource", effectiveShadow?.source ?: "none")
+      .put("effectiveShadowColor", effectiveShadow?.color ?: JSONObject.NULL)
+      .put(
+        "effectiveShadowColorHex",
+        effectiveShadow?.color?.let(::argbIntToHex) ?: JSONObject.NULL
+      )
+      .put(
+        "effectiveShadowColorRgba",
+        effectiveShadow?.color?.let(::argbIntToRgbaJson) ?: JSONObject.NULL
+      )
+      .put("effectiveShadowRadius", effectiveShadow?.blurRadius ?: JSONObject.NULL)
+      .put("effectiveShadowOffsetX", effectiveShadow?.offsetX ?: JSONObject.NULL)
+      .put("effectiveShadowOffsetY", effectiveShadow?.offsetY ?: JSONObject.NULL)
+      .put("shadowLayerCount", state.shadowLayers?.size ?: 0)
       .put("hasTransformOps", state.transformOps != null)
       .put("hasTransformOrigin", state.transformOrigin != null)
   }
@@ -289,4 +318,110 @@ private fun ZynthUIManager.resolvedStylesForNode(nodeId: Int, view: View): JSONO
   }
 
   return output
+}
+
+private data class EffectiveShadow(
+  val source: String,
+  val color: Int?,
+  val blurRadius: Double,
+  val offsetX: Double,
+  val offsetY: Double,
+)
+
+private fun effectiveShadowForState(
+  state: ZynthViewStyleState,
+  density: Float,
+  renderElevation: Double,
+): EffectiveShadow? {
+  val boxShadow = state.shadowLayers
+    ?.firstOrNull()
+    ?.let { layer ->
+      layer.copy(
+        offsetX = layer.offsetX * density,
+        offsetY = layer.offsetY * density,
+        blurRadius = layer.blurRadius * density,
+        spread = layer.spread * density,
+      )
+    }
+    ?.let(::boostShadow)
+  if (boxShadow != null) {
+    return EffectiveShadow(
+      source = "boxShadow",
+      color = boxShadow.color,
+      blurRadius = boxShadow.blurRadius.toDouble(),
+      offsetX = boxShadow.offsetX.toDouble(),
+      offsetY = boxShadow.offsetY.toDouble(),
+    )
+  }
+
+  val rnShadow = ZynthShadowParser
+    .fromReactNative(
+      state.shadowColor,
+      state.shadowOpacity,
+      state.shadowRadius,
+      state.shadowOffsetX,
+      state.shadowOffsetY
+    )
+    ?.firstOrNull()
+    ?.let(::boostShadow)
+  if (rnShadow != null) {
+    return EffectiveShadow(
+      source = "reactNativeShadow",
+      color = rnShadow.color,
+      blurRadius = rnShadow.blurRadius.toDouble(),
+      offsetX = rnShadow.offsetX.toDouble(),
+      offsetY = rnShadow.offsetY.toDouble(),
+    )
+  }
+
+  if (renderElevation > 0.0) {
+    return EffectiveShadow(
+      source = "elevation",
+      color = null,
+      blurRadius = renderElevation,
+      offsetX = 0.0,
+      offsetY = 0.0,
+    )
+  }
+
+  return null
+}
+
+private fun boostShadow(shadow: ShadowLayer): ShadowLayer {
+  val alpha = (shadow.color ushr 24) and 0xFF
+  val boostedAlpha = (alpha * SHADOW_BOOST_ALPHA_MULTIPLIER).roundToInt().coerceIn(0, 255)
+  val color = (boostedAlpha shl 24) or (shadow.color and 0x00FFFFFF)
+  return shadow.copy(
+    blurRadius = shadow.blurRadius * SHADOW_BOOST_BLUR_MULTIPLIER,
+    offsetX = shadow.offsetX * SHADOW_BOOST_OFFSET_MULTIPLIER,
+    offsetY = shadow.offsetY * SHADOW_BOOST_OFFSET_MULTIPLIER,
+    color = color
+  )
+}
+
+private fun Any?.asDoubleOrNull(): Double? {
+  return when (this) {
+    is Int -> toDouble()
+    is Long -> toDouble()
+    is Float -> toDouble()
+    is Double -> this
+    is String -> toDoubleOrNull()
+    else -> null
+  }
+}
+
+private fun argbIntToHex(color: Int): String {
+  return String.format("#%08X", color)
+}
+
+private fun argbIntToRgbaJson(color: Int): JSONObject {
+  val a = (color ushr 24) and 0xFF
+  val r = (color ushr 16) and 0xFF
+  val g = (color ushr 8) and 0xFF
+  val b = color and 0xFF
+  return JSONObject()
+    .put("r", r)
+    .put("g", g)
+    .put("b", b)
+    .put("a", a)
 }

@@ -5,12 +5,16 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.util.Log
 import com.zynth.kit.dev.ZynthDevtoolsClient
+import com.zynth.kit.runtime.ZynthRuntime
 import com.zynth.kit.runtime.ZynthModule
 import java.io.File
 import java.nio.charset.Charset
 import org.json.JSONObject
 
-class DevtoolsModule(private val context: Context) : ZynthModule {
+class DevtoolsModule(
+  private val context: Context,
+  private val runtime: ZynthRuntime? = null
+) : ZynthModule {
   override val name: String = "Devtools"
 
   companion object {
@@ -39,6 +43,11 @@ class DevtoolsModule(private val context: Context) : ZynthModule {
         return
       }
       Log.w(TAG, "No devtools URL found; devtools disabled")
+    }
+
+    @JvmStatic
+    fun setInboundSink(sink: ((String) -> Unit)?) {
+      client.setInboundListener(sink)
     }
 
     @JvmStatic
@@ -112,9 +121,16 @@ class DevtoolsModule(private val context: Context) : ZynthModule {
 
   override fun initialize() {
     start(context)
+    val runtimeRef = runtime
+    if (runtimeRef != null) {
+      setInboundSink { payload ->
+        runtimeRef.dispatchDevtoolsEvent(payload)
+      }
+    }
   }
 
   override fun invalidate() {
+    setInboundSink(null)
     client.disconnect()
   }
 

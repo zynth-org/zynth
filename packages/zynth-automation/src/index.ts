@@ -1,5 +1,6 @@
 export { Automation } from "./automation";
 export { diffSnapshot, assertSnapshotMatches } from "./diff";
+export { installAutomationDevtoolsBridge } from "./remote";
 export type {
   AutomationConfig,
   AutomationExpectedNode,
@@ -12,3 +13,7 @@ export type {
   AutomationSurfaceSnapshot,
   AutomationSnapshot,
 } from "./types";
+
+import { installAutomationDevtoolsBridge } from "./remote";
+
+installAutomationDevtoolsBridge();

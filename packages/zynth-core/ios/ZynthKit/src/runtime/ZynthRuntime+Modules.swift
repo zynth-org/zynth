@@ -95,7 +95,7 @@ public extension ZynthRuntime {
     }
     var modules: [ZynthModule] = [fetch]
 #if DEBUG
-    modules.append(ZynthDevtoolsModule())
+    modules.append(ZynthDevtoolsModule(runtime: self))
     installDevtoolsCrashHandlersIfNeeded()
 #endif
     installModules(modules)

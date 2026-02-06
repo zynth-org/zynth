@@ -74,6 +74,10 @@ function createDevtoolsHub({
 
   function shouldPrintEvent(event) {
     if (!print) return false;
+    if (filters.hideAutomation) {
+      const topic = String(event.topic || "");
+      if (topic.startsWith("automation/")) return false;
+    }
     if (filters.hideDebug) {
       const level = String(event.level || "").toLowerCase();
       if (level === "debug") return false;

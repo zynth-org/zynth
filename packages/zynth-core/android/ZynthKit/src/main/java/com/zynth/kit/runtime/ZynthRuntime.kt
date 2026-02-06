@@ -55,7 +55,7 @@ class ZynthRuntime(val root: ZynthRootView) {
 
   fun installDefaultModules() {
     DevtoolsModule.start(root.context)
-    installModules(listOf(DevtoolsModule(root.context), FetchModule(this)))
+    installModules(listOf(DevtoolsModule(root.context, this), FetchModule(this)))
   }
 
   private fun installCrashHandler() {
@@ -219,5 +219,18 @@ class ZynthRuntime(val root: ZynthRootView) {
 
   internal fun handleDevMessage(payload: String) {
     handleDevMessageInternal(payload)
+  }
+
+  internal fun dispatchDevtoolsEvent(payload: String) {
+    val escapedPayload = JSONObject.quote(payload)
+    runOnJS {
+      runCatching {
+        JSBridge.evaluateScript(
+          runtimePtr,
+          "(function(){var fn=globalThis.__zynth_onDevtoolsEventRaw; if (typeof fn==='function') fn($escapedPayload);})();",
+          "devtools-inbound.js"
+        )
+      }
+    }
   }
 }
