@@ -3,6 +3,7 @@ package com.zynth.components.bottomsheet
 import android.content.Context
 import android.content.DialogInterface
 import android.graphics.Color
+import android.view.Choreographer
 import android.view.View
 import android.widget.FrameLayout
 import androidx.core.graphics.Insets
@@ -48,8 +49,11 @@ class ZynthBottomSheetDialog(
   private var pendingIndex: Int = 0
   private var hasPresentedOnce: Boolean = false
   private var systemBottomInset: Int = 0
-  private var pendingHeightRestore: Int? = null
+  private var pendingIndexRestore: Int? = null
   private var pendingExpandedOffset: Int? = null
+  private var currentSnapIndex: Int = 0
+  private var closeFallbackGeneration: Int = 0
+  private var closeFallbackFrameCallback: Choreographer.FrameCallback? = null
   private val bottomSheetCallback = object : BottomSheetBehavior.BottomSheetCallback() {
     override fun onSlide(bottomSheet: View, slideOffset: Float) {
       listener?.onSlide(bottomSheet, slideOffset)
@@ -58,6 +62,7 @@ class ZynthBottomSheetDialog(
 
     override fun onStateChanged(bottomSheet: View, newState: Int) {
       listener?.onStateChanged(bottomSheet, newState)
+      updateCurrentIndex(bottomSheet, newState)
       if (newState != BottomSheetBehavior.STATE_EXPANDED) {
         commitPendingExpandedOffset()
       }
@@ -74,6 +79,7 @@ class ZynthBottomSheetDialog(
     setCanceledOnTouchOutside(false)
     setOnShowListener(::handleShow)
     setOnDismissListener {
+      cancelCloseFallback()
       overlayView = null
       sheetContainer = null
       lastOverlayProgress = 0f
@@ -84,8 +90,16 @@ class ZynthBottomSheetDialog(
   }
 
   fun setSnapPoints(points: List<BottomSheetSnapPoint>) {
-    pendingHeightRestore = sheetContainer?.let { visibleHeightForSheet(it) }
-    snapPoints = if (points.isEmpty()) DEFAULT_SNAP_POINTS else points
+    val resolvedPoints = if (points.isEmpty()) DEFAULT_SNAP_POINTS else points
+    if (resolvedPoints == snapPoints) {
+      return
+    }
+    pendingIndexRestore = if (isShowing) {
+      currentSnapIndex
+    } else {
+      null
+    }
+    snapPoints = resolvedPoints
     configureBehavior()
   }
 
@@ -110,6 +124,7 @@ class ZynthBottomSheetDialog(
   }
 
   fun present(index: Int, animated: Boolean = true) {
+    cancelCloseFallback()
     pendingIndex = index
     if (isShowing) {
       setStateForIndex(index, animated)
@@ -128,6 +143,7 @@ class ZynthBottomSheetDialog(
       dismiss()
     } else {
       behavior.state = BottomSheetBehavior.STATE_HIDDEN
+      scheduleCloseFallback()
     }
   }
 
@@ -232,9 +248,13 @@ class ZynthBottomSheetDialog(
   private fun applyStateForIndex(index: Int) {
     val behavior = behavior ?: return
     val resolvedIndex = normalizedIndex(index)
+    currentSnapIndex = resolvedIndex
     val state = getStateForSizeIndex(resolvedIndex)
     if (behavior.state != state) {
       behavior.state = state
+    }
+    sheetContainer?.let { container ->
+      container.post { updateOverlayProgress(container) }
     }
   }
 
@@ -353,16 +373,15 @@ class ZynthBottomSheetDialog(
   }
 
   private fun restorePendingHeightIfNeeded() {
-    val height = pendingHeightRestore ?: return
-    pendingHeightRestore = null
-    val index = nearestIndexForHeight(height)
+    val index = pendingIndexRestore ?: return
+    pendingIndexRestore = null
     applyStateForIndex(index)
     commitPendingExpandedOffset()
   }
 
   private fun applyExpandedOffset(offset: Int) {
     val behavior = behavior ?: return
-    if (pendingHeightRestore != null && behavior.state == BottomSheetBehavior.STATE_EXPANDED) {
+    if (pendingIndexRestore != null && behavior.state == BottomSheetBehavior.STATE_EXPANDED) {
       pendingExpandedOffset = offset
       return
     }
@@ -378,5 +397,52 @@ class ZynthBottomSheetDialog(
     }
     behavior.expandedOffset = pending
     pendingExpandedOffset = null
+  }
+
+  private fun scheduleCloseFallback() {
+    cancelCloseFallback()
+    val generation = ++closeFallbackGeneration
+    var framesRemaining = 24
+    val callback = object : Choreographer.FrameCallback {
+      override fun doFrame(frameTimeNanos: Long) {
+        if (generation != closeFallbackGeneration) return
+        if (!isShowing) return
+        val behavior = behavior ?: return
+        if (behavior.state == BottomSheetBehavior.STATE_HIDDEN) return
+        if (framesRemaining <= 0) {
+          dismiss()
+          return
+        }
+        framesRemaining -= 1
+        Choreographer.getInstance().postFrameCallback(this)
+      }
+    }
+    closeFallbackFrameCallback = callback
+    Choreographer.getInstance().postFrameCallback(callback)
+  }
+
+  private fun cancelCloseFallback() {
+    closeFallbackGeneration += 1
+    val callback = closeFallbackFrameCallback ?: return
+    Choreographer.getInstance().removeFrameCallback(callback)
+    closeFallbackFrameCallback = null
+  }
+
+  private fun updateCurrentIndex(sheet: View, state: Int) {
+    currentSnapIndex = when {
+      resolvedSnapHeights.isEmpty() -> 0
+      resolvedSnapHeights.size == 1 -> 0
+      resolvedSnapHeights.size == 2 -> when (state) {
+        BottomSheetBehavior.STATE_EXPANDED -> 1
+        BottomSheetBehavior.STATE_COLLAPSED -> 0
+        else -> nearestIndexForHeight(visibleHeightForSheet(sheet))
+      }
+      else -> when (state) {
+        BottomSheetBehavior.STATE_COLLAPSED -> 0
+        BottomSheetBehavior.STATE_HALF_EXPANDED -> 1
+        BottomSheetBehavior.STATE_EXPANDED -> 2
+        else -> nearestIndexForHeight(visibleHeightForSheet(sheet))
+      }
+    }
   }
 }

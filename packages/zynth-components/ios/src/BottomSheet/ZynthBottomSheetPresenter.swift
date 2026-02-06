@@ -152,7 +152,9 @@ final class ZynthBottomSheetPresenter: NSObject {
     guard let sheet = controller.sheetPresentationController else { return }
     let target = normalizedIndex(index)
     if target < detentIdentifiers.count {
-      sheet.selectedDetentIdentifier = detentIdentifiers[target]
+      sheet.animateChanges {
+        sheet.selectedDetentIdentifier = detentIdentifiers[target]
+      }
     }
   }
 

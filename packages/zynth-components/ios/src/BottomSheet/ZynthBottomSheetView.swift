@@ -59,7 +59,11 @@ public final class ZynthBottomSheetView: UIView {
 
   public override func didMoveToWindow() {
     super.didMoveToWindow()
-    guard window != nil else { return }
+    guard window != nil else {
+      // Ensure we do not keep an orphaned presented sheet after host detaches (e.g. HMR remount).
+      presenter.dismiss()
+      return
+    }
     if let pending = pendingOpenState {
       pendingOpenState = nil
       presenter.setOpenState(pending, preferredIndex: options.initialSnapIndex)

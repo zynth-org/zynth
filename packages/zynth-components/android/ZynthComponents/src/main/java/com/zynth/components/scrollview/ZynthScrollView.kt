@@ -1079,9 +1079,24 @@ internal class ZynthScrollView(
     var contentHeight = viewportHeight
     if (contentView.childCount > 0) {
       val rect = Rect()
+      fun isDescendantOfContent(view: View): Boolean {
+        var current: View? = view
+        while (current != null) {
+          if (current === contentView) return true
+          val parent = current.parent
+          current = if (parent is View) parent else null
+        }
+        return false
+      }
       fun accumulate(view: View) {
+        if (!isDescendantOfContent(view)) return
         rect.set(0, 0, view.width, view.height)
-        contentView.offsetDescendantRectToMyCoords(view, rect)
+        try {
+          contentView.offsetDescendantRectToMyCoords(view, rect)
+        } catch (_: IllegalArgumentException) {
+          // A child can be reparented while this update is queued (e.g. dialog-hosted content).
+          return
+        }
         contentWidth = max(contentWidth, rect.right)
         contentHeight = max(contentHeight, rect.bottom)
         if (view is ViewGroup) {

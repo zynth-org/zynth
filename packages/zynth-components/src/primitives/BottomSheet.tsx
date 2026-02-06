@@ -8,8 +8,8 @@ import {
   type ParentComponent,
 } from "solid-js";
 import type { HostNode, Style } from "@zynth/core";
-import { setProperty } from "@zynth/core";
-import { Dimensions } from "@zynth/apis";
+import { getActiveSurface, render, setActiveSurface, setProperty } from "@zynth/core";
+import { Dimensions, Platform } from "@zynth/apis";
 import { View } from "./View";
 
 export type SnapPoint = number | `${number}%`;
@@ -51,6 +51,8 @@ export interface BottomSheetProps {
 }
 
 const DEFAULT_SNAP_POINTS: SnapPoint[] = ["30%", "64%", "90%"];
+const BOTTOM_SHEET_SURFACE_ID_BASE = 1 << 24;
+let nextBottomSheetSurfaceId = BOTTOM_SHEET_SURFACE_ID_BASE;
 const DEFAULT_SHEET_STYLE: Style = {
   position: "absolute",
   top: 0,
@@ -61,6 +63,15 @@ const DEFAULT_SHEET_STYLE: Style = {
 
 const DEFAULT_CONTENT_STYLE: Style = {
   flex: 1,
+  ...Platform.select({
+    ios: {},
+    android: {
+      borderTopLeftRadius: 12,
+      borderTopRightRadius: 12,
+      overflow: "hidden",
+      elevation: 8,
+    },
+  }),
 };
 
 const resolveSnapPointToDp = (
@@ -90,6 +101,27 @@ const asInternalController = (
 const sendCommand = (host: HostNode | null, command: BottomSheetCommand) => {
   if (!host) return;
   setProperty(host, "__command", JSON.stringify(command));
+};
+
+const allocateBottomSheetSurfaceId = (): number => {
+  const id = nextBottomSheetSurfaceId;
+  nextBottomSheetSurfaceId += 1;
+  return id;
+};
+
+const runWithSurface = <T,>(surfaceId: number, work: () => T): T => {
+  const previous = getActiveSurface();
+  const shouldSwitch = previous !== surfaceId;
+  if (shouldSwitch) {
+    setActiveSurface(surfaceId);
+  }
+  try {
+    return work();
+  } finally {
+    if (shouldSwitch) {
+      setActiveSurface(previous);
+    }
+  }
 };
 
 export const createBottomSheetController = (): BottomSheetController => {
@@ -151,13 +183,15 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
   const resolvedOpen = () =>
     isControlled() ? !!local.open : uncontrolledOpen();
 
-  const [windowHeight, setWindowHeight] = createSignal(
-    Dimensions.get("window").height,
-  );
+  const [windowSize, setWindowSize] = createSignal(Dimensions.get("window"));
+  const useSurfacePortal = () => Platform.OS === "ios";
+  const portalSurfaceId = useSurfacePortal()
+    ? allocateBottomSheetSurfaceId()
+    : null;
 
   createEffect(() => {
     const unsubscribe = Dimensions.observe("window", (metrics) => {
-      setWindowHeight(metrics.height);
+      setWindowSize(metrics);
     });
     onCleanup(unsubscribe);
   });
@@ -175,7 +209,7 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
 
   const maxSnapHeight = createMemo(() => {
     const points = local.snapPoints ?? DEFAULT_SNAP_POINTS;
-    const height = windowHeight();
+    const height = windowSize().height;
     let result = 0;
     for (const point of points) {
       result = Math.max(result, resolveSnapPointToDp(point, height));
@@ -202,7 +236,24 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
   const sheetStyle = createMemo<Style>(() => ({
     ...DEFAULT_SHEET_STYLE,
     ...local.style,
+    ...Platform.select({
+      ios: {},
+      android: {
+        width: 0,
+        height: 0,
+      },
+      default: {},
+    }),
   }));
+
+  const contentWrapperStyle = createMemo<Style>(() => ({
+    position: "absolute",
+    top: 0,
+    left: 0,
+    width: windowSize().width,
+    height: windowSize().height,
+  }));
+  const useWindowWrapper = () => Platform.OS === "android";
 
   const controller = asInternalController(local.controller);
 
@@ -305,9 +356,66 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
     });
   });
 
-  return (
+  const sheetNode = () => (
     <zynth-bottom-sheet ref={attachHost} style={sheetStyle()}>
-      <View style={contentStyle()}>{local.children}</View>
+      {useWindowWrapper() ? (
+        <View style={contentWrapperStyle()} pointerEvents="box-none">
+          <View style={contentStyle()}>
+            {local.children}
+            <View
+              pointerEvents="none"
+              style={{
+                justifyContent: "center",
+                width: "100%",
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+              }}
+            >
+              <View
+                pointerEvents="none"
+                style={{
+                  width: 40,
+                  height: 6,
+                  backgroundColor: "#ccc",
+                  borderRadius: 2,
+                  alignSelf: "center",
+                  marginTop: 8,
+                }}
+              />
+            </View>
+          </View>
+        </View>
+      ) : (
+        <View style={contentStyle()}>
+          {local.children}
+        </View>
+      )}
     </zynth-bottom-sheet>
   );
+
+  if (useSurfacePortal() && portalSurfaceId != null) {
+    createEffect(() => {
+      const surfaceId = portalSurfaceId;
+      // Ensure native surface exists before we render into it.
+      runWithSurface(surfaceId, () => undefined);
+      const dispose = render(
+        () => runWithSurface(surfaceId, () => sheetNode()),
+        { id: surfaceId, type: "root" } as HostNode,
+      );
+      onCleanup(() => {
+        dispose();
+      });
+    });
+
+    return (
+      <View
+        pointerEvents="none"
+        style={{ width: 0, height: 0, position: "absolute", top: 0, left: 0 }}
+      />
+    );
+  }
+
+  return sheetNode();
 };

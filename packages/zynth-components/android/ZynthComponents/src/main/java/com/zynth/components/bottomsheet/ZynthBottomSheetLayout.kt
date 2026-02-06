@@ -64,6 +64,9 @@ class ZynthBottomSheetLayout @JvmOverloads constructor(
   }
 
   fun unbind() {
+    pendingOpenIndex = null
+    dialog.dismissSheet()
+    isOpen = false
     manager = null
     nodeId = -1
   }
@@ -130,6 +133,8 @@ class ZynthBottomSheetLayout @JvmOverloads constructor(
   override fun onDetachedFromWindow() {
     super.onDetachedFromWindow()
     isAttached = false
+    pendingOpenIndex = null
+    dialog.dismissSheet()
   }
 
   private fun handleSlide(sheet: View, slideOffset: Float) {
