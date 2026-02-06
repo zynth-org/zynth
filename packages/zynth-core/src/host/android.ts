@@ -69,7 +69,10 @@ export function createAndroidHost(): Host {
     queue.push({ type: "batch", op });
   };
 
-  const encodeTypedBatch = (ops: BatchOperation[]) => {
+  const encodeTypedBatch = (
+    ops: BatchOperation[],
+    meta: HostBatchMeta = { kind: "flush", scope: "global" },
+  ) => {
     const stringTable: string[] = [];
     const stringIndex = new Map<string, number>();
     const encoded: number[] = [];
@@ -223,7 +226,7 @@ export function createAndroidHost(): Host {
     }
 
     return {
-      meta: { kind: "flush", scope: "global" },
+      meta,
       stringTable,
       ops: new Float64Array(encoded).buffer,
     };
@@ -261,7 +264,9 @@ export function createAndroidHost(): Host {
           if (typeof (ui as any).applyBatchTyped !== "function") {
             throw new Error("Typed batch is required for Android host");
           }
-          (ui as any).applyBatchTyped(encodeTypedBatch(batchAccumulator));
+          (ui as any).applyBatchTyped(
+            encodeTypedBatch(batchAccumulator, { kind: "flush", scope: "global" }),
+          );
           batchAccumulator = [];
         };
 
@@ -332,7 +337,10 @@ export function createAndroidHost(): Host {
 
     const assign = (key: string, value: unknown) => {
       if (value !== undefined) {
-        enqueueBatchOp({ type: "setProp", nodeId: id, name: key, value });
+        const op: BatchOperation = { type: "setProp", nodeId: id, name: key, value };
+        if (!tryEnqueueBatch(op)) {
+          enqueueBatchOp(op);
+        }
       }
     };
 
@@ -482,6 +490,7 @@ export function createAndroidHost(): Host {
     createNode(type, props) {
       let id: number | null = null;
       let recycled = false;
+      const inBatch = !!currentBatch();
 
       if (type !== "text" && RECYCLING_CONTEXTS.size > 0) {
         for (const [contextId, context] of RECYCLING_CONTEXTS) {
@@ -507,68 +516,103 @@ export function createAndroidHost(): Host {
       PARENTS.set(id, null);
       CHILDREN.set(id, []);
       TYPES.set(id, type);
-      if (props?.style)
-        enqueueBatchOp({
+      if (props?.style) {
+        const op: BatchOperation = {
           type: "setProp",
           nodeId: id,
           name: "style",
           value: props.style as Style,
-        });
+        };
+        if (!tryEnqueueBatch(op)) {
+          enqueueBatchOp(op);
+        }
+      }
       if (typeof props?.onPress === "function") {
         enqueueOperation(() => ui.setHandler(id!, "onPress", props.onPress));
       }
       if (typeof props?.onLayout === "function") {
         enqueueOperation(() => ui.setHandler(id!, "onLayout", props.onLayout));
       }
-      if (props?.accessibilityLabel)
-        enqueueBatchOp({
+      if (props?.accessibilityLabel) {
+        const op: BatchOperation = {
           type: "setProp",
           nodeId: id,
           name: "accessibilityLabel",
           value: props.accessibilityLabel,
-        });
-      if (props?.accessibilityHint)
-        enqueueBatchOp({
+        };
+        if (!tryEnqueueBatch(op)) {
+          enqueueBatchOp(op);
+        }
+      }
+      if (props?.accessibilityHint) {
+        const op: BatchOperation = {
           type: "setProp",
           nodeId: id,
           name: "accessibilityHint",
           value: props.accessibilityHint,
-        });
-      if (props?.accessibilityRole)
-        enqueueBatchOp({
+        };
+        if (!tryEnqueueBatch(op)) {
+          enqueueBatchOp(op);
+        }
+      }
+      if (props?.accessibilityRole) {
+        const op: BatchOperation = {
           type: "setProp",
           nodeId: id,
           name: "accessibilityRole",
           value: props.accessibilityRole,
-        });
-      if (props?.pointerEvents)
-        enqueueBatchOp({
+        };
+        if (!tryEnqueueBatch(op)) {
+          enqueueBatchOp(op);
+        }
+      }
+      if (props?.pointerEvents) {
+        const op: BatchOperation = {
           type: "setProp",
           nodeId: id,
           name: "pointerEvents",
           value: props.pointerEvents,
-        });
-      if (props?.testID)
-        enqueueBatchOp({
+        };
+        if (!tryEnqueueBatch(op)) {
+          enqueueBatchOp(op);
+        }
+      }
+      if (props?.testID) {
+        const op: BatchOperation = {
           type: "setProp",
           nodeId: id,
           name: "testID",
           value: props.testID,
-        });
+        };
+        if (!tryEnqueueBatch(op)) {
+          enqueueBatchOp(op);
+        }
+      }
       if (type === "text-input" || type === "secure-text-input") {
         applyTextInputInitialProps(id, props);
       }
-      schedule();
+      if (!inBatch) {
+        schedule();
+      }
       return { id, type } as HostNode;
     },
     createText(value) {
       const id: number = ui.createNode("text");
-      enqueueBatchOp({ type: "setText", nodeId: id, value: value ?? "" });
+      const setTextOp: BatchOperation = {
+        type: "setText",
+        nodeId: id,
+        value: value ?? "",
+      };
+      if (!tryEnqueueBatch(setTextOp)) {
+        enqueueBatchOp(setTextOp);
+      }
       PARENTS.set(id, null);
       CHILDREN.set(id, []);
       TEXTS.set(id, value ?? "");
       TYPES.set(id, "text");
-      schedule();
+      if (!currentBatch()) {
+        schedule();
+      }
       return { id, type: "text" };
     },
     setProperty(node, name, value) {
@@ -812,15 +856,15 @@ export function createAndroidHost(): Host {
       }
       if (!context.operations.length) return;
 
-      const payload = {
-        meta: context.meta,
-        operations: context.operations,
-      };
-
       if (isSuppressed()) return;
 
       if (typeof (ui as any).applyBatchTyped === "function") {
-        (ui as any).applyBatchTyped(payload);
+        (ui as any).applyBatchTyped(
+          encodeTypedBatch(context.operations, context.meta),
+        );
+        if (queue.length || pendingRemovals.size) {
+          schedule();
+        }
         return;
       }
 
