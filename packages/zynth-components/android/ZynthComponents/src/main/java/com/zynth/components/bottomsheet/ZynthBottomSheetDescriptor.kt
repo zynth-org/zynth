@@ -35,6 +35,18 @@ object ZynthBottomSheetDescriptor {
             parseBoolean(value)?.let { layout.setDismissOnOverlayPress(it) }
             true
           }
+          "allowBackgroundInteraction" -> {
+            parseBoolean(value)?.let { enabled ->
+              layout.updateLayoutOptions { copy(allowBackgroundInteraction = enabled) }
+            }
+            true
+          }
+          "allowDismissOnInteraction" -> {
+            parseBoolean(value)?.let { enabled ->
+              layout.updateLayoutOptions { copy(allowDismissOnInteraction = enabled) }
+            }
+            true
+          }
           "initialSnapIndex" -> {
             parseInt(value)?.let { layout.updateLayoutOptions { copy(initialSnapIndex = it.coerceAtLeast(0)) } }
             true

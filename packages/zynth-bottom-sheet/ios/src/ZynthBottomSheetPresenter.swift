@@ -162,15 +162,16 @@ final class ZynthBottomSheetPresenter: NSObject {
   }
 
   func updateOptions(_ newOptions: ZynthBottomSheetOptions) {
+    print("[ZynthBottomSheetPresenter] updateOptions: allowDismiss=\(newOptions.allowDismissOnInteraction), allowBackground=\(newOptions.allowBackgroundInteraction)")
     options = newOptions
 
     rebuildDetents()
-    applyBackgroundInteraction(to: contentController?.sheetPresentationController)
+    updateModalInPresentation()
     updateSystemDimmingViewState()
   }
 
   func setOpenState(_ open: Bool, preferredIndex: Int) {
-
+    print("[ZynthBottomSheetPresenter] setOpenState: \(open)")
     if open {
       present(index: preferredIndex)
     } else {
@@ -179,7 +180,6 @@ final class ZynthBottomSheetPresenter: NSObject {
   }
 
   func present(index: Int? = nil) {
-
     DispatchQueue.main.async { [weak self] in
       self?.presentInternal(index: index)
     }
@@ -192,23 +192,22 @@ final class ZynthBottomSheetPresenter: NSObject {
     guard isSheetOpen else { return }
     guard let sheet = contentController?.sheetPresentationController else { return }
     guard let identifier = detentIdentifier(for: normalized) else { return }
+    print("[ZynthBottomSheetPresenter] snapTo index=\(normalized) identifier=\(identifier.rawValue)")
     sheet.animateChanges {
       sheet.selectedDetentIdentifier = identifier
     }
   }
 
   func dismiss() {
-    guard isSheetOpen, let controller = contentController else {
-
-      return
-    }
-
+    print("[ZynthBottomSheetPresenter] dismiss requested")
+    guard isSheetOpen, let controller = contentController else { return }
     controller.dismiss(animated: true) { [weak self] in
       self?.completeDismiss()
     }
   }
 
   func reset() {
+    print("[ZynthBottomSheetPresenter] reset")
     DispatchQueue.main.async { [weak self] in
       self?.contentController?.dismiss(animated: false) { [weak self] in
         self?.completeDismiss()
@@ -223,36 +222,40 @@ final class ZynthBottomSheetPresenter: NSObject {
     pendingIndex = normalized
 
     if isSheetOpen {
+      print("[ZynthBottomSheetPresenter] presentInternal: already open, snapping to \(normalized)")
       snapTo(index: normalized)
       return
     }
 
     guard let controller = topViewController(), host != nil else {
-
+      print("[ZynthBottomSheetPresenter] presentInternal: FAILED - topViewController or host is nil")
       return
     }
 
+    print("[ZynthBottomSheetPresenter] presentInternal: presenting new sheet at index \(normalized)")
     let sheet = ZynthBottomSheetContentViewController(contentHost: contentHost)
     sheet.presenter = self
     sheet.modalPresentationStyle = .pageSheet
     sheet.presentationController?.delegate = self
     sheet.sheetPresentationController?.delegate = self
     sheet.sheetPresentationController?.prefersGrabberVisible = true
+    
+    contentController = sheet
     applyDetents(to: sheet.sheetPresentationController)
-    applyBackgroundInteraction(to: sheet.sheetPresentationController)
 
     if let identifier = detentIdentifier(for: normalized) {
       sheet.sheetPresentationController?.selectedDetentIdentifier = identifier
     }
+    
+    updateModalInPresentation()
 
-    contentController = sheet
     isSheetOpen = true
     currentReportedIndex = normalized
     lastProgress = 0
 
     controller.present(sheet, animated: true) { [weak self] in
       guard let self = self else { return }
-
+      print("[ZynthBottomSheetPresenter] presentation complete")
       self.host?.dispatchEvent("onOpenChange", payload: ["open": true])
     }
   }
@@ -279,11 +282,21 @@ final class ZynthBottomSheetPresenter: NSObject {
       return SnapDetent(identifier: identifier, detent: detent, height: height)
     }
 
+    print("[ZynthBottomSheetPresenter] rebuildDetents: created \(detentInfo.count) detents")
     pendingIndex = normalizedIndex(pendingIndex)
     currentReportedIndex = normalizedIndex(currentReportedIndex)
-    if isSheetOpen {
-      applyDetents(to: contentController?.sheetPresentationController)
+    
+    if isSheetOpen, let sheet = contentController?.sheetPresentationController {
+      sheet.animateChanges { [weak self] in
+        self?.applyDetents(to: sheet)
+      }
     }
+  }
+
+  private func updateModalInPresentation() {
+    let value = !options.allowDismissOnInteraction
+    print("[ZynthBottomSheetPresenter] updateModalInPresentation: isModalInPresentation=\(value)")
+    contentController?.isModalInPresentation = value
   }
 
   private func applyDetents(to sheet: UISheetPresentationController?) {
@@ -297,9 +310,12 @@ final class ZynthBottomSheetPresenter: NSObject {
 
   private func applyBackgroundInteraction(to sheet: UISheetPresentationController?) {
     guard let sheet = sheet else { return }
-    if options.allowBackgroundInteraction, let identifier = detentIdentifier(for: detentInfo.count - 1) {
-      sheet.largestUndimmedDetentIdentifier = identifier
+    
+    if options.allowBackgroundInteraction, let largest = detentInfo.last?.identifier {
+      print("[ZynthBottomSheetPresenter] applyBackgroundInteraction: enabling largestUndimmedDetentIdentifier=\(largest.rawValue)")
+      sheet.largestUndimmedDetentIdentifier = largest
     } else {
+      print("[ZynthBottomSheetPresenter] applyBackgroundInteraction: disabling largestUndimmedDetentIdentifier")
       sheet.largestUndimmedDetentIdentifier = nil
     }
   }
@@ -357,11 +373,24 @@ final class ZynthBottomSheetPresenter: NSObject {
   }
 
   private func updateSystemDimmingViewState() {
+    // If allowBackgroundInteraction is true, we must ensure the system dimming view is hidden.
+    // Even though largestUndimmedDetentIdentifier SHOULD handle this, sometimes we need to clear our own modifications
+    // or help the system out if we've touched the view before.
+    if options.allowBackgroundInteraction {
+      if let container = contentController?.presentationController?.containerView,
+         let dimmingView = resolveSystemDimmingView(in: container) {
+        dimmingView.isHidden = true
+        dimmingView.alpha = 0
+        dimmingView.isUserInteractionEnabled = false
+      }
+      detachSystemDimmingView()
+      return
+    }
+
     guard let container = contentController?.presentationController?.containerView else { return }
     guard let dimmingView = resolveSystemDimmingView(in: container) else { return }
 
-    let disableCompletely = options.allowBackgroundInteraction || !options.showOverlay
-    if disableCompletely {
+    if !options.showOverlay {
       dimmingView.layer.removeAllAnimations()
       dimmingView.isHidden = true
       dimmingView.alpha = 0
@@ -377,8 +406,7 @@ final class ZynthBottomSheetPresenter: NSObject {
 
     let canReceiveTouches =
       options.dismissOnOverlayPress &&
-      options.allowDismissOnInteraction &&
-      !options.allowBackgroundInteraction
+      options.allowDismissOnInteraction
     dimmingView.isUserInteractionEnabled = canReceiveTouches
     overlayTapGesture.isEnabled = canReceiveTouches
   }

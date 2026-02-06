@@ -69,14 +69,24 @@ static CGFloat ZynthBottomSheetParseCGFloat(NSString *rawJSON, CGFloat fallback)
 static BOOL ZynthBottomSheetParseBoolean(NSString *rawJSON, BOOL fallback) {
   id parsed = ZynthBottomSheetParseJSON(rawJSON);
   if ([parsed isKindOfClass:[NSNumber class]]) {
-    return ((NSNumber *)parsed).boolValue;
+    BOOL result = ((NSNumber *)parsed).boolValue;
+    NSLog(@"[ZynthBottomSheet] Parsed boolean from NSNumber: %d (rawJSON: %@)", result, rawJSON);
+    return result;
   }
   if ([parsed isKindOfClass:[NSString class]]) {
     NSString *lower = [(NSString *)parsed lowercaseString];
-    if ([lower isEqualToString:@"true"]) return YES;
-    if ([lower isEqualToString:@"false"]) return NO;
+    if ([lower isEqualToString:@"true"]) {
+      NSLog(@"[ZynthBottomSheet] Parsed boolean 'true' from string (rawJSON: %@)", rawJSON);
+      return YES;
+    }
+    if ([lower isEqualToString:@"false"]) {
+      NSLog(@"[ZynthBottomSheet] Parsed boolean 'false' from string (rawJSON: %@)", rawJSON);
+      return NO;
+    }
+    NSLog(@"[ZynthBottomSheet] Failed to parse boolean from string '%@', using fallback: %d", (NSString *)parsed, fallback);
     return fallback;
   }
+  NSLog(@"[ZynthBottomSheet] Failed to parse boolean from %@, using fallback: %d", parsed, fallback);
   return fallback;
 }
 

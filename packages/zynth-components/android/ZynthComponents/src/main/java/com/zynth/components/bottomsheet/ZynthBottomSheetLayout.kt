@@ -78,6 +78,8 @@ class ZynthBottomSheetLayout @JvmOverloads constructor(
     dialog.setOverlayColor(resolved.overlayColor)
     dialog.setOverlayOpacity(resolved.overlayOpacity)
     dialog.setDismissOnOverlayPress(resolved.dismissOnOverlayPress)
+    dialog.setAllowBackgroundInteraction(resolved.allowBackgroundInteraction)
+    dialog.setAllowDismissOnInteraction(resolved.allowDismissOnInteraction)
   }
 
   fun updateLayoutOptions(transform: ZynthBottomSheetOptions.() -> ZynthBottomSheetOptions) {
@@ -213,5 +215,7 @@ data class ZynthBottomSheetOptions(
   val overlayColor: Int = Color.BLACK,
   val overlayOpacity: Float = 0.58f,
   val dismissOnOverlayPress: Boolean = true,
+  val allowBackgroundInteraction: Boolean = false,
+  val allowDismissOnInteraction: Boolean = true,
   val initialSnapIndex: Int = 0,
 )

@@ -97,18 +97,39 @@ public final class ZynthBottomSheetView: UIView {
   }
 
   public func setAllowBackgroundInteraction(_ value: NSNumber?) {
+    print("[ZynthBottomSheetView] setAllowBackgroundInteraction: \(value?.boolValue ?? false)")
     guard let value else { return }
     options.allowBackgroundInteraction = value.boolValue
     presenter.updateOptions(options)
   }
 
+  public func setOverlayColorString(_ color: NSString?) {
+    guard let parsed = BottomSheetColorParser.color(from: color as String?) else { return }
+    options.overlayColor = parsed
+    presenter.updateOptions(options)
+  }
+
+  public func setOverlayOpacityValue(_ value: NSNumber?) {
+    guard let value else { return }
+    options.overlayOpacity = min(max(CGFloat(value.floatValue), 0), 1)
+    presenter.updateOptions(options)
+  }
+
+  public func setDismissOnOverlayPress(_ value: NSNumber?) {
+    guard let value else { return }
+    options.dismissOnOverlayPress = value.boolValue
+    presenter.updateOptions(options)
+  }
+
   public func setAllowDismissOnInteraction(_ value: NSNumber?) {
+    print("[ZynthBottomSheetView] setAllowDismissOnInteraction: \(value?.boolValue ?? true)")
     guard let value else { return }
     options.allowDismissOnInteraction = value.boolValue
     presenter.updateOptions(options)
   }
 
   public func setOpenState(_ value: NSNumber?) {
+    print("[ZynthBottomSheetView] setOpenState: \(value?.boolValue ?? false)")
     guard let value else { return }
     if window == nil {
       pendingOpenState = value.boolValue
@@ -144,5 +165,59 @@ public final class ZynthBottomSheetView: UIView {
     typealias Imp = @convention(c) (AnyObject, Selector, NSString, NSDictionary?, ZynthNode) -> Void
     let function = unsafeBitCast(method, to: Imp.self)
     function(manager, selector, name as NSString, payload as NSDictionary?, node)
+  }
+}
+
+private enum BottomSheetColorParser {
+  static func color(from value: String?) -> UIColor? {
+    guard var hex = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+      hex.hasPrefix("#")
+    else {
+      return nil
+    }
+    hex.removeFirst()
+    let scanner = Scanner(string: hex)
+    var hexNumber: UInt64 = 0
+    guard scanner.scanHexInt64(&hexNumber) else { return nil }
+
+    switch hex.count {
+    case 3:
+      let r = (hexNumber & 0xF00) >> 8
+      let g = (hexNumber & 0x0F0) >> 4
+      let b = hexNumber & 0x00F
+      return UIColor(
+        red: CGFloat((r << 4) + r) / 255,
+        green: CGFloat((g << 4) + g) / 255,
+        blue: CGFloat((b << 4) + b) / 255,
+        alpha: 1
+      )
+    case 4:
+      let a = (hexNumber & 0xF000) >> 12
+      let r = (hexNumber & 0x0F00) >> 8
+      let g = (hexNumber & 0x00F0) >> 4
+      let b = hexNumber & 0x000F
+      return UIColor(
+        red: CGFloat((r << 4) + r) / 255,
+        green: CGFloat((g << 4) + g) / 255,
+        blue: CGFloat((b << 4) + b) / 255,
+        alpha: CGFloat((a << 4) + a) / 255
+      )
+    case 6:
+      return UIColor(
+        red: CGFloat((hexNumber & 0xFF0000) >> 16) / 255,
+        green: CGFloat((hexNumber & 0x00FF00) >> 8) / 255,
+        blue: CGFloat(hexNumber & 0x0000FF) / 255,
+        alpha: 1
+      )
+    case 8:
+      return UIColor(
+        red: CGFloat((hexNumber & 0x00FF_0000) >> 16) / 255,
+        green: CGFloat((hexNumber & 0x0000_FF00) >> 8) / 255,
+        blue: CGFloat(hexNumber & 0x0000_00FF) / 255,
+        alpha: CGFloat((hexNumber & 0xFF00_0000) >> 24) / 255
+      )
+    default:
+      return nil
+    }
   }
 }

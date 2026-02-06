@@ -1,7 +1,9 @@
 import UIKit
 
+@available(iOS 16.0, *)
 final class ZynthBottomSheetContentViewController: UIViewController {
   private let contentHost: UIView
+  weak var presenter: ZynthBottomSheetPresenter?
 
   init(contentHost: UIView) {
     self.contentHost = contentHost
@@ -21,6 +23,7 @@ final class ZynthBottomSheetContentViewController: UIViewController {
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
     contentHost.frame = view.bounds
+    presenter?.sheetDidLayout(height: view.frame.height)
   }
 
   func attachContent() {

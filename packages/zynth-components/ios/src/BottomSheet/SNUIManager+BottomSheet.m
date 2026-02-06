@@ -1,4 +1,5 @@
 #import <Foundation/Foundation.h>
+#import <math.h>
 
 #if __has_include(<ZynthComponents/ZynthComponents-Swift.h>)
 #import <ZynthComponents/ZynthComponents-Swift.h>
@@ -54,15 +55,47 @@ static NSInteger ZynthBottomSheetParseInteger(NSString *rawJSON, NSInteger fallb
   return fallback;
 }
 
-static BOOL ZynthBottomSheetParseBoolean(NSString *rawJSON, BOOL fallback) {
+static BOOL ZynthBottomSheetParseBoolean(NSString *rawJSON, id value, BOOL fallback) {
+  if ([value isKindOfClass:[NSNumber class]]) {
+    return [((NSNumber *)value) boolValue];
+  }
+
   id parsed = ZynthBottomSheetParseJSON(rawJSON);
   if ([parsed isKindOfClass:[NSNumber class]]) {
-    return [(NSNumber *)parsed boolValue];
+    BOOL result = ((NSNumber *)parsed).boolValue;
+    NSLog(@"[ZynthBottomSheet] Parsed boolean from NSNumber: %d (rawJSON: %@)", result, rawJSON);
+    return result;
   }
   if ([parsed isKindOfClass:[NSString class]]) {
     NSString *lower = [(NSString *)parsed lowercaseString];
-    if ([lower isEqualToString:@"true"]) return YES;
-    if ([lower isEqualToString:@"false"]) return NO;
+    if ([lower isEqualToString:@"true"]) {
+      NSLog(@"[ZynthBottomSheet] Parsed boolean 'true' from string (rawJSON: %@)", rawJSON);
+      return YES;
+    }
+    if ([lower isEqualToString:@"false"]) {
+      NSLog(@"[ZynthBottomSheet] Parsed boolean 'false' from string (rawJSON: %@)", rawJSON);
+      return NO;
+    }
+    NSLog(@"[ZynthBottomSheet] Failed to parse boolean from string '%@', using fallback: %d", (NSString *)parsed, fallback);
+    return fallback;
+  }
+  
+  if (value != nil && value != [NSNull null]) {
+     NSLog(@"[ZynthBottomSheet] Fallback to value.boolValue for value: %@", value);
+     return [value respondsToSelector:@selector(boolValue)] ? [value boolValue] : fallback;
+  }
+
+  NSLog(@"[ZynthBottomSheet] Failed to parse boolean (rawJSON is %@, value is %@), using fallback: %d", rawJSON, value, fallback);
+  return fallback;
+}
+
+static CGFloat ZynthBottomSheetParseCGFloat(NSString *rawJSON, CGFloat fallback) {
+  id parsed = ZynthBottomSheetParseJSON(rawJSON);
+  if ([parsed isKindOfClass:[NSNumber class]]) {
+    return [(NSNumber *)parsed doubleValue];
+  }
+  if ([parsed isKindOfClass:[NSString class]]) {
+    return [(NSString *)parsed doubleValue];
   }
   return fallback;
 }
@@ -120,20 +153,42 @@ static BOOL ZynthBottomSheetParseBoolean(NSString *rawJSON, BOOL fallback) {
           return YES;
         }
 
+        if ([name isEqualToString:@"overlayColor"]) {
+          id parsed = ZynthBottomSheetParseJSON(rawJSON);
+          if ([parsed isKindOfClass:[NSString class]]) {
+            [view setOverlayColorString:(NSString *)parsed];
+          }
+          return YES;
+        }
+
+        if ([name isEqualToString:@"overlayOpacity"]) {
+          CGFloat opacity = ZynthBottomSheetParseCGFloat(rawJSON, NAN);
+          if (!isnan(opacity)) {
+            [view setOverlayOpacityValue:@(opacity)];
+          }
+          return YES;
+        }
+
         if ([name isEqualToString:@"allowBackgroundInteraction"]) {
-          BOOL allow = ZynthBottomSheetParseBoolean(rawJSON, NO);
+          BOOL allow = ZynthBottomSheetParseBoolean(rawJSON, value, NO);
           [view setAllowBackgroundInteraction:@(allow)];
           return YES;
         }
 
         if ([name isEqualToString:@"allowDismissOnInteraction"]) {
-          BOOL allow = ZynthBottomSheetParseBoolean(rawJSON, YES);
+          BOOL allow = ZynthBottomSheetParseBoolean(rawJSON, value, YES);
           [view setAllowDismissOnInteraction:@(allow)];
           return YES;
         }
 
+        if ([name isEqualToString:@"dismissOnOverlayPress"]) {
+          BOOL allow = ZynthBottomSheetParseBoolean(rawJSON, value, YES);
+          [view setDismissOnOverlayPress:@(allow)];
+          return YES;
+        }
+
         if ([name isEqualToString:@"open"]) {
-          BOOL open = ZynthBottomSheetParseBoolean(rawJSON, NO);
+          BOOL open = ZynthBottomSheetParseBoolean(rawJSON, value, NO);
           [view setOpenState:@(open)];
           return YES;
         }

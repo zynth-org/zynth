@@ -8,7 +8,12 @@ import {
   type ParentComponent,
 } from "solid-js";
 import type { HostNode, Style } from "@zynth/core";
-import { getActiveSurface, render, setActiveSurface, setProperty } from "@zynth/core";
+import {
+  getActiveSurface,
+  render,
+  setActiveSurface,
+  setProperty,
+} from "@zynth/core";
 import { Dimensions, Platform } from "@zynth/apis";
 import { View } from "./View";
 
@@ -42,6 +47,8 @@ export interface BottomSheetProps {
   overlayColor?: string;
   overlayOpacity?: number;
   dismissOnOverlayPress?: boolean;
+  allowBackgroundInteraction?: boolean;
+  allowDismissOnInteraction?: boolean;
   style?: Style;
   contentContainerStyle?: Style;
   onOpenChange?: (open: boolean) => void;
@@ -70,6 +77,7 @@ const DEFAULT_CONTENT_STYLE: Style = {
       borderTopRightRadius: 12,
       overflow: "hidden",
       elevation: 8,
+      backgroundColor: "#FFF",
     },
   }),
 };
@@ -166,6 +174,8 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
     "overlayColor",
     "overlayOpacity",
     "dismissOnOverlayPress",
+    "allowBackgroundInteraction",
+    "allowDismissOnInteraction",
     "style",
     "contentContainerStyle",
     "onOpenChange",
@@ -289,6 +299,20 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
     if (local.dismissOnOverlayPress != null) {
       setProperty(host, "dismissOnOverlayPress", local.dismissOnOverlayPress);
     }
+    if (local.allowBackgroundInteraction != null) {
+      setProperty(
+        host,
+        "allowBackgroundInteraction",
+        local.allowBackgroundInteraction,
+      );
+    }
+    if (local.allowDismissOnInteraction != null) {
+      setProperty(
+        host,
+        "allowDismissOnInteraction",
+        local.allowDismissOnInteraction,
+      );
+    }
     if (local.testID) {
       setProperty(host, "testID", local.testID);
     }
@@ -388,9 +412,7 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
           </View>
         </View>
       ) : (
-        <View style={contentStyle()}>
-          {local.children}
-        </View>
+        <View style={contentStyle()}>{local.children}</View>
       )}
     </zynth-bottom-sheet>
   );

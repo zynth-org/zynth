@@ -124,13 +124,14 @@ public final class ZynthBottomSheetView: UIView {
   }
 
   @objc public func setAllowDismissOnInteraction(_ value: NSNumber?) {
-
+    print("[ZynthBottomSheetView] setAllowDismissOnInteraction: \(value?.boolValue ?? true)")
     guard let value = value else { return }
     options.allowDismissOnInteraction = value.boolValue
     presenter.updateOptions(options)
   }
 
   @objc public func setAllowBackgroundInteraction(_ value: NSNumber?) {
+    print("[ZynthBottomSheetView] setAllowBackgroundInteraction: \(value?.boolValue ?? false)")
     guard let value = value else { return }
     options.allowBackgroundInteraction = value.boolValue
     presenter.updateOptions(options)
@@ -144,7 +145,7 @@ public final class ZynthBottomSheetView: UIView {
   }
 
   @objc public func setOpenState(_ value: NSNumber?) {
-
+    print("[ZynthBottomSheetView] setOpenState: \(value?.boolValue ?? false)")
     guard let value = value else { return }
     if window == nil {
       pendingOpenState = value.boolValue

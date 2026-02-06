@@ -5,6 +5,7 @@ import android.content.DialogInterface
 import android.graphics.Color
 import android.view.Choreographer
 import android.view.View
+import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.core.graphics.Insets
 import androidx.core.view.ViewCompat
@@ -38,6 +39,8 @@ class ZynthBottomSheetDialog(
   private var overlayColor: Int = Color.BLACK
   private var overlayOpacity: Float = 0.58f
   private var dismissOnOverlayPress: Boolean = true
+  private var allowBackgroundInteraction: Boolean = false
+  private var allowDismissOnInteraction: Boolean = true
   private var isDraggable: Boolean = true
   private var snapPoints: List<BottomSheetSnapPoint> = DEFAULT_SNAP_POINTS
   private var resolvedSnapHeights: List<Int> = emptyList()
@@ -115,6 +118,22 @@ class ZynthBottomSheetDialog(
 
   fun setDismissOnOverlayPress(enabled: Boolean) {
     dismissOnOverlayPress = enabled
+    applyDismissBehavior()
+  }
+
+  fun setAllowBackgroundInteraction(enabled: Boolean) {
+    allowBackgroundInteraction = enabled
+    // Outside taps should pass through to the activity, not cancel the dialog.
+    setCancelable(!enabled && allowDismissOnInteraction)
+    applyWindowInteractionMode()
+    applyOverlay()
+    applyDismissBehavior()
+  }
+
+  fun setAllowDismissOnInteraction(enabled: Boolean) {
+    allowDismissOnInteraction = enabled
+    setDraggable(enabled)
+    setCancelable(enabled && !allowBackgroundInteraction)
     applyDismissBehavior()
   }
 
@@ -213,6 +232,7 @@ class ZynthBottomSheetDialog(
     overlayView = window?.findViewById<View>(com.google.android.material.R.id.touch_outside)?.also { outside ->
       outside.alpha = 0f
     }
+    applyWindowInteractionMode()
     applyOverlay()
     applyDismissBehavior()
     listener?.onShow()
@@ -283,6 +303,11 @@ class ZynthBottomSheetDialog(
   private fun applyOverlay() {
     overlayView?.let {
       it.setBackgroundColor(overlayColor)
+      if (allowBackgroundInteraction || overlayOpacity <= 0f) {
+        it.visibility = View.GONE
+        it.alpha = 0f
+        return@let
+      }
       it.visibility = if (lastOverlayProgress > 0f) View.VISIBLE else View.GONE
       it.alpha = overlayOpacity * lastOverlayProgress
     }
@@ -290,7 +315,9 @@ class ZynthBottomSheetDialog(
 
   private fun applyDismissBehavior() {
     overlayView?.let { overlay ->
-      if (dismissOnOverlayPress) {
+      val canDismissFromOverlay =
+        dismissOnOverlayPress && allowDismissOnInteraction && !allowBackgroundInteraction
+      if (canDismissFromOverlay) {
         overlay.isClickable = true
         overlay.setOnClickListener { dismissSheet() }
       } else {
@@ -298,6 +325,17 @@ class ZynthBottomSheetDialog(
         overlay.setOnClickListener(null)
       }
     }
+  }
+
+  private fun applyWindowInteractionMode() {
+    val win = window ?: return
+    if (allowBackgroundInteraction) {
+      win.addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL)
+      win.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+    } else {
+      win.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL)
+    }
+    setCanceledOnTouchOutside(false)
   }
 
   private fun applyBehaviorConfiguration(state: BottomSheetBehavior<FrameLayout>, animatePeek: Boolean) {
@@ -355,6 +393,14 @@ class ZynthBottomSheetDialog(
   }
 
   private fun updateOverlayProgress(sheet: View) {
+    if (allowBackgroundInteraction || overlayOpacity <= 0f) {
+      lastOverlayProgress = 0f
+      overlayView?.let {
+        it.visibility = View.GONE
+        it.alpha = 0f
+      }
+      return
+    }
     val maxHeight = resolvedSnapHeights.lastOrNull()?.takeIf { it > 0 } ?: screenHeight
     if (maxHeight <= 0) return
     val visibleHeight = visibleHeightForSheet(sheet).coerceAtLeast(0)
