@@ -5,7 +5,9 @@ import android.net.ConnectivityManager
 import android.net.LinkAddress
 import android.net.NetworkCapabilities
 import android.net.nsd.NsdManager
+import android.net.wifi.WifiInfo
 import android.net.wifi.WifiManager
+import android.os.Build
 import android.provider.Settings
 import com.zynth.kit.runtime.ZynthModule
 import com.zynth.kit.runtime.ZynthSyncModule
@@ -211,11 +213,20 @@ class NetworkModule(
         }
 
         return try {
-            val info = wifiManager.connectionInfo
+            @Suppress("DEPRECATION")
+            val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val network = connectivityManager.activeNetwork
+                val caps = connectivityManager.getNetworkCapabilities(network)
+                caps?.transportInfo as? WifiInfo
+            } else {
+                wifiManager.connectionInfo
+            }
+
             val ssidValue = info?.ssid?.takeIf { it.isNotBlank() && it != "<unknown ssid>" }
                 ?.trim('"')
             val bssidValue = info?.bssid?.takeIf { it.isNotBlank() && it != "02:00:00:00:00:00" }
-            val ipAddress = if (info != null && info.ipAddress != 0) {
+            @Suppress("DEPRECATION")
+            val ipAddress = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S && info != null && info.ipAddress != 0) {
                 intToIpv4(info.ipAddress)
             } else {
                 getIpAddress()
@@ -355,7 +366,7 @@ class NetworkModule(
                 while (iterator.hasNext()) {
                     val entryKey = iterator.next()
                     val entryValue = raw.opt(entryKey)
-                    map[entryKey] = if (entryValue == JSONObject.NULL) "" else entryValue.toString()
+                    map[entryKey] = if (entryValue == null || entryValue == JSONObject.NULL) "" else entryValue.toString()
                 }
                 map
             }

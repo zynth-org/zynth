@@ -262,8 +262,15 @@ class NetworkDiscoveryController(
             }
 
             override fun onServiceResolved(resolved: NsdServiceInfo) {
-                val host = resolved.host?.hostName
-                val hostAddress = resolved.host?.hostAddress?.let(::stripIpv6Scope)
+                @Suppress("DEPRECATION")
+                val resolvedHost = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    resolved.hostAddresses.firstOrNull()
+                } else {
+                    resolved.host
+                }
+
+                val hostName = resolvedHost?.hostName
+                val hostAddress = resolvedHost?.hostAddress?.let(::stripIpv6Scope)
                 val addresses = if (!hostAddress.isNullOrBlank()) {
                     listOf(hostAddress)
                 } else {
@@ -275,7 +282,7 @@ class NetworkDiscoveryController(
                     name = resolved.serviceName ?: serviceInfo.serviceName.orEmpty(),
                     type = resolved.serviceType ?: serviceInfo.serviceType ?: discoveryConfig.serviceType,
                     domain = discoveryConfig.domain,
-                    hostName = host,
+                    hostName = hostName,
                     port = resolved.port,
                     addresses = addresses,
                     txtRecord = txtRecordFromService(resolved),
@@ -289,7 +296,13 @@ class NetworkDiscoveryController(
             }
         }
 
-        nsdManager.resolveService(serviceInfo, resolveListener)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            @Suppress("DEPRECATION")
+            nsdManager.resolveService(serviceInfo, { it.run() }, resolveListener)
+        } else {
+            @Suppress("DEPRECATION")
+            nsdManager.resolveService(serviceInfo, resolveListener)
+        }
     }
 
     private fun txtRecordFromService(serviceInfo: NsdServiceInfo): Map<String, String> {
