@@ -38,12 +38,90 @@ function resolvePackageJson(depName: string, appDir: string): string | null {
   return null;
 }
 
-function formatInfoPlistProperties(properties: Record<string, string>): string {
+function quoteYamlString(value: string): string {
+  const escaped = value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return `"${escaped}"`;
+}
+
+function formatYamlValue(value: unknown, indent: string): string {
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return "[]";
+    }
+    return value
+      .map((entry) => {
+        if (
+          entry !== null &&
+          typeof entry === "object" &&
+          !Array.isArray(entry)
+        ) {
+          const objectLines = formatYamlObject(
+            entry as Record<string, unknown>,
+            `${indent}  `
+          );
+          return `${indent}-\n${objectLines}`;
+        }
+        return `${indent}- ${formatYamlValue(entry, `${indent}  `)}`;
+      })
+      .join("\n");
+  }
+
+  if (value !== null && typeof value === "object") {
+    return formatYamlObject(value as Record<string, unknown>, indent);
+  }
+
+  if (typeof value === "string") {
+    return quoteYamlString(value);
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  if (value == null) {
+    return "null";
+  }
+
+  return quoteYamlString(String(value));
+}
+
+function formatYamlObject(
+  objectValue: Record<string, unknown>,
+  indent: string
+): string {
+  const entries = Object.entries(objectValue);
+  if (entries.length === 0) {
+    return "{}";
+  }
+  return entries
+    .map(([key, entryValue]) => {
+      const formatted = formatYamlValue(entryValue, `${indent}  `);
+      if (
+        formatted.includes("\n") ||
+        (entryValue !== null && typeof entryValue === "object")
+      ) {
+        return `${indent}${key}:\n${formatted}`;
+      }
+      return `${indent}${key}: ${formatted}`;
+    })
+    .join("\n");
+}
+
+function formatInfoPlistProperties(properties: Record<string, unknown>): string {
   if (!properties || Object.keys(properties).length === 0) {
     return "";
   }
   return Object.entries(properties)
-    .map(([key, value]) => `        ${key}: "${value}"`)
+    .map(([key, value]) => {
+      const formatted = formatYamlValue(value, "          ");
+      if (
+        formatted.includes("\n") ||
+        (value !== null && typeof value === "object")
+      ) {
+        return `        ${key}:\n${formatted}`;
+      }
+      return `        ${key}: ${formatted}`;
+    })
     .join("\n");
 }
 

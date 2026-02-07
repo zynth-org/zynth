@@ -45,6 +45,8 @@
       "@zynth/markdown/*": ["packages/zynth-markdown/src/*"],
       "@zynth/memory-router": ["packages/zynth-memory-router/src/index.ts"],
       "@zynth/memory-router/*": ["packages/zynth-memory-router/src/*"],
+      "@zynth/network": ["packages/zynth-network/src/index.ts"],
+      "@zynth/network/*": ["packages/zynth-network/src/*"],
       "@zynth/rsbuild-plugin": ["packages/zynth-rsbuild-plugin/src/index.ts"],
       "@zynth/rsbuild-plugin/*": ["packages/zynth-rsbuild-plugin/src/*"],
       "@zynth/safe-area": ["packages/zynth-safe-area/src/index.ts"],

@@ -37,6 +37,7 @@
 | `@zynth/filesystem` | Native file access (`read`, `write`, reactive signals). |
 | `@zynth/haptics` | Taptic engine feedback. |
 | `@zynth/keyboard` | Keyboard avoidance and observation. |
+| `@zynth/network` | Network state + local mDNS/Bonjour discovery for LAN peer finding. |
 | `@zynth/secure-store` | Keychain/Keystore access. |
 | `@zynth/splash-screen`| Startup screen control. |
 | `@zynth/image-picker` | Camera and Photo Library access. |

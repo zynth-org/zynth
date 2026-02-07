@@ -1,0 +1,99 @@
+export type NetworkStateType =
+  | "unknown"
+  | "none"
+  | "wifi"
+  | "cellular"
+  | "ethernet"
+  | "vpn"
+  | "other";
+
+export type NetworkState = {
+  type: NetworkStateType;
+  isConnected: boolean;
+  isInternetReachable: boolean;
+  isExpensive?: boolean;
+};
+
+export type WifiInfo = {
+  ssid: string | null;
+  bssid: string | null;
+  ipAddress: string | null;
+};
+
+export type ServiceTxtRecord = Record<string, string>;
+
+export type NetworkService = {
+  id: string;
+  name: string;
+  type: string;
+  domain: string;
+  hostName: string | null;
+  port: number;
+  addresses: string[];
+  txtRecord: ServiceTxtRecord;
+  lastSeenAt: number;
+  isSelf: boolean;
+};
+
+export type DiscoveryEventType =
+  | "serviceFound"
+  | "serviceLost"
+  | "serviceResolved"
+  | "serviceUpdated";
+
+export type DiscoveryEvent = {
+  type: DiscoveryEventType;
+  timestamp: number;
+  service: NetworkService;
+};
+
+export type NetworkDiscoveryOptions = {
+  serviceType?: string;
+  domain?: string;
+  resolveTimeoutMs?: number;
+  includeSelf?: boolean;
+};
+
+export type NetworkFilterOptions = {
+  includeSelf?: boolean;
+};
+
+export type NetworkAdvertiseOptions = {
+  serviceType: string;
+  name: string;
+  port: number;
+  domain?: string;
+  txtRecord?: ServiceTxtRecord;
+};
+
+export type AdvertisedServiceInfo = {
+  serviceType: string;
+  name: string;
+  domain: string;
+  port: number;
+  txtRecord: ServiceTxtRecord;
+};
+
+export type NetworkSubscriptionSnapshot = {
+  timestamp: number;
+  state: NetworkState;
+  discoveryRunning: boolean;
+  services: NetworkService[];
+  events: DiscoveryEvent[];
+  advertisedService: AdvertisedServiceInfo | null;
+};
+
+export type NetworkSubscribeOptions = NetworkDiscoveryOptions &
+  NetworkFilterOptions & {
+    pollIntervalMs?: number;
+    maxEvents?: number;
+    emitImmediately?: boolean;
+  };
+
+export type NetworkSubscription = {
+  remove: () => void;
+};
+
+export type CreateNetworkDiscoveryOptions = NetworkSubscribeOptions & {
+  autoStart?: boolean;
+};
