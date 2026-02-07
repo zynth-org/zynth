@@ -60,7 +60,9 @@
       "@zynth/ui": ["packages/zynth-ui/src/index.ts"],
       "@zynth/ui/*": ["packages/zynth-ui/src/*"],
       "@zynth/webserver": ["packages/zynth-webserver/src/index.ts"],
-      "@zynth/webserver/*": ["packages/zynth-webserver/src/*"]
+      "@zynth/webserver/*": ["packages/zynth-webserver/src/*"],
+      "@zynth/webview": ["packages/zynth-webview/src/index.ts"],
+      "@zynth/webview/*": ["packages/zynth-webview/src/*"]
     }
   }
 }

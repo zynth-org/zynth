@@ -115,7 +115,7 @@ This document outlines the current status and future development plan for the Zy
 
 ### System APIs
 
-- [ ] @zynth/apis expansion: - [ ] AppState (active/background detection). - [ ] Network (connectivity monitoring). - [ ] Device (model, version, serial info).
+- [x] @zynth/apis expansion: - [x] AppState (active/background detection). - [x] Network (connectivity monitoring). - [x] Device (model, version, serial info).
 - [ ] Unified Permissions: Create @zynth/permissions for a single API to request all system access.
 
 ---
