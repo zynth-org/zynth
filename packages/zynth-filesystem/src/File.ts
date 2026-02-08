@@ -8,8 +8,28 @@ import {
   pathLikeToString,
 } from "./pathUtils";
 import { base64ToBytes, bytesToBase64, concatBytes } from "./encoding";
-import type { DownloadOptions, FileCreateOptions, FileInfo, InfoOptions, PathLike } from "./types";
+import type {
+  ChecksumAlgorithm,
+  DownloadOptions,
+  FileCreateOptions,
+  FileInfo,
+  InfoOptions,
+  PathLike,
+  UploadChecksumOptions,
+  UploadOptions,
+  UploadProgress,
+  UploadStreamOptions,
+} from "./types";
 import { Directory } from "./Directory";
+
+type ExtendedFetchRequestInit = RequestInit & {
+  timeout?: number;
+  onUploadProgress?: (progress: UploadProgress) => void;
+};
+
+const DEFAULT_UPLOAD_CHUNK_SIZE = 64 * 1024;
+const MIN_UPLOAD_CHUNK_SIZE = 1024;
+const MAX_UPLOAD_CHUNK_SIZE = 1024 * 1024;
 
 export class File {
   private _uri: string;
@@ -105,21 +125,116 @@ export class File {
     return callNativeSync<string>("readText", { uri: this._uri });
   }
 
-  readableStream(): ReadableStream<Uint8Array> {
+  async checksumAsync(algorithm: ChecksumAlgorithm = "md5"): Promise<string> {
+    return callNative<string>("checksum", { uri: this._uri, algorithm });
+  }
+
+  checksumSync(algorithm: ChecksumAlgorithm = "md5"): string {
+    return callNativeSync<string>("checksum", { uri: this._uri, algorithm });
+  }
+
+  uploadStream(options?: UploadStreamOptions): ReadableStream<Uint8Array> {
     if (typeof ReadableStream === "undefined") {
       throw new Error("ReadableStream is not available in this runtime.");
     }
+
+    const chunkSize = clampChunkSize(options?.chunkSize);
+    const startOffset = Math.max(0, Math.floor(options?.startOffset ?? 0));
+    const requestedEnd = options?.endOffset;
+    const endOffset =
+      requestedEnd != null ? Math.max(startOffset, Math.floor(requestedEnd)) : null;
+    let offset = startOffset;
+    let closed = false;
+
     return new ReadableStream<Uint8Array>({
-      start: async (controller) => {
-        try {
-          const bytes = await this.bytes();
-          controller.enqueue(bytes);
+      pull: async (controller) => {
+        if (closed) {
           controller.close();
+          return;
+        }
+        if (endOffset != null && offset >= endOffset) {
+          closed = true;
+          controller.close();
+          return;
+        }
+
+        const length =
+          endOffset == null ? chunkSize : Math.min(chunkSize, endOffset - offset);
+        if (length <= 0) {
+          closed = true;
+          controller.close();
+          return;
+        }
+
+        try {
+          const base64 = await callNative<string>("readBase64Chunk", {
+            uri: this._uri,
+            offset,
+            length,
+          });
+          if (!base64) {
+            closed = true;
+            controller.close();
+            return;
+          }
+          const chunk = base64ToBytes(base64);
+          if (chunk.byteLength === 0) {
+            closed = true;
+            controller.close();
+            return;
+          }
+          offset += chunk.byteLength;
+          controller.enqueue(chunk);
         } catch (error) {
+          closed = true;
           controller.error(error);
         }
       },
     });
+  }
+
+  async uploadAsync(url: string, options?: UploadOptions): Promise<Response> {
+    if (typeof fetch !== "function") {
+      throw new Error("fetch is not available in this runtime.");
+    }
+
+    const method = options?.method ?? "POST";
+    const headers = normalizeHeaders(options?.headers);
+    const chunkSize = options?.chunkSize;
+    const contentType = options?.contentType ?? this.type;
+    if (!headers.has("content-type") && contentType) {
+      headers.set("content-type", contentType);
+    }
+
+    if (!headers.has("content-length") && this.exists) {
+      headers.set("content-length", `${this.size}`);
+    }
+
+    if (options?.checksum) {
+      const checksum = await resolveChecksumOption(this, options.checksum);
+      const headerName = checksum.headerName;
+      const headerValue = checksum.includeAlgorithmPrefix
+        ? `${checksum.algorithm}:${checksum.value}`
+        : checksum.value;
+      if (!headers.has(headerName)) {
+        headers.set(headerName, headerValue);
+      }
+    }
+
+    const init: ExtendedFetchRequestInit = {
+      method,
+      headers: headersToRecord(headers),
+      body: this.uploadStream({ chunkSize }),
+      signal: options?.signal,
+      timeout: options?.timeout,
+      onUploadProgress: options?.onUploadProgress,
+    };
+
+    return fetch(url, init);
+  }
+
+  readableStream(): ReadableStream<Uint8Array> {
+    return this.uploadStream();
   }
 
   stream(): ReadableStream<Uint8Array> {
@@ -255,4 +370,59 @@ function resolveDownloadFilename(url: string, headers: Headers): string {
   }
   const fallback = url.split("?")[0].split("/").filter(Boolean).pop();
   return fallback || "download";
+}
+
+function clampChunkSize(value: number | undefined): number {
+  if (value == null || Number.isNaN(value)) {
+    return DEFAULT_UPLOAD_CHUNK_SIZE;
+  }
+  const parsed = Math.floor(value);
+  if (parsed < MIN_UPLOAD_CHUNK_SIZE) {
+    return MIN_UPLOAD_CHUNK_SIZE;
+  }
+  if (parsed > MAX_UPLOAD_CHUNK_SIZE) {
+    return MAX_UPLOAD_CHUNK_SIZE;
+  }
+  return parsed;
+}
+
+function normalizeHeaders(
+  headers?: Record<string, string> | Headers
+): Headers {
+  return headers instanceof Headers ? new Headers(headers) : new Headers(headers ?? {});
+}
+
+function headersToRecord(headers: Headers): Record<string, string> {
+  const result: Record<string, string> = {};
+  headers.forEach((value, key) => {
+    result[key] = value;
+  });
+  return result;
+}
+
+async function resolveChecksumOption(
+  file: File,
+  option: UploadChecksumOptions
+): Promise<{
+  algorithm: ChecksumAlgorithm;
+  value: string;
+  headerName: string;
+  includeAlgorithmPrefix: boolean;
+}> {
+  if (typeof option === "string") {
+    return {
+      algorithm: option,
+      value: await file.checksumAsync(option),
+      headerName: "x-zynth-checksum",
+      includeAlgorithmPrefix: true,
+    };
+  }
+
+  const algorithm = option.algorithm ?? "sha256";
+  return {
+    algorithm,
+    value: await file.checksumAsync(algorithm),
+    headerName: option.headerName ?? "x-zynth-checksum",
+    includeAlgorithmPrefix: option.includeAlgorithmPrefix ?? true,
+  };
 }

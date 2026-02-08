@@ -9,6 +9,41 @@ export type InfoOptions = {
   md5?: boolean;
 };
 
+export type ChecksumAlgorithm = "md5" | "sha1" | "sha256";
+
+export type UploadProgress = {
+  requestId: number;
+  bytesSent: number;
+  bytesTotal: number | null;
+  chunkBytes: number;
+  phase: "enqueue" | "complete";
+};
+
+export type UploadStreamOptions = {
+  chunkSize?: number;
+  startOffset?: number;
+  endOffset?: number;
+};
+
+export type UploadChecksumOptions =
+  | ChecksumAlgorithm
+  | {
+      algorithm?: ChecksumAlgorithm;
+      headerName?: string;
+      includeAlgorithmPrefix?: boolean;
+    };
+
+export type UploadOptions = {
+  method?: string;
+  headers?: Record<string, string>;
+  signal?: AbortSignal;
+  timeout?: number;
+  onUploadProgress?: (progress: UploadProgress) => void;
+  chunkSize?: number;
+  contentType?: string;
+  checksum?: UploadChecksumOptions | false;
+};
+
 export type FileInfo = {
   uri: string;
   exists: boolean;

@@ -116,6 +116,16 @@ class ZynthFileSystemModule(
                         resultResponse(readBase64(uri))
                     }
                 }
+                "readBase64Chunk" -> {
+                    val uri = getStringArg(args, "uri")
+                    val offset = getIntArg(args, "offset")
+                    val length = getIntArg(args, "length")
+                    if (uri == null || offset == null || length == null) {
+                        errorResponse("invalid_argument", "uri/offset/length")
+                    } else {
+                        resultResponse(readBase64Chunk(uri, offset, length))
+                    }
+                }
                 "writeText" -> {
                     val uri = getStringArg(args, "uri")
                     val text = getStringArg(args, "text")
@@ -134,6 +144,15 @@ class ZynthFileSystemModule(
                     } else {
                         writeBase64(uri, data)
                         successResponse()
+                    }
+                }
+                "checksum" -> {
+                    val uri = getStringArg(args, "uri")
+                    if (uri == null) {
+                        errorResponse("invalid_argument", "uri")
+                    } else {
+                        val algorithm = getStringArg(args, "algorithm") ?: "md5"
+                        resultResponse(computeChecksumForUri(uri, algorithm))
                     }
                 }
                 else -> errorResponse("unsupported_method", method)
@@ -197,6 +216,12 @@ class ZynthFileSystemModule(
                     val uri = getStringArg(args, "uri") ?: return null
                     readBase64(uri)
                 }
+                "readBase64Chunk" -> {
+                    val uri = getStringArg(args, "uri") ?: return null
+                    val offset = getIntArg(args, "offset") ?: return null
+                    val length = getIntArg(args, "length") ?: return null
+                    readBase64Chunk(uri, offset, length)
+                }
                 "writeText" -> {
                     val uri = getStringArg(args, "uri") ?: return null
                     val text = getStringArg(args, "text") ?: return null
@@ -208,6 +233,11 @@ class ZynthFileSystemModule(
                     val data = getStringArg(args, "data") ?: return null
                     writeBase64(uri, data)
                     null
+                }
+                "checksum" -> {
+                    val uri = getStringArg(args, "uri") ?: return null
+                    val algorithm = getStringArg(args, "algorithm") ?: "md5"
+                    computeChecksumForUri(uri, algorithm)
                 }
                 else -> null
             }
@@ -281,7 +311,7 @@ class ZynthFileSystemModule(
 
         val md5Requested = getBooleanOption(options, "md5")
         val md5 = if (md5Requested && exists && !isDirectory) {
-            computeMd5(file)
+            computeDigest(file, "MD5")
         } else {
             null
         }
@@ -444,6 +474,37 @@ class ZynthFileSystemModule(
         return Base64.encodeToString(bytes, Base64.NO_WRAP)
     }
 
+    private fun readBase64Chunk(uri: String, offset: Int, length: Int): String {
+        if (offset < 0 || length <= 0) {
+            throw IllegalArgumentException("Invalid offset/length")
+        }
+
+        val parsed = parseUri(uri)
+        if (parsed.scheme == "asset") {
+            context.assets.open(parsed.path).use { stream ->
+                if (!skipFully(stream, offset.toLong())) {
+                    return ""
+                }
+                val buffer = ByteArray(length)
+                val read = stream.read(buffer)
+                if (read <= 0) {
+                    return ""
+                }
+                return Base64.encodeToString(buffer.copyOf(read), Base64.NO_WRAP)
+            }
+        }
+
+        FileInputStream(parsed.path).use { stream ->
+            stream.channel.position(offset.toLong())
+            val buffer = ByteArray(length)
+            val read = stream.read(buffer)
+            if (read <= 0) {
+                return ""
+            }
+            return Base64.encodeToString(buffer.copyOf(read), Base64.NO_WRAP)
+        }
+    }
+
     private fun writeText(uri: String, text: String) {
         val parsed = parseUri(uri)
         if (parsed.scheme == "asset") {
@@ -534,6 +595,24 @@ class ZynthFileSystemModule(
         return context.assets.open(path).use { it.readBytes() }
     }
 
+    private fun skipFully(stream: java.io.InputStream, bytesToSkip: Long): Boolean {
+        var remaining = bytesToSkip
+        val scratch = ByteArray(4096)
+        while (remaining > 0) {
+            val skipped = stream.skip(remaining)
+            if (skipped > 0) {
+                remaining -= skipped
+                continue
+            }
+            val read = stream.read(scratch, 0, minOf(remaining, scratch.size.toLong()).toInt())
+            if (read <= 0) {
+                return false
+            }
+            remaining -= read.toLong()
+        }
+        return true
+    }
+
     private fun copyFile(source: File, destination: File) {
         FileInputStream(source).use { input ->
             FileOutputStream(destination).use { output ->
@@ -578,9 +657,9 @@ class ZynthFileSystemModule(
         }
     }
 
-    private fun computeMd5(file: File): String? {
+    private fun computeDigest(file: File, algorithm: String): String? {
         return try {
-            val digest = MessageDigest.getInstance("MD5")
+            val digest = MessageDigest.getInstance(algorithm)
             FileInputStream(file).use { stream ->
                 val buffer = ByteArray(8192)
                 var read = stream.read(buffer)
@@ -593,6 +672,33 @@ class ZynthFileSystemModule(
         } catch (_: Exception) {
             null
         }
+    }
+
+    private fun computeChecksumForUri(uri: String, algorithm: String): String {
+        val parsed = parseUri(uri)
+        val digestName = when (algorithm.lowercase()) {
+            "md5" -> "MD5"
+            "sha1" -> "SHA-1"
+            "sha256" -> "SHA-256"
+            else -> throw IllegalArgumentException("Unsupported algorithm: $algorithm")
+        }
+
+        if (parsed.scheme == "asset") {
+            val digest = MessageDigest.getInstance(digestName)
+            context.assets.open(parsed.path).use { stream ->
+                val buffer = ByteArray(8192)
+                var read = stream.read(buffer)
+                while (read > 0) {
+                    digest.update(buffer, 0, read)
+                    read = stream.read(buffer)
+                }
+            }
+            return digest.digest().joinToString("") { byte -> "%02x".format(byte) }
+        }
+
+        val file = File(parsed.path)
+        return computeDigest(file, digestName)
+            ?: throw IllegalStateException("Unable to compute checksum")
     }
 
     private fun getParams(args: Array<Any?>): Any? {
@@ -628,6 +734,17 @@ class ZynthFileSystemModule(
     private fun getBoolArg(args: Array<Any?>, key: String): Boolean? {
         val value = getValue(args, key)
         return if (value == JSONObject.NULL) null else value as? Boolean
+    }
+
+    private fun getIntArg(args: Array<Any?>, key: String): Int? {
+        val value = getValue(args, key)
+        return when (value) {
+            JSONObject.NULL -> null
+            is Int -> value
+            is Number -> value.toInt()
+            is String -> value.toIntOrNull()
+            else -> null
+        }
     }
 
     private fun resultResponse(result: Any?): JSONObject {

@@ -93,6 +93,13 @@ final class ZynthFileSystemModule: NSObject, ZynthModule, ZynthSyncModule {
           return errorResponse("invalid_argument", "uri")
         }
         return try readBase64(uri)
+      case "readBase64Chunk":
+        guard let uri = getStringArg(args, key: "uri"),
+              let offset = getIntArg(args, key: "offset"),
+              let length = getIntArg(args, key: "length") else {
+          return errorResponse("invalid_argument", "uri/offset/length")
+        }
+        return try readBase64Chunk(uri, offset: offset, length: length)
       case "writeText":
         guard let uri = getStringArg(args, key: "uri"),
               let text = getStringArg(args, key: "text") else {
@@ -107,6 +114,12 @@ final class ZynthFileSystemModule: NSObject, ZynthModule, ZynthSyncModule {
         }
         try writeBase64(uri, base64: data)
         return nil
+      case "checksum":
+        guard let uri = getStringArg(args, key: "uri") else {
+          return errorResponse("invalid_argument", "uri")
+        }
+        let algorithm = getStringArg(args, key: "algorithm") ?? "md5"
+        return try checksum(uri, algorithm: algorithm)
       default:
         return errorResponse("unsupported_method", method)
       }
@@ -200,7 +213,7 @@ final class ZynthFileSystemModule: NSObject, ZynthModule, ZynthSyncModule {
        let md5Requested = options["md5"] as? Bool,
        md5Requested,
        !isDirectory.boolValue {
-      info["md5"] = md5ForFile(atPath: path) ?? NSNull()
+      info["md5"] = digestForFile(atPath: path, algorithm: "md5") ?? NSNull()
     }
 
     return info
@@ -323,6 +336,24 @@ final class ZynthFileSystemModule: NSObject, ZynthModule, ZynthSyncModule {
     return data.base64EncodedString()
   }
 
+  private func readBase64Chunk(_ uri: String, offset: Int, length: Int) throws -> String {
+    guard let path = resolvePath(uri) else {
+      throw NSError(domain: "ZynthFileSystem", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid uri"])
+    }
+    if length <= 0 || offset < 0 {
+      throw NSError(domain: "ZynthFileSystem", code: 6, userInfo: [NSLocalizedDescriptionKey: "Invalid offset/length"])
+    }
+
+    let url = URL(fileURLWithPath: path)
+    let handle = try FileHandle(forReadingFrom: url)
+    defer {
+      try? handle.close()
+    }
+    try handle.seek(toOffset: UInt64(offset))
+    let data = handle.readData(ofLength: length)
+    return data.base64EncodedString()
+  }
+
   private func writeText(_ uri: String, text: String) throws {
     guard let path = resolvePath(uri) else {
       throw NSError(domain: "ZynthFileSystem", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid uri"])
@@ -340,6 +371,16 @@ final class ZynthFileSystemModule: NSObject, ZynthModule, ZynthSyncModule {
     }
     try ensureParentDirectories(for: path)
     try data.write(to: URL(fileURLWithPath: path), options: .atomic)
+  }
+
+  private func checksum(_ uri: String, algorithm: String) throws -> String {
+    guard let path = resolvePath(uri) else {
+      throw NSError(domain: "ZynthFileSystem", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid uri"])
+    }
+    guard let digest = digestForFile(atPath: path, algorithm: algorithm) else {
+      throw NSError(domain: "ZynthFileSystem", code: 7, userInfo: [NSLocalizedDescriptionKey: "Unable to compute checksum"])
+    }
+    return digest
   }
 
   private func ensureParentDirectories(for path: String) throws {
@@ -375,12 +416,43 @@ final class ZynthFileSystemModule: NSObject, ZynthModule, ZynthSyncModule {
     return ""
   }
 
-  private func md5ForFile(atPath path: String) -> String? {
-    guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
+  private func digestForFile(atPath path: String, algorithm: String) -> String? {
+    let normalized = algorithm.lowercased()
+    guard let handle = FileHandle(forReadingAtPath: path) else {
       return nil
     }
-    let digest = Insecure.MD5.hash(data: data)
-    return digest.map { String(format: "%02hhx", $0) }.joined()
+    defer {
+      try? handle.close()
+    }
+
+    switch normalized {
+    case "md5":
+      var digest = Insecure.MD5()
+      while true {
+        let chunk = handle.readData(ofLength: 64 * 1024)
+        if chunk.isEmpty { break }
+        digest.update(data: chunk)
+      }
+      return digest.finalize().map { String(format: "%02hhx", $0) }.joined()
+    case "sha1":
+      var digest = Insecure.SHA1()
+      while true {
+        let chunk = handle.readData(ofLength: 64 * 1024)
+        if chunk.isEmpty { break }
+        digest.update(data: chunk)
+      }
+      return digest.finalize().map { String(format: "%02hhx", $0) }.joined()
+    case "sha256":
+      var digest = SHA256()
+      while true {
+        let chunk = handle.readData(ofLength: 64 * 1024)
+        if chunk.isEmpty { break }
+        digest.update(data: chunk)
+      }
+      return digest.finalize().map { String(format: "%02hhx", $0) }.joined()
+    default:
+      return nil
+    }
   }
 
   private func unwrapArgs(_ args: Any?) -> Any? {
@@ -418,6 +490,17 @@ final class ZynthFileSystemModule: NSObject, ZynthModule, ZynthSyncModule {
   private func getBoolArg(_ args: Any?, key: String) -> Bool? {
     guard let dict = getDictArg(args) else { return nil }
     return dict[key] as? Bool
+  }
+
+  private func getIntArg(_ args: Any?, key: String) -> Int? {
+    guard let dict = getDictArg(args) else { return nil }
+    if let value = dict[key] as? Int {
+      return value
+    }
+    if let number = dict[key] as? NSNumber {
+      return number.intValue
+    }
+    return nil
   }
 
   private func errorResponse(_ error: String, _ message: String) -> [String: Any] {
