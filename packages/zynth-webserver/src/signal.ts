@@ -5,6 +5,10 @@ import type {
   WebServerInfo,
   WebServerStartOptions,
   WebServerStatus,
+  WebServerSubscribeOptions,
+  WebServerSubscription,
+  WebServerSubscriptionSnapshot,
+  WebServerUploadState,
 } from "./types";
 
 export type WebServerSignal = {
@@ -14,6 +18,11 @@ export type WebServerSignal = {
   start(options?: WebServerStartOptions): Promise<WebServerInfo>;
   stop(): Promise<void>;
   pollEvents(maxEvents?: number): Promise<WebServerEvent[]>;
+  getUploadState(): Promise<WebServerUploadState>;
+  subscribe(
+    listener: (snapshot: WebServerSubscriptionSnapshot) => void,
+    options?: WebServerSubscribeOptions
+  ): WebServerSubscription;
 };
 
 export function createWebServerSignal(): WebServerSignal {
@@ -56,6 +65,17 @@ export function createWebServerSignal(): WebServerSignal {
     return WebServer.drainEvents(maxEvents);
   };
 
+  const getUploadState = async (): Promise<WebServerUploadState> => {
+    return WebServer.getUploadState();
+  };
+
+  const subscribe = (
+    listener: (snapshot: WebServerSubscriptionSnapshot) => void,
+    options?: WebServerSubscribeOptions
+  ): WebServerSubscription => {
+    return WebServer.subscribe(listener, options);
+  };
+
   return {
     status,
     info,
@@ -63,5 +83,7 @@ export function createWebServerSignal(): WebServerSignal {
     start,
     stop,
     pollEvents,
+    getUploadState,
+    subscribe,
   };
 }

@@ -12,6 +12,10 @@ object ZynthWebServerNative {
         indexHtml: String?,
         uploadPath: String?,
         uploadDir: String?,
+        uploadMetadataPath: String?,
+        uploadAuthToken: String?,
+        uploadAuthHeader: String?,
+        uploadAuthQueryKey: String?,
         maxUploadBytes: Long,
         eventsPath: String?
     ): Long
@@ -23,4 +27,5 @@ object ZynthWebServerNative {
     external fun getPort(handle: Long): Int
 
     external fun drainEvents(handle: Long, maxEvents: Int): Array<NativeWebServerEvent>
+    external fun getUploadStateJson(handle: Long): String?
 }

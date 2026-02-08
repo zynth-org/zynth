@@ -6,6 +6,7 @@ struct WebServerInfo {
   let url: String
   let documentRoot: String?
   let uploadPath: String?
+  let uploadMetadataPath: String?
   let eventsPath: String?
 
   func toDictionary() -> [String: Any] {
@@ -15,6 +16,7 @@ struct WebServerInfo {
       "url": url,
       "documentRoot": documentRoot ?? NSNull(),
       "uploadPath": uploadPath ?? NSNull(),
+      "uploadMetadataPath": uploadMetadataPath ?? NSNull(),
       "eventsPath": eventsPath ?? NSNull(),
     ]
   }
@@ -32,6 +34,35 @@ struct WebServerEvent {
   }
 }
 
+struct WebServerUploadState {
+  let activeCount: Int
+  let totalStarted: Int64
+  let totalCompleted: Int64
+  let totalFailed: Int64
+  let totalBytesReceived: Int64
+  let activeUploads: [[String: Any]]
+
+  static let empty = WebServerUploadState(
+    activeCount: 0,
+    totalStarted: 0,
+    totalCompleted: 0,
+    totalFailed: 0,
+    totalBytesReceived: 0,
+    activeUploads: []
+  )
+
+  func toDictionary() -> [String: Any] {
+    return [
+      "activeCount": activeCount,
+      "totalStarted": totalStarted,
+      "totalCompleted": totalCompleted,
+      "totalFailed": totalFailed,
+      "totalBytesReceived": totalBytesReceived,
+      "activeUploads": activeUploads,
+    ]
+  }
+}
+
 final class ZynthWebServerHost {
   struct StartConfig {
     let host: String?
@@ -40,6 +71,10 @@ final class ZynthWebServerHost {
     let indexHtml: String?
     let uploadPath: String?
     let uploadDir: String?
+    let uploadMetadataPath: String?
+    let uploadAuthToken: String?
+    let uploadAuthHeader: String?
+    let uploadAuthQueryKey: String?
     let maxUploadBytes: Int64
     let eventsPath: String?
   }
@@ -61,6 +96,10 @@ final class ZynthWebServerHost {
       indexHtml: config.indexHtml,
       uploadPath: config.uploadPath,
       uploadDir: config.uploadDir,
+      uploadMetadataPath: config.uploadMetadataPath,
+      uploadAuthToken: config.uploadAuthToken,
+      uploadAuthHeader: config.uploadAuthHeader,
+      uploadAuthQueryKey: config.uploadAuthQueryKey,
       maxUploadBytes: config.maxUploadBytes,
       eventsPath: config.eventsPath
     ) else {
@@ -79,6 +118,7 @@ final class ZynthWebServerHost {
       url: url,
       documentRoot: config.documentRoot,
       uploadPath: config.uploadPath,
+      uploadMetadataPath: config.uploadMetadataPath,
       eventsPath: config.eventsPath
     )
     self.info = info
@@ -113,5 +153,26 @@ final class ZynthWebServerHost {
       let data = payload["payload"] as? String ?? ""
       return WebServerEvent(type: type, payload: data)
     }
+  }
+
+  func getUploadState() -> WebServerUploadState {
+    guard let server = handle else {
+      return .empty
+    }
+    guard let json = ZynthWebServerBridge.uploadStateJson(server),
+      let data = json.data(using: .utf8),
+      let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    else {
+      return .empty
+    }
+
+    return WebServerUploadState(
+      activeCount: object["activeCount"] as? Int ?? 0,
+      totalStarted: (object["totalStarted"] as? NSNumber)?.int64Value ?? 0,
+      totalCompleted: (object["totalCompleted"] as? NSNumber)?.int64Value ?? 0,
+      totalFailed: (object["totalFailed"] as? NSNumber)?.int64Value ?? 0,
+      totalBytesReceived: (object["totalBytesReceived"] as? NSNumber)?.int64Value ?? 0,
+      activeUploads: object["activeUploads"] as? [[String: Any]] ?? []
+    )
   }
 }

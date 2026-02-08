@@ -21,6 +21,10 @@ typedef struct ZynthWebServerConfig {
   const char *index_html;
   const char *upload_path;
   const char *upload_dir;
+  const char *upload_metadata_path;
+  const char *upload_auth_token;
+  const char *upload_auth_header;
+  const char *upload_auth_query_key;
   long long max_upload_bytes;
   const char *events_path;
 } ZynthWebServerConfig;
@@ -38,6 +42,8 @@ size_t zynth_webserver_drain_events(
 );
 
 void zynth_webserver_free_event(ZynthWebServerEvent *event);
+char *zynth_webserver_get_upload_state_json(ZynthWebServer *server);
+void zynth_webserver_free_string(char *value);
 
 #ifdef __cplusplus
 }

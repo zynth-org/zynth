@@ -10,6 +10,10 @@
                        indexHtml:(NSString *_Nullable)indexHtml
                       uploadPath:(NSString *_Nullable)uploadPath
                        uploadDir:(NSString *_Nullable)uploadDir
+               uploadMetadataPath:(NSString *_Nullable)uploadMetadataPath
+                  uploadAuthToken:(NSString *_Nullable)uploadAuthToken
+                 uploadAuthHeader:(NSString *_Nullable)uploadAuthHeader
+               uploadAuthQueryKey:(NSString *_Nullable)uploadAuthQueryKey
                   maxUploadBytes:(long long)maxUploadBytes
                       eventsPath:(NSString *_Nullable)eventsPath {
   ZynthWebServerConfig config;
@@ -19,6 +23,12 @@
   config.index_html = indexHtml ? indexHtml.UTF8String : NULL;
   config.upload_path = uploadPath ? uploadPath.UTF8String : NULL;
   config.upload_dir = uploadDir ? uploadDir.UTF8String : NULL;
+  config.upload_metadata_path =
+    uploadMetadataPath ? uploadMetadataPath.UTF8String : NULL;
+  config.upload_auth_token = uploadAuthToken ? uploadAuthToken.UTF8String : NULL;
+  config.upload_auth_header = uploadAuthHeader ? uploadAuthHeader.UTF8String : NULL;
+  config.upload_auth_query_key =
+    uploadAuthQueryKey ? uploadAuthQueryKey.UTF8String : NULL;
   config.max_upload_bytes = maxUploadBytes;
   config.events_path = eventsPath ? eventsPath.UTF8String : NULL;
 
@@ -76,6 +86,19 @@
   }
 
   free(events);
+  return result;
+}
+
++ (NSString *_Nullable)uploadStateJson:(void *)handle {
+  if (!handle) {
+    return nil;
+  }
+  char *json = zynth_webserver_get_upload_state_json((ZynthWebServer *)handle);
+  if (!json) {
+    return nil;
+  }
+  NSString *result = [NSString stringWithUTF8String:json];
+  zynth_webserver_free_string(json);
   return result;
 }
 

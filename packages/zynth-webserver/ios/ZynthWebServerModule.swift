@@ -23,6 +23,8 @@ final class ZynthWebServerModule: NSObject, ZynthModule, ZynthSyncModule {
       return host.isRunning()
     case "getInfo":
       return host.info?.toDictionary() ?? NSNull()
+    case "getUploadState":
+      return host.getUploadState().toDictionary()
     case "drainEvents":
       let maxEvents = getIntArg(args, key: "maxEvents") ?? 50
       let events = host.drainEvents(maxEvents: maxEvents)
@@ -38,6 +40,8 @@ final class ZynthWebServerModule: NSObject, ZynthModule, ZynthSyncModule {
       return host.isRunning()
     case "getInfo":
       return host.info?.toDictionary() ?? NSNull()
+    case "getUploadState":
+      return host.getUploadState().toDictionary()
     default:
       throw ZynthModuleError.syncNotSupported(module: name, method: method)
     }
@@ -53,6 +57,10 @@ final class ZynthWebServerModule: NSObject, ZynthModule, ZynthSyncModule {
       uploadPath: uploadPath,
       uploadDir: getStringArg(args, key: "uploadDir")
     )
+    let uploadMetadataPath = getStringArg(args, key: "uploadMetadataPath")
+    let uploadAuthToken = getStringArg(args, key: "uploadAuthToken")
+    let uploadAuthHeader = getStringArg(args, key: "uploadAuthHeader")
+    let uploadAuthQueryKey = getStringArg(args, key: "uploadAuthQueryKey")
     let maxUploadBytes = getInt64Arg(args, key: "maxUploadBytes") ?? 0
     let eventsPath = getStringArg(args, key: "eventsPath")
     return ZynthWebServerHost.StartConfig(
@@ -62,6 +70,10 @@ final class ZynthWebServerModule: NSObject, ZynthModule, ZynthSyncModule {
       indexHtml: indexHtml,
       uploadPath: uploadPath,
       uploadDir: uploadDir,
+      uploadMetadataPath: uploadMetadataPath,
+      uploadAuthToken: uploadAuthToken,
+      uploadAuthHeader: uploadAuthHeader,
+      uploadAuthQueryKey: uploadAuthQueryKey,
       maxUploadBytes: maxUploadBytes,
       eventsPath: eventsPath
     )

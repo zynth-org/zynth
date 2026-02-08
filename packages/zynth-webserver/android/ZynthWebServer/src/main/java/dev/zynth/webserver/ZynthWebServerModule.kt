@@ -31,6 +31,7 @@ class ZynthWebServerModule(
             }
             "isRunning" -> resultResponse(isRunning())
             "getInfo" -> resultResponse(serverInfo ?: JSONObject.NULL)
+            "getUploadState" -> resultResponse(getUploadState())
             "drainEvents" -> drainEvents(args)
             else -> errorResponse("unsupported_method", method)
         }
@@ -40,6 +41,7 @@ class ZynthWebServerModule(
         return when (method) {
             "isRunning" -> isRunning()
             "getInfo" -> serverInfo ?: JSONObject.NULL
+            "getUploadState" -> getUploadState()
             else -> null
         }
     }
@@ -53,6 +55,10 @@ class ZynthWebServerModule(
         val indexHtml = getStringArg(args, "indexHtml")
         val uploadPath = getStringArg(args, "uploadPath")
         var uploadDir = getStringArg(args, "uploadDir")
+        val uploadMetadataPath = getStringArg(args, "uploadMetadataPath")
+        val uploadAuthToken = getStringArg(args, "uploadAuthToken")
+        val uploadAuthHeader = getStringArg(args, "uploadAuthHeader")
+        val uploadAuthQueryKey = getStringArg(args, "uploadAuthQueryKey")
         val maxUploadBytes = getLongArg(args, "maxUploadBytes") ?: 0L
         val eventsPath = getStringArg(args, "eventsPath")
 
@@ -67,6 +73,10 @@ class ZynthWebServerModule(
             indexHtml,
             uploadPath,
             uploadDir,
+            uploadMetadataPath,
+            uploadAuthToken,
+            uploadAuthHeader,
+            uploadAuthQueryKey,
             maxUploadBytes,
             eventsPath
         )
@@ -82,6 +92,7 @@ class ZynthWebServerModule(
             put("url", "http://$host:$actualPort")
             put("documentRoot", documentRoot ?: JSONObject.NULL)
             put("uploadPath", uploadPath ?: JSONObject.NULL)
+            put("uploadMetadataPath", uploadMetadataPath ?: JSONObject.NULL)
             put("eventsPath", eventsPath ?: JSONObject.NULL)
         }
         serverInfo = info
@@ -116,6 +127,41 @@ class ZynthWebServerModule(
             )
         }
         return resultResponse(array)
+    }
+
+    private fun getUploadState(): JSONObject {
+        if (serverHandle == 0L) {
+            return JSONObject()
+                .put("activeCount", 0)
+                .put("totalStarted", 0)
+                .put("totalCompleted", 0)
+                .put("totalFailed", 0)
+                .put("totalBytesReceived", 0)
+                .put("activeUploads", JSONArray())
+        }
+
+        val raw = ZynthWebServerNative.getUploadStateJson(serverHandle)
+        if (raw.isNullOrBlank()) {
+            return JSONObject()
+                .put("activeCount", 0)
+                .put("totalStarted", 0)
+                .put("totalCompleted", 0)
+                .put("totalFailed", 0)
+                .put("totalBytesReceived", 0)
+                .put("activeUploads", JSONArray())
+        }
+
+        return try {
+            JSONObject(raw)
+        } catch (_: Throwable) {
+            JSONObject()
+                .put("activeCount", 0)
+                .put("totalStarted", 0)
+                .put("totalCompleted", 0)
+                .put("totalFailed", 0)
+                .put("totalBytesReceived", 0)
+                .put("activeUploads", JSONArray())
+        }
     }
 
     private fun getParams(args: Array<Any?>): Any? {

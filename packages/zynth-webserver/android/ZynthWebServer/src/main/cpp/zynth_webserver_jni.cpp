@@ -27,6 +27,10 @@ Java_dev_zynth_webserver_ZynthWebServerNative_start(
   jstring indexHtml,
   jstring uploadPath,
   jstring uploadDir,
+  jstring uploadMetadataPath,
+  jstring uploadAuthToken,
+  jstring uploadAuthHeader,
+  jstring uploadAuthQueryKey,
   jlong maxUploadBytes,
   jstring eventsPath
 ) {
@@ -35,6 +39,10 @@ Java_dev_zynth_webserver_ZynthWebServerNative_start(
   std::string indexHtmlStr = jstringToString(env, indexHtml);
   std::string uploadPathStr = jstringToString(env, uploadPath);
   std::string uploadDirStr = jstringToString(env, uploadDir);
+  std::string uploadMetadataPathStr = jstringToString(env, uploadMetadataPath);
+  std::string uploadAuthTokenStr = jstringToString(env, uploadAuthToken);
+  std::string uploadAuthHeaderStr = jstringToString(env, uploadAuthHeader);
+  std::string uploadAuthQueryKeyStr = jstringToString(env, uploadAuthQueryKey);
   std::string eventsPathStr = jstringToString(env, eventsPath);
 
   ZynthWebServerConfig config;
@@ -46,6 +54,14 @@ Java_dev_zynth_webserver_ZynthWebServerNative_start(
   config.upload_path =
     uploadPathStr.empty() ? nullptr : uploadPathStr.c_str();
   config.upload_dir = uploadDirStr.empty() ? nullptr : uploadDirStr.c_str();
+  config.upload_metadata_path =
+    uploadMetadataPathStr.empty() ? nullptr : uploadMetadataPathStr.c_str();
+  config.upload_auth_token =
+    uploadAuthTokenStr.empty() ? nullptr : uploadAuthTokenStr.c_str();
+  config.upload_auth_header =
+    uploadAuthHeaderStr.empty() ? nullptr : uploadAuthHeaderStr.c_str();
+  config.upload_auth_query_key =
+    uploadAuthQueryKeyStr.empty() ? nullptr : uploadAuthQueryKeyStr.c_str();
   config.max_upload_bytes = static_cast<long long>(maxUploadBytes);
   config.events_path =
     eventsPathStr.empty() ? nullptr : eventsPathStr.c_str();
@@ -134,4 +150,26 @@ Java_dev_zynth_webserver_ZynthWebServerNative_drainEvents(
 
   free(events);
   return array;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_dev_zynth_webserver_ZynthWebServerNative_getUploadStateJson(
+  JNIEnv *env,
+  jobject,
+  jlong handle
+) {
+  auto *server = reinterpret_cast<ZynthWebServer *>(handle);
+  if (!server) {
+    return env->NewStringUTF(
+      "{\"activeCount\":0,\"totalStarted\":0,\"totalCompleted\":0,"
+      "\"totalFailed\":0,\"totalBytesReceived\":0,\"activeUploads\":[]}"
+    );
+  }
+  char *json = zynth_webserver_get_upload_state_json(server);
+  if (!json) {
+    return nullptr;
+  }
+  jstring result = env->NewStringUTF(json);
+  zynth_webserver_free_string(json);
+  return result;
 }

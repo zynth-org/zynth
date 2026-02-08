@@ -10,6 +10,10 @@ NS_ASSUME_NONNULL_BEGIN
                        indexHtml:(NSString *_Nullable)indexHtml
                       uploadPath:(NSString *_Nullable)uploadPath
                        uploadDir:(NSString *_Nullable)uploadDir
+               uploadMetadataPath:(NSString *_Nullable)uploadMetadataPath
+                  uploadAuthToken:(NSString *_Nullable)uploadAuthToken
+                 uploadAuthHeader:(NSString *_Nullable)uploadAuthHeader
+               uploadAuthQueryKey:(NSString *_Nullable)uploadAuthQueryKey
                   maxUploadBytes:(long long)maxUploadBytes
                       eventsPath:(NSString *_Nullable)eventsPath;
 
@@ -18,6 +22,7 @@ NS_ASSUME_NONNULL_BEGIN
 + (int)port:(void *)handle;
 + (NSArray<NSDictionary *> *)drainEvents:(void *)handle
                                maxEvents:(NSInteger)maxEvents;
++ (NSString *_Nullable)uploadStateJson:(void *)handle;
 
 @end
 
