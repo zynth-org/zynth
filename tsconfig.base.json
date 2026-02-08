@@ -152,6 +152,12 @@
       "@zynth/secure-store/*": [
         "packages/zynth-secure-store/src/*"
       ],
+      "@zynth/skia": [
+        "packages/zynth-skia/src/index.ts"
+      ],
+      "@zynth/skia/*": [
+        "packages/zynth-skia/src/*"
+      ],
       "@zynth/skyhook": [
         "packages/zynth-skyhook/src/index.ts"
       ],

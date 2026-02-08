@@ -1,0 +1,106 @@
+{
+  "version": "0.91.0",
+  "artifactSet": "fab0a5adad3361364d3e",
+  "artifacts": [
+    {
+      "id": "android-arm64-gl-pdf",
+      "platform": "android",
+      "arch": "arm64-v8a",
+      "variant": "gl-pdf",
+      "url": "https://github.com/rust-skia/skia-binaries/releases/download/0.91.0/skia-binaries-fab0a5adad3361364d3e-aarch64-linux-android-gl-pdf.tar.gz",
+      "sha256": "",
+      "destination": "native/vendor/android/arm64-v8a/gl-pdf"
+    },
+    {
+      "id": "android-arm64-gl-pdf-textlayout",
+      "platform": "android",
+      "arch": "arm64-v8a",
+      "variant": "gl-pdf-textlayout",
+      "url": "https://github.com/rust-skia/skia-binaries/releases/download/0.91.0/skia-binaries-fab0a5adad3361364d3e-aarch64-linux-android-gl-pdf-textlayout.tar.gz",
+      "sha256": "",
+      "destination": "native/vendor/android/arm64-v8a/gl-pdf-textlayout"
+    },
+    {
+      "id": "android-x86_64-gl-pdf",
+      "platform": "android",
+      "arch": "x86_64",
+      "variant": "gl-pdf",
+      "url": "https://github.com/rust-skia/skia-binaries/releases/download/0.91.0/skia-binaries-fab0a5adad3361364d3e-x86_64-linux-android-gl-pdf.tar.gz",
+      "sha256": "",
+      "destination": "native/vendor/android/x86_64/gl-pdf"
+    },
+    {
+      "id": "android-x86_64-gl-pdf-textlayout",
+      "platform": "android",
+      "arch": "x86_64",
+      "variant": "gl-pdf-textlayout",
+      "url": "https://github.com/rust-skia/skia-binaries/releases/download/0.91.0/skia-binaries-fab0a5adad3361364d3e-x86_64-linux-android-gl-pdf-textlayout.tar.gz",
+      "sha256": "",
+      "destination": "native/vendor/android/x86_64/gl-pdf-textlayout"
+    },
+    {
+      "id": "android-x86-gl-pdf",
+      "platform": "android",
+      "arch": "x86",
+      "variant": "gl-pdf",
+      "url": "https://github.com/rust-skia/skia-binaries/releases/download/0.91.0/skia-binaries-fab0a5adad3361364d3e-i686-linux-android-gl-pdf.tar.gz",
+      "sha256": "",
+      "destination": "native/vendor/android/x86/gl-pdf",
+      "optional": true
+    },
+    {
+      "id": "ios-arm64-device-metal-pdf",
+      "platform": "ios",
+      "arch": "arm64",
+      "variant": "metal-pdf",
+      "url": "https://github.com/rust-skia/skia-binaries/releases/download/0.91.0/skia-binaries-fab0a5adad3361364d3e-aarch64-apple-ios-metal-pdf.tar.gz",
+      "sha256": "",
+      "destination": "native/vendor/ios/arm64/device/metal-pdf"
+    },
+    {
+      "id": "ios-arm64-device-metal-pdf-textlayout",
+      "platform": "ios",
+      "arch": "arm64",
+      "variant": "metal-pdf-textlayout",
+      "url": "https://github.com/rust-skia/skia-binaries/releases/download/0.91.0/skia-binaries-fab0a5adad3361364d3e-aarch64-apple-ios-metal-pdf-textlayout.tar.gz",
+      "sha256": "",
+      "destination": "native/vendor/ios/arm64/device/metal-pdf-textlayout"
+    },
+    {
+      "id": "ios-arm64-sim-metal-pdf",
+      "platform": "ios",
+      "arch": "arm64",
+      "variant": "sim-metal-pdf",
+      "url": "https://github.com/rust-skia/skia-binaries/releases/download/0.91.0/skia-binaries-fab0a5adad3361364d3e-aarch64-apple-ios-sim-metal-pdf.tar.gz",
+      "sha256": "",
+      "destination": "native/vendor/ios/arm64/simulator/metal-pdf"
+    },
+    {
+      "id": "ios-arm64-sim-metal-pdf-textlayout",
+      "platform": "ios",
+      "arch": "arm64",
+      "variant": "sim-metal-pdf-textlayout",
+      "url": "https://github.com/rust-skia/skia-binaries/releases/download/0.91.0/skia-binaries-fab0a5adad3361364d3e-aarch64-apple-ios-sim-metal-pdf-textlayout.tar.gz",
+      "sha256": "",
+      "destination": "native/vendor/ios/arm64/simulator/metal-pdf-textlayout"
+    },
+    {
+      "id": "ios-x86_64-sim-metal-pdf",
+      "platform": "ios",
+      "arch": "x86_64",
+      "variant": "sim-metal-pdf",
+      "url": "https://github.com/rust-skia/skia-binaries/releases/download/0.91.0/skia-binaries-fab0a5adad3361364d3e-x86_64-apple-ios-metal-pdf.tar.gz",
+      "sha256": "",
+      "destination": "native/vendor/ios/x86_64/simulator/metal-pdf"
+    },
+    {
+      "id": "ios-x86_64-sim-metal-pdf-textlayout",
+      "platform": "ios",
+      "arch": "x86_64",
+      "variant": "sim-metal-pdf-textlayout",
+      "url": "https://github.com/rust-skia/skia-binaries/releases/download/0.91.0/skia-binaries-fab0a5adad3361364d3e-x86_64-apple-ios-metal-pdf-textlayout.tar.gz",
+      "sha256": "",
+      "destination": "native/vendor/ios/x86_64/simulator/metal-pdf-textlayout"
+    }
+  ]
+}

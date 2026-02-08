@@ -1,0 +1,76 @@
+{
+  "name": "@zynth/skia",
+  "version": "0.0.1",
+  "description": "Declarative Skia renderer for Zynth",
+  "type": "module",
+  "main": "dist/esm/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "types": "./dist/types/index.d.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "ios",
+    "android",
+    "native",
+    "scripts",
+    "binaries.manifest.json",
+    "ZynthSkia.podspec",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "yarn build:js && yarn build:types",
+    "build:js": "rm -rf dist/esm && tsc --project tsconfig.json",
+    "build:types": "tsc --project tsconfig.types.json",
+    "clean": "rm -rf dist",
+    "binaries:sync": "node ./scripts/manage-binaries.mjs sync",
+    "binaries:update": "node ./scripts/manage-binaries.mjs update",
+    "postinstall": "node ./scripts/manage-binaries.mjs sync"
+  },
+  "keywords": [
+    "zynth",
+    "skia",
+    "native-module"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "@zynth/core": ">=0.0.1",
+    "@zynth/components": ">=0.0.1",
+    "solid-js": ">=1.8.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  },
+  "zynthNative": {
+    "ios": {
+      "pods": [
+        {
+          "name": "ZynthSkia",
+          "podspec": "./ZynthSkia.podspec"
+        }
+      ],
+      "initializer": {
+        "className": "SkiaModule",
+        "method": "initializeWith:"
+      }
+    },
+    "android": {
+      "modules": [
+        {
+          "name": "ZynthSkia",
+          "path": "./android/ZynthSkia"
+        }
+      ],
+      "initializer": {
+        "className": "Skia",
+        "method": "initialize",
+        "package": "dev.zynth.skia"
+      }
+    }
+  }
+}
