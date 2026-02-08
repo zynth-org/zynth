@@ -24,6 +24,7 @@ import org.json.JSONObject
 import org.json.JSONTokener
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 // TODO: Move this to a separate file or optimize
 private const val TRACE_TAG = "ZynthUIManager"
@@ -176,6 +177,11 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     }
     animationFrameCallbacks[callbackId] = callback
     choreographer?.postFrameCallback(callback)
+  }
+
+  fun setSharedSignal(id: Int, value: Double) {
+    if (runtimePtr == 0L) return
+    JSBridge.setSharedSignal(runtimePtr, id, value)
   }
 
   fun cancelAnimationFrame(callbackId: Int) {
@@ -789,6 +795,20 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     runOnMain {
       val targetIndex = index.coerceIn(0, group.childCount)
       group.addView(child, targetIndex)
+      val actualParent = child.parent as? ViewGroup ?: group
+      if (siblings.size > 1) {
+        // Keep draw order aligned with logical zIndex without relying on native Z/elevation.
+        val ordered = siblings.mapIndexedNotNull { insertionIndex, siblingId ->
+          val sibling = nodes[siblingId] ?: return@mapIndexedNotNull null
+          if (sibling.parent !== actualParent) return@mapIndexedNotNull null
+          val zIndex = styleStates[siblingId]?.zIndex ?: 0f
+          Triple(sibling, zIndex, insertionIndex)
+        }.sortedWith(compareBy<Triple<View, Float, Int>>({ it.second }, { it.third }))
+        ordered.forEach { (sibling, _, _) ->
+          sibling.bringToFront()
+        }
+        actualParent.invalidate()
+      }
     }
     val yogaParentId = if (isSurfaceRoot) 0 else parentId
     yogaForSurface(surfaceId).insertChild(yogaParentId, childId, index)
@@ -1321,6 +1341,84 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       skewY,
       perspective,
     )
+  }
+
+  fun applyAnimatedLayoutStyle(
+    nodeId: Int,
+    width: Float,
+    height: Float,
+    minWidth: Float,
+    minHeight: Float,
+    maxWidth: Float,
+    maxHeight: Float,
+    flexBasis: Float,
+  ) {
+    if (Looper.myLooper() != Looper.getMainLooper()) {
+      runOnMain {
+        applyAnimatedLayoutStyleInternal(
+          nodeId,
+          width,
+          height,
+          minWidth,
+          minHeight,
+          maxWidth,
+          maxHeight,
+          flexBasis,
+        )
+      }
+      return
+    }
+    applyAnimatedLayoutStyleInternal(
+      nodeId,
+      width,
+      height,
+      minWidth,
+      minHeight,
+      maxWidth,
+      maxHeight,
+      flexBasis,
+    )
+  }
+
+  private fun applyAnimatedLayoutStyleInternal(
+    nodeId: Int,
+    width: Float,
+    height: Float,
+    minWidth: Float,
+    minHeight: Float,
+    maxWidth: Float,
+    maxHeight: Float,
+    flexBasis: Float,
+  ) {
+    if (nodes[nodeId] == null) return
+    var changed = false
+
+    val applyDp = { name: String, value: Float ->
+      if (value.isFinite()) {
+        // Snap to physical pixels to avoid sub-pixel layout oscillation.
+        val px = dpToPx(value).roundToInt().toFloat()
+        val previous = yogaStyleCache[nodeId]?.get(name) as? Float
+        if (previous != null && kotlin.math.abs(previous - px) < 0.5f) {
+          Unit
+        } else {
+          cacheYogaStyle(nodeId, name, px)
+          yogaForNode(nodeId).setStyle(nodeId, name, px)
+          changed = true
+        }
+      }
+    }
+
+    applyDp("width", width)
+    applyDp("height", height)
+    applyDp("minWidth", minWidth)
+    applyDp("minHeight", minHeight)
+    applyDp("maxWidth", maxWidth)
+    applyDp("maxHeight", maxHeight)
+    applyDp("flexBasis", flexBasis)
+
+    if (changed) {
+      markSurfaceDirtyForNode(nodeId)
+    }
   }
 
   private fun applyAnimatedStyleInternal(

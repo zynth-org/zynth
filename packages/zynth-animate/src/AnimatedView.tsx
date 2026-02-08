@@ -50,6 +50,27 @@ export interface AnimatedViewProps extends Omit<ViewProps, "style"> {
   visible?: boolean;
 }
 
+function normalizeMappingValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((entry) => normalizeMappingValue(entry));
+  }
+  if (value && typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    const next: Record<string, unknown> = {};
+    for (const key of Object.keys(obj).sort()) {
+      // Runtime-only numeric preview field; not part of native mapping identity.
+      if (key === "__zynth_shared_signal_current") continue;
+      next[key] = normalizeMappingValue(obj[key]);
+    }
+    return next;
+  }
+  return value;
+}
+
+function getMappingKey(mapping: unknown): string {
+  return JSON.stringify(normalizeMappingValue(mapping));
+}
+
 export const AnimatedView: ParentComponent<AnimatedViewProps> = (props) => {
   const [local, rest] = splitProps(props, [
     "style",
@@ -75,6 +96,8 @@ export const AnimatedView: ParentComponent<AnimatedViewProps> = (props) => {
   let activeAnimationId: number | null = null;
   let didStartEnter = initialVisible;
   let styleMapperId: number | null = null;
+  let styleMapperNodeId: number | null = null;
+  let styleMapperKey: string | null = null;
 
   const stopAnimation = (): void => {
     if (cancelAnimation) {
@@ -321,6 +344,12 @@ export const AnimatedView: ParentComponent<AnimatedViewProps> = (props) => {
     if (nodeId && isNative) {
       void stopNativeTransition(nodeId);
     }
+    if (styleMapperId !== null) {
+      removeNativeStyleMapper(styleMapperId);
+      styleMapperId = null;
+      styleMapperNodeId = null;
+      styleMapperKey = null;
+    }
   });
 
   createEffect(() => {
@@ -332,23 +361,31 @@ export const AnimatedView: ParentComponent<AnimatedViewProps> = (props) => {
     };
     const mapping = animatedStyle.__zynthAnimatedStyle?.getMapping();
     const nodeId = hostNode()?.id;
-    if (!mapping || !nodeId) return;
+    if (!mapping || !nodeId) {
+      if (styleMapperId !== null) {
+        removeNativeStyleMapper(styleMapperId);
+        styleMapperId = null;
+        styleMapperNodeId = null;
+        styleMapperKey = null;
+      }
+      return;
+    }
 
     const nativeMapping = mapping as Parameters<
       typeof createNativeStyleMapper
     >[1];
-    if (styleMapperId === null) {
-      styleMapperId = createNativeStyleMapper(nodeId, nativeMapping);
-    } else {
-      updateNativeStyleMapper(styleMapperId, nativeMapping);
-    }
-
-    onCleanup(() => {
+    const nextMappingKey = getMappingKey(nativeMapping);
+    if (styleMapperId === null || styleMapperNodeId !== nodeId) {
       if (styleMapperId !== null) {
         removeNativeStyleMapper(styleMapperId);
-        styleMapperId = null;
       }
-    });
+      styleMapperId = createNativeStyleMapper(nodeId, nativeMapping);
+      styleMapperNodeId = nodeId;
+      styleMapperKey = nextMappingKey;
+    } else if (styleMapperKey !== nextMappingKey) {
+      updateNativeStyleMapper(styleMapperId, nativeMapping);
+      styleMapperKey = nextMappingKey;
+    }
   });
 
   const baseStyle = mergeStyles(resolveStyle);

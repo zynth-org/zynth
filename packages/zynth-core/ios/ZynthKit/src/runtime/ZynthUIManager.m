@@ -1,4 +1,8 @@
 #import "ZynthUIManager.h"
+#import "ZynthRuntime.h"
+#import "ZynthHermesRuntimeHost.h"
+#import "ZynthWorklets.h"
+#import "ZynthJSIPluginRegistry.h"
 #import "ZynthUIBindings.h"
 #import "ZynthLayoutTransition.h"
 #import "ZynthUIManager+Private.h"
@@ -958,6 +962,15 @@ static NSString *ZynthVisibility(UIView *view) {
 - (void)markNodeDirty:(NSNumber *)nodeId {
   [[self yogaForNode:nodeId] markDirty:nodeId];
   [self markSurfaceDirtyForNode:nodeId];
+}
+
+- (void)setSharedSignal:(int)signalId value:(double)value {
+  ZynthRuntime *runtime = self.zynthRuntime;
+  if (!runtime) return;
+  // Access private property using public header type
+  ZynthHermesRuntimeHost *host = [runtime valueForKey:@"runtime"];
+  if (!host) return;
+  (void)ZynthSetSharedSignalForHost(host, signalId, value);
 }
 
 - (void)applyKeyboardAvoidingAdjustment:(NSNumber *)nodeId behavior:(NSString *)behavior overlap:(CGFloat)overlap availableHeight:(NSNumber *_Nullable)availableHeight {

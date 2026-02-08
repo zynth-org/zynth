@@ -9,6 +9,7 @@ import {
 import type { Style } from "@zynth/core";
 import { Easing, type EasingFunction } from "./easing";
 import {
+  INTERPOLATION_MARKER,
   SHARED_VALUE_MARKER,
   animateNativeSharedValue,
   cancelNativeSharedValue,
@@ -57,9 +58,20 @@ export type SharedValue<T> = {
   get value(): T;
   set value(next: T);
   cancelAnimation: () => void;
+  nativeId?: number;
 };
 
 type SharedValueToken = SharedSignalToken;
+type InterpolatedValueToken = {
+  [INTERPOLATION_MARKER]: {
+    source: { [SHARED_VALUE_MARKER]: number } | number;
+    inputRange: number[];
+    outputRange: number[];
+    extrapolateLeft?: "identity" | "clamp" | "extend";
+    extrapolateRight?: "identity" | "clamp" | "extend";
+  };
+  __zynth_shared_signal_current?: number;
+};
 
 const DEFAULT_DURATION = 300;
 const DEFAULT_DAMPING = 20;
@@ -108,6 +120,7 @@ export function useSharedValue<T>(initialValue: T): SharedValue<T> {
   let cachedValue = initialValue;
   let cancelActive: (() => void) | null = null;
   let finishCallback: AnimationCallback | null = null;
+  let warnedJsAnimationFallback = false;
 
   const cancelAnimation = (finished: boolean): void => {
     if (cancelActive) {
@@ -290,6 +303,12 @@ export function useSharedValue<T>(initialValue: T): SharedValue<T> {
         animateNativeSharedValue(nativeId, payload);
         return;
       }
+      if (animationRequest && !warnedJsAnimationFallback) {
+        warnedJsAnimationFallback = true;
+        console.warn(
+          "Animating shared value on the JS thread. This may cause performance issues. Consider using this animation on a native-driven style property.",
+        );
+      }
       if (isTimingAnimation(next)) {
         startTiming(next);
         return;
@@ -306,6 +325,7 @@ export function useSharedValue<T>(initialValue: T): SharedValue<T> {
         cancelNativeSharedValue(nativeId);
       }
     },
+    nativeId: nativeId ?? undefined,
   };
 
   return shared;
@@ -328,12 +348,33 @@ function isSharedValueToken(value: unknown): value is SharedValueToken {
   );
 }
 
+function isInterpolatedValueToken(value: unknown): value is InterpolatedValueToken {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      typeof (value as InterpolatedValueToken)[INTERPOLATION_MARKER] === "object",
+  );
+}
+
 function resolveTokenValue(value: unknown): {
   value: unknown;
   token?: SharedValueToken;
+  interpolation?: NativeStyleMapperConfig["opacity"];
+  isDynamicMapped?: boolean;
 } {
   if (isSharedValueToken(value)) {
-    return { value: value.__zynth_shared_signal_current, token: value };
+    return {
+      value: value.__zynth_shared_signal_current,
+      token: value,
+      isDynamicMapped: true,
+    };
+  }
+  if (isInterpolatedValueToken(value)) {
+    return {
+      value: value.__zynth_shared_signal_current,
+      interpolation: value as NativeStyleMapperConfig["opacity"],
+      isDynamicMapped: true,
+    };
   }
   return { value };
 }
@@ -356,6 +397,77 @@ function normalizeAngleValue(value: unknown): unknown {
   return value;
 }
 
+function applyLayoutStyleMapping(
+  style: Style,
+  resolved: Style,
+  mapping: NativeStyleMapperConfig,
+  key:
+    | "width"
+    | "height"
+    | "minWidth"
+    | "minHeight"
+    | "maxWidth"
+    | "maxHeight"
+    | "flexBasis",
+): boolean {
+  const rawValue = style[key];
+  if (rawValue === undefined) return false;
+  const { value, token, interpolation, isDynamicMapped } =
+    resolveTokenValue(rawValue);
+  if (isDynamicMapped) {
+    delete (resolved as Record<string, unknown>)[key];
+  }
+  switch (key) {
+    case "width":
+      if (!isDynamicMapped) {
+        resolved.width = rawValue as Style["width"];
+      }
+      break;
+    case "height":
+      if (!isDynamicMapped) {
+        resolved.height = rawValue as Style["height"];
+      }
+      break;
+    case "minWidth":
+      if (!isDynamicMapped) {
+        resolved.minWidth = rawValue as Style["minWidth"];
+      }
+      break;
+    case "minHeight":
+      if (!isDynamicMapped) {
+        resolved.minHeight = rawValue as Style["minHeight"];
+      }
+      break;
+    case "maxWidth":
+      if (!isDynamicMapped) {
+        resolved.maxWidth = rawValue as Style["maxWidth"];
+      }
+      break;
+    case "maxHeight":
+      if (!isDynamicMapped) {
+        resolved.maxHeight = rawValue as Style["maxHeight"];
+      }
+      break;
+    case "flexBasis":
+      if (!isDynamicMapped) {
+        resolved.flexBasis = rawValue as Style["flexBasis"];
+      }
+      break;
+  }
+    if (token) {
+      mapping[key] = { [SHARED_VALUE_MARKER]: token[SHARED_VALUE_MARKER] };
+      return true;
+    }
+    if (interpolation) {
+      mapping[key] = interpolation as NativeStyleMapperConfig[typeof key];
+      return true;
+    }
+    if (typeof value === "number" || typeof value === "string") {
+      mapping[key] = value as NativeStyleMapperConfig[typeof key];
+    }
+  return false;
+}
+
 function buildNativeStyleMapping(style: Style): {
   mapping: NativeStyleMapperConfig | null;
   resolved: Style;
@@ -365,15 +477,42 @@ function buildNativeStyleMapping(style: Style): {
   const mapping: NativeStyleMapperConfig = {};
 
   if (style.opacity !== undefined) {
-    const { value, token } = resolveTokenValue(style.opacity);
-    resolved.opacity = value as number;
+    const { value, token, interpolation, isDynamicMapped } = resolveTokenValue(
+      style.opacity,
+    );
+    if (isDynamicMapped) {
+      delete resolved.opacity;
+    } else {
+      resolved.opacity = value as number;
+    }
     if (token) {
       mapping.opacity = { [SHARED_VALUE_MARKER]: token[SHARED_VALUE_MARKER] };
+      hasMapping = true;
+    } else if (interpolation) {
+      mapping.opacity = interpolation;
       hasMapping = true;
     } else if (typeof value === "number" || typeof value === "string") {
       mapping.opacity = value as NativeStyleMapperConfig["opacity"];
     }
   }
+
+  hasMapping =
+    applyLayoutStyleMapping(style, resolved, mapping, "width") || hasMapping;
+  hasMapping =
+    applyLayoutStyleMapping(style, resolved, mapping, "height") || hasMapping;
+  hasMapping =
+    applyLayoutStyleMapping(style, resolved, mapping, "minWidth") || hasMapping;
+  hasMapping =
+    applyLayoutStyleMapping(style, resolved, mapping, "minHeight") ||
+    hasMapping;
+  hasMapping =
+    applyLayoutStyleMapping(style, resolved, mapping, "maxWidth") || hasMapping;
+  hasMapping =
+    applyLayoutStyleMapping(style, resolved, mapping, "maxHeight") ||
+    hasMapping;
+  hasMapping =
+    applyLayoutStyleMapping(style, resolved, mapping, "flexBasis") ||
+    hasMapping;
 
   if (Array.isArray(style.transform)) {
     const resolvedTransforms: Array<Record<string, unknown>> = [];
@@ -385,15 +524,21 @@ function buildNativeStyleMapping(style: Style): {
       const nextMapped: Record<string, unknown> = {};
 
       for (const [key, rawValue] of Object.entries(entry)) {
-        const { value, token } = resolveTokenValue(rawValue);
+        const { value, token, interpolation, isDynamicMapped } =
+          resolveTokenValue(rawValue);
         const resolvedValue = isAngleKey(key)
           ? normalizeAngleValue(value)
           : value;
-        nextResolved[key] = resolvedValue;
+        if (!isDynamicMapped) {
+          nextResolved[key] = resolvedValue;
+        }
         if (token) {
           nextMapped[key] = {
             [SHARED_VALUE_MARKER]: token[SHARED_VALUE_MARKER],
           };
+          hasMapping = true;
+        } else if (interpolation) {
+          nextMapped[key] = interpolation;
           hasMapping = true;
         } else {
           const mappedValue = isAngleKey(key)

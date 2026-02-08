@@ -21,6 +21,7 @@ namespace {
 constexpr const char *kTag = "ZynthAnimate";
 constexpr const char *kAnimateKey = "__zynth_animate";
 constexpr const char *kSharedValueKey = "__zynth_shared_value";
+constexpr const char *kInterpolationKey = "__zynth_interpolation";
 
 JavaVM *gVm = nullptr;
 jclass gFrameClockClass = nullptr;
@@ -32,14 +33,19 @@ using GetSharedSignalFn = double (*)(void *, int, bool *);
 using SetSharedSignalFn = bool (*)(void *, int, double);
 using ApplyAnimatedStyleFn =
     void (*)(void *, int, float, float, float, float, float, float, float, float, float, float, float);
+using ApplyAnimatedLayoutStyleFn =
+    void (*)(void *, int, float, float, float, float, float, float, float);
 
 CreateSharedSignalFn gCreateSharedSignal = nullptr;
 GetSharedSignalFn gGetSharedSignal = nullptr;
 SetSharedSignalFn gSetSharedSignal = nullptr;
 ApplyAnimatedStyleFn gApplyAnimatedStyle = nullptr;
+ApplyAnimatedLayoutStyleFn gApplyAnimatedLayoutStyle = nullptr;
 
 using RegisterInstallerFn = void (*)(ZynthJSIPluginInstaller);
+using RegisterSharedSignalCallbackFn = void (*)(ZynthSharedSignalChangedCallback);
 RegisterInstallerFn gRegisterInstaller = nullptr;
+RegisterSharedSignalCallbackFn gRegisterSharedSignalCallback = nullptr;
 
 JNIEnv *getEnv() {
   if (!gVm) return nullptr;
@@ -52,16 +58,36 @@ JNIEnv *getEnv() {
 
 void resolveCoreSymbols() {
   if (gRegisterInstaller) return;
+  __android_log_print(ANDROID_LOG_DEBUG, kTag, "Resolving core symbols...");
+  
+  void *handle = dlopen("libzynthkit.so", RTLD_NOW | RTLD_GLOBAL);
+  if (!handle) {
+    __android_log_print(ANDROID_LOG_ERROR, kTag, "Failed to dlopen libzynthkit.so: %s", dlerror());
+    // Fallback to default search just in case
+    handle = RTLD_DEFAULT;
+  }
+
   gRegisterInstaller = reinterpret_cast<RegisterInstallerFn>(
-      dlsym(RTLD_DEFAULT, "ZynthRegisterJSIPluginInstaller"));
+      dlsym(handle, "ZynthRegisterJSIPluginInstaller"));
+  gRegisterSharedSignalCallback = reinterpret_cast<RegisterSharedSignalCallbackFn>(
+      dlsym(handle, "ZynthRegisterSharedSignalChangedCallback"));
+  
+  if (gRegisterSharedSignalCallback) {
+    __android_log_print(ANDROID_LOG_DEBUG, kTag, "Successfully resolved ZynthRegisterSharedSignalChangedCallback");
+  } else {
+    __android_log_print(ANDROID_LOG_ERROR, kTag, "FAILED to resolve ZynthRegisterSharedSignalChangedCallback: %s", dlerror());
+  }
+
   gCreateSharedSignal = reinterpret_cast<CreateSharedSignalFn>(
-      dlsym(RTLD_DEFAULT, "ZynthCreateSharedSignal"));
+      dlsym(handle, "ZynthCreateSharedSignal"));
   gGetSharedSignal = reinterpret_cast<GetSharedSignalFn>(
-      dlsym(RTLD_DEFAULT, "ZynthGetSharedSignal"));
+      dlsym(handle, "ZynthGetSharedSignal"));
   gSetSharedSignal = reinterpret_cast<SetSharedSignalFn>(
-      dlsym(RTLD_DEFAULT, "ZynthSetSharedSignal"));
+      dlsym(handle, "ZynthSetSharedSignal"));
   gApplyAnimatedStyle = reinterpret_cast<ApplyAnimatedStyleFn>(
-      dlsym(RTLD_DEFAULT, "ZynthApplyAnimatedStyle"));
+      dlsym(handle, "ZynthApplyAnimatedStyle"));
+  gApplyAnimatedLayoutStyle = reinterpret_cast<ApplyAnimatedLayoutStyleFn>(
+      dlsym(handle, "ZynthApplyAnimatedLayoutStyle"));
 }
 
 struct SharedAnimation {
@@ -87,8 +113,13 @@ struct SharedAnimation {
 struct MappedValue {
   bool hasValue = false;
   bool isShared = false;
+  bool isInterpolation = false;
   int sharedId = 0;
   double numberValue = 0.0;
+  std::vector<double> inputRange;
+  std::vector<double> outputRange;
+  std::string extrapolateLeft = "clamp";
+  std::string extrapolateRight = "clamp";
 };
 
 struct StyleMapper {
@@ -106,6 +137,13 @@ struct StyleMapper {
   MappedValue skewX;
   MappedValue skewY;
   MappedValue perspective;
+  MappedValue width;
+  MappedValue height;
+  MappedValue minWidth;
+  MappedValue minHeight;
+  MappedValue maxWidth;
+  MappedValue maxHeight;
+  MappedValue flexBasis;
 };
 
 bool extractSharedValueId(Runtime &rt, const Value &value, int &outId) {
@@ -151,6 +189,78 @@ bool parseMappedValue(Runtime &rt, const Value &value, MappedValue &out, bool is
     out.sharedId = sharedId;
     return true;
   }
+  if (value.isObject()) {
+    Object obj = value.getObject(rt);
+    if (obj.hasProperty(rt, kInterpolationKey)) {
+      Value interpolationValue = obj.getProperty(rt, kInterpolationKey);
+      if (!interpolationValue.isObject()) return false;
+      Object interpolationObj = interpolationValue.getObject(rt);
+      if (!interpolationObj.hasProperty(rt, "source") ||
+          !interpolationObj.hasProperty(rt, "inputRange") ||
+          !interpolationObj.hasProperty(rt, "outputRange")) {
+        return false;
+      }
+
+      int sourceId = 0;
+      Value sourceValue = interpolationObj.getProperty(rt, "source");
+      if (sourceValue.isNumber()) {
+        sourceId = static_cast<int>(sourceValue.asNumber());
+      } else if (!extractSharedValueId(rt, sourceValue, sourceId)) {
+        return false;
+      }
+
+      Value inputRangeValue = interpolationObj.getProperty(rt, "inputRange");
+      Value outputRangeValue = interpolationObj.getProperty(rt, "outputRange");
+      if (!inputRangeValue.isObject() || !outputRangeValue.isObject()) {
+        return false;
+      }
+      Object inputObj = inputRangeValue.getObject(rt);
+      Object outputObj = outputRangeValue.getObject(rt);
+      if (!inputObj.isArray(rt) || !outputObj.isArray(rt)) {
+        return false;
+      }
+      Array inputArray = inputObj.asArray(rt);
+      Array outputArray = outputObj.asArray(rt);
+      size_t count = inputArray.size(rt);
+      if (count < 2 || outputArray.size(rt) != count) {
+        return false;
+      }
+
+      out.hasValue = true;
+      out.isInterpolation = true;
+      out.isShared = false;
+      out.sharedId = sourceId;
+      out.inputRange.clear();
+      out.outputRange.clear();
+      out.inputRange.reserve(count);
+      out.outputRange.reserve(count);
+
+      for (size_t i = 0; i < count; i++) {
+        Value inputEntry = inputArray.getValueAtIndex(rt, i);
+        Value outputEntry = outputArray.getValueAtIndex(rt, i);
+        if (!inputEntry.isNumber() || !outputEntry.isNumber()) {
+          out.hasValue = false;
+          return false;
+        }
+        out.inputRange.push_back(inputEntry.asNumber());
+        out.outputRange.push_back(outputEntry.asNumber());
+      }
+
+      if (interpolationObj.hasProperty(rt, "extrapolateLeft")) {
+        Value left = interpolationObj.getProperty(rt, "extrapolateLeft");
+        if (left.isString()) {
+          out.extrapolateLeft = left.getString(rt).utf8(rt);
+        }
+      }
+      if (interpolationObj.hasProperty(rt, "extrapolateRight")) {
+        Value right = interpolationObj.getProperty(rt, "extrapolateRight");
+        if (right.isString()) {
+          out.extrapolateRight = right.getString(rt).utf8(rt);
+        }
+      }
+      return true;
+    }
+  }
   if (value.isNumber()) {
     out.hasValue = true;
     out.isShared = false;
@@ -170,8 +280,48 @@ bool parseMappedValue(Runtime &rt, const Value &value, MappedValue &out, bool is
   return false;
 }
 
+double interpolateMappedValue(const MappedValue &value, double source, double fallback) {
+  if (value.inputRange.size() < 2 || value.inputRange.size() != value.outputRange.size()) {
+    return fallback;
+  }
+
+  size_t i = 1;
+  for (; i < value.inputRange.size() - 1; i++) {
+    if (source < value.inputRange[i]) break;
+  }
+
+  double inputMin = value.inputRange[i - 1];
+  double inputMax = value.inputRange[i];
+  double outputMin = value.outputRange[i - 1];
+  double outputMax = value.outputRange[i];
+
+  if (source < inputMin) {
+    if (value.extrapolateLeft == "identity") return source;
+    if (value.extrapolateLeft == "clamp") return outputMin;
+  }
+
+  if (source > inputMax) {
+    if (value.extrapolateRight == "identity") return source;
+    if (value.extrapolateRight == "clamp") return outputMax;
+  }
+
+  double inputSpan = inputMax - inputMin;
+  if (std::abs(inputSpan) <= 0.000001) {
+    return outputMax;
+  }
+  double progress = (source - inputMin) / inputSpan;
+  return outputMin + progress * (outputMax - outputMin);
+}
+
 double resolveMappedValue(const MappedValue &value, void *state, double fallback) {
   if (!value.hasValue) return fallback;
+  if (value.isInterpolation) {
+    if (!gGetSharedSignal) return fallback;
+    bool found = false;
+    double source = gGetSharedSignal(state, value.sharedId, &found);
+    if (!found || !std::isfinite(source)) return fallback;
+    return interpolateMappedValue(value, source, fallback);
+  }
   if (value.isShared) {
     if (!gGetSharedSignal) return fallback;
     bool found = false;
@@ -185,6 +335,8 @@ class ZynthAnimateRuntime {
  public:
   ZynthAnimateRuntime(Runtime &rt, void *state)
       : runtime(rt), state(state), nextStyleMapperId(1) {}
+
+  void *getState() const { return state; }
 
   void install() {
     auto createSharedValue = Function::createFromHostFunction(
@@ -218,7 +370,9 @@ class ZynthAnimateRuntime {
           int id = static_cast<int>(args[0].asNumber());
           double value = args[1].asNumber();
           gSetSharedSignal(state, id, value);
-          applyStyleMappers();
+          // Coalesce high-frequency shared value updates (e.g. scroll) to one
+          // mapper application per frame to avoid stale main-thread layout writes.
+          ensureFrame();
           return Value::undefined();
         });
 
@@ -407,6 +561,18 @@ class ZynthAnimateRuntime {
     }
   }
 
+  void ensureFrame() {
+    if (frameScheduled) return;
+    frameScheduled = true;
+    JNIEnv *env = getEnv();
+    if (!env || !gFrameClockClass || !gRequestFrame) {
+      frameScheduled = false;
+      return;
+    }
+    env->CallStaticVoidMethod(gFrameClockClass, gRequestFrame,
+                              reinterpret_cast<jlong>(this));
+  }
+
  private:
   Runtime &runtime;
   void *state;
@@ -428,24 +594,33 @@ class ZynthAnimateRuntime {
     return !animations.empty();
   }
 
-  void ensureFrame() {
-    if (frameScheduled) return;
-    frameScheduled = true;
-    JNIEnv *env = getEnv();
-    if (!env || !gFrameClockClass || !gRequestFrame) {
-      frameScheduled = false;
-      return;
-    }
-    env->CallStaticVoidMethod(gFrameClockClass, gRequestFrame,
-                              reinterpret_cast<jlong>(this));
-  }
-
   StyleMapper buildStyleMapper(Runtime &rt, const Value &value) {
     StyleMapper mapper;
     if (!value.isObject()) return mapper;
     Object styleObj = value.asObject(rt);
     if (styleObj.hasProperty(rt, "opacity")) {
       parseMappedValue(rt, styleObj.getProperty(rt, "opacity"), mapper.opacity);
+    }
+    if (styleObj.hasProperty(rt, "width")) {
+      parseMappedValue(rt, styleObj.getProperty(rt, "width"), mapper.width);
+    }
+    if (styleObj.hasProperty(rt, "height")) {
+      parseMappedValue(rt, styleObj.getProperty(rt, "height"), mapper.height);
+    }
+    if (styleObj.hasProperty(rt, "minWidth")) {
+      parseMappedValue(rt, styleObj.getProperty(rt, "minWidth"), mapper.minWidth);
+    }
+    if (styleObj.hasProperty(rt, "minHeight")) {
+      parseMappedValue(rt, styleObj.getProperty(rt, "minHeight"), mapper.minHeight);
+    }
+    if (styleObj.hasProperty(rt, "maxWidth")) {
+      parseMappedValue(rt, styleObj.getProperty(rt, "maxWidth"), mapper.maxWidth);
+    }
+    if (styleObj.hasProperty(rt, "maxHeight")) {
+      parseMappedValue(rt, styleObj.getProperty(rt, "maxHeight"), mapper.maxHeight);
+    }
+    if (styleObj.hasProperty(rt, "flexBasis")) {
+      parseMappedValue(rt, styleObj.getProperty(rt, "flexBasis"), mapper.flexBasis);
     }
     if (styleObj.hasProperty(rt, "transform")) {
       Value transformValue = styleObj.getProperty(rt, "transform");
@@ -540,6 +715,45 @@ class ZynthAnimateRuntime {
         skewX,
         skewY,
         perspective);
+
+    if (gApplyAnimatedLayoutStyle) {
+      float width = mapper.width.hasValue
+          ? static_cast<float>(resolveMappedValue(mapper.width, state, std::numeric_limits<float>::quiet_NaN()))
+          : std::numeric_limits<float>::quiet_NaN();
+      float height = mapper.height.hasValue
+          ? static_cast<float>(resolveMappedValue(mapper.height, state, std::numeric_limits<float>::quiet_NaN()))
+          : std::numeric_limits<float>::quiet_NaN();
+      
+      if (!std::isnan(height)) {
+        __android_log_print(ANDROID_LOG_DEBUG, kTag, "Applying height %.2f to node %d", height, mapper.nodeId);
+      }
+      
+      float minWidth = mapper.minWidth.hasValue
+          ? static_cast<float>(resolveMappedValue(mapper.minWidth, state, std::numeric_limits<float>::quiet_NaN()))
+          : std::numeric_limits<float>::quiet_NaN();
+      float minHeight = mapper.minHeight.hasValue
+          ? static_cast<float>(resolveMappedValue(mapper.minHeight, state, std::numeric_limits<float>::quiet_NaN()))
+          : std::numeric_limits<float>::quiet_NaN();
+      float maxWidth = mapper.maxWidth.hasValue
+          ? static_cast<float>(resolveMappedValue(mapper.maxWidth, state, std::numeric_limits<float>::quiet_NaN()))
+          : std::numeric_limits<float>::quiet_NaN();
+      float maxHeight = mapper.maxHeight.hasValue
+          ? static_cast<float>(resolveMappedValue(mapper.maxHeight, state, std::numeric_limits<float>::quiet_NaN()))
+          : std::numeric_limits<float>::quiet_NaN();
+      float flexBasis = mapper.flexBasis.hasValue
+          ? static_cast<float>(resolveMappedValue(mapper.flexBasis, state, std::numeric_limits<float>::quiet_NaN()))
+          : std::numeric_limits<float>::quiet_NaN();
+      gApplyAnimatedLayoutStyle(
+          state,
+          mapper.nodeId,
+          width,
+          height,
+          minWidth,
+          minHeight,
+          maxWidth,
+          maxHeight,
+          flexBasis);
+    }
   }
 
   void applyStyleMappers() {
@@ -560,8 +774,26 @@ class ZynthAnimateRuntime {
 std::mutex gInstanceMutex;
 std::unordered_map<ZynthAnimateRuntime *, std::shared_ptr<ZynthAnimateRuntime>> gInstances;
 
+void onSharedSignalChanged(void *state, int signalId) {
+  __android_log_print(ANDROID_LOG_DEBUG, kTag, "Shared signal %d changed", signalId);
+  std::lock_guard<std::mutex> lock(gInstanceMutex);
+  if (gInstances.empty()) {
+    __android_log_print(ANDROID_LOG_DEBUG, kTag, "onSharedSignalChanged: gInstances is empty!");
+  }
+  for (auto &pair : gInstances) {
+    if (pair.first->getState() == state) {
+      __android_log_print(ANDROID_LOG_DEBUG, kTag, "Scheduling frame for signal %d", signalId);
+      pair.first->ensureFrame();
+    }
+  }
+}
+
 void registerInstaller() {
+  __android_log_print(ANDROID_LOG_DEBUG, kTag, "Registering installer...");
   resolveCoreSymbols();
+  if (gRegisterSharedSignalCallback) {
+    gRegisterSharedSignalCallback(onSharedSignalChanged);
+  }
   if (!gRegisterInstaller) {
     __android_log_print(ANDROID_LOG_WARN, kTag, "JSI plugin registry not available");
     return;

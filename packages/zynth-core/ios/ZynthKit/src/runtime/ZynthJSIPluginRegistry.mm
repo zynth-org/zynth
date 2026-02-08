@@ -1,4 +1,10 @@
 #import "ZynthJSIPluginRegistry.h"
+#import "ZynthWorklets.h"
+
+BOOL ZynthSetSharedSignalForHost(ZynthHermesRuntimeHost *host, int signalId, double value) {
+  if (!host) return NO;
+  return [[host worklets] setSharedSignalValue:signalId value:value];
+}
 
 #ifdef __cplusplus
 namespace {
@@ -13,8 +19,19 @@ void ZynthRegisterJSIPluginInstaller(ZynthJSIPluginInstaller installer) {
   pluginInstallers().push_back(installer);
 }
 
+void ZynthRegisterSharedSignalChangedCallback(ZynthSharedSignalChangedCallback callback) {
+  [ZynthWorklets registerSharedSignalChangedCallback:callback];
+}
+
+bool ZynthSetSharedSignal(void *state, int signalId, double value) {
+  ZynthHermesRuntimeHost *host = (__bridge ZynthHermesRuntimeHost *)state;
+  return ZynthSetSharedSignalForHost(host, signalId, value);
+}
+
 void ZynthInstallJSIPlugins(ZynthHermesRuntimeHost *host, facebook::jsi::Runtime &rt) {
-  for (auto installer : pluginInstallers()) {
+  auto &installers = pluginInstallers();
+  NSLog(@"[ZynthKit] Installing %lu JSI plugins", (unsigned long)installers.size());
+  for (auto installer : installers) {
     installer(host, rt);
   }
 }

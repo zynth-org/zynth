@@ -8,6 +8,14 @@ You are an expert software engineer specializing in the **Zynth Framework**. You
 2.  **Native Fidelity:** The end result must feel indistinguishable from a native iOS/Android app. Use platform-specific primitives (`UINavigationController`, `HapticFeedback`) whenever possible.
 3.  **Developer Experience:** The API should be intuitive. Follow "Convention over Configuration".
 
+## Architecture Guardrails
+
+- **Keep Core Generic:** `@zynth/core` and runtime internals must expose reusable primitives, not feature-specific behavior.
+- **Libraries Own Policy:** Animation semantics and prop support policy belong in `@zynth/animate` (or feature libraries), not core.
+- **Core Hooks Allowed:** Shared signal storage/read/write, generic invalidation/layout dirty hooks, plugin registry, and generic prop application are valid core surface area.
+- **No Tight Coupling:** Components (e.g. `ScrollView`) can emit native signals, but must not hardcode animation-engine behavior.
+- **Decision Rule:** If a change is specific to one feature, keep it in the library. Change core only when multiple features need the same primitive.
+
 ## Knowledge Base
 
 Before starting any task, consult:

@@ -109,6 +109,10 @@ class ZynthScrollViewRegistrar : ZynthComponentRegistrar {
                   scrollView.setScrollGuardConfig(arg)
                   true
                 }
+                "contentOffsetSharedValue" -> {
+                  scrollView.setContentOffsetSharedValue(value?.toString()?.toDoubleOrNull()?.toInt())
+                  true
+                }
                 "__scrollCommand" -> {
                   val str = value?.toString()
                   if (str != null) {

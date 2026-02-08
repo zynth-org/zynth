@@ -63,12 +63,18 @@ export type FlatListProps<T> = {
   ListFooterComponent?: JSX.Element | (() => JSX.Element);
   ListEmptyComponent?: JSX.Element | (() => JSX.Element);
   testID?: string;
+  onLayout?: (event: LayoutChangeEvent) => void;
   onStartReached?: () => void;
   onStartReachedThreshold?: number;
   onEndReached?: () => void;
   onEndReachedThreshold?: number;
   onScroll?: (event: ScrollEvent) => void;
   debug?: boolean;
+  /**
+   * The native ID of a SharedValue to be updated synchronously on the UI thread
+   * with the scroll offset. This bypasses the JS bridge for high-performance animations.
+   */
+  contentOffsetSharedValue?: number;
 };
 
 type PoolSlot<T> = {
@@ -1159,6 +1165,8 @@ export function FlatList<T>(props: FlatListProps<T>) {
       }
       contentSize={manualContentSize()}
       testID={props.testID}
+      contentOffsetSharedValue={props.contentOffsetSharedValue}
+      onLayout={props.onLayout}
       onScroll={handleScroll}
     >
       {renderHeader()}

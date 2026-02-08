@@ -13,6 +13,7 @@ internal data class ZynthViewStyleState(
   var shadowRadius: Float? = null,
   var shadowOffsetX: Float? = null,
   var shadowOffsetY: Float? = null,
+  var zIndex: Float = 0f,
   var transformOps: List<TransformOperation>? = null,
   var transformOrigin: Pair<OriginValue, OriginValue>? = null,
 )
@@ -136,9 +137,13 @@ internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, va
       return true
     }
     "zIndex" -> {
+      val state = styleStates.getOrPut(id) { ZynthViewStyleState() }
+      state.zIndex = floatVal
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-        view.z = floatVal
+        // zIndex controls stacking only; do not map to native Z to avoid implicit shadows.
+        view.translationZ = 0f
       }
+      reorderParentChildrenByZIndex(id)
       return true
     }
     "opacity" -> {
@@ -458,9 +463,12 @@ internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, va
       return true
     }
     "zIndex" -> {
+      state.zIndex = value.toFloatOrNull() ?: 0f
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-        view.z = value.toFloatOrNull() ?: 0f
+        // zIndex controls stacking only; do not map to native Z to avoid implicit shadows.
+        view.translationZ = 0f
       }
+      reorderParentChildrenByZIndex(id)
       return true
     }
     "transform" -> {
@@ -798,4 +806,23 @@ private fun ZynthUIManager.boostShadow(shadow: ShadowLayer): ShadowLayer {
     offsetY = shadow.offsetY * 1.6f,
     color = color
   )
+}
+
+private fun ZynthUIManager.reorderParentChildrenByZIndex(nodeId: Int) {
+  val parentId = parents[nodeId] ?: return
+  val siblings = children[parentId] ?: return
+  if (siblings.size <= 1) return
+
+  val parent = nodes[nodeId]?.parent as? android.view.ViewGroup ?: return
+  val ordered = siblings.mapIndexedNotNull { insertionIndex, siblingId ->
+    val sibling = nodes[siblingId] ?: return@mapIndexedNotNull null
+    if (sibling.parent !== parent) return@mapIndexedNotNull null
+    val zIndex = styleStates[siblingId]?.zIndex ?: 0f
+    Triple(sibling, zIndex, insertionIndex)
+  }.sortedWith(compareBy<Triple<android.view.View, Float, Int>>({ it.second }, { it.third }))
+
+  ordered.forEach { (child, _, _) ->
+    child.bringToFront()
+  }
+  parent.invalidate()
 }

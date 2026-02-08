@@ -129,6 +129,11 @@ static BOOL ZynthScrollViewHandleSetProp(ZynthUIManager *manager,
     return YES;
   }
 
+  if ([name isEqualToString:@"contentOffsetSharedValue"]) {
+    [scrollView zynth_setContentOffsetSharedValue:value];
+    return YES;
+  }
+
   if ([name isEqualToString:@"contentSize"]) {
     if ([value isKindOfClass:[NSDictionary class]]) {
       [scrollView zynth_setManualContentSize:(NSDictionary *)value];

@@ -55,6 +55,7 @@ static NSTimeInterval ZynthScrollCurrentTime(void) {
 @property(nonatomic, assign) CGSize lastContentSize;
 @property(nonatomic, assign) CGSize manualContentSize;
 @property(nonatomic, assign) NSTimeInterval lastGestureTimestamp;
+@property(nonatomic, strong, nullable) NSNumber *contentOffsetSharedValue;
 
 - (void)scheduleContentGeometryUpdate;
 @end
@@ -532,6 +533,15 @@ static NSTimeInterval ZynthScrollCurrentTime(void) {
   }
 }
 
+- (void)zynth_setContentOffsetSharedValue:(NSNumber *)value {
+  NSLog(@"[ZynthScrollView] setContentOffsetSharedValue: %@", value);
+  if (!value || [value isKindOfClass:[NSNull class]]) {
+    _contentOffsetSharedValue = nil;
+  } else {
+    _contentOffsetSharedValue = value;
+  }
+}
+
 - (void)zynth_setManualContentSize:(NSDictionary *_Nullable)size {
   if (![size isKindOfClass:[NSDictionary class]]) {
     self.manualContentSize = CGSizeZero;
@@ -637,6 +647,16 @@ static NSTimeInterval ZynthScrollCurrentTime(void) {
   }
 
   [self updateVelocity];
+  
+  if (_contentOffsetSharedValue) {
+    CGFloat offset = self.axis == ZynthScrollAxisHorizontal ? scrollView.contentOffset.x : scrollView.contentOffset.y;
+    static NSInteger scrollLogCount = 0;
+    if (scrollLogCount++ % 30 == 0) {
+      NSLog(@"[ZynthScrollView] Updating shared signal %@ to %.2f", _contentOffsetSharedValue, offset);
+    }
+    [self.manager setSharedSignal:_contentOffsetSharedValue.intValue value:(double)offset];
+  }
+
   [self emitScrollEventNamed:@"onScroll" force:NO];
   if (![self shouldDeferContentGeometryForOffset:scrollView.contentOffset]) {
     [self scheduleContentGeometryUpdate];

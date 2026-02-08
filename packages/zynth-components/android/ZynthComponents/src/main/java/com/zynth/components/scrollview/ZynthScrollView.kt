@@ -52,6 +52,7 @@ internal class ZynthScrollView(
   private var eventThrottleMs: Long = 16L
   private var eventMinDisplacementPx: Float = 0f
   private var bridgeCoalescing: Boolean = false
+  private var contentOffsetSharedValue: Int? = null
   private var lastCommandSeq: Long = -1L
 
   private var isDragging = false
@@ -247,7 +248,7 @@ internal class ZynthScrollView(
     logState("onMeasure w=${MeasureSpec.toString(widthMeasureSpec)} h=${MeasureSpec.toString(heightMeasureSpec)} finalH=${MeasureSpec.toString(finalHeightSpec)}")
   }
 
-      override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+  override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
         // Yoga drives layout via explicit view.layout calls, bypassing onMeasure.
         // We must manually measure the hosts to ensure they match our frame.
         val width = right - left
@@ -262,7 +263,7 @@ internal class ZynthScrollView(
         logState("onLayout changed=$changed frame=[$left,$top,$right,$bottom]")
         post { logState("postLayout") }
         scheduleContentGeometryUpdate()
-      }
+  }
   override fun addView(child: View?, index: Int, params: ViewGroup.LayoutParams?) {
     if (child == null) return
     if (child === verticalHost.view || child === horizontalHost.view) {
@@ -492,6 +493,11 @@ internal class ZynthScrollView(
     }
   }
 
+  fun setContentOffsetSharedValue(value: Int?) {
+    android.util.Log.d("ZynthScrollView", "setContentOffsetSharedValue: $value")
+    contentOffsetSharedValue = value
+  }
+
   fun scrollTo(x: Int?, y: Int?, animated: Boolean) {
     val targetX = x ?: currentScrollX()
     val targetY = y ?: currentScrollY()
@@ -695,6 +701,17 @@ internal class ZynthScrollView(
       lastKnownViewportHeight = host.view.height
     }
     evaluateManualFlingGuard(x, y)
+
+    val offset = if (axis == Axis.HORIZONTAL) x else y
+    contentOffsetSharedValue?.let { id ->
+      val invDensity = if (density == 0f) 0f else 1f / density
+      val value = offset * invDensity.toDouble()
+      // if (offset % 50 == 0) { // Throttled logging
+      //   android.util.Log.d("ZynthScrollView", "Setting shared signal $id to $value")
+      // }
+      manager?.setSharedSignal(id, value)
+    }
+
     if (bridgeCoalescing) {
       coalescedX = x
       coalescedY = y
@@ -1132,6 +1149,7 @@ internal class ZynthScrollView(
       contentView.layout(0, 0, widthPx, heightPx)
     }
   }
+
 
   private fun isNativeDebugEnabled(): Boolean {
     return try {

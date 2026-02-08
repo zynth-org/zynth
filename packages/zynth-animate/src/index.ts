@@ -14,6 +14,11 @@ export {
 } from "./sharedValue";
 export type { AnimationCallback, SharedValue, SpringConfig, TimingConfig } from "./sharedValue";
 
+export { interpolate, Extrapolation } from "./interpolation";
+export type { InterpolationConfig } from "./interpolation";
+export { getAnimationHostBridge } from "./native";
+export type { AnimationHostBridge } from "./native";
+
 export {
   AnimationBuilder,
   createEntryExitAnimation,

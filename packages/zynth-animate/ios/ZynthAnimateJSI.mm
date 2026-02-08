@@ -1,5 +1,7 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
+#import <QuartzCore/QuartzCore.h>
+#import <objc/runtime.h>
 
 #import <hermes/hermes.h>
 #import <jsi/jsi.h>
@@ -23,6 +25,8 @@ using namespace facebook::jsi;
 namespace {
 static const char *kZynthSharedValueKey = "__zynth_shared_value";
 static const char *kZynthAnimateKey = "__zynth_animate";
+static const char *kZynthInterpolationKey = "__zynth_interpolation";
+static char kZynthAnimateHostAssociationKey;
 
 struct SharedAnimation {
   enum class Kind { Timing, Spring };
@@ -46,9 +50,14 @@ struct SharedAnimation {
 
 struct StyleValueRef {
   bool isShared = false;
+  bool isInterpolation = false;
   int sharedId = 0;
   double constant = 0.0;
   std::string stringValue;
+  std::vector<double> inputRange;
+  std::vector<double> outputRange;
+  std::string extrapolateLeft = "clamp";
+  std::string extrapolateRight = "clamp";
 };
 
 struct TransformOp {
@@ -61,6 +70,20 @@ struct StyleMapper {
   int nodeId = 0;
   bool hasOpacity = false;
   StyleValueRef opacity;
+  bool hasWidth = false;
+  StyleValueRef width;
+  bool hasHeight = false;
+  StyleValueRef height;
+  bool hasMinWidth = false;
+  StyleValueRef minWidth;
+  bool hasMinHeight = false;
+  StyleValueRef minHeight;
+  bool hasMaxWidth = false;
+  StyleValueRef maxWidth;
+  bool hasMaxHeight = false;
+  StyleValueRef maxHeight;
+  bool hasFlexBasis = false;
+  StyleValueRef flexBasis;
   std::vector<TransformOp> transforms;
 };
 
@@ -84,28 +107,93 @@ static double parseAngleString(const std::string &value) {
 }
 } // namespace
 
-@interface ZynthAnimateJSI : NSObject
-@property (nonatomic, weak) ZynthHermesRuntimeHost *host;
-@property (nonatomic, strong) CADisplayLink *displayLink;
-@property (nonatomic, assign) BOOL needsStyleUpdate;
-@end
-
-@implementation ZynthAnimateJSI {
+@interface ZynthAnimateJSI : NSObject {
+ @public
   std::atomic<int> _nextStyleMapperId;
   std::unordered_map<int, SharedAnimation> _sharedAnimations;
   std::mutex _sharedAnimationsMutex;
   std::unordered_map<int, StyleMapper> _styleMappers;
   std::mutex _styleMappersMutex;
+  void *_hostKey;
+}
+@property (nonatomic, weak) ZynthHermesRuntimeHost *host;
+@property (nonatomic, strong) CADisplayLink *displayLink;
+@property (nonatomic, assign) BOOL needsStyleUpdate;
+
+- (instancetype)initWithHost:(ZynthHermesRuntimeHost *)host;
+- (void)markNeedsStyleUpdate;
+- (void)ensureDisplayLink;
+- (void)stopDisplayLinkIfNeeded;
+- (double)sharedSignalValueForId:(int)signalId;
+- (void)setSharedSignalValue:(int)signalId value:(double)value;
+- (StyleMapper)buildStyleMapper:(Runtime &)rt value:(const Value &)value nodeId:(int)nodeId;
+
+@end
+
+static void ZynthInstallAnimateBridge(ZynthHermesRuntimeHost *host, Runtime &rt);
+
+@implementation ZynthAnimateJSI
+
++ (void)load {
+  ZynthRegisterJSIPluginInstaller(ZynthInstallAnimateBridge);
+}
+
+static std::mutex gInstanceMutex;
+static std::unordered_map<void *, __weak ZynthAnimateJSI *> gInstances;
+
+static void onSharedSignalChanged(void *state, int signalId) {
+  static NSInteger changeCount = 0;
+  if (changeCount++ % 30 == 0) {
+    NSLog(@"[ZynthAnimate] Shared signal %d changed, updating host %p", signalId, state);
+  }
+  ZynthAnimateJSI *instance = nil;
+  {
+    std::lock_guard<std::mutex> lock(gInstanceMutex);
+    auto it = gInstances.find(state);
+    if (it != gInstances.end()) {
+      instance = it->second;
+      if (!instance) {
+        gInstances.erase(it);
+      }
+    }
+  }
+  [instance markNeedsStyleUpdate];
 }
 
 - (instancetype)initWithHost:(ZynthHermesRuntimeHost *)host {
   self = [super init];
   if (self) {
     _host = host;
+    _hostKey = (__bridge void *)host;
     _nextStyleMapperId = 1;
     _needsStyleUpdate = NO;
+    
+    NSLog(@"[ZynthAnimate] Registering instance for host %p", (__bridge void *)host);
+    if (host) {
+      // Keep the bridge alive for the host lifetime; callbacks only hold weak pointers.
+      objc_setAssociatedObject(host, &kZynthAnimateHostAssociationKey, self, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+      std::lock_guard<std::mutex> lock(gInstanceMutex);
+      gInstances[_hostKey] = self;
+    }
+    
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+      NSLog(@"[ZynthAnimate] Registering global shared signal changed callback");
+      ZynthRegisterSharedSignalChangedCallback(onSharedSignalChanged);
+    });
   }
   return self;
+}
+
+- (void)dealloc {
+  if (_displayLink) {
+    [_displayLink invalidate];
+    _displayLink = nil;
+  }
+  if (_hostKey) {
+    std::lock_guard<std::mutex> lock(gInstanceMutex);
+    gInstances.erase(_hostKey);
+  }
 }
 
 - (ZynthWorklets *)worklets {
@@ -161,6 +249,75 @@ static double parseAngleString(const std::string &value) {
   }
   if (value.isObject()) {
     Object obj = value.asObject(rt);
+    if (obj.hasProperty(rt, kZynthInterpolationKey)) {
+      Value interpolationValue = obj.getProperty(rt, kZynthInterpolationKey);
+      if (interpolationValue.isObject()) {
+        Object interpolationObj = interpolationValue.asObject(rt);
+        if (interpolationObj.hasProperty(rt, "source") &&
+            interpolationObj.hasProperty(rt, "inputRange") &&
+            interpolationObj.hasProperty(rt, "outputRange")) {
+          int sourceId = 0;
+          Value sourceValue = interpolationObj.getProperty(rt, "source");
+          if (sourceValue.isNumber()) {
+            sourceId = static_cast<int>(sourceValue.asNumber());
+          } else if (sourceValue.isObject()) {
+            Object sourceObj = sourceValue.asObject(rt);
+            if (sourceObj.hasProperty(rt, kZynthSharedValueKey)) {
+              Value sourceIdValue = sourceObj.getProperty(rt, kZynthSharedValueKey);
+              if (sourceIdValue.isNumber()) {
+                sourceId = static_cast<int>(sourceIdValue.asNumber());
+              }
+            }
+          }
+
+          Value inputRangeValue = interpolationObj.getProperty(rt, "inputRange");
+          Value outputRangeValue = interpolationObj.getProperty(rt, "outputRange");
+          if (sourceId > 0 && inputRangeValue.isObject() && outputRangeValue.isObject()) {
+            Object inputObj = inputRangeValue.asObject(rt);
+            Object outputObj = outputRangeValue.asObject(rt);
+            if (inputObj.isArray(rt) && outputObj.isArray(rt)) {
+              Array inputArray = inputObj.asArray(rt);
+              Array outputArray = outputObj.asArray(rt);
+              size_t count = inputArray.size(rt);
+              if (count >= 2 && outputArray.size(rt) == count) {
+                bool valid = true;
+                ref.inputRange.clear();
+                ref.outputRange.clear();
+                ref.inputRange.reserve(count);
+                ref.outputRange.reserve(count);
+                for (size_t i = 0; i < count; i++) {
+                  Value inputEntry = inputArray.getValueAtIndex(rt, i);
+                  Value outputEntry = outputArray.getValueAtIndex(rt, i);
+                  if (!inputEntry.isNumber() || !outputEntry.isNumber()) {
+                    valid = false;
+                    break;
+                  }
+                  ref.inputRange.push_back(inputEntry.asNumber());
+                  ref.outputRange.push_back(outputEntry.asNumber());
+                }
+                if (valid) {
+                  ref.isInterpolation = true;
+                  ref.sharedId = sourceId;
+                  if (interpolationObj.hasProperty(rt, "extrapolateLeft")) {
+                    Value left = interpolationObj.getProperty(rt, "extrapolateLeft");
+                    if (left.isString()) {
+                      ref.extrapolateLeft = left.asString(rt).utf8(rt);
+                    }
+                  }
+                  if (interpolationObj.hasProperty(rt, "extrapolateRight")) {
+                    Value right = interpolationObj.getProperty(rt, "extrapolateRight");
+                    if (right.isString()) {
+                      ref.extrapolateRight = right.asString(rt).utf8(rt);
+                    }
+                  }
+                  return ref;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
     if (obj.hasProperty(rt, kZynthSharedValueKey)) {
       Value idValue = obj.getProperty(rt, kZynthSharedValueKey);
       if (idValue.isNumber()) {
@@ -170,6 +327,39 @@ static double parseAngleString(const std::string &value) {
     }
   }
   return ref;
+}
+
+- (double)interpolateStyleValue:(const StyleValueRef &)ref source:(double)source fallback:(double)fallback {
+  if (ref.inputRange.size() < 2 || ref.inputRange.size() != ref.outputRange.size()) {
+    return fallback;
+  }
+
+  size_t i = 1;
+  for (; i < ref.inputRange.size() - 1; i++) {
+    if (source < ref.inputRange[i]) break;
+  }
+
+  double inputMin = ref.inputRange[i - 1];
+  double inputMax = ref.inputRange[i];
+  double outputMin = ref.outputRange[i - 1];
+  double outputMax = ref.outputRange[i];
+
+  if (source < inputMin) {
+    if (ref.extrapolateLeft == "identity") return source;
+    if (ref.extrapolateLeft == "clamp") return outputMin;
+  }
+
+  if (source > inputMax) {
+    if (ref.extrapolateRight == "identity") return source;
+    if (ref.extrapolateRight == "clamp") return outputMax;
+  }
+
+  double span = inputMax - inputMin;
+  if (fabs(span) <= 0.000001) {
+    return outputMax;
+  }
+  double progress = (source - inputMin) / span;
+  return outputMin + progress * (outputMax - outputMin);
 }
 
 - (void)markNeedsStyleUpdate {
@@ -196,13 +386,46 @@ static double parseAngleString(const std::string &value) {
   for (const auto &mapper : mappers) {
     UIView *view = [manager viewForNodeId:@(mapper.nodeId)];
     if (!view) continue;
-    if (mapper.hasOpacity) {
-      double opacity = mapper.opacity.isShared
-        ? [self sharedSignalValueForId:mapper.opacity.sharedId]
-        : mapper.opacity.constant;
-      if (std::isnan(opacity)) {
-        opacity = 0.0;
+    auto resolveValue = [&](const StyleValueRef &ref, double fallback) -> double {
+      double resolved = ref.constant;
+      if (ref.isInterpolation) {
+        double source = [self sharedSignalValueForId:ref.sharedId];
+        if (std::isnan(source)) return fallback;
+        resolved = [self interpolateStyleValue:ref source:source fallback:fallback];
+      } else if (ref.isShared) {
+        resolved = [self sharedSignalValueForId:ref.sharedId];
       }
+      if (std::isnan(resolved)) {
+        return fallback;
+      }
+      return resolved;
+    };
+    auto applyLayout = [&](const char *name, bool hasValue, const StyleValueRef &ref) {
+      if (!hasValue) return;
+      double value = resolveValue(ref, std::numeric_limits<double>::quiet_NaN());
+      if (std::isnan(value)) return;
+      
+      if (strcmp(name, "height") == 0) {
+        static NSInteger heightLogCount = 0;
+        if (heightLogCount++ % 30 == 0) {
+          NSLog(@"[ZynthAnimate] Applying height %.2f to node %d", value, mapper.nodeId);
+        }
+      }
+      
+      CGFloat scale = UIScreen.mainScreen.scale > 0 ? UIScreen.mainScreen.scale : 1.0;
+      double snapped = std::round(value * scale) / scale;
+      NSString *propName = [NSString stringWithUTF8String:name];
+      [manager setProp:@(mapper.nodeId) name:propName valueAny:@(snapped)];
+    };
+    applyLayout("width", mapper.hasWidth, mapper.width);
+    applyLayout("height", mapper.hasHeight, mapper.height);
+    applyLayout("minWidth", mapper.hasMinWidth, mapper.minWidth);
+    applyLayout("minHeight", mapper.hasMinHeight, mapper.minHeight);
+    applyLayout("maxWidth", mapper.hasMaxWidth, mapper.maxWidth);
+    applyLayout("maxHeight", mapper.hasMaxHeight, mapper.maxHeight);
+    applyLayout("flexBasis", mapper.hasFlexBasis, mapper.flexBasis);
+    if (mapper.hasOpacity) {
+      double opacity = resolveValue(mapper.opacity, 0.0);
       view.alpha = (CGFloat)opacity;
     }
 
@@ -352,6 +575,34 @@ static double parseAngleString(const std::string &value) {
     mapper.hasOpacity = true;
     mapper.opacity = [self resolveStyleValue:rt value:opacityValue];
   }
+  if (obj.hasProperty(rt, "width")) {
+    mapper.hasWidth = true;
+    mapper.width = [self resolveStyleValue:rt value:obj.getProperty(rt, "width")];
+  }
+  if (obj.hasProperty(rt, "height")) {
+    mapper.hasHeight = true;
+    mapper.height = [self resolveStyleValue:rt value:obj.getProperty(rt, "height")];
+  }
+  if (obj.hasProperty(rt, "minWidth")) {
+    mapper.hasMinWidth = true;
+    mapper.minWidth = [self resolveStyleValue:rt value:obj.getProperty(rt, "minWidth")];
+  }
+  if (obj.hasProperty(rt, "minHeight")) {
+    mapper.hasMinHeight = true;
+    mapper.minHeight = [self resolveStyleValue:rt value:obj.getProperty(rt, "minHeight")];
+  }
+  if (obj.hasProperty(rt, "maxWidth")) {
+    mapper.hasMaxWidth = true;
+    mapper.maxWidth = [self resolveStyleValue:rt value:obj.getProperty(rt, "maxWidth")];
+  }
+  if (obj.hasProperty(rt, "maxHeight")) {
+    mapper.hasMaxHeight = true;
+    mapper.maxHeight = [self resolveStyleValue:rt value:obj.getProperty(rt, "maxHeight")];
+  }
+  if (obj.hasProperty(rt, "flexBasis")) {
+    mapper.hasFlexBasis = true;
+    mapper.flexBasis = [self resolveStyleValue:rt value:obj.getProperty(rt, "flexBasis")];
+  }
 
   if (obj.hasProperty(rt, "transform")) {
     Value transformValue = obj.getProperty(rt, "transform");
@@ -388,17 +639,18 @@ static double parseAngleString(const std::string &value) {
 
 static void ZynthInstallAnimateBridge(ZynthHermesRuntimeHost *host, Runtime &rt) {
   if (!host) return;
+  NSLog(@"[ZynthAnimate] Installing JSI bridge for host %p", (__bridge void *)host);
   auto *animate = [[ZynthAnimateJSI alloc] initWithHost:host];
   __weak ZynthAnimateJSI *weakAnimate = animate;
 
   auto createSharedValue = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "createSharedValue"), 1,
       [weakAnimate](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
-        ZynthAnimateJSI *strong = weakAnimate;
-        if (!strong || count < 1 || !args[0].isNumber()) {
+        ZynthAnimateJSI *strongAnimate = weakAnimate;
+        if (!strongAnimate || count < 1 || !args[0].isNumber()) {
           return Value::undefined();
         }
-        ZynthWorklets *worklets = [strong worklets];
+        ZynthWorklets *worklets = [strongAnimate worklets];
         if (!worklets) {
           return Value::undefined();
         }
@@ -410,12 +662,12 @@ static void ZynthInstallAnimateBridge(ZynthHermesRuntimeHost *host, Runtime &rt)
   auto getSharedValue = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "getSharedValue"), 1,
       [weakAnimate](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
-        ZynthAnimateJSI *strong = weakAnimate;
-        if (!strong || count < 1 || !args[0].isNumber()) {
+        ZynthAnimateJSI *strongAnimate = weakAnimate;
+        if (!strongAnimate || count < 1 || !args[0].isNumber()) {
           return Value::undefined();
         }
         int signalId = static_cast<int>(args[0].asNumber());
-        double value = [strong sharedSignalValueForId:signalId];
+        double value = [strongAnimate sharedSignalValueForId:signalId];
         if (std::isnan(value)) {
           return Value::undefined();
         }
@@ -425,21 +677,21 @@ static void ZynthInstallAnimateBridge(ZynthHermesRuntimeHost *host, Runtime &rt)
   auto setSharedValue = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "setSharedValue"), 2,
       [weakAnimate](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
-        ZynthAnimateJSI *strong = weakAnimate;
-        if (!strong || count < 2 || !args[0].isNumber() || !args[1].isNumber()) {
+        ZynthAnimateJSI *strongAnimate = weakAnimate;
+        if (!strongAnimate || count < 2 || !args[0].isNumber() || !args[1].isNumber()) {
           return Value::undefined();
         }
         int signalId = static_cast<int>(args[0].asNumber());
         double value = args[1].asNumber();
-        [strong setSharedSignalValue:signalId value:value];
+        [strongAnimate setSharedSignalValue:signalId value:value];
         return Value::undefined();
       });
 
   auto animateSharedValue = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "animateSharedValue"), 2,
       [weakAnimate](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
-        ZynthAnimateJSI *strong = weakAnimate;
-        if (!strong || count < 2 || !args[0].isNumber() || !args[1].isObject()) {
+        ZynthAnimateJSI *strongAnimate = weakAnimate;
+        if (!strongAnimate || count < 2 || !args[0].isNumber() || !args[1].isObject()) {
           return Value::undefined();
         }
         int signalId = static_cast<int>(args[0].asNumber());
@@ -452,7 +704,7 @@ static void ZynthInstallAnimateBridge(ZynthHermesRuntimeHost *host, Runtime &rt)
         double startTime = CACurrentMediaTime() * 1000.0;
         SharedAnimation anim;
         anim.signalId = signalId;
-        anim.fromValue = [strong sharedSignalValueForId:signalId];
+        anim.fromValue = [strongAnimate sharedSignalValueForId:signalId];
         anim.toValue = toValue;
         anim.startTime = startTime;
         anim.delay = config.hasProperty(rt, "delay")
@@ -488,99 +740,95 @@ static void ZynthInstallAnimateBridge(ZynthHermesRuntimeHost *host, Runtime &rt)
                               : 300.0;
         }
         {
-          std::lock_guard<std::mutex> lock(strong->_sharedAnimationsMutex);
-          strong->_sharedAnimations[signalId] = anim;
+          std::lock_guard<std::mutex> lock(strongAnimate->_sharedAnimationsMutex);
+          strongAnimate->_sharedAnimations[signalId] = anim;
         }
-        [strong ensureDisplayLink];
+        [strongAnimate ensureDisplayLink];
         return Value::undefined();
       });
 
   auto cancelSharedValue = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "cancelSharedValue"), 1,
       [weakAnimate](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
-        ZynthAnimateJSI *strong = weakAnimate;
-        if (!strong || count < 1 || !args[0].isNumber()) {
+        ZynthAnimateJSI *strongAnimate = weakAnimate;
+        if (!strongAnimate || count < 1 || !args[0].isNumber()) {
           return Value::undefined();
         }
         int signalId = static_cast<int>(args[0].asNumber());
         {
-          std::lock_guard<std::mutex> lock(strong->_sharedAnimationsMutex);
-          strong->_sharedAnimations.erase(signalId);
+          std::lock_guard<std::mutex> lock(strongAnimate->_sharedAnimationsMutex);
+          strongAnimate->_sharedAnimations.erase(signalId);
         }
-        [strong stopDisplayLinkIfNeeded];
+        [strongAnimate stopDisplayLinkIfNeeded];
         return Value::undefined();
       });
 
   auto createStyleMapper = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "createStyleMapper"), 2,
       [weakAnimate](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
-        ZynthAnimateJSI *strong = weakAnimate;
-        if (!strong || count < 2 || !args[0].isNumber()) {
+        ZynthAnimateJSI *strongAnimate = weakAnimate;
+        if (!strongAnimate || count < 2 || !args[0].isNumber()) {
           return Value::undefined();
         }
         int nodeId = static_cast<int>(args[0].asNumber());
-        StyleMapper mapper = [strong buildStyleMapper:rt value:args[1] nodeId:nodeId];
-        int mapperId = strong->_nextStyleMapperId.fetch_add(1);
+        StyleMapper mapper = [strongAnimate buildStyleMapper:rt value:args[1] nodeId:nodeId];
+        int mapperId = strongAnimate->_nextStyleMapperId.fetch_add(1);
         mapper.mapperId = mapperId;
         {
-          std::lock_guard<std::mutex> lock(strong->_styleMappersMutex);
-          strong->_styleMappers[mapperId] = mapper;
+          std::lock_guard<std::mutex> lock(strongAnimate->_styleMappersMutex);
+          strongAnimate->_styleMappers[mapperId] = mapper;
         }
-        [strong markNeedsStyleUpdate];
+        [strongAnimate markNeedsStyleUpdate];
         return Value(static_cast<double>(mapperId));
       });
 
   auto updateStyleMapper = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "updateStyleMapper"), 2,
       [weakAnimate](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
-        ZynthAnimateJSI *strong = weakAnimate;
-        if (!strong || count < 2 || !args[0].isNumber()) {
+        ZynthAnimateJSI *strongAnimate = weakAnimate;
+        if (!strongAnimate || count < 2 || !args[0].isNumber()) {
           return Value::undefined();
         }
         int mapperId = static_cast<int>(args[0].asNumber());
         StyleMapper mapper;
         {
-          std::lock_guard<std::mutex> lock(strong->_styleMappersMutex);
-          auto it = strong->_styleMappers.find(mapperId);
-          if (it == strong->_styleMappers.end()) {
+          std::lock_guard<std::mutex> lock(strongAnimate->_styleMappersMutex);
+          auto it = strongAnimate->_styleMappers.find(mapperId);
+          if (it == strongAnimate->_styleMappers.end()) {
             return Value::undefined();
           }
-          mapper = [strong buildStyleMapper:rt value:args[1] nodeId:it->second.nodeId];
+          mapper = [strongAnimate buildStyleMapper:rt value:args[1] nodeId:it->second.nodeId];
           mapper.mapperId = mapperId;
-          strong->_styleMappers[mapperId] = mapper;
+          strongAnimate->_styleMappers[mapperId] = mapper;
         }
-        [strong markNeedsStyleUpdate];
+        [strongAnimate markNeedsStyleUpdate];
         return Value::undefined();
       });
 
   auto removeStyleMapper = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "removeStyleMapper"), 1,
       [weakAnimate](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
-        ZynthAnimateJSI *strong = weakAnimate;
-        if (!strong || count < 1 || !args[0].isNumber()) {
+        ZynthAnimateJSI *strongAnimate = weakAnimate;
+        if (!strongAnimate || count < 1 || !args[0].isNumber()) {
           return Value::undefined();
         }
         int mapperId = static_cast<int>(args[0].asNumber());
         {
-          std::lock_guard<std::mutex> lock(strong->_styleMappersMutex);
-          strong->_styleMappers.erase(mapperId);
+          std::lock_guard<std::mutex> lock(strongAnimate->_styleMappersMutex);
+          strongAnimate->_styleMappers.erase(mapperId);
         }
         return Value::undefined();
       });
 
-  Object animate(rt);
-  animate.setProperty(rt, "createSharedValue", createSharedValue);
-  animate.setProperty(rt, "getSharedValue", getSharedValue);
-  animate.setProperty(rt, "setSharedValue", setSharedValue);
-  animate.setProperty(rt, "animateSharedValue", animateSharedValue);
-  animate.setProperty(rt, "cancelSharedValue", cancelSharedValue);
-  animate.setProperty(rt, "createStyleMapper", createStyleMapper);
-  animate.setProperty(rt, "updateStyleMapper", updateStyleMapper);
-  animate.setProperty(rt, "removeStyleMapper", removeStyleMapper);
-  rt.global().setProperty(rt, kZynthAnimateKey, animate);
+  Object animateJSIObj(rt);
+  animateJSIObj.setProperty(rt, "createSharedValue", createSharedValue);
+  animateJSIObj.setProperty(rt, "getSharedValue", getSharedValue);
+  animateJSIObj.setProperty(rt, "setSharedValue", setSharedValue);
+  animateJSIObj.setProperty(rt, "animateSharedValue", animateSharedValue);
+  animateJSIObj.setProperty(rt, "cancelSharedValue", cancelSharedValue);
+  animateJSIObj.setProperty(rt, "createStyleMapper", createStyleMapper);
+  animateJSIObj.setProperty(rt, "updateStyleMapper", updateStyleMapper);
+  animateJSIObj.setProperty(rt, "removeStyleMapper", removeStyleMapper);
+  rt.global().setProperty(rt, kZynthAnimateKey, animateJSIObj);
   NSLog(@"[ZynthAnimate] animate bridge installed");
-}
-
-__attribute__((constructor)) static void ZynthRegisterAnimatePlugin(void) {
-  ZynthRegisterJSIPluginInstaller(ZynthInstallAnimateBridge);
 }

@@ -337,6 +337,11 @@ export type ScrollViewProps = {
   /** Manual content size override (width, height) for virtualized lists. */
   contentSize?: { width: number; height: number };
   testID?: string;
+  /**
+   * The native ID of a SharedValue to be updated synchronously on the UI thread
+   * with the scroll offset. This bypasses the JS bridge for high-performance animations.
+   */
+  contentOffsetSharedValue?: number;
 };
 
 export const normalizeEvent = (event: any): ScrollEvent => ({
@@ -403,6 +408,7 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
     "onLayout",
     "contentSize",
     "testID",
+    "contentOffsetSharedValue",
     "children",
   ]);
 
@@ -577,6 +583,9 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
     }
     if (local.decelerationRate !== undefined) {
       setProperty(node, "decelerationRate", local.decelerationRate);
+    }
+    if (local.contentOffsetSharedValue !== undefined) {
+      setProperty(node, "contentOffsetSharedValue", local.contentOffsetSharedValue);
     }
 
     setProperty(node, "onScroll", handleScroll);

@@ -15,6 +15,14 @@
     - **Views:** `@zynth/screens` (Native `UINavigationController` / `Fragment` integration).
     - **Multi-App:** `@zynth/hypervisor` allows embedding isolated Zynth apps (Guests) inside a Host app.
 
+### Architecture Guardrails
+
+- **Core-Agnostic Features:** `@zynth/core` and ZynthKit expose generic runtime primitives only. Feature behavior belongs in libraries.
+- **Animation Ownership:** `@zynth/animate` owns animation semantics (animatable props, interpolation, mapper lifecycle, fallbacks).
+- **Core Responsibilities:** Core may provide shared signals, node invalidation/layout dirty hooks, plugin registration, and generic prop application. Avoid feature-specific policy in core.
+- **Component Responsibilities:** Components may emit native signals and consume generic hooks, but should not embed animation-engine coupling.
+- **Preferred Change Order:** Add/extend library adapters first. Touch core only when a missing generic primitive is truly required.
+
 ## Package Map
 
 | Package | Purpose |

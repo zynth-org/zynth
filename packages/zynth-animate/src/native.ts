@@ -19,6 +19,27 @@ export type NativeTransitionConfig = {
   easing?: EasingName;
 };
 
+export interface AnimationHostBridge {
+  isNativePlatform: () => boolean;
+  hasNativeDriver: () => boolean;
+  startTransition: (config: NativeTransitionConfig) => Promise<boolean>;
+  stopTransition: (nodeId: number) => Promise<boolean>;
+  createSharedValue: (initialValue: number) => number | null;
+  getSharedValue: (id: number) => number | null;
+  setSharedValue: (id: number, value: number) => boolean;
+  animateSharedValue: (id: number, config: Record<string, unknown>) => boolean;
+  cancelSharedValue: (id: number) => boolean;
+  createStyleMapper: (
+    nodeId: number,
+    style: NativeStyleMapperConfig
+  ) => number | null;
+  updateStyleMapper: (
+    mapperId: number,
+    style: NativeStyleMapperConfig
+  ) => boolean;
+  removeStyleMapper: (mapperId: number) => boolean;
+}
+
 type ModulesBridge = {
   call?(name: string, method: string, args?: unknown): Promise<unknown> | unknown;
 };
@@ -31,17 +52,38 @@ type ErrorResult = {
 const MODULE_NAME = "ZynthAnimate";
 const PLATFORM_GLOBAL_KEY = "__ZYNTH_PLATFORM";
 export const SHARED_VALUE_MARKER = "__zynth_shared_value";
-let nativeModuleAvailable = true;
+export const INTERPOLATION_MARKER = "__zynth_interpolation";
 
 type NativeSharedValueRef = {
   [SHARED_VALUE_MARKER]: number;
 };
 
-export type NativeStyleValue = number | string | NativeSharedValueRef;
+type NativeInterpolationRef = {
+  [INTERPOLATION_MARKER]: {
+    source: NativeSharedValueRef | number;
+    inputRange: number[];
+    outputRange: number[];
+    extrapolateLeft?: "identity" | "clamp" | "extend";
+    extrapolateRight?: "identity" | "clamp" | "extend";
+  };
+};
+
+export type NativeStyleValue =
+  | number
+  | string
+  | NativeSharedValueRef
+  | NativeInterpolationRef;
 
 export type NativeStyleMapperConfig = {
   opacity?: NativeStyleValue;
   transform?: Array<Record<string, NativeStyleValue>>;
+  width?: NativeStyleValue;
+  height?: NativeStyleValue;
+  minWidth?: NativeStyleValue;
+  minHeight?: NativeStyleValue;
+  maxWidth?: NativeStyleValue;
+  maxHeight?: NativeStyleValue;
+  flexBasis?: NativeStyleValue;
 };
 
 type NativeAnimateJSI = {
@@ -111,140 +153,224 @@ function isErrorResult(value: unknown): value is ErrorResult {
   return typeof (value as { error?: unknown }).error === "string";
 }
 
-async function callBridge(method: string, args?: unknown): Promise<boolean> {
-  const bridge = getModulesBridge();
-  if (!bridge || !bridge.call) {
-    return false;
-  }
-  if (!nativeModuleAvailable) {
-    return false;
-  }
+type NativeAdapterPlatform = "ios" | "android";
 
-  try {
-    const result = await Promise.resolve(bridge.call(MODULE_NAME, method, args));
-    if (isErrorResult(result)) {
-      throw new Error(result.message || result.error || "Unknown error");
-    }
-    return true;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (message.includes("Module ZynthAnimate not found")) {
-      nativeModuleAvailable = false;
+function createFallbackAnimationHostBridge(): AnimationHostBridge {
+  return {
+    isNativePlatform: () => false,
+    hasNativeDriver: () => false,
+    startTransition: async () => false,
+    stopTransition: async () => false,
+    createSharedValue: () => null,
+    getSharedValue: () => null,
+    setSharedValue: () => false,
+    animateSharedValue: () => false,
+    cancelSharedValue: () => false,
+    createStyleMapper: () => null,
+    updateStyleMapper: () => false,
+    removeStyleMapper: () => false,
+  };
+}
+
+function createNativeAnimationHostBridge(
+  platform: NativeAdapterPlatform
+): AnimationHostBridge {
+  let nativeModuleAvailable = true;
+
+  const callBridge = async (method: string, args?: unknown): Promise<boolean> => {
+    const bridge = getModulesBridge();
+    if (!bridge || !bridge.call || !nativeModuleAvailable) {
       return false;
     }
-    console.error(`[ZynthAnimate] Failed to ${method}():`, JSON.stringify(error));
-    return false;
-  }
+    try {
+      const result = await Promise.resolve(bridge.call(MODULE_NAME, method, args));
+      if (isErrorResult(result)) {
+        throw new Error(result.message || result.error || "Unknown error");
+      }
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("Module ZynthAnimate not found")) {
+        nativeModuleAvailable = false;
+        return false;
+      }
+      console.error(
+        `[ZynthAnimate] (${platform}) Failed to ${method}():`,
+        JSON.stringify(error)
+      );
+      return false;
+    }
+  };
+
+  return {
+    isNativePlatform: () => true,
+    hasNativeDriver: hasNativeAnimate,
+    startTransition(config) {
+      return callBridge("startTransition", config);
+    },
+    stopTransition(nodeId) {
+      return callBridge("stopTransition", { nodeId });
+    },
+    createSharedValue(initialValue) {
+      const native = getNativeAnimate();
+      if (!native) return null;
+      try {
+        const id = native.createSharedValue(initialValue);
+        return typeof id === "number" && Number.isFinite(id) ? id : null;
+      } catch (error) {
+        console.error("[ZynthAnimate] createSharedValue failed:", error);
+        return null;
+      }
+    },
+    getSharedValue(id) {
+      const native = getNativeAnimate();
+      if (!native) return null;
+      try {
+        return native.getSharedValue(id);
+      } catch (error) {
+        console.error("[ZynthAnimate] getSharedValue failed:", error);
+        return null;
+      }
+    },
+    setSharedValue(id, value) {
+      const native = getNativeAnimate();
+      if (!native) return false;
+      try {
+        native.setSharedValue(id, value);
+        return true;
+      } catch (error) {
+        console.error("[ZynthAnimate] setSharedValue failed:", error);
+        return false;
+      }
+    },
+    animateSharedValue(id, config) {
+      const native = getNativeAnimate();
+      if (!native) return false;
+      try {
+        native.animateSharedValue(id, config);
+        return true;
+      } catch (error) {
+        console.error("[ZynthAnimate] animateSharedValue failed:", error);
+        return false;
+      }
+    },
+    cancelSharedValue(id) {
+      const native = getNativeAnimate();
+      if (!native) return false;
+      try {
+        native.cancelSharedValue(id);
+        return true;
+      } catch (error) {
+        console.error("[ZynthAnimate] cancelSharedValue failed:", error);
+        return false;
+      }
+    },
+    createStyleMapper(nodeId, style) {
+      const native = getNativeAnimate();
+      if (!native) return null;
+      try {
+        const mapperId = native.createStyleMapper(nodeId, style);
+        return typeof mapperId === "number" && Number.isFinite(mapperId)
+          ? mapperId
+          : null;
+      } catch (error) {
+        console.error("[ZynthAnimate] createStyleMapper failed:", error);
+        return null;
+      }
+    },
+    updateStyleMapper(mapperId, style) {
+      const native = getNativeAnimate();
+      if (!native) return false;
+      try {
+        native.updateStyleMapper(mapperId, style);
+        return true;
+      } catch (error) {
+        console.error("[ZynthAnimate] updateStyleMapper failed:", error);
+        return false;
+      }
+    },
+    removeStyleMapper(mapperId) {
+      const native = getNativeAnimate();
+      if (!native) return false;
+      try {
+        native.removeStyleMapper(mapperId);
+        return true;
+      } catch (error) {
+        console.error("[ZynthAnimate] removeStyleMapper failed:", error);
+        return false;
+      }
+    },
+  };
+}
+
+function createIOSAnimationHostBridge(): AnimationHostBridge {
+  return createNativeAnimationHostBridge("ios");
+}
+
+function createAndroidAnimationHostBridge(): AnimationHostBridge {
+  return createNativeAnimationHostBridge("android");
+}
+
+function createAnimationHostBridgeForCurrentPlatform(): AnimationHostBridge {
+  const os = getPlatformOS();
+  if (os === "ios") return createIOSAnimationHostBridge();
+  if (os === "android") return createAndroidAnimationHostBridge();
+  return createFallbackAnimationHostBridge();
+}
+
+const animationHostBridge = createAnimationHostBridgeForCurrentPlatform();
+
+export function getAnimationHostBridge(): AnimationHostBridge {
+  return animationHostBridge;
 }
 
 export async function startNativeTransition(
   config: NativeTransitionConfig
 ): Promise<boolean> {
-  return callBridge("startTransition", config);
+  return animationHostBridge.startTransition(config);
 }
 
 export async function stopNativeTransition(nodeId: number): Promise<boolean> {
-  return callBridge("stopTransition", { nodeId });
+  return animationHostBridge.stopTransition(nodeId);
 }
 
 export function createNativeSharedValue(initialValue: number): number | null {
-  const native = getNativeAnimate();
-  if (!native) return null;
-  try {
-    return native.createSharedValue(initialValue);
-  } catch (error) {
-    console.error("[ZynthAnimate] createSharedValue failed:", error);
-    return null;
-  }
+  return animationHostBridge.createSharedValue(initialValue);
 }
 
 export function getNativeSharedValue(id: number): number | null {
-  const native = getNativeAnimate();
-  if (!native) return null;
-  try {
-    return native.getSharedValue(id);
-  } catch (error) {
-    console.error("[ZynthAnimate] getSharedValue failed:", error);
-    return null;
-  }
+  return animationHostBridge.getSharedValue(id);
 }
 
 export function setNativeSharedValue(id: number, value: number): boolean {
-  const native = getNativeAnimate();
-  if (!native) return false;
-  try {
-    native.setSharedValue(id, value);
-    return true;
-  } catch (error) {
-    console.error("[ZynthAnimate] setSharedValue failed:", error);
-    return false;
-  }
+  return animationHostBridge.setSharedValue(id, value);
 }
 
 export function animateNativeSharedValue(
   id: number,
   config: Record<string, unknown>
 ): boolean {
-  const native = getNativeAnimate();
-  if (!native) return false;
-  try {
-    native.animateSharedValue(id, config);
-    return true;
-  } catch (error) {
-    console.error("[ZynthAnimate] animateSharedValue failed:", error);
-    return false;
-  }
+  return animationHostBridge.animateSharedValue(id, config);
 }
 
 export function cancelNativeSharedValue(id: number): boolean {
-  const native = getNativeAnimate();
-  if (!native) return false;
-  try {
-    native.cancelSharedValue(id);
-    return true;
-  } catch (error) {
-    console.error("[ZynthAnimate] cancelSharedValue failed:", error);
-    return false;
-  }
+  return animationHostBridge.cancelSharedValue(id);
 }
 
 export function createNativeStyleMapper(
   nodeId: number,
   style: NativeStyleMapperConfig
 ): number | null {
-  const native = getNativeAnimate();
-  if (!native) return null;
-  try {
-    return native.createStyleMapper(nodeId, style);
-  } catch (error) {
-    console.error("[ZynthAnimate] createStyleMapper failed:", error);
-    return null;
-  }
+  return animationHostBridge.createStyleMapper(nodeId, style);
 }
 
 export function updateNativeStyleMapper(
   mapperId: number,
   style: NativeStyleMapperConfig
 ): boolean {
-  const native = getNativeAnimate();
-  if (!native) return false;
-  try {
-    native.updateStyleMapper(mapperId, style);
-    return true;
-  } catch (error) {
-    console.error("[ZynthAnimate] updateStyleMapper failed:", error);
-    return false;
-  }
+  return animationHostBridge.updateStyleMapper(mapperId, style);
 }
 
 export function removeNativeStyleMapper(mapperId: number): boolean {
-  const native = getNativeAnimate();
-  if (!native) return false;
-  try {
-    native.removeStyleMapper(mapperId);
-    return true;
-  } catch (error) {
-    console.error("[ZynthAnimate] removeStyleMapper failed:", error);
-    return false;
-  }
+  return animationHostBridge.removeStyleMapper(mapperId);
 }

@@ -251,12 +251,14 @@ private fun Any?.toIntOrNull(): Int? {
 
 private fun ZynthUIManager.resolvedStylesForNode(nodeId: Int, view: View): JSONObject {
   val configuredElevation = yogaStyleCache[nodeId]?.get("elevation").asDoubleOrNull()
+  val styleState = styleStates[nodeId]
   val output = JSONObject()
     .put("opacity", view.alpha.toDouble())
     .put("elevation", view.elevation.toDouble())
     .put("renderElevation", view.elevation.toDouble())
     .put("configuredElevation", configuredElevation ?: JSONObject.NULL)
-    .put("zIndex", view.z.toDouble())
+    .put("zIndex", styleState?.zIndex?.toDouble() ?: 0.0)
+    .put("renderZ", view.z.toDouble())
     .put("rotation", view.rotation.toDouble())
     .put("rotationX", view.rotationX.toDouble())
     .put("rotationY", view.rotationY.toDouble())
@@ -267,7 +269,7 @@ private fun ZynthUIManager.resolvedStylesForNode(nodeId: Int, view: View): JSONO
     .put("clipToOutline", view.clipToOutline)
     .put("pointerEvents", nodeStates[nodeId]?.pointerEvents ?: "auto")
 
-  val state = styleStates[nodeId]
+  val state = styleState
   if (state != null) {
     val hasRnShadowProps = state.shadowColor != null ||
       state.shadowOpacity != null ||

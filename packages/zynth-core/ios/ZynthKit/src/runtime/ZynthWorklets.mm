@@ -24,6 +24,9 @@ using namespace facebook::jsi;
 namespace {
 static const char *kZynthSharedValueKey = "__zynth_shared_value";
 
+static std::mutex gSharedSignalCallbacksMutex;
+static std::vector<ZynthSharedSignalChangedCallback> gSharedSignalCallbacks;
+
 static std::string valueToString(Runtime &rt, const Value &value) {
   if (value.isString()) return value.asString(rt).utf8(rt);
   if (value.isNumber()) return std::to_string(value.asNumber());
@@ -143,6 +146,13 @@ struct ZynthWorkletClosureValue {
   return self;
 }
 
++ (void)registerSharedSignalChangedCallback:(ZynthSharedSignalChangedCallback)callback {
+  if (!callback) return;
+  NSLog(@"[ZynthWorklets] Registering shared signal callback: %p", callback);
+  std::lock_guard<std::mutex> lock(gSharedSignalCallbacksMutex);
+  gSharedSignalCallbacks.push_back(callback);
+}
+
 - (int)createSharedSignalWithValue:(double)initialValue {
   int signalId = _nextSharedSignalId.fetch_add(1);
   {
@@ -170,6 +180,25 @@ struct ZynthWorkletClosureValue {
     }
     it->second = value;
   }
+
+  std::vector<ZynthSharedSignalChangedCallback> callbacks;
+  {
+    std::lock_guard<std::mutex> lock(gSharedSignalCallbacksMutex);
+    callbacks = gSharedSignalCallbacks;
+  }
+  
+  if (!callbacks.empty()) {
+    // Throttled log
+    static NSInteger triggerCount = 0;
+    if (triggerCount++ % 30 == 0) {
+      NSLog(@"[ZynthWorklets] Triggering %lu callbacks for signal %d value=%.2f", (unsigned long)callbacks.size(), signalId, value);
+    }
+  }
+
+  for (auto callback : callbacks) {
+    callback((__bridge void *)_host, signalId);
+  }
+
   return YES;
 }
 

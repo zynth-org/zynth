@@ -32,6 +32,7 @@ jclass gDevtoolsClass = nullptr;
 jmethodID gDevtoolsEmitMethod = nullptr;
 std::mutex gPluginMutex;
 std::vector<ZynthJSIPluginInstaller> gPluginInstallers;
+std::vector<ZynthSharedSignalChangedCallback> gSharedSignalCallbacks;
 
 struct TimerEntry {
   std::shared_ptr<Function> callback;
@@ -88,6 +89,7 @@ struct RuntimeState {
   jmethodID scheduleAnimationFrame = nullptr;
   jmethodID cancelAnimationFrame = nullptr;
   jmethodID applyAnimatedStyle = nullptr;
+  jmethodID applyAnimatedLayoutStyle = nullptr;
   jmethodID postRegisterWorklet = nullptr;
   jmethodID postRunWorklet = nullptr;
   jmethodID devtoolsEmit = nullptr;
@@ -636,13 +638,20 @@ static void installJSIPlugins(Runtime &rt, RuntimeState *state) {
   }
 }
 
-extern "C" void ZynthRegisterJSIPluginInstaller(ZynthJSIPluginInstaller installer) {
+extern "C" JNIEXPORT void ZynthRegisterJSIPluginInstaller(ZynthJSIPluginInstaller installer) {
   if (!installer) return;
   std::lock_guard<std::mutex> lock(gPluginMutex);
   gPluginInstallers.push_back(installer);
 }
 
-extern "C" int ZynthCreateSharedSignal(void *state, double initialValue) {
+extern "C" JNIEXPORT void ZynthRegisterSharedSignalChangedCallback(ZynthSharedSignalChangedCallback callback) {
+  if (!callback) return;
+  __android_log_print(ANDROID_LOG_DEBUG, "ZynthKit", "Registering shared signal callback: %p", callback);
+  std::lock_guard<std::mutex> lock(gPluginMutex);
+  gSharedSignalCallbacks.push_back(callback);
+}
+
+extern "C" JNIEXPORT int ZynthCreateSharedSignal(void *state, double initialValue) {
   auto *runtimeState = reinterpret_cast<RuntimeState *>(state);
   if (!runtimeState) return 0;
   int id = runtimeState->nextSharedSignalId.fetch_add(1);
@@ -653,7 +662,7 @@ extern "C" int ZynthCreateSharedSignal(void *state, double initialValue) {
   return id;
 }
 
-extern "C" double ZynthGetSharedSignal(void *state, int signalId, bool *found) {
+extern "C" JNIEXPORT double ZynthGetSharedSignal(void *state, int signalId, bool *found) {
   auto *runtimeState = reinterpret_cast<RuntimeState *>(state);
   if (!runtimeState) {
     if (found) *found = false;
@@ -669,21 +678,35 @@ extern "C" double ZynthGetSharedSignal(void *state, int signalId, bool *found) {
   return it->second;
 }
 
-extern "C" bool ZynthSetSharedSignal(void *state, int signalId, double value) {
+extern "C" JNIEXPORT bool ZynthSetSharedSignal(void *state, int signalId, double value) {
   auto *runtimeState = reinterpret_cast<RuntimeState *>(state);
   if (!runtimeState) return false;
   {
     std::lock_guard<std::mutex> lock(runtimeState->sharedSignalsMutex);
     auto it = runtimeState->sharedSignals.find(signalId);
     if (it == runtimeState->sharedSignals.end()) {
+      __android_log_print(ANDROID_LOG_DEBUG, "ZynthKit", "ZynthSetSharedSignal: signal %d not found", signalId);
       return false;
     }
     it->second = value;
   }
+
+  std::vector<ZynthSharedSignalChangedCallback> callbacks;
+  {
+    std::lock_guard<std::mutex> lock(gPluginMutex);
+    callbacks = gSharedSignalCallbacks;
+  }
+  if (!callbacks.empty()) {
+    __android_log_print(ANDROID_LOG_DEBUG, "ZynthKit", "Triggering %zu callbacks for signal %d", callbacks.size(), signalId);
+  }
+  for (auto callback : callbacks) {
+    callback(state, signalId);
+  }
+
   return true;
 }
 
-extern "C" void ZynthApplyAnimatedStyle(
+extern "C" JNIEXPORT void ZynthApplyAnimatedStyle(
     void *state,
     int nodeId,
     float opacity,
@@ -718,6 +741,35 @@ extern "C" void ZynthApplyAnimatedStyle(
       skewX,
       skewY,
       perspective);
+}
+
+extern "C" JNIEXPORT void ZynthApplyAnimatedLayoutStyle(
+    void *state,
+    int nodeId,
+    float width,
+    float height,
+    float minWidth,
+    float minHeight,
+    float maxWidth,
+    float maxHeight,
+    float flexBasis) {
+  auto *runtimeState = reinterpret_cast<RuntimeState *>(state);
+  if (!runtimeState || !runtimeState->uiManager || !runtimeState->applyAnimatedLayoutStyle) {
+    return;
+  }
+  JNIEnv *env = getEnv();
+  if (!env) return;
+  env->CallVoidMethod(
+      runtimeState->uiManager,
+      runtimeState->applyAnimatedLayoutStyle,
+      nodeId,
+      width,
+      height,
+      minWidth,
+      minHeight,
+      maxWidth,
+      maxHeight,
+      flexBasis);
 }
 
 void installTimers(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
@@ -917,17 +969,14 @@ void installTimers(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
         
         static const char *kZynthSharedValueKey = "__zynth_shared_value";
         
-        void installSharedSignals(Runtime &rt, RuntimeState *state) {  if (!state) return;
+void installSharedSignals(Runtime &rt, RuntimeState *state) {  if (!state) return;
   auto createSharedSignal = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "createSharedSignal"), 1,
       [state](Runtime &, const Value &, const Value *args, size_t count) -> Value {
         if (count < 1 || !args[0].isNumber()) return Value::undefined();
-        int id = state->nextSharedSignalId.fetch_add(1);
         double initial = args[0].asNumber();
-        {
-          std::lock_guard<std::mutex> lock(state->sharedSignalsMutex);
-          state->sharedSignals[id] = initial;
-        }
+        int id = ZynthCreateSharedSignal(state, initial);
+        if (id <= 0) return Value::undefined();
         __android_log_print(ANDROID_LOG_DEBUG, "ZynthWorklets",
                             "createSharedSignal id=%d value=%.3f", id, initial);
         return Value(static_cast<double>(id));
@@ -938,10 +987,10 @@ void installTimers(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
       [state](Runtime &, const Value &, const Value *args, size_t count) -> Value {
         if (count < 1 || !args[0].isNumber()) return Value::undefined();
         int id = static_cast<int>(args[0].asNumber());
-        std::lock_guard<std::mutex> lock(state->sharedSignalsMutex);
-        auto it = state->sharedSignals.find(id);
-        if (it == state->sharedSignals.end()) return Value::undefined();
-        return Value(it->second);
+        bool found = false;
+        double value = ZynthGetSharedSignal(state, id, &found);
+        if (!found) return Value::undefined();
+        return Value(value);
       });
 
   auto setSharedSignal = Function::createFromHostFunction(
@@ -952,12 +1001,7 @@ void installTimers(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
         }
         int id = static_cast<int>(args[0].asNumber());
         double value = args[1].asNumber();
-        {
-          std::lock_guard<std::mutex> lock(state->sharedSignalsMutex);
-          auto it = state->sharedSignals.find(id);
-          if (it == state->sharedSignals.end()) return Value::undefined();
-          it->second = value;
-        }
+        if (!ZynthSetSharedSignal(state, id, value)) return Value::undefined();
         __android_log_print(ANDROID_LOG_DEBUG, "ZynthWorklets",
                             "setSharedSignal id=%d value=%.3f", id, value);
         return Value::undefined();
@@ -1595,6 +1639,16 @@ Java_com_zynth_kit_runtime_JSBridge_invokeAnimationFrame(JNIEnv *,
   }
 }
 
+extern "C" JNIEXPORT void JNICALL
+Java_com_zynth_kit_runtime_JSBridge_setSharedSignal(JNIEnv *, jobject, jlong ptr, jint id, jdouble value) {
+  __android_log_print(ANDROID_LOG_DEBUG, "ZynthKit", "JNI setSharedSignal id=%d value=%.2f", id, value);
+  auto *runtime = reinterpret_cast<facebook::hermes::HermesRuntime *>(ptr);
+  if (!runtime) return;
+  auto state = sharedStateFor(runtime);
+  if (!state) return;
+  ZynthSetSharedSignal(state.get(), id, value);
+}
+
 extern "C" jint JNI_OnLoad(JavaVM *vm, void *) {
   gVm = vm;
   return facebook::jni::initialize(vm, [] {});
@@ -1664,6 +1718,8 @@ Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlon
   state->flush = env->GetMethodID(state->uiClass, "flush", "()V");
   state->applyAnimatedStyle =
       env->GetMethodID(state->uiClass, "applyAnimatedStyle", "(IFFFFFFFFFFF)V");
+  state->applyAnimatedLayoutStyle =
+      env->GetMethodID(state->uiClass, "applyAnimatedLayoutStyle", "(IFFFFFFF)V");
   state->scheduleTimer = env->GetMethodID(state->uiClass, "scheduleTimer", "(JIIZ)V");
   state->cancelTimer = env->GetMethodID(state->uiClass, "cancelTimer", "(I)V");
   state->scheduleAnimationFrame = env->GetMethodID(state->uiClass, "scheduleAnimationFrame", "(JI)V");

@@ -6,8 +6,11 @@
 NS_ASSUME_NONNULL_BEGIN
 
 @class ZynthNode;
+@class ZynthRuntime;
 
 @interface ZynthUIManager : NSObject
+
+@property (nonatomic, weak) ZynthRuntime *zynthRuntime;
 
 - (instancetype)initWithRootView:(UIView *)rootView;
 - (NSNumber *)createNode:(NSString *)type;
@@ -31,6 +34,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)markNodeDirty:(NSNumber *)nodeId;
 - (void)zynth_recursiveRemoveNode:(NSNumber *)nodeId;
 - (void)applyKeyboardAvoidingAdjustment:(NSNumber *)nodeId behavior:(NSString *)behavior overlap:(CGFloat)overlap availableHeight:(NSNumber *_Nullable)availableHeight;
+- (void)setSharedSignal:(int)signalId value:(double)value;
 
 @end
 

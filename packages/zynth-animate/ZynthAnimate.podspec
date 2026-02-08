@@ -10,7 +10,8 @@ Pod::Spec.new do |s|
   s.license      = "MIT"
   s.authors      = { "Zynth Team" => "team@zynth.dev" }
   s.source       = { :git => "https://github.com/zynth/zynth.git", :tag => "#{s.version}" }
-  s.source_files = "ios/**/*.{h,m,swift}"
+  s.source_files = "ios/**/*.{h,m,mm,cpp,swift}"
+  s.frameworks   = "UIKit", "QuartzCore"
   s.platform     = :ios, "13.0"
   s.dependency "ZynthKit"
 end
