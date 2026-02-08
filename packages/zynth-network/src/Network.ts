@@ -3,6 +3,12 @@ import {
   NetworkServiceDomains,
   NetworkServiceTypes,
 } from "./constants";
+import {
+  createCapabilityTxtRecord,
+  NetworkTxtRecordKeys,
+  normalizeTxtRecord,
+  parseCapabilityTxtRecord,
+} from "./capabilities";
 import type {
   AdvertisedServiceInfo,
   DiscoveryEvent,
@@ -27,7 +33,6 @@ type NativeDiscoveryEvent = {
 const DEFAULT_DISCOVERY_TIMEOUT_MS = 4000;
 const DEFAULT_DISCOVERY_MAX_EVENTS = 100;
 const DEFAULT_POLL_INTERVAL_MS = 500;
-const DEVICE_ID_TXT_KEY = "zynthDeviceId";
 const GLOBAL_DEVICE_ID_KEY = "__zynth_network_device_id";
 
 const VALID_STATE_TYPES: NetworkStateType[] = [
@@ -129,8 +134,12 @@ function normalizeAdvertiseOptions(
     throw new Error("port must be between 1 and 65535");
   }
 
-  const txtRecord = options.txtRecord ? { ...options.txtRecord } : {};
-  txtRecord[DEVICE_ID_TXT_KEY] = getLocalDeviceId();
+  const capabilityTxtRecord = createCapabilityTxtRecord(options.capabilities);
+  const txtRecord = {
+    ...capabilityTxtRecord,
+    ...normalizeTxtRecord(options.txtRecord),
+  };
+  txtRecord[NetworkTxtRecordKeys.DeviceId] = getLocalDeviceId();
 
   return {
     serviceType,
@@ -140,6 +149,7 @@ function normalizeAdvertiseOptions(
       (options.domain ?? NetworkServiceDomains.Local).trim() ||
       NetworkServiceDomains.Local,
     txtRecord,
+    capabilities: options.capabilities,
   };
 }
 
@@ -160,9 +170,26 @@ function normalizeDiscoveryEvent(event: NativeDiscoveryEvent): DiscoveryEvent {
 }
 
 function withSelfFlag(service: NetworkService): NetworkService {
-  const txtRecord = service.txtRecord ?? {};
-  const isSelf = txtRecord[DEVICE_ID_TXT_KEY] === getLocalDeviceId();
-  return { ...service, isSelf };
+  const txtRecord = normalizeTxtRecord(service.txtRecord);
+  const isSelf = txtRecord[NetworkTxtRecordKeys.DeviceId] === getLocalDeviceId();
+  const capabilities = parseCapabilityTxtRecord(txtRecord);
+  return {
+    ...service,
+    txtRecord,
+    capabilities,
+    isSelf,
+  };
+}
+
+function withAdvertisedCapabilities(
+  service: AdvertisedServiceInfo
+): AdvertisedServiceInfo {
+  const txtRecord = normalizeTxtRecord(service.txtRecord);
+  return {
+    ...service,
+    txtRecord,
+    capabilities: parseCapabilityTxtRecord(txtRecord),
+  };
 }
 
 function shouldIncludeService(
@@ -331,10 +358,11 @@ export const Network = {
     options: NetworkAdvertiseOptions
   ): Promise<AdvertisedServiceInfo> {
     await ensureAvailable();
-    return callNative<AdvertisedServiceInfo>(
+    const service = await callNative<AdvertisedServiceInfo>(
       "startService",
       normalizeAdvertiseOptions(options)
     );
+    return withAdvertisedCapabilities(service);
   },
 
   async stopServiceAsync(): Promise<void> {
@@ -348,7 +376,11 @@ export const Network = {
     if (!isNativeAvailable()) {
       return null;
     }
-    return callNative<AdvertisedServiceInfo | null>("getAdvertisedService", {});
+    const service = await callNative<AdvertisedServiceInfo | null>(
+      "getAdvertisedService",
+      {}
+    );
+    return service ? withAdvertisedCapabilities(service) : null;
   },
 
   subscribe(

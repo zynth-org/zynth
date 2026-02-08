@@ -22,6 +22,27 @@ export type WifiInfo = {
 
 export type ServiceTxtRecord = Record<string, string>;
 
+export type NetworkCapabilityValue =
+  | string
+  | number
+  | boolean
+  | readonly string[];
+
+export type NetworkCapabilityAdvertisement = {
+  version?: string;
+  transfer?: string | readonly string[];
+  maxChunk?: number;
+  [key: string]: NetworkCapabilityValue | undefined;
+};
+
+export type ParsedNetworkCapabilities = {
+  version?: string;
+  transfer: string[];
+  maxChunk?: number;
+  raw: ServiceTxtRecord;
+  custom: ServiceTxtRecord;
+};
+
 export type NetworkService = {
   id: string;
   name: string;
@@ -31,6 +52,7 @@ export type NetworkService = {
   port: number;
   addresses: string[];
   txtRecord: ServiceTxtRecord;
+  capabilities?: ParsedNetworkCapabilities;
   lastSeenAt: number;
   isSelf: boolean;
 };
@@ -64,6 +86,7 @@ export type NetworkAdvertiseOptions = {
   port: number;
   domain?: string;
   txtRecord?: ServiceTxtRecord;
+  capabilities?: NetworkCapabilityAdvertisement;
 };
 
 export type AdvertisedServiceInfo = {
@@ -72,6 +95,23 @@ export type AdvertisedServiceInfo = {
   domain: string;
   port: number;
   txtRecord: ServiceTxtRecord;
+  capabilities?: ParsedNetworkCapabilities;
+};
+
+export type NormalizedPeerMetadata = {
+  peerId: string;
+  serviceId: string;
+  name: string;
+  type: string;
+  domain: string;
+  hostName: string | null;
+  port: number;
+  addresses: string[];
+  primaryAddress: string | null;
+  txtRecord: ServiceTxtRecord;
+  capabilities: ParsedNetworkCapabilities;
+  isSelf: boolean;
+  lastSeenAt: number;
 };
 
 export type NetworkSubscriptionSnapshot = {

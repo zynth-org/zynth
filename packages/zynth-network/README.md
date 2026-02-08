@@ -22,6 +22,7 @@ Regenerate native projects after adding the package.
 
 ```ts
 import {
+  createCapabilityTxtRecord,
   Network,
   NetworkServiceDomains,
   NetworkServiceTypes,
@@ -36,6 +37,17 @@ await Network.startDiscoveryAsync({
 });
 
 const peers = await Network.getDiscoveredServicesAsync();
+
+await Network.startServiceAsync({
+  serviceType: NetworkServiceTypes.Zynth,
+  name: "My Device",
+  port: 53317,
+  txtRecord: createCapabilityTxtRecord({
+    version: "1",
+    transfer: ["http", "ws"],
+    maxChunk: 262144,
+  }),
+});
 ```
 
 ### Recommended Solid usage
@@ -112,6 +124,35 @@ const customType = toBonjourServiceType("my-app"); // "_my-app._tcp."
 const domain = NetworkServiceDomains.Local; // "local."
 ```
 
+### TXT capability helpers and peer normalization
+
+Use typed capability helpers to keep TXT records ergonomic without hardcoding string parsing everywhere:
+
+```ts
+import {
+  createCapabilityTxtRecord,
+  normalizePeerMetadataList,
+} from "@zynth/network";
+
+const txtRecord = createCapabilityTxtRecord({
+  version: "1",
+  transfer: ["http", "ws"],
+  maxChunk: 262144,
+});
+
+await Network.startServiceAsync({
+  serviceType: "_zynth._tcp.",
+  name: "Sender",
+  port: 53317,
+  txtRecord,
+});
+
+const peers = await Network.getDiscoveredServicesAsync();
+const normalized = normalizePeerMetadataList(peers);
+```
+
+`normalizePeerMetadataList` gives stable `peerId`, normalized addresses, and parsed capabilities from TXT (`version`, `transfer`, `maxChunk`) while preserving custom TXT keys.
+
 ### Special cases / platform constraints
 
 These values are best-effort and may be `null` by design:
@@ -179,7 +220,7 @@ Returns `NetworkDiscoveryController` with:
   - `isExpensive?: boolean`
 
 - `NetworkService`
-  - `id`, `name`, `type`, `domain`, `hostName`, `port`, `addresses`, `txtRecord`, `lastSeenAt`, `isSelf`
+  - `id`, `name`, `type`, `domain`, `hostName`, `port`, `addresses`, `txtRecord`, `capabilities`, `lastSeenAt`, `isSelf`
 
 - `DiscoveryEvent`
   - `type: "serviceFound" | "serviceLost" | "serviceResolved" | "serviceUpdated"`
@@ -196,3 +237,9 @@ Returns `NetworkDiscoveryController` with:
   - `Local`
 - `toBonjourServiceType(serviceName, transport?)`
   - helper for generating RFC-compatible DNS-SD service types
+- `createCapabilityTxtRecord(capabilities)`
+  - typed TXT encoder for capability advertisement (`version`, `transfer`, `maxChunk`, custom keys)
+- `parseCapabilityTxtRecord(txtRecord)`
+  - parses known capability keys and keeps custom TXT entries
+- `normalizePeerMetadata(service)` / `normalizePeerMetadataList(services)`
+  - lightweight peer metadata normalization for cross-platform peer lists

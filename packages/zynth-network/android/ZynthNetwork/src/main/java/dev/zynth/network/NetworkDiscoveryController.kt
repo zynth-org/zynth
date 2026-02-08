@@ -340,7 +340,8 @@ class NetworkDiscoveryController(
     private fun serviceKey(serviceInfo: NsdServiceInfo): String {
         val name = serviceInfo.serviceName.orEmpty().lowercase(Locale.US)
         val type = serviceInfo.serviceType.orEmpty().lowercase(Locale.US)
-        return "$name|$type"
+        val domain = discoveryConfig.domain.lowercase(Locale.US)
+        return "$name|$type|$domain"
     }
 
     private fun enqueueDiscoveryEvent(type: String, service: NetworkServiceInfo) {
