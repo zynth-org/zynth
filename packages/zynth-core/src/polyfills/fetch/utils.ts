@@ -1,4 +1,4 @@
-import type { BodyInit, FetchPayload } from "./types";
+import type { BodyInit, FetchPayload, ReadableStreamLike } from "./types";
 
 declare const global: any;
 
@@ -23,4 +23,22 @@ export function coerceBody(body?: BodyInit): FetchPayload["body"] {
     return copy.buffer;
   }
   return undefined;
+}
+
+export function isReadableStreamBody(
+  body: BodyInit,
+  globalObject: any
+): body is ReadableStreamLike<Uint8Array> {
+  if (!body || typeof body !== "object") {
+    return false;
+  }
+  const bodyWithReader = body as { getReader?: unknown };
+  if (typeof bodyWithReader.getReader !== "function") {
+    return false;
+  }
+  const ReadableStreamCtor = globalObject?.ReadableStream;
+  if (typeof ReadableStreamCtor === "function") {
+    return body instanceof ReadableStreamCtor;
+  }
+  return true;
 }

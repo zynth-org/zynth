@@ -3,6 +3,28 @@ import type { AbortSignal } from "../AbortController";
 import type { Blob } from "../Blob";
 import type { FormData } from "../FormData";
 
+export type ReadableStreamReaderResult<T> = {
+  done: boolean;
+  value?: T;
+};
+
+export type ReadableStreamReaderLike<T> = {
+  read(): Promise<ReadableStreamReaderResult<T>>;
+  releaseLock?(): void;
+};
+
+export type ReadableStreamLike<T> = {
+  getReader(): ReadableStreamReaderLike<T>;
+};
+
+export type UploadProgress = {
+  requestId: number;
+  bytesSent: number;
+  bytesTotal: number | null;
+  chunkBytes: number;
+  phase: "enqueue" | "complete";
+};
+
 export type HeaderInit =
   | Record<string, string>
   | Headers
@@ -14,6 +36,8 @@ export type RequestInit = {
   body?: BodyInit;
   timeout?: number;
   signal?: AbortSignal;
+  stream?: boolean;
+  onUploadProgress?: (progress: UploadProgress) => void;
   redirect?: "follow" | "error" | "manual";
 };
 
@@ -23,6 +47,7 @@ export type BodyInit =
   | Uint8Array
   | Blob
   | FormData
+  | ReadableStreamLike<Uint8Array>
   | URLSearchParams
   | null
   | undefined;
@@ -39,7 +64,11 @@ export type FetchResult = {
 };
 
 export type FetchBridge = {
-  call(name: string, method: string, args: any): any;
+  call(
+    name: string,
+    method: string,
+    args: any
+  ): Promise<unknown> | unknown;
 };
 
 export type FetchPayload = {
@@ -50,4 +79,6 @@ export type FetchPayload = {
   body?: string | ArrayBuffer | Uint8Array | number[];
   timeout?: number;
   stream?: boolean;
+  uploadStream?: boolean;
+  uploadLength?: number | null;
 };

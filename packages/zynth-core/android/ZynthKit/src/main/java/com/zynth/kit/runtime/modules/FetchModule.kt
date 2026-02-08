@@ -2,12 +2,18 @@ package com.zynth.kit.runtime.modules
 
 import com.zynth.kit.runtime.ZynthModule
 import com.zynth.kit.runtime.ZynthRuntime
+import java.io.IOException
 import java.nio.ByteBuffer
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
+import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import okio.BufferedSink
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -15,17 +21,21 @@ class FetchModule(private val runtime: ZynthRuntime) : ZynthModule {
     override val name: String = "Fetch"
 
     private val client = OkHttpClient.Builder().build()
-    private val calls = java.util.concurrent.ConcurrentHashMap<Int, okhttp3.Call>()
-    private val pendingChunks = java.util.concurrent.ConcurrentHashMap<Int, MutableList<ByteArray>>()
-    private val pendingEnd = java.util.concurrent.ConcurrentHashMap<Int, Boolean>()
-    private val pendingError = java.util.concurrent.ConcurrentHashMap<Int, String>()
-    private val startedStreams = java.util.concurrent.ConcurrentHashMap<Int, Boolean>()
+    private val calls = ConcurrentHashMap<Int, okhttp3.Call>()
+    private val pendingChunks = ConcurrentHashMap<Int, MutableList<ByteArray>>()
+    private val pendingEnd = ConcurrentHashMap<Int, Boolean>()
+    private val pendingError = ConcurrentHashMap<Int, String>()
+    private val startedStreams = ConcurrentHashMap<Int, Boolean>()
+    private val uploadChannels = ConcurrentHashMap<Int, UploadChannel>()
 
     override fun call(method: String, args: Array<Any?>): JSONObject {
         return when (method) {
             "request" -> handleRequest(args.firstOrNull())
             "cancel" -> handleCancel(args.firstOrNull())
             "streamStart" -> handleStreamStart(args.firstOrNull())
+            "uploadChunk" -> handleUploadChunk(args.firstOrNull())
+            "uploadComplete" -> handleUploadComplete(args.firstOrNull())
+            "uploadAbort" -> handleUploadAbort(args.firstOrNull())
             else -> errorResponse("unknown_method", method)
         }
     }
@@ -34,7 +44,7 @@ class FetchModule(private val runtime: ZynthRuntime) : ZynthModule {
         val params = payload as? JSONObject ?: return errorResponse("invalid_arguments")
         if (!params.has("requestId")) return errorResponse("missing_request_id")
         val requestId = params.getInt("requestId")
-        
+
         val url = params.optString("url")
         if (url.isBlank()) return errorResponse("invalid_url")
 
@@ -42,6 +52,12 @@ class FetchModule(private val runtime: ZynthRuntime) : ZynthModule {
         val headers = params.optJSONObject("headers")
         val timeoutSeconds = params.optDouble("timeout", 0.0)
         val wantsStream = params.optBoolean("stream", false)
+        val uploadStream = params.optBoolean("uploadStream", false)
+        val uploadLength = if (params.has("uploadLength") && !params.isNull("uploadLength")) {
+            params.optLong("uploadLength", -1L).takeIf { it >= 0 }
+        } else {
+            null
+        }
 
         val builder = Request.Builder().url(url)
         if (headers != null) {
@@ -55,7 +71,15 @@ class FetchModule(private val runtime: ZynthRuntime) : ZynthModule {
             }
         }
 
-        if (params.has("body")) {
+        if (uploadStream) {
+            if (method == "GET" || method == "HEAD") {
+                return errorResponse("invalid_method", "uploadStream requires a request body method")
+            }
+            val mediaType = headers?.optString("Content-Type")?.toMediaTypeOrNull()
+            val channel = UploadChannel(mediaType, uploadLength)
+            uploadChannels[requestId] = channel
+            builder.method(method, channel.requestBody())
+        } else if (params.has("body")) {
             val body = params.get("body")
             val mediaType = headers?.optString("Content-Type")?.toMediaTypeOrNull()
             val bytes = coerceBodyBytes(body)
@@ -68,7 +92,10 @@ class FetchModule(private val runtime: ZynthRuntime) : ZynthModule {
                 return errorResponse("unsupported_body", body::class.java.name)
             }
         } else {
-            builder.method(method, if (method == "GET" || method == "HEAD") null else ByteArray(0).toRequestBody())
+            builder.method(
+                method,
+                if (method == "GET" || method == "HEAD") null else ByteArray(0).toRequestBody(),
+            )
         }
 
         val callClient = if (timeoutSeconds > 0) {
@@ -83,12 +110,13 @@ class FetchModule(private val runtime: ZynthRuntime) : ZynthModule {
         calls[requestId] = call
 
         call.enqueue(object : okhttp3.Callback {
-            override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {
+            override fun onFailure(call: okhttp3.Call, e: IOException) {
                 calls.remove(requestId)
+                uploadChannels.remove(requestId)?.abort("Request failed")
                 val error = if (call.isCanceled()) {
-                     mapOf("error" to "aborted", "message" to "Request aborted")
+                    mapOf("error" to "aborted", "message" to "Request aborted")
                 } else {
-                     mapOf("error" to "network_error", "message" to (e.message ?: "unknown"))
+                    mapOf("error" to "network_error", "message" to (e.message ?: "unknown"))
                 }
                 runtime.emitEvent("zynth.fetch.response", error + mapOf("requestId" to requestId))
             }
@@ -109,7 +137,10 @@ class FetchModule(private val runtime: ZynthRuntime) : ZynthModule {
                         .put("headers", headerMap)
                         .put("streamId", requestId)
                     startStreamReader(requestId, requestId, response)
-                    runtime.emitEvent("zynth.fetch.response", mapOf("requestId" to requestId, "result" to result))
+                    runtime.emitEvent(
+                        "zynth.fetch.response",
+                        mapOf("requestId" to requestId, "result" to result),
+                    )
                 } else {
                     response.use { closedResponse ->
                         val bodyBytes = closedResponse.body?.bytes() ?: ByteArray(0)
@@ -130,9 +161,13 @@ class FetchModule(private val runtime: ZynthRuntime) : ZynthModule {
                             .put("redirected", closedResponse.priorResponse != null)
                             .put("headers", headerMap)
                             .put("body", bodyJson)
-                        runtime.emitEvent("zynth.fetch.response", mapOf("requestId" to requestId, "result" to result))
+                        runtime.emitEvent(
+                            "zynth.fetch.response",
+                            mapOf("requestId" to requestId, "result" to result),
+                        )
                     }
                     calls.remove(requestId)
+                    uploadChannels.remove(requestId)
                 }
             }
         })
@@ -144,6 +179,7 @@ class FetchModule(private val runtime: ZynthRuntime) : ZynthModule {
         val params = payload as? JSONObject ?: return errorResponse("invalid_arguments")
         if (!params.has("id")) return errorResponse("missing_request_id")
         val requestId = params.getInt("id")
+        uploadChannels.remove(requestId)?.abort("Request aborted")
         calls.remove(requestId)?.cancel()
         return JSONObject().put("result", true)
     }
@@ -157,12 +193,55 @@ class FetchModule(private val runtime: ZynthRuntime) : ZynthModule {
         return JSONObject().put("result", true)
     }
 
+    private fun handleUploadChunk(payload: Any?): JSONObject {
+        val params = payload as? JSONObject ?: return errorResponse("invalid_arguments")
+        if (!params.has("id")) return errorResponse("missing_request_id")
+        val requestId = params.getInt("id")
+        val channel = uploadChannels[requestId] ?: return errorResponse("upload_not_found")
+        if (!params.has("chunk")) return errorResponse("missing_chunk")
+        val body = params.get("chunk")
+        val chunk = coerceBodyBytes(body) ?: return errorResponse("unsupported_chunk", body::class.java.name)
+
+        return try {
+            channel.enqueue(chunk)
+            JSONObject().put("result", true)
+        } catch (error: Throwable) {
+            errorResponse("upload_failed", error.message)
+        }
+    }
+
+    private fun handleUploadComplete(payload: Any?): JSONObject {
+        val params = payload as? JSONObject ?: return errorResponse("invalid_arguments")
+        if (!params.has("id")) return errorResponse("missing_request_id")
+        val requestId = params.getInt("id")
+        val channel = uploadChannels[requestId] ?: return errorResponse("upload_not_found")
+
+        return try {
+            channel.complete()
+            JSONObject().put("result", true)
+        } catch (error: Throwable) {
+            errorResponse("upload_failed", error.message)
+        }
+    }
+
+    private fun handleUploadAbort(payload: Any?): JSONObject {
+        val params = payload as? JSONObject ?: return errorResponse("invalid_arguments")
+        if (!params.has("id")) return errorResponse("missing_request_id")
+        val requestId = params.getInt("id")
+        val reason = params.optString("message", "Upload aborted")
+
+        uploadChannels.remove(requestId)?.abort(reason)
+        calls.remove(requestId)?.cancel()
+        return JSONObject().put("result", true)
+    }
+
     private fun startStreamReader(requestId: Int, streamId: Int, response: okhttp3.Response) {
         val body = response.body
         if (body == null) {
             emitStream(streamId, mapOf("id" to streamId, "type" to "end"))
             response.close()
             calls.remove(requestId)
+            uploadChannels.remove(requestId)
             return
         }
         Thread {
@@ -184,6 +263,7 @@ class FetchModule(private val runtime: ZynthRuntime) : ZynthModule {
             } finally {
                 response.close()
                 calls.remove(requestId)
+                uploadChannels.remove(requestId)
             }
         }.start()
     }
@@ -262,6 +342,63 @@ class FetchModule(private val runtime: ZynthRuntime) : ZynthModule {
                 bytes
             }
             else -> null
+        }
+    }
+
+    private class UploadChannel(
+        private val mediaType: MediaType?,
+        private val length: Long?,
+    ) {
+        private val queue = LinkedBlockingQueue<UploadEvent>()
+        @Volatile
+        private var closed: Boolean = false
+
+        fun requestBody(): RequestBody {
+            return object : RequestBody() {
+                override fun contentType(): MediaType? = mediaType
+
+                override fun contentLength(): Long = length ?: -1L
+
+                override fun writeTo(sink: BufferedSink) {
+                    while (true) {
+                        val event = queue.take()
+                        when (event) {
+                            is UploadEvent.Chunk -> sink.write(event.bytes)
+                            is UploadEvent.Complete -> return
+                            is UploadEvent.Abort -> throw IOException(event.message)
+                        }
+                    }
+                }
+            }
+        }
+
+        fun enqueue(bytes: ByteArray) {
+            if (closed) {
+                throw IOException("Upload is already closed")
+            }
+            queue.put(UploadEvent.Chunk(bytes))
+        }
+
+        fun complete() {
+            if (closed) {
+                return
+            }
+            closed = true
+            queue.put(UploadEvent.Complete)
+        }
+
+        fun abort(message: String) {
+            if (closed) {
+                return
+            }
+            closed = true
+            queue.put(UploadEvent.Abort(message))
+        }
+
+        private sealed class UploadEvent {
+            data class Chunk(val bytes: ByteArray) : UploadEvent()
+            object Complete : UploadEvent()
+            data class Abort(val message: String) : UploadEvent()
         }
     }
 }

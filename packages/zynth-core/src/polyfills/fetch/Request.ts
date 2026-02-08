@@ -2,6 +2,7 @@ import { Body } from "./Body";
 import { Headers } from "./Headers";
 import type { BodyInit, RequestInit } from "./types";
 import type { AbortSignal } from "../AbortController";
+import { getGlobalObject, isReadableStreamBody } from "./utils";
 
 export class Request extends Body {
   readonly url: string;
@@ -39,6 +40,9 @@ export class Request extends Body {
   clone(): Request {
     if (this.bodyUsed) {
       throw new TypeError("Cannot clone a Request after it is used");
+    }
+    if (isReadableStreamBody(this.requestBody, getGlobalObject())) {
+      throw new TypeError("Cannot clone a Request with a streaming body");
     }
     return new Request(this.url, {
       method: this.method,

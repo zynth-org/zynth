@@ -1,13 +1,15 @@
 import { Headers } from "./Headers";
 import { Request } from "./Request";
 import { Response } from "./Response";
-import { coerceBody, getGlobalObject } from "./utils";
+import { coerceBody, getGlobalObject, isReadableStreamBody } from "./utils";
 import type {
   FetchBridge,
   FetchPayload,
   RequestInit,
   FetchResult,
   BodyInit,
+  ReadableStreamLike,
+  UploadProgress,
 } from "./types";
 
 let nextRequestId = 1;
@@ -47,6 +49,8 @@ export async function fetch(
   }
 
   const requestId = nextRequestId++;
+  let abortReject: ((error: Error) => void) | null = null;
+  let uploadFailureReject: ((error: Error) => void) | null = null;
   let aborted = false;
   const onAbort = () => {
     aborted = true;
@@ -63,7 +67,7 @@ export async function fetch(
 
   const supportsStream = typeof globalObject.ReadableStream === "function";
   const rawBody = init?.body ?? request.getBodyForPayload();
-  const streamOverride = (init as any)?.stream;
+  const streamOverride = init?.stream;
   const wantsStream =
     supportsStream &&
     (typeof streamOverride === "boolean" ? streamOverride : rawBody == null);
@@ -79,8 +83,13 @@ export async function fetch(
   };
 
   const resolvedBody = await resolveBody(rawBody, headers, globalObject);
+  const uploadStream = resolvedBody?.uploadStream;
+  const uploadTotalBytes = inferUploadTotalBytes(headers, resolvedBody);
+
   if (resolvedBody) {
     payload.body = resolvedBody.body;
+    payload.uploadStream = Boolean(uploadStream);
+    payload.uploadLength = uploadTotalBytes;
     payload.headers = headers.toJSON();
   }
 
@@ -95,9 +104,7 @@ export async function fetch(
   }
 
   let result: any;
-  let abortReject: ((error: Error) => void) | null = null;
-  
-  const responsePromise = new Promise((resolve, reject) => {
+  const responsePromise = new Promise((resolve) => {
     const subscription = emitter.addListener("zynth.fetch.response", (data: any) => {
       if (data && data.requestId === requestId) {
         subscription.remove();
@@ -115,9 +122,52 @@ export async function fetch(
         })
       : null;
 
+  const uploadFailurePromise =
+    uploadStream != null
+      ? new Promise((_, reject) => {
+          uploadFailureReject = reject as (error: Error) => void;
+        })
+      : null;
+
   try {
-    bridge.call("Fetch", "request", payload);
-    result = abortPromise ? await Promise.race([responsePromise, abortPromise]) : await responsePromise;
+    const requestResult = await Promise.resolve(
+      bridge.call("Fetch", "request", payload)
+    );
+    throwIfNativeError(requestResult, "request");
+
+    if (uploadStream) {
+      void pumpUploadStreamToNative({
+        bridge,
+        requestId,
+        stream: uploadStream,
+        onUploadProgress: init?.onUploadProgress,
+        totalBytes: uploadTotalBytes,
+      }).catch((error) => {
+        try {
+          bridge.call("Fetch", "uploadAbort", {
+            id: requestId,
+            message: error instanceof Error ? error.message : String(error),
+          });
+        } catch {
+          // Ignore bridge failures during abort cleanup.
+        }
+        if (uploadFailureReject) {
+          uploadFailureReject(
+            error instanceof Error ? error : new Error(String(error))
+          );
+        }
+      });
+    }
+
+    const pending: Promise<unknown>[] = [responsePromise];
+    if (abortPromise) {
+      pending.push(abortPromise);
+    }
+    if (uploadFailurePromise) {
+      pending.push(uploadFailurePromise);
+    }
+
+    result = await Promise.race(pending);
   } finally {
     if (signal && typeof signal.removeEventListener === "function") {
       signal.removeEventListener("abort", onAbort);
@@ -172,6 +222,65 @@ export async function fetch(
 }
 
 export { Headers, Request, Response };
+
+type UploadPumpArgs = {
+  bridge: FetchBridge;
+  requestId: number;
+  stream: ReadableStreamLike<Uint8Array>;
+  onUploadProgress?: (progress: UploadProgress) => void;
+  totalBytes: number | null;
+};
+
+async function pumpUploadStreamToNative(args: UploadPumpArgs): Promise<void> {
+  const reader = args.stream.getReader();
+  let bytesSent = 0;
+
+  try {
+    while (true) {
+      const step = await reader.read();
+      if (step.done) {
+        break;
+      }
+
+      const chunk = normalizeUploadChunk(step.value);
+      if (chunk.byteLength === 0) {
+        continue;
+      }
+
+      const chunkPayload = Array.from(chunk);
+      const chunkResult = await Promise.resolve(
+        args.bridge.call("Fetch", "uploadChunk", {
+          id: args.requestId,
+          chunk: chunkPayload,
+        })
+      );
+      throwIfNativeError(chunkResult, "uploadChunk");
+
+      bytesSent += chunk.byteLength;
+      args.onUploadProgress?.({
+        requestId: args.requestId,
+        bytesSent,
+        bytesTotal: args.totalBytes,
+        chunkBytes: chunk.byteLength,
+        phase: "enqueue",
+      });
+    }
+
+    const completeResult = await Promise.resolve(
+      args.bridge.call("Fetch", "uploadComplete", { id: args.requestId })
+    );
+    throwIfNativeError(completeResult, "uploadComplete");
+    args.onUploadProgress?.({
+      requestId: args.requestId,
+      bytesSent,
+      bytesTotal: args.totalBytes,
+      chunkBytes: 0,
+      phase: "complete",
+    });
+  } finally {
+    reader.releaseLock?.();
+  }
+}
 
 function createStreamFromEmitter(
   streamId: number,
@@ -248,13 +357,43 @@ function normalizeResponseBody(
   return null;
 }
 
+function normalizeUploadChunk(value: unknown): Uint8Array {
+  if (value instanceof Uint8Array) {
+    return value;
+  }
+  if (value instanceof ArrayBuffer) {
+    return new Uint8Array(value);
+  }
+  if (Array.isArray(value)) {
+    const chunk = new Uint8Array(value.length);
+    for (let i = 0; i < value.length; i += 1) {
+      chunk[i] = Number(value[i]) & 0xff;
+    }
+    return chunk;
+  }
+  throw new Error("Upload stream chunk must be Uint8Array-compatible");
+}
+
+type ResolvedBody = {
+  body?: FetchPayload["body"];
+  uploadStream?: ReadableStreamLike<Uint8Array>;
+  uploadLength?: number | null;
+};
+
 async function resolveBody(
   body: BodyInit,
   headers: Headers,
   globalObject: any
-): Promise<{ body: FetchPayload["body"] } | null> {
+): Promise<ResolvedBody | null> {
   if (body == null) {
     return null;
+  }
+
+  if (isReadableStreamBody(body, globalObject)) {
+    return {
+      uploadStream: body,
+      uploadLength: null,
+    };
   }
 
   const FormDataCtor = globalObject.FormData as any;
@@ -267,7 +406,7 @@ async function resolveBody(
       headers.set("content-type", payload.contentType);
     }
     const buffer = payload.body.buffer.slice(0);
-    return { body: buffer };
+    return { body: buffer, uploadLength: buffer.byteLength };
   }
 
   if (URLSearchParamsCtor && body instanceof URLSearchParamsCtor) {
@@ -278,7 +417,7 @@ async function resolveBody(
         "application/x-www-form-urlencoded;charset=UTF-8"
       );
     }
-    return { body: encoded };
+    return { body: encoded, uploadLength: encoded.length };
   }
 
   if (BlobCtor && body instanceof BlobCtor) {
@@ -287,13 +426,65 @@ async function resolveBody(
     if (type && !headers.has("content-type")) {
       headers.set("content-type", type);
     }
-    return { body: buffer };
+    return { body: buffer, uploadLength: buffer.byteLength };
   }
 
   const raw = coerceBody(body);
   if (raw !== undefined) {
-    return { body: raw };
+    return {
+      body: raw,
+      uploadLength: inferBodyLength(raw),
+    };
   }
 
   return null;
+}
+
+function inferUploadTotalBytes(
+  headers: Headers,
+  resolvedBody: ResolvedBody | null
+): number | null {
+  const explicitHeader = headers.get("content-length");
+  if (explicitHeader) {
+    const parsed = Number.parseInt(explicitHeader, 10);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      return parsed;
+    }
+  }
+  if (!resolvedBody) {
+    return null;
+  }
+  return resolvedBody.uploadLength ?? null;
+}
+
+function inferBodyLength(body: FetchPayload["body"]): number | null {
+  if (typeof body === "string") {
+    return body.length;
+  }
+  if (body instanceof ArrayBuffer) {
+    return body.byteLength;
+  }
+  if (body instanceof Uint8Array) {
+    return body.byteLength;
+  }
+  if (Array.isArray(body)) {
+    return body.length;
+  }
+  return null;
+}
+
+function throwIfNativeError(result: unknown, context: string): void {
+  if (!result || typeof result !== "object") {
+    return;
+  }
+  const record = result as Record<string, unknown>;
+  const error = record.error;
+  if (typeof error !== "string") {
+    return;
+  }
+  const message =
+    typeof record.message === "string" && record.message.length > 0
+      ? `: ${record.message}`
+      : "";
+  throw new Error(`[fetch] ${context} ${error}${message}`);
 }
