@@ -97,9 +97,6 @@ export class Directory {
     this._uri = nextUri;
   }
 
-  static async pickDirectoryAsync(_initialUri?: string): Promise<Directory> {
-    throw new Error("Directory picker is not available yet.");
-  }
 }
 
 function resolveDestinationUri(destination: Directory | File | string, name: string): string {

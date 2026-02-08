@@ -10,6 +10,8 @@ Native filesystem access for Zynth apps.
 - Streamed upload helpers (`uploadAsync`, `uploadStream`) for large files
 - Native checksum helpers (`md5`, `sha1`, `sha256`)
 
+It intentionally does not own system picker UX. Use `@zynth/document-picker` in app code, then wrap returned URIs with `File`/`Directory`.
+
 ## Basic
 
 ### Install
@@ -77,6 +79,23 @@ const settings = createFileSignal(settingsFile, {
 });
 
 await settings.setValue('{"theme":"dark"}');
+```
+
+### Picker integration
+
+```ts
+import { DocumentPicker } from "@zynth/document-picker";
+import { File } from "@zynth/filesystem";
+
+const result = await DocumentPicker.getDocumentAsync({
+  multiple: false,
+  copyToCacheDirectory: true,
+});
+
+if (!result.cancelled && result.assets[0]?.uri) {
+  const file = new File(result.assets[0].uri);
+  console.log(await file.text());
+}
 ```
 
 ## Advanced
@@ -176,7 +195,6 @@ Mutations:
 Static helpers:
 
 - `downloadFileAsync(url, destination, options?): Promise<File>`
-- `pickFileAsync(initialUri?, mimeType?): Promise<File>`
 
 ### `Directory`
 
@@ -200,7 +218,6 @@ Methods:
 - `copy(destination: Directory | File | string): Promise<void>`
 - `move(destination: Directory | File | string): Promise<void>`
 - `rename(newName: string): Promise<void>`
-- `pickDirectoryAsync(initialUri?): Promise<Directory>`
 
 ### `Paths`
 
@@ -257,6 +274,4 @@ Path utilities:
 ## Platform notes
 
 - iOS App Transport Security (ATS) blocks plain HTTP by default. For local testing, use loopback (`127.0.0.1`) or configure ATS exceptions.
-- `pickFileAsync` and `pickDirectoryAsync` require `@zynth/document-picker` to be installed/linked in the app.
-- `pickDirectoryAsync` uses a best-effort folder picker and falls back to selecting a file then returning its parent directory.
-- `asset://` and `bundle://` paths are read-only on mobile platforms. Write/create/delete/move/rename on those URIs will throw a descriptive error.
+- `asset://` and `bundle://` paths are read-only on mobile platforms. Write/create/delete/move/rename against those URIs are not supported.

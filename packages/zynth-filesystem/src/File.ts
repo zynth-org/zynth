@@ -339,9 +339,6 @@ export class File {
     return target;
   }
 
-  static async pickFileAsync(_initialUri?: string, _mimeType?: string): Promise<File> {
-    throw new Error("File picker is not available yet.");
-  }
 }
 
 function resolveDestinationUri(destination: Directory | File | string, name: string): string {
