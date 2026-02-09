@@ -123,18 +123,24 @@ function runCommandFiltered(command, args, options = {}) {
     return (
       /\berror:/i.test(line) ||
       /\bwarning:/i.test(line) ||
-      /fatal error:/i.test(line)
+      /fatal error:/i.test(line) ||
+      /Undefined symbols/i.test(line) ||
+      /^ld:/i.test(line) ||
+      /^clang:/i.test(line)
     );
   }
 
   function shouldPrint(line) {
     if (shouldSkip(line)) return false;
+    const now = Date.now();
     if (isDiagnostic(line)) {
-      lastDiagnosticAt = Date.now();
+      lastDiagnosticAt = now;
       return true;
     }
-    if (/\bnote:/i.test(line) && Date.now() - lastDiagnosticAt < 1000) {
-      return true;
+    if (now - lastDiagnosticAt < 1000) {
+      if (/\bnote:/i.test(line) || /^\s+/.test(line)) {
+        return true;
+      }
     }
     return false;
   }
