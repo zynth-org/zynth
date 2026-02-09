@@ -56,6 +56,7 @@ export function createAndroidHost(): Host {
 
   const queue: QueueItem[] = [];
   const pendingRemovals = new Map<number, number>();
+  const pendingDrops = new Set<number>();
   const suppressionKey = "__zynthSuppressNativeMutations";
   const isSuppressed = () => Boolean((g as any)[suppressionKey]);
 
@@ -255,7 +256,7 @@ export function createAndroidHost(): Host {
   const runFlush = () => {
     flushScheduled = false;
     try {
-      if (queue.length || pendingRemovals.size) {
+      if (queue.length || pendingRemovals.size || pendingDrops.size) {
         const pending = queue.splice(0);
         let batchAccumulator: BatchOperation[] = [];
 
@@ -287,6 +288,15 @@ export function createAndroidHost(): Host {
             });
           }
           pendingRemovals.clear();
+        }
+        if (pendingDrops.size) {
+          for (const nodeId of pendingDrops) {
+            batchAccumulator.push({
+              type: "dropNode",
+              nodeId,
+            });
+          }
+          pendingDrops.clear();
         }
         flushBatch();
       }
@@ -330,6 +340,10 @@ export function createAndroidHost(): Host {
 
   const recordPendingRemoval = (parentId: number, childId: number) => {
     pendingRemovals.set(childId, parentId);
+  };
+
+  const recordPendingDrop = (nodeId: number) => {
+    pendingDrops.add(nodeId);
   };
 
   const applyTextInputInitialProps = (id: number, props: any) => {
@@ -672,6 +686,9 @@ export function createAndroidHost(): Host {
       if (pendingRemovals.has(node.id)) {
         pendingRemovals.delete(node.id);
       }
+      if (pendingDrops.has(node.id)) {
+        pendingDrops.delete(node.id);
+      }
       const prevParentId = PARENTS.get(node.id);
       if (prevParentId != null) {
         const prevKids = ensure(prevParentId);
@@ -741,6 +758,7 @@ export function createAndroidHost(): Host {
       // mutate logical structure AFTER computing physIdx
       kids.splice(logicalAt, 0, node.id);
       PARENTS.set(node.id, parent.id);
+      TYPES.set(node.id, node.type);
 
       if (!isMarkerId(node.id)) {
         const op = {
@@ -796,7 +814,9 @@ export function createAndroidHost(): Host {
       PARENTS.set(node.id, null);
       if (!isMarkerId(node.id)) {
         TYPES.delete(node.id);
+        NODE_TO_CONTEXT.delete(node.id);
         enqueueRemoveOp();
+        recordPendingDrop(node.id);
       }
       schedule();
     },
@@ -862,7 +882,7 @@ export function createAndroidHost(): Host {
         (ui as any).applyBatchTyped(
           encodeTypedBatch(context.operations, context.meta),
         );
-        if (queue.length || pendingRemovals.size) {
+        if (queue.length || pendingRemovals.size || pendingDrops.size) {
           schedule();
         }
         return;

@@ -61,6 +61,7 @@ export function createIOSHost(): Host {
 
   const queue: QueueItem[] = [];
   const pendingRemovals = new Map<number, number>();
+  const pendingDrops = new Set<number>();
 
   const enqueueOperation = (operation: () => void) => {
     if (isSuppressed()) return;
@@ -256,7 +257,7 @@ export function createIOSHost(): Host {
     flushScheduled = false;
     rafHandle = null;
     try {
-      if (queue.length || pendingRemovals.size) {
+      if (queue.length || pendingRemovals.size || pendingDrops.size) {
         const pending = queue.splice(0);
         let batchAccumulator: BatchOperation[] = [];
 
@@ -287,6 +288,15 @@ export function createIOSHost(): Host {
             });
           }
           pendingRemovals.clear();
+        }
+        if (pendingDrops.size) {
+          for (const nodeId of pendingDrops) {
+            batchAccumulator.push({
+              type: "dropNode",
+              nodeId,
+            });
+          }
+          pendingDrops.clear();
         }
         flushBatch();
       }
@@ -336,6 +346,10 @@ export function createIOSHost(): Host {
 
   const recordPendingRemoval = (parentId: number, childId: number) => {
     pendingRemovals.set(childId, parentId);
+  };
+
+  const recordPendingDrop = (nodeId: number) => {
+    pendingDrops.add(nodeId);
   };
 
   const resetNodeToDefault = (nodeId: number, type: HostNode["type"]) => {
@@ -635,6 +649,9 @@ export function createIOSHost(): Host {
       if (pendingRemovals.has(node.id)) {
         pendingRemovals.delete(node.id);
       }
+      if (pendingDrops.has(node.id)) {
+        pendingDrops.delete(node.id);
+      }
       const prevParentId = PARENTS.get(node.id);
       if (prevParentId != null) {
         const prevKids = ensure(prevParentId);
@@ -682,6 +699,7 @@ export function createIOSHost(): Host {
       // mutate logical structure AFTER computing physIdx
       kids.splice(logicalAt, 0, node.id);
       PARENTS.set(node.id, parent.id);
+      TYPES.set(node.id, node.type);
 
       if (!isMarkerId(node.id)) {
         const op = {
@@ -725,6 +743,7 @@ export function createIOSHost(): Host {
         TYPES.delete(node.id);
         NODE_TO_CONTEXT.delete(node.id);
         enqueueRemoveOp();
+        recordPendingDrop(node.id);
       } else if (contextId) {
         NODE_TO_CONTEXT.delete(node.id);
       }

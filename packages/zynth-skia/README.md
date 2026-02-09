@@ -48,20 +48,31 @@ ZYNTH_SKIA_SKIP_BINARY_SYNC=1 yarn install
 ## Usage
 
 ```tsx
-import { SkiaView, createSkiaSurface } from "@zynth/skia";
+import {
+  Canvas,
+  Circle,
+  Paint,
+  Rect,
+  createShader,
+  createSkiaValue,
+} from "@zynth/skia";
 
-const surface = createSkiaSurface();
+const [time, setTime] = createSkiaValue(0, { shared: true });
+const shader = createShader(
+  "h.rgba(32 + 160 * h.fract(u.t * 0.2 + input.x / input.width), 120, 220, 1)",
+  { t: time },
+);
 
-<SkiaView
-  ref={(node) => surface.bind(node)}
+<Canvas
   style={{ width: 240, height: 240 }}
   clearColor="#101418"
-  frameLoop={true}
-/>;
-
-surface.submit([
-  { type: "rect", x: 12, y: 12, width: 96, height: 72, color: "#4ADE80" },
-  { type: "circle", cx: 170, cy: 88, r: 42, color: "#60A5FA" },
-  { type: "line", x1: 16, y1: 180, x2: 220, y2: 220, color: "#F59E0B", strokeWidth: 3 },
-]);
+  time={time}
+>
+  <Paint shader={shader}>
+    <Rect x={0} y={0} width={240} height={240} />
+  </Paint>
+  <Circle cx={120} cy={120} r={48} color="#60A5FA" />
+</Canvas>;
 ```
+
+Imperative APIs (`SkiaView`, `createSkiaSurface`) remain available for low-level control.

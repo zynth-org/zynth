@@ -1,4 +1,4 @@
-import { createEffect, mergeProps, onCleanup, splitProps } from "solid-js";
+import { createEffect, createSignal, mergeProps, onCleanup, splitProps } from "solid-js";
 import type { ParentComponent } from "solid-js";
 import type { HostNode } from "@zynth/core";
 import { createSkiaSurface } from "./createSkiaSurface";
@@ -24,21 +24,19 @@ export const SkiaView: ParentComponent<SkiaViewProps> = (props) => {
   ]);
 
   const surface = createSkiaSurface();
+  const [boundVersion, setBoundVersion] = createSignal(0);
 
   const setRef = (node: HostNode | null) => {
     surface.bind(node);
     if (node) {
-      const commands = local.commands;
-      const next = typeof commands === "function" ? commands() : commands;
-      if (next) {
-        surface.submit(next);
-      }
+      setBoundVersion((value) => value + 1);
       surface.setFrameLoopEnabled(Boolean(local.frameLoop));
     }
     (local.ref ?? noopRef)(node);
   };
 
   createEffect(() => {
+    boundVersion();
     const commands = local.commands;
     const next = typeof commands === "function" ? commands() : commands;
     if (!next) return;
@@ -54,11 +52,6 @@ export const SkiaView: ParentComponent<SkiaViewProps> = (props) => {
   });
 
   const onNativeReady = (event: { nativeEvent: { available: boolean } }) => {
-    const commands = local.commands;
-    const next = typeof commands === "function" ? commands() : commands;
-    if (next) {
-      surface.submit(next);
-    }
     surface.setFrameLoopEnabled(Boolean(local.frameLoop));
     local.onNativeReady?.(event);
   };
