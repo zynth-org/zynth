@@ -1,20 +1,16 @@
-import {
-  callNative,
-  callNativeSync,
-  getNativeModule,
-  unwrapNativeResult
-} from "@zynth/core";
+export { SkiaView } from "./SkiaView";
+export { createSkiaSurface } from "./createSkiaSurface";
+export type { SkiaSurfaceController } from "./createSkiaSurface";
 
-const MODULE_NAME = "Skia";
+export type {
+  SkiaDrawCommand,
+  SkiaDrawCircle,
+  SkiaDrawClear,
+  SkiaDrawLine,
+  SkiaDrawRect,
+  SkiaFrameSpec,
+  SkiaSurface,
+  SkiaViewProps,
+} from "./types";
 
-export const Skia = {
-  async exampleMethod() {
-    const result = await callNative(MODULE_NAME, "exampleMethod");
-    return unwrapNativeResult(result);
-  },
-
-  exampleSyncMethod() {
-    const result = callNativeSync(MODULE_NAME, "exampleSyncMethod");
-    return unwrapNativeResult(result);
-  }
-};
+import "./jsx.d.ts";

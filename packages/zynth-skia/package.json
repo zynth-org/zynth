@@ -25,7 +25,7 @@
   ],
   "scripts": {
     "build": "yarn build:js && yarn build:types",
-    "build:js": "rm -rf dist/esm && tsc --project tsconfig.json",
+    "build:js": "rm -rf dist/esm && tsc --project tsconfig.esm.json",
     "build:types": "tsc --project tsconfig.types.json",
     "clean": "rm -rf dist",
     "binaries:sync": "node ./scripts/manage-binaries.mjs sync",
@@ -69,7 +69,8 @@
       "initializer": {
         "className": "Skia",
         "method": "initialize",
-        "package": "dev.zynth.skia"
+        "package": "dev.zynth.skia",
+        "args": ["runtime"]
       }
     }
   }
