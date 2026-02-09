@@ -784,7 +784,7 @@ static void installGlobals(Runtime &rt) {
       "globalThis.clearInterval=(id)=>__hostClearInterval(id);"
       "globalThis.setImmediate=(fn,...a)=>__hostSetTimeout(fn,0,a);"
       "globalThis.clearImmediate=(id)=>__hostClearTimeout(id);"
-      "globalThis.requestAnimationFrame=(fn)=>__hostSetTimeout(fn,16,[]);"
+      "globalThis.requestAnimationFrame=(fn)=>__hostSetTimeout(()=>fn(Date.now()),16,[]);"
       "globalThis.cancelAnimationFrame=(id)=>__hostClearTimeout(id);";
 
   auto buffer = std::make_shared<StringBuffer>(timerScript);
