@@ -1,5 +1,6 @@
 import Foundation
 
+@objc(ZynthSkiaViewRegistry)
 final class ZynthSkiaViewRegistry: NSObject {
   static let shared = ZynthSkiaViewRegistry()
 

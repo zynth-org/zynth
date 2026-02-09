@@ -20,47 +20,65 @@ public final class ZynthSkiaView: UIView, ZynthInspectableComponent {
   }
 
   func markSurfaceReady() {
-    emit("onNativeReady", payload: ["available": true])
+    runOnMain { [weak self] in
+      self?.emit("onNativeReady", payload: ["available": true])
+    }
   }
 
   func resetSurface() {
-    setFrameLoopEnabled(false)
-    clearColorValue = .clear
-    commands.removeAll(keepingCapacity: false)
-    setNeedsDisplay()
+    runOnMain { [weak self] in
+      guard let self else { return }
+      self.setFrameLoopEnabled(false)
+      self.clearColorValue = .clear
+      self.commands.removeAll(keepingCapacity: false)
+      self.setNeedsDisplay()
+    }
   }
 
   func invalidateSurface() {
-    setNeedsDisplay()
+    runOnMain { [weak self] in
+      self?.setNeedsDisplay()
+    }
   }
 
   func setFrameLoopEnabled(_ enabled: Bool) {
-    frameLoopEnabled = enabled
-    if enabled {
-      ensureDisplayLink()
-    } else {
-      stopDisplayLink()
+    runOnMain { [weak self] in
+      guard let self else { return }
+      self.frameLoopEnabled = enabled
+      if enabled {
+        self.ensureDisplayLink()
+      } else {
+        self.stopDisplayLink()
+      }
     }
   }
 
   func setClearColor(_ raw: String?) {
-    clearColorValue = parseColor(raw) ?? clearColorValue
-    setNeedsDisplay()
+    runOnMain { [weak self] in
+      guard let self else { return }
+      self.clearColorValue = self.parseColor(raw) ?? self.clearColorValue
+      self.setNeedsDisplay()
+    }
   }
 
   func submitCommands(_ rawCommands: [[String: Any]]) {
-    commands = rawCommands.compactMap(SkiaCommand.from(raw:))
-    setNeedsDisplay()
+    runOnMain { [weak self] in
+      guard let self else { return }
+      self.commands = rawCommands.compactMap(SkiaCommand.from(raw:))
+      self.setNeedsDisplay()
+    }
   }
 
   func submitFrame(_ rawFrame: [String: Any]?) {
-    guard let rawFrame else { return }
-    if let rawClear = rawFrame["clear"] as? String, let next = parseColor(rawClear) {
-      clearColorValue = next
+    runOnMain { [weak self] in
+      guard let self, let rawFrame else { return }
+      if let rawClear = rawFrame["clear"] as? String, let next = self.parseColor(rawClear) {
+        self.clearColorValue = next
+      }
+      let rawCommands = rawFrame["commands"] as? [[String: Any]] ?? []
+      self.commands = rawCommands.compactMap(SkiaCommand.from(raw:))
+      self.setNeedsDisplay()
     }
-    let rawCommands = rawFrame["commands"] as? [[String: Any]] ?? []
-    commands = rawCommands.compactMap(SkiaCommand.from(raw:))
-    setNeedsDisplay()
   }
 
   public override func draw(_ rect: CGRect) {
@@ -168,6 +186,14 @@ public final class ZynthSkiaView: UIView, ZynthInspectableComponent {
       return UIColor(red: r, green: g, blue: b, alpha: a)
     }
     return nil
+  }
+
+  private func runOnMain(_ work: @escaping () -> Void) {
+    if Thread.isMainThread {
+      work()
+      return
+    }
+    DispatchQueue.main.async(execute: work)
   }
 }
 
