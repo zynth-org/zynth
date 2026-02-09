@@ -576,7 +576,7 @@ static void zynth_emit_upload_event(
 ) {
   if (!server || !upload) return;
   const char *method = request && request->request_method ? request->request_method : "";
-  const char *remote_addr = request && request->remote_addr ? request->remote_addr : "";
+  const char *remote_addr = request ? request->remote_addr : "";
   char *payload = zynth_build_upload_lifecycle_payload(
     phase,
     upload->upload_id,
@@ -1022,7 +1022,7 @@ static int zynth_handle_upload_metadata(struct mg_connection *conn, void *cbdata
   body[written] = '\0';
 
   const char *method = request->request_method ? request->request_method : "";
-  const char *remote_addr = request->remote_addr ? request->remote_addr : "";
+  const char *remote_addr = request->remote_addr;
   char *safe_method = zynth_json_escape(method);
   char *safe_remote = zynth_json_escape(remote_addr);
   if (!safe_method || !safe_remote) {
