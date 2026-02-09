@@ -2,6 +2,54 @@ import Foundation
 import UIKit
 import ZynthKit
 
+@_silgen_name("ZynthSkiaRasterCreateFrame")
+private func ZynthSkiaRasterCreateFrame(
+  _ width: Int32,
+  _ height: Int32,
+  _ pixels: UnsafeMutableRawPointer?,
+  _ rowBytes: Int,
+) -> UnsafeMutableRawPointer?
+
+@_silgen_name("ZynthSkiaRasterDestroyFrame")
+private func ZynthSkiaRasterDestroyFrame(_ frame: UnsafeMutableRawPointer?)
+
+@_silgen_name("ZynthSkiaRasterClear")
+private func ZynthSkiaRasterClear(_ frame: UnsafeMutableRawPointer?, _ argb: UInt32)
+
+@_silgen_name("ZynthSkiaRasterDrawRect")
+private func ZynthSkiaRasterDrawRect(
+  _ frame: UnsafeMutableRawPointer?,
+  _ x: Float,
+  _ y: Float,
+  _ width: Float,
+  _ height: Float,
+  _ argb: UInt32,
+  _ stroke: Bool,
+  _ strokeWidth: Float,
+)
+
+@_silgen_name("ZynthSkiaRasterDrawCircle")
+private func ZynthSkiaRasterDrawCircle(
+  _ frame: UnsafeMutableRawPointer?,
+  _ cx: Float,
+  _ cy: Float,
+  _ radius: Float,
+  _ argb: UInt32,
+  _ stroke: Bool,
+  _ strokeWidth: Float,
+)
+
+@_silgen_name("ZynthSkiaRasterDrawLine")
+private func ZynthSkiaRasterDrawLine(
+  _ frame: UnsafeMutableRawPointer?,
+  _ x1: Float,
+  _ y1: Float,
+  _ x2: Float,
+  _ y2: Float,
+  _ argb: UInt32,
+  _ strokeWidth: Float,
+)
+
 @objc(ZynthSkiaView)
 @objcMembers
 public final class ZynthSkiaView: UIView, ZynthInspectableComponent {
@@ -12,6 +60,10 @@ public final class ZynthSkiaView: UIView, ZynthInspectableComponent {
   private var commands: [SkiaCommand] = []
   private var displayLink: CADisplayLink?
   private var frameLoopEnabled = false
+  private var allowFallback = true
+  private var didLogSkiaRenderer = false
+  private var didWarnFallbackUsage = false
+  private var didWarnFallbackDisabled = false
 
   func bind(manager: ZynthUIManager, node: ZynthNode) {
     self.manager = manager
@@ -53,6 +105,14 @@ public final class ZynthSkiaView: UIView, ZynthInspectableComponent {
     }
   }
 
+  func setAllowFallback(_ enabled: Bool) {
+    runOnMain { [weak self] in
+      guard let self else { return }
+      self.allowFallback = enabled
+      self.setNeedsDisplay()
+    }
+  }
+
   func setClearColor(_ raw: String?) {
     runOnMain { [weak self] in
       guard let self else { return }
@@ -90,7 +150,130 @@ public final class ZynthSkiaView: UIView, ZynthInspectableComponent {
   }
 
   public override func draw(_ rect: CGRect) {
+    if drawWithSkia() {
+      if !didLogSkiaRenderer {
+        didLogSkiaRenderer = true
+        print("[ZynthSkia] Using Skia renderer.")
+      }
+      return
+    }
+    if !allowFallback {
+      if !didWarnFallbackDisabled {
+        didWarnFallbackDisabled = true
+        print("[ZynthSkia][Warning] Skia render failed and fallback is disabled (allowFallback=false). Canvas will not use native fallback.")
+      }
+      guard let context = UIGraphicsGetCurrentContext() else { return }
+      context.setFillColor(clearColorValue.cgColor)
+      context.fill(bounds)
+      return
+    }
+    if !didWarnFallbackUsage {
+      didWarnFallbackUsage = true
+      print("[ZynthSkia][Warning] Falling back to CoreGraphics renderer instead of Skia.")
+    }
     guard let context = UIGraphicsGetCurrentContext() else { return }
+    drawWithCoreGraphics(context)
+  }
+
+  private func drawWithSkia() -> Bool {
+    let drawBounds = bounds.integral
+    guard drawBounds.width > 0, drawBounds.height > 0 else { return false }
+
+    let scale = window?.screen.scale ?? UIScreen.main.scale
+    let pixelWidth = max(Int((drawBounds.width * scale).rounded(.up)), 1)
+    let pixelHeight = max(Int((drawBounds.height * scale).rounded(.up)), 1)
+    let rowBytes = pixelWidth * 4
+    let byteCount = rowBytes * pixelHeight
+
+    var pixelData = Data(count: byteCount)
+    let rendered = pixelData.withUnsafeMutableBytes { rawBuffer -> Bool in
+      guard let baseAddress = rawBuffer.baseAddress else { return false }
+      guard
+        let frame = ZynthSkiaRasterCreateFrame(
+          Int32(pixelWidth),
+          Int32(pixelHeight),
+          baseAddress,
+          rowBytes
+        )
+      else {
+        return false
+      }
+      defer {
+        ZynthSkiaRasterDestroyFrame(frame)
+      }
+
+      let drawScale = Float(scale)
+      ZynthSkiaRasterClear(frame, argbColor(clearColorValue))
+      for command in commands {
+        switch command {
+        case let .clear(color):
+          ZynthSkiaRasterClear(frame, argbColor(color))
+        case let .rect(x, y, width, height, color, style, strokeWidth):
+          ZynthSkiaRasterDrawRect(
+            frame,
+            Float(x) * drawScale,
+            Float(y) * drawScale,
+            Float(width) * drawScale,
+            Float(height) * drawScale,
+            argbColor(color),
+            style == .stroke,
+            Float(strokeWidth) * drawScale
+          )
+        case let .circle(cx, cy, r, color, style, strokeWidth):
+          ZynthSkiaRasterDrawCircle(
+            frame,
+            Float(cx) * drawScale,
+            Float(cy) * drawScale,
+            Float(r) * drawScale,
+            argbColor(color),
+            style == .stroke,
+            Float(strokeWidth) * drawScale
+          )
+        case let .line(x1, y1, x2, y2, color, strokeWidth):
+          ZynthSkiaRasterDrawLine(
+            frame,
+            Float(x1) * drawScale,
+            Float(y1) * drawScale,
+            Float(x2) * drawScale,
+            Float(y2) * drawScale,
+            argbColor(color),
+            Float(strokeWidth) * drawScale
+          )
+        }
+      }
+      return true
+    }
+    guard rendered else { return false }
+
+    let colorSpace = CGColorSpaceCreateDeviceRGB()
+    // The wrapped Skia surface writes RGBA premultiplied pixels for this build.
+    // Using the wrong CG bitmap layout swaps red/blue on iOS simulator.
+    let bitmapInfo = CGBitmapInfo.byteOrder32Big.union(
+      CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
+    )
+    let dataRef = pixelData as CFData
+    guard let provider = CGDataProvider(data: dataRef) else { return false }
+    guard
+      let image = CGImage(
+        width: pixelWidth,
+        height: pixelHeight,
+        bitsPerComponent: 8,
+        bitsPerPixel: 32,
+        bytesPerRow: rowBytes,
+        space: colorSpace,
+        bitmapInfo: bitmapInfo,
+        provider: provider,
+        decode: nil,
+        shouldInterpolate: true,
+        intent: .defaultIntent
+      )
+    else { return false }
+
+    UIImage(cgImage: image).draw(in: drawBounds)
+    return true
+  }
+
+  private func drawWithCoreGraphics(_ context: CGContext) {
     context.setFillColor(clearColorValue.cgColor)
     context.fill(bounds)
 
@@ -130,6 +313,47 @@ public final class ZynthSkiaView: UIView, ZynthInspectableComponent {
         context.strokePath()
       }
     }
+  }
+
+  private func argbColor(_ color: UIColor) -> UInt32 {
+    var r: CGFloat = 0
+    var g: CGFloat = 0
+    var b: CGFloat = 0
+    var a: CGFloat = 0
+    if color.getRed(&r, green: &g, blue: &b, alpha: &a) {
+      return packARGB(r: r, g: g, b: b, a: a)
+    }
+    if let converted = color.cgColor.converted(
+      to: CGColorSpaceCreateDeviceRGB(),
+      intent: .defaultIntent,
+      options: nil
+    ), let components = converted.components {
+      if components.count >= 4 {
+        return packARGB(
+          r: components[0],
+          g: components[1],
+          b: components[2],
+          a: components[3]
+        )
+      }
+      if components.count == 2 {
+        return packARGB(
+          r: components[0],
+          g: components[0],
+          b: components[0],
+          a: components[1]
+        )
+      }
+    }
+    return 0
+  }
+
+  private func packARGB(r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat) -> UInt32 {
+    let alpha = UInt32((max(0, min(1, a)) * 255).rounded())
+    let red = UInt32((max(0, min(1, r)) * 255).rounded())
+    let green = UInt32((max(0, min(1, g)) * 255).rounded())
+    let blue = UInt32((max(0, min(1, b)) * 255).rounded())
+    return (alpha << 24) | (red << 16) | (green << 8) | blue
   }
 
   public func zynthInspectState() -> [AnyHashable: Any] {

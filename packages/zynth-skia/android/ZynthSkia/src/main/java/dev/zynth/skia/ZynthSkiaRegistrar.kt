@@ -27,6 +27,10 @@ class ZynthSkiaRegistrar : ZynthComponentRegistrar {
                             view.setFrameLoopEnabled(parseBoolean(value, false))
                             true
                         }
+                        "allowFallback" -> {
+                            view.setAllowFallback(parseBoolean(value, true))
+                            true
+                        }
                         "commands" -> {
                             val parsed = parseArray(value)
                             view.submitCommands(parsed ?: JSONArray())

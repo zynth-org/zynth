@@ -1,9 +1,11 @@
 package dev.zynth.skia
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.util.Log
 import android.view.Choreographer
 import android.view.View
 import com.zynth.kit.components.ZynthInspectableComponent
@@ -13,6 +15,10 @@ import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicBoolean
 
 class ZynthSkiaView(context: Context) : View(context), ZynthInspectableComponent {
+    companion object {
+        private const val TAG = "ZynthSkiaView"
+    }
+
     private val renderPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private var clearColor: Int = Color.TRANSPARENT
     private var commands: List<SkiaCommand> = emptyList()
@@ -21,6 +27,12 @@ class ZynthSkiaView(context: Context) : View(context), ZynthInspectableComponent
     private var frameLoopEnabled = AtomicBoolean(false)
     private var framePosted = AtomicBoolean(false)
     private val density = context.resources.displayMetrics.density
+    private var skiaBitmap: Bitmap? = null
+    private var skiaRasterReady = true
+    private var allowFallback = true
+    private var didLogSkiaRenderer = false
+    private var didWarnFallbackUsage = false
+    private var didWarnFallbackDisabled = false
 
     private val frameCallback = Choreographer.FrameCallback {
         framePosted.set(false)
@@ -86,9 +98,16 @@ class ZynthSkiaView(context: Context) : View(context), ZynthInspectableComponent
         invalidate()
     }
 
+    fun setAllowFallback(enabled: Boolean) {
+        allowFallback = enabled
+        invalidate()
+    }
+
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
         setFrameLoopEnabled(false)
+        skiaBitmap?.recycle()
+        skiaBitmap = null
         if (nodeId > 0) {
             SkiaViewRegistry.unregister(nodeId)
         }
@@ -96,6 +115,109 @@ class ZynthSkiaView(context: Context) : View(context), ZynthInspectableComponent
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+        if (drawWithSkia(canvas)) {
+            if (!didLogSkiaRenderer) {
+                didLogSkiaRenderer = true
+                Log.i(TAG, "Using Skia renderer.")
+            }
+            return
+        }
+        if (!allowFallback) {
+            if (!didWarnFallbackDisabled) {
+                didWarnFallbackDisabled = true
+                Log.w(TAG, "Skia render failed and fallback is disabled (allowFallback=false).")
+            }
+            canvas.drawColor(clearColor)
+            return
+        }
+        if (!didWarnFallbackUsage) {
+            didWarnFallbackUsage = true
+            Log.w(TAG, "Falling back to android.graphics.Canvas instead of Skia.")
+        }
+        drawWithCanvasFallback(canvas)
+    }
+
+    private fun drawWithSkia(canvas: Canvas): Boolean {
+        if (!skiaRasterReady) return false
+        val widthPx = width
+        val heightPx = height
+        if (widthPx <= 0 || heightPx <= 0) return false
+        val bitmap = ensureSkiaBitmap(widthPx, heightPx) ?: return false
+
+        val frame = try {
+            ZynthSkiaJSI.rasterBegin(bitmap, widthPx, heightPx)
+        } catch (_: Throwable) {
+            skiaRasterReady = false
+            return false
+        }
+        if (frame == 0L) return false
+
+        try {
+            ZynthSkiaJSI.rasterClear(frame, clearColor)
+            for (command in commands) {
+                when (command) {
+                    is SkiaCommand.Clear -> ZynthSkiaJSI.rasterClear(frame, command.color)
+                    is SkiaCommand.Rect -> ZynthSkiaJSI.rasterDrawRect(
+                        frame,
+                        command.x,
+                        command.y,
+                        command.width,
+                        command.height,
+                        command.color,
+                        command.style == Paint.Style.STROKE,
+                        command.strokeWidth,
+                    )
+
+                    is SkiaCommand.Circle -> ZynthSkiaJSI.rasterDrawCircle(
+                        frame,
+                        command.cx,
+                        command.cy,
+                        command.r,
+                        command.color,
+                        command.style == Paint.Style.STROKE,
+                        command.strokeWidth,
+                    )
+
+                    is SkiaCommand.Line -> ZynthSkiaJSI.rasterDrawLine(
+                        frame,
+                        command.x1,
+                        command.y1,
+                        command.x2,
+                        command.y2,
+                        command.color,
+                        command.strokeWidth,
+                    )
+                }
+            }
+        } catch (_: Throwable) {
+            skiaRasterReady = false
+            return false
+        } finally {
+            try {
+                ZynthSkiaJSI.rasterEnd(frame)
+            } catch (_: Throwable) {
+                skiaRasterReady = false
+            }
+        }
+
+        canvas.drawBitmap(bitmap, 0f, 0f, null)
+        return true
+    }
+
+    private fun ensureSkiaBitmap(widthPx: Int, heightPx: Int): Bitmap? {
+        val existing = skiaBitmap
+        if (existing != null && existing.width == widthPx && existing.height == heightPx && !existing.isRecycled) {
+            return existing
+        }
+        existing?.recycle()
+        val created = runCatching {
+            Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
+        }.getOrNull() ?: return null
+        skiaBitmap = created
+        return created
+    }
+
+    private fun drawWithCanvasFallback(canvas: Canvas) {
         canvas.drawColor(clearColor)
 
         for (command in commands) {

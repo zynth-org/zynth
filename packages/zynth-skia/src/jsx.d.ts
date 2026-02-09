@@ -9,6 +9,7 @@ declare module "solid-js" {
         style?: Style;
         clearColor?: string;
         frameLoop?: boolean;
+        allowFallback?: boolean;
         commands?: SkiaDrawCommand[];
         ref?: (node: any) => void;
         onNativeReady?: (event: { nativeEvent: { available: boolean } }) => void;

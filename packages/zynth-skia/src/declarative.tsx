@@ -322,6 +322,7 @@ export const Canvas: ParentComponent<SkiaCanvasProps> = (props) => {
     {
       frameLoop: false,
       clearColor: "transparent",
+      allowFallback: true,
     },
     props,
   );
@@ -330,6 +331,7 @@ export const Canvas: ParentComponent<SkiaCanvasProps> = (props) => {
     "style",
     "frameLoop",
     "clearColor",
+    "allowFallback",
     "time",
     "children",
     "ref",
@@ -360,6 +362,7 @@ export const Canvas: ParentComponent<SkiaCanvasProps> = (props) => {
       style={local.style}
       frameLoop={local.frameLoop}
       clearColor={local.clearColor}
+      allowFallback={local.allowFallback}
       commands={buildCommands}
       onNativeReady={local.onNativeReady}
     />

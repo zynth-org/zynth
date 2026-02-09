@@ -54,6 +54,7 @@ export type SkiaViewProps = {
   style?: Style;
   clearColor?: SkiaColorValue;
   frameLoop?: boolean;
+  allowFallback?: boolean;
   commands?: SkiaDrawCommand[] | (() => SkiaDrawCommand[]);
   ref?: (node: HostNode | null) => void;
   onNativeReady?: (event: { nativeEvent: { available: boolean } }) => void;
@@ -104,6 +105,7 @@ export type SkiaCanvasProps = {
   style?: Style;
   clearColor?: SkiaColorValue;
   frameLoop?: boolean;
+  allowFallback?: boolean;
   time?: number | Accessor<number>;
   ref?: (node: HostNode | null) => void;
   onNativeReady?: (event: { nativeEvent: { available: boolean } }) => void;

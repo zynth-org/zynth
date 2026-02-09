@@ -16,6 +16,7 @@
 - (void)resetSurface;
 - (void)invalidateSurface;
 - (void)setFrameLoopEnabled:(BOOL)enabled;
+- (void)setAllowFallback:(BOOL)enabled;
 - (void)setClearColor:(NSString *_Nullable)raw;
 - (void)submitCommands:(NSArray<NSDictionary *> *)rawCommands;
 @end
@@ -114,6 +115,18 @@ static id ZynthSkiaParseJSON(NSString *rawJSON) {
           enabled = [text isEqualToString:@"true"] || [text isEqualToString:@"1"];
         }
         [view setFrameLoopEnabled:enabled];
+        return YES;
+      }
+
+      if ([name isEqualToString:@"allowFallback"]) {
+        BOOL enabled = YES;
+        if ([value isKindOfClass:[NSNumber class]]) {
+          enabled = [(NSNumber *)value boolValue];
+        } else if ([value isKindOfClass:[NSString class]]) {
+          NSString *text = [((NSString *)value) lowercaseString];
+          enabled = [text isEqualToString:@"true"] || [text isEqualToString:@"1"];
+        }
+        [view setAllowFallback:enabled];
         return YES;
       }
 

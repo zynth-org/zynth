@@ -11,6 +11,7 @@ export const SkiaView: ParentComponent<SkiaViewProps> = (props) => {
     {
       clearColor: "transparent",
       frameLoop: false,
+      allowFallback: true,
     },
     props,
   );
@@ -18,6 +19,7 @@ export const SkiaView: ParentComponent<SkiaViewProps> = (props) => {
     "style",
     "clearColor",
     "frameLoop",
+    "allowFallback",
     "commands",
     "ref",
     "onNativeReady",
@@ -100,6 +102,7 @@ export const SkiaView: ParentComponent<SkiaViewProps> = (props) => {
       style={local.style as any}
       clearColor={local.clearColor}
       frameLoop={local.frameLoop}
+      allowFallback={local.allowFallback}
       onNativeReady={onNativeReady}
     />
   );

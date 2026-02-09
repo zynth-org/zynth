@@ -1,5 +1,6 @@
 package dev.zynth.skia
 
+import android.graphics.Bitmap
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import org.json.JSONArray
@@ -107,4 +108,47 @@ internal object ZynthSkiaJSI {
 
     @JvmStatic
     private external fun nativeInstall(clazz: Class<*>)
+
+    @JvmStatic
+    external fun rasterBegin(bitmap: Bitmap, width: Int, height: Int): Long
+
+    @JvmStatic
+    external fun rasterEnd(handle: Long)
+
+    @JvmStatic
+    external fun rasterClear(handle: Long, color: Int)
+
+    @JvmStatic
+    external fun rasterDrawRect(
+        handle: Long,
+        x: Float,
+        y: Float,
+        width: Float,
+        height: Float,
+        color: Int,
+        stroke: Boolean,
+        strokeWidth: Float,
+    )
+
+    @JvmStatic
+    external fun rasterDrawCircle(
+        handle: Long,
+        cx: Float,
+        cy: Float,
+        radius: Float,
+        color: Int,
+        stroke: Boolean,
+        strokeWidth: Float,
+    )
+
+    @JvmStatic
+    external fun rasterDrawLine(
+        handle: Long,
+        x1: Float,
+        y1: Float,
+        x2: Float,
+        y2: Float,
+        color: Int,
+        strokeWidth: Float,
+    )
 }
