@@ -1,5 +1,8 @@
 import type { SkiaPathCommand, SkiaPathObject, SkiaPathSource } from "./types";
 
+const MAX_PATH_CACHE_ENTRIES = 128;
+const parsedPathCache = new Map<string, readonly SkiaPathCommand[]>();
+
 class PathBuilder implements SkiaPathObject {
   private readonly buffer: SkiaPathCommand[];
 
@@ -116,13 +119,28 @@ function parseSvgPath(raw: string): SkiaPathCommand[] {
   return commands;
 }
 
+function getCachedSvgPath(raw: string): readonly SkiaPathCommand[] {
+  const cached = parsedPathCache.get(raw);
+  if (cached) return cached;
+
+  const parsed = parseSvgPath(raw);
+  if (parsedPathCache.size >= MAX_PATH_CACHE_ENTRIES) {
+    const oldestKey = parsedPathCache.keys().next().value;
+    if (oldestKey) {
+      parsedPathCache.delete(oldestKey);
+    }
+  }
+  parsedPathCache.set(raw, parsed);
+  return parsed;
+}
+
 export function createPath(initial?: SkiaPathSource): SkiaPathObject {
   const builder = new PathBuilder();
   if (initial == null) {
     return builder;
   }
   if (typeof initial === "string") {
-    const parsed = parseSvgPath(initial);
+    const parsed = getCachedSvgPath(initial);
     for (let i = 0; i < parsed.length; i += 1) {
       const command = parsed[i]!;
       if (command.type === "moveTo") {
@@ -152,7 +170,7 @@ export function createPath(initial?: SkiaPathSource): SkiaPathObject {
 
 export function resolvePathCommands(source: SkiaPathSource): readonly SkiaPathCommand[] {
   if (typeof source === "string") {
-    return parseSvgPath(source);
+    return getCachedSvgPath(source);
   }
   if ("commands" in source) {
     return source.commands;

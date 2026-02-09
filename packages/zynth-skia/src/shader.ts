@@ -30,6 +30,8 @@ type ShaderEvaluator = (
   helpers: ShaderHelpers,
 ) => unknown;
 
+const compiledShaderCache = new Map<string, ShaderEvaluator>();
+
 const shaderHelpers: ShaderHelpers = {
   clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
@@ -123,6 +125,8 @@ function toHexColor(input: readonly unknown[]): SkiaColorValue {
 }
 
 function compileShader(source: string): ShaderEvaluator {
+  const cached = compiledShaderCache.get(source);
+  if (cached) return cached;
   const body = `"use strict"; return (${source});`;
   const fn = new Function("u", "input", "h", body) as (
     u: Record<string, SkiaUniformPrimitive>,
@@ -130,7 +134,9 @@ function compileShader(source: string): ShaderEvaluator {
     h: ShaderHelpers,
   ) => unknown;
 
-  return (uniforms, input, helpers) => fn(uniforms, input, helpers);
+  const evaluator: ShaderEvaluator = (uniforms, input, helpers) => fn(uniforms, input, helpers);
+  compiledShaderCache.set(source, evaluator);
+  return evaluator;
 }
 
 function resolveUniforms(uniforms: SkiaUniformMap, into: Record<string, SkiaUniformPrimitive>) {

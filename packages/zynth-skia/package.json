@@ -30,6 +30,7 @@
     "clean": "rm -rf dist",
     "binaries:sync": "node ./scripts/manage-binaries.mjs sync",
     "binaries:update": "node ./scripts/manage-binaries.mjs update",
+    "binaries:verify": "node ./scripts/manage-binaries.mjs verify",
     "postinstall": "node ./scripts/manage-binaries.mjs sync"
   },
   "keywords": [

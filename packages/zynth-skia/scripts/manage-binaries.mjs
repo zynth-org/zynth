@@ -28,9 +28,19 @@ async function pathExists(targetPath) {
 function parseArgs(argv) {
   const args = argv.slice(2);
   const command = args[0] || "sync";
+  const readFlagValue = (flag) => {
+    const flagIndex = args.indexOf(flag);
+    if (flagIndex === -1) return null;
+    const value = args[flagIndex + 1];
+    if (!value || value.startsWith("--")) return null;
+    return value;
+  };
   return {
     command,
     force: args.includes("--force"),
+    version: readFlagValue("--version"),
+    artifactSet: readFlagValue("--artifact-set"),
+    strictChecksums: args.includes("--strict-checksums"),
   };
 }
 
@@ -41,6 +51,21 @@ async function readManifest() {
     throw new Error("Invalid binaries.manifest.json: artifacts must be an array");
   }
   return manifest;
+}
+
+function replaceReleaseTag(url, fromVersion, toVersion) {
+  const marker = `/download/${fromVersion}/`;
+  if (!url.includes(marker)) return url;
+  return url.replace(marker, `/download/${toVersion}/`);
+}
+
+function replaceArtifactSetTag(url, fromArtifactSet, toArtifactSet) {
+  if (!fromArtifactSet || !toArtifactSet || fromArtifactSet === toArtifactSet) {
+    return url;
+  }
+  const marker = `skia-binaries-${fromArtifactSet}-`;
+  if (!url.includes(marker)) return url;
+  return url.replace(marker, `skia-binaries-${toArtifactSet}-`);
 }
 
 function downloadToFile(url, targetFile) {
@@ -185,6 +210,92 @@ async function syncArtifact(artifact, manifest, options) {
   return downloadedSha;
 }
 
+function updateManifestRelease(manifest, options) {
+  const nextVersion = options.version;
+  const nextArtifactSet = options.artifactSet;
+  const shouldUpdateVersion = typeof nextVersion === "string" && nextVersion.trim().length > 0;
+  const shouldUpdateArtifactSet =
+    typeof nextArtifactSet === "string" && nextArtifactSet.trim().length > 0;
+
+  if (!shouldUpdateVersion && !shouldUpdateArtifactSet) return false;
+
+  const fromVersion = manifest.version;
+  const fromArtifactSet = manifest.artifactSet;
+  const targetVersion = shouldUpdateVersion ? nextVersion.trim() : fromVersion;
+  const targetArtifactSet = shouldUpdateArtifactSet ? nextArtifactSet.trim() : fromArtifactSet;
+
+  for (const artifact of manifest.artifacts) {
+    let nextUrl = artifact.url;
+    nextUrl = replaceReleaseTag(nextUrl, fromVersion, targetVersion);
+    nextUrl = replaceArtifactSetTag(nextUrl, fromArtifactSet, targetArtifactSet);
+    artifact.url = nextUrl;
+    artifact.sha256 = "";
+  }
+
+  manifest.version = targetVersion;
+  manifest.artifactSet = targetArtifactSet;
+  return true;
+}
+
+function isSha256(value) {
+  return typeof value === "string" && /^[a-f0-9]{64}$/i.test(value.trim());
+}
+
+function verifyManifest(manifest, options = {}) {
+  const strictChecksums = options.strictChecksums === true;
+  const seenIds = new Set();
+  const seenDestinations = new Set();
+  const errors = [];
+
+  if (typeof manifest.version !== "string" || manifest.version.trim().length === 0) {
+    errors.push("manifest.version is required");
+  }
+
+  if (!Array.isArray(manifest.artifacts) || manifest.artifacts.length === 0) {
+    errors.push("manifest.artifacts must contain at least one entry");
+  }
+
+  for (let index = 0; index < manifest.artifacts.length; index += 1) {
+    const artifact = manifest.artifacts[index];
+    const label = `artifacts[${index}]`;
+    if (!artifact || typeof artifact !== "object") {
+      errors.push(`${label} must be an object`);
+      continue;
+    }
+
+    if (typeof artifact.id !== "string" || artifact.id.trim().length === 0) {
+      errors.push(`${label}.id is required`);
+    } else if (seenIds.has(artifact.id)) {
+      errors.push(`${label}.id "${artifact.id}" is duplicated`);
+    } else {
+      seenIds.add(artifact.id);
+    }
+
+    if (typeof artifact.destination !== "string" || artifact.destination.trim().length === 0) {
+      errors.push(`${label}.destination is required`);
+    } else if (seenDestinations.has(artifact.destination)) {
+      errors.push(`${label}.destination "${artifact.destination}" is duplicated`);
+    } else {
+      seenDestinations.add(artifact.destination);
+    }
+
+    if (typeof artifact.url !== "string" || artifact.url.trim().length === 0) {
+      errors.push(`${label}.url is required`);
+    } else if (!artifact.url.includes(`/download/${manifest.version}/`)) {
+      errors.push(`${label}.url must include manifest version "${manifest.version}"`);
+    }
+
+    const hasChecksum = typeof artifact.sha256 === "string" && artifact.sha256.trim().length > 0;
+    if (strictChecksums ? !isSha256(artifact.sha256) : (hasChecksum && !isSha256(artifact.sha256))) {
+      errors.push(`${label}.sha256 must be a 64-char hex digest`);
+    }
+  }
+
+  if (errors.length > 0) {
+    throw new Error(`Manifest verification failed:\n- ${errors.join("\n- ")}`);
+  }
+}
+
 async function run() {
   if (process.env.ZYNTH_SKIA_SKIP_BINARY_SYNC === "1") {
     console.log("Skipping Skia binaries sync (ZYNTH_SKIA_SKIP_BINARY_SYNC=1).");
@@ -192,13 +303,20 @@ async function run() {
   }
 
   const args = parseArgs(process.argv);
-  if (!["sync", "update"].includes(args.command)) {
-    throw new Error(`Unknown command "${args.command}". Use "sync" or "update".`);
+  if (!["sync", "update", "verify"].includes(args.command)) {
+    throw new Error(`Unknown command "${args.command}". Use "sync", "update", or "verify".`);
   }
 
   const manifest = await readManifest();
+  if (args.command === "verify") {
+    verifyManifest(manifest, { strictChecksums: args.strictChecksums });
+    console.log(`Manifest verification passed for ${manifest.artifacts.length} artifacts.`);
+    return;
+  }
+
   const writeChecksums = args.command === "update";
   const force = args.force || args.command === "update";
+  const manifestReleaseChanged = args.command === "update" && updateManifestRelease(manifest, args);
 
   console.log(
     `Synchronizing Skia binaries (${args.command}) for manifest version ${manifest.version}`
@@ -221,7 +339,7 @@ async function run() {
     }
   }
 
-  if (writeChecksums && hasManifestChanges) {
+  if (writeChecksums && (hasManifestChanges || manifestReleaseChanged)) {
     await fs.writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
     console.log("Updated manifest checksums.");
   }
