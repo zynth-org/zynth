@@ -337,10 +337,9 @@ export const Canvas: ParentComponent<SkiaCanvasProps> = (props) => {
   ]);
 
   const resolvedChildren = children(() => local.children);
-  const commandBuffer: SkiaDrawCommand[] = [];
 
   const buildCommands = () => {
-    commandBuffer.length = 0;
+    const commandBuffer: SkiaDrawCommand[] = [];
     const state: CompileState = {
       offsetX: 0,
       offsetY: 0,

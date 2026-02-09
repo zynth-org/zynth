@@ -288,7 +288,6 @@ internal fun ZynthUIManager.detachNode(id: Int) {
     node.layoutAnimator?.cancel()
     node.layoutAnimator = null
   }
-  nodeSurfaces.remove(id)
   val runnable = longPressRunnables.remove(id)
   if (runnable != null) {
     mainHandler.removeCallbacks(runnable)
@@ -296,12 +295,19 @@ internal fun ZynthUIManager.detachNode(id: Int) {
 }
 
 internal fun ZynthUIManager.destroyNode(id: Int) {
+  // Log.d("ZynthLifecycle", "destroyNode id=$id")
+  try {
+    getLayoutEngine().removeNode(id)
+  } catch (e: Throwable) {
+    android.util.Log.e("ZynthUI", "Failed to remove node $id from layout engine", e)
+  }
   detachNode(id)
   val node = nodeStates[id]
   if (node != null) {
     val descriptor = com.zynth.kit.components.ZynthComponentRegistry.getDescriptor(node.type)
     descriptor?.onReset?.invoke(node)
   }
+  nodeSurfaces.remove(id)
   pointerEvents.remove(id)
   pressNodes.remove(id)
   longPressNodes.remove(id)

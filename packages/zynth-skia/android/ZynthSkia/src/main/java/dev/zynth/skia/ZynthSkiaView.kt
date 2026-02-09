@@ -65,6 +65,11 @@ class ZynthSkiaView(context: Context) : View(context), ZynthInspectableComponent
         invalidate()
     }
 
+    fun submitPackedCommands(ops: DoubleArray, stringTable: Array<String?>) {
+        commands = parsePackedCommands(ops, stringTable)
+        invalidate()
+    }
+
     fun submitFrame(frame: JSONObject?) {
         if (frame == null) return
         val clear = frame.optString("clear", "")
@@ -197,6 +202,107 @@ class ZynthSkiaView(context: Context) : View(context), ZynthInspectableComponent
             }
         }
         return parsed
+    }
+
+    private fun parsePackedCommands(ops: DoubleArray, stringTable: Array<String?>): List<SkiaCommand> {
+        val parsed = ArrayList<SkiaCommand>()
+        var index = 0
+        while (index < ops.size) {
+            val opcode = ops[index++].toInt()
+            when (opcode) {
+                1 -> { // clear
+                    if (index + 2 > ops.size) break
+                    val colorType = ops[index++].toInt()
+                    val colorPayload = ops[index++]
+                    val color = readPackedColor(colorType, colorPayload, stringTable, Color.TRANSPARENT)
+                    parsed.add(SkiaCommand.Clear(color))
+                }
+                2 -> { // rect
+                    if (index + 8 > ops.size) break
+                    val x = dpToPx(ops[index++])
+                    val y = dpToPx(ops[index++])
+                    val width = dpToPx(ops[index++])
+                    val height = dpToPx(ops[index++])
+                    val colorType = ops[index++].toInt()
+                    val colorPayload = ops[index++]
+                    val strokeWidth = dpToPx(ops[index++])
+                    val styleCode = ops[index++].toInt()
+                    val color = readPackedColor(colorType, colorPayload, stringTable, Color.WHITE)
+                    parsed.add(
+                        SkiaCommand.Rect(
+                            x = x,
+                            y = y,
+                            width = width,
+                            height = height,
+                            color = color,
+                            strokeWidth = strokeWidth,
+                            style = if (styleCode == 1) Paint.Style.STROKE else Paint.Style.FILL,
+                        ),
+                    )
+                }
+                3 -> { // circle
+                    if (index + 7 > ops.size) break
+                    val cx = dpToPx(ops[index++])
+                    val cy = dpToPx(ops[index++])
+                    val r = dpToPx(ops[index++])
+                    val colorType = ops[index++].toInt()
+                    val colorPayload = ops[index++]
+                    val strokeWidth = dpToPx(ops[index++])
+                    val styleCode = ops[index++].toInt()
+                    val color = readPackedColor(colorType, colorPayload, stringTable, Color.WHITE)
+                    parsed.add(
+                        SkiaCommand.Circle(
+                            cx = cx,
+                            cy = cy,
+                            r = r,
+                            color = color,
+                            strokeWidth = strokeWidth,
+                            style = if (styleCode == 1) Paint.Style.STROKE else Paint.Style.FILL,
+                        ),
+                    )
+                }
+                4 -> { // line
+                    if (index + 7 > ops.size) break
+                    val x1 = dpToPx(ops[index++])
+                    val y1 = dpToPx(ops[index++])
+                    val x2 = dpToPx(ops[index++])
+                    val y2 = dpToPx(ops[index++])
+                    val colorType = ops[index++].toInt()
+                    val colorPayload = ops[index++]
+                    val strokeWidth = dpToPx(ops[index++])
+                    val color = readPackedColor(colorType, colorPayload, stringTable, Color.WHITE)
+                    parsed.add(
+                        SkiaCommand.Line(
+                            x1 = x1,
+                            y1 = y1,
+                            x2 = x2,
+                            y2 = y2,
+                            color = color,
+                            strokeWidth = strokeWidth,
+                        ),
+                    )
+                }
+                else -> break
+            }
+        }
+        return parsed
+    }
+
+    private fun readPackedColor(
+        colorType: Int,
+        payload: Double,
+        stringTable: Array<String?>,
+        fallback: Int,
+    ): Int {
+        return when (colorType) {
+            1 -> payload.toInt()
+            2 -> {
+                val idx = payload.toInt()
+                val value = if (idx in stringTable.indices) stringTable[idx] else null
+                parseColor(value, fallback)
+            }
+            else -> fallback
+        }
     }
 
     private fun parsePaintStyle(raw: String?): Paint.Style {

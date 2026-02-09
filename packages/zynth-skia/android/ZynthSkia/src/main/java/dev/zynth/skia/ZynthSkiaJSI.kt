@@ -1,5 +1,7 @@
 package dev.zynth.skia
 
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
@@ -28,6 +30,27 @@ internal object ZynthSkiaJSI {
         val view = SkiaViewRegistry.get(nodeId) ?: return false
         val commands = parseJSONArray(commandsJson) ?: JSONArray()
         view.submitCommands(commands)
+        return true
+    }
+
+    @JvmStatic
+    fun submitDrawCommandsPacked(
+        nodeId: Int,
+        opsBuffer: ByteBuffer,
+        opCount: Int,
+        stringTable: Array<String?>,
+    ): Boolean {
+        val view = SkiaViewRegistry.get(nodeId) ?: return false
+        if (opCount <= 0) {
+            view.submitPackedCommands(DoubleArray(0), stringTable)
+            return true
+        }
+        val ordered = opsBuffer.order(ByteOrder.nativeOrder())
+        val ops = DoubleArray(opCount)
+        for (index in 0 until opCount) {
+            ops[index] = ordered.getDouble(index * 8)
+        }
+        view.submitPackedCommands(ops, stringTable)
         return true
     }
 

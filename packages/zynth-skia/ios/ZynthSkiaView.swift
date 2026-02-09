@@ -69,6 +69,14 @@ public final class ZynthSkiaView: UIView, ZynthInspectableComponent {
     }
   }
 
+  func submitPackedCommands(_ opsData: Data, opCount: Int, stringTable: [String]) {
+    runOnMain { [weak self] in
+      guard let self else { return }
+      self.commands = SkiaCommand.fromPacked(data: opsData, opCount: opCount, stringTable: stringTable)
+      self.setNeedsDisplay()
+    }
+  }
+
   func submitFrame(_ rawFrame: [String: Any]?) {
     runOnMain { [weak self] in
       guard let self, let rawFrame else { return }
@@ -294,6 +302,104 @@ private enum SkiaCommand {
     }
   }
 
+  static func fromPacked(data: Data, opCount: Int, stringTable: [String]) -> [SkiaCommand] {
+    guard opCount >= 0 else { return [] }
+    let (requiredBytes, overflow) = opCount.multipliedReportingOverflow(by: MemoryLayout<Double>.stride)
+    guard !overflow else { return [] }
+    guard requiredBytes <= data.count else { return [] }
+
+    var ops = [Double](repeating: 0, count: opCount)
+    ops.withUnsafeMutableBytes { destination in
+      data.withUnsafeBytes { source in
+        guard let src = source.baseAddress, let dst = destination.baseAddress else { return }
+        memcpy(dst, src, requiredBytes)
+      }
+    }
+
+    var parsed: [SkiaCommand] = []
+    parsed.reserveCapacity(max(0, opCount / 2))
+
+    var index = 0
+    while index < ops.count {
+      let opcode = Int(ops[index])
+      index += 1
+      switch opcode {
+      case 1: // clear
+        guard index + 2 <= ops.count else { return parsed }
+        let colorType = Int(ops[index]); index += 1
+        let payload = ops[index]; index += 1
+        let color = readPackedColor(colorType: colorType, payload: payload, stringTable: stringTable, fallback: .clear)
+        parsed.append(.clear(color: color))
+      case 2: // rect
+        guard index + 8 <= ops.count else { return parsed }
+        let x = CGFloat(ops[index]); index += 1
+        let y = CGFloat(ops[index]); index += 1
+        let width = CGFloat(ops[index]); index += 1
+        let height = CGFloat(ops[index]); index += 1
+        let colorType = Int(ops[index]); index += 1
+        let payload = ops[index]; index += 1
+        let strokeWidth = CGFloat(ops[index]); index += 1
+        let styleCode = Int(ops[index]); index += 1
+        let color = readPackedColor(colorType: colorType, payload: payload, stringTable: stringTable, fallback: .white)
+        parsed.append(
+          .rect(
+            x: x,
+            y: y,
+            width: width,
+            height: height,
+            color: color,
+            style: styleCode == 1 ? .stroke : .fill,
+            strokeWidth: strokeWidth
+          )
+        )
+      case 3: // circle
+        guard index + 7 <= ops.count else { return parsed }
+        let cx = CGFloat(ops[index]); index += 1
+        let cy = CGFloat(ops[index]); index += 1
+        let r = CGFloat(ops[index]); index += 1
+        let colorType = Int(ops[index]); index += 1
+        let payload = ops[index]; index += 1
+        let strokeWidth = CGFloat(ops[index]); index += 1
+        let styleCode = Int(ops[index]); index += 1
+        let color = readPackedColor(colorType: colorType, payload: payload, stringTable: stringTable, fallback: .white)
+        parsed.append(
+          .circle(
+            cx: cx,
+            cy: cy,
+            r: r,
+            color: color,
+            style: styleCode == 1 ? .stroke : .fill,
+            strokeWidth: strokeWidth
+          )
+        )
+      case 4: // line
+        guard index + 7 <= ops.count else { return parsed }
+        let x1 = CGFloat(ops[index]); index += 1
+        let y1 = CGFloat(ops[index]); index += 1
+        let x2 = CGFloat(ops[index]); index += 1
+        let y2 = CGFloat(ops[index]); index += 1
+        let colorType = Int(ops[index]); index += 1
+        let payload = ops[index]; index += 1
+        let strokeWidth = CGFloat(ops[index]); index += 1
+        let color = readPackedColor(colorType: colorType, payload: payload, stringTable: stringTable, fallback: .white)
+        parsed.append(
+          .line(
+            x1: x1,
+            y1: y1,
+            x2: x2,
+            y2: y2,
+            color: color,
+            strokeWidth: strokeWidth
+          )
+        )
+      default:
+        return parsed
+      }
+    }
+
+    return parsed
+  }
+
   private static func number(_ raw: Any?) -> CGFloat? {
     switch raw {
     case let value as NSNumber:
@@ -311,6 +417,36 @@ private enum SkiaCommand {
 
   private static func parseStyle(_ raw: String?) -> DrawStyle {
     return raw?.lowercased() == "stroke" ? .stroke : .fill
+  }
+
+  private static func readPackedColor(
+    colorType: Int,
+    payload: Double,
+    stringTable: [String],
+    fallback: UIColor
+  ) -> UIColor {
+    switch colorType {
+    case 1:
+      guard payload.isFinite else { return fallback }
+      let signed = Int32(payload)
+      let argb = UInt32(bitPattern: signed)
+      return colorFromARGB(argb)
+    case 2:
+      guard payload.isFinite else { return fallback }
+      let index = Int(payload)
+      guard index >= 0 && index < stringTable.count else { return fallback }
+      return parseColor(stringTable[index]) ?? fallback
+    default:
+      return fallback
+    }
+  }
+
+  private static func colorFromARGB(_ argb: UInt32) -> UIColor {
+    let a = CGFloat((argb >> 24) & 0xFF) / 255.0
+    let r = CGFloat((argb >> 16) & 0xFF) / 255.0
+    let g = CGFloat((argb >> 8) & 0xFF) / 255.0
+    let b = CGFloat(argb & 0xFF) / 255.0
+    return UIColor(red: r, green: g, blue: b, alpha: a)
   }
 
   private static func parseColor(_ raw: String?) -> UIColor? {

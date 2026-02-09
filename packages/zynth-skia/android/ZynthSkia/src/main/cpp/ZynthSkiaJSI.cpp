@@ -2,8 +2,10 @@
 #include <android/log.h>
 #include <dlfcn.h>
 #include <jsi/jsi.h>
+#include <vector>
 
 #include "ZynthJSIPluginRegistry.h"
+#include "ZynthJsiTypedPayload.h"
 
 using namespace facebook::jsi;
 
@@ -16,6 +18,7 @@ jclass gBridgeClass = nullptr;
 jmethodID gCreateSurface = nullptr;
 jmethodID gDisposeSurface = nullptr;
 jmethodID gSubmitDrawCommands = nullptr;
+jmethodID gSubmitDrawCommandsPacked = nullptr;
 jmethodID gSubmitFrame = nullptr;
 jmethodID gInvalidateSurface = nullptr;
 jmethodID gSetFrameLoopEnabled = nullptr;
@@ -111,6 +114,47 @@ void installSkiaBridge(Runtime &rt) {
         return Value(ok);
       });
 
+  auto submitDrawCommandsPacked = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "submitDrawCommandsPacked"), 4,
+      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 4 || !args[0].isNumber() || !args[1].isObject() ||
+            !args[2].isNumber() || !args[3].isObject()) {
+          return Value(false);
+        }
+        int nodeId = static_cast<int>(args[0].asNumber());
+        uint8_t *opsData = nullptr;
+        size_t opsSize = 0;
+        if (!zynth::jsiutil::readArrayBufferBytes(rt, args[1], &opsData, &opsSize)) {
+          return Value(false);
+        }
+        std::vector<std::string> stringTable;
+        if (!zynth::jsiutil::readStringTable(rt, args[3], &stringTable)) return Value(false);
+
+        JNIEnv *env = getEnv();
+        if (!env || !gBridgeClass || !gSubmitDrawCommandsPacked) return Value(false);
+
+        jobject jBuffer = zynth::jsiutil::newDirectByteBuffer(env, opsData, opsSize);
+        if (!jBuffer) return Value(false);
+
+        const int opCount = static_cast<int>(args[2].asNumber());
+        jobjectArray jStrings = zynth::jsiutil::newJavaStringArray(env, stringTable);
+        if (!jStrings) {
+          env->DeleteLocalRef(jBuffer);
+          return Value(false);
+        }
+
+        jboolean result = env->CallStaticBooleanMethod(
+            gBridgeClass, gSubmitDrawCommandsPacked, nodeId, jBuffer,
+            static_cast<jint>(opCount), jStrings);
+        env->DeleteLocalRef(jBuffer);
+        env->DeleteLocalRef(jStrings);
+        if (env->ExceptionCheck()) {
+          env->ExceptionClear();
+          return Value(false);
+        }
+        return Value(result == JNI_TRUE);
+      });
+
   auto submitFrame = Function::createFromHostFunction(
       rt, PropNameID::forAscii(rt, "submitFrame"), 2,
       [&rt](Runtime &, const Value &, const Value *args, size_t count) -> Value {
@@ -149,6 +193,7 @@ void installSkiaBridge(Runtime &rt) {
   skia.setProperty(rt, "createSurface", createSurface);
   skia.setProperty(rt, "disposeSurface", disposeSurface);
   skia.setProperty(rt, "submitDrawCommands", submitDrawCommands);
+  skia.setProperty(rt, "submitDrawCommandsPacked", submitDrawCommandsPacked);
   skia.setProperty(rt, "submitFrame", submitFrame);
   skia.setProperty(rt, "invalidateSurface", invalidateSurface);
   skia.setProperty(rt, "setFrameLoopEnabled", setFrameLoopEnabled);
@@ -186,6 +231,9 @@ Java_dev_zynth_skia_ZynthSkiaJSI_nativeInstall(JNIEnv *env, jclass, jclass clazz
   gCreateSurface = env->GetStaticMethodID(gBridgeClass, "createSurface", "(I)Z");
   gDisposeSurface = env->GetStaticMethodID(gBridgeClass, "disposeSurface", "(I)Z");
   gSubmitDrawCommands = env->GetStaticMethodID(gBridgeClass, "submitDrawCommands", "(ILjava/lang/String;)Z");
+  gSubmitDrawCommandsPacked = env->GetStaticMethodID(
+      gBridgeClass, "submitDrawCommandsPacked",
+      "(ILjava/nio/ByteBuffer;I[Ljava/lang/String;)Z");
   gSubmitFrame = env->GetStaticMethodID(gBridgeClass, "submitFrame", "(ILjava/lang/String;)Z");
   gInvalidateSurface = env->GetStaticMethodID(gBridgeClass, "invalidateSurface", "(I)Z");
   gSetFrameLoopEnabled = env->GetStaticMethodID(gBridgeClass, "setFrameLoopEnabled", "(IZ)Z");

@@ -106,8 +106,53 @@ private object TextRebuildScheduler {
           "rebuild root=${root.id} len=${text.length} sample=[$sample] family=$family",
         )
       }
-      applyTextSynchronously(textView, composed.text)
-      manager.markNodeDirty(root.id)
+      if (textView.text.toString() != composed.text.toString()) {
+        applyTextSynchronously(textView, composed.text)
+        manager.markNodeDirty(root.id)
+      }
+    }
+  }
+}
+
+private object TextRawRebuildScheduler {
+  private data class Queue(
+    val pending: LinkedHashSet<Int>,
+    var scheduled: Boolean,
+    val styleKey: String,
+  )
+
+  private val mainHandler = Handler(Looper.getMainLooper())
+  private val queues = java.util.WeakHashMap<ZynthUIManager, Queue>()
+
+  fun enqueue(manager: ZynthUIManager, rootId: Int, styleKey: String) {
+    val queue = queues.getOrPut(manager) {
+      Queue(
+        pending = LinkedHashSet(),
+        scheduled = false,
+        styleKey = styleKey,
+      )
+    }
+    queue.pending.add(rootId)
+    if (queue.scheduled) return
+    queue.scheduled = true
+    mainHandler.post { drain(manager) }
+  }
+
+  private fun drain(manager: ZynthUIManager) {
+    val queue = queues[manager] ?: return
+    queue.scheduled = false
+    if (queue.pending.isEmpty()) return
+    val toProcess = queue.pending.toList()
+    queue.pending.clear()
+    for (rootId in toProcess) {
+      val root = manager.getNodeState(rootId) ?: continue
+      if (root.type != "text") continue
+      val rootTextView = root.view as? TextView ?: continue
+      val immediateText = buildRawText(root, manager, queue.styleKey)
+      if (rootTextView.text.toString() != immediateText) {
+        rootTextView.text = immediateText
+        manager.markNodeDirty(root.id)
+      }
     }
   }
 }
@@ -349,15 +394,8 @@ private fun updateComposedText(
 ) {
   val manager = node.attachments[textManagerKey] as? ZynthUIManager ?: return
   val root = findTextRoot(node, manager)
-  val rootTextView = root.view as? TextView
-  if (rootTextView != null) {
-    val immediateText = buildRawText(root, manager, textStyleKey)
-    if (rootTextView.text.toString() != immediateText) {
-      rootTextView.text = immediateText
-      manager.markNodeDirty(root.id)
-    }
-  }
-  if (!subtreeNeedsSpans(root, manager, textStyleKey)) {
+  if (!subtreeNeedsInlineSpans(root, manager, textStyleKey, isRoot = true)) {
+    TextRawRebuildScheduler.enqueue(manager, root.id, textStyleKey)
     return
   }
   TextRebuildScheduler.enqueue(manager, root.id, textStyleKey)
@@ -374,17 +412,22 @@ private fun findTextRoot(node: ZynthUIManager.Node, manager: ZynthUIManager): Zy
   return current
 }
 
-private fun subtreeNeedsSpans(
+private fun subtreeNeedsInlineSpans(
   node: ZynthUIManager.Node,
   manager: ZynthUIManager,
   textStyleKey: String,
+  isRoot: Boolean = false,
 ): Boolean {
-  val style = node.attachments[textStyleKey] as? TextStyleAttributes
-  if (style?.requiresSpans() == true) return true
+  // Root style is applied directly to TextView; spans are only needed for inline styled descendants.
+  if (!isRoot) {
+    val style = node.attachments[textStyleKey] as? TextStyleAttributes
+    if (style != null && !style.isEmpty()) return true
+  }
+  if (node.textChildren.isEmpty()) return false
   for (childId in node.textChildren) {
     val child = manager.getNodeState(childId) ?: continue
     if (child.type != "text") continue
-    if (subtreeNeedsSpans(child, manager, textStyleKey)) return true
+    if (subtreeNeedsInlineSpans(child, manager, textStyleKey, isRoot = false)) return true
   }
   return false
 }

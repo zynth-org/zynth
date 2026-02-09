@@ -65,8 +65,9 @@ class ZynthYogaLayout {
   }
 
   fun removeNode(id: Int) {
+    measureHandlers.remove(id)
     val node = nodes.remove(id) ?: return
-    nodeIds.remove(id)
+    nodeIds.remove(id as Any?)
     pendingApplyDirty = true
     if (node.childCount > 0) {
       for (i in node.childCount - 1 downTo 0) {
@@ -280,7 +281,8 @@ class ZynthYogaLayout {
       measureCount = 0
       lastChangedCount = 0
       rootNode.calculateLayout(rootWidth.toFloat(), rootHeight.toFloat())
-      pendingApplyIds = ArrayList(nodeIds)
+      // Filter out any IDs that are no longer in the nodes map (safety cleanup)
+      pendingApplyIds = ArrayList(nodeIds.filter { nodes.containsKey(it) })
       pendingApplyIndex = 0
       pendingApplyRootWidth = rootWidth
       pendingApplyRootHeight = rootHeight

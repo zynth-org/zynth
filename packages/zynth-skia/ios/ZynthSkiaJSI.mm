@@ -1,7 +1,9 @@
 #import <Foundation/Foundation.h>
 
+#import <cmath>
 #import <hermes/hermes.h>
 #import <jsi/jsi.h>
+#import <string>
 
 #import "ZynthJSIPluginRegistry.h"
 
@@ -13,6 +15,7 @@ using namespace facebook::jsi;
 - (void)markSurfaceReady;
 - (void)resetSurface;
 - (void)submitCommands:(NSArray<NSDictionary *> *)rawCommands;
+- (void)submitPackedCommands:(NSData *)opsData opCount:(NSInteger)opCount stringTable:(NSArray<NSString *> *)stringTable;
 - (void)submitFrame:(NSDictionary *)rawFrame;
 - (void)invalidateSurface;
 - (void)setFrameLoopEnabled:(BOOL)enabled;
@@ -44,6 +47,44 @@ static id ZynthSkiaParseJSONString(Runtime &rt, const Value &value) {
 static int ZynthSkiaReadNodeId(const Value *args, size_t count) {
   if (count < 1 || !args[0].isNumber()) return -1;
   return (int)args[0].asNumber();
+}
+
+static bool ZynthSkiaReadArrayBufferData(
+    Runtime &rt,
+    const Value &value,
+    NSData **outData) {
+  if (!outData || !value.isObject()) return false;
+  Object object = value.asObject(rt);
+  if (!object.isArrayBuffer(rt)) return false;
+  ArrayBuffer buffer = object.getArrayBuffer(rt);
+  uint8_t *bytes = buffer.data(rt);
+  size_t length = buffer.size(rt);
+  *outData = [NSData dataWithBytes:bytes length:length];
+  return *outData != nil;
+}
+
+static bool ZynthSkiaReadStringTable(
+    Runtime &rt,
+    const Value &value,
+    NSMutableArray<NSString *> **outStrings) {
+  if (!outStrings || !value.isObject()) return false;
+  Object object = value.asObject(rt);
+  if (!object.isArray(rt)) return false;
+  Array table = object.asArray(rt);
+  size_t length = table.length(rt);
+  NSMutableArray<NSString *> *strings = [NSMutableArray arrayWithCapacity:length];
+  for (size_t i = 0; i < length; i++) {
+    Value entry = table.getValueAtIndex(rt, i);
+    if (entry.isString()) {
+      std::string utf8 = entry.asString(rt).utf8(rt);
+      NSString *string = [NSString stringWithUTF8String:utf8.c_str()];
+      [strings addObject:string ?: @""];
+    } else {
+      [strings addObject:@""];
+    }
+  }
+  *outStrings = strings;
+  return true;
 }
 } // namespace
 
@@ -93,6 +134,29 @@ static int ZynthSkiaReadNodeId(const Value *args, size_t count) {
           return Value(true);
         });
 
+    auto submitDrawCommandsPacked = Function::createFromHostFunction(
+        rt, PropNameID::forAscii(rt, "submitDrawCommandsPacked"), 4,
+        [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+          int nodeId = ZynthSkiaReadNodeId(args, count);
+          if (nodeId <= 0 || count < 4 || !args[2].isNumber()) return Value(false);
+          ZynthSkiaView *view = [[ZynthSkiaViewRegistry sharedInstance] viewForNodeId:nodeId];
+          if (!view) return Value(false);
+
+          const double opCountRaw = args[2].asNumber();
+          if (opCountRaw < 0 || !std::isfinite(opCountRaw)) return Value(false);
+          if (std::floor(opCountRaw) != opCountRaw) return Value(false);
+          NSInteger opCount = (NSInteger)opCountRaw;
+
+          NSData *opsData = nil;
+          if (!ZynthSkiaReadArrayBufferData(rt, args[1], &opsData)) return Value(false);
+
+          NSMutableArray<NSString *> *stringTable = nil;
+          if (!ZynthSkiaReadStringTable(rt, args[3], &stringTable)) return Value(false);
+
+          [view submitPackedCommands:opsData opCount:opCount stringTable:stringTable];
+          return Value(true);
+        });
+
     auto submitFrame = Function::createFromHostFunction(
         rt, PropNameID::forAscii(rt, "submitFrame"), 2,
         [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
@@ -133,6 +197,7 @@ static int ZynthSkiaReadNodeId(const Value *args, size_t count) {
     skia.setProperty(rt, "createSurface", createSurface);
     skia.setProperty(rt, "disposeSurface", disposeSurface);
     skia.setProperty(rt, "submitDrawCommands", submitDrawCommands);
+    skia.setProperty(rt, "submitDrawCommandsPacked", submitDrawCommandsPacked);
     skia.setProperty(rt, "submitFrame", submitFrame);
     skia.setProperty(rt, "invalidateSurface", invalidateSurface);
     skia.setProperty(rt, "setFrameLoopEnabled", setFrameLoopEnabled);

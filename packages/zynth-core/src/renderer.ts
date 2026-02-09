@@ -86,7 +86,7 @@ function createZynthRenderer<TNode>(
       } else if (Array.isArray(item)) {
         dynamic = normalizeIncomingArray(normalized, item, unwrap) || dynamic;
       } else if ((type = typeof item) === "string" || type === "number") {
-        normalized.push(createTextNode(item));
+        normalized.push(type === "number" ? item.toString() : item);
       } else if (type === "function") {
         if (unwrap) {
           while (typeof item === "function") item = item();
@@ -104,9 +104,34 @@ function createZynthRenderer<TNode>(
     return dynamic;
   }
 
+  function materializeArrayTextNodes(next: any[], current: any) {
+    const currentArray = Array.isArray(current) ? current : null;
+    for (let i = 0, len = next.length; i < len; i++) {
+      const value = next[i];
+      const type = typeof value;
+      if (type !== "string" && type !== "number") continue;
+      const text = type === "number" ? value.toString() : value;
+      const existing = currentArray && currentArray[i];
+      if (existing && isTextNode(existing)) {
+        if (getNodeValue(existing) !== text) {
+          replaceText(existing, text);
+        }
+        next[i] = existing;
+        continue;
+      }
+      next[i] = createTextNode(text);
+    }
+  }
+
   function appendNodes(parent: TNode, array: any[], marker?: TNode | null) {
     for (let i = 0, len = array.length; i < len; i++) {
-      insertNode(parent, array[i], marker ?? null);
+      let child = array[i];
+      const type = typeof child;
+      if (type === "string" || type === "number") {
+        child = createTextNode(type === "number" ? child.toString() : child);
+        array[i] = child;
+      }
+      insertNode(parent, child, marker ?? null);
     }
   }
 
@@ -272,6 +297,7 @@ function createZynthRenderer<TNode>(
         );
         return () => current;
       }
+      materializeArrayTextNodes(array, current);
       if (array.length === 0) {
         const replacement = cleanChildren(parent, current, marker);
         if (multi) return (current = replacement);

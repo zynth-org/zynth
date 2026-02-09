@@ -98,7 +98,11 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal var frameProfiler: ((Double, Double, Boolean, Int) -> Unit)? = null
   internal val frameCallback = Choreographer.FrameCallback { handleFrame() }
   private val layoutEngine: LayoutEngine = LayoutEngineAdapter()
-  private val timerRunnables = HashMap<Int, Runnable>()
+  private data class TimerEntry(
+    val handler: Handler,
+    val runnable: Runnable,
+  )
+  private val timerEntries = HashMap<Int, TimerEntry>()
   private val animationFrameCallbacks = HashMap<Int, Choreographer.FrameCallback>()
   internal var jsHandler: Handler? = null
   private val mainQueue = ArrayDeque<() -> Unit>()
@@ -138,25 +142,26 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   var assetProvider: AssetProvider? = null
 
   fun scheduleTimer(runtimePtr: Long, timerId: Int, delayMs: Int, repeat: Boolean) {
+    val timerHandler = jsHandler ?: mainHandler
     val runnable = object : Runnable {
       override fun run() {
         runOnJS {
           JSBridge.invokeTimer(runtimePtr, timerId)
         }
         if (repeat) {
-          mainHandler.postDelayed(this, delayMs.toLong())
+          timerHandler.postDelayed(this, delayMs.toLong())
         } else {
-          timerRunnables.remove(timerId)
+          timerEntries.remove(timerId)
         }
       }
     }
-    timerRunnables[timerId] = runnable
-    mainHandler.postDelayed(runnable, delayMs.toLong())
+    timerEntries[timerId] = TimerEntry(timerHandler, runnable)
+    timerHandler.postDelayed(runnable, delayMs.toLong())
   }
 
   fun cancelTimer(timerId: Int) {
-    timerRunnables.remove(timerId)?.let {
-      mainHandler.removeCallbacks(it)
+    timerEntries.remove(timerId)?.let { entry ->
+      entry.handler.removeCallbacks(entry.runnable)
     }
   }
 
@@ -319,6 +324,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
         view = view,
         label = view as? TextView,
       )
+      // Log.d("ZynthLifecycle", "createNode id=$id type=$type")
       nodeStates[id] = node
       pointerEvents[id] = "auto"
       nodeSurfaces[id] = activeSurfaceId
@@ -710,26 +716,17 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
         Log.d(TRACE_TAG, "setText($id): '$text' codes=[$hex] hasGlyph=$hasGlyph typeface=${(view as? TextView)?.typeface}")
       }
     }
+    // Log.d("ZynthLifecycle", "setText id=$id len=${text.length}")
     
-    nodeStates[id]?.cachedText = text
     val node = nodeStates[id]
     val descriptor = node?.let { ZynthComponentRegistry.getDescriptor(it.type) }
-    if (node != null) {
-      descriptor?.applyProperty?.invoke(node, "text", text)
-    }
-    if (view is TextView) {
-      runOnMain { applyTextValue(id, view, text) }
+    val handledByDescriptor =
+      if (node != null) descriptor?.applyProperty?.invoke(node, "text", text) == true else false
+    if (!handledByDescriptor && view is TextView) {
+      node?.cachedText = text
+      applyTextValue(id, view, text)
       yogaForNode(id).markDirty(id)
       markSurfaceDirtyForNode(id)
-      val parentId = parents[id]
-      if (parentId != null) {
-        val parent = nodes[parentId]
-        if (parent is TextView) {
-          runOnMain { applyTextValue(parentId, parent, text) }
-          yogaForNode(parentId).markDirty(parentId)
-          markSurfaceDirtyForNode(parentId)
-        }
-      }
     }
     traceOp("setText", node?.type, startNs)
   }
@@ -742,9 +739,8 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     val startNs = System.nanoTime()
     val child = nodes[childId] ?: return
     val parentState = nodeStates[parentId]
-    if (parentState != null && parentState.type == "text") {
-      parentState.textChildren.add(childId)
-    }
+    val parentTextChildren = if (parentState?.type == "text") parentState.textChildren else null
+    parentTextChildren?.removeAll { it == childId }
     val isSurfaceRoot = isSurfaceRootId(parentId)
     val surfaceId = when {
       isSurfaceRoot -> parentId
@@ -754,8 +750,8 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     val parent = if (parentId == 0 || isSurfaceRoot) rootViewForSurface(surfaceId) else nodes[parentId]
     val previousParentId = parents[childId]
     if (previousParentId != null && previousParentId != parentId) {
-      children[previousParentId]?.remove(childId)
-      nodeStates[previousParentId]?.textChildren?.remove(childId)
+      children[previousParentId]?.remove(childId as Any?)
+      nodeStates[previousParentId]?.textChildren?.removeAll { it == childId }
     }
     (child.parent as? ViewGroup)?.removeView(child)
     parents[childId] = parentId
@@ -766,6 +762,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     }
     val insertIndex = index.coerceIn(0, siblings.size)
     siblings.add(insertIndex, childId)
+    parentTextChildren?.add(insertIndex.coerceIn(0, parentTextChildren.size), childId)
     val previousSurfaceId = nodeSurfaces[childId]
     if (previousSurfaceId != surfaceId) {
       moveSubtreeToSurface(childId, surfaceId, parentId, index)
@@ -830,8 +827,8 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       descriptor.onChildRemoved(this, parentState!!, nodeStates[childId]!!)
     }
 
-    nodeStates[parentId]?.textChildren?.remove(childId)
-    children[parentId]?.remove(childId)
+    nodeStates[parentId]?.textChildren?.removeAll { it == childId }
+    children[parentId]?.remove(childId as Any?)
     detachNode(childId)
     parents.remove(childId)
     runOnMain { (child.parent as? ViewGroup)?.removeView(child) }
@@ -1122,11 +1119,9 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     batchDepth -= 1
     if (batchDepth == 0 && batchNeedsLayout) {
       batchNeedsLayout = false
-      if (Looper.myLooper() == Looper.getMainLooper()) {
-        handleFrame()
-      } else {
-        requestLayout()
-      }
+      // Always schedule through Choreographer to coalesce work and avoid long
+      // synchronous layout bursts on the main thread at batch boundaries.
+      requestLayout()
     }
   }
 

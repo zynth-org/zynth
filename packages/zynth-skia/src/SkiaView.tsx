@@ -2,7 +2,7 @@ import { createEffect, createSignal, mergeProps, onCleanup, splitProps } from "s
 import type { ParentComponent } from "solid-js";
 import type { HostNode } from "@zynth/core";
 import { createSkiaSurface } from "./createSkiaSurface";
-import type { SkiaViewProps } from "./types";
+import type { SkiaDrawCommand, SkiaViewProps } from "./types";
 
 const noopRef = () => {};
 
@@ -25,6 +25,41 @@ export const SkiaView: ParentComponent<SkiaViewProps> = (props) => {
 
   const surface = createSkiaSurface();
   const [boundVersion, setBoundVersion] = createSignal(0);
+  let pendingCommands: SkiaDrawCommand[] | null = null;
+  let flushHandle: number | null = null;
+  let flushScheduled = false;
+
+  const cancelFlush = () => {
+    if (flushHandle == null) return;
+    if (typeof cancelAnimationFrame === "function") {
+      cancelAnimationFrame(flushHandle);
+    } else if (typeof clearTimeout === "function") {
+      clearTimeout(flushHandle as any);
+    }
+    flushHandle = null;
+    flushScheduled = false;
+  };
+
+  const scheduleFlush = () => {
+    if (flushScheduled) return;
+    flushScheduled = true;
+    const run = () => {
+      flushScheduled = false;
+      flushHandle = null;
+      const commands = pendingCommands;
+      if (!commands) return;
+      surface.submit(commands);
+    };
+    if (typeof requestAnimationFrame === "function") {
+      flushHandle = requestAnimationFrame(run);
+      return;
+    }
+    if (typeof setTimeout === "function") {
+      flushHandle = setTimeout(run, 16) as unknown as number;
+      return;
+    }
+    run();
+  };
 
   const setRef = (node: HostNode | null) => {
     surface.bind(node);
@@ -40,7 +75,8 @@ export const SkiaView: ParentComponent<SkiaViewProps> = (props) => {
     const commands = local.commands;
     const next = typeof commands === "function" ? commands() : commands;
     if (!next) return;
-    surface.submit(next);
+    pendingCommands = next;
+    scheduleFlush();
   });
 
   createEffect(() => {
@@ -48,6 +84,7 @@ export const SkiaView: ParentComponent<SkiaViewProps> = (props) => {
   });
 
   onCleanup(() => {
+    cancelFlush();
     surface.dispose();
   });
 
