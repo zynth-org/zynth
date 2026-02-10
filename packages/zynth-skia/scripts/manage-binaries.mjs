@@ -39,7 +39,6 @@ function parseArgs(argv) {
     command,
     force: args.includes("--force"),
     version: readFlagValue("--version"),
-    artifactSet: readFlagValue("--artifact-set"),
     strictChecksums: args.includes("--strict-checksums"),
   };
 }
@@ -57,15 +56,6 @@ function replaceReleaseTag(url, fromVersion, toVersion) {
   const marker = `/download/${fromVersion}/`;
   if (!url.includes(marker)) return url;
   return url.replace(marker, `/download/${toVersion}/`);
-}
-
-function replaceArtifactSetTag(url, fromArtifactSet, toArtifactSet) {
-  if (!fromArtifactSet || !toArtifactSet || fromArtifactSet === toArtifactSet) {
-    return url;
-  }
-  const marker = `skia-binaries-${fromArtifactSet}-`;
-  if (!url.includes(marker)) return url;
-  return url.replace(marker, `skia-binaries-${toArtifactSet}-`);
 }
 
 function downloadToFile(url, targetFile) {
@@ -149,6 +139,97 @@ async function copyDirContents(srcDir, destDir) {
   }
 }
 
+async function removeEntriesIfPresent(baseDir, names) {
+  for (const name of names) {
+    await removeIfExists(path.join(baseDir, name));
+  }
+}
+
+function resolveIosSlice(artifact) {
+  const variant = String(artifact.variant || "");
+  if (variant === "arm64-device") return "ios-arm64_arm64e";
+  if (variant === "arm64-simulator" || variant === "x86_64-simulator") {
+    return "ios-arm64_x86_64-simulator";
+  }
+  return "ios-arm64_x86_64-simulator";
+}
+
+async function normalizeAndroidPayload(destinationDir) {
+  // Keep only linkable artifacts and runtime payload files.
+  await removeEntriesIfPresent(destinationDir, ["obj", "gen"]);
+  const entries = await listEntries(destinationDir);
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const name = entry.name;
+    const keep =
+      name.endsWith(".a") ||
+      name.endsWith(".so") ||
+      name.endsWith(".dat") ||
+      name === ".artifact.json";
+    if (!keep) {
+      await removeIfExists(path.join(destinationDir, name));
+    }
+  }
+}
+
+async function normalizeIosPayload(destinationDir, artifact) {
+  const iosRootCandidate = path.join(destinationDir, "ios");
+  const iosRoot = (await pathExists(iosRootCandidate)) ? iosRootCandidate : destinationDir;
+
+  const frameworksOut = path.join(destinationDir, "xcframeworks");
+  const libsOut = path.join(destinationDir, "libs");
+  await removeIfExists(frameworksOut);
+  await removeIfExists(libsOut);
+  await ensureDir(frameworksOut);
+  await ensureDir(libsOut);
+
+  const slice = resolveIosSlice(artifact);
+  const entries = await listEntries(iosRoot);
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !entry.name.endsWith(".xcframework")) continue;
+    const srcFramework = path.join(iosRoot, entry.name);
+    const outFramework = path.join(frameworksOut, entry.name);
+    await fs.cp(srcFramework, outFramework, { recursive: true });
+
+    const candidateLib = path.join(srcFramework, slice, entry.name.replace(".xcframework", ".a"));
+    if (await pathExists(candidateLib)) {
+      await fs.cp(candidateLib, path.join(libsOut, path.basename(candidateLib)), { recursive: true });
+    }
+  }
+
+  // Legacy convenience path while native linkage is migrated.
+  const legacySkiaLib = path.join(libsOut, "libskia.a");
+  if (await pathExists(legacySkiaLib)) {
+    await fs.cp(legacySkiaLib, path.join(destinationDir, "libskia.a"), { recursive: true });
+  }
+
+  if (iosRoot !== destinationDir) {
+    await removeIfExists(iosRoot);
+  } else {
+    const entries = await listEntries(destinationDir);
+    for (const entry of entries) {
+      if (entry.name === "xcframeworks" || entry.name === "libs" || entry.name === ".artifact.json") {
+        continue;
+      }
+      if (entry.name === "libskia.a") {
+        continue;
+      }
+      await removeIfExists(path.join(destinationDir, entry.name));
+    }
+  }
+}
+
+async function normalizeArtifactPayload(destinationDir, artifact) {
+  if (!artifact || typeof artifact !== "object") return;
+  if (artifact.platform === "android") {
+    await normalizeAndroidPayload(destinationDir);
+    return;
+  }
+  if (artifact.platform === "ios") {
+    await normalizeIosPayload(destinationDir, artifact);
+  }
+}
+
 async function syncArtifact(artifact, manifest, options) {
   const destinationDir = path.join(packageDir, artifact.destination);
   const markerPath = path.join(destinationDir, ".artifact.json");
@@ -193,6 +274,7 @@ async function syncArtifact(artifact, manifest, options) {
   await removeIfExists(destinationDir);
   await ensureDir(destinationDir);
   await copyDirContents(sourceRoot, destinationDir);
+  await normalizeArtifactPayload(destinationDir, artifact);
 
   const markerData = {
     id: artifact.id,
@@ -212,28 +294,19 @@ async function syncArtifact(artifact, manifest, options) {
 
 function updateManifestRelease(manifest, options) {
   const nextVersion = options.version;
-  const nextArtifactSet = options.artifactSet;
   const shouldUpdateVersion = typeof nextVersion === "string" && nextVersion.trim().length > 0;
-  const shouldUpdateArtifactSet =
-    typeof nextArtifactSet === "string" && nextArtifactSet.trim().length > 0;
 
-  if (!shouldUpdateVersion && !shouldUpdateArtifactSet) return false;
+  if (!shouldUpdateVersion) return false;
 
   const fromVersion = manifest.version;
-  const fromArtifactSet = manifest.artifactSet;
-  const targetVersion = shouldUpdateVersion ? nextVersion.trim() : fromVersion;
-  const targetArtifactSet = shouldUpdateArtifactSet ? nextArtifactSet.trim() : fromArtifactSet;
+  const targetVersion = nextVersion.trim();
 
   for (const artifact of manifest.artifacts) {
-    let nextUrl = artifact.url;
-    nextUrl = replaceReleaseTag(nextUrl, fromVersion, targetVersion);
-    nextUrl = replaceArtifactSetTag(nextUrl, fromArtifactSet, targetArtifactSet);
-    artifact.url = nextUrl;
+    artifact.url = replaceReleaseTag(artifact.url, fromVersion, targetVersion);
     artifact.sha256 = "";
   }
 
   manifest.version = targetVersion;
-  manifest.artifactSet = targetArtifactSet;
   return true;
 }
 

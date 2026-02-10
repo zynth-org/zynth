@@ -5,6 +5,7 @@ Declarative Skia rendering package for Zynth.
 ## Status
 
 - Binary provisioning is manifest-driven via `binaries.manifest.json`.
+- Binary source is a package-scoped GitHub release hosted in `x64Bits/skia-assets`.
 - Native `zynth-skia-view` component is available on iOS and Android.
 - Sync surface API is exposed for draw submission and frame invalidation.
 
@@ -96,13 +97,7 @@ yarn workspace @zynth/skia binaries:update
 Update release version and refresh checksums:
 
 ```bash
-yarn workspace @zynth/skia binaries:update --version 0.92.0
-```
-
-Update release version + artifact set and refresh checksums:
-
-```bash
-yarn workspace @zynth/skia binaries:update --version 0.92.0 --artifact-set <artifact_set_id>
+yarn workspace @zynth/skia binaries:update --version zynth-skia-binaries-v0.0.2-skia-graphite-m142b
 ```
 
 Verify manifest structure:
@@ -121,12 +116,24 @@ node packages/zynth-skia/scripts/manage-binaries.mjs verify --strict-checksums
 
 `binaries.manifest.json` is the source of truth for:
 
-- Skia release version
+- release tag that hosts mirrored Skia artifacts
 - platform/architecture artifact URLs
 - destination paths under `native/vendor`
 - optional SHA256 integrity locks
 
 `binaries:sync` accepts empty `sha256` fields, but once `binaries:update` runs, the script writes locked checksums for reproducible installs.
+
+## Binary layout contract
+
+`binaries:sync` normalizes downloaded archives into deterministic package-local layouts:
+
+- Android destination (`native/vendor/android/<abi>/gl-pdf`):
+  - keeps only linkable/runtime payload files (`.a`, `.so`, `.dat`)
+  - removes archive build byproducts (`obj`, `gen`, ninja metadata files)
+- iOS destination (`native/vendor/ios/<arch>/<target>/metal-pdf`):
+  - writes `xcframeworks/` with all packaged `*.xcframework` bundles
+  - writes `libs/` with slice-selected static libraries for that target
+  - keeps `libskia.a` at destination root as a temporary compatibility shim during native migration
 
 By default, `postinstall` runs `binaries:sync`. To skip in CI/offline environments:
 
@@ -136,18 +143,21 @@ ZYNTH_SKIA_SKIP_BINARY_SYNC=1 yarn install
 
 ## Binary update policy
 
-1. Change release inputs only through `binaries:update --version ...` (and `--artifact-set` if needed).
-2. Never hand-edit checksum values.
-3. Run `binaries:verify` before opening a PR.
-4. If `binaries.manifest.json` changed, strict checksum verification is required in CI.
-5. Keep `destination` paths deterministic under `native/vendor/<platform>/<arch>/<variant>`.
+1. Mirror the approved asset set into a package-scoped GitHub release tag.
+2. Change release inputs only through `binaries:update --version ...`.
+3. Keep mirrored asset filenames stable, or update `binaries.manifest.json` URLs accordingly.
+4. Never hand-edit checksum values.
+5. Run `binaries:verify` before opening a PR.
+6. If `binaries.manifest.json` changed, strict checksum verification is required in CI.
+7. Keep `destination` paths deterministic under `native/vendor/<platform>/<arch>/<variant>`.
 
 Release checklist:
 
-1. `yarn workspace @zynth/skia binaries:update --version <tag> [--artifact-set <id>]`
-2. `yarn workspace @zynth/skia binaries:verify`
-3. Validate in app scenes (`SkiaParitySuiteExample`, shader demo scenes).
-4. Commit manifest/script changes together.
+1. Publish/mirror the required assets into `https://github.com/x64Bits/skia-assets/releases/tag/<tag>`.
+2. `yarn workspace @zynth/skia binaries:update --version <tag>`
+3. `yarn workspace @zynth/skia binaries:verify`
+4. Validate in app scenes (`SkiaParitySuiteExample`, shader demo scenes).
+5. Commit manifest/script changes together.
 
 ## Usage
 
