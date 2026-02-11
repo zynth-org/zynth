@@ -724,10 +724,6 @@ class ZynthAnimateRuntime {
           ? static_cast<float>(resolveMappedValue(mapper.height, state, std::numeric_limits<float>::quiet_NaN()))
           : std::numeric_limits<float>::quiet_NaN();
       
-      if (!std::isnan(height)) {
-        __android_log_print(ANDROID_LOG_DEBUG, kTag, "Applying height %.2f to node %d", height, mapper.nodeId);
-      }
-      
       float minWidth = mapper.minWidth.hasValue
           ? static_cast<float>(resolveMappedValue(mapper.minWidth, state, std::numeric_limits<float>::quiet_NaN()))
           : std::numeric_limits<float>::quiet_NaN();
@@ -775,21 +771,16 @@ std::mutex gInstanceMutex;
 std::unordered_map<ZynthAnimateRuntime *, std::shared_ptr<ZynthAnimateRuntime>> gInstances;
 
 void onSharedSignalChanged(void *state, int signalId) {
-  __android_log_print(ANDROID_LOG_DEBUG, kTag, "Shared signal %d changed", signalId);
+  (void)signalId;
   std::lock_guard<std::mutex> lock(gInstanceMutex);
-  if (gInstances.empty()) {
-    __android_log_print(ANDROID_LOG_DEBUG, kTag, "onSharedSignalChanged: gInstances is empty!");
-  }
   for (auto &pair : gInstances) {
     if (pair.first->getState() == state) {
-      __android_log_print(ANDROID_LOG_DEBUG, kTag, "Scheduling frame for signal %d", signalId);
       pair.first->ensureFrame();
     }
   }
 }
 
 void registerInstaller() {
-  __android_log_print(ANDROID_LOG_DEBUG, kTag, "Registering installer...");
   resolveCoreSymbols();
   if (gRegisterSharedSignalCallback) {
     gRegisterSharedSignalCallback(onSharedSignalChanged);

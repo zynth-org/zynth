@@ -54,6 +54,8 @@ jmethodID gSetFrameLoopEnabled = nullptr;
 
 struct SurfaceState {
   bool frameLoopEnabled = false;
+  jobject surfaceGlobal = nullptr;
+  ANativeWindow *nativeWindow = nullptr;
   struct CommandBuffer {
     std::vector<double> ops;
     std::vector<std::string> stringTable;
@@ -65,6 +67,17 @@ struct SurfaceState {
 
 std::mutex gSurfaceMutex;
 std::unordered_map<int, SurfaceState> gSurfaces;
+
+void releaseSurfaceResources(JNIEnv *env, SurfaceState &state) {
+  if (state.nativeWindow) {
+    ANativeWindow_release(state.nativeWindow);
+    state.nativeWindow = nullptr;
+  }
+  if (env && state.surfaceGlobal) {
+    env->DeleteGlobalRef(state.surfaceGlobal);
+  }
+  state.surfaceGlobal = nullptr;
+}
 
 JNIEnv *getEnv() {
   if (!gVm) return nullptr;
@@ -670,6 +683,8 @@ Java_dev_zynth_skia_SkiaBridge_nativeCreateSurface(JNIEnv *env, jclass clazz, ji
   std::lock_guard<std::mutex> lock(gSurfaceMutex);
   SurfaceState state;
   state.front = std::make_shared<SurfaceState::CommandBuffer>();
+  state.surfaceGlobal = nullptr;
+  state.nativeWindow = nullptr;
   gSurfaces[static_cast<int>(nodeId)] = std::move(state);
   return JNI_TRUE;
 }
@@ -683,7 +698,11 @@ Java_dev_zynth_skia_SkiaBridge_nativeDisposeSurface(JNIEnv *env, jclass clazz, j
   }
 
   std::lock_guard<std::mutex> lock(gSurfaceMutex);
-  gSurfaces.erase(static_cast<int>(nodeId));
+  auto it = gSurfaces.find(static_cast<int>(nodeId));
+  if (it != gSurfaces.end()) {
+    releaseSurfaceResources(env, it->second);
+    gSurfaces.erase(it);
+  }
   return JNI_TRUE;
 }
 
@@ -899,6 +918,7 @@ Java_dev_zynth_skia_SkiaBridge_nativeRenderToSurface(
   }
 
   std::shared_ptr<SurfaceState::CommandBuffer> commandBuffer;
+  ANativeWindow *window = nullptr;
   {
     std::lock_guard<std::mutex> lock(gSurfaceMutex);
     auto it = gSurfaces.find(static_cast<int>(nodeId));
@@ -911,13 +931,28 @@ Java_dev_zynth_skia_SkiaBridge_nativeRenderToSurface(
       it->second.hasPending = false;
     }
     commandBuffer = it->second.front;
-  }
-  if (!commandBuffer) return JNI_FALSE;
+    if (!commandBuffer) return JNI_FALSE;
 
-  ANativeWindow *window = ANativeWindow_fromSurface(env, surfaceObj);
-  if (!window) {
-    __android_log_print(ANDROID_LOG_WARN, kTag, "nativeRenderToSurface ANativeWindow_fromSurface failed nodeId=%d", (int)nodeId);
-    return JNI_FALSE;
+    const bool surfaceChanged =
+        it->second.surfaceGlobal == nullptr
+        || env->IsSameObject(it->second.surfaceGlobal, surfaceObj) != JNI_TRUE;
+    if (surfaceChanged) {
+      releaseSurfaceResources(env, it->second);
+      it->second.surfaceGlobal = env->NewGlobalRef(surfaceObj);
+      if (!it->second.surfaceGlobal) {
+        return JNI_FALSE;
+      }
+      it->second.nativeWindow = ANativeWindow_fromSurface(env, surfaceObj);
+      if (!it->second.nativeWindow) {
+        releaseSurfaceResources(env, it->second);
+        __android_log_print(ANDROID_LOG_WARN, kTag, "nativeRenderToSurface ANativeWindow_fromSurface failed nodeId=%d", (int)nodeId);
+        return JNI_FALSE;
+      }
+    }
+
+    window = it->second.nativeWindow;
+    if (!window) return JNI_FALSE;
+    ANativeWindow_acquire(window);
   }
 
   ANativeWindow_setBuffersGeometry(
@@ -929,6 +964,13 @@ Java_dev_zynth_skia_SkiaBridge_nativeRenderToSurface(
   ANativeWindow_Buffer buffer;
   if (ANativeWindow_lock(window, &buffer, nullptr) != 0) {
     __android_log_print(ANDROID_LOG_WARN, kTag, "nativeRenderToSurface ANativeWindow_lock failed nodeId=%d", (int)nodeId);
+    {
+      std::lock_guard<std::mutex> lock(gSurfaceMutex);
+      auto it = gSurfaces.find(static_cast<int>(nodeId));
+      if (it != gSurfaces.end() && it->second.nativeWindow == window) {
+        releaseSurfaceResources(env, it->second);
+      }
+    }
     ANativeWindow_release(window);
     return JNI_FALSE;
   }
@@ -957,6 +999,13 @@ Java_dev_zynth_skia_SkiaBridge_nativeRenderToSurface(
 
   if (ANativeWindow_unlockAndPost(window) != 0) {
     __android_log_print(ANDROID_LOG_WARN, kTag, "nativeRenderToSurface unlockAndPost failed nodeId=%d", (int)nodeId);
+    {
+      std::lock_guard<std::mutex> lock(gSurfaceMutex);
+      auto it = gSurfaces.find(static_cast<int>(nodeId));
+      if (it != gSurfaces.end() && it->second.nativeWindow == window) {
+        releaseSurfaceResources(env, it->second);
+      }
+    }
     ANativeWindow_release(window);
     return JNI_FALSE;
   }

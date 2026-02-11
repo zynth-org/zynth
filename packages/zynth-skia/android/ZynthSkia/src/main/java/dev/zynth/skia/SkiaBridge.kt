@@ -8,8 +8,6 @@ import com.zynth.kit.runtime.ZynthRuntime
 import org.json.JSONArray
 import org.json.JSONObject
 import java.lang.ref.WeakReference
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 
 object SkiaBridge {
   private const val OPCODE_CLEAR = 1.0
@@ -42,13 +40,12 @@ object SkiaBridge {
     val created = nativeCreateSurface(nodeId)
     if (!created) return false
 
-    runOnMainSync {
+    runOnMainAsync {
       val view = currentRuntime()?.getUIManager()?.getNodeView(nodeId) as? SkiaView
       if (view != null) {
         view.setSurfaceAvailable(true)
         view.markSurfaceDirty()
       }
-      true
     }
     return true
   }
@@ -59,9 +56,8 @@ object SkiaBridge {
     val disposed = nativeDisposeSurface(nodeId)
     if (!disposed) return false
 
-    runOnMainSync {
+    runOnMainAsync {
       (currentRuntime()?.getUIManager()?.getNodeView(nodeId) as? SkiaView)?.setSurfaceAvailable(false)
-      true
     }
     return true
   }
@@ -84,10 +80,10 @@ object SkiaBridge {
     )
     if (!accepted) return false
 
-    return runOnMainSync {
+    runOnMainAsync {
       (currentRuntime()?.getUIManager()?.getNodeView(nodeId) as? SkiaView)?.markSurfaceDirty()
-      true
     }
+    return true
   }
 
   @JvmStatic
@@ -107,10 +103,10 @@ object SkiaBridge {
     if (nodeId <= 0) return false
     val invalidated = nativeInvalidateSurface(nodeId)
     if (!invalidated) return false
-    return runOnMainSync {
+    runOnMainAsync {
       (currentRuntime()?.getUIManager()?.getNodeView(nodeId) as? SkiaView)?.markSurfaceDirty()
-      true
     }
+    return true
   }
 
   @JvmStatic
@@ -118,10 +114,10 @@ object SkiaBridge {
     if (nodeId <= 0) return false
     val updated = nativeSetFrameLoopEnabled(nodeId, enabled)
     if (!updated) return false
-    return runOnMainSync {
+    runOnMainAsync {
       (currentRuntime()?.getUIManager()?.getNodeView(nodeId) as? SkiaView)?.setFrameLoopEnabled(enabled)
-      true
     }
+    return true
   }
 
   @JvmStatic
@@ -248,23 +244,13 @@ object SkiaBridge {
 
   private fun currentRuntime(): ZynthRuntime? = runtimeRef?.get()
 
-  private fun runOnMainSync(block: () -> Boolean): Boolean {
-    if (currentRuntime() == null) return false
+  private fun runOnMainAsync(block: () -> Unit) {
+    if (currentRuntime() == null) return
     if (Looper.myLooper() == Looper.getMainLooper()) {
-      return block()
+      block()
+      return
     }
-
-    val latch = CountDownLatch(1)
-    var result = false
-    mainHandler.post {
-      try {
-        result = block()
-      } finally {
-        latch.countDown()
-      }
-    }
-    latch.await(500, TimeUnit.MILLISECONDS)
-    return result
+    mainHandler.post(block)
   }
 
   private external fun nativeCreateSurface(nodeId: Int): Boolean

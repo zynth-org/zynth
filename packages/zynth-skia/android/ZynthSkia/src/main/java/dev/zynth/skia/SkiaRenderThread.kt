@@ -126,8 +126,12 @@ internal class SkiaRenderThread {
   private fun renderOnce() {
     val target = surface ?: return
     if (!nativeSurfaceAvailable || nodeId <= 0 || width <= 0 || height <= 0) return
+    if (!target.isValid) {
+      surface = null
+      return
+    }
 
-    SkiaBridge.renderToSurface(
+    val rendered = SkiaBridge.renderToSurface(
       nodeId = nodeId,
       width = width,
       height = height,
@@ -135,6 +139,9 @@ internal class SkiaRenderThread {
       density = density,
       surface = target,
     )
+    if (!rendered && !target.isValid) {
+      surface = null
+    }
   }
 
   private fun onFrame() {

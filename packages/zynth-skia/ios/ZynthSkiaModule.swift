@@ -6,7 +6,6 @@ final class ZynthSkiaModule: NSObject, ZynthModule, ZynthSyncModule {
   let name: String = "Skia"
 
   private weak var runtime: ZynthRuntime?
-  private var surfaces: [Int: SkiaSurfaceState] = [:]
 
   init(runtime: ZynthRuntime) {
     self.runtime = runtime
@@ -40,7 +39,7 @@ final class ZynthSkiaModule: NSObject, ZynthModule, ZynthSyncModule {
   }
 
   func invalidate() {
-    surfaces.removeAll()
+    // no-op; native renderer bridge owns surface state
   }
 
   private func createSurface(_ payload: [String: Any]) -> [String: Any] {
@@ -50,14 +49,12 @@ final class ZynthSkiaModule: NSObject, ZynthModule, ZynthSyncModule {
 
     let result = runOnMainSync { [weak self] in
       guard let self, let runtime else { return false }
-      guard let node = runtime.uiManager.zynth_node(forId: nodeId),
-            let view = node.view as? ZynthSkiaView else {
-        return false
-      }
       let id = nodeId.intValue
-      self.surfaces[id] = SkiaSurfaceState(nodeId: id)
       let created = ZynthSkiaRendererBridge.createSurface(id)
-      view.setSurfaceAvailable(created)
+      if let node = runtime.uiManager.zynth_node(forId: nodeId),
+         let view = node.view as? ZynthSkiaView {
+        view.setSurfaceAvailable(created)
+      }
       return created
     }
 
@@ -72,7 +69,6 @@ final class ZynthSkiaModule: NSObject, ZynthModule, ZynthSyncModule {
     let id = nodeId.intValue
     _ = runOnMainSync { [weak self] in
       guard let self, let runtime else { return false }
-      self.surfaces.removeValue(forKey: id)
       _ = ZynthSkiaRendererBridge.disposeSurface(id)
       if let node = runtime.uiManager.zynth_node(forId: nodeId),
          let view = node.view as? ZynthSkiaView {
@@ -93,20 +89,17 @@ final class ZynthSkiaModule: NSObject, ZynthModule, ZynthSyncModule {
     }
 
     let id = nodeId.intValue
-    guard var state = surfaces[id] else {
-      return error("surface_not_found", "node=\(id)")
+    if !ZynthSkiaRendererBridge.hasSurface(id) {
+      _ = ZynthSkiaRendererBridge.createSurface(id)
     }
-    state.lastCommands = commands
-    surfaces[id] = state
 
     _ = runOnMainSync { [weak self] in
       guard let self, let runtime else { return false }
-      guard let node = runtime.uiManager.zynth_node(forId: nodeId),
-            let view = node.view as? ZynthSkiaView else {
-        return false
-      }
       _ = ZynthSkiaRendererBridge.submitCommands(commands, forNode: id)
-      view.markSurfaceDirty()
+      if let node = runtime.uiManager.zynth_node(forId: nodeId),
+         let view = node.view as? ZynthSkiaView {
+        view.markSurfaceDirty()
+      }
       return true
     }
 
@@ -123,20 +116,17 @@ final class ZynthSkiaModule: NSObject, ZynthModule, ZynthSyncModule {
     }
 
     let id = nodeId.intValue
-    guard var state = surfaces[id] else {
-      return error("surface_not_found", "node=\(id)")
+    if !ZynthSkiaRendererBridge.hasSurface(id) {
+      _ = ZynthSkiaRendererBridge.createSurface(id)
     }
-    state.lastCommands = commands
-    surfaces[id] = state
 
     _ = runOnMainSync { [weak self] in
       guard let self, let runtime else { return false }
-      guard let node = runtime.uiManager.zynth_node(forId: nodeId),
-            let view = node.view as? ZynthSkiaView else {
-        return false
-      }
       _ = ZynthSkiaRendererBridge.submitFrame(frame, forNode: id)
-      view.markSurfaceDirty()
+      if let node = runtime.uiManager.zynth_node(forId: nodeId),
+         let view = node.view as? ZynthSkiaView {
+        view.markSurfaceDirty()
+      }
       return true
     }
 
@@ -149,7 +139,7 @@ final class ZynthSkiaModule: NSObject, ZynthModule, ZynthSyncModule {
     }
 
     let id = nodeId.intValue
-    guard surfaces[id] != nil else {
+    guard ZynthSkiaRendererBridge.hasSurface(id) else {
       return error("surface_not_found", "node=\(id)")
     }
 
@@ -173,11 +163,9 @@ final class ZynthSkiaModule: NSObject, ZynthModule, ZynthSyncModule {
     let enabled = (payload["enabled"] as? Bool) ?? false
 
     let id = nodeId.intValue
-    guard var state = surfaces[id] else {
+    guard ZynthSkiaRendererBridge.hasSurface(id) else {
       return error("surface_not_found", "node=\(id)")
     }
-    state.frameLoopEnabled = enabled
-    surfaces[id] = state
 
     _ = runOnMainSync { [weak self] in
       guard let self, let runtime else { return false }
@@ -212,10 +200,4 @@ final class ZynthSkiaModule: NSObject, ZynthModule, ZynthSyncModule {
   private func error(_ code: String, _ message: String) -> [String: String] {
     return ["error": code, "message": message]
   }
-}
-
-private struct SkiaSurfaceState {
-  let nodeId: Int
-  var frameLoopEnabled: Bool = false
-  var lastCommands: [[String: Any]] = []
 }

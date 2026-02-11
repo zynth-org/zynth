@@ -1,6 +1,7 @@
 #import "ZynthSkiaRendererBridge.h"
 
 #import <mutex>
+#import <memory>
 #import <string>
 #import <unordered_map>
 #import <vector>
@@ -32,10 +33,16 @@ enum PackedStyle {
   PackedStyleStroke = 1,
 };
 
-struct SurfaceState {
-  bool frameLoopEnabled = false;
+struct CommandBuffer {
   std::vector<double> ops;
   std::vector<std::string> stringTable;
+};
+
+struct SurfaceState {
+  bool frameLoopEnabled = false;
+  std::shared_ptr<CommandBuffer> front;
+  std::shared_ptr<CommandBuffer> back;
+  bool hasPending = false;
 };
 
 std::mutex gSkiaMutex;
@@ -58,7 +65,7 @@ static uint32_t parseHexColorString(NSString *value) {
   return 0x00000000;
 }
 
-static SkColor readPackedColor(const SurfaceState &state,
+static SkColor readPackedColor(const CommandBuffer &buffer,
                                const std::vector<double> &ops,
                                size_t &index) {
   if (index >= ops.size()) return SK_ColorTRANSPARENT;
@@ -72,11 +79,11 @@ static SkColor readPackedColor(const SurfaceState &state,
 
   if (colorType == PackedColorTypeString) {
     int stringIndex = static_cast<int>(ops[index++]);
-    if (stringIndex < 0 || stringIndex >= static_cast<int>(state.stringTable.size())) {
+    if (stringIndex < 0 || stringIndex >= static_cast<int>(buffer.stringTable.size())) {
       return SK_ColorTRANSPARENT;
     }
     NSString *colorString =
-        [NSString stringWithUTF8String:state.stringTable[stringIndex].c_str()];
+        [NSString stringWithUTF8String:buffer.stringTable[stringIndex].c_str()];
     return static_cast<SkColor>(parseHexColorString(colorString));
   }
 
@@ -84,7 +91,7 @@ static SkColor readPackedColor(const SurfaceState &state,
   return SK_ColorTRANSPARENT;
 }
 
-static bool renderSurfaceState(const SurfaceState &state,
+static bool renderSurfaceState(const CommandBuffer &buffer,
                                int width,
                                int height,
                                SkColor clearColor,
@@ -100,25 +107,25 @@ static bool renderSurfaceState(const SurfaceState &state,
   canvas->clear(clearColor);
 
   size_t i = 0;
-  while (i < state.ops.size()) {
-    int opcode = static_cast<int>(state.ops[i++]);
+  while (i < buffer.ops.size()) {
+    int opcode = static_cast<int>(buffer.ops[i++]);
 
     if (opcode == PackedOpcodeClear) {
-      SkColor color = readPackedColor(state, state.ops, i);
+      SkColor color = readPackedColor(buffer, buffer.ops, i);
       canvas->clear(color);
       continue;
     }
 
     if (opcode == PackedOpcodeRect) {
-      if (i + 5 >= state.ops.size()) break;
-      float x = static_cast<float>(state.ops[i++]);
-      float y = static_cast<float>(state.ops[i++]);
-      float w = static_cast<float>(state.ops[i++]);
-      float h = static_cast<float>(state.ops[i++]);
-      SkColor color = readPackedColor(state, state.ops, i);
-      if (i + 1 >= state.ops.size()) break;
-      float strokeWidth = static_cast<float>(state.ops[i++]);
-      int style = static_cast<int>(state.ops[i++]);
+      if (i + 5 >= buffer.ops.size()) break;
+      float x = static_cast<float>(buffer.ops[i++]);
+      float y = static_cast<float>(buffer.ops[i++]);
+      float w = static_cast<float>(buffer.ops[i++]);
+      float h = static_cast<float>(buffer.ops[i++]);
+      SkColor color = readPackedColor(buffer, buffer.ops, i);
+      if (i + 1 >= buffer.ops.size()) break;
+      float strokeWidth = static_cast<float>(buffer.ops[i++]);
+      int style = static_cast<int>(buffer.ops[i++]);
 
       SkPaint paint;
       paint.setAntiAlias(true);
@@ -131,14 +138,14 @@ static bool renderSurfaceState(const SurfaceState &state,
     }
 
     if (opcode == PackedOpcodeCircle) {
-      if (i + 4 >= state.ops.size()) break;
-      float cx = static_cast<float>(state.ops[i++]);
-      float cy = static_cast<float>(state.ops[i++]);
-      float r = static_cast<float>(state.ops[i++]);
-      SkColor color = readPackedColor(state, state.ops, i);
-      if (i + 1 >= state.ops.size()) break;
-      float strokeWidth = static_cast<float>(state.ops[i++]);
-      int style = static_cast<int>(state.ops[i++]);
+      if (i + 4 >= buffer.ops.size()) break;
+      float cx = static_cast<float>(buffer.ops[i++]);
+      float cy = static_cast<float>(buffer.ops[i++]);
+      float r = static_cast<float>(buffer.ops[i++]);
+      SkColor color = readPackedColor(buffer, buffer.ops, i);
+      if (i + 1 >= buffer.ops.size()) break;
+      float strokeWidth = static_cast<float>(buffer.ops[i++]);
+      int style = static_cast<int>(buffer.ops[i++]);
 
       SkPaint paint;
       paint.setAntiAlias(true);
@@ -151,14 +158,14 @@ static bool renderSurfaceState(const SurfaceState &state,
     }
 
     if (opcode == PackedOpcodeLine) {
-      if (i + 5 >= state.ops.size()) break;
-      float x1 = static_cast<float>(state.ops[i++]);
-      float y1 = static_cast<float>(state.ops[i++]);
-      float x2 = static_cast<float>(state.ops[i++]);
-      float y2 = static_cast<float>(state.ops[i++]);
-      SkColor color = readPackedColor(state, state.ops, i);
-      if (i >= state.ops.size()) break;
-      float strokeWidth = static_cast<float>(state.ops[i++]);
+      if (i + 5 >= buffer.ops.size()) break;
+      float x1 = static_cast<float>(buffer.ops[i++]);
+      float y1 = static_cast<float>(buffer.ops[i++]);
+      float x2 = static_cast<float>(buffer.ops[i++]);
+      float y2 = static_cast<float>(buffer.ops[i++]);
+      SkColor color = readPackedColor(buffer, buffer.ops, i);
+      if (i >= buffer.ops.size()) break;
+      float strokeWidth = static_cast<float>(buffer.ops[i++]);
 
       SkPaint paint;
       paint.setAntiAlias(true);
@@ -270,7 +277,9 @@ static bool encodeCommands(NSArray<NSDictionary *> *commands,
 + (BOOL)createSurface:(NSInteger)nodeId {
   if (nodeId <= 0) return NO;
   std::lock_guard<std::mutex> lock(gSkiaMutex);
-  gSkiaSurfaces[static_cast<int>(nodeId)] = SurfaceState{};
+  SurfaceState state;
+  state.front = std::make_shared<CommandBuffer>();
+  gSkiaSurfaces[static_cast<int>(nodeId)] = std::move(state);
   return YES;
 }
 
@@ -300,17 +309,19 @@ static bool encodeCommands(NSArray<NSDictionary *> *commands,
   auto it = gSkiaSurfaces.find(static_cast<int>(nodeId));
   if (it == gSkiaSurfaces.end()) return NO;
 
-  SurfaceState &state = it->second;
-  state.ops.assign(ops, ops + opCount);
-  state.stringTable.clear();
-  state.stringTable.reserve(stringTable.count);
+  auto buffer = std::make_shared<CommandBuffer>();
+  buffer->ops.assign(ops, ops + opCount);
+  buffer->stringTable.clear();
+  buffer->stringTable.reserve(stringTable.count);
   for (NSString *value in stringTable) {
     if (![value isKindOfClass:[NSString class]]) {
-      state.stringTable.emplace_back();
+      buffer->stringTable.emplace_back();
       continue;
     }
-    state.stringTable.emplace_back([value UTF8String]);
+    buffer->stringTable.emplace_back([value UTF8String]);
   }
+  it->second.back = std::move(buffer);
+  it->second.hasPending = true;
 
   return YES;
 }
@@ -324,8 +335,11 @@ static bool encodeCommands(NSArray<NSDictionary *> *commands,
   std::lock_guard<std::mutex> lock(gSkiaMutex);
   auto it = gSkiaSurfaces.find(static_cast<int>(nodeId));
   if (it == gSkiaSurfaces.end()) return NO;
-  it->second.ops = std::move(ops);
-  it->second.stringTable = std::move(strings);
+  auto buffer = std::make_shared<CommandBuffer>();
+  buffer->ops = std::move(ops);
+  buffer->stringTable = std::move(strings);
+  it->second.back = std::move(buffer);
+  it->second.hasPending = true;
   return YES;
 }
 
@@ -342,17 +356,23 @@ static bool encodeCommands(NSArray<NSDictionary *> *commands,
                      clearColor:(uint32_t)clearColor {
   if (nodeId <= 0 || width <= 0 || height <= 0) return nil;
 
-  SurfaceState state;
+  std::shared_ptr<CommandBuffer> buffer;
   {
     std::lock_guard<std::mutex> lock(gSkiaMutex);
     auto it = gSkiaSurfaces.find(static_cast<int>(nodeId));
     if (it == gSkiaSurfaces.end()) return nil;
-    state = it->second;
+    if (it->second.hasPending && it->second.back != nullptr) {
+      it->second.front.swap(it->second.back);
+      it->second.back.reset();
+      it->second.hasPending = false;
+    }
+    buffer = it->second.front;
   }
+  if (buffer == nullptr) return nil;
 
   std::vector<uint8_t> pixels;
   size_t rowBytes = 0;
-  if (!renderSurfaceState(state,
+  if (!renderSurfaceState(*buffer,
                           static_cast<int>(width),
                           static_cast<int>(height),
                           static_cast<SkColor>(clearColor),

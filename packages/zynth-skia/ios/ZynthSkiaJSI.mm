@@ -51,17 +51,12 @@ static bool createSurface(ZynthHermesRuntimeHost *host, int nodeId) {
   bool created = [ZynthSkiaRendererBridge createSurface:nodeId];
   if (!created) return false;
 
-  __block bool ok = false;
   onMainSyncBool(^{
     ZynthSkiaView *view = viewForNode(host, nodeId);
-    if (!view) {
-      ok = false;
-      return;
-    }
+    if (!view) return;
     [view setSurfaceAvailable:YES];
-    ok = true;
   });
-  return ok;
+  return true;
 }
 
 static bool disposeSurface(ZynthHermesRuntimeHost *host, int nodeId) {
@@ -76,35 +71,24 @@ static bool disposeSurface(ZynthHermesRuntimeHost *host, int nodeId) {
   return true;
 }
 
-static bool markDirty(ZynthHermesRuntimeHost *host, int nodeId) {
-  __block bool ok = false;
+static void markDirtyIfPresent(ZynthHermesRuntimeHost *host, int nodeId) {
   onMainSyncBool(^{
     ZynthSkiaView *view = viewForNode(host, nodeId);
-    if (!view) {
-      ok = false;
-      return;
-    }
+    if (!view) return;
     [view markSurfaceDirty];
-    ok = true;
   });
-  return ok;
 }
 
 static bool setFrameLoopEnabled(ZynthHermesRuntimeHost *host, int nodeId, bool enabled) {
   bool stored = [ZynthSkiaRendererBridge setFrameLoopEnabled:enabled forNode:nodeId];
   if (!stored) return false;
 
-  __block bool ok = false;
   onMainSyncBool(^{
     ZynthSkiaView *view = viewForNode(host, nodeId);
-    if (!view) {
-      ok = false;
-      return;
-    }
+    if (!view) return;
     [view setFrameLoopEnabledValue:enabled];
-    ok = true;
   });
-  return ok;
+  return true;
 }
 
 static bool submitPacked(
@@ -125,7 +109,8 @@ static bool submitPacked(
                                            stringTable:stringTable
                                                forNode:nodeId];
   if (!stored) return false;
-  return markDirty(host, nodeId);
+  markDirtyIfPresent(host, nodeId);
+  return true;
 }
 
 static void installSkiaBridge(ZynthHermesRuntimeHost *host, Runtime &rt) {
@@ -191,7 +176,10 @@ static void installSkiaBridge(ZynthHermesRuntimeHost *host, Runtime &rt) {
       2,
       [host](Runtime &, const Value &, const Value *args, size_t count) -> Value {
         if (count < 1 || !args[0].isNumber()) return Value(false);
-        return Value(markDirty(host, (int)args[0].asNumber()));
+        int nodeId = (int)args[0].asNumber();
+        if (![ZynthSkiaRendererBridge hasSurface:nodeId]) return Value(false);
+        markDirtyIfPresent(host, nodeId);
+        return Value(true);
       });
 
   auto invalidateSurfaceFn = Function::createFromHostFunction(
@@ -200,7 +188,10 @@ static void installSkiaBridge(ZynthHermesRuntimeHost *host, Runtime &rt) {
       1,
       [host](Runtime &, const Value &, const Value *args, size_t count) -> Value {
         if (count < 1 || !args[0].isNumber()) return Value(false);
-        return Value(markDirty(host, (int)args[0].asNumber()));
+        int nodeId = (int)args[0].asNumber();
+        if (![ZynthSkiaRendererBridge hasSurface:nodeId]) return Value(false);
+        markDirtyIfPresent(host, nodeId);
+        return Value(true);
       });
 
   auto setFrameLoopEnabledFn = Function::createFromHostFunction(
@@ -218,7 +209,10 @@ static void installSkiaBridge(ZynthHermesRuntimeHost *host, Runtime &rt) {
       2,
       [host](Runtime &, const Value &, const Value *args, size_t count) -> Value {
         if (count < 1 || !args[0].isNumber()) return Value(false);
-        return Value(markDirty(host, (int)args[0].asNumber()));
+        int nodeId = (int)args[0].asNumber();
+        if (![ZynthSkiaRendererBridge hasSurface:nodeId]) return Value(false);
+        markDirtyIfPresent(host, nodeId);
+        return Value(true);
       });
 
   Object skia(rt);

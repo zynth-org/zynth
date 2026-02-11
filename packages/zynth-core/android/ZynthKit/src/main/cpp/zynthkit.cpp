@@ -684,10 +684,7 @@ extern "C" JNIEXPORT bool ZynthSetSharedSignal(void *state, int signalId, double
   {
     std::lock_guard<std::mutex> lock(runtimeState->sharedSignalsMutex);
     auto it = runtimeState->sharedSignals.find(signalId);
-    if (it == runtimeState->sharedSignals.end()) {
-      __android_log_print(ANDROID_LOG_DEBUG, "ZynthKit", "ZynthSetSharedSignal: signal %d not found", signalId);
-      return false;
-    }
+    if (it == runtimeState->sharedSignals.end()) return false;
     it->second = value;
   }
 
@@ -695,9 +692,6 @@ extern "C" JNIEXPORT bool ZynthSetSharedSignal(void *state, int signalId, double
   {
     std::lock_guard<std::mutex> lock(gPluginMutex);
     callbacks = gSharedSignalCallbacks;
-  }
-  if (!callbacks.empty()) {
-    __android_log_print(ANDROID_LOG_DEBUG, "ZynthKit", "Triggering %zu callbacks for signal %d", callbacks.size(), signalId);
   }
   for (auto callback : callbacks) {
     callback(state, signalId);
@@ -1002,8 +996,6 @@ void installSharedSignals(Runtime &rt, RuntimeState *state) {  if (!state) retur
         int id = static_cast<int>(args[0].asNumber());
         double value = args[1].asNumber();
         if (!ZynthSetSharedSignal(state, id, value)) return Value::undefined();
-        __android_log_print(ANDROID_LOG_DEBUG, "ZynthWorklets",
-                            "setSharedSignal id=%d value=%.3f", id, value);
         return Value::undefined();
       });
 
@@ -1641,7 +1633,6 @@ Java_com_zynth_kit_runtime_JSBridge_invokeAnimationFrame(JNIEnv *,
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_zynth_kit_runtime_JSBridge_setSharedSignal(JNIEnv *, jobject, jlong ptr, jint id, jdouble value) {
-  __android_log_print(ANDROID_LOG_DEBUG, "ZynthKit", "JNI setSharedSignal id=%d value=%.2f", id, value);
   auto *runtime = reinterpret_cast<facebook::hermes::HermesRuntime *>(ptr);
   if (!runtime) return;
   auto state = sharedStateFor(runtime);

@@ -92,6 +92,7 @@ class SkiaView @JvmOverloads constructor(
   override fun surfaceCreated(holder: SurfaceHolder) {
     val surface = holder.surface
     if (surface == null || !surface.isValid) return
+    renderer.setNativeSurfaceAvailable(surfaceAvailable)
     val w = if (width > 0) width else 1
     val h = if (height > 0) height else 1
     attachSurface(surface, w, h)
@@ -103,15 +104,18 @@ class SkiaView @JvmOverloads constructor(
   }
 
   override fun surfaceDestroyed(holder: SurfaceHolder) {
+    renderer.setNativeSurfaceAvailable(false)
     detachSurface()
   }
 
   private fun attachSurface(surface: Surface, width: Int, height: Int) {
     renderer.setRenderSurface(surface, width, height, resources.displayMetrics.density)
+    renderer.setNativeSurfaceAvailable(surfaceAvailable)
     markSurfaceDirty()
   }
 
   private fun detachSurface() {
+    renderer.setNativeSurfaceAvailable(false)
     renderer.setRenderSurface(null, 0, 0, resources.displayMetrics.density)
   }
 }
