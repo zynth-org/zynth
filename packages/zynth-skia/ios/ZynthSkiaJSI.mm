@@ -216,6 +216,15 @@ static void installSkiaBridge(ZynthHermesRuntimeHost *host, Runtime &rt) {
       });
 
   Object skia(rt);
+  Object capabilities(rt);
+  capabilities.setProperty(rt, "paths", Value(true));
+  capabilities.setProperty(rt, "pathCurves", Value(true));
+  capabilities.setProperty(rt, "paintOpacity", Value(true));
+  capabilities.setProperty(rt, "paintStrokeCap", Value(true));
+  capabilities.setProperty(rt, "paintStrokeJoin", Value(true));
+  capabilities.setProperty(rt, "paintStrokeMiter", Value(true));
+  capabilities.setProperty(rt, "groupTransforms", Value(true));
+  skia.setProperty(rt, "capabilities", capabilities);
   skia.setProperty(rt, "createSurface", createSurfaceFn);
   skia.setProperty(rt, "disposeSurface", disposeSurfaceFn);
   skia.setProperty(rt, "submitDrawCommandsPacked", submitPackedFn);

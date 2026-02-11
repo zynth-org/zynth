@@ -5,6 +5,7 @@
 #import <string>
 #import <unordered_map>
 #import <vector>
+#import <algorithm>
 
 #import "include/core/SkCanvas.h"
 #import "include/core/SkColor.h"
@@ -12,6 +13,7 @@
 #import "include/core/SkImage.h"
 #import "include/core/SkImageInfo.h"
 #import "include/core/SkPaint.h"
+#import "include/core/SkPath.h"
 #import "include/core/SkSurface.h"
 
 namespace {
@@ -21,6 +23,7 @@ enum PackedOpcode {
   PackedOpcodeRect = 2,
   PackedOpcodeCircle = 3,
   PackedOpcodeLine = 4,
+  PackedOpcodePath = 5,
 };
 
 enum PackedColorType {
@@ -31,6 +34,26 @@ enum PackedColorType {
 enum PackedStyle {
   PackedStyleFill = 0,
   PackedStyleStroke = 1,
+};
+
+enum PackedStrokeCap {
+  PackedStrokeCapButt = 0,
+  PackedStrokeCapRound = 1,
+  PackedStrokeCapSquare = 2,
+};
+
+enum PackedStrokeJoin {
+  PackedStrokeJoinMiter = 0,
+  PackedStrokeJoinRound = 1,
+  PackedStrokeJoinBevel = 2,
+};
+
+enum PackedPathVerb {
+  PackedPathVerbMoveTo = 0,
+  PackedPathVerbLineTo = 1,
+  PackedPathVerbQuadTo = 2,
+  PackedPathVerbCubicTo = 3,
+  PackedPathVerbClose = 4,
 };
 
 struct CommandBuffer {
@@ -91,6 +114,50 @@ static SkColor readPackedColor(const CommandBuffer &buffer,
   return SK_ColorTRANSPARENT;
 }
 
+static SkPaint::Cap decodeStrokeCap(int packedCap) {
+  switch (packedCap) {
+    case PackedStrokeCapRound:
+      return SkPaint::kRound_Cap;
+    case PackedStrokeCapSquare:
+      return SkPaint::kSquare_Cap;
+    case PackedStrokeCapButt:
+    default:
+      return SkPaint::kButt_Cap;
+  }
+}
+
+static SkPaint::Join decodeStrokeJoin(int packedJoin) {
+  switch (packedJoin) {
+    case PackedStrokeJoinRound:
+      return SkPaint::kRound_Join;
+    case PackedStrokeJoinBevel:
+      return SkPaint::kBevel_Join;
+    case PackedStrokeJoinMiter:
+    default:
+      return SkPaint::kMiter_Join;
+  }
+}
+
+static void configurePaint(SkPaint &paint,
+                           SkColor color,
+                           float strokeWidth,
+                           int style,
+                           bool antiAlias,
+                           float opacity,
+                           int strokeCap,
+                           int strokeJoin,
+                           float strokeMiter) {
+  paint.setAntiAlias(antiAlias);
+  paint.setColor(color);
+  paint.setAlphaf(std::max(0.0f, std::min(1.0f, opacity)));
+  paint.setStrokeWidth(strokeWidth);
+  paint.setStyle(style == PackedStyleStroke ? SkPaint::kStroke_Style
+                                            : SkPaint::kFill_Style);
+  paint.setStrokeCap(decodeStrokeCap(strokeCap));
+  paint.setStrokeJoin(decodeStrokeJoin(strokeJoin));
+  paint.setStrokeMiter(strokeMiter);
+}
+
 static bool renderSurfaceState(const CommandBuffer &buffer,
                                int width,
                                int height,
@@ -123,16 +190,26 @@ static bool renderSurfaceState(const CommandBuffer &buffer,
       float w = static_cast<float>(buffer.ops[i++]);
       float h = static_cast<float>(buffer.ops[i++]);
       SkColor color = readPackedColor(buffer, buffer.ops, i);
-      if (i + 1 >= buffer.ops.size()) break;
+      if (i + 6 >= buffer.ops.size()) break;
       float strokeWidth = static_cast<float>(buffer.ops[i++]);
       int style = static_cast<int>(buffer.ops[i++]);
+      bool antiAlias = static_cast<int>(buffer.ops[i++]) != 0;
+      float opacity = static_cast<float>(buffer.ops[i++]);
+      int strokeCap = static_cast<int>(buffer.ops[i++]);
+      int strokeJoin = static_cast<int>(buffer.ops[i++]);
+      float strokeMiter = static_cast<float>(buffer.ops[i++]);
 
       SkPaint paint;
-      paint.setAntiAlias(true);
-      paint.setColor(color);
-      paint.setStrokeWidth(strokeWidth);
-      paint.setStyle(style == PackedStyleStroke ? SkPaint::kStroke_Style
-                                                : SkPaint::kFill_Style);
+      configurePaint(
+          paint,
+          color,
+          strokeWidth,
+          style,
+          antiAlias,
+          opacity,
+          strokeCap,
+          strokeJoin,
+          strokeMiter);
       canvas->drawRect(SkRect::MakeXYWH(x, y, w, h), paint);
       continue;
     }
@@ -143,16 +220,26 @@ static bool renderSurfaceState(const CommandBuffer &buffer,
       float cy = static_cast<float>(buffer.ops[i++]);
       float r = static_cast<float>(buffer.ops[i++]);
       SkColor color = readPackedColor(buffer, buffer.ops, i);
-      if (i + 1 >= buffer.ops.size()) break;
+      if (i + 6 >= buffer.ops.size()) break;
       float strokeWidth = static_cast<float>(buffer.ops[i++]);
       int style = static_cast<int>(buffer.ops[i++]);
+      bool antiAlias = static_cast<int>(buffer.ops[i++]) != 0;
+      float opacity = static_cast<float>(buffer.ops[i++]);
+      int strokeCap = static_cast<int>(buffer.ops[i++]);
+      int strokeJoin = static_cast<int>(buffer.ops[i++]);
+      float strokeMiter = static_cast<float>(buffer.ops[i++]);
 
       SkPaint paint;
-      paint.setAntiAlias(true);
-      paint.setColor(color);
-      paint.setStrokeWidth(strokeWidth);
-      paint.setStyle(style == PackedStyleStroke ? SkPaint::kStroke_Style
-                                                : SkPaint::kFill_Style);
+      configurePaint(
+          paint,
+          color,
+          strokeWidth,
+          style,
+          antiAlias,
+          opacity,
+          strokeCap,
+          strokeJoin,
+          strokeMiter);
       canvas->drawCircle(cx, cy, r, paint);
       continue;
     }
@@ -164,15 +251,96 @@ static bool renderSurfaceState(const CommandBuffer &buffer,
       float x2 = static_cast<float>(buffer.ops[i++]);
       float y2 = static_cast<float>(buffer.ops[i++]);
       SkColor color = readPackedColor(buffer, buffer.ops, i);
-      if (i >= buffer.ops.size()) break;
+      if (i + 4 >= buffer.ops.size()) break;
       float strokeWidth = static_cast<float>(buffer.ops[i++]);
+      bool antiAlias = static_cast<int>(buffer.ops[i++]) != 0;
+      float opacity = static_cast<float>(buffer.ops[i++]);
+      int strokeCap = static_cast<int>(buffer.ops[i++]);
+      int strokeJoin = static_cast<int>(buffer.ops[i++]);
+      float strokeMiter = static_cast<float>(buffer.ops[i++]);
 
       SkPaint paint;
-      paint.setAntiAlias(true);
-      paint.setColor(color);
-      paint.setStrokeWidth(strokeWidth);
-      paint.setStyle(SkPaint::kStroke_Style);
+      configurePaint(
+          paint,
+          color,
+          strokeWidth,
+          PackedStyleStroke,
+          antiAlias,
+          opacity,
+          strokeCap,
+          strokeJoin,
+          strokeMiter);
       canvas->drawLine(x1, y1, x2, y2, paint);
+      continue;
+    }
+
+    if (opcode == PackedOpcodePath) {
+      SkColor color = readPackedColor(buffer, buffer.ops, i);
+      if (i + 7 >= buffer.ops.size()) break;
+      float strokeWidth = static_cast<float>(buffer.ops[i++]);
+      int style = static_cast<int>(buffer.ops[i++]);
+      bool antiAlias = static_cast<int>(buffer.ops[i++]) != 0;
+      float opacity = static_cast<float>(buffer.ops[i++]);
+      int strokeCap = static_cast<int>(buffer.ops[i++]);
+      int strokeJoin = static_cast<int>(buffer.ops[i++]);
+      float strokeMiter = static_cast<float>(buffer.ops[i++]);
+      int commandCount = static_cast<int>(buffer.ops[i++]);
+      if (commandCount < 0) break;
+
+      SkPath path;
+      for (int cmd = 0; cmd < commandCount; cmd += 1) {
+        if (i >= buffer.ops.size()) break;
+        int verb = static_cast<int>(buffer.ops[i++]);
+        if (verb == PackedPathVerbMoveTo || verb == PackedPathVerbLineTo) {
+          if (i + 1 >= buffer.ops.size()) break;
+          float x = static_cast<float>(buffer.ops[i++]);
+          float y = static_cast<float>(buffer.ops[i++]);
+          if (verb == PackedPathVerbMoveTo) {
+            path.moveTo(x, y);
+          } else {
+            path.lineTo(x, y);
+          }
+          continue;
+        }
+        if (verb == PackedPathVerbQuadTo) {
+          if (i + 3 >= buffer.ops.size()) break;
+          float cpx = static_cast<float>(buffer.ops[i++]);
+          float cpy = static_cast<float>(buffer.ops[i++]);
+          float x = static_cast<float>(buffer.ops[i++]);
+          float y = static_cast<float>(buffer.ops[i++]);
+          path.quadTo(cpx, cpy, x, y);
+          continue;
+        }
+        if (verb == PackedPathVerbCubicTo) {
+          if (i + 5 >= buffer.ops.size()) break;
+          float cp1x = static_cast<float>(buffer.ops[i++]);
+          float cp1y = static_cast<float>(buffer.ops[i++]);
+          float cp2x = static_cast<float>(buffer.ops[i++]);
+          float cp2y = static_cast<float>(buffer.ops[i++]);
+          float x = static_cast<float>(buffer.ops[i++]);
+          float y = static_cast<float>(buffer.ops[i++]);
+          path.cubicTo(cp1x, cp1y, cp2x, cp2y, x, y);
+          continue;
+        }
+        if (verb == PackedPathVerbClose) {
+          path.close();
+          continue;
+        }
+        break;
+      }
+
+      SkPaint paint;
+      configurePaint(
+          paint,
+          color,
+          strokeWidth,
+          style,
+          antiAlias,
+          opacity,
+          strokeCap,
+          strokeJoin,
+          strokeMiter);
+      canvas->drawPath(path, paint);
       continue;
     }
 
@@ -241,6 +409,25 @@ static bool encodeCommands(NSArray<NSDictionary *> *commands,
       outOps.push_back(command[@"strokeWidth"] ? [command[@"strokeWidth"] doubleValue] : 1.0);
       NSString *style = command[@"style"];
       outOps.push_back([style isEqualToString:@"stroke"] ? PackedStyleStroke : PackedStyleFill);
+      outOps.push_back(command[@"antiAlias"] ? ([command[@"antiAlias"] boolValue] ? 1.0 : 0.0) : 1.0);
+      outOps.push_back(command[@"opacity"] ? [command[@"opacity"] doubleValue] : 1.0);
+      NSString *strokeCap = command[@"strokeCap"];
+      if ([strokeCap isEqualToString:@"round"]) {
+        outOps.push_back(PackedStrokeCapRound);
+      } else if ([strokeCap isEqualToString:@"square"]) {
+        outOps.push_back(PackedStrokeCapSquare);
+      } else {
+        outOps.push_back(PackedStrokeCapButt);
+      }
+      NSString *strokeJoin = command[@"strokeJoin"];
+      if ([strokeJoin isEqualToString:@"round"]) {
+        outOps.push_back(PackedStrokeJoinRound);
+      } else if ([strokeJoin isEqualToString:@"bevel"]) {
+        outOps.push_back(PackedStrokeJoinBevel);
+      } else {
+        outOps.push_back(PackedStrokeJoinMiter);
+      }
+      outOps.push_back(command[@"strokeMiter"] ? [command[@"strokeMiter"] doubleValue] : 4.0);
       continue;
     }
 
@@ -253,6 +440,25 @@ static bool encodeCommands(NSArray<NSDictionary *> *commands,
       outOps.push_back(command[@"strokeWidth"] ? [command[@"strokeWidth"] doubleValue] : 1.0);
       NSString *style = command[@"style"];
       outOps.push_back([style isEqualToString:@"stroke"] ? PackedStyleStroke : PackedStyleFill);
+      outOps.push_back(command[@"antiAlias"] ? ([command[@"antiAlias"] boolValue] ? 1.0 : 0.0) : 1.0);
+      outOps.push_back(command[@"opacity"] ? [command[@"opacity"] doubleValue] : 1.0);
+      NSString *strokeCap = command[@"strokeCap"];
+      if ([strokeCap isEqualToString:@"round"]) {
+        outOps.push_back(PackedStrokeCapRound);
+      } else if ([strokeCap isEqualToString:@"square"]) {
+        outOps.push_back(PackedStrokeCapSquare);
+      } else {
+        outOps.push_back(PackedStrokeCapButt);
+      }
+      NSString *strokeJoin = command[@"strokeJoin"];
+      if ([strokeJoin isEqualToString:@"round"]) {
+        outOps.push_back(PackedStrokeJoinRound);
+      } else if ([strokeJoin isEqualToString:@"bevel"]) {
+        outOps.push_back(PackedStrokeJoinBevel);
+      } else {
+        outOps.push_back(PackedStrokeJoinMiter);
+      }
+      outOps.push_back(command[@"strokeMiter"] ? [command[@"strokeMiter"] doubleValue] : 4.0);
       continue;
     }
 
@@ -264,6 +470,97 @@ static bool encodeCommands(NSArray<NSDictionary *> *commands,
       outOps.push_back([command[@"y2"] doubleValue]);
       pushColor(outOps, outStrings, index, command[@"color"]);
       outOps.push_back(command[@"strokeWidth"] ? [command[@"strokeWidth"] doubleValue] : 1.0);
+      outOps.push_back(command[@"antiAlias"] ? ([command[@"antiAlias"] boolValue] ? 1.0 : 0.0) : 1.0);
+      outOps.push_back(command[@"opacity"] ? [command[@"opacity"] doubleValue] : 1.0);
+      NSString *strokeCap = command[@"strokeCap"];
+      if ([strokeCap isEqualToString:@"round"]) {
+        outOps.push_back(PackedStrokeCapRound);
+      } else if ([strokeCap isEqualToString:@"square"]) {
+        outOps.push_back(PackedStrokeCapSquare);
+      } else {
+        outOps.push_back(PackedStrokeCapButt);
+      }
+      NSString *strokeJoin = command[@"strokeJoin"];
+      if ([strokeJoin isEqualToString:@"round"]) {
+        outOps.push_back(PackedStrokeJoinRound);
+      } else if ([strokeJoin isEqualToString:@"bevel"]) {
+        outOps.push_back(PackedStrokeJoinBevel);
+      } else {
+        outOps.push_back(PackedStrokeJoinMiter);
+      }
+      outOps.push_back(command[@"strokeMiter"] ? [command[@"strokeMiter"] doubleValue] : 4.0);
+      continue;
+    }
+
+    if ([type isEqualToString:@"path"]) {
+      NSArray<NSDictionary *> *pathCommands = command[@"commands"];
+      if (![pathCommands isKindOfClass:[NSArray class]]) {
+        continue;
+      }
+
+      outOps.push_back(PackedOpcodePath);
+      pushColor(outOps, outStrings, index, command[@"color"]);
+      outOps.push_back(command[@"strokeWidth"] ? [command[@"strokeWidth"] doubleValue] : 1.0);
+      NSString *style = command[@"style"];
+      outOps.push_back([style isEqualToString:@"stroke"] ? PackedStyleStroke : PackedStyleFill);
+      outOps.push_back(command[@"antiAlias"] ? ([command[@"antiAlias"] boolValue] ? 1.0 : 0.0) : 1.0);
+      outOps.push_back(command[@"opacity"] ? [command[@"opacity"] doubleValue] : 1.0);
+      NSString *strokeCap = command[@"strokeCap"];
+      if ([strokeCap isEqualToString:@"round"]) {
+        outOps.push_back(PackedStrokeCapRound);
+      } else if ([strokeCap isEqualToString:@"square"]) {
+        outOps.push_back(PackedStrokeCapSquare);
+      } else {
+        outOps.push_back(PackedStrokeCapButt);
+      }
+      NSString *strokeJoin = command[@"strokeJoin"];
+      if ([strokeJoin isEqualToString:@"round"]) {
+        outOps.push_back(PackedStrokeJoinRound);
+      } else if ([strokeJoin isEqualToString:@"bevel"]) {
+        outOps.push_back(PackedStrokeJoinBevel);
+      } else {
+        outOps.push_back(PackedStrokeJoinMiter);
+      }
+      outOps.push_back(command[@"strokeMiter"] ? [command[@"strokeMiter"] doubleValue] : 4.0);
+      outOps.push_back(static_cast<double>(pathCommands.count));
+
+      for (NSDictionary *pathCommand in pathCommands) {
+        NSString *pathType = pathCommand[@"type"];
+        if (![pathType isKindOfClass:[NSString class]]) continue;
+        if ([pathType isEqualToString:@"moveTo"]) {
+          outOps.push_back(PackedPathVerbMoveTo);
+          outOps.push_back([pathCommand[@"x"] doubleValue]);
+          outOps.push_back([pathCommand[@"y"] doubleValue]);
+          continue;
+        }
+        if ([pathType isEqualToString:@"lineTo"]) {
+          outOps.push_back(PackedPathVerbLineTo);
+          outOps.push_back([pathCommand[@"x"] doubleValue]);
+          outOps.push_back([pathCommand[@"y"] doubleValue]);
+          continue;
+        }
+        if ([pathType isEqualToString:@"quadTo"]) {
+          outOps.push_back(PackedPathVerbQuadTo);
+          outOps.push_back([pathCommand[@"cpx"] doubleValue]);
+          outOps.push_back([pathCommand[@"cpy"] doubleValue]);
+          outOps.push_back([pathCommand[@"x"] doubleValue]);
+          outOps.push_back([pathCommand[@"y"] doubleValue]);
+          continue;
+        }
+        if ([pathType isEqualToString:@"cubicTo"]) {
+          outOps.push_back(PackedPathVerbCubicTo);
+          outOps.push_back([pathCommand[@"cp1x"] doubleValue]);
+          outOps.push_back([pathCommand[@"cp1y"] doubleValue]);
+          outOps.push_back([pathCommand[@"cp2x"] doubleValue]);
+          outOps.push_back([pathCommand[@"cp2y"] doubleValue]);
+          outOps.push_back([pathCommand[@"x"] doubleValue]);
+          outOps.push_back([pathCommand[@"y"] doubleValue]);
+          continue;
+        }
+        if ([pathType isEqualToString:@"close"]) {
+          outOps.push_back(PackedPathVerbClose);
+        }
+      }
     }
   }
 

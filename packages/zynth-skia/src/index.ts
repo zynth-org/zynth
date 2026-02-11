@@ -4,6 +4,11 @@ export type { SkiaSurfaceController } from "./createSkiaSurface";
 export { Canvas, Circle, Group, Paint, Path, Rect } from "./declarative";
 export { createPath } from "./path";
 export { createShader, createSkiaValue } from "./shader";
+export {
+  assertSkiaFeature,
+  getSkiaCapabilities,
+  supportsSkiaFeature,
+} from "./native";
 
 export type {
   CreateSkiaValueOptions,
@@ -13,9 +18,12 @@ export type {
   SkiaDrawCircle,
   SkiaDrawClear,
   SkiaDrawLine,
+  SkiaDrawPath,
   SkiaDrawRect,
+  SkiaFeature,
   SkiaFrameSpec,
   SkiaGroupProps,
+  SkiaCapabilities,
   SkiaPaintProps,
   SkiaPathCommand,
   SkiaPathObject,
@@ -24,6 +32,8 @@ export type {
   SkiaRectProps,
   SkiaShaderInput,
   SkiaShaderProgram,
+  SkiaStrokeCap,
+  SkiaStrokeJoin,
   SkiaUniformMap,
   SkiaUniformPrimitive,
   SkiaUniformValue,

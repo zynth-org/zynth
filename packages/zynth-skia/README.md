@@ -167,6 +167,8 @@ import {
   Circle,
   Paint,
   Rect,
+  Path,
+  getSkiaCapabilities,
   createShader,
   createSkiaValue,
 } from "@zynth/skia";
@@ -186,7 +188,19 @@ const shader = createShader(
     <Rect x={0} y={0} width={240} height={240} />
   </Paint>
   <Circle cx={120} cy={120} r={48} color="#60A5FA" />
+  <Path
+    path="M 24 120 C 80 24 160 196 216 88"
+    color="#A855F7"
+    style="stroke"
+    strokeWidth={3}
+    strokeCap="round"
+  />
 </Canvas>;
+
+const caps = getSkiaCapabilities();
+if (!caps.pathCurves) {
+  throw new Error("This runtime does not support curved paths.");
+}
 ```
 
 Imperative APIs (`SkiaView`, `createSkiaSurface`) remain available for low-level control.

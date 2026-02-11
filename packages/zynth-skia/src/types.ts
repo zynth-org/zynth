@@ -17,6 +17,11 @@ export type SkiaDrawRect = {
   color: SkiaColorValue;
   strokeWidth?: number;
   style?: "fill" | "stroke";
+  antiAlias?: boolean;
+  opacity?: number;
+  strokeCap?: SkiaStrokeCap;
+  strokeJoin?: SkiaStrokeJoin;
+  strokeMiter?: number;
 };
 
 export type SkiaDrawCircle = {
@@ -27,6 +32,11 @@ export type SkiaDrawCircle = {
   color: SkiaColorValue;
   strokeWidth?: number;
   style?: "fill" | "stroke";
+  antiAlias?: boolean;
+  opacity?: number;
+  strokeCap?: SkiaStrokeCap;
+  strokeJoin?: SkiaStrokeJoin;
+  strokeMiter?: number;
 };
 
 export type SkiaDrawLine = {
@@ -37,13 +47,47 @@ export type SkiaDrawLine = {
   y2: number;
   color: SkiaColorValue;
   strokeWidth?: number;
+  antiAlias?: boolean;
+  opacity?: number;
+  strokeCap?: SkiaStrokeCap;
+  strokeJoin?: SkiaStrokeJoin;
+  strokeMiter?: number;
+};
+
+export type SkiaPathCommand =
+  | { type: "moveTo"; x: number; y: number }
+  | { type: "lineTo"; x: number; y: number }
+  | { type: "quadTo"; cpx: number; cpy: number; x: number; y: number }
+  | {
+    type: "cubicTo";
+    cp1x: number;
+    cp1y: number;
+    cp2x: number;
+    cp2y: number;
+    x: number;
+    y: number;
+  }
+  | { type: "close" };
+
+export type SkiaDrawPath = {
+  type: "path";
+  commands: readonly SkiaPathCommand[];
+  color: SkiaColorValue;
+  strokeWidth?: number;
+  style?: "fill" | "stroke";
+  antiAlias?: boolean;
+  opacity?: number;
+  strokeCap?: SkiaStrokeCap;
+  strokeJoin?: SkiaStrokeJoin;
+  strokeMiter?: number;
 };
 
 export type SkiaDrawCommand =
   | SkiaDrawClear
   | SkiaDrawRect
   | SkiaDrawCircle
-  | SkiaDrawLine;
+  | SkiaDrawLine
+  | SkiaDrawPath;
 
 export type SkiaFrameSpec = {
   clear?: SkiaColorValue;
@@ -92,11 +136,18 @@ export type SkiaShaderProgram = {
 };
 
 export type SkiaPaintStyle = "fill" | "stroke";
+export type SkiaStrokeCap = "butt" | "round" | "square";
+export type SkiaStrokeJoin = "miter" | "round" | "bevel";
 
 export type SkiaPaintProps = {
   color?: SkiaColorValue;
   strokeWidth?: number;
   style?: SkiaPaintStyle;
+  antiAlias?: boolean;
+  opacity?: number;
+  strokeCap?: SkiaStrokeCap;
+  strokeJoin?: SkiaStrokeJoin;
+  strokeMiter?: number;
   shader?: SkiaShaderProgram;
   children?: JSX.Element;
 };
@@ -115,6 +166,14 @@ export type SkiaCanvasProps = {
 export type SkiaGroupProps = {
   x?: number;
   y?: number;
+  translateX?: number;
+  translateY?: number;
+  scale?: number;
+  scaleX?: number;
+  scaleY?: number;
+  rotate?: number;
+  originX?: number;
+  originY?: number;
   children?: JSX.Element;
 };
 
@@ -126,6 +185,11 @@ export type SkiaRectProps = {
   color?: SkiaColorValue;
   strokeWidth?: number;
   style?: SkiaPaintStyle;
+  antiAlias?: boolean;
+  opacity?: number;
+  strokeCap?: SkiaStrokeCap;
+  strokeJoin?: SkiaStrokeJoin;
+  strokeMiter?: number;
   shader?: SkiaShaderProgram;
 };
 
@@ -136,18 +200,27 @@ export type SkiaCircleProps = {
   color?: SkiaColorValue;
   strokeWidth?: number;
   style?: SkiaPaintStyle;
+  antiAlias?: boolean;
+  opacity?: number;
+  strokeCap?: SkiaStrokeCap;
+  strokeJoin?: SkiaStrokeJoin;
+  strokeMiter?: number;
   shader?: SkiaShaderProgram;
 };
-
-export type SkiaPathCommand =
-  | { type: "moveTo"; x: number; y: number }
-  | { type: "lineTo"; x: number; y: number }
-  | { type: "close" };
 
 export type SkiaPathObject = {
   readonly commands: readonly SkiaPathCommand[];
   moveTo(x: number, y: number): SkiaPathObject;
   lineTo(x: number, y: number): SkiaPathObject;
+  quadTo(cpx: number, cpy: number, x: number, y: number): SkiaPathObject;
+  cubicTo(
+    cp1x: number,
+    cp1y: number,
+    cp2x: number,
+    cp2y: number,
+    x: number,
+    y: number,
+  ): SkiaPathObject;
   close(): SkiaPathObject;
   reset(): SkiaPathObject;
   clone(): SkiaPathObject;
@@ -160,7 +233,31 @@ export type SkiaPathProps = {
   color?: SkiaColorValue;
   strokeWidth?: number;
   style?: SkiaPaintStyle;
+  antiAlias?: boolean;
+  opacity?: number;
+  strokeCap?: SkiaStrokeCap;
+  strokeJoin?: SkiaStrokeJoin;
+  strokeMiter?: number;
   shader?: SkiaShaderProgram;
+};
+
+export type SkiaFeature =
+  | "paths"
+  | "path.curves"
+  | "paint.opacity"
+  | "paint.strokeCap"
+  | "paint.strokeJoin"
+  | "paint.strokeMiter"
+  | "group.transforms";
+
+export type SkiaCapabilities = {
+  paths: boolean;
+  pathCurves: boolean;
+  paintOpacity: boolean;
+  paintStrokeCap: boolean;
+  paintStrokeJoin: boolean;
+  paintStrokeMiter: boolean;
+  groupTransforms: boolean;
 };
 
 export type CreateSkiaValueOptions = {

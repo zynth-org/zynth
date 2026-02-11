@@ -1,5 +1,12 @@
 import { callNativeSync, getNativeModule, unwrapNativeResult } from "@zynth/core";
-import type { SkiaDrawCommand, SkiaFrameSpec } from "./types";
+import {
+  type SkiaCapabilities,
+  type SkiaDrawCommand,
+  type SkiaFeature,
+  type SkiaFrameSpec,
+  type SkiaStrokeCap,
+  type SkiaStrokeJoin,
+} from "./types";
 
 const MODULE_NAME = "Skia";
 const BRIDGE_KEY = "__zynth_skia";
@@ -17,6 +24,7 @@ type SkiaNativeBridge = {
   submitFrame(nodeId: number, frame: SkiaFrameSpec): boolean;
   invalidateSurface(nodeId: number): boolean;
   setFrameLoopEnabled(nodeId: number, enabled: boolean): boolean;
+  capabilities?: Partial<SkiaCapabilities>;
 };
 
 type SkiaSurfacePayload = {
@@ -39,6 +47,7 @@ const enum PackedOpcode {
   Rect = 2,
   Circle = 3,
   Line = 4,
+  Path = 5,
 }
 
 const enum PackedColorType {
@@ -51,10 +60,50 @@ const enum PackedStyle {
   Stroke = 1,
 }
 
+const enum PackedStrokeCap {
+  Butt = 0,
+  Round = 1,
+  Square = 2,
+}
+
+const enum PackedStrokeJoin {
+  Miter = 0,
+  Round = 1,
+  Bevel = 2,
+}
+
+const enum PackedPathVerb {
+  MoveTo = 0,
+  LineTo = 1,
+  QuadTo = 2,
+  CubicTo = 3,
+  Close = 4,
+}
+
 type PackedCommands = {
   ops: ArrayBuffer;
   opCount: number;
   stringTable: string[];
+};
+
+const defaultCapabilities: SkiaCapabilities = {
+  paths: false,
+  pathCurves: false,
+  paintOpacity: false,
+  paintStrokeCap: false,
+  paintStrokeJoin: false,
+  paintStrokeMiter: false,
+  groupTransforms: true,
+};
+
+const featureCapabilityMap: Record<SkiaFeature, keyof SkiaCapabilities> = {
+  paths: "paths",
+  "path.curves": "pathCurves",
+  "paint.opacity": "paintOpacity",
+  "paint.strokeCap": "paintStrokeCap",
+  "paint.strokeJoin": "paintStrokeJoin",
+  "paint.strokeMiter": "paintStrokeMiter",
+  "group.transforms": "groupTransforms",
 };
 
 function parsePackedColor(value: string): number | null {
@@ -100,9 +149,24 @@ function encodePackedCommands(commands: SkiaDrawCommand[]): PackedCommands {
   const encoded: number[] = [];
   const stringTable: string[] = [];
   const stringIndex = new Map<string, number>();
+  const caps = getSkiaCapabilities();
 
   for (let i = 0; i < commands.length; i += 1) {
     const command = commands[i]!;
+    if (command.type !== "clear") {
+      if (command.opacity != null && !caps.paintOpacity) {
+        throw new Error("Skia feature unsupported: paint.opacity");
+      }
+      if (command.strokeCap != null && !caps.paintStrokeCap) {
+        throw new Error("Skia feature unsupported: paint.strokeCap");
+      }
+      if (command.strokeJoin != null && !caps.paintStrokeJoin) {
+        throw new Error("Skia feature unsupported: paint.strokeJoin");
+      }
+      if (command.strokeMiter != null && !caps.paintStrokeMiter) {
+        throw new Error("Skia feature unsupported: paint.strokeMiter");
+      }
+    }
     switch (command.type) {
       case "clear":
         encoded.push(PackedOpcode.Clear);
@@ -119,12 +183,22 @@ function encodePackedCommands(commands: SkiaDrawCommand[]): PackedCommands {
         pushPackedColor(encoded, command.color, stringTable, stringIndex);
         encoded.push(command.strokeWidth ?? 1);
         encoded.push(command.style === "stroke" ? PackedStyle.Stroke : PackedStyle.Fill);
+        encoded.push(command.antiAlias === false ? 0 : 1);
+        encoded.push(caps.paintOpacity ? (command.opacity ?? 1) : 1);
+        encoded.push(encodeStrokeCap(command.strokeCap));
+        encoded.push(encodeStrokeJoin(command.strokeJoin));
+        encoded.push(command.strokeMiter ?? 4);
         break;
       case "circle":
         encoded.push(PackedOpcode.Circle, command.cx, command.cy, command.r);
         pushPackedColor(encoded, command.color, stringTable, stringIndex);
         encoded.push(command.strokeWidth ?? 1);
         encoded.push(command.style === "stroke" ? PackedStyle.Stroke : PackedStyle.Fill);
+        encoded.push(command.antiAlias === false ? 0 : 1);
+        encoded.push(caps.paintOpacity ? (command.opacity ?? 1) : 1);
+        encoded.push(encodeStrokeCap(command.strokeCap));
+        encoded.push(encodeStrokeJoin(command.strokeJoin));
+        encoded.push(command.strokeMiter ?? 4);
         break;
       case "line":
         encoded.push(
@@ -136,6 +210,72 @@ function encodePackedCommands(commands: SkiaDrawCommand[]): PackedCommands {
         );
         pushPackedColor(encoded, command.color, stringTable, stringIndex);
         encoded.push(command.strokeWidth ?? 1);
+        encoded.push(command.antiAlias === false ? 0 : 1);
+        encoded.push(caps.paintOpacity ? (command.opacity ?? 1) : 1);
+        encoded.push(encodeStrokeCap(command.strokeCap));
+        encoded.push(encodeStrokeJoin(command.strokeJoin));
+        encoded.push(command.strokeMiter ?? 4);
+        break;
+      case "path":
+        if (!caps.paths) {
+          throw new Error(
+            "Skia feature unsupported: paths (native runtime does not advertise path support)",
+          );
+        }
+        encoded.push(PackedOpcode.Path);
+        pushPackedColor(encoded, command.color, stringTable, stringIndex);
+        encoded.push(command.strokeWidth ?? 1);
+        encoded.push(command.style === "stroke" ? PackedStyle.Stroke : PackedStyle.Fill);
+        encoded.push(command.antiAlias === false ? 0 : 1);
+        encoded.push(caps.paintOpacity ? (command.opacity ?? 1) : 1);
+        encoded.push(encodeStrokeCap(command.strokeCap));
+        encoded.push(encodeStrokeJoin(command.strokeJoin));
+        encoded.push(command.strokeMiter ?? 4);
+        encoded.push(command.commands.length);
+        for (let cmdIndex = 0; cmdIndex < command.commands.length; cmdIndex += 1) {
+          const pathCommand = command.commands[cmdIndex]!;
+          switch (pathCommand.type) {
+            case "moveTo":
+              encoded.push(PackedPathVerb.MoveTo, pathCommand.x, pathCommand.y);
+              break;
+            case "lineTo":
+              encoded.push(PackedPathVerb.LineTo, pathCommand.x, pathCommand.y);
+              break;
+            case "quadTo":
+              if (!caps.pathCurves) {
+                throw new Error(
+                  "Skia feature unsupported: path.curves (quadTo requires curve support)",
+                );
+              }
+              encoded.push(
+                PackedPathVerb.QuadTo,
+                pathCommand.cpx,
+                pathCommand.cpy,
+                pathCommand.x,
+                pathCommand.y,
+              );
+              break;
+            case "cubicTo":
+              if (!caps.pathCurves) {
+                throw new Error(
+                  "Skia feature unsupported: path.curves (cubicTo requires curve support)",
+                );
+              }
+              encoded.push(
+                PackedPathVerb.CubicTo,
+                pathCommand.cp1x,
+                pathCommand.cp1y,
+                pathCommand.cp2x,
+                pathCommand.cp2y,
+                pathCommand.x,
+                pathCommand.y,
+              );
+              break;
+            case "close":
+              encoded.push(PackedPathVerb.Close);
+              break;
+          }
+        }
         break;
     }
   }
@@ -147,6 +287,18 @@ function encodePackedCommands(commands: SkiaDrawCommand[]): PackedCommands {
   };
 }
 
+function encodeStrokeCap(value: SkiaStrokeCap | undefined): number {
+  if (value === "round") return PackedStrokeCap.Round;
+  if (value === "square") return PackedStrokeCap.Square;
+  return PackedStrokeCap.Butt;
+}
+
+function encodeStrokeJoin(value: SkiaStrokeJoin | undefined): number {
+  if (value === "round") return PackedStrokeJoin.Round;
+  if (value === "bevel") return PackedStrokeJoin.Bevel;
+  return PackedStrokeJoin.Miter;
+}
+
 function callSync(method: string, payload: unknown): unknown {
   const result = callNativeSync(MODULE_NAME, method, payload);
   return unwrapNativeResult(result);
@@ -154,6 +306,33 @@ function callSync(method: string, payload: unknown): unknown {
 
 function getBridge(): SkiaNativeBridge | null {
   return getNativeModule<SkiaNativeBridge>(BRIDGE_KEY);
+}
+
+function readBridgeCapabilities(): Partial<SkiaCapabilities> | null {
+  const bridge = getBridge();
+  if (!bridge || !bridge.capabilities || typeof bridge.capabilities !== "object") {
+    return null;
+  }
+  return bridge.capabilities;
+}
+
+export function getSkiaCapabilities(): SkiaCapabilities {
+  const bridgeCaps = readBridgeCapabilities();
+  return {
+    ...defaultCapabilities,
+    ...(bridgeCaps ?? null),
+  };
+}
+
+export function supportsSkiaFeature(feature: SkiaFeature): boolean {
+  const caps = getSkiaCapabilities();
+  return Boolean(caps[featureCapabilityMap[feature]]);
+}
+
+export function assertSkiaFeature(feature: SkiaFeature, context?: string): void {
+  if (supportsSkiaFeature(feature)) return;
+  const suffix = context ? ` (${context})` : "";
+  throw new Error(`Skia feature unsupported: ${feature}${suffix}`);
 }
 
 export function createNativeSurface(nodeId: number): void {

@@ -19,6 +19,7 @@
 #include "include/core/SkColor.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPaint.h"
+#include "include/core/SkPath.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkSurface.h"
 
@@ -32,12 +33,27 @@ constexpr int kOpcodeClear = 1;
 constexpr int kOpcodeRect = 2;
 constexpr int kOpcodeCircle = 3;
 constexpr int kOpcodeLine = 4;
+constexpr int kOpcodePath = 5;
 
 constexpr int kColorTypeInt = 1;
 constexpr int kColorTypeString = 2;
 
 constexpr int kStyleFill = 0;
 constexpr int kStyleStroke = 1;
+
+constexpr int kStrokeCapButt = 0;
+constexpr int kStrokeCapRound = 1;
+constexpr int kStrokeCapSquare = 2;
+
+constexpr int kStrokeJoinMiter = 0;
+constexpr int kStrokeJoinRound = 1;
+constexpr int kStrokeJoinBevel = 2;
+
+constexpr int kPathVerbMoveTo = 0;
+constexpr int kPathVerbLineTo = 1;
+constexpr int kPathVerbQuadTo = 2;
+constexpr int kPathVerbCubicTo = 3;
+constexpr int kPathVerbClose = 4;
 
 JavaVM *gVm = nullptr;
 using RegisterInstallerFn = void (*)(ZynthJSIPluginInstaller installer);
@@ -129,6 +145,50 @@ SkColor readPackedColor(const SurfaceState::CommandBuffer &buffer, const std::ve
   return SK_ColorTRANSPARENT;
 }
 
+SkPaint::Cap decodeStrokeCap(int cap) {
+  switch (cap) {
+    case kStrokeCapRound:
+      return SkPaint::kRound_Cap;
+    case kStrokeCapSquare:
+      return SkPaint::kSquare_Cap;
+    case kStrokeCapButt:
+    default:
+      return SkPaint::kButt_Cap;
+  }
+}
+
+SkPaint::Join decodeStrokeJoin(int join) {
+  switch (join) {
+    case kStrokeJoinRound:
+      return SkPaint::kRound_Join;
+    case kStrokeJoinBevel:
+      return SkPaint::kBevel_Join;
+    case kStrokeJoinMiter:
+    default:
+      return SkPaint::kMiter_Join;
+  }
+}
+
+void configurePaint(
+    SkPaint &paint,
+    SkColor color,
+    float strokeWidth,
+    int style,
+    bool antiAlias,
+    float opacity,
+    int strokeCap,
+    int strokeJoin,
+    float strokeMiter) {
+  paint.setAntiAlias(antiAlias);
+  paint.setColor(color);
+  paint.setAlphaf(std::max(0.0f, std::min(1.0f, opacity)));
+  paint.setStrokeWidth(strokeWidth);
+  paint.setStyle(style == kStyleStroke ? SkPaint::kStroke_Style : SkPaint::kFill_Style);
+  paint.setStrokeCap(decodeStrokeCap(strokeCap));
+  paint.setStrokeJoin(decodeStrokeJoin(strokeJoin));
+  paint.setStrokeMiter(strokeMiter);
+}
+
 bool renderSurfaceState(
     const SurfaceState::CommandBuffer &buffer,
     SkCanvas *canvas,
@@ -156,15 +216,26 @@ bool renderSurfaceState(
       const float w = static_cast<float>(buffer.ops[i++]);
       const float h = static_cast<float>(buffer.ops[i++]);
       const SkColor color = readPackedColor(buffer, buffer.ops, i);
-      if (i + 1 >= buffer.ops.size()) break;
+      if (i + 6 >= buffer.ops.size()) break;
       const float strokeWidth = static_cast<float>(buffer.ops[i++]);
       const int style = static_cast<int>(buffer.ops[i++]);
+      const bool antiAlias = static_cast<int>(buffer.ops[i++]) != 0;
+      const float opacity = static_cast<float>(buffer.ops[i++]);
+      const int strokeCap = static_cast<int>(buffer.ops[i++]);
+      const int strokeJoin = static_cast<int>(buffer.ops[i++]);
+      const float strokeMiter = static_cast<float>(buffer.ops[i++]);
 
       SkPaint paint;
-      paint.setAntiAlias(true);
-      paint.setColor(color);
-      paint.setStrokeWidth(strokeWidth);
-      paint.setStyle(style == kStyleStroke ? SkPaint::kStroke_Style : SkPaint::kFill_Style);
+      configurePaint(
+          paint,
+          color,
+          strokeWidth,
+          style,
+          antiAlias,
+          opacity,
+          strokeCap,
+          strokeJoin,
+          strokeMiter);
       canvas->drawRect(SkRect::MakeXYWH(x, y, w, h), paint);
       continue;
     }
@@ -175,15 +246,26 @@ bool renderSurfaceState(
       const float cy = static_cast<float>(buffer.ops[i++]);
       const float r = static_cast<float>(buffer.ops[i++]);
       const SkColor color = readPackedColor(buffer, buffer.ops, i);
-      if (i + 1 >= buffer.ops.size()) break;
+      if (i + 6 >= buffer.ops.size()) break;
       const float strokeWidth = static_cast<float>(buffer.ops[i++]);
       const int style = static_cast<int>(buffer.ops[i++]);
+      const bool antiAlias = static_cast<int>(buffer.ops[i++]) != 0;
+      const float opacity = static_cast<float>(buffer.ops[i++]);
+      const int strokeCap = static_cast<int>(buffer.ops[i++]);
+      const int strokeJoin = static_cast<int>(buffer.ops[i++]);
+      const float strokeMiter = static_cast<float>(buffer.ops[i++]);
 
       SkPaint paint;
-      paint.setAntiAlias(true);
-      paint.setColor(color);
-      paint.setStrokeWidth(strokeWidth);
-      paint.setStyle(style == kStyleStroke ? SkPaint::kStroke_Style : SkPaint::kFill_Style);
+      configurePaint(
+          paint,
+          color,
+          strokeWidth,
+          style,
+          antiAlias,
+          opacity,
+          strokeCap,
+          strokeJoin,
+          strokeMiter);
       canvas->drawCircle(cx, cy, r, paint);
       continue;
     }
@@ -195,15 +277,100 @@ bool renderSurfaceState(
       const float x2 = static_cast<float>(buffer.ops[i++]);
       const float y2 = static_cast<float>(buffer.ops[i++]);
       const SkColor color = readPackedColor(buffer, buffer.ops, i);
-      if (i >= buffer.ops.size()) break;
+      if (i + 4 >= buffer.ops.size()) break;
       const float strokeWidth = static_cast<float>(buffer.ops[i++]);
+      const bool antiAlias = static_cast<int>(buffer.ops[i++]) != 0;
+      const float opacity = static_cast<float>(buffer.ops[i++]);
+      const int strokeCap = static_cast<int>(buffer.ops[i++]);
+      const int strokeJoin = static_cast<int>(buffer.ops[i++]);
+      const float strokeMiter = static_cast<float>(buffer.ops[i++]);
 
       SkPaint paint;
-      paint.setAntiAlias(true);
-      paint.setColor(color);
-      paint.setStrokeWidth(strokeWidth);
-      paint.setStyle(SkPaint::kStroke_Style);
+      configurePaint(
+          paint,
+          color,
+          strokeWidth,
+          kStyleStroke,
+          antiAlias,
+          opacity,
+          strokeCap,
+          strokeJoin,
+          strokeMiter);
       canvas->drawLine(x1, y1, x2, y2, paint);
+      continue;
+    }
+
+    if (opcode == kOpcodePath) {
+      const SkColor color = readPackedColor(buffer, buffer.ops, i);
+      if (i + 7 >= buffer.ops.size()) break;
+      const float strokeWidth = static_cast<float>(buffer.ops[i++]);
+      const int style = static_cast<int>(buffer.ops[i++]);
+      const bool antiAlias = static_cast<int>(buffer.ops[i++]) != 0;
+      const float opacity = static_cast<float>(buffer.ops[i++]);
+      const int strokeCap = static_cast<int>(buffer.ops[i++]);
+      const int strokeJoin = static_cast<int>(buffer.ops[i++]);
+      const float strokeMiter = static_cast<float>(buffer.ops[i++]);
+      const int commandCount = static_cast<int>(buffer.ops[i++]);
+      if (commandCount < 0) break;
+
+      SkPath path;
+      for (int cmd = 0; cmd < commandCount; cmd += 1) {
+        if (i >= buffer.ops.size()) break;
+        const int verb = static_cast<int>(buffer.ops[i++]);
+
+        if (verb == kPathVerbMoveTo || verb == kPathVerbLineTo) {
+          if (i + 1 >= buffer.ops.size()) break;
+          const float x = static_cast<float>(buffer.ops[i++]);
+          const float y = static_cast<float>(buffer.ops[i++]);
+          if (verb == kPathVerbMoveTo) {
+            path.moveTo(x, y);
+          } else {
+            path.lineTo(x, y);
+          }
+          continue;
+        }
+
+        if (verb == kPathVerbQuadTo) {
+          if (i + 3 >= buffer.ops.size()) break;
+          const float cpx = static_cast<float>(buffer.ops[i++]);
+          const float cpy = static_cast<float>(buffer.ops[i++]);
+          const float x = static_cast<float>(buffer.ops[i++]);
+          const float y = static_cast<float>(buffer.ops[i++]);
+          path.quadTo(cpx, cpy, x, y);
+          continue;
+        }
+
+        if (verb == kPathVerbCubicTo) {
+          if (i + 5 >= buffer.ops.size()) break;
+          const float cp1x = static_cast<float>(buffer.ops[i++]);
+          const float cp1y = static_cast<float>(buffer.ops[i++]);
+          const float cp2x = static_cast<float>(buffer.ops[i++]);
+          const float cp2y = static_cast<float>(buffer.ops[i++]);
+          const float x = static_cast<float>(buffer.ops[i++]);
+          const float y = static_cast<float>(buffer.ops[i++]);
+          path.cubicTo(cp1x, cp1y, cp2x, cp2y, x, y);
+          continue;
+        }
+
+        if (verb == kPathVerbClose) {
+          path.close();
+          continue;
+        }
+        break;
+      }
+
+      SkPaint paint;
+      configurePaint(
+          paint,
+          color,
+          strokeWidth,
+          style,
+          antiAlias,
+          opacity,
+          strokeCap,
+          strokeJoin,
+          strokeMiter);
+      canvas->drawPath(path, paint);
       continue;
     }
 
@@ -283,6 +450,20 @@ void encodeCommandsFromJS(
       outOps.push_back(readNumberProp(rt, command, "strokeWidth", 1));
       const std::string style = readStringProp(rt, command, "style", "fill");
       outOps.push_back(static_cast<double>(style == "stroke" ? kStyleStroke : kStyleFill));
+      const Value antiAlias = command.getProperty(rt, "antiAlias");
+      outOps.push_back(antiAlias.isBool() ? (antiAlias.getBool() ? 1.0 : 0.0) : 1.0);
+      outOps.push_back(readNumberProp(rt, command, "opacity", 1));
+      const std::string strokeCap = readStringProp(rt, command, "strokeCap", "butt");
+      outOps.push_back(
+          static_cast<double>(
+              strokeCap == "round" ? kStrokeCapRound
+                                    : (strokeCap == "square" ? kStrokeCapSquare : kStrokeCapButt)));
+      const std::string strokeJoin = readStringProp(rt, command, "strokeJoin", "miter");
+      outOps.push_back(
+          static_cast<double>(
+              strokeJoin == "round" ? kStrokeJoinRound
+                                     : (strokeJoin == "bevel" ? kStrokeJoinBevel : kStrokeJoinMiter)));
+      outOps.push_back(readNumberProp(rt, command, "strokeMiter", 4));
       continue;
     }
 
@@ -295,6 +476,20 @@ void encodeCommandsFromJS(
       outOps.push_back(readNumberProp(rt, command, "strokeWidth", 1));
       const std::string style = readStringProp(rt, command, "style", "fill");
       outOps.push_back(static_cast<double>(style == "stroke" ? kStyleStroke : kStyleFill));
+      const Value antiAlias = command.getProperty(rt, "antiAlias");
+      outOps.push_back(antiAlias.isBool() ? (antiAlias.getBool() ? 1.0 : 0.0) : 1.0);
+      outOps.push_back(readNumberProp(rt, command, "opacity", 1));
+      const std::string strokeCap = readStringProp(rt, command, "strokeCap", "butt");
+      outOps.push_back(
+          static_cast<double>(
+              strokeCap == "round" ? kStrokeCapRound
+                                    : (strokeCap == "square" ? kStrokeCapSquare : kStrokeCapButt)));
+      const std::string strokeJoin = readStringProp(rt, command, "strokeJoin", "miter");
+      outOps.push_back(
+          static_cast<double>(
+              strokeJoin == "round" ? kStrokeJoinRound
+                                     : (strokeJoin == "bevel" ? kStrokeJoinBevel : kStrokeJoinMiter)));
+      outOps.push_back(readNumberProp(rt, command, "strokeMiter", 4));
       continue;
     }
 
@@ -306,6 +501,92 @@ void encodeCommandsFromJS(
       outOps.push_back(readNumberProp(rt, command, "y2", 0));
       pushPackedColor(outOps, outStrings, stringIndex, readStringProp(rt, command, "color"));
       outOps.push_back(readNumberProp(rt, command, "strokeWidth", 1));
+      const Value antiAlias = command.getProperty(rt, "antiAlias");
+      outOps.push_back(antiAlias.isBool() ? (antiAlias.getBool() ? 1.0 : 0.0) : 1.0);
+      outOps.push_back(readNumberProp(rt, command, "opacity", 1));
+      const std::string strokeCap = readStringProp(rt, command, "strokeCap", "butt");
+      outOps.push_back(
+          static_cast<double>(
+              strokeCap == "round" ? kStrokeCapRound
+                                    : (strokeCap == "square" ? kStrokeCapSquare : kStrokeCapButt)));
+      const std::string strokeJoin = readStringProp(rt, command, "strokeJoin", "miter");
+      outOps.push_back(
+          static_cast<double>(
+              strokeJoin == "round" ? kStrokeJoinRound
+                                     : (strokeJoin == "bevel" ? kStrokeJoinBevel : kStrokeJoinMiter)));
+      outOps.push_back(readNumberProp(rt, command, "strokeMiter", 4));
+      continue;
+    }
+
+    if (type == "path") {
+      Value pathCommandsValue = command.getProperty(rt, "commands");
+      if (!pathCommandsValue.isObject()) continue;
+      Object pathCommandsObject = pathCommandsValue.asObject(rt);
+      if (!pathCommandsObject.isArray(rt)) continue;
+      Array pathCommands = pathCommandsObject.asArray(rt);
+
+      outOps.push_back(static_cast<double>(kOpcodePath));
+      pushPackedColor(outOps, outStrings, stringIndex, readStringProp(rt, command, "color"));
+      outOps.push_back(readNumberProp(rt, command, "strokeWidth", 1));
+      const std::string style = readStringProp(rt, command, "style", "fill");
+      outOps.push_back(static_cast<double>(style == "stroke" ? kStyleStroke : kStyleFill));
+      const Value antiAlias = command.getProperty(rt, "antiAlias");
+      outOps.push_back(antiAlias.isBool() ? (antiAlias.getBool() ? 1.0 : 0.0) : 1.0);
+      outOps.push_back(readNumberProp(rt, command, "opacity", 1));
+      const std::string strokeCap = readStringProp(rt, command, "strokeCap", "butt");
+      outOps.push_back(
+          static_cast<double>(
+              strokeCap == "round" ? kStrokeCapRound
+                                    : (strokeCap == "square" ? kStrokeCapSquare : kStrokeCapButt)));
+      const std::string strokeJoin = readStringProp(rt, command, "strokeJoin", "miter");
+      outOps.push_back(
+          static_cast<double>(
+              strokeJoin == "round" ? kStrokeJoinRound
+                                     : (strokeJoin == "bevel" ? kStrokeJoinBevel : kStrokeJoinMiter)));
+      outOps.push_back(readNumberProp(rt, command, "strokeMiter", 4));
+
+      const size_t pathCommandCount = pathCommands.length(rt);
+      outOps.push_back(static_cast<double>(pathCommandCount));
+      for (size_t pathIndex = 0; pathIndex < pathCommandCount; pathIndex += 1) {
+        Value pathCommandValue = pathCommands.getValueAtIndex(rt, pathIndex);
+        if (!pathCommandValue.isObject()) continue;
+        Object pathCommand = pathCommandValue.asObject(rt);
+        const std::string pathType = readStringProp(rt, pathCommand, "type");
+
+        if (pathType == "moveTo") {
+          outOps.push_back(static_cast<double>(kPathVerbMoveTo));
+          outOps.push_back(readNumberProp(rt, pathCommand, "x", 0));
+          outOps.push_back(readNumberProp(rt, pathCommand, "y", 0));
+          continue;
+        }
+        if (pathType == "lineTo") {
+          outOps.push_back(static_cast<double>(kPathVerbLineTo));
+          outOps.push_back(readNumberProp(rt, pathCommand, "x", 0));
+          outOps.push_back(readNumberProp(rt, pathCommand, "y", 0));
+          continue;
+        }
+        if (pathType == "quadTo") {
+          outOps.push_back(static_cast<double>(kPathVerbQuadTo));
+          outOps.push_back(readNumberProp(rt, pathCommand, "cpx", 0));
+          outOps.push_back(readNumberProp(rt, pathCommand, "cpy", 0));
+          outOps.push_back(readNumberProp(rt, pathCommand, "x", 0));
+          outOps.push_back(readNumberProp(rt, pathCommand, "y", 0));
+          continue;
+        }
+        if (pathType == "cubicTo") {
+          outOps.push_back(static_cast<double>(kPathVerbCubicTo));
+          outOps.push_back(readNumberProp(rt, pathCommand, "cp1x", 0));
+          outOps.push_back(readNumberProp(rt, pathCommand, "cp1y", 0));
+          outOps.push_back(readNumberProp(rt, pathCommand, "cp2x", 0));
+          outOps.push_back(readNumberProp(rt, pathCommand, "cp2y", 0));
+          outOps.push_back(readNumberProp(rt, pathCommand, "x", 0));
+          outOps.push_back(readNumberProp(rt, pathCommand, "y", 0));
+          continue;
+        }
+        if (pathType == "close") {
+          outOps.push_back(static_cast<double>(kPathVerbClose));
+        }
+      }
       continue;
     }
   }
@@ -591,6 +872,15 @@ void installBridge(Runtime &rt) {
       });
 
   Object skia(rt);
+  Object capabilities(rt);
+  capabilities.setProperty(rt, "paths", Value(true));
+  capabilities.setProperty(rt, "pathCurves", Value(true));
+  capabilities.setProperty(rt, "paintOpacity", Value(true));
+  capabilities.setProperty(rt, "paintStrokeCap", Value(true));
+  capabilities.setProperty(rt, "paintStrokeJoin", Value(true));
+  capabilities.setProperty(rt, "paintStrokeMiter", Value(true));
+  capabilities.setProperty(rt, "groupTransforms", Value(true));
+  skia.setProperty(rt, "capabilities", capabilities);
   skia.setProperty(rt, "createSurface", createSurface);
   skia.setProperty(rt, "disposeSurface", disposeSurface);
   skia.setProperty(rt, "submitDrawCommandsPacked", submitPacked);
