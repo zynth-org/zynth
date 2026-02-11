@@ -159,8 +159,8 @@ function getBridge(): SkiaNativeBridge | null {
 export function createNativeSurface(nodeId: number): void {
   const bridge = getBridge();
   if (bridge?.createSurface) {
-    bridge.createSurface(nodeId);
-    return;
+    const ok = bridge.createSurface(nodeId);
+    if (ok) return;
   }
   callSync("createSurface", { nodeId } satisfies SkiaSurfacePayload);
 }
@@ -168,8 +168,8 @@ export function createNativeSurface(nodeId: number): void {
 export function disposeNativeSurface(nodeId: number): void {
   const bridge = getBridge();
   if (bridge?.disposeSurface) {
-    bridge.disposeSurface(nodeId);
-    return;
+    const ok = bridge.disposeSurface(nodeId);
+    if (ok) return;
   }
   callSync("disposeSurface", { nodeId } satisfies SkiaSurfacePayload);
 }
@@ -181,17 +181,17 @@ export function submitNativeCommands(
   const bridge = getBridge();
   if (bridge?.submitDrawCommandsPacked) {
     const packed = encodePackedCommands(commands);
-    bridge.submitDrawCommandsPacked(
+    const ok = bridge.submitDrawCommandsPacked(
       nodeId,
       packed.ops,
       packed.opCount,
       packed.stringTable,
     );
-    return;
+    if (ok) return;
   }
   if (bridge?.submitDrawCommands) {
-    bridge.submitDrawCommands(nodeId, commands);
-    return;
+    const ok = bridge.submitDrawCommands(nodeId, commands);
+    if (ok) return;
   }
   callSync("submitDrawCommands", {
     nodeId,
@@ -202,8 +202,8 @@ export function submitNativeCommands(
 export function submitNativeFrame(nodeId: number, frame: SkiaFrameSpec): void {
   const bridge = getBridge();
   if (bridge?.submitFrame) {
-    bridge.submitFrame(nodeId, frame);
-    return;
+    const ok = bridge.submitFrame(nodeId, frame);
+    if (ok) return;
   }
   callSync("submitFrame", {
     nodeId,
@@ -214,8 +214,8 @@ export function submitNativeFrame(nodeId: number, frame: SkiaFrameSpec): void {
 export function invalidateNativeSurface(nodeId: number): void {
   const bridge = getBridge();
   if (bridge?.invalidateSurface) {
-    bridge.invalidateSurface(nodeId);
-    return;
+    const ok = bridge.invalidateSurface(nodeId);
+    if (ok) return;
   }
   callSync("invalidateSurface", { nodeId } satisfies SkiaSurfacePayload);
 }
@@ -223,8 +223,8 @@ export function invalidateNativeSurface(nodeId: number): void {
 export function setNativeFrameLoopEnabled(nodeId: number, enabled: boolean): void {
   const bridge = getBridge();
   if (bridge?.setFrameLoopEnabled) {
-    bridge.setFrameLoopEnabled(nodeId, enabled);
-    return;
+    const ok = bridge.setFrameLoopEnabled(nodeId, enabled);
+    if (ok) return;
   }
   callSync("setFrameLoopEnabled", {
     nodeId,

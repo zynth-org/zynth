@@ -28,22 +28,26 @@ Pod::Spec.new do |s|
 
   device_lib_dir = "${PODS_TARGET_SRCROOT}/native/vendor/ios/arm64/device/metal-pdf"
   simulator_lib_dir = "${PODS_TARGET_SRCROOT}/native/vendor/ios/$(CURRENT_ARCH)/simulator/metal-pdf"
+  headers_dir = "${PODS_TARGET_SRCROOT}/native/vendor/headers/skia"
   user_device_lib_dir = "${PODS_ROOT}/../../../../packages/zynth-skia/native/vendor/ios/arm64/device/metal-pdf"
   user_simulator_lib_dir = "${PODS_ROOT}/../../../../packages/zynth-skia/native/vendor/ios/$(CURRENT_ARCH)/simulator/metal-pdf"
+  user_headers_dir = "${PODS_ROOT}/../../../../packages/zynth-skia/native/vendor/headers/skia"
 
   s.pod_target_xcconfig = {
     "CLANG_CXX_LANGUAGE_STANDARD" => "c++17",
     "CLANG_CXX_LIBRARY" => "libc++",
+    "HEADER_SEARCH_PATHS" => "\"#{headers_dir}\" $(inherited)",
     "LIBRARY_SEARCH_PATHS[sdk=iphoneos*]" => "\"#{device_lib_dir}\" $(inherited)",
     "LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]" => "\"#{simulator_lib_dir}\" $(inherited)",
-    "OTHER_LDFLAGS[sdk=iphoneos*]" => "-lskia -lskia-bindings $(inherited)",
-    "OTHER_LDFLAGS[sdk=iphonesimulator*]" => "-lskia -lskia-bindings $(inherited)",
+    "OTHER_LDFLAGS[sdk=iphoneos*]" => "-lskia $(inherited)",
+    "OTHER_LDFLAGS[sdk=iphonesimulator*]" => "-lskia $(inherited)",
   }
   s.user_target_xcconfig = {
+    "HEADER_SEARCH_PATHS" => "\"#{user_headers_dir}\" $(inherited)",
     "LIBRARY_SEARCH_PATHS[sdk=iphoneos*]" => "\"#{user_device_lib_dir}\" $(inherited)",
     "LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]" => "\"#{user_simulator_lib_dir}\" $(inherited)",
-    "OTHER_LDFLAGS[sdk=iphoneos*]" => "-lskia -lskia-bindings $(inherited)",
-    "OTHER_LDFLAGS[sdk=iphonesimulator*]" => "-lskia -lskia-bindings $(inherited)",
+    "OTHER_LDFLAGS[sdk=iphoneos*]" => "-lskia $(inherited)",
+    "OTHER_LDFLAGS[sdk=iphonesimulator*]" => "-lskia $(inherited)",
   }
 
   s.dependency "ZynthKit"
