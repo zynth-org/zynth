@@ -111,7 +111,7 @@ final class ZynthSkiaModule: NSObject, ZynthModule, ZynthSyncModule {
       return error("invalid_argument", "nodeId")
     }
     guard let frame = payload["frame"] as? [String: Any],
-          let commands = frame["commands"] as? [[String: Any]] else {
+          let _ = frame["commands"] as? [[String: Any]] else {
       return error("invalid_argument", "frame")
     }
 

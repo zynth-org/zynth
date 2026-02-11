@@ -104,6 +104,7 @@ function runCommandFiltered(command, args, options = {}) {
     buildIndicator.renderOnce();
   }
   let lastDiagnosticAt = 0;
+  let skippingDiagnostic = false;
   const noisePatterns = IOS_BUILD_NOISE_PATTERNS;
   const reportedPackages = new Set();
 
@@ -131,12 +132,19 @@ function runCommandFiltered(command, args, options = {}) {
   }
 
   function shouldPrint(line) {
-    if (shouldSkip(line)) return false;
-    const now = Date.now();
-    if (isDiagnostic(line)) {
-      lastDiagnosticAt = now;
+    const isDiag = isDiagnostic(line);
+    const skip = shouldSkip(line);
+
+    if (isDiag) {
+      skippingDiagnostic = skip;
+      if (skip) return false;
+      lastDiagnosticAt = Date.now();
       return true;
     }
+
+    if (skippingDiagnostic) return false;
+
+    const now = Date.now();
     if (now - lastDiagnosticAt < 1000) {
       if (/\bnote:/i.test(line) || /^\s+/.test(line)) {
         return true;

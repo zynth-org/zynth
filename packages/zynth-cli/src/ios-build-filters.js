@@ -121,6 +121,8 @@ const IOS_BUILD_NOISE_PATTERNS = [
   /^\s*\|\s*`- warning: 'kUTType.*' is deprecated/i,
   /^\s*\|.*warning:/i,
   /^\s*\|.*note:/i,
+  /zynth-skia\/native\/vendor\/.*warning:/i,
+  /zynth-skia\/native\/vendor\/.*note:/i,
 ];
 
 module.exports = {
