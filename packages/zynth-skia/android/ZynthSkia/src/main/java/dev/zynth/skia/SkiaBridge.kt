@@ -3,7 +3,6 @@ package dev.zynth.skia
 import android.graphics.Bitmap
 import android.os.Handler
 import android.os.Looper
-import android.view.Surface
 import com.zynth.kit.runtime.ZynthRuntime
 import org.json.JSONArray
 import org.json.JSONObject
@@ -134,19 +133,6 @@ object SkiaBridge {
   }
 
   @JvmStatic
-  fun renderToSurface(
-    nodeId: Int,
-    width: Int,
-    height: Int,
-    clearColor: Int,
-    density: Float,
-    surface: Surface,
-  ): Boolean {
-    if (nodeId <= 0 || width <= 0 || height <= 0) return false
-    return nativeRenderToSurface(nodeId, width, height, clearColor, density, surface)
-  }
-
-  @JvmStatic
   fun hasSurface(nodeId: Int): Boolean {
     if (nodeId <= 0) return false
     return nativeHasSurface(nodeId)
@@ -272,12 +258,4 @@ object SkiaBridge {
     bitmap: Bitmap,
   ): Boolean
   private external fun nativeHasSurface(nodeId: Int): Boolean
-  private external fun nativeRenderToSurface(
-    nodeId: Int,
-    width: Int,
-    height: Int,
-    clearColor: Int,
-    density: Float,
-    surface: Surface,
-  ): Boolean
 }

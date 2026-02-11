@@ -1,42 +1,52 @@
 package dev.zynth.skia
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Rect
 import android.util.AttributeSet
-import android.view.Surface
-import android.view.SurfaceHolder
-import android.view.SurfaceView
+import android.view.View
 import com.zynth.kit.core.ZynthUIManager
 import org.json.JSONObject
 
 class SkiaView @JvmOverloads constructor(
   context: Context,
   attrs: AttributeSet? = null,
-) : SurfaceView(context, attrs), SurfaceHolder.Callback {
+) : View(context, attrs), SkiaRenderThread.Listener {
   private var manager: ZynthUIManager? = null
   private var nodeId: Int = -1
   private var clearColor: Int = Color.TRANSPARENT
   private var frameLoopEnabled: Boolean = false
   private var surfaceAvailable: Boolean = false
 
+  private var latestBitmap: Bitmap? = null
+  private var latestWidth: Int = 0
+  private var latestHeight: Int = 0
+  private val drawDestRect = Rect()
+
   private val renderer = SkiaRenderThread()
 
   init {
-    holder.addCallback(this)
+    setWillNotDraw(false)
+    clipToOutline = true
   }
 
   fun bind(manager: ZynthUIManager, nodeId: Int) {
     this.manager = manager
     this.nodeId = nodeId
+
+    renderer.setListener(this)
+    renderer.setViewAttached(isAttachedToWindow)
     renderer.setNodeId(nodeId)
     renderer.setClearColor(clearColor)
     renderer.setFrameLoopEnabled(frameLoopEnabled)
+
     setSurfaceAvailable(SkiaBridge.hasSurface(nodeId))
 
-    val currentSurface = holder.surface
-    if (currentSurface != null && currentSurface.isValid) {
-      attachSurface(currentSurface, width.coerceAtLeast(1), height.coerceAtLeast(1))
-    }
+    val w = width.coerceAtLeast(1)
+    val h = height.coerceAtLeast(1)
+    renderer.updateSize(w, h, resources.displayMetrics.density)
   }
 
   fun setClearColor(color: Int) {
@@ -51,8 +61,7 @@ class SkiaView @JvmOverloads constructor(
   }
 
   fun setAllowFallback(@Suppress("UNUSED_PARAMETER") allow: Boolean) {
-    // Surface-backed renderer path does not use Android primitive fallback.
-    // keep method for prop compatibility.
+    // Software-backed View path is now the default Android renderer.
   }
 
   fun setSurfaceAvailable(available: Boolean) {
@@ -83,39 +92,51 @@ class SkiaView @JvmOverloads constructor(
     renderer.setClearColor(clearColor)
   }
 
+  override fun onAttachedToWindow() {
+    super.onAttachedToWindow()
+    renderer.setViewAttached(true)
+    if (width > 0 && height > 0) {
+      renderer.updateSize(width, height, resources.displayMetrics.density)
+      markSurfaceDirty()
+    }
+  }
+
   override fun onDetachedFromWindow() {
-    detachSurface()
+    renderer.setViewAttached(false)
+    renderer.setListener(null)
     renderer.shutdown()
     super.onDetachedFromWindow()
   }
 
-  override fun surfaceCreated(holder: SurfaceHolder) {
-    val surface = holder.surface
-    if (surface == null || !surface.isValid) return
-    renderer.setNativeSurfaceAvailable(surfaceAvailable)
-    val w = if (width > 0) width else 1
-    val h = if (height > 0) height else 1
-    attachSurface(surface, w, h)
-  }
-
-  override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-    renderer.updateSize(width, height, resources.displayMetrics.density)
+  override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+    super.onSizeChanged(w, h, oldw, oldh)
+    renderer.updateSize(w.coerceAtLeast(1), h.coerceAtLeast(1), resources.displayMetrics.density)
     markSurfaceDirty()
   }
 
-  override fun surfaceDestroyed(holder: SurfaceHolder) {
-    renderer.setNativeSurfaceAvailable(false)
-    detachSurface()
+  override fun onDraw(canvas: Canvas) {
+    super.onDraw(canvas)
+    val bitmap = latestBitmap ?: return
+    if (bitmap.isRecycled) {
+      latestBitmap = null
+      return
+    }
+    if (latestWidth <= 0 || latestHeight <= 0) return
+
+    if (width == latestWidth && height == latestHeight) {
+      canvas.drawBitmap(bitmap, 0f, 0f, null)
+      return
+    }
+
+    drawDestRect.set(0, 0, width, height)
+    canvas.drawBitmap(bitmap, null, drawDestRect, null)
   }
 
-  private fun attachSurface(surface: Surface, width: Int, height: Int) {
-    renderer.setRenderSurface(surface, width, height, resources.displayMetrics.density)
-    renderer.setNativeSurfaceAvailable(surfaceAvailable)
-    markSurfaceDirty()
-  }
-
-  private fun detachSurface() {
-    renderer.setNativeSurfaceAvailable(false)
-    renderer.setRenderSurface(null, 0, 0, resources.displayMetrics.density)
+  override fun onFrameReady(bitmap: Bitmap, width: Int, height: Int) {
+    if (bitmap.isRecycled) return
+    latestBitmap = bitmap
+    latestWidth = width
+    latestHeight = height
+    postInvalidateOnAnimation()
   }
 }

@@ -1,19 +1,27 @@
 package dev.zynth.skia
 
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.os.Handler
 import android.os.HandlerThread
 import android.view.Choreographer
-import android.view.Surface
+import java.lang.ref.WeakReference
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 internal class SkiaRenderThread {
+  interface Listener {
+    fun onFrameReady(bitmap: Bitmap, width: Int, height: Int)
+  }
+
   private val thread = HandlerThread("ZynthSkiaRender").apply { start() }
   private val handler = Handler(thread.looper)
+  private val mainHandler = Handler(android.os.Looper.getMainLooper())
 
   private var choreographer: Choreographer? = null
   private var frameScheduled = false
+
+  private var listenerRef: WeakReference<Listener>? = null
 
   private var nodeId: Int = -1
   private var width: Int = 0
@@ -22,9 +30,14 @@ internal class SkiaRenderThread {
   private var density: Float = 1f
   private var frameLoopEnabled: Boolean = false
   private var nativeSurfaceAvailable: Boolean = false
-  private var surface: Surface? = null
+  private var viewAttached: Boolean = false
   private var dirty: Boolean = false
   private var stopped: Boolean = false
+
+  private var bitmapA: Bitmap? = null
+  private var bitmapB: Bitmap? = null
+  private var publishedBitmap: Bitmap? = null
+
   private val fallbackFrameRunnable = Runnable {
     frameScheduled = false
     onFrame()
@@ -42,6 +55,24 @@ internal class SkiaRenderThread {
       latch.countDown()
     }
     latch.await(500, TimeUnit.MILLISECONDS)
+  }
+
+  fun setListener(listener: Listener?) {
+    handler.post {
+      listenerRef = if (listener == null) null else WeakReference(listener)
+    }
+  }
+
+  fun setViewAttached(value: Boolean) {
+    handler.post {
+      viewAttached = value
+      if (!value) {
+        dirty = false
+      } else {
+        dirty = true
+        scheduleFrameLocked()
+      }
+    }
   }
 
   fun setNodeId(value: Int) {
@@ -82,17 +113,6 @@ internal class SkiaRenderThread {
     }
   }
 
-  fun setRenderSurface(nextSurface: Surface?, w: Int, h: Int, nextDensity: Float) {
-    handler.post {
-      surface = nextSurface
-      width = w
-      height = h
-      density = nextDensity
-      dirty = true
-      scheduleFrameLocked()
-    }
-  }
-
   fun updateSize(w: Int, h: Int, nextDensity: Float) {
     handler.post {
       width = w
@@ -118,30 +138,38 @@ internal class SkiaRenderThread {
         handler.removeCallbacks(fallbackFrameRunnable)
         frameScheduled = false
       }
-      surface = null
+      listenerRef = null
+      releaseBitmaps()
     }
     thread.quitSafely()
   }
 
-  private fun renderOnce() {
-    val target = surface ?: return
-    if (!nativeSurfaceAvailable || nodeId <= 0 || width <= 0 || height <= 0) return
-    if (!target.isValid) {
-      surface = null
-      return
-    }
+  private fun renderOnce(): Boolean {
+    if (!viewAttached || !nativeSurfaceAvailable || nodeId <= 0 || width <= 0 || height <= 0) return false
 
-    val rendered = SkiaBridge.renderToSurface(
+    val targetBitmap = obtainRenderBitmap(width, height) ?: return false
+
+    val rendered = SkiaBridge.renderToBitmap(
       nodeId = nodeId,
       width = width,
       height = height,
       clearColor = clearColor,
       density = density,
-      surface = target,
+      bitmap = targetBitmap,
     )
-    if (!rendered && !target.isValid) {
-      surface = null
+    if (!rendered) return false
+
+    publishedBitmap = targetBitmap
+    val listener = listenerRef?.get()
+    if (listener != null) {
+      val frameWidth = width
+      val frameHeight = height
+      mainHandler.post {
+        listenerRef?.get()?.onFrameReady(targetBitmap, frameWidth, frameHeight)
+      }
     }
+
+    return true
   }
 
   private fun onFrame() {
@@ -150,7 +178,10 @@ internal class SkiaRenderThread {
     val shouldRender = dirty || frameLoopEnabled
     if (shouldRender) {
       dirty = false
-      renderOnce()
+      val drew = renderOnce()
+      if (!drew) {
+        dirty = true
+      }
     }
 
     if (frameLoopEnabled || dirty) {
@@ -160,8 +191,7 @@ internal class SkiaRenderThread {
 
   private fun scheduleFrameLocked() {
     if (stopped || frameScheduled) return
-    val hasSurface = surface != null
-    if (!hasSurface || nodeId <= 0 || width <= 0 || height <= 0) return
+    if (nodeId <= 0 || width <= 0 || height <= 0) return
     if (!dirty && !frameLoopEnabled) return
 
     frameScheduled = true
@@ -171,5 +201,35 @@ internal class SkiaRenderThread {
       return
     }
     handler.postDelayed(fallbackFrameRunnable, 16L)
+  }
+
+  private fun obtainRenderBitmap(nextWidth: Int, nextHeight: Int): Bitmap? {
+    if (nextWidth <= 0 || nextHeight <= 0) return null
+
+    bitmapA = ensureBitmapSize(bitmapA, nextWidth, nextHeight)
+    bitmapB = ensureBitmapSize(bitmapB, nextWidth, nextHeight)
+
+    val a = bitmapA
+    val b = bitmapB
+    if (a == null && b == null) return null
+
+    return if (publishedBitmap === a) {
+      b ?: a
+    } else {
+      a ?: b
+    }
+  }
+
+  private fun ensureBitmapSize(bitmap: Bitmap?, width: Int, height: Int): Bitmap? {
+    if (bitmap != null && !bitmap.isRecycled && bitmap.width == width && bitmap.height == height) {
+      return bitmap
+    }
+    return runCatching { Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888) }.getOrNull()
+  }
+
+  private fun releaseBitmaps() {
+    bitmapA = null
+    bitmapB = null
+    publishedBitmap = null
   }
 }

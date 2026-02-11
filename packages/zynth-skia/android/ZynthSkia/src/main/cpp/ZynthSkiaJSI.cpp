@@ -1,8 +1,6 @@
 #include <jni.h>
 #include <android/bitmap.h>
 #include <android/log.h>
-#include <android/native_window.h>
-#include <android/native_window_jni.h>
 #include <dlfcn.h>
 #include <jsi/jsi.h>
 
@@ -54,8 +52,6 @@ jmethodID gSetFrameLoopEnabled = nullptr;
 
 struct SurfaceState {
   bool frameLoopEnabled = false;
-  jobject surfaceGlobal = nullptr;
-  ANativeWindow *nativeWindow = nullptr;
   struct CommandBuffer {
     std::vector<double> ops;
     std::vector<std::string> stringTable;
@@ -67,17 +63,6 @@ struct SurfaceState {
 
 std::mutex gSurfaceMutex;
 std::unordered_map<int, SurfaceState> gSurfaces;
-
-void releaseSurfaceResources(JNIEnv *env, SurfaceState &state) {
-  if (state.nativeWindow) {
-    ANativeWindow_release(state.nativeWindow);
-    state.nativeWindow = nullptr;
-  }
-  if (env && state.surfaceGlobal) {
-    env->DeleteGlobalRef(state.surfaceGlobal);
-  }
-  state.surfaceGlobal = nullptr;
-}
 
 JNIEnv *getEnv() {
   if (!gVm) return nullptr;
@@ -683,8 +668,6 @@ Java_dev_zynth_skia_SkiaBridge_nativeCreateSurface(JNIEnv *env, jclass clazz, ji
   std::lock_guard<std::mutex> lock(gSurfaceMutex);
   SurfaceState state;
   state.front = std::make_shared<SurfaceState::CommandBuffer>();
-  state.surfaceGlobal = nullptr;
-  state.nativeWindow = nullptr;
   gSurfaces[static_cast<int>(nodeId)] = std::move(state);
   return JNI_TRUE;
 }
@@ -700,7 +683,6 @@ Java_dev_zynth_skia_SkiaBridge_nativeDisposeSurface(JNIEnv *env, jclass clazz, j
   std::lock_guard<std::mutex> lock(gSurfaceMutex);
   auto it = gSurfaces.find(static_cast<int>(nodeId));
   if (it != gSurfaces.end()) {
-    releaseSurfaceResources(env, it->second);
     gSurfaces.erase(it);
   }
   return JNI_TRUE;
@@ -892,125 +874,6 @@ Java_dev_zynth_skia_SkiaBridge_nativeRenderToBitmap(
     return JNI_FALSE;
   }
   return JNI_TRUE;
-}
-
-extern "C" JNIEXPORT jboolean JNICALL
-Java_dev_zynth_skia_SkiaBridge_nativeRenderToSurface(
-    JNIEnv *env,
-    jclass clazz,
-    jint nodeId,
-    jint width,
-    jint height,
-    jint clearColor,
-    jfloat density,
-    jobject surfaceObj) {
-  cacheBridgeMethodsFromJavaClass(env, clazz);
-  if (!env || nodeId <= 0 || width <= 0 || height <= 0 || !surfaceObj) {
-    __android_log_print(
-        ANDROID_LOG_WARN,
-        kTag,
-        "nativeRenderToSurface invalid args nodeId=%d size=%dx%d surface=%p",
-        (int)nodeId,
-        (int)width,
-        (int)height,
-        surfaceObj);
-    return JNI_FALSE;
-  }
-
-  std::shared_ptr<SurfaceState::CommandBuffer> commandBuffer;
-  ANativeWindow *window = nullptr;
-  {
-    std::lock_guard<std::mutex> lock(gSurfaceMutex);
-    auto it = gSurfaces.find(static_cast<int>(nodeId));
-    if (it == gSurfaces.end()) {
-      return JNI_FALSE;
-    }
-    if (it->second.hasPending && it->second.back) {
-      it->second.front.swap(it->second.back);
-      it->second.back.reset();
-      it->second.hasPending = false;
-    }
-    commandBuffer = it->second.front;
-    if (!commandBuffer) return JNI_FALSE;
-
-    const bool surfaceChanged =
-        it->second.surfaceGlobal == nullptr
-        || env->IsSameObject(it->second.surfaceGlobal, surfaceObj) != JNI_TRUE;
-    if (surfaceChanged) {
-      releaseSurfaceResources(env, it->second);
-      it->second.surfaceGlobal = env->NewGlobalRef(surfaceObj);
-      if (!it->second.surfaceGlobal) {
-        return JNI_FALSE;
-      }
-      it->second.nativeWindow = ANativeWindow_fromSurface(env, surfaceObj);
-      if (!it->second.nativeWindow) {
-        releaseSurfaceResources(env, it->second);
-        __android_log_print(ANDROID_LOG_WARN, kTag, "nativeRenderToSurface ANativeWindow_fromSurface failed nodeId=%d", (int)nodeId);
-        return JNI_FALSE;
-      }
-    }
-
-    window = it->second.nativeWindow;
-    if (!window) return JNI_FALSE;
-    ANativeWindow_acquire(window);
-  }
-
-  ANativeWindow_setBuffersGeometry(
-      window,
-      static_cast<int32_t>(width),
-      static_cast<int32_t>(height),
-      WINDOW_FORMAT_RGBA_8888);
-
-  ANativeWindow_Buffer buffer;
-  if (ANativeWindow_lock(window, &buffer, nullptr) != 0) {
-    __android_log_print(ANDROID_LOG_WARN, kTag, "nativeRenderToSurface ANativeWindow_lock failed nodeId=%d", (int)nodeId);
-    {
-      std::lock_guard<std::mutex> lock(gSurfaceMutex);
-      auto it = gSurfaces.find(static_cast<int>(nodeId));
-      if (it != gSurfaces.end() && it->second.nativeWindow == window) {
-        releaseSurfaceResources(env, it->second);
-      }
-    }
-    ANativeWindow_release(window);
-    return JNI_FALSE;
-  }
-
-  const SkImageInfo info = SkImageInfo::Make(
-      static_cast<int>(buffer.width),
-      static_cast<int>(buffer.height),
-      kRGBA_8888_SkColorType,
-      kPremul_SkAlphaType);
-  sk_sp<SkSurface> surface = SkSurfaces::WrapPixels(
-      info,
-      buffer.bits,
-      static_cast<size_t>(buffer.stride) * 4u);
-  if (!surface) {
-    __android_log_print(ANDROID_LOG_WARN, kTag, "nativeRenderToSurface WrapPixels failed nodeId=%d", (int)nodeId);
-    ANativeWindow_unlockAndPost(window);
-    ANativeWindow_release(window);
-    return JNI_FALSE;
-  }
-
-  const bool rendered = renderSurfaceState(
-      *commandBuffer,
-      surface->getCanvas(),
-      static_cast<float>(density),
-      static_cast<SkColor>(static_cast<uint32_t>(clearColor)));
-
-  if (ANativeWindow_unlockAndPost(window) != 0) {
-    __android_log_print(ANDROID_LOG_WARN, kTag, "nativeRenderToSurface unlockAndPost failed nodeId=%d", (int)nodeId);
-    {
-      std::lock_guard<std::mutex> lock(gSurfaceMutex);
-      auto it = gSurfaces.find(static_cast<int>(nodeId));
-      if (it != gSurfaces.end() && it->second.nativeWindow == window) {
-        releaseSurfaceResources(env, it->second);
-      }
-    }
-    ANativeWindow_release(window);
-    return JNI_FALSE;
-  }
-  ANativeWindow_release(window);
-  return rendered ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
