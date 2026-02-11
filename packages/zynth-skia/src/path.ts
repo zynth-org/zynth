@@ -79,8 +79,8 @@ function parseSvgPath(raw: string): SkiaPathCommand[] {
   let startX = 0;
   let startY = 0;
   let mode:
-    | "M" | "L" | "H" | "V" | "C" | "S" | "Q" | "T"
-    | "m" | "l" | "h" | "v" | "c" | "s" | "q" | "t"
+    | "A" | "M" | "L" | "H" | "V" | "C" | "S" | "Q" | "T"
+    | "a" | "m" | "l" | "h" | "v" | "c" | "s" | "q" | "t"
     | null = null;
   let lastCurveControlX: number | null = null;
   let lastCurveControlY: number | null = null;
@@ -101,9 +101,6 @@ function parseSvgPath(raw: string): SkiaPathCommand[] {
       const command = token as "A" | "a" | "C" | "c" | "H" | "h" | "L" | "l"
         | "M" | "m" | "Q" | "q" | "S" | "s" | "T" | "t" | "V" | "v" | "Z" | "z";
       index += 1;
-      if (command === "A" || command === "a") {
-        throw new Error("SVG path arc commands (A/a) are not supported yet");
-      }
       if (command === "Z" || command === "z") {
         commands.push({ type: "close" });
         cursorX = startX;
@@ -296,9 +293,252 @@ function parseSvgPath(raw: string): SkiaPathCommand[] {
       lastCurveKind = "quad";
       continue;
     }
+
+    if (mode === "A" || mode === "a") {
+      const rx = readNumber();
+      const ry = readNumber();
+      const xAxisRotation = readNumber();
+      const largeArcFlag = readNumber();
+      const sweepFlag = readNumber();
+      const x = readNumber();
+      const y = readNumber();
+      if (
+        rx == null || ry == null || xAxisRotation == null || largeArcFlag == null
+        || sweepFlag == null || x == null || y == null
+      ) {
+        break;
+      }
+
+      const normalizedLargeArc = normalizeArcFlag(largeArcFlag);
+      const normalizedSweep = normalizeArcFlag(sweepFlag);
+
+      const endX = mode === "a" ? cursorX + x : x;
+      const endY = mode === "a" ? cursorY + y : y;
+
+      const arcSegments = arcToCubicSegments({
+        x1: cursorX,
+        y1: cursorY,
+        x2: endX,
+        y2: endY,
+        rx,
+        ry,
+        xAxisRotation,
+        largeArc: normalizedLargeArc,
+        sweep: normalizedSweep,
+      });
+      let lastArcCubic: CubicArcSegment | null = null;
+
+      for (let segmentIndex = 0; segmentIndex < arcSegments.length; segmentIndex += 1) {
+        const segment = arcSegments[segmentIndex]!;
+        if (segment.type === "lineTo") {
+          commands.push({ type: "lineTo", x: segment.x, y: segment.y });
+          continue;
+        }
+        lastArcCubic = segment;
+        commands.push({
+          type: "cubicTo",
+          cp1x: segment.cp1x,
+          cp1y: segment.cp1y,
+          cp2x: segment.cp2x,
+          cp2y: segment.cp2y,
+          x: segment.x,
+          y: segment.y,
+        });
+      }
+
+      cursorX = endX;
+      cursorY = endY;
+      lastCurveControlX = lastArcCubic?.cp2x ?? null;
+      lastCurveControlY = lastArcCubic?.cp2y ?? null;
+      lastCurveKind = lastArcCubic ? "cubic" : null;
+      continue;
+    }
   }
 
   return commands;
+}
+
+type CubicArcSegment = {
+  type: "cubicTo";
+  cp1x: number;
+  cp1y: number;
+  cp2x: number;
+  cp2y: number;
+  x: number;
+  y: number;
+};
+
+type LineArcSegment = {
+  type: "lineTo";
+  x: number;
+  y: number;
+};
+
+type ArcSegment = CubicArcSegment | LineArcSegment;
+
+type ArcInput = {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  rx: number;
+  ry: number;
+  xAxisRotation: number;
+  largeArc: 0 | 1;
+  sweep: 0 | 1;
+};
+
+function normalizeArcFlag(value: number): 0 | 1 {
+  if (value === 0 || value === 1) return value;
+  throw new Error(`SVG arc flag must be 0 or 1 (received ${value})`);
+}
+
+function clampCosine(value: number): number {
+  if (value > 1) return 1;
+  if (value < -1) return -1;
+  return value;
+}
+
+function vectorAngle(ux: number, uy: number, vx: number, vy: number): number {
+  const dot = ux * vx + uy * vy;
+  const len = Math.sqrt((ux * ux + uy * uy) * (vx * vx + vy * vy));
+  if (len === 0) return 0;
+  const cos = clampCosine(dot / len);
+  const sign = (ux * vy - uy * vx) < 0 ? -1 : 1;
+  return sign * Math.acos(cos);
+}
+
+function mapUnitPointToEllipse(
+  x: number,
+  y: number,
+  centerX: number,
+  centerY: number,
+  rx: number,
+  ry: number,
+  phiRad: number,
+): { x: number; y: number } {
+  const cosPhi = Math.cos(phiRad);
+  const sinPhi = Math.sin(phiRad);
+  const ex = x * rx;
+  const ey = y * ry;
+  return {
+    x: centerX + (cosPhi * ex - sinPhi * ey),
+    y: centerY + (sinPhi * ex + cosPhi * ey),
+  };
+}
+
+function approximateUnitArc(
+  theta: number,
+  delta: number,
+): {
+  cp1x: number;
+  cp1y: number;
+  cp2x: number;
+  cp2y: number;
+  x: number;
+  y: number;
+} {
+  const alpha = (4 / 3) * Math.tan(delta / 4);
+  const x1 = Math.cos(theta);
+  const y1 = Math.sin(theta);
+  const x2 = Math.cos(theta + delta);
+  const y2 = Math.sin(theta + delta);
+
+  return {
+    cp1x: x1 - y1 * alpha,
+    cp1y: y1 + x1 * alpha,
+    cp2x: x2 + y2 * alpha,
+    cp2y: y2 - x2 * alpha,
+    x: x2,
+    y: y2,
+  };
+}
+
+function arcToCubicSegments(input: ArcInput): ArcSegment[] {
+  const { x1, y1, x2, y2, xAxisRotation, largeArc, sweep } = input;
+  let rx = Math.abs(input.rx);
+  let ry = Math.abs(input.ry);
+
+  if (!Number.isFinite(rx) || !Number.isFinite(ry)) {
+    throw new Error("SVG arc radii must be finite numbers");
+  }
+
+  if ((rx === 0 || ry === 0) || (x1 === x2 && y1 === y2)) {
+    return [{ type: "lineTo", x: x2, y: y2 }];
+  }
+
+  const phi = (xAxisRotation * Math.PI) / 180;
+  const cosPhi = Math.cos(phi);
+  const sinPhi = Math.sin(phi);
+
+  const dx = (x1 - x2) / 2;
+  const dy = (y1 - y2) / 2;
+  const x1p = cosPhi * dx + sinPhi * dy;
+  const y1p = -sinPhi * dx + cosPhi * dy;
+
+  const rxSq = rx * rx;
+  const rySq = ry * ry;
+  const x1pSq = x1p * x1p;
+  const y1pSq = y1p * y1p;
+
+  const lambda = (x1pSq / rxSq) + (y1pSq / rySq);
+  if (lambda > 1) {
+    const scale = Math.sqrt(lambda);
+    rx *= scale;
+    ry *= scale;
+  }
+
+  const rxSq2 = rx * rx;
+  const rySq2 = ry * ry;
+
+  const numerator = (rxSq2 * rySq2) - (rxSq2 * y1p * y1p) - (rySq2 * x1p * x1p);
+  const denominator = (rxSq2 * y1p * y1p) + (rySq2 * x1p * x1p);
+  const ratio = denominator === 0 ? 0 : Math.max(0, numerator / denominator);
+  const sign = largeArc === sweep ? -1 : 1;
+  const coef = sign * Math.sqrt(ratio);
+
+  const cxp = coef * ((rx * y1p) / ry);
+  const cyp = coef * (-(ry * x1p) / rx);
+
+  const cx = cosPhi * cxp - sinPhi * cyp + (x1 + x2) / 2;
+  const cy = sinPhi * cxp + cosPhi * cyp + (y1 + y2) / 2;
+
+  const startUx = (x1p - cxp) / rx;
+  const startUy = (y1p - cyp) / ry;
+  const endUx = (-x1p - cxp) / rx;
+  const endUy = (-y1p - cyp) / ry;
+
+  let theta1 = vectorAngle(1, 0, startUx, startUy);
+  let deltaTheta = vectorAngle(startUx, startUy, endUx, endUy);
+
+  if (sweep === 0 && deltaTheta > 0) {
+    deltaTheta -= Math.PI * 2;
+  } else if (sweep === 1 && deltaTheta < 0) {
+    deltaTheta += Math.PI * 2;
+  }
+
+  const segments = Math.max(1, Math.ceil(Math.abs(deltaTheta) / (Math.PI / 2)));
+  const step = deltaTheta / segments;
+  const out: ArcSegment[] = [];
+
+  for (let index = 0; index < segments; index += 1) {
+    const unitSegment = approximateUnitArc(theta1, step);
+    const cp1 = mapUnitPointToEllipse(unitSegment.cp1x, unitSegment.cp1y, cx, cy, rx, ry, phi);
+    const cp2 = mapUnitPointToEllipse(unitSegment.cp2x, unitSegment.cp2y, cx, cy, rx, ry, phi);
+    const end = mapUnitPointToEllipse(unitSegment.x, unitSegment.y, cx, cy, rx, ry, phi);
+    out.push({
+      type: "cubicTo",
+      cp1x: cp1.x,
+      cp1y: cp1.y,
+      cp2x: cp2.x,
+      cp2y: cp2.y,
+      x: end.x,
+      y: end.y,
+    });
+    theta1 += step;
+  }
+
+  return out;
 }
 
 function getCachedSvgPath(raw: string): readonly SkiaPathCommand[] {
