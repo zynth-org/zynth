@@ -48,6 +48,7 @@ const enum PackedOpcode {
   Circle = 3,
   Line = 4,
   Path = 5,
+  RuntimeShaderRect = 6,
 }
 
 const enum PackedColorType {
@@ -153,7 +154,7 @@ function encodePackedCommands(commands: SkiaDrawCommand[]): PackedCommands {
 
   for (let i = 0; i < commands.length; i += 1) {
     const command = commands[i]!;
-    if (command.type !== "clear") {
+    if (command.type !== "clear" && command.type !== "runtimeShaderRect") {
       if (command.opacity != null && !caps.paintOpacity) {
         throw new Error("Skia feature unsupported: paint.opacity");
       }
@@ -277,6 +278,36 @@ function encodePackedCommands(commands: SkiaDrawCommand[]): PackedCommands {
           }
         }
         break;
+      case "runtimeShaderRect": {
+        encoded.push(
+          PackedOpcode.RuntimeShaderRect,
+          command.x,
+          command.y,
+          command.width,
+          command.height,
+          command.antiAlias === false ? 0 : 1,
+          caps.paintOpacity ? (command.opacity ?? 1) : 1,
+        );
+        const sourceIndex = addPackedString(stringTable, stringIndex, command.source);
+        encoded.push(sourceIndex);
+        const uniformNames = Object.keys(command.uniforms);
+        encoded.push(uniformNames.length);
+        for (let uniformIndex = 0; uniformIndex < uniformNames.length; uniformIndex += 1) {
+          const name = uniformNames[uniformIndex]!;
+          const uniformNameIndex = addPackedString(stringTable, stringIndex, name);
+          const uniformValue = command.uniforms[name]!;
+          encoded.push(uniformNameIndex);
+          if (Array.isArray(uniformValue)) {
+            encoded.push(uniformValue.length);
+            for (let valueIndex = 0; valueIndex < uniformValue.length; valueIndex += 1) {
+              encoded.push(uniformValue[valueIndex] ?? 0);
+            }
+          } else {
+            encoded.push(1, Number(uniformValue));
+          }
+        }
+        break;
+      }
     }
   }
 

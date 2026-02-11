@@ -3,6 +3,9 @@ import { createSignal } from "solid-js";
 import type {
   CreateSkiaValueOptions,
   SkiaColorValue,
+  SkiaRuntimeShaderUniformMap,
+  SkiaRuntimeEffect,
+  SkiaRuntimeUniforms,
   SkiaShaderInput,
   SkiaShaderProgram,
   SkiaUniformMap,
@@ -10,6 +13,8 @@ import type {
   SkiaUniformValue,
   SkiaValueTuple,
 } from "./types";
+
+type RuntimeShaderProgram = SkiaShaderProgram & { runtimeEffect: SkiaRuntimeEffect };
 
 type ShaderHelpers = {
   clamp(value: number, min: number, max: number): number;
@@ -70,6 +75,10 @@ const shaderHelpers: ShaderHelpers = {
 };
 
 function isAccessor(value: SkiaUniformValue): value is () => SkiaUniformPrimitive {
+  return typeof value === "function";
+}
+
+function isUniformMapAccessor(value: SkiaRuntimeUniforms): value is () => SkiaUniformMap {
   return typeof value === "function";
 }
 
@@ -182,6 +191,82 @@ export function createShader(
     },
   };
 }
+
+export function resolveRuntimeUniforms(uniforms?: SkiaRuntimeUniforms): SkiaUniformMap {
+  if (!uniforms) return {};
+  const resolved = isUniformMapAccessor(uniforms) ? uniforms() : uniforms;
+  return resolved && typeof resolved === "object" ? resolved : {};
+}
+
+export function createRuntimeEffect(source: string): SkiaRuntimeEffect | null {
+  if (typeof source !== "string" || source.trim().length === 0) {
+    return null;
+  }
+  const trimmedSource = source.trim();
+  const effect: SkiaRuntimeEffect = {
+    source: trimmedSource,
+    makeShader(uniforms = {}) {
+      const uniformMap = resolveRuntimeUniforms(uniforms);
+      return {
+        source: trimmedSource,
+        uniforms: uniformMap,
+        runtimeEffect: effect,
+        setUniform(name, value) {
+          uniformMap[name] = value;
+        },
+        evaluate() {
+          // Runtime shaders are executed natively; JS color evaluation is only a fallback.
+          return "#FFFFFFFF";
+        },
+      };
+    },
+  };
+  return effect;
+}
+
+export function isRuntimeShaderProgram(
+  program: SkiaShaderProgram | undefined,
+): program is RuntimeShaderProgram {
+  if (!program) return false;
+  return (
+    typeof program.runtimeEffect?.source === "string"
+    && program.runtimeEffect.source.trim().length > 0
+  );
+}
+
+export function resolveRuntimeShaderUniformMap(
+  uniforms: SkiaUniformMap,
+): SkiaRuntimeShaderUniformMap {
+  const output: SkiaRuntimeShaderUniformMap = {};
+  const keys = Object.keys(uniforms);
+  for (let index = 0; index < keys.length; index += 1) {
+    const key = keys[index]!;
+    const raw = uniforms[key];
+    if (raw == null) continue;
+    const value = isAccessor(raw) ? raw() : raw;
+    if (typeof value === "number") {
+      const parsed = normalizeNumber(value, 0);
+      output[key] = parsed;
+      continue;
+    }
+    if (Array.isArray(value)) {
+      const packed: number[] = [];
+      for (let i = 0; i < value.length; i += 1) {
+        packed.push(normalizeNumber(value[i], 0));
+      }
+      output[key] = packed;
+    }
+  }
+  return output;
+}
+
+export const Skia = {
+  RuntimeEffect: {
+    Make(source: string) {
+      return createRuntimeEffect(source);
+    },
+  },
+} as const;
 
 export function createSkiaValue<T>(
   initial: T,

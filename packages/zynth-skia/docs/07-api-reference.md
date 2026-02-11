@@ -11,13 +11,16 @@
 - `Rect`
 - `Circle`
 - `Path`
+- `Shader`
 
 ### Factories / helpers
 
 - `createSkiaSurface`
 - `createPath`
 - `createShader`
+- `createRuntimeEffect`
 - `createSkiaValue`
+- `Skia`
 - `getSkiaCapabilities`
 - `supportsSkiaFeature`
 - `assertSkiaFeature`
@@ -50,6 +53,8 @@
   - `{ type: "line", x1, y1, x2, y2, color, ...paintFields }`
 - `SkiaDrawPath`
   - `{ type: "path", commands, color, ...paintFields }`
+- `SkiaDrawRuntimeShaderRect`
+  - `{ type: "runtimeShaderRect", x, y, width, height, source, uniforms, antiAlias?, opacity? }`
 
 Shared paint fields:
 
@@ -82,7 +87,13 @@ Shared paint fields:
 ## Shader and value types
 
 - `SkiaShaderInput`
+- `SkiaShaderProps`
 - `SkiaShaderProgram`
+- `SkiaShaderSource`
+- `SkiaRuntimeEffect`
+- `SkiaRuntimeShaderUniform`
+- `SkiaRuntimeShaderUniformMap`
+- `SkiaRuntimeUniforms`
 - `SkiaUniformPrimitive`
 - `SkiaUniformValue`
 - `SkiaUniformMap`

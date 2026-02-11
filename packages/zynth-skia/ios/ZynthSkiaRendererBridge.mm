@@ -6,6 +6,7 @@
 #import <unordered_map>
 #import <vector>
 #import <algorithm>
+#import <cstring>
 
 #import "include/core/SkCanvas.h"
 #import "include/core/SkColor.h"
@@ -14,7 +15,9 @@
 #import "include/core/SkImageInfo.h"
 #import "include/core/SkPaint.h"
 #import "include/core/SkPath.h"
+#import "include/core/SkString.h"
 #import "include/core/SkSurface.h"
+#import "include/effects/SkRuntimeEffect.h"
 
 namespace {
 
@@ -24,6 +27,7 @@ enum PackedOpcode {
   PackedOpcodeCircle = 3,
   PackedOpcodeLine = 4,
   PackedOpcodePath = 5,
+  PackedOpcodeRuntimeShaderRect = 6,
 };
 
 enum PackedColorType {
@@ -112,6 +116,41 @@ static SkColor readPackedColor(const CommandBuffer &buffer,
 
   index += 1;
   return SK_ColorTRANSPARENT;
+}
+
+static const std::string *readPackedString(const CommandBuffer &buffer, int idx) {
+  if (idx < 0 || idx >= static_cast<int>(buffer.stringTable.size())) {
+    return nullptr;
+  }
+  return &buffer.stringTable[static_cast<size_t>(idx)];
+}
+
+static sk_sp<SkData> buildRuntimeUniformData(
+    const sk_sp<SkRuntimeEffect> &effect,
+    const std::unordered_map<std::string, std::vector<float>> &uniformValues) {
+  if (!effect) return nullptr;
+  const size_t uniformSize = effect->uniformSize();
+  std::vector<uint8_t> bytes(uniformSize, 0);
+
+  for (const SkRuntimeEffect::Uniform &uniform : effect->uniforms()) {
+    const auto found = uniformValues.find(std::string(uniform.name));
+    if (found == uniformValues.end()) {
+      continue;
+    }
+    const std::vector<float> &values = found->second;
+    if (values.empty()) continue;
+
+    const size_t slotCount = uniform.sizeInBytes() / sizeof(float);
+    if (slotCount == 0) continue;
+    const size_t copyCount = std::min(slotCount, values.size());
+    const size_t offset = uniform.offset;
+    if (offset + uniform.sizeInBytes() > bytes.size()) {
+      continue;
+    }
+    memcpy(bytes.data() + offset, values.data(), copyCount * sizeof(float));
+  }
+
+  return SkData::MakeWithCopy(bytes.data(), bytes.size());
 }
 
 static SkPaint::Cap decodeStrokeCap(int packedCap) {
@@ -344,6 +383,65 @@ static bool renderSurfaceState(const CommandBuffer &buffer,
       continue;
     }
 
+    if (opcode == PackedOpcodeRuntimeShaderRect) {
+      if (i + 7 >= buffer.ops.size()) break;
+      float x = static_cast<float>(buffer.ops[i++]);
+      float y = static_cast<float>(buffer.ops[i++]);
+      float w = static_cast<float>(buffer.ops[i++]);
+      float h = static_cast<float>(buffer.ops[i++]);
+      bool antiAlias = static_cast<int>(buffer.ops[i++]) != 0;
+      float opacity = static_cast<float>(buffer.ops[i++]);
+      int sourceIndex = static_cast<int>(buffer.ops[i++]);
+      int uniformCount = static_cast<int>(buffer.ops[i++]);
+      if (uniformCount < 0) break;
+
+      const std::string *sourcePtr = readPackedString(buffer, sourceIndex);
+      if (!sourcePtr) {
+        continue;
+      }
+
+      std::unordered_map<std::string, std::vector<float>> uniforms;
+      for (int uniformIndex = 0; uniformIndex < uniformCount; uniformIndex += 1) {
+        if (i + 1 >= buffer.ops.size()) break;
+        int nameIndex = static_cast<int>(buffer.ops[i++]);
+        int valueCount = static_cast<int>(buffer.ops[i++]);
+        if (valueCount < 0) break;
+        if (i + static_cast<size_t>(valueCount) > buffer.ops.size()) break;
+        const std::string *namePtr = readPackedString(buffer, nameIndex);
+        std::vector<float> values;
+        values.reserve(static_cast<size_t>(valueCount));
+        for (int valueIndex = 0; valueIndex < valueCount; valueIndex += 1) {
+          values.push_back(static_cast<float>(buffer.ops[i++]));
+        }
+        if (namePtr) {
+          uniforms[*namePtr] = std::move(values);
+        }
+      }
+
+      SkRuntimeEffect::Result result = SkRuntimeEffect::MakeForShader(SkString(sourcePtr->c_str()));
+      if (!result.effect) {
+        continue;
+      }
+
+      sk_sp<SkData> uniformData = buildRuntimeUniformData(result.effect, uniforms);
+      if (!uniformData) {
+        continue;
+      }
+
+      sk_sp<SkShader> runtimeShader = result.effect->makeShader(uniformData, nullptr, 0, nullptr);
+      if (!runtimeShader) {
+        continue;
+      }
+
+      SkPaint paint;
+      paint.setAntiAlias(antiAlias);
+      paint.setShader(runtimeShader);
+      paint.setAlphaf(std::max(0.0f, std::min(1.0f, opacity)));
+      paint.setStyle(SkPaint::kFill_Style);
+      canvas->drawRect(SkRect::MakeXYWH(x, y, w, h), paint);
+      continue;
+    }
+
     break;
   }
 
@@ -561,6 +659,46 @@ static bool encodeCommands(NSArray<NSDictionary *> *commands,
           outOps.push_back(PackedPathVerbClose);
         }
       }
+      continue;
+    }
+
+    if ([type isEqualToString:@"runtimeShaderRect"]) {
+      NSDictionary *uniforms = command[@"uniforms"];
+      if (![uniforms isKindOfClass:[NSDictionary class]]) {
+        uniforms = @{};
+      }
+
+      outOps.push_back(PackedOpcodeRuntimeShaderRect);
+      outOps.push_back([command[@"x"] doubleValue]);
+      outOps.push_back([command[@"y"] doubleValue]);
+      outOps.push_back([command[@"width"] doubleValue]);
+      outOps.push_back([command[@"height"] doubleValue]);
+      outOps.push_back(command[@"antiAlias"] ? ([command[@"antiAlias"] boolValue] ? 1.0 : 0.0) : 1.0);
+      outOps.push_back(command[@"opacity"] ? [command[@"opacity"] doubleValue] : 1.0);
+
+      NSString *source = command[@"source"];
+      int sourceIndex = addString(outStrings, index, [source isKindOfClass:[NSString class]] ? source : @"");
+      outOps.push_back(sourceIndex);
+
+      NSArray<NSString *> *names = [uniforms allKeys];
+      outOps.push_back(static_cast<double>(names.count));
+      for (NSString *name in names) {
+        int nameIndex = addString(outStrings, index, name);
+        outOps.push_back(nameIndex);
+
+        id value = uniforms[name];
+        if ([value isKindOfClass:[NSArray class]]) {
+          NSArray *array = (NSArray *)value;
+          outOps.push_back(static_cast<double>(array.count));
+          for (id item in array) {
+            outOps.push_back([item doubleValue]);
+          }
+          continue;
+        }
+        outOps.push_back(1.0);
+        outOps.push_back([value doubleValue]);
+      }
+      continue;
     }
   }
 

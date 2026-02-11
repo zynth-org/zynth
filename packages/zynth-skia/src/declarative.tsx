@@ -2,6 +2,12 @@ import { children, mergeProps, splitProps } from "solid-js";
 import type { Accessor, JSX, ParentComponent } from "solid-js";
 import { assertSkiaFeature } from "./native";
 import { resolvePathCommands } from "./path";
+import {
+  createShader,
+  isRuntimeShaderProgram,
+  resolveRuntimeShaderUniformMap,
+  resolveRuntimeUniforms,
+} from "./shader";
 import { SkiaView } from "./SkiaView";
 import {
   applyMatrixPoint,
@@ -17,23 +23,32 @@ import type {
   SkiaCircleProps,
   SkiaColorValue,
   SkiaDrawCommand,
+  SkiaDrawRuntimeShaderRect,
   SkiaGroupProps,
   SkiaPaintProps,
   SkiaPaintStyle,
   SkiaPathCommand,
   SkiaPathProps,
   SkiaRectProps,
+  SkiaRuntimeEffect,
+  SkiaRuntimeUniforms,
+  SkiaShaderProps,
   SkiaShaderProgram,
 } from "./types";
 
 const SKIA_NODE = Symbol("zynth.skia.node");
 
-type SkiaNodeKind = "group" | "paint" | "rect" | "circle" | "path";
+type SkiaNodeKind = "group" | "paint" | "rect" | "circle" | "path" | "shader";
 
 type SkiaNode<T extends object> = {
   readonly [SKIA_NODE]: true;
   readonly kind: SkiaNodeKind;
   readonly props: T & { children?: JSX.Element };
+};
+
+type ShaderNodeProps = {
+  source: SkiaShaderProgram | SkiaRuntimeEffect;
+  uniforms?: SkiaRuntimeUniforms;
 };
 
 type PaintState = {
@@ -127,6 +142,47 @@ function evaluateColor(
 ): SkiaColorValue {
   if (!shader) return fallback;
   return shader.evaluate(input);
+}
+
+function isRuntimeEffect(value: unknown): value is SkiaRuntimeEffect {
+  if (!value || typeof value !== "object") return false;
+  const runtimeEffect = value as Partial<SkiaRuntimeEffect>;
+  return typeof runtimeEffect.source === "string" && typeof runtimeEffect.makeShader === "function";
+}
+
+function createProgramFromShaderNode(props: ShaderNodeProps): SkiaShaderProgram {
+  if (isRuntimeEffect(props.source)) {
+    return props.source.makeShader(props.uniforms);
+  }
+  if (isRuntimeShaderProgram(props.source)) {
+    const uniforms = resolveRuntimeUniforms(props.uniforms);
+    return props.source.runtimeEffect!.makeShader({
+      ...props.source.uniforms,
+      ...uniforms,
+    });
+  }
+  const uniforms = resolveRuntimeUniforms(props.uniforms);
+  if (Object.keys(uniforms).length === 0) {
+    return props.source;
+  }
+  return createShader(props.source.source, {
+    ...props.source.uniforms,
+    ...uniforms,
+  });
+}
+
+function resolveShaderChild(
+  value: unknown,
+): SkiaShaderProgram | undefined {
+  const items = toChildArray(value);
+  for (let index = 0; index < items.length; index += 1) {
+    const child = items[index];
+    if (!isNode(child) || child.kind !== "shader") {
+      continue;
+    }
+    return createProgramFromShaderNode(child.props as ShaderNodeProps);
+  }
+  return undefined;
 }
 
 function mergePaint(state: CompileState, props: Partial<SkiaPaintProps>): PaintState {
@@ -228,12 +284,44 @@ function compileShapeRect(
   const width = readNumber(props.width);
   const height = readNumber(props.height);
   const paint = mergePaint(state, props);
+  const childShader = resolveShaderChild(props.children);
+  if (childShader) {
+    paint.shader = childShader;
+  }
+  const runtimeShader = paint.shader;
 
   const p1 = applyMatrixPoint(state.transform, x, y);
   const p2 = applyMatrixPoint(state.transform, x + width, y);
   const p3 = applyMatrixPoint(state.transform, x + width, y + height);
   const p4 = applyMatrixPoint(state.transform, x, y + height);
   const bounds = boundsFromPoints([p1, p2, p3, p4]);
+  const x1 = Math.min(p1.x, p3.x);
+  const y1 = Math.min(p1.y, p3.y);
+  const w = Math.abs(p3.x - p1.x);
+  const h = Math.abs(p3.y - p1.y);
+
+  if (runtimeShader && isRuntimeShaderProgram(runtimeShader)) {
+    if (!isAxisAligned(state.transform)) {
+      throw new Error("Skia runtime shaders currently support axis-aligned Rect only");
+    }
+    if (paint.style === "stroke") {
+      throw new Error("Skia runtime shaders currently support fill style only");
+    }
+    const runtimeCommand: SkiaDrawRuntimeShaderRect = {
+      type: "runtimeShaderRect",
+      x: x1,
+      y: y1,
+      width: w,
+      height: h,
+      source: runtimeShader.runtimeEffect.source,
+      uniforms: resolveRuntimeShaderUniformMap(runtimeShader.uniforms),
+      antiAlias: paint.antiAlias,
+      opacity: paint.opacity,
+    };
+    pushPaintedShape(out, runtimeCommand);
+    return;
+  }
+
   const color = evaluateColor(paint.shader, paint.color, {
     x: bounds.x,
     y: bounds.y,
@@ -243,10 +331,6 @@ function compileShapeRect(
   });
 
   if (isAxisAligned(state.transform)) {
-    const x1 = Math.min(p1.x, p3.x);
-    const y1 = Math.min(p1.y, p3.y);
-    const w = Math.abs(p3.x - p1.x);
-    const h = Math.abs(p3.y - p1.y);
     pushPaintedShape(out, {
       type: "rect",
       x: x1,
@@ -296,6 +380,13 @@ function compileShapeCircle(
   const cy = readNumber(props.cy);
   const r = readNumber(props.r);
   const paint = mergePaint(state, props);
+  const childShader = resolveShaderChild(props.children);
+  if (childShader) {
+    paint.shader = childShader;
+  }
+  if (isRuntimeShaderProgram(paint.shader)) {
+    throw new Error("Skia runtime shaders currently support Rect only");
+  }
 
   const center = applyMatrixPoint(state.transform, cx, cy);
   const right = applyMatrixPoint(state.transform, cx + r, cy);
@@ -370,6 +461,13 @@ function compileShapePath(
 ) {
   const sourceCommands = resolvePathCommands(props.path);
   const paint = mergePaint(state, props);
+  const childShader = resolveShaderChild(props.children);
+  if (childShader) {
+    paint.shader = childShader;
+  }
+  if (isRuntimeShaderProgram(paint.shader)) {
+    throw new Error("Skia runtime shaders currently support Rect only");
+  }
 
   assertSkiaFeature("paths", "Path");
   if (hasCurveCommands(sourceCommands)) {
@@ -439,13 +537,16 @@ function compileNode(
 
   if (value.kind === "paint") {
     const props = value.props as SkiaPaintProps;
+    const shader = resolveShaderChild(props.children) ?? props.shader;
     const paintState: CompileState = {
       transform: state.transform,
-      paint: mergePaint(state, props),
+      paint: mergePaint(state, { ...props, shader }),
     };
     const items = toChildArray(props.children);
     for (let index = 0; index < items.length; index += 1) {
-      compileNode(items[index], paintState, time, out);
+      const item = items[index];
+      if (isNode(item) && item.kind === "shader") continue;
+      compileNode(item, paintState, time, out);
     }
     return;
   }
@@ -457,6 +558,10 @@ function compileNode(
 
   if (value.kind === "circle") {
     compileShapeCircle(value.props as SkiaCircleProps, state, time, out);
+    return;
+  }
+
+  if (value.kind === "shader") {
     return;
   }
 
@@ -548,13 +653,32 @@ export function Paint(props: SkiaPaintProps): JSX.Element {
 }
 
 export function Rect(props: SkiaRectProps): JSX.Element {
-  return createNode("rect", props) as unknown as JSX.Element;
+  const resolved = children(() => props.children);
+  return createNode("rect", {
+    ...props,
+    children: resolved,
+  }) as unknown as JSX.Element;
 }
 
 export function Circle(props: SkiaCircleProps): JSX.Element {
-  return createNode("circle", props) as unknown as JSX.Element;
+  const resolved = children(() => props.children);
+  return createNode("circle", {
+    ...props,
+    children: resolved,
+  }) as unknown as JSX.Element;
 }
 
 export function Path(props: SkiaPathProps): JSX.Element {
-  return createNode("path", props) as unknown as JSX.Element;
+  const resolved = children(() => props.children);
+  return createNode("path", {
+    ...props,
+    children: resolved,
+  }) as unknown as JSX.Element;
+}
+
+export function Shader(props: SkiaShaderProps): JSX.Element {
+  return createNode("shader", {
+    source: props.source,
+    uniforms: props.uniforms,
+  }) as unknown as JSX.Element;
 }

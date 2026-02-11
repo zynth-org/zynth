@@ -82,12 +82,28 @@ export type SkiaDrawPath = {
   strokeMiter?: number;
 };
 
+export type SkiaRuntimeShaderUniform = number | readonly number[];
+export type SkiaRuntimeShaderUniformMap = Record<string, SkiaRuntimeShaderUniform>;
+
+export type SkiaDrawRuntimeShaderRect = {
+  type: "runtimeShaderRect";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  source: string;
+  uniforms: SkiaRuntimeShaderUniformMap;
+  antiAlias?: boolean;
+  opacity?: number;
+};
+
 export type SkiaDrawCommand =
   | SkiaDrawClear
   | SkiaDrawRect
   | SkiaDrawCircle
   | SkiaDrawLine
-  | SkiaDrawPath;
+  | SkiaDrawPath
+  | SkiaDrawRuntimeShaderRect;
 
 export type SkiaFrameSpec = {
   clear?: SkiaColorValue;
@@ -119,6 +135,7 @@ export type SkiaUniformValue =
   | Accessor<SkiaUniformPrimitive>;
 
 export type SkiaUniformMap = Record<string, SkiaUniformValue>;
+export type SkiaRuntimeUniforms = SkiaUniformMap | Accessor<SkiaUniformMap>;
 
 export type SkiaShaderInput = {
   x: number;
@@ -133,6 +150,19 @@ export type SkiaShaderProgram = {
   uniforms: SkiaUniformMap;
   evaluate(input: SkiaShaderInput): SkiaColorValue;
   setUniform(name: string, value: SkiaUniformValue): void;
+  runtimeEffect?: SkiaRuntimeEffect;
+};
+
+export type SkiaRuntimeEffect = {
+  source: string;
+  makeShader(uniforms?: SkiaRuntimeUniforms): SkiaShaderProgram;
+};
+
+export type SkiaShaderSource = SkiaShaderProgram | SkiaRuntimeEffect;
+
+export type SkiaShaderProps = {
+  source: SkiaShaderSource;
+  uniforms?: SkiaRuntimeUniforms;
 };
 
 export type SkiaPaintStyle = "fill" | "stroke";
@@ -191,6 +221,7 @@ export type SkiaRectProps = {
   strokeJoin?: SkiaStrokeJoin;
   strokeMiter?: number;
   shader?: SkiaShaderProgram;
+  children?: JSX.Element;
 };
 
 export type SkiaCircleProps = {
@@ -206,6 +237,7 @@ export type SkiaCircleProps = {
   strokeJoin?: SkiaStrokeJoin;
   strokeMiter?: number;
   shader?: SkiaShaderProgram;
+  children?: JSX.Element;
 };
 
 export type SkiaPathObject = {
@@ -239,6 +271,7 @@ export type SkiaPathProps = {
   strokeJoin?: SkiaStrokeJoin;
   strokeMiter?: number;
   shader?: SkiaShaderProgram;
+  children?: JSX.Element;
 };
 
 export type SkiaFeature =

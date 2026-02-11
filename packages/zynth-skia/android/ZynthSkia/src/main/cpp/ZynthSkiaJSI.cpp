@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -17,11 +18,14 @@
 
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
+#include "include/core/SkData.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
 #include "include/core/SkRect.h"
+#include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
+#include "include/effects/SkRuntimeEffect.h"
 
 using namespace facebook::jsi;
 
@@ -34,6 +38,7 @@ constexpr int kOpcodeRect = 2;
 constexpr int kOpcodeCircle = 3;
 constexpr int kOpcodeLine = 4;
 constexpr int kOpcodePath = 5;
+constexpr int kOpcodeRuntimeShaderRect = 6;
 
 constexpr int kColorTypeInt = 1;
 constexpr int kColorTypeString = 2;
@@ -143,6 +148,41 @@ SkColor readPackedColor(const SurfaceState::CommandBuffer &buffer, const std::ve
   }
 
   return SK_ColorTRANSPARENT;
+}
+
+const std::string *readPackedString(const SurfaceState::CommandBuffer &buffer, int idx) {
+  if (idx < 0 || idx >= static_cast<int>(buffer.stringTable.size())) {
+    return nullptr;
+  }
+  return &buffer.stringTable[static_cast<size_t>(idx)];
+}
+
+sk_sp<SkData> buildRuntimeUniformData(
+    const sk_sp<SkRuntimeEffect> &effect,
+    const std::unordered_map<std::string, std::vector<float>> &uniformValues) {
+  if (!effect) return nullptr;
+  const size_t uniformSize = effect->uniformSize();
+  std::vector<uint8_t> bytes(uniformSize, 0);
+
+  for (const SkRuntimeEffect::Uniform &uniform : effect->uniforms()) {
+    const auto found = uniformValues.find(std::string(uniform.name));
+    if (found == uniformValues.end()) {
+      continue;
+    }
+    const std::vector<float> &values = found->second;
+    if (values.empty()) continue;
+
+    const size_t slotCount = uniform.sizeInBytes() / sizeof(float);
+    if (slotCount == 0) continue;
+    const size_t copyCount = std::min(slotCount, values.size());
+    const size_t offset = uniform.offset;
+    if (offset + uniform.sizeInBytes() > bytes.size()) {
+      continue;
+    }
+    memcpy(bytes.data() + offset, values.data(), copyCount * sizeof(float));
+  }
+
+  return SkData::MakeWithCopy(bytes.data(), bytes.size());
 }
 
 SkPaint::Cap decodeStrokeCap(int cap) {
@@ -374,6 +414,65 @@ bool renderSurfaceState(
       continue;
     }
 
+    if (opcode == kOpcodeRuntimeShaderRect) {
+      if (i + 7 >= buffer.ops.size()) break;
+      const float x = static_cast<float>(buffer.ops[i++]);
+      const float y = static_cast<float>(buffer.ops[i++]);
+      const float w = static_cast<float>(buffer.ops[i++]);
+      const float h = static_cast<float>(buffer.ops[i++]);
+      const bool antiAlias = static_cast<int>(buffer.ops[i++]) != 0;
+      const float opacity = static_cast<float>(buffer.ops[i++]);
+      const int sourceIndex = static_cast<int>(buffer.ops[i++]);
+      const int uniformCount = static_cast<int>(buffer.ops[i++]);
+      if (uniformCount < 0) break;
+
+      const std::string *sourcePtr = readPackedString(buffer, sourceIndex);
+      if (!sourcePtr) {
+        continue;
+      }
+
+      std::unordered_map<std::string, std::vector<float>> uniforms;
+      for (int uniformIndex = 0; uniformIndex < uniformCount; uniformIndex += 1) {
+        if (i + 1 >= buffer.ops.size()) break;
+        const int nameIndex = static_cast<int>(buffer.ops[i++]);
+        const int valueCount = static_cast<int>(buffer.ops[i++]);
+        if (valueCount < 0) break;
+        if (i + static_cast<size_t>(valueCount) > buffer.ops.size()) break;
+        const std::string *namePtr = readPackedString(buffer, nameIndex);
+        std::vector<float> values;
+        values.reserve(static_cast<size_t>(valueCount));
+        for (int valueIndex = 0; valueIndex < valueCount; valueIndex += 1) {
+          values.push_back(static_cast<float>(buffer.ops[i++]));
+        }
+        if (namePtr) {
+          uniforms[*namePtr] = std::move(values);
+        }
+      }
+
+      SkRuntimeEffect::Result result = SkRuntimeEffect::MakeForShader(SkString(sourcePtr->c_str()));
+      if (!result.effect) {
+        continue;
+      }
+
+      sk_sp<SkData> uniformData = buildRuntimeUniformData(result.effect, uniforms);
+      if (!uniformData) {
+        continue;
+      }
+
+      sk_sp<SkShader> runtimeShader = result.effect->makeShader(uniformData, nullptr, 0, nullptr);
+      if (!runtimeShader) {
+        continue;
+      }
+
+      SkPaint paint;
+      paint.setAntiAlias(antiAlias);
+      paint.setShader(runtimeShader);
+      paint.setAlphaf(std::max(0.0f, std::min(1.0f, opacity)));
+      paint.setStyle(SkPaint::kFill_Style);
+      canvas->drawRect(SkRect::MakeXYWH(x, y, w, h), paint);
+      continue;
+    }
+
     break;
   }
 
@@ -586,6 +685,67 @@ void encodeCommandsFromJS(
         if (pathType == "close") {
           outOps.push_back(static_cast<double>(kPathVerbClose));
         }
+      }
+      continue;
+    }
+
+    if (type == "runtimeShaderRect") {
+      outOps.push_back(static_cast<double>(kOpcodeRuntimeShaderRect));
+      outOps.push_back(readNumberProp(rt, command, "x", 0));
+      outOps.push_back(readNumberProp(rt, command, "y", 0));
+      outOps.push_back(readNumberProp(rt, command, "width", 0));
+      outOps.push_back(readNumberProp(rt, command, "height", 0));
+      const Value antiAlias = command.getProperty(rt, "antiAlias");
+      outOps.push_back(antiAlias.isBool() ? (antiAlias.getBool() ? 1.0 : 0.0) : 1.0);
+      outOps.push_back(readNumberProp(rt, command, "opacity", 1));
+
+      const std::string source = readStringProp(rt, command, "source", "");
+      const int sourceIndex = addString(outStrings, stringIndex, source);
+      outOps.push_back(static_cast<double>(sourceIndex));
+
+      Value uniformsValue = command.getProperty(rt, "uniforms");
+      if (!uniformsValue.isObject()) {
+        outOps.push_back(0.0);
+        continue;
+      }
+      Object uniformsObject = uniformsValue.asObject(rt);
+      Array names = uniformsObject.getPropertyNames(rt);
+      const size_t nameCount = names.length(rt);
+      outOps.push_back(static_cast<double>(nameCount));
+
+      for (size_t uniformIndex = 0; uniformIndex < nameCount; uniformIndex += 1) {
+        Value nameValue = names.getValueAtIndex(rt, uniformIndex);
+        if (!nameValue.isString()) {
+          outOps.push_back(-1.0);
+          outOps.push_back(0.0);
+          continue;
+        }
+        const std::string name = nameValue.asString(rt).utf8(rt);
+        const int nameIndex = addString(outStrings, stringIndex, name);
+        outOps.push_back(static_cast<double>(nameIndex));
+
+        Value uniformValue = uniformsObject.getProperty(rt, name.c_str());
+        if (uniformValue.isNumber()) {
+          outOps.push_back(1.0);
+          outOps.push_back(uniformValue.asNumber());
+          continue;
+        }
+
+        if (uniformValue.isObject()) {
+          Object uniformObject = uniformValue.asObject(rt);
+          if (uniformObject.isArray(rt)) {
+            Array uniformArray = uniformObject.asArray(rt);
+            const size_t uniformLength = uniformArray.length(rt);
+            outOps.push_back(static_cast<double>(uniformLength));
+            for (size_t valueIndex = 0; valueIndex < uniformLength; valueIndex += 1) {
+              Value element = uniformArray.getValueAtIndex(rt, valueIndex);
+              outOps.push_back(element.isNumber() ? element.asNumber() : 0.0);
+            }
+            continue;
+          }
+        }
+
+        outOps.push_back(0.0);
       }
       continue;
     }
