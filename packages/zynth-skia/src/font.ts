@@ -1,5 +1,6 @@
 import { createEffect, createSignal } from "solid-js";
 import type { Accessor } from "solid-js";
+import { Font } from "@zynth/apis";
 import type {
   SkiaFont,
   SkiaFontManager,
@@ -249,31 +250,18 @@ async function ensureNativeFontLoaded(
   resourceName: string,
   source?: unknown,
 ): Promise<void> {
-  const modules = getModulesBridge();
-  if (!modules?.call || familyName.length === 0 || resourceName.length === 0) {
-    console.warn(
-      `[SkiaFont] ensureNativeFontLoaded skipped family=${familyName} resource=${resourceName} bridge=${Boolean(modules?.call)}`,
-    );
-    return;
-  }
   try {
     console.log(
       `[SkiaFont] ensureNativeFontLoaded start family=${familyName} resource=${resourceName}`,
     );
 
-    // If source is a descriptor, use it to resolve a full URL for fetch
-    let fetchUrl: string | null = resourceName;
-    if (source && typeof source === "object") {
-      const maybe = source as { resourceName?: unknown };
-      if (maybe.resourceName) {
-        fetchUrl = resolveAssetUrl(maybe.resourceName) ?? resourceName;
-      }
-    }
-
-    const result = (await modules.call("Font", "loadAsync", {
-      fontFamily: familyName,
-      resourceName: fetchUrl ?? resourceName,
-    })) as { success: boolean; path?: string };
+    // Use centralized Font API from @zynth/apis
+    // It handles dev server URLs, promise caching, and native communication.
+    // If the user already called await Font.loadAsync at top level, this will resolve immediately with cached result.
+    const result = await Font.loadAsync(
+      familyName,
+      (source as any)?.resourceName ?? resourceName,
+    );
 
     console.log(
       `[SkiaFont] ensureNativeFontLoaded result family=${familyName}:`,
@@ -283,53 +271,38 @@ async function ensureNativeFontLoaded(
     const skia = getSkiaBridge();
     if (skia?.registerFont) {
       if (result.success && result.path) {
-        console.log(
-          `[SkiaFont] Registering font via native path: ${result.path}`,
-        );
+        console.log(`[SkiaFont] Registering font via native path: ${result.path}`);
         const success = skia.registerFont(familyName, result.path);
         if (success) {
-          console.log(
-            `[SkiaFont] registerFont via path successful family=${familyName}`,
-          );
+          console.log(`[SkiaFont] registerFont via path successful family=${familyName}`);
           return;
         }
-        console.warn(
-          `[SkiaFont] registerFont via path failed family=${familyName}, falling back to fetch`,
-        );
+        console.warn(`[SkiaFont] registerFont via path failed family=${familyName}, falling back to fetch`);
       }
 
-      console.log(
-        `[SkiaFont] registerFont with Skia bridge family=${familyName} url=${fetchUrl}`,
-      );
+      // Fallback to fetch if path registration failed or wasn't provided
+      // Use the URL from resourceName or descriptor
+      const fetchUrl = resolveAssetUrl((source as any)?.resourceName ?? resourceName) ?? resourceName;
+      
+      console.log(`[SkiaFont] registerFont with Skia bridge family=${familyName} url=${fetchUrl}`);
       try {
         if (typeof fetch === "undefined") {
           throw new Error("fetch is not defined in this environment");
         }
-        const response = await fetch(fetchUrl ?? resourceName);
+        const response = await fetch(fetchUrl);
         if (!response.ok) {
           throw new Error(`Failed to fetch font: ${response.statusText}`);
         }
         const buffer = await response.arrayBuffer();
-        console.log(
-          `[SkiaFont] Calling registerFont with buffer size=${buffer.byteLength}`,
-        );
+        console.log(`[SkiaFont] Calling registerFont with buffer size=${buffer.byteLength}`);
         const success = skia.registerFont(familyName, buffer);
-        console.log(
-          `[SkiaFont] registerFont with Skia bridge result family=${familyName}: ${success}`,
-        );
+        console.log(`[SkiaFont] registerFont with Skia bridge result family=${familyName}: ${success}`);
       } catch (e: any) {
-        console.error(
-          `[SkiaFont] registerFont with Skia bridge failed family=${familyName}:`,
-          e?.message ?? e,
-        );
+        console.error(`[SkiaFont] registerFont with Skia bridge failed family=${familyName}:`, e?.message ?? e);
       }
     }
   } catch (e: any) {
-    console.error(
-      `[SkiaFont] ensureNativeFontLoaded failed family=${familyName} resource=${resourceName}:`,
-      e?.message ?? e,
-    );
-    // Ignore load errors and still return a font object so system fallback can render.
+    console.error(`[SkiaFont] ensureNativeFontLoaded failed family=${familyName} resource=${resourceName}:`, e?.message ?? e);
   }
 }
 

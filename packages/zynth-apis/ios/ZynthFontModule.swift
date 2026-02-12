@@ -186,7 +186,16 @@ public class ZynthFontModule: ZynthModule {
         
         // 7. Register the font
         var error: Unmanaged<CFError>?
-        let success = CTFontManagerRegisterFontsForURL(targetURL as CFURL, .process, &error)
+        var success = false
+        
+        // Use main thread for registration to avoid potential hangs during initialization
+        if (Thread.isMainThread) {
+            success = CTFontManagerRegisterFontsForURL(targetURL as CFURL, .process, &error)
+        } else {
+            DispatchQueue.main.sync {
+                success = CTFontManagerRegisterFontsForURL(targetURL as CFURL, .process, &error)
+            }
+        }
         
         if !success {
              if let error = error?.takeRetainedValue() {

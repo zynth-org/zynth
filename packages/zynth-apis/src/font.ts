@@ -1,3 +1,5 @@
+import { createSignal, createEffect, createResource, type Accessor, type Resource } from "solid-js";
+
 type ModulesBridge = {
   call?(
     name: string,
@@ -9,7 +11,7 @@ type ModulesBridge = {
 type WebFontSources = Record<string, string>;
 const webLoadedFonts = new Set<string>();
 const fontLoadState = new Map<string, "loading" | "loaded" | "error">();
-const fontLoadPromises = new Map<string, Promise<void>>();
+const fontLoadPromises = new Map<string, Promise<FontLoadResult>>();
 const fontLoadListeners = new Map<string, Set<() => void>>();
 const fontRegistry = new Map<
   string,
@@ -172,64 +174,88 @@ export interface FontAssetDescriptor {
   devPath?: string;
 }
 
+export type FontLoadResult = {
+  success: boolean;
+  path?: string;
+  error?: string;
+};
+
 export const Font = {
   loadAsync: async (
     fontFamily: string,
     resource: string | FontAssetDescriptor,
-  ): Promise<void> => {
-    let resourceName: string;
+  ): Promise<FontLoadResult> => {
+    // Check if already loading or loaded to avoid redundant calls
+    if (fontLoadPromises.has(fontFamily)) {
+      console.log(`[Font] loadAsync re-using existing promise for ${fontFamily}`);
+      return (fontLoadPromises.get(fontFamily) as unknown) as Promise<FontLoadResult>;
+    }
 
-    if (
-      typeof resource === "object" &&
-      resource !== null &&
-      "type" in resource &&
-      resource.type === "font"
-    ) {
-      const descriptor = resource as FontAssetDescriptor;
-      if (descriptor.devPath) {
-        const globalObj = getGlobalObject();
-        const devServerUrl = (globalObj.__ZYNTH_DEV_SERVER_URL as string) || "";
-        if (devServerUrl) {
-          // Construct /@fs/ URL for dev server
-          resourceName = `${devServerUrl}/@fs/${descriptor.devPath}`;
+    const loadPromise = (async (): Promise<FontLoadResult> => {
+      let resourceName: string;
+
+      if (
+        typeof resource === "object" &&
+        resource !== null &&
+        "type" in resource &&
+        resource.type === "font"
+      ) {
+        const descriptor = resource as FontAssetDescriptor;
+        if (descriptor.devPath) {
+          const globalObj = getGlobalObject();
+          const devServerUrl = (globalObj.__ZYNTH_DEV_SERVER_URL as string) || "";
+          if (devServerUrl) {
+            // Construct /@fs/ URL for dev server
+            resourceName = `${devServerUrl}/@fs/${descriptor.devPath}`;
+          } else {
+            resourceName = descriptor.devPath;
+          }
+        } else if (descriptor.relativePath) {
+          resourceName = descriptor.relativePath;
         } else {
-          resourceName = descriptor.devPath;
+          resourceName = `${descriptor.name}.${descriptor.ext}`;
         }
-      } else if (descriptor.relativePath) {
-        resourceName = descriptor.relativePath;
       } else {
-        resourceName = `${descriptor.name}.${descriptor.ext}`;
+        resourceName = resource as string;
       }
-    } else {
-      resourceName = resource as string;
-    }
 
-    console.log(
-      `[Font] loadAsync start family=${fontFamily} resourceName=${resourceName}`,
-    );
-    // Check for web environment
-    if (typeof document !== "undefined") {
-      await loadWebFont(fontFamily, resourceName);
-      console.log(`[Font] loadAsync web done family=${fontFamily}`);
-      return;
-    }
-
-    const bridge = getModulesBridge();
-    if (!bridge || !bridge.call) {
-      console.warn(
-        `[Font] loadAsync no native bridge family=${fontFamily} resourceName=${resourceName}`,
+      console.log(
+        `[Font] loadAsync start family=${fontFamily} resourceName=${resourceName}`,
       );
-      return;
-    }
+      // Check for web environment
+      if (typeof document !== "undefined") {
+        await loadWebFont(fontFamily, resourceName);
+        console.log(`[Font] loadAsync web done family=${fontFamily}`);
+        return { success: true };
+      }
 
-    const result = await bridge.call("Font", "loadAsync", {
-      fontFamily,
-      resourceName,
-    });
-    console.log(
-      `[Font] loadAsync native result family=${fontFamily}:`,
-      JSON.stringify(result),
-    );
+      const bridge = getModulesBridge();
+      if (!bridge || !bridge.call) {
+        console.warn(
+          `[Font] loadAsync no native bridge family=${fontFamily} resourceName=${resourceName}`,
+        );
+        return { success: false, error: "No native bridge" };
+      }
+
+      try {
+        const result = (await bridge.call("Font", "loadAsync", {
+          fontFamily,
+          resourceName,
+        })) as FontLoadResult;
+
+        console.log(
+          `[Font] loadAsync native result family=${fontFamily}:`,
+          JSON.stringify(result),
+        );
+        return result;
+      } catch (e: any) {
+        console.error(`[Font] loadAsync native failed family=${fontFamily}:`, e);
+        return { success: false, error: e?.message ?? String(e) };
+      }
+    })();
+
+    fontLoadPromises.set(fontFamily, loadPromise);
+    return loadPromise;
   },
   register: (
     fontFamily: string,
@@ -304,10 +330,14 @@ export const Font = {
     }
 
     const promise = Font.loadAsync(fontFamily, resourceToLoad)
-      .then(() => {
-        fontLoadState.set(fontFamily, "loaded");
-        console.log(`[Font] ensureLoaded loaded family=${fontFamily}`);
-        notifyFontLoaded(fontFamily);
+      .then((result) => {
+        if (result.success) {
+          fontLoadState.set(fontFamily, "loaded");
+          console.log(`[Font] ensureLoaded loaded family=${fontFamily}`);
+          notifyFontLoaded(fontFamily);
+        } else {
+          throw new Error(result.error ?? "Unknown error");
+        }
       })
       .catch((error) => {
         fontLoadState.set(fontFamily, "error");
@@ -322,3 +352,38 @@ export const Font = {
     await promise;
   },
 };
+
+/**
+ * Utility to load multiple fonts and return a Solid Resource.
+ * Integrates with Suspense and ErrorBoundary.
+ *
+ * @example
+ * const fonts = createFontLoader({ "Diablo": diabloFont });
+ *
+ * // In JSX
+ * <Suspense fallback={<Loading />}>
+ *   <MyContent ready={fonts()} />
+ * </Suspense>
+ */
+export function createFontLoader(
+  map: Record<string, string | FontAssetDescriptor>,
+): Resource<boolean> {
+  const [resource] = createResource(async () => {
+    console.log("[FontLoader] Starting resource fetch");
+    const families = Object.keys(map);
+    const results = await Promise.all(
+      families.map((family) => Font.loadAsync(family, map[family]!)),
+    );
+
+    const failed = results.find((r) => !r.success);
+    if (failed) {
+      console.error("[FontLoader] Failed to load fonts:", failed.error);
+      throw new Error(failed.error ?? "Failed to load one or more fonts");
+    }
+
+    console.log("[FontLoader] All fonts ready");
+    return true;
+  });
+
+  return resource;
+}

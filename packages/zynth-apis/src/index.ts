@@ -1,12 +1,22 @@
 import { OS, Platform } from "./platform";
 import { Dimensions } from "./dimensions";
-import { Font } from "./font";
+import { Font, createFontLoader } from "./font";
 import { Glyphs } from "./glyphs";
 import { AppState } from "./app-state";
 import { Network } from "./network";
 import { Device } from "./device";
 
-export { OS, Platform, Dimensions, Font, Glyphs, AppState, Network, Device };
+export {
+  OS,
+  Platform,
+  Dimensions,
+  Font,
+  createFontLoader,
+  Glyphs,
+  AppState,
+  Network,
+  Device,
+};
 export type { PlatformSelectSpec } from "./platform";
 export type {
   DimensionMetrics,
