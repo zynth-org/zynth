@@ -82,7 +82,15 @@ export type SkiaDrawPath = {
   strokeMiter?: number;
 };
 
-export type SkiaRuntimeShaderUniform = number | readonly number[];
+export type SkiaSharedSignalToken = {
+  __zynth_shared_value: number;
+  __zynth_shared_signal_current: number;
+};
+
+export type SkiaRuntimeShaderScalar = number | SkiaSharedSignalToken;
+export type SkiaRuntimeShaderUniform =
+  | SkiaRuntimeShaderScalar
+  | readonly SkiaRuntimeShaderScalar[];
 export type SkiaRuntimeShaderUniformMap = Record<string, SkiaRuntimeShaderUniform>;
 
 export type SkiaDrawRuntimeShaderRect = {
@@ -97,13 +105,35 @@ export type SkiaDrawRuntimeShaderRect = {
   opacity?: number;
 };
 
+export type SkiaDrawRuntimeShaderCircle = {
+  type: "runtimeShaderCircle";
+  cx: number;
+  cy: number;
+  r: number;
+  source: string;
+  uniforms: SkiaRuntimeShaderUniformMap;
+  antiAlias?: boolean;
+  opacity?: number;
+};
+
+export type SkiaDrawRuntimeShaderPath = {
+  type: "runtimeShaderPath";
+  commands: readonly SkiaPathCommand[];
+  source: string;
+  uniforms: SkiaRuntimeShaderUniformMap;
+  antiAlias?: boolean;
+  opacity?: number;
+};
+
 export type SkiaDrawCommand =
   | SkiaDrawClear
   | SkiaDrawRect
   | SkiaDrawCircle
   | SkiaDrawLine
   | SkiaDrawPath
-  | SkiaDrawRuntimeShaderRect;
+  | SkiaDrawRuntimeShaderRect
+  | SkiaDrawRuntimeShaderCircle
+  | SkiaDrawRuntimeShaderPath;
 
 export type SkiaFrameSpec = {
   clear?: SkiaColorValue;

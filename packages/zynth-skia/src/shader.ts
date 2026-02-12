@@ -4,6 +4,7 @@ import type {
   CreateSkiaValueOptions,
   SkiaColorValue,
   SkiaRuntimeShaderUniformMap,
+  SkiaSharedSignalToken,
   SkiaRuntimeEffect,
   SkiaRuntimeUniforms,
   SkiaShaderInput,
@@ -76,6 +77,15 @@ const shaderHelpers: ShaderHelpers = {
 
 function isAccessor(value: SkiaUniformValue): value is () => SkiaUniformPrimitive {
   return typeof value === "function";
+}
+
+function isSharedSignalToken(value: unknown): value is SkiaSharedSignalToken {
+  if (!value || typeof value !== "object") return false;
+  const token = value as Partial<SkiaSharedSignalToken>;
+  return (
+    typeof token.__zynth_shared_value === "number"
+    && typeof token.__zynth_shared_signal_current === "number"
+  );
 }
 
 function isUniformMapAccessor(value: SkiaRuntimeUniforms): value is () => SkiaUniformMap {
@@ -244,15 +254,24 @@ export function resolveRuntimeShaderUniformMap(
     const raw = uniforms[key];
     if (raw == null) continue;
     const value = isAccessor(raw) ? raw() : raw;
+    if (isSharedSignalToken(value)) {
+      output[key] = value;
+      continue;
+    }
     if (typeof value === "number") {
       const parsed = normalizeNumber(value, 0);
       output[key] = parsed;
       continue;
     }
     if (Array.isArray(value)) {
-      const packed: number[] = [];
+      const packed: Array<number | SkiaSharedSignalToken> = [];
       for (let i = 0; i < value.length; i += 1) {
-        packed.push(normalizeNumber(value[i], 0));
+        const item = value[i];
+        if (isSharedSignalToken(item)) {
+          packed.push(item);
+          continue;
+        }
+        packed.push(normalizeNumber(item, 0));
       }
       output[key] = packed;
     }

@@ -1,5 +1,7 @@
 #import "ZynthJSIPluginRegistry.h"
 #import "ZynthWorklets.h"
+#include <cmath>
+#include <limits>
 
 BOOL ZynthSetSharedSignalForHost(ZynthHermesRuntimeHost *host, int signalId, double value) {
   if (!host) return NO;
@@ -26,6 +28,21 @@ void ZynthRegisterSharedSignalChangedCallback(ZynthSharedSignalChangedCallback c
 bool ZynthSetSharedSignal(void *state, int signalId, double value) {
   ZynthHermesRuntimeHost *host = (__bridge ZynthHermesRuntimeHost *)state;
   return ZynthSetSharedSignalForHost(host, signalId, value);
+}
+
+double ZynthGetSharedSignal(void *state, int signalId, bool *found) {
+  ZynthHermesRuntimeHost *host = (__bridge ZynthHermesRuntimeHost *)state;
+  if (!host) {
+    if (found) *found = false;
+    return std::numeric_limits<double>::quiet_NaN();
+  }
+  double value = [[host worklets] sharedSignalValueForId:signalId];
+  if (std::isnan(value)) {
+    if (found) *found = false;
+    return value;
+  }
+  if (found) *found = true;
+  return value;
 }
 
 void ZynthInstallJSIPlugins(ZynthHermesRuntimeHost *host, facebook::jsi::Runtime &rt) {

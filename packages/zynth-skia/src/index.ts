@@ -20,6 +20,8 @@ export type {
   SkiaDrawLine,
   SkiaDrawPath,
   SkiaDrawRect,
+  SkiaDrawRuntimeShaderCircle,
+  SkiaDrawRuntimeShaderPath,
   SkiaDrawRuntimeShaderRect,
   SkiaFeature,
   SkiaFrameSpec,

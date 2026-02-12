@@ -50,6 +50,55 @@ This document outlines the current status and future development plan for the Zy
 
 ## Pending Tasks
 
+## SharedSignal + Worklets (Native-First Skia)
+
+This track hardens `@zynth/skia` so animation hooks and shader pipelines stay UI-thread/native by default and avoid JS resubmit loops.
+
+### Objectives
+
+- One command submit should be sufficient for continuous shared-signal-driven rendering.
+- Shared-signal updates from native/worklet runtimes must invalidate only affected surfaces.
+- Hook internals must emit native-bindable values (token-capable), not JS polling wrappers.
+- Validation must include measurable frame-budget/perf gates, not only visual checks.
+
+### Current Status
+
+- [x] Packed scalar protocol v2 (`literal` + `sharedSignal(id,snapshot)`), JS encoder + native decoders.
+- [x] Declarative compile path preserves shared-signal tokens across geometry/paint/runtime uniforms.
+- [x] Native draw-time shared-signal resolution on Android + iOS.
+- [x] Signal-to-surface invalidation wiring (`surface -> signals`, `signal -> surfaces`) on Android + iOS.
+- [x] JS-block proof demo (`SkiaNativeSharedSignalDriveExample`) confirms native render updates when JS stalls.
+- [x] Runtime shader effect caching added in native renderers (avoid `SkRuntimeEffect::MakeForShader` on each draw path).
+- [ ] Formal perf gates with reproducible metrics and pass/fail thresholds.
+- [ ] Cleanup hardening pass (dispose/unmount mapping audits, regression tests).
+- [ ] Hook implementation phase (`useClock`, `usePathInterpolation`, `usePathValue`) on top of native token pipeline.
+
+### Execution Plan
+
+1. **Native pipeline hardening**
+- Keep hot path allocation-light during draw/decode.
+- Keep runtime shader effect cache bounded and reset on runtime teardown.
+- Continue narrowing Android frame artifacts (bitmap handoff/frame pacing) with deterministic diagnostics.
+
+2. **Validation gates (required before hooks)**
+- Functional gate:
+- Shared-signal-driven `Rect`, `Path`, and runtime uniforms animate without JS command resubmission.
+- Threading gate:
+- Animation continues during intentional JS blocking (`Block JS` scenario).
+- Correctness gate:
+- Surface disposal/unmount clears subscription maps; no stale invalidations.
+- Perf gate:
+- Capture frame-time stats on a stress scene (multiple dynamic uniforms + paths) and enforce target budget at 60fps.
+
+3. **Hook delivery phase**
+- `useClock`: native-driven time shared signal, no JS frame loop dependency.
+- `usePathInterpolation`: token-capable progress path with native-friendly interpolation contract.
+- `usePathValue`: mutation/update path with shared-signal input contract and minimal bridge churn.
+
+4. **API defaults and ergonomics**
+- Evaluate defaulting numeric `createSkiaValue(...)` to shared/native mode with explicit opt-out.
+- Document constraints for non-numeric shared signals and expected runtime behavior.
+
 ## Bad Behaviors
 
 - [ ] Improve zynth-cli

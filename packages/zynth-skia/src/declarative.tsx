@@ -1,5 +1,6 @@
 import { children, mergeProps, splitProps } from "solid-js";
 import type { Accessor, JSX, ParentComponent } from "solid-js";
+import { captureSharedSignals } from "@zynth/core";
 import { assertSkiaFeature } from "./native";
 import { resolvePathCommands } from "./path";
 import {
@@ -23,6 +24,8 @@ import type {
   SkiaCircleProps,
   SkiaColorValue,
   SkiaDrawCommand,
+  SkiaDrawRuntimeShaderCircle,
+  SkiaDrawRuntimeShaderPath,
   SkiaDrawRuntimeShaderRect,
   SkiaGroupProps,
   SkiaPaintProps,
@@ -32,6 +35,7 @@ import type {
   SkiaRectProps,
   SkiaRuntimeEffect,
   SkiaRuntimeUniforms,
+  SkiaSharedSignalToken,
   SkiaShaderProps,
   SkiaShaderProgram,
 } from "./types";
@@ -54,12 +58,12 @@ type ShaderNodeProps = {
 type PaintState = {
   color: SkiaColorValue;
   style: SkiaPaintStyle;
-  strokeWidth: number;
+  strokeWidth: number | SkiaSharedSignalToken;
   antiAlias: boolean;
-  opacity: number;
+  opacity: number | SkiaSharedSignalToken;
   strokeCap: "butt" | "round" | "square";
   strokeJoin: "miter" | "round" | "bevel";
-  strokeMiter: number;
+  strokeMiter: number | SkiaSharedSignalToken;
   shader?: SkiaShaderProgram;
 };
 
@@ -120,8 +124,25 @@ function toChildArray(value: unknown): unknown[] {
 }
 
 function readNumber(value: unknown, fallback = 0): number {
+  if (isSharedSignalToken(value)) {
+    return readNumber(value.__zynth_shared_signal_current, fallback);
+  }
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function isSharedSignalToken(value: unknown): value is SkiaSharedSignalToken {
+  if (!value || typeof value !== "object") return false;
+  const token = value as Partial<SkiaSharedSignalToken>;
+  return (
+    typeof token.__zynth_shared_value === "number"
+    && typeof token.__zynth_shared_signal_current === "number"
+  );
+}
+
+function resolveScalar(value: unknown, fallback = 0): number | SkiaSharedSignalToken {
+  if (isSharedSignalToken(value)) return value;
+  return readNumber(value, fallback);
 }
 
 function clampUnit(value: number): number {
@@ -186,15 +207,20 @@ function resolveShaderChild(
 }
 
 function mergePaint(state: CompileState, props: Partial<SkiaPaintProps>): PaintState {
+  const nextOpacityRaw = props.opacity ?? state.paint.opacity;
+  const nextOpacity = isSharedSignalToken(nextOpacityRaw)
+    ? nextOpacityRaw
+    : clampUnit(readNumber(nextOpacityRaw, 1));
+
   return {
     color: props.color ?? state.paint.color,
     style: props.style ?? state.paint.style,
-    strokeWidth: props.strokeWidth ?? state.paint.strokeWidth,
+    strokeWidth: resolveScalar(props.strokeWidth ?? state.paint.strokeWidth, 1),
     antiAlias: props.antiAlias ?? state.paint.antiAlias,
-    opacity: clampUnit(props.opacity ?? state.paint.opacity),
+    opacity: nextOpacity,
     strokeCap: props.strokeCap ?? state.paint.strokeCap,
     strokeJoin: props.strokeJoin ?? state.paint.strokeJoin,
-    strokeMiter: props.strokeMiter ?? state.paint.strokeMiter,
+    strokeMiter: resolveScalar(props.strokeMiter ?? state.paint.strokeMiter, 4),
     shader: props.shader ?? state.paint.shader,
   };
 }
@@ -279,10 +305,14 @@ function compileShapeRect(
   time: number,
   out: SkiaDrawCommand[],
 ) {
-  const x = readNumber(props.x);
-  const y = readNumber(props.y);
-  const width = readNumber(props.width);
-  const height = readNumber(props.height);
+  const xScalar = resolveScalar(props.x);
+  const yScalar = resolveScalar(props.y);
+  const widthScalar = resolveScalar(props.width);
+  const heightScalar = resolveScalar(props.height);
+  const x = readNumber(xScalar);
+  const y = readNumber(yScalar);
+  const width = readNumber(widthScalar);
+  const height = readNumber(heightScalar);
   const paint = mergePaint(state, props);
   const childShader = resolveShaderChild(props.children);
   if (childShader) {
@@ -309,14 +339,14 @@ function compileShapeRect(
     }
     const runtimeCommand: SkiaDrawRuntimeShaderRect = {
       type: "runtimeShaderRect",
-      x: x1,
-      y: y1,
-      width: w,
-      height: h,
+      x: (isAxisAligned(state.transform) ? xScalar : x1) as unknown as number,
+      y: (isAxisAligned(state.transform) ? yScalar : y1) as unknown as number,
+      width: (isAxisAligned(state.transform) ? widthScalar : w) as unknown as number,
+      height: (isAxisAligned(state.transform) ? heightScalar : h) as unknown as number,
       source: runtimeShader.runtimeEffect.source,
       uniforms: resolveRuntimeShaderUniformMap(runtimeShader.uniforms),
       antiAlias: paint.antiAlias,
-      opacity: paint.opacity,
+      opacity: paint.opacity as unknown as number,
     };
     pushPaintedShape(out, runtimeCommand);
     return;
@@ -333,18 +363,18 @@ function compileShapeRect(
   if (isAxisAligned(state.transform)) {
     pushPaintedShape(out, {
       type: "rect",
-      x: x1,
-      y: y1,
-      width: w,
-      height: h,
+      x: (isAxisAligned(state.transform) ? xScalar : x1) as unknown as number,
+      y: (isAxisAligned(state.transform) ? yScalar : y1) as unknown as number,
+      width: (isAxisAligned(state.transform) ? widthScalar : w) as unknown as number,
+      height: (isAxisAligned(state.transform) ? heightScalar : h) as unknown as number,
       color,
       style: paint.style,
-      strokeWidth: paint.strokeWidth,
+      strokeWidth: paint.strokeWidth as unknown as number,
       antiAlias: paint.antiAlias,
-      opacity: paint.opacity,
+      opacity: paint.opacity as unknown as number,
       strokeCap: paint.strokeCap,
       strokeJoin: paint.strokeJoin,
-      strokeMiter: paint.strokeMiter,
+      strokeMiter: paint.strokeMiter as unknown as number,
     });
     return;
   }
@@ -361,12 +391,12 @@ function compileShapeRect(
     ],
     color,
     style: paint.style,
-    strokeWidth: paint.strokeWidth,
+    strokeWidth: paint.strokeWidth as unknown as number,
     antiAlias: paint.antiAlias,
-    opacity: paint.opacity,
+    opacity: paint.opacity as unknown as number,
     strokeCap: paint.strokeCap,
     strokeJoin: paint.strokeJoin,
-    strokeMiter: paint.strokeMiter,
+    strokeMiter: paint.strokeMiter as unknown as number,
   });
 }
 
@@ -376,21 +406,99 @@ function compileShapeCircle(
   time: number,
   out: SkiaDrawCommand[],
 ) {
-  const cx = readNumber(props.cx);
-  const cy = readNumber(props.cy);
-  const r = readNumber(props.r);
+  const cxScalar = resolveScalar(props.cx);
+  const cyScalar = resolveScalar(props.cy);
+  const rScalar = resolveScalar(props.r);
+  const cx = readNumber(cxScalar);
+  const cy = readNumber(cyScalar);
+  const r = readNumber(rScalar);
   const paint = mergePaint(state, props);
   const childShader = resolveShaderChild(props.children);
   if (childShader) {
     paint.shader = childShader;
   }
-  if (isRuntimeShaderProgram(paint.shader)) {
-    throw new Error("Skia runtime shaders currently support Rect only");
-  }
+  const runtimeShader = paint.shader;
 
   const center = applyMatrixPoint(state.transform, cx, cy);
   const right = applyMatrixPoint(state.transform, cx + r, cy);
   const bottom = applyMatrixPoint(state.transform, cx, cy + r);
+
+  if (runtimeShader && isRuntimeShaderProgram(runtimeShader)) {
+    if (paint.style === "stroke") {
+      throw new Error("Skia runtime shaders currently support fill style only");
+    }
+    const uniformScale = resolveCircleUniformScale(state.transform);
+    if (uniformScale != null) {
+      pushPaintedShape(out, {
+        type: "runtimeShaderCircle",
+        cx: (isAxisAligned(state.transform) ? cxScalar : center.x) as unknown as number,
+        cy: (isAxisAligned(state.transform) ? cyScalar : center.y) as unknown as number,
+        r: (isAxisAligned(state.transform) ? rScalar : Math.abs(r * uniformScale)) as unknown as number,
+        source: runtimeShader.runtimeEffect.source,
+        uniforms: resolveRuntimeShaderUniformMap(runtimeShader.uniforms),
+        antiAlias: paint.antiAlias,
+        opacity: paint.opacity as unknown as number,
+      } satisfies SkiaDrawRuntimeShaderCircle);
+      return;
+    }
+
+    assertSkiaFeature("paths", "transformed Circle runtime shader");
+    assertSkiaFeature("path.curves", "transformed Circle runtime shader");
+    const k = 0.5522847498307936;
+    const transformedPath = transformPathCommands(
+      [
+        { type: "moveTo", x: cx + r, y: cy },
+        {
+          type: "cubicTo",
+          cp1x: cx + r,
+          cp1y: cy + k * r,
+          cp2x: cx + k * r,
+          cp2y: cy + r,
+          x: cx,
+          y: cy + r,
+        },
+        {
+          type: "cubicTo",
+          cp1x: cx - k * r,
+          cp1y: cy + r,
+          cp2x: cx - r,
+          cp2y: cy + k * r,
+          x: cx - r,
+          y: cy,
+        },
+        {
+          type: "cubicTo",
+          cp1x: cx - r,
+          cp1y: cy - k * r,
+          cp2x: cx - k * r,
+          cp2y: cy - r,
+          x: cx,
+          y: cy - r,
+        },
+        {
+          type: "cubicTo",
+          cp1x: cx + k * r,
+          cp1y: cy - r,
+          cp2x: cx + r,
+          cp2y: cy - k * r,
+          x: cx + r,
+          y: cy,
+        },
+        { type: "close" },
+      ],
+      state.transform,
+    );
+
+    pushPaintedShape(out, {
+      type: "runtimeShaderPath",
+      commands: transformedPath.commands,
+      source: runtimeShader.runtimeEffect.source,
+      uniforms: resolveRuntimeShaderUniformMap(runtimeShader.uniforms),
+      antiAlias: paint.antiAlias,
+      opacity: paint.opacity as unknown as number,
+    } satisfies SkiaDrawRuntimeShaderPath);
+    return;
+  }
 
   const bounds = boundsFromPoints([
     { x: center.x - Math.abs(right.x - center.x), y: center.y - Math.abs(bottom.y - center.y) },
@@ -409,17 +517,17 @@ function compileShapeCircle(
   if (uniformScale != null) {
     pushPaintedShape(out, {
       type: "circle",
-      cx: center.x,
-      cy: center.y,
-      r: Math.abs(r * uniformScale),
+      cx: (isAxisAligned(state.transform) ? cxScalar : center.x) as unknown as number,
+      cy: (isAxisAligned(state.transform) ? cyScalar : center.y) as unknown as number,
+      r: (isAxisAligned(state.transform) ? rScalar : Math.abs(r * uniformScale)) as unknown as number,
       color,
       style: paint.style,
-      strokeWidth: paint.strokeWidth,
+      strokeWidth: paint.strokeWidth as unknown as number,
       antiAlias: paint.antiAlias,
-      opacity: paint.opacity,
+      opacity: paint.opacity as unknown as number,
       strokeCap: paint.strokeCap,
       strokeJoin: paint.strokeJoin,
-      strokeMiter: paint.strokeMiter,
+      strokeMiter: paint.strokeMiter as unknown as number,
     });
     return;
   }
@@ -444,12 +552,12 @@ function compileShapeCircle(
     commands: path.commands,
     color,
     style: paint.style,
-    strokeWidth: paint.strokeWidth,
+    strokeWidth: paint.strokeWidth as unknown as number,
     antiAlias: paint.antiAlias,
-    opacity: paint.opacity,
+    opacity: paint.opacity as unknown as number,
     strokeCap: paint.strokeCap,
     strokeJoin: paint.strokeJoin,
-    strokeMiter: paint.strokeMiter,
+    strokeMiter: paint.strokeMiter as unknown as number,
   });
 }
 
@@ -466,7 +574,23 @@ function compileShapePath(
     paint.shader = childShader;
   }
   if (isRuntimeShaderProgram(paint.shader)) {
-    throw new Error("Skia runtime shaders currently support Rect only");
+    if (paint.style === "stroke") {
+      throw new Error("Skia runtime shaders currently support fill style only");
+    }
+    assertSkiaFeature("paths", "Path runtime shader");
+    if (hasCurveCommands(sourceCommands)) {
+      assertSkiaFeature("path.curves", "Path runtime shader");
+    }
+    const transformedPath = transformPathCommands(sourceCommands, state.transform);
+    pushPaintedShape(out, {
+      type: "runtimeShaderPath",
+      commands: transformedPath.commands,
+      source: paint.shader.runtimeEffect.source,
+      uniforms: resolveRuntimeShaderUniformMap(paint.shader.uniforms),
+      antiAlias: paint.antiAlias,
+      opacity: paint.opacity as unknown as number,
+    } satisfies SkiaDrawRuntimeShaderPath);
+    return;
   }
 
   assertSkiaFeature("paths", "Path");
@@ -488,12 +612,12 @@ function compileShapePath(
     commands: transformed.commands,
     color,
     style: paint.style,
-    strokeWidth: paint.strokeWidth,
+    strokeWidth: paint.strokeWidth as unknown as number,
     antiAlias: paint.antiAlias,
-    opacity: paint.opacity,
+    opacity: paint.opacity as unknown as number,
     strokeCap: paint.strokeCap,
     strokeJoin: paint.strokeJoin,
-    strokeMiter: paint.strokeMiter,
+    strokeMiter: paint.strokeMiter as unknown as number,
   });
 }
 
@@ -592,17 +716,20 @@ export const Canvas: ParentComponent<SkiaCanvasProps> = (props) => {
   const resolvedChildren = children(() => local.children);
 
   const buildCommands = () => {
-    const commandBuffer: SkiaDrawCommand[] = [];
-    const state: CompileState = {
-      transform: identityMatrix,
-      paint: defaultPaint,
-    };
-    const items = toChildArray(resolvedChildren);
-    const time = readTime(local.time);
-    for (let index = 0; index < items.length; index += 1) {
-      compileNode(items[index], state, time, commandBuffer);
-    }
-    return commandBuffer;
+    const compiled = captureSharedSignals(() => {
+      const commandBuffer: SkiaDrawCommand[] = [];
+      const state: CompileState = {
+        transform: identityMatrix,
+        paint: defaultPaint,
+      };
+      const items = toChildArray(resolvedChildren);
+      const time = readTime(local.time);
+      for (let index = 0; index < items.length; index += 1) {
+        compileNode(items[index], state, time, commandBuffer);
+      }
+      return commandBuffer;
+    });
+    return compiled.result;
   };
 
   return (

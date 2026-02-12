@@ -21,6 +21,7 @@ using namespace facebook::jsi;
 
 namespace {
 static const char *kSkiaKey = "__zynth_skia";
+static bool gSharedSignalCallbackRegistered = false;
 
 static ZynthSkiaView *viewForNode(ZynthHermesRuntimeHost *host, int nodeId) {
   if (!host) return nil;
@@ -114,6 +115,21 @@ static bool submitPacked(
 }
 
 static void installSkiaBridge(ZynthHermesRuntimeHost *host, Runtime &rt) {
+  [ZynthSkiaRendererBridge setRuntimeState:(__bridge void *)host];
+  if (!gSharedSignalCallbackRegistered) {
+    ZynthRegisterSharedSignalChangedCallback(+[](void *state, int signalId) {
+      if (signalId <= 0) return;
+      ZynthHermesRuntimeHost *host = (__bridge ZynthHermesRuntimeHost *)state;
+      if (!host) return;
+      NSArray<NSNumber *> *nodeIds = [ZynthSkiaRendererBridge surfaceNodeIdsForSignalId:signalId];
+      for (NSNumber *nodeId in nodeIds) {
+        if (![nodeId isKindOfClass:[NSNumber class]]) continue;
+        markDirtyIfPresent(host, [nodeId intValue]);
+      }
+    });
+    gSharedSignalCallbackRegistered = true;
+  }
+
   auto createSurfaceFn = Function::createFromHostFunction(
       rt,
       PropNameID::forAscii(rt, "createSurface"),

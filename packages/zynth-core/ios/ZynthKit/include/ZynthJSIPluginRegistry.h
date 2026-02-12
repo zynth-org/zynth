@@ -24,6 +24,7 @@ void ZynthInstallJSIPlugins(ZynthHermesRuntimeHost *host, facebook::jsi::Runtime
 typedef void (*ZynthSharedSignalChangedCallback)(void *state, int signalId);
 void ZynthRegisterSharedSignalChangedCallback(ZynthSharedSignalChangedCallback callback);
 
+double ZynthGetSharedSignal(void *state, int signalId, bool *found);
 bool ZynthSetSharedSignal(void *state, int signalId, double value);
 #endif
 

@@ -4,6 +4,7 @@
 NS_ASSUME_NONNULL_BEGIN
 
 @interface ZynthSkiaRendererBridge : NSObject
++ (void)setRuntimeState:(void *_Nullable)state;
 + (BOOL)createSurface:(NSInteger)nodeId;
 + (BOOL)disposeSurface:(NSInteger)nodeId;
 + (BOOL)setFrameLoopEnabled:(BOOL)enabled forNode:(NSInteger)nodeId;
@@ -18,6 +19,7 @@ NS_ASSUME_NONNULL_BEGIN
                                   height:(NSInteger)height
                               clearColor:(uint32_t)clearColor;
 + (BOOL)hasSurface:(NSInteger)nodeId;
++ (NSArray<NSNumber *> *)surfaceNodeIdsForSignalId:(int)signalId;
 @end
 
 NS_ASSUME_NONNULL_END

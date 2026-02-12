@@ -4,6 +4,7 @@ import {
   type SkiaDrawCommand,
   type SkiaFeature,
   type SkiaFrameSpec,
+  type SkiaSharedSignalToken,
   type SkiaStrokeCap,
   type SkiaStrokeJoin,
 } from "./types";
@@ -49,6 +50,8 @@ const enum PackedOpcode {
   Line = 4,
   Path = 5,
   RuntimeShaderRect = 6,
+  RuntimeShaderCircle = 7,
+  RuntimeShaderPath = 8,
 }
 
 const enum PackedColorType {
@@ -79,6 +82,14 @@ const enum PackedPathVerb {
   QuadTo = 2,
   CubicTo = 3,
   Close = 4,
+}
+
+const PACKED_STREAM_MAGIC = 900719;
+const PACKED_STREAM_VERSION = 2;
+
+const enum PackedScalarKind {
+  Literal = 0,
+  SharedSignal = 1,
 }
 
 type PackedCommands = {
@@ -146,15 +157,207 @@ function pushPackedColor(
   encoded.push(PackedColorType.String, stringIndex);
 }
 
+function isSharedSignalToken(value: unknown): value is SkiaSharedSignalToken {
+  if (!value || typeof value !== "object") return false;
+  const token = value as Partial<SkiaSharedSignalToken>;
+  return (
+    typeof token.__zynth_shared_value === "number"
+    && typeof token.__zynth_shared_signal_current === "number"
+  );
+}
+
+function normalizePackedNumber(value: unknown, fallback = 0): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function pushPackedScalar(encoded: number[], value: unknown, fallback = 0): void {
+  if (isSharedSignalToken(value)) {
+    encoded.push(
+      PackedScalarKind.SharedSignal,
+      value.__zynth_shared_value,
+      normalizePackedNumber(value.__zynth_shared_signal_current, fallback),
+    );
+    return;
+  }
+  encoded.push(PackedScalarKind.Literal, normalizePackedNumber(value, fallback));
+}
+
+function materializeScalar(value: unknown, fallback = 0): number {
+  if (isSharedSignalToken(value)) {
+    return normalizePackedNumber(value.__zynth_shared_signal_current, fallback);
+  }
+  return normalizePackedNumber(value, fallback);
+}
+
+function materializeCommandsForFallback(commands: SkiaDrawCommand[]): SkiaDrawCommand[] {
+  return commands.map((command) => {
+    switch (command.type) {
+      case "clear":
+        return command;
+      case "rect":
+        return {
+          ...command,
+          x: materializeScalar(command.x),
+          y: materializeScalar(command.y),
+          width: materializeScalar(command.width),
+          height: materializeScalar(command.height),
+          strokeWidth: command.strokeWidth == null ? undefined : materializeScalar(command.strokeWidth, 1),
+          opacity: command.opacity == null ? undefined : materializeScalar(command.opacity, 1),
+          strokeMiter: command.strokeMiter == null ? undefined : materializeScalar(command.strokeMiter, 4),
+        };
+      case "circle":
+        return {
+          ...command,
+          cx: materializeScalar(command.cx),
+          cy: materializeScalar(command.cy),
+          r: materializeScalar(command.r),
+          strokeWidth: command.strokeWidth == null ? undefined : materializeScalar(command.strokeWidth, 1),
+          opacity: command.opacity == null ? undefined : materializeScalar(command.opacity, 1),
+          strokeMiter: command.strokeMiter == null ? undefined : materializeScalar(command.strokeMiter, 4),
+        };
+      case "line":
+        return {
+          ...command,
+          x1: materializeScalar(command.x1),
+          y1: materializeScalar(command.y1),
+          x2: materializeScalar(command.x2),
+          y2: materializeScalar(command.y2),
+          strokeWidth: command.strokeWidth == null ? undefined : materializeScalar(command.strokeWidth, 1),
+          opacity: command.opacity == null ? undefined : materializeScalar(command.opacity, 1),
+          strokeMiter: command.strokeMiter == null ? undefined : materializeScalar(command.strokeMiter, 4),
+        };
+      case "path":
+        return {
+          ...command,
+          strokeWidth: command.strokeWidth == null ? undefined : materializeScalar(command.strokeWidth, 1),
+          opacity: command.opacity == null ? undefined : materializeScalar(command.opacity, 1),
+          strokeMiter: command.strokeMiter == null ? undefined : materializeScalar(command.strokeMiter, 4),
+          commands: command.commands.map((pathCommand) => {
+            if (pathCommand.type === "moveTo" || pathCommand.type === "lineTo") {
+              return {
+                ...pathCommand,
+                x: materializeScalar(pathCommand.x),
+                y: materializeScalar(pathCommand.y),
+              };
+            }
+            if (pathCommand.type === "quadTo") {
+              return {
+                ...pathCommand,
+                cpx: materializeScalar(pathCommand.cpx),
+                cpy: materializeScalar(pathCommand.cpy),
+                x: materializeScalar(pathCommand.x),
+                y: materializeScalar(pathCommand.y),
+              };
+            }
+            if (pathCommand.type === "cubicTo") {
+              return {
+                ...pathCommand,
+                cp1x: materializeScalar(pathCommand.cp1x),
+                cp1y: materializeScalar(pathCommand.cp1y),
+                cp2x: materializeScalar(pathCommand.cp2x),
+                cp2y: materializeScalar(pathCommand.cp2y),
+                x: materializeScalar(pathCommand.x),
+                y: materializeScalar(pathCommand.y),
+              };
+            }
+            return pathCommand;
+          }),
+        };
+      case "runtimeShaderRect":
+        return {
+          ...command,
+          x: materializeScalar(command.x),
+          y: materializeScalar(command.y),
+          width: materializeScalar(command.width),
+          height: materializeScalar(command.height),
+          opacity: command.opacity == null ? undefined : materializeScalar(command.opacity, 1),
+          uniforms: Object.fromEntries(
+            Object.entries(command.uniforms).map(([name, uniform]) => {
+              if (Array.isArray(uniform)) {
+                return [name, uniform.map((item) => materializeScalar(item))];
+              }
+              return [name, materializeScalar(uniform)];
+            }),
+          ),
+        };
+      case "runtimeShaderCircle":
+        return {
+          ...command,
+          cx: materializeScalar(command.cx),
+          cy: materializeScalar(command.cy),
+          r: materializeScalar(command.r),
+          opacity: command.opacity == null ? undefined : materializeScalar(command.opacity, 1),
+          uniforms: Object.fromEntries(
+            Object.entries(command.uniforms).map(([name, uniform]) => {
+              if (Array.isArray(uniform)) {
+                return [name, uniform.map((item) => materializeScalar(item))];
+              }
+              return [name, materializeScalar(uniform)];
+            }),
+          ),
+        };
+      case "runtimeShaderPath":
+        return {
+          ...command,
+          opacity: command.opacity == null ? undefined : materializeScalar(command.opacity, 1),
+          uniforms: Object.fromEntries(
+            Object.entries(command.uniforms).map(([name, uniform]) => {
+              if (Array.isArray(uniform)) {
+                return [name, uniform.map((item) => materializeScalar(item))];
+              }
+              return [name, materializeScalar(uniform)];
+            }),
+          ),
+          commands: command.commands.map((pathCommand) => {
+            if (pathCommand.type === "moveTo" || pathCommand.type === "lineTo") {
+              return {
+                ...pathCommand,
+                x: materializeScalar(pathCommand.x),
+                y: materializeScalar(pathCommand.y),
+              };
+            }
+            if (pathCommand.type === "quadTo") {
+              return {
+                ...pathCommand,
+                cpx: materializeScalar(pathCommand.cpx),
+                cpy: materializeScalar(pathCommand.cpy),
+                x: materializeScalar(pathCommand.x),
+                y: materializeScalar(pathCommand.y),
+              };
+            }
+            if (pathCommand.type === "cubicTo") {
+              return {
+                ...pathCommand,
+                cp1x: materializeScalar(pathCommand.cp1x),
+                cp1y: materializeScalar(pathCommand.cp1y),
+                cp2x: materializeScalar(pathCommand.cp2x),
+                cp2y: materializeScalar(pathCommand.cp2y),
+                x: materializeScalar(pathCommand.x),
+                y: materializeScalar(pathCommand.y),
+              };
+            }
+            return pathCommand;
+          }),
+        };
+    }
+  });
+}
+
 function encodePackedCommands(commands: SkiaDrawCommand[]): PackedCommands {
-  const encoded: number[] = [];
+  const encoded: number[] = [PACKED_STREAM_MAGIC, PACKED_STREAM_VERSION];
   const stringTable: string[] = [];
   const stringIndex = new Map<string, number>();
   const caps = getSkiaCapabilities();
 
   for (let i = 0; i < commands.length; i += 1) {
     const command = commands[i]!;
-    if (command.type !== "clear" && command.type !== "runtimeShaderRect") {
+    if (
+      command.type !== "clear"
+      && command.type !== "runtimeShaderRect"
+      && command.type !== "runtimeShaderCircle"
+      && command.type !== "runtimeShaderPath"
+    ) {
       if (command.opacity != null && !caps.paintOpacity) {
         throw new Error("Skia feature unsupported: paint.opacity");
       }
@@ -174,48 +377,47 @@ function encodePackedCommands(commands: SkiaDrawCommand[]): PackedCommands {
         pushPackedColor(encoded, command.color, stringTable, stringIndex);
         break;
       case "rect":
-        encoded.push(
-          PackedOpcode.Rect,
-          command.x,
-          command.y,
-          command.width,
-          command.height,
-        );
+        encoded.push(PackedOpcode.Rect);
+        pushPackedScalar(encoded, command.x);
+        pushPackedScalar(encoded, command.y);
+        pushPackedScalar(encoded, command.width);
+        pushPackedScalar(encoded, command.height);
         pushPackedColor(encoded, command.color, stringTable, stringIndex);
-        encoded.push(command.strokeWidth ?? 1);
+        pushPackedScalar(encoded, command.strokeWidth ?? 1, 1);
         encoded.push(command.style === "stroke" ? PackedStyle.Stroke : PackedStyle.Fill);
         encoded.push(command.antiAlias === false ? 0 : 1);
-        encoded.push(caps.paintOpacity ? (command.opacity ?? 1) : 1);
+        pushPackedScalar(encoded, caps.paintOpacity ? (command.opacity ?? 1) : 1, 1);
         encoded.push(encodeStrokeCap(command.strokeCap));
         encoded.push(encodeStrokeJoin(command.strokeJoin));
-        encoded.push(command.strokeMiter ?? 4);
+        pushPackedScalar(encoded, command.strokeMiter ?? 4, 4);
         break;
       case "circle":
-        encoded.push(PackedOpcode.Circle, command.cx, command.cy, command.r);
+        encoded.push(PackedOpcode.Circle);
+        pushPackedScalar(encoded, command.cx);
+        pushPackedScalar(encoded, command.cy);
+        pushPackedScalar(encoded, command.r);
         pushPackedColor(encoded, command.color, stringTable, stringIndex);
-        encoded.push(command.strokeWidth ?? 1);
+        pushPackedScalar(encoded, command.strokeWidth ?? 1, 1);
         encoded.push(command.style === "stroke" ? PackedStyle.Stroke : PackedStyle.Fill);
         encoded.push(command.antiAlias === false ? 0 : 1);
-        encoded.push(caps.paintOpacity ? (command.opacity ?? 1) : 1);
+        pushPackedScalar(encoded, caps.paintOpacity ? (command.opacity ?? 1) : 1, 1);
         encoded.push(encodeStrokeCap(command.strokeCap));
         encoded.push(encodeStrokeJoin(command.strokeJoin));
-        encoded.push(command.strokeMiter ?? 4);
+        pushPackedScalar(encoded, command.strokeMiter ?? 4, 4);
         break;
       case "line":
-        encoded.push(
-          PackedOpcode.Line,
-          command.x1,
-          command.y1,
-          command.x2,
-          command.y2,
-        );
+        encoded.push(PackedOpcode.Line);
+        pushPackedScalar(encoded, command.x1);
+        pushPackedScalar(encoded, command.y1);
+        pushPackedScalar(encoded, command.x2);
+        pushPackedScalar(encoded, command.y2);
         pushPackedColor(encoded, command.color, stringTable, stringIndex);
-        encoded.push(command.strokeWidth ?? 1);
+        pushPackedScalar(encoded, command.strokeWidth ?? 1, 1);
         encoded.push(command.antiAlias === false ? 0 : 1);
-        encoded.push(caps.paintOpacity ? (command.opacity ?? 1) : 1);
+        pushPackedScalar(encoded, caps.paintOpacity ? (command.opacity ?? 1) : 1, 1);
         encoded.push(encodeStrokeCap(command.strokeCap));
         encoded.push(encodeStrokeJoin(command.strokeJoin));
-        encoded.push(command.strokeMiter ?? 4);
+        pushPackedScalar(encoded, command.strokeMiter ?? 4, 4);
         break;
       case "path":
         if (!caps.paths) {
@@ -225,22 +427,26 @@ function encodePackedCommands(commands: SkiaDrawCommand[]): PackedCommands {
         }
         encoded.push(PackedOpcode.Path);
         pushPackedColor(encoded, command.color, stringTable, stringIndex);
-        encoded.push(command.strokeWidth ?? 1);
+        pushPackedScalar(encoded, command.strokeWidth ?? 1, 1);
         encoded.push(command.style === "stroke" ? PackedStyle.Stroke : PackedStyle.Fill);
         encoded.push(command.antiAlias === false ? 0 : 1);
-        encoded.push(caps.paintOpacity ? (command.opacity ?? 1) : 1);
+        pushPackedScalar(encoded, caps.paintOpacity ? (command.opacity ?? 1) : 1, 1);
         encoded.push(encodeStrokeCap(command.strokeCap));
         encoded.push(encodeStrokeJoin(command.strokeJoin));
-        encoded.push(command.strokeMiter ?? 4);
+        pushPackedScalar(encoded, command.strokeMiter ?? 4, 4);
         encoded.push(command.commands.length);
         for (let cmdIndex = 0; cmdIndex < command.commands.length; cmdIndex += 1) {
           const pathCommand = command.commands[cmdIndex]!;
           switch (pathCommand.type) {
             case "moveTo":
-              encoded.push(PackedPathVerb.MoveTo, pathCommand.x, pathCommand.y);
+              encoded.push(PackedPathVerb.MoveTo);
+              pushPackedScalar(encoded, pathCommand.x);
+              pushPackedScalar(encoded, pathCommand.y);
               break;
             case "lineTo":
-              encoded.push(PackedPathVerb.LineTo, pathCommand.x, pathCommand.y);
+              encoded.push(PackedPathVerb.LineTo);
+              pushPackedScalar(encoded, pathCommand.x);
+              pushPackedScalar(encoded, pathCommand.y);
               break;
             case "quadTo":
               if (!caps.pathCurves) {
@@ -248,13 +454,11 @@ function encodePackedCommands(commands: SkiaDrawCommand[]): PackedCommands {
                   "Skia feature unsupported: path.curves (quadTo requires curve support)",
                 );
               }
-              encoded.push(
-                PackedPathVerb.QuadTo,
-                pathCommand.cpx,
-                pathCommand.cpy,
-                pathCommand.x,
-                pathCommand.y,
-              );
+              encoded.push(PackedPathVerb.QuadTo);
+              pushPackedScalar(encoded, pathCommand.cpx);
+              pushPackedScalar(encoded, pathCommand.cpy);
+              pushPackedScalar(encoded, pathCommand.x);
+              pushPackedScalar(encoded, pathCommand.y);
               break;
             case "cubicTo":
               if (!caps.pathCurves) {
@@ -262,15 +466,13 @@ function encodePackedCommands(commands: SkiaDrawCommand[]): PackedCommands {
                   "Skia feature unsupported: path.curves (cubicTo requires curve support)",
                 );
               }
-              encoded.push(
-                PackedPathVerb.CubicTo,
-                pathCommand.cp1x,
-                pathCommand.cp1y,
-                pathCommand.cp2x,
-                pathCommand.cp2y,
-                pathCommand.x,
-                pathCommand.y,
-              );
+              encoded.push(PackedPathVerb.CubicTo);
+              pushPackedScalar(encoded, pathCommand.cp1x);
+              pushPackedScalar(encoded, pathCommand.cp1y);
+              pushPackedScalar(encoded, pathCommand.cp2x);
+              pushPackedScalar(encoded, pathCommand.cp2y);
+              pushPackedScalar(encoded, pathCommand.x);
+              pushPackedScalar(encoded, pathCommand.y);
               break;
             case "close":
               encoded.push(PackedPathVerb.Close);
@@ -279,15 +481,13 @@ function encodePackedCommands(commands: SkiaDrawCommand[]): PackedCommands {
         }
         break;
       case "runtimeShaderRect": {
-        encoded.push(
-          PackedOpcode.RuntimeShaderRect,
-          command.x,
-          command.y,
-          command.width,
-          command.height,
-          command.antiAlias === false ? 0 : 1,
-          caps.paintOpacity ? (command.opacity ?? 1) : 1,
-        );
+        encoded.push(PackedOpcode.RuntimeShaderRect);
+        pushPackedScalar(encoded, command.x);
+        pushPackedScalar(encoded, command.y);
+        pushPackedScalar(encoded, command.width);
+        pushPackedScalar(encoded, command.height);
+        encoded.push(command.antiAlias === false ? 0 : 1);
+        pushPackedScalar(encoded, caps.paintOpacity ? (command.opacity ?? 1) : 1, 1);
         const sourceIndex = addPackedString(stringTable, stringIndex, command.source);
         encoded.push(sourceIndex);
         const uniformNames = Object.keys(command.uniforms);
@@ -300,10 +500,116 @@ function encodePackedCommands(commands: SkiaDrawCommand[]): PackedCommands {
           if (Array.isArray(uniformValue)) {
             encoded.push(uniformValue.length);
             for (let valueIndex = 0; valueIndex < uniformValue.length; valueIndex += 1) {
-              encoded.push(uniformValue[valueIndex] ?? 0);
+              pushPackedScalar(encoded, uniformValue[valueIndex] ?? 0);
             }
           } else {
-            encoded.push(1, Number(uniformValue));
+            encoded.push(1);
+            pushPackedScalar(encoded, uniformValue);
+          }
+        }
+        break;
+      }
+      case "runtimeShaderCircle": {
+        encoded.push(PackedOpcode.RuntimeShaderCircle);
+        pushPackedScalar(encoded, command.cx);
+        pushPackedScalar(encoded, command.cy);
+        pushPackedScalar(encoded, command.r);
+        encoded.push(command.antiAlias === false ? 0 : 1);
+        pushPackedScalar(encoded, caps.paintOpacity ? (command.opacity ?? 1) : 1, 1);
+        const sourceIndex = addPackedString(stringTable, stringIndex, command.source);
+        encoded.push(sourceIndex);
+        const uniformNames = Object.keys(command.uniforms);
+        encoded.push(uniformNames.length);
+        for (let uniformIndex = 0; uniformIndex < uniformNames.length; uniformIndex += 1) {
+          const name = uniformNames[uniformIndex]!;
+          const uniformNameIndex = addPackedString(stringTable, stringIndex, name);
+          const uniformValue = command.uniforms[name]!;
+          encoded.push(uniformNameIndex);
+          if (Array.isArray(uniformValue)) {
+            encoded.push(uniformValue.length);
+            for (let valueIndex = 0; valueIndex < uniformValue.length; valueIndex += 1) {
+              pushPackedScalar(encoded, uniformValue[valueIndex] ?? 0);
+            }
+          } else {
+            encoded.push(1);
+            pushPackedScalar(encoded, uniformValue);
+          }
+        }
+        break;
+      }
+      case "runtimeShaderPath": {
+        if (!caps.paths) {
+          throw new Error(
+            "Skia feature unsupported: paths (native runtime does not advertise path support)",
+          );
+        }
+        encoded.push(
+          PackedOpcode.RuntimeShaderPath,
+          command.antiAlias === false ? 0 : 1,
+        );
+        pushPackedScalar(encoded, caps.paintOpacity ? (command.opacity ?? 1) : 1, 1);
+        const sourceIndex = addPackedString(stringTable, stringIndex, command.source);
+        encoded.push(sourceIndex);
+        const uniformNames = Object.keys(command.uniforms);
+        encoded.push(uniformNames.length);
+        for (let uniformIndex = 0; uniformIndex < uniformNames.length; uniformIndex += 1) {
+          const name = uniformNames[uniformIndex]!;
+          const uniformNameIndex = addPackedString(stringTable, stringIndex, name);
+          const uniformValue = command.uniforms[name]!;
+          encoded.push(uniformNameIndex);
+          if (Array.isArray(uniformValue)) {
+            encoded.push(uniformValue.length);
+            for (let valueIndex = 0; valueIndex < uniformValue.length; valueIndex += 1) {
+              pushPackedScalar(encoded, uniformValue[valueIndex] ?? 0);
+            }
+          } else {
+            encoded.push(1);
+            pushPackedScalar(encoded, uniformValue);
+          }
+        }
+        encoded.push(command.commands.length);
+        for (let cmdIndex = 0; cmdIndex < command.commands.length; cmdIndex += 1) {
+          const pathCommand = command.commands[cmdIndex]!;
+          switch (pathCommand.type) {
+            case "moveTo":
+              encoded.push(PackedPathVerb.MoveTo);
+              pushPackedScalar(encoded, pathCommand.x);
+              pushPackedScalar(encoded, pathCommand.y);
+              break;
+            case "lineTo":
+              encoded.push(PackedPathVerb.LineTo);
+              pushPackedScalar(encoded, pathCommand.x);
+              pushPackedScalar(encoded, pathCommand.y);
+              break;
+            case "quadTo":
+              if (!caps.pathCurves) {
+                throw new Error(
+                  "Skia feature unsupported: path.curves (quadTo requires curve support)",
+                );
+              }
+              encoded.push(PackedPathVerb.QuadTo);
+              pushPackedScalar(encoded, pathCommand.cpx);
+              pushPackedScalar(encoded, pathCommand.cpy);
+              pushPackedScalar(encoded, pathCommand.x);
+              pushPackedScalar(encoded, pathCommand.y);
+              break;
+            case "cubicTo":
+              if (!caps.pathCurves) {
+                throw new Error(
+                  "Skia feature unsupported: path.curves (cubicTo requires curve support)",
+                );
+              }
+              encoded.push(PackedPathVerb.CubicTo);
+              pushPackedScalar(encoded, pathCommand.cp1x);
+              pushPackedScalar(encoded, pathCommand.cp1y);
+              pushPackedScalar(encoded, pathCommand.cp2x);
+              pushPackedScalar(encoded, pathCommand.cp2y);
+              pushPackedScalar(encoded, pathCommand.x);
+              pushPackedScalar(encoded, pathCommand.y);
+              break;
+            case "close":
+              encoded.push(PackedPathVerb.Close);
+              break;
           }
         }
         break;
@@ -399,13 +705,14 @@ export function submitNativeCommands(
     );
     if (ok) return;
   }
+  const fallbackCommands = materializeCommandsForFallback(commands);
   if (bridge?.submitDrawCommands) {
-    const ok = bridge.submitDrawCommands(nodeId, commands);
+    const ok = bridge.submitDrawCommands(nodeId, fallbackCommands);
     if (ok) return;
   }
   callSync("submitDrawCommands", {
     nodeId,
-    commands,
+    commands: fallbackCommands,
   } satisfies SkiaSubmitPayload);
 }
 

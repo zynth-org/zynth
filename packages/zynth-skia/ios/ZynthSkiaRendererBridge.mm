@@ -1,4 +1,5 @@
 #import "ZynthSkiaRendererBridge.h"
+#import "ZynthJSIPluginRegistry.h"
 
 #import <mutex>
 #import <memory>
@@ -7,6 +8,7 @@
 #import <vector>
 #import <algorithm>
 #import <cstring>
+#include <cmath>
 
 #import "include/core/SkCanvas.h"
 #import "include/core/SkColor.h"
@@ -28,6 +30,8 @@ enum PackedOpcode {
   PackedOpcodeLine = 4,
   PackedOpcodePath = 5,
   PackedOpcodeRuntimeShaderRect = 6,
+  PackedOpcodeRuntimeShaderCircle = 7,
+  PackedOpcodeRuntimeShaderPath = 8,
 };
 
 enum PackedColorType {
@@ -60,6 +64,11 @@ enum PackedPathVerb {
   PackedPathVerbClose = 4,
 };
 
+constexpr int PackedStreamMagic = 900719;
+constexpr int PackedStreamVersion = 2;
+constexpr int PackedScalarLiteral = 0;
+constexpr int PackedScalarSharedSignal = 1;
+
 struct CommandBuffer {
   std::vector<double> ops;
   std::vector<std::string> stringTable;
@@ -74,6 +83,13 @@ struct SurfaceState {
 
 std::mutex gSkiaMutex;
 std::unordered_map<int, SurfaceState> gSkiaSurfaces;
+std::mutex gSignalSubscriptionsMutex;
+std::unordered_map<int, std::vector<int>> gSurfaceSignalIds;
+std::unordered_map<int, std::vector<int>> gSignalSurfaceIds;
+void *gSkiaRuntimeState = nullptr;
+thread_local std::vector<int> *gSignalCollector = nullptr;
+std::mutex gRuntimeEffectCacheMutex;
+std::unordered_map<std::string, sk_sp<SkRuntimeEffect>> gRuntimeEffectCache;
 
 static uint32_t parseHexColorString(NSString *value) {
   if (value == nil) return 0x00000000;
@@ -125,6 +141,82 @@ static const std::string *readPackedString(const CommandBuffer &buffer, int idx)
   return &buffer.stringTable[static_cast<size_t>(idx)];
 }
 
+static void normalizeUniqueIds(std::vector<int> &ids) {
+  std::sort(ids.begin(), ids.end());
+  ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+}
+
+static void removeSurfaceSignalSubscriptionsLocked(int nodeId) {
+  auto foundSurface = gSurfaceSignalIds.find(nodeId);
+  if (foundSurface == gSurfaceSignalIds.end()) return;
+  for (int signalId : foundSurface->second) {
+    auto it = gSignalSurfaceIds.find(signalId);
+    if (it == gSignalSurfaceIds.end()) continue;
+    auto &nodes = it->second;
+    nodes.erase(std::remove(nodes.begin(), nodes.end(), nodeId), nodes.end());
+    if (nodes.empty()) {
+      gSignalSurfaceIds.erase(it);
+    }
+  }
+  gSurfaceSignalIds.erase(foundSurface);
+}
+
+static void updateSurfaceSignalSubscriptions(int nodeId, std::vector<int> ids) {
+  normalizeUniqueIds(ids);
+  std::lock_guard<std::mutex> lock(gSignalSubscriptionsMutex);
+  removeSurfaceSignalSubscriptionsLocked(nodeId);
+  if (ids.empty()) return;
+  gSurfaceSignalIds[nodeId] = ids;
+  for (int signalId : ids) {
+    auto &nodes = gSignalSurfaceIds[signalId];
+    nodes.push_back(nodeId);
+    normalizeUniqueIds(nodes);
+  }
+}
+
+static void consumePackedHeader(const std::vector<double> &ops,
+                                size_t &index,
+                                bool &taggedScalars) {
+  taggedScalars = false;
+  if (ops.size() < 2) return;
+  int maybeMagic = static_cast<int>(ops[0]);
+  if (maybeMagic != PackedStreamMagic) return;
+  int version = static_cast<int>(ops[1]);
+  index = 2;
+  taggedScalars = version >= PackedStreamVersion;
+}
+
+static float readPackedScalar(const std::vector<double> &ops,
+                              size_t &index,
+                              bool taggedScalars,
+                              float fallback = 0.0f) {
+  if (index >= ops.size()) return fallback;
+  if (!taggedScalars) {
+    return static_cast<float>(ops[index++]);
+  }
+
+  int kind = static_cast<int>(ops[index++]);
+  if (kind == PackedScalarLiteral) {
+    if (index >= ops.size()) return fallback;
+    return static_cast<float>(ops[index++]);
+  }
+  if (kind == PackedScalarSharedSignal) {
+    if (index + 1 >= ops.size()) return fallback;
+    int signalId = static_cast<int>(ops[index++]);
+    double snapshot = ops[index++];
+    if (gSignalCollector && signalId > 0) {
+      gSignalCollector->push_back(signalId);
+    }
+    bool found = false;
+    double resolved = ZynthGetSharedSignal(gSkiaRuntimeState, signalId, &found);
+    if (!found || !std::isfinite(resolved)) {
+      resolved = snapshot;
+    }
+    return static_cast<float>(resolved);
+  }
+  return fallback;
+}
+
 static sk_sp<SkData> buildRuntimeUniformData(
     const sk_sp<SkRuntimeEffect> &effect,
     const std::unordered_map<std::string, std::vector<float>> &uniformValues) {
@@ -151,6 +243,31 @@ static sk_sp<SkData> buildRuntimeUniformData(
   }
 
   return SkData::MakeWithCopy(bytes.data(), bytes.size());
+}
+
+static sk_sp<SkRuntimeEffect> getCachedRuntimeEffect(const std::string &source) {
+  if (source.empty()) return nullptr;
+  {
+    std::lock_guard<std::mutex> lock(gRuntimeEffectCacheMutex);
+    auto found = gRuntimeEffectCache.find(source);
+    if (found != gRuntimeEffectCache.end()) {
+      return found->second;
+    }
+  }
+
+  SkRuntimeEffect::Result result = SkRuntimeEffect::MakeForShader(SkString(source.c_str()));
+  if (!result.effect) {
+    return nullptr;
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(gRuntimeEffectCacheMutex);
+    if (gRuntimeEffectCache.size() >= 128) {
+      gRuntimeEffectCache.clear();
+    }
+    gRuntimeEffectCache[source] = result.effect;
+  }
+  return result.effect;
 }
 
 static SkPaint::Cap decodeStrokeCap(int packedCap) {
@@ -202,7 +319,8 @@ static bool renderSurfaceState(const CommandBuffer &buffer,
                                int height,
                                SkColor clearColor,
                                std::vector<uint8_t> &outPixels,
-                               size_t &outRowBytes) {
+                               size_t &outRowBytes,
+                               std::vector<int> *usedSignalIds = nullptr) {
   if (width <= 0 || height <= 0) return false;
 
   SkImageInfo info = SkImageInfo::MakeN32Premul(width, height);
@@ -211,8 +329,12 @@ static bool renderSurfaceState(const CommandBuffer &buffer,
 
   SkCanvas *canvas = surface->getCanvas();
   canvas->clear(clearColor);
+  std::vector<int> *previousCollector = gSignalCollector;
+  gSignalCollector = usedSignalIds;
 
   size_t i = 0;
+  bool taggedScalars = false;
+  consumePackedHeader(buffer.ops, i, taggedScalars);
   while (i < buffer.ops.size()) {
     int opcode = static_cast<int>(buffer.ops[i++]);
 
@@ -223,20 +345,20 @@ static bool renderSurfaceState(const CommandBuffer &buffer,
     }
 
     if (opcode == PackedOpcodeRect) {
-      if (i + 5 >= buffer.ops.size()) break;
-      float x = static_cast<float>(buffer.ops[i++]);
-      float y = static_cast<float>(buffer.ops[i++]);
-      float w = static_cast<float>(buffer.ops[i++]);
-      float h = static_cast<float>(buffer.ops[i++]);
+      float x = readPackedScalar(buffer.ops, i, taggedScalars);
+      float y = readPackedScalar(buffer.ops, i, taggedScalars);
+      float w = readPackedScalar(buffer.ops, i, taggedScalars);
+      float h = readPackedScalar(buffer.ops, i, taggedScalars);
       SkColor color = readPackedColor(buffer, buffer.ops, i);
-      if (i + 6 >= buffer.ops.size()) break;
-      float strokeWidth = static_cast<float>(buffer.ops[i++]);
+      float strokeWidth = readPackedScalar(buffer.ops, i, taggedScalars, 1.0f);
+      if (i + 2 >= buffer.ops.size()) break;
       int style = static_cast<int>(buffer.ops[i++]);
       bool antiAlias = static_cast<int>(buffer.ops[i++]) != 0;
-      float opacity = static_cast<float>(buffer.ops[i++]);
+      float opacity = readPackedScalar(buffer.ops, i, taggedScalars, 1.0f);
+      if (i + 1 >= buffer.ops.size()) break;
       int strokeCap = static_cast<int>(buffer.ops[i++]);
       int strokeJoin = static_cast<int>(buffer.ops[i++]);
-      float strokeMiter = static_cast<float>(buffer.ops[i++]);
+      float strokeMiter = readPackedScalar(buffer.ops, i, taggedScalars, 4.0f);
 
       SkPaint paint;
       configurePaint(
@@ -254,19 +376,19 @@ static bool renderSurfaceState(const CommandBuffer &buffer,
     }
 
     if (opcode == PackedOpcodeCircle) {
-      if (i + 4 >= buffer.ops.size()) break;
-      float cx = static_cast<float>(buffer.ops[i++]);
-      float cy = static_cast<float>(buffer.ops[i++]);
-      float r = static_cast<float>(buffer.ops[i++]);
+      float cx = readPackedScalar(buffer.ops, i, taggedScalars);
+      float cy = readPackedScalar(buffer.ops, i, taggedScalars);
+      float r = readPackedScalar(buffer.ops, i, taggedScalars);
       SkColor color = readPackedColor(buffer, buffer.ops, i);
-      if (i + 6 >= buffer.ops.size()) break;
-      float strokeWidth = static_cast<float>(buffer.ops[i++]);
+      float strokeWidth = readPackedScalar(buffer.ops, i, taggedScalars, 1.0f);
+      if (i + 2 >= buffer.ops.size()) break;
       int style = static_cast<int>(buffer.ops[i++]);
       bool antiAlias = static_cast<int>(buffer.ops[i++]) != 0;
-      float opacity = static_cast<float>(buffer.ops[i++]);
+      float opacity = readPackedScalar(buffer.ops, i, taggedScalars, 1.0f);
+      if (i + 1 >= buffer.ops.size()) break;
       int strokeCap = static_cast<int>(buffer.ops[i++]);
       int strokeJoin = static_cast<int>(buffer.ops[i++]);
-      float strokeMiter = static_cast<float>(buffer.ops[i++]);
+      float strokeMiter = readPackedScalar(buffer.ops, i, taggedScalars, 4.0f);
 
       SkPaint paint;
       configurePaint(
@@ -284,19 +406,19 @@ static bool renderSurfaceState(const CommandBuffer &buffer,
     }
 
     if (opcode == PackedOpcodeLine) {
-      if (i + 5 >= buffer.ops.size()) break;
-      float x1 = static_cast<float>(buffer.ops[i++]);
-      float y1 = static_cast<float>(buffer.ops[i++]);
-      float x2 = static_cast<float>(buffer.ops[i++]);
-      float y2 = static_cast<float>(buffer.ops[i++]);
+      float x1 = readPackedScalar(buffer.ops, i, taggedScalars);
+      float y1 = readPackedScalar(buffer.ops, i, taggedScalars);
+      float x2 = readPackedScalar(buffer.ops, i, taggedScalars);
+      float y2 = readPackedScalar(buffer.ops, i, taggedScalars);
       SkColor color = readPackedColor(buffer, buffer.ops, i);
-      if (i + 4 >= buffer.ops.size()) break;
-      float strokeWidth = static_cast<float>(buffer.ops[i++]);
+      float strokeWidth = readPackedScalar(buffer.ops, i, taggedScalars, 1.0f);
+      if (i + 1 >= buffer.ops.size()) break;
       bool antiAlias = static_cast<int>(buffer.ops[i++]) != 0;
-      float opacity = static_cast<float>(buffer.ops[i++]);
+      float opacity = readPackedScalar(buffer.ops, i, taggedScalars, 1.0f);
+      if (i + 1 >= buffer.ops.size()) break;
       int strokeCap = static_cast<int>(buffer.ops[i++]);
       int strokeJoin = static_cast<int>(buffer.ops[i++]);
-      float strokeMiter = static_cast<float>(buffer.ops[i++]);
+      float strokeMiter = readPackedScalar(buffer.ops, i, taggedScalars, 4.0f);
 
       SkPaint paint;
       configurePaint(
@@ -315,14 +437,16 @@ static bool renderSurfaceState(const CommandBuffer &buffer,
 
     if (opcode == PackedOpcodePath) {
       SkColor color = readPackedColor(buffer, buffer.ops, i);
-      if (i + 7 >= buffer.ops.size()) break;
-      float strokeWidth = static_cast<float>(buffer.ops[i++]);
+      float strokeWidth = readPackedScalar(buffer.ops, i, taggedScalars, 1.0f);
+      if (i + 2 >= buffer.ops.size()) break;
       int style = static_cast<int>(buffer.ops[i++]);
       bool antiAlias = static_cast<int>(buffer.ops[i++]) != 0;
-      float opacity = static_cast<float>(buffer.ops[i++]);
+      float opacity = readPackedScalar(buffer.ops, i, taggedScalars, 1.0f);
+      if (i + 1 >= buffer.ops.size()) break;
       int strokeCap = static_cast<int>(buffer.ops[i++]);
       int strokeJoin = static_cast<int>(buffer.ops[i++]);
-      float strokeMiter = static_cast<float>(buffer.ops[i++]);
+      float strokeMiter = readPackedScalar(buffer.ops, i, taggedScalars, 4.0f);
+      if (i >= buffer.ops.size()) break;
       int commandCount = static_cast<int>(buffer.ops[i++]);
       if (commandCount < 0) break;
 
@@ -331,9 +455,8 @@ static bool renderSurfaceState(const CommandBuffer &buffer,
         if (i >= buffer.ops.size()) break;
         int verb = static_cast<int>(buffer.ops[i++]);
         if (verb == PackedPathVerbMoveTo || verb == PackedPathVerbLineTo) {
-          if (i + 1 >= buffer.ops.size()) break;
-          float x = static_cast<float>(buffer.ops[i++]);
-          float y = static_cast<float>(buffer.ops[i++]);
+          float x = readPackedScalar(buffer.ops, i, taggedScalars);
+          float y = readPackedScalar(buffer.ops, i, taggedScalars);
           if (verb == PackedPathVerbMoveTo) {
             path.moveTo(x, y);
           } else {
@@ -342,22 +465,20 @@ static bool renderSurfaceState(const CommandBuffer &buffer,
           continue;
         }
         if (verb == PackedPathVerbQuadTo) {
-          if (i + 3 >= buffer.ops.size()) break;
-          float cpx = static_cast<float>(buffer.ops[i++]);
-          float cpy = static_cast<float>(buffer.ops[i++]);
-          float x = static_cast<float>(buffer.ops[i++]);
-          float y = static_cast<float>(buffer.ops[i++]);
+          float cpx = readPackedScalar(buffer.ops, i, taggedScalars);
+          float cpy = readPackedScalar(buffer.ops, i, taggedScalars);
+          float x = readPackedScalar(buffer.ops, i, taggedScalars);
+          float y = readPackedScalar(buffer.ops, i, taggedScalars);
           path.quadTo(cpx, cpy, x, y);
           continue;
         }
         if (verb == PackedPathVerbCubicTo) {
-          if (i + 5 >= buffer.ops.size()) break;
-          float cp1x = static_cast<float>(buffer.ops[i++]);
-          float cp1y = static_cast<float>(buffer.ops[i++]);
-          float cp2x = static_cast<float>(buffer.ops[i++]);
-          float cp2y = static_cast<float>(buffer.ops[i++]);
-          float x = static_cast<float>(buffer.ops[i++]);
-          float y = static_cast<float>(buffer.ops[i++]);
+          float cp1x = readPackedScalar(buffer.ops, i, taggedScalars);
+          float cp1y = readPackedScalar(buffer.ops, i, taggedScalars);
+          float cp2x = readPackedScalar(buffer.ops, i, taggedScalars);
+          float cp2y = readPackedScalar(buffer.ops, i, taggedScalars);
+          float x = readPackedScalar(buffer.ops, i, taggedScalars);
+          float y = readPackedScalar(buffer.ops, i, taggedScalars);
           path.cubicTo(cp1x, cp1y, cp2x, cp2y, x, y);
           continue;
         }
@@ -384,13 +505,14 @@ static bool renderSurfaceState(const CommandBuffer &buffer,
     }
 
     if (opcode == PackedOpcodeRuntimeShaderRect) {
-      if (i + 7 >= buffer.ops.size()) break;
-      float x = static_cast<float>(buffer.ops[i++]);
-      float y = static_cast<float>(buffer.ops[i++]);
-      float w = static_cast<float>(buffer.ops[i++]);
-      float h = static_cast<float>(buffer.ops[i++]);
+      float x = readPackedScalar(buffer.ops, i, taggedScalars);
+      float y = readPackedScalar(buffer.ops, i, taggedScalars);
+      float w = readPackedScalar(buffer.ops, i, taggedScalars);
+      float h = readPackedScalar(buffer.ops, i, taggedScalars);
+      if (i >= buffer.ops.size()) break;
       bool antiAlias = static_cast<int>(buffer.ops[i++]) != 0;
-      float opacity = static_cast<float>(buffer.ops[i++]);
+      float opacity = readPackedScalar(buffer.ops, i, taggedScalars, 1.0f);
+      if (i + 1 >= buffer.ops.size()) break;
       int sourceIndex = static_cast<int>(buffer.ops[i++]);
       int uniformCount = static_cast<int>(buffer.ops[i++]);
       if (uniformCount < 0) break;
@@ -406,29 +528,28 @@ static bool renderSurfaceState(const CommandBuffer &buffer,
         int nameIndex = static_cast<int>(buffer.ops[i++]);
         int valueCount = static_cast<int>(buffer.ops[i++]);
         if (valueCount < 0) break;
-        if (i + static_cast<size_t>(valueCount) > buffer.ops.size()) break;
         const std::string *namePtr = readPackedString(buffer, nameIndex);
         std::vector<float> values;
         values.reserve(static_cast<size_t>(valueCount));
         for (int valueIndex = 0; valueIndex < valueCount; valueIndex += 1) {
-          values.push_back(static_cast<float>(buffer.ops[i++]));
+          values.push_back(readPackedScalar(buffer.ops, i, taggedScalars));
         }
         if (namePtr) {
           uniforms[*namePtr] = std::move(values);
         }
       }
 
-      SkRuntimeEffect::Result result = SkRuntimeEffect::MakeForShader(SkString(sourcePtr->c_str()));
-      if (!result.effect) {
+      const sk_sp<SkRuntimeEffect> effect = getCachedRuntimeEffect(*sourcePtr);
+      if (!effect) {
         continue;
       }
 
-      sk_sp<SkData> uniformData = buildRuntimeUniformData(result.effect, uniforms);
+      sk_sp<SkData> uniformData = buildRuntimeUniformData(effect, uniforms);
       if (!uniformData) {
         continue;
       }
 
-      sk_sp<SkShader> runtimeShader = result.effect->makeShader(uniformData, nullptr, 0, nullptr);
+      sk_sp<SkShader> runtimeShader = effect->makeShader(uniformData, nullptr, 0, nullptr);
       if (!runtimeShader) {
         continue;
       }
@@ -442,6 +563,161 @@ static bool renderSurfaceState(const CommandBuffer &buffer,
       continue;
     }
 
+    if (opcode == PackedOpcodeRuntimeShaderCircle) {
+      float cx = readPackedScalar(buffer.ops, i, taggedScalars);
+      float cy = readPackedScalar(buffer.ops, i, taggedScalars);
+      float r = readPackedScalar(buffer.ops, i, taggedScalars);
+      if (i >= buffer.ops.size()) break;
+      bool antiAlias = static_cast<int>(buffer.ops[i++]) != 0;
+      float opacity = readPackedScalar(buffer.ops, i, taggedScalars, 1.0f);
+      if (i + 1 >= buffer.ops.size()) break;
+      int sourceIndex = static_cast<int>(buffer.ops[i++]);
+      int uniformCount = static_cast<int>(buffer.ops[i++]);
+      if (uniformCount < 0) break;
+
+      const std::string *sourcePtr = readPackedString(buffer, sourceIndex);
+      if (!sourcePtr) {
+        continue;
+      }
+
+      std::unordered_map<std::string, std::vector<float>> uniforms;
+      for (int uniformIndex = 0; uniformIndex < uniformCount; uniformIndex += 1) {
+        if (i + 1 >= buffer.ops.size()) break;
+        int nameIndex = static_cast<int>(buffer.ops[i++]);
+        int valueCount = static_cast<int>(buffer.ops[i++]);
+        if (valueCount < 0) break;
+        const std::string *namePtr = readPackedString(buffer, nameIndex);
+        std::vector<float> values;
+        values.reserve(static_cast<size_t>(valueCount));
+        for (int valueIndex = 0; valueIndex < valueCount; valueIndex += 1) {
+          values.push_back(readPackedScalar(buffer.ops, i, taggedScalars));
+        }
+        if (namePtr) {
+          uniforms[*namePtr] = std::move(values);
+        }
+      }
+
+      const sk_sp<SkRuntimeEffect> effect = getCachedRuntimeEffect(*sourcePtr);
+      if (!effect) {
+        continue;
+      }
+
+      sk_sp<SkData> uniformData = buildRuntimeUniformData(effect, uniforms);
+      if (!uniformData) {
+        continue;
+      }
+
+      sk_sp<SkShader> runtimeShader = effect->makeShader(uniformData, nullptr, 0, nullptr);
+      if (!runtimeShader) {
+        continue;
+      }
+
+      SkPaint paint;
+      paint.setAntiAlias(antiAlias);
+      paint.setShader(runtimeShader);
+      paint.setAlphaf(std::max(0.0f, std::min(1.0f, opacity)));
+      paint.setStyle(SkPaint::kFill_Style);
+      canvas->drawCircle(cx, cy, r, paint);
+      continue;
+    }
+
+    if (opcode == PackedOpcodeRuntimeShaderPath) {
+      if (i + 2 >= buffer.ops.size()) break;
+      bool antiAlias = static_cast<int>(buffer.ops[i++]) != 0;
+      float opacity = readPackedScalar(buffer.ops, i, taggedScalars, 1.0f);
+      if (i + 1 >= buffer.ops.size()) break;
+      int sourceIndex = static_cast<int>(buffer.ops[i++]);
+      int uniformCount = static_cast<int>(buffer.ops[i++]);
+      if (uniformCount < 0) break;
+
+      const std::string *sourcePtr = readPackedString(buffer, sourceIndex);
+      if (!sourcePtr) {
+        continue;
+      }
+
+      std::unordered_map<std::string, std::vector<float>> uniforms;
+      for (int uniformIndex = 0; uniformIndex < uniformCount; uniformIndex += 1) {
+        if (i + 1 >= buffer.ops.size()) break;
+        int nameIndex = static_cast<int>(buffer.ops[i++]);
+        int valueCount = static_cast<int>(buffer.ops[i++]);
+        if (valueCount < 0) break;
+        const std::string *namePtr = readPackedString(buffer, nameIndex);
+        std::vector<float> values;
+        values.reserve(static_cast<size_t>(valueCount));
+        for (int valueIndex = 0; valueIndex < valueCount; valueIndex += 1) {
+          values.push_back(readPackedScalar(buffer.ops, i, taggedScalars));
+        }
+        if (namePtr) {
+          uniforms[*namePtr] = std::move(values);
+        }
+      }
+
+      if (i >= buffer.ops.size()) break;
+      int commandCount = static_cast<int>(buffer.ops[i++]);
+      if (commandCount < 0) break;
+      SkPath path;
+      for (int cmd = 0; cmd < commandCount; cmd += 1) {
+        if (i >= buffer.ops.size()) break;
+        int verb = static_cast<int>(buffer.ops[i++]);
+        if (verb == PackedPathVerbMoveTo || verb == PackedPathVerbLineTo) {
+          float x = readPackedScalar(buffer.ops, i, taggedScalars);
+          float y = readPackedScalar(buffer.ops, i, taggedScalars);
+          if (verb == PackedPathVerbMoveTo) {
+            path.moveTo(x, y);
+          } else {
+            path.lineTo(x, y);
+          }
+          continue;
+        }
+        if (verb == PackedPathVerbQuadTo) {
+          float cpx = readPackedScalar(buffer.ops, i, taggedScalars);
+          float cpy = readPackedScalar(buffer.ops, i, taggedScalars);
+          float x = readPackedScalar(buffer.ops, i, taggedScalars);
+          float y = readPackedScalar(buffer.ops, i, taggedScalars);
+          path.quadTo(cpx, cpy, x, y);
+          continue;
+        }
+        if (verb == PackedPathVerbCubicTo) {
+          float cp1x = readPackedScalar(buffer.ops, i, taggedScalars);
+          float cp1y = readPackedScalar(buffer.ops, i, taggedScalars);
+          float cp2x = readPackedScalar(buffer.ops, i, taggedScalars);
+          float cp2y = readPackedScalar(buffer.ops, i, taggedScalars);
+          float x = readPackedScalar(buffer.ops, i, taggedScalars);
+          float y = readPackedScalar(buffer.ops, i, taggedScalars);
+          path.cubicTo(cp1x, cp1y, cp2x, cp2y, x, y);
+          continue;
+        }
+        if (verb == PackedPathVerbClose) {
+          path.close();
+          continue;
+        }
+        break;
+      }
+
+      const sk_sp<SkRuntimeEffect> effect = getCachedRuntimeEffect(*sourcePtr);
+      if (!effect) {
+        continue;
+      }
+
+      sk_sp<SkData> uniformData = buildRuntimeUniformData(effect, uniforms);
+      if (!uniformData) {
+        continue;
+      }
+
+      sk_sp<SkShader> runtimeShader = effect->makeShader(uniformData, nullptr, 0, nullptr);
+      if (!runtimeShader) {
+        continue;
+      }
+
+      SkPaint paint;
+      paint.setAntiAlias(antiAlias);
+      paint.setShader(runtimeShader);
+      paint.setAlphaf(std::max(0.0f, std::min(1.0f, opacity)));
+      paint.setStyle(SkPaint::kFill_Style);
+      canvas->drawPath(path, paint);
+      continue;
+    }
+
     break;
   }
 
@@ -451,6 +727,10 @@ static bool renderSurfaceState(const CommandBuffer &buffer,
   outRowBytes = static_cast<size_t>(width) * 4;
   outPixels.resize(outRowBytes * static_cast<size_t>(height));
   bool ok = image->readPixels(info, outPixels.data(), outRowBytes, 0, 0);
+  gSignalCollector = previousCollector;
+  if (usedSignalIds) {
+    normalizeUniqueIds(*usedSignalIds);
+  }
   return ok;
 }
 
@@ -700,6 +980,122 @@ static bool encodeCommands(NSArray<NSDictionary *> *commands,
       }
       continue;
     }
+
+    if ([type isEqualToString:@"runtimeShaderCircle"]) {
+      NSDictionary *uniforms = command[@"uniforms"];
+      if (![uniforms isKindOfClass:[NSDictionary class]]) {
+        uniforms = @{};
+      }
+
+      outOps.push_back(PackedOpcodeRuntimeShaderCircle);
+      outOps.push_back([command[@"cx"] doubleValue]);
+      outOps.push_back([command[@"cy"] doubleValue]);
+      outOps.push_back([command[@"r"] doubleValue]);
+      outOps.push_back(command[@"antiAlias"] ? ([command[@"antiAlias"] boolValue] ? 1.0 : 0.0) : 1.0);
+      outOps.push_back(command[@"opacity"] ? [command[@"opacity"] doubleValue] : 1.0);
+
+      NSString *source = command[@"source"];
+      int sourceIndex = addString(outStrings, index, [source isKindOfClass:[NSString class]] ? source : @"");
+      outOps.push_back(sourceIndex);
+
+      NSArray<NSString *> *names = [uniforms allKeys];
+      outOps.push_back(static_cast<double>(names.count));
+      for (NSString *name in names) {
+        int nameIndex = addString(outStrings, index, name);
+        outOps.push_back(nameIndex);
+
+        id value = uniforms[name];
+        if ([value isKindOfClass:[NSArray class]]) {
+          NSArray *array = (NSArray *)value;
+          outOps.push_back(static_cast<double>(array.count));
+          for (id item in array) {
+            outOps.push_back([item doubleValue]);
+          }
+          continue;
+        }
+        outOps.push_back(1.0);
+        outOps.push_back([value doubleValue]);
+      }
+      continue;
+    }
+
+    if ([type isEqualToString:@"runtimeShaderPath"]) {
+      NSDictionary *uniforms = command[@"uniforms"];
+      if (![uniforms isKindOfClass:[NSDictionary class]]) {
+        uniforms = @{};
+      }
+      NSArray<NSDictionary *> *pathCommands = command[@"commands"];
+      if (![pathCommands isKindOfClass:[NSArray class]]) {
+        pathCommands = @[];
+      }
+
+      outOps.push_back(PackedOpcodeRuntimeShaderPath);
+      outOps.push_back(command[@"antiAlias"] ? ([command[@"antiAlias"] boolValue] ? 1.0 : 0.0) : 1.0);
+      outOps.push_back(command[@"opacity"] ? [command[@"opacity"] doubleValue] : 1.0);
+
+      NSString *source = command[@"source"];
+      int sourceIndex = addString(outStrings, index, [source isKindOfClass:[NSString class]] ? source : @"");
+      outOps.push_back(sourceIndex);
+
+      NSArray<NSString *> *names = [uniforms allKeys];
+      outOps.push_back(static_cast<double>(names.count));
+      for (NSString *name in names) {
+        int nameIndex = addString(outStrings, index, name);
+        outOps.push_back(nameIndex);
+
+        id value = uniforms[name];
+        if ([value isKindOfClass:[NSArray class]]) {
+          NSArray *array = (NSArray *)value;
+          outOps.push_back(static_cast<double>(array.count));
+          for (id item in array) {
+            outOps.push_back([item doubleValue]);
+          }
+          continue;
+        }
+        outOps.push_back(1.0);
+        outOps.push_back([value doubleValue]);
+      }
+
+      outOps.push_back(static_cast<double>(pathCommands.count));
+      for (NSDictionary *pathCommand in pathCommands) {
+        NSString *pathType = pathCommand[@"type"];
+        if (![pathType isKindOfClass:[NSString class]]) continue;
+        if ([pathType isEqualToString:@"moveTo"]) {
+          outOps.push_back(PackedPathVerbMoveTo);
+          outOps.push_back([pathCommand[@"x"] doubleValue]);
+          outOps.push_back([pathCommand[@"y"] doubleValue]);
+          continue;
+        }
+        if ([pathType isEqualToString:@"lineTo"]) {
+          outOps.push_back(PackedPathVerbLineTo);
+          outOps.push_back([pathCommand[@"x"] doubleValue]);
+          outOps.push_back([pathCommand[@"y"] doubleValue]);
+          continue;
+        }
+        if ([pathType isEqualToString:@"quadTo"]) {
+          outOps.push_back(PackedPathVerbQuadTo);
+          outOps.push_back([pathCommand[@"cpx"] doubleValue]);
+          outOps.push_back([pathCommand[@"cpy"] doubleValue]);
+          outOps.push_back([pathCommand[@"x"] doubleValue]);
+          outOps.push_back([pathCommand[@"y"] doubleValue]);
+          continue;
+        }
+        if ([pathType isEqualToString:@"cubicTo"]) {
+          outOps.push_back(PackedPathVerbCubicTo);
+          outOps.push_back([pathCommand[@"cp1x"] doubleValue]);
+          outOps.push_back([pathCommand[@"cp1y"] doubleValue]);
+          outOps.push_back([pathCommand[@"cp2x"] doubleValue]);
+          outOps.push_back([pathCommand[@"cp2y"] doubleValue]);
+          outOps.push_back([pathCommand[@"x"] doubleValue]);
+          outOps.push_back([pathCommand[@"y"] doubleValue]);
+          continue;
+        }
+        if ([pathType isEqualToString:@"close"]) {
+          outOps.push_back(PackedPathVerbClose);
+        }
+      }
+      continue;
+    }
   }
 
   return true;
@@ -711,17 +1107,23 @@ static bool encodeCommands(NSArray<NSDictionary *> *commands,
 
 + (BOOL)createSurface:(NSInteger)nodeId {
   if (nodeId <= 0) return NO;
-  std::lock_guard<std::mutex> lock(gSkiaMutex);
-  SurfaceState state;
-  state.front = std::make_shared<CommandBuffer>();
-  gSkiaSurfaces[static_cast<int>(nodeId)] = std::move(state);
+  {
+    std::lock_guard<std::mutex> lock(gSkiaMutex);
+    SurfaceState state;
+    state.front = std::make_shared<CommandBuffer>();
+    gSkiaSurfaces[static_cast<int>(nodeId)] = std::move(state);
+  }
+  updateSurfaceSignalSubscriptions(static_cast<int>(nodeId), {});
   return YES;
 }
 
 + (BOOL)disposeSurface:(NSInteger)nodeId {
   if (nodeId <= 0) return NO;
-  std::lock_guard<std::mutex> lock(gSkiaMutex);
-  gSkiaSurfaces.erase(static_cast<int>(nodeId));
+  {
+    std::lock_guard<std::mutex> lock(gSkiaMutex);
+    gSkiaSurfaces.erase(static_cast<int>(nodeId));
+  }
+  updateSurfaceSignalSubscriptions(static_cast<int>(nodeId), {});
   return YES;
 }
 
@@ -807,14 +1209,17 @@ static bool encodeCommands(NSArray<NSDictionary *> *commands,
 
   std::vector<uint8_t> pixels;
   size_t rowBytes = 0;
+  std::vector<int> usedSignalIds;
   if (!renderSurfaceState(*buffer,
                           static_cast<int>(width),
                           static_cast<int>(height),
                           static_cast<SkColor>(clearColor),
                           pixels,
-                          rowBytes)) {
+                          rowBytes,
+                          &usedSignalIds)) {
     return nil;
   }
+  updateSurfaceSignalSubscriptions(static_cast<int>(nodeId), std::move(usedSignalIds));
 
   NSData *data = [NSData dataWithBytes:pixels.data() length:pixels.size()];
   CGDataProviderRef provider = CGDataProviderCreateWithCFData((CFDataRef)data);
@@ -841,6 +1246,31 @@ static bool encodeCommands(NSArray<NSDictionary *> *commands,
   UIImage *image = [UIImage imageWithCGImage:imageRef scale:UIScreen.mainScreen.scale orientation:UIImageOrientationUp];
   CGImageRelease(imageRef);
   return image;
+}
+
++ (void)setRuntimeState:(void *)state {
+  gSkiaRuntimeState = state;
+  if (state == nullptr) {
+    std::lock_guard<std::mutex> lock(gRuntimeEffectCacheMutex);
+    gRuntimeEffectCache.clear();
+  }
+}
+
++ (NSArray<NSNumber *> *)surfaceNodeIdsForSignalId:(int)signalId {
+  if (signalId <= 0) return @[];
+  std::vector<int> nodeIds;
+  {
+    std::lock_guard<std::mutex> lock(gSignalSubscriptionsMutex);
+    auto found = gSignalSurfaceIds.find(signalId);
+    if (found != gSignalSurfaceIds.end()) {
+      nodeIds = found->second;
+    }
+  }
+  NSMutableArray<NSNumber *> *result = [NSMutableArray arrayWithCapacity:nodeIds.size()];
+  for (int nodeId : nodeIds) {
+    [result addObject:@(nodeId)];
+  }
+  return result;
 }
 
 + (BOOL)hasSurface:(NSInteger)nodeId {

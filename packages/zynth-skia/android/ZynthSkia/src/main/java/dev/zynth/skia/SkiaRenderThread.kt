@@ -36,7 +36,8 @@ internal class SkiaRenderThread {
 
   private var bitmapA: Bitmap? = null
   private var bitmapB: Bitmap? = null
-  private var publishedBitmap: Bitmap? = null
+  private var displayedBitmap: Bitmap? = null
+  private val pendingDeliveryBitmaps = HashSet<Bitmap>()
 
   private val fallbackFrameRunnable = Runnable {
     frameScheduled = false
@@ -159,14 +160,21 @@ internal class SkiaRenderThread {
     )
     if (!rendered) return false
 
-    publishedBitmap = targetBitmap
+    pendingDeliveryBitmaps.add(targetBitmap)
     val listener = listenerRef?.get()
     if (listener != null) {
       val frameWidth = width
       val frameHeight = height
       mainHandler.post {
         listenerRef?.get()?.onFrameReady(targetBitmap, frameWidth, frameHeight)
+        handler.post {
+          pendingDeliveryBitmaps.remove(targetBitmap)
+          displayedBitmap = targetBitmap
+        }
       }
+    } else {
+      pendingDeliveryBitmaps.remove(targetBitmap)
+      displayedBitmap = targetBitmap
     }
 
     return true
@@ -213,11 +221,22 @@ internal class SkiaRenderThread {
     val b = bitmapB
     if (a == null && b == null) return null
 
-    return if (publishedBitmap === a) {
-      b ?: a
-    } else {
-      a ?: b
+    fun canRenderTo(bitmap: Bitmap?): Boolean {
+      if (bitmap == null || bitmap.isRecycled) return false
+      if (bitmap === displayedBitmap) return false
+      if (pendingDeliveryBitmaps.contains(bitmap)) return false
+      return true
     }
+
+    val canUseA = canRenderTo(a)
+    val canUseB = canRenderTo(b)
+
+    if (canUseA && canUseB) {
+      return if (displayedBitmap === a) b else a
+    }
+    if (canUseA) return a
+    if (canUseB) return b
+    return null
   }
 
   private fun ensureBitmapSize(bitmap: Bitmap?, width: Int, height: Int): Bitmap? {
@@ -230,6 +249,7 @@ internal class SkiaRenderThread {
   private fun releaseBitmaps() {
     bitmapA = null
     bitmapB = null
-    publishedBitmap = null
+    displayedBitmap = null
+    pendingDeliveryBitmaps.clear()
   }
 }

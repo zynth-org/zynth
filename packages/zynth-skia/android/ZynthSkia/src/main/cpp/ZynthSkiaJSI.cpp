@@ -5,6 +5,7 @@
 #include <jsi/jsi.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -39,6 +40,8 @@ constexpr int kOpcodeCircle = 3;
 constexpr int kOpcodeLine = 4;
 constexpr int kOpcodePath = 5;
 constexpr int kOpcodeRuntimeShaderRect = 6;
+constexpr int kOpcodeRuntimeShaderCircle = 7;
+constexpr int kOpcodeRuntimeShaderPath = 8;
 
 constexpr int kColorTypeInt = 1;
 constexpr int kColorTypeString = 2;
@@ -60,9 +63,20 @@ constexpr int kPathVerbQuadTo = 2;
 constexpr int kPathVerbCubicTo = 3;
 constexpr int kPathVerbClose = 4;
 
+constexpr int kPackedStreamMagic = 900719;
+constexpr int kPackedStreamVersion = 2;
+constexpr int kPackedScalarLiteral = 0;
+constexpr int kPackedScalarSharedSignal = 1;
+
 JavaVM *gVm = nullptr;
 using RegisterInstallerFn = void (*)(ZynthJSIPluginInstaller installer);
 RegisterInstallerFn gRegisterInstaller = nullptr;
+using RegisterSharedSignalChangedFn = void (*)(ZynthSharedSignalChangedCallback callback);
+RegisterSharedSignalChangedFn gRegisterSharedSignalChanged = nullptr;
+using GetSharedSignalFn = double (*)(void *state, int signalId, bool *found);
+GetSharedSignalFn gGetSharedSignal = nullptr;
+void *gRuntimeState = nullptr;
+bool gSharedSignalCallbackRegistered = false;
 
 jclass gSkiaBridgeClass = nullptr;
 jmethodID gCreateSurface = nullptr;
@@ -84,6 +98,12 @@ struct SurfaceState {
 
 std::mutex gSurfaceMutex;
 std::unordered_map<int, SurfaceState> gSurfaces;
+std::mutex gSignalSubscriptionMutex;
+std::unordered_map<int, std::vector<int>> gSurfaceSignalIds;
+std::unordered_map<int, std::vector<int>> gSignalSurfaceIds;
+thread_local std::vector<int> *gSignalCollector = nullptr;
+std::mutex gRuntimeEffectCacheMutex;
+std::unordered_map<std::string, sk_sp<SkRuntimeEffect>> gRuntimeEffectCache;
 
 JNIEnv *getEnv() {
   if (!gVm) return nullptr;
@@ -157,6 +177,90 @@ const std::string *readPackedString(const SurfaceState::CommandBuffer &buffer, i
   return &buffer.stringTable[static_cast<size_t>(idx)];
 }
 
+double resolveSharedSignalValue(int signalId, double fallback, bool *resolved = nullptr) {
+  if (resolved) *resolved = false;
+  if (!gGetSharedSignal || !gRuntimeState || signalId <= 0) return fallback;
+  bool found = false;
+  const double value = gGetSharedSignal(gRuntimeState, signalId, &found);
+  if (!found || !std::isfinite(value)) {
+    return fallback;
+  }
+  if (resolved) *resolved = true;
+  return value;
+}
+
+void normalizeUniqueIds(std::vector<int> &ids) {
+  std::sort(ids.begin(), ids.end());
+  ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+}
+
+void removeSurfaceSignalSubscriptionsLocked(int nodeId) {
+  auto foundSurface = gSurfaceSignalIds.find(nodeId);
+  if (foundSurface == gSurfaceSignalIds.end()) return;
+  for (int signalId : foundSurface->second) {
+    auto it = gSignalSurfaceIds.find(signalId);
+    if (it == gSignalSurfaceIds.end()) continue;
+    auto &nodes = it->second;
+    nodes.erase(std::remove(nodes.begin(), nodes.end(), nodeId), nodes.end());
+    if (nodes.empty()) {
+      gSignalSurfaceIds.erase(it);
+    }
+  }
+  gSurfaceSignalIds.erase(foundSurface);
+}
+
+void updateSurfaceSignalSubscriptions(int nodeId, std::vector<int> ids) {
+  normalizeUniqueIds(ids);
+  std::lock_guard<std::mutex> lock(gSignalSubscriptionMutex);
+  removeSurfaceSignalSubscriptionsLocked(nodeId);
+  if (ids.empty()) return;
+  gSurfaceSignalIds[nodeId] = ids;
+  for (int signalId : ids) {
+    auto &nodes = gSignalSurfaceIds[signalId];
+    nodes.push_back(nodeId);
+    normalizeUniqueIds(nodes);
+  }
+}
+
+bool consumePackedHeader(const std::vector<double> &ops, size_t &index, bool &taggedScalars) {
+  taggedScalars = false;
+  if (ops.size() < 2) return true;
+  const int maybeMagic = static_cast<int>(ops[0]);
+  if (maybeMagic != kPackedStreamMagic) return true;
+  const int version = static_cast<int>(ops[1]);
+  index = 2;
+  taggedScalars = version >= kPackedStreamVersion;
+  return true;
+}
+
+float readPackedScalar(
+    const std::vector<double> &ops,
+    size_t &index,
+    bool taggedScalars,
+    float fallback = 0.0f) {
+  if (index >= ops.size()) return fallback;
+  if (!taggedScalars) {
+    return static_cast<float>(ops[index++]);
+  }
+
+  const int kind = static_cast<int>(ops[index++]);
+  if (kind == kPackedScalarLiteral) {
+    if (index >= ops.size()) return fallback;
+    return static_cast<float>(ops[index++]);
+  }
+  if (kind == kPackedScalarSharedSignal) {
+    if (index + 1 >= ops.size()) return fallback;
+    const int signalId = static_cast<int>(ops[index++]);
+    const double snapshot = ops[index++];
+    if (gSignalCollector && signalId > 0) {
+      gSignalCollector->push_back(signalId);
+    }
+    const double resolved = resolveSharedSignalValue(signalId, snapshot);
+    return static_cast<float>(resolved);
+  }
+  return fallback;
+}
+
 sk_sp<SkData> buildRuntimeUniformData(
     const sk_sp<SkRuntimeEffect> &effect,
     const std::unordered_map<std::string, std::vector<float>> &uniformValues) {
@@ -183,6 +287,31 @@ sk_sp<SkData> buildRuntimeUniformData(
   }
 
   return SkData::MakeWithCopy(bytes.data(), bytes.size());
+}
+
+sk_sp<SkRuntimeEffect> getCachedRuntimeEffect(const std::string &source) {
+  if (source.empty()) return nullptr;
+  {
+    std::lock_guard<std::mutex> lock(gRuntimeEffectCacheMutex);
+    const auto found = gRuntimeEffectCache.find(source);
+    if (found != gRuntimeEffectCache.end()) {
+      return found->second;
+    }
+  }
+
+  SkRuntimeEffect::Result result = SkRuntimeEffect::MakeForShader(SkString(source.c_str()));
+  if (!result.effect) {
+    return nullptr;
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(gRuntimeEffectCacheMutex);
+    if (gRuntimeEffectCache.size() >= 128) {
+      gRuntimeEffectCache.clear();
+    }
+    gRuntimeEffectCache[source] = result.effect;
+  }
+  return result.effect;
 }
 
 SkPaint::Cap decodeStrokeCap(int cap) {
@@ -233,14 +362,19 @@ bool renderSurfaceState(
     const SurfaceState::CommandBuffer &buffer,
     SkCanvas *canvas,
     float density,
-    SkColor clearColor) {
+    SkColor clearColor,
+    std::vector<int> *usedSignalIds = nullptr) {
   if (!canvas) return false;
   canvas->clear(clearColor);
   const float scale = density > 0.0f ? density : 1.0f;
   canvas->save();
   canvas->scale(scale, scale);
+  std::vector<int> *previousCollector = gSignalCollector;
+  gSignalCollector = usedSignalIds;
 
   size_t i = 0;
+  bool taggedScalars = false;
+  consumePackedHeader(buffer.ops, i, taggedScalars);
   while (i < buffer.ops.size()) {
     const int opcode = static_cast<int>(buffer.ops[i++]);
 
@@ -250,20 +384,20 @@ bool renderSurfaceState(
     }
 
     if (opcode == kOpcodeRect) {
-      if (i + 5 >= buffer.ops.size()) break;
-      const float x = static_cast<float>(buffer.ops[i++]);
-      const float y = static_cast<float>(buffer.ops[i++]);
-      const float w = static_cast<float>(buffer.ops[i++]);
-      const float h = static_cast<float>(buffer.ops[i++]);
+      const float x = readPackedScalar(buffer.ops, i, taggedScalars);
+      const float y = readPackedScalar(buffer.ops, i, taggedScalars);
+      const float w = readPackedScalar(buffer.ops, i, taggedScalars);
+      const float h = readPackedScalar(buffer.ops, i, taggedScalars);
       const SkColor color = readPackedColor(buffer, buffer.ops, i);
-      if (i + 6 >= buffer.ops.size()) break;
-      const float strokeWidth = static_cast<float>(buffer.ops[i++]);
+      const float strokeWidth = readPackedScalar(buffer.ops, i, taggedScalars, 1.0f);
+      if (i + 2 >= buffer.ops.size()) break;
       const int style = static_cast<int>(buffer.ops[i++]);
       const bool antiAlias = static_cast<int>(buffer.ops[i++]) != 0;
-      const float opacity = static_cast<float>(buffer.ops[i++]);
+      const float opacity = readPackedScalar(buffer.ops, i, taggedScalars, 1.0f);
+      if (i + 1 >= buffer.ops.size()) break;
       const int strokeCap = static_cast<int>(buffer.ops[i++]);
       const int strokeJoin = static_cast<int>(buffer.ops[i++]);
-      const float strokeMiter = static_cast<float>(buffer.ops[i++]);
+      const float strokeMiter = readPackedScalar(buffer.ops, i, taggedScalars, 4.0f);
 
       SkPaint paint;
       configurePaint(
@@ -281,19 +415,19 @@ bool renderSurfaceState(
     }
 
     if (opcode == kOpcodeCircle) {
-      if (i + 4 >= buffer.ops.size()) break;
-      const float cx = static_cast<float>(buffer.ops[i++]);
-      const float cy = static_cast<float>(buffer.ops[i++]);
-      const float r = static_cast<float>(buffer.ops[i++]);
+      const float cx = readPackedScalar(buffer.ops, i, taggedScalars);
+      const float cy = readPackedScalar(buffer.ops, i, taggedScalars);
+      const float r = readPackedScalar(buffer.ops, i, taggedScalars);
       const SkColor color = readPackedColor(buffer, buffer.ops, i);
-      if (i + 6 >= buffer.ops.size()) break;
-      const float strokeWidth = static_cast<float>(buffer.ops[i++]);
+      const float strokeWidth = readPackedScalar(buffer.ops, i, taggedScalars, 1.0f);
+      if (i + 2 >= buffer.ops.size()) break;
       const int style = static_cast<int>(buffer.ops[i++]);
       const bool antiAlias = static_cast<int>(buffer.ops[i++]) != 0;
-      const float opacity = static_cast<float>(buffer.ops[i++]);
+      const float opacity = readPackedScalar(buffer.ops, i, taggedScalars, 1.0f);
+      if (i + 1 >= buffer.ops.size()) break;
       const int strokeCap = static_cast<int>(buffer.ops[i++]);
       const int strokeJoin = static_cast<int>(buffer.ops[i++]);
-      const float strokeMiter = static_cast<float>(buffer.ops[i++]);
+      const float strokeMiter = readPackedScalar(buffer.ops, i, taggedScalars, 4.0f);
 
       SkPaint paint;
       configurePaint(
@@ -311,19 +445,19 @@ bool renderSurfaceState(
     }
 
     if (opcode == kOpcodeLine) {
-      if (i + 5 >= buffer.ops.size()) break;
-      const float x1 = static_cast<float>(buffer.ops[i++]);
-      const float y1 = static_cast<float>(buffer.ops[i++]);
-      const float x2 = static_cast<float>(buffer.ops[i++]);
-      const float y2 = static_cast<float>(buffer.ops[i++]);
+      const float x1 = readPackedScalar(buffer.ops, i, taggedScalars);
+      const float y1 = readPackedScalar(buffer.ops, i, taggedScalars);
+      const float x2 = readPackedScalar(buffer.ops, i, taggedScalars);
+      const float y2 = readPackedScalar(buffer.ops, i, taggedScalars);
       const SkColor color = readPackedColor(buffer, buffer.ops, i);
-      if (i + 4 >= buffer.ops.size()) break;
-      const float strokeWidth = static_cast<float>(buffer.ops[i++]);
+      const float strokeWidth = readPackedScalar(buffer.ops, i, taggedScalars, 1.0f);
+      if (i + 1 >= buffer.ops.size()) break;
       const bool antiAlias = static_cast<int>(buffer.ops[i++]) != 0;
-      const float opacity = static_cast<float>(buffer.ops[i++]);
+      const float opacity = readPackedScalar(buffer.ops, i, taggedScalars, 1.0f);
+      if (i + 1 >= buffer.ops.size()) break;
       const int strokeCap = static_cast<int>(buffer.ops[i++]);
       const int strokeJoin = static_cast<int>(buffer.ops[i++]);
-      const float strokeMiter = static_cast<float>(buffer.ops[i++]);
+      const float strokeMiter = readPackedScalar(buffer.ops, i, taggedScalars, 4.0f);
 
       SkPaint paint;
       configurePaint(
@@ -342,14 +476,16 @@ bool renderSurfaceState(
 
     if (opcode == kOpcodePath) {
       const SkColor color = readPackedColor(buffer, buffer.ops, i);
-      if (i + 7 >= buffer.ops.size()) break;
-      const float strokeWidth = static_cast<float>(buffer.ops[i++]);
+      const float strokeWidth = readPackedScalar(buffer.ops, i, taggedScalars, 1.0f);
+      if (i + 2 >= buffer.ops.size()) break;
       const int style = static_cast<int>(buffer.ops[i++]);
       const bool antiAlias = static_cast<int>(buffer.ops[i++]) != 0;
-      const float opacity = static_cast<float>(buffer.ops[i++]);
+      const float opacity = readPackedScalar(buffer.ops, i, taggedScalars, 1.0f);
+      if (i + 1 >= buffer.ops.size()) break;
       const int strokeCap = static_cast<int>(buffer.ops[i++]);
       const int strokeJoin = static_cast<int>(buffer.ops[i++]);
-      const float strokeMiter = static_cast<float>(buffer.ops[i++]);
+      const float strokeMiter = readPackedScalar(buffer.ops, i, taggedScalars, 4.0f);
+      if (i >= buffer.ops.size()) break;
       const int commandCount = static_cast<int>(buffer.ops[i++]);
       if (commandCount < 0) break;
 
@@ -359,9 +495,8 @@ bool renderSurfaceState(
         const int verb = static_cast<int>(buffer.ops[i++]);
 
         if (verb == kPathVerbMoveTo || verb == kPathVerbLineTo) {
-          if (i + 1 >= buffer.ops.size()) break;
-          const float x = static_cast<float>(buffer.ops[i++]);
-          const float y = static_cast<float>(buffer.ops[i++]);
+          const float x = readPackedScalar(buffer.ops, i, taggedScalars);
+          const float y = readPackedScalar(buffer.ops, i, taggedScalars);
           if (verb == kPathVerbMoveTo) {
             path.moveTo(x, y);
           } else {
@@ -371,23 +506,21 @@ bool renderSurfaceState(
         }
 
         if (verb == kPathVerbQuadTo) {
-          if (i + 3 >= buffer.ops.size()) break;
-          const float cpx = static_cast<float>(buffer.ops[i++]);
-          const float cpy = static_cast<float>(buffer.ops[i++]);
-          const float x = static_cast<float>(buffer.ops[i++]);
-          const float y = static_cast<float>(buffer.ops[i++]);
+          const float cpx = readPackedScalar(buffer.ops, i, taggedScalars);
+          const float cpy = readPackedScalar(buffer.ops, i, taggedScalars);
+          const float x = readPackedScalar(buffer.ops, i, taggedScalars);
+          const float y = readPackedScalar(buffer.ops, i, taggedScalars);
           path.quadTo(cpx, cpy, x, y);
           continue;
         }
 
         if (verb == kPathVerbCubicTo) {
-          if (i + 5 >= buffer.ops.size()) break;
-          const float cp1x = static_cast<float>(buffer.ops[i++]);
-          const float cp1y = static_cast<float>(buffer.ops[i++]);
-          const float cp2x = static_cast<float>(buffer.ops[i++]);
-          const float cp2y = static_cast<float>(buffer.ops[i++]);
-          const float x = static_cast<float>(buffer.ops[i++]);
-          const float y = static_cast<float>(buffer.ops[i++]);
+          const float cp1x = readPackedScalar(buffer.ops, i, taggedScalars);
+          const float cp1y = readPackedScalar(buffer.ops, i, taggedScalars);
+          const float cp2x = readPackedScalar(buffer.ops, i, taggedScalars);
+          const float cp2y = readPackedScalar(buffer.ops, i, taggedScalars);
+          const float x = readPackedScalar(buffer.ops, i, taggedScalars);
+          const float y = readPackedScalar(buffer.ops, i, taggedScalars);
           path.cubicTo(cp1x, cp1y, cp2x, cp2y, x, y);
           continue;
         }
@@ -415,13 +548,14 @@ bool renderSurfaceState(
     }
 
     if (opcode == kOpcodeRuntimeShaderRect) {
-      if (i + 7 >= buffer.ops.size()) break;
-      const float x = static_cast<float>(buffer.ops[i++]);
-      const float y = static_cast<float>(buffer.ops[i++]);
-      const float w = static_cast<float>(buffer.ops[i++]);
-      const float h = static_cast<float>(buffer.ops[i++]);
+      const float x = readPackedScalar(buffer.ops, i, taggedScalars);
+      const float y = readPackedScalar(buffer.ops, i, taggedScalars);
+      const float w = readPackedScalar(buffer.ops, i, taggedScalars);
+      const float h = readPackedScalar(buffer.ops, i, taggedScalars);
+      if (i >= buffer.ops.size()) break;
       const bool antiAlias = static_cast<int>(buffer.ops[i++]) != 0;
-      const float opacity = static_cast<float>(buffer.ops[i++]);
+      const float opacity = readPackedScalar(buffer.ops, i, taggedScalars, 1.0f);
+      if (i + 1 >= buffer.ops.size()) break;
       const int sourceIndex = static_cast<int>(buffer.ops[i++]);
       const int uniformCount = static_cast<int>(buffer.ops[i++]);
       if (uniformCount < 0) break;
@@ -437,29 +571,28 @@ bool renderSurfaceState(
         const int nameIndex = static_cast<int>(buffer.ops[i++]);
         const int valueCount = static_cast<int>(buffer.ops[i++]);
         if (valueCount < 0) break;
-        if (i + static_cast<size_t>(valueCount) > buffer.ops.size()) break;
         const std::string *namePtr = readPackedString(buffer, nameIndex);
         std::vector<float> values;
         values.reserve(static_cast<size_t>(valueCount));
         for (int valueIndex = 0; valueIndex < valueCount; valueIndex += 1) {
-          values.push_back(static_cast<float>(buffer.ops[i++]));
+          values.push_back(readPackedScalar(buffer.ops, i, taggedScalars));
         }
         if (namePtr) {
           uniforms[*namePtr] = std::move(values);
         }
       }
 
-      SkRuntimeEffect::Result result = SkRuntimeEffect::MakeForShader(SkString(sourcePtr->c_str()));
-      if (!result.effect) {
+      const sk_sp<SkRuntimeEffect> effect = getCachedRuntimeEffect(*sourcePtr);
+      if (!effect) {
         continue;
       }
 
-      sk_sp<SkData> uniformData = buildRuntimeUniformData(result.effect, uniforms);
+      sk_sp<SkData> uniformData = buildRuntimeUniformData(effect, uniforms);
       if (!uniformData) {
         continue;
       }
 
-      sk_sp<SkShader> runtimeShader = result.effect->makeShader(uniformData, nullptr, 0, nullptr);
+      sk_sp<SkShader> runtimeShader = effect->makeShader(uniformData, nullptr, 0, nullptr);
       if (!runtimeShader) {
         continue;
       }
@@ -473,10 +606,163 @@ bool renderSurfaceState(
       continue;
     }
 
+    if (opcode == kOpcodeRuntimeShaderCircle) {
+      const float cx = readPackedScalar(buffer.ops, i, taggedScalars);
+      const float cy = readPackedScalar(buffer.ops, i, taggedScalars);
+      const float r = readPackedScalar(buffer.ops, i, taggedScalars);
+      if (i >= buffer.ops.size()) break;
+      const bool antiAlias = static_cast<int>(buffer.ops[i++]) != 0;
+      const float opacity = readPackedScalar(buffer.ops, i, taggedScalars, 1.0f);
+      if (i + 1 >= buffer.ops.size()) break;
+      const int sourceIndex = static_cast<int>(buffer.ops[i++]);
+      const int uniformCount = static_cast<int>(buffer.ops[i++]);
+      if (uniformCount < 0) break;
+
+      const std::string *sourcePtr = readPackedString(buffer, sourceIndex);
+      if (!sourcePtr) {
+        continue;
+      }
+
+      std::unordered_map<std::string, std::vector<float>> uniforms;
+      for (int uniformIndex = 0; uniformIndex < uniformCount; uniformIndex += 1) {
+        if (i + 1 >= buffer.ops.size()) break;
+        const int nameIndex = static_cast<int>(buffer.ops[i++]);
+        const int valueCount = static_cast<int>(buffer.ops[i++]);
+        if (valueCount < 0) break;
+        const std::string *namePtr = readPackedString(buffer, nameIndex);
+        std::vector<float> values;
+        values.reserve(static_cast<size_t>(valueCount));
+        for (int valueIndex = 0; valueIndex < valueCount; valueIndex += 1) {
+          values.push_back(readPackedScalar(buffer.ops, i, taggedScalars));
+        }
+        if (namePtr) {
+          uniforms[*namePtr] = std::move(values);
+        }
+      }
+
+      const sk_sp<SkRuntimeEffect> effect = getCachedRuntimeEffect(*sourcePtr);
+      if (!effect) {
+        continue;
+      }
+      sk_sp<SkData> uniformData = buildRuntimeUniformData(effect, uniforms);
+      if (!uniformData) {
+        continue;
+      }
+      sk_sp<SkShader> runtimeShader = effect->makeShader(uniformData, nullptr, 0, nullptr);
+      if (!runtimeShader) {
+        continue;
+      }
+      SkPaint paint;
+      paint.setAntiAlias(antiAlias);
+      paint.setShader(runtimeShader);
+      paint.setAlphaf(std::max(0.0f, std::min(1.0f, opacity)));
+      paint.setStyle(SkPaint::kFill_Style);
+      canvas->drawCircle(cx, cy, r, paint);
+      continue;
+    }
+
+    if (opcode == kOpcodeRuntimeShaderPath) {
+      if (i + 2 >= buffer.ops.size()) break;
+      const bool antiAlias = static_cast<int>(buffer.ops[i++]) != 0;
+      const float opacity = readPackedScalar(buffer.ops, i, taggedScalars, 1.0f);
+      if (i + 1 >= buffer.ops.size()) break;
+      const int sourceIndex = static_cast<int>(buffer.ops[i++]);
+      const int uniformCount = static_cast<int>(buffer.ops[i++]);
+      if (uniformCount < 0) break;
+
+      const std::string *sourcePtr = readPackedString(buffer, sourceIndex);
+      if (!sourcePtr) {
+        continue;
+      }
+
+      std::unordered_map<std::string, std::vector<float>> uniforms;
+      for (int uniformIndex = 0; uniformIndex < uniformCount; uniformIndex += 1) {
+        if (i + 1 >= buffer.ops.size()) break;
+        const int nameIndex = static_cast<int>(buffer.ops[i++]);
+        const int valueCount = static_cast<int>(buffer.ops[i++]);
+        if (valueCount < 0) break;
+        const std::string *namePtr = readPackedString(buffer, nameIndex);
+        std::vector<float> values;
+        values.reserve(static_cast<size_t>(valueCount));
+        for (int valueIndex = 0; valueIndex < valueCount; valueIndex += 1) {
+          values.push_back(readPackedScalar(buffer.ops, i, taggedScalars));
+        }
+        if (namePtr) {
+          uniforms[*namePtr] = std::move(values);
+        }
+      }
+
+      if (i >= buffer.ops.size()) break;
+      const int commandCount = static_cast<int>(buffer.ops[i++]);
+      if (commandCount < 0) break;
+      SkPath path;
+      for (int cmd = 0; cmd < commandCount; cmd += 1) {
+        if (i >= buffer.ops.size()) break;
+        const int verb = static_cast<int>(buffer.ops[i++]);
+        if (verb == kPathVerbMoveTo || verb == kPathVerbLineTo) {
+          const float x = readPackedScalar(buffer.ops, i, taggedScalars);
+          const float y = readPackedScalar(buffer.ops, i, taggedScalars);
+          if (verb == kPathVerbMoveTo) {
+            path.moveTo(x, y);
+          } else {
+            path.lineTo(x, y);
+          }
+          continue;
+        }
+        if (verb == kPathVerbQuadTo) {
+          const float cpx = readPackedScalar(buffer.ops, i, taggedScalars);
+          const float cpy = readPackedScalar(buffer.ops, i, taggedScalars);
+          const float x = readPackedScalar(buffer.ops, i, taggedScalars);
+          const float y = readPackedScalar(buffer.ops, i, taggedScalars);
+          path.quadTo(cpx, cpy, x, y);
+          continue;
+        }
+        if (verb == kPathVerbCubicTo) {
+          const float cp1x = readPackedScalar(buffer.ops, i, taggedScalars);
+          const float cp1y = readPackedScalar(buffer.ops, i, taggedScalars);
+          const float cp2x = readPackedScalar(buffer.ops, i, taggedScalars);
+          const float cp2y = readPackedScalar(buffer.ops, i, taggedScalars);
+          const float x = readPackedScalar(buffer.ops, i, taggedScalars);
+          const float y = readPackedScalar(buffer.ops, i, taggedScalars);
+          path.cubicTo(cp1x, cp1y, cp2x, cp2y, x, y);
+          continue;
+        }
+        if (verb == kPathVerbClose) {
+          path.close();
+          continue;
+        }
+        break;
+      }
+
+      const sk_sp<SkRuntimeEffect> effect = getCachedRuntimeEffect(*sourcePtr);
+      if (!effect) {
+        continue;
+      }
+      sk_sp<SkData> uniformData = buildRuntimeUniformData(effect, uniforms);
+      if (!uniformData) {
+        continue;
+      }
+      sk_sp<SkShader> runtimeShader = effect->makeShader(uniformData, nullptr, 0, nullptr);
+      if (!runtimeShader) {
+        continue;
+      }
+      SkPaint paint;
+      paint.setAntiAlias(antiAlias);
+      paint.setShader(runtimeShader);
+      paint.setAlphaf(std::max(0.0f, std::min(1.0f, opacity)));
+      paint.setStyle(SkPaint::kFill_Style);
+      canvas->drawPath(path, paint);
+      continue;
+    }
+
     break;
   }
 
   canvas->restore();
+  gSignalCollector = previousCollector;
+  if (usedSignalIds) {
+    normalizeUniqueIds(*usedSignalIds);
+  }
   return true;
 }
 
@@ -749,11 +1035,182 @@ void encodeCommandsFromJS(
       }
       continue;
     }
+
+    if (type == "runtimeShaderCircle") {
+      outOps.push_back(static_cast<double>(kOpcodeRuntimeShaderCircle));
+      outOps.push_back(readNumberProp(rt, command, "cx", 0));
+      outOps.push_back(readNumberProp(rt, command, "cy", 0));
+      outOps.push_back(readNumberProp(rt, command, "r", 0));
+      const Value antiAlias = command.getProperty(rt, "antiAlias");
+      outOps.push_back(antiAlias.isBool() ? (antiAlias.getBool() ? 1.0 : 0.0) : 1.0);
+      outOps.push_back(readNumberProp(rt, command, "opacity", 1));
+
+      const std::string source = readStringProp(rt, command, "source", "");
+      const int sourceIndex = addString(outStrings, stringIndex, source);
+      outOps.push_back(static_cast<double>(sourceIndex));
+
+      Value uniformsValue = command.getProperty(rt, "uniforms");
+      if (!uniformsValue.isObject()) {
+        outOps.push_back(0.0);
+        continue;
+      }
+      Object uniformsObject = uniformsValue.asObject(rt);
+      Array names = uniformsObject.getPropertyNames(rt);
+      const size_t nameCount = names.length(rt);
+      outOps.push_back(static_cast<double>(nameCount));
+
+      for (size_t uniformIndex = 0; uniformIndex < nameCount; uniformIndex += 1) {
+        Value nameValue = names.getValueAtIndex(rt, uniformIndex);
+        if (!nameValue.isString()) {
+          outOps.push_back(-1.0);
+          outOps.push_back(0.0);
+          continue;
+        }
+        const std::string name = nameValue.asString(rt).utf8(rt);
+        const int nameIndex = addString(outStrings, stringIndex, name);
+        outOps.push_back(static_cast<double>(nameIndex));
+
+        Value uniformValue = uniformsObject.getProperty(rt, name.c_str());
+        if (uniformValue.isNumber()) {
+          outOps.push_back(1.0);
+          outOps.push_back(uniformValue.asNumber());
+          continue;
+        }
+
+        if (uniformValue.isObject()) {
+          Object uniformObject = uniformValue.asObject(rt);
+          if (uniformObject.isArray(rt)) {
+            Array uniformArray = uniformObject.asArray(rt);
+            const size_t uniformLength = uniformArray.length(rt);
+            outOps.push_back(static_cast<double>(uniformLength));
+            for (size_t valueIndex = 0; valueIndex < uniformLength; valueIndex += 1) {
+              Value element = uniformArray.getValueAtIndex(rt, valueIndex);
+              outOps.push_back(element.isNumber() ? element.asNumber() : 0.0);
+            }
+            continue;
+          }
+        }
+
+        outOps.push_back(0.0);
+      }
+      continue;
+    }
+
+    if (type == "runtimeShaderPath") {
+      outOps.push_back(static_cast<double>(kOpcodeRuntimeShaderPath));
+      const Value antiAlias = command.getProperty(rt, "antiAlias");
+      outOps.push_back(antiAlias.isBool() ? (antiAlias.getBool() ? 1.0 : 0.0) : 1.0);
+      outOps.push_back(readNumberProp(rt, command, "opacity", 1));
+
+      const std::string source = readStringProp(rt, command, "source", "");
+      const int sourceIndex = addString(outStrings, stringIndex, source);
+      outOps.push_back(static_cast<double>(sourceIndex));
+
+      Value uniformsValue = command.getProperty(rt, "uniforms");
+      if (!uniformsValue.isObject()) {
+        outOps.push_back(0.0);
+      } else {
+        Object uniformsObject = uniformsValue.asObject(rt);
+        Array names = uniformsObject.getPropertyNames(rt);
+        const size_t nameCount = names.length(rt);
+        outOps.push_back(static_cast<double>(nameCount));
+
+        for (size_t uniformIndex = 0; uniformIndex < nameCount; uniformIndex += 1) {
+          Value nameValue = names.getValueAtIndex(rt, uniformIndex);
+          if (!nameValue.isString()) {
+            outOps.push_back(-1.0);
+            outOps.push_back(0.0);
+            continue;
+          }
+          const std::string name = nameValue.asString(rt).utf8(rt);
+          const int nameIndex = addString(outStrings, stringIndex, name);
+          outOps.push_back(static_cast<double>(nameIndex));
+
+          Value uniformValue = uniformsObject.getProperty(rt, name.c_str());
+          if (uniformValue.isNumber()) {
+            outOps.push_back(1.0);
+            outOps.push_back(uniformValue.asNumber());
+            continue;
+          }
+
+          if (uniformValue.isObject()) {
+            Object uniformObject = uniformValue.asObject(rt);
+            if (uniformObject.isArray(rt)) {
+              Array uniformArray = uniformObject.asArray(rt);
+              const size_t uniformLength = uniformArray.length(rt);
+              outOps.push_back(static_cast<double>(uniformLength));
+              for (size_t valueIndex = 0; valueIndex < uniformLength; valueIndex += 1) {
+                Value element = uniformArray.getValueAtIndex(rt, valueIndex);
+                outOps.push_back(element.isNumber() ? element.asNumber() : 0.0);
+              }
+              continue;
+            }
+          }
+
+          outOps.push_back(0.0);
+        }
+      }
+
+      Value pathCommandsValue = command.getProperty(rt, "commands");
+      if (!pathCommandsValue.isObject()) {
+        outOps.push_back(0.0);
+        continue;
+      }
+      Object pathCommandsObject = pathCommandsValue.asObject(rt);
+      if (!pathCommandsObject.isArray(rt)) {
+        outOps.push_back(0.0);
+        continue;
+      }
+      Array pathCommands = pathCommandsObject.asArray(rt);
+      const size_t pathCommandCount = pathCommands.length(rt);
+      outOps.push_back(static_cast<double>(pathCommandCount));
+      for (size_t pathIndex = 0; pathIndex < pathCommandCount; pathIndex += 1) {
+        Value pathCommandValue = pathCommands.getValueAtIndex(rt, pathIndex);
+        if (!pathCommandValue.isObject()) continue;
+        Object pathCommand = pathCommandValue.asObject(rt);
+        const std::string pathType = readStringProp(rt, pathCommand, "type");
+
+        if (pathType == "moveTo") {
+          outOps.push_back(static_cast<double>(kPathVerbMoveTo));
+          outOps.push_back(readNumberProp(rt, pathCommand, "x", 0));
+          outOps.push_back(readNumberProp(rt, pathCommand, "y", 0));
+          continue;
+        }
+        if (pathType == "lineTo") {
+          outOps.push_back(static_cast<double>(kPathVerbLineTo));
+          outOps.push_back(readNumberProp(rt, pathCommand, "x", 0));
+          outOps.push_back(readNumberProp(rt, pathCommand, "y", 0));
+          continue;
+        }
+        if (pathType == "quadTo") {
+          outOps.push_back(static_cast<double>(kPathVerbQuadTo));
+          outOps.push_back(readNumberProp(rt, pathCommand, "cpx", 0));
+          outOps.push_back(readNumberProp(rt, pathCommand, "cpy", 0));
+          outOps.push_back(readNumberProp(rt, pathCommand, "x", 0));
+          outOps.push_back(readNumberProp(rt, pathCommand, "y", 0));
+          continue;
+        }
+        if (pathType == "cubicTo") {
+          outOps.push_back(static_cast<double>(kPathVerbCubicTo));
+          outOps.push_back(readNumberProp(rt, pathCommand, "cp1x", 0));
+          outOps.push_back(readNumberProp(rt, pathCommand, "cp1y", 0));
+          outOps.push_back(readNumberProp(rt, pathCommand, "cp2x", 0));
+          outOps.push_back(readNumberProp(rt, pathCommand, "cp2y", 0));
+          outOps.push_back(readNumberProp(rt, pathCommand, "x", 0));
+          outOps.push_back(readNumberProp(rt, pathCommand, "y", 0));
+          continue;
+        }
+        if (pathType == "close") {
+          outOps.push_back(static_cast<double>(kPathVerbClose));
+        }
+      }
+      continue;
+    }
   }
 }
 
 void resolveCoreSymbols() {
-  if (gRegisterInstaller) return;
+  if (gRegisterInstaller && gRegisterSharedSignalChanged && gGetSharedSignal) return;
   void *handle = dlopen("libzynthkit.so", RTLD_NOW | RTLD_GLOBAL);
   if (!handle) {
     __android_log_print(ANDROID_LOG_WARN, kTag, "dlopen(libzynthkit.so) failed: %s", dlerror());
@@ -761,6 +1218,10 @@ void resolveCoreSymbols() {
   }
   gRegisterInstaller = reinterpret_cast<RegisterInstallerFn>(
       dlsym(handle, "ZynthRegisterJSIPluginInstaller"));
+  gRegisterSharedSignalChanged = reinterpret_cast<RegisterSharedSignalChangedFn>(
+      dlsym(handle, "ZynthRegisterSharedSignalChangedCallback"));
+  gGetSharedSignal = reinterpret_cast<GetSharedSignalFn>(
+      dlsym(handle, "ZynthGetSharedSignal"));
 }
 
 bool resolveBridgeMethods(JNIEnv *env) {
@@ -1051,15 +1512,39 @@ void installBridge(Runtime &rt) {
   rt.global().setProperty(rt, kSkiaKey, skia);
 }
 
+void onSharedSignalChanged(void *state, int signalId) {
+  if (signalId <= 0 || state == nullptr || state != gRuntimeState) {
+    return;
+  }
+
+  std::vector<int> nodeIds;
+  {
+    std::lock_guard<std::mutex> lock(gSignalSubscriptionMutex);
+    auto it = gSignalSurfaceIds.find(signalId);
+    if (it != gSignalSurfaceIds.end()) {
+      nodeIds = it->second;
+    }
+  }
+  if (nodeIds.empty()) return;
+
+  for (int nodeId : nodeIds) {
+    callBoolMethod(gInvalidateSurface, static_cast<jint>(nodeId));
+  }
+}
+
 void registerInstaller() {
   resolveCoreSymbols();
   if (!gRegisterInstaller) {
     __android_log_print(ANDROID_LOG_WARN, kTag, "JSI plugin registry not available");
     return;
   }
+  if (gRegisterSharedSignalChanged && !gSharedSignalCallbackRegistered) {
+    gRegisterSharedSignalChanged(onSharedSignalChanged);
+    gSharedSignalCallbackRegistered = true;
+  }
 
   gRegisterInstaller([](Runtime &rt, void *state) {
-    (void)state;
+    gRuntimeState = state;
     installBridge(rt);
   });
 }
@@ -1115,10 +1600,13 @@ Java_dev_zynth_skia_SkiaBridge_nativeCreateSurface(JNIEnv *env, jclass clazz, ji
     return JNI_FALSE;
   }
 
-  std::lock_guard<std::mutex> lock(gSurfaceMutex);
-  SurfaceState state;
-  state.front = std::make_shared<SurfaceState::CommandBuffer>();
-  gSurfaces[static_cast<int>(nodeId)] = std::move(state);
+  {
+    std::lock_guard<std::mutex> lock(gSurfaceMutex);
+    SurfaceState state;
+    state.front = std::make_shared<SurfaceState::CommandBuffer>();
+    gSurfaces[static_cast<int>(nodeId)] = std::move(state);
+  }
+  updateSurfaceSignalSubscriptions(static_cast<int>(nodeId), {});
   return JNI_TRUE;
 }
 
@@ -1130,11 +1618,14 @@ Java_dev_zynth_skia_SkiaBridge_nativeDisposeSurface(JNIEnv *env, jclass clazz, j
     return JNI_FALSE;
   }
 
-  std::lock_guard<std::mutex> lock(gSurfaceMutex);
-  auto it = gSurfaces.find(static_cast<int>(nodeId));
-  if (it != gSurfaces.end()) {
-    gSurfaces.erase(it);
+  {
+    std::lock_guard<std::mutex> lock(gSurfaceMutex);
+    auto it = gSurfaces.find(static_cast<int>(nodeId));
+    if (it != gSurfaces.end()) {
+      gSurfaces.erase(it);
+    }
   }
+  updateSurfaceSignalSubscriptions(static_cast<int>(nodeId), {});
   return JNI_TRUE;
 }
 
@@ -1276,6 +1767,7 @@ Java_dev_zynth_skia_SkiaBridge_nativeRenderToBitmap(
     commandBuffer = it->second.front;
   }
   if (!commandBuffer) return JNI_FALSE;
+  std::vector<int> usedSignalIds;
 
   AndroidBitmapInfo bitmapInfo;
   void *bitmapPixels = nullptr;
@@ -1305,7 +1797,8 @@ Java_dev_zynth_skia_SkiaBridge_nativeRenderToBitmap(
       *commandBuffer,
       surface->getCanvas(),
       static_cast<float>(density),
-      static_cast<SkColor>(static_cast<uint32_t>(clearColor)));
+      static_cast<SkColor>(static_cast<uint32_t>(clearColor)),
+      &usedSignalIds);
   if (!rendered) {
     AndroidBitmap_unlockPixels(env, bitmap);
     __android_log_print(
@@ -1323,6 +1816,7 @@ Java_dev_zynth_skia_SkiaBridge_nativeRenderToBitmap(
     __android_log_print(ANDROID_LOG_ERROR, kTag, "nativeRenderToBitmap unlockPixels failed nodeId=%d", (int)nodeId);
     return JNI_FALSE;
   }
+  updateSurfaceSignalSubscriptions(static_cast<int>(nodeId), std::move(usedSignalIds));
   return JNI_TRUE;
 }
 
@@ -1359,7 +1853,23 @@ extern "C" JNIEXPORT void JNICALL JNI_OnUnload(JavaVM *, void *) {
   gSubmitPacked = nullptr;
   gInvalidateSurface = nullptr;
   gSetFrameLoopEnabled = nullptr;
+  gRuntimeState = nullptr;
+  gRegisterInstaller = nullptr;
+  gRegisterSharedSignalChanged = nullptr;
+  gGetSharedSignal = nullptr;
+  gSharedSignalCallbackRegistered = false;
 
-  std::lock_guard<std::mutex> lock(gSurfaceMutex);
-  gSurfaces.clear();
+  {
+    std::lock_guard<std::mutex> lock(gSurfaceMutex);
+    gSurfaces.clear();
+  }
+  {
+    std::lock_guard<std::mutex> subLock(gSignalSubscriptionMutex);
+    gSurfaceSignalIds.clear();
+    gSignalSurfaceIds.clear();
+  }
+  {
+    std::lock_guard<std::mutex> cacheLock(gRuntimeEffectCacheMutex);
+    gRuntimeEffectCache.clear();
+  }
 }
