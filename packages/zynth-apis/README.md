@@ -48,11 +48,32 @@ Load custom fonts dynamically at runtime.
 import { Font } from "@zynth/apis";
 
 // Load a font
-await Font.loadAsync("MyCustomFont", "MyCustomFont.ttf");
+const result = await Font.loadAsync("MyCustomFont", "MyCustomFont.ttf");
 
-// Check if loaded
-if (Font.isLoaded("MyCustomFont")) {
-  // Use the font
+if (result.success) {
+  console.log(`Font loaded at: ${result.path}`);
+}
+```
+
+### `createFontLoader`
+Idiomatic Solid utility to load multiple fonts and integrate with `<Suspense>`. It returns a `Resource<boolean>`.
+
+```tsx
+import { createFontLoader } from "@zynth/apis";
+import { Suspense } from "solid-js";
+
+function Root() {
+  const fonts = createFontLoader({
+    "Diablo": require("./fonts/diablo.ttf"),
+    "Inter": require("./fonts/inter.otf")
+  });
+
+  return (
+    <Suspense fallback={<Loading />}>
+      {/* Accessing fonts() triggers Suspense until all are ready */}
+      {fonts() && <MainApp />}
+    </Suspense>
+  );
 }
 ```
 

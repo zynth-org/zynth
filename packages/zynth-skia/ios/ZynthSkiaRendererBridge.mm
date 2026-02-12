@@ -105,6 +105,14 @@ std::unordered_map<std::string, sk_sp<SkRuntimeEffect>> gRuntimeEffectCache;
 std::mutex gTypefaceCacheMutex;
 std::unordered_map<std::string, sk_sp<SkTypeface>> gTypefaceCache;
 
+static sk_sp<SkFontMgr> getSystemFontMgr() {
+#if __has_include("include/ports/SkFontMgr_mac_ct.h")
+  return SkFontMgr_New_CoreText(nullptr);
+#else
+  return SkFontMgr::RefEmpty();
+#endif
+}
+
 static uint32_t parseHexColorString(NSString *value) {
   if (value == nil) return 0x00000000;
   NSString *trim = [value stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
@@ -422,20 +430,19 @@ static sk_sp<SkTypeface> resolveTypeface(NSString *familyName, NSString *fontSty
     }
   }
 
-#if __has_include("include/ports/SkFontMgr_mac_ct.h")
-  sk_sp<SkFontMgr> fontMgr = SkFontMgr_New_CoreText(nullptr);
-  if (!fontMgr) return nullptr;
+  auto fontMgr = getSystemFontMgr();
   SkFontStyle style(normalizeFontWeight(fontWeight), SkFontStyle::kNormal_Width, normalizeFontSlant(fontStyle));
   const char *family = (familyName != nil && familyName.length > 0)
     ? [familyName UTF8String]
     : nullptr;
-  return fontMgr->matchFamilyStyle(family, style);
-#else
-  (void)familyName;
-  (void)fontStyle;
-  (void)fontWeight;
-  return nullptr;
-#endif
+    
+  auto typeface = fontMgr->matchFamilyStyle(family, style);
+  
+  if (!typeface && family != nullptr) {
+    typeface = fontMgr->matchFamilyStyle("Helvetica", style);
+  }
+
+  return typeface;
 }
 
 static bool renderSurfaceState(const CommandBuffer &buffer,
@@ -1539,13 +1546,30 @@ static bool encodeCommands(NSArray<NSDictionary *> *commands,
   return [all sortedArrayUsingSelector:@selector(localizedCaseInsensitiveCompare:)];
 }
 
-+ (BOOL)registerFont:(NSString *)familyName path:(NSString *)path {
-  if (familyName == nil || path == nil) {
-    NSLog(@"[Skia] registerFont: familyName or path is nil");
-    return NO;
++ (BOOL)registerFont:(NSString *)familyName data:(NSData *)data {
+  if (familyName == nil || data == nil) return NO;
+  sk_sp<SkData> skData = SkData::MakeWithCopy(data.bytes, data.length);
+  if (!skData) return NO;
+
+  sk_sp<SkTypeface> typeface;
+#if __has_include("include/ports/SkFontMgr_mac_ct.h")
+  sk_sp<SkFontMgr> fontMgr = SkFontMgr_New_CoreText(nullptr);
+  if (fontMgr) {
+    typeface = fontMgr->makeFromData(skData);
   }
-  
-  NSLog(@"[Skia] registerFont: family=%@ path=%@", familyName, path);
+#endif
+
+  if (!typeface) return NO;
+
+  {
+    std::lock_guard<std::mutex> lock(gTypefaceCacheMutex);
+    gTypefaceCache[[familyName UTF8String]] = std::move(typeface);
+  }
+  return YES;
+}
+
++ (BOOL)registerFont:(NSString *)familyName path:(NSString *)path {
+  if (familyName == nil || path == nil) return NO;
   
   sk_sp<SkTypeface> typeface;
 #if __has_include("include/ports/SkFontMgr_mac_ct.h")
@@ -1555,17 +1579,12 @@ static bool encodeCommands(NSArray<NSDictionary *> *commands,
   }
 #endif
 
-  if (!typeface) {
-    NSLog(@"[Skia] registerFont: failed to create typeface from path (family=%@)", familyName);
-    return NO;
-  }
+  if (!typeface) return NO;
 
   {
     std::lock_guard<std::mutex> lock(gTypefaceCacheMutex);
     gTypefaceCache[[familyName UTF8String]] = std::move(typeface);
   }
-  
-  NSLog(@"[Skia] registerFont: successfully registered family=%@", familyName);
   return YES;
 }
 

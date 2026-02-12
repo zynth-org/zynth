@@ -1784,7 +1784,6 @@ void installBridge(Runtime &rt) {
       2,
       [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
         if (count < 2 || !args[0].isString()) {
-          __android_log_print(ANDROID_LOG_ERROR, kTag, "registerFont: invalid arguments");
           return Value(false);
         }
 
@@ -1794,33 +1793,16 @@ void installBridge(Runtime &rt) {
 
         if (args[1].isObject() && args[1].asObject(rt).isArrayBuffer(rt)) {
           ArrayBuffer buffer = args[1].asObject(rt).getArrayBuffer(rt);
-          __android_log_print(ANDROID_LOG_DEBUG, kTag, "registerFont: family=%s size=%zu (buffer)", familyName.c_str(), buffer.size(rt));
-          
           auto data = SkData::MakeWithCopy(buffer.data(rt), buffer.size(rt));
           if (data) {
             typeface = fontMgr->makeFromData(data);
           }
         } else if (args[1].isString()) {
           std::string path = args[1].asString(rt).utf8(rt);
-          __android_log_print(ANDROID_LOG_DEBUG, kTag, "registerFont: family=%s path=%s", familyName.c_str(), path.c_str());
-          
-          if (path.compare(0, 6, "asset:") == 0) {
-            // Skia handles assets via SkFontMgr_New_Android if configured, but here we load manually
-            std::string assetPath = path.substr(6);
-            // On Android, assets need special handling or we use makeFromFile if it's a real path.
-            // For now, if it's asset: we'll try to let Skia handle it or fallback.
-            // Actually, makeFromFile doesn't work for assets in APK.
-            // Better: FontRegistry already extracted it if it was remote.
-            // If it's a real asset, we might need AAssetManager.
-            // For simplicity, we assume FontRegistry provides a real path for non-bundled fonts.
-            typeface = fontMgr->makeFromFile(path.c_str());
-          } else {
-            typeface = fontMgr->makeFromFile(path.c_str());
-          }
+          typeface = fontMgr->makeFromFile(path.c_str());
         }
 
         if (!typeface) {
-          __android_log_print(ANDROID_LOG_ERROR, kTag, "registerFont: failed to create typeface (family=%s)", familyName.c_str());
           return Value(false);
         }
 
@@ -1829,7 +1811,6 @@ void installBridge(Runtime &rt) {
           gTypefaceCache[familyName] = std::move(typeface);
         }
 
-        __android_log_print(ANDROID_LOG_INFO, kTag, "registerFont: successfully registered family=%s", familyName.c_str());
         return Value(true);
       });
 

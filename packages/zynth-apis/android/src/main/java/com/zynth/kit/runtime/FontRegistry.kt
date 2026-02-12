@@ -26,11 +26,7 @@ object FontRegistry : AssetProvider {
   }
 
   override fun getTypeface(family: String): Typeface? {
-    val typeface = loadedFonts[family]
-    if (DEBUG_FONTS) {
-      Log.d(TAG, "getTypeface('$family') -> ${if (typeface != null) "Found" else "Not Found"}. Loaded fonts: ${loadedFonts.keys}")
-    }
-    return typeface
+    return loadedFonts[family]
   }
 
   fun getFontPath(family: String): String? {
@@ -43,17 +39,10 @@ object FontRegistry : AssetProvider {
    */
   fun loadFont(fontFamily: String, resourceName: String): Boolean {
     if (loadedFonts.containsKey(fontFamily)) {
-      if (DEBUG_FONTS) {
-        Log.d(TAG, "Font '$fontFamily' already loaded")
-      }
       return true
     }
 
-    val ctx = appContext
-    if (ctx == null) {
-      Log.e(TAG, "FontRegistry not initialized - call initialize() first")
-      return false
-    }
+    val ctx = appContext ?: return false
 
     val normalized = resourceName.trim().removePrefix("./")
     val candidates = linkedSetOf(
@@ -74,15 +63,9 @@ object FontRegistry : AssetProvider {
 
     for (assetPath in candidates) {
       try {
-        if (DEBUG_FONTS) {
-          Log.d(TAG, "Trying font '$fontFamily' from assets: $assetPath")
-        }
         val typeface = Typeface.createFromAsset(ctx.assets, assetPath)
         loadedFonts[fontFamily] = typeface
         loadedPaths[fontFamily] = "asset:$assetPath"
-        if (DEBUG_FONTS) {
-          Log.d(TAG, "Successfully loaded font '$fontFamily' from asset: $assetPath")
-        }
         return true
       } catch (_: Exception) {
         // Try next candidate.
@@ -98,9 +81,6 @@ object FontRegistry : AssetProvider {
     // Handle remote URLs
     if (normalized.startsWith("http://") || normalized.startsWith("https://")) {
       try {
-        if (DEBUG_FONTS) {
-          Log.d(TAG, "Downloading font '$fontFamily' from URL: $normalized")
-        }
         val url = java.net.URL(normalized)
         val connection = url.openConnection() as java.net.HttpURLConnection
         connection.connectTimeout = 30000
@@ -116,12 +96,9 @@ object FontRegistry : AssetProvider {
         val typeface = Typeface.createFromFile(cacheFile)
         loadedFonts[fontFamily] = typeface
         loadedPaths[fontFamily] = cacheFile.absolutePath
-        if (DEBUG_FONTS) {
-          Log.d(TAG, "Successfully loaded font '$fontFamily' from URL: $normalized")
-        }
         return true
       } catch (e: Exception) {
-        Log.e(TAG, "Failed to download font from URL: $normalized", e)
+        Log.e(TAG, "Failed to download font: $normalized", e)
       }
     }
 
@@ -132,16 +109,12 @@ object FontRegistry : AssetProvider {
         val typeface = Typeface.createFromFile(file)
         loadedFonts[fontFamily] = typeface
         loadedPaths[fontFamily] = file.absolutePath
-        if (DEBUG_FONTS) {
-          Log.d(TAG, "Successfully loaded font '$fontFamily' from file: ${file.absolutePath}")
-        }
         return true
       } catch (_: Exception) {
         // Try next candidate.
       }
     }
 
-    Log.e(TAG, "Failed to load font '$fontFamily' from '$resourceName'")
     return false
   }
 
@@ -157,5 +130,6 @@ object FontRegistry : AssetProvider {
    */
   fun clear() {
     loadedFonts.clear()
+    loadedPaths.clear()
   }
 }

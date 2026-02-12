@@ -1,6 +1,7 @@
 {
   "name": "@zynth/apis",
   "version": "0.0.1",
+  "description": "Core native APIs for Zynth, including platform detection, dimensions, and robust custom font management with Skia support.",
   "type": "module",
   "main": "dist/esm/index.js",
   "module": "dist/esm/index.js",

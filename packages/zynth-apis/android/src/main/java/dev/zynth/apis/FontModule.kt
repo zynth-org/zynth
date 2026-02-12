@@ -1,7 +1,6 @@
 package dev.zynth.apis
 
 import android.content.Context
-import android.util.Log
 import com.zynth.kit.runtime.FontRegistry
 import com.zynth.kit.runtime.ZynthModule
 import com.zynth.kit.runtime.ZynthRuntime
@@ -21,25 +20,15 @@ class FontModule(context: Context, private val runtime: ZynthRuntime? = null) : 
     
     private val appContext = context.applicationContext
 
-    init {
-        Log.d(TAG, "FontModule constructor called")
-    }
-
     override fun initialize() {
-        // Initialize the FontRegistry with app context
-        Log.d(TAG, "FontModule.initialize() called - initializing FontRegistry")
         FontRegistry.initialize(appContext)
         runtime?.setAssetProvider(FontRegistry)
-        Log.d(TAG, "FontModule initialized successfully. Runtime provided: ${runtime != null}")
     }
 
     override fun call(method: String, args: Array<Any?>): JSONObject {
-        Log.d(TAG, "FontModule.call() - method: $method, args count: ${args.size}")
-        
         return when (method) {
             "loadAsync" -> loadAsync(args)
             else -> {
-                Log.w(TAG, "Unknown method: $method")
                 JSONObject().apply {
                     put("error", "Unknown method: $method")
                 }
@@ -49,16 +38,13 @@ class FontModule(context: Context, private val runtime: ZynthRuntime? = null) : 
 
     private fun loadAsync(args: Array<Any?>): JSONObject {
         try {
-            // args[0] is the object { fontFamily: string, resourceName: string }
             val params = args.getOrNull(0)
-            Log.d(TAG, "loadAsync params: $params (type: ${params?.javaClass?.simpleName})")
             
             val fontFamily: String?
             val resourceName: String?
             
             when (params) {
                 is JSONObject -> {
-                    // optString(key) returns an empty string when missing; convert empty strings to null
                     fontFamily = params.optString("fontFamily").takeIf { it.isNotEmpty() }
                     resourceName = params.optString("resourceName").takeIf { it.isNotEmpty() }
                 }
@@ -67,38 +53,31 @@ class FontModule(context: Context, private val runtime: ZynthRuntime? = null) : 
                     resourceName = params["resourceName"] as? String
                 }
                 else -> {
-                    Log.e(TAG, "loadAsync: invalid params type: ${params?.javaClass?.simpleName}")
                     return JSONObject().apply {
-                        put("error", "Invalid arguments - expected object with fontFamily and resourceName")
+                        put("error", "Invalid arguments")
                     }
                 }
             }
             
             if (fontFamily.isNullOrEmpty() || resourceName.isNullOrEmpty()) {
-                Log.e(TAG, "loadAsync: missing fontFamily ($fontFamily) or resourceName ($resourceName)")
                 return JSONObject().apply {
                     put("error", "Missing fontFamily or resourceName")
                 }
             }
 
-            Log.d(TAG, "Loading font: '$fontFamily' from '$resourceName'")
-            
             val success = FontRegistry.loadFont(fontFamily, resourceName)
             
             return if (success) {
-                Log.d(TAG, "Successfully loaded font: $fontFamily")
                 JSONObject().apply {
                     put("success", true)
                     put("path", FontRegistry.getFontPath(fontFamily))
                 }
             } else {
-                Log.e(TAG, "Failed to load font: $fontFamily")
                 JSONObject().apply {
-                    put("error", "Failed to load font '$fontFamily' from '$resourceName'")
+                    put("error", "Failed to load font '$fontFamily'")
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "loadAsync error: ${e.message}", e)
             return JSONObject().apply {
                 put("error", e.message ?: "Unknown error")
             }
