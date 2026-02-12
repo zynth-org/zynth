@@ -26,7 +26,14 @@ To ensure a cohesive, reliable, and professional user experience across all oper
 
 The CLI interface prioritizes clarity and technical precision over decorative elements. Emojis are strictly prohibited. Visual feedback is achieved exclusively through standard Unicode geometric shapes, ASCII characters, and terminal color coding.
 
-#### 2. Structural Integrity & Reliability
+#### 2. Terminal Aesthetic (Green Accents)
+
+To evoke a serious, "Fallout console" technical feel, the CLI uses a specific color palette:
+- **Primary Accents:** Dark Green (`#00FF00` or ANSI green) for success symbols (`✔`), primary bullets (`◆`), and progress bars.
+- **Dimmed Text:** Gray for secondary information and paths.
+- **High Contrast:** White for active tasks and critical summaries.
+
+#### 3. Structural Integrity & Reliability
 
 Output must remain stable and readable across different terminal emulators, including legacy Windows consoles.
 

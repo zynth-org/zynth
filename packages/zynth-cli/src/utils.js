@@ -94,8 +94,14 @@ function runCommandFiltered(command, args, options = {}) {
     ...options,
   });
 
-  const totalPackages = getZynthPackageCount(options.root || process.cwd());
-  const buildIndicator = createProgressIndicator("Building native artifacts", totalPackages);
+  const showProgress = options.showProgress !== false;
+  const totalPackages = showProgress
+    ? getZynthPackageCount(options.root || process.cwd())
+    : 0;
+  const buildIndicator = createProgressIndicator(
+    options.label || "Building native artifacts",
+    totalPackages
+  );
   buildIndicator.start();
 
   let resumeTimer = null;
@@ -111,6 +117,7 @@ function runCommandFiltered(command, args, options = {}) {
   const reportedPackages = new Set();
 
   function tryReportPackage(line) {
+    if (!showProgress) return;
     const match = line.match(/packages[\\/](zynth-[^\\/]+)/);
     const name = match ? match[1] : null;
     if (!name || reportedPackages.has(name)) return;
@@ -212,8 +219,14 @@ function runCommandFilteredAndroid(command, args, options = {}) {
     ...options,
   });
 
-  const totalPackages = getZynthPackageCount(options.root || process.cwd());
-  const buildIndicator = createProgressIndicator("Building native artifacts", totalPackages);
+  const showProgress = options.showProgress !== false;
+  const totalPackages = showProgress
+    ? getZynthPackageCount(options.root || process.cwd())
+    : 0;
+  const buildIndicator = createProgressIndicator(
+    options.label || "Building native artifacts",
+    totalPackages
+  );
   buildIndicator.start();
 
   let resumeTimer = null;
@@ -226,6 +239,7 @@ function runCommandFilteredAndroid(command, args, options = {}) {
   }
 
   function tryReportPackage(line) {
+    if (!showProgress) return;
     // Gradle task pattern: > Task :PackageName:taskName
     const match = line.match(/> Task :([^:]+):/);
     const name = match ? match[1] : null;
@@ -275,7 +289,8 @@ function runCommandFilteredAndroid(command, args, options = {}) {
 
 function getZynthPackageCount(root) {
   try {
-    const packagesDir = path.join(findWorkspaceRoot(root), "packages");
+    const workspaceRoot = findWorkspaceRoot(root);
+    const packagesDir = path.join(workspaceRoot, "packages");
     if (fs.existsSync(packagesDir)) {
       return fs
         .readdirSync(packagesDir)
@@ -305,8 +320,8 @@ function createProgressIndicator(label, total) {
     const pos = ((elapsedSeconds % sweepSeconds) / sweepSeconds) * period;
     const bandHalfWidth = 5.0;
     const hasTrueColor = supportsTrueColor();
-    const base = { r: 128, g: 128, b: 128 };
-    const highlight = { r: 255, g: 255, b: 255 };
+    const base = { r: 0, g: 180, b: 0 }; // Fallout Green Base
+    const highlight = { r: 50, g: 255, b: 50 }; // Bright Fallout Green
 
     let shimmer = "";
     for (let i = 0; i < width; i += 1) {
@@ -328,21 +343,25 @@ function createProgressIndicator(label, total) {
       }
     }
 
-    // Progress bar
-    const barWidth = 30;
-    const percent = total > 0 ? Math.min(currentCount / total, 1) : 0;
-    const filledCount = Math.floor(percent * barWidth);
-    const bar = `[${"▓".repeat(filledCount)}${"░".repeat(
-      barWidth - filledCount
-    )}] ${Math.round(percent * 100)}%`;
-
-    const lines = [`◆ ${shimmer}`, `  ${bar}`];
-
-    if (currentItem) {
-      lines.push(`  ↳ Compiling: ${dim(currentItem)}`);
-    }
+    const lines = [`\x1b[32m◆\x1b[0m ${shimmer}`];
 
     if (total > 0) {
+      // Progress bar
+      const barWidth = 30;
+      const percent = Math.min(currentCount / total, 1);
+      const filledCount = Math.floor(percent * barWidth);
+      const greenCode = "\x1b[32m";
+      const resetCode = "\x1b[0m";
+      const bar = `${greenCode}[${"▓".repeat(filledCount)}${resetCode}${"░".repeat(
+        barWidth - filledCount
+      )}${greenCode}]${resetCode} ${Math.round(percent * 100)}%`;
+
+      lines.push(`  ${bar}`);
+
+      if (currentItem) {
+        lines.push(`  ↳ Compiling: ${dim(currentItem)}`);
+      }
+
       lines.push(`  ➔ ${currentCount}/${total} components built...`);
     }
 
@@ -356,6 +375,7 @@ function createProgressIndicator(label, total) {
     process.stdout.write(lines.join("\n") + "\n");
     lastLineCount = lines.length;
   }
+
 
   function clearLine(stream = process.stdout) {
     if (!stream.isTTY) return;
@@ -394,9 +414,9 @@ function createProgressIndicator(label, total) {
       clearLine();
       process.stdout.write("\u001b[?25h"); // Show cursor
       // Final summary
-      process.stdout.write(`◆ ${text}\n`);
+      process.stdout.write("\x1b[32m◆\x1b[0m " + text + "\n");
       process.stdout.write(
-        `✔ Completed ${currentCount} modules in ${((Date.now() - BUILD_SHIMMER_START) / 1000).toFixed(
+        `\x1b[32m✔\x1b[0m Completed ${currentCount} modules in ${((Date.now() - BUILD_SHIMMER_START) / 1000).toFixed(
           1
         )}s\n`
       );
@@ -1175,7 +1195,7 @@ async function devIOS(root, appDir, options = {}) {
     console.error("✖ iOS build failed.");
     process.exit(buildResult.code || 1);
   } else {
-    console.log("✔ iOS build finished.");
+    console.log("\x1b[32m✔\x1b[0m iOS build finished.");
   }
   const appBundlePath = path.join(
     buildDir,
@@ -1191,27 +1211,28 @@ async function devIOS(root, appDir, options = {}) {
     process.exit(1);
   }
 
-  console.log("");
   if (isPhysicalDevice) {
-    console.log(`◆ Installing build to ${targetDevice.name}...`);
     // `ios-deploy` is a common tool for this. Assumes it's installed.
     // You can install it with `npm install -g ios-deploy`
-    runCommand("ios-deploy", [
-      "--id",
-      targetDevice.udid,
-      "--bundle",
-      appBundlePath,
-      "--verbose",
-    ]);
+    await runCommandFiltered(
+      "ios-deploy",
+      ["--id", targetDevice.udid, "--bundle", appBundlePath, "--verbose"],
+      {
+        cwd: iosDir,
+        label: "Installing build to device",
+        showProgress: false,
+      }
+    );
   } else {
-    console.log("◆ Installing build to simulator...");
-    runCommand("xcrun", [
-      "simctl",
-      "install",
-      targetDevice.udid,
-      appBundlePath,
-      "--verbose",
-    ]);
+    await runCommandFiltered(
+      "xcrun",
+      ["simctl", "install", targetDevice.udid, appBundlePath, "--verbose"],
+      {
+        cwd: iosDir,
+        label: "Installing build to simulator",
+        showProgress: false,
+      }
+    );
   }
 
   const desiredPort = Number(process.env.ZYNTH_HMR_PORT || 8081);
@@ -1427,7 +1448,7 @@ async function devAndroid(root, appDir, options = {}) {
     console.error("✖ Android build failed.");
     process.exit(assembleResult.code || 1);
   } else {
-    console.log("✔ Android build finished.");
+    console.log("\x1b[32m✔\x1b[0m Android build finished.");
   }
 
   const devicesForInstall = getConnectedAndroidDevices();
@@ -1441,12 +1462,15 @@ async function devAndroid(root, appDir, options = {}) {
     return;
   }
 
-  console.log("");
-  console.log("◆ Installing build to device...");
   const installResult = await runCommandFilteredAndroid(
     "./gradlew",
     [":app:installDebug", "-q"],
-    { cwd: androidDir, verbose: verboseBuild }
+    {
+      cwd: androidDir,
+      verbose: verboseBuild,
+      label: "Installing build to device",
+      showProgress: false,
+    }
   );
   if (installResult.code !== 0) {
     console.error("✖ Android install failed.");
