@@ -194,12 +194,17 @@ public class ZynthFontModule: ZynthModule {
                  // If error is "already registered", we consider it a success
                  if nsError.domain == kCTFontManagerErrorDomain as String && nsError.code == CTFontManagerError.alreadyRegistered.rawValue {
                      print("[ZynthFontModule] Font '\(fontFamily)' already registered.")
-                     return true
+                     return [
+                        "success": true,
+                        "path": targetURL.path
+                     ]
                  }
                  print("[ZynthFontModule] Failed to register font '\(fontFamily)': \(nsError)")
                  throw ZynthModuleError.moduleNotFound("Failed to register font: \(nsError.localizedDescription)")
              }
-             return false
+             return [
+                "success": false
+             ]
         }
         
         print("[ZynthFontModule] Successfully registered font '\(fontFamily)' from \(targetURL.lastPathComponent)")
@@ -220,6 +225,9 @@ public class ZynthFontModule: ZynthModule {
             }
         }
 
-        return true
+        return [
+            "success": true,
+            "path": targetURL.path
+        ]
     }
 }

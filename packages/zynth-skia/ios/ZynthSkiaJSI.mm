@@ -274,13 +274,19 @@ static void installSkiaBridge(ZynthHermesRuntimeHost *host, Runtime &rt) {
       PropNameID::forAscii(rt, "registerFont"),
       2,
       [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
-        if (count < 2 || !args[0].isString() || !args[1].isObject()) return Value(false);
+        if (count < 2 || !args[0].isString()) return Value(false);
         NSString *familyName = [NSString stringWithUTF8String:args[0].asString(rt).utf8(rt).c_str()];
-        Object bufferObj = args[1].asObject(rt);
-        if (!bufferObj.isArrayBuffer(rt)) return Value(false);
-        ArrayBuffer buffer = bufferObj.getArrayBuffer(rt);
-        NSData *data = [NSData dataWithBytes:buffer.data(rt) length:buffer.size(rt)];
-        return Value([ZynthSkiaRendererBridge registerFont:familyName data:data]);
+        
+        if (args[1].isObject() && args[1].asObject(rt).isArrayBuffer(rt)) {
+          ArrayBuffer buffer = args[1].asObject(rt).getArrayBuffer(rt);
+          NSData *data = [NSData dataWithBytes:buffer.data(rt) length:buffer.size(rt)];
+          return Value([ZynthSkiaRendererBridge registerFont:familyName data:data]);
+        } else if (args[1].isString()) {
+          NSString *path = [NSString stringWithUTF8String:args[1].asString(rt).utf8(rt).c_str()];
+          return Value([ZynthSkiaRendererBridge registerFont:familyName path:path]);
+        }
+        
+        return Value(false);
       });
 
   Object skia(rt);

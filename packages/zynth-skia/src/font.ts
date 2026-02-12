@@ -20,7 +20,7 @@ type SkiaBridge = {
     fontWeight: number,
   ) => number;
   listFontFamilies?: () => string[];
-  registerFont?: (familyName: string, data: ArrayBuffer) => boolean;
+  registerFont?: (familyName: string, dataOrPath: ArrayBuffer | string) => boolean;
 };
 
 type ModulesBridge = {
@@ -89,6 +89,14 @@ function parseSource(source: unknown): {
 
     const pickFileName = (raw: unknown): string | null => {
       if (typeof raw !== "string" || raw.trim().length === 0) return null;
+      // If it looks like a URL or an absolute path, don't strip it
+      if (
+        raw.includes("://") ||
+        raw.startsWith("/") ||
+        raw.startsWith("data:")
+      ) {
+        return raw;
+      }
       const normalized = raw.replace(/\\/g, "/");
       const parts = normalized.split("/");
       const last = parts[parts.length - 1]?.trim();
@@ -194,9 +202,52 @@ function createFontFromStyle(style: SkiaFontStyle): SkiaFont {
   return font;
 }
 
+function resolveAssetUrl(source: unknown): string | null {
+  if (typeof source === "string") {
+    if (
+      source.includes("://") ||
+      source.startsWith("/") ||
+      source.startsWith("data:")
+    ) {
+      return source;
+    }
+    return null;
+  }
+  if (!source || typeof source !== "object") return null;
+
+  const asset = source as {
+    type?: string;
+    name?: string;
+    ext?: string;
+    relativePath?: string;
+    devPath?: string;
+  };
+
+  if (asset.devPath) {
+    const globalObj = globalThis as Record<string, unknown>;
+    const devServerUrl = (globalObj.__ZYNTH_DEV_SERVER_URL as string) || "";
+    if (devServerUrl) {
+      return `${devServerUrl}/@fs/${asset.devPath}`;
+    }
+    return asset.devPath;
+  }
+
+  if (asset.relativePath) return asset.relativePath;
+
+  if (asset.type === "asset" && typeof asset.name === "string") {
+    const name = asset.name.trim();
+    const ext = typeof asset.ext === "string" ? asset.ext.trim() : "";
+    if (name.length > 0 && ext.length > 0) return `${name}.${ext}`;
+    if (name.length > 0) return name;
+  }
+
+  return null;
+}
+
 async function ensureNativeFontLoaded(
   familyName: string,
   resourceName: string,
+  source?: unknown,
 ): Promise<void> {
   const modules = getModulesBridge();
   if (!modules?.call || familyName.length === 0 || resourceName.length === 0) {
@@ -209,10 +260,21 @@ async function ensureNativeFontLoaded(
     console.log(
       `[SkiaFont] ensureNativeFontLoaded start family=${familyName} resource=${resourceName}`,
     );
-    const result = await modules.call("Font", "loadAsync", {
+
+    // If source is a descriptor, use it to resolve a full URL for fetch
+    let fetchUrl: string | null = resourceName;
+    if (source && typeof source === "object") {
+      const maybe = source as { resourceName?: unknown };
+      if (maybe.resourceName) {
+        fetchUrl = resolveAssetUrl(maybe.resourceName) ?? resourceName;
+      }
+    }
+
+    const result = (await modules.call("Font", "loadAsync", {
       fontFamily: familyName,
-      resourceName,
-    });
+      resourceName: fetchUrl ?? resourceName,
+    })) as { success: boolean; path?: string };
+
     console.log(
       `[SkiaFont] ensureNativeFontLoaded result family=${familyName}:`,
       JSON.stringify(result),
@@ -220,23 +282,52 @@ async function ensureNativeFontLoaded(
 
     const skia = getSkiaBridge();
     if (skia?.registerFont) {
-      console.log(`[SkiaFont] registerFont with Skia bridge family=${familyName}`);
+      if (result.success && result.path) {
+        console.log(
+          `[SkiaFont] Registering font via native path: ${result.path}`,
+        );
+        const success = skia.registerFont(familyName, result.path);
+        if (success) {
+          console.log(
+            `[SkiaFont] registerFont via path successful family=${familyName}`,
+          );
+          return;
+        }
+        console.warn(
+          `[SkiaFont] registerFont via path failed family=${familyName}, falling back to fetch`,
+        );
+      }
+
+      console.log(
+        `[SkiaFont] registerFont with Skia bridge family=${familyName} url=${fetchUrl}`,
+      );
       try {
-        const response = await fetch(resourceName);
+        if (typeof fetch === "undefined") {
+          throw new Error("fetch is not defined in this environment");
+        }
+        const response = await fetch(fetchUrl ?? resourceName);
         if (!response.ok) {
           throw new Error(`Failed to fetch font: ${response.statusText}`);
         }
         const buffer = await response.arrayBuffer();
+        console.log(
+          `[SkiaFont] Calling registerFont with buffer size=${buffer.byteLength}`,
+        );
         const success = skia.registerFont(familyName, buffer);
-        console.log(`[SkiaFont] registerFont with Skia bridge result family=${familyName}: ${success}`);
-      } catch (e) {
-        console.error(`[SkiaFont] registerFont with Skia bridge failed family=${familyName}:`, e);
+        console.log(
+          `[SkiaFont] registerFont with Skia bridge result family=${familyName}: ${success}`,
+        );
+      } catch (e: any) {
+        console.error(
+          `[SkiaFont] registerFont with Skia bridge failed family=${familyName}:`,
+          e?.message ?? e,
+        );
       }
     }
-  } catch (e) {
+  } catch (e: any) {
     console.error(
       `[SkiaFont] ensureNativeFontLoaded failed family=${familyName} resource=${resourceName}:`,
-      e,
+      e?.message ?? e,
     );
     // Ignore load errors and still return a font object so system fallback can render.
   }
@@ -342,7 +433,7 @@ export function useFont(
       return;
     }
     setFont(null);
-    void ensureNativeFontLoaded(familyName, resourceName).finally(() => {
+    void ensureNativeFontLoaded(familyName, resourceName, source).finally(() => {
       setFont(createFontFromStyle({ fontFamily: familyName, fontSize: size }));
       console.log(`[SkiaFont] useFont ready family=${familyName} size=${size}`);
     });

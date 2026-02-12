@@ -89,6 +89,7 @@ class FontModule(context: Context, private val runtime: ZynthRuntime? = null) : 
                 Log.d(TAG, "Successfully loaded font: $fontFamily")
                 JSONObject().apply {
                     put("success", true)
+                    put("path", FontRegistry.getFontPath(fontFamily))
                 }
             } else {
                 Log.e(TAG, "Failed to load font: $fontFamily")

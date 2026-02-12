@@ -18,6 +18,7 @@ private const val DEBUG_FONTS = false
  */
 object FontRegistry : AssetProvider {
   private val loadedFonts = ConcurrentHashMap<String, Typeface>()
+  private val loadedPaths = ConcurrentHashMap<String, String>()
   private var appContext: Context? = null
 
   fun initialize(context: Context) {
@@ -30,6 +31,10 @@ object FontRegistry : AssetProvider {
       Log.d(TAG, "getTypeface('$family') -> ${if (typeface != null) "Found" else "Not Found"}. Loaded fonts: ${loadedFonts.keys}")
     }
     return typeface
+  }
+
+  fun getFontPath(family: String): String? {
+    return loadedPaths[family]
   }
 
   /**
@@ -74,6 +79,7 @@ object FontRegistry : AssetProvider {
         }
         val typeface = Typeface.createFromAsset(ctx.assets, assetPath)
         loadedFonts[fontFamily] = typeface
+        loadedPaths[fontFamily] = "asset:$assetPath"
         if (DEBUG_FONTS) {
           Log.d(TAG, "Successfully loaded font '$fontFamily' from asset: $assetPath")
         }
@@ -109,6 +115,7 @@ object FontRegistry : AssetProvider {
         
         val typeface = Typeface.createFromFile(cacheFile)
         loadedFonts[fontFamily] = typeface
+        loadedPaths[fontFamily] = cacheFile.absolutePath
         if (DEBUG_FONTS) {
           Log.d(TAG, "Successfully loaded font '$fontFamily' from URL: $normalized")
         }
@@ -124,6 +131,7 @@ object FontRegistry : AssetProvider {
         if (!file.exists()) continue
         val typeface = Typeface.createFromFile(file)
         loadedFonts[fontFamily] = typeface
+        loadedPaths[fontFamily] = file.absolutePath
         if (DEBUG_FONTS) {
           Log.d(TAG, "Successfully loaded font '$fontFamily' from file: ${file.absolutePath}")
         }
