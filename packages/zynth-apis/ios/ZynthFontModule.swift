@@ -133,7 +133,40 @@ public class ZynthFontModule: ZynthModule {
             }
         }
 
-        // 5. If resourceName is a file path, try direct filesystem path.
+        // 5. If resourceName is a URL, download it
+        if fontURL == nil && (resourceName.hasPrefix("http://") || resourceName.hasPrefix("https://")) {
+            print("[ZynthFontModule] Downloading font from URL: \(resourceName)")
+            if let remoteURL = URL(string: resourceName) {
+                let semaphore = DispatchSemaphore(value: 0)
+                var downloadedURL: URL?
+                
+                let task = URLSession.shared.downloadTask(with: remoteURL) { (localURL, response, error) in
+                    if let localURL = localURL {
+                        // Move to a more permanent location in Caches
+                        let fileManager = FileManager.default
+                        let cachesDirectory = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+                        let destinationURL = cachesDirectory.appendingPathComponent(remoteURL.lastPathComponent)
+                        
+                        try? fileManager.removeItem(at: destinationURL)
+                        do {
+                            try fileManager.moveItem(at: localURL, to: destinationURL)
+                            downloadedURL = destinationURL
+                            print("[ZynthFontModule] Downloaded to: \(destinationURL.path)")
+                        } catch {
+                            print("[ZynthFontModule] Failed to move downloaded file: \(error)")
+                        }
+                    } else if let error = error {
+                        print("[ZynthFontModule] Download failed: \(error)")
+                    }
+                    semaphore.signal()
+                }
+                task.resume()
+                _ = semaphore.wait(timeout: .now() + 30.0) // 30s timeout
+                fontURL = downloadedURL
+            }
+        }
+
+        // 6. If resourceName is a file path, try direct filesystem path.
         if fontURL == nil {
             let directPaths = [normalizedResource, resourceFileName].filter { !$0.isEmpty }
             for candidate in directPaths {
@@ -148,10 +181,10 @@ public class ZynthFontModule: ZynthModule {
         
         guard let targetURL = fontURL else {
              print("[ZynthFontModule] CRITICAL: Could not find '\(resourceName)' anywhere.")
-             throw ZynthModuleError.moduleNotFound("Font resource '\(resourceName)' not found in any bundle.")
+             throw ZynthModuleError.moduleNotFound("Font resource '\(resourceName)' not found in any bundle and failed to download if it was a URL.")
         }
         
-        // 6. Register the font
+        // 7. Register the font
         var error: Unmanaged<CFError>?
         let success = CTFontManagerRegisterFontsForURL(targetURL as CFURL, .process, &error)
         

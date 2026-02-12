@@ -83,7 +83,41 @@ object FontRegistry : AssetProvider {
       }
     }
 
-    val fileCandidates = linkedSetOf(normalized, fileName).filter { it.isNotBlank() }
+    val fileCandidates = mutableListOf<String>()
+    fileCandidates.add(normalized)
+    if (fileName.isNotEmpty() && fileName != normalized) {
+      fileCandidates.add(fileName)
+    }
+
+    // Handle remote URLs
+    if (normalized.startsWith("http://") || normalized.startsWith("https://")) {
+      try {
+        if (DEBUG_FONTS) {
+          Log.d(TAG, "Downloading font '$fontFamily' from URL: $normalized")
+        }
+        val url = java.net.URL(normalized)
+        val connection = url.openConnection() as java.net.HttpURLConnection
+        connection.connectTimeout = 30000
+        connection.readTimeout = 30000
+        
+        val cacheFile = File(ctx.cacheDir, "zynth_font_${fontFamily}_${fileName.ifEmpty { "remote" }}")
+        connection.inputStream.use { input ->
+          cacheFile.outputStream().use { output ->
+            input.copyTo(output)
+          }
+        }
+        
+        val typeface = Typeface.createFromFile(cacheFile)
+        loadedFonts[fontFamily] = typeface
+        if (DEBUG_FONTS) {
+          Log.d(TAG, "Successfully loaded font '$fontFamily' from URL: $normalized")
+        }
+        return true
+      } catch (e: Exception) {
+        Log.e(TAG, "Failed to download font from URL: $normalized", e)
+      }
+    }
+
     for (path in fileCandidates) {
       try {
         val file = File(path)

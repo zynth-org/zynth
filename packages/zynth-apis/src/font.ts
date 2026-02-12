@@ -2,7 +2,7 @@ type ModulesBridge = {
   call?(
     name: string,
     method: string,
-    args?: unknown
+    args?: unknown,
   ): Promise<unknown> | unknown;
 };
 
@@ -51,7 +51,7 @@ function getWebFontSources(): WebFontSources | null {
 
 function resolveWebFontSource(
   fontFamily: string,
-  resourceName: string
+  resourceName: string,
 ): string | null {
   const isUrlLike =
     resourceName.startsWith("data:") ||
@@ -73,17 +73,17 @@ function resolveWebFontSource(
   return sources[fontFamily] ?? sources[resourceName] ?? null;
 }
 
-function registerWebFontSource(
-  fontFamily: string,
-  webSource: string
-): void {
+function registerWebFontSource(fontFamily: string, webSource: string): void {
   const globalObj = getGlobalObject();
   const sources = ((globalObj as any).__zynth_web_font_sources ??=
     {}) as WebFontSources;
   sources[fontFamily] = webSource;
 }
 
-function resolveResourceName(fontFamily: string, resourceName?: string): string {
+function resolveResourceName(
+  fontFamily: string,
+  resourceName?: string,
+): string {
   if (resourceName) return resourceName;
   const registered = fontRegistry.get(fontFamily);
   if (registered?.resourceName) return registered.resourceName;
@@ -98,10 +98,10 @@ function notifyFontLoaded(fontFamily: string) {
 
 async function loadWebFont(
   fontFamily: string,
-  resourceName: string
+  resourceName: string,
 ): Promise<void> {
   console.log(
-    `[Font] loadWebFont start family=${fontFamily} resource=${resourceName}`
+    `[Font] loadWebFont start family=${fontFamily} resource=${resourceName}`,
   );
   if (webLoadedFonts.has(fontFamily)) {
     console.log(`[Font] loadWebFont already loaded family=${fontFamily}`);
@@ -111,7 +111,7 @@ async function loadWebFont(
   const source = resolveWebFontSource(fontFamily, resourceName);
   if (!source) {
     console.warn(
-      `[Font] loadWebFont no source resolved family=${fontFamily} resource=${resourceName}`
+      `[Font] loadWebFont no source resolved family=${fontFamily} resource=${resourceName}`,
     );
     return;
   }
@@ -127,7 +127,7 @@ async function loadWebFont(
     } catch (error) {
       console.warn(
         `[Font] loadWebFont FontFace failed family=${fontFamily}:`,
-        error
+        error,
       );
       // Fall back to @font-face injection below.
     }
@@ -154,7 +154,7 @@ async function loadWebFont(
     } catch (error) {
       console.warn(
         `[Font] loadWebFont document.fonts.load failed family=${fontFamily}:`,
-        error
+        error,
       );
       // Ignore and allow fallback to continue.
     }
@@ -163,13 +163,49 @@ async function loadWebFont(
   }
 }
 
+export interface FontAssetDescriptor {
+  type: "font";
+  name: string;
+  ext: string;
+  hash: string;
+  relativePath?: string;
+  devPath?: string;
+}
+
 export const Font = {
   loadAsync: async (
     fontFamily: string,
-    resourceName: string
+    resource: string | FontAssetDescriptor,
   ): Promise<void> => {
+    let resourceName: string;
+
+    if (
+      typeof resource === "object" &&
+      resource !== null &&
+      "type" in resource &&
+      resource.type === "font"
+    ) {
+      const descriptor = resource as FontAssetDescriptor;
+      if (descriptor.devPath) {
+        const globalObj = getGlobalObject();
+        const devServerUrl = (globalObj.__ZYNTH_DEV_SERVER_URL as string) || "";
+        if (devServerUrl) {
+          // Construct /@fs/ URL for dev server
+          resourceName = `${devServerUrl}/@fs/${descriptor.devPath}`;
+        } else {
+          resourceName = descriptor.devPath;
+        }
+      } else if (descriptor.relativePath) {
+        resourceName = descriptor.relativePath;
+      } else {
+        resourceName = `${descriptor.name}.${descriptor.ext}`;
+      }
+    } else {
+      resourceName = resource as string;
+    }
+
     console.log(
-      `[Font] loadAsync start family=${fontFamily} resource=${resourceName}`
+      `[Font] loadAsync start family=${fontFamily} resourceName=${resourceName}`,
     );
     // Check for web environment
     if (typeof document !== "undefined") {
@@ -181,7 +217,7 @@ export const Font = {
     const bridge = getModulesBridge();
     if (!bridge || !bridge.call) {
       console.warn(
-        `[Font] loadAsync no native bridge family=${fontFamily} resource=${resourceName}`
+        `[Font] loadAsync no native bridge family=${fontFamily} resourceName=${resourceName}`,
       );
       return;
     }
@@ -190,16 +226,30 @@ export const Font = {
       fontFamily,
       resourceName,
     });
-    console.log(`[Font] loadAsync native result family=${fontFamily}:`, result);
+    console.log(
+      `[Font] loadAsync native result family=${fontFamily}:`,
+      JSON.stringify(result),
+    );
   },
   register: (
     fontFamily: string,
-    options: { resourceName?: string; webSource?: string }
+    options: {
+      resourceName?: string | FontAssetDescriptor;
+      webSource?: string;
+    },
   ) => {
     fontRegistry.set(fontFamily, {
-      resourceName: options.resourceName,
+      resourceName:
+        typeof options.resourceName === "string"
+          ? options.resourceName
+          : undefined, // Keep it simple for now or update fontRegistry type
       webSource: options.webSource,
     });
+    // If it's a descriptor, we might want to store it differently
+    if (typeof options.resourceName === "object") {
+      (fontRegistry.get(fontFamily) as any).descriptor = options.resourceName;
+    }
+
     if (options.webSource) {
       registerWebFontSource(fontFamily, options.webSource);
     }
@@ -216,10 +266,13 @@ export const Font = {
   },
   ensureLoaded: async (
     fontFamily: string,
-    options?: { resourceName?: string; webSource?: string }
+    options?: {
+      resourceName?: string | FontAssetDescriptor;
+      webSource?: string;
+    },
   ): Promise<void> => {
     console.log(
-      `[Font] ensureLoaded start family=${fontFamily} resource=${options?.resourceName ?? "(auto)"}`
+      `[Font] ensureLoaded start family=${fontFamily} resource=${options?.resourceName ? (typeof options.resourceName === "string" ? options.resourceName : "(descriptor)") : "(auto)"}`,
     );
     if (fontLoadState.get(fontFamily) === "loaded") return;
     if (fontLoadState.get(fontFamily) === "loading") {
@@ -231,16 +284,26 @@ export const Font = {
     if (options?.webSource) {
       registerWebFontSource(fontFamily, options.webSource);
     }
-    if (options?.resourceName || options?.webSource) {
-      fontRegistry.set(fontFamily, {
-        resourceName: options.resourceName,
-        webSource: options.webSource,
-      });
-    }
 
     fontLoadState.set(fontFamily, "loading");
-    const resourceName = resolveResourceName(fontFamily, options?.resourceName);
-    const promise = Font.loadAsync(fontFamily, resourceName)
+
+    // Resolve resource
+    let resourceToLoad: string | FontAssetDescriptor;
+    if (options?.resourceName) {
+      resourceToLoad = options.resourceName;
+    } else {
+      const registered = fontRegistry.get(fontFamily);
+      if (registered) {
+        resourceToLoad =
+          (registered as any).descriptor ||
+          registered.resourceName ||
+          `${fontFamily}.ttf`;
+      } else {
+        resourceToLoad = `${fontFamily}.ttf`;
+      }
+    }
+
+    const promise = Font.loadAsync(fontFamily, resourceToLoad)
       .then(() => {
         fontLoadState.set(fontFamily, "loaded");
         console.log(`[Font] ensureLoaded loaded family=${fontFamily}`);
@@ -249,8 +312,8 @@ export const Font = {
       .catch((error) => {
         fontLoadState.set(fontFamily, "error");
         console.error(
-          `[Font] ensureLoaded failed family=${fontFamily} resource=${resourceName}:`,
-          error
+          `[Font] ensureLoaded failed family=${fontFamily}:`,
+          error,
         );
         throw error;
       });

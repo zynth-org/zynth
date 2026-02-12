@@ -16,6 +16,10 @@ const IMAGE_ASSET_LOADER_PATH = path.join(
   __dirname,
   "loaders/image-asset-loader.js",
 );
+const FONT_ASSET_LOADER_PATH = path.join(
+  __dirname,
+  "loaders/font-asset-loader.js",
+);
 const require = createRequire(import.meta.url);
 
 let solidJsxRuntime: string | null = null;
@@ -80,11 +84,13 @@ export function createZynthRsbuildPlugin(
         ? artifactPath
         : path.join(api.context.rootPath, artifactPath);
 
-      // Exclude images from built-in asset handling so our custom loader can process them
+      // Exclude images and fonts from built-in asset handling so our custom loaders can process them
       api.modifyBundlerChain((chain, { CHAIN_ID }) => {
         chain.module
           .rule(CHAIN_ID.RULE.IMAGE)
           .exclude.add(/\.(png|jpe?g|gif|webp|avif|svg)$/i);
+
+        chain.module.rules.delete(CHAIN_ID.RULE.FONT);
 
         // Apply aliases (high priority via chain)
         for (const [key, value] of Object.entries(mergedAliases)) {
@@ -99,6 +105,7 @@ export function createZynthRsbuildPlugin(
         };
         ensureAliases(config, mergedExtraAliases, mergedAliases);
         configureImageAssets(config);
+        configureFontAssets(config);
         if (isDev) {
           ensureResolveCondition(config, "development");
         }
@@ -222,6 +229,22 @@ function configureImageAssets(config: rspack.Configuration) {
   });
 }
 
+function configureFontAssets(config: rspack.Configuration) {
+  config.module ??= {};
+  config.module.rules ??= [];
+  // Use unshift to be the first rule
+  config.module.rules.unshift({
+    test: /\.(ttf|otf|woff2?|eot)$/i,
+    type: "javascript/auto",
+    use: [
+      {
+        loader: FONT_ASSET_LOADER_PATH,
+        options: {},
+      },
+    ],
+  });
+}
+
 function createStaticAssetMiddleware() {
   return async (req: any, res: any, next: any) => {
     const url = req.url || "";
@@ -247,6 +270,10 @@ function createStaticAssetMiddleware() {
         ".webp": "image/webp",
         ".avif": "image/avif",
         ".svg": "image/svg+xml",
+        ".ttf": "font/ttf",
+        ".otf": "font/otf",
+        ".woff": "font/woff",
+        ".woff2": "font/woff2",
       };
       res.setHeader(
         "Content-Type",
