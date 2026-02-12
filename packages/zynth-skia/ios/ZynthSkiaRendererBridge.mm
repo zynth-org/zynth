@@ -13,13 +13,19 @@
 #import "include/core/SkCanvas.h"
 #import "include/core/SkColor.h"
 #import "include/core/SkData.h"
+#import "include/core/SkFont.h"
+#import "include/core/SkFontMgr.h"
 #import "include/core/SkImage.h"
 #import "include/core/SkImageInfo.h"
 #import "include/core/SkPaint.h"
 #import "include/core/SkPath.h"
 #import "include/core/SkString.h"
 #import "include/core/SkSurface.h"
+#import "include/core/SkTypeface.h"
 #import "include/effects/SkRuntimeEffect.h"
+#if __has_include("include/ports/SkFontMgr_mac_ct.h")
+#import "include/ports/SkFontMgr_mac_ct.h"
+#endif
 
 namespace {
 
@@ -32,6 +38,7 @@ enum PackedOpcode {
   PackedOpcodeRuntimeShaderRect = 6,
   PackedOpcodeRuntimeShaderCircle = 7,
   PackedOpcodeRuntimeShaderPath = 8,
+  PackedOpcodeText = 9,
 };
 
 enum PackedColorType {
@@ -379,6 +386,46 @@ static void configurePaint(SkPaint &paint,
   paint.setStrokeMiter(strokeMiter);
 }
 
+static int normalizeFontWeight(NSString *weight) {
+  if (weight == nil) return 400;
+  NSString *trimmed = [weight stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+  if (trimmed.length == 0) return 400;
+  if ([trimmed caseInsensitiveCompare:@"bold"] == NSOrderedSame) return 700;
+  if ([trimmed caseInsensitiveCompare:@"normal"] == NSOrderedSame) return 400;
+  NSInteger numeric = [trimmed integerValue];
+  if (numeric < 100) numeric = 100;
+  if (numeric > 900) numeric = 900;
+  numeric = (numeric / 100) * 100;
+  return static_cast<int>(numeric);
+}
+
+static SkFontStyle::Slant normalizeFontSlant(NSString *style) {
+  if (style == nil) return SkFontStyle::kUpright_Slant;
+  NSString *trimmed = [style stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+  if ([trimmed caseInsensitiveCompare:@"italic"] == NSOrderedSame
+      || [trimmed caseInsensitiveCompare:@"oblique"] == NSOrderedSame) {
+    return SkFontStyle::kItalic_Slant;
+  }
+  return SkFontStyle::kUpright_Slant;
+}
+
+static sk_sp<SkTypeface> resolveTypeface(NSString *familyName, NSString *fontStyle, NSString *fontWeight) {
+#if __has_include("include/ports/SkFontMgr_mac_ct.h")
+  sk_sp<SkFontMgr> fontMgr = SkFontMgr_New_CoreText(nullptr);
+  if (!fontMgr) return nullptr;
+  SkFontStyle style(normalizeFontWeight(fontWeight), SkFontStyle::kNormal_Width, normalizeFontSlant(fontStyle));
+  const char *family = (familyName != nil && familyName.length > 0)
+    ? [familyName UTF8String]
+    : nullptr;
+  return fontMgr->matchFamilyStyle(family, style);
+#else
+  (void)familyName;
+  (void)fontStyle;
+  (void)fontWeight;
+  return nullptr;
+#endif
+}
+
 static bool renderSurfaceState(const CommandBuffer &buffer,
                                int width,
                                int height,
@@ -566,6 +613,68 @@ static bool renderSurfaceState(const CommandBuffer &buffer,
           strokeJoin,
           strokeMiter);
       canvas->drawPath(path, paint);
+      continue;
+    }
+
+    if (opcode == PackedOpcodeText) {
+      float x = readPackedScalar(buffer.ops, i, taggedScalars);
+      float y = readPackedScalar(buffer.ops, i, taggedScalars);
+      SkColor color = readPackedColor(buffer, buffer.ops, i);
+      float fontSize = readPackedScalar(buffer.ops, i, taggedScalars, 14.0f);
+      if (i + 5 >= buffer.ops.size()) break;
+      bool antiAlias = static_cast<int>(buffer.ops[i++]) != 0;
+      float opacity = readPackedScalar(buffer.ops, i, taggedScalars, 1.0f);
+      int familyIndex = static_cast<int>(buffer.ops[i++]);
+      int styleIndex = static_cast<int>(buffer.ops[i++]);
+      int weightIndex = static_cast<int>(buffer.ops[i++]);
+      int textIndex = static_cast<int>(buffer.ops[i++]);
+      bool hasMatrix = static_cast<int>(buffer.ops[i++]) != 0;
+
+      const std::string *familyPtr = readPackedString(buffer, familyIndex);
+      const std::string *stylePtr = readPackedString(buffer, styleIndex);
+      const std::string *weightPtr = readPackedString(buffer, weightIndex);
+      const std::string *textPtr = readPackedString(buffer, textIndex);
+      if (!textPtr) {
+        continue;
+      }
+
+      NSString *familyName = familyPtr
+        ? [NSString stringWithUTF8String:familyPtr->c_str()]
+        : @"";
+      NSString *fontStyle = stylePtr
+        ? [NSString stringWithUTF8String:stylePtr->c_str()]
+        : @"normal";
+      NSString *fontWeight = weightPtr
+        ? [NSString stringWithUTF8String:weightPtr->c_str()]
+        : @"normal";
+
+      sk_sp<SkTypeface> typeface = resolveTypeface(familyName, fontStyle, fontWeight);
+
+      if (hasMatrix) {
+        if (i + 5 >= buffer.ops.size()) break;
+        const float a = static_cast<float>(buffer.ops[i++]);
+        const float b = static_cast<float>(buffer.ops[i++]);
+        const float c = static_cast<float>(buffer.ops[i++]);
+        const float d = static_cast<float>(buffer.ops[i++]);
+        const float tx = static_cast<float>(buffer.ops[i++]);
+        const float ty = static_cast<float>(buffer.ops[i++]);
+        SkMatrix matrix = SkMatrix::MakeAll(a, c, tx, b, d, ty, 0, 0, 1);
+        canvas->save();
+        canvas->concat(matrix);
+      }
+
+      SkFont font(typeface, std::max(0.0f, fontSize));
+      font.setSubpixel(true);
+      font.setEdging(antiAlias ? SkFont::Edging::kAntiAlias : SkFont::Edging::kAlias);
+      SkPaint paint;
+      paint.setColor(color);
+      paint.setAlphaf(std::max(0.0f, std::min(1.0f, opacity)));
+      paint.setAntiAlias(antiAlias);
+      paint.setStyle(SkPaint::kFill_Style);
+      canvas->drawString(SkString(textPtr->c_str()), x, y, font, paint);
+      if (hasMatrix) {
+        canvas->restore();
+      }
       continue;
     }
 
@@ -1007,6 +1116,44 @@ static bool encodeCommands(NSArray<NSDictionary *> *commands,
       continue;
     }
 
+    if ([type isEqualToString:@"text"]) {
+      outOps.push_back(PackedOpcodeText);
+      outOps.push_back([command[@"x"] doubleValue]);
+      outOps.push_back([command[@"y"] doubleValue]);
+      pushColor(outOps, outStrings, index, command[@"color"]);
+      outOps.push_back(command[@"fontSize"] ? [command[@"fontSize"] doubleValue] : 14.0);
+      outOps.push_back(command[@"antiAlias"] ? ([command[@"antiAlias"] boolValue] ? 1.0 : 0.0) : 1.0);
+      outOps.push_back(command[@"opacity"] ? [command[@"opacity"] doubleValue] : 1.0);
+      NSString *fontFamily = [command[@"fontFamily"] isKindOfClass:[NSString class]]
+        ? command[@"fontFamily"]
+        : @"";
+      NSString *fontStyle = [command[@"fontStyle"] isKindOfClass:[NSString class]]
+        ? command[@"fontStyle"]
+        : @"normal";
+      NSString *fontWeight = [command[@"fontWeight"] isKindOfClass:[NSString class]]
+        ? command[@"fontWeight"]
+        : ([command[@"fontWeight"] respondsToSelector:@selector(stringValue)]
+            ? [command[@"fontWeight"] stringValue]
+            : @"normal");
+      NSString *text = [command[@"text"] isKindOfClass:[NSString class]]
+        ? command[@"text"]
+        : @"";
+      outOps.push_back(addString(outStrings, index, fontFamily));
+      outOps.push_back(addString(outStrings, index, fontStyle));
+      outOps.push_back(addString(outStrings, index, fontWeight));
+      outOps.push_back(addString(outStrings, index, text));
+      NSArray *matrix = command[@"matrix"];
+      if ([matrix isKindOfClass:[NSArray class]] && matrix.count == 6) {
+        outOps.push_back(1.0);
+        for (NSNumber *value in matrix) {
+          outOps.push_back([value doubleValue]);
+        }
+      } else {
+        outOps.push_back(0.0);
+      }
+      continue;
+    }
+
     if ([type isEqualToString:@"runtimeShaderRect"]) {
       NSDictionary *uniforms = command[@"uniforms"];
       if (![uniforms isKindOfClass:[NSDictionary class]]) {
@@ -1342,6 +1489,24 @@ static bool encodeCommands(NSArray<NSDictionary *> *commands,
   if (nodeId <= 0) return NO;
   std::lock_guard<std::mutex> lock(gSkiaMutex);
   return gSkiaSurfaces.find(static_cast<int>(nodeId)) != gSkiaSurfaces.end();
+}
+
++ (double)measureText:(NSString *)text
+           familyName:(NSString *)familyName
+             fontSize:(double)fontSize
+            fontStyle:(NSString *)fontStyle
+           fontWeight:(NSString *)fontWeight {
+  NSString *content = [text isKindOfClass:[NSString class]] ? text : @"";
+  if (content.length == 0 || fontSize <= 0) return 0.0;
+  sk_sp<SkTypeface> typeface = resolveTypeface(familyName, fontStyle, fontWeight);
+  std::string utf8 = std::string([content UTF8String]);
+  SkFont font(typeface, static_cast<float>(fontSize));
+  font.setSubpixel(true);
+  return static_cast<double>(font.measureText(utf8.data(), utf8.size(), SkTextEncoding::kUTF8));
+}
+
++ (NSArray<NSString *> *)listFontFamilies {
+  return [UIFont familyNames];
 }
 
 @end

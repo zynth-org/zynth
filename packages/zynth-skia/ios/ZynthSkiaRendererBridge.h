@@ -20,6 +20,12 @@ NS_ASSUME_NONNULL_BEGIN
                               clearColor:(uint32_t)clearColor;
 + (BOOL)hasSurface:(NSInteger)nodeId;
 + (NSArray<NSNumber *> *)surfaceNodeIdsForSignalId:(int)signalId;
++ (double)measureText:(NSString *)text
+           familyName:(NSString *)familyName
+             fontSize:(double)fontSize
+            fontStyle:(NSString *)fontStyle
+           fontWeight:(NSString *)fontWeight;
++ (NSArray<NSString *> *)listFontFamilies;
 @end
 
 NS_ASSUME_NONNULL_END

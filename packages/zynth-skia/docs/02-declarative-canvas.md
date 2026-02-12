@@ -43,6 +43,7 @@ Props:
 - `Rect`
 - `Circle`
 - `Path`
+- `Text`
 - `Shader` (as a child of `Paint` or shape nodes)
 
 All shape nodes accept local paint overrides.

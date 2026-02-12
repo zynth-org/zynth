@@ -100,12 +100,19 @@ async function loadWebFont(
   fontFamily: string,
   resourceName: string
 ): Promise<void> {
+  console.log(
+    `[Font] loadWebFont start family=${fontFamily} resource=${resourceName}`
+  );
   if (webLoadedFonts.has(fontFamily)) {
+    console.log(`[Font] loadWebFont already loaded family=${fontFamily}`);
     return;
   }
 
   const source = resolveWebFontSource(fontFamily, resourceName);
   if (!source) {
+    console.warn(
+      `[Font] loadWebFont no source resolved family=${fontFamily} resource=${resourceName}`
+    );
     return;
   }
 
@@ -118,6 +125,10 @@ async function loadWebFont(
       webLoadedFonts.add(fontFamily);
       return;
     } catch (error) {
+      console.warn(
+        `[Font] loadWebFont FontFace failed family=${fontFamily}:`,
+        error
+      );
       // Fall back to @font-face injection below.
     }
   }
@@ -141,6 +152,10 @@ async function loadWebFont(
       await docFonts.load(`1em ${fontFamily}`);
       webLoadedFonts.add(fontFamily);
     } catch (error) {
+      console.warn(
+        `[Font] loadWebFont document.fonts.load failed family=${fontFamily}:`,
+        error
+      );
       // Ignore and allow fallback to continue.
     }
   } else {
@@ -153,21 +168,29 @@ export const Font = {
     fontFamily: string,
     resourceName: string
   ): Promise<void> => {
+    console.log(
+      `[Font] loadAsync start family=${fontFamily} resource=${resourceName}`
+    );
     // Check for web environment
     if (typeof document !== "undefined") {
       await loadWebFont(fontFamily, resourceName);
+      console.log(`[Font] loadAsync web done family=${fontFamily}`);
       return;
     }
 
     const bridge = getModulesBridge();
     if (!bridge || !bridge.call) {
+      console.warn(
+        `[Font] loadAsync no native bridge family=${fontFamily} resource=${resourceName}`
+      );
       return;
     }
 
-    await bridge.call("Font", "loadAsync", {
+    const result = await bridge.call("Font", "loadAsync", {
       fontFamily,
       resourceName,
     });
+    console.log(`[Font] loadAsync native result family=${fontFamily}:`, result);
   },
   register: (
     fontFamily: string,
@@ -195,8 +218,12 @@ export const Font = {
     fontFamily: string,
     options?: { resourceName?: string; webSource?: string }
   ): Promise<void> => {
+    console.log(
+      `[Font] ensureLoaded start family=${fontFamily} resource=${options?.resourceName ?? "(auto)"}`
+    );
     if (fontLoadState.get(fontFamily) === "loaded") return;
     if (fontLoadState.get(fontFamily) === "loading") {
+      console.log(`[Font] ensureLoaded already loading family=${fontFamily}`);
       await fontLoadPromises.get(fontFamily);
       return;
     }
@@ -216,10 +243,15 @@ export const Font = {
     const promise = Font.loadAsync(fontFamily, resourceName)
       .then(() => {
         fontLoadState.set(fontFamily, "loaded");
+        console.log(`[Font] ensureLoaded loaded family=${fontFamily}`);
         notifyFontLoaded(fontFamily);
       })
       .catch((error) => {
         fontLoadState.set(fontFamily, "error");
+        console.error(
+          `[Font] ensureLoaded failed family=${fontFamily} resource=${resourceName}:`,
+          error
+        );
         throw error;
       });
 

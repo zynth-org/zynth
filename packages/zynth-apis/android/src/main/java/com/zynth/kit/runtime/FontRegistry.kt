@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Typeface
 import android.util.Log
 import com.zynth.kit.core.AssetProvider
+import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
 private const val TAG = "FontRegistry"
@@ -49,24 +50,57 @@ object FontRegistry : AssetProvider {
       return false
     }
 
-    return try {
-      // resourceName is the font filename, e.g., "zynth-icons.ttf"
-      // Load from assets/fonts/ directory
-      val assetPath = "fonts/$resourceName"
-      if (DEBUG_FONTS) {
-        Log.d(TAG, "Loading font '$fontFamily' from assets: $assetPath")
-      }
-      
-      val typeface = Typeface.createFromAsset(ctx.assets, assetPath)
-      loadedFonts[fontFamily] = typeface
-      if (DEBUG_FONTS) {
-        Log.d(TAG, "Successfully loaded font '$fontFamily'")
-      }
-      true
-    } catch (e: Exception) {
-      Log.e(TAG, "Failed to load font '$fontFamily' from '$resourceName': ${e.message}")
-      false
+    val normalized = resourceName.trim().removePrefix("./")
+    val candidates = linkedSetOf(
+      normalized,
+      "fonts/$normalized",
+      "assets/fonts/$normalized",
+      "src/assets/fonts/$normalized",
+      "app/src/main/assets/fonts/$normalized",
+      "main/assets/fonts/$normalized",
+    )
+    val fileName = normalized.substringAfterLast('/').substringAfterLast('\\')
+    if (fileName.isNotEmpty() && fileName != normalized) {
+      candidates.add(fileName)
+      candidates.add("fonts/$fileName")
+      candidates.add("assets/fonts/$fileName")
+      candidates.add("src/assets/fonts/$fileName")
     }
+
+    for (assetPath in candidates) {
+      try {
+        if (DEBUG_FONTS) {
+          Log.d(TAG, "Trying font '$fontFamily' from assets: $assetPath")
+        }
+        val typeface = Typeface.createFromAsset(ctx.assets, assetPath)
+        loadedFonts[fontFamily] = typeface
+        if (DEBUG_FONTS) {
+          Log.d(TAG, "Successfully loaded font '$fontFamily' from asset: $assetPath")
+        }
+        return true
+      } catch (_: Exception) {
+        // Try next candidate.
+      }
+    }
+
+    val fileCandidates = linkedSetOf(normalized, fileName).filter { it.isNotBlank() }
+    for (path in fileCandidates) {
+      try {
+        val file = File(path)
+        if (!file.exists()) continue
+        val typeface = Typeface.createFromFile(file)
+        loadedFonts[fontFamily] = typeface
+        if (DEBUG_FONTS) {
+          Log.d(TAG, "Successfully loaded font '$fontFamily' from file: ${file.absolutePath}")
+        }
+        return true
+      } catch (_: Exception) {
+        // Try next candidate.
+      }
+    }
+
+    Log.e(TAG, "Failed to load font '$fontFamily' from '$resourceName'")
+    return false
   }
 
   /**

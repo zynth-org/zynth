@@ -54,6 +54,62 @@ export type SkiaDrawLine = {
   strokeMiter?: number;
 };
 
+export type SkiaFontStyleSlant = "normal" | "italic" | "oblique";
+export type SkiaFontWeight = "normal" | "bold" | 100 | 200 | 300 | 400 | 500 | 600 | 700 | 800 | 900;
+
+export type SkiaFontStyle = {
+  fontFamily?: string;
+  fontSize?: number;
+  fontStyle?: SkiaFontStyleSlant;
+  fontWeight?: SkiaFontWeight;
+};
+
+export type SkiaTypeface = {
+  familyName: string;
+  fontStyle: SkiaFontStyleSlant;
+  fontWeight: Exclude<SkiaFontWeight, "normal" | "bold"> | 400 | 700;
+};
+
+export type SkiaMeasuredText = {
+  width: number;
+};
+
+export type SkiaFont = {
+  familyName: string;
+  size: number;
+  fontStyle: SkiaFontStyleSlant;
+  fontWeight: Exclude<SkiaFontWeight, "normal" | "bold"> | 400 | 700;
+  measureText(text: string): SkiaMeasuredText;
+};
+
+export type SkiaFontManager = {
+  listFontFamilies(): string[];
+  matchFamilyStyle(
+    familyName: string,
+    style?: Partial<Pick<SkiaFontStyle, "fontStyle" | "fontWeight">>,
+  ): SkiaTypeface | null;
+};
+
+export type SkiaTypefaceFontProvider = {
+  registerTypeface(typeface: SkiaTypeface, familyName?: string): void;
+  asFontManager(): SkiaFontManager;
+};
+
+export type SkiaDrawText = {
+  type: "text";
+  text: string;
+  x: number;
+  y: number;
+  color: SkiaColorValue;
+  fontFamily: string;
+  fontSize: number;
+  fontStyle?: SkiaFontStyleSlant;
+  fontWeight?: SkiaFontWeight;
+  antiAlias?: boolean;
+  opacity?: number;
+  matrix?: readonly [number, number, number, number, number, number];
+};
+
 export type SkiaPathCommand =
   | { type: "moveTo"; x: number; y: number }
   | { type: "lineTo"; x: number; y: number }
@@ -137,6 +193,7 @@ export type SkiaDrawCommand =
   | SkiaDrawRect
   | SkiaDrawCircle
   | SkiaDrawLine
+  | SkiaDrawText
   | SkiaDrawPath
   | SkiaDrawRuntimeShaderRect
   | SkiaDrawRuntimeShaderCircle
@@ -308,6 +365,17 @@ export type SkiaPathProps = {
   strokeJoin?: SkiaStrokeJoin;
   strokeMiter?: number;
   shader?: SkiaShaderProgram;
+  children?: JSX.Element;
+};
+
+export type SkiaTextProps = {
+  text: string;
+  font: SkiaFont | Accessor<SkiaFont | null>;
+  x?: number;
+  y?: number;
+  color?: SkiaColorValue;
+  antiAlias?: boolean;
+  opacity?: number;
   children?: JSX.Element;
 };
 

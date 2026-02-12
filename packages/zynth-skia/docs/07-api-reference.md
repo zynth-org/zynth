@@ -12,6 +12,7 @@
 - `Circle`
 - `Path`
 - `Shader`
+- `Text`
 
 ### Factories / helpers
 
@@ -20,6 +21,11 @@
 - `createShader`
 - `createRuntimeEffect`
 - `createSkiaValue`
+- `createFont`
+- `useFont`
+- `matchFont`
+- `listFontFamilies`
+- `vec`
 - `createClock`
 - `createPathInterpolation`
 - `createPathValue`
@@ -56,6 +62,8 @@
   - `{ type: "line", x1, y1, x2, y2, color, ...paintFields }`
 - `SkiaDrawPath`
   - `{ type: "path", commands, color, ...paintFields }`
+- `SkiaDrawText`
+  - `{ type: "text", text, x, y, color, fontFamily, fontSize, fontStyle?, fontWeight?, antiAlias?, opacity? }`
 - `SkiaDrawRuntimeShaderRect`
   - `{ type: "runtimeShaderRect", x, y, width, height, source, uniforms, antiAlias?, opacity? }`
 
@@ -77,6 +85,7 @@ Shared paint fields:
 - `SkiaRectProps`
 - `SkiaCircleProps`
 - `SkiaPathProps`
+- `SkiaTextProps`
 
 ## Path types
 
@@ -93,6 +102,13 @@ Shared paint fields:
 - `SkiaShaderProps`
 - `SkiaShaderProgram`
 - `SkiaShaderSource`
+- `SkiaFontStyle`
+- `SkiaFontStyleSlant`
+- `SkiaFontWeight`
+- `SkiaTypeface`
+- `SkiaFont`
+- `SkiaFontManager`
+- `SkiaTypefaceFontProvider`
 - `SkiaRuntimeEffect`
 - `SkiaRuntimeShaderUniform`
 - `SkiaRuntimeShaderUniformMap`

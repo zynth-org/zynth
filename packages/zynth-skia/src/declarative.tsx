@@ -27,6 +27,7 @@ import type {
   SkiaDrawRuntimeShaderCircle,
   SkiaDrawRuntimeShaderPath,
   SkiaDrawRuntimeShaderRect,
+  SkiaFont,
   SkiaGroupProps,
   SkiaPaintProps,
   SkiaPaintStyle,
@@ -38,11 +39,12 @@ import type {
   SkiaSharedSignalToken,
   SkiaShaderProps,
   SkiaShaderProgram,
+  SkiaTextProps,
 } from "./types";
 
 const SKIA_NODE = Symbol("zynth.skia.node");
 
-type SkiaNodeKind = "group" | "paint" | "rect" | "circle" | "path" | "shader";
+type SkiaNodeKind = "group" | "paint" | "rect" | "circle" | "path" | "shader" | "text";
 
 type SkiaNode<T extends object> = {
   readonly [SKIA_NODE]: true;
@@ -704,6 +706,67 @@ function compileShapePath(
   });
 }
 
+function compileShapeText(
+  props: SkiaTextProps,
+  state: CompileState,
+  time: number,
+  out: SkiaDrawCommand[],
+) {
+  const xScalar = resolveScalar(props.x ?? 0);
+  const yScalar = resolveScalar(props.y ?? 0);
+  const x = readNumber(xScalar);
+  const y = readNumber(yScalar);
+  const paint = mergePaint(state, props);
+  const text = typeof props.text === "string" ? props.text : String(props.text ?? "");
+  const resolvedFont = typeof props.font === "function"
+    ? (props.font as Accessor<unknown>)()
+    : props.font;
+  if (!resolvedFont) {
+    return;
+  }
+  const font = resolvedFont as SkiaFont;
+  const width = font.measureText(text).width;
+  const bounds = boundsFromPoints([
+    applyMatrixPoint(state.transform, x, y - font.size),
+    applyMatrixPoint(state.transform, x + width, y),
+  ]);
+  const color = evaluateColor(paint.shader, paint.color, {
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+    time,
+  });
+  const identityTransform = isIdentityTransform(state.transform);
+  if (!identityTransform && (isSharedSignalToken(xScalar) || isSharedSignalToken(yScalar))) {
+    throw new Error("Skia Text does not support tokenized x/y with transformed Group");
+  }
+
+  pushPaintedShape(out, {
+    type: "text",
+    text,
+    x: identityTransform ? (xScalar as unknown as number) : x,
+    y: identityTransform ? (yScalar as unknown as number) : y,
+    color,
+    fontFamily: font.familyName,
+    fontSize: font.size,
+    fontStyle: font.fontStyle,
+    fontWeight: font.fontWeight,
+    antiAlias: props.antiAlias ?? paint.antiAlias,
+    opacity: paint.opacity as unknown as number,
+    matrix: identityTransform
+      ? undefined
+      : [
+        state.transform.a,
+        state.transform.b,
+        state.transform.c,
+        state.transform.d,
+        state.transform.tx,
+        state.transform.ty,
+      ] as const,
+  });
+}
+
 function compileNode(
   value: unknown,
   state: CompileState,
@@ -769,6 +832,11 @@ function compileNode(
   }
 
   if (value.kind === "shader") {
+    return;
+  }
+
+  if (value.kind === "text") {
+    compileShapeText(value.props as SkiaTextProps, state, time, out);
     return;
   }
 
@@ -881,6 +949,14 @@ export function Circle(props: SkiaCircleProps): JSX.Element {
 export function Path(props: SkiaPathProps): JSX.Element {
   const resolved = children(() => props.children);
   return createNode("path", {
+    ...props,
+    children: resolved,
+  }) as unknown as JSX.Element;
+}
+
+export function Text(props: SkiaTextProps): JSX.Element {
+  const resolved = children(() => props.children);
+  return createNode("text", {
     ...props,
     children: resolved,
   }) as unknown as JSX.Element;

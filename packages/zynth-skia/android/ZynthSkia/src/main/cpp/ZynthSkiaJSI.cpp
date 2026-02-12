@@ -20,12 +20,15 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkData.h"
+#include "include/core/SkFont.h"
+#include "include/core/SkFontMgr.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
+#include "include/core/SkTypeface.h"
 #include "include/effects/SkRuntimeEffect.h"
 
 using namespace facebook::jsi;
@@ -42,6 +45,7 @@ constexpr int kOpcodePath = 5;
 constexpr int kOpcodeRuntimeShaderRect = 6;
 constexpr int kOpcodeRuntimeShaderCircle = 7;
 constexpr int kOpcodeRuntimeShaderPath = 8;
+constexpr int kOpcodeText = 9;
 
 constexpr int kColorTypeInt = 1;
 constexpr int kColorTypeString = 2;
@@ -419,6 +423,41 @@ void configurePaint(
   paint.setStrokeMiter(strokeMiter);
 }
 
+int normalizeFontWeight(const std::string &weight) {
+  if (weight.empty() || weight == "normal") return 400;
+  if (weight == "bold") return 700;
+  try {
+    int parsed = std::stoi(weight);
+    parsed = std::max(100, std::min(900, parsed));
+    return (parsed / 100) * 100;
+  } catch (...) {
+    return 400;
+  }
+}
+
+SkFontStyle::Slant normalizeFontSlant(const std::string &style) {
+  if (style == "italic" || style == "oblique") {
+    return SkFontStyle::kItalic_Slant;
+  }
+  return SkFontStyle::kUpright_Slant;
+}
+
+sk_sp<SkTypeface> resolveTypeface(
+    const std::string &familyName,
+    const std::string &fontStyle,
+    const std::string &fontWeight) {
+  sk_sp<SkFontMgr> fontMgr = SkFontMgr::RefDefault();
+  if (!fontMgr) return nullptr;
+  SkFontStyle style(
+      normalizeFontWeight(fontWeight),
+      SkFontStyle::kNormal_Width,
+      normalizeFontSlant(fontStyle));
+  if (familyName.empty()) {
+    return fontMgr->legacyMakeTypeface(nullptr, style);
+  }
+  return fontMgr->matchFamilyStyle(familyName.c_str(), style);
+}
+
 bool renderSurfaceState(
     const SurfaceState::CommandBuffer &buffer,
     SkCanvas *canvas,
@@ -605,6 +644,64 @@ bool renderSurfaceState(
           strokeJoin,
           strokeMiter);
       canvas->drawPath(path, paint);
+      continue;
+    }
+
+    if (opcode == kOpcodeText) {
+      const float x = readPackedScalar(buffer.ops, i, taggedScalars);
+      const float y = readPackedScalar(buffer.ops, i, taggedScalars);
+      const SkColor color = readPackedColor(buffer, buffer.ops, i);
+      const float fontSize = readPackedScalar(buffer.ops, i, taggedScalars, 14.0f);
+      if (i + 5 >= buffer.ops.size()) break;
+      const bool antiAlias = static_cast<int>(buffer.ops[i++]) != 0;
+      const float opacity = readPackedScalar(buffer.ops, i, taggedScalars, 1.0f);
+      const int familyIndex = static_cast<int>(buffer.ops[i++]);
+      const int styleIndex = static_cast<int>(buffer.ops[i++]);
+      const int weightIndex = static_cast<int>(buffer.ops[i++]);
+      const int textIndex = static_cast<int>(buffer.ops[i++]);
+      const bool hasMatrix = static_cast<int>(buffer.ops[i++]) != 0;
+
+      const std::string *familyPtr = readPackedString(buffer, familyIndex);
+      const std::string *stylePtr = readPackedString(buffer, styleIndex);
+      const std::string *weightPtr = readPackedString(buffer, weightIndex);
+      const std::string *textPtr = readPackedString(buffer, textIndex);
+      if (!textPtr) {
+        continue;
+      }
+
+      sk_sp<SkTypeface> typeface = resolveTypeface(
+          familyPtr ? *familyPtr : std::string(),
+          stylePtr ? *stylePtr : std::string("normal"),
+          weightPtr ? *weightPtr : std::string("normal"));
+      if (!typeface) {
+        typeface = SkTypeface::MakeDefault();
+      }
+
+      if (hasMatrix) {
+        if (i + 5 >= buffer.ops.size()) break;
+        const float a = static_cast<float>(buffer.ops[i++]);
+        const float b = static_cast<float>(buffer.ops[i++]);
+        const float c = static_cast<float>(buffer.ops[i++]);
+        const float d = static_cast<float>(buffer.ops[i++]);
+        const float tx = static_cast<float>(buffer.ops[i++]);
+        const float ty = static_cast<float>(buffer.ops[i++]);
+        const SkMatrix matrix = SkMatrix::MakeAll(a, c, tx, b, d, ty, 0, 0, 1);
+        canvas->save();
+        canvas->concat(matrix);
+      }
+
+      SkFont font(typeface, std::max(0.0f, fontSize));
+      font.setSubpixel(true);
+      font.setEdging(antiAlias ? SkFont::Edging::kAntiAlias : SkFont::Edging::kAlias);
+      SkPaint paint;
+      paint.setColor(color);
+      paint.setAlphaf(std::max(0.0f, std::min(1.0f, opacity)));
+      paint.setAntiAlias(antiAlias);
+      paint.setStyle(SkPaint::kFill_Style);
+      canvas->drawString(SkString(textPtr->c_str()), x, y, font, paint);
+      if (hasMatrix) {
+        canvas->restore();
+      }
       continue;
     }
 
@@ -1033,6 +1130,48 @@ void encodeCommandsFromJS(
           outOps.push_back(static_cast<double>(kPathVerbClose));
         }
       }
+      continue;
+    }
+
+    if (type == "text") {
+      outOps.push_back(static_cast<double>(kOpcodeText));
+      outOps.push_back(readNumberProp(rt, command, "x", 0));
+      outOps.push_back(readNumberProp(rt, command, "y", 0));
+      pushPackedColor(outOps, outStrings, stringIndex, readStringProp(rt, command, "color"));
+      outOps.push_back(readNumberProp(rt, command, "fontSize", 14));
+      const Value antiAlias = command.getProperty(rt, "antiAlias");
+      outOps.push_back(antiAlias.isBool() ? (antiAlias.getBool() ? 1.0 : 0.0) : 1.0);
+      outOps.push_back(readNumberProp(rt, command, "opacity", 1));
+
+      const int familyIndex = addString(outStrings, stringIndex, readStringProp(rt, command, "fontFamily"));
+      const int styleIndex = addString(outStrings, stringIndex, readStringProp(rt, command, "fontStyle", "normal"));
+      Value fontWeight = command.getProperty(rt, "fontWeight");
+      const std::string weight = fontWeight.isString()
+        ? fontWeight.asString(rt).utf8(rt)
+        : (fontWeight.isNumber() ? std::to_string(static_cast<int>(fontWeight.asNumber())) : std::string("normal"));
+      const int weightIndex = addString(outStrings, stringIndex, weight);
+      const int textIndex = addString(outStrings, stringIndex, readStringProp(rt, command, "text"));
+      outOps.push_back(static_cast<double>(familyIndex));
+      outOps.push_back(static_cast<double>(styleIndex));
+      outOps.push_back(static_cast<double>(weightIndex));
+      outOps.push_back(static_cast<double>(textIndex));
+
+      Value matrixValue = command.getProperty(rt, "matrix");
+      if (matrixValue.isObject()) {
+        Object matrixObject = matrixValue.asObject(rt);
+        if (matrixObject.isArray(rt)) {
+          Array matrix = matrixObject.asArray(rt);
+          if (matrix.length(rt) == 6) {
+            outOps.push_back(1.0);
+            for (size_t m = 0; m < 6; m += 1) {
+              Value entry = matrix.getValueAtIndex(rt, m);
+              outOps.push_back(entry.isNumber() ? entry.asNumber() : 0.0);
+            }
+            continue;
+          }
+        }
+      }
+      outOps.push_back(0.0);
       continue;
     }
 
@@ -1553,6 +1692,50 @@ void installBridge(Runtime &rt) {
         return Value(callSubmitPacked(static_cast<jint>(args[0].asNumber()), ops, strings));
       });
 
+  auto measureText = Function::createFromHostFunction(
+      rt,
+      PropNameID::forAscii(rt, "measureText"),
+      5,
+      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 5 || !args[0].isString() || !args[1].isString() || !args[2].isNumber()
+            || !args[3].isString() || (!args[4].isString() && !args[4].isNumber())) {
+          return Value(0.0);
+        }
+        const std::string text = args[0].asString(rt).utf8(rt);
+        const std::string familyName = args[1].asString(rt).utf8(rt);
+        const float fontSize = static_cast<float>(args[2].asNumber());
+        const std::string fontStyle = args[3].asString(rt).utf8(rt);
+        const std::string fontWeight = args[4].isString()
+          ? args[4].asString(rt).utf8(rt)
+          : std::to_string(static_cast<int>(args[4].asNumber()));
+
+        sk_sp<SkTypeface> typeface = resolveTypeface(familyName, fontStyle, fontWeight);
+        if (!typeface) {
+          typeface = SkTypeface::MakeDefault();
+        }
+        SkFont font(typeface, std::max(0.0f, fontSize));
+        font.setSubpixel(true);
+        const double width = static_cast<double>(font.measureText(text.data(), text.size(), SkTextEncoding::kUTF8));
+        return Value(width);
+      });
+
+  auto listFontFamilies = Function::createFromHostFunction(
+      rt,
+      PropNameID::forAscii(rt, "listFontFamilies"),
+      0,
+      [](Runtime &rt, const Value &, const Value *, size_t) -> Value {
+        sk_sp<SkFontMgr> fontMgr = SkFontMgr::RefDefault();
+        if (!fontMgr) return Array(rt, 0);
+        const int count = fontMgr->countFamilies();
+        Array families(rt, count > 0 ? static_cast<size_t>(count) : 0);
+        for (int index = 0; index < count; index += 1) {
+          SkString name;
+          fontMgr->getFamilyName(index, &name);
+          families.setValueAtIndex(rt, static_cast<size_t>(index), String::createFromUtf8(rt, name.c_str()));
+        }
+        return families;
+      });
+
   Object skia(rt);
   Object capabilities(rt);
   capabilities.setProperty(rt, "paths", Value(true));
@@ -1570,6 +1753,8 @@ void installBridge(Runtime &rt) {
   skia.setProperty(rt, "invalidateSurface", invalidateSurface);
   skia.setProperty(rt, "setFrameLoopEnabled", setFrameLoopEnabled);
   skia.setProperty(rt, "submitFrame", submitFrame);
+  skia.setProperty(rt, "measureText", measureText);
+  skia.setProperty(rt, "listFontFamilies", listFontFamilies);
   rt.global().setProperty(rt, kSkiaKey, skia);
 }
 

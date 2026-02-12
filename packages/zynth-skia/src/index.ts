@@ -1,7 +1,8 @@
 export { SkiaView } from "./SkiaView";
 export { createSkiaSurface } from "./createSkiaSurface";
 export type { SkiaSurfaceController } from "./createSkiaSurface";
-export { Canvas, Circle, Group, Paint, Path, Rect, Shader } from "./declarative";
+export { Canvas, Circle, Group, Paint, Path, Rect, Shader, Text } from "./declarative";
+export { createFont, listFontFamilies, matchFont, useFont, vec } from "./font";
 export { createPath } from "./path";
 export { createRuntimeEffect, createShader, createSkiaValue, Skia } from "./shader";
 export {
@@ -31,6 +32,12 @@ export type {
   SkiaDrawRuntimeShaderCircle,
   SkiaDrawRuntimeShaderPath,
   SkiaDrawRuntimeShaderRect,
+  SkiaDrawText,
+  SkiaFont,
+  SkiaFontManager,
+  SkiaFontStyle,
+  SkiaFontStyleSlant,
+  SkiaFontWeight,
   SkiaFeature,
   SkiaFrameSpec,
   SkiaGroupProps,
@@ -49,6 +56,9 @@ export type {
   SkiaShaderSource,
   SkiaStrokeCap,
   SkiaStrokeJoin,
+  SkiaTextProps,
+  SkiaTypeface,
+  SkiaTypefaceFontProvider,
   SkiaRuntimeEffect,
   SkiaRuntimeShaderUniform,
   SkiaRuntimeShaderUniformMap,

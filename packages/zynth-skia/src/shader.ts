@@ -1,5 +1,12 @@
 import { createSharedSignal } from "@zynth/core";
 import { createSignal } from "solid-js";
+import {
+  createFont,
+  createSystemFontManager,
+  createTypefaceFontProvider,
+  matchFont,
+} from "./font";
+import type { SkiaFontWeight } from "./types";
 import type {
   CreateSkiaValueOptions,
   SkiaColorValue,
@@ -285,6 +292,25 @@ export const Skia = {
       return createRuntimeEffect(source);
     },
   },
+  FontMgr: {
+    System() {
+      return createSystemFontManager();
+    },
+  },
+  TypefaceFontProvider: {
+    Make() {
+      return createTypefaceFontProvider();
+    },
+  },
+  Font(typeface: { familyName: string; fontStyle?: "normal" | "italic" | "oblique"; fontWeight?: number }, size: number) {
+    return createFont({
+      fontFamily: typeface.familyName,
+      fontSize: size,
+      fontStyle: typeface.fontStyle,
+      fontWeight: typeface.fontWeight as SkiaFontWeight | undefined,
+    });
+  },
+  matchFont,
 } as const;
 
 export function createSkiaValue<T>(

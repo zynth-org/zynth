@@ -53,6 +53,7 @@ const enum PackedOpcode {
   RuntimeShaderRect = 6,
   RuntimeShaderCircle = 7,
   RuntimeShaderPath = 8,
+  Text = 9,
 }
 
 const enum PackedColorType {
@@ -373,6 +374,13 @@ function materializeCommandsForFallback(commands: SkiaDrawCommand[]): SkiaDrawCo
             return pathCommand;
           }),
         };
+      case "text":
+        return {
+          ...command,
+          x: materializeScalar(command.x),
+          y: materializeScalar(command.y),
+          opacity: command.opacity == null ? undefined : materializeScalar(command.opacity, 1),
+        };
       case "runtimeShaderRect":
         return {
           ...command,
@@ -463,6 +471,7 @@ function encodePackedCommands(commands: SkiaDrawCommand[]): PackedCommands {
     const command = commands[i]!;
     if (
       command.type !== "clear"
+      && command.type !== "text"
       && command.type !== "runtimeShaderRect"
       && command.type !== "runtimeShaderCircle"
       && command.type !== "runtimeShaderPath"
@@ -720,6 +729,33 @@ function encodePackedCommands(commands: SkiaDrawCommand[]): PackedCommands {
               encoded.push(PackedPathVerb.Close);
               break;
           }
+        }
+        break;
+      }
+      case "text": {
+        encoded.push(PackedOpcode.Text);
+        pushPackedScalar(encoded, command.x);
+        pushPackedScalar(encoded, command.y);
+        pushPackedColor(encoded, command.color, stringTable, stringIndex);
+        pushPackedScalar(encoded, command.fontSize, 14);
+        encoded.push(command.antiAlias === false ? 0 : 1);
+        pushPackedScalar(encoded, caps.paintOpacity ? (command.opacity ?? 1) : 1, 1);
+        const familyIndex = addPackedString(stringTable, stringIndex, command.fontFamily);
+        const styleIndex = addPackedString(stringTable, stringIndex, command.fontStyle ?? "normal");
+        const weightIndex = addPackedString(
+          stringTable,
+          stringIndex,
+          command.fontWeight == null ? "normal" : String(command.fontWeight),
+        );
+        const textIndex = addPackedString(stringTable, stringIndex, command.text);
+        encoded.push(familyIndex, styleIndex, weightIndex, textIndex);
+        if (command.matrix) {
+          encoded.push(1);
+          for (let matrixIndex = 0; matrixIndex < 6; matrixIndex += 1) {
+            encoded.push(command.matrix[matrixIndex] ?? 0);
+          }
+        } else {
+          encoded.push(0);
         }
         break;
       }

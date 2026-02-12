@@ -16,6 +16,27 @@ public class ZynthFontModule: ZynthModule {
             throw ZynthModuleError.moduleNotFound("Method \(method) not found in Font module")
         }
     }
+
+    private func findFontInBundleRecursively(
+        bundle: Bundle,
+        fileName: String
+    ) -> URL? {
+        guard let resourcePath = bundle.resourcePath else { return nil }
+        let rootURL = URL(fileURLWithPath: resourcePath, isDirectory: true)
+        guard let enumerator = FileManager.default.enumerator(
+            at: rootURL,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return nil
+        }
+        while let next = enumerator.nextObject() as? URL {
+            if next.lastPathComponent.caseInsensitiveCompare(fileName) == .orderedSame {
+                return next
+            }
+        }
+        return nil
+    }
     
     private func loadAsync(args: Any?) throws -> Any? {
         guard let params = args as? [String: Any],
@@ -25,9 +46,21 @@ public class ZynthFontModule: ZynthModule {
         }
 
         print("[ZynthFontModule] Attempting to load font: \(fontFamily) (resource: \(resourceName))")
+        let normalizedResource = resourceName.replacingOccurrences(of: "\\", with: "/")
+        let resourceFileName = (normalizedResource as NSString).lastPathComponent
+        let mainBundle = Bundle.main
 
         // 1. Try to find the font in the main bundle
-        var fontURL = Bundle.main.url(forResource: resourceName, withExtension: nil)
+        var fontURL = mainBundle.url(forResource: normalizedResource, withExtension: nil)
+        if fontURL == nil && resourceFileName != normalizedResource {
+            fontURL = mainBundle.url(forResource: resourceFileName, withExtension: nil)
+        }
+        if fontURL == nil {
+            fontURL = mainBundle.url(forResource: resourceFileName, withExtension: nil, subdirectory: "fonts")
+                ?? mainBundle.url(forResource: resourceFileName, withExtension: nil, subdirectory: "Fonts")
+                ?? mainBundle.url(forResource: resourceFileName, withExtension: nil, subdirectory: "assets/fonts")
+                ?? mainBundle.url(forResource: resourceFileName, withExtension: nil, subdirectory: "src/assets/fonts")
+        }
         if let url = fontURL {
              print("[ZynthFontModule] Found in Main Bundle: \(url.path)")
         }
@@ -40,18 +73,23 @@ public class ZynthFontModule: ZynthModule {
                 if let bundleURL = Bundle.main.url(forResource: bundleName, withExtension: "bundle") {
                      print("[ZynthFontModule] Found \(bundleName).bundle at: \(bundleURL.path)")
                      if let bundle = Bundle(url: bundleURL) {
-                        fontURL = bundle.url(forResource: resourceName, withExtension: nil)
+                        fontURL = bundle.url(forResource: normalizedResource, withExtension: nil)
+                        if fontURL == nil {
+                            fontURL = bundle.url(forResource: resourceFileName, withExtension: nil)
+                        }
                         if let url = fontURL {
                              print("[ZynthFontModule] Found file in \(bundleName).bundle root: \(url.path)")
                              break
                         } else {
-                             fontURL = bundle.url(forResource: resourceName, withExtension: nil, subdirectory: "Fonts")
+                             fontURL = bundle.url(forResource: resourceFileName, withExtension: nil, subdirectory: "Fonts")
+                                 ?? bundle.url(forResource: resourceFileName, withExtension: nil, subdirectory: "fonts")
                              if let url = fontURL {
                                  print("[ZynthFontModule] Found file in \(bundleName).bundle/Fonts: \(url.path)")
                                  break
                              } else {
                                  // Try assets/fonts too since that's where we just pointed the podspec
-                                 fontURL = bundle.url(forResource: resourceName, withExtension: nil, subdirectory: "assets/fonts")
+                                 fontURL = bundle.url(forResource: resourceFileName, withExtension: nil, subdirectory: "assets/fonts")
+                                     ?? bundle.url(forResource: resourceFileName, withExtension: nil, subdirectory: "src/assets/fonts")
                                  if let url = fontURL {
                                      print("[ZynthFontModule] Found file in \(bundleName).bundle/assets/fonts: \(url.path)")
                                      break
@@ -69,9 +107,40 @@ public class ZynthFontModule: ZynthModule {
         if fontURL == nil {
             print("[ZynthFontModule] Searching all \(Bundle.allBundles.count) loaded bundles...")
             for bundle in Bundle.allBundles {
-                if let url = bundle.url(forResource: resourceName, withExtension: nil) {
+                if let url = bundle.url(forResource: normalizedResource, withExtension: nil)
+                    ?? bundle.url(forResource: resourceFileName, withExtension: nil)
+                    ?? bundle.url(forResource: resourceFileName, withExtension: nil, subdirectory: "fonts")
+                    ?? bundle.url(forResource: resourceFileName, withExtension: nil, subdirectory: "Fonts")
+                    ?? bundle.url(forResource: resourceFileName, withExtension: nil, subdirectory: "assets/fonts")
+                    ?? bundle.url(forResource: resourceFileName, withExtension: nil, subdirectory: "src/assets/fonts") {
                     fontURL = url
                     print("[ZynthFontModule] Found in bundle '\(bundle.bundlePath)': \(url.path)")
+                    break
+                }
+            }
+        }
+
+        // 4. If still not found, recursively scan bundle resource folders by filename.
+        if fontURL == nil {
+            print("[ZynthFontModule] Recursive bundle search for '\(resourceFileName)'...")
+            let bundles = [Bundle.main] + Bundle.allBundles
+            for bundle in bundles {
+                if let found = findFontInBundleRecursively(bundle: bundle, fileName: resourceFileName) {
+                    fontURL = found
+                    print("[ZynthFontModule] Found via recursive scan in '\(bundle.bundlePath)': \(found.path)")
+                    break
+                }
+            }
+        }
+
+        // 5. If resourceName is a file path, try direct filesystem path.
+        if fontURL == nil {
+            let directPaths = [normalizedResource, resourceFileName].filter { !$0.isEmpty }
+            for candidate in directPaths {
+                let url = URL(fileURLWithPath: candidate)
+                if FileManager.default.fileExists(atPath: url.path) {
+                    fontURL = url
+                    print("[ZynthFontModule] Found via direct file path: \(url.path)")
                     break
                 }
             }
@@ -82,7 +151,7 @@ public class ZynthFontModule: ZynthModule {
              throw ZynthModuleError.moduleNotFound("Font resource '\(resourceName)' not found in any bundle.")
         }
         
-        // 4. Register the font
+        // 6. Register the font
         var error: Unmanaged<CFError>?
         let success = CTFontManagerRegisterFontsForURL(targetURL as CFURL, .process, &error)
         
