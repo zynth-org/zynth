@@ -188,8 +188,16 @@ function replacePlaceholders(content: string, config: AppConfig, extras: any = {
     )
     .replace(/\{\{\s*ACTIVITY_ATTRIBUTES\s*\}\}/g, extras.activityAttributes ?? "")
     .replace(
+      /\{\{\s*APP_ICON_DRAWABLE\s*\}\}/g,
+      extras.appIconDrawable ?? "@android:drawable/sym_def_app_icon"
+    )
+    .replace(
+      /\{\{\s*APP_ROUND_ICON_DRAWABLE\s*\}\}/g,
+      extras.appRoundIconDrawable ?? "@android:drawable/sym_def_app_icon"
+    )
+    .replace(
       /\{\{\s*SPLASH_ICON_DRAWABLE\s*\}\}/g,
-      extras.splashIconDrawable ?? "@mipmap/ic_launcher"
+      extras.splashIconDrawable ?? "@android:drawable/sym_def_app_icon"
     )
     .replace(
       /\{\{\s*SPLASH_WINDOW_BACKGROUND\s*\}\}/g,
@@ -591,7 +599,35 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
   const moduleInitializers =
     generateAndroidModuleInitializers(componentModules);
   const activityAttributes = formatActivityAttributes(baseConfig.androidConfig);
-  const splashIconDrawable = "@mipmap/ic_launcher";
+  const appJsonPath = path.join(appDir, "app.json");
+  let appConfig: any = {};
+  if (fs.existsSync(appJsonPath)) {
+    try {
+      const json = JSON.parse(fs.readFileSync(appJsonPath, "utf8"));
+      appConfig = json.zynth || json;
+    } catch {
+      appConfig = {};
+    }
+  }
+  const legacyIconPath = typeof appConfig.icon === "string"
+    ? path.resolve(appDir, appConfig.icon)
+    : "";
+  const adaptiveForegroundPath = typeof appConfig.android?.adaptiveIcon?.foregroundImage === "string"
+    ? path.resolve(appDir, appConfig.android.adaptiveIcon.foregroundImage)
+    : "";
+  const hasLauncherIcons = Boolean(
+    (legacyIconPath && fs.existsSync(legacyIconPath))
+      || (adaptiveForegroundPath && fs.existsSync(adaptiveForegroundPath))
+  );
+  const appIconDrawable = hasLauncherIcons
+    ? "@mipmap/ic_launcher"
+    : "@android:drawable/sym_def_app_icon";
+  const appRoundIconDrawable = hasLauncherIcons
+    ? "@mipmap/ic_launcher_round"
+    : "@android:drawable/sym_def_app_icon";
+  const splashIconDrawable = hasLauncherIcons
+    ? "@mipmap/ic_launcher"
+    : "@android:drawable/sym_def_app_icon";
   const splashWindowBackground = "@drawable/zynth_splash_screen";
   const activityHooks = collectAndroidActivityHooks(appDir);
   const activityHookImports = formatHookBlock(activityHooks.imports, "");
@@ -683,6 +719,8 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
         moduleImports,
         moduleInitializers,
         activityAttributes,
+        appIconDrawable,
+        appRoundIconDrawable,
         splashIconDrawable,
         splashWindowBackground,
         activityHookImports,

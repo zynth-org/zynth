@@ -215,7 +215,7 @@ async function buildIOS(root, appDir, argv) {
 
   if (buildResult.code !== 0) {
     console.error("\n✖ Build failed!");
-    console.error("\n💡 Troubleshooting tips:");
+    console.error("\n◆ Troubleshooting tips:");
     console.error("   1. Open Xcode and sign in with your Apple ID:");
     console.error("      Xcode > Settings > Accounts");
     console.error("   2. Open the project and configure signing:");

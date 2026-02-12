@@ -111,7 +111,9 @@ export default function App() {
   packageJson.name = slug;
   fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
 
-  console.log(chalk.green("✅ App created successfully!"));
+      console.log(`\n\x1b[32m✔\x1b[0m App created successfully!`);
+
+  
   console.log(
     chalk.cyan(`To get started, run:
 

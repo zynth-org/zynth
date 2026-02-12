@@ -63,7 +63,7 @@ module.exports = {
     });
     const server = await hub.start();
     console.log(
-      `🔌 Zynth devtools hub listening at ws://${server.host}:${server.port}`
+      `◆ Zynth devtools hub listening at ws://${server.host}:${server.port}`
     );
     await new Promise(() => {});
   },

@@ -303,126 +303,267 @@ function getZynthPackageCount(root) {
 }
 
 function createProgressIndicator(label, total) {
+
   const text = String(label);
+
   let timer = null;
+
   let currentCount = 0;
+
   let currentItem = "";
+
   let lastLineCount = 0;
 
+  let startTime = Date.now();
+
+
+
   function render() {
+
     if (!process.stdout.isTTY) return;
 
+
+
     const width = text.length;
+
     const padding = 10;
+
     const period = width + padding * 2;
+
     const sweepSeconds = 2.0;
-    const elapsedSeconds = (Date.now() - BUILD_SHIMMER_START) / 1000;
+
+    const elapsedSeconds = (Date.now() - startTime) / 1000;
+
     const pos = ((elapsedSeconds % sweepSeconds) / sweepSeconds) * period;
+
     const bandHalfWidth = 5.0;
+
     const hasTrueColor = supportsTrueColor();
+
     const base = { r: 0, g: 180, b: 0 }; // Fallout Green Base
+
     const highlight = { r: 50, g: 255, b: 50 }; // Bright Fallout Green
 
+
+
     let shimmer = "";
+
     for (let i = 0; i < width; i += 1) {
+
       const iPos = i + padding;
+
       const dist = Math.abs(iPos - pos);
+
       const t =
+
         dist <= bandHalfWidth
+
           ? 0.5 * (1 + Math.cos(Math.PI * (dist / bandHalfWidth)))
+
           : 0;
+
       if (hasTrueColor) {
+
         const color = mixColor(base, highlight, t * 0.9);
+
         shimmer += colorize(text[i], color, true);
+
       } else if (t < 0.2) {
+
         shimmer += dim(text[i]);
+
       } else if (t < 0.6) {
+
         shimmer += text[i];
+
       } else {
+
         shimmer += bold(text[i]);
+
       }
+
     }
+
+
 
     const lines = [`\x1b[32m◆\x1b[0m ${shimmer}`];
 
+
+
     if (total > 0) {
+
       // Progress bar
+
       const barWidth = 30;
+
       const percent = Math.min(currentCount / total, 1);
+
       const filledCount = Math.floor(percent * barWidth);
+
       const greenCode = "\x1b[32m";
+
       const resetCode = "\x1b[0m";
+
       const bar = `${greenCode}[${"▓".repeat(filledCount)}${resetCode}${"░".repeat(
+
         barWidth - filledCount
+
       )}${greenCode}]${resetCode} ${Math.round(percent * 100)}%`;
+
+
 
       lines.push(`  ${bar}`);
 
+
+
       if (currentItem) {
+
         lines.push(`  ↳ Compiling: ${dim(currentItem)}`);
+
       }
 
+
+
       lines.push(`  ➔ ${currentCount}/${total} components built...`);
+
     }
+
+
 
     // Clear previous lines
+
     for (let i = 0; i < lastLineCount; i++) {
+
       readline.moveCursor(process.stdout, 0, -1);
+
       readline.clearLine(process.stdout, 0);
+
     }
 
+
+
     // Write new lines
+
     process.stdout.write(lines.join("\n") + "\n");
+
     lastLineCount = lines.length;
+
   }
+
 
 
   function clearLine(stream = process.stdout) {
+
     if (!stream.isTTY) return;
+
     for (let i = 0; i < lastLineCount; i++) {
+
       readline.moveCursor(stream, 0, -1);
+
       readline.clearLine(stream, 0);
+
     }
+
     lastLineCount = 0;
+
   }
 
+
+
   return {
+
     start() {
+
+      startTime = Date.now();
+
       if (!process.stdout.isTTY) {
+
         process.stdout.write(`${text}\n`);
+
         return;
+
       }
+
       if (timer) return;
+
       process.stdout.write("\u001b[?25l"); // Hide cursor
+
       render();
+
       timer = setInterval(render, 80);
+
     },
+
     update(count, item) {
+
       currentCount = count;
+
       currentItem = item;
+
       if (!timer) render();
+
     },
+
     renderOnce() {
+
       if (!process.stdout.isTTY) return;
+
       render();
+
     },
-    stop() {
-      if (timer) {
-        clearInterval(timer);
-        timer = null;
-      }
-      clearLine();
-      process.stdout.write("\u001b[?25h"); // Show cursor
-      // Final summary
-      process.stdout.write("\x1b[32m◆\x1b[0m " + text + "\n");
-      process.stdout.write(
-        `\x1b[32m✔\x1b[0m Completed ${currentCount} modules in ${((Date.now() - BUILD_SHIMMER_START) / 1000).toFixed(
-          1
-        )}s\n`
-      );
-    },
+
+        stop(silent = false) {
+
+          if (timer) {
+
+            clearInterval(timer);
+
+            timer = null;
+
+          }
+
+          clearLine();
+
+          process.stdout.write("\u001b[?25h"); // Show cursor
+
+    
+
+          if (silent) return;
+
+    
+
+          const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+
+    
+
+          if (total > 0) {
+
+            // Final summary for progress-based tasks
+
+            process.stdout.write("\x1b[32m◆\x1b[0m " + text + "\n");
+
+            process.stdout.write(
+
+              `\x1b[32m✔\x1b[0m Completed ${currentCount} modules in ${duration}s\n`
+
+            );
+
+          } else {
+
+            // Simple success for non-progress tasks (like install)
+
+            process.stdout.write(`\x1b[32m✔\x1b[0m ${text} finished in ${duration}s\n`);
+
+          }
+
+        },
+
+    
+
     clearLine,
+
   };
+
 }
 
 function createBuildIndicator(label) {
@@ -553,7 +694,7 @@ function getIOSConfig(root, appDir) {
       const script = require(tsPath);
       return script.getAppConfig(appDir);
     } catch (e) {
-      console.warn("⚠️  Failed to load config-utils.ts:", e.message);
+      console.warn("! Failed to load config-utils.ts:", e.message);
     }
   }
 
@@ -595,7 +736,7 @@ function ensurePrebuild(root, appDir, platform, options = {}) {
       });
     } catch (e) {
       console.warn(
-        "⚠️  ts-node not found, trying to run TS script without registration might fail."
+        "! ts-node not found, trying to run TS script without registration might fail."
       );
     }
   } else if (!fs.existsSync(jsPath)) {
@@ -673,7 +814,7 @@ function getBootedSimulatorId() {
       }
     }
   } catch (error) {
-    console.warn("⚠️  Failed to parse simctl output:", error.message);
+    console.warn("! Failed to parse simctl output:", error.message);
   }
   return null;
 }
@@ -764,7 +905,7 @@ function readZynthArtifacts(appDir) {
     const raw = fs.readFileSync(artifactPath, "utf8");
     return JSON.parse(raw);
   } catch (error) {
-    console.warn(`⚠️  Failed to read ${artifactPath}:`, error.message);
+    console.warn(`! Failed to read ${artifactPath}:`, error.message);
     return null;
   }
 }
@@ -984,7 +1125,7 @@ async function startZynthDevtoolsHub({ host, port, quiet }) {
   devtoolsPublish = hub.publish;
   if (!quiet) {
     console.log(
-      `🔌 Zynth devtools hub listening at ws://${server.host}:${server.port}`
+      `◆ Zynth devtools hub listening at ws://${server.host}:${server.port}`
     );
   }
   return server;
@@ -998,7 +1139,9 @@ function buildDevtoolsUrl({ deviceHost, port, override }) {
 
 async function startZynthHMRServer(appDir, platform, options = {}) {
   const defaultPort = 8081;
-  const port = Number(process.env.ZYNTH_HMR_PORT || options.port || defaultPort);
+  const port = Number(
+    process.env.ZYNTH_HMR_PORT || options.port || defaultPort
+  );
   const localHost = process.env.ZYNTH_HMR_HOST || "localhost";
   const bindHost =
     process.env.ZYNTH_HMR_BIND ||
@@ -1023,16 +1166,27 @@ async function startZynthHMRServer(appDir, platform, options = {}) {
   const command = process.platform === "win32" ? "npx.cmd" : "npx";
   const child = spawn(command, args, {
     cwd: appDir,
-    stdio: "inherit",
+    stdio: ["ignore", "pipe", "pipe"],
     env: {
       ...process.env,
       ZYNTH_HMR_PORT: String(port),
       BASELINE_BROWSER_MAPPING_IGNORE_OLD_DATA: "true",
       BROWSERSLIST_IGNORE_OLD_DATA: "true",
+      FORCE_COLOR: "1",
     },
   });
 
+  const { createHMRFilter } = require("./hmr-filter");
+  const buildIndicator = createProgressIndicator("Bundling JavaScript", 0);
+  const filter = createHMRFilter(buildIndicator);
+
+  buildIndicator.start();
+
+  child.stdout.on("data", filter);
+  child.stderr.on("data", filter);
+
   child.on("error", (error) => {
+    buildIndicator.stop();
     console.error("  ! Failed to launch Rsbuild dev server:", error.message);
   });
 
@@ -1052,7 +1206,6 @@ async function startZynthHMRServer(appDir, platform, options = {}) {
   const localUrl = `http://${localHost}:${port}`;
   const deviceUrl = `http://${deviceHost}:${port}`;
 
-  console.log(`» Rsbuild dev server spawned`);
   if (!options.quietLogs) {
     console.log(`  Local:   ${localUrl}`);
     console.log(`  Device:  ${deviceUrl}`);
@@ -1363,7 +1516,7 @@ async function devIOS(root, appDir, options = {}) {
     }
 
     if (!quietOutput) {
-      console.log("🚀 Launching application on simulator...");
+      console.log("◆ Launching application on simulator...");
       runCommand("xcrun", [
         "simctl",
         "launch",
@@ -1382,12 +1535,12 @@ async function devIOS(root, appDir, options = {}) {
 
   if (hmrServer && !quietOutput) {
     console.log(
-      "🔥 Rsbuild dev server running. Leave this session open for hot reloading."
+      "\x1b[32m✔\x1b[0m Rsbuild dev server running. Leave this session open for hot reloading."
     );
   }
   if (devtoolsServer && devtoolsUrl && !quietOutput) {
-    console.log(`📡 Devtools URL: ${devtoolsUrl}`);
-    console.log("📖 Devtools events streaming. Press Ctrl+C to stop.");
+    console.log(`◆ Devtools URL: ${devtoolsUrl}`);
+    console.log("◆ Devtools events streaming. Press Ctrl+C to stop.");
   }
 
   await new Promise(() => {});
@@ -1703,14 +1856,14 @@ async function devAndroid(root, appDir, options = {}) {
 
   if (!quietOutput) {
     console.log(
-      "🔥 Zynth HMR server running. Leave this session open for hot reloading."
+      "\x1b[32m✔\x1b[0m Zynth HMR server running. Leave this session open for hot reloading."
     );
     if (runtimeDeviceUrl && runtimeDeviceUrl !== hmrServer.deviceUrl) {
       console.log(`  ↳ Device URL: ${runtimeDeviceUrl}`);
     }
     if (devtoolsServer && devtoolsDeviceUrl) {
-      console.log(`📡 Devtools URL: ${devtoolsDeviceUrl}`);
-      console.log("📖 Devtools events streaming. Press Ctrl+C to stop.");
+      console.log(`◆ Devtools URL: ${devtoolsDeviceUrl}`);
+      console.log("◆ Devtools events streaming. Press Ctrl+C to stop.");
     }
   }
 
@@ -1746,10 +1899,10 @@ function listWorkspaces(root, folder) {
 function bundle(scope, root) {
   const runWorkspaceBuild = (workspace) => {
     if (!workspace.scripts.build) {
-      console.log(`⚠️  Skipping ${workspace.name}; no build script defined.`);
+      console.log(`! Skipping ${workspace.name}; no build script defined.`);
       return;
     }
-    console.log(`📦 Bundling ${workspace.name}...`);
+    console.log(`◆ Bundling ${workspace.name}...`);
     runCommand("yarn", ["workspace", workspace.name, "run", "build"], {
       cwd: root,
     });
