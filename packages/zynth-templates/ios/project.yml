@@ -31,6 +31,7 @@ targets:
       properties:
         # Use a storyboard-based launch screen to control image content mode.
         UILaunchStoryboardName: LaunchScreen
+{{UI_APP_FONTS}}
 {{INFO_PLIST_PROPERTIES}}
     settings:
       base:

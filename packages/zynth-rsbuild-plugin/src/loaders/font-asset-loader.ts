@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import path from "node:path";
+import fs from "node:fs";
 
 interface FontAssetDescriptor {
   type: "font";
@@ -36,6 +37,33 @@ export default function fontAssetLoader(this: any, content: Buffer): string {
     ext: parsed.ext.slice(1), // Remove leading dot
     hash,
   };
+
+  // Record font in manifest for native build discovery
+  try {
+    const distDir = path.resolve(this.rootContext, "dist");
+    const manifestDir = path.join(distDir, "assets");
+    const manifestPath = path.join(manifestDir, "fonts-manifest.json");
+
+    if (!fs.existsSync(manifestDir)) {
+      fs.mkdirSync(manifestDir, { recursive: true });
+    }
+
+    let manifest: Record<string, string> = {};
+    if (fs.existsSync(manifestPath)) {
+      try {
+        manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+      } catch (e) {
+        manifest = {};
+      }
+    }
+
+    // Map filename to absolute source path
+    const fontFileName = `${parsed.name}.${parsed.ext.slice(1)}`;
+    manifest[fontFileName] = absolutePath;
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+  } catch (e) {
+    // Ignore manifest write errors (might happen in some environments)
+  }
 
   // In development, include the absolute path for dev server serving
   if (isDev) {

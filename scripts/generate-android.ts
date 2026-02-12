@@ -705,7 +705,7 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
     fs.chmodSync(gradlewPath, 0o755);
   }
 
-  generateAssets(appDir, "android");
+  generateAssets(appDir, "android", dev);
 
   if (!quiet) {
     console.log(`✅ Android project generated at ${targetDir}`);

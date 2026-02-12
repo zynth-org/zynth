@@ -522,7 +522,7 @@ function ensurePrebuild(root, appDir, platform, options = {}) {
   }
 
   // Load and call the prebuild script with options
-  const prebuildModule = require(scriptPath);
+  const prebuildModule = requireScript(scriptPath);
   const originalCwd = process.cwd();
   try {
     process.chdir(appDir);
@@ -1701,6 +1701,25 @@ function resetAndroid(appDir) {
   );
 }
 
+function requireScript(scriptPath) {
+  if (scriptPath.endsWith(".ts")) {
+    try {
+      require("ts-node").register({
+        transpileOnly: true,
+        compilerOptions: {
+          module: "commonjs",
+          moduleResolution: "node",
+        },
+      });
+    } catch (e) {
+      console.warn(
+        "⚠️  ts-node not found, trying to run TS script without registration might fail."
+      );
+    }
+  }
+  return require(scriptPath);
+}
+
 module.exports = {
   readJSON,
   findWorkspaceRoot,
@@ -1723,4 +1742,5 @@ module.exports = {
   bundle,
   resetIOS,
   resetAndroid,
+  requireScript,
 };

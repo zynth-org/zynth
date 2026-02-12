@@ -7,6 +7,7 @@ const {
   getIOSConfig,
   getAndroidConfig,
   runCommand,
+  requireScript,
 } = require("../utils");
 
 module.exports = {
@@ -59,6 +60,15 @@ module.exports = {
       throw new Error(
         `JS bundle not found at ${bundlePath}. Cannot proceed with ${argv.platform} build.`
       );
+    }
+
+    // After bundling, ensure assets (like fonts) are discovered and copied to native folders
+    console.log(`🎨 Generating assets for ${argv.platform}...`);
+    try {
+      const { generateAssets } = requireScript(path.join(root, "scripts", "generate-assets.ts"));
+      generateAssets(appDir, argv.platform, false); // dev = false to ensure fonts are copied
+    } catch (e) {
+      console.warn(`⚠️  Failed to generate assets: ${e.message}`);
     }
 
     if (argv.platform === "ios") {

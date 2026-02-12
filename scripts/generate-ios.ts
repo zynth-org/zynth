@@ -347,6 +347,11 @@ function replacePlaceholders(content: string, config: AppConfig, extras: any = {
   );
 
   output = output.replace(
+    /\{\{UI_APP_FONTS\}\}/g,
+    extras.uiAppFonts ?? ""
+  );
+
+  output = output.replace(
     /\{\{LAUNCH_SCREEN_IMAGE\}\}/g,
     extras.launchScreenImage ?? ""
   );
@@ -471,6 +476,23 @@ export function generateIOSProject(appDir: string, options: any = {}) {
   }
   
   const infoPlistProperties = formatInfoPlistProperties(config.infoPlist);
+
+  // Collect fonts for UIAppFonts
+  const fontsDir = path.join(targetDir, config.appName, "fonts");
+  const fontFiles: string[] = [];
+  if (fs.existsSync(fontsDir)) {
+    const files = fs.readdirSync(fontsDir);
+    files.forEach(file => {
+      if (/\.(ttf|otf)$/i.test(file)) {
+        fontFiles.push(file);
+      }
+    });
+  }
+  
+  const uiAppFontsLine = fontFiles.length > 0 
+    ? `        UIAppFonts:\n${fontFiles.map(f => `          - ${f}`).join('\n')}`
+    : "";
+
   const hasSplash = Boolean(splashConfig.image || splashConfig.backgroundColor);
   const splashImageName = splashConfig.image ? "LaunchImage" : "";
   const splashBackgroundColor = splashConfig.backgroundColor || (splashConfig.image ? "#ffffff" : "");
@@ -521,6 +543,7 @@ static NSString *const kZynthSplashResizeMode = @"${splashResizeMode}";`;
         moduleImports,
         moduleInitializers,
         infoPlistProperties,
+        uiAppFonts: uiAppFontsLine,
         extraAppDelegateHeader,
         extraAppDelegateInit,
         launchScreenImage,
@@ -540,7 +563,7 @@ static NSString *const kZynthSplashResizeMode = @"${splashResizeMode}";`;
   }
 
   // Generate assets (Icons, Splash)
-  generateAssets(appDir, "ios");
+  generateAssets(appDir, "ios", dev);
   if (quiet) {
     console.log("  ├─ Generated iOS App Icons");
     console.log("  ├─ Generated iOS Splash Assets");
