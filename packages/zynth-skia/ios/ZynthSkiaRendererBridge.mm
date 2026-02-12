@@ -102,6 +102,9 @@ thread_local std::vector<int> *gSignalCollector = nullptr;
 std::mutex gRuntimeEffectCacheMutex;
 std::unordered_map<std::string, sk_sp<SkRuntimeEffect>> gRuntimeEffectCache;
 
+std::mutex gTypefaceCacheMutex;
+std::unordered_map<std::string, sk_sp<SkTypeface>> gTypefaceCache;
+
 static uint32_t parseHexColorString(NSString *value) {
   if (value == nil) return 0x00000000;
   NSString *trim = [value stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
@@ -410,6 +413,15 @@ static SkFontStyle::Slant normalizeFontSlant(NSString *style) {
 }
 
 static sk_sp<SkTypeface> resolveTypeface(NSString *familyName, NSString *fontStyle, NSString *fontWeight) {
+  if (familyName != nil && familyName.length > 0) {
+    std::string name = [familyName UTF8String];
+    std::lock_guard<std::mutex> lock(gTypefaceCacheMutex);
+    auto it = gTypefaceCache.find(name);
+    if (it != gTypefaceCache.end()) {
+      return it->second;
+    }
+  }
+
 #if __has_include("include/ports/SkFontMgr_mac_ct.h")
   sk_sp<SkFontMgr> fontMgr = SkFontMgr_New_CoreText(nullptr);
   if (!fontMgr) return nullptr;
@@ -663,7 +675,11 @@ static bool renderSurfaceState(const CommandBuffer &buffer,
         canvas->concat(matrix);
       }
 
-      SkFont font(typeface, std::max(0.0f, fontSize));
+      SkFont font;
+      font.setSize(std::max(0.0f, fontSize));
+      if (typeface) {
+        font.setTypeface(typeface);
+      }
       font.setSubpixel(true);
       font.setEdging(antiAlias ? SkFont::Edging::kAntiAlias : SkFont::Edging::kAlias);
       SkPaint paint;
@@ -1500,13 +1516,49 @@ static bool encodeCommands(NSArray<NSDictionary *> *commands,
   if (content.length == 0 || fontSize <= 0) return 0.0;
   sk_sp<SkTypeface> typeface = resolveTypeface(familyName, fontStyle, fontWeight);
   std::string utf8 = std::string([content UTF8String]);
-  SkFont font(typeface, static_cast<float>(fontSize));
+  SkFont font;
+  font.setSize(static_cast<float>(fontSize));
+  if (typeface) {
+    font.setTypeface(typeface);
+  }
   font.setSubpixel(true);
   return static_cast<double>(font.measureText(utf8.data(), utf8.size(), SkTextEncoding::kUTF8));
 }
 
 + (NSArray<NSString *> *)listFontFamilies {
-  return [UIFont familyNames];
+  NSMutableArray<NSString *> *all = [[UIFont familyNames] mutableCopy];
+  {
+    std::lock_guard<std::mutex> lock(gTypefaceCacheMutex);
+    for (const auto &it : gTypefaceCache) {
+      NSString *name = [NSString stringWithUTF8String:it.first.c_str()];
+      if (![all containsObject:name]) {
+        [all addObject:name];
+      }
+    }
+  }
+  return [all sortedArrayUsingSelector:@selector(localizedCaseInsensitiveCompare:)];
+}
+
++ (BOOL)registerFont:(NSString *)familyName data:(NSData *)data {
+  if (familyName == nil || data == nil) return NO;
+  sk_sp<SkData> skData = SkData::MakeWithCopy(data.bytes, data.length);
+  if (!skData) return NO;
+
+  sk_sp<SkTypeface> typeface;
+#if __has_include("include/ports/SkFontMgr_mac_ct.h")
+  sk_sp<SkFontMgr> fontMgr = SkFontMgr_New_CoreText(nullptr);
+  if (fontMgr) {
+    typeface = fontMgr->makeFromData(skData);
+  }
+#endif
+
+  if (!typeface) return NO;
+
+  {
+    std::lock_guard<std::mutex> lock(gTypefaceCacheMutex);
+    gTypefaceCache[[familyName UTF8String]] = std::move(typeface);
+  }
+  return YES;
 }
 
 @end

@@ -20,6 +20,7 @@ type SkiaBridge = {
     fontWeight: number,
   ) => number;
   listFontFamilies?: () => string[];
+  registerFont?: (familyName: string, data: ArrayBuffer) => boolean;
 };
 
 type ModulesBridge = {
@@ -71,6 +72,45 @@ function parseSource(source: unknown): {
   familyName: string;
   resourceName: string;
 } {
+  const resolveResourceNameLike = (value: unknown): string | null => {
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    }
+    if (!value || typeof value !== "object") return null;
+
+    const asset = value as {
+      type?: unknown;
+      name?: unknown;
+      ext?: unknown;
+      relativePath?: unknown;
+      devPath?: unknown;
+    };
+
+    const pickFileName = (raw: unknown): string | null => {
+      if (typeof raw !== "string" || raw.trim().length === 0) return null;
+      const normalized = raw.replace(/\\/g, "/");
+      const parts = normalized.split("/");
+      const last = parts[parts.length - 1]?.trim();
+      return last && last.length > 0 ? last : null;
+    };
+
+    const relativeName = pickFileName(asset.relativePath);
+    if (relativeName) return relativeName;
+
+    const devName = pickFileName(asset.devPath);
+    if (devName) return devName;
+
+    if (asset.type === "asset" && typeof asset.name === "string") {
+      const name = asset.name.trim();
+      const ext = typeof asset.ext === "string" ? asset.ext.trim() : "";
+      if (name.length > 0 && ext.length > 0) return `${name}.${ext}`;
+      if (name.length > 0) return name;
+    }
+
+    return null;
+  };
+
   if (source && typeof source === "object") {
     const maybe = source as { fontFamily?: unknown; resourceName?: unknown };
     if (
@@ -79,10 +119,7 @@ function parseSource(source: unknown): {
     ) {
       const familyName = maybe.fontFamily.trim();
       const resourceName =
-        typeof maybe.resourceName === "string" &&
-        maybe.resourceName.trim().length > 0
-          ? maybe.resourceName.trim()
-          : `${familyName}.ttf`;
+        resolveResourceNameLike(maybe.resourceName) ?? `${familyName}.ttf`;
       return { familyName, resourceName };
     }
   }
@@ -180,9 +217,26 @@ async function ensureNativeFontLoaded(
       `[SkiaFont] ensureNativeFontLoaded result family=${familyName}:`,
       JSON.stringify(result),
     );
-  } catch {
+
+    const skia = getSkiaBridge();
+    if (skia?.registerFont) {
+      console.log(`[SkiaFont] registerFont with Skia bridge family=${familyName}`);
+      try {
+        const response = await fetch(resourceName);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch font: ${response.statusText}`);
+        }
+        const buffer = await response.arrayBuffer();
+        const success = skia.registerFont(familyName, buffer);
+        console.log(`[SkiaFont] registerFont with Skia bridge result family=${familyName}: ${success}`);
+      } catch (e) {
+        console.error(`[SkiaFont] registerFont with Skia bridge failed family=${familyName}:`, e);
+      }
+    }
+  } catch (e) {
     console.error(
-      `[SkiaFont] ensureNativeFontLoaded failed family=${familyName} resource=${resourceName}`,
+      `[SkiaFont] ensureNativeFontLoaded failed family=${familyName} resource=${resourceName}:`,
+      e,
     );
     // Ignore load errors and still return a font object so system fallback can render.
   }

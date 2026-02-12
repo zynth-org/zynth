@@ -269,6 +269,20 @@ static void installSkiaBridge(ZynthHermesRuntimeHost *host, Runtime &rt) {
         return array;
       });
 
+  auto registerFontFn = Function::createFromHostFunction(
+      rt,
+      PropNameID::forAscii(rt, "registerFont"),
+      2,
+      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 2 || !args[0].isString() || !args[1].isObject()) return Value(false);
+        NSString *familyName = [NSString stringWithUTF8String:args[0].asString(rt).utf8(rt).c_str()];
+        Object bufferObj = args[1].asObject(rt);
+        if (!bufferObj.isArrayBuffer(rt)) return Value(false);
+        ArrayBuffer buffer = bufferObj.getArrayBuffer(rt);
+        NSData *data = [NSData dataWithBytes:buffer.data(rt) length:buffer.size(rt)];
+        return Value([ZynthSkiaRendererBridge registerFont:familyName data:data]);
+      });
+
   Object skia(rt);
   Object capabilities(rt);
   capabilities.setProperty(rt, "paths", Value(true));
@@ -288,6 +302,7 @@ static void installSkiaBridge(ZynthHermesRuntimeHost *host, Runtime &rt) {
   skia.setProperty(rt, "submitFrame", submitFrameFn);
   skia.setProperty(rt, "measureText", measureTextFn);
   skia.setProperty(rt, "listFontFamilies", listFontFamiliesFn);
+  skia.setProperty(rt, "registerFont", registerFontFn);
 
   rt.global().setProperty(rt, kSkiaKey, skia);
 }

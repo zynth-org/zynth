@@ -26,6 +26,7 @@ NS_ASSUME_NONNULL_BEGIN
             fontStyle:(NSString *)fontStyle
            fontWeight:(NSString *)fontWeight;
 + (NSArray<NSString *> *)listFontFamilies;
++ (BOOL)registerFont:(NSString *)familyName data:(NSData *)data;
 @end
 
 NS_ASSUME_NONNULL_END

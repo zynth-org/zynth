@@ -30,6 +30,8 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkTypeface.h"
 #include "include/effects/SkRuntimeEffect.h"
+#include "include/ports/SkFontMgr_android.h"
+#include "include/ports/SkFontScanner_FreeType.h"
 
 using namespace facebook::jsi;
 
@@ -112,6 +114,21 @@ std::unordered_map<int, std::vector<int>> gSignalSurfaceIds;
 thread_local std::vector<int> *gSignalCollector = nullptr;
 std::mutex gRuntimeEffectCacheMutex;
 std::unordered_map<std::string, sk_sp<SkRuntimeEffect>> gRuntimeEffectCache;
+
+std::mutex gTypefaceCacheMutex;
+std::unordered_map<std::string, sk_sp<SkTypeface>> gTypefaceCache;
+
+sk_sp<SkFontMgr> getSystemFontMgr() {
+  static sk_sp<SkFontMgr> gFontMgr;
+  static std::once_flag gFontMgrOnce;
+  std::call_once(gFontMgrOnce, []() {
+    gFontMgr = SkFontMgr_New_Android(nullptr, SkFontScanner_Make_FreeType());
+    if (!gFontMgr) {
+      gFontMgr = SkFontMgr::RefEmpty();
+    }
+  });
+  return gFontMgr;
+}
 
 JNIEnv *getEnv() {
   if (!gVm) return nullptr;
@@ -446,11 +463,22 @@ sk_sp<SkTypeface> resolveTypeface(
     const std::string &familyName,
     const std::string &fontStyle,
     const std::string &fontWeight) {
-  (void)familyName;
-  (void)fontStyle;
-  (void)fontWeight;
-  // Keep compatibility across Skia variants where FontMgr default factories are unavailable.
-  // A null typeface lets SkFont fallback to default platform font.
+  if (!familyName.empty()) {
+    std::lock_guard<std::mutex> lock(gTypefaceCacheMutex);
+    auto it = gTypefaceCache.find(familyName);
+    if (it != gTypefaceCache.end()) {
+      return it->second;
+    }
+  }
+
+  auto fontMgr = getSystemFontMgr();
+  if (fontMgr) {
+    SkFontStyle style(
+        normalizeFontWeight(fontWeight),
+        SkFontStyle::kNormal_Width,
+        normalizeFontSlant(fontStyle));
+    return fontMgr->matchFamilyStyle(familyName.empty() ? nullptr : familyName.c_str(), style);
+  }
   return nullptr;
 }
 
@@ -683,7 +711,11 @@ bool renderSurfaceState(
         canvas->concat(matrix);
       }
 
-      SkFont font(typeface, std::max(0.0f, fontSize));
+      SkFont font;
+      font.setSize(std::max(0.0f, fontSize));
+      if (typeface) {
+        font.setTypeface(typeface);
+      }
       font.setSubpixel(true);
       font.setEdging(antiAlias ? SkFont::Edging::kAntiAlias : SkFont::Edging::kAlias);
       SkPaint paint;
@@ -1703,7 +1735,11 @@ void installBridge(Runtime &rt) {
           : std::to_string(static_cast<int>(args[4].asNumber()));
 
         sk_sp<SkTypeface> typeface = resolveTypeface(familyName, fontStyle, fontWeight);
-        SkFont font(typeface, std::max(0.0f, fontSize));
+        SkFont font;
+        font.setSize(std::max(0.0f, fontSize));
+        if (typeface) {
+          font.setTypeface(typeface);
+        }
         font.setSubpixel(true);
         const double width = static_cast<double>(font.measureText(text.data(), text.size(), SkTextEncoding::kUTF8));
         return Value(width);
@@ -1714,7 +1750,63 @@ void installBridge(Runtime &rt) {
       PropNameID::forAscii(rt, "listFontFamilies"),
       0,
       [](Runtime &rt, const Value &, const Value *, size_t) -> Value {
-        return Array(rt, 0);
+        std::vector<std::string> families;
+        {
+          std::lock_guard<std::mutex> lock(gTypefaceCacheMutex);
+          for (const auto &it : gTypefaceCache) {
+            families.push_back(it.first);
+          }
+        }
+
+        auto fontMgr = getSystemFontMgr();
+        if (fontMgr) {
+          int count = fontMgr->countFamilies();
+          for (int i = 0; i < count; i++) {
+            SkString name;
+            fontMgr->getFamilyName(i, &name);
+            families.push_back(name.c_str());
+          }
+        }
+
+        std::sort(families.begin(), families.end());
+        families.erase(std::unique(families.begin(), families.end()), families.end());
+
+        Array result(rt, families.size());
+        for (size_t i = 0; i < families.size(); i++) {
+          result.setValueAtIndex(rt, i, String::createFromUtf8(rt, families[i]));
+        }
+        return Value(std::move(result));
+      });
+
+  auto registerFont = Function::createFromHostFunction(
+      rt,
+      PropNameID::forAscii(rt, "registerFont"),
+      2,
+      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 2 || !args[0].isString() || !args[1].isObject()) {
+          return Value(false);
+        }
+
+        const std::string familyName = args[0].asString(rt).utf8(rt);
+        Object bufferObj = args[1].asObject(rt);
+        if (!bufferObj.isArrayBuffer(rt)) {
+          return Value(false);
+        }
+
+        ArrayBuffer buffer = bufferObj.getArrayBuffer(rt);
+        auto data = SkData::MakeWithCopy(buffer.data(rt), buffer.size(rt));
+        if (!data) return Value(false);
+
+        auto fontMgr = getSystemFontMgr();
+        auto typeface = fontMgr->makeFromData(data);
+        if (!typeface) return Value(false);
+
+        {
+          std::lock_guard<std::mutex> lock(gTypefaceCacheMutex);
+          gTypefaceCache[familyName] = std::move(typeface);
+        }
+
+        return Value(true);
       });
 
   Object skia(rt);
@@ -1736,6 +1828,7 @@ void installBridge(Runtime &rt) {
   skia.setProperty(rt, "submitFrame", submitFrame);
   skia.setProperty(rt, "measureText", measureText);
   skia.setProperty(rt, "listFontFamilies", listFontFamilies);
+  skia.setProperty(rt, "registerFont", registerFont);
   rt.global().setProperty(rt, kSkiaKey, skia);
 }
 
