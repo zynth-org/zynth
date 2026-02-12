@@ -446,16 +446,12 @@ sk_sp<SkTypeface> resolveTypeface(
     const std::string &familyName,
     const std::string &fontStyle,
     const std::string &fontWeight) {
-  sk_sp<SkFontMgr> fontMgr = SkFontMgr::RefDefault();
-  if (!fontMgr) return nullptr;
-  SkFontStyle style(
-      normalizeFontWeight(fontWeight),
-      SkFontStyle::kNormal_Width,
-      normalizeFontSlant(fontStyle));
-  if (familyName.empty()) {
-    return fontMgr->legacyMakeTypeface(nullptr, style);
-  }
-  return fontMgr->matchFamilyStyle(familyName.c_str(), style);
+  (void)familyName;
+  (void)fontStyle;
+  (void)fontWeight;
+  // Keep compatibility across Skia variants where FontMgr default factories are unavailable.
+  // A null typeface lets SkFont fallback to default platform font.
+  return nullptr;
 }
 
 bool renderSurfaceState(
@@ -673,9 +669,6 @@ bool renderSurfaceState(
           familyPtr ? *familyPtr : std::string(),
           stylePtr ? *stylePtr : std::string("normal"),
           weightPtr ? *weightPtr : std::string("normal"));
-      if (!typeface) {
-        typeface = SkTypeface::MakeDefault();
-      }
 
       if (hasMatrix) {
         if (i + 5 >= buffer.ops.size()) break;
@@ -1710,9 +1703,6 @@ void installBridge(Runtime &rt) {
           : std::to_string(static_cast<int>(args[4].asNumber()));
 
         sk_sp<SkTypeface> typeface = resolveTypeface(familyName, fontStyle, fontWeight);
-        if (!typeface) {
-          typeface = SkTypeface::MakeDefault();
-        }
         SkFont font(typeface, std::max(0.0f, fontSize));
         font.setSubpixel(true);
         const double width = static_cast<double>(font.measureText(text.data(), text.size(), SkTextEncoding::kUTF8));
@@ -1724,16 +1714,7 @@ void installBridge(Runtime &rt) {
       PropNameID::forAscii(rt, "listFontFamilies"),
       0,
       [](Runtime &rt, const Value &, const Value *, size_t) -> Value {
-        sk_sp<SkFontMgr> fontMgr = SkFontMgr::RefDefault();
-        if (!fontMgr) return Array(rt, 0);
-        const int count = fontMgr->countFamilies();
-        Array families(rt, count > 0 ? static_cast<size_t>(count) : 0);
-        for (int index = 0; index < count; index += 1) {
-          SkString name;
-          fontMgr->getFamilyName(index, &name);
-          families.setValueAtIndex(rt, static_cast<size_t>(index), String::createFromUtf8(rt, name.c_str()));
-        }
-        return families;
+        return Array(rt, 0);
       });
 
   Object skia(rt);
