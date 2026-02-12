@@ -10,8 +10,8 @@ export function main(options: any = {}): void {
   const quiet = Boolean(options.quiet);
 
   if (!quiet) {
-    console.log("🚀 Starting iOS prebuild...");
-    console.log(`📱 App directory: ${appDir}`);
+    console.log("◆ Starting iOS prebuild...");
+    console.log(`◆ App directory: ${appDir}`);
   }
 
   try {
@@ -33,7 +33,7 @@ export function main(options: any = {}): void {
     process.chdir(iosDir);
 
     if (!quiet) {
-      console.log("\n⚙️  Running XcodeGen...");
+      console.log("\n◆ Running XcodeGen...");
     }
     execSync("xcodegen generate --spec project.yml", {
       stdio: quiet ? "pipe" : "inherit",
@@ -45,10 +45,10 @@ export function main(options: any = {}): void {
     console.log("✔ iOS prebuild completed successfully!");
     console.log("");
     if (!quiet) {
-      console.log("📂 You can now open the .xcworkspace file in Xcode");
+      console.log("➔ You can now open the .xcworkspace file in Xcode");
     }
   } catch (error: any) {
-    console.error("\n❌ Prebuild failed:", error.message);
+    console.error("\n✖ Prebuild failed:", error.message);
     process.exit(1);
   }
 }

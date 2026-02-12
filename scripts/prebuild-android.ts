@@ -14,8 +14,8 @@ export function main(options: any = {}): void {
   const appDir = process.cwd();
   const quiet = Boolean(options.quiet);
   if (!quiet) {
-    console.log("🚀 Starting Android prebuild...");
-    console.log(`📱 App directory: ${appDir}`);
+    console.log("◆ Starting Android prebuild...");
+    console.log(`◆ App directory: ${appDir}`);
   }
 
   try {
@@ -57,21 +57,21 @@ export function main(options: any = {}): void {
     if (isDev) {
       if (!quiet) {
         console.log(
-          "\n⚡ Dev prebuild skips copying the JS bundle (served via Rsbuild dev server).",
+          "\n◆ Dev prebuild skips copying the JS bundle (served via Rsbuild dev server).",
         );
       }
     } else if (fs.existsSync(bundleSrc)) {
       fs.copyFileSync(bundleSrc, bundleDest);
       if (!quiet) {
         console.log(
-          `\n📄 Copied JS bundle to ${path.relative(appDir, bundleDest)}`,
+          `\n◆ Copied JS bundle to ${path.relative(appDir, bundleDest)}`,
         );
       }
 
       // Generate Hermes bytecode if hermesc is available
       try {
         if (!quiet) {
-          console.log("🔄 Compiling to Hermes bytecode...");
+          console.log("◆ Compiling to Hermes bytecode...");
         }
 
         // Try to find hermesc in common locations
@@ -107,30 +107,30 @@ export function main(options: any = {}): void {
           );
           if (!quiet) {
             console.log(
-              `📦 Generated Hermes bytecode: ${path.relative(appDir, hbcDest)}`,
+              `◆ Generated Hermes bytecode: ${path.relative(appDir, hbcDest)}`,
             );
           }
         } else {
           if (!quiet) {
             console.warn(
-              "⚠️  hermesc not found. HBC compilation skipped. Install hermes-engine or add hermesc to PATH.",
+              "! hermesc not found. HBC compilation skipped. Install hermes-engine or add hermesc to PATH.",
             );
           }
         }
       } catch (error: any) {
         if (!quiet) {
           console.warn(
-            `⚠️  HBC compilation failed: ${error.message}. Falling back to JS source.`,
+            `! HBC compilation failed: ${error.message}. Falling back to JS source.`,
           );
         }
       }
     } else if (!quiet) {
       console.warn(
-        "\n⚠️  JS bundle not found (dist/main.js). Run the JS build before prebuild.",
+        "\n! JS bundle not found (dist/main.js). Run the JS build before prebuild.",
       );
     }
     if (!quiet) {
-      console.log("\n✅ Android project ready.");
+      console.log("\n✔ Android project ready.");
       console.log("Next steps:");
       const relativePath = path.relative(process.cwd(), androidDir);
       console.log(`  cd ${relativePath || "."}`);

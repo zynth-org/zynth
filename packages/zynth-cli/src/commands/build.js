@@ -8,6 +8,8 @@ const {
   getAndroidConfig,
   runCommand,
   requireScript,
+  runCommandFiltered,
+  runCommandFilteredAndroid,
 } = require("../utils");
 
 module.exports = {
@@ -41,6 +43,11 @@ module.exports = {
       describe: "Path to export options plist for IPA export",
       type: "string",
     });
+    yargs.option("verbose", {
+      describe: "Print raw native build output without filtering",
+      type: "boolean",
+      default: false,
+    });
   },
   handler: async (argv) => {
     const root = findWorkspaceRoot(process.cwd());
@@ -50,7 +57,7 @@ module.exports = {
 
     // Build JS bundle if not skipped
     if (!argv.skipBundle) {
-      console.log("📦 Building JavaScript bundle...");
+      console.log("◆ Building JavaScript bundle...");
       ensureBundle(appDir);
     }
 
@@ -58,17 +65,19 @@ module.exports = {
     const bundlePath = path.join(appDir, "dist", "main.js");
     if (!fs.existsSync(bundlePath)) {
       throw new Error(
-        `JS bundle not found at ${bundlePath}. Cannot proceed with ${argv.platform} build.`
+        `✖ JS bundle not found at ${bundlePath}. Cannot proceed with ${argv.platform} build.`
       );
     }
 
     // After bundling, ensure assets (like fonts) are discovered and copied to native folders
-    console.log(`🎨 Generating assets for ${argv.platform}...`);
+    console.log(`◆ Generating assets for ${argv.platform}...`);
     try {
-      const { generateAssets } = requireScript(path.join(root, "scripts", "generate-assets.ts"));
+      const { generateAssets } = requireScript(
+        path.join(root, "scripts", "generate-assets.ts")
+      );
       generateAssets(appDir, argv.platform, false); // dev = false to ensure fonts are copied
     } catch (e) {
-      console.warn(`⚠️  Failed to generate assets: ${e.message}`);
+      console.warn(`! Failed to generate assets: ${e.message}`);
     }
 
     if (argv.platform === "ios") {
@@ -76,7 +85,7 @@ module.exports = {
     } else {
       // Android needs manual bundle copy since Gradle doesn't auto-copy in release builds
       copyBundleToAndroid(appDir);
-      await buildAndroid(root, appDir);
+      await buildAndroid(root, appDir, argv);
     }
   },
 };
@@ -85,14 +94,14 @@ function copyBundleToAndroid(appDir) {
   const bundleSrc = path.join(appDir, "dist", "main.js");
   if (!fs.existsSync(bundleSrc)) {
     throw new Error(
-      "JS bundle not found at dist/main.js. Run the build command without --skip-bundle first."
+      "✖ JS bundle not found at dist/main.js. Run the build command without --skip-bundle first."
     );
   }
 
   const androidDir = path.join(appDir, "android");
   if (!fs.existsSync(androidDir)) {
     throw new Error(
-      `Android project not found at ${androidDir}. Run 'zynth prebuild android' first to generate the native project.`
+      `✖ Android project not found at ${androidDir}. Run 'zynth prebuild android' first to generate the native project.`
     );
   }
 
@@ -105,12 +114,12 @@ function copyBundleToAndroid(appDir) {
   const hbcDest = path.join(assetsDir, "main.hbc");
 
   fs.copyFileSync(bundleSrc, bundleDest);
-  console.log(`📄 Copied JS bundle to android/app/src/main/assets/main.js`);
+  console.log(`◆ Copied JS bundle to android/app/src/main/assets/main.js`);
 
   // Try to generate Hermes bytecode
   try {
     const { execSync } = require("child_process");
-    console.log("🔄 Compiling to Hermes bytecode...");
+    console.log("◆ Compiling to Hermes bytecode...");
 
     const possiblePaths = [
       "hermesc",
@@ -134,13 +143,13 @@ function copyBundleToAndroid(appDir) {
         stdio: "inherit",
       });
       console.log(
-        `📦 Generated Hermes bytecode: android/app/src/main/assets/main.hbc`
+        `✔ Generated Hermes bytecode: android/app/src/main/assets/main.hbc`
       );
     } else {
-      console.warn("⚠️  hermesc not found. Skipping HBC compilation.");
+      console.warn("! hermesc not found. Skipping HBC compilation.");
     }
   } catch (error) {
-    console.warn(`⚠️  HBC compilation failed: ${error.message}`);
+    console.warn(`! HBC compilation failed: ${error.message}`);
   }
 }
 
@@ -150,17 +159,15 @@ async function buildIOS(root, appDir, argv) {
 
   if (!fs.existsSync(iosDir)) {
     throw new Error(
-      `iOS project not found at ${iosDir}.\n` +
+      `✖ iOS project not found at ${iosDir}.\n` +
         `Run 'zynth prebuild ios' first to generate the native project, then configure signing in Xcode.`
     );
   }
 
-  console.log(`📦 Building ${config.appNameCapitalized} for iOS (Release)...`);
-
   const workspacePath = `${config.appNameCapitalized}.xcworkspace`;
   if (!fs.existsSync(path.join(iosDir, workspacePath))) {
     throw new Error(
-      `Xcode workspace not found at ios/${workspacePath}.\n` +
+      `✖ Xcode workspace not found at ios/${workspacePath}.\n` +
         `Run 'pod install' in the ios directory first.`
     );
   }
@@ -184,25 +191,30 @@ async function buildIOS(root, appDir, argv) {
   // Add automatic provisioning updates (enabled by default)
   if (argv.allowProvisioningUpdates) {
     buildArgs.push("-allowProvisioningUpdates");
-    console.log("🔐 Automatic provisioning updates enabled");
+    console.log("◆ Automatic provisioning updates enabled");
   }
 
   // Add device registration if specified
   if (argv.allowProvisioningDeviceRegistration) {
     buildArgs.push("-allowProvisioningDeviceRegistration");
-    console.log("📱 Automatic device registration enabled");
+    console.log("◆ Automatic device registration enabled");
   }
 
   // Add development team if specified
   if (argv.team) {
     buildArgs.push(`DEVELOPMENT_TEAM=${argv.team}`);
-    console.log(`👥 Using development team: ${argv.team}`);
+    console.log(`◆ Using development team: ${argv.team}`);
   }
 
-  try {
-    runCommand("xcodebuild", buildArgs, { cwd: iosDir });
-  } catch (error) {
-    console.error("\n❌ Build failed!");
+  console.log(`◆ Building ${config.appNameCapitalized} for iOS (Release)...`);
+  const buildResult = await runCommandFiltered("xcodebuild", buildArgs, {
+    cwd: iosDir,
+    verbose: argv.verbose,
+    root,
+  });
+
+  if (buildResult.code !== 0) {
+    console.error("\n✖ Build failed!");
     console.error("\n💡 Troubleshooting tips:");
     console.error("   1. Open Xcode and sign in with your Apple ID:");
     console.error("      Xcode > Settings > Accounts");
@@ -216,19 +228,19 @@ async function buildIOS(root, appDir, argv) {
     console.error("      - Let Xcode create a new certificate");
     console.error("   4. Specify your team ID:");
     console.error(`      yarn zynth build ios --team YOUR_TEAM_ID`);
-    throw error;
+    process.exit(buildResult.code || 1);
   }
 
-  console.log("\n✅ iOS Release build completed!");
-  console.log(`📂 Archive: ios/.build/${config.appNameCapitalized}.xcarchive`);
+  console.log("\n✔ iOS Release build completed!");
+  console.log(`➔ Archive: ios/.build/${config.appNameCapitalized}.xcarchive`);
 }
 
-async function buildAndroid(root, appDir) {
+async function buildAndroid(root, appDir, argv) {
   const config = getAndroidConfig(root, appDir);
-  console.log("📦 Building Android Release APK...");
+  console.log("◆ Building Android Release APK...");
 
   const androidDir = path.join(appDir, "android");
-  
+
   const env = { ...process.env };
   const signing = config.androidConfig?.signing;
   if (signing) {
@@ -236,14 +248,30 @@ async function buildAndroid(root, appDir) {
       env.ZYNTH_KEYSTORE_FILE = path.resolve(appDir, signing.storeFile);
     }
     if (signing.keyAlias) env.ZYNTH_KEY_ALIAS = signing.keyAlias;
-    if (signing.storePassword) env.ZYNTH_KEYSTORE_PASSWORD = signing.storePassword;
+    if (signing.storePassword)
+      env.ZYNTH_KEYSTORE_PASSWORD = signing.storePassword;
     if (signing.keyPassword) env.ZYNTH_KEY_PASSWORD = signing.keyPassword;
-    
-    console.log("🔐 Using signing config from app.json");
+
+    console.log("◆ Using signing config from app.json");
   }
 
-  runCommand("./gradlew", [":app:assembleRelease"], { cwd: androidDir, env });
+  const result = await runCommandFilteredAndroid(
+    "./gradlew",
+    [":app:assembleRelease"],
+    {
+      cwd: androidDir,
+      env,
+      verbose: argv.verbose,
+      root,
+    }
+  );
 
-  console.log("✅ Android Release build completed!");
-  console.log("📂 APK: android/app/build/outputs/apk/release/app-release.apk");
+  if (result.code !== 0) {
+    console.error("✖ Android build failed.");
+    process.exit(result.code || 1);
+  }
+
+  console.log("✔ Android Release build completed!");
+  console.log("➔ APK: android/app/build/outputs/apk/release/app-release.apk");
 }
+

@@ -94,8 +94,10 @@ function runCommandFiltered(command, args, options = {}) {
     ...options,
   });
 
-  const buildIndicator = createBuildIndicator("Building native artifacts");
+  const totalPackages = getZynthPackageCount(options.root || process.cwd());
+  const buildIndicator = createProgressIndicator("Building native artifacts", totalPackages);
   buildIndicator.start();
+
   let resumeTimer = null;
   let lastOutputAt = 0;
   function writeBuildLine(stream, line, prefix = "  ! ") {
@@ -113,7 +115,8 @@ function runCommandFiltered(command, args, options = {}) {
     const name = match ? match[1] : null;
     if (!name || reportedPackages.has(name)) return;
     reportedPackages.add(name);
-    writeBuildLine(process.stdout, `${name.replace(/^zynth-/, "")}`, "  ■ ");
+    const displayName = name.replace(/^zynth-/, "");
+    buildIndicator.update(reportedPackages.size, displayName);
   }
 
   function shouldSkip(line) {
@@ -209,7 +212,8 @@ function runCommandFilteredAndroid(command, args, options = {}) {
     ...options,
   });
 
-  const buildIndicator = createBuildIndicator("Building native artifacts");
+  const totalPackages = getZynthPackageCount(options.root || process.cwd());
+  const buildIndicator = createProgressIndicator("Building native artifacts", totalPackages);
   buildIndicator.start();
 
   let resumeTimer = null;
@@ -229,7 +233,7 @@ function runCommandFilteredAndroid(command, args, options = {}) {
     if (!name || name === "app" || reportedPackages.has(name)) return;
     reportedPackages.add(name);
     const displayName = name.replace(/^Zynth/, "").toLowerCase();
-    writeBuildLine(process.stdout, displayName, "  ■ ");
+    buildIndicator.update(reportedPackages.size, displayName);
   }
 
   function isDiagnostic(line) {
@@ -269,14 +273,31 @@ function runCommandFilteredAndroid(command, args, options = {}) {
   });
 }
 
-function createBuildIndicator(label) {
+function getZynthPackageCount(root) {
+  try {
+    const packagesDir = path.join(findWorkspaceRoot(root), "packages");
+    if (fs.existsSync(packagesDir)) {
+      return fs
+        .readdirSync(packagesDir)
+        .filter((dir) => dir.startsWith("zynth-")).length;
+    }
+  } catch (e) {
+    // Ignore
+  }
+  return 0;
+}
+
+function createProgressIndicator(label, total) {
   const text = String(label);
   let timer = null;
-  let lastWidth = 0;
+  let currentCount = 0;
+  let currentItem = "";
+  let lastLineCount = 0;
 
-  function renderShimmer() {
+  function render() {
+    if (!process.stdout.isTTY) return;
+
     const width = text.length;
-    if (width === 0) return;
     const padding = 10;
     const period = width + padding * 2;
     const sweepSeconds = 2.0;
@@ -286,7 +307,8 @@ function createBuildIndicator(label) {
     const hasTrueColor = supportsTrueColor();
     const base = { r: 128, g: 128, b: 128 };
     const highlight = { r: 255, g: 255, b: 255 };
-    let output = "";
+
+    let shimmer = "";
     for (let i = 0; i < width; i += 1) {
       const iPos = i + padding;
       const dist = Math.abs(iPos - pos);
@@ -296,25 +318,52 @@ function createBuildIndicator(label) {
           : 0;
       if (hasTrueColor) {
         const color = mixColor(base, highlight, t * 0.9);
-        output += colorize(text[i], color, true);
+        shimmer += colorize(text[i], color, true);
       } else if (t < 0.2) {
-        output += dim(text[i]);
+        shimmer += dim(text[i]);
       } else if (t < 0.6) {
-        output += text[i];
+        shimmer += text[i];
       } else {
-        output += bold(text[i]);
+        shimmer += bold(text[i]);
       }
     }
-    const pad =
-      lastWidth > output.length ? " ".repeat(lastWidth - output.length) : "";
-    lastWidth = output.length;
-    process.stdout.write(`\r${output}${pad}`);
+
+    // Progress bar
+    const barWidth = 30;
+    const percent = total > 0 ? Math.min(currentCount / total, 1) : 0;
+    const filledCount = Math.floor(percent * barWidth);
+    const bar = `[${"▓".repeat(filledCount)}${"░".repeat(
+      barWidth - filledCount
+    )}] ${Math.round(percent * 100)}%`;
+
+    const lines = [`◆ ${shimmer}`, `  ${bar}`];
+
+    if (currentItem) {
+      lines.push(`  ↳ Compiling: ${dim(currentItem)}`);
+    }
+
+    if (total > 0) {
+      lines.push(`  ➔ ${currentCount}/${total} components built...`);
+    }
+
+    // Clear previous lines
+    for (let i = 0; i < lastLineCount; i++) {
+      readline.moveCursor(process.stdout, 0, -1);
+      readline.clearLine(process.stdout, 0);
+    }
+
+    // Write new lines
+    process.stdout.write(lines.join("\n") + "\n");
+    lastLineCount = lines.length;
   }
 
   function clearLine(stream = process.stdout) {
     if (!stream.isTTY) return;
-    readline.clearLine(stream, 0);
-    readline.cursorTo(stream, 0);
+    for (let i = 0; i < lastLineCount; i++) {
+      readline.moveCursor(stream, 0, -1);
+      readline.clearLine(stream, 0);
+    }
+    lastLineCount = 0;
   }
 
   return {
@@ -324,13 +373,18 @@ function createBuildIndicator(label) {
         return;
       }
       if (timer) return;
-      process.stdout.write("\u001b[?25l");
-      renderShimmer();
-      timer = setInterval(renderShimmer, 80);
+      process.stdout.write("\u001b[?25l"); // Hide cursor
+      render();
+      timer = setInterval(render, 80);
+    },
+    update(count, item) {
+      currentCount = count;
+      currentItem = item;
+      if (!timer) render();
     },
     renderOnce() {
       if (!process.stdout.isTTY) return;
-      renderShimmer();
+      render();
     },
     stop() {
       if (timer) {
@@ -338,10 +392,22 @@ function createBuildIndicator(label) {
         timer = null;
       }
       clearLine();
-      process.stdout.write("\u001b[?25h");
+      process.stdout.write("\u001b[?25h"); // Show cursor
+      // Final summary
+      process.stdout.write(`◆ ${text}\n`);
+      process.stdout.write(
+        `✔ Completed ${currentCount} modules in ${((Date.now() - BUILD_SHIMMER_START) / 1000).toFixed(
+          1
+        )}s\n`
+      );
     },
     clearLine,
   };
+}
+
+function createBuildIndicator(label) {
+  // Legacy shim
+  return createProgressIndicator(label, 0);
 }
 
 function mixColor(a, b, t) {
@@ -1040,7 +1106,7 @@ async function devIOS(root, appDir, options = {}) {
 
   if (options.prebuild) {
     if (!quietOutput) {
-      console.log("♻️  Regenerating iOS project (--prebuild)");
+      console.log("◆ Regenerating iOS project (--prebuild)");
     }
     removeDirectory(iosDir);
     ensurePrebuild(root, appDir, "ios", {
@@ -1051,7 +1117,7 @@ async function devIOS(root, appDir, options = {}) {
 
   if (!fs.existsSync(iosDir)) {
     console.error(
-      "❌ iOS project not found. Run `zynth prebuild ios` or pass --prebuild."
+      "✖ iOS project not found. Run `zynth prebuild ios` or pass --prebuild."
     );
     process.exit(1);
   }
@@ -1095,7 +1161,7 @@ async function devIOS(root, appDir, options = {}) {
       buildArgs.push(`DEVELOPMENT_TEAM=${devTeam}`);
     } else {
       console.warn(
-        "\n⚠️  Building for a physical device. If the build fails due to code signing, set the ZYNTH_IOS_DEVELOPMENT_TEAM environment variable to your Apple Development Team ID.\n"
+        "\n! Building for a physical device. If the build fails due to code signing, set the ZYNTH_IOS_DEVELOPMENT_TEAM environment variable to your Apple Development Team ID.\n"
       );
     }
   }
@@ -1120,7 +1186,7 @@ async function devIOS(root, appDir, options = {}) {
   );
   if (!fs.existsSync(appBundlePath)) {
     console.error(
-      `❌ Built app not found at ${appBundlePath}. Check xcodebuild output.`
+      `✖ Built app not found at ${appBundlePath}. Check xcodebuild output.`
     );
     process.exit(1);
   }
@@ -1158,7 +1224,7 @@ async function devIOS(root, appDir, options = {}) {
   });
 
   if (!hmrServer) {
-    console.error("❌ Failed to start Rsbuild dev server. Aborting.");
+    console.error("✖ Failed to start Rsbuild dev server. Aborting.");
     process.exit(1);
   }
 
@@ -1181,7 +1247,7 @@ async function devIOS(root, appDir, options = {}) {
   const serverReady = await waitForDevServer(hmrServer.localUrl);
   if (!serverReady) {
     console.error(
-      "❌ Rsbuild dev server did not respond within the expected time window."
+      "✖ Rsbuild dev server did not respond within the expected time window."
     );
     process.exit(1);
   }
@@ -1216,7 +1282,7 @@ async function devIOS(root, appDir, options = {}) {
     const hmrToken = await waitForHMRToken(appDir);
     if (hmrToken) {
       if (!quietOutput) {
-        console.log("🔐 Injecting HMR token into simulator environment");
+        console.log("◆ Injecting HMR token into simulator environment");
       }
       process.env.ZYNTH_DEV_SERVER_TOKEN = hmrToken;
       runCommand("xcrun", [
@@ -1230,7 +1296,7 @@ async function devIOS(root, appDir, options = {}) {
       ]);
     } else {
       console.warn(
-        "⚠️  HMR token not detected; continuing without authentication"
+        "! HMR token not detected; continuing without authentication"
       );
       delete process.env.ZYNTH_DEV_SERVER_TOKEN;
       spawnSync("xcrun", [
@@ -1327,7 +1393,7 @@ async function devAndroid(root, appDir, options = {}) {
     });
   } else if (!fs.existsSync(androidDir)) {
     // If android dir is missing, we must prebuild regardless of flag
-    console.log("⚠️  Android directory missing. Running prebuild...");
+    console.log("◆ Android directory missing. Running prebuild...");
     ensurePrebuild(root, appDir, "android", {
       dev: true,
       quiet: quietOutput,
@@ -1727,6 +1793,8 @@ module.exports = {
   runCommand,
   runNode,
   readCommandOutput,
+  runCommandFiltered,
+  runCommandFilteredAndroid,
   devIOS,
   devAndroid,
   ensurePrebuild,
