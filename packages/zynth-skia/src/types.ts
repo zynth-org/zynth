@@ -87,6 +87,13 @@ export type SkiaSharedSignalToken = {
   __zynth_shared_signal_current: number;
 };
 
+export type SkiaInterpolationToken = SkiaSharedSignalToken & {
+  __zynth_skia_interp_input: readonly number[];
+  __zynth_skia_interp_output: readonly number[];
+  __zynth_skia_interp_left?: "clamp" | "extend" | "identity";
+  __zynth_skia_interp_right?: "clamp" | "extend" | "identity";
+};
+
 export type SkiaRuntimeShaderScalar = number | SkiaSharedSignalToken;
 export type SkiaRuntimeShaderUniform =
   | SkiaRuntimeShaderScalar
@@ -328,3 +335,13 @@ export type CreateSkiaValueOptions = {
 };
 
 export type SkiaValueTuple<T> = [Accessor<T>, Setter<T>];
+
+export type SkiaClockOptions = {
+  autoStart?: boolean;
+  durationMs?: number;
+  fallbackStepMs?: number;
+};
+
+export type SkiaProgressValue = number | Accessor<number>;
+
+export type SkiaUsePathValueUpdater = (path: SkiaPathObject) => void;

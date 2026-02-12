@@ -23,6 +23,8 @@ This README is the docs index. Each section is split into a separate page so too
   SVG path coverage (`A/a` included), group transforms, feature gates
 - [06 - Binaries and Native Assets](./docs/06-binaries-and-assets.md)
   manifest contract, sync/update/verify policy
+- [08 - Reactive Primitives](./docs/08-reactive-primitives.md)
+  shared-signal-first primitives (`createClock`, `createPathInterpolation`, `createPathValue`)
 
 ### API reference
 

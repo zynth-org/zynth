@@ -9,6 +9,8 @@ const [time, setTime] = createSkiaValue(0, { shared: true });
 - `shared: true` uses shared-signal backing for numeric values.
 - For non-numeric values, it falls back to Solid `createSignal` semantics.
 
+For shared-signal-driven animation primitives (`createClock`, `createPathInterpolation`, `createPathValue`), see `08-reactive-primitives.md`.
+
 ## `createShader`
 
 ```ts

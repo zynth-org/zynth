@@ -20,6 +20,9 @@
 - `createShader`
 - `createRuntimeEffect`
 - `createSkiaValue`
+- `createClock`
+- `createPathInterpolation`
+- `createPathValue`
 - `Skia`
 - `getSkiaCapabilities`
 - `supportsSkiaFeature`
@@ -99,6 +102,11 @@ Shared paint fields:
 - `SkiaUniformMap`
 - `CreateSkiaValueOptions`
 - `SkiaValueTuple<T>`
+- `SkiaClockOptions`
+- `SkiaProgressValue`
+- `SkiaUsePathValueUpdater`
+- `SkiaSharedSignalToken`
+- `SkiaInterpolationToken`
 
 ## Feature-gate types
 

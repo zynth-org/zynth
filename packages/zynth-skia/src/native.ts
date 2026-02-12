@@ -4,6 +4,7 @@ import {
   type SkiaDrawCommand,
   type SkiaFeature,
   type SkiaFrameSpec,
+  type SkiaInterpolationToken,
   type SkiaSharedSignalToken,
   type SkiaStrokeCap,
   type SkiaStrokeJoin,
@@ -90,6 +91,7 @@ const PACKED_STREAM_VERSION = 2;
 const enum PackedScalarKind {
   Literal = 0,
   SharedSignal = 1,
+  Interpolation = 2,
 }
 
 type PackedCommands = {
@@ -166,12 +168,102 @@ function isSharedSignalToken(value: unknown): value is SkiaSharedSignalToken {
   );
 }
 
+function isInterpolationToken(value: unknown): value is SkiaInterpolationToken {
+  if (!isSharedSignalToken(value)) return false;
+  const token = value as Partial<SkiaInterpolationToken>;
+  return Array.isArray(token.__zynth_skia_interp_input)
+    && Array.isArray(token.__zynth_skia_interp_output);
+}
+
+function encodeExtrapolationMode(mode: unknown): number {
+  if (mode === "identity") return 2;
+  if (mode === "extend") return 1;
+  return 0;
+}
+
+function interpolateSnapshot(
+  source: number,
+  inputRange: readonly number[],
+  outputRange: readonly number[],
+  leftMode: number,
+  rightMode: number,
+): number {
+  if (inputRange.length !== outputRange.length || inputRange.length < 2) {
+    return outputRange[0] ?? 0;
+  }
+  if (source <= inputRange[0]!) {
+    if (leftMode === 2) return source;
+    if (leftMode === 0) return outputRange[0]!;
+  }
+  if (source >= inputRange[inputRange.length - 1]!) {
+    if (rightMode === 2) return source;
+    if (rightMode === 0) return outputRange[outputRange.length - 1]!;
+  }
+
+  let index = 0;
+  for (let i = 0; i < inputRange.length - 1; i += 1) {
+    const start = inputRange[i]!;
+    const end = inputRange[i + 1]!;
+    if (source >= start && source <= end) {
+      index = i;
+      break;
+    }
+    if (source > end) {
+      index = i;
+    }
+  }
+
+  const inMin = inputRange[index]!;
+  const inMax = inputRange[index + 1]!;
+  const outMin = outputRange[index]!;
+  const outMax = outputRange[index + 1]!;
+  const span = inMax - inMin;
+  if (span === 0) return outMin;
+  const t = (source - inMin) / span;
+  return outMin + (outMax - outMin) * t;
+}
+
 function normalizePackedNumber(value: unknown, fallback = 0): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 function pushPackedScalar(encoded: number[], value: unknown, fallback = 0): void {
+  if (isInterpolationToken(value)) {
+    const inputRange = value.__zynth_skia_interp_input;
+    const outputRange = value.__zynth_skia_interp_output;
+    const count = Math.min(inputRange.length, outputRange.length);
+    if (count < 2) {
+      encoded.push(
+        PackedScalarKind.SharedSignal,
+        value.__zynth_shared_value,
+        normalizePackedNumber(value.__zynth_shared_signal_current, fallback),
+      );
+      return;
+    }
+    const inValues = inputRange.slice(0, count);
+    const outValues = outputRange.slice(0, count);
+    const leftMode = encodeExtrapolationMode(value.__zynth_skia_interp_left);
+    const rightMode = encodeExtrapolationMode(value.__zynth_skia_interp_right);
+    const snapshot = interpolateSnapshot(
+      normalizePackedNumber(value.__zynth_shared_signal_current, fallback),
+      inValues,
+      outValues,
+      leftMode,
+      rightMode,
+    );
+    encoded.push(
+      PackedScalarKind.Interpolation,
+      value.__zynth_shared_value,
+      snapshot,
+      count,
+      ...inValues,
+      ...outValues,
+      leftMode,
+      rightMode,
+    );
+    return;
+  }
   if (isSharedSignalToken(value)) {
     encoded.push(
       PackedScalarKind.SharedSignal,
@@ -184,6 +276,23 @@ function pushPackedScalar(encoded: number[], value: unknown, fallback = 0): void
 }
 
 function materializeScalar(value: unknown, fallback = 0): number {
+  if (isInterpolationToken(value)) {
+    const inputRange = value.__zynth_skia_interp_input;
+    const outputRange = value.__zynth_skia_interp_output;
+    const count = Math.min(inputRange.length, outputRange.length);
+    if (count < 2) {
+      return normalizePackedNumber(value.__zynth_shared_signal_current, fallback);
+    }
+    const leftMode = encodeExtrapolationMode(value.__zynth_skia_interp_left);
+    const rightMode = encodeExtrapolationMode(value.__zynth_skia_interp_right);
+    return interpolateSnapshot(
+      normalizePackedNumber(value.__zynth_shared_signal_current, fallback),
+      inputRange.slice(0, count),
+      outputRange.slice(0, count),
+      leftMode,
+      rightMode,
+    );
+  }
   if (isSharedSignalToken(value)) {
     return normalizePackedNumber(value.__zynth_shared_signal_current, fallback);
   }

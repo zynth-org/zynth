@@ -67,6 +67,10 @@ constexpr int kPackedStreamMagic = 900719;
 constexpr int kPackedStreamVersion = 2;
 constexpr int kPackedScalarLiteral = 0;
 constexpr int kPackedScalarSharedSignal = 1;
+constexpr int kPackedScalarInterpolation = 2;
+constexpr int kExtrapolateClamp = 0;
+constexpr int kExtrapolateExtend = 1;
+constexpr int kExtrapolateIdentity = 2;
 
 JavaVM *gVm = nullptr;
 using RegisterInstallerFn = void (*)(ZynthJSIPluginInstaller installer);
@@ -257,6 +261,63 @@ float readPackedScalar(
     }
     const double resolved = resolveSharedSignalValue(signalId, snapshot);
     return static_cast<float>(resolved);
+  }
+  if (kind == kPackedScalarInterpolation) {
+    if (index + 3 >= ops.size()) return fallback;
+    const int signalId = static_cast<int>(ops[index++]);
+    const double snapshot = ops[index++];
+    int count = static_cast<int>(ops[index++]);
+    if (count < 2) return static_cast<float>(snapshot);
+    if (index + static_cast<size_t>(count * 2 + 2) > ops.size()) return fallback;
+    std::vector<double> inputRange;
+    std::vector<double> outputRange;
+    inputRange.reserve(static_cast<size_t>(count));
+    outputRange.reserve(static_cast<size_t>(count));
+    for (int i = 0; i < count; i += 1) {
+      inputRange.push_back(ops[index++]);
+    }
+    for (int i = 0; i < count; i += 1) {
+      outputRange.push_back(ops[index++]);
+    }
+    const int leftMode = static_cast<int>(ops[index++]);
+    const int rightMode = static_cast<int>(ops[index++]);
+
+    if (gSignalCollector && signalId > 0) {
+      gSignalCollector->push_back(signalId);
+    }
+    const double source = resolveSharedSignalValue(signalId, snapshot);
+    if (!std::isfinite(source)) return fallback;
+
+    if (source <= inputRange.front()) {
+      if (leftMode == kExtrapolateIdentity) return static_cast<float>(source);
+      if (leftMode == kExtrapolateClamp) return static_cast<float>(outputRange.front());
+    }
+    if (source >= inputRange.back()) {
+      if (rightMode == kExtrapolateIdentity) return static_cast<float>(source);
+      if (rightMode == kExtrapolateClamp) return static_cast<float>(outputRange.back());
+    }
+
+    int segment = 0;
+    for (int i = 0; i < count - 1; i += 1) {
+      const double start = inputRange[static_cast<size_t>(i)];
+      const double end = inputRange[static_cast<size_t>(i + 1)];
+      if (source >= start && source <= end) {
+        segment = i;
+        break;
+      }
+      if (source > end) {
+        segment = i;
+      }
+    }
+
+    const double inMin = inputRange[static_cast<size_t>(segment)];
+    const double inMax = inputRange[static_cast<size_t>(segment + 1)];
+    const double outMin = outputRange[static_cast<size_t>(segment)];
+    const double outMax = outputRange[static_cast<size_t>(segment + 1)];
+    const double span = inMax - inMin;
+    if (!std::isfinite(span) || span == 0.0) return static_cast<float>(outMin);
+    const double t = (source - inMin) / span;
+    return static_cast<float>(outMin + (outMax - outMin) * t);
   }
   return fallback;
 }

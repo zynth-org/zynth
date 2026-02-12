@@ -68,6 +68,10 @@ constexpr int PackedStreamMagic = 900719;
 constexpr int PackedStreamVersion = 2;
 constexpr int PackedScalarLiteral = 0;
 constexpr int PackedScalarSharedSignal = 1;
+constexpr int PackedScalarInterpolation = 2;
+constexpr int ExtrapolateClamp = 0;
+constexpr int ExtrapolateExtend = 1;
+constexpr int ExtrapolateIdentity = 2;
 
 struct CommandBuffer {
   std::vector<double> ops;
@@ -213,6 +217,67 @@ static float readPackedScalar(const std::vector<double> &ops,
       resolved = snapshot;
     }
     return static_cast<float>(resolved);
+  }
+  if (kind == PackedScalarInterpolation) {
+    if (index + 3 >= ops.size()) return fallback;
+    int signalId = static_cast<int>(ops[index++]);
+    double snapshot = ops[index++];
+    int count = static_cast<int>(ops[index++]);
+    if (count < 2) return static_cast<float>(snapshot);
+    if (index + static_cast<size_t>(count * 2 + 2) > ops.size()) return fallback;
+    std::vector<double> inputRange;
+    std::vector<double> outputRange;
+    inputRange.reserve(static_cast<size_t>(count));
+    outputRange.reserve(static_cast<size_t>(count));
+    for (int i = 0; i < count; i += 1) {
+      inputRange.push_back(ops[index++]);
+    }
+    for (int i = 0; i < count; i += 1) {
+      outputRange.push_back(ops[index++]);
+    }
+    int leftMode = static_cast<int>(ops[index++]);
+    int rightMode = static_cast<int>(ops[index++]);
+
+    if (gSignalCollector && signalId > 0) {
+      gSignalCollector->push_back(signalId);
+    }
+    bool found = false;
+    double source = ZynthGetSharedSignal(gSkiaRuntimeState, signalId, &found);
+    if (!found || !std::isfinite(source)) {
+      source = snapshot;
+    }
+    if (!std::isfinite(source)) return fallback;
+
+    if (source <= inputRange.front()) {
+      if (leftMode == ExtrapolateIdentity) return static_cast<float>(source);
+      if (leftMode == ExtrapolateClamp) return static_cast<float>(outputRange.front());
+    }
+    if (source >= inputRange.back()) {
+      if (rightMode == ExtrapolateIdentity) return static_cast<float>(source);
+      if (rightMode == ExtrapolateClamp) return static_cast<float>(outputRange.back());
+    }
+
+    int segment = 0;
+    for (int i = 0; i < count - 1; i += 1) {
+      double start = inputRange[static_cast<size_t>(i)];
+      double end = inputRange[static_cast<size_t>(i + 1)];
+      if (source >= start && source <= end) {
+        segment = i;
+        break;
+      }
+      if (source > end) {
+        segment = i;
+      }
+    }
+
+    double inMin = inputRange[static_cast<size_t>(segment)];
+    double inMax = inputRange[static_cast<size_t>(segment + 1)];
+    double outMin = outputRange[static_cast<size_t>(segment)];
+    double outMax = outputRange[static_cast<size_t>(segment + 1)];
+    double span = inMax - inMin;
+    if (!std::isfinite(span) || span == 0.0) return static_cast<float>(outMin);
+    double t = (source - inMin) / span;
+    return static_cast<float>(outMin + (outMax - outMin) * t);
   }
   return fallback;
 }

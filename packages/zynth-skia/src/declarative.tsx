@@ -235,6 +235,80 @@ function hasCurveCommands(commands: readonly SkiaPathCommand[]): boolean {
   return false;
 }
 
+function hasTokenizedPathScalars(commands: readonly SkiaPathCommand[]): boolean {
+  for (let index = 0; index < commands.length; index += 1) {
+    const command = commands[index]!;
+    if (command.type === "moveTo" || command.type === "lineTo") {
+      if (isSharedSignalToken(command.x) || isSharedSignalToken(command.y)) {
+        return true;
+      }
+      continue;
+    }
+    if (command.type === "quadTo") {
+      if (
+        isSharedSignalToken(command.cpx)
+        || isSharedSignalToken(command.cpy)
+        || isSharedSignalToken(command.x)
+        || isSharedSignalToken(command.y)
+      ) {
+        return true;
+      }
+      continue;
+    }
+    if (command.type === "cubicTo") {
+      if (
+        isSharedSignalToken(command.cp1x)
+        || isSharedSignalToken(command.cp1y)
+        || isSharedSignalToken(command.cp2x)
+        || isSharedSignalToken(command.cp2y)
+        || isSharedSignalToken(command.x)
+        || isSharedSignalToken(command.y)
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function isIdentityTransform(matrix: Matrix2D): boolean {
+  const epsilon = 1e-6;
+  return (
+    Math.abs(matrix.a - 1) <= epsilon
+    && Math.abs(matrix.b) <= epsilon
+    && Math.abs(matrix.c) <= epsilon
+    && Math.abs(matrix.d - 1) <= epsilon
+    && Math.abs(matrix.tx) <= epsilon
+    && Math.abs(matrix.ty) <= epsilon
+  );
+}
+
+function boundsFromPathCommands(commands: readonly SkiaPathCommand[]) {
+  const points: { x: number; y: number }[] = [];
+  for (let index = 0; index < commands.length; index += 1) {
+    const command = commands[index]!;
+    if (command.type === "moveTo" || command.type === "lineTo") {
+      points.push({ x: readNumber(command.x), y: readNumber(command.y) });
+      continue;
+    }
+    if (command.type === "quadTo") {
+      points.push(
+        { x: readNumber(command.cpx), y: readNumber(command.cpy) },
+        { x: readNumber(command.x), y: readNumber(command.y) },
+      );
+      continue;
+    }
+    if (command.type === "cubicTo") {
+      points.push(
+        { x: readNumber(command.cp1x), y: readNumber(command.cp1y) },
+        { x: readNumber(command.cp2x), y: readNumber(command.cp2y) },
+        { x: readNumber(command.x), y: readNumber(command.y) },
+      );
+    }
+  }
+  return boundsFromPoints(points);
+}
+
 function transformPathCommands(
   commands: readonly SkiaPathCommand[],
   matrix: Matrix2D,
@@ -568,6 +642,11 @@ function compileShapePath(
   out: SkiaDrawCommand[],
 ) {
   const sourceCommands = resolvePathCommands(props.path);
+  const tokenizedPath = hasTokenizedPathScalars(sourceCommands);
+  const identityTransform = isIdentityTransform(state.transform);
+  if (tokenizedPath && !identityTransform) {
+    throw new Error("Skia tokenized path interpolation currently requires an identity Group transform");
+  }
   const paint = mergePaint(state, props);
   const childShader = resolveShaderChild(props.children);
   if (childShader) {
@@ -581,7 +660,9 @@ function compileShapePath(
     if (hasCurveCommands(sourceCommands)) {
       assertSkiaFeature("path.curves", "Path runtime shader");
     }
-    const transformedPath = transformPathCommands(sourceCommands, state.transform);
+    const transformedPath = tokenizedPath
+      ? { commands: sourceCommands, bounds: boundsFromPathCommands(sourceCommands) }
+      : transformPathCommands(sourceCommands, state.transform);
     pushPaintedShape(out, {
       type: "runtimeShaderPath",
       commands: transformedPath.commands,
@@ -598,7 +679,9 @@ function compileShapePath(
     assertSkiaFeature("path.curves", "Path");
   }
 
-  const transformed = transformPathCommands(sourceCommands, state.transform);
+  const transformed = tokenizedPath
+    ? { commands: sourceCommands, bounds: boundsFromPathCommands(sourceCommands) }
+    : transformPathCommands(sourceCommands, state.transform);
   const color = evaluateColor(paint.shader, paint.color, {
     x: transformed.bounds.x,
     y: transformed.bounds.y,

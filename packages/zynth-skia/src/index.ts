@@ -5,6 +5,14 @@ export { Canvas, Circle, Group, Paint, Path, Rect, Shader } from "./declarative"
 export { createPath } from "./path";
 export { createRuntimeEffect, createShader, createSkiaValue, Skia } from "./shader";
 export {
+  createClock,
+  createPathInterpolation,
+  createPathValue,
+  useClock,
+  usePathInterpolation,
+  usePathValue,
+} from "./hooks";
+export {
   assertSkiaFeature,
   getSkiaCapabilities,
   supportsSkiaFeature,
@@ -26,12 +34,14 @@ export type {
   SkiaFeature,
   SkiaFrameSpec,
   SkiaGroupProps,
+  SkiaInterpolationToken,
   SkiaCapabilities,
   SkiaPaintProps,
   SkiaPathCommand,
   SkiaPathObject,
   SkiaPathProps,
   SkiaPathSource,
+  SkiaProgressValue,
   SkiaRectProps,
   SkiaShaderInput,
   SkiaShaderProps,
@@ -46,6 +56,8 @@ export type {
   SkiaUniformMap,
   SkiaUniformPrimitive,
   SkiaUniformValue,
+  SkiaClockOptions,
+  SkiaUsePathValueUpdater,
   SkiaValueTuple,
   SkiaSurface,
   SkiaViewProps,
