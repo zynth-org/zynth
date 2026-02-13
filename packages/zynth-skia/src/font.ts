@@ -31,6 +31,8 @@ type SkiaBridge = {
 };
 
 const skiaRegisteredFonts = new Set<string>();
+const warnedMissingFamilies = new Set<string>();
+let cachedSystemFamilyKeys: Set<string> | null = null;
 
 export function vec(x: SkiaScalarValue, y: SkiaScalarValue): SkiaPoint {
   return { x, y };
@@ -41,6 +43,56 @@ function getSkiaBridge(): SkiaBridge | null {
   const bridge = globalObj.__zynth_skia;
   if (!bridge || typeof bridge !== "object") return null;
   return bridge as SkiaBridge;
+}
+
+function normalizeFamilyKey(familyName: string): string {
+  return familyName.trim().toLowerCase();
+}
+
+function getSystemFamilyKeys(): Set<string> | null {
+  if (cachedSystemFamilyKeys) return cachedSystemFamilyKeys;
+  const available = listFontFamilies();
+  if (available.length === 0) return null;
+  cachedSystemFamilyKeys = new Set<string>();
+  for (let index = 0; index < available.length; index += 1) {
+    const key = normalizeFamilyKey(available[index] ?? "");
+    if (key.length > 0) cachedSystemFamilyKeys.add(key);
+  }
+  return cachedSystemFamilyKeys;
+}
+
+function markSystemFamilyKnown(familyName: string): void {
+  const key = normalizeFamilyKey(familyName);
+  if (key.length === 0) return;
+  if (!cachedSystemFamilyKeys) cachedSystemFamilyKeys = new Set<string>();
+  cachedSystemFamilyKeys.add(key);
+}
+
+function warnMissingFontFamilyOnce(
+  familyName: string,
+  fontMgr?: SkiaFontManager,
+): void {
+  const key = normalizeFamilyKey(familyName);
+  if (key.length === 0 || warnedMissingFamilies.has(key)) return;
+
+  if (fontMgr) {
+    const available = listFontFamilies(fontMgr);
+    if (available.length === 0) return;
+    for (let index = 0; index < available.length; index += 1) {
+      if (normalizeFamilyKey(available[index] ?? "") === key) {
+        return;
+      }
+    }
+  } else {
+    const availableKeys = getSystemFamilyKeys();
+    if (!availableKeys || availableKeys.has(key)) return;
+  }
+
+  warnedMissingFamilies.add(key);
+  console.warn(
+    `[SkiaFont] Font family "${familyName}" is not available. ` +
+      "Text may fallback or render unexpectedly until the font is registered.",
+  );
 }
 
 function normalizeFontStyle(
@@ -271,6 +323,7 @@ async function ensureNativeFontLoaded(
         const success = skia.registerFont(familyName, result.path);
         if (success) {
           skiaRegisteredFonts.add(familyName);
+          markSystemFamilyKnown(familyName);
           return;
         }
       }
@@ -290,6 +343,7 @@ async function ensureNativeFontLoaded(
           const success = skia.registerFont(familyName, buffer);
           if (success) {
             skiaRegisteredFonts.add(familyName);
+            markSystemFamilyKnown(familyName);
           }
         } catch (e: any) {
           console.error(
@@ -318,6 +372,9 @@ export function matchFont(
         fontWeight: style.fontWeight,
       })
     : null;
+  if (style.fontFamily && !matched) {
+    warnMissingFontFamilyOnce(style.fontFamily, fontMgr);
+  }
 
   return createFontFromStyle({
     fontFamily: matched?.familyName ?? fallbackFamily,
