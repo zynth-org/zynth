@@ -40,7 +40,7 @@ public class ZynthFontModule: ZynthModule {
     
     private func loadAsync(args: Any?) throws -> Any? {
         guard let params = args as? [String: Any],
-              let fontFamily = params["fontFamily"] as? String,
+              let _ = params["fontFamily"] as? String,
               let resourceName = params["resourceName"] as? String else {
             throw ZynthModuleError.moduleNotFound("Invalid arguments for loadAsync. Expected fontFamily and resourceName.")
         }
