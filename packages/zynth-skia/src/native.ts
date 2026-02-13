@@ -751,7 +751,6 @@ function encodePackedCommands(commands: SkiaDrawCommand[]): PackedCommands {
         encoded.push(encodeStrokeCap(command.strokeCap));
         encoded.push(encodeStrokeJoin(command.strokeJoin));
         pushPackedScalar(encoded, command.strokeMiter ?? 4, 4);
-        pushPackedLinearGradient(encoded, command.linearGradient, stringTable, stringIndex);
         encoded.push(command.commands.length);
         for (let cmdIndex = 0; cmdIndex < command.commands.length; cmdIndex += 1) {
           const pathCommand = command.commands[cmdIndex]!;
@@ -797,6 +796,7 @@ function encodePackedCommands(commands: SkiaDrawCommand[]): PackedCommands {
               break;
           }
         }
+        pushPackedLinearGradient(encoded, command.linearGradient, stringTable, stringIndex);
         break;
       case "runtimeShaderRect": {
         encoded.push(PackedOpcode.RuntimeShaderRect);

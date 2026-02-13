@@ -572,12 +572,13 @@ function compileShapeRect(
     if (paint.style === "stroke") {
       throw new Error("Skia runtime shaders currently support fill style only");
     }
+    const identityTransform = isIdentityTransform(state.transform);
     const runtimeCommand: SkiaDrawRuntimeShaderRect = {
       type: "runtimeShaderRect",
-      x: (isAxisAligned(state.transform) ? xScalar : x1) as unknown as number,
-      y: (isAxisAligned(state.transform) ? yScalar : y1) as unknown as number,
-      width: (isAxisAligned(state.transform) ? widthScalar : w) as unknown as number,
-      height: (isAxisAligned(state.transform) ? heightScalar : h) as unknown as number,
+      x: (identityTransform ? xScalar : x1) as unknown as number,
+      y: (identityTransform ? yScalar : y1) as unknown as number,
+      width: (identityTransform ? widthScalar : w) as unknown as number,
+      height: (identityTransform ? heightScalar : h) as unknown as number,
       source: runtimeShader.runtimeEffect.source,
       uniforms: resolveRuntimeShaderUniformMap(runtimeShader.uniforms),
       antiAlias: paint.antiAlias,
@@ -596,12 +597,13 @@ function compileShapeRect(
   });
 
   if (isAxisAligned(state.transform)) {
+    const identityTransform = isIdentityTransform(state.transform);
     pushPaintedShape(out, {
       type: "rect",
-      x: (isAxisAligned(state.transform) ? xScalar : x1) as unknown as number,
-      y: (isAxisAligned(state.transform) ? yScalar : y1) as unknown as number,
-      width: (isAxisAligned(state.transform) ? widthScalar : w) as unknown as number,
-      height: (isAxisAligned(state.transform) ? heightScalar : h) as unknown as number,
+      x: (identityTransform ? xScalar : x1) as unknown as number,
+      y: (identityTransform ? yScalar : y1) as unknown as number,
+      width: (identityTransform ? widthScalar : w) as unknown as number,
+      height: (identityTransform ? heightScalar : h) as unknown as number,
       color,
       style: paint.style,
       strokeWidth: paint.strokeWidth as unknown as number,
@@ -674,11 +676,12 @@ function compileShapeCircle(
     }
     const uniformScale = resolveCircleUniformScale(state.transform);
     if (uniformScale != null) {
+      const identityTransform = isIdentityTransform(state.transform);
       pushPaintedShape(out, {
         type: "runtimeShaderCircle",
-        cx: (isAxisAligned(state.transform) ? cxScalar : center.x) as unknown as number,
-        cy: (isAxisAligned(state.transform) ? cyScalar : center.y) as unknown as number,
-        r: (isAxisAligned(state.transform) ? rScalar : Math.abs(r * uniformScale)) as unknown as number,
+        cx: (identityTransform ? cxScalar : center.x) as unknown as number,
+        cy: (identityTransform ? cyScalar : center.y) as unknown as number,
+        r: (identityTransform ? rScalar : Math.abs(r * uniformScale)) as unknown as number,
         source: runtimeShader.runtimeEffect.source,
         uniforms: resolveRuntimeShaderUniformMap(runtimeShader.uniforms),
         antiAlias: paint.antiAlias,
@@ -760,11 +763,12 @@ function compileShapeCircle(
 
   const uniformScale = resolveCircleUniformScale(state.transform);
   if (uniformScale != null) {
+    const identityTransform = isIdentityTransform(state.transform);
     pushPaintedShape(out, {
       type: "circle",
-      cx: (isAxisAligned(state.transform) ? cxScalar : center.x) as unknown as number,
-      cy: (isAxisAligned(state.transform) ? cyScalar : center.y) as unknown as number,
-      r: (isAxisAligned(state.transform) ? rScalar : Math.abs(r * uniformScale)) as unknown as number,
+      cx: (identityTransform ? cxScalar : center.x) as unknown as number,
+      cy: (identityTransform ? cyScalar : center.y) as unknown as number,
+      r: (identityTransform ? rScalar : Math.abs(r * uniformScale)) as unknown as number,
       color,
       style: paint.style,
       strokeWidth: paint.strokeWidth as unknown as number,
@@ -1138,68 +1142,62 @@ export const Canvas: ParentComponent<SkiaCanvasProps> = (props) => {
 
 export function Group(props: SkiaGroupProps): JSX.Element {
   const resolved = children(() => props.children);
-  return createNode("group", {
-    x: props.x,
-    y: props.y,
-    translateX: props.translateX,
-    translateY: props.translateY,
-    scale: props.scale,
-    scaleX: props.scaleX,
-    scaleY: props.scaleY,
-    rotate: props.rotate,
-    originX: props.originX,
-    originY: props.originY,
-    layer: props.layer,
-    children: resolved,
-  }) as unknown as JSX.Element;
+  return createNode(
+    "group",
+    mergeProps(props, {
+      children: resolved,
+    }),
+  ) as unknown as JSX.Element;
 }
 
 export function Paint(props: SkiaPaintProps): JSX.Element {
   const resolved = children(() => props.children);
-  return createNode("paint", {
-    color: props.color,
-    style: props.style,
-    strokeWidth: props.strokeWidth,
-    antiAlias: props.antiAlias,
-    opacity: props.opacity,
-    strokeCap: props.strokeCap,
-    strokeJoin: props.strokeJoin,
-    strokeMiter: props.strokeMiter,
-    shader: props.shader,
-    children: resolved,
-  }) as unknown as JSX.Element;
+  return createNode(
+    "paint",
+    mergeProps(props, {
+      children: resolved,
+    }),
+  ) as unknown as JSX.Element;
 }
 
 export function Rect(props: SkiaRectProps): JSX.Element {
   const resolved = children(() => props.children);
-  return createNode("rect", {
-    ...props,
-    children: resolved,
-  }) as unknown as JSX.Element;
+  return createNode(
+    "rect",
+    mergeProps(props, {
+      children: resolved,
+    }),
+  ) as unknown as JSX.Element;
 }
 
 export function Circle(props: SkiaCircleProps): JSX.Element {
   const resolved = children(() => props.children);
-  return createNode("circle", {
-    ...props,
-    children: resolved,
-  }) as unknown as JSX.Element;
+  return createNode(
+    "circle",
+    mergeProps(props, {
+      children: resolved,
+    }),
+  ) as unknown as JSX.Element;
 }
 
 export function Path(props: SkiaPathProps): JSX.Element {
   const resolved = children(() => props.children);
-  return createNode("path", {
-    ...props,
-    children: resolved,
-  }) as unknown as JSX.Element;
+  return createNode(
+    "path",
+    mergeProps(props, {
+      children: resolved,
+    }),
+  ) as unknown as JSX.Element;
 }
 
 export function Text(props: SkiaTextProps): JSX.Element {
   const resolved = children(() => props.children);
-  return createNode("text", {
-    ...props,
-    children: resolved,
-  }) as unknown as JSX.Element;
+  return createNode(
+    "text",
+    mergeProps(props, {
+      children: resolved,
+    }),
+  ) as unknown as JSX.Element;
 }
 
 export function Shader(props: SkiaShaderProps): JSX.Element {
@@ -1223,9 +1221,12 @@ export function LinearGradient(props: SkiaLinearGradientProps): JSX.Element {
 export function Mask(props: SkiaMaskProps): JSX.Element {
   const resolvedChildren = children(() => props.children);
   const resolvedMask = children(() => props.mask);
-  return createNode("mask", {
-    mode: props.mode ?? "luminance",
-    mask: props.mask == null ? undefined : resolvedMask,
-    children: resolvedChildren,
-  }) as unknown as JSX.Element;
+  return createNode(
+    "mask",
+    mergeProps(props, {
+      mode: props.mode ?? "luminance",
+      mask: props.mask == null ? undefined : resolvedMask,
+      children: resolvedChildren,
+    }),
+  ) as unknown as JSX.Element;
 }
