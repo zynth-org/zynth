@@ -29,6 +29,8 @@
 #include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkTypeface.h"
+#include "include/effects/SkGradientShader.h"
+#include "include/effects/SkLumaColorFilter.h"
 #include "include/effects/SkRuntimeEffect.h"
 #include "include/ports/SkFontMgr_android.h"
 #include "include/ports/SkFontScanner_FreeType.h"
@@ -48,6 +50,9 @@ constexpr int kOpcodeRuntimeShaderRect = 6;
 constexpr int kOpcodeRuntimeShaderCircle = 7;
 constexpr int kOpcodeRuntimeShaderPath = 8;
 constexpr int kOpcodeText = 9;
+constexpr int kOpcodeSaveLayer = 10;
+constexpr int kOpcodeSaveLayerLuminanceMask = 11;
+constexpr int kOpcodeRestore = 12;
 
 constexpr int kColorTypeInt = 1;
 constexpr int kColorTypeString = 2;
@@ -68,6 +73,10 @@ constexpr int kPathVerbLineTo = 1;
 constexpr int kPathVerbQuadTo = 2;
 constexpr int kPathVerbCubicTo = 3;
 constexpr int kPathVerbClose = 4;
+constexpr int kTileModeClamp = 0;
+constexpr int kTileModeRepeat = 1;
+constexpr int kTileModeMirror = 2;
+constexpr int kTileModeDecal = 3;
 
 constexpr int kPackedStreamMagic = 900719;
 constexpr int kPackedStreamVersion = 2;
@@ -439,6 +448,72 @@ void configurePaint(
   paint.setStrokeMiter(strokeMiter);
 }
 
+SkTileMode decodeTileMode(int mode) {
+  switch (mode) {
+    case kTileModeRepeat:
+      return SkTileMode::kRepeat;
+    case kTileModeMirror:
+      return SkTileMode::kMirror;
+    case kTileModeDecal:
+      return SkTileMode::kDecal;
+    case kTileModeClamp:
+    default:
+      return SkTileMode::kClamp;
+  }
+}
+
+bool applyPackedLinearGradient(
+    const SurfaceState::CommandBuffer &buffer,
+    const std::vector<double> &ops,
+    size_t &index,
+    bool taggedScalars,
+    SkPaint &paint) {
+  if (index >= ops.size()) return false;
+  const bool hasGradient = static_cast<int>(ops[index++]) != 0;
+  if (!hasGradient) return true;
+
+  const float startX = readPackedScalar(ops, index, taggedScalars);
+  const float startY = readPackedScalar(ops, index, taggedScalars);
+  const float endX = readPackedScalar(ops, index, taggedScalars);
+  const float endY = readPackedScalar(ops, index, taggedScalars);
+  if (index >= ops.size()) return false;
+  const int colorCount = static_cast<int>(ops[index++]);
+  if (colorCount < 2) return false;
+
+  std::vector<SkColor> colors;
+  colors.reserve(static_cast<size_t>(colorCount));
+  for (int i = 0; i < colorCount; i += 1) {
+    colors.push_back(readPackedColor(buffer, ops, index));
+  }
+
+  if (index >= ops.size()) return false;
+  const bool hasPositions = static_cast<int>(ops[index++]) != 0;
+  std::vector<SkScalar> positions;
+  if (hasPositions) {
+    positions.reserve(static_cast<size_t>(colorCount));
+    for (int i = 0; i < colorCount; i += 1) {
+      positions.push_back(readPackedScalar(ops, index, taggedScalars));
+    }
+  }
+
+  if (index >= ops.size()) return false;
+  const int tileMode = static_cast<int>(ops[index++]);
+  (void)readPackedScalar(ops, index, taggedScalars, 0.0f);
+
+  SkPoint points[2] = {SkPoint::Make(startX, startY), SkPoint::Make(endX, endY)};
+  const SkScalar *positionPtr = hasPositions ? positions.data() : nullptr;
+  sk_sp<SkShader> gradient = SkGradientShader::MakeLinear(
+      points,
+      colors.data(),
+      positionPtr,
+      colorCount,
+      decodeTileMode(tileMode));
+  if (gradient) {
+    paint.setShader(gradient);
+  }
+  return true;
+}
+
 int normalizeFontWeight(const std::string &weight) {
   if (weight.empty() || weight == "normal") return 400;
   if (weight == "bold") return 700;
@@ -506,6 +581,24 @@ bool renderSurfaceState(
       continue;
     }
 
+    if (opcode == kOpcodeSaveLayer) {
+      canvas->saveLayer(nullptr, nullptr);
+      continue;
+    }
+
+    if (opcode == kOpcodeSaveLayerLuminanceMask) {
+      SkPaint layerPaint;
+      layerPaint.setBlendMode(SkBlendMode::kDstIn);
+      layerPaint.setColorFilter(SkLumaColorFilter::Make());
+      canvas->saveLayer(nullptr, &layerPaint);
+      continue;
+    }
+
+    if (opcode == kOpcodeRestore) {
+      canvas->restore();
+      continue;
+    }
+
     if (opcode == kOpcodeRect) {
       const float x = readPackedScalar(buffer.ops, i, taggedScalars);
       const float y = readPackedScalar(buffer.ops, i, taggedScalars);
@@ -533,6 +626,7 @@ bool renderSurfaceState(
           strokeCap,
           strokeJoin,
           strokeMiter);
+      if (!applyPackedLinearGradient(buffer, buffer.ops, i, taggedScalars, paint)) break;
       canvas->drawRect(SkRect::MakeXYWH(x, y, w, h), paint);
       continue;
     }
@@ -563,6 +657,7 @@ bool renderSurfaceState(
           strokeCap,
           strokeJoin,
           strokeMiter);
+      if (!applyPackedLinearGradient(buffer, buffer.ops, i, taggedScalars, paint)) break;
       canvas->drawCircle(cx, cy, r, paint);
       continue;
     }
@@ -666,6 +761,7 @@ bool renderSurfaceState(
           strokeCap,
           strokeJoin,
           strokeMiter);
+      if (!applyPackedLinearGradient(buffer, buffer.ops, i, taggedScalars, paint)) break;
       canvas->drawPath(path, paint);
       continue;
     }
@@ -675,14 +771,13 @@ bool renderSurfaceState(
       const float y = readPackedScalar(buffer.ops, i, taggedScalars);
       const SkColor color = readPackedColor(buffer, buffer.ops, i);
       const float fontSize = readPackedScalar(buffer.ops, i, taggedScalars, 14.0f);
-      if (i + 5 >= buffer.ops.size()) break;
+      if (i + 4 >= buffer.ops.size()) break;
       const bool antiAlias = static_cast<int>(buffer.ops[i++]) != 0;
       const float opacity = readPackedScalar(buffer.ops, i, taggedScalars, 1.0f);
       const int familyIndex = static_cast<int>(buffer.ops[i++]);
       const int styleIndex = static_cast<int>(buffer.ops[i++]);
       const int weightIndex = static_cast<int>(buffer.ops[i++]);
       const int textIndex = static_cast<int>(buffer.ops[i++]);
-      const bool hasMatrix = static_cast<int>(buffer.ops[i++]) != 0;
 
       const std::string *familyPtr = readPackedString(buffer, familyIndex);
       const std::string *stylePtr = readPackedString(buffer, styleIndex);
@@ -697,19 +792,6 @@ bool renderSurfaceState(
           stylePtr ? *stylePtr : std::string("normal"),
           weightPtr ? *weightPtr : std::string("normal"));
 
-      if (hasMatrix) {
-        if (i + 5 >= buffer.ops.size()) break;
-        const float a = static_cast<float>(buffer.ops[i++]);
-        const float b = static_cast<float>(buffer.ops[i++]);
-        const float c = static_cast<float>(buffer.ops[i++]);
-        const float d = static_cast<float>(buffer.ops[i++]);
-        const float tx = static_cast<float>(buffer.ops[i++]);
-        const float ty = static_cast<float>(buffer.ops[i++]);
-        const SkMatrix matrix = SkMatrix::MakeAll(a, c, tx, b, d, ty, 0, 0, 1);
-        canvas->save();
-        canvas->concat(matrix);
-      }
-
       SkFont font;
       font.setSize(std::max(0.0f, fontSize));
       if (typeface) {
@@ -722,6 +804,21 @@ bool renderSurfaceState(
       paint.setAlphaf(std::max(0.0f, std::min(1.0f, opacity)));
       paint.setAntiAlias(antiAlias);
       paint.setStyle(SkPaint::kFill_Style);
+      if (!applyPackedLinearGradient(buffer, buffer.ops, i, taggedScalars, paint)) break;
+      if (i >= buffer.ops.size()) break;
+      const bool hasMatrix = static_cast<int>(buffer.ops[i++]) != 0;
+      if (hasMatrix) {
+        if (i + 5 >= buffer.ops.size()) break;
+        const float a = static_cast<float>(buffer.ops[i++]);
+        const float b = static_cast<float>(buffer.ops[i++]);
+        const float c = static_cast<float>(buffer.ops[i++]);
+        const float d = static_cast<float>(buffer.ops[i++]);
+        const float tx = static_cast<float>(buffer.ops[i++]);
+        const float ty = static_cast<float>(buffer.ops[i++]);
+        const SkMatrix matrix = SkMatrix::MakeAll(a, c, tx, b, d, ty, 0, 0, 1);
+        canvas->save();
+        canvas->concat(matrix);
+      }
       canvas->drawString(SkString(textPtr->c_str()), x, y, font, paint);
       if (hasMatrix) {
         canvas->restore();
@@ -986,6 +1083,72 @@ std::string readStringProp(Runtime &rt, const Object &object, const char *name, 
   return std::string(fallback);
 }
 
+void encodeLinearGradientFromJS(
+    Runtime &rt,
+    const Object &command,
+    std::vector<double> &outOps,
+    std::vector<std::string> &outStrings,
+    std::unordered_map<std::string, int> &stringIndex) {
+  Value gradientValue = command.getProperty(rt, "linearGradient");
+  if (!gradientValue.isObject()) {
+    outOps.push_back(0.0);
+    return;
+  }
+  Object gradient = gradientValue.asObject(rt);
+  outOps.push_back(1.0);
+
+  Object start = gradient.getProperty(rt, "start").isObject()
+    ? gradient.getProperty(rt, "start").asObject(rt)
+    : Object(rt);
+  Object end = gradient.getProperty(rt, "end").isObject()
+    ? gradient.getProperty(rt, "end").asObject(rt)
+    : Object(rt);
+  outOps.push_back(readNumberProp(rt, start, "x", 0));
+  outOps.push_back(readNumberProp(rt, start, "y", 0));
+  outOps.push_back(readNumberProp(rt, end, "x", 0));
+  outOps.push_back(readNumberProp(rt, end, "y", 0));
+
+  Value colorsValue = gradient.getProperty(rt, "colors");
+  if (!colorsValue.isObject() || !colorsValue.asObject(rt).isArray(rt)) {
+    outOps.push_back(0.0);
+    outOps.push_back(0.0);
+    outOps.push_back(0.0);
+    outOps.push_back(0.0);
+    return;
+  }
+  Array colors = colorsValue.asObject(rt).asArray(rt);
+  const size_t colorCount = colors.length(rt);
+  outOps.push_back(static_cast<double>(colorCount));
+  for (size_t colorIndex = 0; colorIndex < colorCount; colorIndex += 1) {
+    Value colorValue = colors.getValueAtIndex(rt, colorIndex);
+    const std::string color = colorValue.isString() ? colorValue.asString(rt).utf8(rt) : std::string();
+    pushPackedColor(outOps, outStrings, stringIndex, color);
+  }
+
+  Value positionsValue = gradient.getProperty(rt, "positions");
+  if (positionsValue.isObject() && positionsValue.asObject(rt).isArray(rt)) {
+    Array positions = positionsValue.asObject(rt).asArray(rt);
+    if (positions.length(rt) == colorCount) {
+      outOps.push_back(1.0);
+      for (size_t posIndex = 0; posIndex < colorCount; posIndex += 1) {
+        Value item = positions.getValueAtIndex(rt, posIndex);
+        outOps.push_back(item.isNumber() ? item.asNumber() : 0.0);
+      }
+    } else {
+      outOps.push_back(0.0);
+    }
+  } else {
+    outOps.push_back(0.0);
+  }
+
+  const std::string mode = readStringProp(rt, gradient, "mode", "clamp");
+  const int tileMode = mode == "repeat"
+    ? kTileModeRepeat
+    : (mode == "mirror" ? kTileModeMirror : (mode == "decal" ? kTileModeDecal : kTileModeClamp));
+  outOps.push_back(static_cast<double>(tileMode));
+  outOps.push_back(readNumberProp(rt, gradient, "flags", 0));
+}
+
 void encodeCommandsFromJS(
     Runtime &rt,
     const Array &commands,
@@ -1004,6 +1167,21 @@ void encodeCommandsFromJS(
     if (type == "clear") {
       outOps.push_back(static_cast<double>(kOpcodeClear));
       pushPackedColor(outOps, outStrings, stringIndex, readStringProp(rt, command, "color"));
+      continue;
+    }
+
+    if (type == "saveLayer") {
+      outOps.push_back(static_cast<double>(kOpcodeSaveLayer));
+      continue;
+    }
+
+    if (type == "saveLayerLuminanceMask") {
+      outOps.push_back(static_cast<double>(kOpcodeSaveLayerLuminanceMask));
+      continue;
+    }
+
+    if (type == "restore") {
+      outOps.push_back(static_cast<double>(kOpcodeRestore));
       continue;
     }
 
@@ -1031,6 +1209,7 @@ void encodeCommandsFromJS(
               strokeJoin == "round" ? kStrokeJoinRound
                                      : (strokeJoin == "bevel" ? kStrokeJoinBevel : kStrokeJoinMiter)));
       outOps.push_back(readNumberProp(rt, command, "strokeMiter", 4));
+      encodeLinearGradientFromJS(rt, command, outOps, outStrings, stringIndex);
       continue;
     }
 
@@ -1057,6 +1236,7 @@ void encodeCommandsFromJS(
               strokeJoin == "round" ? kStrokeJoinRound
                                      : (strokeJoin == "bevel" ? kStrokeJoinBevel : kStrokeJoinMiter)));
       outOps.push_back(readNumberProp(rt, command, "strokeMiter", 4));
+      encodeLinearGradientFromJS(rt, command, outOps, outStrings, stringIndex);
       continue;
     }
 
@@ -1082,6 +1262,7 @@ void encodeCommandsFromJS(
               strokeJoin == "round" ? kStrokeJoinRound
                                      : (strokeJoin == "bevel" ? kStrokeJoinBevel : kStrokeJoinMiter)));
       outOps.push_back(readNumberProp(rt, command, "strokeMiter", 4));
+      encodeLinearGradientFromJS(rt, command, outOps, outStrings, stringIndex);
       continue;
     }
 
@@ -1179,6 +1360,7 @@ void encodeCommandsFromJS(
       outOps.push_back(static_cast<double>(styleIndex));
       outOps.push_back(static_cast<double>(weightIndex));
       outOps.push_back(static_cast<double>(textIndex));
+      encodeLinearGradientFromJS(rt, command, outOps, outStrings, stringIndex);
 
       Value matrixValue = command.getProperty(rt, "matrix");
       if (matrixValue.isObject()) {

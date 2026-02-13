@@ -1,5 +1,6 @@
 import { callNativeSync, getNativeModule, unwrapNativeResult } from "@zynth/core";
 import {
+  type SkiaLinearGradient,
   type SkiaCapabilities,
   type SkiaDrawCommand,
   type SkiaFeature,
@@ -54,6 +55,16 @@ const enum PackedOpcode {
   RuntimeShaderCircle = 7,
   RuntimeShaderPath = 8,
   Text = 9,
+  SaveLayer = 10,
+  SaveLayerLuminanceMask = 11,
+  Restore = 12,
+}
+
+const enum PackedTileMode {
+  Clamp = 0,
+  Repeat = 1,
+  Mirror = 2,
+  Decal = 3,
 }
 
 const enum PackedColorType {
@@ -158,6 +169,64 @@ function pushPackedColor(
   }
   const stringIndex = addPackedString(table, index, color);
   encoded.push(PackedColorType.String, stringIndex);
+}
+
+function encodeTileMode(mode: SkiaLinearGradient["mode"]): number {
+  if (mode === "repeat") return PackedTileMode.Repeat;
+  if (mode === "mirror") return PackedTileMode.Mirror;
+  if (mode === "decal") return PackedTileMode.Decal;
+  return PackedTileMode.Clamp;
+}
+
+function pushPackedLinearGradient(
+  encoded: number[],
+  gradient: SkiaLinearGradient | undefined,
+  table: string[],
+  index: Map<string, number>,
+): void {
+  if (!gradient) {
+    encoded.push(0);
+    return;
+  }
+
+  encoded.push(1);
+  pushPackedScalar(encoded, gradient.start.x);
+  pushPackedScalar(encoded, gradient.start.y);
+  pushPackedScalar(encoded, gradient.end.x);
+  pushPackedScalar(encoded, gradient.end.y);
+  encoded.push(gradient.colors.length);
+  for (let colorIndex = 0; colorIndex < gradient.colors.length; colorIndex += 1) {
+    pushPackedColor(encoded, gradient.colors[colorIndex]!, table, index);
+  }
+  if (gradient.positions && gradient.positions.length === gradient.colors.length) {
+    encoded.push(1);
+    for (let positionIndex = 0; positionIndex < gradient.positions.length; positionIndex += 1) {
+      pushPackedScalar(encoded, gradient.positions[positionIndex]!);
+    }
+  } else {
+    encoded.push(0);
+  }
+  encoded.push(encodeTileMode(gradient.mode));
+  pushPackedScalar(encoded, gradient.flags ?? 0);
+}
+
+function materializeLinearGradient(gradient: SkiaLinearGradient | undefined): SkiaLinearGradient | undefined {
+  if (!gradient) return undefined;
+  return {
+    ...gradient,
+    start: {
+      x: materializeScalar(gradient.start.x),
+      y: materializeScalar(gradient.start.y),
+    },
+    end: {
+      x: materializeScalar(gradient.end.x),
+      y: materializeScalar(gradient.end.y),
+    },
+    positions: gradient.positions
+      ? gradient.positions.map((value) => materializeScalar(value))
+      : undefined,
+    flags: gradient.flags == null ? undefined : materializeScalar(gradient.flags, 0),
+  };
 }
 
 function isSharedSignalToken(value: unknown): value is SkiaSharedSignalToken {
@@ -305,6 +374,10 @@ function materializeCommandsForFallback(commands: SkiaDrawCommand[]): SkiaDrawCo
     switch (command.type) {
       case "clear":
         return command;
+      case "saveLayer":
+      case "saveLayerLuminanceMask":
+      case "restore":
+        return command;
       case "rect":
         return {
           ...command,
@@ -315,6 +388,7 @@ function materializeCommandsForFallback(commands: SkiaDrawCommand[]): SkiaDrawCo
           strokeWidth: command.strokeWidth == null ? undefined : materializeScalar(command.strokeWidth, 1),
           opacity: command.opacity == null ? undefined : materializeScalar(command.opacity, 1),
           strokeMiter: command.strokeMiter == null ? undefined : materializeScalar(command.strokeMiter, 4),
+          linearGradient: materializeLinearGradient(command.linearGradient),
         };
       case "circle":
         return {
@@ -325,6 +399,7 @@ function materializeCommandsForFallback(commands: SkiaDrawCommand[]): SkiaDrawCo
           strokeWidth: command.strokeWidth == null ? undefined : materializeScalar(command.strokeWidth, 1),
           opacity: command.opacity == null ? undefined : materializeScalar(command.opacity, 1),
           strokeMiter: command.strokeMiter == null ? undefined : materializeScalar(command.strokeMiter, 4),
+          linearGradient: materializeLinearGradient(command.linearGradient),
         };
       case "line":
         return {
@@ -343,6 +418,7 @@ function materializeCommandsForFallback(commands: SkiaDrawCommand[]): SkiaDrawCo
           strokeWidth: command.strokeWidth == null ? undefined : materializeScalar(command.strokeWidth, 1),
           opacity: command.opacity == null ? undefined : materializeScalar(command.opacity, 1),
           strokeMiter: command.strokeMiter == null ? undefined : materializeScalar(command.strokeMiter, 4),
+          linearGradient: materializeLinearGradient(command.linearGradient),
           commands: command.commands.map((pathCommand) => {
             if (pathCommand.type === "moveTo" || pathCommand.type === "lineTo") {
               return {
@@ -380,6 +456,7 @@ function materializeCommandsForFallback(commands: SkiaDrawCommand[]): SkiaDrawCo
           x: materializeScalar(command.x),
           y: materializeScalar(command.y),
           opacity: command.opacity == null ? undefined : materializeScalar(command.opacity, 1),
+          linearGradient: materializeLinearGradient(command.linearGradient),
         };
       case "runtimeShaderRect":
         return {
@@ -471,6 +548,9 @@ function encodePackedCommands(commands: SkiaDrawCommand[]): PackedCommands {
     const command = commands[i]!;
     if (
       command.type !== "clear"
+      && command.type !== "saveLayer"
+      && command.type !== "saveLayerLuminanceMask"
+      && command.type !== "restore"
       && command.type !== "text"
       && command.type !== "runtimeShaderRect"
       && command.type !== "runtimeShaderCircle"
@@ -494,6 +574,15 @@ function encodePackedCommands(commands: SkiaDrawCommand[]): PackedCommands {
         encoded.push(PackedOpcode.Clear);
         pushPackedColor(encoded, command.color, stringTable, stringIndex);
         break;
+      case "saveLayer":
+        encoded.push(PackedOpcode.SaveLayer);
+        break;
+      case "saveLayerLuminanceMask":
+        encoded.push(PackedOpcode.SaveLayerLuminanceMask);
+        break;
+      case "restore":
+        encoded.push(PackedOpcode.Restore);
+        break;
       case "rect":
         encoded.push(PackedOpcode.Rect);
         pushPackedScalar(encoded, command.x);
@@ -508,6 +597,7 @@ function encodePackedCommands(commands: SkiaDrawCommand[]): PackedCommands {
         encoded.push(encodeStrokeCap(command.strokeCap));
         encoded.push(encodeStrokeJoin(command.strokeJoin));
         pushPackedScalar(encoded, command.strokeMiter ?? 4, 4);
+        pushPackedLinearGradient(encoded, command.linearGradient, stringTable, stringIndex);
         break;
       case "circle":
         encoded.push(PackedOpcode.Circle);
@@ -522,6 +612,7 @@ function encodePackedCommands(commands: SkiaDrawCommand[]): PackedCommands {
         encoded.push(encodeStrokeCap(command.strokeCap));
         encoded.push(encodeStrokeJoin(command.strokeJoin));
         pushPackedScalar(encoded, command.strokeMiter ?? 4, 4);
+        pushPackedLinearGradient(encoded, command.linearGradient, stringTable, stringIndex);
         break;
       case "line":
         encoded.push(PackedOpcode.Line);
@@ -552,6 +643,7 @@ function encodePackedCommands(commands: SkiaDrawCommand[]): PackedCommands {
         encoded.push(encodeStrokeCap(command.strokeCap));
         encoded.push(encodeStrokeJoin(command.strokeJoin));
         pushPackedScalar(encoded, command.strokeMiter ?? 4, 4);
+        pushPackedLinearGradient(encoded, command.linearGradient, stringTable, stringIndex);
         encoded.push(command.commands.length);
         for (let cmdIndex = 0; cmdIndex < command.commands.length; cmdIndex += 1) {
           const pathCommand = command.commands[cmdIndex]!;
@@ -749,6 +841,7 @@ function encodePackedCommands(commands: SkiaDrawCommand[]): PackedCommands {
         );
         const textIndex = addPackedString(stringTable, stringIndex, command.text);
         encoded.push(familyIndex, styleIndex, weightIndex, textIndex);
+        pushPackedLinearGradient(encoded, command.linearGradient, stringTable, stringIndex);
         if (command.matrix) {
           encoded.push(1);
           for (let matrixIndex = 0; matrixIndex < 6; matrixIndex += 1) {

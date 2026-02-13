@@ -1,7 +1,18 @@
 export { SkiaView } from "./SkiaView";
 export { createSkiaSurface } from "./createSkiaSurface";
 export type { SkiaSurfaceController } from "./createSkiaSurface";
-export { Canvas, Circle, Group, Paint, Path, Rect, Shader, Text } from "./declarative";
+export {
+  Canvas,
+  Circle,
+  Group,
+  LinearGradient,
+  Mask,
+  Paint,
+  Path,
+  Rect,
+  Shader,
+  Text,
+} from "./declarative";
 export {
   createFont,
   createFontFromStyle,
@@ -37,10 +48,16 @@ export type {
   SkiaDrawLine,
   SkiaDrawPath,
   SkiaDrawRect,
+  SkiaDrawRestore,
   SkiaDrawRuntimeShaderCircle,
   SkiaDrawRuntimeShaderPath,
   SkiaDrawRuntimeShaderRect,
+  SkiaDrawSaveLayer,
+  SkiaDrawSaveLayerLuminanceMask,
   SkiaDrawText,
+  SkiaLinearGradient,
+  SkiaLinearGradientProps,
+  SkiaMaskProps,
   SkiaFont,
   SkiaFontManager,
   SkiaFontStyle,
@@ -56,6 +73,8 @@ export type {
   SkiaPathObject,
   SkiaPathProps,
   SkiaPathSource,
+  SkiaPoint,
+  SkiaPointLike,
   SkiaProgressValue,
   SkiaRectProps,
   SkiaShaderInput,
@@ -64,6 +83,7 @@ export type {
   SkiaShaderSource,
   SkiaStrokeCap,
   SkiaStrokeJoin,
+  SkiaTileMode,
   SkiaTextProps,
   SkiaTypeface,
   SkiaTypefaceFontProvider,

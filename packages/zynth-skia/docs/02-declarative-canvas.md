@@ -26,6 +26,7 @@ Props:
 - scale: `scale`, `scaleX`, `scaleY`
 - rotation: `rotate`
 - pivot: `originX`, `originY`
+- composition: `layer`
 
 ### `Paint`
 
@@ -38,6 +39,29 @@ Props:
 - `strokeCap`, `strokeJoin`, `strokeMiter`
 - `shader`
 
+### `LinearGradient`
+
+Gradient shader node.
+
+Props:
+
+- `start: { x, y } | [x, y]`
+- `end: { x, y } | [x, y]`
+- `colors` (2-stop minimum)
+- `positions?`
+- `mode?: "clamp" | "repeat" | "mirror" | "decal"`
+- `flags?`
+
+### `Mask`
+
+Luminance mask composition node.
+
+Props:
+
+- `mode?: "luminance"`
+- `mask?`
+- `children`
+
 ### Shapes
 
 - `Rect`
@@ -45,6 +69,8 @@ Props:
 - `Path`
 - `Text`
 - `Shader` (as a child of `Paint` or shape nodes)
+- `LinearGradient` (as a child of `Paint` or shape nodes)
+- `Mask`
 
 All shape nodes accept local paint overrides.
 

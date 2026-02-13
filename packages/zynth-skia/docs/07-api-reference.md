@@ -12,6 +12,8 @@
 - `Circle`
 - `Path`
 - `Shader`
+- `LinearGradient`
+- `Mask`
 - `Text`
 
 ### Factories / helpers
@@ -54,16 +56,22 @@
 
 - `SkiaDrawClear`
   - `{ type: "clear", color }`
+- `SkiaDrawSaveLayer`
+  - `{ type: "saveLayer" }`
+- `SkiaDrawSaveLayerLuminanceMask`
+  - `{ type: "saveLayerLuminanceMask" }`
+- `SkiaDrawRestore`
+  - `{ type: "restore" }`
 - `SkiaDrawRect`
-  - `{ type: "rect", x, y, width, height, color, ...paintFields }`
+  - `{ type: "rect", x, y, width, height, color, linearGradient?, ...paintFields }`
 - `SkiaDrawCircle`
-  - `{ type: "circle", cx, cy, r, color, ...paintFields }`
+  - `{ type: "circle", cx, cy, r, color, linearGradient?, ...paintFields }`
 - `SkiaDrawLine`
   - `{ type: "line", x1, y1, x2, y2, color, ...paintFields }`
 - `SkiaDrawPath`
-  - `{ type: "path", commands, color, ...paintFields }`
+  - `{ type: "path", commands, color, linearGradient?, ...paintFields }`
 - `SkiaDrawText`
-  - `{ type: "text", text, x, y, color, fontFamily, fontSize, fontStyle?, fontWeight?, antiAlias?, opacity? }`
+  - `{ type: "text", text, x, y, color, fontFamily, fontSize, fontStyle?, fontWeight?, antiAlias?, opacity?, linearGradient? }`
 - `SkiaDrawRuntimeShaderRect`
   - `{ type: "runtimeShaderRect", x, y, width, height, source, uniforms, antiAlias?, opacity? }`
 
@@ -86,6 +94,8 @@ Shared paint fields:
 - `SkiaCircleProps`
 - `SkiaPathProps`
 - `SkiaTextProps`
+- `SkiaLinearGradientProps`
+- `SkiaMaskProps`
 
 ## Path types
 
@@ -99,6 +109,10 @@ Shared paint fields:
 ## Shader and value types
 
 - `SkiaShaderInput`
+- `SkiaLinearGradient`
+- `SkiaPoint`
+- `SkiaPointLike`
+- `SkiaTileMode`
 - `SkiaShaderProps`
 - `SkiaShaderProgram`
 - `SkiaShaderSource`

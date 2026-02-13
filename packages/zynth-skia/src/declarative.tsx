@@ -24,15 +24,23 @@ import type {
   SkiaCircleProps,
   SkiaColorValue,
   SkiaDrawCommand,
+  SkiaDrawRestore,
+  SkiaDrawSaveLayer,
+  SkiaDrawSaveLayerLuminanceMask,
   SkiaDrawRuntimeShaderCircle,
   SkiaDrawRuntimeShaderPath,
   SkiaDrawRuntimeShaderRect,
   SkiaFont,
   SkiaGroupProps,
+  SkiaLinearGradient,
+  SkiaLinearGradientProps,
+  SkiaMaskProps,
   SkiaPaintProps,
   SkiaPaintStyle,
   SkiaPathCommand,
   SkiaPathProps,
+  SkiaPoint,
+  SkiaPointLike,
   SkiaRectProps,
   SkiaRuntimeEffect,
   SkiaRuntimeUniforms,
@@ -44,7 +52,16 @@ import type {
 
 const SKIA_NODE = Symbol("zynth.skia.node");
 
-type SkiaNodeKind = "group" | "paint" | "rect" | "circle" | "path" | "shader" | "text";
+type SkiaNodeKind =
+  | "group"
+  | "paint"
+  | "rect"
+  | "circle"
+  | "path"
+  | "shader"
+  | "text"
+  | "linearGradient"
+  | "mask";
 
 type SkiaNode<T extends object> = {
   readonly [SKIA_NODE]: true;
@@ -57,6 +74,8 @@ type ShaderNodeProps = {
   uniforms?: SkiaRuntimeUniforms;
 };
 
+type LinearGradientNodeProps = SkiaLinearGradientProps;
+
 type PaintState = {
   color: SkiaColorValue;
   style: SkiaPaintStyle;
@@ -67,6 +86,7 @@ type PaintState = {
   strokeJoin: "miter" | "round" | "bevel";
   strokeMiter: number | SkiaSharedSignalToken;
   shader?: SkiaShaderProgram;
+  linearGradient?: SkiaLinearGradient;
 };
 
 type CompileState = {
@@ -208,6 +228,49 @@ function resolveShaderChild(
   return undefined;
 }
 
+function resolvePointLike(point: SkiaPointLike): SkiaPoint {
+  if (Array.isArray(point)) {
+    return {
+      x: resolveScalar(point[0], 0) as unknown as number,
+      y: resolveScalar(point[1], 0) as unknown as number,
+    };
+  }
+  const pointObject = point as SkiaPoint;
+  return {
+    x: resolveScalar(pointObject.x, 0) as unknown as number,
+    y: resolveScalar(pointObject.y, 0) as unknown as number,
+  };
+}
+
+function resolveLinearGradientChild(
+  value: unknown,
+): SkiaLinearGradient | undefined {
+  const items = toChildArray(value);
+  for (let index = 0; index < items.length; index += 1) {
+    const child = items[index];
+    if (!isNode(child) || child.kind !== "linearGradient") {
+      continue;
+    }
+    const props = child.props as LinearGradientNodeProps;
+    const colors = props.colors;
+    if (!Array.isArray(colors) || colors.length < 2) {
+      throw new Error("Skia LinearGradient requires at least two colors");
+    }
+    if (props.positions && props.positions.length !== colors.length) {
+      throw new Error("Skia LinearGradient positions must match colors length");
+    }
+    return {
+      start: resolvePointLike(props.start),
+      end: resolvePointLike(props.end),
+      colors: colors as [SkiaColorValue, SkiaColorValue, ...SkiaColorValue[]],
+      positions: props.positions,
+      mode: props.mode,
+      flags: props.flags,
+    };
+  }
+  return undefined;
+}
+
 function mergePaint(state: CompileState, props: Partial<SkiaPaintProps>): PaintState {
   const nextOpacityRaw = props.opacity ?? state.paint.opacity;
   const nextOpacity = isSharedSignalToken(nextOpacityRaw)
@@ -224,6 +287,7 @@ function mergePaint(state: CompileState, props: Partial<SkiaPaintProps>): PaintS
     strokeJoin: props.strokeJoin ?? state.paint.strokeJoin,
     strokeMiter: resolveScalar(props.strokeMiter ?? state.paint.strokeMiter, 4),
     shader: props.shader ?? state.paint.shader,
+    linearGradient: state.paint.linearGradient,
   };
 }
 
@@ -283,6 +347,33 @@ function isIdentityTransform(matrix: Matrix2D): boolean {
     && Math.abs(matrix.tx) <= epsilon
     && Math.abs(matrix.ty) <= epsilon
   );
+}
+
+function resolveLinearGradientForPaint(
+  gradient: SkiaLinearGradient | undefined,
+  matrix: Matrix2D,
+): SkiaLinearGradient | undefined {
+  if (!gradient) return undefined;
+  const identityTransform = isIdentityTransform(matrix);
+  const hasTokenizedPoint = (
+    isSharedSignalToken(gradient.start.x)
+    || isSharedSignalToken(gradient.start.y)
+    || isSharedSignalToken(gradient.end.x)
+    || isSharedSignalToken(gradient.end.y)
+  );
+  if (!identityTransform && hasTokenizedPoint) {
+    throw new Error("Skia LinearGradient tokenized points require an identity Group transform");
+  }
+  if (identityTransform) {
+    return gradient;
+  }
+  const start = applyMatrixPoint(matrix, gradient.start.x, gradient.start.y);
+  const end = applyMatrixPoint(matrix, gradient.end.x, gradient.end.y);
+  return {
+    ...gradient,
+    start,
+    end,
+  };
 }
 
 function boundsFromPathCommands(commands: readonly SkiaPathCommand[]) {
@@ -375,6 +466,18 @@ function pushPaintedShape(
   out.push(command);
 }
 
+function pushSaveLayer(out: SkiaDrawCommand[]): void {
+  out.push({ type: "saveLayer" } satisfies SkiaDrawSaveLayer);
+}
+
+function pushSaveLayerLuminanceMask(out: SkiaDrawCommand[]): void {
+  out.push({ type: "saveLayerLuminanceMask" } satisfies SkiaDrawSaveLayerLuminanceMask);
+}
+
+function pushRestore(out: SkiaDrawCommand[]): void {
+  out.push({ type: "restore" } satisfies SkiaDrawRestore);
+}
+
 function compileShapeRect(
   props: SkiaRectProps,
   state: CompileState,
@@ -391,8 +494,16 @@ function compileShapeRect(
   const height = readNumber(heightScalar);
   const paint = mergePaint(state, props);
   const childShader = resolveShaderChild(props.children);
+  const childLinearGradient = resolveLinearGradientChild(props.children);
   if (childShader) {
     paint.shader = childShader;
+    paint.linearGradient = undefined;
+  } else if (childLinearGradient) {
+    paint.linearGradient = childLinearGradient;
+    paint.shader = undefined;
+  }
+  if (paint.shader) {
+    paint.linearGradient = undefined;
   }
   const runtimeShader = paint.shader;
 
@@ -451,6 +562,7 @@ function compileShapeRect(
       strokeCap: paint.strokeCap,
       strokeJoin: paint.strokeJoin,
       strokeMiter: paint.strokeMiter as unknown as number,
+      linearGradient: resolveLinearGradientForPaint(paint.linearGradient, state.transform),
     });
     return;
   }
@@ -473,6 +585,7 @@ function compileShapeRect(
     strokeCap: paint.strokeCap,
     strokeJoin: paint.strokeJoin,
     strokeMiter: paint.strokeMiter as unknown as number,
+    linearGradient: resolveLinearGradientForPaint(paint.linearGradient, state.transform),
   });
 }
 
@@ -490,8 +603,16 @@ function compileShapeCircle(
   const r = readNumber(rScalar);
   const paint = mergePaint(state, props);
   const childShader = resolveShaderChild(props.children);
+  const childLinearGradient = resolveLinearGradientChild(props.children);
   if (childShader) {
     paint.shader = childShader;
+    paint.linearGradient = undefined;
+  } else if (childLinearGradient) {
+    paint.linearGradient = childLinearGradient;
+    paint.shader = undefined;
+  }
+  if (paint.shader) {
+    paint.linearGradient = undefined;
   }
   const runtimeShader = paint.shader;
 
@@ -604,6 +725,7 @@ function compileShapeCircle(
       strokeCap: paint.strokeCap,
       strokeJoin: paint.strokeJoin,
       strokeMiter: paint.strokeMiter as unknown as number,
+      linearGradient: resolveLinearGradientForPaint(paint.linearGradient, state.transform),
     });
     return;
   }
@@ -634,6 +756,7 @@ function compileShapeCircle(
     strokeCap: paint.strokeCap,
     strokeJoin: paint.strokeJoin,
     strokeMiter: paint.strokeMiter as unknown as number,
+    linearGradient: resolveLinearGradientForPaint(paint.linearGradient, state.transform),
   });
 }
 
@@ -651,8 +774,16 @@ function compileShapePath(
   }
   const paint = mergePaint(state, props);
   const childShader = resolveShaderChild(props.children);
+  const childLinearGradient = resolveLinearGradientChild(props.children);
   if (childShader) {
     paint.shader = childShader;
+    paint.linearGradient = undefined;
+  } else if (childLinearGradient) {
+    paint.linearGradient = childLinearGradient;
+    paint.shader = undefined;
+  }
+  if (paint.shader) {
+    paint.linearGradient = undefined;
   }
   if (isRuntimeShaderProgram(paint.shader)) {
     if (paint.style === "stroke") {
@@ -703,6 +834,7 @@ function compileShapePath(
     strokeCap: paint.strokeCap,
     strokeJoin: paint.strokeJoin,
     strokeMiter: paint.strokeMiter as unknown as number,
+    linearGradient: resolveLinearGradientForPaint(paint.linearGradient, state.transform),
   });
 }
 
@@ -717,6 +849,18 @@ function compileShapeText(
   const x = readNumber(xScalar);
   const y = readNumber(yScalar);
   const paint = mergePaint(state, props);
+  const childShader = resolveShaderChild(props.children);
+  const childLinearGradient = resolveLinearGradientChild(props.children);
+  if (childShader) {
+    paint.shader = childShader;
+    paint.linearGradient = undefined;
+  } else if (childLinearGradient) {
+    paint.linearGradient = childLinearGradient;
+    paint.shader = undefined;
+  }
+  if (paint.shader) {
+    paint.linearGradient = undefined;
+  }
   const text = typeof props.text === "string" ? props.text : String(props.text ?? "");
   const resolvedFont = typeof props.font === "function"
     ? (props.font as Accessor<unknown>)()
@@ -764,6 +908,7 @@ function compileShapeText(
         state.transform.tx,
         state.transform.ty,
       ] as const,
+    linearGradient: resolveLinearGradientForPaint(paint.linearGradient, state.transform),
   });
 }
 
@@ -798,24 +943,34 @@ function compileNode(
       transform: resolveGroupTransform(state.transform, props),
       paint: state.paint,
     };
+    if (props.layer) {
+      pushSaveLayer(out);
+    }
     const items = toChildArray(props.children);
     for (let index = 0; index < items.length; index += 1) {
       compileNode(items[index], groupState, time, out);
+    }
+    if (props.layer) {
+      pushRestore(out);
     }
     return;
   }
 
   if (value.kind === "paint") {
     const props = value.props as SkiaPaintProps;
-    const shader = resolveShaderChild(props.children) ?? props.shader;
+    const childLinearGradient = resolveLinearGradientChild(props.children);
+    const shader = childLinearGradient ? undefined : (resolveShaderChild(props.children) ?? props.shader);
     const paintState: CompileState = {
       transform: state.transform,
-      paint: mergePaint(state, { ...props, shader }),
+      paint: {
+        ...mergePaint(state, { ...props, shader }),
+        linearGradient: childLinearGradient ?? (shader ? undefined : state.paint.linearGradient),
+      },
     };
     const items = toChildArray(props.children);
     for (let index = 0; index < items.length; index += 1) {
       const item = items[index];
-      if (isNode(item) && item.kind === "shader") continue;
+      if (isNode(item) && (item.kind === "shader" || item.kind === "linearGradient")) continue;
       compileNode(item, paintState, time, out);
     }
     return;
@@ -832,6 +987,38 @@ function compileNode(
   }
 
   if (value.kind === "shader") {
+    return;
+  }
+
+  if (value.kind === "linearGradient") {
+    return;
+  }
+
+  if (value.kind === "mask") {
+    const props = value.props as SkiaMaskProps;
+    if ((props.mode ?? "luminance") !== "luminance") {
+      throw new Error("Skia Mask currently supports mode=\"luminance\" only");
+    }
+
+    const rawContentItems = toChildArray(props.children);
+    const maskItems = props.mask != null
+      ? toChildArray(props.mask)
+      : (rawContentItems.length > 0 ? [rawContentItems[0]] : []);
+    const derivedContentItems = rawContentItems.slice(1);
+    const contentItems = props.mask != null
+      ? rawContentItems
+      : (derivedContentItems.length > 0 ? derivedContentItems : rawContentItems);
+
+    pushSaveLayer(out);
+    for (let index = 0; index < contentItems.length; index += 1) {
+      compileNode(contentItems[index], state, time, out);
+    }
+    pushSaveLayerLuminanceMask(out);
+    for (let index = 0; index < maskItems.length; index += 1) {
+      compileNode(maskItems[index], state, time, out);
+    }
+    pushRestore(out);
+    pushRestore(out);
     return;
   }
 
@@ -910,6 +1097,7 @@ export function Group(props: SkiaGroupProps): JSX.Element {
     rotate: props.rotate,
     originX: props.originX,
     originY: props.originY,
+    layer: props.layer,
     children: resolved,
   }) as unknown as JSX.Element;
 }
@@ -966,5 +1154,26 @@ export function Shader(props: SkiaShaderProps): JSX.Element {
   return createNode("shader", {
     source: props.source,
     uniforms: props.uniforms,
+  }) as unknown as JSX.Element;
+}
+
+export function LinearGradient(props: SkiaLinearGradientProps): JSX.Element {
+  return createNode("linearGradient", {
+    start: props.start,
+    end: props.end,
+    colors: props.colors,
+    positions: props.positions,
+    mode: props.mode,
+    flags: props.flags,
+  }) as unknown as JSX.Element;
+}
+
+export function Mask(props: SkiaMaskProps): JSX.Element {
+  const resolvedChildren = children(() => props.children);
+  const resolvedMask = children(() => props.mask);
+  return createNode("mask", {
+    mode: props.mode ?? "luminance",
+    mask: props.mask == null ? undefined : resolvedMask,
+    children: resolvedChildren,
   }) as unknown as JSX.Element;
 }

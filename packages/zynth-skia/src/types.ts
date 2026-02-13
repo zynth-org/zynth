@@ -2,6 +2,23 @@ import type { Accessor, JSX, Setter } from "solid-js";
 import type { HostNode, Style } from "@zynth/core";
 
 export type SkiaColorValue = string;
+export type SkiaTileMode = "clamp" | "repeat" | "mirror" | "decal";
+
+export type SkiaPoint = {
+  x: number;
+  y: number;
+};
+
+export type SkiaPointLike = SkiaPoint | readonly [number, number];
+
+export type SkiaLinearGradient = {
+  start: SkiaPoint;
+  end: SkiaPoint;
+  colors: readonly [SkiaColorValue, SkiaColorValue, ...SkiaColorValue[]];
+  positions?: readonly number[];
+  mode?: SkiaTileMode;
+  flags?: number;
+};
 
 export type SkiaDrawClear = {
   type: "clear";
@@ -22,6 +39,7 @@ export type SkiaDrawRect = {
   strokeCap?: SkiaStrokeCap;
   strokeJoin?: SkiaStrokeJoin;
   strokeMiter?: number;
+  linearGradient?: SkiaLinearGradient;
 };
 
 export type SkiaDrawCircle = {
@@ -37,6 +55,7 @@ export type SkiaDrawCircle = {
   strokeCap?: SkiaStrokeCap;
   strokeJoin?: SkiaStrokeJoin;
   strokeMiter?: number;
+  linearGradient?: SkiaLinearGradient;
 };
 
 export type SkiaDrawLine = {
@@ -108,6 +127,7 @@ export type SkiaDrawText = {
   antiAlias?: boolean;
   opacity?: number;
   matrix?: readonly [number, number, number, number, number, number];
+  linearGradient?: SkiaLinearGradient;
 };
 
 export type SkiaPathCommand =
@@ -136,6 +156,19 @@ export type SkiaDrawPath = {
   strokeCap?: SkiaStrokeCap;
   strokeJoin?: SkiaStrokeJoin;
   strokeMiter?: number;
+  linearGradient?: SkiaLinearGradient;
+};
+
+export type SkiaDrawSaveLayer = {
+  type: "saveLayer";
+};
+
+export type SkiaDrawSaveLayerLuminanceMask = {
+  type: "saveLayerLuminanceMask";
+};
+
+export type SkiaDrawRestore = {
+  type: "restore";
 };
 
 export type SkiaSharedSignalToken = {
@@ -190,6 +223,9 @@ export type SkiaDrawRuntimeShaderPath = {
 
 export type SkiaDrawCommand =
   | SkiaDrawClear
+  | SkiaDrawSaveLayer
+  | SkiaDrawSaveLayerLuminanceMask
+  | SkiaDrawRestore
   | SkiaDrawRect
   | SkiaDrawCircle
   | SkiaDrawLine
@@ -259,6 +295,21 @@ export type SkiaShaderProps = {
   uniforms?: SkiaRuntimeUniforms;
 };
 
+export type SkiaLinearGradientProps = {
+  start: SkiaPointLike;
+  end: SkiaPointLike;
+  colors: readonly [SkiaColorValue, SkiaColorValue, ...SkiaColorValue[]];
+  positions?: readonly number[];
+  mode?: SkiaTileMode;
+  flags?: number;
+};
+
+export type SkiaMaskProps = {
+  mode?: "luminance";
+  mask?: JSX.Element;
+  children?: JSX.Element;
+};
+
 export type SkiaPaintStyle = "fill" | "stroke";
 export type SkiaStrokeCap = "butt" | "round" | "square";
 export type SkiaStrokeJoin = "miter" | "round" | "bevel";
@@ -298,6 +349,7 @@ export type SkiaGroupProps = {
   rotate?: number;
   originX?: number;
   originY?: number;
+  layer?: boolean;
   children?: JSX.Element;
 };
 

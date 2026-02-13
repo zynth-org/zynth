@@ -22,6 +22,8 @@
 #import "include/core/SkString.h"
 #import "include/core/SkSurface.h"
 #import "include/core/SkTypeface.h"
+#import "include/effects/SkGradientShader.h"
+#import "include/effects/SkLumaColorFilter.h"
 #import "include/effects/SkRuntimeEffect.h"
 #if __has_include("include/ports/SkFontMgr_mac_ct.h")
 #import "include/ports/SkFontMgr_mac_ct.h"
@@ -39,6 +41,9 @@ enum PackedOpcode {
   PackedOpcodeRuntimeShaderCircle = 7,
   PackedOpcodeRuntimeShaderPath = 8,
   PackedOpcodeText = 9,
+  PackedOpcodeSaveLayer = 10,
+  PackedOpcodeSaveLayerLuminanceMask = 11,
+  PackedOpcodeRestore = 12,
 };
 
 enum PackedColorType {
@@ -69,6 +74,13 @@ enum PackedPathVerb {
   PackedPathVerbQuadTo = 2,
   PackedPathVerbCubicTo = 3,
   PackedPathVerbClose = 4,
+};
+
+enum PackedTileMode {
+  PackedTileModeClamp = 0,
+  PackedTileModeRepeat = 1,
+  PackedTileModeMirror = 2,
+  PackedTileModeDecal = 3,
 };
 
 constexpr int PackedStreamMagic = 900719;
@@ -396,6 +408,71 @@ static void configurePaint(SkPaint &paint,
   paint.setStrokeMiter(strokeMiter);
 }
 
+static SkTileMode decodeTileMode(int mode) {
+  switch (mode) {
+    case PackedTileModeRepeat:
+      return SkTileMode::kRepeat;
+    case PackedTileModeMirror:
+      return SkTileMode::kMirror;
+    case PackedTileModeDecal:
+      return SkTileMode::kDecal;
+    case PackedTileModeClamp:
+    default:
+      return SkTileMode::kClamp;
+  }
+}
+
+static bool applyPackedLinearGradient(const CommandBuffer &buffer,
+                                      const std::vector<double> &ops,
+                                      size_t &index,
+                                      bool taggedScalars,
+                                      SkPaint &paint) {
+  if (index >= ops.size()) return false;
+  const bool hasGradient = static_cast<int>(ops[index++]) != 0;
+  if (!hasGradient) return true;
+
+  const float startX = readPackedScalar(ops, index, taggedScalars);
+  const float startY = readPackedScalar(ops, index, taggedScalars);
+  const float endX = readPackedScalar(ops, index, taggedScalars);
+  const float endY = readPackedScalar(ops, index, taggedScalars);
+  if (index >= ops.size()) return false;
+  const int colorCount = static_cast<int>(ops[index++]);
+  if (colorCount < 2) return false;
+
+  std::vector<SkColor> colors;
+  colors.reserve(static_cast<size_t>(colorCount));
+  for (int colorIndex = 0; colorIndex < colorCount; colorIndex += 1) {
+    colors.push_back(readPackedColor(buffer, ops, index));
+  }
+
+  if (index >= ops.size()) return false;
+  const bool hasPositions = static_cast<int>(ops[index++]) != 0;
+  std::vector<SkScalar> positions;
+  if (hasPositions) {
+    positions.reserve(static_cast<size_t>(colorCount));
+    for (int posIndex = 0; posIndex < colorCount; posIndex += 1) {
+      positions.push_back(readPackedScalar(ops, index, taggedScalars));
+    }
+  }
+
+  if (index >= ops.size()) return false;
+  const int tileMode = static_cast<int>(ops[index++]);
+  (void)readPackedScalar(ops, index, taggedScalars, 0.0f);
+
+  SkPoint points[2] = {SkPoint::Make(startX, startY), SkPoint::Make(endX, endY)};
+  const SkScalar *positionPtr = hasPositions ? positions.data() : nullptr;
+  auto gradient = SkGradientShader::MakeLinear(
+      points,
+      colors.data(),
+      positionPtr,
+      colorCount,
+      decodeTileMode(tileMode));
+  if (gradient) {
+    paint.setShader(gradient);
+  }
+  return true;
+}
+
 static int normalizeFontWeight(NSString *weight) {
   if (weight == nil) return 400;
   NSString *trimmed = [weight stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
@@ -474,6 +551,24 @@ static bool renderSurfaceState(const CommandBuffer &buffer,
       continue;
     }
 
+    if (opcode == PackedOpcodeSaveLayer) {
+      canvas->saveLayer(nullptr, nullptr);
+      continue;
+    }
+
+    if (opcode == PackedOpcodeSaveLayerLuminanceMask) {
+      SkPaint layerPaint;
+      layerPaint.setBlendMode(SkBlendMode::kDstIn);
+      layerPaint.setColorFilter(SkLumaColorFilter::Make());
+      canvas->saveLayer(nullptr, &layerPaint);
+      continue;
+    }
+
+    if (opcode == PackedOpcodeRestore) {
+      canvas->restore();
+      continue;
+    }
+
     if (opcode == PackedOpcodeRect) {
       float x = readPackedScalar(buffer.ops, i, taggedScalars);
       float y = readPackedScalar(buffer.ops, i, taggedScalars);
@@ -501,6 +596,7 @@ static bool renderSurfaceState(const CommandBuffer &buffer,
           strokeCap,
           strokeJoin,
           strokeMiter);
+      if (!applyPackedLinearGradient(buffer, buffer.ops, i, taggedScalars, paint)) break;
       canvas->drawRect(SkRect::MakeXYWH(x, y, w, h), paint);
       continue;
     }
@@ -531,6 +627,7 @@ static bool renderSurfaceState(const CommandBuffer &buffer,
           strokeCap,
           strokeJoin,
           strokeMiter);
+      if (!applyPackedLinearGradient(buffer, buffer.ops, i, taggedScalars, paint)) break;
       canvas->drawCircle(cx, cy, r, paint);
       continue;
     }
@@ -630,6 +727,7 @@ static bool renderSurfaceState(const CommandBuffer &buffer,
           strokeCap,
           strokeJoin,
           strokeMiter);
+      if (!applyPackedLinearGradient(buffer, buffer.ops, i, taggedScalars, paint)) break;
       canvas->drawPath(path, paint);
       continue;
     }
@@ -639,14 +737,13 @@ static bool renderSurfaceState(const CommandBuffer &buffer,
       float y = readPackedScalar(buffer.ops, i, taggedScalars);
       SkColor color = readPackedColor(buffer, buffer.ops, i);
       float fontSize = readPackedScalar(buffer.ops, i, taggedScalars, 14.0f);
-      if (i + 5 >= buffer.ops.size()) break;
+      if (i + 4 >= buffer.ops.size()) break;
       bool antiAlias = static_cast<int>(buffer.ops[i++]) != 0;
       float opacity = readPackedScalar(buffer.ops, i, taggedScalars, 1.0f);
       int familyIndex = static_cast<int>(buffer.ops[i++]);
       int styleIndex = static_cast<int>(buffer.ops[i++]);
       int weightIndex = static_cast<int>(buffer.ops[i++]);
       int textIndex = static_cast<int>(buffer.ops[i++]);
-      bool hasMatrix = static_cast<int>(buffer.ops[i++]) != 0;
 
       const std::string *familyPtr = readPackedString(buffer, familyIndex);
       const std::string *stylePtr = readPackedString(buffer, styleIndex);
@@ -668,19 +765,6 @@ static bool renderSurfaceState(const CommandBuffer &buffer,
 
       sk_sp<SkTypeface> typeface = resolveTypeface(familyName, fontStyle, fontWeight);
 
-      if (hasMatrix) {
-        if (i + 5 >= buffer.ops.size()) break;
-        const float a = static_cast<float>(buffer.ops[i++]);
-        const float b = static_cast<float>(buffer.ops[i++]);
-        const float c = static_cast<float>(buffer.ops[i++]);
-        const float d = static_cast<float>(buffer.ops[i++]);
-        const float tx = static_cast<float>(buffer.ops[i++]);
-        const float ty = static_cast<float>(buffer.ops[i++]);
-        SkMatrix matrix = SkMatrix::MakeAll(a, c, tx, b, d, ty, 0, 0, 1);
-        canvas->save();
-        canvas->concat(matrix);
-      }
-
       SkFont font;
       font.setSize(std::max(0.0f, fontSize));
       if (typeface) {
@@ -693,6 +777,21 @@ static bool renderSurfaceState(const CommandBuffer &buffer,
       paint.setAlphaf(std::max(0.0f, std::min(1.0f, opacity)));
       paint.setAntiAlias(antiAlias);
       paint.setStyle(SkPaint::kFill_Style);
+      if (!applyPackedLinearGradient(buffer, buffer.ops, i, taggedScalars, paint)) break;
+      if (i >= buffer.ops.size()) break;
+      bool hasMatrix = static_cast<int>(buffer.ops[i++]) != 0;
+      if (hasMatrix) {
+        if (i + 5 >= buffer.ops.size()) break;
+        const float a = static_cast<float>(buffer.ops[i++]);
+        const float b = static_cast<float>(buffer.ops[i++]);
+        const float c = static_cast<float>(buffer.ops[i++]);
+        const float d = static_cast<float>(buffer.ops[i++]);
+        const float tx = static_cast<float>(buffer.ops[i++]);
+        const float ty = static_cast<float>(buffer.ops[i++]);
+        SkMatrix matrix = SkMatrix::MakeAll(a, c, tx, b, d, ty, 0, 0, 1);
+        canvas->save();
+        canvas->concat(matrix);
+      }
       canvas->drawString(SkString(textPtr->c_str()), x, y, font, paint);
       if (hasMatrix) {
         canvas->restore();
@@ -957,6 +1056,53 @@ static void pushColor(std::vector<double> &ops,
   ops.push_back(strIndex);
 }
 
+static void encodeLinearGradient(NSDictionary *command,
+                                 std::vector<double> &outOps,
+                                 std::vector<std::string> &outStrings,
+                                 std::unordered_map<std::string, int> &index) {
+  NSDictionary *gradient = command[@"linearGradient"];
+  if (![gradient isKindOfClass:[NSDictionary class]]) {
+    outOps.push_back(0.0);
+    return;
+  }
+  outOps.push_back(1.0);
+
+  NSDictionary *start = [gradient[@"start"] isKindOfClass:[NSDictionary class]] ? gradient[@"start"] : @{};
+  NSDictionary *end = [gradient[@"end"] isKindOfClass:[NSDictionary class]] ? gradient[@"end"] : @{};
+  outOps.push_back([start[@"x"] doubleValue]);
+  outOps.push_back([start[@"y"] doubleValue]);
+  outOps.push_back([end[@"x"] doubleValue]);
+  outOps.push_back([end[@"y"] doubleValue]);
+
+  NSArray *colors = [gradient[@"colors"] isKindOfClass:[NSArray class]] ? gradient[@"colors"] : @[];
+  outOps.push_back(static_cast<double>(colors.count));
+  for (id color in colors) {
+    pushColor(outOps, outStrings, index, [color isKindOfClass:[NSString class]] ? color : @"");
+  }
+
+  NSArray *positions = [gradient[@"positions"] isKindOfClass:[NSArray class]] ? gradient[@"positions"] : nil;
+  if (positions != nil && positions.count == colors.count) {
+    outOps.push_back(1.0);
+    for (id value in positions) {
+      outOps.push_back([value doubleValue]);
+    }
+  } else {
+    outOps.push_back(0.0);
+  }
+
+  NSString *mode = [gradient[@"mode"] isKindOfClass:[NSString class]] ? gradient[@"mode"] : @"clamp";
+  int tileMode = PackedTileModeClamp;
+  if ([mode isEqualToString:@"repeat"]) {
+    tileMode = PackedTileModeRepeat;
+  } else if ([mode isEqualToString:@"mirror"]) {
+    tileMode = PackedTileModeMirror;
+  } else if ([mode isEqualToString:@"decal"]) {
+    tileMode = PackedTileModeDecal;
+  }
+  outOps.push_back(tileMode);
+  outOps.push_back(gradient[@"flags"] ? [gradient[@"flags"] doubleValue] : 0.0);
+}
+
 static bool encodeCommands(NSArray<NSDictionary *> *commands,
                            std::vector<double> &outOps,
                            std::vector<std::string> &outStrings) {
@@ -970,6 +1116,21 @@ static bool encodeCommands(NSArray<NSDictionary *> *commands,
     if ([type isEqualToString:@"clear"]) {
       outOps.push_back(PackedOpcodeClear);
       pushColor(outOps, outStrings, index, command[@"color"]);
+      continue;
+    }
+
+    if ([type isEqualToString:@"saveLayer"]) {
+      outOps.push_back(PackedOpcodeSaveLayer);
+      continue;
+    }
+
+    if ([type isEqualToString:@"saveLayerLuminanceMask"]) {
+      outOps.push_back(PackedOpcodeSaveLayerLuminanceMask);
+      continue;
+    }
+
+    if ([type isEqualToString:@"restore"]) {
+      outOps.push_back(PackedOpcodeRestore);
       continue;
     }
 
@@ -1002,6 +1163,7 @@ static bool encodeCommands(NSArray<NSDictionary *> *commands,
         outOps.push_back(PackedStrokeJoinMiter);
       }
       outOps.push_back(command[@"strokeMiter"] ? [command[@"strokeMiter"] doubleValue] : 4.0);
+      encodeLinearGradient(command, outOps, outStrings, index);
       continue;
     }
 
@@ -1033,6 +1195,7 @@ static bool encodeCommands(NSArray<NSDictionary *> *commands,
         outOps.push_back(PackedStrokeJoinMiter);
       }
       outOps.push_back(command[@"strokeMiter"] ? [command[@"strokeMiter"] doubleValue] : 4.0);
+      encodeLinearGradient(command, outOps, outStrings, index);
       continue;
     }
 
@@ -1096,6 +1259,7 @@ static bool encodeCommands(NSArray<NSDictionary *> *commands,
         outOps.push_back(PackedStrokeJoinMiter);
       }
       outOps.push_back(command[@"strokeMiter"] ? [command[@"strokeMiter"] doubleValue] : 4.0);
+      encodeLinearGradient(command, outOps, outStrings, index);
       outOps.push_back(static_cast<double>(pathCommands.count));
 
       for (NSDictionary *pathCommand in pathCommands) {
@@ -1164,6 +1328,7 @@ static bool encodeCommands(NSArray<NSDictionary *> *commands,
       outOps.push_back(addString(outStrings, index, fontStyle));
       outOps.push_back(addString(outStrings, index, fontWeight));
       outOps.push_back(addString(outStrings, index, text));
+      encodeLinearGradient(command, outOps, outStrings, index);
       NSArray *matrix = command[@"matrix"];
       if ([matrix isKindOfClass:[NSArray class]] && matrix.count == 6) {
         outOps.push_back(1.0);
