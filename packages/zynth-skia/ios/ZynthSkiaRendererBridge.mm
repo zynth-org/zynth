@@ -77,7 +77,6 @@ constexpr int PackedScalarLiteral = 0;
 constexpr int PackedScalarSharedSignal = 1;
 constexpr int PackedScalarInterpolation = 2;
 constexpr int ExtrapolateClamp = 0;
-constexpr int ExtrapolateExtend = 1;
 constexpr int ExtrapolateIdentity = 2;
 
 struct CommandBuffer {

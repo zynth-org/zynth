@@ -75,7 +75,6 @@ constexpr int kPackedScalarLiteral = 0;
 constexpr int kPackedScalarSharedSignal = 1;
 constexpr int kPackedScalarInterpolation = 2;
 constexpr int kExtrapolateClamp = 0;
-constexpr int kExtrapolateExtend = 1;
 constexpr int kExtrapolateIdentity = 2;
 
 JavaVM *gVm = nullptr;
