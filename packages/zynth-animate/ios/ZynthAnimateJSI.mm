@@ -46,6 +46,12 @@ struct SharedAnimation {
   double restDisplacement = 0.001;
   bool overshootClamping = false;
   double direction = 0.0;
+  int callbackId = 0;
+};
+
+struct SharedAnimationCompletion {
+  int callbackId = 0;
+  bool finished = false;
 };
 
 struct StyleValueRef {
@@ -112,6 +118,8 @@ static double parseAngleString(const std::string &value) {
   std::atomic<int> _nextStyleMapperId;
   std::unordered_map<int, SharedAnimation> _sharedAnimations;
   std::mutex _sharedAnimationsMutex;
+  std::vector<SharedAnimationCompletion> _sharedAnimationCompletions;
+  std::mutex _sharedAnimationCompletionsMutex;
   std::unordered_map<int, StyleMapper> _styleMappers;
   std::mutex _styleMappersMutex;
   void *_hostKey;
@@ -126,6 +134,7 @@ static double parseAngleString(const std::string &value) {
 - (void)stopDisplayLinkIfNeeded;
 - (double)sharedSignalValueForId:(int)signalId;
 - (void)setSharedSignalValue:(int)signalId value:(double)value;
+- (void)pushSharedAnimationCompletion:(int)callbackId finished:(BOOL)finished;
 - (StyleMapper)buildStyleMapper:(Runtime &)rt value:(const Value &)value nodeId:(int)nodeId;
 
 @end
@@ -235,6 +244,15 @@ static void onSharedSignalChanged(void *state, int signalId) {
   if ([worklets setSharedSignalValue:signalId value:value]) {
     [self markNeedsStyleUpdate];
   }
+}
+
+- (void)pushSharedAnimationCompletion:(int)callbackId finished:(BOOL)finished {
+  if (callbackId <= 0) return;
+  std::lock_guard<std::mutex> lock(_sharedAnimationCompletionsMutex);
+  SharedAnimationCompletion completion;
+  completion.callbackId = callbackId;
+  completion.finished = finished;
+  _sharedAnimationCompletions.push_back(completion);
 }
 
 - (StyleValueRef)resolveStyleValue:(Runtime &)rt value:(const Value &)value {
@@ -555,7 +573,13 @@ static void onSharedSignalChanged(void *state, int signalId) {
       }
     }
     for (int id : finished) {
-      _sharedAnimations.erase(id);
+      auto it = _sharedAnimations.find(id);
+      if (it != _sharedAnimations.end()) {
+        if (it->second.callbackId > 0) {
+          [self pushSharedAnimationCompletion:it->second.callbackId finished:YES];
+        }
+        _sharedAnimations.erase(it);
+      }
     }
   }
   [self applyStyleMappers];
@@ -710,6 +734,9 @@ static void ZynthInstallAnimateBridge(ZynthHermesRuntimeHost *host, Runtime &rt)
         anim.delay = config.hasProperty(rt, "delay")
                          ? config.getProperty(rt, "delay").asNumber()
                          : 0.0;
+        anim.callbackId = config.hasProperty(rt, "callbackId")
+                              ? static_cast<int>(config.getProperty(rt, "callbackId").asNumber())
+                              : 0;
         anim.direction = anim.toValue - anim.fromValue;
         if (type == "spring") {
           anim.kind = SharedAnimation::Kind::Spring;
@@ -741,6 +768,11 @@ static void ZynthInstallAnimateBridge(ZynthHermesRuntimeHost *host, Runtime &rt)
         }
         {
           std::lock_guard<std::mutex> lock(strongAnimate->_sharedAnimationsMutex);
+          auto existing = strongAnimate->_sharedAnimations.find(signalId);
+          if (existing != strongAnimate->_sharedAnimations.end() &&
+              existing->second.callbackId > 0) {
+            [strongAnimate pushSharedAnimationCompletion:existing->second.callbackId finished:NO];
+          }
           strongAnimate->_sharedAnimations[signalId] = anim;
         }
         [strongAnimate ensureDisplayLink];
@@ -757,10 +789,39 @@ static void ZynthInstallAnimateBridge(ZynthHermesRuntimeHost *host, Runtime &rt)
         int signalId = static_cast<int>(args[0].asNumber());
         {
           std::lock_guard<std::mutex> lock(strongAnimate->_sharedAnimationsMutex);
-          strongAnimate->_sharedAnimations.erase(signalId);
+          auto existing = strongAnimate->_sharedAnimations.find(signalId);
+          if (existing != strongAnimate->_sharedAnimations.end()) {
+            if (existing->second.callbackId > 0) {
+              [strongAnimate pushSharedAnimationCompletion:existing->second.callbackId finished:NO];
+            }
+            strongAnimate->_sharedAnimations.erase(existing);
+          }
         }
         [strongAnimate stopDisplayLinkIfNeeded];
         return Value::undefined();
+      });
+
+  auto consumeAnimationCompletions = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "consumeAnimationCompletions"), 0,
+      [weakAnimate](Runtime &rt, const Value &, const Value *, size_t) -> Value {
+        ZynthAnimateJSI *strongAnimate = weakAnimate;
+        if (!strongAnimate) {
+          return Array(rt, 0);
+        }
+        std::vector<SharedAnimationCompletion> completions;
+        {
+          std::lock_guard<std::mutex> lock(strongAnimate->_sharedAnimationCompletionsMutex);
+          completions.swap(strongAnimate->_sharedAnimationCompletions);
+        }
+        Array result(rt, completions.size());
+        for (size_t index = 0; index < completions.size(); index++) {
+          const auto &completion = completions[index];
+          Object entry(rt);
+          entry.setProperty(rt, "callbackId", Value(static_cast<double>(completion.callbackId)));
+          entry.setProperty(rt, "finished", Value(completion.finished));
+          result.setValueAtIndex(rt, index, entry);
+        }
+        return result;
       });
 
   auto createStyleMapper = Function::createFromHostFunction(
@@ -826,6 +887,7 @@ static void ZynthInstallAnimateBridge(ZynthHermesRuntimeHost *host, Runtime &rt)
   animateJSIObj.setProperty(rt, "setSharedValue", setSharedValue);
   animateJSIObj.setProperty(rt, "animateSharedValue", animateSharedValue);
   animateJSIObj.setProperty(rt, "cancelSharedValue", cancelSharedValue);
+  animateJSIObj.setProperty(rt, "consumeAnimationCompletions", consumeAnimationCompletions);
   animateJSIObj.setProperty(rt, "createStyleMapper", createStyleMapper);
   animateJSIObj.setProperty(rt, "updateStyleMapper", updateStyleMapper);
   animateJSIObj.setProperty(rt, "removeStyleMapper", removeStyleMapper);

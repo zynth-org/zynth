@@ -29,6 +29,7 @@ export interface AnimationHostBridge {
   setSharedValue: (id: number, value: number) => boolean;
   animateSharedValue: (id: number, config: Record<string, unknown>) => boolean;
   cancelSharedValue: (id: number) => boolean;
+  consumeAnimationCompletions: () => Array<{ callbackId: number; finished: boolean }>;
   createStyleMapper: (
     nodeId: number,
     style: NativeStyleMapperConfig
@@ -92,6 +93,7 @@ type NativeAnimateJSI = {
   setSharedValue: (id: number, value: number) => void;
   animateSharedValue: (id: number, config: Record<string, unknown>) => void;
   cancelSharedValue: (id: number) => void;
+  consumeAnimationCompletions: () => Array<{ callbackId: number; finished: boolean }>;
   createStyleMapper: (nodeId: number, style: NativeStyleMapperConfig) => number;
   updateStyleMapper: (mapperId: number, style: NativeStyleMapperConfig) => void;
   removeStyleMapper: (mapperId: number) => void;
@@ -166,6 +168,7 @@ function createFallbackAnimationHostBridge(): AnimationHostBridge {
     setSharedValue: () => false,
     animateSharedValue: () => false,
     cancelSharedValue: () => false,
+    consumeAnimationCompletions: () => [],
     createStyleMapper: () => null,
     updateStyleMapper: () => false,
     removeStyleMapper: () => false,
@@ -265,6 +268,30 @@ function createNativeAnimationHostBridge(
         return false;
       }
     },
+    consumeAnimationCompletions() {
+      const native = getNativeAnimate();
+      if (!native) return [];
+      try {
+        const results = native.consumeAnimationCompletions();
+        if (!Array.isArray(results)) return [];
+        const normalized: Array<{ callbackId: number; finished: boolean }> = [];
+        for (const entry of results) {
+          if (!entry || typeof entry !== "object") continue;
+          const record = entry as { callbackId?: unknown; finished?: unknown };
+          if (
+            typeof record.callbackId === "number" &&
+            Number.isFinite(record.callbackId) &&
+            typeof record.finished === "boolean"
+          ) {
+            normalized.push({ callbackId: record.callbackId, finished: record.finished });
+          }
+        }
+        return normalized;
+      } catch (error) {
+        console.error("[ZynthAnimate] consumeAnimationCompletions failed:", error);
+        return [];
+      }
+    },
     createStyleMapper(nodeId, style) {
       const native = getNativeAnimate();
       if (!native) return null;
@@ -355,6 +382,13 @@ export function animateNativeSharedValue(
 
 export function cancelNativeSharedValue(id: number): boolean {
   return animationHostBridge.cancelSharedValue(id);
+}
+
+export function consumeNativeAnimationCompletions(): Array<{
+  callbackId: number;
+  finished: boolean;
+}> {
+  return animationHostBridge.consumeAnimationCompletions();
 }
 
 export function createNativeStyleMapper(

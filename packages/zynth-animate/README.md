@@ -16,11 +16,11 @@ This library provides a physics-based animation system that runs on the UI threa
 ### Basic Animation
 
 ```tsx
-import { Animated, useSharedValue, useAnimatedStyle, withSpring } from "@zynth/animate";
+import { Animated, createSharedValue, useAnimatedStyle, withSpring } from "@zynth/animate";
 import { Button } from "@zynth/components";
 
 function MyComponent() {
-  const width = useSharedValue(100);
+  const width = createSharedValue(100);
 
   const style = useAnimatedStyle(() => ({
     width: width.value,
@@ -68,7 +68,7 @@ import { Animated, LinearTransition } from "@zynth/animate";
 
 ## API Reference
 
-### `useSharedValue(initialValue)`
+### `createSharedValue(initialValue)`
 Creates a reference to a value that can be animated.
 *   `.value`: Get or set the current value. Assigning an animation function (like `withTiming`) triggers an animation.
 

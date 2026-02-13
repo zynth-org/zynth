@@ -12,7 +12,9 @@ import {
   INTERPOLATION_MARKER,
   SHARED_VALUE_MARKER,
   animateNativeSharedValue,
+  consumeNativeAnimationCompletions,
   cancelNativeSharedValue,
+  getNativeSharedValue,
   hasNativeAnimate,
   isNativePlatform,
   type NativeStyleMapperConfig,
@@ -58,6 +60,7 @@ export type SharedValue<T> = {
   get value(): T;
   set value(next: T);
   cancelAnimation: () => void;
+  toSignal: () => SharedSignalAccessor<T>;
   nativeId?: number;
 };
 
@@ -79,6 +82,47 @@ const DEFAULT_STIFFNESS = 150;
 const DEFAULT_MASS = 1;
 const DEFAULT_REST_SPEED = 0.001;
 const DEFAULT_REST_DISPLACEMENT = 0.001;
+let nextNativeCompletionCallbackId = 1;
+const nativeCompletionCallbacks = new Map<number, AnimationCallback>();
+let nativeCompletionCancel: (() => void) | null = null;
+
+function ensureNativeCompletionPolling(): void {
+  if (nativeCompletionCancel || nativeCompletionCallbacks.size === 0) return;
+  nativeCompletionCancel = startAnimation(() => {
+    const completed = consumeNativeAnimationCompletions();
+    for (const entry of completed) {
+      const callback = nativeCompletionCallbacks.get(entry.callbackId);
+      if (!callback) continue;
+      nativeCompletionCallbacks.delete(entry.callbackId);
+      try {
+        callback(entry.finished);
+      } catch (error) {
+        console.error("[ZynthAnimate] shared value onFinish callback failed:", error);
+      }
+    }
+    if (nativeCompletionCallbacks.size === 0) {
+      nativeCompletionCancel = null;
+      return true;
+    }
+    return false;
+  });
+}
+
+function registerNativeCompletionCallback(callback: AnimationCallback): number {
+  const callbackId = nextNativeCompletionCallbackId++;
+  nativeCompletionCallbacks.set(callbackId, callback);
+  ensureNativeCompletionPolling();
+  return callbackId;
+}
+
+function unregisterNativeCompletionCallback(callbackId: number): void {
+  nativeCompletionCallbacks.delete(callbackId);
+  if (nativeCompletionCallbacks.size === 0 && nativeCompletionCancel) {
+    const cancel = nativeCompletionCancel;
+    nativeCompletionCancel = null;
+    cancel();
+  }
+}
 
 function isTimingAnimation(value: unknown): value is TimingAnimation {
   return Boolean(
@@ -110,7 +154,7 @@ export function withSpring(
   return { __kind: "spring", toValue, config } as SpringAnimation;
 }
 
-export function useSharedValue<T>(initialValue: T): SharedValue<T> {
+export function createSharedValue<T>(initialValue: T): SharedValue<T> {
   const [signal, setSignal] = createSharedSignal(initialValue);
   const nativeId =
     typeof initialValue === "number"
@@ -121,22 +165,44 @@ export function useSharedValue<T>(initialValue: T): SharedValue<T> {
   let cancelActive: (() => void) | null = null;
   let finishCallback: AnimationCallback | null = null;
   let warnedJsAnimationFallback = false;
+  let nativeCompletionCallbackId: number | null = null;
 
   const cancelAnimation = (finished: boolean): void => {
-    if (cancelActive) {
-      cancelActive();
-      cancelActive = null;
+    const active = cancelActive;
+    cancelActive = null;
+    if (active) {
+      active();
     }
-    if (finishCallback) {
-      finishCallback(finished);
-      finishCallback = null;
+    const callback = finishCallback;
+    finishCallback = null;
+    if (callback) {
+      callback(finished);
     }
   };
 
   const setImmediate = (next: T): void => {
     cancelAnimation(false);
+    if (nativeId !== null) {
+      const canceled = cancelNativeSharedValue(nativeId);
+      if (!canceled && nativeCompletionCallbackId !== null) {
+        const callbackId = nativeCompletionCallbackId;
+        nativeCompletionCallbackId = null;
+        unregisterNativeCompletionCallback(callbackId);
+      }
+    }
     setSignal(() => next);
     cachedValue = next;
+  };
+
+  const syncFromNativeIfAvailable = (): void => {
+    if (nativeId === null || !hasNativeAnimate()) return;
+    const nativeCurrent = getNativeSharedValue(nativeId);
+    if (typeof nativeCurrent !== "number" || !Number.isFinite(nativeCurrent)) {
+      return;
+    }
+    const typedValue = nativeCurrent as T;
+    cachedValue = typedValue;
+    setSignal(() => typedValue);
   };
 
   const startTiming = (request: TimingAnimation): void => {
@@ -261,8 +327,10 @@ export function useSharedValue<T>(initialValue: T): SharedValue<T> {
         : isSpringAnimation(next)
           ? next
           : null;
+      const animationConfig = animationRequest?.config;
       if (nativeId !== null && animationRequest && hasNativeAnimate()) {
-        const config = animationRequest.config ?? {};
+        cancelAnimation(false);
+        const config = animationConfig ?? {};
         const payload: Record<string, unknown> = {
           type: animationRequest.__kind,
           toValue: animationRequest.toValue,
@@ -300,20 +368,44 @@ export function useSharedValue<T>(initialValue: T): SharedValue<T> {
             payload.overshootClamping = springConfig.overshootClamping;
           }
         }
-        animateNativeSharedValue(nativeId, payload);
-        return;
+        if (typeof config.onFinish === "function") {
+          const callbackId = registerNativeCompletionCallback((finished) => {
+            if (nativeCompletionCallbackId !== callbackId) return;
+            nativeCompletionCallbackId = null;
+            config.onFinish?.(finished);
+          });
+          nativeCompletionCallbackId = callbackId;
+          payload.callbackId = callbackId;
+        } else {
+          nativeCompletionCallbackId = null;
+        }
+        const started = animateNativeSharedValue(nativeId, payload);
+        if (started) {
+          return;
+        }
+        if (nativeCompletionCallbackId !== null) {
+          const callbackId = nativeCompletionCallbackId;
+          nativeCompletionCallbackId = null;
+          unregisterNativeCompletionCallback(callbackId);
+        }
       }
-      if (animationRequest && !warnedJsAnimationFallback) {
+      if (
+        animationRequest &&
+        !warnedJsAnimationFallback &&
+        (nativeId === null || !hasNativeAnimate())
+      ) {
         warnedJsAnimationFallback = true;
         console.warn(
           "Animating shared value on the JS thread. This may cause performance issues. Consider using this animation on a native-driven style property.",
         );
       }
       if (isTimingAnimation(next)) {
+        syncFromNativeIfAvailable();
         startTiming(next);
         return;
       }
       if (isSpringAnimation(next)) {
+        syncFromNativeIfAvailable();
         startSpring(next);
         return;
       }
@@ -322,9 +414,15 @@ export function useSharedValue<T>(initialValue: T): SharedValue<T> {
     cancelAnimation: () => {
       cancelAnimation(false);
       if (nativeId !== null) {
-        cancelNativeSharedValue(nativeId);
+        const canceled = cancelNativeSharedValue(nativeId);
+        if (!canceled && nativeCompletionCallbackId !== null) {
+          const callbackId = nativeCompletionCallbackId;
+          nativeCompletionCallbackId = null;
+          unregisterNativeCompletionCallback(callbackId);
+        }
       }
     },
+    toSignal: () => signal,
     nativeId: nativeId ?? undefined,
   };
 

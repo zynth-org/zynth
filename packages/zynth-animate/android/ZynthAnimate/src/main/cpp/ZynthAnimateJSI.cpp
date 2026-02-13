@@ -108,6 +108,12 @@ struct SharedAnimation {
   double restDisplacement = 0.001;
   bool overshootClamping = false;
   double direction = 0.0;
+  int callbackId = 0;
+};
+
+struct SharedAnimationCompletion {
+  int callbackId = 0;
+  bool finished = false;
 };
 
 struct MappedValue {
@@ -397,6 +403,9 @@ class ZynthAnimateRuntime {
           anim.toValue = toValue;
           anim.startTime = nowMs();
           anim.delay = config.hasProperty(rt, "delay") ? config.getProperty(rt, "delay").asNumber() : 0.0;
+          anim.callbackId = config.hasProperty(rt, "callbackId")
+              ? static_cast<int>(config.getProperty(rt, "callbackId").asNumber())
+              : 0;
           anim.direction = anim.toValue - anim.fromValue;
 
           if (type == "spring") {
@@ -421,6 +430,10 @@ class ZynthAnimateRuntime {
 
           {
             std::lock_guard<std::mutex> lock(mutex);
+            auto existing = animations.find(id);
+            if (existing != animations.end() && existing->second.callbackId > 0) {
+              completions.push_back({existing->second.callbackId, false});
+            }
             animations[id] = anim;
           }
           ensureFrame();
@@ -434,9 +447,36 @@ class ZynthAnimateRuntime {
           int id = static_cast<int>(args[0].asNumber());
           {
             std::lock_guard<std::mutex> lock(mutex);
-            animations.erase(id);
+            auto existing = animations.find(id);
+            if (existing != animations.end()) {
+              if (existing->second.callbackId > 0) {
+                completions.push_back({existing->second.callbackId, false});
+              }
+              animations.erase(existing);
+            }
           }
           return Value::undefined();
+        });
+
+    auto consumeAnimationCompletions = Function::createFromHostFunction(
+        runtime, PropNameID::forAscii(runtime, "consumeAnimationCompletions"), 0,
+        [this](Runtime &rt, const Value &, const Value *, size_t) -> Value {
+          std::vector<SharedAnimationCompletion> pending;
+          {
+            std::lock_guard<std::mutex> lock(mutex);
+            pending.swap(completions);
+          }
+          Array result(rt, pending.size());
+          for (size_t index = 0; index < pending.size(); index++) {
+            Object entry(rt);
+            entry.setProperty(
+                rt,
+                "callbackId",
+                Value(static_cast<double>(pending[index].callbackId)));
+            entry.setProperty(rt, "finished", Value(pending[index].finished));
+            result.setValueAtIndex(rt, index, entry);
+          }
+          return result;
         });
 
     auto createStyleMapper = Function::createFromHostFunction(
@@ -498,6 +538,7 @@ class ZynthAnimateRuntime {
     animate.setProperty(runtime, "setSharedValue", setSharedValue);
     animate.setProperty(runtime, "animateSharedValue", animateSharedValue);
     animate.setProperty(runtime, "cancelSharedValue", cancelSharedValue);
+    animate.setProperty(runtime, "consumeAnimationCompletions", consumeAnimationCompletions);
     animate.setProperty(runtime, "createStyleMapper", createStyleMapper);
     animate.setProperty(runtime, "updateStyleMapper", updateStyleMapper);
     animate.setProperty(runtime, "removeStyleMapper", removeStyleMapper);
@@ -552,7 +593,13 @@ class ZynthAnimateRuntime {
         }
       }
       for (int id : finished) {
-        animations.erase(id);
+        auto it = animations.find(id);
+        if (it != animations.end()) {
+          if (it->second.callbackId > 0) {
+            completions.push_back({it->second.callbackId, true});
+          }
+          animations.erase(it);
+        }
       }
     }
     applyStyleMappers();
@@ -578,6 +625,7 @@ class ZynthAnimateRuntime {
   void *state;
   std::atomic<int> nextStyleMapperId;
   std::unordered_map<int, SharedAnimation> animations;
+  std::vector<SharedAnimationCompletion> completions;
   std::unordered_map<int, StyleMapper> styleMappers;
   std::mutex mutex;
   bool frameScheduled = false;
