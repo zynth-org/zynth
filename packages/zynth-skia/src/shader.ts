@@ -1,7 +1,11 @@
-import { createSharedSignal } from "@zynth/core";
+import {
+  createSharedSignal,
+  type InterpolatedScalarRef,
+  type SharedScalarRef,
+} from "@zynth/core";
 import { createSignal } from "solid-js";
 import {
-  createFont,
+  createFontFromStyle,
   createSystemFontManager,
   createTypefaceFontProvider,
   matchFont,
@@ -10,6 +14,7 @@ import type { SkiaFontWeight } from "./types";
 import type {
   CreateSkiaValueOptions,
   SkiaColorValue,
+  SkiaInterpolationToken,
   SkiaRuntimeShaderUniformMap,
   SkiaSharedSignalToken,
   SkiaRuntimeEffect,
@@ -93,6 +98,50 @@ function isSharedSignalToken(value: unknown): value is SkiaSharedSignalToken {
     typeof token.__zynth_shared_value === "number"
     && typeof token.__zynth_shared_signal_current === "number"
   );
+}
+
+function isInterpolatedToken(value: unknown): value is {
+  __zynth_skia_interp_input: readonly number[];
+  __zynth_skia_interp_output: readonly number[];
+} {
+  if (!value || typeof value !== "object") return false;
+  const token = value as {
+    __zynth_skia_interp_input?: unknown;
+    __zynth_skia_interp_output?: unknown;
+  };
+  return Array.isArray(token.__zynth_skia_interp_input)
+    && Array.isArray(token.__zynth_skia_interp_output);
+}
+
+function isCoreSharedScalarRef(value: unknown): value is SharedScalarRef {
+  if (!value || typeof value !== "object") return false;
+  const ref = value as Partial<SharedScalarRef>;
+  return ref.kind === "shared"
+    && typeof ref.signalId === "number"
+    && typeof ref.snapshot === "number";
+}
+
+function isCoreInterpolatedScalarRef(value: unknown): value is InterpolatedScalarRef {
+  if (!value || typeof value !== "object") return false;
+  const ref = value as Partial<InterpolatedScalarRef>;
+  return ref.kind === "interpolate"
+    && typeof ref.signalId === "number"
+    && typeof ref.snapshot === "number"
+    && Array.isArray(ref.input)
+    && Array.isArray(ref.output);
+}
+
+type ReactiveScalarRef =
+  | SkiaSharedSignalToken
+  | SkiaInterpolationToken
+  | SharedScalarRef
+  | InterpolatedScalarRef;
+
+function isReactiveScalarRef(value: unknown): value is ReactiveScalarRef {
+  return isSharedSignalToken(value)
+    || isInterpolatedToken(value)
+    || isCoreSharedScalarRef(value)
+    || isCoreInterpolatedScalarRef(value);
 }
 
 function isUniformMapAccessor(value: SkiaRuntimeUniforms): value is () => SkiaUniformMap {
@@ -261,7 +310,7 @@ export function resolveRuntimeShaderUniformMap(
     const raw = uniforms[key];
     if (raw == null) continue;
     const value = isAccessor(raw) ? raw() : raw;
-    if (isSharedSignalToken(value)) {
+    if (isReactiveScalarRef(value)) {
       output[key] = value;
       continue;
     }
@@ -271,10 +320,10 @@ export function resolveRuntimeShaderUniformMap(
       continue;
     }
     if (Array.isArray(value)) {
-      const packed: Array<number | SkiaSharedSignalToken> = [];
+      const packed: Array<number | SkiaSharedSignalToken | SharedScalarRef | InterpolatedScalarRef> = [];
       for (let i = 0; i < value.length; i += 1) {
         const item = value[i];
-        if (isSharedSignalToken(item)) {
+        if (isReactiveScalarRef(item)) {
           packed.push(item);
           continue;
         }
@@ -303,7 +352,7 @@ export const Skia = {
     },
   },
   Font(typeface: { familyName: string; fontStyle?: "normal" | "italic" | "oblique"; fontWeight?: number }, size: number) {
-    return createFont({
+    return createFontFromStyle({
       fontFamily: typeface.familyName,
       fontSize: size,
       fontStyle: typeface.fontStyle,

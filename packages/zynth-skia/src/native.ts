@@ -1,4 +1,10 @@
-import { callNativeSync, getNativeModule, unwrapNativeResult } from "@zynth/core";
+import {
+  callNativeSync,
+  getNativeModule,
+  unwrapNativeResult,
+  type InterpolatedScalarRef,
+  type SharedScalarRef,
+} from "@zynth/core";
 import {
   type SkiaLinearGradient,
   type SkiaCapabilities,
@@ -120,6 +126,11 @@ const defaultCapabilities: SkiaCapabilities = {
   paintStrokeJoin: false,
   paintStrokeMiter: false,
   groupTransforms: true,
+  text: false,
+  fontMeasure: false,
+  maskLuminance: false,
+  shaderLinearGradient: false,
+  groupLayer: false,
 };
 
 const featureCapabilityMap: Record<SkiaFeature, keyof SkiaCapabilities> = {
@@ -130,6 +141,11 @@ const featureCapabilityMap: Record<SkiaFeature, keyof SkiaCapabilities> = {
   "paint.strokeJoin": "paintStrokeJoin",
   "paint.strokeMiter": "paintStrokeMiter",
   "group.transforms": "groupTransforms",
+  text: "text",
+  "font.measure": "fontMeasure",
+  "mask.luminance": "maskLuminance",
+  "shader.linearGradient": "shaderLinearGradient",
+  "group.layer": "groupLayer",
 };
 
 function parsePackedColor(value: string): number | null {
@@ -245,6 +261,24 @@ function isInterpolationToken(value: unknown): value is SkiaInterpolationToken {
     && Array.isArray(token.__zynth_skia_interp_output);
 }
 
+function isCoreSharedScalarRef(value: unknown): value is SharedScalarRef {
+  if (!value || typeof value !== "object") return false;
+  const ref = value as Partial<SharedScalarRef>;
+  return ref.kind === "shared"
+    && typeof ref.signalId === "number"
+    && typeof ref.snapshot === "number";
+}
+
+function isCoreInterpolatedScalarRef(value: unknown): value is InterpolatedScalarRef {
+  if (!value || typeof value !== "object") return false;
+  const ref = value as Partial<InterpolatedScalarRef>;
+  return ref.kind === "interpolate"
+    && typeof ref.signalId === "number"
+    && typeof ref.snapshot === "number"
+    && Array.isArray(ref.input)
+    && Array.isArray(ref.output);
+}
+
 function encodeExtrapolationMode(mode: unknown): number {
   if (mode === "identity") return 2;
   if (mode === "extend") return 1;
@@ -298,75 +332,137 @@ function normalizePackedNumber(value: unknown, fallback = 0): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function pushPackedScalar(encoded: number[], value: unknown, fallback = 0): void {
-  if (isInterpolationToken(value)) {
-    const inputRange = value.__zynth_skia_interp_input;
-    const outputRange = value.__zynth_skia_interp_output;
-    const count = Math.min(inputRange.length, outputRange.length);
+type NormalizedScalar =
+  | { kind: PackedScalarKind.Literal; value: number }
+  | { kind: PackedScalarKind.SharedSignal; signalId: number; snapshot: number }
+  | {
+    kind: PackedScalarKind.Interpolation;
+    signalId: number;
+    snapshot: number;
+    input: number[];
+    output: number[];
+    leftMode: number;
+    rightMode: number;
+  };
+
+function normalizeScalar(value: unknown, fallback = 0): NormalizedScalar {
+  if (isCoreInterpolatedScalarRef(value)) {
+    const input = value.input.map((entry) => normalizePackedNumber(entry, fallback));
+    const output = value.output.map((entry) => normalizePackedNumber(entry, fallback));
+    const count = Math.min(input.length, output.length);
     if (count < 2) {
-      encoded.push(
-        PackedScalarKind.SharedSignal,
-        value.__zynth_shared_value,
-        normalizePackedNumber(value.__zynth_shared_signal_current, fallback),
-      );
-      return;
+      return {
+        kind: PackedScalarKind.SharedSignal,
+        signalId: normalizePackedNumber(value.signalId, 0),
+        snapshot: normalizePackedNumber(value.snapshot, fallback),
+      };
     }
-    const inValues = inputRange.slice(0, count);
-    const outValues = outputRange.slice(0, count);
+    const inputRange = input.slice(0, count);
+    const outputRange = output.slice(0, count);
+    const leftMode = encodeExtrapolationMode(value.left);
+    const rightMode = encodeExtrapolationMode(value.right);
+    return {
+      kind: PackedScalarKind.Interpolation,
+      signalId: normalizePackedNumber(value.signalId, 0),
+      snapshot: interpolateSnapshot(
+        normalizePackedNumber(value.snapshot, fallback),
+        inputRange,
+        outputRange,
+        leftMode,
+        rightMode,
+      ),
+      input: inputRange,
+      output: outputRange,
+      leftMode,
+      rightMode,
+    };
+  }
+
+  if (isInterpolationToken(value)) {
+    const input = value.__zynth_skia_interp_input.map((entry) => normalizePackedNumber(entry, fallback));
+    const output = value.__zynth_skia_interp_output.map((entry) => normalizePackedNumber(entry, fallback));
+    const count = Math.min(input.length, output.length);
+    if (count < 2) {
+      return {
+        kind: PackedScalarKind.SharedSignal,
+        signalId: normalizePackedNumber(value.__zynth_shared_value, 0),
+        snapshot: normalizePackedNumber(value.__zynth_shared_signal_current, fallback),
+      };
+    }
+    const inputRange = input.slice(0, count);
+    const outputRange = output.slice(0, count);
     const leftMode = encodeExtrapolationMode(value.__zynth_skia_interp_left);
     const rightMode = encodeExtrapolationMode(value.__zynth_skia_interp_right);
-    const snapshot = interpolateSnapshot(
-      normalizePackedNumber(value.__zynth_shared_signal_current, fallback),
-      inValues,
-      outValues,
+    return {
+      kind: PackedScalarKind.Interpolation,
+      signalId: normalizePackedNumber(value.__zynth_shared_value, 0),
+      snapshot: interpolateSnapshot(
+        normalizePackedNumber(value.__zynth_shared_signal_current, fallback),
+        inputRange,
+        outputRange,
+        leftMode,
+        rightMode,
+      ),
+      input: inputRange,
+      output: outputRange,
       leftMode,
       rightMode,
-    );
-    encoded.push(
-      PackedScalarKind.Interpolation,
-      value.__zynth_shared_value,
-      snapshot,
-      count,
-      ...inValues,
-      ...outValues,
-      leftMode,
-      rightMode,
-    );
-    return;
+    };
   }
+
+  if (isCoreSharedScalarRef(value)) {
+    return {
+      kind: PackedScalarKind.SharedSignal,
+      signalId: normalizePackedNumber(value.signalId, 0),
+      snapshot: normalizePackedNumber(value.snapshot, fallback),
+    };
+  }
+
   if (isSharedSignalToken(value)) {
-    encoded.push(
-      PackedScalarKind.SharedSignal,
-      value.__zynth_shared_value,
-      normalizePackedNumber(value.__zynth_shared_signal_current, fallback),
-    );
+    return {
+      kind: PackedScalarKind.SharedSignal,
+      signalId: normalizePackedNumber(value.__zynth_shared_value, 0),
+      snapshot: normalizePackedNumber(value.__zynth_shared_signal_current, fallback),
+    };
+  }
+
+  return {
+    kind: PackedScalarKind.Literal,
+    value: normalizePackedNumber(value, fallback),
+  };
+}
+
+function pushPackedScalar(encoded: number[], value: unknown, fallback = 0): void {
+  const normalized = normalizeScalar(value, fallback);
+  if (normalized.kind === PackedScalarKind.Literal) {
+    encoded.push(PackedScalarKind.Literal, normalized.value);
     return;
   }
-  encoded.push(PackedScalarKind.Literal, normalizePackedNumber(value, fallback));
+  if (normalized.kind === PackedScalarKind.SharedSignal) {
+    encoded.push(PackedScalarKind.SharedSignal, normalized.signalId, normalized.snapshot);
+    return;
+  }
+  encoded.push(
+    PackedScalarKind.Interpolation,
+    normalized.signalId,
+    normalized.snapshot,
+    normalized.input.length,
+    ...normalized.input,
+    ...normalized.output,
+    normalized.leftMode,
+    normalized.rightMode,
+  );
 }
 
 function materializeScalar(value: unknown, fallback = 0): number {
-  if (isInterpolationToken(value)) {
-    const inputRange = value.__zynth_skia_interp_input;
-    const outputRange = value.__zynth_skia_interp_output;
-    const count = Math.min(inputRange.length, outputRange.length);
-    if (count < 2) {
-      return normalizePackedNumber(value.__zynth_shared_signal_current, fallback);
-    }
-    const leftMode = encodeExtrapolationMode(value.__zynth_skia_interp_left);
-    const rightMode = encodeExtrapolationMode(value.__zynth_skia_interp_right);
-    return interpolateSnapshot(
-      normalizePackedNumber(value.__zynth_shared_signal_current, fallback),
-      inputRange.slice(0, count),
-      outputRange.slice(0, count),
-      leftMode,
-      rightMode,
-    );
+  const normalized = normalizeScalar(value, fallback);
+  if (normalized.kind === PackedScalarKind.Literal) {
+    return normalized.value;
   }
-  if (isSharedSignalToken(value)) {
-    return normalizePackedNumber(value.__zynth_shared_signal_current, fallback);
+  if (normalized.kind === PackedScalarKind.SharedSignal) {
+    return normalized.snapshot;
   }
-  return normalizePackedNumber(value, fallback);
+  return normalized.snapshot;
 }
 
 function materializeCommandsForFallback(commands: SkiaDrawCommand[]): SkiaDrawCommand[] {
@@ -578,12 +674,18 @@ function encodePackedCommands(commands: SkiaDrawCommand[]): PackedCommands {
         encoded.push(PackedOpcode.SaveLayer);
         break;
       case "saveLayerLuminanceMask":
+        if (!caps.maskLuminance) {
+          throw new Error("Skia feature unsupported: mask.luminance");
+        }
         encoded.push(PackedOpcode.SaveLayerLuminanceMask);
         break;
       case "restore":
         encoded.push(PackedOpcode.Restore);
         break;
       case "rect":
+        if (command.linearGradient && !caps.shaderLinearGradient) {
+          throw new Error("Skia feature unsupported: shader.linearGradient");
+        }
         encoded.push(PackedOpcode.Rect);
         pushPackedScalar(encoded, command.x);
         pushPackedScalar(encoded, command.y);
@@ -600,6 +702,9 @@ function encodePackedCommands(commands: SkiaDrawCommand[]): PackedCommands {
         pushPackedLinearGradient(encoded, command.linearGradient, stringTable, stringIndex);
         break;
       case "circle":
+        if (command.linearGradient && !caps.shaderLinearGradient) {
+          throw new Error("Skia feature unsupported: shader.linearGradient");
+        }
         encoded.push(PackedOpcode.Circle);
         pushPackedScalar(encoded, command.cx);
         pushPackedScalar(encoded, command.cy);
@@ -633,6 +738,9 @@ function encodePackedCommands(commands: SkiaDrawCommand[]): PackedCommands {
           throw new Error(
             "Skia feature unsupported: paths (native runtime does not advertise path support)",
           );
+        }
+        if (command.linearGradient && !caps.shaderLinearGradient) {
+          throw new Error("Skia feature unsupported: shader.linearGradient");
         }
         encoded.push(PackedOpcode.Path);
         pushPackedColor(encoded, command.color, stringTable, stringIndex);
@@ -825,6 +933,12 @@ function encodePackedCommands(commands: SkiaDrawCommand[]): PackedCommands {
         break;
       }
       case "text": {
+        if (!caps.text) {
+          throw new Error("Skia feature unsupported: text");
+        }
+        if (command.linearGradient && !caps.shaderLinearGradient) {
+          throw new Error("Skia feature unsupported: shader.linearGradient");
+        }
         encoded.push(PackedOpcode.Text);
         pushPackedScalar(encoded, command.x);
         pushPackedScalar(encoded, command.y);
@@ -861,6 +975,10 @@ function encodePackedCommands(commands: SkiaDrawCommand[]): PackedCommands {
     stringTable,
   };
 }
+
+export const __internalSkiaNativeTestHooks = {
+  encodePackedCommands,
+};
 
 function encodeStrokeCap(value: SkiaStrokeCap | undefined): number {
   if (value === "round") return PackedStrokeCap.Round;

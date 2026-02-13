@@ -1,6 +1,10 @@
 import { children, mergeProps, splitProps } from "solid-js";
 import type { Accessor, JSX, ParentComponent } from "solid-js";
-import { captureSharedSignals } from "@zynth/core";
+import {
+  captureSharedSignals,
+  type InterpolatedScalarRef,
+  type SharedScalarRef,
+} from "@zynth/core";
 import { assertSkiaFeature } from "./native";
 import { resolvePathCommands } from "./path";
 import {
@@ -41,6 +45,8 @@ import type {
   SkiaPathProps,
   SkiaPoint,
   SkiaPointLike,
+  SkiaScalarValue,
+  SkiaInterpolationToken,
   SkiaRectProps,
   SkiaRuntimeEffect,
   SkiaRuntimeUniforms,
@@ -79,12 +85,12 @@ type LinearGradientNodeProps = SkiaLinearGradientProps;
 type PaintState = {
   color: SkiaColorValue;
   style: SkiaPaintStyle;
-  strokeWidth: number | SkiaSharedSignalToken;
+  strokeWidth: SkiaScalarValue;
   antiAlias: boolean;
-  opacity: number | SkiaSharedSignalToken;
+  opacity: SkiaScalarValue;
   strokeCap: "butt" | "round" | "square";
   strokeJoin: "miter" | "round" | "bevel";
-  strokeMiter: number | SkiaSharedSignalToken;
+  strokeMiter: SkiaScalarValue;
   shader?: SkiaShaderProgram;
   linearGradient?: SkiaLinearGradient;
 };
@@ -146,7 +152,16 @@ function toChildArray(value: unknown): unknown[] {
 }
 
 function readNumber(value: unknown, fallback = 0): number {
+  if (isCoreSharedScalarRef(value)) {
+    return readNumber(value.snapshot, fallback);
+  }
   if (isSharedSignalToken(value)) {
+    return readNumber(value.__zynth_shared_signal_current, fallback);
+  }
+  if (isCoreInterpolatedScalarRef(value)) {
+    return readNumber(value.snapshot, fallback);
+  }
+  if (isInterpolationToken(value)) {
     return readNumber(value.__zynth_shared_signal_current, fallback);
   }
   const numeric = Number(value);
@@ -162,8 +177,40 @@ function isSharedSignalToken(value: unknown): value is SkiaSharedSignalToken {
   );
 }
 
-function resolveScalar(value: unknown, fallback = 0): number | SkiaSharedSignalToken {
-  if (isSharedSignalToken(value)) return value;
+function isInterpolationToken(value: unknown): value is SkiaInterpolationToken {
+  if (!isSharedSignalToken(value)) return false;
+  const token = value as Partial<SkiaInterpolationToken>;
+  return Array.isArray(token.__zynth_skia_interp_input)
+    && Array.isArray(token.__zynth_skia_interp_output);
+}
+
+function isCoreSharedScalarRef(value: unknown): value is SharedScalarRef {
+  if (!value || typeof value !== "object") return false;
+  const ref = value as Partial<SharedScalarRef>;
+  return ref.kind === "shared"
+    && typeof ref.signalId === "number"
+    && typeof ref.snapshot === "number";
+}
+
+function isCoreInterpolatedScalarRef(value: unknown): value is InterpolatedScalarRef {
+  if (!value || typeof value !== "object") return false;
+  const ref = value as Partial<InterpolatedScalarRef>;
+  return ref.kind === "interpolate"
+    && typeof ref.signalId === "number"
+    && typeof ref.snapshot === "number"
+    && Array.isArray(ref.input)
+    && Array.isArray(ref.output);
+}
+
+function isReactiveScalar(value: unknown): boolean {
+  return isSharedSignalToken(value)
+    || isInterpolationToken(value)
+    || isCoreSharedScalarRef(value)
+    || isCoreInterpolatedScalarRef(value);
+}
+
+function resolveScalar(value: unknown, fallback = 0): SkiaScalarValue {
+  if (isReactiveScalar(value)) return value as SkiaScalarValue;
   return readNumber(value, fallback);
 }
 
@@ -259,6 +306,7 @@ function resolveLinearGradientChild(
     if (props.positions && props.positions.length !== colors.length) {
       throw new Error("Skia LinearGradient positions must match colors length");
     }
+    assertSkiaFeature("shader.linearGradient", "LinearGradient");
     return {
       start: resolvePointLike(props.start),
       end: resolvePointLike(props.end),
@@ -273,7 +321,7 @@ function resolveLinearGradientChild(
 
 function mergePaint(state: CompileState, props: Partial<SkiaPaintProps>): PaintState {
   const nextOpacityRaw = props.opacity ?? state.paint.opacity;
-  const nextOpacity = isSharedSignalToken(nextOpacityRaw)
+  const nextOpacity = isReactiveScalar(nextOpacityRaw)
     ? nextOpacityRaw
     : clampUnit(readNumber(nextOpacityRaw, 1));
 
@@ -305,17 +353,17 @@ function hasTokenizedPathScalars(commands: readonly SkiaPathCommand[]): boolean 
   for (let index = 0; index < commands.length; index += 1) {
     const command = commands[index]!;
     if (command.type === "moveTo" || command.type === "lineTo") {
-      if (isSharedSignalToken(command.x) || isSharedSignalToken(command.y)) {
+      if (isReactiveScalar(command.x) || isReactiveScalar(command.y)) {
         return true;
       }
       continue;
     }
     if (command.type === "quadTo") {
       if (
-        isSharedSignalToken(command.cpx)
-        || isSharedSignalToken(command.cpy)
-        || isSharedSignalToken(command.x)
-        || isSharedSignalToken(command.y)
+        isReactiveScalar(command.cpx)
+        || isReactiveScalar(command.cpy)
+        || isReactiveScalar(command.x)
+        || isReactiveScalar(command.y)
       ) {
         return true;
       }
@@ -323,12 +371,12 @@ function hasTokenizedPathScalars(commands: readonly SkiaPathCommand[]): boolean 
     }
     if (command.type === "cubicTo") {
       if (
-        isSharedSignalToken(command.cp1x)
-        || isSharedSignalToken(command.cp1y)
-        || isSharedSignalToken(command.cp2x)
-        || isSharedSignalToken(command.cp2y)
-        || isSharedSignalToken(command.x)
-        || isSharedSignalToken(command.y)
+        isReactiveScalar(command.cp1x)
+        || isReactiveScalar(command.cp1y)
+        || isReactiveScalar(command.cp2x)
+        || isReactiveScalar(command.cp2y)
+        || isReactiveScalar(command.x)
+        || isReactiveScalar(command.y)
       ) {
         return true;
       }
@@ -356,10 +404,10 @@ function resolveLinearGradientForPaint(
   if (!gradient) return undefined;
   const identityTransform = isIdentityTransform(matrix);
   const hasTokenizedPoint = (
-    isSharedSignalToken(gradient.start.x)
-    || isSharedSignalToken(gradient.start.y)
-    || isSharedSignalToken(gradient.end.x)
-    || isSharedSignalToken(gradient.end.y)
+    isReactiveScalar(gradient.start.x)
+    || isReactiveScalar(gradient.start.y)
+    || isReactiveScalar(gradient.end.x)
+    || isReactiveScalar(gradient.end.y)
   );
   if (!identityTransform && hasTokenizedPoint) {
     throw new Error("Skia LinearGradient tokenized points require an identity Group transform");
@@ -367,8 +415,8 @@ function resolveLinearGradientForPaint(
   if (identityTransform) {
     return gradient;
   }
-  const start = applyMatrixPoint(matrix, gradient.start.x, gradient.start.y);
-  const end = applyMatrixPoint(matrix, gradient.end.x, gradient.end.y);
+  const start = applyMatrixPoint(matrix, readNumber(gradient.start.x), readNumber(gradient.start.y));
+  const end = applyMatrixPoint(matrix, readNumber(gradient.end.x), readNumber(gradient.end.y));
   return {
     ...gradient,
     start,
@@ -844,6 +892,7 @@ function compileShapeText(
   time: number,
   out: SkiaDrawCommand[],
 ) {
+  assertSkiaFeature("text", "Text");
   const xScalar = resolveScalar(props.x ?? 0);
   const yScalar = resolveScalar(props.y ?? 0);
   const x = readNumber(xScalar);
@@ -869,6 +918,7 @@ function compileShapeText(
     return;
   }
   const font = resolvedFont as SkiaFont;
+  assertSkiaFeature("font.measure", "Text.measureText");
   const width = font.measureText(text).width;
   const bounds = boundsFromPoints([
     applyMatrixPoint(state.transform, x, y - font.size),
@@ -882,7 +932,7 @@ function compileShapeText(
     time,
   });
   const identityTransform = isIdentityTransform(state.transform);
-  if (!identityTransform && (isSharedSignalToken(xScalar) || isSharedSignalToken(yScalar))) {
+  if (!identityTransform && (isReactiveScalar(xScalar) || isReactiveScalar(yScalar))) {
     throw new Error("Skia Text does not support tokenized x/y with transformed Group");
   }
 
@@ -944,6 +994,7 @@ function compileNode(
       paint: state.paint,
     };
     if (props.layer) {
+      assertSkiaFeature("group.layer", "Group layer");
       pushSaveLayer(out);
     }
     const items = toChildArray(props.children);
@@ -995,6 +1046,7 @@ function compileNode(
   }
 
   if (value.kind === "mask") {
+    assertSkiaFeature("mask.luminance", "Mask");
     const props = value.props as SkiaMaskProps;
     if ((props.mode ?? "luminance") !== "luminance") {
       throw new Error("Skia Mask currently supports mode=\"luminance\" only");

@@ -1,12 +1,17 @@
 import type { Accessor, JSX, Setter } from "solid-js";
-import type { HostNode, Style } from "@zynth/core";
+import type {
+  HostNode,
+  InterpolatedScalarRef,
+  SharedScalarRef,
+  Style,
+} from "@zynth/core";
 
 export type SkiaColorValue = string;
 export type SkiaTileMode = "clamp" | "repeat" | "mirror" | "decal";
 
 export type SkiaPoint = {
-  x: number;
-  y: number;
+  x: SkiaScalarValue;
+  y: SkiaScalarValue;
 };
 
 export type SkiaPointLike = SkiaPoint | readonly [number, number];
@@ -15,9 +20,9 @@ export type SkiaLinearGradient = {
   start: SkiaPoint;
   end: SkiaPoint;
   colors: readonly [SkiaColorValue, SkiaColorValue, ...SkiaColorValue[]];
-  positions?: readonly number[];
+  positions?: readonly SkiaScalarValue[];
   mode?: SkiaTileMode;
-  flags?: number;
+  flags?: SkiaScalarValue;
 };
 
 export type SkiaDrawClear = {
@@ -27,50 +32,50 @@ export type SkiaDrawClear = {
 
 export type SkiaDrawRect = {
   type: "rect";
-  x: number;
-  y: number;
-  width: number;
-  height: number;
+  x: SkiaScalarValue;
+  y: SkiaScalarValue;
+  width: SkiaScalarValue;
+  height: SkiaScalarValue;
   color: SkiaColorValue;
-  strokeWidth?: number;
+  strokeWidth?: SkiaScalarValue;
   style?: "fill" | "stroke";
   antiAlias?: boolean;
-  opacity?: number;
+  opacity?: SkiaScalarValue;
   strokeCap?: SkiaStrokeCap;
   strokeJoin?: SkiaStrokeJoin;
-  strokeMiter?: number;
+  strokeMiter?: SkiaScalarValue;
   linearGradient?: SkiaLinearGradient;
 };
 
 export type SkiaDrawCircle = {
   type: "circle";
-  cx: number;
-  cy: number;
-  r: number;
+  cx: SkiaScalarValue;
+  cy: SkiaScalarValue;
+  r: SkiaScalarValue;
   color: SkiaColorValue;
-  strokeWidth?: number;
+  strokeWidth?: SkiaScalarValue;
   style?: "fill" | "stroke";
   antiAlias?: boolean;
-  opacity?: number;
+  opacity?: SkiaScalarValue;
   strokeCap?: SkiaStrokeCap;
   strokeJoin?: SkiaStrokeJoin;
-  strokeMiter?: number;
+  strokeMiter?: SkiaScalarValue;
   linearGradient?: SkiaLinearGradient;
 };
 
 export type SkiaDrawLine = {
   type: "line";
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
+  x1: SkiaScalarValue;
+  y1: SkiaScalarValue;
+  x2: SkiaScalarValue;
+  y2: SkiaScalarValue;
   color: SkiaColorValue;
-  strokeWidth?: number;
+  strokeWidth?: SkiaScalarValue;
   antiAlias?: boolean;
-  opacity?: number;
+  opacity?: SkiaScalarValue;
   strokeCap?: SkiaStrokeCap;
   strokeJoin?: SkiaStrokeJoin;
-  strokeMiter?: number;
+  strokeMiter?: SkiaScalarValue;
 };
 
 export type SkiaFontStyleSlant = "normal" | "italic" | "oblique";
@@ -117,15 +122,15 @@ export type SkiaTypefaceFontProvider = {
 export type SkiaDrawText = {
   type: "text";
   text: string;
-  x: number;
-  y: number;
+  x: SkiaScalarValue;
+  y: SkiaScalarValue;
   color: SkiaColorValue;
   fontFamily: string;
-  fontSize: number;
+  fontSize: SkiaScalarValue;
   fontStyle?: SkiaFontStyleSlant;
   fontWeight?: SkiaFontWeight;
   antiAlias?: boolean;
-  opacity?: number;
+  opacity?: SkiaScalarValue;
   matrix?: readonly [number, number, number, number, number, number];
   linearGradient?: SkiaLinearGradient;
 };
@@ -149,13 +154,13 @@ export type SkiaDrawPath = {
   type: "path";
   commands: readonly SkiaPathCommand[];
   color: SkiaColorValue;
-  strokeWidth?: number;
+  strokeWidth?: SkiaScalarValue;
   style?: "fill" | "stroke";
   antiAlias?: boolean;
-  opacity?: number;
+  opacity?: SkiaScalarValue;
   strokeCap?: SkiaStrokeCap;
   strokeJoin?: SkiaStrokeJoin;
-  strokeMiter?: number;
+  strokeMiter?: SkiaScalarValue;
   linearGradient?: SkiaLinearGradient;
 };
 
@@ -183,7 +188,14 @@ export type SkiaInterpolationToken = SkiaSharedSignalToken & {
   __zynth_skia_interp_right?: "clamp" | "extend" | "identity";
 };
 
-export type SkiaRuntimeShaderScalar = number | SkiaSharedSignalToken;
+export type SkiaScalarValue =
+  | number
+  | SharedScalarRef
+  | InterpolatedScalarRef
+  | SkiaSharedSignalToken
+  | SkiaInterpolationToken;
+
+export type SkiaRuntimeShaderScalar = SkiaScalarValue;
 export type SkiaRuntimeShaderUniform =
   | SkiaRuntimeShaderScalar
   | readonly SkiaRuntimeShaderScalar[];
@@ -191,25 +203,25 @@ export type SkiaRuntimeShaderUniformMap = Record<string, SkiaRuntimeShaderUnifor
 
 export type SkiaDrawRuntimeShaderRect = {
   type: "runtimeShaderRect";
-  x: number;
-  y: number;
-  width: number;
-  height: number;
+  x: SkiaScalarValue;
+  y: SkiaScalarValue;
+  width: SkiaScalarValue;
+  height: SkiaScalarValue;
   source: string;
   uniforms: SkiaRuntimeShaderUniformMap;
   antiAlias?: boolean;
-  opacity?: number;
+  opacity?: SkiaScalarValue;
 };
 
 export type SkiaDrawRuntimeShaderCircle = {
   type: "runtimeShaderCircle";
-  cx: number;
-  cy: number;
-  r: number;
+  cx: SkiaScalarValue;
+  cy: SkiaScalarValue;
+  r: SkiaScalarValue;
   source: string;
   uniforms: SkiaRuntimeShaderUniformMap;
   antiAlias?: boolean;
-  opacity?: number;
+  opacity?: SkiaScalarValue;
 };
 
 export type SkiaDrawRuntimeShaderPath = {
@@ -218,7 +230,7 @@ export type SkiaDrawRuntimeShaderPath = {
   source: string;
   uniforms: SkiaRuntimeShaderUniformMap;
   antiAlias?: boolean;
-  opacity?: number;
+  opacity?: SkiaScalarValue;
 };
 
 export type SkiaDrawCommand =
@@ -299,9 +311,9 @@ export type SkiaLinearGradientProps = {
   start: SkiaPointLike;
   end: SkiaPointLike;
   colors: readonly [SkiaColorValue, SkiaColorValue, ...SkiaColorValue[]];
-  positions?: readonly number[];
+  positions?: readonly SkiaScalarValue[];
   mode?: SkiaTileMode;
-  flags?: number;
+  flags?: SkiaScalarValue;
 };
 
 export type SkiaMaskProps = {
@@ -316,13 +328,13 @@ export type SkiaStrokeJoin = "miter" | "round" | "bevel";
 
 export type SkiaPaintProps = {
   color?: SkiaColorValue;
-  strokeWidth?: number;
+  strokeWidth?: SkiaScalarValue;
   style?: SkiaPaintStyle;
   antiAlias?: boolean;
-  opacity?: number;
+  opacity?: SkiaScalarValue;
   strokeCap?: SkiaStrokeCap;
   strokeJoin?: SkiaStrokeJoin;
-  strokeMiter?: number;
+  strokeMiter?: SkiaScalarValue;
   shader?: SkiaShaderProgram;
   children?: JSX.Element;
 };
@@ -354,34 +366,34 @@ export type SkiaGroupProps = {
 };
 
 export type SkiaRectProps = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
+  x: SkiaScalarValue;
+  y: SkiaScalarValue;
+  width: SkiaScalarValue;
+  height: SkiaScalarValue;
   color?: SkiaColorValue;
-  strokeWidth?: number;
+  strokeWidth?: SkiaScalarValue;
   style?: SkiaPaintStyle;
   antiAlias?: boolean;
-  opacity?: number;
+  opacity?: SkiaScalarValue;
   strokeCap?: SkiaStrokeCap;
   strokeJoin?: SkiaStrokeJoin;
-  strokeMiter?: number;
+  strokeMiter?: SkiaScalarValue;
   shader?: SkiaShaderProgram;
   children?: JSX.Element;
 };
 
 export type SkiaCircleProps = {
-  cx: number;
-  cy: number;
-  r: number;
+  cx: SkiaScalarValue;
+  cy: SkiaScalarValue;
+  r: SkiaScalarValue;
   color?: SkiaColorValue;
-  strokeWidth?: number;
+  strokeWidth?: SkiaScalarValue;
   style?: SkiaPaintStyle;
   antiAlias?: boolean;
-  opacity?: number;
+  opacity?: SkiaScalarValue;
   strokeCap?: SkiaStrokeCap;
   strokeJoin?: SkiaStrokeJoin;
-  strokeMiter?: number;
+  strokeMiter?: SkiaScalarValue;
   shader?: SkiaShaderProgram;
   children?: JSX.Element;
 };
@@ -409,13 +421,13 @@ export type SkiaPathSource = SkiaPathObject | readonly SkiaPathCommand[] | strin
 export type SkiaPathProps = {
   path: SkiaPathSource;
   color?: SkiaColorValue;
-  strokeWidth?: number;
+  strokeWidth?: SkiaScalarValue;
   style?: SkiaPaintStyle;
   antiAlias?: boolean;
-  opacity?: number;
+  opacity?: SkiaScalarValue;
   strokeCap?: SkiaStrokeCap;
   strokeJoin?: SkiaStrokeJoin;
-  strokeMiter?: number;
+  strokeMiter?: SkiaScalarValue;
   shader?: SkiaShaderProgram;
   children?: JSX.Element;
 };
@@ -423,11 +435,11 @@ export type SkiaPathProps = {
 export type SkiaTextProps = {
   text: string;
   font: SkiaFont | Accessor<SkiaFont | null>;
-  x?: number;
-  y?: number;
+  x?: SkiaScalarValue;
+  y?: SkiaScalarValue;
   color?: SkiaColorValue;
   antiAlias?: boolean;
-  opacity?: number;
+  opacity?: SkiaScalarValue;
   children?: JSX.Element;
 };
 
@@ -438,7 +450,12 @@ export type SkiaFeature =
   | "paint.strokeCap"
   | "paint.strokeJoin"
   | "paint.strokeMiter"
-  | "group.transforms";
+  | "group.transforms"
+  | "text"
+  | "font.measure"
+  | "mask.luminance"
+  | "shader.linearGradient"
+  | "group.layer";
 
 export type SkiaCapabilities = {
   paths: boolean;
@@ -448,6 +465,11 @@ export type SkiaCapabilities = {
   paintStrokeJoin: boolean;
   paintStrokeMiter: boolean;
   groupTransforms: boolean;
+  text: boolean;
+  fontMeasure: boolean;
+  maskLuminance: boolean;
+  shaderLinearGradient: boolean;
+  groupLayer: boolean;
 };
 
 export type CreateSkiaValueOptions = {

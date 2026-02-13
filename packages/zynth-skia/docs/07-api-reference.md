@@ -23,6 +23,8 @@
 - `createShader`
 - `createRuntimeEffect`
 - `createSkiaValue`
+- `toSharedScalar`
+- `interpolateShared`
 - `createFont`
 - `useFont`
 - `matchFont`
@@ -138,6 +140,14 @@ Shared paint fields:
 - `SkiaSharedSignalToken`
 - `SkiaInterpolationToken`
 
+Compatibility note:
+
+- Legacy `SkiaSharedSignalToken` / `SkiaInterpolationToken` object literals remain supported for migration, but `toSharedScalar` and `interpolateShared` are the preferred API.
+- `SkiaScalarValue`
+- `SharedSignalAccessor`
+- `SharedScalarRef`
+- `InterpolatedScalarRef`
+
 ## Feature-gate types
 
 - `SkiaFeature`
@@ -147,5 +157,10 @@ Shared paint fields:
   - `paint.strokeCap`
   - `paint.strokeJoin`
   - `paint.strokeMiter`
-  - `group.transforms`
+- `group.transforms`
+  - `text`
+  - `font.measure`
+  - `mask.luminance`
+  - `shader.linearGradient`
+  - `group.layer`
 - `SkiaCapabilities`

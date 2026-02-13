@@ -52,6 +52,12 @@ Props:
 - `mode?: "clamp" | "repeat" | "mirror" | "decal"`
 - `flags?`
 
+Reactive scalar coordinates:
+
+- Use `toSharedScalar(...)` for direct shared-signal coordinates.
+- Use `interpolateShared(...)` for native interpolation references.
+- Avoid `tick()` snapshots for native-reactive coords in declarative nodes.
+
 ### `Mask`
 
 Luminance mask composition node.
@@ -73,6 +79,12 @@ Props:
 - `Mask`
 
 All shape nodes accept local paint overrides.
+
+## Migration note
+
+- Do not snapshot with `tick()` for native-reactive coordinates.
+- Prefer `interpolateShared` and `toSharedScalar`.
+- Legacy manual token literals (`__zynth_*`) are compatibility-only and deprecated for app code.
 
 ## Example: paint inheritance and override
 

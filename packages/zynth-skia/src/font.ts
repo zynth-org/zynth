@@ -9,6 +9,8 @@ import type {
   SkiaFontStyleSlant,
   SkiaFontWeight,
   SkiaMeasuredText,
+  SkiaPoint,
+  SkiaScalarValue,
   SkiaTypeface,
   SkiaTypefaceFontProvider,
 } from "./types";
@@ -30,7 +32,7 @@ type SkiaBridge = {
 
 const skiaRegisteredFonts = new Set<string>();
 
-export function vec(x: number, y: number): { x: number; y: number } {
+export function vec(x: SkiaScalarValue, y: SkiaScalarValue): SkiaPoint {
   return { x, y };
 }
 

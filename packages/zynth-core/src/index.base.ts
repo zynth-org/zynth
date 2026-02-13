@@ -29,6 +29,13 @@ export { ensureDevtoolsBridge, emitDevtoolsEvent, addDevtoolsListener } from "./
 export { registerWebAdapter } from "./webRegistry";
 export { createSharedSignal, captureSharedSignals, readSharedSignal } from "./sharedSignal";
 export type { SharedSignalAccessor, SharedSignalToken } from "./sharedSignal";
+export { toSharedScalar, interpolateShared } from "./sharedScalar";
+export type {
+  SharedScalarRef,
+  SharedScalarValue,
+  InterpolatedScalarRef,
+  SharedScalarExtrapolation,
+} from "./sharedScalar";
 export { createWorklet } from "./worklet";
 export type { WorkletFunction, WorkletMetadata, WorkletPayload } from "./worklet";
 export { shareSignalRef, isSignalRef, getSignalRefId } from "./signalRef";

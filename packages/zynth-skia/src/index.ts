@@ -1,6 +1,7 @@
 export { SkiaView } from "./SkiaView";
 export { createSkiaSurface } from "./createSkiaSurface";
 export type { SkiaSurfaceController } from "./createSkiaSurface";
+export { interpolateShared, toSharedScalar } from "@zynth/core";
 export {
   Canvas,
   Circle,
@@ -37,6 +38,12 @@ export {
   getSkiaCapabilities,
   supportsSkiaFeature,
 } from "./native";
+export type {
+  InterpolatedScalarRef,
+  SharedScalarRef,
+  SharedSignalAccessor,
+  SharedScalarValue,
+} from "@zynth/core";
 
 export type {
   CreateSkiaValueOptions,
@@ -66,6 +73,7 @@ export type {
   SkiaFeature,
   SkiaFrameSpec,
   SkiaGroupProps,
+  SkiaScalarValue,
   SkiaInterpolationToken,
   SkiaCapabilities,
   SkiaPaintProps,
