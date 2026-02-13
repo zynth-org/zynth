@@ -10,6 +10,12 @@ import {
   createTypefaceFontProvider,
   matchFont,
 } from "./font";
+import {
+  makeImage,
+  makeImageFromEncoded,
+  makeSkiaDataFromBase64,
+  makeSkiaDataFromBytes,
+} from "./image";
 import type { SkiaFontWeight } from "./types";
 import type {
   CreateSkiaValueOptions,
@@ -19,6 +25,7 @@ import type {
   SkiaSharedSignalToken,
   SkiaRuntimeEffect,
   SkiaRuntimeUniforms,
+  SkiaImageInfo,
   SkiaShaderInput,
   SkiaShaderProgram,
   SkiaUniformMap,
@@ -336,6 +343,26 @@ export function resolveRuntimeShaderUniformMap(
 }
 
 export const Skia = {
+  Data: {
+    fromBase64(base64: string) {
+      return makeSkiaDataFromBase64(base64);
+    },
+    fromBytes(bytes: ArrayBuffer | Uint8Array) {
+      return makeSkiaDataFromBytes(bytes);
+    },
+  },
+  Image: {
+    MakeImageFromEncoded(data: { toBytes(): Uint8Array }) {
+      return makeImageFromEncoded(data);
+    },
+    MakeImage(
+      info: SkiaImageInfo,
+      data: { toBytes(): Uint8Array },
+      rowBytes: number,
+    ) {
+      return makeImage(info, data, rowBytes);
+    },
+  },
   RuntimeEffect: {
     Make(source: string) {
       return createRuntimeEffect(source);

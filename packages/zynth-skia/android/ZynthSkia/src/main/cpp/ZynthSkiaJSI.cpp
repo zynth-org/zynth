@@ -5,6 +5,7 @@
 #include <jsi/jsi.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -23,8 +24,10 @@
 #include "include/core/SkFont.h"
 #include "include/core/SkFontMgr.h"
 #include "include/core/SkImageInfo.h"
+#include "include/core/SkImage.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkSamplingOptions.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
@@ -53,6 +56,7 @@ constexpr int kOpcodeText = 9;
 constexpr int kOpcodeSaveLayer = 10;
 constexpr int kOpcodeSaveLayerLuminanceMask = 11;
 constexpr int kOpcodeRestore = 12;
+constexpr int kOpcodeImage = 13;
 
 constexpr int kColorTypeInt = 1;
 constexpr int kColorTypeString = 2;
@@ -77,6 +81,21 @@ constexpr int kTileModeClamp = 0;
 constexpr int kTileModeRepeat = 1;
 constexpr int kTileModeMirror = 2;
 constexpr int kTileModeDecal = 3;
+constexpr int kImageFitContain = 0;
+constexpr int kImageFitFill = 1;
+constexpr int kImageFitCover = 2;
+constexpr int kImageFitFitHeight = 3;
+constexpr int kImageFitFitWidth = 4;
+constexpr int kImageFitScaleDown = 5;
+constexpr int kImageFitNone = 6;
+constexpr int kSamplingDefault = 0;
+constexpr int kSamplingCubic = 1;
+constexpr int kSamplingFilterMipmap = 2;
+constexpr int kFilterNearest = 0;
+constexpr int kFilterLinear = 1;
+constexpr int kMipmapNone = 0;
+constexpr int kMipmapNearest = 1;
+constexpr int kMipmapLinear = 2;
 
 constexpr int kPackedStreamMagic = 900719;
 constexpr int kPackedStreamVersion = 2;
@@ -122,6 +141,9 @@ std::unordered_map<int, std::vector<int>> gSignalSurfaceIds;
 thread_local std::vector<int> *gSignalCollector = nullptr;
 std::mutex gRuntimeEffectCacheMutex;
 std::unordered_map<std::string, sk_sp<SkRuntimeEffect>> gRuntimeEffectCache;
+std::mutex gImageCacheMutex;
+std::unordered_map<int, sk_sp<SkImage>> gImageCache;
+std::atomic<int> gNextImageId{1};
 
 std::mutex gTypefaceCacheMutex;
 std::unordered_map<std::string, sk_sp<SkTypeface>> gTypefaceCache;
@@ -460,6 +482,153 @@ SkTileMode decodeTileMode(int mode) {
     default:
       return SkTileMode::kClamp;
   }
+}
+
+SkAlphaType decodeAlphaType(int alphaType) {
+  switch (alphaType) {
+    case 1:
+      return kOpaque_SkAlphaType;
+    case 2:
+      return kPremul_SkAlphaType;
+    case 3:
+      return kUnpremul_SkAlphaType;
+    case 0:
+    default:
+      return kUnknown_SkAlphaType;
+  }
+}
+
+SkColorType decodeColorType(int colorType) {
+  switch (colorType) {
+    case 1:
+      return kAlpha_8_SkColorType;
+    case 2:
+      return kRGB_565_SkColorType;
+    case 4:
+      return kRGBA_8888_SkColorType;
+    case 6:
+      return kBGRA_8888_SkColorType;
+    case 10:
+      return kRGBA_F16_SkColorType;
+    case 0:
+    default:
+      return kUnknown_SkColorType;
+  }
+}
+
+int encodeAlphaType(SkAlphaType alphaType) {
+  switch (alphaType) {
+    case kOpaque_SkAlphaType:
+      return 1;
+    case kPremul_SkAlphaType:
+      return 2;
+    case kUnpremul_SkAlphaType:
+      return 3;
+    case kUnknown_SkAlphaType:
+    default:
+      return 0;
+  }
+}
+
+int encodeColorType(SkColorType colorType) {
+  switch (colorType) {
+    case kAlpha_8_SkColorType:
+      return 1;
+    case kRGB_565_SkColorType:
+      return 2;
+    case kRGBA_8888_SkColorType:
+      return 4;
+    case kBGRA_8888_SkColorType:
+      return 6;
+    case kRGBA_F16_SkColorType:
+      return 10;
+    case kUnknown_SkColorType:
+    default:
+      return 0;
+  }
+}
+
+SkSamplingOptions decodeSampling(const std::vector<double> &ops, size_t &index) {
+  if (index >= ops.size()) return SkSamplingOptions(SkFilterMode::kNearest, SkMipmapMode::kNone);
+  const int kind = static_cast<int>(ops[index++]);
+  if (kind == kSamplingCubic) {
+    if (index + 1 >= ops.size()) return SkSamplingOptions(SkFilterMode::kNearest, SkMipmapMode::kNone);
+    const float B = static_cast<float>(ops[index++]);
+    const float C = static_cast<float>(ops[index++]);
+    return SkSamplingOptions(SkCubicResampler{B, C});
+  }
+  if (kind == kSamplingFilterMipmap) {
+    if (index + 1 >= ops.size()) return SkSamplingOptions(SkFilterMode::kNearest, SkMipmapMode::kNone);
+    const int filter = static_cast<int>(ops[index++]);
+    const int mipmap = static_cast<int>(ops[index++]);
+    const SkFilterMode skFilter = filter == kFilterLinear ? SkFilterMode::kLinear : SkFilterMode::kNearest;
+    SkMipmapMode skMipmap = SkMipmapMode::kNone;
+    if (mipmap == kMipmapNearest) skMipmap = SkMipmapMode::kNearest;
+    if (mipmap == kMipmapLinear) skMipmap = SkMipmapMode::kLinear;
+    return SkSamplingOptions(skFilter, skMipmap);
+  }
+  return SkSamplingOptions(SkFilterMode::kNearest, SkMipmapMode::kNone);
+}
+
+void applyImageFit(
+    int fit,
+    float imageWidth,
+    float imageHeight,
+    const SkRect &dstInput,
+    SkRect &outSrc,
+    SkRect &outDst) {
+  outSrc = SkRect::MakeWH(std::max(0.0f, imageWidth), std::max(0.0f, imageHeight));
+  outDst = dstInput;
+  if (imageWidth <= 0.0f || imageHeight <= 0.0f || dstInput.width() <= 0.0f || dstInput.height() <= 0.0f) {
+    return;
+  }
+
+  const float scaleContain = std::min(dstInput.width() / imageWidth, dstInput.height() / imageHeight);
+  const float scaleCover = std::max(dstInput.width() / imageWidth, dstInput.height() / imageHeight);
+  const float centerX = dstInput.left() + dstInput.width() * 0.5f;
+  const float centerY = dstInput.top() + dstInput.height() * 0.5f;
+
+  if (fit == kImageFitFill) {
+    return;
+  }
+  if (fit == kImageFitNone) {
+    outDst = SkRect::MakeXYWH(dstInput.left(), dstInput.top(), imageWidth, imageHeight);
+    return;
+  }
+  if (fit == kImageFitFitWidth) {
+    const float scaledHeight = imageHeight * (dstInput.width() / imageWidth);
+    outDst = SkRect::MakeXYWH(dstInput.left(), centerY - scaledHeight * 0.5f, dstInput.width(), scaledHeight);
+    return;
+  }
+  if (fit == kImageFitFitHeight) {
+    const float scaledWidth = imageWidth * (dstInput.height() / imageHeight);
+    outDst = SkRect::MakeXYWH(centerX - scaledWidth * 0.5f, dstInput.top(), scaledWidth, dstInput.height());
+    return;
+  }
+  if (fit == kImageFitCover) {
+    const float srcWidth = dstInput.width() / scaleCover;
+    const float srcHeight = dstInput.height() / scaleCover;
+    const float srcLeft = (imageWidth - srcWidth) * 0.5f;
+    const float srcTop = (imageHeight - srcHeight) * 0.5f;
+    outSrc = SkRect::MakeXYWH(srcLeft, srcTop, srcWidth, srcHeight);
+    outDst = dstInput;
+    return;
+  }
+
+  float scale = scaleContain;
+  if (fit == kImageFitScaleDown) {
+    scale = std::min(1.0f, scaleContain);
+  }
+  const float drawWidth = imageWidth * scale;
+  const float drawHeight = imageHeight * scale;
+  outDst = SkRect::MakeXYWH(centerX - drawWidth * 0.5f, centerY - drawHeight * 0.5f, drawWidth, drawHeight);
+}
+
+sk_sp<SkImage> getImageById(int imageId) {
+  std::lock_guard<std::mutex> lock(gImageCacheMutex);
+  auto found = gImageCache.find(imageId);
+  if (found == gImageCache.end()) return nullptr;
+  return found->second;
 }
 
 bool applyPackedLinearGradient(
@@ -823,6 +992,49 @@ bool renderSurfaceState(
       if (hasMatrix) {
         canvas->restore();
       }
+      continue;
+    }
+
+    if (opcode == kOpcodeImage) {
+      if (i >= buffer.ops.size()) break;
+      const int imageId = static_cast<int>(buffer.ops[i++]);
+      const float x = readPackedScalar(buffer.ops, i, taggedScalars);
+      const float y = readPackedScalar(buffer.ops, i, taggedScalars);
+      const float width = readPackedScalar(buffer.ops, i, taggedScalars);
+      const float height = readPackedScalar(buffer.ops, i, taggedScalars);
+      if (i >= buffer.ops.size()) break;
+      const int fit = static_cast<int>(buffer.ops[i++]);
+      const SkSamplingOptions sampling = decodeSampling(buffer.ops, i);
+      if (i >= buffer.ops.size()) break;
+      const bool antiAlias = static_cast<int>(buffer.ops[i++]) != 0;
+      const float opacity = readPackedScalar(buffer.ops, i, taggedScalars, 1.0f);
+      if (width <= 0.0f || height <= 0.0f) {
+        continue;
+      }
+
+      sk_sp<SkImage> image = getImageById(imageId);
+      if (!image) {
+        continue;
+      }
+
+      const SkRect dstInput = SkRect::MakeXYWH(x, y, width, height);
+      SkRect srcRect;
+      SkRect dstRect;
+      applyImageFit(fit, static_cast<float>(image->width()), static_cast<float>(image->height()), dstInput, srcRect, dstRect);
+      if (dstRect.width() <= 0.0f || dstRect.height() <= 0.0f || srcRect.width() <= 0.0f || srcRect.height() <= 0.0f) {
+        continue;
+      }
+
+      SkPaint paint;
+      paint.setAntiAlias(antiAlias);
+      paint.setAlphaf(std::max(0.0f, std::min(1.0f, opacity)));
+      canvas->drawImageRect(
+          image,
+          srcRect,
+          dstRect,
+          sampling,
+          &paint,
+          SkCanvas::kStrict_SrcRectConstraint);
       continue;
     }
 
@@ -1378,6 +1590,53 @@ void encodeCommandsFromJS(
         }
       }
       outOps.push_back(0.0);
+      continue;
+    }
+
+    if (type == "image") {
+      outOps.push_back(static_cast<double>(kOpcodeImage));
+      outOps.push_back(readNumberProp(rt, command, "imageId", 0));
+      outOps.push_back(readNumberProp(rt, command, "x", 0));
+      outOps.push_back(readNumberProp(rt, command, "y", 0));
+      outOps.push_back(readNumberProp(rt, command, "width", 0));
+      outOps.push_back(readNumberProp(rt, command, "height", 0));
+
+      const std::string fit = readStringProp(rt, command, "fit", "contain");
+      int packedFit = kImageFitContain;
+      if (fit == "fill") packedFit = kImageFitFill;
+      else if (fit == "cover") packedFit = kImageFitCover;
+      else if (fit == "fitHeight") packedFit = kImageFitFitHeight;
+      else if (fit == "fitWidth") packedFit = kImageFitFitWidth;
+      else if (fit == "scaleDown") packedFit = kImageFitScaleDown;
+      else if (fit == "none") packedFit = kImageFitNone;
+      outOps.push_back(static_cast<double>(packedFit));
+
+      Value samplingValue = command.getProperty(rt, "sampling");
+      if (!samplingValue.isObject()) {
+        outOps.push_back(static_cast<double>(kSamplingDefault));
+      } else {
+        Object sampling = samplingValue.asObject(rt);
+        Value bValue = sampling.getProperty(rt, "B");
+        Value cValue = sampling.getProperty(rt, "C");
+        if (bValue.isNumber() || cValue.isNumber()) {
+          outOps.push_back(static_cast<double>(kSamplingCubic));
+          outOps.push_back(bValue.isNumber() ? bValue.asNumber() : 0.0);
+          outOps.push_back(cValue.isNumber() ? cValue.asNumber() : 0.0);
+        } else {
+          outOps.push_back(static_cast<double>(kSamplingFilterMipmap));
+          const std::string filter = readStringProp(rt, sampling, "filter", "nearest");
+          const std::string mipmap = readStringProp(rt, sampling, "mipmap", "none");
+          outOps.push_back(filter == "linear" ? static_cast<double>(kFilterLinear) : static_cast<double>(kFilterNearest));
+          int packedMipmap = kMipmapNone;
+          if (mipmap == "nearest") packedMipmap = kMipmapNearest;
+          if (mipmap == "linear") packedMipmap = kMipmapLinear;
+          outOps.push_back(static_cast<double>(packedMipmap));
+        }
+      }
+
+      const Value antiAlias = command.getProperty(rt, "antiAlias");
+      outOps.push_back(antiAlias.isBool() ? (antiAlias.getBool() ? 1.0 : 0.0) : 1.0);
+      outOps.push_back(readNumberProp(rt, command, "opacity", 1));
       continue;
     }
 
@@ -1995,6 +2254,103 @@ void installBridge(Runtime &rt) {
         return Value(true);
       });
 
+  auto createImageFromEncoded = Function::createFromHostFunction(
+      rt,
+      PropNameID::forAscii(rt, "createImageFromEncoded"),
+      1,
+      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isObject() || !args[0].asObject(rt).isArrayBuffer(rt)) {
+          return Value(0.0);
+        }
+        ArrayBuffer buffer = args[0].asObject(rt).getArrayBuffer(rt);
+        auto data = SkData::MakeWithCopy(buffer.data(rt), buffer.size(rt));
+        if (!data) return Value(0.0);
+        auto image = SkImages::DeferredFromEncodedData(data);
+        if (!image) return Value(0.0);
+        const int imageId = gNextImageId.fetch_add(1);
+        {
+          std::lock_guard<std::mutex> lock(gImageCacheMutex);
+          gImageCache[imageId] = std::move(image);
+        }
+        return Value(static_cast<double>(imageId));
+      });
+
+  auto createImageFromPixels = Function::createFromHostFunction(
+      rt,
+      PropNameID::forAscii(rt, "createImageFromPixels"),
+      6,
+      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (
+            count < 6
+            || !args[0].isNumber()
+            || !args[1].isNumber()
+            || !args[2].isNumber()
+            || !args[3].isNumber()
+            || !args[4].isNumber()
+            || !args[5].isObject()
+            || !args[5].asObject(rt).isArrayBuffer(rt)
+        ) {
+          return Value(0.0);
+        }
+        const int width = static_cast<int>(args[0].asNumber());
+        const int height = static_cast<int>(args[1].asNumber());
+        const int alphaType = static_cast<int>(args[2].asNumber());
+        const int colorType = static_cast<int>(args[3].asNumber());
+        const size_t rowBytes = static_cast<size_t>(std::max(0.0, args[4].asNumber()));
+        if (width <= 0 || height <= 0 || rowBytes == 0) return Value(0.0);
+
+        const SkImageInfo info = SkImageInfo::Make(
+            width,
+            height,
+            decodeColorType(colorType),
+            decodeAlphaType(alphaType));
+        if (info.isEmpty() || info.colorType() == kUnknown_SkColorType) {
+          return Value(0.0);
+        }
+
+        ArrayBuffer buffer = args[5].asObject(rt).getArrayBuffer(rt);
+        auto data = SkData::MakeWithCopy(buffer.data(rt), buffer.size(rt));
+        if (!data) return Value(0.0);
+        auto image = SkImages::RasterFromData(info, data, rowBytes);
+        if (!image) return Value(0.0);
+
+        const int imageId = gNextImageId.fetch_add(1);
+        {
+          std::lock_guard<std::mutex> lock(gImageCacheMutex);
+          gImageCache[imageId] = std::move(image);
+        }
+        return Value(static_cast<double>(imageId));
+      });
+
+  auto getImageInfo = Function::createFromHostFunction(
+      rt,
+      PropNameID::forAscii(rt, "getImageInfo"),
+      1,
+      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isNumber()) return Value::null();
+        const int imageId = static_cast<int>(args[0].asNumber());
+        sk_sp<SkImage> image = getImageById(imageId);
+        if (!image) return Value::null();
+        const SkImageInfo info = image->imageInfo();
+        Object result(rt);
+        result.setProperty(rt, "width", Value(static_cast<double>(image->width())));
+        result.setProperty(rt, "height", Value(static_cast<double>(image->height())));
+        result.setProperty(rt, "alphaType", Value(static_cast<double>(encodeAlphaType(info.alphaType()))));
+        result.setProperty(rt, "colorType", Value(static_cast<double>(encodeColorType(info.colorType()))));
+        return result;
+      });
+
+  auto releaseImage = Function::createFromHostFunction(
+      rt,
+      PropNameID::forAscii(rt, "releaseImage"),
+      1,
+      [](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isNumber()) return Value(false);
+        const int imageId = static_cast<int>(args[0].asNumber());
+        std::lock_guard<std::mutex> lock(gImageCacheMutex);
+        return Value(gImageCache.erase(imageId) > 0);
+      });
+
   Object skia(rt);
   Object capabilities(rt);
   capabilities.setProperty(rt, "paths", Value(true));
@@ -2009,6 +2365,7 @@ void installBridge(Runtime &rt) {
   capabilities.setProperty(rt, "maskLuminance", Value(true));
   capabilities.setProperty(rt, "shaderLinearGradient", Value(true));
   capabilities.setProperty(rt, "groupLayer", Value(true));
+  capabilities.setProperty(rt, "images", Value(true));
   skia.setProperty(rt, "capabilities", capabilities);
   skia.setProperty(rt, "createSurface", createSurface);
   skia.setProperty(rt, "disposeSurface", disposeSurface);
@@ -2020,6 +2377,10 @@ void installBridge(Runtime &rt) {
   skia.setProperty(rt, "measureText", measureText);
   skia.setProperty(rt, "listFontFamilies", listFontFamilies);
   skia.setProperty(rt, "registerFont", registerFont);
+  skia.setProperty(rt, "createImageFromEncoded", createImageFromEncoded);
+  skia.setProperty(rt, "createImageFromPixels", createImageFromPixels);
+  skia.setProperty(rt, "getImageInfo", getImageInfo);
+  skia.setProperty(rt, "releaseImage", releaseImage);
   rt.global().setProperty(rt, kSkiaKey, skia);
 }
 
@@ -2382,5 +2743,9 @@ extern "C" JNIEXPORT void JNICALL JNI_OnUnload(JavaVM *, void *) {
   {
     std::lock_guard<std::mutex> cacheLock(gRuntimeEffectCacheMutex);
     gRuntimeEffectCache.clear();
+  }
+  {
+    std::lock_guard<std::mutex> imageLock(gImageCacheMutex);
+    gImageCache.clear();
   }
 }

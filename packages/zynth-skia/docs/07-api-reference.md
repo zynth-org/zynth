@@ -15,6 +15,7 @@
 - `LinearGradient`
 - `Mask`
 - `Text`
+- `Image`
 
 ### Factories / helpers
 
@@ -33,6 +34,11 @@
 - `createClock`
 - `createPathInterpolation`
 - `createPathValue`
+- `createImage`
+- `useImage`
+- `CubicSampling`
+- `FilterMode`
+- `MipmapMode`
 - `Skia`
 - `getSkiaCapabilities`
 - `supportsSkiaFeature`
@@ -74,6 +80,8 @@
   - `{ type: "path", commands, color, linearGradient?, ...paintFields }`
 - `SkiaDrawText`
   - `{ type: "text", text, x, y, color, fontFamily, fontSize, fontStyle?, fontWeight?, antiAlias?, opacity?, linearGradient? }`
+- `SkiaDrawImage`
+  - `{ type: "image", imageId, x, y, width, height, fit?, sampling?, antiAlias?, opacity? }`
 - `SkiaDrawRuntimeShaderRect`
   - `{ type: "runtimeShaderRect", x, y, width, height, source, uniforms, antiAlias?, opacity? }`
 

@@ -19,6 +19,7 @@
 #import "include/core/SkImageInfo.h"
 #import "include/core/SkPaint.h"
 #import "include/core/SkPath.h"
+#import "include/core/SkSamplingOptions.h"
 #import "include/core/SkString.h"
 #import "include/core/SkSurface.h"
 #import "include/core/SkTypeface.h"
@@ -44,6 +45,7 @@ enum PackedOpcode {
   PackedOpcodeSaveLayer = 10,
   PackedOpcodeSaveLayerLuminanceMask = 11,
   PackedOpcodeRestore = 12,
+  PackedOpcodeImage = 13,
 };
 
 enum PackedColorType {
@@ -83,6 +85,33 @@ enum PackedTileMode {
   PackedTileModeDecal = 3,
 };
 
+enum PackedImageFit {
+  PackedImageFitContain = 0,
+  PackedImageFitFill = 1,
+  PackedImageFitCover = 2,
+  PackedImageFitFitHeight = 3,
+  PackedImageFitFitWidth = 4,
+  PackedImageFitScaleDown = 5,
+  PackedImageFitNone = 6,
+};
+
+enum PackedSamplingKind {
+  PackedSamplingKindDefault = 0,
+  PackedSamplingKindCubic = 1,
+  PackedSamplingKindFilterMipmap = 2,
+};
+
+enum PackedFilterMode {
+  PackedFilterModeNearest = 0,
+  PackedFilterModeLinear = 1,
+};
+
+enum PackedMipmapMode {
+  PackedMipmapModeNone = 0,
+  PackedMipmapModeNearest = 1,
+  PackedMipmapModeLinear = 2,
+};
+
 constexpr int PackedStreamMagic = 900719;
 constexpr int PackedStreamVersion = 2;
 constexpr int PackedScalarLiteral = 0;
@@ -112,6 +141,9 @@ void *gSkiaRuntimeState = nullptr;
 thread_local std::vector<int> *gSignalCollector = nullptr;
 std::mutex gRuntimeEffectCacheMutex;
 std::unordered_map<std::string, sk_sp<SkRuntimeEffect>> gRuntimeEffectCache;
+std::mutex gImageCacheMutex;
+std::unordered_map<int, sk_sp<SkImage>> gImageCache;
+int gNextImageId = 1;
 
 std::mutex gTypefaceCacheMutex;
 std::unordered_map<std::string, sk_sp<SkTypeface>> gTypefaceCache;
@@ -420,6 +452,157 @@ static SkTileMode decodeTileMode(int mode) {
     default:
       return SkTileMode::kClamp;
   }
+}
+
+static SkAlphaType decodeAlphaType(int alphaType) {
+  switch (alphaType) {
+    case 1:
+      return kOpaque_SkAlphaType;
+    case 2:
+      return kPremul_SkAlphaType;
+    case 3:
+      return kUnpremul_SkAlphaType;
+    case 0:
+    default:
+      return kUnknown_SkAlphaType;
+  }
+}
+
+static SkColorType decodeColorType(int colorType) {
+  switch (colorType) {
+    case 1:
+      return kAlpha_8_SkColorType;
+    case 2:
+      return kRGB_565_SkColorType;
+    case 4:
+      return kRGBA_8888_SkColorType;
+    case 6:
+      return kBGRA_8888_SkColorType;
+    case 10:
+      return kRGBA_F16_SkColorType;
+    case 0:
+    default:
+      return kUnknown_SkColorType;
+  }
+}
+
+static int encodeAlphaType(SkAlphaType alphaType) {
+  switch (alphaType) {
+    case kOpaque_SkAlphaType:
+      return 1;
+    case kPremul_SkAlphaType:
+      return 2;
+    case kUnpremul_SkAlphaType:
+      return 3;
+    case kUnknown_SkAlphaType:
+    default:
+      return 0;
+  }
+}
+
+static int encodeColorType(SkColorType colorType) {
+  switch (colorType) {
+    case kAlpha_8_SkColorType:
+      return 1;
+    case kRGB_565_SkColorType:
+      return 2;
+    case kRGBA_8888_SkColorType:
+      return 4;
+    case kBGRA_8888_SkColorType:
+      return 6;
+    case kRGBA_F16_SkColorType:
+      return 10;
+    case kUnknown_SkColorType:
+    default:
+      return 0;
+  }
+}
+
+static SkSamplingOptions decodeSampling(const std::vector<double> &ops, size_t &index) {
+  if (index >= ops.size()) return SkSamplingOptions(SkFilterMode::kNearest, SkMipmapMode::kNone);
+  int kind = static_cast<int>(ops[index++]);
+  if (kind == PackedSamplingKindCubic) {
+    if (index + 1 >= ops.size()) return SkSamplingOptions(SkFilterMode::kNearest, SkMipmapMode::kNone);
+    float B = static_cast<float>(ops[index++]);
+    float C = static_cast<float>(ops[index++]);
+    return SkSamplingOptions(SkCubicResampler{B, C});
+  }
+  if (kind == PackedSamplingKindFilterMipmap) {
+    if (index + 1 >= ops.size()) return SkSamplingOptions(SkFilterMode::kNearest, SkMipmapMode::kNone);
+    int filter = static_cast<int>(ops[index++]);
+    int mipmap = static_cast<int>(ops[index++]);
+    const SkFilterMode skFilter = filter == PackedFilterModeLinear ? SkFilterMode::kLinear : SkFilterMode::kNearest;
+    SkMipmapMode skMipmap = SkMipmapMode::kNone;
+    if (mipmap == PackedMipmapModeNearest) skMipmap = SkMipmapMode::kNearest;
+    if (mipmap == PackedMipmapModeLinear) skMipmap = SkMipmapMode::kLinear;
+    return SkSamplingOptions(skFilter, skMipmap);
+  }
+  return SkSamplingOptions(SkFilterMode::kNearest, SkMipmapMode::kNone);
+}
+
+static void applyImageFit(
+    int fit,
+    float imageWidth,
+    float imageHeight,
+    const SkRect &dstInput,
+    SkRect &outSrc,
+    SkRect &outDst) {
+  outSrc = SkRect::MakeWH(std::max(0.0f, imageWidth), std::max(0.0f, imageHeight));
+  outDst = dstInput;
+  if (imageWidth <= 0.0f || imageHeight <= 0.0f || dstInput.width() <= 0.0f || dstInput.height() <= 0.0f) {
+    return;
+  }
+
+  const float scaleContain = std::min(dstInput.width() / imageWidth, dstInput.height() / imageHeight);
+  const float scaleCover = std::max(dstInput.width() / imageWidth, dstInput.height() / imageHeight);
+  const float centerX = dstInput.left() + dstInput.width() * 0.5f;
+  const float centerY = dstInput.top() + dstInput.height() * 0.5f;
+
+  if (fit == PackedImageFitFill) {
+    return;
+  }
+
+  if (fit == PackedImageFitNone) {
+    outDst = SkRect::MakeXYWH(dstInput.left(), dstInput.top(), imageWidth, imageHeight);
+    return;
+  }
+
+  if (fit == PackedImageFitFitWidth) {
+    const float scaledHeight = imageHeight * (dstInput.width() / imageWidth);
+    outDst = SkRect::MakeXYWH(dstInput.left(), centerY - scaledHeight * 0.5f, dstInput.width(), scaledHeight);
+    return;
+  }
+
+  if (fit == PackedImageFitFitHeight) {
+    const float scaledWidth = imageWidth * (dstInput.height() / imageHeight);
+    outDst = SkRect::MakeXYWH(centerX - scaledWidth * 0.5f, dstInput.top(), scaledWidth, dstInput.height());
+    return;
+  }
+
+  if (fit == PackedImageFitCover) {
+    const float srcWidth = dstInput.width() / scaleCover;
+    const float srcHeight = dstInput.height() / scaleCover;
+    const float srcLeft = (imageWidth - srcWidth) * 0.5f;
+    const float srcTop = (imageHeight - srcHeight) * 0.5f;
+    outSrc = SkRect::MakeXYWH(srcLeft, srcTop, srcWidth, srcHeight);
+    outDst = dstInput;
+    return;
+  }
+
+  float scale = scaleContain;
+  if (fit == PackedImageFitScaleDown) {
+    scale = std::min(1.0f, scaleContain);
+  }
+  const float drawWidth = imageWidth * scale;
+  const float drawHeight = imageHeight * scale;
+  outDst = SkRect::MakeXYWH(centerX - drawWidth * 0.5f, centerY - drawHeight * 0.5f, drawWidth, drawHeight);
+}
+
+static sk_sp<SkImage> getImageById(int imageId) {
+  std::lock_guard<std::mutex> lock(gImageCacheMutex);
+  auto found = gImageCache.find(imageId);
+  if (found == gImageCache.end()) return nullptr;
+  return found->second;
 }
 
 static bool applyPackedLinearGradient(const CommandBuffer &buffer,
@@ -796,6 +979,50 @@ static bool renderSurfaceState(const CommandBuffer &buffer,
       if (hasMatrix) {
         canvas->restore();
       }
+      continue;
+    }
+
+    if (opcode == PackedOpcodeImage) {
+      if (i >= buffer.ops.size()) break;
+      int imageId = static_cast<int>(buffer.ops[i++]);
+      float x = readPackedScalar(buffer.ops, i, taggedScalars);
+      float y = readPackedScalar(buffer.ops, i, taggedScalars);
+      float width = readPackedScalar(buffer.ops, i, taggedScalars);
+      float height = readPackedScalar(buffer.ops, i, taggedScalars);
+      if (i >= buffer.ops.size()) break;
+      int fit = static_cast<int>(buffer.ops[i++]);
+      const SkSamplingOptions sampling = decodeSampling(buffer.ops, i);
+      if (i >= buffer.ops.size()) break;
+      bool antiAlias = static_cast<int>(buffer.ops[i++]) != 0;
+      float opacity = readPackedScalar(buffer.ops, i, taggedScalars, 1.0f);
+      if (width <= 0.0f || height <= 0.0f) {
+        continue;
+      }
+
+      sk_sp<SkImage> image = getImageById(imageId);
+      if (!image) {
+        continue;
+      }
+
+      const SkRect dstInput = SkRect::MakeXYWH(x, y, width, height);
+      SkRect srcRect;
+      SkRect dstRect;
+      applyImageFit(fit, static_cast<float>(image->width()), static_cast<float>(image->height()), dstInput, srcRect, dstRect);
+      if (dstRect.width() <= 0.0f || dstRect.height() <= 0.0f || srcRect.width() <= 0.0f || srcRect.height() <= 0.0f) {
+        continue;
+      }
+
+      SkPaint paint;
+      paint.setAntiAlias(antiAlias);
+      paint.setAlphaf(std::max(0.0f, std::min(1.0f, opacity)));
+      canvas->drawImageRect(
+        image,
+        srcRect,
+        dstRect,
+        sampling,
+        &paint,
+        SkCanvas::kStrict_SrcRectConstraint
+      );
       continue;
     }
 
@@ -1341,6 +1568,49 @@ static bool encodeCommands(NSArray<NSDictionary *> *commands,
       continue;
     }
 
+    if ([type isEqualToString:@"image"]) {
+      outOps.push_back(PackedOpcodeImage);
+      outOps.push_back([command[@"imageId"] doubleValue]);
+      outOps.push_back([command[@"x"] doubleValue]);
+      outOps.push_back([command[@"y"] doubleValue]);
+      outOps.push_back([command[@"width"] doubleValue]);
+      outOps.push_back([command[@"height"] doubleValue]);
+
+      NSString *fit = [command[@"fit"] isKindOfClass:[NSString class]] ? command[@"fit"] : @"contain";
+      int packedFit = PackedImageFitContain;
+      if ([fit isEqualToString:@"fill"]) packedFit = PackedImageFitFill;
+      else if ([fit isEqualToString:@"cover"]) packedFit = PackedImageFitCover;
+      else if ([fit isEqualToString:@"fitHeight"]) packedFit = PackedImageFitFitHeight;
+      else if ([fit isEqualToString:@"fitWidth"]) packedFit = PackedImageFitFitWidth;
+      else if ([fit isEqualToString:@"scaleDown"]) packedFit = PackedImageFitScaleDown;
+      else if ([fit isEqualToString:@"none"]) packedFit = PackedImageFitNone;
+      outOps.push_back(packedFit);
+
+      NSDictionary *sampling = [command[@"sampling"] isKindOfClass:[NSDictionary class]] ? command[@"sampling"] : nil;
+      NSNumber *b = [sampling[@"B"] isKindOfClass:[NSNumber class]] ? sampling[@"B"] : nil;
+      NSNumber *c = [sampling[@"C"] isKindOfClass:[NSNumber class]] ? sampling[@"C"] : nil;
+      if (sampling == nil) {
+        outOps.push_back(PackedSamplingKindDefault);
+      } else if (b != nil || c != nil) {
+        outOps.push_back(PackedSamplingKindCubic);
+        outOps.push_back(b != nil ? b.doubleValue : 0.0);
+        outOps.push_back(c != nil ? c.doubleValue : 0.0);
+      } else {
+        outOps.push_back(PackedSamplingKindFilterMipmap);
+        NSString *filter = [sampling[@"filter"] isKindOfClass:[NSString class]] ? sampling[@"filter"] : @"nearest";
+        NSString *mipmap = [sampling[@"mipmap"] isKindOfClass:[NSString class]] ? sampling[@"mipmap"] : @"none";
+        outOps.push_back([filter isEqualToString:@"linear"] ? PackedFilterModeLinear : PackedFilterModeNearest);
+        int packedMipmap = PackedMipmapModeNone;
+        if ([mipmap isEqualToString:@"nearest"]) packedMipmap = PackedMipmapModeNearest;
+        if ([mipmap isEqualToString:@"linear"]) packedMipmap = PackedMipmapModeLinear;
+        outOps.push_back(packedMipmap);
+      }
+
+      outOps.push_back(command[@"antiAlias"] ? ([command[@"antiAlias"] boolValue] ? 1.0 : 0.0) : 1.0);
+      outOps.push_back(command[@"opacity"] ? [command[@"opacity"] doubleValue] : 1.0);
+      continue;
+    }
+
     if ([type isEqualToString:@"runtimeShaderRect"]) {
       NSDictionary *uniforms = command[@"uniforms"];
       if (![uniforms isKindOfClass:[NSDictionary class]]) {
@@ -1652,6 +1922,8 @@ static bool encodeCommands(NSArray<NSDictionary *> *commands,
   if (state == nullptr) {
     std::lock_guard<std::mutex> lock(gRuntimeEffectCacheMutex);
     gRuntimeEffectCache.clear();
+    std::lock_guard<std::mutex> imageLock(gImageCacheMutex);
+    gImageCache.clear();
   }
 }
 
@@ -1750,6 +2022,67 @@ static bool encodeCommands(NSArray<NSDictionary *> *commands,
     gTypefaceCache[[familyName UTF8String]] = std::move(typeface);
   }
   return YES;
+}
+
++ (NSInteger)createImageFromEncodedData:(NSData *)data {
+  if (data == nil || data.length == 0) return 0;
+  sk_sp<SkData> encoded = SkData::MakeWithCopy(data.bytes, data.length);
+  if (!encoded) return 0;
+  sk_sp<SkImage> image = SkImages::DeferredFromEncodedData(encoded);
+  if (!image) return 0;
+
+  std::lock_guard<std::mutex> lock(gImageCacheMutex);
+  const int imageId = gNextImageId++;
+  gImageCache[imageId] = std::move(image);
+  return imageId;
+}
+
++ (NSInteger)createImageFromPixelsWithWidth:(NSInteger)width
+                                    height:(NSInteger)height
+                                 alphaType:(NSInteger)alphaType
+                                 colorType:(NSInteger)colorType
+                                  rowBytes:(NSInteger)rowBytes
+                                      data:(NSData *)data {
+  if (width <= 0 || height <= 0 || rowBytes <= 0 || data == nil || data.length == 0) {
+    return 0;
+  }
+  const SkImageInfo info = SkImageInfo::Make(
+    static_cast<int>(width),
+    static_cast<int>(height),
+    decodeColorType(static_cast<int>(colorType)),
+    decodeAlphaType(static_cast<int>(alphaType))
+  );
+  if (info.isEmpty() || info.colorType() == kUnknown_SkColorType) {
+    return 0;
+  }
+  sk_sp<SkData> pixels = SkData::MakeWithCopy(data.bytes, data.length);
+  if (!pixels) return 0;
+  sk_sp<SkImage> image = SkImages::RasterFromData(info, pixels, static_cast<size_t>(rowBytes));
+  if (!image) return 0;
+
+  std::lock_guard<std::mutex> lock(gImageCacheMutex);
+  const int imageId = gNextImageId++;
+  gImageCache[imageId] = std::move(image);
+  return imageId;
+}
+
++ (NSDictionary<NSString *, NSNumber *> *)getImageInfo:(NSInteger)imageId {
+  if (imageId <= 0) return nil;
+  sk_sp<SkImage> image = getImageById(static_cast<int>(imageId));
+  if (!image) return nil;
+  const SkImageInfo info = image->imageInfo();
+  return @{
+    @"width": @(image->width()),
+    @"height": @(image->height()),
+    @"alphaType": @(encodeAlphaType(info.alphaType())),
+    @"colorType": @(encodeColorType(info.colorType())),
+  };
+}
+
++ (BOOL)releaseImage:(NSInteger)imageId {
+  if (imageId <= 0) return NO;
+  std::lock_guard<std::mutex> lock(gImageCacheMutex);
+  return gImageCache.erase(static_cast<int>(imageId)) > 0;
 }
 
 @end

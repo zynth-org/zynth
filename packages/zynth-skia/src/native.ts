@@ -9,8 +9,10 @@ import {
   type SkiaLinearGradient,
   type SkiaCapabilities,
   type SkiaDrawCommand,
+  type SkiaDrawImage,
   type SkiaFeature,
   type SkiaFrameSpec,
+  type SkiaImageInfo,
   type SkiaInterpolationToken,
   type SkiaSharedSignalToken,
   type SkiaStrokeCap,
@@ -33,6 +35,17 @@ type SkiaNativeBridge = {
   submitFrame(nodeId: number, frame: SkiaFrameSpec): boolean;
   invalidateSurface(nodeId: number): boolean;
   setFrameLoopEnabled(nodeId: number, enabled: boolean): boolean;
+  createImageFromEncoded?(data: ArrayBuffer): number;
+  createImageFromPixels?(
+    width: number,
+    height: number,
+    alphaType: number,
+    colorType: number,
+    rowBytes: number,
+    data: ArrayBuffer,
+  ): number;
+  getImageInfo?(imageId: number): SkiaImageInfo | null;
+  releaseImage?(imageId: number): boolean;
   capabilities?: Partial<SkiaCapabilities>;
 };
 
@@ -64,6 +77,7 @@ const enum PackedOpcode {
   SaveLayer = 10,
   SaveLayerLuminanceMask = 11,
   Restore = 12,
+  Image = 13,
 }
 
 const enum PackedTileMode {
@@ -103,6 +117,33 @@ const enum PackedPathVerb {
   Close = 4,
 }
 
+const enum PackedImageFit {
+  Contain = 0,
+  Fill = 1,
+  Cover = 2,
+  FitHeight = 3,
+  FitWidth = 4,
+  ScaleDown = 5,
+  None = 6,
+}
+
+const enum PackedSamplingKind {
+  Default = 0,
+  Cubic = 1,
+  FilterMipmap = 2,
+}
+
+const enum PackedFilterMode {
+  Nearest = 0,
+  Linear = 1,
+}
+
+const enum PackedMipmapMode {
+  None = 0,
+  Nearest = 1,
+  Linear = 2,
+}
+
 const PACKED_STREAM_MAGIC = 900719;
 const PACKED_STREAM_VERSION = 2;
 
@@ -131,6 +172,7 @@ const defaultCapabilities: SkiaCapabilities = {
   maskLuminance: false,
   shaderLinearGradient: false,
   groupLayer: false,
+  images: false,
 };
 
 const featureCapabilityMap: Record<SkiaFeature, keyof SkiaCapabilities> = {
@@ -146,6 +188,7 @@ const featureCapabilityMap: Record<SkiaFeature, keyof SkiaCapabilities> = {
   "mask.luminance": "maskLuminance",
   "shader.linearGradient": "shaderLinearGradient",
   "group.layer": "groupLayer",
+  images: "images",
 };
 
 function parsePackedColor(value: string): number | null {
@@ -554,6 +597,15 @@ function materializeCommandsForFallback(commands: SkiaDrawCommand[]): SkiaDrawCo
           opacity: command.opacity == null ? undefined : materializeScalar(command.opacity, 1),
           linearGradient: materializeLinearGradient(command.linearGradient),
         };
+      case "image":
+        return {
+          ...command,
+          x: materializeScalar(command.x),
+          y: materializeScalar(command.y),
+          width: materializeScalar(command.width),
+          height: materializeScalar(command.height),
+          opacity: command.opacity == null ? undefined : materializeScalar(command.opacity, 1),
+        };
       case "runtimeShaderRect":
         return {
           ...command,
@@ -634,6 +686,48 @@ function materializeCommandsForFallback(commands: SkiaDrawCommand[]): SkiaDrawCo
   });
 }
 
+function encodeImageFit(fit: SkiaDrawImage["fit"]): number {
+  switch (fit) {
+    case "fill":
+      return PackedImageFit.Fill;
+    case "cover":
+      return PackedImageFit.Cover;
+    case "fitHeight":
+      return PackedImageFit.FitHeight;
+    case "fitWidth":
+      return PackedImageFit.FitWidth;
+    case "scaleDown":
+      return PackedImageFit.ScaleDown;
+    case "none":
+      return PackedImageFit.None;
+    case "contain":
+    default:
+      return PackedImageFit.Contain;
+  }
+}
+
+function encodeImageSampling(encoded: number[], sampling: SkiaDrawImage["sampling"]): void {
+  if (!sampling) {
+    encoded.push(PackedSamplingKind.Default);
+    return;
+  }
+  if ("B" in sampling || "C" in sampling) {
+    encoded.push(
+      PackedSamplingKind.Cubic,
+      Number((sampling as { B?: unknown }).B ?? 0),
+      Number((sampling as { C?: unknown }).C ?? 0),
+    );
+    return;
+  }
+  encoded.push(
+    PackedSamplingKind.FilterMipmap,
+    (sampling.filter ?? "nearest") === "linear" ? PackedFilterMode.Linear : PackedFilterMode.Nearest,
+    sampling.mipmap === "nearest"
+      ? PackedMipmapMode.Nearest
+      : (sampling.mipmap === "linear" ? PackedMipmapMode.Linear : PackedMipmapMode.None),
+  );
+}
+
 function encodePackedCommands(commands: SkiaDrawCommand[]): PackedCommands {
   const encoded: number[] = [PACKED_STREAM_MAGIC, PACKED_STREAM_VERSION];
   const stringTable: string[] = [];
@@ -648,6 +742,7 @@ function encodePackedCommands(commands: SkiaDrawCommand[]): PackedCommands {
       && command.type !== "saveLayerLuminanceMask"
       && command.type !== "restore"
       && command.type !== "text"
+      && command.type !== "image"
       && command.type !== "runtimeShaderRect"
       && command.type !== "runtimeShaderCircle"
       && command.type !== "runtimeShaderPath"
@@ -966,6 +1061,21 @@ function encodePackedCommands(commands: SkiaDrawCommand[]): PackedCommands {
         }
         break;
       }
+      case "image":
+        if (!caps.images) {
+          throw new Error("Skia feature unsupported: images");
+        }
+        encoded.push(PackedOpcode.Image);
+        encoded.push(command.imageId);
+        pushPackedScalar(encoded, command.x);
+        pushPackedScalar(encoded, command.y);
+        pushPackedScalar(encoded, command.width);
+        pushPackedScalar(encoded, command.height);
+        encoded.push(encodeImageFit(command.fit));
+        encodeImageSampling(encoded, command.sampling);
+        encoded.push(command.antiAlias === false ? 0 : 1);
+        pushPackedScalar(encoded, caps.paintOpacity ? (command.opacity ?? 1) : 1, 1);
+        break;
     }
   }
 
@@ -1103,4 +1213,46 @@ export function setNativeFrameLoopEnabled(nodeId: number, enabled: boolean): voi
     nodeId,
     enabled,
   } satisfies SkiaFrameLoopPayload);
+}
+
+export function createNativeImageFromEncoded(data: ArrayBuffer): number {
+  const bridge = getBridge();
+  if (bridge?.createImageFromEncoded) {
+    const imageId = bridge.createImageFromEncoded(data);
+    if (typeof imageId === "number" && imageId > 0) return imageId;
+  }
+  throw new Error("Skia native bridge is unavailable for createImageFromEncoded");
+}
+
+export function createNativeImageFromPixels(
+  width: number,
+  height: number,
+  alphaType: number,
+  colorType: number,
+  rowBytes: number,
+  data: ArrayBuffer,
+): number {
+  const bridge = getBridge();
+  if (bridge?.createImageFromPixels) {
+    const imageId = bridge.createImageFromPixels(width, height, alphaType, colorType, rowBytes, data);
+    if (typeof imageId === "number" && imageId > 0) return imageId;
+  }
+  throw new Error("Skia native bridge is unavailable for createImageFromPixels");
+}
+
+export function getNativeImageInfo(imageId: number): SkiaImageInfo | null {
+  const bridge = getBridge();
+  if (bridge?.getImageInfo) {
+    const info = bridge.getImageInfo(imageId);
+    if (info) return info;
+  }
+  return null;
+}
+
+export function releaseNativeImage(imageId: number): void {
+  const bridge = getBridge();
+  if (bridge?.releaseImage) {
+    const ok = bridge.releaseImage(imageId);
+    if (ok) return;
+  }
 }

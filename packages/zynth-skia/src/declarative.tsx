@@ -36,6 +36,7 @@ import type {
   SkiaDrawRuntimeShaderRect,
   SkiaFont,
   SkiaGroupProps,
+  SkiaImageProps,
   SkiaLinearGradient,
   SkiaLinearGradientProps,
   SkiaMaskProps,
@@ -66,6 +67,7 @@ type SkiaNodeKind =
   | "path"
   | "shader"
   | "text"
+  | "image"
   | "linearGradient"
   | "mask";
 
@@ -966,6 +968,51 @@ function compileShapeText(
   });
 }
 
+function compileShapeImage(
+  props: SkiaImageProps,
+  state: CompileState,
+  out: SkiaDrawCommand[],
+) {
+  assertSkiaFeature("images", "Image");
+  const resolvedImage = typeof props.image === "function"
+    ? (props.image as Accessor<unknown>)()
+    : props.image;
+  if (!resolvedImage || typeof resolvedImage !== "object") return;
+  const imageId = Number((resolvedImage as { id?: unknown }).id);
+  if (!Number.isFinite(imageId) || imageId <= 0) return;
+
+  if (!isAxisAligned(state.transform)) {
+    throw new Error("Skia Image currently supports axis-aligned Group transforms only");
+  }
+
+  const xScalar = resolveScalar(props.x);
+  const yScalar = resolveScalar(props.y);
+  const widthScalar = resolveScalar(props.width);
+  const heightScalar = resolveScalar(props.height);
+  const x = readNumber(xScalar);
+  const y = readNumber(yScalar);
+  const width = readNumber(widthScalar);
+  const height = readNumber(heightScalar);
+  const identityTransform = isIdentityTransform(state.transform);
+  const p1 = applyMatrixPoint(state.transform, x, y);
+  const p3 = applyMatrixPoint(state.transform, x + width, y + height);
+  const opacity = props.opacity ?? state.paint.opacity;
+  const resolvedOpacity = isReactiveScalar(opacity) ? opacity : clampUnit(readNumber(opacity, 1));
+
+  pushPaintedShape(out, {
+    type: "image",
+    imageId,
+    x: (identityTransform ? xScalar : Math.min(p1.x, p3.x)) as unknown as number,
+    y: (identityTransform ? yScalar : Math.min(p1.y, p3.y)) as unknown as number,
+    width: (identityTransform ? widthScalar : Math.abs(p3.x - p1.x)) as unknown as number,
+    height: (identityTransform ? heightScalar : Math.abs(p3.y - p1.y)) as unknown as number,
+    fit: props.fit,
+    sampling: props.sampling,
+    antiAlias: props.antiAlias ?? state.paint.antiAlias,
+    opacity: resolvedOpacity as unknown as number,
+  });
+}
+
 function compileNode(
   value: unknown,
   state: CompileState,
@@ -1080,6 +1127,11 @@ function compileNode(
 
   if (value.kind === "text") {
     compileShapeText(value.props as SkiaTextProps, state, time, out);
+    return;
+  }
+
+  if (value.kind === "image") {
+    compileShapeImage(value.props as SkiaImageProps, state, out);
     return;
   }
 
@@ -1198,6 +1250,10 @@ export function Text(props: SkiaTextProps): JSX.Element {
       children: resolved,
     }),
   ) as unknown as JSX.Element;
+}
+
+export function Image(props: SkiaImageProps): JSX.Element {
+  return createNode("image", props) as unknown as JSX.Element;
 }
 
 export function Shader(props: SkiaShaderProps): JSX.Element {

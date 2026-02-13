@@ -289,6 +289,75 @@ static void installSkiaBridge(ZynthHermesRuntimeHost *host, Runtime &rt) {
         return Value(false);
       });
 
+  auto createImageFromEncodedFn = Function::createFromHostFunction(
+      rt,
+      PropNameID::forAscii(rt, "createImageFromEncoded"),
+      1,
+      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isObject() || !args[0].asObject(rt).isArrayBuffer(rt)) {
+          return Value(0.0);
+        }
+        ArrayBuffer buffer = args[0].asObject(rt).getArrayBuffer(rt);
+        NSData *data = [NSData dataWithBytes:buffer.data(rt) length:buffer.size(rt)];
+        NSInteger imageId = [ZynthSkiaRendererBridge createImageFromEncodedData:data];
+        return Value((double)imageId);
+      });
+
+  auto createImageFromPixelsFn = Function::createFromHostFunction(
+      rt,
+      PropNameID::forAscii(rt, "createImageFromPixels"),
+      6,
+      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 6
+            || !args[0].isNumber()
+            || !args[1].isNumber()
+            || !args[2].isNumber()
+            || !args[3].isNumber()
+            || !args[4].isNumber()
+            || !args[5].isObject()
+            || !args[5].asObject(rt).isArrayBuffer(rt)) {
+          return Value(0.0);
+        }
+        ArrayBuffer buffer = args[5].asObject(rt).getArrayBuffer(rt);
+        NSData *data = [NSData dataWithBytes:buffer.data(rt) length:buffer.size(rt)];
+        NSInteger imageId = [ZynthSkiaRendererBridge createImageFromPixelsWithWidth:(NSInteger)args[0].asNumber()
+                                                                              height:(NSInteger)args[1].asNumber()
+                                                                           alphaType:(NSInteger)args[2].asNumber()
+                                                                           colorType:(NSInteger)args[3].asNumber()
+                                                                            rowBytes:(NSInteger)args[4].asNumber()
+                                                                                data:data];
+        return Value((double)imageId);
+      });
+
+  auto getImageInfoFn = Function::createFromHostFunction(
+      rt,
+      PropNameID::forAscii(rt, "getImageInfo"),
+      1,
+      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isNumber()) {
+          return Value::null();
+        }
+        NSDictionary<NSString *, NSNumber *> *info = [ZynthSkiaRendererBridge getImageInfo:(NSInteger)args[0].asNumber()];
+        if (info == nil) return Value::null();
+        Object result(rt);
+        result.setProperty(rt, "width", Value([[info objectForKey:@"width"] doubleValue]));
+        result.setProperty(rt, "height", Value([[info objectForKey:@"height"] doubleValue]));
+        result.setProperty(rt, "alphaType", Value([[info objectForKey:@"alphaType"] doubleValue]));
+        result.setProperty(rt, "colorType", Value([[info objectForKey:@"colorType"] doubleValue]));
+        return result;
+      });
+
+  auto releaseImageFn = Function::createFromHostFunction(
+      rt,
+      PropNameID::forAscii(rt, "releaseImage"),
+      1,
+      [](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isNumber()) {
+          return Value(false);
+        }
+        return Value([ZynthSkiaRendererBridge releaseImage:(NSInteger)args[0].asNumber()]);
+      });
+
   Object skia(rt);
   Object capabilities(rt);
   capabilities.setProperty(rt, "paths", Value(true));
@@ -303,6 +372,7 @@ static void installSkiaBridge(ZynthHermesRuntimeHost *host, Runtime &rt) {
   capabilities.setProperty(rt, "maskLuminance", Value(true));
   capabilities.setProperty(rt, "shaderLinearGradient", Value(true));
   capabilities.setProperty(rt, "groupLayer", Value(true));
+  capabilities.setProperty(rt, "images", Value(true));
   skia.setProperty(rt, "capabilities", capabilities);
   skia.setProperty(rt, "createSurface", createSurfaceFn);
   skia.setProperty(rt, "disposeSurface", disposeSurfaceFn);
@@ -314,6 +384,10 @@ static void installSkiaBridge(ZynthHermesRuntimeHost *host, Runtime &rt) {
   skia.setProperty(rt, "measureText", measureTextFn);
   skia.setProperty(rt, "listFontFamilies", listFontFamiliesFn);
   skia.setProperty(rt, "registerFont", registerFontFn);
+  skia.setProperty(rt, "createImageFromEncoded", createImageFromEncodedFn);
+  skia.setProperty(rt, "createImageFromPixels", createImageFromPixelsFn);
+  skia.setProperty(rt, "getImageInfo", getImageInfoFn);
+  skia.setProperty(rt, "releaseImage", releaseImageFn);
 
   rt.global().setProperty(rt, kSkiaKey, skia);
 }

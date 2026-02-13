@@ -74,11 +74,22 @@ Props:
 - `Circle`
 - `Path`
 - `Text`
+- `Image`
 - `Shader` (as a child of `Paint` or shape nodes)
 - `LinearGradient` (as a child of `Paint` or shape nodes)
 - `Mask`
 
 All shape nodes accept local paint overrides.
+
+### `Image`
+
+Props:
+
+- `image: SkiaImage | Accessor<SkiaImage | null>`
+- `x`, `y`, `width`, `height`
+- `fit?: "contain" | "fill" | "cover" | "fitHeight" | "fitWidth" | "scaleDown" | "none"`
+- `sampling?: { B, C } | { filter?: "nearest" | "linear"; mipmap?: "none" | "nearest" | "linear" }`
+- `antiAlias?`, `opacity?`
 
 ## Migration note
 

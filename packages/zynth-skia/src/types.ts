@@ -135,6 +135,62 @@ export type SkiaDrawText = {
   linearGradient?: SkiaLinearGradient;
 };
 
+export type SkiaImageInfo = {
+  width: number;
+  height: number;
+  alphaType: number;
+  colorType: number;
+};
+
+export type SkiaImage = {
+  readonly __skiaImage: true;
+  readonly id: number;
+  width(): number;
+  height(): number;
+  getImageInfo(): SkiaImageInfo;
+  encodeToBytes(): Uint8Array;
+  encodeToBase64(): string;
+  readPixels(): Uint8Array | Float32Array;
+  dispose(): void;
+};
+
+export type SkiaImageFit =
+  | "contain"
+  | "fill"
+  | "cover"
+  | "fitHeight"
+  | "fitWidth"
+  | "scaleDown"
+  | "none";
+
+export type SkiaImageCubicSampling = {
+  B: number;
+  C: number;
+};
+
+export type SkiaImageFilterMode = "nearest" | "linear";
+export type SkiaImageMipmapMode = "none" | "nearest" | "linear";
+
+export type SkiaImageFilterSampling = {
+  filter?: SkiaImageFilterMode;
+  mipmap?: SkiaImageMipmapMode;
+};
+
+export type SkiaImageSampling = SkiaImageCubicSampling | SkiaImageFilterSampling;
+
+export type SkiaDrawImage = {
+  type: "image";
+  imageId: number;
+  x: SkiaScalarValue;
+  y: SkiaScalarValue;
+  width: SkiaScalarValue;
+  height: SkiaScalarValue;
+  fit?: SkiaImageFit;
+  sampling?: SkiaImageSampling;
+  antiAlias?: boolean;
+  opacity?: SkiaScalarValue;
+};
+
 export type SkiaPathCommand =
   | { type: "moveTo"; x: number; y: number }
   | { type: "lineTo"; x: number; y: number }
@@ -242,6 +298,7 @@ export type SkiaDrawCommand =
   | SkiaDrawCircle
   | SkiaDrawLine
   | SkiaDrawText
+  | SkiaDrawImage
   | SkiaDrawPath
   | SkiaDrawRuntimeShaderRect
   | SkiaDrawRuntimeShaderCircle
@@ -443,6 +500,18 @@ export type SkiaTextProps = {
   children?: JSX.Element;
 };
 
+export type SkiaImageProps = {
+  image: SkiaImage | Accessor<SkiaImage | null> | null;
+  x: SkiaScalarValue;
+  y: SkiaScalarValue;
+  width: SkiaScalarValue;
+  height: SkiaScalarValue;
+  fit?: SkiaImageFit;
+  sampling?: SkiaImageSampling;
+  antiAlias?: boolean;
+  opacity?: SkiaScalarValue;
+};
+
 export type SkiaFeature =
   | "paths"
   | "path.curves"
@@ -455,7 +524,8 @@ export type SkiaFeature =
   | "font.measure"
   | "mask.luminance"
   | "shader.linearGradient"
-  | "group.layer";
+  | "group.layer"
+  | "images";
 
 export type SkiaCapabilities = {
   paths: boolean;
@@ -470,6 +540,7 @@ export type SkiaCapabilities = {
   maskLuminance: boolean;
   shaderLinearGradient: boolean;
   groupLayer: boolean;
+  images: boolean;
 };
 
 export type CreateSkiaValueOptions = {

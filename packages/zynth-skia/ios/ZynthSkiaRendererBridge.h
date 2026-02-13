@@ -28,6 +28,15 @@ NS_ASSUME_NONNULL_BEGIN
 + (NSArray<NSString *> *)listFontFamilies;
 + (BOOL)registerFont:(NSString *)familyName data:(NSData *)data;
 + (BOOL)registerFont:(NSString *)familyName path:(NSString *)path;
++ (NSInteger)createImageFromEncodedData:(NSData *)data;
++ (NSInteger)createImageFromPixelsWithWidth:(NSInteger)width
+                                    height:(NSInteger)height
+                                 alphaType:(NSInteger)alphaType
+                                 colorType:(NSInteger)colorType
+                                  rowBytes:(NSInteger)rowBytes
+                                      data:(NSData *)data;
++ (nullable NSDictionary<NSString *, NSNumber *> *)getImageInfo:(NSInteger)imageId;
++ (BOOL)releaseImage:(NSInteger)imageId;
 @end
 
 NS_ASSUME_NONNULL_END

@@ -6,6 +6,7 @@ export {
   Canvas,
   Circle,
   Group,
+  Image,
   LinearGradient,
   Mask,
   Paint,
@@ -23,6 +24,20 @@ export {
   useFont,
   vec,
 } from "./font";
+export {
+  AlphaType,
+  ColorType,
+  CubicSampling,
+  FilterMode,
+  MipmapMode,
+  createImage,
+  makeImage,
+  makeImageFromEncoded,
+  makeSkiaDataFromBase64,
+  makeSkiaDataFromBytes,
+  useImage,
+} from "./image";
+export type { SkiaData, SkiaImageSource } from "./image";
 export { createPath } from "./path";
 export { createRuntimeEffect, createShader, createSkiaValue, Skia } from "./shader";
 export {
@@ -53,6 +68,7 @@ export type {
   SkiaDrawCircle,
   SkiaDrawClear,
   SkiaDrawLine,
+  SkiaDrawImage,
   SkiaDrawPath,
   SkiaDrawRect,
   SkiaDrawRestore,
@@ -73,6 +89,14 @@ export type {
   SkiaFeature,
   SkiaFrameSpec,
   SkiaGroupProps,
+  SkiaImage,
+  SkiaImageFit,
+  SkiaImageCubicSampling,
+  SkiaImageInfo,
+  SkiaImageMipmapMode,
+  SkiaImageFilterMode,
+  SkiaImageSampling,
+  SkiaImageProps,
   SkiaScalarValue,
   SkiaInterpolationToken,
   SkiaCapabilities,
