@@ -73,32 +73,6 @@ This track hardens `@zynth/skia` so animation hooks and shader pipelines stay UI
 - [ ] Cleanup hardening pass (dispose/unmount mapping audits, regression tests).
 - [ ] Hook implementation phase (`useClock`, `usePathInterpolation`, `usePathValue`) on top of native token pipeline.
 
-### Execution Plan
-
-1. **Native pipeline hardening**
-- Keep hot path allocation-light during draw/decode.
-- Keep runtime shader effect cache bounded and reset on runtime teardown.
-- Continue narrowing Android frame artifacts (bitmap handoff/frame pacing) with deterministic diagnostics.
-
-2. **Validation gates (required before hooks)**
-- Functional gate:
-- Shared-signal-driven `Rect`, `Path`, and runtime uniforms animate without JS command resubmission.
-- Threading gate:
-- Animation continues during intentional JS blocking (`Block JS` scenario).
-- Correctness gate:
-- Surface disposal/unmount clears subscription maps; no stale invalidations.
-- Perf gate:
-- Capture frame-time stats on a stress scene (multiple dynamic uniforms + paths) and enforce target budget at 60fps.
-
-3. **Hook delivery phase**
-- `useClock`: native-driven time shared signal, no JS frame loop dependency.
-- `usePathInterpolation`: token-capable progress path with native-friendly interpolation contract.
-- `usePathValue`: mutation/update path with shared-signal input contract and minimal bridge churn.
-
-4. **API defaults and ergonomics**
-- Evaluate defaulting numeric `createSkiaValue(...)` to shared/native mode with explicit opt-out.
-- Document constraints for non-numeric shared signals and expected runtime behavior.
-
 ## Bad Behaviors
 
 - [ ] Improve zynth-cli
