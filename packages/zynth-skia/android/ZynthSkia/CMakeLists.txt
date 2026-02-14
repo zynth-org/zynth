@@ -8,7 +8,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 set(SKIA_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../native/vendor)
 set(SKIA_HEADERS ${SKIA_ROOT}/headers/skia)
-set(SKIA_ANDROID_LIB_DIR ${SKIA_ROOT}/android/${ANDROID_ABI}/gl-pdf)
+set(SKIA_ANDROID_LIB_DIR ${SKIA_ROOT}/android/${ANDROID_ABI})
 
 add_library(zynthskia SHARED
   src/main/cpp/ZynthSkiaJSI.cpp
@@ -27,8 +27,12 @@ target_include_directories(zynthskia
     ${CMAKE_CURRENT_SOURCE_DIR}/src/main/cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../zynth-core/android/ZynthKit/src/main/cpp
     ${SKIA_HEADERS}
-    ${SKIA_HEADERS}/include
     $<TARGET_PROPERTY:ReactAndroid::jsi,INTERFACE_INCLUDE_DIRECTORIES>
+)
+
+target_compile_definitions(zynthskia
+  PRIVATE
+    SK_GRAPHITE
 )
 
 target_link_libraries(zynthskia

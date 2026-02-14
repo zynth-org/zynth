@@ -2,6 +2,16 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 
+// ANSI Colors
+const RESET = "\x1b[0m";
+const GREEN = "\x1b[32m";
+const DIM = "\x1b[2m";
+const BRIGHT = "\x1b[1m";
+
+const SYMBOL_STEP = `${GREEN}◆${RESET}`;
+const SYMBOL_SUCCESS = `${GREEN}✔${RESET}`;
+const SYMBOL_SUBSTEP = `${GREEN}➔${RESET}`;
+
 const nativeSourceExtensions = new Set([".h", ".hh", ".hpp", ".c", ".cc", ".cpp", ".m", ".mm"]);
 const featureRootHeaders = {
   svg: [
@@ -246,7 +256,7 @@ async function packDirectoryToTar(sourceDir, tarPath, context) {
 }
 
 export async function prepareReleaseBundle(manifest, args, context) {
-  console.log(`Preparing release bundle for ${manifest.version}`);
+  console.log(`${SYMBOL_STEP} Preparing release bundle (${BRIGHT}${manifest.version}${RESET})`);
 
   const outputDir = args.outDir.includes("current")
     ? path.join(context.defaultReleaseOutDir, manifest.version)
@@ -322,11 +332,11 @@ export async function prepareReleaseBundle(manifest, args, context) {
 
   if (hasManifestChanges) {
     await fs.writeFile(context.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
-    console.log("Updated manifest checksums from local release bundle outputs.");
+    console.log(`  ${SYMBOL_SUBSTEP} Updated manifest checksums.`);
   }
 
-  console.log(`Release bundle created at ${outputDir}`);
+  console.log(`\n${SYMBOL_SUCCESS} Release bundle created at ${DIM}${outputDir}${RESET}`);
   for (const artifact of outputs) {
-    console.log(`  ${artifact.file}  sha256=${artifact.sha256}`);
+    console.log(`  ${SYMBOL_SUBSTEP} ${artifact.file} ${DIM}sha256=${artifact.sha256.substring(0, 12)}...${RESET}`);
   }
 }

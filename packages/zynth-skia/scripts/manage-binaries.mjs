@@ -10,6 +10,19 @@ import https from "node:https";
 import { execFileSync } from "node:child_process";
 import { prepareReleaseBundle } from "./release-prep.mjs";
 
+// ANSI Colors
+const RESET = "\x1b[0m";
+const GREEN = "\x1b[32m";
+const DIM = "\x1b[2m";
+const BRIGHT = "\x1b[1m";
+const RED = "\x1b[31m";
+
+const SYMBOL_STEP = `${GREEN}◆${RESET}`;
+const SYMBOL_SUCCESS = `${GREEN}✔${RESET}`;
+const SYMBOL_SUBSTEP = `${GREEN}➔${RESET}`;
+const SYMBOL_FAIL = `${RED}✘${RESET}`;
+const SYMBOL_BULLET = `${GREEN}•${RESET}`;
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const packageDir = path.resolve(__dirname, "..");
@@ -194,15 +207,6 @@ async function removeEntriesIfPresent(baseDir, names) {
   }
 }
 
-function resolveIosSlice(artifact) {
-  const variant = String(artifact.variant || "");
-  if (variant === "arm64-device") return "ios-arm64_arm64e";
-  if (variant === "arm64-simulator" || variant === "x86_64-simulator") {
-    return "ios-arm64_x86_64-simulator";
-  }
-  return "ios-arm64_x86_64-simulator";
-}
-
 async function normalizeAndroidPayload(destinationDir) {
   await removeEntriesIfPresent(destinationDir, ["obj", "gen"]);
   const entries = await listEntries(destinationDir);
@@ -226,40 +230,52 @@ async function normalizeIosPayload(destinationDir, artifact) {
 
   const frameworksOut = path.join(destinationDir, "xcframeworks");
   const libsOut = path.join(destinationDir, "libs");
+
+  // Re-create output folders
   await removeIfExists(frameworksOut);
   await removeIfExists(libsOut);
   await ensureDir(frameworksOut);
   await ensureDir(libsOut);
 
-  const slice = resolveIosSlice(artifact);
+  // We extract 'libs' from the device slice for general linkage, 
+  // though podspec will prefer the full xcframeworks.
+  const preferredSlice = artifact.variant === "arm64-device" ? "ios-arm64_arm64e" : "ios-arm64_x86_64-simulator";
+
   const entries = await listEntries(iosRoot);
   for (const entry of entries) {
     if (!entry.isDirectory() || !entry.name.endsWith(".xcframework")) continue;
+    
     const srcFramework = path.join(iosRoot, entry.name);
     const outFramework = path.join(frameworksOut, entry.name);
+    
+    // Copy the whole framework
     await fs.cp(srcFramework, outFramework, { recursive: true });
 
-    const candidateLib = path.join(srcFramework, slice, entry.name.replace(".xcframework", ".a"));
-    if (await pathExists(candidateLib)) {
-      await fs.cp(candidateLib, path.join(libsOut, path.basename(candidateLib)), { recursive: true });
+    // Extract static lib for the preferred slice into 'libs'
+    let sliceDir = path.join(srcFramework, preferredSlice);
+    if (!(await pathExists(sliceDir))) {
+        // Fallback to any available slice if preferred is missing
+        const slices = await listEntries(srcFramework);
+        const firstSlice = slices.find(s => s.isDirectory() && s.name.startsWith("ios-"));
+        if (firstSlice) sliceDir = path.join(srcFramework, firstSlice.name);
+    }
+
+    const libName = entry.name.replace(".xcframework", ".a");
+    const srcLib = path.join(sliceDir, libName);
+    if (await pathExists(srcLib)) {
+      await fs.cp(srcLib, path.join(libsOut, libName));
     }
   }
 
-  const legacySkiaLib = path.join(libsOut, "libskia.a");
-  if (await pathExists(legacySkiaLib)) {
-    await fs.cp(legacySkiaLib, path.join(destinationDir, "libskia.a"), { recursive: true });
-  }
-
+  // Cleanup source
   if (iosRoot !== destinationDir) {
     await removeIfExists(iosRoot);
   } else {
     const entries = await listEntries(destinationDir);
     for (const entry of entries) {
-      if (entry.name === "xcframeworks" || entry.name === "libs" || entry.name === ".artifact.json") {
-        continue;
-      }
-      if (entry.name === "libskia.a") continue;
-      await removeIfExists(path.join(destinationDir, entry.name));
+      const name = entry.name;
+      const keep = name === "xcframeworks" || name === "libs" || name === ".artifact.json";
+      if (!keep) await removeIfExists(path.join(destinationDir, name));
     }
   }
 }
@@ -288,7 +304,7 @@ async function syncArtifact(artifact, manifest, options) {
     (!expectedSha || marker.sha256 === expectedSha);
 
   if (shouldSkip) {
-    console.log(`• ${artifact.id}: up-to-date`);
+    console.log(`${SYMBOL_BULLET} ${artifact.id}: ${DIM}up-to-date${RESET}`);
     return null;
   }
 
@@ -298,7 +314,7 @@ async function syncArtifact(artifact, manifest, options) {
   const archivePath = path.join(cacheDir, `${artifact.id}.tar.gz`);
   const extractPath = path.join(tempDir, `${artifact.id}-extract`);
 
-  console.log(`• ${artifact.id}: downloading`);
+  console.log(`${SYMBOL_BULLET} ${artifact.id}: ${BRIGHT}downloading${RESET}`);
   await downloadToFile(artifact.url, archivePath);
   const downloadedSha = await sha256(archivePath);
 
@@ -333,7 +349,7 @@ async function syncArtifact(artifact, manifest, options) {
   };
   await fs.writeFile(markerPath, `${JSON.stringify(markerData, null, 2)}\n`, "utf8");
 
-  console.log(`  ${artifact.id}: synced`);
+  console.log(`  ${SYMBOL_SUBSTEP} ${artifact.id}: ${GREEN}synced${RESET}`);
   return downloadedSha;
 }
 
@@ -456,7 +472,8 @@ async function run() {
   const force = args.force || args.command === "update";
   const manifestReleaseChanged = args.command === "update" && updateManifestRelease(manifest, args);
 
-  console.log(`Synchronizing Skia binaries (${args.command}) for manifest version ${manifest.version}`);
+  console.log(`${SYMBOL_STEP} Synchronizing Skia binaries (${BRIGHT}${args.command}${RESET})`);
+  console.log(`  ${DIM}Manifest version: ${manifest.version}${RESET}\n`);
 
   let hasManifestChanges = false;
   for (const artifact of manifest.artifacts) {
@@ -468,7 +485,7 @@ async function run() {
       }
     } catch (error) {
       if (artifact.optional) {
-        console.warn(`  ${artifact.id}: optional artifact failed (${error.message})`);
+        console.warn(`${SYMBOL_BULLET} ${artifact.id}: ${DIM}optional artifact failed (${error.message})${RESET}`);
         continue;
       }
       throw error;
@@ -477,13 +494,13 @@ async function run() {
 
   if (writeChecksums && (hasManifestChanges || manifestReleaseChanged)) {
     await fs.writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
-    console.log("Updated manifest checksums.");
+    console.log(`${SYMBOL_SUBSTEP} Updated manifest checksums.`);
   }
 
-  console.log("Skia binaries sync complete.");
+  console.log(`\n${SYMBOL_SUCCESS} Skia binaries sync complete.`);
 }
 
 run().catch((error) => {
-  console.error(`[zynth-skia] ${error.message}`);
+  console.error(`\n${SYMBOL_FAIL} ${RED}Error:${RESET} ${error.message}`);
   process.exit(1);
 });

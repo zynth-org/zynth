@@ -24,16 +24,16 @@ node packages/zynth-skia/scripts/manage-binaries.mjs verify --strict-checksums
 - destination paths under `native/vendor`
 - optional SHA256 integrity locks
 
-The manifest provisions a single headers payload at `native/vendor/headers` (public + required module/internal headers).
+The manifest provisions a single headers payload at `native/vendor/headers/skia` (public + required module/internal headers).
 
 `binaries:sync` accepts empty `sha256`; `binaries:update` locks checksums.
 
 ## Layout normalization
 
-- Android: `native/vendor/android/<abi>/gl-pdf`
+- Android: `native/vendor/android/<abi>`
   keeps `.a`, `.so`, `.dat` and strips archive byproducts
-- iOS: `native/vendor/ios/<arch>/<target>/metal-pdf`
-  writes `xcframeworks/`, `libs/`, and compatibility `libskia.a`
+- iOS: `native/vendor/ios`
+  writes `xcframeworks/` and flattened `libs/`
 - Headers: `native/vendor/headers/skia`
   generated from a deterministic transitive dependency walk rooted at native includes and feature roots
 
@@ -63,7 +63,7 @@ Use one command to prepare release assets from a matching Skia source snapshot:
 
 This command:
 1. Reuses cached runtime artifacts already synchronized by `binaries:sync`.
-2. Regenerates `native/vendor/headers` from source closure and writes `native/vendor/headers/skia/.headers-manifest.json`.
+2. Regenerates `native/vendor/headers/skia` from source closure and writes `native/vendor/headers/skia/.headers-manifest.json`.
 3. Packs all manifest artifacts into the output folder using manifest filenames.
 4. Updates manifest checksums to match generated tarballs.
 
