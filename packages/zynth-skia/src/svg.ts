@@ -47,6 +47,81 @@ function stringToBytes(value: string): Uint8Array {
   return bytes;
 }
 
+function bytesToString(bytes: Uint8Array): string {
+  if (typeof TextDecoder !== "undefined") {
+    return new TextDecoder("utf-8").decode(bytes);
+  }
+  const maybeBuffer = (globalThis as {
+    Buffer?: { from(input: Uint8Array): { toString(encoding: string): string } };
+  }).Buffer;
+  if (maybeBuffer) {
+    return maybeBuffer.from(bytes).toString("utf8");
+  }
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 1) {
+    binary += String.fromCharCode(bytes[i]!);
+  }
+  return decodeURIComponent(escape(binary));
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  if (typeof atob === "function") {
+    const binary = atob(value);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+  }
+  const maybeBuffer = (globalThis as { Buffer?: { from(input: string, encoding: string): Uint8Array } }).Buffer;
+  if (maybeBuffer) {
+    return new Uint8Array(maybeBuffer.from(value, "base64"));
+  }
+  throw new Error("No base64 decoder available");
+}
+
+function isDataUri(value: string): boolean {
+  return value.startsWith("data:");
+}
+
+function dataUriToBytes(uri: string): Uint8Array {
+  const commaIndex = uri.indexOf(",");
+  if (commaIndex <= 4) {
+    throw new Error("createSVG received an invalid data URI");
+  }
+  const metadata = uri.slice(5, commaIndex);
+  const payload = uri.slice(commaIndex + 1);
+  const isBase64 = metadata.split(";").some((part) => part.trim().toLowerCase() === "base64");
+  if (isBase64) {
+    return base64ToBytes(payload);
+  }
+  return stringToBytes(decodeURIComponent(payload));
+}
+
+function parseAssetModuleDescriptor(source: string): SVGAssetDescriptor | null {
+  const trimmed = source.trim();
+  const exportPrefix = "export default";
+  const jsonCandidate = trimmed.startsWith(exportPrefix)
+    ? trimmed.slice(exportPrefix.length).trim().replace(/;$/, "")
+    : trimmed;
+  if (!jsonCandidate.startsWith("{")) return null;
+  try {
+    const parsed = JSON.parse(jsonCandidate) as Partial<SVGAssetDescriptor> | null;
+    if (!parsed || parsed.type !== "asset") return null;
+    if (typeof parsed.name !== "string" || typeof parsed.hash !== "string") return null;
+    return {
+      type: "asset",
+      name: parsed.name,
+      hash: parsed.hash,
+      scale: typeof parsed.scale === "number" ? parsed.scale : undefined,
+      relativePath: typeof parsed.relativePath === "string" ? parsed.relativePath : undefined,
+      devPath: typeof parsed.devPath === "string" ? parsed.devPath : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function dataUriFromSource(source: { data: string; mimeType?: string }): string {
   const mimeType = source.mimeType ?? "image/svg+xml";
   if (isInlineSVG(source.data)) {
@@ -65,10 +140,19 @@ function encodeDevPath(filePath: string): string {
 }
 
 function descriptorToUri(descriptor: SVGAssetDescriptor): string | null {
-  const devUrl = (globalThis as { __ZYNTH_DEV_SERVER_URL?: string }).__ZYNTH_DEV_SERVER_URL;
+  const globalObj = globalThis as {
+    __ZYNTH_DEV_SERVER_URL?: string;
+    location?: { origin?: string };
+  };
+  const devUrl = globalObj.__ZYNTH_DEV_SERVER_URL
+    ?? globalObj.location?.origin;
   if (devUrl && descriptor.devPath) {
     const encodedPath = encodeDevPath(descriptor.devPath);
     return `${devUrl}/@fs/${encodedPath}?hash=${descriptor.hash}`;
+  }
+  if (descriptor.devPath) {
+    const encodedPath = encodeDevPath(descriptor.devPath);
+    return `/@fs/${encodedPath}?hash=${descriptor.hash}`;
   }
   if (descriptor.relativePath) {
     return `/${descriptor.relativePath.replace(/\\/g, "/")}`;
@@ -107,6 +191,27 @@ async function loadSVGFromSource(source: SkiaSVGSource): Promise<SkiaSVG> {
     return makeSVGFromString(source);
   }
   const uri = resolveSourceUri(source);
+  if (isDataUri(uri)) {
+    const bytes = dataUriToBytes(uri);
+    const decoded = bytesToString(bytes);
+    if (isInlineSVG(decoded)) {
+      return makeSVGFromString(decoded);
+    }
+    const descriptor = parseAssetModuleDescriptor(decoded);
+    if (descriptor) {
+      const resolvedUri = descriptorToUri(descriptor);
+      if (!resolvedUri) {
+        throw new Error("createSVG could not resolve asset module descriptor to a URI");
+      }
+      const response = await fetch(resolvedUri);
+      if (!response.ok) {
+        throw new Error(`createSVG failed to fetch SVG asset: ${response.status}`);
+      }
+      const buffer = await response.arrayBuffer();
+      return makeSVGFromData({ toBytes: () => new Uint8Array(buffer) });
+    }
+    return makeSVGFromData({ toBytes: () => bytes });
+  }
   const response = await fetch(uri);
   if (!response.ok) {
     throw new Error(`createSVG failed to fetch SVG: ${response.status}`);
@@ -207,7 +312,16 @@ export function makeSVGFromData(
   _resources?: Record<string, { toBytes(): Uint8Array } | Uint8Array>,
 ): SkiaSVG {
   const bytes = data.toBytes();
-  const svgId = createNativeSVGFromData(toArrayBuffer(bytes));
+  let svgId = 0;
+  try {
+    svgId = createNativeSVGFromData(toArrayBuffer(bytes));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.includes("createSVGFromData")) {
+      throw error;
+    }
+    svgId = createNativeSVGFromString(bytesToString(bytes));
+  }
   const size = resolveSVGSizeOrThrow(svgId);
   return createSkiaSVG(svgId, size.width, size.height);
 }
