@@ -46,6 +46,10 @@ type SkiaNativeBridge = {
   ): number;
   getImageInfo?(imageId: number): SkiaImageInfo | null;
   releaseImage?(imageId: number): boolean;
+  createSVGFromString?(source: string): number;
+  createSVGFromData?(data: ArrayBuffer): number;
+  getSVGSize?(svgId: number): { width: number; height: number } | null;
+  releaseSVG?(svgId: number): boolean;
   capabilities?: Partial<SkiaCapabilities>;
 };
 
@@ -78,6 +82,7 @@ const enum PackedOpcode {
   SaveLayerLuminanceMask = 11,
   Restore = 12,
   Image = 13,
+  SVG = 14,
 }
 
 const enum PackedTileMode {
@@ -173,6 +178,7 @@ const defaultCapabilities: SkiaCapabilities = {
   shaderLinearGradient: false,
   groupLayer: false,
   images: false,
+  svg: false,
 };
 
 const featureCapabilityMap: Record<SkiaFeature, keyof SkiaCapabilities> = {
@@ -189,6 +195,7 @@ const featureCapabilityMap: Record<SkiaFeature, keyof SkiaCapabilities> = {
   "shader.linearGradient": "shaderLinearGradient",
   "group.layer": "groupLayer",
   images: "images",
+  svg: "svg",
 };
 
 function parsePackedColor(value: string): number | null {
@@ -606,6 +613,15 @@ function materializeCommandsForFallback(commands: SkiaDrawCommand[]): SkiaDrawCo
           height: materializeScalar(command.height),
           opacity: command.opacity == null ? undefined : materializeScalar(command.opacity, 1),
         };
+      case "svg":
+        return {
+          ...command,
+          x: materializeScalar(command.x),
+          y: materializeScalar(command.y),
+          width: command.width == null ? undefined : materializeScalar(command.width),
+          height: command.height == null ? undefined : materializeScalar(command.height),
+          opacity: command.opacity == null ? undefined : materializeScalar(command.opacity, 1),
+        };
       case "runtimeShaderRect":
         return {
           ...command,
@@ -743,6 +759,7 @@ function encodePackedCommands(commands: SkiaDrawCommand[]): PackedCommands {
       && command.type !== "restore"
       && command.type !== "text"
       && command.type !== "image"
+      && command.type !== "svg"
       && command.type !== "runtimeShaderRect"
       && command.type !== "runtimeShaderCircle"
       && command.type !== "runtimeShaderPath"
@@ -1076,6 +1093,28 @@ function encodePackedCommands(commands: SkiaDrawCommand[]): PackedCommands {
         encoded.push(command.antiAlias === false ? 0 : 1);
         pushPackedScalar(encoded, caps.paintOpacity ? (command.opacity ?? 1) : 1, 1);
         break;
+      case "svg":
+        if (!caps.svg) {
+          throw new Error("Skia feature unsupported: svg");
+        }
+        encoded.push(PackedOpcode.SVG);
+        encoded.push(command.svgId);
+        pushPackedScalar(encoded, command.x);
+        pushPackedScalar(encoded, command.y);
+        if (command.width == null) {
+          encoded.push(0);
+        } else {
+          encoded.push(1);
+          pushPackedScalar(encoded, command.width);
+        }
+        if (command.height == null) {
+          encoded.push(0);
+        } else {
+          encoded.push(1);
+          pushPackedScalar(encoded, command.height);
+        }
+        pushPackedScalar(encoded, caps.paintOpacity ? (command.opacity ?? 1) : 1, 1);
+        break;
     }
   }
 
@@ -1253,6 +1292,43 @@ export function releaseNativeImage(imageId: number): void {
   const bridge = getBridge();
   if (bridge?.releaseImage) {
     const ok = bridge.releaseImage(imageId);
+    if (ok) return;
+  }
+}
+
+export function createNativeSVGFromString(source: string): number {
+  const bridge = getBridge();
+  if (bridge?.createSVGFromString) {
+    const svgId = bridge.createSVGFromString(source);
+    if (typeof svgId === "number" && svgId > 0) return svgId;
+  }
+  throw new Error("Skia native bridge is unavailable for createSVGFromString");
+}
+
+export function createNativeSVGFromData(data: ArrayBuffer): number {
+  const bridge = getBridge();
+  if (bridge?.createSVGFromData) {
+    const svgId = bridge.createSVGFromData(data);
+    if (typeof svgId === "number" && svgId > 0) return svgId;
+  }
+  throw new Error("Skia native bridge is unavailable for createSVGFromData");
+}
+
+export function getNativeSVGSize(svgId: number): { width: number; height: number } | null {
+  const bridge = getBridge();
+  if (bridge?.getSVGSize) {
+    const size = bridge.getSVGSize(svgId);
+    if (size && Number.isFinite(size.width) && Number.isFinite(size.height)) {
+      return size;
+    }
+  }
+  return null;
+}
+
+export function releaseNativeSVG(svgId: number): void {
+  const bridge = getBridge();
+  if (bridge?.releaseSVG) {
+    const ok = bridge.releaseSVG(svgId);
     if (ok) return;
   }
 }

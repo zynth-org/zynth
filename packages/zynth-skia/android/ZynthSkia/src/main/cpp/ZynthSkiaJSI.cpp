@@ -35,6 +35,13 @@
 #include "include/effects/SkGradientShader.h"
 #include "include/effects/SkLumaColorFilter.h"
 #include "include/effects/SkRuntimeEffect.h"
+#if __has_include("modules/svg/include/SkSVGDOM.h")
+#include "modules/svg/include/SkSVGDOM.h"
+#include "include/core/SkStream.h"
+#define ZYNTH_SKIA_HAS_SVG 1
+#else
+#define ZYNTH_SKIA_HAS_SVG 0
+#endif
 #include "include/ports/SkFontMgr_android.h"
 #include "include/ports/SkFontScanner_FreeType.h"
 
@@ -57,6 +64,7 @@ constexpr int kOpcodeSaveLayer = 10;
 constexpr int kOpcodeSaveLayerLuminanceMask = 11;
 constexpr int kOpcodeRestore = 12;
 constexpr int kOpcodeImage = 13;
+constexpr int kOpcodeSVG = 14;
 
 constexpr int kColorTypeInt = 1;
 constexpr int kColorTypeString = 2;
@@ -144,6 +152,12 @@ std::unordered_map<std::string, sk_sp<SkRuntimeEffect>> gRuntimeEffectCache;
 std::mutex gImageCacheMutex;
 std::unordered_map<int, sk_sp<SkImage>> gImageCache;
 std::atomic<int> gNextImageId{1};
+#if ZYNTH_SKIA_HAS_SVG
+std::mutex gSVGCacheMutex;
+std::unordered_map<int, sk_sp<SkSVGDOM>> gSVGCache;
+std::atomic<int> gNextSVGId{1};
+std::mutex gSVGRenderMutex;
+#endif
 
 std::mutex gTypefaceCacheMutex;
 std::unordered_map<std::string, sk_sp<SkTypeface>> gTypefaceCache;
@@ -631,6 +645,15 @@ sk_sp<SkImage> getImageById(int imageId) {
   return found->second;
 }
 
+#if ZYNTH_SKIA_HAS_SVG
+sk_sp<SkSVGDOM> getSVGById(int svgId) {
+  std::lock_guard<std::mutex> lock(gSVGCacheMutex);
+  auto found = gSVGCache.find(svgId);
+  if (found == gSVGCache.end()) return nullptr;
+  return found->second;
+}
+#endif
+
 bool applyPackedLinearGradient(
     const SurfaceState::CommandBuffer &buffer,
     const std::vector<double> &ops,
@@ -1035,6 +1058,56 @@ bool renderSurfaceState(
           sampling,
           &paint,
           SkCanvas::kStrict_SrcRectConstraint);
+      continue;
+    }
+
+    if (opcode == kOpcodeSVG) {
+      if (i >= buffer.ops.size()) break;
+      const int svgId = static_cast<int>(buffer.ops[i++]);
+      const float x = readPackedScalar(buffer.ops, i, taggedScalars);
+      const float y = readPackedScalar(buffer.ops, i, taggedScalars);
+      if (i >= buffer.ops.size()) break;
+      const bool hasWidth = static_cast<int>(buffer.ops[i++]) != 0;
+      const float width = hasWidth ? readPackedScalar(buffer.ops, i, taggedScalars) : 0.0f;
+      if (i >= buffer.ops.size()) break;
+      const bool hasHeight = static_cast<int>(buffer.ops[i++]) != 0;
+      const float height = hasHeight ? readPackedScalar(buffer.ops, i, taggedScalars) : 0.0f;
+      const float opacity = readPackedScalar(buffer.ops, i, taggedScalars, 1.0f);
+      if (opacity <= 0.0f) {
+        continue;
+      }
+#if ZYNTH_SKIA_HAS_SVG
+      sk_sp<SkSVGDOM> svg = getSVGById(svgId);
+      if (!svg) {
+        continue;
+      }
+      const float alpha = std::max(0.0f, std::min(1.0f, opacity));
+      if (alpha < 1.0f) {
+        SkPaint layerPaint;
+        layerPaint.setAlphaf(alpha);
+        canvas->saveLayer(nullptr, &layerPaint);
+      }
+
+      canvas->save();
+      canvas->translate(x, y);
+      {
+        std::lock_guard<std::mutex> lock(gSVGRenderMutex);
+        const SkSize previousSize = svg->containerSize();
+        const float resolvedWidth = hasWidth ? std::max(0.0f, width) : previousSize.width();
+        const float resolvedHeight = hasHeight ? std::max(0.0f, height) : previousSize.height();
+        if (hasWidth || hasHeight) {
+          svg->setContainerSize(SkSize::Make(resolvedWidth, resolvedHeight));
+        }
+        svg->render(canvas);
+        if (hasWidth || hasHeight) {
+          svg->setContainerSize(previousSize);
+        }
+      }
+      canvas->restore();
+      if (alpha < 1.0f) {
+        canvas->restore();
+      }
+#endif
       continue;
     }
 
@@ -2351,6 +2424,103 @@ void installBridge(Runtime &rt) {
         return Value(gImageCache.erase(imageId) > 0);
       });
 
+  auto createSVGFromString = Function::createFromHostFunction(
+      rt,
+      PropNameID::forAscii(rt, "createSVGFromString"),
+      1,
+      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+#if !ZYNTH_SKIA_HAS_SVG
+        (void)rt;
+        (void)args;
+        (void)count;
+        return Value(0.0);
+#else
+        if (count < 1 || !args[0].isString()) {
+          return Value(0.0);
+        }
+        std::string source = args[0].asString(rt).utf8(rt);
+        if (source.empty()) return Value(0.0);
+        SkMemoryStream stream(source.data(), source.size(), false);
+        auto svg = SkSVGDOM::Builder().make(stream);
+        if (!svg) return Value(0.0);
+        const int svgId = gNextSVGId.fetch_add(1);
+        {
+          std::lock_guard<std::mutex> lock(gSVGCacheMutex);
+          gSVGCache[svgId] = std::move(svg);
+        }
+        return Value(static_cast<double>(svgId));
+#endif
+      });
+
+  auto createSVGFromData = Function::createFromHostFunction(
+      rt,
+      PropNameID::forAscii(rt, "createSVGFromData"),
+      1,
+      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+#if !ZYNTH_SKIA_HAS_SVG
+        (void)rt;
+        (void)args;
+        (void)count;
+        return Value(0.0);
+#else
+        if (count < 1 || !args[0].isObject() || !args[0].asObject(rt).isArrayBuffer(rt)) {
+          return Value(0.0);
+        }
+        ArrayBuffer buffer = args[0].asObject(rt).getArrayBuffer(rt);
+        auto data = SkData::MakeWithCopy(buffer.data(rt), buffer.size(rt));
+        if (!data) return Value(0.0);
+        SkMemoryStream stream(data->data(), data->size(), false);
+        auto svg = SkSVGDOM::Builder().make(stream);
+        if (!svg) return Value(0.0);
+        const int svgId = gNextSVGId.fetch_add(1);
+        {
+          std::lock_guard<std::mutex> lock(gSVGCacheMutex);
+          gSVGCache[svgId] = std::move(svg);
+        }
+        return Value(static_cast<double>(svgId));
+#endif
+      });
+
+  auto getSVGSize = Function::createFromHostFunction(
+      rt,
+      PropNameID::forAscii(rt, "getSVGSize"),
+      1,
+      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+#if !ZYNTH_SKIA_HAS_SVG
+        (void)rt;
+        (void)args;
+        (void)count;
+        return Value::null();
+#else
+        if (count < 1 || !args[0].isNumber()) return Value::null();
+        const int svgId = static_cast<int>(args[0].asNumber());
+        sk_sp<SkSVGDOM> svg = getSVGById(svgId);
+        if (!svg) return Value::null();
+        const SkSize size = svg->containerSize();
+        Object result(rt);
+        result.setProperty(rt, "width", Value(static_cast<double>(std::max(0.0f, size.width()))));
+        result.setProperty(rt, "height", Value(static_cast<double>(std::max(0.0f, size.height()))));
+        return result;
+#endif
+      });
+
+  auto releaseSVG = Function::createFromHostFunction(
+      rt,
+      PropNameID::forAscii(rt, "releaseSVG"),
+      1,
+      [](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+#if !ZYNTH_SKIA_HAS_SVG
+        (void)args;
+        (void)count;
+        return Value(false);
+#else
+        if (count < 1 || !args[0].isNumber()) return Value(false);
+        const int svgId = static_cast<int>(args[0].asNumber());
+        std::lock_guard<std::mutex> lock(gSVGCacheMutex);
+        return Value(gSVGCache.erase(svgId) > 0);
+#endif
+      });
+
   Object skia(rt);
   Object capabilities(rt);
   capabilities.setProperty(rt, "paths", Value(true));
@@ -2366,6 +2536,7 @@ void installBridge(Runtime &rt) {
   capabilities.setProperty(rt, "shaderLinearGradient", Value(true));
   capabilities.setProperty(rt, "groupLayer", Value(true));
   capabilities.setProperty(rt, "images", Value(true));
+  capabilities.setProperty(rt, "svg", Value(ZYNTH_SKIA_HAS_SVG ? true : false));
   skia.setProperty(rt, "capabilities", capabilities);
   skia.setProperty(rt, "createSurface", createSurface);
   skia.setProperty(rt, "disposeSurface", disposeSurface);
@@ -2381,6 +2552,10 @@ void installBridge(Runtime &rt) {
   skia.setProperty(rt, "createImageFromPixels", createImageFromPixels);
   skia.setProperty(rt, "getImageInfo", getImageInfo);
   skia.setProperty(rt, "releaseImage", releaseImage);
+  skia.setProperty(rt, "createSVGFromString", createSVGFromString);
+  skia.setProperty(rt, "createSVGFromData", createSVGFromData);
+  skia.setProperty(rt, "getSVGSize", getSVGSize);
+  skia.setProperty(rt, "releaseSVG", releaseSVG);
   rt.global().setProperty(rt, kSkiaKey, skia);
 }
 
@@ -2748,4 +2923,10 @@ extern "C" JNIEXPORT void JNICALL JNI_OnUnload(JavaVM *, void *) {
     std::lock_guard<std::mutex> imageLock(gImageCacheMutex);
     gImageCache.clear();
   }
+#if ZYNTH_SKIA_HAS_SVG
+  {
+    std::lock_guard<std::mutex> svgLock(gSVGCacheMutex);
+    gSVGCache.clear();
+  }
+#endif
 }

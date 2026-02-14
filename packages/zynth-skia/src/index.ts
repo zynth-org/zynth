@@ -7,6 +7,7 @@ export {
   Circle,
   Group,
   Image,
+  ImageSVG,
   LinearGradient,
   Mask,
   Paint,
@@ -38,6 +39,13 @@ export {
   useImage,
 } from "./image";
 export type { SkiaData, SkiaImageSource } from "./image";
+export {
+  createSVG,
+  makeSVGFromData,
+  makeSVGFromString,
+  useSVG,
+} from "./svg";
+export type { SkiaSVGSource } from "./svg";
 export { createPath } from "./path";
 export { createRuntimeEffect, createShader, createSkiaValue, Skia } from "./shader";
 export {
@@ -69,6 +77,7 @@ export type {
   SkiaDrawClear,
   SkiaDrawLine,
   SkiaDrawImage,
+  SkiaDrawSVG,
   SkiaDrawPath,
   SkiaDrawRect,
   SkiaDrawRestore,
@@ -97,6 +106,8 @@ export type {
   SkiaImageFilterMode,
   SkiaImageSampling,
   SkiaImageProps,
+  SkiaSVG,
+  SkiaSVGProps,
   SkiaScalarValue,
   SkiaInterpolationToken,
   SkiaCapabilities,

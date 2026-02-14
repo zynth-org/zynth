@@ -37,6 +37,10 @@ NS_ASSUME_NONNULL_BEGIN
                                       data:(NSData *)data;
 + (nullable NSDictionary<NSString *, NSNumber *> *)getImageInfo:(NSInteger)imageId;
 + (BOOL)releaseImage:(NSInteger)imageId;
++ (NSInteger)createSVGFromString:(NSString *)source;
++ (NSInteger)createSVGFromData:(NSData *)data;
++ (nullable NSDictionary<NSString *, NSNumber *> *)getSVGSize:(NSInteger)svgId;
++ (BOOL)releaseSVG:(NSInteger)svgId;
 @end
 
 NS_ASSUME_NONNULL_END

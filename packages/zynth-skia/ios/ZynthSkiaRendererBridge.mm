@@ -26,6 +26,13 @@
 #import "include/effects/SkGradientShader.h"
 #import "include/effects/SkLumaColorFilter.h"
 #import "include/effects/SkRuntimeEffect.h"
+#if __has_include("modules/svg/include/SkSVGDOM.h")
+#import "modules/svg/include/SkSVGDOM.h"
+#import "include/core/SkStream.h"
+#define ZYNTH_SKIA_HAS_SVG 1
+#else
+#define ZYNTH_SKIA_HAS_SVG 0
+#endif
 #if __has_include("include/ports/SkFontMgr_mac_ct.h")
 #import "include/ports/SkFontMgr_mac_ct.h"
 #endif
@@ -46,6 +53,7 @@ enum PackedOpcode {
   PackedOpcodeSaveLayerLuminanceMask = 11,
   PackedOpcodeRestore = 12,
   PackedOpcodeImage = 13,
+  PackedOpcodeSVG = 14,
 };
 
 enum PackedColorType {
@@ -144,6 +152,12 @@ std::unordered_map<std::string, sk_sp<SkRuntimeEffect>> gRuntimeEffectCache;
 std::mutex gImageCacheMutex;
 std::unordered_map<int, sk_sp<SkImage>> gImageCache;
 int gNextImageId = 1;
+#if ZYNTH_SKIA_HAS_SVG
+std::mutex gSVGCacheMutex;
+std::unordered_map<int, sk_sp<SkSVGDOM>> gSVGCache;
+int gNextSVGId = 1;
+std::mutex gSVGRenderMutex;
+#endif
 
 std::mutex gTypefaceCacheMutex;
 std::unordered_map<std::string, sk_sp<SkTypeface>> gTypefaceCache;
@@ -605,6 +619,15 @@ static sk_sp<SkImage> getImageById(int imageId) {
   return found->second;
 }
 
+#if ZYNTH_SKIA_HAS_SVG
+static sk_sp<SkSVGDOM> getSVGById(int svgId) {
+  std::lock_guard<std::mutex> lock(gSVGCacheMutex);
+  auto found = gSVGCache.find(svgId);
+  if (found == gSVGCache.end()) return nullptr;
+  return found->second;
+}
+#endif
+
 static bool applyPackedLinearGradient(const CommandBuffer &buffer,
                                       const std::vector<double> &ops,
                                       size_t &index,
@@ -1023,6 +1046,57 @@ static bool renderSurfaceState(const CommandBuffer &buffer,
         &paint,
         SkCanvas::kStrict_SrcRectConstraint
       );
+      continue;
+    }
+
+    if (opcode == PackedOpcodeSVG) {
+      if (i >= buffer.ops.size()) break;
+      int svgId = static_cast<int>(buffer.ops[i++]);
+      float x = readPackedScalar(buffer.ops, i, taggedScalars);
+      float y = readPackedScalar(buffer.ops, i, taggedScalars);
+      if (i >= buffer.ops.size()) break;
+      bool hasWidth = static_cast<int>(buffer.ops[i++]) != 0;
+      float width = hasWidth ? readPackedScalar(buffer.ops, i, taggedScalars) : 0.0f;
+      if (i >= buffer.ops.size()) break;
+      bool hasHeight = static_cast<int>(buffer.ops[i++]) != 0;
+      float height = hasHeight ? readPackedScalar(buffer.ops, i, taggedScalars) : 0.0f;
+      float opacity = readPackedScalar(buffer.ops, i, taggedScalars, 1.0f);
+      if (opacity <= 0.0f) {
+        continue;
+      }
+#if ZYNTH_SKIA_HAS_SVG
+      sk_sp<SkSVGDOM> svg = getSVGById(svgId);
+      if (!svg) {
+        continue;
+      }
+
+      const float alpha = std::max(0.0f, std::min(1.0f, opacity));
+      if (alpha < 1.0f) {
+        SkPaint layerPaint;
+        layerPaint.setAlphaf(alpha);
+        canvas->saveLayer(nullptr, &layerPaint);
+      }
+
+      canvas->save();
+      canvas->translate(x, y);
+      {
+        std::lock_guard<std::mutex> lock(gSVGRenderMutex);
+        const SkSize previousSize = svg->containerSize();
+        const float resolvedWidth = hasWidth ? std::max(0.0f, width) : previousSize.width();
+        const float resolvedHeight = hasHeight ? std::max(0.0f, height) : previousSize.height();
+        if (hasWidth || hasHeight) {
+          svg->setContainerSize(SkSize::Make(resolvedWidth, resolvedHeight));
+        }
+        svg->render(canvas);
+        if (hasWidth || hasHeight) {
+          svg->setContainerSize(previousSize);
+        }
+      }
+      canvas->restore();
+      if (alpha < 1.0f) {
+        canvas->restore();
+      }
+#endif
       continue;
     }
 
@@ -1924,6 +1998,10 @@ static bool encodeCommands(NSArray<NSDictionary *> *commands,
     gRuntimeEffectCache.clear();
     std::lock_guard<std::mutex> imageLock(gImageCacheMutex);
     gImageCache.clear();
+#if ZYNTH_SKIA_HAS_SVG
+    std::lock_guard<std::mutex> svgLock(gSVGCacheMutex);
+    gSVGCache.clear();
+#endif
   }
 }
 
@@ -2083,6 +2161,64 @@ static bool encodeCommands(NSArray<NSDictionary *> *commands,
   if (imageId <= 0) return NO;
   std::lock_guard<std::mutex> lock(gImageCacheMutex);
   return gImageCache.erase(static_cast<int>(imageId)) > 0;
+}
+
++ (NSInteger)createSVGFromString:(NSString *)source {
+#if !ZYNTH_SKIA_HAS_SVG
+  (void)source;
+  return 0;
+#else
+  if (source == nil || source.length == 0) return 0;
+  NSData *data = [source dataUsingEncoding:NSUTF8StringEncoding];
+  if (data == nil || data.length == 0) return 0;
+  return [self createSVGFromData:data];
+#endif
+}
+
++ (NSInteger)createSVGFromData:(NSData *)data {
+#if !ZYNTH_SKIA_HAS_SVG
+  (void)data;
+  return 0;
+#else
+  if (data == nil || data.length == 0) return 0;
+  sk_sp<SkData> skData = SkData::MakeWithCopy(data.bytes, data.length);
+  if (!skData) return 0;
+  SkMemoryStream stream(skData->data(), skData->size(), false);
+  auto svg = SkSVGDOM::Builder().make(stream);
+  if (!svg) return 0;
+
+  std::lock_guard<std::mutex> lock(gSVGCacheMutex);
+  const int svgId = gNextSVGId++;
+  gSVGCache[svgId] = std::move(svg);
+  return svgId;
+#endif
+}
+
++ (NSDictionary<NSString *, NSNumber *> *)getSVGSize:(NSInteger)svgId {
+#if !ZYNTH_SKIA_HAS_SVG
+  (void)svgId;
+  return nil;
+#else
+  if (svgId <= 0) return nil;
+  sk_sp<SkSVGDOM> svg = getSVGById(static_cast<int>(svgId));
+  if (!svg) return nil;
+  const SkSize size = svg->containerSize();
+  return @{
+    @"width": @(std::max(0.0f, size.width())),
+    @"height": @(std::max(0.0f, size.height())),
+  };
+#endif
+}
+
++ (BOOL)releaseSVG:(NSInteger)svgId {
+#if !ZYNTH_SKIA_HAS_SVG
+  (void)svgId;
+  return NO;
+#else
+  if (svgId <= 0) return NO;
+  std::lock_guard<std::mutex> lock(gSVGCacheMutex);
+  return gSVGCache.erase(static_cast<int>(svgId)) > 0;
+#endif
 }
 
 @end

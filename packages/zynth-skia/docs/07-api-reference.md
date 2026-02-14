@@ -16,6 +16,7 @@
 - `Mask`
 - `Text`
 - `Image`
+- `ImageSVG`
 
 ### Factories / helpers
 
@@ -36,6 +37,8 @@
 - `createPathValue`
 - `createImage`
 - `useImage`
+- `createSVG`
+- `useSVG`
 - `CubicSampling`
 - `FilterMode`
 - `MipmapMode`
@@ -82,6 +85,8 @@
   - `{ type: "text", text, x, y, color, fontFamily, fontSize, fontStyle?, fontWeight?, antiAlias?, opacity?, linearGradient? }`
 - `SkiaDrawImage`
   - `{ type: "image", imageId, x, y, width, height, fit?, sampling?, antiAlias?, opacity? }`
+- `SkiaDrawSVG`
+  - `{ type: "svg", svgId, x, y, width?, height?, opacity? }`
 - `SkiaDrawRuntimeShaderRect`
   - `{ type: "runtimeShaderRect", x, y, width, height, source, uniforms, antiAlias?, opacity? }`
 

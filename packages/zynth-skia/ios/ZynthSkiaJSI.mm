@@ -11,6 +11,12 @@
 #import <string>
 #import <vector>
 
+#if __has_include("modules/svg/include/SkSVGDOM.h")
+#define ZYNTH_SKIA_HAS_SVG 1
+#else
+#define ZYNTH_SKIA_HAS_SVG 0
+#endif
+
 using namespace facebook::jsi;
 
 @interface ZynthSkiaView : UIView
@@ -358,6 +364,60 @@ static void installSkiaBridge(ZynthHermesRuntimeHost *host, Runtime &rt) {
         return Value([ZynthSkiaRendererBridge releaseImage:(NSInteger)args[0].asNumber()]);
       });
 
+  auto createSVGFromStringFn = Function::createFromHostFunction(
+      rt,
+      PropNameID::forAscii(rt, "createSVGFromString"),
+      1,
+      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isString()) {
+          return Value(0.0);
+        }
+        NSString *source = [NSString stringWithUTF8String:args[0].asString(rt).utf8(rt).c_str()];
+        NSInteger svgId = [ZynthSkiaRendererBridge createSVGFromString:source];
+        return Value((double)svgId);
+      });
+
+  auto createSVGFromDataFn = Function::createFromHostFunction(
+      rt,
+      PropNameID::forAscii(rt, "createSVGFromData"),
+      1,
+      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isObject() || !args[0].asObject(rt).isArrayBuffer(rt)) {
+          return Value(0.0);
+        }
+        ArrayBuffer buffer = args[0].asObject(rt).getArrayBuffer(rt);
+        NSData *data = [NSData dataWithBytes:buffer.data(rt) length:buffer.size(rt)];
+        NSInteger svgId = [ZynthSkiaRendererBridge createSVGFromData:data];
+        return Value((double)svgId);
+      });
+
+  auto getSVGSizeFn = Function::createFromHostFunction(
+      rt,
+      PropNameID::forAscii(rt, "getSVGSize"),
+      1,
+      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isNumber()) {
+          return Value::null();
+        }
+        NSDictionary<NSString *, NSNumber *> *size = [ZynthSkiaRendererBridge getSVGSize:(NSInteger)args[0].asNumber()];
+        if (size == nil) return Value::null();
+        Object result(rt);
+        result.setProperty(rt, "width", Value([[size objectForKey:@"width"] doubleValue]));
+        result.setProperty(rt, "height", Value([[size objectForKey:@"height"] doubleValue]));
+        return result;
+      });
+
+  auto releaseSVGFn = Function::createFromHostFunction(
+      rt,
+      PropNameID::forAscii(rt, "releaseSVG"),
+      1,
+      [](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isNumber()) {
+          return Value(false);
+        }
+        return Value([ZynthSkiaRendererBridge releaseSVG:(NSInteger)args[0].asNumber()]);
+      });
+
   Object skia(rt);
   Object capabilities(rt);
   capabilities.setProperty(rt, "paths", Value(true));
@@ -373,6 +433,7 @@ static void installSkiaBridge(ZynthHermesRuntimeHost *host, Runtime &rt) {
   capabilities.setProperty(rt, "shaderLinearGradient", Value(true));
   capabilities.setProperty(rt, "groupLayer", Value(true));
   capabilities.setProperty(rt, "images", Value(true));
+  capabilities.setProperty(rt, "svg", Value(ZYNTH_SKIA_HAS_SVG ? true : false));
   skia.setProperty(rt, "capabilities", capabilities);
   skia.setProperty(rt, "createSurface", createSurfaceFn);
   skia.setProperty(rt, "disposeSurface", disposeSurfaceFn);
@@ -388,6 +449,10 @@ static void installSkiaBridge(ZynthHermesRuntimeHost *host, Runtime &rt) {
   skia.setProperty(rt, "createImageFromPixels", createImageFromPixelsFn);
   skia.setProperty(rt, "getImageInfo", getImageInfoFn);
   skia.setProperty(rt, "releaseImage", releaseImageFn);
+  skia.setProperty(rt, "createSVGFromString", createSVGFromStringFn);
+  skia.setProperty(rt, "createSVGFromData", createSVGFromDataFn);
+  skia.setProperty(rt, "getSVGSize", getSVGSizeFn);
+  skia.setProperty(rt, "releaseSVG", releaseSVGFn);
 
   rt.global().setProperty(rt, kSkiaKey, skia);
 }

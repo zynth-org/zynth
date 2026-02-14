@@ -54,6 +54,7 @@ import type {
   SkiaSharedSignalToken,
   SkiaShaderProps,
   SkiaShaderProgram,
+  SkiaSVGProps,
   SkiaTextProps,
 } from "./types";
 
@@ -68,6 +69,7 @@ type SkiaNodeKind =
   | "shader"
   | "text"
   | "image"
+  | "svg"
   | "linearGradient"
   | "mask";
 
@@ -1013,6 +1015,64 @@ function compileShapeImage(
   });
 }
 
+function compileShapeSVG(
+  props: SkiaSVGProps,
+  state: CompileState,
+  out: SkiaDrawCommand[],
+) {
+  assertSkiaFeature("svg", "ImageSVG");
+  const resolvedSVG = typeof props.svg === "function"
+    ? (props.svg as Accessor<unknown>)()
+    : props.svg;
+  if (!resolvedSVG || typeof resolvedSVG !== "object") return;
+  const svgId = Number((resolvedSVG as { id?: unknown }).id);
+  if (!Number.isFinite(svgId) || svgId <= 0) return;
+
+  if (!isAxisAligned(state.transform)) {
+    throw new Error("Skia ImageSVG currently supports axis-aligned Group transforms only");
+  }
+
+  const xScalar = resolveScalar(props.x ?? 0);
+  const yScalar = resolveScalar(props.y ?? 0);
+  const widthScalar = props.width == null ? undefined : resolveScalar(props.width);
+  const heightScalar = props.height == null ? undefined : resolveScalar(props.height);
+  const x = readNumber(xScalar);
+  const y = readNumber(yScalar);
+  const width = widthScalar == null ? undefined : readNumber(widthScalar);
+  const height = heightScalar == null ? undefined : readNumber(heightScalar);
+  const identityTransform = isIdentityTransform(state.transform);
+  const opacity = props.opacity ?? state.paint.opacity;
+  const resolvedOpacity = isReactiveScalar(opacity) ? opacity : clampUnit(readNumber(opacity, 1));
+
+  if (!identityTransform) {
+    if (width == null || height == null) {
+      throw new Error("Skia ImageSVG with transformed Group requires explicit width and height");
+    }
+    const p1 = applyMatrixPoint(state.transform, x, y);
+    const p3 = applyMatrixPoint(state.transform, x + width, y + height);
+    pushPaintedShape(out, {
+      type: "svg",
+      svgId,
+      x: Math.min(p1.x, p3.x),
+      y: Math.min(p1.y, p3.y),
+      width: Math.abs(p3.x - p1.x),
+      height: Math.abs(p3.y - p1.y),
+      opacity: resolvedOpacity as unknown as number,
+    });
+    return;
+  }
+
+  pushPaintedShape(out, {
+    type: "svg",
+    svgId,
+    x: xScalar as unknown as number,
+    y: yScalar as unknown as number,
+    width: widthScalar as unknown as number | undefined,
+    height: heightScalar as unknown as number | undefined,
+    opacity: resolvedOpacity as unknown as number,
+  });
+}
+
 function compileNode(
   value: unknown,
   state: CompileState,
@@ -1135,6 +1195,11 @@ function compileNode(
     return;
   }
 
+  if (value.kind === "svg") {
+    compileShapeSVG(value.props as SkiaSVGProps, state, out);
+    return;
+  }
+
   compileShapePath(value.props as SkiaPathProps, state, time, out);
 }
 
@@ -1254,6 +1319,10 @@ export function Text(props: SkiaTextProps): JSX.Element {
 
 export function Image(props: SkiaImageProps): JSX.Element {
   return createNode("image", props) as unknown as JSX.Element;
+}
+
+export function ImageSVG(props: SkiaSVGProps): JSX.Element {
+  return createNode("svg", props) as unknown as JSX.Element;
 }
 
 export function Shader(props: SkiaShaderProps): JSX.Element {

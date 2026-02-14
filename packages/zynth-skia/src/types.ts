@@ -154,6 +154,14 @@ export type SkiaImage = {
   dispose(): void;
 };
 
+export type SkiaSVG = {
+  readonly __skiaSVG: true;
+  readonly id: number;
+  width(): number;
+  height(): number;
+  dispose(): void;
+};
+
 export type SkiaImageFit =
   | "contain"
   | "fill"
@@ -188,6 +196,16 @@ export type SkiaDrawImage = {
   fit?: SkiaImageFit;
   sampling?: SkiaImageSampling;
   antiAlias?: boolean;
+  opacity?: SkiaScalarValue;
+};
+
+export type SkiaDrawSVG = {
+  type: "svg";
+  svgId: number;
+  x: SkiaScalarValue;
+  y: SkiaScalarValue;
+  width?: SkiaScalarValue;
+  height?: SkiaScalarValue;
   opacity?: SkiaScalarValue;
 };
 
@@ -299,6 +317,7 @@ export type SkiaDrawCommand =
   | SkiaDrawLine
   | SkiaDrawText
   | SkiaDrawImage
+  | SkiaDrawSVG
   | SkiaDrawPath
   | SkiaDrawRuntimeShaderRect
   | SkiaDrawRuntimeShaderCircle
@@ -512,6 +531,15 @@ export type SkiaImageProps = {
   opacity?: SkiaScalarValue;
 };
 
+export type SkiaSVGProps = {
+  svg: SkiaSVG | Accessor<SkiaSVG | null> | null;
+  x?: SkiaScalarValue;
+  y?: SkiaScalarValue;
+  width?: SkiaScalarValue;
+  height?: SkiaScalarValue;
+  opacity?: SkiaScalarValue;
+};
+
 export type SkiaFeature =
   | "paths"
   | "path.curves"
@@ -525,7 +553,8 @@ export type SkiaFeature =
   | "mask.luminance"
   | "shader.linearGradient"
   | "group.layer"
-  | "images";
+  | "images"
+  | "svg";
 
 export type SkiaCapabilities = {
   paths: boolean;
@@ -541,6 +570,7 @@ export type SkiaCapabilities = {
   shaderLinearGradient: boolean;
   groupLayer: boolean;
   images: boolean;
+  svg: boolean;
 };
 
 export type CreateSkiaValueOptions = {

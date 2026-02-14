@@ -62,7 +62,7 @@
       "arch": "any",
       "variant": "headers",
       "url": "https://github.com/x64Bits/skia-assets/releases/download/zynth-skia-binaries-v0.0.2-skia-graphite-m142b/skia-graphite-headers-skia-graphite-m142b.tar.gz",
-      "sha256": "d6d080a404e2481535b93a417b1cdb1a9a855874be895ded175754907a5a7b6c",
+      "sha256": "0eaba8cc2bc80da25d41c0a9671f1f3f6b1e85c06dbd46aebc5f428f574bc9ee",
       "destination": "native/vendor/headers"
     }
   ]

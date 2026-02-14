@@ -1,7 +1,6 @@
 import { createEffect, createSignal, createResource } from "solid-js";
 import type { Accessor, Resource } from "solid-js";
 import { Font } from "@zynth/apis";
-import type { FontAssetDescriptor, FontLoadResult } from "@zynth/apis";
 import type {
   SkiaFont,
   SkiaFontManager,
@@ -33,6 +32,24 @@ type SkiaBridge = {
 const skiaRegisteredFonts = new Set<string>();
 const warnedMissingFamilies = new Set<string>();
 let cachedSystemFamilyKeys: Set<string> | null = null;
+
+type FontAssetDescriptor = {
+  type: "font";
+  name: string;
+  ext: string;
+  hash: string;
+  relativePath?: string;
+  devPath?: string;
+};
+
+function readLoadResultPath(result: unknown): string | null {
+  if (!result || typeof result !== "object") return null;
+  const maybe = result as { success?: unknown; path?: unknown };
+  if (maybe.success === true && typeof maybe.path === "string" && maybe.path.length > 0) {
+    return maybe.path;
+  }
+  return null;
+}
 
 export function vec(x: SkiaScalarValue, y: SkiaScalarValue): SkiaPoint {
   return { x, y };
@@ -315,12 +332,16 @@ async function ensureNativeFontLoaded(
     if (skiaRegisteredFonts.has(familyName)) return;
 
     const loadSource = (source as any)?.resourceName ?? source ?? resourceName;
-    const result = await Font.loadAsync(familyName, loadSource);
+    const result = await (Font.loadAsync(
+      familyName,
+      loadSource as string | FontAssetDescriptor,
+    ) as unknown as Promise<unknown>);
 
     const skia = getSkiaBridge();
     if (skia?.registerFont) {
-      if (result.success && result.path) {
-        const success = skia.registerFont(familyName, result.path);
+      const loadedPath = readLoadResultPath(result);
+      if (loadedPath) {
+        const success = skia.registerFont(familyName, loadedPath);
         if (success) {
           skiaRegisteredFonts.add(familyName);
           markSystemFamilyKnown(familyName);

@@ -6,6 +6,7 @@
 yarn workspace @zynth/skia binaries:sync
 yarn workspace @zynth/skia binaries:update
 yarn workspace @zynth/skia binaries:verify
+yarn workspace @zynth/skia binaries:prepare-release --source /path/to/skia-refs_heads_chrome_m142 --features svg,skottie --out /tmp/zynth-skia-release
 ```
 
 Strict checksum verification (CI for manifest edits):
@@ -23,6 +24,8 @@ node packages/zynth-skia/scripts/manage-binaries.mjs verify --strict-checksums
 - destination paths under `native/vendor`
 - optional SHA256 integrity locks
 
+The manifest provisions a single headers payload at `native/vendor/headers` (public + required module/internal headers).
+
 `binaries:sync` accepts empty `sha256`; `binaries:update` locks checksums.
 
 ## Layout normalization
@@ -31,6 +34,8 @@ node packages/zynth-skia/scripts/manage-binaries.mjs verify --strict-checksums
   keeps `.a`, `.so`, `.dat` and strips archive byproducts
 - iOS: `native/vendor/ios/<arch>/<target>/metal-pdf`
   writes `xcframeworks/`, `libs/`, and compatibility `libskia.a`
+- Headers: `native/vendor/headers/skia`
+  generated from a deterministic transitive dependency walk rooted at native includes and feature roots
 
 ## Postinstall behavior
 
@@ -49,3 +54,22 @@ ZYNTH_SKIA_SKIP_BINARY_SYNC=1 yarn install
 3. Do not hand-edit checksums.
 4. Run `binaries:verify` before PR.
 5. If manifest changed, run strict checksum verification in CI.
+
+## Release prep lifecycle
+
+Use one command to prepare release assets from a matching Skia source snapshot:
+
+`yarn workspace @zynth/skia binaries:prepare-release --source /absolute/path/to/skia-snapshot --features svg,skottie --out /tmp/zynth-skia-release`
+
+This command:
+1. Reuses cached runtime artifacts already synchronized by `binaries:sync`.
+2. Regenerates `native/vendor/headers` from source closure and writes `native/vendor/headers/skia/.headers-manifest.json`.
+3. Packs all manifest artifacts into the output folder using manifest filenames.
+4. Updates manifest checksums to match generated tarballs.
+
+Feature roots are declarative and additive:
+- `svg`
+- `skottie`
+- `shaper`
+
+Additional roots can be pinned in `native/headers.roots.json`.

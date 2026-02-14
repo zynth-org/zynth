@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { pipeline } from "node:stream/promises";
 import https from "node:https";
 import { execFileSync } from "node:child_process";
+import { prepareReleaseBundle } from "./release-prep.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,6 +16,12 @@ const packageDir = path.resolve(__dirname, "..");
 const manifestPath = path.join(packageDir, "binaries.manifest.json");
 const cacheDir = path.join(packageDir, "native", "vendor", ".cache");
 const tempDir = path.join(packageDir, "native", "vendor", ".tmp");
+const defaultReleaseOutDir = path.join(packageDir, "native", "vendor", ".release");
+const defaultHeaderRootsPath = path.join(packageDir, "native", "headers.roots.json");
+const nativeScanDirs = [
+  path.join(packageDir, "android", "ZynthSkia", "src", "main", "cpp"),
+  path.join(packageDir, "ios"),
+];
 
 async function pathExists(targetPath) {
   try {
@@ -28,6 +35,7 @@ async function pathExists(targetPath) {
 function parseArgs(argv) {
   const args = argv.slice(2);
   const command = args[0] || "sync";
+
   const readFlagValue = (flag) => {
     const flagIndex = args.indexOf(flag);
     if (flagIndex === -1) return null;
@@ -35,11 +43,30 @@ function parseArgs(argv) {
     if (!value || value.startsWith("--")) return null;
     return value;
   };
+
+  const featureValue = readFlagValue("--features") || "";
+  const features = featureValue
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+
+  const outputFlag = readFlagValue("--out");
+  const rootsFlag = readFlagValue("--roots");
+
   return {
     command,
     force: args.includes("--force"),
     version: readFlagValue("--version"),
     strictChecksums: args.includes("--strict-checksums"),
+    source: readFlagValue("--source") || null,
+    outDir: outputFlag
+      ? path.resolve(process.cwd(), outputFlag)
+      : path.join(defaultReleaseOutDir, readFlagValue("--version") || "current"),
+    features,
+    allowMissingHeaders: args.includes("--allow-missing-headers"),
+    rootsPath: rootsFlag
+      ? path.resolve(process.cwd(), rootsFlag)
+      : defaultHeaderRootsPath,
   };
 }
 
@@ -121,6 +148,28 @@ async function listEntries(dirPath) {
   }
 }
 
+async function listFilesRecursive(rootDir) {
+  const out = [];
+  if (!(await pathExists(rootDir))) return out;
+
+  const stack = [rootDir];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current) continue;
+    const entries = await fs.readdir(current, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(fullPath);
+        continue;
+      }
+      if (entry.isFile()) out.push(fullPath);
+    }
+  }
+
+  return out;
+}
+
 async function pickExtractionRoot(extractDir) {
   const entries = await listEntries(extractDir);
   if (entries.length !== 1) return extractDir;
@@ -155,7 +204,6 @@ function resolveIosSlice(artifact) {
 }
 
 async function normalizeAndroidPayload(destinationDir) {
-  // Keep only linkable artifacts and runtime payload files.
   await removeEntriesIfPresent(destinationDir, ["obj", "gen"]);
   const entries = await listEntries(destinationDir);
   for (const entry of entries) {
@@ -197,7 +245,6 @@ async function normalizeIosPayload(destinationDir, artifact) {
     }
   }
 
-  // Legacy convenience path while native linkage is migrated.
   const legacySkiaLib = path.join(libsOut, "libskia.a");
   if (await pathExists(legacySkiaLib)) {
     await fs.cp(legacySkiaLib, path.join(destinationDir, "libskia.a"), { recursive: true });
@@ -211,9 +258,7 @@ async function normalizeIosPayload(destinationDir, artifact) {
       if (entry.name === "xcframeworks" || entry.name === "libs" || entry.name === ".artifact.json") {
         continue;
       }
-      if (entry.name === "libskia.a") {
-        continue;
-      }
+      if (entry.name === "libskia.a") continue;
       await removeIfExists(path.join(destinationDir, entry.name));
     }
   }
@@ -370,14 +415,16 @@ function verifyManifest(manifest, options = {}) {
 }
 
 async function run() {
-  if (process.env.ZYNTH_SKIA_SKIP_BINARY_SYNC === "1") {
-    console.log("Skipping Skia binaries sync (ZYNTH_SKIA_SKIP_BINARY_SYNC=1).");
-    return;
+  const args = parseArgs(process.argv);
+  const allowedCommands = ["sync", "update", "verify", "prepare-release"];
+  if (!allowedCommands.includes(args.command)) {
+    throw new Error(`Unknown command "${args.command}". Use ${allowedCommands.join(", ")}.`);
   }
 
-  const args = parseArgs(process.argv);
-  if (!["sync", "update", "verify"].includes(args.command)) {
-    throw new Error(`Unknown command "${args.command}". Use "sync", "update", or "verify".`);
+  const isSyncCommand = args.command === "sync" || args.command === "update";
+  if (isSyncCommand && process.env.ZYNTH_SKIA_SKIP_BINARY_SYNC === "1") {
+    console.log("Skipping Skia binaries sync (ZYNTH_SKIA_SKIP_BINARY_SYNC=1).");
+    return;
   }
 
   const manifest = await readManifest();
@@ -387,13 +434,29 @@ async function run() {
     return;
   }
 
+  if (args.command === "prepare-release") {
+    verifyManifest(manifest, { strictChecksums: false });
+    await prepareReleaseBundle(manifest, args, {
+      packageDir,
+      manifestPath,
+      cacheDir,
+      defaultReleaseOutDir,
+      nativeScanDirs,
+      pathExists,
+      ensureDir,
+      removeIfExists,
+      listFilesRecursive,
+      sha256,
+      downloadToFile,
+    });
+    return;
+  }
+
   const writeChecksums = args.command === "update";
   const force = args.force || args.command === "update";
   const manifestReleaseChanged = args.command === "update" && updateManifestRelease(manifest, args);
 
-  console.log(
-    `Synchronizing Skia binaries (${args.command}) for manifest version ${manifest.version}`
-  );
+  console.log(`Synchronizing Skia binaries (${args.command}) for manifest version ${manifest.version}`);
 
   let hasManifestChanges = false;
   for (const artifact of manifest.artifacts) {

@@ -31,6 +31,7 @@
     "binaries:sync": "node ./scripts/manage-binaries.mjs sync",
     "binaries:update": "node ./scripts/manage-binaries.mjs update",
     "binaries:verify": "node ./scripts/manage-binaries.mjs verify",
+    "binaries:prepare-release": "node ./scripts/manage-binaries.mjs prepare-release",
     "postinstall": "node ./scripts/manage-binaries.mjs sync"
   },
   "keywords": [
