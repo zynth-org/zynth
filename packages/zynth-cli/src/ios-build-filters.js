@@ -4,6 +4,7 @@ const IOS_BUILD_NOISE_PATTERNS = [
   /^note: Building targets in dependency order/i,
   /^note: Target dependency graph/i,
   /built for newer 'iOS-simulator' version/i,
+  /^ld:\s*wa/i,
   /^ld: warning:/i,
   /ld: warning: object file .* built for newer/i,
   /ld: warning: object file .*Build\/Products/i,
