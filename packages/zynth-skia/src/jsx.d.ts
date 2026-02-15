@@ -13,6 +13,7 @@ declare module "solid-js" {
         commands?: SkiaDrawCommand[];
         ref?: (node: any) => void;
         onNativeReady?: (event: { nativeEvent: { available: boolean } }) => void;
+        onLayout?: (event: { nativeEvent: { layout: { x: number; y: number; width: number; height: number } } }) => void;
         children?: JSX.Element;
       };
     }

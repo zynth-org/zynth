@@ -1,4 +1,6 @@
 export { SkiaView } from "./SkiaView";
+export { SkottieView } from "./SkottieView";
+export type { SkottieViewProps } from "./SkottieView";
 export { createSkiaSurface } from "./createSkiaSurface";
 export type { SkiaSurfaceController } from "./createSkiaSurface";
 export { interpolateShared, toSharedScalar } from "@zynth/core";
@@ -47,9 +49,6 @@ export {
   makeSkottieFromString,
   useSkottie,
 } from "./skottie";
-export type {
-  SkiaSkottieSource,
-} from "./skottie";
 export {
   createSVG,
   makeSVGFromData,
@@ -80,6 +79,8 @@ export type {
 } from "@zynth/core";
 
 export type {
+  LayoutRectangle,
+  LayoutChangeEvent,
   CreateSkiaValueOptions,
   SkiaCanvasProps,
   SkiaCircleProps,
@@ -119,6 +120,7 @@ export type {
   SkiaImageSampling,
   SkiaImageProps,
   SkiaSkottie,
+  SkiaSkottieSource,
   SkiaSkottieProps,
   SkiaSVG,
   SkiaSVGProps,

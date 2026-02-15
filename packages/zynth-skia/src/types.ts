@@ -173,6 +173,12 @@ export type SkiaSkottie = {
   dispose(): void;
 };
 
+export type SkiaSkottieSource =
+  | string
+  | object
+  | { uri: string }
+  | { data: string; mimeType?: string };
+
 export type SkiaImageFit =
   | "contain"
   | "fill"
@@ -351,6 +357,19 @@ export type SkiaFrameSpec = {
   commands: SkiaDrawCommand[];
 };
 
+export type LayoutRectangle = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export type LayoutChangeEvent = {
+  nativeEvent: {
+    layout: LayoutRectangle;
+  };
+};
+
 export type SkiaViewProps = {
   style?: Style;
   clearColor?: SkiaColorValue;
@@ -359,6 +378,7 @@ export type SkiaViewProps = {
   commands?: SkiaDrawCommand[] | (() => SkiaDrawCommand[]);
   ref?: (node: HostNode | null) => void;
   onNativeReady?: (event: { nativeEvent: { available: boolean } }) => void;
+  onLayout?: (event: LayoutChangeEvent) => void;
   children?: JSX.Element;
 };
 
@@ -446,6 +466,7 @@ export type SkiaCanvasProps = {
   time?: number | Accessor<number>;
   ref?: (node: HostNode | null) => void;
   onNativeReady?: (event: { nativeEvent: { available: boolean } }) => void;
+  onLayout?: (event: LayoutChangeEvent) => void;
   children?: JSX.Element;
 };
 

@@ -23,6 +23,7 @@ export const SkiaView: ParentComponent<SkiaViewProps> = (props) => {
     "commands",
     "ref",
     "onNativeReady",
+    "onLayout",
   ]);
 
   const surface = createSkiaSurface();
@@ -104,6 +105,7 @@ export const SkiaView: ParentComponent<SkiaViewProps> = (props) => {
       frameLoop={local.frameLoop}
       allowFallback={local.allowFallback}
       onNativeReady={onNativeReady}
+      onLayout={local.onLayout}
     />
   );
 };

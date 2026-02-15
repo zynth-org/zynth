@@ -1305,6 +1305,7 @@ export const Canvas: ParentComponent<SkiaCanvasProps> = (props) => {
     "children",
     "ref",
     "onNativeReady",
+    "onLayout",
   ]);
 
   const resolvedChildren = children(() => local.children);
@@ -1336,6 +1337,7 @@ export const Canvas: ParentComponent<SkiaCanvasProps> = (props) => {
       allowFallback={local.allowFallback}
       commands={buildCommands}
       onNativeReady={local.onNativeReady}
+      onLayout={local.onLayout}
     />
   );
 };

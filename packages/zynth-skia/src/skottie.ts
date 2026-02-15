@@ -1,17 +1,12 @@
 import { createEffect, createSignal, onCleanup } from "solid-js";
 import type { Accessor } from "solid-js";
-import type { SkiaSkottie } from "./types";
+import type { SkiaSkottie, SkiaSkottieSource } from "./types";
 import {
   createNativeSkottieFromData,
   createNativeSkottieFromString,
   getNativeSkottieInfo,
   releaseNativeSkottie,
 } from "./native";
-
-export type SkiaSkottieSource =
-  | string
-  | { uri: string }
-  | { data: string; mimeType?: string };
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(
@@ -71,16 +66,18 @@ function resolveSkottieInfoOrThrow(animationId: number): {
   return info;
 }
 
-function resolveSourceUri(source: SkiaSkottieSource): string {
+function resolveSourceUri(
+  source: Exclude<SkiaSkottieSource, object> | { uri: string } | { data: string },
+): string {
   if (typeof source === "string") {
     return source;
   }
   if ("uri" in source && typeof source.uri === "string") {
     return source.uri;
   }
-  if ("data" in source && typeof source.data === "string") {
-    const mimeType = source.mimeType ?? "application/json";
-    return `data:${mimeType};base64,${source.data}`;
+  if ("data" in source && typeof (source as any).data === "string") {
+    const mimeType = (source as any).mimeType ?? "application/json";
+    return `data:${mimeType};base64,${(source as any).data}`;
   }
   throw new Error("createSkottie received an unsupported source");
 }
@@ -90,7 +87,11 @@ async function createSkottieFromSource(source: SkiaSkottieSource): Promise<SkiaS
     return makeSkottieFromString(source);
   }
 
-  const uri = resolveSourceUri(source);
+  if (typeof source === "object" && source !== null && !("uri" in source) && !("data" in source)) {
+    return makeSkottieFromString(JSON.stringify(source));
+  }
+
+  const uri = resolveSourceUri(source as any);
   const response = await fetch(uri);
   if (!response.ok) {
     throw new Error(`createSkottie failed to fetch animation: ${response.status}`);
@@ -104,7 +105,7 @@ export function createSkottie(
   onError?: (error: Error) => void,
 ): Accessor<SkiaSkottie | null> {
   const readSource = typeof source === "function"
-    ? source as Accessor<SkiaSkottieSource>
+    ? (source as Accessor<SkiaSkottieSource>)
     : () => source;
   const [animation, setAnimation] = createSignal<SkiaSkottie | null>(null);
   let requestId = 0;
