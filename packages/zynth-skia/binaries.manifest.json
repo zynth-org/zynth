@@ -7,7 +7,7 @@
       "arch": "arm64-v8a",
       "variant": "arm64-v8a",
       "url": "https://github.com/x64Bits/skia-assets/releases/download/zynth-skia-binaries-v0.0.2-skia-graphite-m142/skia-graphite-android-arm-64-m142.tar.gz",
-      "sha256": "2522386799a07051313d95ef1a860aaec3b5591907fad17737ec38e00d7d0850",
+      "sha256": "12b772ef8c0aa1eb71e28005ce2b57fda920524dff3e11799802dd301594fe48",
       "destination": "native/vendor/android/arm64-v8a"
     },
     {
@@ -16,7 +16,7 @@
       "arch": "x86_64",
       "variant": "x86_64",
       "url": "https://github.com/x64Bits/skia-assets/releases/download/zynth-skia-binaries-v0.0.2-skia-graphite-m142/skia-graphite-android-arm-x64-m142.tar.gz",
-      "sha256": "c81e24e822b3b01ca584b29a9af543ce9095a51a2290dd30f4858b30df9e609e",
+      "sha256": "d4743ca1754759b1c350b1eeae5bfd98133782b5162db7ece68cea85aa985035",
       "destination": "native/vendor/android/x86_64"
     },
     {
@@ -25,7 +25,7 @@
       "arch": "x86",
       "variant": "x86",
       "url": "https://github.com/x64Bits/skia-assets/releases/download/zynth-skia-binaries-v0.0.2-skia-graphite-m142/skia-graphite-android-arm-x86-m142.tar.gz",
-      "sha256": "0069d9b2d0ea03f0eb4c72e8c66a2bd6498c96dc6eb16355b7b6832ec1bfa74e",
+      "sha256": "97f565d0e63f7083c521aeb9738226dcc4b41b909de45c2d32d0af7a888c6695",
       "destination": "native/vendor/android/x86",
       "optional": true
     },
@@ -35,7 +35,7 @@
       "arch": "armeabi-v7a",
       "variant": "armeabi-v7a",
       "url": "https://github.com/x64Bits/skia-assets/releases/download/zynth-skia-binaries-v0.0.2-skia-graphite-m142/skia-graphite-android-arm-v7-m142.tar.gz",
-      "sha256": "775a8b55f402761d43b544358495f96f7533b330a32a65c25761ebe3606f6ea2",
+      "sha256": "d509a232325dcb3c6e2fc4fc246e83e0748ad5a29cecddb0d3d7a3b1c844509b",
       "destination": "native/vendor/android/armeabi-v7a",
       "optional": true
     },
@@ -45,7 +45,7 @@
       "arch": "any",
       "variant": "xcframeworks",
       "url": "https://github.com/x64Bits/skia-assets/releases/download/zynth-skia-binaries-v0.0.2-skia-graphite-m142/skia-graphite-apple-ios-xcframeworks-m142.tar.gz",
-      "sha256": "2a9d24f073b57f0293d8f7fe3217693e3a88f73716130faec76e763f4be69dfa",
+      "sha256": "75446ff0e9522b0474c76b9077353dadd13505466653f0eedd55b1c1bc7ced48",
       "destination": "native/vendor/ios"
     },
     {
@@ -54,7 +54,7 @@
       "arch": "any",
       "variant": "headers",
       "url": "https://github.com/x64Bits/skia-assets/releases/download/zynth-skia-binaries-v0.0.2-skia-graphite-m142/skia-graphite-headers-m142.tar.gz",
-      "sha256": "aa75a1d0447a38491a500425fc28eeb0593d0313896bb6217ef11392c086a559",
+      "sha256": "86a9352566632b410221ce042230f0b86806ea63bd9618df436c37af561824df",
       "destination": "native/vendor/headers/skia"
     }
   ]

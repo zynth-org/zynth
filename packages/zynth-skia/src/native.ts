@@ -50,6 +50,16 @@ type SkiaNativeBridge = {
   createSVGFromData?(data: ArrayBuffer): number;
   getSVGSize?(svgId: number): { width: number; height: number } | null;
   releaseSVG?(svgId: number): boolean;
+  createSkottieFromString?(source: string): number;
+  createSkottieFromData?(data: ArrayBuffer): number;
+  getSkottieInfo?(animationId: number): {
+    width: number;
+    height: number;
+    duration: number;
+    fps: number;
+    version: string;
+  } | null;
+  releaseSkottie?(animationId: number): boolean;
   capabilities?: Partial<SkiaCapabilities>;
 };
 
@@ -83,6 +93,7 @@ const enum PackedOpcode {
   Restore = 12,
   Image = 13,
   SVG = 14,
+  Skottie = 15,
 }
 
 const enum PackedTileMode {
@@ -179,6 +190,7 @@ const defaultCapabilities: SkiaCapabilities = {
   groupLayer: false,
   images: false,
   svg: false,
+  skottie: false,
 };
 
 const featureCapabilityMap: Record<SkiaFeature, keyof SkiaCapabilities> = {
@@ -196,6 +208,7 @@ const featureCapabilityMap: Record<SkiaFeature, keyof SkiaCapabilities> = {
   "group.layer": "groupLayer",
   images: "images",
   svg: "svg",
+  skottie: "skottie",
 };
 
 function parsePackedColor(value: string): number | null {
@@ -622,6 +635,16 @@ function materializeCommandsForFallback(commands: SkiaDrawCommand[]): SkiaDrawCo
           height: command.height == null ? undefined : materializeScalar(command.height),
           opacity: command.opacity == null ? undefined : materializeScalar(command.opacity, 1),
         };
+      case "skottie":
+        return {
+          ...command,
+          x: materializeScalar(command.x),
+          y: materializeScalar(command.y),
+          frame: materializeScalar(command.frame),
+          width: command.width == null ? undefined : materializeScalar(command.width),
+          height: command.height == null ? undefined : materializeScalar(command.height),
+          opacity: command.opacity == null ? undefined : materializeScalar(command.opacity, 1),
+        };
       case "runtimeShaderRect":
         return {
           ...command,
@@ -760,6 +783,7 @@ function encodePackedCommands(commands: SkiaDrawCommand[]): PackedCommands {
       && command.type !== "text"
       && command.type !== "image"
       && command.type !== "svg"
+      && command.type !== "skottie"
       && command.type !== "runtimeShaderRect"
       && command.type !== "runtimeShaderCircle"
       && command.type !== "runtimeShaderPath"
@@ -1115,6 +1139,29 @@ function encodePackedCommands(commands: SkiaDrawCommand[]): PackedCommands {
         }
         pushPackedScalar(encoded, caps.paintOpacity ? (command.opacity ?? 1) : 1, 1);
         break;
+      case "skottie":
+        if (!caps.skottie) {
+          throw new Error("Skia feature unsupported: skottie");
+        }
+        encoded.push(PackedOpcode.Skottie);
+        encoded.push(command.animationId);
+        pushPackedScalar(encoded, command.x);
+        pushPackedScalar(encoded, command.y);
+        pushPackedScalar(encoded, command.frame);
+        if (command.width == null) {
+          encoded.push(0);
+        } else {
+          encoded.push(1);
+          pushPackedScalar(encoded, command.width);
+        }
+        if (command.height == null) {
+          encoded.push(0);
+        } else {
+          encoded.push(1);
+          pushPackedScalar(encoded, command.height);
+        }
+        pushPackedScalar(encoded, caps.paintOpacity ? (command.opacity ?? 1) : 1, 1);
+        break;
     }
   }
 
@@ -1329,6 +1376,58 @@ export function releaseNativeSVG(svgId: number): void {
   const bridge = getBridge();
   if (bridge?.releaseSVG) {
     const ok = bridge.releaseSVG(svgId);
+    if (ok) return;
+  }
+}
+
+export function createNativeSkottieFromString(source: string): number {
+  const bridge = getBridge();
+  if (bridge?.createSkottieFromString) {
+    const animationId = bridge.createSkottieFromString(source);
+    if (typeof animationId === "number" && animationId > 0) return animationId;
+  }
+  throw new Error("Skia native bridge is unavailable for createSkottieFromString");
+}
+
+export function createNativeSkottieFromData(data: ArrayBuffer): number {
+  const bridge = getBridge();
+  if (bridge?.createSkottieFromData) {
+    const animationId = bridge.createSkottieFromData(data);
+    if (typeof animationId === "number" && animationId > 0) return animationId;
+  }
+  throw new Error("Skia native bridge is unavailable for createSkottieFromData");
+}
+
+export function getNativeSkottieInfo(
+  animationId: number,
+): {
+  width: number;
+  height: number;
+  duration: number;
+  fps: number;
+  version: string;
+} | null {
+  const bridge = getBridge();
+  if (bridge?.getSkottieInfo) {
+    const info = bridge.getSkottieInfo(animationId);
+    if (
+      info
+      && Number.isFinite(info.width)
+      && Number.isFinite(info.height)
+      && Number.isFinite(info.duration)
+      && Number.isFinite(info.fps)
+      && typeof info.version === "string"
+    ) {
+      return info;
+    }
+  }
+  return null;
+}
+
+export function releaseNativeSkottie(animationId: number): void {
+  const bridge = getBridge();
+  if (bridge?.releaseSkottie) {
+    const ok = bridge.releaseSkottie(animationId);
     if (ok) return;
   }
 }

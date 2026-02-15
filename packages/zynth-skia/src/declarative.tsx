@@ -54,6 +54,7 @@ import type {
   SkiaSharedSignalToken,
   SkiaShaderProps,
   SkiaShaderProgram,
+  SkiaSkottieProps,
   SkiaSVGProps,
   SkiaTextProps,
 } from "./types";
@@ -70,6 +71,7 @@ type SkiaNodeKind =
   | "text"
   | "image"
   | "svg"
+  | "skottie"
   | "linearGradient"
   | "mask";
 
@@ -1073,6 +1075,82 @@ function compileShapeSVG(
   });
 }
 
+function compileShapeSkottie(
+  props: SkiaSkottieProps,
+  state: CompileState,
+  out: SkiaDrawCommand[],
+) {
+  assertSkiaFeature("skottie", "Skottie");
+  const resolvedAnimation = typeof props.animation === "function"
+    ? (props.animation as Accessor<unknown>)()
+    : props.animation;
+  if (!resolvedAnimation || typeof resolvedAnimation !== "object") return;
+  const animationId = Number((resolvedAnimation as { id?: unknown }).id);
+  if (!Number.isFinite(animationId) || animationId <= 0) return;
+
+  if (!isAxisAligned(state.transform)) {
+    throw new Error("Skia Skottie currently supports axis-aligned Group transforms only");
+  }
+
+  const xScalar = resolveScalar(props.x ?? 0);
+  const yScalar = resolveScalar(props.y ?? 0);
+  const frameScalar = resolveScalar(props.frame);
+  const x = readNumber(xScalar);
+  const y = readNumber(yScalar);
+
+  const animationSize = resolvedAnimation as {
+    width?: () => number;
+    height?: () => number;
+  };
+  const widthFallback = typeof animationSize.width === "function"
+    ? animationSize.width()
+    : undefined;
+  const heightFallback = typeof animationSize.height === "function"
+    ? animationSize.height()
+    : undefined;
+  const widthScalar = props.width == null
+    ? (widthFallback == null ? undefined : resolveScalar(widthFallback))
+    : resolveScalar(props.width);
+  const heightScalar = props.height == null
+    ? (heightFallback == null ? undefined : resolveScalar(heightFallback))
+    : resolveScalar(props.height);
+  const width = widthScalar == null ? undefined : readNumber(widthScalar);
+  const height = heightScalar == null ? undefined : readNumber(heightScalar);
+  const identityTransform = isIdentityTransform(state.transform);
+  const opacity = props.opacity ?? state.paint.opacity;
+  const resolvedOpacity = isReactiveScalar(opacity) ? opacity : clampUnit(readNumber(opacity, 1));
+
+  if (!identityTransform) {
+    if (width == null || height == null) {
+      throw new Error("Skia Skottie with transformed Group requires width and height");
+    }
+    const p1 = applyMatrixPoint(state.transform, x, y);
+    const p3 = applyMatrixPoint(state.transform, x + width, y + height);
+    pushPaintedShape(out, {
+      type: "skottie",
+      animationId,
+      x: Math.min(p1.x, p3.x),
+      y: Math.min(p1.y, p3.y),
+      frame: frameScalar as unknown as number,
+      width: Math.abs(p3.x - p1.x),
+      height: Math.abs(p3.y - p1.y),
+      opacity: resolvedOpacity as unknown as number,
+    });
+    return;
+  }
+
+  pushPaintedShape(out, {
+    type: "skottie",
+    animationId,
+    x: xScalar as unknown as number,
+    y: yScalar as unknown as number,
+    frame: frameScalar as unknown as number,
+    width: widthScalar as unknown as number | undefined,
+    height: heightScalar as unknown as number | undefined,
+    opacity: resolvedOpacity as unknown as number,
+  });
+}
+
 function compileNode(
   value: unknown,
   state: CompileState,
@@ -1200,6 +1278,11 @@ function compileNode(
     return;
   }
 
+  if (value.kind === "skottie") {
+    compileShapeSkottie(value.props as SkiaSkottieProps, state, out);
+    return;
+  }
+
   compileShapePath(value.props as SkiaPathProps, state, time, out);
 }
 
@@ -1323,6 +1406,10 @@ export function Image(props: SkiaImageProps): JSX.Element {
 
 export function ImageSVG(props: SkiaSVGProps): JSX.Element {
   return createNode("svg", props) as unknown as JSX.Element;
+}
+
+export function Skottie(props: SkiaSkottieProps): JSX.Element {
+  return createNode("skottie", props) as unknown as JSX.Element;
 }
 
 export function Shader(props: SkiaShaderProps): JSX.Element {

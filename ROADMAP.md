@@ -75,7 +75,7 @@ This track hardens `@zynth/skia` so animation hooks and shader pipelines stay UI
 
 ## Bad Behaviors
 
-- [ ] Improve zynth-cli
+- [x] Improve zynth-cli
 - [x] zynth-ui TextInput use SytemGlyphs for icons on Android.
 - [ ] zynth-ui Custom slider doesn't keep on the selected position when released on Android.
 - [ ] Android: BottomSheet doesn't remove the backdrop when is set.

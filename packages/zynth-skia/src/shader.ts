@@ -16,6 +16,7 @@ import {
   makeSkiaDataFromBase64,
   makeSkiaDataFromBytes,
 } from "./image";
+import { makeSkottie } from "./skottie";
 import { makeSVGFromData, makeSVGFromString } from "./svg";
 import type { SkiaFontWeight } from "./types";
 import type {
@@ -378,6 +379,11 @@ export const Skia = {
       resources?: Record<string, { toBytes(): Uint8Array } | Uint8Array>,
     ) {
       return makeSVGFromData(data, fontMgr, resources);
+    },
+  },
+  Skottie: {
+    Make(source: string | { toBytes(): Uint8Array }) {
+      return makeSkottie(source);
     },
   },
   RuntimeEffect: {

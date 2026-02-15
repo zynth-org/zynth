@@ -14,6 +14,7 @@ export {
   Path,
   Rect,
   Shader,
+  Skottie,
   Text,
 } from "./declarative";
 export {
@@ -39,6 +40,16 @@ export {
   useImage,
 } from "./image";
 export type { SkiaData, SkiaImageSource } from "./image";
+export {
+  createSkottie,
+  makeSkottie,
+  makeSkottieFromData,
+  makeSkottieFromString,
+  useSkottie,
+} from "./skottie";
+export type {
+  SkiaSkottieSource,
+} from "./skottie";
 export {
   createSVG,
   makeSVGFromData,
@@ -77,6 +88,7 @@ export type {
   SkiaDrawClear,
   SkiaDrawLine,
   SkiaDrawImage,
+  SkiaDrawSkottie,
   SkiaDrawSVG,
   SkiaDrawPath,
   SkiaDrawRect,
@@ -106,6 +118,8 @@ export type {
   SkiaImageFilterMode,
   SkiaImageSampling,
   SkiaImageProps,
+  SkiaSkottie,
+  SkiaSkottieProps,
   SkiaSVG,
   SkiaSVGProps,
   SkiaScalarValue,

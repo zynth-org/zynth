@@ -162,6 +162,17 @@ export type SkiaSVG = {
   dispose(): void;
 };
 
+export type SkiaSkottie = {
+  readonly __skiaSkottie: true;
+  readonly id: number;
+  width(): number;
+  height(): number;
+  duration(): number;
+  fps(): number;
+  version(): string;
+  dispose(): void;
+};
+
 export type SkiaImageFit =
   | "contain"
   | "fill"
@@ -204,6 +215,17 @@ export type SkiaDrawSVG = {
   svgId: number;
   x: SkiaScalarValue;
   y: SkiaScalarValue;
+  width?: SkiaScalarValue;
+  height?: SkiaScalarValue;
+  opacity?: SkiaScalarValue;
+};
+
+export type SkiaDrawSkottie = {
+  type: "skottie";
+  animationId: number;
+  x: SkiaScalarValue;
+  y: SkiaScalarValue;
+  frame: SkiaScalarValue;
   width?: SkiaScalarValue;
   height?: SkiaScalarValue;
   opacity?: SkiaScalarValue;
@@ -318,6 +340,7 @@ export type SkiaDrawCommand =
   | SkiaDrawText
   | SkiaDrawImage
   | SkiaDrawSVG
+  | SkiaDrawSkottie
   | SkiaDrawPath
   | SkiaDrawRuntimeShaderRect
   | SkiaDrawRuntimeShaderCircle
@@ -540,6 +563,16 @@ export type SkiaSVGProps = {
   opacity?: SkiaScalarValue;
 };
 
+export type SkiaSkottieProps = {
+  animation: SkiaSkottie | Accessor<SkiaSkottie | null> | null;
+  frame: SkiaScalarValue;
+  x?: SkiaScalarValue;
+  y?: SkiaScalarValue;
+  width?: SkiaScalarValue;
+  height?: SkiaScalarValue;
+  opacity?: SkiaScalarValue;
+};
+
 export type SkiaFeature =
   | "paths"
   | "path.curves"
@@ -554,7 +587,8 @@ export type SkiaFeature =
   | "shader.linearGradient"
   | "group.layer"
   | "images"
-  | "svg";
+  | "svg"
+  | "skottie";
 
 export type SkiaCapabilities = {
   paths: boolean;
@@ -571,6 +605,7 @@ export type SkiaCapabilities = {
   groupLayer: boolean;
   images: boolean;
   svg: boolean;
+  skottie: boolean;
 };
 
 export type CreateSkiaValueOptions = {

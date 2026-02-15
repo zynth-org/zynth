@@ -1,4 +1,5 @@
 #import <Foundation/Foundation.h>
+#import <TargetConditionals.h>
 
 #import <jsi/jsi.h>
 
@@ -15,6 +16,12 @@
 #define ZYNTH_SKIA_HAS_SVG 1
 #else
 #define ZYNTH_SKIA_HAS_SVG 0
+#endif
+#if __has_include("modules/skottie/include/Skottie.h") \
+  && !(TARGET_OS_SIMULATOR && defined(__x86_64__))
+#define ZYNTH_SKIA_HAS_SKOTTIE 1
+#else
+#define ZYNTH_SKIA_HAS_SKOTTIE 0
 #endif
 
 using namespace facebook::jsi;
@@ -418,6 +425,66 @@ static void installSkiaBridge(ZynthHermesRuntimeHost *host, Runtime &rt) {
         return Value([ZynthSkiaRendererBridge releaseSVG:(NSInteger)args[0].asNumber()]);
       });
 
+  auto createSkottieFromStringFn = Function::createFromHostFunction(
+      rt,
+      PropNameID::forAscii(rt, "createSkottieFromString"),
+      1,
+      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isString()) {
+          return Value(0.0);
+        }
+        NSString *source = [NSString stringWithUTF8String:args[0].asString(rt).utf8(rt).c_str()];
+        NSInteger animationId = [ZynthSkiaRendererBridge createSkottieFromString:source];
+        return Value((double)animationId);
+      });
+
+  auto createSkottieFromDataFn = Function::createFromHostFunction(
+      rt,
+      PropNameID::forAscii(rt, "createSkottieFromData"),
+      1,
+      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isObject() || !args[0].asObject(rt).isArrayBuffer(rt)) {
+          return Value(0.0);
+        }
+        ArrayBuffer buffer = args[0].asObject(rt).getArrayBuffer(rt);
+        NSData *data = [NSData dataWithBytes:buffer.data(rt) length:buffer.size(rt)];
+        NSInteger animationId = [ZynthSkiaRendererBridge createSkottieFromData:data];
+        return Value((double)animationId);
+      });
+
+  auto getSkottieInfoFn = Function::createFromHostFunction(
+      rt,
+      PropNameID::forAscii(rt, "getSkottieInfo"),
+      1,
+      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isNumber()) {
+          return Value::null();
+        }
+        NSDictionary<NSString *, id> *info = [ZynthSkiaRendererBridge getSkottieInfo:(NSInteger)args[0].asNumber()];
+        if (info == nil) return Value::null();
+        Object result(rt);
+        result.setProperty(rt, "width", Value([[info objectForKey:@"width"] doubleValue]));
+        result.setProperty(rt, "height", Value([[info objectForKey:@"height"] doubleValue]));
+        result.setProperty(rt, "duration", Value([[info objectForKey:@"duration"] doubleValue]));
+        result.setProperty(rt, "fps", Value([[info objectForKey:@"fps"] doubleValue]));
+        NSString *version = [[info objectForKey:@"version"] isKindOfClass:[NSString class]]
+          ? (NSString *)[info objectForKey:@"version"]
+          : @"";
+        result.setProperty(rt, "version", String::createFromUtf8(rt, [version UTF8String]));
+        return result;
+      });
+
+  auto releaseSkottieFn = Function::createFromHostFunction(
+      rt,
+      PropNameID::forAscii(rt, "releaseSkottie"),
+      1,
+      [](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isNumber()) {
+          return Value(false);
+        }
+        return Value([ZynthSkiaRendererBridge releaseSkottie:(NSInteger)args[0].asNumber()]);
+      });
+
   Object skia(rt);
   Object capabilities(rt);
   capabilities.setProperty(rt, "paths", Value(true));
@@ -434,6 +501,7 @@ static void installSkiaBridge(ZynthHermesRuntimeHost *host, Runtime &rt) {
   capabilities.setProperty(rt, "groupLayer", Value(true));
   capabilities.setProperty(rt, "images", Value(true));
   capabilities.setProperty(rt, "svg", Value(ZYNTH_SKIA_HAS_SVG ? true : false));
+  capabilities.setProperty(rt, "skottie", Value(ZYNTH_SKIA_HAS_SKOTTIE ? true : false));
   skia.setProperty(rt, "capabilities", capabilities);
   skia.setProperty(rt, "createSurface", createSurfaceFn);
   skia.setProperty(rt, "disposeSurface", disposeSurfaceFn);
@@ -453,6 +521,10 @@ static void installSkiaBridge(ZynthHermesRuntimeHost *host, Runtime &rt) {
   skia.setProperty(rt, "createSVGFromData", createSVGFromDataFn);
   skia.setProperty(rt, "getSVGSize", getSVGSizeFn);
   skia.setProperty(rt, "releaseSVG", releaseSVGFn);
+  skia.setProperty(rt, "createSkottieFromString", createSkottieFromStringFn);
+  skia.setProperty(rt, "createSkottieFromData", createSkottieFromDataFn);
+  skia.setProperty(rt, "getSkottieInfo", getSkottieInfoFn);
+  skia.setProperty(rt, "releaseSkottie", releaseSkottieFn);
 
   rt.global().setProperty(rt, kSkiaKey, skia);
 }

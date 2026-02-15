@@ -255,6 +255,41 @@ async function packDirectoryToTar(sourceDir, tarPath, context) {
   });
 }
 
+const skiaSourcePatches = [
+  "modules/jsonreader/SkJSONReader.cpp",
+  "modules/skresources/src/SkResources.cpp",
+  "modules/skresources/src/SkAnimCodecPlayer.cpp",
+  "src/utils/SkOSPath.cpp",
+  "src/codec/SkCodecImageGenerator.cpp",
+  "src/codec/SkPixmapUtils.cpp",
+  "src/base/SkBase64.cpp",
+  "src/core/SkAutoPixmapStorage.cpp",
+  "src/ports/SkOSFile_posix.cpp",
+];
+
+async function generateSourcePatchesFromSource(manifest, args, context) {
+  const sourceRoot = path.resolve(process.cwd(), args.source);
+  const patchArtifact = findArtifactByVariant(manifest, "source-patches");
+  if (!patchArtifact) return null;
+
+  const patchDestination = path.join(context.packageDir, patchArtifact.destination);
+  await context.removeIfExists(patchDestination);
+  await context.ensureDir(patchDestination);
+
+  for (const rel of skiaSourcePatches) {
+    const sourceFile = path.join(sourceRoot, rel);
+    if (!(await context.pathExists(sourceFile))) {
+      console.warn(`\x1b[33m•\x1b[0m Warning: Source patch file not found: ${rel}`);
+      continue;
+    }
+    const destination = path.join(patchDestination, rel);
+    await context.ensureDir(path.dirname(destination));
+    await fs.copyFile(sourceFile, destination);
+  }
+
+  return { count: skiaSourcePatches.length };
+}
+
 export async function prepareReleaseBundle(manifest, args, context) {
   console.log(`${SYMBOL_STEP} Preparing release bundle (${BRIGHT}${manifest.version}${RESET})`);
 
@@ -265,6 +300,7 @@ export async function prepareReleaseBundle(manifest, args, context) {
   await context.ensureDir(outputDir);
 
   const headerSummary = await generateHeadersFromSource(manifest, args, context);
+  const patchSummary = await generateSourcePatchesFromSource(manifest, args, context);
   let hasManifestChanges = false;
   const outputs = [];
   const producedFiles = new Map();
@@ -281,7 +317,7 @@ export async function prepareReleaseBundle(manifest, args, context) {
       digest = existingOutput.digest;
       bytes = existingOutput.bytes;
       source = existingOutput.source;
-    } else if (artifact.variant === "headers") {
+    } else if (artifact.variant === "headers" || artifact.variant === "source-patches") {
       const destination = path.join(context.packageDir, artifact.destination);
       if (!(await context.pathExists(destination))) {
         throw new Error(`Artifact destination not found for ${artifact.id}: ${destination}`);
@@ -325,6 +361,7 @@ export async function prepareReleaseBundle(manifest, args, context) {
       generatedAt: new Date().toISOString(),
       features: args.features,
       headers: headerSummary,
+      patches: patchSummary,
       artifacts: outputs,
     }, null, 2)}\n`,
     "utf8"

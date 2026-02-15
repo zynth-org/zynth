@@ -1,3 +1,9 @@
 [
-  "modules/svg/include/SkSVGDOM.h"
+  "modules/svg/include/SkSVGDOM.h",
+  "modules/skottie/include/Skottie.h",
+  "src/codec/SkPixmapUtilsPriv.h",
+  "src/codec/SkCodecImageGenerator.h",
+  "src/core/SkOSFile.h",
+  "src/ports/SkOSFile_ios.h",
+  "src/core/SkAutoPixmapStorage.h"
 ]

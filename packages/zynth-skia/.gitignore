@@ -1,2 +1,8 @@
 native/vendor/**
 !native/vendor/.gitkeep
+native/src/base
+native/src/codec
+native/src/core
+native/src/utils
+native/src/modules/jsonreader
+native/src/modules/skresources

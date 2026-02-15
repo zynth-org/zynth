@@ -41,6 +41,10 @@ NS_ASSUME_NONNULL_BEGIN
 + (NSInteger)createSVGFromData:(NSData *)data;
 + (nullable NSDictionary<NSString *, NSNumber *> *)getSVGSize:(NSInteger)svgId;
 + (BOOL)releaseSVG:(NSInteger)svgId;
++ (NSInteger)createSkottieFromString:(NSString *)source;
++ (NSInteger)createSkottieFromData:(NSData *)data;
++ (nullable NSDictionary<NSString *, id> *)getSkottieInfo:(NSInteger)animationId;
++ (BOOL)releaseSkottie:(NSInteger)animationId;
 @end
 
 NS_ASSUME_NONNULL_END

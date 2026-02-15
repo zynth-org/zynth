@@ -42,6 +42,13 @@
 #else
 #define ZYNTH_SKIA_HAS_SVG 0
 #endif
+#if __has_include("modules/skottie/include/Skottie.h")
+#include "modules/skottie/include/Skottie.h"
+#include "include/core/SkStream.h"
+#define ZYNTH_SKIA_HAS_SKOTTIE 1
+#else
+#define ZYNTH_SKIA_HAS_SKOTTIE 0
+#endif
 #include "include/ports/SkFontMgr_android.h"
 #include "include/ports/SkFontScanner_FreeType.h"
 
@@ -65,6 +72,7 @@ constexpr int kOpcodeSaveLayerLuminanceMask = 11;
 constexpr int kOpcodeRestore = 12;
 constexpr int kOpcodeImage = 13;
 constexpr int kOpcodeSVG = 14;
+constexpr int kOpcodeSkottie = 15;
 
 constexpr int kColorTypeInt = 1;
 constexpr int kColorTypeString = 2;
@@ -157,6 +165,12 @@ std::mutex gSVGCacheMutex;
 std::unordered_map<int, sk_sp<SkSVGDOM>> gSVGCache;
 std::atomic<int> gNextSVGId{1};
 std::mutex gSVGRenderMutex;
+#endif
+#if ZYNTH_SKIA_HAS_SKOTTIE
+std::mutex gSkottieCacheMutex;
+std::unordered_map<int, sk_sp<skottie::Animation>> gSkottieCache;
+std::atomic<int> gNextSkottieId{1};
+std::mutex gSkottieRenderMutex;
 #endif
 
 std::mutex gTypefaceCacheMutex;
@@ -654,6 +668,15 @@ sk_sp<SkSVGDOM> getSVGById(int svgId) {
 }
 #endif
 
+#if ZYNTH_SKIA_HAS_SKOTTIE
+sk_sp<skottie::Animation> getSkottieById(int animationId) {
+  std::lock_guard<std::mutex> lock(gSkottieCacheMutex);
+  auto found = gSkottieCache.find(animationId);
+  if (found == gSkottieCache.end()) return nullptr;
+  return found->second;
+}
+#endif
+
 bool applyPackedLinearGradient(
     const SurfaceState::CommandBuffer &buffer,
     const std::vector<double> &ops,
@@ -1101,6 +1124,61 @@ bool renderSurfaceState(
         svg->render(canvas);
         if (hasWidth || hasHeight) {
           svg->setContainerSize(previousSize);
+        }
+      }
+      canvas->restore();
+      if (alpha < 1.0f) {
+        canvas->restore();
+      }
+#endif
+      continue;
+    }
+
+    if (opcode == kOpcodeSkottie) {
+      if (i >= buffer.ops.size()) break;
+      const int animationId = static_cast<int>(buffer.ops[i++]);
+      const float x = readPackedScalar(buffer.ops, i, taggedScalars);
+      const float y = readPackedScalar(buffer.ops, i, taggedScalars);
+      const float frame = readPackedScalar(buffer.ops, i, taggedScalars);
+      if (i >= buffer.ops.size()) break;
+      const bool hasWidth = static_cast<int>(buffer.ops[i++]) != 0;
+      const float width = hasWidth ? readPackedScalar(buffer.ops, i, taggedScalars) : 0.0f;
+      if (i >= buffer.ops.size()) break;
+      const bool hasHeight = static_cast<int>(buffer.ops[i++]) != 0;
+      const float height = hasHeight ? readPackedScalar(buffer.ops, i, taggedScalars) : 0.0f;
+      const float opacity = readPackedScalar(buffer.ops, i, taggedScalars, 1.0f);
+      if (opacity <= 0.0f) {
+        continue;
+      }
+#if ZYNTH_SKIA_HAS_SKOTTIE
+      sk_sp<skottie::Animation> animation = getSkottieById(animationId);
+      if (!animation) {
+        continue;
+      }
+
+      const float alpha = std::max(0.0f, std::min(1.0f, opacity));
+      if (alpha < 1.0f) {
+        SkPaint layerPaint;
+        layerPaint.setAlphaf(alpha);
+        canvas->saveLayer(nullptr, &layerPaint);
+      }
+
+      canvas->save();
+      canvas->translate(x, y);
+      {
+        std::lock_guard<std::mutex> lock(gSkottieRenderMutex);
+        const float targetWidth = hasWidth
+          ? std::max(0.0f, width)
+          : std::max(0.0f, animation->size().width());
+        const float targetHeight = hasHeight
+          ? std::max(0.0f, height)
+          : std::max(0.0f, animation->size().height());
+        animation->seekFrame(frame);
+        if (targetWidth > 0.0f && targetHeight > 0.0f) {
+          const SkRect dst = SkRect::MakeWH(targetWidth, targetHeight);
+          animation->render(canvas, &dst);
+        } else {
+          animation->render(canvas);
         }
       }
       canvas->restore();
@@ -1709,6 +1787,53 @@ void encodeCommandsFromJS(
 
       const Value antiAlias = command.getProperty(rt, "antiAlias");
       outOps.push_back(antiAlias.isBool() ? (antiAlias.getBool() ? 1.0 : 0.0) : 1.0);
+      outOps.push_back(readNumberProp(rt, command, "opacity", 1));
+      continue;
+    }
+
+    if (type == "svg") {
+      outOps.push_back(static_cast<double>(kOpcodeSVG));
+      outOps.push_back(readNumberProp(rt, command, "svgId", 0));
+      outOps.push_back(readNumberProp(rt, command, "x", 0));
+      outOps.push_back(readNumberProp(rt, command, "y", 0));
+      Value widthValue = command.getProperty(rt, "width");
+      if (widthValue.isNumber()) {
+        outOps.push_back(1.0);
+        outOps.push_back(widthValue.asNumber());
+      } else {
+        outOps.push_back(0.0);
+      }
+      Value heightValue = command.getProperty(rt, "height");
+      if (heightValue.isNumber()) {
+        outOps.push_back(1.0);
+        outOps.push_back(heightValue.asNumber());
+      } else {
+        outOps.push_back(0.0);
+      }
+      outOps.push_back(readNumberProp(rt, command, "opacity", 1));
+      continue;
+    }
+
+    if (type == "skottie") {
+      outOps.push_back(static_cast<double>(kOpcodeSkottie));
+      outOps.push_back(readNumberProp(rt, command, "animationId", 0));
+      outOps.push_back(readNumberProp(rt, command, "x", 0));
+      outOps.push_back(readNumberProp(rt, command, "y", 0));
+      outOps.push_back(readNumberProp(rt, command, "frame", 0));
+      Value widthValue = command.getProperty(rt, "width");
+      if (widthValue.isNumber()) {
+        outOps.push_back(1.0);
+        outOps.push_back(widthValue.asNumber());
+      } else {
+        outOps.push_back(0.0);
+      }
+      Value heightValue = command.getProperty(rt, "height");
+      if (heightValue.isNumber()) {
+        outOps.push_back(1.0);
+        outOps.push_back(heightValue.asNumber());
+      } else {
+        outOps.push_back(0.0);
+      }
       outOps.push_back(readNumberProp(rt, command, "opacity", 1));
       continue;
     }
@@ -2521,6 +2646,107 @@ void installBridge(Runtime &rt) {
 #endif
       });
 
+  auto createSkottieFromString = Function::createFromHostFunction(
+      rt,
+      PropNameID::forAscii(rt, "createSkottieFromString"),
+      1,
+      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+#if !ZYNTH_SKIA_HAS_SKOTTIE
+        (void)rt;
+        (void)args;
+        (void)count;
+        return Value(0.0);
+#else
+        if (count < 1 || !args[0].isString()) {
+          return Value(0.0);
+        }
+        const std::string source = args[0].asString(rt).utf8(rt);
+        if (source.empty()) return Value(0.0);
+        sk_sp<skottie::Animation> animation = skottie::Animation::Make(source.c_str(), source.size());
+        if (!animation) return Value(0.0);
+        const int animationId = gNextSkottieId.fetch_add(1);
+        {
+          std::lock_guard<std::mutex> lock(gSkottieCacheMutex);
+          gSkottieCache[animationId] = std::move(animation);
+        }
+        return Value(static_cast<double>(animationId));
+#endif
+      });
+
+  auto createSkottieFromData = Function::createFromHostFunction(
+      rt,
+      PropNameID::forAscii(rt, "createSkottieFromData"),
+      1,
+      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+#if !ZYNTH_SKIA_HAS_SKOTTIE
+        (void)rt;
+        (void)args;
+        (void)count;
+        return Value(0.0);
+#else
+        if (count < 1 || !args[0].isObject() || !args[0].asObject(rt).isArrayBuffer(rt)) {
+          return Value(0.0);
+        }
+        ArrayBuffer buffer = args[0].asObject(rt).getArrayBuffer(rt);
+        auto data = SkData::MakeWithCopy(buffer.data(rt), buffer.size(rt));
+        if (!data) return Value(0.0);
+        sk_sp<skottie::Animation> animation = skottie::Animation::Make(
+          static_cast<const char *>(data->data()),
+          data->size()
+        );
+        if (!animation) return Value(0.0);
+        const int animationId = gNextSkottieId.fetch_add(1);
+        {
+          std::lock_guard<std::mutex> lock(gSkottieCacheMutex);
+          gSkottieCache[animationId] = std::move(animation);
+        }
+        return Value(static_cast<double>(animationId));
+#endif
+      });
+
+  auto getSkottieInfo = Function::createFromHostFunction(
+      rt,
+      PropNameID::forAscii(rt, "getSkottieInfo"),
+      1,
+      [](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+#if !ZYNTH_SKIA_HAS_SKOTTIE
+        (void)rt;
+        (void)args;
+        (void)count;
+        return Value::null();
+#else
+        if (count < 1 || !args[0].isNumber()) return Value::null();
+        const int animationId = static_cast<int>(args[0].asNumber());
+        sk_sp<skottie::Animation> animation = getSkottieById(animationId);
+        if (!animation) return Value::null();
+        const SkSize size = animation->size();
+        Object result(rt);
+        result.setProperty(rt, "width", Value(static_cast<double>(std::max(0.0f, size.width()))));
+        result.setProperty(rt, "height", Value(static_cast<double>(std::max(0.0f, size.height()))));
+        result.setProperty(rt, "duration", Value(animation->duration()));
+        result.setProperty(rt, "fps", Value(animation->fps()));
+        result.setProperty(rt, "version", String::createFromUtf8(rt, animation->version().c_str()));
+        return result;
+#endif
+      });
+
+  auto releaseSkottie = Function::createFromHostFunction(
+      rt,
+      PropNameID::forAscii(rt, "releaseSkottie"),
+      1,
+      [](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+#if !ZYNTH_SKIA_HAS_SKOTTIE
+        (void)args;
+        (void)count;
+        return Value(false);
+#else
+        if (count < 1 || !args[0].isNumber()) return Value(false);
+        const int animationId = static_cast<int>(args[0].asNumber());
+        std::lock_guard<std::mutex> lock(gSkottieCacheMutex);
+        return Value(gSkottieCache.erase(animationId) > 0);
+#endif
+      });
+
   Object skia(rt);
   Object capabilities(rt);
   capabilities.setProperty(rt, "paths", Value(true));
@@ -2537,6 +2763,7 @@ void installBridge(Runtime &rt) {
   capabilities.setProperty(rt, "groupLayer", Value(true));
   capabilities.setProperty(rt, "images", Value(true));
   capabilities.setProperty(rt, "svg", Value(ZYNTH_SKIA_HAS_SVG ? true : false));
+  capabilities.setProperty(rt, "skottie", Value(ZYNTH_SKIA_HAS_SKOTTIE ? true : false));
   skia.setProperty(rt, "capabilities", capabilities);
   skia.setProperty(rt, "createSurface", createSurface);
   skia.setProperty(rt, "disposeSurface", disposeSurface);
@@ -2556,6 +2783,10 @@ void installBridge(Runtime &rt) {
   skia.setProperty(rt, "createSVGFromData", createSVGFromData);
   skia.setProperty(rt, "getSVGSize", getSVGSize);
   skia.setProperty(rt, "releaseSVG", releaseSVG);
+  skia.setProperty(rt, "createSkottieFromString", createSkottieFromString);
+  skia.setProperty(rt, "createSkottieFromData", createSkottieFromData);
+  skia.setProperty(rt, "getSkottieInfo", getSkottieInfo);
+  skia.setProperty(rt, "releaseSkottie", releaseSkottie);
   rt.global().setProperty(rt, kSkiaKey, skia);
 }
 
@@ -2927,6 +3158,12 @@ extern "C" JNIEXPORT void JNICALL JNI_OnUnload(JavaVM *, void *) {
   {
     std::lock_guard<std::mutex> svgLock(gSVGCacheMutex);
     gSVGCache.clear();
+  }
+#endif
+#if ZYNTH_SKIA_HAS_SKOTTIE
+  {
+    std::lock_guard<std::mutex> skottieLock(gSkottieCacheMutex);
+    gSkottieCache.clear();
   }
 #endif
 }

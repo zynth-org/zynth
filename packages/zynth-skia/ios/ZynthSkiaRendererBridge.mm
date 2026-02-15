@@ -1,5 +1,6 @@
 #import "ZynthSkiaRendererBridge.h"
 #import "ZynthJSIPluginRegistry.h"
+#import <TargetConditionals.h>
 
 #import <mutex>
 #import <memory>
@@ -33,6 +34,14 @@
 #else
 #define ZYNTH_SKIA_HAS_SVG 0
 #endif
+#if __has_include("modules/skottie/include/Skottie.h") \
+  && !(TARGET_OS_SIMULATOR && defined(__x86_64__))
+#import "modules/skottie/include/Skottie.h"
+#import "include/core/SkStream.h"
+#define ZYNTH_SKIA_HAS_SKOTTIE 1
+#else
+#define ZYNTH_SKIA_HAS_SKOTTIE 0
+#endif
 #if __has_include("include/ports/SkFontMgr_mac_ct.h")
 #import "include/ports/SkFontMgr_mac_ct.h"
 #endif
@@ -54,6 +63,7 @@ enum PackedOpcode {
   PackedOpcodeRestore = 12,
   PackedOpcodeImage = 13,
   PackedOpcodeSVG = 14,
+  PackedOpcodeSkottie = 15,
 };
 
 enum PackedColorType {
@@ -157,6 +167,12 @@ std::mutex gSVGCacheMutex;
 std::unordered_map<int, sk_sp<SkSVGDOM>> gSVGCache;
 int gNextSVGId = 1;
 std::mutex gSVGRenderMutex;
+#endif
+#if ZYNTH_SKIA_HAS_SKOTTIE
+std::mutex gSkottieCacheMutex;
+std::unordered_map<int, sk_sp<skottie::Animation>> gSkottieCache;
+int gNextSkottieId = 1;
+std::mutex gSkottieRenderMutex;
 #endif
 
 std::mutex gTypefaceCacheMutex;
@@ -628,6 +644,15 @@ static sk_sp<SkSVGDOM> getSVGById(int svgId) {
 }
 #endif
 
+#if ZYNTH_SKIA_HAS_SKOTTIE
+static sk_sp<skottie::Animation> getSkottieById(int animationId) {
+  std::lock_guard<std::mutex> lock(gSkottieCacheMutex);
+  auto found = gSkottieCache.find(animationId);
+  if (found == gSkottieCache.end()) return nullptr;
+  return found->second;
+}
+#endif
+
 static bool applyPackedLinearGradient(const CommandBuffer &buffer,
                                       const std::vector<double> &ops,
                                       size_t &index,
@@ -1090,6 +1115,71 @@ static bool renderSurfaceState(const CommandBuffer &buffer,
         svg->render(canvas);
         if (hasWidth || hasHeight) {
           svg->setContainerSize(previousSize);
+        }
+      }
+      canvas->restore();
+      if (alpha < 1.0f) {
+        canvas->restore();
+      }
+#endif
+      continue;
+    }
+
+    if (opcode == PackedOpcodeSkottie) {
+      if (i >= buffer.ops.size()) break;
+      int animationId = static_cast<int>(buffer.ops[i++]);
+      float x = readPackedScalar(buffer.ops, i, taggedScalars);
+      float y = readPackedScalar(buffer.ops, i, taggedScalars);
+      float frame = readPackedScalar(buffer.ops, i, taggedScalars);
+      if (i >= buffer.ops.size()) break;
+      bool hasWidth = static_cast<int>(buffer.ops[i++]) != 0;
+      float width = hasWidth ? readPackedScalar(buffer.ops, i, taggedScalars) : 0.0f;
+      if (i >= buffer.ops.size()) break;
+      bool hasHeight = static_cast<int>(buffer.ops[i++]) != 0;
+      float height = hasHeight ? readPackedScalar(buffer.ops, i, taggedScalars) : 0.0f;
+      float opacity = readPackedScalar(buffer.ops, i, taggedScalars, 1.0f);
+      if (opacity <= 0.0f) {
+        continue;
+      }
+#if !ZYNTH_SKIA_HAS_SKOTTIE
+      (void)animationId;
+      (void)x;
+      (void)y;
+      (void)frame;
+      (void)hasWidth;
+      (void)width;
+      (void)hasHeight;
+      (void)height;
+#endif
+#if ZYNTH_SKIA_HAS_SKOTTIE
+      sk_sp<skottie::Animation> animation = getSkottieById(animationId);
+      if (!animation) {
+        continue;
+      }
+
+      const float alpha = std::max(0.0f, std::min(1.0f, opacity));
+      if (alpha < 1.0f) {
+        SkPaint layerPaint;
+        layerPaint.setAlphaf(alpha);
+        canvas->saveLayer(nullptr, &layerPaint);
+      }
+
+      canvas->save();
+      canvas->translate(x, y);
+      {
+        std::lock_guard<std::mutex> lock(gSkottieRenderMutex);
+        const float targetWidth = hasWidth
+          ? std::max(0.0f, width)
+          : std::max(0.0f, animation->size().width());
+        const float targetHeight = hasHeight
+          ? std::max(0.0f, height)
+          : std::max(0.0f, animation->size().height());
+        animation->seekFrame(frame);
+        if (targetWidth > 0.0f && targetHeight > 0.0f) {
+          const SkRect dst = SkRect::MakeWH(targetWidth, targetHeight);
+          animation->render(canvas, &dst);
+        } else {
+          animation->render(canvas);
         }
       }
       canvas->restore();
@@ -1685,6 +1775,53 @@ static bool encodeCommands(NSArray<NSDictionary *> *commands,
       continue;
     }
 
+    if ([type isEqualToString:@"svg"]) {
+      outOps.push_back(PackedOpcodeSVG);
+      outOps.push_back([command[@"svgId"] doubleValue]);
+      outOps.push_back([command[@"x"] doubleValue]);
+      outOps.push_back([command[@"y"] doubleValue]);
+      NSNumber *width = [command[@"width"] isKindOfClass:[NSNumber class]] ? command[@"width"] : nil;
+      NSNumber *height = [command[@"height"] isKindOfClass:[NSNumber class]] ? command[@"height"] : nil;
+      if (width != nil) {
+        outOps.push_back(1.0);
+        outOps.push_back(width.doubleValue);
+      } else {
+        outOps.push_back(0.0);
+      }
+      if (height != nil) {
+        outOps.push_back(1.0);
+        outOps.push_back(height.doubleValue);
+      } else {
+        outOps.push_back(0.0);
+      }
+      outOps.push_back(command[@"opacity"] ? [command[@"opacity"] doubleValue] : 1.0);
+      continue;
+    }
+
+    if ([type isEqualToString:@"skottie"]) {
+      outOps.push_back(PackedOpcodeSkottie);
+      outOps.push_back([command[@"animationId"] doubleValue]);
+      outOps.push_back([command[@"x"] doubleValue]);
+      outOps.push_back([command[@"y"] doubleValue]);
+      outOps.push_back([command[@"frame"] doubleValue]);
+      NSNumber *width = [command[@"width"] isKindOfClass:[NSNumber class]] ? command[@"width"] : nil;
+      NSNumber *height = [command[@"height"] isKindOfClass:[NSNumber class]] ? command[@"height"] : nil;
+      if (width != nil) {
+        outOps.push_back(1.0);
+        outOps.push_back(width.doubleValue);
+      } else {
+        outOps.push_back(0.0);
+      }
+      if (height != nil) {
+        outOps.push_back(1.0);
+        outOps.push_back(height.doubleValue);
+      } else {
+        outOps.push_back(0.0);
+      }
+      outOps.push_back(command[@"opacity"] ? [command[@"opacity"] doubleValue] : 1.0);
+      continue;
+    }
+
     if ([type isEqualToString:@"runtimeShaderRect"]) {
       NSDictionary *uniforms = command[@"uniforms"];
       if (![uniforms isKindOfClass:[NSDictionary class]]) {
@@ -2002,6 +2139,10 @@ static bool encodeCommands(NSArray<NSDictionary *> *commands,
     std::lock_guard<std::mutex> svgLock(gSVGCacheMutex);
     gSVGCache.clear();
 #endif
+#if ZYNTH_SKIA_HAS_SKOTTIE
+    std::lock_guard<std::mutex> skottieLock(gSkottieCacheMutex);
+    gSkottieCache.clear();
+#endif
   }
 }
 
@@ -2218,6 +2359,67 @@ static bool encodeCommands(NSArray<NSDictionary *> *commands,
   if (svgId <= 0) return NO;
   std::lock_guard<std::mutex> lock(gSVGCacheMutex);
   return gSVGCache.erase(static_cast<int>(svgId)) > 0;
+#endif
+}
+
++ (NSInteger)createSkottieFromString:(NSString *)source {
+#if !ZYNTH_SKIA_HAS_SKOTTIE
+  (void)source;
+  return 0;
+#else
+  if (source == nil || source.length == 0) return 0;
+  NSData *data = [source dataUsingEncoding:NSUTF8StringEncoding];
+  if (data == nil || data.length == 0) return 0;
+  return [self createSkottieFromData:data];
+#endif
+}
+
++ (NSInteger)createSkottieFromData:(NSData *)data {
+#if !ZYNTH_SKIA_HAS_SKOTTIE
+  (void)data;
+  return 0;
+#else
+  if (data == nil || data.length == 0) return 0;
+  sk_sp<skottie::Animation> animation = skottie::Animation::Make(
+    static_cast<const char *>(data.bytes),
+    data.length
+  );
+  if (!animation) return 0;
+
+  std::lock_guard<std::mutex> lock(gSkottieCacheMutex);
+  const int animationId = gNextSkottieId++;
+  gSkottieCache[animationId] = std::move(animation);
+  return animationId;
+#endif
+}
+
++ (NSDictionary<NSString *, id> *)getSkottieInfo:(NSInteger)animationId {
+#if !ZYNTH_SKIA_HAS_SKOTTIE
+  (void)animationId;
+  return nil;
+#else
+  if (animationId <= 0) return nil;
+  sk_sp<skottie::Animation> animation = getSkottieById(static_cast<int>(animationId));
+  if (!animation) return nil;
+  const SkSize size = animation->size();
+  return @{
+    @"width": @(std::max(0.0f, size.width())),
+    @"height": @(std::max(0.0f, size.height())),
+    @"duration": @(animation->duration()),
+    @"fps": @(animation->fps()),
+    @"version": [NSString stringWithUTF8String:animation->version().c_str()],
+  };
+#endif
+}
+
++ (BOOL)releaseSkottie:(NSInteger)animationId {
+#if !ZYNTH_SKIA_HAS_SKOTTIE
+  (void)animationId;
+  return NO;
+#else
+  if (animationId <= 0) return NO;
+  std::lock_guard<std::mutex> lock(gSkottieCacheMutex);
+  return gSkottieCache.erase(static_cast<int>(animationId)) > 0;
 #endif
 }
 

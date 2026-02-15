@@ -318,7 +318,7 @@ async function syncArtifact(artifact, manifest, options) {
   await downloadToFile(artifact.url, archivePath);
   const downloadedSha = await sha256(archivePath);
 
-  if (expectedSha && downloadedSha !== expectedSha) {
+  if (!options.force && expectedSha && downloadedSha !== expectedSha) {
     throw new Error(
       `Checksum mismatch for ${artifact.id}. Expected ${expectedSha}, got ${downloadedSha}`
     );
