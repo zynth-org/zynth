@@ -28,48 +28,62 @@ class ZynthModuleRegistry {
     private var bridgeSessionId: String? = null
 
     fun setSessionId(sessionId: String) {
-        this.bridgeSessionId = sessionId
+        synchronized(this) {
+            this.bridgeSessionId = sessionId
+        }
     }
 
     private fun validateNonce(args: ZynthArgs) {
-        val session = bridgeSessionId ?: return
-        
-        val sessionId = try { args.getString("bridgeSessionId") } catch (e: Exception) { 
-            // If we have a session ID enforced, then we MUST have it in args.
-            // But if we don't have it yet, we allowed it above.
-            throw SecurityException("E_INVALID_SESSION: Missing bridgeSessionId") 
-        }
-        val nonce = try { args.getLong("nonce") } catch (e: Exception) {
-            throw SecurityException("E_INVALID_NONCE: Missing nonce")
-        }
+        synchronized(this) {
+            val session = bridgeSessionId ?: throw SecurityException("E_INVALID_SESSION: Bridge session not initialized")
+            Log.i(TAG, "Validating nonce for session: $session")
+            
+            val sessionId = try { args.getString("bridgeSessionId") } catch (e: Exception) { 
+                throw SecurityException("E_INVALID_SESSION: Missing bridgeSessionId") 
+            }
+            val nonce = try { args.getLong("nonce") } catch (e: Exception) {
+                throw SecurityException("E_INVALID_NONCE: Missing nonce")
+            }
 
-        if (sessionId != session) {
-            throw SecurityException("E_INVALID_SESSION: Invalid bridge session")
-        }
+            if (sessionId != session) {
+                Log.w(TAG, "Session mismatch: received=$sessionId, expected=$session")
+                throw SecurityException("E_INVALID_SESSION: Invalid bridge session")
+            }
 
-        if (nonce <= lastNonce) {
-            throw SecurityException("E_INVALID_NONCE: Replay attack detected")
-        }
+            if (nonce <= lastNonce) {
+                Log.w(TAG, "Replay attack detected: nonce=$nonce, lastNonce=$lastNonce")
+                throw SecurityException("E_INVALID_NONCE: Replay attack detected")
+            }
 
-        lastNonce = nonce
+            lastNonce = nonce
+        }
     }
 
     fun register(module: ZynthModule) {
         Log.i(TAG, "Registering module: ${module.name}")
-        modules[module.name] = module
+        synchronized(this) {
+            modules[module.name] = module
+        }
         Log.i(TAG, "Module registered. Total modules: ${modules.size}, keys: ${modules.keys}")
         module.initialize()
         Log.i(TAG, "Module initialized: ${module.name}")
     }
 
     fun destroy() {
-        modules.values.forEach { it.invalidate() }
-        modules.clear()
+        val modulesToInvalidate = synchronized(this) {
+            val list = modules.values.toList()
+            modules.clear()
+            list
+        }
+        modulesToInvalidate.forEach { it.invalidate() }
     }
 
     fun exportedConstants(): Map<String, Any> {
         val constants = mutableMapOf<String, Any>()
-        for (module in modules.values) {
+        val currentModules = synchronized(this) {
+            modules.values.toList()
+        }
+        for (module in currentModules) {
             module.constants?.let {
                 constants[module.name] = it
             }
@@ -78,9 +92,8 @@ class ZynthModuleRegistry {
     }
 
     fun call(name: String, method: String, args: Array<Any?>): JSONObject {
-        Log.i(TAG, "call(name=$name, method=$method) - modules.size=${modules.size}")
-        Log.i(TAG, "Available modules: ${modules.keys}")
-        val module = modules[name]
+        Log.i(TAG, "call(name=$name, method=$method)")
+        val module = synchronized(this) { modules[name] }
         if (module == null) {
             Log.w(TAG, "Module not found: $name")
             val sanitized = ZynthErrorMapper.sanitizeModuleError("module_not_found")
@@ -112,7 +125,7 @@ class ZynthModuleRegistry {
 
     fun callSync(name: String, method: String, args: Array<Any?>): Any? {
         Log.i(TAG, "callSync(name=$name, method=$method)")
-        val module = modules[name]
+        val module = synchronized(this) { modules[name] }
         if (module == null) {
             val sanitized = ZynthErrorMapper.sanitizeModuleError("module_not_found")
             Log.w(TAG, "Module $name not found")

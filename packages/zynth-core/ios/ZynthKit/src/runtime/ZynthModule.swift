@@ -52,20 +52,22 @@ final class ZynthModuleRegistry: NSObject, ZynthModuleBridge {
   private var modules: [String: ZynthModule] = [:]
   private var lastNonce: Int64 = 0
   private var bridgeSessionId: String?
+  private let queue = DispatchQueue(label: "dev.zynth.moduleRegistry")
 
   override init() {
       super.init()
   }
   
   func setSessionId(_ sessionId: String) {
-      self.bridgeSessionId = sessionId
+      queue.sync {
+          self.bridgeSessionId = sessionId
+      }
   }
 
   private func validateNonce(_ args: ZynthArgs) throws {
+    // Note: This must be called from within the queue
     guard let session = self.bridgeSessionId else { 
-        // If session ID isn't set yet (extremely early calls), we allow it
-        // but it's a security risk we should monitor.
-        return 
+        throw ZynthModuleError.invalidSession
     }
     
     let sessionId = try args.string("bridgeSessionId")
@@ -83,29 +85,36 @@ final class ZynthModuleRegistry: NSObject, ZynthModuleBridge {
   }
 
   func register(_ module: ZynthModule) {
-    modules[module.name] = module
+    queue.sync {
+        modules[module.name] = module
+    }
     module.initialize()
   }
 
   func destroy() {
-    for module in modules.values {
-      module.invalidate()
+    queue.sync {
+        for module in modules.values {
+          module.invalidate()
+        }
+        modules.removeAll()
     }
-    modules.removeAll()
   }
 
   func exportedConstants() -> [String: Any] {
-    var constants: [String: Any] = [:]
-    for module in modules.values {
-      if let moduleConstants = module.constantsToExport {
-        constants[module.name] = moduleConstants
-      }
+    return queue.sync {
+        var constants: [String: Any] = [:]
+        for module in modules.values {
+          if let moduleConstants = module.constantsToExport {
+            constants[module.name] = moduleConstants
+          }
+        }
+        return constants
     }
-    return constants
   }
 
   func call(_ name: String, method: String, args: Any?) throws -> Any? {
-    guard let module = modules[name] else {
+    let module: ZynthModule? = queue.sync { modules[name] }
+    guard let module = module else {
       throw ZynthModuleError.moduleNotFound(name)
     }
     guard module.exportedMethods.contains(method) else {
@@ -113,13 +122,14 @@ final class ZynthModuleRegistry: NSObject, ZynthModuleBridge {
     }
     let zynthArgs = ZynthArgs(args)
     if module.protectedMethods.contains(method) {
-      try validateNonce(zynthArgs)
+      try queue.sync { try validateNonce(zynthArgs) }
     }
     return try module.call(method: method, args: zynthArgs)
   }
 
   func callSync(_ name: String, method: String, args: Any?) throws -> Any? {
-    guard let module = modules[name] else {
+    let module: ZynthModule? = queue.sync { modules[name] }
+    guard let module = module else {
       throw ZynthModuleError.moduleNotFound(name)
     }
     guard module.exportedMethods.contains(method) else {
@@ -130,7 +140,7 @@ final class ZynthModuleRegistry: NSObject, ZynthModuleBridge {
     }
     let zynthArgs = ZynthArgs(args)
     if module.protectedMethods.contains(method) {
-      try validateNonce(zynthArgs)
+      try queue.sync { try validateNonce(zynthArgs) }
     }
     return try syncModule.callSync(method: method, args: zynthArgs)
   }

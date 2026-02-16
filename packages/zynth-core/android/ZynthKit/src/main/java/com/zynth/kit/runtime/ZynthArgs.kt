@@ -77,7 +77,14 @@ class ZynthArgs(private val args: Any?) {
     fun getLong(key: String): Long {
         val json = getJSONObject()
         if (!json.has(key)) throw ZynthTypeException("Missing required argument: $key")
-        return json.optLong(key, -1L).takeIf { it != -1L } ?: throw ZynthTypeException("Invalid type for argument '$key': expected Long/Number")
+        val value = json.opt(key)
+        return when (value) {
+            is Long -> value
+            is Double -> value.toLong()
+            is Int -> value.toLong()
+            is Number -> value.toLong()
+            else -> throw ZynthTypeException("Invalid type for argument '$key': expected Long/Number")
+        }
     }
 
     fun getLong(key: String, default: Long): Long {
