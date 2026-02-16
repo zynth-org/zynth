@@ -1,0 +1,31 @@
+export {
+  Sensors,
+  createAccelerometer,
+  createBarometer,
+  createDeviceMotion,
+  createGyroscope,
+  createLightSensor,
+  createMagnetometer,
+  createMagnetometerUncalibrated,
+  createPedometer,
+} from "./Sensors";
+
+export type {
+  AccelerometerSample,
+  BarometerSample,
+  CreateSensorOptions,
+  DeviceMotionSample,
+  GyroscopeSample,
+  LightSensorSample,
+  MagnetometerSample,
+  MagnetometerUncalibratedSample,
+  PedometerSample,
+  SensorController,
+  SensorKind,
+  SensorPermissionResponse,
+  SensorPermissionStatus,
+  SensorReading,
+  SensorReadingMap,
+  SensorStartOptions,
+  SensorSubscription,
+} from "./types";

@@ -1,0 +1,73 @@
+{
+  "name": "@zynth/sensors",
+  "version": "0.0.1",
+  "description": "Device sensor APIs for Zynth",
+  "type": "module",
+  "main": "dist/esm/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "types": "./dist/types/index.d.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "ios",
+    "android",
+    "src",
+    "README.md",
+    "ZynthSensors.podspec"
+  ],
+  "scripts": {
+    "build": "yarn build:js && yarn build:types",
+    "build:js": "rm -rf dist/esm && tsc --project tsconfig.esm.json",
+    "build:types": "tsc --project tsconfig.types.json",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "zynth",
+    "sensors",
+    "accelerometer",
+    "gyroscope",
+    "pedometer",
+    "android",
+    "ios"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "solid-js": ">=1.8.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  },
+  "zynthNative": {
+    "ios": {
+      "pods": [
+        {
+          "name": "ZynthSensors",
+          "podspec": "./ZynthSensors.podspec"
+        }
+      ],
+      "initializer": {
+        "className": "ZynthSensors",
+        "method": "initializeWith:"
+      }
+    },
+    "android": {
+      "modules": [
+        {
+          "name": "ZynthSensors",
+          "path": "./android/ZynthSensors"
+        }
+      ],
+      "initializer": {
+        "className": "ZynthSensors",
+        "method": "initialize",
+        "package": "dev.zynth.sensors"
+      }
+    }
+  }
+}

@@ -152,6 +152,12 @@
       "@zynth/secure-store/*": [
         "packages/zynth-secure-store/src/*"
       ],
+      "@zynth/sensors": [
+        "packages/zynth-sensors/src/index.ts"
+      ],
+      "@zynth/sensors/*": [
+        "packages/zynth-sensors/src/*"
+      ],
       "@zynth/skia": [
         "packages/zynth-skia/src/index.ts"
       ],
