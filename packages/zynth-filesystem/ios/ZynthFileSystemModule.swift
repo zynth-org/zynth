@@ -22,90 +22,90 @@ final class ZynthFileSystemModule: NSObject, ZynthModule, ZynthSyncModule {
     ]
   }
 
+  var protectedMethods: [String] {
+    return ["createDirectory", "createFile", "delete", "copy", "move", "writeText", "writeBase64"]
+  }
+
   private let fileManager = FileManager.default
 
   func call(method: String, args: ZynthArgs) throws -> Any? {
-    return handle(method: method, args: args)
+    return try handle(method: method, args: args)
   }
 
   func callSync(method: String, args: ZynthArgs) throws -> Any? {
-    return handle(method: method, args: args)
+    return try handle(method: method, args: args)
   }
 
-  private func handle(method: String, args: ZynthArgs) -> Any? {
-    do {
-      switch method {
-      case "getPaths":
-        return getPaths()
-      case "getDiskSpace":
-        return getDiskSpace()
-      case "getSharedContainers":
-        return [String: String]()
-      case "getPathInfo":
-        let uri = try args.string("uri")
-        return getPathInfo(uri)
-      case "getInfo":
-        let uri = try args.string("uri")
-        let options = try? args.dict("options")
-        return try getInfo(uri, options: options)
-      case "listDirectory":
-        let uri = try args.string("uri")
-        return try listDirectory(uri)
-      case "createDirectory":
-        let uri = try args.string("uri")
-        let options = try? args.dict("options")
-        try createDirectory(uri, options: options)
-        return nil
-      case "createFile":
-        let uri = try args.string("uri")
-        let options = try? args.dict("options")
-        try createFile(uri, options: options)
-        return nil
-      case "delete":
-        let uri = try args.string("uri")
-        let recursive = args.bool("recursive", default: false)
-        try deleteItem(uri, recursive: recursive)
-        return nil
-      case "copy":
-        let from = try args.string("from")
-        let to = try args.string("to")
-        try copyItem(from, to)
-        return nil
-      case "move":
-        let from = try args.string("from")
-        let to = try args.string("to")
-        try moveItem(from, to)
-        return nil
-      case "readText":
-        let uri = try args.string("uri")
-        return try readText(uri)
-      case "readBase64":
-        let uri = try args.string("uri")
-        return try readBase64(uri)
-      case "readBase64Chunk":
-        let uri = try args.string("uri")
-        let offset = try Int(args.number("offset"))
-        let length = try Int(args.number("length"))
-        return try readBase64Chunk(uri, offset: offset, length: length)
-      case "writeText":
-        let uri = try args.string("uri")
-        let text = try args.string("text")
-        try writeText(uri, text: text)
-        return nil
-      case "writeBase64":
-        let uri = try args.string("uri")
-        let data = try args.string("data")
-        try writeBase64(uri, base64: data)
-        return nil
-      case "checksum":
-        let uri = try args.string("uri")
-        let algorithm = args.string("algorithm", default: "md5")
-        return try checksum(uri, algorithm: algorithm)
-      default:
-        return errorResponse("unsupported_method", method)
-      }
-    } catch {
-      return errorResponse("io_error", error.localizedDescription)
+  private func handle(method: String, args: ZynthArgs) throws -> Any? {
+    switch method {
+    case "getPaths":
+      return getPaths()
+    case "getDiskSpace":
+      return getDiskSpace()
+    case "getSharedContainers":
+      return [String: String]()
+    case "getPathInfo":
+      let uri = try args.string("uri")
+      return getPathInfo(uri)
+    case "getInfo":
+      let uri = try args.string("uri")
+      let options = try? args.dict("options")
+      return try getInfo(uri, options: options)
+    case "listDirectory":
+      let uri = try args.string("uri")
+      return try listDirectory(uri)
+    case "createDirectory":
+      let uri = try args.string("uri")
+      let options = try? args.dict("options")
+      try createDirectory(uri, options: options)
+      return nil
+    case "createFile":
+      let uri = try args.string("uri")
+      let options = try? args.dict("options")
+      try createFile(uri, options: options)
+      return nil
+    case "delete":
+      let uri = try args.string("uri")
+      let recursive = try args.bool("recursive", default: false)
+      try deleteItem(uri, recursive: recursive)
+      return nil
+    case "copy":
+      let from = try args.string("from")
+      let to = try args.string("to")
+      try copyItem(from, to)
+      return nil
+    case "move":
+      let from = try args.string("from")
+      let to = try args.string("to")
+      try moveItem(from, to)
+      return nil
+    case "readText":
+      let uri = try args.string("uri")
+      return try readText(uri)
+    case "readBase64":
+      let uri = try args.string("uri")
+      return try readBase64(uri)
+    case "readBase64Chunk":
+      let uri = try args.string("uri")
+      let offset = try Int(args.number("offset"))
+      let length = try Int(args.number("length"))
+      return try readBase64Chunk(uri, offset: offset, length: length)
+    case "writeText":
+      let uri = try args.string("uri")
+      let text = try args.string("text")
+      try writeText(uri, text: text)
+      return nil
+    case "writeBase64":
+      let uri = try args.string("uri")
+      let data = try args.string("data")
+      try writeBase64(uri, base64: data)
+      return nil
+    case "checksum":
+      let uri = try args.string("uri")
+      let algorithm = try args.string("algorithm", default: "md5")
+      return try checksum(uri, algorithm: algorithm)
+    default:
+      throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
   }
 
@@ -434,9 +434,5 @@ final class ZynthFileSystemModule: NSObject, ZynthModule, ZynthSyncModule {
     default:
       return nil
     }
-  }
-
-  private func errorResponse(_ error: String, _ message: String) -> [String: Any] {
-    return ["error": error, "message": message]
   }
 }

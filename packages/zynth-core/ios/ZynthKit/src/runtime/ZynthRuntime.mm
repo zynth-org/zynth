@@ -30,6 +30,7 @@
   self = [super init];
   if (self) {
     _rootView = rootView;
+    _bridgeSessionId = [[NSUUID UUID] UUIDString];
     _uiManager = [[ZynthUIManager alloc] initWithRootView:rootView];
     _uiManager.zynthRuntime = self;
     _runtime = [[ZynthHermesRuntimeHost alloc] initWithUIManager:_uiManager];

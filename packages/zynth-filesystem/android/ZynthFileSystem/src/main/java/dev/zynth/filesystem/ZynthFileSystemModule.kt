@@ -29,177 +29,173 @@ class ZynthFileSystemModule(
         "readText", "readBase64", "readBase64Chunk", "writeText", "writeBase64", "checksum"
     )
 
+    override val protectedMethods: List<String> = listOf(
+        "createDirectory", "createFile", "delete", "copy", "move", "writeText", "writeBase64"
+    )
+
     override fun call(method: String, args: ZynthArgs): JSONObject {
-        return try {
-            when (method) {
-                "getPaths" -> resultResponse(getPaths())
-                "getDiskSpace" -> resultResponse(getDiskSpace())
-                "getSharedContainers" -> resultResponse(JSONObject())
-                "getPathInfo" -> {
-                    val uri = args.getString("uri")
-                    resultResponse(getPathInfo(uri))
-                }
-                "getInfo" -> {
-                    val uri = args.getString("uri")
-                    val options = try { args.getMap("options") } catch (e: Exception) { null }
-                    resultResponse(getInfo(uri, options))
-                }
-                "listDirectory" -> {
-                    val uri = args.getString("uri")
-                    resultResponse(listDirectory(uri))
-                }
-                "createDirectory" -> {
-                    val uri = args.getString("uri")
-                    val options = try { args.getMap("options") } catch (e: Exception) { null }
-                    createDirectory(uri, options)
-                    successResponse()
-                }
-                "createFile" -> {
-                    val uri = args.getString("uri")
-                    val options = try { args.getMap("options") } catch (e: Exception) { null }
-                    createFile(uri, options)
-                    successResponse()
-                }
-                "delete" -> {
-                    val uri = args.getString("uri")
-                    val recursive = args.getBoolean("recursive", false)
-                    deleteItem(uri, recursive)
-                    successResponse()
-                }
-                "copy" -> {
-                    val from = args.getString("from")
-                    val to = args.getString("to")
-                    copyItem(from, to)
-                    successResponse()
-                }
-                "move" -> {
-                    val from = args.getString("from")
-                    val to = args.getString("to")
-                    moveItem(from, to)
-                    successResponse()
-                }
-                "readText" -> {
-                    val uri = args.getString("uri")
-                    resultResponse(readText(uri))
-                }
-                "readBase64" -> {
-                    val uri = args.getString("uri")
-                    resultResponse(readBase64(uri))
-                }
-                "readBase64Chunk" -> {
-                    val uri = args.getString("uri")
-                    val offset = args.getInt("offset")
-                    val length = args.getInt("length")
-                    resultResponse(readBase64Chunk(uri, offset, length))
-                }
-                "writeText" -> {
-                    val uri = args.getString("uri")
-                    val text = args.getString("text")
-                    writeText(uri, text)
-                    successResponse()
-                }
-                "writeBase64" -> {
-                    val uri = args.getString("uri")
-                    val data = args.getString("data")
-                    writeBase64(uri, data)
-                    successResponse()
-                }
-                "checksum" -> {
-                    val uri = args.getString("uri")
-                    val algorithm = args.getString("algorithm", "md5")
-                    resultResponse(computeChecksumForUri(uri, algorithm))
-                }
-                else -> errorResponse("unsupported_method", method)
+        return when (method) {
+            "getPaths" -> resultResponse(getPaths())
+            "getDiskSpace" -> resultResponse(getDiskSpace())
+            "getSharedContainers" -> resultResponse(JSONObject())
+            "getPathInfo" -> {
+                val uri = args.getString("uri")
+                resultResponse(getPathInfo(uri))
             }
-        } catch (e: Exception) {
-            errorResponse("io_error", e.message ?: "Unknown error")
+            "getInfo" -> {
+                val uri = args.getString("uri")
+                val options = try { args.getMap("options") } catch (e: Exception) { null }
+                resultResponse(getInfo(uri, options))
+            }
+            "listDirectory" -> {
+                val uri = args.getString("uri")
+                resultResponse(listDirectory(uri))
+            }
+            "createDirectory" -> {
+                val uri = args.getString("uri")
+                val options = try { args.getMap("options") } catch (e: Exception) { null }
+                createDirectory(uri, options)
+                successResponse()
+            }
+            "createFile" -> {
+                val uri = args.getString("uri")
+                val options = try { args.getMap("options") } catch (e: Exception) { null }
+                createFile(uri, options)
+                successResponse()
+            }
+            "delete" -> {
+                val uri = args.getString("uri")
+                val recursive = args.getBoolean("recursive", false)
+                deleteItem(uri, recursive)
+                successResponse()
+            }
+            "copy" -> {
+                val from = args.getString("from")
+                val to = args.getString("to")
+                copyItem(from, to)
+                successResponse()
+            }
+            "move" -> {
+                val from = args.getString("from")
+                val to = args.getString("to")
+                moveItem(from, to)
+                successResponse()
+            }
+            "readText" -> {
+                val uri = args.getString("uri")
+                resultResponse(readText(uri))
+            }
+            "readBase64" -> {
+                val uri = args.getString("uri")
+                resultResponse(readBase64(uri))
+            }
+            "readBase64Chunk" -> {
+                val uri = args.getString("uri")
+                val offset = args.getInt("offset")
+                val length = args.getInt("length")
+                resultResponse(readBase64Chunk(uri, offset, length))
+            }
+            "writeText" -> {
+                val uri = args.getString("uri")
+                val text = args.getString("text")
+                writeText(uri, text)
+                successResponse()
+            }
+            "writeBase64" -> {
+                val uri = args.getString("uri")
+                val data = args.getString("data")
+                writeBase64(uri, data)
+                successResponse()
+            }
+            "checksum" -> {
+                val uri = args.getString("uri")
+                val algorithm = args.getString("algorithm", "md5")
+                resultResponse(computeChecksumForUri(uri, algorithm))
+            }
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
     }
 
     override fun callSync(method: String, args: ZynthArgs): Any? {
-        return try {
-            when (method) {
-                "getPaths" -> getPaths()
-                "getDiskSpace" -> getDiskSpace()
-                "getSharedContainers" -> JSONObject()
-                "getPathInfo" -> {
-                    val uri = args.getString("uri")
-                    getPathInfo(uri)
-                }
-                "getInfo" -> {
-                    val uri = args.getString("uri")
-                    val options = try { args.getMap("options") } catch (e: Exception) { null }
-                    getInfo(uri, options)
-                }
-                "listDirectory" -> {
-                    val uri = args.getString("uri")
-                    listDirectory(uri)
-                }
-                "createDirectory" -> {
-                    val uri = args.getString("uri")
-                    val options = try { args.getMap("options") } catch (e: Exception) { null }
-                    createDirectory(uri, options)
-                    null
-                }
-                "createFile" -> {
-                    val uri = args.getString("uri")
-                    val options = try { args.getMap("options") } catch (e: Exception) { null }
-                    createFile(uri, options)
-                    null
-                }
-                "delete" -> {
-                    val uri = args.getString("uri")
-                    val recursive = args.getBoolean("recursive", false)
-                    deleteItem(uri, recursive)
-                    null
-                }
-                "copy" -> {
-                    val from = args.getString("from")
-                    val to = args.getString("to")
-                    copyItem(from, to)
-                    null
-                }
-                "move" -> {
-                    val from = args.getString("from")
-                    val to = args.getString("to")
-                    moveItem(from, to)
-                    null
-                }
-                "readText" -> {
-                    val uri = args.getString("uri")
-                    readText(uri)
-                }
-                "readBase64" -> {
-                    val uri = args.getString("uri")
-                    readBase64(uri)
-                }
-                "readBase64Chunk" -> {
-                    val uri = args.getString("uri")
-                    val offset = args.getInt("offset")
-                    val length = args.getInt("length")
-                    readBase64Chunk(uri, offset, length)
-                }
-                "writeText" -> {
-                    val uri = args.getString("uri")
-                    val text = args.getString("text")
-                    writeText(uri, text)
-                    null
-                }
-                "writeBase64" -> {
-                    val uri = args.getString("uri")
-                    val data = args.getString("data")
-                    writeBase64(uri, data)
-                    null
-                }
-                "checksum" -> {
-                    val uri = args.getString("uri")
-                    val algorithm = args.getString("algorithm", "md5")
-                    computeChecksumForUri(uri, algorithm)
-                }
-                else -> null
+        return when (method) {
+            "getPaths" -> getPaths()
+            "getDiskSpace" -> getDiskSpace()
+            "getSharedContainers" -> JSONObject()
+            "getPathInfo" -> {
+                val uri = args.getString("uri")
+                getPathInfo(uri)
             }
-        } catch (e: Exception) {
-            errorResponse("io_error", e.message ?: "Unknown error")
+            "getInfo" -> {
+                val uri = args.getString("uri")
+                val options = try { args.getMap("options") } catch (e: Exception) { null }
+                getInfo(uri, options)
+            }
+            "listDirectory" -> {
+                val uri = args.getString("uri")
+                listDirectory(uri)
+            }
+            "createDirectory" -> {
+                val uri = args.getString("uri")
+                val options = try { args.getMap("options") } catch (e: Exception) { null }
+                createDirectory(uri, options)
+                null
+            }
+            "createFile" -> {
+                val uri = args.getString("uri")
+                val options = try { args.getMap("options") } catch (e: Exception) { null }
+                createFile(uri, options)
+                null
+            }
+            "delete" -> {
+                val uri = args.getString("uri")
+                val recursive = args.getBoolean("recursive", false)
+                deleteItem(uri, recursive)
+                null
+            }
+            "copy" -> {
+                val from = args.getString("from")
+                val to = args.getString("to")
+                copyItem(from, to)
+                null
+            }
+            "move" -> {
+                val from = args.getString("from")
+                val to = args.getString("to")
+                moveItem(from, to)
+                null
+            }
+            "readText" -> {
+                val uri = args.getString("uri")
+                readText(uri)
+            }
+            "readBase64" -> {
+                val uri = args.getString("uri")
+                readBase64(uri)
+            }
+            "readBase64Chunk" -> {
+                val uri = args.getString("uri")
+                val offset = args.getInt("offset")
+                val length = args.getInt("length")
+                readBase64Chunk(uri, offset, length)
+            }
+            "writeText" -> {
+                val uri = args.getString("uri")
+                val text = args.getString("text")
+                writeText(uri, text)
+                null
+            }
+            "writeBase64" -> {
+                val uri = args.getString("uri")
+                val data = args.getString("data")
+                writeBase64(uri, data)
+                null
+            }
+            "checksum" -> {
+                val uri = args.getString("uri")
+                val algorithm = args.getString("algorithm", "md5")
+                computeChecksumForUri(uri, algorithm)
+            }
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
     }
 
@@ -667,13 +663,6 @@ class ZynthFileSystemModule(
     private fun successResponse(): JSONObject {
         return JSONObject().apply {
             put("success", true)
-        }
-    }
-
-    private fun errorResponse(error: String, message: String): JSONObject {
-        return JSONObject().apply {
-            put("error", error)
-            put("message", message)
         }
     }
 }

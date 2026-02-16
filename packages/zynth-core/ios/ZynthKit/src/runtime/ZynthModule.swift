@@ -5,6 +5,8 @@ public enum ZynthModuleError: LocalizedError {
   case syncNotSupported(module: String, method: String)
   case methodNotExported(module: String, method: String)
   case runtimeDeallocated
+  case invalidSession
+  case invalidNonce
 
   public var errorDescription: String? {
     switch self {
@@ -16,6 +18,10 @@ public enum ZynthModuleError: LocalizedError {
       return "Method \(method) is not exported by module \(module)"
     case .runtimeDeallocated:
       return "Runtime deallocated"
+    case .invalidSession:
+      return "Invalid bridge session"
+    case .invalidNonce:
+      return "Invalid nonce (replay attack detected)"
     }
   }
 }
@@ -24,6 +30,7 @@ public protocol ZynthModule {
   var name: String { get }
   var constantsToExport: [String: Any]? { get }
   var exportedMethods: [String] { get }
+  var protectedMethods: [String] { get }
   func call(method: String, args: ZynthArgs) throws -> Any?
   func initialize()
   func invalidate()
@@ -32,6 +39,7 @@ public protocol ZynthModule {
 public extension ZynthModule {
   var constantsToExport: [String: Any]? { nil }
   var exportedMethods: [String] { [] }
+  var protectedMethods: [String] { [] }
   func initialize() {}
   func invalidate() {}
 }
@@ -42,8 +50,37 @@ public protocol ZynthSyncModule {
 
 final class ZynthModuleRegistry: NSObject, ZynthModuleBridge {
   private var modules: [String: ZynthModule] = [:]
+  private var lastNonce: Int64 = 0
+  private var bridgeSessionId: String?
 
-  override init() {}
+  override init() {
+      super.init()
+  }
+  
+  func setSessionId(_ sessionId: String) {
+      self.bridgeSessionId = sessionId
+  }
+
+  private func validateNonce(_ args: ZynthArgs) throws {
+    guard let session = self.bridgeSessionId else { 
+        // If session ID isn't set yet (extremely early calls), we allow it
+        // but it's a security risk we should monitor.
+        return 
+    }
+    
+    let sessionId = try args.string("bridgeSessionId")
+    let nonce = try args.int64("nonce")
+    
+    guard sessionId == session else {
+        throw ZynthModuleError.invalidSession
+    }
+    
+    guard nonce > self.lastNonce else {
+        throw ZynthModuleError.invalidNonce
+    }
+    
+    self.lastNonce = nonce
+  }
 
   func register(_ module: ZynthModule) {
     modules[module.name] = module
@@ -75,6 +112,9 @@ final class ZynthModuleRegistry: NSObject, ZynthModuleBridge {
       throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
     let zynthArgs = ZynthArgs(args)
+    if module.protectedMethods.contains(method) {
+      try validateNonce(zynthArgs)
+    }
     return try module.call(method: method, args: zynthArgs)
   }
 
@@ -89,6 +129,9 @@ final class ZynthModuleRegistry: NSObject, ZynthModuleBridge {
       throw ZynthModuleError.syncNotSupported(module: name, method: method)
     }
     let zynthArgs = ZynthArgs(args)
+    if module.protectedMethods.contains(method) {
+      try validateNonce(zynthArgs)
+    }
     return try syncModule.callSync(method: method, args: zynthArgs)
   }
   
@@ -97,8 +140,8 @@ final class ZynthModuleRegistry: NSObject, ZynthModuleBridge {
     do {
       return try call(moduleName, method: methodName, args: args)
     } catch {
-      print("[ZynthModuleRegistry] callModule error: \(error)")
-      return ["error": error.localizedDescription]
+      let sanitized = ZynthErrorMapper.sanitize(error)
+      return ["error": sanitized.code, "message": sanitized.publicMessage]
     }
   }
   
@@ -106,8 +149,8 @@ final class ZynthModuleRegistry: NSObject, ZynthModuleBridge {
     do {
       return try callSync(moduleName, method: methodName, args: args)
     } catch {
-      print("[ZynthModuleRegistry] callModuleSync error: \(error)")
-      return ["error": error.localizedDescription]
+      let sanitized = ZynthErrorMapper.sanitize(error)
+      return ["error": sanitized.code, "message": sanitized.publicMessage]
     }
   }
 }

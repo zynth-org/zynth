@@ -33,6 +33,12 @@ class ZynthSecureStoreModule(
         "canUseBiometricAuthentication",
     )
 
+    override val protectedMethods: List<String> = listOf(
+        "getItem",
+        "setItem",
+        "deleteItem",
+    )
+
     private val context: Context = activity.applicationContext
     private val activityRef = java.lang.ref.WeakReference(activity)
     private val stores = mutableMapOf<String, SharedPreferences>()
@@ -41,104 +47,80 @@ class ZynthSecureStoreModule(
         return when (method) {
             "getItem" -> {
                 val key = args.getString("key")
-                try {
-                    val options = parseOptions(args)
-                    val value = performAuthenticated(options) {
-                        performWithStore(options) { store ->
-                            store.getString(key, null)
-                        }
+                val options = parseOptions(args)
+                val value = performAuthenticated(options) {
+                    performWithStore(options) { store ->
+                        store.getString(key, null)
                     }
-                    resultResponse(value)
-                } catch (e: Exception) {
-                    errorResponse("get_failed", e.message ?: "unknown")
                 }
+                resultResponse(value)
             }
             "setItem" -> {
                 val key = args.getString("key")
                 val value = args.getString("value")
-                try {
-                    val options = parseOptions(args)
-                    performAuthenticated(options) {
-                        performWithStore(options) { store ->
-                            store.edit().putString(key, value).apply()
-                            null
-                        }
+                val options = parseOptions(args)
+                performAuthenticated(options) {
+                    performWithStore(options) { store ->
+                        store.edit().putString(key, value).apply()
+                        null
                     }
-                    successResponse()
-                } catch (e: Exception) {
-                    errorResponse("set_failed", e.message ?: "unknown")
                 }
+                resultResponse(null)
             }
             "deleteItem" -> {
                 val key = args.getString("key")
-                try {
-                    val options = parseOptions(args)
-                    performAuthenticated(options) {
-                        performWithStore(options) { store ->
-                            store.edit().remove(key).apply()
-                            null
-                        }
+                val options = parseOptions(args)
+                performAuthenticated(options) {
+                    performWithStore(options) { store ->
+                        store.edit().remove(key).apply()
+                        null
                     }
-                    successResponse()
-                } catch (e: Exception) {
-                    errorResponse("delete_failed", e.message ?: "unknown")
                 }
+                resultResponse(null)
             }
             "isAvailable" -> resultResponse(true)
             "canUseBiometricAuthentication" -> resultResponse(canUseBiometrics())
-            else -> errorResponse("unsupported_method", method)
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
     }
 
     override fun callSync(method: String, args: ZynthArgs): Any? {
         return when (method) {
             "getItem" -> {
-                val key = try { args.getString("key") } catch (e: Exception) { null } ?: return null
-                return try {
-                    val options = parseOptions(args)
-                    performAuthenticated(options) {
-                        performWithStore(options) { store ->
-                            store.getString(key, null)
-                        }
+                val key = args.getString("key")
+                val options = parseOptions(args)
+                performAuthenticated(options) {
+                    performWithStore(options) { store ->
+                        store.getString(key, null)
                     }
-                } catch (e: Exception) {
-                    errorMap("get_failed", e.message ?: "unknown")
                 }
             }
             "setItem" -> {
-                val key = try { args.getString("key") } catch (e: Exception) { null } ?: return null
-                val value = try { args.getString("value") } catch (e: Exception) { null } ?: return null
-                return try {
-                    val options = parseOptions(args)
-                    performAuthenticated(options) {
-                        performWithStore(options) { store ->
-                            store.edit().putString(key, value).apply()
-                            null
-                        }
+                val key = args.getString("key")
+                val value = args.getString("value")
+                val options = parseOptions(args)
+                performAuthenticated(options) {
+                    performWithStore(options) { store ->
+                        store.edit().putString(key, value).apply()
+                        null
                     }
-                    null
-                } catch (e: Exception) {
-                    errorMap("set_failed", e.message ?: "unknown")
                 }
+                null
             }
             "deleteItem" -> {
-                val key = try { args.getString("key") } catch (e: Exception) { null } ?: return null
-                return try {
-                    val options = parseOptions(args)
-                    performAuthenticated(options) {
-                        performWithStore(options) { store ->
-                            store.edit().remove(key).apply()
-                            null
-                        }
+                val key = args.getString("key")
+                val options = parseOptions(args)
+                performAuthenticated(options) {
+                    performWithStore(options) { store ->
+                        store.edit().remove(key).apply()
+                        null
                     }
-                    null
-                } catch (e: Exception) {
-                    errorMap("delete_failed", e.message ?: "unknown")
                 }
+                null
             }
             "isAvailable" -> true
             "canUseBiometricAuthentication" -> canUseBiometrics()
-            else -> null
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
     }
 
@@ -305,23 +287,6 @@ class ZynthSecureStoreModule(
         return JSONObject().apply {
             put("result", result ?: JSONObject.NULL)
         }
-    }
-
-    private fun successResponse(): JSONObject {
-        return JSONObject().apply {
-            put("success", true)
-        }
-    }
-
-    private fun errorResponse(error: String, message: String): JSONObject {
-        return JSONObject().apply {
-            put("error", error)
-            put("message", message)
-        }
-    }
-
-    private fun errorMap(error: String, message: String): Map<String, Any> {
-        return mapOf("error" to error, "message" to message)
     }
 
     private data class SecureStoreOptions(

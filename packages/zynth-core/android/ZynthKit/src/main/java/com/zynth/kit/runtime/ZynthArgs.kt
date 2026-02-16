@@ -11,15 +11,18 @@ class ZynthArgs(private val args: Any?) {
         if (args is JSONObject) return args
         if (args is Map<*, *>) return JSONObject(args)
         if (args is Array<*>) {
-            if (args.size == 1 && args[0] is JSONObject) return args[0] as JSONObject
-            if (args.size == 1 && args[0] is Map<*, *>) return JSONObject(args[0] as Map<*, *>)
+            if (args.size == 1) {
+                val first = args[0]
+                if (first is JSONObject) return first
+                if (first is Map<*, *>) return JSONObject(first as Map<*, *>)
+            }
 
             // Fallback: If we're calling keyed access on an array, maybe the caller
             // meant the first object in that array (common in JSI bridges)
             if (args.size > 0 && args[0] is JSONObject) return args[0] as JSONObject
         }
         if (args == null) return JSONObject()
-        throw ZynthTypeException("Expected JSONObject for arguments, got ${args::class.java.simpleName}")
+        return JSONObject() // Return empty object instead of throwing to be more permissive with missing args
     }
 
     private fun getJSONArray(): JSONArray {

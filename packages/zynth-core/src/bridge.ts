@@ -50,7 +50,10 @@ declare global {
   var __zynth_shared_signals: ZynthSharedSignalsBridge;
   var __zynth_worklets: ZynthWorkletsBridge;
   var __zynth_ui_commands: ZynthUICommandsBridge;
+  var NativeConstants: Record<string, any>;
 }
+
+let _nextNonce = Date.now();
 
 /**
  * Retrieves the global object in a cross-platform safe way.
@@ -90,9 +93,11 @@ export function getNativeModule<T>(key: string): T | null {
  */
 export function unwrapNativeResult<T = unknown>(value: any): T {
   if (value && typeof value === "object") {
-    if ("error" in value && value.error) {
+    // Check if it's an error response
+    if ("error" in value) {
       throw new Error(value.message || value.error || "Unknown native error");
     }
+    // Check for standard result wrappers
     if ("result" in value) return value.result as T;
     if ("data" in value) return value.data as T;
   }
@@ -108,7 +113,7 @@ export function unwrapNativeResult<T = unknown>(value: any): T {
 export async function callNative<T = unknown>(
   moduleName: string,
   method: string,
-  args?: unknown
+  args?: any
 ): Promise<T> {
   const bridge = getModulesBridge();
   if (!bridge) {
@@ -116,7 +121,23 @@ export async function callNative<T = unknown>(
       `[Zynth] Native bridge not found. Cannot call ${moduleName}.${method}`
     );
   }
-  const result = await Promise.resolve(bridge.call(moduleName, method, args));
+
+  // Auto-inject security context for protected methods
+  let callArgs: any = args;
+  const g = getGlobalObject();
+  const sessionId = g.NativeConstants?.bridgeSessionId;
+  
+  if (sessionId) {
+    if (!args || (typeof args === "object" && !Array.isArray(args))) {
+      callArgs = {
+        ...(args || {}),
+        bridgeSessionId: sessionId,
+        nonce: _nextNonce++,
+      };
+    }
+  }
+
+  const result = await Promise.resolve(bridge.call(moduleName, method, callArgs));
   return unwrapNativeResult<T>(result);
 }
 
@@ -129,7 +150,7 @@ export async function callNative<T = unknown>(
 export function callNativeSync<T = unknown>(
   moduleName: string,
   method: string,
-  args?: unknown
+  args?: any
 ): T {
   const bridge = getModulesBridge();
   if (!bridge || !bridge.callSync) {
@@ -137,6 +158,22 @@ export function callNativeSync<T = unknown>(
       `[Zynth] Native bridge (callSync) not found. Cannot call ${moduleName}.${method}`
     );
   }
-  const result = bridge.callSync(moduleName, method, args);
+
+  // Auto-inject security context for protected methods
+  let callArgs: any = args;
+  const g = getGlobalObject();
+  const sessionId = g.NativeConstants?.bridgeSessionId;
+
+  if (sessionId) {
+    if (!args || (typeof args === "object" && !Array.isArray(args))) {
+      callArgs = {
+        ...(args || {}),
+        bridgeSessionId: sessionId,
+        nonce: _nextNonce++,
+      };
+    }
+  }
+
+  const result = bridge.callSync(moduleName, method, callArgs);
   return unwrapNativeResult<T>(result);
 }

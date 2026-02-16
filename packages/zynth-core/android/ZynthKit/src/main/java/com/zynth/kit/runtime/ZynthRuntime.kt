@@ -23,6 +23,7 @@ class ZynthRuntime(val root: ZynthRootView) {
   private val jsThread = HandlerThread("ZynthJS")
   private val jsHandler: Handler
   private var hasStarted: Boolean = false
+  val bridgeSessionId: String = java.util.UUID.randomUUID().toString()
   init {
     jsThread.start()
     jsHandler = Handler(jsThread.looper)
@@ -95,11 +96,13 @@ class ZynthRuntime(val root: ZynthRootView) {
   fun loadInitialBundle(assets: AssetManager, preloadedCode: String? = null, preloadedBytecode: ByteArray? = null) {
     runOnJSSync {
       JSBridge.installUIBindings(runtimePtr, uiManager)
+      registry.setSessionId(bridgeSessionId)
       JSBridge.installModuleRegistry(runtimePtr, registry)
       installHmrShim()
     }
 
-    val constants = registry.exportedConstants()
+    val constants = registry.exportedConstants().toMutableMap()
+    constants["bridgeSessionId"] = bridgeSessionId
     if (constants.isNotEmpty()) {
       val json = JSONObject(constants as Map<*, *>).toString()
       runOnJSSync {

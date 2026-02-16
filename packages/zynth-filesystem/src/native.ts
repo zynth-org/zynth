@@ -1,7 +1,7 @@
 
 type ModulesBridge = {
-  call?(name: string, method: string, args?: unknown): Promise<unknown> | unknown;
-  callSync?(name: string, method: string, args?: unknown): unknown;
+  call?(name: string, method: string, args?: any): Promise<unknown> | unknown;
+  callSync?(name: string, method: string, args?: any): unknown;
 };
 
 type ErrorResult = {
@@ -17,8 +17,9 @@ type DevtoolsBridge = {
 const MODULE_NAME = "ZynthFileSystem";
 const PLATFORM_GLOBAL_KEY = "__ZYNTH_PLATFORM";
 let warnedMissing = false;
+let _nextNonce = Date.now();
 
-function getGlobalObject(): Record<string, unknown> {
+function getGlobalObject(): Record<string, any> {
   if (typeof globalThis !== "undefined") {
     return globalThis as Record<string, unknown>;
   }
@@ -116,21 +117,53 @@ export function warnMissingNativeOnce(context: string, error?: unknown): void {
   });
 }
 
-export async function callNative<T>(method: string, args?: unknown): Promise<T> {
+export async function callNative<T>(method: string, args?: any): Promise<T> {
   const bridge = getModulesBridge();
   if (!bridge || !bridge.call) {
     throw new Error("Native modules bridge not available");
   }
-  const result = await Promise.resolve(bridge.call(MODULE_NAME, method, args));
+  
+  // Auto-inject security context for protected methods
+  let callArgs: any = args;
+  const g = getGlobalObject();
+  const sessionId = g.NativeConstants?.bridgeSessionId;
+
+  if (sessionId) {
+    if (!args || (typeof args === "object" && !Array.isArray(args))) {
+      callArgs = {
+        ...(args || {}),
+        bridgeSessionId: sessionId,
+        nonce: _nextNonce++,
+      };
+    }
+  }
+
+  const result = await Promise.resolve(bridge.call(MODULE_NAME, method, callArgs));
   return unwrapResult<T>(result);
 }
 
-export function callNativeSync<T>(method: string, args?: unknown): T {
+export function callNativeSync<T>(method: string, args?: any): T {
   const bridge = getModulesBridge();
   if (!bridge?.callSync) {
     throw new Error("Native sync bridge not available");
   }
-  return unwrapResult<T>(bridge.callSync(MODULE_NAME, method, args));
+
+  // Auto-inject security context for protected methods
+  let callArgs: any = args;
+  const g = getGlobalObject();
+  const sessionId = g.NativeConstants?.bridgeSessionId;
+
+  if (sessionId) {
+    if (!args || (typeof args === "object" && !Array.isArray(args))) {
+      callArgs = {
+        ...(args || {}),
+        bridgeSessionId: sessionId,
+        nonce: _nextNonce++,
+      };
+    }
+  }
+
+  return unwrapResult<T>(bridge.callSync(MODULE_NAME, method, callArgs));
 }
 
 export function isNativeAvailable(): boolean {

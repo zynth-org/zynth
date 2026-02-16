@@ -17,6 +17,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, weak, readonly) UIView *rootView;
 @property (nonatomic, assign, readonly) int rootSurfaceId;
 @property (nonatomic, strong, readonly) ZynthUIManager *uiManager;
+@property (nonatomic, copy, readonly) NSString *bridgeSessionId;
 
 - (instancetype)initWithRootView:(UIView *)rootView;
 - (BOOL)loadInitialBundleWithJsBundleURL:(NSURL *_Nullable)url

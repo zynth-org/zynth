@@ -85,8 +85,11 @@ public extension ZynthRuntime {
     for module in modules {
       zynthModuleRegistry.register(module)
     }
+    zynthModuleRegistry.setSessionId(bridgeSessionId)
     // Register the registry as the bridge and inject constants
-    installModuleBridge(zynthModuleRegistry, constants: zynthModuleRegistry.exportedConstants())
+    var constants = zynthModuleRegistry.exportedConstants()
+    constants["bridgeSessionId"] = bridgeSessionId
+    installModuleBridge(zynthModuleRegistry, constants: constants)
   }
 
   @objc func installDefaultModules() {

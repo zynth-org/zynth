@@ -24,10 +24,18 @@ public class ZynthArgs {
     self.args = args
   }
 
-  public func string(_ key: String) throws -> String {
-    guard let dict = args as? [String: Any] else {
-      throw ZynthArgsError.invalidType(key: "root", expected: "Dictionary")
+  private func getDict() throws -> [String: Any] {
+    if let dict = args as? [String: Any] {
+      return dict
     }
+    if let array = args as? [Any], array.count == 1, let dict = array[0] as? [String: Any] {
+      return dict
+    }
+    throw ZynthArgsError.invalidType(key: "root", expected: "Dictionary")
+  }
+
+  public func string(_ key: String) throws -> String {
+    let dict = try getDict()
     guard let val = dict[key] else {
       throw ZynthArgsError.missingKey(key)
     }
@@ -49,9 +57,7 @@ public class ZynthArgs {
   }
 
   public func number(_ key: String) throws -> Double {
-    guard let dict = args as? [String: Any] else {
-      throw ZynthArgsError.invalidType(key: "root", expected: "Dictionary")
-    }
+    let dict = try getDict()
     guard let val = dict[key] else {
       throw ZynthArgsError.missingKey(key)
     }
@@ -77,9 +83,7 @@ public class ZynthArgs {
   }
 
   public func bool(_ key: String) throws -> Bool {
-    guard let dict = args as? [String: Any] else {
-      throw ZynthArgsError.invalidType(key: "root", expected: "Dictionary")
-    }
+    let dict = try getDict()
     guard let val = dict[key] else {
       throw ZynthArgsError.missingKey(key)
     }
@@ -97,9 +101,7 @@ public class ZynthArgs {
   }
 
   public func dict(_ key: String) throws -> [String: Any] {
-    guard let dict = args as? [String: Any] else {
-      throw ZynthArgsError.invalidType(key: "root", expected: "Dictionary")
-    }
+    let dict = try getDict()
     guard let val = dict[key] else {
       throw ZynthArgsError.missingKey(key)
     }
@@ -110,9 +112,7 @@ public class ZynthArgs {
   }
 
   public func array(_ key: String) throws -> [Any] {
-    guard let dict = args as? [String: Any] else {
-      throw ZynthArgsError.invalidType(key: "root", expected: "Dictionary")
-    }
+    let dict = try getDict()
     guard let val = dict[key] else {
       throw ZynthArgsError.missingKey(key)
     }

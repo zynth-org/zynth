@@ -11,6 +11,8 @@ interface ZynthModule {
         get() = null
     val exportedMethods: List<String>
         get() = emptyList()
+    val protectedMethods: List<String>
+        get() = emptyList()
     fun call(method: String, args: ZynthArgs): JSONObject
     fun initialize() {}
     fun invalidate() {}
@@ -22,6 +24,35 @@ interface ZynthSyncModule {
 
 class ZynthModuleRegistry {
     private val modules = mutableMapOf<String, ZynthModule>()
+    private var lastNonce: Long = 0
+    private var bridgeSessionId: String? = null
+
+    fun setSessionId(sessionId: String) {
+        this.bridgeSessionId = sessionId
+    }
+
+    private fun validateNonce(args: ZynthArgs) {
+        val session = bridgeSessionId ?: return
+        
+        val sessionId = try { args.getString("bridgeSessionId") } catch (e: Exception) { 
+            // If we have a session ID enforced, then we MUST have it in args.
+            // But if we don't have it yet, we allowed it above.
+            throw SecurityException("E_INVALID_SESSION: Missing bridgeSessionId") 
+        }
+        val nonce = try { args.getLong("nonce") } catch (e: Exception) {
+            throw SecurityException("E_INVALID_NONCE: Missing nonce")
+        }
+
+        if (sessionId != session) {
+            throw SecurityException("E_INVALID_SESSION: Invalid bridge session")
+        }
+
+        if (nonce <= lastNonce) {
+            throw SecurityException("E_INVALID_NONCE: Replay attack detected")
+        }
+
+        lastNonce = nonce
+    }
 
     fun register(module: ZynthModule) {
         Log.i(TAG, "Registering module: ${module.name}")
@@ -52,30 +83,30 @@ class ZynthModuleRegistry {
         val module = modules[name]
         if (module == null) {
             Log.w(TAG, "Module not found: $name")
-            return JSONObject().put("error", "module_not_found")
+            val sanitized = ZynthErrorMapper.sanitizeModuleError("module_not_found")
+            return JSONObject().put("error", sanitized.code).put("message", sanitized.publicMessage)
         }
 
         Log.i(TAG, "Module found, calling: $name.$method")
         if (!module.exportedMethods.contains(method)) {
             Log.w(TAG, "Method not exported: $name.$method")
+            val sanitized = ZynthErrorMapper.sanitizeModuleError("method_not_exported")
             return JSONObject()
-                .put("error", "method_not_exported")
-                .put("message", "Method $method is not exported by module $name")
+                .put("error", sanitized.code)
+                .put("message", sanitized.publicMessage)
         }
 
         return try {
             val zynthArgs = ZynthArgs(args)
+            if (module.protectedMethods.contains(method)) {
+                validateNonce(zynthArgs)
+            }
             module.call(method, zynthArgs)
-        } catch (e: ZynthTypeException) {
-            Log.e(TAG, "Type error calling $name.$method", e)
-            JSONObject()
-                .put("error", "type_error")
-                .put("message", e.message)
         } catch (t: Throwable) {
-            Log.e(TAG, "Exception calling $name.$method", t)
+            val sanitized = ZynthErrorMapper.sanitize(t)
             JSONObject()
-                .put("error", "exception")
-                .put("message", t.message ?: "unknown")
+                .put("error", sanitized.code)
+                .put("message", sanitized.publicMessage)
         }
     }
 
@@ -83,46 +114,43 @@ class ZynthModuleRegistry {
         Log.i(TAG, "callSync(name=$name, method=$method)")
         val module = modules[name]
         if (module == null) {
-            val message = "Module $name not found. Available: ${modules.keys}"
-            Log.w(TAG, message)
+            val sanitized = ZynthErrorMapper.sanitizeModuleError("module_not_found")
+            Log.w(TAG, "Module $name not found")
             return mapOf(
-                "error" to "module_not_found",
-                "message" to message,
+                "error" to sanitized.code,
+                "message" to sanitized.publicMessage,
             )
         }
 
         if (module !is ZynthSyncModule) {
-            val message = "Module $name does not support synchronous method $method"
-            Log.w(TAG, message)
+            val sanitized = ZynthErrorMapper.sanitizeModuleError("sync_not_supported")
+            Log.w(TAG, "Module $name does not support synchronous method $method")
             return mapOf(
-                "error" to "sync_not_supported",
-                "message" to message,
+                "error" to sanitized.code,
+                "message" to sanitized.publicMessage,
             )
         }
 
         if (!module.exportedMethods.contains(method)) {
-            val message = "Method $method is not exported by module $name"
-            Log.w(TAG, message)
+            val sanitized = ZynthErrorMapper.sanitizeModuleError("method_not_exported")
+            Log.w(TAG, "Method $method is not exported by module $name")
             return mapOf(
-                "error" to "method_not_exported",
-                "message" to message,
+                "error" to sanitized.code,
+                "message" to sanitized.publicMessage,
             )
         }
 
         return try {
             val zynthArgs = ZynthArgs(args)
+            if (module.protectedMethods.contains(method)) {
+                validateNonce(zynthArgs)
+            }
             module.callSync(method, zynthArgs)
-        } catch (e: ZynthTypeException) {
-            Log.e(TAG, "Type error calling sync $name.$method", e)
-            mapOf(
-                "error" to "type_error",
-                "message" to e.message,
-            )
         } catch (t: Throwable) {
-            Log.e(TAG, "Exception calling sync $name.$method", t)
+            val sanitized = ZynthErrorMapper.sanitize(t)
             mapOf(
-                "error" to "exception",
-                "message" to (t.message ?: "unknown"),
+                "error" to sanitized.code,
+                "message" to sanitized.publicMessage,
             )
         }
     }

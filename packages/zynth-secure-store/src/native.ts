@@ -22,8 +22,9 @@ type NativeSecureStoreJSI = {
 const MODULE_NAME = "ZynthSecureStore";
 const PLATFORM_GLOBAL_KEY = "__ZYNTH_PLATFORM";
 const JSI_GLOBAL_KEY = "__zynth_secure_store";
+let _nextNonce = Date.now();
 
-function getGlobalObject(): Record<string, unknown> {
+function getGlobalObject(): Record<string, any> {
   if (typeof globalThis !== "undefined") {
     return globalThis as Record<string, unknown>;
   }
@@ -83,15 +84,15 @@ function isModuleNotFound(error: ErrorResult): boolean {
 }
 
 function unwrapResult<T>(value: unknown): T {
-  if (isErrorResult(value)) {
-    if (isModuleNotFound(value)) {
-      throw createMissingModuleError();
-    }
-    const message = value.message || value.error || "Unknown error";
-    throw new Error(message);
-  }
   if (value && typeof value === "object") {
     const record = value as Record<string, unknown>;
+    if ("error" in record && record.error) {
+      if (isModuleNotFound(record as ErrorResult)) {
+        throw createMissingModuleError();
+      }
+      const message = record.message || record.error || "Unknown error";
+      throw new Error(message as string);
+    }
     if ("result" in record) {
       return record.result as T;
     }
@@ -109,27 +110,27 @@ function normalizeOptions(options?: SecureStoreOptions): SecureStoreOptions | un
 
 export async function callNative<T>(
   method: string,
-  args?: unknown
+  args?: any
 ): Promise<T> {
   const native = getNativeJSI();
   if (native) {
     switch (method) {
       case "getItem":
         return native.getItem(
-          (args as { key: string }).key,
-          (args as { options?: SecureStoreOptions }).options
+          args.key,
+          args.options
         ) as T;
       case "setItem":
         native.setItem(
-          (args as { key: string }).key,
-          (args as { value: string }).value,
-          (args as { options?: SecureStoreOptions }).options
+          args.key,
+          args.value,
+          args.options
         );
         return undefined as T;
       case "deleteItem":
         native.deleteItem(
-          (args as { key: string }).key,
-          (args as { options?: SecureStoreOptions }).options
+          args.key,
+          args.options
         );
         return undefined as T;
       case "isAvailable":
@@ -145,30 +146,46 @@ export async function callNative<T>(
   if (!bridge || !bridge.call) {
     throw new Error("Native modules bridge not available");
   }
-  const result = await Promise.resolve(bridge.call(MODULE_NAME, method, args));
+
+  // Auto-inject security context for protected methods
+  let callArgs: any = args;
+  const g = getGlobalObject();
+  const sessionId = g.NativeConstants?.bridgeSessionId;
+
+  if (sessionId) {
+    if (!args || (typeof args === "object" && !Array.isArray(args))) {
+      callArgs = {
+        ...(args || {}),
+        bridgeSessionId: sessionId,
+        nonce: _nextNonce++,
+      };
+    }
+  }
+
+  const result = await Promise.resolve(bridge.call(MODULE_NAME, method, callArgs));
   return unwrapResult<T>(result);
 }
 
-export function callNativeSync<T>(method: string, args?: unknown): T {
+export function callNativeSync<T>(method: string, args?: any): T {
   const native = getNativeJSI();
   if (native) {
     switch (method) {
       case "getItem":
         return native.getItem(
-          (args as { key: string }).key,
-          (args as { options?: SecureStoreOptions }).options
+          args.key,
+          args.options
         ) as T;
       case "setItem":
         native.setItem(
-          (args as { key: string }).key,
-          (args as { value: string }).value,
-          (args as { options?: SecureStoreOptions }).options
+          args.key,
+          args.value,
+          args.options
         );
         return undefined as T;
       case "deleteItem":
         native.deleteItem(
-          (args as { key: string }).key,
-          (args as { options?: SecureStoreOptions }).options
+          args.key,
+          args.options
         );
         return undefined as T;
       case "isAvailable":
@@ -184,7 +201,23 @@ export function callNativeSync<T>(method: string, args?: unknown): T {
   if (!bridge?.callSync) {
     throw new Error("Native sync bridge not available");
   }
-  return unwrapResult<T>(bridge.callSync(MODULE_NAME, method, args));
+
+  // Auto-inject security context for protected methods
+  let callArgs: any = args;
+  const g = getGlobalObject();
+  const sessionId = g.NativeConstants?.bridgeSessionId;
+
+  if (sessionId) {
+    if (!args || (typeof args === "object" && !Array.isArray(args))) {
+      callArgs = {
+        ...(args || {}),
+        bridgeSessionId: sessionId,
+        nonce: _nextNonce++,
+      };
+    }
+  }
+
+  return unwrapResult<T>(bridge.callSync(MODULE_NAME, method, callArgs));
 }
 
 export function isNativeAvailable(): boolean {

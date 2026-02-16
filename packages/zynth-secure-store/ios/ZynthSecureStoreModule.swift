@@ -18,6 +18,10 @@ final class ZynthSecureStoreModule: NSObject, ZynthModule, ZynthSyncModule {
     return ["getItem", "setItem", "deleteItem", "isAvailable", "canUseBiometricAuthentication"]
   }
 
+  var protectedMethods: [String] {
+    return ["getItem", "setItem", "deleteItem"]
+  }
+
   func call(method: String, args: ZynthArgs) throws -> Any? {
     return try handle(method: method, args: args)
   }
@@ -31,37 +35,25 @@ final class ZynthSecureStoreModule: NSObject, ZynthModule, ZynthSyncModule {
     case "getItem":
       let key = try args.string("key")
       let options = parseOptions(args)
-      do {
-        let value = try getItem(forKey: key, options: options)
-        return value ?? NSNull()
-      } catch {
-        return errorResponse("get_failed", error.localizedDescription)
-      }
+      let value = try getItem(forKey: key, options: options)
+      return value ?? NSNull()
     case "setItem":
       let key = try args.string("key")
       let value = try args.string("value")
       let options = parseOptions(args)
-      do {
-        try setItem(value, forKey: key, options: options)
-        return nil
-      } catch {
-        return errorResponse("set_failed", error.localizedDescription)
-      }
+      try setItem(value, forKey: key, options: options)
+      return ["result": NSNull()]
     case "deleteItem":
       let key = try args.string("key")
       let options = parseOptions(args)
-      do {
-        try deleteItem(forKey: key, options: options)
-        return nil
-      } catch {
-        return errorResponse("delete_failed", error.localizedDescription)
-      }
+      try deleteItem(forKey: key, options: options)
+      return ["result": NSNull()]
     case "isAvailable":
       return true
     case "canUseBiometricAuthentication":
       return canUseBiometricAuthentication()
     default:
-      return errorResponse("unsupported_method", method)
+      throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
   }
 
@@ -167,10 +159,6 @@ final class ZynthSecureStoreModule: NSObject, ZynthModule, ZynthSyncModule {
     )
     return canEvaluate
   }
-
-  private func errorResponse(_ error: String, _ message: String) -> [String: Any] {
-    return ["error": error, "message": message]
-  }
 }
 
 private struct SecureStoreOptions {
@@ -247,7 +235,7 @@ private enum KeychainAccessibility: Int {
   }
 }
 
-private enum SecureStoreError: Error {
+private enum SecureStoreError: LocalizedError {
   case status(OSStatus)
   case invalidAccessControl
 
@@ -255,10 +243,13 @@ private enum SecureStoreError: Error {
     return .status(status)
   }
 
-  var localizedDescription: String {
+  var errorDescription: String? {
     switch self {
     case .status(let status):
-      return SecCopyErrorMessageString(status, nil) as String? ?? "Keychain error: \(status)"
+      if let msg = SecCopyErrorMessageString(status, nil) as String? {
+        return msg
+      }
+      return "Keychain error: \(status)"
     case .invalidAccessControl:
       return "Unable to create access control"
     }
