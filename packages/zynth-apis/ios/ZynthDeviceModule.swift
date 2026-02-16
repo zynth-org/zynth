@@ -7,6 +7,10 @@ import Darwin
 final class ZynthDeviceModule: NSObject, ZynthModule, ZynthSyncModule {
   let name: String = "Device"
 
+  var exportedMethods: [String] {
+    return ["getInfo", "current"]
+  }
+
   var constantsToExport: [String: Any]? {
     deviceInfo() as [String: Any]
   }

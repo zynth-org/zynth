@@ -19,6 +19,8 @@ class DevtoolsModule(
 ) : ZynthModule {
   override val name: String = "Devtools"
 
+  override val exportedMethods: List<String> = listOf("connect", "emit", "nativeError", "isConnected")
+
   companion object {
     private const val TAG = "ZynthDevtools"
     private val client = ZynthDevtoolsClient()

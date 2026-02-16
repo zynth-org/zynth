@@ -5,6 +5,10 @@ import ZynthKit
 class ZynthHypervisorModule: NSObject, ZynthModule, ZynthSyncModule {
     var name: String = "ZynthHypervisor"
     
+    var exportedMethods: [String] {
+        return ["postMessage"]
+    }
+    
     private weak var runtime: ZynthRuntime?
     
     init(runtime: ZynthRuntime) {

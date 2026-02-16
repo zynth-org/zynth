@@ -12,6 +12,11 @@ import ZynthKit
 final class ZynthSafeAreaBridge: NSObject, ZynthModule, ZynthSyncModule {
 
   let name = "ZynthSafeArea"
+
+  var exportedMethods: [String] {
+    return ["refresh", "getCurrentMetrics"]
+  }
+
   private let module: ZynthSafeAreaModule
 
   init(module: ZynthSafeAreaModule) {

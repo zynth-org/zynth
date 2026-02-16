@@ -23,6 +23,12 @@ class ZynthFileSystemModule(
 ) : ZynthModule, ZynthSyncModule {
     override val name: String = "ZynthFileSystem"
 
+    override val exportedMethods: List<String> = listOf(
+        "getPaths", "getDiskSpace", "getSharedContainers", "getPathInfo", "getInfo",
+        "listDirectory", "createDirectory", "createFile", "delete", "copy", "move",
+        "readText", "readBase64", "readBase64Chunk", "writeText", "writeBase64", "checksum"
+    )
+
     override fun call(method: String, args: ZynthArgs): JSONObject {
         return try {
             when (method) {

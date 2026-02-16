@@ -3,6 +3,10 @@ import Foundation
 final class ZynthDevtoolsModule: ZynthModule {
   let name: String = "Devtools"
 
+  var exportedMethods: [String] {
+    return ["connect", "emit", "isConnected"]
+  }
+
 #if DEBUG
   private let client = ZynthDevtoolsClient()
   private weak var runtime: ZynthRuntime?

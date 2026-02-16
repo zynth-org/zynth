@@ -24,6 +24,10 @@ private struct NetworkSnapshot: Equatable {
 final class ZynthNetworkModule: NSObject, ZynthModule, ZynthSyncModule {
   let name: String = "Network"
 
+  var exportedMethods: [String] {
+    return ["current"]
+  }
+
   private weak var runtime: ZynthRuntime?
   private let monitor = NWPathMonitor()
   private let monitorQueue = DispatchQueue(label: "dev.zynth.apis.network.monitor")

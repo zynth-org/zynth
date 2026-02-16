@@ -3,6 +3,7 @@ import Foundation
 public enum ZynthModuleError: LocalizedError {
   case moduleNotFound(String)
   case syncNotSupported(module: String, method: String)
+  case methodNotExported(module: String, method: String)
   case runtimeDeallocated
 
   public var errorDescription: String? {
@@ -11,6 +12,8 @@ public enum ZynthModuleError: LocalizedError {
       return "Module \(module) not found"
     case .syncNotSupported(let module, let method):
       return "Module \(module) does not support synchronous method \(method)"
+    case .methodNotExported(let module, let method):
+      return "Method \(method) is not exported by module \(module)"
     case .runtimeDeallocated:
       return "Runtime deallocated"
     }
@@ -20,6 +23,7 @@ public enum ZynthModuleError: LocalizedError {
 public protocol ZynthModule {
   var name: String { get }
   var constantsToExport: [String: Any]? { get }
+  var exportedMethods: [String] { get }
   func call(method: String, args: ZynthArgs) throws -> Any?
   func initialize()
   func invalidate()
@@ -27,6 +31,7 @@ public protocol ZynthModule {
 
 public extension ZynthModule {
   var constantsToExport: [String: Any]? { nil }
+  var exportedMethods: [String] { [] }
   func initialize() {}
   func invalidate() {}
 }
@@ -66,6 +71,9 @@ final class ZynthModuleRegistry: NSObject, ZynthModuleBridge {
     guard let module = modules[name] else {
       throw ZynthModuleError.moduleNotFound(name)
     }
+    guard module.exportedMethods.contains(method) else {
+      throw ZynthModuleError.methodNotExported(module: name, method: method)
+    }
     let zynthArgs = ZynthArgs(args)
     return try module.call(method: method, args: zynthArgs)
   }
@@ -73,6 +81,9 @@ final class ZynthModuleRegistry: NSObject, ZynthModuleBridge {
   func callSync(_ name: String, method: String, args: Any?) throws -> Any? {
     guard let module = modules[name] else {
       throw ZynthModuleError.moduleNotFound(name)
+    }
+    guard module.exportedMethods.contains(method) else {
+      throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
     guard let syncModule = module as? ZynthSyncModule else {
       throw ZynthModuleError.syncNotSupported(module: name, method: method)

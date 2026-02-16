@@ -20,6 +20,13 @@ class ZynthHapticsModule(
 ) : ZynthModule {
     override val name: String = "ZynthHaptics"
 
+    override val exportedMethods: List<String> = listOf(
+        "notificationAsync",
+        "impactAsync",
+        "selectionAsync",
+        "performHapticsAsync",
+    )
+
     override fun call(method: String, args: ZynthArgs): JSONObject {
         return when (method) {
             "notificationAsync" -> handleNotification(args)

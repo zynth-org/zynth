@@ -60,6 +60,8 @@ class DimensionsModule(
 
     override val name: String = "Dimensions"
 
+    override val exportedMethods: List<String> = listOf("current")
+
     private val appContext: Context = rootView.context.applicationContext
 
     @Volatile

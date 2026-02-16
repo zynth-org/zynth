@@ -12,6 +12,8 @@ class DevtoolsModule(
 ) : ZynthModule {
   override val name: String = "Devtools"
 
+  override val exportedMethods: List<String> = listOf("connect", "emit", "nativeError", "isConnected")
+
   companion object {
     @JvmStatic
     fun start(context: Context) {

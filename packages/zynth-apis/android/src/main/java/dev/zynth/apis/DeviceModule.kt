@@ -14,6 +14,8 @@ class DeviceModule(
 
     override val name: String = "Device"
 
+    override val exportedMethods: List<String> = listOf("getInfo", "current")
+
     private val appContext = context.applicationContext
 
     override val constants: Map<String, Any>?

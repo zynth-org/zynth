@@ -9,6 +9,8 @@ interface ZynthModule {
     val name: String
     val constants: Map<String, Any>?
         get() = null
+    val exportedMethods: List<String>
+        get() = emptyList()
     fun call(method: String, args: ZynthArgs): JSONObject
     fun initialize() {}
     fun invalidate() {}
@@ -54,6 +56,13 @@ class ZynthModuleRegistry {
         }
 
         Log.i(TAG, "Module found, calling: $name.$method")
+        if (!module.exportedMethods.contains(method)) {
+            Log.w(TAG, "Method not exported: $name.$method")
+            return JSONObject()
+                .put("error", "method_not_exported")
+                .put("message", "Method $method is not exported by module $name")
+        }
+
         return try {
             val zynthArgs = ZynthArgs(args)
             module.call(method, zynthArgs)
@@ -87,6 +96,15 @@ class ZynthModuleRegistry {
             Log.w(TAG, message)
             return mapOf(
                 "error" to "sync_not_supported",
+                "message" to message,
+            )
+        }
+
+        if (!module.exportedMethods.contains(method)) {
+            val message = "Method $method is not exported by module $name"
+            Log.w(TAG, message)
+            return mapOf(
+                "error" to "method_not_exported",
                 "message" to message,
             )
         }

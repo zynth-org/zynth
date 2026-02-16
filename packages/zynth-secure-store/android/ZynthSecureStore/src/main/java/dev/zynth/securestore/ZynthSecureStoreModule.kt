@@ -24,6 +24,15 @@ class ZynthSecureStoreModule(
     activity: Activity
 ) : ZynthModule, ZynthSyncModule {
     override val name: String = "ZynthSecureStore"
+
+    override val exportedMethods: List<String> = listOf(
+        "getItem",
+        "setItem",
+        "deleteItem",
+        "isAvailable",
+        "canUseBiometricAuthentication",
+    )
+
     private val context: Context = activity.applicationContext
     private val activityRef = java.lang.ref.WeakReference(activity)
     private val stores = mutableMapOf<String, SharedPreferences>()

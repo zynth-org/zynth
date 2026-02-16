@@ -37,6 +37,10 @@ private struct DimensionsPayload: Equatable {
 final class ZynthDimensionsModule: NSObject, ZynthModule, ZynthSyncModule {
   let name: String = "Dimensions"
 
+  var exportedMethods: [String] {
+    return ["current"]
+  }
+
   private weak var runtime: ZynthRuntime?
   private weak var rootView: UIView?
   private var boundsObservation: NSKeyValueObservation?

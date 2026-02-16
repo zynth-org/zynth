@@ -13,6 +13,15 @@ import UniformTypeIdentifiers
 @objc(ZynthFileSystemModule)
 final class ZynthFileSystemModule: NSObject, ZynthModule, ZynthSyncModule {
   let name: String = "ZynthFileSystem"
+
+  var exportedMethods: [String] {
+    return [
+      "getPaths", "getDiskSpace", "getSharedContainers", "getPathInfo", "getInfo",
+      "listDirectory", "createDirectory", "createFile", "delete", "copy", "move",
+      "readText", "readBase64", "readBase64Chunk", "writeText", "writeBase64", "checksum"
+    ]
+  }
+
   private let fileManager = FileManager.default
 
   func call(method: String, args: ZynthArgs) throws -> Any? {

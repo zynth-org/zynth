@@ -6,6 +6,10 @@ import CoreText
 public class ZynthFontModule: ZynthModule {
     public var name: String { "Font" }
     
+    public var exportedMethods: [String] {
+        return ["loadAsync"]
+    }
+    
     public init() {}
     
     public func call(method: String, args: ZynthArgs) throws -> Any? {

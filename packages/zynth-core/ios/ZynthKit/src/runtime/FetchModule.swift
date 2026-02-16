@@ -4,6 +4,10 @@ import Foundation
 final class FetchModule: NSObject, ZynthModule, URLSessionDataDelegate {
   let name: String = "Fetch"
 
+  var exportedMethods: [String] {
+    return ["request", "cancel", "streamStart", "uploadChunk", "uploadComplete", "uploadAbort"]
+  }
+
   private lazy var session: URLSession = {
     URLSession(configuration: .default, delegate: self, delegateQueue: nil)
   }()

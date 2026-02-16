@@ -24,6 +24,8 @@ class AppStateModule(
 
     override val name: String = "AppState"
 
+    override val exportedMethods: List<String> = listOf("current")
+
     @Volatile
     private var currentState: String = "active"
     private var lifecycleOwner: LifecycleOwner? = null

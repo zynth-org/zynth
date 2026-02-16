@@ -14,6 +14,10 @@ private enum AppLifecycleState: String {
 final class ZynthAppStateModule: NSObject, ZynthModule, ZynthSyncModule {
   let name: String = "AppState"
 
+  var exportedMethods: [String] {
+    return ["current"]
+  }
+
   private weak var runtime: ZynthRuntime?
   private var observers: [NSObjectProtocol] = []
   private var currentState: AppLifecycleState = .active

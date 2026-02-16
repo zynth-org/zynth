@@ -11,6 +11,8 @@ class ZynthHypervisorModule(
 ) : ZynthModule {
     override val name = "ZynthHypervisor"
 
+    override val exportedMethods: List<String> = listOf("postMessage")
+
     override fun call(method: String, args: ZynthArgs): JSONObject {
         return when (method) {
             "postMessage" -> {

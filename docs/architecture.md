@@ -116,6 +116,56 @@ The `__ui` global object is the sole entry point for UI mutations. It is a C++ H
 - **iOS**: Implemented in `ZynthUIManager.mm`. It maps integer IDs to `UIView` instances / Yoga Nodes.
 - **Android**: Implemented in `ZynthBridge.kt` (via JNI). It maps IDs to `Android.View` instances / Yoga Nodes.
 
+# Bridge Architecture: Type-Safe Communication
+
+The Zynth framework employs a structured boundary between the JavaScript runtime and the native OS layers (Android/iOS). This document explains the design principles behind our type-safe bridge.
+
+## The Core Problem: Type Confusion
+
+In many hybrid frameworks, data passed from JavaScript to Native is handled as generic, untyped objects. This forces native developers to perform manual type casting, which is error-prone. A single incorrect assumption (e.g., treating a `null` as a `String`) can lead to:
+
+1.  **Native Crashes**: Unhandled exceptions in the main thread.
+2.  **Logic Bypasses**: Bypassing security checks because a variable didn't cast as expected.
+3.  **Information Leakage**: Verbose stack traces sent back to the JS context.
+
+## Our Solution: `ZynthArgs`
+
+We use a specialized wrapper—`ZynthArgs`—that acts as a security checkpoint at the bridge entry point.
+
+### How it Works
+
+Instead of receiving a raw array or dictionary, every native module receives a `ZynthArgs` instance.
+
+- **iOS**: Uses `ZynthArgs.swift` to wrap `Any?`.
+- **Android**: Uses `ZynthArgs.kt` to wrap `JSONObject/JSONArray`.
+
+### Key Benefits
+
+1.  **Fail-Fast Validation**: Methods like `args.string("key")` throw descriptive, caught exceptions immediately if the input doesn't match the expected schema.
+2.  **Sanitized Errors**: The bridge catch-all ensures that only safe, high-level error codes are returned to JavaScript, never internal memory addresses or file paths.
+3.  **Zero Hot-Path Impact**: This validation is applied to high-level "General Purpose" modules. High-performance rendering paths (UI Batching/Worklets) use a separate binary-first pipeline to maintain 120fps performance.
+4.  **Developer Experience**: Standardized getters reduce boilerplate and prevent the "forced unwrap" anti-pattern in Swift and Kotlin.
+
+## Secure Module Discovery
+
+To prevent unauthorized access to internal native logic, Zynth implements an **Explicit Whitelist** model for module method exposure.
+
+### The Vulnerability: Implicit Exposure
+In traditional bridge architectures, any public method on a native module might be reachable from JavaScript if the routing logic is not carefully managed. This can lead to "Discovery Attacks" where a malicious script probes the bridge for undocumented or helper methods.
+
+### The Solution: `exportedMethods`
+Every native module in Zynth must explicitly declare its public API surface:
+
+- **iOS**: `var exportedMethods: [String] { get }`
+- **Android**: `val exportedMethods: List<String>`
+
+### Enforcement Mechanism
+The `ZynthModuleRegistry` (on both platforms) acts as a Gatekeeper. Before a call is dispatched to a module's `call` method, the registry verifies that the requested method name exists in the `exportedMethods` list.
+
+1.  **Strict Rejection**: If a method is not whitelisted, the call is rejected with a `METHOD_NOT_EXPORTED` error.
+2.  **O(1) Performance**: Whitelists are indexed into optimized HashSets during module initialization, ensuring that this security check has zero measurable impact on call latency.
+3.  **Auditability**: Security auditors can verify the entire framework's attack surface by simply scanning for `exportedMethods` definitions across the codebase.
+
 ### Yoga Layout
 
 Zynth uses [Yoga](https://yogalayout.dev/) (the same layout engine as React Native) to implement Flexbox.

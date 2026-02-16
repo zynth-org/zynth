@@ -35,6 +35,8 @@ class NetworkModule(
 
     override val name: String = "Network"
 
+    override val exportedMethods: List<String> = listOf("current")
+
     private val connectivityManager = context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
     @Volatile

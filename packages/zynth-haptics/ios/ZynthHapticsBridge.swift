@@ -14,6 +14,10 @@ final class ZynthHapticsBridge: NSObject, ZynthModule {
 
   let name = "ZynthHaptics"
 
+  var exportedMethods: [String] {
+    return ["notificationAsync", "impactAsync", "selectionAsync", "performHapticsAsync"]
+  }
+
   func call(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "notificationAsync":

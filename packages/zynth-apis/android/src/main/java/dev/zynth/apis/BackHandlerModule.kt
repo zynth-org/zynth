@@ -19,6 +19,8 @@ class BackHandlerModule(
 
     override val name: String = "BackHandler"
 
+    override val exportedMethods: List<String> = listOf("setCanGoBack")
+
     private var callback: OnBackPressedCallback? = null
     @Volatile private var canGoBack: Boolean = false
 

@@ -18,6 +18,8 @@ private const val TAG = "FontModule"
  */
 class FontModule(context: Context, private val runtime: ZynthRuntime? = null) : ZynthModule {
     override val name = "Font"
+
+    override val exportedMethods: List<String> = listOf("loadAsync")
     
     private val appContext = context.applicationContext
 

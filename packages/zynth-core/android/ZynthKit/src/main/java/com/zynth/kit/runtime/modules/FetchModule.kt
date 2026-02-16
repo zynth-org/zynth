@@ -22,6 +22,15 @@ import org.json.JSONObject
 class FetchModule(private val runtime: ZynthRuntime) : ZynthModule {
     override val name: String = "Fetch"
 
+    override val exportedMethods: List<String> = listOf(
+        "request",
+        "cancel",
+        "streamStart",
+        "uploadChunk",
+        "uploadComplete",
+        "uploadAbort",
+    )
+
     private val client = OkHttpClient.Builder().build()
     private val calls = ConcurrentHashMap<Int, okhttp3.Call>()
     private val pendingChunks = ConcurrentHashMap<Int, MutableList<ByteArray>>()

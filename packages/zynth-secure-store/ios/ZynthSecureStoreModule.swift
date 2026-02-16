@@ -14,6 +14,10 @@ import ZynthKit
 final class ZynthSecureStoreModule: NSObject, ZynthModule, ZynthSyncModule {
   let name: String = "ZynthSecureStore"
 
+  var exportedMethods: [String] {
+    return ["getItem", "setItem", "deleteItem", "isAvailable", "canUseBiometricAuthentication"]
+  }
+
   func call(method: String, args: ZynthArgs) throws -> Any? {
     return try handle(method: method, args: args)
   }

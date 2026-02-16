@@ -19,6 +19,9 @@ class ZynthSafeAreaModule(
     private val runtime: ZynthRuntime
 ) : ZynthModule, ZynthSyncModule {
     override val name: String = "ZynthSafeArea"
+
+    override val exportedMethods: List<String> = listOf("getCurrentMetrics", "refresh")
+
     override val constants: Map<String, Any>?
         get() = (getCurrentMetrics() ?: defaultMetrics()).toMap()
 

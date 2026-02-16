@@ -91,6 +91,7 @@ This track hardens `@zynth/skia` so animation hooks and shader pipelines stay UI
 - [ ] iOS: Crash on `TextHighRefreshSignalExample`
 - [ ] iOS: Doest put the defaultValue on `TextInputsTest`
 - [ ] Android: Pressable many errors
+- [ ] Android: HypervisorDemo keeps the fallback loading text after success bundle load
 - [ ] Android: AsyncStorageExample discrepancy
 - [ ] Android: WebView first render like 2s displaying all screen.
 - [ ] Android: Contacts animation broken.
