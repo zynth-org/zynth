@@ -12,12 +12,15 @@ import {
   type JSX,
   type Accessor,
 } from "solid-js";
-import { View, Text, Button, SystemIcon } from "@zynth/components";
-import { Platform, OS, createSafeAreaInsets } from "@zynth/apis";
 import {
+  View,
+  Text,
+  Button,
+  SystemIcon,
   BottomSheet as ZynthBottomSheet,
   createBottomSheetController,
-} from "@zynth/bottom-sheet";
+} from "@zynth/components";
+import { Platform, OS, createSafeAreaInsets } from "@zynth/apis";
 import {
   ScreenContainer,
   ScreenSheetContainer,

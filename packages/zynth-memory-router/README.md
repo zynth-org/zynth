@@ -49,6 +49,53 @@ export default function App() {
 
 ## API Reference
 
+### Filesystem Router
+
+`@zynth/memory-router` can render a filesystem-generated screen tree:
+
+```tsx
+import { NavigationContainer, createFileSystemRouter } from "@zynth/memory-router";
+import fileSystemRouterManifest from "@zynth/memory-router/fs-routes";
+
+const AppRouter = createFileSystemRouter(fileSystemRouterManifest);
+
+export default function App() {
+  return (
+    <NavigationContainer>
+      <AppRouter />
+    </NavigationContainer>
+  );
+}
+```
+
+The manifest is generated through the memory-router rsbuild helper, which emits
+an rsbuild generic generated-module feature.
+
+Recommended config:
+
+```ts
+import { defineZynthConfig } from "@zynth/rsbuild-plugin";
+import { memoryRouterFileSystem } from "@zynth/memory-router/rsbuild";
+
+export default defineZynthConfig({}, {
+  plugin: {
+    features: [memoryRouterFileSystem({ enable: true })],
+  },
+});
+```
+
+Filesystem router safety checks:
+* Duplicate resolved route names fail generation with a descriptive error.
+* Invalid `initialRouteName` in Stack navigators falls back to first registered screen (with warning).
+* Nested Stack/Tabs header ownership should be explicit via `headerShown` to avoid parent/child back mismatches.
+
+Filesystem conventions:
+* `_layout.stack.tsx` (or `.ts/.jsx/.js`) defines a Stack navigator for a directory.
+* `_layout.tabs.tsx` (or `.ts/.jsx/.js`) defines a BottomTabs navigator for a directory.
+* Screen files (`.tsx/.ts/.jsx/.js`) map to route names.
+* `index.*` maps to the directory route.
+* Route-group directories like `(tabs)` are pathless grouping segments.
+
 ### Navigators
 
 #### `createStackNavigator<ParamList>()`

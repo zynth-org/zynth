@@ -219,6 +219,12 @@ We use [Rsbuild](https://rsbuild.dev/) (based on Rspack) for blazing fast builds
     - **Universal JSX**: Solid's compiler is configured to generate `universal` create calls instead of `document.createElement`.
     - **Hermes Bytecode**: The final JS bundle is often compiled to bytecode using the `hermesc` tool before being packaged into the app.
 
+**Feature ownership model:**
+
+- `@zynth/rsbuild-plugin` stays agnostic and exposes generic build primitives (e.g. generated module features).
+- Feature packages (such as `@zynth/memory-router`) own domain-specific semantics and provide helpers that emit those generic features.
+- This keeps bundling extensible without embedding router policy inside the bundler integration layer.
+
 ### Skyhook (AI Generation)
 
 Skyhook is the backend service that powers Zynth's "Prompt-to-App" capability.

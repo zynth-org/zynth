@@ -9,7 +9,37 @@ export interface ZynthRsbuildPluginOptions {
   extraAliases?: Record<string, string | false | (string | false)[]>;
   /** Skip writing the HMR artifact JSON. */
   writeArtifacts?: boolean;
+  /** Extensible build features that can generate virtual modules/artifacts. */
+  features?: ZynthBuildFeature[];
 }
+
+export interface ZynthBuildFeatureContext {
+  appRoot: string;
+  workspaceRoot: string;
+  platform: "ios" | "android" | "web";
+}
+
+export interface ZynthGeneratedModuleFeature {
+  kind: "generated-module";
+  /** Exact import id exposed to application source code. */
+  moduleId: string;
+  /** Output file path for generated module. Relative to app root if not absolute. */
+  outputPath?: string;
+  /** Module source code generator. */
+  generate: (
+    context: ZynthBuildFeatureContext
+  ) => string | Promise<string>;
+}
+
+/** Opaque feature descriptors owned by framework packages. */
+export interface ZynthOpaqueFeature {
+  kind: string;
+  [key: string]: unknown;
+}
+
+export type ZynthBuildFeature =
+  | ZynthGeneratedModuleFeature
+  | ZynthOpaqueFeature;
 
 export interface DefineZynthConfigOptions {
   plugin?: ZynthRsbuildPluginOptions;

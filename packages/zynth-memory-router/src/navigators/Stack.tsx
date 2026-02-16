@@ -141,19 +141,34 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
   // Initialize state after children have registered
   const initializeState = () => {
     if (initialized()) return;
-    const initialRouteName = props.initialRouteName ?? screenOrder[0];
+    let initialRouteName = props.initialRouteName;
 
-    if (initialRouteName && screenRegistry.has(initialRouteName)) {
-      const initialRoute = createRoute(initialRouteName);
-      setState({
-        key: navigatorId,
-        type: "stack",
-        index: 0,
-        routes: [initialRoute],
-      });
-      setInitialRouteKey(initialRoute.key);
-      setInitialized(true);
+    if (initialRouteName && !screenRegistry.has(initialRouteName)) {
+      console.warn(
+        `[Stack Navigator] initialRouteName '${initialRouteName}' not found in navigator '${navigatorId}'. Falling back to first registered screen.`,
+      );
+      initialRouteName = undefined;
     }
+
+    const fallbackRouteName = screenOrder[0];
+    const routeName = initialRouteName ?? fallbackRouteName;
+
+    if (!routeName) {
+      console.warn(
+        `[Stack Navigator] Navigator '${navigatorId}' has no registered screens.`,
+      );
+      return;
+    }
+
+    const initialRoute = createRoute(routeName);
+    setState({
+      key: navigatorId,
+      type: "stack",
+      index: 0,
+      routes: [initialRoute],
+    });
+    setInitialRouteKey(initialRoute.key);
+    setInitialized(true);
   };
 
   // Navigation helpers
@@ -834,8 +849,6 @@ function HeaderBar(props: HeaderBarProps) {
         flexDirection: "row",
         alignItems: "center",
         paddingHorizontal: 4,
-        borderBottomWidth: props.options.headerShadowVisible ? 1 : 0,
-        borderBottomColor: "#e5e7eb",
         zIndex: 1000,
       }}
     >

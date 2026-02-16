@@ -47,6 +47,30 @@ A wrapper around `defineConfig` that applies Zynth's defaults.
 *   `plugin`: Options passed to the underlying plugin.
     *   `hermesCompat`: Enable Hermes shims (default: `true` for native).
     *   `writeArtifacts`: Write HMR tokens to `.zynth/artifacts.json` (default: `true`).
+    *   `features`: Extensible feature descriptors (including generated modules).
+
+### Feature Ownership
+
+`@zynth/rsbuild-plugin` is intentionally agnostic. It executes generic feature
+descriptors (for example, generated module features), while feature packages
+own domain-specific semantics.
+
+Example with memory-router filesystem routing:
+
+```ts
+import { defineZynthConfig } from "@zynth/rsbuild-plugin";
+import { memoryRouterFileSystem } from "@zynth/memory-router/rsbuild";
+
+export default defineZynthConfig({}, {
+  plugin: {
+    features: [memoryRouterFileSystem({ enable: true })],
+  },
+});
+```
+
+In this setup, `@zynth/memory-router` owns route scanning and manifest semantics.
+`@zynth/rsbuild-plugin` only writes/aliases the generated module.
+Router-specific filesystem conventions are documented by each router package.
 
 ## How it Works
 

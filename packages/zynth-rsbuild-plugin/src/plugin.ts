@@ -6,7 +6,18 @@ import os from "node:os";
 
 import type { RsbuildPlugin } from "@rsbuild/core";
 import * as rspack from "@rspack/core";
-import type { ZynthRsbuildPluginOptions } from "./types.js";
+import type {
+  ZynthBuildFeatureContext,
+  ZynthRsbuildPluginOptions,
+} from "./types.js";
+import {
+  escapeRegExp,
+  isGeneratedModuleFeature,
+  registerGeneratedModule,
+  resolveFeatureOutputFile,
+  resolveFeaturePlatform,
+  writeGeneratedModuleFile,
+} from "./features.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HMR_SHIM_PATH = path.join(__dirname, "shims/hmr-client-empty.js");
@@ -64,6 +75,32 @@ export function createZynthRsbuildPlugin(
       );
       const solidAliases = resolveSolidAliases(repoRoot);
       const mergedAliases = { ...discoveredAliases, ...solidAliases };
+      const exactModuleReplacements: Array<{ request: string; target: string }> =
+        [];
+
+      const featureContext: ZynthBuildFeatureContext = {
+        appRoot: api.context.rootPath,
+        workspaceRoot: repoRoot,
+        platform: resolveFeaturePlatform(isWeb),
+      };
+
+      for (const feature of options.features ?? []) {
+        if (isGeneratedModuleFeature(feature)) {
+          const outputFile = resolveFeatureOutputFile(
+            feature,
+            api.context.rootPath,
+          );
+          const source = await feature.generate(featureContext);
+          await writeGeneratedModuleFile(outputFile, source);
+          registerGeneratedModule(
+            mergedAliases,
+            exactModuleReplacements,
+            feature.moduleId,
+            outputFile,
+          );
+          continue;
+        }
+      }
 
       // Special handling for @zynth/core in Web
       if (isWeb) {
@@ -133,6 +170,15 @@ export function createZynthRsbuildPlugin(
               OVERLAY_SHIM_PATH,
             ),
             new rspack.NormalModuleReplacementPlugin(/\.css$/, CSS_SHIM_PATH),
+          );
+        }
+
+        for (const replacement of exactModuleReplacements) {
+          config.plugins?.push(
+            new rspack.NormalModuleReplacementPlugin(
+              new RegExp(`^${escapeRegExp(replacement.request)}$`),
+              replacement.target,
+            ),
           );
         }
       });

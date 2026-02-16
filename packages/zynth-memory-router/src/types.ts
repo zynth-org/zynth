@@ -431,6 +431,44 @@ export type ScreenComponent<
 > = Component<ScreenComponentProps<ParamList, RouteName>>;
 
 // ============================================================================
+// Filesystem Router
+// ============================================================================
+
+export interface FileSystemScreenRoute {
+  kind: "screen";
+  /** Navigation route name (for navigate/push). */
+  name: string;
+  /** Screen component module default export. */
+  component: ScreenComponent;
+  /** Optional static or reactive options export. */
+  options?: ScreenOptionsInput;
+  /** Optional initial params export. */
+  initialParams?: object;
+}
+
+export interface FileSystemNavigatorRoute {
+  kind: "navigator";
+  /** Route name used by the parent navigator for this nested navigator screen. */
+  name: string;
+  /** Navigator type to render. */
+  navigator: "stack" | "tabs";
+  /** Optional default options from _layout.* export. */
+  options?: ScreenOptionsInput;
+  /** Optional initial route name from _layout.* export. */
+  initialRouteName?: string;
+  /** Optional tab bar options from _layout.tabs.* export. */
+  tabBarOptions?: TabBarOptions;
+  /** Child screens and nested navigators. */
+  children: FileSystemRouteNode[];
+}
+
+export type FileSystemRouteNode =
+  | FileSystemScreenRoute
+  | FileSystemNavigatorRoute;
+
+export type FileSystemRouterManifest = FileSystemNavigatorRoute;
+
+// ============================================================================
 // Navigator Props
 // ============================================================================
 

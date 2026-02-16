@@ -5,11 +5,27 @@
   "main": "dist/esm/index.js",
   "module": "dist/esm/index.js",
   "types": "dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "types": "./dist/types/index.d.ts"
+    },
+    "./rsbuild": {
+      "import": "./rsbuild.js",
+      "types": "./rsbuild.d.ts"
+    },
+    "./*": "./*",
+    "./package.json": "./package.json"
+  },
   "sideEffects": false,
   "license": "MIT",
   "files": [
     "dist",
     "src",
+    "filesystem-router.js",
+    "filesystem-router.d.ts",
+    "rsbuild.js",
+    "rsbuild.d.ts",
     "package.json",
     "README.md"
   ],

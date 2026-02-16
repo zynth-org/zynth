@@ -19,6 +19,7 @@ export {
   createBottomSheetNavigator,
   createRouter,
 } from "./createRouter";
+export { createFileSystemRouter } from "./filesystem";
 
 // Navigators
 export { Stack, StackNavigator, StackScreen } from "./navigators";
@@ -118,6 +119,12 @@ export type {
   LinkingOptions,
   LinkingConfig,
   LinkingRouteConfig,
+
+  // Filesystem routing
+  FileSystemScreenRoute,
+  FileSystemNavigatorRoute,
+  FileSystemRouteNode,
+  FileSystemRouterManifest,
 } from "./types";
 
 // Context types
