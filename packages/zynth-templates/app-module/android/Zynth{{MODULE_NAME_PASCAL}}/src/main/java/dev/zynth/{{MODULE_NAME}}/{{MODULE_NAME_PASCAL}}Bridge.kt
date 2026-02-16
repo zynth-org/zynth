@@ -2,6 +2,7 @@ package dev.zynth.{{MODULE_NAME}}
 
 import com.zynth.kit.runtime.ZynthModule
 import com.zynth.kit.runtime.ZynthSyncModule
+import com.zynth.kit.runtime.ZynthArgs
 import org.json.JSONObject
 
 /**
@@ -15,7 +16,7 @@ class {{MODULE_NAME_PASCAL}}Bridge(
     override val constants: Map<String, Any>?
         get() = module.getInitialState().toMap()
 
-    override fun call(method: String, args: Array<Any?>): JSONObject {
+    override fun call(method: String, args: ZynthArgs): JSONObject {
         return when (method) {
             else -> JSONObject()
                 .put("error", "unsupported_method")
@@ -23,7 +24,7 @@ class {{MODULE_NAME_PASCAL}}Bridge(
         }
     }
 
-    override fun callSync(method: String, args: Array<Any?>): Any? {
+    override fun callSync(method: String, args: ZynthArgs): Any? {
         return when (method) {
             "getCurrentState" -> module.getInitialState().toMap()
             else -> null

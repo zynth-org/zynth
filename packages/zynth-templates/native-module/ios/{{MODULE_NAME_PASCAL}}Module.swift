@@ -17,7 +17,7 @@ class {{MODULE_NAME_PASCAL}}Module: NSObject, ZynthModule, ZynthSyncModule {
     // Cleanup
   }
 
-  func call(method: String, args: Any?) throws -> Any? {
+  func call(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "exampleMethod":
       return ["result": "Async result"]
@@ -26,7 +26,7 @@ class {{MODULE_NAME_PASCAL}}Module: NSObject, ZynthModule, ZynthSyncModule {
     }
   }
   
-  func callSync(method: String, args: Any?) throws -> Any? {
+  func callSync(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "exampleSyncMethod":
       return "Sync result"

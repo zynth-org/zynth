@@ -5,6 +5,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import com.zynth.kit.runtime.ZynthModule
 import com.zynth.kit.runtime.ZynthSyncModule
+import com.zynth.kit.runtime.ZynthArgs
 import java.io.File
 
 class ZynthWebServerModule(
@@ -22,7 +23,7 @@ class ZynthWebServerModule(
         stopServer()
     }
 
-    override fun call(method: String, args: Array<Any?>): JSONObject {
+    override fun call(method: String, args: ZynthArgs): JSONObject {
         return when (method) {
             "start" -> startServer(args)
             "stop" -> {
@@ -37,7 +38,7 @@ class ZynthWebServerModule(
         }
     }
 
-    override fun callSync(method: String, args: Array<Any?>): Any? {
+    override fun callSync(method: String, args: ZynthArgs): Any? {
         return when (method) {
             "isRunning" -> isRunning()
             "getInfo" -> serverInfo ?: JSONObject.NULL
@@ -46,21 +47,21 @@ class ZynthWebServerModule(
         }
     }
 
-    private fun startServer(args: Array<Any?>): JSONObject {
+    private fun startServer(args: ZynthArgs): JSONObject {
         stopServer()
 
-        val host = getStringArg(args, "host") ?: "0.0.0.0"
-        val port = getIntArg(args, "port") ?: 0
-        val documentRoot = getStringArg(args, "documentRoot")
-        val indexHtml = getStringArg(args, "indexHtml")
-        val uploadPath = getStringArg(args, "uploadPath")
-        var uploadDir = getStringArg(args, "uploadDir")
-        val uploadMetadataPath = getStringArg(args, "uploadMetadataPath")
-        val uploadAuthToken = getStringArg(args, "uploadAuthToken")
-        val uploadAuthHeader = getStringArg(args, "uploadAuthHeader")
-        val uploadAuthQueryKey = getStringArg(args, "uploadAuthQueryKey")
-        val maxUploadBytes = getLongArg(args, "maxUploadBytes") ?: 0L
-        val eventsPath = getStringArg(args, "eventsPath")
+        val host = args.getString("host", "0.0.0.0")
+        val port = args.getInt("port", 0)
+        val documentRoot = args.getOptionalString("documentRoot")
+        val indexHtml = args.getOptionalString("indexHtml")
+        val uploadPath = args.getOptionalString("uploadPath")
+        var uploadDir = args.getOptionalString("uploadDir")
+        val uploadMetadataPath = args.getOptionalString("uploadMetadataPath")
+        val uploadAuthToken = args.getOptionalString("uploadAuthToken")
+        val uploadAuthHeader = args.getOptionalString("uploadAuthHeader")
+        val uploadAuthQueryKey = args.getOptionalString("uploadAuthQueryKey")
+        val maxUploadBytes = (try { args.getDouble("maxUploadBytes").toLong() } catch (e: Exception) { 0L })
+        val eventsPath = args.getOptionalString("eventsPath")
 
         if (uploadPath != null && uploadDir == null) {
             uploadDir = File(activity.cacheDir, "zynth-webserver").absolutePath
@@ -111,11 +112,11 @@ class ZynthWebServerModule(
         return serverHandle != 0L && ZynthWebServerNative.isRunning(serverHandle)
     }
 
-    private fun drainEvents(args: Array<Any?>): JSONObject {
+    private fun drainEvents(args: ZynthArgs): JSONObject {
         if (serverHandle == 0L) {
             return resultResponse(JSONArray())
         }
-        val maxEvents = getIntArg(args, "maxEvents") ?: 50
+        val maxEvents = args.getInt("maxEvents", 50)
         val events = ZynthWebServerNative.drainEvents(serverHandle, maxEvents)
         val array = JSONArray()
         for (event in events) {
@@ -161,50 +162,6 @@ class ZynthWebServerModule(
                 .put("totalFailed", 0)
                 .put("totalBytesReceived", 0)
                 .put("activeUploads", JSONArray())
-        }
-    }
-
-    private fun getParams(args: Array<Any?>): Any? {
-        return args.getOrNull(0)
-    }
-
-    private fun getStringArg(args: Array<Any?>, key: String): String? {
-        val params = getParams(args)
-        return when (params) {
-            is JSONObject -> {
-                val value = params.opt(key)
-                if (value == JSONObject.NULL) null else value as? String
-            }
-            is Map<*, *> -> params[key] as? String
-            else -> null
-        }
-    }
-
-    private fun getIntArg(args: Array<Any?>, key: String): Int? {
-        val params = getParams(args)
-        val value = when (params) {
-            is JSONObject -> params.opt(key)
-            is Map<*, *> -> params[key]
-            else -> null
-        }
-        return when (value) {
-            is Number -> value.toInt()
-            is String -> value.toIntOrNull()
-            else -> null
-        }
-    }
-
-    private fun getLongArg(args: Array<Any?>, key: String): Long? {
-        val params = getParams(args)
-        val value = when (params) {
-            is JSONObject -> params.opt(key)
-            is Map<*, *> -> params[key]
-            else -> null
-        }
-        return when (value) {
-            is Number -> value.toLong()
-            is String -> value.toLongOrNull()
-            else -> null
         }
     }
 

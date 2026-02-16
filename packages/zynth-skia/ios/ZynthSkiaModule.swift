@@ -11,12 +11,12 @@ final class ZynthSkiaModule: NSObject, ZynthModule, ZynthSyncModule {
     self.runtime = runtime
   }
 
-  func call(method: String, args: Any?) throws -> Any? {
+  func call(method: String, args: ZynthArgs) throws -> Any? {
     return try callSync(method: method, args: args)
   }
 
-  func callSync(method: String, args: Any?) throws -> Any? {
-    let payload = args as? [String: Any] ?? [:]
+  func callSync(method: String, args: ZynthArgs) throws -> Any? {
+    let payload = (try? args.asDict()) ?? [:]
     switch method {
     case "createSurface":
       return createSurface(payload)

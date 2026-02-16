@@ -8,7 +8,7 @@ public class ZynthFontModule: ZynthModule {
     
     public init() {}
     
-    public func call(method: String, args: Any?) throws -> Any? {
+    public func call(method: String, args: ZynthArgs) throws -> Any? {
         switch method {
         case "loadAsync":
             return try loadAsync(args: args)
@@ -38,12 +38,11 @@ public class ZynthFontModule: ZynthModule {
         return nil
     }
     
-    private func loadAsync(args: Any?) throws -> Any? {
-        guard let params = args as? [String: Any],
-              let _ = params["fontFamily"] as? String,
-              let resourceName = params["resourceName"] as? String else {
-            throw ZynthModuleError.moduleNotFound("Invalid arguments for loadAsync. Expected fontFamily and resourceName.")
-        }
+    private func loadAsync(args: ZynthArgs) throws -> Any? {
+        let resourceName = try args.string("resourceName")
+        let fontFamily = try args.string("fontFamily")
+        
+        print("[ZynthFontModule] Loading font '\(fontFamily)' from resource '\(resourceName)'")
 
         let normalizedResource = resourceName.replacingOccurrences(of: "\\", with: "/")
         let resourceFileName = (normalizedResource as NSString).lastPathComponent

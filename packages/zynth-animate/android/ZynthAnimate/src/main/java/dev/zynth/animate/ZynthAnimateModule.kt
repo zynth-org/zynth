@@ -7,6 +7,7 @@ import android.view.Choreographer
 import android.view.View
 import com.zynth.kit.runtime.ZynthModule
 import com.zynth.kit.runtime.ZynthRuntime
+import com.zynth.kit.runtime.ZynthArgs
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.max
@@ -120,10 +121,11 @@ class ZynthAnimateModule(
     private val animations = LinkedHashMap<Int, StyleAnimation>()
     private var frameCallback: Choreographer.FrameCallback? = null
 
-    override fun call(method: String, args: Array<Any?>): JSONObject {
+    override fun call(method: String, args: ZynthArgs): JSONObject {
+        val params = args.nestedAt(0)
         return when (method) {
-            "startTransition" -> handleStartTransition(args)
-            "stopTransition" -> handleStopTransition(args)
+            "startTransition" -> handleStartTransition(params)
+            "stopTransition" -> handleStopTransition(params)
             else -> errorResponse("unsupported_method", method)
         }
     }
@@ -136,20 +138,19 @@ class ZynthAnimateModule(
         }
     }
 
-    private fun handleStartTransition(args: Array<Any?>): JSONObject {
-        val params = args.firstOrNull()
-        val nodeId = getIntParam(params, "nodeId") ?: return errorResponse("invalid_argument", "nodeId")
+    private fun handleStartTransition(params: ZynthArgs): JSONObject {
+        val nodeId = params.getInt("nodeId")
 
-        val animationId = getIntParam(params, "animationId") ?: SystemClock.uptimeMillis().toInt()
-        val phase = getStringParam(params, "phase") ?: "enter"
-        val durationMs = getLongParam(params, "duration") ?: 300L
-        val delayMs = getLongParam(params, "delay") ?: 0L
-        val easingName = getStringParam(params, "easing")
+        val animationId = try { params.getInt("animationId") } catch (e: Exception) { SystemClock.uptimeMillis().toInt() }
+        val phase = params.getString("phase", "enter")
+        val durationMs = (try { params.getDouble("duration") } catch (e: Exception) { 300.0 }).toLong()
+        val delayMs = (try { params.getDouble("delay") } catch (e: Exception) { 0.0 }).toLong()
+        val easingName = params.getOptionalString("easing")
         val easing = Easing.fromName(easingName)
 
-        val fromStyle = parseStyle(getParam(params, "from"))
-        val toStyle = parseStyle(getParam(params, "to"))
-        val frameSpecs = parseKeyframes(getParam(params, "frames"))
+        val fromStyle = parseStyle(try { params.nested("from") } catch (e: Exception) { null })
+        val toStyle = parseStyle(try { params.nested("to") } catch (e: Exception) { null })
+        val frameSpecs = parseKeyframes(try { params.nested("frames") } catch (e: Exception) { null })
 
         runOnMain {
             val view = runtime.getUIManager().getNodeView(nodeId) ?: return@runOnMain
@@ -195,9 +196,8 @@ class ZynthAnimateModule(
         return successResponse()
     }
 
-    private fun handleStopTransition(args: Array<Any?>): JSONObject {
-        val params = args.firstOrNull()
-        val nodeId = getIntParam(params, "nodeId") ?: return errorResponse("invalid_argument", "nodeId")
+    private fun handleStopTransition(params: ZynthArgs): JSONObject {
+        val nodeId = params.getInt("nodeId")
 
         runOnMain {
             animations.remove(nodeId)
@@ -451,7 +451,7 @@ class ZynthAnimateModule(
         val rotateXMatrix = identityMatrix().apply { applyRotateX(this, rx) }
         val rotateYMatrix = identityMatrix().apply { applyRotateY(this, ry) }
 
-        // CSS/RN order: transforms are applied in reverse list order.
+        // combined matrices
         val combined = multiplyMatrices(rotateYMatrix, rotateXMatrix)
         return extractEulerFromMatrix(combined)
     }
@@ -521,14 +521,10 @@ class ZynthAnimateModule(
         )
     }
 
-    private fun parseStyle(value: Any?): AnimatedStyle? {
-        val map = when (value) {
-            is JSONObject -> jsonToMap(value)
-            is Map<*, *> -> value
-            else -> null
-        } ?: return null
+    private fun parseStyle(args: ZynthArgs?): AnimatedStyle? {
+        if (args == null) return null
 
-        var opacity: Float? = getFloat(map, "opacity")
+        var opacity: Float? = try { args.getDouble("opacity").toFloat() } catch (e: Exception) { null }
         var translateX: Float? = null
         var translateY: Float? = null
         var scale: Float? = null
@@ -541,20 +537,10 @@ class ZynthAnimateModule(
         var skewY: Float? = null
         var perspective: Float? = null
 
-        val transformValue = map["transform"]
-        val transforms = when (transformValue) {
-            is JSONArray -> jsonArrayToList(transformValue)
-            is List<*> -> transformValue
-            is Array<*> -> transformValue.toList()
-            else -> emptyList()
-        }
+        val transforms = try { args.getList("transform") } catch (e: Exception) { emptyList<Any?>() }
 
         for (entry in transforms) {
-            val item = when (entry) {
-                is JSONObject -> jsonToMap(entry)
-                is Map<*, *> -> entry
-                else -> null
-            } ?: continue
+            val item = if (entry is Map<*, *>) entry else continue
 
             for ((key, rawValue) in item) {
                 when (key as? String) {
@@ -595,24 +581,17 @@ class ZynthAnimateModule(
         val easing: Easing? = null,
     )
 
-    private fun parseKeyframes(value: Any?): List<KeyframeSpec> {
-        val list = when (value) {
-            is JSONArray -> jsonArrayToList(value)
-            is List<*> -> value
-            is Array<*> -> value.toList()
-            else -> emptyList()
-        }
+    private fun parseKeyframes(args: ZynthArgs?): List<KeyframeSpec> {
+        if (args == null) return emptyList()
+        val list = try { args.asArray() } catch (e: Exception) { emptyArray<Any?>() }
         if (list.isEmpty()) return emptyList()
+        
         val frames = mutableListOf<KeyframeSpec>()
-        for (entry in list) {
-            val item = when (entry) {
-                is JSONObject -> jsonToMap(entry)
-                is Map<*, *> -> entry
-                else -> null
-            } ?: continue
-            val at = getFloat(item, "at") ?: continue
-            val style = parseStyle(item["style"])
-            val easingName = getStringParam(item, "easing")
+        for (i in list.indices) {
+            val item = args.nestedAt(i)
+            val at = try { item.getDouble("at").toFloat() } catch (e: Exception) { continue }
+            val style = parseStyle(try { item.nested("style") } catch (e: Exception) { null })
+            val easingName = item.getOptionalString("easing")
             val easing = easingName?.let { Easing.fromName(it) }
             frames.add(
                 KeyframeSpec(
@@ -647,60 +626,6 @@ class ZynthAnimateModule(
             is String -> value.toFloatOrNull()
             else -> null
         }
-    }
-
-    private fun getParam(params: Any?, key: String): Any? {
-        return when (params) {
-            is JSONObject -> params.opt(key)
-            is Map<*, *> -> params[key]
-            else -> null
-        }
-    }
-
-    private fun getStringParam(params: Any?, key: String): String? {
-        val value = getParam(params, key)
-        return value as? String
-    }
-
-    private fun getIntParam(params: Any?, key: String): Int? {
-        val value = getParam(params, key)
-        return when (value) {
-            is Number -> value.toInt()
-            is String -> value.toIntOrNull()
-            else -> null
-        }
-    }
-
-    private fun getLongParam(params: Any?, key: String): Long? {
-        val value = getParam(params, key)
-        return when (value) {
-            is Number -> value.toLong()
-            is String -> value.toLongOrNull()
-            else -> null
-        }
-    }
-
-    private fun getFloat(map: Map<*, *>, key: String): Float? {
-        val value = map[key]
-        return parseNumber(value)
-    }
-
-    private fun jsonToMap(json: JSONObject): Map<String, Any?> {
-        val map = mutableMapOf<String, Any?>()
-        val keys = json.keys()
-        while (keys.hasNext()) {
-            val key = keys.next()
-            map[key] = json.opt(key)
-        }
-        return map
-    }
-
-    private fun jsonArrayToList(array: JSONArray): List<Any?> {
-        val list = ArrayList<Any?>(array.length())
-        for (i in 0 until array.length()) {
-            list.add(array.opt(i))
-        }
-        return list
     }
 
     private fun runOnMain(block: () -> Unit) {

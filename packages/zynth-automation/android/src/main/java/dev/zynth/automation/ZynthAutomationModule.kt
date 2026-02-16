@@ -4,6 +4,7 @@ import android.content.pm.ApplicationInfo
 import com.zynth.kit.runtime.ZynthModule
 import com.zynth.kit.runtime.ZynthRuntime
 import com.zynth.kit.runtime.ZynthSyncModule
+import com.zynth.kit.runtime.ZynthArgs
 import org.json.JSONObject
 
 internal class ZynthAutomationModule(
@@ -13,7 +14,7 @@ internal class ZynthAutomationModule(
     override val name: String = "Automation"
     private var productionInspectionEnabled: Boolean = false
 
-    override fun call(method: String, args: Array<Any?>): JSONObject {
+    override fun call(method: String, args: ZynthArgs): JSONObject {
         return when (method) {
             "read" -> JSONObject().put("result", runtime.getUIManager().snapshot(normalizedReadOptions(args)))
             "configure" -> JSONObject().put("result", configure(args))
@@ -21,7 +22,7 @@ internal class ZynthAutomationModule(
         }
     }
 
-    override fun callSync(method: String, args: Array<Any?>): Any? {
+    override fun callSync(method: String, args: ZynthArgs): Any? {
         return when (method) {
             "read" -> runtime.getUIManager().snapshot(normalizedReadOptions(args))
             "configure" -> JSONObject(configure(args))
@@ -29,24 +30,22 @@ internal class ZynthAutomationModule(
         }
     }
 
-    private fun parseOptions(args: Array<Any?>): JSONObject? {
-        if (args.isEmpty()) return null
-        val first = args[0] ?: return null
-        return when (first) {
-            is JSONObject -> first
-            is Map<*, *> -> JSONObject(first)
-            else -> null
+    private fun parseOptions(args: ZynthArgs): JSONObject {
+        return try {
+            JSONObject(args.getMapAt(0))
+        } catch (e: Exception) {
+            JSONObject()
         }
     }
 
-    private fun configure(args: Array<Any?>): Map<String, Any> {
+    private fun configure(args: ZynthArgs): Map<String, Any> {
         val options = parseOptions(args)
-        productionInspectionEnabled = options?.optBoolean("enableProductionInspection", false) ?: false
+        productionInspectionEnabled = options.optBoolean("enableProductionInspection", false)
         return mapOf("productionInspectionEnabled" to productionInspectionEnabled)
     }
 
-    private fun normalizedReadOptions(args: Array<Any?>): JSONObject {
-        val options = parseOptions(args) ?: JSONObject()
+    private fun normalizedReadOptions(args: ZynthArgs): JSONObject {
+        val options = parseOptions(args)
         if (!isDebugBuild() && !productionInspectionEnabled) {
             // Heavy fields are disabled in production by default to reduce overhead.
             options.put("includeResolvedStyles", false)

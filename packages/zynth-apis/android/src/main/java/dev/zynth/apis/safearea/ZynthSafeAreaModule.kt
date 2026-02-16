@@ -8,6 +8,7 @@ import androidx.core.view.WindowInsetsCompat
 import com.zynth.kit.runtime.ZynthModule
 import com.zynth.kit.runtime.ZynthSyncModule
 import com.zynth.kit.runtime.ZynthRuntime
+import com.zynth.kit.runtime.ZynthArgs
 import org.json.JSONObject
 
 /**
@@ -21,7 +22,8 @@ class ZynthSafeAreaModule(
     override val constants: Map<String, Any>?
         get() = (getCurrentMetrics() ?: defaultMetrics()).toMap()
 
-    override fun call(method: String, args: Array<Any?>): JSONObject {
+    override fun call(method: String, args: ZynthArgs): JSONObject {
+        val params = try { args.nestedAt(0) } catch (e: Exception) { null }
         return when (method) {
             "getCurrentMetrics" -> JSONObject().put("result", (getCurrentMetrics() ?: lastMetrics ?: defaultMetrics()).toJSONObject())
             "refresh" -> {
@@ -35,7 +37,8 @@ class ZynthSafeAreaModule(
         }
     }
 
-    override fun callSync(method: String, args: Array<Any?>): Any? {
+    override fun callSync(method: String, args: ZynthArgs): Any? {
+        val params = try { args.nestedAt(0) } catch (e: Exception) { null }
         return when (method) {
             "getCurrentMetrics" -> (getCurrentMetrics() ?: lastMetrics ?: defaultMetrics()).toMap()
             else -> null

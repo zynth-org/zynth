@@ -6,7 +6,7 @@ final class ZynthWebServerModule: NSObject, ZynthModule, ZynthSyncModule {
   let name: String = "ZynthWebServer"
   private let host = ZynthWebServerHost()
 
-  func call(method: String, args: Any?) throws -> Any? {
+  func call(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "start":
       do {
@@ -26,7 +26,7 @@ final class ZynthWebServerModule: NSObject, ZynthModule, ZynthSyncModule {
     case "getUploadState":
       return host.getUploadState().toDictionary()
     case "drainEvents":
-      let maxEvents = getIntArg(args, key: "maxEvents") ?? 50
+      let maxEvents = Int(args.number("maxEvents", default: 50))
       let events = host.drainEvents(maxEvents: maxEvents)
       return events.map { $0.toDictionary() }
     default:
@@ -34,7 +34,7 @@ final class ZynthWebServerModule: NSObject, ZynthModule, ZynthSyncModule {
     }
   }
 
-  func callSync(method: String, args: Any?) throws -> Any? {
+  func callSync(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "isRunning":
       return host.isRunning()
@@ -47,22 +47,22 @@ final class ZynthWebServerModule: NSObject, ZynthModule, ZynthSyncModule {
     }
   }
 
-  private func parseStartConfig(_ args: Any?) -> ZynthWebServerHost.StartConfig {
-    let host = getStringArg(args, key: "host")
-    let port = getIntArg(args, key: "port") ?? 0
-    let documentRoot = getStringArg(args, key: "documentRoot")
-    let indexHtml = getStringArg(args, key: "indexHtml")
-    let uploadPath = getStringArg(args, key: "uploadPath")
+  private func parseStartConfig(_ args: ZynthArgs) -> ZynthWebServerHost.StartConfig {
+    let host = args.optionalString("host")
+    let port = Int(args.number("port", default: 0))
+    let documentRoot = args.optionalString("documentRoot")
+    let indexHtml = args.optionalString("indexHtml")
+    let uploadPath = args.optionalString("uploadPath")
     let uploadDir = resolveUploadDir(
       uploadPath: uploadPath,
-      uploadDir: getStringArg(args, key: "uploadDir")
+      uploadDir: args.optionalString("uploadDir")
     )
-    let uploadMetadataPath = getStringArg(args, key: "uploadMetadataPath")
-    let uploadAuthToken = getStringArg(args, key: "uploadAuthToken")
-    let uploadAuthHeader = getStringArg(args, key: "uploadAuthHeader")
-    let uploadAuthQueryKey = getStringArg(args, key: "uploadAuthQueryKey")
-    let maxUploadBytes = getInt64Arg(args, key: "maxUploadBytes") ?? 0
-    let eventsPath = getStringArg(args, key: "eventsPath")
+    let uploadMetadataPath = args.optionalString("uploadMetadataPath")
+    let uploadAuthToken = args.optionalString("uploadAuthToken")
+    let uploadAuthHeader = args.optionalString("uploadAuthHeader")
+    let uploadAuthQueryKey = args.optionalString("uploadAuthQueryKey")
+    let maxUploadBytes = (try? args.int64("maxUploadBytes")) ?? 0
+    let eventsPath = args.optionalString("eventsPath")
     return ZynthWebServerHost.StartConfig(
       host: host,
       port: port,
@@ -88,55 +88,6 @@ final class ZynthWebServerModule: NSObject, ZynthModule, ZynthSyncModule {
     }
     let base = NSTemporaryDirectory()
     return (base as NSString).appendingPathComponent("zynth-webserver")
-  }
-
-  private func unwrapArgs(_ args: Any?) -> Any? {
-    if let array = args as? [Any], array.count == 1 {
-      let value = array[0]
-      return value is NSNull ? nil : value
-    }
-    return args
-  }
-
-  private func getDictArg(_ args: Any?) -> [String: Any]? {
-    let unwrapped = unwrapArgs(args)
-    if let dict = unwrapped as? [String: Any] {
-      return dict
-    }
-    if let dict = unwrapped as? NSDictionary {
-      return dict as? [String: Any]
-    }
-    return nil
-  }
-
-  private func getStringArg(_ args: Any?, key: String) -> String? {
-    guard let dict = getDictArg(args) else { return nil }
-    let value = dict[key]
-    return value as? String
-  }
-
-  private func getIntArg(_ args: Any?, key: String) -> Int? {
-    guard let dict = getDictArg(args) else { return nil }
-    let value = dict[key]
-    if let number = value as? NSNumber {
-      return number.intValue
-    }
-    if let string = value as? String, let parsed = Int(string) {
-      return parsed
-    }
-    return nil
-  }
-
-  private func getInt64Arg(_ args: Any?, key: String) -> Int64? {
-    guard let dict = getDictArg(args) else { return nil }
-    let value = dict[key]
-    if let number = value as? NSNumber {
-      return number.int64Value
-    }
-    if let string = value as? String, let parsed = Int64(string) {
-      return parsed
-    }
-    return nil
   }
 
   private func errorResponse(_ error: String, _ message: String) -> [String: Any] {

@@ -14,20 +14,18 @@ import ZynthKit
 final class ZynthSecureStoreModule: NSObject, ZynthModule, ZynthSyncModule {
   let name: String = "ZynthSecureStore"
 
-  func call(method: String, args: Any?) throws -> Any? {
-    return handle(method: method, args: args)
+  func call(method: String, args: ZynthArgs) throws -> Any? {
+    return try handle(method: method, args: args)
   }
 
-  func callSync(method: String, args: Any?) throws -> Any? {
-    return handle(method: method, args: args)
+  func callSync(method: String, args: ZynthArgs) throws -> Any? {
+    return try handle(method: method, args: args)
   }
 
-  private func handle(method: String, args: Any?) -> Any? {
+  private func handle(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "getItem":
-      guard let key = getStringArg(args, key: "key") else {
-        return errorResponse("invalid_argument", "key")
-      }
+      let key = try args.string("key")
       let options = parseOptions(args)
       do {
         let value = try getItem(forKey: key, options: options)
@@ -36,10 +34,8 @@ final class ZynthSecureStoreModule: NSObject, ZynthModule, ZynthSyncModule {
         return errorResponse("get_failed", error.localizedDescription)
       }
     case "setItem":
-      guard let key = getStringArg(args, key: "key"),
-            let value = getStringArg(args, key: "value") else {
-        return errorResponse("invalid_argument", "key/value")
-      }
+      let key = try args.string("key")
+      let value = try args.string("value")
       let options = parseOptions(args)
       do {
         try setItem(value, forKey: key, options: options)
@@ -48,9 +44,7 @@ final class ZynthSecureStoreModule: NSObject, ZynthModule, ZynthSyncModule {
         return errorResponse("set_failed", error.localizedDescription)
       }
     case "deleteItem":
-      guard let key = getStringArg(args, key: "key") else {
-        return errorResponse("invalid_argument", "key")
-      }
+      let key = try args.string("key")
       let options = parseOptions(args)
       do {
         try deleteItem(forKey: key, options: options)
@@ -67,32 +61,8 @@ final class ZynthSecureStoreModule: NSObject, ZynthModule, ZynthSyncModule {
     }
   }
 
-  private func unwrapArgs(_ args: Any?) -> Any? {
-    if let array = args as? [Any], array.count == 1 {
-      let value = array[0]
-      return value is NSNull ? nil : value
-    }
-    return args
-  }
-
-  private func getDictArg(_ args: Any?) -> [String: Any]? {
-    let unwrapped = unwrapArgs(args)
-    if let dict = unwrapped as? [String: Any] {
-      return dict
-    }
-    if let dict = unwrapped as? NSDictionary {
-      return dict as? [String: Any]
-    }
-    return nil
-  }
-
-  private func getStringArg(_ args: Any?, key: String) -> String? {
-    guard let dict = getDictArg(args) else { return nil }
-    return dict[key] as? String
-  }
-
-  private func parseOptions(_ args: Any?) -> SecureStoreOptions {
-    guard let dict = getDictArg(args), let optionsValue = dict["options"] as? [String: Any] else {
+  private func parseOptions(_ args: ZynthArgs) -> SecureStoreOptions {
+    guard let optionsValue = try? args.dict("options") else {
       return SecureStoreOptions()
     }
     return SecureStoreOptions(from: optionsValue)

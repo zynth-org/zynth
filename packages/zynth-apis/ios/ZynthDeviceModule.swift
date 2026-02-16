@@ -11,7 +11,7 @@ final class ZynthDeviceModule: NSObject, ZynthModule, ZynthSyncModule {
     deviceInfo() as [String: Any]
   }
 
-  func call(method: String, args: Any?) throws -> Any? {
+  func call(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "getInfo", "current":
       return ["result": deviceInfo() as [String: Any]]
@@ -20,7 +20,7 @@ final class ZynthDeviceModule: NSObject, ZynthModule, ZynthSyncModule {
     }
   }
 
-  func callSync(method: String, args: Any?) throws -> Any? {
+  func callSync(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "getInfo", "current":
       return deviceInfo() as [String: Any]

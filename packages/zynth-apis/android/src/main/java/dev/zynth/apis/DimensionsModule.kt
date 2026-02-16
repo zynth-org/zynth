@@ -13,6 +13,7 @@ import com.zynth.kit.core.ZynthRootView
 import com.zynth.kit.runtime.ZynthModule
 import com.zynth.kit.runtime.ZynthRuntime
 import com.zynth.kit.runtime.ZynthSyncModule
+import com.zynth.kit.runtime.ZynthArgs
 import kotlin.math.max
 import org.json.JSONObject
 
@@ -99,16 +100,18 @@ class DimensionsModule(
         }
     }
 
-    override fun call(method: String, args: Array<Any?>): JSONObject {
+    override fun call(method: String, args: ZynthArgs): JSONObject {
         ensureObserving()
+        val params = try { args.nestedAt(0) } catch (e: Exception) { null }
         return when (method) {
             "current" -> jsonResponse(capturePayload())
             else -> errorResponse(method)
         }
     }
 
-    override fun callSync(method: String, args: Array<Any?>): Any? {
+    override fun callSync(method: String, args: ZynthArgs): Any? {
         ensureObserving()
+        val params = try { args.nestedAt(0) } catch (e: Exception) { null }
         return when (method) {
             "current" -> capturePayload().toMap()
             else -> throw UnsupportedOperationException("Method $method not supported by Dimensions module")

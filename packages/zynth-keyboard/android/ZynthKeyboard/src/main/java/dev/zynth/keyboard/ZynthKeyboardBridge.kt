@@ -1,6 +1,7 @@
 package dev.zynth.keyboard
 
 import com.zynth.kit.runtime.ZynthModule
+import com.zynth.kit.runtime.ZynthArgs
 import org.json.JSONObject
 
 /**
@@ -16,7 +17,7 @@ class ZynthKeyboardBridge(
     override val constants: Map<String, Any>?
         get() = keyboardModule.getInitialState().toMap()
 
-    override fun call(method: String, args: Array<Any?>): JSONObject {
+    override fun call(method: String, args: ZynthArgs): JSONObject {
         return when (method) {
             "dismiss" -> handleDismiss()
             "getState" -> handleGetState()

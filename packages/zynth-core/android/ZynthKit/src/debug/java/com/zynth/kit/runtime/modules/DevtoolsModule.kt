@@ -7,6 +7,8 @@ import android.util.Log
 import com.zynth.kit.dev.ZynthDevtoolsClient
 import com.zynth.kit.runtime.ZynthRuntime
 import com.zynth.kit.runtime.ZynthModule
+import com.zynth.kit.runtime.ZynthArgs
+import com.zynth.kit.runtime.ZynthTypeException
 import java.io.File
 import java.nio.charset.Charset
 import org.json.JSONObject
@@ -134,22 +136,18 @@ class DevtoolsModule(
     client.disconnect()
   }
 
-  override fun call(method: String, args: Array<Any?>): JSONObject {
+  override fun call(method: String, args: ZynthArgs): JSONObject {
     return when (method) {
       "connect" -> {
-        val payload = args.firstOrNull() as? Map<*, *> ?: return error("invalid_arguments")
-        val url = payload["url"] as? String ?: return error("invalid_url")
-        val token = payload["token"] as? String
+        val params = args.nestedAt(0)
+        val url = params.getString("url")
+        val token = params.getOptionalString("token")
         client.connect(url, token)
         ok()
       }
       "emit" -> {
-        val payload = args.firstOrNull()
-        val event = when (payload) {
-          is Map<*, *> -> JSONObject(payload)
-          is JSONObject -> payload
-          else -> return error("invalid_arguments")
-        }
+        val eventMap = args.getMapAt(0)
+        val event = JSONObject(eventMap)
         if (!event.has("topic")) {
           return error("missing_topic")
         }
@@ -160,8 +158,8 @@ class DevtoolsModule(
         ok()
       }
       "nativeError" -> {
-        val payload = args.firstOrNull() as? Map<*, *>
-        val message = payload?.get("message") as? String ?: "Devtools native error test"
+        val params = args.nestedAt(0)
+        val message = params.getString("message", "Devtools native error test")
         val event = JSONObject()
           .put("topic", "error/native")
           .put("level", "error")

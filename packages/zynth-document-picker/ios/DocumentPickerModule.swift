@@ -16,7 +16,7 @@ final class DocumentPickerModule: NSObject, ZynthModule, UIDocumentPickerDelegat
     super.init()
   }
 
-  func call(method: String, args: Any?) throws -> Any? {
+  func call(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "pickDocumentAsync":
       return try pickDocumentAsync(args: args)
@@ -25,12 +25,12 @@ final class DocumentPickerModule: NSObject, ZynthModule, UIDocumentPickerDelegat
     }
   }
 
-  private func pickDocumentAsync(args: Any?) throws -> Any? {
+  private func pickDocumentAsync(args: ZynthArgs) throws -> Any? {
     if pendingRequestId != nil {
       return errorResponse("busy", "Another picker request is already active")
     }
 
-    let requestId = getRequestId(args)
+    let requestId = args.string("requestId", default: UUID().uuidString)
     let options = getOptions(args)
     pendingRequestId = requestId
     pendingCopyToCacheDirectory = options.copyToCacheDirectory
@@ -183,39 +183,14 @@ final class DocumentPickerModule: NSObject, ZynthModule, UIDocumentPickerDelegat
     return start
   }
 
-  private func getRequestId(_ args: Any?) -> String {
-    guard
-      let payload = getDictArg(args),
-      let value = payload["requestId"] as? String,
-      !value.isEmpty
-    else {
-      return UUID().uuidString
-    }
-    return value
-  }
-
   private typealias PickerOptions = (multiple: Bool, types: [String], copyToCacheDirectory: Bool)
 
-  private func getOptions(_ args: Any?) -> PickerOptions {
-    let optionsMap = getOptionsMap(args)
+  private func getOptions(_ args: ZynthArgs) -> PickerOptions {
+    let optionsMap = (try? args.dict("options")) ?? [:]
     let multiple = optionsMap["multiple"] as? Bool ?? false
     let copyToCacheDirectory = optionsMap["copyToCacheDirectory"] as? Bool ?? true
     let types = normalizeTypes(optionsMap["type"])
     return (multiple: multiple, types: types, copyToCacheDirectory: copyToCacheDirectory)
-  }
-
-  private func getOptionsMap(_ args: Any?) -> [String: Any] {
-    guard let payload = getDictArg(args) else {
-      return [:]
-    }
-
-    if let options = payload["options"] as? [String: Any] {
-      return options
-    }
-    if let options = payload["options"] as? NSDictionary {
-      return options as? [String: Any] ?? [:]
-    }
-    return [:]
   }
 
   private func normalizeTypes(_ raw: Any?) -> [String] {
@@ -229,25 +204,6 @@ final class DocumentPickerModule: NSObject, ZynthModule, UIDocumentPickerDelegat
       return values.compactMap { $0 as? String }
     }
     return []
-  }
-
-  private func unwrapArgs(_ args: Any?) -> Any? {
-    if let array = args as? [Any], array.count == 1 {
-      let value = array[0]
-      return value is NSNull ? nil : value
-    }
-    return args
-  }
-
-  private func getDictArg(_ args: Any?) -> [String: Any]? {
-    let unwrapped = unwrapArgs(args)
-    if let dict = unwrapped as? [String: Any] {
-      return dict
-    }
-    if let dict = unwrapped as? NSDictionary {
-      return dict as? [String: Any]
-    }
-    return nil
   }
 
   private func emitResult(_ payload: [String: Any]) {

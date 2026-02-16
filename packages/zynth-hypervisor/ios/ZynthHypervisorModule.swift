@@ -11,32 +11,13 @@ class ZynthHypervisorModule: NSObject, ZynthModule, ZynthSyncModule {
         self.runtime = runtime
     }
     
-    func call(method: String, args: Any?) throws -> Any? {
+    func call(method: String, args: ZynthArgs) throws -> Any? {
         switch method {
         case "postMessage":
             // Guest sending message to Host
-            // args[0] is the message
-            if let argsArray = args as? [Any], let message = argsArray.first {
-                // How do we get the host?
-                // The guest runtime is owned by the ZynthHypervisorView.
-                // We need a way to bubble this event up to the view.
-                
-                // Option: Emit a specific event on the runtime that the view listens to?
-                // No, the view owns the runtime.
-                
-                // Let's use NotificationCenter for decoupling, or a delegate pattern if we could access it.
-                // Since ZynthModule is initialized by ZynthRuntime, we might need to pass a delegate.
-                // But modules are registered via the registry.
-                
-                // ALTERNATIVE: The Hypervisor View can inject a callback into the runtime/module?
-                // Or we can use the `ZynthNativeEmitter` mechanism in reverse?
-                // No, `ZynthNativeEmitter` is Native -> JS.
-                
-                // Let's post a notification that the HypervisorView listens to.
-                // We need a unique ID to identify *which* guest sent it.
-                // The runtime doesn't have a unique ID by default exposed easily here, 
-                // but we can use ObjectIdentifier(runtime).
-                
+            // Try extracting from "message" key if it's a dict, or first index if it's an array
+            let message = (try? args.string("message")) ?? (try? args.getString(0))
+            if let message = message {
                 if let runtime = runtime {
                     NotificationCenter.default.post(
                         name: .didReceiveGuestMessage,
@@ -51,7 +32,7 @@ class ZynthHypervisorModule: NSObject, ZynthModule, ZynthSyncModule {
         }
     }
     
-    func callSync(method: String, args: Any?) throws -> Any? {
+    func callSync(method: String, args: ZynthArgs) throws -> Any? {
         return nil
     }
 }

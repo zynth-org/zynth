@@ -9,13 +9,13 @@ interface ZynthModule {
     val name: String
     val constants: Map<String, Any>?
         get() = null
-    fun call(method: String, args: Array<Any?>): JSONObject
+    fun call(method: String, args: ZynthArgs): JSONObject
     fun initialize() {}
     fun invalidate() {}
 }
 
 interface ZynthSyncModule {
-    fun callSync(method: String, args: Array<Any?>): Any?
+    fun callSync(method: String, args: ZynthArgs): Any?
 }
 
 class ZynthModuleRegistry {
@@ -55,7 +55,13 @@ class ZynthModuleRegistry {
 
         Log.i(TAG, "Module found, calling: $name.$method")
         return try {
-            module.call(method, args)
+            val zynthArgs = ZynthArgs(args)
+            module.call(method, zynthArgs)
+        } catch (e: ZynthTypeException) {
+            Log.e(TAG, "Type error calling $name.$method", e)
+            JSONObject()
+                .put("error", "type_error")
+                .put("message", e.message)
         } catch (t: Throwable) {
             Log.e(TAG, "Exception calling $name.$method", t)
             JSONObject()
@@ -86,7 +92,14 @@ class ZynthModuleRegistry {
         }
 
         return try {
-            module.callSync(method, args)
+            val zynthArgs = ZynthArgs(args)
+            module.callSync(method, zynthArgs)
+        } catch (e: ZynthTypeException) {
+            Log.e(TAG, "Type error calling sync $name.$method", e)
+            mapOf(
+                "error" to "type_error",
+                "message" to e.message,
+            )
         } catch (t: Throwable) {
             Log.e(TAG, "Exception calling sync $name.$method", t)
             mapOf(

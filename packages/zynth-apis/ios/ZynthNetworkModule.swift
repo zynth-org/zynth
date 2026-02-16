@@ -54,7 +54,7 @@ final class ZynthNetworkModule: NSObject, ZynthModule, ZynthSyncModule {
     stopMonitoring()
   }
 
-  func call(method: String, args: Any?) throws -> Any? {
+  func call(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "current":
       return ["result": withSnapshot { $0.toDictionary() }]
@@ -63,7 +63,7 @@ final class ZynthNetworkModule: NSObject, ZynthModule, ZynthSyncModule {
     }
   }
 
-  func callSync(method: String, args: Any?) throws -> Any? {
+  func callSync(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "current":
       return withSnapshot { $0.toDictionary() }

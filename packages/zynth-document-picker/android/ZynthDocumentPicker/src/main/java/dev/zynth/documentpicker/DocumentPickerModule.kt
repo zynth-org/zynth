@@ -6,6 +6,7 @@ import android.provider.OpenableColumns
 import androidx.activity.result.ActivityResultLauncher
 import com.zynth.kit.runtime.ZynthModule
 import com.zynth.kit.runtime.ZynthRuntime
+import com.zynth.kit.runtime.ZynthArgs
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -23,19 +24,19 @@ class DocumentPickerModule(
     private var pendingRequestId: String? = null
     private var pendingCopyToCacheDirectory: Boolean = true
 
-    override fun call(method: String, args: Array<Any?>): JSONObject {
+    override fun call(method: String, args: ZynthArgs): JSONObject {
         return when (method) {
             "pickDocumentAsync" -> pickDocumentAsync(args)
             else -> errorResponse("unsupported_method", method)
         }
     }
 
-    private fun pickDocumentAsync(args: Array<Any?>): JSONObject {
+    private fun pickDocumentAsync(args: ZynthArgs): JSONObject {
         if (pendingRequestId != null) {
             return errorResponse("busy", "Another picker request is already active")
         }
 
-        val requestId = getRequestId(args)
+        val requestId = args.getString("requestId", UUID.randomUUID().toString())
         val options = parseOptions(args)
         pendingRequestId = requestId
         pendingCopyToCacheDirectory = options.copyToCacheDirectory
@@ -142,31 +143,17 @@ class DocumentPickerModule(
         return Uri.fromFile(destination).toString()
     }
 
-    private fun getRequestId(args: Array<Any?>): String {
-        val params = getParams(args)
-        return when (params) {
-            is JSONObject -> params.optString("requestId", UUID.randomUUID().toString())
-            is Map<*, *> -> (params["requestId"] as? String) ?: UUID.randomUUID().toString()
-            else -> UUID.randomUUID().toString()
-        }
-    }
-
     private data class PickerOptions(
         val multiple: Boolean,
         val mimeTypes: List<String>,
         val copyToCacheDirectory: Boolean
     )
 
-    private fun parseOptions(args: Array<Any?>): PickerOptions {
-        val params = getParams(args)
-        val options = when (params) {
-            is JSONObject -> params.opt("options")
-            is Map<*, *> -> params["options"]
-            else -> null
-        }
+    private fun parseOptions(args: ZynthArgs): PickerOptions {
+        val options = try { args.getMap("options") } catch (e: Exception) { null }
 
-        val multiple = getBoolean(options, "multiple", false)
-        val copyToCacheDirectory = getBoolean(options, "copyToCacheDirectory", true)
+        val multiple = options?.get("multiple") as? Boolean ?: false
+        val copyToCacheDirectory = options?.get("copyToCacheDirectory") as? Boolean ?: true
         val mimeTypes = getMimeTypes(options)
         return PickerOptions(
             multiple = multiple,
@@ -175,12 +162,8 @@ class DocumentPickerModule(
         )
     }
 
-    private fun getMimeTypes(options: Any?): List<String> {
-        val rawType = when (options) {
-            is JSONObject -> options.opt("type")
-            is Map<*, *> -> options["type"]
-            else -> null
-        }
+    private fun getMimeTypes(options: Map<String, Any?>?): List<String> {
+        val rawType = options?.get("type")
 
         return when (rawType) {
             is String -> listOf(rawType)
@@ -197,18 +180,6 @@ class DocumentPickerModule(
             is List<*> -> rawType.filterIsInstance<String>()
             else -> emptyList()
         }
-    }
-
-    private fun getBoolean(options: Any?, key: String, fallback: Boolean): Boolean {
-        return when (options) {
-            is JSONObject -> if (options.has(key)) options.optBoolean(key, fallback) else fallback
-            is Map<*, *> -> options[key] as? Boolean ?: fallback
-            else -> fallback
-        }
-    }
-
-    private fun getParams(args: Array<Any?>): Any? {
-        return args.getOrNull(0)
     }
 
     private fun emitResult(cancelled: Boolean, assets: JSONArray) {

@@ -4,6 +4,7 @@ import android.content.Context
 import com.zynth.kit.runtime.FontRegistry
 import com.zynth.kit.runtime.ZynthModule
 import com.zynth.kit.runtime.ZynthRuntime
+import com.zynth.kit.runtime.ZynthArgs
 import org.json.JSONObject
 
 private const val TAG = "FontModule"
@@ -25,9 +26,10 @@ class FontModule(context: Context, private val runtime: ZynthRuntime? = null) : 
         runtime?.setAssetProvider(FontRegistry)
     }
 
-    override fun call(method: String, args: Array<Any?>): JSONObject {
+    override fun call(method: String, args: ZynthArgs): JSONObject {
+        val params = try { args.nestedAt(0) } catch (e: Exception) { args }
         return when (method) {
-            "loadAsync" -> loadAsync(args)
+            "loadAsync" -> loadAsync(params)
             else -> {
                 JSONObject().apply {
                     put("error", "Unknown method: $method")
@@ -36,28 +38,10 @@ class FontModule(context: Context, private val runtime: ZynthRuntime? = null) : 
         }
     }
 
-    private fun loadAsync(args: Array<Any?>): JSONObject {
+    private fun loadAsync(params: ZynthArgs): JSONObject {
         try {
-            val params = args.getOrNull(0)
-            
-            val fontFamily: String?
-            val resourceName: String?
-            
-            when (params) {
-                is JSONObject -> {
-                    fontFamily = params.optString("fontFamily").takeIf { it.isNotEmpty() }
-                    resourceName = params.optString("resourceName").takeIf { it.isNotEmpty() }
-                }
-                is Map<*, *> -> {
-                    fontFamily = params["fontFamily"] as? String
-                    resourceName = params["resourceName"] as? String
-                }
-                else -> {
-                    return JSONObject().apply {
-                        put("error", "Invalid arguments")
-                    }
-                }
-            }
+            val fontFamily = try { params.getString("fontFamily") } catch (e: Exception) { null }
+            val resourceName = try { params.getString("resourceName") } catch (e: Exception) { null }
             
             if (fontFamily.isNullOrEmpty() || resourceName.isNullOrEmpty()) {
                 return JSONObject().apply {

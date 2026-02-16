@@ -13,39 +13,31 @@ final class ZynthAsyncStorageModule: NSObject, ZynthModule, ZynthSyncModule {
   let name: String = "ZynthAsyncStorage"
   private let storage = ZynthAsyncStorageStore()
 
-  func call(method: String, args: Any?) throws -> Any? {
-    return handle(method: method, args: args)
+  func call(method: String, args: ZynthArgs) throws -> Any? {
+    return try handle(method: method, args: args)
   }
 
-  func callSync(method: String, args: Any?) throws -> Any? {
-    return handle(method: method, args: args)
+  func callSync(method: String, args: ZynthArgs) throws -> Any? {
+    return try handle(method: method, args: args)
   }
 
-  private func handle(method: String, args: Any?) -> Any? {
+  private func handle(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "getItem":
-      guard let key = getStringArg(args, key: "key") else {
-        return errorResponse("invalid_argument", "key")
-      }
+      let key = try args.string("key")
       return storage.getItem(key) ?? NSNull()
     case "setItem":
-      guard let key = getStringArg(args, key: "key"),
-            let value = getStringArg(args, key: "value") else {
-        return errorResponse("invalid_argument", "key/value")
-      }
+      let key = try args.string("key")
+      let value = try args.string("value")
       storage.setItem(key, value: value)
       return nil
     case "removeItem":
-      guard let key = getStringArg(args, key: "key") else {
-        return errorResponse("invalid_argument", "key")
-      }
+      let key = try args.string("key")
       storage.removeItem(key)
       return nil
     case "mergeItem":
-      guard let key = getStringArg(args, key: "key"),
-            let value = getStringArg(args, key: "value") else {
-        return errorResponse("invalid_argument", "key/value")
-      }
+      let key = try args.string("key")
+      let value = try args.string("value")
       storage.mergeItem(key, value: value)
       return nil
     case "clear":
@@ -54,26 +46,18 @@ final class ZynthAsyncStorageModule: NSObject, ZynthModule, ZynthSyncModule {
     case "getAllKeys":
       return storage.getAllKeys()
     case "multiGet":
-      guard let keys = getStringArrayArg(args, key: "keys") else {
-        return errorResponse("invalid_argument", "keys")
-      }
+      let keys = try args.array("keys").compactMap { $0 as? String }
       return storage.multiGet(keys)
     case "multiSet":
-      guard let pairs = getPairsArg(args, key: "pairs") else {
-        return errorResponse("invalid_argument", "pairs")
-      }
+      let pairs = parsePairs(try args.array("pairs"))
       storage.multiSet(pairs)
       return nil
     case "multiRemove":
-      guard let keys = getStringArrayArg(args, key: "keys") else {
-        return errorResponse("invalid_argument", "keys")
-      }
+      let keys = try args.array("keys").compactMap { $0 as? String }
       storage.multiRemove(keys)
       return nil
     case "multiMerge":
-      guard let pairs = getPairsArg(args, key: "pairs") else {
-        return errorResponse("invalid_argument", "pairs")
-      }
+      let pairs = parsePairs(try args.array("pairs"))
       storage.multiMerge(pairs)
       return nil
     default:
@@ -81,58 +65,9 @@ final class ZynthAsyncStorageModule: NSObject, ZynthModule, ZynthSyncModule {
     }
   }
 
-  private func unwrapArgs(_ args: Any?) -> Any? {
-    if let array = args as? [Any], array.count == 1 {
-      let value = array[0]
-      return value is NSNull ? nil : value
-    }
-    return args
-  }
-
-  private func getDictArg(_ args: Any?) -> [String: Any]? {
-    let unwrapped = unwrapArgs(args)
-    if let dict = unwrapped as? [String: Any] {
-      return dict
-    }
-    if let dict = unwrapped as? NSDictionary {
-      return dict as? [String: Any]
-    }
-    return nil
-  }
-
-  private func getStringArg(_ args: Any?, key: String) -> String? {
-    guard let dict = getDictArg(args) else { return nil }
-    let value = dict[key]
-    return value as? String
-  }
-
-  private func getStringArrayArg(_ args: Any?, key: String) -> [String]? {
-    guard let dict = getDictArg(args) else { return nil }
-    let value = dict[key]
-    if let array = value as? [String] {
-      return array
-    }
-    if let array = value as? [Any] {
-      return array.compactMap { $0 as? String }
-    }
-    if let array = value as? NSArray {
-      return array.compactMap { $0 as? String }
-    }
-    return nil
-  }
-
-  private func getPairsArg(_ args: Any?, key: String) -> [(String, String)]? {
-    guard let dict = getDictArg(args) else { return nil }
-    let value = dict[key]
-    return parsePairs(value)
-  }
-
-  private func parsePairs(_ value: Any?) -> [(String, String)]? {
-    guard let entries = value as? [Any] ?? (value as? NSArray as? [Any]) else {
-      return nil
-    }
+  private func parsePairs(_ value: [Any]) -> [(String, String)] {
     var result: [(String, String)] = []
-    for entry in entries {
+    for entry in value {
       if let pair = parsePair(entry) {
         result.append(pair)
       }
@@ -142,11 +77,6 @@ final class ZynthAsyncStorageModule: NSObject, ZynthModule, ZynthSyncModule {
 
   private func parsePair(_ value: Any?) -> (String, String)? {
     if let array = value as? [Any], array.count >= 2,
-       let key = array[0] as? String,
-       let val = array[1] as? String {
-      return (key, val)
-    }
-    if let array = value as? NSArray, array.count >= 2,
        let key = array[0] as? String,
        let val = array[1] as? String {
       return (key, val)

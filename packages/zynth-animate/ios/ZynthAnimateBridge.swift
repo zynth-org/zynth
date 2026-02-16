@@ -101,36 +101,30 @@ final class ZynthAnimateBridge: NSObject, ZynthModule {
     self.runtime = runtime
   }
 
-  func call(method: String, args: Any?) throws -> Any? {
+  func call(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "startTransition":
-      return handleStartTransition(args)
+      return try handleStartTransition(args)
     case "stopTransition":
-      return handleStopTransition(args)
+      return try handleStopTransition(args)
     default:
       return errorResponse("unsupported_method", method)
     }
   }
 
-  private func handleStartTransition(_ args: Any?) -> [String: Any] {
-    guard let params = getDict(args) else {
-      return errorResponse("invalid_argument", "params")
-    }
-
-    guard let nodeId = getInt(params["nodeId"]) else {
-      return errorResponse("invalid_argument", "nodeId")
-    }
-
-    let animationId = getInt(params["animationId"]) ?? Int(Date().timeIntervalSince1970 * 1000)
-    let phase = (params["phase"] as? String) ?? "enter"
-    let durationMs = getDouble(params["duration"]) ?? 300
-    let delayMs = getDouble(params["delay"]) ?? 0
-    let easingName = (params["easing"] as? String) ?? "easeOutCubic"
+  private func handleStartTransition(_ args: ZynthArgs) throws -> [String: Any] {
+    let nodeId = try Int(args.number("nodeId"))
+    let animationId = Int(args.number("animationId", default: Double(Date().timeIntervalSince1970 * 1000)))
+    let phase = args.string("phase", default: "enter")
+    let durationMs = args.number("duration", default: 300)
+    let delayMs = args.number("delay", default: 0)
+    let easingName = args.string("easing", default: "easeOutCubic")
     let easing = ZynthAnimateEasing(rawValue: easingName) ?? .easeOutCubic
 
-    let fromStyle = parseStyle(params["from"])
-    let toStyle = parseStyle(params["to"])
-    let frameSpecs = parseKeyframes(params["frames"])
+    let dict = try args.asDict()
+    let fromStyle = parseStyle(dict["from"])
+    let toStyle = parseStyle(dict["to"])
+    let frameSpecs = parseKeyframes(dict["frames"])
 
     runOnMain { [weak self] in
       guard let self, let runtime = self.runtime else { return }
@@ -179,14 +173,8 @@ final class ZynthAnimateBridge: NSObject, ZynthModule {
     return successResponse()
   }
 
-  private func handleStopTransition(_ args: Any?) -> [String: Any] {
-    guard let params = getDict(args) else {
-      return errorResponse("invalid_argument", "params")
-    }
-
-    guard let nodeId = getInt(params["nodeId"]) else {
-      return errorResponse("invalid_argument", "nodeId")
-    }
+  private func handleStopTransition(_ args: ZynthArgs) throws -> [String: Any] {
+    let nodeId = try Int(args.number("nodeId"))
 
     runOnMain { [weak self] in
       guard let self else { return }
@@ -522,18 +510,6 @@ final class ZynthAnimateBridge: NSObject, ZynthModule {
         return CGFloat(radians)
       }
     }
-    return nil
-  }
-
-  private func getDict(_ args: Any?) -> [String: Any]? {
-    if let dict = args as? [String: Any] { return dict }
-    if let dict = args as? NSDictionary { return dict as? [String: Any] }
-    return nil
-  }
-
-  private func getInt(_ value: Any?) -> Int? {
-    if let number = value as? NSNumber { return number.intValue }
-    if let string = value as? String, let parsed = Int(string) { return parsed }
     return nil
   }
 

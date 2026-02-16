@@ -21,47 +21,40 @@ final class FetchModule: NSObject, ZynthModule, URLSessionDataDelegate {
     self.emitEvent = emitEvent
   }
 
-  func call(method: String, args: Any?) throws -> Any? {
+  func call(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "request":
-      return handleRequest(args: args)
+      return try handleRequest(args: args)
     case "cancel":
-      return handleCancel(args: args)
+      return try handleCancel(args: args)
     case "streamStart":
-      return handleStreamStart(args: args)
+      return try handleStreamStart(args: args)
     case "uploadChunk":
-      return handleUploadChunk(args: args)
+      return try handleUploadChunk(args: args)
     case "uploadComplete":
-      return handleUploadComplete(args: args)
+      return try handleUploadComplete(args: args)
     case "uploadAbort":
-      return handleUploadAbort(args: args)
+      return try handleUploadAbort(args: args)
     default:
       return ["error": "unknown_method", "method": method]
     }
   }
 
-  private func handleRequest(args: Any?) -> Any {
-    guard let payload = args as? [String: Any] else {
-      return ["error": "invalid_arguments"]
-    }
+  private func handleRequest(args: ZynthArgs) throws -> Any {
+    let requestId = try args.number("requestId")
+    let idInt = Int(requestId)
 
-    guard let requestId = payload["requestId"] as? Int else {
-      return ["error": "missing_request_id"]
-    }
+    let wantsResponseStream = args.bool("stream", default: false)
+    let wantsUploadStream = args.bool("uploadStream", default: false)
 
-    let wantsResponseStream = payload["stream"] as? Bool ?? false
-    let wantsUploadStream = payload["uploadStream"] as? Bool ?? false
-
-    guard
-      let urlString = payload["url"] as? String,
-      let url = URL(string: urlString)
-    else {
+    let urlString = try args.string("url")
+    guard let url = URL(string: urlString) else {
       return ["error": "invalid_url"]
     }
 
-    let method = (payload["method"] as? String)?.uppercased() ?? "GET"
-    let headers = payload["headers"] as? [String: Any]
-    let timeoutSeconds = (payload["timeout"] as? Double) ?? 0
+    let method = args.string("method", default: "GET").uppercased()
+    let headers = try? args.dict("headers")
+    let timeoutSeconds = args.number("timeout", default: 0)
 
     if wantsUploadStream && (method == "GET" || method == "HEAD") {
       return [
@@ -84,17 +77,18 @@ final class FetchModule: NSObject, ZynthModule, URLSessionDataDelegate {
 
     if wantsUploadStream {
       taskQueue.sync {
-        pendingUploads[requestId] = PendingUpload(
-          requestId: requestId,
+        pendingUploads[idInt] = PendingUpload(
+          requestId: idInt,
           urlString: urlString,
           wantsResponseStream: wantsResponseStream,
           request: request,
           body: Data()
         )
       }
-      return ["requestId": requestId]
+      return ["requestId": idInt]
     }
 
+    let payload = try args.asDict()
     if let body = payload["body"] {
       if let data = coerceBodyData(body) {
         request.httpBody = data
@@ -109,19 +103,17 @@ final class FetchModule: NSObject, ZynthModule, URLSessionDataDelegate {
     }
 
     startRequest(
-      requestId: requestId,
+      requestId: idInt,
       urlString: urlString,
       request: request,
       wantsResponseStream: wantsResponseStream
     )
 
-    return ["requestId": requestId]
+    return ["requestId": idInt]
   }
 
-  private func handleCancel(args: Any?) -> Any {
-    guard let payload = args as? [String: Any], let requestId = payload["id"] as? Int else {
-      return ["error": "invalid_arguments"]
-    }
+  private func handleCancel(args: ZynthArgs) throws -> Any {
+    let requestId = try Int(args.number("id"))
 
     taskQueue.sync {
       pendingUploads.removeValue(forKey: requestId)
@@ -132,10 +124,8 @@ final class FetchModule: NSObject, ZynthModule, URLSessionDataDelegate {
     return ["result": true]
   }
 
-  private func handleStreamStart(args: Any?) -> Any {
-    guard let payload = args as? [String: Any], let streamId = payload["id"] as? Int else {
-      return ["error": "invalid_arguments"]
-    }
+  private func handleStreamStart(args: ZynthArgs) throws -> Any {
+    let streamId = try Int(args.number("id"))
 
     taskQueue.sync {
       guard var state = streamStates[streamId] else {
@@ -152,13 +142,11 @@ final class FetchModule: NSObject, ZynthModule, URLSessionDataDelegate {
     return ["result": true]
   }
 
-  private func handleUploadChunk(args: Any?) -> Any {
-    guard
-      let payload = args as? [String: Any],
-      let requestId = payload["id"] as? Int,
-      let chunk = payload["chunk"]
-    else {
-      return ["error": "invalid_arguments"]
+  private func handleUploadChunk(args: ZynthArgs) throws -> Any {
+    let requestId = try Int(args.number("id"))
+    let payload = try args.asDict()
+    guard let chunk = payload["chunk"] else {
+      throw ZynthArgsError.missingKey("chunk")
     }
 
     guard let data = coerceBodyData(chunk) else {
@@ -175,13 +163,8 @@ final class FetchModule: NSObject, ZynthModule, URLSessionDataDelegate {
     }
   }
 
-  private func handleUploadComplete(args: Any?) -> Any {
-    guard
-      let payload = args as? [String: Any],
-      let requestId = payload["id"] as? Int
-    else {
-      return ["error": "invalid_arguments"]
-    }
+  private func handleUploadComplete(args: ZynthArgs) throws -> Any {
+    let requestId = try Int(args.number("id"))
 
     let pending = taskQueue.sync { () -> PendingUpload? in
       pendingUploads.removeValue(forKey: requestId)
@@ -204,13 +187,8 @@ final class FetchModule: NSObject, ZynthModule, URLSessionDataDelegate {
     return ["result": true]
   }
 
-  private func handleUploadAbort(args: Any?) -> Any {
-    guard
-      let payload = args as? [String: Any],
-      let requestId = payload["id"] as? Int
-    else {
-      return ["error": "invalid_arguments"]
-    }
+  private func handleUploadAbort(args: ZynthArgs) throws -> Any {
+    let requestId = try Int(args.number("id"))
 
     taskQueue.sync {
       pendingUploads.removeValue(forKey: requestId)

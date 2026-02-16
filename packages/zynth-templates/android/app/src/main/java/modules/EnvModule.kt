@@ -3,13 +3,14 @@ package {{BUNDLE_ID}}.modules
 import android.os.Build
 import com.zynth.kit.runtime.ZynthModule
 import com.zynth.kit.runtime.ZynthSyncModule
+import com.zynth.kit.runtime.ZynthArgs
 import org.json.JSONObject
 import java.nio.ByteBuffer
 
 class EnvModule : ZynthModule, ZynthSyncModule {
     override val name: String = "Env"
 
-    override fun call(method: String, args: Array<Any?>): JSONObject {
+    override fun call(method: String, args: ZynthArgs): JSONObject {
         return when (method) {
             "constants" -> jsonResponse(constantsPayload())
             "echoData" -> handleEchoData(args)
@@ -17,7 +18,7 @@ class EnvModule : ZynthModule, ZynthSyncModule {
         }
     }
 
-    override fun callSync(method: String, args: Array<Any?>): Any? {
+    override fun callSync(method: String, args: ZynthArgs): Any? {
         return when (method) {
             "constants" -> constantsPayload()
             else -> throw IllegalStateException("Env module does not implement $method")
@@ -34,8 +35,8 @@ class EnvModule : ZynthModule, ZynthSyncModule {
             .put("timestamp", System.currentTimeMillis())
     }
 
-    private fun handleEchoData(args: Array<Any?>): JSONObject {
-        val payload = args.firstOrNull() as? Map<*, *> ?: return errorResponse("echoData", "invalid_payload")
+    private fun handleEchoData(args: ZynthArgs): JSONObject {
+        val payload = try { args.getMapAt(0) } catch (e: Exception) { return errorResponse("echoData", "invalid_payload") }
         val buffer = payload["payload"] as? ByteBuffer ?: return errorResponse("echoData", "missing_buffer")
 
         val checksum = fnv1a32Hex(buffer)

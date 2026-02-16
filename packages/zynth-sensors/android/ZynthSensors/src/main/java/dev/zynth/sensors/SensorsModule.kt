@@ -13,6 +13,7 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.core.content.ContextCompat
 import com.zynth.kit.runtime.ZynthModule
 import com.zynth.kit.runtime.ZynthRuntime
+import com.zynth.kit.runtime.ZynthArgs
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.max
@@ -49,7 +50,7 @@ class SensorsModule(
         stopAll()
     }
 
-    override fun call(method: String, args: Array<Any?>): JSONObject {
+    override fun call(method: String, args: ZynthArgs): JSONObject {
         return try {
             when (method) {
                 "isAvailable" -> resultResponse(isAvailable(sensorName(args)))
@@ -68,7 +69,7 @@ class SensorsModule(
         }
     }
 
-    private fun requestPermission(args: Array<Any?>): JSONObject {
+    private fun requestPermission(args: ZynthArgs): JSONObject {
         val sensor = sensorName(args)
         val status = permissionStatus(sensor)
 
@@ -83,7 +84,7 @@ class SensorsModule(
         val launcher = permissionLauncher
             ?: return errorResponse("not_initialized", "Permission launcher not initialized")
 
-        val requestId = getStringArg(args, "requestId") ?: "perm-${System.currentTimeMillis()}"
+        val requestId = args.getString("requestId", "perm-${System.currentTimeMillis()}")
         pendingPermissionRequestId = requestId
         pendingPermissionSensor = sensor
 
@@ -107,13 +108,13 @@ class SensorsModule(
         pendingPermissionSensor = null
     }
 
-    private fun startUpdates(args: Array<Any?>): Boolean {
+    private fun startUpdates(args: ZynthArgs): Boolean {
         val sensor = sensorName(args)
         if (activeSensors.contains(sensor)) {
             return true
         }
 
-        val sampleIntervalMs = max(10, getIntArg(args, "sampleIntervalMs") ?: 100)
+        val sampleIntervalMs = max(10, args.getInt("sampleIntervalMs", 100))
         val samplePeriodUs = sampleIntervalMs * 1000
 
         return when (sensor) {
@@ -451,40 +452,8 @@ class SensorsModule(
         )
     }
 
-    private fun sensorName(args: Array<Any?>): String {
-        return getStringArg(args, "sensor") ?: ""
-    }
-
-    private fun unwrapArgs(args: Array<Any?>): Any? {
-        return args.getOrNull(0)
-    }
-
-    private fun getStringArg(args: Array<Any?>, key: String): String? {
-        val payload = unwrapArgs(args)
-        if (payload is JSONObject) {
-            return payload.optString(key, null)
-        }
-        if (payload is Map<*, *>) {
-            return payload[key] as? String
-        }
-        return null
-    }
-
-    private fun getIntArg(args: Array<Any?>, key: String): Int? {
-        val payload = unwrapArgs(args)
-        if (payload is JSONObject && payload.has(key)) {
-            return payload.optInt(key)
-        }
-        if (payload is Map<*, *>) {
-            val raw = payload[key]
-            return when (raw) {
-                is Int -> raw
-                is Number -> raw.toInt()
-                is String -> raw.toIntOrNull()
-                else -> null
-            }
-        }
-        return null
+    private fun sensorName(args: ZynthArgs): String {
+        return args.getString("sensor", "")
     }
 
     private data class DeviceMotionState(

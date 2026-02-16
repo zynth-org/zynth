@@ -28,7 +28,7 @@ final class SensorsModule: NSObject, ZynthModule {
     stopAll()
   }
 
-  func call(method: String, args: Any?) throws -> Any? {
+  func call(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "isAvailable":
       return isAvailable(sensorName(from: args))
@@ -48,7 +48,7 @@ final class SensorsModule: NSObject, ZynthModule {
     }
   }
 
-  private func requestPermission(args: Any?) -> Any {
+  private func requestPermission(args: ZynthArgs) -> Any {
     let sensor = sensorName(from: args)
     guard isAvailable(sensor) else {
       return permissionStatusUnavailable()
@@ -59,7 +59,7 @@ final class SensorsModule: NSObject, ZynthModule {
       return status
     }
 
-    let requestId = getStringArg(args, key: "requestId") ?? UUID().uuidString
+    let requestId = args.string("requestId", default: UUID().uuidString)
 
     if sensor == "pedometer" {
       let now = Date()
@@ -85,9 +85,9 @@ final class SensorsModule: NSObject, ZynthModule {
     return status
   }
 
-  private func startUpdates(args: Any?) -> Bool {
+  private func startUpdates(args: ZynthArgs) -> Bool {
     let sensor = sensorName(from: args)
-    let intervalMs = max(10, getIntArg(args, key: "sampleIntervalMs") ?? 100)
+    let intervalMs = max(10, Int(args.number("sampleIntervalMs", default: 100)))
     let interval = TimeInterval(intervalMs) / 1000.0
 
     guard isAvailable(sensor) else {
@@ -333,45 +333,8 @@ final class SensorsModule: NSObject, ZynthModule {
     runtime.emitEvent(name: "Sensors.permission", payload: payload)
   }
 
-  private func sensorName(from args: Any?) -> String {
-    return getStringArg(args, key: "sensor") ?? ""
-  }
-
-  private func unwrapArgs(_ args: Any?) -> Any? {
-    if let array = args as? [Any], array.count == 1 {
-      let value = array[0]
-      return value is NSNull ? nil : value
-    }
-    return args
-  }
-
-  private func getDictArg(_ args: Any?) -> [String: Any]? {
-    let value = unwrapArgs(args)
-    if let dict = value as? [String: Any] {
-      return dict
-    }
-    if let dict = value as? NSDictionary {
-      return dict as? [String: Any]
-    }
-    return nil
-  }
-
-  private func getStringArg(_ args: Any?, key: String) -> String? {
-    guard let dict = getDictArg(args) else { return nil }
-    guard let value = dict[key] else { return nil }
-    return value as? String
-  }
-
-  private func getIntArg(_ args: Any?, key: String) -> Int? {
-    guard let dict = getDictArg(args) else { return nil }
-    guard let value = dict[key] else { return nil }
-    if let number = value as? NSNumber {
-      return number.intValue
-    }
-    if let string = value as? String {
-      return Int(string)
-    }
-    return nil
+  private func sensorName(from args: ZynthArgs) -> String {
+    return args.string("sensor", default: "")
   }
 
   private func errorResponse(_ error: String, _ message: String) -> [String: Any] {

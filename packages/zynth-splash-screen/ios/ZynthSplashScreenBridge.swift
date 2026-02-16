@@ -13,7 +13,7 @@ final class ZynthSplashScreenBridge: NSObject, ZynthModule, ZynthSyncModule {
 
   let name = "ZynthSplashScreen"
 
-  func call(method: String, args: Any?) throws -> Any? {
+  func call(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "preventAutoHide":
       return ZynthSplashScreen.preventAutoHideJS()
@@ -24,7 +24,7 @@ final class ZynthSplashScreenBridge: NSObject, ZynthModule, ZynthSyncModule {
     }
   }
 
-  func callSync(method: String, args: Any?) throws -> Any? {
+  func callSync(method: String, args: ZynthArgs) throws -> Any? {
     return try call(method: method, args: args)
   }
 }

@@ -254,14 +254,14 @@ final class ZynthAppearanceBridge: NSObject, ZynthModule, ZynthSyncModule {
     return module?.getInitialState().toDictionary()
   }
 
-  func call(method: String, args: Any?) throws -> Any? {
+  func call(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     default:
       return ["error": "unsupported_method", "message": method]
     }
   }
 
-  func callSync(method: String, args: Any?) throws -> Any? {
+  func callSync(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "getCurrent":
       print("[ZynthAppearance] callSync getCurrent")

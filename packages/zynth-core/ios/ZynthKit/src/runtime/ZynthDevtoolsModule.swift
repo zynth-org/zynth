@@ -34,25 +34,21 @@ final class ZynthDevtoolsModule: ZynthModule {
 #endif
   }
 
-  func call(method: String, args: Any?) throws -> Any? {
+  func call(method: String, args: ZynthArgs) throws -> Any? {
 #if DEBUG
     switch method {
     case "connect":
-      guard let payload = args as? [String: Any] else {
-        return ["error": "invalid_arguments"]
+      let urlString = try args.string("url")
+      guard let url = URL(string: urlString) else {
+        throw ZynthArgsError.invalidType(key: "url", expected: "valid URL")
       }
-      guard let urlString = payload["url"] as? String, let url = URL(string: urlString) else {
-        return ["error": "invalid_url"]
-      }
-      let token = payload["token"] as? String
+      let token = args.optionalString("token")
       client.connect(url: url, token: token)
       return ["result": true]
     case "emit":
-      guard let event = args as? [String: Any] else {
-        return ["error": "invalid_arguments"]
-      }
+      let event = try args.asDict()
       if event["topic"] == nil {
-        return ["error": "missing_topic"]
+        throw ZynthArgsError.missingKey("topic")
       }
       client.publish(event: event)
       return ["result": true]

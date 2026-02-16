@@ -15,15 +15,15 @@ final class ZynthFileSystemModule: NSObject, ZynthModule, ZynthSyncModule {
   let name: String = "ZynthFileSystem"
   private let fileManager = FileManager.default
 
-  func call(method: String, args: Any?) throws -> Any? {
+  func call(method: String, args: ZynthArgs) throws -> Any? {
     return handle(method: method, args: args)
   }
 
-  func callSync(method: String, args: Any?) throws -> Any? {
+  func callSync(method: String, args: ZynthArgs) throws -> Any? {
     return handle(method: method, args: args)
   }
 
-  private func handle(method: String, args: Any?) -> Any? {
+  private func handle(method: String, args: ZynthArgs) -> Any? {
     do {
       switch method {
       case "getPaths":
@@ -33,92 +33,64 @@ final class ZynthFileSystemModule: NSObject, ZynthModule, ZynthSyncModule {
       case "getSharedContainers":
         return [String: String]()
       case "getPathInfo":
-        guard let uri = getStringArg(args, key: "uri") else {
-          return errorResponse("invalid_argument", "uri")
-        }
+        let uri = try args.string("uri")
         return getPathInfo(uri)
       case "getInfo":
-        guard let uri = getStringArg(args, key: "uri") else {
-          return errorResponse("invalid_argument", "uri")
-        }
-        let options = getDictArg(args, key: "options")
+        let uri = try args.string("uri")
+        let options = try? args.dict("options")
         return try getInfo(uri, options: options)
       case "listDirectory":
-        guard let uri = getStringArg(args, key: "uri") else {
-          return errorResponse("invalid_argument", "uri")
-        }
+        let uri = try args.string("uri")
         return try listDirectory(uri)
       case "createDirectory":
-        guard let uri = getStringArg(args, key: "uri") else {
-          return errorResponse("invalid_argument", "uri")
-        }
-        let options = getDictArg(args, key: "options")
+        let uri = try args.string("uri")
+        let options = try? args.dict("options")
         try createDirectory(uri, options: options)
         return nil
       case "createFile":
-        guard let uri = getStringArg(args, key: "uri") else {
-          return errorResponse("invalid_argument", "uri")
-        }
-        let options = getDictArg(args, key: "options")
+        let uri = try args.string("uri")
+        let options = try? args.dict("options")
         try createFile(uri, options: options)
         return nil
       case "delete":
-        guard let uri = getStringArg(args, key: "uri") else {
-          return errorResponse("invalid_argument", "uri")
-        }
-        let recursive = getBoolArg(args, key: "recursive") ?? false
+        let uri = try args.string("uri")
+        let recursive = args.bool("recursive", default: false)
         try deleteItem(uri, recursive: recursive)
         return nil
       case "copy":
-        guard let from = getStringArg(args, key: "from"),
-              let to = getStringArg(args, key: "to") else {
-          return errorResponse("invalid_argument", "from/to")
-        }
+        let from = try args.string("from")
+        let to = try args.string("to")
         try copyItem(from, to)
         return nil
       case "move":
-        guard let from = getStringArg(args, key: "from"),
-              let to = getStringArg(args, key: "to") else {
-          return errorResponse("invalid_argument", "from/to")
-        }
+        let from = try args.string("from")
+        let to = try args.string("to")
         try moveItem(from, to)
         return nil
       case "readText":
-        guard let uri = getStringArg(args, key: "uri") else {
-          return errorResponse("invalid_argument", "uri")
-        }
+        let uri = try args.string("uri")
         return try readText(uri)
       case "readBase64":
-        guard let uri = getStringArg(args, key: "uri") else {
-          return errorResponse("invalid_argument", "uri")
-        }
+        let uri = try args.string("uri")
         return try readBase64(uri)
       case "readBase64Chunk":
-        guard let uri = getStringArg(args, key: "uri"),
-              let offset = getIntArg(args, key: "offset"),
-              let length = getIntArg(args, key: "length") else {
-          return errorResponse("invalid_argument", "uri/offset/length")
-        }
+        let uri = try args.string("uri")
+        let offset = try Int(args.number("offset"))
+        let length = try Int(args.number("length"))
         return try readBase64Chunk(uri, offset: offset, length: length)
       case "writeText":
-        guard let uri = getStringArg(args, key: "uri"),
-              let text = getStringArg(args, key: "text") else {
-          return errorResponse("invalid_argument", "uri/text")
-        }
+        let uri = try args.string("uri")
+        let text = try args.string("text")
         try writeText(uri, text: text)
         return nil
       case "writeBase64":
-        guard let uri = getStringArg(args, key: "uri"),
-              let data = getStringArg(args, key: "data") else {
-          return errorResponse("invalid_argument", "uri/data")
-        }
+        let uri = try args.string("uri")
+        let data = try args.string("data")
         try writeBase64(uri, base64: data)
         return nil
       case "checksum":
-        guard let uri = getStringArg(args, key: "uri") else {
-          return errorResponse("invalid_argument", "uri")
-        }
-        let algorithm = getStringArg(args, key: "algorithm") ?? "md5"
+        let uri = try args.string("uri")
+        let algorithm = args.string("algorithm", default: "md5")
         return try checksum(uri, algorithm: algorithm)
       default:
         return errorResponse("unsupported_method", method)
@@ -453,54 +425,6 @@ final class ZynthFileSystemModule: NSObject, ZynthModule, ZynthSyncModule {
     default:
       return nil
     }
-  }
-
-  private func unwrapArgs(_ args: Any?) -> Any? {
-    if let array = args as? [Any], array.count == 1 {
-      let value = array[0]
-      return value is NSNull ? nil : value
-    }
-    return args
-  }
-
-  private func getDictArg(_ args: Any?, key: String? = nil) -> [String: Any]? {
-    let unwrapped = unwrapArgs(args)
-    if let dict = unwrapped as? [String: Any] {
-      if let key = key {
-        return dict[key] as? [String: Any]
-      }
-      return dict
-    }
-    if let dict = unwrapped as? NSDictionary {
-      let swiftDict = dict as? [String: Any]
-      if let key = key {
-        return swiftDict?[key] as? [String: Any]
-      }
-      return swiftDict
-    }
-    return nil
-  }
-
-  private func getStringArg(_ args: Any?, key: String) -> String? {
-    guard let dict = getDictArg(args) else { return nil }
-    let value = dict[key]
-    return value as? String
-  }
-
-  private func getBoolArg(_ args: Any?, key: String) -> Bool? {
-    guard let dict = getDictArg(args) else { return nil }
-    return dict[key] as? Bool
-  }
-
-  private func getIntArg(_ args: Any?, key: String) -> Int? {
-    guard let dict = getDictArg(args) else { return nil }
-    if let value = dict[key] as? Int {
-      return value
-    }
-    if let number = dict[key] as? NSNumber {
-      return number.intValue
-    }
-    return nil
   }
 
   private func errorResponse(_ error: String, _ message: String) -> [String: Any] {

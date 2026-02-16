@@ -15,7 +15,7 @@ final class NetworkModule: NSObject, ZynthModule, ZynthSyncModule {
     host.invalidate()
   }
 
-  func call(method: String, args: Any?) throws -> Any? {
+  func call(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "getNetworkState":
       return host.getNetworkState()
@@ -46,7 +46,7 @@ final class NetworkModule: NSObject, ZynthModule, ZynthSyncModule {
       host.clearDiscoveredServices()
       return nil
     case "drainDiscoveryEvents":
-      let maxEvents = getIntArg(args, key: "maxEvents") ?? 100
+      let maxEvents = Int(args.number("maxEvents", default: 100))
       return host.drainDiscoveryEvents(maxEvents: maxEvents).map { $0.toDictionary() }
     case "startService":
       do {
@@ -66,7 +66,7 @@ final class NetworkModule: NSObject, ZynthModule, ZynthSyncModule {
     }
   }
 
-  func callSync(method: String, args: Any?) throws -> Any? {
+  func callSync(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "getNetworkState":
       return host.getNetworkState()
@@ -83,27 +83,29 @@ final class NetworkModule: NSObject, ZynthModule, ZynthSyncModule {
     }
   }
 
-  private func parseDiscoveryConfig(_ args: Any?) -> DiscoveryConfig {
-    let serviceType = normalizeServiceType(getStringArg(args, key: "serviceType"), fallback: "_zynth._tcp.")
-    let domain = normalizeDomain(getStringArg(args, key: "domain"), fallback: "local.")
-    let timeoutMs = max(500, getIntArg(args, key: "resolveTimeoutMs") ?? 4000)
+  private func parseDiscoveryConfig(_ args: ZynthArgs) -> DiscoveryConfig {
+    let serviceType = normalizeServiceType(args.optionalString("serviceType"), fallback: "_zynth._tcp.")
+    let domain = normalizeDomain(args.optionalString("domain"), fallback: "local.")
+    let timeoutMs = max(500, Int(args.number("resolveTimeoutMs", default: 4000)))
     return DiscoveryConfig(serviceType: serviceType, domain: domain, resolveTimeoutMs: timeoutMs)
   }
 
-  private func parseAdvertiseOptions(_ args: Any?) throws -> AdvertiseOptions {
-    guard let serviceType = getStringArg(args, key: "serviceType"), !serviceType.isEmpty else {
+  private func parseAdvertiseOptions(_ args: ZynthArgs) throws -> AdvertiseOptions {
+    let serviceType = try args.string("serviceType")
+    if serviceType.isEmpty {
       throw NSError(domain: "Network", code: 1, userInfo: [NSLocalizedDescriptionKey: "serviceType is required"])
     }
-    guard let name = getStringArg(args, key: "name"), !name.isEmpty else {
+    let name = try args.string("name")
+    if name.isEmpty {
       throw NSError(domain: "Network", code: 2, userInfo: [NSLocalizedDescriptionKey: "name is required"])
     }
-    let port = getIntArg(args, key: "port") ?? 0
+    let port = try Int(args.number("port"))
     if port <= 0 || port > 65535 {
       throw NSError(domain: "Network", code: 3, userInfo: [NSLocalizedDescriptionKey: "port must be between 1 and 65535"])
     }
 
-    let domain = normalizeDomain(getStringArg(args, key: "domain"), fallback: "local.")
-    let txtRecord = getStringDictionaryArg(args, key: "txtRecord")
+    let domain = normalizeDomain(args.optionalString("domain"), fallback: "local.")
+    let txtRecord = getStringDictionary(from: try? args.dict("txtRecord"))
 
     return AdvertiseOptions(
       serviceType: normalizeServiceType(serviceType, fallback: "_zynth._tcp."),
@@ -114,63 +116,13 @@ final class NetworkModule: NSObject, ZynthModule, ZynthSyncModule {
     )
   }
 
-  private func unwrapArgs(_ args: Any?) -> Any? {
-    if let array = args as? [Any], array.count == 1 {
-      let value = array[0]
-      return value is NSNull ? nil : value
+  private func getStringDictionary(from map: [String: Any]?) -> [String: String] {
+    guard let map = map else { return [:] }
+    var result: [String: String] = [:]
+    for (entryKey, entryValue) in map {
+      result[entryKey] = String(describing: entryValue)
     }
-    return args
-  }
-
-  private func getDictArg(_ args: Any?) -> [String: Any]? {
-    let unwrapped = unwrapArgs(args)
-    if let dict = unwrapped as? [String: Any] {
-      return dict
-    }
-    if let dict = unwrapped as? NSDictionary {
-      return dict as? [String: Any]
-    }
-    return nil
-  }
-
-  private func getStringArg(_ args: Any?, key: String) -> String? {
-    guard let dict = getDictArg(args) else { return nil }
-    guard let value = dict[key] else { return nil }
-    if let string = value as? String {
-      return string.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-    return nil
-  }
-
-  private func getIntArg(_ args: Any?, key: String) -> Int? {
-    guard let dict = getDictArg(args) else { return nil }
-    guard let value = dict[key] else { return nil }
-    if let number = value as? NSNumber {
-      return number.intValue
-    }
-    if let string = value as? String {
-      return Int(string)
-    }
-    return nil
-  }
-
-  private func getStringDictionaryArg(_ args: Any?, key: String) -> [String: String] {
-    guard let dict = getDictArg(args) else { return [:] }
-    guard let raw = dict[key] else { return [:] }
-
-    if let map = raw as? [String: String] {
-      return map
-    }
-
-    if let map = raw as? [String: Any] {
-      var result: [String: String] = [:]
-      for (entryKey, entryValue) in map {
-        result[entryKey] = String(describing: entryValue)
-      }
-      return result
-    }
-
-    return [:]
+    return result
   }
 
   private func normalizeServiceType(_ value: String?, fallback: String) -> String {

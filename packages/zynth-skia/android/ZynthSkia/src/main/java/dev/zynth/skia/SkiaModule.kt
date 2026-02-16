@@ -2,17 +2,18 @@ package dev.zynth.skia
 
 import com.zynth.kit.runtime.ZynthModule
 import com.zynth.kit.runtime.ZynthSyncModule
+import com.zynth.kit.runtime.ZynthArgs
 import org.json.JSONObject
 
 class SkiaModule : ZynthModule, ZynthSyncModule {
   override val name: String = "Skia"
 
-  override fun call(method: String, args: Array<Any?>): JSONObject {
+  override fun call(method: String, args: ZynthArgs): JSONObject {
     return callSync(method, args) as JSONObject
   }
 
-  override fun callSync(method: String, args: Array<Any?>): Any {
-    val payload = args.firstOrNull() as? JSONObject ?: JSONObject()
+  override fun callSync(method: String, args: ZynthArgs): Any {
+    val payload = try { JSONObject(args.asMap()) } catch (e: Exception) { JSONObject() }
     return when (method) {
       "createSurface" -> createSurface(payload)
       "disposeSurface" -> disposeSurface(payload)

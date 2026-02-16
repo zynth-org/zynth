@@ -11,6 +11,7 @@ import android.os.Build
 import android.provider.Settings
 import com.zynth.kit.runtime.ZynthModule
 import com.zynth.kit.runtime.ZynthSyncModule
+import com.zynth.kit.runtime.ZynthArgs
 import org.json.JSONObject
 import java.net.Inet4Address
 import java.net.Inet6Address
@@ -42,7 +43,7 @@ class NetworkModule(
         shutdown()
     }
 
-    override fun call(method: String, args: Array<Any?>): JSONObject {
+    override fun call(method: String, args: ZynthArgs): JSONObject {
         return try {
             when (method) {
                 "getNetworkState" -> resultResponse(getNetworkState())
@@ -65,7 +66,7 @@ class NetworkModule(
                     successResponse()
                 }
                 "drainDiscoveryEvents" -> {
-                    val maxEvents = getIntArg(args, "maxEvents") ?: 100
+                    val maxEvents = args.getInt("maxEvents", 100)
                     resultResponse(discoveryController.drainDiscoveryEvents(maxEvents))
                 }
                 "startService" -> resultResponse(
@@ -85,7 +86,7 @@ class NetworkModule(
         }
     }
 
-    override fun callSync(method: String, args: Array<Any?>): Any? {
+    override fun callSync(method: String, args: ZynthArgs): Any? {
         return when (method) {
             "getNetworkState" -> getNetworkState()
             "getIpAddress" -> getIpAddress() ?: JSONObject.NULL
@@ -256,18 +257,18 @@ class NetworkModule(
         }
     }
 
-    private fun parseDiscoveryConfig(args: Array<Any?>): DiscoveryConfig {
-        val serviceType = normalizeServiceType(getStringArg(args, "serviceType"), "_zynth._tcp.")
-        val domain = normalizeDomain(getStringArg(args, "domain"), "local.")
-        val resolveTimeoutMs = (getIntArg(args, "resolveTimeoutMs") ?: 4000).coerceAtLeast(500)
+    private fun parseDiscoveryConfig(args: ZynthArgs): DiscoveryConfig {
+        val serviceType = normalizeServiceType(args.getOptionalString("serviceType"), "_zynth._tcp.")
+        val domain = normalizeDomain(args.getOptionalString("domain"), "local.")
+        val resolveTimeoutMs = args.getInt("resolveTimeoutMs", 4000).coerceAtLeast(500)
         return DiscoveryConfig(serviceType, domain, resolveTimeoutMs)
     }
 
-    private fun parseAdvertisedService(args: Array<Any?>): AdvertisedServiceInfo {
-        val serviceType = normalizeServiceType(getStringArg(args, "serviceType"), "")
-        val serviceName = (getStringArg(args, "name") ?: "").trim()
-        val port = (getIntArg(args, "port") ?: 0)
-        val domain = normalizeDomain(getStringArg(args, "domain"), "local.")
+    private fun parseAdvertisedService(args: ZynthArgs): AdvertisedServiceInfo {
+        val serviceType = normalizeServiceType(args.getOptionalString("serviceType"), "")
+        val serviceName = (args.getOptionalString("name") ?: "").trim()
+        val port = args.getInt("port", 0)
+        val domain = normalizeDomain(args.getOptionalString("domain"), "local.")
         val txtRecord = getStringMapArg(args, "txtRecord")
 
         if (serviceType.isBlank()) {
@@ -321,65 +322,17 @@ class NetworkModule(
         return if (candidate.endsWith('.')) candidate else "$candidate."
     }
 
-    private fun getParams(args: Array<Any?>): Any? {
-        return args.getOrNull(0)
-    }
+    private fun getStringMapArg(args: ZynthArgs, key: String): Map<String, String> {
+        val raw = try { args.getMap(key) } catch (e: Exception) { null }
 
-    private fun getStringArg(args: Array<Any?>, key: String): String? {
-        val params = getParams(args)
-        return when (params) {
-            is JSONObject -> {
-                val value = params.opt(key)
-                if (value == JSONObject.NULL) null else value as? String
+        return if (raw != null) {
+            val map = linkedMapOf<String, String>()
+            for ((entryKey, entryValue) in raw) {
+                map[entryKey] = entryValue?.toString() ?: ""
             }
-            is Map<*, *> -> params[key] as? String
-            else -> null
-        }?.trim()
-    }
-
-    private fun getIntArg(args: Array<Any?>, key: String): Int? {
-        val params = getParams(args)
-        val value = when (params) {
-            is JSONObject -> params.opt(key)
-            is Map<*, *> -> params[key]
-            else -> null
-        }
-        return when (value) {
-            is Number -> value.toInt()
-            is String -> value.toIntOrNull()
-            else -> null
-        }
-    }
-
-    private fun getStringMapArg(args: Array<Any?>, key: String): Map<String, String> {
-        val params = getParams(args)
-        val raw = when (params) {
-            is JSONObject -> params.opt(key)
-            is Map<*, *> -> params[key]
-            else -> null
-        }
-
-        return when (raw) {
-            is JSONObject -> {
-                val map = linkedMapOf<String, String>()
-                val iterator = raw.keys()
-                while (iterator.hasNext()) {
-                    val entryKey = iterator.next()
-                    val entryValue = raw.opt(entryKey)
-                    map[entryKey] = if (entryValue == null || entryValue == JSONObject.NULL) "" else entryValue.toString()
-                }
-                map
-            }
-            is Map<*, *> -> {
-                val map = linkedMapOf<String, String>()
-                for ((entryKey, entryValue) in raw) {
-                    if (entryKey is String) {
-                        map[entryKey] = entryValue?.toString() ?: ""
-                    }
-                }
-                map
-            }
-            else -> emptyMap()
+            map
+        } else {
+            emptyMap()
         }
     }
 

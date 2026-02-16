@@ -22,7 +22,7 @@ final class ZynthKeyboardBridge: NSObject, ZynthModule {
     super.init()
   }
 
-  func call(method: String, args: Any?) throws -> Any? {
+  func call(method: String, args: ZynthArgs) throws -> Any? {
     print("[ZynthKeyboardBridge] call(\(method))")
     switch method {
     case "dismiss":

@@ -14,7 +14,7 @@ public class ImagePickerModule: NSObject, ZynthModule {
         super.init()
     }
     
-    public func call(method: String, args: Any?) throws -> Any? {
+    public func call(method: String, args: ZynthArgs) throws -> Any? {
         switch method {
         case "launchCameraAsync":
             return try launchCameraAsync(args: args)
@@ -29,11 +29,8 @@ public class ImagePickerModule: NSObject, ZynthModule {
         }
     }
     
-    private func getRequestId(_ args: Any?) -> String {
-        if let params = args as? [String: Any], let requestId = params["requestId"] as? String {
-            return requestId
-        }
-        return UUID().uuidString
+    private func getRequestId(_ args: ZynthArgs) -> String {
+        return args.string("requestId", default: UUID().uuidString)
     }
     
     private func getCameraPermissionsAsync() throws -> [String: Any] {
@@ -60,7 +57,7 @@ public class ImagePickerModule: NSObject, ZynthModule {
         return result
     }
     
-    private func requestCameraPermissionsAsync(args: Any?) throws -> Any? {
+    private func requestCameraPermissionsAsync(args: ZynthArgs) throws -> Any? {
         let requestId = getRequestId(args)
         self.pendingRequestId = requestId
         
@@ -76,7 +73,7 @@ public class ImagePickerModule: NSObject, ZynthModule {
         return ["status": "pending"]
     }
     
-    private func launchCameraAsync(args: Any?) throws -> Any? {
+    private func launchCameraAsync(args: ZynthArgs) throws -> Any? {
         let requestId = getRequestId(args)
         
         if pendingRequestId != nil {
@@ -107,7 +104,7 @@ public class ImagePickerModule: NSObject, ZynthModule {
         return ["status": "pending"]
     }
     
-    private func launchImageLibraryAsync(args: Any?) throws -> Any? {
+    private func launchImageLibraryAsync(args: ZynthArgs) throws -> Any? {
         let requestId = getRequestId(args)
         
         if pendingRequestId != nil {

@@ -14,7 +14,7 @@ final class ZynthHapticsBridge: NSObject, ZynthModule {
 
   let name = "ZynthHaptics"
 
-  func call(method: String, args: Any?) throws -> Any? {
+  func call(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "notificationAsync":
       return handleNotification(args)
@@ -29,8 +29,8 @@ final class ZynthHapticsBridge: NSObject, ZynthModule {
     }
   }
 
-  private func handleNotification(_ args: Any?) -> [String: Any] {
-    guard let typeString = getStringArg(args, key: "type"),
+  private func handleNotification(_ args: ZynthArgs) -> [String: Any] {
+    guard let typeString = try? args.string("type"),
           let type = NotificationType(rawValue: typeString.lowercased()) else {
       return errorResponse("invalid_argument", "type")
     }
@@ -44,8 +44,8 @@ final class ZynthHapticsBridge: NSObject, ZynthModule {
     return successResponse()
   }
 
-  private func handleImpact(_ args: Any?) -> [String: Any] {
-    guard let styleString = getStringArg(args, key: "style"),
+  private func handleImpact(_ args: ZynthArgs) -> [String: Any] {
+    guard let styleString = try? args.string("style"),
           let style = ImpactStyle(rawValue: styleString.lowercased()) else {
       return errorResponse("invalid_argument", "style")
     }
@@ -77,16 +77,6 @@ final class ZynthHapticsBridge: NSObject, ZynthModule {
         block()
       }
     }
-  }
-
-  private func getStringArg(_ args: Any?, key: String) -> String? {
-    if let dict = args as? [String: Any] {
-      return dict[key] as? String
-    }
-    if let dict = args as? NSDictionary {
-      return dict[key] as? String
-    }
-    return nil
   }
 
   private func successResponse() -> [String: Any] {

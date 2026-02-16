@@ -88,6 +88,13 @@ This track hardens `@zynth/skia` so animation hooks and shader pipelines stay UI
 - [ ] iOS: Transparency buttons doesn't works.
 - [ ] iOS: DatePicker imperative won't open.
 - [ ] iOS: Stack Modal bug that return to details with.
+- [ ] iOS: Crash on `TextHighRefreshSignalExample`
+- [ ] iOS: Doest put the defaultValue on `TextInputsTest`
+- [ ] Android: Pressable many errors
+- [ ] Android: AsyncStorageExample discrepancy
+- [ ] Android: WebView first render like 2s displaying all screen.
+- [ ] Android: Contacts animation broken.
+- [ ] FlatList with decorators have a SolidJS owner warning
 - [ ] Migrate zynth-screens to new Runtime
 - [x] Migrate zynth-animate to new Runtime
 - [x] Migrate zynth-apis to new Runtime

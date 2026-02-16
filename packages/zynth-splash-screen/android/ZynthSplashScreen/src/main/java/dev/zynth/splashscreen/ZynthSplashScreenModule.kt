@@ -1,6 +1,7 @@
 package dev.zynth.splashscreen
 
 import com.zynth.kit.runtime.ZynthModule
+import com.zynth.kit.runtime.ZynthArgs
 import org.json.JSONObject
 
 /**
@@ -10,7 +11,7 @@ import org.json.JSONObject
 class ZynthSplashScreenModule : ZynthModule {
     override val name: String = "ZynthSplashScreen"
 
-    override fun call(method: String, args: Array<Any?>): JSONObject {
+    override fun call(method: String, args: ZynthArgs): JSONObject {
         return when (method) {
             "preventAutoHide" -> handlePreventAutoHide()
             "hide" -> handleHide()

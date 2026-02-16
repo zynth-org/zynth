@@ -66,7 +66,7 @@ final class ZynthDimensionsModule: NSObject, ZynthModule, ZynthSyncModule {
     }
   }
 
-  func call(method: String, args: Any?) throws -> Any? {
+  func call(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "current":
       guard let payload = capturePayload() else {
@@ -81,7 +81,7 @@ final class ZynthDimensionsModule: NSObject, ZynthModule, ZynthSyncModule {
     }
   }
 
-  func callSync(method: String, args: Any?) throws -> Any? {
+  func callSync(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "current":
       guard let payload = capturePayload() else { return [:] }

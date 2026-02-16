@@ -9,6 +9,7 @@ import android.os.VibratorManager
 import android.view.HapticFeedbackConstants
 import android.view.View
 import com.zynth.kit.runtime.ZynthModule
+import com.zynth.kit.runtime.ZynthArgs
 import org.json.JSONObject
 
 /**
@@ -19,7 +20,7 @@ class ZynthHapticsModule(
 ) : ZynthModule {
     override val name: String = "ZynthHaptics"
 
-    override fun call(method: String, args: Array<Any?>): JSONObject {
+    override fun call(method: String, args: ZynthArgs): JSONObject {
         return when (method) {
             "notificationAsync" -> handleNotification(args)
             "impactAsync" -> handleImpact(args)
@@ -29,15 +30,15 @@ class ZynthHapticsModule(
         }
     }
 
-    private fun handleNotification(args: Array<Any?>): JSONObject {
-        val type = getStringArg(args, "type") ?: return errorResponse("invalid_argument", "type")
+    private fun handleNotification(args: ZynthArgs): JSONObject {
+        val type = args.getOptionalString("type") ?: return errorResponse("invalid_argument", "type")
         val pattern = notificationPatterns[type] ?: return errorResponse("invalid_argument", type)
         vibrate(pattern)
         return successResponse()
     }
 
-    private fun handleImpact(args: Array<Any?>): JSONObject {
-        val style = getStringArg(args, "style") ?: return errorResponse("invalid_argument", "style")
+    private fun handleImpact(args: ZynthArgs): JSONObject {
+        val style = args.getOptionalString("style") ?: return errorResponse("invalid_argument", "style")
         val pattern = impactPatterns[style] ?: return errorResponse("invalid_argument", style)
         vibrate(pattern)
         return successResponse()
@@ -48,8 +49,8 @@ class ZynthHapticsModule(
         return successResponse()
     }
 
-    private fun handlePerformHaptics(args: Array<Any?>): JSONObject {
-        val type = getStringArg(args, "type") ?: return errorResponse("invalid_argument", "type")
+    private fun handlePerformHaptics(args: ZynthArgs): JSONObject {
+        val type = args.getOptionalString("type") ?: return errorResponse("invalid_argument", "type")
         if (type == "no-haptics") {
             return successResponse()
         }
@@ -70,15 +71,6 @@ class ZynthHapticsModule(
     private fun findHapticsView(): View? {
         return activity.findViewById(android.R.id.content)
             ?: activity.window?.decorView
-    }
-
-    private fun getStringArg(args: Array<Any?>, key: String): String? {
-        val params = args.getOrNull(0)
-        return when (params) {
-            is JSONObject -> params.optString(key).takeIf { it.isNotEmpty() }
-            is Map<*, *> -> params[key] as? String
-            else -> null
-        }
     }
 
     private fun resolveHapticFeedbackConstant(type: String): Int? {

@@ -20,7 +20,7 @@ public enum ZynthModuleError: LocalizedError {
 public protocol ZynthModule {
   var name: String { get }
   var constantsToExport: [String: Any]? { get }
-  func call(method: String, args: Any?) throws -> Any?
+  func call(method: String, args: ZynthArgs) throws -> Any?
   func initialize()
   func invalidate()
 }
@@ -32,7 +32,7 @@ public extension ZynthModule {
 }
 
 public protocol ZynthSyncModule {
-  func callSync(method: String, args: Any?) throws -> Any?
+  func callSync(method: String, args: ZynthArgs) throws -> Any?
 }
 
 final class ZynthModuleRegistry: NSObject, ZynthModuleBridge {
@@ -66,7 +66,8 @@ final class ZynthModuleRegistry: NSObject, ZynthModuleBridge {
     guard let module = modules[name] else {
       throw ZynthModuleError.moduleNotFound(name)
     }
-    return try module.call(method: method, args: args)
+    let zynthArgs = ZynthArgs(args)
+    return try module.call(method: method, args: zynthArgs)
   }
 
   func callSync(_ name: String, method: String, args: Any?) throws -> Any? {
@@ -76,7 +77,8 @@ final class ZynthModuleRegistry: NSObject, ZynthModuleBridge {
     guard let syncModule = module as? ZynthSyncModule else {
       throw ZynthModuleError.syncNotSupported(module: name, method: method)
     }
-    return try syncModule.callSync(method: method, args: args)
+    let zynthArgs = ZynthArgs(args)
+    return try syncModule.callSync(method: method, args: zynthArgs)
   }
   
   // ZynthModuleBridge implementation

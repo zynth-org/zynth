@@ -7,6 +7,7 @@ import androidx.activity.OnBackPressedCallback
 import com.zynth.kit.core.ZynthRootView
 import com.zynth.kit.runtime.ZynthModule
 import com.zynth.kit.runtime.ZynthRuntime
+import com.zynth.kit.runtime.ZynthArgs
 import org.json.JSONObject
 
 private const val BACK_PRESS_EVENT = "zynth.android.backPress"
@@ -44,15 +45,11 @@ class BackHandlerModule(
         callback = null
     }
 
-    override fun call(method: String, args: Array<Any?>): JSONObject {
+    override fun call(method: String, args: ZynthArgs): JSONObject {
         return when (method) {
             "setCanGoBack" -> {
-                val payload = args.firstOrNull()
-                canGoBack = when (payload) {
-                    is JSONObject -> payload.optBoolean("canGoBack", false)
-                    is Map<*, *> -> (payload["canGoBack"] as? Boolean) ?: false
-                    else -> false
-                }
+                val params = args.nestedAt(0)
+                canGoBack = params.getBoolean("canGoBack", false)
                 JSONObject().put("ok", true)
             }
             else -> JSONObject().put("error", "unknown_method")

@@ -3,6 +3,7 @@ package com.zynth.kit.runtime.modules
 import android.content.Context
 import com.zynth.kit.runtime.ZynthModule
 import com.zynth.kit.runtime.ZynthRuntime
+import com.zynth.kit.runtime.ZynthArgs
 import org.json.JSONObject
 
 class DevtoolsModule(
@@ -31,7 +32,7 @@ class DevtoolsModule(
     fun setInboundSink(@Suppress("UNUSED_PARAMETER") sink: ((String) -> Unit)?) {}
   }
 
-  override fun call(method: String, args: Array<Any?>): JSONObject {
+  override fun call(method: String, args: ZynthArgs): JSONObject {
     return JSONObject().put("result", false)
   }
 }

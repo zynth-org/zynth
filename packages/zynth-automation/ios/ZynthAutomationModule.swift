@@ -12,10 +12,10 @@ final class ZynthAutomationModule: NSObject, ZynthModule, ZynthSyncModule {
     super.init()
   }
 
-  func call(method: String, args: Any?) throws -> Any? {
+  func call(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "read":
-      return ["result": readSnapshot(args: args)]
+      return ["result": try readSnapshot(args: args)]
     case "configure":
       return ["result": configure(args: args)]
     default:
@@ -26,10 +26,10 @@ final class ZynthAutomationModule: NSObject, ZynthModule, ZynthSyncModule {
     }
   }
 
-  func callSync(method: String, args: Any?) throws -> Any? {
+  func callSync(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "read":
-      return readSnapshot(args: args)
+      return try readSnapshot(args: args)
     case "configure":
       return configure(args: args)
     default:
@@ -40,11 +40,11 @@ final class ZynthAutomationModule: NSObject, ZynthModule, ZynthSyncModule {
     }
   }
 
-  private func readSnapshot(args: Any?) -> [String: Any] {
+  private func readSnapshot(args: ZynthArgs) throws -> [String: Any] {
     guard let runtime else {
       return ["error": "runtime_deallocated"]
     }
-    var options = (args as? [String: Any]) ?? [:]
+    var options = (try? args.asDict()) ?? [:]
     if !isDebugBuild && !productionInspectionEnabled {
       // Heavy fields are disabled in production by default to reduce overhead.
       options["includeResolvedStyles"] = false
@@ -54,8 +54,8 @@ final class ZynthAutomationModule: NSObject, ZynthModule, ZynthSyncModule {
     return runtime.uiManager.snapshot(options) as? [String: Any] ?? [:]
   }
 
-  private func configure(args: Any?) -> [String: Any] {
-    let config = args as? [String: Any]
+  private func configure(args: ZynthArgs) -> [String: Any] {
+    let config = try? args.asDict()
     productionInspectionEnabled = config?["enableProductionInspection"] as? Bool ?? false
     return ["productionInspectionEnabled": productionInspectionEnabled]
   }

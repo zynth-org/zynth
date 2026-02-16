@@ -13,6 +13,7 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.zynth.kit.runtime.ZynthModule
 import com.zynth.kit.runtime.ZynthSyncModule
+import com.zynth.kit.runtime.ZynthArgs
 import org.json.JSONObject
 import java.security.KeyStore
 import java.util.concurrent.CountDownLatch
@@ -27,63 +28,51 @@ class ZynthSecureStoreModule(
     private val activityRef = java.lang.ref.WeakReference(activity)
     private val stores = mutableMapOf<String, SharedPreferences>()
 
-    override fun call(method: String, args: Array<Any?>): JSONObject {
+    override fun call(method: String, args: ZynthArgs): JSONObject {
         return when (method) {
             "getItem" -> {
-                val key = getStringArg(args, "key")
-                if (key == null) {
-                    errorResponse("invalid_argument", "key")
-                } else {
-                    try {
-                        val options = parseOptions(args)
-                        val value = performAuthenticated(options) {
-                            performWithStore(options) { store ->
-                                store.getString(key, null)
-                            }
+                val key = args.getString("key")
+                try {
+                    val options = parseOptions(args)
+                    val value = performAuthenticated(options) {
+                        performWithStore(options) { store ->
+                            store.getString(key, null)
                         }
-                        resultResponse(value)
-                    } catch (e: Exception) {
-                        errorResponse("get_failed", e.message ?: "unknown")
                     }
+                    resultResponse(value)
+                } catch (e: Exception) {
+                    errorResponse("get_failed", e.message ?: "unknown")
                 }
             }
             "setItem" -> {
-                val key = getStringArg(args, "key")
-                val value = getStringArg(args, "value")
-                if (key == null || value == null) {
-                    errorResponse("invalid_argument", "key/value")
-                } else {
-                    try {
-                        val options = parseOptions(args)
-                        performAuthenticated(options) {
-                            performWithStore(options) { store ->
-                                store.edit().putString(key, value).apply()
-                                null
-                            }
+                val key = args.getString("key")
+                val value = args.getString("value")
+                try {
+                    val options = parseOptions(args)
+                    performAuthenticated(options) {
+                        performWithStore(options) { store ->
+                            store.edit().putString(key, value).apply()
+                            null
                         }
-                        successResponse()
-                    } catch (e: Exception) {
-                        errorResponse("set_failed", e.message ?: "unknown")
                     }
+                    successResponse()
+                } catch (e: Exception) {
+                    errorResponse("set_failed", e.message ?: "unknown")
                 }
             }
             "deleteItem" -> {
-                val key = getStringArg(args, "key")
-                if (key == null) {
-                    errorResponse("invalid_argument", "key")
-                } else {
-                    try {
-                        val options = parseOptions(args)
-                        performAuthenticated(options) {
-                            performWithStore(options) { store ->
-                                store.edit().remove(key).apply()
-                                null
-                            }
+                val key = args.getString("key")
+                try {
+                    val options = parseOptions(args)
+                    performAuthenticated(options) {
+                        performWithStore(options) { store ->
+                            store.edit().remove(key).apply()
+                            null
                         }
-                        successResponse()
-                    } catch (e: Exception) {
-                        errorResponse("delete_failed", e.message ?: "unknown")
                     }
+                    successResponse()
+                } catch (e: Exception) {
+                    errorResponse("delete_failed", e.message ?: "unknown")
                 }
             }
             "isAvailable" -> resultResponse(true)
@@ -92,10 +81,10 @@ class ZynthSecureStoreModule(
         }
     }
 
-    override fun callSync(method: String, args: Array<Any?>): Any? {
+    override fun callSync(method: String, args: ZynthArgs): Any? {
         return when (method) {
             "getItem" -> {
-                val key = getStringArg(args, "key") ?: return null
+                val key = try { args.getString("key") } catch (e: Exception) { null } ?: return null
                 return try {
                     val options = parseOptions(args)
                     performAuthenticated(options) {
@@ -108,8 +97,8 @@ class ZynthSecureStoreModule(
                 }
             }
             "setItem" -> {
-                val key = getStringArg(args, "key") ?: return null
-                val value = getStringArg(args, "value") ?: return null
+                val key = try { args.getString("key") } catch (e: Exception) { null } ?: return null
+                val value = try { args.getString("value") } catch (e: Exception) { null } ?: return null
                 return try {
                     val options = parseOptions(args)
                     performAuthenticated(options) {
@@ -124,7 +113,7 @@ class ZynthSecureStoreModule(
                 }
             }
             "deleteItem" -> {
-                val key = getStringArg(args, "key") ?: return null
+                val key = try { args.getString("key") } catch (e: Exception) { null } ?: return null
                 return try {
                     val options = parseOptions(args)
                     performAuthenticated(options) {
@@ -144,26 +133,8 @@ class ZynthSecureStoreModule(
         }
     }
 
-    private fun getParams(args: Array<Any?>): Any? {
-        return args.getOrNull(0)
-    }
-
-    private fun getStringArg(args: Array<Any?>, key: String): String? {
-        val params = getParams(args)
-        return when (params) {
-            is JSONObject -> params.optString(key).takeIf { it.isNotEmpty() }
-            is Map<*, *> -> params[key] as? String
-            else -> null
-        }
-    }
-
-    private fun parseOptions(args: Array<Any?>): SecureStoreOptions {
-        val params = getParams(args)
-        val optionsValue = when (params) {
-            is JSONObject -> params.optJSONObject("options")
-            is Map<*, *> -> params["options"]
-            else -> null
-        }
+    private fun parseOptions(args: ZynthArgs): SecureStoreOptions {
+        val optionsValue = try { args.getMap("options") } catch (e: Exception) { null }
         return SecureStoreOptions.from(optionsValue)
     }
 
@@ -350,24 +321,13 @@ class ZynthSecureStoreModule(
         val authenticationPrompt: String?
     ) {
         companion object {
-            fun from(value: Any?): SecureStoreOptions {
-                return when (value) {
-                    is JSONObject -> {
-                        SecureStoreOptions(
-                            keychainService = value.optString("keychainService").takeIf { it.isNotEmpty() },
-                            requireAuthentication = value.optBoolean("requireAuthentication", false),
-                            authenticationPrompt = value.optString("authenticationPrompt").takeIf { it.isNotEmpty() }
-                        )
-                    }
-                    is Map<*, *> -> {
-                        SecureStoreOptions(
-                            keychainService = value["keychainService"] as? String,
-                            requireAuthentication = value["requireAuthentication"] as? Boolean ?: false,
-                            authenticationPrompt = value["authenticationPrompt"] as? String
-                        )
-                    }
-                    else -> SecureStoreOptions(null, false, null)
-                }
+            fun from(value: Map<String, Any?>?): SecureStoreOptions {
+                if (value == null) return SecureStoreOptions(null, false, null)
+                return SecureStoreOptions(
+                    keychainService = value["keychainService"] as? String,
+                    requireAuthentication = value["requireAuthentication"] as? Boolean ?: false,
+                    authenticationPrompt = value["authenticationPrompt"] as? String
+                )
             }
         }
     }

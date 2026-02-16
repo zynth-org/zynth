@@ -9,6 +9,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
 import com.zynth.kit.runtime.ZynthModule
 import com.zynth.kit.runtime.ZynthRuntime
+import com.zynth.kit.runtime.ZynthArgs
 import org.json.JSONObject
 import java.io.File
 import java.util.UUID
@@ -31,7 +32,7 @@ class ImagePickerModule(
         private var pendingUri: Uri? = null
     }
 
-    override fun call(method: String, args: Array<Any?>): JSONObject {
+    override fun call(method: String, args: ZynthArgs): JSONObject {
         return when (method) {
             "launchCameraAsync" -> launchCameraAsync(args)
             "launchImageLibraryAsync" -> launchImageLibraryAsync(args)
@@ -41,16 +42,11 @@ class ImagePickerModule(
         }
     }
 
-    private fun getRequestId(args: Array<Any?>): String {
-        val params = args.getOrNull(0)
-        return when (params) {
-            is JSONObject -> params.optString("requestId", UUID.randomUUID().toString())
-            is Map<*, *> -> (params["requestId"] as? String) ?: UUID.randomUUID().toString()
-            else -> UUID.randomUUID().toString()
-        }
+    private fun getRequestId(args: ZynthArgs): String {
+        return try { args.getString("requestId", UUID.randomUUID().toString()) } catch (e: Exception) { UUID.randomUUID().toString() }
     }
 
-    private fun launchImageLibraryAsync(args: Array<Any?>): JSONObject {
+    private fun launchImageLibraryAsync(args: ZynthArgs): JSONObject {
         val requestId = getRequestId(args)
         Log.d(TAG, "launchImageLibraryAsync called with requestId: $requestId")
 
@@ -104,7 +100,7 @@ class ImagePickerModule(
         }
     }
 
-    private fun requestCameraPermissionsAsync(args: Array<Any?>): JSONObject {
+    private fun requestCameraPermissionsAsync(args: ZynthArgs): JSONObject {
         val requestId = getRequestId(args)
         val permission = Manifest.permission.CAMERA
         
@@ -120,7 +116,7 @@ class ImagePickerModule(
         return JSONObject().put("status", "pending")
     }
 
-    private fun launchCameraAsync(args: Array<Any?>): JSONObject {
+    private fun launchCameraAsync(args: ZynthArgs): JSONObject {
         val requestId = getRequestId(args)
         Log.d(TAG, "launchCameraAsync called with requestId: $requestId")
 
@@ -148,17 +144,9 @@ class ImagePickerModule(
         if (pendingRequestId == null) return
 
         if (isGranted) {
-            // Check if this was a direct permission request or part of launchCamera
-            // For now we assume if it was part of launchCamera we want to start camera
-            // If it was just a permission request, we just emit the result
             if (pendingUri == null) {
-                // If pendingUri is null, we haven't started startCamera yet
-                // But wait, launchCameraAsync sets pendingRequestId then checks permission.
-                // If it calls permissionLauncher, it HASN'T called startCamera yet.
-                // We need to know if we should proceed to camera or just return permission status.
                 startCamera()
             } else {
-                // This state shouldn't really happen with current logic but handle it
                 emitResult(getCameraPermissionsAsync())
             }
         } else {

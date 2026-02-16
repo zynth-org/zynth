@@ -9,6 +9,7 @@ import android.os.Build
 import com.zynth.kit.runtime.ZynthModule
 import com.zynth.kit.runtime.ZynthRuntime
 import com.zynth.kit.runtime.ZynthSyncModule
+import com.zynth.kit.runtime.ZynthArgs
 import org.json.JSONObject
 
 private const val NETWORK_EVENT = "zynth.network.change"
@@ -66,14 +67,16 @@ class NetworkModule(
         stopMonitoring()
     }
 
-    override fun call(method: String, args: Array<Any?>): JSONObject {
+    override fun call(method: String, args: ZynthArgs): JSONObject {
+        val params = try { args.nestedAt(0) } catch (e: Exception) { null }
         return when (method) {
             "current" -> JSONObject().put("result", latestSnapshot.toMap())
             else -> JSONObject().put("error", "unknown_method")
         }
     }
 
-    override fun callSync(method: String, args: Array<Any?>): Any? {
+    override fun callSync(method: String, args: ZynthArgs): Any? {
+        val params = try { args.nestedAt(0) } catch (e: Exception) { null }
         return when (method) {
             "current" -> latestSnapshot.toMap()
             else -> null

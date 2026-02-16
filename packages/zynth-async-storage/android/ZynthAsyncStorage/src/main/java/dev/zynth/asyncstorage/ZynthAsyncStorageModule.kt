@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.zynth.kit.runtime.ZynthModule
 import com.zynth.kit.runtime.ZynthSyncModule
+import com.zynth.kit.runtime.ZynthArgs
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -13,44 +14,28 @@ class ZynthAsyncStorageModule(
     override val name: String = "ZynthAsyncStorage"
     private val storage = ZynthAsyncStorageStore(context)
 
-    override fun call(method: String, args: Array<Any?>): JSONObject {
+    override fun call(method: String, args: ZynthArgs): JSONObject {
         return when (method) {
             "getItem" -> {
-                val key = getStringArg(args, "key")
-                if (key == null) {
-                    errorResponse("invalid_argument", "key")
-                } else {
-                    resultResponse(storage.getItem(key))
-                }
+                val key = args.getString("key")
+                resultResponse(storage.getItem(key))
             }
             "setItem" -> {
-                val key = getStringArg(args, "key")
-                val value = getStringArg(args, "value")
-                if (key == null || value == null) {
-                    errorResponse("invalid_argument", "key/value")
-                } else {
-                    storage.setItem(key, value)
-                    successResponse()
-                }
+                val key = args.getString("key")
+                val value = args.getString("value")
+                storage.setItem(key, value)
+                successResponse()
             }
             "removeItem" -> {
-                val key = getStringArg(args, "key")
-                if (key == null) {
-                    errorResponse("invalid_argument", "key")
-                } else {
-                    storage.removeItem(key)
-                    successResponse()
-                }
+                val key = args.getString("key")
+                storage.removeItem(key)
+                successResponse()
             }
             "mergeItem" -> {
-                val key = getStringArg(args, "key")
-                val value = getStringArg(args, "value")
-                if (key == null || value == null) {
-                    errorResponse("invalid_argument", "key/value")
-                } else {
-                    storage.mergeItem(key, value)
-                    successResponse()
-                }
+                val key = args.getString("key")
+                val value = args.getString("value")
+                storage.mergeItem(key, value)
+                successResponse()
             }
             "clear" -> {
                 storage.clear()
@@ -58,65 +43,49 @@ class ZynthAsyncStorageModule(
             }
             "getAllKeys" -> resultResponse(storage.getAllKeys())
             "multiGet" -> {
-                val keys = getStringArrayArg(args, "keys")
-                if (keys == null) {
-                    errorResponse("invalid_argument", "keys")
-                } else {
-                    resultResponse(storage.multiGet(keys))
-                }
+                val keys = args.getList("keys").mapNotNull { it as? String }
+                resultResponse(storage.multiGet(keys))
             }
             "multiSet" -> {
-                val pairs = getPairsArg(args, "pairs")
-                if (pairs == null) {
-                    errorResponse("invalid_argument", "pairs")
-                } else {
-                    storage.multiSet(pairs)
-                    successResponse()
-                }
+                val pairs = parsePairs(args.getList("pairs"))
+                storage.multiSet(pairs)
+                successResponse()
             }
             "multiRemove" -> {
-                val keys = getStringArrayArg(args, "keys")
-                if (keys == null) {
-                    errorResponse("invalid_argument", "keys")
-                } else {
-                    storage.multiRemove(keys)
-                    successResponse()
-                }
+                val keys = args.getList("keys").mapNotNull { it as? String }
+                storage.multiRemove(keys)
+                successResponse()
             }
             "multiMerge" -> {
-                val pairs = getPairsArg(args, "pairs")
-                if (pairs == null) {
-                    errorResponse("invalid_argument", "pairs")
-                } else {
-                    storage.multiMerge(pairs)
-                    successResponse()
-                }
+                val pairs = parsePairs(args.getList("pairs"))
+                storage.multiMerge(pairs)
+                successResponse()
             }
             else -> errorResponse("unsupported_method", method)
         }
     }
 
-    override fun callSync(method: String, args: Array<Any?>): Any? {
+    override fun callSync(method: String, args: ZynthArgs): Any? {
         return when (method) {
-            "getItem" -> storage.getItem(getStringArg(args, "key"))
+            "getItem" -> storage.getItem(try { args.getString("key") } catch (e: Exception) { null })
             "setItem" -> {
-                val key = getStringArg(args, "key")
-                val value = getStringArg(args, "value")
+                val key = try { args.getString("key") } catch (e: Exception) { null }
+                val value = try { args.getString("value") } catch (e: Exception) { null }
                 if (key != null && value != null) {
                     storage.setItem(key, value)
                 }
                 null
             }
             "removeItem" -> {
-                val key = getStringArg(args, "key")
+                val key = try { args.getString("key") } catch (e: Exception) { null }
                 if (key != null) {
                     storage.removeItem(key)
                 }
                 null
             }
             "mergeItem" -> {
-                val key = getStringArg(args, "key")
-                val value = getStringArg(args, "value")
+                val key = try { args.getString("key") } catch (e: Exception) { null }
+                val value = try { args.getString("value") } catch (e: Exception) { null }
                 if (key != null && value != null) {
                     storage.mergeItem(key, value)
                 }
@@ -128,7 +97,7 @@ class ZynthAsyncStorageModule(
             }
             "getAllKeys" -> storage.getAllKeys()
             "multiGet" -> {
-                val keys = getStringArrayArg(args, "keys")
+                val keys = try { args.getList("keys").mapNotNull { it as? String } } catch (e: Exception) { null }
                 if (keys == null) {
                     null
                 } else {
@@ -136,21 +105,21 @@ class ZynthAsyncStorageModule(
                 }
             }
             "multiSet" -> {
-                val pairs = getPairsArg(args, "pairs")
+                val pairs = try { parsePairs(args.getList("pairs")) } catch (e: Exception) { null }
                 if (pairs != null) {
                     storage.multiSet(pairs)
                 }
                 null
             }
             "multiRemove" -> {
-                val keys = getStringArrayArg(args, "keys")
+                val keys = try { args.getList("keys").mapNotNull { it as? String } } catch (e: Exception) { null }
                 if (keys != null) {
                     storage.multiRemove(keys)
                 }
                 null
             }
             "multiMerge" -> {
-                val pairs = getPairsArg(args, "pairs")
+                val pairs = try { parsePairs(args.getList("pairs")) } catch (e: Exception) { null }
                 if (pairs != null) {
                     storage.multiMerge(pairs)
                 }
@@ -160,72 +129,9 @@ class ZynthAsyncStorageModule(
         }
     }
 
-    private fun getParams(args: Array<Any?>): Any? {
-        return args.getOrNull(0)
-    }
-
-    private fun getStringArg(args: Array<Any?>, key: String): String? {
-        val params = getParams(args)
-        return when (params) {
-            is JSONObject -> {
-                val value = params.opt(key)
-                if (value == JSONObject.NULL) null else value as? String
-            }
-            is Map<*, *> -> params[key] as? String
-            else -> null
-        }
-    }
-
-    private fun getStringArrayArg(args: Array<Any?>, key: String): List<String>? {
-        val params = getParams(args)
-        val value = when (params) {
-            is JSONObject -> params.opt(key)
-            is Map<*, *> -> params[key]
-            else -> null
-        }
-        return when (value) {
-            is JSONArray -> {
-                val result = mutableListOf<String>()
-                for (i in 0 until value.length()) {
-                    val entry = value.opt(i)
-                    if (entry is String) {
-                        result.add(entry)
-                    }
-                }
-                result
-            }
-            is Array<*> -> value.mapNotNull { it as? String }
-            is List<*> -> value.mapNotNull { it as? String }
-            else -> null
-        }
-    }
-
-    private fun getPairsArg(args: Array<Any?>, key: String): List<Pair<String, String>>? {
-        val params = getParams(args)
-        val value = when (params) {
-            is JSONObject -> params.opt(key)
-            is Map<*, *> -> params[key]
-            else -> null
-        }
-        return parsePairs(value)
-    }
-
-    private fun parsePairs(value: Any?): List<Pair<String, String>>? {
-        val entries = when (value) {
-            is JSONArray -> {
-                val list = mutableListOf<Any?>()
-                for (i in 0 until value.length()) {
-                    list.add(value.opt(i))
-                }
-                list
-            }
-            is Array<*> -> value.toList()
-            is List<*> -> value
-            else -> null
-        } ?: return null
-
+    private fun parsePairs(value: List<Any?>): List<Pair<String, String>> {
         val result = mutableListOf<Pair<String, String>>()
-        for (entry in entries) {
+        for (entry in value) {
             val pair = parsePair(entry)
             if (pair != null) {
                 result.add(pair)

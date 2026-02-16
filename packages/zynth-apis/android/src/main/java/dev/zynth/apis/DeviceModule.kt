@@ -5,6 +5,7 @@ import android.os.Build
 import android.provider.Settings
 import com.zynth.kit.runtime.ZynthModule
 import com.zynth.kit.runtime.ZynthSyncModule
+import com.zynth.kit.runtime.ZynthArgs
 import org.json.JSONObject
 
 class DeviceModule(
@@ -18,14 +19,14 @@ class DeviceModule(
     override val constants: Map<String, Any>?
         get() = deviceInfo()
 
-    override fun call(method: String, args: Array<Any?>): JSONObject {
+    override fun call(method: String, args: ZynthArgs): JSONObject {
         return when (method) {
             "getInfo", "current" -> JSONObject().put("result", deviceInfo())
             else -> JSONObject().put("error", "unknown_method")
         }
     }
 
-    override fun callSync(method: String, args: Array<Any?>): Any? {
+    override fun callSync(method: String, args: ZynthArgs): Any? {
         return when (method) {
             "getInfo", "current" -> deviceInfo()
             else -> null

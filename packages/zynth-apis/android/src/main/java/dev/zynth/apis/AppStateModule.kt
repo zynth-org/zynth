@@ -11,6 +11,7 @@ import com.zynth.kit.core.ZynthRootView
 import com.zynth.kit.runtime.ZynthModule
 import com.zynth.kit.runtime.ZynthRuntime
 import com.zynth.kit.runtime.ZynthSyncModule
+import com.zynth.kit.runtime.ZynthArgs
 import org.json.JSONObject
 
 private const val APP_STATE_EVENT = "zynth.appstate.change"
@@ -79,7 +80,8 @@ class AppStateModule(
         checkAndUpdate()
     }
 
-    override fun call(method: String, args: Array<Any?>): JSONObject {
+    override fun call(method: String, args: ZynthArgs): JSONObject {
+        val params = try { args.nestedAt(0) } catch (e: Exception) { null }
         return when (method) {
             "current" -> {
                 checkAndUpdate()
@@ -89,7 +91,8 @@ class AppStateModule(
         }
     }
 
-    override fun callSync(method: String, args: Array<Any?>): Any? {
+    override fun callSync(method: String, args: ZynthArgs): Any? {
+        val params = try { args.nestedAt(0) } catch (e: Exception) { null }
         return when (method) {
             "current" -> {
                 checkAndUpdate()

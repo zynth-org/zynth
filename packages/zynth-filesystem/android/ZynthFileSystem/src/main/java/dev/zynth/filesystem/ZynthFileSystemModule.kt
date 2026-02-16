@@ -8,6 +8,7 @@ import android.util.Base64
 import android.webkit.MimeTypeMap
 import com.zynth.kit.runtime.ZynthModule
 import com.zynth.kit.runtime.ZynthSyncModule
+import com.zynth.kit.runtime.ZynthArgs
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -22,138 +23,85 @@ class ZynthFileSystemModule(
 ) : ZynthModule, ZynthSyncModule {
     override val name: String = "ZynthFileSystem"
 
-    override fun call(method: String, args: Array<Any?>): JSONObject {
+    override fun call(method: String, args: ZynthArgs): JSONObject {
         return try {
             when (method) {
                 "getPaths" -> resultResponse(getPaths())
                 "getDiskSpace" -> resultResponse(getDiskSpace())
                 "getSharedContainers" -> resultResponse(JSONObject())
                 "getPathInfo" -> {
-                    val uri = getStringArg(args, "uri")
-                    if (uri == null) {
-                        errorResponse("invalid_argument", "uri")
-                    } else {
-                        resultResponse(getPathInfo(uri))
-                    }
+                    val uri = args.getString("uri")
+                    resultResponse(getPathInfo(uri))
                 }
                 "getInfo" -> {
-                    val uri = getStringArg(args, "uri")
-                    if (uri == null) {
-                        errorResponse("invalid_argument", "uri")
-                    } else {
-                        resultResponse(getInfo(uri, getOptionsArg(args)))
-                    }
+                    val uri = args.getString("uri")
+                    val options = try { args.getMap("options") } catch (e: Exception) { null }
+                    resultResponse(getInfo(uri, options))
                 }
                 "listDirectory" -> {
-                    val uri = getStringArg(args, "uri")
-                    if (uri == null) {
-                        errorResponse("invalid_argument", "uri")
-                    } else {
-                        resultResponse(listDirectory(uri))
-                    }
+                    val uri = args.getString("uri")
+                    resultResponse(listDirectory(uri))
                 }
                 "createDirectory" -> {
-                    val uri = getStringArg(args, "uri")
-                    if (uri == null) {
-                        errorResponse("invalid_argument", "uri")
-                    } else {
-                        createDirectory(uri, getOptionsArg(args))
-                        successResponse()
-                    }
+                    val uri = args.getString("uri")
+                    val options = try { args.getMap("options") } catch (e: Exception) { null }
+                    createDirectory(uri, options)
+                    successResponse()
                 }
                 "createFile" -> {
-                    val uri = getStringArg(args, "uri")
-                    if (uri == null) {
-                        errorResponse("invalid_argument", "uri")
-                    } else {
-                        createFile(uri, getOptionsArg(args))
-                        successResponse()
-                    }
+                    val uri = args.getString("uri")
+                    val options = try { args.getMap("options") } catch (e: Exception) { null }
+                    createFile(uri, options)
+                    successResponse()
                 }
                 "delete" -> {
-                    val uri = getStringArg(args, "uri")
-                    if (uri == null) {
-                        errorResponse("invalid_argument", "uri")
-                    } else {
-                        val recursive = getBoolArg(args, "recursive") ?: false
-                        deleteItem(uri, recursive)
-                        successResponse()
-                    }
+                    val uri = args.getString("uri")
+                    val recursive = args.getBoolean("recursive", false)
+                    deleteItem(uri, recursive)
+                    successResponse()
                 }
                 "copy" -> {
-                    val from = getStringArg(args, "from")
-                    val to = getStringArg(args, "to")
-                    if (from == null || to == null) {
-                        errorResponse("invalid_argument", "from/to")
-                    } else {
-                        copyItem(from, to)
-                        successResponse()
-                    }
+                    val from = args.getString("from")
+                    val to = args.getString("to")
+                    copyItem(from, to)
+                    successResponse()
                 }
                 "move" -> {
-                    val from = getStringArg(args, "from")
-                    val to = getStringArg(args, "to")
-                    if (from == null || to == null) {
-                        errorResponse("invalid_argument", "from/to")
-                    } else {
-                        moveItem(from, to)
-                        successResponse()
-                    }
+                    val from = args.getString("from")
+                    val to = args.getString("to")
+                    moveItem(from, to)
+                    successResponse()
                 }
                 "readText" -> {
-                    val uri = getStringArg(args, "uri")
-                    if (uri == null) {
-                        errorResponse("invalid_argument", "uri")
-                    } else {
-                        resultResponse(readText(uri))
-                    }
+                    val uri = args.getString("uri")
+                    resultResponse(readText(uri))
                 }
                 "readBase64" -> {
-                    val uri = getStringArg(args, "uri")
-                    if (uri == null) {
-                        errorResponse("invalid_argument", "uri")
-                    } else {
-                        resultResponse(readBase64(uri))
-                    }
+                    val uri = args.getString("uri")
+                    resultResponse(readBase64(uri))
                 }
                 "readBase64Chunk" -> {
-                    val uri = getStringArg(args, "uri")
-                    val offset = getIntArg(args, "offset")
-                    val length = getIntArg(args, "length")
-                    if (uri == null || offset == null || length == null) {
-                        errorResponse("invalid_argument", "uri/offset/length")
-                    } else {
-                        resultResponse(readBase64Chunk(uri, offset, length))
-                    }
+                    val uri = args.getString("uri")
+                    val offset = args.getInt("offset")
+                    val length = args.getInt("length")
+                    resultResponse(readBase64Chunk(uri, offset, length))
                 }
                 "writeText" -> {
-                    val uri = getStringArg(args, "uri")
-                    val text = getStringArg(args, "text")
-                    if (uri == null || text == null) {
-                        errorResponse("invalid_argument", "uri/text")
-                    } else {
-                        writeText(uri, text)
-                        successResponse()
-                    }
+                    val uri = args.getString("uri")
+                    val text = args.getString("text")
+                    writeText(uri, text)
+                    successResponse()
                 }
                 "writeBase64" -> {
-                    val uri = getStringArg(args, "uri")
-                    val data = getStringArg(args, "data")
-                    if (uri == null || data == null) {
-                        errorResponse("invalid_argument", "uri/data")
-                    } else {
-                        writeBase64(uri, data)
-                        successResponse()
-                    }
+                    val uri = args.getString("uri")
+                    val data = args.getString("data")
+                    writeBase64(uri, data)
+                    successResponse()
                 }
                 "checksum" -> {
-                    val uri = getStringArg(args, "uri")
-                    if (uri == null) {
-                        errorResponse("invalid_argument", "uri")
-                    } else {
-                        val algorithm = getStringArg(args, "algorithm") ?: "md5"
-                        resultResponse(computeChecksumForUri(uri, algorithm))
-                    }
+                    val uri = args.getString("uri")
+                    val algorithm = args.getString("algorithm", "md5")
+                    resultResponse(computeChecksumForUri(uri, algorithm))
                 }
                 else -> errorResponse("unsupported_method", method)
             }
@@ -162,81 +110,84 @@ class ZynthFileSystemModule(
         }
     }
 
-    override fun callSync(method: String, args: Array<Any?>): Any? {
+    override fun callSync(method: String, args: ZynthArgs): Any? {
         return try {
             when (method) {
                 "getPaths" -> getPaths()
                 "getDiskSpace" -> getDiskSpace()
                 "getSharedContainers" -> JSONObject()
                 "getPathInfo" -> {
-                    val uri = getStringArg(args, "uri") ?: return null
+                    val uri = args.getString("uri")
                     getPathInfo(uri)
                 }
                 "getInfo" -> {
-                    val uri = getStringArg(args, "uri") ?: return null
-                    getInfo(uri, getOptionsArg(args))
+                    val uri = args.getString("uri")
+                    val options = try { args.getMap("options") } catch (e: Exception) { null }
+                    getInfo(uri, options)
                 }
                 "listDirectory" -> {
-                    val uri = getStringArg(args, "uri") ?: return null
+                    val uri = args.getString("uri")
                     listDirectory(uri)
                 }
                 "createDirectory" -> {
-                    val uri = getStringArg(args, "uri") ?: return null
-                    createDirectory(uri, getOptionsArg(args))
+                    val uri = args.getString("uri")
+                    val options = try { args.getMap("options") } catch (e: Exception) { null }
+                    createDirectory(uri, options)
                     null
                 }
                 "createFile" -> {
-                    val uri = getStringArg(args, "uri") ?: return null
-                    createFile(uri, getOptionsArg(args))
+                    val uri = args.getString("uri")
+                    val options = try { args.getMap("options") } catch (e: Exception) { null }
+                    createFile(uri, options)
                     null
                 }
                 "delete" -> {
-                    val uri = getStringArg(args, "uri") ?: return null
-                    val recursive = getBoolArg(args, "recursive") ?: false
+                    val uri = args.getString("uri")
+                    val recursive = args.getBoolean("recursive", false)
                     deleteItem(uri, recursive)
                     null
                 }
                 "copy" -> {
-                    val from = getStringArg(args, "from") ?: return null
-                    val to = getStringArg(args, "to") ?: return null
+                    val from = args.getString("from")
+                    val to = args.getString("to")
                     copyItem(from, to)
                     null
                 }
                 "move" -> {
-                    val from = getStringArg(args, "from") ?: return null
-                    val to = getStringArg(args, "to") ?: return null
+                    val from = args.getString("from")
+                    val to = args.getString("to")
                     moveItem(from, to)
                     null
                 }
                 "readText" -> {
-                    val uri = getStringArg(args, "uri") ?: return null
+                    val uri = args.getString("uri")
                     readText(uri)
                 }
                 "readBase64" -> {
-                    val uri = getStringArg(args, "uri") ?: return null
+                    val uri = args.getString("uri")
                     readBase64(uri)
                 }
                 "readBase64Chunk" -> {
-                    val uri = getStringArg(args, "uri") ?: return null
-                    val offset = getIntArg(args, "offset") ?: return null
-                    val length = getIntArg(args, "length") ?: return null
+                    val uri = args.getString("uri")
+                    val offset = args.getInt("offset")
+                    val length = args.getInt("length")
                     readBase64Chunk(uri, offset, length)
                 }
                 "writeText" -> {
-                    val uri = getStringArg(args, "uri") ?: return null
-                    val text = getStringArg(args, "text") ?: return null
+                    val uri = args.getString("uri")
+                    val text = args.getString("text")
                     writeText(uri, text)
                     null
                 }
                 "writeBase64" -> {
-                    val uri = getStringArg(args, "uri") ?: return null
-                    val data = getStringArg(args, "data") ?: return null
+                    val uri = args.getString("uri")
+                    val data = args.getString("data")
                     writeBase64(uri, data)
                     null
                 }
                 "checksum" -> {
-                    val uri = getStringArg(args, "uri") ?: return null
-                    val algorithm = getStringArg(args, "algorithm") ?: "md5"
+                    val uri = args.getString("uri")
+                    val algorithm = args.getString("algorithm", "md5")
                     computeChecksumForUri(uri, algorithm)
                 }
                 else -> null
@@ -284,7 +235,7 @@ class ZynthFileSystemModule(
         }
     }
 
-    private fun getInfo(uri: String, options: Any?): JSONObject {
+    private fun getInfo(uri: String, options: Map<String, Any?>?): JSONObject {
         val parsed = parseUri(uri)
         if (parsed.scheme == "asset") {
             val assetInfo = getAssetInfo(parsed.path)
@@ -309,7 +260,7 @@ class ZynthFileSystemModule(
         }
         val modificationTime = if (exists) file.lastModified() else null
 
-        val md5Requested = getBooleanOption(options, "md5")
+        val md5Requested = options?.get("md5") as? Boolean ?: false
         val md5 = if (md5Requested && exists && !isDirectory) {
             computeDigest(file, "MD5")
         } else {
@@ -348,15 +299,15 @@ class ZynthFileSystemModule(
         return result
     }
 
-    private fun createDirectory(uri: String, options: Any?) {
+    private fun createDirectory(uri: String, options: Map<String, Any?>?) {
         val parsed = parseUri(uri)
         if (parsed.scheme == "asset") {
             throw IllegalArgumentException("Cannot create directories in assets")
         }
         val file = File(parsed.path)
-        val intermediates = getBooleanOption(options, "intermediates")
-        val overwrite = getBooleanOption(options, "overwrite")
-        val idempotent = getBooleanOption(options, "idempotent")
+        val intermediates = options?.get("intermediates") as? Boolean ?: false
+        val overwrite = options?.get("overwrite") as? Boolean ?: false
+        val idempotent = options?.get("idempotent") as? Boolean ?: false
 
         if (file.exists()) {
             if (overwrite) {
@@ -377,14 +328,14 @@ class ZynthFileSystemModule(
         }
     }
 
-    private fun createFile(uri: String, options: Any?) {
+    private fun createFile(uri: String, options: Map<String, Any?>?) {
         val parsed = parseUri(uri)
         if (parsed.scheme == "asset") {
             throw IllegalArgumentException("Cannot create files in assets")
         }
         val file = File(parsed.path)
-        val intermediates = getBooleanOption(options, "intermediates")
-        val overwrite = getBooleanOption(options, "overwrite")
+        val intermediates = options?.get("intermediates") as? Boolean ?: false
+        val overwrite = options?.get("overwrite") as? Boolean ?: false
 
         if (file.exists()) {
             if (overwrite) {
@@ -699,52 +650,6 @@ class ZynthFileSystemModule(
         val file = File(parsed.path)
         return computeDigest(file, digestName)
             ?: throw IllegalStateException("Unable to compute checksum")
-    }
-
-    private fun getParams(args: Array<Any?>): Any? {
-        return args.getOrNull(0)
-    }
-
-    private fun getValue(args: Array<Any?>, key: String): Any? {
-        val params = getParams(args)
-        return when (params) {
-            is JSONObject -> params.opt(key)
-            is Map<*, *> -> params[key]
-            else -> null
-        }
-    }
-
-    private fun getOptionsArg(args: Array<Any?>): Any? {
-        return getValue(args, "options")
-    }
-
-    private fun getBooleanOption(options: Any?, key: String): Boolean {
-        return when (options) {
-            is JSONObject -> options.optBoolean(key, false)
-            is Map<*, *> -> options[key] as? Boolean ?: false
-            else -> false
-        }
-    }
-
-    private fun getStringArg(args: Array<Any?>, key: String): String? {
-        val value = getValue(args, key)
-        return if (value == JSONObject.NULL) null else value as? String
-    }
-
-    private fun getBoolArg(args: Array<Any?>, key: String): Boolean? {
-        val value = getValue(args, key)
-        return if (value == JSONObject.NULL) null else value as? Boolean
-    }
-
-    private fun getIntArg(args: Array<Any?>, key: String): Int? {
-        val value = getValue(args, key)
-        return when (value) {
-            JSONObject.NULL -> null
-            is Int -> value
-            is Number -> value.toInt()
-            is String -> value.toIntOrNull()
-            else -> null
-        }
     }
 
     private fun resultResponse(result: Any?): JSONObject {
