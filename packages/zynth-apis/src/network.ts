@@ -1,6 +1,6 @@
 import { callNativeSync, getGlobalObject, sharedNativeEventEmitter } from "@zynth/core";
 
-const MODULE_NAME = "Network";
+const MODULE_NAME = "ZynthNetworkCore";
 const EVENT_NAME = "zynth.network.change";
 
 export type NetworkType =

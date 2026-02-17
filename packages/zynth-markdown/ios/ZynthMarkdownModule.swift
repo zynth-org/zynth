@@ -5,12 +5,16 @@ import ZynthKit
 final class ZynthMarkdownModule: NSObject, ZynthModule, ZynthSyncModule {
   let name: String = "ZynthMarkdown"
 
+  var exportedMethods: [String] {
+    return ["parse"]
+  }
+
   func call(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "parse":
-      return parse(args)
+      return ["result": parse(args)]
     default:
-      return errorResponse("unsupported_method", method)
+      throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
   }
 
@@ -19,7 +23,7 @@ final class ZynthMarkdownModule: NSObject, ZynthModule, ZynthSyncModule {
     case "parse":
       return parse(args)
     default:
-      throw ZynthModuleError.syncNotSupported(module: name, method: method)
+      throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
   }
 
@@ -33,9 +37,5 @@ final class ZynthMarkdownModule: NSObject, ZynthModule, ZynthSyncModule {
       extensions: extensions
     )
     return json
-  }
-
-  private func errorResponse(_ error: String, _ message: String) -> [String: Any] {
-    return ["error": error, "message": message]
   }
 }

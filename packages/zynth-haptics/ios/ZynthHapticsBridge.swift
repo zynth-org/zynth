@@ -21,22 +21,22 @@ final class ZynthHapticsBridge: NSObject, ZynthModule {
   func call(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "notificationAsync":
-      return handleNotification(args)
+      return try handleNotification(args)
     case "impactAsync":
-      return handleImpact(args)
+      return try handleImpact(args)
     case "selectionAsync":
       return handleSelection()
     case "performHapticsAsync":
-      return errorResponse("unsupported_method", "performHapticsAsync")
+      return try handlePerformHaptics(args)
     default:
-      return errorResponse("unsupported_method", method)
+      throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
   }
 
-  private func handleNotification(_ args: ZynthArgs) -> [String: Any] {
-    guard let typeString = try? args.string("type"),
-          let type = NotificationType(rawValue: typeString.lowercased()) else {
-      return errorResponse("invalid_argument", "type")
+  private func handleNotification(_ args: ZynthArgs) throws -> [String: Any] {
+    let typeString = try args.string("type")
+    guard let type = NotificationType(rawValue: typeString.lowercased()) else {
+      throw ZynthArgsError.invalidType(key: "type", expected: "NotificationType")
     }
 
     runOnMain {
@@ -45,13 +45,13 @@ final class ZynthHapticsBridge: NSObject, ZynthModule {
       generator.notificationOccurred(type.feedbackType)
     }
 
-    return successResponse()
+    return ["result": true]
   }
 
-  private func handleImpact(_ args: ZynthArgs) -> [String: Any] {
-    guard let styleString = try? args.string("style"),
-          let style = ImpactStyle(rawValue: styleString.lowercased()) else {
-      return errorResponse("invalid_argument", "style")
+  private func handleImpact(_ args: ZynthArgs) throws -> [String: Any] {
+    let styleString = try args.string("style")
+    guard let style = ImpactStyle(rawValue: styleString.lowercased()) else {
+      throw ZynthArgsError.invalidType(key: "style", expected: "ImpactStyle")
     }
 
     runOnMain {
@@ -60,7 +60,7 @@ final class ZynthHapticsBridge: NSObject, ZynthModule {
       generator.impactOccurred()
     }
 
-    return successResponse()
+    return ["result": true]
   }
 
   private func handleSelection() -> [String: Any] {
@@ -70,7 +70,24 @@ final class ZynthHapticsBridge: NSObject, ZynthModule {
       generator.selectionChanged()
     }
 
-    return successResponse()
+    return ["result": true]
+  }
+
+  private func handlePerformHaptics(_ args: ZynthArgs) throws -> [String: Any] {
+    let type = try args.string("type")
+    if type == "no-haptics" {
+      return ["result": true]
+    }
+
+    // Since we don't have a direct mapping for all HapticFeedbackConstants on iOS,
+    // we'll use selection feedback as a fallback or map common ones.
+    runOnMain {
+      let generator = UISelectionFeedbackGenerator()
+      generator.prepare()
+      generator.selectionChanged()
+    }
+
+    return ["result": true]
   }
 
   private func runOnMain(_ block: @escaping () -> Void) {
@@ -81,14 +98,6 @@ final class ZynthHapticsBridge: NSObject, ZynthModule {
         block()
       }
     }
-  }
-
-  private func successResponse() -> [String: Any] {
-    return ["success": true]
-  }
-
-  private func errorResponse(_ error: String, _ message: String) -> [String: Any] {
-    return ["error": error, "message": message]
   }
 
   private enum NotificationType: String {

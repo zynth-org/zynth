@@ -13,6 +13,11 @@ final class ZynthKeyboardBridge: NSObject, ZynthModule {
 
   let name = "ZynthKeyboard"
   private weak var keyboardModule: ZynthKeyboardModule?
+
+  var exportedMethods: [String] {
+    return ["dismiss", "getState"]
+  }
+
   var constantsToExport: [String: Any]? {
     keyboardModule?.getInitialState().toDictionary()
   }
@@ -23,19 +28,17 @@ final class ZynthKeyboardBridge: NSObject, ZynthModule {
   }
 
   func call(method: String, args: ZynthArgs) throws -> Any? {
-    print("[ZynthKeyboardBridge] call(\(method))")
     switch method {
     case "dismiss":
-      return handleDismiss()
+      return ["result": handleDismiss()]
     case "getState":
-      return handleGetState()
+      return ["result": handleGetState()]
     default:
-      return ["error": "unsupported_method", "message": method]
+      throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
   }
 
   private func handleDismiss() -> [String: Any] {
-    print("[ZynthKeyboardBridge] handleDismiss() invoked from JS")
     keyboardModule?.dismissKeyboard()
     return ["success": true]
   }

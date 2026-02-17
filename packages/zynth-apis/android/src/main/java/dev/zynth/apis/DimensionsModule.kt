@@ -104,20 +104,22 @@ class DimensionsModule(
 
     override fun call(method: String, args: ZynthArgs): JSONObject {
         ensureObserving()
-        val params = try { args.nestedAt(0) } catch (e: Exception) { null }
         return when (method) {
-            "current" -> jsonResponse(capturePayload())
-            else -> errorResponse(method)
+            "current" -> resultResponse(capturePayload().toJson())
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
     }
 
     override fun callSync(method: String, args: ZynthArgs): Any? {
         ensureObserving()
-        val params = try { args.nestedAt(0) } catch (e: Exception) { null }
         return when (method) {
             "current" -> capturePayload().toMap()
-            else -> throw UnsupportedOperationException("Method $method not supported by Dimensions module")
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
+    }
+
+    private fun resultResponse(result: Any?): JSONObject {
+        return JSONObject().put("result", result)
     }
 
     override fun onLayoutChange(
@@ -286,18 +288,5 @@ class DimensionsModule(
         } else {
             rootView.post(block)
         }
-    }
-
-    private fun jsonResponse(payload: DimensionsPayload): JSONObject {
-        return JSONObject()
-            .put("ok", true)
-            .put("result", payload.toJson())
-    }
-
-    private fun errorResponse(method: String): JSONObject {
-        return JSONObject()
-            .put("ok", false)
-            .put("error", "unknown_method")
-            .put("method", method)
     }
 }

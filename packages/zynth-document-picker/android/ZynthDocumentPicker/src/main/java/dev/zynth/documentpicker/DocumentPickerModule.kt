@@ -18,6 +18,8 @@ class DocumentPickerModule(
 ) : ZynthModule {
     override val name = "DocumentPicker"
 
+    override val exportedMethods: List<String> = listOf("pickDocumentAsync")
+
     var openDocumentLauncher: ActivityResultLauncher<Array<String>>? = null
     var openMultipleDocumentsLauncher: ActivityResultLauncher<Array<String>>? = null
 
@@ -27,13 +29,13 @@ class DocumentPickerModule(
     override fun call(method: String, args: ZynthArgs): JSONObject {
         return when (method) {
             "pickDocumentAsync" -> pickDocumentAsync(args)
-            else -> errorResponse("unsupported_method", method)
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
     }
 
     private fun pickDocumentAsync(args: ZynthArgs): JSONObject {
         if (pendingRequestId != null) {
-            return errorResponse("busy", "Another picker request is already active")
+            throw IllegalStateException("Another picker request is already active")
         }
 
         val requestId = args.getString("requestId", UUID.randomUUID().toString())
@@ -43,20 +45,20 @@ class DocumentPickerModule(
 
         val mimeTypes = if (options.mimeTypes.isEmpty()) arrayOf("*/*") else options.mimeTypes.toTypedArray()
 
-        return try {
+        try {
             if (options.multiple) {
                 val launcher = openMultipleDocumentsLauncher
-                    ?: return errorResponse("not_initialized", "OpenMultipleDocuments launcher not initialized")
+                    ?: throw IllegalStateException("OpenMultipleDocuments launcher not initialized")
                 launcher.launch(mimeTypes)
             } else {
                 val launcher = openDocumentLauncher
-                    ?: return errorResponse("not_initialized", "OpenDocument launcher not initialized")
+                    ?: throw IllegalStateException("OpenDocument launcher not initialized")
                 launcher.launch(mimeTypes)
             }
-            JSONObject().put("status", "pending")
+            return JSONObject().apply { put("result", "pending") }
         } catch (error: Throwable) {
             pendingRequestId = null
-            errorResponse("launch_failed", error.message ?: "Failed to launch document picker")
+            throw error
         }
     }
 
@@ -191,12 +193,5 @@ class DocumentPickerModule(
         runtime.emitEvent("DocumentPicker.result", payload)
         pendingRequestId = null
         pendingCopyToCacheDirectory = true
-    }
-
-    private fun errorResponse(error: String, message: String): JSONObject {
-        return JSONObject().apply {
-            put("error", error)
-            put("message", message)
-        }
     }
 }

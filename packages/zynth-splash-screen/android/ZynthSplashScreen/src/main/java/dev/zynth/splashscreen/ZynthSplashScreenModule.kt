@@ -11,34 +11,27 @@ import org.json.JSONObject
 class ZynthSplashScreenModule : ZynthModule {
     override val name: String = "ZynthSplashScreen"
 
+    override val exportedMethods: List<String> = listOf("preventAutoHide", "hide")
+
     override fun call(method: String, args: ZynthArgs): JSONObject {
         return when (method) {
-            "preventAutoHide" -> handlePreventAutoHide()
-            "hide" -> handleHide()
-            else -> errorResponse("unsupported_method", method)
+            "preventAutoHide" -> resultResponse(handlePreventAutoHide())
+            "hide" -> resultResponse(handleHide())
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
     }
 
     private fun handlePreventAutoHide(): JSONObject {
         ZynthSplashScreen.preventAutoHide()
-        return successResponse()
+        return JSONObject().put("success", true)
     }
 
     private fun handleHide(): JSONObject {
         ZynthSplashScreen.hide()
-        return successResponse()
+        return JSONObject().put("success", true)
     }
 
-    private fun successResponse(): JSONObject {
-        return JSONObject().apply {
-            put("success", true)
-        }
-    }
-
-    private fun errorResponse(error: String, message: String): JSONObject {
-        return JSONObject().apply {
-            put("error", error)
-            put("message", message)
-        }
+    private fun resultResponse(result: Any?): JSONObject {
+        return JSONObject().put("result", result)
     }
 }

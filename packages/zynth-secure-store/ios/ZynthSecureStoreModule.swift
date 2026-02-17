@@ -36,22 +36,22 @@ final class ZynthSecureStoreModule: NSObject, ZynthModule, ZynthSyncModule {
       let key = try args.string("key")
       let options = parseOptions(args)
       let value = try getItem(forKey: key, options: options)
-      return value ?? NSNull()
+      return ["result": value as Any? ?? NSNull()]
     case "setItem":
       let key = try args.string("key")
       let value = try args.string("value")
       let options = parseOptions(args)
       try setItem(value, forKey: key, options: options)
-      return ["result": NSNull()]
+      return ["result": true]
     case "deleteItem":
       let key = try args.string("key")
       let options = parseOptions(args)
       try deleteItem(forKey: key, options: options)
-      return ["result": NSNull()]
+      return ["result": true]
     case "isAvailable":
-      return true
+      return ["result": true]
     case "canUseBiometricAuthentication":
-      return canUseBiometricAuthentication()
+      return ["result": canUseBiometricAuthentication()]
     default:
       throw ZynthModuleError.methodNotExported(module: name, method: method)
     }

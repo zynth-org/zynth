@@ -13,21 +13,27 @@ class {{MODULE_NAME_PASCAL}}Bridge(
 ) : ZynthModule, ZynthSyncModule {
     override val name: String = "{{MODULE_NAME_PASCAL}}"
 
+    override val exportedMethods: List<String> = listOf("getCurrentState")
+    override val protectedMethods: List<String> = emptyList()
+
     override val constants: Map<String, Any>?
         get() = module.getInitialState().toMap()
 
     override fun call(method: String, args: ZynthArgs): JSONObject {
         return when (method) {
-            else -> JSONObject()
-                .put("error", "unsupported_method")
-                .put("message", method)
+            "getCurrentState" -> resultResponse(JSONObject(module.getInitialState().toMap()))
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
     }
 
     override fun callSync(method: String, args: ZynthArgs): Any? {
         return when (method) {
             "getCurrentState" -> module.getInitialState().toMap()
-            else -> null
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
+    }
+
+    private fun resultResponse(result: Any?): JSONObject {
+        return JSONObject().put("result", result)
     }
 }

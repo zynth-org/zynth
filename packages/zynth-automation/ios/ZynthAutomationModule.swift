@@ -4,6 +4,14 @@ import ZynthKit
 final class ZynthAutomationModule: NSObject, ZynthModule, ZynthSyncModule {
   let name: String = "Automation"
 
+  var exportedMethods: [String] {
+    return ["read", "configure"]
+  }
+
+  var protectedMethods: [String] {
+    return ["read", "configure"]
+  }
+
   private weak var runtime: ZynthRuntime?
   private var productionInspectionEnabled = false
 
@@ -19,10 +27,7 @@ final class ZynthAutomationModule: NSObject, ZynthModule, ZynthSyncModule {
     case "configure":
       return ["result": configure(args: args)]
     default:
-      return [
-        "error": "unknown_method",
-        "method": method,
-      ]
+      throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
   }
 
@@ -33,16 +38,13 @@ final class ZynthAutomationModule: NSObject, ZynthModule, ZynthSyncModule {
     case "configure":
       return configure(args: args)
     default:
-      return [
-        "error": "unknown_method",
-        "method": method,
-      ]
+      throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
   }
 
   private func readSnapshot(args: ZynthArgs) throws -> [String: Any] {
     guard let runtime else {
-      return ["error": "runtime_deallocated"]
+      throw ZynthModuleError.runtimeDeallocated
     }
     var options = (try? args.asDict()) ?? [:]
     if !isDebugBuild && !productionInspectionEnabled {

@@ -6,31 +6,36 @@ final class ZynthWebServerModule: NSObject, ZynthModule, ZynthSyncModule {
   let name: String = "ZynthWebServer"
   private let host = ZynthWebServerHost()
 
+  var exportedMethods: [String] {
+    return ["start", "stop", "isRunning", "getInfo", "getUploadState", "drainEvents"]
+  }
+
+  var protectedMethods: [String] {
+    return ["start", "stop"]
+  }
+
   func call(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "start":
-      do {
-        let config = parseStartConfig(args)
-        let info = try host.start(config: config)
-        return info.toDictionary()
-      } catch {
-        return errorResponse("start_failed", error.localizedDescription)
-      }
+      let config = parseStartConfig(args)
+      let info = try host.start(config: config)
+      return ["result": info.toDictionary()]
     case "stop":
       host.stop()
-      return nil
+      return ["result": true]
     case "isRunning":
-      return host.isRunning()
+      return ["result": host.isRunning()]
     case "getInfo":
-      return host.info?.toDictionary() ?? NSNull()
+      let info = host.info?.toDictionary()
+      return ["result": info as Any? ?? NSNull()]
     case "getUploadState":
-      return host.getUploadState().toDictionary()
+      return ["result": host.getUploadState().toDictionary()]
     case "drainEvents":
       let maxEvents = Int(args.number("maxEvents", default: 50))
       let events = host.drainEvents(maxEvents: maxEvents)
-      return events.map { $0.toDictionary() }
+      return ["result": events.map { $0.toDictionary() }]
     default:
-      return errorResponse("unsupported_method", method)
+      throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
   }
 
@@ -88,9 +93,5 @@ final class ZynthWebServerModule: NSObject, ZynthModule, ZynthSyncModule {
     }
     let base = NSTemporaryDirectory()
     return (base as NSString).appendingPathComponent("zynth-webserver")
-  }
-
-  private func errorResponse(_ error: String, _ message: String) -> [String: Any] {
-    return ["error": error, "message": message]
   }
 }

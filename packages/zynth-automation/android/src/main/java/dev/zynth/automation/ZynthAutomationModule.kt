@@ -14,19 +14,22 @@ internal class ZynthAutomationModule(
     override val name: String = "Automation"
     private var productionInspectionEnabled: Boolean = false
 
+    override val exportedMethods: List<String> = listOf("read", "configure")
+    override val protectedMethods: List<String> = listOf("read", "configure")
+
     override fun call(method: String, args: ZynthArgs): JSONObject {
         return when (method) {
             "read" -> JSONObject().put("result", runtime.getUIManager().snapshot(normalizedReadOptions(args)))
-            "configure" -> JSONObject().put("result", configure(args))
-            else -> JSONObject().put("error", "unknown_method").put("method", method)
+            "configure" -> JSONObject().put("result", JSONObject(configure(args)))
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
     }
 
     override fun callSync(method: String, args: ZynthArgs): Any? {
         return when (method) {
             "read" -> runtime.getUIManager().snapshot(normalizedReadOptions(args))
-            "configure" -> JSONObject(configure(args))
-            else -> JSONObject().put("error", "unknown_method").put("method", method)
+            "configure" -> configure(args)
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
     }
 

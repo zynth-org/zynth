@@ -24,6 +24,24 @@ class NetworkModule(
 ) : ZynthModule, ZynthSyncModule {
     override val name: String = "Network"
 
+    override val exportedMethods: List<String> = listOf(
+        "getNetworkState",
+        "getIpAddress",
+        "getMacAddress",
+        "getCurrentWifi",
+        "isAirplaneModeEnabled",
+        "startDiscovery",
+        "stopDiscovery",
+        "isDiscoveryRunning",
+        "getDiscoveredServices",
+        "clearDiscoveredServices",
+        "drainDiscoveryEvents",
+        "startService",
+        "stopService",
+        "getAdvertisedService",
+        "current"
+    )
+
     private val appContext = context.applicationContext
     private val connectivityManager =
         appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -44,56 +62,50 @@ class NetworkModule(
     }
 
     override fun call(method: String, args: ZynthArgs): JSONObject {
-        return try {
-            when (method) {
-                "getNetworkState" -> resultResponse(getNetworkState())
-                "getIpAddress" -> resultResponse(getIpAddress() ?: JSONObject.NULL)
-                "getMacAddress" -> resultResponse(getMacAddress() ?: JSONObject.NULL)
-                "getCurrentWifi" -> resultResponse(getCurrentWifi() ?: JSONObject.NULL)
-                "isAirplaneModeEnabled" -> resultResponse(isAirplaneModeEnabled())
-                "startDiscovery" -> {
-                    discoveryController.startDiscovery(parseDiscoveryConfig(args))
-                    successResponse()
-                }
-                "stopDiscovery" -> {
-                    discoveryController.stopDiscovery(clearServices = false)
-                    successResponse()
-                }
-                "isDiscoveryRunning" -> resultResponse(discoveryController.isDiscoveryRunning())
-                "getDiscoveredServices" -> resultResponse(discoveryController.getDiscoveredServices())
-                "clearDiscoveredServices" -> {
-                    discoveryController.clearDiscoveredServices()
-                    successResponse()
-                }
-                "drainDiscoveryEvents" -> {
-                    val maxEvents = args.getInt("maxEvents", 100)
-                    resultResponse(discoveryController.drainDiscoveryEvents(maxEvents))
-                }
-                "startService" -> resultResponse(
-                    discoveryController.startService(parseAdvertisedService(args))
-                )
-                "stopService" -> {
-                    discoveryController.stopService()
-                    successResponse()
-                }
-                "getAdvertisedService" -> resultResponse(discoveryController.getAdvertisedService())
-                else -> errorResponse("unsupported_method", method)
+        return when (method) {
+            "getNetworkState", "current" -> resultResponse(getNetworkState())
+            "getIpAddress" -> resultResponse(getIpAddress() ?: JSONObject.NULL)
+            "getMacAddress" -> resultResponse(getMacAddress() ?: JSONObject.NULL)
+            "getCurrentWifi" -> resultResponse(getCurrentWifi() ?: JSONObject.NULL)
+            "isAirplaneModeEnabled" -> resultResponse(isAirplaneModeEnabled())
+            "startDiscovery" -> {
+                discoveryController.startDiscovery(parseDiscoveryConfig(args))
+                resultResponse(true)
             }
-        } catch (e: SecurityException) {
-            errorResponse("permission_denied", e.message ?: "Permission denied")
-        } catch (e: Throwable) {
-            errorResponse("internal_error", e.message ?: "Unknown error")
+            "stopDiscovery" -> {
+                discoveryController.stopDiscovery(clearServices = false)
+                resultResponse(true)
+            }
+            "isDiscoveryRunning" -> resultResponse(discoveryController.isDiscoveryRunning())
+            "getDiscoveredServices" -> resultResponse(discoveryController.getDiscoveredServices())
+            "clearDiscoveredServices" -> {
+                discoveryController.clearDiscoveredServices()
+                resultResponse(true)
+            }
+            "drainDiscoveryEvents" -> {
+                val maxEvents = args.getInt("maxEvents", 100)
+                resultResponse(discoveryController.drainDiscoveryEvents(maxEvents))
+            }
+            "startService" -> resultResponse(
+                discoveryController.startService(parseAdvertisedService(args))
+            )
+            "stopService" -> {
+                discoveryController.stopService()
+                resultResponse(true)
+            }
+            "getAdvertisedService" -> resultResponse(discoveryController.getAdvertisedService())
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
     }
 
     override fun callSync(method: String, args: ZynthArgs): Any? {
         return when (method) {
-            "getNetworkState" -> getNetworkState()
+            "getNetworkState", "current" -> getNetworkState()
             "getIpAddress" -> getIpAddress() ?: JSONObject.NULL
             "isDiscoveryRunning" -> discoveryController.isDiscoveryRunning()
             "getDiscoveredServices" -> discoveryController.getDiscoveredServices()
             "getAdvertisedService" -> discoveryController.getAdvertisedService()
-            else -> null
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
     }
 
@@ -338,15 +350,5 @@ class NetworkModule(
 
     private fun resultResponse(result: Any?): JSONObject {
         return JSONObject().put("result", result ?: JSONObject.NULL)
-    }
-
-    private fun successResponse(): JSONObject {
-        return JSONObject().put("success", true)
-    }
-
-    private fun errorResponse(error: String, message: String): JSONObject {
-        return JSONObject()
-            .put("error", error)
-            .put("message", message)
     }
 }

@@ -8,6 +8,15 @@ import org.json.JSONObject
 class SkiaModule : ZynthModule, ZynthSyncModule {
   override val name: String = "Skia"
 
+  override val exportedMethods: List<String> = listOf(
+    "createSurface",
+    "disposeSurface",
+    "submitDrawCommands",
+    "submitFrame",
+    "invalidateSurface",
+    "setFrameLoopEnabled"
+  )
+
   override fun call(method: String, args: ZynthArgs): JSONObject {
     return callSync(method, args) as JSONObject
   }
@@ -21,7 +30,7 @@ class SkiaModule : ZynthModule, ZynthSyncModule {
       "submitFrame" -> submitFrame(payload)
       "invalidateSurface" -> invalidateSurface(payload)
       "setFrameLoopEnabled" -> setFrameLoopEnabled(payload)
-      else -> errorResult("unsupported_method", "Unsupported Skia method: $method")
+      else -> throw IllegalArgumentException("Unsupported Skia method: $method")
     }
   }
 
@@ -31,69 +40,67 @@ class SkiaModule : ZynthModule, ZynthSyncModule {
 
   private fun createSurface(payload: JSONObject): JSONObject {
     val nodeId = payload.optInt("nodeId", -1)
-    if (nodeId <= 0) return errorResult("invalid_argument", "nodeId")
-    return if (SkiaBridge.createSurface(nodeId)) okResult() else errorResult("surface_create_failed", "node=$nodeId")
+    if (nodeId <= 0) throw IllegalArgumentException("Missing or invalid nodeId")
+    if (!SkiaBridge.createSurface(nodeId)) {
+        throw IllegalStateException("Surface creation failed for node=$nodeId")
+    }
+    return resultResponse(true)
   }
 
   private fun disposeSurface(payload: JSONObject): JSONObject {
     val nodeId = payload.optInt("nodeId", -1)
-    if (nodeId <= 0) return errorResult("invalid_argument", "nodeId")
-    return if (SkiaBridge.disposeSurface(nodeId)) okResult() else errorResult("surface_dispose_failed", "node=$nodeId")
+    if (nodeId <= 0) throw IllegalArgumentException("Missing or invalid nodeId")
+    SkiaBridge.disposeSurface(nodeId)
+    return resultResponse(true)
   }
 
   private fun submitDrawCommands(payload: JSONObject): JSONObject {
     val nodeId = payload.optInt("nodeId", -1)
-    if (nodeId <= 0) return errorResult("invalid_argument", "nodeId")
+    if (nodeId <= 0) throw IllegalArgumentException("Missing or invalid nodeId")
 
     val commands = payload.optJSONArray("commands")
-      ?: return errorResult("invalid_argument", "commands")
+      ?: throw IllegalArgumentException("Missing commands")
 
-    return if (SkiaBridge.submitCommands(nodeId, commands)) {
-      okResult()
-    } else {
-      errorResult("submit_failed", "node=$nodeId")
+    if (!SkiaBridge.submitCommands(nodeId, commands)) {
+      throw IllegalStateException("Submit commands failed for node=$nodeId")
     }
+    return resultResponse(true)
   }
 
   private fun submitFrame(payload: JSONObject): JSONObject {
     val nodeId = payload.optInt("nodeId", -1)
-    if (nodeId <= 0) return errorResult("invalid_argument", "nodeId")
+    if (nodeId <= 0) throw IllegalArgumentException("Missing or invalid nodeId")
 
     val frame = payload.optJSONObject("frame")
-      ?: return errorResult("invalid_argument", "frame")
+      ?: throw IllegalArgumentException("Missing frame")
 
-    return if (SkiaBridge.submitFrame(nodeId, frame)) {
-      okResult()
-    } else {
-      errorResult("submit_failed", "node=$nodeId")
+    if (!SkiaBridge.submitFrame(nodeId, frame)) {
+      throw IllegalStateException("Submit frame failed for node=$nodeId")
     }
+    return resultResponse(true)
   }
 
   private fun invalidateSurface(payload: JSONObject): JSONObject {
     val nodeId = payload.optInt("nodeId", -1)
-    if (nodeId <= 0) return errorResult("invalid_argument", "nodeId")
-    return if (SkiaBridge.invalidateSurface(nodeId)) okResult() else errorResult("surface_not_found", "node=$nodeId")
+    if (nodeId <= 0) throw IllegalArgumentException("Missing or invalid nodeId")
+    if (!SkiaBridge.invalidateSurface(nodeId)) {
+        throw IllegalStateException("Surface not found for node=$nodeId")
+    }
+    return resultResponse(true)
   }
 
   private fun setFrameLoopEnabled(payload: JSONObject): JSONObject {
     val nodeId = payload.optInt("nodeId", -1)
-    if (nodeId <= 0) return errorResult("invalid_argument", "nodeId")
+    if (nodeId <= 0) throw IllegalArgumentException("Missing or invalid nodeId")
 
     val enabled = payload.optBoolean("enabled", false)
-    return if (SkiaBridge.setFrameLoopEnabled(nodeId, enabled)) {
-      okResult()
-    } else {
-      errorResult("surface_not_found", "node=$nodeId")
+    if (!SkiaBridge.setFrameLoopEnabled(nodeId, enabled)) {
+      throw IllegalStateException("Surface not found for node=$nodeId")
     }
+    return resultResponse(true)
   }
 
-  private fun okResult(): JSONObject {
-    return JSONObject().put("result", true)
-  }
-
-  private fun errorResult(code: String, message: String): JSONObject {
-    return JSONObject()
-      .put("error", code)
-      .put("message", message)
+  private fun resultResponse(result: Any?): JSONObject {
+    return JSONObject().put("result", result)
   }
 }

@@ -29,44 +29,33 @@ class FontModule(context: Context, private val runtime: ZynthRuntime? = null) : 
     }
 
     override fun call(method: String, args: ZynthArgs): JSONObject {
-        val params = try { args.nestedAt(0) } catch (e: Exception) { args }
         return when (method) {
-            "loadAsync" -> loadAsync(params)
-            else -> {
-                JSONObject().apply {
-                    put("error", "Unknown method: $method")
-                }
-            }
+            "loadAsync" -> resultResponse(loadAsync(args))
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
     }
 
     private fun loadAsync(params: ZynthArgs): JSONObject {
-        try {
-            val fontFamily = try { params.getString("fontFamily") } catch (e: Exception) { null }
-            val resourceName = try { params.getString("resourceName") } catch (e: Exception) { null }
-            
-            if (fontFamily.isNullOrEmpty() || resourceName.isNullOrEmpty()) {
-                return JSONObject().apply {
-                    put("error", "Missing fontFamily or resourceName")
-                }
-            }
-
-            val success = FontRegistry.loadFont(fontFamily, resourceName)
-            
-            return if (success) {
-                JSONObject().apply {
-                    put("success", true)
-                    put("path", FontRegistry.getFontPath(fontFamily))
-                }
-            } else {
-                JSONObject().apply {
-                    put("error", "Failed to load font '$fontFamily'")
-                }
-            }
-        } catch (e: Exception) {
-            return JSONObject().apply {
-                put("error", e.message ?: "Unknown error")
-            }
+        val fontFamily = params.getString("fontFamily")
+        val resourceName = params.getString("resourceName")
+        
+        if (fontFamily.isEmpty() || resourceName.isEmpty()) {
+            throw IllegalArgumentException("Missing fontFamily or resourceName")
         }
+
+        val success = FontRegistry.loadFont(fontFamily, resourceName)
+        
+        if (success) {
+            return JSONObject().apply {
+                put("success", true)
+                put("path", FontRegistry.getFontPath(fontFamily))
+            }
+        } else {
+            throw IllegalStateException("Failed to load font '$fontFamily'")
+        }
+    }
+
+    private fun resultResponse(result: Any?): JSONObject {
+        return JSONObject().put("result", result)
     }
 }

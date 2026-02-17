@@ -14,37 +14,30 @@ class ZynthKeyboardBridge(
     
     override val name: String = "ZynthKeyboard"
 
+    override val exportedMethods: List<String> = listOf("dismiss", "getState")
+
     override val constants: Map<String, Any>?
         get() = keyboardModule.getInitialState().toMap()
 
     override fun call(method: String, args: ZynthArgs): JSONObject {
         return when (method) {
-            "dismiss" -> handleDismiss()
-            "getState" -> handleGetState()
-            else -> errorResponse("unsupported_method", method)
+            "dismiss" -> resultResponse(handleDismiss())
+            "getState" -> resultResponse(handleGetState())
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
     }
 
     private fun handleDismiss(): JSONObject {
         keyboardModule.dismissKeyboard()
-        return successResponse()
+        return JSONObject().put("success", true)
     }
 
     private fun handleGetState(): JSONObject {
         // Could be implemented to return current state if needed
-        return successResponse()
+        return JSONObject().put("success", true)
     }
 
-    private fun successResponse(): JSONObject {
-        return JSONObject().apply {
-            put("success", true)
-        }
-    }
-
-    private fun errorResponse(error: String, message: String): JSONObject {
-        return JSONObject().apply {
-            put("error", error)
-            put("message", message)
-        }
+    private fun resultResponse(result: Any?): JSONObject {
+        return JSONObject().put("result", result)
     }
 }

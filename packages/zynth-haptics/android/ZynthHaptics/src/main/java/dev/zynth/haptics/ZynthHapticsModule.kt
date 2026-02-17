@@ -33,46 +33,46 @@ class ZynthHapticsModule(
             "impactAsync" -> handleImpact(args)
             "selectionAsync" -> handleSelection()
             "performHapticsAsync" -> handlePerformHaptics(args)
-            else -> errorResponse("unsupported_method", method)
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
     }
 
     private fun handleNotification(args: ZynthArgs): JSONObject {
-        val type = args.getOptionalString("type") ?: return errorResponse("invalid_argument", "type")
-        val pattern = notificationPatterns[type] ?: return errorResponse("invalid_argument", type)
+        val type = args.getString("type")
+        val pattern = notificationPatterns[type.lowercase()] ?: throw IllegalArgumentException("Invalid notification type: $type")
         vibrate(pattern)
-        return successResponse()
+        return resultResponse(null)
     }
 
     private fun handleImpact(args: ZynthArgs): JSONObject {
-        val style = args.getOptionalString("style") ?: return errorResponse("invalid_argument", "style")
-        val pattern = impactPatterns[style] ?: return errorResponse("invalid_argument", style)
+        val style = args.getString("style")
+        val pattern = impactPatterns[style.lowercase()] ?: throw IllegalArgumentException("Invalid impact style: $style")
         vibrate(pattern)
-        return successResponse()
+        return resultResponse(null)
     }
 
     private fun handleSelection(): JSONObject {
         vibrate(selectionPattern)
-        return successResponse()
+        return resultResponse(null)
     }
 
     private fun handlePerformHaptics(args: ZynthArgs): JSONObject {
-        val type = args.getOptionalString("type") ?: return errorResponse("invalid_argument", "type")
+        val type = args.getString("type")
         if (type == "no-haptics") {
-            return successResponse()
+            return resultResponse(null)
         }
 
         val feedbackType = resolveHapticFeedbackConstant(type)
-            ?: return errorResponse("unsupported_type", type)
+            ?: throw IllegalArgumentException("Unsupported haptic type: $type")
 
         val view = findHapticsView()
-            ?: return errorResponse("no_view", "activity")
+            ?: throw IllegalStateException("Could not find view for haptic feedback")
 
         activity.runOnUiThread {
             view.performHapticFeedback(feedbackType)
         }
 
-        return successResponse()
+        return resultResponse(null)
     }
 
     private fun findHapticsView(): View? {
@@ -121,16 +121,9 @@ class ZynthHapticsModule(
         }
     }
 
-    private fun successResponse(): JSONObject {
+    private fun resultResponse(result: Any?): JSONObject {
         return JSONObject().apply {
-            put("success", true)
-        }
-    }
-
-    private fun errorResponse(error: String, message: String): JSONObject {
-        return JSONObject().apply {
-            put("error", error)
-            put("message", message)
+            put("result", result ?: JSONObject.NULL)
         }
     }
 

@@ -8,19 +8,19 @@ import org.json.JSONObject
 class ZynthMarkdownModule : ZynthModule, ZynthSyncModule {
     override val name: String = "ZynthMarkdown"
 
+    override val exportedMethods: List<String> = listOf("parse")
+
     override fun call(method: String, args: ZynthArgs): JSONObject {
-        val params = try { args.nestedAt(0) } catch (e: Exception) { args }
         return when (method) {
-            "parse" -> resultResponse(parse(params))
-            else -> errorResponse("unsupported_method", method)
+            "parse" -> resultResponse(parse(args))
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
     }
 
-    override fun callSync(method: String, args: ZynthArgs): Any? {
-        val params = try { args.nestedAt(0) } catch (e: Exception) { args }
+    override fun callSync(method: String, args: ZynthArgs): Any {
         return when (method) {
-            "parse" -> parse(params)
-            else -> null
+            "parse" -> parse(args)
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
     }
 
@@ -34,13 +34,6 @@ class ZynthMarkdownModule : ZynthModule, ZynthSyncModule {
     private fun resultResponse(result: Any?): JSONObject {
         return JSONObject().apply {
             put("result", result ?: JSONObject.NULL)
-        }
-    }
-
-    private fun errorResponse(error: String, message: String): JSONObject {
-        return JSONObject().apply {
-            put("error", error)
-            put("message", message)
         }
     }
 }

@@ -166,6 +166,34 @@ The `ZynthModuleRegistry` (on both platforms) acts as a Gatekeeper. Before a cal
 2.  **O(1) Performance**: Whitelists are indexed into optimized HashSets during module initialization, ensuring that this security check has zero measurable impact on call latency.
 3.  **Auditability**: Security auditors can verify the entire framework's attack surface by simply scanning for `exportedMethods` definitions across the codebase.
 
+## Secure Session & Replay Protection
+
+For sensitive operations (e.g., Secure Storage, Biometric Auth, File System writes), whitelisting alone is insufficient. If a JavaScript context is compromised, an attacker could capture a legitimate command and "replay" it later. Zynth prevents this via a nonce-based protection layer.
+
+### 1. The `bridgeSessionId`
+Upon initialization, each `ZynthRuntime` generates a cryptographically secure UUID known as the `bridgeSessionId`. This ID is:
+- Kept in native memory within the `ZynthModuleRegistry`.
+- Exposed to JavaScript via `NativeConstants.bridgeSessionId`.
+- Unique to the current app execution; it is regenerated every time the app reloads.
+
+### 2. Protected Methods
+Modules can opt-in to heightened security by defining `protectedMethods`:
+- **iOS**: `var protectedMethods: [String] { get }`
+- **Android**: `val protectedMethods: List<String>`
+
+### 3. Nonce Validation
+When a protected method is called, the native registry enforces the following rules:
+1.  **Session Match**: The `bridgeSessionId` passed in the arguments must exactly match the native session ID. This prevents cross-runtime or stale-session attacks.
+2.  **Nonce Monotonicity**: The call must include a numeric `nonce`. The registry tracks the `lastUsedNonce`. If the incoming nonce is less than or equal to the previous one, the call is rejected as a replay attack.
+
+### 4. Zero-Boilerplate Implementation
+To ensure this protection is used consistently, `@zynth/core` provides centralized `callNative` and `callNativeSync` helpers. These helpers automatically:
+- Retrieve the current `bridgeSessionId` from global constants.
+- Manage an incrementing `nonce` counter in the JS environment.
+- Inject these security tokens into the argument payload before it crosses the JSI boundary.
+
+This "Secure by Default" approach means that individual module developers don't need to manually handle security tokens, while the system remains resilient against common bridge-based attack vectors.
+
 ### Yoga Layout
 
 Zynth uses [Yoga](https://yogalayout.dev/) (the same layout engine as React Native) to implement Flexbox.

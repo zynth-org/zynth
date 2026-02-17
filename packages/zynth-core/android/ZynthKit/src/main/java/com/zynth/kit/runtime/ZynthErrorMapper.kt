@@ -45,6 +45,9 @@ object ZynthErrorMapper {
                     SanitizedError("E_NATIVE_ERROR", "An internal native error occurred." + debugSuffix)
                 }
             }
+            is java.io.IOException -> {
+                SanitizedError("E_IO_ERROR", "A storage error occurred." + debugSuffix)
+            }
             // Add more specific exceptions here as they are identified
             else -> {
                 // Check message for common patterns if we want to be more specific while staying safe

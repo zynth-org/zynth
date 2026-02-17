@@ -33,6 +33,15 @@ class SensorsModule(
 ) : ZynthModule, SensorEventListener {
     override val name: String = "Sensors"
 
+    override val exportedMethods: List<String> = listOf(
+        "isAvailable",
+        "getPermissionStatus",
+        "requestPermission",
+        "startUpdates",
+        "stopUpdates",
+        "readCurrent"
+    )
+
     var permissionLauncher: ActivityResultLauncher<String>? = null
 
     private val sensorManager =
@@ -51,21 +60,17 @@ class SensorsModule(
     }
 
     override fun call(method: String, args: ZynthArgs): JSONObject {
-        return try {
-            when (method) {
-                "isAvailable" -> resultResponse(isAvailable(sensorName(args)))
-                "getPermissionStatus" -> resultResponse(permissionStatus(sensorName(args)))
-                "requestPermission" -> requestPermission(args)
-                "startUpdates" -> resultResponse(startUpdates(args))
-                "stopUpdates" -> {
-                    stopUpdates(sensorName(args))
-                    successResponse()
-                }
-                "readCurrent" -> resultResponse(readCurrent(sensorName(args)) ?: JSONObject.NULL)
-                else -> errorResponse("unsupported_method", method)
+        return when (method) {
+            "isAvailable" -> resultResponse(isAvailable(sensorName(args)))
+            "getPermissionStatus" -> resultResponse(permissionStatus(sensorName(args)))
+            "requestPermission" -> requestPermission(args)
+            "startUpdates" -> resultResponse(startUpdates(args))
+            "stopUpdates" -> {
+                stopUpdates(sensorName(args))
+                resultResponse(true)
             }
-        } catch (error: Throwable) {
-            errorResponse("internal_error", error.message ?: "Unknown error")
+            "readCurrent" -> resultResponse(readCurrent(sensorName(args)) ?: JSONObject.NULL)
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
     }
 
@@ -82,7 +87,7 @@ class SensorsModule(
         }
 
         val launcher = permissionLauncher
-            ?: return errorResponse("not_initialized", "Permission launcher not initialized")
+            ?: throw IllegalStateException("Permission launcher not initialized")
 
         val requestId = args.getString("requestId", "perm-${System.currentTimeMillis()}")
         pendingPermissionRequestId = requestId
@@ -463,15 +468,7 @@ class SensorsModule(
         var quaternion: DoubleArray? = null,
     )
 
-    private fun successResponse(): JSONObject {
-        return JSONObject().put("success", true)
-    }
-
     private fun resultResponse(result: Any?): JSONObject {
         return JSONObject().put("result", result)
-    }
-
-    private fun errorResponse(error: String, message: String): JSONObject {
-        return JSONObject().put("error", error).put("message", message)
     }
 }

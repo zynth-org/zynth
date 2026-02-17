@@ -57,7 +57,6 @@ let _nextNonce = Date.now();
 
 /**
  * Retrieves the global object in a cross-platform safe way.
- * Prioritizes globalThis, then global, then window, then fallback to Function("return this")().
  */
 export function getGlobalObject(): any {
   if (typeof globalThis !== "undefined") return globalThis;
@@ -70,8 +69,13 @@ export function getGlobalObject(): any {
   }
 }
 
+function getSessionId(): string | undefined {
+  const g = getGlobalObject();
+  return g.NativeConstants?.bridgeSessionId;
+}
+
 /**
- * Access the Zynth Modules Bridge (native module communication).
+ * Access the Zynth Modules Bridge.
  */
 export function getModulesBridge(): ZynthModulesBridge | null {
   const g = getGlobalObject();
@@ -79,8 +83,7 @@ export function getModulesBridge(): ZynthModulesBridge | null {
 }
 
 /**
- * Access a specific JSI Native Module directly attached to the global object.
- * @param key The global key (e.g. '__zynth_async_storage')
+ * Access a specific JSI Native Module.
  */
 export function getNativeModule<T>(key: string): T | null {
   const g = getGlobalObject();
@@ -89,15 +92,12 @@ export function getNativeModule<T>(key: string): T | null {
 
 /**
  * Unwraps the result from a native call.
- * Handles { result: ... }, { data: ... }, or error objects.
  */
 export function unwrapNativeResult<T = unknown>(value: any): T {
   if (value && typeof value === "object") {
-    // Check if it's an error response
     if ("error" in value) {
       throw new Error(value.message || value.error || "Unknown native error");
     }
-    // Check for standard result wrappers
     if ("result" in value) return value.result as T;
     if ("data" in value) return value.data as T;
   }
@@ -105,10 +105,7 @@ export function unwrapNativeResult<T = unknown>(value: any): T {
 }
 
 /**
- * Asynchronously call a native module method via the bridge.
- * @param moduleName The name of the native module (e.g. 'Dimensions')
- * @param method The method name (e.g. 'current')
- * @param args The arguments to pass
+ * Asynchronously call a native module method with automatic security context.
  */
 export async function callNative<T = unknown>(
   moduleName: string,
@@ -117,22 +114,18 @@ export async function callNative<T = unknown>(
 ): Promise<T> {
   const bridge = getModulesBridge();
   if (!bridge) {
-    throw new Error(
-      `[Zynth] Native bridge not found. Cannot call ${moduleName}.${method}`
-    );
+    throw new Error(`[Zynth] Native bridge not found. Cannot call ${moduleName}.${method}`);
   }
 
-  // Auto-inject security context for protected methods
-  let callArgs: any = args;
-  const g = getGlobalObject();
-  const sessionId = g.NativeConstants?.bridgeSessionId;
-  
+  const sessionId = getSessionId();
+  let callArgs = args;
+
   if (sessionId) {
     if (!args || (typeof args === "object" && !Array.isArray(args))) {
       callArgs = {
         ...(args || {}),
         bridgeSessionId: sessionId,
-        nonce: _nextNonce++,
+        nonce: ++_nextNonce,
       };
     }
   }
@@ -142,10 +135,7 @@ export async function callNative<T = unknown>(
 }
 
 /**
- * Synchronously call a native module method via the bridge.
- * @param moduleName The name of the native module
- * @param method The method name
- * @param args The arguments to pass
+ * Synchronously call a native module method with automatic security context.
  */
 export function callNativeSync<T = unknown>(
   moduleName: string,
@@ -154,22 +144,18 @@ export function callNativeSync<T = unknown>(
 ): T {
   const bridge = getModulesBridge();
   if (!bridge || !bridge.callSync) {
-    throw new Error(
-      `[Zynth] Native bridge (callSync) not found. Cannot call ${moduleName}.${method}`
-    );
+    throw new Error(`[Zynth] Native bridge (callSync) not found. Cannot call ${moduleName}.${method}`);
   }
 
-  // Auto-inject security context for protected methods
-  let callArgs: any = args;
-  const g = getGlobalObject();
-  const sessionId = g.NativeConstants?.bridgeSessionId;
+  const sessionId = getSessionId();
+  let callArgs = args;
 
   if (sessionId) {
     if (!args || (typeof args === "object" && !Array.isArray(args))) {
       callArgs = {
         ...(args || {}),
         bridgeSessionId: sessionId,
-        nonce: _nextNonce++,
+        nonce: ++_nextNonce,
       };
     }
   }

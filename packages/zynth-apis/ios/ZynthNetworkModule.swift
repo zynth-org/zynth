@@ -22,7 +22,7 @@ private struct NetworkSnapshot: Equatable {
 
 @objc(ZynthNetworkModule)
 final class ZynthNetworkModule: NSObject, ZynthModule, ZynthSyncModule {
-  let name: String = "Network"
+  let name: String = "ZynthNetworkCore"
 
   var exportedMethods: [String] {
     return ["current"]
@@ -63,7 +63,7 @@ final class ZynthNetworkModule: NSObject, ZynthModule, ZynthSyncModule {
     case "current":
       return ["result": withSnapshot { $0.toDictionary() }]
     default:
-      return ["error": "unknown_method"]
+      throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
   }
 
@@ -72,7 +72,7 @@ final class ZynthNetworkModule: NSObject, ZynthModule, ZynthSyncModule {
     case "current":
       return withSnapshot { $0.toDictionary() }
     default:
-      throw ZynthModuleError.syncNotSupported(module: name, method: method)
+      throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
   }
 

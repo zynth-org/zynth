@@ -13,23 +13,26 @@ class ZynthAppearanceBridge(
 ) : ZynthModule, ZynthSyncModule {
     override val name: String = "ZynthAppearance"
 
+    override val exportedMethods: List<String> = listOf("getCurrent")
+
     override val constants: Map<String, Any>?
         get() = module.getInitialState().toMap()
 
-    @Suppress("UNUSED_PARAMETER")
     override fun call(method: String, args: ZynthArgs): JSONObject {
-        val params = try { args.nestedAt(0) } catch (e: Exception) { null }
-        return JSONObject()
-            .put("error", "unsupported_method")
-            .put("message", method)
+        return when (method) {
+            "getCurrent" -> resultResponse(JSONObject(module.getCurrentState().toMap()))
+            else -> throw IllegalArgumentException("Unsupported method: $method")
+        }
     }
 
-    @Suppress("UNUSED_PARAMETER")
-    override fun callSync(method: String, args: ZynthArgs): Any? {
-        val params = try { args.nestedAt(0) } catch (e: Exception) { null }
+    override fun callSync(method: String, args: ZynthArgs): Any {
         return when (method) {
-            "getCurrent" -> JSONObject(module.getCurrentState().toMap())
-            else -> null
+            "getCurrent" -> module.getCurrentState().toMap()
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
+    }
+
+    private fun resultResponse(result: Any?): JSONObject {
+        return JSONObject().put("result", result)
     }
 }

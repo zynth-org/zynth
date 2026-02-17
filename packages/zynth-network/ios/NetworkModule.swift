@@ -5,6 +5,26 @@ import ZynthKit
 final class NetworkModule: NSObject, ZynthModule, ZynthSyncModule {
   let name: String = "Network"
 
+  var exportedMethods: [String] {
+    return [
+      "getNetworkState",
+      "getIpAddress",
+      "getMacAddress",
+      "getCurrentWifi",
+      "isAirplaneModeEnabled",
+      "startDiscovery",
+      "stopDiscovery",
+      "isDiscoveryRunning",
+      "getDiscoveredServices",
+      "clearDiscoveredServices",
+      "drainDiscoveryEvents",
+      "startService",
+      "stopService",
+      "getAdvertisedService",
+      "current"
+    ]
+  }
+
   private let host = NetworkHost()
 
   func initialize() {
@@ -17,58 +37,51 @@ final class NetworkModule: NSObject, ZynthModule, ZynthSyncModule {
 
   func call(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
-    case "getNetworkState":
-      return host.getNetworkState()
+    case "getNetworkState", "current":
+      return ["result": host.getNetworkState()]
     case "getIpAddress":
-      return host.getIpAddress() ?? NSNull()
+      return ["result": host.getIpAddress() as Any? ?? NSNull()]
     case "getMacAddress":
-      return host.getMacAddress() ?? NSNull()
+      return ["result": host.getMacAddress() as Any? ?? NSNull()]
     case "getCurrentWifi":
-      return host.getCurrentWifi() ?? NSNull()
+      return ["result": host.getCurrentWifi() as Any? ?? NSNull()]
     case "isAirplaneModeEnabled":
-      return host.isAirplaneModeEnabled() ?? NSNull()
+      return ["result": host.isAirplaneModeEnabled() as Any? ?? NSNull()]
     case "startDiscovery":
       let config = parseDiscoveryConfig(args)
-      do {
-        try host.startDiscovery(config: config)
-        return nil
-      } catch {
-        return errorResponse("start_discovery_failed", error.localizedDescription)
-      }
+      try host.startDiscovery(config: config)
+      return ["result": true]
     case "stopDiscovery":
       host.stopDiscovery()
-      return nil
+      return ["result": true]
     case "isDiscoveryRunning":
-      return host.isDiscoveryRunning()
+      return ["result": host.isDiscoveryRunning()]
     case "getDiscoveredServices":
-      return host.getDiscoveredServices().map { $0.toDictionary() }
+      return ["result": host.getDiscoveredServices().map { $0.toDictionary() }]
     case "clearDiscoveredServices":
       host.clearDiscoveredServices()
-      return nil
+      return ["result": true]
     case "drainDiscoveryEvents":
       let maxEvents = Int(args.number("maxEvents", default: 100))
-      return host.drainDiscoveryEvents(maxEvents: maxEvents).map { $0.toDictionary() }
+      return ["result": host.drainDiscoveryEvents(maxEvents: maxEvents).map { $0.toDictionary() }]
     case "startService":
-      do {
-        let options = try parseAdvertiseOptions(args)
-        let info = try host.startService(options: options)
-        return info.toDictionary()
-      } catch {
-        return errorResponse("start_service_failed", error.localizedDescription)
-      }
+      let options = try parseAdvertiseOptions(args)
+      let info = try host.startService(options: options)
+      return ["result": info.toDictionary()]
     case "stopService":
       host.stopService()
-      return nil
+      return ["result": true]
     case "getAdvertisedService":
-      return host.getAdvertisedService()?.toDictionary() ?? NSNull()
+      let info = host.getAdvertisedService()?.toDictionary()
+      return ["result": info as Any? ?? NSNull()]
     default:
-      return errorResponse("unsupported_method", method)
+      throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
   }
 
   func callSync(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
-    case "getNetworkState":
+    case "getNetworkState", "current":
       return host.getNetworkState()
     case "getIpAddress":
       return host.getIpAddress() ?? NSNull()
@@ -79,7 +92,7 @@ final class NetworkModule: NSObject, ZynthModule, ZynthSyncModule {
     case "getAdvertisedService":
       return host.getAdvertisedService()?.toDictionary() ?? NSNull()
     default:
-      throw ZynthModuleError.syncNotSupported(module: name, method: method)
+      throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
   }
 
@@ -135,9 +148,5 @@ final class NetworkModule: NSObject, ZynthModule, ZynthSyncModule {
     let candidate = (value ?? fallback).trimmingCharacters(in: .whitespacesAndNewlines)
     if candidate.isEmpty { return fallback }
     return candidate.hasSuffix(".") ? candidate : "\(candidate)."
-  }
-
-  private func errorResponse(_ error: String, _ message: String) -> [String: Any] {
-    return ["error": error, "message": message]
   }
 }

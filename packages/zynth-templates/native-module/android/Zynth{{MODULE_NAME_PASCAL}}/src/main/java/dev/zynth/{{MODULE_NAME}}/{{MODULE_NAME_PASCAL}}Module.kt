@@ -11,57 +11,37 @@ import org.json.JSONObject
 
 
 class {{MODULE_NAME_PASCAL}}Module : ZynthModule, ZynthSyncModule {
-
     override val name = "{{MODULE_NAME_PASCAL}}"
 
-
+    override val exportedMethods: List<String> = listOf("exampleMethod", "exampleSyncMethod")
+    override val protectedMethods: List<String> = emptyList()
 
     override val constants: Map<String, Any>?
-
         get() = mapOf("exampleConstant" to "Hello from Android")
 
-
-
     override fun initialize() {
-
         // Module setup
-
     }
-
-
 
     override fun invalidate() {
-
         // Cleanup
-
     }
-
-
 
     override fun call(method: String, args: ZynthArgs): JSONObject {
-
         return when (method) {
-
-            "exampleMethod" -> JSONObject().put("result", "Async result")
-
-            else -> JSONObject().put("error", "unknown_method")
-
+            "exampleMethod" -> resultResponse("Async result")
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
-
     }
-
-
 
     override fun callSync(method: String, args: ZynthArgs): Any? {
-
         return when (method) {
-
             "exampleSyncMethod" -> "Sync result"
-
-            else -> null
-
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
-
     }
 
+    private fun resultResponse(result: Any?): JSONObject {
+        return JSONObject().put("result", result)
+    }
 }

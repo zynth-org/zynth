@@ -8,6 +8,10 @@ class ZynthHypervisorModule: NSObject, ZynthModule, ZynthSyncModule {
     var exportedMethods: [String] {
         return ["postMessage"]
     }
+
+    var protectedMethods: [String] {
+        return ["postMessage"]
+    }
     
     private weak var runtime: ZynthRuntime?
     
@@ -32,7 +36,7 @@ class ZynthHypervisorModule: NSObject, ZynthModule, ZynthSyncModule {
             }
             return nil
         default:
-             return ["error": "unknown_method", "method": method]
+            throw ZynthModuleError.methodNotExported(module: name, method: method)
         }
     }
     

@@ -33,7 +33,7 @@ class NetworkModule(
     private val runtime: ZynthRuntime,
 ) : ZynthModule, ZynthSyncModule {
 
-    override val name: String = "Network"
+    override val name: String = "ZynthNetworkCore"
 
     override val exportedMethods: List<String> = listOf("current")
 
@@ -70,19 +70,21 @@ class NetworkModule(
     }
 
     override fun call(method: String, args: ZynthArgs): JSONObject {
-        val params = try { args.nestedAt(0) } catch (e: Exception) { null }
         return when (method) {
-            "current" -> JSONObject().put("result", latestSnapshot.toMap())
-            else -> JSONObject().put("error", "unknown_method")
+            "current" -> resultResponse(JSONObject(latestSnapshot.toMap()))
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
     }
 
     override fun callSync(method: String, args: ZynthArgs): Any? {
-        val params = try { args.nestedAt(0) } catch (e: Exception) { null }
         return when (method) {
             "current" -> latestSnapshot.toMap()
-            else -> null
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
+    }
+
+    private fun resultResponse(result: Any?): JSONObject {
+        return JSONObject().put("result", result)
     }
 
     private fun startMonitoring() {

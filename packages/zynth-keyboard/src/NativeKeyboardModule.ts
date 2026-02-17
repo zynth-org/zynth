@@ -1,4 +1,8 @@
-import { sharedNativeEventEmitter } from "@zynth/core";
+import {
+  callNative,
+  getGlobalObject,
+  sharedNativeEventEmitter,
+} from "@zynth/core";
 import type {
   KeyboardState,
   KeyboardChangeListener,
@@ -69,21 +73,6 @@ declare global {
 const EVENT_NAME = "ZynthKeyboard:change";
 const MODULE_KEY = "ZynthKeyboard";
 
-function getGlobalObject(): Record<string, unknown> {
-  if (typeof globalThis !== "undefined") {
-    return globalThis as Record<string, unknown>;
-  }
-  try {
-    const fallback = Function("return this")();
-    if (fallback && typeof fallback === "object") {
-      return fallback as Record<string, unknown>;
-    }
-  } catch {
-    // ignore
-  }
-  return {};
-}
-
 function readNativeConstants(): KeyboardState | null {
   const globalObj = getGlobalObject();
   const constants = globalObj.NativeConstants as Record<string, unknown> | undefined;
@@ -132,10 +121,7 @@ function createEmitterModule(): NativeKeyboardModule | null {
       return () => subscription.remove();
     },
     dismiss() {
-      const bridge = getModulesBridge();
-      if (bridge?.call) {
-        bridge.call("ZynthKeyboard", "dismiss", {});
-      }
+      void callNative("ZynthKeyboard", "dismiss", {});
     },
     _updateState(state: KeyboardState) {
       latest = state;

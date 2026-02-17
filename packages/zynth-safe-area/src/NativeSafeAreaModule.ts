@@ -142,10 +142,8 @@ function readNativeConstants(): WindowMetrics | null {
 // Removed getModulesBridge
 
 function readFromBridge(): WindowMetrics | null {
-  const bridge = getModulesBridge();
-  if (!bridge?.callSync) return null;
   try {
-    const result = callNativeSync(MODULE_KEY, "getCurrentMetrics", {});
+    const result = callNativeSync<any>(MODULE_KEY, "getCurrentMetrics", {});
     if (!result || typeof result !== "object") return null;
     return result as WindowMetrics;
   } catch {

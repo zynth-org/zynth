@@ -33,8 +33,10 @@ final class ZynthSafeAreaBridge: NSObject, ZynthModule, ZynthSyncModule {
     case "refresh":
       module.refreshMetrics()
       return ["result": true]
+    case "getCurrentMetrics":
+      return ["result": module.getInitialMetrics().toDictionary()]
     default:
-      return ["error": "unsupported_method", "message": method]
+      throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
   }
 
@@ -43,7 +45,7 @@ final class ZynthSafeAreaBridge: NSObject, ZynthModule, ZynthSyncModule {
     case "getCurrentMetrics":
       return module.getInitialMetrics().toDictionary()
     default:
-      throw ZynthModuleError.syncNotSupported(module: name, method: method)
+      throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
   }
 }

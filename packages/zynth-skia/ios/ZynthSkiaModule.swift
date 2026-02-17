@@ -5,6 +5,17 @@ import ZynthKit
 final class ZynthSkiaModule: NSObject, ZynthModule, ZynthSyncModule {
   let name: String = "Skia"
 
+  var exportedMethods: [String] {
+    return [
+      "createSurface",
+      "disposeSurface",
+      "submitDrawCommands",
+      "submitFrame",
+      "invalidateSurface",
+      "setFrameLoopEnabled"
+    ]
+  }
+
   private weak var runtime: ZynthRuntime?
 
   init(runtime: ZynthRuntime) {
@@ -19,22 +30,19 @@ final class ZynthSkiaModule: NSObject, ZynthModule, ZynthSyncModule {
     let payload = (try? args.asDict()) ?? [:]
     switch method {
     case "createSurface":
-      return createSurface(payload)
+      return try createSurface(payload)
     case "disposeSurface":
-      return disposeSurface(payload)
+      return try disposeSurface(payload)
     case "submitDrawCommands":
-      return submitDrawCommands(payload)
+      return try submitDrawCommands(payload)
     case "submitFrame":
-      return submitFrame(payload)
+      return try submitFrame(payload)
     case "invalidateSurface":
-      return invalidateSurface(payload)
+      return try invalidateSurface(payload)
     case "setFrameLoopEnabled":
-      return setFrameLoopEnabled(payload)
+      return try setFrameLoopEnabled(payload)
     default:
-      return [
-        "error": "unsupported_method",
-        "message": "Unsupported Skia method: \(method)",
-      ]
+      throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
   }
 
@@ -42,13 +50,13 @@ final class ZynthSkiaModule: NSObject, ZynthModule, ZynthSyncModule {
     // no-op; native renderer bridge owns surface state
   }
 
-  private func createSurface(_ payload: [String: Any]) -> [String: Any] {
+  private func createSurface(_ payload: [String: Any]) throws -> [String: Any] {
     guard let nodeId = payload["nodeId"] as? NSNumber else {
-      return error("invalid_argument", "nodeId")
+      throw NSError(domain: "ZynthSkia", code: 1, userInfo: [NSLocalizedDescriptionKey: "Missing nodeId"])
     }
 
     let result = runOnMainSync { [weak self] in
-      guard let self, let runtime else { return false }
+      guard let self, let runtime = self.runtime else { return false }
       let id = nodeId.intValue
       let created = ZynthSkiaRendererBridge.createSurface(id)
       if let node = runtime.uiManager.zynth_node(forId: nodeId),
@@ -58,17 +66,20 @@ final class ZynthSkiaModule: NSObject, ZynthModule, ZynthSyncModule {
       return created
     }
 
-    return result ? ["result": true] : error("surface_create_failed", "node=\(nodeId)")
+    if !result {
+      throw NSError(domain: "ZynthSkia", code: 2, userInfo: [NSLocalizedDescriptionKey: "Surface creation failed"])
+    }
+    return ["result": true]
   }
 
-  private func disposeSurface(_ payload: [String: Any]) -> [String: Any] {
+  private func disposeSurface(_ payload: [String: Any]) throws -> [String: Any] {
     guard let nodeId = payload["nodeId"] as? NSNumber else {
-      return error("invalid_argument", "nodeId")
+      throw NSError(domain: "ZynthSkia", code: 1, userInfo: [NSLocalizedDescriptionKey: "Missing nodeId"])
     }
 
     let id = nodeId.intValue
     _ = runOnMainSync { [weak self] in
-      guard let self, let runtime else { return false }
+      guard let self, let runtime = self.runtime else { return false }
       _ = ZynthSkiaRendererBridge.disposeSurface(id)
       if let node = runtime.uiManager.zynth_node(forId: nodeId),
          let view = node.view as? ZynthSkiaView {
@@ -80,12 +91,12 @@ final class ZynthSkiaModule: NSObject, ZynthModule, ZynthSyncModule {
     return ["result": true]
   }
 
-  private func submitDrawCommands(_ payload: [String: Any]) -> [String: Any] {
+  private func submitDrawCommands(_ payload: [String: Any]) throws -> [String: Any] {
     guard let nodeId = payload["nodeId"] as? NSNumber else {
-      return error("invalid_argument", "nodeId")
+      throw NSError(domain: "ZynthSkia", code: 1, userInfo: [NSLocalizedDescriptionKey: "Missing nodeId"])
     }
     guard let commands = payload["commands"] as? [[String: Any]] else {
-      return error("invalid_argument", "commands")
+      throw NSError(domain: "ZynthSkia", code: 1, userInfo: [NSLocalizedDescriptionKey: "Missing commands"])
     }
 
     let id = nodeId.intValue
@@ -94,7 +105,7 @@ final class ZynthSkiaModule: NSObject, ZynthModule, ZynthSyncModule {
     }
 
     _ = runOnMainSync { [weak self] in
-      guard let self, let runtime else { return false }
+      guard let self, let runtime = self.runtime else { return false }
       _ = ZynthSkiaRendererBridge.submitCommands(commands, forNode: id)
       if let node = runtime.uiManager.zynth_node(forId: nodeId),
          let view = node.view as? ZynthSkiaView {
@@ -106,13 +117,13 @@ final class ZynthSkiaModule: NSObject, ZynthModule, ZynthSyncModule {
     return ["result": true]
   }
 
-  private func submitFrame(_ payload: [String: Any]) -> [String: Any] {
+  private func submitFrame(_ payload: [String: Any]) throws -> [String: Any] {
     guard let nodeId = payload["nodeId"] as? NSNumber else {
-      return error("invalid_argument", "nodeId")
+      throw NSError(domain: "ZynthSkia", code: 1, userInfo: [NSLocalizedDescriptionKey: "Missing nodeId"])
     }
     guard let frame = payload["frame"] as? [String: Any],
           let _ = frame["commands"] as? [[String: Any]] else {
-      return error("invalid_argument", "frame")
+      throw NSError(domain: "ZynthSkia", code: 1, userInfo: [NSLocalizedDescriptionKey: "Missing frame"])
     }
 
     let id = nodeId.intValue
@@ -121,7 +132,7 @@ final class ZynthSkiaModule: NSObject, ZynthModule, ZynthSyncModule {
     }
 
     _ = runOnMainSync { [weak self] in
-      guard let self, let runtime else { return false }
+      guard let self, let runtime = self.runtime else { return false }
       _ = ZynthSkiaRendererBridge.submitFrame(frame, forNode: id)
       if let node = runtime.uiManager.zynth_node(forId: nodeId),
          let view = node.view as? ZynthSkiaView {
@@ -133,18 +144,18 @@ final class ZynthSkiaModule: NSObject, ZynthModule, ZynthSyncModule {
     return ["result": true]
   }
 
-  private func invalidateSurface(_ payload: [String: Any]) -> [String: Any] {
+  private func invalidateSurface(_ payload: [String: Any]) throws -> [String: Any] {
     guard let nodeId = payload["nodeId"] as? NSNumber else {
-      return error("invalid_argument", "nodeId")
+      throw NSError(domain: "ZynthSkia", code: 1, userInfo: [NSLocalizedDescriptionKey: "Missing nodeId"])
     }
 
     let id = nodeId.intValue
     guard ZynthSkiaRendererBridge.hasSurface(id) else {
-      return error("surface_not_found", "node=\(id)")
+      throw NSError(domain: "ZynthSkia", code: 3, userInfo: [NSLocalizedDescriptionKey: "Surface not found"])
     }
 
     _ = runOnMainSync { [weak self] in
-      guard let self, let runtime else { return false }
+      guard let self, let runtime = self.runtime else { return false }
       guard let node = runtime.uiManager.zynth_node(forId: nodeId),
             let view = node.view as? ZynthSkiaView else {
         return false
@@ -156,19 +167,19 @@ final class ZynthSkiaModule: NSObject, ZynthModule, ZynthSyncModule {
     return ["result": true]
   }
 
-  private func setFrameLoopEnabled(_ payload: [String: Any]) -> [String: Any] {
+  private func setFrameLoopEnabled(_ payload: [String: Any]) throws -> [String: Any] {
     guard let nodeId = payload["nodeId"] as? NSNumber else {
-      return error("invalid_argument", "nodeId")
+      throw NSError(domain: "ZynthSkia", code: 1, userInfo: [NSLocalizedDescriptionKey: "Missing nodeId"])
     }
     let enabled = (payload["enabled"] as? Bool) ?? false
 
     let id = nodeId.intValue
     guard ZynthSkiaRendererBridge.hasSurface(id) else {
-      return error("surface_not_found", "node=\(id)")
+      throw NSError(domain: "ZynthSkia", code: 3, userInfo: [NSLocalizedDescriptionKey: "Surface not found"])
     }
 
     _ = runOnMainSync { [weak self] in
-      guard let self, let runtime else { return false }
+      guard let self, let runtime = self.runtime else { return false }
       guard let node = runtime.uiManager.zynth_node(forId: nodeId),
             let view = node.view as? ZynthSkiaView else {
         return false
@@ -195,9 +206,5 @@ final class ZynthSkiaModule: NSObject, ZynthModule, ZynthSyncModule {
     }
     _ = group.wait(timeout: .now() + 0.5)
     return result
-  }
-
-  private func error(_ code: String, _ message: String) -> [String: String] {
-    return ["error": code, "message": message]
   }
 }

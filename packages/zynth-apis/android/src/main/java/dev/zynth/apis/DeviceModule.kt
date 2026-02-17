@@ -23,16 +23,20 @@ class DeviceModule(
 
     override fun call(method: String, args: ZynthArgs): JSONObject {
         return when (method) {
-            "getInfo", "current" -> JSONObject().put("result", deviceInfo())
-            else -> JSONObject().put("error", "unknown_method")
+            "getInfo", "current" -> resultResponse(JSONObject(deviceInfo()))
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
     }
 
     override fun callSync(method: String, args: ZynthArgs): Any? {
         return when (method) {
             "getInfo", "current" -> deviceInfo()
-            else -> null
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
+    }
+
+    private fun resultResponse(result: Any?): JSONObject {
+        return JSONObject().put("result", result)
     }
 
     private fun deviceInfo(): Map<String, Any> {

@@ -50,12 +50,15 @@ class BackHandlerModule(
     override fun call(method: String, args: ZynthArgs): JSONObject {
         return when (method) {
             "setCanGoBack" -> {
-                val params = args.nestedAt(0)
-                canGoBack = params.getBoolean("canGoBack", false)
-                JSONObject().put("ok", true)
+                canGoBack = args.getBoolean("canGoBack", false)
+                resultResponse(true)
             }
-            else -> JSONObject().put("error", "unknown_method")
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
+    }
+
+    private fun resultResponse(result: Any?): JSONObject {
+        return JSONObject().put("result", result)
     }
 
     private fun findHostActivity(context: Context): ComponentActivity? {

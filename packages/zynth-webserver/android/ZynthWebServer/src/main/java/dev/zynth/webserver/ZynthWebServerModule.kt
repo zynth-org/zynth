@@ -15,6 +15,9 @@ class ZynthWebServerModule(
     private var serverHandle: Long = 0
     private var serverInfo: JSONObject? = null
 
+    override val exportedMethods: List<String> = listOf("start", "stop", "isRunning", "getInfo", "getUploadState", "drainEvents")
+    override val protectedMethods: List<String> = listOf("start", "stop")
+
     override fun invalidate() {
         stopServer()
     }
@@ -28,13 +31,13 @@ class ZynthWebServerModule(
             "start" -> startServer(args)
             "stop" -> {
                 stopServer()
-                successResponse()
+                resultResponse(true)
             }
             "isRunning" -> resultResponse(isRunning())
             "getInfo" -> resultResponse(serverInfo ?: JSONObject.NULL)
             "getUploadState" -> resultResponse(getUploadState())
             "drainEvents" -> drainEvents(args)
-            else -> errorResponse("unsupported_method", method)
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
     }
 
@@ -43,7 +46,7 @@ class ZynthWebServerModule(
             "isRunning" -> isRunning()
             "getInfo" -> serverInfo ?: JSONObject.NULL
             "getUploadState" -> getUploadState()
-            else -> null
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
     }
 
@@ -82,7 +85,7 @@ class ZynthWebServerModule(
             eventsPath
         )
         if (handle == 0L) {
-            return errorResponse("start_failed", "Failed to start web server")
+            throw IllegalStateException("Failed to start web server")
         }
 
         serverHandle = handle
@@ -168,19 +171,6 @@ class ZynthWebServerModule(
     private fun resultResponse(result: Any?): JSONObject {
         return JSONObject().apply {
             put("result", result ?: JSONObject.NULL)
-        }
-    }
-
-    private fun successResponse(): JSONObject {
-        return JSONObject().apply {
-            put("success", true)
-        }
-    }
-
-    private fun errorResponse(error: String, message: String): JSONObject {
-        return JSONObject().apply {
-            put("error", error)
-            put("message", message)
         }
     }
 }

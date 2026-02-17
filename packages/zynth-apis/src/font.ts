@@ -1,12 +1,5 @@
+import { callNative, getGlobalObject } from "@zynth/core";
 import { createSignal, createEffect, createResource, type Accessor, type Resource } from "solid-js";
-
-type ModulesBridge = {
-  call?(
-    name: string,
-    method: string,
-    args?: unknown,
-  ): Promise<unknown> | unknown;
-};
 
 type WebFontSources = Record<string, string>;
 const webLoadedFonts = new Set<string>();
@@ -17,30 +10,6 @@ const fontRegistry = new Map<
   string,
   { resourceName?: string; webSource?: string }
 >();
-
-function getGlobalObject(): Record<string, unknown> {
-  if (typeof globalThis !== "undefined") {
-    return globalThis as any;
-  }
-  try {
-    const fallback = Function("return this")();
-    if (fallback && typeof fallback === "object") {
-      return fallback as Record<string, unknown>;
-    }
-  } catch {
-    // ignore
-  }
-  return {};
-}
-
-function getModulesBridge(): ModulesBridge | null {
-  const globalObj = getGlobalObject();
-  const maybeBridge = globalObj.__modules;
-  if (!maybeBridge || typeof maybeBridge !== "object") {
-    return null;
-  }
-  return maybeBridge as ModulesBridge;
-}
 
 function getWebFontSources(): WebFontSources | null {
   const globalObj = getGlobalObject();
@@ -209,16 +178,11 @@ export const Font = {
         return { success: true };
       }
 
-      const bridge = getModulesBridge();
-      if (!bridge || !bridge.call) {
-        return { success: false, error: "No native bridge" };
-      }
-
       try {
-        const result = (await bridge.call("Font", "loadAsync", {
+        const result = await callNative<FontLoadResult>("Font", "loadAsync", {
           fontFamily,
           resourceName,
-        })) as FontLoadResult;
+        });
 
         return result;
       } catch (e: any) {

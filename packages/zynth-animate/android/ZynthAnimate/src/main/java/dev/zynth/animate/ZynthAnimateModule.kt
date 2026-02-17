@@ -116,17 +116,18 @@ class ZynthAnimateModule(
 ) : ZynthModule {
     override val name: String = "ZynthAnimate"
 
+    override val exportedMethods: List<String> = listOf("startTransition", "stopTransition")
+
     private val handler = Handler(Looper.getMainLooper())
     private val choreographer = Choreographer.getInstance()
     private val animations = LinkedHashMap<Int, StyleAnimation>()
     private var frameCallback: Choreographer.FrameCallback? = null
 
     override fun call(method: String, args: ZynthArgs): JSONObject {
-        val params = args.nestedAt(0)
         return when (method) {
-            "startTransition" -> handleStartTransition(params)
-            "stopTransition" -> handleStopTransition(params)
-            else -> errorResponse("unsupported_method", method)
+            "startTransition" -> resultResponse(handleStartTransition(args))
+            "stopTransition" -> resultResponse(handleStopTransition(args))
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
     }
 
@@ -193,7 +194,7 @@ class ZynthAnimateModule(
             }
         }
 
-        return successResponse()
+        return JSONObject().put("success", true)
     }
 
     private fun handleStopTransition(params: ZynthArgs): JSONObject {
@@ -204,7 +205,7 @@ class ZynthAnimateModule(
             stopFrameCallbackIfNeeded()
         }
 
-        return successResponse()
+        return JSONObject().put("success", true)
     }
 
     private fun ensureFrameCallback() {
@@ -636,11 +637,7 @@ class ZynthAnimateModule(
         }
     }
 
-    private fun successResponse(): JSONObject {
-        return JSONObject().put("success", true)
-    }
-
-    private fun errorResponse(error: String, message: String): JSONObject {
-        return JSONObject().put("error", error).put("message", message)
+    private fun resultResponse(result: Any?): JSONObject {
+        return JSONObject().put("result", result)
     }
 }

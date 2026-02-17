@@ -12,28 +12,28 @@ final class ZynthDeviceModule: NSObject, ZynthModule, ZynthSyncModule {
   }
 
   var constantsToExport: [String: Any]? {
-    deviceInfo() as [String: Any]
+    deviceInfo()
   }
 
   func call(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "getInfo", "current":
-      return ["result": deviceInfo() as [String: Any]]
+      return ["result": deviceInfo()]
     default:
-      return ["error": "unknown_method"]
+      throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
   }
 
   func callSync(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "getInfo", "current":
-      return deviceInfo() as [String: Any]
+      return deviceInfo()
     default:
-      throw ZynthModuleError.syncNotSupported(module: name, method: method)
+      throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
   }
 
-  private func deviceInfo() -> [String: Any?] {
+  private func deviceInfo() -> [String: Any] {
     let device = UIDevice.current
     return [
       "platform": "ios",
@@ -45,9 +45,9 @@ final class ZynthDeviceModule: NSObject, ZynthModule, ZynthSyncModule {
       "osName": device.systemName,
       "osVersion": device.systemVersion,
       "osBuildId": ProcessInfo.processInfo.operatingSystemVersionString,
-      "serialNumber": nil,
-      "uniqueId": device.identifierForVendor?.uuidString,
-      "sdkInt": nil,
+      "serialNumber": NSNull(),
+      "uniqueId": device.identifierForVendor?.uuidString as Any? ?? NSNull(),
+      "sdkInt": NSNull(),
       "isEmulator": isRunningOnSimulator(),
     ]
   }

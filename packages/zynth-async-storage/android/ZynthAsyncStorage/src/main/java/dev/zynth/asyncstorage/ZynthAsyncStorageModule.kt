@@ -14,6 +14,15 @@ class ZynthAsyncStorageModule(
     override val name: String = "ZynthAsyncStorage"
     private val storage = ZynthAsyncStorageStore(context)
 
+    override val exportedMethods: List<String> = listOf(
+        "getItem", "setItem", "removeItem", "mergeItem", "clear",
+        "getAllKeys", "multiGet", "multiSet", "multiRemove", "multiMerge"
+    )
+
+    override val protectedMethods: List<String> = listOf(
+        "setItem", "removeItem", "mergeItem", "clear", "multiSet", "multiRemove", "multiMerge"
+    )
+
     override fun call(method: String, args: ZynthArgs): JSONObject {
         return when (method) {
             "getItem" -> {
@@ -24,22 +33,22 @@ class ZynthAsyncStorageModule(
                 val key = args.getString("key")
                 val value = args.getString("value")
                 storage.setItem(key, value)
-                successResponse()
+                resultResponse(null)
             }
             "removeItem" -> {
                 val key = args.getString("key")
                 storage.removeItem(key)
-                successResponse()
+                resultResponse(null)
             }
             "mergeItem" -> {
                 val key = args.getString("key")
                 val value = args.getString("value")
                 storage.mergeItem(key, value)
-                successResponse()
+                resultResponse(null)
             }
             "clear" -> {
                 storage.clear()
-                successResponse()
+                resultResponse(null)
             }
             "getAllKeys" -> resultResponse(storage.getAllKeys())
             "multiGet" -> {
@@ -49,46 +58,35 @@ class ZynthAsyncStorageModule(
             "multiSet" -> {
                 val pairs = parsePairs(args.getList("pairs"))
                 storage.multiSet(pairs)
-                successResponse()
+                resultResponse(null)
             }
             "multiRemove" -> {
                 val keys = args.getList("keys").mapNotNull { it as? String }
                 storage.multiRemove(keys)
-                successResponse()
+                resultResponse(null)
             }
             "multiMerge" -> {
                 val pairs = parsePairs(args.getList("pairs"))
                 storage.multiMerge(pairs)
-                successResponse()
+                resultResponse(null)
             }
-            else -> errorResponse("unsupported_method", method)
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
     }
 
     override fun callSync(method: String, args: ZynthArgs): Any? {
         return when (method) {
-            "getItem" -> storage.getItem(try { args.getString("key") } catch (e: Exception) { null })
+            "getItem" -> storage.getItem(args.getString("key"))
             "setItem" -> {
-                val key = try { args.getString("key") } catch (e: Exception) { null }
-                val value = try { args.getString("value") } catch (e: Exception) { null }
-                if (key != null && value != null) {
-                    storage.setItem(key, value)
-                }
+                storage.setItem(args.getString("key"), args.getString("value"))
                 null
             }
             "removeItem" -> {
-                val key = try { args.getString("key") } catch (e: Exception) { null }
-                if (key != null) {
-                    storage.removeItem(key)
-                }
+                storage.removeItem(args.getString("key"))
                 null
             }
             "mergeItem" -> {
-                val key = try { args.getString("key") } catch (e: Exception) { null }
-                val value = try { args.getString("value") } catch (e: Exception) { null }
-                if (key != null && value != null) {
-                    storage.mergeItem(key, value)
-                }
+                storage.mergeItem(args.getString("key"), args.getString("value"))
                 null
             }
             "clear" -> {
@@ -97,35 +95,21 @@ class ZynthAsyncStorageModule(
             }
             "getAllKeys" -> storage.getAllKeys()
             "multiGet" -> {
-                val keys = try { args.getList("keys").mapNotNull { it as? String } } catch (e: Exception) { null }
-                if (keys == null) {
-                    null
-                } else {
-                    storage.multiGet(keys)
-                }
+                storage.multiGet(args.getList("keys").mapNotNull { it as? String })
             }
             "multiSet" -> {
-                val pairs = try { parsePairs(args.getList("pairs")) } catch (e: Exception) { null }
-                if (pairs != null) {
-                    storage.multiSet(pairs)
-                }
+                storage.multiSet(parsePairs(args.getList("pairs")))
                 null
             }
             "multiRemove" -> {
-                val keys = try { args.getList("keys").mapNotNull { it as? String } } catch (e: Exception) { null }
-                if (keys != null) {
-                    storage.multiRemove(keys)
-                }
+                storage.multiRemove(args.getList("keys").mapNotNull { it as? String })
                 null
             }
             "multiMerge" -> {
-                val pairs = try { parsePairs(args.getList("pairs")) } catch (e: Exception) { null }
-                if (pairs != null) {
-                    storage.multiMerge(pairs)
-                }
+                storage.multiMerge(parsePairs(args.getList("pairs")))
                 null
             }
-            else -> null
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
     }
 
@@ -208,19 +192,6 @@ class ZynthAsyncStorageModule(
             put("result", result ?: JSONObject.NULL)
         }
     }
-
-    private fun successResponse(): JSONObject {
-        return JSONObject().apply {
-            put("success", true)
-        }
-    }
-
-    private fun errorResponse(error: String, message: String): JSONObject {
-        return JSONObject().apply {
-            put("error", error)
-            put("message", message)
-        }
-    }
 }
 
 private class ZynthAsyncStorageStore(context: Context) {
@@ -233,21 +204,29 @@ private class ZynthAsyncStorageStore(context: Context) {
     }
 
     fun setItem(key: String, value: String) {
-        prefs.edit().putString(key, value).apply()
+        if (!prefs.edit().putString(key, value).commit()) {
+            throw java.io.IOException("Failed to persist item to storage")
+        }
     }
 
     fun removeItem(key: String) {
-        prefs.edit().remove(key).apply()
+        if (!prefs.edit().remove(key).commit()) {
+            throw java.io.IOException("Failed to remove item from storage")
+        }
     }
 
     fun mergeItem(key: String, value: String) {
         val existing = prefs.getString(key, null)
         val merged = mergeJson(existing, value)
-        prefs.edit().putString(key, merged).apply()
+        if (!prefs.edit().putString(key, merged).commit()) {
+            throw java.io.IOException("Failed to merge item in storage")
+        }
     }
 
     fun clear() {
-        prefs.edit().clear().apply()
+        if (!prefs.edit().clear().commit()) {
+            throw java.io.IOException("Failed to clear storage")
+        }
     }
 
     fun getAllKeys(): JSONArray {
@@ -275,7 +254,9 @@ private class ZynthAsyncStorageStore(context: Context) {
         for ((key, value) in pairs) {
             editor.putString(key, value)
         }
-        editor.apply()
+        if (!editor.commit()) {
+            throw java.io.IOException("Failed to persist multiple items to storage")
+        }
     }
 
     fun multiRemove(keys: List<String>) {
@@ -283,7 +264,9 @@ private class ZynthAsyncStorageStore(context: Context) {
         for (key in keys) {
             editor.remove(key)
         }
-        editor.apply()
+        if (!editor.commit()) {
+            throw java.io.IOException("Failed to remove multiple items from storage")
+        }
     }
 
     fun multiMerge(pairs: List<Pair<String, String>>) {
@@ -293,7 +276,9 @@ private class ZynthAsyncStorageStore(context: Context) {
             val merged = mergeJson(existing, value)
             editor.putString(key, merged)
         }
-        editor.apply()
+        if (!editor.commit()) {
+            throw java.io.IOException("Failed to merge multiple items in storage")
+        }
     }
 
     private fun mergeJson(existing: String?, update: String): String {

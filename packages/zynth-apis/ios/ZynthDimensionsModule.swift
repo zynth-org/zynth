@@ -73,15 +73,10 @@ final class ZynthDimensionsModule: NSObject, ZynthModule, ZynthSyncModule {
   func call(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "current":
-      guard let payload = capturePayload() else {
-        return ["error": "unavailable"]
-      }
-      return ["result": payload.toDictionary()]
+      let payload = capturePayload()?.toDictionary()
+      return ["result": payload as Any? ?? NSNull()]
     default:
-      return [
-        "error": "unknown_method",
-        "method": method,
-      ]
+      throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
   }
 
@@ -91,7 +86,7 @@ final class ZynthDimensionsModule: NSObject, ZynthModule, ZynthSyncModule {
       guard let payload = capturePayload() else { return [:] }
       return payload.toDictionary()
     default:
-      throw ZynthModuleError.syncNotSupported(module: name, method: method)
+      throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
   }
 

@@ -93,6 +93,10 @@ private struct ZynthStyleAnimation {
 final class ZynthAnimateBridge: NSObject, ZynthModule {
   let name = "ZynthAnimate"
 
+  var exportedMethods: [String] {
+    return ["startTransition", "stopTransition"]
+  }
+
   private weak var runtime: ZynthRuntime?
   private var displayLink: CADisplayLink?
   private var animations: [Int: ZynthStyleAnimation] = [:]
@@ -104,11 +108,11 @@ final class ZynthAnimateBridge: NSObject, ZynthModule {
   func call(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "startTransition":
-      return try handleStartTransition(args)
+      return ["result": try handleStartTransition(args)]
     case "stopTransition":
-      return try handleStopTransition(args)
+      return ["result": try handleStopTransition(args)]
     default:
-      return errorResponse("unsupported_method", method)
+      throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
   }
 
@@ -529,9 +533,5 @@ final class ZynthAnimateBridge: NSObject, ZynthModule {
 
   private func successResponse() -> [String: Any] {
     return ["success": true]
-  }
-
-  private func errorResponse(_ error: String, _ message: String) -> [String: Any] {
-    return ["error": error, "message": message]
   }
 }

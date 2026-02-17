@@ -7,6 +7,10 @@ import ZynthKit
 final class DocumentPickerModule: NSObject, ZynthModule, UIDocumentPickerDelegate {
   let name: String = "DocumentPicker"
 
+  var exportedMethods: [String] {
+    return ["pickDocumentAsync"]
+  }
+
   private let runtime: ZynthRuntime
   private var pendingRequestId: String?
   private var pendingCopyToCacheDirectory = true
@@ -21,16 +25,16 @@ final class DocumentPickerModule: NSObject, ZynthModule, UIDocumentPickerDelegat
     case "pickDocumentAsync":
       return try pickDocumentAsync(args: args)
     default:
-      return errorResponse("unsupported_method", method)
+      throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
   }
 
   private func pickDocumentAsync(args: ZynthArgs) throws -> Any? {
     if pendingRequestId != nil {
-      return errorResponse("busy", "Another picker request is already active")
+      throw NSError(domain: "ZynthDocumentPicker", code: 1, userInfo: [NSLocalizedDescriptionKey: "Another picker request is already active"])
     }
 
-    let requestId = args.string("requestId", default: UUID().uuidString)
+    let requestId = try args.string("requestId", default: UUID().uuidString)
     let options = getOptions(args)
     pendingRequestId = requestId
     pendingCopyToCacheDirectory = options.copyToCacheDirectory
@@ -212,9 +216,5 @@ final class DocumentPickerModule: NSObject, ZynthModule, UIDocumentPickerDelegat
     runtime.emitEvent(name: "DocumentPicker.result", payload: data)
     pendingRequestId = nil
     pendingCopyToCacheDirectory = true
-  }
-
-  private func errorResponse(_ error: String, _ message: String) -> [String: Any] {
-    return ["error": error, "message": message]
   }
 }

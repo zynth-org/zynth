@@ -12,6 +12,7 @@ class ZynthHypervisorModule(
     override val name = "ZynthHypervisor"
 
     override val exportedMethods: List<String> = listOf("postMessage")
+    override val protectedMethods: List<String> = listOf("postMessage")
 
     override fun call(method: String, args: ZynthArgs): JSONObject {
         return when (method) {
@@ -23,7 +24,7 @@ class ZynthHypervisorModule(
                 onMessage(message)
                 JSONObject()
             }
-            else -> JSONObject().put("error", "unknown_method").put("method", method)
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
     }
 }

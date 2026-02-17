@@ -15,9 +15,9 @@ public class ZynthFontModule: ZynthModule {
     public func call(method: String, args: ZynthArgs) throws -> Any? {
         switch method {
         case "loadAsync":
-            return try loadAsync(args: args)
+            return ["result": try loadAsync(args: args)]
         default:
-            throw ZynthModuleError.moduleNotFound("Method \(method) not found in Font module")
+            throw ZynthModuleError.methodNotExported(module: name, method: method)
         }
     }
 

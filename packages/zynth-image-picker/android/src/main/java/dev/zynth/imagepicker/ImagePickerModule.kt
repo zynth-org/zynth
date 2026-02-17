@@ -21,6 +21,13 @@ class ImagePickerModule(
     private val context: Context
 ) : ZynthModule {
     override val name = "ImagePicker"
+
+    override val exportedMethods: List<String> = listOf(
+        "launchCameraAsync",
+        "launchImageLibraryAsync",
+        "getCameraPermissionsAsync",
+        "requestCameraPermissionsAsync"
+    )
     
     // Set by initializer
     var cameraLauncher: ActivityResultLauncher<Uri>? = null
@@ -38,12 +45,12 @@ class ImagePickerModule(
             "launchImageLibraryAsync" -> launchImageLibraryAsync(args)
             "getCameraPermissionsAsync" -> getCameraPermissionsAsync()
             "requestCameraPermissionsAsync" -> requestCameraPermissionsAsync(args)
-            else -> JSONObject().put("error", "Unknown method: $method")
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
     }
 
     private fun getRequestId(args: ZynthArgs): String {
-        return try { args.getString("requestId", UUID.randomUUID().toString()) } catch (e: Exception) { UUID.randomUUID().toString() }
+        return args.getString("requestId", UUID.randomUUID().toString())
     }
 
     private fun launchImageLibraryAsync(args: ZynthArgs): JSONObject {
@@ -51,28 +58,26 @@ class ImagePickerModule(
         Log.d(TAG, "launchImageLibraryAsync called with requestId: $requestId")
 
         if (pendingRequestId != null) {
-             return JSONObject().put("error", "Another request is already pending")
+             throw IllegalStateException("Another request is already pending")
         }
 
         pendingRequestId = requestId
 
         try {
-            if (imageLibraryLauncher == null) {
-                emitResult(JSONObject().put("error", "Image library launcher not initialized"))
-                return JSONObject().put("status", "error")
-            }
+            val launcher = imageLibraryLauncher
+                ?: throw IllegalStateException("Image library launcher not initialized")
 
-            imageLibraryLauncher?.launch(
+            launcher.launch(
                 androidx.activity.result.PickVisualMediaRequest(
                     ActivityResultContracts.PickVisualMedia.ImageOnly
                 )
             )
+            return JSONObject().put("status", "pending")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to launch image library", e)
-            emitResult(JSONObject().put("error", e.message))
+            pendingRequestId = null
+            throw e
         }
-
-        return JSONObject().put("status", "pending")
     }
 
     fun onLibraryResult(uri: Uri?) {
@@ -122,7 +127,7 @@ class ImagePickerModule(
 
         if (pendingRequestId != null) {
              Log.w(TAG, "Another request is already pending: $pendingRequestId")
-             return JSONObject().put("error", "Another request is already pending")
+             throw IllegalStateException("Another request is already pending")
         }
 
         pendingRequestId = requestId
@@ -133,7 +138,8 @@ class ImagePickerModule(
             startCamera()
         } else {
             Log.d(TAG, "Permission not granted, requesting for camera...")
-            permissionLauncher?.launch(permission)
+            val launcher = permissionLauncher ?: throw IllegalStateException("Permission launcher not initialized")
+            launcher.launch(permission)
         }
 
         return JSONObject().put("status", "pending")
@@ -168,17 +174,16 @@ class ImagePickerModule(
             pendingUri = uri
             Log.d(TAG, "Starting camera intent. URI: $uri")
             
-            if (cameraLauncher == null) {
-                Log.e(TAG, "cameraLauncher is NULL!")
-                emitResult(JSONObject().put("error", "Camera launcher not initialized"))
-                return
-            }
+            val launcher = cameraLauncher
+                ?: throw IllegalStateException("Camera launcher not initialized")
             
-            cameraLauncher?.launch(uri)
+            launcher.launch(uri)
             
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start camera", e)
-            emitResult(JSONObject().put("error", e.message))
+            pendingRequestId = null
+            pendingUri = null
+            throw e
         }
     }
 

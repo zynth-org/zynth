@@ -241,6 +241,11 @@ private final class TraitObserverView: UIView {
 final class ZynthAppearanceBridge: NSObject, ZynthModule, ZynthSyncModule {
 
   let name = "ZynthAppearance"
+
+  var exportedMethods: [String] {
+    return ["getCurrent"]
+  }
+
   // Strong reference to keep the module alive since the bridge is retained by the runtime
   private var module: ZynthAppearanceModule?
 
@@ -250,24 +255,25 @@ final class ZynthAppearanceBridge: NSObject, ZynthModule, ZynthSyncModule {
   }
 
   var constantsToExport: [String: Any]? {
-    print("[ZynthAppearance] constantsToExport")
     return module?.getInitialState().toDictionary()
   }
 
   func call(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
+    case "getCurrent":
+      let state = module?.getCurrentState().toDictionary()
+      return ["result": state as Any? ?? NSNull()]
     default:
-      return ["error": "unsupported_method", "message": method]
+      throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
   }
 
   func callSync(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "getCurrent":
-      print("[ZynthAppearance] callSync getCurrent")
       return module?.getCurrentState().toDictionary()
     default:
-      throw ZynthModuleError.syncNotSupported(module: name, method: method)
+      throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
   }
 }

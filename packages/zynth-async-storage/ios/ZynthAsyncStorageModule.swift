@@ -13,6 +13,17 @@ final class ZynthAsyncStorageModule: NSObject, ZynthModule, ZynthSyncModule {
   let name: String = "ZynthAsyncStorage"
   private let storage = ZynthAsyncStorageStore()
 
+  var exportedMethods: [String] {
+    return [
+      "getItem", "setItem", "removeItem", "mergeItem", "clear",
+      "getAllKeys", "multiGet", "multiSet", "multiRemove", "multiMerge"
+    ]
+  }
+
+  var protectedMethods: [String] {
+    return ["setItem", "removeItem", "mergeItem", "clear", "multiSet", "multiRemove", "multiMerge"]
+  }
+
   func call(method: String, args: ZynthArgs) throws -> Any? {
     return try handle(method: method, args: args)
   }
@@ -25,43 +36,43 @@ final class ZynthAsyncStorageModule: NSObject, ZynthModule, ZynthSyncModule {
     switch method {
     case "getItem":
       let key = try args.string("key")
-      return storage.getItem(key) ?? NSNull()
+      return ["result": storage.getItem(key) as Any? ?? NSNull()]
     case "setItem":
       let key = try args.string("key")
       let value = try args.string("value")
       storage.setItem(key, value: value)
-      return nil
+      return ["result": true]
     case "removeItem":
       let key = try args.string("key")
       storage.removeItem(key)
-      return nil
+      return ["result": true]
     case "mergeItem":
       let key = try args.string("key")
       let value = try args.string("value")
       storage.mergeItem(key, value: value)
-      return nil
+      return ["result": true]
     case "clear":
       storage.clear()
-      return nil
+      return ["result": true]
     case "getAllKeys":
-      return storage.getAllKeys()
+      return ["result": storage.getAllKeys()]
     case "multiGet":
       let keys = try args.array("keys").compactMap { $0 as? String }
-      return storage.multiGet(keys)
+      return ["result": storage.multiGet(keys)]
     case "multiSet":
       let pairs = parsePairs(try args.array("pairs"))
       storage.multiSet(pairs)
-      return nil
+      return ["result": true]
     case "multiRemove":
       let keys = try args.array("keys").compactMap { $0 as? String }
       storage.multiRemove(keys)
-      return nil
+      return ["result": true]
     case "multiMerge":
       let pairs = parsePairs(try args.array("pairs"))
       storage.multiMerge(pairs)
-      return nil
+      return ["result": true]
     default:
-      return errorResponse("unsupported_method", method)
+      throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
   }
 
@@ -87,10 +98,6 @@ final class ZynthAsyncStorageModule: NSObject, ZynthModule, ZynthSyncModule {
       return (key, val)
     }
     return nil
-  }
-
-  private func errorResponse(_ error: String, _ message: String) -> [String: Any] {
-    return ["error": error, "message": message]
   }
 }
 

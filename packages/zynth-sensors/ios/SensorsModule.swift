@@ -31,21 +31,33 @@ final class SensorsModule: NSObject, ZynthModule {
   func call(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "isAvailable":
-      return isAvailable(sensorName(from: args))
+      return ["result": isAvailable(sensorName(from: args))]
     case "getPermissionStatus":
-      return permissionStatus(sensorName(from: args))
+      return ["result": permissionStatus(sensorName(from: args))]
     case "requestPermission":
-      return requestPermission(args: args)
+      return ["result": requestPermission(args: args)]
     case "startUpdates":
-      return startUpdates(args: args)
+      return ["result": startUpdates(args: args)]
     case "stopUpdates":
       stopUpdates(sensorName(from: args))
-      return nil
+      return ["result": true]
     case "readCurrent":
-      return readCurrent(sensorName(from: args)) ?? NSNull()
+      let reading = readCurrent(sensorName(from: args))
+      return ["result": reading as Any? ?? NSNull()]
     default:
-      return errorResponse("unsupported_method", method)
+      throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
+  }
+
+  var exportedMethods: [String] {
+    return [
+      "isAvailable",
+      "getPermissionStatus",
+      "requestPermission",
+      "startUpdates",
+      "stopUpdates",
+      "readCurrent"
+    ]
   }
 
   private func requestPermission(args: ZynthArgs) -> Any {
@@ -335,9 +347,5 @@ final class SensorsModule: NSObject, ZynthModule {
 
   private func sensorName(from args: ZynthArgs) -> String {
     return args.string("sensor", default: "")
-  }
-
-  private func errorResponse(_ error: String, _ message: String) -> [String: Any] {
-    ["error": error, "message": message]
   }
 }

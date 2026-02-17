@@ -26,25 +26,20 @@ class ZynthSafeAreaModule(
         get() = (getCurrentMetrics() ?: defaultMetrics()).toMap()
 
     override fun call(method: String, args: ZynthArgs): JSONObject {
-        val params = try { args.nestedAt(0) } catch (e: Exception) { null }
         return when (method) {
             "getCurrentMetrics" -> JSONObject().put("result", (getCurrentMetrics() ?: lastMetrics ?: defaultMetrics()).toJSONObject())
             "refresh" -> {
                 updateMetrics(force = true)
                 JSONObject().put("result", true)
             }
-            else -> {
-                android.util.Log.w("ZynthSafeArea", "Call to ZynthSafeAreaModule for method '$method' not implemented.")
-                JSONObject()
-            }
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
     }
 
     override fun callSync(method: String, args: ZynthArgs): Any? {
-        val params = try { args.nestedAt(0) } catch (e: Exception) { null }
         return when (method) {
             "getCurrentMetrics" -> (getCurrentMetrics() ?: lastMetrics ?: defaultMetrics()).toMap()
-            else -> null
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
     }
     private var lastMetrics: WindowMetrics? = null

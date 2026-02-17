@@ -97,6 +97,12 @@ This track hardens `@zynth/skia` so animation hooks and shader pipelines stay UI
 - [ ] Android: Contacts animation broken.
 - [ ] FlatList with decorators have a SolidJS owner warning
 - [ ] Migrate zynth-screens to new Runtime
+- [ ] Won't load system icons
+- [ ] Android: Modal blink on open
+- [ ] Android: KeyboardAvoidingView won't works sometimes
+- [ ] Android: Modal take top inset as a space and move the content below
+- [ ] FlatList: Item height expand on fast scroll
+- [ ] iOS: BorderRadius change on press for disable state change
 - [x] Migrate zynth-animate to new Runtime
 - [x] Migrate zynth-apis to new Runtime
 - [x] Migrate zynth-async-storage to new Runtime

@@ -39,71 +39,71 @@ final class ZynthFileSystemModule: NSObject, ZynthModule, ZynthSyncModule {
   private func handle(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "getPaths":
-      return getPaths()
+      return ["result": getPaths()]
     case "getDiskSpace":
-      return getDiskSpace()
+      return ["result": getDiskSpace()]
     case "getSharedContainers":
-      return [String: String]()
+      return ["result": [String: String]()]
     case "getPathInfo":
       let uri = try args.string("uri")
-      return getPathInfo(uri)
+      return ["result": getPathInfo(uri)]
     case "getInfo":
       let uri = try args.string("uri")
       let options = try? args.dict("options")
-      return try getInfo(uri, options: options)
+      return ["result": try getInfo(uri, options: options)]
     case "listDirectory":
       let uri = try args.string("uri")
-      return try listDirectory(uri)
+      return ["result": try listDirectory(uri)]
     case "createDirectory":
       let uri = try args.string("uri")
       let options = try? args.dict("options")
       try createDirectory(uri, options: options)
-      return nil
+      return ["result": true]
     case "createFile":
       let uri = try args.string("uri")
       let options = try? args.dict("options")
       try createFile(uri, options: options)
-      return nil
+      return ["result": true]
     case "delete":
       let uri = try args.string("uri")
       let recursive = try args.bool("recursive", default: false)
       try deleteItem(uri, recursive: recursive)
-      return nil
+      return ["result": true]
     case "copy":
       let from = try args.string("from")
       let to = try args.string("to")
       try copyItem(from, to)
-      return nil
+      return ["result": true]
     case "move":
       let from = try args.string("from")
       let to = try args.string("to")
       try moveItem(from, to)
-      return nil
+      return ["result": true]
     case "readText":
       let uri = try args.string("uri")
-      return try readText(uri)
+      return ["result": try readText(uri)]
     case "readBase64":
       let uri = try args.string("uri")
-      return try readBase64(uri)
+      return ["result": try readBase64(uri)]
     case "readBase64Chunk":
       let uri = try args.string("uri")
       let offset = try Int(args.number("offset"))
       let length = try Int(args.number("length"))
-      return try readBase64Chunk(uri, offset: offset, length: length)
+      return ["result": try readBase64Chunk(uri, offset: offset, length: length)]
     case "writeText":
       let uri = try args.string("uri")
       let text = try args.string("text")
       try writeText(uri, text: text)
-      return nil
+      return ["result": true]
     case "writeBase64":
       let uri = try args.string("uri")
       let data = try args.string("data")
       try writeBase64(uri, base64: data)
-      return nil
+      return ["result": true]
     case "checksum":
       let uri = try args.string("uri")
       let algorithm = try args.string("algorithm", default: "md5")
-      return try checksum(uri, algorithm: algorithm)
+      return ["result": try checksum(uri, algorithm: algorithm)]
     default:
       throw ZynthModuleError.methodNotExported(module: name, method: method)
     }

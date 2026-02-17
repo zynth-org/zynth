@@ -83,25 +83,27 @@ class AppStateModule(
     }
 
     override fun call(method: String, args: ZynthArgs): JSONObject {
-        val params = try { args.nestedAt(0) } catch (e: Exception) { null }
         return when (method) {
             "current" -> {
                 checkAndUpdate()
-                JSONObject().put("result", mapOf("state" to currentState))
+                resultResponse(mapOf("state" to currentState))
             }
-            else -> JSONObject().put("error", "unknown_method")
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
     }
 
     override fun callSync(method: String, args: ZynthArgs): Any? {
-        val params = try { args.nestedAt(0) } catch (e: Exception) { null }
         return when (method) {
             "current" -> {
                 checkAndUpdate()
                 mapOf("state" to currentState)
             }
-            else -> null
+            else -> throw IllegalArgumentException("Unsupported method: $method")
         }
+    }
+
+    private fun resultResponse(result: Any?): JSONObject {
+        return JSONObject().put("result", result)
     }
 
     private fun checkAndUpdate() {

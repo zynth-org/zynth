@@ -1,3 +1,8 @@
+import {
+  callNative,
+  getGlobalObject,
+  getModulesBridge,
+} from "@zynth/core";
 import type { Style } from "@zynth/core";
 import type { EasingName } from "./easing";
 
@@ -40,15 +45,6 @@ export interface AnimationHostBridge {
   ) => boolean;
   removeStyleMapper: (mapperId: number) => boolean;
 }
-
-type ModulesBridge = {
-  call?(name: string, method: string, args?: unknown): Promise<unknown> | unknown;
-};
-
-type ErrorResult = {
-  error?: string;
-  message?: string;
-};
 
 const MODULE_NAME = "ZynthAnimate";
 const PLATFORM_GLOBAL_KEY = "__ZYNTH_PLATFORM";
@@ -99,30 +95,6 @@ type NativeAnimateJSI = {
   removeStyleMapper: (mapperId: number) => void;
 };
 
-function getGlobalObject(): Record<string, unknown> {
-  if (typeof globalThis !== "undefined") {
-    return globalThis as Record<string, unknown>;
-  }
-  try {
-    const fallback = Function("return this")();
-    if (fallback && typeof fallback === "object") {
-      return fallback as Record<string, unknown>;
-    }
-  } catch {
-    // ignore
-  }
-  return {};
-}
-
-function getModulesBridge(): ModulesBridge | null {
-  const globalObj = getGlobalObject();
-  const maybeBridge = globalObj.__modules;
-  if (!maybeBridge || typeof maybeBridge !== "object") {
-    return null;
-  }
-  return maybeBridge as ModulesBridge;
-}
-
 function getNativeAnimate(): NativeAnimateJSI | null {
   const globalObj = getGlobalObject();
   const native = globalObj.__zynth_animate;
@@ -148,11 +120,6 @@ export function isNativePlatform(): boolean {
 
 export function hasNativeAnimate(): boolean {
   return Boolean(getNativeAnimate());
-}
-
-function isErrorResult(value: unknown): value is ErrorResult {
-  if (!value || typeof value !== "object") return false;
-  return typeof (value as { error?: unknown }).error === "string";
 }
 
 type NativeAdapterPlatform = "ios" | "android";
@@ -181,25 +148,19 @@ function createNativeAnimationHostBridge(
   let nativeModuleAvailable = true;
 
   const callBridge = async (method: string, args?: unknown): Promise<boolean> => {
-    const bridge = getModulesBridge();
-    if (!bridge || !bridge.call || !nativeModuleAvailable) {
-      return false;
-    }
+    if (!nativeModuleAvailable) return false;
     try {
-      const result = await Promise.resolve(bridge.call(MODULE_NAME, method, args));
-      if (isErrorResult(result)) {
-        throw new Error(result.message || result.error || "Unknown error");
-      }
+      await callNative(MODULE_NAME, method, args);
       return true;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message.includes("Module ZynthAnimate not found")) {
+    } catch (error: any) {
+      const message = error.message || String(error);
+      if (message.includes("module_not_found") || message.includes("not found")) {
         nativeModuleAvailable = false;
         return false;
       }
       console.error(
         `[ZynthAnimate] (${platform}) Failed to ${method}():`,
-        JSON.stringify(error)
+        error
       );
       return false;
     }

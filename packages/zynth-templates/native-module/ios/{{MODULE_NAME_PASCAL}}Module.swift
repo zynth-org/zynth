@@ -4,6 +4,14 @@ import ZynthKit
 @objc({{MODULE_NAME_PASCAL}}Module)
 class {{MODULE_NAME_PASCAL}}Module: NSObject, ZynthModule, ZynthSyncModule {
   let name = "{{MODULE_NAME_PASCAL}}"
+
+  var exportedMethods: [String] {
+    return ["exampleMethod", "exampleSyncMethod"]
+  }
+
+  var protectedMethods: [String] {
+    return [] // Add methods that require replay protection here
+  }
   
   var constantsToExport: [String: Any]? {
     ["exampleConstant": "Hello from iOS"]
@@ -22,7 +30,7 @@ class {{MODULE_NAME_PASCAL}}Module: NSObject, ZynthModule, ZynthSyncModule {
     case "exampleMethod":
       return ["result": "Async result"]
     default:
-      return nil
+      throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
   }
   
@@ -31,7 +39,7 @@ class {{MODULE_NAME_PASCAL}}Module: NSObject, ZynthModule, ZynthSyncModule {
     case "exampleSyncMethod":
       return "Sync result"
     default:
-      throw ZynthModuleError.syncNotSupported(module: name, method: method)
+      throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
   }
 

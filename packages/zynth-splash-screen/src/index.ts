@@ -1,57 +1,12 @@
-type ModulesBridge = {
-  call?(
-    name: string,
-    method: string,
-    args?: unknown
-  ): Promise<unknown> | unknown;
-  callSync?(name: string, method: string, args?: unknown): unknown;
-};
-
-function getGlobalObject(): Record<string, unknown> {
-  if (typeof globalThis !== "undefined") {
-    return globalThis as any;
-  }
-  try {
-    const fallback = Function("return this")();
-    if (fallback && typeof fallback === "object") {
-      return fallback as Record<string, unknown>;
-    }
-  } catch {
-    // ignore
-  }
-  return {};
-}
-
-function getModulesBridge(): ModulesBridge | null {
-  const globalObj = getGlobalObject();
-  const maybeBridge = globalObj.__modules;
-  if (!maybeBridge || typeof maybeBridge !== "object") {
-    return null;
-  }
-  return maybeBridge as ModulesBridge;
-}
-
-function isErrorResult(value: unknown): value is { error: string } {
-  if (!value || typeof value !== "object") return false;
-  return typeof (value as { error?: unknown }).error === "string";
-}
+import { callNative, callNativeSync } from "@zynth/core";
 
 async function callBridge(
   method: "preventAutoHide" | "hide"
 ): Promise<boolean> {
-  const bridge = getModulesBridge();
-  if (!bridge || !bridge.call) {
-    console.warn("[ZynthSplashScreen] Native modules bridge not available.");
-    return false;
-  }
-
   try {
-    if (method === "preventAutoHide" && bridge.callSync) {
+    if (method === "preventAutoHide") {
       try {
-        const result = bridge.callSync("ZynthSplashScreen", method, {});
-        if (isErrorResult(result)) {
-          throw new Error(result.error);
-        }
+        callNativeSync("ZynthSplashScreen", method, {});
         return true;
       } catch (error) {
         console.warn(
@@ -60,10 +15,7 @@ async function callBridge(
         );
       }
     }
-    const result = await bridge.call("ZynthSplashScreen", method, {});
-    if (isErrorResult(result)) {
-      throw new Error(result.error);
-    }
+    await callNative("ZynthSplashScreen", method, {});
     return true;
   } catch (error) {
     console.error(`[ZynthSplashScreen] Failed to ${method}():`, error);

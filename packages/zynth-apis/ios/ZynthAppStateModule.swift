@@ -49,7 +49,7 @@ final class ZynthAppStateModule: NSObject, ZynthModule, ZynthSyncModule {
     case "current":
       return ["result": ["state": currentState.rawValue]]
     default:
-      return ["error": "unknown_method"]
+      throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
   }
 
@@ -58,7 +58,7 @@ final class ZynthAppStateModule: NSObject, ZynthModule, ZynthSyncModule {
     case "current":
       return ["state": currentState.rawValue]
     default:
-      throw ZynthModuleError.syncNotSupported(module: name, method: method)
+      throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
   }
 

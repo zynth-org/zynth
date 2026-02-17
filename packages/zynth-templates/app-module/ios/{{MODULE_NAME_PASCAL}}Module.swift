@@ -139,6 +139,14 @@ final class {{MODULE_NAME_PASCAL}}Bridge: NSObject, ZynthModule, ZynthSyncModule
     self.module = module
     super.init()
   }
+
+  var exportedMethods: [String] {
+    return ["getCurrentState"]
+  }
+
+  var protectedMethods: [String] {
+    return []
+  }
   
   var constantsToExport: [String: Any]? {
     module?.getInitialState().toDictionary()
@@ -146,8 +154,10 @@ final class {{MODULE_NAME_PASCAL}}Bridge: NSObject, ZynthModule, ZynthSyncModule
   
   func call(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
+    case "getCurrentState":
+      return ["result": module?.getInitialState().toDictionary()]
     default:
-      return ["error": "unsupported_method", "message": method]
+      throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
   }
   
@@ -156,7 +166,7 @@ final class {{MODULE_NAME_PASCAL}}Bridge: NSObject, ZynthModule, ZynthSyncModule
     case "getCurrentState":
       return module?.getInitialState().toDictionary()
     default:
-      throw ZynthModuleError.syncNotSupported(module: name, method: method)
+      throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
   }
 }

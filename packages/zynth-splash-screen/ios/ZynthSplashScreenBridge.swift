@@ -13,14 +13,18 @@ final class ZynthSplashScreenBridge: NSObject, ZynthModule, ZynthSyncModule {
 
   let name = "ZynthSplashScreen"
 
+  var exportedMethods: [String] {
+    return ["preventAutoHide", "hide"]
+  }
+
   func call(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "preventAutoHide":
-      return ZynthSplashScreen.preventAutoHideJS()
+      return ["result": ZynthSplashScreen.preventAutoHideJS()]
     case "hide":
-      return ZynthSplashScreen.hideJS()
+      return ["result": ZynthSplashScreen.hideJS()]
     default:
-      return ["error": "unsupported_method", "message": method]
+      throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
   }
 
