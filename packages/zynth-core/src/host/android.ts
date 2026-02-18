@@ -312,10 +312,12 @@ export function createAndroidHost(): Host {
 
   const runFlush = () => {
     flushScheduled = false;
+    rafHandle = null;
     try {
       if (queue.length || pendingRemovals.size || pendingDrops.size) {
         const pending = queue.splice(0);
         let batchAccumulator: BatchOperation[] = [];
+        const deferredClosures: Array<() => void> = [];
 
         const flushBatch = () => {
           if (!batchAccumulator.length) return;
@@ -332,8 +334,7 @@ export function createAndroidHost(): Host {
           if (item.type === "batch") {
             batchAccumulator.push(item.op);
           } else {
-            flushBatch();
-            item.func();
+            deferredClosures.push(item.func);
           }
         }
         if (pendingRemovals.size) {
@@ -356,6 +357,9 @@ export function createAndroidHost(): Host {
           pendingDrops.clear();
         }
         flushBatch();
+        for (const fn of deferredClosures) {
+          fn();
+        }
       }
       ui.flush();
     } catch (e) {
@@ -364,21 +368,17 @@ export function createAndroidHost(): Host {
   };
 
   const schedule = () => {
-    if (flushScheduled) return;
+    if (flushScheduled || rafHandle != null) return;
     flushScheduled = true;
 
-    if (typeof queueMicrotask === "function") {
-      queueMicrotask(runFlush);
-      return;
-    }
-
-    if (typeof Promise !== "undefined") {
-      Promise.resolve()
-        .then(runFlush)
-        .catch((err) => {
-          flushScheduled = false;
-          console.error("Flush error:", JSON.stringify(err));
-        });
+    if (
+      typeof requestAnimationFrame === "function" &&
+      typeof cancelAnimationFrame === "function"
+    ) {
+      rafHandle = requestAnimationFrame(() => {
+        rafHandle = null;
+        runFlush();
+      });
       return;
     }
 
@@ -939,12 +939,10 @@ export function createAndroidHost(): Host {
         (ui as any).applyBatchTyped(
           encodeTypedBatch(context.operations, context.meta),
         );
-        // Keep batch and flush in the same turn so C++ Yoga computes
-        // after structural ops (insert/remove) are applied.
-        ui.flush();
-        if (queue.length || pendingRemovals.size || pendingDrops.size) {
-          schedule();
-        }
+        // Coalesce flushes across multiple batch completions in the same tick.
+        // Immediate flush here causes partial commits during navigation
+        // (header/content/text settling across several frames).
+        schedule();
         return;
       }
 
