@@ -33,7 +33,7 @@ private const val TRACE_TAG = "ZynthUIManager"
 private const val DEFAULT_PERSPECTIVE = 500f
 private const val DEBUG_TEXT = false
 private const val DEBUG_TEXT_DIRTY = false
-private const val DEBUG_CPP_LAYOUT_DIAGNOSTICS = true
+private const val DEBUG_CPP_LAYOUT_DIAGNOSTICS = false
 
 private val STYLE_PROP_ID_TO_NAME = mapOf(
   100 to "backgroundColor",
@@ -976,7 +976,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     view.measure(widthSpec, heightSpec)
     val measuredWidth = view.measuredWidth.coerceAtLeast(0)
     val measuredHeight = view.measuredHeight.coerceAtLeast(0)
-    if (yogaMeasureDebugCount < 80 && view is TextView) {
+    if (DEBUG_CPP_LAYOUT_DIAGNOSTICS && yogaMeasureDebugCount < 80 && view is TextView) {
       yogaMeasureDebugCount += 1
       Log.d(
         "ZynthUI",

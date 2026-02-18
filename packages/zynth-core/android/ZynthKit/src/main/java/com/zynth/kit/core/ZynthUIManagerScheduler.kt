@@ -5,7 +5,7 @@ import android.os.SystemClock
 import android.view.View
 import android.widget.TextView
 
-private const val DEBUG_SCHEDULER = true
+private const val DEBUG_SCHEDULER = false
 
 internal fun ZynthUIManager.setFrameProfilerInternal(
   profiler: ((frameMs: Double, layoutMs: Double, overBudget: Boolean, nodeCount: Int) -> Unit)?

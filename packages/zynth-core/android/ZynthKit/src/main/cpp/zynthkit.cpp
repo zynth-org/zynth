@@ -23,6 +23,10 @@
 #include <vector>
 #include <limits>
 
+#ifndef ZYNTH_ENABLE_RUNTIME_BATCH_LOGS
+#define ZYNTH_ENABLE_RUNTIME_BATCH_LOGS 0
+#endif
+
 using namespace facebook::jsi;
 
 namespace {
@@ -1498,6 +1502,7 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
             }
 
             if (layoutChanged) {
+#if ZYNTH_ENABLE_RUNTIME_BATCH_LOGS
               __android_log_print(
                   ANDROID_LOG_DEBUG,
                   "ZynthRuntime",
@@ -1508,6 +1513,7 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
                   layoutRemoveCount,
                   layoutDropCount,
                   missingYogaNodeCount);
+#endif
               jmethodID markMethod = env->GetMethodID(state->uiClass, "markBatchNeedsLayout", "()V");
               if (markMethod) {
                 env->CallVoidMethod(state->uiManager, markMethod);
