@@ -22,9 +22,19 @@
 #include <unistd.h>
 #include <vector>
 #include <limits>
+#include <chrono>
+#include <algorithm>
 
 #ifndef ZYNTH_ENABLE_RUNTIME_BATCH_LOGS
 #define ZYNTH_ENABLE_RUNTIME_BATCH_LOGS 0
+#endif
+
+#ifndef ZYNTH_ENABLE_RUNTIME_FLUSH_LOGS
+#define ZYNTH_ENABLE_RUNTIME_FLUSH_LOGS 0
+#endif
+
+#ifndef ZYNTH_ENABLE_RENDERER_SAMPLED_DIAGNOSTICS
+#define ZYNTH_ENABLE_RENDERER_SAMPLED_DIAGNOSTICS 0
 #endif
 
 using namespace facebook::jsi;
@@ -90,6 +100,11 @@ struct RuntimeState {
   jmethodID applyBatchTypedBuffer = nullptr;
   jmethodID setSurface = nullptr;
   jmethodID flush = nullptr;
+  jmethodID getNodeView = nullptr;
+  jmethodID markBatchNeedsLayout = nullptr;
+  jmethodID getRootWidth = nullptr;
+  jmethodID getRootHeight = nullptr;
+  jmethodID applyLayoutResults = nullptr;
   jmethodID scheduleTimer = nullptr;
   jmethodID cancelTimer = nullptr;
   jmethodID scheduleAnimationFrame = nullptr;
@@ -123,6 +138,26 @@ struct RuntimeState {
   std::atomic<int> nextSharedSignalId{1};
   std::unordered_map<int, double> sharedSignals;
   std::mutex sharedSignalsMutex;
+  std::atomic<bool> cppLayoutDirty{false};
+  bool hasPerformedCppLayout = false;
+  int lastRootWidth = -1;
+  int lastRootHeight = -1;
+  std::vector<float> layoutResultsBuffer;
+  jfloatArray layoutResultsArray = nullptr; // Global ref
+  jsize layoutResultsArraySize = 0;
+#if ZYNTH_ENABLE_RENDERER_SAMPLED_DIAGNOSTICS
+  int64_t rendererDiagWindowStartMs = 0;
+  int64_t rendererDiagLastLogMs = 0;
+  uint64_t rendererFlushCalls = 0;
+  uint64_t rendererFlushNoopSkips = 0;
+  uint64_t rendererLayoutsRun = 0;
+  uint64_t rendererFullSyncs = 0;
+  uint64_t rendererDeltaSyncs = 0;
+  uint64_t rendererFramesSent = 0;
+  uint64_t rendererNodeSamples = 0;
+  uint64_t rendererArrayAllocs = 0;
+  uint64_t rendererArrayReuses = 0;
+#endif
 };
 
 std::mutex gStateMutex;
@@ -169,6 +204,67 @@ void removeHandlersForNode(facebook::hermes::HermesRuntime *runtime, int nodeId)
 JNIEnv *getEnv() {
   return facebook::jni::Environment::current();
 }
+
+inline int64_t monotonicNowMs() {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+             std::chrono::steady_clock::now().time_since_epoch())
+      .count();
+}
+
+inline void markLayoutDirty(JNIEnv* env, RuntimeState* state) {
+  if (!state) return;
+  state->cppLayoutDirty.store(true, std::memory_order_relaxed);
+  if (env && state->markBatchNeedsLayout) {
+    env->CallVoidMethod(state->uiManager, state->markBatchNeedsLayout);
+  }
+}
+
+#if ZYNTH_ENABLE_RENDERER_SAMPLED_DIAGNOSTICS
+inline void maybeLogRendererDiagnostics(RuntimeState* state) {
+  if (!state) return;
+  const int64_t nowMs = monotonicNowMs();
+  if (state->rendererDiagWindowStartMs == 0) {
+    state->rendererDiagWindowStartMs = nowMs;
+    state->rendererDiagLastLogMs = nowMs;
+    return;
+  }
+  if (nowMs - state->rendererDiagLastLogMs < 2000) return;
+
+  const int64_t windowMs = std::max<int64_t>(1, nowMs - state->rendererDiagWindowStartMs);
+  const uint64_t avgNodes = state->rendererLayoutsRun > 0
+      ? (state->rendererNodeSamples / state->rendererLayoutsRun)
+      : 0;
+  const uint64_t avgFrames = state->rendererLayoutsRun > 0
+      ? (state->rendererFramesSent / state->rendererLayoutsRun)
+      : 0;
+  __android_log_print(
+      ANDROID_LOG_DEBUG,
+      "ZynthRuntime",
+      "renderer stats: windowMs=%lld flush=%llu noop=%llu layouts=%llu full=%llu delta=%llu avgNodes=%llu avgFrames=%llu arrayAlloc=%llu arrayReuse=%llu",
+      static_cast<long long>(windowMs),
+      static_cast<unsigned long long>(state->rendererFlushCalls),
+      static_cast<unsigned long long>(state->rendererFlushNoopSkips),
+      static_cast<unsigned long long>(state->rendererLayoutsRun),
+      static_cast<unsigned long long>(state->rendererFullSyncs),
+      static_cast<unsigned long long>(state->rendererDeltaSyncs),
+      static_cast<unsigned long long>(avgNodes),
+      static_cast<unsigned long long>(avgFrames),
+      static_cast<unsigned long long>(state->rendererArrayAllocs),
+      static_cast<unsigned long long>(state->rendererArrayReuses));
+
+  state->rendererDiagWindowStartMs = nowMs;
+  state->rendererDiagLastLogMs = nowMs;
+  state->rendererFlushCalls = 0;
+  state->rendererFlushNoopSkips = 0;
+  state->rendererLayoutsRun = 0;
+  state->rendererFullSyncs = 0;
+  state->rendererDeltaSyncs = 0;
+  state->rendererFramesSent = 0;
+  state->rendererNodeSamples = 0;
+  state->rendererArrayAllocs = 0;
+  state->rendererArrayReuses = 0;
+}
+#endif
 
 void callSetProp(JNIEnv *env, RuntimeState *state, jint nodeId, const std::string &name,
                  const std::string &value) {
@@ -1231,9 +1327,8 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
 
         // Register in C++ Yoga Manager immediately
         jobject view = nullptr;
-        jmethodID getViewMethod = env->GetMethodID(state->uiClass, "getNodeView", "(I)Landroid/view/View;");
-        if (getViewMethod) {
-          view = env->CallObjectMethod(state->uiManager, getViewMethod, nodeId);
+        if (state->getNodeView) {
+          view = env->CallObjectMethod(state->uiManager, state->getNodeView, nodeId);
         }
         if (!view) {
           __android_log_print(ANDROID_LOG_WARN, "ZynthRuntime", "createNode: getNodeView returned null for node %d type=%s", nodeId, type.c_str());
@@ -1262,14 +1357,15 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
           zynth::kit::ZynthStyleEngine::applyStyleProp(yogaNode, prop, args[2], rt, state->density);
           
           // Notify Kotlin that layout needs calculation
-          jmethodID markMethod = env->GetMethodID(state->uiClass, "markBatchNeedsLayout", "()V");
-          if (markMethod) {
-            env->CallVoidMethod(state->uiManager, markMethod);
-          }
+          markLayoutDirty(env, state);
           return Value::undefined();
         }
 
         applyProp(rt, state, env, nodeId, name, args[2]);
+        if (name == "style") {
+          // Style objects may include layout props handled inside applyProp/applyStyle.
+          markLayoutDirty(env, state);
+        }
         return Value::undefined();
       });
 
@@ -1289,10 +1385,7 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
         auto yogaNode = state->yogaManager->getNode(nodeId);
         if (yogaNode && YGNodeHasMeasureFunc(yogaNode)) {
           YGNodeMarkDirty(yogaNode);
-          jmethodID markMethod = env->GetMethodID(state->uiClass, "markBatchNeedsLayout", "()V");
-          if (markMethod) {
-            env->CallVoidMethod(state->uiManager, markMethod);
-          }
+          markLayoutDirty(env, state);
         }
         return Value::undefined();
       });
@@ -1318,6 +1411,7 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
                             static_cast<jint>(index));
         
         state->yogaManager->insertChild(parentId, childId, index);
+        markLayoutDirty(env, state);
         return Value::undefined();
       });
 
@@ -1338,6 +1432,7 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
                             static_cast<jint>(childId));
         
         state->yogaManager->removeChild(parentId, childId);
+        markLayoutDirty(env, state);
         return Value::undefined();
       });
 
@@ -1514,10 +1609,7 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
                   layoutDropCount,
                   missingYogaNodeCount);
 #endif
-              jmethodID markMethod = env->GetMethodID(state->uiClass, "markBatchNeedsLayout", "()V");
-              if (markMethod) {
-                env->CallVoidMethod(state->uiManager, markMethod);
-              }
+              markLayoutDirty(env, state);
             }
 
             // Finally, call Kotlin to handle the rest (non-layout props, insertions, etc.)
@@ -1630,34 +1722,85 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
         if (!state) return Value::undefined();
         JNIEnv *env = getEnv();
         if (!env) return Value::undefined();
-        
-        jmethodID getWidthMethod = env->GetMethodID(state->uiClass, "getRootWidth", "()I");
-        jmethodID getHeightMethod = env->GetMethodID(state->uiClass, "getRootHeight", "()I");
-        if (getWidthMethod && getHeightMethod) {
-          int width = env->CallIntMethod(state->uiManager, getWidthMethod);
-          int height = env->CallIntMethod(state->uiManager, getHeightMethod);
-          state->yogaManager->calculateLayout(width, height);
-          
-          // Sync results back to Kotlin
-          std::vector<float> results = state->yogaManager->getLayoutResults();
-          if (!results.empty()) {
-            __android_log_print(
-                ANDROID_LOG_DEBUG,
-                "ZynthRuntime",
-                "flush(C++): root=%dx%d frames=%zu",
-                width,
-                height,
-                results.size() / 5);
-            jfloatArray jResults = env->NewFloatArray(static_cast<jsize>(results.size()));
-            env->SetFloatArrayRegion(jResults, 0, static_cast<jsize>(results.size()), results.data());
-            
-            jmethodID applyResultsMethod = env->GetMethodID(state->uiClass, "applyLayoutResults", "([F)V");
-            if (applyResultsMethod) {
-              env->CallVoidMethod(state->uiManager, applyResultsMethod, jResults);
+
+#if ZYNTH_ENABLE_RENDERER_SAMPLED_DIAGNOSTICS
+        state->rendererFlushCalls += 1;
+#endif
+
+        if (state->getRootWidth && state->getRootHeight) {
+          const int width = env->CallIntMethod(state->uiManager, state->getRootWidth);
+          const int height = env->CallIntMethod(state->uiManager, state->getRootHeight);
+          const bool rootChanged = width != state->lastRootWidth || height != state->lastRootHeight;
+          const bool needsLayout = rootChanged || !state->hasPerformedCppLayout ||
+              state->cppLayoutDirty.load(std::memory_order_relaxed);
+          if (needsLayout) {
+            state->yogaManager->calculateLayout(width, height);
+            state->lastRootWidth = width;
+            state->lastRootHeight = height;
+            state->hasPerformedCppLayout = true;
+
+            bool didFullSync = false;
+            size_t totalNodeCount = 0;
+            state->yogaManager->getLayoutResults(
+                state->layoutResultsBuffer,
+                true,
+                &didFullSync,
+                &totalNodeCount);
+            const jsize resultSize = static_cast<jsize>(state->layoutResultsBuffer.size());
+            if (resultSize > 0 && state->applyLayoutResults) {
+              if (state->layoutResultsArray == nullptr || state->layoutResultsArraySize != resultSize) {
+                jfloatArray newArray = env->NewFloatArray(resultSize);
+                if (state->layoutResultsArray != nullptr) {
+                  env->DeleteGlobalRef(state->layoutResultsArray);
+                }
+                state->layoutResultsArray = static_cast<jfloatArray>(env->NewGlobalRef(newArray));
+                state->layoutResultsArraySize = resultSize;
+                env->DeleteLocalRef(newArray);
+#if ZYNTH_ENABLE_RENDERER_SAMPLED_DIAGNOSTICS
+                state->rendererArrayAllocs += 1;
+#endif
+              } else {
+#if ZYNTH_ENABLE_RENDERER_SAMPLED_DIAGNOSTICS
+                state->rendererArrayReuses += 1;
+#endif
+              }
+              env->SetFloatArrayRegion(
+                  state->layoutResultsArray,
+                  0,
+                  resultSize,
+                  state->layoutResultsBuffer.data());
+              env->CallVoidMethod(state->uiManager, state->applyLayoutResults, state->layoutResultsArray);
+#if ZYNTH_ENABLE_RUNTIME_FLUSH_LOGS
+              __android_log_print(
+                  ANDROID_LOG_DEBUG,
+                  "ZynthRuntime",
+                  "flush(C++): root=%dx%d frames=%zu",
+                  width,
+                  height,
+                  state->layoutResultsBuffer.size() / 5);
+#endif
             }
-            env->DeleteLocalRef(jResults);
+            state->cppLayoutDirty.store(false, std::memory_order_relaxed);
+#if ZYNTH_ENABLE_RENDERER_SAMPLED_DIAGNOSTICS
+            state->rendererLayoutsRun += 1;
+            state->rendererNodeSamples += static_cast<uint64_t>(totalNodeCount);
+            state->rendererFramesSent += static_cast<uint64_t>(state->layoutResultsBuffer.size() / 5);
+            if (didFullSync) {
+              state->rendererFullSyncs += 1;
+            } else {
+              state->rendererDeltaSyncs += 1;
+            }
+#endif
+          } else {
+#if ZYNTH_ENABLE_RENDERER_SAMPLED_DIAGNOSTICS
+            state->rendererFlushNoopSkips += 1;
+#endif
           }
         }
+
+#if ZYNTH_ENABLE_RENDERER_SAMPLED_DIAGNOSTICS
+        maybeLogRendererDiagnostics(state);
+#endif
 
         env->CallVoidMethod(state->uiManager, state->flush);
         return Value::undefined();
@@ -1799,6 +1942,7 @@ Java_com_zynth_kit_runtime_JSBridge_destroyHermesRuntime(JNIEnv *, jobject, jlon
         if (it->second->uiClass) env->DeleteGlobalRef(it->second->uiClass);
         if (it->second->jsBridgeClass) env->DeleteGlobalRef(it->second->jsBridgeClass);
         if (it->second->devtoolsClass) env->DeleteGlobalRef(it->second->devtoolsClass);
+        if (it->second->layoutResultsArray) env->DeleteGlobalRef(it->second->layoutResultsArray);
       }
       gStates.erase(it);
     }
@@ -1828,6 +1972,11 @@ Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlon
       env->GetMethodID(state->uiClass, "applyBatchTypedBuffer", "(Ljava/nio/ByteBuffer;I[Ljava/lang/String;)V");
   state->setSurface = env->GetMethodID(state->uiClass, "setSurface", "(I)V");
   state->flush = env->GetMethodID(state->uiClass, "flush", "()V");
+  state->getNodeView = env->GetMethodID(state->uiClass, "getNodeView", "(I)Landroid/view/View;");
+  state->markBatchNeedsLayout = env->GetMethodID(state->uiClass, "markBatchNeedsLayout", "()V");
+  state->getRootWidth = env->GetMethodID(state->uiClass, "getRootWidth", "()I");
+  state->getRootHeight = env->GetMethodID(state->uiClass, "getRootHeight", "()I");
+  state->applyLayoutResults = env->GetMethodID(state->uiClass, "applyLayoutResults", "([F)V");
   state->applyAnimatedStyle =
       env->GetMethodID(state->uiClass, "applyAnimatedStyle", "(IFFFFFFFFFFF)V");
   state->applyAnimatedLayoutStyle =

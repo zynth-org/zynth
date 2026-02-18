@@ -26,9 +26,21 @@ public:
   void calculateLayout(int rootWidth, int rootHeight);
   
   // Get a buffer of frames: [nodeId, left, top, width, height, ...]
-  std::vector<float> getLayoutResults();
+  void getLayoutResults(
+      std::vector<float>& outResults,
+      bool deltaOnly,
+      bool* didFullSync = nullptr,
+      size_t* totalNodeCount = nullptr);
+  size_t getNodeCount();
 
 private:
+  struct LayoutFrame {
+    float left = 0.0f;
+    float top = 0.0f;
+    float width = 0.0f;
+    float height = 0.0f;
+  };
+
   struct MeasureContext {
     ZynthYogaManager* manager;
     int nodeId;
@@ -53,6 +65,7 @@ private:
   std::unordered_map<int, facebook::jni::global_ref<facebook::jni::JObject>> viewRefs_;
   std::unordered_map<int, bool> isTextNode_;
   std::unordered_map<int, std::unique_ptr<MeasureContext>> measureContexts_;
+  std::unordered_map<int, LayoutFrame> lastLayoutFrames_;
   facebook::jni::global_ref<facebook::jni::JObject> uiManagerRef_;
   jmethodID measureNodeMethod_ = nullptr;
   std::mutex mutex_;

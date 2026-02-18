@@ -3,6 +3,7 @@
 #include <yoga/Yoga.h>
 #include <cmath>
 #include <cstdint>
+#include <algorithm>
 
 #ifndef ZYNTH_ENABLE_YOGA_DEBUG_LOGS
 #define ZYNTH_ENABLE_YOGA_DEBUG_LOGS 0
@@ -89,6 +90,7 @@ void ZynthYogaManager::removeNode(int nodeId) {
   viewRefs_.erase(nodeId);
   isTextNode_.erase(nodeId);
   measureContexts_.erase(nodeId);
+  lastLayoutFrames_.erase(nodeId);
   ZYNTH_YOGA_LOGD("Removed node %d", nodeId);
 }
 
@@ -179,10 +181,22 @@ void ZynthYogaManager::calculateLayout(int rootWidth, int rootHeight) {
   ZYNTH_YOGA_LOGD("Layout calculated for root %dx%d", rootWidth, rootHeight);
 }
 
-std::vector<float> ZynthYogaManager::getLayoutResults() {
+void ZynthYogaManager::getLayoutResults(
+    std::vector<float>& outResults,
+    bool deltaOnly,
+    bool* didFullSync,
+    size_t* totalNodeCount) {
   std::lock_guard<std::mutex> lock(mutex_);
-  std::vector<float> results;
-  results.reserve(nodes_.size() * 5);
+  const bool fullSync = !deltaOnly || lastLayoutFrames_.empty();
+  if (didFullSync != nullptr) {
+    *didFullSync = fullSync;
+  }
+  if (totalNodeCount != nullptr) {
+    *totalNodeCount = nodes_.size();
+  }
+
+  outResults.clear();
+  outResults.reserve(nodes_.size() * 5);
   int zeroAreaCount = 0;
   int invalidCount = 0;
   int sampleCount = 0;
@@ -218,11 +232,29 @@ std::vector<float> ZynthYogaManager::getLayoutResults() {
       }
     }
     
-    results.push_back(static_cast<float>(nodeId));
-    results.push_back(left);
-    results.push_back(top);
-    results.push_back(width);
-    results.push_back(height);
+    const LayoutFrame current{left, top, width, height};
+    bool changed = fullSync;
+    if (!changed) {
+      auto it = lastLayoutFrames_.find(nodeId);
+      if (it == lastLayoutFrames_.end()) {
+        changed = true;
+      } else {
+        const LayoutFrame& prev = it->second;
+        changed =
+            std::fabs(prev.left - current.left) > 0.01f ||
+            std::fabs(prev.top - current.top) > 0.01f ||
+            std::fabs(prev.width - current.width) > 0.01f ||
+            std::fabs(prev.height - current.height) > 0.01f;
+      }
+    }
+    lastLayoutFrames_[nodeId] = current;
+    if (changed) {
+      outResults.push_back(static_cast<float>(nodeId));
+      outResults.push_back(left);
+      outResults.push_back(top);
+      outResults.push_back(width);
+      outResults.push_back(height);
+    }
   }
   ZYNTH_YOGA_LOGD(
       "getLayoutResults: nodes=%zu zeroArea=%d invalid=%d sample=%s",
@@ -230,7 +262,11 @@ std::vector<float> ZynthYogaManager::getLayoutResults() {
       zeroAreaCount,
       invalidCount,
       sample);
-  return results;
+}
+
+size_t ZynthYogaManager::getNodeCount() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return nodes_.size();
 }
 
 YGSize ZynthYogaManager::measureTextNode(
