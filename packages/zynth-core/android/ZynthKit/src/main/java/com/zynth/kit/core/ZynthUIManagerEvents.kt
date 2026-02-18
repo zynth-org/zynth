@@ -324,6 +324,7 @@ internal fun ZynthUIManager.destroyNode(id: Int) {
   layoutDirtyNodes.remove(id)
   layoutFrames.remove(id)
   layoutTransitionFrames.remove(id)
+  pendingInitialLayoutNodes.remove(id)
   styleDirtyNodes.remove(id)
   styleStates.remove(id)
   styleLayoutDirtyNodes.remove(id)

@@ -5,7 +5,7 @@ import android.os.SystemClock
 import android.view.View
 import android.widget.TextView
 
-private const val DEBUG_SCHEDULER = false
+private const val DEBUG_SCHEDULER = true
 
 internal fun ZynthUIManager.setFrameProfilerInternal(
   profiler: ((frameMs: Double, layoutMs: Double, overBudget: Boolean, nodeCount: Int) -> Unit)?
@@ -211,7 +211,16 @@ internal fun ZynthUIManager.performLayoutInternal(dirty: Set<Int>): Set<Int> {
       height = rootView.height.takeIf { it > 0 } ?: rootView.measuredHeight
     }
     syncSurfaceRootSize(surfaceId, root, width, height)
+    if (cppLayoutAppliedSurfaces.contains(surfaceId)) {
+      if (DEBUG_SCHEDULER) {
+        Log.d("ZynthUI", "performLayoutInternal: skip Kotlin Yoga for surface=$surfaceId (C++ layout owner)")
+      }
+      continue
+    }
     val complete = layout.layout(width, height, nodes, layoutApplyBudgetMs)
+    if (DEBUG_SCHEDULER) {
+      Log.d("ZynthUI", "performLayoutInternal: Kotlin Yoga layout surface=$surfaceId root=${width}x$height complete=$complete")
+    }
     if (!complete) {
       incomplete.add(surfaceId)
     }

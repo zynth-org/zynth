@@ -10,6 +10,8 @@ add_library(zynthkit SHARED
   src/main/cpp/zynthkit.cpp
   src/main/cpp/UICommandsRegistry.cpp
   src/main/cpp/ScrollViewUICommands.cpp
+  src/main/cpp/ZynthStyleEngine.cpp
+  src/main/cpp/ZynthYogaManager.cpp
 )
 
 find_package(hermes-engine REQUIRED CONFIG)
@@ -20,6 +22,7 @@ target_include_directories(zynthkit
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/main/cpp
     $<TARGET_PROPERTY:ReactAndroid::jsi,INTERFACE_INCLUDE_DIRECTORIES>
+    $<TARGET_PROPERTY:ReactAndroid::reactnative,INTERFACE_INCLUDE_DIRECTORIES>
 )
 
 if(TARGET hermes-engine::hermesvm)
@@ -34,6 +37,7 @@ target_link_libraries(zynthkit
   PRIVATE
     ${ZYNTH_HERMES_TARGET}
     ReactAndroid::jsi
+    ReactAndroid::reactnative
     fbjni::fbjni
     log
 )

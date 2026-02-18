@@ -6,6 +6,8 @@
 
 #include "UICommandsRegistry.h"
 #include "ZynthJSIPluginRegistry.h"
+#include "ZynthStyleEngine.h"
+#include "ZynthYogaManager.h"
 
 #include <memory>
 #include <mutex>
@@ -105,7 +107,9 @@ struct RuntimeState {
   jclass booleanClass = nullptr;
   jmethodID booleanConstructor = nullptr;
   jclass stringClass = nullptr;
+  float density = 1.0f;
   std::shared_ptr<TimerContext> timerContext = std::make_shared<TimerContext>();
+  std::shared_ptr<zynth::kit::ZynthYogaManager> yogaManager = std::make_shared<zynth::kit::ZynthYogaManager>();
   std::shared_ptr<facebook::hermes::HermesRuntime> uiRuntime;
   std::atomic<int> nextWorkletId{1};
   std::unordered_map<int, std::shared_ptr<Function>> uiWorklets;
@@ -172,76 +176,30 @@ void callSetProp(JNIEnv *env, RuntimeState *state, jint nodeId, const std::strin
 }
 
 void applyStyle(Runtime &rt, RuntimeState *state, JNIEnv *env, jint nodeId, const Object &style) {
-  static const char *numericKeys[] = {
-      "width", "height", "flex", "flexGrow", "flexShrink", "flexBasis",
-      "padding", "paddingHorizontal", "paddingVertical", "paddingTop", "paddingRight",
-      "paddingBottom", "paddingLeft", "margin", "marginHorizontal", "marginVertical",
-      "marginTop", "marginRight", "marginBottom", "marginLeft", "borderRadius",
-      "borderWidth", "fontSize", "top", "right", "bottom", "left", "opacity",
-      "shadowOpacity", "shadowRadius", "elevation", "zIndex", "gap", "rowGap",
-      "columnGap", "minWidth", "minHeight", "maxWidth", "maxHeight", "aspectRatio",
-      "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth",
-      "borderTopLeftRadius", "borderTopRightRadius", "borderBottomRightRadius",
-      "borderBottomLeftRadius", "lineHeight", "lineSpacing", "paragraphSpacing",
-      "letterSpacing", "baselineShift", "minimumFontScale"
-  };
-
-  static const char *stringKeys[] = {
-      "flexDirection", "justifyContent", "alignItems", "alignSelf", "alignContent",
-      "flexWrap", "background", "backgroundImage", "backgroundColor", "borderColor",
-      "borderStyle", "fontWeight", "color", "position", "display", "overflow",
-      "pointerEvents", "borderTopColor", "borderRightColor", "borderBottomColor",
-      "borderLeftColor", "shadowColor", "boxShadow", "fontFamily", "fontStyle",
-      "textAlign", "textDecorationLine", "textTransform", "hyphenation"
-  };
-
-  static const char *objectKeys[] = {
-      "transform", "transformOrigin", "shadowOffset", "boxShadow",
-      "background", "backgroundImage"
-  };
-
-  auto stringifyValue = [&rt](const Value &value) -> std::optional<std::string> {
-    if (value.isString()) {
-      return value.asString(rt).utf8(rt);
-    }
-    if (!value.isObject()) return std::nullopt;
-    try {
-      Object json = rt.global().getPropertyAsObject(rt, "JSON");
-      Function stringify = json.getPropertyAsFunction(rt, "stringify");
-      Value result = stringify.call(rt, value);
-      if (result.isString()) {
-        return result.asString(rt).utf8(rt);
+  auto yogaNode = state->yogaManager->getNode(nodeId);
+  Array names = style.getPropertyNames(rt);
+  for (size_t i = 0; i < names.size(rt); ++i) {
+    std::string name = names.getValueAtIndex(rt, i).asString(rt).utf8(rt);
+    Value v = style.getProperty(rt, name.c_str());
+    
+    zynth::kit::StyleProp prop = zynth::kit::ZynthStyleEngine::propFromString(name);
+    if (static_cast<int>(prop) > 0 && static_cast<int>(prop) < 100 && yogaNode) {
+      // Direct C++ Yoga application
+      zynth::kit::ZynthStyleEngine::applyStyleProp(yogaNode, prop, v, rt, state->density);
+    } else {
+      // Fallback to Kotlin for visual properties or if Yoga node missing
+      if (v.isNumber()) {
+        callSetProp(env, state, nodeId, name, std::to_string(v.asNumber()));
+      } else if (v.isString()) {
+        callSetProp(env, state, nodeId, name, v.asString(rt).utf8(rt));
+      } else if (v.isObject()) {
+        Object json = rt.global().getPropertyAsObject(rt, "JSON");
+        Function stringify = json.getPropertyAsFunction(rt, "stringify");
+        Value result = stringify.call(rt, v);
+        if (result.isString()) {
+          callSetProp(env, state, nodeId, name, result.asString(rt).utf8(rt));
+        }
       }
-    } catch (...) {
-      return std::nullopt;
-    }
-    return std::nullopt;
-  };
-
-  for (const char *key : numericKeys) {
-    if (!style.hasProperty(rt, key)) continue;
-    Value v = style.getProperty(rt, key);
-    if (v.isNumber()) {
-      callSetProp(env, state, nodeId, key, std::to_string(v.asNumber()));
-    } else if (v.isString()) {
-      callSetProp(env, state, nodeId, key, v.asString(rt).utf8(rt));
-    }
-  }
-
-  for (const char *key : stringKeys) {
-    if (!style.hasProperty(rt, key)) continue;
-    Value v = style.getProperty(rt, key);
-    if (v.isString()) {
-      callSetProp(env, state, nodeId, key, v.asString(rt).utf8(rt));
-    }
-  }
-
-  for (const char *key : objectKeys) {
-    if (!style.hasProperty(rt, key)) continue;
-    Value v = style.getProperty(rt, key);
-    auto value = stringifyValue(v);
-    if (value) {
-      callSetProp(env, state, nodeId, key, *value);
     }
   }
 }
@@ -252,6 +210,14 @@ void applyProp(Runtime &rt, RuntimeState *state, JNIEnv *env, jint nodeId, const
     applyStyle(rt, state, env, nodeId, value.asObject(rt));
     return;
   }
+  
+  zynth::kit::StyleProp prop = zynth::kit::ZynthStyleEngine::propFromString(name);
+  auto yogaNode = state->yogaManager->getNode(nodeId);
+  if (static_cast<int>(prop) > 0 && static_cast<int>(prop) < 100 && yogaNode) {
+    zynth::kit::ZynthStyleEngine::applyStyleProp(yogaNode, prop, value, rt, state->density);
+    return;
+  }
+
   if (value.isString()) {
     callSetProp(env, state, nodeId, name, value.asString(rt).utf8(rt));
     return;
@@ -1258,6 +1224,20 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
         jstring jType = env->NewStringUTF(type.c_str());
         jint nodeId = env->CallIntMethod(state->uiManager, state->createNode, jType);
         env->DeleteLocalRef(jType);
+
+        // Register in C++ Yoga Manager immediately
+        jobject view = nullptr;
+        jmethodID getViewMethod = env->GetMethodID(state->uiClass, "getNodeView", "(I)Landroid/view/View;");
+        if (getViewMethod) {
+          view = env->CallObjectMethod(state->uiManager, getViewMethod, nodeId);
+        }
+        if (!view) {
+          __android_log_print(ANDROID_LOG_WARN, "ZynthRuntime", "createNode: getNodeView returned null for node %d type=%s", nodeId, type.c_str());
+        }
+        
+        state->yogaManager->createNode(nodeId, view ? facebook::jni::wrap_alias(view) : nullptr);
+        if (view) env->DeleteLocalRef(view);
+
         return Value(static_cast<double>(nodeId));
       });
 
@@ -1271,6 +1251,20 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
         if (!env) return Value::undefined();
         jint nodeId = static_cast<jint>(args[0].asNumber());
         std::string name = args[1].asString(rt).utf8(rt);
+        
+        zynth::kit::StyleProp prop = zynth::kit::ZynthStyleEngine::propFromString(name);
+        auto yogaNode = state->yogaManager->getNode(nodeId);
+        if (static_cast<int>(prop) > 0 && static_cast<int>(prop) < 100 && yogaNode) {
+          zynth::kit::ZynthStyleEngine::applyStyleProp(yogaNode, prop, args[2], rt, state->density);
+          
+          // Notify Kotlin that layout needs calculation
+          jmethodID markMethod = env->GetMethodID(state->uiClass, "markBatchNeedsLayout", "()V");
+          if (markMethod) {
+            env->CallVoidMethod(state->uiManager, markMethod);
+          }
+          return Value::undefined();
+        }
+
         applyProp(rt, state, env, nodeId, name, args[2]);
         return Value::undefined();
       });
@@ -1288,6 +1282,14 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
         jstring jText = env->NewStringUTF(text.c_str());
         env->CallVoidMethod(state->uiManager, state->setText, nodeId, jText);
         env->DeleteLocalRef(jText);
+        auto yogaNode = state->yogaManager->getNode(nodeId);
+        if (yogaNode && YGNodeHasMeasureFunc(yogaNode)) {
+          YGNodeMarkDirty(yogaNode);
+          jmethodID markMethod = env->GetMethodID(state->uiClass, "markBatchNeedsLayout", "()V");
+          if (markMethod) {
+            env->CallVoidMethod(state->uiManager, markMethod);
+          }
+        }
         return Value::undefined();
       });
 
@@ -1301,10 +1303,17 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
         if (!state) return Value::undefined();
         JNIEnv *env = getEnv();
         if (!env) return Value::undefined();
+
+        int parentId = static_cast<int>(args[0].asNumber());
+        int childId = static_cast<int>(args[1].asNumber());
+        int index = static_cast<int>(args[2].asNumber());
+
         env->CallVoidMethod(state->uiManager, state->insertChild,
-                            static_cast<jint>(args[0].asNumber()),
-                            static_cast<jint>(args[1].asNumber()),
-                            static_cast<jint>(args[2].asNumber()));
+                            static_cast<jint>(parentId),
+                            static_cast<jint>(childId),
+                            static_cast<jint>(index));
+        
+        state->yogaManager->insertChild(parentId, childId, index);
         return Value::undefined();
       });
 
@@ -1312,14 +1321,19 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
       rt, PropNameID::forAscii(rt, "removeChild"), 2,
       [runtime](Runtime &, const Value &, const Value *args, size_t count) -> Value {
         if (count < 2 || !args[0].isNumber() || !args[1].isNumber()) return Value::undefined();
-        removeHandlersForNode(runtime, static_cast<int>(args[1].asNumber()));
+        int parentId = static_cast<int>(args[0].asNumber());
+        int childId = static_cast<int>(args[1].asNumber());
+
+        removeHandlersForNode(runtime, childId);
         RuntimeState *state = stateFor(runtime);
         if (!state) return Value::undefined();
         JNIEnv *env = getEnv();
         if (!env) return Value::undefined();
         env->CallVoidMethod(state->uiManager, state->removeChild,
-                            static_cast<jint>(args[0].asNumber()),
-                            static_cast<jint>(args[1].asNumber()));
+                            static_cast<jint>(parentId),
+                            static_cast<jint>(childId));
+        
+        state->yogaManager->removeChild(parentId, childId);
         return Value::undefined();
       });
 
@@ -1379,77 +1393,149 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
           if (!stringTableObject.isArray(rt)) return Value::undefined();
           Array stringTable = stringTableObject.asArray(rt);
           const size_t stringCount = stringTable.length(rt);
-          jdoubleArray jOps = nullptr;
-          if (opsObject.isArrayBuffer(rt)) {
-            ArrayBuffer buffer = opsObject.getArrayBuffer(rt);
-            const size_t byteLength = buffer.size(rt);
-            const size_t opCount = byteLength / sizeof(double);
-            if (state->applyBatchTypedBuffer) {
-              jobject jBuffer = env->NewDirectByteBuffer(buffer.data(rt), static_cast<jlong>(byteLength));
-              if (!jBuffer) return Value::undefined();
+          // C++ implementation of applyBatchTyped to avoid JNI overhead for layout props
+          if (state->applyBatchTypedPacked) {
+            // First, let's try to handle layout props in C++
+            const double* ops = nullptr;
+            size_t opCount = 0;
+            std::vector<double> opsBuffer;
 
-              jclass stringClass = env->FindClass("java/lang/String");
-              jobjectArray jStrings = env->NewObjectArray(static_cast<jsize>(stringCount), stringClass, nullptr);
-              env->DeleteLocalRef(stringClass);
-              for (size_t i = 0; i < stringCount; i++) {
-                Value entry = stringTable.getValueAtIndex(rt, i);
-                if (entry.isString()) {
-                  std::string utf8 = entry.asString(rt).utf8(rt);
-                  jstring jStr = env->NewStringUTF(utf8.c_str());
-                  env->SetObjectArrayElement(jStrings, static_cast<jsize>(i), jStr);
-                  env->DeleteLocalRef(jStr);
-                }
+            if (opsObject.isArrayBuffer(rt)) {
+              ArrayBuffer buffer = opsObject.getArrayBuffer(rt);
+              ops = reinterpret_cast<const double*>(buffer.data(rt));
+              opCount = buffer.size(rt) / sizeof(double);
+            } else {
+              // Fallback for Array
+              Array opsPacked = opsObject.asArray(rt);
+              opCount = opsPacked.length(rt);
+              opsBuffer.reserve(opCount);
+              for (size_t i = 0; i < opCount; i++) {
+                opsBuffer.push_back(opsPacked.getValueAtIndex(rt, i).asNumber());
               }
-
-              env->CallVoidMethod(state->uiManager, state->applyBatchTypedBuffer, jBuffer,
-                                  static_cast<jint>(opCount), jStrings);
-              env->DeleteLocalRef(jBuffer);
-              env->DeleteLocalRef(jStrings);
-              return Value::undefined();
+              ops = opsBuffer.data();
             }
 
-            if (!state->applyBatchTypedPacked) return Value::undefined();
-            jOps = env->NewDoubleArray(static_cast<jsize>(opCount));
-            if (!jOps) return Value::undefined();
-            if (opCount > 0) {
-              const auto *data = reinterpret_cast<const uint8_t *>(buffer.data(rt));
-              std::vector<jdouble> opsBuffer(opCount);
-              std::memcpy(opsBuffer.data(), data, opCount * sizeof(double));
-              env->SetDoubleArrayRegion(jOps, 0, static_cast<jsize>(opCount), opsBuffer.data());
+            // Iterate and handle layout props
+            size_t i = 0;
+            bool layoutChanged = false;
+            int layoutSetPropCount = 0;
+            int layoutInsertCount = 0;
+            int layoutRemoveCount = 0;
+            int layoutDropCount = 0;
+            int missingYogaNodeCount = 0;
+            while (i < opCount) {
+              int opcode = static_cast<int>(ops[i++]);
+              switch (opcode) {
+                case 1: { // setProp
+                  if (i + 3 >= opCount) { i = opCount; break; }
+                  int nodeId = static_cast<int>(ops[i++]);
+                  int propIdOrIndex = static_cast<int>(ops[i++]);
+                  int valueType = static_cast<int>(ops[i++]);
+                  double payload = ops[i++];
+
+                  if (propIdOrIndex > 0 && propIdOrIndex < 100) {
+                    // It's a layout prop ID!
+                    auto yogaNode = state->yogaManager->getNode(nodeId);
+                    if (yogaNode) {
+                      zynth::kit::StyleProp prop = static_cast<zynth::kit::StyleProp>(propIdOrIndex);
+                      Value v = Value::null();
+                      if (valueType == 1) {
+                        v = Value(payload);
+                      } else if (valueType == 3) {
+                        v = Value(payload != 0.0);
+                      } else if (valueType == 2) {
+                        size_t strIndex = static_cast<size_t>(payload);
+                        if (strIndex < stringCount) {
+                          Value strVal = stringTable.getValueAtIndex(rt, strIndex);
+                          if (strVal.isString()) {
+                            v = Value(String::createFromUtf8(rt, strVal.asString(rt).utf8(rt)));
+                          }
+                        }
+                      }
+                      zynth::kit::ZynthStyleEngine::applyStyleProp(yogaNode, prop, v, rt, state->density);
+                      layoutChanged = true;
+                      layoutSetPropCount += 1;
+                    } else {
+                      missingYogaNodeCount += 1;
+                    }
+                  }
+                  break;
+                }
+                case 2: // setText
+                  i += 2; break;
+                case 3: { // insertChild
+                  if (i + 2 >= opCount) { i = opCount; break; }
+                  int parentId = static_cast<int>(ops[i++]);
+                  int childId = static_cast<int>(ops[i++]);
+                  int index = static_cast<int>(ops[i++]);
+                  state->yogaManager->insertChild(parentId, childId, index);
+                  layoutChanged = true;
+                  layoutInsertCount += 1;
+                  break;
+                }
+                case 4: { // removeChild
+                  if (i + 1 >= opCount) { i = opCount; break; }
+                  int parentId = static_cast<int>(ops[i++]);
+                  int childId = static_cast<int>(ops[i++]);
+                  state->yogaManager->removeChild(parentId, childId);
+                  layoutChanged = true;
+                  layoutRemoveCount += 1;
+                  break;
+                }
+                case 5: { // dropNode
+                  if (i >= opCount) { i = opCount; break; }
+                  int nodeId = static_cast<int>(ops[i++]);
+                  state->yogaManager->removeNode(nodeId);
+                  layoutChanged = true;
+                  layoutDropCount += 1;
+                  break;
+                }
+                default:
+                  // Unknown opcode, abort loop to be safe
+                  i = opCount;
+                  break;
+              }
             }
-          } else if (opsObject.isArray(rt)) {
-            if (!state->applyBatchTypedPacked) return Value::undefined();
-            Array opsPacked = opsObject.asArray(rt);
-            const size_t opCount = opsPacked.length(rt);
-            jOps = env->NewDoubleArray(static_cast<jsize>(opCount));
-            if (!jOps) return Value::undefined();
-            std::vector<jdouble> opsBuffer(opCount);
-            for (size_t i = 0; i < opCount; i++) {
-              Value opVal = opsPacked.getValueAtIndex(rt, i);
-              opsBuffer[i] = opVal.isNumber() ? opVal.asNumber() : 0.0;
+
+            if (layoutChanged) {
+              __android_log_print(
+                  ANDROID_LOG_DEBUG,
+                  "ZynthRuntime",
+                  "applyBatchTyped(C++): ops=%zu layoutSet=%d insert=%d remove=%d drop=%d missingYoga=%d",
+                  opCount,
+                  layoutSetPropCount,
+                  layoutInsertCount,
+                  layoutRemoveCount,
+                  layoutDropCount,
+                  missingYogaNodeCount);
+              jmethodID markMethod = env->GetMethodID(state->uiClass, "markBatchNeedsLayout", "()V");
+              if (markMethod) {
+                env->CallVoidMethod(state->uiManager, markMethod);
+              }
             }
-            env->SetDoubleArrayRegion(jOps, 0, static_cast<jsize>(opCount), opsBuffer.data());
-          } else {
+
+            // Finally, call Kotlin to handle the rest (non-layout props, insertions, etc.)
+            // We need to pass the original data.
+            jdoubleArray jOps = env->NewDoubleArray(static_cast<jsize>(opCount));
+            env->SetDoubleArrayRegion(jOps, 0, static_cast<jsize>(opCount), reinterpret_cast<const jdouble*>(ops));
+
+            jclass stringClass = env->FindClass("java/lang/String");
+            jobjectArray jStrings = env->NewObjectArray(static_cast<jsize>(stringCount), stringClass, nullptr);
+            for (size_t k = 0; k < stringCount; k++) {
+              Value entry = stringTable.getValueAtIndex(rt, k);
+              if (entry.isString()) {
+                jstring jStr = env->NewStringUTF(entry.asString(rt).utf8(rt).c_str());
+                env->SetObjectArrayElement(jStrings, static_cast<jsize>(k), jStr);
+                env->DeleteLocalRef(jStr);
+              }
+            }
+            env->DeleteLocalRef(stringClass);
+
+            env->CallVoidMethod(state->uiManager, state->applyBatchTypedPacked, jOps, jStrings);
+            env->DeleteLocalRef(jOps);
+            env->DeleteLocalRef(jStrings);
             return Value::undefined();
           }
-
-          jclass stringClass = env->FindClass("java/lang/String");
-          jobjectArray jStrings = env->NewObjectArray(static_cast<jsize>(stringCount), stringClass, nullptr);
-          env->DeleteLocalRef(stringClass);
-          for (size_t i = 0; i < stringCount; i++) {
-            Value entry = stringTable.getValueAtIndex(rt, i);
-            if (entry.isString()) {
-              std::string utf8 = entry.asString(rt).utf8(rt);
-              jstring jStr = env->NewStringUTF(utf8.c_str());
-              env->SetObjectArrayElement(jStrings, static_cast<jsize>(i), jStr);
-              env->DeleteLocalRef(jStr);
-            }
-          }
-
-          env->CallVoidMethod(state->uiManager, state->applyBatchTypedPacked, jOps, jStrings);
-          env->DeleteLocalRef(jOps);
-          env->DeleteLocalRef(jStrings);
-          return Value::undefined();
         }
         Value opsVal = payload.getProperty(rt, "operations");
         if (!opsVal.isObject()) return Value::undefined();
@@ -1538,6 +1624,35 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
         if (!state) return Value::undefined();
         JNIEnv *env = getEnv();
         if (!env) return Value::undefined();
+        
+        jmethodID getWidthMethod = env->GetMethodID(state->uiClass, "getRootWidth", "()I");
+        jmethodID getHeightMethod = env->GetMethodID(state->uiClass, "getRootHeight", "()I");
+        if (getWidthMethod && getHeightMethod) {
+          int width = env->CallIntMethod(state->uiManager, getWidthMethod);
+          int height = env->CallIntMethod(state->uiManager, getHeightMethod);
+          state->yogaManager->calculateLayout(width, height);
+          
+          // Sync results back to Kotlin
+          std::vector<float> results = state->yogaManager->getLayoutResults();
+          if (!results.empty()) {
+            __android_log_print(
+                ANDROID_LOG_DEBUG,
+                "ZynthRuntime",
+                "flush(C++): root=%dx%d frames=%zu",
+                width,
+                height,
+                results.size() / 5);
+            jfloatArray jResults = env->NewFloatArray(static_cast<jsize>(results.size()));
+            env->SetFloatArrayRegion(jResults, 0, static_cast<jsize>(results.size()), results.data());
+            
+            jmethodID applyResultsMethod = env->GetMethodID(state->uiClass, "applyLayoutResults", "([F)V");
+            if (applyResultsMethod) {
+              env->CallVoidMethod(state->uiManager, applyResultsMethod, jResults);
+            }
+            env->DeleteLocalRef(jResults);
+          }
+        }
+
         env->CallVoidMethod(state->uiManager, state->flush);
         return Value::undefined();
       });
@@ -1715,6 +1830,13 @@ Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlon
   state->cancelTimer = env->GetMethodID(state->uiClass, "cancelTimer", "(I)V");
   state->scheduleAnimationFrame = env->GetMethodID(state->uiClass, "scheduleAnimationFrame", "(JI)V");
   state->cancelAnimationFrame = env->GetMethodID(state->uiClass, "cancelAnimationFrame", "(I)V");
+  
+  jmethodID getDensityMethod = env->GetMethodID(state->uiClass, "getDensity", "()F");
+  if (getDensityMethod) {
+    state->density = env->CallFloatMethod(uiManager, getDensityMethod);
+  }
+  state->yogaManager->setUIManager(facebook::jni::wrap_alias(uiManager));
+
   jclass bridgeClass = env->FindClass("com/zynth/kit/runtime/JSBridge");
   if (bridgeClass) {
     state->jsBridgeClass = static_cast<jclass>(env->NewGlobalRef(bridgeClass));
