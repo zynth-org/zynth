@@ -130,9 +130,7 @@ internal fun ZynthUIManager.registerSurfaceInternal(
   }
   val layout = ZynthYogaLayout()
   layout.layoutDidUpdate = { nodeId, left, top, right, bottom, changed ->
-    // Only secondary surfaces should use Kotlin layout to release first-mount visibility.
-    // Root surface visibility is released by C++ applyLayoutResults to avoid one-frame drift.
-    if (surfaceId != rootView.rootId && changed && pendingInitialLayoutNodes.remove(nodeId)) {
+    if (changed && pendingInitialLayoutNodes.remove(nodeId)) {
       nodes[nodeId]?.visibility = View.VISIBLE
     }
     if (changed && styleStates.containsKey(nodeId)) {
