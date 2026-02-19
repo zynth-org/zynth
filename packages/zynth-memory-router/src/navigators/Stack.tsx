@@ -4,9 +4,6 @@ import {
   createContext,
   useContext,
   For,
-  Show,
-  Switch,
-  Match,
   getOwner,
   runWithOwner,
   createEffect,
@@ -157,9 +154,9 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
     const routeName = initialRouteName ?? fallbackRouteName;
 
     if (!routeName) {
-      // console.warn(
-      //   `[Stack Navigator] Navigator '${navigatorId}' has no registered screens.`,
-      // );
+      console.warn(
+        `[Stack Navigator] Navigator '${navigatorId}' has no registered screens.`,
+      );
       return;
     }
 
@@ -424,8 +421,8 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
 
   // Inner component that renders after children have registered
   const ScreensRenderer = () => {
-    // Trigger initialization immediately
-    initializeState();
+    // Trigger initialization after children have rendered
+    queueMicrotask(() => initializeState());
 
     const currentRoute = createMemo(() => state().routes[state().index]);
     const currentOptions = createMemo<ScreenOptions | undefined>(() => {
@@ -441,24 +438,6 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
     const shouldRenderHeaderBar = createMemo(
       () => headerShown() && (!useNativeHeader || Platform.OS === OS.WEB),
     );
-
-    type HeaderRenderModel = {
-      options: ScreenOptions;
-      title: string;
-      canGoBack: boolean;
-    };
-
-    const headerModel = createMemo<HeaderRenderModel | null>(() => {
-      if (!shouldRenderHeaderBar()) return null;
-      const route = currentRoute();
-      const options = currentOptions();
-      if (!route || !options) return null;
-      return {
-        options,
-        title: options.title ?? route.name,
-        canGoBack: canGoBack(),
-      };
-    });
 
     return (
       <View style={{ flex: 1 }}>
@@ -644,14 +623,15 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
             }}
           </For>
         </ScreenContainer>
-        <Show when={headerModel()}>
+        {shouldRenderHeaderBar() && currentRoute() && currentOptions() ? (
           <HeaderBar
-            options={headerModel()!.options}
-            title={headerModel()!.title}
-            canGoBack={headerModel()!.canGoBack}
+            key={currentRoute()!.key}
+            options={currentOptions()!}
+            title={currentOptions()!.title ?? currentRoute()!.name}
+            canGoBack={helpers.canGoBack()}
             onBack={helpers.goBack}
           />
-        </Show>
+        ) : null}
       </View>
     );
   };
@@ -682,6 +662,7 @@ export const Stack = {
 // -----------------------------------------------------------------------------
 
 interface HeaderBarProps {
+  key?: string;
   options: ScreenOptions;
   title?: string;
   canGoBack: boolean;
@@ -712,24 +693,20 @@ const BackArrowIcon = (props: { color: string; style?: any }) => (
 
 function HeaderBar(props: HeaderBarProps) {
   const insets = createSafeAreaInsets();
+  const insetTop = insets.top;
+  const baseHeight = insetTop + DEFAULT_HEADER_HEIGHT;
   const owner = getOwner();
 
-  const tintColor = createMemo(
-    () => props.options.headerTintColor ?? DEFAULT_HEADER_TINT,
-  );
-  const titleColor = createMemo(
-    () =>
-      props.options.headerTitleColor ??
-      props.options.headerTintColor ??
-      DEFAULT_HEADER_TINT,
-  );
-  const backgroundColor = createMemo(() =>
+  const tintColor = () => props.options.headerTintColor ?? DEFAULT_HEADER_TINT;
+  const titleColor = () =>
+    props.options.headerTitleColor ??
+    props.options.headerTintColor ??
+    DEFAULT_HEADER_TINT;
+  const backgroundColor = () =>
     props.options.headerTransparent
       ? "transparent"
-      : (props.options.headerBackgroundColor ?? DEFAULT_HEADER_BACKGROUND),
-  );
-  const backVisible = createMemo(() => props.options.headerBackVisible ?? true);
-
+      : (props.options.headerBackgroundColor ?? DEFAULT_HEADER_BACKGROUND);
+  const backVisible = () => props.options.headerBackVisible ?? true;
   const invokeBack = () => {
     if (owner) {
       runWithOwner(owner, () => props.onBack());
@@ -737,7 +714,6 @@ function HeaderBar(props: HeaderBarProps) {
       props.onBack();
     }
   };
-
   const invokeHeaderRightButton = () => {
     const handler = props.options.headerRightButton?.onPress;
     if (!handler) return;
@@ -748,7 +724,117 @@ function HeaderBar(props: HeaderBarProps) {
     }
   };
 
-  const canBack = createMemo(() => props.canGoBack && backVisible());
+  const renderLeft = () => {
+    const canBack = () => props.canGoBack && backVisible();
+    if (props.options.headerLeft) return props.options.headerLeft();
+    if (!canBack()) {
+      return (
+        <View
+          style={{
+            backgroundColor: "transparent",
+            paddingHorizontal: 8,
+            paddingVertical: 6,
+            minWidth: 56,
+            minHeight: 56,
+          }}
+        />
+      );
+    }
+    return (
+      <Pressable
+        onPress={invokeBack}
+        pressEffect="ripple"
+        hitSlop={8}
+        style={{
+          backgroundColor: "transparent",
+          paddingHorizontal: 8,
+          paddingVertical: 6,
+          minWidth: 56,
+          minHeight: 56,
+          alignItems: "center",
+          justifyContent: "center",
+          opacity: 1,
+        }}
+        stateLayerStyle={{
+          backgroundColor: "rgba(0, 0, 0, 0.08)",
+          borderRadius: 999,
+        }}
+      >
+        {Platform.OS === OS.WEB ? (
+          <BackArrowIcon
+            color={tintColor()}
+            style={{ width: 24, height: 24, zIndex: 999 }}
+          />
+        ) : (
+          <SystemGlyph
+            name="RiArrowsArrowLeftLine"
+            size={32}
+            color={tintColor()}
+            style={{
+              textAlign: "center",
+              alignContent: "center",
+              justifyContent: "center",
+            }}
+          />
+        )}
+      </Pressable>
+    );
+  };
+
+  const renderTitle = () => {
+    if (props.options.headerTitle) return props.options.headerTitle();
+    if (props.options.title) {
+      return (
+        <Text
+          style={{
+            color: titleColor(),
+            fontSize: 20,
+            fontWeight: "600",
+          }}
+          numberOfLines={1}
+        >
+          {props.options.title}
+        </Text>
+      );
+    }
+    return null;
+  };
+
+  const renderRight = () => {
+    if (props.options.headerRight) return props.options.headerRight();
+    if (props.options.headerRightButton)
+      return (
+        <Button
+          onPress={
+            props.options.headerRightButton?.onPress
+              ? invokeHeaderRightButton
+              : undefined
+          }
+          variant="ghost"
+          style={{
+            paddingHorizontal: 12,
+            paddingVertical: 6,
+            minWidth: 48,
+            alignSelf: "stretch",
+            justifyContent: "center",
+          }}
+        >
+          <Text
+            style={{
+              color: tintColor(),
+              fontSize: 15,
+              fontWeight: "500",
+            }}
+          >
+            {props.options.headerRightButton?.title ??
+              (props.options.headerRightButton?.systemItem === "close"
+                ? "Close"
+                : "Done")}
+          </Text>
+        </Button>
+      );
+    return null;
+  };
 
   return (
     <View
@@ -757,8 +843,8 @@ function HeaderBar(props: HeaderBarProps) {
         top: 0,
         left: 0,
         right: 0,
-        height: insets.top + DEFAULT_HEADER_HEIGHT,
-        paddingTop: insets.top,
+        height: baseHeight,
+        paddingTop: insetTop,
         backgroundColor: backgroundColor(),
         flexDirection: "row",
         alignItems: "center",
@@ -782,68 +868,7 @@ function HeaderBar(props: HeaderBarProps) {
             alignItems: "center",
           }}
         >
-          <Show
-            when={props.options.headerLeft}
-            fallback={
-              <Show
-                when={canBack()}
-                fallback={
-                  <View
-                    style={{
-                      backgroundColor: "transparent",
-                      paddingHorizontal: 8,
-                      paddingVertical: 6,
-                      minWidth: 56,
-                      minHeight: 56,
-                    }}
-                  />
-                }
-              >
-                <Pressable
-                  onPress={invokeBack}
-                  pressEffect="ripple"
-                  hitSlop={8}
-                  style={{
-                    backgroundColor: "transparent",
-                    paddingHorizontal: 8,
-                    paddingVertical: 6,
-                    minWidth: 56,
-                    minHeight: 56,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    opacity: 1,
-                  }}
-                  stateLayerStyle={{
-                    backgroundColor: "rgba(0, 0, 0, 0.08)",
-                    borderRadius: 999,
-                  }}
-                >
-                  <Show
-                    when={Platform.OS === OS.WEB}
-                    fallback={
-                      <SystemGlyph
-                        name="RiArrowsArrowLeftLine"
-                        size={32}
-                        color={tintColor()}
-                        style={{
-                          textAlign: "center",
-                          alignContent: "center",
-                          justifyContent: "center",
-                        }}
-                      />
-                    }
-                  >
-                    <BackArrowIcon
-                      color={tintColor()}
-                      style={{ width: 24, height: 24, zIndex: 999 }}
-                    />
-                  </Show>
-                </Pressable>
-              </Show>
-            }
-          >
-            {(headerLeft) => headerLeft()()}
-          </Show>
+          {renderLeft()}
         </View>
         <View
           style={{
@@ -852,25 +877,7 @@ function HeaderBar(props: HeaderBarProps) {
             paddingLeft: 8,
           }}
         >
-          <Show
-            when={props.options.headerTitle}
-            fallback={
-              <Show when={props.title}>
-                <Text
-                  style={{
-                    color: titleColor(),
-                    fontSize: 20,
-                    fontWeight: "600",
-                  }}
-                  numberOfLines={1}
-                >
-                  {props.title}
-                </Text>
-              </Show>
-            }
-          >
-            {(headerTitle) => headerTitle()()}
-          </Show>
+          {renderTitle()}
         </View>
       </View>
       <View
@@ -882,56 +889,7 @@ function HeaderBar(props: HeaderBarProps) {
           paddingRight: 8,
         }}
       >
-        <Show
-          when={props.options.headerRight}
-          fallback={
-            <Show when={props.options.headerRightButton}>
-              <Button
-                onPress={
-                  props.options.headerRightButton?.onPress
-                    ? invokeHeaderRightButton
-                    : undefined
-                }
-                variant="ghost"
-                style={{
-                  paddingHorizontal: 12,
-                  paddingVertical: 6,
-                  minWidth: 48,
-                  alignSelf: "stretch",
-                  justifyContent: "center",
-                }}
-              >
-                <Text
-                  style={{
-                    color: tintColor(),
-                    fontSize: 15,
-                    fontWeight: "500",
-                  }}
-                >
-                  <Switch fallback={props.options.headerRightButton?.title}>
-                    <Match
-                      when={
-                        props.options.headerRightButton?.systemItem === "close"
-                      }
-                    >
-                      Close
-                    </Match>
-                    <Match
-                      when={
-                        !props.options.headerRightButton?.title &&
-                        !props.options.headerRightButton?.systemItem
-                      }
-                    >
-                      Done
-                    </Match>
-                  </Switch>
-                </Text>
-              </Button>
-            </Show>
-          }
-        >
-          {(headerRight) => headerRight()()}
-        </Show>
+        {renderRight()}
       </View>
     </View>
   );
