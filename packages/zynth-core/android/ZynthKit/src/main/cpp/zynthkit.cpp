@@ -2178,33 +2178,44 @@ static void invokeLayoutEventsBatchInternal(
   if (length < 5) return;
   jdouble *data = env->GetDoubleArrayElements(payload, nullptr);
   if (!data) return;
-  for (jsize i = 0; i + 4 < length; i += 5) {
-    int nodeId = static_cast<int>(data[i]);
-    double x = data[i + 1];
-    double y = data[i + 2];
-    double width = data[i + 3];
-    double height = data[i + 4];
-
+  struct LayoutDispatchEntry {
     std::shared_ptr<Function> handler;
-    {
-      std::lock_guard<std::mutex> lock(gHandlerMutex);
+    double x = 0.0;
+    double y = 0.0;
+    double width = 0.0;
+    double height = 0.0;
+  };
+  std::vector<LayoutDispatchEntry> dispatchEntries;
+  dispatchEntries.reserve(static_cast<size_t>(length / 5));
+  {
+    std::lock_guard<std::mutex> lock(gHandlerMutex);
+    for (jsize i = 0; i + 4 < length; i += 5) {
+      int nodeId = static_cast<int>(data[i]);
       auto it = gHandlers.find(HandlerKey{runtime, nodeId, "onLayout"});
-      if (it == gHandlers.end()) continue;
-      handler = it->second.handler;
+      if (it == gHandlers.end() || !it->second.handler) continue;
+      LayoutDispatchEntry entry;
+      entry.handler = it->second.handler;
+      entry.x = data[i + 1];
+      entry.y = data[i + 2];
+      entry.width = data[i + 3];
+      entry.height = data[i + 4];
+      dispatchEntries.push_back(std::move(entry));
     }
-    if (!handler) continue;
+  }
+  for (const auto &entry : dispatchEntries) {
+    if (!entry.handler) continue;
     Runtime &rt = *runtime;
     Object payloadObj(rt);
     Object nativeEvent(rt);
     Object layout(rt);
-    layout.setProperty(rt, "x", x);
-    layout.setProperty(rt, "y", y);
-    layout.setProperty(rt, "width", width);
-    layout.setProperty(rt, "height", height);
+    layout.setProperty(rt, "x", entry.x);
+    layout.setProperty(rt, "y", entry.y);
+    layout.setProperty(rt, "width", entry.width);
+    layout.setProperty(rt, "height", entry.height);
     nativeEvent.setProperty(rt, "layout", layout);
     payloadObj.setProperty(rt, "nativeEvent", nativeEvent);
     try {
-      handler->call(rt, payloadObj);
+      entry.handler->call(rt, payloadObj);
     } catch (const JSError &error) {
       auto state = sharedStateFor(runtime);
       std::string message = error.getMessage();

@@ -19,6 +19,7 @@ import com.zynth.kit.layout.MeasureHandler
 import com.zynth.kit.layout.Rect as LayoutRect
 import com.zynth.kit.layout.Style
 import com.zynth.kit.layout.ZynthYogaLayout
+import com.zynth.kit.components.ZynthComponentDescriptor
 import com.zynth.kit.runtime.JSBridge
 import org.json.JSONObject
 import org.json.JSONTokener
@@ -226,6 +227,9 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   )
   private val timerEntries = HashMap<Int, TimerEntry>()
   private val animationFrameCallbacks = HashMap<Int, Choreographer.FrameCallback>()
+  private var descriptorCacheNodeId: Int = Int.MIN_VALUE
+  private var descriptorCacheType: String? = null
+  private var descriptorCacheValue: ZynthComponentDescriptor? = null
   internal var jsHandler: Handler? = null
   private val mainQueue = ArrayDeque<() -> Unit>()
   private var mainQueueScheduled = false
@@ -475,7 +479,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     val startNs = System.nanoTime()
     val view = nodes[id] ?: return
     val node = nodeStates[id]
-    val descriptor = node?.let { ZynthComponentRegistry.getDescriptor(it.type) }
+    val descriptor = descriptorFor(node)
     
     val isLayoutProp = when (name) {
       "width", "height", "minWidth", "minHeight", "maxWidth", "maxHeight",
@@ -519,7 +523,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     val startNs = System.nanoTime()
     val view = nodes[id] ?: return
     val node = nodeStates[id]
-    val descriptor = node?.let { ZynthComponentRegistry.getDescriptor(it.type) }
+    val descriptor = descriptorFor(node)
     if (node != null && descriptor?.applyProperty?.invoke(node, name, value) == true) {
       maybeNotifyStyle(descriptor, node, name, value)
       traceOp("setProp", node.type, startNs)
@@ -546,7 +550,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     }
     if (name == "color" && view is TextView) {
       ZynthColorParser.parse(value)?.let { color ->
-        runOnMain { view.setTextColor(color) }
+        view.setTextColor(color)
       }
       maybeNotifyStyle(descriptor, node, name, value)
       traceOp("setProp", node?.type, startNs)
@@ -599,14 +603,14 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     }
     if (name == "opacity") {
       val alpha = value?.toFloatOrNull() ?: return
-      runOnMain { view.alpha = alpha }
+      view.alpha = alpha
       maybeNotifyStyle(descriptor, node, name, value)
       traceOp("setProp", node?.type, startNs)
       return
     }
     if (view is TextView && name == "fontSize") {
       val size = value?.toFloatOrNull() ?: return
-      runOnMain { view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, dpToPx(size)) }
+      view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, dpToPx(size))
       maybeNotifyStyle(descriptor, node, name, value)
       traceOp("setProp", node?.type, startNs)
       return
@@ -618,40 +622,38 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       } else {
         Typeface.NORMAL
       }
-      runOnMain { view.setTypeface(view.typeface, style) }
+      view.setTypeface(view.typeface, style)
       maybeNotifyStyle(descriptor, node, name, value)
       traceOp("setProp", node?.type, startNs)
       return
     }
     if (view is TextView && name == "fontStyle") {
       val style = if (value == "italic") Typeface.ITALIC else Typeface.NORMAL
-      runOnMain { view.setTypeface(view.typeface, style) }
+      view.setTypeface(view.typeface, style)
       maybeNotifyStyle(descriptor, node, name, value)
       traceOp("setProp", node?.type, startNs)
       return
     }
     if (view is TextView && name == "fontFamily") {
       if (value == null) {
-        runOnMain { view.typeface = Typeface.DEFAULT }
+        view.typeface = Typeface.DEFAULT
         maybeNotifyStyle(descriptor, node, name, value)
         traceOp("setProp", node?.type, startNs)
         return
       }
       val family = value
-      runOnMain {
-        val custom = assetProvider?.getTypeface(family)
-        val style = view.typeface?.style ?: Typeface.NORMAL
-        if (custom != null) {
-          // If it's an icon font, we MUST use the typeface directly.
-          // Typeface.create(custom, style) can fail to preserve the glyphs if the style (e.g. Bold) isn't supported by the font file.
-          if (family.contains("Icon")) {
-             view.typeface = custom
-          } else {
-             view.typeface = Typeface.create(custom, style)
-          }
+      val custom = assetProvider?.getTypeface(family)
+      val style = view.typeface?.style ?: Typeface.NORMAL
+      if (custom != null) {
+        // If it's an icon font, we MUST use the typeface directly.
+        // Typeface.create(custom, style) can fail to preserve the glyphs if the style (e.g. Bold) isn't supported by the font file.
+        if (family.contains("Icon")) {
+          view.typeface = custom
         } else {
-          view.typeface = Typeface.create(family, style)
+          view.typeface = Typeface.create(custom, style)
         }
+      } else {
+        view.typeface = Typeface.create(family, style)
       }
       maybeNotifyStyle(descriptor, node, name, value)
       traceOp("setProp", node?.type, startNs)
@@ -664,7 +666,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
         "left" -> Gravity.START
         else -> Gravity.START
       }
-      runOnMain { view.gravity = gravity }
+      view.gravity = gravity
       maybeNotifyStyle(descriptor, node, name, value)
       traceOp("setProp", node?.type, startNs)
       return
@@ -845,7 +847,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     // Log.d("ZynthLifecycle", "setText id=$id len=${text.length}")
     
     val node = nodeStates[id]
-    val descriptor = node?.let { ZynthComponentRegistry.getDescriptor(it.type) }
+    val descriptor = descriptorFor(node)
     val handledByDescriptor =
       if (node != null) descriptor?.applyProperty?.invoke(node, "text", text) == true else false
     if (!handledByDescriptor && view is TextView) {
@@ -915,23 +917,21 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       yogaForSurface(surfaceId).insertChild(yogaParentId, childId, index)
       return
     }
-    runOnMain {
-      val targetIndex = index.coerceIn(0, group.childCount)
-      group.addView(child, targetIndex)
-      val actualParent = child.parent as? ViewGroup ?: group
-      if (siblings.size > 1) {
-        // Keep draw order aligned with logical zIndex without relying on native Z/elevation.
-        val ordered = siblings.mapIndexedNotNull { insertionIndex, siblingId ->
-          val sibling = nodes[siblingId] ?: return@mapIndexedNotNull null
-          if (sibling.parent !== actualParent) return@mapIndexedNotNull null
-          val zIndex = styleStates[siblingId]?.zIndex ?: 0f
-          Triple(sibling, zIndex, insertionIndex)
-        }.sortedWith(compareBy<Triple<View, Float, Int>>({ it.second }, { it.third }))
-        ordered.forEach { (sibling, _, _) ->
-          sibling.bringToFront()
-        }
-        actualParent.invalidate()
+    val targetIndex = index.coerceIn(0, group.childCount)
+    group.addView(child, targetIndex)
+    val actualParent = child.parent as? ViewGroup ?: group
+    if (siblings.size > 1) {
+      // Keep draw order aligned with logical zIndex without relying on native Z/elevation.
+      val ordered = siblings.mapIndexedNotNull { insertionIndex, siblingId ->
+        val sibling = nodes[siblingId] ?: return@mapIndexedNotNull null
+        if (sibling.parent !== actualParent) return@mapIndexedNotNull null
+        val zIndex = styleStates[siblingId]?.zIndex ?: 0f
+        Triple(sibling, zIndex, insertionIndex)
+      }.sortedWith(compareBy<Triple<View, Float, Int>>({ it.second }, { it.third }))
+      ordered.forEach { (sibling, _, _) ->
+        sibling.bringToFront()
       }
+      actualParent.invalidate()
     }
     val yogaParentId = if (isSurfaceRoot) 0 else parentId
     yogaForSurface(surfaceId).insertChild(yogaParentId, childId, index)
@@ -957,7 +957,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     children[parentId]?.remove(childId as Any?)
     detachNode(childId)
     parents.remove(childId)
-    runOnMain { (child.parent as? ViewGroup)?.removeView(child) }
+    (child.parent as? ViewGroup)?.removeView(child)
     val yogaParentId = if (isSurfaceRootId(parentId)) 0 else parentId
     yogaForNode(childId).removeChild(yogaParentId, childId)
     markSurfaceDirtyForNode(childId)
@@ -1128,6 +1128,9 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
           val keyToken = ops[i++].toInt()
           val valueType = ops[i++].toInt()
           val payload = ops[i++]
+          if (keyToken < 0 && applyTypedSetProp(nodeId, -keyToken, valueType, payload, strings)) {
+            continue@opLoop
+          }
           val key = resolveTypedPropName(keyToken, strings)
           if (key.isEmpty()) continue@opLoop
           if (valueType == 1) {
@@ -1197,6 +1200,9 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
           val keyToken = read(i++).toInt()
           val valueType = read(i++).toInt()
           val payload = read(i++)
+          if (keyToken < 0 && applyTypedSetProp(nodeId, -keyToken, valueType, payload, strings)) {
+            continue@opLoop
+          }
           val key = resolveTypedPropName(keyToken, strings)
           if (key.isEmpty()) continue@opLoop
           if (valueType == 1) {
@@ -1785,6 +1791,142 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       "shadowColor", "shadowOpacity", "shadowRadius", "shadowOffset", "boxShadow" -> true
       else -> false
     }
+  }
+
+  private fun descriptorFor(node: Node?): ZynthComponentDescriptor? {
+    if (node == null) return null
+    if (descriptorCacheNodeId == node.id && descriptorCacheType == node.type) {
+      return descriptorCacheValue
+    }
+    val descriptor = ZynthComponentRegistry.getDescriptor(node.type)
+    descriptorCacheNodeId = node.id
+    descriptorCacheType = node.type
+    descriptorCacheValue = descriptor
+    return descriptor
+  }
+
+  private fun applyTypedSetProp(
+    nodeId: Int,
+    propId: Int,
+    valueType: Int,
+    payload: Double,
+    strings: Array<String?>
+  ): Boolean {
+    if (valueType == 1) {
+      when (propId) {
+        1 -> { setProp(nodeId, "width", payload); return true }
+        2 -> { setProp(nodeId, "height", payload); return true }
+        3 -> { setProp(nodeId, "minWidth", payload); return true }
+        4 -> { setProp(nodeId, "minHeight", payload); return true }
+        5 -> { setProp(nodeId, "maxWidth", payload); return true }
+        6 -> { setProp(nodeId, "maxHeight", payload); return true }
+        7 -> { setProp(nodeId, "flex", payload); return true }
+        8 -> { setProp(nodeId, "flexGrow", payload); return true }
+        9 -> { setProp(nodeId, "flexShrink", payload); return true }
+        10 -> { setProp(nodeId, "flexBasis", payload); return true }
+        11 -> { setProp(nodeId, "top", payload); return true }
+        12 -> { setProp(nodeId, "right", payload); return true }
+        13 -> { setProp(nodeId, "bottom", payload); return true }
+        14 -> { setProp(nodeId, "left", payload); return true }
+        15 -> { setProp(nodeId, "padding", payload); return true }
+        16 -> { setProp(nodeId, "paddingHorizontal", payload); return true }
+        17 -> { setProp(nodeId, "paddingVertical", payload); return true }
+        18 -> { setProp(nodeId, "paddingTop", payload); return true }
+        19 -> { setProp(nodeId, "paddingRight", payload); return true }
+        20 -> { setProp(nodeId, "paddingBottom", payload); return true }
+        21 -> { setProp(nodeId, "paddingLeft", payload); return true }
+        22 -> { setProp(nodeId, "margin", payload); return true }
+        23 -> { setProp(nodeId, "marginHorizontal", payload); return true }
+        24 -> { setProp(nodeId, "marginVertical", payload); return true }
+        25 -> { setProp(nodeId, "marginTop", payload); return true }
+        26 -> { setProp(nodeId, "marginRight", payload); return true }
+        27 -> { setProp(nodeId, "marginBottom", payload); return true }
+        28 -> { setProp(nodeId, "marginLeft", payload); return true }
+        29 -> { setProp(nodeId, "gap", payload); return true }
+        30 -> { setProp(nodeId, "rowGap", payload); return true }
+        31 -> { setProp(nodeId, "columnGap", payload); return true }
+        32 -> { setProp(nodeId, "aspectRatio", payload); return true }
+        58 -> { setProp(nodeId, "fontSize", payload); return true }
+        63 -> { setProp(nodeId, "opacity", payload); return true }
+        64 -> { setProp(nodeId, "elevation", payload); return true }
+        65 -> { setProp(nodeId, "zIndex", payload); return true }
+        68 -> { setProp(nodeId, "shadowColor", payload); return true }
+        69 -> { setProp(nodeId, "shadowOpacity", payload); return true }
+        70 -> { setProp(nodeId, "shadowRadius", payload); return true }
+        73 -> { setProp(nodeId, "lineHeight", payload); return true }
+        74 -> { setProp(nodeId, "lineSpacing", payload); return true }
+        75 -> { setProp(nodeId, "paragraphSpacing", payload); return true }
+        76 -> { setProp(nodeId, "letterSpacing", payload); return true }
+        79 -> { setProp(nodeId, "minimumFontScale", payload); return true }
+        80 -> { setProp(nodeId, "baselineShift", payload); return true }
+      }
+      return false
+    }
+    if (valueType == 3) {
+      val value = if (payload != 0.0) "true" else "false"
+      when (propId) {
+        90 -> { setProp(nodeId, "enableDoublePress", value); return true }
+        91 -> { setProp(nodeId, "multiline", value); return true }
+        94 -> { setProp(nodeId, "editable", value); return true }
+        95 -> { setProp(nodeId, "secureTextEntry", value); return true }
+        98 -> { setProp(nodeId, "autoCorrect", value); return true }
+        99 -> { setProp(nodeId, "spellCheck", value); return true }
+        101 -> { setProp(nodeId, "blurOnSubmit", value); return true }
+      }
+      return false
+    }
+    if (valueType == 2) {
+      val value = strings.getOrNull(payload.toInt()) ?: return false
+      when (propId) {
+        33 -> { setProp(nodeId, "flexDirection", value); return true }
+        34 -> { setProp(nodeId, "justifyContent", value); return true }
+        35 -> { setProp(nodeId, "alignItems", value); return true }
+        36 -> { setProp(nodeId, "alignSelf", value); return true }
+        37 -> { setProp(nodeId, "alignContent", value); return true }
+        38 -> { setProp(nodeId, "flexWrap", value); return true }
+        39 -> { setProp(nodeId, "position", value); return true }
+        40 -> { setProp(nodeId, "display", value); return true }
+        41 -> { setProp(nodeId, "overflow", value); return true }
+        42 -> { setProp(nodeId, "background", value); return true }
+        43 -> { setProp(nodeId, "backgroundImage", value); return true }
+        44 -> { setProp(nodeId, "backgroundColor", value); return true }
+        45 -> { setProp(nodeId, "borderColor", value); return true }
+        46 -> { setProp(nodeId, "borderStyle", value); return true }
+        47 -> { setProp(nodeId, "borderRadius", value); return true }
+        57 -> { setProp(nodeId, "color", value); return true }
+        59 -> { setProp(nodeId, "fontWeight", value); return true }
+        60 -> { setProp(nodeId, "fontFamily", value); return true }
+        61 -> { setProp(nodeId, "fontStyle", value); return true }
+        62 -> { setProp(nodeId, "textAlign", value); return true }
+        66 -> { setProp(nodeId, "transform", value); return true }
+        67 -> { setProp(nodeId, "transformOrigin", value); return true }
+        71 -> { setProp(nodeId, "shadowOffset", value); return true }
+        72 -> { setProp(nodeId, "boxShadow", value); return true }
+        77 -> { setProp(nodeId, "textDecorationLine", value); return true }
+        78 -> { setProp(nodeId, "textTransform", value); return true }
+        81 -> { setProp(nodeId, "hyphenation", value); return true }
+        82 -> { setProp(nodeId, "pointerEvents", value); return true }
+        83 -> { setProp(nodeId, "accessibilityLabel", value); return true }
+        84 -> { setProp(nodeId, "accessibilityHint", value); return true }
+        85 -> { setProp(nodeId, "accessibilityRole", value); return true }
+        86 -> { setProp(nodeId, "testID", value); return true }
+        87 -> { setProp(nodeId, "layout", value); return true }
+        96 -> { setProp(nodeId, "inputMode", value); return true }
+        97 -> { setProp(nodeId, "autoCapitalize", value); return true }
+        100 -> { setProp(nodeId, "returnKeyType", value); return true }
+        102 -> { setProp(nodeId, "submitBehavior", value); return true }
+        105 -> { setProp(nodeId, "value", value); return true }
+        106 -> { setProp(nodeId, "defaultValue", value); return true }
+        107 -> { setProp(nodeId, "placeholder", value); return true }
+        108 -> { setProp(nodeId, "selection", value); return true }
+        109 -> { setProp(nodeId, "selectionColor", value); return true }
+        110 -> { setProp(nodeId, "caretColor", value); return true }
+        111 -> { setProp(nodeId, "clearButtonMode", value); return true }
+        112 -> { setProp(nodeId, "showClearAccessory", value); return true }
+        113 -> { setProp(nodeId, "__scrollCommand", value); return true }
+      }
+    }
+    return false
   }
 
   private fun styleFromProp(name: String, rawValue: String): Style? {

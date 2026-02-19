@@ -69,6 +69,7 @@ export function createAndroidHost(): Host {
     if (isSuppressed()) return;
     queue.push({ type: "batch", op });
   };
+  const RECYCLING_DEBUG = false;
 
   const PROP_TO_ID: Record<string, number> = {
     width: 1,
@@ -374,7 +375,9 @@ export function createAndroidHost(): Host {
   const runFlush = () => {
     flushScheduled = false;
     try {
+      let hadNativeWork = false;
       if (queue.length || pendingRemovals.size || pendingDrops.size) {
+        hadNativeWork = true;
         const pending = queue.splice(0);
         let batchAccumulator: BatchOperation[] = [];
 
@@ -418,7 +421,9 @@ export function createAndroidHost(): Host {
         }
         flushBatch();
       }
-      ui.flush();
+      if (hadNativeWork) {
+        ui.flush();
+      }
     } catch (e) {
       console.error("Flush error:", JSON.stringify(e));
     }
@@ -1022,15 +1027,19 @@ export function createAndroidHost(): Host {
       // Retroactively mark existing direct children for recycling
       const containerChildren = CHILDREN.get(containerId) || [];
 
-      console.log(
-        `[Host/Recycling] 🔍 Container ${containerId} has ${containerChildren.length} children:`,
-        containerChildren.map((id) => `${id}(${TYPES.get(id)})`).join(", "),
-      );
+      if (RECYCLING_DEBUG) {
+        console.log(
+          `[Host/Recycling] 🔍 Container ${containerId} has ${containerChildren.length} children:`,
+          containerChildren.map((id) => `${id}(${TYPES.get(id)})`).join(", "),
+        );
+      }
 
       let markedCount = 0;
       for (const childId of containerChildren) {
         if (isMarkerId(childId)) {
-          console.log(`[Host/Recycling] ⏭️  Skipping marker ${childId}`);
+          if (RECYCLING_DEBUG) {
+            console.log(`[Host/Recycling] ⏭️  Skipping marker ${childId}`);
+          }
           continue;
         }
 
