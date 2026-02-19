@@ -130,6 +130,9 @@ internal fun ZynthUIManager.registerSurfaceInternal(
   }
   val layout = ZynthYogaLayout()
   layout.layoutDidUpdate = { nodeId, left, top, right, bottom, changed ->
+    if (changed && pendingInitialLayoutNodes.remove(nodeId)) {
+      nodes[nodeId]?.visibility = View.VISIBLE
+    }
     if (changed && styleStates.containsKey(nodeId)) {
       styleLayoutDirtyNodes.add(nodeId)
       styleLayoutFrames[nodeId] = Rect(left, top, right, bottom)

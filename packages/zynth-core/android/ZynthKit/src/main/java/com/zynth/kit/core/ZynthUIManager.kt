@@ -1001,6 +1001,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     }
     // Log.d("ZynthUI", "applyLayoutResults: processing ${results.size / 5} node frames on main thread")
     val touchedSurfaces = HashSet<Int>()
+    val rootSurfaceId = rootView.rootId
     var changedCount = 0
     var zeroAreaCount = 0
     var i = 0
@@ -1013,6 +1014,11 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       
       val view = nodes[nodeId] ?: continue
       val surfaceId = nodeSurfaces[nodeId] ?: activeSurfaceId
+      // C++ Yoga currently owns the app root surface layout path.
+      // Keep secondary surfaces (e.g. tab icon surfaces) on Kotlin Yoga.
+      if (surfaceId != rootSurfaceId) {
+        continue
+      }
       touchedSurfaces.add(surfaceId)
       val l = left.toInt()
       val t = top.toInt()
