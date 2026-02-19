@@ -286,6 +286,10 @@ void applyStyle(Runtime &rt, RuntimeState *state, JNIEnv *env, jint nodeId, cons
     if (static_cast<int>(prop) > 0 && static_cast<int>(prop) < 100 && yogaNode) {
       // Direct C++ Yoga application
       zynth::kit::ZynthStyleEngine::applyStyleProp(yogaNode, prop, v, rt, state->density);
+      // Some Yoga props also require View-side effects in Kotlin.
+      if (prop == zynth::kit::StyleProp::Overflow && v.isString()) {
+        callSetProp(env, state, nodeId, name, v.asString(rt).utf8(rt));
+      }
     } else {
       // Fallback to Kotlin for visual properties or if Yoga node missing
       if (v.isNumber()) {
@@ -315,6 +319,10 @@ void applyProp(Runtime &rt, RuntimeState *state, JNIEnv *env, jint nodeId, const
   auto yogaNode = state->yogaManager->getNode(nodeId);
   if (static_cast<int>(prop) > 0 && static_cast<int>(prop) < 100 && yogaNode) {
     zynth::kit::ZynthStyleEngine::applyStyleProp(yogaNode, prop, value, rt, state->density);
+    // Keep Kotlin in sync for props that have View-side behavior.
+    if (prop == zynth::kit::StyleProp::Overflow && value.isString()) {
+      callSetProp(env, state, nodeId, name, value.asString(rt).utf8(rt));
+    }
     return;
   }
 
@@ -1355,6 +1363,9 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
         auto yogaNode = state->yogaManager->getNode(nodeId);
         if (static_cast<int>(prop) > 0 && static_cast<int>(prop) < 100 && yogaNode) {
           zynth::kit::ZynthStyleEngine::applyStyleProp(yogaNode, prop, args[2], rt, state->density);
+          if (prop == zynth::kit::StyleProp::Overflow && args[2].isString()) {
+            callSetProp(env, state, nodeId, name, args[2].asString(rt).utf8(rt));
+          }
           
           // Notify Kotlin that layout needs calculation
           markLayoutDirty(env, state);

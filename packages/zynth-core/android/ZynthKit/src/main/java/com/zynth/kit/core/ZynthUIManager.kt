@@ -47,6 +47,7 @@ private val STYLE_PROP_ID_TO_NAME = mapOf(
   108 to "shadowRadius",
   109 to "elevation"
 )
+private const val YOGA_PROP_OVERFLOW_ID = 40
 
 class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal var runtimePtr: Long = 0L
@@ -1173,11 +1174,16 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
           val payload = ops[i++]
           
           if (propIdOrIndex > 0 && propIdOrIndex < 100) {
-            // Already handled in C++ Style Engine
-            continue
+            // Most Yoga props are already handled in C++.
+            // Overflow also requires a View-side clip update in Kotlin.
+            if (propIdOrIndex != YOGA_PROP_OVERFLOW_ID) {
+              continue
+            }
           }
           
-          val key = if (propIdOrIndex >= 100) {
+          val key = if (propIdOrIndex == YOGA_PROP_OVERFLOW_ID) {
+            "overflow"
+          } else if (propIdOrIndex >= 100) {
             STYLE_PROP_ID_TO_NAME[propIdOrIndex] ?: ""
           } else {
             strings.getOrNull(if (propIdOrIndex < 0) -propIdOrIndex else propIdOrIndex) ?: ""
@@ -1254,11 +1260,16 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
           val payload = read(i++)
           
           if (propIdOrIndex > 0 && propIdOrIndex < 100) {
-            // Already handled in C++ Style Engine
-            continue
+            // Most Yoga props are already handled in C++.
+            // Overflow also requires a View-side clip update in Kotlin.
+            if (propIdOrIndex != YOGA_PROP_OVERFLOW_ID) {
+              continue
+            }
           }
           
-          val key = if (propIdOrIndex >= 100) {
+          val key = if (propIdOrIndex == YOGA_PROP_OVERFLOW_ID) {
+            "overflow"
+          } else if (propIdOrIndex >= 100) {
             STYLE_PROP_ID_TO_NAME[propIdOrIndex] ?: ""
           } else {
             strings.getOrNull(if (propIdOrIndex < 0) -propIdOrIndex else propIdOrIndex) ?: ""
