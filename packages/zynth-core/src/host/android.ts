@@ -70,61 +70,6 @@ export function createAndroidHost(): Host {
     queue.push({ type: "batch", op });
   };
 
-  const STYLE_PROP_MAP: Record<string, number> = {
-    width: 1,
-    height: 2,
-    minWidth: 3,
-    minHeight: 4,
-    maxWidth: 5,
-    maxHeight: 6,
-    flex: 7,
-    flexGrow: 8,
-    flexShrink: 9,
-    flexBasis: 10,
-    flexDirection: 11,
-    flexWrap: 12,
-    justifyContent: 13,
-    alignItems: 14,
-    alignSelf: 15,
-    alignContent: 16,
-    position: 17,
-    top: 18,
-    right: 19,
-    bottom: 20,
-    left: 21,
-    padding: 22,
-    paddingHorizontal: 23,
-    paddingVertical: 24,
-    paddingTop: 25,
-    paddingRight: 26,
-    paddingBottom: 27,
-    paddingLeft: 28,
-    margin: 29,
-    marginHorizontal: 30,
-    marginVertical: 31,
-    marginTop: 32,
-    marginRight: 33,
-    marginBottom: 34,
-    marginLeft: 35,
-    gap: 36,
-    rowGap: 37,
-    columnGap: 38,
-    aspectRatio: 39,
-    overflow: 40,
-    display: 41,
-    zIndex: 42,
-    backgroundColor: 100,
-    opacity: 101,
-    borderRadius: 102,
-    borderWidth: 103,
-    borderColor: 104,
-    shadowColor: 105,
-    shadowOffset: 106,
-    shadowOpacity: 107,
-    shadowRadius: 108,
-    elevation: 109,
-  };
-
   const encodeTypedBatch = (
     ops: BatchOperation[],
     meta: HostBatchMeta = { kind: "flush", scope: "global" },
@@ -186,27 +131,25 @@ export function createAndroidHost(): Host {
 
     const encodeProp = (nodeId: number, name: string, value: any) => {
       if (value == null) {
-        const propId = STYLE_PROP_MAP[name] ?? -addString(name);
-        encoded.push(1, nodeId, propId, 0, 0);
+        encoded.push(1, nodeId, addString(name), 0, 0);
         return;
       }
-      const propId = STYLE_PROP_MAP[name] ?? -addString(name);
       switch (typeof value) {
         case "number":
-          encoded.push(1, nodeId, propId, 1, value);
+          encoded.push(1, nodeId, addString(name), 1, value);
           return;
         case "boolean":
-          encoded.push(1, nodeId, propId, 3, value ? 1 : 0);
+          encoded.push(1, nodeId, addString(name), 3, value ? 1 : 0);
           return;
         case "string":
-          encoded.push(1, nodeId, propId, 2, addString(value));
+          encoded.push(1, nodeId, addString(name), 2, addString(value));
           return;
         case "object":
           try {
             encoded.push(
               1,
               nodeId,
-              propId,
+              addString(name),
               2,
               addString(JSON.stringify(value)),
             );
@@ -939,9 +882,6 @@ export function createAndroidHost(): Host {
         (ui as any).applyBatchTyped(
           encodeTypedBatch(context.operations, context.meta),
         );
-        // Keep batch and flush in the same turn so C++ Yoga computes
-        // after structural ops (insert/remove) are applied.
-        ui.flush();
         if (queue.length || pendingRemovals.size || pendingDrops.size) {
           schedule();
         }

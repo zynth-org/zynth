@@ -167,7 +167,6 @@ internal fun ZynthUIManager.unregisterSurfaceInternal(surfaceId: Int) {
   }
 
   dirtySurfaces.remove(surfaceId)
-  cppLayoutAppliedSurfaces.remove(surfaceId)
   surfaceSizes.remove(surfaceId)
   surfaceYoga.remove(surfaceId)
   surfaceRoots.remove(surfaceId)
