@@ -988,15 +988,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
 
   fun applyLayoutResults(results: FloatArray) {
     if (Looper.myLooper() != Looper.getMainLooper()) {
-      val latch = CountDownLatch(1)
-      runOnMain {
-        applyLayoutResults(results)
-        latch.countDown()
-      }
-      val completed = latch.await(120, TimeUnit.MILLISECONDS)
-      if (!completed) {
-        Log.w("ZynthUI", "applyLayoutResults timeout frames=${results.size / 5}")
-      }
+      runOnMain { applyLayoutResults(results) }
       return
     }
     // Log.d("ZynthUI", "applyLayoutResults: processing ${results.size / 5} node frames on main thread")
