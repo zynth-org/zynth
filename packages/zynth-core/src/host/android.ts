@@ -70,6 +70,122 @@ export function createAndroidHost(): Host {
     queue.push({ type: "batch", op });
   };
 
+  const PROP_TO_ID: Record<string, number> = {
+    width: 1,
+    height: 2,
+    minWidth: 3,
+    minHeight: 4,
+    maxWidth: 5,
+    maxHeight: 6,
+    flex: 7,
+    flexGrow: 8,
+    flexShrink: 9,
+    flexBasis: 10,
+    top: 11,
+    right: 12,
+    bottom: 13,
+    left: 14,
+    padding: 15,
+    paddingHorizontal: 16,
+    paddingVertical: 17,
+    paddingTop: 18,
+    paddingRight: 19,
+    paddingBottom: 20,
+    paddingLeft: 21,
+    margin: 22,
+    marginHorizontal: 23,
+    marginVertical: 24,
+    marginTop: 25,
+    marginRight: 26,
+    marginBottom: 27,
+    marginLeft: 28,
+    gap: 29,
+    rowGap: 30,
+    columnGap: 31,
+    aspectRatio: 32,
+    flexDirection: 33,
+    justifyContent: 34,
+    alignItems: 35,
+    alignSelf: 36,
+    alignContent: 37,
+    flexWrap: 38,
+    position: 39,
+    display: 40,
+    overflow: 41,
+    background: 42,
+    backgroundImage: 43,
+    backgroundColor: 44,
+    borderColor: 45,
+    borderStyle: 46,
+    borderRadius: 47,
+    borderWidth: 48,
+    borderTopWidth: 49,
+    borderRightWidth: 50,
+    borderBottomWidth: 51,
+    borderLeftWidth: 52,
+    borderTopLeftRadius: 53,
+    borderTopRightRadius: 54,
+    borderBottomRightRadius: 55,
+    borderBottomLeftRadius: 56,
+    color: 57,
+    fontSize: 58,
+    fontWeight: 59,
+    fontFamily: 60,
+    fontStyle: 61,
+    textAlign: 62,
+    opacity: 63,
+    elevation: 64,
+    zIndex: 65,
+    transform: 66,
+    transformOrigin: 67,
+    shadowColor: 68,
+    shadowOpacity: 69,
+    shadowRadius: 70,
+    shadowOffset: 71,
+    boxShadow: 72,
+    lineHeight: 73,
+    lineSpacing: 74,
+    paragraphSpacing: 75,
+    letterSpacing: 76,
+    textDecorationLine: 77,
+    textTransform: 78,
+    minimumFontScale: 79,
+    baselineShift: 80,
+    hyphenation: 81,
+    pointerEvents: 82,
+    accessibilityLabel: 83,
+    accessibilityHint: 84,
+    accessibilityRole: 85,
+    testID: 86,
+    layout: 87,
+    delayLongPressMs: 88,
+    doublePressWindowMs: 89,
+    enableDoublePress: 90,
+    multiline: 91,
+    numberOfLines: 92,
+    maxLength: 93,
+    editable: 94,
+    secureTextEntry: 95,
+    inputMode: 96,
+    autoCapitalize: 97,
+    autoCorrect: 98,
+    spellCheck: 99,
+    returnKeyType: 100,
+    blurOnSubmit: 101,
+    submitBehavior: 102,
+    eventThrottleMs: 103,
+    allowProgrammaticJumpDuringEdit: 104,
+    value: 105,
+    defaultValue: 106,
+    placeholder: 107,
+    selection: 108,
+    selectionColor: 109,
+    caretColor: 110,
+    clearButtonMode: 111,
+    showClearAccessory: 112,
+    __scrollCommand: 113,
+  };
+
   const encodeTypedBatch = (
     ops: BatchOperation[],
     meta: HostBatchMeta = { kind: "flush", scope: "global" },
@@ -130,26 +246,28 @@ export function createAndroidHost(): Host {
     };
 
     const encodeProp = (nodeId: number, name: string, value: any) => {
+      const propId = PROP_TO_ID[name];
+      const keyToken = propId !== undefined ? -propId : addString(name);
       if (value == null) {
-        encoded.push(1, nodeId, addString(name), 0, 0);
+        encoded.push(1, nodeId, keyToken, 0, 0);
         return;
       }
       switch (typeof value) {
         case "number":
-          encoded.push(1, nodeId, addString(name), 1, value);
+          encoded.push(1, nodeId, keyToken, 1, value);
           return;
         case "boolean":
-          encoded.push(1, nodeId, addString(name), 3, value ? 1 : 0);
+          encoded.push(1, nodeId, keyToken, 3, value ? 1 : 0);
           return;
         case "string":
-          encoded.push(1, nodeId, addString(name), 2, addString(value));
+          encoded.push(1, nodeId, keyToken, 2, addString(value));
           return;
         case "object":
           try {
             encoded.push(
               1,
               nodeId,
-              addString(name),
+              keyToken,
               2,
               addString(JSON.stringify(value)),
             );

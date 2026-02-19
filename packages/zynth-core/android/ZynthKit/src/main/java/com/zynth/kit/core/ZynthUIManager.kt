@@ -32,6 +32,128 @@ private const val DEFAULT_PERSPECTIVE = 500f
 private const val DEBUG_TEXT = false
 private const val DEBUG_TEXT_DIRTY = false
 
+private fun resolveTypedPropName(keyToken: Int, strings: Array<String?>): String {
+  if (keyToken >= 0) {
+    return strings.getOrNull(keyToken) ?: ""
+  }
+  return when (-keyToken) {
+    1 -> "width"
+    2 -> "height"
+    3 -> "minWidth"
+    4 -> "minHeight"
+    5 -> "maxWidth"
+    6 -> "maxHeight"
+    7 -> "flex"
+    8 -> "flexGrow"
+    9 -> "flexShrink"
+    10 -> "flexBasis"
+    11 -> "top"
+    12 -> "right"
+    13 -> "bottom"
+    14 -> "left"
+    15 -> "padding"
+    16 -> "paddingHorizontal"
+    17 -> "paddingVertical"
+    18 -> "paddingTop"
+    19 -> "paddingRight"
+    20 -> "paddingBottom"
+    21 -> "paddingLeft"
+    22 -> "margin"
+    23 -> "marginHorizontal"
+    24 -> "marginVertical"
+    25 -> "marginTop"
+    26 -> "marginRight"
+    27 -> "marginBottom"
+    28 -> "marginLeft"
+    29 -> "gap"
+    30 -> "rowGap"
+    31 -> "columnGap"
+    32 -> "aspectRatio"
+    33 -> "flexDirection"
+    34 -> "justifyContent"
+    35 -> "alignItems"
+    36 -> "alignSelf"
+    37 -> "alignContent"
+    38 -> "flexWrap"
+    39 -> "position"
+    40 -> "display"
+    41 -> "overflow"
+    42 -> "background"
+    43 -> "backgroundImage"
+    44 -> "backgroundColor"
+    45 -> "borderColor"
+    46 -> "borderStyle"
+    47 -> "borderRadius"
+    48 -> "borderWidth"
+    49 -> "borderTopWidth"
+    50 -> "borderRightWidth"
+    51 -> "borderBottomWidth"
+    52 -> "borderLeftWidth"
+    53 -> "borderTopLeftRadius"
+    54 -> "borderTopRightRadius"
+    55 -> "borderBottomRightRadius"
+    56 -> "borderBottomLeftRadius"
+    57 -> "color"
+    58 -> "fontSize"
+    59 -> "fontWeight"
+    60 -> "fontFamily"
+    61 -> "fontStyle"
+    62 -> "textAlign"
+    63 -> "opacity"
+    64 -> "elevation"
+    65 -> "zIndex"
+    66 -> "transform"
+    67 -> "transformOrigin"
+    68 -> "shadowColor"
+    69 -> "shadowOpacity"
+    70 -> "shadowRadius"
+    71 -> "shadowOffset"
+    72 -> "boxShadow"
+    73 -> "lineHeight"
+    74 -> "lineSpacing"
+    75 -> "paragraphSpacing"
+    76 -> "letterSpacing"
+    77 -> "textDecorationLine"
+    78 -> "textTransform"
+    79 -> "minimumFontScale"
+    80 -> "baselineShift"
+    81 -> "hyphenation"
+    82 -> "pointerEvents"
+    83 -> "accessibilityLabel"
+    84 -> "accessibilityHint"
+    85 -> "accessibilityRole"
+    86 -> "testID"
+    87 -> "layout"
+    88 -> "delayLongPressMs"
+    89 -> "doublePressWindowMs"
+    90 -> "enableDoublePress"
+    91 -> "multiline"
+    92 -> "numberOfLines"
+    93 -> "maxLength"
+    94 -> "editable"
+    95 -> "secureTextEntry"
+    96 -> "inputMode"
+    97 -> "autoCapitalize"
+    98 -> "autoCorrect"
+    99 -> "spellCheck"
+    100 -> "returnKeyType"
+    101 -> "blurOnSubmit"
+    102 -> "submitBehavior"
+    103 -> "eventThrottleMs"
+    104 -> "allowProgrammaticJumpDuringEdit"
+    105 -> "value"
+    106 -> "defaultValue"
+    107 -> "placeholder"
+    108 -> "selection"
+    109 -> "selectionColor"
+    110 -> "caretColor"
+    111 -> "clearButtonMode"
+    112 -> "showClearAccessory"
+    113 -> "__scrollCommand"
+    else -> ""
+  }
+}
+
 class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal var runtimePtr: Long = 0L
   internal val mainHandler = Handler(Looper.getMainLooper())
@@ -111,6 +233,10 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   private val mainQueueMaxOpsPerTick = 100000
   private val mainQueueMaxMsPerTick = 16.0
   internal val layoutApplyBudgetMs = 8.0
+  internal val layoutApplyBudgetMinMs = 5.0
+  internal val layoutApplyBudgetMaxMs = 12.0
+  internal val layoutPhaseBudgetMinNs = 18_000_000L
+  internal val layoutPhaseBudgetMaxNs = 30_000_000L
   private val traceEnabled = false
   private val traceIntervalMs = 500L
   private var traceStartMs = SystemClock.uptimeMillis()
@@ -993,16 +1119,17 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     }
     beginBatch()
     var i = 0
-    while (i < ops.size) {
+    opLoop@ while (i < ops.size) {
       val opcode = ops[i++].toInt()
       when (opcode) {
         1 -> { // setProp
           if (i + 3 >= ops.size) return
           val nodeId = ops[i++].toInt()
-          val keyIndex = ops[i++].toInt()
+          val keyToken = ops[i++].toInt()
           val valueType = ops[i++].toInt()
           val payload = ops[i++]
-          val key = strings.getOrNull(keyIndex) ?: ""
+          val key = resolveTypedPropName(keyToken, strings)
+          if (key.isEmpty()) continue@opLoop
           if (valueType == 1) {
             setProp(nodeId, key, payload)
           } else {
@@ -1048,26 +1175,30 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   fun applyBatchTypedBuffer(buffer: ByteBuffer, opCount: Int, strings: Array<String?>) {
     val ops = buffer.order(ByteOrder.nativeOrder())
     if (Looper.myLooper() != Looper.getMainLooper()) {
-      val copied = DoubleArray(opCount)
-      for (i in 0 until opCount) {
-        copied[i] = ops.getDouble(i * 8)
-      }
-      runOnMain { applyBatchTypedPacked(copied, strings) }
+      val byteLength = opCount * 8
+      val source = ops.duplicate().order(ByteOrder.nativeOrder())
+      source.position(0)
+      source.limit(byteLength.coerceAtMost(source.capacity()))
+      val copied = ByteBuffer.allocateDirect(byteLength).order(ByteOrder.nativeOrder())
+      copied.put(source)
+      copied.rewind()
+      runOnMain { applyBatchTypedBuffer(copied, opCount, strings) }
       return
     }
     beginBatch()
     var i = 0
     fun read(idx: Int): Double = ops.getDouble(idx * 8)
-    while (i < opCount) {
+    opLoop@ while (i < opCount) {
       val opcode = read(i++).toInt()
       when (opcode) {
         1 -> { // setProp
           if (i + 3 >= opCount) return
           val nodeId = read(i++).toInt()
-          val keyIndex = read(i++).toInt()
+          val keyToken = read(i++).toInt()
           val valueType = read(i++).toInt()
           val payload = read(i++)
-          val key = strings.getOrNull(keyIndex) ?: ""
+          val key = resolveTypedPropName(keyToken, strings)
+          if (key.isEmpty()) continue@opLoop
           if (valueType == 1) {
             setProp(nodeId, key, payload)
           } else {
@@ -1621,8 +1752,39 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     value: String?
   ) {
     if (descriptor == null || node == null || value == null) return
+    if (!isStylePropForDescriptor(name)) return
     val style = styleFromProp(name, value) ?: return
     descriptor.onStyleApplied(node, style)
+  }
+
+  private fun isStylePropForDescriptor(name: String): Boolean {
+    return when (name) {
+      "width", "height", "minWidth", "minHeight", "maxWidth", "maxHeight",
+      "flex", "flexGrow", "flexShrink", "flexBasis",
+      "top", "right", "bottom", "left",
+      "padding", "paddingHorizontal", "paddingVertical", "paddingTop", "paddingRight",
+      "paddingBottom", "paddingLeft",
+      "margin", "marginHorizontal", "marginVertical", "marginTop", "marginRight",
+      "marginBottom", "marginLeft",
+      "gap", "rowGap", "columnGap",
+      "aspectRatio",
+      "flexDirection", "justifyContent", "alignItems", "alignSelf", "alignContent",
+      "flexWrap", "position", "display", "overflow",
+      "background", "backgroundImage", "backgroundColor",
+      "borderColor", "borderStyle", "borderRadius", "borderWidth",
+      "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth",
+      "borderTopColor", "borderRightColor", "borderBottomColor", "borderLeftColor",
+      "borderTopLeftRadius", "borderTopRightRadius", "borderBottomRightRadius",
+      "borderBottomLeftRadius",
+      "color", "fontSize", "fontWeight", "fontFamily", "fontStyle",
+      "textAlign", "lineHeight", "lineSpacing", "paragraphSpacing", "letterSpacing",
+      "textDecorationLine", "textTransform", "minimumFontScale", "baselineShift",
+      "hyphenation",
+      "opacity", "elevation", "zIndex",
+      "transform", "transformOrigin",
+      "shadowColor", "shadowOpacity", "shadowRadius", "shadowOffset", "boxShadow" -> true
+      else -> false
+    }
   }
 
   private fun styleFromProp(name: String, rawValue: String): Style? {

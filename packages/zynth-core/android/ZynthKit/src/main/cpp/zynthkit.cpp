@@ -20,6 +20,7 @@
 #include <unistd.h>
 #include <vector>
 #include <limits>
+#include <algorithm>
 
 using namespace facebook::jsi;
 
@@ -1388,9 +1389,18 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
               jobject jBuffer = env->NewDirectByteBuffer(buffer.data(rt), static_cast<jlong>(byteLength));
               if (!jBuffer) return Value::undefined();
 
-              jclass stringClass = env->FindClass("java/lang/String");
+              jclass stringClass = state->stringClass;
+              if (!stringClass) {
+                jclass localStringClass = env->FindClass("java/lang/String");
+                if (!localStringClass) {
+                  env->DeleteLocalRef(jBuffer);
+                  return Value::undefined();
+                }
+                stringClass = localStringClass;
+                state->stringClass = static_cast<jclass>(env->NewGlobalRef(localStringClass));
+                env->DeleteLocalRef(localStringClass);
+              }
               jobjectArray jStrings = env->NewObjectArray(static_cast<jsize>(stringCount), stringClass, nullptr);
-              env->DeleteLocalRef(stringClass);
               for (size_t i = 0; i < stringCount; i++) {
                 Value entry = stringTable.getValueAtIndex(rt, i);
                 if (entry.isString()) {
@@ -1433,9 +1443,18 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
             return Value::undefined();
           }
 
-          jclass stringClass = env->FindClass("java/lang/String");
+          jclass stringClass = state->stringClass;
+          if (!stringClass) {
+            jclass localStringClass = env->FindClass("java/lang/String");
+            if (!localStringClass) {
+              env->DeleteLocalRef(jOps);
+              return Value::undefined();
+            }
+            stringClass = localStringClass;
+            state->stringClass = static_cast<jclass>(env->NewGlobalRef(localStringClass));
+            env->DeleteLocalRef(localStringClass);
+          }
           jobjectArray jStrings = env->NewObjectArray(static_cast<jsize>(stringCount), stringClass, nullptr);
-          env->DeleteLocalRef(stringClass);
           for (size_t i = 0; i < stringCount; i++) {
             Value entry = stringTable.getValueAtIndex(rt, i);
             if (entry.isString()) {
@@ -1732,6 +1751,11 @@ Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlon
       gDevtoolsClass = static_cast<jclass>(env->NewGlobalRef(state->devtoolsClass));
       gDevtoolsEmitMethod = state->devtoolsEmit;
     }
+  }
+  jclass stringCls = env->FindClass("java/lang/String");
+  if (stringCls) {
+    state->stringClass = static_cast<jclass>(env->NewGlobalRef(stringCls));
+    env->DeleteLocalRef(stringCls);
   }
 
   {
@@ -2143,16 +2167,14 @@ Java_com_zynth_kit_runtime_JSBridge_invokeLayoutEvent(JNIEnv *,
   }
 }
 
-extern "C" JNIEXPORT void JNICALL
-Java_com_zynth_kit_runtime_JSBridge_invokeLayoutEventsBatch(JNIEnv *env,
-                                                            jobject,
-                                                            jlong runtimePtr,
-                                                            jdoubleArray payload) {
-  facebook::hermes::HermesRuntime *runtime =
-      reinterpret_cast<facebook::hermes::HermesRuntime *>(runtimePtr);
-  if (!runtime) return;
-  if (!payload) return;
-  jsize length = env->GetArrayLength(payload);
+static void invokeLayoutEventsBatchInternal(
+    JNIEnv *env,
+    facebook::hermes::HermesRuntime *runtime,
+    jdoubleArray payload,
+    jsize requestedLength) {
+  if (!env || !runtime || !payload) return;
+  jsize availableLength = env->GetArrayLength(payload);
+  jsize length = requestedLength >= 0 ? std::min(availableLength, requestedLength) : availableLength;
   if (length < 5) return;
   jdouble *data = env->GetDoubleArrayElements(payload, nullptr);
   if (!data) return;
@@ -2194,6 +2216,27 @@ Java_com_zynth_kit_runtime_JSBridge_invokeLayoutEventsBatch(JNIEnv *env,
     }
   }
   env->ReleaseDoubleArrayElements(payload, data, JNI_ABORT);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_zynth_kit_runtime_JSBridge_invokeLayoutEventsBatch(JNIEnv *env,
+                                                            jobject,
+                                                            jlong runtimePtr,
+                                                            jdoubleArray payload) {
+  facebook::hermes::HermesRuntime *runtime =
+      reinterpret_cast<facebook::hermes::HermesRuntime *>(runtimePtr);
+  invokeLayoutEventsBatchInternal(env, runtime, payload, -1);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_zynth_kit_runtime_JSBridge_invokeLayoutEventsBatchSlice(JNIEnv *env,
+                                                                 jobject,
+                                                                 jlong runtimePtr,
+                                                                 jdoubleArray payload,
+                                                                 jint length) {
+  facebook::hermes::HermesRuntime *runtime =
+      reinterpret_cast<facebook::hermes::HermesRuntime *>(runtimePtr);
+  invokeLayoutEventsBatchInternal(env, runtime, payload, static_cast<jsize>(length));
 }
 
 static jobject jsValueToJava(JNIEnv *env, Runtime &rt, RuntimeState *state, const Value &value) {
@@ -2277,8 +2320,12 @@ Java_com_zynth_kit_runtime_JSBridge_installModuleRegistry(JNIEnv *env, jobject, 
   env->DeleteLocalRef(boolCls);
 
   jclass stringCls = env->FindClass("java/lang/String");
-  state->stringClass = static_cast<jclass>(env->NewGlobalRef(stringCls));
-  env->DeleteLocalRef(stringCls);
+  if (stringCls && !state->stringClass) {
+    state->stringClass = static_cast<jclass>(env->NewGlobalRef(stringCls));
+  }
+  if (stringCls) {
+    env->DeleteLocalRef(stringCls);
+  }
 
   Runtime &rt = *runtime;
 

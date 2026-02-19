@@ -46,8 +46,11 @@ internal fun ZynthUIManager.handleFrame() {
   }
   val dirty = dirtySurfaces.toSet()
   dirtySurfaces.clear()
+  val nodeCount = surfaceYoga.values.sumOf { it.nodeCount() }
+  val layoutApplyBudgetMs = computeAdaptiveLayoutApplyBudgetMs(dirty.size, nodeCount)
+  val layoutPhaseBudgetNs = computeAdaptiveLayoutPhaseBudgetNs(dirty.size, nodeCount)
   val layoutStartNs = System.nanoTime()
-  val incomplete = performLayoutInternal(dirty)
+  val incomplete = performLayoutInternal(dirty, layoutApplyBudgetMs, layoutPhaseBudgetNs)
   val layoutNs = System.nanoTime() - layoutStartNs
   tracePhase("layout", layoutNs)
   val layoutComplete = incomplete.isEmpty()
@@ -70,7 +73,6 @@ internal fun ZynthUIManager.handleFrame() {
   lastLayoutMs = lastFrameMs
 
   val overBudget = lastFrameMs > 14.0
-  val nodeCount = surfaceYoga.values.sumOf { it.nodeCount() }
   // Log.d(
   //   "ZynthUI",
   //   "frame summary %.2fms layout=%.2fms surfaces=%d nodes=%d overBudget=%b".format(
@@ -192,12 +194,53 @@ private fun ZynthUIManager.recordPerfSample(
 }
 
 internal fun ZynthUIManager.performLayoutInternal(dirty: Set<Int>): Set<Int> {
+  return performLayoutInternal(dirty, layoutApplyBudgetMs, 24_000_000L)
+}
+
+private fun ZynthUIManager.computeAdaptiveLayoutApplyBudgetMs(
+  dirtySurfaceCount: Int,
+  nodeCount: Int
+): Double {
+  var budget = layoutApplyBudgetMs
+  if (lastFrameMs > 14.0 || budgetOverruns > 0) {
+    budget -= 1.0
+  }
+  if (dirtySurfaceCount >= 2) {
+    budget += 0.75
+  }
+  if (nodeCount >= 1500) {
+    budget += 1.0
+  }
+  return budget.coerceIn(layoutApplyBudgetMinMs, layoutApplyBudgetMaxMs)
+}
+
+private fun ZynthUIManager.computeAdaptiveLayoutPhaseBudgetNs(
+  dirtySurfaceCount: Int,
+  nodeCount: Int
+): Long {
+  var budgetNs = 24_000_000L
+  if (lastFrameMs > 14.0) {
+    budgetNs -= 2_000_000L
+  }
+  if (dirtySurfaceCount >= 2) {
+    budgetNs += 2_000_000L
+  }
+  if (nodeCount >= 1500) {
+    budgetNs += 2_000_000L
+  }
+  return budgetNs.coerceIn(layoutPhaseBudgetMinNs, layoutPhaseBudgetMaxNs)
+}
+
+internal fun ZynthUIManager.performLayoutInternal(
+  dirty: Set<Int>,
+  perSurfaceApplyBudgetMs: Double,
+  totalBudgetNs: Long
+): Set<Int> {
   val incomplete = HashSet<Int>()
   val startNs = System.nanoTime()
-  val budgetNs = 24_000_000L // 24ms total budget for layout phase
 
   for (surfaceId in dirty) {
-    if (System.nanoTime() - startNs > budgetNs) {
+    if (System.nanoTime() - startNs > totalBudgetNs) {
       incomplete.add(surfaceId)
       continue
     }
@@ -211,7 +254,7 @@ internal fun ZynthUIManager.performLayoutInternal(dirty: Set<Int>): Set<Int> {
       height = rootView.height.takeIf { it > 0 } ?: rootView.measuredHeight
     }
     syncSurfaceRootSize(surfaceId, root, width, height)
-    val complete = layout.layout(width, height, nodes, layoutApplyBudgetMs)
+    val complete = layout.layout(width, height, nodes, perSurfaceApplyBudgetMs)
     if (!complete) {
       incomplete.add(surfaceId)
     }

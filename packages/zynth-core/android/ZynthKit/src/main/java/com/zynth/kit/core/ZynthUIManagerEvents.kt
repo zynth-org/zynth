@@ -276,7 +276,7 @@ internal fun ZynthUIManager.dispatchLayoutEvents() {
         layoutPayloadBuffer[index++] = event.width
         layoutPayloadBuffer[index++] = event.height
       }
-      JSBridge.invokeLayoutEventsBatch(runtimePtr, layoutPayloadBuffer.copyOf(requiredSize))
+      JSBridge.invokeLayoutEventsBatchSlice(runtimePtr, layoutPayloadBuffer, requiredSize)
     }
   }
 }
