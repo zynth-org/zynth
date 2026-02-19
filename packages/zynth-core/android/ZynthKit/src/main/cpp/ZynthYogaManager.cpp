@@ -4,16 +4,6 @@
 #include <cmath>
 #include <cstdint>
 
-#ifndef ZYNTH_ENABLE_YOGA_DEBUG_LOGS
-#define ZYNTH_ENABLE_YOGA_DEBUG_LOGS 0
-#endif
-
-#if ZYNTH_ENABLE_YOGA_DEBUG_LOGS
-#define ZYNTH_YOGA_LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, "ZynthYoga", __VA_ARGS__)
-#else
-#define ZYNTH_YOGA_LOGD(...) ((void)0)
-#endif
-
 namespace zynth {
 namespace kit {
 
@@ -23,7 +13,7 @@ ZynthYogaManager::ZynthYogaManager() {
   rootNode_ = YGNodeNewWithConfig(config_);
   YGNodeStyleSetFlexDirection(rootNode_, YGFlexDirectionColumn);
   YGNodeStyleSetAlignItems(rootNode_, YGAlignStretch);
-  ZYNTH_YOGA_LOGD("ZynthYogaManager initialized, rootNode=%p", rootNode_);
+  __android_log_print(ANDROID_LOG_DEBUG, "ZynthYoga", "ZynthYogaManager initialized, rootNode=%p", rootNode_);
 }
 
 ZynthYogaManager::~ZynthYogaManager() {
@@ -67,13 +57,13 @@ void ZynthYogaManager::createNode(int nodeId, facebook::jni::alias_ref<facebook:
       YGNodeSetContext(node, ctx.get());
       YGNodeSetMeasureFunc(node, &ZynthYogaManager::measureTextNode);
       measureContexts_[nodeId] = std::move(ctx);
-      ZYNTH_YOGA_LOGD("Attached text measure function to node %d", nodeId);
+      __android_log_print(ANDROID_LOG_DEBUG, "ZynthYoga", "Attached text measure function to node %d", nodeId);
     }
     if (textViewClass != nullptr) {
       env->DeleteLocalRef(textViewClass);
     }
   }
-  ZYNTH_YOGA_LOGD("Created node %d (%p)", nodeId, node);
+  __android_log_print(ANDROID_LOG_DEBUG, "ZynthYoga", "Created node %d (%p)", nodeId, node);
 }
 
 void ZynthYogaManager::removeNode(int nodeId) {
@@ -89,7 +79,7 @@ void ZynthYogaManager::removeNode(int nodeId) {
   viewRefs_.erase(nodeId);
   isTextNode_.erase(nodeId);
   measureContexts_.erase(nodeId);
-  ZYNTH_YOGA_LOGD("Removed node %d", nodeId);
+  __android_log_print(ANDROID_LOG_DEBUG, "ZynthYoga", "Removed node %d", nodeId);
 }
 
 void ZynthYogaManager::insertChild(int parentId, int childId, int index) {
@@ -109,7 +99,7 @@ void ZynthYogaManager::insertChild(int parentId, int childId, int index) {
   // Keep text composition semantics aligned with Kotlin path:
   // text -> text should not build a Yoga subtree.
   if (parentId != 0 && isTextNode_[parentId] && isTextNode_[childId]) {
-    ZYNTH_YOGA_LOGD("Skipped text->text insert %d -> %d", parentId, childId);
+    __android_log_print(ANDROID_LOG_DEBUG, "ZynthYoga", "Skipped text->text insert %d -> %d", parentId, childId);
     return;
   }
 
@@ -117,7 +107,7 @@ void ZynthYogaManager::insertChild(int parentId, int childId, int index) {
   // If this node is about to become a parent, disable its measure function.
   if (parentId != 0 && YGNodeHasMeasureFunc(parent)) {
     YGNodeSetMeasureFunc(parent, nullptr);
-    ZYNTH_YOGA_LOGD("Disabled measure function for parent %d before insert", parentId);
+    __android_log_print(ANDROID_LOG_DEBUG, "ZynthYoga", "Disabled measure function for parent %d before insert", parentId);
   }
 
   if (YGNodeGetOwner(child)) {
@@ -129,7 +119,7 @@ void ZynthYogaManager::insertChild(int parentId, int childId, int index) {
     targetIndex = YGNodeGetChildCount(parent);
   }
   YGNodeInsertChild(parent, child, targetIndex);
-  ZYNTH_YOGA_LOGD("Inserted child %d into parent %d at index %d", childId, parentId, targetIndex);
+  __android_log_print(ANDROID_LOG_DEBUG, "ZynthYoga", "Inserted child %d into parent %d at index %d", childId, parentId, targetIndex);
 }
 
 void ZynthYogaManager::removeChild(int parentId, int childId) {
@@ -144,12 +134,12 @@ void ZynthYogaManager::removeChild(int parentId, int childId) {
   if (!parent || !child) return;
 
   if (parentId != 0 && isTextNode_[parentId] && isTextNode_[childId]) {
-    ZYNTH_YOGA_LOGD("Skipped text->text remove %d -> %d", parentId, childId);
+    __android_log_print(ANDROID_LOG_DEBUG, "ZynthYoga", "Skipped text->text remove %d -> %d", parentId, childId);
     return;
   }
 
   YGNodeRemoveChild(parent, child);
-  ZYNTH_YOGA_LOGD("Removed child %d from parent %d", childId, parentId);
+  __android_log_print(ANDROID_LOG_DEBUG, "ZynthYoga", "Removed child %d from parent %d", childId, parentId);
 
   // If a text node becomes a leaf again, restore its measure function.
   if (parentId != 0 && YGNodeGetChildCount(parent) == 0) {
@@ -157,7 +147,7 @@ void ZynthYogaManager::removeChild(int parentId, int childId) {
     if (ctxIt != measureContexts_.end() && !YGNodeHasMeasureFunc(parent)) {
       YGNodeSetContext(parent, ctxIt->second.get());
       YGNodeSetMeasureFunc(parent, &ZynthYogaManager::measureTextNode);
-      ZYNTH_YOGA_LOGD("Restored measure function for leaf parent %d", parentId);
+      __android_log_print(ANDROID_LOG_DEBUG, "ZynthYoga", "Restored measure function for leaf parent %d", parentId);
     }
   }
 }
@@ -176,7 +166,7 @@ void ZynthYogaManager::calculateLayout(int rootWidth, int rootHeight) {
   YGNodeStyleSetWidth(rootNode_, static_cast<float>(rootWidth));
   YGNodeStyleSetHeight(rootNode_, static_cast<float>(rootHeight));
   YGNodeCalculateLayout(rootNode_, static_cast<float>(rootWidth), static_cast<float>(rootHeight), YGDirectionLTR);
-  ZYNTH_YOGA_LOGD("Layout calculated for root %dx%d", rootWidth, rootHeight);
+  __android_log_print(ANDROID_LOG_DEBUG, "ZynthYoga", "Layout calculated for root %dx%d", rootWidth, rootHeight);
 }
 
 std::vector<float> ZynthYogaManager::getLayoutResults() {
@@ -224,7 +214,9 @@ std::vector<float> ZynthYogaManager::getLayoutResults() {
     results.push_back(width);
     results.push_back(height);
   }
-  ZYNTH_YOGA_LOGD(
+  __android_log_print(
+      ANDROID_LOG_DEBUG,
+      "ZynthYoga",
       "getLayoutResults: nodes=%zu zeroArea=%d invalid=%d sample=%s",
       nodes_.size(),
       zeroAreaCount,
