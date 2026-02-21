@@ -14,6 +14,9 @@ NS_ASSUME_NONNULL_BEGIN
 FOUNDATION_EXPORT BOOL ZynthSetSharedSignalForHost(ZynthHermesRuntimeHost *_Nullable host,
                                                    int signalId,
                                                    double value);
+FOUNDATION_EXPORT double ZynthGetSharedSignalForHost(ZynthHermesRuntimeHost *_Nullable host,
+                                                    int signalId,
+                                                    BOOL *_Nullable found);
 
 #ifdef __cplusplus
 typedef void (*ZynthJSIPluginInstaller)(ZynthHermesRuntimeHost *host, facebook::jsi::Runtime &rt);

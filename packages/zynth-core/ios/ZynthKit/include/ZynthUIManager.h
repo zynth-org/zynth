@@ -35,6 +35,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)zynth_recursiveRemoveNode:(NSNumber *)nodeId;
 - (void)applyKeyboardAvoidingAdjustment:(NSNumber *)nodeId behavior:(NSString *)behavior overlap:(CGFloat)overlap availableHeight:(NSNumber *_Nullable)availableHeight;
 - (void)setSharedSignal:(int)signalId value:(double)value;
+- (NSNumber *_Nullable)sharedSignalValue:(int)signalId;
 
 @end
 

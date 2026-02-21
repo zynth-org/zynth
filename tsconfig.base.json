@@ -80,6 +80,12 @@
       "@zynth/filesystem/*": [
         "packages/zynth-filesystem/src/*"
       ],
+      "@zynth/gesture-handler": [
+        "packages/zynth-gesture-handler/src/index.ts"
+      ],
+      "@zynth/gesture-handler/*": [
+        "packages/zynth-gesture-handler/src/*"
+      ],
       "@zynth/haptics": [
         "packages/zynth-haptics/src/index.ts"
       ],

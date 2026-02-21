@@ -319,6 +319,12 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     JSBridge.setSharedSignal(runtimePtr, id, value)
   }
 
+  fun getSharedSignal(id: Int): Double? {
+    if (runtimePtr == 0L) return null
+    val value = JSBridge.getSharedSignal(runtimePtr, id)
+    return if (value.isNaN()) null else value
+  }
+
   fun cancelAnimationFrame(callbackId: Int) {
     if (Looper.myLooper() != Looper.getMainLooper()) {
       runOnMain { cancelAnimationFrame(callbackId) }

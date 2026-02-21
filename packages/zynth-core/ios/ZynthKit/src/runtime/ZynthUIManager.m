@@ -973,6 +973,17 @@ static NSString *ZynthVisibility(UIView *view) {
   (void)ZynthSetSharedSignalForHost(host, signalId, value);
 }
 
+- (NSNumber *_Nullable)sharedSignalValue:(int)signalId {
+  ZynthRuntime *runtime = self.zynthRuntime;
+  if (!runtime) return nil;
+  ZynthHermesRuntimeHost *host = [runtime valueForKey:@"runtime"];
+  if (!host) return nil;
+  BOOL found = NO;
+  double value = ZynthGetSharedSignalForHost(host, signalId, &found);
+  if (!found) return nil;
+  return @(value);
+}
+
 - (void)applyKeyboardAvoidingAdjustment:(NSNumber *)nodeId behavior:(NSString *)behavior overlap:(CGFloat)overlap availableHeight:(NSNumber *_Nullable)availableHeight {
   if (![NSThread isMainThread]) {
     dispatch_async(dispatch_get_main_queue(), ^{

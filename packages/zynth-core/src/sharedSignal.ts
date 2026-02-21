@@ -178,7 +178,6 @@ export function createSharedSignal<T>(
   }
 
   const accessor: SharedSignalAccessor<T> = (() => {
-    const trackedValue = value();
     if (
       nativeId !== null &&
       captureContext &&
@@ -193,6 +192,7 @@ export function createSharedSignal<T>(
       captureContext.tokens.set(nativeId, token);
       return token as T;
     }
+    const trackedValue = value();
     return trackedValue;
   }) as SharedSignalAccessor<T>;
 

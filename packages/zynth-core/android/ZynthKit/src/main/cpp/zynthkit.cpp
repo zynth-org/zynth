@@ -1659,6 +1659,18 @@ Java_com_zynth_kit_runtime_JSBridge_setSharedSignal(JNIEnv *, jobject, jlong ptr
   ZynthSetSharedSignal(state.get(), id, value);
 }
 
+extern "C" JNIEXPORT jdouble JNICALL
+Java_com_zynth_kit_runtime_JSBridge_getSharedSignal(JNIEnv *, jobject, jlong ptr, jint id) {
+  auto *runtime = reinterpret_cast<facebook::hermes::HermesRuntime *>(ptr);
+  if (!runtime) return std::numeric_limits<jdouble>::quiet_NaN();
+  auto state = sharedStateFor(runtime);
+  if (!state) return std::numeric_limits<jdouble>::quiet_NaN();
+  bool found = false;
+  double value = ZynthGetSharedSignal(state.get(), id, &found);
+  if (!found) return std::numeric_limits<jdouble>::quiet_NaN();
+  return value;
+}
+
 extern "C" jint JNI_OnLoad(JavaVM *vm, void *) {
   gVm = vm;
   return facebook::jni::initialize(vm, [] {});

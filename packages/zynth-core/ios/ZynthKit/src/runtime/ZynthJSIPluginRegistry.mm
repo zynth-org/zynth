@@ -8,6 +8,20 @@ BOOL ZynthSetSharedSignalForHost(ZynthHermesRuntimeHost *host, int signalId, dou
   return [[host worklets] setSharedSignalValue:signalId value:value];
 }
 
+double ZynthGetSharedSignalForHost(ZynthHermesRuntimeHost *host, int signalId, BOOL *found) {
+  if (!host) {
+    if (found) *found = NO;
+    return std::numeric_limits<double>::quiet_NaN();
+  }
+  double value = [[host worklets] sharedSignalValueForId:signalId];
+  if (std::isnan(value)) {
+    if (found) *found = NO;
+    return value;
+  }
+  if (found) *found = YES;
+  return value;
+}
+
 #ifdef __cplusplus
 namespace {
 std::vector<ZynthJSIPluginInstaller> &pluginInstallers() {
@@ -32,16 +46,9 @@ bool ZynthSetSharedSignal(void *state, int signalId, double value) {
 
 double ZynthGetSharedSignal(void *state, int signalId, bool *found) {
   ZynthHermesRuntimeHost *host = (__bridge ZynthHermesRuntimeHost *)state;
-  if (!host) {
-    if (found) *found = false;
-    return std::numeric_limits<double>::quiet_NaN();
-  }
-  double value = [[host worklets] sharedSignalValueForId:signalId];
-  if (std::isnan(value)) {
-    if (found) *found = false;
-    return value;
-  }
-  if (found) *found = true;
+  BOOL foundObjC = NO;
+  double value = ZynthGetSharedSignalForHost(host, signalId, &foundObjC);
+  if (found) *found = foundObjC;
   return value;
 }
 
