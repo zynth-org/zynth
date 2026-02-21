@@ -59,7 +59,7 @@ open class ZynthViewContainer(context: Context) : ZynthLayoutView(context) {
   
   override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
     return when (pointerMode) {
-      PointerEventsMode.NONE -> false
+      PointerEventsMode.NONE -> true
       PointerEventsMode.BOX_NONE -> false
       PointerEventsMode.BOX_ONLY -> true
       PointerEventsMode.AUTO -> super.onInterceptTouchEvent(ev)

@@ -263,6 +263,10 @@ class ZynthGestureDetectorView(context: Context) : FrameLayout(context) {
   override fun dispatchTouchEvent(event: MotionEvent): Boolean {
     if (!hasEnabledGestures()) return super.dispatchTouchEvent(event)
 
+    // Let children have a chance to handle the touch first.
+    // We still process the gesture regardless of whether a child consumed it.
+    val handledByChild = super.dispatchTouchEvent(event)
+
     lastX = event.x
     lastY = event.y
     lastRawX = event.rawX
