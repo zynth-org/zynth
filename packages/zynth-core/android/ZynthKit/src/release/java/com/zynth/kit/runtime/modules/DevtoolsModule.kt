@@ -4,6 +4,7 @@ import android.content.Context
 import com.zynth.kit.runtime.ZynthModule
 import com.zynth.kit.runtime.ZynthRuntime
 import com.zynth.kit.runtime.ZynthArgs
+import com.zynth.kit.runtime.ZynthNativeErrorOverlay
 import org.json.JSONObject
 
 class DevtoolsModule(
@@ -22,7 +23,7 @@ class DevtoolsModule(
 
     @JvmStatic
     fun emitNativeEvent(eventJson: String?) {
-      eventJson?.length
+      ZynthNativeErrorOverlay.handleRawEvent(eventJson)
     }
 
     @JvmStatic
@@ -35,6 +36,21 @@ class DevtoolsModule(
   }
 
   override fun call(method: String, args: ZynthArgs): JSONObject {
-    return JSONObject().put("result", false)
+    return when (method) {
+      "emit" -> {
+        runCatching {
+          val eventMap = args.getMapAt(0)
+          val event = JSONObject(eventMap)
+          if (event.has("topic")) {
+            val envelope = JSONObject()
+              .put("type", "pub")
+              .put("event", event)
+            ZynthNativeErrorOverlay.handleRawEvent(envelope.toString())
+          }
+        }
+        JSONObject().put("result", true)
+      }
+      else -> JSONObject().put("result", false)
+    }
   }
 }

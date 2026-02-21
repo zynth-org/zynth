@@ -6,6 +6,7 @@
 #import "ZynthUICommandsRegistry.h"
 #import "ZynthJSIPluginRegistry.h"
 #import "ZynthWorklets.h"
+#import "ZynthNativeErrorOverlayManager.h"
 
 #import <hermes/hermes.h>
 #import <jsi/jsi.h>
@@ -333,7 +334,7 @@ static void installGlobals(Runtime &rt) {
                                tag:(NSString *)tag
                               data:(NSDictionary *)data {
   id<ZynthModuleBridge> bridge = _moduleBridge;
-  if (!bridge || topic.length == 0) {
+  if (topic.length == 0) {
     return;
   }
   NSMutableDictionary *event = [NSMutableDictionary dictionary];
@@ -347,6 +348,10 @@ static void installGlobals(Runtime &rt) {
   if (data) {
     event[@"data"] = data;
   }
+  [[ZynthNativeErrorOverlayManager shared] handleEventWithTopic:topic
+                                                          level:level
+                                                            tag:tag
+                                                           data:data];
 
   // Forward devtools events into JS so in-app overlays can react without
   // relying on networked devtools.
@@ -376,7 +381,9 @@ static void installGlobals(Runtime &rt) {
   } @catch (NSException *) {
     // Never allow diagnostics forwarding to crash the runtime.
   }
-  [bridge callModule:@"Devtools" method:@"emit" args:event];
+  if (bridge) {
+    [bridge callModule:@"Devtools" method:@"emit" args:event];
+  }
 }
 
 - (BOOL)evaluateString:(NSString *)code

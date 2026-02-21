@@ -31,6 +31,8 @@ std::atomic<bool> gCrashHandlerInstalled{false};
 std::atomic<bool> gCrashThreadStarted{false};
 jclass gDevtoolsClass = nullptr;
 jmethodID gDevtoolsEmitMethod = nullptr;
+jclass gNativeOverlayClass = nullptr;
+jmethodID gNativeOverlayHandleRawMethod = nullptr;
 std::mutex gPluginMutex;
 std::vector<ZynthJSIPluginInstaller> gPluginInstallers;
 std::vector<ZynthSharedSignalChangedCallback> gSharedSignalCallbacks;
@@ -74,6 +76,7 @@ struct RuntimeState {
   jclass uiClass = nullptr;
   jclass jsBridgeClass = nullptr;
   jclass devtoolsClass = nullptr;
+  jclass nativeOverlayClass = nullptr;
   jmethodID createNode = nullptr;
   jmethodID setProp = nullptr;
   jmethodID setText = nullptr;
@@ -95,6 +98,7 @@ struct RuntimeState {
   jmethodID postRunWorklet = nullptr;
   jmethodID devtoolsEmit = nullptr;
   jmethodID devtoolsIsConnected = nullptr;
+  jmethodID nativeOverlayHandleRaw = nullptr;
   jobject moduleRegistry = nullptr;
   jclass moduleRegistryClass = nullptr;
   jmethodID moduleCall = nullptr;
@@ -347,16 +351,25 @@ void emitDevtoolsEvent(RuntimeState *state,
                        const std::string &level,
                        const std::string &tag,
                        const std::string &data) {
-  if (!state || !state->devtoolsClass || !state->devtoolsEmit) return;
+  if (!state) return;
   JNIEnv *env = getEnv();
   if (!env) return;
   std::string payload = std::string("{\"topic\":\"") + jsonEscape(topic) +
                         "\",\"level\":\"" + jsonEscape(level) +
                         "\",\"tag\":\"" + jsonEscape(tag) +
                         "\",\"data\":\"" + jsonEscape(data) + "\"}";
-  jstring jPayload = env->NewStringUTF(payload.c_str());
-  env->CallStaticVoidMethod(state->devtoolsClass, state->devtoolsEmit, jPayload);
-  env->DeleteLocalRef(jPayload);
+
+  if (state->nativeOverlayClass && state->nativeOverlayHandleRaw) {
+    jstring jPayload = env->NewStringUTF(payload.c_str());
+    env->CallStaticVoidMethod(state->nativeOverlayClass, state->nativeOverlayHandleRaw, jPayload);
+    env->DeleteLocalRef(jPayload);
+  }
+
+  if (state->devtoolsClass && state->devtoolsEmit) {
+    jstring jPayload = env->NewStringUTF(payload.c_str());
+    env->CallStaticVoidMethod(state->devtoolsClass, state->devtoolsEmit, jPayload);
+    env->DeleteLocalRef(jPayload);
+  }
 
   // Also forward devtools events into JS so in-app overlays can react without
   // relying on networked devtools.
@@ -418,16 +431,24 @@ void startCrashWatcherThread() {
         break;
       }
       buf[readBytes] = '\0';
-      if (!gDevtoolsClass || !gDevtoolsEmitMethod) {
+      if ((!gDevtoolsClass || !gDevtoolsEmitMethod) &&
+          (!gNativeOverlayClass || !gNativeOverlayHandleRawMethod)) {
         continue;
       }
       std::string data(buf);
       std::string payload =
           std::string("{\"topic\":\"crash/native\",\"level\":\"error\",\"tag\":\"crash\",\"data\":\"") +
           jsonEscape(data) + "\"}";
-      jstring jPayload = env->NewStringUTF(payload.c_str());
-      env->CallStaticVoidMethod(gDevtoolsClass, gDevtoolsEmitMethod, jPayload);
-      env->DeleteLocalRef(jPayload);
+      if (gDevtoolsClass && gDevtoolsEmitMethod) {
+        jstring jPayload = env->NewStringUTF(payload.c_str());
+        env->CallStaticVoidMethod(gDevtoolsClass, gDevtoolsEmitMethod, jPayload);
+        env->DeleteLocalRef(jPayload);
+      }
+      if (gNativeOverlayClass && gNativeOverlayHandleRawMethod) {
+        jstring jPayload = env->NewStringUTF(payload.c_str());
+        env->CallStaticVoidMethod(gNativeOverlayClass, gNativeOverlayHandleRawMethod, jPayload);
+        env->DeleteLocalRef(jPayload);
+      }
     }
     gVm->DetachCurrentThread();
   }).detach();
@@ -1709,6 +1730,7 @@ Java_com_zynth_kit_runtime_JSBridge_destroyHermesRuntime(JNIEnv *, jobject, jlon
         if (it->second->uiClass) env->DeleteGlobalRef(it->second->uiClass);
         if (it->second->jsBridgeClass) env->DeleteGlobalRef(it->second->jsBridgeClass);
         if (it->second->devtoolsClass) env->DeleteGlobalRef(it->second->devtoolsClass);
+        if (it->second->nativeOverlayClass) env->DeleteGlobalRef(it->second->nativeOverlayClass);
       }
       gStates.erase(it);
     }
@@ -1764,6 +1786,17 @@ Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlon
       gDevtoolsEmitMethod = state->devtoolsEmit;
     }
   }
+  jclass nativeOverlayClass = env->FindClass("com/zynth/kit/runtime/ZynthNativeErrorOverlay");
+  if (nativeOverlayClass) {
+    state->nativeOverlayClass = static_cast<jclass>(env->NewGlobalRef(nativeOverlayClass));
+    env->DeleteLocalRef(nativeOverlayClass);
+    state->nativeOverlayHandleRaw =
+        env->GetStaticMethodID(state->nativeOverlayClass, "handleRawEvent", "(Ljava/lang/String;)V");
+    if (!gNativeOverlayClass && state->nativeOverlayClass && state->nativeOverlayHandleRaw) {
+      gNativeOverlayClass = static_cast<jclass>(env->NewGlobalRef(state->nativeOverlayClass));
+      gNativeOverlayHandleRawMethod = state->nativeOverlayHandleRaw;
+    }
+  }
   jclass stringCls = env->FindClass("java/lang/String");
   if (stringCls) {
     state->stringClass = static_cast<jclass>(env->NewGlobalRef(stringCls));
@@ -1802,10 +1835,18 @@ Java_com_zynth_kit_runtime_JSBridge_evaluateScript(JNIEnv *env, jobject, jlong p
   env->ReleaseStringUTFChars(code, utf8);
   const char *source = sourceUrl ? env->GetStringUTFChars(sourceUrl, nullptr) : nullptr;
   auto buffer = std::make_shared<StringBuffer>(script);
+  auto state = sharedStateFor(runtime);
   try {
     runtime->evaluateJavaScript(buffer, source ? source : "<android>");
+  } catch (const facebook::jsi::JSError &error) {
+    std::string message = error.getMessage();
+    std::string stack = error.getStack();
+    std::string combined = stack.empty() ? message : (message + "\n" + stack);
+    emitDevtoolsEvent(state.get(), "error/js", "error", "js", combined);
+  } catch (const std::exception &error) {
+    emitDevtoolsEvent(state.get(), "error/js", "error", "js", error.what());
   } catch (...) {
-    return;
+    emitDevtoolsEvent(state.get(), "error/js", "error", "js", "Unknown evaluateScript failure");
   }
   if (sourceUrl && source) env->ReleaseStringUTFChars(sourceUrl, source);
 }
@@ -1838,14 +1879,21 @@ Java_com_zynth_kit_runtime_JSBridge_loadBytecode(JNIEnv *env, jobject, jlong ptr
   const char *source = sourceUrl ? env->GetStringUTFChars(sourceUrl, nullptr) : nullptr;
   
   auto buffer = std::make_shared<ZynthBytecodeBuffer>(std::move(data));
+  auto state = sharedStateFor(runtime);
   try {
     runtime->evaluateJavaScript(buffer, source ? source : "main.hbc");
   } catch (const facebook::jsi::JSError &e) {
     __android_log_print(ANDROID_LOG_ERROR, "ZynthRuntime", "Failed to load bytecode: %s", e.getMessage().c_str());
+    std::string message = e.getMessage();
+    std::string stack = e.getStack();
+    std::string combined = stack.empty() ? message : (message + "\n" + stack);
+    emitDevtoolsEvent(state.get(), "error/js", "error", "js", combined);
   } catch (const std::exception &e) {
     __android_log_print(ANDROID_LOG_ERROR, "ZynthRuntime", "Failed to load bytecode: %s", e.what());
+    emitDevtoolsEvent(state.get(), "error/js", "error", "js", e.what());
   } catch (...) {
     __android_log_print(ANDROID_LOG_ERROR, "ZynthRuntime", "Failed to load bytecode: Unknown error");
+    emitDevtoolsEvent(state.get(), "error/js", "error", "js", "Unknown bytecode evaluation failure");
   }
   if (sourceUrl && source) env->ReleaseStringUTFChars(sourceUrl, source);
 }
@@ -1867,8 +1915,18 @@ Java_com_zynth_kit_runtime_JSBridge_callGlobalDouble(JNIEnv *env, jobject, jlong
   auto callFn = static_cast<Value (Function::*)(Runtime&, const Value*, size_t) const>(&Function::call);
   try {
     (fn.*callFn)(rt, &arg, 1);
+  } catch (const JSError &error) {
+    auto state = sharedStateFor(runtime);
+    std::string message = error.getMessage();
+    std::string stack = error.getStack();
+    std::string combined = stack.empty() ? message : (message + "\n" + stack);
+    emitDevtoolsEvent(state.get(), "error/js", "error", "js", combined);
+  } catch (const std::exception &error) {
+    auto state = sharedStateFor(runtime);
+    emitDevtoolsEvent(state.get(), "error/js", "error", "js", error.what());
   } catch (...) {
-    return;
+    auto state = sharedStateFor(runtime);
+    emitDevtoolsEvent(state.get(), "error/js", "error", "js", "Unknown callGlobalDouble failure");
   }
 }
 
@@ -1901,8 +1959,18 @@ Java_com_zynth_kit_runtime_JSBridge_callGlobalFrame(JNIEnv *env,
   auto callFn = static_cast<Value (Function::*)(Runtime&, const Value*, size_t) const>(&Function::call);
   try {
     (fn.*callFn)(rt, args, 4);
+  } catch (const JSError &error) {
+    auto state = sharedStateFor(runtime);
+    std::string message = error.getMessage();
+    std::string stack = error.getStack();
+    std::string combined = stack.empty() ? message : (message + "\n" + stack);
+    emitDevtoolsEvent(state.get(), "error/js", "error", "js", combined);
+  } catch (const std::exception &error) {
+    auto state = sharedStateFor(runtime);
+    emitDevtoolsEvent(state.get(), "error/js", "error", "js", error.what());
   } catch (...) {
-    return;
+    auto state = sharedStateFor(runtime);
+    emitDevtoolsEvent(state.get(), "error/js", "error", "js", "Unknown callGlobalFrame failure");
   }
 }
 
@@ -1941,8 +2009,18 @@ Java_com_zynth_kit_runtime_JSBridge_emitEvent(JNIEnv *env,
   }
   try {
     emitFn.call(rt, String::createFromUtf8(rt, eventName), payload);
+  } catch (const JSError &error) {
+    auto state = sharedStateFor(runtime);
+    std::string message = error.getMessage();
+    std::string stack = error.getStack();
+    std::string combined = stack.empty() ? message : (message + "\n" + stack);
+    emitDevtoolsEvent(state.get(), "error/js", "error", "js", combined);
+  } catch (const std::exception &error) {
+    auto state = sharedStateFor(runtime);
+    emitDevtoolsEvent(state.get(), "error/js", "error", "js", error.what());
   } catch (...) {
-    return;
+    auto state = sharedStateFor(runtime);
+    emitDevtoolsEvent(state.get(), "error/js", "error", "js", "Unknown emitEvent failure");
   }
 }
 

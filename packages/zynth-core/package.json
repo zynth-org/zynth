@@ -33,8 +33,7 @@
     "solid-js": ">=1.8.0"
   },
   "dependencies": {
-    "@zynth/apis": "0.0.1",
-    "@zynth/error-overlay": "0.0.1"
+    "@zynth/apis": "0.0.1"
   },
   "devDependencies": {
     "@rsbuild/core": "^1.0.1",

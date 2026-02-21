@@ -3,6 +3,7 @@
 #import "ZynthUIManager.h"
 #import "ZynthUIManager+Components.h"
 #import "ZynthUIManager+Surface.h"
+#import "ZynthNativeErrorOverlayManager.h"
 #if __has_include("ZynthKit-Swift.h")
 #import "ZynthKit-Swift.h"
 #endif
@@ -34,6 +35,7 @@
     _uiManager = [[ZynthUIManager alloc] initWithRootView:rootView];
     _uiManager.zynthRuntime = self;
     _runtime = [[ZynthHermesRuntimeHost alloc] initWithUIManager:_uiManager];
+    [[ZynthNativeErrorOverlayManager shared] attachRuntime:self];
 #if __has_include("ZynthKit-Swift.h")
     [[ZynthRuntimeManagerRegistry shared] setRuntime:self for:_uiManager];
 #endif
@@ -145,7 +147,7 @@
 }
 
 - (void)destroy {
-  // Phase 1 scaffold.
+  [[ZynthNativeErrorOverlayManager shared] detach];
 }
 
 @end

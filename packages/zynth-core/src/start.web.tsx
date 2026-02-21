@@ -9,15 +9,7 @@ import {
   wrapZynthAppFns,
 } from "./hmr";
 import { setActiveSurface } from "./surface";
-import {
-  addDevtoolsListener,
-  ensureDevtoolsBridge,
-  installDevtoolsConsole,
-} from "./devtools";
-import {
-  installErrorOverlayDiagnostics,
-  wrapWithErrorOverlay,
-} from "@zynth/error-overlay";
+import { ensureDevtoolsBridge, installDevtoolsConsole } from "./devtools";
 
 if (typeof globalThis.queueMicrotask !== "function") {
   globalThis.queueMicrotask = function (callback) {
@@ -86,10 +78,9 @@ export function start(App: () => any): () => void {
   ensureNativeHMRHooks();
   ensureDevtoolsBridge();
   installDevtoolsConsole();
-  installErrorOverlayDiagnostics(addDevtoolsListener);
   const g = globalThis as any;
 
-  currentApp = wrapWithErrorOverlay(App);
+  currentApp = App;
 
   g.__zynth_rerenderApp = () => {
     if (lastRootId == null) {

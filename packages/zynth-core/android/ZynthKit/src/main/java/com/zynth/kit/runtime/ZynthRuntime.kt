@@ -36,6 +36,7 @@ class ZynthRuntime(val root: ZynthRootView) {
     }
     installDefaultModules()
     installCrashHandler()
+    ZynthNativeErrorOverlay.attach(this, root)
   }
 
   companion object {
@@ -184,10 +185,23 @@ class ZynthRuntime(val root: ZynthRootView) {
   }
 
   fun destroy() {
+    ZynthNativeErrorOverlay.detach()
     runOnJSSync {
       JSBridge.destroyHermesRuntime(runtimePtr)
     }
     jsThread.quitSafely()
+  }
+
+  fun requestNativeOverlayReload() {
+    runOnJS {
+      runCatching {
+        JSBridge.evaluateScript(
+          runtimePtr,
+          "(function(){var fn=globalThis.__zynth_rerenderApp; if (typeof fn==='function') fn();})();",
+          "native-overlay-reload.js"
+        )
+      }
+    }
   }
 
   internal fun evaluateScript(code: String, sourceUrl: String? = null) {

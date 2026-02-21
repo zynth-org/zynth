@@ -1,5 +1,4 @@
 import { Platform, OS } from "@zynth/apis";
-import { Text, View } from "@zynth/components";
 import { render, setHost, withHostBatch } from "./renderer";
 import { createIOSHost } from "./host/ios";
 import { createAndroidHost } from "./host/android";
@@ -10,18 +9,10 @@ import {
 } from "./hmr";
 import { setActiveSurface } from "./surface";
 import {
-  addDevtoolsListener,
   ensureDevtoolsBridge,
   installDevtoolsConsole,
   installDevtoolsErrorHandlers,
 } from "./devtools";
-import {
-  ErrorOverlayLayer,
-  installErrorOverlayDiagnostics,
-  isErrorOverlayEnabled,
-  wrapWithErrorOverlay,
-} from "@zynth/error-overlay";
-import { getActiveSurface } from "./surface";
 
 if (typeof globalThis.queueMicrotask !== "function") {
   globalThis.queueMicrotask = function (callback) {
@@ -46,47 +37,9 @@ if (typeof globalThis.queueMicrotask !== "function") {
 let lastRootId: number | null = null;
 let currentApp: (() => any) | null = null;
 let disposeCurrentApp: (() => void) | null = null;
-let disposeOverlay: (() => void) | null = null;
-let overlaySurfaceId: number | null = null;
 let disposeDevBanner: (() => void) | null = null;
 let devBannerSurfaceId: number | null = null;
 let hasStarted = false;
-const gStart = globalThis as any;
-
-const SURFACE_ID_OFFSET = 1 << 20;
-
-function getOverlaySurfaceId(rootId: number): number {
-  if (rootId >= SURFACE_ID_OFFSET) {
-    return rootId + 1;
-  }
-  return rootId + SURFACE_ID_OFFSET;
-}
-
-function runWithSurface<T>(surfaceId: number, work: () => T): T {
-  const previous = getActiveSurface();
-  const shouldSwitch = previous !== surfaceId;
-  if (shouldSwitch) {
-    setActiveSurface(surfaceId);
-  }
-  try {
-    return work();
-  } finally {
-    if (shouldSwitch) {
-      setActiveSurface(previous ?? surfaceId);
-    }
-  }
-}
-
-function mountErrorOverlaySurface(rootId: number) {
-  if (!isErrorOverlayEnabled()) return;
-  if (disposeOverlay) return;
-  const surfaceId = getOverlaySurfaceId(rootId);
-  overlaySurfaceId = surfaceId;
-  disposeOverlay = render(
-    () => runWithSurface(surfaceId, () => <ErrorOverlayLayer />),
-    { id: surfaceId, type: "root" } as any,
-  );
-}
 
 export function start(App: () => any): () => void {
   // Native Platform Initialization
@@ -94,10 +47,9 @@ export function start(App: () => any): () => void {
   ensureDevtoolsBridge();
   installDevtoolsConsole();
   installDevtoolsErrorHandlers();
-  installErrorOverlayDiagnostics(addDevtoolsListener);
   const g = globalThis as any;
 
-  currentApp = isErrorOverlayEnabled() ? App : wrapWithErrorOverlay(App);
+  currentApp = App;
 
   g.__zynth_rerenderApp = () => {
     if ((globalThis as any).__ZYNTH_HMR_TRACE === true) {
@@ -165,13 +117,6 @@ export function start(App: () => any): () => void {
         console.error("[ZynthRuntime] dispose failed", error);
       }
     }
-    if (typeof disposeOverlay === "function") {
-      try {
-        disposeOverlay();
-      } catch (error) {
-        console.error("[ZynthRuntime] overlay dispose failed", error);
-      }
-    }
     if (typeof disposeDevBanner === "function") {
       try {
         disposeDevBanner();
@@ -182,8 +127,6 @@ export function start(App: () => any): () => void {
     disposeCurrentApp = null;
     currentApp = null;
     lastRootId = null;
-    disposeOverlay = null;
-    overlaySurfaceId = null;
     disposeDevBanner = null;
     devBannerSurfaceId = null;
   };
@@ -214,7 +157,6 @@ export function start(App: () => any): () => void {
     }
     hasStarted = true;
     setActiveSurface(rootId);
-    mountErrorOverlaySurface(rootId);
     console.log(`Starting render with rootId: ${rootId}`);
     if (typeof currentApp !== "function") {
       console.error("[__startApp] no app registered for rendering");

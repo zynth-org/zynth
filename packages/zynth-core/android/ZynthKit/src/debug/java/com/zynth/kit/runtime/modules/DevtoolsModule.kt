@@ -9,6 +9,7 @@ import com.zynth.kit.runtime.ZynthRuntime
 import com.zynth.kit.runtime.ZynthModule
 import com.zynth.kit.runtime.ZynthArgs
 import com.zynth.kit.runtime.ZynthTypeException
+import com.zynth.kit.runtime.ZynthNativeErrorOverlay
 import java.io.File
 import java.nio.charset.Charset
 import org.json.JSONObject
@@ -57,6 +58,7 @@ class DevtoolsModule(
     @JvmStatic
     fun emitNativeEvent(eventJson: String?) {
       val raw = eventJson ?: return
+      ZynthNativeErrorOverlay.handleRawEvent(raw)
       val event = runCatching { JSONObject(raw) }.getOrNull() ?: return
       if (!event.has("topic")) return
       val envelope = JSONObject()
@@ -156,6 +158,7 @@ class DevtoolsModule(
         val envelope = JSONObject()
           .put("type", "pub")
           .put("event", event)
+        ZynthNativeErrorOverlay.handleRawEvent(envelope.toString())
         client.publish(envelope.toString())
         ok()
       }
