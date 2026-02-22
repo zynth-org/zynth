@@ -18,6 +18,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.core.view.WindowInsetsCompat
 import com.zynth.kit.core.ZynthRootView
 import java.lang.ref.WeakReference
 import org.json.JSONObject
@@ -138,23 +139,24 @@ internal object ZynthNativeErrorOverlay {
     rootRef = null
     mainHandler.post {
       removeView(fatalOverlayView)
-      removeView(warningToastView)
-      fatalOverlayView = null
-      warningToastView = null
-      warningEntry = null
+      dismissWarning()
     }
   }
 
   fun dismissForHmrUpdate() {
     mainHandler.post {
       removeView(fatalOverlayView)
-      removeView(warningToastView)
       fatalOverlayView = null
-      warningToastView = null
-      warningCount = 0
-      warningMessage = ""
-      warningEntry = null
+      dismissWarning()
     }
+  }
+
+  private fun dismissWarning() {
+    removeView(warningToastView)
+    warningToastView = null
+    warningCount = 0
+    warningMessage = ""
+    warningEntry = null
   }
 
   @JvmStatic
@@ -220,8 +222,9 @@ internal object ZynthNativeErrorOverlay {
 
     val kindIsWarning = entry.kind == "warning"
     val accent = if (kindIsWarning) tokens.warning else tokens.error
-    val topInset = root.rootWindowInsets?.systemWindowInsetTop ?: statusBarHeight(root)
-    val bottomInset = root.rootWindowInsets?.systemWindowInsetBottom ?: 0
+    val insets = root.rootWindowInsets?.let { WindowInsetsCompat.toWindowInsetsCompat(it) }
+    val topInset = insets?.getInsets(WindowInsetsCompat.Type.systemBars())?.top ?: statusBarHeight(root)
+    val bottomInset = insets?.getInsets(WindowInsetsCompat.Type.systemBars())?.bottom ?: 0
     val badgeText = when (entry.kind) {
       "crash" -> "Native Error"
       "warning" -> "Warning"
@@ -411,6 +414,9 @@ internal object ZynthNativeErrorOverlay {
     val dismissButton = actionButton(root.context, GLYPH_CLOSE, "Dismiss", tokens.neutralButton) {
       removeView(container)
       fatalOverlayView = null
+      if (kindIsWarning) {
+        dismissWarning()
+      }
     }
     val reloadButton = actionButton(root.context, GLYPH_REFRESH, "Reload", tokens.dangerButton) {
       runtimeRef?.get()?.requestNativeOverlayReload()
@@ -511,18 +517,18 @@ internal object ZynthNativeErrorOverlay {
       val container = LinearLayout(root.context).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        setPadding(dp(0), dp(0), dp(16), dp(0))
-        background = roundedBackground(tokens.warningToastBg, tokens.warningToastBorder, dp(48).toFloat()).apply {
+        background = roundedBackground(tokens.warningToastBg, tokens.warningToastBorder, dp(28).toFloat()).apply {
           setStroke(dp(2), tokens.warningToastBorder)
         }
         layoutParams = FrameLayout.LayoutParams(
           FrameLayout.LayoutParams.MATCH_PARENT,
-          FrameLayout.LayoutParams.WRAP_CONTENT,
+          dp(56),
         ).apply {
           gravity = Gravity.BOTTOM
           marginStart = dp(tokens.screenPadding)
           marginEnd = dp(tokens.screenPadding)
-          val insetBottom = root.rootWindowInsets?.systemWindowInsetBottom ?: 0
+          val insets = root.rootWindowInsets?.let { WindowInsetsCompat.toWindowInsetsCompat(it) }
+          val insetBottom = insets?.getInsets(WindowInsetsCompat.Type.systemBars())?.bottom ?: 0
           bottomMargin = insetBottom + dp(12)
         }
         elevation = 99_998f
@@ -531,10 +537,10 @@ internal object ZynthNativeErrorOverlay {
         id = View.generateViewId()
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        setPadding(dp(16), dp(16), dp(16), dp(16))
+        setPadding(dp(16), 0, dp(8), 0)
         isClickable = true
         isFocusable = true
-        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
         setOnClickListener {
           val current = warningEntry
           if (current != null) {
@@ -564,8 +570,8 @@ internal object ZynthNativeErrorOverlay {
       })
       val textWrap = LinearLayout(root.context).apply {
         orientation = LinearLayout.VERTICAL
-        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-          marginStart = dp(16)
+        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+          marginStart = dp(12)
         }
       }
       val title = TextView(root.context).apply {
@@ -586,28 +592,33 @@ internal object ZynthNativeErrorOverlay {
       expand.addView(alertDot)
       expand.addView(textWrap)
 
-      val close = FrameLayout(root.context).apply {
+      val close = TextView(root.context).apply {
+        text = GLYPH_CLOSE
+        setTextColor(tokens.warning)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+        typeface = iconTypeface(root.context)
+        gravity = Gravity.CENTER
         isClickable = true
         isFocusable = true
-        setOnClickListener {
-          removeView(warningToastView)
-          warningToastView = null
-          warningCount = 0
-          warningMessage = ""
-          warningEntry = null
+        
+        val bg = roundedBackground(withAlpha(Color.WHITE, 0.12f), Color.TRANSPARENT, dp(999).toFloat())
+        val outValue = TypedValue()
+        root.context.theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, outValue, true)
+        val ripple = root.context.getDrawable(outValue.resourceId)
+        
+        background = if (ripple != null) {
+          android.graphics.drawable.LayerDrawable(arrayOf(bg, ripple))
+        } else {
+          bg
         }
-        background = roundedBackground(withAlpha(Color.WHITE, 0.12f), Color.TRANSPARENT, dp(999).toFloat())
-        layoutParams = LinearLayout.LayoutParams(dp(35), dp(35)).apply {
-          marginStart = dp(8)
+        
+        layoutParams = LinearLayout.LayoutParams(dp(38), dp(38)).apply {
+          marginEnd = dp(10)
+        }
+        setOnClickListener {
+          dismissWarning()
         }
       }
-      close.addView(glyphView(root.context, GLYPH_CLOSE, tokens.warning, 24f).apply {
-        layoutParams = FrameLayout.LayoutParams(
-          FrameLayout.LayoutParams.WRAP_CONTENT,
-          FrameLayout.LayoutParams.WRAP_CONTENT,
-          Gravity.CENTER,
-        )
-      })
 
       container.addView(expand)
       container.addView(close)
