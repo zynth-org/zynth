@@ -226,18 +226,22 @@ static NSInteger const ZynthWarningCloseIconTag = 91006;
   footer.layer.borderColor = [self colorToken:@"border" fallback:@"#27272A"].CGColor;
   [overlay addSubview:footer];
 
+  UIView *badgeWrap = [[UIView alloc] init];
+  badgeWrap.translatesAutoresizingMaskIntoConstraints = NO;
+  badgeWrap.backgroundColor = [self colorWithAlpha:accentColor alpha:0.14];
+  badgeWrap.layer.cornerRadius = 15.0;
+  badgeWrap.layer.masksToBounds = YES;
+  badgeWrap.layer.borderWidth = 1.0;
+  badgeWrap.layer.borderColor = [self colorWithAlpha:accentColor alpha:0.32].CGColor;
+  [content addSubview:badgeWrap];
+
   UILabel *badge = [[UILabel alloc] init];
   badge.translatesAutoresizingMaskIntoConstraints = NO;
-  badge.text = [NSString stringWithFormat:@"  %@  ", badgeText];
+  badge.text = badgeText;
   badge.textColor = accentColor;
   badge.font = [UIFont systemFontOfSize:11 weight:UIFontWeightHeavy];
   badge.textAlignment = NSTextAlignmentCenter;
-  badge.backgroundColor = [self colorWithAlpha:accentColor alpha:0.14];
-  badge.layer.cornerRadius = 999.0;
-  badge.layer.masksToBounds = YES;
-  badge.layer.borderWidth = 1.0;
-  badge.layer.borderColor = [self colorWithAlpha:accentColor alpha:0.32].CGColor;
-  [content addSubview:badge];
+  [badgeWrap addSubview:badge];
 
   UILabel *titleLabel = [[UILabel alloc] init];
   titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
@@ -348,13 +352,15 @@ static NSInteger const ZynthWarningCloseIconTag = 91006;
     [footer.bottomAnchor constraintEqualToAnchor:safe.bottomAnchor],
     [footer.heightAnchor constraintEqualToConstant:footerHeight],
 
-    [badge.topAnchor constraintEqualToAnchor:content.topAnchor],
-    [badge.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
-    [badge.heightAnchor constraintEqualToConstant:30.0],
-    [badge.widthAnchor constraintGreaterThanOrEqualToConstant:120.0],
-    [badge.trailingAnchor constraintLessThanOrEqualToAnchor:content.trailingAnchor],
+    [badgeWrap.topAnchor constraintEqualToAnchor:content.topAnchor],
+    [badgeWrap.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
+    [badgeWrap.heightAnchor constraintEqualToConstant:30.0],
+    [badgeWrap.trailingAnchor constraintLessThanOrEqualToAnchor:content.trailingAnchor],
+    [badge.leadingAnchor constraintEqualToAnchor:badgeWrap.leadingAnchor constant:14.0],
+    [badge.trailingAnchor constraintEqualToAnchor:badgeWrap.trailingAnchor constant:-14.0],
+    [badge.centerYAnchor constraintEqualToAnchor:badgeWrap.centerYAnchor],
 
-    [titleLabel.topAnchor constraintEqualToAnchor:badge.bottomAnchor constant:12.0],
+    [titleLabel.topAnchor constraintEqualToAnchor:badgeWrap.bottomAnchor constant:12.0],
     [titleLabel.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
     [titleLabel.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
 
