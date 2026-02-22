@@ -2,6 +2,10 @@
 #import "ZynthRuntime.h"
 
 #import <UIKit/UIKit.h>
+#import <objc/message.h>
+#if __has_include("ZynthKit-Swift.h")
+#import "ZynthKit-Swift.h"
+#endif
 
 @interface ZynthNativeErrorOverlayManager ()
 @property(nonatomic, weak) ZynthRuntime *runtime;
@@ -11,7 +15,17 @@
 @property(nonatomic, strong) NSDictionary *tokens;
 @property(nonatomic, assign) NSInteger warningCount;
 @property(nonatomic, copy) NSString *warningMessage;
+- (NSAttributedString *)styledStackText:(NSString *)stack;
+- (void)requestSymbolicationForStack:(NSString *)stack
+                                label:(UILabel *)stackBody
+                           stackView:(UIView *)stackView
+                              overlay:(UIView *)overlay;
 @end
+
+static NSString *const ZynthGlyphArrowRight = @"\uea05";
+static NSString *const ZynthGlyphTerminal = @"\uea07";
+static NSString *const ZynthGlyphClose = @"\uea0a";
+static NSString *const ZynthGlyphRefresh = @"\uea0e";
 
 @implementation ZynthNativeErrorOverlayManager
 
@@ -156,114 +170,222 @@
   self.warningCount = 0;
   self.warningMessage = @"";
 
+  BOOL isWarning = [topic hasPrefix:@"warning/"];
+  UIColor *accentColor = isWarning ? [self colorToken:@"warning" fallback:@"#FACC15"]
+                                   : [self colorToken:@"error" fallback:@"#F87171"];
+  NSString *badgeText = [topic hasPrefix:@"crash/"] ? @"NATIVE ERROR" : @"RUNTIME ERROR";
+  NSString *heroTitle = @"An error has occurred.";
+  NSString *heroDescription = @"A JavaScript exception was detected, preventing further action.";
+
   UIView *overlay = [[UIView alloc] initWithFrame:root.bounds];
   overlay.backgroundColor = [self colorToken:@"overlayBg" fallback:@"#18181B"];
   overlay.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
   overlay.userInteractionEnabled = YES;
+  UILayoutGuide *safe = overlay.safeAreaLayoutGuide;
 
-  UIView *panel = [[UIView alloc] init];
-  panel.backgroundColor = [self colorToken:@"panelBg" fallback:@"#0F0F12"];
-  panel.layer.cornerRadius = [self layoutToken:@"panelRadius" fallback:18.0];
-  panel.layer.borderWidth = 1.0;
-  panel.layer.borderColor = [self colorToken:@"border" fallback:@"#27272A"].CGColor;
-  panel.translatesAutoresizingMaskIntoConstraints = NO;
-  [overlay addSubview:panel];
+  UIView *content = [[UIView alloc] init];
+  content.translatesAutoresizingMaskIntoConstraints = NO;
+  [overlay addSubview:content];
+
+  UIView *footer = [[UIView alloc] init];
+  footer.translatesAutoresizingMaskIntoConstraints = NO;
+  footer.backgroundColor = [self colorWithAlpha:[self colorToken:@"overlayBg" fallback:@"#18181B"] alpha:0.98];
+  footer.layer.borderWidth = 1.0;
+  footer.layer.borderColor = [self colorToken:@"border" fallback:@"#27272A"].CGColor;
+  [overlay addSubview:footer];
+
+  UILabel *badge = [[UILabel alloc] init];
+  badge.translatesAutoresizingMaskIntoConstraints = NO;
+  badge.text = [NSString stringWithFormat:@"  %@  ", badgeText];
+  badge.textColor = accentColor;
+  badge.font = [UIFont systemFontOfSize:11 weight:UIFontWeightHeavy];
+  badge.textAlignment = NSTextAlignmentCenter;
+  badge.backgroundColor = [self colorWithAlpha:accentColor alpha:0.14];
+  badge.layer.cornerRadius = 12.0;
+  badge.layer.masksToBounds = YES;
+  badge.layer.borderWidth = 1.0;
+  badge.layer.borderColor = [self colorWithAlpha:accentColor alpha:0.32].CGColor;
+  [content addSubview:badge];
 
   UILabel *titleLabel = [[UILabel alloc] init];
-  titleLabel.text = title;
+  titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
+  titleLabel.text = heroTitle;
   titleLabel.textColor = [self colorToken:@"title" fallback:@"#FAFAFA"];
   titleLabel.font = [UIFont systemFontOfSize:22 weight:UIFontWeightBold];
   titleLabel.numberOfLines = 0;
-  titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
+  [content addSubview:titleLabel];
 
-  UILabel *messageLabel = [[UILabel alloc] init];
-  messageLabel.text = message;
-  messageLabel.textColor = [self colorToken:@"error" fallback:@"#F87171"];
-  messageLabel.font = [UIFont monospacedSystemFontOfSize:13 weight:UIFontWeightRegular];
-  messageLabel.numberOfLines = 0;
-  messageLabel.translatesAutoresizingMaskIntoConstraints = NO;
+  UILabel *subtitleLabel = [[UILabel alloc] init];
+  subtitleLabel.translatesAutoresizingMaskIntoConstraints = NO;
+  subtitleLabel.text = heroDescription;
+  subtitleLabel.textColor = [self colorToken:@"body" fallback:@"#A1A1AA"];
+  subtitleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightRegular];
+  subtitleLabel.numberOfLines = 3;
+  [content addSubview:subtitleLabel];
 
-  UILabel *topicLabel = [[UILabel alloc] init];
-  topicLabel.text = topic;
-  topicLabel.textColor = [self colorToken:@"body" fallback:@"#A1A1AA"];
-  topicLabel.font = [UIFont monospacedSystemFontOfSize:11 weight:UIFontWeightRegular];
-  topicLabel.numberOfLines = 1;
-  topicLabel.translatesAutoresizingMaskIntoConstraints = NO;
+  UIView *card = [[UIView alloc] init];
+  card.translatesAutoresizingMaskIntoConstraints = NO;
+  card.backgroundColor = [self colorToken:@"panelBg" fallback:@"#0F0F12"];
+  card.layer.cornerRadius = 22.0;
+  card.layer.borderWidth = 1.0;
+  card.layer.borderColor = [self colorToken:@"border" fallback:@"#27272A"].CGColor;
+  [content addSubview:card];
 
-  [panel addSubview:titleLabel];
-  [panel addSubview:messageLabel];
-  [panel addSubview:topicLabel];
+  UIView *iconWrap = [[UIView alloc] init];
+  iconWrap.translatesAutoresizingMaskIntoConstraints = NO;
+  iconWrap.backgroundColor = [self colorWithAlpha:accentColor alpha:0.3];
+  iconWrap.layer.cornerRadius = 14.0;
+  [card addSubview:iconWrap];
+
+  UILabel *terminalIcon = [self glyphLabel:ZynthGlyphTerminal color:accentColor size:22];
+  terminalIcon.translatesAutoresizingMaskIntoConstraints = NO;
+  [iconWrap addSubview:terminalIcon];
+
+  UILabel *messageTitle = [[UILabel alloc] init];
+  messageTitle.translatesAutoresizingMaskIntoConstraints = NO;
+  messageTitle.text = @"Message";
+  messageTitle.textColor = [self color:@"#71717A"];
+  messageTitle.font = [UIFont systemFontOfSize:11 weight:UIFontWeightBold];
+  [card addSubview:messageTitle];
+
+  UILabel *messageBody = [[UILabel alloc] init];
+  messageBody.translatesAutoresizingMaskIntoConstraints = NO;
+  messageBody.text = message;
+  messageBody.textColor = accentColor;
+  messageBody.font = [UIFont monospacedSystemFontOfSize:13 weight:UIFontWeightRegular];
+  messageBody.numberOfLines = 4;
+  [card addSubview:messageBody];
+
+  UIView *stackLabelRow = [[UIView alloc] init];
+  stackLabelRow.translatesAutoresizingMaskIntoConstraints = NO;
+  [content addSubview:stackLabelRow];
+
+  UILabel *arrowIcon = [self glyphLabel:ZynthGlyphArrowRight color:[self color:@"#71717A"] size:12];
+  arrowIcon.translatesAutoresizingMaskIntoConstraints = NO;
+  [stackLabelRow addSubview:arrowIcon];
+
+  UILabel *stackLabelTitle = [[UILabel alloc] init];
+  stackLabelTitle.translatesAutoresizingMaskIntoConstraints = NO;
+  stackLabelTitle.text = @"STACK TRACE";
+  stackLabelTitle.textColor = [self color:@"#71717A"];
+  stackLabelTitle.font = [UIFont systemFontOfSize:11 weight:UIFontWeightBlack];
+  [stackLabelRow addSubview:stackLabelTitle];
 
   UIScrollView *stackScroll = [[UIScrollView alloc] init];
-  stackScroll.layer.cornerRadius = 12.0;
+  stackScroll.translatesAutoresizingMaskIntoConstraints = NO;
+  stackScroll.layer.cornerRadius = 18.0;
   stackScroll.layer.borderWidth = 1.0;
   stackScroll.layer.borderColor = [self colorToken:@"border" fallback:@"#27272A"].CGColor;
-  stackScroll.backgroundColor = [self colorToken:@"overlayBg" fallback:@"#18181B"];
-  stackScroll.translatesAutoresizingMaskIntoConstraints = NO;
-  [panel addSubview:stackScroll];
+  stackScroll.backgroundColor = [self colorWithAlpha:[self colorToken:@"overlayBg" fallback:@"#18181B"] alpha:0.75];
+  [content addSubview:stackScroll];
 
-  UILabel *stackLabel = [[UILabel alloc] init];
-  stackLabel.text = stack.length > 0 ? stack : @"No stack trace available.";
-  stackLabel.textColor = [self colorToken:@"body" fallback:@"#A1A1AA"];
-  stackLabel.font = [UIFont monospacedSystemFontOfSize:11 weight:UIFontWeightRegular];
-  stackLabel.numberOfLines = 0;
-  stackLabel.translatesAutoresizingMaskIntoConstraints = NO;
-  [stackScroll addSubview:stackLabel];
+  UILabel *stackBody = [[UILabel alloc] init];
+  stackBody.translatesAutoresizingMaskIntoConstraints = NO;
+  NSString *initialStack = stack.length > 0 ? stack : @"No stack trace available.";
+  stackBody.attributedText = [self styledStackText:initialStack];
+  stackBody.textColor = [self colorToken:@"body" fallback:@"#A1A1AA"];
+  stackBody.font = [UIFont monospacedSystemFontOfSize:11 weight:UIFontWeightRegular];
+  stackBody.numberOfLines = 0;
+  [stackScroll addSubview:stackBody];
 
-  UIButton *dismissButton = [self button:@"Dismiss"
-                                   color:[self colorToken:@"neutralButton" fallback:@"#27272A"]
-                                  action:@selector(onDismissPressed)];
-  UIButton *reloadButton = [self button:@"Reload"
-                                  color:[self colorToken:@"dangerButton" fallback:@"#DC2626"]
-                                 action:@selector(onReloadPressed)];
+  UIButton *dismissButton = [self actionButtonWithGlyph:ZynthGlyphClose
+                                                  title:@"Dismiss"
+                                                  color:[self colorToken:@"neutralButton" fallback:@"#27272A"]
+                                                 action:@selector(onDismissPressed)];
+  UIButton *reloadButton = [self actionButtonWithGlyph:ZynthGlyphRefresh
+                                                 title:@"Reload"
+                                                 color:[self colorToken:@"dangerButton" fallback:@"#DC2626"]
+                                                action:@selector(onReloadPressed)];
   dismissButton.translatesAutoresizingMaskIntoConstraints = NO;
   reloadButton.translatesAutoresizingMaskIntoConstraints = NO;
-  [panel addSubview:dismissButton];
-  [panel addSubview:reloadButton];
+  [footer addSubview:dismissButton];
+  [footer addSubview:reloadButton];
 
+  CGFloat horizontal = [self layoutToken:@"screenPadding" fallback:20.0];
+  CGFloat footerHeight = [self layoutToken:@"buttonHeight" fallback:48.0] + 24.0;
   [NSLayoutConstraint activateConstraints:@[
-    [panel.leadingAnchor constraintEqualToAnchor:overlay.leadingAnchor constant:[self layoutToken:@"screenPadding" fallback:20.0]],
-    [panel.trailingAnchor constraintEqualToAnchor:overlay.trailingAnchor constant:-[self layoutToken:@"screenPadding" fallback:20.0]],
-    [panel.centerYAnchor constraintEqualToAnchor:overlay.centerYAnchor],
+    [content.topAnchor constraintEqualToAnchor:safe.topAnchor constant:10.0],
+    [content.leadingAnchor constraintEqualToAnchor:overlay.leadingAnchor constant:horizontal],
+    [content.trailingAnchor constraintEqualToAnchor:overlay.trailingAnchor constant:-horizontal],
+    [content.bottomAnchor constraintEqualToAnchor:footer.topAnchor constant:-8.0],
 
-    [titleLabel.leadingAnchor constraintEqualToAnchor:panel.leadingAnchor constant:[self layoutToken:@"panelPadding" fallback:16.0]],
-    [titleLabel.trailingAnchor constraintEqualToAnchor:panel.trailingAnchor constant:-[self layoutToken:@"panelPadding" fallback:16.0]],
-    [titleLabel.topAnchor constraintEqualToAnchor:panel.topAnchor constant:[self layoutToken:@"panelPadding" fallback:16.0]],
+    [footer.leadingAnchor constraintEqualToAnchor:overlay.leadingAnchor],
+    [footer.trailingAnchor constraintEqualToAnchor:overlay.trailingAnchor],
+    [footer.bottomAnchor constraintEqualToAnchor:safe.bottomAnchor],
+    [footer.heightAnchor constraintEqualToConstant:footerHeight],
 
-    [messageLabel.leadingAnchor constraintEqualToAnchor:titleLabel.leadingAnchor],
-    [messageLabel.trailingAnchor constraintEqualToAnchor:titleLabel.trailingAnchor],
-    [messageLabel.topAnchor constraintEqualToAnchor:titleLabel.topAnchor constant:40],
+    [badge.topAnchor constraintEqualToAnchor:content.topAnchor],
+    [badge.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
+    [badge.heightAnchor constraintEqualToConstant:24.0],
+    [badge.widthAnchor constraintGreaterThanOrEqualToConstant:120.0],
+    [badge.trailingAnchor constraintLessThanOrEqualToAnchor:content.trailingAnchor],
 
-    [topicLabel.leadingAnchor constraintEqualToAnchor:titleLabel.leadingAnchor],
-    [topicLabel.trailingAnchor constraintEqualToAnchor:titleLabel.trailingAnchor],
-    [topicLabel.topAnchor constraintEqualToAnchor:messageLabel.bottomAnchor constant:8],
+    [titleLabel.topAnchor constraintEqualToAnchor:badge.bottomAnchor constant:12.0],
+    [titleLabel.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
+    [titleLabel.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
 
-    [stackScroll.leadingAnchor constraintEqualToAnchor:titleLabel.leadingAnchor],
-    [stackScroll.trailingAnchor constraintEqualToAnchor:titleLabel.trailingAnchor],
-    [stackScroll.topAnchor constraintEqualToAnchor:topicLabel.bottomAnchor constant:12],
-    [stackScroll.heightAnchor constraintEqualToConstant:220],
+    [subtitleLabel.topAnchor constraintEqualToAnchor:titleLabel.bottomAnchor constant:8.0],
+    [subtitleLabel.leadingAnchor constraintEqualToAnchor:titleLabel.leadingAnchor],
+    [subtitleLabel.trailingAnchor constraintEqualToAnchor:titleLabel.trailingAnchor],
 
-    [stackLabel.leadingAnchor constraintEqualToAnchor:stackScroll.leadingAnchor constant:10],
-    [stackLabel.trailingAnchor constraintEqualToAnchor:stackScroll.trailingAnchor constant:-10],
-    [stackLabel.topAnchor constraintEqualToAnchor:stackScroll.topAnchor constant:10],
-    [stackLabel.bottomAnchor constraintEqualToAnchor:stackScroll.bottomAnchor constant:-10],
-    [stackLabel.widthAnchor constraintEqualToAnchor:stackScroll.widthAnchor constant:-20],
+    [card.topAnchor constraintEqualToAnchor:subtitleLabel.bottomAnchor constant:18.0],
+    [card.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
+    [card.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
 
-    [dismissButton.leadingAnchor constraintEqualToAnchor:titleLabel.leadingAnchor],
-    [dismissButton.topAnchor constraintEqualToAnchor:stackScroll.bottomAnchor constant:12],
+    [iconWrap.topAnchor constraintEqualToAnchor:card.topAnchor constant:16.0],
+    [iconWrap.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:16.0],
+    [iconWrap.widthAnchor constraintEqualToConstant:40.0],
+    [iconWrap.heightAnchor constraintEqualToConstant:40.0],
+    [terminalIcon.centerXAnchor constraintEqualToAnchor:iconWrap.centerXAnchor],
+    [terminalIcon.centerYAnchor constraintEqualToAnchor:iconWrap.centerYAnchor],
+
+    [messageTitle.topAnchor constraintEqualToAnchor:card.topAnchor constant:16.0],
+    [messageTitle.leadingAnchor constraintEqualToAnchor:iconWrap.trailingAnchor constant:12.0],
+    [messageTitle.trailingAnchor constraintEqualToAnchor:card.trailingAnchor constant:-16.0],
+    [messageBody.topAnchor constraintEqualToAnchor:messageTitle.bottomAnchor constant:4.0],
+    [messageBody.leadingAnchor constraintEqualToAnchor:messageTitle.leadingAnchor],
+    [messageBody.trailingAnchor constraintEqualToAnchor:messageTitle.trailingAnchor],
+    [messageBody.bottomAnchor constraintEqualToAnchor:card.bottomAnchor constant:-16.0],
+
+    [stackLabelRow.topAnchor constraintEqualToAnchor:card.bottomAnchor constant:16.0],
+    [stackLabelRow.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
+    [stackLabelRow.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
+    [stackLabelRow.heightAnchor constraintEqualToConstant:16.0],
+
+    [arrowIcon.leadingAnchor constraintEqualToAnchor:stackLabelRow.leadingAnchor],
+    [arrowIcon.centerYAnchor constraintEqualToAnchor:stackLabelRow.centerYAnchor],
+    [stackLabelTitle.leadingAnchor constraintEqualToAnchor:arrowIcon.trailingAnchor constant:4.0],
+    [stackLabelTitle.centerYAnchor constraintEqualToAnchor:stackLabelRow.centerYAnchor],
+
+    [stackScroll.topAnchor constraintEqualToAnchor:stackLabelRow.bottomAnchor constant:8.0],
+    [stackScroll.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
+    [stackScroll.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
+    [stackScroll.bottomAnchor constraintEqualToAnchor:content.bottomAnchor],
+
+    [stackBody.topAnchor constraintEqualToAnchor:stackScroll.topAnchor constant:10.0],
+    [stackBody.leadingAnchor constraintEqualToAnchor:stackScroll.leadingAnchor constant:10.0],
+    [stackBody.trailingAnchor constraintEqualToAnchor:stackScroll.trailingAnchor constant:-10.0],
+    [stackBody.bottomAnchor constraintEqualToAnchor:stackScroll.bottomAnchor constant:-10.0],
+    [stackBody.widthAnchor constraintEqualToAnchor:stackScroll.widthAnchor constant:-20.0],
+
+    [dismissButton.leadingAnchor constraintEqualToAnchor:footer.leadingAnchor constant:horizontal],
+    [dismissButton.centerYAnchor constraintEqualToAnchor:footer.centerYAnchor constant:-6.0],
     [dismissButton.heightAnchor constraintEqualToConstant:[self layoutToken:@"buttonHeight" fallback:48.0]],
-    [dismissButton.bottomAnchor constraintEqualToAnchor:panel.bottomAnchor constant:-[self layoutToken:@"panelPadding" fallback:16.0]],
 
-    [reloadButton.leadingAnchor constraintEqualToAnchor:dismissButton.trailingAnchor constant:8],
-    [reloadButton.trailingAnchor constraintEqualToAnchor:titleLabel.trailingAnchor],
-    [reloadButton.widthAnchor constraintEqualToAnchor:dismissButton.widthAnchor],
-    [reloadButton.topAnchor constraintEqualToAnchor:dismissButton.topAnchor],
+    [reloadButton.leadingAnchor constraintEqualToAnchor:dismissButton.trailingAnchor constant:8.0],
+    [reloadButton.trailingAnchor constraintEqualToAnchor:footer.trailingAnchor constant:-horizontal],
+    [reloadButton.centerYAnchor constraintEqualToAnchor:dismissButton.centerYAnchor],
     [reloadButton.heightAnchor constraintEqualToAnchor:dismissButton.heightAnchor],
+    [reloadButton.widthAnchor constraintEqualToAnchor:dismissButton.widthAnchor],
   ]];
 
   [self.fatalOverlay removeFromSuperview];
   self.fatalOverlay = overlay;
   [root addSubview:overlay];
+
+  if (stack.length > 0) {
+    [self requestSymbolicationForStack:stack label:stackBody stackView:stackScroll overlay:overlay];
+  }
 }
 
 - (void)showWarningToast:(NSString *)message {
@@ -307,10 +429,11 @@
     ]];
 
     [root addSubview:toast];
+    UILayoutGuide *safe = root.safeAreaLayoutGuide;
     [NSLayoutConstraint activateConstraints:@[
       [toast.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:[self layoutToken:@"screenPadding" fallback:20.0]],
       [toast.trailingAnchor constraintEqualToAnchor:root.trailingAnchor constant:-[self layoutToken:@"screenPadding" fallback:20.0]],
-      [toast.bottomAnchor constraintEqualToAnchor:root.bottomAnchor constant:-24],
+      [toast.bottomAnchor constraintEqualToAnchor:safe.bottomAnchor constant:-12.0],
     ]];
     self.warningToast = toast;
   } else {
@@ -340,6 +463,124 @@
   button.titleLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightBold];
   [button addTarget:self action:action forControlEvents:UIControlEventTouchUpInside];
   return button;
+}
+
+- (UIButton *)actionButtonWithGlyph:(NSString *)glyph
+                              title:(NSString *)title
+                              color:(UIColor *)color
+                             action:(SEL)action {
+  UIButton *button = [UIButton buttonWithType:UIButtonTypeCustom];
+  button.backgroundColor = color;
+  button.layer.cornerRadius = 16.0;
+  [button addTarget:self action:action forControlEvents:UIControlEventTouchUpInside];
+
+  UIStackView *stack = [[UIStackView alloc] init];
+  stack.translatesAutoresizingMaskIntoConstraints = NO;
+  stack.axis = UILayoutConstraintAxisHorizontal;
+  stack.alignment = UIStackViewAlignmentCenter;
+  stack.spacing = 6.0;
+  [button addSubview:stack];
+
+  UILabel *icon = [self glyphLabel:glyph color:[self colorToken:@"buttonText" fallback:@"#E4E4E7"] size:18.0];
+  UILabel *label = [[UILabel alloc] init];
+  label.text = title;
+  label.textColor = [self colorToken:@"buttonText" fallback:@"#E4E4E7"];
+  label.font = [UIFont systemFontOfSize:13 weight:UIFontWeightBold];
+
+  [stack addArrangedSubview:icon];
+  [stack addArrangedSubview:label];
+
+  [NSLayoutConstraint activateConstraints:@[
+    [stack.centerXAnchor constraintEqualToAnchor:button.centerXAnchor],
+    [stack.centerYAnchor constraintEqualToAnchor:button.centerYAnchor],
+  ]];
+
+  return button;
+}
+
+- (UILabel *)glyphLabel:(NSString *)glyph color:(UIColor *)color size:(CGFloat)size {
+  UILabel *label = [[UILabel alloc] init];
+  label.text = glyph;
+  label.textColor = color;
+  label.font = [self glyphFont:size];
+  label.textAlignment = NSTextAlignmentCenter;
+  return label;
+}
+
+- (UIFont *)glyphFont:(CGFloat)size {
+  UIFont *font = [UIFont fontWithName:@"ZynthRuntime" size:size];
+  if (font) return font;
+  return [UIFont systemFontOfSize:size weight:UIFontWeightRegular];
+}
+
+- (UIColor *)colorWithAlpha:(UIColor *)color alpha:(CGFloat)alpha {
+  CGFloat r = 0, g = 0, b = 0, a = 0;
+  [color getRed:&r green:&g blue:&b alpha:&a];
+  return [UIColor colorWithRed:r green:g blue:b alpha:alpha];
+}
+
+- (NSAttributedString *)styledStackText:(NSString *)stack {
+  NSString *base = stack.length > 0 ? stack : @"No stack trace available.";
+  NSArray<NSString *> *lines = [base componentsSeparatedByString:@"\n"];
+  NSMutableArray<NSString *> *displayLines = [NSMutableArray arrayWithCapacity:lines.count];
+  for (NSUInteger i = 0; i < lines.count; i++) {
+    NSString *line = lines[i];
+    if (i == 0) {
+      [displayLines addObject:line];
+    } else {
+      [displayLines addObject:[@"  " stringByAppendingString:line]];
+    }
+  }
+  NSString *value = [displayLines componentsJoinedByString:@"\n"];
+  UIColor *body = [self colorToken:@"body" fallback:@"#A1A1AA"];
+  UIColor *title = [self colorToken:@"title" fallback:@"#FAFAFA"];
+  UIFont *font = [UIFont monospacedSystemFontOfSize:11 weight:UIFontWeightRegular];
+  NSMutableAttributedString *attributed = [[NSMutableAttributedString alloc] initWithString:value
+                                                                                  attributes:@{
+    NSForegroundColorAttributeName: body,
+    NSFontAttributeName: font,
+  }];
+  NSRange firstBreak = [value rangeOfString:@"\n"];
+  NSUInteger firstLength = firstBreak.location == NSNotFound ? value.length : firstBreak.location;
+  if (firstLength > 0) {
+    [attributed addAttribute:NSForegroundColorAttributeName value:title range:NSMakeRange(0, firstLength)];
+  }
+  return attributed;
+}
+
+- (void)requestSymbolicationForStack:(NSString *)stack
+                                label:(UILabel *)stackBody
+                           stackView:(UIView *)stackView
+                              overlay:(UIView *)overlay {
+  Class symbolicator = NSClassFromString(@"ZynthStackSymbolicator");
+  SEL selector = NSSelectorFromString(@"symbolicate:completion:");
+  if (!symbolicator || ![symbolicator respondsToSelector:selector]) {
+    NSLog(@"[ZynthSymbolicator] iOS symbolicator class unavailable");
+    return;
+  }
+  NSLog(@"[ZynthSymbolicator] iOS symbolication requested");
+  __weak typeof(self) weakSelf = self;
+  __weak UILabel *weakStackBody = stackBody;
+  void (*invoke)(id, SEL, NSString *, id) = (void (*)(id, SEL, NSString *, id))objc_msgSend;
+  invoke(symbolicator, selector, stack, ^(NSString *symbolicated) {
+    __strong typeof(self) strongSelf = weakSelf;
+    UILabel *strongStackBody = weakStackBody;
+    if (!strongSelf || !strongStackBody || strongSelf.fatalOverlay != overlay || !stackView) return;
+    NSAttributedString *styled = [strongSelf styledStackText:symbolicated ?: @""];
+    if ([strongStackBody.attributedText.string isEqualToString:styled.string]) return;
+    [UIView animateWithDuration:0.12
+                     animations:^{
+                       stackView.alpha = 0.0;
+                     }
+                     completion:^(BOOL finished) {
+                       if (!finished || strongSelf.fatalOverlay != overlay) return;
+                       strongStackBody.attributedText = styled;
+                       [UIView animateWithDuration:0.18
+                                        animations:^{
+                                          stackView.alpha = 1.0;
+                                        }];
+                     }];
+  });
 }
 
 - (CGFloat)layoutToken:(NSString *)name fallback:(CGFloat)fallback {

@@ -4,13 +4,16 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Handler
 import android.os.Looper
+import android.text.SpannableString
+import android.text.Spanned
 import android.text.TextUtils
+import android.text.style.ForegroundColorSpan
+import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.View.OnLayoutChangeListener
-import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -20,12 +23,20 @@ import java.lang.ref.WeakReference
 import org.json.JSONObject
 
 internal object ZynthNativeErrorOverlay {
+  private const val TAG = "ZynthNativeOverlay"
+  private const val RUNTIME_FONT_ASSET = "fonts/ZynthRuntime.ttf"
+  private const val GLYPH_ARROW_RIGHT = "\uea05"
+  private const val GLYPH_TERMINAL = "\uea07"
+  private const val GLYPH_CLOSE = "\uea0a"
+  private const val GLYPH_REFRESH = "\uea0e"
+
   private val mainHandler = Handler(Looper.getMainLooper())
   private var rootRef: WeakReference<ZynthRootView>? = null
   private var runtimeRef: WeakReference<ZynthRuntime>? = null
   private var fatalOverlayView: View? = null
   private var warningToastView: View? = null
   private var rootLayoutListener: OnLayoutChangeListener? = null
+  private var glyphTypeface: Typeface? = null
   private var warningCount: Int = 0
   private var warningMessage: String = ""
 
@@ -192,6 +203,26 @@ internal object ZynthNativeErrorOverlay {
     removeView(warningToastView)
     warningToastView = null
 
+    val kindIsWarning = entry.kind == "warning"
+    val accent = if (kindIsWarning) tokens.warning else tokens.error
+    val topInset = root.rootWindowInsets?.systemWindowInsetTop ?: statusBarHeight(root)
+    val bottomInset = root.rootWindowInsets?.systemWindowInsetBottom ?: 0
+    val badgeText = when (entry.kind) {
+      "crash" -> "Native Error"
+      "warning" -> "Warning"
+      else -> "Runtime Error"
+    }
+    val heroTitle = if (kindIsWarning) {
+      "Potential performance issue detected"
+    } else {
+      "An error has occurred."
+    }
+    val heroDescription = if (kindIsWarning) {
+      "This warning indicates a condition that may lead to unstable behavior."
+    } else {
+      "A JavaScript exception was detected, preventing further action."
+    }
+
     val container = FrameLayout(root.context).apply {
       setBackgroundColor(tokens.overlayBg)
       isClickable = true
@@ -203,96 +234,221 @@ internal object ZynthNativeErrorOverlay {
       elevation = 99_999f
     }
 
-    val panel = LinearLayout(root.context).apply {
+    val content = LinearLayout(root.context).apply {
       orientation = LinearLayout.VERTICAL
-      setPadding(dp(tokens.panelPadding), dp(tokens.panelPadding), dp(tokens.panelPadding), dp(tokens.panelPadding))
-      background = roundedBackground(tokens.panelBg, tokens.border, dp(tokens.panelRadius).toFloat())
+      setPadding(
+        dp(tokens.screenPadding),
+        topInset + dp(10),
+        dp(tokens.screenPadding),
+        dp(16),
+      )
       layoutParams = FrameLayout.LayoutParams(
         FrameLayout.LayoutParams.MATCH_PARENT,
-        FrameLayout.LayoutParams.WRAP_CONTENT,
-      ).apply {
-        gravity = Gravity.CENTER
-        marginStart = dp(tokens.screenPadding)
-        marginEnd = dp(tokens.screenPadding)
-      }
+        FrameLayout.LayoutParams.MATCH_PARENT,
+      )
     }
 
+    val badge = TextView(root.context).apply {
+      text = badgeText.uppercase()
+      setTextColor(accent)
+      setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+      setTypeface(typeface, Typeface.BOLD)
+      setPadding(dp(10), dp(6), dp(10), dp(6))
+      background = roundedBackground(withAlpha(accent, 0.14f), withAlpha(accent, 0.32f), dp(999).toFloat())
+      layoutParams = LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams.WRAP_CONTENT,
+        LinearLayout.LayoutParams.WRAP_CONTENT,
+      )
+    }
     val title = TextView(root.context).apply {
-      text = if (entry.kind == "crash") "Native Crash" else "Runtime Error"
+      text = heroTitle
       setTextColor(tokens.title)
       setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
       setTypeface(typeface, Typeface.BOLD)
+      setPadding(0, dp(12), 0, 0)
     }
     val subtitle = TextView(root.context).apply {
-      text = entry.message
-      setTextColor(if (entry.kind == "warning") tokens.warning else tokens.error)
+      text = heroDescription
+      setTextColor(tokens.body)
       setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
       setPadding(0, dp(8), 0, 0)
-      maxLines = 8
-      ellipsize = TextUtils.TruncateAt.END
-    }
-    val topicView = TextView(root.context).apply {
-      text = entry.topic
-      setTextColor(tokens.body)
-      setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-      setPadding(0, dp(6), 0, 0)
+      maxLines = 4
     }
 
-    panel.addView(title)
-    panel.addView(subtitle)
-    panel.addView(topicView)
-
-    val stack = entry.stack
-    if (!stack.isNullOrBlank()) {
-      val stackScroll = ScrollView(root.context).apply {
-        layoutParams = LinearLayout.LayoutParams(
-          LinearLayout.LayoutParams.MATCH_PARENT,
-          dp(220),
-        ).apply {
-          topMargin = dp(12)
-        }
-        setPadding(dp(10), dp(10), dp(10), dp(10))
-        background = roundedBackground(Color.parseColor("#18181B"), tokens.border, dp(12).toFloat())
-      }
-      val stackText = TextView(root.context).apply {
-        text = stack
-        setTextColor(tokens.body)
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-        typeface = Typeface.MONOSPACE
-      }
-      stackScroll.addView(stackText)
-      panel.addView(stackScroll)
-    }
-
-    val actions = LinearLayout(root.context).apply {
-      orientation = LinearLayout.HORIZONTAL
+    val card = LinearLayout(root.context).apply {
+      orientation = LinearLayout.VERTICAL
+      setPadding(dp(tokens.panelPadding), dp(tokens.panelPadding), dp(tokens.panelPadding), dp(tokens.panelPadding))
+      background = roundedBackground(tokens.panelBg, tokens.border, dp(22).toFloat())
       layoutParams = LinearLayout.LayoutParams(
         LinearLayout.LayoutParams.MATCH_PARENT,
         LinearLayout.LayoutParams.WRAP_CONTENT,
-      ).apply { topMargin = dp(12) }
+      ).apply { topMargin = dp(18) }
+    }
+    val cardTop = LinearLayout(root.context).apply {
+      orientation = LinearLayout.HORIZONTAL
       gravity = Gravity.CENTER_VERTICAL
     }
+    val iconWrap = FrameLayout(root.context).apply {
+      layoutParams = LinearLayout.LayoutParams(dp(40), dp(40))
+      background = roundedBackground(withAlpha(accent, 0.3f), Color.TRANSPARENT, dp(14).toFloat())
+    }
+    val terminalIcon = glyphView(root.context, GLYPH_TERMINAL, accent, 22f).apply {
+      layoutParams = FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams.WRAP_CONTENT,
+        FrameLayout.LayoutParams.WRAP_CONTENT,
+        Gravity.CENTER,
+      )
+    }
+    iconWrap.addView(terminalIcon)
+    val messageWrap = LinearLayout(root.context).apply {
+      orientation = LinearLayout.VERTICAL
+      layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+        marginStart = dp(12)
+      }
+    }
+    val messageTitle = TextView(root.context).apply {
+      text = "Message"
+      setTextColor(Color.parseColor("#71717A"))
+      setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+      setTypeface(typeface, Typeface.BOLD)
+    }
+    val messageValue = TextView(root.context).apply {
+      text = entry.message
+      setTextColor(accent)
+      setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+      typeface = Typeface.MONOSPACE
+      maxLines = 4
+      ellipsize = TextUtils.TruncateAt.END
+      setPadding(0, dp(4), 0, 0)
+    }
+    messageWrap.addView(messageTitle)
+    messageWrap.addView(messageValue)
+    cardTop.addView(iconWrap)
+    cardTop.addView(messageWrap)
+    card.addView(cardTop)
 
-    val dismissButton = actionButton(root.context, "Dismiss", tokens.neutralButton) {
+    val stackLabelRow = LinearLayout(root.context).apply {
+      orientation = LinearLayout.HORIZONTAL
+      gravity = Gravity.CENTER_VERTICAL
+      layoutParams = LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams.MATCH_PARENT,
+        LinearLayout.LayoutParams.WRAP_CONTENT,
+      ).apply { topMargin = dp(16) }
+    }
+    val stackArrow = glyphView(root.context, GLYPH_ARROW_RIGHT, Color.parseColor("#71717A"), 12f).apply {
+      setPadding(0, dp(2), 0, 0)
+    }
+    val stackLabel = TextView(root.context).apply {
+      text = "STACK TRACE"
+      setTextColor(Color.parseColor("#71717A"))
+      setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+      setTypeface(typeface, Typeface.BOLD)
+      letterSpacing = 0.06f
+      setPadding(dp(4), 0, 0, 0)
+    }
+    stackLabelRow.addView(stackArrow)
+    stackLabelRow.addView(stackLabel)
+
+    val stackScroll = ScrollView(root.context).apply {
+      layoutParams = LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams.MATCH_PARENT,
+        0,
+        1f,
+      ).apply { topMargin = dp(8) }
+      setPadding(dp(10), dp(10), dp(10), dp(10))
+      background = roundedBackground(withAlpha(tokens.overlayBg, 0.75f), tokens.border, dp(18).toFloat())
+      alpha = 1f
+      isFillViewport = true
+    }
+    val stackContent = FrameLayout(root.context).apply {
+      layoutParams = FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams.MATCH_PARENT,
+        FrameLayout.LayoutParams.WRAP_CONTENT,
+      )
+    }
+    var stackText = buildStackTextView(root.context, styledStackText(entry.stack ?: "No stack trace available."))
+    stackContent.addView(stackText)
+    stackScroll.addView(stackContent)
+
+    content.addView(badge)
+    content.addView(title)
+    content.addView(subtitle)
+    content.addView(card)
+    content.addView(stackLabelRow)
+    content.addView(stackScroll)
+
+    val footer = LinearLayout(root.context).apply {
+      orientation = LinearLayout.HORIZONTAL
+      gravity = Gravity.CENTER_VERTICAL
+      setPadding(
+        dp(tokens.screenPadding),
+        dp(12),
+        dp(tokens.screenPadding),
+        bottomInset + dp(12),
+      )
+      layoutParams = FrameLayout.LayoutParams(
+        LinearLayout.LayoutParams.MATCH_PARENT,
+        LinearLayout.LayoutParams.WRAP_CONTENT,
+        Gravity.BOTTOM,
+      )
+      background = roundedBackground(withAlpha(tokens.overlayBg, 0.98f), tokens.border, 0f)
+    }
+    val dismissButton = actionButton(root.context, GLYPH_CLOSE, "Dismiss", tokens.neutralButton) {
       removeView(container)
       fatalOverlayView = null
     }
-    val reloadButton = actionButton(root.context, "Reload", tokens.dangerButton) {
+    val reloadButton = actionButton(root.context, GLYPH_REFRESH, "Reload", tokens.dangerButton) {
       runtimeRef?.get()?.requestNativeOverlayReload()
       removeView(container)
       fatalOverlayView = null
     }
     val buttonLp = LinearLayout.LayoutParams(0, dp(tokens.buttonHeight), 1f)
     val buttonLpWithGap = LinearLayout.LayoutParams(0, dp(tokens.buttonHeight), 1f).apply { marginStart = dp(8) }
-    actions.addView(dismissButton, buttonLp)
-    actions.addView(reloadButton, buttonLpWithGap)
-    panel.addView(actions)
+    footer.addView(dismissButton, buttonLp)
+    footer.addView(reloadButton, buttonLpWithGap)
 
-    container.addView(panel)
+    container.addView(content)
+    container.addView(footer)
     removeView(fatalOverlayView)
     root.addView(container)
     fatalOverlayView = container
     forceLayoutInRoot(root, container)
+    val initialStack = entry.stack
+    if (!initialStack.isNullOrBlank()) {
+      ZynthStackSymbolicator.symbolicateStackTrace(initialStack) { symbolicated ->
+        if (fatalOverlayView !== container || stackText.parent == null) return@symbolicateStackTrace
+        val styled = styledStackText(symbolicated)
+        if (stackText.text?.toString() == styled.toString()) return@symbolicateStackTrace
+        val previous = stackText
+        val replacement = buildStackTextView(root.context, styled).apply { alpha = 0f }
+        stackContent.addView(replacement)
+        Log.d(
+          TAG,
+          "symbolicated replacing stack: oldChars=${previous.text.length} newChars=${replacement.text.length}"
+        )
+        previous.animate().cancel()
+        replacement.animate().cancel()
+        previous.animate().alpha(0f).setDuration(120L).start()
+        replacement.animate()
+          .alpha(1f)
+          .setDuration(180L)
+          .withEndAction {
+            if (fatalOverlayView !== container) return@withEndAction
+            stackContent.removeView(previous)
+            stackText = replacement
+            stackContent.requestLayout()
+            stackScroll.requestLayout()
+            stackScroll.invalidate()
+            stackContent.post {
+              Log.d(
+                TAG,
+                "stack layout after swap: lines=${stackText.lineCount} height=${stackText.height} scrollChild=${stackContent.height}"
+              )
+            }
+          }
+          .start()
+      }
+    }
   }
 
   private fun showWarningToast(entry: OverlayEntry) {
@@ -323,7 +479,8 @@ internal object ZynthNativeErrorOverlay {
           gravity = Gravity.BOTTOM
           marginStart = dp(tokens.screenPadding)
           marginEnd = dp(tokens.screenPadding)
-          bottomMargin = dp(24)
+          val insetBottom = root.rootWindowInsets?.systemWindowInsetBottom ?: 0
+          bottomMargin = insetBottom + dp(12)
         }
         elevation = 99_998f
       }
@@ -333,19 +490,15 @@ internal object ZynthNativeErrorOverlay {
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
         setTypeface(typeface, Typeface.BOLD)
       }
-      val close = Button(root.context).apply {
-        text = "Close"
-        setTextColor(tokens.buttonText)
-        setBackgroundColor(tokens.neutralButton)
-        setOnClickListener {
-          removeView(warningToastView)
-          warningToastView = null
-          warningCount = 0
-          warningMessage = ""
-        }
+      val close = actionButton(root.context, GLYPH_CLOSE, "Close", tokens.neutralButton) {
+        removeView(warningToastView)
+        warningToastView = null
+        warningCount = 0
+        warningMessage = ""
       }
+      close.layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(40))
       container.addView(label, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-      container.addView(close, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(40)))
+      container.addView(close)
       host.addView(container)
       root.addView(host)
       warningToastView = host
@@ -361,14 +514,115 @@ internal object ZynthNativeErrorOverlay {
     }
   }
 
-  private fun actionButton(context: android.content.Context, label: String, bgColor: Int, onPress: () -> Unit): Button {
-    return Button(context).apply {
-      text = label
-      setTextColor(tokens.buttonText)
-      setBackgroundColor(bgColor)
+  private fun actionButton(
+    context: android.content.Context,
+    glyph: String,
+    label: String,
+    bgColor: Int,
+    onPress: () -> Unit,
+  ): LinearLayout {
+    return LinearLayout(context).apply {
+      orientation = LinearLayout.HORIZONTAL
+      gravity = Gravity.CENTER
+      setPadding(dp(12), 0, dp(12), 0)
+      background = roundedBackground(bgColor, Color.TRANSPARENT, dp(16).toFloat())
+      isClickable = true
+      isFocusable = true
       setOnClickListener { onPress() }
-      setAllCaps(false)
+      addView(glyphView(context, glyph, tokens.buttonText, 18f))
+      addView(TextView(context).apply {
+        text = label
+        setTextColor(tokens.buttonText)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+        setTypeface(typeface, Typeface.BOLD)
+        setPadding(dp(6), 0, 0, 0)
+      })
     }
+  }
+
+  private fun glyphView(
+    context: android.content.Context,
+    glyph: String,
+    color: Int,
+    sizeSp: Float,
+  ): TextView {
+    return TextView(context).apply {
+      text = glyph
+      setTextColor(color)
+      setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp)
+      typeface = iconTypeface(context)
+      includeFontPadding = false
+    }
+  }
+
+  private fun iconTypeface(context: android.content.Context): Typeface {
+    val cached = glyphTypeface
+    if (cached != null) return cached
+    val loaded = runCatching {
+      Typeface.createFromAsset(context.assets, RUNTIME_FONT_ASSET)
+    }.getOrNull() ?: Typeface.DEFAULT
+    glyphTypeface = loaded
+    return loaded
+  }
+
+  private fun withAlpha(color: Int, alpha: Float): Int {
+    val a = (alpha.coerceIn(0f, 1f) * 255f).toInt()
+    return (color and 0x00FFFFFF) or (a shl 24)
+  }
+
+  private fun styledStackText(stack: String): SpannableString {
+    val display = prepareDisplayStack(stack)
+    val spannable = SpannableString(display)
+    val firstLineEnd = display.indexOf('\n').let { if (it == -1) display.length else it }
+    if (firstLineEnd > 0) {
+      spannable.setSpan(
+        ForegroundColorSpan(tokens.title),
+        0,
+        firstLineEnd,
+        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+      )
+    }
+    return spannable
+  }
+
+  private fun buildStackTextView(
+    context: android.content.Context,
+    text: SpannableString,
+  ): TextView {
+    return TextView(context).apply {
+      setTextColor(tokens.body)
+      setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+      typeface = Typeface.MONOSPACE
+      setLineSpacing(0f, 1.2f)
+      setHorizontallyScrolling(false)
+      isVerticalScrollBarEnabled = false
+      layoutParams = FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams.MATCH_PARENT,
+        FrameLayout.LayoutParams.WRAP_CONTENT,
+      )
+      this.text = text
+    }
+  }
+
+  private fun prepareDisplayStack(stack: String): String {
+    val text = stack.ifBlank { "No stack trace available." }
+    val lines = text.split('\n')
+    if (lines.isEmpty()) return text
+    val output = ArrayList<String>(lines.size)
+    for ((index, line) in lines.withIndex()) {
+      if (index == 0) {
+        output += line
+      } else {
+        output += "  $line"
+      }
+    }
+    return output.joinToString("\n")
+  }
+
+  private fun statusBarHeight(view: View): Int {
+    val id = view.resources.getIdentifier("status_bar_height", "dimen", "android")
+    if (id <= 0) return 0
+    return view.resources.getDimensionPixelSize(id)
   }
 
   private fun roundedBackground(bgColor: Int, borderColor: Int, radius: Float): android.graphics.drawable.GradientDrawable {
