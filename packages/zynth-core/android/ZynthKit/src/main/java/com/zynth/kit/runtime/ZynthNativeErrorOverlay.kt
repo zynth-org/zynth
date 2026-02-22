@@ -427,37 +427,59 @@ internal object ZynthNativeErrorOverlay {
     val initialStack = entry.stack
     if (!initialStack.isNullOrBlank()) {
       ZynthStackSymbolicator.symbolicateStackTrace(initialStack) { symbolicated ->
-        if (fatalOverlayView !== container || stackText.parent == null) return@symbolicateStackTrace
         val styled = styledStackText(symbolicated)
-        if (stackText.text?.toString() == styled.toString()) return@symbolicateStackTrace
-        val previous = stackText
-        val replacement = buildStackTextView(root.context, styled).apply { alpha = 0f }
-        stackContent.addView(replacement)
-        Log.d(
-          TAG,
-          "symbolicated replacing stack: oldChars=${previous.text.length} newChars=${replacement.text.length}"
-        )
-        previous.animate().cancel()
-        replacement.animate().cancel()
-        previous.animate().alpha(0f).setDuration(120L).start()
-        replacement.animate()
-          .alpha(1f)
-          .setDuration(180L)
-          .withEndAction {
-            if (fatalOverlayView !== container) return@withEndAction
-            stackContent.removeView(previous)
-            stackText = replacement
-            stackContent.requestLayout()
-            stackScroll.requestLayout()
-            stackScroll.invalidate()
-            stackContent.post {
-              Log.d(
-                TAG,
-                "stack layout after swap: lines=${stackText.lineCount} height=${stackText.height} scrollChild=${stackContent.height}"
-              )
-            }
+        val swapAction = swap@{
+          if (fatalOverlayView !== container || stackText.parent == null) {
+            return@swap
           }
-          .start()
+          if (stackText.text?.toString() == styled.toString()) {
+            return@swap
+          }
+          val previous = stackText
+          val replacement = buildStackTextView(root.context, styled)
+          Log.d(
+            TAG,
+            "symbolicated replacing stack: oldChars=${previous.text.length} newChars=${replacement.text.length} width=${stackContent.width}"
+          )
+          stackContent.animate().cancel()
+          stackContent.animate()
+            .alpha(0f)
+            .setDuration(120L)
+            .withEndAction {
+              if (fatalOverlayView !== container) return@withEndAction
+              stackContent.removeAllViews()
+              stackContent.addView(replacement)
+              stackText = replacement
+
+              val contentWidth = (stackContent.width - stackContent.paddingLeft - stackContent.paddingRight).coerceAtLeast(1)
+              val widthSpec = View.MeasureSpec.makeMeasureSpec(contentWidth, View.MeasureSpec.EXACTLY)
+              val heightSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+              stackText.measure(widthSpec, heightSpec)
+              stackText.layout(0, 0, contentWidth, stackText.measuredHeight)
+
+              stackContent.requestLayout()
+              stackScroll.requestLayout()
+              stackScroll.invalidate()
+              stackContent.post {
+                Log.d(
+                  TAG,
+                  "stack layout after swap: lines=${stackText.lineCount} height=${stackText.height} measured=${stackText.measuredHeight} scrollChild=${stackContent.height} width=${stackContent.width}"
+                )
+              }
+              stackContent.animate()
+                .alpha(1f)
+                .setDuration(180L)
+                .start()
+            }
+            .start()
+        }
+
+        // Cached symbolication can resolve before first layout pass.
+        if (stackContent.width <= 0 || stackScroll.width <= 0) {
+          stackContent.post { swapAction.invoke() }
+        } else {
+          swapAction.invoke()
+        }
       }
     }
   }
