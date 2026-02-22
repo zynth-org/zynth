@@ -27,6 +27,7 @@ internal object ZynthNativeErrorOverlay {
   private const val RUNTIME_FONT_ASSET = "fonts/ZynthRuntime.ttf"
   private const val GLYPH_ARROW_RIGHT = "\uea05"
   private const val GLYPH_TERMINAL = "\uea07"
+  private const val GLYPH_ALERT = "\uea09"
   private const val GLYPH_CLOSE = "\uea0a"
   private const val GLYPH_REFRESH = "\uea0e"
 
@@ -39,6 +40,7 @@ internal object ZynthNativeErrorOverlay {
   private var glyphTypeface: Typeface? = null
   private var warningCount: Int = 0
   private var warningMessage: String = ""
+  private var warningEntry: OverlayEntry? = null
 
   private const val TOKENS_JSON = """
     {
@@ -139,6 +141,7 @@ internal object ZynthNativeErrorOverlay {
       removeView(warningToastView)
       fatalOverlayView = null
       warningToastView = null
+      warningEntry = null
     }
   }
 
@@ -150,6 +153,7 @@ internal object ZynthNativeErrorOverlay {
       warningToastView = null
       warningCount = 0
       warningMessage = ""
+      warningEntry = null
     }
   }
 
@@ -413,6 +417,9 @@ internal object ZynthNativeErrorOverlay {
       removeView(container)
       fatalOverlayView = null
     }
+    if (kindIsWarning) {
+      reloadButton.background = roundedBackground(tokens.warningButton, Color.TRANSPARENT, dp(16).toFloat())
+    }
     val buttonLp = LinearLayout.LayoutParams(0, dp(tokens.buttonHeight), 1f)
     val buttonLpWithGap = LinearLayout.LayoutParams(0, dp(tokens.buttonHeight), 1f).apply { marginStart = dp(8) }
     footer.addView(dismissButton, buttonLp)
@@ -489,6 +496,7 @@ internal object ZynthNativeErrorOverlay {
     val root = rootView() ?: return
     warningCount += 1
     warningMessage = entry.message
+    warningEntry = entry
 
     val toast = warningToastView ?: run {
       val host = FrameLayout(root.context).apply {
@@ -503,8 +511,10 @@ internal object ZynthNativeErrorOverlay {
       val container = LinearLayout(root.context).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        setPadding(dp(12), dp(10), dp(12), dp(10))
-        background = roundedBackground(tokens.warningToastBg, tokens.warningToastBorder, dp(20).toFloat())
+        setPadding(dp(0), dp(0), dp(16), dp(0))
+        background = roundedBackground(tokens.warningToastBg, tokens.warningToastBorder, dp(48).toFloat()).apply {
+          setStroke(dp(2), tokens.warningToastBorder)
+        }
         layoutParams = FrameLayout.LayoutParams(
           FrameLayout.LayoutParams.MATCH_PARENT,
           FrameLayout.LayoutParams.WRAP_CONTENT,
@@ -517,20 +527,89 @@ internal object ZynthNativeErrorOverlay {
         }
         elevation = 99_998f
       }
-      val label = TextView(root.context).apply {
+      val expand = LinearLayout(root.context).apply {
         id = View.generateViewId()
-        setTextColor(tokens.warning)
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(dp(16), dp(16), dp(16), dp(16))
+        isClickable = true
+        isFocusable = true
+        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        setOnClickListener {
+          val current = warningEntry
+          if (current != null) {
+            showFatalOverlay(current.copy(kind = "warning"))
+          } else {
+            showFatalOverlay(
+              OverlayEntry(
+                topic = "warning/runtime",
+                kind = "warning",
+                message = warningMessage,
+                stack = null,
+              )
+            )
+          }
+        }
+      }
+      val alertDot = FrameLayout(root.context).apply {
+        layoutParams = LinearLayout.LayoutParams(dp(32), dp(32))
+        background = roundedBackground(Color.parseColor("#EAB308"), Color.TRANSPARENT, dp(999).toFloat())
+      }
+      alertDot.addView(glyphView(root.context, GLYPH_ALERT, Color.parseColor("#09090B"), 16f).apply {
+        layoutParams = FrameLayout.LayoutParams(
+          FrameLayout.LayoutParams.WRAP_CONTENT,
+          FrameLayout.LayoutParams.WRAP_CONTENT,
+          Gravity.CENTER,
+        )
+      })
+      val textWrap = LinearLayout(root.context).apply {
+        orientation = LinearLayout.VERTICAL
+        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+          marginStart = dp(16)
+        }
+      }
+      val title = TextView(root.context).apply {
+        id = View.generateViewId()
+        setTextColor(Color.parseColor("#FEF08A"))
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
         setTypeface(typeface, Typeface.BOLD)
       }
-      val close = actionButton(root.context, GLYPH_CLOSE, "Close", tokens.neutralButton) {
-        removeView(warningToastView)
-        warningToastView = null
-        warningCount = 0
-        warningMessage = ""
+      val subtitle = TextView(root.context).apply {
+        id = View.generateViewId()
+        setTextColor(withAlpha(tokens.warning, 0.8f))
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+        maxLines = 1
+        ellipsize = TextUtils.TruncateAt.END
       }
-      close.layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(40))
-      container.addView(label, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+      textWrap.addView(title)
+      textWrap.addView(subtitle)
+      expand.addView(alertDot)
+      expand.addView(textWrap)
+
+      val close = FrameLayout(root.context).apply {
+        isClickable = true
+        isFocusable = true
+        setOnClickListener {
+          removeView(warningToastView)
+          warningToastView = null
+          warningCount = 0
+          warningMessage = ""
+          warningEntry = null
+        }
+        background = roundedBackground(withAlpha(Color.WHITE, 0.12f), Color.TRANSPARENT, dp(999).toFloat())
+        layoutParams = LinearLayout.LayoutParams(dp(35), dp(35)).apply {
+          marginStart = dp(8)
+        }
+      }
+      close.addView(glyphView(root.context, GLYPH_CLOSE, tokens.warning, 24f).apply {
+        layoutParams = FrameLayout.LayoutParams(
+          FrameLayout.LayoutParams.WRAP_CONTENT,
+          FrameLayout.LayoutParams.WRAP_CONTENT,
+          Gravity.CENTER,
+        )
+      })
+
+      container.addView(expand)
       container.addView(close)
       host.addView(container)
       root.addView(host)
@@ -539,12 +618,16 @@ internal object ZynthNativeErrorOverlay {
       host
     }
     val toastContainer = (toast as ViewGroup).getChildAt(0) as? ViewGroup
-    val label = toastContainer?.getChildAt(0) as? TextView
-    label?.text = if (warningCount > 1) {
-      "Warning ($warningCount): $warningMessage"
+    val expand = toastContainer?.getChildAt(0) as? ViewGroup
+    val textWrap = expand?.getChildAt(1) as? ViewGroup
+    val title = textWrap?.getChildAt(0) as? TextView
+    val subtitle = textWrap?.getChildAt(1) as? TextView
+    title?.text = if (warningCount > 1) {
+      "Performance Warning ($warningCount)"
     } else {
-      "Warning: $warningMessage"
+      "Performance Warning"
     }
+    subtitle?.text = warningMessage
   }
 
   private fun actionButton(

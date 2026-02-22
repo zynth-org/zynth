@@ -15,17 +15,29 @@
 @property(nonatomic, strong) NSDictionary *tokens;
 @property(nonatomic, assign) NSInteger warningCount;
 @property(nonatomic, copy) NSString *warningMessage;
+@property(nonatomic, copy) NSString *warningTopic;
+@property(nonatomic, copy) NSString *warningStack;
 - (NSAttributedString *)styledStackText:(NSString *)stack;
 - (void)requestSymbolicationForStack:(NSString *)stack
                                 label:(UILabel *)stackBody
                            stackView:(UIView *)stackView
                               overlay:(UIView *)overlay;
+- (void)showWarningToastWithTopic:(NSString *)topic
+                           message:(NSString *)message
+                             stack:(NSString *_Nullable)stack;
 @end
 
 static NSString *const ZynthGlyphArrowRight = @"\uea05";
 static NSString *const ZynthGlyphTerminal = @"\uea07";
+static NSString *const ZynthGlyphAlert = @"\uea09";
 static NSString *const ZynthGlyphClose = @"\uea0a";
 static NSString *const ZynthGlyphRefresh = @"\uea0e";
+static NSInteger const ZynthWarningTitleTag = 91001;
+static NSInteger const ZynthWarningSubtitleTag = 91002;
+static NSInteger const ZynthWarningIconWrapTag = 91003;
+static NSInteger const ZynthWarningCloseButtonTag = 91004;
+static NSInteger const ZynthWarningAlertIconTag = 91005;
+static NSInteger const ZynthWarningCloseIconTag = 91006;
 
 @implementation ZynthNativeErrorOverlayManager
 
@@ -42,6 +54,8 @@ static NSString *const ZynthGlyphRefresh = @"\uea0e";
   self = [super init];
   if (self) {
     _warningMessage = @"";
+    _warningTopic = @"warning/runtime";
+    _warningStack = @"";
     NSString *json = @"{\"layout\":{\"screenPadding\":20,\"panelRadius\":18,\"panelPadding\":16,\"buttonHeight\":48},\"colors\":{\"overlayBg\":\"#18181B\",\"panelBg\":\"#0F0F12\",\"border\":\"#27272A\",\"title\":\"#FAFAFA\",\"body\":\"#A1A1AA\",\"error\":\"#F87171\",\"warning\":\"#FACC15\",\"neutralButton\":\"#27272A\",\"dangerButton\":\"#DC2626\",\"warningToastBg\":\"#242014\",\"warningToastBorder\":\"#695511\",\"buttonText\":\"#E4E4E7\"}}";
     NSData *data = [json dataUsingEncoding:NSUTF8StringEncoding];
     if (data) {
@@ -70,6 +84,8 @@ static NSString *const ZynthGlyphRefresh = @"\uea0e";
     self.warningToast = nil;
     self.warningCount = 0;
     self.warningMessage = @"";
+    self.warningTopic = @"warning/runtime";
+    self.warningStack = @"";
   });
   self.runtime = nil;
   self.rootView = nil;
@@ -83,6 +99,8 @@ static NSString *const ZynthGlyphRefresh = @"\uea0e";
     self.warningToast = nil;
     self.warningCount = 0;
     self.warningMessage = @"";
+    self.warningTopic = @"warning/runtime";
+    self.warningStack = @"";
   });
 }
 
@@ -111,8 +129,9 @@ static NSString *const ZynthGlyphRefresh = @"\uea0e";
 
   if ([topic isEqualToString:@"log/console"] && [level isEqualToString:@"warn"]) {
     NSString *message = [self readMessage:data];
+    NSString *stack = [self readStack:data];
     dispatch_async(dispatch_get_main_queue(), ^{
-      [self showWarningToast:message];
+      [self showWarningToastWithTopic:topic message:message stack:stack];
     });
     return;
   }
@@ -184,9 +203,11 @@ static NSString *const ZynthGlyphRefresh = @"\uea0e";
   BOOL isWarning = [topic hasPrefix:@"warning/"];
   UIColor *accentColor = isWarning ? [self colorToken:@"warning" fallback:@"#FACC15"]
                                    : [self colorToken:@"error" fallback:@"#F87171"];
-  NSString *badgeText = [topic hasPrefix:@"crash/"] ? @"NATIVE ERROR" : @"RUNTIME ERROR";
-  NSString *heroTitle = @"An error has occurred.";
-  NSString *heroDescription = @"A JavaScript exception was detected, preventing further action.";
+  NSString *badgeText = isWarning ? @"WARNING" : ([topic hasPrefix:@"crash/"] ? @"NATIVE ERROR" : @"RUNTIME ERROR");
+  NSString *heroTitle = isWarning ? @"Potential performance issue detected" : @"An error has occurred.";
+  NSString *heroDescription = isWarning
+    ? @"This warning indicates a condition that may lead to unstable behavior."
+    : @"A JavaScript exception was detected, preventing further action.";
 
   UIView *overlay = [[UIView alloc] initWithFrame:root.bounds];
   overlay.backgroundColor = [self colorToken:@"overlayBg" fallback:@"#18181B"];
@@ -212,7 +233,7 @@ static NSString *const ZynthGlyphRefresh = @"\uea0e";
   badge.font = [UIFont systemFontOfSize:11 weight:UIFontWeightHeavy];
   badge.textAlignment = NSTextAlignmentCenter;
   badge.backgroundColor = [self colorWithAlpha:accentColor alpha:0.14];
-  badge.layer.cornerRadius = 12.0;
+  badge.layer.cornerRadius = 999.0;
   badge.layer.masksToBounds = YES;
   badge.layer.borderWidth = 1.0;
   badge.layer.borderColor = [self colorWithAlpha:accentColor alpha:0.32].CGColor;
@@ -305,7 +326,9 @@ static NSString *const ZynthGlyphRefresh = @"\uea0e";
                                                  action:@selector(onDismissPressed)];
   UIButton *reloadButton = [self actionButtonWithGlyph:ZynthGlyphRefresh
                                                  title:@"Reload"
-                                                 color:[self colorToken:@"dangerButton" fallback:@"#DC2626"]
+                                                 color:(isWarning
+                                                        ? [self colorToken:@"warningButton" fallback:@"#CA8A04"]
+                                                        : [self colorToken:@"dangerButton" fallback:@"#DC2626"])
                                                 action:@selector(onReloadPressed)];
   dismissButton.translatesAutoresizingMaskIntoConstraints = NO;
   reloadButton.translatesAutoresizingMaskIntoConstraints = NO;
@@ -327,7 +350,7 @@ static NSString *const ZynthGlyphRefresh = @"\uea0e";
 
     [badge.topAnchor constraintEqualToAnchor:content.topAnchor],
     [badge.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
-    [badge.heightAnchor constraintEqualToConstant:24.0],
+    [badge.heightAnchor constraintEqualToConstant:30.0],
     [badge.widthAnchor constraintGreaterThanOrEqualToConstant:120.0],
     [badge.trailingAnchor constraintLessThanOrEqualToAnchor:content.trailingAnchor],
 
@@ -399,44 +422,120 @@ static NSString *const ZynthGlyphRefresh = @"\uea0e";
   }
 }
 
-- (void)showWarningToast:(NSString *)message {
+- (void)showWarningToastWithTopic:(NSString *)topic
+                           message:(NSString *)message
+                             stack:(NSString *_Nullable)stack {
   UIView *root = self.rootView;
   if (!root || self.fatalOverlay != nil) return;
+  (void)topic;
+  self.warningTopic = @"warning/console";
   self.warningCount += 1;
   self.warningMessage = message ?: @"";
+  self.warningStack = stack.length > 0 ? stack : @"";
 
-  UILabel *label = nil;
+  UILabel *titleLabel = nil;
+  UILabel *subtitleLabel = nil;
   if (!self.warningToast) {
     UIView *toast = [[UIView alloc] init];
     toast.backgroundColor = [self colorToken:@"warningToastBg" fallback:@"#242014"];
-    toast.layer.cornerRadius = 24.0;
-    toast.layer.borderWidth = 1.0;
+    toast.layer.cornerRadius = 35.0; // Perfect pill for 70 height
+    toast.layer.borderWidth = 2.0;
     toast.layer.borderColor = [self colorToken:@"warningToastBorder" fallback:@"#695511"].CGColor;
     toast.translatesAutoresizingMaskIntoConstraints = NO;
+    toast.clipsToBounds = YES; // Use clipsToBounds for the main container
 
-    UILabel *text = [[UILabel alloc] init];
-    text.textColor = [self colorToken:@"warning" fallback:@"#FACC15"];
-    text.font = [UIFont systemFontOfSize:12 weight:UIFontWeightBold];
-    text.numberOfLines = 2;
-    text.translatesAutoresizingMaskIntoConstraints = NO;
-    [toast addSubview:text];
-    label = text;
+    // Use a horizontal UIStackView for reliable layout
+    UIStackView *mainStack = [[UIStackView alloc] init];
+    mainStack.translatesAutoresizingMaskIntoConstraints = NO;
+    mainStack.axis = UILayoutConstraintAxisHorizontal;
+    mainStack.alignment = UIStackViewAlignmentCenter;
+    mainStack.spacing = 16.0;
+    [toast addSubview:mainStack];
 
-    UIButton *close = [self button:@"Close"
-                             color:[self colorToken:@"neutralButton" fallback:@"#27272A"]
-                            action:@selector(onCloseWarningPressed)];
+    // Wrap the expand control around the icon and text
+    UIControl *expand = [[UIControl alloc] init];
+    expand.translatesAutoresizingMaskIntoConstraints = NO;
+    [expand addTarget:self action:@selector(onWarningExpandPressed) forControlEvents:UIControlEventTouchUpInside];
+    [toast addSubview:expand];
+
+    // Left Icon Wrap
+    UIView *iconWrap = [[UIView alloc] init];
+    iconWrap.translatesAutoresizingMaskIntoConstraints = NO;
+    iconWrap.tag = ZynthWarningIconWrapTag;
+    iconWrap.backgroundColor = [self color:@"#EAB308"];
+    iconWrap.layer.cornerRadius = 16.0; // 32/2
+    iconWrap.layer.masksToBounds = YES;
+    iconWrap.layer.borderWidth = 1.0;
+    iconWrap.layer.borderColor = [self colorWithAlpha:[self color:@"#EAB308"] alpha:0.9].CGColor;
+    [mainStack addArrangedSubview:iconWrap];
+
+    UILabel *alertIcon = [self glyphLabel:ZynthGlyphAlert color:[self color:@"#09090B"] size:16.0];
+    alertIcon.translatesAutoresizingMaskIntoConstraints = NO;
+    alertIcon.tag = ZynthWarningAlertIconTag;
+    [iconWrap addSubview:alertIcon];
+
+    // Text Stack
+    UIStackView *textStack = [[UIStackView alloc] init];
+    textStack.axis = UILayoutConstraintAxisVertical;
+    textStack.spacing = 2.0;
+    textStack.translatesAutoresizingMaskIntoConstraints = NO;
+    [mainStack addArrangedSubview:textStack];
+
+    UILabel *title = [[UILabel alloc] init];
+    title.textColor = [self color:@"#FEF08A"];
+    title.font = [UIFont systemFontOfSize:12 weight:UIFontWeightBold];
+    title.tag = ZynthWarningTitleTag;
+    [textStack addArrangedSubview:title];
+    titleLabel = title;
+
+    UILabel *subtitle = [[UILabel alloc] init];
+    subtitle.textColor = [self colorWithAlpha:[self colorToken:@"warning" fallback:@"#FACC15"] alpha:0.8];
+    subtitle.font = [UIFont systemFontOfSize:10 weight:UIFontWeightRegular];
+    subtitle.numberOfLines = 1;
+    subtitle.lineBreakMode = NSLineBreakByTruncatingTail;
+    subtitle.tag = ZynthWarningSubtitleTag;
+    [textStack addArrangedSubview:subtitle];
+    subtitleLabel = subtitle;
+
+    // Right Close Button
+    UIButton *close = [UIButton buttonWithType:UIButtonTypeCustom];
     close.translatesAutoresizingMaskIntoConstraints = NO;
-    [toast addSubview:close];
+    close.tag = ZynthWarningCloseButtonTag;
+    close.backgroundColor = [self color:@"#54430A"];
+    close.layer.cornerRadius = 17.5; // 35/2
+    close.layer.masksToBounds = YES;
+    close.layer.borderWidth = 1.0;
+    close.layer.borderColor = [self color:@"#A16207"].CGColor;
+    [close addTarget:self action:@selector(onCloseWarningPressed) forControlEvents:UIControlEventTouchUpInside];
+    [mainStack addArrangedSubview:close];
+
+    UILabel *closeIcon = [self glyphLabel:ZynthGlyphClose color:[self colorToken:@"warning" fallback:@"#FACC15"] size:18.0];
+    closeIcon.translatesAutoresizingMaskIntoConstraints = NO;
+    closeIcon.tag = ZynthWarningCloseIconTag;
+    [close addSubview:closeIcon];
 
     [NSLayoutConstraint activateConstraints:@[
-      [text.leadingAnchor constraintEqualToAnchor:toast.leadingAnchor constant:12],
-      [text.centerYAnchor constraintEqualToAnchor:toast.centerYAnchor],
-      [close.leadingAnchor constraintEqualToAnchor:text.trailingAnchor constant:12],
-      [close.trailingAnchor constraintEqualToAnchor:toast.trailingAnchor constant:-12],
-      [close.centerYAnchor constraintEqualToAnchor:toast.centerYAnchor],
-      [close.heightAnchor constraintEqualToConstant:38],
-      [text.topAnchor constraintEqualToAnchor:toast.topAnchor constant:10],
-      [text.bottomAnchor constraintEqualToAnchor:toast.bottomAnchor constant:-10],
+      [mainStack.leadingAnchor constraintEqualToAnchor:toast.leadingAnchor constant:16.0],
+      [mainStack.trailingAnchor constraintEqualToAnchor:toast.trailingAnchor constant:-16.0],
+      [mainStack.topAnchor constraintEqualToAnchor:toast.topAnchor],
+      [mainStack.bottomAnchor constraintEqualToAnchor:toast.bottomAnchor],
+
+      [expand.leadingAnchor constraintEqualToAnchor:toast.leadingAnchor],
+      [expand.topAnchor constraintEqualToAnchor:toast.topAnchor],
+      [expand.bottomAnchor constraintEqualToAnchor:toast.bottomAnchor],
+      [expand.trailingAnchor constraintEqualToAnchor:close.leadingAnchor],
+
+      [iconWrap.widthAnchor constraintEqualToConstant:32.0],
+      [iconWrap.heightAnchor constraintEqualToConstant:32.0],
+      [alertIcon.centerXAnchor constraintEqualToAnchor:iconWrap.centerXAnchor],
+      [alertIcon.centerYAnchor constraintEqualToAnchor:iconWrap.centerYAnchor],
+
+      [close.widthAnchor constraintEqualToConstant:35.0],
+      [close.heightAnchor constraintEqualToConstant:35.0],
+      [closeIcon.centerXAnchor constraintEqualToAnchor:close.centerXAnchor],
+      [closeIcon.centerYAnchor constraintEqualToAnchor:close.centerYAnchor],
+
+      [toast.heightAnchor constraintEqualToConstant:70.0],
     ]];
 
     [root addSubview:toast];
@@ -448,20 +547,22 @@ static NSString *const ZynthGlyphRefresh = @"\uea0e";
     ]];
     self.warningToast = toast;
   } else {
-    for (UIView *subview in self.warningToast.subviews) {
-      if ([subview isKindOfClass:[UILabel class]]) {
-        label = (UILabel *)subview;
-        break;
-      }
-    }
+    titleLabel = (UILabel *)[self.warningToast viewWithTag:ZynthWarningTitleTag];
+    subtitleLabel = (UILabel *)[self.warningToast viewWithTag:ZynthWarningSubtitleTag];
   }
 
-  if (label) {
+  if (titleLabel) {
     if (self.warningCount > 1) {
-      label.text = [NSString stringWithFormat:@"Warning (%ld): %@", (long)self.warningCount, self.warningMessage];
+      titleLabel.text = [NSString stringWithFormat:@"Performance Warning (%ld)", (long)self.warningCount];
     } else {
-      label.text = [NSString stringWithFormat:@"Warning: %@", self.warningMessage];
+      titleLabel.text = @"Performance Warning";
     }
+  }
+  if (subtitleLabel) {
+    subtitleLabel.text = self.warningMessage;
+  }
+  if (self.warningToast) {
+    [self.warningToast layoutIfNeeded];
   }
 }
 
@@ -630,11 +731,20 @@ static NSString *const ZynthGlyphRefresh = @"\uea0e";
   [self onDismissPressed];
 }
 
+- (void)onWarningExpandPressed {
+  NSString *topic = self.warningTopic.length > 0 ? self.warningTopic : @"warning/runtime";
+  NSString *message = self.warningMessage.length > 0 ? self.warningMessage : @"Performance warning";
+  NSString *stack = self.warningStack.length > 0 ? self.warningStack : nil;
+  [self showFatalOverlayWithTitle:@"Warning" topic:topic message:message stack:stack];
+}
+
 - (void)onCloseWarningPressed {
   [self.warningToast removeFromSuperview];
   self.warningToast = nil;
   self.warningCount = 0;
   self.warningMessage = @"";
+  self.warningTopic = @"warning/runtime";
+  self.warningStack = @"";
 }
 
 @end
