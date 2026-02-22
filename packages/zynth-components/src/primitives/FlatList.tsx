@@ -92,7 +92,7 @@ type PoolSlot<T> = {
 const DEFAULT_ESTIMATED_ITEM_SIZE = 64;
 const DEFAULT_MIN_POOL_ITEMS = 15;
 const DEFAULT_OVERSCAN_MULTIPLE = 2;
-const DEFAULT_POOL_GROWTH_CHUNK = 12;
+const DEFAULT_POOL_GROWTH_CHUNK = 24;
 const MEASUREMENT_EPSILON = 0.5;
 const LAYOUT_TOTAL_EPSILON = 0.5;
 const OFFSET_EPSILON = 0.01;
@@ -416,6 +416,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
   });
 
   const measurementCache = new Map<string, number>();
+  const pendingMeasurementCache = new Map<string, number>();
   const sizeTree = new FenwickTree();
   let dataKeys: string[] = [];
   let layoutTotal = 0;
@@ -427,6 +428,67 @@ export function FlatList<T>(props: FlatListProps<T>) {
   let pendingBindingsFrame = false;
   let pendingBindingsOffset = 0;
   let pendingBindingsViewport = 0;
+
+  const commitMeasurement = (key: string, size: number) => {
+    const prev = measurementCache.get(key);
+    if (prev !== undefined && Math.abs(prev - size) < MEASUREMENT_EPSILON) {
+      return false;
+    }
+    if (prev !== undefined && size + MEASUREMENT_EPSILON < prev) {
+      // Avoid shrinking cached sizes from stale/recycled measurements.
+      return false;
+    }
+    const mappedIndex = dataKeyToIndex.get(key);
+    if (mappedIndex === undefined) return false;
+    measurementCache.set(key, size);
+    if (prev === undefined) {
+      measuredSum += size;
+      measuredCount += 1;
+    } else {
+      measuredSum += size - prev;
+    }
+    sizeTree.update(mappedIndex, size);
+    return true;
+  };
+
+  const finalizeMeasurementPass = () => {
+    layoutTotal = sizeTree.total();
+    setLayoutVersion((prevVersion) => prevVersion + 1);
+    scheduleBindingsUpdate(lastOffset, lastViewport, false);
+
+    if (
+      !adaptiveLocked &&
+      measuredCount >= ADAPTIVE_ESTIMATE_SAMPLES &&
+      dataKeys.length > 0
+    ) {
+      const avg = measuredSum / measuredCount;
+      const base = layoutEstimate();
+      if (Number.isFinite(avg) && avg > 0 && base > 0) {
+        const delta = Math.abs(avg - base) / base;
+        if (delta >= ADAPTIVE_ESTIMATE_THRESHOLD) {
+          adaptiveLocked = true;
+          setLayoutEstimate(avg);
+          rebuildLayout(dataKeys);
+          refreshBindings();
+          scheduleBindingsUpdate(lastOffset, lastViewport, false);
+        }
+      }
+    }
+  };
+
+  const flushPendingMeasurements = () => {
+    if (pendingMeasurementCache.size === 0) return;
+    let changed = false;
+    for (const [pendingKey, pendingSize] of pendingMeasurementCache) {
+      if (commitMeasurement(pendingKey, pendingSize)) {
+        changed = true;
+      }
+    }
+    pendingMeasurementCache.clear();
+    if (changed) {
+      finalizeMeasurementPass();
+    }
+  };
 
   const rebuildLayout = (nextKeys: string[]) => {
     const estimate = layoutEstimate();
@@ -935,45 +997,23 @@ export function FlatList<T>(props: FlatListProps<T>) {
   const recordMeasurement = (key: string, index: number, size: number) => {
     if (!key) return;
     if (!Number.isFinite(size) || size <= 0) return;
-    const prev = measurementCache.get(key);
-    if (prev !== undefined && Math.abs(prev - size) < MEASUREMENT_EPSILON) {
-      return;
-    }
-    if (prev !== undefined && size + MEASUREMENT_EPSILON < prev) {
-      // Avoid shrinking cached sizes from stale/recycled measurements.
-      return;
-    }
     const mappedIndex = dataKeyToIndex.get(key);
-    if (mappedIndex === undefined) return;
-    measurementCache.set(key, size);
-    if (prev === undefined) {
-      measuredSum += size;
-      measuredCount += 1;
-    } else {
-      measuredSum += size - prev;
-    }
-    sizeTree.update(mappedIndex, size);
-    layoutTotal = sizeTree.total();
-    setLayoutVersion((prevVersion) => prevVersion + 1);
-    scheduleBindingsUpdate(lastOffset, lastViewport, false);
+    if (mappedIndex === undefined || mappedIndex !== index) return;
 
-    if (
-      !adaptiveLocked &&
-      measuredCount >= ADAPTIVE_ESTIMATE_SAMPLES &&
-      dataKeys.length > 0
-    ) {
-      const avg = measuredSum / measuredCount;
-      const base = layoutEstimate();
-      if (Number.isFinite(avg) && avg > 0 && base > 0) {
-        const delta = Math.abs(avg - base) / base;
-        if (delta >= ADAPTIVE_ESTIMATE_THRESHOLD) {
-          adaptiveLocked = true;
-          setLayoutEstimate(avg);
-          rebuildLayout(dataKeys);
-          refreshBindings();
-          scheduleBindingsUpdate(lastOffset, lastViewport, false);
-        }
+    if (isScrolling) {
+      const queued = pendingMeasurementCache.get(key);
+      if (queued === undefined || size > queued) {
+        pendingMeasurementCache.set(key, size);
       }
+      return;
+    }
+
+    if (pendingMeasurementCache.size > 0) {
+      flushPendingMeasurements();
+    }
+
+    if (commitMeasurement(key, size)) {
+      finalizeMeasurementPass();
     }
   };
 
@@ -982,6 +1022,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
     const keys = props.data.map((item, index) =>
       props.keyExtractor(item, index),
     );
+    pendingMeasurementCache.clear();
     adaptiveLocked = false;
     rebuildLayout(keys);
     refreshBindings();
@@ -995,6 +1036,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
       if (scrollIdleTimer) clearTimeout(scrollIdleTimer);
       scrollIdleTimer = setTimeout(() => {
         isScrolling = false;
+        flushPendingMeasurements();
       }, 120);
       const offset = props.horizontal
         ? (event.contentOffset?.x ?? 0)
@@ -1039,6 +1081,11 @@ export function FlatList<T>(props: FlatListProps<T>) {
   });
 
   onCleanup(() => {
+    if (scrollIdleTimer) {
+      clearTimeout(scrollIdleTimer);
+      scrollIdleTimer = null;
+    }
+    pendingMeasurementCache.clear();
     poolSlotsRef = [];
   });
 
