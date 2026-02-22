@@ -75,6 +75,17 @@ static NSString *const ZynthGlyphRefresh = @"\uea0e";
   self.rootView = nil;
 }
 
+- (void)dismissForHmrUpdate {
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [self.fatalOverlay removeFromSuperview];
+    [self.warningToast removeFromSuperview];
+    self.fatalOverlay = nil;
+    self.warningToast = nil;
+    self.warningCount = 0;
+    self.warningMessage = @"";
+  });
+}
+
 - (void)handleRawEventJSON:(NSString *)json {
   if (json.length == 0) return;
   NSData *data = [json dataUsingEncoding:NSUTF8StringEncoding];

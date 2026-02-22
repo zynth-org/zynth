@@ -142,6 +142,17 @@ internal object ZynthNativeErrorOverlay {
     }
   }
 
+  fun dismissForHmrUpdate() {
+    mainHandler.post {
+      removeView(fatalOverlayView)
+      removeView(warningToastView)
+      fatalOverlayView = null
+      warningToastView = null
+      warningCount = 0
+      warningMessage = ""
+    }
+  }
+
   @JvmStatic
   fun handleRawEvent(eventJson: String?) {
     if (eventJson.isNullOrBlank()) return

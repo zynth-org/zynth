@@ -119,6 +119,9 @@ extension ZynthRuntime {
     }
 
     print("[ZynthRuntime] 📨 HMR message type:", type)
+    if type == "update" || type == "ok" || type == "still-ok" || type == "built" || type == "sync" {
+      dismissNativeErrorOverlayForHmr()
+    }
     switch type {
     case "update":
       applyHotUpdate()
@@ -208,6 +211,22 @@ extension ZynthRuntime {
     guard let trimmed = token?.trimmingCharacters(in: .whitespacesAndNewlines),
           !trimmed.isEmpty else { return nil }
     return trimmed
+  }
+
+  private func dismissNativeErrorOverlayForHmr() {
+    guard let managerClass = NSClassFromString("ZynthNativeErrorOverlayManager") as? NSObject.Type else {
+      return
+    }
+    let sharedSelector = NSSelectorFromString("shared")
+    let dismissSelector = NSSelectorFromString("dismissForHmrUpdate")
+    guard managerClass.responds(to: sharedSelector),
+          let unmanaged = managerClass.perform(sharedSelector) else {
+      return
+    }
+    let manager = unmanaged.takeUnretainedValue() as AnyObject
+    if manager.responds(to: dismissSelector) {
+      _ = manager.perform(dismissSelector)
+    }
   }
 
   func refreshDevBundle() {

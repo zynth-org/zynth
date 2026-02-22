@@ -99,6 +99,9 @@ internal fun ZynthRuntime.handleDevMessageInternal(payload: String) {
   }
 
   val type = json.optString("type", "")
+  if (type == "update" || type == "ok" || type == "still-ok" || type == "built" || type == "sync") {
+    ZynthNativeErrorOverlay.dismissForHmrUpdate()
+  }
   when (type) {
     "update" -> applyHotUpdate()
     "hash" -> {

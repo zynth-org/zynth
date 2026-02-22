@@ -14,6 +14,7 @@ NS_ASSUME_NONNULL_BEGIN
                          tag:(NSString *_Nullable)tag
                         data:(id _Nullable)data;
 - (void)handleRawEventJSON:(NSString *)json;
+- (void)dismissForHmrUpdate;
 
 @end
 
