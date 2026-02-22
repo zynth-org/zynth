@@ -62,6 +62,14 @@ export function getNativeConfig(
 ): RsbuildConfig {
   const { plugin: pluginOptions, babel } = options;
   const platform = options.platform || (process.env?.ZYNTH_PLATFORM as any) || "ios";
+  const isBuildCommand =
+    typeof process !== "undefined" &&
+    Array.isArray(process.argv) &&
+    process.argv.some((arg) => arg === "build");
+  const isProductionBuild =
+    process.env?.NODE_ENV === "production" ||
+    process.env?.BABEL_ENV === "production" ||
+    isBuildCommand;
   const userPlugins = (userConfig.plugins ?? []) as RsbuildPlugins;
 
   const sanitizedUserConfig: RsbuildConfig = { ...userConfig };
@@ -72,6 +80,9 @@ export function getNativeConfig(
   const merged = deepmerge(DEFAULT_NATIVE_CONFIG, sanitizedUserConfig, {
     arrayMerge: (_destinationArray, sourceArray) => sourceArray,
   }) as RsbuildConfig;
+
+  merged.output ??= {};
+  merged.output.minify = isProductionBuild;
 
   // Native specific defines
   merged.source ??= {};
