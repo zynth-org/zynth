@@ -33,8 +33,8 @@ public class ImagePickerModule: NSObject, ZynthModule {
         }
     }
     
-    private func getRequestId(_ args: ZynthArgs) throws -> String {
-        return try args.string("requestId", default: UUID().uuidString)
+    private func getRequestId(_ args: ZynthArgs) -> String {
+        return args.string("requestId", default: UUID().uuidString)
     }
     
     private func getCameraPermissionsAsync() throws -> [String: Any] {
@@ -62,7 +62,7 @@ public class ImagePickerModule: NSObject, ZynthModule {
     }
     
     private func requestCameraPermissionsAsync(args: ZynthArgs) throws -> Any? {
-        let requestId = try getRequestId(args)
+        let requestId = getRequestId(args)
         self.pendingRequestId = requestId
         
         AVCaptureDevice.requestAccess(for: .video) { granted in
@@ -78,7 +78,7 @@ public class ImagePickerModule: NSObject, ZynthModule {
     }
     
     private func launchCameraAsync(args: ZynthArgs) throws -> Any? {
-        let requestId = try getRequestId(args)
+        let requestId = getRequestId(args)
         
         if pendingRequestId != nil {
             throw NSError(domain: "ZynthImagePicker", code: 1, userInfo: [NSLocalizedDescriptionKey: "Another request is already pending"])
@@ -109,7 +109,7 @@ public class ImagePickerModule: NSObject, ZynthModule {
     }
     
     private func launchImageLibraryAsync(args: ZynthArgs) throws -> Any? {
-        let requestId = try getRequestId(args)
+        let requestId = getRequestId(args)
         
         if pendingRequestId != nil {
             throw NSError(domain: "ZynthImagePicker", code: 1, userInfo: [NSLocalizedDescriptionKey: "Another request is already pending"])

@@ -66,7 +66,7 @@ final class ZynthFileSystemModule: NSObject, ZynthModule, ZynthSyncModule {
       return ["result": true]
     case "delete":
       let uri = try args.string("uri")
-      let recursive = try args.bool("recursive", default: false)
+      let recursive = args.bool("recursive", default: false)
       try deleteItem(uri, recursive: recursive)
       return ["result": true]
     case "copy":
@@ -102,7 +102,7 @@ final class ZynthFileSystemModule: NSObject, ZynthModule, ZynthSyncModule {
       return ["result": true]
     case "checksum":
       let uri = try args.string("uri")
-      let algorithm = try args.string("algorithm", default: "md5")
+      let algorithm = args.string("algorithm", default: "md5")
       return ["result": try checksum(uri, algorithm: algorithm)]
     default:
       throw ZynthModuleError.methodNotExported(module: name, method: method)

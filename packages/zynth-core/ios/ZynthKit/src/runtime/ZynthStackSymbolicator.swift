@@ -307,7 +307,7 @@ public final class ZynthStackSymbolicator: NSObject {
 
   private static func decodeVlq(_ segment: String) -> [Int] {
     var values: [Int] = []
-    var chars = Array(segment)
+    let chars = Array(segment)
     var index = 0
     while index < chars.count {
       var shift = 0

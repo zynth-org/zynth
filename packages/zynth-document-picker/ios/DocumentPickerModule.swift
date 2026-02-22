@@ -34,7 +34,7 @@ final class DocumentPickerModule: NSObject, ZynthModule, UIDocumentPickerDelegat
       throw NSError(domain: "ZynthDocumentPicker", code: 1, userInfo: [NSLocalizedDescriptionKey: "Another picker request is already active"])
     }
 
-    let requestId = try args.string("requestId", default: UUID().uuidString)
+    let requestId = args.string("requestId", default: UUID().uuidString)
     let options = getOptions(args)
     pendingRequestId = requestId
     pendingCopyToCacheDirectory = options.copyToCacheDirectory

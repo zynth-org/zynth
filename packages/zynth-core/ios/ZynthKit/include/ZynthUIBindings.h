@@ -7,6 +7,8 @@
 
 @class ZynthUIManager;
 
+NS_ASSUME_NONNULL_BEGIN
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -40,10 +42,12 @@ void ZynthUIInvokeLayoutEventWithRuntime(void *runtimePtr,
                                          double width,
                                          double height);
 void ZynthUISetJSQueue(dispatch_queue_t _Nullable queue);
-void ZynthUIRegisterRuntimeForManager(ZynthUIManager *manager, void *runtimePtr);
-void *ZynthUIRuntimeForManager(ZynthUIManager *manager);
+void ZynthUIRegisterRuntimeForManager(ZynthUIManager *manager, void * _Nullable runtimePtr);
+void * _Nullable ZynthUIRuntimeForManager(ZynthUIManager *manager);
 #ifdef __cplusplus
 }
 
 void ZynthInstallUIBindings(facebook::jsi::Runtime &rt, ZynthUIManager *manager);
 #endif
+
+NS_ASSUME_NONNULL_END
