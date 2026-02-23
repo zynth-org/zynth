@@ -20,7 +20,7 @@ public final class ZynthStartupMetricsRegistry: NSObject {
   }
 
   public static func markRuntimeConstructStart(forSession sessionId: String) {
-    mutateEnabled(sessionId: sessionId) { metrics in
+    mutate(sessionId: sessionId) { metrics in
       if metrics.runtimeConstructStartMs == nil {
         metrics.runtimeConstructStartMs = uptimeMs()
       }
@@ -29,7 +29,7 @@ public final class ZynthStartupMetricsRegistry: NSObject {
   }
 
   public static func markRuntimeConstructEnd(forSession sessionId: String) {
-    mutateEnabled(sessionId: sessionId) { metrics in
+    mutate(sessionId: sessionId) { metrics in
       if metrics.runtimeConstructEndMs == nil {
         metrics.runtimeConstructEndMs = uptimeMs()
       }
@@ -38,7 +38,7 @@ public final class ZynthStartupMetricsRegistry: NSObject {
   }
 
   public static func runtimeCreated(forSession sessionId: String) {
-    mutateEnabled(sessionId: sessionId) { metrics in
+    mutate(sessionId: sessionId) { metrics in
       if metrics.runtimeInitMs == nil {
         metrics.runtimeInitMs = uptimeMs()
       }
@@ -47,7 +47,7 @@ public final class ZynthStartupMetricsRegistry: NSObject {
   }
 
   public static func markModuleInitStart(forSession sessionId: String) {
-    mutateEnabled(sessionId: sessionId) { metrics in
+    mutate(sessionId: sessionId) { metrics in
       if metrics.moduleInitStartMs == nil {
         metrics.moduleInitStartMs = uptimeMs()
       }
@@ -56,7 +56,7 @@ public final class ZynthStartupMetricsRegistry: NSObject {
   }
 
   public static func markModuleInitEnd(forSession sessionId: String) {
-    mutateEnabled(sessionId: sessionId) { metrics in
+    mutate(sessionId: sessionId) { metrics in
       if metrics.moduleInitEndMs == nil {
         metrics.moduleInitEndMs = uptimeMs()
       }
@@ -65,7 +65,7 @@ public final class ZynthStartupMetricsRegistry: NSObject {
   }
 
   public static func markModuleInitializeStart(forSession sessionId: String, moduleName: String) {
-    mutateEnabled(sessionId: sessionId) { metrics in
+    mutate(sessionId: sessionId) { metrics in
       if moduleName.isEmpty { return }
       metrics.moduleInitStarts[moduleName] = uptimeMs()
       metrics.markPhaseThread("moduleInit:\(moduleName):start", thread: currentThreadLabel())
@@ -73,7 +73,7 @@ public final class ZynthStartupMetricsRegistry: NSObject {
   }
 
   public static func markModuleInitializeEnd(forSession sessionId: String, moduleName: String) {
-    mutateEnabled(sessionId: sessionId) { metrics in
+    mutate(sessionId: sessionId) { metrics in
       if moduleName.isEmpty { return }
       guard let start = metrics.moduleInitStarts.removeValue(forKey: moduleName) else {
         return
@@ -92,7 +92,7 @@ public final class ZynthStartupMetricsRegistry: NSObject {
   }
 
   public static func markJsRuntimeSetupStart(forSession sessionId: String) {
-    mutateEnabled(sessionId: sessionId) { metrics in
+    mutate(sessionId: sessionId) { metrics in
       if metrics.jsRuntimeSetupStartMs == nil {
         metrics.jsRuntimeSetupStartMs = uptimeMs()
       }
@@ -101,7 +101,7 @@ public final class ZynthStartupMetricsRegistry: NSObject {
   }
 
   public static func markJsRuntimeSetupEnd(forSession sessionId: String) {
-    mutateEnabled(sessionId: sessionId) { metrics in
+    mutate(sessionId: sessionId) { metrics in
       if metrics.jsRuntimeSetupEndMs == nil {
         metrics.jsRuntimeSetupEndMs = uptimeMs()
       }
@@ -110,14 +110,14 @@ public final class ZynthStartupMetricsRegistry: NSObject {
   }
 
   public static func markBundleReadStart(forSession sessionId: String) {
-    mutateEnabled(sessionId: sessionId) { metrics in
+    mutate(sessionId: sessionId) { metrics in
       metrics.bundleReadStartMs = uptimeMs()
       metrics.markPhaseThread("bundleReadStart", thread: currentThreadLabel())
     }
   }
 
   public static func markBundleReadEnd(forSession sessionId: String) {
-    mutateEnabled(sessionId: sessionId) { metrics in
+    mutate(sessionId: sessionId) { metrics in
       let end = uptimeMs()
       metrics.bundleReadEndMs = end
       if let start = metrics.bundleReadStartMs {
@@ -128,14 +128,14 @@ public final class ZynthStartupMetricsRegistry: NSObject {
   }
 
   public static func markHermesEvalStart(forSession sessionId: String) {
-    mutateEnabled(sessionId: sessionId) { metrics in
+    mutate(sessionId: sessionId) { metrics in
       metrics.hermesEvalStartMs = uptimeMs()
       metrics.markPhaseThread("hermesEvalStart", thread: currentThreadLabel())
     }
   }
 
   public static func markHermesEvalEnd(forSession sessionId: String) {
-    mutateEnabled(sessionId: sessionId) { metrics in
+    mutate(sessionId: sessionId) { metrics in
       let end = uptimeMs()
       metrics.hermesEvalEndMs = end
       if let start = metrics.hermesEvalStartMs {
@@ -146,7 +146,7 @@ public final class ZynthStartupMetricsRegistry: NSObject {
   }
 
   public static func markStartRequested(forSession sessionId: String) {
-    mutateEnabled(sessionId: sessionId) { metrics in
+    mutate(sessionId: sessionId) { metrics in
       if metrics.startRequestedMs == nil {
         metrics.startRequestedMs = uptimeMs()
       }
@@ -155,7 +155,7 @@ public final class ZynthStartupMetricsRegistry: NSObject {
   }
 
   public static func markFirstCommit(forSession sessionId: String) {
-    mutateEnabled(sessionId: sessionId) { metrics in
+    mutate(sessionId: sessionId) { metrics in
       if metrics.firstCommitMs == nil {
         metrics.firstCommitMs = uptimeMs()
       }
@@ -164,7 +164,7 @@ public final class ZynthStartupMetricsRegistry: NSObject {
   }
 
   public static func markFirstFramePresented(forSession sessionId: String) {
-    mutateEnabled(sessionId: sessionId) { metrics in
+    mutate(sessionId: sessionId) { metrics in
       if metrics.firstFrameMs == nil {
         metrics.firstFrameMs = uptimeMs()
       }
@@ -173,7 +173,7 @@ public final class ZynthStartupMetricsRegistry: NSObject {
   }
 
   public static func markFirstInteractive(forSession sessionId: String) {
-    mutateEnabled(sessionId: sessionId) { metrics in
+    mutate(sessionId: sessionId) { metrics in
       if metrics.firstInteractiveMs == nil {
         metrics.firstInteractiveMs = uptimeMs()
       }
@@ -186,7 +186,7 @@ public final class ZynthStartupMetricsRegistry: NSObject {
     frameMs: Double,
     layoutMs: Double
   ) {
-    mutateEnabled(sessionId: sessionId) { metrics in
+    mutate(sessionId: sessionId) { metrics in
       if metrics.firstFrameMs != nil {
         return
       }
