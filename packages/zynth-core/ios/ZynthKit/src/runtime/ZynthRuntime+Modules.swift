@@ -82,14 +82,20 @@ public extension ZynthRuntime {
   }
 
   func installModules(_ modules: [ZynthModule]) {
+    ZynthStartupMetricsRegistry.markModuleInitStart(forSession: bridgeSessionId)
     for module in modules {
+      ZynthStartupMetricsRegistry.markModuleInitializeStart(forSession: bridgeSessionId, moduleName: module.name)
       zynthModuleRegistry.register(module)
+      ZynthStartupMetricsRegistry.markModuleInitializeEnd(forSession: bridgeSessionId, moduleName: module.name)
     }
+    ZynthStartupMetricsRegistry.markModuleInitEnd(forSession: bridgeSessionId)
     zynthModuleRegistry.setSessionId(bridgeSessionId)
     // Register the registry as the bridge and inject constants
+    ZynthStartupMetricsRegistry.markJsRuntimeSetupStart(forSession: bridgeSessionId)
     var constants = zynthModuleRegistry.exportedConstants()
     constants["bridgeSessionId"] = bridgeSessionId
     installModuleBridge(zynthModuleRegistry, constants: constants)
+    ZynthStartupMetricsRegistry.markJsRuntimeSetupEnd(forSession: bridgeSessionId)
   }
 
   @objc func installDefaultModules() {

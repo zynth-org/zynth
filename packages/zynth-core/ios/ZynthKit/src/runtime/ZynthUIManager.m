@@ -720,8 +720,16 @@ static NSString *ZynthVisibility(UIView *view) {
 }
 
 - (void)flush {
+  if (!_didDispatchFirstMountCommit && _firstMountCommitListener) {
+    _didDispatchFirstMountCommit = YES;
+    _firstMountCommitListener();
+  }
   [self markSurfaceDirty:_activeSurfaceId];
   [self requestLayout];
+}
+
+- (void)setFirstMountCommitListener:(dispatch_block_t _Nullable)listener {
+  _firstMountCommitListener = [listener copy];
 }
 
 - (void)setFrameProfiler:(void (^)(NSTimeInterval,

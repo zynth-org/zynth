@@ -24,6 +24,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)applyBatch:(NSString *)batchJSON;
 - (void)setSurface:(NSNumber *)surfaceId;
 - (void)flush;
+- (void)setFirstMountCommitListener:(dispatch_block_t _Nullable)listener;
 - (void)setFrameProfiler:(void (^_Nullable)(NSTimeInterval frameMs,
                                             NSTimeInterval layoutMs,
                                             BOOL overBudget,

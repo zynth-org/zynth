@@ -219,6 +219,8 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal var lastLayoutMs = 0.0
   internal var lastFrameMs = 0.0
   internal var frameProfiler: ((Double, Double, Boolean, Int) -> Unit)? = null
+  internal var firstMountCommitListener: (() -> Unit)? = null
+  private var didDispatchFirstMountCommit = false
   internal val frameCallback = Choreographer.FrameCallback { handleFrame() }
   private val layoutEngine: LayoutEngine = LayoutEngineAdapter()
   private data class TimerEntry(
@@ -1123,6 +1125,10 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       runOnMain { applyBatchTypedPacked(ops, strings) }
       return
     }
+    if (!didDispatchFirstMountCommit && ops.isNotEmpty()) {
+      didDispatchFirstMountCommit = true
+      runCatching { firstMountCommitListener?.invoke() }
+    }
     beginBatch()
     var i = 0
     opLoop@ while (i < ops.size) {
@@ -1193,6 +1199,10 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       copied.rewind()
       runOnMain { applyBatchTypedBuffer(copied, opCount, strings) }
       return
+    }
+    if (!didDispatchFirstMountCommit && opCount > 0) {
+      didDispatchFirstMountCommit = true
+      runCatching { firstMountCommitListener?.invoke() }
     }
     beginBatch()
     var i = 0

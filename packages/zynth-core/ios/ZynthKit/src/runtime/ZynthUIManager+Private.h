@@ -56,6 +56,8 @@ NS_ASSUME_NONNULL_BEGIN
   NSUInteger _budgetOverruns;
   NSTimeInterval _lastLayoutMs;
   NSTimeInterval _lastFrameMs;
+  BOOL _didDispatchFirstMountCommit;
+  dispatch_block_t _Nullable _firstMountCommitListener;
   void (^_frameProfiler)(NSTimeInterval frameMs,
                          NSTimeInterval layoutMs,
                          BOOL overBudget,

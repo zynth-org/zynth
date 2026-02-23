@@ -19,7 +19,14 @@ internal class CoreSystemModule(private val runtime: ZynthRuntime) : ZynthModule
     return when (method) {
       "enableFeatures" -> handleEnableFeatures(args)
       "getMetrics" -> JSONObject().put("result", runtime.startupMetrics.makeSnapshot())
-      "getStartupMetrics" -> JSONObject().put("result", runtime.startupMetrics.makeStartupSnapshot())
+      "getStartupMetrics" -> {
+        val result = if (runtime.startupMetrics.isStartupTimeEnabled()) {
+          runtime.startupMetrics.makeStartupSnapshot()
+        } else {
+          JSONObject.NULL
+        }
+        JSONObject().put("result", result)
+      }
       else -> JSONObject().put("error", "unknown_method").put("method", method)
     }
   }

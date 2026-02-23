@@ -5,15 +5,46 @@ export type CoreSystemFeature = "startupTime";
 export type StartupTimeMetrics = {
   enabled: boolean;
   ready: boolean;
+  processStartMs?: number | null;
+  runtimeConstructStartMs?: number | null;
+  runtimeConstructEndMs?: number | null;
+  runtimeConstructMs?: number | null;
   runtimeInitMs: number | null;
+  moduleInitStartMs?: number | null;
+  moduleInitEndMs?: number | null;
+  moduleInitMs?: number | null;
+  jsRuntimeSetupStartMs?: number | null;
+  jsRuntimeSetupEndMs?: number | null;
+  jsRuntimeSetupMs?: number | null;
   bundleReadMs: number | null;
   hermesEvalMs: number | null;
+  startAppCallMs?: number | null;
+  firstCommitMs?: number | null;
   startToFirstFrameMs: number | null;
   runtimeToFirstFrameMs: number | null;
+  firstCommitToFirstFrameMs?: number | null;
+  firstFrameToFirstInteractiveMs?: number | null;
+  startToFirstInteractiveMs?: number | null;
+  firstInteractiveMs?: number | null;
   framesToFirstRender: number;
   avgFrameMsToFirstRender: number | null;
   avgLayoutMsToFirstRender: number | null;
   firstFrameAtMs: number | null;
+  threadByPhase?: Record<string, string>;
+  syncWait?: {
+    count: number;
+    totalMs: number;
+    maxMs: number;
+    mainThreadCount: number;
+    mainThreadTotalMs: number;
+  };
+  moduleInitBreakdown?: Array<{
+    name: string;
+    startMs: number;
+    endMs: number;
+    durationMs: number;
+    thread: string;
+  }>;
 };
 
 export type CoreSystemMetricsSnapshot = {
