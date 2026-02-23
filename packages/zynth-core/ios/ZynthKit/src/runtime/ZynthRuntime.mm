@@ -7,8 +7,8 @@
 #if __has_include("ZynthKit-Swift.h")
 #import "ZynthKit-Swift.h"
 #endif
-#if DEBUG
 #import <objc/message.h>
+#if DEBUG
 #endif
 
 @interface ZynthRuntime (Modules)
@@ -18,6 +18,89 @@
 @protocol ZynthDevSupportProtocol <NSObject>
 + (void)configureWithRuntime:(id)runtime;
 @end
+
+static Class ZynthResolveStartupMetricsClass() {
+  static Class cachedClass = Nil;
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    cachedClass = NSClassFromString(@"ZynthStartupMetricsRegistry");
+    if (!cachedClass) {
+      cachedClass = NSClassFromString(@"ZynthKit.ZynthStartupMetricsRegistry");
+    }
+#if DEBUG
+    if (!cachedClass) {
+      NSLog(@"[ZynthRuntime] Startup metrics registry class not found");
+    }
+#endif
+  });
+  return cachedClass;
+}
+
+static inline void ZynthStartupMetricsRuntimeCreated(NSString *sessionId) {
+  Class metricsClass = ZynthResolveStartupMetricsClass();
+  if (!metricsClass || !sessionId) return;
+  SEL selector = NSSelectorFromString(@"runtimeCreatedForSession:");
+  if (![metricsClass respondsToSelector:selector]) return;
+  ((void (*)(id, SEL, id))objc_msgSend)(metricsClass, selector, sessionId);
+}
+
+static inline void ZynthStartupMetricsMarkBundleReadStart(NSString *sessionId) {
+  Class metricsClass = ZynthResolveStartupMetricsClass();
+  if (!metricsClass || !sessionId) return;
+  SEL selector = NSSelectorFromString(@"markBundleReadStartForSession:");
+  if (![metricsClass respondsToSelector:selector]) return;
+  ((void (*)(id, SEL, id))objc_msgSend)(metricsClass, selector, sessionId);
+}
+
+static inline void ZynthStartupMetricsMarkBundleReadEnd(NSString *sessionId) {
+  Class metricsClass = ZynthResolveStartupMetricsClass();
+  if (!metricsClass || !sessionId) return;
+  SEL selector = NSSelectorFromString(@"markBundleReadEndForSession:");
+  if (![metricsClass respondsToSelector:selector]) return;
+  ((void (*)(id, SEL, id))objc_msgSend)(metricsClass, selector, sessionId);
+}
+
+static inline void ZynthStartupMetricsMarkHermesEvalStart(NSString *sessionId) {
+  Class metricsClass = ZynthResolveStartupMetricsClass();
+  if (!metricsClass || !sessionId) return;
+  SEL selector = NSSelectorFromString(@"markHermesEvalStartForSession:");
+  if (![metricsClass respondsToSelector:selector]) return;
+  ((void (*)(id, SEL, id))objc_msgSend)(metricsClass, selector, sessionId);
+}
+
+static inline void ZynthStartupMetricsMarkHermesEvalEnd(NSString *sessionId) {
+  Class metricsClass = ZynthResolveStartupMetricsClass();
+  if (!metricsClass || !sessionId) return;
+  SEL selector = NSSelectorFromString(@"markHermesEvalEndForSession:");
+  if (![metricsClass respondsToSelector:selector]) return;
+  ((void (*)(id, SEL, id))objc_msgSend)(metricsClass, selector, sessionId);
+}
+
+static inline void ZynthStartupMetricsMarkStartRequested(NSString *sessionId) {
+  Class metricsClass = ZynthResolveStartupMetricsClass();
+  if (!metricsClass || !sessionId) return;
+  SEL selector = NSSelectorFromString(@"markStartRequestedForSession:");
+  if (![metricsClass respondsToSelector:selector]) return;
+  ((void (*)(id, SEL, id))objc_msgSend)(metricsClass, selector, sessionId);
+}
+
+static inline void ZynthStartupMetricsMarkFirstFramePresented(NSString *sessionId) {
+  Class metricsClass = ZynthResolveStartupMetricsClass();
+  if (!metricsClass || !sessionId) return;
+  SEL selector = NSSelectorFromString(@"markFirstFramePresentedForSession:");
+  if (![metricsClass respondsToSelector:selector]) return;
+  ((void (*)(id, SEL, id))objc_msgSend)(metricsClass, selector, sessionId);
+}
+
+static inline void ZynthStartupMetricsRecordFrame(NSString *sessionId,
+                                                  NSTimeInterval frameMs,
+                                                  NSTimeInterval layoutMs) {
+  Class metricsClass = ZynthResolveStartupMetricsClass();
+  if (!metricsClass || !sessionId) return;
+  SEL selector = NSSelectorFromString(@"recordFrameForSession:frameMs:layoutMs:");
+  if (![metricsClass respondsToSelector:selector]) return;
+  ((void (*)(id, SEL, id, double, double))objc_msgSend)(metricsClass, selector, sessionId, frameMs, layoutMs);
+}
 
 @interface ZynthRuntime ()
 @property(nonatomic, weak) UIView *rootView;
@@ -35,6 +118,7 @@
     _uiManager = [[ZynthUIManager alloc] initWithRootView:rootView];
     _uiManager.zynthRuntime = self;
     _runtime = [[ZynthHermesRuntimeHost alloc] initWithUIManager:_uiManager];
+    ZynthStartupMetricsRuntimeCreated(_bridgeSessionId);
     [[ZynthNativeErrorOverlayManager shared] attachRuntime:self];
 #if __has_include("ZynthKit-Swift.h")
     [[ZynthRuntimeManagerRegistry shared] setRuntime:self for:_uiManager];
@@ -52,12 +136,14 @@
     }
 #endif
     __weak ZynthHermesRuntimeHost *weakRuntime = _runtime;
+    NSString *sessionId = [_bridgeSessionId copy];
     [_uiManager setFrameProfiler:^(NSTimeInterval frameMs,
                                  NSTimeInterval layoutMs,
                                  BOOL overBudget,
                                  NSUInteger nodeCount) {
       ZynthHermesRuntimeHost *strongRuntime = weakRuntime;
       if (!strongRuntime) return;
+      ZynthStartupMetricsRecordFrame(sessionId, frameMs, layoutMs);
       [strongRuntime callGlobal:@"__zynth_reportFrame"
                            args:@[
                              @(frameMs),
@@ -83,20 +169,29 @@
     }
     return NO;
   }
+  ZynthStartupMetricsMarkBundleReadStart(self.bridgeSessionId);
   NSError *readError = nil;
   NSString *code = [NSString stringWithContentsOfURL:url
                                             encoding:NSUTF8StringEncoding
                                                error:&readError];
+  ZynthStartupMetricsMarkBundleReadEnd(self.bridgeSessionId);
   if (!code) {
     if (error) {
       *error = readError ?: [NSError errorWithDomain:@"ZynthRuntime" code:2 userInfo:nil];
     }
     return NO;
   }
-  return [self.runtime evaluateString:code sourceURL:url.absoluteString error:error];
+  return [self evaluateScript:code sourceURL:url.absoluteString error:error];
 }
 
 - (void)startWithRootId:(int)rootId {
+  ZynthStartupMetricsMarkStartRequested(self.bridgeSessionId);
+  __weak ZynthRuntime *weakSelf = self;
+  [self addSurfaceFirstFrameListener:rootId listener:^{
+    __strong ZynthRuntime *strongSelf = weakSelf;
+    if (!strongSelf) return;
+    ZynthStartupMetricsMarkFirstFramePresented(strongSelf.bridgeSessionId);
+  }];
   [self.runtime callGlobal:@"__startApp" args:@[ @(rootId) ]];
 }
 
@@ -135,7 +230,10 @@
 - (BOOL)evaluateScript:(NSString *)code
              sourceURL:(NSString *_Nullable)sourceURL
                  error:(NSError *_Nullable *_Nullable)error {
-  return [self.runtime evaluateString:code sourceURL:sourceURL error:error];
+  ZynthStartupMetricsMarkHermesEvalStart(self.bridgeSessionId);
+  BOOL ok = [self.runtime evaluateString:code sourceURL:sourceURL error:error];
+  ZynthStartupMetricsMarkHermesEvalEnd(self.bridgeSessionId);
+  return ok;
 }
 
 - (void)flush {

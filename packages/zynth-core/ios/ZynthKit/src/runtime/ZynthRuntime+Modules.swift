@@ -96,7 +96,8 @@ public extension ZynthRuntime {
     let fetch = FetchModule { [weak self] name, data in
       self?.emitEvent(name: name, payload: data)
     }
-    var modules: [ZynthModule] = [fetch]
+    let coreSystem = CoreSystemModule(runtime: self)
+    var modules: [ZynthModule] = [fetch, coreSystem]
 #if DEBUG
     modules.append(ZynthDevtoolsModule(runtime: self))
     installDevtoolsCrashHandlersIfNeeded()

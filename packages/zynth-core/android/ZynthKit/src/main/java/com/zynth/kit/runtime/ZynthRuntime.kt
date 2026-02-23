@@ -7,6 +7,7 @@ import com.zynth.kit.core.AssetProvider
 import com.zynth.kit.core.ZynthRootView
 import com.zynth.kit.core.ZynthUIManager
 import com.zynth.kit.core.addSurfaceFirstFrameListener
+import com.zynth.kit.runtime.modules.CoreSystemModule
 import com.zynth.kit.runtime.modules.DevtoolsModule
 import com.zynth.kit.runtime.modules.FetchModule
 import android.os.Handler
@@ -19,20 +20,26 @@ import org.json.JSONObject
 class ZynthRuntime(val root: ZynthRootView) {
   private val uiManager = ZynthUIManager(root)
   private val runtimePtr: Long = JSBridge.createHermesRuntime()
+  internal val startupMetrics = ZynthStartupMetrics()
   private val registry = ZynthModuleRegistry()
   private val jsThread = HandlerThread("ZynthJS")
   private val jsHandler: Handler
   private var hasStarted: Boolean = false
   val bridgeSessionId: String = java.util.UUID.randomUUID().toString()
   init {
+    startupMetrics.markRuntimeCreated()
     jsThread.start()
     jsHandler = Handler(jsThread.looper)
     uiManager.setJSHandler(jsHandler)
     uiManager.setRuntimePtr(runtimePtr)
     uiManager.setFrameProfiler { frameMs, layoutMs, overBudget, nodeCount ->
+      startupMetrics.recordFrame(frameMs, layoutMs)
       runOnJS {
         JSBridge.callGlobalFrame(runtimePtr, "__zynth_reportFrame", frameMs, layoutMs, overBudget, nodeCount)
       }
+    }
+    uiManager.addSurfaceFirstFrameListener(root.rootId) {
+      startupMetrics.markFirstFramePresented()
     }
     installDefaultModules()
     installCrashHandler()
@@ -57,7 +64,7 @@ class ZynthRuntime(val root: ZynthRootView) {
 
   fun installDefaultModules() {
     DevtoolsModule.start(root.context)
-    installModules(listOf(DevtoolsModule(root.context, this), FetchModule(this)))
+    installModules(listOf(DevtoolsModule(root.context, this), FetchModule(this), CoreSystemModule(this)))
   }
 
   private fun installCrashHandler() {
@@ -119,20 +126,27 @@ class ZynthRuntime(val root: ZynthRootView) {
     }
 
     if (preloadedBytecode != null) {
+      startupMetrics.markHermesEvalStart()
       runOnJSSync {
         JSBridge.loadBytecode(runtimePtr, preloadedBytecode, "main.hbc")
       }
+      startupMetrics.markHermesEvalEnd()
     } else {
+      startupMetrics.markBundleReadStart()
       val code = preloadedCode ?: run {
         try {
           assets.open("main.js").use { it.bufferedReader().readText() }
         } catch (error: Exception) {
+          startupMetrics.markBundleReadEnd()
           return
         }
       }
+      startupMetrics.markBundleReadEnd()
+      startupMetrics.markHermesEvalStart()
       runOnJSSync {
         JSBridge.evaluateScript(runtimePtr, code, "main.js")
       }
+      startupMetrics.markHermesEvalEnd()
     }
     hasStarted = false
   }
@@ -179,6 +193,7 @@ class ZynthRuntime(val root: ZynthRootView) {
       return
     }
     hasStarted = true
+    startupMetrics.markStartRequested()
     runOnJS {
       JSBridge.callGlobalDouble(runtimePtr, "__startApp", rootId.toDouble())
     }

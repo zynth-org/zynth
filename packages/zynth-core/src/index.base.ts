@@ -70,3 +70,14 @@ export type {
   ZynthWorkletsBridge,
   ZynthUICommandsBridge,
 } from "./bridge";
+export {
+  CoreSystem,
+  enableCoreSystemFeatures,
+  getCoreSystemMetrics,
+  getStartupTimeMetrics,
+} from "./coreSystem";
+export type {
+  CoreSystemFeature,
+  CoreSystemMetricsSnapshot,
+  StartupTimeMetrics,
+} from "./coreSystem";
