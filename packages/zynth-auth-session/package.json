@@ -27,7 +27,8 @@
     "clean": "rm -rf dist"
   },
   "peerDependencies": {
-    "@zynth/core": "0.0.1"
+    "@zynth/core": "0.0.1",
+    "@zynth/crypto": "0.0.1"
   },
   "devDependencies": {
     "typescript": "^5.6.3"

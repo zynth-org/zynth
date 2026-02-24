@@ -1,9 +1,17 @@
+import { Crypto, isCryptoAvailable as isZynthCryptoAvailable } from "@zynth/crypto";
 import { callNative, isNativeAvailable } from "./native";
 import type {
   AuthSessionDismissResult,
+  AuthSessionErrorCode,
+  AuthSessionPkcePair,
   AuthSessionRequest,
   AuthSessionResult,
+  BuildAuthorizationUrlOptions,
+  CreatePkceOptions,
+  CreateStateOptions,
   MakeRedirectUriOptions,
+  ValidateAuthSessionResponseOptions,
+  ValidateAuthSessionResponseResult,
 } from "./types";
 
 type NativeEventSubscription = { remove(): void };
@@ -19,6 +27,15 @@ type NativeAuthSessionResult = {
   errorCode?: unknown;
   errorMessage?: unknown;
 };
+
+const PKCE_VERIFIER_MIN_BYTES = 32;
+const PKCE_VERIFIER_MAX_BYTES = 96;
+const STATE_MIN_BYTES = 16;
+const STATE_MAX_BYTES = 64;
+const BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+const CRYPTO_UNAVAILABLE_WARNING =
+  "[AuthSession] Crypto is unavailable. PKCE/state helpers require @zynth/crypto with native installation (or a compatible global crypto implementation).";
 
 function getGlobalObject(): Record<string, unknown> {
   if (typeof globalThis !== "undefined") {
@@ -42,6 +59,12 @@ function getNativeEmitter(): ZynthNativeEmitterBridge | null {
 
 function createRequestId(): string {
   return `authsession-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function createError(code: AuthSessionErrorCode, message: string): Error {
+  const error = new Error(`[AuthSession] ${message}`) as Error & { code?: AuthSessionErrorCode };
+  error.code = code;
+  return error;
 }
 
 function normalizeParams(url: string | undefined): Record<string, string> | undefined {
@@ -136,8 +159,9 @@ function openWebPopup(request: AuthSessionRequest): AuthSessionResult {
 
   return {
     type: "error",
-    errorCode: "E_WEB_UNSUPPORTED",
-    errorMessage: "Web fallback cannot securely capture redirects in this runtime",
+    errorCode: "E_WEB_FALLBACK_OPENED",
+    errorMessage:
+      "Insecure web popup fallback opened. Redirect capture remains unsupported in this runtime.",
   };
 }
 
@@ -161,12 +185,108 @@ function buildUriFromParts(options: MakeRedirectUriOptions): string {
   return url.toString();
 }
 
+function bytesToBase64(bytes: Uint8Array): string {
+  if (bytes.byteLength === 0) {
+    return "";
+  }
+
+  let output = "";
+  let index = 0;
+  for (; index + 2 < bytes.byteLength; index += 3) {
+    const chunk = (bytes[index] << 16) | (bytes[index + 1] << 8) | bytes[index + 2];
+    output += BASE64_ALPHABET[(chunk >> 18) & 63];
+    output += BASE64_ALPHABET[(chunk >> 12) & 63];
+    output += BASE64_ALPHABET[(chunk >> 6) & 63];
+    output += BASE64_ALPHABET[chunk & 63];
+  }
+
+  const remaining = bytes.byteLength - index;
+  if (remaining === 1) {
+    const chunk = bytes[index] << 16;
+    output += BASE64_ALPHABET[(chunk >> 18) & 63];
+    output += BASE64_ALPHABET[(chunk >> 12) & 63];
+    output += "==";
+  } else if (remaining === 2) {
+    const chunk = (bytes[index] << 16) | (bytes[index + 1] << 8);
+    output += BASE64_ALPHABET[(chunk >> 18) & 63];
+    output += BASE64_ALPHABET[(chunk >> 12) & 63];
+    output += BASE64_ALPHABET[(chunk >> 6) & 63];
+    output += "=";
+  }
+
+  return output;
+}
+
+function toBase64Url(bytes: Uint8Array): string {
+  return bytesToBase64(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function assertIntegerInRange(value: number, min: number, max: number, label: string): number {
+  if (!Number.isInteger(value) || value < min || value > max) {
+    throw new Error(`[AuthSession] ${label} must be an integer between ${min} and ${max}`);
+  }
+  return value;
+}
+
+function ensureCryptoAvailable(): void {
+  if (!isZynthCryptoAvailable()) {
+    throw createError("E_CRYPTO_UNAVAILABLE", CRYPTO_UNAVAILABLE_WARNING);
+  }
+}
+
+function getRandomBytes(size: number): Uint8Array {
+  ensureCryptoAvailable();
+  const output = new Uint8Array(size);
+  return Crypto.getRandomValues(output);
+}
+
+function assertHttpsUrl(raw: string, fieldName: string): URL {
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) {
+    throw new Error(`[AuthSession] ${fieldName} must be a non-empty string`);
+  }
+  const url = new URL(trimmed);
+  if (url.protocol.toLowerCase() !== "https:") {
+    throw new Error(`[AuthSession] ${fieldName} must use https`);
+  }
+  return url;
+}
+
+function parseParams(result: AuthSessionResult): Record<string, string> {
+  if (result.params) {
+    return result.params;
+  }
+  const parsed = normalizeParams(result.url);
+  return parsed ?? {};
+}
+
+function utf8Encode(value: string): Uint8Array {
+  if (typeof TextEncoder !== "undefined") {
+    return new TextEncoder().encode(value);
+  }
+
+  const bytes = new Uint8Array(value.length);
+  for (let index = 0; index < value.length; index += 1) {
+    bytes[index] = value.charCodeAt(index) & 0xff;
+  }
+  return bytes;
+}
+
 export const AuthSession = Object.freeze({
   async startAsync(request: AuthSessionRequest): Promise<AuthSessionResult> {
     validateRequest(request);
 
     if (!isNativeAvailable()) {
-      return openWebPopup(request);
+      if (request.allowInsecureWebPopupFallback === true) {
+        return openWebPopup(request);
+      }
+
+      return {
+        type: "error",
+        errorCode: "E_WEB_UNSUPPORTED",
+        errorMessage:
+          "AuthSession web fallback is disabled by default because redirects cannot be securely captured in this runtime. Set request.allowInsecureWebPopupFallback=true to open an insecure popup fallback.",
+      };
     }
 
     const requestId = createRequestId();
@@ -254,5 +374,151 @@ export const AuthSession = Object.freeze({
       return true;
     }
     return typeof window !== "undefined" && typeof window.open === "function";
+  },
+
+  isCryptoAvailable(): boolean {
+    return isZynthCryptoAvailable();
+  },
+
+  getCryptoWarningMessage(): string | null {
+    if (isZynthCryptoAvailable()) {
+      return null;
+    }
+    return CRYPTO_UNAVAILABLE_WARNING;
+  },
+
+  async createPKCEAsync(options: CreatePkceOptions = {}): Promise<AuthSessionPkcePair> {
+    const verifierByteLength = assertIntegerInRange(
+      options.verifierByteLength ?? PKCE_VERIFIER_MIN_BYTES,
+      PKCE_VERIFIER_MIN_BYTES,
+      PKCE_VERIFIER_MAX_BYTES,
+      "PKCE verifierByteLength"
+    );
+
+    try {
+      const verifierBytes = getRandomBytes(verifierByteLength);
+      const codeVerifier = toBase64Url(verifierBytes);
+      if (codeVerifier.length < 43 || codeVerifier.length > 128) {
+        throw new Error("Generated code_verifier length is out of RFC7636 bounds (43-128)");
+      }
+
+      const digest = await Crypto.subtle.digest("SHA-256", utf8Encode(codeVerifier));
+      const codeChallenge = toBase64Url(new Uint8Array(digest));
+
+      return {
+        codeVerifier,
+        codeChallenge,
+        codeChallengeMethod: "S256",
+      };
+    } catch (error: unknown) {
+      if (error instanceof Error && (error as Error & { code?: AuthSessionErrorCode }).code === "E_CRYPTO_UNAVAILABLE") {
+        throw error;
+      }
+      const detail = error instanceof Error ? error.message : String(error);
+      throw createError("E_PKCE_GENERATION_FAILED", `Failed to generate PKCE values: ${detail}`);
+    }
+  },
+
+  async generateStateAsync(options: CreateStateOptions = {}): Promise<string> {
+    const byteLength = assertIntegerInRange(
+      options.byteLength ?? PKCE_VERIFIER_MIN_BYTES,
+      STATE_MIN_BYTES,
+      STATE_MAX_BYTES,
+      "state byteLength"
+    );
+
+    try {
+      return toBase64Url(getRandomBytes(byteLength));
+    } catch (error: unknown) {
+      if (error instanceof Error && (error as Error & { code?: AuthSessionErrorCode }).code === "E_CRYPTO_UNAVAILABLE") {
+        throw error;
+      }
+      const detail = error instanceof Error ? error.message : String(error);
+      throw createError("E_STATE_GENERATION_FAILED", `Failed to generate state: ${detail}`);
+    }
+  },
+
+  buildAuthorizationUrl(options: BuildAuthorizationUrlOptions): string {
+    const endpoint = assertHttpsUrl(options.authorizationEndpoint, "authorizationEndpoint");
+    if (!options.clientId || options.clientId.trim().length === 0) {
+      throw new Error("[AuthSession] clientId must be a non-empty string");
+    }
+    if (!options.redirectUri || options.redirectUri.trim().length === 0) {
+      throw new Error("[AuthSession] redirectUri must be a non-empty string");
+    }
+
+    const responseType = options.responseType ?? "code";
+    const url = new URL(endpoint.toString());
+    url.searchParams.set("client_id", options.clientId);
+    url.searchParams.set("redirect_uri", options.redirectUri);
+    url.searchParams.set("response_type", responseType);
+
+    if (options.scopes && options.scopes.length > 0) {
+      url.searchParams.set("scope", options.scopes.join(" "));
+    }
+
+    if (options.state && options.state.length > 0) {
+      url.searchParams.set("state", options.state);
+    }
+
+    if (options.codeChallenge && options.codeChallenge.length > 0) {
+      url.searchParams.set("code_challenge", options.codeChallenge);
+      url.searchParams.set("code_challenge_method", options.codeChallengeMethod ?? "S256");
+    }
+
+    const extraParams = options.extraParams ?? {};
+    for (const key of Object.keys(extraParams)) {
+      url.searchParams.set(key, extraParams[key]);
+    }
+
+    return url.toString();
+  },
+
+  validateAuthResponse(options: ValidateAuthSessionResponseOptions): ValidateAuthSessionResponseResult {
+    const result = options.result;
+    const params = parseParams(result);
+
+    if (result.type !== "success") {
+      return {
+        ok: false,
+        errorCode: "E_AUTH_FAILED",
+        errorMessage: result.errorMessage ?? `Auth session did not complete successfully (type=${result.type})`,
+        params,
+        url: result.url,
+      };
+    }
+
+    if (typeof options.expectedState === "string" && options.expectedState.length > 0) {
+      const actualState = params.state;
+      if (actualState !== options.expectedState) {
+        return {
+          ok: false,
+          errorCode: "E_STATE_MISMATCH",
+          errorMessage: "OAuth state mismatch detected",
+          params,
+          url: result.url,
+        };
+      }
+    }
+
+    const requireCode = options.requireCode ?? true;
+    const code = params.code;
+    if (requireCode && (!code || code.length === 0)) {
+      return {
+        ok: false,
+        errorCode: "E_AUTH_CODE_MISSING",
+        errorMessage: "Authorization code is missing from callback",
+        params,
+        url: result.url,
+      };
+    }
+
+    return {
+      ok: true,
+      code,
+      state: params.state,
+      params,
+      url: result.url,
+    };
   },
 });

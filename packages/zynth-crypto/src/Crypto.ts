@@ -323,13 +323,19 @@ export function isCryptoAvailable(): boolean {
   if (isNativeAvailable()) {
     return true;
   }
-  const globalObject = getGlobalObject() as Record<string, unknown>;
-  return isCryptoLike(globalObject.crypto);
+  return Boolean(getFallbackCrypto());
 }
 
 function getFallbackCrypto(): CryptoLike | undefined {
   const globalObject = getGlobalObject() as Record<string, unknown>;
-  return globalObject.crypto as CryptoLike | undefined;
+  const candidate = globalObject.crypto;
+  if (!isCryptoLike(candidate)) {
+    return undefined;
+  }
+  if (candidate === nativeCrypto) {
+    return undefined;
+  }
+  return candidate;
 }
 
 function getFallbackSubtle(): SubtleCryptoLike | undefined {
