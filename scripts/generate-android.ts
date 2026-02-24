@@ -141,6 +141,79 @@ function formatActivityAttributes(androidConfig: any): string {
   return attributes.join("\n            ");
 }
 
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function formatActivityIntentFilters(androidConfig: any): string {
+  const filters = Array.isArray(androidConfig?.intentFilters)
+    ? androidConfig.intentFilters
+    : [];
+  if (!filters.length) {
+    return "";
+  }
+
+  const blocks: string[] = [];
+  for (const filter of filters) {
+    const actions: string[] = Array.isArray(filter?.actions) && filter.actions.length
+      ? filter.actions
+      : ["android.intent.action.VIEW"];
+    const categories: string[] = Array.isArray(filter?.categories) && filter.categories.length
+      ? filter.categories
+      : ["android.intent.category.DEFAULT", "android.intent.category.BROWSABLE"];
+    const dataList: any[] = Array.isArray(filter?.data)
+      ? filter.data
+      : filter?.data
+        ? [filter.data]
+        : [];
+
+    const block: string[] = [];
+    const autoVerifyAttr = filter?.autoVerify === true ? ' android:autoVerify="true"' : "";
+    block.push(`            <intent-filter${autoVerifyAttr}>`);
+
+    for (const action of actions) {
+      if (typeof action !== "string" || !action.trim()) continue;
+      block.push(`                <action android:name="${escapeXml(action.trim())}" />`);
+    }
+
+    for (const category of categories) {
+      if (typeof category !== "string" || !category.trim()) continue;
+      block.push(`                <category android:name="${escapeXml(category.trim())}" />`);
+    }
+
+    for (const dataItem of dataList) {
+      if (!dataItem || typeof dataItem !== "object") continue;
+      const attrs: string[] = [];
+      for (const key of [
+        "scheme",
+        "host",
+        "port",
+        "path",
+        "pathPrefix",
+        "pathPattern",
+        "mimeType",
+      ]) {
+        const raw = dataItem[key];
+        if (typeof raw === "string" && raw.trim()) {
+          attrs.push(`android:${key}="${escapeXml(raw.trim())}"`);
+        }
+      }
+      if (attrs.length > 0) {
+        block.push(`                <data ${attrs.join(" ")} />`);
+      }
+    }
+
+    block.push("            </intent-filter>");
+    blocks.push(block.join("\n"));
+  }
+
+  return blocks.length ? `\n${blocks.join("\n")}` : "";
+}
+
 function replacePlaceholders(content: string, config: AppConfig, extras: any = {}): string {
   return content
     .replace(/\{\{\s*APP_NAME\s*\}\}/g, config.appName)
@@ -187,6 +260,10 @@ function replacePlaceholders(content: string, config: AppConfig, extras: any = {
       extras.devServerTokenBuildConfig ?? "\"\""
     )
     .replace(/\{\{\s*ACTIVITY_ATTRIBUTES\s*\}\}/g, extras.activityAttributes ?? "")
+    .replace(
+      /\{\{\s*ACTIVITY_INTENT_FILTERS\s*\}\}/g,
+      extras.activityIntentFilters ?? ""
+    )
     .replace(
       /\{\{\s*APP_ICON_DRAWABLE\s*\}\}/g,
       extras.appIconDrawable ?? "@android:drawable/sym_def_app_icon"
@@ -599,6 +676,7 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
   const moduleInitializers =
     generateAndroidModuleInitializers(componentModules);
   const activityAttributes = formatActivityAttributes(baseConfig.androidConfig);
+  const activityIntentFilters = formatActivityIntentFilters(baseConfig.androidConfig);
   const appJsonPath = path.join(appDir, "app.json");
   let appConfig: any = {};
   if (fs.existsSync(appJsonPath)) {
@@ -719,6 +797,7 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
         moduleImports,
         moduleInitializers,
         activityAttributes,
+        activityIntentFilters,
         appIconDrawable,
         appRoundIconDrawable,
         splashIconDrawable,

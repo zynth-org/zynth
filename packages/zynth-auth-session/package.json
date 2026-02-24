@@ -1,0 +1,62 @@
+{
+  "name": "@zynth/auth-session",
+  "version": "0.0.1",
+  "description": "Secure auth session primitives for Zynth",
+  "type": "module",
+  "main": "dist/esm/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "types": "./dist/types/index.d.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "src",
+    "ios",
+    "android",
+    "ZynthAuthSession.podspec"
+  ],
+  "scripts": {
+    "build": "yarn build:js && yarn build:types",
+    "build:js": "rm -rf dist/esm && tsc --project tsconfig.esm.json",
+    "build:types": "tsc --project tsconfig.types.json",
+    "clean": "rm -rf dist"
+  },
+  "peerDependencies": {
+    "@zynth/core": "0.0.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  },
+  "zynthNative": {
+    "ios": {
+      "pods": [
+        {
+          "name": "ZynthAuthSession",
+          "podspec": "./ZynthAuthSession.podspec"
+        }
+      ],
+      "initializer": {
+        "className": "ZynthAuthSession",
+        "method": "initializeWith:"
+      }
+    },
+    "android": {
+      "modules": [
+        {
+          "name": "ZynthAuthSession",
+          "path": "./android/ZynthAuthSession"
+        }
+      ],
+      "initializer": {
+        "className": "ZynthAuthSession",
+        "method": "initialize",
+        "package": "dev.zynth.authsession"
+      }
+    }
+  }
+}

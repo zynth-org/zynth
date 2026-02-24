@@ -23,6 +23,7 @@
 
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+{{ACTIVITY_INTENT_FILTERS}}
         </activity>
     </application>
 
