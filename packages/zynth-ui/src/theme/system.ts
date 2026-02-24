@@ -22,7 +22,7 @@ const MODULE_KEY = "ZynthAppearance";
 const EVENT_NAME = "ZynthAppearance:change";
 
 declare global {
-  var NativeConstants: Record<string, unknown> | undefined;
+  var NativeConstants: Record<string, any>;
   var __ZYNTH_APPEARANCE__: NativeAppearanceModule | undefined;
 }
 

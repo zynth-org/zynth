@@ -34,7 +34,7 @@ declare global {
     __ZYNTH_SAFE_AREA__?: NativeSafeAreaModule;
   }
   var __ZYNTH_SAFE_AREA__: NativeSafeAreaModule | undefined;
-  var NativeConstants: Record<string, unknown> | undefined;
+  var NativeConstants: Record<string, any>;
 }
 
 const EVENT_NAME = "zynth.safearea.change";

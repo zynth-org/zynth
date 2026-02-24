@@ -10,5 +10,5 @@ export interface {{MODULE_NAME_PASCAL}}State {
 }
 
 declare global {
-  var NativeConstants: Record<string, unknown> | undefined;
+  var NativeConstants: Record<string, any>;
 }

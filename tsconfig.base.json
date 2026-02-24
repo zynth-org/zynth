@@ -27,6 +27,8 @@
       "@zynth/core": ["packages/zynth-core/src/index.ts"],
       "@zynth/core/*": ["packages/zynth-core/src/*"],
       "@zynth/core/universal": ["packages/zynth-core/src/universal.ts"],
+      "@zynth/crypto": ["packages/zynth-crypto/src/index.ts"],
+      "@zynth/crypto/*": ["packages/zynth-crypto/src/*"],
       "@zynth/document-picker": ["packages/zynth-document-picker/src/index.ts"],
       "@zynth/document-picker/*": ["packages/zynth-document-picker/src/*"],
       "@zynth/error-overlay": ["packages/zynth-error-overlay/src/index.ts"],

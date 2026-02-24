@@ -63,7 +63,7 @@ declare global {
   interface Window {
     __ZYNTH_KEYBOARD__?: NativeKeyboardModule;
   }
-  var NativeConstants: Record<string, unknown> | undefined;
+  var NativeConstants: Record<string, any>;
 }
 
 /**

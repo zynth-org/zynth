@@ -1,0 +1,62 @@
+{
+  "name": "@zynth/crypto",
+  "version": "0.0.1",
+  "description": "Native WebCrypto-compatible primitives for Zynth",
+  "type": "module",
+  "main": "dist/esm/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "types": "./dist/types/index.d.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "src",
+    "ios",
+    "android",
+    "ZynthCrypto.podspec"
+  ],
+  "scripts": {
+    "build": "yarn build:js && yarn build:types",
+    "build:js": "rm -rf dist/esm && tsc --project tsconfig.esm.json",
+    "build:types": "tsc --project tsconfig.types.json",
+    "clean": "rm -rf dist"
+  },
+  "peerDependencies": {
+    "@zynth/core": "0.0.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  },
+  "zynthNative": {
+    "ios": {
+      "pods": [
+        {
+          "name": "ZynthCrypto",
+          "podspec": "./ZynthCrypto.podspec"
+        }
+      ],
+      "initializer": {
+        "className": "ZynthCrypto",
+        "method": "initializeWith:"
+      }
+    },
+    "android": {
+      "modules": [
+        {
+          "name": "ZynthCrypto",
+          "path": "./android/ZynthCrypto"
+        }
+      ],
+      "initializer": {
+        "className": "ZynthCrypto",
+        "method": "initialize",
+        "package": "dev.zynth.crypto"
+      }
+    }
+  }
+}
