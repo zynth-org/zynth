@@ -174,6 +174,11 @@ class MainActivity : AppCompatActivity() {
     runtime = null
   }
 
+  override fun onNewIntent(intent: android.content.Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+  }
+
   private fun persistDevConfig(
     devServerUrl: String?,
     devServerToken: String?,

@@ -2,6 +2,8 @@ package dev.zynth.authsession
 
 import android.app.Activity
 import android.graphics.Color
+import android.os.Handler
+import android.os.Looper
 import androidx.browser.customtabs.CustomTabColorSchemeParams
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.lifecycle.DefaultLifecycleObserver
@@ -31,8 +33,16 @@ internal class AuthSessionModule(
   )
 
   private var pending: PendingSession? = null
-  private var lastIntentUrl: String? = null
+  private var lastIntent: android.content.Intent? = null
   private var awaitingBrowserReturn: Boolean = false
+  private val mainHandler = Handler(Looper.getMainLooper())
+  private var redirectPollRunnable: Runnable? = null
+  private var redirectPollAttempts: Int = 0
+
+  companion object {
+    private const val REDIRECT_POLL_INTERVAL_MS = 120L
+    private const val REDIRECT_POLL_MAX_ATTEMPTS = 12
+  }
 
   init {
     val owner = activity as? LifecycleOwner
@@ -40,11 +50,13 @@ internal class AuthSessionModule(
   }
 
   override fun invalidate() {
+    clearRedirectPolling()
     pending = null
     awaitingBrowserReturn = false
   }
 
   override fun onPause(owner: LifecycleOwner) {
+    clearRedirectPolling()
     if (pending != null) {
       awaitingBrowserReturn = true
     }
@@ -55,17 +67,7 @@ internal class AuthSessionModule(
       return
     }
 
-    val currentUrl = activity.intent?.dataString
-    if (currentUrl != null && currentUrl != lastIntentUrl && tryComplete(currentUrl)) {
-      lastIntentUrl = currentUrl
-      awaitingBrowserReturn = false
-      return
-    }
-
-    val session = pending ?: return
-    pending = null
-    awaitingBrowserReturn = false
-    emitResult(requestId = session.requestId, type = "cancel")
+    startRedirectPolling()
   }
 
   override fun call(method: String, args: ZynthArgs): JSONObject {
@@ -101,6 +103,7 @@ internal class AuthSessionModule(
     val customTabsIntent = builder.build()
     pending = PendingSession(requestId = requestId, redirectUri = redirectUri)
     awaitingBrowserReturn = false
+    lastIntent = activity.intent
     customTabsIntent.launchUrl(activity, android.net.Uri.parse(authUrl.toString()))
 
     return JSONObject().put("status", "pending")
@@ -114,6 +117,7 @@ internal class AuthSessionModule(
 
   private fun dismissAuthSession(): JSONObject {
     val session = pending ?: return JSONObject().put("dismissed", false)
+    clearRedirectPolling()
     pending = null
     awaitingBrowserReturn = false
     emitResult(requestId = session.requestId, type = "dismiss")
@@ -135,6 +139,46 @@ internal class AuthSessionModule(
       url = callback.toString(),
     )
     return true
+  }
+
+  private fun startRedirectPolling() {
+    clearRedirectPolling()
+    redirectPollAttempts = 0
+
+    val runnable = object : Runnable {
+      override fun run() {
+        val session = pending ?: return
+        val currentIntent = activity.intent
+        val currentUrl = currentIntent?.dataString
+        if (currentIntent != lastIntent && currentUrl != null && tryComplete(currentUrl)) {
+          lastIntent = currentIntent
+          awaitingBrowserReturn = false
+          clearRedirectPolling()
+          return
+        }
+
+        redirectPollAttempts += 1
+        if (redirectPollAttempts >= REDIRECT_POLL_MAX_ATTEMPTS) {
+          clearRedirectPolling()
+          pending = null
+          awaitingBrowserReturn = false
+          emitResult(requestId = session.requestId, type = "cancel")
+          return
+        }
+
+        mainHandler.postDelayed(this, REDIRECT_POLL_INTERVAL_MS)
+      }
+    }
+
+    redirectPollRunnable = runnable
+    mainHandler.post(runnable)
+  }
+
+  private fun clearRedirectPolling() {
+    val runnable = redirectPollRunnable ?: return
+    mainHandler.removeCallbacks(runnable)
+    redirectPollRunnable = null
+    redirectPollAttempts = 0
   }
 
   private fun parseHttpsUri(raw: String): URI {
