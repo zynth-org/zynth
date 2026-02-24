@@ -26,21 +26,29 @@ final class AuthSessionModule: NSObject, ZynthModule, ASWebAuthenticationPresent
   func call(method: String, args: ZynthArgs) throws -> Any? {
     switch method {
     case "openAuthSession":
-      return try openAuthSession(args: args)
+      return try onMainSync {
+        try openAuthSession(args: args)
+      }
     case "completeAuthSession":
-      return try completeAuthSession(args: args)
+      return try onMainSync {
+        try completeAuthSession(args: args)
+      }
     case "dismissAuthSession":
-      return dismissAuthSession()
+      return onMainSync {
+        dismissAuthSession()
+      }
     default:
       throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
   }
 
   func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-    return UIApplication.shared.connectedScenes
-      .compactMap { $0 as? UIWindowScene }
-      .flatMap(\.windows)
-      .first(where: { $0.isKeyWindow }) ?? ASPresentationAnchor()
+    return onMainSync {
+      UIApplication.shared.connectedScenes
+        .compactMap { $0 as? UIWindowScene }
+        .flatMap(\.windows)
+        .first(where: { $0.isKeyWindow }) ?? ASPresentationAnchor()
+    }
   }
 
   private func openAuthSession(args: ZynthArgs) throws -> Any? {
@@ -201,6 +209,16 @@ final class AuthSessionModule: NSObject, ZynthModule, ASWebAuthenticationPresent
       "errorMessage": errorMessage ?? NSNull(),
     ]
     runtime?.emitEvent(name: "AuthSession.result", payload: payload)
+  }
+
+  private func onMainSync<T>(_ block: () throws -> T) rethrows -> T {
+    if Thread.isMainThread {
+      return try block()
+    }
+
+    return try DispatchQueue.main.sync {
+      try block()
+    }
   }
 
   private struct PendingSession {
