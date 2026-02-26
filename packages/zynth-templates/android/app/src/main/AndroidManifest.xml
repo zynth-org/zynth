@@ -2,6 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     android:installLocation="auto">
     <uses-permission android:name="android.permission.INTERNET" />
+{{ANDROID_USES_PERMISSIONS}}
 
     <application
         android:name=".MainApplication"

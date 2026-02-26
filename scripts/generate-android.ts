@@ -214,6 +214,58 @@ function formatActivityIntentFilters(androidConfig: any): string {
   return blocks.length ? `\n${blocks.join("\n")}` : "";
 }
 
+function formatAndroidPermissions(androidConfig: any): string {
+  const permissions = Array.isArray(androidConfig?.permissions)
+    ? androidConfig.permissions
+    : [];
+  if (!permissions.length) {
+    return "";
+  }
+
+  const lines: string[] = [];
+  const seen = new Set<string>();
+
+  for (const entry of permissions) {
+    if (typeof entry === "string") {
+      const permission = entry.trim();
+      if (!permission) continue;
+      const key = `${permission}|`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      lines.push(`    <uses-permission android:name="${escapeXml(permission)}" />`);
+      continue;
+    }
+
+    if (!entry || typeof entry !== "object") {
+      continue;
+    }
+
+    const name =
+      typeof entry.name === "string" ? entry.name.trim() : "";
+    if (!name) {
+      continue;
+    }
+
+    const attrs = [`android:name="${escapeXml(name)}"`];
+    if (typeof entry.maxSdkVersion === "number" && Number.isFinite(entry.maxSdkVersion)) {
+      attrs.push(`android:maxSdkVersion="${Math.round(entry.maxSdkVersion)}"`);
+    }
+    if (typeof entry.minSdkVersion === "number" && Number.isFinite(entry.minSdkVersion)) {
+      attrs.push(`android:minSdkVersion="${Math.round(entry.minSdkVersion)}"`);
+    }
+    if (typeof entry.usesPermissionFlags === "string" && entry.usesPermissionFlags.trim()) {
+      attrs.push(`android:usesPermissionFlags="${escapeXml(entry.usesPermissionFlags.trim())}"`);
+    }
+
+    const key = attrs.join("|");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    lines.push(`    <uses-permission ${attrs.join(" ")} />`);
+  }
+
+  return lines.length ? `\n${lines.join("\n")}` : "";
+}
+
 function replacePlaceholders(content: string, config: AppConfig, extras: any = {}): string {
   return content
     .replace(/\{\{\s*APP_NAME\s*\}\}/g, config.appName)
@@ -263,6 +315,10 @@ function replacePlaceholders(content: string, config: AppConfig, extras: any = {
     .replace(
       /\{\{\s*ACTIVITY_INTENT_FILTERS\s*\}\}/g,
       extras.activityIntentFilters ?? ""
+    )
+    .replace(
+      /\{\{\s*ANDROID_USES_PERMISSIONS\s*\}\}/g,
+      extras.androidUsesPermissions ?? ""
     )
     .replace(
       /\{\{\s*APP_ICON_DRAWABLE\s*\}\}/g,
@@ -677,6 +733,7 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
     generateAndroidModuleInitializers(componentModules);
   const activityAttributes = formatActivityAttributes(baseConfig.androidConfig);
   const activityIntentFilters = formatActivityIntentFilters(baseConfig.androidConfig);
+  const androidUsesPermissions = formatAndroidPermissions(baseConfig.androidConfig);
   const appJsonPath = path.join(appDir, "app.json");
   let appConfig: any = {};
   if (fs.existsSync(appJsonPath)) {
@@ -798,6 +855,7 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
         moduleInitializers,
         activityAttributes,
         activityIntentFilters,
+        androidUsesPermissions,
         appIconDrawable,
         appRoundIconDrawable,
         splashIconDrawable,

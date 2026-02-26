@@ -1,0 +1,62 @@
+{
+  "name": "@zynth/bluetooth",
+  "version": "0.0.1",
+  "description": "Secure Bluetooth Classic + BLE primitives for Zynth",
+  "type": "module",
+  "main": "dist/esm/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "types": "./dist/types/index.d.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "src",
+    "android",
+    "ios",
+    "ZynthBluetooth.podspec"
+  ],
+  "scripts": {
+    "build": "yarn build:js && yarn build:types",
+    "build:js": "rm -rf dist/esm && tsc --project tsconfig.esm.json",
+    "build:types": "tsc --project tsconfig.types.json",
+    "clean": "rm -rf dist"
+  },
+  "peerDependencies": {
+    "@zynth/core": "0.0.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  },
+  "zynthNative": {
+    "ios": {
+      "pods": [
+        {
+          "name": "ZynthBluetooth",
+          "podspec": "./ZynthBluetooth.podspec"
+        }
+      ],
+      "initializer": {
+        "className": "ZynthBluetooth",
+        "method": "initializeWith:"
+      }
+    },
+    "android": {
+      "modules": [
+        {
+          "name": "ZynthBluetooth",
+          "path": "./android/ZynthBluetooth"
+        }
+      ],
+      "initializer": {
+        "className": "ZynthBluetooth",
+        "method": "initialize",
+        "package": "dev.zynth.bluetooth"
+      }
+    }
+  }
+}

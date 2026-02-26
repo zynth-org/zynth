@@ -78,7 +78,9 @@
       "@zynth/web-browser": ["packages/zynth-web-browser/src/index.ts"],
       "@zynth/web-browser/*": ["packages/zynth-web-browser/src/*"],
       "@zynth/auth-session": ["packages/zynth-auth-session/src/index.ts"],
-      "@zynth/auth-session/*": ["packages/zynth-auth-session/src/*"]
+      "@zynth/auth-session/*": ["packages/zynth-auth-session/src/*"],
+      "@zynth/bluetooth": ["packages/zynth-bluetooth/src/index.ts"],
+      "@zynth/bluetooth/*": ["packages/zynth-bluetooth/src/*"]
     }
   }
 }
