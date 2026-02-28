@@ -168,6 +168,7 @@ internal fun ZynthRuntime.applyHotUpdate() {
   if (baseUrl.isNullOrEmpty()) return
   if (isApplyingHotUpdate) return
   isApplyingHotUpdate = true
+  ZynthHmrVisualIndicator.pulse(root)
 
   hotUpdateExecutor.execute {
     try {

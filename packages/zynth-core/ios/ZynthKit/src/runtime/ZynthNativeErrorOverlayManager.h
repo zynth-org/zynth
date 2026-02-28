@@ -15,6 +15,7 @@ NS_ASSUME_NONNULL_BEGIN
                         data:(id _Nullable)data;
 - (void)handleRawEventJSON:(NSString *)json;
 - (void)dismissForHmrUpdate;
+- (void)flashHmrIndicator;
 
 @end
 

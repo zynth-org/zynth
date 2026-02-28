@@ -229,6 +229,22 @@ extension ZynthRuntime {
     }
   }
 
+  private func flashNativeHmrIndicator() {
+    guard let managerClass = NSClassFromString("ZynthNativeErrorOverlayManager") as? NSObject.Type else {
+      return
+    }
+    let sharedSelector = NSSelectorFromString("shared")
+    let flashSelector = NSSelectorFromString("flashHmrIndicator")
+    guard managerClass.responds(to: sharedSelector),
+          let unmanaged = managerClass.perform(sharedSelector) else {
+      return
+    }
+    let manager = unmanaged.takeUnretainedValue() as AnyObject
+    if manager.responds(to: flashSelector) {
+      _ = manager.perform(flashSelector)
+    }
+  }
+
   func refreshDevBundle() {
     guard let url = devServerURL else { return }
     do {
@@ -244,6 +260,7 @@ extension ZynthRuntime {
     if isApplyingHotUpdate { return }
     guard devServerURL != nil else { return }
     isApplyingHotUpdate = true
+    flashNativeHmrIndicator()
 
     let manifestCandidates = hotUpdateManifestPaths()
     print("[ZynthRuntime] 🔥 applyHotUpdate, manifest candidates:", manifestCandidates)

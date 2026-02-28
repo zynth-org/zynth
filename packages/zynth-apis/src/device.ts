@@ -19,6 +19,8 @@ export type DeviceInfo = Readonly<{
   uniqueId: string | null;
   sdkInt: number | null;
   isEmulator: boolean;
+  hasRoundedDisplayCorners: boolean;
+  displayCornerRadius: number | null;
 }>;
 
 type DevicePayload = {
@@ -35,6 +37,8 @@ type DevicePayload = {
   uniqueId?: unknown;
   sdkInt?: unknown;
   isEmulator?: unknown;
+  hasRoundedDisplayCorners?: unknown;
+  displayCornerRadius?: unknown;
 };
 
 function asStringOrNull(value: unknown): string | null {
@@ -74,6 +78,8 @@ function normalizeDeviceInfo(value: unknown): DeviceInfo | null {
     uniqueId: asStringOrNull(payload.uniqueId),
     sdkInt: asNumberOrNull(payload.sdkInt),
     isEmulator: Boolean(payload.isEmulator),
+    hasRoundedDisplayCorners: Boolean(payload.hasRoundedDisplayCorners),
+    displayCornerRadius: asNumberOrNull(payload.displayCornerRadius),
   });
 }
 
@@ -116,6 +122,8 @@ function readWebDeviceInfo(): DeviceInfo {
     uniqueId: null,
     sdkInt: null,
     isEmulator: false,
+    hasRoundedDisplayCorners: false,
+    displayCornerRadius: null,
   });
 }
 

@@ -115,4 +115,5 @@ import { Device } from "@zynth/apis";
 
 const info = Device.getInfo();
 console.log(info.model, info.osName, info.osVersion);
+console.log(info.hasRoundedDisplayCorners, info.displayCornerRadius);
 ```

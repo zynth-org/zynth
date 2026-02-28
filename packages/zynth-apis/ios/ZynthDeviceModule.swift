@@ -35,6 +35,7 @@ final class ZynthDeviceModule: NSObject, ZynthModule, ZynthSyncModule {
 
   private func deviceInfo() -> [String: Any] {
     let device = UIDevice.current
+    let cornerRadius = estimatedDisplayCornerRadius()
     return [
       "platform": "ios",
       "model": device.model,
@@ -49,7 +50,60 @@ final class ZynthDeviceModule: NSObject, ZynthModule, ZynthSyncModule {
       "uniqueId": device.identifierForVendor?.uuidString as Any? ?? NSNull(),
       "sdkInt": NSNull(),
       "isEmulator": isRunningOnSimulator(),
+      "hasRoundedDisplayCorners": cornerRadius > 0,
+      "displayCornerRadius": cornerRadius > 0 ? cornerRadius : NSNull(),
     ]
+  }
+
+  private func estimatedDisplayCornerRadius() -> CGFloat {
+    if !Thread.isMainThread {
+      var value: CGFloat = 0
+      DispatchQueue.main.sync {
+        value = self.estimatedDisplayCornerRadiusOnMain()
+      }
+      return value
+    }
+    return estimatedDisplayCornerRadiusOnMain()
+  }
+
+  private func estimatedDisplayCornerRadiusOnMain() -> CGFloat {
+    let window = activeWindowOnMain()
+    if let layerRadius = window?.layer.cornerRadius, layerRadius > 0 {
+      return layerRadius
+    }
+
+    let insets = window?.safeAreaInsets ?? .zero
+    let bounds = window?.bounds ?? UIScreen.main.bounds
+    let shortest = min(bounds.width, bounds.height)
+    let hasRoundedSignals =
+      insets.bottom > 0 || insets.left > 0 || insets.right > 0 || insets.top > 20
+
+    if hasRoundedSignals {
+      return max(30, min(60, shortest * 0.125))
+    }
+    if UIDevice.current.userInterfaceIdiom == .phone, shortest >= 390 {
+      return max(20, min(42, shortest * 0.095))
+    }
+    return 0
+  }
+
+  private func activeWindowOnMain() -> UIWindow? {
+    guard #available(iOS 13.0, *) else {
+      return nil
+    }
+    for scene in UIApplication.shared.connectedScenes {
+      guard let windowScene = scene as? UIWindowScene else { continue }
+      guard scene.activationState == .foregroundActive || scene.activationState == .foregroundInactive else {
+        continue
+      }
+      if let key = windowScene.windows.first(where: { $0.isKeyWindow }) {
+        return key
+      }
+      if let first = windowScene.windows.first {
+        return first
+      }
+    }
+    return nil
   }
 
   private func isRunningOnSimulator() -> Bool {

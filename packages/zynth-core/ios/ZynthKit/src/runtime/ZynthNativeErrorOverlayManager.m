@@ -1,6 +1,8 @@
 #import "ZynthNativeErrorOverlayManager.h"
 #import "ZynthRuntime.h"
 
+#import <math.h>
+#import <QuartzCore/QuartzCore.h>
 #import <UIKit/UIKit.h>
 #import <objc/message.h>
 #if __has_include("ZynthKit-Swift.h")
@@ -12,6 +14,7 @@
 @property(nonatomic, weak) UIView *rootView;
 @property(nonatomic, strong) UIView *fatalOverlay;
 @property(nonatomic, strong) UIView *warningToast;
+@property(nonatomic, strong) UIView *hmrIndicator;
 @property(nonatomic, strong) NSDictionary *tokens;
 @property(nonatomic, assign) NSInteger warningCount;
 @property(nonatomic, copy) NSString *warningMessage;
@@ -25,6 +28,20 @@
 - (void)showWarningToastWithTopic:(NSString *)topic
                            message:(NSString *)message
                              stack:(NSString *_Nullable)stack;
+- (void)configureHmrIndicatorLayersForRoot:(UIView *)root;
+- (CGFloat)hmrCornerRadiusForRoot:(UIView *)root;
+- (UIWindow *_Nullable)activeWindowForRoot:(UIView *)root;
+@end
+
+@interface ZynthPassthroughOverlayView : UIView
+@end
+
+@implementation ZynthPassthroughOverlayView
+- (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
+  (void)point;
+  (void)event;
+  return NO;
+}
 @end
 
 static NSString *const ZynthGlyphArrowRight = @"\uea05";
@@ -80,8 +97,10 @@ static NSInteger const ZynthWarningCloseIconTag = 91006;
   dispatch_async(dispatch_get_main_queue(), ^{
     [self.fatalOverlay removeFromSuperview];
     [self.warningToast removeFromSuperview];
+    [self.hmrIndicator removeFromSuperview];
     self.fatalOverlay = nil;
     self.warningToast = nil;
+    self.hmrIndicator = nil;
     self.warningCount = 0;
     self.warningMessage = @"";
     self.warningTopic = @"warning/runtime";
@@ -95,13 +114,222 @@ static NSInteger const ZynthWarningCloseIconTag = 91006;
   dispatch_async(dispatch_get_main_queue(), ^{
     [self.fatalOverlay removeFromSuperview];
     [self.warningToast removeFromSuperview];
+    [self.hmrIndicator removeFromSuperview];
     self.fatalOverlay = nil;
     self.warningToast = nil;
+    self.hmrIndicator = nil;
     self.warningCount = 0;
     self.warningMessage = @"";
     self.warningTopic = @"warning/runtime";
     self.warningStack = @"";
   });
+}
+
+- (void)flashHmrIndicator {
+  dispatch_async(dispatch_get_main_queue(), ^{
+    UIView *root = self.rootView;
+    if (root == nil) return;
+
+    if (self.hmrIndicator == nil) {
+      ZynthPassthroughOverlayView *overlay = [[ZynthPassthroughOverlayView alloc] initWithFrame:root.bounds];
+      overlay.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+      overlay.userInteractionEnabled = NO;
+      overlay.backgroundColor = UIColor.clearColor;
+      self.hmrIndicator = overlay;
+      [root addSubview:overlay];
+    } else if (self.hmrIndicator.superview != root) {
+      [self.hmrIndicator removeFromSuperview];
+      self.hmrIndicator.frame = root.bounds;
+      [root addSubview:self.hmrIndicator];
+    } else {
+      self.hmrIndicator.frame = root.bounds;
+    }
+
+    [self configureHmrIndicatorLayersForRoot:root];
+    self.hmrIndicator.alpha = 0.0;
+    [root bringSubviewToFront:self.hmrIndicator];
+
+    [UIView animateWithDuration:0.09
+                          delay:0
+                        options:UIViewAnimationOptionCurveEaseOut | UIViewAnimationOptionBeginFromCurrentState
+                     animations:^{
+      self.hmrIndicator.alpha = 1.0;
+    } completion:^(BOOL finished) {
+      if (!finished) return;
+      [UIView animateWithDuration:0.26
+                            delay:0
+                          options:UIViewAnimationOptionCurveEaseInOut | UIViewAnimationOptionBeginFromCurrentState
+                       animations:^{
+        self.hmrIndicator.alpha = 0.0;
+      } completion:nil];
+    }];
+  });
+}
+
+- (void)configureHmrIndicatorLayersForRoot:(UIView *)root {
+  if (self.hmrIndicator == nil) return;
+  NSArray<CALayer *> *existing = [self.hmrIndicator.layer.sublayers copy];
+  for (CALayer *layer in existing) {
+    [layer removeFromSuperlayer];
+  }
+  CGFloat cornerRadius = [self hmrCornerRadiusForRoot:root];
+  self.hmrIndicator.layer.cornerRadius = cornerRadius;
+  if (@available(iOS 13.0, *)) {
+    self.hmrIndicator.layer.cornerCurve = kCACornerCurveContinuous;
+  }
+  self.hmrIndicator.layer.masksToBounds = cornerRadius > 0.0;
+
+  CAGradientLayer *aura = [CAGradientLayer layer];
+  aura.frame = self.hmrIndicator.bounds;
+  aura.cornerRadius = cornerRadius;
+  aura.masksToBounds = cornerRadius > 0.0;
+  aura.startPoint = CGPointMake(0.0, 0.0);
+  aura.endPoint = CGPointMake(1.0, 1.0);
+  aura.colors = @[
+    (__bridge id)[UIColor colorWithRed:0.13 green:0.79 blue:0.46 alpha:0.74].CGColor,
+    (__bridge id)[UIColor colorWithRed:0.19 green:0.86 blue:0.57 alpha:0.70].CGColor,
+    (__bridge id)[UIColor colorWithRed:0.30 green:0.90 blue:0.66 alpha:0.68].CGColor,
+    (__bridge id)[UIColor colorWithRed:0.15 green:0.73 blue:0.41 alpha:0.74].CGColor,
+  ];
+  aura.locations = @[ @0.0, @0.34, @0.67, @1.0 ];
+
+  CGRect bounds = aura.bounds;
+  CGFloat shortest = MIN(bounds.size.width, bounds.size.height);
+  CGFloat edgeThickness = MAX(14.0, MIN(22.0, shortest * 0.034));
+  CGFloat targetInnerCorner =
+    cornerRadius > 0.0 ? MAX(10.0, MIN(24.0, cornerRadius * 0.42)) : 0.0;
+
+  CALayer *softMask = [CALayer layer];
+  softMask.frame = bounds;
+  NSInteger bands = 8;
+  CGFloat step = edgeThickness / (CGFloat)bands;
+
+  for (NSInteger i = 0; i < bands; i++) {
+    CGFloat outerInset = (CGFloat)i * step;
+    CGFloat innerInset = (CGFloat)(i + 1) * step;
+    CGRect outerRect = CGRectInset(bounds, outerInset, outerInset);
+    CGRect innerRect = CGRectInset(bounds, innerInset, innerInset);
+
+    CGFloat outerCornerRadius =
+      cornerRadius > 0.0 ? MAX(targetInnerCorner, cornerRadius - outerInset) : 0.0;
+    CGFloat innerCornerRadius =
+      cornerRadius > 0.0 ? MAX(targetInnerCorner, cornerRadius - innerInset) : 0.0;
+
+    UIBezierPath *bandPath =
+      [UIBezierPath bezierPathWithRoundedRect:outerRect cornerRadius:outerCornerRadius];
+    UIBezierPath *innerPath =
+      [UIBezierPath bezierPathWithRoundedRect:innerRect cornerRadius:innerCornerRadius];
+    [bandPath appendPath:innerPath];
+
+    CGFloat t = (CGFloat)(i + 1) / (CGFloat)bands;
+    CGFloat alpha = pow(1.0 - t, 1.35);
+
+    CAShapeLayer *band = [CAShapeLayer layer];
+    band.frame = bounds;
+    band.path = bandPath.CGPath;
+    band.fillRule = kCAFillRuleEvenOdd;
+    band.fillColor = [UIColor colorWithWhite:1.0 alpha:alpha].CGColor;
+    band.contentsScale = UIScreen.mainScreen.scale;
+    band.allowsEdgeAntialiasing = YES;
+    [softMask addSublayer:band];
+  }
+
+  // Corner compensation: slight alpha boost where horizontal/vertical edges meet.
+  CGFloat cornerBoostSize = MAX(edgeThickness * 4.0, 48.0);
+  NSArray<NSValue *> *cornerFrames = @[
+    [NSValue valueWithCGRect:CGRectMake(0.0, 0.0, cornerBoostSize, cornerBoostSize)],
+    [NSValue valueWithCGRect:CGRectMake(bounds.size.width - cornerBoostSize, 0.0, cornerBoostSize, cornerBoostSize)],
+    [NSValue valueWithCGRect:CGRectMake(0.0, bounds.size.height - cornerBoostSize, cornerBoostSize, cornerBoostSize)],
+    [NSValue valueWithCGRect:CGRectMake(bounds.size.width - cornerBoostSize, bounds.size.height - cornerBoostSize, cornerBoostSize, cornerBoostSize)],
+  ];
+  NSArray<NSValue *> *cornerStarts = @[
+    [NSValue valueWithCGPoint:CGPointMake(0.0, 0.0)],
+    [NSValue valueWithCGPoint:CGPointMake(1.0, 0.0)],
+    [NSValue valueWithCGPoint:CGPointMake(0.0, 1.0)],
+    [NSValue valueWithCGPoint:CGPointMake(1.0, 1.0)],
+  ];
+  NSArray<NSValue *> *cornerEnds = @[
+    [NSValue valueWithCGPoint:CGPointMake(1.0, 1.0)],
+    [NSValue valueWithCGPoint:CGPointMake(0.0, 1.0)],
+    [NSValue valueWithCGPoint:CGPointMake(1.0, 0.0)],
+    [NSValue valueWithCGPoint:CGPointMake(0.0, 0.0)],
+  ];
+
+  for (NSInteger i = 0; i < cornerFrames.count; i++) {
+    CAGradientLayer *cornerBoost = [CAGradientLayer layer];
+    cornerBoost.type = kCAGradientLayerRadial;
+    cornerBoost.frame = [cornerFrames[i] CGRectValue];
+    cornerBoost.startPoint = [cornerStarts[i] CGPointValue];
+    cornerBoost.endPoint = [cornerEnds[i] CGPointValue];
+    cornerBoost.colors = @[
+      (__bridge id)[UIColor colorWithWhite:1.0 alpha:0.24].CGColor,
+      (__bridge id)[UIColor colorWithWhite:1.0 alpha:0.0].CGColor,
+    ];
+    cornerBoost.locations = @[ @0.0, @1.0 ];
+    cornerBoost.contentsScale = UIScreen.mainScreen.scale;
+    [softMask addSublayer:cornerBoost];
+  }
+
+  aura.mask = softMask;
+  [self.hmrIndicator.layer addSublayer:aura];
+}
+
+- (CGFloat)hmrCornerRadiusForRoot:(UIView *)root {
+  CGFloat explicitRadius = root.layer.cornerRadius;
+  if (explicitRadius > 0.0) {
+    return explicitRadius;
+  }
+
+  UIWindow *window = [self activeWindowForRoot:root];
+  CGFloat windowRadius = window.layer.cornerRadius;
+  if (windowRadius > 0.0) {
+    return windowRadius;
+  }
+  UIEdgeInsets insets = window != nil ? window.safeAreaInsets : root.safeAreaInsets;
+  CGFloat shortest = MIN(
+    window != nil ? window.bounds.size.width : root.bounds.size.width,
+    window != nil ? window.bounds.size.height : root.bounds.size.height
+  );
+
+  BOOL hasRoundedSignals =
+    insets.bottom > 0.0 || insets.left > 0.0 || insets.right > 0.0 || insets.top > 20.0;
+
+  if (hasRoundedSignals) {
+    return MAX(30.0, MIN(60.0, shortest * 0.125));
+  }
+
+  // Fallback: only for modern large-screen phones. Compact devices like iPhone SE should stay square.
+  if (UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPhone) {
+    if (shortest >= 390.0) {
+      return MAX(20.0, MIN(42.0, shortest * 0.095));
+    }
+    return 0.0;
+  }
+  return 0.0;
+}
+
+- (UIWindow *_Nullable)activeWindowForRoot:(UIView *)root {
+  if (root.window != nil) {
+    return root.window;
+  }
+
+  for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+    if (![scene isKindOfClass:[UIWindowScene class]]) continue;
+    UIWindowScene *windowScene = (UIWindowScene *)scene;
+    if (windowScene.activationState != UISceneActivationStateForegroundActive &&
+        windowScene.activationState != UISceneActivationStateForegroundInactive) {
+      continue;
+    }
+    for (UIWindow *window in windowScene.windows) {
+      if (window.isKeyWindow) {
+        return window;
+      }
+    }
+    if (windowScene.windows.count > 0) {
+      return windowScene.windows.firstObject;
+    }
+  }
+  return nil;
 }
 
 - (void)handleRawEventJSON:(NSString *)json {

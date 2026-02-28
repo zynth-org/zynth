@@ -241,6 +241,7 @@ class ZynthRuntime(val root: ZynthRootView) {
   }
 
   fun destroy() {
+    ZynthHmrVisualIndicator.dismiss()
     ZynthNativeErrorOverlay.detach()
     runOnJSSync {
       JSBridge.destroyHermesRuntime(runtimePtr)

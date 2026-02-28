@@ -59,6 +59,8 @@ class DeviceModule(
             "uniqueId" to (androidId ?: ""),
             "sdkInt" to Build.VERSION.SDK_INT,
             "isEmulator" to isProbablyEmulator(),
+            "hasRoundedDisplayCorners" to false,
+            "displayCornerRadius" to JSONObject.NULL,
         )
     }
 
