@@ -352,6 +352,58 @@ export function createIOSHost(): Host {
     pendingDrops.add(nodeId);
   };
 
+  const detachNodeFromRecyclingState = (nodeId: number) => {
+    const contextId = NODE_TO_CONTEXT.get(nodeId);
+    if (!contextId) return;
+    const context = RECYCLING_CONTEXTS.get(contextId);
+    if (context) {
+      context.activeBindings.delete(nodeId);
+      for (const pool of context.pool.values()) {
+        const index = pool.indexOf(nodeId);
+        if (index >= 0) {
+          pool.splice(index, 1);
+        }
+      }
+    }
+    NODE_TO_CONTEXT.delete(nodeId);
+  };
+
+  const destroySubtreeTracking = (rootId: number) => {
+    const stack: { id: number; expanded: boolean }[] = [
+      { id: rootId, expanded: false },
+    ];
+    const seen = new Set<number>();
+    const ordered: number[] = [];
+
+    while (stack.length) {
+      const item = stack.pop()!;
+      if (item.expanded) {
+        ordered.push(item.id);
+        continue;
+      }
+      if (seen.has(item.id)) continue;
+      seen.add(item.id);
+      stack.push({ id: item.id, expanded: true });
+      const childIds = CHILDREN.get(item.id);
+      if (childIds) {
+        for (let i = childIds.length - 1; i >= 0; i--) {
+          stack.push({ id: childIds[i], expanded: false });
+        }
+      }
+    }
+
+    for (const nodeId of ordered) {
+      if (!isMarkerId(nodeId)) {
+        recordPendingDrop(nodeId);
+      }
+      TEXTS.delete(nodeId);
+      TYPES.delete(nodeId);
+      detachNodeFromRecyclingState(nodeId);
+      CHILDREN.delete(nodeId);
+      PARENTS.delete(nodeId);
+    }
+  };
+
   const resetNodeToDefault = (nodeId: number, type: HostNode["type"]) => {
     // Reset style with explicit position reset to prevent position from persisting
     enqueueBatchOp({
@@ -390,14 +442,23 @@ export function createIOSHost(): Host {
     const nodeType = TYPES.get(nodeId);
     if (!nodeType) return;
 
-    resetNodeToDefault(nodeId, nodeType);
-
     let pool = context.pool.get(nodeType);
     if (!pool) {
       pool = [];
       context.pool.set(nodeType, pool);
     }
-    pool.push(nodeId);
+
+    if (pool.length < 512) {
+      resetNodeToDefault(nodeId, nodeType);
+      pool.push(nodeId);
+    } else {
+      recordPendingDrop(nodeId);
+      TEXTS.delete(nodeId);
+      TYPES.delete(nodeId);
+      detachNodeFromRecyclingState(nodeId);
+      CHILDREN.delete(nodeId);
+      PARENTS.delete(nodeId);
+    }
 
     context.activeBindings.delete(nodeId);
   };
@@ -492,12 +553,15 @@ export function createIOSHost(): Host {
     },
     createNode(type, props) {
       let id: number | null = null;
+      let recycled = false;
+      const inBatch = !!currentBatch();
 
-      if (RECYCLING_CONTEXTS.size > 0) {
+      if (type !== "text" && RECYCLING_CONTEXTS.size > 0) {
         for (const [contextId] of RECYCLING_CONTEXTS) {
           const pooled = findAvailableNodeInPool(contextId, type);
           if (pooled !== null) {
             id = pooled;
+            recycled = true;
             NODE_TO_CONTEXT.set(id, contextId);
             break;
           }
@@ -509,75 +573,110 @@ export function createIOSHost(): Host {
       }
 
       const node = { id, type } as HostNode;
-      if (registry) {
+      if (registry && !recycled) {
         registry.register(node, id);
       }
 
       PARENTS.set(id, null);
       CHILDREN.set(id, []);
       TYPES.set(id, type);
-      if (props?.style)
-        enqueueBatchOp({
+      if (props?.style) {
+        const op: BatchOperation = {
           type: "setProp",
           nodeId: id,
           name: "style",
           value: props.style as Style,
-        });
+        };
+        if (!tryEnqueueBatch(op)) {
+          enqueueBatchOp(op);
+        }
+      }
       if (typeof props?.onPress === "function") {
         enqueueOperation(() => ui.setHandler(id!, "onPress", props.onPress));
       }
       if (typeof props?.onLayout === "function") {
         enqueueOperation(() => ui.setHandler(id!, "onLayout", props.onLayout));
       }
-      if (props?.accessibilityLabel)
-        enqueueBatchOp({
+      if (props?.accessibilityLabel) {
+        const op: BatchOperation = {
           type: "setProp",
           nodeId: id,
           name: "accessibilityLabel",
           value: props.accessibilityLabel,
-        });
-      if (props?.accessibilityHint)
-        enqueueBatchOp({
+        };
+        if (!tryEnqueueBatch(op)) {
+          enqueueBatchOp(op);
+        }
+      }
+      if (props?.accessibilityHint) {
+        const op: BatchOperation = {
           type: "setProp",
           nodeId: id,
           name: "accessibilityHint",
           value: props.accessibilityHint,
-        });
-      if (props?.accessibilityRole)
-        enqueueBatchOp({
+        };
+        if (!tryEnqueueBatch(op)) {
+          enqueueBatchOp(op);
+        }
+      }
+      if (props?.accessibilityRole) {
+        const op: BatchOperation = {
           type: "setProp",
           nodeId: id,
           name: "accessibilityRole",
           value: props.accessibilityRole,
-        });
-      if (props?.pointerEvents)
-        enqueueBatchOp({
+        };
+        if (!tryEnqueueBatch(op)) {
+          enqueueBatchOp(op);
+        }
+      }
+      if (props?.pointerEvents) {
+        const op: BatchOperation = {
           type: "setProp",
           nodeId: id,
           name: "pointerEvents",
           value: props.pointerEvents,
-        });
-      if (props?.testID)
-        enqueueBatchOp({
+        };
+        if (!tryEnqueueBatch(op)) {
+          enqueueBatchOp(op);
+        }
+      }
+      if (props?.testID) {
+        const op: BatchOperation = {
           type: "setProp",
           nodeId: id,
           name: "testID",
           value: props.testID,
-        });
-      if (type === "text-input") {
+        };
+        if (!tryEnqueueBatch(op)) {
+          enqueueBatchOp(op);
+        }
+      }
+      if (type === "text-input" || type === "secure-text-input") {
         applyTextInputInitialProps(id, props);
       }
-      schedule();
+      if (!inBatch) {
+        schedule();
+      }
       return { id, type } as HostNode;
     },
     createText(value) {
       const id: number = ui.createNode("text");
-      enqueueBatchOp({ type: "setText", nodeId: id, value: value ?? "" });
+      const setTextOp: BatchOperation = {
+        type: "setText",
+        nodeId: id,
+        value: value ?? "",
+      };
+      if (!tryEnqueueBatch(setTextOp)) {
+        enqueueBatchOp(setTextOp);
+      }
       PARENTS.set(id, null);
       CHILDREN.set(id, []);
       TEXTS.set(id, value ?? "");
       TYPES.set(id, "text");
-      schedule();
+      if (!currentBatch()) {
+        schedule();
+      }
       return { id, type: "text" };
     },
     setProperty(node, name, value) {
@@ -601,29 +700,33 @@ export function createIOSHost(): Host {
           name: "style",
           value: value || {},
         });
-      } else if (name === "controller") {
-        // Controller is managed purely on the JS side for now.
+        schedule();
         return;
-      } else if (typeof value === "function") {
+      }
+      if (name === "controller") {
+        return;
+      }
+      if (typeof value === "function") {
         enqueueOperation(() => ui.setHandler(node.id, name, value));
-      } else {
-        if (
-          tryEnqueueBatch({
-            type: "setProp",
-            nodeId: node.id,
-            name,
-            value,
-          })
-        ) {
-          return;
-        }
-        enqueueBatchOp({
+        schedule();
+        return;
+      }
+      if (
+        tryEnqueueBatch({
           type: "setProp",
           nodeId: node.id,
           name,
           value,
-        });
+        })
+      ) {
+        return;
       }
+      enqueueBatchOp({
+        type: "setProp",
+        nodeId: node.id,
+        name,
+        value,
+      });
       schedule();
     },
     setText(node, value) {
@@ -658,6 +761,9 @@ export function createIOSHost(): Host {
         const prevIndex = prevKids.indexOf(node.id);
         if (prevIndex >= 0) {
           prevKids.splice(prevIndex, 1);
+          if (prevKids.length === 0) {
+            CHILDREN.delete(prevParentId);
+          }
         }
       }
 
@@ -665,36 +771,23 @@ export function createIOSHost(): Host {
       const aIdx = anchor ? kids.indexOf(anchor.id) : -1;
       const logicalAt = aIdx >= 0 ? aIdx : kids.length;
 
+      if (parent.type === "text" && logicalAt < kids.length) {
+        const oldId = kids[logicalAt];
+        if (oldId !== node.id && !isMarkerId(oldId)) {
+          recordPendingDrop(oldId);
+          TEXTS.delete(oldId);
+          TYPES.delete(oldId);
+          PARENTS.delete(oldId);
+          kids.splice(logicalAt, 1);
+        }
+      }
+
       // physical index counts only non-markers STRICTLY BEFORE logicalAt
       let physIdx = 0;
       for (let i = 0; i < logicalAt; i++) if (!isMarkerId(kids[i])) physIdx++;
 
-      let currentParent: number | null = parent.id;
-      while (currentParent !== null) {
-        const contextId = CONTAINER_TO_CONTEXT.get(currentParent);
-        if (contextId && RECYCLING_CONTEXTS.has(contextId)) {
-          const isDirectChild =
-            PARENTS.get(parent.id) === currentParent ||
-            parent.id === currentParent;
-
-          if (isDirectChild && !NODE_TO_CONTEXT.has(node.id)) {
-            NODE_TO_CONTEXT.set(node.id, contextId);
-          } else if (!NODE_TO_CONTEXT.has(node.id)) {
-            let ancestorId: number | null = parent.id;
-            while (ancestorId !== null) {
-              const inherited = NODE_TO_CONTEXT.get(ancestorId);
-              if (inherited) {
-                NODE_TO_CONTEXT.set(node.id, inherited);
-                break;
-              }
-              ancestorId = PARENTS.get(ancestorId) ?? null;
-            }
-          }
-
-          break;
-        }
-        currentParent = PARENTS.get(currentParent) ?? null;
-      }
+      // Implicit recycling detection was removed to avoid retaining nodes
+      // in non-recycling list churn scenarios.
 
       // mutate logical structure AFTER computing physIdx
       kids.splice(logicalAt, 0, node.id);
@@ -716,37 +809,61 @@ export function createIOSHost(): Host {
     },
     removeNode(parent, node) {
       const kids = ensure(parent.id);
-      const i = kids.indexOf(node.id);
-      if (i < 0) return;
+      let i = kids.indexOf(node.id);
+
+      if (i < 0) {
+        const actualParentId = PARENTS.get(node.id);
+        if (actualParentId != null) {
+          const actualKids = CHILDREN.get(actualParentId);
+          if (actualKids) {
+            const actualIdx = actualKids.indexOf(node.id);
+            if (actualIdx >= 0) {
+              actualKids.splice(actualIdx, 1);
+              if (actualKids.length === 0) {
+                CHILDREN.delete(actualParentId);
+              }
+            }
+          }
+        }
+      } else {
+        kids.splice(i, 1);
+        if (kids.length === 0) {
+          CHILDREN.delete(parent.id);
+        }
+      }
 
       const contextId = NODE_TO_CONTEXT.get(node.id);
-      const shouldRecycle = contextId && RECYCLING_CONTEXTS.has(contextId);
+      const shouldRecycle =
+        contextId && RECYCLING_CONTEXTS.has(contextId) && node.type !== "text";
 
       const enqueueRemoveOp = () => {
         recordPendingRemoval(parent.id, node.id);
       };
 
       if (shouldRecycle) {
-        kids.splice(i, 1);
+        returnNodeToPool(contextId!, node.id);
+
+        const childIds = CHILDREN.get(node.id);
+        if (childIds) {
+          for (const childId of [...childIds]) {
+            destroySubtreeTracking(childId);
+          }
+          CHILDREN.delete(node.id);
+        }
+
         PARENTS.set(node.id, null);
         if (!isMarkerId(node.id)) {
           enqueueRemoveOp();
-          returnNodeToPool(contextId!, node.id);
         }
         schedule();
         return;
       }
 
-      kids.splice(i, 1);
       PARENTS.set(node.id, null);
       if (!isMarkerId(node.id)) {
-        TYPES.delete(node.id);
-        NODE_TO_CONTEXT.delete(node.id);
         enqueueRemoveOp();
-        recordPendingDrop(node.id);
-      } else if (contextId) {
-        NODE_TO_CONTEXT.delete(node.id);
       }
+      destroySubtreeTracking(node.id);
       schedule();
     },
     getParentNode(node) {
@@ -809,6 +926,9 @@ export function createIOSHost(): Host {
       if (typeof (ui as any).applyBatchTyped === "function") {
         if (isSuppressed()) return;
         (ui as any).applyBatchTyped(encodeTypedBatch(context.operations));
+        if (queue.length || pendingRemovals.size || pendingDrops.size) {
+          schedule();
+        }
         return;
       }
 

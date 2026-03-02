@@ -4,6 +4,8 @@
 #import "ZynthUIManager+Events.h"
 #import "ZynthUIManager+Style.h"
 
+static const NSTimeInterval kZynthFrameBudgetMs = 14.0;
+
 @implementation ZynthUIManager (Scheduler)
 
 - (void)zynth_setFrameProfilerInternal:(void (^)(NSTimeInterval,
@@ -53,7 +55,6 @@
   _frameInProgress = YES;
   _needsLayout = NO;
 
-  static const NSTimeInterval kFrameBudgetMs = 14.0;
   CFTimeInterval frameStart = CACurrentMediaTime();
   if (!_didWarmup) {
     _didWarmup = YES;
@@ -74,22 +75,13 @@
   CFTimeInterval frameEnd = CACurrentMediaTime();
   _lastFrameMs = (frameEnd - frameStart) * 1000.0;
   _lastLayoutMs = _lastFrameMs;
-  BOOL overBudget = _lastFrameMs > kFrameBudgetMs;
+  BOOL overBudget = _lastFrameMs > kZynthFrameBudgetMs;
   NSUInteger nodeCount = 0;
   for (NSNumber *key in _surfaceYoga) {
     nodeCount += [_surfaceYoga[key] nodeCount];
   }
-  NSLog(@"[ZynthUI] frame summary %.2fms layout=%.2fms surfaces=%lu nodes=%lu overBudget=%@",
-        _lastFrameMs,
-        _lastLayoutMs,
-        (unsigned long)dirtySurfaces.count,
-        (unsigned long)nodeCount,
-        overBudget ? @"true" : @"false");
   if (overBudget) {
     _budgetOverruns += 1;
-    NSLog(@"[ZynthUI] frame over budget %.2fms (budget %.2fms, nodes %lu, overruns %lu)",
-          _lastFrameMs, kFrameBudgetMs, (unsigned long)nodeCount,
-          (unsigned long)_budgetOverruns);
   }
   if (_frameProfiler) {
     _frameProfiler(_lastFrameMs, _lastLayoutMs, overBudget, nodeCount);

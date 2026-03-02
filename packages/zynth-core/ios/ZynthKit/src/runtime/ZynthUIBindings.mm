@@ -726,66 +726,69 @@ void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
 
           if (!ops.empty()) {
             ZynthRunOnMainAsync(^{
-              size_t i = 0;
-              const size_t total = ops.size();
-              while (i < total) {
-                int opcode = (int)ops[i++];
-                switch (opcode) {
-                  case 1: { // setProp [nodeId, nameIdx, valType, val]
-                    if (i + 3 >= total) { i = total; break; }
-                    int nodeId = (int)ops[i++];
-                    int keyIndex = (int)ops[i++];
-                    int valueType = (int)ops[i++];
-                    double payloadVal = ops[i++];
-                    
-                    NSString *name = (keyIndex >= 0 && keyIndex < internedStrings.count) ? internedStrings[keyIndex] : nil;
-                    if (!name) continue;
-                    
-                    id value = nil;
-                    if (valueType == 1) value = @(payloadVal);
-                    else if (valueType == 2) value = ((int)payloadVal >= 0 && (int)payloadVal < internedStrings.count) ? internedStrings[(int)payloadVal] : @"";
-                    else if (valueType == 3) value = @(payloadVal != 0);
-                    
-                    [manager setProp:@(nodeId) name:name valueAny:value];
-                    break;
+              @try {
+                size_t i = 0;
+                const size_t total = ops.size();
+                while (i < total) {
+                  int opcode = (int)ops[i++];
+                  switch (opcode) {
+                    case 1: { // setProp [nodeId, nameIdx, valType, val]
+                      if (i + 3 >= total) { i = total; break; }
+                      int nodeId = (int)ops[i++];
+                      int keyIndex = (int)ops[i++];
+                      int valueType = (int)ops[i++];
+                      double payloadVal = ops[i++];
+
+                      NSString *name = (keyIndex >= 0 && keyIndex < internedStrings.count) ? internedStrings[keyIndex] : nil;
+                      if (!name) continue;
+
+                      id value = nil;
+                      if (valueType == 1) value = @(payloadVal);
+                      else if (valueType == 2) value = ((int)payloadVal >= 0 && (int)payloadVal < internedStrings.count) ? internedStrings[(int)payloadVal] : @"";
+                      else if (valueType == 3) value = @(payloadVal != 0);
+
+                      [manager setProp:@(nodeId) name:name valueAny:value];
+                      break;
+                    }
+                    case 2: { // setText [nodeId, textIndex]
+                      if (i + 1 >= total) { i = total; break; }
+                      int nodeId = (int)ops[i++];
+                      int textIndex = (int)ops[i++];
+                      NSString *text = (textIndex >= 0 && textIndex < internedStrings.count) ? internedStrings[textIndex] : @"";
+                      [manager setText:@(nodeId) text:text];
+                      break;
+                    }
+                    case 3: { // insertChild [parentId, childId, index]
+                      if (i + 2 >= total) { i = total; break; }
+                      int parentId = (int)ops[i++];
+                      int childId = (int)ops[i++];
+                      int index = (int)ops[i++];
+                      [manager insertChild:@(parentId) child:@(childId) index:@(index)];
+                      break;
+                    }
+                    case 4: { // removeChild [parentId, childId]
+                      if (i + 1 >= total) { i = total; break; }
+                      int parentId = (int)ops[i++];
+                      int childId = (int)ops[i++];
+                      // Handlers are preserved on Detach (Move)
+                      [manager removeChild:@(parentId) child:@(childId)];
+                      break;
+                    }
+                    case 5: { // dropNode [nodeId]
+                      if (i >= total) { i = total; break; }
+                      int nodeId = (int)ops[i++];
+                      removeHandlersForNode(rt, nodeId);
+                      [manager dropNode:@(nodeId)];
+                      break;
+                    }
+                    default:
+                      i = total;
+                      break;
                   }
-                  case 2: { // setText [nodeId, textIndex]
-                    if (i + 1 >= total) { i = total; break; }
-                    int nodeId = (int)ops[i++];
-                    int textIndex = (int)ops[i++];
-                    NSString *text = (textIndex >= 0 && textIndex < internedStrings.count) ? internedStrings[textIndex] : @"";
-                    [manager setText:@(nodeId) text:text];
-                    break;
-                  }
-                  case 3: { // insertChild [parentId, childId, index]
-                    if (i + 2 >= total) { i = total; break; }
-                    int parentId = (int)ops[i++];
-                    int childId = (int)ops[i++];
-                    int index = (int)ops[i++];
-                    [manager insertChild:@(parentId) child:@(childId) index:@(index)];
-                    break;
-                  }
-                  case 4: { // removeChild [parentId, childId]
-                    if (i + 1 >= total) { i = total; break; }
-                    int parentId = (int)ops[i++];
-                    int childId = (int)ops[i++];
-                    // Handlers are preserved on Detach (Move)
-                    [manager removeChild:@(parentId) child:@(childId)];
-                    break;
-                  }
-                  case 5: { // dropNode [nodeId]
-                    if (i + 1 >= total) { i = total; break; }
-                    int nodeId = (int)ops[i++];
-                    removeHandlersForNode(rt, nodeId);
-                    [manager dropNode:@(nodeId)];
-                    break;
-                  }
-                  default:
-                    i = total;
-                    break;
                 }
+              } @finally {
+                [manager flush];
               }
-              [manager flush];
             });
           }
           return Value::undefined();
