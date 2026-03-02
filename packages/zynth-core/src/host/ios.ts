@@ -233,7 +233,6 @@ export function createIOSHost(): Host {
     };
   };
 
-  let rafHandle: number | null = null;
   let flushScheduled = false;
 
   type BatchContext = {
@@ -255,9 +254,10 @@ export function createIOSHost(): Host {
 
   const runFlush = () => {
     flushScheduled = false;
-    rafHandle = null;
     try {
+      let hadNativeWork = false;
       if (queue.length || pendingRemovals.size || pendingDrops.size) {
+        hadNativeWork = true;
         const pending = queue.splice(0);
         let batchAccumulator: BatchOperation[] = [];
 
@@ -300,7 +300,9 @@ export function createIOSHost(): Host {
         }
         flushBatch();
       }
-      ui.flush();
+      if (hadNativeWork) {
+        ui.flush();
+      }
     } catch (e) {
       console.error("Flush error:", JSON.stringify(e));
     }
@@ -309,13 +311,6 @@ export function createIOSHost(): Host {
   const schedule = () => {
     if (flushScheduled) return;
     flushScheduled = true;
-
-    if (typeof requestAnimationFrame === "function") {
-      if (rafHandle == null) {
-        rafHandle = requestAnimationFrame(runFlush);
-      }
-      return;
-    }
 
     if (typeof queueMicrotask === "function") {
       queueMicrotask(runFlush);
