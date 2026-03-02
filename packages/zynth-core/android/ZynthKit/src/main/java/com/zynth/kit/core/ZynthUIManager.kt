@@ -5,7 +5,6 @@ import android.os.Handler
 import android.os.Looper
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import android.os.SystemClock
 import android.view.Choreographer
 import android.view.Gravity
 import android.view.View
@@ -193,6 +192,30 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal val pressLocalPoints = HashMap<Int, Pair<Float, Float>>()
   internal val pressScreenPoints = HashMap<Int, Pair<Float, Float>>()
   internal val longPressRunnables = HashMap<Int, Runnable>()
+  internal val droppedBeforeCreation = HashSet<Int>()
+  private val byteBufferPool = ArrayDeque<ByteBuffer>(16)
+  
+  private fun acquireByteBuffer(capacity: Int): ByteBuffer {
+    synchronized(byteBufferPool) {
+      if (byteBufferPool.isNotEmpty()) {
+        val buffer = byteBufferPool.removeLast()
+        if (buffer.capacity() >= capacity) {
+          buffer.clear()
+          return buffer
+        }
+      }
+    }
+    return ByteBuffer.allocateDirect(capacity.coerceAtLeast(16384)).order(ByteOrder.nativeOrder())
+  }
+
+  private fun releaseByteBuffer(buffer: ByteBuffer) {
+    synchronized(byteBufferPool) {
+      if (byteBufferPool.size < 16) {
+        byteBufferPool.addLast(buffer)
+      }
+    }
+  }
+
   internal val touchListeners = HashMap<Int, View.OnTouchListener>()
   internal val layoutNodes = ConcurrentHashMap.newKeySet<Int>()
   internal val layoutPending = ConcurrentHashMap.newKeySet<Int>()
@@ -243,14 +266,8 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal val layoutApplyBudgetMaxMs = 12.0
   internal val layoutPhaseBudgetMinNs = 18_000_000L
   internal val layoutPhaseBudgetMaxNs = 30_000_000L
-  private val traceEnabled = false
-  private val traceIntervalMs = 500L
-  private var traceStartMs = SystemClock.uptimeMillis()
-  private var traceLastLogMs = traceStartMs
-  private var lastDrainOps = 0
-  private var lastDrainMs = 0.0
   internal var perfFrameCount = 0
-  internal var perfLastLogMs = traceStartMs
+  internal var perfLastLogMs = android.os.SystemClock.uptimeMillis()
   internal var perfLayoutMs = 0.0
   internal var perfStyleMs = 0.0
   internal var perfLayoutEventsMs = 0.0
@@ -267,10 +284,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal var perfMaxSurfaces = 0
   private var batchDepth = 0
   private var batchNeedsLayout = false
-  private data class OpStats(var count: Int = 0, var ns: Long = 0L)
-  private val opStats = HashMap<String, OpStats>()
-  private val typeStats = HashMap<String, OpStats>()
-  private val phaseStats = HashMap<String, OpStats>()
   var assetProvider: AssetProvider? = null
 
   fun scheduleTimer(runtimePtr: Long, timerId: Int, delayMs: Int, repeat: Boolean) {
@@ -383,7 +396,14 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
 
   private fun drainMainQueue() {
     val startNs = System.nanoTime()
-    val maxMs = mainQueueMaxMsPerTick
+    val queueSize = synchronized(mainQueueLock) { mainQueue.size }
+    // If the queue is backed up, increase the budget to catch up and prevent memory growth.
+    // Use a multi-tier budget to handle extreme churn.
+    val maxMs = when {
+      queueSize > 1000 -> mainQueueMaxMsPerTick * 4.0
+      queueSize > 500 -> mainQueueMaxMsPerTick * 2.0
+      else -> mainQueueMaxMsPerTick
+    }
     var processed = 0
     while (processed < mainQueueMaxOpsPerTick) {
       val op = synchronized(mainQueueLock) {
@@ -400,10 +420,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
         break
       }
     }
-    val elapsedMs = (System.nanoTime() - startNs) / 1_000_000.0
-    lastDrainOps = processed
-    lastDrainMs = elapsedMs
-    maybeLogTrace("drain")
     val shouldContinue = synchronized(mainQueueLock) {
       if (mainQueue.isEmpty()) {
         mainQueueScheduled = false
@@ -447,29 +463,33 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     val id = nextId++
     val create = {
       val startNs = System.nanoTime()
-      val descriptor = ZynthComponentRegistry.getDescriptor(type)
-      val view = descriptor?.createView?.invoke(rootView.context, id) ?: run {
-        if (type == "text") {
-          TextView(rootView.context).apply { text = "" }
-        } else {
-          ZynthLayoutView(rootView.context)
+      if (droppedBeforeCreation.remove(id)) {
+        // This node was dropped before it could be created. Skip.
+        traceOp("createNodeSkip", type, startNs)
+      } else {
+        val descriptor = ZynthComponentRegistry.getDescriptor(type)
+        val view = descriptor?.createView?.invoke(rootView.context, id) ?: run {
+          if (type == "text") {
+            TextView(rootView.context).apply { text = "" }
+          } else {
+            ZynthLayoutView(rootView.context)
+          }
         }
+        nodes[id] = view
+        val node = Node(
+          id = id,
+          type = type,
+          view = view,
+          label = view as? TextView,
+        )
+        nodeStates[id] = node
+        pointerEvents[id] = "auto"
+        nodeSurfaces[id] = activeSurfaceId
+        yogaForSurface(activeSurfaceId).ensureNode(id, view)
+        markSurfaceDirty(activeSurfaceId)
+        descriptor?.onNodeCreated?.invoke(this, node)
+        traceOp("createNode", type, startNs)
       }
-      nodes[id] = view
-      val node = Node(
-        id = id,
-        type = type,
-        view = view,
-        label = view as? TextView,
-      )
-      // Log.d("ZynthLifecycle", "createNode id=$id type=$type")
-      nodeStates[id] = node
-      pointerEvents[id] = "auto"
-      nodeSurfaces[id] = activeSurfaceId
-      yogaForSurface(activeSurfaceId).ensureNode(id, view)
-      markSurfaceDirty(activeSurfaceId)
-      descriptor?.onNodeCreated?.invoke(this, node)
-      traceOp("createNode", type, startNs)
     }
     if (Looper.myLooper() == Looper.getMainLooper()) {
       create()
@@ -967,7 +987,8 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     parents.remove(childId)
     (child.parent as? ViewGroup)?.removeView(child)
     val yogaParentId = if (isSurfaceRootId(parentId)) 0 else parentId
-    yogaForNode(childId).removeChild(yogaParentId, childId)
+    val surfaceId = nodeSurfaces[childId] ?: activeSurfaceId
+    yogaForSurface(surfaceId).removeChild(yogaParentId, childId)
     markSurfaceDirtyForNode(childId)
     traceOp("removeChild", parentState?.type, startNs)
   }
@@ -977,7 +998,10 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       runOnMain { dropNode(nodeId) }
       return
     }
+    val startNs = System.nanoTime()
+    val type = nodeStates[nodeId]?.type
     destroyNode(nodeId)
+    traceOp("dropNode", type, startNs)
   }
 
   fun setHandler(id: Int, name: String) {
@@ -1130,61 +1154,64 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       runCatching { firstMountCommitListener?.invoke() }
     }
     beginBatch()
-    var i = 0
-    opLoop@ while (i < ops.size) {
-      val opcode = ops[i++].toInt()
-      when (opcode) {
-        1 -> { // setProp
-          if (i + 3 >= ops.size) return
-          val nodeId = ops[i++].toInt()
-          val keyToken = ops[i++].toInt()
-          val valueType = ops[i++].toInt()
-          val payload = ops[i++]
-          if (keyToken < 0 && applyTypedSetProp(nodeId, -keyToken, valueType, payload, strings)) {
-            continue@opLoop
-          }
-          val key = resolveTypedPropName(keyToken, strings)
-          if (key.isEmpty()) continue@opLoop
-          if (valueType == 1) {
-            setProp(nodeId, key, payload)
-          } else {
-            val value: String? = when (valueType) {
-              2 -> strings.getOrNull(payload.toInt())
-              3 -> if (payload != 0.0) "true" else "false"
-              else -> null
+    try {
+      var i = 0
+      opLoop@ while (i < ops.size) {
+        val opcode = ops[i++].toInt()
+        when (opcode) {
+          1 -> { // setProp
+            if (i + 3 >= ops.size) break@opLoop
+            val nodeId = ops[i++].toInt()
+            val keyToken = ops[i++].toInt()
+            val valueType = ops[i++].toInt()
+            val payload = ops[i++]
+            if (keyToken < 0 && applyTypedSetProp(nodeId, -keyToken, valueType, payload, strings)) {
+              continue@opLoop
             }
-            setProp(nodeId, key, value)
+            val key = resolveTypedPropName(keyToken, strings)
+            if (key.isEmpty()) continue@opLoop
+            if (valueType == 1) {
+              setProp(nodeId, key, payload)
+            } else {
+              val value: String? = when (valueType) {
+                2 -> strings.getOrNull(payload.toInt())
+                3 -> if (payload != 0.0) "true" else "false"
+                else -> null
+              }
+              setProp(nodeId, key, value)
+            }
           }
+          2 -> { // setText
+            if (i + 1 >= ops.size) break@opLoop
+            val nodeId = ops[i++].toInt()
+            val textIndex = ops[i++].toInt()
+            val text = strings.getOrNull(textIndex) ?: ""
+            setText(nodeId, text)
+          }
+          3 -> { // insertChild
+            if (i + 2 >= ops.size) break@opLoop
+            val parentId = ops[i++].toInt()
+            val childId = ops[i++].toInt()
+            val index = ops[i++].toInt()
+            insertChild(parentId, childId, index)
+          }
+          4 -> { // removeChild
+            if (i + 1 >= ops.size) break@opLoop
+            val parentId = ops[i++].toInt()
+            val childId = ops[i++].toInt()
+            removeChild(parentId, childId)
+          }
+          5 -> { // dropNode
+            if (i >= ops.size) break@opLoop
+            val nodeId = ops[i++].toInt()
+            dropNode(nodeId)
+          }
+          else -> break@opLoop
         }
-        2 -> { // setText
-          if (i + 1 >= ops.size) return
-          val nodeId = ops[i++].toInt()
-          val textIndex = ops[i++].toInt()
-          val text = strings.getOrNull(textIndex) ?: ""
-          setText(nodeId, text)
-        }
-        3 -> { // insertChild
-          if (i + 2 >= ops.size) return
-          val parentId = ops[i++].toInt()
-          val childId = ops[i++].toInt()
-          val index = ops[i++].toInt()
-          insertChild(parentId, childId, index)
-        }
-        4 -> { // removeChild
-          if (i + 1 >= ops.size) return
-          val parentId = ops[i++].toInt()
-          val childId = ops[i++].toInt()
-          removeChild(parentId, childId)
-        }
-        5 -> { // dropNode
-          if (i + 1 >= ops.size) return
-          val nodeId = ops[i++].toInt()
-          dropNode(nodeId)
-        }
-        else -> return
       }
+    } finally {
+      endBatch()
     }
-    endBatch()
   }
 
   fun applyBatchTypedBuffer(buffer: ByteBuffer, opCount: Int, strings: Array<String?>) {
@@ -1194,10 +1221,13 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       val source = ops.duplicate().order(ByteOrder.nativeOrder())
       source.position(0)
       source.limit(byteLength.coerceAtMost(source.capacity()))
-      val copied = ByteBuffer.allocateDirect(byteLength).order(ByteOrder.nativeOrder())
+      val copied = acquireByteBuffer(byteLength)
       copied.put(source)
       copied.rewind()
-      runOnMain { applyBatchTypedBuffer(copied, opCount, strings) }
+      runOnMain { 
+        applyBatchTypedBuffer(copied, opCount, strings)
+        releaseByteBuffer(copied)
+      }
       return
     }
     if (!didDispatchFirstMountCommit && opCount > 0) {
@@ -1205,62 +1235,65 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       runCatching { firstMountCommitListener?.invoke() }
     }
     beginBatch()
-    var i = 0
-    fun read(idx: Int): Double = ops.getDouble(idx * 8)
-    opLoop@ while (i < opCount) {
-      val opcode = read(i++).toInt()
-      when (opcode) {
-        1 -> { // setProp
-          if (i + 3 >= opCount) return
-          val nodeId = read(i++).toInt()
-          val keyToken = read(i++).toInt()
-          val valueType = read(i++).toInt()
-          val payload = read(i++)
-          if (keyToken < 0 && applyTypedSetProp(nodeId, -keyToken, valueType, payload, strings)) {
-            continue@opLoop
-          }
-          val key = resolveTypedPropName(keyToken, strings)
-          if (key.isEmpty()) continue@opLoop
-          if (valueType == 1) {
-            setProp(nodeId, key, payload)
-          } else {
-            val value: String? = when (valueType) {
-              2 -> strings.getOrNull(payload.toInt())
-              3 -> if (payload != 0.0) "true" else "false"
-              else -> null
+    try {
+      var i = 0
+      fun read(idx: Int): Double = ops.getDouble(idx * 8)
+      opLoop@ while (i < opCount) {
+        val opcode = read(i++).toInt()
+        when (opcode) {
+          1 -> { // setProp
+            if (i + 3 >= opCount) break@opLoop
+            val nodeId = read(i++).toInt()
+            val keyToken = read(i++).toInt()
+            val valueType = read(i++).toInt()
+            val payload = read(i++)
+            if (keyToken < 0 && applyTypedSetProp(nodeId, -keyToken, valueType, payload, strings)) {
+              continue@opLoop
             }
-            setProp(nodeId, key, value)
+            val key = resolveTypedPropName(keyToken, strings)
+            if (key.isEmpty()) continue@opLoop
+            if (valueType == 1) {
+              setProp(nodeId, key, payload)
+            } else {
+              val value: String? = when (valueType) {
+                2 -> strings.getOrNull(payload.toInt())
+                3 -> if (payload != 0.0) "true" else "false"
+                else -> null
+              }
+              setProp(nodeId, key, value)
+            }
           }
+          2 -> { // setText
+            if (i + 1 >= opCount) break@opLoop
+            val nodeId = read(i++).toInt()
+            val textIndex = read(i++).toInt()
+            val text = strings.getOrNull(textIndex) ?: ""
+            setText(nodeId, text)
+          }
+          3 -> { // insertChild
+            if (i + 2 >= opCount) break@opLoop
+            val parentId = read(i++).toInt()
+            val childId = read(i++).toInt()
+            val index = read(i++).toInt()
+            insertChild(parentId, childId, index)
+          }
+          4 -> { // removeChild
+            if (i + 1 >= opCount) break@opLoop
+            val parentId = read(i++).toInt()
+            val childId = read(i++).toInt()
+            removeChild(parentId, childId)
+          }
+          5 -> { // dropNode
+            if (i >= opCount) break@opLoop
+            val nodeId = read(i++).toInt()
+            dropNode(nodeId)
+          }
+          else -> break@opLoop
         }
-        2 -> { // setText
-          if (i + 1 >= opCount) return
-          val nodeId = read(i++).toInt()
-          val textIndex = read(i++).toInt()
-          val text = strings.getOrNull(textIndex) ?: ""
-          setText(nodeId, text)
-        }
-        3 -> { // insertChild
-          if (i + 2 >= opCount) return
-          val parentId = read(i++).toInt()
-          val childId = read(i++).toInt()
-          val index = read(i++).toInt()
-          insertChild(parentId, childId, index)
-        }
-        4 -> { // removeChild
-          if (i + 1 >= opCount) return
-          val parentId = read(i++).toInt()
-          val childId = read(i++).toInt()
-          removeChild(parentId, childId)
-        }
-        5 -> { // dropNode
-          if (i + 1 >= opCount) return
-          val nodeId = read(i++).toInt()
-          dropNode(nodeId)
-        }
-        else -> return
       }
+    } finally {
+      endBatch()
     }
-    endBatch()
   }
 
   private fun beginBatch() {
@@ -1316,62 +1349,14 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   }
 
   internal fun tracePhase(name: String, durationNs: Long) {
-    if (!traceEnabled) return
-    val stats = phaseStats.getOrPut(name) { OpStats() }
-    stats.count += 1
-    stats.ns += durationNs
+    name
+    durationNs
   }
 
   private fun traceOp(op: String, type: String?, startNs: Long) {
-    if (!traceEnabled) return
-    val durationNs = System.nanoTime() - startNs
-    val opStatsEntry = opStats.getOrPut(op) { OpStats() }
-    opStatsEntry.count += 1
-    opStatsEntry.ns += durationNs
-    val typeKey = type ?: "unknown"
-    val typeStatsEntry = typeStats.getOrPut(typeKey) { OpStats() }
-    typeStatsEntry.count += 1
-    typeStatsEntry.ns += durationNs
-  }
-
-  private fun maybeLogTrace(reason: String) {
-    if (!traceEnabled) return
-    val now = SystemClock.uptimeMillis()
-    if (now - traceLastLogMs < traceIntervalMs) return
-    traceLastLogMs = now
-    val sinceStartMs = now - traceStartMs
-    val queueSize = synchronized(mainQueueLock) { mainQueue.size }
-    val opSnapshot = opStats.toList()
-    val typeSnapshot = typeStats.toList()
-    val phaseSnapshot = phaseStats.toList()
-    opStats.clear()
-    typeStats.clear()
-    phaseStats.clear()
-    val topTypes = typeSnapshot.sortedByDescending { it.second.ns }.take(6)
-    val topOps = opSnapshot.sortedByDescending { it.second.ns }.take(6)
-    val topPhases = phaseSnapshot.sortedByDescending { it.second.ns }.take(6)
-    val typeSummary = topTypes.joinToString { (key, stat) ->
-      "%s %.2fms/%d".format(key, stat.ns / 1_000_000.0, stat.count)
-    }
-    val opSummary = topOps.joinToString { (key, stat) ->
-      "%s %.2fms/%d".format(key, stat.ns / 1_000_000.0, stat.count)
-    }
-    val phaseSummary = topPhases.joinToString { (key, stat) ->
-      "%s %.2fms/%d".format(key, stat.ns / 1_000_000.0, stat.count)
-    }
-    Log.d(
-      "ZynthUI",
-      "trace %dms reason=%s queue=%d drain=%.2fms/%d ops=[%s] types=[%s] phases=[%s]".format(
-        sinceStartMs,
-        reason,
-        queueSize,
-        lastDrainMs,
-        lastDrainOps,
-        opSummary,
-        typeSummary,
-        phaseSummary
-      )
-    )
+    op
+    type
+    startNs
   }
 
   private fun requestLayout() {

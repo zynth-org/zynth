@@ -469,6 +469,59 @@ export function createAndroidHost(): Host {
     pendingDrops.add(nodeId);
   };
 
+  const detachNodeFromRecyclingState = (nodeId: number) => {
+    const contextId = NODE_TO_CONTEXT.get(nodeId);
+    if (!contextId) return;
+    const context = RECYCLING_CONTEXTS.get(contextId);
+    if (context) {
+      context.activeBindings.delete(nodeId);
+      for (const pool of context.pool.values()) {
+        const index = pool.indexOf(nodeId);
+        if (index >= 0) {
+          pool.splice(index, 1);
+        }
+      }
+    }
+    NODE_TO_CONTEXT.delete(nodeId);
+  };
+
+  const destroySubtreeTracking = (rootId: number) => {
+    const stack: { id: number; expanded: boolean }[] = [{ id: rootId, expanded: false }];
+    const seen = new Set<number>();
+    const ordered: number[] = [];
+    
+    while (stack.length) {
+      const item = stack.pop()!;
+      if (item.expanded) {
+        ordered.push(item.id);
+        continue;
+      }
+      
+      if (seen.has(item.id)) continue;
+      seen.add(item.id);
+      
+      stack.push({ id: item.id, expanded: true });
+      
+      const childIds = CHILDREN.get(item.id);
+      if (childIds) {
+        for (let i = childIds.length - 1; i >= 0; i--) {
+          stack.push({ id: childIds[i], expanded: false });
+        }
+      }
+    }
+
+    for (const nodeId of ordered) {
+      if (!isMarkerId(nodeId)) {
+        recordPendingDrop(nodeId);
+      }
+      TEXTS.delete(nodeId);
+      TYPES.delete(nodeId);
+      detachNodeFromRecyclingState(nodeId);
+      CHILDREN.delete(nodeId);
+      PARENTS.delete(nodeId);
+    }
+  };
+
   const applyTextInputInitialProps = (id: number, props: any) => {
     if (!props) return;
 
@@ -602,16 +655,26 @@ export function createAndroidHost(): Host {
     const nodeType = TYPES.get(nodeId);
     if (!nodeType) return;
 
-    // Reset node to clean state
-    resetNodeToDefault(nodeId, nodeType);
-
-    // Add to pool
+    // Add to pool with a strict size limit to prevent memory creep
     let pool = context.pool.get(nodeType);
     if (!pool) {
       pool = [];
       context.pool.set(nodeType, pool);
     }
-    pool.push(nodeId);
+    
+    if (pool.length < 512) {
+      // Reset node to clean state before pooling
+      resetNodeToDefault(nodeId, nodeType);
+      pool.push(nodeId);
+    } else {
+      // Pool full, just drop the node to reclaim memory
+      recordPendingDrop(nodeId);
+      TEXTS.delete(nodeId);
+      TYPES.delete(nodeId);
+      detachNodeFromRecyclingState(nodeId);
+      CHILDREN.delete(nodeId);
+      PARENTS.delete(nodeId);
+    }
 
     // Remove from active bindings
     context.activeBindings.delete(nodeId);
@@ -818,12 +881,27 @@ export function createAndroidHost(): Host {
         const prevIndex = prevKids.indexOf(node.id);
         if (prevIndex >= 0) {
           prevKids.splice(prevIndex, 1);
+          if (prevKids.length === 0) {
+            CHILDREN.delete(prevParentId);
+          }
         }
       }
 
       const kids = ensure(parent.id);
       const aIdx = anchor ? kids.indexOf(anchor.id) : -1;
       const logicalAt = aIdx >= 0 ? aIdx : kids.length;
+
+      // Fix: If this is a replacement in a Text parent, drop the old node at this position
+      if (parent.type === "text" && logicalAt < kids.length) {
+        const oldId = kids[logicalAt];
+        if (oldId !== node.id && !isMarkerId(oldId)) {
+          recordPendingDrop(oldId);
+          TEXTS.delete(oldId);
+          TYPES.delete(oldId);
+          PARENTS.delete(oldId);
+          kids.splice(logicalAt, 1);
+        }
+      }
 
       // physical index counts only non-markers STRICTLY BEFORE logicalAt
       let physIdx = 0;
@@ -832,51 +910,8 @@ export function createAndroidHost(): Host {
       // Check if this is a recycled node being reinserted
       const wasRecycled = NODE_TO_CONTEXT.has(node.id);
 
-      // Check if parent or any ancestor is a recycling container
-      // If yes, mark this node for recycling BUT ONLY if it's a direct child
-      // We don't want to recycle nested children (like Text inside View)
-      let currentParent: number | null = parent.id;
-      let isDirectChildOfContainer = false;
-
-      while (currentParent !== null) {
-        const contextId = CONTAINER_TO_CONTEXT.get(currentParent);
-        if (contextId && RECYCLING_CONTEXTS.has(contextId)) {
-          // Check if this is a DIRECT child of the recycling container
-          // (not a grandchild or deeper)
-          isDirectChildOfContainer =
-            PARENTS.get(parent.id) === currentParent ||
-            parent.id === currentParent;
-
-          if (isDirectChildOfContainer) {
-            // This node is a direct child - mark it for recycling
-            if (!NODE_TO_CONTEXT.has(node.id)) {
-              NODE_TO_CONTEXT.set(node.id, contextId);
-            }
-          }
-
-          // Propagate recycling context to nested descendants so their pools can be reused.
-          if (!NODE_TO_CONTEXT.has(node.id)) {
-            let ancestorId: number | null = parent.id;
-            let inheritedContext: string | null = null;
-            while (ancestorId !== null) {
-              const ancestorContext = NODE_TO_CONTEXT.get(ancestorId);
-              if (ancestorContext) {
-                inheritedContext = ancestorContext;
-                break;
-              }
-              ancestorId = PARENTS.get(ancestorId) ?? null;
-            }
-
-            const isNativeElement = node.type !== "marker";
-            if (inheritedContext && isNativeElement) {
-              NODE_TO_CONTEXT.set(node.id, inheritedContext);
-            }
-          }
-
-          break;
-        }
-        currentParent = PARENTS.get(currentParent) ?? null;
-      }
+      // NOTE: Implicit recycling detection was removed to prevent accidental leaks in standard For loops.
+      // Recycling is now strictly opt-in via registerRecyclingContext.
 
       // mutate logical structure AFTER computing physIdx
       kids.splice(logicalAt, 0, node.id);
@@ -898,14 +933,28 @@ export function createAndroidHost(): Host {
     },
     removeNode(parent, node) {
       const kids = ensure(parent.id);
-      const i = kids.indexOf(node.id);
-      if (i < 0) return;
+      let i = kids.indexOf(node.id);
 
-      const nonMarkerBefore = (() => {
-        let n = 0;
-        for (let j = 0; j < i; j++) if (!isMarkerId(kids[j])) n++;
-        return n;
-      })();
+      if (i < 0) {
+        // Fallback: if not in expected parent, find where it actually is.
+        // This prevents leaks when host tracking and renderer state diverge.
+        const actualParentId = PARENTS.get(node.id);
+        if (actualParentId != null) {
+          const actualKids = CHILDREN.get(actualParentId);
+          if (actualKids) {
+            const actualIdx = actualKids.indexOf(node.id);
+            if (actualIdx >= 0) {
+              actualKids.splice(actualIdx, 1);
+              if (actualKids.length === 0) CHILDREN.delete(actualParentId);
+            }
+          }
+        }
+      } else {
+        kids.splice(i, 1);
+        if (kids.length === 0) {
+          CHILDREN.delete(parent.id);
+        }
+      }
 
       // Check if this node came from a recycling pool
       const contextId = NODE_TO_CONTEXT.get(node.id);
@@ -917,30 +966,32 @@ export function createAndroidHost(): Host {
       };
 
       if (shouldRecycle) {
-        // Return to pool instead of destroying
+        // Return to pool instead of destroying native view
         returnNodeToPool(contextId!, node.id);
+        
+        // IMPORTANT: We must still recursively destroy and drop all children 
+        // of this node, otherwise they leak in host maps and native state.
+        const childIds = CHILDREN.get(node.id);
+        if (childIds) {
+          for (const childId of [...childIds]) {
+            destroySubtreeTracking(childId);
+          }
+          CHILDREN.delete(node.id);
+        }
 
-        // Detach from parent but don't destroy
-        kids.splice(i, 1);
         PARENTS.set(node.id, null);
-
         if (!isMarkerId(node.id)) {
-          // Just detach visually, don't actually remove from native
           enqueueRemoveOp();
         }
         schedule();
         return;
       }
 
-      // Standard destruction path
-      kids.splice(i, 1);
       PARENTS.set(node.id, null);
       if (!isMarkerId(node.id)) {
-        TYPES.delete(node.id);
-        NODE_TO_CONTEXT.delete(node.id);
         enqueueRemoveOp();
-        recordPendingDrop(node.id);
       }
+      destroySubtreeTracking(node.id);
       schedule();
     },
     getParentNode(node) {

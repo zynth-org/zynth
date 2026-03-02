@@ -263,6 +263,7 @@ internal fun ZynthUIManager.dispatchLayoutEvents() {
     // Copy events to a new list to avoid ConcurrentModificationException
     // when runOnJS executes later and layoutEventBuffer is modified by the next frame.
     val eventsSnapshot = ArrayList(layoutEventBuffer)
+    layoutEventBuffer.clear()
     runOnJS {
       val requiredSize = eventsSnapshot.size * 5
       if (layoutPayloadBuffer.size < requiredSize) {
@@ -295,47 +296,108 @@ internal fun ZynthUIManager.detachNode(id: Int) {
 }
 
 internal fun ZynthUIManager.destroyNode(id: Int) {
-  // Log.d("ZynthLifecycle", "destroyNode id=$id")
-  try {
-    getLayoutEngine().removeNode(id)
-  } catch (e: Throwable) {
-    android.util.Log.e("ZynthUI", "Failed to remove node $id from layout engine", e)
+  data class PendingDestroy(val nodeId: Int, val expanded: Boolean)
+
+  val stack = ArrayDeque<PendingDestroy>()
+  val queued = HashSet<Int>()
+  stack.addLast(PendingDestroy(id, false))
+
+  while (stack.isNotEmpty()) {
+    val pending = stack.removeLast()
+    val nodeId = pending.nodeId
+
+    if (!pending.expanded) {
+      if (!queued.add(nodeId)) {
+        continue
+      }
+      
+      if (!nodeStates.containsKey(nodeId)) {
+        // If the node doesn't exist yet, it might be in the creation queue.
+        // Mark it as dropped so createNode can skip it.
+        droppedBeforeCreation.add(nodeId)
+        continue
+      }
+
+      stack.addLast(PendingDestroy(nodeId, true))
+      val childIds = children[nodeId]
+      if (childIds != null) {
+        for (index in childIds.size - 1 downTo 0) {
+          stack.addLast(PendingDestroy(childIds[index], false))
+        }
+      }
+      continue
+    }
+
+    try {
+      val surfaceId = nodeSurfaces[nodeId]
+      val layout = if (surfaceId != null) surfaceYoga[surfaceId] else null
+      if (layout != null) {
+        layout.removeNode(nodeId)
+      } else {
+        getLayoutEngine().removeNode(nodeId)
+      }
+    } catch (error: Throwable) {
+      android.util.Log.e("ZynthUI", "Failed to remove node $nodeId from layout engine", error)
+    }
+
+    detachNode(nodeId)
+    
+    // Explicitly remove from parent ViewGroup to ensure no leaked View references in the UI tree.
+    nodes[nodeId]?.let { view ->
+      (view.parent as? android.view.ViewGroup)?.removeView(view)
+    }
+
+    val node = nodeStates.remove(nodeId)
+    if (node != null) {
+      runCatching {
+        val descriptor = com.zynth.kit.components.ZynthComponentRegistry.getDescriptor(node.type)
+        descriptor?.onReset?.invoke(node)
+      }
+      node.attachments.clear()
+      node.textChildren.clear()
+    }
+
+    val parentId = parents.remove(nodeId)
+    if (parentId != null) {
+      val siblings = children[parentId]
+      if (siblings != null) {
+        siblings.remove(nodeId as Any?)
+        if (siblings.isEmpty()) {
+          children.remove(parentId)
+        }
+      }
+      nodeStates[parentId]?.textChildren?.removeAll { it == nodeId }
+    }
+
+    nodeSurfaces.remove(nodeId)
+    pointerEvents.remove(nodeId)
+    pressNodes.remove(nodeId)
+    longPressNodes.remove(nodeId)
+    doublePressNodes.remove(nodeId)
+    activePressNodes.remove(nodeId)
+    longPressFired.remove(nodeId)
+    longPressDurations.remove(nodeId)
+    doublePressWindows.remove(nodeId)
+    lastPressTimestamps.remove(nodeId)
+    pressLocalPoints.remove(nodeId)
+    pressScreenPoints.remove(nodeId)
+    layoutNodes.remove(nodeId)
+    layoutPending.remove(nodeId)
+    layoutDirtyNodes.remove(nodeId)
+    layoutFrames.remove(nodeId)
+    layoutTransitionFrames.remove(nodeId)
+    styleDirtyNodes.remove(nodeId)
+    styleStates.remove(nodeId)
+    styleLayoutDirtyNodes.remove(nodeId)
+    styleLayoutFrames.remove(nodeId)
+    textStyleStates.remove(nodeId)
+    yogaStyleCache.remove(nodeId)
+    children.remove(nodeId)
+
+    val listener = touchListeners.remove(nodeId)
+    val view = nodes.remove(nodeId)
+    if (listener != null && view != null) {
+      runOnMain { view.setOnTouchListener(null) }
+    }
   }
-  detachNode(id)
-  val node = nodeStates[id]
-  if (node != null) {
-    val descriptor = com.zynth.kit.components.ZynthComponentRegistry.getDescriptor(node.type)
-    descriptor?.onReset?.invoke(node)
-  }
-  nodeSurfaces.remove(id)
-  pointerEvents.remove(id)
-  pressNodes.remove(id)
-  longPressNodes.remove(id)
-  doublePressNodes.remove(id)
-  activePressNodes.remove(id)
-  longPressFired.remove(id)
-  longPressDurations.remove(id)
-  doublePressWindows.remove(id)
-  lastPressTimestamps.remove(id)
-  pressLocalPoints.remove(id)
-  pressScreenPoints.remove(id)
-  layoutNodes.remove(id)
-  layoutPending.remove(id)
-  layoutDirtyNodes.remove(id)
-  layoutFrames.remove(id)
-  layoutTransitionFrames.remove(id)
-  styleDirtyNodes.remove(id)
-  styleStates.remove(id)
-  styleLayoutDirtyNodes.remove(id)
-  styleLayoutFrames.remove(id)
-  textStyleStates.remove(id)
-  yogaStyleCache.remove(id)
-  children.remove(id)
-  nodeStates.remove(id)
-  val listener = touchListeners.remove(id)
-  val view = nodes[id]
-  if (listener != null && view != null) {
-    runOnMain { view.setOnTouchListener(null) }
-  }
-  nodes.remove(id)
 }

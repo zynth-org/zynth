@@ -25,7 +25,7 @@ class ZynthYogaLayout {
     setUseWebDefaults(false)
   }
   private val nodes = HashMap<Int, YogaNode>()
-  private val nodeIds = ArrayList<Int>()
+  private val nodeIds = LinkedHashSet<Int>()
   private val measureHandlers = HashMap<Int, MeasureHandler>()
   private var measureCount = 0
   private var lastMeasureCount = 0
@@ -41,10 +41,34 @@ class ZynthYogaLayout {
   }
   var layoutDidUpdate: ((id: Int, left: Int, top: Int, right: Int, bottom: Int, changed: Boolean) -> Unit)? = null
 
+  private val nodePool = ArrayDeque<YogaNode>(64)
+
+  private fun acquireYogaNode(): YogaNode {
+    return if (nodePool.isNotEmpty()) {
+      nodePool.removeLast()
+    } else {
+      YogaNodeFactory.create(config)
+    }
+  }
+
+  private fun releaseYogaNode(node: YogaNode) {
+    if (node.childCount > 0) {
+      for (i in node.childCount - 1 downTo 0) {
+        node.removeChildAt(i)
+      }
+    }
+    node.reset()
+    node.data = null
+    node.setMeasureFunction(null)
+    if (nodePool.size < 512) {
+      nodePool.addLast(node)
+    }
+  }
+
   fun ensureNode(id: Int, view: View) {
     if (nodes.containsKey(id)) return
     pendingApplyDirty = true
-    val node = YogaNodeFactory.create(config)
+    val node = acquireYogaNode()
     node.data = view
     val handler = measureHandlers[id]
     if (handler != null) {
@@ -67,16 +91,21 @@ class ZynthYogaLayout {
   fun removeNode(id: Int) {
     measureHandlers.remove(id)
     val node = nodes.remove(id) ?: return
-    nodeIds.remove(id as Any?)
+    nodeIds.remove(id)
     pendingApplyDirty = true
     if (node.childCount > 0) {
       for (i in node.childCount - 1 downTo 0) {
         node.removeChildAt(i)
       }
     }
-    node.owner?.removeChildAt(node.owner?.indexOf(node) ?: 0)
-    node.data = null
-    node.reset()
+    val owner = node.owner
+    if (owner != null) {
+      val index = owner.indexOf(node)
+      if (index >= 0) {
+        owner.removeChildAt(index)
+      }
+    }
+    releaseYogaNode(node)
   }
 
   fun insertChild(parentId: Int, childId: Int, index: Int) {
@@ -85,8 +114,12 @@ class ZynthYogaLayout {
     if (parent == null) return
     if (parent.isMeasureDefined) return
     pendingApplyDirty = true
-    if (child.owner != null) {
-      child.owner?.removeChildAt(child.owner?.indexOf(child) ?: 0)
+    val owner = child.owner
+    if (owner != null) {
+      val ownerIndex = owner.indexOf(child)
+      if (ownerIndex >= 0) {
+        owner.removeChildAt(ownerIndex)
+      }
     }
     val targetIndex = index.coerceIn(0, parent.childCount)
     parent.addChildAt(child, targetIndex)
@@ -281,8 +314,7 @@ class ZynthYogaLayout {
       measureCount = 0
       lastChangedCount = 0
       rootNode.calculateLayout(rootWidth.toFloat(), rootHeight.toFloat())
-      // Filter out any IDs that are no longer in the nodes map (safety cleanup)
-      pendingApplyIds = ArrayList(nodeIds.filter { nodes.containsKey(it) })
+      pendingApplyIds = buildPendingApplyIds()
       pendingApplyIndex = 0
       pendingApplyRootWidth = rootWidth
       pendingApplyRootHeight = rootHeight
@@ -298,6 +330,20 @@ class ZynthYogaLayout {
   fun nodeCount(): Int = nodes.size
   fun lastLayoutMeasureCount(): Int = lastMeasureCount
   fun lastLayoutChangedCount(): Int = lastChangedCount
+
+  private fun buildPendingApplyIds(): List<Int> {
+    // Keep this list limited to reachable layout nodes to avoid growing
+    // apply work from stale IDs and to prevent temporary list over-allocation.
+    val ids = ArrayList<Int>(nodes.size.coerceAtMost(1024))
+    for (id in nodeIds) {
+      val node = nodes[id] ?: continue
+      // Only apply if the node is in the tree and has a new layout result.
+      if (node.owner != null && node.hasNewLayout()) {
+        ids.add(id)
+      }
+    }
+    return ids
+  }
 
   private fun applyPending(applyBudgetMs: Double): Boolean {
     val ids = pendingApplyIds ?: return true
@@ -316,6 +362,10 @@ class ZynthYogaLayout {
       val height = node.layoutHeight.toInt()
       val right = left + width
       val bottom = top + height
+      
+      // Mark as seen so it doesn't appear in buildPendingApplyIds next time unless it changes.
+      node.markLayoutSeen()
+
       val frameChanged =
         view.left != left || view.top != top || view.right != right || view.bottom != bottom
       if (view is ZynthLayoutView) {
