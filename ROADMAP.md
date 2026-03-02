@@ -88,7 +88,7 @@ This track hardens `@zynth/skia` so animation hooks and shader pipelines stay UI
 - [ ] iOS: Transparency buttons doesn't works.
 - [ ] iOS: DatePicker imperative won't open.
 - [ ] iOS: Stack Modal bug that return to details with.
-- [ ] iOS: Crash on `TextHighRefreshSignalExample`
+- [x] iOS: Crash on `TextHighRefreshSignalExample`
 - [ ] iOS: Doest put the defaultValue on `TextInputsTest`
 - [ ] Android: Pressable many errors
 - [ ] Android: HypervisorDemo keeps the fallback loading text after success bundle load

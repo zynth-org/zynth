@@ -204,6 +204,7 @@ type NativeKeyEvent = KeyEvent;
 export const TextInput: Component<TextInputProps> = (props) => {
   const controller = createMemo(() => props.controller);
   const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
+  let defaultAppliedNodeId: number | null = null;
 
   const isPotentiallySecure = createMemo(
     () => props.secureTextEntry !== undefined
@@ -315,11 +316,23 @@ export const TextInput: Component<TextInputProps> = (props) => {
   createEffect(() => {
     const node = hostNode();
     if (!node) return;
-    const nodeId = (node as any)?.id;
-    const value = props.value;
-    if (value !== undefined) {
-      // console.log("[TextInput] controlled value update", { nodeId, value });
-      setProperty(node, "value", value);
+    const nodeId = (node as any)?.id as number | undefined;
+    const normalizedNodeId =
+      typeof nodeId === "number" ? nodeId : defaultAppliedNodeId;
+    const controlledValue = props.value;
+
+    if (controlledValue !== undefined) {
+      // console.log("[TextInput] controlled value update", { nodeId, value: controlledValue });
+      setProperty(node, "value", controlledValue);
+      defaultAppliedNodeId = normalizedNodeId ?? null;
+      return;
+    }
+
+    const initialValue = props.defaultValue;
+    if (initialValue !== undefined && defaultAppliedNodeId !== normalizedNodeId) {
+      // Ensure uncontrolled inputs get their initial text on mount.
+      setProperty(node, "value", initialValue);
+      defaultAppliedNodeId = normalizedNodeId ?? null;
     }
   });
 
