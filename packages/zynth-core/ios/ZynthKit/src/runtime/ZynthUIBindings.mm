@@ -18,7 +18,7 @@ static bool DEBUG_RUNTIME = false;
 static dispatch_queue_t sJSQueue = nil;
 static void *kZynthJSQueueKey = &kZynthJSQueueKey;
 static std::mutex sMainOpMutex;
-static std::vector<dispatch_block_t> sMainOps;
+static NSMutableArray<dispatch_block_t> *sMainOps = nil;
 static BOOL sMainOpsScheduled = NO;
 
 static inline bool ZynthIsOnJSQueue() {
@@ -51,7 +51,10 @@ static inline void ZynthRunOnMainAsync(dispatch_block_t block) {
   BOOL shouldSchedule = NO;
   {
     std::lock_guard<std::mutex> lock(sMainOpMutex);
-    sMainOps.push_back(copied);
+    if (!sMainOps) {
+      sMainOps = [NSMutableArray array];
+    }
+    [sMainOps addObject:copied];
     if (!sMainOpsScheduled) {
       sMainOpsScheduled = YES;
       shouldSchedule = YES;
@@ -61,13 +64,14 @@ static inline void ZynthRunOnMainAsync(dispatch_block_t block) {
     return;
   }
   dispatch_async(dispatch_get_main_queue(), ^{
-    std::vector<dispatch_block_t> pending;
+    NSArray<dispatch_block_t> *pending = nil;
     {
       std::lock_guard<std::mutex> lock(sMainOpMutex);
-      pending.swap(sMainOps);
+      pending = [sMainOps copy];
+      [sMainOps removeAllObjects];
       sMainOpsScheduled = NO;
     }
-    for (const auto &op : pending) {
+    for (dispatch_block_t op in pending) {
       op();
     }
   });

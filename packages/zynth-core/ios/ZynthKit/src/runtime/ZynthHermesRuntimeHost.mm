@@ -633,11 +633,14 @@ static void installGlobals(Runtime &rt) {
           if (!strongHost) return;
           auto it = strongHost->_timers.find(timerId);
           if (it == strongHost->_timers.end()) return;
-          auto &timerRef = *it->second;
+          // Remove one-shot timer before invoking JS to avoid re-entrant
+          // clearTimeout(timerId) invalidating references captured below.
+          std::unique_ptr<Timer> timerRef = std::move(it->second);
+          strongHost->_timers.erase(it);
           const Value *argsPtr =
-              timerRef.args.empty() ? nullptr : timerRef.args.data();
+              timerRef->args.empty() ? nullptr : timerRef->args.data();
           try {
-            timerRef.fn->call(rt, argsPtr, timerRef.args.size());
+            timerRef->fn->call(rt, argsPtr, timerRef->args.size());
           } catch (const JSError &error) {
             NSString *message = [NSString stringWithUTF8String:error.getMessage().c_str()];
             NSString *stack = [NSString stringWithUTF8String:error.getStack().c_str()];
@@ -661,8 +664,7 @@ static void installGlobals(Runtime &rt) {
               NSLog(@"[ZynthJS] setTimeout exception: %@", message);
             }
           }
-          dispatch_source_cancel(timerRef.source);
-          strongHost->_timers.erase(it);
+          dispatch_source_cancel(timerRef->source);
         });
 
         dispatch_resume(source);
