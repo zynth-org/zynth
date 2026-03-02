@@ -213,28 +213,28 @@ static NSTimeInterval ZynthScrollCurrentTime(void) {
   }
 
   // 2. Otherwise, calculate from subviews (legacy behavior)
-  __block CGFloat contentWidth = boundsSize.width;
-  __block CGFloat contentHeight = boundsSize.height;
+  CGFloat contentWidth = boundsSize.width;
+  CGFloat contentHeight = boundsSize.height;
+  NSMutableArray<UIView *> *stack = [NSMutableArray arrayWithArray:_contentView.subviews];
 
-  __block void (^accumulate)(UIView *);
-  accumulate = ^(UIView *view) {
+  while (stack.count > 0) {
+    UIView *view = stack.lastObject;
+    [stack removeLastObject];
+
     CGRect rect = [view convertRect:view.bounds toView:self.contentView];
     contentWidth = MAX(contentWidth, CGRectGetMaxX(rect));
     contentHeight = MAX(contentHeight, CGRectGetMaxY(rect));
-    
-    // Stop recursion for controls (Switch, Slider, etc.) to avoid measuring 
+
+    // Stop traversal for controls (Switch, Slider, etc.) to avoid measuring
     // their internal implementation subviews which may have erratic frames.
     if ([view isKindOfClass:[UIControl class]]) {
-      return;
+      continue;
     }
-    
-    for (UIView *child in view.subviews) {
-      accumulate(child);
-    }
-  };
 
-  for (UIView *subview in _contentView.subviews) {
-    accumulate(subview);
+    NSArray<UIView *> *children = view.subviews;
+    for (NSInteger i = children.count - 1; i >= 0; i--) {
+      [stack addObject:children[(NSUInteger)i]];
+    }
   }
 
   if (self.axis == ZynthScrollAxisHorizontal) {
