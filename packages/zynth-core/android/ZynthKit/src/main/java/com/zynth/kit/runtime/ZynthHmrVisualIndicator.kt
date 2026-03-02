@@ -252,5 +252,6 @@ private class HmrPulseDrawable : Drawable() {
     // Not used.
   }
 
+  @Deprecated("Deprecated in Drawable; retained for compatibility override.")
   override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
 }

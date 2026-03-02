@@ -60,20 +60,24 @@ export const BluetoothBLE = {
     return callNativeSync<boolean>("isEnabled", {});
   },
 
-  async getPermissionsAsync(): Promise<BluetoothPermissionStatus> {
+  async getPermissionsAsync(
+    transport: "ble" | "classic" | "all" = "ble"
+  ): Promise<BluetoothPermissionStatus> {
     if (!isNativeAvailable()) {
       return createUnavailablePermissionState();
     }
-    return callNative<BluetoothPermissionStatus>("getPermissions", { transport: "ble" });
+    return callNative<BluetoothPermissionStatus>("getPermissions", { transport });
   },
 
-  async requestPermissionsAsync(): Promise<BluetoothPermissionStatus> {
+  async requestPermissionsAsync(
+    transport: "ble" | "classic" | "all" = "ble"
+  ): Promise<BluetoothPermissionStatus> {
     if (!isNativeAvailable()) {
       return createUnavailablePermissionState();
     }
 
     const requestId = createRequestId("btble-perm");
-    const result = await requestPermissionsWithEvent(requestId, "ble");
+    const result = await requestPermissionsWithEvent(requestId, transport);
     const status = result.data as BluetoothPermissionStatus | undefined;
     return status ?? createUnavailablePermissionState();
   },

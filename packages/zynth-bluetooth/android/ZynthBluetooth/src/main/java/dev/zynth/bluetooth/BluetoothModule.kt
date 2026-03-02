@@ -28,9 +28,11 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.ParcelUuid
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
@@ -93,6 +95,7 @@ internal class BluetoothModule(
   )
 
   override val protectedMethods: List<String> = exportedMethods
+  private val logTag = "ZynthBluetooth"
 
   private val appContext: Context = activity.applicationContext
   private val bluetoothManager: BluetoothManager? =
@@ -110,6 +113,7 @@ internal class BluetoothModule(
   private var blePeripheralServiceUuid: UUID? = null
   private var blePeripheralCharacteristicUuid: UUID? = null
   private var blePeripheralCharacteristic: BluetoothGattCharacteristic? = null
+  private var blePeripheralCharacteristicValue: ByteArray = ByteArray(0)
   private var blePeripheralLocalName: String? = null
   private var blePeripheralPreviousAdapterName: String? = null
 
@@ -274,6 +278,7 @@ internal class BluetoothModule(
   private fun getPermissions(transport: String): JSONObject {
     val requiresScan = transport == "ble" || transport == "all" || transport == "classic"
     val requiresConnect = transport == "ble" || transport == "all" || transport == "classic"
+    val requiresAdvertise = transport == "all"
 
     val scanGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && requiresScan) {
       hasPermission(Manifest.permission.BLUETOOTH_SCAN)
@@ -285,7 +290,7 @@ internal class BluetoothModule(
     } else {
       true
     }
-    val advertiseGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+    val advertiseGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && requiresAdvertise) {
       hasPermission(Manifest.permission.BLUETOOTH_ADVERTISE)
     } else {
       true
@@ -301,7 +306,10 @@ internal class BluetoothModule(
       .put("bluetoothConnect", connectGranted)
       .put("bluetoothAdvertise", advertiseGranted)
       .put("location", locationGranted)
-      .put("allGranted", scanGranted && connectGranted && locationGranted)
+      .put(
+        "allGranted",
+        scanGranted && connectGranted && locationGranted && (!requiresAdvertise || advertiseGranted)
+      )
   }
 
   private fun requestPermissions(args: ZynthArgs): JSONObject {
@@ -328,6 +336,7 @@ internal class BluetoothModule(
     val list = mutableListOf<String>()
     val requiresScan = transport == "classic" || transport == "ble" || transport == "all"
     val requiresConnect = transport == "classic" || transport == "ble" || transport == "all"
+    val requiresAdvertise = transport == "all"
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
       if (requiresScan && !hasPermission(Manifest.permission.BLUETOOTH_SCAN)) {
@@ -335,6 +344,9 @@ internal class BluetoothModule(
       }
       if (requiresConnect && !hasPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
         list.add(Manifest.permission.BLUETOOTH_CONNECT)
+      }
+      if (requiresAdvertise && !hasPermission(Manifest.permission.BLUETOOTH_ADVERTISE)) {
+        list.add(Manifest.permission.BLUETOOTH_ADVERTISE)
       }
     }
 
@@ -670,6 +682,7 @@ internal class BluetoothModule(
         val connection = connectionRef.get() ?: return
         val pending = connection.pendingWrite ?: return
         connection.pendingWrite = null
+        logNative("onCharacteristicWrite connection=${connection.connectionId} characteristic=${characteristic.uuid} status=$status")
         if (status == BluetoothGatt.GATT_SUCCESS) {
           pending.result = true
         } else {
@@ -882,6 +895,7 @@ internal class BluetoothModule(
     val withResponse = args.getBoolean("withResponse", true)
 
     val data = decodeBase64(dataBase64) ?: return failure("E_INVALID_ARGUMENT", "Invalid base64 payload")
+    logNative("writeBleCharacteristic connection=${connection.connectionId} characteristic=${characteristic.uuid} bytes=${data.size} withResponse=$withResponse")
 
     val pending = PendingBooleanResult()
     connection.pendingWrite = pending
@@ -910,6 +924,7 @@ internal class BluetoothModule(
 
     if (!pending.latch.await(timeoutMs.toLong(), TimeUnit.MILLISECONDS)) {
       connection.pendingWrite = null
+      logNative("writeBleCharacteristic timeout connection=${connection.connectionId} characteristic=${characteristic.uuid}")
       return failure("E_TIMEOUT", "BLE characteristic write timeout")
     }
 
@@ -1080,7 +1095,12 @@ internal class BluetoothModule(
       BluetoothGattCharacteristic.PERMISSION_READ or
         BluetoothGattCharacteristic.PERMISSION_WRITE
     )
-    characteristic.value = initialValue
+    blePeripheralCharacteristicValue = initialValue
+    val cccd = BluetoothGattDescriptor(
+      UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"),
+      BluetoothGattDescriptor.PERMISSION_READ or BluetoothGattDescriptor.PERMISSION_WRITE
+    )
+    characteristic.addDescriptor(cccd)
 
     val service = BluetoothGattService(serviceUuid, BluetoothGattService.SERVICE_TYPE_PRIMARY)
     service.addCharacteristic(characteristic)
@@ -1115,7 +1135,7 @@ internal class BluetoothModule(
         offset: Int,
         characteristic: BluetoothGattCharacteristic,
       ) {
-        val value = characteristic.value ?: ByteArray(0)
+        val value = blePeripheralCharacteristicValue
         val response = if (offset >= value.size) ByteArray(0) else value.copyOfRange(offset, value.size)
         bleGattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, response)
 
@@ -1139,7 +1159,17 @@ internal class BluetoothModule(
         offset: Int,
         value: ByteArray,
       ) {
-        val current = characteristic.value ?: ByteArray(0)
+        val frameMeta = if (value.size >= 4) {
+          val prefix = value[0].toInt() and 0xFF
+          val key = value[1].toInt() and 0xFF
+          val index = value[2].toInt() and 0xFF
+          val total = value[3].toInt() and 0xFF
+          " framePrefix=$prefix key=$key index=$index total=$total"
+        } else {
+          ""
+        }
+        logNative("onCharacteristicWriteRequest central=${device.address} characteristic=${characteristic.uuid} bytes=${value.size} responseNeeded=$responseNeeded offset=$offset$frameMeta")
+        val current = blePeripheralCharacteristicValue
         val next = if (offset <= 0) {
           value
         } else {
@@ -1148,10 +1178,11 @@ internal class BluetoothModule(
           value.copyInto(resized, destinationOffset = offset)
           resized
         }
-        characteristic.value = next
+        blePeripheralCharacteristicValue = next
 
         if (responseNeeded) {
-          bleGattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, null)
+          bleGattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, value)
+          logNative("onCharacteristicWriteRequest responded success requestId=$requestId prepared=$preparedWrite")
         }
 
         emitBleEvent(
@@ -1163,6 +1194,43 @@ internal class BluetoothModule(
             .put("characteristicUuid", characteristic.uuid.toString())
             .put("dataBase64", encodeBase64(next))
         )
+      }
+
+      override fun onDescriptorReadRequest(
+        device: BluetoothDevice,
+        requestId: Int,
+        offset: Int,
+        descriptor: BluetoothGattDescriptor,
+      ) {
+        logNative("onDescriptorReadRequest central=${device.address} descriptor=${descriptor.uuid}")
+        // For CCCD and others, we can just respond with the current value if needed, 
+        // but often null/empty is fine for default descriptors.
+        bleGattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, descriptor.value)
+      }
+
+      override fun onDescriptorWriteRequest(
+        device: BluetoothDevice,
+        requestId: Int,
+        descriptor: BluetoothGattDescriptor,
+        preparedWrite: Boolean,
+        responseNeeded: Boolean,
+        offset: Int,
+        value: ByteArray,
+      ) {
+        logNative("onDescriptorWriteRequest central=${device.address} descriptor=${descriptor.uuid} responseNeeded=$responseNeeded")
+        descriptor.value = value
+        if (responseNeeded) {
+          bleGattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, value)
+        }
+      }
+
+      override fun onExecuteWrite(device: BluetoothDevice, requestId: Int, execute: Boolean) {
+        logNative("onExecuteWrite central=${device.address} requestId=$requestId execute=$execute")
+        bleGattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, null)
+      }
+
+      override fun onMtuChanged(device: BluetoothDevice, mtu: Int) {
+        logNative("GATT server MTU changed central=${device.address} mtu=$mtu")
       }
     }) ?: return failure("E_NATIVE", "Failed to open BLE GATT server")
 
@@ -1181,15 +1249,14 @@ internal class BluetoothModule(
     val dataBuilder = AdvertiseData.Builder()
       .addServiceUuid(ParcelUuid(serviceUuid))
       .setIncludeTxPowerLevel(false)
-    if (localName != null) {
-      dataBuilder.setIncludeDeviceName(true)
-    }
+    // Keep advertising payload minimal to avoid ADVERTISE_FAILED_DATA_TOO_LARGE on devices
+    // with strict 31-byte advertisement limits.
+    dataBuilder.setIncludeDeviceName(false)
     val data = dataBuilder.build()
 
-    if (localName != null && adapter.name != localName) {
-      blePeripheralPreviousAdapterName = adapter.name
-      runCatching { adapter.name = localName }
-    }
+    // Do not mutate adapter name for mesh advertising. It can enlarge/fragment payload
+    // and cause advertise start failures on some Android stacks.
+    blePeripheralPreviousAdapterName = null
 
     val callback = object : AdvertiseCallback() {
       override fun onStartSuccess(settingsInEffect: AdvertiseSettings) {
@@ -1204,7 +1271,7 @@ internal class BluetoothModule(
 
       override fun onStartFailure(errorCode: Int) {
         cleanupBlePeripheralResources(emitStoppedEvent = false)
-        emitBleError("E_NATIVE", "BLE advertise failed with code $errorCode")
+        emitBleError("E_NATIVE", "BLE advertise failed with code $errorCode (${advertiseFailureReason(errorCode)})")
       }
     }
 
@@ -1244,6 +1311,7 @@ internal class BluetoothModule(
 
     peripheralCentrals.clear()
     blePeripheralCharacteristic = null
+    blePeripheralCharacteristicValue = ByteArray(0)
     blePeripheralServiceUuid = null
     blePeripheralCharacteristicUuid = null
     blePeripheralLocalName = null
@@ -1288,12 +1356,22 @@ internal class BluetoothModule(
       return failure("E_INVALID_ARGUMENT", "dataBase64 is required")
     }
     val data = decodeBase64(raw) ?: return failure("E_INVALID_ARGUMENT", "Invalid base64 payload")
-    characteristic.value = data
+    blePeripheralCharacteristicValue = data
 
     val server = bleGattServer
     if (server != null) {
       for (device in peripheralCentrals.values) {
-        runCatching { server.notifyCharacteristicChanged(device, characteristic, false) }
+        runCatching {
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            server.notifyCharacteristicChanged(device, characteristic, false, data)
+          } else {
+            @Suppress("DEPRECATION")
+            run {
+              characteristic.value = data
+              server.notifyCharacteristicChanged(device, characteristic, false)
+            }
+          }
+        }
       }
     }
 
@@ -1339,8 +1417,18 @@ internal class BluetoothModule(
 
   private fun cleanupBleConnection(connectionId: String) {
     val connection = bleConnections.remove(connectionId) ?: return
+    runCatching { connection.gatt.disconnect() }
     runCatching { connection.gatt.close() }
     connection.connected = false
+    
+    val error = "Disconnected"
+    connection.pendingServices?.let { it.error = error; it.latch.countDown() }
+    connection.pendingRead?.let { it.error = error; it.latch.countDown() }
+    connection.pendingWrite?.let { it.error = error; it.latch.countDown() }
+    connection.pendingNotify?.let { it.error = error; it.latch.countDown() }
+    connection.pendingMtu?.let { it.error = error; it.latch.countDown() }
+    connection.pendingRssi?.let { it.error = error; it.latch.countDown() }
+    
     emitBleConnection(connection)
   }
 
@@ -1558,6 +1646,23 @@ internal class BluetoothModule(
       BluetoothAdapter.STATE_ON -> "ON"
       BluetoothAdapter.STATE_TURNING_OFF -> "TURNING_OFF"
       else -> "UNKNOWN($state)"
+    }
+  }
+
+  private fun advertiseFailureReason(errorCode: Int): String {
+    return when (errorCode) {
+      AdvertiseCallback.ADVERTISE_FAILED_DATA_TOO_LARGE -> "DATA_TOO_LARGE"
+      AdvertiseCallback.ADVERTISE_FAILED_TOO_MANY_ADVERTISERS -> "TOO_MANY_ADVERTISERS"
+      AdvertiseCallback.ADVERTISE_FAILED_ALREADY_STARTED -> "ALREADY_STARTED"
+      AdvertiseCallback.ADVERTISE_FAILED_INTERNAL_ERROR -> "INTERNAL_ERROR"
+      AdvertiseCallback.ADVERTISE_FAILED_FEATURE_UNSUPPORTED -> "FEATURE_UNSUPPORTED"
+      else -> "UNKNOWN"
+    }
+  }
+
+  private fun logNative(message: String) {
+    if ((appContext.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+      Log.d(logTag, "[ZynthBluetooth][Android] $message")
     }
   }
 

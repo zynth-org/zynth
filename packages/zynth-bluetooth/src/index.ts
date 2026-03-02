@@ -1,5 +1,6 @@
 export { BluetoothClassic } from "./BluetoothClassic";
 export { BluetoothBLE } from "./BluetoothBLE";
+export { BluetoothMesh } from "./BluetoothMesh";
 export { isNativeAvailable } from "./native";
 export type {
   BlePeripheralConfig,
@@ -25,3 +26,23 @@ export type {
   ClassicDiscoveryOptions,
   ClassicReconnectOptions,
 } from "./types";
+export type {
+  MeshEvent,
+  MeshEvictionPolicy,
+  MeshHandshakeMode,
+  MeshListenerSubscription,
+  MeshMessage,
+  MeshNodeConfig,
+  MeshNodeState,
+  MeshPeer,
+  MeshQueuedEnvelope,
+  MeshRelayEnvelope,
+  MeshRelayPolicy,
+  MeshSecurityConfig,
+  MeshSendMessageInput,
+  MeshSession,
+  MeshSessionState,
+  MeshStartResult,
+  MeshStoreForwardPolicy,
+  MeshTransportRecord,
+} from "./mesh/types";

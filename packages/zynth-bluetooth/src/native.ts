@@ -163,6 +163,15 @@ export async function requestPermissionsWithEvent(
   }
 
   return new Promise<BluetoothOperationResult<Record<string, unknown>>>((resolve, reject) => {
+    let settled = false;
+    const settle = (result: BluetoothOperationResult<Record<string, unknown>>): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve(result);
+    };
+
     const subscription = emitter.addListener("Bluetooth.permissionResult", (payload: unknown) => {
       const record = asRecord(payload);
       if (!record || record.requestId !== requestId) {
@@ -176,15 +185,36 @@ export async function requestPermissionsWithEvent(
         message: typeof record.message === "string" ? record.message : undefined,
         data: asRecord(record.data) ?? undefined,
       };
-      resolve(result);
+      settle(result);
     });
 
     void callNative<unknown>("requestPermissions", {
       requestId,
       transport,
-    }).catch((error: unknown) => {
-      subscription.remove();
-      reject(error);
-    });
+    })
+      .then((response: unknown) => {
+        const record = asRecord(response);
+        if (!record) {
+          return;
+        }
+
+        const isPending = record.status === "pending";
+        if (isPending) {
+          return;
+        }
+
+        subscription.remove();
+        settle({
+          ok: true,
+          data: record,
+        });
+      })
+      .catch((error: unknown) => {
+        subscription.remove();
+        if (settled) {
+          return;
+        }
+        reject(error);
+      });
   });
 }

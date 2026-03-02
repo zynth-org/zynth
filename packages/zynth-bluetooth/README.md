@@ -28,6 +28,33 @@ This package is optimized for Android native execution through Zynth modules + J
 import { BluetoothClassic, BluetoothBLE } from "@zynth/bluetooth";
 ```
 
+### Mesh Chat Runtime
+
+```ts
+import { BluetoothMesh } from "@zynth/bluetooth";
+
+await BluetoothMesh.startNodeAsync({
+  nodeId: "node-a",
+  serviceUuid: "180F",
+  characteristicUuid: "2A19",
+  ttl: 3,
+});
+
+await BluetoothMesh.sendMessageAsync({
+  roomId: "demo-room",
+  payloadBase64: "SGVsbG8gbWVzaA==",
+});
+```
+
+`BluetoothMesh` adds BitChat-like building blocks on top of BLE:
+
+- peer discovery and session lifecycle events
+- relay with TTL + hop count + dedupe
+- bounded store-and-forward queue
+- Noise-style PSK session key derivation + AES-GCM payload protection
+
+Security is optional at runtime: if `globalThis.crypto` (with `subtle`) is unavailable, mesh security operations are skipped and a warning is emitted once.
+
 ### Permissions
 
 ```ts

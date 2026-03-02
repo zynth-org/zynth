@@ -57,6 +57,17 @@ final class BluetoothModule: NSObject, ZynthModule, ZynthSyncModule {
   private var pendingConnectByPeripheralId: [String: PendingConnect] = [:]
   private var pendingPermissionRequestId: String?
   private var pendingPermissionWorkItem: DispatchWorkItem?
+  private var peripheralManager: CBPeripheralManager?
+  private var peripheralServiceUuid: CBUUID?
+  private var peripheralCharacteristicUuid: CBUUID?
+  private var peripheralCharacteristic: CBMutableCharacteristic?
+  private var peripheralService: CBMutableService?
+  private var peripheralCharacteristicValue = Data()
+  private var peripheralLocalName: String?
+  private var peripheralConnectable = true
+  private var peripheralRunning = false
+  private var peripheralPendingStart = false
+  private var subscribedCentralIds: Set<String> = []
 
   init(runtime: ZynthRuntime) {
     self.runtime = runtime
@@ -72,6 +83,7 @@ final class BluetoothModule: NSObject, ZynthModule, ZynthSyncModule {
       pendingPermissionWorkItem = nil
       pendingPermissionRequestId = nil
       stopBleScanLocked()
+      stopBlePeripheralLocked(emitEvent: false)
       for connection in connectedByConnectionId.values {
         centralManager?.cancelPeripheralConnection(connection.peripheral)
       }
@@ -129,11 +141,15 @@ final class BluetoothModule: NSObject, ZynthModule, ZynthSyncModule {
     case "getBleConnections":
       return success(connectedByConnectionId.values.map { $0.toDictionary() })
     case "isBlePeripheralSupported":
-      return success(false)
-    case "startBlePeripheral", "stopBlePeripheral", "updateBlePeripheralCharacteristic":
-      return peripheralUnavailableResult()
+      return success(isBlePeripheralSupported())
+    case "startBlePeripheral":
+      return startBlePeripheral(args)
+    case "stopBlePeripheral":
+      return success(stopBlePeripheral())
+    case "updateBlePeripheralCharacteristic":
+      return updateBlePeripheralCharacteristic(args)
     case "getBlePeripheralState":
-      return success(defaultPeripheralState())
+      return success(peripheralStatePayload())
     default:
       throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
@@ -150,21 +166,22 @@ final class BluetoothModule: NSObject, ZynthModule, ZynthSyncModule {
     case "getPermissions":
       return permissionsPayload()
     case "isBlePeripheralSupported":
-      return false
+      return isBlePeripheralSupported()
     case "getBlePeripheralState":
-      return defaultPeripheralState()
+      return peripheralStatePayload()
     default:
       throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
   }
 
-  private func defaultPeripheralState() -> [String: Any] {
+  private func peripheralStatePayload() -> [String: Any] {
+    let centrals = subscribedCentralIds.sorted()
     return [
-      "running": false,
-      "localName": NSNull(),
-      "serviceUuid": NSNull(),
-      "characteristicUuid": NSNull(),
-      "connectedCentralIds": [],
+      "running": peripheralRunning,
+      "localName": peripheralLocalName as Any? ?? NSNull(),
+      "serviceUuid": peripheralServiceUuid?.uuidString.lowercased() as Any? ?? NSNull(),
+      "characteristicUuid": peripheralCharacteristicUuid?.uuidString.lowercased() as Any? ?? NSNull(),
+      "connectedCentralIds": centrals,
     ]
   }
 
@@ -174,6 +191,10 @@ final class BluetoothModule: NSObject, ZynthModule, ZynthSyncModule {
 
   private func isEnabled() -> Bool {
     return managerState() == .poweredOn
+  }
+
+  private func isBlePeripheralSupported() -> Bool {
+    return managerState() != .unsupported
   }
 
   private func managerState() -> CBManagerState {
@@ -296,6 +317,7 @@ final class BluetoothModule: NSObject, ZynthModule, ZynthSyncModule {
       return failure("E_INVALID_ARGUMENT", "deviceId is required")
     }
     let timeoutMs = max(1000, Int(args.number("timeoutMs", default: 15000)))
+    logNative("connectBle requested deviceId=\(deviceId) timeoutMs=\(timeoutMs)")
 
     let result = waitResult(timeoutMs: timeoutMs) { completion in
       queue.async {
@@ -305,6 +327,7 @@ final class BluetoothModule: NSObject, ZynthModule, ZynthSyncModule {
         }
 
         let peripheralId = peripheral.identifier.uuidString
+        self.logNative("connectBle attempting peripheralId=\(peripheralId)")
         let pending = PendingConnect(completion: completion)
         self.pendingConnectByPeripheralId[peripheralId] = pending
         peripheral.delegate = self
@@ -369,6 +392,7 @@ final class BluetoothModule: NSObject, ZynthModule, ZynthSyncModule {
           completion(.failure("E_NOT_FOUND", "BLE connection not found: \(connectionId)"))
           return
         }
+        self.logNative("discoverBleServices start connectionId=\(connectionId)")
         connection.pendingServiceDiscovery = completion
         connection.peripheral.discoverServices(nil)
       }
@@ -412,7 +436,16 @@ final class BluetoothModule: NSObject, ZynthModule, ZynthSyncModule {
       return failure("E_NATIVE", "Failed to resolve characteristic")
     }
 
+    if withResponse {
+      if !resolved.characteristic.properties.contains(.write) {
+        return failure("E_INVALID_ARGUMENT", "Characteristic does not support write with response")
+      }
+    } else if !resolved.characteristic.properties.contains(.writeWithoutResponse) {
+      return failure("E_INVALID_ARGUMENT", "Characteristic does not support write without response")
+    }
+
     let writeType: CBCharacteristicWriteType = withResponse ? .withResponse : .withoutResponse
+    logNative("writeBleCharacteristic target=\(resolved.characteristicId) bytes=\(data.count) withResponse=\(withResponse)")
     if withResponse {
       return waitResult(timeoutMs: timeoutMs) { completion in
         queue.async {
@@ -444,6 +477,7 @@ final class BluetoothModule: NSObject, ZynthModule, ZynthSyncModule {
 
     return waitResult(timeoutMs: timeoutMs) { completion in
       queue.async {
+        self.logNative("setBleNotification start connectionId=\(resolved.connection.connectionId) characteristic=\(resolved.characteristicId) enabled=\(enabled)")
         resolved.connection.pendingNotify = PendingNotify(
           characteristicId: resolved.characteristicId,
           completion: completion
@@ -487,6 +521,169 @@ final class BluetoothModule: NSObject, ZynthModule, ZynthSyncModule {
         connection.pendingRssi = completion
         connection.peripheral.readRSSI()
       }
+    }
+  }
+
+  private func startBlePeripheral(_ args: ZynthArgs) -> [String: Any] {
+    guard isBlePeripheralSupported() else {
+      return failure("E_UNAVAILABLE", "BLE peripheral mode is unsupported on this device")
+    }
+
+    let serviceRaw = args.string("serviceUuid", default: "")
+    let characteristicRaw = args.string("characteristicUuid", default: "")
+    let localNameRaw = args.string("localName", default: "").trimmingCharacters(in: .whitespacesAndNewlines)
+    let connectable = args.bool("connectable", default: true)
+    let initialRaw = args.string("initialValueBase64", default: "")
+
+    let normalizedService = normalizeUuid(serviceRaw)
+    let normalizedCharacteristic = normalizeUuid(characteristicRaw)
+    if normalizedService.isEmpty || normalizedCharacteristic.isEmpty {
+      return failure("E_INVALID_ARGUMENT", "serviceUuid and characteristicUuid are required")
+    }
+
+    let initialValue: Data
+    if initialRaw.isEmpty {
+      initialValue = Data()
+    } else if let decoded = Data(base64Encoded: initialRaw) {
+      initialValue = decoded
+    } else {
+      return failure("E_INVALID_ARGUMENT", "initialValueBase64 must be valid base64")
+    }
+
+    queue.sync {
+      if peripheralManager == nil {
+        peripheralManager = CBPeripheralManager(delegate: self, queue: queue)
+        logNative("Created CBPeripheralManager")
+      }
+
+      stopBlePeripheralLocked(emitEvent: false)
+
+      let serviceUuid = CBUUID(string: normalizedService)
+      let characteristicUuid = CBUUID(string: normalizedCharacteristic)
+      let characteristic = CBMutableCharacteristic(
+        type: characteristicUuid,
+        properties: [.read, .write, .notify],
+        value: nil,
+        permissions: [.readable, .writeable]
+      )
+      peripheralCharacteristicValue = initialValue
+
+      let service = CBMutableService(type: serviceUuid, primary: true)
+      service.characteristics = [characteristic]
+
+      peripheralServiceUuid = serviceUuid
+      peripheralCharacteristicUuid = characteristicUuid
+      peripheralCharacteristic = characteristic
+      peripheralService = service
+      peripheralLocalName = localNameRaw.isEmpty ? nil : localNameRaw
+      peripheralConnectable = connectable
+      peripheralPendingStart = true
+      logNative("startBlePeripheral requested service=\(serviceUuid.uuidString) characteristic=\(characteristicUuid.uuidString) state=\(describeManagerState(peripheralManager?.state ?? .unknown))")
+
+      if peripheralManager?.state == .poweredOn {
+        configurePeripheralGattLocked()
+      }
+    }
+
+    return success(peripheralStatePayload())
+  }
+
+  private func stopBlePeripheral() -> Bool {
+    return queue.sync {
+      stopBlePeripheralLocked(emitEvent: true)
+      return true
+    }
+  }
+
+  private func stopBlePeripheralLocked(emitEvent: Bool) {
+    if let manager = peripheralManager, manager.isAdvertising {
+      logNative("Stopping BLE advertising")
+      manager.stopAdvertising()
+    }
+    if let manager = peripheralManager, manager.state == .poweredOn {
+      manager.removeAllServices()
+    }
+    subscribedCentralIds.removeAll()
+    peripheralPendingStart = false
+    peripheralServiceUuid = nil
+    peripheralCharacteristicUuid = nil
+    peripheralCharacteristic = nil
+    peripheralService = nil
+    peripheralCharacteristicValue = Data()
+    peripheralLocalName = nil
+    peripheralConnectable = true
+    let wasRunning = peripheralRunning
+    peripheralRunning = false
+
+    if emitEvent, wasRunning {
+      emitBleEvent([
+        "type": "peripheral_stopped",
+        "timestamp": timestamp(),
+        "state": peripheralStatePayload(),
+      ])
+    }
+  }
+
+  private func startAdvertisingLocked() {
+    guard let manager = peripheralManager,
+          let serviceUuid = peripheralServiceUuid,
+          let characteristicUuid = peripheralCharacteristicUuid,
+          manager.state == .poweredOn else {
+      return
+    }
+
+    // iOS does not accept CBAdvertisementDataIsConnectable in peripheral payload.
+    // Connectivity is managed by CoreBluetooth for CBPeripheralManager advertisements.
+    var payload: [String: Any] = [
+      CBAdvertisementDataServiceUUIDsKey: [serviceUuid],
+    ]
+    if let name = peripheralLocalName, !name.isEmpty {
+      payload[CBAdvertisementDataLocalNameKey] = name
+    } else {
+      payload[CBAdvertisementDataLocalNameKey] = "mesh-\(characteristicUuid.uuidString.prefix(4).lowercased())"
+    }
+
+    manager.startAdvertising(payload)
+    peripheralRunning = true
+    peripheralPendingStart = false
+    logNative("Started BLE advertising localName=\((payload[CBAdvertisementDataLocalNameKey] as? String) ?? "nil") service=\(serviceUuid.uuidString) connectable=\(peripheralConnectable)")
+    emitBleEvent([
+      "type": "peripheral_started",
+      "timestamp": timestamp(),
+      "state": peripheralStatePayload(),
+    ])
+  }
+
+  private func configurePeripheralGattLocked() {
+    guard let manager = peripheralManager, manager.state == .poweredOn else {
+      return
+    }
+    guard let service = peripheralService else {
+      logNative("configurePeripheralGattLocked skipped: missing service")
+      return
+    }
+
+    manager.removeAllServices()
+    manager.add(service)
+    logNative("Added BLE service, waiting for didAdd callback service=\(service.uuid.uuidString)")
+  }
+
+  private func updateBlePeripheralCharacteristic(_ args: ZynthArgs) -> [String: Any] {
+    let dataBase64 = args.string("dataBase64", default: "")
+    guard !dataBase64.isEmpty, let data = Data(base64Encoded: dataBase64) else {
+      return failure("E_INVALID_ARGUMENT", "Invalid base64 payload")
+    }
+
+    return queue.sync {
+      guard peripheralRunning, let characteristic = peripheralCharacteristic else {
+        return failure("E_NOT_CONNECTED", "BLE peripheral is not running")
+      }
+
+      peripheralCharacteristicValue = data
+      if let manager = peripheralManager, !subscribedCentralIds.isEmpty {
+        manager.updateValue(data, for: characteristic, onSubscribedCentrals: nil)
+      }
+      return success(true)
     }
   }
 
@@ -688,6 +885,7 @@ final class BluetoothModule: NSObject, ZynthModule, ZynthSyncModule {
   }
 
   private func emitBleError(_ code: String, _ message: String) {
+    logNative("BLE error code=\(code) message=\(message)")
     emitBleEvent([
       "type": "error",
       "timestamp": timestamp(),
@@ -728,10 +926,36 @@ final class BluetoothModule: NSObject, ZynthModule, ZynthSyncModule {
   private func timestamp() -> Int64 {
     return Int64(Date().timeIntervalSince1970 * 1000)
   }
+
+  private func describeManagerState(_ state: CBManagerState) -> String {
+    switch state {
+    case .unknown:
+      return "unknown"
+    case .resetting:
+      return "resetting"
+    case .unsupported:
+      return "unsupported"
+    case .unauthorized:
+      return "unauthorized"
+    case .poweredOff:
+      return "poweredOff"
+    case .poweredOn:
+      return "poweredOn"
+    @unknown default:
+      return "unknownDefault"
+    }
+  }
+
+  private func logNative(_ message: String) {
+#if DEBUG
+    NSLog("[ZynthBluetooth][iOS] %@", message)
+#endif
+  }
 }
 
 extension BluetoothModule: CBCentralManagerDelegate {
   func centralManagerDidUpdateState(_ central: CBCentralManager) {
+    logNative("Central state=\(describeManagerState(central.state))")
     if central.state != .poweredOn && isScanning {
       _ = stopBleScan()
     }
@@ -768,7 +992,9 @@ extension BluetoothModule: CBCentralManagerDelegate {
 
   func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
     let peripheralId = peripheral.identifier.uuidString
+    logNative("didConnect peripheralId=\(peripheralId)")
     guard let pending = pendingConnectByPeripheralId.removeValue(forKey: peripheralId) else {
+      logNative("didConnect ignored: no pending connect for peripheralId=\(peripheralId)")
       return
     }
 
@@ -786,7 +1012,9 @@ extension BluetoothModule: CBCentralManagerDelegate {
 
   func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
     let peripheralId = peripheral.identifier.uuidString
+    logNative("didFailToConnect peripheralId=\(peripheralId) error=\(error?.localizedDescription ?? "unknown")")
     guard let pending = pendingConnectByPeripheralId.removeValue(forKey: peripheralId) else {
+      logNative("didFailToConnect ignored: no pending connect for peripheralId=\(peripheralId)")
       return
     }
     let message = error?.localizedDescription ?? "BLE connection failed"
@@ -796,17 +1024,39 @@ extension BluetoothModule: CBCentralManagerDelegate {
 
   func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
     let peripheralId = peripheral.identifier.uuidString
+    logNative("didDisconnectPeripheral peripheralId=\(peripheralId) error=\(error?.localizedDescription ?? "none")")
     guard let connectionId = connectionIdByPeripheralId.removeValue(forKey: peripheralId),
           let connection = connectedByConnectionId.removeValue(forKey: connectionId) else {
+      logNative("didDisconnectPeripheral ignored: no active connection mapping for peripheralId=\(peripheralId)")
       return
     }
 
+    let message = error?.localizedDescription ?? "Disconnected"
     connection.connected = false
+    connection.pendingServiceDiscovery?(.failure("E_IO", message))
+    connection.pendingServiceDiscovery = nil
+    connection.pendingServiceLookup?.completion(.failure("E_IO", message))
+    connection.pendingServiceLookup = nil
+    connection.pendingCharacteristicLookup?.completion(.failure("E_IO", message))
+    connection.pendingCharacteristicLookup = nil
+    connection.pendingRead?.completion(.failure("E_IO", message))
+    connection.pendingRead = nil
+    connection.pendingWrite?.completion(.failure("E_IO", message))
+    connection.pendingWrite = nil
+    connection.pendingNotify?.completion(.failure("E_IO", message))
+    connection.pendingNotify = nil
+    connection.pendingRssi?(.failure("E_IO", message))
+    connection.pendingRssi = nil
+
     if let error {
       connection.lastError = error.localizedDescription
       emitBleError("E_IO", error.localizedDescription)
     }
     emitBleConnectionState(connection)
+    
+    if let pendingConnect = pendingConnectByPeripheralId.removeValue(forKey: peripheralId) {
+      pendingConnect.completion(.failure("E_IO", message))
+    }
   }
 }
 
@@ -816,6 +1066,7 @@ extension BluetoothModule: CBPeripheralDelegate {
           let connection = connectedByConnectionId[connectionId] else {
       return
     }
+    logNative("didDiscoverServices connectionId=\(connectionId) error=\(error?.localizedDescription ?? "none")")
     if let error {
       let message = error.localizedDescription
       connection.pendingServiceDiscovery?(.failure("E_IO", message))
@@ -851,6 +1102,7 @@ extension BluetoothModule: CBPeripheralDelegate {
           let connection = connectedByConnectionId[connectionId] else {
       return
     }
+    logNative("didDiscoverCharacteristicsFor connectionId=\(connectionId) service=\(service.uuid.uuidString.lowercased()) error=\(error?.localizedDescription ?? "none")")
     if let error {
       let message = error.localizedDescription
       connection.pendingCharacteristicLookup?.completion(.failure("E_IO", message))
@@ -892,6 +1144,7 @@ extension BluetoothModule: CBPeripheralDelegate {
         return
       }
       let data = characteristic.value ?? Data()
+      logNative("didUpdateValueFor(read) connection=\(connectionId) characteristic=\(characteristicId) bytes=\(data.count)")
       pendingRead.completion(.success(data.base64EncodedString()))
       return
     }
@@ -902,6 +1155,7 @@ extension BluetoothModule: CBPeripheralDelegate {
     }
 
     let data = characteristic.value ?? Data()
+    logNative("didUpdateValueFor(notify) connection=\(connectionId) characteristic=\(characteristicId) bytes=\(data.count)")
     emitBleEvent([
       "type": "characteristic_changed",
       "timestamp": timestamp(),
@@ -918,19 +1172,26 @@ extension BluetoothModule: CBPeripheralDelegate {
 
   func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
     guard let connectionId = connectionIdByPeripheralId[peripheral.identifier.uuidString],
-          let connection = connectedByConnectionId[connectionId],
-          let pendingWrite = connection.pendingWrite else {
+          let connection = connectedByConnectionId[connectionId] else {
+      logNative("didWriteValueFor ignored: no active connection mapping for peripheral=\(peripheral.identifier.uuidString) characteristic=\(characteristic.uuid.uuidString.lowercased())")
+      return
+    }
+    guard let pendingWrite = connection.pendingWrite else {
+      logNative("didWriteValueFor ignored: no pending write connection=\(connectionId) characteristic=\(characteristic.uuid.uuidString.lowercased())")
       return
     }
     let characteristicId = characteristic.uuid.uuidString.lowercased()
     guard pendingWrite.characteristicId == characteristicId else {
+      logNative("didWriteValueFor ignored: pending characteristic mismatch connection=\(connectionId) expected=\(pendingWrite.characteristicId) got=\(characteristicId)")
       return
     }
     connection.pendingWrite = nil
 
     if let error {
+      logNative("didWriteValueFor failed connection=\(connectionId) characteristic=\(characteristicId) error=\(error.localizedDescription)")
       pendingWrite.completion(.failure("E_IO", error.localizedDescription))
     } else {
+      logNative("didWriteValueFor success connection=\(connectionId) characteristic=\(characteristicId)")
       pendingWrite.completion(.success(true))
     }
   }
@@ -948,8 +1209,10 @@ extension BluetoothModule: CBPeripheralDelegate {
     connection.pendingNotify = nil
 
     if let error {
+      logNative("didUpdateNotificationStateFor failed connection=\(connectionId) characteristic=\(characteristicId) error=\(error.localizedDescription)")
       pendingNotify.completion(.failure("E_IO", error.localizedDescription))
     } else {
+      logNative("didUpdateNotificationStateFor success connection=\(connectionId) characteristic=\(characteristicId) enabled=\(characteristic.isNotifying)")
       pendingNotify.completion(.success(true))
     }
   }
@@ -967,6 +1230,127 @@ extension BluetoothModule: CBPeripheralDelegate {
     } else {
       pendingRssi(.success(RSSI.intValue))
     }
+  }
+}
+
+extension BluetoothModule: CBPeripheralManagerDelegate {
+  func peripheralManagerDidUpdateState(_ peripheral: CBPeripheralManager) {
+    logNative("Peripheral manager state=\(describeManagerState(peripheral.state)) pendingStart=\(peripheralPendingStart) running=\(peripheralRunning)")
+    if peripheral.state == .poweredOn {
+      if peripheralPendingStart {
+        configurePeripheralGattLocked()
+      } else if peripheralServiceUuid != nil, peripheralCharacteristicUuid != nil, !peripheralRunning {
+        startAdvertisingLocked()
+      }
+      emitPermissionResultIfNeeded()
+      return
+    }
+
+    if peripheral.state != .poweredOn, peripheralRunning {
+      stopBlePeripheralLocked(emitEvent: true)
+    }
+    emitPermissionResultIfNeeded()
+  }
+
+  func peripheralManager(_ peripheral: CBPeripheralManager, didAdd service: CBService, error: Error?) {
+    if let error {
+      logNative("didAdd service failed service=\(service.uuid.uuidString) error=\(error.localizedDescription)")
+      emitBleError("E_IO", "BLE add service failed: \(error.localizedDescription)")
+      return
+    }
+    logNative("didAdd service success service=\(service.uuid.uuidString)")
+    if peripheralPendingStart {
+      startAdvertisingLocked()
+    }
+  }
+
+  func peripheralManagerDidStartAdvertising(_ peripheral: CBPeripheralManager, error: Error?) {
+    if let error {
+      logNative("startAdvertising failed error=\(error.localizedDescription)")
+      emitBleError("E_IO", "BLE advertising failed: \(error.localizedDescription)")
+    } else {
+      logNative("startAdvertising callback success")
+    }
+  }
+
+  func peripheralManager(_ peripheral: CBPeripheralManager, central: CBCentral, didSubscribeTo characteristic: CBCharacteristic) {
+    logNative("Central subscribed central=\(central.identifier.uuidString) characteristic=\(characteristic.uuid.uuidString)")
+    subscribedCentralIds.insert(central.identifier.uuidString)
+    emitBleEvent([
+      "type": "peripheral_central_connection",
+      "timestamp": timestamp(),
+      "centralId": central.identifier.uuidString,
+      "connected": true,
+    ])
+  }
+
+  func peripheralManager(_ peripheral: CBPeripheralManager, central: CBCentral, didUnsubscribeFrom characteristic: CBCharacteristic) {
+    logNative("Central unsubscribed central=\(central.identifier.uuidString) characteristic=\(characteristic.uuid.uuidString)")
+    subscribedCentralIds.remove(central.identifier.uuidString)
+    emitBleEvent([
+      "type": "peripheral_central_connection",
+      "timestamp": timestamp(),
+      "centralId": central.identifier.uuidString,
+      "connected": false,
+    ])
+  }
+
+  func peripheralManager(
+    _ peripheral: CBPeripheralManager,
+    didReceiveRead request: CBATTRequest
+  ) {
+    guard let characteristic = peripheralCharacteristic,
+          request.characteristic.uuid == characteristic.uuid else {
+      peripheral.respond(to: request, withResult: .attributeNotFound)
+      return
+    }
+
+    let value = peripheralCharacteristicValue
+    if request.offset > value.count {
+      peripheral.respond(to: request, withResult: .invalidOffset)
+      return
+    }
+
+    request.value = value.subdata(in: request.offset..<value.count)
+    peripheral.respond(to: request, withResult: .success)
+    let centralId = request.central.identifier.uuidString
+    logNative("Read request served central=\(centralId) bytes=\((request.value ?? Data()).count)")
+    emitBleEvent([
+      "type": "peripheral_characteristic_read",
+      "timestamp": timestamp(),
+      "centralId": centralId,
+      "serviceUuid": peripheralServiceUuid?.uuidString.lowercased() ?? "",
+      "characteristicUuid": characteristic.uuid.uuidString.lowercased(),
+      "dataBase64": (request.value ?? Data()).base64EncodedString(),
+    ])
+  }
+
+  func peripheralManager(
+    _ peripheral: CBPeripheralManager,
+    didReceiveWrite requests: [CBATTRequest]
+  ) {
+    guard let request = requests.first,
+          let characteristic = peripheralCharacteristic,
+          request.characteristic.uuid == characteristic.uuid else {
+      if let first = requests.first {
+        peripheral.respond(to: first, withResult: .attributeNotFound)
+      }
+      return
+    }
+
+    let incoming = request.value ?? Data()
+    peripheralCharacteristicValue = incoming
+    peripheral.respond(to: request, withResult: .success)
+    logNative("Write request received central=\(request.central.identifier.uuidString) bytes=\(incoming.count)")
+
+    emitBleEvent([
+      "type": "peripheral_characteristic_write",
+      "timestamp": timestamp(),
+      "centralId": request.central.identifier.uuidString,
+      "serviceUuid": peripheralServiceUuid?.uuidString.lowercased() ?? "",
+      "characteristicUuid": characteristic.uuid.uuidString.lowercased(),
+      "dataBase64": incoming.base64EncodedString(),
+    ])
   }
 }
 
