@@ -217,7 +217,15 @@ class ZynthButtonView(context: Context) : FrameLayout(context) {
       val hSpec = MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY)
       materialButton.measure(wSpec, hSpec)
     }
-    super.onLayout(changed, left, top, right, bottom)
+    // Keep the native MaterialButton stretched to this container.
+    materialButton.layout(0, 0, width, height)
+
+    // Preserve Yoga-computed frames for JS children. Calling FrameLayout's
+    // default layout here would re-position children via gravity (top-left).
+    for (i in 1 until childCount) {
+      val child = getChildAt(i)
+      child.layout(child.left, child.top, child.right, child.bottom)
+    }
   }
 
   override fun onAttachedToWindow() {
