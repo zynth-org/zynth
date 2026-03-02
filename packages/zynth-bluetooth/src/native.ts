@@ -83,7 +83,7 @@ export async function callNative<T>(method: string, args?: unknown): Promise<T> 
   } catch (error: unknown) {
     if (
       error instanceof Error &&
-      (error.message.includes("module_not_found") || error.message.includes("not found"))
+      (error.message.includes("module_not_found") || error.message === "Native module Bluetooth not found")
     ) {
       throw createMissingModuleError();
     }
@@ -98,7 +98,7 @@ export function callNativeSync<T>(method: string, args?: unknown): T {
   } catch (error: unknown) {
     if (
       error instanceof Error &&
-      (error.message.includes("module_not_found") || error.message.includes("not found"))
+      (error.message.includes("module_not_found") || error.message === "Native module Bluetooth not found")
     ) {
       throw createMissingModuleError();
     }

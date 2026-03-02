@@ -1,5 +1,6 @@
 import { BluetoothBLE } from "../BluetoothBLE";
 import type { BluetoothBleEvent } from "../types";
+import { emitDevtoolsEvent } from "@zynth/core";
 import { base64ToBytes, bytesToBase64, decodeEnvelope, dedupeKey, encodeEnvelope, normalizeUuid, createEnvelopeBase } from "./protocol";
 import { forwardedEnvelope, getRelayDecision } from "./router";
 import { MeshSecurityEngine } from "./security";
@@ -325,6 +326,12 @@ export class MeshRuntime {
   }
 
   private emit(event: MeshEvent): void {
+    emitDevtoolsEvent({
+      topic: `mesh/${event.type.replace(/_/g, "/")}`,
+      level: event.type === "error" ? "error" : "info",
+      tag: "mesh",
+      data: event,
+    });
     for (const listener of this.listeners) {
       listener(event);
     }
