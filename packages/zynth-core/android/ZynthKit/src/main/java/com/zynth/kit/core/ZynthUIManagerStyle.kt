@@ -485,7 +485,6 @@ internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, va
       val clip = value == "hidden" || value == "scroll"
       if (view is ZynthLayoutView) {
         view.setOverflowHidden(clip)
-        view.clipToOutline = false
       } else {
         view.clipToOutline = clip
         if (view is android.view.ViewGroup) {

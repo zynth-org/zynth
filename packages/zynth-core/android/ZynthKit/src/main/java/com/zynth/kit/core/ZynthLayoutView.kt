@@ -59,7 +59,9 @@ open class ZynthLayoutView @JvmOverloads constructor(
         val hasUniformRadius = borderTopLeftRadius == borderTopRightRadius &&
                                borderTopLeftRadius == borderBottomRightRadius &&
                                borderTopLeftRadius == borderBottomLeftRadius
-        clipToOutline = hidden && hasUniformRadius
+        val hasRadius = borderTopLeftRadius > 0f || borderTopRightRadius > 0f || 
+                        borderBottomRightRadius > 0f || borderBottomLeftRadius > 0f
+        clipToOutline = (hidden && hasUniformRadius) || (hasUniformRadius && hasRadius)
         invalidateOutline()
       }
       invalidate()
@@ -78,7 +80,9 @@ open class ZynthLayoutView @JvmOverloads constructor(
         val hasUniformRadius = borderTopLeftRadius == borderTopRightRadius &&
                                borderTopLeftRadius == borderBottomRightRadius &&
                                borderTopLeftRadius == borderBottomLeftRadius
-        clipToOutline = overflowHidden && hasUniformRadius
+        val hasRadius = borderTopLeftRadius > 0f || borderTopRightRadius > 0f || 
+                        borderBottomRightRadius > 0f || borderBottomLeftRadius > 0f
+        clipToOutline = (overflowHidden && hasUniformRadius) || (hasUniformRadius && hasRadius)
         invalidateOutline()
       }
       invalidate()
@@ -136,14 +140,19 @@ open class ZynthLayoutView @JvmOverloads constructor(
 
   override fun dispatchDraw(canvas: Canvas) {
     val borderDrawable = background as? ZynthBorderDrawable
-    if (overflowHidden && width > 0 && height > 0) {
+    val hasUniformRadius = borderTopLeftRadius == borderTopRightRadius &&
+                           borderTopLeftRadius == borderBottomRightRadius &&
+                           borderTopLeftRadius == borderBottomLeftRadius
+    val hasRadius = borderTopLeftRadius > 0f || borderTopRightRadius > 0f || 
+                    borderBottomRightRadius > 0f || borderBottomLeftRadius > 0f
+
+    // Use manual clipping only if clipToOutline is not active or cannot handle the radii (non-uniform).
+    // clipToOutline is preferred for uniform radii as it provides anti-aliased smooth edges.
+    val needsManualClip = overflowHidden && (!clipToOutline || !hasUniformRadius)
+
+    if (needsManualClip && width > 0 && height > 0) {
       val saveCount = canvas.save()
 
-      // Always clip children when overflow is hidden. clipToOutline does not
-      // reliably clip ViewGroup children across Android versions.
-      val hasRadius = borderTopLeftRadius > 0f || borderTopRightRadius > 0f || 
-                      borderBottomRightRadius > 0f || borderBottomLeftRadius > 0f
-      
       if (hasRadius) {
         updateClipPath()
         clipPath?.let { canvas.clipPath(it) }
