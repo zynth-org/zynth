@@ -182,6 +182,7 @@ class ZynthPressableView(context: Context) : ZynthLayoutView(context) {
     cancelPressOut()
     val payload = createPayload(event)
     val runnable = Runnable {
+      pressVisible = false
       payload.put("cancelled", cancelled)
       listener?.dispatchEvent(nodeId, "onPressOut", payload)
       updatePressVisualState(animated = true)

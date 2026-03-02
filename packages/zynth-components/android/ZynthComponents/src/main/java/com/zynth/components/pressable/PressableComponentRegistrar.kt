@@ -34,11 +34,24 @@ class PressableComponentRegistrar : ZynthComponentRegistrar {
         applyProperty = { node, name, value -> PressablePropAdapter.apply(node, name, value) },
         onSetHandler = { node, event ->
           val pressable = node.view as? ZynthPressableView ?: return@ZynthComponentDescriptor false
-          if (event == "onLongPress") {
-            pressable.setHasLongPressHandler(true)
-            true
-          } else {
-            false
+          when (event) {
+            "onPress",
+            "onPressIn",
+            "onPressOut",
+            "onDoublePress",
+            "onLongPress",
+            "onHoverIn",
+            "onHoverOut",
+            "onFocus",
+            "onBlur",
+            "onKeyDown",
+            "onKeyUp" -> {
+              if (event == "onLongPress") {
+                pressable.setHasLongPressHandler(true)
+              }
+              true
+            }
+            else -> false
           }
         },
         onReset = { node ->
