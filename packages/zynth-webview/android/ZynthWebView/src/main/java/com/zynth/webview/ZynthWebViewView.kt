@@ -5,13 +5,14 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.util.Log
+import android.view.ViewOutlineProvider
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.widget.FrameLayout
+import android.view.WindowInsets
 import com.zynth.kit.core.ZynthUIManager
 import org.json.JSONObject
 import org.json.JSONTokener
@@ -43,6 +44,13 @@ class ZynthWebViewView(context: Context) : WebView(context) {
       settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
     }
     setBackgroundColor(Color.TRANSPARENT)
+    outlineProvider = ViewOutlineProvider.BOUNDS
+    clipToOutline = true
+    fitsSystemWindows = false
+    setPadding(0, 0, 0, 0)
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+      setOnApplyWindowInsetsListener { _, insets -> insets }
+    }
 
     addJavascriptInterface(JSBridge(), "ZynthWebViewBridge")
 
@@ -96,6 +104,11 @@ class ZynthWebViewView(context: Context) : WebView(context) {
         emit("onNavigationStateChange", navigationPayload(loading = false))
       }
     }
+  }
+
+  override fun onApplyWindowInsets(insets: WindowInsets): WindowInsets {
+    // Insets are handled by Zynth/Yoga containers (safe-area). Avoid WebView applying them internally.
+    return insets
   }
 
   override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {

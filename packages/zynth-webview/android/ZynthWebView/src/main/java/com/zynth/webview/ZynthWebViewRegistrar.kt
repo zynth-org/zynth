@@ -13,7 +13,12 @@ class ZynthWebViewRegistrar : ZynthComponentRegistrar {
         type = "zynth-webview",
         createView = { context, _ -> ZynthWebViewView(context) },
         onNodeCreated = { manager, node ->
-          (node.view as? ZynthWebViewView)?.bind(manager, node.id)
+          val view = node.view as? ZynthWebViewView ?: return@ZynthComponentDescriptor
+          view.layoutParams = FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+          )
+          view.bind(manager, node.id)
         },
         applyProperty = { node, name, value ->
           val view = node.view as? ZynthWebViewView ?: return@ZynthComponentDescriptor false
