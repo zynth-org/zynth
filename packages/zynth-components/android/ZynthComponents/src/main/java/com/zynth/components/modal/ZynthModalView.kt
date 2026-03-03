@@ -4,12 +4,14 @@ import android.app.Activity
 import android.app.Dialog
 import android.content.Context
 import android.content.ContextWrapper
+import android.os.Build
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
+import androidx.core.view.WindowCompat
 import com.zynth.kit.core.ZynthUIManager
 import org.json.JSONObject
 
@@ -190,6 +192,7 @@ class ZynthModalView(context: Context) : FrameLayout(context) {
       window?.setDimAmount(0f)
       window?.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
       window?.setWindowAnimations(0)
+      configureEdgeToEdgeWindow()
 
       root.layoutParams = LayoutParams(
         LayoutParams.MATCH_PARENT,
@@ -234,6 +237,31 @@ class ZynthModalView(context: Context) : FrameLayout(context) {
         hostView.isOpen = false
         hostView.dispatchEvent("onOpenChange", JSONObject().put("open", false))
         hostView.dispatchEvent("onDismiss", JSONObject())
+      }
+    }
+
+    private fun configureEdgeToEdgeWindow() {
+      val dialogWindow = window ?: return
+      dialogWindow.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+      dialogWindow.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS)
+      dialogWindow.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION)
+      WindowCompat.setDecorFitsSystemWindows(dialogWindow, false)
+      dialogWindow.setLayout(
+        WindowManager.LayoutParams.MATCH_PARENT,
+        WindowManager.LayoutParams.MATCH_PARENT,
+      )
+      dialogWindow.statusBarColor = Color.TRANSPARENT
+      dialogWindow.navigationBarColor = Color.TRANSPARENT
+
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        dialogWindow.isNavigationBarContrastEnforced = false
+      }
+
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        val attributes = dialogWindow.attributes
+        attributes.layoutInDisplayCutoutMode =
+          WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        dialogWindow.attributes = attributes
       }
     }
 
