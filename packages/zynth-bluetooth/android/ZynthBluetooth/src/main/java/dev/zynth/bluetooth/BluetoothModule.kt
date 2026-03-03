@@ -114,6 +114,7 @@ internal class BluetoothModule(
   private var blePeripheralCharacteristicUuid: UUID? = null
   private var blePeripheralCharacteristic: BluetoothGattCharacteristic? = null
   private var blePeripheralCharacteristicValue: ByteArray = ByteArray(0)
+  private val blePeripheralDescriptorValues = ConcurrentHashMap<UUID, ByteArray>()
   private var blePeripheralLocalName: String? = null
   private var blePeripheralPreviousAdapterName: String? = null
 
@@ -1100,6 +1101,7 @@ internal class BluetoothModule(
       UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"),
       BluetoothGattDescriptor.PERMISSION_READ or BluetoothGattDescriptor.PERMISSION_WRITE
     )
+    blePeripheralDescriptorValues[cccd.uuid] = BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE.copyOf()
     characteristic.addDescriptor(cccd)
 
     val service = BluetoothGattService(serviceUuid, BluetoothGattService.SERVICE_TYPE_PRIMARY)
@@ -1203,9 +1205,13 @@ internal class BluetoothModule(
         descriptor: BluetoothGattDescriptor,
       ) {
         logNative("onDescriptorReadRequest central=${device.address} descriptor=${descriptor.uuid}")
-        // For CCCD and others, we can just respond with the current value if needed, 
-        // but often null/empty is fine for default descriptors.
-        bleGattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, descriptor.value)
+        val currentValue = blePeripheralDescriptorValues[descriptor.uuid] ?: ByteArray(0)
+        val response = if (offset >= currentValue.size) {
+          ByteArray(0)
+        } else {
+          currentValue.copyOfRange(offset, currentValue.size)
+        }
+        bleGattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, response)
       }
 
       override fun onDescriptorWriteRequest(
@@ -1218,7 +1224,7 @@ internal class BluetoothModule(
         value: ByteArray,
       ) {
         logNative("onDescriptorWriteRequest central=${device.address} descriptor=${descriptor.uuid} responseNeeded=$responseNeeded")
-        descriptor.value = value
+        blePeripheralDescriptorValues[descriptor.uuid] = value.copyOf()
         if (responseNeeded) {
           bleGattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, value)
         }
@@ -1312,6 +1318,7 @@ internal class BluetoothModule(
     peripheralCentrals.clear()
     blePeripheralCharacteristic = null
     blePeripheralCharacteristicValue = ByteArray(0)
+    blePeripheralDescriptorValues.clear()
     blePeripheralServiceUuid = null
     blePeripheralCharacteristicUuid = null
     blePeripheralLocalName = null

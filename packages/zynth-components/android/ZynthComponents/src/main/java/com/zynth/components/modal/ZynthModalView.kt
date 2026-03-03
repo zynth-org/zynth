@@ -243,8 +243,6 @@ class ZynthModalView(context: Context) : FrameLayout(context) {
     private fun configureEdgeToEdgeWindow() {
       val dialogWindow = window ?: return
       dialogWindow.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
-      dialogWindow.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS)
-      dialogWindow.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION)
       WindowCompat.setDecorFitsSystemWindows(dialogWindow, false)
       dialogWindow.setLayout(
         WindowManager.LayoutParams.MATCH_PARENT,
