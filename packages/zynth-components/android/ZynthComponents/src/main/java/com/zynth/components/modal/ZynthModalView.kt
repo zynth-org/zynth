@@ -183,6 +183,7 @@ class ZynthModalView(context: Context) : FrameLayout(context) {
     private val contentContainer = FrameLayout(context)
     private var options = ZynthModalOptions()
     private var isAnimatingOut = false
+    private var hasCompletedEnterAnimation = false
 
     init {
       window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
@@ -198,6 +199,7 @@ class ZynthModalView(context: Context) : FrameLayout(context) {
         LayoutParams.MATCH_PARENT,
         LayoutParams.MATCH_PARENT,
       )
+      overlayView.alpha = 0f
       contentContainer.layoutParams = LayoutParams(
         LayoutParams.MATCH_PARENT,
         LayoutParams.MATCH_PARENT,
@@ -216,6 +218,8 @@ class ZynthModalView(context: Context) : FrameLayout(context) {
       setContentView(root)
 
       setOnShowListener {
+        hasCompletedEnterAnimation = false
+        isAnimatingOut = false
         attachContent()
         applyOverlayState()
         prepareEnterState()
@@ -225,6 +229,8 @@ class ZynthModalView(context: Context) : FrameLayout(context) {
 
       setOnDismissListener {
         detachContent()
+        hasCompletedEnterAnimation = false
+        isAnimatingOut = false
         hostView.isOpen = false
         hostView.dispatchEvent("onOpenChange", JSONObject().put("open", false))
         hostView.dispatchEvent("onDismiss", JSONObject())
@@ -286,6 +292,16 @@ class ZynthModalView(context: Context) : FrameLayout(context) {
 
     private fun applyOverlayState() {
       overlayView.setBackgroundColor(options.overlayColor)
+      if (!isShowing) {
+        overlayView.alpha = if (options.animation == ZynthModalAnimation.NONE) overlayTargetAlpha() else 0f
+        return
+      }
+
+      if (!hasCompletedEnterAnimation && options.animation != ZynthModalAnimation.NONE && !isAnimatingOut) {
+        overlayView.alpha = 0f
+        return
+      }
+
       overlayView.alpha = overlayTargetAlpha()
     }
 
@@ -319,7 +335,10 @@ class ZynthModalView(context: Context) : FrameLayout(context) {
     }
 
     private fun animateIn() {
-      if (options.animation == ZynthModalAnimation.NONE) return
+      if (options.animation == ZynthModalAnimation.NONE) {
+        hasCompletedEnterAnimation = true
+        return
+      }
       root.post {
         val overlayAlpha = overlayTargetAlpha()
         val duration = when (options.animation) {
@@ -333,6 +352,9 @@ class ZynthModalView(context: Context) : FrameLayout(context) {
           .alpha(overlayAlpha)
           .setDuration(duration)
           .setStartDelay(0L)
+          .withEndAction {
+            hasCompletedEnterAnimation = true
+          }
           .start()
 
         when (options.animation) {
