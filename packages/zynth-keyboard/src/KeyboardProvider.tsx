@@ -34,34 +34,62 @@ export interface KeyboardProviderProps {
  * Must wrap components that use useKeyboard()
  */
 export const KeyboardProvider: Component<KeyboardProviderProps> = (props) => {
-  const nativeModule = getNativeKeyboardModule();
-
-  // Warn if no native module is available
-  if (!nativeModule) {
-    console.warn(
-      "[KeyboardProvider] Native keyboard module not found. " +
-        "Keyboard state will show as hidden. " +
-        "Make sure the native platform has initialized the module."
-    );
-  }
+  const [nativeModule, setNativeModule] = createSignal(getNativeKeyboardModule());
+  const [didWarnMissingModule, setDidWarnMissingModule] = createSignal(false);
 
   // Initialize with current state from native
   const getInitialState = (): KeyboardState => {
-    if (nativeModule) {
-      return nativeModule.getState();
+    const module = nativeModule();
+    if (module) {
+      return module.getState();
     }
     return DEFAULT_KEYBOARD_STATE;
   };
 
   const [state, setState] = createSignal<KeyboardState>(getInitialState());
 
+  // Retry module resolution briefly to avoid startup race warnings.
+  createEffect(() => {
+    if (nativeModule()) return;
+
+    let attempts = 0;
+    const maxAttempts = 20;
+    const timer = setInterval(() => {
+      const resolved = getNativeKeyboardModule();
+      if (resolved) {
+        clearInterval(timer);
+        setNativeModule(resolved);
+        setState(resolved.getState());
+        return;
+      }
+
+      attempts += 1;
+      if (attempts >= maxAttempts) {
+        clearInterval(timer);
+        if (!didWarnMissingModule()) {
+          console.warn(
+            "[KeyboardProvider] Native keyboard module not found. " +
+              "Keyboard state will show as hidden. " +
+              "Make sure the native platform has initialized the module."
+          );
+          setDidWarnMissingModule(true);
+        }
+      }
+    }, 50);
+
+    onCleanup(() => clearInterval(timer));
+  });
+
   // Subscribe to native keyboard changes
   createEffect(() => {
-    if (!nativeModule) {
+    const module = nativeModule();
+    if (!module) {
       return;
     }
 
-    const unsubscribe = nativeModule.addChangeListener((newState) => {
+    setState(module.getState());
+
+    const unsubscribe = module.addChangeListener((newState) => {
       setState(newState);
     });
 
