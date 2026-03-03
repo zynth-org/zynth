@@ -26,6 +26,7 @@ class ZynthKeyboardAvoidingView(context: Context) : FrameLayout(context) {
     private var nodeId: Int = -1
     private var lastAppliedOverlapPx: Float = Float.NaN
     private var lastAppliedBehavior: KeyboardAvoidingBehavior? = null
+    private var listenersInstalled = false
 
     init {
         clipChildren = true
@@ -36,6 +37,7 @@ class ZynthKeyboardAvoidingView(context: Context) : FrameLayout(context) {
         super.onAttachedToWindow()
         isAttached = true
         setupKeyboardListener()
+        post { syncWithCurrentInsets() }
     }
 
     override fun onDetachedFromWindow() {
@@ -59,16 +61,28 @@ class ZynthKeyboardAvoidingView(context: Context) : FrameLayout(context) {
     }
 
     fun setBehavior(behaviorString: String) {
-        behavior = when (behaviorString.lowercase()) {
+        val newBehavior = when (behaviorString.lowercase()) {
             "padding" -> KeyboardAvoidingBehavior.PADDING
             "position" -> KeyboardAvoidingBehavior.POSITION
             "height" -> KeyboardAvoidingBehavior.HEIGHT
             else -> KeyboardAvoidingBehavior.PADDING
         }
+        if (behavior == newBehavior) return
+        clearAllBehaviorAdjustments()
+        behavior = newBehavior
+        lastAppliedOverlapPx = Float.NaN
+        lastAppliedBehavior = null
+        if (isAttached) {
+            post { syncWithCurrentInsets() }
+        }
     }
 
     fun setKeyboardVerticalOffset(offset: Float) {
+        if (keyboardVerticalOffset == offset) return
         keyboardVerticalOffset = offset
+        if (isAttached) {
+            post { syncWithCurrentInsets() }
+        }
     }
 
     fun setKeyboardEnabled(enabled: Boolean) {
@@ -87,6 +101,9 @@ class ZynthKeyboardAvoidingView(context: Context) : FrameLayout(context) {
     private var stableHeight: Float? = null
 
     private fun setupKeyboardListener() {
+        if (listenersInstalled) return
+        listenersInstalled = true
+
         val density = resources.displayMetrics.density
 
         // Use WindowInsetsAnimation for smooth keyboard tracking (API 30+)
@@ -109,15 +126,19 @@ class ZynthKeyboardAvoidingView(context: Context) : FrameLayout(context) {
                             // Capture the stable height before animation affects the view size.
                             val density = resources.displayMetrics.density
                             var baseHeight = this@ZynthKeyboardAvoidingView.height.toFloat()
-                            
-                            // If we are currently in 'height' behavior and the keyboard is reportedly open (currentKeyboardHeight > 0),
-                            // it means our current height is likely shrunken by the previous adjustment. 
-                            // We need to restore the full height to use as a stable base for the closing animation.
-                            if (behavior == KeyboardAvoidingBehavior.HEIGHT && currentKeyboardHeight > 0f) {
-                                val overlapDp = currentKeyboardHeight + keyboardVerticalOffset
+
+                            val rootInsets = ViewCompat.getRootWindowInsets(this@ZynthKeyboardAvoidingView)
+                            val imeInsets = rootInsets?.getInsets(WindowInsetsCompat.Type.ime())
+                            val imeHeight = if (imeInsets == null) 0f else imeInsets.bottom / density
+                            val isVisible = rootInsets?.isVisible(WindowInsetsCompat.Type.ime()) == true
+
+                            // If we are currently in 'height' behavior and the keyboard is visibly open,
+                            // restore full height to use as a stable base for closing animation.
+                            if (behavior == KeyboardAvoidingBehavior.HEIGHT && isVisible && imeHeight > 0f) {
+                                val overlapDp = imeHeight + keyboardVerticalOffset
                                 baseHeight += (overlapDp * density)
                             }
-                            
+
                             stableHeight = baseHeight
                         }
                         return super.onStart(animation, bounds)
@@ -164,15 +185,13 @@ class ZynthKeyboardAvoidingView(context: Context) : FrameLayout(context) {
 
         // Fallback for older APIs
         ViewCompat.setOnApplyWindowInsetsListener(this) { _, insets ->
-            // On Android R+, we rely on the WindowInsetsAnimationCallback to handle
-            // both the animation and the final state (in onEnd).
-            // Applying insets here on R+ causes a race condition where the final state
-            // is applied immediately before the animation starts from 0, causing a visual jump.
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (!isKeyboardEnabled) return@setOnApplyWindowInsetsListener insets
+
+            // On Android R+, use this listener as a reconciliation path for transitions
+            // that do not emit IME animations (e.g. back-dismiss on some OEMs, app resume).
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && imeAnimationActive) {
                 return@setOnApplyWindowInsetsListener insets
             }
-
-            if (!isKeyboardEnabled) return@setOnApplyWindowInsetsListener insets
 
             val imeInsets = insets.getInsets(WindowInsetsCompat.Type.ime())
             val imeHeight = imeInsets.bottom / density
@@ -182,6 +201,27 @@ class ZynthKeyboardAvoidingView(context: Context) : FrameLayout(context) {
             applyAdjustment(if (isVisible) currentKeyboardHeight + keyboardVerticalOffset else 0f)
 
             insets
+        }
+    }
+
+    private fun syncWithCurrentInsets() {
+        if (!isAttached || !isKeyboardEnabled) return
+        val density = resources.displayMetrics.density
+        val insets = ViewCompat.getRootWindowInsets(this) ?: return
+        val imeInsets = insets.getInsets(WindowInsetsCompat.Type.ime())
+        val imeHeight = imeInsets.bottom / density
+        val isVisible = insets.isVisible(WindowInsetsCompat.Type.ime())
+        currentKeyboardHeight = if (isVisible) imeHeight else 0f
+        applyAdjustment(if (isVisible) currentKeyboardHeight + keyboardVerticalOffset else 0f)
+    }
+
+    private fun clearAllBehaviorAdjustments() {
+        translationY = 0f
+        if (layoutManager != null && nodeId >= 0) {
+            layoutManager?.applyKeyboardAvoidingAdjustment(nodeId, "padding", 0f)
+            layoutManager?.applyKeyboardAvoidingAdjustment(nodeId, "height", 0f)
+        } else {
+            setPadding(paddingLeft, paddingTop, paddingRight, 0)
         }
     }
 
@@ -214,12 +254,7 @@ class ZynthKeyboardAvoidingView(context: Context) : FrameLayout(context) {
     }
 
     private fun resetLayout() {
-        translationY = 0f
-        if (layoutManager != null && nodeId >= 0) {
-            layoutManager?.applyKeyboardAvoidingAdjustment(nodeId, behavior.name.lowercase(), 0f)
-        } else {
-            setPadding(paddingLeft, paddingTop, paddingRight, 0)
-        }
+        clearAllBehaviorAdjustments()
         currentKeyboardHeight = 0f
         lastAppliedOverlapPx = Float.NaN
         lastAppliedBehavior = null
