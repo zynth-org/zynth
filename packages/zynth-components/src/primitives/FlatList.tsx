@@ -793,16 +793,18 @@ export function FlatList<T>(props: FlatListProps<T>) {
   let endRearmThreshold = 0;
   const [headerExtent, setHeaderExtent] = createSignal(0);
   const [footerExtent, setFooterExtent] = createSignal(0);
+  const hasHeaderDecorator = createMemo(() => !!props.ListHeaderComponent);
+  const hasFooterDecorator = createMemo(() => !!props.ListFooterComponent);
 
   createEffect(() => {
-    if (!props.ListHeaderComponent) setHeaderExtent(0);
-    if (!props.ListFooterComponent) setFooterExtent(0);
+    if (!hasHeaderDecorator()) setHeaderExtent(0);
+    if (!hasFooterDecorator()) setFooterExtent(0);
   });
 
   const getHeaderExtent = () =>
-    props.ListHeaderComponent ? headerExtent() : 0;
+    hasHeaderDecorator() ? headerExtent() : 0;
   const getFooterExtent = () =>
-    props.ListFooterComponent ? footerExtent() : 0;
+    hasFooterDecorator() ? footerExtent() : 0;
 
   const getListOffset = (rawOffset: number, viewport: number) => {
     const adjusted = Math.max(0, rawOffset - getHeaderExtent());
