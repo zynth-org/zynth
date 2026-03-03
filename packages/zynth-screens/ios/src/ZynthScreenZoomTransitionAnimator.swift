@@ -39,10 +39,13 @@ final class ZynthScreenZoomTransitionAnimator: NSObject, UIViewControllerAnimate
       }
       container.addSubview(toView)
     } else {
-      toView.frame = container.bounds
-      container.insertSubview(toView, belowSubview: fromView)
-      toView.transform = .identity
-      toView.alpha = 1
+      performPopTransition(
+        transitionContext: transitionContext,
+        container: container,
+        fromView: fromView,
+        toView: toView
+      )
+      return
     }
 
     UIView.animate(
@@ -67,6 +70,57 @@ final class ZynthScreenZoomTransitionAnimator: NSObject, UIViewControllerAnimate
       toView.layer.masksToBounds = false
       fromView.layer.cornerRadius = 0
       fromView.transform = .identity
+      transitionContext.completeTransition(!cancelled)
+    }
+  }
+
+  private func performPopTransition(
+    transitionContext: UIViewControllerContextTransitioning,
+    container: UIView,
+    fromView: UIView,
+    toView: UIView
+  ) {
+    toView.frame = container.bounds
+    toView.transform = .identity
+    toView.alpha = 1
+    container.insertSubview(toView, belowSubview: fromView)
+
+    let animatingView = fromView.snapshotView(afterScreenUpdates: false) ?? fromView
+    if animatingView !== fromView {
+      animatingView.frame = fromView.frame
+      fromView.isHidden = true
+      container.addSubview(animatingView)
+    }
+
+    animatingView.layer.cornerRadius = 0
+    animatingView.layer.masksToBounds = true
+    if #available(iOS 13.0, *) {
+      animatingView.layer.cornerCurve = .continuous
+    }
+    animatingView.transform = .identity
+    animatingView.alpha = 1
+
+    UIView.animate(
+      withDuration: duration,
+      delay: 0,
+      options: [.curveEaseInOut, .allowUserInteraction]
+    ) {
+      animatingView.layer.cornerRadius = self.cornerRadius
+      animatingView.transform = CGAffineTransform(scaleX: self.startScale, y: self.startScale)
+      animatingView.alpha = 0
+    } completion: { _ in
+      let cancelled = transitionContext.transitionWasCancelled
+
+      if animatingView !== fromView {
+        fromView.isHidden = false
+        animatingView.removeFromSuperview()
+      }
+
+      fromView.layer.cornerRadius = 0
+      fromView.layer.masksToBounds = false
+      fromView.transform = .identity
+      fromView.alpha = 1
+      toView.layer.masksToBounds = false
       transitionContext.completeTransition(!cancelled)
     }
   }

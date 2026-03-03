@@ -35,7 +35,10 @@ final class ZynthScreenHeaderAccessoryHostView: UIView {
 
   override var intrinsicContentSize: CGSize {
     if contentView.bounds.width > 0 && contentView.bounds.height > 0 {
-      return CGSize(width: max(contentView.bounds.width, 44), height: max(contentView.bounds.height, 32))
+      // Guard against oversized accessory measurements causing expensive transition snapshots.
+      let width = min(max(contentView.bounds.width, 44), 88)
+      let height = min(max(contentView.bounds.height, 32), 44)
+      return CGSize(width: width, height: height)
     }
     return CGSize(width: 44, height: 32)
   }

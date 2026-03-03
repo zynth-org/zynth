@@ -109,6 +109,7 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
     null,
   );
   const [hasNavigated, setHasNavigated] = createSignal(false);
+  const suppressedNativeBackRouteKeys = new Set<string>();
 
   const registerScreen = (name: string, config: ScreenConfig) => {
     if (!screenRegistry.has(name)) {
@@ -218,8 +219,15 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
     },
     pop(count = 1) {
       setHasNavigated(true);
+      const currentState = state();
+      const newIndex = Math.max(0, currentState.index - count);
+      for (let i = newIndex + 1; i <= currentState.index; i++) {
+        const route = currentState.routes[i];
+        if (route?.key) {
+          suppressedNativeBackRouteKeys.add(route.key);
+        }
+      }
       setState((prev) => {
-        const newIndex = Math.max(0, prev.index - count);
         return {
           ...prev,
           index: newIndex,
@@ -239,6 +247,13 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
     },
     popToTop() {
       setHasNavigated(true);
+      const currentState = state();
+      for (let i = 1; i <= currentState.index; i++) {
+        const route = currentState.routes[i];
+        if (route?.key) {
+          suppressedNativeBackRouteKeys.add(route.key);
+        }
+      }
       setState((prev) => {
         if (prev.index === 0) return prev;
         return {
@@ -491,6 +506,7 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
               });
 
               onCleanup(() => {
+                suppressedNativeBackRouteKeys.delete(route.key);
                 unregisterNativeHeaderAccessory(route.key, "right");
               });
 
@@ -555,6 +571,9 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
                 () => options()?.headerRightButton,
               );
               const handleNativeBack = () => {
+                if (suppressedNativeBackRouteKeys.delete(route.key)) {
+                  return;
+                }
                 helpers.goBack();
               };
               const handleNativeHeaderRightPress = () => {

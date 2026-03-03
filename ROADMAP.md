@@ -86,8 +86,8 @@ This track hardens `@zynth/skia` so animation hooks and shader pipelines stay UI
 - [ ] Individual Rounded corners have discrepancy between iOS and Android.
 - [ ] iOS: Reload Hypervisor doesn't clean the redbox.
 - [ ] iOS: Transparency buttons doesn't works.
-- [ ] iOS: DatePicker imperative won't open.
-- [ ] iOS: Stack Modal bug that return to details with.
+- [x] iOS: DatePicker imperative won't open.
+- [x] iOS: Stack Modal bug that return to details with.
 - [x] iOS: Crash on `TextHighRefreshSignalExample`
 - [x] iOS: Doest put the defaultValue on `TextInputsTest`
 - [x] Android: Pressable many errors
@@ -95,13 +95,13 @@ This track hardens `@zynth/skia` so animation hooks and shader pipelines stay UI
 - [?] Android: AsyncStorageExample discrepancy
 - [x] Android: WebView first render like 2s displaying all screen.
 - [x] Android: Contacts animation broken.
-- [ ] FlatList with decorators have a SolidJS owner warning
+- [x] FlatList with decorators have a SolidJS owner warning
 - [x] Migrate zynth-screens to new Runtime
 - [x] Won't load system icons
 - [x] Android: Modal blink on open
 - [?] Android: KeyboardAvoidingView won't works sometimes
 - [x] Android: Modal take top inset as a space and move the content below
-- [ ] FlatList: Item height expand on fast scroll
+- [?] FlatList: Item height expand on fast scroll
 - [ ] iOS: BorderRadius change on press for disable state change
 - [x] Migrate zynth-animate to new Runtime
 - [x] Migrate zynth-apis to new Runtime

@@ -240,9 +240,17 @@ final class ZynthScreenViewController: UIViewController {
     }
 
     if #available(iOS 18.0, *) {
+      guard shouldUseUIKitNativeZoomTransition() else {
+        resetPreferredTransitionIfNeeded()
+        return
+      }
       usesNativeZoomTransition = true
-      preferredTransition = .zoom { _ in
-        return nil
+      preferredTransition = .zoom { [weak self] _ in
+        guard let self else { return nil }
+        if let topController = self.navigationController?.topViewController as? ZynthScreenViewController {
+          return topController.nativeZoomSourceView()
+        }
+        return self.nativeZoomSourceView()
       }
     } else {
       usesNativeZoomTransition = false
@@ -254,5 +262,33 @@ final class ZynthScreenViewController: UIViewController {
       preferredTransition = nil
     }
     usesNativeZoomTransition = false
+  }
+
+  private func shouldUseUIKitNativeZoomTransition() -> Bool {
+    // Surface-backed header accessories can produce unstable morph snapshots
+    // during native zoom transitions. Prefer the custom zoom animator for this path.
+    if screenView.headerOptions.rightAccessory != nil {
+      return false
+    }
+    return true
+  }
+
+  fileprivate func nativeZoomSourceView() -> UIView? {
+    if let accessoryHost = rightAccessoryHost {
+      let size = accessoryHost.bounds.size
+      if
+        size.width.isFinite,
+        size.height.isFinite,
+        size.width > 0,
+        size.height > 0,
+        accessoryHost.window != nil
+      {
+        return accessoryHost
+      }
+    }
+    if let navigationBar = navigationController?.navigationBar, navigationBar.window != nil {
+      return navigationBar
+    }
+    return view
   }
 }

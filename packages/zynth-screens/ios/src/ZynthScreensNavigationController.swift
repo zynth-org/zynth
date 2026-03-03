@@ -4,6 +4,7 @@ final class ZynthScreensNavigationController: UINavigationController, UINavigati
   weak var screenContainer: ZynthScreenContainerView?
   private var previousViewControllers: [UIViewController] = []
   private var isPerformingProgrammaticUpdate = false
+  private var suppressedProgrammaticPopControllerIDs = Set<ObjectIdentifier>()
   private let transitionWillBeginName = Notification.Name("ZynthScreenTransitionWillBegin")
   private let transitionDidEndName = Notification.Name("ZynthScreenTransitionDidEnd")
 
@@ -19,9 +20,17 @@ final class ZynthScreensNavigationController: UINavigationController, UINavigati
   }
 
   func performProgrammaticUpdate(_ block: () -> Void) {
+    let beforeControllers = viewControllers
     isPerformingProgrammaticUpdate = true
     block()
-    previousViewControllers = viewControllers
+    let afterControllers = viewControllers
+    let poppedControllers = beforeControllers.compactMap { $0 as? ZynthScreenViewController }.filter { controller in
+      return !afterControllers.contains(where: { $0 === controller })
+    }
+    for controller in poppedControllers {
+      suppressedProgrammaticPopControllerIDs.insert(ObjectIdentifier(controller))
+    }
+    previousViewControllers = afterControllers
     isPerformingProgrammaticUpdate = false
     refreshInteractiveGestureState()
   }
@@ -54,7 +63,16 @@ final class ZynthScreensNavigationController: UINavigationController, UINavigati
       return !navigationController.viewControllers.contains(where: { $0 === controller })
     }
 
-    if let popped = poppedControllers.first {
+    let nonSuppressedPopped = poppedControllers.filter { controller in
+      let id = ObjectIdentifier(controller)
+      if suppressedProgrammaticPopControllerIDs.contains(id) {
+        suppressedProgrammaticPopControllerIDs.remove(id)
+        return false
+      }
+      return true
+    }
+
+    if let popped = nonSuppressedPopped.first {
       screenContainer?.handleNativePop(for: popped)
       NotificationCenter.default.post(name: transitionDidEndName, object: nil)
     }
