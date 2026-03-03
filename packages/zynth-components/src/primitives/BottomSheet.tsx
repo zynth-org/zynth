@@ -289,7 +289,11 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
     if (!host) return;
     setProperty(host, "style", sheetStyle());
     setProperty(host, "snapPoints", local.snapPoints ?? DEFAULT_SNAP_POINTS);
-    setProperty(host, "initialSnapIndex", local.initialSnapIndex ?? 0);
+    // `initialSnapIndex` is a pre-open hint. Re-applying it while the sheet is open
+    // can force UIKit to re-resolve detents mid-gesture and cause snap jitter.
+    if (!resolvedOpen()) {
+      setProperty(host, "initialSnapIndex", local.initialSnapIndex ?? 0);
+    }
     if (local.overlayColor != null) {
       setProperty(host, "overlayColor", local.overlayColor);
     }

@@ -4,6 +4,7 @@
 @implementation ZynthYogaLayout {
   __weak UIView *_rootView;
   NSMutableDictionary<NSNumber *, NSValue *> *_nodes;
+  NSMutableDictionary<NSNumber *, UIView *> *_views;
   YGNodeRef _rootNode;
 }
 
@@ -28,6 +29,7 @@ static YGSize ZynthMeasureText(YGNodeConstRef node,
   if (self) {
     _rootView = rootView;
     _nodes = [NSMutableDictionary dictionary];
+    _views = [NSMutableDictionary dictionary];
     _rootNode = YGNodeNew();
     YGNodeStyleSetFlexDirection(_rootNode, YGFlexDirectionColumn);
     YGNodeStyleSetAlignItems(_rootNode, YGAlignStretch);
@@ -54,6 +56,7 @@ static YGSize ZynthMeasureText(YGNodeConstRef node,
       YGNodeSetMeasureFunc(node, ZynthMeasureText);
     }
     _nodes[nodeId] = [NSValue valueWithPointer:node];
+    _views[nodeId] = view;
   }
 }
 
@@ -67,10 +70,14 @@ static YGSize ZynthMeasureText(YGNodeConstRef node,
 - (void)removeNode:(NSNumber *)nodeId {
   @synchronized(self) {
     NSValue *value = _nodes[nodeId];
-    if (!value) return;
+    if (!value) {
+      [_views removeObjectForKey:nodeId];
+      return;
+    }
     YGNodeRef node = (YGNodeRef)value.pointerValue;
     if (!node) {
       [_nodes removeObjectForKey:nodeId];
+      [_views removeObjectForKey:nodeId];
       return;
     }
     while (YGNodeGetChildCount(node) > 0) {
@@ -88,6 +95,7 @@ static YGSize ZynthMeasureText(YGNodeConstRef node,
     YGNodeSetContext(node, NULL);
     YGNodeFree(node);
     [_nodes removeObjectForKey:nodeId];
+    [_views removeObjectForKey:nodeId];
   }
 }
 
@@ -487,6 +495,8 @@ static YGSize ZynthMeasureText(YGNodeConstRef node,
 
 - (UIView *)viewForNode:(NSNumber *)nodeId {
   @synchronized(self) {
+    UIView *view = _views[nodeId];
+    if (view) return view;
     YGNodeRef node = [self yogaForNode:nodeId];
     if (!node) return nil;
     void *ctx = YGNodeGetContext(node);
