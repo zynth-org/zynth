@@ -1,10 +1,15 @@
 package com.zynth.components.bottomsheet
 
+import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.DialogInterface
 import android.graphics.Color
 import android.view.Choreographer
+import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.core.graphics.Insets
@@ -47,6 +52,10 @@ class ZynthBottomSheetDialog(
   private var behavior: BottomSheetBehavior<FrameLayout>? = null
   private var sheetContainer: FrameLayout? = null
   private var overlayView: View? = null
+  private var overlayDefaultWidth: Int? = null
+  private var overlayDefaultHeight: Int? = null
+  private var overlayParent: ViewGroup? = null
+  private var overlayParentIndex: Int = -1
   private var lastOverlayProgress: Float = 0f
   private var pendingIndex: Int = 0
   private var hasPresentedOnce: Boolean = false
@@ -56,6 +65,7 @@ class ZynthBottomSheetDialog(
   private var currentSnapIndex: Int = 0
   private var closeFallbackGeneration: Int = 0
   private var closeFallbackFrameCallback: Choreographer.FrameCallback? = null
+  private var forwardingOutsideGesture: Boolean = false
   private val bottomSheetCallback = object : BottomSheetBehavior.BottomSheetCallback() {
     override fun onSlide(bottomSheet: View, slideOffset: Float) {
       listener?.onSlide(bottomSheet, slideOffset)
@@ -82,6 +92,7 @@ class ZynthBottomSheetDialog(
     setOnShowListener(::handleShow)
     setOnDismissListener {
       cancelCloseFallback()
+      restoreOverlayToParentIfNeeded()
       overlayView = null
       sheetContainer = null
       lastOverlayProgress = 0f
@@ -208,6 +219,7 @@ class ZynthBottomSheetDialog(
     outsideScrim?.visibility = View.GONE
     outsideScrim?.alpha = 0f
     overlayView = outsideScrim
+    captureOverlayParentIfNeeded()
     sheetContainer = findViewById(com.google.android.material.R.id.design_bottom_sheet)
     sheetContainer?.let { container ->
       container.setBackgroundColor(Color.TRANSPARENT)
@@ -245,6 +257,7 @@ class ZynthBottomSheetDialog(
         setStateForIndex(pendingIndex, animated = true)
         window?.decorView?.alpha = 1f
       }
+      applyCoordinatorPassThroughMode()
     }
     applyWindowInteractionMode()
     applyOverlay()
@@ -339,6 +352,7 @@ class ZynthBottomSheetDialog(
         overlay.setOnClickListener(null)
       }
     }
+    applyOverlayInteractionMode()
   }
 
   private fun applyWindowInteractionMode() {
@@ -346,16 +360,170 @@ class ZynthBottomSheetDialog(
     enforceNoSystemDim()
     if (allowBackgroundInteraction) {
       win.addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL)
+      win.setGravity(Gravity.BOTTOM)
+      val sheetWindowHeight = resolvedSnapHeights.lastOrNull()
+      if (sheetWindowHeight != null && sheetWindowHeight > 0) {
+        win.setLayout(WindowManager.LayoutParams.MATCH_PARENT, sheetWindowHeight)
+      } else {
+        win.setLayout(
+          WindowManager.LayoutParams.MATCH_PARENT,
+          WindowManager.LayoutParams.WRAP_CONTENT,
+        )
+      }
     } else {
       win.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL)
+      win.setLayout(
+        WindowManager.LayoutParams.MATCH_PARENT,
+        WindowManager.LayoutParams.MATCH_PARENT,
+      )
     }
     setCanceledOnTouchOutside(false)
+    applyCoordinatorPassThroughMode()
   }
 
   private fun enforceNoSystemDim() {
     val win = window ?: return
     win.setDimAmount(0f)
     win.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+  }
+
+  private fun applyOverlayInteractionMode() {
+    val overlay = overlayView ?: return
+    val params = overlay.layoutParams
+    if (overlayDefaultWidth == null || overlayDefaultHeight == null) {
+      overlayDefaultWidth = params?.width
+      overlayDefaultHeight = params?.height
+    }
+
+    if (allowBackgroundInteraction) {
+      detachOverlayFromParentIfNeeded()
+      overlay.visibility = View.GONE
+      overlay.alpha = 0f
+      overlay.isClickable = false
+      overlay.isEnabled = false
+      overlay.isFocusable = false
+      overlay.setOnClickListener(null)
+      if (params != null && (params.width != 0 || params.height != 0)) {
+        params.width = 0
+        params.height = 0
+        overlay.layoutParams = params
+      }
+      return
+    }
+
+    restoreOverlayToParentIfNeeded()
+    overlay.isEnabled = true
+    if (params != null) {
+      val defaultWidth = overlayDefaultWidth
+      val defaultHeight = overlayDefaultHeight
+      if (defaultWidth != null && defaultHeight != null) {
+        if (params.width != defaultWidth || params.height != defaultHeight) {
+          params.width = defaultWidth
+          params.height = defaultHeight
+          overlay.layoutParams = params
+        }
+      } else if (params.width == 0 || params.height == 0) {
+        params.width = ViewGroup.LayoutParams.MATCH_PARENT
+        params.height = ViewGroup.LayoutParams.MATCH_PARENT
+        overlay.layoutParams = params
+      }
+    }
+  }
+
+  private fun captureOverlayParentIfNeeded() {
+    if (overlayParent != null) return
+    val overlay = overlayView ?: return
+    val parent = overlay.parent as? ViewGroup ?: return
+    overlayParent = parent
+    overlayParentIndex = parent.indexOfChild(overlay).coerceAtLeast(0)
+  }
+
+  private fun detachOverlayFromParentIfNeeded() {
+    val overlay = overlayView ?: return
+    val parent = overlay.parent as? ViewGroup ?: return
+    if (overlayParent == null) {
+      overlayParent = parent
+      overlayParentIndex = parent.indexOfChild(overlay).coerceAtLeast(0)
+    }
+    parent.removeView(overlay)
+  }
+
+  private fun restoreOverlayToParentIfNeeded() {
+    val overlay = overlayView ?: return
+    if (overlay.parent != null) return
+    val parent = overlayParent ?: return
+    val index = overlayParentIndex.coerceAtLeast(0).coerceAtMost(parent.childCount)
+    parent.addView(overlay, index)
+  }
+
+  private fun applyCoordinatorPassThroughMode() {
+    val container = sheetContainer ?: return
+    val coordinator = container.parent as? View ?: return
+    if (!allowBackgroundInteraction) {
+      forwardingOutsideGesture = false
+      coordinator.setOnTouchListener(null)
+      return
+    }
+    coordinator.setOnTouchListener { _, event ->
+      val sheet = sheetContainer ?: return@setOnTouchListener false
+      when (event.actionMasked) {
+        MotionEvent.ACTION_DOWN -> {
+          val inside = isPointInsideView(event.rawX, event.rawY, sheet)
+          forwardingOutsideGesture = !inside
+          if (forwardingOutsideGesture) {
+            dispatchTouchToActivity(event)
+            true
+          } else {
+            false
+          }
+        }
+        MotionEvent.ACTION_MOVE,
+        MotionEvent.ACTION_UP,
+        MotionEvent.ACTION_CANCEL -> {
+          if (!forwardingOutsideGesture) {
+            return@setOnTouchListener false
+          }
+          dispatchTouchToActivity(event)
+          if (event.actionMasked == MotionEvent.ACTION_UP ||
+            event.actionMasked == MotionEvent.ACTION_CANCEL
+          ) {
+            forwardingOutsideGesture = false
+          }
+          true
+        }
+        else -> false
+      }
+    }
+  }
+
+  private fun isPointInsideView(rawX: Float, rawY: Float, view: View): Boolean {
+    val location = IntArray(2)
+    view.getLocationOnScreen(location)
+    val left = location[0].toFloat()
+    val top = location[1].toFloat()
+    val right = left + view.width.toFloat()
+    val bottom = top + view.height.toFloat()
+    return rawX >= left && rawX <= right && rawY >= top && rawY <= bottom
+  }
+
+  private fun dispatchTouchToActivity(event: MotionEvent) {
+    val activity = findActivity() ?: return
+    val decor = activity.window?.decorView ?: return
+    val location = IntArray(2)
+    decor.getLocationOnScreen(location)
+    val copy = MotionEvent.obtain(event)
+    copy.setLocation(event.rawX - location[0], event.rawY - location[1])
+    decor.dispatchTouchEvent(copy)
+    copy.recycle()
+  }
+
+  private fun findActivity(): Activity? {
+    var current: Context? = context
+    while (current is ContextWrapper) {
+      if (current is Activity) return current
+      current = current.baseContext
+    }
+    return null
   }
 
   private fun applyBehaviorConfiguration(state: BottomSheetBehavior<FrameLayout>, animatePeek: Boolean) {
@@ -403,6 +571,7 @@ class ZynthBottomSheetDialog(
     }
     contentHost.requestLayout()
     restorePendingHeightIfNeeded()
+    applyWindowInteractionMode()
   }
 
   private fun prepareEntranceState(state: BottomSheetBehavior<FrameLayout>) {

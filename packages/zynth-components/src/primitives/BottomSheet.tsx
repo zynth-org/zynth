@@ -387,7 +387,7 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
           <View style={contentStyle()}>
             {local.children}
             <View
-              pointerEvents="none"
+              pointerEvents="box-none"
               style={{
                 justifyContent: "center",
                 width: "100%",

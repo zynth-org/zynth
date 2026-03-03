@@ -78,10 +78,10 @@ This track hardens `@zynth/skia` so animation hooks and shader pipelines stay UI
 - [x] Improve zynth-cli
 - [x] zynth-ui TextInput use SytemGlyphs for icons on Android.
 - [ ] zynth-ui Custom slider doesn't keep on the selected position when released on Android.
-- [ ] Android: BottomSheet doesn't remove the backdrop when is set.
-- [ ] Android: AsyncStorage sometimes didn't load/set on startup
-- [ ] Android: WARN [KeyboardProvider] Native keyboard module not found. Keyboard state will show as hidden. Make sure the native platform has initialized the module.
-- [ ] Create a new BottomSheet from scratch.
+- [x] Android: BottomSheet doesn't remove the backdrop when is set.
+- [?] Android: AsyncStorage sometimes didn't load/set on startup
+- [x] Android: WARN [KeyboardProvider] Native keyboard module not found. Keyboard state will show as hidden. Make sure the native platform has initialized the module.
+- [x] Create a new BottomSheet from scratch.
 - [ ] Elevation discrepancy between iOS and Android.
 - [ ] Individual Rounded corners have discrepancy between iOS and Android.
 - [ ] iOS: Reload Hypervisor doesn't clean the redbox.
@@ -89,18 +89,18 @@ This track hardens `@zynth/skia` so animation hooks and shader pipelines stay UI
 - [ ] iOS: DatePicker imperative won't open.
 - [ ] iOS: Stack Modal bug that return to details with.
 - [x] iOS: Crash on `TextHighRefreshSignalExample`
-- [ ] iOS: Doest put the defaultValue on `TextInputsTest`
-- [ ] Android: Pressable many errors
-- [ ] Android: HypervisorDemo keeps the fallback loading text after success bundle load
-- [ ] Android: AsyncStorageExample discrepancy
-- [ ] Android: WebView first render like 2s displaying all screen.
-- [ ] Android: Contacts animation broken.
+- [x] iOS: Doest put the defaultValue on `TextInputsTest`
+- [x] Android: Pressable many errors
+- [x] Android: HypervisorDemo keeps the fallback loading text after success bundle load
+- [?] Android: AsyncStorageExample discrepancy
+- [x] Android: WebView first render like 2s displaying all screen.
+- [x] Android: Contacts animation broken.
 - [ ] FlatList with decorators have a SolidJS owner warning
-- [ ] Migrate zynth-screens to new Runtime
-- [ ] Won't load system icons
-- [ ] Android: Modal blink on open
-- [ ] Android: KeyboardAvoidingView won't works sometimes
-- [ ] Android: Modal take top inset as a space and move the content below
+- [x] Migrate zynth-screens to new Runtime
+- [x] Won't load system icons
+- [x] Android: Modal blink on open
+- [?] Android: KeyboardAvoidingView won't works sometimes
+- [x] Android: Modal take top inset as a space and move the content below
 - [ ] FlatList: Item height expand on fast scroll
 - [ ] iOS: BorderRadius change on press for disable state change
 - [x] Migrate zynth-animate to new Runtime
