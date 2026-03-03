@@ -10,7 +10,6 @@ import android.widget.FrameLayout
 import androidx.core.graphics.Insets
 import androidx.core.view.ViewCompat
 import androidx.core.view.doOnPreDraw
-import androidx.core.view.doOnNextLayout
 import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
@@ -89,7 +88,15 @@ class ZynthBottomSheetDialog(
       listener?.onDismiss()
     }
     window?.setWindowAnimations(0)
-    window?.setDimAmount(0f)
+    enforceNoSystemDim()
+    // Keep the first frame hidden until we fully configure the sheet state.
+    window?.decorView?.alpha = 0f
+  }
+
+  override fun onStart() {
+    super.onStart()
+    // BottomSheetDialog/Material can restore dim on first show; force it off again.
+    enforceNoSystemDim()
   }
 
   fun setSnapPoints(points: List<BottomSheetSnapPoint>) {
@@ -149,6 +156,10 @@ class ZynthBottomSheetDialog(
       setStateForIndex(index, animated)
       return
     }
+    if (!hasPresentedOnce) {
+      window?.decorView?.alpha = 0f
+    }
+    enforceNoSystemDim()
     show()
   }
 
@@ -190,6 +201,13 @@ class ZynthBottomSheetDialog(
   @Suppress("UNUSED_PARAMETER")
   private fun handleShow(dialog: DialogInterface) {
     screenHeight = ZynthBottomSheetUtils.screenHeight(context)
+    enforceNoSystemDim()
+    val outsideScrim: View? = window?.findViewById(com.google.android.material.R.id.touch_outside)
+    // Prevent Material's default outside scrim from flashing before we apply our own overlay state.
+    outsideScrim?.setBackgroundColor(Color.TRANSPARENT)
+    outsideScrim?.visibility = View.GONE
+    outsideScrim?.alpha = 0f
+    overlayView = outsideScrim
     sheetContainer = findViewById(com.google.android.material.R.id.design_bottom_sheet)
     sheetContainer?.let { container ->
       container.setBackgroundColor(Color.TRANSPARENT)
@@ -214,23 +232,19 @@ class ZynthBottomSheetDialog(
       if (!hasPresentedOnce) {
         hasPresentedOnce = true
         container.visibility = View.INVISIBLE
-        // Set the peek height to 0 and state to collapsed to ensure it starts hidden
-        behavior?.let {
-          it.setPeekHeight(0, false)
-          it.state = BottomSheetBehavior.STATE_COLLAPSED
-        }
+        // Start from a fully collapsed hidden state before first reveal.
+        behavior?.let { prepareEntranceState(it) }
         container.doOnPreDraw {
           configureBehavior(animatePeek = true)
           setStateForIndex(pendingIndex, animated = true)
           container.visibility = View.VISIBLE
+          window?.decorView?.alpha = 1f
         }
       } else {
         configureBehavior(animatePeek = false)
         setStateForIndex(pendingIndex, animated = true)
+        window?.decorView?.alpha = 1f
       }
-    }
-    overlayView = window?.findViewById<View>(com.google.android.material.R.id.touch_outside)?.also { outside ->
-      outside.alpha = 0f
     }
     applyWindowInteractionMode()
     applyOverlay()
@@ -329,13 +343,19 @@ class ZynthBottomSheetDialog(
 
   private fun applyWindowInteractionMode() {
     val win = window ?: return
+    enforceNoSystemDim()
     if (allowBackgroundInteraction) {
       win.addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL)
-      win.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
     } else {
       win.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL)
     }
     setCanceledOnTouchOutside(false)
+  }
+
+  private fun enforceNoSystemDim() {
+    val win = window ?: return
+    win.setDimAmount(0f)
+    win.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
   }
 
   private fun applyBehaviorConfiguration(state: BottomSheetBehavior<FrameLayout>, animatePeek: Boolean) {
