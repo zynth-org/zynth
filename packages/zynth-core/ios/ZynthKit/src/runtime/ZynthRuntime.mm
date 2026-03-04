@@ -4,6 +4,7 @@
 #import "ZynthUIManager+Components.h"
 #import "ZynthUIManager+Surface.h"
 #import "ZynthNativeErrorOverlayManager.h"
+#import "ZynthNativePerformanceOverlayManager.h"
 #if __has_include("ZynthKit-Swift.h")
 #import "ZynthKit-Swift.h"
 #endif
@@ -138,6 +139,9 @@ static inline void ZynthStartupMetricsRecordFrame(NSString *sessionId,
 @property(nonatomic, weak) UIView *rootView;
 @property(nonatomic, strong) ZynthUIManager *uiManager;
 @property(nonatomic, strong) ZynthHermesRuntimeHost *runtime;
+@property(nonatomic, assign) BOOL performanceJSTickerEnabled;
+@property(nonatomic, strong) dispatch_source_t performanceJSTicker;
+@property(nonatomic, assign) BOOL performanceOverlayActive;
 @end
 
 @implementation ZynthRuntime
@@ -158,6 +162,7 @@ static inline void ZynthStartupMetricsRecordFrame(NSString *sessionId,
       ZynthStartupMetricsMarkFirstCommit(sessionIdForCommit);
     }];
     [[ZynthNativeErrorOverlayManager shared] attachRuntime:self];
+    [[ZynthNativePerformanceOverlayManager shared] attachRuntime:self];
 #if __has_include("ZynthKit-Swift.h")
     [[ZynthRuntimeManagerRegistry shared] setRuntime:self for:_uiManager];
 #endif
@@ -182,6 +187,8 @@ static inline void ZynthStartupMetricsRecordFrame(NSString *sessionId,
       ZynthHermesRuntimeHost *strongRuntime = weakRuntime;
       if (!strongRuntime) return;
       ZynthStartupMetricsRecordFrame(sessionIdForFrame, frameMs, layoutMs);
+      ZynthNativePerformanceOverlayManager *overlayManager = [ZynthNativePerformanceOverlayManager shared];
+      [overlayManager recordPerformanceFrameWithFrameMs:frameMs nodeCount:nodeCount];
       [strongRuntime callGlobal:@"__zynth_reportFrame"
                            args:@[
                              @(frameMs),
@@ -268,6 +275,20 @@ static inline void ZynthStartupMetricsRecordFrame(NSString *sessionId,
   [self.runtime callGlobal:name args:payload];
 }
 
+- (void)setPerformanceOverlayEnabled:(BOOL)enabled {
+  [[ZynthNativePerformanceOverlayManager shared] setPerformanceOverlayEnabled:enabled];
+  self.performanceOverlayActive = enabled;
+  if (enabled) {
+    [self startPerformanceJSTicker];
+  } else {
+    [self stopPerformanceJSTicker];
+  }
+}
+
+- (NSDictionary<NSString *, NSNumber *> *)performanceOverlaySnapshot {
+  return [[ZynthNativePerformanceOverlayManager shared] performanceOverlaySnapshot];
+}
+
 - (BOOL)evaluateScript:(NSString *)code
              sourceURL:(NSString *_Nullable)sourceURL
                  error:(NSError *_Nullable *_Nullable)error {
@@ -286,7 +307,46 @@ static inline void ZynthStartupMetricsRecordFrame(NSString *sessionId,
 }
 
 - (void)destroy {
+  [self stopPerformanceJSTicker];
   [[ZynthNativeErrorOverlayManager shared] detach];
+  [[ZynthNativePerformanceOverlayManager shared] detach];
+}
+
+- (void)startPerformanceJSTicker {
+  if (self.performanceJSTickerEnabled) return;
+  self.performanceJSTickerEnabled = YES;
+  __weak ZynthRuntime *weakSelf = self;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    __strong ZynthRuntime *strongSelf = weakSelf;
+    if (!strongSelf || !strongSelf.performanceJSTickerEnabled) return;
+    if (strongSelf.performanceJSTicker != nil) return;
+    dispatch_source_t timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
+    if (timer == nil) return;
+    strongSelf.performanceJSTicker = timer;
+    dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, 0), (uint64_t)(16 * NSEC_PER_MSEC), (uint64_t)(2 * NSEC_PER_MSEC));
+    dispatch_source_set_event_handler(timer, ^{
+      __strong ZynthRuntime *innerSelf = weakSelf;
+      if (!innerSelf || !innerSelf.performanceJSTickerEnabled || !innerSelf.performanceOverlayActive) return;
+      ZynthNativePerformanceOverlayManager *overlayManager = [ZynthNativePerformanceOverlayManager shared];
+      if (![overlayManager requestPerformanceJSPing]) return;
+      ZynthHermesRuntimeHost *host = innerSelf.runtime;
+      if (!host) return;
+      [host performOnJSQueue:^{
+        [[ZynthNativePerformanceOverlayManager shared] recordPerformanceJSPing];
+      }];
+    });
+    dispatch_resume(timer);
+  });
+}
+
+- (void)stopPerformanceJSTicker {
+  self.performanceJSTickerEnabled = NO;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    if (self.performanceJSTicker != nil) {
+      dispatch_source_cancel(self.performanceJSTicker);
+      self.performanceJSTicker = nil;
+    }
+  });
 }
 
 @end

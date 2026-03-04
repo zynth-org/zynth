@@ -25,6 +25,8 @@ class ZynthRuntime(val root: ZynthRootView) {
   private val registry = ZynthModuleRegistry()
   private val jsThread = HandlerThread("ZynthJS")
   private val jsHandler: Handler
+  private var performanceJsTickerActive: Boolean = false
+  private var performanceJsTicker: Runnable? = null
   private val startupStateLock = Any()
   private var hasStarted: Boolean = false
   private var isBundleLoaded: Boolean = false
@@ -44,6 +46,7 @@ class ZynthRuntime(val root: ZynthRootView) {
     }
     uiManager.setFrameProfiler { frameMs, layoutMs, overBudget, nodeCount ->
       startupMetrics.recordFrame(frameMs, layoutMs)
+      ZynthNativePerformanceOverlay.recordPerformanceFrame(nodeCount)
       runOnJS {
         JSBridge.callGlobalFrame(runtimePtr, "__zynth_reportFrame", frameMs, layoutMs, overBudget, nodeCount)
       }
@@ -59,6 +62,7 @@ class ZynthRuntime(val root: ZynthRootView) {
     installDefaultModules()
     installCrashHandler()
     ZynthNativeErrorOverlay.attach(this, root)
+    ZynthNativePerformanceOverlay.attach(root)
   }
 
   companion object {
@@ -242,7 +246,9 @@ class ZynthRuntime(val root: ZynthRootView) {
 
   fun destroy() {
     ZynthHmrVisualIndicator.dismiss()
+    stopPerformanceJsTicker()
     ZynthNativeErrorOverlay.detach()
+    ZynthNativePerformanceOverlay.detach()
     runOnJSSync {
       JSBridge.destroyHermesRuntime(runtimePtr)
     }
@@ -259,6 +265,19 @@ class ZynthRuntime(val root: ZynthRootView) {
         )
       }
     }
+  }
+
+  fun setPerformanceOverlayEnabled(enabled: Boolean) {
+    ZynthNativePerformanceOverlay.setPerformanceOverlayEnabled(enabled)
+    if (enabled) {
+      startPerformanceJsTicker()
+    } else {
+      stopPerformanceJsTicker()
+    }
+  }
+
+  fun getPerformanceOverlayStats(): Map<String, Any> {
+    return ZynthNativePerformanceOverlay.getPerformanceOverlaySnapshot()
   }
 
   internal fun evaluateScript(code: String, sourceUrl: String? = null) {
@@ -311,6 +330,33 @@ class ZynthRuntime(val root: ZynthRootView) {
     }
     if (rootId == null) return
     JSBridge.callGlobalDouble(runtimePtr, "__startApp", rootId.toDouble())
+  }
+
+  private fun startPerformanceJsTicker() {
+    if (performanceJsTickerActive) return
+    performanceJsTickerActive = true
+    val ticker = object : Runnable {
+      override fun run() {
+        if (!performanceJsTickerActive) return
+        if (ZynthNativePerformanceOverlay.requestPerformanceJsPing()) {
+          runOnJS {
+            ZynthNativePerformanceOverlay.recordPerformanceJsPing()
+          }
+        }
+        jsHandler.postDelayed(this, 16L)
+      }
+    }
+    performanceJsTicker = ticker
+    jsHandler.post(ticker)
+  }
+
+  private fun stopPerformanceJsTicker() {
+    performanceJsTickerActive = false
+    val ticker = performanceJsTicker
+    if (ticker != null) {
+      jsHandler.removeCallbacks(ticker)
+    }
+    performanceJsTicker = null
   }
 
   internal fun handleDevMessage(payload: String) {

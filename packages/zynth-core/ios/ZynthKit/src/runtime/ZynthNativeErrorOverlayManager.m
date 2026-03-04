@@ -2,7 +2,6 @@
 #import "ZynthRuntime.h"
 
 #import <math.h>
-#import <QuartzCore/QuartzCore.h>
 #import <UIKit/UIKit.h>
 #import <objc/message.h>
 #if __has_include("ZynthKit-Swift.h")

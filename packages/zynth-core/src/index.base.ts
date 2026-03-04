@@ -76,8 +76,14 @@ export {
   getCoreSystemMetrics,
   getStartupTimeMetrics,
 } from "./coreSystem";
+export {
+  PerformanceOverlay,
+  setPerformanceOverlayEnabled,
+  getPerformanceOverlayStats,
+} from "./performanceOverlay";
 export type {
   CoreSystemFeature,
   CoreSystemMetricsSnapshot,
   StartupTimeMetrics,
 } from "./coreSystem";
+export type { PerformanceOverlayStats } from "./performanceOverlay";

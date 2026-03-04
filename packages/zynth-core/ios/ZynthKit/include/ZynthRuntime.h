@@ -30,6 +30,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)addSurfaceFirstFrameListener:(int)surfaceId listener:(dispatch_block_t)listener NS_SWIFT_NAME(addSurfaceFirstFrameListener(_:listener:));
 - (void)removeSurfaceFirstFrameListener:(int)surfaceId listener:(dispatch_block_t)listener NS_SWIFT_NAME(removeSurfaceFirstFrameListener(_:listener:));
 - (void)callGlobal:(NSString *)name args:(NSArray *)args;
+- (void)setPerformanceOverlayEnabled:(BOOL)enabled;
+- (NSDictionary<NSString *, NSNumber *> *)performanceOverlaySnapshot;
 - (BOOL)evaluateScript:(NSString *)code
              sourceURL:(NSString *_Nullable)sourceURL
                  error:(NSError *_Nullable *_Nullable)error;

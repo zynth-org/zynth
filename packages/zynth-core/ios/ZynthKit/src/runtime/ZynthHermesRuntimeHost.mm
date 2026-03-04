@@ -582,6 +582,15 @@ static void installGlobals(Runtime &rt) {
   return nil;
 }
 
+- (void)performOnJSQueue:(dispatch_block_t)block {
+  if (!block) return;
+  if (dispatch_get_specific(kZynthJSQueueKey) == kZynthJSQueueKey) {
+    block();
+    return;
+  }
+  dispatch_async(_jsQueue, block);
+}
+
 - (void)installTimers {
   Runtime &rt = *_runtime;
   __weak ZynthHermesRuntimeHost *weakHost = self;

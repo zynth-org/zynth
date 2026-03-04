@@ -22,6 +22,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (id _Nullable)callGlobalObjectMethod:(NSString *)objectName
                                 method:(NSString *)methodName
                                   args:(NSArray *)args;
+- (void)performOnJSQueue:(dispatch_block_t)block;
 
 - (ZynthUIManager *)uiManager;
 - (ZynthWorklets *)worklets;

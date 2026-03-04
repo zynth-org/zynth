@@ -4,17 +4,24 @@ final class ZynthDevtoolsModule: ZynthModule {
   let name: String = "Devtools"
 
   var exportedMethods: [String] {
-    return ["connect", "emit", "isConnected"]
+    return [
+      "connect",
+      "emit",
+      "isConnected",
+      "setPerformanceOverlayEnabled",
+      "getPerformanceOverlayStats",
+    ]
   }
+
+  private weak var runtime: ZynthRuntime?
 
 #if DEBUG
   private let client = ZynthDevtoolsClient()
-  private weak var runtime: ZynthRuntime?
 #endif
 
   init(runtime: ZynthRuntime? = nil) {
-#if DEBUG
     self.runtime = runtime
+#if DEBUG
 #endif
   }
 
@@ -58,6 +65,13 @@ final class ZynthDevtoolsModule: ZynthModule {
       return ["result": true]
     case "isConnected":
       return ["result": client.isConnected]
+    case "setPerformanceOverlayEnabled":
+      let enabled = args.bool("enabled", default: false)
+      runtime?.setPerformanceOverlayEnabled(enabled)
+      return ["result": true]
+    case "getPerformanceOverlayStats":
+      let snapshot = runtime?.performanceOverlaySnapshot() ?? [:]
+      return ["result": snapshot]
     default:
       return ["error": "unknown_method", "method": method]
     }

@@ -20,7 +20,14 @@ class DevtoolsModule(
 ) : ZynthModule {
   override val name: String = "Devtools"
 
-  override val exportedMethods: List<String> = listOf("connect", "emit", "nativeError", "isConnected")
+  override val exportedMethods: List<String> = listOf(
+    "connect",
+    "emit",
+    "nativeError",
+    "isConnected",
+    "setPerformanceOverlayEnabled",
+    "getPerformanceOverlayStats",
+  )
 
   companion object {
     private const val TAG = "ZynthDevtools"
@@ -178,6 +185,22 @@ class DevtoolsModule(
         error("native_error_test")
       }
       "isConnected" -> JSONObject().put("result", client.isConnected)
+      "setPerformanceOverlayEnabled" -> {
+        val params = args.nestedAt(0)
+        val enabled = params.getBoolean("enabled", false)
+        runtime?.setPerformanceOverlayEnabled(enabled)
+        ok()
+      }
+      "getPerformanceOverlayStats" -> {
+        val stats = runtime?.getPerformanceOverlayStats() ?: mapOf(
+          "enabled" to false,
+          "ramMb" to 0,
+          "views" to 0,
+          "uiFps" to 0,
+          "jsFps" to 0,
+        )
+        JSONObject().put("result", JSONObject(stats))
+      }
       else -> error("unknown_method")
     }
   }
