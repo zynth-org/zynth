@@ -15,7 +15,6 @@ Pod::Spec.new do |s|
 
   s.dependency   "ZynthKit"
   s.dependency   "SDWebImage", "~> 5.18"
-  s.dependency   "SDWebImageSVGCoder", "~> 1.7"
 
   s.pod_target_xcconfig = {
     'HEADER_SEARCH_PATHS' => %w[

@@ -88,7 +88,6 @@ public final class ZynthScreenTabsContainerView: UIView, UITabBarControllerDeleg
   private var iconHostRetryCount = 0
   private var didForceInitialTabBarLayoutFix = false
   private var tabBarLayoutFixWorkItem: DispatchWorkItem?
-  private let tabBarButtonClass: AnyClass? = NSClassFromString("UITabBarButton")
   
   // Custom overlay labels to replace buggy native labels
   private var customLabelOverlays: [UILabel] = []
@@ -860,10 +859,10 @@ public final class ZynthScreenTabsContainerView: UIView, UITabBarControllerDeleg
 
     func walk(_ node: UIView) {
       if let control = node as? UIControl {
-        let className = String(describing: type(of: control))
-        let matchesExplicitClass = tabBarButtonClass.flatMap { control.isKind(of: $0) } ?? false
-        let matchesName = className.contains("TabButton") || className.contains("TabBarButton")
-        if matchesExplicitClass || matchesName {
+        let hasIcon = findIconImageView(in: control) != nil
+        let hasTitle = titleForTabButton(control) != nil
+        let hasVisibleSize = control.bounds.width > 1 || control.bounds.height > 1
+        if hasVisibleSize && (hasIcon || hasTitle) {
           let identifier = ObjectIdentifier(control)
           if !seen.contains(identifier) {
             seen.insert(identifier)

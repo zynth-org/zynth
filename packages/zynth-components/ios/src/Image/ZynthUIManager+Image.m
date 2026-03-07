@@ -1,7 +1,6 @@
 #import "ZynthUIManager+Image.h"
 #import "ZynthUIManager+Internal.h"
 #import <SDWebImage/SDWebImage.h>
-#import <SDWebImageSVGCoder/SDWebImageSVGCoder.h>
 
 #ifdef __OBJC__
 #if __has_include(<UIKit/UIKit.h>)
@@ -303,6 +302,19 @@ static void SNImageEmitError(NSString *message, ZynthNode *node, ZynthUIManager 
   [manager zynth_dispatchEvent:@"onError" payload:payload toNode:node];
 }
 
+static BOOL SNImageIsSVGSource(NSString *uri) {
+  if (uri.length == 0) return NO;
+  NSString *lower = uri.lowercaseString;
+  if ([lower hasPrefix:@"data:image/svg+xml"]) {
+    return YES;
+  }
+
+  NSURLComponents *components = [NSURLComponents componentsWithString:uri];
+  NSString *path = components.path ?: uri;
+  NSString *ext = path.pathExtension.lowercaseString;
+  return [ext isEqualToString:@"svg"] || [ext isEqualToString:@"svgz"];
+}
+
 static void SNImageLoadBase64(NSString *data, id scaleValue, ZynthNode *node, NSString *token, ZynthUIManager *manager) {
   NSString *payload = data;
   NSRange comma = [payload rangeOfString:@","];
@@ -378,6 +390,15 @@ static void SNImageLoadSystem(NSString *name, ZynthNode *node, NSString *token, 
 
 static void SNImageLoadURI(NSString *uri, NSDictionary * _Nullable info, ZynthNode *node, NSString *token, ZynthUIManager *manager) {
   NSString *lower = uri.lowercaseString;
+  if (SNImageIsSVGSource(uri)) {
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+      NSLog(@"[ZynthImage] SVG source detected but SVG is not supported on iOS Image anymore.");
+    });
+    SNImageEmitError(@"SVG is not supported on iOS Image. Use PNG/JPEG/WebP or render SVG another way.", node, manager);
+    return;
+  }
+
   if ([lower hasPrefix:@"data:"]) {
     SNImageLoadBase64(uri, info[@"scale"], node, token, manager);
     return;
@@ -682,8 +703,6 @@ static YGSize SNMeasureImageFunc(YGNodeConstRef yogaNode,
 + (void)load {
   static dispatch_once_t onceToken;
   dispatch_once(&onceToken, ^{
-    [SDImageCodersManager.sharedManager addCoder:[SDImageSVGCoder sharedCoder]];
-
     ZynthComponentDescriptor *descriptor = [[ZynthComponentDescriptor alloc] initWithType:@"image"];
     descriptor.createView = ^UIView *(ZynthUIManager *manager, NSString *type) {
       UIImageView *imageView = [ZynthImageView new];
