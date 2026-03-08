@@ -121,7 +121,7 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
   // State - will be populated after children register
   const navigatorId = props.id ?? `stack-${generateKey()}`;
 
-  function createRoute(name: string, params?: object): RouteNode {
+  function createRouteNode(name: string, params?: object): RouteNode {
     const config = screenRegistry.get(name);
     return {
       key: generateKey(),
@@ -161,7 +161,7 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
       return;
     }
 
-    const initialRoute = createRoute(routeName);
+    const initialRoute = createRouteNode(routeName);
     setState({
       key: navigatorId,
       type: "stack",
@@ -202,7 +202,7 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
         // Push new route
         const routes = [
           ...prev.routes.slice(0, prev.index + 1),
-          createRoute(name, params),
+          createRouteNode(name, params),
         ];
         return { ...prev, index: routes.length - 1, routes };
       });
@@ -212,7 +212,7 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
       setState((prev) => {
         const routes = [
           ...prev.routes.slice(0, prev.index + 1),
-          createRoute(name, params),
+          createRouteNode(name, params),
         ];
         return { ...prev, index: routes.length - 1, routes };
       });
@@ -273,7 +273,7 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
       setHasNavigated(true);
       setState((prev) => {
         const routes = [...prev.routes];
-        routes[prev.index] = createRoute(name, params);
+        routes[prev.index] = createRouteNode(name, params);
         return { ...prev, routes };
       });
     },
@@ -283,7 +283,7 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
         ...prev,
         index: resetState.index ?? resetState.routes.length - 1,
         routes: resetState.routes.map((r) =>
-          createRoute(r.name, r.params as object),
+          createRouteNode(r.name, r.params as object),
         ),
       }));
     },

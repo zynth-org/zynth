@@ -52,7 +52,7 @@ export function useRoute<
 }
 
 // ============================================================================
-// useFocusEffect
+// createFocusEffect
 // ============================================================================
 
 /**
@@ -60,7 +60,7 @@ export function useRoute<
  * Similar to useEffect but only runs when focused.
  *
  * @example
- * useFocusEffect(() => {
+ * createFocusEffect(() => {
  *   console.log("Screen focused");
  *   fetchData();
  *
@@ -69,7 +69,7 @@ export function useRoute<
  *   };
  * });
  */
-export function useFocusEffect(callback: FocusEffectCallback): void {
+export function createFocusEffect(callback: FocusEffectCallback): void {
   const routeContext = useRouteContext();
 
   createEffect(() => {
@@ -106,7 +106,7 @@ export function useIsFocused() {
 }
 
 // ============================================================================
-// useBeforeRemove
+// createBeforeRemove
 // ============================================================================
 
 /**
@@ -114,14 +114,14 @@ export function useIsFocused() {
  * Useful for confirming unsaved changes.
  *
  * @example
- * useBeforeRemove((event) => {
+ * createBeforeRemove((event) => {
  *   if (hasUnsavedChanges()) {
  *     event.preventDefault();
  *     showConfirmDialog();
  *   }
  * });
  */
-export function useBeforeRemove(handler: BeforeRemoveHandler): void {
+export function createBeforeRemove(handler: BeforeRemoveHandler): void {
   const navigation = useNavigationContext();
 
   // Store the handler for this screen
@@ -129,7 +129,7 @@ export function useBeforeRemove(handler: BeforeRemoveHandler): void {
   createEffect(() => {
     // TODO: Implement proper before-remove event system
     // For now, this is a placeholder
-    console.warn("useBeforeRemove is not fully implemented yet");
+    console.warn("createBeforeRemove is not fully implemented yet");
   });
 }
 

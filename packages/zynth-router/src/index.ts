@@ -34,9 +34,9 @@ export {
 export {
   useNavigation,
   useRoute,
-  useFocusEffect,
+  createFocusEffect,
   useIsFocused,
-  useBeforeRemove,
+  createBeforeRemove,
   useNavigationState,
   useScreenOptions,
   useParams,

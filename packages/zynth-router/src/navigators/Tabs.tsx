@@ -237,7 +237,7 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
     if (initialized() || screenOrder.length === 0) return;
 
     const initialRouteName = props.initialRouteName ?? screenOrder[0];
-    const routes = screenOrder.map((name) => createRoute(name));
+    const routes = screenOrder.map((name) => createRouteNode(name));
     const initialIndex = initialRouteName
       ? routes.findIndex((r) => r.name === initialRouteName)
       : 0;
@@ -254,7 +254,7 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
     setInitialized(true);
   }
 
-  function createRoute(name: string, params?: object): RouteNode {
+  function createRouteNode(name: string, params?: object): RouteNode {
     const config = screenRegistry.get(name);
     return {
       key: `${navigatorId}-${name}`,
@@ -334,7 +334,7 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
     reset(resetState) {
       setState((prev) => {
         const routes = resetState.routes.map((r) =>
-          createRoute(r.name, r.params as object)
+          createRouteNode(r.name, r.params as object)
         );
         return {
           ...prev,

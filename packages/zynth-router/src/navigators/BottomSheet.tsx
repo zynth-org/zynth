@@ -134,7 +134,7 @@ export function BottomSheetNavigator(
   // State - will be populated after children register
   const navigatorId = props.id ?? `bottom-sheet-${generateKey()}`;
 
-  function createRoute(name: string, params?: object): RouteNode {
+  function createRouteNode(name: string, params?: object): RouteNode {
     const config = screenRegistry.get(name);
     return {
       key: generateKey(),
@@ -158,7 +158,7 @@ export function BottomSheetNavigator(
     const initialRouteName = props.initialRouteName ?? screenOrder[0];
 
     if (initialRouteName && screenRegistry.has(initialRouteName)) {
-      const initialRoute = createRoute(initialRouteName);
+      const initialRoute = createRouteNode(initialRouteName);
       setState({
         key: navigatorId,
         type: "stack",
@@ -194,7 +194,7 @@ export function BottomSheetNavigator(
         }
         const routes = [
           ...prev.routes.slice(0, prev.index + 1),
-          createRoute(name, params),
+          createRouteNode(name, params),
         ];
         return { ...prev, index: routes.length - 1, routes };
       });
@@ -204,7 +204,7 @@ export function BottomSheetNavigator(
       setState((prev) => {
         const routes = [
           ...prev.routes.slice(0, prev.index + 1),
-          createRoute(name, params),
+          createRouteNode(name, params),
         ];
         return { ...prev, index: routes.length - 1, routes };
       });
@@ -240,7 +240,7 @@ export function BottomSheetNavigator(
       setHasNavigated(true);
       setState((prev) => {
         const routes = [...prev.routes];
-        routes[prev.index] = createRoute(name, params);
+        routes[prev.index] = createRouteNode(name, params);
         return { ...prev, routes };
       });
     },
@@ -250,7 +250,7 @@ export function BottomSheetNavigator(
         ...prev,
         index: resetState.index ?? resetState.routes.length - 1,
         routes: resetState.routes.map((r) =>
-          createRoute(r.name, r.params as object),
+          createRouteNode(r.name, r.params as object),
         ),
       }));
     },

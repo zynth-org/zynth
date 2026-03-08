@@ -171,15 +171,15 @@ function MyScreen() {
 }
 ```
 
-## useFocusEffect
+## createFocusEffect
 
 Run side effects when the screen comes into focus.
 
 ```tsx
-import { useFocusEffect } from "@zynth/router";
+import { createFocusEffect } from "@zynth/router";
 
 function MyScreen() {
-  useFocusEffect(() => {
+  createFocusEffect(() => {
     console.log("Screen focused");
 
     // Fetch data
@@ -213,7 +213,7 @@ function FeedScreen() {
     }
   };
 
-  useFocusEffect(() => {
+  createFocusEffect(() => {
     loadPosts();
   });
 
@@ -227,18 +227,18 @@ function FeedScreen() {
 }
 ```
 
-## useBeforeRemove
+## createBeforeRemove
 
 Prevent navigation or show confirmation dialog.
 
 ```tsx
-import { useBeforeRemove } from "@zynth/router";
+import { createBeforeRemove } from "@zynth/router";
 import { createSignal } from "solid-js";
 
 function EditProfileScreen() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = createSignal(false);
 
-  useBeforeRemove((event) => {
+  createBeforeRemove((event) => {
     if (!hasUnsavedChanges()) {
       return; // Allow navigation
     }
@@ -419,8 +419,8 @@ import {
   useNavigation,
   useRoute,
   useIsFocused,
-  useFocusEffect,
-  useBeforeRemove,
+  createFocusEffect,
+  createBeforeRemove,
 } from "@zynth/router";
 import { createSignal, createEffect } from "solid-js";
 
@@ -443,7 +443,7 @@ function EditPostScreen() {
   });
 
   // Warn before leaving with unsaved changes
-  useBeforeRemove((event) => {
+  createBeforeRemove((event) => {
     if (hasChanges()) {
       event.preventDefault();
       if (confirm("Discard changes?")) {
@@ -453,7 +453,7 @@ function EditPostScreen() {
   });
 
   // Auto-save when screen loses focus
-  useFocusEffect(() => {
+  createFocusEffect(() => {
     return () => {
       if (hasChanges()) {
         savePost(postId, content());
@@ -509,12 +509,12 @@ const route = useRoute<StackParams, "Details">();
 - `useRoute()` when you need full route info
 - `useRouteName()` when you only need the name
 
-### 3. Cleanup in useFocusEffect
+### 3. Cleanup in createFocusEffect
 
 Always return a cleanup function:
 
 ```tsx
-useFocusEffect(() => {
+createFocusEffect(() => {
   const subscription = subscribe();
 
   return () => {
@@ -523,12 +523,12 @@ useFocusEffect(() => {
 });
 ```
 
-### 4. Guard useBeforeRemove
+### 4. Guard createBeforeRemove
 
 Only prevent navigation when necessary:
 
 ```tsx
-useBeforeRemove((event) => {
+createBeforeRemove((event) => {
   if (!shouldPrevent()) {
     return; // Allow navigation
   }

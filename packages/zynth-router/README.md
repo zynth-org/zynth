@@ -156,11 +156,11 @@ const route = useRoute<RouteProps>();
 console.log(route.params().itemId);
 ```
 
-#### `useFocusEffect(callback)`
+#### `createFocusEffect(callback)`
 Runs a side-effect when the screen comes into focus.
 
 ```tsx
-useFocusEffect(() => {
+createFocusEffect(() => {
   console.log("Screen focused");
   return () => console.log("Screen blurred");
 });

@@ -22,8 +22,8 @@ export {
   useParams,
   useRouteName,
   useIsFocused,
-  useFocusEffect,
-  useBeforeRemove,
+  createFocusEffect,
+  createBeforeRemove,
   useNavigationState,
   useScreenOptions,
 } from "./hooks";
@@ -244,12 +244,12 @@ const isFocused = useIsFocused();
 
 **Returns:** `Accessor<boolean>`
 
-### useFocusEffect(effect)
+### createFocusEffect(effect)
 
 Runs effect when screen gains focus.
 
 ```tsx
-useFocusEffect(() => {
+createFocusEffect(() => {
   // Run on focus
   return () => {
     // Cleanup on unfocus
@@ -261,12 +261,12 @@ useFocusEffect(() => {
 
 - `effect: () => void | (() => void)` - Effect to run, optionally returns cleanup
 
-### useBeforeRemove(listener)
+### createBeforeRemove(listener)
 
 Prevents navigation or prompts confirmation.
 
 ```tsx
-useBeforeRemove((event) => {
+createBeforeRemove((event) => {
   if (hasUnsavedChanges) {
     event.preventDefault();
     // Show dialog...
