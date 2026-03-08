@@ -14,6 +14,41 @@ export interface AppConfig {
   devServerUrl?: string;
 }
 
+function buildInfoPlistDefaults(
+  configuredInfoPlist: Record<string, unknown>
+): Record<string, unknown> {
+  const configuredSceneManifest = configuredInfoPlist.UIApplicationSceneManifest;
+  const { UIApplicationSceneManifest: _omitSceneManifest, ...restInfoPlist } =
+    configuredInfoPlist;
+  const defaultSceneConfigurations = {
+    UIWindowSceneSessionRoleApplication: [
+      {
+        UISceneConfigurationName: "Default Configuration",
+        UISceneDelegateClassName: "SceneDelegate",
+      },
+    ],
+  };
+
+  const mergedSceneManifest =
+    configuredSceneManifest &&
+    typeof configuredSceneManifest === "object" &&
+    !Array.isArray(configuredSceneManifest)
+      ? {
+          UIApplicationSupportsMultipleScenes: false,
+          UISceneConfigurations: defaultSceneConfigurations,
+          ...(configuredSceneManifest as Record<string, unknown>),
+        }
+      : {
+          UIApplicationSupportsMultipleScenes: false,
+          UISceneConfigurations: defaultSceneConfigurations,
+        };
+
+  return {
+    UIApplicationSceneManifest: mergedSceneManifest,
+    ...restInfoPlist,
+  };
+}
+
 export function safeReadJSON(filePath: string): any {
   try {
     return JSON.parse(fs.readFileSync(filePath, "utf8"));
@@ -56,7 +91,9 @@ export function getAppConfig(appDir: string): AppConfig {
     workspaceName: pkg.name || `@demo/${appName}`,
     displayName: appConfig.name || pkg.displayName || appName,
     version: appConfig.version || pkg.version || "1.0.0",
-    infoPlist: appConfig.ios?.infoPlist || {},
+    infoPlist: buildInfoPlistDefaults(
+      (appConfig.ios?.infoPlist || {}) as Record<string, unknown>
+    ),
     androidConfig: appConfig.android || {},
     devServerUrl: appConfig.devServerUrl,
   };

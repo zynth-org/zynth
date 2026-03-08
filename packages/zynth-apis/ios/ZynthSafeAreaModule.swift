@@ -58,15 +58,17 @@ public class ZynthSafeAreaModule: NSObject {
     observers.append(windowDidBecomeKeyObserver)
 
     // Observe window scene changes
-    let sceneObserver = NotificationCenter.default.addObserver(
-      forName: UIScene.didActivateNotification,
-      object: nil,
-      queue: .main
-    ) { [weak self] _ in
-      // print("[ZynthSafeArea] Scene activated - updating metrics")
-      self?.scheduleMetricsUpdate()
+    if #available(iOS 13.0, *), supportsSceneLifecycle() {
+      let sceneObserver = NotificationCenter.default.addObserver(
+        forName: UIScene.didActivateNotification,
+        object: nil,
+        queue: .main
+      ) { [weak self] _ in
+        // print("[ZynthSafeArea] Scene activated - updating metrics")
+        self?.scheduleMetricsUpdate()
+      }
+      observers.append(sceneObserver)
     }
-    observers.append(sceneObserver)
 
     // Observe orientation changes
     let orientationObserver = NotificationCenter.default.addObserver(
@@ -80,7 +82,7 @@ public class ZynthSafeAreaModule: NSObject {
     observers.append(orientationObserver)
 
     // Observe window geometry changes (replaces deprecated didChangeStatusBarFrameNotification)
-    if #available(iOS 13.0, *) {
+    if #available(iOS 13.0, *), supportsSceneLifecycle() {
       let sceneGeometryObserver = NotificationCenter.default.addObserver(
         forName: UIScene.willEnterForegroundNotification,
         object: nil,
@@ -167,7 +169,7 @@ public class ZynthSafeAreaModule: NSObject {
 
   private func getActiveWindow() -> UIWindow? {
     // Try to get the key window from active scene
-    if #available(iOS 13.0, *) {
+    if #available(iOS 13.0, *), supportsSceneLifecycle() {
       // First try to get the key window from the foreground active scene
       let scenes = UIApplication.shared.connectedScenes
         .compactMap { $0 as? UIWindowScene }
@@ -197,6 +199,11 @@ public class ZynthSafeAreaModule: NSObject {
     }
 
     return nil
+  }
+
+  private func supportsSceneLifecycle() -> Bool {
+    let manifest = Bundle.main.object(forInfoDictionaryKey: "UIApplicationSceneManifest")
+    return manifest is [String: Any]
   }
 
   // MARK: - Update Pipeline (Coalesced)

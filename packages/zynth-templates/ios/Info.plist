@@ -18,6 +18,23 @@
 		<string>1.0</string>
 		<key>CFBundleVersion</key>
 		<string>1</string>
+		<key>UIApplicationSceneManifest</key>
+		<dict>
+			<key>UIApplicationSupportsMultipleScenes</key>
+			<false/>
+			<key>UISceneConfigurations</key>
+			<dict>
+				<key>UIWindowSceneSessionRoleApplication</key>
+				<array>
+					<dict>
+						<key>UISceneConfigurationName</key>
+						<string>Default Configuration</string>
+						<key>UISceneDelegateClassName</key>
+						<string>SceneDelegate</string>
+					</dict>
+				</array>
+			</dict>
+		</dict>
 		<key>UIViewControllerBasedStatusBarAppearance</key>
 		<false />
 	<key>NSAppTransportSecurity</key>
@@ -29,6 +46,7 @@
 	<string>This app needs access to your camera to take photos.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>This app needs access to your photo library to pick photos.</string>
-	<key>UIAppFonts</key>
-	</dict>
-</plist>
+		<key>UIAppFonts</key>
+		<array/>
+		</dict>
+	</plist>

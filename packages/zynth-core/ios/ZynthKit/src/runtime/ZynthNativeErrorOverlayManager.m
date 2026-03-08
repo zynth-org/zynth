@@ -55,6 +55,11 @@ static NSInteger const ZynthWarningCloseButtonTag = 91004;
 static NSInteger const ZynthWarningAlertIconTag = 91005;
 static NSInteger const ZynthWarningCloseIconTag = 91006;
 
+static BOOL ZynthAppUsesSceneLifecycle(void) {
+  id manifest = [NSBundle.mainBundle objectForInfoDictionaryKey:@"UIApplicationSceneManifest"];
+  return [manifest isKindOfClass:[NSDictionary class]];
+}
+
 @implementation ZynthNativeErrorOverlayManager
 
 + (instancetype)shared {
@@ -310,6 +315,14 @@ static NSInteger const ZynthWarningCloseIconTag = 91006;
 - (UIWindow *_Nullable)activeWindowForRoot:(UIView *)root {
   if (root.window != nil) {
     return root.window;
+  }
+
+  if (!ZynthAppUsesSceneLifecycle()) {
+    UIWindow *keyWindow = UIApplication.sharedApplication.keyWindow;
+    if (keyWindow != nil) {
+      return keyWindow;
+    }
+    return UIApplication.sharedApplication.windows.firstObject;
   }
 
   for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {

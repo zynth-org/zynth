@@ -15,10 +15,37 @@
 @implementation AppDelegate
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
+  (void)application;
+  (void)launchOptions;
   NSLog(@"[Zynth] App start");
 
-  self.window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
-  self.surface = [[UIView alloc] initWithFrame:self.window.bounds];
+  if ([self usesSceneLifecycle]) {
+    return YES;
+  }
+
+  UIWindow *window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+  [self configureRootWindow:window];
+  return YES;
+}
+
+- (UISceneConfiguration *)application:(UIApplication *)application
+configurationForConnectingSceneSession:(UISceneSession *)connectingSceneSession
+                              options:(UISceneConnectionOptions *)options API_AVAILABLE(ios(13.0)) {
+  (void)application;
+  (void)options;
+  if (![self usesSceneLifecycle]) {
+    return nil;
+  }
+  UISceneConfiguration *configuration =
+    [[UISceneConfiguration alloc] initWithName:@"Default Configuration"
+                                   sessionRole:connectingSceneSession.role];
+  configuration.delegateClass = NSClassFromString(@"SceneDelegate");
+  return configuration;
+}
+
+- (void)configureRootWindow:(UIWindow *)window {
+  self.window = window;
+  self.surface = [[UIView alloc] initWithFrame:window.bounds];
   self.surface.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
   
   // Default background while initializing (will be overridden by Splash if enabled)
@@ -88,13 +115,18 @@
     if (![self.runtime loadInitialBundleWithJsBundleURL:bundleURL error:&loadError]) {
       NSLog(@"[Zynth] Failed to load bundle: %@", loadError);
 {{RUNTIME_LOAD_FAILURE}}
-      return NO;
+      return;
     }
     NSLog(@"[Zynth] Starting runtime with rootId 0");
     [self.runtime startWithRootId:0];
   }
 
-  return YES;
+  return;
+}
+
+- (BOOL)usesSceneLifecycle {
+  id sceneManifest = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"UIApplicationSceneManifest"];
+  return [sceneManifest isKindOfClass:[NSDictionary class]];
 }
 
 @end
