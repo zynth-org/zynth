@@ -20,6 +20,8 @@ import android.widget.TextView
 import androidx.core.view.WindowInsetsCompat
 import com.zynth.kit.core.ZynthRootView
 import java.lang.ref.WeakReference
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.roundToInt
 
 internal object ZynthNativePerformanceOverlay {
@@ -34,20 +36,22 @@ internal object ZynthNativePerformanceOverlay {
   private const val FPS_RECOVER_OFFSET = 3
   private const val FPS_WARN_SAMPLES = 3
   private const val FPS_RECOVER_SAMPLES = 2
+  private const val UI_FPS_DISPLAY_DEADBAND = 2
+  private const val JS_FPS_DISPLAY_DEADBAND = 2
 
   private val mainHandler = Handler(Looper.getMainLooper())
   private var rootRef: WeakReference<ZynthRootView>? = null
   private var rootLayoutListener: OnLayoutChangeListener? = null
   private var performanceOverlayView: View? = null
-  private var performanceEnabled: Boolean = false
+  @Volatile private var performanceEnabled: Boolean = false
   private var performanceUiFrameCount: Int = 0
-  private var performanceJsTickCount: Int = 0
+  private val performanceJsTickCount = AtomicInteger(0)
   private var performanceNodeCount: Int = 0
   private var performanceUiFps: Int = 0
   private var performanceJsFps: Int = 0
   private var performanceRamMb: Int = 0
   private var performanceLastSampleMs: Long = 0L
-  @Volatile private var performanceJsPingPending: Boolean = false
+  private val performanceJsPingPending = AtomicBoolean(false)
   private var performanceDragStartX: Float = 0f
   private var performanceDragStartY: Float = 0f
   private var uiFrameCallback: Choreographer.FrameCallback? = null
@@ -140,23 +144,17 @@ internal object ZynthNativePerformanceOverlay {
   @JvmStatic
   fun requestPerformanceJsPing(): Boolean {
     if (!performanceEnabled) {
-      performanceJsPingPending = false
+      performanceJsPingPending.set(false)
       return false
     }
-    if (performanceJsPingPending) {
-      return false
-    }
-    performanceJsPingPending = true
-    return true
+    return performanceJsPingPending.compareAndSet(false, true)
   }
 
   @JvmStatic
   fun recordPerformanceJsPing() {
-    mainHandler.post {
-      performanceJsPingPending = false
-      if (!performanceEnabled) return@post
-      performanceJsTickCount += 1
-    }
+    performanceJsPingPending.set(false)
+    if (!performanceEnabled) return
+    performanceJsTickCount.incrementAndGet()
   }
 
   private fun rootView(): ZynthRootView? {
@@ -170,13 +168,13 @@ internal object ZynthNativePerformanceOverlay {
 
   private fun resetPerformanceCounters() {
     performanceUiFrameCount = 0
-    performanceJsTickCount = 0
+    performanceJsTickCount.set(0)
     performanceNodeCount = 0
     performanceUiFps = 0
     performanceJsFps = 0
     performanceRamMb = 0
     performanceLastSampleMs = SystemClock.elapsedRealtime()
-    performanceJsPingPending = false
+    performanceJsPingPending.set(false)
     uiFpsEma = -1.0
     jsFpsEma = -1.0
     uiWarnActive = false
@@ -287,7 +285,7 @@ internal object ZynthNativePerformanceOverlay {
   private fun dismissPerformanceOverlay() {
     removeView(performanceOverlayView)
     performanceOverlayView = null
-    performanceJsPingPending = false
+    performanceJsPingPending.set(false)
   }
 
   private fun samplePerformanceIfNeeded() {
@@ -299,19 +297,45 @@ internal object ZynthNativePerformanceOverlay {
     val elapsedMs = nowMs - performanceLastSampleMs
     if (elapsedMs < 1_000L) return
 
+    val targetFps = targetFps()
+    val root = rootView()
+    if (root != null && !root.hasWindowFocus()) {
+      performanceUiFps = targetFps
+      performanceJsFps = targetFps
+      uiFpsEma = targetFps.toDouble()
+      jsFpsEma = targetFps.toDouble()
+      uiWarnActive = false
+      jsWarnActive = false
+      uiWarnStreak = 0
+      jsWarnStreak = 0
+      uiRecoverStreak = 0
+      jsRecoverStreak = 0
+      performanceRamMb = readProcessRamMb()
+      performanceNodeCount = countViews(root)
+      performanceUiFrameCount = 0
+      performanceJsTickCount.set(0)
+      performanceLastSampleMs = nowMs
+      updatePerformanceOverlayLabels()
+      return
+    }
+
     val elapsedSec = elapsedMs / 1000.0
     val rawUiFps = (performanceUiFrameCount / elapsedSec).roundToInt().coerceAtLeast(0)
-    val rawJsFps = (performanceJsTickCount / elapsedSec).roundToInt().coerceAtLeast(0)
-    val targetFps = targetFps()
+    val rawJsFps = (performanceJsTickCount.getAndSet(0) / elapsedSec).roundToInt().coerceAtLeast(0)
     uiFpsEma = smoothFps(uiFpsEma, rawUiFps)
     jsFpsEma = smoothFps(jsFpsEma, rawJsFps)
     performanceUiFps = uiFpsEma.roundToInt().coerceIn(0, targetFps)
     performanceJsFps = jsFpsEma.roundToInt().coerceIn(0, targetFps)
+    if (performanceUiFps >= targetFps - UI_FPS_DISPLAY_DEADBAND) {
+      performanceUiFps = targetFps
+    }
+    if (performanceJsFps >= targetFps - JS_FPS_DISPLAY_DEADBAND) {
+      performanceJsFps = targetFps
+    }
     updateAlertState(targetFps)
     performanceRamMb = readProcessRamMb()
-    performanceNodeCount = countViews(rootView())
+    performanceNodeCount = countViews(root)
     performanceUiFrameCount = 0
-    performanceJsTickCount = 0
     performanceLastSampleMs = nowMs
     updatePerformanceOverlayLabels()
   }
