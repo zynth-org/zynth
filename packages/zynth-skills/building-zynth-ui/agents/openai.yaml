@@ -1,0 +1,7 @@
+interface:
+  display_name: "Building Zynth UI"
+  short_description: "Zynth Framework UI Guidelines"
+  brand_color: "#0A0A0A"
+
+policy:
+  allow_implicit_invocation: true

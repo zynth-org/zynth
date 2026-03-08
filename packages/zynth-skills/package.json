@@ -1,0 +1,15 @@
+{
+  "name": "@zynth/skills",
+  "version": "1.0.0",
+  "description": "Zynth Framework Agent Skills",
+  "private": true,
+  "files": [
+    "building-zynth-ui"
+  ],
+  "keywords": [
+    "zynth",
+    "skills",
+    "codex",
+    "agents"
+  ]
+}
