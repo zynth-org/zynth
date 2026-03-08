@@ -35,12 +35,21 @@ const require = createRequire(import.meta.url);
 
 let solidJsxRuntime: string | null = null;
 let solidJsxDevRuntime: string | null = null;
+let solidHyperscriptRuntime: string | null = null;
 try {
-  solidJsxRuntime = require.resolve("solid-js/h/jsx-runtime");
-  solidJsxDevRuntime = require.resolve("solid-js/h/jsx-dev-runtime");
+  solidJsxRuntime =
+    safeResolve(require, "solid-js/h/jsx-runtime/dist/jsx.js") ??
+    safeResolve(require, "solid-js/h/jsx-runtime");
+  solidJsxDevRuntime =
+    safeResolve(require, "solid-js/h/jsx-dev-runtime/dist/jsx.js") ??
+    safeResolve(require, "solid-js/h/jsx-dev-runtime");
+  solidHyperscriptRuntime =
+    safeResolve(require, "solid-js/h/dist/h.cjs") ??
+    safeResolve(require, "solid-js/h");
 } catch {
   solidJsxRuntime = null;
   solidJsxDevRuntime = null;
+  solidHyperscriptRuntime = null;
 }
 
 const DEFAULT_ARTIFACT_RELATIVE_PATH = ".zynth/artifacts.json";
@@ -373,6 +382,8 @@ function ensureAliases(
   const resolvedDevRuntime = solidJsxDevRuntime ?? solidJsxRuntime;
   if (resolvedDevRuntime)
     staticAliases["solid-js/jsx-dev-runtime"] = resolvedDevRuntime;
+  if (solidHyperscriptRuntime)
+    staticAliases["solid-js/h"] = solidHyperscriptRuntime;
 
   for (const [key, value] of Object.entries(staticAliases)) {
     if (alias[key] === undefined) alias[key] = value;
@@ -438,20 +449,37 @@ async function discoverZynthPackageAliases(
 function resolveSolidAliases(repoRoot: string): Record<string, string> {
   const aliases: Record<string, string> = {};
   const rootRequire = createRequire(path.join(repoRoot, "package.json"));
+  const solidHFromRoot = safeResolve(rootRequire, "solid-js/h/dist/h.cjs");
+  const solidHFallbackFromRoot = safeResolve(rootRequire, "solid-js/h");
 
   const solidJsxRuntimeFromRoot = safeResolve(
     rootRequire,
-    "solid-js/h/jsx-runtime",
+    "solid-js/h/jsx-runtime/dist/jsx.js",
   );
   const solidJsxDevRuntimeFromRoot = safeResolve(
+    rootRequire,
+    "solid-js/h/jsx-dev-runtime/dist/jsx.js",
+  );
+  const solidJsxRuntimeFallbackFromRoot = safeResolve(
+    rootRequire,
+    "solid-js/h/jsx-runtime",
+  );
+  const solidJsxDevRuntimeFallbackFromRoot = safeResolve(
     rootRequire,
     "solid-js/h/jsx-dev-runtime",
   );
 
-  if (solidJsxRuntimeFromRoot)
-    aliases["solid-js/jsx-runtime"] = solidJsxRuntimeFromRoot;
-  if (solidJsxDevRuntimeFromRoot)
-    aliases["solid-js/jsx-dev-runtime"] = solidJsxDevRuntimeFromRoot;
+  if (solidJsxRuntimeFromRoot || solidJsxRuntimeFallbackFromRoot) {
+    aliases["solid-js/jsx-runtime"] =
+      solidJsxRuntimeFromRoot || solidJsxRuntimeFallbackFromRoot!;
+  }
+  if (solidJsxDevRuntimeFromRoot || solidJsxDevRuntimeFallbackFromRoot) {
+    aliases["solid-js/jsx-dev-runtime"] =
+      solidJsxDevRuntimeFromRoot || solidJsxDevRuntimeFallbackFromRoot!;
+  }
+  if (solidHFromRoot || solidHFallbackFromRoot) {
+    aliases["solid-js/h"] = solidHFromRoot || solidHFallbackFromRoot!;
+  }
 
   return aliases;
 }

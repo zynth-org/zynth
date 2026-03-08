@@ -23,13 +23,15 @@ const aliasEntries = {
 const extraAliases = Object.fromEntries(
   Object.entries(aliasEntries).filter(([, target]) => existsSync(target))
 );
+const platform = process.env.ZYNTH_PLATFORM || "ios";
 
 export default defineZynthConfig(
   {},
   {
+    platform,
     plugin: {
       extraAliases,
-      writeArtifacts: false,
+      writeArtifacts: true,
     },
   }
 );

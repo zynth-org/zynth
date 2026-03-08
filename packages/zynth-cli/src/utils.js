@@ -1169,6 +1169,7 @@ async function startZynthHMRServer(appDir, platform, options = {}) {
     stdio: ["ignore", "pipe", "pipe"],
     env: {
       ...process.env,
+      ZYNTH_PLATFORM: platform,
       ZYNTH_HMR_PORT: String(port),
       BASELINE_BROWSER_MAPPING_IGNORE_OLD_DATA: "true",
       BROWSERSLIST_IGNORE_OLD_DATA: "true",
