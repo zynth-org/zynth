@@ -78,12 +78,22 @@ export function createZynthRsbuildPlugin(
         ? path.resolve(workspaceRoot)
         : await findWorkspaceRoot(api.context.rootPath);
 
+      const installedAliases = await discoverInstalledZynthPackageAliases(
+        api.context.rootPath,
+        isWeb,
+      );
       const discoveredAliases = await discoverZynthPackageAliases(
         repoRoot,
         isWeb,
       );
       const solidAliases = resolveSolidAliases(repoRoot);
-      const mergedAliases = { ...discoveredAliases, ...solidAliases };
+      // Prefer app-local node_modules package resolution for production parity.
+      // Workspace aliases are fallback-only when app dependencies are absent.
+      const mergedAliases = {
+        ...discoveredAliases,
+        ...installedAliases,
+        ...solidAliases,
+      };
       const exactModuleReplacements: Array<{ request: string; target: string }> =
         [];
 
@@ -391,6 +401,14 @@ function ensureAliases(
 
   if (extraAliases) {
     for (const [key, value] of Object.entries(extraAliases)) {
+      if (
+        key.startsWith("@zynth/") &&
+        discoveredAliases &&
+        (discoveredAliases[key] !== undefined ||
+          discoveredAliases[`${key}$`] !== undefined)
+      ) {
+        continue;
+      }
       alias[key] = value;
     }
   }
@@ -444,6 +462,112 @@ async function discoverZynthPackageAliases(
     }
   } catch {}
   return aliases;
+}
+
+async function discoverInstalledZynthPackageAliases(
+  appRoot: string,
+  isWeb: boolean,
+): Promise<Record<string, string>> {
+  const aliases: Record<string, string> = {};
+  const scopedDir = path.join(appRoot, "node_modules", "@zynth");
+
+  let entries: import("node:fs").Dirent[] = [];
+  try {
+    entries = (await fs.readdir(scopedDir, {
+      withFileTypes: true,
+    })) as import("node:fs").Dirent[];
+  } catch {
+    return aliases;
+  }
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const packageName = `@zynth/${entry.name}`;
+    try {
+      const packageDir = path.join(scopedDir, entry.name);
+      const packageJsonPath = path.join(packageDir, "package.json");
+      if (!(await exists(packageJsonPath))) {
+        continue;
+      }
+      const packageRaw = await fs.readFile(packageJsonPath, "utf8");
+      const packageJson = JSON.parse(packageRaw) as {
+        exports?: Record<string, unknown>;
+      };
+      const srcDir = path.join(packageDir, "src");
+      const sourceEntry = await pickFirstExisting([
+        ...(isWeb
+          ? [path.join(srcDir, "index.web.ts"), path.join(srcDir, "index.web.tsx")]
+          : []),
+        path.join(srcDir, "index.ts"),
+        path.join(srcDir, "index.tsx"),
+      ]);
+
+      if (sourceEntry) {
+        aliases[`${packageName}$`] = sourceEntry;
+        aliases[packageName] = srcDir;
+      } else {
+        const exportRoot = resolveImportExport(packageJson.exports, ".");
+        if (exportRoot) {
+          const rootTarget = path.resolve(packageDir, exportRoot);
+          aliases[`${packageName}$`] = rootTarget;
+          aliases[packageName] = path.dirname(rootTarget);
+        }
+      }
+
+      if (packageName === "@zynth/core") {
+        const universalSrcPath = path.join(srcDir, "universal.ts");
+        if (await exists(universalSrcPath)) {
+          aliases["@zynth/core/universal"] = universalSrcPath;
+        } else {
+          const universalExport = resolveImportExport(
+            packageJson.exports,
+            "./universal",
+          );
+          if (universalExport) {
+            aliases["@zynth/core/universal"] = path.resolve(
+              packageDir,
+              universalExport,
+            );
+          }
+        }
+      }
+
+      if (isWeb && packageName === "@zynth/core") {
+        const webEntry = await pickFirstExisting([
+          path.join(srcDir, "index.web.ts"),
+          path.join(srcDir, "index.web.tsx"),
+        ]);
+        if (webEntry) {
+          aliases["@zynth/core$"] = webEntry;
+          aliases["@zynth/core"] = path.dirname(webEntry);
+        }
+      }
+    } catch {
+      // Ignore malformed or partially installed packages.
+    }
+  }
+
+  return aliases;
+}
+
+function resolveImportExport(
+  exportsField: Record<string, unknown> | undefined,
+  key: "." | "./universal",
+): string | null {
+  if (!exportsField) return null;
+  const entry = exportsField[key];
+  if (!entry) return null;
+
+  if (typeof entry === "string") {
+    return entry;
+  }
+  if (entry && typeof entry === "object") {
+    const importPath = (entry as Record<string, unknown>).import;
+    if (typeof importPath === "string") return importPath;
+    const defaultPath = (entry as Record<string, unknown>).default;
+    if (typeof defaultPath === "string") return defaultPath;
+  }
+  return null;
 }
 
 function resolveSolidAliases(repoRoot: string): Record<string, string> {
