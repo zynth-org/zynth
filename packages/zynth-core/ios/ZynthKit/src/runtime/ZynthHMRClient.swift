@@ -19,8 +19,10 @@ final class ZynthHMRClient: NSObject, URLSessionWebSocketDelegate {
     super.init()
     let configuration = URLSessionConfiguration.default
     configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-    configuration.timeoutIntervalForRequest = 30
-    configuration.timeoutIntervalForResource = 30
+    // Keep dev WebSocket sessions alive; short default request/resource timeouts
+    // cause noisy -1001 disconnects in Xcode when idle.
+    configuration.timeoutIntervalForRequest = 7 * 24 * 60 * 60
+    configuration.timeoutIntervalForResource = 7 * 24 * 60 * 60
     self.session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
   }
 
@@ -85,7 +87,9 @@ final class ZynthHMRClient: NSObject, URLSessionWebSocketDelegate {
       guard let self else { return }
       switch result {
       case .failure(let error):
-        print("[ZynthHMRClient] receive error: \(error.localizedDescription)")
+        if !isExpectedDisconnectError(error) {
+          print("[ZynthHMRClient] receive error: \(error.localizedDescription)")
+        }
         self.scheduleReconnect()
       case .success(let message):
         switch message {
@@ -196,6 +200,34 @@ final class ZynthHMRClient: NSObject, URLSessionWebSocketDelegate {
       let reasonString = reason.flatMap { String(data: $0, encoding: .utf8) } ?? "none"
       print("[ZynthHMRClient] ⚠️ WebSocket closed (code: \(closeCode.rawValue), reason: \(reasonString))")
       self?.scheduleReconnect()
+    }
+  }
+
+  func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+    guard let error else { return }
+    queue.async { [weak self] in
+      guard let self else { return }
+      self.socket = nil
+      if !self.isExpectedDisconnectError(error) {
+        print("[ZynthHMRClient] task completed with error: \(error.localizedDescription)")
+      }
+      if !self.stopped {
+        self.scheduleReconnect()
+      }
+    }
+  }
+
+  private func isExpectedDisconnectError(_ error: Error) -> Bool {
+    let nsError = error as NSError
+    if nsError.domain != NSURLErrorDomain {
+      return false
+    }
+    switch nsError.code {
+    case NSURLErrorTimedOut, NSURLErrorCancelled, NSURLErrorNetworkConnectionLost,
+      NSURLErrorNotConnectedToInternet, NSURLErrorCannotConnectToHost:
+      return true
+    default:
+      return false
     }
   }
 }

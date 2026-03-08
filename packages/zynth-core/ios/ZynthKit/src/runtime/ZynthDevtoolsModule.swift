@@ -116,8 +116,9 @@ final class ZynthDevtoolsClient: NSObject {
     super.init()
     let configuration = URLSessionConfiguration.default
     configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-    configuration.timeoutIntervalForRequest = 30
-    configuration.timeoutIntervalForResource = 30
+    // Keep dev WebSocket sessions alive; avoid periodic -1001 timeout noise.
+    configuration.timeoutIntervalForRequest = 7 * 24 * 60 * 60
+    configuration.timeoutIntervalForResource = 7 * 24 * 60 * 60
     session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
   }
 
@@ -327,13 +328,30 @@ extension ZynthDevtoolsClient: URLSessionWebSocketDelegate {
   }
 
   func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-    guard error != nil else { return }
+    guard let error else { return }
     queue.async { [weak self] in
       guard let self else { return }
       self.socket = nil
+      if !self.isExpectedDisconnectError(error) {
+        print("[ZynthDevtools] task completed with error: \(error.localizedDescription)")
+      }
       if !self.stopped {
         self.scheduleReconnect()
       }
+    }
+  }
+
+  private func isExpectedDisconnectError(_ error: Error) -> Bool {
+    let nsError = error as NSError
+    if nsError.domain != NSURLErrorDomain {
+      return false
+    }
+    switch nsError.code {
+    case NSURLErrorTimedOut, NSURLErrorCancelled, NSURLErrorNetworkConnectionLost,
+      NSURLErrorNotConnectedToInternet, NSURLErrorCannotConnectToHost:
+      return true
+    default:
+      return false
     }
   }
 }

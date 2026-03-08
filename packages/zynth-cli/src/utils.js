@@ -1493,6 +1493,15 @@ async function devIOS(root, appDir, options = {}) {
       "ZYNTH_DEV_SERVER_URL",
       hmrServer.deviceUrl,
     ]);
+    runCommand("xcrun", [
+      "simctl",
+      "spawn",
+      targetDevice.udid,
+      "launchctl",
+      "setenv",
+      "OS_ACTIVITY_MODE",
+      "disable",
+    ]);
     if (devtoolsUrl) {
       runCommand("xcrun", [
         "simctl",
