@@ -79,6 +79,7 @@ const DEFAULT_CONTENT_STYLE: Style = {
       elevation: 8,
       backgroundColor: "#FFF",
     },
+    web: {},
   }),
 };
 
