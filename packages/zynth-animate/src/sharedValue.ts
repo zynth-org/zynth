@@ -675,7 +675,7 @@ type AnimatedStyleAccessor = Accessor<Style> & {
   };
 };
 
-export function useAnimatedStyle(getStyle: () => Style): AnimatedStyleAccessor {
+export function createAnimatedStyle(getStyle: () => Style): AnimatedStyleAccessor {
   const nativeEnabled = isNativePlatform() && hasNativeAnimate();
   if (!nativeEnabled) {
     return createMemo(

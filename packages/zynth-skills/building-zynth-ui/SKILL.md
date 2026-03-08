@@ -140,6 +140,6 @@ Use `<BottomSheet />` for high-performance, native-backed modal sheets:
 
 ## Advanced UI
 
-- **Shared Values**: Use `createSharedValue` and `useAnimatedStyle` for 60fps/120fps animations that run on the native UI thread.
+- **Shared Values**: Use `createSharedValue` and `createAnimatedStyle` for 60fps/120fps animations that run on the native UI thread.
 - **Glass Effects**: Use `<GlassContainer />` to wrap content with dynamic blurring and transparency.
 - **Skia**: For custom drawing or complex shaders, use `@zynth/skia`. It integrates seamlessly with Zynth signals for real-time performance.

@@ -16,13 +16,13 @@ This library provides a physics-based animation system that runs on the UI threa
 ### Basic Animation
 
 ```tsx
-import { Animated, createSharedValue, useAnimatedStyle, withSpring } from "@zynth/animate";
+import { Animated, createSharedValue, createAnimatedStyle, withSpring } from "@zynth/animate";
 import { Button } from "@zynth/components";
 
 function MyComponent() {
   const width = createSharedValue(100);
 
-  const style = useAnimatedStyle(() => ({
+  const style = createAnimatedStyle(() => ({
     width: width.value,
     height: 100,
     backgroundColor: "red",
@@ -72,11 +72,11 @@ import { Animated, LinearTransition } from "@zynth/animate";
 Creates a reference to a value that can be animated.
 *   `.value`: Get or set the current value. Assigning an animation function (like `withTiming`) triggers an animation.
 
-### `useAnimatedStyle(() => style)`
+### `createAnimatedStyle(() => style)`
 Creates a reactive style object that updates whenever accessed shared values change. Returns a style object compatible with `Animated.View`.
 
 ### `Animated.View`
-A wrapper around the native `View` that accepts `useAnimatedStyle` results and handles layout animations.
+A wrapper around the native `View` that accepts `createAnimatedStyle` results and handles layout animations.
 
 ### Animation Functions
 *   `withSpring(toValue, config)`: Physics-based spring animation.

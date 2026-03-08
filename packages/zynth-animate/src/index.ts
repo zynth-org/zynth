@@ -8,7 +8,7 @@ export type { EasingFunction, EasingName } from "./easing";
 
 export {
   createSharedValue,
-  useAnimatedStyle,
+  createAnimatedStyle,
   withTiming,
   withSpring,
 } from "./sharedValue";
