@@ -20,7 +20,7 @@ export interface HeaderMetrics {
 /**
  * Hook to get header metrics for proper content padding.
  *
- * Since memory-router uses JS-based headers, this returns the safe area
+ * Since router uses JS-based headers, this returns the safe area
  * inset plus a standard header height. Use this to add proper top padding
  * to your screen content.
  *

@@ -185,7 +185,7 @@ export interface ScreenTabsContainerProps {
 }
 
 /**
- * Route definition for memory router
+ * Route definition for router
  */
 export interface RouteDefinition<Params = Record<string, any>> {
   name: string;
@@ -193,7 +193,7 @@ export interface RouteDefinition<Params = Record<string, any>> {
 }
 
 /**
- * Navigation state for memory router
+ * Navigation state for router
  */
 export interface NavigationState<ParamList = Record<string, any>> {
   routes: RouteDefinition<ParamList[keyof ParamList]>[];

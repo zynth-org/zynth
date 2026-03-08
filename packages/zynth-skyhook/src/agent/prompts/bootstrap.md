@@ -12,7 +12,7 @@ This prompt helps an AI agent understand the Zynth monorepo and how to develop c
 - UI layer uses SolidJS (JSX) and a Yoga-based native renderer.
 - Key packages available (non-exhaustive):
   - `@zynth/components` — cross-platform primitives (View, Text, Button, Image, ScrollView, TextField, etc.)
-  - `@zynth/memory-router` — navigation primitives
+  - `@zynth/router` — navigation primitives
   - `@zynth/components` (examples live in `apps/components/src/components/`)
   - `@zynth/keyboard`, `@zynth/apis`, `@zynth/icons`, `@zynth/bottom-sheet`, `@zynth/apis`
 

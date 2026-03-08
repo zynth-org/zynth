@@ -5,7 +5,7 @@ The Stack Navigator manages a stack of screens with push/pop transitions, simila
 ## Creating a Stack Navigator
 
 ```tsx
-import { createStackNavigator } from "@zynth/memory-router";
+import { createStackNavigator } from "@zynth/router";
 
 type StackParams = {
   Home: undefined;
@@ -104,7 +104,7 @@ Each screen can have its own options:
 Use the `useNavigation` hook to access navigation methods:
 
 ```tsx
-import { useNavigation } from "@zynth/memory-router";
+import { useNavigation } from "@zynth/router";
 
 function MyScreen() {
   const navigation = useNavigation<StackParams>();
@@ -243,7 +243,7 @@ Update options based on state:
 
 ```tsx
 import { createEffect } from "solid-js";
-import { useNavigation } from "@zynth/memory-router";
+import { useNavigation } from "@zynth/router";
 
 function MyScreen() {
   const navigation = useNavigation();
@@ -267,7 +267,7 @@ function MyScreen() {
 
 ## Header Customization
 
-While the memory-router provides a default header, you can hide it and create your own:
+While the router provides a default header, you can hide it and create your own:
 
 ```tsx
 <Stack.Screen

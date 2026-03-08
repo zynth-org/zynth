@@ -25,7 +25,7 @@ This document outlines the current status and future development plan for the Zy
 
 ### Navigation
 
-- [x] @zynth/memory-router: JS-state navigation (Stack, Tabs, BottomSheet).
+- [x] @zynth/router: JS-state navigation (Stack, Tabs, BottomSheet).
 - [x] @zynth/screens: Native screen container primitives.
 
 ### System APIs
@@ -115,7 +115,7 @@ This track hardens `@zynth/skia` so animation hooks and shader pipelines stay UI
 - [x] Migrate zynth-image-picker to new Runtime
 - [x] Migrate zynth-keyboard to new Runtime
 - [x] Migrate zynth-markdown to new Runtime
-- [x] Migrate zynth-memory-router to new Runtime
+- [x] Migrate zynth-router to new Runtime
 - [x] Migrate zynth-secure-store to new Runtime
 - [x] Migrate zynth-splash-screen to new Runtime
 - [x] Migrate zynth-ui to new Runtime

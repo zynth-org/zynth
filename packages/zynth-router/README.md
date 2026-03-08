@@ -1,21 +1,21 @@
-# @zynth/memory-router
+# @zynth/router
 
 A robust, type-safe navigation library for Zynth applications.
 
-Designed to mimic the API of React Navigation, `zynth-memory-router` manages navigation state in JavaScript memory while driving native transitions via `@zynth/screens`. This decoupling makes it ideal for the Zynth Hypervisor and multi-app environments where a single native `UINavigationController` cannot be shared.
+Designed to mimic the API of React Navigation, `@zynth/router` manages navigation state in JavaScript memory while driving native transitions via `@zynth/screens`. This decoupling makes it ideal for the Zynth Hypervisor and multi-app environments where a single native `UINavigationController` cannot be shared.
 
 ## Installation
 
 This package is included by default in the `app` template.
 
 ```bash
-yarn add @zynth/memory-router
+yarn add @zynth/router
 ```
 
 ## Quick Start
 
 ```tsx
-import { NavigationContainer, createStackNavigator } from "@zynth/memory-router";
+import { NavigationContainer, createStackNavigator } from "@zynth/router";
 import { HomeScreen, DetailsScreen } from "./screens";
 
 // 1. Define your route params
@@ -51,11 +51,11 @@ export default function App() {
 
 ### Filesystem Router
 
-`@zynth/memory-router` can render a filesystem-generated screen tree:
+`@zynth/router` can render a filesystem-generated screen tree:
 
 ```tsx
-import { NavigationContainer, createFileSystemRouter } from "@zynth/memory-router";
-import fileSystemRouterManifest from "@zynth/memory-router/fs-routes";
+import { NavigationContainer, createFileSystemRouter } from "@zynth/router";
+import fileSystemRouterManifest from "@zynth/router/fs-routes";
 
 const AppRouter = createFileSystemRouter(fileSystemRouterManifest);
 
@@ -68,18 +68,18 @@ export default function App() {
 }
 ```
 
-The manifest is generated through the memory-router rsbuild helper, which emits
+The manifest is generated through the router rsbuild helper, which emits
 an rsbuild generic generated-module feature.
 
 Recommended config:
 
 ```ts
 import { defineZynthConfig } from "@zynth/rsbuild-plugin";
-import { memoryRouterFileSystem } from "@zynth/memory-router/rsbuild";
+import { routerFileSystem } from "@zynth/router/rsbuild";
 
 export default defineZynthConfig({}, {
   plugin: {
-    features: [memoryRouterFileSystem({ enable: true })],
+    features: [routerFileSystem({ enable: true })],
   },
 });
 ```

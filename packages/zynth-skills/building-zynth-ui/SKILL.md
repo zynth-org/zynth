@@ -46,7 +46,7 @@ Zynth generates temporary `/ios` and `/android` directories. **NEVER** modify fi
 
 ## Routes & Navigation
 
-Zynth uses `@zynth/memory-router` for application-level navigation.
+Zynth uses `@zynth/router` for application-level navigation.
 
 - **Navigation Container**: Wrap your root component in `<NavigationContainer />`.
 - **Navigators**: Use `createStackNavigator`, `createTabNavigator`, or `createBottomSheetNavigator`.

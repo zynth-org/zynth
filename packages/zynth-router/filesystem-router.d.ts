@@ -1,11 +1,11 @@
-export interface MemoryRouterFileSystemFeatureOptions {
+export interface RouterFileSystemFeatureOptions {
   enable?: boolean;
   screensDir?: string;
   outputPath?: string;
   moduleId?: string;
 }
 
-export interface ResolvedMemoryRouterFileSystemOptions {
+export interface ResolvedRouterFileSystemOptions {
   screensDir: string;
   outputPath: string;
   moduleId: string;
@@ -27,10 +27,10 @@ export interface GeneratedModuleFeature {
 }
 
 export declare function resolveFileSystemRouterOptions(
-  options: MemoryRouterFileSystemFeatureOptions | undefined,
+  options: RouterFileSystemFeatureOptions | undefined,
   appRoot: string,
-): ResolvedMemoryRouterFileSystemOptions | null;
+): ResolvedRouterFileSystemOptions | null;
 
-export declare function memoryRouterFileSystemGeneratedModule(
-  options?: MemoryRouterFileSystemFeatureOptions,
+export declare function routerFileSystemGeneratedModule(
+  options?: RouterFileSystemFeatureOptions,
 ): GeneratedModuleFeature;

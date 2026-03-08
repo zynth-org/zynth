@@ -1,11 +1,11 @@
 # Getting Started
 
-This guide will help you set up and start using `@zynth/memory-router` in your Zynth application.
+This guide will help you set up and start using `@zynth/router` in your Zynth application.
 
 ## Installation
 
 ```bash
-yarn add @zynth/memory-router
+yarn add @zynth/router
 ```
 
 The router automatically includes its dependencies:
@@ -21,7 +21,7 @@ The router automatically includes its dependencies:
 First, wrap your app with `NavigationContainer`:
 
 ```tsx
-import { NavigationContainer } from "@zynth/memory-router";
+import { NavigationContainer } from "@zynth/router";
 
 export function App() {
   return (
@@ -35,7 +35,7 @@ export function App() {
 Use `createStackNavigator` or `createTabNavigator` to create a typed navigator:
 
 ```tsx
-import { createStackNavigator } from "@zynth/memory-router";
+import { createStackNavigator } from "@zynth/router";
 
 type RootStackParams = {
   Home: undefined;
@@ -71,7 +71,7 @@ function App() {
 Use the `useNavigation` hook in your screen components:
 
 ```tsx
-import { useNavigation } from "@zynth/memory-router";
+import { useNavigation } from "@zynth/router";
 import { Pressable, Text, View } from "@zynth/components";
 
 function HomeScreen() {
@@ -94,7 +94,7 @@ function HomeScreen() {
 Use the `useRoute` hook to access params:
 
 ```tsx
-import { useRoute } from "@zynth/memory-router";
+import { useRoute } from "@zynth/router";
 import { Text, View } from "@zynth/components";
 
 function ProfileScreen() {
@@ -117,7 +117,7 @@ import {
   createStackNavigator,
   useNavigation,
   useRoute,
-} from "@zynth/memory-router";
+} from "@zynth/router";
 import { View, Text, Pressable } from "@zynth/components";
 
 // Define route types

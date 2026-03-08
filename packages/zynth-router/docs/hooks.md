@@ -1,13 +1,13 @@
 # Navigation Hooks
 
-`@zynth/memory-router` provides several hooks for accessing navigation state and functionality within your screens.
+`@zynth/router` provides several hooks for accessing navigation state and functionality within your screens.
 
 ## useNavigation
 
 Get access to navigation methods for the current screen.
 
 ```tsx
-import { useNavigation } from "@zynth/memory-router";
+import { useNavigation } from "@zynth/router";
 
 type StackParams = {
   Home: undefined;
@@ -69,7 +69,7 @@ navigation.isFocused();
 Access the current route's information (name, params, key).
 
 ```tsx
-import { useRoute } from "@zynth/memory-router";
+import { useRoute } from "@zynth/router";
 
 type StackParams = {
   Details: { id: string; title: string };
@@ -110,7 +110,7 @@ route.setParams; // Update params function
 Shorthand for accessing route params.
 
 ```tsx
-import { useParams } from "@zynth/memory-router";
+import { useParams } from "@zynth/router";
 
 type StackParams = {
   Details: { id: string; title: string };
@@ -133,7 +133,7 @@ function DetailsScreen() {
 Get the current route name.
 
 ```tsx
-import { useRouteName } from "@zynth/memory-router";
+import { useRouteName } from "@zynth/router";
 
 function MyScreen() {
   const routeName = useRouteName();
@@ -147,7 +147,7 @@ function MyScreen() {
 Check if the current screen is focused.
 
 ```tsx
-import { useIsFocused } from "@zynth/memory-router";
+import { useIsFocused } from "@zynth/router";
 import { createEffect } from "solid-js";
 
 function MyScreen() {
@@ -176,7 +176,7 @@ function MyScreen() {
 Run side effects when the screen comes into focus.
 
 ```tsx
-import { useFocusEffect } from "@zynth/memory-router";
+import { useFocusEffect } from "@zynth/router";
 
 function MyScreen() {
   useFocusEffect(() => {
@@ -232,7 +232,7 @@ function FeedScreen() {
 Prevent navigation or show confirmation dialog.
 
 ```tsx
-import { useBeforeRemove } from "@zynth/memory-router";
+import { useBeforeRemove } from "@zynth/router";
 import { createSignal } from "solid-js";
 
 function EditProfileScreen() {
@@ -270,7 +270,7 @@ function EditProfileScreen() {
 Access the raw navigation state.
 
 ```tsx
-import { useNavigationState } from "@zynth/memory-router";
+import { useNavigationState } from "@zynth/router";
 
 function MyScreen() {
   const state = useNavigationState();
@@ -316,7 +316,7 @@ function Breadcrumbs() {
 Get or update screen options dynamically.
 
 ```tsx
-import { useScreenOptions } from "@zynth/memory-router";
+import { useScreenOptions } from "@zynth/router";
 import { createEffect, createSignal } from "solid-js";
 
 function MyScreen() {
@@ -346,7 +346,7 @@ function MyScreen() {
 Get header dimensions (useful for layouts).
 
 ```tsx
-import { useHeaderMetrics } from "@zynth/memory-router";
+import { useHeaderMetrics } from "@zynth/router";
 
 function MyScreen() {
   const headerMetrics = useHeaderMetrics();
@@ -364,7 +364,7 @@ function MyScreen() {
 Get tab bar dimensions.
 
 ```tsx
-import { useTabBarMetrics } from "@zynth/memory-router";
+import { useTabBarMetrics } from "@zynth/router";
 
 function MyScreen() {
   const tabBarMetrics = useTabBarMetrics();
@@ -382,7 +382,7 @@ function MyScreen() {
 Access the raw navigation context (advanced use cases).
 
 ```tsx
-import { useNavigationContext } from "@zynth/memory-router";
+import { useNavigationContext } from "@zynth/router";
 
 function MyScreen() {
   const navContext = useNavigationContext();
@@ -399,7 +399,7 @@ function MyScreen() {
 Access the raw route context (advanced use cases).
 
 ```tsx
-import { useRouteContext } from "@zynth/memory-router";
+import { useRouteContext } from "@zynth/router";
 
 function MyScreen() {
   const routeContext = useRouteContext();
@@ -421,7 +421,7 @@ import {
   useIsFocused,
   useFocusEffect,
   useBeforeRemove,
-} from "@zynth/memory-router";
+} from "@zynth/router";
 import { createSignal, createEffect } from "solid-js";
 
 type StackParams = {

@@ -213,9 +213,9 @@ Zynth ensures that heavy JS work does not block the UI thread, except when synch
 
 ### Memory-based Routing
 
-`@zynth/memory-router` is a pure JavaScript implementation of a navigation stack. It maintains the state of routes, parameters, and history.
+`@zynth/router` is a pure JavaScript implementation of a navigation stack. It maintains the state of routes, parameters, and history.
 
-We chose a memory router over a native-controller-based router (like `react-native-screens`' native stack) to support the **Hypervisor** architecture. In a Hypervisor setup, multiple independent Zynth apps might run on the same screen. If they all tried to control the single global `UINavigationController`, chaos would ensue. A memory router keeps navigation state isolated per-app.
+We chose a router over a native-controller-based router (like `react-native-screens`' native stack) to support the **Hypervisor** architecture. In a Hypervisor setup, multiple independent Zynth apps might run on the same screen. If they all tried to control the single global `UINavigationController`, chaos would ensue. A router keeps navigation state isolated per-app.
 
 ### Native Screen Integration
 
@@ -300,7 +300,7 @@ We use [Rsbuild](https://rsbuild.dev/) (based on Rspack) for blazing fast builds
 **Feature ownership model:**
 
 - `@zynth/rsbuild-plugin` stays agnostic and exposes generic build primitives (e.g. generated module features).
-- Feature packages (such as `@zynth/memory-router`) own domain-specific semantics and provide helpers that emit those generic features.
+- Feature packages (such as `@zynth/router`) own domain-specific semantics and provide helpers that emit those generic features.
 - This keeps bundling extensible without embedding router policy inside the bundler integration layer.
 
 ### Skyhook (AI Generation)

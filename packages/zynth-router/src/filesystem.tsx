@@ -129,7 +129,7 @@ function getNestedNavigatorComponent(
 function validateManifest(manifest: FileSystemRouterManifest): void {
   if (manifest.kind !== "navigator") {
     throw new Error(
-      "[memory-router] Invalid filesystem router manifest: root must be a navigator.",
+      "[router] Invalid filesystem router manifest: root must be a navigator.",
     );
   }
   assertUniqueChildNames(manifest);
@@ -140,7 +140,7 @@ function assertUniqueChildNames(navigator: FileSystemNavigatorRoute): void {
   for (const child of navigator.children) {
     if (names.has(child.name)) {
       throw new Error(
-        `[memory-router] Duplicate route name '${child.name}' in navigator '${navigator.name}'.`,
+        `[router] Duplicate route name '${child.name}' in navigator '${navigator.name}'.`,
       );
     }
     names.add(child.name);

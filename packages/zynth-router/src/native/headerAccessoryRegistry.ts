@@ -144,7 +144,7 @@ function renderNativeHeaderAccessory(
     }
     pending.add(surfaceId);
     console.warn(
-      `[ZynthMemoryRouter] Missing header accessory factory for route '${routeKey}' (${position}). Queued surface=${surfaceId}`
+      `[ZynthRouter] Missing header accessory factory for route '${routeKey}' (${position}). Queued surface=${surfaceId}`
     );
     return false;
   }

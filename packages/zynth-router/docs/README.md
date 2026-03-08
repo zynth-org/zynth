@@ -1,10 +1,10 @@
-# @zynth/memory-router
+# @zynth/router
 
 A lightweight, memory-based navigation router for Zynth apps. Inspired by React Navigation, built for SolidJS, and powered by `@zynth/screens` for smooth transitions.
 
 ## Overview
 
-`@zynth/memory-router` provides a familiar navigation API similar to React Navigation, but designed specifically for Zynth's architecture. It uses pure View-based screen primitives (via `@zynth/screens`) instead of native navigation controllers, making it ideal for:
+`@zynth/router` provides a familiar navigation API similar to React Navigation, but designed specifically for Zynth's architecture. It uses pure View-based screen primitives (via `@zynth/screens`) instead of native navigation controllers, making it ideal for:
 
 - **Hypervisor environments** where multiple apps share the same native context
 - **Apps requiring full control** over navigation state and transitions
@@ -34,7 +34,7 @@ A lightweight, memory-based navigation router for Zynth apps. Inspired by React 
 ## Quick Example
 
 ```tsx
-import { NavigationContainer, createStackNavigator } from "@zynth/memory-router";
+import { NavigationContainer, createStackNavigator } from "@zynth/router";
 import { View, Text } from "@zynth/components";
 
 type RootStackParams = {
@@ -56,10 +56,10 @@ function App() {
 }
 ```
 
-## Comparison with @zynth/router
+## Comparison with Native-Controller Routers
 
-| Feature               | @zynth/memory-router          | @zynth/router                       |
-| --------------------- | ---------------------------- | ---------------------------------- |
+| Feature               | @zynth/router               | Native-controller router           |
+| --------------------- | --------------------------- | ---------------------------------- |
 | Navigation approach   | Memory-based, JS-driven      | Native navigation controllers      |
 | Screen transitions    | `@zynth/screens` (View-based) | Native Fragments/UIViewControllers |
 | Hypervisor compatible | ✅ Yes                       | ❌ Surface conflicts               |

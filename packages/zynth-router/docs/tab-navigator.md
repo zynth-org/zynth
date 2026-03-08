@@ -5,7 +5,7 @@ The Tab Navigator displays a tab bar at the bottom of the screen, allowing users
 ## Creating a Tab Navigator
 
 ```tsx
-import { createTabNavigator } from "@zynth/memory-router";
+import { createTabNavigator } from "@zynth/router";
 
 type TabParams = {
   Home: undefined;
@@ -211,7 +211,7 @@ const renderIcon = (glyph: string) => (props: IconProps) =>
 Use `useNavigation` to navigate between tabs:
 
 ```tsx
-import { useNavigation } from "@zynth/memory-router";
+import { useNavigation } from "@zynth/router";
 
 function MyScreen() {
   const navigation = useNavigation<TabParams>();
@@ -278,7 +278,7 @@ function App() {
 Create a fully custom tab bar by providing a `tabBar` prop:
 
 ```tsx
-import type { TabBarProps } from "@zynth/memory-router";
+import type { TabBarProps } from "@zynth/router";
 import { For, Show } from "solid-js";
 import { View, Text, Pressable } from "@zynth/components";
 
@@ -367,7 +367,7 @@ import {
   NavigationContainer,
   createTabNavigator,
   useNavigation,
-} from "@zynth/memory-router";
+} from "@zynth/router";
 import { View, Text, Pressable } from "@zynth/components";
 import { createSignal } from "solid-js";
 

@@ -81,7 +81,7 @@ A C++ core (shared between iOS and Android) that implements the JSI bridge. It u
 
 - **`@zynth/components`**: Core primitives (`View`, `Text`, `Image`, `FlatList`).
 - **`@zynth/animate`**: High-performance, interruptible animations (`createSharedValue`, `withSpring`).
-- **`@zynth/memory-router`**: A stack-based router designed for multi-app environments.
+- **`@zynth/router`**: A stack-based router designed for multi-app environments.
 - **`@zynth/hypervisor`**: Run isolated "Guest" Zynth apps within a "Host" app.
 
 _For a deep dive into the internals, read the [Architecture Documentation](docs/architecture.md)._

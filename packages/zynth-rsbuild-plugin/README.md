@@ -55,20 +55,20 @@ A wrapper around `defineConfig` that applies Zynth's defaults.
 descriptors (for example, generated module features), while feature packages
 own domain-specific semantics.
 
-Example with memory-router filesystem routing:
+Example with router filesystem routing:
 
 ```ts
 import { defineZynthConfig } from "@zynth/rsbuild-plugin";
-import { memoryRouterFileSystem } from "@zynth/memory-router/rsbuild";
+import { routerFileSystem } from "@zynth/router/rsbuild";
 
 export default defineZynthConfig({}, {
   plugin: {
-    features: [memoryRouterFileSystem({ enable: true })],
+    features: [routerFileSystem({ enable: true })],
   },
 });
 ```
 
-In this setup, `@zynth/memory-router` owns route scanning and manifest semantics.
+In this setup, `@zynth/router` owns route scanning and manifest semantics.
 `@zynth/rsbuild-plugin` only writes/aliases the generated module.
 Router-specific filesystem conventions are documented by each router package.
 

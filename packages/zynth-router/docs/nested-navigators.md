@@ -4,7 +4,7 @@ Nested navigators allow you to compose different navigation patterns together, s
 
 ## Overview
 
-Nesting navigators is a core pattern in React Navigation and `@zynth/memory-router`. Common use cases include:
+Nesting navigators is a core pattern in React Navigation and `@zynth/router`. Common use cases include:
 
 - **Stack in Tabs** - Each tab has its own navigation stack
 - **Tabs in Stack** - Modal or authentication flows that sit above tabs
@@ -22,7 +22,7 @@ import {
   createStackNavigator,
   createTabNavigator,
   useNavigation,
-} from "@zynth/memory-router";
+} from "@zynth/router";
 
 // Define tab-level routes
 type AppTabParams = {
@@ -406,7 +406,7 @@ import {
   createStackNavigator,
   createTabNavigator,
   useNavigation,
-} from "@zynth/memory-router";
+} from "@zynth/router";
 
 // Tab-level routes
 type AppTabParams = {

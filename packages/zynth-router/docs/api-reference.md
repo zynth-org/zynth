@@ -1,6 +1,6 @@
 # API Reference
 
-Complete API reference for `@zynth/memory-router`.
+Complete API reference for `@zynth/router`.
 
 ## Exports
 
@@ -550,7 +550,7 @@ import {
   useNavigation,
   useRoute,
   type ScreenOptions,
-} from "@zynth/memory-router";
+} from "@zynth/router";
 
 type StackParams = {
   Home: undefined;
@@ -584,7 +584,7 @@ import {
   NavigationContainer,
   createTabNavigator,
   type TabBarOptions,
-} from "@zynth/memory-router";
+} from "@zynth/router";
 
 type TabParams = {
   Home: undefined;

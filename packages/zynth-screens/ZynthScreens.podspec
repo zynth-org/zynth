@@ -1,7 +1,7 @@
 Pod::Spec.new do |s|
   s.name         = "ZynthScreens"
   s.version      = "0.0.1"
-  s.summary      = "Native screen primitives for Zynth memory router"
+  s.summary      = "Native screen primitives for Zynth router"
   s.license      = { :type => "MIT" }
   s.author       = { "Zynth" => "dev@zynthstack.dev" }
   s.homepage     = "https://github.com/zynth/zynth"

@@ -1,6 +1,6 @@
 # TypeScript Support
 
-`@zynth/memory-router` is built with TypeScript and provides full type safety for routes, params, and navigation.
+`@zynth/router` is built with TypeScript and provides full type safety for routes, params, and navigation.
 
 ## Defining Route Types
 
@@ -27,7 +27,7 @@ type RootStackParams = {
 Pass your route types to the navigator factory:
 
 ```tsx
-import { createStackNavigator } from "@zynth/memory-router";
+import { createStackNavigator } from "@zynth/router";
 
 const Stack = createStackNavigator<RootStackParams>();
 
@@ -45,7 +45,7 @@ const Stack = createStackNavigator<RootStackParams>();
 Provide route types to get type-safe navigation methods:
 
 ```tsx
-import { useNavigation } from "@zynth/memory-router";
+import { useNavigation } from "@zynth/router";
 
 function MyScreen() {
   const navigation = useNavigation<RootStackParams>();
@@ -76,7 +76,7 @@ function MyScreen() {
 Provide both route types and current route name:
 
 ```tsx
-import { useRoute } from "@zynth/memory-router";
+import { useRoute } from "@zynth/router";
 
 function ProfileScreen() {
   const route = useRoute<RootStackParams, "Profile">();
@@ -94,7 +94,7 @@ function ProfileScreen() {
 Shorthand with the same type safety:
 
 ```tsx
-import { useParams } from "@zynth/memory-router";
+import { useParams } from "@zynth/router";
 
 function DetailsScreen() {
   const params = useParams<RootStackParams, "Details">();
@@ -127,7 +127,7 @@ function ProfileScreen() {
 Define a props type for screens that need navigation and route:
 
 ```tsx
-import type { NavigationHelpers, RouteProp } from "@zynth/memory-router";
+import type { NavigationHelpers, RouteProp } from "@zynth/router";
 
 type ProfileScreenProps = {
   navigation: NavigationHelpers<RootStackParams>;
@@ -150,7 +150,7 @@ function ProfileScreen(props: ProfileScreenProps) {
 Create a reusable type for screen components:
 
 ```tsx
-import type { NavigationHelpers, RouteProp } from "@zynth/memory-router";
+import type { NavigationHelpers, RouteProp } from "@zynth/router";
 
 type ScreenComponent<
   ParamList extends Record<string, any>,
@@ -172,7 +172,7 @@ const ProfileScreen: ScreenComponent<RootStackParams, "Profile"> = (props) => {
 Screen options are also typed:
 
 ```tsx
-import type { ScreenOptions } from "@zynth/memory-router";
+import type { ScreenOptions } from "@zynth/router";
 
 const screenOptions: ScreenOptions = {
   title: "My Screen",
@@ -267,7 +267,7 @@ function HomeMainScreen() {
 The type for navigation object returned by `useNavigation`:
 
 ```tsx
-import type { NavigationHelpers } from "@zynth/memory-router";
+import type { NavigationHelpers } from "@zynth/router";
 
 function useMyNavigationHook(): NavigationHelpers<RootStackParams> {
   return useNavigation<RootStackParams>();
@@ -279,7 +279,7 @@ function useMyNavigationHook(): NavigationHelpers<RootStackParams> {
 The type for route object returned by `useRoute`:
 
 ```tsx
-import type { RouteProp } from "@zynth/memory-router";
+import type { RouteProp } from "@zynth/router";
 
 function useMyRouteHook(): RouteProp<RootStackParams, "Profile"> {
   return useRoute<RootStackParams, "Profile">();
@@ -291,7 +291,7 @@ function useMyRouteHook(): RouteProp<RootStackParams, "Profile"> {
 The type for navigation state:
 
 ```tsx
-import type { NavigationState } from "@zynth/memory-router";
+import type { NavigationState } from "@zynth/router";
 
 function useNavigationHistory(): NavigationState {
   return useNavigationState();
@@ -303,7 +303,7 @@ function useNavigationHistory(): NavigationState {
 The type for screen options:
 
 ```tsx
-import type { ScreenOptions } from "@zynth/memory-router";
+import type { ScreenOptions } from "@zynth/router";
 
 const defaultOptions: ScreenOptions = {
   headerShown: true,
@@ -316,7 +316,7 @@ const defaultOptions: ScreenOptions = {
 The type for tab bar options:
 
 ```tsx
-import type { TabBarOptions } from "@zynth/memory-router";
+import type { TabBarOptions } from "@zynth/router";
 
 const tabBarOptions: TabBarOptions = {
   tabBarBackgroundColor: "#000",
@@ -483,7 +483,7 @@ import {
   useRoute,
   type NavigationHelpers,
   type RouteProp,
-} from "@zynth/memory-router";
+} from "@zynth/router";
 
 // Define all route types
 type RootStackParams = {

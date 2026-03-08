@@ -1,5 +1,5 @@
 // ============================================================================
-// @zynth/memory-router
+// @zynth/router
 //
 // Memory-based navigation router for Zynth apps. Uses @zynth/screens for
 // transitions instead of platform-specific navigation controllers.

@@ -30,4 +30,4 @@ Represents a single view in the navigation stack.
 
 ## Usage
 
-This package is typically used internally by `@zynth/memory-router` or other high-level routers, but can be used directly for custom navigation implementations.
+This package is typically used internally by `@zynth/router` or other high-level routers, but can be used directly for custom navigation implementations.
