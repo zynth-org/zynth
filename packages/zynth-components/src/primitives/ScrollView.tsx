@@ -38,7 +38,7 @@ type ScrollCommand =
   | { type: "flashIndicators" }
   | { type: "lockAxis"; axis: Axis | null };
 
-export type ScrollController = {
+export type ScrollViewRef = {
   metrics: () => ScrollMetrics;
   isDragging: () => boolean;
   isDecelerating: () => boolean;
@@ -58,7 +58,7 @@ export type ScrollController = {
   lockAxis: (axis: Axis | null) => void;
 };
 
-export type InternalScrollController = ScrollController & {
+export type InternalScrollViewRef = ScrollViewRef & {
   __setHost?: (node: HostNode | null) => void;
   __applyMetrics?: (
     metrics: ScrollMetrics,
@@ -74,7 +74,7 @@ export const INITIAL_METRICS: ScrollMetrics = {
   zoomScale: 1,
 };
 
-export function createScrollController(): ScrollController {
+export function createScrollViewRef(): ScrollViewRef {
   const [metrics, setMetrics] = createSignal<ScrollMetrics>(INITIAL_METRICS);
   const [dragging, setDragging] = createSignal(false);
   const [decelerating, setDecelerating] = createSignal(false);
@@ -135,7 +135,7 @@ export function createScrollController(): ScrollController {
     }, delayMs);
   };
 
-  const controller: InternalScrollController = {
+  const controller: InternalScrollViewRef = {
     metrics,
     isDragging: dragging,
     isDecelerating: decelerating,
@@ -331,7 +331,7 @@ export type ScrollViewProps = {
   eventThrottleMs?: number;
   eventMinDisplacementPx?: number;
   bridgeCoalescing?: boolean;
-  controller?: ScrollController;
+  ref?: ((node: (HostNode & ScrollViewRef) | null) => void) | null;
   /** Optional native scroll guard overrides produced by `ScrollView.config(...)`. */
   config?: ScrollViewConfig;
   /** Manual content size override (width, height) for virtualized lists. */
@@ -398,7 +398,7 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
     "scrollSnapAlign",
     "scrollSnapStop",
     "scrollPadding",
-    "controller",
+    "ref",
     "onScroll",
     "onScrollBeginDrag",
     "onScrollEndDrag",
@@ -436,9 +436,14 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
   });
 
   const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
-  const controller = createMemo(
-    () => local.controller as InternalScrollController | undefined,
-  );
+  const imperativeRef = createScrollViewRef() as InternalScrollViewRef;
+  let disposed = false;
+
+  const assignRef = (node: (HostNode & ScrollViewRef) | null) => {
+    if (typeof local.ref === "function") {
+      local.ref(node);
+    }
+  };
 
   const [metrics, setMetrics] = createSignal<ScrollMetrics>(INITIAL_METRICS);
   const [isDragging, setIsDragging] = createSignal(false);
@@ -479,7 +484,7 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
     if (state?.decelerating !== undefined) {
       setIsDecelerating(state.decelerating);
     }
-    controller()?.__applyMetrics?.(nextMetrics, {
+    imperativeRef.__applyMetrics?.(nextMetrics, {
       dragging: state?.dragging ?? isDragging(),
       decelerating: state?.decelerating ?? isDecelerating(),
     });
@@ -495,35 +500,38 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
   };
 
   const handleScroll = (event: any) => {
+    if (disposed) return;
     const normal = updateFromEvent(event);
     local.onScroll?.(normal);
   };
 
   const handleScrollBeginDrag = (event: any) => {
+    if (disposed) return;
     const normal = updateFromEvent(event, { dragging: true });
     local.onScrollBeginDrag?.(normal);
   };
 
   const handleScrollEndDrag = (event: any) => {
+    if (disposed) return;
     const normal = updateFromEvent(event, { dragging: false });
     local.onScrollEndDrag?.(normal);
   };
 
   const handleMomentumScrollBegin = (event: any) => {
+    if (disposed) return;
     const normal = updateFromEvent(event, { decelerating: true });
     local.onMomentumScrollBegin?.(normal);
   };
 
   const handleMomentumScrollEnd = (event: any) => {
+    if (disposed) return;
     const normal = updateFromEvent(event, { decelerating: false });
     local.onMomentumScrollEnd?.(normal);
   };
 
   createEffect(() => {
-    const ctrl = controller();
-    if (!ctrl) return;
-    ctrl.__setHost?.(hostNode());
-    ctrl.__applyMetrics?.(metrics(), {
+    imperativeRef.__setHost?.(hostNode());
+    imperativeRef.__applyMetrics?.(metrics(), {
       dragging: isDragging(),
       decelerating: isDecelerating(),
     });
@@ -597,13 +605,44 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
   });
 
   onCleanup(() => {
-    controller()?.__setHost?.(null);
+    disposed = true;
+    const node = hostNode();
+    if (node) {
+      setProperty(node, "onScroll", null);
+      setProperty(node, "onScrollBeginDrag", null);
+      setProperty(node, "onScrollEndDrag", null);
+      setProperty(node, "onMomentumScrollBegin", null);
+      setProperty(node, "onMomentumScrollEnd", null);
+      setProperty(node, "onLayout", null);
+    }
+    imperativeRef.__setHost?.(null);
+    assignRef(null);
   });
 
   if (Platform.OS === OS.IOS && local.contentSize) {
     return (
-      <recycler-scroll-view
-        ref={(node: any) => setHostNode((node as unknown as HostNode) ?? null)}
+        <recycler-scroll-view
+        ref={(node: any) => {
+          const host = (node as unknown as HostNode) ?? null;
+          setHostNode(host);
+          if (host) {
+            const imperativeNode = host as HostNode & ScrollViewRef;
+            imperativeNode.metrics = imperativeRef.metrics;
+            imperativeNode.isDragging = imperativeRef.isDragging;
+            imperativeNode.isDecelerating = imperativeRef.isDecelerating;
+            imperativeNode.scrollTo = imperativeRef.scrollTo;
+            imperativeNode.ui = imperativeRef.ui;
+            imperativeNode.scrollBy = imperativeRef.scrollBy;
+            imperativeNode.stop = imperativeRef.stop;
+            imperativeNode.flashScrollIndicators =
+              imperativeRef.flashScrollIndicators;
+            imperativeNode.getMetricsNow = imperativeRef.getMetricsNow;
+            imperativeNode.lockAxis = imperativeRef.lockAxis;
+            assignRef(imperativeNode);
+            return;
+          }
+          assignRef(null);
+        }}
         testID={local.testID}
       >
         <View style={containerStyle()}>{resolvedChildren()}</View>
@@ -613,7 +652,27 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
 
   return (
     <scroll-view
-      ref={(node: any) => setHostNode((node as unknown as HostNode) ?? null)}
+      ref={(node: any) => {
+        const host = (node as unknown as HostNode) ?? null;
+        setHostNode(host);
+        if (host) {
+          const imperativeNode = host as HostNode & ScrollViewRef;
+          imperativeNode.metrics = imperativeRef.metrics;
+          imperativeNode.isDragging = imperativeRef.isDragging;
+          imperativeNode.isDecelerating = imperativeRef.isDecelerating;
+          imperativeNode.scrollTo = imperativeRef.scrollTo;
+          imperativeNode.ui = imperativeRef.ui;
+          imperativeNode.scrollBy = imperativeRef.scrollBy;
+          imperativeNode.stop = imperativeRef.stop;
+          imperativeNode.flashScrollIndicators =
+            imperativeRef.flashScrollIndicators;
+          imperativeNode.getMetricsNow = imperativeRef.getMetricsNow;
+          imperativeNode.lockAxis = imperativeRef.lockAxis;
+          assignRef(imperativeNode);
+          return;
+        }
+        assignRef(null);
+      }}
       testID={local.testID}
     >
       <View style={containerStyle()}>{resolvedChildren()}</View>

@@ -11,9 +11,9 @@ import type { ParentComponent } from "solid-js";
 import type { HostNode, Style } from "@zynth/core";
 import { setProperty } from "@zynth/core";
 import {
-  createPressableController,
+  createPressableRef,
   type InternalPressableController,
-  type PressableController,
+  type PressableRef,
 } from "./pressable/controller";
 import type { KeyEvent, Modifiers } from "./events";
 export type { KeyEvent } from "./events";
@@ -79,7 +79,7 @@ export type PressableProps = {
   pointerEvents?: "auto" | "none" | "box-none" | "box-only";
   enableGlassIOS?: boolean;
   tintColor?: string;
-  controller?: PressableController;
+  ref?: (node: (HostNode & PressableRef) | null) => void;
   asChild?: boolean;
   accessibilityLabel?: string;
   accessibilityHint?: string;
@@ -207,7 +207,7 @@ export const Pressable: ParentComponent<PressableProps> = (props) => {
     "pointerEvents",
     "enableGlassIOS",
     "tintColor",
-    "controller",
+    "ref",
     "asChild",
     "accessibilityLabel",
     "accessibilityHint",
@@ -226,12 +226,9 @@ export const Pressable: ParentComponent<PressableProps> = (props) => {
     "onPressChange",
   ]);
 
-  const providedController = () =>
-    (local.controller as InternalPressableController | undefined) ?? null;
-
-  const controller: InternalPressableController =
-    providedController() ??
-    createPressableController({ disabled: local.disabled });
+  const controller: InternalPressableController = createPressableRef({
+    disabled: local.disabled,
+  });
 
   const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
 
@@ -243,6 +240,7 @@ export const Pressable: ParentComponent<PressableProps> = (props) => {
 
   onCleanup(() => {
     controller.__attachHost?.(null);
+    local.ref?.(null);
   });
 
   createEffect(() => {
@@ -461,7 +459,26 @@ export const Pressable: ParentComponent<PressableProps> = (props) => {
 
   return (
     <pressable
-      ref={(node: any) => setHostNode((node as unknown as HostNode) ?? null)}
+      ref={(node: any) => {
+        const host = (node as unknown as HostNode) ?? null;
+        setHostNode(host);
+        if (host) {
+          const imperativeNode = host as HostNode & PressableRef;
+          imperativeNode.pressed = controller.pressed;
+          imperativeNode.hovered = controller.hovered;
+          imperativeNode.focused = controller.focused;
+          imperativeNode.disabled = controller.disabled;
+          imperativeNode.longPressActive = controller.longPressActive;
+          imperativeNode.focus = controller.focus;
+          imperativeNode.blur = controller.blur;
+          imperativeNode.click = controller.click;
+          imperativeNode.cancel = controller.cancel;
+          imperativeNode.setDisabled = controller.setDisabled;
+          local.ref?.(imperativeNode);
+          return;
+        }
+        local.ref?.(null);
+      }}
       pointerEvents={pointerBehavior()}
       accessibilityLabel={local.accessibilityLabel}
       accessibilityHint={local.accessibilityHint}

@@ -40,14 +40,18 @@ export class AppleStyleScrollController implements ScrollStopController {
   private blocked = false;
   private blockStartTime = 0;
   private maxBlockDuration = 500; // Maximum time to block scroll (ms)
-  private scrollControllerRef: any = null;
+  private scrollRef: { stop?: () => void } | null = null;
 
-  constructor(scrollController?: any) {
-    this.scrollControllerRef = scrollController;
+  constructor(scrollRef?: { stop?: () => void } | null) {
+    this.scrollRef = scrollRef ?? null;
   }
 
-  setScrollController(controller: any) {
-    this.scrollControllerRef = controller;
+  setScrollRef(ref: { stop?: () => void } | null) {
+    this.scrollRef = ref;
+  }
+
+  setScrollController(controller: { stop?: () => void } | null) {
+    this.setScrollRef(controller);
   }
 
   shouldStopScroll(
@@ -100,9 +104,7 @@ export class AppleStyleScrollController implements ScrollStopController {
     this.blocked = true;
     this.blockStartTime = Date.now();
 
-    // TODO: Call native scroll controller to stop scroll
-    // This would require exposing a method on the scroll controller
-    // For now, we log it - the integration with FlatList will handle it
+    this.scrollRef?.stop?.();
     console.log("[ScrollController] Scroll STOPPED imperatively");
   }
 

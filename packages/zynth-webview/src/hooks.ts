@@ -1,25 +1,25 @@
-import type { WebViewController, WebViewControllerApi } from "./types";
+import type { WebViewMethods, WebViewRefHandle } from "./types";
 
 const noop = () => {};
 const noopWithString = (_value: string) => {};
 
-export function createWebViewController(): WebViewController {
-  const controller: WebViewController = {
+export function createWebViewRefHandle(): WebViewRefHandle {
+  const handle: WebViewRefHandle = {
     api: null,
-    reload: () => (controller.api ?? fallbackApi).reload(),
-    goBack: () => (controller.api ?? fallbackApi).goBack(),
-    goForward: () => (controller.api ?? fallbackApi).goForward(),
-    stopLoading: () => (controller.api ?? fallbackApi).stopLoading(),
+    reload: () => (handle.api ?? fallbackApi).reload(),
+    goBack: () => (handle.api ?? fallbackApi).goBack(),
+    goForward: () => (handle.api ?? fallbackApi).goForward(),
+    stopLoading: () => (handle.api ?? fallbackApi).stopLoading(),
     injectJavaScript: (script: string) =>
-      (controller.api ?? fallbackApi).injectJavaScript(script),
+      (handle.api ?? fallbackApi).injectJavaScript(script),
     postMessage: (message: string) =>
-      (controller.api ?? fallbackApi).postMessage(message),
+      (handle.api ?? fallbackApi).postMessage(message),
   };
 
-  return controller;
+  return handle;
 }
 
-const fallbackApi: WebViewControllerApi = {
+const fallbackApi: WebViewMethods = {
   reload: noop,
   goBack: noop,
   goForward: noop,

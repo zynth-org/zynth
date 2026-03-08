@@ -19,7 +19,7 @@ import { View } from "./View";
 
 export type SnapPoint = number | `${number}%`;
 
-export interface BottomSheetController {
+export interface BottomSheetRef {
   open: (index?: number) => void;
   close: () => void;
   snapTo: (index: number) => void;
@@ -31,7 +31,7 @@ type BottomSheetCommand =
   | { type: "close" }
   | { type: "snapTo"; index: number };
 
-type InternalController = BottomSheetController & {
+type InternalRef = BottomSheetRef & {
   __attachHost: (node: HostNode | null) => void;
   __updateIndex: (index: number) => void;
   __setOpenState?: (open: boolean) => void;
@@ -39,7 +39,7 @@ type InternalController = BottomSheetController & {
 
 export interface BottomSheetProps {
   children?: JSX.Element;
-  controller?: BottomSheetController;
+  ref?: (node: (HostNode & BottomSheetRef) | null) => void;
   snapPoints?: SnapPoint[];
   initialSnapIndex?: number;
   open?: boolean;
@@ -95,18 +95,6 @@ const resolveSnapPointToDp = (
   return Math.max(0, (numeric / 100) * windowHeight);
 };
 
-const asInternalController = (
-  controller?: BottomSheetController | null,
-): InternalController | undefined => {
-  if (
-    controller &&
-    typeof (controller as InternalController).__attachHost === "function"
-  ) {
-    return controller as InternalController;
-  }
-  return undefined;
-};
-
 const sendCommand = (host: HostNode | null, command: BottomSheetCommand) => {
   if (!host) return;
   setProperty(host, "__command", JSON.stringify(command));
@@ -133,20 +121,20 @@ const runWithSurface = <T,>(surfaceId: number, work: () => T): T => {
   }
 };
 
-export const createBottomSheetController = (): BottomSheetController => {
+export const createBottomSheetRef = (): BottomSheetRef => {
   let host: HostNode | null = null;
   let currentIndex = 0;
 
-  const controller: InternalController = {
+  const handle: InternalRef = {
     open: (index) => {
-      controller.__setOpenState?.(true);
+      handle.__setOpenState?.(true);
       sendCommand(
         host,
         index != null ? { type: "open", index } : { type: "open" },
       );
     },
     close: () => {
-      controller.__setOpenState?.(false);
+      handle.__setOpenState?.(false);
       sendCommand(host, { type: "close" });
     },
     snapTo: (index) => {
@@ -161,13 +149,13 @@ export const createBottomSheetController = (): BottomSheetController => {
     },
   };
 
-  return controller;
+  return handle;
 };
 
 export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
   const [local] = splitProps(props, [
     "children",
-    "controller",
+    "ref",
     "snapPoints",
     "initialSnapIndex",
     "open",
@@ -186,6 +174,7 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
   ]);
 
   const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
+  let currentIndex = local.initialSnapIndex ?? 0;
   const [lastSentOpen, setLastSentOpen] = createSignal<boolean | null>(null);
   const [uncontrolledOpen, setUncontrolledOpen] = createSignal(false);
   let ignoreCloseUntil = 0;
@@ -266,23 +255,37 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
   }));
   const useWindowWrapper = () => Platform.OS === "android";
 
-  const controller = asInternalController(local.controller);
-
-  if (controller) {
-    controller.__setOpenState = (open) => {
-      if (!isControlled()) {
-        setUncontrolledOpen(open);
-      }
-    };
-  }
-
   const attachHost = (node: HostNode | null) => {
     setHostNode(node);
-    controller?.__attachHost(node);
+    if (node) {
+      const imperativeNode = node as HostNode & BottomSheetRef;
+      imperativeNode.open = (index) => {
+        if (!isControlled()) {
+          setUncontrolledOpen(true);
+        }
+        sendCommand(
+          node,
+          index != null ? { type: "open", index } : { type: "open" },
+        );
+      };
+      imperativeNode.close = () => {
+        if (!isControlled()) {
+          setUncontrolledOpen(false);
+        }
+        sendCommand(node, { type: "close" });
+      };
+      imperativeNode.snapTo = (index) => {
+        sendCommand(node, { type: "snapTo", index });
+      };
+      imperativeNode.getCurrentIndex = () => currentIndex;
+      local.ref?.(imperativeNode);
+      return;
+    }
+    local.ref?.(null);
   };
 
   onCleanup(() => {
-    controller?.__attachHost(null);
+    local.ref?.(null);
   });
 
   createEffect(() => {
@@ -347,13 +350,13 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
       const index =
         typeof payload.index === "number" && Number.isFinite(payload.index)
           ? payload.index
-          : (controller?.getCurrentIndex() ?? 0);
+          : currentIndex;
       const progress =
         typeof payload.progress === "number" &&
         Number.isFinite(payload.progress)
           ? payload.progress
           : 0;
-      controller?.__updateIndex(index);
+      currentIndex = index;
       local.onSnapChange?.({ index, progress });
     };
 

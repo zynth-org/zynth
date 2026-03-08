@@ -20,7 +20,7 @@ export interface DatePickerProps {
   onRangeChange?: (value: DateRangeValue) => void;
   onCancel?: () => void;
   onDismiss?: () => void;
-  controller?: DatePickerController;
+  ref?: (node: (HostNode & DatePickerRef) | null) => void;
   style?: Style;
   children?: JSX.Element;
   testID?: string;
@@ -46,7 +46,7 @@ type DateRangeEvent = {
   end?: number;
 };
 
-export interface DatePickerController {
+export interface DatePickerRef {
   open: () => void;
   dismiss: () => void;
   /** @internal */
@@ -55,7 +55,7 @@ export interface DatePickerController {
 
 type DatePickerCommand = { type: "show"; __ts?: number } | { type: "dismiss"; __ts?: number };
 
-export function createDatePickerController(): DatePickerController {
+export function createDatePickerRef(): DatePickerRef {
   let host: HostNode | null = null;
 
   const issueCommand = (command: DatePickerCommand) => {
@@ -63,7 +63,7 @@ export function createDatePickerController(): DatePickerController {
     setProperty(host, "__command", { ...command, __ts: Date.now() });
   };
 
-  const controller: DatePickerController = {
+  const controller: DatePickerRef = {
     open() {
       issueCommand({ type: "show" });
     },
@@ -79,7 +79,7 @@ export function createDatePickerController(): DatePickerController {
   return controller;
 }
 
-export const useDatePickerController = () => createDatePickerController();
+export const useDatePickerRef = () => createDatePickerRef();
 
 const toTimestamp = (value?: number | Date | null): number | undefined => {
   if (value == null) return undefined;
@@ -136,7 +136,7 @@ const DatePickerRoot: ParentComponent<DatePickerProps> = (props) => {
     "onRangeChange",
     "onCancel",
     "onDismiss",
-    "controller",
+    "ref",
     "style",
     "children",
     "testID",
@@ -167,19 +167,26 @@ const DatePickerRoot: ParentComponent<DatePickerProps> = (props) => {
     };
 
   const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
-  const controller = () => local.controller ?? null;
+  onCleanup(() => local.ref?.(null));
 
-  createEffect(() => {
-    controller()?.__attachHost?.(hostNode());
-  });
-
-  onCleanup(() => {
-    controller()?.__attachHost?.(null);
-  });
+  const attachRef = (node: any) => {
+    const host = (node as HostNode) ?? null;
+    setHostNode(host);
+    if (!host) {
+      local.ref?.(null);
+      return;
+    }
+    const imperativeNode = host as HostNode & DatePickerRef;
+    imperativeNode.open = () =>
+      setProperty(host, "__command", { type: "show", __ts: Date.now() });
+    imperativeNode.dismiss = () =>
+      setProperty(host, "__command", { type: "dismiss", __ts: Date.now() });
+    local.ref?.(imperativeNode);
+  };
 
   return (
     <date-picker-view
-      ref={(node: any) => setHostNode((node as HostNode) ?? null)}
+      ref={attachRef}
       mode={local.mode ?? "date"}
       title={local.title}
       value={selection()}

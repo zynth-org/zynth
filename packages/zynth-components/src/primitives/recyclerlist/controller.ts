@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js";
-import type { ScrollController } from "../ScrollView";
+import type { ScrollViewRef } from "../ScrollView";
 
 export type ScrollToIndexOptions = {
   index: number;
@@ -23,7 +23,7 @@ export type RecyclerListController = {
   scrollToTop: (options?: ScrollToEdgeOptions) => void;
   scrollToEnd: (options?: ScrollToEdgeOptions) => void;
   flashScrollIndicators: () => void;
-  getNativeScrollRef: () => ScrollController | null;
+  getNativeScrollRef: () => ScrollViewRef | null;
 };
 
 type LayoutResolver = {
@@ -36,21 +36,21 @@ type LayoutResolver = {
 };
 
 type InternalRecyclerListController = RecyclerListController & {
-  __setScrollController: (controller: ScrollController | null) => void;
+  __setScrollRef: (ref: ScrollViewRef | null) => void;
   __setLayoutResolver: (resolver: LayoutResolver | null) => void;
 };
 
 export function createRecyclerListController(): RecyclerListController {
-  const [scrollController, setScrollController] =
-    createSignal<ScrollController | null>(null);
+  const [scrollRef, setScrollRef] =
+    createSignal<ScrollViewRef | null>(null);
   let resolver: LayoutResolver | null = null;
 
   const controller: InternalRecyclerListController = {
     scrollToIndex(options) {
-      const ctrl = scrollController();
+      const ctrl = scrollRef();
       if (!ctrl) {
         console.warn(
-          "[RecyclerListController] scrollToIndex called before controller attached"
+          "[RecyclerListController] scrollToIndex called before ref attached"
         );
         return;
       }
@@ -103,10 +103,10 @@ export function createRecyclerListController(): RecyclerListController {
     },
 
     scrollToOffset(options) {
-      const ctrl = scrollController();
+      const ctrl = scrollRef();
       if (!ctrl) {
         console.warn(
-          "[RecyclerListController] scrollToOffset called before controller attached"
+          "[RecyclerListController] scrollToOffset called before ref attached"
         );
         return;
       }
@@ -135,10 +135,10 @@ export function createRecyclerListController(): RecyclerListController {
     },
 
     scrollToTop(options = {}) {
-      const ctrl = scrollController();
+      const ctrl = scrollRef();
       if (!ctrl) {
         console.warn(
-          "[RecyclerListController] scrollToTop called before controller attached"
+          "[RecyclerListController] scrollToTop called before ref attached"
         );
         return;
       }
@@ -166,10 +166,10 @@ export function createRecyclerListController(): RecyclerListController {
     },
 
     scrollToEnd(options = {}) {
-      const ctrl = scrollController();
+      const ctrl = scrollRef();
       if (!ctrl) {
         console.warn(
-          "[RecyclerListController] scrollToEnd called before controller attached"
+          "[RecyclerListController] scrollToEnd called before ref attached"
         );
         return;
       }
@@ -200,10 +200,10 @@ export function createRecyclerListController(): RecyclerListController {
     },
 
     flashScrollIndicators() {
-      const ctrl = scrollController();
+      const ctrl = scrollRef();
       if (!ctrl) {
         console.warn(
-          "[RecyclerListController] flashScrollIndicators called before controller attached"
+          "[RecyclerListController] flashScrollIndicators called before ref attached"
         );
         return;
       }
@@ -211,11 +211,11 @@ export function createRecyclerListController(): RecyclerListController {
     },
 
     getNativeScrollRef() {
-      return scrollController();
+      return scrollRef();
     },
 
-    __setScrollController(ctrl) {
-      setScrollController(ctrl);
+    __setScrollRef(ctrl) {
+      setScrollRef(ctrl);
     },
 
     __setLayoutResolver(nextResolver) {

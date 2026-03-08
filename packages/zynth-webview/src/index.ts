@@ -1,5 +1,5 @@
 export { WebView } from "./WebView";
-export { createWebViewController } from "./hooks";
+export { createWebViewRefHandle } from "./hooks";
 
 export type {
   WebViewProps,
@@ -12,8 +12,9 @@ export type {
   WebViewNativeReadyEvent,
   WebViewNavigationState,
   WebViewCommand,
-  WebViewController,
-  WebViewControllerApi,
+  WebViewMethods,
+  WebViewRefHandle,
+  WebViewRef,
 } from "./types";
 
 import "./jsx.d.ts";

@@ -2,7 +2,7 @@ import { createSignal } from "solid-js";
 import type { HostNode } from "@zynth/core";
 import { setProperty } from "@zynth/core";
 
-export type PressableController = {
+export type PressableRef = {
   pressed: () => boolean;
   hovered: () => boolean;
   focused: () => boolean;
@@ -15,7 +15,7 @@ export type PressableController = {
   setDisabled: (value: boolean) => void;
 };
 
-export type InternalPressableController = PressableController & {
+export type InternalPressableController = PressableRef & {
   __attachHost?: (node: HostNode | null) => void;
   __applyState?: (partial: {
     pressed?: boolean;
@@ -33,9 +33,9 @@ type PressableCommand =
   | { type: "click" }
   | { type: "cancel" };
 
-export function createPressableController(opts?: {
+export function createPressableRef(opts?: {
   disabled?: boolean;
-}): PressableController {
+}): PressableRef {
   const [pressed, setPressed] = createSignal(false);
   const [hovered, setHovered] = createSignal(false);
   const [focused, setFocused] = createSignal(false);

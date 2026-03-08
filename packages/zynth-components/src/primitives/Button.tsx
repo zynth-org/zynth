@@ -59,7 +59,7 @@ type PendingBehavior =
   | { mode: "auto"; blockWhilePending?: boolean }
   | { mode: "manual" };
 
-export type ButtonController = {
+export type ButtonRef = {
   pressed: () => boolean;
   focused: () => boolean;
   hovered: () => boolean;
@@ -72,7 +72,7 @@ export type ButtonController = {
   setDisabled: (value: boolean) => void;
 };
 
-type ButtonControllerInternal = ButtonController & {
+type ButtonControllerInternal = ButtonRef & {
   __attachHost?: (node: HostNode | null) => void;
   __applyState?: (partial: {
     pressed?: boolean;
@@ -119,10 +119,10 @@ const resolveStyleBackgroundColor = (style: Style | undefined) => {
   return value;
 };
 
-export function createButtonController(opts?: {
+export function createButtonRef(opts?: {
   disabled?: boolean;
   loading?: boolean;
-}): ButtonController {
+}): ButtonRef {
   const [pressed, setPressed] = createSignal(false);
   const [focused, setFocused] = createSignal(false);
   const [hovered, setHovered] = createSignal(false);
@@ -233,7 +233,7 @@ export type ButtonProps = {
   disabledStyle?: Style;
   loadingStyle?: Style;
   asChild?: boolean;
-  controller?: ButtonController;
+  ref?: (node: (HostNode & ButtonRef) | null) => void;
   accessibilityLabel?: string;
   accessibilityHint?: string;
   testID?: string;
@@ -335,7 +335,7 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     "disabledStyle",
     "loadingStyle",
     "asChild",
-    "controller",
+    "ref",
     "accessibilityLabel",
     "accessibilityHint",
     "testID",
@@ -343,15 +343,10 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     "ready",
   ]);
 
-  const providedController = () =>
-    (local.controller as ButtonControllerInternal | undefined) ?? null;
-
-  const controller: ButtonControllerInternal =
-    providedController() ??
-    createButtonController({
-      disabled: local.disabled,
-      loading: local.loading,
-    });
+  const controller: ButtonControllerInternal = createButtonRef({
+    disabled: local.disabled,
+    loading: local.loading,
+  });
 
   const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
   controller.__attachHost?.(hostNode());
@@ -362,6 +357,7 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
 
   onCleanup(() => {
     controller.__attachHost?.(null);
+    local.ref?.(null);
   });
 
   createEffect(() => {
@@ -816,7 +812,26 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
 
   return (
     <button
-      ref={(node: any) => setHostNode((node as unknown as HostNode) ?? null)}
+      ref={(node: any) => {
+        const host = (node as unknown as HostNode) ?? null;
+        setHostNode(host);
+        if (host) {
+          const imperativeNode = host as HostNode & ButtonRef;
+          imperativeNode.pressed = controller.pressed;
+          imperativeNode.focused = controller.focused;
+          imperativeNode.hovered = controller.hovered;
+          imperativeNode.disabled = controller.disabled;
+          imperativeNode.loading = controller.loading;
+          imperativeNode.focus = controller.focus;
+          imperativeNode.blur = controller.blur;
+          imperativeNode.click = controller.click;
+          imperativeNode.setLoading = controller.setLoading;
+          imperativeNode.setDisabled = controller.setDisabled;
+          local.ref?.(imperativeNode);
+          return;
+        }
+        local.ref?.(null);
+      }}
       testID={local.testID}
     >
       <View style={contentStyle()}>

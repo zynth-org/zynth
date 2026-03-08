@@ -60,7 +60,7 @@ export interface WebViewCommand {
   payload?: string;
 }
 
-export interface WebViewControllerApi {
+export interface WebViewMethods {
   reload: () => void;
   goBack: () => void;
   goForward: () => void;
@@ -69,8 +69,10 @@ export interface WebViewControllerApi {
   postMessage: (message: string) => void;
 }
 
-export interface WebViewController extends WebViewControllerApi {
-  api: WebViewControllerApi | null;
+export type WebViewRef = HostNode & WebViewMethods;
+
+export interface WebViewRefHandle extends WebViewMethods {
+  api: WebViewMethods | null;
 }
 
 export interface WebViewProps {
@@ -85,8 +87,7 @@ export interface WebViewProps {
   onMessage?: (event: WebViewMessageEvent) => void;
   onNavigationStateChange?: (event: WebViewLoadEvent) => void;
   onNativeReady?: (event: WebViewNativeReadyEvent) => void;
-  controller?: WebViewController;
   key?: string | number;
-  ref?: (node: HostNode | null) => void;
+  ref?: (node: WebViewRef | null) => void;
   children?: JSX.Element;
 }

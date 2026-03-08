@@ -18,7 +18,7 @@ import {
   Button,
   SystemIcon,
   BottomSheet as ZynthBottomSheet,
-  createBottomSheetController,
+  type BottomSheetRef,
 } from "@zynth/components";
 import { Platform, OS, createSafeAreaInsets } from "@zynth/apis";
 import {
@@ -121,8 +121,7 @@ export function BottomSheetNavigator(
   );
   const [hasNavigated, setHasNavigated] = createSignal(false);
 
-  // Bottom Sheet Controller
-  const bsController = createBottomSheetController();
+  let bsRef: BottomSheetRef | null = null;
 
   const registerScreen = (name: string, config: ScreenConfig) => {
     if (!screenRegistry.has(name)) {
@@ -396,7 +395,7 @@ export function BottomSheetNavigator(
         // Defer the snap command to ensure snapPoints props have been updated on the native side
 
         requestAnimationFrame(() => {
-          bsController.snapTo(opts.initialSnapIndex!);
+          bsRef?.snapTo(opts.initialSnapIndex!);
         });
       }
     });
@@ -432,7 +431,9 @@ export function BottomSheetNavigator(
             initialSnapIndex={untrack(
               () => bottomSheetOptions().initialSnapIndex,
             )}
-            controller={bsController}
+            ref={(node) => {
+              bsRef = node;
+            }}
             open={true} // Always open as a navigator
             allowDismissOnInteraction={false} // Prevent closing the navigator by swipe by default? User can implement back behavior.
           >

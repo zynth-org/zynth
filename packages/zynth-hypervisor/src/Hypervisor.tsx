@@ -1,5 +1,11 @@
-import { createEffect, createSignal, mergeProps, JSX } from "solid-js";
-import { HypervisorController, HypervisorControllerApi } from "./hooks";
+import { createSignal, mergeProps, JSX } from "solid-js";
+import type { HostNode } from "@zynth/core";
+
+export interface HypervisorRef extends HostNode {
+  reload: () => void;
+  destroy: () => void;
+  postMessage: (payload: unknown) => void;
+}
 
 export interface HypervisorProps {
   source: { uri: string } | { code: string };
@@ -7,46 +13,47 @@ export interface HypervisorProps {
   fallback?: JSX.Element;
   onLoad?: () => void;
   onError?: (error: { message: string }) => void;
-  onMessage?: (message: any) => void;
-  controller?: HypervisorController; // Add controller prop
+  onMessage?: (message: unknown) => void;
+  ref?: (node: HypervisorRef | null) => void;
 }
 
 export function Hypervisor(props: HypervisorProps) {
   const merged = mergeProps({
     onLoad: () => {},
-    onError: (e: { message: string }) => console.error("Hypervisor Error:", e.message),
-    onMessage: (m: any) => {},
+    onError: (e: { message: string }) =>
+      console.error("Hypervisor Error:", e.message),
+    onMessage: (_m: unknown) => {},
   }, props);
 
   // Signals to imperatively trigger native methods
   const [reloadTrigger, setReloadTrigger] = createSignal(false);
   const [destroyTrigger, setDestroyTrigger] = createSignal(false);
-  const [postMessagePayload, setPostMessagePayload] = createSignal<any>(undefined);
+  const [postMessagePayload, setPostMessagePayload] = createSignal<unknown>(
+    undefined,
+  );
 
-  createEffect(() => {
-    if (merged.controller) {
-      // Connect controller actions to native view props
-      merged.controller.api = {
-        reload: () => {
-          setReloadTrigger(true);
-          // Reset after a short delay to allow native to pick it up
-          setTimeout(() => setReloadTrigger(false), 10);
-        },
-        destroy: () => {
-          setDestroyTrigger(true);
-          setTimeout(() => setDestroyTrigger(false), 10);
-        },
-        postMessage: (payload: any) => {
-          setPostMessagePayload(payload);
-          setTimeout(() => setPostMessagePayload(undefined), 10); // Clear payload after sending
-        }
+  const attachRef = (node: HypervisorRef | null) => {
+    if (node) {
+      node.reload = () => {
+        setReloadTrigger(true);
+        setTimeout(() => setReloadTrigger(false), 10);
+      };
+      node.destroy = () => {
+        setDestroyTrigger(true);
+        setTimeout(() => setDestroyTrigger(false), 10);
+      };
+      node.postMessage = (payload: unknown) => {
+        setPostMessagePayload(payload);
+        setTimeout(() => setPostMessagePayload(undefined), 10);
       };
     }
-  });
+    merged.ref?.(node);
+  };
 
   return (
     // @ts-ignore: Custom native element
     <zynth-hypervisor-view
+      ref={attachRef}
       style={merged.style}
       source={merged.source}
       onLoad={merged.onLoad}

@@ -5,26 +5,29 @@ import { JSX } from "solid-js"; // Import JSX for element types if needed
 // --- Host-side API ---
 
 // API for imperative control of the Hypervisor component from the Host
-export interface HypervisorControllerApi {
+export interface HypervisorBridgeRef {
   reload: () => void;
   destroy: () => void;
   postMessage: (payload: any) => void;
 }
 
-// Controller object passed to Hypervisor component
-export interface HypervisorController {
-  api?: HypervisorControllerApi;
+// Ref handle object that can be wired to a Hypervisor ref
+export interface HypervisorRefHandle {
+  api?: HypervisorBridgeRef;
 }
 
-export function useHypervisorController(): [HypervisorController, HypervisorControllerApi] {
-  const controller: HypervisorController = {}; 
+export function useHypervisorRefHandle(): [
+  HypervisorRefHandle,
+  HypervisorBridgeRef,
+] {
+  const handle: HypervisorRefHandle = {}; 
   
-  const api: HypervisorControllerApi = {
-    reload: () => controller.api?.reload(),
-    destroy: () => controller.api?.destroy(),
-    postMessage: (payload: any) => controller.api?.postMessage(payload),
+  const api: HypervisorBridgeRef = {
+    reload: () => handle.api?.reload(),
+    destroy: () => handle.api?.destroy(),
+    postMessage: (payload: any) => handle.api?.postMessage(payload),
   };
-  return [controller, api];
+  return [handle, api];
 }
 
 

@@ -14,7 +14,7 @@ import { View } from "./View";
 
 export type ModalAnimation = "fade" | "slide" | "zoom" | "none";
 
-export interface ModalController {
+export interface ModalRef {
   open: () => void;
   dismiss: () => void;
   /** @internal */
@@ -23,14 +23,14 @@ export interface ModalController {
 
 type ModalCommand = { type: "show" } | { type: "dismiss" };
 
-type InternalController = ModalController & {
+type InternalRef = ModalRef & {
   __attachHost: (node: HostNode | null) => void;
 };
 
 export interface ModalProps {
   open?: boolean;
   defaultOpen?: boolean;
-  controller?: ModalController;
+  ref?: (node: (HostNode & ModalRef) | null) => void;
   animation?: ModalAnimation;
   transparent?: boolean;
   overlayColor?: string;
@@ -59,22 +59,10 @@ const sendCommand = (host: HostNode | null, command: ModalCommand) => {
   setProperty(host, "__command", JSON.stringify(command));
 };
 
-const asInternalController = (
-  controller?: ModalController | null
-): InternalController | undefined => {
-  if (
-    controller &&
-    typeof (controller as InternalController).__attachHost === "function"
-  ) {
-    return controller as InternalController;
-  }
-  return undefined;
-};
-
-export const createModalController = (): ModalController => {
+export const createModalRef = (): ModalRef => {
   let host: HostNode | null = null;
 
-  const controller: InternalController = {
+  const handle: InternalRef = {
     open: () => {
       sendCommand(host, { type: "show" });
     },
@@ -86,16 +74,16 @@ export const createModalController = (): ModalController => {
     },
   };
 
-  return controller;
+  return handle;
 };
 
-export const useModalController = () => createModalController();
+export const useModalRef = () => createModalRef();
 
 export const Modal: ParentComponent<ModalProps> = (props) => {
   const [local] = splitProps(props, [
     "open",
     "defaultOpen",
-    "controller",
+    "ref",
     "animation",
     "transparent",
     "overlayColor",
@@ -154,19 +142,20 @@ export const Modal: ParentComponent<ModalProps> = (props) => {
     height: screenSize().height,
   }));
 
-  const controller = asInternalController(local.controller);
-
   const attachHost = (node: HostNode | null) => {
     host = node;
-    controller?.__attachHost(node);
+    if (node) {
+      const imperativeNode = node as HostNode & ModalRef;
+      imperativeNode.open = () => sendCommand(node, { type: "show" });
+      imperativeNode.dismiss = () => sendCommand(node, { type: "dismiss" });
+      local.ref?.(imperativeNode);
+    } else {
+      local.ref?.(null);
+    }
     if (node && resolvedOpen()) {
       setProperty(node, "open", true);
     }
   };
-
-  onCleanup(() => {
-    controller?.__attachHost(null);
-  });
 
   createEffect(() => {
     if (!host) return;

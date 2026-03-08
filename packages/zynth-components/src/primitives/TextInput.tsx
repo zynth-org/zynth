@@ -1,5 +1,5 @@
 import type { Component } from "solid-js";
-import { createEffect, createMemo, createSignal, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import type { HostNode, Style } from "@zynth/core";
 import { setProperty } from "@zynth/core";
 import type { KeyEvent } from "./events";
@@ -15,7 +15,7 @@ export type TextChangeEvent = {
   composing: boolean;
 };
 
-export type TextController = {
+export type TextInputRef = {
   text: () => string;
   setText: (value: string) => void;
   selection: () => Selection;
@@ -32,23 +32,23 @@ export type TextController = {
   cancelPending: () => void;
   driveFromValue?: boolean;
   /** @internal bridge for the primitive */
-  __attachInternal?: (ops: TextControllerBridge) => void;
+  __attachInternal?: (ops: TextInputRefBridge) => void;
   /** @internal helpers set from native events */
   __setTextFromNative?: (value: string) => void;
   __setSelectionFromNative?: (sel: Selection) => void;
 };
 
-type TextControllerBridge = {
+type TextInputRefBridge = {
   notifyNativeValue: (value: string) => void;
   notifyNativeSelection: (sel: Selection) => void;
   notifyEditing: (value: boolean) => void;
   notifyComposing: (value: boolean) => void;
 };
 
-export function useTextController(opts?: {
+export function useTextInputRef(opts?: {
   value?: string;
   driveFromValue?: boolean;
-}): TextController {
+}): TextInputRef {
   const [text, setText] = createSignal(opts?.value ?? "");
   const [selection, setSelection] = createSignal<Selection>({
     start: 0,
@@ -58,9 +58,9 @@ export function useTextController(opts?: {
   const [isComposing, setIsComposing] = createSignal(false);
   const [hasPending, setHasPending] = createSignal(false);
 
-  let bridge: TextControllerBridge | undefined;
+  let bridge: TextInputRefBridge | undefined;
 
-  const controller: TextController & {
+  const controller: TextInputRef & {
     __setEditing?: (value: boolean) => void;
     __setComposing?: (value: boolean) => void;
     __setTextFromNative?: (value: string) => void;
@@ -80,10 +80,10 @@ export function useTextController(opts?: {
     isComposing,
     hasPendingSync: hasPending,
     focus() {
-      console.warn("[zynth] TextController.focus is not hooked to native yet");
+      console.warn("[zynth] TextInputRef.focus is not hooked to native yet");
     },
     blur() {
-      console.warn("[zynth] TextController.blur is not hooked to native yet");
+      console.warn("[zynth] TextInputRef.blur is not hooked to native yet");
     },
     clear() {
       controller.setText("");
@@ -191,7 +191,7 @@ export interface TextInputProps {
   onCompositionEnd?: () => void;
   eventThrottleMs?: number;
   allowProgrammaticJumpDuringEdit?: boolean;
-  controller?: TextController;
+  ref?: (node: (HostNode & TextInputRef) | null) => void;
   style?: Style;
   testID?: string;
 }
@@ -202,9 +202,18 @@ type NativeSelectionEvent = { selection: Selection };
 type NativeKeyEvent = KeyEvent;
 
 export const TextInput: Component<TextInputProps> = (props) => {
-  const controller = createMemo(() => props.controller);
+  const controller = useTextInputRef({
+    value: props.value ?? props.defaultValue,
+    driveFromValue: props.value !== undefined,
+  }) as TextInputRef & {
+    __setEditing?: (value: boolean) => void;
+    __setComposing?: (value: boolean) => void;
+    __setTextFromNative?: (value: string) => void;
+    __setSelectionFromNative?: (sel: Selection) => void;
+  };
   const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
   let defaultAppliedNodeId: number | null = null;
+  onCleanup(() => props.ref?.(null));
 
   const isPotentiallySecure = createMemo(
     () => props.secureTextEntry !== undefined
@@ -221,7 +230,7 @@ export const TextInput: Component<TextInputProps> = (props) => {
   const handleChange = (event: NativeTextChangeEvent) => {
     props.onChange?.(event);
     if (typeof event.textAfter === "string") {
-      controller()?.__setTextFromNative?.(event.textAfter);
+      controller.__setTextFromNative?.(event.textAfter);
     }
     if (event.range) {
       const insertedLength = event.inserted?.length ?? 0;
@@ -230,38 +239,34 @@ export const TextInput: Component<TextInputProps> = (props) => {
         start: nextStart,
         end: nextStart,
       };
-      controller()?.__setSelectionFromNative?.(nextSelection);
+      controller.__setSelectionFromNative?.(nextSelection);
     }
-    const ctrl = controller();
-    (ctrl as any)?.__setComposing?.(event.composing);
+    controller.__setComposing?.(event.composing);
   };
 
   const handleChangeText = (payload: NativeTextPayload) => {
     if (typeof payload?.text === "string") {
       props.onChangeText?.(payload.text);
-      controller()?.__setTextFromNative?.(payload.text);
+      controller.__setTextFromNative?.(payload.text);
     }
-    const ctrl = controller();
-    (ctrl as any)?.__setComposing?.(false);
+    controller.__setComposing?.(false);
   };
 
   const handleSelectionChange = (payload: NativeSelectionEvent) => {
     const sel = payload?.selection;
     if (!sel) return;
     props.onSelectionChange?.(sel);
-    controller()?.__setSelectionFromNative?.(sel);
+    controller.__setSelectionFromNative?.(sel);
   };
 
   const handleFocus = () => {
     props.onFocus?.();
-    const ctrl = controller();
-    (ctrl as any)?.__setEditing?.(true);
+    controller.__setEditing?.(true);
   };
 
   const handleBlur = () => {
     props.onBlur?.();
-    const ctrl = controller();
-    (ctrl as any)?.__setEditing?.(false);
+    controller.__setEditing?.(false);
   };
 
   const handleSubmit = (payload: NativeTextPayload) => {
@@ -274,23 +279,20 @@ export const TextInput: Component<TextInputProps> = (props) => {
 
   const handleCompositionStart = () => {
     props.onCompositionStart?.();
-    const ctrl = controller();
-    (ctrl as any)?.__setComposing?.(true);
+    controller.__setComposing?.(true);
   };
   const handleCompositionEnd = () => {
     props.onCompositionEnd?.();
-    const ctrl = controller();
-    (ctrl as any)?.__setComposing?.(false);
+    controller.__setComposing?.(false);
   };
 
   createEffect(() => {
     const node = hostNode();
-    const ctrl = controller();
-    if (!node || !ctrl?.__attachInternal) return;
+    if (!node || !controller.__attachInternal) return;
 
     const nodeId = (node as any)?.id;
     // console.log("[TextInput] attach controller bridge", { nodeId });
-    const bridge: TextControllerBridge = {
+    const bridge: TextInputRefBridge = {
       notifyNativeValue(value) {
         // console.log("[TextInput] bridge notifyNativeValue", { nodeId, value });
         setProperty(node, "value", value);
@@ -310,7 +312,7 @@ export const TextInput: Component<TextInputProps> = (props) => {
       },
     };
 
-    ctrl.__attachInternal(bridge);
+    controller.__attachInternal(bridge);
   });
 
   createEffect(() => {
@@ -409,15 +411,63 @@ export const TextInput: Component<TextInputProps> = (props) => {
       when={isPotentiallySecure()}
       fallback={
         <text-input
-          ref={(node: Element | null) =>
-            setHostNode((node as unknown as HostNode) ?? null)
+          ref={(node: (HostNode & TextInputRef) | null) =>
+            (() => {
+              const host = node as HostNode | null;
+              setHostNode(host);
+              if (!host) {
+                props.ref?.(null);
+                return;
+              }
+              const imperativeNode = host as HostNode & TextInputRef;
+              imperativeNode.text = controller.text;
+              imperativeNode.setText = controller.setText;
+              imperativeNode.selection = controller.selection;
+              imperativeNode.setSelection = controller.setSelection;
+              imperativeNode.isEditing = controller.isEditing;
+              imperativeNode.isComposing = controller.isComposing;
+              imperativeNode.hasPendingSync = controller.hasPendingSync;
+              imperativeNode.focus = () => setProperty(host, "requestFocus", true);
+              imperativeNode.blur = () => setProperty(host, "requestBlur", true);
+              imperativeNode.clear = controller.clear;
+              imperativeNode.insertAtCursor = controller.insertAtCursor;
+              imperativeNode.replaceRange = controller.replaceRange;
+              imperativeNode.commit = controller.commit;
+              imperativeNode.cancelPending = controller.cancelPending;
+              imperativeNode.driveFromValue = controller.driveFromValue;
+              props.ref?.(imperativeNode);
+            })()
           }
         />
       }
     >
       <secure-text-input
-        ref={(node: Element | null) =>
-          setHostNode((node as unknown as HostNode) ?? null)
+        ref={(node: (HostNode & TextInputRef) | null) =>
+          (() => {
+            const host = node as HostNode | null;
+            setHostNode(host);
+            if (!host) {
+              props.ref?.(null);
+              return;
+            }
+            const imperativeNode = host as HostNode & TextInputRef;
+            imperativeNode.text = controller.text;
+            imperativeNode.setText = controller.setText;
+            imperativeNode.selection = controller.selection;
+            imperativeNode.setSelection = controller.setSelection;
+            imperativeNode.isEditing = controller.isEditing;
+            imperativeNode.isComposing = controller.isComposing;
+            imperativeNode.hasPendingSync = controller.hasPendingSync;
+            imperativeNode.focus = () => setProperty(host, "requestFocus", true);
+            imperativeNode.blur = () => setProperty(host, "requestBlur", true);
+            imperativeNode.clear = controller.clear;
+            imperativeNode.insertAtCursor = controller.insertAtCursor;
+            imperativeNode.replaceRange = controller.replaceRange;
+            imperativeNode.commit = controller.commit;
+            imperativeNode.cancelPending = controller.cancelPending;
+            imperativeNode.driveFromValue = controller.driveFromValue;
+            props.ref?.(imperativeNode);
+          })()
         }
       />
     </Show>

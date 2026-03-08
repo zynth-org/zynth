@@ -1,8 +1,8 @@
 import { createSignal } from "solid-js";
-import type { ScrollController } from "../ScrollView";
+import type { ScrollViewRef } from "../ScrollView";
 
 /**
- * FlatListController - Imperative API for programmatic scrolling
+ * FlatListRef - Imperative API for programmatic scrolling
  *
  * Provides deterministic scroll control and utilities for testing and UX.
  * All scroll operations use the same offset math as item binding, ensuring
@@ -46,7 +46,7 @@ export type ScrollToEdgeOptions = {
   animated?: boolean;
 };
 
-export type FlatListController = {
+export type FlatListRef = {
   /**
    * Scroll to a specific item index.
    * Uses the same offset math as item binding for pixel-perfect positioning.
@@ -86,14 +86,14 @@ export type FlatListController = {
   recordInteraction: () => void;
 
   /**
-   * Escape hatch: direct access to the underlying ScrollView controller.
+   * Escape hatch: direct access to the underlying ScrollView ref.
    * Use sparingly - prefer the typed methods above.
    */
-  getNativeScrollRef: () => ScrollController | null;
+  getNativeScrollRef: () => ScrollViewRef | null;
 };
 
-type InternalFlatListController = FlatListController & {
-  __setScrollController: (controller: ScrollController | null) => void;
+type InternalFlatListController = FlatListRef & {
+  __setScrollRef: (ref: ScrollViewRef | null) => void;
   __setMetadata: (metadata: {
     itemSize: number;
     horizontal: boolean;
@@ -102,20 +102,20 @@ type InternalFlatListController = FlatListController & {
   __triggerRecompute: () => number; // Returns recompute ID
 };
 
-export function createFlatListController(): FlatListController {
-  const [scrollController, setScrollController] =
-    createSignal<ScrollController | null>(null);
+export function createFlatListRef(): FlatListRef {
+  const [scrollRef, setScrollRef] =
+    createSignal<ScrollViewRef | null>(null);
   const [itemSize, setItemSize] = createSignal(0);
   const [horizontal, setHorizontal] = createSignal(false);
   const [dataLength, setDataLength] = createSignal(0);
   const [recomputeId, setRecomputeId] = createSignal(0);
 
-  const controller: InternalFlatListController = {
+  const refHandle: InternalFlatListController = {
     scrollToIndex(options) {
-      const ctrl = scrollController();
+      const ctrl = scrollRef();
       if (!ctrl) {
         console.warn(
-          "[FlatListController] scrollToIndex called before controller attached"
+          "[FlatListRef] scrollToIndex called before ref attached"
         );
         return;
       }
@@ -124,7 +124,7 @@ export function createFlatListController(): FlatListController {
       const len = dataLength();
       if (!size || !len) {
         console.warn(
-          "[FlatListController] scrollToIndex called with invalid metadata"
+          "[FlatListRef] scrollToIndex called with invalid metadata"
         );
         return;
       }
@@ -168,10 +168,10 @@ export function createFlatListController(): FlatListController {
     },
 
     scrollToOffset(options) {
-      const ctrl = scrollController();
+      const ctrl = scrollRef();
       if (!ctrl) {
         console.warn(
-          "[FlatListController] scrollToOffset called before controller attached"
+          "[FlatListRef] scrollToOffset called before ref attached"
         );
         return;
       }
@@ -187,10 +187,10 @@ export function createFlatListController(): FlatListController {
     },
 
     scrollToTop(options = {}) {
-      const ctrl = scrollController();
+      const ctrl = scrollRef();
       if (!ctrl) {
         console.warn(
-          "[FlatListController] scrollToTop called before controller attached"
+          "[FlatListRef] scrollToTop called before ref attached"
         );
         return;
       }
@@ -205,10 +205,10 @@ export function createFlatListController(): FlatListController {
     },
 
     scrollToEnd(options = {}) {
-      const ctrl = scrollController();
+      const ctrl = scrollRef();
       if (!ctrl) {
         console.warn(
-          "[FlatListController] scrollToEnd called before controller attached"
+          "[FlatListRef] scrollToEnd called before ref attached"
         );
         return;
       }
@@ -219,7 +219,7 @@ export function createFlatListController(): FlatListController {
 
       if (!size || !len) {
         console.warn(
-          "[FlatListController] scrollToEnd called with invalid metadata"
+          "[FlatListRef] scrollToEnd called with invalid metadata"
         );
         return;
       }
@@ -240,10 +240,10 @@ export function createFlatListController(): FlatListController {
     },
 
     flashScrollIndicators() {
-      const ctrl = scrollController();
+      const ctrl = scrollRef();
       if (!ctrl) {
         console.warn(
-          "[FlatListController] flashScrollIndicators called before controller attached"
+          "[FlatListRef] flashScrollIndicators called before ref attached"
         );
         return;
       }
@@ -262,11 +262,11 @@ export function createFlatListController(): FlatListController {
     },
 
     getNativeScrollRef() {
-      return scrollController();
+      return scrollRef();
     },
 
-    __setScrollController(ctrl) {
-      setScrollController(ctrl);
+    __setScrollRef(ctrl) {
+      setScrollRef(ctrl);
     },
 
     __setMetadata(metadata) {
@@ -280,5 +280,5 @@ export function createFlatListController(): FlatListController {
     },
   };
 
-  return controller;
+  return refHandle;
 }

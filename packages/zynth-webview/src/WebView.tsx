@@ -2,7 +2,7 @@ import { createEffect, createSignal, mergeProps, onCleanup, splitProps } from "s
 import type { ParentComponent } from "solid-js";
 import type { HostNode } from "@zynth/core";
 import { setProperty } from "@zynth/core";
-import type { WebViewCommand, WebViewControllerApi, WebViewProps } from "./types";
+import type { WebViewCommand, WebViewProps, WebViewRef } from "./types";
 
 const noopRef = () => {};
 const toNativeEvent = <T,>(event: T): { nativeEvent: T } => {
@@ -33,7 +33,6 @@ export const WebView: ParentComponent<WebViewProps> = (props) => {
     "onMessage",
     "onNavigationStateChange",
     "onNativeReady",
-    "controller",
     "ref",
   ]);
 
@@ -54,24 +53,22 @@ export const WebView: ParentComponent<WebViewProps> = (props) => {
     setTimeout(() => setCommand(undefined), 10);
   };
 
-  createEffect(() => {
-    if (!local.controller) return;
-
-    const api: WebViewControllerApi = {
-      reload: () => queueCommand("reload"),
-      goBack: () => queueCommand("goBack"),
-      goForward: () => queueCommand("goForward"),
-      stopLoading: () => queueCommand("stopLoading"),
-      injectJavaScript: (script: string) => queueCommand("injectJavaScript", script),
-      postMessage: (message: string) => queueCommand("postMessage", message),
-    };
-
-    local.controller.api = api;
-  });
-
   const refProp = (node: HostNode | null) => {
     setHostNode(node);
-    (local.ref ?? noopRef)(node);
+    if (node) {
+      const refNode = node as WebViewRef;
+      refNode.reload = () => queueCommand("reload");
+      refNode.goBack = () => queueCommand("goBack");
+      refNode.goForward = () => queueCommand("goForward");
+      refNode.stopLoading = () => queueCommand("stopLoading");
+      refNode.injectJavaScript = (script: string) =>
+        queueCommand("injectJavaScript", script);
+      refNode.postMessage = (message: string) =>
+        queueCommand("postMessage", message);
+      (local.ref ?? noopRef)(refNode);
+      return;
+    }
+    (local.ref ?? noopRef)(null);
   };
 
   const handleLoadStart = (event: any) =>

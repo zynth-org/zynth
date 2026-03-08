@@ -12,15 +12,15 @@ import {
 } from "solid-js";
 import type { Accessor, Setter } from "solid-js";
 import { Platform, OS } from "@zynth/apis";
-import type { Style } from "@zynth/core";
-import { ScrollView, createScrollController } from "./ScrollView";
+import type { HostNode, Style } from "@zynth/core";
+import { ScrollView, type ScrollViewRef } from "./ScrollView";
 import type {
   ScrollEvent,
   MaintainVisibleContentPosition,
   ScrollViewConfig,
 } from "./ScrollView";
 import { View, type LayoutChangeEvent } from "./View";
-import type { FlatListController } from "./flatlist/controller";
+import type { FlatListRef } from "./flatlist/controller";
 
 export type ItemSeparatorProps<T> = {
   leadingItem: T;
@@ -52,7 +52,7 @@ export type FlatListProps<T> = {
   style?: Style;
   contentContainerStyle?: Style;
   maintainVisibleContentPosition?: MaintainVisibleContentPosition;
-  controller?: FlatListController;
+  ref?: (node: (HostNode & FlatListRef) | null) => void;
   scrollViewConfig?: ScrollViewConfig;
   scrollEventThrottleMs?: number;
   scrollEventMinDisplacementPx?: number;
@@ -236,7 +236,8 @@ export function FlatList<T>(props: FlatListProps<T>) {
     }
   };
 
-  const scrollController = createScrollController();
+  const [scrollRef, setScrollRef] =
+    createSignal<ScrollViewRef | null>(null);
 
   const [viewportSize, setViewportSize] = createSignal(0);
   let lastOffset = 0;
@@ -244,31 +245,6 @@ export function FlatList<T>(props: FlatListProps<T>) {
 
   const isInverted = createMemo(() => props.inverted ?? false);
 
-  createEffect(() => {
-    const controller = props.controller as any;
-    if (!controller) return;
-    if (typeof controller.__setScrollController === "function") {
-      controller.__setScrollController(scrollController);
-    }
-    onCleanup(() => {
-      if (typeof controller.__setScrollController === "function") {
-        controller.__setScrollController(null);
-      }
-      if (typeof controller.__setLayoutResolver === "function") {
-        controller.__setLayoutResolver(null);
-      }
-    });
-  });
-
-  createEffect(() => {
-    const controller = props.controller as any;
-    if (!controller || typeof controller.__setMetadata !== "function") return;
-    controller.__setMetadata({
-      itemSize: layoutEstimate(),
-      horizontal: !!props.horizontal,
-      dataLength: props.data.length,
-    });
-  });
 
   const estimatedItemSize = createMemo(() => {
     const estimate = props.estimatedItemSize;
@@ -548,29 +524,6 @@ export function FlatList<T>(props: FlatListProps<T>) {
     return Math.max(0, getTotalSize() - base - size);
   };
 
-  createEffect(() => {
-    const controller = props.controller as any;
-    if (!controller || typeof controller.__setLayoutResolver !== "function") {
-      return;
-    }
-    controller.__setLayoutResolver({
-      getOffset: (index: number) => getOffsetForIndex(index),
-      getSize: (index: number) => getSizeForIndex(index),
-      getTotal: () => getTotalSize(),
-      getLength: () => props.data.length,
-      isHorizontal: () => !!props.horizontal,
-      isInverted: () => isInverted(),
-    });
-  });
-
-  createEffect(() => {
-    const controller = props.controller as any;
-    if (!controller || typeof controller.__triggerRecompute !== "function") {
-      return;
-    }
-    controller.__triggerRecompute();
-    updateBindingsForOffset(lastOffset, lastViewport || effectiveViewport());
-  });
 
   let lastRangeStart = -1;
   let lastRangeEnd = -1;
@@ -882,22 +835,26 @@ export function FlatList<T>(props: FlatListProps<T>) {
   };
 
   const scheduleScrollTo = (logicalOffset: number, animated: boolean) => {
+    const scroll = scrollRef();
+    if (!scroll) return;
     const viewport = lastViewport || effectiveViewport();
     const rawOffset = getRawOffset(logicalOffset, viewport);
     if (props.horizontal) {
-      scrollController.scrollTo({ x: rawOffset, animated });
+      scroll.scrollTo({ x: rawOffset, animated });
     } else {
-      scrollController.scrollTo({ y: rawOffset, animated });
+      scroll.scrollTo({ y: rawOffset, animated });
     }
   };
 
   const scheduleScrollBy = (logicalDelta: number) => {
+    const scroll = scrollRef();
+    if (!scroll) return;
     if (!logicalDelta || Math.abs(logicalDelta) < 0.5) return;
     const rawDelta = isInverted() ? -logicalDelta : logicalDelta;
     if (props.horizontal) {
-      scrollController.scrollBy({ dx: rawDelta, animated: false });
+      scroll.scrollBy({ dx: rawDelta, animated: false });
     } else {
-      scrollController.scrollBy({ dy: rawDelta, animated: false });
+      scroll.scrollBy({ dy: rawDelta, animated: false });
     }
   };
 
@@ -1197,12 +1154,60 @@ export function FlatList<T>(props: FlatListProps<T>) {
     );
   };
 
+  const attachRef = (node: (HostNode & ScrollViewRef) | null) => {
+    setScrollRef(node);
+    if (!node) {
+      props.ref?.(null);
+      return;
+    }
+    const imperativeNode = node as HostNode & ScrollViewRef & FlatListRef;
+    imperativeNode.scrollToIndex = (options) => {
+      const dataLength = props.data.length;
+      if (!dataLength) return;
+      const clampedIndex = Math.max(0, Math.min(options.index, dataLength - 1));
+      const itemOffset = getOffsetForIndex(clampedIndex);
+      const itemSize = getSizeForIndex(clampedIndex);
+      const metrics = node.metrics();
+      const viewport = props.horizontal
+        ? metrics.viewportSize.width
+        : metrics.viewportSize.height;
+      const viewPosition = Math.max(0, Math.min(options.viewPosition ?? 0, 1));
+      const viewOffset = options.viewOffset ?? 0;
+      const target = itemOffset - (viewport - itemSize) * viewPosition + viewOffset;
+      scheduleScrollTo(Math.max(0, target), options.animated ?? false);
+    };
+    imperativeNode.scrollToOffset = (options) => {
+      scheduleScrollTo(Math.max(0, options.offset), options.animated ?? false);
+    };
+    imperativeNode.scrollToTop = (options) => {
+      scheduleScrollTo(0, options?.animated ?? false);
+    };
+    imperativeNode.scrollToEnd = (options) => {
+      const viewport = lastViewport || effectiveViewport();
+      const maxOffset = Math.max(0, getTotalSize() - viewport);
+      scheduleScrollTo(maxOffset, options?.animated ?? false);
+    };
+    imperativeNode.flashScrollIndicators = () => {
+      node.flashScrollIndicators();
+    };
+    imperativeNode.recomputeViewableItems = () => {
+      updateBindingsForOffset(lastOffset, lastViewport || effectiveViewport());
+    };
+    imperativeNode.recordInteraction = () => {};
+    imperativeNode.getNativeScrollRef = () => node;
+    props.ref?.(imperativeNode);
+  };
+
+  onCleanup(() => {
+    props.ref?.(null);
+  });
+
   return (
     <ScrollView
+      ref={attachRef}
       horizontal={props.horizontal}
       style={mergedScrollViewStyle()}
       contentContainerStyle={sanitizedContentContainerStyle()}
-      controller={scrollController}
       config={props.scrollViewConfig}
       eventThrottleMs={props.scrollEventThrottleMs}
       eventMinDisplacementPx={

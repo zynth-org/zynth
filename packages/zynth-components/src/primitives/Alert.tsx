@@ -27,7 +27,7 @@ export type AlertButtons =
   | [AlertButton, AlertButton]
   | [AlertButton, AlertButton, AlertButton];
 
-export interface AlertController {
+export interface AlertRef {
   /** Show the alert dialog */
   show: () => void;
   /** Dismiss the alert dialog programmatically */
@@ -36,7 +36,7 @@ export interface AlertController {
 
 type AlertCommand = { type: "show" } | { type: "dismiss" };
 
-type InternalController = AlertController & {
+type InternalRef = AlertRef & {
   __attachHost: (node: HostNode | null) => void;
 };
 
@@ -52,8 +52,8 @@ export interface AlertProps {
   buttons?: AlertButtons;
   /** Callback fired when the alert is dismissed (after any button press or programmatic dismiss) */
   onDismiss?: () => void;
-  /** Controller for imperative show/dismiss operations */
-  controller?: AlertController;
+  /** Ref for imperative show/dismiss operations */
+  ref?: (node: (HostNode & AlertRef) | null) => void;
 }
 
 let cmdSeq = 0;
@@ -63,28 +63,18 @@ const sendCommand = (host: HostNode | null, command: AlertCommand) => {
   setProperty(host, "__command", JSON.stringify({ ...command, _seq: cmdSeq }));
 };
 
-const asInternalController = (
-  controller?: AlertController | null
-): InternalController | undefined => {
-  if (
-    controller &&
-    typeof (controller as InternalController).__attachHost === "function"
-  ) {
-    return controller as InternalController;
-  }
-  return undefined;
-};
-
 /**
- * Creates an AlertController for imperative control of the Alert component.
+ * Creates an AlertRef for imperative control of the Alert component.
  *
  * @example
  * ```tsx
- * const alert = createAlertController();
+ * const alert = createAlertRef();
  *
  * <Button onPress={() => alert.show()}>Show Alert</Button>
  * <Alert
- *   controller={alert}
+ *   ref={(node) => {
+ *     // You can also keep the handle in a signal/local variable
+ *   }}
  *   title="Confirm"
  *   message="Are you sure?"
  *   buttons={[
@@ -94,10 +84,10 @@ const asInternalController = (
  * />
  * ```
  */
-export const createAlertController = (): AlertController => {
+export const createAlertRef = (): AlertRef => {
   let host: HostNode | null = null;
 
-  const controller: InternalController = {
+  const handle: InternalRef = {
     show: () => {
       sendCommand(host, { type: "show" });
     },
@@ -109,7 +99,7 @@ export const createAlertController = (): AlertController => {
     },
   };
 
-  return controller;
+  return handle;
 };
 
 /**
@@ -122,10 +112,12 @@ export const createAlertController = (): AlertController => {
  *
  * @example
  * ```tsx
- * const alertController = createAlertController();
+ * const alertRef = createAlertRef();
  *
  * <Alert
- *   controller={alertController}
+ *   ref={(node) => {
+ *     // assign node to a local/signal if needed
+ *   }}
  *   title="Delete Item"
  *   message="This action cannot be undone."
  *   buttons={[
@@ -142,22 +134,24 @@ export const Alert: Component<AlertProps> = (props) => {
     "message",
     "buttons",
     "onDismiss",
-    "controller",
+    "ref",
   ]);
 
   const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
-  const controller = asInternalController(local.controller);
 
   // Store button callbacks for matching with native events
   let buttonCallbacks: Array<(() => void) | undefined> = [];
 
   const attachHost = (node: HostNode) => {
     setHostNode(node);
-    controller?.__attachHost(node);
+    const imperativeNode = node as HostNode & AlertRef;
+    imperativeNode.show = () => sendCommand(node, { type: "show" });
+    imperativeNode.dismiss = () => sendCommand(node, { type: "dismiss" });
+    local.ref?.(imperativeNode);
   };
 
   onCleanup(() => {
-    controller?.__attachHost(null);
+    local.ref?.(null);
   });
 
   // Sync props to native

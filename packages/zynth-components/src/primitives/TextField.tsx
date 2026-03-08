@@ -2,6 +2,7 @@ import {
   splitProps,
   createSignal,
   createEffect,
+  onCleanup,
   type Component,
 } from "solid-js";
 import type { HostNode, Style } from "@zynth/core";
@@ -12,7 +13,7 @@ export type ReturnKeyType = "done" | "go" | "next" | "search" | "send";
 export type AutoCapitalize = "none" | "sentences" | "words" | "characters";
 export type TextFieldVariant = "filled" | "outlined" | "none";
 
-export interface TextFieldController {
+export interface TextFieldRef {
   /** Get the current text value */
   text: () => string;
   /** Set the text value programmatically */
@@ -39,15 +40,15 @@ type TextFieldBridge = {
   notifyBlur: () => void;
 };
 
-export function useTextFieldController(opts?: {
+export function useTextFieldRef(opts?: {
   value?: string;
-}): TextFieldController {
+}): TextFieldRef {
   const [text, setText] = createSignal(opts?.value ?? "");
   const [isFocused, setIsFocused] = createSignal(false);
 
   let bridge: TextFieldBridge | undefined;
 
-  const controller: TextFieldController = {
+  const controller: TextFieldRef = {
     text,
     setText(value) {
       setText(value);
@@ -115,8 +116,8 @@ export interface TextFieldProps {
   /** Called when the return/submit key is pressed */
   onSubmit?: (event: { value: string }) => void;
 
-  /** Controller for imperative control */
-  controller?: TextFieldController;
+  /** Ref for imperative control */
+  ref?: ((node: (HostNode & TextFieldRef) | null) => void) | null;
 
   /** Style props */
   style?: Style;
@@ -147,28 +148,38 @@ export const TextField: Component<TextFieldProps> = (props) => {
     "onFocus",
     "onBlur",
     "onSubmit",
-    "controller",
+    "ref",
     "style",
     "testID",
   ]);
 
   const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
+  const [text, setText] = createSignal(local.value ?? local.defaultValue ?? "");
+  const [focused, setFocused] = createSignal(false);
+
+  const assignRef = (node: (HostNode & TextFieldRef) | null) => {
+    if (typeof local.ref === "function") {
+      local.ref(node);
+    }
+  };
+
+  onCleanup(() => assignRef(null));
 
   // Handle text change from native
   const handleChange = (event: TextFieldEvent<{ value: string }>) => {
-    local.controller?.__setTextFromNative?.(event.value);
+    setText(event.value);
     local.onChange?.(event.value);
   };
 
   // Handle focus from native
   const handleFocus = () => {
-    local.controller?.__setFocusedFromNative?.(true);
+    setFocused(true);
     local.onFocus?.();
   };
 
   // Handle blur from native
   const handleBlur = () => {
-    local.controller?.__setFocusedFromNative?.(false);
+    setFocused(false);
     local.onBlur?.();
   };
 
@@ -177,30 +188,13 @@ export const TextField: Component<TextFieldProps> = (props) => {
     local.onSubmit?.({ value: event.value });
   };
 
-  // Attach controller bridge when node is available
-  createEffect(() => {
-    const node = hostNode();
-    if (!node || !local.controller) return;
-
-    local.controller.__attachInternal?.({
-      notifyNativeValue: (value) => {
-        setProperty(node, "value", value);
-      },
-      notifyFocus: () => {
-        setProperty(node, "requestFocus", true);
-      },
-      notifyBlur: () => {
-        setProperty(node, "requestBlur", true);
-      },
-    });
-  });
-
   // Sync controlled value to native
   createEffect(() => {
     const node = hostNode();
     if (!node) return;
 
     if (local.value !== undefined) {
+      setText(local.value);
       setProperty(node, "value", local.value);
     }
   });
@@ -280,7 +274,31 @@ export const TextField: Component<TextFieldProps> = (props) => {
 
   return (
     <text-field
-      ref={(node: HostNode) => setHostNode(node)}
+      ref={(node: (HostNode & TextFieldRef) | null) => {
+        if (!node) {
+          setHostNode(null);
+          assignRef(null);
+          return;
+        }
+        setHostNode(node);
+        const imperativeNode = node;
+        imperativeNode.text = text;
+        imperativeNode.setText = (value: string) => {
+          setText(value);
+          setProperty(node, "value", value);
+        };
+        imperativeNode.focus = () => {
+          setProperty(node, "requestFocus", true);
+        };
+        imperativeNode.blur = () => {
+          setProperty(node, "requestBlur", true);
+        };
+        imperativeNode.clear = () => {
+          imperativeNode.setText("");
+        };
+        imperativeNode.isFocused = focused;
+        assignRef(imperativeNode);
+      }}
       defaultValue={local.defaultValue}
       style={filteredStyle()}
       testID={local.testID}
