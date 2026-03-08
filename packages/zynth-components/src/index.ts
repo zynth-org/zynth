@@ -21,7 +21,7 @@ export * from "./primitives/BottomSheet";
 export * from "./primitives/GlassView";
 export * from "./primitives/GlassContainer";
 import "./runtimeGlyphs";
-export { useStyle, mergeStyles } from "./hooks/useStyle";
+export { createStyle, mergeStyles } from "./hooks/createStyle";
 export { createPressableController } from "./primitives/pressable/controller";
 export type { PressableController } from "./primitives/pressable/controller";
 export { createFlatListController } from "./primitives/flatlist/controller";

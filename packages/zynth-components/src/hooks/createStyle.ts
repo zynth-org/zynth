@@ -10,7 +10,7 @@ import type { Style, StyleProp } from "@zynth/core";
  *
  * @example
  * ```tsx
- * const style = useStyle(() => [
+ * const style = createStyle(() => [
  *   { color: "#FFF" },
  *   props.customStyle
  * ]);
@@ -18,7 +18,7 @@ import type { Style, StyleProp } from "@zynth/core";
  * return <Text style={style()} />;
  * ```
  */
-export const useStyle = (
+export const createStyle = (
   style: Accessor<StyleProp | undefined>
 ): Accessor<Style | undefined> => {
   return createMemo(() => {

@@ -22,7 +22,7 @@ references/
   navigation.md          Zynth Memory Router: Stack, Tabs, BottomSheet navigators, and hooks
   route-structure.md     FileSystemRouter: convention-based routing and manifest generation
   storage.md             AsyncStorage, SecureStore, and local database options
-  styling.md             Zynth Styling: useStyle, mergeStyles, box-shadow, and layout props
+  styling.md             Zynth Styling: createStyle, mergeStyles, box-shadow, and layout props
   visual-effects.md      GlassView: tactile scale/tilt feedback and liquid glass effects
   skia.md                ZynthSkia: high-performance 2D graphics and shaders
 ```
@@ -58,7 +58,7 @@ Zynth uses `@zynth/router` for application-level navigation.
 
 - **Internal First**: Always prefer `@zynth/*` packages for core functionality (Animate, Icons, APIs, Screens).
 - **Icons**: Use `@zynth/icons` for component-based icons or `<SystemIcon />` for platform-native symbols (SF Symbols on iOS).
-- **Styling**: Use `useStyle` and `mergeStyles` from `@zynth/components` for reactive styling.
+- **Styling**: Use `createStyle` and `mergeStyles` from `@zynth/components` for reactive styling.
 - **Reactivity**: `React.useContext` is **NOT** available; use `createContext` from `solid-js`.
 - **Safe Areas**: Use `createSafeAreaInsets()` from `@zynth/apis` or `contentInsetAdjustmentBehavior="automatic"` on scrollable views.
 

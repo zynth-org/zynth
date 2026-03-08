@@ -1,5 +1,5 @@
 import { createSignal, onMount, onCleanup } from "solid-js";
-import { Text, TextProps, useStyle } from "@zynth/components";
+import { Text, TextProps, createStyle } from "@zynth/components";
 import { Font } from "@zynth/apis";
 
 // Track font loading state globally
@@ -126,7 +126,7 @@ export function createIcon(glyph: string, fontFamily: string) {
     // Always render the same Text element to avoid layout thrashing
     // Use a space character as placeholder until font is ready
     // This maintains proper text composition in the native layer
-    const mergedStyle = useStyle(() => props.style);
+    const mergedStyle = createStyle(() => props.style);
 
     return (
       <Text

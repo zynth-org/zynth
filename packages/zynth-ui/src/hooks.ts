@@ -12,7 +12,7 @@ export function useUITheme(): Accessor<UITheme> {
 /**
  * Access the resolved color scheme (light/dark).
  */
-export function useUIColorScheme(): Accessor<ColorScheme> {
+export function createUIColorScheme(): Accessor<ColorScheme> {
   const theme = useUITheme();
   return createMemo(() => theme().scheme);
 }

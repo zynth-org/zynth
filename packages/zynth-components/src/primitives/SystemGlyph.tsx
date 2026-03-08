@@ -1,7 +1,7 @@
 import { createSignal, onCleanup, onMount, type Component } from "solid-js";
 import { Font, Glyphs } from "@zynth/apis";
 import { Text, type TextProps } from "./Text";
-import { useStyle } from "../hooks/useStyle";
+import { createStyle } from "../hooks/createStyle";
 import "../runtimeGlyphs";
 
 export type SystemGlyphProps = TextProps & {
@@ -18,7 +18,7 @@ export const SystemGlyph: Component<SystemGlyphProps> = (props) => {
   const [isReady, setIsReady] = createSignal(
     resolveEntry() ? Glyphs.isLoaded(props.name) : false
   );
-  const resolvedStyle = useStyle(() => props.style);
+  const resolvedStyle = createStyle(() => props.style);
 
   const scheduleReady = () => {
     if (typeof requestAnimationFrame === "function") {
