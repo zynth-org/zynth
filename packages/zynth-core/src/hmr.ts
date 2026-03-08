@@ -63,8 +63,13 @@ export type ZynthHMRPayload = {
 
 export type ZynthHMRListener = (payload: ZynthHMRPayload) => void;
 
-const nativeListeners = new Set<ZynthHMRListener>();
-let nativeHooksInstalled = false;
+const nativeListeners = (() => {
+  const g = globalThis as any;
+  if (!(g.__zynthNativeHMRListeners instanceof Set)) {
+    g.__zynthNativeHMRListeners = new Set<ZynthHMRListener>();
+  }
+  return g.__zynthNativeHMRListeners as Set<ZynthHMRListener>;
+})();
 
 function parsePayload(payload: unknown): ZynthHMRPayload | null {
   NATIVE_LOG.log("parsePayload", typeof payload);
@@ -110,11 +115,11 @@ function dispatchNativePayload(payload: ZynthHMRPayload) {
 }
 
 export function ensureNativeHMRHooks() {
-  if (nativeHooksInstalled) {
+  const g = globalThis as any;
+  if (g.__zynthNativeHMRHooksInstalled === true) {
     return;
   }
-  nativeHooksInstalled = true;
-  const g = globalThis as any;
+  g.__zynthNativeHMRHooksInstalled = true;
   const previous =
     typeof g.__zynth_refresh === "function" ? g.__zynth_refresh : undefined;
   const isDefaultStub = (() => {
@@ -548,6 +553,10 @@ function processUpdatedModules(
 
 function installWebpackHotUpdateHook() {
   const g = globalThis as any;
+  if (g.__zynthWebpackHotUpdateHookInstalled === true) {
+    return;
+  }
+  g.__zynthWebpackHotUpdateHookInstalled = true;
   ensureModuleTables();
   const original = g.webpackHotUpdate;
 
@@ -704,10 +713,20 @@ ensureNativeHMRHooks();
 
 (function traceEmitter() {
   const g = globalThis as any;
-  const prev = g.__zynth_emitDevMessage;
+  if (g.__zynth_emitDevMessageTracerInstalled === true) {
+    return;
+  }
+
+  const existing = g.__zynth_emitDevMessage;
+  if (typeof g.__zynth_emitDevMessageRaw !== "function") {
+    g.__zynth_emitDevMessageRaw = existing;
+  }
+
   g.__zynth_emitDevMessage = function (payload: any) {
     NATIVE_LOG.log("emitDevMessage ->", payload?.type, payload);
-    return prev ? prev(payload) : undefined;
+    const raw = g.__zynth_emitDevMessageRaw;
+    return typeof raw === "function" ? raw(payload) : undefined;
   };
+  g.__zynth_emitDevMessageTracerInstalled = true;
   NATIVE_LOG.log("__zynth_emitDevMessage tracer attached");
 })();
