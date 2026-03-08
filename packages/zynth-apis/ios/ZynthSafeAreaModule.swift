@@ -81,7 +81,7 @@ public class ZynthSafeAreaModule: NSObject {
     }
     observers.append(orientationObserver)
 
-    // Observe window geometry changes (replaces deprecated didChangeStatusBarFrameNotification)
+    // Observe app foreground transitions for geometry refreshes.
     if #available(iOS 13.0, *), supportsSceneLifecycle() {
       let sceneGeometryObserver = NotificationCenter.default.addObserver(
         forName: UIScene.willEnterForegroundNotification,
@@ -93,15 +93,15 @@ public class ZynthSafeAreaModule: NSObject {
       }
       observers.append(sceneGeometryObserver)
     } else {
-      let statusBarObserver = NotificationCenter.default.addObserver(
-        forName: UIApplication.willChangeStatusBarFrameNotification,
+      let appForegroundObserver = NotificationCenter.default.addObserver(
+        forName: UIApplication.willEnterForegroundNotification,
         object: nil,
         queue: .main
       ) { [weak self] _ in
-        // print("[ZynthSafeArea] Status bar frame changing - updating metrics")
+        // print("[ZynthSafeArea] App entering foreground - updating metrics")
         self?.scheduleMetricsUpdate()
       }
-      observers.append(statusBarObserver)
+      observers.append(appForegroundObserver)
     }
 
     // Get initial metrics immediately if window is already available
@@ -168,34 +168,40 @@ public class ZynthSafeAreaModule: NSObject {
   }
 
   private func getActiveWindow() -> UIWindow? {
-    // Try to get the key window from active scene
-    if #available(iOS 13.0, *), supportsSceneLifecycle() {
-      // First try to get the key window from the foreground active scene
+    if #available(iOS 13.0, *) {
       let scenes = UIApplication.shared.connectedScenes
         .compactMap { $0 as? UIWindowScene }
 
-      // Try foreground active scene first
       if let activeScene = scenes.first(where: { $0.activationState == .foregroundActive }) {
         if let keyWindow = activeScene.windows.first(where: { $0.isKeyWindow }) {
           return keyWindow
         }
-        // Fall back to first window in active scene
         if let firstWindow = activeScene.windows.first {
           return firstWindow
         }
       }
 
-      // Fall back to any scene's first window
+      if let inactiveScene = scenes.first(where: { $0.activationState == .foregroundInactive }) {
+        if let keyWindow = inactiveScene.windows.first(where: { $0.isKeyWindow }) {
+          return keyWindow
+        }
+        if let firstWindow = inactiveScene.windows.first {
+          return firstWindow
+        }
+      }
+
       if let window = scenes.first?.windows.first {
         return window
       }
-    } else {
-      // iOS 12 and earlier
-      if let keyWindow = UIApplication.shared.keyWindow {
-        return keyWindow
+
+      if let delegate = UIApplication.shared.delegate {
+        let selector = NSSelectorFromString("window")
+        if delegate.responds(to: selector),
+           let value = (delegate as AnyObject).perform(selector)?.takeUnretainedValue(),
+           let window = value as? UIWindow {
+          return window
+        }
       }
-      // Fall back to first window
-      return UIApplication.shared.windows.first
     }
 
     return nil

@@ -55,11 +55,6 @@ static NSInteger const ZynthWarningCloseButtonTag = 91004;
 static NSInteger const ZynthWarningAlertIconTag = 91005;
 static NSInteger const ZynthWarningCloseIconTag = 91006;
 
-static BOOL ZynthAppUsesSceneLifecycle(void) {
-  id manifest = [NSBundle.mainBundle objectForInfoDictionaryKey:@"UIApplicationSceneManifest"];
-  return [manifest isKindOfClass:[NSDictionary class]];
-}
-
 @implementation ZynthNativeErrorOverlayManager
 
 + (instancetype)shared {
@@ -317,14 +312,6 @@ static BOOL ZynthAppUsesSceneLifecycle(void) {
     return root.window;
   }
 
-  if (!ZynthAppUsesSceneLifecycle()) {
-    UIWindow *keyWindow = UIApplication.sharedApplication.keyWindow;
-    if (keyWindow != nil) {
-      return keyWindow;
-    }
-    return UIApplication.sharedApplication.windows.firstObject;
-  }
-
   for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
     if (![scene isKindOfClass:[UIWindowScene class]]) continue;
     UIWindowScene *windowScene = (UIWindowScene *)scene;
@@ -341,6 +328,19 @@ static BOOL ZynthAppUsesSceneLifecycle(void) {
       return windowScene.windows.firstObject;
     }
   }
+
+  id<UIApplicationDelegate> delegate = UIApplication.sharedApplication.delegate;
+  SEL windowSelector = NSSelectorFromString(@"window");
+  if ([delegate respondsToSelector:windowSelector]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+    id value = [delegate performSelector:windowSelector];
+#pragma clang diagnostic pop
+    if ([value isKindOfClass:[UIWindow class]]) {
+      return (UIWindow *)value;
+    }
+  }
+
   return nil;
 }
 
