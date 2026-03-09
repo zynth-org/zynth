@@ -49,7 +49,7 @@ configurationForConnectingSceneSession:(UISceneSession *)connectingSceneSession
   self.surface.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
   
   // Default background while initializing (will be overridden by Splash if enabled)
-  self.surface.backgroundColor = [UIColor colorWithRed:0.06 green:0.07 blue:0.09 alpha:1.0];
+  self.surface.backgroundColor = [UIColor colorWithRed:0.9608 green:0.9608 blue:0.9608 alpha:1.0];
 
   self.runtime = [[ZynthRuntime alloc] initWithRootView:self.surface];
 

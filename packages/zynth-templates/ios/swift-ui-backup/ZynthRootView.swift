@@ -22,7 +22,7 @@ struct ZynthRootView: UIViewRepresentable {
     init() {
       surface = UIView(frame: UIScreen.main.bounds)
       surface.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-      surface.backgroundColor = UIColor(red: 0.06, green: 0.07, blue: 0.09, alpha: 1.0)
+      surface.backgroundColor = UIColor(red: 0.9608, green: 0.9608, blue: 0.9608, alpha: 1.0)
 
       uiManager = SNUIManager(rootView: surface)
 
