@@ -12,10 +12,21 @@ add_library(zynthanimate SHARED
 
 find_package(ReactAndroid REQUIRED CONFIG)
 
+set(ZYNTH_CORE_CPP_DIR_MONOREPO ${CMAKE_CURRENT_SOURCE_DIR}/../../../zynth-core/android/ZynthKit/src/main/cpp)
+set(ZYNTH_CORE_CPP_DIR_PACKAGE ${CMAKE_CURRENT_SOURCE_DIR}/../../../core/android/ZynthKit/src/main/cpp)
+
+if(EXISTS "${ZYNTH_CORE_CPP_DIR_MONOREPO}/ZynthJSIPluginRegistry.h")
+  set(ZYNTH_CORE_CPP_DIR ${ZYNTH_CORE_CPP_DIR_MONOREPO})
+elseif(EXISTS "${ZYNTH_CORE_CPP_DIR_PACKAGE}/ZynthJSIPluginRegistry.h")
+  set(ZYNTH_CORE_CPP_DIR ${ZYNTH_CORE_CPP_DIR_PACKAGE})
+else()
+  message(FATAL_ERROR "Unable to locate @zynth/core Android headers. Checked ${ZYNTH_CORE_CPP_DIR_MONOREPO} and ${ZYNTH_CORE_CPP_DIR_PACKAGE}")
+endif()
+
 target_include_directories(zynthanimate
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/main/cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../zynth-core/android/ZynthKit/src/main/cpp
+    ${ZYNTH_CORE_CPP_DIR}
     $<TARGET_PROPERTY:ReactAndroid::jsi,INTERFACE_INCLUDE_DIRECTORIES>
 )
 

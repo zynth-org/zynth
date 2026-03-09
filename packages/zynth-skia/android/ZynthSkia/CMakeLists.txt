@@ -16,6 +16,17 @@ add_library(zynthskia SHARED
 
 find_package(ReactAndroid REQUIRED CONFIG)
 
+set(ZYNTH_CORE_CPP_DIR_MONOREPO ${CMAKE_CURRENT_SOURCE_DIR}/../../../zynth-core/android/ZynthKit/src/main/cpp)
+set(ZYNTH_CORE_CPP_DIR_PACKAGE ${CMAKE_CURRENT_SOURCE_DIR}/../../../core/android/ZynthKit/src/main/cpp)
+
+if(EXISTS "${ZYNTH_CORE_CPP_DIR_MONOREPO}/ZynthJSIPluginRegistry.h")
+  set(ZYNTH_CORE_CPP_DIR ${ZYNTH_CORE_CPP_DIR_MONOREPO})
+elseif(EXISTS "${ZYNTH_CORE_CPP_DIR_PACKAGE}/ZynthJSIPluginRegistry.h")
+  set(ZYNTH_CORE_CPP_DIR ${ZYNTH_CORE_CPP_DIR_PACKAGE})
+else()
+  message(FATAL_ERROR "Unable to locate @zynth/core Android headers. Checked ${ZYNTH_CORE_CPP_DIR_MONOREPO} and ${ZYNTH_CORE_CPP_DIR_PACKAGE}")
+endif()
+
 file(GLOB SKIA_STATIC_LIBS "${SKIA_ANDROID_LIB_DIR}/*.a")
 
 if(NOT EXISTS "${SKIA_ANDROID_LIB_DIR}/libskia.a")
@@ -25,7 +36,7 @@ endif()
 target_include_directories(zynthskia
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/main/cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../zynth-core/android/ZynthKit/src/main/cpp
+    ${ZYNTH_CORE_CPP_DIR}
     ${SKIA_HEADERS}
     $<TARGET_PROPERTY:ReactAndroid::jsi,INTERFACE_INCLUDE_DIRECTORIES>
 )

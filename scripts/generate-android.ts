@@ -372,6 +372,12 @@ function ensureDir(dir: string): void {
   fs.mkdirSync(dir, { recursive: true });
 }
 
+function toBuildConfigStringLiteral(value: string): string {
+  // AGP buildConfigField expects a Java expression. For String fields this must be
+  // a quoted Java string literal (e.g. "\"value\""), including when empty.
+  return JSON.stringify(JSON.stringify(value));
+}
+
 function collectNativeAndroidModules(appDir: string): any[] {
   const modulesByName = new Map();
   const appPackage = safeReadJSON(path.join(appDir, "package.json")) || {};
@@ -771,12 +777,12 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
     activityHooks.onFirstFrame,
     "      "
   );
-  const devServerUrlBuildConfig = JSON.stringify(
-    config.devServerUrl ? `"${config.devServerUrl}"` : ""
+  const devServerUrlBuildConfig = toBuildConfigStringLiteral(
+    typeof config.devServerUrl === "string" ? config.devServerUrl : ""
   );
   const devArtifacts = safeReadJSON(path.join(appDir, ".zynth", "artifacts.json")) || {};
-  const devServerTokenBuildConfig = JSON.stringify(
-    typeof devArtifacts.hmrServerToken === "string" ? `"${devArtifacts.hmrServerToken}"` : ""
+  const devServerTokenBuildConfig = toBuildConfigStringLiteral(
+    typeof devArtifacts.hmrServerToken === "string" ? devArtifacts.hmrServerToken : ""
   );
   const runtimeModuleImports = "";
   const runtimeModuleInstalls = "    // No default modules for core runtime";
