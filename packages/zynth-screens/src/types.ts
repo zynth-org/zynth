@@ -136,6 +136,7 @@ export interface ScreenTabBarItemDescriptor {
 export interface ScreenTabBarOptions {
   visible?: boolean;
   backgroundColor?: string;
+  activeIndicatorColor?: string;
   activeTintColor?: string;
   inactiveTintColor?: string;
   showLabels?: boolean;

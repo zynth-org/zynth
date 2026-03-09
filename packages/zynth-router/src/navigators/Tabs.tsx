@@ -470,6 +470,7 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
   const resolvedNativeTabBarOptions = createMemo(() => ({
     visible: props.tabBarOptions?.tabBarVisible !== false,
     backgroundColor: props.tabBarOptions?.tabBarBackgroundColor,
+    activeIndicatorColor: props.tabBarOptions?.tabBarActiveIndicatorColor,
     activeTintColor: props.tabBarOptions?.tabBarActiveTintColor,
     inactiveTintColor: props.tabBarOptions?.tabBarInactiveTintColor,
     showLabels: props.tabBarOptions?.tabBarShowLabels ?? true,

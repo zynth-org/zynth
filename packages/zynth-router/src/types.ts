@@ -219,6 +219,8 @@ export interface TabBarOptions {
   tabBarVisible?: boolean;
   /** Tab bar background color */
   tabBarBackgroundColor?: string;
+  /** Active tab indicator color (native tab bar) */
+  tabBarActiveIndicatorColor?: string;
   /** Active tab tint color */
   tabBarActiveTintColor?: string;
   /** Inactive tab tint color */

@@ -21,6 +21,7 @@ import com.google.android.material.bottomnavigation.BottomNavigationItemView
 import com.google.android.material.bottomnavigation.BottomNavigationMenuView
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.navigation.NavigationBarView
+import com.zynth.kit.core.ZynthColorParser
 import com.zynth.kit.core.ZynthRootView
 import com.zynth.kit.core.ZynthUIManager
 import org.json.JSONArray
@@ -194,10 +195,16 @@ class ScreenTabsContainerView(context: Context) : LinearLayout(context) {
       val activeColor = parseColor(options.optString("activeTintColor"))
       val inactiveColor = parseColor(options.optString("inactiveTintColor"))
       val backgroundColor = parseColor(options.optString("backgroundColor"))
+      val activeIndicatorColor = parseColor(options.optString("activeIndicatorColor"))
       tabBarVisible = options.optBoolean("visible", true)
 
       if (backgroundColor != null) {
         bottomNav.setBackgroundColor(backgroundColor)
+        bottomNav.backgroundTintList = ColorStateList.valueOf(backgroundColor)
+      }
+
+      if (activeIndicatorColor != null) {
+        bottomNav.itemActiveIndicatorColor = ColorStateList.valueOf(activeIndicatorColor)
       }
 
       if (activeColor != null || inactiveColor != null) {
@@ -629,11 +636,7 @@ class ScreenTabsContainerView(context: Context) : LinearLayout(context) {
 
   private fun parseColor(colorString: String?): Int? {
     if (colorString.isNullOrEmpty()) return null
-    return try {
-      Color.parseColor(colorString)
-    } catch (_: Exception) {
-      null
-    }
+    return ZynthColorParser.parse(colorString)
   }
 
   private fun createColorStateList(activeColor: Int, inactiveColor: Int): ColorStateList {
