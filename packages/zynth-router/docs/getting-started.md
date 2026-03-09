@@ -5,10 +5,10 @@ This guide will help you set up and start using `@zynth/router` in your Zynth ap
 ## Installation
 
 ```bash
-yarn add @zynth/router
+yarn add @zynth/router @zynth/screens @zynth/components @zynth/apis @zynth/core
 ```
 
-The router automatically includes its dependencies:
+`@zynth/router` expects these packages as peer dependencies:
 
 - `@zynth/screens` - Screen primitives for transitions
 - `@zynth/components` - UI components

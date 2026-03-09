@@ -9,7 +9,7 @@ Designed to mimic the API of React Navigation, `@zynth/router` manages navigatio
 This package is included by default in the `app` template.
 
 ```bash
-yarn add @zynth/router
+yarn add @zynth/router @zynth/screens @zynth/components @zynth/apis @zynth/core
 ```
 
 ## Quick Start

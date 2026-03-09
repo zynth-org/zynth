@@ -30,19 +30,21 @@
     "README.md"
   ],
   "peerDependencies": {
+    "@zynth/core": ">=0.0.1",
+    "@zynth/screens": ">=0.0.1",
+    "@zynth/components": ">=0.0.1",
+    "@zynth/apis": ">=0.0.1",
     "solid-js": ">=1.8.0"
-  },
-  "dependencies": {
-    "@zynth/core": "0.0.1",
-    "@zynth/screens": "0.0.1",
-    "@zynth/components": "0.0.1",
-    "@zynth/apis": "0.0.1"
   },
   "devDependencies": {
     "@babel/preset-env": "^7.24.7",
     "@babel/preset-typescript": "^7.24.7",
     "@rsbuild/core": "^1.0.1",
     "@rsbuild/plugin-babel": "^1.0.1",
+    "@zynth/apis": "*",
+    "@zynth/components": "*",
+    "@zynth/core": "*",
+    "@zynth/screens": "*",
     "babel-preset-solid": "^1.8.0",
     "solid-js": "^1.8.0",
     "typescript": "^5.6.2"
