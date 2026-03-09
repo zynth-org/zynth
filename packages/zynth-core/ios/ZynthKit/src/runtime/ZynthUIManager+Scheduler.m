@@ -82,6 +82,13 @@ static const NSTimeInterval kZynthFrameBudgetMs = 14.0;
   }
   if (overBudget) {
     _budgetOverruns += 1;
+#if DEBUG
+    NSLog(@"[ZynthUI] frame over budget %.2fms (budget %.2fms, nodes %lu, overruns %lu)",
+          _lastFrameMs,
+          kZynthFrameBudgetMs,
+          (unsigned long)nodeCount,
+          (unsigned long)_budgetOverruns);
+#endif
   }
   if (_frameProfiler) {
     _frameProfiler(_lastFrameMs, _lastLayoutMs, overBudget, nodeCount);
