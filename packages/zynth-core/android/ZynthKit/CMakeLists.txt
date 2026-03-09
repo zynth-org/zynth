@@ -37,3 +37,8 @@ target_link_libraries(zynthkit
     fbjni::fbjni
     log
 )
+
+target_link_options(zynthkit PRIVATE
+  -Wl,-z,max-page-size=16384
+  -Wl,-z,common-page-size=16384
+)

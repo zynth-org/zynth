@@ -36,3 +36,8 @@ target_link_libraries(zynthanimate
     log
     android
 )
+
+target_link_options(zynthanimate PRIVATE
+  -Wl,-z,max-page-size=16384
+  -Wl,-z,common-page-size=16384
+)
