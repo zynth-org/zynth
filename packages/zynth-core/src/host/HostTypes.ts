@@ -1,3 +1,5 @@
+import type { StyleRef } from "../style";
+
 export type NodeType =
   | "root"
   | "view"
@@ -167,7 +169,10 @@ export type Style = {
  * Array styles are merged left-to-right, with later values overriding earlier ones.
  * Useful for conditional and responsive styling while maintaining SolidJS reactivity.
  */
-export type StyleProp = Style | (Style | undefined | null)[];
+export type StyleProp =
+  | Style
+  | StyleRef
+  | (Style | StyleRef | undefined | null)[];
 
 export type ImageResizeMode = "cover" | "contain" | "stretch" | "center";
 

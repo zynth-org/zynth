@@ -3,11 +3,13 @@ import type {
   HostNode,
   HostBatchMeta,
   Style,
+  StyleProp,
   RecyclingConfig,
   RecyclingContext,
 } from "./HostTypes";
 import type { ZynthUIBridge } from "../bridge";
 import { ensureNativeEmitter } from "../nativeEmitter";
+import { flattenStyleProp } from "../style";
 
 export function createIOSHost(): Host {
   ensureNativeEmitter();
@@ -162,11 +164,9 @@ export function createIOSHost(): Host {
       }
     };
 
-    const encodeStyle = (nodeId: number, style: any) => {
+    const encodeStyle = (nodeId: number, style: unknown) => {
       if (!style) return;
-      const resolved = Array.isArray(style)
-        ? style.reduce((acc, item) => (item ? { ...acc, ...item } : acc), {})
-        : style;
+      const resolved = flattenStyleProp(style as StyleProp);
       if (!resolved || typeof resolved !== "object") return;
       for (const [key, value] of Object.entries(resolved)) {
         if (key === "transform") {
