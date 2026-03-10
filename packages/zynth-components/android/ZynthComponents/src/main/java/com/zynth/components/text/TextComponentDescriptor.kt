@@ -3,23 +3,17 @@ package com.zynth.components.text
 import android.graphics.Typeface
 import android.util.Log
 import android.os.SystemClock
-import android.os.Handler
-import android.os.Looper
 import android.util.TypedValue
-import android.view.View
 import android.view.View.MeasureSpec
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.TextView
-import androidx.core.text.PrecomputedTextCompat
-import androidx.core.widget.TextViewCompat
 import com.zynth.kit.components.ZynthComponentDescriptor
 import com.zynth.kit.components.ZynthComponentRegistrar
 import com.zynth.kit.core.ZynthUIManager
 import com.zynth.kit.runtime.FontRegistry
 import com.zynth.kit.layout.MeasureMode
 import com.zynth.kit.layout.Style
-import java.util.concurrent.Executors
 import kotlin.math.roundToInt
 
 /**
@@ -61,99 +55,40 @@ private fun hashMeasureKey(
   return result
 }
 
-private object TextRebuildScheduler {
-  private data class Queue(
-    val pending: LinkedHashSet<Int>,
-    var scheduled: Boolean,
-    val composer: TextComposer,
-  )
-
-  private val mainHandler = Handler(Looper.getMainLooper())
-  private val queues = java.util.WeakHashMap<ZynthUIManager, Queue>()
-
-  fun enqueue(manager: ZynthUIManager, rootId: Int, styleKey: String) {
-    val queue = queues.getOrPut(manager) {
-      val density = manager.getRootView().resources.displayMetrics.density
-      Queue(
-        pending = LinkedHashSet(),
-        scheduled = false,
-        composer = TextComposer(density, styleKey) { id -> manager.getNodeState(id) },
-      )
-    }
-    queue.pending.add(rootId)
-    if (queue.scheduled) return
-    queue.scheduled = true
-    mainHandler.post { drain(manager) }
+private fun rebuildComposedText(manager: ZynthUIManager, rootId: Int, styleKey: String) {
+  val root = manager.getNodeState(rootId) ?: return
+  if (root.type != "text") return
+  val textView = root.view as? TextView ?: return
+  val density = manager.getRootView().resources.displayMetrics.density
+  val composer = TextComposer(density, styleKey) { id -> manager.getNodeState(id) }
+  val composed = composer.compose(root)
+  if (DEBUG_TEXT) {
+    val text = composed.text.toString()
+    val sample = text.take(16).map { Integer.toHexString(it.code) }.joinToString(" ")
+    val family = composed.effectiveStyle?.fontFamily
+    Log.d(
+      "ZynthText",
+      "rebuild root=${root.id} len=${text.length} sample=[$sample] family=$family",
+    )
   }
-
-  private fun drain(manager: ZynthUIManager) {
-    val queue = queues[manager] ?: return
-    queue.scheduled = false
-    if (queue.pending.isEmpty()) return
-    val toProcess = queue.pending.toList()
-    queue.pending.clear()
-    for (rootId in toProcess) {
-      val root = manager.getNodeState(rootId) ?: continue
-      if (root.type != "text") continue
-      val composed = queue.composer.compose(root)
-      val textView = root.view as? TextView ?: continue
-      if (DEBUG_TEXT) {
-        val text = composed.text.toString()
-        val sample = text.take(16).map { Integer.toHexString(it.code) }.joinToString(" ")
-        val family = composed.effectiveStyle?.fontFamily
-        Log.d(
-          "ZynthText",
-          "rebuild root=${root.id} len=${text.length} sample=[$sample] family=$family",
-        )
-      }
-      if (textView.text.toString() != composed.text.toString()) {
-        applyTextSynchronously(textView, composed.text)
-        manager.markNodeDirty(root.id)
-      }
-    }
+  val previous = textView.text?.toString() ?: ""
+  val next = composed.text.toString()
+  // Always apply composed text so span-only style changes (color/weight/lineHeight/etc.)
+  // are reflected even when the raw string is unchanged.
+  applyTextSynchronously(textView, composed.text)
+  if (previous != next) {
+    manager.markNodeDirty(root.id)
   }
 }
 
-private object TextRawRebuildScheduler {
-  private data class Queue(
-    val pending: LinkedHashSet<Int>,
-    var scheduled: Boolean,
-    val styleKey: String,
-  )
-
-  private val mainHandler = Handler(Looper.getMainLooper())
-  private val queues = java.util.WeakHashMap<ZynthUIManager, Queue>()
-
-  fun enqueue(manager: ZynthUIManager, rootId: Int, styleKey: String) {
-    val queue = queues.getOrPut(manager) {
-      Queue(
-        pending = LinkedHashSet(),
-        scheduled = false,
-        styleKey = styleKey,
-      )
-    }
-    queue.pending.add(rootId)
-    if (queue.scheduled) return
-    queue.scheduled = true
-    mainHandler.post { drain(manager) }
-  }
-
-  private fun drain(manager: ZynthUIManager) {
-    val queue = queues[manager] ?: return
-    queue.scheduled = false
-    if (queue.pending.isEmpty()) return
-    val toProcess = queue.pending.toList()
-    queue.pending.clear()
-    for (rootId in toProcess) {
-      val root = manager.getNodeState(rootId) ?: continue
-      if (root.type != "text") continue
-      val rootTextView = root.view as? TextView ?: continue
-      val immediateText = buildRawText(root, manager, queue.styleKey)
-      if (rootTextView.text.toString() != immediateText) {
-        rootTextView.text = immediateText
-        manager.markNodeDirty(root.id)
-      }
-    }
+private fun rebuildRawText(manager: ZynthUIManager, rootId: Int, styleKey: String) {
+  val root = manager.getNodeState(rootId) ?: return
+  if (root.type != "text") return
+  val rootTextView = root.view as? TextView ?: return
+  val immediateText = buildRawText(root, manager, styleKey)
+  if (rootTextView.text.toString() != immediateText) {
+    rootTextView.text = immediateText
+    manager.markNodeDirty(root.id)
   }
 }
 
@@ -265,6 +200,11 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
           "numberOfLines" -> {
             val lines = jsonValue?.toIntOrNull() ?: 0
             textView.maxLines = if (lines > 0) lines else Int.MAX_VALUE
+            val manager = node.attachments[textManagerKey] as? ZynthUIManager
+            val root = manager?.let { findTextRoot(node, it) }
+            if (manager != null && root != null) {
+              manager.markNodeDirty(root.id)
+            }
             true
           }
           else -> false
@@ -356,7 +296,21 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
       }
 
       if (didChange) {
-        updateComposedText(node, textStyleKey, textManagerKey)
+        val manager = node.attachments[textManagerKey] as? ZynthUIManager
+        val root = manager?.let { findTextRoot(node, it) }
+        val hasInlineSpans =
+          if (manager != null && root != null) {
+            subtreeNeedsInlineSpans(root, manager, textStyleKey, isRoot = true)
+          } else {
+            false
+          }
+        val shouldRecompose = shouldRecomposeText(existing, merged, hasInlineSpans)
+        if (shouldRecompose) {
+          updateComposedText(node, textStyleKey, textManagerKey)
+        }
+        if (didTextMetricsChange(existing, merged) && manager != null && root != null) {
+          manager.markNodeDirty(root.id)
+        }
       }
       val durationMs = (SystemClock.elapsedRealtimeNanos() - styleStart) / 1_000_000.0
       if (durationMs > 4) {
@@ -378,10 +332,10 @@ fun createTextComponentDescriptor(): ZynthComponentDescriptor {
       node.attachments.remove(textStyleKey)
       node.attachments.remove(textManagerKey)
     },
-    onChildInserted = { manager, parent, _, _ ->
+    onChildInserted = { _, parent, _, _ ->
       updateComposedText(parent, textStyleKey, textManagerKey)
     },
-    onChildRemoved = { manager, parent, _ ->
+    onChildRemoved = { _, parent, _ ->
       updateComposedText(parent, textStyleKey, textManagerKey)
     }
   )
@@ -394,11 +348,81 @@ private fun updateComposedText(
 ) {
   val manager = node.attachments[textManagerKey] as? ZynthUIManager ?: return
   val root = findTextRoot(node, manager)
-  if (!subtreeNeedsInlineSpans(root, manager, textStyleKey, isRoot = true)) {
-    TextRawRebuildScheduler.enqueue(manager, root.id, textStyleKey)
+  val hasInlineSpans = subtreeNeedsInlineSpans(root, manager, textStyleKey, isRoot = true)
+  val rootStyle = root.attachments[textStyleKey] as? TextStyleAttributes
+  val rootNeedsSpans = rootStyle?.let { needsRootSpanStyles(it) } ?: false
+  if (!hasInlineSpans && !rootNeedsSpans) {
+    rebuildRawText(manager, root.id, textStyleKey)
     return
   }
-  TextRebuildScheduler.enqueue(manager, root.id, textStyleKey)
+  rebuildComposedText(manager, root.id, textStyleKey)
+}
+
+private fun shouldRecomposeText(
+  previous: TextStyleAttributes?,
+  next: TextStyleAttributes,
+  hasInlineSpans: Boolean,
+): Boolean {
+  val nextNeedsRootSpans = needsRootSpanStyles(next)
+  if (previous == null) {
+    return hasInlineSpans || next.textTransform != null || nextNeedsRootSpans
+  }
+  if (previous.textTransform != next.textTransform) {
+    return true
+  }
+  if (nextNeedsRootSpans || needsRootSpanStyles(previous)) {
+    if (previous.textDecorationLine != next.textDecorationLine ||
+      previous.lineHeight != next.lineHeight ||
+      previous.lineSpacing != next.lineSpacing ||
+      previous.paragraphSpacing != next.paragraphSpacing ||
+      previous.letterSpacing != next.letterSpacing ||
+      previous.baselineShift != next.baselineShift
+    ) {
+      return true
+    }
+  }
+  if (!hasInlineSpans) {
+    return false
+  }
+  return previous.color != next.color ||
+    previous.fontSize != next.fontSize ||
+    previous.fontWeight != next.fontWeight ||
+    previous.fontFamily != next.fontFamily ||
+    previous.fontStyle != next.fontStyle ||
+    previous.lineHeight != next.lineHeight ||
+    previous.lineSpacing != next.lineSpacing ||
+    previous.paragraphSpacing != next.paragraphSpacing ||
+    previous.letterSpacing != next.letterSpacing ||
+    previous.textDecorationLine != next.textDecorationLine ||
+    previous.baselineShift != next.baselineShift
+}
+
+private fun needsRootSpanStyles(style: TextStyleAttributes): Boolean {
+  return style.textDecorationLine != null ||
+    style.lineHeight != null ||
+    style.lineSpacing != null ||
+    style.paragraphSpacing != null ||
+    style.letterSpacing != null ||
+    style.baselineShift != null
+}
+
+private fun didTextMetricsChange(
+  previous: TextStyleAttributes?,
+  next: TextStyleAttributes,
+): Boolean {
+  if (previous == null) return true
+  return previous.fontSize != next.fontSize ||
+    previous.fontWeight != next.fontWeight ||
+    previous.fontFamily != next.fontFamily ||
+    previous.fontStyle != next.fontStyle ||
+    previous.lineHeight != next.lineHeight ||
+    previous.lineSpacing != next.lineSpacing ||
+    previous.paragraphSpacing != next.paragraphSpacing ||
+    previous.letterSpacing != next.letterSpacing ||
+    previous.minimumFontScale != next.minimumFontScale ||
+    previous.baselineShift != next.baselineShift ||
+    previous.hyphenation != next.hyphenation ||
+    previous.textTransform != next.textTransform
 }
 
 private fun findTextRoot(node: ZynthUIManager.Node, manager: ZynthUIManager): ZynthUIManager.Node {
