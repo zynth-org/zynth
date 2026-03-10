@@ -32,7 +32,7 @@ export interface HostBatchMeta {
   extras?: Record<string, any> | null;
 }
 
-export type StyleObject = {
+export type Style = {
   width?: number | `${number}%` | "auto";
   height?: number | `${number}%` | "auto";
   minWidth?: number | `${number}%`;
@@ -170,9 +170,9 @@ export type StyleObject = {
  * Useful for conditional and responsive styling while maintaining SolidJS reactivity.
  */
 export type StyleProp =
-  | StyleObject
+  | Style
   | StyleRef
-  | (StyleObject | StyleRef | undefined | null)[];
+  | (Style | StyleRef | undefined | null)[];
 
 export type ImageResizeMode = "cover" | "contain" | "stretch" | "center";
 

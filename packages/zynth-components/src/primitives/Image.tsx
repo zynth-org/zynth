@@ -1,13 +1,11 @@
 import { createEffect, createSignal, type Component } from "solid-js";
 import { Platform, OS } from "@zynth/apis";
 import type {
-  StyleProp,
-  HostNode,
+  Style,
   ImageAssetSource as CoreImageAssetSource,
   ImageUriSource as CoreImageUriSource,
   ImageAssetDescriptor,
 } from "@zynth/core";
-import { createStyleBinding } from "../hooks/styleBinding";
 
 export type ImageResizeMode = "cover" | "contain" | "stretch" | "center";
 
@@ -47,21 +45,17 @@ export interface ImageErrorEvent {
 
 export interface ImageProps {
   source: ImageSource | ImageSource[];
-  style?: StyleProp;
+  style?: Style;
   resizeMode?: ImageResizeMode;
   tintColor?: string;
   onLoad?: (event: ImageLoadEvent) => void;
   onError?: (event: ImageErrorEvent) => void;
-  ref?: (node: HostNode | null) => void;
 }
 
 export type ImageElementProps = ImageProps & { children?: never };
 
 export const Image: Component<ImageProps> = (props) => {
   const [currentSourceIndex, setCurrentSourceIndex] = createSignal(0);
-  const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
-
-  createStyleBinding(hostNode, () => props.style);
 
   const sources = () => {
     const src = props.source;
@@ -76,7 +70,14 @@ export const Image: Component<ImageProps> = (props) => {
 
   const normalizedSource = () => {
     const source = currentSource();
+    // console.log(
+    //   "[Image] Current source (index:",
+    //   currentSourceIndex(),
+    //   "):",
+    //   JSON.stringify(source)
+    // );
     const normalized = normalizeSingleSource(source);
+    // console.log("[Image] Normalized source:", JSON.stringify(normalized));
     return normalized;
   };
 
@@ -84,16 +85,29 @@ export const Image: Component<ImageProps> = (props) => {
     const sourceList = sources();
     const nextIndex = currentSourceIndex() + 1;
 
+    // console.log(
+    //   "[Image] Error loading source",
+    //   currentSourceIndex(),
+    //   "of",
+    //   sourceList.length
+    // );
+
     // Try next source if available
     if (nextIndex < sourceList.length) {
+      console.log("[Image] Trying fallback source at index", nextIndex);
       setCurrentSourceIndex(nextIndex);
     } else {
+      console.log("[Image] All sources failed, calling onError");
       // All sources failed, call the user's error handler
       props.onError?.(event);
     }
   };
 
   const handleLoad = (event: ImageLoadEvent) => {
+    // console.log(
+    //   "[Image] Successfully loaded source at index",
+    //   currentSourceIndex()
+    // );
     props.onLoad?.(event);
   };
 
@@ -103,20 +117,14 @@ export const Image: Component<ImageProps> = (props) => {
     setCurrentSourceIndex(0);
   });
 
-  const refProp = (node: HostNode | null) => {
-    setHostNode(node);
-    props.ref?.(node);
-  };
-
   return (
     <image
-      style={undefined}
+      style={props.style as any}
       source={normalizedSource()}
       resizeMode={props.resizeMode}
       tintColor={props.tintColor}
       onLoad={handleLoad}
       onError={handleError}
-      ref={refProp}
     />
   );
 };

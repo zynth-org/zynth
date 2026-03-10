@@ -12,7 +12,7 @@ import {
 } from "solid-js";
 import type { Accessor, Setter } from "solid-js";
 import { Platform, OS } from "@zynth/apis";
-import type { HostNode, Style, StyleProp } from "@zynth/core";
+import type { HostNode, Style } from "@zynth/core";
 import { ScrollView, type ScrollViewRef } from "./ScrollView";
 import type {
   ScrollEvent,
@@ -49,8 +49,8 @@ export type FlatListProps<T> = {
   inverted?: boolean;
   extraData?: unknown;
   horizontal?: boolean;
-  style?: StyleProp;
-  contentContainerStyle?: StyleProp;
+  style?: Style;
+  contentContainerStyle?: Style;
   maintainVisibleContentPosition?: MaintainVisibleContentPosition;
   ref?: (node: (HostNode & FlatListRef) | null) => void;
   scrollViewConfig?: ScrollViewConfig;

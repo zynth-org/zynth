@@ -1,5 +1,5 @@
 import { createEffect, createRoot, getListener } from "solid-js";
-import type { StyleObject as HostStyle, StyleProp } from "./host/HostTypes";
+import type { Style as HostStyle, StyleProp } from "./host/HostTypes";
 
 const STYLE_REF_KIND = "__zynth_style_ref_kind";
 const STYLE_REF_ID = "__zynth_style_ref_id";
@@ -432,15 +432,8 @@ function composeStyles(...layers: StyleInput[]): ComposedStyleRef {
   return createComposedRef(layers);
 }
 
-export interface Style extends HostStyle {}
-
-export const Style = {
+export const StyleGraph = {
   create: createStyles,
   bind: bindStyle,
   compose: composeStyles,
 };
-
-/** @deprecated Use Style instead */
-export const StyleGraph = Style;
-/** @deprecated Use Style instead */
-export type StyleGraph = Style;

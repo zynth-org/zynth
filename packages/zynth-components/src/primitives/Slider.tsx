@@ -1,6 +1,5 @@
-import { createSignal, splitProps, type Component } from "solid-js";
-import type { StyleProp, HostNode } from "@zynth/core";
-import { createStyleBinding } from "../hooks/styleBinding";
+import { splitProps, type Component } from "solid-js";
+import type { Style } from "@zynth/core";
 
 export interface SliderProps {
   /** Controlled value of the slider. */
@@ -26,12 +25,11 @@ export interface SliderProps {
   /** Called when the user releases the thumb. */
   onSlidingComplete?: (value: number) => void;
   /** Additional style. */
-  style?: StyleProp;
+  style?: Style;
   /** Testing identifier. */
   testID?: string;
   /** Rounds emitted values to this number of decimal places. Defaults to 5. */
   precision?: number;
-  ref?: (node: HostNode | null) => void;
 }
 
 type SliderEvent = {
@@ -68,11 +66,7 @@ export const Slider: Component<SliderProps> = (props) => {
     "style",
     "testID",
     "precision",
-    "ref",
   ]);
-
-  const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
-  createStyleBinding(hostNode, () => local.style);
 
   const precision = () =>
     typeof local.precision === "number" ? local.precision : 5;
@@ -97,11 +91,6 @@ export const Slider: Component<SliderProps> = (props) => {
       handler?.(nextRounded);
     };
 
-  const refProp = (node: HostNode | null) => {
-    setHostNode(node);
-    local.ref?.(node);
-  };
-
   return (
     <slider-view
       value={local.value ?? local.defaultValue ?? 0}
@@ -120,9 +109,8 @@ export const Slider: Component<SliderProps> = (props) => {
           ? wrapHandler(local.onSlidingComplete)
           : undefined
       }
-      style={undefined}
+      style={local.style}
       testID={local.testID}
-      ref={refProp}
     />
   );
 };

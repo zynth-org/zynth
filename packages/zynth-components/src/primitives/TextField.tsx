@@ -5,9 +5,8 @@ import {
   onCleanup,
   type Component,
 } from "solid-js";
-import type { HostNode, StyleProp } from "@zynth/core";
+import type { HostNode, Style } from "@zynth/core";
 import { setProperty } from "@zynth/core";
-import { createStyleBinding } from "../hooks/styleBinding";
 
 export type KeyboardType = "default" | "numeric" | "email" | "phone" | "url";
 export type ReturnKeyType = "done" | "go" | "next" | "search" | "send";
@@ -121,7 +120,7 @@ export interface TextFieldProps {
   ref?: ((node: (HostNode & TextFieldRef) | null) => void) | null;
 
   /** Style props */
-  style?: StyleProp;
+  style?: Style;
   /** Test ID for testing frameworks */
   testID?: string;
 }
@@ -157,8 +156,6 @@ export const TextField: Component<TextFieldProps> = (props) => {
   const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
   const [text, setText] = createSignal(local.value ?? local.defaultValue ?? "");
   const [focused, setFocused] = createSignal(false);
-
-  createStyleBinding(hostNode, () => local.style);
 
   const assignRef = (node: (HostNode & TextFieldRef) | null) => {
     if (typeof local.ref === "function") {
@@ -230,6 +227,51 @@ export const TextField: Component<TextFieldProps> = (props) => {
     setProperty(node, "onSubmit", handleSubmit);
   });
 
+  // Sync style properties to native
+  createEffect(() => {
+    const node = hostNode();
+    if (!node || !local.style) return;
+
+    const style = local.style as Record<string, unknown>;
+
+    if (style.backgroundColor !== undefined) {
+      setProperty(node, "backgroundColor", style.backgroundColor);
+    }
+    if (style.borderRadius !== undefined) {
+      setProperty(node, "borderRadius", style.borderRadius);
+    }
+    if (style.borderWidth !== undefined) {
+      setProperty(node, "borderWidth", style.borderWidth);
+    }
+    if (style.borderColor !== undefined) {
+      setProperty(node, "borderColor", style.borderColor);
+    }
+    if (style.color !== undefined) {
+      setProperty(node, "textColor", style.color);
+    }
+    const placeholderColor =
+      local.placeholderColor ?? style.placeholderColor ?? undefined;
+    if (placeholderColor !== undefined) {
+      setProperty(node, "placeholderColor", placeholderColor);
+    }
+  });
+
+  // Filter out styles that are handled natively to avoid double-application
+  const filteredStyle = () => {
+    if (!local.style) return undefined;
+    const style = local.style as Record<string, unknown>;
+    const {
+      backgroundColor,
+      borderRadius,
+      borderWidth,
+      borderColor,
+      color,
+      placeholderColor,
+      ...rest
+    } = style;
+    return rest;
+  };
+
   return (
     <text-field
       ref={(node: (HostNode & TextFieldRef) | null) => {
@@ -258,7 +300,7 @@ export const TextField: Component<TextFieldProps> = (props) => {
         assignRef(imperativeNode);
       }}
       defaultValue={local.defaultValue}
-      style={undefined}
+      style={filteredStyle()}
       testID={local.testID}
     />
   );

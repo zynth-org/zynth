@@ -7,10 +7,9 @@ import {
   type ParentComponent,
   type JSX,
 } from "solid-js";
-import type { HostNode, Style, StyleProp } from "@zynth/core";
-import { setProperty, flattenStyleProp } from "@zynth/core";
+import type { HostNode, Style } from "@zynth/core";
+import { setProperty } from "@zynth/core";
 import { Dimensions } from "@zynth/apis";
-import { createStyleBinding } from "../hooks/styleBinding";
 import { View } from "./View";
 
 export type ModalAnimation = "fade" | "slide" | "zoom" | "none";
@@ -40,7 +39,7 @@ export interface ModalProps {
   onOpenChange?: (open: boolean) => void;
   onRequestClose?: () => void;
   onDismiss?: () => void;
-  style?: StyleProp;
+  style?: Style;
   children?: JSX.Element;
   testID?: string;
 }
@@ -98,7 +97,7 @@ export const Modal: ParentComponent<ModalProps> = (props) => {
     "testID",
   ]);
 
-  const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
+  let host: HostNode | null = null;
   const [uncontrolledOpen, setUncontrolledOpen] = createSignal(
     local.defaultOpen ?? false
   );
@@ -124,19 +123,16 @@ export const Modal: ParentComponent<ModalProps> = (props) => {
     onCleanup(unsubscribe);
   });
 
-  const modalStyle = createMemo<StyleProp>(() => {
-    return [
-      DEFAULT_MODAL_STYLE,
-      local.style,
-      {
-        width: 0,
-        height: 0,
-        display: resolvedOpen() ? "flex" : "none",
-      },
-    ] as StyleProp;
+  const modalStyle = createMemo<Style>(() => {
+    const style: Style = {
+      ...DEFAULT_MODAL_STYLE,
+      ...local.style,
+    };
+    style.width = 0;
+    style.height = 0;
+    style.display = resolvedOpen() ? "flex" : "none";
+    return style;
   });
-
-  createStyleBinding(hostNode, modalStyle);
 
   const contentWrapperStyle = createMemo<Style>(() => ({
     position: "absolute",
@@ -147,7 +143,7 @@ export const Modal: ParentComponent<ModalProps> = (props) => {
   }));
 
   const attachHost = (node: HostNode | null) => {
-    setHostNode(node);
+    host = node;
     if (node) {
       const imperativeNode = node as HostNode & ModalRef;
       imperativeNode.open = () => sendCommand(node, { type: "show" });
@@ -162,8 +158,8 @@ export const Modal: ParentComponent<ModalProps> = (props) => {
   };
 
   createEffect(() => {
-    const host = hostNode();
     if (!host) return;
+    setProperty(host, "style", modalStyle());
     setProperty(host, "animation", resolvedAnimation());
     setProperty(host, "transparent", resolvedTransparent());
     setProperty(host, "dismissOnOverlayPress", resolvedDismissOnOverlayPress());
@@ -176,7 +172,6 @@ export const Modal: ParentComponent<ModalProps> = (props) => {
   });
 
   createEffect(() => {
-    const host = hostNode();
     if (!host) return;
 
     setProperty(host, "onRequestClose", () => {
@@ -200,7 +195,7 @@ export const Modal: ParentComponent<ModalProps> = (props) => {
   });
 
   return (
-    <zynth-modal ref={attachHost} style={undefined}>
+    <zynth-modal ref={attachHost} style={modalStyle()}>
       <View style={contentWrapperStyle()} pointerEvents="box-none">
         {local.children}
       </View>

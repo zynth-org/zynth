@@ -1,15 +1,13 @@
-import { children as resolveChildren, createSignal, splitProps } from "solid-js";
+import { children as resolveChildren, splitProps } from "solid-js";
 import type { JSX, ParentComponent } from "solid-js";
-import type { HostNode, StyleProp } from "@zynth/core";
-import { createStyleBinding } from "../hooks/styleBinding";
+import type { Style } from "@zynth/core";
 
 export interface GlassContainerProps {
-  style?: StyleProp;
+  style?: Style;
   children?: JSX.Element;
   spacing?: number;
   pointerEvents?: "auto" | "none" | "box-none" | "box-only";
   testID?: string;
-  ref?: (node: HostNode | null) => void;
 }
 
 export const GlassContainer: ParentComponent<GlassContainerProps> = (props) => {
@@ -19,25 +17,15 @@ export const GlassContainer: ParentComponent<GlassContainerProps> = (props) => {
     "spacing",
     "pointerEvents",
     "testID",
-    "ref",
   ]);
   const resolvedChildren = resolveChildren(() => local.children);
 
-  const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
-  createStyleBinding(hostNode, () => local.style);
-
-  const refProp = (node: HostNode | null) => {
-    setHostNode(node);
-    local.ref?.(node);
-  };
-
   return (
     <glass-container
-      style={undefined}
+      style={local.style as any}
       spacing={local.spacing}
       pointerEvents={local.pointerEvents}
       testID={local.testID}
-      ref={refProp}
     >
       {resolvedChildren()}
     </glass-container>
