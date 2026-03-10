@@ -8,13 +8,14 @@ import {
   splitProps,
 } from "solid-js";
 import type { ParentComponent } from "solid-js";
-import type { HostNode, Style } from "@zynth/core";
-import { setProperty } from "@zynth/core";
+import type { HostNode, StyleProp } from "@zynth/core";
+import { setProperty, flattenStyleProp } from "@zynth/core";
 import {
   createPressableRef,
   type InternalPressableController,
   type PressableRef,
 } from "./pressable/controller";
+import { createStyleBinding } from "../hooks/styleBinding";
 import type { KeyEvent, Modifiers } from "./events";
 export type { KeyEvent } from "./events";
 
@@ -74,8 +75,8 @@ export type PressableProps = {
   activateKeys?: Array<"Enter" | "Space">;
   preventFocusOnPress?: boolean;
   pressEffect?: "none" | "highlight" | "ripple";
-  stateLayerStyle?: Style | ((state: PressableState) => Style);
-  style?: Style | ((state: PressableState) => Style);
+  stateLayerStyle?: StyleProp | ((state: PressableState) => StyleProp);
+  style?: StyleProp | ((state: PressableState) => StyleProp);
   pointerEvents?: "auto" | "none" | "box-none" | "box-only";
   enableGlassIOS?: boolean;
   tintColor?: string;
@@ -316,23 +317,25 @@ export const Pressable: ParentComponent<PressableProps> = (props) => {
     longPressActive: controller.longPressActive(),
   }));
 
-  const resolvedStyle = createMemo<Style | undefined>(() => {
+  const resolvedStyle = createMemo<StyleProp | undefined>(() => {
     const value = local.style;
     const state = currentState();
     if (typeof value === "function") {
       return value(state);
     }
-    return value as Style | undefined;
+    return value as StyleProp | undefined;
   });
 
-  const resolvedStateLayerStyle = createMemo<Style | undefined>(() => {
+  const resolvedStateLayerStyle = createMemo<StyleProp | undefined>(() => {
     const value = local.stateLayerStyle;
     const state = currentState();
     if (typeof value === "function") {
       return value(state);
     }
-    return value as Style | undefined;
+    return value as StyleProp | undefined;
   });
+
+  createStyleBinding(hostNode, resolvedStyle);
 
   const resolvedChildren = resolveChildren(() => local.children);
 
@@ -408,8 +411,7 @@ export const Pressable: ParentComponent<PressableProps> = (props) => {
     const node = hostNode();
     if (!node) return;
 
-    setProperty(node, "style", resolvedStyle());
-    setProperty(node, "stateLayerStyle", resolvedStateLayerStyle());
+    setProperty(node, "stateLayerStyle", flattenStyleProp(resolvedStateLayerStyle()));
     setProperty(node, "disabled", resolvedDisabled());
     setProperty(node, "pressEffect", resolvedPressEffect());
     setProperty(node, "pressRetentionOffset", resolvedPressRetention());
@@ -459,6 +461,7 @@ export const Pressable: ParentComponent<PressableProps> = (props) => {
 
   return (
     <pressable
+      style={undefined}
       ref={(node: any) => {
         const host = (node as unknown as HostNode) ?? null;
         setHostNode(host);

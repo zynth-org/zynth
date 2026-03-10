@@ -10,11 +10,12 @@ import {
   splitProps,
 } from "solid-js";
 import type { ParentComponent } from "solid-js";
-import type { HostNode, Style } from "@zynth/core";
-import { setProperty } from "@zynth/core";
+import type { HostNode, Style, StyleProp } from "@zynth/core";
+import { setProperty, flattenStyleProp } from "@zynth/core";
 import { Text } from "./Text";
 import { View } from "./View";
 import { ProgressIndicator } from "./ProgressIndicator";
+import { createStyleBinding } from "../hooks/styleBinding";
 
 export type ButtonType = "button" | "submit";
 export type Variant = "solid" | "outline" | "ghost" | "link";
@@ -224,14 +225,14 @@ export type ButtonProps = {
   onKeyUp?: (event: { key: string }) => void;
   pressBehavior?: PressBehavior;
   pendingBehavior?: PendingBehavior;
-  style?: Style;
+  style?: StyleProp;
   enableGlassIOS?: boolean;
   tintColor?: string;
-  labelStyle?: Style;
-  iconStyle?: Style;
-  pressedStyle?: Style;
-  disabledStyle?: Style;
-  loadingStyle?: Style;
+  labelStyle?: StyleProp;
+  iconStyle?: StyleProp;
+  pressedStyle?: StyleProp;
+  disabledStyle?: StyleProp;
+  loadingStyle?: StyleProp;
   asChild?: boolean;
   ref?: (node: (HostNode & ButtonRef) | null) => void;
   accessibilityLabel?: string;
@@ -512,7 +513,7 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
       composed.paddingVertical = 0;
     }
     if (local.style) {
-      Object.assign(composed, local.style as Style);
+      Object.assign(composed, flattenStyleProp(local.style) ?? {});
     }
     return composed;
   });
@@ -636,6 +637,23 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     callWithOwner(local.onKeyUp, { key });
   };
 
+  const styleToPass = createMemo(() => {
+    const resolvedStyle = resolvedButtonStyle();
+    const shouldUseBackgroundBase =
+      !!local.enableGlassIOS || resolvedVariant() === "solid";
+    const styleBaseColor = shouldUseBackgroundBase
+      ? resolveStyleBackgroundColor(resolvedStyle)
+      : undefined;
+
+    const result = { ...resolvedStyle };
+    if (shouldUseBackgroundBase && styleBaseColor) {
+      delete result.backgroundColor;
+    }
+    return result;
+  });
+
+  createStyleBinding(hostNode, styleToPass);
+
   createEffect(() => {
     const node = hostNode();
     if (!node) return;
@@ -658,7 +676,7 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     }
 
     // Base Color — let the system choose unless explicitly provided or destructive tone
-    const resolvedStyle = resolvedButtonStyle() as Style | undefined;
+    const resolvedStyle = resolvedButtonStyle();
     const shouldUseBackgroundBase =
       !!local.enableGlassIOS || resolvedVariant() === "solid";
     const styleBaseColor = shouldUseBackgroundBase
@@ -669,15 +687,6 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
       styleBaseColor ??
       (resolvedTone() === "danger" ? toneColorMap[resolvedTone()] : undefined);
 
-    // If we extracted the background color to use as the button's base color (native tint),
-    // we should remove it from the container view's style to prevent it from rendering
-    // a square background behind the rounded button (which causes "disappearing corners").
-    const styleToPass = resolvedStyle ? { ...resolvedStyle } : undefined;
-    if (shouldUseBackgroundBase && styleBaseColor && styleToPass) {
-      delete styleToPass.backgroundColor;
-    }
-
-    setProperty(node, "style", styleToPass);
     setProperty(node, "type", resolvedType());
     setProperty(node, "disabled", resolvedDisabled());
     setProperty(node, "loading", computedLoading());
@@ -733,11 +742,11 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     setProperty(node, "haptics", local.haptics ?? "none");
     // labelStyle, iconStyle, pressedStyle etc might not be needed for native text,
     // unless we want to allow overriding native text attributes (requires more native code)
-    setProperty(node, "labelStyle", local.labelStyle);
-    setProperty(node, "iconStyle", local.iconStyle);
-    setProperty(node, "pressedStyle", local.pressedStyle);
-    setProperty(node, "disabledStyle", local.disabledStyle);
-    setProperty(node, "loadingStyle", local.loadingStyle);
+    setProperty(node, "labelStyle", flattenStyleProp(local.labelStyle));
+    setProperty(node, "iconStyle", flattenStyleProp(local.iconStyle));
+    setProperty(node, "pressedStyle", flattenStyleProp(local.pressedStyle));
+    setProperty(node, "disabledStyle", flattenStyleProp(local.disabledStyle));
+    setProperty(node, "loadingStyle", flattenStyleProp(local.loadingStyle));
     setProperty(node, "accessibilityLabel", resolvedAccessibilityLabel());
     setProperty(node, "accessibilityHint", local.accessibilityHint);
     setProperty(node, "testID", local.testID);
@@ -784,7 +793,7 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
   });
 
   const resolvedTextColor = createMemo(() => {
-    const style = local.labelStyle as Style;
+    const style = flattenStyleProp(local.labelStyle);
     if (style?.color) return style.color;
 
     if (resolvedVariant() === "solid") {
@@ -799,12 +808,18 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     if (isStringContent() && !useNativeTitle()) {
       const fontSize = sizeFontMap[resolvedSize()] ?? sizeFontMap.md;
       // Merge labelStyle with default font size
-      const textStyle: Style = {
-        fontSize,
-        color: resolvedTextColor(),
-        ...((local.labelStyle as Style) ?? {}),
-      };
-      return <Text style={textStyle}>{titleContent()}</Text>;
+      return (
+        <Text
+          style={[
+            { fontSize, color: resolvedTextColor() } as Style,
+            ...(Array.isArray(local.labelStyle)
+              ? local.labelStyle
+              : [local.labelStyle]),
+          ] as StyleProp}
+        >
+          {titleContent()}
+        </Text>
+      );
     }
     if (isStringContent()) return null;
     return local.children;
@@ -812,6 +827,7 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
 
   return (
     <button
+      style={undefined}
       ref={(node: any) => {
         const host = (node as unknown as HostNode) ?? null;
         setHostNode(host);
@@ -849,11 +865,15 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
             )}
             {local.loadingAriaLabel ? (
               <Text
-                style={{
-                  fontSize: sizeFontMap[resolvedSize()] ?? sizeFontMap.md,
-                  color: resolvedTextColor(),
-                  ...((local.labelStyle as Style) ?? {}),
-                }}
+                style={[
+                  {
+                    fontSize: sizeFontMap[resolvedSize()] ?? sizeFontMap.md,
+                    color: resolvedTextColor(),
+                  } as Style,
+                  ...(Array.isArray(local.labelStyle)
+                    ? local.labelStyle
+                    : [local.labelStyle]),
+                ] as StyleProp}
               >
                 {local.loadingAriaLabel}
               </Text>

@@ -9,8 +9,8 @@ import "./polyfills/fetch";
 export * from "./renderer";
 export * from "./host/HostTypes";
 export {
+  Style,
   StyleGraph,
-  StyleGraph as Style,
   isStyleRef,
   flattenStyleProp,
   createStyleGraphBinding,

@@ -7,14 +7,16 @@ import {
   type JSX,
   type ParentComponent,
 } from "solid-js";
-import type { HostNode, Style } from "@zynth/core";
+import type { HostNode, Style, StyleProp, StyleRef } from "@zynth/core";
 import {
   getActiveSurface,
   render,
   setActiveSurface,
   setProperty,
+  flattenStyleProp,
 } from "@zynth/core";
 import { Dimensions, Platform } from "@zynth/apis";
+import { createStyleBinding } from "../hooks/styleBinding";
 import { View } from "./View";
 
 export type SnapPoint = number | `${number}%`;
@@ -49,8 +51,8 @@ export interface BottomSheetProps {
   dismissOnOverlayPress?: boolean;
   allowBackgroundInteraction?: boolean;
   allowDismissOnInteraction?: boolean;
-  style?: Style;
-  contentContainerStyle?: Style;
+  style?: StyleProp;
+  contentContainerStyle?: StyleProp;
   onOpenChange?: (open: boolean) => void;
   onSnapChange?: (payload: { index: number; progress: number }) => void;
   onDismiss?: () => void;
@@ -217,34 +219,40 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
     return result;
   });
 
+  const sheetStyle = createMemo<StyleProp>(() => {
+    const layers: (Style | StyleRef | undefined | null)[] = [
+      DEFAULT_SHEET_STYLE,
+      ...(Array.isArray(local.style) ? local.style : [local.style]),
+      Platform.select({
+        ios: {},
+        android: {
+          width: 0,
+          height: 0,
+        },
+        default: {},
+      }),
+    ];
+    return layers as StyleProp;
+  });
+
+  createStyleBinding(hostNode, sheetStyle);
+
   const contentStyle = createMemo<Style>(() => {
     const resolvedMaxHeight = Number(maxSnapHeight());
+    const flattenedContainer = flattenStyleProp(local.contentContainerStyle);
     const style: Style = {
       ...DEFAULT_CONTENT_STYLE,
-      ...local.contentContainerStyle,
+      ...(flattenedContainer ?? {}),
     };
     if (
       resolvedMaxHeight > 0 &&
-      local.contentContainerStyle?.height == null &&
-      local.contentContainerStyle?.maxHeight == null
+      flattenedContainer?.height == null &&
+      flattenedContainer?.maxHeight == null
     ) {
       style.maxHeight = resolvedMaxHeight;
     }
     return style;
   });
-
-  const sheetStyle = createMemo<Style>(() => ({
-    ...DEFAULT_SHEET_STYLE,
-    ...local.style,
-    ...Platform.select({
-      ios: {},
-      android: {
-        width: 0,
-        height: 0,
-      },
-      default: {},
-    }),
-  }));
 
   const contentWrapperStyle = createMemo<Style>(() => ({
     position: "absolute",
@@ -291,7 +299,6 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
   createEffect(() => {
     const host = hostNode();
     if (!host) return;
-    setProperty(host, "style", sheetStyle());
     setProperty(host, "snapPoints", local.snapPoints ?? DEFAULT_SNAP_POINTS);
     // `initialSnapIndex` is a pre-open hint. Re-applying it while the sheet is open
     // can force UIKit to re-resolve detents mid-gesture and cause snap jitter.
@@ -389,7 +396,7 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
   });
 
   const sheetNode = () => (
-    <zynth-bottom-sheet ref={attachHost} style={sheetStyle()}>
+    <zynth-bottom-sheet ref={attachHost} style={undefined}>
       {useWindowWrapper() ? (
         <View style={contentWrapperStyle()} pointerEvents="box-none">
           <View style={contentStyle()}>

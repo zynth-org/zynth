@@ -10,6 +10,7 @@ import { Platform, OS } from "@zynth/apis";
 import type { ParentComponent } from "solid-js";
 import type { HostNode, Style, StyleProp } from "@zynth/core";
 import { scheduleOnUIAfter, setProperty, shareSignalRef } from "@zynth/core";
+import { createStyleBinding } from "../hooks/styleBinding";
 import { View } from "./View";
 import type { LayoutChangeEvent } from "./View";
 
@@ -436,6 +437,7 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
   });
 
   const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
+  createStyleBinding(hostNode, () => local.style);
   const imperativeRef = createScrollViewRef() as InternalScrollViewRef;
   let disposed = false;
 
@@ -621,9 +623,9 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
 
   if (Platform.OS === OS.IOS && local.contentSize) {
     return (
-        <recycler-scroll-view
-        ref={(node: any) => {
-          const host = (node as unknown as HostNode) ?? null;
+      <recycler-scroll-view
+        style={undefined}
+        ref={(node: any) => {          const host = (node as unknown as HostNode) ?? null;
           setHostNode(host);
           if (host) {
             const imperativeNode = host as HostNode & ScrollViewRef;
@@ -652,6 +654,7 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
 
   return (
     <scroll-view
+      style={undefined}
       ref={(node: any) => {
         const host = (node as unknown as HostNode) ?? null;
         setHostNode(host);

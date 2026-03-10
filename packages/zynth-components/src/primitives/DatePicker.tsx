@@ -6,8 +6,9 @@ import {
   type ParentComponent,
   type JSX,
 } from "solid-js";
-import type { HostNode, Style } from "@zynth/core";
+import type { HostNode, StyleProp } from "@zynth/core";
 import { setProperty } from "@zynth/core";
+import { createStyleBinding } from "../hooks/styleBinding";
 
 export interface DatePickerProps {
   mode?: "date" | "range" | "year";
@@ -21,15 +22,16 @@ export interface DatePickerProps {
   onCancel?: () => void;
   onDismiss?: () => void;
   ref?: (node: (HostNode & DatePickerRef) | null) => void;
-  style?: Style;
+  style?: StyleProp;
   children?: JSX.Element;
   testID?: string;
 }
 
 export interface DatePickerTriggerProps {
-  style?: Style;
+  style?: StyleProp;
   children?: JSX.Element;
   testID?: string;
+  ref?: (node: HostNode | null) => void;
 }
 
 type DatePickerEvent = {
@@ -142,6 +144,9 @@ const DatePickerRoot: ParentComponent<DatePickerProps> = (props) => {
     "testID",
   ]);
 
+  const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
+  createStyleBinding(hostNode, () => local.style);
+
   const selection = () => {
     if (local.mode === "range") {
       return toRangeSelection(
@@ -166,7 +171,6 @@ const DatePickerRoot: ParentComponent<DatePickerProps> = (props) => {
       handler?.(next);
     };
 
-  const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
   onCleanup(() => local.ref?.(null));
 
   const attachRef = (node: any) => {
@@ -198,7 +202,7 @@ const DatePickerRoot: ParentComponent<DatePickerProps> = (props) => {
       }
       onCancel={local.onCancel}
       onDismiss={local.onDismiss}
-      style={local.style}
+      style={undefined}
       testID={local.testID}
     >
       {local.children}
@@ -207,10 +211,17 @@ const DatePickerRoot: ParentComponent<DatePickerProps> = (props) => {
 };
 
 const DatePickerTrigger: ParentComponent<DatePickerTriggerProps> = (props) => {
-  const [local] = splitProps(props, ["style", "children", "testID"]);
+  const [local] = splitProps(props, ["style", "children", "testID", "ref"]);
+  const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
+  createStyleBinding(hostNode, () => local.style);
+
+  const refProp = (node: HostNode | null) => {
+    setHostNode(node);
+    local.ref?.(node);
+  };
 
   return (
-    <date-picker-trigger-view style={local.style} testID={local.testID}>
+    <date-picker-trigger-view style={undefined} testID={local.testID} ref={refProp}>
       {local.children}
     </date-picker-trigger-view>
   );

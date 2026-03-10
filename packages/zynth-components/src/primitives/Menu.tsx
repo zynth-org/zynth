@@ -1,23 +1,27 @@
 import {
   splitProps,
+  createSignal,
   type ParentComponent,
   type Component,
   type JSX,
 } from "solid-js";
-import type { Style } from "@zynth/core";
+import type { HostNode, StyleProp } from "@zynth/core";
+import { createStyleBinding } from "../hooks/styleBinding";
 
 export interface MenuProps {
-  style?: Style;
+  style?: StyleProp;
   children?: JSX.Element;
   onOpen?: () => void;
   onClose?: () => void;
   testID?: string;
+  ref?: (node: HostNode | null) => void;
 }
 
 export interface MenuTriggerProps {
-  style?: Style;
+  style?: StyleProp;
   children?: JSX.Element;
   testID?: string;
+  ref?: (node: HostNode | null) => void;
 }
 
 export interface MenuItemProps {
@@ -25,9 +29,10 @@ export interface MenuItemProps {
   onPress?: () => void;
   destructive?: boolean;
   disabled?: boolean;
-  style?: Style;
+  style?: StyleProp;
   testID?: string;
   icon?: JSX.Element;
+  ref?: (node: HostNode | null) => void;
 }
 
 const MenuRoot: ParentComponent<MenuProps> = (props) => {
@@ -37,14 +42,24 @@ const MenuRoot: ParentComponent<MenuProps> = (props) => {
     "testID",
     "onOpen",
     "onClose",
+    "ref",
   ]);
+
+  const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
+  createStyleBinding(hostNode, () => local.style);
+
+  const refProp = (node: HostNode | null) => {
+    setHostNode(node);
+    local.ref?.(node);
+  };
 
   return (
     <menu-view
-      style={local.style}
+      style={undefined}
       testID={local.testID}
       onOpen={local.onOpen}
       onClose={local.onClose}
+      ref={refProp}
     >
       {local.children}
     </menu-view>
@@ -52,10 +67,18 @@ const MenuRoot: ParentComponent<MenuProps> = (props) => {
 };
 
 const MenuTrigger: ParentComponent<MenuTriggerProps> = (props) => {
-  const [local] = splitProps(props, ["style", "children", "testID"]);
+  const [local] = splitProps(props, ["style", "children", "testID", "ref"]);
+
+  const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
+  createStyleBinding(hostNode, () => local.style);
+
+  const refProp = (node: HostNode | null) => {
+    setHostNode(node);
+    local.ref?.(node);
+  };
 
   return (
-    <menu-trigger-view style={local.style} testID={local.testID}>
+    <menu-trigger-view style={undefined} testID={local.testID} ref={refProp}>
       {local.children}
     </menu-trigger-view>
   );
@@ -70,7 +93,27 @@ const MenuItem: Component<MenuItemProps> = (props) => {
     "style",
     "testID",
     "icon",
+    "ref",
   ]);
+
+  const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
+  const internalStyle = () => [
+    {
+      display: "none",
+      position: "absolute",
+      width: 0,
+      height: 0,
+      opacity: 0,
+    },
+    local.style,
+  ] as StyleProp;
+
+  createStyleBinding(hostNode, internalStyle);
+
+  const refProp = (node: HostNode | null) => {
+    setHostNode(node);
+    local.ref?.(node);
+  };
 
   return (
     <menu-item-view
@@ -78,17 +121,11 @@ const MenuItem: Component<MenuItemProps> = (props) => {
       destructive={local.destructive}
       disabled={local.disabled}
       slot="items"
-      style={{
-        display: "none",
-        position: "absolute",
-        width: 0,
-        height: 0,
-        opacity: 0,
-        ...local.style,
-      }}
+      style={undefined}
       testID={local.testID}
       onPress={local.onPress}
       pointerEvents="none"
+      ref={refProp}
     >
       {local.icon}
     </menu-item-view>

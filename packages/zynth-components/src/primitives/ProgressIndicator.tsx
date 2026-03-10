@@ -1,5 +1,6 @@
-import { splitProps, type Component } from "solid-js";
-import type { Style } from "@zynth/core";
+import { createSignal, splitProps, type Component } from "solid-js";
+import type { StyleProp, HostNode } from "@zynth/core";
+import { createStyleBinding } from "../hooks/styleBinding";
 
 export type ProgressIndicatorSize = "small" | "large";
 
@@ -11,9 +12,10 @@ export interface ProgressIndicatorProps {
   /** Whether the indicator is animating. Defaults to true. */
   animating?: boolean;
   /** Additional style for the container. */
-  style?: Style;
+  style?: StyleProp;
   /** Test ID for testing frameworks. */
   testID?: string;
+  ref?: (node: HostNode | null) => void;
 }
 
 export const ProgressIndicator: Component<ProgressIndicatorProps> = (props) => {
@@ -23,15 +25,25 @@ export const ProgressIndicator: Component<ProgressIndicatorProps> = (props) => {
     "animating",
     "style",
     "testID",
+    "ref",
   ]);
+
+  const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
+  createStyleBinding(hostNode, () => local.style);
+
+  const refProp = (node: HostNode | null) => {
+    setHostNode(node);
+    local.ref?.(node);
+  };
 
   return (
     <progress-indicator
       color={local.color}
       size={local.size ?? "small"}
       animating={local.animating ?? true}
-      style={local.style}
+      style={undefined}
       testID={local.testID}
+      ref={refProp}
     />
   );
 };

@@ -1,7 +1,8 @@
 import type { Component } from "solid-js";
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
-import type { HostNode, Style } from "@zynth/core";
+import type { HostNode, StyleProp } from "@zynth/core";
 import { setProperty } from "@zynth/core";
+import { createStyleBinding } from "../hooks/styleBinding";
 import type { KeyEvent } from "./events";
 export type { KeyEvent } from "./events";
 
@@ -192,7 +193,7 @@ export interface TextInputProps {
   eventThrottleMs?: number;
   allowProgrammaticJumpDuringEdit?: boolean;
   ref?: (node: (HostNode & TextInputRef) | null) => void;
-  style?: Style;
+  style?: StyleProp;
   testID?: string;
 }
 
@@ -214,6 +215,8 @@ export const TextInput: Component<TextInputProps> = (props) => {
   const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
   let defaultAppliedNodeId: number | null = null;
   onCleanup(() => props.ref?.(null));
+
+  createStyleBinding(hostNode, () => props.style);
 
   const isPotentiallySecure = createMemo(
     () => props.secureTextEntry !== undefined
@@ -363,7 +366,6 @@ export const TextInput: Component<TextInputProps> = (props) => {
       props.submitBehavior ?? (props.multiline ? "newline" : undefined);
 
     const optionalEntries: [string, unknown][] = [
-      ["style", props.style as any],
       ["defaultValue", props.defaultValue],
       ["placeholder", props.placeholder],
       ["numberOfLines", props.numberOfLines],
@@ -411,6 +413,7 @@ export const TextInput: Component<TextInputProps> = (props) => {
       when={isPotentiallySecure()}
       fallback={
         <text-input
+          style={undefined}
           ref={(node: (HostNode & TextInputRef) | null) =>
             (() => {
               const host = node as HostNode | null;
@@ -442,6 +445,7 @@ export const TextInput: Component<TextInputProps> = (props) => {
       }
     >
       <secure-text-input
+        style={undefined}
         ref={(node: (HostNode & TextInputRef) | null) =>
           (() => {
             const host = node as HostNode | null;
