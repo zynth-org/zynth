@@ -28,6 +28,29 @@ static const char *kZynthAnimateKey = "__zynth_animate";
 static const char *kZynthInterpolationKey = "__zynth_interpolation";
 static char kZynthAnimateHostAssociationKey;
 
+static bool ZynthAnimateVerboseLogsEnabled() {
+#if DEBUG
+  static bool enabled = []() {
+    NSString *rawValue = NSProcessInfo.processInfo.environment[@"ZYNTH_ANIMATE_VERBOSE_LOGS"];
+    if (rawValue == nil) {
+      return false;
+    }
+    NSString *normalized = [[rawValue stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] lowercaseString];
+    return [normalized isEqualToString:@"1"] || [normalized isEqualToString:@"true"] || [normalized isEqualToString:@"yes"];
+  }();
+  return enabled;
+#else
+  return false;
+#endif
+}
+
+#define ZYNTH_ANIMATE_LOG(...)                    \
+  do {                                            \
+    if (ZynthAnimateVerboseLogsEnabled()) {       \
+      NSLog(__VA_ARGS__);                         \
+    }                                             \
+  } while (0)
+
 struct SharedAnimation {
   enum class Kind { Timing, Spring };
   Kind kind = Kind::Timing;
@@ -153,7 +176,7 @@ static std::unordered_map<void *, __weak ZynthAnimateJSI *> gInstances;
 static void onSharedSignalChanged(void *state, int signalId) {
   static NSInteger changeCount = 0;
   if (changeCount++ % 30 == 0) {
-    NSLog(@"[ZynthAnimate] Shared signal %d changed, updating host %p", signalId, state);
+    ZYNTH_ANIMATE_LOG(@"[ZynthAnimate] Shared signal %d changed, updating host %p", signalId, state);
   }
   ZynthAnimateJSI *instance = nil;
   {
@@ -177,7 +200,7 @@ static void onSharedSignalChanged(void *state, int signalId) {
     _nextStyleMapperId = 1;
     _needsStyleUpdate = NO;
     
-    NSLog(@"[ZynthAnimate] Registering instance for host %p", (__bridge void *)host);
+    ZYNTH_ANIMATE_LOG(@"[ZynthAnimate] Registering instance for host %p", (__bridge void *)host);
     if (host) {
       // Keep the bridge alive for the host lifetime; callbacks only hold weak pointers.
       objc_setAssociatedObject(host, &kZynthAnimateHostAssociationKey, self, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -187,7 +210,7 @@ static void onSharedSignalChanged(void *state, int signalId) {
     
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-      NSLog(@"[ZynthAnimate] Registering global shared signal changed callback");
+      ZYNTH_ANIMATE_LOG(@"[ZynthAnimate] Registering global shared signal changed callback");
       ZynthRegisterSharedSignalChangedCallback(onSharedSignalChanged);
     });
   }
@@ -426,7 +449,7 @@ static void onSharedSignalChanged(void *state, int signalId) {
       if (strcmp(name, "height") == 0) {
         static NSInteger heightLogCount = 0;
         if (heightLogCount++ % 30 == 0) {
-          NSLog(@"[ZynthAnimate] Applying height %.2f to node %d", value, mapper.nodeId);
+          ZYNTH_ANIMATE_LOG(@"[ZynthAnimate] Applying height %.2f to node %d", value, mapper.nodeId);
         }
       }
       
@@ -663,7 +686,7 @@ static void onSharedSignalChanged(void *state, int signalId) {
 
 static void ZynthInstallAnimateBridge(ZynthHermesRuntimeHost *host, Runtime &rt) {
   if (!host) return;
-  NSLog(@"[ZynthAnimate] Installing JSI bridge for host %p", (__bridge void *)host);
+  ZYNTH_ANIMATE_LOG(@"[ZynthAnimate] Installing JSI bridge for host %p", (__bridge void *)host);
   auto *animate = [[ZynthAnimateJSI alloc] initWithHost:host];
   __weak ZynthAnimateJSI *weakAnimate = animate;
 
@@ -892,5 +915,5 @@ static void ZynthInstallAnimateBridge(ZynthHermesRuntimeHost *host, Runtime &rt)
   animateJSIObj.setProperty(rt, "updateStyleMapper", updateStyleMapper);
   animateJSIObj.setProperty(rt, "removeStyleMapper", removeStyleMapper);
   rt.global().setProperty(rt, kZynthAnimateKey, animateJSIObj);
-  NSLog(@"[ZynthAnimate] animate bridge installed");
+  ZYNTH_ANIMATE_LOG(@"[ZynthAnimate] animate bridge installed");
 }

@@ -27,6 +27,29 @@ static const char *kZynthSharedValueKey = "__zynth_shared_value";
 static std::mutex gSharedSignalCallbacksMutex;
 static std::vector<ZynthSharedSignalChangedCallback> gSharedSignalCallbacks;
 
+static bool ZynthWorkletsVerboseLogsEnabled() {
+#if DEBUG
+  static bool enabled = []() {
+    NSString *rawValue = NSProcessInfo.processInfo.environment[@"ZYNTH_WORKLETS_VERBOSE_LOGS"];
+    if (rawValue == nil) {
+      return false;
+    }
+    NSString *normalized = [[rawValue stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] lowercaseString];
+    return [normalized isEqualToString:@"1"] || [normalized isEqualToString:@"true"] || [normalized isEqualToString:@"yes"];
+  }();
+  return enabled;
+#else
+  return false;
+#endif
+}
+
+#define ZYNTH_WORKLETS_LOG(...)                     \
+  do {                                              \
+    if (ZynthWorkletsVerboseLogsEnabled()) {        \
+      NSLog(__VA_ARGS__);                           \
+    }                                               \
+  } while (0)
+
 static std::string valueToString(Runtime &rt, const Value &value) {
   if (value.isString()) return value.asString(rt).utf8(rt);
   if (value.isNumber()) return std::to_string(value.asNumber());
@@ -45,7 +68,7 @@ static void installConsole(Runtime &rt) {
           std::string str = valueToString(rt, args[i]);
           [parts addObject:[NSString stringWithUTF8String:str.c_str()]];
         }
-        NSLog(@"[ZynthWorklet] %@", [parts componentsJoinedByString:@" "]);
+        ZYNTH_WORKLETS_LOG(@"[ZynthWorklet] %@", [parts componentsJoinedByString:@" "]);
         return Value::undefined();
       });
 
@@ -148,7 +171,7 @@ struct ZynthWorkletClosureValue {
 
 + (void)registerSharedSignalChangedCallback:(ZynthSharedSignalChangedCallback)callback {
   if (!callback) return;
-  NSLog(@"[ZynthWorklets] Registering shared signal callback: %p", callback);
+  ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] Registering shared signal callback: %p", callback);
   std::lock_guard<std::mutex> lock(gSharedSignalCallbacksMutex);
   gSharedSignalCallbacks.push_back(callback);
 }
@@ -191,7 +214,7 @@ struct ZynthWorkletClosureValue {
     // Throttled log
     static NSInteger triggerCount = 0;
     if (triggerCount++ % 30 == 0) {
-      NSLog(@"[ZynthWorklets] Triggering %lu callbacks for signal %d value=%.2f", (unsigned long)callbacks.size(), signalId, value);
+      ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] Triggering %lu callbacks for signal %d value=%.2f", (unsigned long)callbacks.size(), signalId, value);
     }
   }
 
@@ -208,12 +231,12 @@ struct ZynthWorkletClosureValue {
       rt, PropNameID::forAscii(rt, "createSharedSignal"), 1,
       [self](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
         if (count < 1 || !args[0].isNumber()) {
-          NSLog(@"[ZynthWorklets] createSharedSignal: invalid args");
+          ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] createSharedSignal: invalid args");
           return Value::undefined();
         }
         double initialValue = args[0].asNumber();
         int signalId = [self createSharedSignalWithValue:initialValue];
-        NSLog(@"[ZynthWorklets] createSharedSignal id=%d value=%.3f", signalId, initialValue);
+        ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] createSharedSignal id=%d value=%.3f", signalId, initialValue);
         return Value(static_cast<double>(signalId));
       });
 
@@ -221,13 +244,13 @@ struct ZynthWorkletClosureValue {
       rt, PropNameID::forAscii(rt, "getSharedSignal"), 1,
       [self](Runtime &, const Value &, const Value *args, size_t count) -> Value {
         if (count < 1 || !args[0].isNumber()) {
-          NSLog(@"[ZynthWorklets] getSharedSignal: invalid args");
+          ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] getSharedSignal: invalid args");
           return Value::undefined();
         }
         int signalId = static_cast<int>(args[0].asNumber());
         double value = [self sharedSignalValueForId:signalId];
         if (std::isnan(value)) {
-          NSLog(@"[ZynthWorklets] getSharedSignal missing id=%d", signalId);
+          ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] getSharedSignal missing id=%d", signalId);
           return Value::undefined();
         }
         return Value(value);
@@ -237,16 +260,16 @@ struct ZynthWorkletClosureValue {
       rt, PropNameID::forAscii(rt, "setSharedSignal"), 2,
       [self](Runtime &, const Value &, const Value *args, size_t count) -> Value {
         if (count < 2 || !args[0].isNumber() || !args[1].isNumber()) {
-          NSLog(@"[ZynthWorklets] setSharedSignal: invalid args");
+          ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] setSharedSignal: invalid args");
           return Value::undefined();
         }
         int signalId = static_cast<int>(args[0].asNumber());
         double value = args[1].asNumber();
         if (![self setSharedSignalValue:signalId value:value]) {
-          NSLog(@"[ZynthWorklets] setSharedSignal missing id=%d", signalId);
+          ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] setSharedSignal missing id=%d", signalId);
           return Value::undefined();
         }
-        NSLog(@"[ZynthWorklets] setSharedSignal id=%d value=%.3f", signalId, value);
+        ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] setSharedSignal id=%d value=%.3f", signalId, value);
         return Value::undefined();
       });
 
@@ -254,7 +277,7 @@ struct ZynthWorkletClosureValue {
       rt, PropNameID::forAscii(rt, "removeSharedSignal"), 1,
       [self](Runtime &, const Value &, const Value *args, size_t count) -> Value {
         if (count < 1 || !args[0].isNumber()) {
-          NSLog(@"[ZynthWorklets] removeSharedSignal: invalid args");
+          ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] removeSharedSignal: invalid args");
           return Value::undefined();
         }
         int signalId = static_cast<int>(args[0].asNumber());
@@ -262,7 +285,7 @@ struct ZynthWorkletClosureValue {
           std::lock_guard<std::mutex> lock(_sharedSignalsMutex);
           _sharedSignals.erase(signalId);
         }
-        NSLog(@"[ZynthWorklets] removeSharedSignal id=%d", signalId);
+        ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] removeSharedSignal id=%d", signalId);
         return Value::undefined();
       });
 
@@ -272,7 +295,7 @@ struct ZynthWorkletClosureValue {
   shared.setProperty(rt, "setSharedSignal", setSharedSignal);
   shared.setProperty(rt, "removeSharedSignal", removeSharedSignal);
   rt.global().setProperty(rt, "__zynth_shared_signals", shared);
-  NSLog(@"[ZynthWorklets] shared signals bridge installed");
+  ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] shared signals bridge installed");
 }
 
 - (void)installWorkletsBridgeOnRuntime:(facebook::jsi::Runtime &)rt {
@@ -283,17 +306,17 @@ struct ZynthWorkletClosureValue {
       [weakSelf](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
         ZynthWorklets *strongSelf = weakSelf;
         if (!strongSelf || count < 1 || !args[0].isObject()) {
-          NSLog(@"[ZynthWorklets] register: invalid payload");
+          ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] register: invalid payload");
           return Value::undefined();
         }
         Object payload = args[0].asObject(rt);
         if (!payload.hasProperty(rt, "code")) {
-          NSLog(@"[ZynthWorklets] register: missing code");
+          ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] register: missing code");
           return Value::undefined();
         }
         Value codeValue = payload.getProperty(rt, "code");
         if (!codeValue.isString()) {
-          NSLog(@"[ZynthWorklets] register: code not string");
+          ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] register: code not string");
           return Value::undefined();
         }
         std::string code = codeValue.asString(rt).utf8(rt);
@@ -368,7 +391,7 @@ struct ZynthWorkletClosureValue {
                                         closure:*closureCopy];
         });
 
-        NSLog(@"[ZynthWorklets] register id=%d location=%s", workletId, location.c_str());
+        ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] register id=%d location=%s", workletId, location.c_str());
         return Value(static_cast<double>(workletId));
       });
 
@@ -376,7 +399,7 @@ struct ZynthWorkletClosureValue {
       rt, PropNameID::forAscii(rt, "run"), 1,
       [weakSelf](Runtime &, const Value &, const Value *args, size_t count) -> Value {
         if (count < 1 || !args[0].isNumber()) {
-          NSLog(@"[ZynthWorklets] run: invalid args");
+          ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] run: invalid args");
           return Value::undefined();
         }
         int workletId = static_cast<int>(args[0].asNumber());
@@ -385,7 +408,7 @@ struct ZynthWorkletClosureValue {
           if (!strongSelf) return;
           [strongSelf runWorkletOnUIRuntime:workletId];
         });
-        NSLog(@"[ZynthWorklets] run id=%d", workletId);
+        ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] run id=%d", workletId);
         return Value::undefined();
       });
 
@@ -393,7 +416,7 @@ struct ZynthWorkletClosureValue {
       rt, PropNameID::forAscii(rt, "runAfter"), 2,
       [weakSelf](Runtime &, const Value &, const Value *args, size_t count) -> Value {
         if (count < 2 || !args[0].isNumber() || !args[1].isNumber()) {
-          NSLog(@"[ZynthWorklets] runAfter: invalid args");
+          ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] runAfter: invalid args");
           return Value::undefined();
         }
         int workletId = static_cast<int>(args[0].asNumber());
@@ -404,7 +427,7 @@ struct ZynthWorkletClosureValue {
           if (!strongSelf) return;
           [strongSelf runWorkletOnUIRuntime:workletId];
         });
-        NSLog(@"[ZynthWorklets] runAfter id=%d delayMs=%.0f", workletId, delayMs);
+        ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] runAfter id=%d delayMs=%.0f", workletId, delayMs);
         return Value::undefined();
       });
 
@@ -413,7 +436,7 @@ struct ZynthWorkletClosureValue {
   worklets.setProperty(rt, "run", runWorklet);
   worklets.setProperty(rt, "runAfter", runAfter);
   rt.global().setProperty(rt, "__zynth_worklets", worklets);
-  NSLog(@"[ZynthWorklets] worklets bridge installed");
+  ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] worklets bridge installed");
 }
 
 
@@ -427,7 +450,7 @@ struct ZynthWorkletClosureValue {
   if (host) {
     ZynthInstallUICommandsRegistry(host, *_uiRuntime);
   }
-  NSLog(@"[ZynthWorklets] UI runtime created");
+  ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] UI runtime created");
 }
 
 - (void)registerWorkletOnUIRuntime:(int)workletId
@@ -443,7 +466,7 @@ struct ZynthWorkletClosureValue {
     auto buffer = std::make_shared<StringBuffer>(source.c_str());
     Value result = rt.evaluateJavaScript(buffer, "zynth-worklet.js");
     if (!result.isObject() || !result.getObject(rt).isFunction(rt)) {
-      NSLog(@"[ZynthWorklets] register id=%d failed (not function)", workletId);
+      ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] register id=%d failed (not function)", workletId);
       return;
     }
     auto fn = std::make_shared<Function>(result.getObject(rt).getFunction(rt));
@@ -452,13 +475,13 @@ struct ZynthWorkletClosureValue {
       _uiWorklets[workletId] = fn;
       _uiWorkletClosures[workletId] = closure;
     }
-    NSLog(@"[ZynthWorklets] registered id=%d location=%s", workletId, location.c_str());
+    ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] registered id=%d location=%s", workletId, location.c_str());
   } catch (const JSError &error) {
     NSString *message = [NSString stringWithUTF8String:error.getMessage().c_str()];
-    NSLog(@"[ZynthWorklets] register error id=%d %@", workletId, message);
+    ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] register error id=%d %@", workletId, message);
   } catch (const std::exception &ex) {
     NSString *message = [NSString stringWithUTF8String:ex.what()];
-    NSLog(@"[ZynthWorklets] register exception id=%d %@", workletId, message);
+    ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] register exception id=%d %@", workletId, message);
   }
 }
 
@@ -472,7 +495,7 @@ struct ZynthWorkletClosureValue {
     std::lock_guard<std::mutex> lock(_workletMutex);
     auto it = _uiWorklets.find(workletId);
     if (it == _uiWorklets.end()) {
-      NSLog(@"[ZynthWorklets] run missing id=%d", workletId);
+      ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] run missing id=%d", workletId);
       return;
     }
     fn = it->second;
@@ -517,14 +540,14 @@ struct ZynthWorkletClosureValue {
   }
 
   try {
-    NSLog(@"[ZynthWorklets] run execute id=%d", workletId);
+    ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] run execute id=%d", workletId);
     fn->call(rt);
   } catch (const JSError &error) {
     NSString *message = [NSString stringWithUTF8String:error.getMessage().c_str()];
-    NSLog(@"[ZynthWorklets] run error id=%d %@", workletId, message);
+    ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] run error id=%d %@", workletId, message);
   } catch (const std::exception &ex) {
     NSString *message = [NSString stringWithUTF8String:ex.what()];
-    NSLog(@"[ZynthWorklets] run exception id=%d %@", workletId, message);
+    ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] run exception id=%d %@", workletId, message);
   }
 }
 
