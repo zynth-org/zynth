@@ -1,31 +1,19 @@
-import { children as resolveChildren, createSignal } from "solid-js";
+import { mergeProps, children as resolveChildren } from "solid-js";
 import type { JSX, ParentComponent } from "solid-js";
-import type { HostNode, StyleProp } from "@zynth/core";
-import { createStyleBinding } from "../hooks/styleBinding";
+import type { Style, StyleProp } from "@zynth/core";
+import { createStyle } from "../hooks/createStyle";
 
 export interface TextProps {
-  style?: StyleProp | (() => StyleProp | undefined);
+  style?: StyleProp;
   numberOfLines?: number;
   text?: string;
-  ref?: (node: HostNode | null) => void;
 }
 
 export const Text: ParentComponent<TextProps> = (props) => {
   const resolvedChildren = resolveChildren(() => props.children);
-  const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
-  const resolveStyle = () => {
-    const style = props.style;
-    return typeof style === "function" ? style() : style;
-  };
-  createStyleBinding(hostNode, resolveStyle);
-
-  const refProp = (node: HostNode | null) => {
-    setHostNode(node);
-    props.ref?.(node);
-  };
-
+  const style = createStyle(() => props.style);
   return (
-    <text style={undefined} text={props.text} ref={refProp}>
+    <text style={style()} text={props.text}>
       {resolvedChildren()}
     </text>
   );

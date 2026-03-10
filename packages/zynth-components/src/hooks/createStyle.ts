@@ -1,15 +1,5 @@
 import { createMemo, type Accessor } from "solid-js";
-import { flattenStyleProp } from "@zynth/core";
 import type { Style, StyleProp } from "@zynth/core";
-
-type StyleInput = StyleProp | (() => StyleProp | undefined) | undefined;
-
-function resolveStyleInput(input: StyleInput): StyleProp | undefined {
-  if (typeof input === "function") {
-    return resolveStyleInput(input());
-  }
-  return input;
-}
 
 /**
  * Merges an array of styles or a single style into a final Style object.
@@ -29,10 +19,17 @@ function resolveStyleInput(input: StyleInput): StyleProp | undefined {
  * ```
  */
 export const createStyle = (
-  style: Accessor<StyleInput>
+  style: Accessor<StyleProp | undefined>
 ): Accessor<Style | undefined> => {
   return createMemo(() => {
-    return flattenStyleProp(resolveStyleInput(style()));
+    const s = style();
+    if (s === undefined) return undefined;
+    if (!Array.isArray(s)) return s;
+
+    return s.reduce<Style>((acc, curr) => {
+      if (!curr) return acc;
+      return { ...acc, ...curr };
+    }, {});
   });
 };
 
@@ -58,7 +55,7 @@ export const mergeStyles = (
   ...styles: (StyleProp | Accessor<StyleProp | undefined>)[]
 ): Accessor<Style> => {
   const memo = createMemo(() => {
-    const result: Partial<Record<keyof Style, Style[keyof Style]>> = {};
+    const result: Style = {};
 
     for (const style of styles) {
       // If it's an accessor, call it to get the value
@@ -68,17 +65,21 @@ export const mergeStyles = (
           : style;
 
       if (value === undefined || value === null) continue;
-      const flattened = flattenStyleProp(value);
-      if (!flattened) continue;
-      for (const key of Object.keys(flattened) as Array<keyof Style>) {
-        const next = flattened[key];
-        if (next !== undefined) {
-          result[key] = next;
+
+      if (Array.isArray(value)) {
+        // Merge each item in the array
+        for (const item of value) {
+          if (item) {
+            Object.assign(result, item);
+          }
         }
+      } else {
+        // Merge single style object
+        Object.assign(result, value);
       }
     }
 
-    return result as Style;
+    return result;
   });
 
   (memo as any).__zynthAnimatedStyle = {

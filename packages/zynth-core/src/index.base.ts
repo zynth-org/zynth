@@ -8,21 +8,6 @@ import "./polyfills/FormData";
 import "./polyfills/fetch";
 export * from "./renderer";
 export * from "./host/HostTypes";
-export {
-  StyleGraph,
-  StyleGraph as Style,
-  isStyleRef,
-  flattenStyleProp,
-  createStyleGraphBinding,
-} from "./style";
-export type {
-  StyleRef,
-  StaticStyleRef,
-  BoundStyleRef,
-  ComposedStyleRef,
-  StylePatch,
-  StyleGraphBinding,
-} from "./style";
 export { createIOSHost } from "./host/ios";
 export { createAndroidHost } from "./host/android";
 export {

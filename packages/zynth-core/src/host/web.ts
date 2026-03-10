@@ -1,5 +1,4 @@
-import type { Host, HostNode, Style, StyleProp } from "./HostTypes";
-import { flattenStyleProp } from "../style";
+import type { Host, HostNode, Style } from "./HostTypes";
 
 // Map IDs to real DOM nodes
 const NODES = new Map<number, HTMLElement | Text>();
@@ -190,8 +189,7 @@ export function registerComponent(
       }
       const setProps = (element as any).__setProps;
       if (setProps) {
-        const finalValue =
-          key === "style" ? normalizeStyle(flattenStyleProp(value as StyleProp)) : value;
+        const finalValue = key === "style" ? normalizeStyle(value) : value;
         setProps({ [key]: finalValue });
         return true;
       }
@@ -223,9 +221,13 @@ export function registerComponent(
   });
 }
 
-function applyStyle(element: HTMLElement, style: StyleProp) {
-  const resolved = flattenStyleProp(style);
-  const normalized = normalizeStyle(resolved);
+function applyStyle(element: HTMLElement, style: Style | Style[]) {
+  if (Array.isArray(style)) {
+    style.forEach((s) => s && applyStyle(element, s));
+    return;
+  }
+
+  const normalized = normalizeStyle(style);
   if (!normalized || typeof normalized !== "object") return;
 
   const hasAnyBorder =

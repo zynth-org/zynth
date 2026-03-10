@@ -3,12 +3,10 @@ import type {
   HostNode,
   HostBatchMeta,
   Style,
-  StyleProp,
   RecyclingConfig,
   RecyclingContext,
 } from "./HostTypes";
 import type { ZynthUIBridge } from "../bridge";
-import { flattenStyleProp } from "../style";
 
 export function createAndroidHost(): Host {
   const g: any =
@@ -283,9 +281,11 @@ export function createAndroidHost(): Host {
       }
     };
 
-    const encodeStyle = (nodeId: number, style: unknown) => {
+    const encodeStyle = (nodeId: number, style: any) => {
       if (!style) return;
-      const resolved = flattenStyleProp(style as StyleProp);
+      const resolved = Array.isArray(style)
+        ? style.reduce((acc, item) => (item ? { ...acc, ...item } : acc), {})
+        : style;
       if (!resolved || typeof resolved !== "object") return;
       for (const [key, value] of Object.entries(resolved)) {
         if (key === "transform") {

@@ -100,13 +100,13 @@ export function createIcon(glyph: string, fontFamily: string) {
         if (cancelled) return;
         // Use double requestAnimationFrame to ensure we're past the next paint
         // This gives the native side ample time to update the FontRegistry
-        if (!cancelled) {
-          setIsReady(true);
-        }
-        // requestAnimationFrame(() => {
-        //   requestAnimationFrame(() => {
-        //   });
-        // });
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            if (!cancelled) {
+              setIsReady(true);
+            }
+          });
+        });
       };
 
       // Subscribe to font load completion

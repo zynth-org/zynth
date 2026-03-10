@@ -1,11 +1,13 @@
 import {
   children as resolveChildren,
+  createEffect,
   createSignal,
   splitProps,
 } from "solid-js";
 import type { JSX, ParentComponent } from "solid-js";
 import type { HostNode, StyleProp } from "@zynth/core";
-import { createStyleBinding } from "../hooks/styleBinding";
+import { setProperty } from "@zynth/core";
+import { createStyle } from "../hooks/createStyle";
 
 export type LayoutRectangle = {
   x: number;
@@ -54,7 +56,12 @@ export const View: ParentComponent<ViewProps> = (props) => {
     "ref",
   ]);
   const resolvedChildren = resolveChildren(() => props.children);
+  const resolvedStyle = createStyle(() => {
+    const style = local.style;
+    return typeof style === "function" ? style() : style;
+  });
   const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
+  const hasStyleAccessor = typeof local.style === "function";
   const resolvedPointer = local.pointerEvents ?? "auto";
   const pressHandlers: Record<string, (() => void) | undefined> = {
     onPress: local.onPress,
@@ -66,14 +73,17 @@ export const View: ParentComponent<ViewProps> = (props) => {
     (local.ref ?? noopRef)(node);
   };
 
-  createStyleBinding(hostNode, () => {
-    const style = local.style;
-    return typeof style === "function" ? style() : style;
+  createEffect(() => {
+    if (!hasStyleAccessor) return;
+    const node = hostNode();
+    if (!node) return;
+    const nextStyle = resolvedStyle() ?? {};
+    setProperty(node, "style", nextStyle);
   });
 
   return (
     <view
-      style={undefined}
+      style={(hasStyleAccessor ? undefined : (resolvedStyle() as any)) as any}
       layout={local.layout}
       onLayout={local.onLayout}
       onPress={appliedPressHandlers.onPress}
