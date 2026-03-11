@@ -141,6 +141,43 @@ function formatActivityAttributes(androidConfig: any): string {
   return attributes.join("\n            ");
 }
 
+function formatApplicationAttributes(androidConfig: any): string {
+  const attributes: string[] = [];
+
+  const usesCleartextTraffic =
+    typeof androidConfig?.usesCleartextTraffic === "boolean"
+      ? androidConfig.usesCleartextTraffic
+      : true;
+
+  const hasCustomNetworkSecurityConfig =
+    androidConfig?.applicationAttributes &&
+    typeof androidConfig.applicationAttributes === "object" &&
+    Object.keys(androidConfig.applicationAttributes).some(
+      (key) => key === "android:networkSecurityConfig" || key === "networkSecurityConfig"
+    );
+
+  attributes.push(`android:usesCleartextTraffic="${usesCleartextTraffic ? "true" : "false"}"`);
+
+  if (usesCleartextTraffic && !hasCustomNetworkSecurityConfig) {
+    attributes.push('android:networkSecurityConfig="@xml/network_security_config"');
+  }
+
+  if (androidConfig?.applicationAttributes) {
+    for (const [key, value] of Object.entries(androidConfig.applicationAttributes)) {
+      const normalizedKey = key.startsWith("android:") ? key : `android:${key}`;
+      if (
+        normalizedKey === "android:usesCleartextTraffic" ||
+        normalizedKey === "android:networkSecurityConfig"
+      ) {
+        continue;
+      }
+      attributes.push(`${normalizedKey}="${escapeXml(String(value))}"`);
+    }
+  }
+
+  return attributes.join("\n        ");
+}
+
 function escapeXml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
@@ -312,6 +349,10 @@ function replacePlaceholders(content: string, config: AppConfig, extras: any = {
       extras.devServerTokenBuildConfig ?? "\"\""
     )
     .replace(/\{\{\s*ACTIVITY_ATTRIBUTES\s*\}\}/g, extras.activityAttributes ?? "")
+    .replace(
+      /\{\{\s*APPLICATION_ATTRIBUTES\s*\}\}/g,
+      extras.applicationAttributes ?? ""
+    )
     .replace(
       /\{\{\s*ACTIVITY_INTENT_FILTERS\s*\}\}/g,
       extras.activityIntentFilters ?? ""
@@ -738,6 +779,7 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
   const moduleInitializers =
     generateAndroidModuleInitializers(componentModules);
   const activityAttributes = formatActivityAttributes(baseConfig.androidConfig);
+  const applicationAttributes = formatApplicationAttributes(baseConfig.androidConfig);
   const activityIntentFilters = formatActivityIntentFilters(baseConfig.androidConfig);
   const androidUsesPermissions = formatAndroidPermissions(baseConfig.androidConfig);
   const appJsonPath = path.join(appDir, "app.json");
@@ -859,6 +901,7 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
         componentDependencies,
         moduleImports,
         moduleInitializers,
+        applicationAttributes,
         activityAttributes,
         activityIntentFilters,
         androidUsesPermissions,

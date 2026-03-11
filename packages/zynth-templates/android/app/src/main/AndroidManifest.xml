@@ -12,8 +12,7 @@
         android:roundIcon="{{APP_ROUND_ICON_DRAWABLE}}"
         android:supportsRtl="true"
         android:theme="@style/Theme.{{APP_NAME}}"
-        android:usesCleartextTraffic="true"
-        android:networkSecurityConfig="@xml/network_security_config">
+        {{APPLICATION_ATTRIBUTES}}>
         <activity
             android:name=".MainActivity"
             {{ACTIVITY_ATTRIBUTES}}
