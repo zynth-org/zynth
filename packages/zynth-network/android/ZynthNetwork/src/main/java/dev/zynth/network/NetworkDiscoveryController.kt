@@ -4,10 +4,9 @@ import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
-import java.net.InetSocketAddress
-import java.net.Socket
 import java.util.Locale
 
 class NetworkDiscoveryController(
@@ -15,8 +14,8 @@ class NetworkDiscoveryController(
     private val wifiManager: WifiManager,
 ) {
     companion object {
+        const val TAG = "ZynthNetworkDiscovery"
         private const val DEVICE_ID_TXT_KEY = "zynthDeviceId"
-        private const val RESOLVED_SERVICE_LIVENESS_TIMEOUT_MS = 600
     }
 
     private val lock = Any()
@@ -247,6 +246,7 @@ class NetworkDiscoveryController(
         synchronized(lock) {
             enqueueDiscoveryEvent("serviceFound", found)
         }
+        Log.d(TAG, "serviceFound name=${found.name} type=${found.type} port=${found.port}")
 
         resolveService(serviceInfo, key)
     }
@@ -257,6 +257,7 @@ class NetworkDiscoveryController(
             val existing = discoveredServices.remove(key)
             if (existing != null) {
                 enqueueDiscoveryEvent("serviceLost", existing.copy(lastSeenAt = nowMs()))
+                Log.d(TAG, "serviceLost name=${existing.name} port=${existing.port}")
             }
         }
     }
@@ -298,19 +299,15 @@ class NetworkDiscoveryController(
                     lastSeenAt = nowMs(),
                 )
 
-                if (!isServiceReachable(updated)) {
-                    synchronized(lock) {
-                        val existing = discoveredServices.remove(key) ?: return@synchronized
-                        enqueueDiscoveryEvent("serviceLost", existing.copy(lastSeenAt = nowMs()))
-                    }
-                    return
-                }
-
                 synchronized(lock) {
                     pruneDuplicateResolvedServices(updated, key)
                     discoveredServices[key] = updated
                     enqueueDiscoveryEvent("serviceResolved", updated)
                 }
+                Log.d(
+                    TAG,
+                    "serviceResolved name=${updated.name} port=${updated.port} addresses=${updated.addresses.joinToString(",")}"
+                )
             }
         }
 
@@ -410,44 +407,6 @@ class NetworkDiscoveryController(
         val bHost = b.hostName?.trim()?.lowercase(Locale.US)
         if (!aHost.isNullOrEmpty() && !bHost.isNullOrEmpty() && aHost == bHost && a.port == b.port) {
             return true
-        }
-
-        return false
-    }
-
-    private fun isServiceReachable(service: NetworkServiceInfo): Boolean {
-        if (service.port <= 0) {
-            return false
-        }
-
-        val targets = linkedSetOf<String>()
-        service.addresses.forEach { address ->
-            val normalized = address.trim()
-            if (normalized.isNotEmpty()) {
-                targets.add(normalized)
-            }
-        }
-        val hostName = service.hostName?.trim()
-        if (!hostName.isNullOrEmpty()) {
-            targets.add(hostName)
-        }
-
-        if (targets.isEmpty()) {
-            return true
-        }
-
-        targets.forEach { target ->
-            try {
-                Socket().use { socket ->
-                    socket.connect(
-                        InetSocketAddress(target, service.port),
-                        RESOLVED_SERVICE_LIVENESS_TIMEOUT_MS,
-                    )
-                }
-                return true
-            } catch (_: Throwable) {
-                // try next target
-            }
         }
 
         return false
