@@ -6,12 +6,19 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import org.json.JSONArray
 import org.json.JSONObject
+import java.net.InetSocketAddress
+import java.net.Socket
 import java.util.Locale
 
 class NetworkDiscoveryController(
     private val nsdManager: NsdManager,
     private val wifiManager: WifiManager,
 ) {
+    companion object {
+        private const val DEVICE_ID_TXT_KEY = "zynthDeviceId"
+        private const val RESOLVED_SERVICE_LIVENESS_TIMEOUT_MS = 600
+    }
+
     private val lock = Any()
 
     private var discoveryListener: NsdManager.DiscoveryListener? = null
@@ -238,7 +245,6 @@ class NetworkDiscoveryController(
         )
 
         synchronized(lock) {
-            discoveredServices[key] = found
             enqueueDiscoveryEvent("serviceFound", found)
         }
 
@@ -258,7 +264,10 @@ class NetworkDiscoveryController(
     private fun resolveService(serviceInfo: NsdServiceInfo, key: String) {
         val resolveListener = object : NsdManager.ResolveListener {
             override fun onResolveFailed(serviceInfo: NsdServiceInfo?, errorCode: Int) {
-                // keep serviceFound entry only
+                synchronized(lock) {
+                    val existing = discoveredServices.remove(key) ?: return
+                    enqueueDiscoveryEvent("serviceLost", existing.copy(lastSeenAt = nowMs()))
+                }
             }
 
             override fun onServiceResolved(resolved: NsdServiceInfo) {
@@ -289,7 +298,16 @@ class NetworkDiscoveryController(
                     lastSeenAt = nowMs(),
                 )
 
+                if (!isServiceReachable(updated)) {
+                    synchronized(lock) {
+                        val existing = discoveredServices.remove(key) ?: return@synchronized
+                        enqueueDiscoveryEvent("serviceLost", existing.copy(lastSeenAt = nowMs()))
+                    }
+                    return
+                }
+
                 synchronized(lock) {
+                    pruneDuplicateResolvedServices(updated, key)
                     discoveredServices[key] = updated
                     enqueueDiscoveryEvent("serviceResolved", updated)
                 }
@@ -338,10 +356,117 @@ class NetworkDiscoveryController(
     }
 
     private fun serviceKey(serviceInfo: NsdServiceInfo): String {
-        val name = serviceInfo.serviceName.orEmpty().lowercase(Locale.US)
-        val type = serviceInfo.serviceType.orEmpty().lowercase(Locale.US)
-        val domain = discoveryConfig.domain.lowercase(Locale.US)
+        val name = serviceInfo.serviceName.orEmpty().trim().lowercase(Locale.US)
+        val type = normalizeServiceTypeForKey(serviceInfo.serviceType).lowercase(Locale.US)
+        val domain = normalizeDomainForKey(discoveryConfig.domain).lowercase(Locale.US)
         return "$name|$type|$domain"
+    }
+
+    private fun normalizeServiceTypeForKey(value: String?): String {
+        val trimmed = value.orEmpty().trim()
+        if (trimmed.isEmpty()) {
+            return discoveryConfig.serviceType.trim().ifEmpty { "_zynth._tcp." }
+        }
+        return if (trimmed.endsWith(".")) trimmed else "$trimmed."
+    }
+
+    private fun normalizeDomainForKey(value: String?): String {
+        val trimmed = value.orEmpty().trim()
+        if (trimmed.isEmpty()) {
+            return "local."
+        }
+        return if (trimmed.endsWith(".")) trimmed else "$trimmed."
+    }
+
+    private fun pruneDuplicateResolvedServices(updated: NetworkServiceInfo, keepKey: String) {
+        val duplicateKeys = mutableListOf<String>()
+        discoveredServices.forEach { (existingKey, existingService) ->
+            if (existingKey == keepKey) {
+                return@forEach
+            }
+            if (isDuplicatePeer(existingService, updated)) {
+                duplicateKeys.add(existingKey)
+            }
+        }
+        duplicateKeys.forEach { duplicateKey ->
+            discoveredServices.remove(duplicateKey)
+        }
+    }
+
+    private fun isDuplicatePeer(a: NetworkServiceInfo, b: NetworkServiceInfo): Boolean {
+        val aDeviceId = normalizedDeviceId(a)
+        val bDeviceId = normalizedDeviceId(b)
+        if (aDeviceId != null && bDeviceId != null && aDeviceId == bDeviceId) {
+            return true
+        }
+
+        val aAddress = normalizedPrimaryAddress(a)
+        val bAddress = normalizedPrimaryAddress(b)
+        if (aAddress != null && bAddress != null && aAddress == bAddress && a.port == b.port) {
+            return true
+        }
+
+        val aHost = a.hostName?.trim()?.lowercase(Locale.US)
+        val bHost = b.hostName?.trim()?.lowercase(Locale.US)
+        if (!aHost.isNullOrEmpty() && !bHost.isNullOrEmpty() && aHost == bHost && a.port == b.port) {
+            return true
+        }
+
+        return false
+    }
+
+    private fun isServiceReachable(service: NetworkServiceInfo): Boolean {
+        if (service.port <= 0) {
+            return false
+        }
+
+        val targets = linkedSetOf<String>()
+        service.addresses.forEach { address ->
+            val normalized = address.trim()
+            if (normalized.isNotEmpty()) {
+                targets.add(normalized)
+            }
+        }
+        val hostName = service.hostName?.trim()
+        if (!hostName.isNullOrEmpty()) {
+            targets.add(hostName)
+        }
+
+        if (targets.isEmpty()) {
+            return true
+        }
+
+        targets.forEach { target ->
+            try {
+                Socket().use { socket ->
+                    socket.connect(
+                        InetSocketAddress(target, service.port),
+                        RESOLVED_SERVICE_LIVENESS_TIMEOUT_MS,
+                    )
+                }
+                return true
+            } catch (_: Throwable) {
+                // try next target
+            }
+        }
+
+        return false
+    }
+
+    private fun normalizedDeviceId(service: NetworkServiceInfo): String? {
+        val value = service.txtRecord[DEVICE_ID_TXT_KEY]?.trim()
+        if (value.isNullOrEmpty()) {
+            return null
+        }
+        return value
+    }
+
+    private fun normalizedPrimaryAddress(service: NetworkServiceInfo): String? {
+        val value = service.addresses.firstOrNull()?.trim()?.lowercase(Locale.US)
+        if (value.isNullOrEmpty()) {
+            return null
+        }
+        return value
     }
 
     private fun enqueueDiscoveryEvent(type: String, service: NetworkServiceInfo) {

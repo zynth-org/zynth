@@ -73,7 +73,7 @@ class NetworkModule(
                 resultResponse(true)
             }
             "stopDiscovery" -> {
-                discoveryController.stopDiscovery(clearServices = false)
+                discoveryController.stopDiscovery(clearServices = true)
                 resultResponse(true)
             }
             "isDiscoveryRunning" -> resultResponse(discoveryController.isDiscoveryRunning())
