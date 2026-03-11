@@ -96,7 +96,7 @@ function runCommandFiltered(command, args, options = {}) {
 
   const showProgress = options.showProgress !== false;
   const totalPackages = showProgress
-    ? getZynthPackageCount(options.root || process.cwd())
+    ? getZynthPackageCount(options.root || process.cwd(), "ios")
     : 0;
   const buildIndicator = createProgressIndicator(
     options.label || "Building native artifacts",
@@ -221,7 +221,7 @@ function runCommandFilteredAndroid(command, args, options = {}) {
 
   const showProgress = options.showProgress !== false;
   const totalPackages = showProgress
-    ? getZynthPackageCount(options.root || process.cwd())
+    ? getZynthPackageCount(options.root || process.cwd(), "android")
     : 0;
   const buildIndicator = createProgressIndicator(
     options.label || "Building native artifacts",
@@ -287,17 +287,126 @@ function runCommandFilteredAndroid(command, args, options = {}) {
   });
 }
 
-function getZynthPackageCount(root) {
+function resolvePackageJsonFromApp(depName, appDir) {
   try {
-    const workspaceRoot = findWorkspaceRoot(root);
-    const packagesDir = path.join(workspaceRoot, "packages");
-    if (fs.existsSync(packagesDir)) {
-      return fs
-        .readdirSync(packagesDir)
-        .filter((dir) => dir.startsWith("zynth-")).length;
+    return require.resolve(path.join(depName, "package.json"), {
+      paths: [appDir],
+    });
+  } catch (_error) {
+    // fall through to entry-resolution fallback
+  }
+
+  try {
+    const entryPath = require.resolve(depName, { paths: [appDir] });
+    let dir = path.dirname(entryPath);
+    while (true) {
+      const candidate = path.join(dir, "package.json");
+      if (fs.existsSync(candidate)) return candidate;
+      const parent = path.dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
     }
-  } catch (e) {
-    // Ignore
+  } catch (_error) {
+    // Ignore resolution failures; dependency may be optional
+  }
+
+  let current = appDir;
+  while (true) {
+    const candidate = path.join(current, "node_modules", depName, "package.json");
+    if (fs.existsSync(candidate)) return candidate;
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+
+  return null;
+}
+
+function resolveAppDirectoryForCount(root) {
+  const candidates = [];
+
+  if (root) {
+    candidates.push(path.resolve(root));
+  }
+
+  const appFlagIndex = process.argv.findIndex(
+    (arg) => arg === "--app" || arg === "-a"
+  );
+  if (appFlagIndex !== -1) {
+    const appArg = process.argv[appFlagIndex + 1];
+    if (appArg) {
+      candidates.push(path.resolve(appArg));
+    }
+  }
+
+  if (process.env.ZYNTH_APP_DIR) {
+    candidates.push(path.resolve(process.env.ZYNTH_APP_DIR));
+  }
+
+  candidates.push(process.cwd());
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+
+    const appJsonPath = path.join(candidate, "app.json");
+    if (fs.existsSync(appJsonPath)) {
+      return candidate;
+    }
+
+    try {
+      return findAppDirectory(candidate);
+    } catch (_error) {
+      // try next candidate
+    }
+  }
+
+  return null;
+}
+
+function getZynthPackageCount(root, platform) {
+  try {
+    const appDir = resolveAppDirectoryForCount(root);
+    if (!appDir) return 0;
+
+    const appPkgPath = path.join(appDir, "package.json");
+    if (!fs.existsSync(appPkgPath)) return 0;
+
+    const appPackage = readJSON(appPkgPath);
+    const queue = [];
+    const seen = new Set();
+    const nativePackages = new Set();
+
+    function enqueueDependencyNames(source) {
+      if (!source || typeof source !== "object") return;
+      for (const name of Object.keys(source)) {
+        if (name.startsWith("@zynth/")) {
+          queue.push(name);
+        }
+      }
+    }
+
+    enqueueDependencyNames(appPackage.dependencies);
+    enqueueDependencyNames(appPackage.devDependencies);
+
+    while (queue.length > 0) {
+      const packageName = queue.shift();
+      if (!packageName || seen.has(packageName)) continue;
+      seen.add(packageName);
+
+      const packageJsonPath = resolvePackageJsonFromApp(packageName, appDir);
+      if (!packageJsonPath || !fs.existsSync(packageJsonPath)) continue;
+
+      const packageJson = readJSON(packageJsonPath);
+      if (packageJson?.zynthNative?.[platform]) {
+        nativePackages.add(packageName);
+      }
+
+      enqueueDependencyNames(packageJson.dependencies);
+    }
+
+    return nativePackages.size;
+  } catch (_error) {
+    // Ignore and keep indicator non-blocking
   }
   return 0;
 }
