@@ -172,14 +172,21 @@ final class NetworkHost: NSObject, NetServiceBrowserDelegate, NetServiceDelegate
       if !options.txtRecord.isEmpty {
         var txtRecordData: [String: Data] = [:]
         for (key, value) in options.txtRecord {
-          txtRecordData[key] = value.data(using: .utf8)
+          let sanitizedKey = self.sanitizeTxtKey(key)
+          let sanitizedValue = self.sanitizeTxtValue(value)
+          if sanitizedKey.isEmpty || sanitizedValue.isEmpty {
+            continue
+          }
+          txtRecordData[sanitizedKey] = sanitizedValue.data(using: .utf8)
         }
-        service.setTXTRecord(NetService.data(fromTXTRecord: txtRecordData))
+        if !txtRecordData.isEmpty {
+          service.setTXTRecord(NetService.data(fromTXTRecord: txtRecordData))
+        }
       }
 
       self.advertisedService = service
       self.advertisedInfo = info
-      service.publish(options: [.listenForConnections])
+      service.publish()
 
       return info
     }
@@ -462,12 +469,33 @@ final class NetworkHost: NSObject, NetServiceBrowserDelegate, NetServiceDelegate
   }
 
   func netServiceDidPublish(_ sender: NetService) {
-    // Publish success is reflected by keeping advertisedInfo.
+    NSLog("[ZynthNetworkHost] didPublish name=%@ type=%@ port=%d", sender.name, sender.type, sender.port)
   }
 
   func netService(_ sender: NetService, didNotPublish errorDict: [String: NSNumber]) {
+    NSLog("[ZynthNetworkHost] didNotPublish name=%@ error=%@", sender.name, String(describing: errorDict))
     if let active = advertisedService, active === sender {
       stopServiceInternal()
     }
+  }
+
+  private func sanitizeTxtKey(_ key: String) -> String {
+    let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.isEmpty {
+      return ""
+    }
+    let ascii = trimmed.replacingOccurrences(of: "[^A-Za-z0-9_-]", with: "", options: .regularExpression)
+    // Android NsdServiceInfo discourages keys longer than 9; keep wire format conservative.
+    return String(ascii.prefix(9))
+  }
+
+  private func sanitizeTxtValue(_ value: String) -> String {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.isEmpty {
+      return ""
+    }
+    let ascii = trimmed.replacingOccurrences(of: "[^\\x20-\\x7E]", with: "_", options: .regularExpression)
+    // Keep TXT values modest to reduce fragmentation/parser issues on older stacks.
+    return String(ascii.prefix(120))
   }
 }

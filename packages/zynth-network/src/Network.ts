@@ -139,6 +139,7 @@ function normalizeAdvertiseOptions(
     ...capabilityTxtRecord,
     ...normalizeTxtRecord(options.txtRecord),
   };
+  delete txtRecord[NetworkTxtRecordKeys.LegacyDeviceId];
   txtRecord[NetworkTxtRecordKeys.DeviceId] = getLocalDeviceId();
 
   return {
@@ -171,7 +172,10 @@ function normalizeDiscoveryEvent(event: NativeDiscoveryEvent): DiscoveryEvent {
 
 function withSelfFlag(service: NetworkService): NetworkService {
   const txtRecord = normalizeTxtRecord(service.txtRecord);
-  const isSelf = txtRecord[NetworkTxtRecordKeys.DeviceId] === getLocalDeviceId();
+  const advertisedDeviceId =
+    txtRecord[NetworkTxtRecordKeys.DeviceId] ??
+    txtRecord[NetworkTxtRecordKeys.LegacyDeviceId];
+  const isSelf = advertisedDeviceId === getLocalDeviceId();
   const capabilities = parseCapabilityTxtRecord(txtRecord);
   return {
     ...service,

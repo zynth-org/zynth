@@ -86,7 +86,7 @@ By default, self is excluded from peer lists/events.
 
 How it works:
 
-- `startServiceAsync` injects `zynthDeviceId` into TXT records
+- `startServiceAsync` injects `zdid` into TXT records (`zynthDeviceId` is still read for backward compatibility)
 - discovered services are marked with `isSelf`
 - `getDiscoveredServicesAsync` and `drainDiscoveryEventsAsync` filter `isSelf` unless `includeSelf: true`
 

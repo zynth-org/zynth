@@ -4,6 +4,8 @@ import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
@@ -15,7 +17,8 @@ class NetworkDiscoveryController(
 ) {
     companion object {
         const val TAG = "ZynthNetworkDiscovery"
-        private const val DEVICE_ID_TXT_KEY = "zynthDeviceId"
+        private const val DEVICE_ID_TXT_KEY = "zdid"
+        private const val LEGACY_DEVICE_ID_TXT_KEY = "zynthDeviceId"
     }
 
     private val lock = Any()
@@ -33,6 +36,8 @@ class NetworkDiscoveryController(
     private var discoveryRunning: Boolean = false
     private val discoveredServices = linkedMapOf<String, NetworkServiceInfo>()
     private val discoveryEvents = ArrayList<DiscoveryEvent>()
+    private val resolveAttempts = linkedMapOf<String, Int>()
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     private var advertisedInfo: AdvertisedServiceInfo? = null
 
@@ -265,7 +270,22 @@ class NetworkDiscoveryController(
     private fun resolveService(serviceInfo: NsdServiceInfo, key: String) {
         val resolveListener = object : NsdManager.ResolveListener {
             override fun onResolveFailed(serviceInfo: NsdServiceInfo?, errorCode: Int) {
+                val serviceName = serviceInfo?.serviceName ?: key
+                val attempt = synchronized(lock) {
+                    val current = (resolveAttempts[key] ?: 0) + 1
+                    resolveAttempts[key] = current
+                    current
+                }
+                Log.w(TAG, "serviceResolveFailed name=$serviceName code=$errorCode attempt=$attempt")
+                if (attempt < 3) {
+                    mainHandler.postDelayed(
+                        { resolveService(serviceInfo ?: serviceInfoFallback(serviceName), key) },
+                        700L
+                    )
+                    return
+                }
                 synchronized(lock) {
+                    resolveAttempts.remove(key)
                     val existing = discoveredServices.remove(key) ?: return
                     enqueueDiscoveryEvent("serviceLost", existing.copy(lastSeenAt = nowMs()))
                 }
@@ -300,6 +320,7 @@ class NetworkDiscoveryController(
                 )
 
                 synchronized(lock) {
+                    resolveAttempts.remove(key)
                     pruneDuplicateResolvedServices(updated, key)
                     discoveredServices[key] = updated
                     enqueueDiscoveryEvent("serviceResolved", updated)
@@ -317,6 +338,13 @@ class NetworkDiscoveryController(
         } else {
             @Suppress("DEPRECATION")
             nsdManager.resolveService(serviceInfo, resolveListener)
+        }
+    }
+
+    private fun serviceInfoFallback(name: String): NsdServiceInfo {
+        return NsdServiceInfo().apply {
+            serviceName = name
+            serviceType = discoveryConfig.serviceType
         }
     }
 
@@ -413,7 +441,9 @@ class NetworkDiscoveryController(
     }
 
     private fun normalizedDeviceId(service: NetworkServiceInfo): String? {
-        val value = service.txtRecord[DEVICE_ID_TXT_KEY]?.trim()
+        val value =
+            service.txtRecord[DEVICE_ID_TXT_KEY]?.trim()
+                ?: service.txtRecord[LEGACY_DEVICE_ID_TXT_KEY]?.trim()
         if (value.isNullOrEmpty()) {
             return null
         }

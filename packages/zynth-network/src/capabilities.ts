@@ -7,13 +7,15 @@ import type {
 const VERSION_KEY = "version";
 const TRANSFER_KEY = "transfer";
 const MAX_CHUNK_KEY = "maxChunk";
-const DEVICE_ID_KEY = "zynthDeviceId";
+const DEVICE_ID_KEY = "zdid";
+const LEGACY_DEVICE_ID_KEY = "zynthDeviceId";
 
 const KNOWN_KEYS: readonly string[] = [
   VERSION_KEY,
   TRANSFER_KEY,
   MAX_CHUNK_KEY,
   DEVICE_ID_KEY,
+  LEGACY_DEVICE_ID_KEY,
 ];
 const KNOWN_LOWERCASE_KEYS = new Set(
   KNOWN_KEYS.map((key) => key.toLowerCase())
@@ -21,6 +23,7 @@ const KNOWN_LOWERCASE_KEYS = new Set(
 
 export const NetworkTxtRecordKeys = {
   DeviceId: DEVICE_ID_KEY,
+  LegacyDeviceId: LEGACY_DEVICE_ID_KEY,
   Version: VERSION_KEY,
   Transfer: TRANSFER_KEY,
   MaxChunk: MAX_CHUNK_KEY,

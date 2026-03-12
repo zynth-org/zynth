@@ -43,7 +43,9 @@ function sanitizePort(port: number): number {
 
 function createPeerId(service: NetworkService, domain: string): string {
   const txtRecord = service.txtRecord ?? {};
-  const advertisedDeviceId = txtRecord[NetworkTxtRecordKeys.DeviceId];
+  const advertisedDeviceId =
+    txtRecord[NetworkTxtRecordKeys.DeviceId] ??
+    txtRecord[NetworkTxtRecordKeys.LegacyDeviceId];
   if (typeof advertisedDeviceId === "string" && advertisedDeviceId.trim().length > 0) {
     return advertisedDeviceId.trim();
   }
