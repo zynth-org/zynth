@@ -136,7 +136,6 @@ export function start(App: () => any): () => void {
   };
 
   g.__startApp = (...args: any[]) => {
-    console.log("__startApp called!");
     const rootId = args[0];
 
     const platform = Platform.OS;
@@ -148,7 +147,6 @@ export function start(App: () => any): () => void {
     }
 
     setActiveSurface(rootId);
-    console.log(`Starting render with rootId: ${rootId}`);
     if (typeof currentApp !== "function") {
       console.error("[__startApp] no app registered for rendering");
       return;
@@ -161,7 +159,6 @@ export function start(App: () => any): () => void {
         type: "root",
       } as any);
       lastRootId = rootId;
-      console.log("Render completed successfully");
     } catch (error) {
       const msg = String((error as any)?.message || error);
       const stack = String((error as any)?.stack || "");
