@@ -13,6 +13,21 @@ This tool orchestrates the development, build, and bundling process for Zynth ap
 - `zynth reset`: Cleans and regenerates the native directories from scratch.
 - `zynth create`: Scaffolds a new Zynth application.
 - `zynth automation`: Reads native screen snapshots and runs snapshot diffs via the devtools hub.
+- `zynth permissions`: Applies predefined app.json permission presets (for example `media-library`, `file-intents`).
+
+### Permissions Wizard
+
+Use interactive onboarding:
+
+- `zynth permissions` (defaults to `wizard`)
+  - Step 1: Select presets with `SPACE`, confirm with `ENTER`.
+  - Step 2: Edit default permission text values (for example iOS `infoPlist` usage strings).
+
+Non-interactive options:
+
+- `zynth permissions list`
+- `zynth permissions add media-library`
+- `zynth permissions add file-intents`
 
 ### Runtime Selection
 

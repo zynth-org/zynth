@@ -40,3 +40,10 @@ if (!result.cancelled) {
 ```tsx
 const result = await ImagePicker.launchImageLibraryAsync();
 ```
+
+## Chooser Matrix
+
+- Import external files into app: `@zynth/document-picker`
+- Import camera/gallery image into app: `@zynth/image-picker`
+- Open/share/export files using system handlers: `@zynth/file-intents`
+- Save image/video into Photos/Gallery: `@zynth/media-library`

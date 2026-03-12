@@ -1,0 +1,74 @@
+{
+  "name": "@zynth/media-library",
+  "version": "0.0.1",
+  "description": "Save media files to the system Photos/Gallery from Zynth",
+  "type": "module",
+  "main": "dist/esm/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "types": "./dist/types/index.d.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "ios",
+    "android",
+    "ZynthMediaLibrary.podspec"
+  ],
+  "scripts": {
+    "build": "yarn build:js && yarn build:types",
+    "build:js": "rm -rf dist/esm && tsc --project tsconfig.esm.json",
+    "build:types": "tsc --project tsconfig.types.json",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "zynth",
+    "media-library",
+    "photos",
+    "gallery",
+    "ios",
+    "android"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  },
+  "zynthNative": {
+    "ios": {
+      "pods": [
+        {
+          "name": "ZynthMediaLibrary",
+          "podspec": "./ZynthMediaLibrary.podspec"
+        }
+      ],
+      "initializer": {
+        "className": "ZynthMediaLibrary",
+        "method": "initializeWith:"
+      }
+    },
+    "android": {
+      "modules": [
+        {
+          "name": "ZynthMediaLibrary",
+          "path": "./android/ZynthMediaLibrary"
+        }
+      ],
+      "initializer": {
+        "className": "ZynthMediaLibrary",
+        "method": "initialize",
+        "package": "dev.zynth.medialibrary",
+        "args": [
+          "activity",
+          "runtime"
+        ]
+      }
+    }
+  },
+  "dependencies": {
+    "@zynth/core": "*"
+  }
+}

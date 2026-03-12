@@ -45,3 +45,10 @@ Options:
 ### `DocumentPicker.isAvailable()`
 
 Returns whether the native module bridge is available on the current platform/runtime.
+
+## Chooser Matrix
+
+- Import external files into app: `@zynth/document-picker`
+- Import camera/gallery image into app: `@zynth/image-picker`
+- Open/share/export files using system handlers: `@zynth/file-intents`
+- Save image/video into Photos/Gallery: `@zynth/media-library`
