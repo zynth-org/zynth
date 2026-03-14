@@ -5,6 +5,7 @@ com.zynth.components.datepicker.DatePickerComponentRegistrar
 com.zynth.components.glass.GlassComponentRegistrar
 com.zynth.components.image.ImageComponentRegistrar
 com.zynth.components.menu.MenuComponentRegistrar
+com.zynth.components.popover.PopoverComponentRegistrar
 com.zynth.components.modal.ModalComponentRegistrar
 com.zynth.components.pressable.PressableComponentRegistrar
 com.zynth.components.progressindicator.ProgressIndicatorRegistrar

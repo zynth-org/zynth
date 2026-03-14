@@ -9,6 +9,7 @@ import "./Switch";
 import "./Alert";
 import "./DatePicker";
 import "./Menu";
+import "./Popover";
 import "./Input";
 import "./ProgressIndicator";
 import "./Modal";

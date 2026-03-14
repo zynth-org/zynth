@@ -15,6 +15,7 @@ export * from "./primitives/TextField";
 export * from "./primitives/Alert";
 export * from "./primitives/StatusBar";
 export * from "./primitives/Menu";
+export * from "./primitives/Popover";
 export * from "./primitives/DatePicker";
 export * from "./primitives/Modal";
 export * from "./primitives/BottomSheet";

@@ -84,6 +84,9 @@ declare module "solid-js" {
       "zynth-status-bar": StatusBarProps & { [key: string]: any };
       "menu-view": ViewElementProps & { [key: string]: any };
       "menu-trigger-view": ViewElementProps & { [key: string]: any };
+      "popover-view": ViewElementProps & { [key: string]: any };
+      "popover-trigger-view": ViewElementProps & { [key: string]: any };
+      "popover-content-view": ViewElementProps & { [key: string]: any };
       svg: { [key: string]: any };
       path: { [key: string]: any };
       "menu-item-view": ViewElementProps & {
