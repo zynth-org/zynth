@@ -553,23 +553,28 @@ private final class ZynthPopoverContainerController:
       withHorizontalFittingPriority: .required,
       verticalFittingPriority: .fittingSizeLevel
     )
-    let fitting = contentView.sizeThatFits(
-      CGSize(width: UIView.layoutFittingExpandedSize.width, height: UIView.layoutFittingExpandedSize.height)
-    )
+    let intrinsic = contentView.intrinsicContentSize
     let subviewsUnion = contentView.subviews.reduce(CGRect.null) { partial, subview in
       return partial.union(subview.frame)
     }.size
 
-    let width = max(
+    let candidatesWidth: [CGFloat] = [
       autoLayoutCompressed.width,
-      fitting.width,
+      intrinsic.width,
       subviewsUnion.width,
+    ]
+    let candidatesHeight: [CGFloat] = [
+      autoLayoutCompressed.height,
+      intrinsic.height,
+      subviewsUnion.height,
+    ]
+
+    let width = max(
+      candidatesWidth.filter { $0.isFinite && $0 > 0 }.max() ?? 1,
       1
     )
     let height = max(
-      autoLayoutCompressed.height,
-      fitting.height,
-      subviewsUnion.height,
+      candidatesHeight.filter { $0.isFinite && $0 > 0 }.max() ?? 1,
       1
     )
     let nextSize = CGSize(width: width, height: height)
