@@ -187,6 +187,16 @@ static CGFloat ZynthBottomSheetParseCGFloat(NSString *rawJSON, CGFloat fallback)
           return YES;
         }
 
+        if ([name isEqualToString:@"contentHeightHint"]) {
+          CGFloat hint = ZynthBottomSheetParseCGFloat(rawJSON, NAN);
+          if (isnan(hint)) {
+            [view setContentHeightHint:nil];
+          } else {
+            [view setContentHeightHint:@(hint)];
+          }
+          return YES;
+        }
+
         if ([name isEqualToString:@"dismissOnOverlayPress"]) {
           BOOL allow = ZynthBottomSheetParseBoolean(rawJSON, value, YES);
           [view setDismissOnOverlayPress:@(allow)];

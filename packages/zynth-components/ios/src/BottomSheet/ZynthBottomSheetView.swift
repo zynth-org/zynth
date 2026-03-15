@@ -132,6 +132,11 @@ public final class ZynthBottomSheetView: UIView {
     presenter.updateOptions(options)
   }
 
+  public func setContentHeightHint(_ value: NSNumber?) {
+    options.contentHeightHint = value.map { CGFloat($0.doubleValue) }
+    presenter.updateOptions(options)
+  }
+
   public func setOpenState(_ value: NSNumber?) {
     guard let value else { return }
     if window == nil {
@@ -156,6 +161,10 @@ public final class ZynthBottomSheetView: UIView {
       if let index = (command["index"] as? NSNumber)?.intValue {
         presenter.snapTo(index: index)
       }
+    case "expand":
+      presenter.expand()
+    case "collapse":
+      presenter.collapse()
     default:
       break
     }

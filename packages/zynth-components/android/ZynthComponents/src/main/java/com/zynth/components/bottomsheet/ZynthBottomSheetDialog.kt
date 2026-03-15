@@ -6,11 +6,13 @@ import android.content.ContextWrapper
 import android.content.DialogInterface
 import android.graphics.Color
 import android.graphics.Rect
+import android.util.TypedValue
 import android.view.Choreographer
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.core.graphics.Insets
@@ -51,6 +53,7 @@ class ZynthBottomSheetDialog(
   private var snapPoints: List<BottomSheetSnapPoint> = DEFAULT_SNAP_POINTS
   private var resolvedSnapHeights: List<Int> = emptyList()
   private var measuredContentHeight: Int = 0
+  private var contentHeightHintPx: Int? = null
   private var screenHeight: Int = ZynthBottomSheetUtils.screenHeight(context)
   private var behavior: BottomSheetBehavior<FrameLayout>? = null
   private var sheetContainer: FrameLayout? = null
@@ -69,7 +72,11 @@ class ZynthBottomSheetDialog(
   private var closeFallbackGeneration: Int = 0
   private var closeFallbackFrameCallback: Choreographer.FrameCallback? = null
   private var forwardingOutsideGesture: Boolean = false
+  private var isGlobalLayoutListenerAttached: Boolean = false
   private val contentLayoutChangeListener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+    handleContentLayoutChanged()
+  }
+  private val contentGlobalLayoutListener = ViewTreeObserver.OnGlobalLayoutListener {
     handleContentLayoutChanged()
   }
   private val bottomSheetCallback = object : BottomSheetBehavior.BottomSheetCallback() {
@@ -99,6 +106,7 @@ class ZynthBottomSheetDialog(
     setOnShowListener(::handleShow)
     setOnDismissListener {
       cancelCloseFallback()
+      detachGlobalLayoutListener()
       restoreOverlayToParentIfNeeded()
       overlayView = null
       sheetContainer = null
@@ -173,6 +181,29 @@ class ZynthBottomSheetDialog(
     }
     configureBehavior()
     if (isShowing) {
+      if (enabled) {
+        attachGlobalLayoutListener()
+      } else {
+        detachGlobalLayoutListener()
+      }
+      applyStateForIndex(currentSnapIndex)
+    }
+  }
+
+  fun setContentHeightHintDp(heightDp: Float?) {
+    val metrics = context.resources.displayMetrics
+    val nextPx = heightDp
+      ?.takeIf { it > 0f }
+      ?.let {
+        TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, it, metrics).toInt()
+      }
+      ?.coerceAtLeast(0)
+    if (nextPx == contentHeightHintPx) {
+      return
+    }
+    contentHeightHintPx = nextPx
+    if (dynamicContentHeight && isShowing) {
+      configureBehavior()
       applyStateForIndex(currentSnapIndex)
     }
   }
@@ -214,6 +245,17 @@ class ZynthBottomSheetDialog(
     setStateForIndex(index, animated = true)
   }
 
+  fun expand() {
+    if (!isShowing) return
+    val targetIndex = (resolvedSnapHeights.size - 1).coerceAtLeast(0)
+    setStateForIndex(targetIndex, animated = true)
+  }
+
+  fun collapse() {
+    if (!isShowing) return
+    setStateForIndex(0, animated = true)
+  }
+
   fun getResolvedSnapHeights(): List<Int> = resolvedSnapHeights
   fun getMaxScreenHeight(): Int = screenHeight
   fun visibleHeightForSheet(view: View): Int = (screenHeight - view.top).coerceAtLeast(0)
@@ -236,6 +278,7 @@ class ZynthBottomSheetDialog(
     screenHeight = ZynthBottomSheetUtils.screenHeight(context)
     if (dynamicContentHeight) {
       measuredContentHeight = measureContentHeight().coerceAtLeast(0)
+      attachGlobalLayoutListener()
     }
     enforceNoSystemDim()
     val outsideScrim: View? = window?.findViewById(com.google.android.material.R.id.touch_outside)
@@ -590,15 +633,15 @@ class ZynthBottomSheetDialog(
     }
     sheetContainer?.let { container ->
       val params = container.layoutParams
-      if (params.height != maxHeight) {
-        params.height = maxHeight
-        container.layoutParams = params
-      }
+      params.height = maxHeight
+      container.layoutParams = params
+      container.requestLayout()
+      (container.parent as? View)?.requestLayout()
     }
     val hostParams = contentHost.layoutParams
     if (hostParams == null) {
       contentHost.layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, maxHeight)
-    } else if (hostParams.height != maxHeight) {
+    } else {
       hostParams.height = maxHeight
       contentHost.layoutParams = hostParams
     }
@@ -655,7 +698,9 @@ class ZynthBottomSheetDialog(
     if (measured > 0) {
       measuredContentHeight = measured
     }
-    val cappedContentHeight = measuredContentHeight
+    val hintedHeight = contentHeightHintPx?.takeIf { it > 0 } ?: 0
+    val sourceHeight = maxOf(measuredContentHeight, hintedHeight)
+    val cappedContentHeight = sourceHeight
       .takeIf { it > 0 }
       ?.coerceAtMost(screenHeight)
       ?: screenHeight
@@ -706,7 +751,9 @@ class ZynthBottomSheetDialog(
     if (!dynamicContentHeight || !isShowing) {
       return
     }
-    val nextHeight = measureContentHeight().coerceAtLeast(0)
+    val measuredHeight = measureContentHeight().coerceAtLeast(0)
+    val hintedHeight = contentHeightHintPx?.takeIf { it > 0 } ?: 0
+    val nextHeight = maxOf(measuredHeight, hintedHeight)
     if (nextHeight <= 0 || abs(nextHeight - measuredContentHeight) <= 1) {
       return
     }
@@ -716,6 +763,23 @@ class ZynthBottomSheetDialog(
     if (previousHeights != resolvedSnapHeights) {
       applyStateForIndex(currentSnapIndex)
     }
+  }
+
+  private fun attachGlobalLayoutListener() {
+    if (isGlobalLayoutListenerAttached) return
+    val observer = contentHost.viewTreeObserver
+    if (!observer.isAlive) return
+    observer.addOnGlobalLayoutListener(contentGlobalLayoutListener)
+    isGlobalLayoutListenerAttached = true
+  }
+
+  private fun detachGlobalLayoutListener() {
+    if (!isGlobalLayoutListenerAttached) return
+    val observer = contentHost.viewTreeObserver
+    if (observer.isAlive) {
+      observer.removeOnGlobalLayoutListener(contentGlobalLayoutListener)
+    }
+    isGlobalLayoutListenerAttached = false
   }
 
   private fun applyExpandedOffset(offset: Int) {

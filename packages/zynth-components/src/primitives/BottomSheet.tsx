@@ -23,13 +23,25 @@ export interface BottomSheetRef {
   open: (index?: number) => void;
   close: () => void;
   snapTo: (index: number) => void;
+  expand: () => void;
+  collapse: () => void;
   getCurrentIndex: () => number;
 }
 
 type BottomSheetCommand =
   | { type: "open"; index?: number }
   | { type: "close" }
-  | { type: "snapTo"; index: number };
+  | { type: "snapTo"; index: number }
+  | { type: "expand" }
+  | { type: "collapse" };
+
+interface LayoutEvent {
+  nativeEvent?: {
+    layout?: {
+      height?: number;
+    };
+  };
+}
 
 type InternalRef = BottomSheetRef & {
   __attachHost: (node: HostNode | null) => void;
@@ -151,6 +163,12 @@ export const createBottomSheetRef = (): BottomSheetRef => {
     snapTo: (index) => {
       sendCommand(host, { type: "snapTo", index });
     },
+    expand: () => {
+      sendCommand(host, { type: "expand" });
+    },
+    collapse: () => {
+      sendCommand(host, { type: "collapse" });
+    },
     getCurrentIndex: () => currentIndex,
     __attachHost: (node) => {
       host = node;
@@ -186,7 +204,10 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
   ]);
 
   const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
+  const [contentHeightHint, setContentHeightHint] = createSignal(0);
   let currentIndex = local.initialSnapIndex ?? 0;
+  let lastDynamicLayoutHeight = 0;
+  let dynamicLayoutCommandCooldownUntil = 0;
   const [lastSentOpen, setLastSentOpen] = createSignal<boolean | null>(null);
   const [uncontrolledOpen, setUncontrolledOpen] = createSignal(false);
   let ignoreCloseUntil = 0;
@@ -268,14 +289,74 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
     }),
   }));
 
-  const contentWrapperStyle = createMemo<Style>(() => ({
-    position: "absolute",
-    top: 0,
-    left: 0,
-    width: windowSize().width,
-    height: windowSize().height,
-  }));
+  const contentWrapperStyle = createMemo<Style>(() => {
+    if (local.dynamicContentHeight) {
+      return {
+        position: "absolute",
+        top: 0,
+        left: 0,
+        width: windowSize().width,
+      };
+    }
+    return {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      width: windowSize().width,
+      height: windowSize().height,
+    };
+  });
   const useWindowWrapper = () => Platform.OS === "android";
+
+  const handleContentLayout = (event: LayoutEvent) => {
+    if (!local.dynamicContentHeight) {
+      return;
+    }
+    const height = event.nativeEvent?.layout?.height;
+    if (typeof height !== "number" || !Number.isFinite(height) || height <= 0) {
+      return;
+    }
+    const rounded = Math.round(height * 100) / 100;
+    if (Math.abs(rounded - contentHeightHint()) <= 0.5) {
+      return;
+    }
+
+    const previousHeight = lastDynamicLayoutHeight;
+    lastDynamicLayoutHeight = rounded;
+    setContentHeightHint(rounded);
+
+    if (!resolvedOpen()) {
+      return;
+    }
+    if (previousHeight <= 0) {
+      return;
+    }
+
+    const delta = rounded - previousHeight;
+    if (Math.abs(delta) <= 0.5) {
+      return;
+    }
+
+    const now = Date.now();
+    console.log(now, dynamicLayoutCommandCooldownUntil, delta);
+    if (now < dynamicLayoutCommandCooldownUntil) {
+      return;
+    }
+    dynamicLayoutCommandCooldownUntil = now + 120;
+
+    const host = hostNode();
+    if (!host) {
+      return;
+    }
+    sendCommand(host, delta > 0 ? { type: "expand" } : { type: "collapse" });
+  };
+
+  createEffect(() => {
+    if (!resolvedOpen()) {
+      lastDynamicLayoutHeight = 0;
+      dynamicLayoutCommandCooldownUntil = 0;
+    }
+  });
 
   const attachHost = (node: HostNode | null) => {
     setHostNode(node);
@@ -299,6 +380,12 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
       imperativeNode.snapTo = (index) => {
         sendCommand(node, { type: "snapTo", index });
       };
+      imperativeNode.expand = () => {
+        sendCommand(node, { type: "expand" });
+      };
+      imperativeNode.collapse = () => {
+        sendCommand(node, { type: "collapse" });
+      };
       imperativeNode.getCurrentIndex = () => currentIndex;
       local.ref?.(imperativeNode);
       return;
@@ -317,7 +404,8 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
     setProperty(
       host,
       "snapPoints",
-      local.snapPoints ?? (local.dynamicContentHeight ? [] : DEFAULT_SNAP_POINTS),
+      local.snapPoints ??
+        (local.dynamicContentHeight ? [] : DEFAULT_SNAP_POINTS),
     );
     // `initialSnapIndex` is a pre-open hint. Re-applying it while the sheet is open
     // can force UIKit to re-resolve detents mid-gesture and cause snap jitter.
@@ -347,8 +435,12 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
         local.allowDismissOnInteraction,
       );
     }
-    if (local.dynamicContentHeight != null) {
-      setProperty(host, "dynamicContentHeight", local.dynamicContentHeight);
+    const dynamicContentEnabled = !!local.dynamicContentHeight;
+    setProperty(host, "dynamicContentHeight", dynamicContentEnabled);
+    if (dynamicContentEnabled) {
+      setProperty(host, "contentHeightHint", contentHeightHint());
+    } else {
+      setProperty(host, "contentHeightHint", null);
     }
     if (local.testID) {
       setProperty(host, "testID", local.testID);
@@ -421,7 +513,7 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
     <zynth-bottom-sheet ref={attachHost} style={sheetStyle()}>
       {useWindowWrapper() ? (
         <View style={contentWrapperStyle()} pointerEvents="box-none">
-          <View style={contentStyle()}>
+          <View style={contentStyle()} onLayout={handleContentLayout}>
             {local.children}
             <View
               pointerEvents="box-none"
@@ -449,7 +541,9 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
           </View>
         </View>
       ) : (
-        <View style={contentStyle()}>{local.children}</View>
+        <View style={contentStyle()} onLayout={handleContentLayout}>
+          {local.children}
+        </View>
       )}
     </zynth-bottom-sheet>
   );

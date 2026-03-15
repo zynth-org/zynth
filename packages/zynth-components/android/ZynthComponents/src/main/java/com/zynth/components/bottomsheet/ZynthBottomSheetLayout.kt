@@ -81,6 +81,7 @@ class ZynthBottomSheetLayout @JvmOverloads constructor(
     dialog.setAllowBackgroundInteraction(resolved.allowBackgroundInteraction)
     dialog.setAllowDismissOnInteraction(resolved.allowDismissOnInteraction)
     dialog.setDynamicContentHeight(resolved.dynamicContentHeight)
+    dialog.setContentHeightHintDp(resolved.contentHeightHintDp)
   }
 
   fun updateLayoutOptions(transform: ZynthBottomSheetOptions.() -> ZynthBottomSheetOptions) {
@@ -115,6 +116,14 @@ class ZynthBottomSheetLayout @JvmOverloads constructor(
 
   fun snapTo(index: Int) {
     dialog.snapTo(index.coerceAtLeast(0))
+  }
+
+  fun expand() {
+    dialog.expand()
+  }
+
+  fun collapse() {
+    dialog.collapse()
   }
 
   fun reset() {
@@ -219,5 +228,6 @@ data class ZynthBottomSheetOptions(
   val allowBackgroundInteraction: Boolean = false,
   val allowDismissOnInteraction: Boolean = true,
   val dynamicContentHeight: Boolean = false,
+  val contentHeightHintDp: Float? = null,
   val initialSnapIndex: Int = 0,
 )

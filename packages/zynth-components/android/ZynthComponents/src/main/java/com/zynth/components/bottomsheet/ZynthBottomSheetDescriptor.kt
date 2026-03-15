@@ -53,6 +53,17 @@ object ZynthBottomSheetDescriptor {
             }
             true
           }
+          "contentHeightHint" -> {
+            val parsed = parsePrimitive(value)
+            val hint = when (parsed) {
+              null -> null
+              is Number -> parsed.toFloat()
+              is String -> parsed.toFloatOrNull()
+              else -> null
+            }?.takeIf { it > 0f }
+            layout.updateLayoutOptions { copy(contentHeightHintDp = hint) }
+            true
+          }
           "initialSnapIndex" -> {
             parseInt(value)?.let { layout.updateLayoutOptions { copy(initialSnapIndex = it.coerceAtLeast(0)) } }
             true
@@ -75,6 +86,8 @@ object ZynthBottomSheetDescriptor {
                 "snapTo" -> command.takeIf { it.has("index") }?.let {
                   layout.snapTo(it.optInt("index"))
                 }
+                "expand" -> layout.expand()
+                "collapse" -> layout.collapse()
                 else -> Unit
               }
             }

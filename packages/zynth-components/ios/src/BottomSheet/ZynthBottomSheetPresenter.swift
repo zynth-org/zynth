@@ -51,6 +51,7 @@ struct ZynthBottomSheetOptions {
   var allowBackgroundInteraction: Bool = false
   var allowDismissOnInteraction: Bool = true
   var dynamicContentHeight: Bool = false
+  var contentHeightHint: CGFloat? = nil
 }
 
 @available(iOS 16.0, *)
@@ -71,6 +72,7 @@ final class ZynthBottomSheetPresenter: NSObject {
   private var lastProgress: CGFloat = 0
   private var detentIdentifiers: [UISheetPresentationController.Detent.Identifier] = []
   private var resolvedHeights: [CGFloat] = []
+  private var detentRevision: Int = 0
   private var measuredContentHeight: CGFloat = 0
   private var bottomSafeAreaInset: CGFloat = 0
 
@@ -84,6 +86,30 @@ final class ZynthBottomSheetPresenter: NSObject {
     options = newOptions
     rebuildDetents()
     guard let controller = contentController else { return }
+    guard let sheet = controller.sheetPresentationController else {
+      configureSheet(for: controller, selectedIndex: pendingIndex)
+      return
+    }
+
+    // Keep live option updates in-sync while the sheet is already presented.
+    if isOpen {
+      let detents = makeDetents()
+      let selected = detentIdentifiers[normalizedIndex(pendingIndex)]
+      sheet.invalidateDetents()
+      sheet.animateChanges {
+        sheet.detents = detents
+        sheet.selectedDetentIdentifier = selected
+      }
+      sheet.prefersGrabberVisible = true
+      sheet.prefersScrollingExpandsWhenScrolledToEdge = false
+      sheet.largestUndimmedDetentIdentifier = options.allowBackgroundInteraction
+        ? detentIdentifiers.last
+        : nil
+      controller.isModalInPresentation = !options.allowDismissOnInteraction
+      updateSystemDimmingViewState()
+      return
+    }
+
     configureSheet(for: controller, selectedIndex: pendingIndex)
   }
 
@@ -110,6 +136,27 @@ final class ZynthBottomSheetPresenter: NSObject {
   func snapTo(index: Int) {
     DispatchQueue.main.async { [weak self] in
       self?.snapToInternal(index: index)
+    }
+  }
+
+  func expand() {
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      if !self.isOpen {
+        self.present(index: max(self.detentIdentifiers.count - 1, 0))
+        return
+      }
+      self.snapToInternal(index: max(self.detentIdentifiers.count - 1, 0))
+    }
+  }
+
+  func collapse() {
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      if !self.isOpen {
+        return
+      }
+      self.snapToInternal(index: 0)
     }
   }
 
@@ -224,13 +271,16 @@ final class ZynthBottomSheetPresenter: NSObject {
   }
 
   private func rebuildDetents() {
+    detentRevision += 1
     let snapPoints = options.snapPoints.isEmpty
       ? (options.dynamicContentHeight ? [] : ZynthBottomSheetOptions().snapPoints)
       : options.snapPoints
     let screenHeight = UIScreen.main.bounds.height
+    let hintedHeight = max(options.contentHeightHint ?? 0, 0)
+    let sourceHeight = max(measuredContentHeight, hintedHeight)
     let contentCap: CGFloat
-    if options.dynamicContentHeight, measuredContentHeight > 0 {
-      contentCap = min(screenHeight, measuredContentHeight)
+    if options.dynamicContentHeight, sourceHeight > 0 {
+      contentCap = min(screenHeight, sourceHeight)
     } else {
       contentCap = screenHeight
     }
@@ -239,12 +289,14 @@ final class ZynthBottomSheetPresenter: NSObject {
       : 0
     let effectiveContentCap = max(contentCap - dynamicSafeAreaCompensation, 1)
     print(
-      "[ZynthBottomSheet] rebuildDetents dynamic=\(options.dynamicContentHeight) measured=\(measuredContentHeight) contentCap=\(contentCap) effectiveCap=\(effectiveContentCap) safeBottom=\(bottomSafeAreaInset) screen=\(screenHeight) snapCount=\(snapPoints.count)"
+      "[ZynthBottomSheet] rebuildDetents dynamic=\(options.dynamicContentHeight) measured=\(measuredContentHeight) hint=\(hintedHeight) contentCap=\(contentCap) effectiveCap=\(effectiveContentCap) safeBottom=\(bottomSafeAreaInset) screen=\(screenHeight) snapCount=\(snapPoints.count)"
     )
     if options.dynamicContentHeight && snapPoints.isEmpty {
       resolvedHeights = [effectiveContentCap]
       detentIdentifiers = [
-        UISheetPresentationController.Detent.Identifier("zynth-bottom-sheet-0"),
+        UISheetPresentationController.Detent.Identifier(
+          "zynth-bottom-sheet-\(detentRevision)-0"
+        ),
       ]
       return
     }
@@ -261,7 +313,9 @@ final class ZynthBottomSheetPresenter: NSObject {
     }
     resolvedHeights = uniqueHeights
     detentIdentifiers = uniqueHeights.enumerated().map { index, _ in
-      UISheetPresentationController.Detent.Identifier("zynth-bottom-sheet-\(index)")
+      UISheetPresentationController.Detent.Identifier(
+        "zynth-bottom-sheet-\(detentRevision)-\(index)"
+      )
     }
   }
 
@@ -317,6 +371,7 @@ final class ZynthBottomSheetPresenter: NSObject {
   func contentHeightDidChange(height: CGFloat, bottomSafeAreaInset: CGFloat) {
     let normalizedHeight = max(height, 0)
     let normalizedSafeAreaBottom = max(bottomSafeAreaInset, 0)
+    let previousMeasuredHeight = measuredContentHeight
     if abs(normalizedHeight - measuredContentHeight) <= 1 &&
       abs(normalizedSafeAreaBottom - self.bottomSafeAreaInset) <= 1
     {
@@ -333,8 +388,19 @@ final class ZynthBottomSheetPresenter: NSObject {
     )
     guard options.dynamicContentHeight else { return }
     guard let controller = contentController else { return }
+    guard let sheet = controller.sheetPresentationController else { return }
     rebuildDetents()
-    configureSheet(for: controller, selectedIndex: pendingIndex)
+    if normalizedHeight > previousMeasuredHeight + 1 {
+      pendingIndex = max(pendingIndex, detentIdentifiers.count - 1)
+    }
+    let detents = makeDetents()
+    let selected = detentIdentifiers[normalizedIndex(pendingIndex)]
+    sheet.invalidateDetents()
+    sheet.animateChanges {
+      sheet.detents = detents
+      sheet.selectedDetentIdentifier = selected
+    }
+    updateSystemDimmingViewState()
   }
 
   private func nearestIndex(for height: CGFloat) -> Int {
