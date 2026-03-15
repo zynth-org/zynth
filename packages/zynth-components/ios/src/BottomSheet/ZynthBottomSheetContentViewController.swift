@@ -17,12 +17,14 @@ final class ZynthBottomSheetContentViewController: UIViewController {
   override func viewDidLoad() {
     super.viewDidLoad()
     view.backgroundColor = .clear
+    view.insetsLayoutMarginsFromSafeArea = false
+    view.directionalLayoutMargins = .zero
     attachContent()
   }
 
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
-    contentHost.frame = view.bounds
+    layoutContentHost()
     presenter?.sheetDidLayout(height: view.frame.height)
   }
 
@@ -31,7 +33,7 @@ final class ZynthBottomSheetContentViewController: UIViewController {
       contentHost.removeFromSuperview()
       view.addSubview(contentHost)
     }
-    contentHost.frame = view.bounds
+    layoutContentHost()
     contentHost.autoresizingMask = [.flexibleWidth, .flexibleHeight]
   }
 
@@ -42,5 +44,18 @@ final class ZynthBottomSheetContentViewController: UIViewController {
     }
     contentHost.frame = host.bounds
     contentHost.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+  }
+
+  private func layoutContentHost() {
+    // Expand host into the bottom safe-area strip without mutating
+    // controller safe-area insets (which can trigger UIKit recursion).
+    let safeBottom = max(view.safeAreaInsets.bottom, 0)
+    let bounds = view.bounds
+    contentHost.frame = CGRect(
+      x: bounds.origin.x,
+      y: bounds.origin.y,
+      width: bounds.width,
+      height: bounds.height + safeBottom
+    )
   }
 }

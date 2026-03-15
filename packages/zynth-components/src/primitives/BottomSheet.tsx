@@ -224,6 +224,7 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
       ...local.contentContainerStyle,
     };
     if (
+      Platform.OS !== "ios" &&
       resolvedMaxHeight > 0 &&
       local.contentContainerStyle?.height == null &&
       local.contentContainerStyle?.maxHeight == null
