@@ -1,4 +1,4 @@
-import type { Style } from "@zynth/core";
+import type { Style, StyleRef } from "@zynth/core";
 import type { JSX } from "solid-js";
 import type { ImageElementProps } from "./primitives/Image";
 import type { TextInputProps } from "./primitives/TextInput";
@@ -13,7 +13,7 @@ type ZynthChildren = JSX.Element | JSX.Element[] | null | undefined;
 type SolidButtonProps = JSX.HTMLAttributes<HTMLButtonElement>;
 
 interface ViewElementProps {
-  style?: Style;
+  style?: Style | StyleRef;
   children?: ZynthChildren;
   onPress?: () => void;
   accessibilityLabel?: string;
@@ -39,7 +39,7 @@ interface ViewElementProps {
 }
 
 interface GlassViewElementProps {
-  style?: Style;
+  style?: Style | StyleRef;
   children?: ZynthChildren;
   glassEffect?: "regular" | "clear" | "none";
   interactive?: boolean;
@@ -49,7 +49,7 @@ interface GlassViewElementProps {
 }
 
 interface GlassContainerElementProps {
-  style?: Style;
+  style?: Style | StyleRef;
   children?: ZynthChildren;
   spacing?: number;
   pointerEvents?: "auto" | "none" | "box-none" | "box-only";
@@ -57,7 +57,7 @@ interface GlassContainerElementProps {
 }
 
 interface TextElementProps {
-  style?: Style;
+  style?: Style | StyleRef;
   children?: ZynthChildren;
   text?: string;
 }
