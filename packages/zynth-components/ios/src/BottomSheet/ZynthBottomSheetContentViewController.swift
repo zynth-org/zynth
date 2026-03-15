@@ -73,11 +73,7 @@ final class ZynthBottomSheetContentViewController: UIViewController {
       verticalFittingPriority: .fittingSizeLevel
     ).height
     let frameMeasured = max(maxChildY, 0)
-    let measured = frameMeasured > 0 ? frameMeasured : max(fittingHeight, 0)
-    print(
-      "[ZynthBottomSheet] measuredContentHeight=\(measured) frameMeasured=\(frameMeasured) fitting=\(fittingHeight) viewHeight=\(view.bounds.height)"
-    )
-    return measured
+    return frameMeasured > 0 ? frameMeasured : max(fittingHeight, 0)
   }
 
   private func deepestVisibleBottom(in root: UIView) -> CGFloat? {

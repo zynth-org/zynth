@@ -185,7 +185,6 @@ final class ZynthBottomSheetPresenter: NSObject {
     }
 
     isOpen = true
-    print("[ZynthBottomSheet] presentInternal called, pendingIndex=\(pendingIndex)")
 
     let controller = ZynthBottomSheetContentViewController(contentHost: contentHost)
     controller.presenter = self
@@ -288,9 +287,6 @@ final class ZynthBottomSheetPresenter: NSObject {
       ? min(max(bottomSafeAreaInset, 0), contentCap)
       : 0
     let effectiveContentCap = max(contentCap - dynamicSafeAreaCompensation, 1)
-    print(
-      "[ZynthBottomSheet] rebuildDetents dynamic=\(options.dynamicContentHeight) measured=\(measuredContentHeight) hint=\(hintedHeight) contentCap=\(contentCap) effectiveCap=\(effectiveContentCap) safeBottom=\(bottomSafeAreaInset) screen=\(screenHeight) snapCount=\(snapPoints.count)"
-    )
     if options.dynamicContentHeight && snapPoints.isEmpty {
       resolvedHeights = [effectiveContentCap]
       detentIdentifiers = [
@@ -383,9 +379,6 @@ final class ZynthBottomSheetPresenter: NSObject {
       measuredContentHeight = normalizedHeight
       self.bottomSafeAreaInset = normalizedSafeAreaBottom
     }
-    print(
-      "[ZynthBottomSheet] contentHeightDidChange=\(measuredContentHeight) safeBottom=\(self.bottomSafeAreaInset) isOpen=\(isOpen)"
-    )
     guard options.dynamicContentHeight else { return }
     guard let controller = contentController else { return }
     guard let sheet = controller.sheetPresentationController else { return }

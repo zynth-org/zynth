@@ -62,30 +62,22 @@ static BOOL ZynthBottomSheetParseBoolean(NSString *rawJSON, id value, BOOL fallb
 
   id parsed = ZynthBottomSheetParseJSON(rawJSON);
   if ([parsed isKindOfClass:[NSNumber class]]) {
-    BOOL result = ((NSNumber *)parsed).boolValue;
-    NSLog(@"[ZynthBottomSheet] Parsed boolean from NSNumber: %d (rawJSON: %@)", result, rawJSON);
-    return result;
+    return ((NSNumber *)parsed).boolValue;
   }
   if ([parsed isKindOfClass:[NSString class]]) {
     NSString *lower = [(NSString *)parsed lowercaseString];
     if ([lower isEqualToString:@"true"]) {
-      NSLog(@"[ZynthBottomSheet] Parsed boolean 'true' from string (rawJSON: %@)", rawJSON);
       return YES;
     }
     if ([lower isEqualToString:@"false"]) {
-      NSLog(@"[ZynthBottomSheet] Parsed boolean 'false' from string (rawJSON: %@)", rawJSON);
       return NO;
     }
-    NSLog(@"[ZynthBottomSheet] Failed to parse boolean from string '%@', using fallback: %d", (NSString *)parsed, fallback);
     return fallback;
   }
   
   if (value != nil && value != [NSNull null]) {
-     NSLog(@"[ZynthBottomSheet] Fallback to value.boolValue for value: %@", value);
      return [value respondsToSelector:@selector(boolValue)] ? [value boolValue] : fallback;
   }
-
-  NSLog(@"[ZynthBottomSheet] Failed to parse boolean (rawJSON is %@, value is %@), using fallback: %d", rawJSON, value, fallback);
   return fallback;
 }
 
