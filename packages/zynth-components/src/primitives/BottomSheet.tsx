@@ -49,6 +49,7 @@ export interface BottomSheetProps {
   dismissOnOverlayPress?: boolean;
   allowBackgroundInteraction?: boolean;
   allowDismissOnInteraction?: boolean;
+  dynamicContentHeight?: boolean;
   style?: Style;
   contentContainerStyle?: Style;
   onOpenChange?: (open: boolean) => void;
@@ -81,6 +82,16 @@ const DEFAULT_CONTENT_STYLE: Style = {
     },
     web: {},
   }),
+};
+
+const DYNAMIC_ANDROID_CONTENT_STYLE: Style = {
+  borderTopLeftRadius: 12,
+  borderTopRightRadius: 12,
+  overflow: "hidden",
+  elevation: 8,
+  backgroundColor: "#FFF",
+  flexGrow: 0,
+  flexShrink: 1,
 };
 
 const resolveSnapPointToDp = (
@@ -165,6 +176,7 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
     "dismissOnOverlayPress",
     "allowBackgroundInteraction",
     "allowDismissOnInteraction",
+    "dynamicContentHeight",
     "style",
     "contentContainerStyle",
     "onOpenChange",
@@ -208,8 +220,13 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
   });
 
   const maxSnapHeight = createMemo(() => {
-    const points = local.snapPoints ?? DEFAULT_SNAP_POINTS;
+    const points =
+      local.snapPoints ??
+      (local.dynamicContentHeight ? [] : DEFAULT_SNAP_POINTS);
     const height = windowSize().height;
+    if (points.length === 0) {
+      return height;
+    }
     let result = 0;
     for (const point of points) {
       result = Math.max(result, resolveSnapPointToDp(point, height));
@@ -219,8 +236,12 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
 
   const contentStyle = createMemo<Style>(() => {
     const resolvedMaxHeight = Number(maxSnapHeight());
+    const baseStyle =
+      local.dynamicContentHeight && Platform.OS === "android"
+        ? DYNAMIC_ANDROID_CONTENT_STYLE
+        : DEFAULT_CONTENT_STYLE;
     const style: Style = {
-      ...DEFAULT_CONTENT_STYLE,
+      ...baseStyle,
       ...local.contentContainerStyle,
     };
     if (
@@ -293,7 +314,11 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
     const host = hostNode();
     if (!host) return;
     setProperty(host, "style", sheetStyle());
-    setProperty(host, "snapPoints", local.snapPoints ?? DEFAULT_SNAP_POINTS);
+    setProperty(
+      host,
+      "snapPoints",
+      local.snapPoints ?? (local.dynamicContentHeight ? [] : DEFAULT_SNAP_POINTS),
+    );
     // `initialSnapIndex` is a pre-open hint. Re-applying it while the sheet is open
     // can force UIKit to re-resolve detents mid-gesture and cause snap jitter.
     if (!resolvedOpen()) {
@@ -321,6 +346,9 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
         "allowDismissOnInteraction",
         local.allowDismissOnInteraction,
       );
+    }
+    if (local.dynamicContentHeight != null) {
+      setProperty(host, "dynamicContentHeight", local.dynamicContentHeight);
     }
     if (local.testID) {
       setProperty(host, "testID", local.testID);

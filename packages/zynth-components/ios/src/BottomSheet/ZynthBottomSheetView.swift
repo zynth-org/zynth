@@ -86,7 +86,7 @@ public final class ZynthBottomSheetView: UIView {
 
   public func updateSnapPoints(_ items: NSArray?) {
     let parsed = BottomSheetSnapPoint.parseList(items)
-    options.snapPoints = parsed.isEmpty ? ZynthBottomSheetOptions().snapPoints : parsed
+    options.snapPoints = parsed
     presenter.updateOptions(options)
   }
 
@@ -97,7 +97,6 @@ public final class ZynthBottomSheetView: UIView {
   }
 
   public func setAllowBackgroundInteraction(_ value: NSNumber?) {
-    print("[ZynthBottomSheetView] setAllowBackgroundInteraction: \(value?.boolValue ?? false)")
     guard let value else { return }
     options.allowBackgroundInteraction = value.boolValue
     presenter.updateOptions(options)
@@ -122,14 +121,18 @@ public final class ZynthBottomSheetView: UIView {
   }
 
   public func setAllowDismissOnInteraction(_ value: NSNumber?) {
-    print("[ZynthBottomSheetView] setAllowDismissOnInteraction: \(value?.boolValue ?? true)")
     guard let value else { return }
     options.allowDismissOnInteraction = value.boolValue
     presenter.updateOptions(options)
   }
 
+  public func setDynamicContentHeight(_ value: NSNumber?) {
+    guard let value else { return }
+    options.dynamicContentHeight = value.boolValue
+    presenter.updateOptions(options)
+  }
+
   public func setOpenState(_ value: NSNumber?) {
-    print("[ZynthBottomSheetView] setOpenState: \(value?.boolValue ?? false)")
     guard let value else { return }
     if window == nil {
       pendingOpenState = value.boolValue

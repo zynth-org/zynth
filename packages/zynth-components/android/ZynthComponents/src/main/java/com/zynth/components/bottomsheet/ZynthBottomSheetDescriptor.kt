@@ -47,6 +47,12 @@ object ZynthBottomSheetDescriptor {
             }
             true
           }
+          "dynamicContentHeight" -> {
+            parseBoolean(value)?.let { enabled ->
+              layout.updateLayoutOptions { copy(dynamicContentHeight = enabled) }
+            }
+            true
+          }
           "initialSnapIndex" -> {
             parseInt(value)?.let { layout.updateLayoutOptions { copy(initialSnapIndex = it.coerceAtLeast(0)) } }
             true
@@ -98,7 +104,7 @@ object ZynthBottomSheetDescriptor {
           is String -> BottomSheetSnapPoint.parse(item)?.let { parsed -> result.add(parsed) }
         }
       }
-      result.takeIf { it.isNotEmpty() }
+      result
     } catch (error: JSONException) {
       null
     }

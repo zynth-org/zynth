@@ -25,6 +25,10 @@ final class ZynthBottomSheetContentViewController: UIViewController {
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
     layoutContentHost()
+    presenter?.contentHeightDidChange(
+      height: measuredContentHeight(),
+      bottomSafeAreaInset: max(view.safeAreaInsets.bottom, 0)
+    )
     presenter?.sheetDidLayout(height: view.frame.height)
   }
 
@@ -47,15 +51,49 @@ final class ZynthBottomSheetContentViewController: UIViewController {
   }
 
   private func layoutContentHost() {
-    // Expand host into the bottom safe-area strip without mutating
-    // controller safe-area insets (which can trigger UIKit recursion).
-    let safeBottom = max(view.safeAreaInsets.bottom, 0)
     let bounds = view.bounds
     contentHost.frame = CGRect(
       x: bounds.origin.x,
       y: bounds.origin.y,
       width: bounds.width,
-      height: bounds.height + safeBottom
+      height: bounds.height
     )
+  }
+
+  private func measuredContentHeight() -> CGFloat {
+    contentHost.layoutIfNeeded()
+    var maxChildY: CGFloat = 0
+    for child in contentHost.subviews where !child.isHidden {
+      let deepestBottom = deepestVisibleBottom(in: child) ?? child.frame.maxY
+      maxChildY = max(maxChildY, deepestBottom)
+    }
+    let fittingHeight = contentHost.systemLayoutSizeFitting(
+      CGSize(width: view.bounds.width, height: UIView.layoutFittingCompressedSize.height),
+      withHorizontalFittingPriority: .required,
+      verticalFittingPriority: .fittingSizeLevel
+    ).height
+    let frameMeasured = max(maxChildY, 0)
+    let measured = frameMeasured > 0 ? frameMeasured : max(fittingHeight, 0)
+    print(
+      "[ZynthBottomSheet] measuredContentHeight=\(measured) frameMeasured=\(frameMeasured) fitting=\(fittingHeight) viewHeight=\(view.bounds.height)"
+    )
+    return measured
+  }
+
+  private func deepestVisibleBottom(in root: UIView) -> CGFloat? {
+    if root.isHidden || root.alpha <= 0.001 {
+      return nil
+    }
+    var maxBottom: CGFloat? = nil
+    for child in root.subviews where !child.isHidden {
+      if let nested = deepestVisibleBottom(in: child) {
+        maxBottom = max(maxBottom ?? nested, nested)
+      }
+    }
+    if maxBottom != nil {
+      return maxBottom
+    }
+    let frameInHost = root.convert(root.bounds, to: contentHost)
+    return frameInHost.maxY
   }
 }

@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.DialogInterface
 import android.graphics.Color
+import android.graphics.Rect
 import android.view.Choreographer
 import android.view.Gravity
 import android.view.MotionEvent
@@ -45,9 +46,11 @@ class ZynthBottomSheetDialog(
   private var dismissOnOverlayPress: Boolean = true
   private var allowBackgroundInteraction: Boolean = false
   private var allowDismissOnInteraction: Boolean = true
+  private var dynamicContentHeight: Boolean = false
   private var isDraggable: Boolean = true
   private var snapPoints: List<BottomSheetSnapPoint> = DEFAULT_SNAP_POINTS
   private var resolvedSnapHeights: List<Int> = emptyList()
+  private var measuredContentHeight: Int = 0
   private var screenHeight: Int = ZynthBottomSheetUtils.screenHeight(context)
   private var behavior: BottomSheetBehavior<FrameLayout>? = null
   private var sheetContainer: FrameLayout? = null
@@ -66,6 +69,9 @@ class ZynthBottomSheetDialog(
   private var closeFallbackGeneration: Int = 0
   private var closeFallbackFrameCallback: Choreographer.FrameCallback? = null
   private var forwardingOutsideGesture: Boolean = false
+  private val contentLayoutChangeListener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+    handleContentLayoutChanged()
+  }
   private val bottomSheetCallback = object : BottomSheetBehavior.BottomSheetCallback() {
     override fun onSlide(bottomSheet: View, slideOffset: Float) {
       listener?.onSlide(bottomSheet, slideOffset)
@@ -87,6 +93,7 @@ class ZynthBottomSheetDialog(
       FrameLayout.LayoutParams.MATCH_PARENT,
       FrameLayout.LayoutParams.MATCH_PARENT,
     )
+    contentHost.addOnLayoutChangeListener(contentLayoutChangeListener)
     setCancelable(true)
     setCanceledOnTouchOutside(false)
     setOnShowListener(::handleShow)
@@ -111,8 +118,7 @@ class ZynthBottomSheetDialog(
   }
 
   fun setSnapPoints(points: List<BottomSheetSnapPoint>) {
-    val resolvedPoints = if (points.isEmpty()) DEFAULT_SNAP_POINTS else points
-    if (resolvedPoints == snapPoints) {
+    if (points == snapPoints) {
       return
     }
     pendingIndexRestore = if (isShowing) {
@@ -120,7 +126,7 @@ class ZynthBottomSheetDialog(
     } else {
       null
     }
-    snapPoints = resolvedPoints
+    snapPoints = points
     configureBehavior()
   }
 
@@ -153,6 +159,22 @@ class ZynthBottomSheetDialog(
     setDraggable(enabled)
     setCancelable(enabled && !allowBackgroundInteraction)
     applyDismissBehavior()
+  }
+
+  fun setDynamicContentHeight(enabled: Boolean) {
+    if (dynamicContentHeight == enabled) {
+      return
+    }
+    dynamicContentHeight = enabled
+    if (!enabled) {
+      measuredContentHeight = 0
+    } else {
+      measuredContentHeight = measureContentHeight().coerceAtLeast(0)
+    }
+    configureBehavior()
+    if (isShowing) {
+      applyStateForIndex(currentSnapIndex)
+    }
   }
 
   fun setDraggable(enabled: Boolean) {
@@ -212,6 +234,9 @@ class ZynthBottomSheetDialog(
   @Suppress("UNUSED_PARAMETER")
   private fun handleShow(dialog: DialogInterface) {
     screenHeight = ZynthBottomSheetUtils.screenHeight(context)
+    if (dynamicContentHeight) {
+      measuredContentHeight = measureContentHeight().coerceAtLeast(0)
+    }
     enforceNoSystemDim()
     val outsideScrim: View? = window?.findViewById(com.google.android.material.R.id.touch_outside)
     // Prevent Material's default outside scrim from flashing before we apply our own overlay state.
@@ -267,16 +292,24 @@ class ZynthBottomSheetDialog(
 
   private fun configureBehavior(animatePeek: Boolean = false) {
     val metrics = context.resources.displayMetrics
+    val heightCap = resolveDynamicHeightCap()
+    if (dynamicContentHeight && snapPoints.isEmpty()) {
+      resolvedSnapHeights = listOf(heightCap)
+      behavior?.let { applyBehaviorConfiguration(it, animatePeek) }
+      return
+    }
     resolvedSnapHeights = snapPoints.mapNotNull {
       val resolved = it.resolveHeight(screenHeight, metrics)
       resolved
-        .coerceAtMost(screenHeight)
+        .coerceAtMost(heightCap)
         .takeIf { height -> height > 0 }
     }.distinct().sorted()
 
     if (resolvedSnapHeights.isEmpty()) {
       resolvedSnapHeights = DEFAULT_SNAP_POINTS.mapNotNull {
-        it.resolveHeight(screenHeight, metrics).takeIf { height -> height > 0 }
+        it.resolveHeight(screenHeight, metrics)
+          .coerceAtMost(heightCap)
+          .takeIf { height -> height > 0 }
       }
     }
     if (resolvedSnapHeights.isEmpty()) {
@@ -612,6 +645,77 @@ class ZynthBottomSheetDialog(
     pendingIndexRestore = null
     applyStateForIndex(index)
     commitPendingExpandedOffset()
+  }
+
+  private fun resolveDynamicHeightCap(): Int {
+    if (!dynamicContentHeight) {
+      return screenHeight
+    }
+    val measured = measureContentHeight().coerceAtLeast(0)
+    if (measured > 0) {
+      measuredContentHeight = measured
+    }
+    val cappedContentHeight = measuredContentHeight
+      .takeIf { it > 0 }
+      ?.coerceAtMost(screenHeight)
+      ?: screenHeight
+    return cappedContentHeight.coerceAtLeast(1)
+  }
+
+  private fun measureContentHeight(): Int {
+    if (contentHost.childCount == 0) return 0
+    var bottomMost = 0
+    for (index in 0 until contentHost.childCount) {
+      val child = contentHost.getChildAt(index) ?: continue
+      val childBottom = measureDeepestVisibleBottom(child)
+      if (childBottom > bottomMost) {
+        bottomMost = childBottom
+      }
+    }
+    val padded = bottomMost + contentHost.paddingBottom
+    return padded.coerceAtLeast(0)
+  }
+
+  private fun measureDeepestVisibleBottom(view: View): Int {
+    if (view.visibility == View.GONE || view.alpha <= 0f) {
+      return 0
+    }
+
+    if (view is ViewGroup && view.childCount > 0) {
+      var descendantBottom = 0
+      for (index in 0 until view.childCount) {
+        val child = view.getChildAt(index) ?: continue
+        val childBottom = measureDeepestVisibleBottom(child)
+        if (childBottom > descendantBottom) {
+          descendantBottom = childBottom
+        }
+      }
+      if (descendantBottom > 0) {
+        return descendantBottom
+      }
+    }
+
+    val rect = Rect()
+    view.getDrawingRect(rect)
+    contentHost.offsetDescendantRectToMyCoords(view, rect)
+    val layoutParams = view.layoutParams as? ViewGroup.MarginLayoutParams
+    return rect.bottom + (layoutParams?.bottomMargin ?: 0)
+  }
+
+  private fun handleContentLayoutChanged() {
+    if (!dynamicContentHeight || !isShowing) {
+      return
+    }
+    val nextHeight = measureContentHeight().coerceAtLeast(0)
+    if (nextHeight <= 0 || abs(nextHeight - measuredContentHeight) <= 1) {
+      return
+    }
+    measuredContentHeight = nextHeight
+    val previousHeights = resolvedSnapHeights
+    configureBehavior()
+    if (previousHeights != resolvedSnapHeights) {
+      applyStateForIndex(currentSnapIndex)
+    }
   }
 
   private fun applyExpandedOffset(offset: Int) {
