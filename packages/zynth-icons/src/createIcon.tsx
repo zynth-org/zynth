@@ -1,6 +1,6 @@
 import { createSignal, onMount, onCleanup } from "solid-js";
 import { Text, TextProps, createStyle } from "@zynth/components";
-import { Font } from "@zynth/apis";
+import { Font, Platform } from "@zynth/apis";
 
 // Track font loading state globally
 const fontLoadState = new Map<string, "loading" | "loaded" | "error">();
@@ -135,6 +135,10 @@ export function createIcon(glyph: string, fontFamily: string) {
         style={{
           ...mergedStyle(),
           fontFamily: isReady() ? fontFamily : undefined,
+          height:
+            Platform.OS === "android"
+              ? mergedStyle().fontSize || 16
+              : undefined,
         }}
       />
     );
