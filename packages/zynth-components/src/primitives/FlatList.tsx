@@ -40,6 +40,7 @@ export type FlatListProps<T> = {
   data: T[];
   renderItem: (info: FlatListRenderItemInfo<T>) => JSX.Element;
   keyExtractor: (item: T, index: number) => string;
+  numColumns?: number;
   recycle?: boolean;
   estimatedItemSize?: number;
   poolSize?: number;
@@ -244,6 +245,44 @@ export function FlatList<T>(props: FlatListProps<T>) {
   let lastViewport = 0;
 
   const isInverted = createMemo(() => props.inverted ?? false);
+  const columnCount = createMemo(() => {
+    const value = props.numColumns;
+    if (typeof value !== "number" || !Number.isFinite(value)) return 1;
+    return Math.max(1, Math.floor(value));
+  });
+  const isMultiColumn = createMemo(
+    () => !props.horizontal && columnCount() > 1,
+  );
+  const getVirtualLength = () => {
+    if (!isMultiColumn()) return props.data.length;
+    return Math.ceil(props.data.length / columnCount());
+  };
+  const getDataStartIndexForVirtualIndex = (virtualIndex: number) => {
+    if (!isMultiColumn()) return virtualIndex;
+    return virtualIndex * columnCount();
+  };
+  const getDataCountForVirtualIndex = (virtualIndex: number) => {
+    const start = getDataStartIndexForVirtualIndex(virtualIndex);
+    const remaining = props.data.length - start;
+    if (remaining <= 0) return 0;
+    if (!isMultiColumn()) return 1;
+    return Math.min(columnCount(), remaining);
+  };
+  const getVirtualIndexForDataIndex = (dataIndex: number) => {
+    if (!isMultiColumn()) return dataIndex;
+    return Math.floor(dataIndex / columnCount());
+  };
+  const getVirtualKeyForIndex = (virtualIndex: number) => {
+    const dataIndex = getDataStartIndexForVirtualIndex(virtualIndex);
+    if (dataIndex < 0 || dataIndex >= props.data.length) {
+      return `__zynth_flatlist_virtual_${virtualIndex}`;
+    }
+    const item = props.data[dataIndex];
+    if (item === undefined || item === null) {
+      return `__zynth_flatlist_virtual_${virtualIndex}`;
+    }
+    return props.keyExtractor(item, dataIndex);
+  };
 
 
   const estimatedItemSize = createMemo(() => {
@@ -309,7 +348,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
     if (typeof props.poolSize === "number") {
       return Math.min(Math.max(0, props.poolSize), maxPoolSize);
     }
-    const dataLength = props.data.length;
+    const dataLength = getVirtualLength();
     if (dataLength === 0) return 0;
     const estimate = layoutEstimate();
     const viewport = effectiveViewport();
@@ -533,14 +572,19 @@ export function FlatList<T>(props: FlatListProps<T>) {
     if (!slot) return;
     slotBindings[slotIndex] = dataIndex;
     slot.setLayoutToken((value) => value + 1);
-    if (dataIndex < 0 || dataIndex >= props.data.length) {
+    const virtualLength = getVirtualLength();
+    if (dataIndex < 0 || dataIndex >= virtualLength) {
       slot.setIndex(-1);
       slot.setItem(null);
       slot.setKey(null);
       return;
     }
-    const item = props.data[dataIndex];
-    const key = item ? props.keyExtractor(item, dataIndex) : null;
+    const startIndex = getDataStartIndexForVirtualIndex(dataIndex);
+    const item =
+      startIndex >= 0 && startIndex < props.data.length
+        ? props.data[startIndex]
+        : null;
+    const key = dataKeys[dataIndex] ?? null;
     slot.setIndex(dataIndex);
     slot.setItem((item ?? null) as any);
     slot.setKey(key);
@@ -548,9 +592,10 @@ export function FlatList<T>(props: FlatListProps<T>) {
 
   const refreshBindings = () => {
     if (!poolSlotsRef.length) return;
+    const virtualLength = getVirtualLength();
     for (let i = 0; i < poolSlotsRef.length; i += 1) {
       const boundIndex = slotBindings[i];
-      if (boundIndex < 0 || boundIndex >= props.data.length) {
+      if (boundIndex < 0 || boundIndex >= virtualLength) {
         bindSlot(i, -1);
       } else {
         bindSlot(i, boundIndex);
@@ -562,7 +607,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
   const [flowOffset, setFlowOffset] = createSignal(0);
 
   const updateBindingsForOffset = (offset: number, viewport: number) => {
-    const dataLength = props.data.length;
+    const dataLength = getVirtualLength();
     if (dataLength !== dataKeys.length) return;
     if (dataLength === 0 || poolSlotsRef.length === 0) {
       if (poolSlotsRef.length > 0) {
@@ -978,9 +1023,11 @@ export function FlatList<T>(props: FlatListProps<T>) {
 
   createEffect(() => {
     const _extra = props.extraData;
-    const keys = props.data.map((item, index) =>
-      props.keyExtractor(item, index),
-    );
+    const keys: string[] = [];
+    const virtualLength = getVirtualLength();
+    for (let index = 0; index < virtualLength; index += 1) {
+      keys.push(getVirtualKeyForIndex(index));
+    }
     pendingMeasurementCache.clear();
     adaptiveLocked = false;
     rebuildLayout(keys);
@@ -1165,8 +1212,9 @@ export function FlatList<T>(props: FlatListProps<T>) {
       const dataLength = props.data.length;
       if (!dataLength) return;
       const clampedIndex = Math.max(0, Math.min(options.index, dataLength - 1));
-      const itemOffset = getOffsetForIndex(clampedIndex);
-      const itemSize = getSizeForIndex(clampedIndex);
+      const virtualIndex = getVirtualIndexForDataIndex(clampedIndex);
+      const itemOffset = getOffsetForIndex(virtualIndex);
+      const itemSize = getSizeForIndex(virtualIndex);
       const metrics = node.metrics();
       const viewport = props.horizontal
         ? metrics.viewportSize.width
@@ -1229,59 +1277,20 @@ export function FlatList<T>(props: FlatListProps<T>) {
           <Index each={poolSlots()}>
             {(slot) => {
               const slotData = slot();
-              const itemProxy = new Proxy(
-                {},
-                {
-                  get(_, prop) {
-                    const item = slotData.item();
-                    if (item == null) return undefined;
-                    const value = Reflect.get(item as any, prop, item);
-                    return typeof value === "function"
-                      ? value.bind(item)
-                      : value;
-                  },
-                  has(_, prop) {
-                    const item = slotData.item();
-                    if (item == null) return false;
-                    if (
-                      typeof item !== "object" &&
-                      typeof item !== "function"
-                    ) {
-                      return false;
-                    }
-                    return prop in (item as object);
-                  },
-                  ownKeys() {
-                    const item = slotData.item();
-                    return item ? Reflect.ownKeys(item) : [];
-                  },
-                  getOwnPropertyDescriptor(_, prop) {
-                    const item = slotData.item();
-                    if (!item) return undefined;
-                    const descriptor = Object.getOwnPropertyDescriptor(
-                      item,
-                      prop,
-                    );
-                    if (!descriptor) return undefined;
-                    return { ...descriptor, configurable: true };
-                  },
-                },
-              ) as T;
-
-              const indexValue = {
-                valueOf: () => slotData.index(),
-                toString: () => String(slotData.index()),
-                [Symbol.toPrimitive](hint: string) {
-                  const value = slotData.index();
-                  return hint === "string" ? String(value) : value;
-                },
-              } as unknown as number;
-
-              const renderKeyList = createMemo(() => {
-                const item = slotData.item();
-                if (item === null || item === undefined) return [];
-                if (props.recycle) return ["stable"];
-                return [slotData.index()];
+              const rowStartIndex = createMemo(() => {
+                const idx = slotData.index();
+                if (idx < 0) return -1;
+                return getDataStartIndexForVirtualIndex(idx);
+              });
+              const rowItemOffsets = createMemo(() => {
+                const idx = slotData.index();
+                if (idx < 0) return [];
+                const count = getDataCountForVirtualIndex(idx);
+                const offsets: number[] = [];
+                for (let i = 0; i < count; i += 1) {
+                  offsets.push(i);
+                }
+                return offsets;
               });
 
               const position = createMemo(() => {
@@ -1312,6 +1321,13 @@ export function FlatList<T>(props: FlatListProps<T>) {
                   return { minWidth: ready ? size : 0 };
                 }
                 return { minHeight: ready ? size : 0 };
+              });
+              const rowContentStyle = createMemo((): Style | undefined => {
+                if (!isMultiColumn()) return undefined;
+                return {
+                  flexDirection: "row",
+                  width: "100%",
+                };
               });
 
               const itemStyle = createMemo((): Style => {
@@ -1383,42 +1399,137 @@ export function FlatList<T>(props: FlatListProps<T>) {
                     style={contentStyle}
                     onLayout={handleLayout()}
                   >
-                    <For each={renderKeyList()}>
-                      {() => {
-                        const itemElement = props.renderItem({
-                          item: itemProxy,
-                          index: indexValue,
-                          itemSignal: slotData.item,
-                          indexSignal: slotData.index,
-                        });
-                        const SeparatorComponent = props.ItemSeparatorComponent;
-                        const SeparatorWrapper = () => {
-                          if (!SeparatorComponent) return null;
-                          const index = slotData.index();
-                          if (index === -1 || index >= props.data.length - 1) {
-                            return null;
-                          }
-                          const leading = slotData.item();
-                          if (leading == null) return null;
-                          const trailing = props.data[index + 1];
-                          if (trailing === undefined) return null;
+                    <View style={rowContentStyle()}>
+                      <For each={rowItemOffsets()}>
+                        {(columnOffset) => {
+                          const itemIndex = createMemo(() => {
+                            const start = rowStartIndex();
+                            if (start < 0) return -1;
+                            const index = start + columnOffset;
+                            if (index < 0 || index >= props.data.length) return -1;
+                            return index;
+                          });
+                          const itemSignal = createMemo<T | null>(() => {
+                            const index = itemIndex();
+                            if (index < 0) return null;
+                            const item = props.data[index];
+                            return item ?? null;
+                          });
+                          const itemProxy = new Proxy(
+                            {},
+                            {
+                              get(_, prop) {
+                                const item = itemSignal();
+                                if (item == null) return undefined;
+                                const value = Reflect.get(item as any, prop, item);
+                                return typeof value === "function"
+                                  ? value.bind(item)
+                                  : value;
+                              },
+                              has(_, prop) {
+                                const item = itemSignal();
+                                if (item == null) return false;
+                                if (
+                                  typeof item !== "object" &&
+                                  typeof item !== "function"
+                                ) {
+                                  return false;
+                                }
+                                return prop in (item as object);
+                              },
+                              ownKeys() {
+                                const item = itemSignal();
+                                return item ? Reflect.ownKeys(item) : [];
+                              },
+                              getOwnPropertyDescriptor(_, prop) {
+                                const item = itemSignal();
+                                if (!item) return undefined;
+                                const descriptor = Object.getOwnPropertyDescriptor(
+                                  item,
+                                  prop,
+                                );
+                                if (!descriptor) return undefined;
+                                return { ...descriptor, configurable: true };
+                              },
+                            },
+                          ) as T;
+
+                          const indexValue = {
+                            valueOf: () => itemIndex(),
+                            toString: () => String(itemIndex()),
+                            [Symbol.toPrimitive](hint: string) {
+                              const value = itemIndex();
+                              return hint === "string" ? String(value) : value;
+                            },
+                          } as unknown as number;
+
+                          const renderKeyList = createMemo(() => {
+                            const item = itemSignal();
+                            if (item === null || item === undefined) return [];
+                            if (props.recycle) return ["stable"];
+                            return [itemIndex()];
+                          });
+
+                          const columnStyle = createMemo((): Style => {
+                            if (!isMultiColumn()) {
+                              return { width: "100%" };
+                            }
+                            return { width: `${100 / columnCount()}%` };
+                          });
+
                           return (
-                            <SeparatorComponent
-                              leadingItem={leading}
-                              trailingItem={trailing}
-                              leadingIndex={index}
-                              trailingIndex={index + 1}
-                            />
+                            <View style={columnStyle()}>
+                              <For each={renderKeyList()}>
+                                {() =>
+                                  props.renderItem({
+                                    item: itemProxy,
+                                    index: indexValue,
+                                    itemSignal,
+                                    indexSignal: itemIndex,
+                                  })
+                                }
+                              </For>
+                            </View>
                           );
-                        };
-                        return (
-                          <>
-                            {itemElement}
-                            <SeparatorWrapper />
-                          </>
-                        );
-                      }}
-                    </For>
+                        }}
+                      </For>
+                    </View>
+                    {(() => {
+                      const SeparatorComponent = props.ItemSeparatorComponent;
+                      if (!SeparatorComponent) return null;
+                      const virtualIndex = slotData.index();
+                      if (virtualIndex === -1 || virtualIndex >= dataKeys.length - 1) {
+                        return null;
+                      }
+                      const leadingIndex = isMultiColumn()
+                        ? getDataStartIndexForVirtualIndex(virtualIndex) +
+                          getDataCountForVirtualIndex(virtualIndex) -
+                          1
+                        : getDataStartIndexForVirtualIndex(virtualIndex);
+                      const trailingIndex =
+                        getDataStartIndexForVirtualIndex(virtualIndex + 1);
+                      if (
+                        leadingIndex < 0 ||
+                        leadingIndex >= props.data.length ||
+                        trailingIndex < 0 ||
+                        trailingIndex >= props.data.length
+                      ) {
+                        return null;
+                      }
+                      const leading = props.data[leadingIndex];
+                      const trailing = props.data[trailingIndex];
+                      if (leading === undefined || trailing === undefined) {
+                        return null;
+                      }
+                      return (
+                        <SeparatorComponent
+                          leadingItem={leading}
+                          trailingItem={trailing}
+                          leadingIndex={leadingIndex}
+                          trailingIndex={trailingIndex}
+                        />
+                      );
+                    })()}
                   </View>
                 </View>
               );
