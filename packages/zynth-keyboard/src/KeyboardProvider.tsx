@@ -52,32 +52,31 @@ export const KeyboardProvider: Component<KeyboardProviderProps> = (props) => {
   createEffect(() => {
     if (nativeModule()) return;
 
-    let attempts = 0;
-    const maxAttempts = 20;
-    const timer = setInterval(() => {
+    const warnDelayMs = 5000;
+    const pollTimer = setInterval(() => {
       const resolved = getNativeKeyboardModule();
       if (resolved) {
-        clearInterval(timer);
+        clearInterval(pollTimer);
         setNativeModule(resolved);
         setState(resolved.getState());
-        return;
-      }
-
-      attempts += 1;
-      if (attempts >= maxAttempts) {
-        clearInterval(timer);
-        if (!didWarnMissingModule()) {
-          console.warn(
-            "[KeyboardProvider] Native keyboard module not found. " +
-              "Keyboard state will show as hidden. " +
-              "Make sure the native platform has initialized the module."
-          );
-          setDidWarnMissingModule(true);
-        }
       }
     }, 50);
 
-    onCleanup(() => clearInterval(timer));
+    const warnTimer = setTimeout(() => {
+      if (!nativeModule() && !didWarnMissingModule()) {
+        console.warn(
+          "[KeyboardProvider] Native keyboard module not found. " +
+            "Keyboard state will show as hidden. " +
+            "Make sure the native platform has initialized the module."
+        );
+        setDidWarnMissingModule(true);
+      }
+    }, warnDelayMs);
+
+    onCleanup(() => {
+      clearInterval(pollTimer);
+      clearTimeout(warnTimer);
+    });
   });
 
   // Subscribe to native keyboard changes

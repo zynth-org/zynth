@@ -11,6 +11,14 @@ object ZynthKeyboardAwareScrollViewDescriptor {
             type = "zynth-keyboard-aware-scroll-view",
             createView = { context, _ -> ZynthKeyboardAwareScrollView(context) },
             onNodeCreated = { _, _ -> },
+            onChildInserted = { _, parent, child, index ->
+                val view = parent.view as? ZynthKeyboardAwareScrollView ?: return@ZynthComponentDescriptor
+                view.insertContentSubview(child.view, index)
+            },
+            onChildRemoved = { _, parent, child ->
+                val view = parent.view as? ZynthKeyboardAwareScrollView ?: return@ZynthComponentDescriptor
+                view.removeContentSubview(child.view)
+            },
             applyProperty = { node, name, value ->
                 val view = node.view as? ZynthKeyboardAwareScrollView ?: return@ZynthComponentDescriptor false
                 when (name) {
@@ -77,6 +85,7 @@ object ZynthKeyboardAwareScrollViewDescriptor {
         val parsed = parsePrimitive(value) ?: return null
         return when (parsed) {
             is Boolean -> parsed
+            is Number -> parsed.toInt() != 0
             is String -> {
                 when (parsed.lowercase()) {
                     "true" -> true

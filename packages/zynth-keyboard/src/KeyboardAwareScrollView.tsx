@@ -134,7 +134,11 @@ export const KeyboardAwareScrollView: ParentComponent<
       testID={props.testID}
       data-testid={props.testID}
     >
-      <View style={props.contentContainerStyle}>{props.children}</View>
+      {props.contentContainerStyle != null ? (
+        <View style={props.contentContainerStyle}>{props.children}</View>
+      ) : (
+        props.children
+      )}
     </zynth-keyboard-aware-scroll-view>
   );
 };
