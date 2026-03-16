@@ -162,9 +162,49 @@ static NSString *ZynthKeyboardParseString(NSString *rawJSON) {
         [(ZynthKeyboardAwareScrollView *)node.view cleanup];
       }
     };
-    // NOTE: We don't set handleInsertChild/handleRemoveChild because the default
-    // behavior in ZynthUIManager already detects insertContentSubview:atIndex: and
-    // handles both view and Yoga node insertion correctly.
+    scrollDescriptor.handleInsertChild = ^BOOL(ZynthUIManager *manager,
+                                               ZynthNode *parent,
+                                               ZynthNode *child,
+                                               NSNumber *childId,
+                                               NSUInteger index) {
+      if (!parent || ![parent.view isKindOfClass:[ZynthKeyboardAwareScrollView class]]) return NO;
+      ZynthKeyboardAwareScrollView *view = (ZynthKeyboardAwareScrollView *)parent.view;
+      if (!child.view) return YES;
+
+      NSUInteger target = MIN(index, parent.children.count);
+      [view insertContentSubview:child.view atIndex:(NSInteger)target];
+      [parent.children insertObject:childId atIndex:target];
+
+      if (child.yoga && parent.yoga) {
+        YGNodeRef owner = YGNodeGetOwner(child.yoga);
+        if (owner) {
+          YGNodeRemoveChild(owner, child.yoga);
+        }
+        YGNodeInsertChild(parent.yoga, child.yoga, (uint32_t)target);
+      }
+
+      [manager zynth_markNeedsFlush];
+      return YES;
+    };
+    scrollDescriptor.handleRemoveChild = ^BOOL(ZynthUIManager *manager,
+                                               ZynthNode *parent,
+                                               ZynthNode *child,
+                                               NSNumber *childId) {
+      if (!parent || ![parent.view isKindOfClass:[ZynthKeyboardAwareScrollView class]]) return NO;
+      ZynthKeyboardAwareScrollView *view = (ZynthKeyboardAwareScrollView *)parent.view;
+
+      if (child.view) {
+        [view removeContentSubview:child.view];
+      }
+      [parent.children removeObject:childId];
+
+      if (child.yoga && parent.yoga) {
+        YGNodeRemoveChild(parent.yoga, child.yoga);
+      }
+
+      [manager zynth_markNeedsFlush];
+      return YES;
+    };
     scrollDescriptor.handleSetProp = ^BOOL(ZynthUIManager *manager,
                                             ZynthNode *node,
                                             NSString *name,

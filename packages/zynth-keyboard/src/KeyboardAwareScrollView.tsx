@@ -1,5 +1,6 @@
 import type { JSX, ParentComponent } from "solid-js";
 import type { Style } from "@zynth/core";
+import { View } from "@zynth/components";
 
 export interface KeyboardAwareScrollViewProps {
   /**
@@ -68,6 +69,11 @@ export interface KeyboardAwareScrollViewProps {
   style?: Style;
 
   /**
+   * Style to apply to the inner content container
+   */
+  contentContainerStyle?: Style;
+
+  /**
    * Children to render inside the scroll view
    */
   children?: JSX.Element;
@@ -128,7 +134,7 @@ export const KeyboardAwareScrollView: ParentComponent<
       testID={props.testID}
       data-testid={props.testID}
     >
-      {props.children}
+      <View style={props.contentContainerStyle}>{props.children}</View>
     </zynth-keyboard-aware-scroll-view>
   );
 };
