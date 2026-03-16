@@ -445,6 +445,8 @@ export function FlatList<T>(props: FlatListProps<T>) {
   let pendingBindingsViewport = 0;
   let pendingMeasurementMicrotask = false;
   let pendingMeasurementFrame = false;
+  const [renderEpoch, setRenderEpoch] = createSignal(0);
+  let previousVirtualizationSignature = "";
 
   const commitMeasurement = (key: string, size: number) => {
     const prev = measurementCache.get(key);
@@ -1048,6 +1050,9 @@ export function FlatList<T>(props: FlatListProps<T>) {
 
   createEffect(() => {
     const _extra = props.extraData;
+    const signature = `${props.horizontal ? 1 : 0}:${columnCount()}:${isMultiColumn() ? 1 : 0}`;
+    const topologyChanged = signature !== previousVirtualizationSignature;
+    previousVirtualizationSignature = signature;
     const keys: string[] = [];
     const virtualLength = getVirtualLength();
     for (let index = 0; index < virtualLength; index += 1) {
@@ -1056,9 +1061,20 @@ export function FlatList<T>(props: FlatListProps<T>) {
     pendingMeasurementCache.clear();
     adaptiveLocked = false;
     rebuildLayout(keys);
-    refreshBindings();
+    if (topologyChanged) {
+      for (let i = 0; i < poolSlotsRef.length; i += 1) {
+        if (slotBindings[i] !== -1) {
+          bindSlot(i, -1);
+        }
+      }
+      setIsFlowLayout(false);
+      setFlowOffset(0);
+    } else {
+      refreshBindings();
+    }
     updateBindingsForOffset(lastOffset, effectiveViewport());
     handleDataChange(keys);
+    setRenderEpoch((prev) => prev + 1);
   });
 
   const handleScroll = (event: ScrollEvent) => {
@@ -1333,11 +1349,10 @@ export function FlatList<T>(props: FlatListProps<T>) {
               });
 
               const contentStyle = createMemo((): Style => {
-                const size = extent();
                 if (props.horizontal) {
-                  return { minWidth: size };
+                  return { height: "100%" };
                 }
-                return { minHeight: size };
+                return { width: "100%" };
               });
               const rowContentStyle = createMemo((): Style | undefined => {
                 if (!isMultiColumn()) return undefined;
@@ -1482,8 +1497,9 @@ export function FlatList<T>(props: FlatListProps<T>) {
                           const renderKeyList = createMemo(() => {
                             const item = itemSignal();
                             if (item === null || item === undefined) return [];
-                            if (props.recycle) return ["stable"];
-                            return [itemIndex()];
+                            const epoch = renderEpoch();
+                            if (props.recycle) return [`stable:${epoch}`];
+                            return [`${itemIndex()}:${epoch}`];
                           });
 
                           const columnStyle = createMemo((): Style => {
