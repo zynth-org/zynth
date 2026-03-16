@@ -443,13 +443,19 @@ export function FlatList<T>(props: FlatListProps<T>) {
   let pendingBindingsFrame = false;
   let pendingBindingsOffset = 0;
   let pendingBindingsViewport = 0;
+  let pendingMeasurementMicrotask = false;
+  let pendingMeasurementFrame = false;
 
   const commitMeasurement = (key: string, size: number) => {
     const prev = measurementCache.get(key);
     if (prev !== undefined && Math.abs(prev - size) < MEASUREMENT_EPSILON) {
       return false;
     }
-    if (prev !== undefined && size + MEASUREMENT_EPSILON < prev) {
+    if (
+      prev !== undefined &&
+      size + MEASUREMENT_EPSILON < prev &&
+      isScrolling
+    ) {
       // Avoid shrinking cached sizes from stale/recycled measurements.
       return false;
     }
@@ -502,6 +508,29 @@ export function FlatList<T>(props: FlatListProps<T>) {
     pendingMeasurementCache.clear();
     if (changed) {
       finalizeMeasurementPass();
+    }
+  };
+
+  const schedulePendingMeasurementFlush = (useFrame: boolean) => {
+    if (useFrame && typeof requestAnimationFrame === "function") {
+      if (pendingMeasurementFrame) return;
+      pendingMeasurementFrame = true;
+      requestAnimationFrame(() => {
+        pendingMeasurementFrame = false;
+        flushPendingMeasurements();
+      });
+      return;
+    }
+    if (pendingMeasurementMicrotask) return;
+    pendingMeasurementMicrotask = true;
+    const flush = () => {
+      pendingMeasurementMicrotask = false;
+      flushPendingMeasurements();
+    };
+    if (typeof queueMicrotask === "function") {
+      queueMicrotask(flush);
+    } else {
+      Promise.resolve().then(flush);
     }
   };
 
@@ -1004,20 +1033,16 @@ export function FlatList<T>(props: FlatListProps<T>) {
     const mappedIndex = dataKeyToIndex.get(key);
     if (mappedIndex === undefined || mappedIndex !== index) return;
 
+    const queued = pendingMeasurementCache.get(key);
     if (isScrolling) {
-      const queued = pendingMeasurementCache.get(key);
       if (queued === undefined || size > queued) {
         pendingMeasurementCache.set(key, size);
       }
       return;
     }
-
-    if (pendingMeasurementCache.size > 0) {
-      flushPendingMeasurements();
-    }
-
-    if (commitMeasurement(key, size)) {
-      finalizeMeasurementPass();
+    if (queued === undefined || Math.abs(size - queued) >= MEASUREMENT_EPSILON) {
+      pendingMeasurementCache.set(key, size);
+      schedulePendingMeasurementFlush(true);
     }
   };
 
@@ -1307,20 +1332,12 @@ export function FlatList<T>(props: FlatListProps<T>) {
                 return getSizeForIndex(idx);
               });
 
-              const measurementReady = createMemo(() => {
-                layoutVersion();
-                const key = slotData.key();
-                if (!key) return false;
-                return measurementCache.has(key);
-              });
-
               const contentStyle = createMemo((): Style => {
                 const size = extent();
-                const ready = measurementReady();
                 if (props.horizontal) {
-                  return { minWidth: ready ? size : 0 };
+                  return { minWidth: size };
                 }
-                return { minHeight: ready ? size : 0 };
+                return { minHeight: size };
               });
               const rowContentStyle = createMemo((): Style | undefined => {
                 if (!isMultiColumn()) return undefined;
@@ -1332,7 +1349,6 @@ export function FlatList<T>(props: FlatListProps<T>) {
 
               const itemStyle = createMemo((): Style => {
                 const size = extent();
-                const ready = measurementReady();
                 const isFlow = isFlowLayout();
                 
                 if (props.horizontal) {
@@ -1341,7 +1357,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
                       position: "relative",
                       left: 0,
                       top: 0,
-                      minWidth: ready ? size : 0,
+                      minWidth: size,
                       height: "100%",
                       overflow: "visible",
                     };
@@ -1350,7 +1366,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
                     position: "absolute",
                     left: position(),
                     top: 0,
-                    minWidth: ready ? size : 0,
+                    minWidth: size,
                     height: "100%",
                     overflow: "visible",
                   };
@@ -1361,7 +1377,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
                     top: 0,
                     left: 0,
                     width: "100%",
-                    minHeight: ready ? size : 0,
+                    minHeight: size,
                     overflow: "visible",
                   };
                 }
@@ -1370,7 +1386,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
                   top: position(),
                   left: 0,
                   width: "100%",
-                  minHeight: ready ? size : 0,
+                  minHeight: size,
                   overflow: "visible",
                 };
               });
