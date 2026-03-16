@@ -8,8 +8,10 @@ export interface SwitchProps {
   onValueChange?: (value: boolean) => void;
   /** Whether the switch is disabled. */
   disabled?: boolean;
-  /** The color of the switch track when on. Uses system accent color by default. */
-  trackColor?: string;
+  /** The color of the switch track. Can be a single color string or an object with false/true states. */
+  trackColor?: string | { false?: string; true?: string };
+  /** The color of the switch thumb. Can be a single color string or an object with false/true states. */
+  thumbColor?: string | { false?: string; true?: string };
   /** Additional style for the container. */
   style?: Style;
   /** Test ID for testing frameworks. */
@@ -27,6 +29,7 @@ export const Switch: Component<SwitchProps> = (props) => {
     "onValueChange",
     "disabled",
     "trackColor",
+    "thumbColor",
     "style",
     "testID",
   ]);
@@ -46,6 +49,7 @@ export const Switch: Component<SwitchProps> = (props) => {
       }
       disabled={local.disabled ?? false}
       trackColor={local.trackColor}
+      thumbColor={local.thumbColor}
       style={local.style}
       testID={local.testID}
     />

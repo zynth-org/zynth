@@ -5,6 +5,7 @@ import android.content.res.ColorStateList
 import android.graphics.Color
 import android.widget.FrameLayout
 import com.google.android.material.materialswitch.MaterialSwitch
+import org.json.JSONObject
 import kotlin.math.roundToInt
 
 /**
@@ -26,8 +27,10 @@ class ZynthSwitchView(context: Context) : FrameLayout(context) {
   private val materialSwitch: MaterialSwitch
   private val density = resources.displayMetrics.density
 
-  private var customTrackColor: Int? = null
-  private var customThumbColor: Int? = null
+  private var customTrackColorOn: Int? = null
+  private var customTrackColorOff: Int? = null
+  private var customThumbColorOn: Int? = null
+  private var customThumbColorOff: Int? = null
 
   interface Listener {
     fun onValueChange(nodeId: Int, value: Boolean)
@@ -107,47 +110,85 @@ class ZynthSwitchView(context: Context) : FrameLayout(context) {
     materialSwitch.alpha = if (disabled) 0.5f else 1.0f
   }
 
-  fun setTrackColor(colorString: String?) {
-    val color = colorString?.let { parseColor(it) }
-    customTrackColor = color
-    
-    if (color != null) {
-      // Set track color for checked state
-      val states = arrayOf(
-        intArrayOf(android.R.attr.state_checked),
-        intArrayOf(-android.R.attr.state_checked)
-      )
-      val trackColors = intArrayOf(
-        color,
-        // Use a lighter version for unchecked state
-        Color.argb(60, Color.red(color), Color.green(color), Color.blue(color))
-      )
-      materialSwitch.trackTintList = ColorStateList(states, trackColors)
+  fun setTrackColor(colorData: String?) {
+    if (colorData == null) {
+      customTrackColorOn = null
+      customTrackColorOff = null
     } else {
-      // Reset to default
-      materialSwitch.trackTintList = null
+      try {
+        val obj = JSONObject(colorData)
+        customTrackColorOn = obj.optString("true").takeIf { it.isNotEmpty() }?.let { parseColor(it) }
+        customTrackColorOff = obj.optString("false").takeIf { it.isNotEmpty() }?.let { parseColor(it) }
+      } catch (e: Exception) {
+        // Fallback to single color
+        customTrackColorOn = parseColor(colorData)
+        customTrackColorOff = null
+      }
     }
+    updateColors()
   }
 
-  fun setThumbColor(colorString: String?) {
-    val color = colorString?.let { parseColor(it) }
-    customThumbColor = color
-    
-    if (color != null) {
-      materialSwitch.thumbTintList = ColorStateList.valueOf(color)
+  fun setThumbColor(colorData: String?) {
+    if (colorData == null) {
+      customThumbColorOn = null
+      customThumbColorOff = null
     } else {
-      // Reset to default
+      try {
+        val obj = JSONObject(colorData)
+        customThumbColorOn = obj.optString("true").takeIf { it.isNotEmpty() }?.let { parseColor(it) }
+        customThumbColorOff = obj.optString("false").takeIf { it.isNotEmpty() }?.let { parseColor(it) }
+      } catch (e: Exception) {
+        // Fallback to single color
+        customThumbColorOn = parseColor(colorData)
+        customThumbColorOff = null
+      }
+    }
+    updateColors()
+  }
+
+  private fun updateColors() {
+    val states = arrayOf(
+      intArrayOf(android.R.attr.state_checked),
+      intArrayOf(-android.R.attr.state_checked)
+    )
+
+    if (customTrackColorOn != null || customTrackColorOff != null) {
+      val onColor = customTrackColorOn ?: Color.TRANSPARENT
+      val offColor = customTrackColorOff ?: Color.argb(60, Color.red(onColor), Color.green(onColor), Color.blue(onColor))
+      
+      val trackColors = intArrayOf(onColor, offColor)
+      materialSwitch.trackTintList = ColorStateList(states, trackColors)
+    } else {
+      materialSwitch.trackTintList = null
+    }
+
+    if (customThumbColorOn != null || customThumbColorOff != null) {
+      val onColor = customThumbColorOn ?: customThumbColorOff!!
+      val offColor = customThumbColorOff ?: customThumbColorOn!!
+      
+      val thumbColors = intArrayOf(onColor, offColor)
+      materialSwitch.thumbTintList = ColorStateList(states, thumbColors)
+    } else {
       materialSwitch.thumbTintList = null
     }
   }
 
   private fun parseColor(colorStr: String): Int? {
+    if (colorStr.isEmpty()) return null
     return try {
       when {
         colorStr.startsWith("#") -> Color.parseColor(colorStr)
         colorStr.startsWith("rgba(") -> parseRgba(colorStr)
         colorStr.startsWith("rgb(") -> parseRgb(colorStr)
-        else -> Color.parseColor("#$colorStr")
+        else -> {
+          // Try as-is (for color names like "red", "white")
+          try {
+            Color.parseColor(colorStr)
+          } catch (e: Exception) {
+            // Try with # if it's a hex without it
+            Color.parseColor("#$colorStr")
+          }
+        }
       }
     } catch (e: Exception) {
       null

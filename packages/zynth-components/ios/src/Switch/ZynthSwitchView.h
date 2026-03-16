@@ -19,7 +19,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)zynth_setValue:(BOOL)value;
 - (void)zynth_setDisabled:(BOOL)disabled;
 - (void)zynth_setTrackColor:(UIColor *_Nullable)color;
+- (void)zynth_setOnTrackColor:(UIColor *_Nullable)onColor offTrackColor:(UIColor *_Nullable)offColor;
 - (void)zynth_setThumbColor:(UIColor *_Nullable)color;
+- (void)zynth_setOnThumbColor:(UIColor *_Nullable)onColor offThumbColor:(UIColor *_Nullable)offColor;
 
 @end
 

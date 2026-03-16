@@ -49,23 +49,32 @@
 }
 
 - (void)zynth_setTrackColor:(UIColor *)color {
-  if (self.customTrackColor == color || [self.customTrackColor isEqual:color]) {
-    return;
-  }
-  self.customTrackColor = color;
-  
-  // Use performWithoutAnimation to prevent visual glitches when setting onTintColor
-  // iOS can have animation artifacts when changing tint colors
+  [self zynth_setOnTrackColor:color offTrackColor:nil];
+}
+
+- (void)zynth_setOnTrackColor:(UIColor *)onColor offTrackColor:(UIColor *)offColor {
+  // Use performWithoutAnimation to prevent visual glitches when setting tint colors
   [UIView performWithoutAnimation:^{
-    self.onTintColor = color;
+    if (onColor) {
+      self.onTintColor = onColor;
+    }
+    if (offColor) {
+      self.tintColor = offColor;
+    }
     [self layoutIfNeeded];
   }];
 }
 
 - (void)zynth_setThumbColor:(UIColor *)color {
-  // thumbTintColor is intentionally not supported as it causes visual glitches
-  // during animations on iOS. The thumb loses its shadow/depth effects.
-  // This method is kept for potential future use but does nothing.
+  self.thumbTintColor = color;
+}
+
+- (void)zynth_setOnThumbColor:(UIColor *)onColor offThumbColor:(UIColor *)offColor {
+  // iOS UISwitch doesn't support different thumb colors per state natively.
+  // We'll use the 'on' color as primary thumb color for now.
+  if (onColor) {
+    self.thumbTintColor = onColor;
+  }
 }
 
 #pragma mark - Intrinsic Size

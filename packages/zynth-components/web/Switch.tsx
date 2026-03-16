@@ -8,6 +8,7 @@ export const Switch = (props: any) => {
     "onValueChange",
     "disabled",
     "trackColor",
+    "thumbColor",
     "style",
     "class",
   ]);
@@ -19,13 +20,19 @@ export const Switch = (props: any) => {
 
   const containerStyle = createMemo(() => {
     const s = local.style;
+    
+    let trackColor = local.trackColor;
+    if (typeof trackColor === "object" && trackColor !== null) {
+      trackColor = local.value ? trackColor.true : trackColor.false;
+    } else if (!local.value) {
+      trackColor = undefined; // Use default for OFF state if only string provided
+    }
+
     const base: any = {
       display: "inline-block",
       width: "51px",
       height: "31px",
-      "background-color": local.value
-        ? local.trackColor || "#34c759"
-        : "#e9e9ea",
+      "background-color": trackColor || (local.value ? "#34c759" : "#e9e9ea"),
       "border-radius": "16px",
       position: "relative",
       cursor: local.disabled ? "not-allowed" : "pointer",
@@ -39,17 +46,24 @@ export const Switch = (props: any) => {
     return Object.assign(base, s);
   });
 
-  const thumbStyle = createMemo(() => ({
-    width: "27px",
-    height: "27px",
-    "background-color": "white",
-    "border-radius": "50%",
-    position: "absolute",
-    top: "2px",
-    left: local.value ? "22px" : "2px",
-    transition: "left 0.2s",
-    "box-shadow": "0 3px 8px rgba(0,0,0,0.15)",
-  }));
+  const thumbStyle = createMemo(() => {
+    let thumbColor = local.thumbColor;
+    if (typeof thumbColor === "object" && thumbColor !== null) {
+      thumbColor = local.value ? thumbColor.true : thumbColor.false;
+    }
+
+    return {
+      width: "27px",
+      height: "27px",
+      "background-color": thumbColor || "white",
+      "border-radius": "50%",
+      position: "absolute",
+      top: "2px",
+      left: local.value ? "22px" : "2px",
+      transition: "left 0.2s",
+      "box-shadow": "0 3px 8px rgba(0,0,0,0.15)",
+    };
+  });
 
   return (
     <div

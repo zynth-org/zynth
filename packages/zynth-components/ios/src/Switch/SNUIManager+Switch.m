@@ -70,20 +70,49 @@ static BOOL ZynthSwitchHandleSetProp(ZynthUIManager *manager,
   }
 
   if ([name isEqualToString:@"trackColor"]) {
-    UIColor *color = nil;
-    if ([value isKindOfClass:[NSString class]]) {
-      color = ZynthColorFromHex((NSString *)value);
+    if ([value isKindOfClass:[NSDictionary class]]) {
+      UIColor *onColor = ZynthColorFromHex(value[@"true"]);
+      UIColor *offColor = ZynthColorFromHex(value[@"false"]);
+      [switchView zynth_setOnTrackColor:onColor offTrackColor:offColor];
+    } else if ([value isKindOfClass:[NSString class]]) {
+      NSString *colorStr = (NSString *)value;
+      if ([colorStr hasPrefix:@"{"]) {
+        // Try parsing string as JSON
+        NSData *data = [colorStr dataUsingEncoding:NSUTF8StringEncoding];
+        NSDictionary *dict = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+        if (dict && [dict isKindOfClass:[NSDictionary class]]) {
+          UIColor *onColor = ZynthColorFromHex(dict[@"true"]);
+          UIColor *offColor = ZynthColorFromHex(dict[@"false"]);
+          [switchView zynth_setOnTrackColor:onColor offTrackColor:offColor];
+          return YES;
+        }
+      }
+      UIColor *color = ZynthColorFromHex(colorStr);
+      [switchView zynth_setTrackColor:color];
     }
-    [switchView zynth_setTrackColor:color];
     return YES;
   }
 
   if ([name isEqualToString:@"thumbColor"]) {
-    UIColor *color = nil;
-    if ([value isKindOfClass:[NSString class]]) {
-      color = ZynthColorFromHex((NSString *)value);
+    if ([value isKindOfClass:[NSDictionary class]]) {
+      UIColor *onColor = ZynthColorFromHex(value[@"true"]);
+      UIColor *offColor = ZynthColorFromHex(value[@"false"]);
+      [switchView zynth_setOnThumbColor:onColor offThumbColor:offColor];
+    } else if ([value isKindOfClass:[NSString class]]) {
+      NSString *colorStr = (NSString *)value;
+      if ([colorStr hasPrefix:@"{"]) {
+        NSData *data = [colorStr dataUsingEncoding:NSUTF8StringEncoding];
+        NSDictionary *dict = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+        if (dict && [dict isKindOfClass:[NSDictionary class]]) {
+          UIColor *onColor = ZynthColorFromHex(dict[@"true"]);
+          UIColor *offColor = ZynthColorFromHex(dict[@"false"]);
+          [switchView zynth_setOnThumbColor:onColor offThumbColor:offColor];
+          return YES;
+        }
+      }
+      UIColor *color = ZynthColorFromHex(colorStr);
+      [switchView zynth_setThumbColor:color];
     }
-    [switchView zynth_setThumbColor:color];
     return YES;
   }
 
