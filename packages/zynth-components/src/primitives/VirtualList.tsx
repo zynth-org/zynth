@@ -211,7 +211,8 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
   const visibleRange = createMemo(() => {
     const hasViewport = axisViewportLength() > 0;
     const hasCrossViewport = crossViewportLength() > 0;
-    if (!hasViewport || !hasCrossViewport || !headerMeasured()) {
+    const headerReady = !hasHeader() || headerLength() > 0;
+    if (!hasViewport || !hasCrossViewport || !headerMeasured() || !headerReady) {
       return { startItem: 0, endItem: 0 };
     }
     const r = range();
@@ -278,12 +279,14 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
   };
 
   const handleHeaderLayout = (e: LayoutChangeEvent) => {
-    setHeaderLength(
-      local.horizontal
-        ? e.nativeEvent.layout.width
-        : e.nativeEvent.layout.height,
-    );
-    setHeaderMeasured(true);
+    const nextLength = local.horizontal
+      ? e.nativeEvent.layout.width
+      : e.nativeEvent.layout.height;
+    setHeaderLength(nextLength);
+    // Only unlock item rendering once header has a concrete measured size.
+    if (nextLength > 0 || !hasHeader()) {
+      setHeaderMeasured(true);
+    }
   };
 
   const handleFooterLayout = (e: LayoutChangeEvent) => {
