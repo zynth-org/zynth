@@ -78,6 +78,12 @@ export type FlatListProps<T> = {
    * with the scroll offset. This bypasses the JS bridge for high-performance animations.
    */
   contentOffsetSharedValue?: number;
+  /**
+   * Controls how list topology changes (e.g. `numColumns`) are applied.
+   * - `immediate`: apply immediately (default).
+   * - `waitForMeasurements`: hide the next topology until enough rows are measured.
+   */
+  transitionMode?: "immediate" | "waitForMeasurements";
 };
 
 type PoolSlot<T> = {
@@ -446,6 +452,12 @@ export function FlatList<T>(props: FlatListProps<T>) {
   const [renderEpoch, setRenderEpoch] = createSignal(0);
   let previousVirtualizationSignature = "";
   let forceImmediateMeasurementFlush = false;
+  const useWaitForMeasurementsTransition = createMemo(
+    () => props.transitionMode === "waitForMeasurements",
+  );
+  const [isTopologyTransitionPending, setIsTopologyTransitionPending] =
+    createSignal(false);
+  let minMeasurementsForReveal = 0;
 
   const commitMeasurement = (key: string, size: number) => {
     const prev = measurementCache.get(key);
@@ -478,6 +490,14 @@ export function FlatList<T>(props: FlatListProps<T>) {
     setLayoutVersion((prevVersion) => prevVersion + 1);
     scheduleBindingsUpdate(lastOffset, lastViewport, false);
     forceImmediateMeasurementFlush = false;
+    if (isTopologyTransitionPending()) {
+      const enoughMeasurements =
+        measuredCount >= minMeasurementsForReveal ||
+        measuredCount >= dataKeys.length;
+      if (enoughMeasurements) {
+        setIsTopologyTransitionPending(false);
+      }
+    }
 
     if (
       !adaptiveLocked &&
@@ -1083,6 +1103,18 @@ export function FlatList<T>(props: FlatListProps<T>) {
         setIsFlowLayout(false);
         setFlowOffset(0);
         forceImmediateMeasurementFlush = true;
+        if (useWaitForMeasurementsTransition() && keys.length > 0) {
+          const viewport = effectiveViewport();
+          const estimate = Math.max(1, layoutEstimate());
+          minMeasurementsForReveal = Math.min(
+            keys.length,
+            Math.max(1, Math.ceil(viewport / estimate) + 1),
+          );
+          setIsTopologyTransitionPending(true);
+        } else {
+          minMeasurementsForReveal = 0;
+          setIsTopologyTransitionPending(false);
+        }
       }
       pendingMeasurementCache.clear();
       adaptiveLocked = false;
@@ -1189,6 +1221,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
       position: "relative",
       [props.horizontal ? "width" : "height"]: contentSize(),
       [props.horizontal ? "height" : "width"]: "100%",
+      opacity: isTopologyTransitionPending() ? 0 : 1,
     };
     if (isFlow) {
       if (props.horizontal) {
