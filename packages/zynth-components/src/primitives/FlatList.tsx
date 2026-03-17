@@ -450,6 +450,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
   let pendingMeasurementMicrotask = false;
   let pendingMeasurementFrame = false;
   const [renderEpoch, setRenderEpoch] = createSignal(0);
+  const [topologyEpoch, setTopologyEpoch] = createSignal(0);
   let previousVirtualizationSignature = "";
   let forceImmediateMeasurementFlush = false;
   const useWaitForMeasurementsTransition = createMemo(
@@ -458,6 +459,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
   const [isTopologyTransitionPending, setIsTopologyTransitionPending] =
     createSignal(false);
   let minMeasurementsForReveal = 0;
+  let transitionBindingsCap = 0;
 
   const commitMeasurement = (key: string, size: number) => {
     const prev = measurementCache.get(key);
@@ -496,6 +498,8 @@ export function FlatList<T>(props: FlatListProps<T>) {
         measuredCount >= dataKeys.length;
       if (enoughMeasurements) {
         setIsTopologyTransitionPending(false);
+        transitionBindingsCap = 0;
+        scheduleBindingsUpdate(lastOffset, lastViewport, false);
       }
     }
 
@@ -713,7 +717,13 @@ export function FlatList<T>(props: FlatListProps<T>) {
         schedulePoolGrowth(nextSize);
       }
 
-      const targetBindings = Math.min(poolSlotsRef.length, dataLength);
+      const targetBindings = Math.min(
+        poolSlotsRef.length,
+        dataLength,
+        isTopologyTransitionPending() && transitionBindingsCap > 0
+          ? transitionBindingsCap
+          : Number.POSITIVE_INFINITY,
+      );
       if (targetBindings > 0 && endIndex - startIndex + 1 < targetBindings) {
         let expandStart = startIndex;
         let expandEnd = endIndex;
@@ -1097,6 +1107,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
         keys.push(getVirtualKeyForIndex(index));
       }
       if (topologyChanged) {
+        setTopologyEpoch((prev) => prev + 1);
         measurementCache.clear();
         measuredSum = 0;
         measuredCount = 0;
@@ -1110,9 +1121,11 @@ export function FlatList<T>(props: FlatListProps<T>) {
             keys.length,
             Math.max(1, Math.ceil(viewport / estimate) + 1),
           );
+          transitionBindingsCap = minMeasurementsForReveal;
           setIsTopologyTransitionPending(true);
         } else {
           minMeasurementsForReveal = 0;
+          transitionBindingsCap = 0;
           setIsTopologyTransitionPending(false);
         }
       }
@@ -1130,7 +1143,9 @@ export function FlatList<T>(props: FlatListProps<T>) {
       }
       updateBindingsForOffset(lastOffset, effectiveViewport());
       handleDataChange(keys);
-      setRenderEpoch((prev) => prev + 1);
+      if (!props.recycle) {
+        setRenderEpoch((prev) => prev + 1);
+      }
     });
   });
 
@@ -1221,7 +1236,6 @@ export function FlatList<T>(props: FlatListProps<T>) {
       position: "relative",
       [props.horizontal ? "width" : "height"]: contentSize(),
       [props.horizontal ? "height" : "width"]: "100%",
-      opacity: isTopologyTransitionPending() ? 0 : 1,
     };
     if (isFlow) {
       if (props.horizontal) {
@@ -1559,8 +1573,10 @@ export function FlatList<T>(props: FlatListProps<T>) {
                           const renderKeyList = createMemo(() => {
                             const item = itemSignal();
                             if (item === null || item === undefined) return [];
+                            if (props.recycle) {
+                              return [`stable:${topologyEpoch()}`];
+                            }
                             const epoch = renderEpoch();
-                            if (props.recycle) return [`stable:${epoch}`];
                             return [`${itemIndex()}:${epoch}`];
                           });
 
