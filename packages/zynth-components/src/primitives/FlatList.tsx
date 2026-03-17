@@ -445,6 +445,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
   let pendingMeasurementFrame = false;
   const [renderEpoch, setRenderEpoch] = createSignal(0);
   let previousVirtualizationSignature = "";
+  let forceImmediateMeasurementFlush = false;
 
   const commitMeasurement = (key: string, size: number) => {
     const prev = measurementCache.get(key);
@@ -476,6 +477,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
     layoutTotal = sizeTree.total();
     setLayoutVersion((prevVersion) => prevVersion + 1);
     scheduleBindingsUpdate(lastOffset, lastViewport, false);
+    forceImmediateMeasurementFlush = false;
 
     if (
       !adaptiveLocked &&
@@ -1058,7 +1060,8 @@ export function FlatList<T>(props: FlatListProps<T>) {
     }
     if (queued === undefined || Math.abs(size - queued) >= MEASUREMENT_EPSILON) {
       pendingMeasurementCache.set(key, size);
-      schedulePendingMeasurementFlush(true);
+      // Topology switches (e.g. numColumns) should settle measurements in the same tick.
+      schedulePendingMeasurementFlush(!forceImmediateMeasurementFlush);
     }
   };
 
@@ -1079,6 +1082,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
         measuredCount = 0;
         setIsFlowLayout(false);
         setFlowOffset(0);
+        forceImmediateMeasurementFlush = true;
       }
       pendingMeasurementCache.clear();
       adaptiveLocked = false;
