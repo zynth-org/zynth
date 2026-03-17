@@ -1,6 +1,8 @@
 import {
   JSX,
   Index,
+  batch,
+  createComputed,
   createEffect,
   createMemo,
   createRoot,
@@ -299,7 +301,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
   let measuredCount = 0;
   let dataKeyToIndex = new Map<string, number>();
 
-  createEffect(() => {
+  createComputed(() => {
     const estimate = estimatedItemSize();
     setLayoutEstimate(estimate);
     adaptiveLocked = false;
@@ -426,10 +428,6 @@ export function FlatList<T>(props: FlatListProps<T>) {
     }
   };
 
-  createEffect(() => {
-    schedulePoolGrowth(desiredPoolSize());
-  });
-
   const measurementCache = new Map<string, number>();
   const pendingMeasurementCache = new Map<string, number>();
   const sizeTree = new FenwickTree();
@@ -447,6 +445,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
   let pendingMeasurementFrame = false;
   const [renderEpoch, setRenderEpoch] = createSignal(0);
   let previousVirtualizationSignature = "";
+  let delayFlow = false;
 
   const commitMeasurement = (key: string, size: number) => {
     const prev = measurementCache.get(key);
@@ -638,150 +637,166 @@ export function FlatList<T>(props: FlatListProps<T>) {
   const [flowOffset, setFlowOffset] = createSignal(0);
 
   const updateBindingsForOffset = (offset: number, viewport: number) => {
-    const dataLength = getVirtualLength();
-    if (dataLength !== dataKeys.length) return;
-    if (dataLength === 0 || poolSlotsRef.length === 0) {
-      if (poolSlotsRef.length > 0) {
-        for (let i = 0; i < poolSlotsRef.length; i += 1) {
-          if (slotBindings[i] !== -1) {
-            bindSlot(i, -1);
+    batch(() => {
+      const dataLength = getVirtualLength();
+      if (dataLength !== dataKeys.length) return;
+      if (dataLength === 0 || poolSlotsRef.length === 0) {
+        if (poolSlotsRef.length > 0) {
+          for (let i = 0; i < poolSlotsRef.length; i += 1) {
+            if (slotBindings[i] !== -1) {
+              bindSlot(i, -1);
+            }
           }
         }
+        return;
       }
-      return;
-    }
 
-    const overscan = overscanMainDistance();
-    const total = getTotalSize();
-    if (
-      lastRangeStart !== -1 &&
-      lastRangeEnd !== -1 &&
-      Math.abs(offset - lastBindingsOffset) < OFFSET_EPSILON &&
-      Math.abs(viewport - lastBindingsViewport) < OFFSET_EPSILON &&
-      Math.abs(total - lastBindingsTotal) < LAYOUT_TOTAL_EPSILON
-    ) {
-      return;
-    }
-    const listOffset = getListOffset(offset, viewport);
-    const logicalOffset = getLogicalOffset(listOffset, viewport);
-    const startOffset = Math.max(0, logicalOffset - overscan);
-    const endOffset = Math.min(total, logicalOffset + viewport + overscan);
-
-    let startIndex = sizeTree.findIndexByOffset(startOffset);
-    let endIndex = sizeTree.findIndexByOffset(
-      Math.max(0, endOffset - OFFSET_EPSILON),
-    );
-
-    if (startIndex < 0) startIndex = 0;
-    if (endIndex < 0) endIndex = 0;
-
-    const maxIndex = dataLength - 1;
-    startIndex = Math.max(0, Math.min(startIndex, maxIndex));
-    endIndex = Math.max(startIndex, Math.min(endIndex, maxIndex));
-
-    const rangeCount = endIndex - startIndex + 1;
-    if (rangeCount > poolSlotsRef.length) {
-      const maxPoolSize =
-        typeof props.maxPoolSize === "number"
-          ? Math.max(0, props.maxPoolSize)
-          : Number.POSITIVE_INFINITY;
-      const nextSize = Math.min(dataLength, rangeCount, maxPoolSize);
-      if (nextSize === dataLength && props.debug) {
-        log(`Pool expanded to dataLength=${dataLength} (rangeCount=${rangeCount.toFixed(0)})`);
-      }
-      schedulePoolGrowth(nextSize);
-    }
-
-    const targetBindings = Math.min(poolSlotsRef.length, dataLength);
-    if (targetBindings > 0 && endIndex - startIndex + 1 < targetBindings) {
-      let expandStart = startIndex;
-      let expandEnd = endIndex;
-      while (
-        expandEnd - expandStart + 1 < targetBindings &&
-        (expandStart > 0 || expandEnd < maxIndex)
+      const overscan = overscanMainDistance();
+      const total = getTotalSize();
+      if (
+        lastRangeStart !== -1 &&
+        lastRangeEnd !== -1 &&
+        Math.abs(offset - lastBindingsOffset) < OFFSET_EPSILON &&
+        Math.abs(viewport - lastBindingsViewport) < OFFSET_EPSILON &&
+        Math.abs(total - lastBindingsTotal) < LAYOUT_TOTAL_EPSILON
       ) {
-        if (expandEnd < maxIndex) {
-          expandEnd += 1;
-          if (expandEnd - expandStart + 1 >= targetBindings) break;
-        }
-        if (expandStart > 0) {
-          expandStart -= 1;
-        }
+        return;
       }
-      startIndex = expandStart;
-      endIndex = expandEnd;
-    }
+      const listOffset = getListOffset(offset, viewport);
+      const logicalOffset = getLogicalOffset(listOffset, viewport);
+      const startOffset = Math.max(0, logicalOffset - overscan);
+      const endOffset = Math.min(total, logicalOffset + viewport + overscan);
 
-    if (startIndex === lastRangeStart && endIndex === lastRangeEnd) {
+      let startIndex = sizeTree.findIndexByOffset(startOffset);
+      let endIndex = sizeTree.findIndexByOffset(
+        Math.max(0, endOffset - OFFSET_EPSILON),
+      );
+
+      if (startIndex < 0) startIndex = 0;
+      if (endIndex < 0) endIndex = 0;
+
+      const maxIndex = dataLength - 1;
+      startIndex = Math.max(0, Math.min(startIndex, maxIndex));
+      endIndex = Math.max(startIndex, Math.min(endIndex, maxIndex));
+
+      const rangeCount = endIndex - startIndex + 1;
+      if (rangeCount > poolSlotsRef.length) {
+        const maxPoolSize =
+          typeof props.maxPoolSize === "number"
+            ? Math.max(0, props.maxPoolSize)
+            : Number.POSITIVE_INFINITY;
+        const nextSize = Math.min(dataLength, rangeCount, maxPoolSize);
+        if (nextSize === dataLength && props.debug) {
+          log(`Pool expanded to dataLength=${dataLength} (rangeCount=${rangeCount.toFixed(0)})`);
+        }
+        schedulePoolGrowth(nextSize);
+      }
+
+      const targetBindings = Math.min(poolSlotsRef.length, dataLength);
+      if (targetBindings > 0 && endIndex - startIndex + 1 < targetBindings) {
+        let expandStart = startIndex;
+        let expandEnd = endIndex;
+        while (
+          expandEnd - expandStart + 1 < targetBindings &&
+          (expandStart > 0 || expandEnd < maxIndex)
+        ) {
+          if (expandEnd < maxIndex) {
+            expandEnd += 1;
+            if (expandEnd - expandStart + 1 >= targetBindings) break;
+          }
+          if (expandStart > 0) {
+            expandStart -= 1;
+          }
+        }
+        startIndex = expandStart;
+        endIndex = expandEnd;
+      }
+
+      if (startIndex === lastRangeStart && endIndex === lastRangeEnd) {
+        lastBindingsOffset = offset;
+        lastBindingsViewport = viewport;
+        lastBindingsTotal = total;
+        return;
+      }
+      lastRangeStart = startIndex;
+      lastRangeEnd = endIndex;
       lastBindingsOffset = offset;
       lastBindingsViewport = viewport;
       lastBindingsTotal = total;
-      return;
-    }
-    lastRangeStart = startIndex;
-    lastRangeEnd = endIndex;
-    lastBindingsOffset = offset;
-    lastBindingsViewport = viewport;
-    lastBindingsTotal = total;
 
-    if (props.debug) {
-      log(
-        `updateBindings: off=${offset.toFixed(1)} vp=${viewport.toFixed(1)} logOff=${logicalOffset.toFixed(1)} total=${total.toFixed(1)} range=[${startIndex}, ${endIndex}]`,
-      );
-    }
-
-    const needed = new Set<number>();
-    for (let i = startIndex; i <= endIndex; i += 1) {
-      needed.add(i);
-    }
-
-    for (let i = 0; i < poolSlotsRef.length; i += 1) {
-      const boundIndex = slotBindings[i];
-      if (boundIndex !== -1 && !needed.has(boundIndex)) {
-        bindSlot(i, -1);
+      if (props.debug) {
+        log(
+          `updateBindings: off=${offset.toFixed(1)} vp=${viewport.toFixed(1)} logOff=${logicalOffset.toFixed(1)} total=${total.toFixed(1)} range=[${startIndex}, ${endIndex}]`,
+        );
       }
-    }
 
-    const boundIndices = new Set<number>();
-    for (let i = 0; i < poolSlotsRef.length; i += 1) {
-      const boundIndex = slotBindings[i];
-      if (boundIndex !== -1) boundIndices.add(boundIndex);
-    }
-
-    for (let dataIndex = startIndex; dataIndex <= endIndex; dataIndex += 1) {
-      if (boundIndices.has(dataIndex)) continue;
-      const availableSlot = slotBindings.findIndex((idx) => idx === -1);
-      if (availableSlot === -1) break;
-      bindSlot(availableSlot, dataIndex);
-      boundIndices.add(dataIndex);
-    }
-
-    // Check for flow layout eligibility (contiguous sorted slots)
-    let isFlow = true;
-    let lastBound = -1;
-    let firstBound = -1;
-    for (let i = 0; i < slotBindings.length; i++) {
-      const idx = slotBindings[i];
-      if (idx === -1) continue;
-      if (firstBound === -1) firstBound = idx;
-      
-      if (lastBound !== -1 && idx !== lastBound + 1) {
-        isFlow = false;
-        break;
+      const needed = new Set<number>();
+      for (let i = startIndex; i <= endIndex; i += 1) {
+        needed.add(i);
       }
-      lastBound = idx;
-    }
-    // Also check if the DOM order (slots) matches Data order.
-    // Since we iterate poolSlotsRef (DOM order) and check if indices are increasing,
-    // this correctly verifies that DOM Slot 0 has Index K, Slot 1 has Index K+1, etc.
-    
-    if (isFlow && firstBound !== -1) {
-      setIsFlowLayout(true);
-      setFlowOffset(getOffsetForIndex(firstBound));
-    } else {
-      setIsFlowLayout(false);
-      setFlowOffset(0);
-    }
+
+      for (let i = 0; i < poolSlotsRef.length; i += 1) {
+        const boundIndex = slotBindings[i];
+        if (boundIndex !== -1 && !needed.has(boundIndex)) {
+          bindSlot(i, -1);
+        }
+      }
+
+      const boundIndices = new Set<number>();
+      for (let i = 0; i < poolSlotsRef.length; i += 1) {
+        const boundIndex = slotBindings[i];
+        if (boundIndex !== -1) boundIndices.add(boundIndex);
+      }
+
+      for (let dataIndex = startIndex; dataIndex <= endIndex; dataIndex += 1) {
+        if (boundIndices.has(dataIndex)) continue;
+        const availableSlot = slotBindings.findIndex((idx) => idx === -1);
+        if (availableSlot === -1) break;
+        bindSlot(availableSlot, dataIndex);
+        boundIndices.add(dataIndex);
+      }
+
+      // Check for flow layout eligibility (contiguous sorted slots in the DOM pool)
+      let isFlow = true;
+      let firstActiveIndex = -1;
+      let lastActiveIndex = -1;
+      let firstSlotIndex = -1;
+      let lastSlotIndex = -1;
+      let activeCount = 0;
+
+      for (let i = 0; i < slotBindings.length; i++) {
+        const idx = slotBindings[i];
+        if (idx !== -1) {
+          if (firstActiveIndex === -1) {
+            firstActiveIndex = idx;
+            firstSlotIndex = i;
+          }
+          if (lastActiveIndex !== -1 && idx !== lastActiveIndex + 1) {
+            isFlow = false;
+            break;
+          }
+          lastActiveIndex = idx;
+          lastSlotIndex = i;
+          activeCount++;
+        }
+      }
+
+      // If there are gaps (-1) between the first and last active slot in the DOM pool,
+      // we cannot use flow layout because those gaps would take up space between items.
+      if (isFlow && activeCount > 0) {
+        if (lastSlotIndex - firstSlotIndex + 1 !== activeCount) {
+          isFlow = false;
+        }
+      }
+
+      if (isFlow && firstActiveIndex !== -1 && !delayFlow) {
+        setIsFlowLayout(true);
+        setFlowOffset(getOffsetForIndex(firstActiveIndex));
+      } else {
+        setIsFlowLayout(false);
+        setFlowOffset(0);
+      }
+    });
   };
 
   const scheduleBindingsUpdate = (
@@ -1048,33 +1063,42 @@ export function FlatList<T>(props: FlatListProps<T>) {
     }
   };
 
-  createEffect(() => {
-    const _extra = props.extraData;
-    const signature = `${props.horizontal ? 1 : 0}:${columnCount()}:${isMultiColumn() ? 1 : 0}`;
-    const topologyChanged = signature !== previousVirtualizationSignature;
-    previousVirtualizationSignature = signature;
-    const keys: string[] = [];
-    const virtualLength = getVirtualLength();
-    for (let index = 0; index < virtualLength; index += 1) {
-      keys.push(getVirtualKeyForIndex(index));
-    }
-    pendingMeasurementCache.clear();
-    adaptiveLocked = false;
-    rebuildLayout(keys);
-    if (topologyChanged) {
-      for (let i = 0; i < poolSlotsRef.length; i += 1) {
-        if (slotBindings[i] !== -1) {
-          bindSlot(i, -1);
-        }
+  createComputed(() => {
+    batch(() => {
+      const _extra = props.extraData;
+      const signature = `${props.horizontal ? 1 : 0}:${columnCount()}:${isMultiColumn() ? 1 : 0}`;
+      const topologyChanged = signature !== previousVirtualizationSignature;
+      previousVirtualizationSignature = signature;
+      const keys: string[] = [];
+      const virtualLength = getVirtualLength();
+      for (let index = 0; index < virtualLength; index += 1) {
+        keys.push(getVirtualKeyForIndex(index));
       }
-      setIsFlowLayout(false);
-      setFlowOffset(0);
-    } else {
-      refreshBindings();
-    }
-    updateBindingsForOffset(lastOffset, effectiveViewport());
-    handleDataChange(keys);
-    setRenderEpoch((prev) => prev + 1);
+      if (topologyChanged) {
+        measurementCache.clear();
+        measuredSum = 0;
+        measuredCount = 0;
+        delayFlow = true;
+      }
+      pendingMeasurementCache.clear();
+      adaptiveLocked = false;
+      rebuildLayout(keys);
+      if (topologyChanged) {
+        for (let i = 0; i < poolSlotsRef.length; i += 1) {
+          if (slotBindings[i] !== -1) {
+            bindSlot(i, -1);
+          }
+        }
+        setIsFlowLayout(false);
+        setFlowOffset(0);
+      } else {
+        refreshBindings();
+      }
+      updateBindingsForOffset(lastOffset, effectiveViewport());
+      delayFlow = false;
+      handleDataChange(keys);
+      setRenderEpoch((prev) => prev + 1);
+    });
   });
 
   const handleScroll = (event: ScrollEvent) => {
@@ -1120,11 +1144,15 @@ export function FlatList<T>(props: FlatListProps<T>) {
     });
   };
 
-  createEffect(() => {
+  createComputed(() => {
     const viewport = effectiveViewport();
     if (viewport <= 0) return;
     lastViewport = viewport;
     updateBindingsForOffset(lastOffset, viewport);
+  });
+
+  createComputed(() => {
+    schedulePoolGrowth(desiredPoolSize());
   });
 
   onCleanup(() => {
@@ -1344,7 +1372,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
               const extent = createMemo(() => {
                 layoutVersion();
                 const idx = slotData.index();
-                if (idx < 0) return estimatedItemSize();
+                if (idx < 0) return 0;
                 return getSizeForIndex(idx);
               });
 
@@ -1365,6 +1393,11 @@ export function FlatList<T>(props: FlatListProps<T>) {
               const itemStyle = createMemo((): Style => {
                 const size = extent();
                 const isFlow = isFlowLayout();
+                const idx = slotData.index();
+
+                if (isFlow && idx < 0) {
+                  return { display: "none" };
+                }
                 
                 if (props.horizontal) {
                   if (isFlow) {
