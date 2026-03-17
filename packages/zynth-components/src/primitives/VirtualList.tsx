@@ -7,6 +7,7 @@ import {
   untrack,
   createEffect,
 } from "solid-js";
+
 import { ScrollView, ScrollEvent } from "./ScrollView";
 import { View, LayoutChangeEvent } from "./View";
 import { StyleProp } from "@zynth/core";
@@ -17,7 +18,11 @@ export type VirtualListRenderItemInfo<T> = {
 };
 
 export type ItemLayout = { length: number; offset: number; index: number };
-export type GetItemLayout<T> = (data: T[] | null | undefined, index: number) => ItemLayout;
+export type GetItemLayout<T> = (
+  data: T[] | null | undefined,
+  index: number,
+) => ItemLayout;
+type VisibleRange = { start: number; end: number };
 
 export interface VirtualListProps<T> {
   data: T[];
@@ -76,16 +81,24 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
   const [scrollOffset, setScrollOffset] = createSignal(0);
   const [viewportSize, setViewportSize] = createSignal(
     { width: 0, height: 0 },
-    { equals: (a, b) => a.width === b.width && a.height === b.height }
+    { equals: (a, b) => a.width === b.width && a.height === b.height },
   );
-  const [headerHeight, setHeaderHeight] = createSignal(0);
-  const [footerHeight, setFooterHeight] = createSignal(0);
+  const [headerLength, setHeaderLength] = createSignal(0);
+  const [footerLength, setFooterLength] = createSignal(0);
 
   const numColumns = createMemo(() => Math.max(1, local.numColumns ?? 1));
   const overscanRows = createMemo(() => local.overscan ?? 2);
-  const defaultItemHeight = createMemo(() => local.itemHeight ?? 50);
+  const defaultItemLength = createMemo(() => local.itemHeight ?? 50);
+  const axisViewportLength = createMemo(() =>
+    local.horizontal ? viewportSize().width : viewportSize().height,
+  );
+  const crossViewportLength = createMemo(() =>
+    local.horizontal ? viewportSize().height : viewportSize().width,
+  );
 
-  const rowCount = createMemo(() => Math.ceil(local.data.length / numColumns()));
+  const rowCount = createMemo(() =>
+    Math.ceil(local.data.length / numColumns()),
+  );
 
   // Internal data access to avoid excessive reactivity during layout calculations
   let currentData = local.data;
@@ -93,31 +106,42 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     currentData = local.data;
   });
 
-  const getRowLayout = (rowIndex: number): { length: number; offset: number } => {
+  const getRowLayout = (
+    rowIndex: number,
+  ): { length: number; offset: number } => {
     const cols = numColumns();
     if (local.getItemLayout) {
       const firstItemIndex = rowIndex * cols;
       const layout = local.getItemLayout(currentData, firstItemIndex);
       return { length: layout.length, offset: layout.offset };
     }
-    const height = defaultItemHeight();
-    return { length: height, offset: rowIndex * height };
+    const length = defaultItemLength();
+    return { length, offset: rowIndex * length };
   };
 
-  const totalContentHeight = createMemo(() => {
+  const totalContentLength = createMemo(() => {
     const count = rowCount();
-    let rowsHeight = 0;
+    let rowsLength = 0;
     if (count > 0) {
       const lastRow = getRowLayout(count - 1);
-      rowsHeight = lastRow.offset + lastRow.length;
+      rowsLength = lastRow.offset + lastRow.length;
     }
-    return rowsHeight + headerHeight() + footerHeight();
+    return rowsLength + headerLength() + footerLength();
   });
 
-  const range = createMemo((prev) => {
-    const offset = Math.max(0, scrollOffset() - headerHeight());
-    const viewport = local.horizontal ? viewportSize().width : viewportSize().height;
+  const initialRange: VisibleRange = {
+    start: 0,
+    end: local.initialNumToRender ?? 10,
+  };
+  const range = createMemo<VisibleRange>((prev) => {
+    const offset = Math.max(0, scrollOffset() - headerLength());
+    const viewport = axisViewportLength();
     const count = rowCount();
+    const maxOffset = Math.max(
+      0,
+      totalContentLength() - headerLength() - footerLength() - viewport,
+    );
+    const clampedOffset = Math.min(offset, maxOffset);
 
     if (viewport === 0) {
       return { start: 0, end: local.initialNumToRender ?? 10 };
@@ -133,10 +157,13 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
       while (low <= high) {
         let mid = Math.floor((low + high) / 2);
         let layout = getRowLayout(mid);
-        if (layout.offset <= offset && layout.offset + layout.length > offset) {
+        if (
+          layout.offset <= clampedOffset &&
+          layout.offset + layout.length > clampedOffset
+        ) {
           startRow = mid;
           break;
-        } else if (layout.offset > offset) {
+        } else if (layout.offset > clampedOffset) {
           high = mid - 1;
         } else {
           low = mid + 1;
@@ -147,48 +174,73 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
       endRow = startRow;
       for (let i = startRow; i < count; i++) {
         let layout = getRowLayout(i);
-        if (layout.offset > offset + viewport) {
+        if (layout.offset > clampedOffset + viewport) {
           endRow = i;
           break;
         }
         endRow = i + 1;
       }
     } else {
-      const height = defaultItemHeight();
-      startRow = Math.floor(offset / height);
-      endRow = Math.ceil((offset + viewport) / height);
+      const length = defaultItemLength();
+      startRow = Math.floor(clampedOffset / length);
+      endRow = Math.ceil((clampedOffset + viewport) / length);
     }
 
     const os = overscanRows();
-    const nextStart = Math.max(0, startRow - os);
-    const nextEnd = Math.min(count, endRow + os);
+    const nextStart = Math.min(count, Math.max(0, startRow - os));
+    const nextEnd = Math.min(count, Math.max(nextStart, endRow + os));
 
-    // Prevent propagating unchanged range object
     if (prev && prev.start === nextStart && prev.end === nextEnd) {
       return prev;
     }
     return { start: nextStart, end: nextEnd };
-  }, { start: 0, end: local.initialNumToRender ?? 10 });
+  }, initialRange);
 
-  const visibleItems = createMemo(() => {
+  const visibleRange = createMemo(() => {
     const r = range();
     const cols = numColumns();
     const startItem = r.start * cols;
     const endItem = Math.min(local.data.length, r.end * cols);
-    return local.data.slice(startItem, endItem);
+    return { startItem, endItem };
   });
+
+  const visibleIndices = createMemo(() => {
+    const next = visibleRange();
+    const count = Math.max(0, next.endItem - next.startItem);
+    return Array.from({ length: count }, (_, i) => next.startItem + i);
+  });
+
+  const readAxisOffsetFromEvent = (event: ScrollEvent): number => {
+    return local.horizontal ? event.contentOffset.x : event.contentOffset.y;
+  };
 
   let lastEndReachedOffset = 0;
   const handleScroll = (e: ScrollEvent) => {
-    const offset = local.horizontal ? e.contentOffset.x : e.contentOffset.y;
-    // Granular update for scroll offset - only affects visibleRange calculations
+    const offset = readAxisOffsetFromEvent(e);
+
+    // Keep viewport synchronized with native metrics, which are more reliable
+    // than layout events during axis-specific scroll host updates.
+    const meas = e.layoutMeasurement;
+    if (meas.width > 0 && meas.height > 0) {
+      const current = viewportSize();
+      // Use a small epsilon to avoid unnecessary updates from floating point artifacts
+      if (Math.abs(meas.width - current.width) > 0.1 || Math.abs(meas.height - current.height) > 0.1) {
+        setViewportSize({
+          width: meas.width,
+          height: meas.height,
+        });
+      }
+    }
+
     setScrollOffset(offset);
     local.onScroll?.(e);
 
     if (local.onEndReached) {
       const threshold = local.onEndReachedThreshold ?? 0.5;
-      const viewport = local.horizontal ? viewportSize().width : viewportSize().height;
-      const contentSize = local.horizontal ? e.contentSize.width : e.contentSize.height;
+      const viewport = axisViewportLength();
+      const contentSize = local.horizontal
+        ? e.contentSize.width
+        : e.contentSize.height;
       if (offset + viewport >= contentSize - viewport * threshold) {
         if (offset > lastEndReachedOffset) {
           untrack(() => local.onEndReached?.());
@@ -209,20 +261,51 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
   };
 
   const handleHeaderLayout = (e: LayoutChangeEvent) => {
-    setHeaderHeight(local.horizontal ? e.nativeEvent.layout.width : e.nativeEvent.layout.height);
+    setHeaderLength(
+      local.horizontal
+        ? e.nativeEvent.layout.width
+        : e.nativeEvent.layout.height,
+    );
   };
 
   const handleFooterLayout = (e: LayoutChangeEvent) => {
-    setFooterHeight(local.horizontal ? e.nativeEvent.layout.width : e.nativeEvent.layout.height);
+    setFooterLength(
+      local.horizontal
+        ? e.nativeEvent.layout.width
+        : e.nativeEvent.layout.height,
+    );
   };
 
   const containerStyle = createMemo(() => {
+    const isHoriz = local.horizontal;
+    const axisLength = totalContentLength();
+    const crossSize = crossViewportLength();
     const base: any = {
-      [local.horizontal ? "width" : "height"]: totalContentHeight(),
-      [local.horizontal ? "height" : "width"]: "100%",
       position: "relative",
+      [isHoriz ? "width" : "height"]: axisLength,
+      [isHoriz ? "minWidth" : "minHeight"]: axisLength,
+      [isHoriz ? "height" : "width"]: isHoriz ? (crossSize > 0 ? crossSize : "100%") : "100%",
     };
-    return [base, local.contentContainerStyle];
+    if (!local.contentContainerStyle) return base;
+    return Array.isArray(local.contentContainerStyle)
+      ? [base, ...local.contentContainerStyle]
+      : [base, local.contentContainerStyle];
+  });
+  const scrollViewStyle = createMemo<StyleProp>(() => {
+    if (!local.style) return { flex: 1 };
+    return Array.isArray(local.style)
+      ? [{ flex: 1 }, ...local.style]
+      : [{ flex: 1 }, local.style];
+  });
+
+  const scrollContentContainerStyle = createMemo<StyleProp>(() => {
+    const base = local.horizontal
+      ? ({ alignSelf: "flex-start" as const })
+      : ({ flexGrow: 1, alignSelf: "stretch" as const });
+    if (!local.contentContainerStyle) return base;
+    return Array.isArray(local.contentContainerStyle)
+      ? [base, ...local.contentContainerStyle]
+      : [base, local.contentContainerStyle];
   });
 
   return (
@@ -231,40 +314,44 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
       horizontal={local.horizontal}
       onScroll={handleScroll}
       onLayout={handleLayout}
-      style={[{ flex: 1 }, local.style]}
-      removeClippedSubviews={local.removeClippedSubviews}
-      contentSize={
-        local.horizontal
-          ? { width: totalContentHeight(), height: viewportSize().height }
-          : { width: viewportSize().width, height: totalContentHeight() }
-      }
+      style={scrollViewStyle()}
+      contentContainerStyle={scrollContentContainerStyle()}
       testID={local.testID}
     >
-      <View style={containerStyle()}>
+      <View style={containerStyle}>
         {local.ListHeaderComponent && (
-          <View onLayout={handleHeaderLayout}>
-            {local.ListHeaderComponent}
-          </View>
+          <View onLayout={handleHeaderLayout}>{local.ListHeaderComponent}</View>
         )}
 
-        <For each={visibleItems()}>
-          {(item, indexSignal) => {
-            const absoluteIndex = createMemo(() => range().start * numColumns() + indexSignal());
-            const rowIndex = createMemo(() => Math.floor(absoluteIndex() / numColumns()));
-            const colIndex = createMemo(() => absoluteIndex() % numColumns());
+        <For each={visibleIndices()}>
+          {(absoluteIndex) => {
+            const rowIndex = createMemo(() =>
+              Math.floor(absoluteIndex / numColumns()),
+            );
+            const colIndex = createMemo(() => absoluteIndex % numColumns());
             const layout = createMemo(() => getRowLayout(rowIndex()));
+            const item = createMemo(() => local.data[absoluteIndex]);
+            const key = createMemo(() =>
+              local.keyExtractor
+                ? local.keyExtractor(item(), absoluteIndex)
+                : absoluteIndex,
+            );
 
             const style = createMemo(() => {
               const isHoriz = local.horizontal;
-              const offset = layout().offset + headerHeight();
+              const offset = layout().offset + headerLength();
               const length = layout().length;
               const cols = numColumns();
-              const viewportCrossSize = isHoriz ? viewportSize().height : viewportSize().width;
-              // If viewport is not yet measured, default to 100% just in case, but pixel math is preferred.
-              const crossSpan = viewportCrossSize > 0 ? viewportCrossSize / cols : `${100 / cols}%`;
-              const crossOffset = viewportCrossSize > 0 ? colIndex() * (viewportCrossSize / cols) : `${colIndex() * (100 / cols)}%`;
-
-              return {
+              const viewportCrossSize = crossViewportLength();
+              const crossSpan =
+                viewportCrossSize > 0
+                  ? viewportCrossSize / cols
+                  : `${100 / cols}%`;
+              const crossOffset =
+                viewportCrossSize > 0
+                  ? colIndex() * (viewportCrossSize / cols)
+                  : `${colIndex() * (100 / cols)}%`;
+              const finalStyle = {
                 position: "absolute" as const,
                 [isHoriz ? "left" : "top"]: offset,
                 [isHoriz ? "top" : "left"]: crossOffset,
@@ -272,11 +359,12 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
                 [isHoriz ? "height" : "width"]: crossSpan,
                 ...((local.columnWrapperStyle as any) ?? {}),
               };
+              return finalStyle;
             });
 
             return (
-              <View style={style()}>
-                {local.renderItem({ item, index: absoluteIndex() })}
+              <View style={style} key={key()}>
+                {local.renderItem({ item: item(), index: absoluteIndex })}
               </View>
             );
           }}
@@ -289,7 +377,8 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
             onLayout={handleFooterLayout}
             style={{
               position: "absolute",
-              [local.horizontal ? "left" : "top"]: totalContentHeight() - footerHeight(),
+              [local.horizontal ? "left" : "top"]:
+                totalContentLength() - footerLength(),
               [local.horizontal ? "top" : "left"]: 0,
               [local.horizontal ? "bottom" : "right"]: 0,
             }}
