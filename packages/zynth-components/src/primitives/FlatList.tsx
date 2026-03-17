@@ -445,7 +445,6 @@ export function FlatList<T>(props: FlatListProps<T>) {
   let pendingMeasurementFrame = false;
   const [renderEpoch, setRenderEpoch] = createSignal(0);
   let previousVirtualizationSignature = "";
-  let delayFlow = false;
 
   const commitMeasurement = (key: string, size: number) => {
     const prev = measurementCache.get(key);
@@ -789,7 +788,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
         }
       }
 
-      if (isFlow && firstActiveIndex !== -1 && !delayFlow) {
+      if (isFlow && firstActiveIndex !== -1) {
         setIsFlowLayout(true);
         setFlowOffset(getOffsetForIndex(firstActiveIndex));
       } else {
@@ -1078,7 +1077,8 @@ export function FlatList<T>(props: FlatListProps<T>) {
         measurementCache.clear();
         measuredSum = 0;
         measuredCount = 0;
-        delayFlow = true;
+        setIsFlowLayout(false);
+        setFlowOffset(0);
       }
       pendingMeasurementCache.clear();
       adaptiveLocked = false;
@@ -1089,13 +1089,10 @@ export function FlatList<T>(props: FlatListProps<T>) {
             bindSlot(i, -1);
           }
         }
-        setIsFlowLayout(false);
-        setFlowOffset(0);
       } else {
         refreshBindings();
       }
       updateBindingsForOffset(lastOffset, effectiveViewport());
-      delayFlow = false;
       handleDataChange(keys);
       setRenderEpoch((prev) => prev + 1);
     });
@@ -1372,7 +1369,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
               const extent = createMemo(() => {
                 layoutVersion();
                 const idx = slotData.index();
-                if (idx < 0) return 0;
+                if (idx < 0) return estimatedItemSize();
                 return getSizeForIndex(idx);
               });
 
@@ -1393,11 +1390,6 @@ export function FlatList<T>(props: FlatListProps<T>) {
               const itemStyle = createMemo((): Style => {
                 const size = extent();
                 const isFlow = isFlowLayout();
-                const idx = slotData.index();
-
-                if (isFlow && idx < 0) {
-                  return { display: "none" };
-                }
                 
                 if (props.horizontal) {
                   if (isFlow) {
