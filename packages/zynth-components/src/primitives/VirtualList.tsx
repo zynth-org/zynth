@@ -29,7 +29,7 @@ export interface VirtualListProps<T> {
   renderItem: (info: VirtualListRenderItemInfo<T>) => JSX.Element;
   keyExtractor?: (item: T, index: number) => string | number;
   numColumns?: number;
-  itemHeight?: number;
+  estimatedItemSize?: number;
   getItemLayout?: GetItemLayout<T>;
   overscan?: number;
   style?: StyleProp;
@@ -59,7 +59,7 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     "renderItem",
     "keyExtractor",
     "numColumns",
-    "itemHeight",
+    "estimatedItemSize",
     "getItemLayout",
     "overscan",
     "style",
@@ -85,10 +85,13 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
   );
   const [headerLength, setHeaderLength] = createSignal(0);
   const [footerLength, setFooterLength] = createSignal(0);
+  const [headerMeasured, setHeaderMeasured] = createSignal(
+    !local.ListHeaderComponent,
+  );
 
   const numColumns = createMemo(() => Math.max(1, local.numColumns ?? 1));
   const overscanRows = createMemo(() => local.overscan ?? 2);
-  const defaultItemLength = createMemo(() => local.itemHeight ?? 50);
+  const defaultItemLength = createMemo(() => local.estimatedItemSize ?? 50);
   const axisViewportLength = createMemo(() =>
     local.horizontal ? viewportSize().width : viewportSize().height,
   );
@@ -104,6 +107,14 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
   let currentData = local.data;
   createEffect(() => {
     currentData = local.data;
+  });
+  createEffect(() => {
+    if (!local.ListHeaderComponent) {
+      setHeaderMeasured(true);
+      setHeaderLength(0);
+      return;
+    }
+    setHeaderMeasured(false);
   });
 
   const getRowLayout = (
@@ -197,6 +208,16 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
   }, initialRange);
 
   const visibleRange = createMemo(() => {
+    if (!headerMeasured()) {
+      return { startItem: 0, endItem: 0 };
+    }
+    if (local.horizontal) {
+      if (axisViewportLength() <= 0 || crossViewportLength() <= 0) {
+        return { startItem: 0, endItem: 0 };
+      }
+    } else if (numColumns() > 1 && crossViewportLength() <= 0) {
+      return { startItem: 0, endItem: 0 };
+    }
     const r = range();
     const cols = numColumns();
     const startItem = r.start * cols;
@@ -266,6 +287,7 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
         ? e.nativeEvent.layout.width
         : e.nativeEvent.layout.height,
     );
+    setHeaderMeasured(true);
   };
 
   const handleFooterLayout = (e: LayoutChangeEvent) => {
@@ -286,10 +308,7 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
       [isHoriz ? "minWidth" : "minHeight"]: axisLength,
       [isHoriz ? "height" : "width"]: isHoriz ? (crossSize > 0 ? crossSize : "100%") : "100%",
     };
-    if (!local.contentContainerStyle) return base;
-    return Array.isArray(local.contentContainerStyle)
-      ? [base, ...local.contentContainerStyle]
-      : [base, local.contentContainerStyle];
+    return base;
   });
   const scrollViewStyle = createMemo<StyleProp>(() => {
     if (!local.style) return { flex: 1 };
@@ -343,14 +362,16 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
               const length = layout().length;
               const cols = numColumns();
               const viewportCrossSize = crossViewportLength();
+              const fallbackCrossSpan =
+                !isHoriz && cols === 1 ? ("100%" as const) : defaultItemLength();
               const crossSpan =
                 viewportCrossSize > 0
                   ? viewportCrossSize / cols
-                  : `${100 / cols}%`;
+                  : fallbackCrossSpan;
               const crossOffset =
                 viewportCrossSize > 0
                   ? colIndex() * (viewportCrossSize / cols)
-                  : `${colIndex() * (100 / cols)}%`;
+                  : colIndex() * defaultItemLength();
               const finalStyle = {
                 position: "absolute" as const,
                 [isHoriz ? "left" : "top"]: offset,
