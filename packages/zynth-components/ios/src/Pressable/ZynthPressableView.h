@@ -37,6 +37,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)zynth_setFocusable:(BOOL)focusable;
 - (void)zynth_setPointerEvents:(NSString *_Nullable)pointerEvents;
 - (void)zynth_setEnableGlassIOS:(BOOL)enabled;
+- (void)zynth_setReady:(BOOL)ready;
 - (void)zynth_setHasLongPressHandler:(BOOL)hasHandler;
 - (void)zynth_handleCommand:(NSDictionary *_Nullable)command;
 

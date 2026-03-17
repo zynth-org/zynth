@@ -128,6 +128,12 @@ static BOOL ZynthPressableHandleSetProp(ZynthUIManager *manager,
     return YES;
   }
 
+  if ([name isEqualToString:@"ready"]) {
+    BOOL ready = value && value != (id)[NSNull null] ? [value boolValue] : YES;
+    [pressable zynth_setReady:ready];
+    return YES;
+  }
+
   if ([name isEqualToString:@"activateKeys"]) {
     if ([value isKindOfClass:[NSArray class]]) {
       [pressable zynth_setActivateKeys:(NSArray<NSString *> *)value];
@@ -193,6 +199,7 @@ static BOOL ZynthPressableHandleSetHandler(ZynthUIManager *manager,
       ZynthPressableView *pressable = (ZynthPressableView *)node.view;
       pressable.delegate = manager;
       [pressable attachToManager:manager node:node];
+      [pressable zynth_setReady:NO];
     };
     descriptor.handleSetProp = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name, id value, NSString *rawJSON) {
       return ZynthPressableHandleSetProp(manager, node, name, value, rawJSON);

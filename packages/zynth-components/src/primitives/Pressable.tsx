@@ -84,6 +84,11 @@ export type PressableProps = {
   accessibilityLabel?: string;
   accessibilityHint?: string;
   testID?: string;
+  /**
+   * Internal mount gate for native rendering stability.
+   * Keep default `true` unless you intentionally coordinate first paint.
+   */
+  ready?: boolean;
   onPressIn?: (event: PressEvent) => void;
   onPressOut?: (event: PressEvent) => void;
   onPress?: (event: PressEvent) => void;
@@ -212,6 +217,7 @@ export const Pressable: ParentComponent<PressableProps> = (props) => {
     "accessibilityLabel",
     "accessibilityHint",
     "testID",
+    "ready",
     "onPressIn",
     "onPressOut",
     "onPress",
@@ -449,6 +455,8 @@ export const Pressable: ParentComponent<PressableProps> = (props) => {
     setProperty(node, "onBlur", handleBlur);
     setProperty(node, "onKeyDown", handleKeyDown);
     setProperty(node, "onKeyUp", handleKeyUp);
+    // Keep native pressable hidden until this prop pass has configured visuals/events.
+    setProperty(node, "ready", local.ready ?? true);
   });
 
   if (local.asChild) {

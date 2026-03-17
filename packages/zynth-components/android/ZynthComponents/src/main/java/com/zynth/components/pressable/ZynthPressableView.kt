@@ -59,6 +59,7 @@ class ZynthPressableView(context: Context) : ZynthLayoutView(context) {
   private var pointerEvents: String = "auto"
   private var lastCommandSeq: Long = -1L
   private var lastRadii: FloatArray? = null
+  private var isReady = false
 
   private var pressedDown = false
   private var pressVisible = false
@@ -89,6 +90,7 @@ class ZynthPressableView(context: Context) : ZynthLayoutView(context) {
       }
     }
     updatePressVisualState(animated = false)
+    updateReadyVisibility()
   }
 
   fun resetState() {
@@ -119,6 +121,7 @@ class ZynthPressableView(context: Context) : ZynthLayoutView(context) {
     setDoublePressWindow(null)
     setActivateKeys(emptySet())
     setPointerEvents("auto")
+    setReady(false)
 
     hitSlop = null
     clearHitSlop()
@@ -224,6 +227,7 @@ class ZynthPressableView(context: Context) : ZynthLayoutView(context) {
   }
 
   private fun shouldHandleInteraction(): Boolean {
+    if (!isReady) return false
     if (pointerEvents == "none") return false
     if (pointerEvents == "box-only") return true
     return !disabled
@@ -415,8 +419,7 @@ class ZynthPressableView(context: Context) : ZynthLayoutView(context) {
 
   fun setDisabled(value: Boolean) {
     disabled = value
-    isEnabled = !value
-    updatePressVisualState(animated = true)
+    applyEnabledState()
   }
 
   fun setFocusableSurface(enabled: Boolean) {
@@ -634,6 +637,21 @@ class ZynthPressableView(context: Context) : ZynthLayoutView(context) {
 
   fun setPointerEvents(value: String?) {
     pointerEvents = value ?: "auto"
+    applyEnabledState()
+  }
+
+  fun setReady(ready: Boolean) {
+    if (isReady == ready) return
+    isReady = ready
+    updateReadyVisibility()
+    applyEnabledState()
+  }
+
+  private fun updateReadyVisibility() {
+    visibility = if (isReady) View.VISIBLE else View.INVISIBLE
+  }
+
+  private fun applyEnabledState() {
     when (pointerEvents) {
       "none" -> {
         isClickable = false
@@ -641,13 +659,14 @@ class ZynthPressableView(context: Context) : ZynthLayoutView(context) {
       }
       "box-none" -> {
         isClickable = false
-        isEnabled = !disabled
+        isEnabled = isReady && !disabled
       }
       else -> {
-        isClickable = true
-        isEnabled = !disabled
+        isClickable = isReady
+        isEnabled = isReady && !disabled
       }
     }
+    updatePressVisualState(animated = false)
   }
 
   private fun applyHitSlop() {

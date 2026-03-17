@@ -43,6 +43,7 @@ static const CFTimeInterval kZynthPressableDefaultDoublePressWindowMs = 250.0;
 @property(nonatomic, assign) CFTimeInterval delayPressInMs;
 @property(nonatomic, assign) CFTimeInterval delayPressOutMs;
 @property(nonatomic, assign) CFTimeInterval delayLongPressMs;
+@property(nonatomic, assign) BOOL ready;
 @end
 
 @implementation ZynthPressableView
@@ -68,10 +69,13 @@ static const CFTimeInterval kZynthPressableDefaultDoublePressWindowMs = 250.0;
     _focusable = YES;
     _pointerEvents = @"auto";
     _lastPressTimestampMs = -1;
+    _ready = NO;
 
     self.exclusiveTouch = YES;
     self.multipleTouchEnabled = NO;
     self.layer.opacity = 1.0;
+    self.hidden = YES;
+    [self updateInteractivity];
   }
   return self;
 }
@@ -97,13 +101,14 @@ static const CFTimeInterval kZynthPressableDefaultDoublePressWindowMs = 250.0;
 }
 
 - (BOOL)shouldHandleTouch {
+  if (!self.ready) return NO;
   if (self.disabled) return NO;
   if ([self.pointerEvents isEqualToString:@"none"]) return NO;
   return self.userInteractionEnabled;
 }
 
 - (void)updateInteractivity {
-  BOOL enabled = !self.disabled && ![self.pointerEvents isEqualToString:@"none"];
+  BOOL enabled = self.ready && !self.disabled && ![self.pointerEvents isEqualToString:@"none"];
   self.userInteractionEnabled = enabled;
   self.alpha = enabled ? 1.0 : 0.5;
 }
@@ -221,6 +226,13 @@ static const CFTimeInterval kZynthPressableDefaultDoublePressWindowMs = 250.0;
 
 - (void)zynth_setPointerEvents:(NSString *)pointerEvents {
   self.pointerEvents = pointerEvents ?: @"auto";
+  [self updateInteractivity];
+}
+
+- (void)zynth_setReady:(BOOL)ready {
+  if (_ready == ready) return;
+  _ready = ready;
+  self.hidden = !ready;
   [self updateInteractivity];
 }
 

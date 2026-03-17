@@ -102,6 +102,11 @@ internal object PressablePropAdapter {
         node.pointerEvents = pointer ?: "auto"
         return true
       }
+      "ready" -> {
+        val ready = asBoolean(parsed) ?: true
+        pressable.setReady(ready)
+        return true
+      }
       "activateKeys" -> {
         val keys: Set<String> = when (parsed) {
           is JSONArray -> {
