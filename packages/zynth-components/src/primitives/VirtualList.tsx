@@ -85,9 +85,10 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
   );
   const [headerLength, setHeaderLength] = createSignal(0);
   const [footerLength, setFooterLength] = createSignal(0);
-  const [headerMeasured, setHeaderMeasured] = createSignal(
-    !local.ListHeaderComponent,
+  const hasHeader = createMemo(
+    () => local.ListHeaderComponent !== undefined && local.ListHeaderComponent !== null,
   );
+  const [headerMeasured, setHeaderMeasured] = createSignal(!hasHeader());
 
   const numColumns = createMemo(() => Math.max(1, local.numColumns ?? 1));
   const overscanRows = createMemo(() => local.overscan ?? 2);
@@ -109,7 +110,7 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     currentData = local.data;
   });
   createEffect(() => {
-    if (!local.ListHeaderComponent) {
+    if (!hasHeader()) {
       setHeaderMeasured(true);
       setHeaderLength(0);
       return;
@@ -208,14 +209,9 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
   }, initialRange);
 
   const visibleRange = createMemo(() => {
-    if (!headerMeasured()) {
-      return { startItem: 0, endItem: 0 };
-    }
-    if (local.horizontal) {
-      if (axisViewportLength() <= 0 || crossViewportLength() <= 0) {
-        return { startItem: 0, endItem: 0 };
-      }
-    } else if (numColumns() > 1 && crossViewportLength() <= 0) {
+    const hasViewport = axisViewportLength() > 0;
+    const hasCrossViewport = crossViewportLength() > 0;
+    if (!hasViewport || !hasCrossViewport || !headerMeasured()) {
       return { startItem: 0, endItem: 0 };
     }
     const r = range();
@@ -337,7 +333,7 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
       contentContainerStyle={scrollContentContainerStyle()}
       testID={local.testID}
     >
-      <View style={containerStyle}>
+      <view style={containerStyle() as any}>
         {local.ListHeaderComponent && (
           <View onLayout={handleHeaderLayout}>{local.ListHeaderComponent}</View>
         )}
@@ -384,9 +380,9 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
             });
 
             return (
-              <View style={style} key={key()}>
+              <view style={style() as any} key={key()}>
                 {local.renderItem({ item: item(), index: absoluteIndex })}
-              </View>
+              </view>
             );
           }}
         </For>
@@ -407,7 +403,7 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
             {local.ListFooterComponent}
           </View>
         )}
-      </View>
+      </view>
     </ScrollView>
   );
 }
