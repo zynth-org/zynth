@@ -22,6 +22,7 @@ BEFORE providing any code or architectural change, you MUST wrap your reasoning 
 - **Layout**: Yoga (Flexbox C++ engine).
 - **Reactivity**: SolidJS (Fine-grained reactivity).
 - **Communication**: JSI (JavaScript Interface) is preferred over the legacy Bridge.
+- **Package manager**: yarn 1
   </core_stack>
 
 <constraints>
