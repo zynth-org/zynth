@@ -23,7 +23,12 @@ class ZynthAppearanceModule(
 
     private fun registerBridge() {
         android.util.Log.d("ZynthAppearance", "registerBridge")
-        runtime.installModules(listOf(ZynthAppearanceBridge(this)))
+        runtime.installModules(
+            listOf(
+                ZynthAppearanceBridge(this),
+                ZynthUIModule(),
+            )
+        )
     }
 
     private fun startObserving() {

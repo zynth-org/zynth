@@ -49,7 +49,7 @@
         }
       ],
       "initializer": {
-        "className": "ZynthAppearanceModule",
+        "className": "ZynthUIBootstrap",
         "method": "initializeWith:"
       }
     },
@@ -61,7 +61,7 @@
         }
       ],
       "initializer": {
-        "className": "ZynthAppearance",
+        "className": "ZynthUIBootstrap",
         "method": "initialize",
         "package": "dev.zynth.ui"
       }
