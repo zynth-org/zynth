@@ -11,6 +11,7 @@ import android.view.View
 import android.widget.FrameLayout
 import androidx.appcompat.view.ContextThemeWrapper
 import androidx.appcompat.widget.PopupMenu
+import androidx.core.view.MenuItemCompat
 import com.google.android.material.color.MaterialColors
 import com.zynth.kit.core.ZynthUIManager
 
@@ -80,7 +81,10 @@ class ZynthMenuView(context: Context) : FrameLayout(context) {
 
       val menuItem = popup.menu.add(Menu.NONE, itemId, index, menuTitle)
       menuItem.isEnabled = !itemView.disabled
-      itemView.createIconDrawable()?.let { menuItem.icon = it }
+      itemView.createIconDrawable()?.let {
+        menuItem.icon = it
+        MenuItemCompat.setIconTintList(menuItem, null)
+      }
       itemMap[itemId] = itemView
     }
 

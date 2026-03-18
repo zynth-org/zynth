@@ -35,6 +35,9 @@ class ZynthMenuItemView(context: Context) : FrameLayout(context) {
 
     val paint = TextPaint(textView.paint)
     paint.isAntiAlias = true
+    paint.color = textView.currentTextColor
+    paint.typeface = textView.typeface
+    
     val metrics = paint.fontMetrics
     val width = ceil(paint.measureText(text)).toInt().coerceAtLeast(1)
     val height = ceil(metrics.descent - metrics.ascent).toInt().coerceAtLeast(1)
