@@ -18,6 +18,7 @@ export interface MenuTriggerProps {
   style?: Style;
   children?: JSX.Element;
   testID?: string;
+  openOn?: "press" | "longPress";
 }
 
 export interface MenuItemProps {
@@ -52,10 +53,14 @@ const MenuRoot: ParentComponent<MenuProps> = (props) => {
 };
 
 const MenuTrigger: ParentComponent<MenuTriggerProps> = (props) => {
-  const [local] = splitProps(props, ["style", "children", "testID"]);
+  const [local] = splitProps(props, ["style", "children", "testID", "openOn"]);
 
   return (
-    <menu-trigger-view style={local.style} testID={local.testID}>
+    <menu-trigger-view
+      style={local.style}
+      testID={local.testID}
+      openOn={local.openOn}
+    >
       {local.children}
     </menu-trigger-view>
   );

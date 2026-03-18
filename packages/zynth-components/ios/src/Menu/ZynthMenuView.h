@@ -6,5 +6,6 @@
 @property (nonatomic, copy) void (^onClose)(void);
 
 - (void)updateMenu;
+- (void)setTriggerOpenBehavior:(NSString * _Nullable)behavior;
 
 @end

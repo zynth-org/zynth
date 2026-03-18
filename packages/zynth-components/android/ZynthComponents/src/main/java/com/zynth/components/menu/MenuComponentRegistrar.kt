@@ -72,6 +72,16 @@ private fun createMenuTriggerDescriptor(): ZynthComponentDescriptor {
       node.mountHasVisualProps = true
       node.mountAwaitingFirstProps = false
     },
+    applyProperty = { node, name, value ->
+      val triggerView = node.view as? ZynthMenuTriggerView ?: return@ZynthComponentDescriptor false
+      when (name) {
+        "openOn" -> {
+          triggerView.setOpenOn(parseStringValue(value, name))
+          true
+        }
+        else -> false
+      }
+    },
     onReset = { node ->
       (node.view as? ZynthMenuTriggerView)?.reset()
     },
