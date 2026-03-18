@@ -745,7 +745,13 @@ function HeaderBar(props: HeaderBarProps) {
 
   const renderLeft = () => {
     const canBack = () => props.canGoBack && backVisible();
-    if (props.options.headerLeft) return props.options.headerLeft();
+    if (props.options.headerLeft) {
+      return props.options.headerLeft({
+        tintColor: tintColor(),
+        canGoBack: canBack(),
+        onPress: invokeBack,
+      });
+    }
     if (!canBack()) {
       return (
         <View

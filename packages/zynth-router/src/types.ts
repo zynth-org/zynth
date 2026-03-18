@@ -97,7 +97,7 @@ export interface ScreenOptions {
   /** Hide the default back button */
   headerBackVisible?: boolean;
   /** Custom header left component */
-  headerLeft?: () => JSX.Element;
+  headerLeft?: (props: HeaderLeftProps) => JSX.Element;
   /** Custom header right component */
   headerRight?: () => JSX.Element;
   /** Native-style header right button descriptor */
@@ -126,6 +126,15 @@ export interface ScreenOptions {
   // Content options
   /** Content background color */
   contentBackgroundColor?: string;
+}
+
+export interface HeaderLeftProps {
+  /** Resolved header tint color for icons/actions. */
+  tintColor: string;
+  /** Whether the current screen can navigate back. */
+  canGoBack: boolean;
+  /** Default back action handler for custom left components. */
+  onPress: () => void;
 }
 
 export interface HeaderRightButtonOptions {
