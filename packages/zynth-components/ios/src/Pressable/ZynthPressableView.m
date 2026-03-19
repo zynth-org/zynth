@@ -382,7 +382,7 @@ static const CFTimeInterval kZynthPressableDefaultDoublePressWindowMs = 250.0;
   BOOL wasLongPress = self.longPressFired;
   self.longPressFired = NO;
   self.pressed = NO;
-  if (!wasLongPress) {
+  if (!cancelled && !wasLongPress) {
     NSDictionary *payload = [self payloadForTouch:self.lastTouch];
     if ([self.delegate respondsToSelector:@selector(pressableView:didPress:)]) {
       [self.delegate pressableView:self didPress:payload];
