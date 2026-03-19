@@ -19,6 +19,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (void)zynth_setSpacing:(NSNumber *_Nullable)spacing;
 - (void)zynth_setPointerEvents:(NSString *_Nullable)pointerEvents;
+- (void)zynth_setStyleCornerRadius:(NSNumber *_Nullable)radius;
 
 @end
 

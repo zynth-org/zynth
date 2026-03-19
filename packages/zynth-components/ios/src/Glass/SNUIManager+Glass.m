@@ -53,6 +53,12 @@ static BOOL ZynthGlassViewHandleSetProp(ZynthUIManager *manager,
     return YES;
   }
 
+  if ([name isEqualToString:@"borderRadius"]) {
+    NSNumber *radius = [value isKindOfClass:[NSNumber class]] ? (NSNumber *)value : nil;
+    [glassView zynth_setStyleCornerRadius:radius];
+    return YES;
+  }
+
   return NO;
 }
 
@@ -81,6 +87,12 @@ static BOOL ZynthGlassContainerHandleSetProp(ZynthUIManager *manager,
     [container zynth_setPointerEvents:pointer];
     node.pointerEvents = pointer.length ? pointer : @"auto";
     [manager zynth_updateInteractionStateForNode:node];
+    return YES;
+  }
+
+  if ([name isEqualToString:@"borderRadius"]) {
+    NSNumber *radius = [value isKindOfClass:[NSNumber class]] ? (NSNumber *)value : nil;
+    [container zynth_setStyleCornerRadius:radius];
     return YES;
   }
 

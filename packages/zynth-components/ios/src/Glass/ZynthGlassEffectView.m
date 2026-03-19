@@ -6,6 +6,7 @@
 @property (nonatomic, strong, nullable) UIColor *glassTintColor;
 @property (nonatomic, strong, nullable) UIColor *pendingBackgroundColor;
 @property (nonatomic, strong, nullable) UIView *cachedContentView;
+@property (nonatomic, strong, nullable) NSNumber *styleCornerRadius;
 @end
 
 @implementation ZynthGlassEffectView
@@ -26,6 +27,7 @@
   if (!self.cachedContentView) {
     self.cachedContentView = [super contentView];
   }
+  [self zynth_applyClampedCornerRadius];
   if (self.cachedContentView) {
     self.cachedContentView.frame = self.bounds;
     if (self.pendingBackgroundColor) {
@@ -84,6 +86,35 @@
       ? (NSString *)pointerEvents
       : @"auto";
   self.pointerMode = ZynthPointerEventsFromString(mode);
+}
+
+- (void)zynth_setStyleCornerRadius:(NSNumber *)radius {
+  _styleCornerRadius = radius;
+  [self zynth_applyClampedCornerRadius];
+}
+
+- (CGFloat)zynth_clampedCornerRadiusForRadius:(CGFloat)radius {
+  CGFloat normalized = MAX(0.0, radius);
+  CGFloat width = CGRectGetWidth(self.bounds);
+  CGFloat height = CGRectGetHeight(self.bounds);
+  if (width <= 0.0 || height <= 0.0) {
+    return normalized;
+  }
+  return MIN(normalized, MIN(width, height) * 0.5);
+}
+
+- (void)zynth_applyClampedCornerRadius {
+  CGFloat sourceRadius =
+      self.styleCornerRadius ? (CGFloat)self.styleCornerRadius.doubleValue : 0.0;
+  CGFloat clamped = [self zynth_clampedCornerRadiusForRadius:sourceRadius];
+  self.layer.cornerRadius = clamped;
+  self.layer.masksToBounds = clamped > 0.0;
+  self.clipsToBounds = clamped > 0.0;
+  if (self.cachedContentView) {
+    self.cachedContentView.layer.cornerRadius = clamped;
+    self.cachedContentView.layer.masksToBounds = clamped > 0.0;
+    self.cachedContentView.clipsToBounds = clamped > 0.0;
+  }
 }
 
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {

@@ -21,6 +21,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)zynth_setInteractive:(BOOL)interactive;
 - (void)zynth_setTintColor:(UIColor *_Nullable)tintColor;
 - (void)zynth_setPointerEvents:(NSString *_Nullable)pointerEvents;
+- (void)zynth_setStyleCornerRadius:(NSNumber *_Nullable)radius;
 
 @end
 

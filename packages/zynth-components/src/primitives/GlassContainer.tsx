@@ -1,6 +1,7 @@
 import { children as resolveChildren, splitProps } from "solid-js";
 import type { JSX, ParentComponent } from "solid-js";
 import type { Style } from "@zynth/core";
+import { OS, Platform } from "@zynth/apis";
 
 export interface GlassContainerProps {
   style?: Style;
@@ -19,6 +20,18 @@ export const GlassContainer: ParentComponent<GlassContainerProps> = (props) => {
     "testID",
   ]);
   const resolvedChildren = resolveChildren(() => local.children);
+
+  if (Platform.OS === OS.ANDROID) {
+    return (
+      <view
+        style={local.style as any}
+        pointerEvents={local.pointerEvents}
+        testID={local.testID}
+      >
+        {resolvedChildren()}
+      </view>
+    );
+  }
 
   return (
     <glass-container
