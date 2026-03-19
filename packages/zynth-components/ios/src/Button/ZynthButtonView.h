@@ -46,6 +46,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)zynth_setBaseColor:(UIColor *_Nullable)color;
 - (void)zynth_setImage:(UIImage *_Nullable)image;
 - (void)zynth_setRounded:(NSString *_Nullable)rounded;
+- (void)zynth_setStyleCornerRadius:(NSNumber *_Nullable)radius;
 
 @end
 

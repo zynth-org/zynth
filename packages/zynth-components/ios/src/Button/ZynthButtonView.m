@@ -23,7 +23,8 @@ static const CFTimeInterval kZynthButtonLongPressDuration = 0.5;
 @property(nonatomic, copy) NSString *buttonTitle;
 @property(nonatomic, copy) NSString *loadingText;
 @property(nonatomic, copy) NSString *loadingPlacement;
-@property(nonatomic, copy) NSString *rounded;
+@property(nonatomic, copy, nullable) NSString *rounded;
+@property(nonatomic, strong, nullable) NSNumber *styleCornerRadius;
 @property(nonatomic, strong, nullable) UIImage *buttonImage;
 @property(nonatomic, strong, nullable) UIColor *baseColor;
 
@@ -87,7 +88,7 @@ static const CFTimeInterval kZynthButtonLongPressDuration = 0.5;
     _variant = @"plain";
     _zynthRole = @"normal";
     _size = @"medium";
-    _rounded = @"md";
+    _rounded = nil;
     _pressRetentionOffset = 14.0;
     _hitSlopInsets = UIEdgeInsetsZero;
     _minimumTouchSize = CGSizeMake(44.0, 44.0);
@@ -259,6 +260,12 @@ static const CFTimeInterval kZynthButtonLongPressDuration = 0.5;
 #pragma mark - Native Configuration (iOS 15+)
 
 - (CGFloat)zynth_resolvedCornerRadius {
+  if (self.styleCornerRadius != nil) {
+    return MAX(0.0, (CGFloat)self.styleCornerRadius.doubleValue);
+  }
+  if (self.rounded.length == 0) {
+    return MAX(0.0, self.layer.cornerRadius);
+  }
   if ([self.rounded isEqualToString:@"pill"] || [self.rounded isEqualToString:@"full"]) {
     return CGRectGetHeight(self.bounds) * 0.5;
   }
@@ -274,10 +281,23 @@ static const CFTimeInterval kZynthButtonLongPressDuration = 0.5;
   return 8.0;
 }
 
+- (CGFloat)zynth_clampedCornerRadius:(CGFloat)radius {
+  CGFloat normalized = MAX(0.0, radius);
+  CGFloat width = CGRectGetWidth(self.bounds);
+  CGFloat height = CGRectGetHeight(self.bounds);
+  if (width <= 0.0 || height <= 0.0) {
+    return normalized;
+  }
+  CGFloat maxAllowed = MIN(width, height) * 0.5;
+  return MIN(normalized, maxAllowed);
+}
+
 - (void)zynth_applyRoundedCorners {
-  CGFloat radius = [self zynth_resolvedCornerRadius];
+  CGFloat radius = [self zynth_clampedCornerRadius:[self zynth_resolvedCornerRadius]];
   self.layer.cornerRadius = radius;
+  self.clipsToBounds = radius > 0.0;
   self.layer.masksToBounds = radius > 0.0;
+  [self updateGlassMask];
 }
 
 - (void)zynth_updateCustomSubviewsVisibility {
@@ -398,6 +418,13 @@ static const CFTimeInterval kZynthButtonLongPressDuration = 0.5;
     if (config.background) {
       config.background.cornerRadius = 0.0;
     }
+  } else if (self.rounded.length == 0) {
+    // No rounded token was provided (e.g. JS style.borderRadius is driving shape).
+    // Keep a fixed style and mirror the host layer radius.
+    config.cornerStyle = UIButtonConfigurationCornerStyleFixed;
+    if (config.background) {
+      config.background.cornerRadius = MAX(0.0, self.layer.cornerRadius);
+    }
   } else {
     // Default to system-defined dynamic corner style (available iOS 15+)
     config.cornerStyle = UIButtonConfigurationCornerStyleDynamic;
@@ -476,7 +503,12 @@ static const CFTimeInterval kZynthButtonLongPressDuration = 0.5;
 }
 
 - (void)zynth_setRounded:(NSString *)rounded {
-  _rounded = rounded ?: @"md";
+  _rounded = rounded;
+  [self updateNativeConfiguration];
+}
+
+- (void)zynth_setStyleCornerRadius:(NSNumber *)radius {
+  _styleCornerRadius = radius;
   [self updateNativeConfiguration];
 }
 

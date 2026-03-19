@@ -129,6 +129,12 @@ static BOOL ZynthButtonHandleSetProp(ZynthUIManager *manager,
     return YES;
   }
 
+  if ([name isEqualToString:@"borderRadius"]) {
+    NSNumber *radius = [value isKindOfClass:[NSNumber class]] ? (NSNumber *)value : nil;
+    [button zynth_setStyleCornerRadius:radius];
+    return YES;
+  }
+
   if ([name isEqualToString:@"preventFocusOnPress"]) {
     BOOL prevent = value && value != (id)[NSNull null] ? [value boolValue] : NO;
     [button zynth_setPreventFocusOnPress:prevent];

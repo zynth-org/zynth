@@ -468,7 +468,16 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     if (typeof labelContent === "string") return labelContent;
     return local.label;
   });
-  const resolvedRounded = createMemo(() => local.rounded ?? ("md" as const));
+  const resolvedRounded = createMemo<
+    ButtonProps["rounded"] | undefined
+  >(() => {
+    if (local.rounded) return local.rounded;
+    const style = local.style as Style | undefined;
+    if (style?.borderRadius !== undefined) {
+      return undefined;
+    }
+    return "md" as const;
+  });
 
   // Removed: sizePaddingMap, baseRadiusMap, etc. since native handles layout.
 
@@ -713,7 +722,7 @@ export const Button: ParentComponent<ButtonProps> = (props) => {
     }
     setProperty(node, "size", nativeSize);
     setProperty(node, "fullWidth", local.fullWidth ?? false);
-    setProperty(node, "rounded", resolvedRounded());
+    setProperty(node, "rounded", resolvedRounded() ?? null);
     setProperty(node, "elevation", resolvedElevation());
     setProperty(node, "pressEffect", resolvedPressEffect());
     setProperty(node, "pressRetentionOffset", local.pressRetentionOffset);
