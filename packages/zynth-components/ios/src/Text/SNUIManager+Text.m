@@ -57,16 +57,25 @@ static YGSize ZynthTextMeasureFunc(YGNodeConstRef node,
 // Helper function to refresh text for a label node by composing from children
 static NSString *ZynthTextApplyTransform(NSString *text, NSString *transform) {
   if (!transform || text.length == 0) return text;
-  if ([transform isEqualToString:@"uppercase"]) {
+  NSString *normalized = [transform lowercaseString];
+  if ([normalized isEqualToString:@"uppercase"]) {
     return [text uppercaseString];
   }
-  if ([transform isEqualToString:@"lowercase"]) {
+  if ([normalized isEqualToString:@"lowercase"]) {
     return [text lowercaseString];
   }
-  if ([transform isEqualToString:@"capitalize"]) {
+  if ([normalized isEqualToString:@"capitalize"]) {
     return [text capitalizedString];
   }
   return text;
+}
+
+static NSString *ZynthResolveTextTransform(NSString *parentTransform,
+                                          NSString *childTransform) {
+  if ([childTransform isKindOfClass:[NSString class]] && childTransform.length > 0) {
+    return childTransform;
+  }
+  return parentTransform;
 }
 
 static NSDictionary<NSAttributedStringKey, id> *
@@ -115,13 +124,15 @@ static UIFont *ZynthResolveFontFamily(NSString *fontFamily,
 
 static NSAttributedString *ZynthBuildAttributedText(ZynthUIManager *manager,
                                                    ZynthNode *node,
-                                                   NSDictionary<NSAttributedStringKey, id> *inherited) {
+                                                   NSDictionary<NSAttributedStringKey, id> *inherited,
+                                                   NSString *inheritedTransform) {
   if (!node || ![node.view isKindOfClass:[ZynthTextView class]]) {
     return [[NSAttributedString alloc] initWithString:@""];
   }
 
   ZynthTextView *textView = (ZynthTextView *)node.view;
   NSDictionary *ownAttributes = textView.zynth_baseTextAttributes ?: @{};
+  NSString *effectiveTransform = ZynthResolveTextTransform(inheritedTransform, textView.zynth_textTransform);
 
   // Build effective attributes:
   // - If child has explicit fontFamily, NEVER inherit parent's font (crucial for icon fonts)
@@ -165,7 +176,7 @@ static NSAttributedString *ZynthBuildAttributedText(ZynthUIManager *manager,
 
   if (node.children.count == 0) {
     NSString *raw = textView.text ?: @"";
-    NSString *transformed = ZynthTextApplyTransform(raw, textView.zynth_textTransform);
+    NSString *transformed = ZynthTextApplyTransform(raw, effectiveTransform);
     
     // Ensure every text segment has a font - UILabel needs complete font coverage
     NSMutableDictionary *finalAttrs = [effective mutableCopy] ?: [NSMutableDictionary dictionary];
@@ -182,7 +193,7 @@ static NSAttributedString *ZynthBuildAttributedText(ZynthUIManager *manager,
   for (NSNumber *childId in node.children) {
     ZynthNode *child = [manager zynth_nodeForId:childId];
     if (!child || ![child.view isKindOfClass:[ZynthTextView class]]) continue;
-    NSAttributedString *childText = ZynthBuildAttributedText(manager, child, effective);
+    NSAttributedString *childText = ZynthBuildAttributedText(manager, child, effective, effectiveTransform);
     [builder appendAttributedString:childText];
   }
 
@@ -205,7 +216,7 @@ static void ZynthTextRefreshLabelNode(ZynthUIManager *manager, ZynthNode *node) 
 
   ZynthTextView *textView = (ZynthTextView *)node.view;
 
-  NSAttributedString *composed = ZynthBuildAttributedText(manager, node, nil);
+  NSAttributedString *composed = ZynthBuildAttributedText(manager, node, nil, nil);
   textView.attributedText = composed;
   [manager markNodeDirty:@(node.nid)];
   
@@ -219,7 +230,7 @@ static void ZynthTextRefreshLabelNode(ZynthUIManager *manager, ZynthNode *node) 
   // "Second tick" pass to fix race conditions where styles might be lost
   // during rapid layout updates or initial render.
   dispatch_async(dispatch_get_main_queue(), ^{
-    NSAttributedString *recomposed = ZynthBuildAttributedText(manager, node, nil);
+    NSAttributedString *recomposed = ZynthBuildAttributedText(manager, node, nil, nil);
     textView.attributedText = recomposed;
     [textView setNeedsDisplay];
     [manager markNodeDirty:@(node.nid)];
