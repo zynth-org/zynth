@@ -20,7 +20,7 @@ public class ZynthSplashScreen: NSObject {
             return lockQueue.sync { _preventAutoHide }
         }
         set {
-            lockQueue.async(flags: .barrier) { _preventAutoHide = newValue }
+            lockQueue.sync(flags: .barrier) { _preventAutoHide = newValue }
         }
     }
     
@@ -49,7 +49,7 @@ public class ZynthSplashScreen: NSObject {
         // We no longer rely on the passed window for hierarchy, but we use the shared setup flow.
         // Using a dedicated window avoids issues with rootViewController replacements on the main window.
         DispatchQueue.main.async {
-            show(imageName: imageName, backgroundColor: backgroundColor, resizeMode: resizeMode)
+            show(attachedTo: window, imageName: imageName, backgroundColor: backgroundColor, resizeMode: resizeMode)
         }
         
         // Primary hide mechanism: Native "First Frame" event
@@ -58,7 +58,11 @@ public class ZynthSplashScreen: NSObject {
                 if preventAutoHide {
                     return
                 }
-                hide()
+                if let rootView = runtime.rootView,
+                   rootView.window != nil,
+                   !rootView.subviews.isEmpty {
+                    hide()
+                }
             }
         }
         
@@ -89,10 +93,11 @@ public class ZynthSplashScreen: NSObject {
                                  backgroundColor: String, 
                                  resizeMode: String) {
         // Compatibility shim if called directly
-        show(imageName: imageName, backgroundColor: backgroundColor, resizeMode: resizeMode)
+        show(attachedTo: window, imageName: imageName, backgroundColor: backgroundColor, resizeMode: resizeMode)
     }
 
-    private static func show(imageName: String, 
+    private static func show(attachedTo hostWindow: UIWindow?,
+                             imageName: String, 
                              backgroundColor: String, 
                              resizeMode: String) {
         // Prevent showing if we've already hidden (race condition protection)
@@ -105,6 +110,9 @@ public class ZynthSplashScreen: NSObject {
         // Create a dedicated window for the splash screen
         // We use the main screen bounds
         let window = UIWindow(frame: UIScreen.main.bounds)
+        if #available(iOS 13.0, *), let scene = hostWindow?.windowScene {
+            window.windowScene = scene
+        }
         window.backgroundColor = .clear
         
         // Place it above the status bar and alerts to ensure visibility
