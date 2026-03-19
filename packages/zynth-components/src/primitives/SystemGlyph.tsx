@@ -18,7 +18,10 @@ export const SystemGlyph: Component<SystemGlyphProps> = (props) => {
   const [isReady, setIsReady] = createSignal(
     resolveEntry() ? Glyphs.isLoaded(props.name) : false
   );
-  const resolvedStyle = createStyle(() => props.style);
+  const resolvedStyle = createStyle(() => {
+    const nextStyle = props.style;
+    return typeof nextStyle === "function" ? nextStyle() : nextStyle;
+  });
 
   const scheduleReady = () => {
     if (typeof requestAnimationFrame === "function") {

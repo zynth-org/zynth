@@ -60,6 +60,7 @@ interface TextElementProps {
   style?: Style | StyleRef;
   children?: ZynthChildren;
   text?: string;
+  ref?: (node: any) => void;
 }
 
 declare module "solid-js" {

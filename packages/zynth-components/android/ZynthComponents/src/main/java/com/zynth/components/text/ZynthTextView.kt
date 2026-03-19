@@ -14,5 +14,7 @@ class ZynthTextView(context: Context) : AppCompatTextView(context) {
     textSize = 16f
     setTextColor(Color.BLACK) // Default to black text
     gravity = Gravity.START
+    includeFontPadding = false
+    setPadding(0, 0, 0, 0)
   }
 }

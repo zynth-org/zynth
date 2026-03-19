@@ -60,7 +60,7 @@ export const UIThemeProvider: Component<UIThemeProviderProps> = (props) => {
     const unsubscribe = subscribeToSystemColorScheme((scheme) => {
       setSystemScheme(scheme);
     });
-    let retryId: ReturnType<typeof setTimeout> | null = null;
+    const retryIds: Array<ReturnType<typeof setTimeout>> = [];
     const schedule = (globalThis as any)?.setTimeout as
       | ((handler: () => void, timeout: number) => ReturnType<typeof setTimeout>)
       | undefined;
@@ -69,17 +69,23 @@ export const UIThemeProvider: Component<UIThemeProviderProps> = (props) => {
       | undefined;
 
     if (typeof schedule === "function") {
-      retryId = schedule(() => {
-        const next = getSystemColorScheme();
-        if (next !== systemScheme()) {
-          setSystemScheme(next);
-        }
-      }, 0);
+      const retryDelays = [0, 32, 128, 512, 1500];
+      for (const delay of retryDelays) {
+        const retryId = schedule(() => {
+          const next = getSystemColorScheme();
+          if (next !== systemScheme()) {
+            setSystemScheme(next);
+          }
+        }, delay);
+        retryIds.push(retryId);
+      }
     }
 
     onCleanup(() => {
-      if (retryId !== null && typeof clear === "function") {
-        clear(retryId);
+      if (typeof clear === "function") {
+        for (const retryId of retryIds) {
+          clear(retryId);
+        }
       }
       unsubscribe();
     });

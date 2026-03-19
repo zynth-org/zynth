@@ -1,4 +1,4 @@
-import { createEffect, createSignal, type Component } from "solid-js";
+import { createEffect, createSignal, onCleanup, type Component } from "solid-js";
 import { Platform, OS } from "@zynth/apis";
 import type {
   Style,
@@ -56,6 +56,7 @@ export type ImageElementProps = ImageProps & { children?: never };
 
 export const Image: Component<ImageProps> = (props) => {
   const [currentSourceIndex, setCurrentSourceIndex] = createSignal(0);
+  const [devServerReadyTick, setDevServerReadyTick] = createSignal(0);
 
   const sources = () => {
     const src = props.source;
@@ -69,6 +70,7 @@ export const Image: Component<ImageProps> = (props) => {
   };
 
   const normalizedSource = () => {
+    devServerReadyTick();
     const source = currentSource();
     // console.log(
     //   "[Image] Current source (index:",
@@ -115,6 +117,51 @@ export const Image: Component<ImageProps> = (props) => {
   createEffect(() => {
     props.source;
     setCurrentSourceIndex(0);
+  });
+
+  createEffect(() => {
+    const source = currentSource();
+    if (
+      !source ||
+      typeof source !== "object" ||
+      (source as any).type !== "asset" ||
+      !(source as ImageDescriptorSource).devPath
+    ) {
+      return;
+    }
+
+    if ((globalThis as any).__ZYNTH_DEV_SERVER_URL) {
+      return;
+    }
+
+    const schedule = (globalThis as any).setTimeout as
+      | ((handler: () => void, timeout: number) => ReturnType<typeof setTimeout>)
+      | undefined;
+    const clear = (globalThis as any).clearTimeout as
+      | ((id: ReturnType<typeof setTimeout>) => void)
+      | undefined;
+
+    if (typeof schedule !== "function") {
+      return;
+    }
+
+    const retryIds: Array<ReturnType<typeof setTimeout>> = [];
+    const retryDelays = [0, 32, 128, 512, 1500];
+    for (const delay of retryDelays) {
+      const retryId = schedule(() => {
+        if ((globalThis as any).__ZYNTH_DEV_SERVER_URL) {
+          setDevServerReadyTick((value) => value + 1);
+        }
+      }, delay);
+      retryIds.push(retryId);
+    }
+
+    onCleanup(() => {
+      if (typeof clear !== "function") return;
+      for (const retryId of retryIds) {
+        clear(retryId);
+      }
+    });
   });
 
   return (

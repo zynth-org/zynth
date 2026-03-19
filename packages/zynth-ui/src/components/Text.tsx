@@ -1,7 +1,7 @@
 import { Text as NativeText, type TextProps as NativeTextProps } from "@zynth/components";
 import { type ParentComponent, splitProps } from "solid-js";
 import { useUITheme } from "../hooks";
-import type { StyleProp } from "@zynth/core";
+import type { Style, StyleProp } from "@zynth/core";
 
 export interface TextProps extends NativeTextProps {
   variant?: "heading" | "subheading" | "body" | "caption" | "label";
@@ -14,8 +14,27 @@ export const Text: ParentComponent<TextProps> = (props) => {
   const [local, others] = splitProps(props, ["style", "variant", "color", "weight", "size"]);
   const theme = useUITheme();
 
+  const mergeDefinedStyle = (
+    base: StyleProp,
+    override: StyleProp | null | undefined,
+  ): StyleProp => {
+    if (!override) return base;
+    if (Array.isArray(override)) {
+      return override.reduce<StyleProp>((acc, item) => mergeDefinedStyle(acc, item), base);
+    }
+    const next: Style = { ...(base as Style) };
+    for (const [key, value] of Object.entries(override as object)) {
+      if (value !== undefined) {
+        (next as Record<string, unknown>)[key] = value;
+      }
+    }
+    return next;
+  };
+
   const resolvedStyle = () => {
     const t = theme();
+    const overrideStyle =
+      typeof local.style === "function" ? local.style() : local.style;
     
     // Default style base
     let base: StyleProp = {
@@ -75,10 +94,7 @@ export const Text: ParentComponent<TextProps> = (props) => {
     }
 
     // Merge with user provided style
-    if (local.style) {
-      return { ...base, ...(local.style as object) };
-    }
-    return base;
+    return mergeDefinedStyle(base, overrideStyle);
   };
 
   return <NativeText style={resolvedStyle()} {...others} />;

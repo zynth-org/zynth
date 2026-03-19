@@ -48,6 +48,17 @@ function normalizeScheme(value: unknown): ColorScheme | null {
   return null;
 }
 
+function unwrapSnapshot(value: unknown): AppearanceSnapshot | null {
+  if (!value || typeof value !== "object") return null;
+  if ("result" in (value as Record<string, unknown>)) {
+    const result = (value as Record<string, unknown>).result;
+    return result && typeof result === "object"
+      ? (result as AppearanceSnapshot)
+      : null;
+  }
+  return value as AppearanceSnapshot;
+}
+
 function readNativeConstants(): ColorScheme | null {
   const globalObj = getGlobalObject();
   const constants = globalObj.NativeConstants as
@@ -56,10 +67,11 @@ function readNativeConstants(): ColorScheme | null {
   // console.log("[UITheme] NativeConstants", constants ? Object.keys(constants) : null);
   if (!constants) return null;
 
-  const snapshot =
+  const rawSnapshot =
     (constants[MODULE_KEY] as AppearanceSnapshot | undefined) ??
     (constants.Appearance as AppearanceSnapshot | undefined);
 
+  const snapshot = unwrapSnapshot(rawSnapshot);
   if (!snapshot) return null;
   return normalizeScheme(snapshot.colorScheme ?? snapshot.scheme);
 }
@@ -72,19 +84,17 @@ function readFromBridge(): ColorScheme | null {
   // console.log("[UITheme] __modules", bridge ? Object.keys(bridge as object) : null);
   if (!bridge?.callSync) return null;
   try {
-    const result = bridge.callSync(MODULE_KEY, "getCurrent");
-    // console.log("[UITheme] bridge result", result);
-    if (!result || typeof result !== "object") return null;
-    const snapshot = result as AppearanceSnapshot;
+    const result = bridge.callSync(MODULE_KEY, "getCurrent", null);
+    const snapshot = unwrapSnapshot(result);
+    if (!snapshot) return null;
     return normalizeScheme(snapshot.colorScheme ?? snapshot.scheme);
   } catch {
     // Try async call for runtimes that only support `call`.
     try {
       if (bridge?.call) {
         const result = bridge.call(MODULE_KEY, "getCurrent", null);
-        // console.log("[UITheme] bridge call result", result);
-        if (result && typeof result === "object") {
-          const snapshot = result as AppearanceSnapshot;
+        const snapshot = unwrapSnapshot(result);
+        if (snapshot) {
           return normalizeScheme(snapshot.colorScheme ?? snapshot.scheme);
         }
       }
@@ -116,13 +126,13 @@ function readFromMatchMedia(): ColorScheme | null {
 
 export function getSystemColorScheme(): ColorScheme {
   const fromNativeModule = readFromNativeModule();
-  const fromConstants = readNativeConstants();
   const fromBridge = readFromBridge();
+  const fromConstants = readNativeConstants();
   const fromMatchMedia = readFromMatchMedia();
   const resolved =
     fromNativeModule ??
-    fromConstants ??
     fromBridge ??
+    fromConstants ??
     fromMatchMedia ??
     "light";
 

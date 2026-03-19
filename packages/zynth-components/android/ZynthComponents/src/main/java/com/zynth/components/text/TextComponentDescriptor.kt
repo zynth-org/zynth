@@ -371,15 +371,21 @@ private fun shouldRecomposeText(
     return true
   }
   if (nextNeedsRootSpans || needsRootSpanStyles(previous)) {
-    if (previous.textDecorationLine != next.textDecorationLine ||
+    // Root-level spans are already active (or becoming active), so changes in any
+    // text-affecting style must trigger recomposition. Otherwise stale spans
+    // (e.g. ForegroundColorSpan from a previous scheme) can keep overriding
+    // TextView-level properties like setTextColor.
+    return previous.color != next.color ||
+      previous.fontSize != next.fontSize ||
+      previous.fontWeight != next.fontWeight ||
+      previous.fontFamily != next.fontFamily ||
+      previous.fontStyle != next.fontStyle ||
+      previous.textDecorationLine != next.textDecorationLine ||
       previous.lineHeight != next.lineHeight ||
       previous.lineSpacing != next.lineSpacing ||
       previous.paragraphSpacing != next.paragraphSpacing ||
       previous.letterSpacing != next.letterSpacing ||
       previous.baselineShift != next.baselineShift
-    ) {
-      return true
-    }
   }
   if (!hasInlineSpans) {
     return false
