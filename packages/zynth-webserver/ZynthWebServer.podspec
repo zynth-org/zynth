@@ -13,7 +13,7 @@ Pod::Spec.new do |s|
   s.source_files = "ios/**/*.{h,m,mm,swift}", "native/**/*.{h,c}"
   s.public_header_files = "ios/include/**/*.h"
   s.requires_arc = true
-  s.compiler_flags = "-DNO_SSL"
+  s.compiler_flags = "-DNO_SSL -UDEBUG"
   s.pod_target_xcconfig = {
     "HEADER_SEARCH_PATHS" => "\"${PODS_TARGET_SRCROOT}/native\"",
     "OTHER_CFLAGS" => "$(inherited) -Wno-ambiguous-macro"

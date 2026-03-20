@@ -53,9 +53,6 @@ final class ZynthTabIconHostView: UIView {
     renderQueue.async { [weak self] in
       guard let self else { return }
       guard token == self.renderToken else { return }
-#if DEBUG
-      NSLog("[ZynthTabIconHost] render surface=%d route=%@", surfaceId, routeKey)
-#endif
       runtime.callGlobal(
         "__zynth_renderTabIcon",
         args: [surfaceId, routeKey, active, colorHex]
@@ -68,9 +65,6 @@ final class ZynthTabIconHostView: UIView {
     guard let runtime = runtime, let surfaceId = surfaceId else { return }
     self.surfaceId = nil
     renderQueue.async {
-#if DEBUG
-      NSLog("[ZynthTabIconHost] teardown surface=%d", surfaceId)
-#endif
       runtime.callGlobal("__zynth_disposeTabIcon", args: [surfaceId])
       DispatchQueue.main.async {
         runtime.unregisterSurface(id: surfaceId)

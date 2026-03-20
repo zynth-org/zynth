@@ -21,6 +21,7 @@ target_include_directories(
 )
 
 target_compile_definitions(zynthwebserver PRIVATE NO_SSL)
+target_compile_options(zynthwebserver PRIVATE -UDEBUG)
 
 find_library(log-lib log)
 

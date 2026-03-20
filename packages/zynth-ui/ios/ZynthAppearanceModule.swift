@@ -53,6 +53,13 @@ final class ZynthAppearanceModule: NSObject {
     return AppearanceState(colorScheme: resolveColorScheme())
   }
 
+  private func readUIOnMain<T>(_ block: () -> T) -> T {
+    if Thread.isMainThread {
+      return block()
+    }
+    return DispatchQueue.main.sync(execute: block)
+  }
+
   private func resolveColorScheme() -> String {
     if #available(iOS 13.0, *) {
       let style = currentTraitCollection().userInterfaceStyle
@@ -81,10 +88,12 @@ final class ZynthAppearanceModule: NSObject {
   }
 
   private func currentTraitCollection() -> UITraitCollection {
-    if let window = getActiveWindow() {
-      return window.traitCollection
+    return readUIOnMain {
+      if let window = getActiveWindow() {
+        return window.traitCollection
+      }
+      return UIScreen.main.traitCollection
     }
-    return UIScreen.main.traitCollection
   }
 
   private func attachTraitObserverIfNeeded() {
@@ -200,14 +209,16 @@ final class ZynthAppearanceModule: NSObject {
   }
 
   private func getActiveWindow() -> UIWindow? {
-    if #available(iOS 13.0, *), supportsSceneLifecycle() {
-      return UIApplication.shared.connectedScenes
-        .compactMap { $0 as? UIWindowScene }
-        .first { $0.activationState == .foregroundActive }?
-        .windows
-        .first { $0.isKeyWindow }
+    return readUIOnMain {
+      if #available(iOS 13.0, *), supportsSceneLifecycle() {
+        return UIApplication.shared.connectedScenes
+          .compactMap { $0 as? UIWindowScene }
+          .first { $0.activationState == .foregroundActive }?
+          .windows
+          .first { $0.isKeyWindow }
+      }
+      return UIApplication.shared.keyWindow
     }
-    return UIApplication.shared.keyWindow
   }
 
   private func supportsSceneLifecycle() -> Bool {

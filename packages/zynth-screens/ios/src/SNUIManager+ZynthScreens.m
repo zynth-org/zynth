@@ -422,12 +422,6 @@ static NSArray *ZynthScreensParseArrayValue(id value, NSString *rawJSON) {
 
       child.parentId = parent.nid;
       child.surfaceId = parent.surfaceId;
-#if DEBUG
-      NSLog(@"[ZynthScreens] insert tabs child parent=%d child=%d surface=%d",
-            parent.nid,
-            child.nid,
-            parent.surfaceId);
-#endif
 
       NSUInteger clamped = MIN(index, parent.children.count);
       [parent.children insertObject:childId atIndex:clamped];

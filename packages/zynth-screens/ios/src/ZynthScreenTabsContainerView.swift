@@ -116,10 +116,6 @@ public final class ZynthScreenTabsContainerView: UIView, UITabBarControllerDeleg
     clipsToBounds = true
   }
 
-  private func debugLog(_ message: String) {
-    // Logging disabled
-  }
-
   public override func layoutSubviews() {
     super.layoutSubviews()
     tabBarController?.view.frame = bounds
@@ -193,13 +189,10 @@ public final class ZynthScreenTabsContainerView: UIView, UITabBarControllerDeleg
   @objc(insertTabContentView:atIndex:)
   public func insertTabContentView(_ view: UIView, at index: Int) {
     let clamped = max(0, min(index, tabViews.count))
-    NSLog("[ZynthScreenTabs] insertTabContentView at index \(index) (clamped: \(clamped)), view: \(view), nativeEnabled: \(nativeTabBarEnabled)")
     if let existingIndex = tabViews.firstIndex(where: { $0 === view }) {
-      NSLog("[ZynthScreenTabs] View already exists at index \(existingIndex), removing")
       tabViews.remove(at: existingIndex)
     }
     tabViews.insert(view, at: clamped)
-    NSLog("[ZynthScreenTabs] Total tabViews count: \(tabViews.count)")
 
     if nativeTabBarEnabled {
       adoptViewForNativeTabs(view)
@@ -236,14 +229,11 @@ public final class ZynthScreenTabsContainerView: UIView, UITabBarControllerDeleg
   public func setSelectedIndexValue(_ value: NSNumber?) {
       let proposed = value?.intValue ?? 0
       selectedIndex = clampIndex(proposed)
-      NSLog("[ZynthScreenTabs] setSelectedIndexValue - proposed: \(proposed), clamped: \(selectedIndex), nativeEnabled: \(nativeTabBarEnabled)")
       if nativeTabBarEnabled {
         guard let controller = tabBarController else {
-          NSLog("[ZynthScreenTabs] ERROR: tabBarController is nil!")
           return
         }
         let clamped = clampIndex(selectedIndex)
-        NSLog("[ZynthScreenTabs] Current controller.selectedIndex: \(controller.selectedIndex), new: \(clamped)")
         
         if controller.selectedIndex != clamped {
           // If programmatic selection to unready tab, show overlay
@@ -308,7 +298,6 @@ public final class ZynthScreenTabsContainerView: UIView, UITabBarControllerDeleg
       return ZynthNativeTabBarItem(dictionary: dict)
     }
 #if DEBUG
-    NSLog("[ZynthScreenTabs] setTabItems count=%d", descriptors.count)
 #endif
     guard tabDescriptors != descriptors else { return }
     tabDescriptors = descriptors
@@ -347,7 +336,6 @@ public final class ZynthScreenTabsContainerView: UIView, UITabBarControllerDeleg
       guard let targetIndex = controllers.firstIndex(of: viewController) else { return true }
       
       let currentIndex = tabBarController.selectedIndex
-      NSLog("[ZynthScreenTabs] shouldSelect - current: \(currentIndex), target: \(targetIndex)")
       
       // If already selected or programmatic, allow immediate switch
       if targetIndex == currentIndex || isApplyingNativeSelection {
@@ -359,7 +347,6 @@ public final class ZynthScreenTabsContainerView: UIView, UITabBarControllerDeleg
       
       // Check if content is ready
       if isContentReady(targetView) {
-          NSLog("[ZynthScreenTabs] Content ready for index \(targetIndex), allowing immediate switch")
           selectedIndex = targetIndex
           updateIconHostStates()
           
@@ -367,11 +354,8 @@ public final class ZynthScreenTabsContainerView: UIView, UITabBarControllerDeleg
           dispatchEvent(name: "onNativeTabSelect", payload: ["index": targetIndex] as NSDictionary)
           return true
       } else {
-          NSLog("[ZynthScreenTabs] Content NOT ready for index \(targetIndex). Showing overlay and switching immediately.")
-          
           // 1. Snapshot current view to freeze the screen visually
           addTransitionOverlay(from: tabBarController.selectedViewController?.view, tabBarController: tabBarController)
-          NSLog("[ZynthScreenTabs] Transition overlay added")
           
           // 2. Start polling for readiness
           waitForContentAndRemoveOverlay(for: targetIndex)
@@ -432,8 +416,6 @@ public final class ZynthScreenTabsContainerView: UIView, UITabBarControllerDeleg
       let elapsed = Date().timeIntervalSince(startTime)
 
       if ready || elapsed > maxWaitTime {
-        NSLog("[ZynthScreenTabs] Content ready (or timeout) for index \(index) after \(String(format: "%.3f", elapsed))s. Removing overlay.")
-
         if ready {
           markViewReady(targetView)
         }
@@ -477,7 +459,6 @@ public final class ZynthScreenTabsContainerView: UIView, UITabBarControllerDeleg
     let item = DispatchWorkItem { [weak self] in
       guard let self else { return }
       guard self.nativeTabBarEnabled else { return }
-      self.debugLog("iconHostRetry attempt \(self.iconHostRetryCount)")
       self.tabBarController?.tabBar.setNeedsLayout()
       self.tabBarController?.tabBar.layoutIfNeeded()
       self.refreshIconHosts()
@@ -513,7 +494,6 @@ public final class ZynthScreenTabsContainerView: UIView, UITabBarControllerDeleg
   private func forceTabBarRelayout(reason: String) {
     guard let controller = tabBarController else { return }
     let tabBar = controller.tabBar
-    debugLog("forceTabBarRelayout(\(reason)) begin: selectedIndex=\(controller.selectedIndex) bounds=\(tabBar.bounds)")
 
     UIView.performWithoutAnimation {
       tabBar.setNeedsLayout()
@@ -535,8 +515,6 @@ public final class ZynthScreenTabsContainerView: UIView, UITabBarControllerDeleg
       }
     }
 
-    debugLog("forceTabBarRelayout(\(reason)) end")
-    
     // Re-run icon host refresh after forcing layout to re-normalize labels
     refreshIconHosts()
   }
@@ -579,7 +557,6 @@ public final class ZynthScreenTabsContainerView: UIView, UITabBarControllerDeleg
     guard nativeTabBarEnabled else { return }
     guard let controllers = tabBarController.viewControllers else { return }
     guard let index = controllers.firstIndex(of: viewController) else { return }
-    NSLog("[ZynthScreenTabs] didSelect viewController at index \(index), title: \(viewController.title ?? "nil"), isApplying: \(isApplyingNativeSelection)")
     // This is called AFTER shouldSelect returned true, so the switch already happened
     // Just update our state
     selectedIndex = index
@@ -596,13 +573,11 @@ public final class ZynthScreenTabsContainerView: UIView, UITabBarControllerDeleg
     }
 
     tabBar.layoutIfNeeded()
-    debugLog("refreshIconHosts begin: items=\(items.count) bounds=\(tabBar.bounds) subviews=\(tabBar.subviews.count)")
     
     // CRITICAL: Skip processing if tab bar hasn't been laid out yet (width == 0).
     // UIKit will position labels incorrectly during this phase, and any normalization
     // we apply will be wrong. Schedule a retry instead.
     if tabBar.bounds.width < 1 {
-      debugLog("refreshIconHosts: tabBar width is 0, scheduling retry")
       scheduleIconHostRetry()
       return
     }
@@ -614,9 +589,6 @@ public final class ZynthScreenTabsContainerView: UIView, UITabBarControllerDeleg
     // We need to attach icon hosts to buttons in BOTH views.
     
     let (normalButtons, selectedButtons) = collectDualTabButtons(in: tabBar)
-    debugLog("tabButtons: normal=\(normalButtons.count) selected=\(selectedButtons.count)")
-    
-    // NSLog("[ZynthScreenTabs] refreshIconHosts: Found \(normalButtons.count) normal buttons, \(selectedButtons.count) selected buttons")
 
     if normalButtons.isEmpty && selectedButtons.isEmpty {
       clearIconHosts()
@@ -1193,42 +1165,34 @@ public final class ZynthScreenTabsContainerView: UIView, UITabBarControllerDeleg
   }
 
   private func adoptViewForNativeTabs(_ view: UIView) {
-    NSLog("[ZynthScreenTabs] adoptViewForNativeTabs - view: \(view), hidden: \(view.isHidden), alpha: \(view.alpha)")
     view.removeFromSuperview()
     view.frame = bounds
     view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     // CRITICAL: Unhide the view since UITabBarController will manage visibility
     view.isHidden = false
     view.alpha = 1.0
-    NSLog("[ZynthScreenTabs] adoptViewForNativeTabs - after unhide: hidden: \(view.isHidden), alpha: \(view.alpha)")
   }
 
   private func synchronizeTabs() {
     guard nativeTabBarEnabled else { return }
-    NSLog("[ZynthScreenTabs] synchronizeTabs - tabViews count: \(tabViews.count)")
     attachTabBarControllerIfNeeded()
     guard let controller = tabBarController else {
-      NSLog("[ZynthScreenTabs] ERROR: tabBarController is nil after attach!")
       return
     }
 
     let tabContentControllers = tabViews.compactMap { self.controller(for: $0) }
-    NSLog("[ZynthScreenTabs] Created \(tabContentControllers.count) view controllers")
     controller.setViewControllers(tabContentControllers, animated: false)
     let clamped = max(0, min(selectedIndex, tabContentControllers.count - 1))
     selectedIndex = clamped
     controller.selectedIndex = clamped
-    NSLog("[ZynthScreenTabs] Set selectedIndex to \(clamped)")
     updateTabBarItems()
   }
 
   private func controller(for view: UIView) -> ZynthTabContentViewController {
     let key = ObjectIdentifier(view)
     if let existing = controllerMap[key] {
-      NSLog("[ZynthScreenTabs] Reusing existing controller for view \(view)")
       return existing
     }
-    NSLog("[ZynthScreenTabs] Creating new controller for view \(view), frame: \(view.frame), subviews: \(view.subviews.count)")
     let controller = ZynthTabContentViewController(contentView: view)
     controllerMap[key] = controller
     return controller

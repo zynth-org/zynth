@@ -29,6 +29,12 @@ static NSString *const kSNImageTaskKey = @"imageTask";
 static NSString *const kSNImageSourceTokenKey = @"imageSourceToken";
 static NSString *const kSNImageTintColorKey = @"imageTintColor";
 
+static CGFloat SNImageClamp01(CGFloat value) {
+  if (value < 0.0) return 0.0;
+  if (value > 1.0) return 1.0;
+  return value;
+}
+
 static id SNImageAttachment(ZynthNode *node, NSString *key) {
   if (!node || !key) return nil;
   return node.attachments[key];
@@ -84,6 +90,10 @@ static UIColor *SNImageColorFromValue(id value) {
         CGFloat g = [[components[1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]] floatValue] / 255.0;
         CGFloat b = [[components[2] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]] floatValue] / 255.0;
         CGFloat a = [[components[3] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]] floatValue];
+        r = SNImageClamp01(r);
+        g = SNImageClamp01(g);
+        b = SNImageClamp01(b);
+        a = SNImageClamp01(a);
         return [UIColor colorWithRed:r green:g blue:b alpha:a];
       }
     }
