@@ -221,9 +221,12 @@ function descriptorToNativeSource(
     } satisfies ImageUriSource;
   }
 
-  const assetId = descriptor.hash
+  const baseAssetId = descriptor.hash
     ? `${descriptor.name}-${descriptor.hash}`
     : descriptor.name;
+  const assetId = descriptor.ext
+    ? `images/${baseAssetId}.${descriptor.ext}`
+    : `images/${baseAssetId}`;
   console.log("[Image] Using asset ID:", assetId);
   return {
     asset: assetId,

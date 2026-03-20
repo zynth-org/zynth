@@ -277,6 +277,48 @@ function copyFonts(appDir: string, fonts: string[], platform: 'ios' | 'android',
   });
 }
 
+function copyBundledImages(appDir: string, platform: 'ios' | 'android', appName: string): void {
+  const manifestPath = path.join(appDir, 'dist', 'assets', 'images-manifest.json');
+  if (!fs.existsSync(manifestPath)) return;
+
+  let manifest: Record<string, string> = {};
+  try {
+    const parsed = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    if (parsed && typeof parsed === 'object') {
+      manifest = parsed as Record<string, string>;
+    }
+  } catch (_error) {
+    return;
+  }
+
+  const targetRoot = platform === 'ios'
+    ? path.join(appDir, 'ios', appName)
+    : path.join(appDir, 'android', 'app', 'src', 'main', 'assets');
+  fs.mkdirSync(targetRoot, { recursive: true });
+
+  const quiet = Boolean(process.env.ZYNTH_QUIET_PREBUILD);
+  const copied: string[] = [];
+
+  for (const [relativeDestPath, sourcePath] of Object.entries(manifest)) {
+    if (!relativeDestPath || typeof sourcePath !== 'string' || sourcePath.length === 0) {
+      continue;
+    }
+    if (!fs.existsSync(sourcePath)) {
+      continue;
+    }
+
+    const normalizedRelative = relativeDestPath.replace(/^\/+/, '');
+    const destPath = path.join(targetRoot, normalizedRelative);
+    fs.mkdirSync(path.dirname(destPath), { recursive: true });
+    fs.copyFileSync(sourcePath, destPath);
+    copied.push(normalizedRelative);
+  }
+
+  if (!quiet && copied.length > 0) {
+    console.log(`  ✓ Copied ${copied.length} bundled image asset(s)`);
+  }
+}
+
 function generateAndroidSplashAssets(appDir: string, splash: any): void {
   const resDir = path.join(appDir, 'android', 'app', 'src', 'main', 'res');
   const valuesDir = path.join(resDir, 'values');
@@ -365,6 +407,7 @@ export function generateAssets(appDir: string, platform: 'ios' | 'android', dev:
         generateIOSIcons(appDir, iconPath, cleanAppName);
       }
       generateIOSSplashAssets(appDir, appConfig.splash || {}, cleanAppName);
+      copyBundledImages(appDir, 'ios', cleanAppName);
       if (allFonts.length > 0) {
         copyFonts(appDir, allFonts, 'ios', cleanAppName);
       }
@@ -381,6 +424,7 @@ export function generateAssets(appDir: string, platform: 'ios' | 'android', dev:
           generateAndroidIcons(appDir, iconPath);
       }
       generateAndroidSplashAssets(appDir, appConfig.splash || {});
+      copyBundledImages(appDir, 'android', cleanAppName);
       if (allFonts.length > 0) {
         copyFonts(appDir, allFonts, 'android', cleanAppName);
       }

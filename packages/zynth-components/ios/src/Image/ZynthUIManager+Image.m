@@ -363,6 +363,15 @@ static void SNImageLoadAsset(NSString *asset, id bundleValue, id scaleValue, Zyn
   }
   UIImage *image = [UIImage imageNamed:asset inBundle:bundle compatibleWithTraitCollection:nil];
   if (!image) {
+    NSString *resourcePath = bundle.resourcePath;
+    if (resourcePath.length > 0) {
+      NSString *assetPath = [resourcePath stringByAppendingPathComponent:asset];
+      if ([[NSFileManager defaultManager] fileExistsAtPath:assetPath]) {
+        image = [UIImage imageWithContentsOfFile:assetPath];
+      }
+    }
+  }
+  if (!image) {
     SNImageEmitError([NSString stringWithFormat:@"Asset %@ not found", asset], node, manager);
     return;
   }

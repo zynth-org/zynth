@@ -86,5 +86,33 @@ targets:
             echo "📦 Copying Hermes bytecode..."
             cp "$HBC_PATH" "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/main.hbc"
           fi
+
+          # Copy bundled image assets discovered during JS build.
+          IMAGES_MANIFEST_PATH="apps/{{APP_DIR}}/dist/assets/images-manifest.json"
+          if [ -f "$IMAGES_MANIFEST_PATH" ]; then
+            echo "🖼️ Copying bundled image assets..."
+            export IMAGES_MANIFEST_PATH
+            node -e '
+              const fs = require("fs");
+              const path = require("path");
+              const manifestPath = process.env.IMAGES_MANIFEST_PATH;
+              const resourcesDir = path.join(
+                process.env.BUILT_PRODUCTS_DIR || "",
+                process.env.UNLOCALIZED_RESOURCES_FOLDER_PATH || "",
+              );
+              let copied = 0;
+              const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+              for (const [relativeDest, sourcePath] of Object.entries(manifest)) {
+                if (!relativeDest || typeof sourcePath !== "string") continue;
+                if (!fs.existsSync(sourcePath)) continue;
+                const normalizedDest = relativeDest.replace(/^\/+/, "");
+                const outputPath = path.join(resourcesDir, normalizedDest);
+                fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+                fs.copyFileSync(sourcePath, outputPath);
+                copied += 1;
+              }
+              console.log(`  ✓ Copied ${copied} bundled image asset(s)`);
+            '
+          fi
     dependencies:
       - sdk: JavaScriptCore.framework

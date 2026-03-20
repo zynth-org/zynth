@@ -245,6 +245,15 @@ internal class ZynthImageComponent(
         if (system.isNotEmpty()) {
           return ImageSourceSpec.SystemData(system)
         }
+        val asset = value.optString("asset", "")
+        if (asset.isNotEmpty()) {
+          val scale = value.optDouble("scale", Double.NaN)
+          return ImageSourceSpec.AssetData(
+            asset,
+            value.optString("bundle", "").takeIf { it.isNotBlank() },
+            if (!scale.isNaN() && scale > 0) scale.toFloat() else null,
+          )
+        }
         val data = value.optString("data", "")
         if (data.isNotEmpty()) {
           val scale = value.optDouble("scale", Double.NaN)

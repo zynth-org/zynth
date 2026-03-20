@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import path from "node:path";
+import fs from "node:fs";
 
 interface ImageAssetDescriptor {
   type: "asset";
@@ -43,6 +44,32 @@ export default function imageAssetLoader(this: any, content: Buffer): string {
     hash,
     scale,
   };
+
+  // Record image in manifest for native build discovery
+  try {
+    const distDir = path.resolve(this.rootContext, "dist");
+    const manifestDir = path.join(distDir, "assets");
+    const manifestPath = path.join(manifestDir, "images-manifest.json");
+
+    if (!fs.existsSync(manifestDir)) {
+      fs.mkdirSync(manifestDir, { recursive: true });
+    }
+
+    let manifest: Record<string, string> = {};
+    if (fs.existsSync(manifestPath)) {
+      try {
+        manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+      } catch (_error) {
+        manifest = {};
+      }
+    }
+
+    const nativeAssetId = `${baseName}-${hash}.${parsed.ext.slice(1)}`;
+    manifest[`images/${nativeAssetId}`] = absolutePath;
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+  } catch (_error) {
+    // Ignore manifest write errors (might happen in some environments)
+  }
 
   // In development, include the absolute path for dev server serving
   if (isDev) {
