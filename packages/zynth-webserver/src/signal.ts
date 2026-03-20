@@ -19,6 +19,10 @@ export type WebServerSignal = {
   stop(): Promise<void>;
   pollEvents(maxEvents?: number): Promise<WebServerEvent[]>;
   getUploadState(): Promise<WebServerUploadState>;
+  setSignal(key: string, payload: unknown): Promise<void>;
+  getSignal<T = unknown>(key: string, consume?: boolean): Promise<T | null>;
+  setReply(key: string, payload: unknown): Promise<void>;
+  getReply<T = unknown>(key: string, consume?: boolean): Promise<T | null>;
   subscribe(
     listener: (snapshot: WebServerSubscriptionSnapshot) => void,
     options?: WebServerSubscribeOptions
@@ -69,6 +73,28 @@ export function createWebServerSignal(): WebServerSignal {
     return WebServer.getUploadState();
   };
 
+  const setSignal = async (key: string, payload: unknown): Promise<void> => {
+    await WebServer.setSignal(key, payload);
+  };
+
+  const getSignal = async <T = unknown>(
+    key: string,
+    consume?: boolean
+  ): Promise<T | null> => {
+    return WebServer.getSignal<T>(key, consume);
+  };
+
+  const setReply = async (key: string, payload: unknown): Promise<void> => {
+    await WebServer.setReply(key, payload);
+  };
+
+  const getReply = async <T = unknown>(
+    key: string,
+    consume?: boolean
+  ): Promise<T | null> => {
+    return WebServer.getReply<T>(key, consume);
+  };
+
   const subscribe = (
     listener: (snapshot: WebServerSubscriptionSnapshot) => void,
     options?: WebServerSubscribeOptions
@@ -84,6 +110,10 @@ export function createWebServerSignal(): WebServerSignal {
     stop,
     pollEvents,
     getUploadState,
+    setSignal,
+    getSignal,
+    setReply,
+    getReply,
     subscribe,
   };
 }

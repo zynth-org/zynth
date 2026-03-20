@@ -38,6 +38,8 @@ export type WebServerInfo = {
   uploadPath?: string | null;
   uploadMetadataPath?: string | null;
   eventsPath?: string | null;
+  signalPath?: string | null;
+  replyPath?: string | null;
 };
 
 export type WebServerUploadLifecycleEventType =

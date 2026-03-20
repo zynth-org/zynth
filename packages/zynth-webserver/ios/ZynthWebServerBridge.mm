@@ -102,4 +102,35 @@
   return result;
 }
 
++ (BOOL)setReply:(void *)handle key:(NSString *)key payloadJson:(NSString *)payloadJson {
+  if (!handle || key.length == 0 || payloadJson == nil) {
+    return NO;
+  }
+  int ok = zynth_webserver_set_reply(
+    (ZynthWebServer *)handle,
+    key.UTF8String,
+    payloadJson.UTF8String
+  );
+  return ok != 0;
+}
+
++ (NSString *_Nullable)getReplyJson:(void *)handle
+                                 key:(NSString *)key
+                             consume:(BOOL)consume {
+  if (!handle || key.length == 0) {
+    return nil;
+  }
+  char *json = zynth_webserver_get_reply_json(
+    (ZynthWebServer *)handle,
+    key.UTF8String,
+    consume ? 1 : 0
+  );
+  if (!json) {
+    return nil;
+  }
+  NSString *result = [NSString stringWithUTF8String:json];
+  zynth_webserver_free_string(json);
+  return result;
+}
+
 @end

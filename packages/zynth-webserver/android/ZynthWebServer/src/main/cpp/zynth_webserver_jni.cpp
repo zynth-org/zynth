@@ -173,3 +173,53 @@ Java_dev_zynth_webserver_ZynthWebServerNative_getUploadStateJson(
   zynth_webserver_free_string(json);
   return result;
 }
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_dev_zynth_webserver_ZynthWebServerNative_setReply(
+  JNIEnv *env,
+  jobject,
+  jlong handle,
+  jstring key,
+  jstring payloadJson
+) {
+  auto *server = reinterpret_cast<ZynthWebServer *>(handle);
+  if (!server || !key || !payloadJson) {
+    return JNI_FALSE;
+  }
+  std::string keyStr = jstringToString(env, key);
+  std::string payloadStr = jstringToString(env, payloadJson);
+  if (keyStr.empty()) {
+    return JNI_FALSE;
+  }
+  int ok = zynth_webserver_set_reply(server, keyStr.c_str(), payloadStr.c_str());
+  return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_dev_zynth_webserver_ZynthWebServerNative_getReplyJson(
+  JNIEnv *env,
+  jobject,
+  jlong handle,
+  jstring key,
+  jboolean consume
+) {
+  auto *server = reinterpret_cast<ZynthWebServer *>(handle);
+  if (!server || !key) {
+    return nullptr;
+  }
+  std::string keyStr = jstringToString(env, key);
+  if (keyStr.empty()) {
+    return nullptr;
+  }
+  char *json = zynth_webserver_get_reply_json(
+    server,
+    keyStr.c_str(),
+    consume == JNI_TRUE ? 1 : 0
+  );
+  if (!json) {
+    return nullptr;
+  }
+  jstring result = env->NewStringUTF(json);
+  zynth_webserver_free_string(json);
+  return result;
+}

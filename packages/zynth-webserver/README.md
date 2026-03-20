@@ -10,11 +10,10 @@ Embedded native HTTP server for Zynth apps.
 - Optional upload metadata callback endpoint
 - Optional token guard for upload/metadata routes
 - Upload state inspection (active uploads + totals)
+- In-memory app-to-web signaling endpoint (`/__zynth/signal`)
 - Solid-friendly signal + subscription helpers
 
-## Basic
-
-### Install
+## Install
 
 ```bash
 npm i @zynth/webserver
@@ -22,17 +21,16 @@ npm i @zynth/webserver
 
 Regenerate native projects after adding the package.
 
-### Basic usage
+## Quick Start
 
 ```ts
 import { WebServer } from "@zynth/webserver";
 
 const info = await WebServer.start({
   port: 0,
-  indexHtml: "<h1>Hello</h1>",
+  indexHtml: "<h1>Hello from Zynth</h1>",
   upload: {
     enabled: true,
-    directory: "/tmp/uploads",
     maxBytes: 10 * 1024 * 1024,
   },
   events: {
@@ -40,17 +38,14 @@ const info = await WebServer.start({
   },
 });
 
-console.log(info.url);
-
-const events = await WebServer.drainEvents(100);
-console.log(events.length);
+console.log(info.url, info.uploadPath, info.eventsPath, info.signalPath);
 
 await WebServer.stop();
 ```
 
-### Recommended Solid usage
+## Solid Integration
 
-Use `createWebServerSignal()` in components. It manages start/stop status and gives low-level accessors/actions.
+Use `createWebServerSignal()` in components to manage lifecycle state and read events.
 
 ```ts
 import { createWebServerSignal } from "@zynth/webserver";
@@ -64,18 +59,184 @@ await server.start({
 });
 
 const events = await server.pollEvents(100);
+console.log(events.length);
 ```
 
-## Advanced
+## Endpoints
 
-### Why `subscribe`
+Default endpoints (when enabled):
 
-`WebServer.subscribe` is the preferred event stream DX when you want continuous updates without manually polling everywhere.
+- Upload: `/__zynth/upload`
+- Browser->App event postbox: `/__zynth/events`
+- App->Browser signal store: `/__zynth/signal`
+- Compatibility alias: `/__zynth/reply`
 
-- provides periodic snapshots (`running`, `info`, `events`, `uploadState`)
-- configurable interval/event batch size
-- single `remove()` cleanup contract
-- safe fallback behavior if individual snapshot fields fail
+Optional endpoint:
+
+- Upload metadata callback: disabled by default (`upload.metadataPath`)
+
+## Uploads
+
+### Start With Upload + Metadata + Guard
+
+```ts
+await WebServer.start({
+  upload: {
+    enabled: true,
+    path: "/__zynth/upload",
+    metadataPath: "/__zynth/upload/metadata",
+    maxBytes: 10 * 1024 * 1024,
+    authToken: "zynth-demo-token",
+    authTokenHeader: "X-Zynth-Upload-Token",
+    authTokenQueryParam: "token",
+  },
+  events: {
+    enabled: true,
+  },
+});
+```
+
+### Upload Event Types
+
+- `upload_started`
+- `upload_progress`
+- `upload_completed`
+- `upload_failed`
+- `upload_metadata`
+
+Use `WebServer.drainEvents(...)` or `WebServer.subscribe(...)` to receive them.
+
+### Upload State
+
+```ts
+const state = await WebServer.getUploadState();
+console.log(state.activeCount, state.totalCompleted, state.totalBytesReceived);
+```
+
+## In-Memory Signaling
+
+The signal store solves app->browser communication without filesystem polling.
+
+### API
+
+- `WebServer.setSignal(key, payload)`
+- `WebServer.getSignal(key, consume?)`
+- `WebServer.getSignalPath()`
+
+Compatibility aliases:
+
+- `setReply` -> `setSignal`
+- `getReply` -> `getSignal`
+- `/__zynth/reply` -> `/__zynth/signal`
+
+### Semantics
+
+- Writes are keyed (`key -> JSON payload`).
+- `GET /__zynth/signal?id=<key>` defaults to consume-on-read.
+- Use `consume=0` for non-consuming reads.
+- Missing key returns `204 No Content`.
+
+### HTTP Contract
+
+- `GET /__zynth/signal?id=<key>&consume=1|0`
+  - `200` with JSON payload when found
+  - `204` when not found
+  - `400` when `id` is missing
+  - `405` for unsupported methods
+
+### App-Side Example
+
+```ts
+await WebServer.setSignal("offer-42", {
+  requestId: "offer-42",
+  decision: "accepted",
+  accepted: true,
+  at: Date.now(),
+});
+
+const peek = await WebServer.getSignal("offer-42", false);
+console.log(peek);
+```
+
+### Browser-Side Example
+
+```ts
+async function waitForDecision(requestId: string): Promise<unknown | null> {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    const res = await fetch(
+      `/__zynth/signal?id=${encodeURIComponent(requestId)}&consume=1`
+    );
+    if (res.status === 200) {
+      return await res.json();
+    }
+    if (res.status !== 204) {
+      throw new Error(`Signal read failed: HTTP ${res.status}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  return null;
+}
+```
+
+## Full Offer/Decision Handshake (Recommended)
+
+This is the common pattern for accept/reject workflows.
+
+### 1) Browser posts offer to app
+
+```ts
+await fetch("/__zynth/events", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    type: "signal_offer",
+    requestId: "offer-123",
+    fileName: "report.pdf",
+    size: 120394,
+    at: Date.now(),
+  }),
+});
+```
+
+### 2) App listens for `message` events
+
+```ts
+const events = await WebServer.drainEvents(100);
+for (const event of events) {
+  if (event.type !== "message" || typeof event.payload !== "object") continue;
+  const payload = event.payload as Record<string, unknown>;
+  if (payload.type === "signal_offer" && typeof payload.requestId === "string") {
+    // Show offer in UI, then resolve with setSignal(...)
+  }
+}
+```
+
+### 3) App resolves request ID
+
+```ts
+await WebServer.setSignal("offer-123", {
+  requestId: "offer-123",
+  decision: "rejected",
+  accepted: false,
+  reason: "user_declined",
+  at: Date.now(),
+});
+```
+
+### 4) Browser receives final decision
+
+```ts
+const res = await fetch("/__zynth/signal?id=offer-123&consume=1");
+if (res.status === 200) {
+  const decision = await res.json();
+  console.log(decision);
+}
+```
+
+## Subscriptions
+
+`WebServer.subscribe` is the preferred continuous stream API.
 
 ```ts
 const sub = WebServer.subscribe(
@@ -95,81 +256,17 @@ const sub = WebServer.subscribe(
 sub.remove();
 ```
 
-### Upload metadata callback
+## Production Notes
 
-You can expose a separate metadata endpoint and receive `upload_metadata` events.
+- Prefer stable request IDs (UUIDs) for signaling keys.
+- Use `consume=1` for one-shot decisions.
+- Use `consume=0` only for diagnostics/preview.
+- Treat `204` as "not ready yet", not as an error.
+- Keep polling intervals reasonable (300-1000ms).
+- Signal storage is in-memory and process-local.
+- Legacy alias endpoints/methods are supported for compatibility.
 
-```ts
-await WebServer.start({
-  upload: {
-    enabled: true,
-    metadataPath: "/__zynth/upload/metadata",
-  },
-});
-
-// POST JSON to /__zynth/upload/metadata
-// then read via WebServer.drainEvents(...)
-```
-
-### Upload guard token
-
-Set `upload.authToken` to require token validation on upload/metadata endpoints.
-
-By default, token is accepted from:
-
-- header: `X-Zynth-Upload-Token`
-- query param: `token`
-
-Both keys are customizable:
-
-- `upload.authTokenHeader`
-- `upload.authTokenQueryParam`
-
-```ts
-await WebServer.start({
-  upload: {
-    enabled: true,
-    authToken: "zynth-demo-token",
-    authTokenHeader: "X-Zynth-Upload-Token",
-    authTokenQueryParam: "token",
-  },
-});
-```
-
-### Upload lifecycle events
-
-Upload route emits structured events:
-
-- `upload_started`
-- `upload_progress`
-- `upload_completed`
-- `upload_failed`
-
-Each lifecycle event payload includes fields like:
-
-- `uploadId`, `phase`, `name`, `path`
-- `bytesReceived`, `totalBytes`
-- `method`, `remoteAddress`, `contentType`
-- `statusCode`, `reason`, `metadata`
-
-### Upload inspection
-
-Use upload state to inspect active transfers and aggregate totals.
-
-```ts
-const state = await WebServer.getUploadState();
-console.log(state.activeCount, state.totalCompleted, state.totalBytesReceived);
-```
-
-### Common endpoint defaults
-
-When enabled, defaults are:
-
-- upload path: `/__zynth/upload`
-- events path: `/__zynth/events`
-- metadata path: `null` (disabled unless explicitly set)
-
-## API reference
+## API Reference
 
 ### `WebServer`
 
@@ -179,17 +276,28 @@ When enabled, defaults are:
 - `getInfo(): Promise<WebServerInfo | null>`
 - `getUploadState(): Promise<WebServerUploadState>`
 - `drainEvents(maxEvents?: number): Promise<WebServerEvent[]>`
+- `setSignal(key: string, payload: unknown): Promise<void>`
+- `getSignal<T = unknown>(key: string, consume?: boolean): Promise<T | null>`
+- `setReply(key: string, payload: unknown): Promise<void>` (compatibility alias)
+- `getReply<T = unknown>(key: string, consume?: boolean): Promise<T | null>` (compatibility alias)
 - `subscribe(listener, options?): WebServerSubscription`
 - `isAvailable(): boolean`
+- `getSignalPath(): string`
+- `getReplyPath(): string`
 
 ### `createWebServerSignal()`
 
 Returns `WebServerSignal` with:
 
-- accessors: `status`, `info`, `error`
-- actions: `start`, `stop`, `pollEvents`, `getUploadState`, `subscribe`
+- Accessors: `status`, `info`, `error`
+- Actions:
+  - `start`, `stop`
+  - `pollEvents`, `getUploadState`
+  - `setSignal`, `getSignal`
+  - `setReply`, `getReply`
+  - `subscribe`
 
-### Core types
+### Core Types
 
 - `WebServerStatus`
   - `"idle" | "starting" | "running" | "stopped" | "error"`
@@ -205,7 +313,7 @@ Returns `WebServerSignal` with:
   - `enabled?`, `path?`
 
 - `WebServerInfo`
-  - `host`, `port`, `url`, `documentRoot?`, `uploadPath?`, `uploadMetadataPath?`, `eventsPath?`
+  - `host`, `port`, `url`, `documentRoot?`, `uploadPath?`, `uploadMetadataPath?`, `eventsPath?`, `signalPath?`, `replyPath?`
 
 - `WebServerEventType`
   - `"upload_started" | "upload_progress" | "upload_completed" | "upload_failed" | "upload_metadata" | "message"`
@@ -224,3 +332,4 @@ Returns `WebServerSignal` with:
 
 - `WebServerSubscription`
   - `remove()`
+

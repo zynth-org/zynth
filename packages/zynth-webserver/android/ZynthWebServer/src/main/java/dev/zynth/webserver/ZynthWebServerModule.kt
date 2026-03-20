@@ -15,7 +15,18 @@ class ZynthWebServerModule(
     private var serverHandle: Long = 0
     private var serverInfo: JSONObject? = null
 
-    override val exportedMethods: List<String> = listOf("start", "stop", "isRunning", "getInfo", "getUploadState", "drainEvents")
+    override val exportedMethods: List<String> = listOf(
+        "start",
+        "stop",
+        "isRunning",
+        "getInfo",
+        "getUploadState",
+        "drainEvents",
+        "setSignal",
+        "getSignal",
+        "setReply",
+        "getReply"
+    )
     override val protectedMethods: List<String> = listOf("start", "stop")
 
     override fun invalidate() {
@@ -37,6 +48,10 @@ class ZynthWebServerModule(
             "getInfo" -> resultResponse(serverInfo ?: JSONObject.NULL)
             "getUploadState" -> resultResponse(getUploadState())
             "drainEvents" -> drainEvents(args)
+            "setSignal" -> setSignal(args)
+            "getSignal" -> getSignal(args)
+            "setReply" -> setReply(args)
+            "getReply" -> getReply(args)
             else -> throw IllegalArgumentException("Unsupported method: $method")
         }
     }
@@ -46,6 +61,8 @@ class ZynthWebServerModule(
             "isRunning" -> isRunning()
             "getInfo" -> serverInfo ?: JSONObject.NULL
             "getUploadState" -> getUploadState()
+            "getSignal" -> getSignal(args).get("result")
+            "getReply" -> getReply(args).get("result")
             else -> throw IllegalArgumentException("Unsupported method: $method")
         }
     }
@@ -98,6 +115,8 @@ class ZynthWebServerModule(
             put("uploadPath", uploadPath ?: JSONObject.NULL)
             put("uploadMetadataPath", uploadMetadataPath ?: JSONObject.NULL)
             put("eventsPath", eventsPath ?: JSONObject.NULL)
+            put("signalPath", "/__zynth/signal")
+            put("replyPath", "/__zynth/reply")
         }
         serverInfo = info
         return resultResponse(info)
@@ -165,6 +184,51 @@ class ZynthWebServerModule(
                 .put("totalFailed", 0)
                 .put("totalBytesReceived", 0)
                 .put("activeUploads", JSONArray())
+        }
+    }
+
+    private fun setReply(args: ZynthArgs): JSONObject {
+        return setSignal(args)
+    }
+
+    private fun getReply(args: ZynthArgs): JSONObject {
+        return getSignal(args)
+    }
+
+    private fun setSignal(args: ZynthArgs): JSONObject {
+        if (serverHandle == 0L) {
+            return resultResponse(false)
+        }
+        val key = args.getString("key", "").trim()
+        if (key.isEmpty()) {
+            return resultResponse(false)
+        }
+        val payloadJson = args.getString("payloadJson", "null")
+        val ok = ZynthWebServerNative.setReply(serverHandle, key, payloadJson)
+        return resultResponse(ok)
+    }
+
+    private fun getSignal(args: ZynthArgs): JSONObject {
+        if (serverHandle == 0L) {
+            return resultResponse(JSONObject.NULL)
+        }
+        val key = args.getString("key", "").trim()
+        if (key.isEmpty()) {
+            return resultResponse(JSONObject.NULL)
+        }
+        val consume = args.getBoolean("consume", true)
+        val raw = ZynthWebServerNative.getReplyJson(serverHandle, key, consume)
+        if (raw.isNullOrBlank()) {
+            return resultResponse(JSONObject.NULL)
+        }
+        return try {
+            resultResponse(JSONObject(raw))
+        } catch (_: Throwable) {
+            try {
+                resultResponse(JSONArray(raw))
+            } catch (_: Throwable) {
+                resultResponse(raw)
+            }
         }
     }
 

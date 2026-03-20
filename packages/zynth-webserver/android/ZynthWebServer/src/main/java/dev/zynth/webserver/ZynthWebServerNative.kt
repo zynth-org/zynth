@@ -28,4 +28,6 @@ object ZynthWebServerNative {
 
     external fun drainEvents(handle: Long, maxEvents: Int): Array<NativeWebServerEvent>
     external fun getUploadStateJson(handle: Long): String?
+    external fun setReply(handle: Long, key: String, payloadJson: String): Boolean
+    external fun getReplyJson(handle: Long, key: String, consume: Boolean): String?
 }

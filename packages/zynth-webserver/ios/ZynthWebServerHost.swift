@@ -8,6 +8,8 @@ struct WebServerInfo {
   let uploadPath: String?
   let uploadMetadataPath: String?
   let eventsPath: String?
+  let signalPath: String?
+  let replyPath: String?
 
   func toDictionary() -> [String: Any] {
     return [
@@ -18,6 +20,8 @@ struct WebServerInfo {
       "uploadPath": uploadPath ?? NSNull(),
       "uploadMetadataPath": uploadMetadataPath ?? NSNull(),
       "eventsPath": eventsPath ?? NSNull(),
+      "signalPath": signalPath ?? NSNull(),
+      "replyPath": replyPath ?? NSNull(),
     ]
   }
 }
@@ -119,7 +123,9 @@ final class ZynthWebServerHost {
       documentRoot: config.documentRoot,
       uploadPath: config.uploadPath,
       uploadMetadataPath: config.uploadMetadataPath,
-      eventsPath: config.eventsPath
+      eventsPath: config.eventsPath,
+      signalPath: "/__zynth/signal",
+      replyPath: "/__zynth/reply"
     )
     self.info = info
     return info
@@ -174,5 +180,30 @@ final class ZynthWebServerHost {
       totalBytesReceived: (object["totalBytesReceived"] as? NSNumber)?.int64Value ?? 0,
       activeUploads: object["activeUploads"] as? [[String: Any]] ?? []
     )
+  }
+
+  func setReply(key: String, payloadJson: String) -> Bool {
+    guard let server = handle else {
+      return false
+    }
+    if key.isEmpty {
+      return false
+    }
+    return ZynthWebServerBridge.setReply(server, key: key, payloadJson: payloadJson)
+  }
+
+  func getReply(key: String, consume: Bool) -> Any? {
+    guard let server = handle else {
+      return nil
+    }
+    if key.isEmpty {
+      return nil
+    }
+    guard let json = ZynthWebServerBridge.getReplyJson(server, key: key, consume: consume),
+      let data = json.data(using: .utf8)
+    else {
+      return nil
+    }
+    return try? JSONSerialization.jsonObject(with: data)
   }
 }

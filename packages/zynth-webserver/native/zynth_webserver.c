@@ -27,6 +27,13 @@ typedef struct ZynthActiveUploadNode {
   struct ZynthActiveUploadNode *next;
 } ZynthActiveUploadNode;
 
+typedef struct ZynthReplyNode {
+  char *key;
+  char *payload_json;
+  long long updated_at_ms;
+  struct ZynthReplyNode *next;
+} ZynthReplyNode;
+
 struct ZynthWebServer {
   struct mg_context *ctx;
   char *host;
@@ -46,12 +53,20 @@ struct ZynthWebServer {
   ZynthWebServerEventNode *events_tail;
   pthread_mutex_t uploads_mutex;
   ZynthActiveUploadNode *active_uploads_head;
+  pthread_mutex_t replies_mutex;
+  ZynthReplyNode *replies_head;
+  size_t replies_count;
+  size_t replies_max_entries;
   long long next_upload_id;
   long long total_uploads_started;
   long long total_uploads_completed;
   long long total_uploads_failed;
   long long total_upload_bytes_received;
 };
+
+static const char *ZYNTH_SIGNAL_ENDPOINT_PATH = "/__zynth/signal";
+static const char *ZYNTH_REPLY_ENDPOINT_PATH = "/__zynth/reply";
+static const size_t ZYNTH_DEFAULT_MAX_SIGNAL_ENTRIES = 1024;
 
 static char *zynth_strdup(const char *value) {
   if (!value) return NULL;
@@ -209,6 +224,23 @@ static void zynth_webserver_clear_active_uploads(ZynthWebServer *server) {
   }
 }
 
+static void zynth_webserver_clear_replies(ZynthWebServer *server) {
+  if (!server) return;
+  pthread_mutex_lock(&server->replies_mutex);
+  ZynthReplyNode *node = server->replies_head;
+  server->replies_head = NULL;
+  server->replies_count = 0;
+  pthread_mutex_unlock(&server->replies_mutex);
+
+  while (node) {
+    ZynthReplyNode *next = node->next;
+    zynth_free(node->key);
+    zynth_free(node->payload_json);
+    zynth_free(node);
+    node = next;
+  }
+}
+
 static int zynth_is_allowed_filename_char(char value) {
   if (value >= 'a' && value <= 'z') return 1;
   if (value >= 'A' && value <= 'Z') return 1;
@@ -288,6 +320,131 @@ static int zynth_get_query_param(
 static int zynth_string_equals(const char *a, const char *b) {
   if (!a || !b) return 0;
   return strcmp(a, b) == 0;
+}
+
+static int zynth_parse_query_bool(
+  const char *query_string,
+  const char *key,
+  int default_value
+) {
+  char buffer[32];
+  if (!zynth_get_query_param(query_string, key, buffer, sizeof(buffer))) {
+    return default_value;
+  }
+  if (buffer[0] == '\0') {
+    return default_value;
+  }
+  if (strcmp(buffer, "0") == 0 || strcmp(buffer, "false") == 0 ||
+      strcmp(buffer, "no") == 0 || strcmp(buffer, "off") == 0) {
+    return 0;
+  }
+  return 1;
+}
+
+static int zynth_webserver_set_reply_locked(
+  ZynthWebServer *server,
+  const char *key,
+  const char *payload_json
+) {
+  if (!server || !key || !*key || !payload_json) {
+    return 0;
+  }
+
+  ZynthReplyNode *node = server->replies_head;
+  while (node) {
+    if (strcmp(node->key, key) == 0) {
+      char *next_payload = zynth_strdup(payload_json);
+      if (!next_payload) {
+        return 0;
+      }
+      zynth_free(node->payload_json);
+      node->payload_json = next_payload;
+      node->updated_at_ms = zynth_now_ms();
+      return 1;
+    }
+    node = node->next;
+  }
+
+  ZynthReplyNode *created = (ZynthReplyNode *)calloc(1, sizeof(ZynthReplyNode));
+  if (!created) {
+    return 0;
+  }
+  created->key = zynth_strdup(key);
+  created->payload_json = zynth_strdup(payload_json);
+  if (!created->key || !created->payload_json) {
+    zynth_free(created->key);
+    zynth_free(created->payload_json);
+    zynth_free(created);
+    return 0;
+  }
+  created->updated_at_ms = zynth_now_ms();
+  created->next = server->replies_head;
+  server->replies_head = created;
+  server->replies_count += 1;
+
+  while (server->replies_max_entries > 0 &&
+         server->replies_count > server->replies_max_entries) {
+    ZynthReplyNode *cursor = server->replies_head;
+    ZynthReplyNode *previous = NULL;
+    if (!cursor) {
+      server->replies_count = 0;
+      break;
+    }
+    while (cursor->next) {
+      previous = cursor;
+      cursor = cursor->next;
+    }
+    if (previous) {
+      previous->next = NULL;
+    } else {
+      server->replies_head = NULL;
+    }
+    zynth_free(cursor->key);
+    zynth_free(cursor->payload_json);
+    zynth_free(cursor);
+    if (server->replies_count > 0) {
+      server->replies_count -= 1;
+    }
+  }
+  return 1;
+}
+
+static char *zynth_webserver_get_reply_locked(
+  ZynthWebServer *server,
+  const char *key,
+  int consume
+) {
+  if (!server || !key || !*key) {
+    return NULL;
+  }
+
+  ZynthReplyNode *node = server->replies_head;
+  ZynthReplyNode *previous = NULL;
+  while (node) {
+    if (strcmp(node->key, key) == 0) {
+      char *result = zynth_strdup(node->payload_json ? node->payload_json : "null");
+      if (!result) {
+        return NULL;
+      }
+      if (consume) {
+        if (previous) {
+          previous->next = node->next;
+        } else {
+          server->replies_head = node->next;
+        }
+        if (server->replies_count > 0) {
+          server->replies_count -= 1;
+        }
+        zynth_free(node->key);
+        zynth_free(node->payload_json);
+        zynth_free(node);
+      }
+      return result;
+    }
+    previous = node;
+    node = node->next;
+  }
+  return NULL;
 }
 
 static int zynth_is_authorized(
@@ -612,6 +769,17 @@ static void zynth_send_status(
   );
 }
 
+static void zynth_send_json(struct mg_connection *conn, int status, const char *json) {
+  const char *value = json ? json : "null";
+  mg_printf(
+    conn,
+    "HTTP/1.1 %d\r\nContent-Length: %zu\r\nContent-Type: application/json\r\n\r\n%s",
+    status,
+    strlen(value),
+    value
+  );
+}
+
 static int zynth_handle_index(struct mg_connection *conn, void *cbdata) {
   ZynthWebServer *server = (ZynthWebServer *)cbdata;
   if (!server || !server->index_html) {
@@ -901,6 +1069,49 @@ static int zynth_handle_upload(struct mg_connection *conn, void *cbdata) {
   return 1;
 }
 
+static int zynth_handle_reply(struct mg_connection *conn, void *cbdata) {
+  ZynthWebServer *server = (ZynthWebServer *)cbdata;
+  if (!server) return 0;
+  const struct mg_request_info *request = mg_get_request_info(conn);
+  if (!request || !request->request_method) {
+    return 0;
+  }
+  if (strcmp(request->request_method, "GET") != 0 &&
+      strcmp(request->request_method, "HEAD") != 0) {
+    zynth_send_status(conn, 405, "Method Not Allowed");
+    return 1;
+  }
+
+  char reply_id[256];
+  if (!zynth_get_query_param(request->query_string, "id", reply_id, sizeof(reply_id)) ||
+      !reply_id[0]) {
+    zynth_send_status(conn, 400, "Missing id");
+    return 1;
+  }
+  int consume = zynth_parse_query_bool(request->query_string, "consume", 1);
+
+  pthread_mutex_lock(&server->replies_mutex);
+  char *payload = zynth_webserver_get_reply_locked(server, reply_id, consume);
+  pthread_mutex_unlock(&server->replies_mutex);
+
+  if (!payload) {
+    zynth_send_status(conn, 204, "");
+    return 1;
+  }
+
+  if (strcmp(request->request_method, "HEAD") == 0) {
+    mg_printf(
+      conn,
+      "HTTP/1.1 200 OK\r\nContent-Length: %zu\r\nContent-Type: application/json\r\n\r\n",
+      strlen(payload)
+    );
+  } else {
+    zynth_send_json(conn, 200, payload);
+  }
+  zynth_free(payload);
+  return 1;
+}
+
 static int zynth_handle_events(struct mg_connection *conn, void *cbdata) {
   ZynthWebServer *server = (ZynthWebServer *)cbdata;
   if (!server) return 0;
@@ -1065,9 +1276,11 @@ ZynthWebServer *zynth_webserver_start(const ZynthWebServerConfig *config) {
   server->upload_auth_query_key = zynth_strdup(config->upload_auth_query_key);
   server->max_upload_bytes = config->max_upload_bytes;
   server->events_path = zynth_strdup(config->events_path);
+  server->replies_max_entries = ZYNTH_DEFAULT_MAX_SIGNAL_ENTRIES;
 
   pthread_mutex_init(&server->events_mutex, NULL);
   pthread_mutex_init(&server->uploads_mutex, NULL);
+  pthread_mutex_init(&server->replies_mutex, NULL);
 
   char port_buffer[64];
   if (server->host && *server->host) {
@@ -1123,6 +1336,8 @@ ZynthWebServer *zynth_webserver_start(const ZynthWebServerConfig *config) {
   if (server->events_path && *server->events_path) {
     mg_set_request_handler(server->ctx, server->events_path, zynth_handle_events, server);
   }
+  mg_set_request_handler(server->ctx, ZYNTH_SIGNAL_ENDPOINT_PATH, zynth_handle_reply, server);
+  mg_set_request_handler(server->ctx, ZYNTH_REPLY_ENDPOINT_PATH, zynth_handle_reply, server);
 
   struct mg_server_ports ports[1];
   int count = mg_get_server_ports(server->ctx, 1, ports);
@@ -1141,8 +1356,10 @@ void zynth_webserver_stop(ZynthWebServer *server) {
   }
   zynth_webserver_clear_events(server);
   zynth_webserver_clear_active_uploads(server);
+  zynth_webserver_clear_replies(server);
   pthread_mutex_destroy(&server->events_mutex);
   pthread_mutex_destroy(&server->uploads_mutex);
+  pthread_mutex_destroy(&server->replies_mutex);
   zynth_free(server->host);
   zynth_free(server->document_root);
   zynth_free(server->index_html);
@@ -1299,6 +1516,34 @@ char *zynth_webserver_get_upload_state_json(ZynthWebServer *server) {
   );
   zynth_free(uploads_json);
   return out;
+}
+
+int zynth_webserver_set_reply(
+  ZynthWebServer *server,
+  const char *key,
+  const char *payload_json
+) {
+  if (!server || !key || !*key || !payload_json) {
+    return 0;
+  }
+  pthread_mutex_lock(&server->replies_mutex);
+  int result = zynth_webserver_set_reply_locked(server, key, payload_json);
+  pthread_mutex_unlock(&server->replies_mutex);
+  return result;
+}
+
+char *zynth_webserver_get_reply_json(
+  ZynthWebServer *server,
+  const char *key,
+  int consume
+) {
+  if (!server || !key || !*key) {
+    return NULL;
+  }
+  pthread_mutex_lock(&server->replies_mutex);
+  char *result = zynth_webserver_get_reply_locked(server, key, consume ? 1 : 0);
+  pthread_mutex_unlock(&server->replies_mutex);
+  return result;
 }
 
 void zynth_webserver_free_event(ZynthWebServerEvent *event) {

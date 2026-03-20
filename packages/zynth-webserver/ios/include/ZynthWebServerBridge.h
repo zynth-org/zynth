@@ -23,6 +23,10 @@ NS_ASSUME_NONNULL_BEGIN
 + (NSArray<NSDictionary *> *)drainEvents:(void *)handle
                                maxEvents:(NSInteger)maxEvents;
 + (NSString *_Nullable)uploadStateJson:(void *)handle;
++ (BOOL)setReply:(void *)handle key:(NSString *)key payloadJson:(NSString *)payloadJson;
++ (NSString *_Nullable)getReplyJson:(void *)handle
+                                 key:(NSString *)key
+                             consume:(BOOL)consume;
 
 @end
 

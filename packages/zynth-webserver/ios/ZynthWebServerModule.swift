@@ -7,7 +7,18 @@ final class ZynthWebServerModule: NSObject, ZynthModule, ZynthSyncModule {
   private let host = ZynthWebServerHost()
 
   var exportedMethods: [String] {
-    return ["start", "stop", "isRunning", "getInfo", "getUploadState", "drainEvents"]
+    return [
+      "start",
+      "stop",
+      "isRunning",
+      "getInfo",
+      "getUploadState",
+      "drainEvents",
+      "setSignal",
+      "getSignal",
+      "setReply",
+      "getReply",
+    ]
   }
 
   var protectedMethods: [String] {
@@ -34,6 +45,26 @@ final class ZynthWebServerModule: NSObject, ZynthModule, ZynthSyncModule {
       let maxEvents = Int(args.number("maxEvents", default: 50))
       let events = host.drainEvents(maxEvents: maxEvents)
       return ["result": events.map { $0.toDictionary() }]
+    case "setReply":
+      let key = args.string("key", default: "").trimmingCharacters(in: .whitespacesAndNewlines)
+      let payloadJson = args.string("payloadJson", default: "null")
+      let ok = host.setReply(key: key, payloadJson: payloadJson)
+      return ["result": ok]
+    case "getReply":
+      let key = args.string("key", default: "").trimmingCharacters(in: .whitespacesAndNewlines)
+      let consume = args.bool("consume", default: true)
+      let result = host.getReply(key: key, consume: consume)
+      return ["result": result ?? NSNull()]
+    case "setSignal":
+      let key = args.string("key", default: "").trimmingCharacters(in: .whitespacesAndNewlines)
+      let payloadJson = args.string("payloadJson", default: "null")
+      let ok = host.setReply(key: key, payloadJson: payloadJson)
+      return ["result": ok]
+    case "getSignal":
+      let key = args.string("key", default: "").trimmingCharacters(in: .whitespacesAndNewlines)
+      let consume = args.bool("consume", default: true)
+      let result = host.getReply(key: key, consume: consume)
+      return ["result": result ?? NSNull()]
     default:
       throw ZynthModuleError.methodNotExported(module: name, method: method)
     }
@@ -47,6 +78,14 @@ final class ZynthWebServerModule: NSObject, ZynthModule, ZynthSyncModule {
       return host.info?.toDictionary() ?? NSNull()
     case "getUploadState":
       return host.getUploadState().toDictionary()
+    case "getReply":
+      let key = args.string("key", default: "").trimmingCharacters(in: .whitespacesAndNewlines)
+      let consume = args.bool("consume", default: true)
+      return host.getReply(key: key, consume: consume) ?? NSNull()
+    case "getSignal":
+      let key = args.string("key", default: "").trimmingCharacters(in: .whitespacesAndNewlines)
+      let consume = args.bool("consume", default: true)
+      return host.getReply(key: key, consume: consume) ?? NSNull()
     default:
       throw ZynthModuleError.syncNotSupported(module: name, method: method)
     }

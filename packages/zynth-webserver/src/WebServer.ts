@@ -33,6 +33,8 @@ type NativeWebServerStartArgs = {
 const DEFAULT_HOST = "0.0.0.0";
 const DEFAULT_UPLOAD_PATH = "/__zynth/upload";
 const DEFAULT_EVENTS_PATH = "/__zynth/events";
+const DEFAULT_SIGNAL_PATH = "/__zynth/signal";
+const DEFAULT_REPLY_PATH = "/__zynth/reply";
 const DEFAULT_POLL_INTERVAL_MS = 500;
 const DEFAULT_MAX_EVENTS = 50;
 
@@ -241,6 +243,47 @@ const WebServer = {
       return [];
     }
     return result.map(parseEvent);
+  },
+  async setSignal(key: string, payload: unknown): Promise<void> {
+    await ensureAvailable();
+    const normalizedKey = key.trim();
+    if (!normalizedKey) {
+      throw new Error("WebServer.setSignal requires a non-empty key");
+    }
+    const payloadJson = JSON.stringify(payload ?? null);
+    const ok = await callNative<boolean>("setSignal", {
+      key: normalizedKey,
+      payloadJson,
+    });
+    if (!ok) {
+      throw new Error(`Failed to store signal for key "${normalizedKey}"`);
+    }
+  },
+  async getSignal<T = unknown>(key: string, consume = true): Promise<T | null> {
+    if (!isNativeAvailable()) {
+      return null;
+    }
+    const normalizedKey = key.trim();
+    if (!normalizedKey) {
+      return null;
+    }
+    const result = await callNative<T | null>("getSignal", {
+      key: normalizedKey,
+      consume,
+    });
+    return result ?? null;
+  },
+  getSignalPath(): string {
+    return DEFAULT_SIGNAL_PATH;
+  },
+  async setReply(key: string, payload: unknown): Promise<void> {
+    await WebServer.setSignal(key, payload);
+  },
+  async getReply<T = unknown>(key: string, consume = true): Promise<T | null> {
+    return WebServer.getSignal<T>(key, consume);
+  },
+  getReplyPath(): string {
+    return DEFAULT_REPLY_PATH;
   },
   subscribe(
     listener: (snapshot: WebServerSubscriptionSnapshot) => void,

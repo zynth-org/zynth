@@ -43,6 +43,16 @@ size_t zynth_webserver_drain_events(
 
 void zynth_webserver_free_event(ZynthWebServerEvent *event);
 char *zynth_webserver_get_upload_state_json(ZynthWebServer *server);
+int zynth_webserver_set_reply(
+  ZynthWebServer *server,
+  const char *key,
+  const char *payload_json
+);
+char *zynth_webserver_get_reply_json(
+  ZynthWebServer *server,
+  const char *key,
+  int consume
+);
 void zynth_webserver_free_string(char *value);
 
 #ifdef __cplusplus
