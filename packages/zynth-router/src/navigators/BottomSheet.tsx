@@ -39,6 +39,7 @@ import {
   HeaderHeightContext,
 } from "../integration/insets";
 import { registerAndroidBackHandler } from "../native/androidBackHandler";
+import { runAtomicNavigationTransition } from "../native/atomicNavigation";
 import type {
   RouteParamList,
   NavigationState,
@@ -120,6 +121,7 @@ export function BottomSheetNavigator(
     null,
   );
   const [hasNavigated, setHasNavigated] = createSignal(false);
+  const visitedRouteNames = new Set<string>();
 
   let bsRef: BottomSheetRef | null = null;
 
@@ -164,6 +166,7 @@ export function BottomSheetNavigator(
         index: 0,
         routes: [initialRoute],
       });
+      visitedRouteNames.add(initialRouteName);
       setInitialRouteKey(initialRoute.key);
       setInitialized(true);
     }
@@ -184,28 +187,36 @@ export function BottomSheetNavigator(
       }
 
       setHasNavigated(true);
-      setState((prev) => {
-        const existingIndex = prev.routes.findIndex((r) => r.name === name);
-        if (existingIndex >= 0) {
-          const routes = [...prev.routes];
-          routes[existingIndex] = { ...routes[existingIndex], params };
-          return { ...prev, index: existingIndex, routes };
-        }
-        const routes = [
-          ...prev.routes.slice(0, prev.index + 1),
-          createRouteNode(name, params),
-        ];
-        return { ...prev, index: routes.length - 1, routes };
+      const shouldUseAtomic = !visitedRouteNames.has(name);
+      runAtomicNavigationTransition(shouldUseAtomic, () => {
+        setState((prev) => {
+          const existingIndex = prev.routes.findIndex((r) => r.name === name);
+          if (existingIndex >= 0) {
+            const routes = [...prev.routes];
+            routes[existingIndex] = { ...routes[existingIndex], params };
+            return { ...prev, index: existingIndex, routes };
+          }
+          const routes = [
+            ...prev.routes.slice(0, prev.index + 1),
+            createRouteNode(name, params),
+          ];
+          visitedRouteNames.add(name);
+          return { ...prev, index: routes.length - 1, routes };
+        });
       });
     },
     push(name, params) {
       setHasNavigated(true);
-      setState((prev) => {
-        const routes = [
-          ...prev.routes.slice(0, prev.index + 1),
-          createRouteNode(name, params),
-        ];
-        return { ...prev, index: routes.length - 1, routes };
+      const shouldUseAtomic = !visitedRouteNames.has(name);
+      runAtomicNavigationTransition(shouldUseAtomic, () => {
+        setState((prev) => {
+          const routes = [
+            ...prev.routes.slice(0, prev.index + 1),
+            createRouteNode(name, params),
+          ];
+          visitedRouteNames.add(name);
+          return { ...prev, index: routes.length - 1, routes };
+        });
       });
     },
     pop(count = 1) {
@@ -237,21 +248,35 @@ export function BottomSheetNavigator(
     },
     replace(name, params) {
       setHasNavigated(true);
-      setState((prev) => {
-        const routes = [...prev.routes];
-        routes[prev.index] = createRouteNode(name, params);
-        return { ...prev, routes };
+      const shouldUseAtomic = !visitedRouteNames.has(name);
+      runAtomicNavigationTransition(shouldUseAtomic, () => {
+        setState((prev) => {
+          const routes = [...prev.routes];
+          routes[prev.index] = createRouteNode(name, params);
+          visitedRouteNames.add(name);
+          return { ...prev, routes };
+        });
       });
     },
     reset(resetState) {
       setHasNavigated(true);
-      setState((prev) => ({
-        ...prev,
-        index: resetState.index ?? resetState.routes.length - 1,
-        routes: resetState.routes.map((r) =>
-          createRouteNode(r.name, r.params as object),
-        ),
-      }));
+      let shouldUseAtomic = false;
+      for (const route of resetState.routes) {
+        if (!visitedRouteNames.has(route.name)) {
+          shouldUseAtomic = true;
+          break;
+        }
+      }
+      runAtomicNavigationTransition(shouldUseAtomic, () => {
+        setState((prev) => ({
+          ...prev,
+          index: resetState.index ?? resetState.routes.length - 1,
+          routes: resetState.routes.map((r) => {
+            visitedRouteNames.add(r.name);
+            return createRouteNode(r.name, r.params as object);
+          }),
+        }));
+      });
     },
     setParams(params) {
       setState((prev) => {

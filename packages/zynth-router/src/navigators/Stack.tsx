@@ -44,6 +44,7 @@ import {
   unregisterNativeHeaderAccessory,
 } from "../native/headerAccessoryRegistry";
 import { registerAndroidBackHandler } from "../native/androidBackHandler";
+import { runAtomicNavigationTransition } from "../native/atomicNavigation";
 
 // ============================================================================
 // Utility: Generate unique keys
@@ -110,6 +111,7 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
   );
   const [hasNavigated, setHasNavigated] = createSignal(false);
   const suppressedNativeBackRouteKeys = new Set<string>();
+  const visitedRouteNames = new Set<string>();
 
   const registerScreen = (name: string, config: ScreenConfig) => {
     if (!screenRegistry.has(name)) {
@@ -168,6 +170,7 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
       index: 0,
       routes: [initialRoute],
     });
+    visitedRouteNames.add(routeName);
     setInitialRouteKey(initialRoute.key);
     setInitialized(true);
   };
@@ -190,31 +193,39 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
       }
 
       setHasNavigated(true);
-      setState((prev) => {
-        // Check if route already exists in stack
-        const existingIndex = prev.routes.findIndex((r) => r.name === name);
-        if (existingIndex >= 0) {
-          // Navigate to existing route, updating params
-          const routes = [...prev.routes];
-          routes[existingIndex] = { ...routes[existingIndex], params };
-          return { ...prev, index: existingIndex, routes };
-        }
-        // Push new route
-        const routes = [
-          ...prev.routes.slice(0, prev.index + 1),
-          createRouteNode(name, params),
-        ];
-        return { ...prev, index: routes.length - 1, routes };
+      const shouldUseAtomic = !visitedRouteNames.has(name);
+      runAtomicNavigationTransition(shouldUseAtomic, () => {
+        setState((prev) => {
+          // Check if route already exists in stack
+          const existingIndex = prev.routes.findIndex((r) => r.name === name);
+          if (existingIndex >= 0) {
+            // Navigate to existing route, updating params
+            const routes = [...prev.routes];
+            routes[existingIndex] = { ...routes[existingIndex], params };
+            return { ...prev, index: existingIndex, routes };
+          }
+          // Push new route
+          const routes = [
+            ...prev.routes.slice(0, prev.index + 1),
+            createRouteNode(name, params),
+          ];
+          visitedRouteNames.add(name);
+          return { ...prev, index: routes.length - 1, routes };
+        });
       });
     },
     push(name, params) {
       setHasNavigated(true);
-      setState((prev) => {
-        const routes = [
-          ...prev.routes.slice(0, prev.index + 1),
-          createRouteNode(name, params),
-        ];
-        return { ...prev, index: routes.length - 1, routes };
+      const shouldUseAtomic = !visitedRouteNames.has(name);
+      runAtomicNavigationTransition(shouldUseAtomic, () => {
+        setState((prev) => {
+          const routes = [
+            ...prev.routes.slice(0, prev.index + 1),
+            createRouteNode(name, params),
+          ];
+          visitedRouteNames.add(name);
+          return { ...prev, index: routes.length - 1, routes };
+        });
       });
     },
     pop(count = 1) {
@@ -271,21 +282,35 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
     },
     replace(name, params) {
       setHasNavigated(true);
-      setState((prev) => {
-        const routes = [...prev.routes];
-        routes[prev.index] = createRouteNode(name, params);
-        return { ...prev, routes };
+      const shouldUseAtomic = !visitedRouteNames.has(name);
+      runAtomicNavigationTransition(shouldUseAtomic, () => {
+        setState((prev) => {
+          const routes = [...prev.routes];
+          routes[prev.index] = createRouteNode(name, params);
+          visitedRouteNames.add(name);
+          return { ...prev, routes };
+        });
       });
     },
     reset(resetState) {
       setHasNavigated(true);
-      setState((prev) => ({
-        ...prev,
-        index: resetState.index ?? resetState.routes.length - 1,
-        routes: resetState.routes.map((r) =>
-          createRouteNode(r.name, r.params as object),
-        ),
-      }));
+      let shouldUseAtomic = false;
+      for (const route of resetState.routes) {
+        if (!visitedRouteNames.has(route.name)) {
+          shouldUseAtomic = true;
+          break;
+        }
+      }
+      runAtomicNavigationTransition(shouldUseAtomic, () => {
+        setState((prev) => ({
+          ...prev,
+          index: resetState.index ?? resetState.routes.length - 1,
+          routes: resetState.routes.map((r) => {
+            visitedRouteNames.add(r.name);
+            return createRouteNode(r.name, r.params as object);
+          }),
+        }));
+      });
     },
     setParams(params) {
       setState((prev) => {

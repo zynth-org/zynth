@@ -42,6 +42,7 @@ import {
   unregisterNativeTabIcon,
   renderNativeTabIcon,
 } from "../native/tabIconRegistry";
+import { runAtomicNavigationTransition } from "../native/atomicNavigation";
 import type { ScreenTabBarItemDescriptor } from "@zynth/screens";
 import { registerAndroidBackHandler } from "../native/androidBackHandler";
 import { useTabBarMetrics } from "../integration/insets";
@@ -211,6 +212,7 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
 
   const screenRegistry = new Map<string, TabScreenConfig>();
   const screenOrder: string[] = [];
+  const visitedRouteKeys = new Set<string>();
 
   const registerScreen = (name: string, config: TabScreenConfig) => {
     if (!screenRegistry.has(name)) {
@@ -251,6 +253,10 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
         { key: routes[Math.max(0, initialIndex)]?.key ?? "", type: "tab" },
       ],
     });
+    const initialRoute = routes[Math.max(0, initialIndex)];
+    if (initialRoute) {
+      visitedRouteKeys.add(initialRoute.key);
+    }
     setInitialized(true);
   }
 
@@ -281,22 +287,30 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
         return;
       }
 
-      setState((prev) => {
-        // If not initialized, we can't navigate yet, or should queue it?
-        // For now assume initialized.
-        const index = prev.routes.findIndex((r) => r.name === name);
-        if (index >= 0) {
-          const routes = [...prev.routes];
-          if (params) {
-            routes[index] = { ...routes[index], params };
+      const current = state();
+      const targetRoute = current.routes.find((r) => r.name === name);
+      const shouldUseAtomic =
+        !!targetRoute && !visitedRouteKeys.has(targetRoute.key);
+      runAtomicNavigationTransition(shouldUseAtomic, () => {
+        setState((prev) => {
+          // If not initialized, we can't navigate yet, or should queue it?
+          // For now assume initialized.
+          const index = prev.routes.findIndex((r) => r.name === name);
+          if (index >= 0) {
+            const routes = [...prev.routes];
+            if (params) {
+              routes[index] = { ...routes[index], params };
+            }
+            const routeKey = routes[index].key;
+            visitedRouteKeys.add(routeKey);
+            const history = [
+              ...(prev.history ?? []),
+              { key: routeKey, type: "tab" },
+            ];
+            return { ...prev, index, routes, history };
           }
-          const history = [
-            ...(prev.history ?? []),
-            { key: routes[index].key, type: "tab" },
-          ];
-          return { ...prev, index, routes, history };
-        }
-        return prev;
+          return prev;
+        });
       });
     },
     push(name, params) {
@@ -391,26 +405,35 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
         helpers.navigate(action.payload.name, action.payload.params as object);
         break;
       case "SWITCH_TAB":
-        setState((prev) => {
+        {
           const index = action.payload.index;
-          // console.log(
-          //   `[Tabs] SWITCH_TAB - index: ${index}, routes.length: ${prev.routes.length}, current index: ${prev.index}`
-          // );
-          if (index >= 0 && index < prev.routes.length) {
-            const history = [
-              ...(prev.history ?? []),
-              { key: prev.routes[index].key, type: "tab" },
-            ];
-            // console.log(
-            //   `[Tabs] Setting state index to ${index}, route: ${prev.routes[index].name}`
-            // );
-            return { ...prev, index, history };
-          }
-          // console.log(
-          //   `[Tabs] Index ${index} out of bounds, not changing state`
-          // );
-          return prev;
-        });
+          const targetRoute = state().routes[index];
+          const shouldUseAtomic =
+            !!targetRoute && !visitedRouteKeys.has(targetRoute.key);
+          runAtomicNavigationTransition(shouldUseAtomic, () => {
+            setState((prev) => {
+              // console.log(
+              //   `[Tabs] SWITCH_TAB - index: ${index}, routes.length: ${prev.routes.length}, current index: ${prev.index}`
+              // );
+              if (index >= 0 && index < prev.routes.length) {
+                const routeKey = prev.routes[index].key;
+                visitedRouteKeys.add(routeKey);
+                const history = [
+                  ...(prev.history ?? []),
+                  { key: routeKey, type: "tab" },
+                ];
+                // console.log(
+                //   `[Tabs] Setting state index to ${index}, route: ${prev.routes[index].name}`
+                // );
+                return { ...prev, index, history };
+              }
+              // console.log(
+              //   `[Tabs] Index ${index} out of bounds, not changing state`
+              // );
+              return prev;
+            });
+          });
+        }
         break;
       case "GO_BACK":
         helpers.goBack();
@@ -712,6 +735,7 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
                 createEffect(() => {
                   if (isActive()) {
                     setIsLoaded(true);
+                    visitedRouteKeys.add(routeValue().key);
                   }
                 });
 
