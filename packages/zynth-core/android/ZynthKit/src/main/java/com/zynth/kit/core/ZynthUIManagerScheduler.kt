@@ -6,6 +6,8 @@ import android.view.View
 import android.widget.TextView
 
 private const val DEBUG_SCHEDULER = false
+private const val ATOMIC_LAYOUT_APPLY_BUDGET_MS = 48.0
+private const val ATOMIC_LAYOUT_PHASE_BUDGET_NS = 64_000_000L
 
 internal fun ZynthUIManager.setFrameProfilerInternal(
   profiler: ((frameMs: Double, layoutMs: Double, overBudget: Boolean, nodeCount: Int) -> Unit)?
@@ -33,6 +35,9 @@ internal fun ZynthUIManager.ensureChoreographerInternal() {
 internal fun ZynthUIManager.handleFrame() {
   if (frameInProgress) return
   if (!needsLayout || dirtySurfaces.isEmpty()) {
+    if (dirtySurfaces.isEmpty()) {
+      atomicCommitPending = false
+    }
     frameCallbackPosted = false
     return
   }
@@ -47,8 +52,13 @@ internal fun ZynthUIManager.handleFrame() {
   val dirty = dirtySurfaces.toSet()
   dirtySurfaces.clear()
   val nodeCount = surfaceYoga.values.sumOf { it.nodeCount() }
-  val layoutApplyBudgetMs = computeAdaptiveLayoutApplyBudgetMs(dirty.size, nodeCount)
-  val layoutPhaseBudgetNs = computeAdaptiveLayoutPhaseBudgetNs(dirty.size, nodeCount)
+  val forceAtomic = atomicCommitPending
+  val layoutApplyBudgetMs =
+    if (forceAtomic) ATOMIC_LAYOUT_APPLY_BUDGET_MS
+    else computeAdaptiveLayoutApplyBudgetMs(dirty.size, nodeCount)
+  val layoutPhaseBudgetNs =
+    if (forceAtomic) ATOMIC_LAYOUT_PHASE_BUDGET_NS
+    else computeAdaptiveLayoutPhaseBudgetNs(dirty.size, nodeCount)
   val layoutStartNs = System.nanoTime()
   val incomplete = performLayoutInternal(dirty, layoutApplyBudgetMs, layoutPhaseBudgetNs)
   val layoutNs = System.nanoTime() - layoutStartNs
@@ -60,6 +70,9 @@ internal fun ZynthUIManager.handleFrame() {
   }
   var styleNs = 0L
   if (layoutComplete) {
+    if (forceAtomic) {
+      atomicCommitPending = false
+    }
     val styleStartNs = System.nanoTime()
     applyStyleLayoutIfNeeded()
     styleNs = System.nanoTime() - styleStartNs

@@ -27,6 +27,11 @@ export interface HostBatchMeta {
   itemKey?: string | number;
   itemIndex?: number;
   descriptor?: Record<string, any> | null;
+  /**
+   * Host-specific metadata.
+   * Android renderer recognizes `extras.atomic === true` (or `extras.syncFrame === true`)
+   * to request a higher-budget, single-commit frame for critical transitions.
+   */
   extras?: Record<string, any> | null;
 }
 

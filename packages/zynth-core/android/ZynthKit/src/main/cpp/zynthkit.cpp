@@ -21,6 +21,7 @@
 #include <vector>
 #include <limits>
 #include <algorithm>
+#include <cctype>
 
 using namespace facebook::jsi;
 
@@ -86,6 +87,8 @@ struct RuntimeState {
   jmethodID applyBatch = nullptr;
   jmethodID applyBatchTypedPacked = nullptr;
   jmethodID applyBatchTypedBuffer = nullptr;
+  jmethodID beginAtomicCommit = nullptr;
+  jmethodID endAtomicCommit = nullptr;
   jmethodID setSurface = nullptr;
   jmethodID flush = nullptr;
   jmethodID scheduleTimer = nullptr;
@@ -1393,6 +1396,58 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
         JNIEnv *env = getEnv();
         if (!env) return Value::undefined();
         Object payload = args[0].asObject(rt);
+        auto isTruthy = [&rt](const Value &value) -> bool {
+          if (value.isBool()) {
+            return value.getBool();
+          }
+          if (value.isNumber()) {
+            return value.asNumber() != 0.0;
+          }
+          if (value.isString()) {
+            std::string text = value.asString(rt).utf8(rt);
+            std::transform(text.begin(), text.end(), text.begin(),
+                           [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+            return text == "true" || text == "1" || text == "yes" || text == "on";
+          }
+          return false;
+        };
+        auto isAtomicKind = [](const std::string &kind) -> bool {
+          return kind == "transition" || kind == "navigation" || kind == "theme";
+        };
+        auto shouldUseAtomicCommit = [&]() -> bool {
+          Value metaVal = payload.getProperty(rt, "meta");
+          if (!metaVal.isObject()) return false;
+          Object metaObject = metaVal.asObject(rt);
+          Value extrasVal = metaObject.getProperty(rt, "extras");
+          if (extrasVal.isObject()) {
+            Object extrasObject = extrasVal.asObject(rt);
+            if (isTruthy(extrasObject.getProperty(rt, "atomic"))) return true;
+            if (isTruthy(extrasObject.getProperty(rt, "syncFrame"))) return true;
+          }
+          Value kindVal = metaObject.getProperty(rt, "kind");
+          if (kindVal.isString() && isAtomicKind(kindVal.asString(rt).utf8(rt))) return true;
+          Value scopeVal = metaObject.getProperty(rt, "scope");
+          if (scopeVal.isString() && isAtomicKind(scopeVal.asString(rt).utf8(rt))) return true;
+          return false;
+        };
+        struct AtomicCommitScope {
+          JNIEnv *env = nullptr;
+          RuntimeState *state = nullptr;
+          bool active = false;
+          AtomicCommitScope(JNIEnv *jniEnv, RuntimeState *runtimeState, bool enabled)
+              : env(jniEnv), state(runtimeState) {
+            if (!enabled || !env || !state || !state->beginAtomicCommit || !state->endAtomicCommit) {
+              return;
+            }
+            env->CallVoidMethod(state->uiManager, state->beginAtomicCommit);
+            active = true;
+          }
+          ~AtomicCommitScope() {
+            if (!active || !env || !state || !state->endAtomicCommit) return;
+            env->CallVoidMethod(state->uiManager, state->endAtomicCommit);
+          }
+        };
+        AtomicCommitScope atomicCommitScope(env, state, shouldUseAtomicCommit());
         Value opsPackedVal = payload.getProperty(rt, "ops");
         Value stringTableVal = payload.getProperty(rt, "stringTable");
         if (opsPackedVal.isObject() && stringTableVal.isObject()) {
@@ -1758,6 +1813,8 @@ Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlon
       env->GetMethodID(state->uiClass, "applyBatchTypedPacked", "([D[Ljava/lang/String;)V");
   state->applyBatchTypedBuffer =
       env->GetMethodID(state->uiClass, "applyBatchTypedBuffer", "(Ljava/nio/ByteBuffer;I[Ljava/lang/String;)V");
+  state->beginAtomicCommit = env->GetMethodID(state->uiClass, "beginAtomicCommit", "()V");
+  state->endAtomicCommit = env->GetMethodID(state->uiClass, "endAtomicCommit", "()V");
   state->setSurface = env->GetMethodID(state->uiClass, "setSurface", "(I)V");
   state->flush = env->GetMethodID(state->uiClass, "flush", "()V");
   state->applyAnimatedStyle =

@@ -284,6 +284,8 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal var perfMaxSurfaces = 0
   private var batchDepth = 0
   private var batchNeedsLayout = false
+  private var atomicCommitDepth = 0
+  internal var atomicCommitPending = false
   var assetProvider: AssetProvider? = null
 
   fun scheduleTimer(runtimePtr: Long, timerId: Int, delayMs: Int, repeat: Boolean) {
@@ -1315,6 +1317,35 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
 
   internal fun markBatchNeedsLayout() {
     batchNeedsLayout = true
+  }
+
+  fun beginAtomicCommit() {
+    if (Looper.myLooper() != Looper.getMainLooper()) {
+      runOnMain { beginAtomicCommit() }
+      return
+    }
+    atomicCommitDepth += 1
+  }
+
+  fun endAtomicCommit() {
+    if (Looper.myLooper() != Looper.getMainLooper()) {
+      runOnMain { endAtomicCommit() }
+      return
+    }
+    if (atomicCommitDepth == 0) return
+    atomicCommitDepth -= 1
+    if (atomicCommitDepth != 0) return
+    if (dirtySurfaces.isEmpty()) {
+      atomicCommitPending = false
+      return
+    }
+    atomicCommitPending = true
+    ensureChoreographer()
+    needsLayout = true
+    if (!frameCallbackPosted) {
+      frameCallbackPosted = true
+      choreographer?.postFrameCallback(frameCallback)
+    }
   }
 
   fun registerSurface(surfaceId: Int, surfaceRoot: ViewGroup) {
