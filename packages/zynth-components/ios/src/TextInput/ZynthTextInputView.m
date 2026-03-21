@@ -87,11 +87,11 @@ static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
   placeholder.numberOfLines = 0;
   placeholder.translatesAutoresizingMaskIntoConstraints = NO;
   [self addSubview:placeholder];
-  self.placeholderLeadingConstraint = [placeholder.leadingAnchor constraintEqualToAnchor:self.leadingAnchor constant:2];
-  self.placeholderTopConstraint = [placeholder.topAnchor constraintEqualToAnchor:self.topAnchor constant:2];
+  self.placeholderLeadingConstraint = [placeholder.leadingAnchor constraintEqualToAnchor:self.leadingAnchor constant:0];
+  self.placeholderTopConstraint = [placeholder.topAnchor constraintEqualToAnchor:self.topAnchor constant:0];
   [NSLayoutConstraint activateConstraints:@[
     self.placeholderLeadingConstraint,
-    [placeholder.trailingAnchor constraintEqualToAnchor:self.trailingAnchor constant:-2],
+    [placeholder.trailingAnchor constraintEqualToAnchor:self.trailingAnchor constant:0],
     self.placeholderTopConstraint
   ]];
   self.placeholderLabel = placeholder;
@@ -116,10 +116,14 @@ static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
   UIEdgeInsets newInsets = UIEdgeInsetsMake(top, left, bottom, right);
   if (!UIEdgeInsetsEqualToEdgeInsets(self.textContainerInset, newInsets)) {
     self.textContainerInset = newInsets;
-    // Update placeholder constraints to match padding
-    self.placeholderLeadingConstraint.constant = left + 2; // +2 for slight offset or strict matching? Original was constant:2
-    self.placeholderTopConstraint.constant = top + 2;
+    self.placeholderLeadingConstraint.constant = left;
+    self.placeholderTopConstraint.constant = top;
   }
+}
+
+- (void)setFont:(UIFont *)font {
+  [super setFont:font];
+  self.placeholderLabel.font = font;
 }
 
 - (void)setText:(NSString *)text {

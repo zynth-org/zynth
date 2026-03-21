@@ -107,12 +107,21 @@ static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
         UIColor *base = self.textColor ?: [UIColor lightGrayColor];
         placeholderColor = [base colorWithAlphaComponent:0.45];
     }
-    self.attributedPlaceholder = [[NSAttributedString alloc] initWithString:self.placeholder attributes:@{NSForegroundColorAttributeName: placeholderColor}];
+    NSMutableDictionary<NSAttributedStringKey, id> *attributes = [NSMutableDictionary dictionaryWithObject:placeholderColor forKey:NSForegroundColorAttributeName];
+    if (self.font) {
+      attributes[NSFontAttributeName] = self.font;
+    }
+    self.attributedPlaceholder = [[NSAttributedString alloc] initWithString:self.placeholder attributes:attributes];
 }
 
 - (void)setTextColor:(UIColor *)textColor {
     [super setTextColor:textColor];
     [self applyPlaceholderToneFromTextColor];
+}
+
+- (void)setFont:(UIFont *)font {
+  [super setFont:font];
+  [self applyPlaceholderToneFromTextColor];
 }
 
 #pragma mark - Layout
