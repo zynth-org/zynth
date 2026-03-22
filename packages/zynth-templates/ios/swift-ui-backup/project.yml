@@ -32,6 +32,17 @@ targets:
         # Ensure a proper full-screen window is created before app code runs.
         # Use a storyboard-based launch screen to control image content mode.
         UILaunchStoryboardName: LaunchScreen
+        # Avoid archive warning when iPad multitasking is allowed.
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+          - UIInterfaceOrientationPortraitUpsideDown
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
     settings:
       base:
         TARGETED_DEVICE_FAMILY: "1,2"
@@ -39,7 +50,14 @@ targets:
         LD_RUNPATH_SEARCH_PATHS: "@executable_path/Frameworks"
     prebuildScripts:
       - name: BundleJS
-        basedOnDependencyAnalysis: false
+        basedOnDependencyAnalysis: true
+        inputFiles:
+          - $(SRCROOT)/../dist/main.js
+          - $(SRCROOT)/../dist/main.hbc
+          - $(SRCROOT)/../dist/assets/images-manifest.json
+        outputFiles:
+          - $(BUILT_PRODUCTS_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/main.js
+          - $(BUILT_PRODUCTS_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/main.hbc
         script: |
           set -e
           # Build all workspaces so @zynth/core dist exists

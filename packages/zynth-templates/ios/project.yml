@@ -31,6 +31,17 @@ targets:
       properties:
         # Use a storyboard-based launch screen to control image content mode.
         UILaunchStoryboardName: LaunchScreen
+        # Avoid archive warning when iPad multitasking is allowed.
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+          - UIInterfaceOrientationPortraitUpsideDown
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
 {{UI_APP_FONTS}}
 {{INFO_PLIST_PROPERTIES}}
     settings:
@@ -41,7 +52,14 @@ targets:
         OTHER_LDFLAGS: "$(inherited) -ObjC"
     prebuildScripts:
       - name: BundleJS
-        basedOnDependencyAnalysis: false
+        basedOnDependencyAnalysis: true
+        inputFiles:
+          - $(SRCROOT)/../dist/main.js
+          - $(SRCROOT)/../dist/main.hbc
+          - $(SRCROOT)/../dist/assets/images-manifest.json
+        outputFiles:
+          - $(BUILT_PRODUCTS_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/main.js
+          - $(BUILT_PRODUCTS_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/main.hbc
         script: |
           # Exit immediately if a command exits with a non-zero status.
           set -e
