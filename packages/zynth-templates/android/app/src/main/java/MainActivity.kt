@@ -50,6 +50,10 @@ class MainActivity : AppCompatActivity() {
 
     // Capture dev server + devtools intent extras early so native modules can read them.
     val launchIntent = intent
+    val startupMetricsEnabled = launchIntent.getBooleanExtra(
+      "ZYNTH_STARTUP_METRICS",
+      BuildConfig.ZYNTH_STARTUP_METRICS_ENABLED,
+    )
     var devServerUrl = launchIntent.getStringExtra("ZYNTH_DEV_SERVER_URL")
     var devServerToken = launchIntent.getStringExtra("ZYNTH_DEV_SERVER_TOKEN")
     var devtoolsUrl = launchIntent.getStringExtra("ZYNTH_DEVTOOLS_URL")
@@ -95,6 +99,10 @@ class MainActivity : AppCompatActivity() {
       if (devServerUrl.isNullOrBlank()) {
         devServerUrl = if (isEmulator()) "http://10.0.2.2:8081" else null
       }
+    }
+
+    if (startupMetricsEnabled) {
+      System.setProperty("ZYNTH_STARTUP_METRICS", "true")
     }
 
     if (!devServerUrl.isNullOrBlank()) {

@@ -12,6 +12,7 @@ export interface AppConfig {
   infoPlist: Record<string, any>;
   androidConfig: any;
   devServerUrl?: string;
+  androidStartupMetricsEnabled?: boolean;
 }
 
 function buildInfoPlistDefaults(
@@ -96,5 +97,7 @@ export function getAppConfig(appDir: string): AppConfig {
     ),
     androidConfig: appConfig.android || {},
     devServerUrl: appConfig.devServerUrl,
+    androidStartupMetricsEnabled:
+      appConfig.android?.startupMetrics?.enabled === true,
   };
 }

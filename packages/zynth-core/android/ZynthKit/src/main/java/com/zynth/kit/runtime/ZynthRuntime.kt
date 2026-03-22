@@ -33,6 +33,9 @@ class ZynthRuntime(val root: ZynthRootView) {
   private var pendingStartRootId: Int? = null
   val bridgeSessionId: String = java.util.UUID.randomUUID().toString()
   init {
+    if (isStartupMetricsBootstrapEnabled()) {
+      startupMetrics.enableFeatures(listOf("startupTime"))
+    }
     startupMetrics.markRuntimeConstructStart()
     runtimePtr = JSBridge.createHermesRuntime()
     startupMetrics.markRuntimeConstructEnd()
@@ -63,6 +66,33 @@ class ZynthRuntime(val root: ZynthRootView) {
     installCrashHandler()
     ZynthNativeErrorOverlay.attach(this, root)
     ZynthNativePerformanceOverlay.attach(root)
+  }
+
+  private fun isStartupMetricsBootstrapEnabled(): Boolean {
+    val rawStartupFlag = System.getProperty("ZYNTH_STARTUP_METRICS")?.trim()
+    if (rawStartupFlag != null && parseBooleanLike(rawStartupFlag)) {
+      return true
+    }
+
+    val rawCoreFeatures = System.getProperty("ZYNTH_CORE_FEATURES")?.trim()
+    if (rawCoreFeatures.isNullOrEmpty()) {
+      return false
+    }
+
+    val entries = rawCoreFeatures.split(',')
+    for (entry in entries) {
+      if (entry.trim() == "startupTime") {
+        return true
+      }
+    }
+    return false
+  }
+
+  private fun parseBooleanLike(value: String): Boolean {
+    return value.equals("1") ||
+      value.equals("true", ignoreCase = true) ||
+      value.equals("yes", ignoreCase = true) ||
+      value.equals("on", ignoreCase = true)
   }
 
   companion object {
