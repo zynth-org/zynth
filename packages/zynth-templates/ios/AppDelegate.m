@@ -58,7 +58,10 @@ configurationForConnectingSceneSession:(UISceneSession *)connectingSceneSession
   // Initialize extra modules (like Splash Screen) as early as possible
 {{EXTRA_APP_DELEGATE_INIT}}
 
-  NSURL *bundleURL = [[NSBundle mainBundle] URLForResource:@"main" withExtension:@"js"];
+  NSURL *bundleURL = [[NSBundle mainBundle] URLForResource:@"main" withExtension:@"hbc"];
+  if (!bundleURL) {
+    bundleURL = [[NSBundle mainBundle] URLForResource:@"main" withExtension:@"js"];
+  }
 #if DEBUG
   NSString *devServer = [[NSProcessInfo processInfo] environment][@"ZYNTH_DEV_SERVER_URL"];
   BOOL usesEnv = devServer.length > 0;

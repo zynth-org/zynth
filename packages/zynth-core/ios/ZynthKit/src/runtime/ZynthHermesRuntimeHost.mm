@@ -454,14 +454,31 @@ static void installGlobals(Runtime &rt) {
       ok = NO;
       return;
     }
-    NSString *string = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-    if (!string) {
-      NSDictionary *info = @{ NSLocalizedDescriptionKey : @"Invalid UTF-8 bytecode payload" };
-      localError = [NSError errorWithDomain:@"ZynthHermes" code:3 userInfo:info];
+    try {
+      auto buffer = std::make_shared<NSDataBuffer>(data);
+      const char *source = sourceURL ? sourceURL.UTF8String : "main.hbc";
+      strongSelf->_runtime->evaluateJavaScript(buffer, source);
+      ok = YES;
+    } catch (const JSError &ex) {
+      NSString *message = [NSString stringWithUTF8String:ex.getMessage().c_str()];
+      NSString *stack = [NSString stringWithUTF8String:ex.getStack().c_str()];
+      [strongSelf emitDevtoolsEventWithTopic:@"error/js"
+                                       level:@"error"
+                                         tag:@"js"
+                                        data:@{
+                                          @"context": sourceURL ?: @"main.hbc",
+                                          @"message": message ?: @"JS error",
+                                          @"stack": stack ?: @"",
+                                        }];
+      NSDictionary *info = @{ NSLocalizedDescriptionKey : message ?: @"JS error" };
+      localError = [NSError errorWithDomain:@"ZynthHermes" code:1 userInfo:info];
       ok = NO;
-      return;
+    } catch (const std::exception &ex) {
+      NSString *message = [NSString stringWithUTF8String:ex.what()];
+      NSDictionary *info = @{ NSLocalizedDescriptionKey : message ?: @"Runtime error" };
+      localError = [NSError errorWithDomain:@"ZynthHermes" code:2 userInfo:info];
+      ok = NO;
     }
-    ok = [strongSelf evaluateString:string sourceURL:sourceURL error:&localError];
   };
   if (dispatch_get_specific(kZynthJSQueueKey) == kZynthJSQueueKey) {
     evalBlock();

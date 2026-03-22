@@ -1,5 +1,6 @@
 const path = require("path");
 const fs = require("fs");
+const { execSync } = require("child_process");
 const {
   findWorkspaceRoot,
   findAppDirectory,
@@ -69,6 +70,9 @@ module.exports = {
       );
     }
 
+    const hbcPath = path.join(appDir, "dist", "main.hbc");
+    compileBundleToHermesBytecode(appDir, bundlePath, hbcPath, argv.platform);
+
     // After bundling, ensure assets (like fonts) are discovered and copied to native folders
     console.log(`◆ Generating assets for ${argv.platform}...`);
     try {
@@ -116,41 +120,67 @@ function copyBundleToAndroid(appDir) {
   fs.copyFileSync(bundleSrc, bundleDest);
   console.log(`◆ Copied JS bundle to android/app/src/main/assets/main.js`);
 
-  // Try to generate Hermes bytecode
+  if (fs.existsSync(path.join(appDir, "dist", "main.hbc"))) {
+    fs.copyFileSync(path.join(appDir, "dist", "main.hbc"), hbcDest);
+    console.log(
+      `✔ Copied Hermes bytecode to android/app/src/main/assets/main.hbc`
+    );
+  } else {
+    console.warn(
+      "! dist/main.hbc not found. Android runtime will fallback to JS source."
+    );
+  }
+}
+
+function compileBundleToHermesBytecode(appDir, bundleSrc, hbcDest, platform) {
+  if (!fs.existsSync(bundleSrc)) return false;
+
+  console.log(`◆ Compiling JS bundle to Hermes bytecode for ${platform}...`);
+  const hermescPath = resolveHermesCompilerPath(appDir);
+  if (!hermescPath) {
+    console.warn(
+      "! hermesc not found. Skipping HBC compilation (runtime will use main.js)."
+    );
+    return false;
+  }
+
   try {
-    const { execSync } = require("child_process");
-    console.log("◆ Compiling to Hermes bytecode...");
-
-    const possiblePaths = [
-      "hermesc",
-      "npx hermesc",
-      path.join(process.env.ANDROID_HOME || "", "hermes", "bin", "hermesc"),
-    ];
-
-    let hermescPath;
-    for (const testPath of possiblePaths) {
-      try {
-        execSync(`${testPath} --help`, { stdio: "ignore" });
-        hermescPath = testPath;
-        break;
-      } catch (e) {
-        // Continue
-      }
+    if (fs.existsSync(hbcDest)) {
+      fs.unlinkSync(hbcDest);
     }
-
-    if (hermescPath) {
-      execSync(`${hermescPath} -emit-binary -out "${hbcDest}" "${bundleSrc}"`, {
-        stdio: "inherit",
-      });
-      console.log(
-        `✔ Generated Hermes bytecode: android/app/src/main/assets/main.hbc`
-      );
-    } else {
-      console.warn("! hermesc not found. Skipping HBC compilation.");
-    }
+    execSync(`"${hermescPath}" -emit-binary -out "${hbcDest}" "${bundleSrc}"`, {
+      stdio: "inherit",
+    });
+    console.log(`✔ Generated Hermes bytecode: ${path.relative(process.cwd(), hbcDest)}`);
+    return true;
   } catch (error) {
     console.warn(`! HBC compilation failed: ${error.message}`);
+    return false;
   }
+}
+
+function resolveHermesCompilerPath(appDir) {
+  const candidates = [
+    process.env.HERMES_CLI_PATH,
+    "hermesc",
+    path.join(appDir, "node_modules", ".bin", "hermesc"),
+    path.join(appDir, "node_modules", "react-native", "sdks", "hermesc", "osx-bin", "hermesc"),
+    path.join(appDir, "node_modules", "react-native", "sdks", "hermesc", "linux64-bin", "hermesc"),
+    path.join(appDir, "ios", "Pods", "hermes-engine", "destroot", "bin", "hermesc"),
+    path.join(appDir, "ios", "Pods", "hermes-engine", "build_host_hermesc", "bin", "hermesc"),
+    path.join(process.env.ANDROID_HOME || "", "hermes", "bin", "hermesc"),
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    try {
+      execSync(`"${candidate}" --help`, { stdio: "ignore" });
+      return candidate;
+    } catch (error) {
+      // Try next location
+    }
+  }
+
+  return null;
 }
 
 async function buildIOS(root, appDir, argv) {
@@ -274,4 +304,3 @@ async function buildAndroid(root, appDir, argv) {
   console.log("✔ Android Release build completed!");
   console.log("➔ APK: android/app/build/outputs/apk/release/app-release.apk");
 }
-

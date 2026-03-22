@@ -214,19 +214,43 @@ static inline void ZynthStartupMetricsRecordFrame(NSString *sessionId,
     }
     return NO;
   }
+  NSURL *resolvedURL = url;
+  NSString *ext = resolvedURL.pathExtension.lowercaseString;
+  if (resolvedURL.isFileURL && [ext isEqualToString:@"js"]) {
+    NSURL *hbcURL = [[resolvedURL URLByDeletingPathExtension] URLByAppendingPathExtension:@"hbc"];
+    if ([[NSFileManager defaultManager] fileExistsAtPath:hbcURL.path]) {
+      resolvedURL = hbcURL;
+      ext = @"hbc";
+    }
+  }
+
   ZynthStartupMetricsMarkBundleReadStart(self.bridgeSessionId);
   NSError *readError = nil;
-  NSString *code = [NSString stringWithContentsOfURL:url
-                                            encoding:NSUTF8StringEncoding
-                                               error:&readError];
+  NSData *payload = [NSData dataWithContentsOfURL:resolvedURL options:0 error:&readError];
   ZynthStartupMetricsMarkBundleReadEnd(self.bridgeSessionId);
-  if (!code) {
+  if (!payload) {
     if (error) {
       *error = readError ?: [NSError errorWithDomain:@"ZynthRuntime" code:2 userInfo:nil];
     }
     return NO;
   }
-  return [self evaluateScript:code sourceURL:url.absoluteString error:error];
+
+  if ([ext isEqualToString:@"hbc"]) {
+    ZynthStartupMetricsMarkHermesEvalStart(self.bridgeSessionId);
+    BOOL ok = [self.runtime evaluateBytecode:payload sourceURL:resolvedURL.absoluteString error:error];
+    ZynthStartupMetricsMarkHermesEvalEnd(self.bridgeSessionId);
+    return ok;
+  }
+
+  NSString *code = [[NSString alloc] initWithData:payload encoding:NSUTF8StringEncoding];
+  if (!code) {
+    if (error) {
+      NSDictionary *info = @{ NSLocalizedDescriptionKey : @"Bundle is not valid UTF-8 JavaScript source" };
+      *error = [NSError errorWithDomain:@"ZynthRuntime" code:3 userInfo:info];
+    }
+    return NO;
+  }
+  return [self evaluateScript:code sourceURL:resolvedURL.absoluteString error:error];
 }
 
 - (void)startWithRootId:(int)rootId {
