@@ -148,9 +148,16 @@ function compileBundleToHermesBytecode(appDir, bundleSrc, hbcDest, platform) {
     if (fs.existsSync(hbcDest)) {
       fs.unlinkSync(hbcDest);
     }
-    execSync(`"${hermescPath}" -emit-binary -out "${hbcDest}" "${bundleSrc}"`, {
-      stdio: "inherit",
-    });
+    const hermesArgs = [
+      "-emit-binary",
+      // App bundles legitimately reference host-provided globals (console, Promise, timers, URL...).
+      // Keep other warnings enabled while suppressing undeclared-global noise.
+      "-Wno-undefined-variable",
+      "-out",
+      `"${hbcDest}"`,
+      `"${bundleSrc}"`,
+    ].join(" ");
+    execSync(`"${hermescPath}" ${hermesArgs}`, { stdio: "inherit" });
     console.log(`✔ Generated Hermes bytecode: ${path.relative(process.cwd(), hbcDest)}`);
     return true;
   } catch (error) {

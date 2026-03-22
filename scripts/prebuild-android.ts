@@ -101,8 +101,17 @@ export function main(options: any = {}): void {
         }
 
         if (hermescPath) {
+          const hermesArgs = [
+            "-emit-binary",
+            // App bundles legitimately reference host-provided globals (console, Promise, timers, URL...).
+            // Keep other warnings enabled while suppressing undeclared-global noise.
+            "-Wno-undefined-variable",
+            "-out",
+            `"${hbcDest}"`,
+            `"${bundleSrc}"`,
+          ].join(" ");
           execSync(
-            `${hermescPath} -emit-binary -out "${hbcDest}" "${bundleSrc}"`,
+            `${hermescPath} ${hermesArgs}`,
             { stdio: "inherit" },
           );
           if (!quiet) {
