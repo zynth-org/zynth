@@ -7,6 +7,7 @@ import com.zynth.kit.runtime.ZynthModule
 import com.zynth.kit.runtime.ZynthSyncModule
 import com.zynth.kit.runtime.ZynthArgs
 import java.io.File
+import java.security.MessageDigest
 
 class ZynthWebServerModule(
     private val activity: Activity
@@ -22,6 +23,7 @@ class ZynthWebServerModule(
         "getInfo",
         "getUploadState",
         "drainEvents",
+        "upsertManagedTlsCertificate",
         "setSignal",
         "getSignal",
         "setReply",
@@ -48,6 +50,7 @@ class ZynthWebServerModule(
             "getInfo" -> resultResponse(serverInfo ?: JSONObject.NULL)
             "getUploadState" -> resultResponse(getUploadState())
             "drainEvents" -> drainEvents(args)
+            "upsertManagedTlsCertificate" -> upsertManagedTlsCertificate(args)
             "setSignal" -> setSignal(args)
             "getSignal" -> getSignal(args)
             "setReply" -> setReply(args)
@@ -215,6 +218,69 @@ class ZynthWebServerModule(
         return setSignal(args)
     }
 
+    private fun upsertManagedTlsCertificate(args: ZynthArgs): JSONObject {
+        val aliasRaw = args.getString("alias", "default").trim()
+        val alias = sanitizeAlias(if (aliasRaw.isEmpty()) "default" else aliasRaw)
+        val generateIfMissing = args.getBoolean("generateIfMissing", false)
+        val commonName = args.getString("commonName", "localhost").trim().ifEmpty { "localhost" }
+        val validDays = args.getInt("validDays", 365).coerceIn(1, 3650)
+        var pem = args.getString("pem", "").trim()
+        if (pem.isEmpty() && generateIfMissing) {
+            val generatedPem = ZynthWebServerNative.generateSelfSignedPem(commonName, validDays)
+            if (generatedPem.isNullOrBlank()) {
+                val detail = ZynthWebServerNative.getLastError()?.trim().orEmpty()
+                if (detail.isNotEmpty()) {
+                    throw IllegalStateException("Failed to generate self-signed certificate ($detail)")
+                }
+                throw IllegalStateException("Failed to generate self-signed certificate")
+            }
+            pem = generatedPem.trim()
+        }
+        if (pem.isEmpty()) {
+            throw IllegalArgumentException("pem is required (or set generateIfMissing=true)")
+        }
+
+        val rotateAfterMs = try {
+            args.getDouble("rotateAfterMs").toLong()
+        } catch (_: Exception) {
+            30L * 24L * 60L * 60L * 1000L
+        }
+        val normalizedRotateAfterMs = rotateAfterMs.coerceAtLeast(1L)
+
+        val tlsDir = File(activity.cacheDir, "zynth-webserver/tls")
+        if (!tlsDir.exists() && !tlsDir.mkdirs()) {
+            throw IllegalStateException("Unable to create managed TLS directory")
+        }
+        val pemFile = File(tlsDir, "$alias.pem")
+        val metadataFile = File(tlsDir, "$alias.meta")
+        val now = System.currentTimeMillis()
+        val fingerprint = sha256Hex(pem)
+
+        var existed = pemFile.exists()
+        var shouldRewrite = true
+        if (existed) {
+            val existingPem = runCatching { pemFile.readText(Charsets.UTF_8) }.getOrNull()
+            val lastUpdatedAt = parseUpdatedAt(metadataFile)
+            val hasExpired = (now - lastUpdatedAt) >= normalizedRotateAfterMs
+            shouldRewrite = existingPem != pem || hasExpired
+        }
+
+        if (shouldRewrite) {
+            pemFile.writeText(pem, Charsets.UTF_8)
+            metadataFile.writeText(now.toString(), Charsets.UTF_8)
+        }
+
+        val updatedAt = if (shouldRewrite) now else parseUpdatedAt(metadataFile)
+        return resultResponse(
+            JSONObject()
+                .put("alias", alias)
+                .put("certificatePath", pemFile.absolutePath)
+                .put("fingerprintSha256", fingerprint)
+                .put("updatedAt", updatedAt)
+                .put("existed", existed)
+        )
+    }
+
     private fun getReply(args: ZynthArgs): JSONObject {
         return getSignal(args)
     }
@@ -260,5 +326,41 @@ class ZynthWebServerModule(
         return JSONObject().apply {
             put("result", result ?: JSONObject.NULL)
         }
+    }
+
+    private fun sanitizeAlias(value: String): String {
+        val out = StringBuilder(value.length)
+        for (char in value) {
+            when {
+                char in 'a'..'z' -> out.append(char)
+                char in 'A'..'Z' -> out.append(char)
+                char in '0'..'9' -> out.append(char)
+                char == '-' || char == '_' || char == '.' -> out.append(char)
+                else -> out.append('_')
+            }
+        }
+        return out.toString().ifEmpty { "default" }
+    }
+
+    private fun parseUpdatedAt(file: File): Long {
+        if (!file.exists()) {
+            return 0L
+        }
+        return runCatching {
+            file.readText(Charsets.UTF_8).trim().toLong()
+        }.getOrDefault(0L)
+    }
+
+    private fun sha256Hex(value: String): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
+        val output = StringBuilder(digest.size * 2)
+        for (byte in digest) {
+            val unsignedValue = byte.toInt() and 0xff
+            if (unsignedValue < 16) {
+                output.append('0')
+            }
+            output.append(unsignedValue.toString(16))
+        }
+        return output.toString()
     }
 }

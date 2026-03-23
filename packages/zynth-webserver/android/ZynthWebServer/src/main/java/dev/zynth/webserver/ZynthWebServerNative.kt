@@ -23,6 +23,7 @@ object ZynthWebServerNative {
     ): Long
 
     external fun supportsTls(): Boolean
+    external fun generateSelfSignedPem(commonName: String?, validDays: Int): String?
     external fun getLastError(): String?
 
     external fun stop(handle: Long)

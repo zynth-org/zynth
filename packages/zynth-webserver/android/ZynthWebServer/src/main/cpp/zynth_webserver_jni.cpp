@@ -85,6 +85,26 @@ Java_dev_zynth_webserver_ZynthWebServerNative_supportsTls(
 }
 
 extern "C" JNIEXPORT jstring JNICALL
+Java_dev_zynth_webserver_ZynthWebServerNative_generateSelfSignedPem(
+  JNIEnv *env,
+  jobject,
+  jstring commonName,
+  jint validDays
+) {
+  std::string commonNameStr = jstringToString(env, commonName);
+  char *pem = zynth_webserver_generate_self_signed_pem(
+    commonNameStr.empty() ? nullptr : commonNameStr.c_str(),
+    static_cast<int>(validDays)
+  );
+  if (!pem) {
+    return nullptr;
+  }
+  jstring result = env->NewStringUTF(pem);
+  zynth_webserver_free_string(pem);
+  return result;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
 Java_dev_zynth_webserver_ZynthWebServerNative_getLastError(
   JNIEnv *env,
   jobject
