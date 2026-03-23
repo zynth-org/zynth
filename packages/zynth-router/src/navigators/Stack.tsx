@@ -65,7 +65,7 @@ interface StackNavigatorContextValue {
 
 interface ScreenConfig {
   component: ScreenComponent;
-  options?: ScreenOptionsInput;
+  options: Accessor<ScreenOptionsInput | undefined>;
   initialParams?: object;
 }
 
@@ -83,7 +83,7 @@ export function StackScreen<
   if (ctx) {
     ctx.registerScreen(props.name, {
       component: props.component as unknown as ScreenComponent,
-      options: props.options,
+      options: () => props.options,
       initialParams: props.initialParams as object | undefined,
     });
   }
@@ -384,12 +384,13 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
   // Resolve screen options
   function resolveOptions(
     routeOptions?: ScreenOptions,
-    screenOptions?: ScreenOptionsInput,
+    screenOptionsAccessor?: Accessor<ScreenOptionsInput | undefined>,
   ): ScreenOptions {
     const defaultOpts =
       typeof props.screenOptions === "function"
         ? (props.screenOptions() ?? {})
         : (props.screenOptions ?? {});
+    const screenOptions = screenOptionsAccessor ? screenOptionsAccessor() : undefined;
     const screenOpts =
       typeof screenOptions === "function"
         ? (screenOptions() ?? {})
