@@ -8,6 +8,8 @@ object ZynthWebServerNative {
     external fun start(
         host: String?,
         port: Int,
+        tlsEnabled: Boolean,
+        tlsCertificate: String?,
         documentRoot: String?,
         indexHtml: String?,
         uploadPath: String?,
@@ -19,6 +21,9 @@ object ZynthWebServerNative {
         maxUploadBytes: Long,
         eventsPath: String?
     ): Long
+
+    external fun supportsTls(): Boolean
+    external fun getLastError(): String?
 
     external fun stop(handle: Long)
 

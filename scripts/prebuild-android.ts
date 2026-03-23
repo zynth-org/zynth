@@ -1,6 +1,7 @@
 import * as path from "path";
 import * as fs from "fs";
 import { execSync } from "child_process";
+import { getZynthPackageConfig } from "./config-utils";
 function dim(text: string): string {
   return `\u001b[2m${text}\u001b[0m`;
 }
@@ -24,6 +25,10 @@ export function main(options: any = {}): void {
       process.env.ZYNTH_QUIET_PREBUILD = "1";
     }
     const config = generateAndroidProject(appDir, options);
+    const webServerTlsEnabled = resolveWebServerNativeTls(appDir);
+    if (webServerTlsEnabled) {
+      ensureWebServerTlsSources({ quiet });
+    }
     if (quiet) {
       delete process.env.ZYNTH_QUIET_PREBUILD;
       console.log("  ├─ Generated Android Legacy Icons");
@@ -43,6 +48,16 @@ export function main(options: any = {}): void {
     const gradlePropsDest = path.join(androidDir, "gradle.properties");
     if (fs.existsSync(gradlePropsSrc)) {
       fs.copyFileSync(gradlePropsSrc, gradlePropsDest);
+    }
+    upsertGradleProperty(
+      gradlePropsDest,
+      "zynthWebServerTls",
+      webServerTlsEnabled ? "true" : "false"
+    );
+    if (!quiet) {
+      console.log(
+        `◆ @zynth/webserver native TLS: ${webServerTlsEnabled ? "enabled" : "disabled"}`
+      );
     }
     const bundleSrc = path.join(appDir, "dist", "main.js");
     const assetsDir = path.join(androidDir, "app", "src", "main", "assets");
@@ -153,6 +168,152 @@ export function main(options: any = {}): void {
   } catch (error: any) {
     console.error("\n! Android prebuild failed:", error.message);
     process.exit(1);
+  }
+}
+
+function parseBoolean(value: unknown): boolean | null {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true") return true;
+    if (normalized === "false") return false;
+  }
+  return null;
+}
+
+function resolveWebServerNativeTls(appDir: string): boolean {
+  const packageConfig = getZynthPackageConfig(appDir, "@zynth/webserver");
+  const candidates = [
+    packageConfig.nativeTls,
+    packageConfig.tlsNative,
+    packageConfig.nativeTlsEnabled,
+    packageConfig.enableNativeTls,
+    packageConfig.enableTls,
+  ];
+  for (const value of candidates) {
+    const parsed = parseBoolean(value);
+    if (parsed !== null) {
+      return parsed;
+    }
+  }
+  return false;
+}
+
+function upsertGradleProperty(
+  filePath: string,
+  key: string,
+  value: string
+): void {
+  const nextLine = `${key}=${value}`;
+  const source = fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : "";
+  const lines = source.length > 0 ? source.split(/\r?\n/) : [];
+  const pattern = new RegExp(`^\\s*${key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*=`);
+
+  let replaced = false;
+  const output = lines.map((line) => {
+    if (pattern.test(line)) {
+      replaced = true;
+      return nextLine;
+    }
+    return line;
+  });
+
+  if (!replaced) {
+    if (output.length > 0 && output[output.length - 1] !== "") {
+      output.push("");
+    }
+    output.push(nextLine);
+  }
+
+  fs.writeFileSync(filePath, `${output.join("\n").replace(/\n+$/, "")}\n`);
+}
+
+function ensureWebServerTlsSources(params: { quiet: boolean }): void {
+  const { quiet } = params;
+  const frameworkRoot = path.resolve(__dirname, "..");
+  const nativeRoot = path.join(
+    frameworkRoot,
+    "packages",
+    "zynth-webserver",
+    "native",
+  );
+  const mbedtlsDir = path.join(nativeRoot, "mbedtls");
+  const mbedtlsSentinel = path.join(mbedtlsDir, "library", "ssl_tls.c");
+  if (fs.existsSync(mbedtlsSentinel)) {
+    return;
+  }
+
+  const tempRoot = path.join(
+    "/tmp",
+    `zynth-webserver-tls-${Date.now().toString(36)}`,
+  );
+  const mbedtlsSourceDir = path.join(tempRoot, "mbedtls");
+  const civetwebSourceDir = path.join(tempRoot, "civetweb");
+
+  fs.mkdirSync(tempRoot, { recursive: true });
+
+  try {
+    if (!quiet) {
+      console.log("◆ Fetching @zynth/webserver TLS sources (mbedTLS + CivetWeb)...");
+    }
+
+    execSync(
+      `git clone --depth 1 --branch mbedtls-2.28.10 https://github.com/Mbed-TLS/mbedtls.git "${mbedtlsSourceDir}"`,
+      { stdio: quiet ? "pipe" : "inherit" },
+    );
+    execSync(
+      `git clone --depth 1 https://github.com/civetweb/civetweb.git "${civetwebSourceDir}"`,
+      { stdio: quiet ? "pipe" : "inherit" },
+    );
+
+    fs.rmSync(mbedtlsDir, { recursive: true, force: true });
+    fs.mkdirSync(mbedtlsDir, { recursive: true });
+    copyDir(path.join(mbedtlsSourceDir, "include"), path.join(mbedtlsDir, "include"));
+    copyDir(path.join(mbedtlsSourceDir, "library"), path.join(mbedtlsDir, "library"));
+    fs.copyFileSync(
+      path.join(mbedtlsSourceDir, "LICENSE"),
+      path.join(mbedtlsDir, "LICENSE"),
+    );
+
+    const civetwebDir = path.join(nativeRoot, "civetweb");
+    fs.copyFileSync(
+      path.join(civetwebSourceDir, "src", "civetweb.c"),
+      path.join(civetwebDir, "civetweb.c"),
+    );
+    fs.copyFileSync(
+      path.join(civetwebSourceDir, "include", "civetweb.h"),
+      path.join(civetwebDir, "civetweb.h"),
+    );
+    fs.copyFileSync(
+      path.join(civetwebSourceDir, "src", "mod_mbedtls.inl"),
+      path.join(civetwebDir, "mod_mbedtls.inl"),
+    );
+    fs.copyFileSync(
+      path.join(civetwebSourceDir, "src", "openssl_dl.inl"),
+      path.join(civetwebDir, "openssl_dl.inl"),
+    );
+    fs.copyFileSync(
+      path.join(civetwebSourceDir, "src", "wolfssl_extras.inl"),
+      path.join(civetwebDir, "wolfssl_extras.inl"),
+    );
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
+function copyDir(sourceDir: string, destDir: string): void {
+  fs.mkdirSync(destDir, { recursive: true });
+  const entries = fs.readdirSync(sourceDir, { withFileTypes: true });
+  for (const entry of entries) {
+    const sourcePath = path.join(sourceDir, entry.name);
+    const destPath = path.join(destDir, entry.name);
+    if (entry.isDirectory()) {
+      copyDir(sourcePath, destPath);
+      continue;
+    }
+    fs.copyFileSync(sourcePath, destPath);
   }
 }
 

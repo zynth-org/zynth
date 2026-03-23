@@ -23,6 +23,8 @@ Java_dev_zynth_webserver_ZynthWebServerNative_start(
   jobject,
   jstring host,
   jint port,
+  jboolean tlsEnabled,
+  jstring tlsCertificate,
   jstring documentRoot,
   jstring indexHtml,
   jstring uploadPath,
@@ -35,6 +37,7 @@ Java_dev_zynth_webserver_ZynthWebServerNative_start(
   jstring eventsPath
 ) {
   std::string hostStr = jstringToString(env, host);
+  std::string tlsCertificateStr = jstringToString(env, tlsCertificate);
   std::string documentRootStr = jstringToString(env, documentRoot);
   std::string indexHtmlStr = jstringToString(env, indexHtml);
   std::string uploadPathStr = jstringToString(env, uploadPath);
@@ -48,6 +51,9 @@ Java_dev_zynth_webserver_ZynthWebServerNative_start(
   ZynthWebServerConfig config;
   config.host = hostStr.empty() ? nullptr : hostStr.c_str();
   config.port = static_cast<int>(port);
+  config.tls_enabled = tlsEnabled == JNI_TRUE ? 1 : 0;
+  config.tls_certificate =
+    tlsCertificateStr.empty() ? nullptr : tlsCertificateStr.c_str();
   config.document_root =
     documentRootStr.empty() ? nullptr : documentRootStr.c_str();
   config.index_html = indexHtmlStr.empty() ? nullptr : indexHtmlStr.c_str();
@@ -68,6 +74,28 @@ Java_dev_zynth_webserver_ZynthWebServerNative_start(
 
   ZynthWebServer *server = zynth_webserver_start(&config);
   return reinterpret_cast<jlong>(server);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_dev_zynth_webserver_ZynthWebServerNative_supportsTls(
+  JNIEnv *,
+  jobject
+) {
+  return zynth_webserver_supports_tls() ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_dev_zynth_webserver_ZynthWebServerNative_getLastError(
+  JNIEnv *env,
+  jobject
+) {
+  char *message = zynth_webserver_get_last_error();
+  if (!message) {
+    return nullptr;
+  }
+  jstring result = env->NewStringUTF(message);
+  zynth_webserver_free_string(message);
+  return result;
 }
 
 extern "C" JNIEXPORT void JNICALL

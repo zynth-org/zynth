@@ -72,6 +72,8 @@ class ZynthWebServerModule(
 
         val host = args.getString("host", "0.0.0.0")
         val port = args.getInt("port", 0)
+        val tlsEnabled = args.getBoolean("tlsEnabled", false)
+        val tlsCertificate = args.getOptionalString("tlsCertificate")
         val documentRoot = args.getOptionalString("documentRoot")
         val indexHtml = args.getOptionalString("indexHtml")
         val uploadPath = args.getOptionalString("uploadPath")
@@ -87,9 +89,25 @@ class ZynthWebServerModule(
             uploadDir = File(activity.cacheDir, "zynth-webserver").absolutePath
         }
 
+        if (tlsEnabled && !ZynthWebServerNative.supportsTls()) {
+            if (BuildConfig.ZYNTH_WEBSERVER_TLS_REQUESTED) {
+                throw IllegalStateException(
+                    "TLS was requested for @zynth/webserver, but the Android native build could not compile a TLS backend. The native build fell back to NO_SSL; HTTPS is unavailable."
+                )
+            }
+            throw IllegalStateException(
+                "TLS is not available in this ZynthWebServer build. Enable @zynth/webserver nativeTls in app.json and rebuild native modules."
+            )
+        }
+        if (tlsEnabled && tlsCertificate.isNullOrBlank()) {
+            throw IllegalArgumentException("tlsCertificate is required when tlsEnabled=true")
+        }
+
         val handle = ZynthWebServerNative.start(
             host,
             port,
+            tlsEnabled,
+            tlsCertificate,
             documentRoot,
             indexHtml,
             uploadPath,
@@ -102,6 +120,10 @@ class ZynthWebServerModule(
             eventsPath
         )
         if (handle == 0L) {
+            val detail = ZynthWebServerNative.getLastError()?.trim().orEmpty()
+            if (detail.isNotEmpty()) {
+                throw IllegalStateException("Failed to start web server ($detail)")
+            }
             throw IllegalStateException("Failed to start web server")
         }
 
@@ -110,7 +132,9 @@ class ZynthWebServerModule(
         val info = JSONObject().apply {
             put("host", host)
             put("port", actualPort)
-            put("url", "http://$host:$actualPort")
+            put("url", "${if (tlsEnabled) "https" else "http"}://$host:$actualPort")
+            put("scheme", if (tlsEnabled) "https" else "http")
+            put("secureTransport", tlsEnabled)
             put("documentRoot", documentRoot ?: JSONObject.NULL)
             put("uploadPath", uploadPath ?: JSONObject.NULL)
             put("uploadMetadataPath", uploadMetadataPath ?: JSONObject.NULL)

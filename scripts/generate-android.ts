@@ -141,13 +141,13 @@ function formatActivityAttributes(androidConfig: any): string {
   return attributes.join("\n            ");
 }
 
-function formatApplicationAttributes(androidConfig: any): string {
+function formatApplicationAttributes(androidConfig: any, dev: boolean): string {
   const attributes: string[] = [];
 
   const usesCleartextTraffic =
     typeof androidConfig?.usesCleartextTraffic === "boolean"
       ? androidConfig.usesCleartextTraffic
-      : true;
+      : dev;
 
   const hasCustomNetworkSecurityConfig =
     androidConfig?.applicationAttributes &&
@@ -783,7 +783,7 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
   const moduleInitializers =
     generateAndroidModuleInitializers(componentModules);
   const activityAttributes = formatActivityAttributes(baseConfig.androidConfig);
-  const applicationAttributes = formatApplicationAttributes(baseConfig.androidConfig);
+  const applicationAttributes = formatApplicationAttributes(baseConfig.androidConfig, dev);
   const activityIntentFilters = formatActivityIntentFilters(baseConfig.androidConfig);
   const androidUsesPermissions = formatAndroidPermissions(baseConfig.androidConfig);
   const appJsonPath = path.join(appDir, "app.json");

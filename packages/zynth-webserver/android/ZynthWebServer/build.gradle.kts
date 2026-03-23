@@ -3,16 +3,34 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val zynthWebServerTlsEnabled =
+    providers.gradleProperty("zynthWebServerTls")
+        .map { it.equals("true", ignoreCase = true) }
+        .orElse(false)
+
 android {
     namespace = "dev.zynth.webserver"
     compileSdk = 34
+    buildFeatures {
+        buildConfig = true
+    }
 
     defaultConfig {
         minSdk = 24
         targetSdk = 34
+        buildConfigField(
+            "boolean",
+            "ZYNTH_WEBSERVER_TLS_REQUESTED",
+            if (zynthWebServerTlsEnabled.get()) "true" else "false"
+        )
         externalNativeBuild {
             cmake {
                 cppFlags("-fexceptions", "-frtti", "-std=c++17")
+                arguments(
+                    "-DZYNTH_WEBSERVER_ENABLE_TLS=${
+                        if (zynthWebServerTlsEnabled.get()) "ON" else "OFF"
+                    }"
+                )
             }
         }
         ndk {
