@@ -29,6 +29,9 @@ class NetworkModule(
         "getIpAddress",
         "getMacAddress",
         "getCurrentWifi",
+        "getLocalIdentity",
+        "signChallenge",
+        "verifyChallenge",
         "isAirplaneModeEnabled",
         "startDiscovery",
         "stopDiscovery",
@@ -52,6 +55,7 @@ class NetworkModule(
         nsdManager = nsdManager,
         wifiManager = wifiManager,
     )
+    private val identityManager = NetworkIdentityManager()
 
     fun shutdown() {
         discoveryController.shutdown()
@@ -67,6 +71,19 @@ class NetworkModule(
             "getIpAddress" -> resultResponse(getIpAddress() ?: JSONObject.NULL)
             "getMacAddress" -> resultResponse(getMacAddress() ?: JSONObject.NULL)
             "getCurrentWifi" -> resultResponse(getCurrentWifi() ?: JSONObject.NULL)
+            "getLocalIdentity" -> resultResponse(identityManager.getLocalIdentity())
+            "signChallenge" -> resultResponse(
+                identityManager.signChallenge(
+                    args.getOptionalString("challengeBase64") ?: ""
+                )
+            )
+            "verifyChallenge" -> resultResponse(
+                identityManager.verifyChallenge(
+                    args.getOptionalString("publicKeyBase64") ?: "",
+                    args.getOptionalString("challengeBase64") ?: "",
+                    args.getOptionalString("signatureBase64") ?: "",
+                )
+            )
             "isAirplaneModeEnabled" -> resultResponse(isAirplaneModeEnabled())
             "startDiscovery" -> {
                 discoveryController.startDiscovery(parseDiscoveryConfig(args))
@@ -102,6 +119,7 @@ class NetworkModule(
         return when (method) {
             "getNetworkState", "current" -> getNetworkState()
             "getIpAddress" -> getIpAddress() ?: JSONObject.NULL
+            "getLocalIdentity" -> identityManager.getLocalIdentity()
             "isDiscoveryRunning" -> discoveryController.isDiscoveryRunning()
             "getDiscoveredServices" -> discoveryController.getDiscoveredServices()
             "getAdvertisedService" -> discoveryController.getAdvertisedService()
