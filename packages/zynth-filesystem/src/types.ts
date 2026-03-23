@@ -36,6 +36,9 @@ export type UploadChecksumOptions =
 export type UploadOptions = {
   method?: string;
   headers?: Record<string, string>;
+  tls?: {
+    trustedCertificatesPem?: string | readonly string[];
+  };
   signal?: AbortSignal;
   timeout?: number;
   onUploadProgress?: (progress: UploadProgress) => void;

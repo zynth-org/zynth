@@ -25,6 +25,9 @@ import { Directory } from "./Directory";
 type ExtendedFetchRequestInit = RequestInit & {
   timeout?: number;
   onUploadProgress?: (progress: UploadProgress) => void;
+  tls?: {
+    trustedCertificatesPem?: string | readonly string[];
+  };
 };
 
 const DEFAULT_UPLOAD_CHUNK_SIZE = 64 * 1024;
@@ -228,6 +231,7 @@ export class File {
       signal: options?.signal,
       timeout: options?.timeout,
       onUploadProgress: options?.onUploadProgress,
+      tls: normalizeUploadTlsOptions(options?.tls),
     };
 
     return fetch(url, init);
@@ -339,6 +343,44 @@ export class File {
     return target;
   }
 
+}
+
+function normalizeUploadTlsOptions(
+  tls:
+    | {
+        trustedCertificatesPem?: string | readonly string[];
+      }
+    | undefined
+): { trustedCertificatesPem?: string | readonly string[] } | undefined {
+  if (!tls) {
+    return undefined;
+  }
+  const trustedCertificatesPem = normalizeTrustedCertificatesPem(
+    tls.trustedCertificatesPem
+  );
+  if (!trustedCertificatesPem) {
+    return undefined;
+  }
+  return { trustedCertificatesPem };
+}
+
+function normalizeTrustedCertificatesPem(
+  value: string | readonly string[] | undefined
+): string | readonly string[] | undefined {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const normalized = value
+    .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+    .filter((entry) => entry.length > 0);
+  if (normalized.length === 0) {
+    return undefined;
+  }
+  return normalized;
 }
 
 function resolveDestinationUri(destination: Directory | File | string, name: string): string {

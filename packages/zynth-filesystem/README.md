@@ -59,6 +59,9 @@ const video = new File(Paths.document, "movie.mp4");
 const response = await video.uploadAsync("https://example.com/upload", {
   method: "PUT",
   checksum: { algorithm: "sha256", headerName: "x-content-checksum" },
+  tls: {
+    trustedCertificatesPem: [serverCertificatePem],
+  },
   onUploadProgress: (event) => {
     console.log(event.phase, event.bytesSent, event.bytesTotal);
   },
@@ -130,6 +133,25 @@ Supported algorithms:
 
 - `checksum: "sha256"` -> defaults to `x-zynth-checksum: sha256:<digest>`
 - custom object for `headerName` and prefix behavior
+
+### TLS pinning in `uploadAsync`
+
+For self-signed or private CA HTTPS endpoints, pass request-level trust anchors:
+
+```ts
+await file.uploadAsync("https://127.0.0.1:53317/__zynth/upload", {
+  method: "POST",
+  tls: {
+    trustedCertificatesPem: [serverCertificatePem],
+  },
+});
+```
+
+Notes:
+
+- `trustedCertificatesPem` accepts one PEM string or an array of PEM strings.
+- Trust applies only to that request.
+- This is intended for explicit cert pinning/private trust flows.
 
 ### Path semantics and URI support
 
