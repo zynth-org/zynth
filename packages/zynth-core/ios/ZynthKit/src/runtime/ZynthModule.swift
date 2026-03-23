@@ -151,7 +151,11 @@ final class ZynthModuleRegistry: NSObject, ZynthModuleBridge {
       return try call(moduleName, method: methodName, args: args)
     } catch {
       let sanitized = ZynthErrorMapper.sanitize(error)
-      return ["error": sanitized.code, "message": sanitized.publicMessage]
+      var payload: [String: Any] = ["error": sanitized.code, "message": sanitized.publicMessage]
+      if let debugDetails = sanitized.debugDetails, !debugDetails.isEmpty {
+        payload["details"] = debugDetails
+      }
+      return payload
     }
   }
   
@@ -160,7 +164,11 @@ final class ZynthModuleRegistry: NSObject, ZynthModuleBridge {
       return try callSync(moduleName, method: methodName, args: args)
     } catch {
       let sanitized = ZynthErrorMapper.sanitize(error)
-      return ["error": sanitized.code, "message": sanitized.publicMessage]
+      var payload: [String: Any] = ["error": sanitized.code, "message": sanitized.publicMessage]
+      if let debugDetails = sanitized.debugDetails, !debugDetails.isEmpty {
+        payload["details"] = debugDetails
+      }
+      return payload
     }
   }
 }

@@ -27,6 +27,27 @@ class ZynthModuleRegistry {
     private var lastNonce: Long = 0
     private var bridgeSessionId: String? = null
 
+    private fun errorJson(sanitized: SanitizedError): JSONObject {
+        val payload = JSONObject()
+            .put("error", sanitized.code)
+            .put("message", sanitized.publicMessage)
+        if (!sanitized.debugDetails.isNullOrBlank()) {
+            payload.put("details", sanitized.debugDetails)
+        }
+        return payload
+    }
+
+    private fun errorMap(sanitized: SanitizedError): Map<String, Any> {
+        val payload = mutableMapOf<String, Any>(
+            "error" to sanitized.code,
+            "message" to sanitized.publicMessage,
+        )
+        if (!sanitized.debugDetails.isNullOrBlank()) {
+            payload["details"] = sanitized.debugDetails
+        }
+        return payload
+    }
+
     fun setSessionId(sessionId: String) {
         synchronized(this) {
             this.bridgeSessionId = sessionId
@@ -97,16 +118,14 @@ class ZynthModuleRegistry {
         if (module == null) {
             Log.w(TAG, "Module not found: $name")
             val sanitized = ZynthErrorMapper.sanitizeModuleError("module_not_found")
-            return JSONObject().put("error", sanitized.code).put("message", sanitized.publicMessage)
+            return errorJson(sanitized)
         }
 
         Log.i(TAG, "Module found, calling: $name.$method")
         if (!module.exportedMethods.contains(method)) {
             Log.w(TAG, "Method not exported: $name.$method")
             val sanitized = ZynthErrorMapper.sanitizeModuleError("method_not_exported")
-            return JSONObject()
-                .put("error", sanitized.code)
-                .put("message", sanitized.publicMessage)
+            return errorJson(sanitized)
         }
 
         return try {
@@ -117,9 +136,7 @@ class ZynthModuleRegistry {
             module.call(method, zynthArgs)
         } catch (t: Throwable) {
             val sanitized = ZynthErrorMapper.sanitize(t)
-            JSONObject()
-                .put("error", sanitized.code)
-                .put("message", sanitized.publicMessage)
+            errorJson(sanitized)
         }
     }
 
@@ -129,28 +146,19 @@ class ZynthModuleRegistry {
         if (module == null) {
             val sanitized = ZynthErrorMapper.sanitizeModuleError("module_not_found")
             Log.w(TAG, "Module $name not found")
-            return mapOf(
-                "error" to sanitized.code,
-                "message" to sanitized.publicMessage,
-            )
+            return errorMap(sanitized)
         }
 
         if (module !is ZynthSyncModule) {
             val sanitized = ZynthErrorMapper.sanitizeModuleError("sync_not_supported")
             Log.w(TAG, "Module $name does not support synchronous method $method")
-            return mapOf(
-                "error" to sanitized.code,
-                "message" to sanitized.publicMessage,
-            )
+            return errorMap(sanitized)
         }
 
         if (!module.exportedMethods.contains(method)) {
             val sanitized = ZynthErrorMapper.sanitizeModuleError("method_not_exported")
             Log.w(TAG, "Method $method is not exported by module $name")
-            return mapOf(
-                "error" to sanitized.code,
-                "message" to sanitized.publicMessage,
-            )
+            return errorMap(sanitized)
         }
 
         return try {
@@ -161,10 +169,7 @@ class ZynthModuleRegistry {
             module.callSync(method, zynthArgs)
         } catch (t: Throwable) {
             val sanitized = ZynthErrorMapper.sanitize(t)
-            mapOf(
-                "error" to sanitized.code,
-                "message" to sanitized.publicMessage,
-            )
+            errorMap(sanitized)
         }
     }
 }
