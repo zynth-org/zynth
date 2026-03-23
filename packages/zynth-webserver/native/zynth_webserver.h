@@ -38,6 +38,10 @@ int zynth_webserver_get_port(ZynthWebServer *server);
 const char *zynth_webserver_get_host(ZynthWebServer *server);
 int zynth_webserver_supports_tls(void);
 char *zynth_webserver_get_last_error(void);
+char *zynth_webserver_generate_self_signed_pem(
+  const char *common_name,
+  int valid_days
+);
 
 size_t zynth_webserver_drain_events(
   ZynthWebServer *server,

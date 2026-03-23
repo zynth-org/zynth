@@ -12,6 +12,18 @@
 #include <time.h>
 #include <stdarg.h>
 
+#if defined(USE_MBEDTLS)
+#include "mbedtls/ctr_drbg.h"
+#include "mbedtls/ecp.h"
+#include "mbedtls/entropy.h"
+#include "mbedtls/error.h"
+#include "mbedtls/md.h"
+#include "mbedtls/pk.h"
+#include "mbedtls/oid.h"
+#include "mbedtls/x509_crt.h"
+#include "mbedtls/x509_csr.h"
+#endif
+
 typedef struct ZynthWebServerEventNode {
   ZynthWebServerEvent event;
   struct ZynthWebServerEventNode *next;
@@ -130,6 +142,243 @@ static long long zynth_now_ms(void) {
   struct timespec ts;
   clock_gettime(CLOCK_REALTIME, &ts);
   return ((long long)ts.tv_sec * 1000LL) + ((long long)ts.tv_nsec / 1000000LL);
+}
+
+static int zynth_clamp_valid_days(int valid_days) {
+  if (valid_days <= 0) {
+    return 365;
+  }
+  if (valid_days > 3650) {
+    return 3650;
+  }
+  return valid_days;
+}
+
+static int zynth_format_utc_time(time_t value, char out[16]) {
+  struct tm tm_value;
+#if defined(_WIN32)
+  if (gmtime_s(&tm_value, &value) != 0) {
+    return 0;
+  }
+#else
+  if (!gmtime_r(&value, &tm_value)) {
+    return 0;
+  }
+#endif
+  if (strftime(out, 16, "%Y%m%d%H%M%S", &tm_value) == 0) {
+    return 0;
+  }
+  return 1;
+}
+
+#if defined(USE_MBEDTLS)
+static void zynth_set_mbedtls_error(const char *prefix, int code) {
+  char details[256];
+  memset(details, 0, sizeof(details));
+  mbedtls_strerror(code, details, sizeof(details));
+  zynth_set_last_errorf("%s (%d): %s", prefix, code, details);
+}
+#endif
+
+char *zynth_webserver_generate_self_signed_pem(
+  const char *common_name,
+  int valid_days
+) {
+#if defined(NO_SSL)
+  (void)common_name;
+  (void)valid_days;
+  zynth_set_last_error(
+    "TLS is not available in this ZynthWebServer build. Rebuild native module with TLS enabled."
+  );
+  return NULL;
+#elif defined(USE_MBEDTLS)
+  zynth_set_last_error(NULL);
+  const char *effective_common_name =
+    (common_name && *common_name) ? common_name : "localhost";
+  int effective_valid_days = zynth_clamp_valid_days(valid_days);
+
+  mbedtls_entropy_context entropy;
+  mbedtls_ctr_drbg_context ctr_drbg;
+  mbedtls_pk_context key;
+  mbedtls_x509write_cert cert;
+  mbedtls_mpi serial;
+
+  mbedtls_entropy_init(&entropy);
+  mbedtls_ctr_drbg_init(&ctr_drbg);
+  mbedtls_pk_init(&key);
+  mbedtls_x509write_crt_init(&cert);
+  mbedtls_mpi_init(&serial);
+
+  int result = 0;
+  const char *personalization = "zynth-webserver-self-signed";
+  result = mbedtls_ctr_drbg_seed(
+    &ctr_drbg,
+    mbedtls_entropy_func,
+    &entropy,
+    (const unsigned char *)personalization,
+    strlen(personalization)
+  );
+  if (result != 0) {
+    zynth_set_mbedtls_error("Failed to seed certificate RNG", result);
+    goto cleanup;
+  }
+
+  result = mbedtls_pk_setup(&key, mbedtls_pk_info_from_type(MBEDTLS_PK_ECKEY));
+  if (result != 0) {
+    zynth_set_mbedtls_error("Failed to initialize certificate key", result);
+    goto cleanup;
+  }
+
+  result = mbedtls_ecp_gen_key(
+    MBEDTLS_ECP_DP_SECP256R1,
+    mbedtls_pk_ec(key),
+    mbedtls_ctr_drbg_random,
+    &ctr_drbg
+  );
+  if (result != 0) {
+    zynth_set_mbedtls_error("Failed to generate EC key", result);
+    goto cleanup;
+  }
+
+  unsigned char serial_bytes[16];
+  memset(serial_bytes, 0, sizeof(serial_bytes));
+  result = mbedtls_ctr_drbg_random(&ctr_drbg, serial_bytes, sizeof(serial_bytes));
+  if (result != 0) {
+    zynth_set_mbedtls_error("Failed to generate certificate serial", result);
+    goto cleanup;
+  }
+  serial_bytes[0] = (unsigned char)(serial_bytes[0] & 0x7fU);
+  if (serial_bytes[0] == 0) {
+    serial_bytes[0] = 1;
+  }
+  result = mbedtls_mpi_read_binary(&serial, serial_bytes, sizeof(serial_bytes));
+  if (result != 0) {
+    zynth_set_mbedtls_error("Failed to encode certificate serial", result);
+    goto cleanup;
+  }
+
+  char subject_name[256];
+  snprintf(subject_name, sizeof(subject_name), "CN=%s", effective_common_name);
+  char not_before[16];
+  char not_after[16];
+  time_t now = time(NULL);
+  time_t expires_at = now + (time_t)effective_valid_days * 24 * 60 * 60;
+  if (!zynth_format_utc_time(now, not_before) ||
+      !zynth_format_utc_time(expires_at, not_after)) {
+    zynth_set_last_error("Failed to format certificate validity window");
+    goto cleanup;
+  }
+
+  mbedtls_x509write_crt_set_md_alg(&cert, MBEDTLS_MD_SHA256);
+  mbedtls_x509write_crt_set_subject_key(&cert, &key);
+  mbedtls_x509write_crt_set_issuer_key(&cert, &key);
+  result = mbedtls_x509write_crt_set_subject_name(&cert, subject_name);
+  if (result != 0) {
+    zynth_set_mbedtls_error("Failed to set certificate subject name", result);
+    goto cleanup;
+  }
+  result = mbedtls_x509write_crt_set_issuer_name(&cert, subject_name);
+  if (result != 0) {
+    zynth_set_mbedtls_error("Failed to set certificate issuer name", result);
+    goto cleanup;
+  }
+  result = mbedtls_x509write_crt_set_serial(&cert, &serial);
+  if (result != 0) {
+    zynth_set_mbedtls_error("Failed to set certificate serial", result);
+    goto cleanup;
+  }
+  result = mbedtls_x509write_crt_set_validity(&cert, not_before, not_after);
+  if (result != 0) {
+    zynth_set_mbedtls_error("Failed to set certificate validity", result);
+    goto cleanup;
+  }
+  result = mbedtls_x509write_crt_set_basic_constraints(&cert, 0, -1);
+  if (result != 0) {
+    zynth_set_mbedtls_error("Failed to set certificate constraints", result);
+    goto cleanup;
+  }
+  const unsigned char subject_alt_name[] = {
+    0x30, 0x11,
+    0x82, 0x09, 'l', 'o', 'c', 'a', 'l', 'h', 'o', 's', 't',
+    0x87, 0x04, 0x7f, 0x00, 0x00, 0x01
+  };
+  result = mbedtls_x509write_crt_set_extension(
+    &cert,
+    MBEDTLS_OID_SUBJECT_ALT_NAME,
+    MBEDTLS_OID_SIZE(MBEDTLS_OID_SUBJECT_ALT_NAME),
+    0,
+    subject_alt_name,
+    sizeof(subject_alt_name)
+  );
+  if (result != 0) {
+    zynth_set_mbedtls_error("Failed to set certificate subjectAltName", result);
+    goto cleanup;
+  }
+  result = mbedtls_x509write_crt_set_subject_key_identifier(&cert);
+  if (result != 0) {
+    zynth_set_mbedtls_error("Failed to set certificate key identifier", result);
+    goto cleanup;
+  }
+  result = mbedtls_x509write_crt_set_authority_key_identifier(&cert);
+  if (result != 0) {
+    zynth_set_mbedtls_error("Failed to set certificate authority identifier", result);
+    goto cleanup;
+  }
+
+  unsigned char cert_pem[4096];
+  unsigned char key_pem[4096];
+  memset(cert_pem, 0, sizeof(cert_pem));
+  memset(key_pem, 0, sizeof(key_pem));
+
+  result = mbedtls_x509write_crt_pem(
+    &cert,
+    cert_pem,
+    sizeof(cert_pem),
+    mbedtls_ctr_drbg_random,
+    &ctr_drbg
+  );
+  if (result != 0) {
+    zynth_set_mbedtls_error("Failed to serialize certificate PEM", result);
+    goto cleanup;
+  }
+
+  result = mbedtls_pk_write_key_pem(&key, key_pem, sizeof(key_pem));
+  if (result != 0) {
+    zynth_set_mbedtls_error("Failed to serialize private key PEM", result);
+    goto cleanup;
+  }
+
+  size_t cert_length = strlen((const char *)cert_pem);
+  size_t key_length = strlen((const char *)key_pem);
+  char *combined = (char *)malloc(cert_length + key_length + 2);
+  if (!combined) {
+    zynth_set_last_error("Out of memory while creating certificate PEM");
+    goto cleanup;
+  }
+  memcpy(combined, cert_pem, cert_length);
+  memcpy(combined + cert_length, key_pem, key_length);
+  combined[cert_length + key_length] = '\0';
+
+  mbedtls_mpi_free(&serial);
+  mbedtls_x509write_crt_free(&cert);
+  mbedtls_pk_free(&key);
+  mbedtls_ctr_drbg_free(&ctr_drbg);
+  mbedtls_entropy_free(&entropy);
+  return combined;
+
+cleanup:
+  mbedtls_mpi_free(&serial);
+  mbedtls_x509write_crt_free(&cert);
+  mbedtls_pk_free(&key);
+  mbedtls_ctr_drbg_free(&ctr_drbg);
+  mbedtls_entropy_free(&entropy);
+  return NULL;
+#else
+  (void)common_name;
+  (void)valid_days;
+  zynth_set_last_error("TLS certificate generation backend is not available");
+  return NULL;
+#endif
 }
 
 static void zynth_webserver_queue_event(
