@@ -55,6 +55,17 @@ declare global {
 
 let _nextNonce = Date.now();
 
+type NativeErrorResult = {
+  error?: unknown;
+  message?: unknown;
+  details?: unknown;
+};
+
+type ZynthNativeError = Error & {
+  code?: string;
+  details?: unknown;
+};
+
 /**
  * Retrieves the global object in a cross-platform safe way.
  */
@@ -96,7 +107,31 @@ export function getNativeModule<T>(key: string): T | null {
 export function unwrapNativeResult<T = unknown>(value: any): T {
   if (value && typeof value === "object") {
     if ("error" in value) {
-      throw new Error(value.message || value.error || "Unknown native error");
+      const nativeError = value as NativeErrorResult;
+      const code = typeof nativeError.error === "string" ? nativeError.error : undefined;
+      const baseMessage =
+        typeof nativeError.message === "string"
+          ? nativeError.message
+          : typeof nativeError.error === "string"
+            ? nativeError.error
+            : "Unknown native error";
+      const details = nativeError.details;
+      const detailsText =
+        typeof details === "string"
+          ? details.trim()
+          : details != null
+            ? String(details)
+            : "";
+      const fullMessage = detailsText.length > 0 ? `${baseMessage}\n${detailsText}` : baseMessage;
+
+      const error = new Error(fullMessage) as ZynthNativeError;
+      if (code) {
+        error.code = code;
+      }
+      if (details !== undefined) {
+        error.details = details;
+      }
+      throw error;
     }
     if ("result" in value) return value.result as T;
     if ("data" in value) return value.data as T;

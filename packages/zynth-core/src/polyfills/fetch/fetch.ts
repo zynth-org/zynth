@@ -5,6 +5,7 @@ import { coerceBody, getGlobalObject, isReadableStreamBody } from "./utils";
 import type {
   FetchBridge,
   FetchPayload,
+  FetchTlsInit,
   RequestInit,
   FetchResult,
   BodyInit,
@@ -85,6 +86,14 @@ export async function fetch(
   const resolvedBody = await resolveBody(rawBody, headers, globalObject);
   const uploadStream = resolvedBody?.uploadStream;
   const uploadTotalBytes = inferUploadTotalBytes(headers, resolvedBody);
+  const trustedCertificatesPem = normalizeTrustedCertificates(
+    init?.tls?.trustedCertificatesPem
+  );
+  if (trustedCertificatesPem.length > 0) {
+    payload.tls = {
+      trustedCertificatesPem,
+    };
+  }
 
   if (resolvedBody) {
     payload.body = resolvedBody.body;
@@ -222,6 +231,29 @@ export async function fetch(
 }
 
 export { Headers, Request, Response };
+
+function normalizeTrustedCertificates(
+  value: FetchTlsInit["trustedCertificatesPem"] | undefined
+): string[] {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? [trimmed] : [];
+  }
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const output: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "string") {
+      continue;
+    }
+    const trimmed = entry.trim();
+    if (trimmed.length > 0) {
+      output.push(trimmed);
+    }
+  }
+  return output;
+}
 
 type UploadPumpArgs = {
   bridge: FetchBridge;

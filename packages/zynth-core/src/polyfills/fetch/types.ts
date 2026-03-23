@@ -25,6 +25,10 @@ export type UploadProgress = {
   phase: "enqueue" | "complete";
 };
 
+export type FetchTlsInit = {
+  trustedCertificatesPem?: string | readonly string[];
+};
+
 export type HeaderInit =
   | Record<string, string>
   | Headers
@@ -39,6 +43,7 @@ export type RequestInit = {
   stream?: boolean;
   onUploadProgress?: (progress: UploadProgress) => void;
   redirect?: "follow" | "error" | "manual";
+  tls?: FetchTlsInit;
 };
 
 export type BodyInit =
@@ -81,4 +86,7 @@ export type FetchPayload = {
   stream?: boolean;
   uploadStream?: boolean;
   uploadLength?: number | null;
+  tls?: {
+    trustedCertificatesPem?: string[];
+  };
 };
