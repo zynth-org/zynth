@@ -59,6 +59,33 @@ const verified = await Network.verifyChallengeAsync({
 console.log(verified);
 ```
 
+### Handshake + TOFU helper flow
+
+```ts
+import {
+  Network,
+  createNetworkTrustStore,
+  createPeerChallenge,
+} from "@zynth/network";
+
+const trustStore = createNetworkTrustStore();
+const challenge = createPeerChallenge();
+
+// Send challenge.challengeBase64 to peer, receive proof from peer.
+const result = await Network.authenticatePeerAsync({
+  challengeBase64: challenge.challengeBase64,
+  issuedAt: challenge.issuedAt,
+  proof: peerProof,
+  trustStore,
+  trustOnFirstUse: true,
+  alias: "Alice Phone",
+});
+
+if (!result.verified || !result.trusted) {
+  throw new Error(result.reason ?? "peer authentication failed");
+}
+```
+
 ### Recommended Solid usage
 
 Use `createNetworkDiscovery` in components. It manages polling/subscription lifecycle and cleanup for you.
@@ -77,6 +104,17 @@ const events = discovery.events();
 ```
 
 ## Advanced
+
+### Secure peer session helpers
+
+`@zynth/network` now includes first-class helpers for authenticated local peer sessions:
+
+- `createPeerChallenge()` / `Network.createChallengeBase64(...)` for challenge creation
+- `Network.authenticatePeerAsync(...)` for signature + freshness verification
+- `createNetworkTrustStore(...)` for optional central trust persistence/TOFU
+- `createIdentityTxtRecord(...)` + `parseIdentityTxtRecord(...)` for identity metadata in TXT records
+
+To auto-advertise local identity over mDNS TXT, set `includeIdentity: true` in `startServiceAsync`.
 
 ### Why `createNetworkDiscovery`
 
@@ -201,6 +239,8 @@ If previously denied, re-enable:
 - `getLocalIdentityAsync(): Promise<NetworkLocalIdentity>`
 - `signChallengeAsync(challengeBase64: string): Promise<NetworkChallengeProof>`
 - `verifyChallengeAsync(options: NetworkVerifyChallengeOptions): Promise<boolean>`
+- `createChallengeBase64(challengeBytes?: number): string`
+- `authenticatePeerAsync(options: NetworkAuthenticatePeerOptions): Promise<NetworkAuthenticatePeerResult>`
 
 - `startDiscoveryAsync(options?: NetworkDiscoveryOptions): Promise<void>`
 - `stopDiscoveryAsync(): Promise<void>`
@@ -266,7 +306,17 @@ Returns `NetworkDiscoveryController` with:
   - helper for generating RFC-compatible DNS-SD service types
 - `createCapabilityTxtRecord(capabilities)`
   - typed TXT encoder for capability advertisement (`version`, `transfer`, `maxChunk`, custom keys)
+- `createIdentityTxtRecord(identity)`
+  - encodes identity keys (`zidAlg`, `zidKeyId`, `zidPk`, `zidFp`) for service TXT records
 - `parseCapabilityTxtRecord(txtRecord)`
   - parses known capability keys and keeps custom TXT entries
+- `parseIdentityTxtRecord(txtRecord)`
+  - decodes peer identity from TXT, when present
 - `normalizePeerMetadata(service)` / `normalizePeerMetadataList(services)`
   - lightweight peer metadata normalization for cross-platform peer lists
+- `createPeerChallenge(challengeBytes?)`
+  - creates a random base64 challenge with timestamp
+- `createNetworkTrustStore(options?)`
+  - optional centralized trust store with pluggable persistence (TOFU/known-peer flows)
+- `NetworkAdvertiseOptions.includeIdentity?`
+  - when `true`, adds identity TXT keys (`zidAlg`, `zidKeyId`, `zidPk`, `zidFp`) automatically

@@ -87,6 +87,7 @@ export type NetworkAdvertiseOptions = {
   domain?: string;
   txtRecord?: ServiceTxtRecord;
   capabilities?: NetworkCapabilityAdvertisement;
+  includeIdentity?: boolean;
 };
 
 export type AdvertisedServiceInfo = {
@@ -161,4 +162,81 @@ export type NetworkVerifyChallengeOptions = {
   publicKeyBase64: string;
   challengeBase64: string;
   signatureBase64: string;
+};
+
+export type NetworkIdentityTxtRecord = {
+  algorithm: NetworkIdentityAlgorithm;
+  keyId: string;
+  publicKeyBase64: string;
+  fingerprintSha256: string;
+};
+
+export type NetworkPeerChallenge = {
+  challengeBase64: string;
+  issuedAt: number;
+};
+
+export type NetworkTrustRecord = {
+  fingerprintSha256: string;
+  publicKeyBase64?: string;
+  keyId?: string;
+  alias?: string;
+  firstSeenAt: number;
+  lastSeenAt: number;
+  lastVerifiedAt?: number;
+  verificationCount: number;
+  metadata?: Record<string, string>;
+};
+
+export type NetworkTrustStorePersistence = {
+  load: () => Promise<NetworkTrustRecord[] | null | undefined>;
+  save: (records: readonly NetworkTrustRecord[]) => Promise<void>;
+};
+
+export type NetworkTrustStore = {
+  listAsync: () => Promise<NetworkTrustRecord[]>;
+  getAsync: (fingerprintSha256: string) => Promise<NetworkTrustRecord | null>;
+  isTrustedAsync: (fingerprintSha256: string) => Promise<boolean>;
+  upsertAsync: (record: NetworkTrustRecord) => Promise<NetworkTrustRecord>;
+  touchVerifiedAsync: (
+    fingerprintSha256: string,
+    details: {
+      verifiedAt?: number;
+      publicKeyBase64?: string;
+      keyId?: string;
+      alias?: string;
+      metadata?: Record<string, string>;
+    }
+  ) => Promise<NetworkTrustRecord>;
+  revokeAsync: (fingerprintSha256: string) => Promise<boolean>;
+  clearAsync: () => Promise<void>;
+};
+
+export type CreateNetworkTrustStoreOptions = {
+  initialRecords?: readonly NetworkTrustRecord[];
+  persistence?: NetworkTrustStorePersistence;
+  now?: () => number;
+};
+
+export type NetworkAuthenticatePeerOptions = {
+  challengeBase64: string;
+  proof: NetworkChallengeProof;
+  issuedAt?: number;
+  maxSignedAgeMs?: number;
+  allowedClockSkewMs?: number;
+  expectedFingerprintSha256?: string;
+  expectedKeyId?: string;
+  trustStore?: NetworkTrustStore;
+  trustOnFirstUse?: boolean;
+  alias?: string;
+  metadata?: Record<string, string>;
+};
+
+export type NetworkAuthenticatePeerResult = {
+  verified: boolean;
+  trusted: boolean;
+  trustReason: "none" | "known" | "tofu";
+  reason?: string;
+  peer: NetworkLocalIdentity;
+  signedAt: number;
 };

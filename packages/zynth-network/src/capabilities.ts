@@ -1,5 +1,7 @@
 import type {
   NetworkCapabilityAdvertisement,
+  NetworkIdentityTxtRecord,
+  NetworkLocalIdentity,
   ParsedNetworkCapabilities,
   ServiceTxtRecord,
 } from "./types";
@@ -9,6 +11,10 @@ const TRANSFER_KEY = "transfer";
 const MAX_CHUNK_KEY = "maxChunk";
 const DEVICE_ID_KEY = "zdid";
 const LEGACY_DEVICE_ID_KEY = "zynthDeviceId";
+const IDENTITY_ALGORITHM_KEY = "zidAlg";
+const IDENTITY_KEY_ID_KEY = "zidKeyId";
+const IDENTITY_PUBLIC_KEY_KEY = "zidPk";
+const IDENTITY_FINGERPRINT_KEY = "zidFp";
 
 const KNOWN_KEYS: readonly string[] = [
   VERSION_KEY,
@@ -16,6 +22,10 @@ const KNOWN_KEYS: readonly string[] = [
   MAX_CHUNK_KEY,
   DEVICE_ID_KEY,
   LEGACY_DEVICE_ID_KEY,
+  IDENTITY_ALGORITHM_KEY,
+  IDENTITY_KEY_ID_KEY,
+  IDENTITY_PUBLIC_KEY_KEY,
+  IDENTITY_FINGERPRINT_KEY,
 ];
 const KNOWN_LOWERCASE_KEYS = new Set(
   KNOWN_KEYS.map((key) => key.toLowerCase())
@@ -27,7 +37,49 @@ export const NetworkTxtRecordKeys = {
   Version: VERSION_KEY,
   Transfer: TRANSFER_KEY,
   MaxChunk: MAX_CHUNK_KEY,
+  IdentityAlgorithm: IDENTITY_ALGORITHM_KEY,
+  IdentityKeyId: IDENTITY_KEY_ID_KEY,
+  IdentityPublicKey: IDENTITY_PUBLIC_KEY_KEY,
+  IdentityFingerprint: IDENTITY_FINGERPRINT_KEY,
 } as const;
+
+export function createIdentityTxtRecord(
+  identity: NetworkLocalIdentity
+): ServiceTxtRecord {
+  return {
+    [IDENTITY_ALGORITHM_KEY]: identity.algorithm,
+    [IDENTITY_KEY_ID_KEY]: identity.keyId,
+    [IDENTITY_PUBLIC_KEY_KEY]: identity.publicKeyBase64,
+    [IDENTITY_FINGERPRINT_KEY]: identity.fingerprintSha256,
+  };
+}
+
+export function parseIdentityTxtRecord(
+  txtRecord?: ServiceTxtRecord | null
+): NetworkIdentityTxtRecord | null {
+  const normalized = normalizeTxtRecord(txtRecord);
+  const algorithm = normalized[IDENTITY_ALGORITHM_KEY];
+  const keyId = normalized[IDENTITY_KEY_ID_KEY];
+  const publicKeyBase64 = normalized[IDENTITY_PUBLIC_KEY_KEY];
+  const fingerprintSha256 = normalized[IDENTITY_FINGERPRINT_KEY];
+  if (
+    algorithm !== "ECDSA_P256_SHA256" ||
+    typeof keyId !== "string" ||
+    typeof publicKeyBase64 !== "string" ||
+    typeof fingerprintSha256 !== "string" ||
+    keyId.trim().length === 0 ||
+    publicKeyBase64.trim().length === 0 ||
+    fingerprintSha256.trim().length === 0
+  ) {
+    return null;
+  }
+  return {
+    algorithm,
+    keyId,
+    publicKeyBase64,
+    fingerprintSha256,
+  };
+}
 
 function normalizeTxtKey(key: string): string {
   return key.trim();

@@ -4,13 +4,17 @@ import {
   NetworkServiceTypes,
 } from "./constants";
 import {
+  createIdentityTxtRecord,
   createCapabilityTxtRecord,
   NetworkTxtRecordKeys,
   normalizeTxtRecord,
   parseCapabilityTxtRecord,
 } from "./capabilities";
+import { authenticatePeerAsync as authenticatePeer } from "./handshake";
 import type {
   AdvertisedServiceInfo,
+  NetworkAuthenticatePeerOptions,
+  NetworkAuthenticatePeerResult,
   DiscoveryEvent,
   NetworkChallengeProof,
   NetworkAdvertiseOptions,
@@ -120,9 +124,9 @@ function normalizeDiscoveryOptions(
   };
 }
 
-function normalizeAdvertiseOptions(
+async function normalizeAdvertiseOptions(
   options: NetworkAdvertiseOptions
-): NetworkAdvertiseOptions {
+): Promise<NetworkAdvertiseOptions> {
   const serviceType = (options.serviceType || "").trim();
   const name = (options.name || "").trim();
   const port = Math.round(options.port);
@@ -142,6 +146,10 @@ function normalizeAdvertiseOptions(
     ...capabilityTxtRecord,
     ...normalizeTxtRecord(options.txtRecord),
   };
+  if (options.includeIdentity === true) {
+    const identity = await Network.getLocalIdentityAsync();
+    Object.assign(txtRecord, createIdentityTxtRecord(identity));
+  }
   delete txtRecord[NetworkTxtRecordKeys.LegacyDeviceId];
   txtRecord[NetworkTxtRecordKeys.DeviceId] = getLocalDeviceId();
 
@@ -311,6 +319,44 @@ async function createSnapshot(
 }
 
 export const Network = {
+  createChallengeBase64(challengeBytes = 32): string {
+    if (typeof challengeBytes !== "number" || !Number.isFinite(challengeBytes)) {
+      challengeBytes = 32;
+    }
+    const size = Math.max(16, Math.min(4096, Math.round(challengeBytes)));
+    const bytes = new Uint8Array(size);
+    const cryptoValue = getGlobalObject().crypto as
+      | { getRandomValues(value: Uint8Array): Uint8Array }
+      | undefined;
+    if (cryptoValue?.getRandomValues) {
+      cryptoValue.getRandomValues(bytes);
+    } else {
+      for (let index = 0; index < bytes.length; index += 1) {
+        bytes[index] = Math.floor(Math.random() * 256);
+      }
+    }
+    let binary = "";
+    for (let index = 0; index < bytes.length; index += 1) {
+      binary += String.fromCharCode(bytes[index] as number);
+    }
+    if (typeof btoa === "function") {
+      return btoa(binary);
+    }
+    const bufferCtor = getGlobalObject().Buffer as
+      | { from(input: Uint8Array): { toString(encoding: string): string } }
+      | undefined;
+    if (bufferCtor) {
+      return bufferCtor.from(bytes).toString("base64");
+    }
+    throw new Error("No base64 encoder available in this runtime");
+  },
+
+  async authenticatePeerAsync(
+    options: NetworkAuthenticatePeerOptions
+  ): Promise<NetworkAuthenticatePeerResult> {
+    return authenticatePeer(options);
+  },
+
   async getNetworkStateAsync(): Promise<NetworkState> {
     if (!isNativeAvailable()) {
       return { type: "unknown", isConnected: false, isInternetReachable: false };
@@ -464,7 +510,7 @@ export const Network = {
     await ensureAvailable();
     const service = await callNative<AdvertisedServiceInfo>(
       "startService",
-      normalizeAdvertiseOptions(options)
+      await normalizeAdvertiseOptions(options)
     );
     return withAdvertisedCapabilities(service);
   },

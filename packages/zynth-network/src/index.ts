@@ -1,10 +1,14 @@
 export { Network } from "./Network";
 export {
+  createIdentityTxtRecord,
   createCapabilityTxtRecord,
   NetworkTxtRecordKeys,
   normalizeTxtRecord,
+  parseIdentityTxtRecord,
   parseCapabilityTxtRecord,
 } from "./capabilities";
+export { createPeerChallenge, authenticatePeerAsync } from "./handshake";
+export { createNetworkTrustStore } from "./trustStore";
 export {
   NetworkServiceDomains,
   NetworkServiceTypes,
@@ -25,13 +29,18 @@ export type {
   DiscoveryEvent,
   DiscoveryEventType,
   NetworkAdvertiseOptions,
+  NetworkAuthenticatePeerOptions,
+  NetworkAuthenticatePeerResult,
   NetworkCapabilityAdvertisement,
   NetworkCapabilityValue,
   NetworkChallengeProof,
+  CreateNetworkTrustStoreOptions,
   NetworkDiscoveryOptions,
   NetworkIdentityAlgorithm,
+  NetworkIdentityTxtRecord,
   NetworkFilterOptions,
   NetworkLocalIdentity,
+  NetworkPeerChallenge,
   NormalizedPeerMetadata,
   ParsedNetworkCapabilities,
   NetworkService,
@@ -40,6 +49,9 @@ export type {
   NetworkSubscribeOptions,
   NetworkSubscription,
   NetworkSubscriptionSnapshot,
+  NetworkTrustRecord,
+  NetworkTrustStore,
+  NetworkTrustStorePersistence,
   NetworkVerifyChallengeOptions,
   ServiceTxtRecord,
   WifiInfo,
