@@ -15,6 +15,7 @@ final class FetchModule: NSObject, ZynthModule, URLSessionDataDelegate {
   private let taskQueue = DispatchQueue(label: "zynth.fetch.tasks")
   private var tasks: [Int: URLSessionDataTask] = [:]
   private var taskIdsByTaskIdentifier: [Int: Int] = [:]
+  private var trustedCertificatesByTaskIdentifier: [Int: [Data]] = [:]
   private var streamStates: [Int: StreamState] = [:]
   private var pendingUploads: [Int: PendingUpload] = [:]
   private var bufferedResponses: [Int: Data] = [:]
@@ -59,6 +60,7 @@ final class FetchModule: NSObject, ZynthModule, URLSessionDataDelegate {
     let method = args.string("method", default: "GET").uppercased()
     let headers = try? args.dict("headers")
     let timeoutSeconds = args.number("timeout", default: 0)
+    let trustedCertificates = try parseTrustedCertificatesPem(args)
 
     if wantsUploadStream && (method == "GET" || method == "HEAD") {
       return [
@@ -86,6 +88,7 @@ final class FetchModule: NSObject, ZynthModule, URLSessionDataDelegate {
           urlString: urlString,
           wantsResponseStream: wantsResponseStream,
           request: request,
+          trustedCertificates: trustedCertificates,
           body: Data()
         )
       }
@@ -110,7 +113,8 @@ final class FetchModule: NSObject, ZynthModule, URLSessionDataDelegate {
       requestId: idInt,
       urlString: urlString,
       request: request,
-      wantsResponseStream: wantsResponseStream
+      wantsResponseStream: wantsResponseStream,
+      trustedCertificates: trustedCertificates
     )
 
     return ["requestId": idInt]
@@ -185,7 +189,8 @@ final class FetchModule: NSObject, ZynthModule, URLSessionDataDelegate {
       requestId: pending.requestId,
       urlString: pending.urlString,
       request: request,
-      wantsResponseStream: pending.wantsResponseStream
+      wantsResponseStream: pending.wantsResponseStream,
+      trustedCertificates: pending.trustedCertificates
     )
 
     return ["result": true]
@@ -207,7 +212,8 @@ final class FetchModule: NSObject, ZynthModule, URLSessionDataDelegate {
     requestId: Int,
     urlString: String,
     request: URLRequest,
-    wantsResponseStream: Bool
+    wantsResponseStream: Bool,
+    trustedCertificates: [Data]
   ) {
     if wantsResponseStream {
       let streamState = StreamState(
@@ -226,7 +232,7 @@ final class FetchModule: NSObject, ZynthModule, URLSessionDataDelegate {
       }
 
       let task = session.dataTask(with: request)
-      storeTask(task, id: requestId)
+      storeTask(task, id: requestId, trustedCertificates: trustedCertificates)
       task.resume()
       return
     }
@@ -286,14 +292,19 @@ final class FetchModule: NSObject, ZynthModule, URLSessionDataDelegate {
       self.emitEvent("zynth.fetch.response", result)
     }
 
-    storeTask(task, id: requestId)
+    storeTask(task, id: requestId, trustedCertificates: trustedCertificates)
     task.resume()
   }
 
-  private func storeTask(_ task: URLSessionDataTask, id: Int) {
+  private func storeTask(_ task: URLSessionDataTask, id: Int, trustedCertificates: [Data]) {
     taskQueue.sync {
       tasks[id] = task
       taskIdsByTaskIdentifier[task.taskIdentifier] = id
+      if !trustedCertificates.isEmpty {
+        trustedCertificatesByTaskIdentifier[task.taskIdentifier] = trustedCertificates
+      } else {
+        trustedCertificatesByTaskIdentifier.removeValue(forKey: task.taskIdentifier)
+      }
     }
   }
 
@@ -306,6 +317,7 @@ final class FetchModule: NSObject, ZynthModule, URLSessionDataDelegate {
   private func detachTaskUnsafe(_ id: Int) {
     if let task = tasks.removeValue(forKey: id) {
       taskIdsByTaskIdentifier.removeValue(forKey: task.taskIdentifier)
+      trustedCertificatesByTaskIdentifier.removeValue(forKey: task.taskIdentifier)
     }
   }
 
@@ -355,6 +367,50 @@ final class FetchModule: NSObject, ZynthModule, URLSessionDataDelegate {
     taskQueue.sync {
       taskIdsByTaskIdentifier[taskIdentifier]
     }
+  }
+
+  private func trustedCertificates(for taskIdentifier: Int) -> [Data] {
+    taskQueue.sync {
+      trustedCertificatesByTaskIdentifier[taskIdentifier] ?? []
+    }
+  }
+
+  func urlSession(
+    _ session: URLSession,
+    task: URLSessionTask,
+    didReceive challenge: URLAuthenticationChallenge,
+    completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+  ) {
+    guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust else {
+      completionHandler(.performDefaultHandling, nil)
+      return
+    }
+
+    let trustedCertificates = trustedCertificates(for: task.taskIdentifier)
+    if trustedCertificates.isEmpty {
+      completionHandler(.performDefaultHandling, nil)
+      return
+    }
+
+    guard let serverTrust = challenge.protectionSpace.serverTrust else {
+      completionHandler(.cancelAuthenticationChallenge, nil)
+      return
+    }
+    guard #available(iOS 15.0, *),
+      let serverCertificate = SecTrustCopyCertificateChain(serverTrust).first
+    else {
+      completionHandler(.cancelAuthenticationChallenge, nil)
+      return
+    }
+
+    let serverCertificateData = Data(SecCertificateCopyData(serverCertificate) as Data)
+    let matched = trustedCertificates.contains(serverCertificateData)
+    if matched {
+      completionHandler(.useCredential, URLCredential(trust: serverTrust))
+      return
+    }
+
+    completionHandler(.cancelAuthenticationChallenge, nil)
   }
 
   func urlSession(
@@ -512,7 +568,106 @@ private struct PendingUpload {
   let urlString: String
   let wantsResponseStream: Bool
   let request: URLRequest
+  let trustedCertificates: [Data]
   var body: Data
+}
+
+private enum FetchTlsParseError: LocalizedError {
+  case invalidTlsObject
+  case invalidTrustedCertificatesType
+  case invalidTrustedCertificatesEntry
+  case missingCertificateBlock
+  case invalidCertificateBlock
+
+  var errorDescription: String? {
+    switch self {
+    case .invalidTlsObject:
+      return "tls must be an object"
+    case .invalidTrustedCertificatesType:
+      return "tls.trustedCertificatesPem must be a PEM string or array of PEM strings"
+    case .invalidTrustedCertificatesEntry:
+      return "tls.trustedCertificatesPem array must contain only PEM strings"
+    case .missingCertificateBlock:
+      return "tls.trustedCertificatesPem must include at least one CERTIFICATE block"
+    case .invalidCertificateBlock:
+      return "tls.trustedCertificatesPem contains an invalid CERTIFICATE block"
+    }
+  }
+}
+
+private extension FetchModule {
+  func parseTrustedCertificatesPem(_ args: ZynthArgs) throws -> [Data] {
+    let payload = try args.asDict()
+    guard let rawTls = payload["tls"] else {
+      return []
+    }
+    guard let tlsConfig = rawTls as? [String: Any] else {
+      throw FetchTlsParseError.invalidTlsObject
+    }
+    guard let rawTrustedCertificates = tlsConfig["trustedCertificatesPem"] else {
+      return []
+    }
+
+    let sources: [String]
+    if let single = rawTrustedCertificates as? String {
+      sources = [single]
+    } else if let array = rawTrustedCertificates as? [Any] {
+      var parsed: [String] = []
+      parsed.reserveCapacity(array.count)
+      for entry in array {
+        guard let value = entry as? String else {
+          throw FetchTlsParseError.invalidTrustedCertificatesEntry
+        }
+        parsed.append(value)
+      }
+      sources = parsed
+    } else {
+      throw FetchTlsParseError.invalidTrustedCertificatesType
+    }
+
+    if sources.isEmpty {
+      return []
+    }
+
+    var certificates: [Data] = []
+    for source in sources {
+      let blocks = extractCertificateBlocks(source)
+      if blocks.isEmpty {
+        throw FetchTlsParseError.missingCertificateBlock
+      }
+      for block in blocks {
+        let body = block
+          .replacingOccurrences(of: "-----BEGIN CERTIFICATE-----", with: "")
+          .replacingOccurrences(of: "-----END CERTIFICATE-----", with: "")
+          .components(separatedBy: .whitespacesAndNewlines)
+          .joined()
+        guard let der = Data(base64Encoded: body), !der.isEmpty else {
+          throw FetchTlsParseError.invalidCertificateBlock
+        }
+        certificates.append(der)
+      }
+    }
+    return certificates
+  }
+
+  func extractCertificateBlocks(_ source: String) -> [String] {
+    let pattern = "-----BEGIN CERTIFICATE-----[\\s\\S]*?-----END CERTIFICATE-----"
+    guard let regex = try? NSRegularExpression(pattern: pattern) else {
+      return []
+    }
+    let input = source as NSString
+    let matches = regex.matches(in: source, range: NSRange(location: 0, length: input.length))
+    if matches.isEmpty {
+      return []
+    }
+
+    var blocks: [String] = []
+    blocks.reserveCapacity(matches.count)
+    for match in matches {
+      blocks.append(input.substring(with: match.range).trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+    return blocks
+  }
 }
 
 private func coerceHeaders(_ raw: [AnyHashable: Any]) -> [String: String] {

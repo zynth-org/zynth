@@ -4,11 +4,20 @@ import com.zynth.kit.runtime.ZynthModule
 import com.zynth.kit.runtime.ZynthRuntime
 import com.zynth.kit.runtime.ZynthArgs
 import com.zynth.kit.runtime.ZynthTypeException
+import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.nio.ByteBuffer
+import java.nio.charset.StandardCharsets
+import java.security.KeyStore
+import java.security.SecureRandom
+import java.security.cert.CertificateFactory
+import java.security.cert.X509Certificate
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManagerFactory
+import javax.net.ssl.X509TrustManager
 import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
@@ -38,6 +47,7 @@ class FetchModule(private val runtime: ZynthRuntime) : ZynthModule {
     private val pendingError = ConcurrentHashMap<Int, String>()
     private val startedStreams = ConcurrentHashMap<Int, Boolean>()
     private val uploadChannels = ConcurrentHashMap<Int, UploadChannel>()
+    private val tlsClientCache = ConcurrentHashMap<String, OkHttpClient>()
 
     override fun call(method: String, args: ZynthArgs): JSONObject {
         return when (method) {
@@ -63,6 +73,7 @@ class FetchModule(private val runtime: ZynthRuntime) : ZynthModule {
         val wantsStream = args.getBoolean("stream", false)
         val uploadStream = args.getBoolean("uploadStream", false)
         val uploadLength = args.getOptionalLong("uploadLength")?.takeIf { it >= 0 }
+        val trustedCertificatesPem = parseTrustedCertificatesPem(args)
 
         val builder = Request.Builder().url(url)
         if (headers != null) {
@@ -101,13 +112,7 @@ class FetchModule(private val runtime: ZynthRuntime) : ZynthModule {
             )
         }
 
-        val callClient = if (timeoutSeconds > 0) {
-            client.newBuilder()
-                .callTimeout((timeoutSeconds * 1000.0).toLong(), TimeUnit.MILLISECONDS)
-                .build()
-        } else {
-            client
-        }
+        val callClient = resolveCallClient(timeoutSeconds, trustedCertificatesPem)
 
         val call = callClient.newCall(builder.build())
         calls[requestId] = call
@@ -306,6 +311,136 @@ class FetchModule(private val runtime: ZynthRuntime) : ZynthModule {
         val obj = JSONObject().put("error", error)
         if (message != null) obj.put("message", message)
         return obj
+    }
+
+    private fun parseTrustedCertificatesPem(args: ZynthArgs): List<String> {
+        if (!args.has("tls")) {
+            return emptyList()
+        }
+        val tlsConfig = try {
+            args.getMap("tls")
+        } catch (_: Exception) {
+            throw IllegalArgumentException("tls must be an object")
+        }
+        val rawCertificates = tlsConfig["trustedCertificatesPem"] ?: return emptyList()
+
+        val sources = when (rawCertificates) {
+            is String -> listOf(rawCertificates)
+            is List<*> -> {
+                val parsed = mutableListOf<String>()
+                for (entry in rawCertificates) {
+                    if (entry !is String) {
+                        throw IllegalArgumentException(
+                            "tls.trustedCertificatesPem array must contain only PEM strings"
+                        )
+                    }
+                    parsed.add(entry)
+                }
+                parsed
+            }
+            else -> throw IllegalArgumentException(
+                "tls.trustedCertificatesPem must be a PEM string or array of PEM strings"
+            )
+        }
+
+        if (sources.isEmpty()) {
+            return emptyList()
+        }
+
+        val certificates = mutableListOf<String>()
+        for (source in sources) {
+            val blocks = extractCertificateBlocks(source)
+            if (blocks.isEmpty()) {
+                throw IllegalArgumentException(
+                    "tls.trustedCertificatesPem must include at least one CERTIFICATE block"
+                )
+            }
+            certificates.addAll(blocks)
+        }
+        return certificates
+    }
+
+    private fun resolveCallClient(timeoutSeconds: Double, trustedCertificatesPem: List<String>): OkHttpClient {
+        val timeoutMs = if (timeoutSeconds > 0) {
+            (timeoutSeconds * 1000.0).toLong()
+        } else {
+            0L
+        }
+
+        if (trustedCertificatesPem.isEmpty()) {
+            return if (timeoutMs > 0) {
+                client.newBuilder()
+                    .callTimeout(timeoutMs, TimeUnit.MILLISECONDS)
+                    .build()
+            } else {
+                client
+            }
+        }
+
+        val certKey = trustedCertificatesPem.joinToString(separator = "\n")
+        val pinnedClient = tlsClientCache.getOrPut(certKey) {
+            val trustManager = buildTrustManager(trustedCertificatesPem)
+            val sslContext = SSLContext.getInstance("TLS")
+            sslContext.init(null, arrayOf(trustManager), SecureRandom())
+            client.newBuilder()
+                .sslSocketFactory(sslContext.socketFactory, trustManager)
+                .build()
+        }
+
+        return if (timeoutMs > 0) {
+            pinnedClient.newBuilder()
+                .callTimeout(timeoutMs, TimeUnit.MILLISECONDS)
+                .build()
+        } else {
+            pinnedClient
+        }
+    }
+
+    private fun buildTrustManager(certificatesPem: List<String>): X509TrustManager {
+        val keyStore = KeyStore.getInstance(KeyStore.getDefaultType())
+        keyStore.load(null, null)
+        val certificateFactory = CertificateFactory.getInstance("X.509")
+
+        var inserted = 0
+        for (pem in certificatesPem) {
+            val bytes = pem.toByteArray(StandardCharsets.US_ASCII)
+            val certificate = certificateFactory.generateCertificate(
+                ByteArrayInputStream(bytes)
+            ) as X509Certificate
+            keyStore.setCertificateEntry("zynth-fetch-trust-$inserted", certificate)
+            inserted += 1
+        }
+
+        if (inserted == 0) {
+            throw IllegalArgumentException("tls.trustedCertificatesPem resolved to zero certificates")
+        }
+
+        val trustManagerFactory = TrustManagerFactory.getInstance(
+            TrustManagerFactory.getDefaultAlgorithm()
+        )
+        trustManagerFactory.init(keyStore)
+        val trustManager = trustManagerFactory.trustManagers.firstOrNull { manager ->
+            manager is X509TrustManager
+        } as? X509TrustManager
+
+        return trustManager
+            ?: throw IllegalStateException("Failed to initialize X509TrustManager for fetch TLS override")
+    }
+
+    private fun extractCertificateBlocks(value: String): List<String> {
+        val blocks = mutableListOf<String>()
+        val regex = Regex(
+            "-----BEGIN CERTIFICATE-----[\\s\\S]*?-----END CERTIFICATE-----",
+            setOf(RegexOption.MULTILINE)
+        )
+        val matches = regex.findAll(value)
+        for (match in matches) {
+            val block = match.value.trim()
+            if (block.isNotEmpty()) {
+                blocks.add(block)
+            }
+        }
+        return blocks
     }
 
     private fun coerceBodyBytes(body: Any): ByteArray? {
