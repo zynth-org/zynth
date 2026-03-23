@@ -62,6 +62,47 @@ const info = await WebServer.start({
 console.log(info.url, info.scheme, info.secureTransport);
 ```
 
+### HTTPS Start With Managed Certificate Persistence
+
+```ts
+const info = await WebServer.start({
+  port: 0,
+  tls: {
+    enabled: true,
+    managed: {
+      alias: "lan-server",
+      autoGenerate: true,
+      commonName: "localhost",
+      validDays: 365,
+      rotateAfterMs: 7 * 24 * 60 * 60 * 1000,
+    },
+  },
+});
+```
+
+### Managed TLS lifecycle details
+
+Managed TLS can now be fully framework-owned:
+
+- certificate generation (self-signed, native)
+- persistence under app cache
+- rotation via `rotateAfterMs`
+- stable aliasing via `managed.alias`
+
+You can also trigger cert lifecycle directly:
+
+```ts
+const cert = await WebServer.upsertManagedTlsCertificate({
+  alias: "lan-server",
+  generateIfMissing: true,
+  commonName: "localhost",
+  validDays: 365,
+  rotateAfterMs: 7 * 24 * 60 * 60 * 1000,
+});
+
+console.log(cert.certificatePath, cert.fingerprintSha256, cert.existed);
+```
+
 ## Solid Integration
 
 Use `createWebServerSignal()` in components to manage lifecycle state and read events.
@@ -295,6 +336,7 @@ sub.remove();
 ### `WebServer`
 
 - `start(options?: WebServerStartOptions): Promise<WebServerInfo>`
+- `upsertManagedTlsCertificate(options): Promise<WebServerManagedTlsCertificateInfo>`
 - `stop(): Promise<void>`
 - `isRunning(): Promise<boolean>`
 - `getInfo(): Promise<WebServerInfo | null>`
@@ -341,9 +383,29 @@ Returns `WebServerSignal` with:
 - `WebServerTlsOptions`
   - `enabled?`
   - `certificatePath?` (PEM certificate/private key bundle for CivetWeb `ssl_certificate`)
+  - `certificatePem?` (inline PEM bundle; persisted by framework before start)
+  - `managed?`
+    - `alias?`
+    - `rotateAfterMs?`
+    - `pem?`
+    - `getPem?`
+    - `autoGenerate?` (defaults to `true` when no PEM source is provided)
+    - `commonName?` (used for self-signed generation)
+    - `validDays?` (1..3650; used for self-signed generation)
+
+- `WebServer.upsertManagedTlsCertificate(options)`
+  - `alias?`
+  - `pem?`
+  - `rotateAfterMs?`
+  - `generateIfMissing?`
+  - `commonName?`
+  - `validDays?`
 
 - `WebServerEventsOptions`
   - `enabled?`, `path?`
+
+- `WebServerManagedTlsCertificateInfo`
+  - `alias`, `certificatePath`, `fingerprintSha256`, `updatedAt`, `existed`
 
 - `WebServerInfo`
   - `host`, `port`, `url`, `scheme`, `secureTransport`, `documentRoot?`, `uploadPath?`, `uploadMetadataPath?`, `eventsPath?`, `signalPath?`, `replyPath?`

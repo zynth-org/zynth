@@ -31,6 +31,24 @@ export type WebServerSecurityOptions = {
 export type WebServerTlsOptions = {
   enabled?: boolean;
   certificatePath?: string;
+  certificatePem?: string;
+  managed?: {
+    alias?: string;
+    rotateAfterMs?: number;
+    pem?: string;
+    getPem?: () => string | Promise<string>;
+    autoGenerate?: boolean;
+    commonName?: string;
+    validDays?: number;
+  };
+};
+
+export type WebServerManagedTlsCertificateInfo = {
+  alias: string;
+  certificatePath: string;
+  fingerprintSha256: string;
+  updatedAt: number;
+  existed: boolean;
 };
 
 export type WebServerStartOptions = {

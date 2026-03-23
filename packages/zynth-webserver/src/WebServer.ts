@@ -3,6 +3,7 @@ import type {
   WebServerActiveUpload,
   WebServerEvent,
   WebServerInfo,
+  WebServerManagedTlsCertificateInfo,
   WebServerStartOptions,
   WebServerSubscribeOptions,
   WebServerSubscription,
@@ -32,6 +33,14 @@ type NativeWebServerStartArgs = {
   eventsPath?: string | null;
 };
 
+type NativeManagedTlsCertificateInfo = {
+  alias: string;
+  certificatePath: string;
+  fingerprintSha256: string;
+  updatedAt: number;
+  existed: boolean;
+};
+
 const DEFAULT_HOST = "0.0.0.0";
 const DEFAULT_UPLOAD_PATH = "/__zynth/upload";
 const DEFAULT_EVENTS_PATH = "/__zynth/events";
@@ -41,6 +50,8 @@ const DEFAULT_POLL_INTERVAL_MS = 500;
 const DEFAULT_MAX_EVENTS = 50;
 const DEFAULT_SERVER_AUTH_HEADER = "X-Zynth-Server-Token";
 const DEFAULT_SERVER_AUTH_QUERY_KEY = "token";
+const DEFAULT_MANAGED_TLS_ALIAS = "default";
+const DEFAULT_MANAGED_TLS_ROTATE_MS = 30 * 24 * 60 * 60 * 1000;
 
 function getGlobalObject(): Record<string, unknown> {
   if (typeof globalThis !== "undefined") {
@@ -109,13 +120,117 @@ function normalizeNativeFilePath(value: string | undefined): string | null {
   return decodeURIComponent(candidate.replace(/^file:\/\//, ""));
 }
 
-function normalizeStartOptions(
+function normalizeManagedTlsCertificateInfo(
+  value: unknown
+): WebServerManagedTlsCertificateInfo {
+  if (!value || typeof value !== "object") {
+    throw new Error("Invalid managed TLS certificate payload");
+  }
+  const record = value as Record<string, unknown>;
+  const alias =
+    typeof record.alias === "string" && record.alias.trim().length > 0
+      ? record.alias.trim()
+      : DEFAULT_MANAGED_TLS_ALIAS;
+  const certificatePath =
+    typeof record.certificatePath === "string" ? record.certificatePath.trim() : "";
+  const fingerprintSha256 =
+    typeof record.fingerprintSha256 === "string"
+      ? record.fingerprintSha256.trim()
+      : "";
+  const updatedAt =
+    typeof record.updatedAt === "number" && Number.isFinite(record.updatedAt)
+      ? Math.round(record.updatedAt)
+      : Date.now();
+  const existed = record.existed === true;
+  if (!certificatePath || !fingerprintSha256) {
+    throw new Error("Invalid managed TLS certificate payload");
+  }
+  return {
+    alias,
+    certificatePath,
+    fingerprintSha256,
+    updatedAt,
+    existed,
+  };
+}
+
+async function resolveTlsCertificatePath(
   options?: WebServerStartOptions
-): NativeWebServerStartArgs {
+): Promise<string | null> {
+  const directPath = normalizeNativeFilePath(options?.tls?.certificatePath);
+  if (directPath) {
+    return directPath;
+  }
+  const managed = options?.tls?.managed;
+  const inlinePem = resolveOptionalString(options?.tls?.certificatePem);
+  if (!managed && !inlinePem) {
+    return null;
+  }
+  const alias = resolveAlias(managed?.alias);
+  const rotateAfterMs = normalizeRotateAfterMs(managed?.rotateAfterMs);
+  const providedPem =
+    resolveOptionalString(managed?.pem) ??
+    (typeof managed?.getPem === "function"
+      ? resolveOptionalString(await managed.getPem())
+      : null) ??
+    inlinePem;
+  const generateIfMissing = managed?.autoGenerate !== false && !providedPem;
+  const commonName = resolveOptionalString(managed?.commonName) ?? "localhost";
+  const validDays = normalizeValidDays(managed?.validDays);
+  const created = await callNative<NativeManagedTlsCertificateInfo>(
+    "upsertManagedTlsCertificate",
+    {
+      alias,
+      pem: providedPem,
+      rotateAfterMs,
+      generateIfMissing,
+      commonName,
+      validDays,
+    }
+  );
+  return normalizeManagedTlsCertificateInfo(created).certificatePath;
+}
+
+function resolveOptionalString(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function resolveAlias(value: unknown): string {
+  const alias = resolveOptionalString(value);
+  return alias ?? DEFAULT_MANAGED_TLS_ALIAS;
+}
+
+function normalizeRotateAfterMs(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return DEFAULT_MANAGED_TLS_ROTATE_MS;
+  }
+  return Math.round(value);
+}
+
+function normalizeValidDays(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return 365;
+  }
+  const rounded = Math.round(value);
+  if (rounded > 3650) {
+    return 3650;
+  }
+  return rounded;
+}
+
+async function normalizeStartOptions(
+  options?: WebServerStartOptions
+): Promise<NativeWebServerStartArgs> {
   const tlsEnabled = options?.tls?.enabled === true;
-  const tlsCertificate = normalizeNativeFilePath(options?.tls?.certificatePath);
+  const tlsCertificate = tlsEnabled ? await resolveTlsCertificatePath(options) : null;
   if (tlsEnabled && !tlsCertificate) {
-    throw new Error("tls.certificatePath is required when tls.enabled=true");
+    throw new Error(
+      "tls.certificatePath is required when tls.enabled=true unless managed TLS is configured"
+    );
   }
 
   const allowInsecureHttp =
@@ -284,8 +399,31 @@ async function createSnapshot(
 const WebServer = {
   async start(options?: WebServerStartOptions): Promise<WebServerInfo> {
     await ensureAvailable();
-    const args = normalizeStartOptions(options);
+    const args = await normalizeStartOptions(options);
     return callNative<WebServerInfo>("start", args);
+  },
+  async upsertManagedTlsCertificate(options?: {
+    alias?: string;
+    pem?: string;
+    rotateAfterMs?: number;
+    generateIfMissing?: boolean;
+    commonName?: string;
+    validDays?: number;
+  }): Promise<WebServerManagedTlsCertificateInfo> {
+    await ensureAvailable();
+    const pem = resolveOptionalString(options?.pem);
+    if (!pem && options?.generateIfMissing !== true) {
+      throw new Error("pem is required unless generateIfMissing=true");
+    }
+    const result = await callNative<unknown>("upsertManagedTlsCertificate", {
+      alias: resolveAlias(options?.alias),
+      pem,
+      rotateAfterMs: normalizeRotateAfterMs(options?.rotateAfterMs),
+      generateIfMissing: options?.generateIfMissing === true,
+      commonName: resolveOptionalString(options?.commonName) ?? "localhost",
+      validDays: normalizeValidDays(options?.validDays),
+    });
+    return normalizeManagedTlsCertificateInfo(result);
   },
   async stop(): Promise<void> {
     await ensureAvailable();

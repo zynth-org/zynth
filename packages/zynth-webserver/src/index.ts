@@ -7,6 +7,7 @@ export type {
   WebServerEventType,
   WebServerEventsOptions,
   WebServerInfo,
+  WebServerManagedTlsCertificateInfo,
   WebServerSecurityOptions,
   WebServerStartOptions,
   WebServerStatus,
