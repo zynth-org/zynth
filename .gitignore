@@ -47,6 +47,7 @@ packages/zynth-android/**/.gradle/
 packages/zynth-icons/assets/fonts/*.ttf
 packages/zynth-icons/ios/Fonts/*.ttf
 packages/zynth-icons/android/src/main/assets/fonts/*.ttf
+packages/zynth-webserver/native/mbedtls/
 
 # macOS
 .DS_Store
