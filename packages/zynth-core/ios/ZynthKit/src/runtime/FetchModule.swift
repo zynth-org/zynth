@@ -397,11 +397,14 @@ final class FetchModule: NSObject, ZynthModule, URLSessionDataDelegate {
       return
     }
     guard #available(iOS 15.0, *),
-      let serverCertificate = SecTrustCopyCertificateChain(serverTrust).first
+      let certificateChain = SecTrustCopyCertificateChain(serverTrust),
+      CFArrayGetCount(certificateChain) > 0,
+      let firstEntry = CFArrayGetValueAtIndex(certificateChain, 0)
     else {
       completionHandler(.cancelAuthenticationChallenge, nil)
       return
     }
+    let serverCertificate = unsafeBitCast(firstEntry, to: SecCertificate.self)
 
     let serverCertificateData = Data(SecCertificateCopyData(serverCertificate) as Data)
     let matched = trustedCertificates.contains(serverCertificateData)
