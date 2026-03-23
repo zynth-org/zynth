@@ -53,6 +53,20 @@
   return value;
 }
 
++ (NSString *_Nullable)generateSelfSignedPemWithCommonName:(NSString *_Nullable)commonName
+                                                 validDays:(NSInteger)validDays {
+  char *pem = zynth_webserver_generate_self_signed_pem(
+    commonName ? commonName.UTF8String : NULL,
+    (int)validDays
+  );
+  if (!pem) {
+    return nil;
+  }
+  NSString *value = [NSString stringWithUTF8String:pem];
+  zynth_webserver_free_string(pem);
+  return value;
+}
+
 + (void)stop:(void *)handle {
   if (handle) {
     zynth_webserver_stop((ZynthWebServer *)handle);

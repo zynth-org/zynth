@@ -1,5 +1,6 @@
 import Foundation
 import ZynthKit
+import CryptoKit
 
 @objc(ZynthWebServerModule)
 final class ZynthWebServerModule: NSObject, ZynthModule, ZynthSyncModule {
@@ -14,6 +15,7 @@ final class ZynthWebServerModule: NSObject, ZynthModule, ZynthSyncModule {
       "getInfo",
       "getUploadState",
       "drainEvents",
+      "upsertManagedTlsCertificate",
       "setSignal",
       "getSignal",
       "setReply",
@@ -45,6 +47,39 @@ final class ZynthWebServerModule: NSObject, ZynthModule, ZynthSyncModule {
       let maxEvents = Int(args.number("maxEvents", default: 50))
       let events = host.drainEvents(maxEvents: maxEvents)
       return ["result": events.map { $0.toDictionary() }]
+    case "upsertManagedTlsCertificate":
+      let alias = sanitizeAlias(args.string("alias", default: "default"))
+      let generateIfMissing = args.bool("generateIfMissing", default: false)
+      let commonName = args.string("commonName", default: "localhost")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      let validDays = max(1, min(3650, Int(args.number("validDays", default: 365))))
+      var pem = args.string("pem", default: "").trimmingCharacters(in: .whitespacesAndNewlines)
+      if pem.isEmpty && generateIfMissing {
+        let generatedPem = ZynthWebServerBridge.generateSelfSignedPem(
+          withCommonName: commonName.isEmpty ? "localhost" : commonName,
+          validDays: validDays
+        )?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let generatedPem, !generatedPem.isEmpty {
+          pem = generatedPem
+        } else {
+          let details = ZynthWebServerBridge.lastError() ?? "unknown"
+          throw NSError(
+            domain: "ZynthWebServer",
+            code: 2202,
+            userInfo: [NSLocalizedDescriptionKey: "Failed to generate self-signed certificate (\(details))"]
+          )
+        }
+      }
+      if pem.isEmpty {
+        throw NSError(
+          domain: "ZynthWebServer",
+          code: 2201,
+          userInfo: [NSLocalizedDescriptionKey: "pem is required (or set generateIfMissing=true)"]
+        )
+      }
+      let rotateAfterMs = max(1, Int64(args.number("rotateAfterMs", default: 30 * 24 * 60 * 60 * 1000)))
+      let result = try upsertManagedTlsCertificate(alias: alias, pem: pem, rotateAfterMs: rotateAfterMs)
+      return ["result": result]
     case "setReply":
       let key = args.string("key", default: "").trimmingCharacters(in: .whitespacesAndNewlines)
       let payloadJson = args.string("payloadJson", default: "null")
@@ -136,5 +171,81 @@ final class ZynthWebServerModule: NSObject, ZynthModule, ZynthSyncModule {
     }
     let base = NSTemporaryDirectory()
     return (base as NSString).appendingPathComponent("zynth-webserver")
+  }
+
+  private func upsertManagedTlsCertificate(
+    alias: String,
+    pem: String,
+    rotateAfterMs: Int64
+  ) throws -> [String: Any] {
+    let fileManager = FileManager.default
+    let cacheDir = try fileManager.url(
+      for: .cachesDirectory,
+      in: .userDomainMask,
+      appropriateFor: nil,
+      create: true
+    )
+    let tlsDir = cacheDir
+      .appendingPathComponent("zynth-webserver", isDirectory: true)
+      .appendingPathComponent("tls", isDirectory: true)
+    if !fileManager.fileExists(atPath: tlsDir.path) {
+      try fileManager.createDirectory(at: tlsDir, withIntermediateDirectories: true)
+    }
+
+    let pemUrl = tlsDir.appendingPathComponent("\(alias).pem")
+    let metaUrl = tlsDir.appendingPathComponent("\(alias).meta")
+    let now = Int64(Date().timeIntervalSince1970 * 1000.0)
+    let existed = fileManager.fileExists(atPath: pemUrl.path)
+    var shouldRewrite = true
+    if existed {
+      let existingPem = try? String(contentsOf: pemUrl, encoding: .utf8)
+      let lastUpdatedAt = parseUpdatedAt(from: metaUrl)
+      let hasExpired = now - lastUpdatedAt >= rotateAfterMs
+      shouldRewrite = existingPem != pem || hasExpired
+    }
+    if shouldRewrite {
+      try pem.write(to: pemUrl, atomically: true, encoding: .utf8)
+      try String(now).write(to: metaUrl, atomically: true, encoding: .utf8)
+    }
+
+    let updatedAt = shouldRewrite ? now : parseUpdatedAt(from: metaUrl)
+    return [
+      "alias": alias,
+      "certificatePath": pemUrl.path,
+      "fingerprintSha256": sha256Hex(pem),
+      "updatedAt": updatedAt,
+      "existed": existed,
+    ]
+  }
+
+  private func parseUpdatedAt(from fileUrl: URL) -> Int64 {
+    guard let value = try? String(contentsOf: fileUrl, encoding: .utf8) else {
+      return 0
+    }
+    return Int64(value.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+  }
+
+  private func sanitizeAlias(_ value: String) -> String {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.isEmpty {
+      return "default"
+    }
+    let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.")
+    let scalars = trimmed.unicodeScalars.map { scalar -> Character in
+      return allowed.contains(scalar) ? Character(scalar) : "_"
+    }
+    let result = String(scalars)
+    return result.isEmpty ? "default" : result
+  }
+
+  private func sha256Hex(_ value: String) -> String {
+    let digest = SHA256.hash(data: Data(value.utf8))
+    let digestBytes = Array(digest)
+    var output = ""
+    output.reserveCapacity(digestBytes.count * 2)
+    for byte in digestBytes {
+      output.append(String(format: "%02x", byte))
+    }
+    return output
   }
 }

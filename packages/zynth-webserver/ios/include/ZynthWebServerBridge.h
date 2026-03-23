@@ -20,6 +20,8 @@ NS_ASSUME_NONNULL_BEGIN
                       eventsPath:(NSString *_Nullable)eventsPath;
 + (BOOL)supportsTls;
 + (NSString *_Nullable)lastError;
++ (NSString *_Nullable)generateSelfSignedPemWithCommonName:(NSString *_Nullable)commonName
+                                                 validDays:(NSInteger)validDays;
 
 + (void)stop:(void *)handle;
 + (BOOL)isRunning:(void *)handle;
