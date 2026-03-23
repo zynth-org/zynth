@@ -137,3 +137,28 @@ export type NetworkSubscription = {
 export type CreateNetworkDiscoveryOptions = NetworkSubscribeOptions & {
   autoStart?: boolean;
 };
+
+export type NetworkIdentityAlgorithm = "ECDSA_P256_SHA256";
+
+export type NetworkLocalIdentity = {
+  algorithm: NetworkIdentityAlgorithm;
+  keyId: string;
+  publicKeyBase64: string;
+  fingerprintSha256: string;
+};
+
+export type NetworkChallengeProof = {
+  algorithm: NetworkIdentityAlgorithm;
+  keyId: string;
+  publicKeyBase64: string;
+  fingerprintSha256: string;
+  challengeBase64: string;
+  signatureBase64: string;
+  signedAt: number;
+};
+
+export type NetworkVerifyChallengeOptions = {
+  publicKeyBase64: string;
+  challengeBase64: string;
+  signatureBase64: string;
+};

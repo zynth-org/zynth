@@ -12,7 +12,7 @@ Pod::Spec.new do |s|
 
   s.source_files = "ios/**/*.{h,m,swift}"
   s.requires_arc = true
-  s.frameworks = "Network"
+  s.frameworks = "Network", "Security", "CryptoKit"
 
   s.dependency "ZynthKit"
 end

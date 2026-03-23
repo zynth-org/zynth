@@ -48,6 +48,15 @@ await Network.startServiceAsync({
     maxChunk: 262144,
   }),
 });
+
+const identity = await Network.getLocalIdentityAsync();
+const signed = await Network.signChallengeAsync("BASE64_CHALLENGE_BYTES");
+const verified = await Network.verifyChallengeAsync({
+  publicKeyBase64: identity.publicKeyBase64,
+  challengeBase64: signed.challengeBase64,
+  signatureBase64: signed.signatureBase64,
+});
+console.log(verified);
 ```
 
 ### Recommended Solid usage
@@ -189,6 +198,9 @@ If previously denied, re-enable:
 - `getMacAddressAsync(): Promise<string | null>`
 - `getCurrentWifiAsync(): Promise<WifiInfo | null>`
 - `isAirplaneModeEnabledAsync(): Promise<boolean | null>`
+- `getLocalIdentityAsync(): Promise<NetworkLocalIdentity>`
+- `signChallengeAsync(challengeBase64: string): Promise<NetworkChallengeProof>`
+- `verifyChallengeAsync(options: NetworkVerifyChallengeOptions): Promise<boolean>`
 
 - `startDiscoveryAsync(options?: NetworkDiscoveryOptions): Promise<void>`
 - `stopDiscoveryAsync(): Promise<void>`
@@ -218,6 +230,21 @@ Returns `NetworkDiscoveryController` with:
   - `isConnected: boolean`
   - `isInternetReachable: boolean`
   - `isExpensive?: boolean`
+
+- `NetworkLocalIdentity`
+  - `algorithm: "ECDSA_P256_SHA256"`
+  - `keyId: string`
+  - `publicKeyBase64: string` (P-256 public key, ANSI X9.63 uncompressed, base64)
+  - `fingerprintSha256: string`
+
+- `NetworkChallengeProof`
+  - `algorithm: "ECDSA_P256_SHA256"`
+  - `keyId: string`
+  - `publicKeyBase64: string`
+  - `fingerprintSha256: string`
+  - `challengeBase64: string`
+  - `signatureBase64: string`
+  - `signedAt: number`
 
 - `NetworkService`
   - `id`, `name`, `type`, `domain`, `hostName`, `port`, `addresses`, `txtRecord`, `capabilities`, `lastSeenAt`, `isSelf`

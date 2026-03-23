@@ -11,6 +11,9 @@ final class NetworkModule: NSObject, ZynthModule, ZynthSyncModule {
       "getIpAddress",
       "getMacAddress",
       "getCurrentWifi",
+      "getLocalIdentity",
+      "signChallenge",
+      "verifyChallenge",
       "isAirplaneModeEnabled",
       "startDiscovery",
       "stopDiscovery",
@@ -26,6 +29,7 @@ final class NetworkModule: NSObject, ZynthModule, ZynthSyncModule {
   }
 
   private let host = NetworkHost()
+  private let identityHost = NetworkIdentityHost()
 
   func initialize() {
     host.initialize()
@@ -45,6 +49,22 @@ final class NetworkModule: NSObject, ZynthModule, ZynthSyncModule {
       return ["result": host.getMacAddress() as Any? ?? NSNull()]
     case "getCurrentWifi":
       return ["result": host.getCurrentWifi() as Any? ?? NSNull()]
+    case "getLocalIdentity":
+      return ["result": try identityHost.getLocalIdentity()]
+    case "signChallenge":
+      let challengeBase64 = try args.string("challengeBase64")
+      return ["result": try identityHost.signChallenge(challengeBase64: challengeBase64)]
+    case "verifyChallenge":
+      let publicKeyBase64 = try args.string("publicKeyBase64")
+      let challengeBase64 = try args.string("challengeBase64")
+      let signatureBase64 = try args.string("signatureBase64")
+      return [
+        "result": try identityHost.verifyChallenge(
+          publicKeyBase64: publicKeyBase64,
+          challengeBase64: challengeBase64,
+          signatureBase64: signatureBase64
+        ),
+      ]
     case "isAirplaneModeEnabled":
       return ["result": host.isAirplaneModeEnabled() as Any? ?? NSNull()]
     case "startDiscovery":
@@ -85,6 +105,8 @@ final class NetworkModule: NSObject, ZynthModule, ZynthSyncModule {
       return host.getNetworkState()
     case "getIpAddress":
       return host.getIpAddress() ?? NSNull()
+    case "getLocalIdentity":
+      return try identityHost.getLocalIdentity()
     case "isDiscoveryRunning":
       return host.isDiscoveryRunning()
     case "getDiscoveredServices":

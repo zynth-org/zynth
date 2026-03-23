@@ -12,7 +12,9 @@ import {
 import type {
   AdvertisedServiceInfo,
   DiscoveryEvent,
+  NetworkChallengeProof,
   NetworkAdvertiseOptions,
+  NetworkLocalIdentity,
   NetworkDiscoveryOptions,
   NetworkFilterOptions,
   NetworkService,
@@ -21,6 +23,7 @@ import type {
   NetworkSubscribeOptions,
   NetworkSubscription,
   NetworkSubscriptionSnapshot,
+  NetworkVerifyChallengeOptions,
   WifiInfo,
 } from "./types";
 
@@ -170,6 +173,64 @@ function normalizeDiscoveryEvent(event: NativeDiscoveryEvent): DiscoveryEvent {
   };
 }
 
+function normalizeLocalIdentity(value: unknown): NetworkLocalIdentity {
+  if (!value || typeof value !== "object") {
+    throw new Error("Invalid local identity response from native module");
+  }
+  const record = value as Record<string, unknown>;
+  const algorithm = record.algorithm;
+  const keyId = record.keyId;
+  const publicKeyBase64 = record.publicKeyBase64;
+  const fingerprintSha256 = record.fingerprintSha256;
+  if (algorithm !== "ECDSA_P256_SHA256") {
+    throw new Error("Unsupported local identity algorithm");
+  }
+  if (
+    typeof keyId !== "string" ||
+    typeof publicKeyBase64 !== "string" ||
+    typeof fingerprintSha256 !== "string" ||
+    !keyId.trim() ||
+    !publicKeyBase64.trim() ||
+    !fingerprintSha256.trim()
+  ) {
+    throw new Error("Invalid local identity payload from native module");
+  }
+  return {
+    algorithm,
+    keyId,
+    publicKeyBase64,
+    fingerprintSha256,
+  };
+}
+
+function normalizeChallengeProof(value: unknown): NetworkChallengeProof {
+  if (!value || typeof value !== "object") {
+    throw new Error("Invalid challenge proof response from native module");
+  }
+  const record = value as Record<string, unknown>;
+  const identity = normalizeLocalIdentity(record);
+  const challengeBase64 = record.challengeBase64;
+  const signatureBase64 = record.signatureBase64;
+  const signedAt = record.signedAt;
+  if (
+    typeof challengeBase64 !== "string" ||
+    typeof signatureBase64 !== "string" ||
+    !challengeBase64.trim() ||
+    !signatureBase64.trim()
+  ) {
+    throw new Error("Invalid challenge proof payload from native module");
+  }
+  if (typeof signedAt !== "number" || !Number.isFinite(signedAt) || signedAt <= 0) {
+    throw new Error("Invalid challenge proof timestamp from native module");
+  }
+  return {
+    ...identity,
+    challengeBase64,
+    signatureBase64,
+    signedAt: Math.round(signedAt),
+  };
+}
+
 function withSelfFlag(service: NetworkService): NetworkService {
   const txtRecord = normalizeTxtRecord(service.txtRecord);
   const advertisedDeviceId =
@@ -277,6 +338,45 @@ export const Network = {
       return null;
     }
     return callNative<WifiInfo | null>("getCurrentWifi", {});
+  },
+
+  async getLocalIdentityAsync(): Promise<NetworkLocalIdentity> {
+    await ensureAvailable();
+    const identity = await callNative<unknown>("getLocalIdentity", {});
+    return normalizeLocalIdentity(identity);
+  },
+
+  async signChallengeAsync(challengeBase64: string): Promise<NetworkChallengeProof> {
+    await ensureAvailable();
+    if (typeof challengeBase64 !== "string" || challengeBase64.trim().length === 0) {
+      throw new Error("challengeBase64 must be a non-empty base64 string");
+    }
+    const proof = await callNative<unknown>("signChallenge", {
+      challengeBase64: challengeBase64.trim(),
+    });
+    return normalizeChallengeProof(proof);
+  },
+
+  async verifyChallengeAsync(
+    options: NetworkVerifyChallengeOptions
+  ): Promise<boolean> {
+    await ensureAvailable();
+    if (!options || typeof options !== "object") {
+      throw new Error("options are required");
+    }
+    const publicKeyBase64 = options.publicKeyBase64?.trim();
+    const challengeBase64 = options.challengeBase64?.trim();
+    const signatureBase64 = options.signatureBase64?.trim();
+    if (!publicKeyBase64 || !challengeBase64 || !signatureBase64) {
+      throw new Error(
+        "publicKeyBase64, challengeBase64, and signatureBase64 are required"
+      );
+    }
+    return callNative<boolean>("verifyChallenge", {
+      publicKeyBase64,
+      challengeBase64,
+      signatureBase64,
+    });
   },
 
   async isAirplaneModeEnabledAsync(): Promise<boolean | null> {
