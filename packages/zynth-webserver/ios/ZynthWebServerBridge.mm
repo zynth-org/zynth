@@ -6,6 +6,8 @@
 
 + (void *_Nullable)startWithHost:(NSString *_Nullable)host
                             port:(NSInteger)port
+                      tlsEnabled:(BOOL)tlsEnabled
+                   tlsCertificate:(NSString *_Nullable)tlsCertificate
                     documentRoot:(NSString *_Nullable)documentRoot
                        indexHtml:(NSString *_Nullable)indexHtml
                       uploadPath:(NSString *_Nullable)uploadPath
@@ -19,6 +21,8 @@
   ZynthWebServerConfig config;
   config.host = host ? host.UTF8String : NULL;
   config.port = (int)port;
+  config.tls_enabled = tlsEnabled ? 1 : 0;
+  config.tls_certificate = tlsCertificate ? tlsCertificate.UTF8String : NULL;
   config.document_root = documentRoot ? documentRoot.UTF8String : NULL;
   config.index_html = indexHtml ? indexHtml.UTF8String : NULL;
   config.upload_path = uploadPath ? uploadPath.UTF8String : NULL;
@@ -33,6 +37,20 @@
   config.events_path = eventsPath ? eventsPath.UTF8String : NULL;
 
   return zynth_webserver_start(&config);
+}
+
++ (BOOL)supportsTls {
+  return zynth_webserver_supports_tls() != 0;
+}
+
++ (NSString *_Nullable)lastError {
+  char *message = zynth_webserver_get_last_error();
+  if (!message) {
+    return nil;
+  }
+  NSString *value = [NSString stringWithUTF8String:message];
+  zynth_webserver_free_string(message);
+  return value;
 }
 
 + (void)stop:(void *)handle {

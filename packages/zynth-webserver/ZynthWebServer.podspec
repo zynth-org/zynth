@@ -13,11 +13,21 @@ Pod::Spec.new do |s|
   s.source_files = "ios/**/*.{h,m,mm,swift}", "native/**/*.{h,c}"
   s.public_header_files = "ios/include/**/*.h"
   s.requires_arc = true
-  s.compiler_flags = "-DNO_SSL -UDEBUG"
-  s.pod_target_xcconfig = {
-    "HEADER_SEARCH_PATHS" => "\"${PODS_TARGET_SRCROOT}/native\"",
-    "OTHER_CFLAGS" => "$(inherited) -Wno-ambiguous-macro"
-  }
+  tls_enabled = ENV["ZYNTH_WEBSERVER_TLS"] == "1"
+  if tls_enabled
+    s.compiler_flags = "-DUSE_MBEDTLS -UDEBUG"
+    s.pod_target_xcconfig = {
+      "HEADER_SEARCH_PATHS" => "\"${PODS_TARGET_SRCROOT}/native\" \"${PODS_TARGET_SRCROOT}/native/mbedtls/include\"",
+      "OTHER_CFLAGS" => "$(inherited) -Wno-ambiguous-macro -Wno-documentation-deprecated-sync -Wno-shorten-64-to-32"
+    }
+  else
+    s.exclude_files = "native/mbedtls/**/*"
+    s.compiler_flags = "-DNO_SSL -UDEBUG"
+    s.pod_target_xcconfig = {
+      "HEADER_SEARCH_PATHS" => "\"${PODS_TARGET_SRCROOT}/native\"",
+      "OTHER_CFLAGS" => "$(inherited) -Wno-ambiguous-macro"
+    }
+  end
 
   s.dependency "ZynthKit"
 end

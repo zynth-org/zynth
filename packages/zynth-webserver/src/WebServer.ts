@@ -18,6 +18,8 @@ type NativeWebServerEvent = {
 type NativeWebServerStartArgs = {
   host?: string;
   port?: number;
+  tlsEnabled?: boolean;
+  tlsCertificate?: string | null;
   documentRoot?: string | null;
   indexHtml?: string | null;
   uploadPath?: string | null;
@@ -37,6 +39,40 @@ const DEFAULT_SIGNAL_PATH = "/__zynth/signal";
 const DEFAULT_REPLY_PATH = "/__zynth/reply";
 const DEFAULT_POLL_INTERVAL_MS = 500;
 const DEFAULT_MAX_EVENTS = 50;
+const DEFAULT_SERVER_AUTH_HEADER = "X-Zynth-Server-Token";
+const DEFAULT_SERVER_AUTH_QUERY_KEY = "token";
+
+function getGlobalObject(): Record<string, unknown> {
+  if (typeof globalThis !== "undefined") {
+    return globalThis as Record<string, unknown>;
+  }
+  try {
+    const fallback = Function("return this")();
+    if (fallback && typeof fallback === "object") {
+      return fallback as Record<string, unknown>;
+    }
+  } catch {
+    // ignore
+  }
+  return {};
+}
+
+function isDevelopmentRuntime(): boolean {
+  const globalObject = getGlobalObject();
+  if (globalObject.__DEV__ === true) {
+    return true;
+  }
+  const processValue = globalObject.process as
+    | { env?: { NODE_ENV?: unknown } }
+    | undefined;
+  if (processValue && typeof processValue === "object") {
+    const env = processValue.env?.NODE_ENV;
+    if (typeof env === "string" && env.toLowerCase() !== "production") {
+      return true;
+    }
+  }
+  return false;
+}
 
 function resolvePath(value: string | undefined, fallback: string): string {
   if (typeof value !== "string") {
@@ -54,31 +90,74 @@ function resolveOptionalPath(value: string | undefined): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function normalizeNativeFilePath(value: string | undefined): string | null {
+  const candidate = resolveOptionalPath(value);
+  if (!candidate) {
+    return null;
+  }
+  if (!candidate.startsWith("file://")) {
+    return candidate;
+  }
+  try {
+    const parsed = new URL(candidate);
+    if (parsed.protocol === "file:") {
+      return decodeURIComponent(parsed.pathname);
+    }
+  } catch {
+    // Fallback below.
+  }
+  return decodeURIComponent(candidate.replace(/^file:\/\//, ""));
+}
+
 function normalizeStartOptions(
   options?: WebServerStartOptions
 ): NativeWebServerStartArgs {
+  const tlsEnabled = options?.tls?.enabled === true;
+  const tlsCertificate = normalizeNativeFilePath(options?.tls?.certificatePath);
+  if (tlsEnabled && !tlsCertificate) {
+    throw new Error("tls.certificatePath is required when tls.enabled=true");
+  }
+
+  const allowInsecureHttp =
+    options?.security?.allowInsecureHttp ??
+    (isDevelopmentRuntime() || tlsEnabled);
+  if (!tlsEnabled && !allowInsecureHttp) {
+    throw new Error(
+      "WebServer insecure HTTP is blocked in this runtime. Set security.allowInsecureHttp=true only when you explicitly accept insecure transport."
+    );
+  }
+
   const uploadEnabled = options?.upload?.enabled !== false;
   const eventsEnabled = options?.events?.enabled !== false;
+  const serverAuthToken = options?.security?.authToken ?? options?.upload?.authToken;
+  const serverAuthHeader =
+    options?.security?.authTokenHeader ??
+    options?.upload?.authTokenHeader ??
+    DEFAULT_SERVER_AUTH_HEADER;
+  const serverAuthQueryKey =
+    options?.security?.authTokenQueryParam ??
+    options?.upload?.authTokenQueryParam ??
+    DEFAULT_SERVER_AUTH_QUERY_KEY;
 
   return {
     host: options?.host ?? DEFAULT_HOST,
     port: options?.port,
-    documentRoot: options?.documentRoot ?? null,
+    tlsEnabled,
+    tlsCertificate,
+    documentRoot: normalizeNativeFilePath(options?.documentRoot),
     indexHtml: options?.indexHtml ?? null,
     uploadPath: uploadEnabled
       ? resolvePath(options?.upload?.path, DEFAULT_UPLOAD_PATH)
       : null,
-    uploadDir: uploadEnabled ? options?.upload?.directory ?? null : null,
+    uploadDir: uploadEnabled
+      ? normalizeNativeFilePath(options?.upload?.directory)
+      : null,
     uploadMetadataPath: uploadEnabled
-      ? resolveOptionalPath(options?.upload?.metadataPath)
+      ? normalizeNativeFilePath(options?.upload?.metadataPath)
       : null,
-    uploadAuthToken: uploadEnabled ? options?.upload?.authToken ?? null : null,
-    uploadAuthHeader: uploadEnabled
-      ? options?.upload?.authTokenHeader ?? null
-      : null,
-    uploadAuthQueryKey: uploadEnabled
-      ? options?.upload?.authTokenQueryParam ?? null
-      : null,
+    uploadAuthToken: serverAuthToken ?? null,
+    uploadAuthHeader: serverAuthToken ? serverAuthHeader : null,
+    uploadAuthQueryKey: serverAuthToken ? serverAuthQueryKey : null,
     maxUploadBytes: uploadEnabled ? options?.upload?.maxBytes ?? null : null,
     eventsPath: eventsEnabled
       ? resolvePath(options?.events?.path, DEFAULT_EVENTS_PATH)

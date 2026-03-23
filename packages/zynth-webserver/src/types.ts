@@ -21,6 +21,18 @@ export type WebServerEventsOptions = {
   path?: string;
 };
 
+export type WebServerSecurityOptions = {
+  allowInsecureHttp?: boolean;
+  authToken?: string;
+  authTokenHeader?: string;
+  authTokenQueryParam?: string;
+};
+
+export type WebServerTlsOptions = {
+  enabled?: boolean;
+  certificatePath?: string;
+};
+
 export type WebServerStartOptions = {
   host?: string;
   port?: number;
@@ -28,12 +40,16 @@ export type WebServerStartOptions = {
   indexHtml?: string;
   upload?: WebServerUploadOptions;
   events?: WebServerEventsOptions;
+  security?: WebServerSecurityOptions;
+  tls?: WebServerTlsOptions;
 };
 
 export type WebServerInfo = {
   host: string;
   port: number;
   url: string;
+  scheme: "http" | "https";
+  secureTransport: boolean;
   documentRoot?: string | null;
   uploadPath?: string | null;
   uploadMetadataPath?: string | null;

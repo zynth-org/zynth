@@ -94,6 +94,8 @@ final class ZynthWebServerModule: NSObject, ZynthModule, ZynthSyncModule {
   private func parseStartConfig(_ args: ZynthArgs) -> ZynthWebServerHost.StartConfig {
     let host = args.optionalString("host")
     let port = Int(args.number("port", default: 0))
+    let tlsEnabled = args.bool("tlsEnabled", default: false)
+    let tlsCertificate = args.optionalString("tlsCertificate")
     let documentRoot = args.optionalString("documentRoot")
     let indexHtml = args.optionalString("indexHtml")
     let uploadPath = args.optionalString("uploadPath")
@@ -110,6 +112,8 @@ final class ZynthWebServerModule: NSObject, ZynthModule, ZynthSyncModule {
     return ZynthWebServerHost.StartConfig(
       host: host,
       port: port,
+      tlsEnabled: tlsEnabled,
+      tlsCertificate: tlsCertificate,
       documentRoot: documentRoot,
       indexHtml: indexHtml,
       uploadPath: uploadPath,

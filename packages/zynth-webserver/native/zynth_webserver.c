@@ -10,6 +10,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <time.h>
+#include <stdarg.h>
 
 typedef struct ZynthWebServerEventNode {
   ZynthWebServerEvent event;
@@ -38,6 +39,8 @@ struct ZynthWebServer {
   struct mg_context *ctx;
   char *host;
   int port;
+  int tls_enabled;
+  char *tls_certificate;
   char *document_root;
   char *index_html;
   char *upload_path;
@@ -68,6 +71,9 @@ static const char *ZYNTH_SIGNAL_ENDPOINT_PATH = "/__zynth/signal";
 static const char *ZYNTH_REPLY_ENDPOINT_PATH = "/__zynth/reply";
 static const size_t ZYNTH_DEFAULT_MAX_SIGNAL_ENTRIES = 1024;
 
+static pthread_mutex_t zynth_last_error_mutex = PTHREAD_MUTEX_INITIALIZER;
+static char *zynth_last_error_message = NULL;
+
 static char *zynth_strdup(const char *value) {
   if (!value) return NULL;
   size_t length = strlen(value) + 1;
@@ -82,6 +88,43 @@ static void zynth_free(void *value) {
 }
 
 void zynth_webserver_free_string(char *value) { zynth_free(value); }
+
+static void zynth_set_last_error(const char *message) {
+  pthread_mutex_lock(&zynth_last_error_mutex);
+  zynth_free(zynth_last_error_message);
+  zynth_last_error_message = zynth_strdup(message ? message : "");
+  pthread_mutex_unlock(&zynth_last_error_mutex);
+}
+
+static void zynth_set_last_errorf(const char *format, ...) {
+  if (!format) {
+    zynth_set_last_error("Unknown webserver error");
+    return;
+  }
+
+  va_list args;
+  va_start(args, format);
+  va_list copy;
+  va_copy(copy, args);
+  int length = vsnprintf(NULL, 0, format, copy);
+  va_end(copy);
+  if (length < 0) {
+    va_end(args);
+    zynth_set_last_error("Unknown webserver error");
+    return;
+  }
+
+  char *buffer = (char *)malloc((size_t)length + 1);
+  if (!buffer) {
+    va_end(args);
+    zynth_set_last_error("Out of memory while formatting webserver error");
+    return;
+  }
+  vsnprintf(buffer, (size_t)length + 1, format, args);
+  va_end(args);
+  zynth_set_last_error(buffer);
+  zynth_free(buffer);
+}
 
 static long long zynth_now_ms(void) {
   struct timespec ts;
@@ -1081,6 +1124,10 @@ static int zynth_handle_reply(struct mg_connection *conn, void *cbdata) {
     zynth_send_status(conn, 405, "Method Not Allowed");
     return 1;
   }
+  if (!zynth_is_authorized(server, conn, request)) {
+    zynth_send_status(conn, 401, "Unauthorized");
+    return 1;
+  }
 
   char reply_id[256];
   if (!zynth_get_query_param(request->query_string, "id", reply_id, sizeof(reply_id)) ||
@@ -1121,6 +1168,10 @@ static int zynth_handle_events(struct mg_connection *conn, void *cbdata) {
   }
   if (strcmp(request->request_method, "POST") != 0) {
     zynth_send_status(conn, 405, "Method Not Allowed");
+    return 1;
+  }
+  if (!zynth_is_authorized(server, conn, request)) {
+    zynth_send_status(conn, 401, "Unauthorized");
     return 1;
   }
 
@@ -1260,12 +1311,23 @@ static int zynth_handle_upload_metadata(struct mg_connection *conn, void *cbdata
 }
 
 ZynthWebServer *zynth_webserver_start(const ZynthWebServerConfig *config) {
+  zynth_set_last_error(NULL);
   if (!config) return NULL;
+#if defined(NO_SSL)
+  if (config->tls_enabled) {
+    zynth_set_last_error(
+      "TLS is not available in this ZynthWebServer build. Rebuild native module with TLS enabled."
+    );
+    return NULL;
+  }
+#endif
   ZynthWebServer *server = (ZynthWebServer *)calloc(1, sizeof(ZynthWebServer));
   if (!server) return NULL;
 
   server->host = zynth_strdup(config->host ? config->host : "0.0.0.0");
   server->port = config->port;
+  server->tls_enabled = config->tls_enabled ? 1 : 0;
+  server->tls_certificate = zynth_strdup(config->tls_certificate);
   server->document_root = zynth_strdup(config->document_root);
   server->index_html = zynth_strdup(config->index_html);
   server->upload_path = zynth_strdup(config->upload_path);
@@ -1282,38 +1344,79 @@ ZynthWebServer *zynth_webserver_start(const ZynthWebServerConfig *config) {
   pthread_mutex_init(&server->uploads_mutex, NULL);
   pthread_mutex_init(&server->replies_mutex, NULL);
 
-  char port_buffer[64];
+  char port_buffer[80];
+  const char *port_suffix = server->tls_enabled ? "s" : "";
   if (server->host && *server->host) {
     snprintf(
       port_buffer,
       sizeof(port_buffer),
-      "%s:%d",
+      "%s:%d%s",
       server->host,
-      server->port > 0 ? server->port : 0
+      server->port > 0 ? server->port : 0,
+      port_suffix
     );
   } else {
     snprintf(
       port_buffer,
       sizeof(port_buffer),
-      "%d",
-      server->port > 0 ? server->port : 0
+      "%d%s",
+      server->port > 0 ? server->port : 0,
+      port_suffix
     );
   }
 
-  const char *options[] = {
-    "listening_ports",
-    port_buffer,
-    "document_root",
-    server->document_root ? server->document_root : ".",
-    "num_threads",
-    "4",
-    NULL
-  };
+  if (server->tls_enabled &&
+      (!server->tls_certificate || !*server->tls_certificate)) {
+    zynth_set_last_error("tlsCertificate is required when tlsEnabled=true");
+    zynth_webserver_stop(server);
+    return NULL;
+  }
+
+  const char *options[12];
+  int option_index = 0;
+  options[option_index++] = "listening_ports";
+  options[option_index++] = port_buffer;
+  if (server->tls_enabled) {
+    options[option_index++] = "ssl_certificate";
+    options[option_index++] = server->tls_certificate;
+  }
+  options[option_index++] = "document_root";
+  options[option_index++] = server->document_root ? server->document_root : ".";
+  options[option_index++] = "num_threads";
+  options[option_index++] = "4";
+  options[option_index++] = NULL;
 
   struct mg_callbacks callbacks;
   memset(&callbacks, 0, sizeof(callbacks));
-  server->ctx = mg_start(&callbacks, server, options);
+  struct mg_init_data init_data;
+  memset(&init_data, 0, sizeof(init_data));
+  init_data.callbacks = &callbacks;
+  init_data.user_data = server;
+  init_data.configuration_options = options;
+
+  char error_text[512];
+  memset(error_text, 0, sizeof(error_text));
+  struct mg_error_data error_data;
+  memset(&error_data, 0, sizeof(error_data));
+  error_data.text = error_text;
+  error_data.text_buffer_size = sizeof(error_text);
+
+  server->ctx = mg_start2(&init_data, &error_data);
   if (!server->ctx) {
+    if (error_text[0] != '\0') {
+      zynth_set_last_errorf(
+        "Failed to start web server (code=%u sub=%u): %s",
+        error_data.code,
+        error_data.code_sub,
+        error_text
+      );
+    } else {
+      zynth_set_last_errorf(
+        "Failed to start web server (code=%u sub=%u)",
+        error_data.code,
+        error_data.code_sub
+      );
+    }
     zynth_webserver_stop(server);
     return NULL;
   }
@@ -1361,6 +1464,7 @@ void zynth_webserver_stop(ZynthWebServer *server) {
   pthread_mutex_destroy(&server->uploads_mutex);
   pthread_mutex_destroy(&server->replies_mutex);
   zynth_free(server->host);
+  zynth_free(server->tls_certificate);
   zynth_free(server->document_root);
   zynth_free(server->index_html);
   zynth_free(server->upload_path);
@@ -1386,6 +1490,21 @@ int zynth_webserver_get_port(ZynthWebServer *server) {
 const char *zynth_webserver_get_host(ZynthWebServer *server) {
   if (!server) return NULL;
   return server->host;
+}
+
+int zynth_webserver_supports_tls(void) {
+#if defined(NO_SSL)
+  return 0;
+#else
+  return 1;
+#endif
+}
+
+char *zynth_webserver_get_last_error(void) {
+  pthread_mutex_lock(&zynth_last_error_mutex);
+  char *copy = zynth_strdup(zynth_last_error_message ? zynth_last_error_message : "");
+  pthread_mutex_unlock(&zynth_last_error_mutex);
+  return copy;
 }
 
 size_t zynth_webserver_drain_events(

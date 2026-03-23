@@ -17,6 +17,8 @@ typedef struct ZynthWebServerEvent {
 typedef struct ZynthWebServerConfig {
   const char *host;
   int port;
+  int tls_enabled;
+  const char *tls_certificate;
   const char *document_root;
   const char *index_html;
   const char *upload_path;
@@ -34,6 +36,8 @@ void zynth_webserver_stop(ZynthWebServer *server);
 int zynth_webserver_is_running(ZynthWebServer *server);
 int zynth_webserver_get_port(ZynthWebServer *server);
 const char *zynth_webserver_get_host(ZynthWebServer *server);
+int zynth_webserver_supports_tls(void);
+char *zynth_webserver_get_last_error(void);
 
 size_t zynth_webserver_drain_events(
   ZynthWebServer *server,

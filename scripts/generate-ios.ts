@@ -125,6 +125,27 @@ function formatInfoPlistProperties(properties: Record<string, unknown>): string 
     .join("\n");
 }
 
+function applyTransportSecurityDefaults(
+  infoPlist: Record<string, unknown>,
+  dev: boolean
+): void {
+  const existing = infoPlist.NSAppTransportSecurity;
+  if (existing != null) {
+    return;
+  }
+
+  if (dev) {
+    infoPlist.NSAppTransportSecurity = {
+      NSAllowsArbitraryLoads: true,
+    };
+    return;
+  }
+
+  infoPlist.NSAppTransportSecurity = {
+    NSAllowsArbitraryLoads: false,
+  };
+}
+
 function collectNativeIOSPods(appDir: string): any[] {
   const podsByName = new Map();
   const appPackage = safeReadJSON(path.join(appDir, "package.json")) || {};
@@ -466,7 +487,8 @@ export function generateIOSProject(appDir: string, options: any = {}) {
   const componentPodBlock = formatComponentPodLines(componentPods, targetDir);
   const moduleImports = generateModuleImports(componentPods);
   const moduleInitializers = generateModuleInitializers(componentPods);
-  
+  applyTransportSecurityDefaults(config.infoPlist, dev);
+
   // Inject Dev Server URL into Info.plist if configured
   if (config.devServerUrl) {
     config.infoPlist["ZynthDevServerURL"] = config.devServerUrl;

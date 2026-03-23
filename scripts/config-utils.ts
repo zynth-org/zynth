@@ -58,6 +58,41 @@ export function safeReadJSON(filePath: string): any {
   }
 }
 
+export function getZynthConfig(appDir: string): Record<string, any> {
+  const appJsonPath = path.join(appDir, "app.json");
+  if (!fs.existsSync(appJsonPath)) {
+    return {};
+  }
+  const appJson = safeReadJSON(appJsonPath);
+  if (!appJson || typeof appJson !== "object") {
+    return {};
+  }
+  const zynth = (appJson as Record<string, unknown>).zynth;
+  if (zynth && typeof zynth === "object" && !Array.isArray(zynth)) {
+    return zynth as Record<string, any>;
+  }
+  return appJson as Record<string, any>;
+}
+
+export function getZynthPackageConfig(
+  appDir: string,
+  packageName: string
+): Record<string, any> {
+  if (!packageName) {
+    return {};
+  }
+  const config = getZynthConfig(appDir);
+  const packages = config.packages;
+  if (!packages || typeof packages !== "object" || Array.isArray(packages)) {
+    return {};
+  }
+  const entry = (packages as Record<string, unknown>)[packageName];
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+    return {};
+  }
+  return entry as Record<string, any>;
+}
+
 // Configuration - parse app info from app.json (Zynth-style) and package.json
 export function getAppConfig(appDir: string): AppConfig {
   const pkgPath = path.join(appDir, "package.json");

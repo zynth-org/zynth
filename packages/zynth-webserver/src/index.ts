@@ -7,6 +7,7 @@ export type {
   WebServerEventType,
   WebServerEventsOptions,
   WebServerInfo,
+  WebServerSecurityOptions,
   WebServerStartOptions,
   WebServerStatus,
   WebServerSubscribeOptions,
@@ -17,5 +18,6 @@ export type {
   WebServerUploadMetadataPayload,
   WebServerUploadOptions,
   WebServerUploadState,
+  WebServerTlsOptions,
 } from "./types";
 export type { WebServerSignal } from "./signal";

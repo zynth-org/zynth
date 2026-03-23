@@ -6,6 +6,8 @@ NS_ASSUME_NONNULL_BEGIN
 
 + (void *_Nullable)startWithHost:(NSString *_Nullable)host
                             port:(NSInteger)port
+                      tlsEnabled:(BOOL)tlsEnabled
+                   tlsCertificate:(NSString *_Nullable)tlsCertificate
                     documentRoot:(NSString *_Nullable)documentRoot
                        indexHtml:(NSString *_Nullable)indexHtml
                       uploadPath:(NSString *_Nullable)uploadPath
@@ -16,6 +18,8 @@ NS_ASSUME_NONNULL_BEGIN
                uploadAuthQueryKey:(NSString *_Nullable)uploadAuthQueryKey
                   maxUploadBytes:(long long)maxUploadBytes
                       eventsPath:(NSString *_Nullable)eventsPath;
++ (BOOL)supportsTls;
++ (NSString *_Nullable)lastError;
 
 + (void)stop:(void *)handle;
 + (BOOL)isRunning:(void *)handle;

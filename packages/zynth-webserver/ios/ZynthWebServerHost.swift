@@ -4,6 +4,8 @@ struct WebServerInfo {
   let host: String
   let port: Int
   let url: String
+  let scheme: String
+  let secureTransport: Bool
   let documentRoot: String?
   let uploadPath: String?
   let uploadMetadataPath: String?
@@ -16,6 +18,8 @@ struct WebServerInfo {
       "host": host,
       "port": port,
       "url": url,
+      "scheme": scheme,
+      "secureTransport": secureTransport,
       "documentRoot": documentRoot ?? NSNull(),
       "uploadPath": uploadPath ?? NSNull(),
       "uploadMetadataPath": uploadMetadataPath ?? NSNull(),
@@ -71,6 +75,8 @@ final class ZynthWebServerHost {
   struct StartConfig {
     let host: String?
     let port: Int
+    let tlsEnabled: Bool
+    let tlsCertificate: String?
     let documentRoot: String?
     let indexHtml: String?
     let uploadPath: String?
@@ -93,9 +99,22 @@ final class ZynthWebServerHost {
   func start(config: StartConfig) throws -> WebServerInfo {
     stop()
 
+    if config.tlsEnabled && !ZynthWebServerBridge.supportsTls() {
+      throw NSError(domain: "ZynthWebServer", code: 2, userInfo: [
+        NSLocalizedDescriptionKey: "TLS is not available in this ZynthWebServer build. Rebuild native module with TLS enabled.",
+      ])
+    }
+    if config.tlsEnabled && (config.tlsCertificate?.isEmpty != false) {
+      throw NSError(domain: "ZynthWebServer", code: 3, userInfo: [
+        NSLocalizedDescriptionKey: "tlsCertificate is required when tlsEnabled=true",
+      ])
+    }
+
     guard let server = ZynthWebServerBridge.start(
       withHost: config.host,
       port: config.port,
+      tlsEnabled: config.tlsEnabled,
+      tlsCertificate: config.tlsCertificate,
       documentRoot: config.documentRoot,
       indexHtml: config.indexHtml,
       uploadPath: config.uploadPath,
@@ -107,19 +126,27 @@ final class ZynthWebServerHost {
       maxUploadBytes: config.maxUploadBytes,
       eventsPath: config.eventsPath
     ) else {
+      let nativeDetail = ZynthWebServerBridge.lastError()?.trimmingCharacters(in: .whitespacesAndNewlines)
+      let message =
+        (nativeDetail?.isEmpty == false)
+        ? "Failed to start web server (\(nativeDetail!))"
+        : "Failed to start web server"
       throw NSError(domain: "ZynthWebServer", code: 1, userInfo: [
-        NSLocalizedDescriptionKey: "Failed to start web server",
+        NSLocalizedDescriptionKey: message,
       ])
     }
 
     handle = server
     let port = Int(ZynthWebServerBridge.port(server))
     let host = config.host ?? "0.0.0.0"
-    let url = "http://\(host):\(port)"
+    let scheme = config.tlsEnabled ? "https" : "http"
+    let url = "\(scheme)://\(host):\(port)"
     let info = WebServerInfo(
       host: host,
       port: port,
       url: url,
+      scheme: scheme,
+      secureTransport: config.tlsEnabled,
       documentRoot: config.documentRoot,
       uploadPath: config.uploadPath,
       uploadMetadataPath: config.uploadMetadataPath,
