@@ -25,6 +25,7 @@ import { Directory } from "./Directory";
 type ExtendedFetchRequestInit = RequestInit & {
   timeout?: number;
   onUploadProgress?: (progress: UploadProgress) => void;
+  bodyFileUri?: string;
   tls?: {
     trustedCertificatesPem?: string | readonly string[];
   };
@@ -243,6 +244,7 @@ export class File {
       method,
       headers: headersToRecord(headers),
       body: this.uploadStream({ chunkSize }),
+      bodyFileUri: this._uri.startsWith("file://") ? this._uri : undefined,
       signal: options?.signal,
       timeout: options?.timeout,
       onUploadProgress: options?.onUploadProgress,

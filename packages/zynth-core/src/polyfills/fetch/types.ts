@@ -38,6 +38,7 @@ export type RequestInit = {
   method?: string;
   headers?: HeaderInit;
   body?: BodyInit;
+  bodyFileUri?: string;
   timeout?: number;
   signal?: AbortSignal;
   stream?: boolean;
@@ -82,6 +83,7 @@ export type FetchPayload = {
   method?: string;
   headers?: Record<string, string>;
   body?: string | ArrayBuffer | Uint8Array | number[];
+  bodyFileUri?: string;
   timeout?: number;
   stream?: boolean;
   uploadStream?: boolean;

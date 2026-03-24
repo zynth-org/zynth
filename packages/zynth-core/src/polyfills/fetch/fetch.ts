@@ -74,6 +74,7 @@ export async function fetch(
     (typeof streamOverride === "boolean" ? streamOverride : rawBody == null);
   const headers = new Headers(request.headers);
   const redirectMode = init?.redirect ?? request.redirect ?? "follow";
+  const bodyFileUri = normalizeBodyFileUri((init as any)?.bodyFileUri);
   const payload: FetchPayload = {
     url: request.url,
     requestId,
@@ -85,6 +86,7 @@ export async function fetch(
 
   const resolvedBody = await resolveBody(rawBody, headers, globalObject);
   const uploadStream = resolvedBody?.uploadStream;
+  const useNativeFileBody = Boolean(bodyFileUri && uploadStream);
   const uploadTotalBytes = inferUploadTotalBytes(headers, resolvedBody);
   const trustedCertificatesPem = normalizeTrustedCertificates(
     init?.tls?.trustedCertificatesPem
@@ -97,9 +99,13 @@ export async function fetch(
 
   if (resolvedBody) {
     payload.body = resolvedBody.body;
-    payload.uploadStream = Boolean(uploadStream);
-    payload.uploadLength = uploadTotalBytes;
+    payload.uploadStream = Boolean(uploadStream && !useNativeFileBody);
+    payload.uploadLength = useNativeFileBody ? null : uploadTotalBytes;
     payload.headers = headers.toJSON();
+  }
+  if (useNativeFileBody && bodyFileUri) {
+    payload.bodyFileUri = bodyFileUri;
+    delete (payload as any).body;
   }
 
   // Ensure ArrayBuffer is converted to number[] for bridge compatibility
@@ -132,7 +138,7 @@ export async function fetch(
       : null;
 
   const uploadFailurePromise =
-    uploadStream != null
+    uploadStream != null && !useNativeFileBody
       ? new Promise((_, reject) => {
           uploadFailureReject = reject as (error: Error) => void;
         })
@@ -144,7 +150,7 @@ export async function fetch(
     );
     throwIfNativeError(requestResult, "request");
 
-    if (uploadStream) {
+    if (uploadStream && !useNativeFileBody) {
       void pumpUploadStreamToNative({
         bridge,
         requestId,
@@ -253,6 +259,20 @@ function normalizeTrustedCertificates(
     }
   }
   return output;
+}
+
+function normalizeBodyFileUri(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (trimmed.startsWith("file://") || trimmed.startsWith("/")) {
+    return trimmed;
+  }
+  return null;
 }
 
 type UploadPumpArgs = {

@@ -1,10 +1,13 @@
 package com.zynth.kit.runtime.modules
 
+import android.net.Uri
 import com.zynth.kit.runtime.ZynthModule
 import com.zynth.kit.runtime.ZynthRuntime
 import com.zynth.kit.runtime.ZynthArgs
 import com.zynth.kit.runtime.ZynthTypeException
 import java.io.ByteArrayInputStream
+import java.io.File
+import java.io.FileInputStream
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
@@ -73,6 +76,7 @@ class FetchModule(private val runtime: ZynthRuntime) : ZynthModule {
         val wantsStream = args.getBoolean("stream", false)
         val uploadStream = args.getBoolean("uploadStream", false)
         val uploadLength = args.getOptionalLong("uploadLength")?.takeIf { it >= 0 }
+        val bodyFileUri = args.getOptionalString("bodyFileUri")?.trim()?.takeIf { it.isNotEmpty() }
         val trustedCertificatesPem = parseTrustedCertificatesPem(args)
 
         val builder = Request.Builder().url(url)
@@ -85,7 +89,18 @@ class FetchModule(private val runtime: ZynthRuntime) : ZynthModule {
             }
         }
 
-        if (uploadStream) {
+        if (bodyFileUri != null) {
+            if (method == "GET" || method == "HEAD") {
+                return errorResponse("invalid_method", "bodyFileUri requires a request body method")
+            }
+            val mediaType = (headers?.get("Content-Type") as? String)?.toMediaTypeOrNull()
+            val filePath = resolveBodyFilePath(bodyFileUri) ?: return errorResponse("invalid_body_file_uri")
+            val file = File(filePath)
+            if (!file.exists() || !file.isFile) {
+                return errorResponse("invalid_body_file_uri", "bodyFileUri does not point to an existing file")
+            }
+            builder.method(method, createFileRequestBody(file, mediaType))
+        } else if (uploadStream) {
             if (method == "GET" || method == "HEAD") {
                 return errorResponse("invalid_method", "uploadStream requires a request body method")
             }
@@ -468,6 +483,34 @@ class FetchModule(private val runtime: ZynthRuntime) : ZynthModule {
                 bytes
             }
             else -> null
+        }
+    }
+
+    private fun resolveBodyFilePath(uri: String): String? {
+        if (uri.startsWith("file://")) {
+            return runCatching { Uri.parse(uri).path }.getOrNull()
+        }
+        return if (uri.startsWith("/")) uri else null
+    }
+
+    private fun createFileRequestBody(file: File, mediaType: MediaType?): RequestBody {
+        return object : RequestBody() {
+            override fun contentType(): MediaType? = mediaType
+
+            override fun contentLength(): Long = file.length()
+
+            override fun writeTo(sink: BufferedSink) {
+                FileInputStream(file).use { input ->
+                    val buffer = ByteArray(64 * 1024)
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read <= 0) {
+                            break
+                        }
+                        sink.write(buffer, 0, read)
+                    }
+                }
+            }
         }
     }
 

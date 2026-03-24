@@ -60,12 +60,14 @@ final class FetchModule: NSObject, ZynthModule, URLSessionDataDelegate {
     let method = args.string("method", default: "GET").uppercased()
     let headers = try? args.dict("headers")
     let timeoutSeconds = args.number("timeout", default: 0)
+    let bodyFileUri = args.optionalString("bodyFileUri")?.trimmingCharacters(in: .whitespacesAndNewlines)
     let trustedCertificates = try parseTrustedCertificatesPem(args)
 
-    if wantsUploadStream && (method == "GET" || method == "HEAD") {
+    if (wantsUploadStream || (bodyFileUri?.isEmpty == false)) &&
+      (method == "GET" || method == "HEAD") {
       return [
         "error": "invalid_method",
-        "message": "uploadStream requires a request body method",
+        "message": "Request body requires a non-GET/HEAD method",
       ]
     }
 
@@ -79,6 +81,25 @@ final class FetchModule: NSObject, ZynthModule, URLSessionDataDelegate {
       for (key, value) in headers {
         request.setValue(String(describing: value), forHTTPHeaderField: key)
       }
+    }
+
+    if let bodyFileUri, !bodyFileUri.isEmpty {
+      do {
+        request.httpBody = try loadBodyFileData(bodyFileUri)
+      } catch {
+        return [
+          "error": "invalid_body_file_uri",
+          "message": error.localizedDescription,
+        ]
+      }
+      startRequest(
+        requestId: idInt,
+        urlString: urlString,
+        request: request,
+        wantsResponseStream: wantsResponseStream,
+        trustedCertificates: trustedCertificates
+      )
+      return ["requestId": idInt]
     }
 
     if wantsUploadStream {
@@ -118,6 +139,37 @@ final class FetchModule: NSObject, ZynthModule, URLSessionDataDelegate {
     )
 
     return ["requestId": idInt]
+  }
+
+  private func loadBodyFileData(_ rawUri: String) throws -> Data {
+    let trimmed = rawUri.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.isEmpty {
+      throw NSError(
+        domain: "Fetch",
+        code: 1,
+        userInfo: [NSLocalizedDescriptionKey: "bodyFileUri is empty"]
+      )
+    }
+    let fileUrl: URL
+    if trimmed.hasPrefix("file://") {
+      guard let url = URL(string: trimmed), url.isFileURL else {
+        throw NSError(
+          domain: "Fetch",
+          code: 2,
+          userInfo: [NSLocalizedDescriptionKey: "bodyFileUri is not a valid file URL"]
+        )
+      }
+      fileUrl = url
+    } else if trimmed.hasPrefix("/") {
+      fileUrl = URL(fileURLWithPath: trimmed)
+    } else {
+      throw NSError(
+        domain: "Fetch",
+        code: 3,
+        userInfo: [NSLocalizedDescriptionKey: "bodyFileUri must be file:// or absolute path"]
+      )
+    }
+    return try Data(contentsOf: fileUrl)
   }
 
   private func handleCancel(args: ZynthArgs) throws -> Any {
