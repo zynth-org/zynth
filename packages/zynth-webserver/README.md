@@ -103,6 +103,16 @@ const cert = await WebServer.upsertManagedTlsCertificate({
 console.log(cert.certificatePath, cert.fingerprintSha256, cert.existed);
 ```
 
+Read managed cert material for app-side pinning:
+
+```ts
+const current = await WebServer.getManagedTlsCertificate("lan-server");
+if (current) {
+  console.log(current.alias, current.fingerprintSha256);
+  // current.certificatePem contains CERTIFICATE block(s) only (no private key)
+}
+```
+
 ## Solid Integration
 
 Use `createWebServerSignal()` in components to manage lifecycle state and read events.
@@ -337,6 +347,7 @@ sub.remove();
 
 - `start(options?: WebServerStartOptions): Promise<WebServerInfo>`
 - `upsertManagedTlsCertificate(options): Promise<WebServerManagedTlsCertificateInfo>`
+- `getManagedTlsCertificate(alias?): Promise<WebServerManagedTlsCertificate | null>`
 - `stop(): Promise<void>`
 - `isRunning(): Promise<boolean>`
 - `getInfo(): Promise<WebServerInfo | null>`
@@ -406,6 +417,9 @@ Returns `WebServerSignal` with:
 
 - `WebServerManagedTlsCertificateInfo`
   - `alias`, `certificatePath`, `fingerprintSha256`, `updatedAt`, `existed`
+
+- `WebServerManagedTlsCertificate`
+  - `alias`, `certificatePath`, `certificatePem`, `fingerprintSha256`, `updatedAt`
 
 - `WebServerInfo`
   - `host`, `port`, `url`, `scheme`, `secureTransport`, `documentRoot?`, `uploadPath?`, `uploadMetadataPath?`, `eventsPath?`, `signalPath?`, `replyPath?`

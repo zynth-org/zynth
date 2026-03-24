@@ -21,6 +21,7 @@ class ZynthWebServerModule(
         "stop",
         "isRunning",
         "getInfo",
+        "getManagedTlsCertificate",
         "getUploadState",
         "drainEvents",
         "upsertManagedTlsCertificate",
@@ -48,6 +49,7 @@ class ZynthWebServerModule(
             }
             "isRunning" -> resultResponse(isRunning())
             "getInfo" -> resultResponse(serverInfo ?: JSONObject.NULL)
+            "getManagedTlsCertificate" -> getManagedTlsCertificate(args)
             "getUploadState" -> resultResponse(getUploadState())
             "drainEvents" -> drainEvents(args)
             "upsertManagedTlsCertificate" -> upsertManagedTlsCertificate(args)
@@ -281,6 +283,31 @@ class ZynthWebServerModule(
         )
     }
 
+    private fun getManagedTlsCertificate(args: ZynthArgs): JSONObject {
+        val aliasRaw = args.getString("alias", "default").trim()
+        val alias = sanitizeAlias(if (aliasRaw.isEmpty()) "default" else aliasRaw)
+        val tlsDir = File(activity.cacheDir, "zynth-webserver/tls")
+        val pemFile = File(tlsDir, "$alias.pem")
+        val metadataFile = File(tlsDir, "$alias.meta")
+        if (!pemFile.exists()) {
+            return resultResponse(JSONObject.NULL)
+        }
+        val pemBundle = runCatching { pemFile.readText(Charsets.UTF_8) }.getOrElse {
+            throw IllegalStateException("Failed to read managed certificate file")
+        }
+        val certificatePem = extractCertificatePem(pemBundle)
+            ?: throw IllegalStateException("Managed certificate file does not contain a certificate PEM block")
+        val updatedAt = parseUpdatedAt(metadataFile).coerceAtLeast(0L)
+        return resultResponse(
+            JSONObject()
+                .put("alias", alias)
+                .put("certificatePath", pemFile.absolutePath)
+                .put("certificatePem", certificatePem)
+                .put("fingerprintSha256", sha256Hex(certificatePem))
+                .put("updatedAt", updatedAt)
+        )
+    }
+
     private fun getReply(args: ZynthArgs): JSONObject {
         return getSignal(args)
     }
@@ -351,6 +378,17 @@ class ZynthWebServerModule(
         }.getOrDefault(0L)
     }
 
+    private fun extractCertificatePem(pemBundle: String): String? {
+        val blocks = CERTIFICATE_BLOCK_REGEX.findAll(pemBundle)
+            .map { it.value.trim() }
+            .filter { it.isNotEmpty() }
+            .toList()
+        if (blocks.isEmpty()) {
+            return null
+        }
+        return blocks.joinToString("\n", postfix = "\n")
+    }
+
     private fun sha256Hex(value: String): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
         val output = StringBuilder(digest.size * 2)
@@ -362,5 +400,11 @@ class ZynthWebServerModule(
             output.append(unsignedValue.toString(16))
         }
         return output.toString()
+    }
+
+    companion object {
+        private val CERTIFICATE_BLOCK_REGEX = Regex(
+            "-----BEGIN CERTIFICATE-----[\\s\\S]*?-----END CERTIFICATE-----"
+        )
     }
 }

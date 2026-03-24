@@ -144,6 +144,7 @@ static long long zynth_now_ms(void) {
   return ((long long)ts.tv_sec * 1000LL) + ((long long)ts.tv_nsec / 1000000LL);
 }
 
+#if defined(USE_MBEDTLS)
 static int zynth_clamp_valid_days(int valid_days) {
   if (valid_days <= 0) {
     return 365;
@@ -171,7 +172,6 @@ static int zynth_format_utc_time(time_t value, char out[16]) {
   return 1;
 }
 
-#if defined(USE_MBEDTLS)
 static void zynth_set_mbedtls_error(const char *prefix, int code) {
   char details[256];
   memset(details, 0, sizeof(details));
@@ -1106,12 +1106,16 @@ static int zynth_write_request_body(
   long long content_length,
   long long max_bytes,
   long long *out_written,
+  const char **out_reason,
   ZynthWebServer *server,
   ZynthActiveUploadNode *upload,
   const struct mg_request_info *request,
   const char *content_type,
   const char *metadata_json
 ) {
+  if (out_reason) {
+    *out_reason = "";
+  }
   long long written = 0;
   long long next_progress_emit = 0;
   char buffer[8192];
@@ -1126,14 +1130,23 @@ static int zynth_write_request_body(
     }
     int read = mg_read(conn, buffer, (int)to_read);
     if (read <= 0) {
+      if (content_length >= 0 && written < content_length && out_reason) {
+        *out_reason = "incomplete_body";
+      }
       break;
     }
     written += read;
     zynth_upload_update(server, upload, written);
     if (max_bytes > 0 && written > max_bytes) {
+      if (out_reason) {
+        *out_reason = "max_bytes_exceeded";
+      }
       return -1;
     }
     if (fwrite(buffer, 1, (size_t)read, file) != (size_t)read) {
+      if (out_reason) {
+        *out_reason = "fwrite_failed";
+      }
       return 0;
     }
 
@@ -1160,6 +1173,9 @@ static int zynth_write_request_body(
     *out_written = written;
   }
   if (content_length >= 0 && written < content_length) {
+    if (out_reason && (!*out_reason || !**out_reason)) {
+      *out_reason = "incomplete_body";
+    }
     return 0;
   }
   return 1;
@@ -1180,7 +1196,29 @@ static int zynth_handle_upload(struct mg_connection *conn, void *cbdata) {
     zynth_send_status(conn, 405, "Method Not Allowed");
     return 1;
   }
+  const char *header_metadata = mg_get_header(conn, "X-Upload-Metadata");
+  const char *content_type = mg_get_header(conn, "Content-Type");
   if (!zynth_is_authorized(server, conn, request)) {
+    char *metadata_json = zynth_upload_metadata_json(request, header_metadata);
+    char *payload = zynth_build_upload_lifecycle_payload(
+      "failed",
+      0,
+      "",
+      "",
+      0,
+      request->content_length,
+      request->request_method,
+      request->remote_addr,
+      content_type ? content_type : "",
+      "unauthorized",
+      401,
+      metadata_json
+    );
+    if (payload) {
+      zynth_webserver_queue_event(server, "upload_failed", payload);
+      zynth_free(payload);
+    }
+    zynth_free(metadata_json);
     zynth_send_status(conn, 401, "Unauthorized");
     return 1;
   }
@@ -1193,8 +1231,6 @@ static int zynth_handle_upload(struct mg_connection *conn, void *cbdata) {
   }
 
   const char *header_name = mg_get_header(conn, "X-File-Name");
-  const char *header_metadata = mg_get_header(conn, "X-Upload-Metadata");
-  const char *content_type = mg_get_header(conn, "Content-Type");
   const char *query_string = request->query_string;
   char name_buffer[256];
   const char *requested_name = header_name;
@@ -1285,12 +1321,14 @@ static int zynth_handle_upload(struct mg_connection *conn, void *cbdata) {
   }
 
   long long written = 0;
+  const char *write_failure_reason = "";
   int result = zynth_write_request_body(
     conn,
     file,
     content_length,
     server->max_upload_bytes,
     &written,
+    &write_failure_reason,
     server,
     upload,
     request,
@@ -1320,6 +1358,11 @@ static int zynth_handle_upload(struct mg_connection *conn, void *cbdata) {
     return 1;
   }
   if (result == 0) {
+    const char *reason =
+      (write_failure_reason && *write_failure_reason)
+        ? write_failure_reason
+        : "write_failed";
+    int status_code = strcmp(reason, "incomplete_body") == 0 ? 422 : 500;
     zynth_emit_upload_event(
       server,
       "upload_failed",
@@ -1327,8 +1370,8 @@ static int zynth_handle_upload(struct mg_connection *conn, void *cbdata) {
       upload,
       request,
       content_type,
-      "write_failed",
-      500,
+      reason,
+      status_code,
       metadata_json
     );
     zynth_upload_finalize(server, upload, 0);
@@ -1336,7 +1379,7 @@ static int zynth_handle_upload(struct mg_connection *conn, void *cbdata) {
     zynth_free(safe_name);
     zynth_free(full_path);
     zynth_free(metadata_json);
-    zynth_send_status(conn, 500, "Upload failed");
+    zynth_send_status(conn, status_code, "Upload failed");
     return 1;
   }
 

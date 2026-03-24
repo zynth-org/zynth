@@ -13,6 +13,7 @@ final class ZynthWebServerModule: NSObject, ZynthModule, ZynthSyncModule {
       "stop",
       "isRunning",
       "getInfo",
+      "getManagedTlsCertificate",
       "getUploadState",
       "drainEvents",
       "upsertManagedTlsCertificate",
@@ -41,6 +42,10 @@ final class ZynthWebServerModule: NSObject, ZynthModule, ZynthSyncModule {
     case "getInfo":
       let info = host.info?.toDictionary()
       return ["result": info as Any? ?? NSNull()]
+    case "getManagedTlsCertificate":
+      let alias = sanitizeAlias(args.string("alias", default: "default"))
+      let result = try getManagedTlsCertificate(alias: alias)
+      return ["result": result as Any? ?? NSNull()]
     case "getUploadState":
       return ["result": host.getUploadState().toDictionary()]
     case "drainEvents":
@@ -218,11 +223,74 @@ final class ZynthWebServerModule: NSObject, ZynthModule, ZynthSyncModule {
     ]
   }
 
+  private func getManagedTlsCertificate(alias: String) throws -> [String: Any]? {
+    let fileManager = FileManager.default
+    let cacheDir = try fileManager.url(
+      for: .cachesDirectory,
+      in: .userDomainMask,
+      appropriateFor: nil,
+      create: true
+    )
+    let tlsDir = cacheDir
+      .appendingPathComponent("zynth-webserver", isDirectory: true)
+      .appendingPathComponent("tls", isDirectory: true)
+    let pemUrl = tlsDir.appendingPathComponent("\(alias).pem")
+    let metaUrl = tlsDir.appendingPathComponent("\(alias).meta")
+    guard fileManager.fileExists(atPath: pemUrl.path) else {
+      return nil
+    }
+
+    let pemBundle = try String(contentsOf: pemUrl, encoding: .utf8)
+    guard let certificatePem = extractCertificatePem(pemBundle) else {
+      throw NSError(
+        domain: "ZynthWebServer",
+        code: 2203,
+        userInfo: [NSLocalizedDescriptionKey: "Managed certificate file does not contain a certificate PEM block"]
+      )
+    }
+    let updatedAt = parseUpdatedAt(from: metaUrl)
+    return [
+      "alias": alias,
+      "certificatePath": pemUrl.path,
+      "certificatePem": certificatePem,
+      "fingerprintSha256": sha256Hex(certificatePem),
+      "updatedAt": updatedAt,
+    ]
+  }
+
   private func parseUpdatedAt(from fileUrl: URL) -> Int64 {
     guard let value = try? String(contentsOf: fileUrl, encoding: .utf8) else {
       return 0
     }
     return Int64(value.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+  }
+
+  private func extractCertificatePem(_ pemBundle: String) -> String? {
+    guard let regex = try? NSRegularExpression(
+      pattern: "-----BEGIN CERTIFICATE-----[\\s\\S]*?-----END CERTIFICATE-----",
+      options: []
+    ) else {
+      return nil
+    }
+    let range = NSRange(pemBundle.startIndex..<pemBundle.endIndex, in: pemBundle)
+    let matches = regex.matches(in: pemBundle, options: [], range: range)
+    if matches.isEmpty {
+      return nil
+    }
+    var blocks: [String] = []
+    for match in matches {
+      guard let swiftRange = Range(match.range, in: pemBundle) else {
+        continue
+      }
+      let block = String(pemBundle[swiftRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+      if !block.isEmpty {
+        blocks.append(block)
+      }
+    }
+    if blocks.isEmpty {
+      return nil
+    }
+    return blocks.joined(separator: "\n") + "\n"
   }
 
   private func sanitizeAlias(_ value: String) -> String {

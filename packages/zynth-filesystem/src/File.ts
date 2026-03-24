@@ -148,49 +148,68 @@ export class File {
       requestedEnd != null ? Math.max(startOffset, Math.floor(requestedEnd)) : null;
     let offset = startOffset;
     let closed = false;
+    let reading = false;
+    let pendingPull = false;
+
+    const readNextChunk = async (
+      controller: ReadableStreamDefaultController<Uint8Array>
+    ): Promise<void> => {
+      if (closed) {
+        controller.close();
+        return;
+      }
+      if (endOffset != null && offset >= endOffset) {
+        closed = true;
+        controller.close();
+        return;
+      }
+
+      const length =
+        endOffset == null ? chunkSize : Math.min(chunkSize, endOffset - offset);
+      if (length <= 0) {
+        closed = true;
+        controller.close();
+        return;
+      }
+
+      const base64 = await callNative<string>("readBase64Chunk", {
+        uri: this._uri,
+        offset,
+        length,
+      });
+      if (!base64) {
+        closed = true;
+        controller.close();
+        return;
+      }
+      const chunk = base64ToBytes(base64);
+      if (chunk.byteLength === 0) {
+        closed = true;
+        controller.close();
+        return;
+      }
+      offset += chunk.byteLength;
+      controller.enqueue(chunk);
+    };
 
     return new ReadableStream<Uint8Array>({
       pull: async (controller) => {
-        if (closed) {
-          controller.close();
+        if (reading) {
+          pendingPull = true;
           return;
         }
-        if (endOffset != null && offset >= endOffset) {
-          closed = true;
-          controller.close();
-          return;
-        }
-
-        const length =
-          endOffset == null ? chunkSize : Math.min(chunkSize, endOffset - offset);
-        if (length <= 0) {
-          closed = true;
-          controller.close();
-          return;
-        }
-
+        reading = true;
         try {
-          const base64 = await callNative<string>("readBase64Chunk", {
-            uri: this._uri,
-            offset,
-            length,
-          });
-          if (!base64) {
-            closed = true;
-            controller.close();
-            return;
+          await readNextChunk(controller);
+          while (pendingPull && !closed) {
+            pendingPull = false;
+            await readNextChunk(controller);
           }
-          const chunk = base64ToBytes(base64);
-          if (chunk.byteLength === 0) {
-            closed = true;
-            controller.close();
-            return;
-          }
-          offset += chunk.byteLength;
-          controller.enqueue(chunk);
         } catch (error) {
           closed = true;
           controller.error(error);
+        } finally {
+          reading = false;
         }
       },
     });
@@ -207,10 +226,6 @@ export class File {
     const contentType = options?.contentType ?? this.type;
     if (!headers.has("content-type") && contentType) {
       headers.set("content-type", contentType);
-    }
-
-    if (!headers.has("content-length") && this.exists) {
-      headers.set("content-length", `${this.size}`);
     }
 
     if (options?.checksum) {

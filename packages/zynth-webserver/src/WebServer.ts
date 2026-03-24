@@ -3,6 +3,7 @@ import type {
   WebServerActiveUpload,
   WebServerEvent,
   WebServerInfo,
+  WebServerManagedTlsCertificate,
   WebServerManagedTlsCertificateInfo,
   WebServerStartOptions,
   WebServerSubscribeOptions,
@@ -39,6 +40,14 @@ type NativeManagedTlsCertificateInfo = {
   fingerprintSha256: string;
   updatedAt: number;
   existed: boolean;
+};
+
+type NativeManagedTlsCertificate = {
+  alias: string;
+  certificatePath: string;
+  certificatePem: string;
+  fingerprintSha256: string;
+  updatedAt: number;
 };
 
 const DEFAULT_HOST = "0.0.0.0";
@@ -151,6 +160,41 @@ function normalizeManagedTlsCertificateInfo(
     fingerprintSha256,
     updatedAt,
     existed,
+  };
+}
+
+function normalizeManagedTlsCertificate(
+  value: unknown
+): WebServerManagedTlsCertificate {
+  if (!value || typeof value !== "object") {
+    throw new Error("Invalid managed TLS certificate payload");
+  }
+  const record = value as Record<string, unknown>;
+  const alias =
+    typeof record.alias === "string" && record.alias.trim().length > 0
+      ? record.alias.trim()
+      : DEFAULT_MANAGED_TLS_ALIAS;
+  const certificatePath =
+    typeof record.certificatePath === "string" ? record.certificatePath.trim() : "";
+  const certificatePem =
+    typeof record.certificatePem === "string" ? record.certificatePem.trim() : "";
+  const fingerprintSha256 =
+    typeof record.fingerprintSha256 === "string"
+      ? record.fingerprintSha256.trim()
+      : "";
+  const updatedAt =
+    typeof record.updatedAt === "number" && Number.isFinite(record.updatedAt)
+      ? Math.round(record.updatedAt)
+      : Date.now();
+  if (!certificatePath || !certificatePem || !fingerprintSha256) {
+    throw new Error("Invalid managed TLS certificate payload");
+  }
+  return {
+    alias,
+    certificatePath,
+    certificatePem,
+    fingerprintSha256,
+    updatedAt,
   };
 }
 
@@ -424,6 +468,18 @@ const WebServer = {
       validDays: normalizeValidDays(options?.validDays),
     });
     return normalizeManagedTlsCertificateInfo(result);
+  },
+  async getManagedTlsCertificate(
+    alias = DEFAULT_MANAGED_TLS_ALIAS
+  ): Promise<WebServerManagedTlsCertificate | null> {
+    await ensureAvailable();
+    const result = await callNative<NativeManagedTlsCertificate | null>(
+      "getManagedTlsCertificate",
+      {
+        alias: resolveAlias(alias),
+      }
+    );
+    return result ? normalizeManagedTlsCertificate(result) : null;
   },
   async stop(): Promise<void> {
     await ensureAvailable();

@@ -51,6 +51,14 @@ export type WebServerManagedTlsCertificateInfo = {
   existed: boolean;
 };
 
+export type WebServerManagedTlsCertificate = {
+  alias: string;
+  certificatePath: string;
+  certificatePem: string;
+  fingerprintSha256: string;
+  updatedAt: number;
+};
+
 export type WebServerStartOptions = {
   host?: string;
   port?: number;
