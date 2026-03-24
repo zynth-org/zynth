@@ -19,6 +19,11 @@ class NetworkDiscoveryController(
         const val TAG = "ZynthNetworkDiscovery"
         private const val DEVICE_ID_TXT_KEY = "zdid"
         private const val LEGACY_DEVICE_ID_TXT_KEY = "zynthDeviceId"
+        private const val MAX_DISCOVERY_EVENTS = 250
+        private const val MAX_DISCOVERED_SERVICES = 128
+        private const val MAX_RESOLVE_ATTEMPTS = 3
+        private const val RESOLVE_RETRY_DELAY_MS = 700L
+        private const val RESOLVE_COOLDOWN_MS = 1200L
     }
 
     private val lock = Any()
@@ -37,6 +42,9 @@ class NetworkDiscoveryController(
     private val discoveredServices = linkedMapOf<String, NetworkServiceInfo>()
     private val discoveryEvents = ArrayList<DiscoveryEvent>()
     private val resolveAttempts = linkedMapOf<String, Int>()
+    private val resolveInFlight = linkedSetOf<String>()
+    private val resolveRetryTasks = linkedMapOf<String, Runnable>()
+    private val lastResolveAtMs = linkedMapOf<String, Long>()
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private var advertisedInfo: AdvertisedServiceInfo? = null
@@ -103,6 +111,7 @@ class NetworkDiscoveryController(
         }
 
         discoveryListener = null
+        clearResolveWork()
 
         synchronized(lock) {
             discoveryRunning = false
@@ -132,6 +141,7 @@ class NetworkDiscoveryController(
     }
 
     fun clearDiscoveredServices() {
+        clearResolveWork()
         synchronized(lock) {
             discoveredServices.clear()
             discoveryEvents.clear()
@@ -259,6 +269,10 @@ class NetworkDiscoveryController(
     private fun handleServiceLost(serviceInfo: NsdServiceInfo) {
         val key = serviceKey(serviceInfo)
         synchronized(lock) {
+            resolveInFlight.remove(key)
+            resolveAttempts.remove(key)
+            lastResolveAtMs.remove(key)
+            cancelResolveRetryLocked(key)
             val existing = discoveredServices.remove(key)
             if (existing != null) {
                 enqueueDiscoveryEvent("serviceLost", existing.copy(lastSeenAt = nowMs()))
@@ -268,24 +282,51 @@ class NetworkDiscoveryController(
     }
 
     private fun resolveService(serviceInfo: NsdServiceInfo, key: String) {
+        val canResolve = synchronized(lock) {
+            if (!discoveryRunning) {
+                false
+            } else if (resolveInFlight.contains(key)) {
+                false
+            } else {
+                val now = nowMs()
+                val lastAttempt = lastResolveAtMs[key]
+                if (lastAttempt != null && now - lastAttempt < RESOLVE_COOLDOWN_MS) {
+                    false
+                } else {
+                    resolveInFlight.add(key)
+                    lastResolveAtMs[key] = now
+                    true
+                }
+            }
+        }
+        if (!canResolve) {
+            return
+        }
+
         val resolveListener = object : NsdManager.ResolveListener {
             override fun onResolveFailed(serviceInfo: NsdServiceInfo?, errorCode: Int) {
                 val serviceName = serviceInfo?.serviceName ?: key
+                var shouldRetry = false
+                var retryServiceInfo: NsdServiceInfo? = null
                 val attempt = synchronized(lock) {
+                    resolveInFlight.remove(key)
                     val current = (resolveAttempts[key] ?: 0) + 1
                     resolveAttempts[key] = current
+                    if (current < MAX_RESOLVE_ATTEMPTS && discoveryRunning) {
+                        shouldRetry = true
+                        retryServiceInfo = serviceInfo ?: serviceInfoFallback(serviceName)
+                    }
                     current
                 }
                 Log.w(TAG, "serviceResolveFailed name=$serviceName code=$errorCode attempt=$attempt")
-                if (attempt < 3) {
-                    mainHandler.postDelayed(
-                        { resolveService(serviceInfo ?: serviceInfoFallback(serviceName), key) },
-                        700L
-                    )
+                if (shouldRetry && retryServiceInfo != null) {
+                    scheduleResolveRetry(key, retryServiceInfo!!)
                     return
                 }
                 synchronized(lock) {
                     resolveAttempts.remove(key)
+                    lastResolveAtMs.remove(key)
+                    cancelResolveRetryLocked(key)
                     val existing = discoveredServices.remove(key) ?: return
                     enqueueDiscoveryEvent("serviceLost", existing.copy(lastSeenAt = nowMs()))
                 }
@@ -320,9 +361,12 @@ class NetworkDiscoveryController(
                 )
 
                 synchronized(lock) {
+                    resolveInFlight.remove(key)
                     resolveAttempts.remove(key)
+                    cancelResolveRetryLocked(key)
                     pruneDuplicateResolvedServices(updated, key)
                     discoveredServices[key] = updated
+                    enforceServiceLimitLocked()
                     enqueueDiscoveryEvent("serviceResolved", updated)
                 }
                 Log.d(
@@ -467,8 +511,48 @@ class NetworkDiscoveryController(
             )
         )
 
-        if (discoveryEvents.size > 500) {
-            discoveryEvents.subList(0, discoveryEvents.size - 500).clear()
+        if (discoveryEvents.size > MAX_DISCOVERY_EVENTS) {
+            discoveryEvents.subList(0, discoveryEvents.size - MAX_DISCOVERY_EVENTS).clear()
+        }
+    }
+
+    private fun scheduleResolveRetry(key: String, serviceInfo: NsdServiceInfo) {
+        val task = synchronized(lock) {
+            cancelResolveRetryLocked(key)
+            val runnable = Runnable {
+                resolveService(serviceInfo, key)
+            }
+            resolveRetryTasks[key] = runnable
+            runnable
+        }
+        mainHandler.postDelayed(task, RESOLVE_RETRY_DELAY_MS)
+    }
+
+    private fun clearResolveWork() {
+        synchronized(lock) {
+            resolveInFlight.clear()
+            resolveAttempts.clear()
+            lastResolveAtMs.clear()
+            resolveRetryTasks.values.forEach { task ->
+                mainHandler.removeCallbacks(task)
+            }
+            resolveRetryTasks.clear()
+        }
+    }
+
+    private fun cancelResolveRetryLocked(key: String) {
+        val pending = resolveRetryTasks.remove(key) ?: return
+        mainHandler.removeCallbacks(pending)
+    }
+
+    private fun enforceServiceLimitLocked() {
+        while (discoveredServices.size > MAX_DISCOVERED_SERVICES) {
+            val firstKey = discoveredServices.keys.firstOrNull() ?: break
+            discoveredServices.remove(firstKey)
+            resolveInFlight.remove(firstKey)
+            resolveAttempts.remove(firstKey)
+            lastResolveAtMs.remove(firstKey)
+            cancelResolveRetryLocked(firstKey)
         }
     }
 

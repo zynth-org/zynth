@@ -299,14 +299,21 @@ async function createSnapshot(
   maxEvents: number,
   options?: NetworkFilterOptions
 ): Promise<NetworkSubscriptionSnapshot> {
-  const [state, discoveryRunning, services, events, advertisedService] =
-    await Promise.all([
-      Network.getNetworkStateAsync(),
-      Network.isDiscoveryRunningAsync(),
+  const [state, discoveryRunning, advertisedService] = await Promise.all([
+    Network.getNetworkStateAsync(),
+    Network.isDiscoveryRunningAsync(),
+    Network.getAdvertisedServiceAsync(),
+  ]);
+
+  let services: NetworkService[] = [];
+  let events: DiscoveryEvent[] = [];
+
+  if (discoveryRunning) {
+    [services, events] = await Promise.all([
       Network.getDiscoveredServicesAsync(options),
       Network.drainDiscoveryEventsAsync(maxEvents, options),
-      Network.getAdvertisedServiceAsync(),
     ]);
+  }
 
   return {
     timestamp: Date.now(),
