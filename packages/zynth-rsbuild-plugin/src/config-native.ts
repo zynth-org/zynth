@@ -28,7 +28,7 @@ const DEFAULT_NATIVE_CONFIG: RsbuildConfig = {
     emitCss: false, // No CSS in native
   },
   server: {
-    port: 8081,
+    port: 7070,
     host: "0.0.0.0",
     publicDir: false,
     printUrls: true,

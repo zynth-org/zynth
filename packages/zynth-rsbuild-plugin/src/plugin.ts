@@ -208,7 +208,7 @@ export function createZynthRsbuildPlugin(
         api.modifyRsbuildConfig((config) => {
           // Inject dev server URL
           const devServerHost = config.server?.host || "0.0.0.0";
-          const devServerPort = config.server?.port || 8081;
+          const devServerPort = config.server?.port || (isWeb ? 7076 : 7070);
 
           let hostForUrl = devServerHost;
           if (hostForUrl === "0.0.0.0") {

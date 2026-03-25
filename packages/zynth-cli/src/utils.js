@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const http = require("http");
+const net = require("net");
 const { spawn, spawnSync } = require("child_process");
 const readline = require("readline");
 
@@ -1247,14 +1248,20 @@ function buildDevtoolsUrl({ deviceHost, port, override }) {
 }
 
 async function startZynthHMRServer(appDir, platform, options = {}) {
-  const defaultPort = 8081;
-  const port = Number(
+  const defaultPort = 7070;
+  const requestedPort = Number(
     process.env.ZYNTH_HMR_PORT || options.port || defaultPort
   );
   const localHost = process.env.ZYNTH_HMR_HOST || "localhost";
   const bindHost =
     process.env.ZYNTH_HMR_BIND ||
     (localHost === "localhost" ? "0.0.0.0" : localHost);
+  const port = await findAvailablePort(requestedPort, bindHost);
+  if (!options.quietLogs && port !== requestedPort) {
+    console.log(
+      `  ! Port ${requestedPort} is in use, switched HMR server to ${port}.`
+    );
+  }
   const defaultSimulatorHost =
     platform === "android" ? "10.0.2.2" : "127.0.0.1";
   const defaultPhysicalHost = getLocalIp();
@@ -1333,6 +1340,35 @@ async function startZynthHMRServer(appDir, platform, options = {}) {
   };
 }
 
+function isPortAvailable(port, host = "0.0.0.0") {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.once("error", () => resolve(false));
+    server.once("listening", () => {
+      server.close(() => resolve(true));
+    });
+    server.listen(port, host);
+  });
+}
+
+async function findAvailablePort(startPort, host = "0.0.0.0", maxTries = 100) {
+  let candidate = Number(startPort);
+  if (!Number.isFinite(candidate) || candidate <= 0) {
+    candidate = 7070;
+  }
+  for (let i = 0; i < maxTries; i += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    const free = await isPortAvailable(candidate, host);
+    if (free) {
+      return candidate;
+    }
+    candidate += 1;
+  }
+  throw new Error(
+    `Unable to find a free port starting from ${startPort} (checked ${maxTries} ports).`
+  );
+}
+
 async function devIOS(root, appDir, options = {}) {
   const config = getIOSConfig(root, appDir);
   const iosDir = path.join(appDir, "ios");
@@ -1340,7 +1376,7 @@ async function devIOS(root, appDir, options = {}) {
   const quietOutput = Boolean(options.quietOutput ?? options.prebuild);
   const devtoolsEnabled = options.devtools !== false;
   const devtoolsPort = Number(
-    process.env.ZYNTH_DEVTOOLS_PORT || options.devtoolsPort || 8091
+    process.env.ZYNTH_DEVTOOLS_PORT || options.devtoolsPort || 7080
   );
   const devtoolsUrlOverride = process.env.ZYNTH_DEVTOOLS_URL;
   const devtoolsToken = process.env.ZYNTH_DEVTOOLS_TOKEN;
@@ -1498,7 +1534,7 @@ async function devIOS(root, appDir, options = {}) {
     );
   }
 
-  const desiredPort = Number(process.env.ZYNTH_HMR_PORT || 8081);
+  const desiredPort = Number(process.env.ZYNTH_HMR_PORT || 7070);
   const hmrServer = await startZynthHMRServer(appDir, "ios", {
     port: desiredPort,
     isPhysicalDevice: isPhysicalDevice,
@@ -1672,7 +1708,7 @@ async function devAndroid(root, appDir, options = {}) {
   const { local, hmrNetwork } = options;
   const devtoolsEnabled = options.devtools !== false;
   const devtoolsPort = Number(
-    process.env.ZYNTH_DEVTOOLS_PORT || options.devtoolsPort || 8091
+    process.env.ZYNTH_DEVTOOLS_PORT || options.devtoolsPort || 7080
   );
   const devtoolsUrlOverride = process.env.ZYNTH_DEVTOOLS_URL;
   const devtoolsToken = process.env.ZYNTH_DEVTOOLS_TOKEN || null;
@@ -1758,7 +1794,7 @@ async function devAndroid(root, appDir, options = {}) {
   let serializedConfig = "";
   let portForReverse = null;
 
-  const desiredPort = Number(process.env.ZYNTH_HMR_PORT || 8081);
+  const desiredPort = Number(process.env.ZYNTH_HMR_PORT || 7070);
   hmrServer = await startZynthHMRServer(appDir, "android", {
     port: desiredPort,
     deviceHostOverride:

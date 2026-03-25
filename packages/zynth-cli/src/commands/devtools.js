@@ -6,7 +6,7 @@ module.exports = {
   builder: (yargs) => {
     yargs.option("port", {
       type: "number",
-      default: 8091,
+      default: 7080,
       describe: "Port for the devtools WebSocket server",
     });
     yargs.option("host", {

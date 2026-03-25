@@ -72,7 +72,7 @@ configurationForConnectingSceneSession:(UISceneSession *)connectingSceneSession
     }
   }
   if (devServer.length == 0) {
-    devServer = @"http://localhost:8081";
+    devServer = @"http://localhost:7070";
   }
   if (usesEnv) {
     BOOL ready = zynth_wait_for_dev_server(devServer, 15.0);

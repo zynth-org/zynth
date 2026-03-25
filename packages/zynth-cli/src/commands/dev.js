@@ -42,7 +42,7 @@ module.exports = {
     yargs.option("devtools-port", {
       describe: "Port for the devtools WebSocket server",
       type: "number",
-      default: 8091,
+      default: 7080,
     });
     yargs.option("verbose", {
       describe: "Print raw native build output without filtering",

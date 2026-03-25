@@ -36,7 +36,7 @@ const DEFAULT_WEB_CONFIG: RsbuildConfig = {
     emitCss: true,
   },
   server: {
-    port: 8082, // Default web port
+    port: 7076, // Default web port
     host: "0.0.0.0",
     publicDir: { name: "public" },
     printUrls: true,

@@ -59,6 +59,15 @@ class MainActivity : AppCompatActivity() {
     var devtoolsUrl = launchIntent.getStringExtra("ZYNTH_DEVTOOLS_URL")
     var devtoolsToken = launchIntent.getStringExtra("ZYNTH_DEVTOOLS_TOKEN")
 
+    val buildConfigDevServerUrl = BuildConfig.ZYNTH_DEV_SERVER_URL.takeIf { it.isNotBlank() }
+    if (devServerUrl.isNullOrBlank()) {
+      devServerUrl = buildConfigDevServerUrl
+    }
+    val buildConfigDevServerToken = BuildConfig.ZYNTH_DEV_SERVER_TOKEN.takeIf { it.isNotBlank() }
+    if (devServerToken.isNullOrBlank()) {
+      devServerToken = buildConfigDevServerToken
+    }
+
     val persistedConfig = loadPersistedDevConfig()
     if (devServerUrl.isNullOrBlank()) {
       devServerUrl = persistedConfig?.url
@@ -71,15 +80,6 @@ class MainActivity : AppCompatActivity() {
     }
     if (devtoolsToken.isNullOrBlank()) {
       devtoolsToken = persistedConfig?.devtoolsToken
-    }
-
-    val buildConfigDevServerUrl = BuildConfig.ZYNTH_DEV_SERVER_URL.takeIf { it.isNotBlank() }
-    if (devServerUrl.isNullOrBlank()) {
-      devServerUrl = buildConfigDevServerUrl
-    }
-    val buildConfigDevServerToken = BuildConfig.ZYNTH_DEV_SERVER_TOKEN.takeIf { it.isNotBlank() }
-    if (devServerToken.isNullOrBlank()) {
-      devServerToken = buildConfigDevServerToken
     }
 
     // Allow forcing local bundle loading via Intent extra (useful for testing bytecode in Debug)
@@ -97,7 +97,7 @@ class MainActivity : AppCompatActivity() {
       }
     } else {
       if (devServerUrl.isNullOrBlank()) {
-        devServerUrl = if (isEmulator()) "http://10.0.2.2:8081" else null
+        devServerUrl = if (isEmulator()) "http://10.0.2.2:7070" else null
       }
     }
 

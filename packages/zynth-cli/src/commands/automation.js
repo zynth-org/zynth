@@ -261,7 +261,7 @@ module.exports = {
           cmd
             .option("hub", {
               type: "string",
-              default: "ws://127.0.0.1:8091",
+              default: "ws://127.0.0.1:7080",
               describe: "Devtools hub WebSocket URL",
             })
             .option("connect-timeout", {
@@ -312,7 +312,7 @@ module.exports = {
           cmd
             .option("hub", {
               type: "string",
-              default: "ws://127.0.0.1:8091",
+              default: "ws://127.0.0.1:7080",
               describe: "Devtools hub WebSocket URL",
             })
             .option("connect-timeout", {
