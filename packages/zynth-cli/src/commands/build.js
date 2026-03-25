@@ -157,6 +157,7 @@ module.exports = {
     if (argv.platform === "ios") {
       await buildIOS(root, appDir, argv);
     } else {
+      removeAndroidDevConfigAsset(appDir);
       // Android needs manual bundle copy since Gradle doesn't auto-copy in release builds
       copyBundleToAndroid(appDir);
       await buildAndroid(root, appDir, argv);
@@ -198,6 +199,33 @@ function copyBundleToAndroid(appDir) {
   } else {
     console.warn(
       "! dist/main.hbc not found. Android runtime will fallback to JS source."
+    );
+  }
+}
+
+function removeAndroidDevConfigAsset(appDir) {
+  const devConfigPath = path.join(
+    appDir,
+    "android",
+    "app",
+    "src",
+    "main",
+    "assets",
+    "zynth-dev-config.json"
+  );
+
+  if (!fs.existsSync(devConfigPath)) {
+    return;
+  }
+
+  try {
+    fs.unlinkSync(devConfigPath);
+    console.log(
+      "◆ Removed dev-only asset android/app/src/main/assets/zynth-dev-config.json"
+    );
+  } catch (error) {
+    console.warn(
+      `! Failed to remove dev-only Android asset (${devConfigPath}): ${error.message}`
     );
   }
 }
