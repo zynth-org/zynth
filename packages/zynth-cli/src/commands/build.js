@@ -9,6 +9,7 @@ const {
   getAndroidConfig,
   runCommand,
   requireScript,
+  resolveInternalProjectScriptPath,
   runCommandFiltered,
   runCommandFilteredAndroid,
   printZynthBuildStatus,
@@ -20,6 +21,49 @@ function gray(text) {
 
 function brightWhite(text) {
   return `\x1b[97m${text}\x1b[0m`;
+}
+
+function parseDotEnvValue(rawValue) {
+  const trimmed = rawValue.trim();
+  if (!trimmed) return "";
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
+function loadAppDotEnv(appDir) {
+  const envPath = path.join(appDir, ".env");
+  if (!fs.existsSync(envPath)) {
+    return { loaded: false, count: 0 };
+  }
+
+  const content = fs.readFileSync(envPath, "utf8");
+  let count = 0;
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+
+    const lineWithoutExport = trimmed.startsWith("export ")
+      ? trimmed.slice(7).trim()
+      : trimmed;
+    const equalsIndex = lineWithoutExport.indexOf("=");
+    if (equalsIndex <= 0) continue;
+
+    const key = lineWithoutExport.slice(0, equalsIndex).trim();
+    if (!key) continue;
+
+    const value = parseDotEnvValue(lineWithoutExport.slice(equalsIndex + 1));
+    if (process.env[key] === undefined) {
+      process.env[key] = value;
+      count += 1;
+    }
+  }
+
+  return { loaded: true, count };
 }
 
 module.exports = {
@@ -69,6 +113,12 @@ module.exports = {
     const appDir = argv.app
       ? path.resolve(process.cwd(), argv.app)
       : findAppDirectory(process.cwd());
+
+    const dotEnvResult = loadAppDotEnv(appDir);
+    if (dotEnvResult.loaded && dotEnvResult.count > 0) {
+      console.log("◆ Loaded app environment from .env");
+    }
+
     let root = appDir;
     try {
       root = findWorkspaceRoot(process.cwd());
@@ -97,7 +147,7 @@ module.exports = {
     console.log(`◆ Generating assets for ${argv.platform}...`);
     try {
       const { generateAssets } = requireScript(
-        path.join(__dirname, "..", "project-scripts", "generate-assets.ts")
+        resolveInternalProjectScriptPath("generate-assets")
       );
       generateAssets(appDir, argv.platform, false); // dev = false to ensure fonts are copied
     } catch (e) {
@@ -488,6 +538,23 @@ async function buildAndroid(root, appDir, argv) {
     if (appliedSigning) {
       console.log("◆ Using signing config from app.json");
     }
+  }
+
+  const hasEnvSigning =
+    Boolean(env.ZYNTH_KEY_ALIAS) &&
+    Boolean(env.ZYNTH_KEY_PASSWORD) &&
+    Boolean(env.ZYNTH_KEYSTORE_PASSWORD);
+  const resolvedEnvStoreFile = resolveSigningStoreFile(
+    appDir,
+    androidDir,
+    env.ZYNTH_KEYSTORE_FILE
+  );
+  if (resolvedEnvStoreFile) {
+    env.ZYNTH_KEYSTORE_FILE = resolvedEnvStoreFile;
+  }
+  if (!appliedSigning && hasEnvSigning && resolvedEnvStoreFile) {
+    appliedSigning = true;
+    console.log("◆ Using signing config from environment");
   }
 
   const result = await runCommandFilteredAndroid(
