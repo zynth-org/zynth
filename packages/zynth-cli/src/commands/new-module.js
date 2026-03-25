@@ -2,7 +2,11 @@ const fs = require("fs");
 const path = require("path");
 const prompts = require("prompts");
 const chalk = require("chalk");
-const { findWorkspaceRoot, findAppDirectory, readJSON } = require("../utils");
+const { findAppDirectory, readJSON } = require("../utils");
+
+function resolveModuleTemplateDir() {
+  return path.join(__dirname, "..", "templates", "app-module");
+}
 
 function normalizeModuleName(input) {
   if (!input) return "";
@@ -126,16 +130,10 @@ function renameAndroidPackageDir(
 }
 
 async function createNewModule(argv) {
-  const root = findWorkspaceRoot(process.cwd());
   const appDir = argv.app
     ? path.resolve(process.cwd(), argv.app)
     : findAppDirectory(process.cwd());
-  const templatesDir = path.join(
-    root,
-    "packages",
-    "zynth-templates",
-    "app-module"
-  );
+  const templatesDir = resolveModuleTemplateDir();
 
   if (!fs.existsSync(templatesDir)) {
     console.error(chalk.red("[x] Template not found:"), templatesDir);

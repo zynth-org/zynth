@@ -1,0 +1,136 @@
+name: {{APP_NAME}}
+options:
+  minimumXcodeGenVersion: 2.38.0
+  deploymentTarget:
+    iOS: "15.1"
+settings:
+  base:
+    PRODUCT_BUNDLE_IDENTIFIER: {{BUNDLE_ID}}
+    SWIFT_VERSION: "5.0"
+    CLANG_ENABLE_MODULES: YES
+    CODE_SIGN_STYLE: Automatic
+targets:
+  {{APP_NAME}}:
+    type: application
+    platform: iOS
+    sources:
+      - path: .
+        excludes:
+          - project.yml
+          - Podfile
+          - Podfile.lock
+          - Manifest.lock
+          - Pods/**
+          - "{{APP_NAME}}.xcworkspace/**"
+          - Info.plist
+          - build/**
+          - .build/**
+          - .xcodegen/**
+    info:
+      path: Info.plist
+      properties:
+        # Use a storyboard-based launch screen to control image content mode.
+        UILaunchStoryboardName: LaunchScreen
+        # Avoid archive warning when iPad multitasking is allowed.
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+          - UIInterfaceOrientationPortraitUpsideDown
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+{{UI_APP_FONTS}}
+{{INFO_PLIST_PROPERTIES}}
+    settings:
+      base:
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_OBJC_BRIDGING_HEADER: ""
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
+        OTHER_LDFLAGS: "$(inherited) -ObjC"
+    prebuildScripts:
+      - name: BundleJS
+        basedOnDependencyAnalysis: true
+        inputFiles:
+          - $(SRCROOT)/../dist/main.js
+          - $(SRCROOT)/../dist/main.hbc
+          - $(SRCROOT)/../dist/assets/images-manifest.json
+        outputFiles:
+          - $(BUILT_PRODUCTS_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/main.js
+          - $(BUILT_PRODUCTS_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/main.hbc
+        script: |
+          # Exit immediately if a command exits with a non-zero status.
+          set -e
+
+          # 🎯 FIX: Explicitly set the PATH for NVM-managed executables.
+          # You must use the directory containing the 'node' and 'yarn' binaries.
+          # WARNING: If you change your Node version using NVM, you must update the version number here!
+          export PATH="/Users/ignaciozsabo/.nvm/versions/node/v22.20.0/bin:$PATH"
+
+          # ✅ Navigate from the Xcode project dir to the root of your framework.
+          cd "$PROJECT_DIR/../../../"
+
+          # Check if bundle already exists and we're in Release mode
+          BUNDLE_PATH="apps/{{APP_DIR}}/dist/main.js"
+          if [ "$CONFIGURATION" = "Release" ]; then
+            echo "⚡ Release build detected - using pre-built bundle"
+            if [ ! -f "$BUNDLE_PATH" ]; then
+              echo "---" >&2
+              echo "FATAL ERROR: JS bundle not found at $BUNDLE_PATH" >&2
+              echo "For Release builds, you must build the bundle first:" >&2
+              echo "  yarn workspace {{WORKSPACE_NAME}} build" >&2
+              echo "Or use: zynth build ios" >&2
+              echo "---" >&2
+              exit 1
+            fi
+          else
+            echo "⚡ Debug build - skipping bundle copy (Rsbuild dev server supplies JS)."
+            mkdir -p "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
+            rm -f "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/main.js"
+            rm -f "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/main.hbc"
+            exit 0
+          fi
+
+          # Copy the generated JS bundle into the app's resources folder (Release only).
+          echo "📄 Copying main.js to app resources..."
+          mkdir -p "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
+          cp "$BUNDLE_PATH" "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/main.js"
+
+          # Try to copy Hermes bytecode if it exists (for faster startup)
+          HBC_PATH="apps/{{APP_DIR}}/dist/main.hbc"
+          if [ -f "$HBC_PATH" ]; then
+            echo "📦 Copying Hermes bytecode..."
+            cp "$HBC_PATH" "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/main.hbc"
+          fi
+
+          # Copy bundled image assets discovered during JS build.
+          IMAGES_MANIFEST_PATH="apps/{{APP_DIR}}/dist/assets/images-manifest.json"
+          if [ -f "$IMAGES_MANIFEST_PATH" ]; then
+            echo "🖼️ Copying bundled image assets..."
+            export IMAGES_MANIFEST_PATH
+            node -e '
+              const fs = require("fs");
+              const path = require("path");
+              const manifestPath = process.env.IMAGES_MANIFEST_PATH;
+              const resourcesDir = path.join(
+                process.env.BUILT_PRODUCTS_DIR || "",
+                process.env.UNLOCALIZED_RESOURCES_FOLDER_PATH || "",
+              );
+              let copied = 0;
+              const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+              for (const [relativeDest, sourcePath] of Object.entries(manifest)) {
+                if (!relativeDest || typeof sourcePath !== "string") continue;
+                if (!fs.existsSync(sourcePath)) continue;
+                const normalizedDest = relativeDest.replace(/^\/+/, "");
+                const outputPath = path.join(resourcesDir, normalizedDest);
+                fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+                fs.copyFileSync(sourcePath, outputPath);
+                copied += 1;
+              }
+              console.log(`  ✓ Copied ${copied} bundled image asset(s)`);
+            '
+          fi
+    dependencies:
+      - sdk: JavaScriptCore.framework

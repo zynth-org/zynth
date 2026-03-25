@@ -1,0 +1,75 @@
+platform :ios, '15.1'
+use_frameworks! :linkage => :static
+
+ENV['RCT_HERMES_V1_ENABLED'] = '1'
+
+zynth_ios_candidates = [
+  File.expand_path('../node_modules/{{ZYNTH_IOS_RUNTIME_PACKAGE}}', __dir__),
+  File.expand_path('../../node_modules/{{ZYNTH_IOS_RUNTIME_PACKAGE}}', __dir__),
+  File.expand_path('../../../node_modules/{{ZYNTH_IOS_RUNTIME_PACKAGE}}', __dir__)
+]
+
+zynth_ios_path = zynth_ios_candidates.find { |candidate| File.exist?(candidate) }
+raise "Unable to locate {{ZYNTH_IOS_RUNTIME_PACKAGE}} in node_modules (looked in #{zynth_ios_candidates.join(', ')})" unless zynth_ios_path
+hermes_podspec_path = File.expand_path('ios/hermes-engine', zynth_ios_path)
+
+target '{{APP_NAME}}' do
+  pod 'hermes-engine', :path => hermes_podspec_path
+  pod 'Yoga'
+  pod 'ZynthKit', :path => zynth_ios_path
+{{ZYNTH_COMPONENT_PODS}}
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |t|
+    t.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.1'
+      config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++17'
+      config.build_settings['CLANG_CXX_LIBRARY'] = 'libc++'
+
+      other_cxx = config.build_settings['OTHER_CPLUSPLUSFLAGS'] || '$(inherited)'
+      other_c = config.build_settings['OTHER_CFLAGS'] || '$(inherited)'
+      config.build_settings['OTHER_CPLUSPLUSFLAGS'] = "#{other_cxx} -std=c++17 -Wno-error"
+      config.build_settings['OTHER_CFLAGS'] = "#{other_c} -Wno-error"
+      config.build_settings['GCC_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
+
+      header_paths = config.build_settings['HEADER_SEARCH_PATHS']
+      if header_paths
+        cleaned = header_paths
+          .to_s
+          .split(' ')
+          .reject { |p| p.include?('ZynthKit/include') }
+          .reject { |p| p.include?('packages/zynth-core/ios/ZynthKit') }
+          .join(' ')
+        config.build_settings['HEADER_SEARCH_PATHS'] = cleaned
+      end
+
+      if t.name == 'ZynthKit'
+        # Force ZynthKit to compile only against its source headers to avoid
+        # picking up its own built framework headers during the same build.
+        config.build_settings['HEADER_SEARCH_PATHS'] = %w[
+          $(inherited)
+          ${PODS_TARGET_SRCROOT}/ios/ZynthKit
+          ${PODS_TARGET_SRCROOT}/ios/ZynthKit/include
+          ${PODS_TARGET_SRCROOT}/ios/ZynthKit/src
+          ${PODS_ROOT}/hermes-engine/destroot/include
+          ${PODS_ROOT}/hermes-engine/destroot/include/jsi
+          ${PODS_ROOT}/hermes-engine/API
+          ${PODS_ROOT}/hermes-engine/API/jsi
+          ${PODS_ROOT}/hermes-engine/public
+        ].join(' ')
+      end
+    end
+  end
+
+  yoga = installer.pods_project.targets.find { |t| t.name == 'Yoga' }
+  if yoga
+    yoga.build_configurations.each do |config|
+      config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++17'
+      config.build_settings['GCC_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
+      config.build_settings['WARNING_CFLAGS'] = ''
+      config.build_settings['OTHER_CFLAGS'] = '-Wno-error'
+      config.build_settings['OTHER_CPLUSPLUSFLAGS'] = '-std=c++17 -Wno-bitwise-instead-of-logical -Wno-error'
+    end
+  end
+end

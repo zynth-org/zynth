@@ -1,0 +1,17 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Material 3 theme with dynamic colors support -->
+    <style name="Theme.{{APP_NAME}}" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- Enable edge-to-edge with transparent status bar -->
+        <item name="android:statusBarColor" tools:targetApi="l">@android:color/transparent</item>
+        <item name="android:navigationBarColor" tools:targetApi="l">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar" tools:targetApi="m">true</item>
+    </style>
+
+    <style name="Theme.{{APP_NAME}}.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/zynth_splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">{{SPLASH_ICON_DRAWABLE}}</item>
+        <item name="windowSplashScreenIconBackgroundColor">@color/zynth_splash_background</item>
+        <item name="android:windowBackground">{{SPLASH_WINDOW_BACKGROUND}}</item>
+        <item name="postSplashScreenTheme">@style/Theme.{{APP_NAME}}</item>
+    </style>
+</resources>

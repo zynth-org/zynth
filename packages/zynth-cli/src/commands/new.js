@@ -2,10 +2,13 @@ const fs = require("fs");
 const path = require("path");
 const prompts = require("prompts");
 const chalk = require("chalk");
-const { findWorkspaceRoot, readJSON } = require("../utils");
+const { readJSON } = require("../utils");
+
+function resolveAppTemplateDir() {
+  return path.join(__dirname, "..", "templates", "app");
+}
 
 async function createNewApp(argv) {
-  const root = findWorkspaceRoot(process.cwd());
   const { directory, path: customPath } = argv;
 
   const baseDir = customPath ? path.resolve(customPath) : process.cwd();
@@ -38,8 +41,7 @@ async function createNewApp(argv) {
 
   const appPath = path.join(baseDir, appDirectory);
   const appName = path.basename(appPath);
-  const templatesDir = path.join(root, "packages", "zynth-templates");
-  const appTemplateDir = path.join(templatesDir, "app");
+  const appTemplateDir = resolveAppTemplateDir();
 
   const questions = [
     {
@@ -109,75 +111,6 @@ export default function App() {
   const packageJsonPath = path.join(appPath, "package.json");
   const packageJson = readJSON(packageJsonPath);
   packageJson.name = slug;
-  const localZynthResolutions = {};
-  const resolvedZynthPackages = new Set();
-  const resolutionQueue = [];
-  function addLocalResolution(depName) {
-    if (!depName.startsWith("@zynth/")) {
-      return;
-    }
-    const folderName = depName.replace("@zynth/", "zynth-");
-    const localPkgPath = path.join(root, "packages", folderName);
-    if (!fs.existsSync(localPkgPath)) {
-      return;
-    }
-    const relativePath = path.relative(appPath, localPkgPath) || ".";
-    const fileRef = `file:${relativePath}`;
-    localZynthResolutions[depName] = fileRef;
-    if (!resolvedZynthPackages.has(depName)) {
-      resolvedZynthPackages.add(depName);
-      resolutionQueue.push({ depName, localPkgPath });
-    }
-  }
-  const dependencySections = ["dependencies", "devDependencies"];
-  for (const section of dependencySections) {
-    if (!packageJson[section] || typeof packageJson[section] !== "object") {
-      continue;
-    }
-    for (const depName of Object.keys(packageJson[section])) {
-      if (!depName.startsWith("@zynth/")) {
-        continue;
-      }
-      addLocalResolution(depName);
-      if (!localZynthResolutions[depName]) {
-        delete packageJson[section][depName];
-        continue;
-      }
-      packageJson[section][depName] = localZynthResolutions[depName];
-    }
-  }
-  while (resolutionQueue.length > 0) {
-    const next = resolutionQueue.shift();
-    if (!next) {
-      continue;
-    }
-    const depPackage = readJSON(path.join(next.localPkgPath, "package.json"));
-    if (!depPackage) {
-      continue;
-    }
-    const sources = [
-      depPackage.dependencies || {},
-      depPackage.peerDependencies || {},
-      depPackage.devDependencies || {},
-    ];
-    for (const source of sources) {
-      for (const depName of Object.keys(source)) {
-        if (depName.startsWith("@zynth/")) {
-          addLocalResolution(depName);
-        }
-      }
-    }
-  }
-  if (Object.keys(localZynthResolutions).length > 0) {
-    packageJson.resolutions = {
-      ...(packageJson.resolutions || {}),
-      ...localZynthResolutions,
-    };
-  }
-  if (!packageJson.zynth || typeof packageJson.zynth !== "object") {
-    packageJson.zynth = {};
-  }
-  packageJson.zynth.frameworkRoot = path.relative(appPath, root) || ".";
   fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
 
       console.log(`\n\x1b[32m✔\x1b[0m App created successfully!`);
@@ -186,7 +119,7 @@ export default function App() {
   console.log(
     chalk.cyan(`To get started, run:
 
-  cd ${directory}
+  cd ${appDirectory}
   yarn zynth dev ios`)
   );
 }

@@ -1,0 +1,74 @@
+package {{BUNDLE_ID}}.modules
+
+import android.os.Build
+import com.zynth.kit.runtime.ZynthModule
+import com.zynth.kit.runtime.ZynthSyncModule
+import com.zynth.kit.runtime.ZynthArgs
+import org.json.JSONObject
+import java.nio.ByteBuffer
+
+class EnvModule : ZynthModule, ZynthSyncModule {
+    override val name: String = "Env"
+
+    override fun call(method: String, args: ZynthArgs): JSONObject {
+        return when (method) {
+            "constants" -> jsonResponse(constantsPayload())
+            "echoData" -> handleEchoData(args)
+            else -> errorResponse(method)
+        }
+    }
+
+    override fun callSync(method: String, args: ZynthArgs): Any? {
+        return when (method) {
+            "constants" -> constantsPayload()
+            else -> throw IllegalStateException("Env module does not implement $method")
+        }
+    }
+
+    private fun constantsPayload(): JSONObject {
+        return JSONObject()
+            .put("platform", "android")
+            .put("manufacturer", Build.MANUFACTURER ?: "unknown")
+            .put("model", Build.MODEL ?: "unknown")
+            .put("version", Build.VERSION.RELEASE ?: "unknown")
+            .put("sdk", Build.VERSION.SDK_INT)
+            .put("timestamp", System.currentTimeMillis())
+    }
+
+    private fun handleEchoData(args: ZynthArgs): JSONObject {
+        val payload = try { args.getMapAt(0) } catch (e: Exception) { return errorResponse("echoData", "invalid_payload") }
+        val buffer = payload["payload"] as? ByteBuffer ?: return errorResponse("echoData", "missing_buffer")
+
+        val checksum = fnv1a32Hex(buffer)
+        buffer.rewind()
+
+        return jsonResponse(
+            JSONObject()
+                .put("byteLength", buffer.remaining())
+                .put("checksum", checksum)
+                .put("echo", buffer)
+        )
+    }
+
+    private fun fnv1a32Hex(data: ByteBuffer): String {
+        var hash = 0x811C9DC5.toInt()
+        while (data.hasRemaining()) {
+            hash = hash xor (data.get().toInt() and 0xFF)
+            hash *= 16777619
+        }
+        return String.format("%08x", hash)
+    }
+
+    private fun jsonResponse(result: JSONObject): JSONObject {
+        return JSONObject()
+            .put("ok", true)
+            .put("result", result)
+    }
+
+    private fun errorResponse(method: String, message: String = "unknown_method"): JSONObject {
+        return JSONObject()
+            .put("ok", false)
+            .put("error", message)
+            .put("method", method)
+    }
+}
