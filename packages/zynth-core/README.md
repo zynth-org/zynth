@@ -75,7 +75,7 @@ Batching must avoid JSON on hot paths. The preferred payload is a typed op buffe
 
 ## Native Modules
 
-For comprehensive documentation on creating, registering, and using Native Modules in Zynth Core, please refer to the [Native Module Template Documentation](../zynth-templates/native-module/README.md).
+For comprehensive documentation on creating, registering, and using Native Modules in Zynth Core, please refer to the [Native Module Template Documentation](../zynth-cli/src/templates/native-module/README.md).
 
 ---
 

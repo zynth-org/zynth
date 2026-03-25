@@ -16,7 +16,7 @@ Refactor the `/api/generate` endpoint to support a robust, atomic pipeline for p
 
 ## 3. Workspace Generation (Boilerplate)
 - [x] **Port CLI Logic:** Adapted in `src/services/provisioning.ts`.
-- [x] **Template Source:** Uses `packages/zynth-templates/app`.
+- [x] **Template Source:** Uses `packages/zynth-cli/src/templates/app`.
 - [x] **File Generation:** Implemented.
 
 ## 4. Artifacts Management

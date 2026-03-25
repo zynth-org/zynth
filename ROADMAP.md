@@ -43,7 +43,7 @@ This document outlines the current status and future development plan for the Zy
 
 - [x] @zynth/cli: Project management and build orchestration.
 - [x] @zynth/rsbuild-plugin: Build configuration for Native/Web.
-- [x] @zynth/templates: Project scaffolding blueprints.
+- [x] CLI-bundled templates: Project scaffolding blueprints.
 - [x] @zynth/skyhook: AI-powered generation backend.
 
 ---

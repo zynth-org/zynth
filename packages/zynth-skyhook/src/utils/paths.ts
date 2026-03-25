@@ -32,7 +32,7 @@ export async function getTemplateDir(templateName: "app") {
     await stat(skyhookTemplate);
     return skyhookTemplate;
   } catch {
-    return join(root, "packages", "zynth-templates", templateName);
+    return join(root, "packages", "zynth-cli", "src", "templates", templateName);
   }
 }
 

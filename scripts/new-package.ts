@@ -236,7 +236,9 @@ async function main(): Promise<void> {
   const templatesDir = path.join(
     root,
     "packages",
-    "zynth-templates",
+    "zynth-cli",
+    "src",
+    "templates",
     "native-module"
   );
 
