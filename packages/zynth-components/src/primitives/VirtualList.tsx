@@ -2,6 +2,7 @@ import {
   createMemo,
   createSignal,
   For,
+  Show,
   JSX,
   splitProps,
   untrack,
@@ -227,6 +228,25 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     const count = Math.max(0, next.endItem - next.startItem);
     return Array.from({ length: count }, (_, i) => next.startItem + i);
   });
+  const visibleKeys = createMemo<Array<string | number>>(() => {
+    const indices = visibleIndices();
+    return indices.map((absoluteIndex) => {
+      const item = local.data[absoluteIndex];
+      if (local.keyExtractor && item !== undefined) {
+        return local.keyExtractor(item, absoluteIndex);
+      }
+      return absoluteIndex;
+    });
+  });
+  const visibleIndexByKey = createMemo(() => {
+    const map = new Map<string | number, number>();
+    const keys = visibleKeys();
+    const indices = visibleIndices();
+    for (let i = 0; i < keys.length; i += 1) {
+      map.set(keys[i], indices[i]);
+    }
+    return map;
+  });
 
   const readAxisOffsetFromEvent = (event: ScrollEvent): number => {
     return local.horizontal ? event.contentOffset.x : event.contentOffset.y;
@@ -341,19 +361,21 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
           <View onLayout={handleHeaderLayout}>{local.ListHeaderComponent}</View>
         )}
 
-        <For each={visibleIndices()}>
-          {(absoluteIndex) => {
+        <For each={visibleKeys()}>
+          {(itemKey) => {
+            const absoluteIndex = createMemo(
+              () => visibleIndexByKey().get(itemKey) ?? -1,
+            );
             const rowIndex = createMemo(() =>
-              Math.floor(absoluteIndex / numColumns()),
+              Math.floor(absoluteIndex() / numColumns()),
             );
-            const colIndex = createMemo(() => absoluteIndex % numColumns());
+            const colIndex = createMemo(() => absoluteIndex() % numColumns());
             const layout = createMemo(() => getRowLayout(rowIndex()));
-            const item = createMemo(() => local.data[absoluteIndex]);
-            const key = createMemo(() =>
-              local.keyExtractor
-                ? local.keyExtractor(item(), absoluteIndex)
-                : absoluteIndex,
-            );
+            const item = createMemo(() => {
+              const index = absoluteIndex();
+              if (index < 0 || index >= local.data.length) return undefined;
+              return local.data[index];
+            });
 
             const style = createMemo(() => {
               const isHoriz = local.horizontal;
@@ -383,9 +405,11 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
             });
 
             return (
-              <view style={style() as any} key={key()}>
-                {local.renderItem({ item: item(), index: absoluteIndex })}
-              </view>
+              <Show when={item() !== undefined}>
+                <view style={style() as any} key={itemKey}>
+                  {local.renderItem({ item: item() as T, index: absoluteIndex() })}
+                </view>
+              </Show>
             );
           }}
         </For>
