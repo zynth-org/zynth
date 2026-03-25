@@ -4,9 +4,12 @@ const readline = require('readline');
  * Creates a filter for Rsbuild HMR server output.
  * It condenses noise and success messages while preserving errors and code frames.
  * @param {object} indicator - Optional progress indicator to stop on success/error.
+ * @param {object} options - Optional callbacks for lifecycle events.
  */
-function createHMRFilter(indicator) {
+function createHMRFilter(indicator, options = {}) {
   let inError = false;
+  const onReady =
+    options && typeof options.onReady === "function" ? options.onReady : null;
 
   return (data) => {
     const text = data.toString();
@@ -26,6 +29,9 @@ function createHMRFilter(indicator) {
         const timeMatch = clean.match(/built in ([\d.]+ s)/) || clean.match(/ready ([\d.]+ s)/) || clean.match(/([\d.]+ s)/);
         const timeStr = timeMatch ? timeMatch[1] : 'unknown time';
         process.stdout.write(`\x1b[32m✔\x1b[0m Bundle build complete in ${timeStr}\n`);
+        if (onReady) {
+          onReady();
+        }
         inError = false;
         continue;
       }

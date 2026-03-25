@@ -7,6 +7,7 @@ This tool orchestrates the development, build, and bundling process for Zynth ap
 ## Commands
 
 - `zynth dev`: Starts the development server with Hot Module Replacement (HMR).
+- `zynth start`: Starts the JavaScript dev server (`rsbuild dev`) and Zynth devtools hub without `concurrently`.
 - `zynth prebuild`: Generates/Updates the native `android` and `ios` project directories based on the project configuration and installed modules.
 - `zynth build`: Builds the native application.
 - `zynth bundle`: Bundles the JavaScript application into a single file for production.

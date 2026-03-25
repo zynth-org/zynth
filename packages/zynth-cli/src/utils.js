@@ -16,6 +16,14 @@ function readJSON(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
 }
 
+function gray(text) {
+  return `\x1b[90m${text}\x1b[0m`;
+}
+
+function brightWhite(text) {
+  return `\x1b[97m${text}\x1b[0m`;
+}
+
 function findWorkspaceRoot(startDir) {
   let current = path.resolve(startDir);
   while (true) {
@@ -71,6 +79,23 @@ function runCommandQuiet(command, args, options = {}) {
     ...options,
   });
   if (result.status !== 0) {
+    const code = result.status == null ? 1 : result.status;
+    process.exit(code);
+  }
+}
+
+function runCommandSilentUnlessError(command, args, options = {}) {
+  const result = spawnSync(command, args, {
+    stdio: ["ignore", "pipe", "pipe"],
+    shell: false,
+    encoding: "utf8",
+    ...options,
+  });
+  if (result.status !== 0) {
+    const stdout = (result.stdout || "").trim();
+    const stderr = (result.stderr || "").trim();
+    if (stdout) process.stderr.write(`${stdout}\n`);
+    if (stderr) process.stderr.write(`${stderr}\n`);
     const code = result.status == null ? 1 : result.status;
     process.exit(code);
   }
@@ -321,6 +346,90 @@ function resolvePackageJsonFromApp(depName, appDir) {
   }
 
   return null;
+}
+
+function getZynthRuntimeVersion(appDir) {
+  const runtimePkgPath = resolvePackageJsonFromApp("@zynth/core", appDir);
+  if (runtimePkgPath && fs.existsSync(runtimePkgPath)) {
+    try {
+      const pkg = readJSON(runtimePkgPath);
+      if (typeof pkg.version === "string" && pkg.version.trim()) {
+        return pkg.version.trim();
+      }
+    } catch (_error) {
+      // Fall through to local workspace fallback
+    }
+  }
+
+  const localCorePkgPath = path.resolve(
+    __dirname,
+    "..",
+    "..",
+    "zynth-core",
+    "package.json"
+  );
+  if (fs.existsSync(localCorePkgPath)) {
+    try {
+      const pkg = readJSON(localCorePkgPath);
+      if (typeof pkg.version === "string" && pkg.version.trim()) {
+        return pkg.version.trim();
+      }
+    } catch (_error) {
+      // Ignore and return fallback
+    }
+  }
+
+  return "0.0.0";
+}
+
+function printZynthDevStatus({ appDir, serverPort, devtoolsEnabled }) {
+  const version = getZynthRuntimeVersion(appDir);
+  const portText = Number.isFinite(Number(serverPort))
+    ? String(serverPort)
+    : "N/A";
+  const devtoolsState = devtoolsEnabled ? "ACTIVE" : "INACTIVE";
+  const devtoolsStateStyled = devtoolsEnabled
+    ? brightWhite(devtoolsState)
+    : gray(devtoolsState);
+  const divider = "-".repeat(49);
+
+  console.log(
+    `${gray("// ")}${brightWhite("Z Y N T H Framework ")}\x1b[32mSTARTED\x1b[0m${gray(
+      ` // v${version}`
+    )}`
+  );
+  console.log(gray(divider));
+  console.log(
+    `${gray("[ SERVER : ")}${brightWhite(portText)}${gray(
+      " ] | [ DEV_TOOLS : "
+    )}${devtoolsStateStyled}${gray(" ]")}`
+  );
+}
+
+function printZynthBuildStatus({ appDir, platform, outputPath, includeOutput = true }) {
+  const version = getZynthRuntimeVersion(appDir);
+  const divider = "-".repeat(49);
+  const normalizedPlatform = String(platform || "unknown").toUpperCase();
+  const resolvedOutput = outputPath || "N/A";
+
+  console.log(
+    `${gray("// ")}${brightWhite("Z Y N T H")}${gray(` /// v${version}`)}`
+  );
+  console.log(gray(divider));
+  if (includeOutput) {
+    console.log(
+      `${gray("[ BUILD : ")}${brightWhite(
+        `${normalizedPlatform} RELEASE`
+      )}${gray(" ] >> [ OUTPUT : ")}${brightWhite(resolvedOutput)}${gray(" ]")}`
+    );
+    return;
+  }
+
+  console.log(
+    `${gray("[ BUILD : ")}${brightWhite(`${normalizedPlatform} RELEASE`)}${gray(
+      " ]"
+    )}`
+  );
 }
 
 function resolveAppDirectoryForCount(root) {
@@ -1221,7 +1330,7 @@ function getLocalIp() {
   return "127.0.0.1";
 }
 
-async function startZynthDevtoolsHub({ host, port, quiet }) {
+async function startZynthDevtoolsHub({ host, port }) {
   const env = process.env.ZYNTH_DEVTOOLS_DEBUG || "";
   const hideDebug = !(env === "1" || env === "true");
   const hub = createDevtoolsHub({
@@ -1233,11 +1342,6 @@ async function startZynthDevtoolsHub({ host, port, quiet }) {
   });
   const server = await hub.start();
   devtoolsPublish = hub.publish;
-  if (!quiet) {
-    console.log(
-      `◆ Zynth devtools hub listening at ws://${server.host}:${server.port}`
-    );
-  }
   return server;
 }
 
@@ -1322,14 +1426,6 @@ async function startZynthHMRServer(appDir, platform, options = {}) {
 
   const localUrl = `http://${localHost}:${port}`;
   const deviceUrl = `http://${deviceHost}:${port}`;
-
-  if (!options.quietLogs) {
-    console.log(`  Local:   ${localUrl}`);
-    console.log(`  Device:  ${deviceUrl}`);
-    console.log(`  Bundle:  ${deviceUrl}/main.js`);
-    console.log(`  Updates: ${deviceUrl}/bundle/app.hot-update.json`);
-    console.log(`  Socket:  ws://${deviceHost}:${port}/rsbuild-hmr`);
-  }
 
   return {
     process: child,
@@ -1548,12 +1644,10 @@ async function devIOS(root, appDir, options = {}) {
     process.exit(1);
   }
 
-  let devtoolsServer = null;
   if (devtoolsEnabled && !devtoolsUrlOverride) {
-    devtoolsServer = await startZynthDevtoolsHub({
+    await startZynthDevtoolsHub({
       host: "0.0.0.0",
       port: devtoolsPort,
-      quiet: quietOutput,
     });
   }
   const devtoolsUrl = devtoolsEnabled
@@ -1688,14 +1782,12 @@ async function devIOS(root, appDir, options = {}) {
     }
   }
 
-  if (hmrServer && !quietOutput) {
-    console.log(
-      "\x1b[32m✔\x1b[0m Rsbuild dev server running. Leave this session open for hot reloading."
-    );
-  }
-  if (devtoolsServer && devtoolsUrl && !quietOutput) {
-    console.log(`◆ Devtools URL: ${devtoolsUrl}`);
-    console.log("◆ Devtools events streaming. Press Ctrl+C to stop.");
+  if (hmrServer) {
+    printZynthDevStatus({
+      appDir,
+      serverPort: hmrServer.port,
+      devtoolsEnabled: devtoolsEnabled,
+    });
   }
 
   await new Promise(() => {});
@@ -1786,7 +1878,6 @@ async function devAndroid(root, appDir, options = {}) {
   }
 
   let hmrServer = null;
-  let devtoolsServer = null;
   let hmrToken = null;
   let runtimeDeviceUrl = null;
   let devtoolsDeviceUrl = null;
@@ -1812,10 +1903,9 @@ async function devAndroid(root, appDir, options = {}) {
   }
 
   if (devtoolsEnabled && !devtoolsUrlOverride) {
-    devtoolsServer = await startZynthDevtoolsHub({
+    await startZynthDevtoolsHub({
       host: "0.0.0.0",
       port: devtoolsPort,
-      quiet: quietOutput,
     });
   }
 
@@ -2003,24 +2093,13 @@ async function devAndroid(root, appDir, options = {}) {
     }
   }
 
-  if (quietOutput) {
-    runCommandQuiet("adb", launchArgs);
-  } else {
-    runCommand("adb", launchArgs);
-  }
+  runCommandSilentUnlessError("adb", launchArgs);
 
-  if (!quietOutput) {
-    console.log(
-      "\x1b[32m✔\x1b[0m Zynth HMR server running. Leave this session open for hot reloading."
-    );
-    if (runtimeDeviceUrl && runtimeDeviceUrl !== hmrServer.deviceUrl) {
-      console.log(`  ↳ Device URL: ${runtimeDeviceUrl}`);
-    }
-    if (devtoolsServer && devtoolsDeviceUrl) {
-      console.log(`◆ Devtools URL: ${devtoolsDeviceUrl}`);
-      console.log("◆ Devtools events streaming. Press Ctrl+C to stop.");
-    }
-  }
+  printZynthDevStatus({
+    appDir,
+    serverPort: hmrServer?.port || desiredPort,
+    devtoolsEnabled: devtoolsEnabled,
+  });
 
   if (devtoolsEnabled) {
     await new Promise(() => {});
@@ -2138,6 +2217,9 @@ module.exports = {
   getLocalIp,
   getAndroidConfig,
   startZynthHMRServer,
+  getZynthRuntimeVersion,
+  printZynthDevStatus,
+  printZynthBuildStatus,
   listWorkspaces,
   bundle,
   resetIOS,

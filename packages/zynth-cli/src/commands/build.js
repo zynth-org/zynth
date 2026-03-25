@@ -1,6 +1,6 @@
 const path = require("path");
 const fs = require("fs");
-const { execSync } = require("child_process");
+const { execSync, spawnSync } = require("child_process");
 const {
   findWorkspaceRoot,
   findAppDirectory,
@@ -11,7 +11,16 @@ const {
   requireScript,
   runCommandFiltered,
   runCommandFilteredAndroid,
+  printZynthBuildStatus,
 } = require("../utils");
+
+function gray(text) {
+  return `\x1b[90m${text}\x1b[0m`;
+}
+
+function brightWhite(text) {
+  return `\x1b[97m${text}\x1b[0m`;
+}
 
 module.exports = {
   command: "build <platform>",
@@ -48,6 +57,12 @@ module.exports = {
       describe: "Print raw native build output without filtering",
       type: "boolean",
       default: false,
+    });
+    yargs.option("format", {
+      describe: "Android output format for release build",
+      type: "string",
+      choices: ["apk", "aab"],
+      default: "apk",
     });
   },
   handler: async (argv) => {
@@ -190,6 +205,147 @@ function resolveHermesCompilerPath(appDir) {
   return null;
 }
 
+function resolveSigningStoreFile(appDir, androidDir, storeFile) {
+  if (!storeFile || typeof storeFile !== "string") {
+    return null;
+  }
+  const trimmed = storeFile.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const candidates = path.isAbsolute(trimmed)
+    ? [trimmed]
+    : [path.resolve(appDir, trimmed), path.resolve(androidDir, trimmed)];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function formatBytes(bytes) {
+  const value = Number(bytes);
+  if (!Number.isFinite(value) || value < 0) {
+    return "N/A";
+  }
+  const units = ["B", "KB", "MB", "GB"];
+  let size = value;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+  return `${size.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+function walkFiles(rootDir) {
+  if (!fs.existsSync(rootDir)) return [];
+  const entries = fs.readdirSync(rootDir, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    const fullPath = path.join(rootDir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...walkFiles(fullPath));
+      continue;
+    }
+    if (entry.isFile()) {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
+
+function detectAndroidArtifacts(androidDir) {
+  const outputsDir = path.join(androidDir, "app", "build", "outputs");
+  const allFiles = walkFiles(outputsDir);
+  return allFiles
+    .filter((filePath) => /[\\/]release[\\/]/.test(filePath))
+    .filter((filePath) => filePath.endsWith(".apk") || filePath.endsWith(".aab"))
+    .map((filePath) => {
+      const stat = fs.statSync(filePath);
+      const format = filePath.endsWith(".aab") ? "AAB" : "APK";
+      return {
+        path: filePath,
+        format,
+        sizeBytes: stat.size,
+      };
+    })
+    .sort((a, b) => b.sizeBytes - a.sizeBytes);
+}
+
+function isCommandAvailable(command) {
+  const probeArgs = process.platform === "win32" ? ["/?"] : ["--help"];
+  const result = spawnSync(command, probeArgs, { stdio: "ignore" });
+  return result.status !== null;
+}
+
+function detectArtifactSigning(artifactPath, format, signingConfigured) {
+  const lowerPath = artifactPath.toLowerCase();
+  if (lowerPath.includes("unsigned")) {
+    return "NO";
+  }
+
+  if (format === "APK") {
+    if (isCommandAvailable("apksigner")) {
+      try {
+        execSync(`apksigner verify "${artifactPath}"`, { stdio: "ignore" });
+        return "YES";
+      } catch (_error) {
+        return "NO";
+      }
+    }
+    return signingConfigured ? "YES" : "NO";
+  }
+
+  if (format === "AAB") {
+    if (isCommandAvailable("jarsigner")) {
+      try {
+        execSync(`jarsigner -verify "${artifactPath}"`, { stdio: "ignore" });
+        return "YES";
+      } catch (_error) {
+        return "NO";
+      }
+    }
+    return signingConfigured ? "YES" : "NO";
+  }
+
+  return signingConfigured ? "YES" : "NO";
+}
+
+function printAndroidArtifactSummary(androidDir, signingConfigured, preferredFormat) {
+  const artifacts = detectAndroidArtifacts(androidDir);
+  if (!artifacts.length) {
+    console.warn("! No Android release artifacts were found in app/build/outputs.");
+    return null;
+  }
+
+  const normalizedPreferred = String(preferredFormat || "").toUpperCase();
+  const preferred =
+    artifacts.find((artifact) => artifact.format === normalizedPreferred) ||
+    artifacts[0];
+  const relativePath = path.relative(androidDir, preferred.path);
+  const size = formatBytes(preferred.sizeBytes);
+  const signed = detectArtifactSigning(
+    preferred.path,
+    preferred.format,
+    signingConfigured
+  );
+
+  const summaryLine =
+    `${gray("[ FORMAT : ")}${brightWhite(preferred.format)}${gray(" ] | [ SIZE : ")}` +
+    `${brightWhite(size)}${gray(" ] | [ SIGNED : ")}${brightWhite(signed)}${gray(" ]")}`;
+  const outputLine =
+    `${gray("[ OUTPUT : ")}${brightWhite(relativePath)}${gray(" ]")}`;
+
+  console.log(`◆ ${summaryLine}`);
+  console.log(`◆ ${outputLine}`);
+
+  return relativePath;
+}
+
 async function buildIOS(root, appDir, argv) {
   const config = getIOSConfig(root, appDir);
   const iosDir = path.join(appDir, "ios");
@@ -268,33 +424,70 @@ async function buildIOS(root, appDir, argv) {
     process.exit(buildResult.code || 1);
   }
 
+  const archivePath = `ios/.build/${config.appNameCapitalized}.xcarchive`;
   console.log("\n✔ iOS Release build completed!");
-  console.log(`➔ Archive: ios/.build/${config.appNameCapitalized}.xcarchive`);
+  printZynthBuildStatus({
+    appDir,
+    platform: "ios",
+    outputPath: archivePath,
+  });
 }
 
 async function buildAndroid(root, appDir, argv) {
   const config = getAndroidConfig(root, appDir);
-  console.log("◆ Building Android Release APK...");
+  const requestedFormat =
+    String(argv.format || config.androidConfig?.buildOutputFormat || "apk")
+      .trim()
+      .toLowerCase() === "aab"
+      ? "aab"
+      : "apk";
+  const gradleTask =
+    requestedFormat === "aab" ? ":app:bundleRelease" : ":app:assembleRelease";
+  const formatLabel = requestedFormat.toUpperCase();
+  console.log(`◆ Building Android Release ${formatLabel}...`);
 
   const androidDir = path.join(appDir, "android");
 
   const env = { ...process.env };
   const signing = config.androidConfig?.signing;
+  let appliedSigning = false;
   if (signing) {
-    if (signing.storeFile) {
-      env.ZYNTH_KEYSTORE_FILE = path.resolve(appDir, signing.storeFile);
+    const resolvedStoreFile = resolveSigningStoreFile(
+      appDir,
+      androidDir,
+      signing.storeFile
+    );
+
+    if (signing.storeFile && !resolvedStoreFile) {
+      console.warn(
+        `! Android signing storeFile not found (${signing.storeFile}). Skipping CLI signing env and continuing with Gradle defaults.`
+      );
     }
-    if (signing.keyAlias) env.ZYNTH_KEY_ALIAS = signing.keyAlias;
+
+    if (resolvedStoreFile) {
+      env.ZYNTH_KEYSTORE_FILE = resolvedStoreFile;
+      appliedSigning = true;
+    }
+    if (signing.keyAlias) {
+      env.ZYNTH_KEY_ALIAS = signing.keyAlias;
+      appliedSigning = true;
+    }
     if (signing.storePassword)
       env.ZYNTH_KEYSTORE_PASSWORD = signing.storePassword;
-    if (signing.keyPassword) env.ZYNTH_KEY_PASSWORD = signing.keyPassword;
+    if (signing.storePassword) appliedSigning = true;
+    if (signing.keyPassword) {
+      env.ZYNTH_KEY_PASSWORD = signing.keyPassword;
+      appliedSigning = true;
+    }
 
-    console.log("◆ Using signing config from app.json");
+    if (appliedSigning) {
+      console.log("◆ Using signing config from app.json");
+    }
   }
 
   const result = await runCommandFilteredAndroid(
     "./gradlew",
-    [":app:assembleRelease"],
+    [gradleTask],
     {
       cwd: androidDir,
       env,
@@ -308,6 +501,12 @@ async function buildAndroid(root, appDir, argv) {
     process.exit(result.code || 1);
   }
 
+  printZynthBuildStatus({
+    appDir,
+    platform: "android",
+    includeOutput: false,
+  });
+
+  printAndroidArtifactSummary(androidDir, appliedSigning, formatLabel);
   console.log("✔ Android Release build completed!");
-  console.log("➔ APK: android/app/build/outputs/apk/release/app-release.apk");
 }
