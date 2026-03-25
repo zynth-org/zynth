@@ -11,6 +11,7 @@ const { createDevtoolsHub } = require("./devtools/hub");
 const { IOS_BUILD_NOISE_PATTERNS } = require("./ios-build-filters");
 
 let devtoolsPublish = null;
+let tsRuntimeRegistered = false;
 
 function readJSON(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
@@ -58,6 +59,53 @@ function findAppDirectory(startDir) {
     }
     current = parent;
   }
+}
+
+function resolveInternalProjectScriptPath(scriptName) {
+  const scriptsDir = path.join(__dirname, "project-scripts");
+  const jsPath = path.join(scriptsDir, `${scriptName}.js`);
+  const tsPath = path.join(scriptsDir, `${scriptName}.ts`);
+  if (fs.existsSync(jsPath)) {
+    return jsPath;
+  }
+  if (fs.existsSync(tsPath)) {
+    return tsPath;
+  }
+  throw new Error(
+    `Missing ${scriptName}.ts or ${scriptName}.js in CLI internal project-scripts`
+  );
+}
+
+function registerTypeScriptRuntime() {
+  if (tsRuntimeRegistered || require.extensions[".ts"]) {
+    tsRuntimeRegistered = true;
+    return;
+  }
+  let ts;
+  try {
+    ts = require("typescript");
+  } catch (_error) {
+    throw new Error(
+      "typescript dependency is required to execute CLI internal TypeScript scripts."
+    );
+  }
+
+  require.extensions[".ts"] = (module, filename) => {
+    const source = fs.readFileSync(filename, "utf8");
+    const compiled = ts.transpileModule(source, {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        moduleResolution: ts.ModuleResolutionKind.NodeJs,
+        target: ts.ScriptTarget.ES2020,
+        esModuleInterop: true,
+      },
+      fileName: filename,
+      reportDiagnostics: false,
+    }).outputText;
+    module._compile(compiled, filename);
+  };
+
+  tsRuntimeRegistered = true;
 }
 
 function runCommand(command, args, options = {}) {
@@ -899,27 +947,16 @@ function writeAndroidDevAsset(androidDir, payload) {
 }
 
 function getIOSConfig(root, appDir) {
-  const tsPath = path.join(__dirname, "project-scripts", "config-utils.ts");
-
-  if (fs.existsSync(tsPath)) {
-    try {
-      require("ts-node").register({
-        transpileOnly: true,
-        compilerOptions: {
-          module: "commonjs",
-          moduleResolution: "node",
-        },
-      });
-      const script = require(tsPath);
-      return script.getAppConfig(appDir);
-    } catch (e) {
-      console.warn("! Failed to load config-utils.ts:", e.message);
-    }
+  const scriptPath = resolveInternalProjectScriptPath("config-utils");
+  try {
+    const script = requireScript(scriptPath);
+    return script.getAppConfig(appDir);
+  } catch (e) {
+    console.warn("! Failed to load config-utils script:", e.message);
+    throw new Error(
+      "Could not load app config. Missing CLI internal project-scripts/config-utils"
+    );
   }
-
-  throw new Error(
-    "Could not load app config. Missing CLI internal project-scripts/config-utils.ts"
-  );
 }
 
 function getAndroidConfig(root, appDir) {
@@ -931,31 +968,7 @@ function getAndroidConfig(root, appDir) {
 
 function ensurePrebuild(root, appDir, platform, options = {}) {
   const scriptName = platform === "ios" ? "prebuild-ios" : "prebuild-android";
-  const tsPath = path.join(__dirname, "project-scripts", `${scriptName}.ts`);
-  const jsPath = path.join(__dirname, "project-scripts", `${scriptName}.js`);
-
-  let scriptPath = jsPath;
-  if (fs.existsSync(tsPath)) {
-    scriptPath = tsPath;
-    // Register ts-node if we're loading a TS file
-    try {
-      require("ts-node").register({
-        transpileOnly: true,
-        compilerOptions: {
-          module: "commonjs",
-          moduleResolution: "node",
-        },
-      });
-    } catch (e) {
-      console.warn(
-        "! ts-node not found, trying to run TS script without registration might fail."
-      );
-    }
-  } else if (!fs.existsSync(jsPath)) {
-    throw new Error(
-      `Missing ${scriptName}.ts or ${scriptName}.js in CLI internal project-scripts`
-    );
-  }
+  const scriptPath = resolveInternalProjectScriptPath(scriptName);
 
   // Load and call the prebuild script with options
   const prebuildModule = requireScript(scriptPath);
@@ -2170,19 +2183,7 @@ function resetAndroid(appDir) {
 
 function requireScript(scriptPath) {
   if (scriptPath.endsWith(".ts")) {
-    try {
-      require("ts-node").register({
-        transpileOnly: true,
-        compilerOptions: {
-          module: "commonjs",
-          moduleResolution: "node",
-        },
-      });
-    } catch (e) {
-      console.warn(
-        "⚠️  ts-node not found, trying to run TS script without registration might fail."
-      );
-    }
+    registerTypeScriptRuntime();
   }
   return require(scriptPath);
 }
@@ -2215,4 +2216,5 @@ module.exports = {
   resetIOS,
   resetAndroid,
   requireScript,
+  resolveInternalProjectScriptPath,
 };
