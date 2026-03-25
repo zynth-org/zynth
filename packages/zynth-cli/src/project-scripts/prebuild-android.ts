@@ -7,9 +7,7 @@ function dim(text: string): string {
 }
 import { generateAndroidProject } from "./generate-android";
 
-const templatesRoot = path.dirname(
-  require.resolve("@zynth/templates/package.json"),
-);
+const templatesRoot = path.resolve(__dirname, "..", "templates");
 
 export function main(options: any = {}): void {
   const appDir = process.cwd();
@@ -95,14 +93,7 @@ export function main(options: any = {}): void {
           "hermesc", // In PATH
           "npx hermesc", // Via npm
           path.join(process.env.ANDROID_HOME || "", "hermes", "bin", "hermesc"), // Android SDK
-          path.join(
-            __dirname,
-            "..",
-            "node_modules",
-            "hermes-engine",
-            "bin",
-            "hermesc",
-          ), // Local
+          path.join(appDir, "node_modules", "hermes-engine", "bin", "hermesc"), // Local app dependency
         ];
 
         for (const testPath of possiblePaths) {
@@ -230,15 +221,22 @@ function upsertGradleProperty(
   fs.writeFileSync(filePath, `${output.join("\n").replace(/\n+$/, "")}\n`);
 }
 
+function resolveWebServerNativeRoot(): string {
+  try {
+    const webServerPkgPath = require.resolve("@zynth/webserver/package.json", {
+      paths: [process.cwd()],
+    });
+    return path.join(path.dirname(webServerPkgPath), "native");
+  } catch (_error) {
+    throw new Error(
+      "Could not resolve @zynth/webserver native directory from the current app."
+    );
+  }
+}
+
 function ensureWebServerTlsSources(params: { quiet: boolean }): void {
   const { quiet } = params;
-  const frameworkRoot = path.resolve(__dirname, "..");
-  const nativeRoot = path.join(
-    frameworkRoot,
-    "packages",
-    "zynth-webserver",
-    "native",
-  );
+  const nativeRoot = resolveWebServerNativeRoot();
   const mbedtlsDir = path.join(nativeRoot, "mbedtls");
   const mbedtlsSentinel = path.join(mbedtlsDir, "library", "ssl_tls.c");
   if (fs.existsSync(mbedtlsSentinel)) {

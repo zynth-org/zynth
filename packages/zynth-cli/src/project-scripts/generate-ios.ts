@@ -404,9 +404,7 @@ function generateNativeModulesConfig(pods: any[], targetDir: string) {
 }
 
 // Copy template files and replace placeholders
-const templatesRoot = path.dirname(
-  require.resolve("@zynth/templates/package.json")
-);
+const templatesRoot = path.resolve(__dirname, "..", "templates");
 
 function removeDirectoryWithRetries(targetDir: string, retries = 5): void {
   const sleep = (ms: number) => {

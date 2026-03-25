@@ -92,7 +92,7 @@ module.exports = {
     console.log(`◆ Generating assets for ${argv.platform}...`);
     try {
       const { generateAssets } = requireScript(
-        path.join(root, "scripts", "generate-assets.ts")
+        path.join(__dirname, "..", "project-scripts", "generate-assets.ts")
       );
       generateAssets(appDir, argv.platform, false); // dev = false to ensure fonts are copied
     } catch (e) {

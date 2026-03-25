@@ -899,7 +899,7 @@ function writeAndroidDevAsset(androidDir, payload) {
 }
 
 function getIOSConfig(root, appDir) {
-  const tsPath = path.join(root, "scripts", "config-utils.ts");
+  const tsPath = path.join(__dirname, "project-scripts", "config-utils.ts");
 
   if (fs.existsSync(tsPath)) {
     try {
@@ -917,15 +917,8 @@ function getIOSConfig(root, appDir) {
     }
   }
 
-  // Fallback for legacy setups
-  const scriptPath = path.join(root, "scripts", "generate-ios.js");
-  if (fs.existsSync(scriptPath)) {
-    const script = require(scriptPath);
-    return script.getAppConfig(appDir);
-  }
-
   throw new Error(
-    "Could not load app config. Missing scripts/config-utils.ts or generate-ios.js"
+    "Could not load app config. Missing CLI internal project-scripts/config-utils.ts"
   );
 }
 
@@ -938,8 +931,8 @@ function getAndroidConfig(root, appDir) {
 
 function ensurePrebuild(root, appDir, platform, options = {}) {
   const scriptName = platform === "ios" ? "prebuild-ios" : "prebuild-android";
-  const tsPath = path.join(root, "scripts", `${scriptName}.ts`);
-  const jsPath = path.join(root, "scripts", `${scriptName}.js`);
+  const tsPath = path.join(__dirname, "project-scripts", `${scriptName}.ts`);
+  const jsPath = path.join(__dirname, "project-scripts", `${scriptName}.js`);
 
   let scriptPath = jsPath;
   if (fs.existsSync(tsPath)) {
@@ -960,10 +953,7 @@ function ensurePrebuild(root, appDir, platform, options = {}) {
     }
   } else if (!fs.existsSync(jsPath)) {
     throw new Error(
-      `Missing ${scriptName}.ts or ${scriptName}.js in ${path.join(
-        root,
-        "scripts"
-      )}`
+      `Missing ${scriptName}.ts or ${scriptName}.js in CLI internal project-scripts`
     );
   }
 

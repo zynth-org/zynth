@@ -102,15 +102,22 @@ function resolveWebServerNativeTls(appDir: string): boolean {
   return false;
 }
 
+function resolveWebServerNativeRoot(): string {
+  try {
+    const webServerPkgPath = require.resolve("@zynth/webserver/package.json", {
+      paths: [process.cwd()],
+    });
+    return path.join(path.dirname(webServerPkgPath), "native");
+  } catch (_error) {
+    throw new Error(
+      "Could not resolve @zynth/webserver native directory from the current app."
+    );
+  }
+}
+
 function ensureWebServerTlsSources(params: { quiet: boolean }): void {
   const { quiet } = params;
-  const frameworkRoot = path.resolve(__dirname, "..");
-  const nativeRoot = path.join(
-    frameworkRoot,
-    "packages",
-    "zynth-webserver",
-    "native",
-  );
+  const nativeRoot = resolveWebServerNativeRoot();
   const mbedtlsDir = path.join(nativeRoot, "mbedtls");
   const mbedtlsSentinel = path.join(mbedtlsDir, "library", "ssl_tls.c");
   if (fs.existsSync(mbedtlsSentinel)) {

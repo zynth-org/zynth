@@ -38,9 +38,7 @@ function resolvePackageJson(depName: string, appDir: string): string | null {
   return null;
 }
 
-const templatesRoot = path.dirname(
-  require.resolve("@zynth/templates/package.json")
-);
+const templatesRoot = path.resolve(__dirname, "..", "templates");
 const BINARY_EXTENSIONS = new Set([
   ".jar",
   ".png",
