@@ -20,10 +20,15 @@ module.exports = {
     });
   },
   handler: (argv) => {
-    const root = findWorkspaceRoot(process.cwd());
     const appDir = argv.app
       ? path.resolve(process.cwd(), argv.app)
       : findAppDirectory(process.cwd());
+    let root = appDir;
+    try {
+      root = findWorkspaceRoot(process.cwd());
+    } catch (_error) {
+      // Standalone app: use app root as command root
+    }
     const options = { dev: !argv.production };
     ensurePrebuild(root, appDir, argv.platform, options);
   },

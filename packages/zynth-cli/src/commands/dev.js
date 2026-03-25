@@ -51,10 +51,15 @@ module.exports = {
     });
   },
   handler: async (argv) => {
-    const root = findWorkspaceRoot(process.cwd());
     const appDir = argv.app
       ? path.resolve(process.cwd(), argv.app)
       : findAppDirectory(process.cwd());
+    let root = appDir;
+    try {
+      root = findWorkspaceRoot(process.cwd());
+    } catch (_error) {
+      // Standalone app: use app root as command root
+    }
     if (argv.platform === "ios") {
       await devIOS(root, appDir, {
         prebuild: argv.prebuild,
