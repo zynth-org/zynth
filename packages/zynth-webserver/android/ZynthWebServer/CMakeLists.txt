@@ -60,6 +60,14 @@ else()
 endif()
 target_compile_options(zynthwebserver PRIVATE -UDEBUG)
 
+if (ANDROID)
+  target_link_options(
+    zynthwebserver
+    PRIVATE
+    -Wl,-z,max-page-size=16384
+  )
+endif()
+
 find_library(log-lib log)
 
 target_link_libraries(
