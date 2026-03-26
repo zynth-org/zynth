@@ -86,7 +86,9 @@ export async function fetch(
 
   const resolvedBody = await resolveBody(rawBody, headers, globalObject);
   const uploadStream = resolvedBody?.uploadStream;
-  const useNativeFileBody = Boolean(bodyFileUri && uploadStream);
+  const useNativeFileBody = Boolean(
+    bodyFileUri && uploadStream && typeof init?.onUploadProgress !== "function"
+  );
   const uploadTotalBytes = inferUploadTotalBytes(headers, resolvedBody);
   const trustedCertificatesPem = normalizeTrustedCertificates(
     init?.tls?.trustedCertificatesPem
