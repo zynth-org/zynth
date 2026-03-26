@@ -28,6 +28,7 @@ import type {
   NetworkSubscription,
   NetworkSubscriptionSnapshot,
   NetworkVerifyChallengeOptions,
+  LocalNetworkAccessStatus,
   WifiInfo,
 } from "./types";
 
@@ -50,6 +51,13 @@ const VALID_STATE_TYPES: NetworkStateType[] = [
   "ethernet",
   "vpn",
   "other",
+];
+const VALID_LOCAL_NETWORK_ACCESS_STATUSES: LocalNetworkAccessStatus[] = [
+  "granted",
+  "denied",
+  "restricted",
+  "unavailable",
+  "unknown",
 ];
 
 function getGlobalObject(): Record<string, unknown> {
@@ -103,6 +111,18 @@ function normalizeNetworkState(value: unknown): NetworkState {
     isExpensive:
       typeof record.isExpensive === "boolean" ? record.isExpensive : undefined,
   };
+}
+
+function normalizeLocalNetworkAccessStatus(
+  value: unknown
+): LocalNetworkAccessStatus {
+  if (typeof value !== "string") {
+    return "unknown";
+  }
+  const normalized = value.toLowerCase() as LocalNetworkAccessStatus;
+  return VALID_LOCAL_NETWORK_ACCESS_STATUSES.includes(normalized)
+    ? normalized
+    : "unknown";
 }
 
 function normalizeDiscoveryOptions(
@@ -437,6 +457,29 @@ export const Network = {
       return null;
     }
     return callNative<boolean | null>("isAirplaneModeEnabled", {});
+  },
+
+  async getLocalNetworkAccessStatusAsync(): Promise<LocalNetworkAccessStatus> {
+    if (!isNativeAvailable()) {
+      return "unavailable";
+    }
+    const status = await callNative<unknown>("getLocalNetworkAccessStatus", {});
+    return normalizeLocalNetworkAccessStatus(status);
+  },
+
+  async requestLocalNetworkAccessAsync(): Promise<LocalNetworkAccessStatus> {
+    if (!isNativeAvailable()) {
+      return "unavailable";
+    }
+    const status = await callNative<unknown>("requestLocalNetworkAccess", {});
+    return normalizeLocalNetworkAccessStatus(status);
+  },
+
+  async openAppSettingsAsync(): Promise<boolean> {
+    if (!isNativeAvailable()) {
+      return false;
+    }
+    return callNative<boolean>("openAppSettings", {});
   },
 
   async startDiscoveryAsync(options?: NetworkDiscoveryOptions): Promise<void> {

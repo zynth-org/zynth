@@ -1,5 +1,13 @@
 import Foundation
 
+enum LocalNetworkAccessStatus: String {
+  case granted
+  case denied
+  case restricted
+  case unavailable
+  case unknown
+}
+
 struct DiscoveryConfig {
   let serviceType: String
   let domain: String

@@ -28,6 +28,7 @@ export type {
   CreateNetworkDiscoveryOptions,
   DiscoveryEvent,
   DiscoveryEventType,
+  LocalNetworkAccessStatus,
   NetworkAdvertiseOptions,
   NetworkAuthenticatePeerOptions,
   NetworkAuthenticatePeerResult,

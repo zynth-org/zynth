@@ -33,6 +33,9 @@ class NetworkModule(
         "signChallenge",
         "verifyChallenge",
         "isAirplaneModeEnabled",
+        "getLocalNetworkAccessStatus",
+        "requestLocalNetworkAccess",
+        "openAppSettings",
         "startDiscovery",
         "stopDiscovery",
         "isDiscoveryRunning",
@@ -85,6 +88,9 @@ class NetworkModule(
                 )
             )
             "isAirplaneModeEnabled" -> resultResponse(isAirplaneModeEnabled())
+            "getLocalNetworkAccessStatus" -> resultResponse("unavailable")
+            "requestLocalNetworkAccess" -> resultResponse("unavailable")
+            "openAppSettings" -> resultResponse(false)
             "startDiscovery" -> {
                 discoveryController.startDiscovery(parseDiscoveryConfig(args))
                 resultResponse(true)
@@ -121,6 +127,7 @@ class NetworkModule(
             "getIpAddress" -> getIpAddress() ?: JSONObject.NULL
             "getLocalIdentity" -> identityManager.getLocalIdentity()
             "isDiscoveryRunning" -> discoveryController.isDiscoveryRunning()
+            "getLocalNetworkAccessStatus" -> "unavailable"
             "getDiscoveredServices" -> discoveryController.getDiscoveredServices()
             "getAdvertisedService" -> discoveryController.getAdvertisedService()
             else -> throw IllegalArgumentException("Unsupported method: $method")

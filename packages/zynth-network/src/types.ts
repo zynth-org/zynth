@@ -20,6 +20,13 @@ export type WifiInfo = {
   ipAddress: string | null;
 };
 
+export type LocalNetworkAccessStatus =
+  | "granted"
+  | "denied"
+  | "restricted"
+  | "unavailable"
+  | "unknown";
+
 export type ServiceTxtRecord = Record<string, string>;
 
 export type NetworkCapabilityValue =

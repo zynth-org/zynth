@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import ZynthKit
 
 @objc(NetworkModule)
@@ -15,6 +16,9 @@ final class NetworkModule: NSObject, ZynthModule, ZynthSyncModule {
       "signChallenge",
       "verifyChallenge",
       "isAirplaneModeEnabled",
+      "getLocalNetworkAccessStatus",
+      "requestLocalNetworkAccess",
+      "openAppSettings",
       "startDiscovery",
       "stopDiscovery",
       "isDiscoveryRunning",
@@ -67,6 +71,13 @@ final class NetworkModule: NSObject, ZynthModule, ZynthSyncModule {
       ]
     case "isAirplaneModeEnabled":
       return ["result": host.isAirplaneModeEnabled() as Any? ?? NSNull()]
+    case "getLocalNetworkAccessStatus":
+      return ["result": host.getLocalNetworkAccessStatus().rawValue]
+    case "requestLocalNetworkAccess":
+      let status = host.requestLocalNetworkAccess()
+      return ["result": status.rawValue]
+    case "openAppSettings":
+      return ["result": openAppSettings()]
     case "startDiscovery":
       let config = parseDiscoveryConfig(args)
       try host.startDiscovery(config: config)
@@ -109,6 +120,8 @@ final class NetworkModule: NSObject, ZynthModule, ZynthSyncModule {
       return try identityHost.getLocalIdentity()
     case "isDiscoveryRunning":
       return host.isDiscoveryRunning()
+    case "getLocalNetworkAccessStatus":
+      return host.getLocalNetworkAccessStatus().rawValue
     case "getDiscoveredServices":
       return host.getDiscoveredServices().map { $0.toDictionary() }
     case "getAdvertisedService":
@@ -170,5 +183,22 @@ final class NetworkModule: NSObject, ZynthModule, ZynthSyncModule {
     let candidate = (value ?? fallback).trimmingCharacters(in: .whitespacesAndNewlines)
     if candidate.isEmpty { return fallback }
     return candidate.hasSuffix(".") ? candidate : "\(candidate)."
+  }
+
+  private func openAppSettings() -> Bool {
+    guard let url = URL(string: UIApplication.openSettingsURLString) else {
+      return false
+    }
+    let openBlock = {
+      UIApplication.shared.open(url, options: [:], completionHandler: nil)
+    }
+    if Thread.isMainThread {
+      openBlock()
+      return true
+    }
+    DispatchQueue.main.async {
+      openBlock()
+    }
+    return true
   }
 }
