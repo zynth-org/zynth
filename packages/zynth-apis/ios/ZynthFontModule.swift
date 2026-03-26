@@ -44,9 +44,8 @@ public class ZynthFontModule: ZynthModule {
     
     private func loadAsync(args: ZynthArgs) throws -> Any? {
         let resourceName = try args.string("resourceName")
-        let fontFamily = try args.string("fontFamily")
         
-        print("[ZynthFontModule] Loading font '\(fontFamily)' from resource '\(resourceName)'")
+        // print("[ZynthFontModule] Loading font '\(fontFamily)' from resource '\(resourceName)'")
 
         let normalizedResource = resourceName.replacingOccurrences(of: "\\", with: "/")
         let resourceFileName = (normalizedResource as NSString).lastPathComponent
