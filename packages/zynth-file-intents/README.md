@@ -25,6 +25,7 @@ const result = await FileIntents.exportAsync({
 
 - This package does not add runtime permissions automatically.
 - Configure platform permissions/messages explicitly in `app.json` when your app workflow needs them.
+- On iOS, `target: "downloads"` is treated as `target: "files"` because exports go through the system Files picker.
 
 ## Security Hardening Checklist
 

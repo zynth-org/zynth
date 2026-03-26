@@ -22,11 +22,25 @@ type NativeExportResult = {
   error?: string;
 };
 
+const PLATFORM_GLOBAL_KEY = "__ZYNTH_PLATFORM";
+
 function getGlobalObject(): Record<string, unknown> {
   if (typeof globalThis !== "undefined") {
     return globalThis as Record<string, unknown>;
   }
   return {};
+}
+
+function getPlatform(): string | null {
+  const value = getGlobalObject()[PLATFORM_GLOBAL_KEY];
+  return typeof value === "string" ? value.toLowerCase() : null;
+}
+
+function normalizeExportTarget(target: "files" | "downloads"): "files" | "downloads" {
+  if (getPlatform() === "ios" && target === "downloads") {
+    return "files";
+  }
+  return target;
 }
 
 function getNativeEmitter(): ZynthNativeEmitterBridge | null {
@@ -136,7 +150,7 @@ export const FileIntents = {
         uri: options.uri.trim(),
         mimeType: options.mimeType ?? undefined,
         suggestedName: options.suggestedName ?? undefined,
-        target: options.target,
+        target: normalizeExportTarget(options.target),
       }).catch((error: unknown) => {
         subscription.remove();
         reject(error instanceof Error ? error : new Error(String(error)));

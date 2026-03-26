@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 import ZynthKit
 
 @objc(FileIntentsModule)
-final class FileIntentsModule: NSObject, ZynthModule, UIDocumentPickerDelegate, UIDocumentInteractionControllerDelegate {
+final class FileIntentsModule: NSObject, ZynthModule, UIDocumentPickerDelegate, UIDocumentInteractionControllerDelegate, UIAdaptivePresentationControllerDelegate {
   let name: String = "FileIntents"
 
   var exportedMethods: [String] {
@@ -89,22 +89,18 @@ final class FileIntentsModule: NSObject, ZynthModule, UIDocumentPickerDelegate, 
     let requestId = args.string("requestId", default: UUID().uuidString)
     let uri = try args.string("uri")
     let suggestedName = args.optionalString("suggestedName")
-    let target = args.string("target", default: "files")
+    let requestedTarget = args.string("target", default: "files").lowercased()
+    let target = requestedTarget == "downloads" ? "files" : requestedTarget
     guard target == "files" else {
-      throw NSError(domain: "ZynthFileIntents", code: 5, userInfo: [NSLocalizedDescriptionKey: "iOS export target must be 'files'"]) }
+      throw NSError(domain: "ZynthFileIntents", code: 5, userInfo: [NSLocalizedDescriptionKey: "iOS export target must be 'files' or 'downloads'"]) }
 
     let sourceURL = try resolveFileURL(uri)
     let exportURL = try prepareExportURL(sourceURL: sourceURL, suggestedName: suggestedName)
     pendingExportRequestId = requestId
 
-    guard let presenter = topViewController() else {
-      pendingExportRequestId = nil
-      throw NSError(domain: "ZynthFileIntents", code: 1, userInfo: [NSLocalizedDescriptionKey: "No active view controller"]) }
-
-    let picker = UIDocumentPickerViewController(forExporting: [exportURL], asCopy: true)
-    picker.delegate = self
-    picker.modalPresentationStyle = .formSheet
-    presenter.present(picker, animated: true)
+    DispatchQueue.main.async { [weak self] in
+      self?.presentExportPicker(requestId: requestId, exportURL: exportURL)
+    }
 
     return ["status": "pending"]
   }
@@ -116,6 +112,10 @@ final class FileIntentsModule: NSObject, ZynthModule, UIDocumentPickerDelegate, 
   func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
     let destination = urls.first?.absoluteString
     emitExportResult(cancelled: false, destinationUri: destination, error: nil)
+  }
+
+  func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+    emitExportResult(cancelled: true, destinationUri: nil, error: nil)
   }
 
   private func emitExportResult(cancelled: Bool, destinationUri: String?, error: String?) {
@@ -130,6 +130,27 @@ final class FileIntentsModule: NSObject, ZynthModule, UIDocumentPickerDelegate, 
       "error": (error as Any?) ?? NSNull(),
     ]
     runtime?.emitEvent(name: "FileIntents.result", payload: payload)
+  }
+
+  private func presentExportPicker(requestId: String, exportURL: URL) {
+    guard pendingExportRequestId == requestId else {
+      return
+    }
+
+    guard let presenter = topViewController() else {
+      emitExportResult(
+        cancelled: false,
+        destinationUri: nil,
+        error: "No active view controller"
+      )
+      return
+    }
+
+    let picker = UIDocumentPickerViewController(forExporting: [exportURL], asCopy: true)
+    picker.delegate = self
+    picker.modalPresentationStyle = .formSheet
+    picker.presentationController?.delegate = self
+    presenter.present(picker, animated: true)
   }
 
   private func normalizeFiles(_ raw: Any?) -> [URL] {
@@ -198,12 +219,10 @@ final class FileIntentsModule: NSObject, ZynthModule, UIDocumentPickerDelegate, 
     if let base {
       start = base
     } else {
-      start = UIApplication.shared.connectedScenes
-        .compactMap { $0 as? UIWindowScene }
-        .flatMap(\.windows)
-        .first(where: { $0.isKeyWindow })?
-        .rootViewController
+      start = activeWindow()?.rootViewController
     }
+
+    guard let start else { return nil }
 
     if let nav = start as? UINavigationController {
       return topViewController(base: nav.visibleViewController)
@@ -211,10 +230,38 @@ final class FileIntentsModule: NSObject, ZynthModule, UIDocumentPickerDelegate, 
     if let tab = start as? UITabBarController {
       return topViewController(base: tab.selectedViewController)
     }
-    if let presented = start?.presentedViewController {
+    if let presented = start.presentedViewController, presented.viewIfLoaded?.window != nil {
       return topViewController(base: presented)
     }
     return start
+  }
+
+  private func activeWindow() -> UIWindow? {
+    let scenes = UIApplication.shared.connectedScenes
+      .compactMap { $0 as? UIWindowScene }
+
+    if let activeScene = scenes.first(where: { $0.activationState == .foregroundActive }) {
+      if let keyWindow = activeScene.windows.first(where: { $0.isKeyWindow }) {
+        return keyWindow
+      }
+      if let visibleWindow = activeScene.windows.first(where: { !$0.isHidden }) {
+        return visibleWindow
+      }
+      if let firstWindow = activeScene.windows.first {
+        return firstWindow
+      }
+    }
+
+    for scene in scenes {
+      if let keyWindow = scene.windows.first(where: { $0.isKeyWindow }) {
+        return keyWindow
+      }
+      if let firstWindow = scene.windows.first {
+        return firstWindow
+      }
+    }
+
+    return nil
   }
 
   private func onMainSync<T>(_ block: () throws -> T) rethrows -> T {
