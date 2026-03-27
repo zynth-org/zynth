@@ -125,14 +125,17 @@ object TextInputPropAdapter {
     }
   }
 
-  private fun parseString(json: String?): String? {
-    if (json == null || json == "null") return null
-    return try {
-      val obj = JSONObject("{\"v\":$json}")
-      obj.getString("v")
-    } catch (e: Exception) {
-      json.trim('"')
+  private fun parseString(value: String?): String? {
+    if (value == null || value == "null" || value == "undefined") return null
+    if (value.startsWith("\"") && value.endsWith("\"") && value.length >= 2) {
+      return try {
+        val obj = JSONObject("{\"v\":$value}")
+        obj.getString("v")
+      } catch (e: Exception) {
+        value.substring(1, value.length - 1)
+      }
     }
+    return value
   }
 
   private fun parseBoolean(json: String?): Boolean? {

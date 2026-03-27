@@ -56,6 +56,7 @@ internal open class ZynthTextInputView @JvmOverloads constructor(
   internal var inputHandlerWorkletId: Int = 0
 
   private var lastChangeDispatchTime = 0L
+  private var lastEmittedText: String? = null
   private var suppressNativeEvent = false
   private var selectionWatcherEnabled = true
   private var isComposingText = false
@@ -281,14 +282,26 @@ internal open class ZynthTextInputView @JvmOverloads constructor(
   }
 
   fun updateTextSync(newValue: String?) {
-    val current = text?.toString()
-    if (current == newValue) return
+    val next = newValue.orEmpty()
+    if (next == lastEmittedText) return
+    
+    val current = text?.toString().orEmpty()
+    
+    // Normalize spaces (handle non-breaking spaces and others)
+    if (current == next) return
+    
+    // If the only difference is trailing whitespace and we are currently editing,
+    // avoid resetting the text as it disrupts the keyboard/composition state.
+    if (isFocused && current.trimEnd() == next.trimEnd() && (current.length - next.length).let { kotlin.math.abs(it) <= 1 }) {
+       return
+    }
 
     val start = selectionStart
     val end = selectionEnd
 
     performProgrammaticUpdate {
-      setText(newValue)
+      setText(next)
+      lastEmittedText = next
       if (start >= 0 && end >= 0) {
         val len = text?.length ?: 0
         val newStart = start.coerceIn(0, len)
@@ -702,6 +715,8 @@ internal open class ZynthTextInputView @JvmOverloads constructor(
   }
 
   private fun emitChange(change: PendingChange) {
+    val textAfter = text?.toString().orEmpty()
+    lastEmittedText = textAfter
     val payload = JSONObject()
     try {
       val range = JSONObject()
@@ -710,7 +725,7 @@ internal open class ZynthTextInputView @JvmOverloads constructor(
       payload.put("range", range)
       payload.put("inserted", change.inserted)
       payload.put("removed", change.removed)
-      payload.put("textAfter", text?.toString().orEmpty())
+      payload.put("textAfter", textAfter)
       payload.put("composing", isComposingText)
     } catch (t: Throwable) {
       Log.w("ZynthTextInputView", "Failed to build text change payload", t)
@@ -723,7 +738,7 @@ internal open class ZynthTextInputView @JvmOverloads constructor(
     if (hasOnChangeText) {
       val textPayload = JSONObject()
       try {
-        textPayload.put("text", text?.toString().orEmpty())
+        textPayload.put("text", textAfter)
       } catch (t: Throwable) {
         Log.w("ZynthTextInputView", "Failed to build changeText payload", t)
       }

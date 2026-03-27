@@ -45,6 +45,7 @@ The CLI interface prioritizes clarity and technical precision over decorative el
 #### 2. Terminal Aesthetic (Green Accents)
 
 To evoke a serious, "Fallout console" technical feel, the CLI uses a specific color palette:
+
 - **Primary Accents:** Dark Green (`#00FF00` or ANSI green) for success symbols (`✔`), primary bullets (`◆`), and progress bars.
 - **Dimmed Text:** Gray for secondary information and paths.
 - **High Contrast:** White for active tasks and critical summaries.
@@ -88,7 +89,3 @@ _When the build completes, the detailed line is replaced by a final summary:_
 ✔ Completed 22 modules in 14.2s
 
 ```
-
----
-
-Does this technical wording align with the image you have in mind for your framework? I can help refine any of these points to better match your vision.

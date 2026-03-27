@@ -1990,11 +1990,11 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   private fun styleFromProp(name: String, rawValue: String): Style? {
     val trimmed = rawValue.trim()
     val jsonValue = when {
-      trimmed.isEmpty() -> JSONObject.quote("")
+      rawValue.isEmpty() -> JSONObject.quote("")
       trimmed == "true" || trimmed == "false" -> trimmed
       trimmed.toDoubleOrNull() != null -> trimmed
       trimmed.startsWith("{") || trimmed.startsWith("[") -> trimmed
-      else -> JSONObject.quote(trimmed)
+      else -> JSONObject.quote(rawValue)
     }
     val json = "{\"$name\":$jsonValue}"
     return runCatching { Style.fromJson(json) }.getOrNull()

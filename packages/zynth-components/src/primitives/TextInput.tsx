@@ -1,6 +1,6 @@
 import type { Component } from "solid-js";
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
-import type { HostNode, Style } from "@zynth/core";
+import type { HostNode, Style, SyncSignalAccessor } from "@zynth/core";
 import { createWorklet, setProperty } from "@zynth/core";
 import type { KeyEvent } from "./events";
 export type { KeyEvent } from "./events";
@@ -46,10 +46,12 @@ type TextInputRefBridge = {
 };
 
 export function useTextInputRef(opts?: {
-  value?: string;
+  value?: string | SyncSignalAccessor<string>;
   driveFromValue?: boolean;
 }): TextInputRef {
-  const [text, setText] = createSignal(opts?.value ?? "");
+  const initialValue =
+    typeof opts?.value === "function" ? opts.value() : opts?.value ?? "";
+  const [text, setText] = createSignal(initialValue);
   const [selection, setSelection] = createSignal<Selection>({
     start: 0,
     end: 0,
@@ -157,7 +159,7 @@ export type ClearButtonMode =
   | "always";
 
 export interface TextInputProps {
-  value?: string;
+  value?: string | SyncSignalAccessor<string>;
   defaultValue?: string;
   placeholder?: string;
   multiline?: boolean;
@@ -453,7 +455,8 @@ export const TextInput: Component<TextInputProps> = (props) => {
     const nodeId = (node as any)?.id as number | undefined;
     const normalizedNodeId =
       typeof nodeId === "number" ? nodeId : defaultAppliedNodeId;
-    const controlledValue = props.value;
+    const controlledValue =
+      typeof props.value === "function" ? props.value() : props.value;
 
     if (controlledValue !== undefined) {
       // console.log("[TextInput] controlled value update", { nodeId, value: controlledValue });
