@@ -14,6 +14,7 @@ import type {
 } from "./types";
 
 let nextRequestId = 1;
+declare const __ZYNTH_PLATFORM__: string;
 
 function createAbortError(): Error {
   const error = new Error("Aborted");
@@ -86,8 +87,14 @@ export async function fetch(
 
   const resolvedBody = await resolveBody(rawBody, headers, globalObject);
   const uploadStream = resolvedBody?.uploadStream;
+  const canTrackNativeFileBodyProgress =
+    (__ZYNTH_PLATFORM__ === "android" || __ZYNTH_PLATFORM__ === "ios") &&
+    typeof init?.onUploadProgress === "function";
   const useNativeFileBody = Boolean(
-    bodyFileUri && uploadStream && typeof init?.onUploadProgress !== "function"
+    bodyFileUri &&
+      uploadStream &&
+      (typeof init?.onUploadProgress !== "function" ||
+        canTrackNativeFileBodyProgress)
   );
   const uploadTotalBytes = inferUploadTotalBytes(headers, resolvedBody);
   const trustedCertificatesPem = normalizeTrustedCertificates(
@@ -110,9 +117,9 @@ export async function fetch(
     delete (payload as any).body;
   }
 
-  // Ensure ArrayBuffer is converted to number[] for bridge compatibility
+  // Bridge handles ArrayBuffer and Uint8Array directly.
   if (payload.body instanceof ArrayBuffer) {
-    payload.body = Array.from(new Uint8Array(payload.body));
+    // Keep as ArrayBuffer.
   }
 
   const emitter = globalObject.ZynthNativeEmitter;
@@ -131,6 +138,24 @@ export async function fetch(
     // Add safety timeout or rely on native timeout?
     // Native timeout should trigger an error event.
   });
+
+  const uploadProgressSubscription =
+    init?.onUploadProgress && useNativeFileBody
+      ? emitter.addListener("zynth.fetch.uploadProgress", (data: any) => {
+          if (data && data.requestId === requestId) {
+            init.onUploadProgress!({
+              requestId: data.requestId,
+              bytesSent: data.bytesSent,
+              bytesTotal:
+                typeof data.bytesTotal === "number" && data.bytesTotal >= 0
+                  ? data.bytesTotal
+                  : null,
+              chunkBytes: data.chunkBytes,
+              phase: data.phase || "enqueue",
+            });
+          }
+        })
+      : null;
 
   const abortPromise =
     signal && typeof signal.addEventListener === "function"
@@ -188,6 +213,9 @@ export async function fetch(
   } finally {
     if (signal && typeof signal.removeEventListener === "function") {
       signal.removeEventListener("abort", onAbort);
+    }
+    if (uploadProgressSubscription) {
+      uploadProgressSubscription.remove();
     }
   }
 
@@ -301,7 +329,9 @@ async function pumpUploadStreamToNative(args: UploadPumpArgs): Promise<void> {
         continue;
       }
 
-      const chunkPayload = Array.from(chunk);
+      // Optimization: Pass the buffer directly if possible, or Uint8Array.
+      // Many JSI implementations can handle binary data directly.
+      const chunkPayload = chunk;
       const chunkResult = await Promise.resolve(
         args.bridge.call("Fetch", "uploadChunk", {
           id: args.requestId,
@@ -311,6 +341,16 @@ async function pumpUploadStreamToNative(args: UploadPumpArgs): Promise<void> {
       throwIfNativeError(chunkResult, "uploadChunk");
 
       bytesSent += chunk.byteLength;
+
+      // We only report progress here if we don't expect native to report it.
+      // Current Zynth Fetch modules on Android and iOS report progress during writeTo.
+      // However, to keep it simple and backwards compatible, we'll keep this but maybe
+      // guard it if we know native will report it.
+      // Actually, since we added a listener in the main fetch loop, we should avoid double reporting.
+      // If we are here, useNativeFileBody was false.
+      // But native UploadChannel ALSO emits events now.
+      // So we should NOT report here if the native module is new enough to emit events.
+      // For now, let's keep it to ensure progress still works even if native emitter fails.
       args.onUploadProgress?.({
         requestId: args.requestId,
         bytesSent,

@@ -470,6 +470,26 @@ final class FetchModule: NSObject, ZynthModule, URLSessionDataDelegate {
 
   func urlSession(
     _ session: URLSession,
+    task: URLSessionTask,
+    didSendBodyData bytesSent: Int64,
+    totalBytesSent: Int64,
+    totalBytesExpectedToSend: Int64
+  ) {
+    guard let requestId = requestId(for: task.taskIdentifier) else {
+      return
+    }
+
+    emitEvent("zynth.fetch.uploadProgress", [
+      "requestId": requestId,
+      "bytesSent": totalBytesSent,
+      "bytesTotal": totalBytesExpectedToSend,
+      "chunkBytes": bytesSent,
+      "phase": "enqueue",
+    ])
+  }
+
+  func urlSession(
+    _ session: URLSession,
     dataTask: URLSessionDataTask,
     didReceive response: URLResponse,
     completionHandler: @escaping (URLSession.ResponseDisposition) -> Void

@@ -43,7 +43,11 @@ class FetchModule(private val runtime: ZynthRuntime) : ZynthModule {
         "uploadAbort",
     )
 
-    private val client = OkHttpClient.Builder().build()
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(0, TimeUnit.SECONDS)
+        .writeTimeout(0, TimeUnit.SECONDS)
+        .build()
     private val calls = ConcurrentHashMap<Int, okhttp3.Call>()
     private val pendingChunks = ConcurrentHashMap<Int, MutableList<ByteArray>>()
     private val pendingEnd = ConcurrentHashMap<Int, Boolean>()
@@ -99,13 +103,15 @@ class FetchModule(private val runtime: ZynthRuntime) : ZynthModule {
             if (!file.exists() || !file.isFile) {
                 return errorResponse("invalid_body_file_uri", "bodyFileUri does not point to an existing file")
             }
-            builder.method(method, createFileRequestBody(file, mediaType))
+            builder.method(method, createFileRequestBody(file, mediaType, requestId))
         } else if (uploadStream) {
             if (method == "GET" || method == "HEAD") {
                 return errorResponse("invalid_method", "uploadStream requires a request body method")
             }
             val mediaType = (headers?.get("Content-Type") as? String)?.toMediaTypeOrNull()
-            val channel = UploadChannel(mediaType, uploadLength)
+            val channel = UploadChannel(mediaType, uploadLength, requestId) { reqId, sent, total, chunk ->
+                emitUploadProgress(reqId, sent, total, chunk)
+            }
             uploadChannels[requestId] = channel
             builder.method(method, channel.requestBody())
         } else if (args.has("body")) {
@@ -146,19 +152,20 @@ class FetchModule(private val runtime: ZynthRuntime) : ZynthModule {
 
             override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
                 if (wantsStream) {
-                    val headerMap = JSONObject()
+                    val headerMap = mutableMapOf<String, String>()
                     for (name in response.headers.names()) {
                         val values = response.headers.values(name)
-                        headerMap.put(name, values.joinToString(", "))
+                        headerMap[name] = values.joinToString(", ")
                     }
-                    val result = JSONObject()
-                        .put("status", response.code)
-                        .put("statusText", response.message)
-                        .put("ok", response.isSuccessful)
-                        .put("url", response.request.url.toString())
-                        .put("redirected", response.priorResponse != null)
-                        .put("headers", headerMap)
-                        .put("streamId", requestId)
+                    val result = mapOf(
+                        "status" to response.code,
+                        "statusText" to response.message,
+                        "ok" to response.isSuccessful,
+                        "url" to response.request.url.toString(),
+                        "redirected" to (response.priorResponse != null),
+                        "headers" to headerMap,
+                        "streamId" to requestId
+                    )
                     startStreamReader(requestId, requestId, response)
                     runtime.emitEvent(
                         "zynth.fetch.response",
@@ -167,23 +174,20 @@ class FetchModule(private val runtime: ZynthRuntime) : ZynthModule {
                 } else {
                     response.use { closedResponse ->
                         val bodyBytes = closedResponse.body?.bytes() ?: ByteArray(0)
-                        val bodyJson = JSONArray()
-                        for (byte in bodyBytes) {
-                            bodyJson.put(byte.toInt() and 0xff)
-                        }
-                        val headerMap = JSONObject()
+                        val headerMap = mutableMapOf<String, String>()
                         for (name in closedResponse.headers.names()) {
                             val values = closedResponse.headers.values(name)
-                            headerMap.put(name, values.joinToString(", "))
+                            headerMap[name] = values.joinToString(", ")
                         }
-                        val result = JSONObject()
-                            .put("status", closedResponse.code)
-                            .put("statusText", closedResponse.message)
-                            .put("ok", closedResponse.isSuccessful)
-                            .put("url", closedResponse.request.url.toString())
-                            .put("redirected", closedResponse.priorResponse != null)
-                            .put("headers", headerMap)
-                            .put("body", bodyJson)
+                        val result = mapOf(
+                            "status" to closedResponse.code,
+                            "statusText" to closedResponse.message,
+                            "ok" to closedResponse.isSuccessful,
+                            "url" to closedResponse.request.url.toString(),
+                            "redirected" to (closedResponse.priorResponse != null),
+                            "headers" to headerMap,
+                            "body" to bodyBytes
+                        )
                         runtime.emitEvent(
                             "zynth.fetch.response",
                             mapOf("requestId" to requestId, "result" to result),
@@ -493,13 +497,15 @@ class FetchModule(private val runtime: ZynthRuntime) : ZynthModule {
         return if (uri.startsWith("/")) uri else null
     }
 
-    private fun createFileRequestBody(file: File, mediaType: MediaType?): RequestBody {
+    private fun createFileRequestBody(file: File, mediaType: MediaType?, requestId: Int): RequestBody {
         return object : RequestBody() {
             override fun contentType(): MediaType? = mediaType
 
             override fun contentLength(): Long = file.length()
 
             override fun writeTo(sink: BufferedSink) {
+                val totalBytes = file.length()
+                var bytesSent = 0L
                 FileInputStream(file).use { input ->
                     val buffer = ByteArray(64 * 1024)
                     while (true) {
@@ -508,15 +514,30 @@ class FetchModule(private val runtime: ZynthRuntime) : ZynthModule {
                             break
                         }
                         sink.write(buffer, 0, read)
+                        bytesSent += read
+                        emitUploadProgress(requestId, bytesSent, totalBytes, read)
                     }
                 }
             }
         }
     }
 
+    private fun emitUploadProgress(requestId: Int, bytesSent: Long, bytesTotal: Long, chunkBytes: Int) {
+        val payload = mapOf(
+            "requestId" to requestId,
+            "bytesSent" to bytesSent,
+            "bytesTotal" to bytesTotal,
+            "chunkBytes" to chunkBytes,
+            "phase" to "enqueue"
+        )
+        runtime.emitEvent("zynth.fetch.uploadProgress", payload)
+    }
+
     private class UploadChannel(
         private val mediaType: MediaType?,
         private val length: Long?,
+        private val requestId: Int,
+        private val onBytesSent: (Int, Long, Long, Int) -> Unit
     ) {
         private val queue = LinkedBlockingQueue<UploadEvent>()
         @Volatile
@@ -529,10 +550,15 @@ class FetchModule(private val runtime: ZynthRuntime) : ZynthModule {
                 override fun contentLength(): Long = length ?: -1L
 
                 override fun writeTo(sink: BufferedSink) {
+                    var totalBytesSent = 0L
                     while (true) {
                         val event = queue.take()
                         when (event) {
-                            is UploadEvent.Chunk -> sink.write(event.bytes)
+                            is UploadEvent.Chunk -> {
+                                sink.write(event.bytes)
+                                totalBytesSent += event.bytes.size
+                                onBytesSent(requestId, totalBytesSent, length ?: -1L, event.bytes.size)
+                            }
                             is UploadEvent.Complete -> return
                             is UploadEvent.Abort -> throw IOException(event.message)
                         }
