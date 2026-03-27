@@ -15,6 +15,7 @@ export const TextInput = (props: any) => {
     "inputMode",
     "onChangeText",
     "onChange",
+    "handler",
     "onFocus",
     "onBlur",
     "onKeyPress",
@@ -56,6 +57,41 @@ export const TextInput = (props: any) => {
         },
       });
     }
+  };
+
+  const handleBeforeInput = (e: InputEvent) => {
+    if (typeof local.handler !== "function") return;
+    const target = e.target as HTMLInputElement | HTMLTextAreaElement | null;
+    if (!target) return;
+
+    const currentText = target.value ?? "";
+    const incoming = typeof e.data === "string" ? e.data : "";
+    const next = local.handler(currentText, incoming);
+    if (typeof next !== "string" || next === currentText) {
+      if (next === currentText) {
+        e.preventDefault();
+      }
+      return;
+    }
+
+    e.preventDefault();
+    target.value = next;
+    const cursor = next.length;
+    try {
+      target.setSelectionRange(cursor, cursor);
+    } catch {
+      // ignore selection update failures on unsupported inputs
+    }
+
+    local.onChangeText?.({ text: next });
+    local.onChange?.({
+      textAfter: next,
+      composing: false,
+      range: {
+        start: cursor,
+        end: cursor,
+      },
+    });
   };
 
   const handleKeyDown = (e: KeyboardEvent) => {
@@ -122,6 +158,7 @@ export const TextInput = (props: any) => {
           disabled={local.editable === false}
           maxlength={local.maxLength}
           onInput={handleInput}
+          onBeforeInput={handleBeforeInput}
           onFocus={() => local.onFocus?.()}
           onBlur={() => local.onBlur?.()}
           onKeyDown={handleKeyDown}
@@ -142,6 +179,7 @@ export const TextInput = (props: any) => {
           maxlength={local.maxLength}
           inputmode={local.inputMode}
           onInput={handleInput}
+          onBeforeInput={handleBeforeInput}
           onFocus={() => local.onFocus?.()}
           onBlur={() => local.onBlur?.()}
           onKeyDown={handleKeyDown}

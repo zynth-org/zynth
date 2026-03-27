@@ -646,12 +646,35 @@ void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
         int nodeId = (int)args[0].asNumber();
         std::string name = args[1].asString(rt).utf8(rt);
         if (count >= 3 && args[2].isObject() && args[2].asObject(rt).isFunction(rt)) {
-          Function fn = args[2].asObject(rt).asFunction(rt);
+          Object fnObj = args[2].asObject(rt);
+          if (name == "handler" &&
+              fnObj.hasProperty(rt, "__zynth_worklet_id") &&
+              fnObj.getProperty(rt, "__zynth_worklet_id").isNumber()) {
+            int workletId = (int)fnObj.getProperty(rt, "__zynth_worklet_id").asNumber();
+            ZynthRunOnMainAsync(^{
+              [manager setInputHandlerWorklet:@(nodeId) workletId:@(workletId)];
+            });
+            return Value::undefined();
+          }
+          Function fn = fnObj.asFunction(rt);
           registerHandler(rt, nodeId, name, std::move(fn));
         }
         NSString *handlerName = [NSString stringWithUTF8String:name.c_str()];
         ZynthRunOnMainAsync(^{
           [manager setHandler:@(nodeId) name:handlerName];
+        });
+        return Value::undefined();
+      });
+
+  auto clearInputHandler = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "clearInputHandler"), 1,
+      [manager](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isNumber()) {
+          return Value::undefined();
+        }
+        int nodeId = (int)args[0].asNumber();
+        ZynthRunOnMainAsync(^{
+          [manager clearInputHandlerWorklet:@(nodeId)];
         });
         return Value::undefined();
       });
@@ -987,6 +1010,7 @@ void ZynthInstallUIBindings(Runtime &rt, ZynthUIManager *manager) {
   ui.setProperty(rt, "insertChild", insertChild);
   ui.setProperty(rt, "removeChild", removeChild);
   ui.setProperty(rt, "setHandler", setHandler);
+  ui.setProperty(rt, "clearInputHandler", clearInputHandler);
   ui.setProperty(rt, "applyBatch", applyBatch);
   ui.setProperty(rt, "applyBatchTyped", applyBatchTyped);
   ui.setProperty(rt, "setSurface", setSurface);

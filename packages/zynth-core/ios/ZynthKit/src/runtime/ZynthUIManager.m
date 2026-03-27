@@ -708,6 +708,26 @@ static NSString *ZynthVisibility(UIView *view) {
   }
 }
 
+- (void)setInputHandlerWorklet:(NSNumber *)nodeId workletId:(NSNumber *)workletId {
+  UIView *view = _nodes[nodeId];
+  if (!view) return;
+  if (![workletId respondsToSelector:@selector(intValue)]) return;
+  int resolvedWorkletId = workletId.intValue;
+
+  SEL selector = NSSelectorFromString(@"setInputHandlerWorkletId:");
+  if ([view respondsToSelector:selector]) {
+    IMP imp = [view methodForSelector:selector];
+    if (imp) {
+      void (*func)(id, SEL, NSInteger) = (void (*)(id, SEL, NSInteger))imp;
+      func(view, selector, resolvedWorkletId);
+    }
+  }
+}
+
+- (void)clearInputHandlerWorklet:(NSNumber *)nodeId {
+  [self setInputHandlerWorklet:nodeId workletId:@0];
+}
+
 - (void)applyBatch:(NSString *)batchJSON {
   (void)batchJSON;
 }
@@ -990,6 +1010,20 @@ static NSString *ZynthVisibility(UIView *view) {
   double value = ZynthGetSharedSignalForHost(host, signalId, &found);
   if (!found) return nil;
   return @(value);
+}
+
+- (NSString *_Nullable)runInputHandlerWorklet:(int)workletId
+                                   currentText:(NSString *)currentText
+                                      newInput:(NSString *)newInput {
+  ZynthRuntime *runtime = self.zynthRuntime;
+  if (!runtime) return nil;
+  ZynthHermesRuntimeHost *host = [runtime valueForKey:@"runtime"];
+  if (!host) return nil;
+  ZynthWorklets *worklets = [host worklets];
+  if (!worklets) return nil;
+  return [worklets runInputHandlerWorkletWithId:workletId
+                                    currentText:currentText ?: @""
+                                       newInput:newInput ?: @""];
 }
 
 - (void)applyKeyboardAvoidingAdjustment:(NSNumber *)nodeId behavior:(NSString *)behavior overlap:(CGFloat)overlap availableHeight:(NSNumber *_Nullable)availableHeight {

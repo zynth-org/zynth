@@ -26,6 +26,12 @@ typedef void (*ZynthSharedSignalChangedCallback)(void *state, int signalId);
 - (int)createSharedSignalWithValue:(double)initialValue;
 - (double)sharedSignalValueForId:(int)signalId;
 - (BOOL)setSharedSignalValue:(int)signalId value:(double)value;
+- (int)createSyncSignalWithValue:(NSString *)initialValue;
+- (nullable NSString *)syncSignalValueForId:(int)signalId;
+- (BOOL)setSyncSignalValue:(int)signalId value:(NSString *)value;
+- (nullable NSString *)runInputHandlerWorkletWithId:(int)workletId
+                                         currentText:(NSString *)currentText
+                                            newInput:(NSString *)newInput;
 
 + (void)registerSharedSignalChangedCallback:(ZynthSharedSignalChangedCallback)callback;
 

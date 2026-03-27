@@ -21,6 +21,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)removeChild:(NSNumber *)parentId child:(NSNumber *)childId;
 - (void)dropNode:(NSNumber *)nodeId;
 - (void)setHandler:(NSNumber *)nodeId name:(NSString *)name;
+- (void)setInputHandlerWorklet:(NSNumber *)nodeId workletId:(NSNumber *)workletId;
+- (void)clearInputHandlerWorklet:(NSNumber *)nodeId;
 - (void)applyBatch:(NSString *)batchJSON;
 - (void)setSurface:(NSNumber *)surfaceId;
 - (void)flush;
@@ -37,6 +39,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)applyKeyboardAvoidingAdjustment:(NSNumber *)nodeId behavior:(NSString *)behavior overlap:(CGFloat)overlap availableHeight:(NSNumber *_Nullable)availableHeight;
 - (void)setSharedSignal:(int)signalId value:(double)value;
 - (NSNumber *_Nullable)sharedSignalValue:(int)signalId;
+- (NSString *_Nullable)runInputHandlerWorklet:(int)workletId
+                                   currentText:(NSString *)currentText
+                                      newInput:(NSString *)newInput;
 
 @end
 

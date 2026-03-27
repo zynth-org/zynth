@@ -1,7 +1,7 @@
 import type { Component } from "solid-js";
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import type { HostNode, Style } from "@zynth/core";
-import { setProperty } from "@zynth/core";
+import { createWorklet, setProperty } from "@zynth/core";
 import type { KeyEvent } from "./events";
 export type { KeyEvent } from "./events";
 
@@ -179,6 +179,7 @@ export interface TextInputProps {
   clearButtonMode?: ClearButtonMode;
   showClearAccessory?: boolean;
   inputFilter?: (proposed: string, change: Selection) => string | false;
+  handler?: (currentText: string, newInput: string) => string;
   onChangeText?: (text: string) => void;
   onChange?: (event: TextChangeEvent) => void;
   onSelectionChange?: (selection: Selection) => void;
@@ -196,10 +197,93 @@ export interface TextInputProps {
   testID?: string;
 }
 
+const noopInputHandlerWorklet = createWorklet(
+  ((_currentText: unknown, _newInput: unknown) => {
+    "worklet";
+    return undefined;
+  }) as (...args: unknown[]) => unknown
+);
+
 type NativeTextChangeEvent = TextChangeEvent & { target: number };
 type NativeTextPayload = { text: string };
 type NativeSelectionEvent = { selection: Selection };
 type NativeKeyEvent = KeyEvent;
+
+type SyncSignalCarrier = {
+  __zynth_sync_signal_id?: number;
+};
+
+function readSyncSignalId(value: unknown): number | undefined {
+  if (!value || typeof value !== "function") return undefined;
+  const maybeSignal = value as SyncSignalCarrier;
+  return typeof maybeSignal.__zynth_sync_signal_id === "number"
+    ? maybeSignal.__zynth_sync_signal_id
+    : undefined;
+}
+
+function bindRuntimeSyncSignalNode(signalId: number, nodeId: number): void {
+  const globalObj = globalThis as {
+    __zynth_bindSyncSignalNode?: (syncSignalId: number, hostNodeId: number) => void;
+  };
+  globalObj.__zynth_bindSyncSignalNode?.(signalId, nodeId);
+}
+
+function unbindRuntimeSyncSignalNode(signalId: number, nodeId: number): void {
+  const globalObj = globalThis as {
+    __zynth_unbindSyncSignalNode?: (syncSignalId: number, hostNodeId: number) => void;
+  };
+  globalObj.__zynth_unbindSyncSignalNode?.(signalId, nodeId);
+}
+
+function deriveInputDelta(previousText: string, nextText: string): string {
+  if (nextText.startsWith(previousText)) {
+    return nextText.slice(previousText.length);
+  }
+  if (previousText.startsWith(nextText)) {
+    return "";
+  }
+  return nextText;
+}
+
+function remapCursorThroughTransformation(
+  sourceText: string,
+  transformedText: string,
+  sourceCursor: number
+): number {
+  const safeCursor = Math.max(0, Math.min(sourceCursor, sourceText.length));
+  if (sourceText === transformedText) return safeCursor;
+
+  let prefix = 0;
+  const prefixLimit = Math.min(sourceText.length, transformedText.length);
+  while (
+    prefix < prefixLimit &&
+    sourceText.charCodeAt(prefix) === transformedText.charCodeAt(prefix)
+  ) {
+    prefix += 1;
+  }
+
+  let suffix = 0;
+  const sourceRemaining = sourceText.length - prefix;
+  const transformedRemaining = transformedText.length - prefix;
+  const suffixLimit = Math.min(sourceRemaining, transformedRemaining);
+  while (
+    suffix < suffixLimit &&
+    sourceText.charCodeAt(sourceText.length - 1 - suffix) ===
+      transformedText.charCodeAt(transformedText.length - 1 - suffix)
+  ) {
+    suffix += 1;
+  }
+
+  if (safeCursor <= prefix) return safeCursor;
+
+  const sourceSuffixStart = sourceText.length - suffix;
+  if (safeCursor >= sourceSuffixStart) {
+    const offsetIntoSuffix = sourceText.length - safeCursor;
+    return Math.max(0, transformedText.length - offsetIntoSuffix);
+  }
+
+  return prefix + (transformedText.length - prefix - suffix);
+}
 
 export const TextInput: Component<TextInputProps> = (props) => {
   const controller = useTextInputRef({
@@ -218,6 +302,7 @@ export const TextInput: Component<TextInputProps> = (props) => {
   const isPotentiallySecure = createMemo(
     () => props.secureTextEntry !== undefined
   );
+  const syncSignalId = createMemo(() => readSyncSignalId(props.value));
 
   // createEffect(() => {
   //   if (isPotentiallySecure() && props.multiline) {
@@ -246,8 +331,44 @@ export const TextInput: Component<TextInputProps> = (props) => {
 
   const handleChangeText = (payload: NativeTextPayload) => {
     if (typeof payload?.text === "string") {
-      props.onChangeText?.(payload.text);
-      controller.__setTextFromNative?.(payload.text);
+      const incomingText = payload.text;
+      const previousText = controller.text();
+
+      if (typeof props.handler === "function") {
+        const delta = deriveInputDelta(previousText, incomingText);
+        const transformedText = props.handler(previousText, delta);
+        const resolvedText =
+          typeof transformedText === "string" ? transformedText : incomingText;
+
+        if (resolvedText !== incomingText) {
+          const node = hostNode();
+          const incomingSelection = controller.selection();
+          const incomingCursor =
+            typeof incomingSelection?.end === "number"
+              ? incomingSelection.end
+              : incomingText.length;
+          const remappedCursor = remapCursorThroughTransformation(
+            incomingText,
+            resolvedText,
+            incomingCursor
+          );
+          const nextSelection: Selection = {
+            start: remappedCursor,
+            end: remappedCursor,
+          };
+          if (node) {
+            setProperty(node, "value", resolvedText);
+            setProperty(node, "selection", nextSelection);
+          }
+          controller.__setSelectionFromNative?.(nextSelection);
+        }
+
+        props.onChangeText?.(resolvedText);
+        controller.__setTextFromNative?.(resolvedText);
+      } else {
+        props.onChangeText?.(incomingText);
+        controller.__setTextFromNative?.(incomingText);
+      }
     }
     controller.__setComposing?.(false);
   };
@@ -317,6 +438,17 @@ export const TextInput: Component<TextInputProps> = (props) => {
 
   createEffect(() => {
     const node = hostNode();
+    const signalId = syncSignalId();
+    if (!node || typeof signalId !== "number") return;
+
+    bindRuntimeSyncSignalNode(signalId, node.id);
+    onCleanup(() => {
+      unbindRuntimeSyncSignalNode(signalId, node.id);
+    });
+  });
+
+  createEffect(() => {
+    const node = hostNode();
     if (!node) return;
     const nodeId = (node as any)?.id as number | undefined;
     const normalizedNodeId =
@@ -358,6 +490,7 @@ export const TextInput: Component<TextInputProps> = (props) => {
     setProperty(node, "onBlur", handleBlur);
     setProperty(node, "onCompositionStart", handleCompositionStart);
     setProperty(node, "onCompositionEnd", handleCompositionEnd);
+    setProperty(node, "handler", props.handler ?? noopInputHandlerWorklet);
 
     const derivedSubmitBehavior =
       props.submitBehavior ?? (props.multiline ? "newline" : undefined);

@@ -157,6 +157,9 @@ struct ZynthWorkletClosureValue {
   std::atomic<int> _nextSharedSignalId;
   std::unordered_map<int, double> _sharedSignals;
   std::mutex _sharedSignalsMutex;
+  std::atomic<int> _nextSyncSignalId;
+  std::unordered_map<int, std::string> _syncSignals;
+  std::mutex _syncSignalsMutex;
 }
 
 - (instancetype)initWithHost:(ZynthHermesRuntimeHost *)host {
@@ -165,6 +168,7 @@ struct ZynthWorkletClosureValue {
     _host = host;
     _nextWorkletId = 1;
     _nextSharedSignalId = 1;
+    _nextSyncSignalId = 1;
   }
   return self;
 }
@@ -222,6 +226,42 @@ struct ZynthWorkletClosureValue {
     callback((__bridge void *)_host, signalId);
   }
 
+  return YES;
+}
+
+- (int)createSyncSignalWithValue:(NSString *)initialValue {
+  int signalId = _nextSyncSignalId.fetch_add(1);
+  std::string text;
+  if ([initialValue isKindOfClass:[NSString class]]) {
+    text = [initialValue UTF8String] ?: "";
+  }
+  {
+    std::lock_guard<std::mutex> lock(_syncSignalsMutex);
+    _syncSignals[signalId] = std::move(text);
+  }
+  return signalId;
+}
+
+- (nullable NSString *)syncSignalValueForId:(int)signalId {
+  std::lock_guard<std::mutex> lock(_syncSignalsMutex);
+  auto it = _syncSignals.find(signalId);
+  if (it == _syncSignals.end()) {
+    return nil;
+  }
+  return [NSString stringWithUTF8String:it->second.c_str()];
+}
+
+- (BOOL)setSyncSignalValue:(int)signalId value:(NSString *)value {
+  std::string text;
+  if ([value isKindOfClass:[NSString class]]) {
+    text = [value UTF8String] ?: "";
+  }
+  std::lock_guard<std::mutex> lock(_syncSignalsMutex);
+  auto it = _syncSignals.find(signalId);
+  if (it == _syncSignals.end()) {
+    return NO;
+  }
+  it->second = std::move(text);
   return YES;
 }
 
@@ -289,12 +329,78 @@ struct ZynthWorkletClosureValue {
         return Value::undefined();
       });
 
+  auto createSyncSignal = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "createSyncSignal"), 1,
+      [self](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isString()) {
+          ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] createSyncSignal: invalid args");
+          return Value::undefined();
+        }
+        std::string initialValue = args[0].asString(rt).utf8(rt);
+        NSString *initialText = [NSString stringWithUTF8String:initialValue.c_str()];
+        int signalId = [self createSyncSignalWithValue:initialText ?: @""];
+        return Value(static_cast<double>(signalId));
+      });
+
+  auto getSyncSignal = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "getSyncSignal"), 1,
+      [self](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isNumber()) {
+          ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] getSyncSignal: invalid args");
+          return Value::undefined();
+        }
+        int signalId = static_cast<int>(args[0].asNumber());
+        NSString *value = [self syncSignalValueForId:signalId];
+        if (![value isKindOfClass:[NSString class]]) {
+          return Value::undefined();
+        }
+        return Value(String::createFromUtf8(rt, [value UTF8String] ?: ""));
+      });
+
+  auto setSyncSignal = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "setSyncSignal"), 2,
+      [self](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 2 || !args[0].isNumber() || !args[1].isString()) {
+          ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] setSyncSignal: invalid args");
+          return Value::undefined();
+        }
+        int signalId = static_cast<int>(args[0].asNumber());
+        std::string value = args[1].asString(rt).utf8(rt);
+        NSString *text = [NSString stringWithUTF8String:value.c_str()];
+        if (![self setSyncSignalValue:signalId value:text ?: @""]) {
+          return Value::undefined();
+        }
+        return Value::undefined();
+      });
+
+  auto removeSyncSignal = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "removeSyncSignal"), 1,
+      [self](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isNumber()) {
+          ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] removeSyncSignal: invalid args");
+          return Value::undefined();
+        }
+        int signalId = static_cast<int>(args[0].asNumber());
+        {
+          std::lock_guard<std::mutex> lock(_syncSignalsMutex);
+          _syncSignals.erase(signalId);
+        }
+        return Value::undefined();
+      });
+
   Object shared(rt);
   shared.setProperty(rt, "createSharedSignal", createSharedSignal);
   shared.setProperty(rt, "getSharedSignal", getSharedSignal);
   shared.setProperty(rt, "setSharedSignal", setSharedSignal);
   shared.setProperty(rt, "removeSharedSignal", removeSharedSignal);
   rt.global().setProperty(rt, "__zynth_shared_signals", shared);
+
+  Object sync(rt);
+  sync.setProperty(rt, "createSyncSignal", createSyncSignal);
+  sync.setProperty(rt, "getSyncSignal", getSyncSignal);
+  sync.setProperty(rt, "setSyncSignal", setSyncSignal);
+  sync.setProperty(rt, "removeSyncSignal", removeSyncSignal);
+  rt.global().setProperty(rt, "__zynth_sync_signals", sync);
   ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] shared signals bridge installed");
 }
 
@@ -548,6 +654,74 @@ struct ZynthWorkletClosureValue {
   } catch (const std::exception &ex) {
     NSString *message = [NSString stringWithUTF8String:ex.what()];
     ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] run exception id=%d %@", workletId, message);
+  }
+}
+
+- (nullable NSString *)runInputHandlerWorkletWithId:(int)workletId
+                                         currentText:(NSString *)currentText
+                                            newInput:(NSString *)newInput {
+  [self ensureUIRuntime];
+  if (!_uiRuntime) return nil;
+  auto &rt = *_uiRuntime;
+  std::shared_ptr<Function> fn;
+  std::vector<ZynthWorkletClosureValue> closure;
+  {
+    std::lock_guard<std::mutex> lock(_workletMutex);
+    auto it = _uiWorklets.find(workletId);
+    if (it == _uiWorklets.end()) {
+      return nil;
+    }
+    fn = it->second;
+    auto closureIt = _uiWorkletClosures.find(workletId);
+    if (closureIt != _uiWorkletClosures.end()) {
+      closure = closureIt->second;
+    }
+  }
+
+  Object global = rt.global();
+  __weak ZynthWorklets *weakSelf = self;
+  for (const auto &entry : closure) {
+    auto propId = PropNameID::forUtf8(rt, entry.name);
+    switch (entry.kind) {
+      case ZynthWorkletClosureValue::Kind::Shared: {
+        int sharedId = entry.sharedId;
+        auto getter = Function::createFromHostFunction(
+            rt, propId, 0,
+            [weakSelf, sharedId](Runtime &, const Value &, const Value *, size_t) -> Value {
+              ZynthWorklets *strongSelf = weakSelf;
+              if (!strongSelf) return Value::undefined();
+              std::lock_guard<std::mutex> lock(strongSelf->_sharedSignalsMutex);
+              auto it = strongSelf->_sharedSignals.find(sharedId);
+              if (it == strongSelf->_sharedSignals.end()) {
+                return Value::undefined();
+              }
+              return Value(it->second);
+            });
+        global.setProperty(rt, propId, std::move(getter));
+        break;
+      }
+      case ZynthWorkletClosureValue::Kind::Number:
+        global.setProperty(rt, propId, Value(entry.numberValue));
+        break;
+      case ZynthWorkletClosureValue::Kind::Bool:
+        global.setProperty(rt, propId, Value(entry.boolValue));
+        break;
+      case ZynthWorkletClosureValue::Kind::String:
+        global.setProperty(rt, propId, String::createFromUtf8(rt, entry.stringValue));
+        break;
+    }
+  }
+
+  try {
+    std::string current = [currentText isKindOfClass:[NSString class]] ? ([currentText UTF8String] ?: "") : "";
+    std::string incoming = [newInput isKindOfClass:[NSString class]] ? ([newInput UTF8String] ?: "") : "";
+    Value result =
+        fn->call(rt, String::createFromUtf8(rt, current), String::createFromUtf8(rt, incoming));
+    if (!result.isString()) return nil;
+    std::string output = result.asString(rt).utf8(rt);
+    return [NSString stringWithUTF8String:output.c_str()];
+  } catch (...) {
+    return nil;
   }
 }
 

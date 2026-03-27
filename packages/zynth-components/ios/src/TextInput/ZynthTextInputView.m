@@ -80,6 +80,7 @@ static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
   self.pendingRemoved = @"";
   self.lastChangeDispatch = [NSDate dateWithTimeIntervalSince1970:0];
   self.submitBehavior = @"submit";
+  self.inputHandlerWorkletId = 0;
 
   UILabel *placeholder = [UILabel new];
   placeholder.textColor = [[UIColor lightGrayColor] colorWithAlphaComponent:0.7];
@@ -532,6 +533,33 @@ static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
     NSString *proposed = [current stringByReplacingCharactersInRange:range withString:inserted];
     NSLog(@"[ZynthTextInputView] maxLength check proposed=%@ length=%lu limit=%ld", proposed, (unsigned long)proposed.length, (long)self.maxLength);
     if (proposed.length > (NSUInteger)self.maxLength) {
+      return NO;
+    }
+  }
+
+  if (self.inputHandlerWorkletId > 0 && self.manager) {
+    NSString *transformed = [self.manager runInputHandlerWorklet:(int)self.inputHandlerWorkletId
+                                                     currentText:current ?: @""
+                                                        newInput:inserted ?: @""];
+    NSString *proposed = [current stringByReplacingCharactersInRange:range withString:inserted];
+    if ([transformed isKindOfClass:[NSString class]] && ![transformed isEqualToString:proposed]) {
+      [self performProgrammaticUpdate:^{
+        self.text = transformed ?: current;
+        NSInteger cursor = self.text.length;
+        UITextPosition *startPos =
+            [self positionFromPosition:self.beginningOfDocument offset:cursor];
+        if (startPos) {
+          UITextRange *cursorRange =
+              [self textRangeFromPosition:startPos toPosition:startPos];
+          if (cursorRange) {
+            [self setSelectedTextRange:cursorRange];
+          }
+        }
+      }];
+      if (self.node && self.node.yoga && YGNodeGetOwner(self.node.yoga)) {
+        YGNodeMarkDirty(self.node.yoga);
+      }
+      [self.manager zynth_markNeedsFlush];
       return NO;
     }
   }

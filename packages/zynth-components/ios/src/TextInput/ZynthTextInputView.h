@@ -29,6 +29,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, assign, getter=isComposing) BOOL composing;
 @property(nonatomic, assign) BOOL isEditableProp;
 @property(nonatomic, copy) NSString *submitBehavior;
+@property(nonatomic, assign) NSInteger inputHandlerWorkletId;
 
 @property (nonatomic, strong, nullable) NSLayoutConstraint *placeholderLeadingConstraint;
 @property (nonatomic, strong, nullable) NSLayoutConstraint *placeholderTopConstraint;

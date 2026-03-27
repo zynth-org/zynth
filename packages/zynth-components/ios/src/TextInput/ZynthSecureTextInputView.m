@@ -50,6 +50,7 @@ static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
   self.blurOnSubmit = NO;
   self.secureTextEntry = YES; // Default to secure
   self.padding = UIEdgeInsetsZero;
+  self.inputHandlerWorkletId = 0;
 
   [self addTarget:self action:@selector(textFieldDidChange:) forControlEvents:UIControlEventEditingChanged];
 }
@@ -234,6 +235,35 @@ static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
 
 - (void)textFieldDidChange:(UITextField *)textField {
     [self emitChange];
+}
+
+- (BOOL)textField:(UITextField *)textField
+shouldChangeCharactersInRange:(NSRange)range
+replacementString:(NSString *)string {
+    NSString *current = textField.text ?: @"";
+    NSString *incoming = string ?: @"";
+
+    if (self.inputHandlerWorkletId > 0 && self.manager) {
+        NSString *transformed = [self.manager runInputHandlerWorklet:(int)self.inputHandlerWorkletId
+                                                         currentText:current
+                                                            newInput:incoming];
+        NSString *proposed = [current stringByReplacingCharactersInRange:range withString:incoming];
+        if ([transformed isKindOfClass:[NSString class]] && ![transformed isEqualToString:proposed]) {
+            textField.text = transformed ?: current;
+            NSInteger cursor = textField.text.length;
+            UITextPosition *position = [textField positionFromPosition:textField.beginningOfDocument
+                                                                offset:cursor];
+            if (position) {
+                UITextRange *cursorRange = [textField textRangeFromPosition:position toPosition:position];
+                if (cursorRange) {
+                    textField.selectedTextRange = cursorRange;
+                }
+            }
+            return NO;
+        }
+    }
+
+    return YES;
 }
 
 @end

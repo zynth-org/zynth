@@ -7,6 +7,7 @@ export type ZynthUIBridge = {
   insertChild(parent: number, child: number, index: number): void;
   removeChild(parent: number, child: number): void;
   setHandler(id: number, name: string, fn: Function): void;
+  clearInputHandler?(id: number): void;
   flush(): void;
   applyBatch?(payload: string | Record<string, any>): void;
   setSurface?(surfaceId: number): void;
@@ -38,6 +39,13 @@ export type ZynthWorkletsBridge = {
   runAfter?: (id: number, delayMs: number) => void;
 };
 
+export type ZynthSyncSignalsBridge = {
+  createSyncSignal?: (initialValue: string) => number;
+  getSyncSignal?: (id: number) => string;
+  setSyncSignal?: (id: number, value: string) => void;
+  removeSyncSignal?: (id: number) => void;
+};
+
 export type ZynthUICommandsBridge = {
   scrollTo: (nodeId: number, x?: number, y?: number, animated?: boolean) => void;
 };
@@ -49,6 +57,7 @@ declare global {
   var ZynthNativeEmitter: ZynthNativeEmitterBridge;
   var __zynth_shared_signals: ZynthSharedSignalsBridge;
   var __zynth_worklets: ZynthWorkletsBridge;
+  var __zynth_sync_signals: ZynthSyncSignalsBridge;
   var __zynth_ui_commands: ZynthUICommandsBridge;
   var NativeConstants: Record<string, any>;
 }

@@ -4,6 +4,7 @@ import type { BlockStatement } from "@babel/types";
 type BabelAPI = typeof import("@babel/core");
 
 type WorkletState = PluginPass & {
+  createInputHandlerLocalNames?: Set<string>;
   file: {
     opts: {
       filename?: string;
@@ -56,6 +57,44 @@ export function createWorkletBabelPlugin() {
     return {
       name: "zynth-worklet",
       visitor: {
+        Program: {
+          enter(path, state) {
+            const localNames = new Set<string>();
+            for (const statement of path.node.body) {
+              if (!t.isImportDeclaration(statement)) continue;
+              if (statement.source.value !== "@zynth/core") continue;
+              for (const specifier of statement.specifiers) {
+                if (!t.isImportSpecifier(specifier)) continue;
+                if (!t.isIdentifier(specifier.imported, { name: "createInputHandler" })) {
+                  continue;
+                }
+                localNames.add(specifier.local.name);
+              }
+            }
+            state.createInputHandlerLocalNames = localNames;
+          },
+        },
+        CallExpression(path, state) {
+          const localNames = state.createInputHandlerLocalNames;
+          if (!localNames || localNames.size === 0) return;
+          const callee = path.node.callee;
+          if (!t.isIdentifier(callee) || !localNames.has(callee.name)) return;
+          if (path.node.arguments.length === 0) return;
+
+          const firstArg = path.node.arguments[0];
+          if (!t.isFunctionExpression(firstArg) && !t.isArrowFunctionExpression(firstArg)) {
+            return;
+          }
+
+          if (!t.isBlockStatement(firstArg.body)) {
+            firstArg.body = t.blockStatement([t.returnStatement(firstArg.body)]);
+          }
+
+          if (!hasWorkletDirective(firstArg.body)) {
+            firstArg.body.directives = firstArg.body.directives ?? [];
+            firstArg.body.directives.unshift(t.directive(t.directiveLiteral("worklet")));
+          }
+        },
         Function(path, state) {
           if (path.getData("zynthWorkletProcessed")) {
             return;

@@ -29,6 +29,11 @@ export { ensureDevtoolsBridge, emitDevtoolsEvent, addDevtoolsListener } from "./
 export { registerWebAdapter } from "./webRegistry";
 export { createSharedSignal, captureSharedSignals, readSharedSignal } from "./sharedSignal";
 export type { SharedSignalAccessor, SharedSignalToken } from "./sharedSignal";
+export {
+  createSyncSignal,
+  createInputHandler,
+} from "./syncSignal";
+export type { SyncSignalAccessor, SyncSignalSetter } from "./syncSignal";
 export { toSharedScalar, interpolateShared } from "./sharedScalar";
 export type {
   SharedScalarRef,
@@ -67,6 +72,7 @@ export type {
   ZynthUIBridge,
   ZynthModulesBridge,
   ZynthSharedSignalsBridge,
+  ZynthSyncSignalsBridge,
   ZynthWorkletsBridge,
   ZynthUICommandsBridge,
 } from "./bridge";
