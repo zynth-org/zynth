@@ -842,6 +842,18 @@ export function createAndroidHost(): Host {
       if (name === "controller") {
         return;
       }
+      if (name === "handler") {
+        if (typeof value === "function") {
+          enqueueOperation(() => ui.setHandler(node.id, name, value));
+          schedule();
+          return;
+        }
+        if (value == null && typeof ui.clearInputHandler === "function") {
+          enqueueOperation(() => ui.clearInputHandler!(node.id));
+          schedule();
+        }
+        return;
+      }
       if (typeof value === "function") {
         enqueueOperation(() => ui.setHandler(node.id, name, value));
         schedule();

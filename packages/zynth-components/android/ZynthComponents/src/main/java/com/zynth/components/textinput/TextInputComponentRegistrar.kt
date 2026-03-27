@@ -223,9 +223,15 @@ class TextInputComponentRegistrar : ZynthComponentRegistrar {
             else -> false
           }
         },
+        onSetInputHandler = { node, workletId ->
+          val input = node.view as? ZynthTextInputView ?: return@ZynthComponentDescriptor false
+          input.inputHandlerWorkletId = workletId
+          true
+        },
         onReset = { node ->
           (node.view as? ZynthTextInputView)?.let {
             it.clearHandlers()
+            it.inputHandlerWorkletId = 0
             it.performProgrammaticUpdate {
               it.setText("")
             }
@@ -289,9 +295,15 @@ class TextInputComponentRegistrar : ZynthComponentRegistrar {
             else -> false
           }
         },
+        onSetInputHandler = { node, workletId ->
+          val input = node.view as? ZynthSecureTextInputView ?: return@ZynthComponentDescriptor false
+          input.inputHandlerWorkletId = workletId
+          true
+        },
         onReset = { node ->
           (node.view as? ZynthSecureTextInputView)?.let {
             it.clearHandlers()
+            it.inputHandlerWorkletId = 0
             it.performProgrammaticUpdate {
               it.setText("")
             }

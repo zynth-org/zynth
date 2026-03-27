@@ -53,6 +53,7 @@ internal open class ZynthTextInputView @JvmOverloads constructor(
   internal var submitBehavior: String = "submit"
   internal var allowProgrammaticJumpDuringEdit = false
   internal var eventThrottleMs: Long = 0L
+  internal var inputHandlerWorkletId: Int = 0
 
   private var lastChangeDispatchTime = 0L
   private var suppressNativeEvent = false
@@ -916,10 +917,76 @@ internal open class ZynthTextInputView @JvmOverloads constructor(
     setActualPadding(left, top, right, bottom)
   }
 
+  private fun applyInputHandler(currentText: String, newInput: String): String? {
+    val workletId = inputHandlerWorkletId
+    if (workletId <= 0) return null
+    val mgr = manager ?: return null
+    return mgr.runInputHandlerWorklet(nodeId, workletId, currentText, newInput)
+  }
+
+  private fun applyTransformedText(nextText: String): Boolean {
+    val editable = text ?: return false
+    editable.replace(0, editable.length, nextText)
+    val cursor = nextText.length.coerceIn(0, editable.length)
+    try {
+      setSelection(cursor, cursor)
+    } catch (_: Throwable) {
+    }
+    return true
+  }
+
   private inner class ZynthInputConnection(
     target: InputConnection?,
     mutable: Boolean,
   ) : InputConnectionWrapper(target, mutable) {
+    override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
+      if (suppressNativeEvent) {
+        return super.commitText(text, newCursorPosition)
+      }
+
+      val incoming = text?.toString() ?: ""
+      val currentText = this@ZynthTextInputView.text?.toString().orEmpty()
+      val start = selectionStart.coerceIn(0, currentText.length)
+      val end = selectionEnd.coerceIn(0, currentText.length)
+      val safeStart = minOf(start, end)
+      val safeEnd = maxOf(start, end)
+      val proposed = buildString {
+        append(currentText.substring(0, safeStart))
+        append(incoming)
+        append(currentText.substring(safeEnd))
+      }
+
+      val transformed = applyInputHandler(currentText, incoming)
+      if (transformed == null || transformed == proposed) {
+        return super.commitText(text, newCursorPosition)
+      }
+      return applyTransformedText(transformed)
+    }
+
+    override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
+      if (suppressNativeEvent) {
+        return super.deleteSurroundingText(beforeLength, afterLength)
+      }
+
+      val currentText = this@ZynthTextInputView.text?.toString().orEmpty()
+      if (currentText.isEmpty()) {
+        return super.deleteSurroundingText(beforeLength, afterLength)
+      }
+      val start = selectionStart.coerceIn(0, currentText.length)
+      val end = selectionEnd.coerceIn(0, currentText.length)
+      val safeStart = minOf(start, end)
+      val safeEnd = maxOf(start, end)
+      val deleteStart = (safeStart - beforeLength).coerceIn(0, currentText.length)
+      val deleteEnd = (safeEnd + afterLength).coerceIn(deleteStart, currentText.length)
+      val proposed = currentText.removeRange(deleteStart, deleteEnd)
+
+      val transformed = applyInputHandler(currentText, "")
+      if (transformed == null || transformed == proposed) {
+        return super.deleteSurroundingText(beforeLength, afterLength)
+      }
+      return applyTransformedText(transformed)
+    }
+
     override fun setComposingText(text: CharSequence?, newCursorPosition: Int): Boolean {
       val result = super.setComposingText(text, newCursorPosition)
       if (!suppressNativeEvent && !text.isNullOrEmpty()) {

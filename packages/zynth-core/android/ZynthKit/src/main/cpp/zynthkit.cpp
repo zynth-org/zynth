@@ -84,6 +84,8 @@ struct RuntimeState {
   jmethodID insertChild = nullptr;
   jmethodID removeChild = nullptr;
   jmethodID setHandler = nullptr;
+  jmethodID setInputHandler = nullptr;
+  jmethodID clearInputHandler = nullptr;
   jmethodID applyBatch = nullptr;
   jmethodID applyBatchTypedPacked = nullptr;
   jmethodID applyBatchTypedBuffer = nullptr;
@@ -123,6 +125,9 @@ struct RuntimeState {
   std::atomic<int> nextSharedSignalId{1};
   std::unordered_map<int, double> sharedSignals;
   std::mutex sharedSignalsMutex;
+  std::atomic<int> nextSyncSignalId{1};
+  std::unordered_map<int, std::string> syncSignals;
+  std::mutex syncSignalsMutex;
 };
 
 std::mutex gStateMutex;
@@ -725,6 +730,42 @@ extern "C" JNIEXPORT bool ZynthSetSharedSignal(void *state, int signalId, double
   return true;
 }
 
+extern "C" JNIEXPORT int ZynthCreateSyncSignal(void *state, const char *initialValue) {
+  auto *runtimeState = reinterpret_cast<RuntimeState *>(state);
+  if (!runtimeState) return 0;
+  int id = runtimeState->nextSyncSignalId.fetch_add(1);
+  {
+    std::lock_guard<std::mutex> lock(runtimeState->syncSignalsMutex);
+    runtimeState->syncSignals[id] = initialValue ? std::string(initialValue) : std::string();
+  }
+  return id;
+}
+
+extern "C" JNIEXPORT bool ZynthGetSyncSignal(
+    void *state,
+    int signalId,
+    std::string &outValue) {
+  auto *runtimeState = reinterpret_cast<RuntimeState *>(state);
+  if (!runtimeState) return false;
+  std::lock_guard<std::mutex> lock(runtimeState->syncSignalsMutex);
+  auto it = runtimeState->syncSignals.find(signalId);
+  if (it == runtimeState->syncSignals.end()) {
+    return false;
+  }
+  outValue = it->second;
+  return true;
+}
+
+extern "C" JNIEXPORT bool ZynthSetSyncSignal(void *state, int signalId, const char *value) {
+  auto *runtimeState = reinterpret_cast<RuntimeState *>(state);
+  if (!runtimeState) return false;
+  std::lock_guard<std::mutex> lock(runtimeState->syncSignalsMutex);
+  auto it = runtimeState->syncSignals.find(signalId);
+  if (it == runtimeState->syncSignals.end()) return false;
+  it->second = value ? std::string(value) : std::string();
+  return true;
+}
+
 extern "C" JNIEXPORT void ZynthApplyAnimatedStyle(
     void *state,
     int nodeId,
@@ -1044,6 +1085,61 @@ void installSharedSignals(Runtime &rt, RuntimeState *state) {  if (!state) retur
   rt.global().setProperty(rt, "__zynth_shared_signals", shared);
 }
 
+void installSyncSignals(Runtime &rt, RuntimeState *state) {
+  if (!state) return;
+
+  auto createSyncSignal = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "createSyncSignal"), 1,
+      [state](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isString()) return Value::undefined();
+        std::string initial = args[0].asString(rt).utf8(rt);
+        int id = ZynthCreateSyncSignal(state, initial.c_str());
+        if (id <= 0) return Value::undefined();
+        return Value(static_cast<double>(id));
+      });
+
+  auto getSyncSignal = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "getSyncSignal"), 1,
+      [state](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isNumber()) return Value::undefined();
+        int id = static_cast<int>(args[0].asNumber());
+        std::string value;
+        if (!ZynthGetSyncSignal(state, id, value)) return Value::undefined();
+        return Value(String::createFromUtf8(rt, value));
+      });
+
+  auto setSyncSignal = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "setSyncSignal"), 2,
+      [state](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 2 || !args[0].isNumber() || !args[1].isString()) {
+          return Value::undefined();
+        }
+        int id = static_cast<int>(args[0].asNumber());
+        std::string value = args[1].asString(rt).utf8(rt);
+        if (!ZynthSetSyncSignal(state, id, value.c_str())) return Value::undefined();
+        return Value::undefined();
+      });
+
+  auto removeSyncSignal = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "removeSyncSignal"), 1,
+      [state](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isNumber()) return Value::undefined();
+        int id = static_cast<int>(args[0].asNumber());
+        {
+          std::lock_guard<std::mutex> lock(state->syncSignalsMutex);
+          state->syncSignals.erase(id);
+        }
+        return Value::undefined();
+      });
+
+  Object sync(rt);
+  sync.setProperty(rt, "createSyncSignal", createSyncSignal);
+  sync.setProperty(rt, "getSyncSignal", getSyncSignal);
+  sync.setProperty(rt, "setSyncSignal", setSyncSignal);
+  sync.setProperty(rt, "removeSyncSignal", removeSyncSignal);
+  rt.global().setProperty(rt, "__zynth_sync_signals", sync);
+}
+
 void ensureUIRuntime(const std::shared_ptr<RuntimeState> &state) {
   if (!state) return;
   if (state->uiRuntime) return;
@@ -1051,6 +1147,7 @@ void ensureUIRuntime(const std::shared_ptr<RuntimeState> &state) {
   installConsole(*state->uiRuntime, state.get());
   installGlobals(*state->uiRuntime);
   installSharedSignals(*state->uiRuntime, state.get());
+  installSyncSignals(*state->uiRuntime, state.get());
   zynth::kit::installUICommandsRegistry(state, *state->uiRuntime);
   __android_log_print(ANDROID_LOG_DEBUG, "ZynthWorklets", "UI runtime created");
 }
@@ -1150,6 +1247,73 @@ void runWorkletOnUIRuntime(const std::shared_ptr<RuntimeState> &state, int workl
     __android_log_print(ANDROID_LOG_ERROR, "ZynthWorklets",
                         "run exception id=%d %s", workletId, ex.what());
   }
+}
+
+std::optional<std::string> runInputHandlerWorkletOnUIRuntime(
+    const std::shared_ptr<RuntimeState> &state,
+    int workletId,
+    const std::string &currentText,
+    const std::string &newInput) {
+  if (!state) return std::nullopt;
+  ensureUIRuntime(state);
+  if (!state->uiRuntime) return std::nullopt;
+  std::shared_ptr<Function> fn;
+  std::vector<ZynthWorkletClosureValue> closure;
+  {
+    std::lock_guard<std::mutex> lock(state->workletMutex);
+    auto it = state->uiWorklets.find(workletId);
+    if (it == state->uiWorklets.end()) {
+      return std::nullopt;
+    }
+    fn = it->second;
+    auto closureIt = state->uiWorkletClosures.find(workletId);
+    if (closureIt != state->uiWorkletClosures.end()) {
+      closure = closureIt->second;
+    }
+  }
+
+  auto &rt = *state->uiRuntime;
+  Object global = rt.global();
+  for (const auto &entry : closure) {
+    auto propId = PropNameID::forUtf8(rt, entry.name);
+    switch (entry.kind) {
+      case ZynthWorkletClosureValue::Kind::Shared: {
+        int sharedId = entry.sharedId;
+        auto getter = Function::createFromHostFunction(
+            rt, propId, 0,
+            [state, sharedId](Runtime &, const Value &, const Value *, size_t) -> Value {
+              std::lock_guard<std::mutex> lock(state->sharedSignalsMutex);
+              auto it = state->sharedSignals.find(sharedId);
+              if (it == state->sharedSignals.end()) return Value::undefined();
+              return Value(it->second);
+            });
+        global.setProperty(rt, propId, std::move(getter));
+        break;
+      }
+      case ZynthWorkletClosureValue::Kind::Number:
+        global.setProperty(rt, propId, Value(entry.numberValue));
+        break;
+      case ZynthWorkletClosureValue::Kind::Bool:
+        global.setProperty(rt, propId, Value(entry.boolValue));
+        break;
+      case ZynthWorkletClosureValue::Kind::String:
+        global.setProperty(rt, propId, String::createFromUtf8(rt, entry.stringValue));
+        break;
+    }
+  }
+
+  try {
+    Value result = fn->call(
+        rt,
+        String::createFromUtf8(rt, currentText),
+        String::createFromUtf8(rt, newInput));
+    if (result.isString()) {
+      return result.asString(rt).utf8(rt);
+    }
+  } catch (...) {
+    return std::nullopt;
+  }
+  return std::nullopt;
 }
 
 void installWorkletsBridge(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
@@ -1362,13 +1526,40 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
         std::string name = args[1].asString(rt).utf8(rt);
         jstring jName = env->NewStringUTF(name.c_str());
         if (count >= 3 && args[2].isObject() && args[2].asObject(rt).isFunction(rt)) {
-          Function fn = args[2].asObject(rt).asFunction(rt);
+          Object fnObj = args[2].asObject(rt);
+          if (
+              name == "handler" &&
+              fnObj.hasProperty(rt, "__zynth_worklet_id") &&
+              fnObj.getProperty(rt, "__zynth_worklet_id").isNumber() &&
+              state->setInputHandler) {
+            jint workletId =
+                static_cast<jint>(fnObj.getProperty(rt, "__zynth_worklet_id").asNumber());
+            env->CallVoidMethod(state->uiManager, state->setInputHandler, nodeId, workletId);
+            env->DeleteLocalRef(jName);
+            return Value::undefined();
+          }
+          Function fn = fnObj.asFunction(rt);
           std::lock_guard<std::mutex> lock(gHandlerMutex);
           gHandlers[HandlerKey{runtime, nodeId, name}] = HandlerEntry{
               runtime, std::make_shared<Function>(std::move(fn))};
         }
         env->CallVoidMethod(state->uiManager, state->setHandler, nodeId, jName);
         env->DeleteLocalRef(jName);
+        return Value::undefined();
+      });
+
+  auto clearInputHandler = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "clearInputHandler"), 1,
+      [runtime](Runtime &, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 1 || !args[0].isNumber()) return Value::undefined();
+        RuntimeState *state = stateFor(runtime);
+        if (!state || !state->clearInputHandler) return Value::undefined();
+        JNIEnv *env = getEnv();
+        if (!env) return Value::undefined();
+        env->CallVoidMethod(
+            state->uiManager,
+            state->clearInputHandler,
+            static_cast<jint>(args[0].asNumber()));
         return Value::undefined();
       });
 
@@ -1644,6 +1835,7 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
   ui.setProperty(rt, "insertChild", insertChild);
   ui.setProperty(rt, "removeChild", removeChild);
   ui.setProperty(rt, "setHandler", setHandler);
+  ui.setProperty(rt, "clearInputHandler", clearInputHandler);
   ui.setProperty(rt, "applyBatch", applyBatch);
   ui.setProperty(rt, "applyBatchTyped", applyBatchTyped);
   ui.setProperty(rt, "setSurface", setSurface);
@@ -1808,6 +2000,8 @@ Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlon
   state->insertChild = env->GetMethodID(state->uiClass, "insertChild", "(III)V");
   state->removeChild = env->GetMethodID(state->uiClass, "removeChild", "(II)V");
   state->setHandler = env->GetMethodID(state->uiClass, "setHandler", "(ILjava/lang/String;)V");
+  state->setInputHandler = env->GetMethodID(state->uiClass, "setInputHandler", "(II)V");
+  state->clearInputHandler = env->GetMethodID(state->uiClass, "clearInputHandler", "(I)V");
   state->applyBatch = env->GetMethodID(state->uiClass, "applyBatch", "(Ljava/lang/String;)V");
   state->applyBatchTypedPacked =
       env->GetMethodID(state->uiClass, "applyBatchTypedPacked", "([D[Ljava/lang/String;)V");
@@ -1873,6 +2067,7 @@ Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlon
   installTimers(*runtime, runtime);
   installUIBindings(*runtime, runtime);
   installSharedSignals(*runtime, state.get());
+  installSyncSignals(*runtime, state.get());
   installWorkletsBridge(*runtime, runtime);
   auto shared = sharedStateFor(runtime);
   if (shared) {
@@ -2269,6 +2464,30 @@ Java_com_zynth_kit_runtime_JSBridge_runWorkletOnUiRuntime(JNIEnv *,
   auto state = sharedStateFor(runtime);
   if (!state) return;
   runWorkletOnUIRuntime(state, workletId);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_zynth_kit_runtime_JSBridge_runInputHandlerOnUiRuntime(JNIEnv *env,
+                                                               jobject,
+                                                               jlong ptr,
+                                                               jint workletId,
+                                                               jstring currentText,
+                                                               jstring newInput) {
+  auto *runtime = reinterpret_cast<facebook::hermes::HermesRuntime *>(ptr);
+  if (!runtime) return nullptr;
+  auto state = sharedStateFor(runtime);
+  if (!state) return nullptr;
+
+  const char *currentUtf8 = currentText ? env->GetStringUTFChars(currentText, nullptr) : nullptr;
+  const char *inputUtf8 = newInput ? env->GetStringUTFChars(newInput, nullptr) : nullptr;
+  std::string current = currentUtf8 ? currentUtf8 : "";
+  std::string input = inputUtf8 ? inputUtf8 : "";
+  if (currentText && currentUtf8) env->ReleaseStringUTFChars(currentText, currentUtf8);
+  if (newInput && inputUtf8) env->ReleaseStringUTFChars(newInput, inputUtf8);
+
+  auto result = runInputHandlerWorkletOnUIRuntime(state, workletId, current, input);
+  if (!result.has_value()) return nullptr;
+  return env->NewStringUTF(result->c_str());
 }
 
 extern "C" JNIEXPORT void JNICALL

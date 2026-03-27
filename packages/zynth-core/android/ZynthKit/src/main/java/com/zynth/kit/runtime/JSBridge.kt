@@ -47,6 +47,12 @@ internal object JSBridge {
   external fun getSharedSignal(runtimePtr: Long, id: Int): Double
   external fun registerWorkletOnUiRuntime(runtimePtr: Long, workletId: Int)
   external fun runWorkletOnUiRuntime(runtimePtr: Long, workletId: Int)
+  external fun runInputHandlerOnUiRuntime(
+    runtimePtr: Long,
+    workletId: Int,
+    currentText: String,
+    newInput: String
+  ): String?
 
   private val workletHandler = android.os.Handler(android.os.Looper.getMainLooper())
 

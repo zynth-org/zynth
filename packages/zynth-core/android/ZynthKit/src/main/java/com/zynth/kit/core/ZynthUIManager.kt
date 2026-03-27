@@ -342,6 +342,18 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     return if (value.isNaN()) null else value
   }
 
+  fun runInputHandlerWorklet(
+    nodeId: Int,
+    workletId: Int,
+    currentText: String,
+    newInput: String,
+  ): String? {
+    if (runtimePtr == 0L || workletId <= 0) return null
+    return runCatching {
+      JSBridge.runInputHandlerOnUiRuntime(runtimePtr, workletId, currentText, newInput)
+    }.getOrNull()
+  }
+
   fun cancelAnimationFrame(callbackId: Int) {
     if (Looper.myLooper() != Looper.getMainLooper()) {
       runOnMain { cancelAnimationFrame(callbackId) }
@@ -1041,6 +1053,20 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       return
     }
     traceOp("setHandler", node?.type, startNs)
+  }
+
+  fun setInputHandler(id: Int, workletId: Int) {
+    if (Looper.myLooper() != Looper.getMainLooper()) {
+      runOnMain { setInputHandler(id, workletId) }
+      return
+    }
+    val node = nodeStates[id] ?: return
+    val descriptor = ZynthComponentRegistry.getDescriptor(node.type)
+    descriptor?.onSetInputHandler?.invoke(node, workletId)
+  }
+
+  fun clearInputHandler(id: Int) {
+    setInputHandler(id, 0)
   }
 
   override fun dispatchEvent(nodeId: Int, event: String, payload: org.json.JSONObject?) {
