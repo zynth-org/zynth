@@ -115,6 +115,15 @@ const formatCard = createInputHandler((currentText, newChar) => {
 });
 ```
 
+## Style Partitioning
+
+`TextInput` is a primitive and sync-aware component. To ensure stability during reactive updates (especially when focused), the framework internally partitions decorative and text-editing styles using a two-layer native architecture.
+
+- **Outer Layer (Host Container):** Responsible for layout, background, border, radius, shadow, and opacity.
+- **Inner Layer (Editable Control):** Responsible for text-specific styles like `color`, `fontSize`, `fontWeight`, `fontFamily`, and `textAlign`.
+
+This partitioning prevents reactive style updates (like changing a border color on focus) from destabilizing the native text editor or causing unexpected cursor jumps.
+
 ## Props
 
 | Prop | Type | Description |

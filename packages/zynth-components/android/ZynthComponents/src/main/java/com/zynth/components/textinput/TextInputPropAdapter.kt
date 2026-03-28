@@ -7,7 +7,8 @@ import org.json.JSONObject
 
 object TextInputPropAdapter {
   fun apply(node: ZynthUIManager.Node, name: String, value: String?): Boolean {
-    val input = node.view as? ZynthTextInputView ?: return false
+    val container = node.view as? ZynthTextInputContainer
+    val input = container?.getInputView() ?: node.view as? ZynthTextInputView ?: return false
 
     return when (name) {
       "value" -> {

@@ -157,15 +157,19 @@ class TextInputComponentRegistrar : ZynthComponentRegistrar {
       ZynthComponentDescriptor(
         type = "text-input",
         createView = { context: Context, _: Int ->
-          val view = ZynthTextInputView(context)
-          view.layoutParams = FrameLayout.LayoutParams(
+          val container = ZynthTextInputContainer(context)
+          val input = ZynthTextInputView(context)
+          input.layoutParams = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.WRAP_CONTENT,
           )
-          view
+          container.setInputView(input)
+          container
         },
         onNodeCreated = { manager: ZynthUIManager, node: ZynthUIManager.Node ->
-          (node.view as? ZynthTextInputView)?.let { input ->
+          val container = node.view as? ZynthTextInputContainer
+          val input = container?.getInputView()
+          if (input != null) {
             if (node.attachments[TEXT_INPUT_STATE_KEY] == null) {
               node.attachments[TEXT_INPUT_STATE_KEY] = TextInputState()
             }
@@ -177,12 +181,15 @@ class TextInputComponentRegistrar : ZynthComponentRegistrar {
         },
         applyProperty = { node, name, value -> TextInputPropAdapter.apply(node, name, value) },
         onStyleApplied = { node, style ->
-          (node.view as? ZynthTextInputView)?.let { input ->
+          val container = node.view as? ZynthTextInputContainer
+          val input = container?.getInputView()
+          if (input != null) {
             applyStyle(input, style)
           }
         },
         onSetHandler = { node, event ->
-          val input = node.view as? ZynthTextInputView ?: return@ZynthComponentDescriptor false
+          val container = node.view as? ZynthTextInputContainer
+          val input = container?.getInputView() ?: return@ZynthComponentDescriptor false
           when (event) {
             "onChange" -> {
               input.hasOnChange = true
@@ -224,18 +231,21 @@ class TextInputComponentRegistrar : ZynthComponentRegistrar {
           }
         },
         onSetInputHandler = { node, workletId ->
-          val input = node.view as? ZynthTextInputView ?: return@ZynthComponentDescriptor false
+          val container = node.view as? ZynthTextInputContainer
+          val input = container?.getInputView() ?: return@ZynthComponentDescriptor false
           input.inputHandlerWorkletId = workletId
           true
         },
         onSyncInputState = { node, text, selectionStart, selectionEnd ->
-          val input = node.view as? ZynthTextInputView ?: return@ZynthComponentDescriptor false
+          val container = node.view as? ZynthTextInputContainer
+          val input = container?.getInputView() ?: return@ZynthComponentDescriptor false
           // We don't need to update syncSignalId here as it's passed from JSI bind call
           input.updateTextSyncWithSelection(text, selectionStart, selectionEnd)
           true
         },
         onReset = { node ->
-          (node.view as? ZynthTextInputView)?.let {
+          val container = node.view as? ZynthTextInputContainer
+          container?.getInputView()?.let {
             it.clearHandlers()
             it.inputHandlerWorkletId = 0
             it.performProgrammaticUpdate {
@@ -251,15 +261,19 @@ class TextInputComponentRegistrar : ZynthComponentRegistrar {
       ZynthComponentDescriptor(
         type = "secure-text-input",
         createView = { context: Context, _: Int ->
-          val view = ZynthSecureTextInputView(context)
-          view.layoutParams = FrameLayout.LayoutParams(
+          val container = ZynthTextInputContainer(context)
+          val input = ZynthSecureTextInputView(context)
+          input.layoutParams = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.WRAP_CONTENT,
           )
-          view
+          container.setInputView(input)
+          container
         },
         onNodeCreated = { manager: ZynthUIManager, node: ZynthUIManager.Node ->
-          (node.view as? ZynthSecureTextInputView)?.let { input ->
+          val container = node.view as? ZynthTextInputContainer
+          val input = container?.getInputView() as? ZynthSecureTextInputView
+          if (input != null) {
             if (node.attachments[TEXT_INPUT_STATE_KEY] == null) {
               node.attachments[TEXT_INPUT_STATE_KEY] = TextInputState()
             }
@@ -271,12 +285,15 @@ class TextInputComponentRegistrar : ZynthComponentRegistrar {
         },
         applyProperty = { node, name, value -> TextInputPropAdapter.apply(node, name, value) },
         onStyleApplied = { node, style ->
-          (node.view as? ZynthSecureTextInputView)?.let { input ->
+          val container = node.view as? ZynthTextInputContainer
+          val input = container?.getInputView() as? ZynthSecureTextInputView
+          if (input != null) {
             applyStyle(input, style)
           }
         },
         onSetHandler = { node, event ->
-          val input = node.view as? ZynthSecureTextInputView ?: return@ZynthComponentDescriptor false
+          val container = node.view as? ZynthTextInputContainer
+          val input = container?.getInputView() as? ZynthSecureTextInputView ?: return@ZynthComponentDescriptor false
           when (event) {
             "onChange" -> {
               input.hasOnChange = true
@@ -302,17 +319,20 @@ class TextInputComponentRegistrar : ZynthComponentRegistrar {
           }
         },
         onSetInputHandler = { node, workletId ->
-          val input = node.view as? ZynthSecureTextInputView ?: return@ZynthComponentDescriptor false
+          val container = node.view as? ZynthTextInputContainer
+          val input = container?.getInputView() as? ZynthSecureTextInputView ?: return@ZynthComponentDescriptor false
           input.inputHandlerWorkletId = workletId
           true
         },
         onSyncInputState = { node, text, selectionStart, selectionEnd ->
-          val input = node.view as? ZynthSecureTextInputView ?: return@ZynthComponentDescriptor false
+          val container = node.view as? ZynthTextInputContainer
+          val input = container?.getInputView() as? ZynthSecureTextInputView ?: return@ZynthComponentDescriptor false
           input.updateTextSyncWithSelection(text, selectionStart, selectionEnd)
           true
         },
         onReset = { node ->
-          (node.view as? ZynthSecureTextInputView)?.let {
+          val container = node.view as? ZynthTextInputContainer
+          (container?.getInputView() as? ZynthSecureTextInputView)?.let {
             it.clearHandlers()
             it.inputHandlerWorkletId = 0
             it.performProgrammaticUpdate {
