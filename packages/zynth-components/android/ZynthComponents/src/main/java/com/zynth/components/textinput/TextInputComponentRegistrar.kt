@@ -228,6 +228,12 @@ class TextInputComponentRegistrar : ZynthComponentRegistrar {
           input.inputHandlerWorkletId = workletId
           true
         },
+        onSyncInputState = { node, text, selectionStart, selectionEnd ->
+          val input = node.view as? ZynthTextInputView ?: return@ZynthComponentDescriptor false
+          // We don't need to update syncSignalId here as it's passed from JSI bind call
+          input.updateTextSyncWithSelection(text, selectionStart, selectionEnd)
+          true
+        },
         onReset = { node ->
           (node.view as? ZynthTextInputView)?.let {
             it.clearHandlers()
@@ -298,6 +304,11 @@ class TextInputComponentRegistrar : ZynthComponentRegistrar {
         onSetInputHandler = { node, workletId ->
           val input = node.view as? ZynthSecureTextInputView ?: return@ZynthComponentDescriptor false
           input.inputHandlerWorkletId = workletId
+          true
+        },
+        onSyncInputState = { node, text, selectionStart, selectionEnd ->
+          val input = node.view as? ZynthSecureTextInputView ?: return@ZynthComponentDescriptor false
+          input.updateTextSyncWithSelection(text, selectionStart, selectionEnd)
           true
         },
         onReset = { node ->

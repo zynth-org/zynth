@@ -117,6 +117,11 @@ object TextInputPropAdapter {
         input.applyEventThrottle(throttle)
         true
       }
+      "syncSignalId" -> {
+        val id = parseNumber(value)?.toInt() ?: 0
+        input.syncSignalId = id
+        true
+      }
       "__focusRequest" -> {
         input.requestFocusFromJS()
         true

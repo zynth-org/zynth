@@ -901,6 +901,29 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     traceOp("setText", node?.type, startNs)
   }
 
+  fun syncTextInputState(id: Int, text: String, selectionStart: Int, selectionEnd: Int) {
+    if (Looper.myLooper() != Looper.getMainLooper()) {
+      runOnMain { syncTextInputState(id, text, selectionStart, selectionEnd) }
+      return
+    }
+    val view = nodes[id] ?: return
+    val node = nodeStates[id] ?: return
+    val descriptor = descriptorFor(node)
+    
+    if (descriptor?.onSyncInputState?.invoke(node, text, selectionStart, selectionEnd) == true) {
+      return
+    }
+
+    // Default fallback if descriptor doesn't handle it
+    if (view is android.widget.EditText) {
+      view.setText(text)
+      if (selectionStart >= 0 && selectionEnd >= 0) {
+        val len = view.text?.length ?: 0
+        view.setSelection(selectionStart.coerceIn(0, len), selectionEnd.coerceIn(0, len))
+      }
+    }
+  }
+
   fun insertChild(parentId: Int, childId: Int, index: Int) {
     if (Looper.myLooper() != Looper.getMainLooper()) {
       runOnMain { insertChild(parentId, childId, index) }
@@ -1143,6 +1166,15 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   fun getNodeState(nodeId: Int): Node? = nodeStates[nodeId]
 
   fun getParentId(nodeId: Int): Int? = parents[nodeId]
+
+  fun setSyncSignal(signalId: Int, value: String): Boolean {
+    return JSBridge.setSyncSignal(runtimePtr, signalId, value)
+  }
+
+  fun getSyncSignal(signalId: Int): String? {
+    val sb = StringBuilder()
+    return if (JSBridge.getSyncSignal(runtimePtr, signalId, sb)) sb.toString() else null
+  }
 
   fun setMeasureHandler(nodeId: Int, handler: MeasureHandler?) {
     layoutEngine.setMeasureHandler(nodeId, handler)

@@ -37,6 +37,7 @@ internal open class ZynthTextInputView @JvmOverloads constructor(
 
   internal var manager: ZynthUIManager? = null
   internal var nodeId: Int = -1
+  internal var syncSignalId: Int = 0
 
   // Event registration flags
   internal var hasOnChange = false
@@ -145,6 +146,7 @@ internal open class ZynthTextInputView @JvmOverloads constructor(
       }
 
       emitChange(change)
+      updateSyncSignalBuffer()
       recordEventDispatch()
       mgr.markNodeDirty(nodeId)
 
@@ -155,6 +157,13 @@ internal open class ZynthTextInputView @JvmOverloads constructor(
         updateCompositionState(false)
       }
     }
+  }
+
+  private fun updateSyncSignalBuffer() {
+    val sid = syncSignalId
+    if (sid <= 0) return
+    val current = text?.toString().orEmpty()
+    manager?.setSyncSignal(sid, current)
   }
 
   private val internalFocusListener = OnFocusChangeListener { v, hasFocus ->
@@ -278,6 +287,34 @@ internal open class ZynthTextInputView @JvmOverloads constructor(
     } finally {
       suppressNativeEvent = previous
       manager?.markNodeDirty(nodeId)
+    }
+  }
+
+  fun updateTextSyncWithSelection(newValue: String, newSelStart: Int, newSelEnd: Int) {
+    if (newValue == lastEmittedText) return
+    val current = text?.toString().orEmpty()
+    if (current == newValue && newSelStart < 0 && newSelEnd < 0) return
+
+    val start = if (newSelStart >= 0) newSelStart else selectionStart
+    val end = if (newSelEnd >= 0) newSelEnd else selectionEnd
+
+    performProgrammaticUpdate {
+      if (current != newValue) {
+        setText(newValue)
+        lastEmittedText = newValue
+      }
+      val len = text?.length ?: 0
+      val safeStart = start.coerceIn(0, len)
+      val safeEnd = end.coerceIn(0, len)
+
+      val previous = selectionWatcherEnabled
+      selectionWatcherEnabled = false
+      try {
+        setSelection(safeStart, safeEnd)
+      } catch (_: Throwable) {
+      } finally {
+        selectionWatcherEnabled = previous
+      }
     }
   }
 

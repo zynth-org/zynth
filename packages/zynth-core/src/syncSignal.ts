@@ -98,21 +98,45 @@ function setNativeSyncSignal(id: number, value: string): void {
   fallbackStore.set(id, value);
 }
 
-function pushValueToBoundNodes(signalId: number, value: string): void {
+function pushValueToBoundNodes(
+  signalId: number,
+  value: string,
+  nativeText?: string,
+  selectionStart?: number,
+  selectionEnd?: number,
+): void {
   const nodeIds = syncSignalNodeBindings.get(signalId);
   if (!nodeIds || nodeIds.size === 0) return;
 
   const globalObj = getGlobalObject() as {
     __ui?: {
       setProp?: (id: number, name: string, value: unknown) => void;
+      syncInputState?: (
+        id: number,
+        newText: string,
+        nativeText: string,
+        selStart: number,
+        selEnd: number,
+      ) => void;
     };
   };
-  const setProp = globalObj.__ui?.setProp;
-  if (typeof setProp !== "function") return;
+  
+  const ui = globalObj.__ui;
+  if (!ui) return;
 
   for (const nodeId of nodeIds) {
     try {
-      setProp(nodeId, "value", value);
+      if (typeof ui.syncInputState === "function") {
+        ui.syncInputState(
+          nodeId,
+          value,
+          nativeText ?? "",
+          selectionStart ?? -1,
+          selectionEnd ?? -1,
+        );
+      } else if (typeof ui.setProp === "function") {
+        ui.setProp(nodeId, "value", value);
+      }
     } catch {
       // keep other bindings alive even if one write fails
     }
@@ -178,7 +202,17 @@ export function createSyncSignal<T extends string = string>(
 
     const nextText = String(resolved ?? "") as T;
     setNativeSyncSignal(syncId, nextText);
-    pushValueToBoundNodes(syncId, nextText);
+    
+    // We pass the new text as the "native" baseline for the diff check.
+    // If the caller provided selection info (e.g. from a formatter worklet), we pass it along.
+    const sel = (resolved as any)?.__zynth_selection;
+    pushValueToBoundNodes(
+      syncId, 
+      nextText, 
+      nextText, 
+      sel?.start ?? -1, 
+      sel?.end ?? -1
+    );
 
     cached = nextText;
     accessor.__zynth_sync_signal_current = cached;

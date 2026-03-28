@@ -22,6 +22,7 @@ data class ZynthComponentDescriptor(
   val applyProperty: (node: ZynthUIManager.Node, name: String, value: String?) -> Boolean = { _, _, _ -> false },
   val onSetHandler: (node: ZynthUIManager.Node, event: String) -> Boolean = { _, _ -> false },
   val onSetInputHandler: (node: ZynthUIManager.Node, workletId: Int) -> Boolean = { _, _ -> false },
+  val onSyncInputState: (node: ZynthUIManager.Node, text: String, selectionStart: Int, selectionEnd: Int) -> Boolean = { _, _, _, _ -> false },
   val onStyleApplied: (node: ZynthUIManager.Node, style: Style) -> Unit = { _, _ -> },
   val onReset: (node: ZynthUIManager.Node) -> Unit = { _ -> },
   val onChildInserted: (manager: ZynthUIManager, parent: ZynthUIManager.Node, child: ZynthUIManager.Node, index: Int) -> Unit = { _, _, _, _ -> },

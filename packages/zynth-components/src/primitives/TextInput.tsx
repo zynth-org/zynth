@@ -1,5 +1,11 @@
 import type { Component } from "solid-js";
-import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  onCleanup,
+  Show,
+} from "solid-js";
 import type { HostNode, Style, SyncSignalAccessor } from "@zynth/core";
 import { createWorklet, setProperty } from "@zynth/core";
 import type { KeyEvent } from "./events";
@@ -50,7 +56,7 @@ export function useTextInputRef(opts?: {
   driveFromValue?: boolean;
 }): TextInputRef {
   const initialValue =
-    typeof opts?.value === "function" ? opts.value() : opts?.value ?? "";
+    typeof opts?.value === "function" ? opts.value() : (opts?.value ?? "");
   const [text, setText] = createSignal(initialValue);
   const [selection, setSelection] = createSignal<Selection>({
     start: 0,
@@ -95,7 +101,7 @@ export function useTextInputRef(opts?: {
       const sel = selection();
       const current = text();
       const next = `${current.slice(0, sel.start)}${fragment}${current.slice(
-        sel.end
+        sel.end,
       )}`;
       controller.setText(next);
       const cursor = sel.start + fragment.length;
@@ -107,7 +113,7 @@ export function useTextInputRef(opts?: {
       const safeStart = Math.max(0, Math.min(start, current.length));
       const safeEnd = Math.max(safeStart, Math.min(end, current.length));
       const next = `${current.slice(0, safeStart)}${fragment}${current.slice(
-        safeEnd
+        safeEnd,
       )}`;
       controller.setText(next);
       const cursor = safeStart + fragment.length;
@@ -199,12 +205,13 @@ export interface TextInputProps {
   testID?: string;
 }
 
-const noopInputHandlerWorklet = createWorklet(
-  ((_currentText: unknown, _newInput: unknown) => {
-    "worklet";
-    return undefined;
-  }) as (...args: unknown[]) => unknown
-);
+const noopInputHandlerWorklet = createWorklet(((
+  _currentText: unknown,
+  _newInput: unknown,
+) => {
+  "worklet";
+  return undefined;
+}) as (...args: unknown[]) => unknown);
 
 type NativeTextChangeEvent = TextChangeEvent & { target: number };
 type NativeTextPayload = { text: string };
@@ -225,14 +232,20 @@ function readSyncSignalId(value: unknown): number | undefined {
 
 function bindRuntimeSyncSignalNode(signalId: number, nodeId: number): void {
   const globalObj = globalThis as {
-    __zynth_bindSyncSignalNode?: (syncSignalId: number, hostNodeId: number) => void;
+    __zynth_bindSyncSignalNode?: (
+      syncSignalId: number,
+      hostNodeId: number,
+    ) => void;
   };
   globalObj.__zynth_bindSyncSignalNode?.(signalId, nodeId);
 }
 
 function unbindRuntimeSyncSignalNode(signalId: number, nodeId: number): void {
   const globalObj = globalThis as {
-    __zynth_unbindSyncSignalNode?: (syncSignalId: number, hostNodeId: number) => void;
+    __zynth_unbindSyncSignalNode?: (
+      syncSignalId: number,
+      hostNodeId: number,
+    ) => void;
   };
   globalObj.__zynth_unbindSyncSignalNode?.(signalId, nodeId);
 }
@@ -250,7 +263,7 @@ function deriveInputDelta(previousText: string, nextText: string): string {
 function remapCursorThroughTransformation(
   sourceText: string,
   transformedText: string,
-  sourceCursor: number
+  sourceCursor: number,
 ): number {
   const safeCursor = Math.max(0, Math.min(sourceCursor, sourceText.length));
   if (sourceText === transformedText) return safeCursor;
@@ -287,6 +300,13 @@ function remapCursorThroughTransformation(
   return prefix + (transformedText.length - prefix - suffix);
 }
 
+function isSyncSignal(value: unknown): value is SyncSignalAccessor<string> {
+  return (
+    typeof value === "function" &&
+    (value as any).__zynth_sync_signal_id !== undefined
+  );
+}
+
 export const TextInput: Component<TextInputProps> = (props) => {
   const controller = useTextInputRef({
     value: props.value ?? props.defaultValue,
@@ -299,10 +319,11 @@ export const TextInput: Component<TextInputProps> = (props) => {
   };
   const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
   let defaultAppliedNodeId: number | null = null;
+  let initialSyncValueSet = false;
   onCleanup(() => props.ref?.(null));
 
   const isPotentiallySecure = createMemo(
-    () => props.secureTextEntry !== undefined
+    () => props.secureTextEntry !== undefined,
   );
   const syncSignalId = createMemo(() => readSyncSignalId(props.value));
 
@@ -321,7 +342,36 @@ export const TextInput: Component<TextInputProps> = (props) => {
     }
     if (event.range) {
       const insertedLength = event.inserted?.length ?? 0;
-      const nextStart = event.range.start + insertedLength;
+      const removedLength = event.removed?.length ?? 0;
+
+      let nextStart: number;
+
+      // Enhanced autocorrect detection
+      const looksLikeAutoCorrect =
+        removedLength > 0 &&
+        insertedLength > 0 &&
+        // Same length replacement
+        removedLength === insertedLength &&
+        // Different text (autocorrect changes the word)
+        event.removed !== event.inserted &&
+        // Check if the change is at a word boundary (common for autocorrect)
+        (event.range.start === 0 ||
+          /\s/.test(event.textAfter.charAt(event.range.start - 1)));
+
+      if (looksLikeAutoCorrect) {
+        // For autocorrect, maintain the cursor at the end of the corrected word
+        nextStart = event.range.start + insertedLength;
+      } else if (insertedLength > 0 && removedLength === 0) {
+        // Pure insertion
+        nextStart = event.range.start + insertedLength;
+      } else if (removedLength > 0 && insertedLength === 0) {
+        // Pure deletion
+        nextStart = event.range.start;
+      } else {
+        // Default case
+        nextStart = event.range.start + insertedLength;
+      }
+
       const nextSelection: Selection = {
         start: nextStart,
         end: nextStart,
@@ -352,7 +402,7 @@ export const TextInput: Component<TextInputProps> = (props) => {
           const remappedCursor = remapCursorThroughTransformation(
             incomingText,
             resolvedText,
-            incomingCursor
+            incomingCursor,
           );
           const nextSelection: Selection = {
             start: remappedCursor,
@@ -370,6 +420,20 @@ export const TextInput: Component<TextInputProps> = (props) => {
       } else {
         props.onChangeText?.(incomingText);
         controller.__setTextFromNative?.(incomingText);
+
+        // Ensure cursor is at the end of the text after autocorrect
+        // This is a fallback in case the cursor positioning in handleChange is incorrect
+        const currentSelection = controller.selection();
+        if (currentSelection.start === currentSelection.end) {
+          // If cursor is collapsed, ensure it's at a valid position
+          const textLength = incomingText.length;
+          if (currentSelection.start > textLength) {
+            controller.__setSelectionFromNative?.({
+              start: textLength,
+              end: textLength,
+            });
+          }
+        }
       }
     }
     controller.__setComposing?.(false);
@@ -459,6 +523,13 @@ export const TextInput: Component<TextInputProps> = (props) => {
       typeof props.value === "function" ? props.value() : props.value;
 
     if (controlledValue !== undefined) {
+      // If the value is a SyncSignal, we skip the bridge update effect.
+      // The native view now updates the sync buffer directly, and we don't want
+      // JS to push the same value back down, which triggers IME/cursor jumps.
+      if (typeof props.value === "function" && (props.value as any).__zynth_sync_signal_id) {
+        return;
+      }
+
       // console.log("[TextInput] controlled value update", { nodeId, value: controlledValue });
       setProperty(node, "value", controlledValue);
       defaultAppliedNodeId = normalizedNodeId ?? null;
@@ -466,7 +537,10 @@ export const TextInput: Component<TextInputProps> = (props) => {
     }
 
     const initialValue = props.defaultValue;
-    if (initialValue !== undefined && defaultAppliedNodeId !== normalizedNodeId) {
+    if (
+      initialValue !== undefined &&
+      defaultAppliedNodeId !== normalizedNodeId
+    ) {
       // Ensure uncontrolled inputs get their initial text on mount.
       setProperty(node, "value", initialValue);
       defaultAppliedNodeId = normalizedNodeId ?? null;
@@ -482,7 +556,7 @@ export const TextInput: Component<TextInputProps> = (props) => {
     setProperty(
       node,
       "multiline",
-      isPotentiallySecure() ? false : props.multiline ?? false
+      isPotentiallySecure() ? false : (props.multiline ?? false),
     );
     setProperty(node, "onChange", handleChange);
     setProperty(node, "onChangeText", handleChangeText);
@@ -563,8 +637,10 @@ export const TextInput: Component<TextInputProps> = (props) => {
               imperativeNode.isEditing = controller.isEditing;
               imperativeNode.isComposing = controller.isComposing;
               imperativeNode.hasPendingSync = controller.hasPendingSync;
-              imperativeNode.focus = () => setProperty(host, "requestFocus", true);
-              imperativeNode.blur = () => setProperty(host, "requestBlur", true);
+              imperativeNode.focus = () =>
+                setProperty(host, "requestFocus", true);
+              imperativeNode.blur = () =>
+                setProperty(host, "requestBlur", true);
               imperativeNode.clear = controller.clear;
               imperativeNode.insertAtCursor = controller.insertAtCursor;
               imperativeNode.replaceRange = controller.replaceRange;
@@ -594,7 +670,8 @@ export const TextInput: Component<TextInputProps> = (props) => {
             imperativeNode.isEditing = controller.isEditing;
             imperativeNode.isComposing = controller.isComposing;
             imperativeNode.hasPendingSync = controller.hasPendingSync;
-            imperativeNode.focus = () => setProperty(host, "requestFocus", true);
+            imperativeNode.focus = () =>
+              setProperty(host, "requestFocus", true);
             imperativeNode.blur = () => setProperty(host, "requestBlur", true);
             imperativeNode.clear = controller.clear;
             imperativeNode.insertAtCursor = controller.insertAtCursor;

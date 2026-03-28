@@ -81,6 +81,7 @@ struct RuntimeState {
   jmethodID createNode = nullptr;
   jmethodID setProp = nullptr;
   jmethodID setText = nullptr;
+  jmethodID syncTextInputState = nullptr;
   jmethodID insertChild = nullptr;
   jmethodID removeChild = nullptr;
   jmethodID setHandler = nullptr;
@@ -128,6 +129,8 @@ struct RuntimeState {
   std::atomic<int> nextSyncSignalId{1};
   std::unordered_map<int, std::string> syncSignals;
   std::mutex syncSignalsMutex;
+  std::unordered_map<int, int> syncSignalBindings; // nodeId -> signalId
+  std::mutex syncSignalBindingsMutex;
 };
 
 std::mutex gStateMutex;
@@ -756,6 +759,21 @@ extern "C" JNIEXPORT bool ZynthGetSyncSignal(
   return true;
 }
 
+extern "C" JNIEXPORT bool JNICALL
+Java_com_zynth_kit_runtime_JSBridge_getSyncSignal(JNIEnv *env, jobject, jlong ptr, jint signalId, jobject value) {
+  auto *state = reinterpret_cast<RuntimeState *>(ptr);
+  if (!state) return false;
+  std::string str;
+  if (!ZynthGetSyncSignal(state, signalId, str)) return false;
+  
+  jclass sbClass = env->GetObjectClass(value);
+  jmethodID appendMethod = env->GetMethodID(sbClass, "append", "(Ljava/lang/String;)Ljava/lang/StringBuilder;");
+  jstring jStr = env->NewStringUTF(str.c_str());
+  env->CallObjectMethod(value, appendMethod, jStr);
+  env->DeleteLocalRef(jStr);
+  return true;
+}
+
 extern "C" JNIEXPORT bool ZynthSetSyncSignal(void *state, int signalId, const char *value) {
   auto *runtimeState = reinterpret_cast<RuntimeState *>(state);
   if (!runtimeState) return false;
@@ -764,6 +782,16 @@ extern "C" JNIEXPORT bool ZynthSetSyncSignal(void *state, int signalId, const ch
   if (it == runtimeState->syncSignals.end()) return false;
   it->second = value ? std::string(value) : std::string();
   return true;
+}
+
+extern "C" JNIEXPORT bool JNICALL
+Java_com_zynth_kit_runtime_JSBridge_setSyncSignal(JNIEnv *env, jobject, jlong ptr, jint signalId, jstring value) {
+  auto *state = reinterpret_cast<RuntimeState *>(ptr);
+  if (!state) return false;
+  const char *chars = env->GetStringUTFChars(value, nullptr);
+  bool result = ZynthSetSyncSignal(state, signalId, chars);
+  env->ReleaseStringUTFChars(value, chars);
+  return result;
 }
 
 extern "C" JNIEXPORT void ZynthApplyAnimatedStyle(
@@ -1138,6 +1166,50 @@ void installSyncSignals(Runtime &rt, RuntimeState *state) {
   sync.setProperty(rt, "setSyncSignal", setSyncSignal);
   sync.setProperty(rt, "removeSyncSignal", removeSyncSignal);
   rt.global().setProperty(rt, "__zynth_sync_signals", sync);
+
+  auto bindSyncSignalNode = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "bindSyncSignalNode"), 2,
+      [state](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 2 || !args[0].isNumber() || !args[1].isNumber()) return Value::undefined();
+        int signalId = static_cast<int>(args[0].asNumber());
+        int nodeId = static_cast<int>(args[1].asNumber());
+        {
+          std::lock_guard<std::mutex> lock(state->syncSignalBindingsMutex);
+          state->syncSignalBindings[nodeId] = signalId;
+        }
+        JNIEnv *env = getEnv();
+        if (env && state->uiManager && state->setProp) {
+          jstring jName = env->NewStringUTF("syncSignalId");
+          jstring jValue = env->NewStringUTF(std::to_string(signalId).c_str());
+          env->CallVoidMethod(state->uiManager, state->setProp, nodeId, jName, jValue);
+          env->DeleteLocalRef(jName);
+          env->DeleteLocalRef(jValue);
+        }
+        return Value::undefined();
+      });
+
+  auto unbindSyncSignalNode = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "unbindSyncSignalNode"), 2,
+      [state](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 2 || !args[0].isNumber() || !args[1].isNumber()) return Value::undefined();
+        int nodeId = static_cast<int>(args[1].asNumber());
+        {
+          std::lock_guard<std::mutex> lock(state->syncSignalBindingsMutex);
+          state->syncSignalBindings.erase(nodeId);
+        }
+        JNIEnv *env = getEnv();
+        if (env && state->uiManager && state->setProp) {
+          jstring jName = env->NewStringUTF("syncSignalId");
+          jstring jValue = env->NewStringUTF("0");
+          env->CallVoidMethod(state->uiManager, state->setProp, nodeId, jName, jValue);
+          env->DeleteLocalRef(jName);
+          env->DeleteLocalRef(jValue);
+        }
+        return Value::undefined();
+      });
+
+  rt.global().setProperty(rt, "__zynth_bindSyncSignalNode", bindSyncSignalNode);
+  rt.global().setProperty(rt, "__zynth_unbindSyncSignalNode", unbindSyncSignalNode);
 }
 
 void ensureUIRuntime(const std::shared_ptr<RuntimeState> &state) {
@@ -1478,6 +1550,49 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
         env->CallVoidMethod(state->uiManager, state->setText, nodeId, jText);
         env->DeleteLocalRef(jText);
         return Value::undefined();
+      });
+
+  auto syncInputState = Function::createFromHostFunction(
+      rt, PropNameID::forAscii(rt, "syncInputState"), 5,
+      [runtime](Runtime &rt, const Value &, const Value *args, size_t count) -> Value {
+        if (count < 5 || !args[0].isNumber()) return Value::undefined();
+        RuntimeState *state = stateFor(runtime);
+        if (!state || !state->syncTextInputState) return Value::undefined();
+        JNIEnv *env = getEnv();
+        if (!env) return Value::undefined();
+
+        jint nodeId = static_cast<jint>(args[0].asNumber());
+        std::string newText = args[1].isString() ? args[1].asString(rt).utf8(rt) : "";
+        std::string nativeText = args[2].isString() ? args[2].asString(rt).utf8(rt) : "";
+
+        // ==========================================
+        // 1) THE NO-OP DIFF CHECK
+        // ==========================================
+        if (newText == nativeText) {
+            // The pipeline text matches the native OS buffer exactly (e.g., autocorrect).
+            // We short-circuit and DO NOT overwrite the native view, protecting the OS cursor state.
+            return Value(true); 
+        }
+
+        // ==========================================
+        // 2) SELECTION SYNC WRITE-BACK
+        // ==========================================
+        jint selStart = static_cast<jint>(args[3].isNumber() ? args[3].asNumber() : -1);
+        jint selEnd = static_cast<jint>(args[4].isNumber() ? args[4].asNumber() : -1);
+
+        jstring jNewText = env->NewStringUTF(newText.c_str());
+        
+        env->CallVoidMethod(
+            state->uiManager, 
+            state->syncTextInputState, 
+            nodeId, 
+            jNewText, 
+            selStart, 
+            selEnd
+        );
+
+        env->DeleteLocalRef(jNewText);
+        return Value(true);
       });
 
   auto insertChild = Function::createFromHostFunction(
@@ -1832,6 +1947,7 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
   ui.setProperty(rt, "createNode", createNode);
   ui.setProperty(rt, "setProp", setProp);
   ui.setProperty(rt, "setText", setText);
+  ui.setProperty(rt, "syncInputState", syncInputState);
   ui.setProperty(rt, "insertChild", insertChild);
   ui.setProperty(rt, "removeChild", removeChild);
   ui.setProperty(rt, "setHandler", setHandler);
@@ -1997,6 +2113,7 @@ Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlon
   state->createNode = env->GetMethodID(state->uiClass, "createNode", "(Ljava/lang/String;)I");
   state->setProp = env->GetMethodID(state->uiClass, "setProp", "(ILjava/lang/String;Ljava/lang/String;)V");
   state->setText = env->GetMethodID(state->uiClass, "setText", "(ILjava/lang/String;)V");
+  state->syncTextInputState = env->GetMethodID(state->uiClass, "syncTextInputState", "(ILjava/lang/String;II)V");
   state->insertChild = env->GetMethodID(state->uiClass, "insertChild", "(III)V");
   state->removeChild = env->GetMethodID(state->uiClass, "removeChild", "(II)V");
   state->setHandler = env->GetMethodID(state->uiClass, "setHandler", "(ILjava/lang/String;)V");
