@@ -621,6 +621,12 @@ static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
   self.composing = NO;
   self.didEmitCompositionStart = NO;
   [self emitFocusIfNeeded];
+  
+  if (self.selectTextOnFocus) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+      [textView selectAll:nil];
+    });
+  }
 }
 
 - (void)textViewDidEndEditing:(UITextView *)textView {

@@ -15,6 +15,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 // Prop-backed properties
 @property(nonatomic, assign) BOOL blurOnSubmit;
+@property(nonatomic, assign) BOOL selectTextOnFocus;
 @property(nonatomic, copy) NSString *submitBehavior;
 @property(nonatomic, assign) double eventThrottle;
 

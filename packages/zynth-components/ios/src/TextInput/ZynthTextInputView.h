@@ -28,6 +28,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, assign) BOOL hasOnCompositionEnd;
 @property(nonatomic, assign, getter=isComposing) BOOL composing;
 @property(nonatomic, assign) BOOL isEditableProp;
+@property(nonatomic, assign) BOOL selectTextOnFocus;
 @property(nonatomic, copy) NSString *submitBehavior;
 @property(nonatomic, assign) NSInteger inputHandlerWorkletId;
 

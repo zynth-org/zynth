@@ -7,7 +7,7 @@ import {
   Show,
 } from "solid-js";
 import type { HostNode, Style, SyncSignalAccessor } from "@zynth/core";
-import { createWorklet, setProperty } from "@zynth/core";
+import { createWorklet, setProperty, flush } from "@zynth/core";
 import type { KeyEvent } from "./events";
 export type { KeyEvent } from "./events";
 
@@ -198,6 +198,7 @@ export interface TextInputProps {
   onBlur?: () => void;
   onCompositionStart?: () => void;
   onCompositionEnd?: () => void;
+  selectTextOnFocus?: boolean;
   eventThrottleMs?: number;
   allowProgrammaticJumpDuringEdit?: boolean;
   ref?: (node: (HostNode & TextInputRef) | null) => void;
@@ -594,6 +595,7 @@ export const TextInput: Component<TextInputProps> = (props) => {
       ["clearButtonMode", props.clearButtonMode],
       ["showClearAccessory", props.showClearAccessory],
       ["eventThrottleMs", props.eventThrottleMs],
+      ["selectTextOnFocus", props.selectTextOnFocus],
       [
         "allowProgrammaticJumpDuringEdit",
         props.allowProgrammaticJumpDuringEdit,
@@ -637,10 +639,14 @@ export const TextInput: Component<TextInputProps> = (props) => {
               imperativeNode.isEditing = controller.isEditing;
               imperativeNode.isComposing = controller.isComposing;
               imperativeNode.hasPendingSync = controller.hasPendingSync;
-              imperativeNode.focus = () =>
+              imperativeNode.focus = () => {
                 setProperty(host, "requestFocus", true);
-              imperativeNode.blur = () =>
+                flush();
+              };
+              imperativeNode.blur = () => {
                 setProperty(host, "requestBlur", true);
+                flush();
+              };
               imperativeNode.clear = controller.clear;
               imperativeNode.insertAtCursor = controller.insertAtCursor;
               imperativeNode.replaceRange = controller.replaceRange;
@@ -670,9 +676,14 @@ export const TextInput: Component<TextInputProps> = (props) => {
             imperativeNode.isEditing = controller.isEditing;
             imperativeNode.isComposing = controller.isComposing;
             imperativeNode.hasPendingSync = controller.hasPendingSync;
-            imperativeNode.focus = () =>
+            imperativeNode.focus = () => {
               setProperty(host, "requestFocus", true);
-            imperativeNode.blur = () => setProperty(host, "requestBlur", true);
+              flush();
+            };
+            imperativeNode.blur = () => {
+              setProperty(host, "requestBlur", true);
+              flush();
+            };
             imperativeNode.clear = controller.clear;
             imperativeNode.insertAtCursor = controller.insertAtCursor;
             imperativeNode.replaceRange = controller.replaceRange;

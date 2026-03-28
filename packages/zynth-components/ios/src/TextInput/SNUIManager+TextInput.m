@@ -252,6 +252,29 @@ static BOOL ZynthTextInputHandleSetProp(ZynthUIManager *manager,
     return YES;
   }
 
+  if ([name isEqualToString:@"selectTextOnFocus"]) {
+    view.selectTextOnFocus = [value respondsToSelector:@selector(boolValue)] ? [value boolValue] : NO;
+    return YES;
+  }
+
+  if ([name isEqualToString:@"requestFocus"]) {
+    if ([value respondsToSelector:@selector(boolValue)] && [value boolValue]) {
+      dispatch_async(dispatch_get_main_queue(), ^{
+        [view becomeFirstResponder];
+      });
+    }
+    return YES;
+  }
+
+  if ([name isEqualToString:@"requestBlur"]) {
+    if ([value respondsToSelector:@selector(boolValue)] && [value boolValue]) {
+      dispatch_async(dispatch_get_main_queue(), ^{
+        [view resignFirstResponder];
+      });
+    }
+    return YES;
+  }
+
   if ([name isEqualToString:@"style"]) {
     return NO;
   }
@@ -534,6 +557,29 @@ static BOOL ZynthSecureTextInputHandleSetProp(ZynthUIManager *manager,
   if ([name isEqualToString:@"eventThrottleMs"]) {
     double ms = [value respondsToSelector:@selector(doubleValue)] ? [value doubleValue] : 0.0;
     view.eventThrottle = ms / 1000.0;
+    return YES;
+  }
+
+  if ([name isEqualToString:@"selectTextOnFocus"]) {
+    view.selectTextOnFocus = [value respondsToSelector:@selector(boolValue)] ? [value boolValue] : NO;
+    return YES;
+  }
+
+  if ([name isEqualToString:@"requestFocus"]) {
+    if ([value respondsToSelector:@selector(boolValue)] && [value boolValue]) {
+      dispatch_async(dispatch_get_main_queue(), ^{
+        [view becomeFirstResponder];
+      });
+    }
+    return YES;
+  }
+
+  if ([name isEqualToString:@"requestBlur"]) {
+    if ([value respondsToSelector:@selector(boolValue)] && [value boolValue]) {
+      dispatch_async(dispatch_get_main_queue(), ^{
+        [view resignFirstResponder];
+      });
+    }
     return YES;
   }
 

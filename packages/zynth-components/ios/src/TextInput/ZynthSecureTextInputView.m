@@ -211,6 +211,11 @@ static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
 
 - (void)textFieldDidBeginEditing:(UITextField *)textField {
     [self emitFocusIfNeeded];
+    if (self.selectTextOnFocus) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [textField selectAll:nil];
+        });
+    }
 }
 
 - (void)textFieldDidEndEditing:(UITextField *)textField {

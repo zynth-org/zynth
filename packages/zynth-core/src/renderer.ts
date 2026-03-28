@@ -499,6 +499,9 @@ export function insertNode(p: any, n: any, a?: any) {
 export function removeNode(p: any, n: any) {
   return H().removeNode(p, n);
 }
+export function flush() {
+  return H().flush?.();
+}
 export function getParentNode(n: any) {
   return H().getParentNode(n);
 }
