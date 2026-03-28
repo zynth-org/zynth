@@ -681,27 +681,6 @@ static BOOL ZynthSecureTextInputHandleSetHandler(ZynthUIManager *manager,
     descriptor.handleSetHandler = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name) {
       return ZynthTextInputHandleSetHandler(manager, node, name);
     };
-    descriptor.handleSetInputHandler = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSInteger workletId) {
-      if (![node.view isKindOfClass:[ZynthTextInputContainer class]]) return NO;
-      ZynthTextInputContainer *container = (ZynthTextInputContainer *)node.view;
-      ZynthTextInputView *view = (ZynthTextInputView *)container.inputView;
-      if (![view isKindOfClass:[ZynthTextInputView class]]) return NO;
-      view.inputHandlerWorkletId = workletId;
-      return YES;
-    };
-    descriptor.onSyncInputState = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *text, NSInteger selStart, NSInteger selEnd) {
-      if (![node.view isKindOfClass:[ZynthTextInputContainer class]]) return NO;
-      ZynthTextInputContainer *container = (ZynthTextInputContainer *)node.view;
-      ZynthTextInputView *view = (ZynthTextInputView *)container.inputView;
-      if (![view isKindOfClass:[ZynthTextInputView class]]) return NO;
-      [view performProgrammaticUpdate:^{
-        view.text = text;
-        if (selStart >= 0 && selEnd >= 0) {
-          view.selectedRange = NSMakeRange(selStart, selEnd - selStart);
-        }
-      }];
-      return YES;
-    };
     descriptor.applyStyle = ^(ZynthUIManager *manager, ZynthNode *node, NSDictionary *style) {
       ZynthTextInputHandleStyle(manager, node, style);
     };
@@ -774,29 +753,6 @@ static BOOL ZynthSecureTextInputHandleSetHandler(ZynthUIManager *manager,
     };
     descriptor.handleSetHandler = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *name) {
       return ZynthSecureTextInputHandleSetHandler(manager, node, name);
-    };
-    descriptor.handleSetInputHandler = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSInteger workletId) {
-      if (![node.view isKindOfClass:[ZynthTextInputContainer class]]) return NO;
-      ZynthTextInputContainer *container = (ZynthTextInputContainer *)node.view;
-      ZynthSecureTextInputView *view = (ZynthSecureTextInputView *)container.inputView;
-      if (![view isKindOfClass:[ZynthSecureTextInputView class]]) return NO;
-      view.inputHandlerWorkletId = workletId;
-      return YES;
-    };
-    descriptor.onSyncInputState = ^BOOL(ZynthUIManager *manager, ZynthNode *node, NSString *text, NSInteger selStart, NSInteger selEnd) {
-      if (![node.view isKindOfClass:[ZynthTextInputContainer class]]) return NO;
-      ZynthTextInputContainer *container = (ZynthTextInputContainer *)node.view;
-      ZynthSecureTextInputView *view = (ZynthSecureTextInputView *)container.inputView;
-      if (![view isKindOfClass:[ZynthSecureTextInputView class]]) return NO;
-      view.text = text;
-      if (selStart >= 0 && selEnd >= 0) {
-        UITextPosition *start = [view positionFromPosition:view.beginningOfDocument offset:selStart];
-        UITextPosition *end = [view positionFromPosition:view.beginningOfDocument offset:selEnd];
-        if (start && end) {
-          view.selectedTextRange = [view textRangeFromPosition:start toPosition:end];
-        }
-      }
-      return YES;
     };
     descriptor.applyStyle = ^(ZynthUIManager *manager, ZynthNode *node, NSDictionary *style) {
       ZynthTextInputHandleStyle(manager, node, style);
