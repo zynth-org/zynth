@@ -761,7 +761,9 @@ extern "C" JNIEXPORT bool ZynthGetSyncSignal(
 
 extern "C" JNIEXPORT bool JNICALL
 Java_com_zynth_kit_runtime_JSBridge_getSyncSignal(JNIEnv *env, jobject, jlong ptr, jint signalId, jobject value) {
-  auto *state = reinterpret_cast<RuntimeState *>(ptr);
+  auto *runtime = reinterpret_cast<facebook::hermes::HermesRuntime *>(ptr);
+  if (!runtime) return false;
+  auto *state = stateFor(runtime);
   if (!state) return false;
   std::string str;
   if (!ZynthGetSyncSignal(state, signalId, str)) return false;
@@ -786,7 +788,9 @@ extern "C" JNIEXPORT bool ZynthSetSyncSignal(void *state, int signalId, const ch
 
 extern "C" JNIEXPORT bool JNICALL
 Java_com_zynth_kit_runtime_JSBridge_setSyncSignal(JNIEnv *env, jobject, jlong ptr, jint signalId, jstring value) {
-  auto *state = reinterpret_cast<RuntimeState *>(ptr);
+  auto *runtime = reinterpret_cast<facebook::hermes::HermesRuntime *>(ptr);
+  if (!runtime) return false;
+  auto *state = stateFor(runtime);
   if (!state) return false;
   const char *chars = env->GetStringUTFChars(value, nullptr);
   bool result = ZynthSetSyncSignal(state, signalId, chars);

@@ -1,15 +1,17 @@
-import type { Component } from "solid-js";
+import type { Accessor, Component } from "solid-js";
 import {
   createEffect,
   createMemo,
   createSignal,
   onCleanup,
   Show,
+  splitProps,
 } from "solid-js";
-import type { HostNode, Style, SyncSignalAccessor } from "@zynth/core";
+import type { HostNode, StyleProp, SyncSignalAccessor } from "@zynth/core";
 import { createWorklet, setProperty, flush } from "@zynth/core";
 import type { KeyEvent } from "./events";
 export type { KeyEvent } from "./events";
+import { createStyle } from "../hooks/createStyle";
 
 export type Selection = { start: number; end: number };
 
@@ -202,8 +204,9 @@ export interface TextInputProps {
   eventThrottleMs?: number;
   allowProgrammaticJumpDuringEdit?: boolean;
   ref?: (node: (HostNode & TextInputRef) | null) => void;
-  style?: Style;
+  style?: StyleProp | Accessor<StyleProp | undefined>;
   testID?: string;
+  debugSync?: boolean;
 }
 
 const noopInputHandlerWorklet = createWorklet(((
@@ -309,9 +312,51 @@ function isSyncSignal(value: unknown): value is SyncSignalAccessor<string> {
 }
 
 export const TextInput: Component<TextInputProps> = (props) => {
+  const [local] = splitProps(props, [
+    "value",
+    "defaultValue",
+    "placeholder",
+    "multiline",
+    "numberOfLines",
+    "maxLength",
+    "editable",
+    "secureTextEntry",
+    "inputMode",
+    "autoCapitalize",
+    "autoCorrect",
+    "spellCheck",
+    "returnKeyType",
+    "blurOnSubmit",
+    "submitBehavior",
+    "selection",
+    "selectionColor",
+    "caretColor",
+    "placeholderTextColor",
+    "clearButtonMode",
+    "showClearAccessory",
+    "inputFilter",
+    "handler",
+    "onChangeText",
+    "onChange",
+    "onSelectionChange",
+    "onContentSizeChange",
+    "onSubmitEditing",
+    "onKeyPress",
+    "onFocus",
+    "onBlur",
+    "onCompositionStart",
+    "onCompositionEnd",
+    "selectTextOnFocus",
+    "eventThrottleMs",
+    "allowProgrammaticJumpDuringEdit",
+    "ref",
+    "style",
+    "testID",
+    "debugSync",
+  ]);
   const controller = useTextInputRef({
-    value: props.value ?? props.defaultValue,
-    driveFromValue: props.value !== undefined,
+    value: local.value ?? local.defaultValue,
+    driveFromValue: local.value !== undefined,
   }) as TextInputRef & {
     __setEditing?: (value: boolean) => void;
     __setComposing?: (value: boolean) => void;
@@ -320,13 +365,22 @@ export const TextInput: Component<TextInputProps> = (props) => {
   };
   const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
   let defaultAppliedNodeId: number | null = null;
-  let initialSyncValueSet = false;
-  onCleanup(() => props.ref?.(null));
+  onCleanup(() => local.ref?.(null));
 
   const isPotentiallySecure = createMemo(
-    () => props.secureTextEntry !== undefined,
+    () => local.secureTextEntry !== undefined,
   );
-  const syncSignalId = createMemo(() => readSyncSignalId(props.value));
+  const syncSignalId = createMemo(() => readSyncSignalId(local.value));
+  const hasStyleAccessor = typeof local.style === "function";
+  const resolvedStyle = createStyle(() => {
+    const style = local.style;
+    return typeof style === "function" ? style() : style;
+  });
+  const debugLabel = createMemo(() => local.testID ?? "TextInput");
+  const logSync = (phase: string, data?: Record<string, unknown>) => {
+    if (!local.debugSync) return;
+    console.log(`[TextInput sync:${debugLabel()}] ${phase}`, data ?? {});
+  };
 
   // createEffect(() => {
   //   if (isPotentiallySecure() && props.multiline) {
@@ -337,7 +391,7 @@ export const TextInput: Component<TextInputProps> = (props) => {
   // });
 
   const handleChange = (event: NativeTextChangeEvent) => {
-    props.onChange?.(event);
+    local.onChange?.(event);
     if (typeof event.textAfter === "string") {
       controller.__setTextFromNative?.(event.textAfter);
     }
@@ -387,9 +441,9 @@ export const TextInput: Component<TextInputProps> = (props) => {
       const incomingText = payload.text;
       const previousText = controller.text();
 
-      if (typeof props.handler === "function") {
+      if (typeof local.handler === "function") {
         const delta = deriveInputDelta(previousText, incomingText);
-        const transformedText = props.handler(previousText, delta);
+        const transformedText = local.handler(previousText, delta);
         const resolvedText =
           typeof transformedText === "string" ? transformedText : incomingText;
 
@@ -416,10 +470,10 @@ export const TextInput: Component<TextInputProps> = (props) => {
           controller.__setSelectionFromNative?.(nextSelection);
         }
 
-        props.onChangeText?.(resolvedText);
+        local.onChangeText?.(resolvedText);
         controller.__setTextFromNative?.(resolvedText);
       } else {
-        props.onChangeText?.(incomingText);
+        local.onChangeText?.(incomingText);
         controller.__setTextFromNative?.(incomingText);
 
         // Ensure cursor is at the end of the text after autocorrect
@@ -443,34 +497,34 @@ export const TextInput: Component<TextInputProps> = (props) => {
   const handleSelectionChange = (payload: NativeSelectionEvent) => {
     const sel = payload?.selection;
     if (!sel) return;
-    props.onSelectionChange?.(sel);
+    local.onSelectionChange?.(sel);
     controller.__setSelectionFromNative?.(sel);
   };
 
   const handleFocus = () => {
-    props.onFocus?.();
+    local.onFocus?.();
     controller.__setEditing?.(true);
   };
 
   const handleBlur = () => {
-    props.onBlur?.();
+    local.onBlur?.();
     controller.__setEditing?.(false);
   };
 
   const handleSubmit = (payload: NativeTextPayload) => {
-    props.onSubmitEditing?.(payload.text);
+    local.onSubmitEditing?.(payload.text);
   };
 
   const handleKeyPress = (event: NativeKeyEvent) => {
-    props.onKeyPress?.(event);
+    local.onKeyPress?.(event);
   };
 
   const handleCompositionStart = () => {
-    props.onCompositionStart?.();
+    local.onCompositionStart?.();
     controller.__setComposing?.(true);
   };
   const handleCompositionEnd = () => {
-    props.onCompositionEnd?.();
+    local.onCompositionEnd?.();
     controller.__setComposing?.(false);
   };
 
@@ -521,28 +575,32 @@ export const TextInput: Component<TextInputProps> = (props) => {
     const normalizedNodeId =
       typeof nodeId === "number" ? nodeId : defaultAppliedNodeId;
     const controlledValue =
-      typeof props.value === "function" ? props.value() : props.value;
+      typeof local.value === "function" ? local.value() : local.value;
 
     if (controlledValue !== undefined) {
       // If the value is a SyncSignal, we skip the bridge update effect.
       // The native view now updates the sync buffer directly, and we don't want
       // JS to push the same value back down, which triggers IME/cursor jumps.
-      if (typeof props.value === "function" && (props.value as any).__zynth_sync_signal_id) {
+      if (
+        typeof local.value === "function" &&
+        (local.value as any).__zynth_sync_signal_id
+      ) {
         return;
       }
 
-      // console.log("[TextInput] controlled value update", { nodeId, value: controlledValue });
+      logSync("controlled-value", { nodeId, value: controlledValue });
       setProperty(node, "value", controlledValue);
       defaultAppliedNodeId = normalizedNodeId ?? null;
       return;
     }
 
-    const initialValue = props.defaultValue;
+    const initialValue = local.defaultValue;
     if (
       initialValue !== undefined &&
       defaultAppliedNodeId !== normalizedNodeId
     ) {
       // Ensure uncontrolled inputs get their initial text on mount.
+      logSync("default-value", { nodeId, value: initialValue });
       setProperty(node, "value", initialValue);
       defaultAppliedNodeId = normalizedNodeId ?? null;
     }
@@ -552,13 +610,18 @@ export const TextInput: Component<TextInputProps> = (props) => {
     const node = hostNode();
     if (!node) return;
     const nodeId = (node as any)?.id;
+    const nextMultiline = isPotentiallySecure()
+      ? false
+      : (local.multiline ?? false);
+    logSync("multiline", { nodeId, value: nextMultiline });
+    setProperty(node, "multiline", nextMultiline);
+  });
 
-    // console.log("[TextInput] updating static props", { nodeId });
-    setProperty(
-      node,
-      "multiline",
-      isPotentiallySecure() ? false : (props.multiline ?? false),
-    );
+  createEffect(() => {
+    const node = hostNode();
+    if (!node) return;
+    const nodeId = (node as any)?.id;
+    logSync("handlers", { nodeId });
     setProperty(node, "onChange", handleChange);
     setProperty(node, "onChangeText", handleChangeText);
     setProperty(node, "onSelectionChange", handleSelectionChange);
@@ -568,55 +631,70 @@ export const TextInput: Component<TextInputProps> = (props) => {
     setProperty(node, "onBlur", handleBlur);
     setProperty(node, "onCompositionStart", handleCompositionStart);
     setProperty(node, "onCompositionEnd", handleCompositionEnd);
-    setProperty(node, "handler", props.handler ?? noopInputHandlerWorklet);
-
-    const derivedSubmitBehavior =
-      props.submitBehavior ?? (props.multiline ? "newline" : undefined);
-
-    const optionalEntries: [string, unknown][] = [
-      ["style", props.style as any],
-      ["defaultValue", props.defaultValue],
-      ["placeholder", props.placeholder],
-      ["numberOfLines", props.numberOfLines],
-      ["maxLength", props.maxLength],
-      ["editable", props.editable],
-      ["secureTextEntry", props.secureTextEntry],
-      ["inputMode", props.inputMode],
-      ["autoCapitalize", props.autoCapitalize],
-      ["autoCorrect", props.autoCorrect],
-      ["spellCheck", props.spellCheck],
-      ["returnKeyType", props.returnKeyType],
-      ["blurOnSubmit", props.blurOnSubmit],
-      ["submitBehavior", derivedSubmitBehavior],
-      ["selection", props.selection],
-      ["selectionColor", props.selectionColor],
-      ["caretColor", props.caretColor],
-      ["placeholderTextColor", props.placeholderTextColor],
-      ["clearButtonMode", props.clearButtonMode],
-      ["showClearAccessory", props.showClearAccessory],
-      ["eventThrottleMs", props.eventThrottleMs],
-      ["selectTextOnFocus", props.selectTextOnFocus],
-      [
-        "allowProgrammaticJumpDuringEdit",
-        props.allowProgrammaticJumpDuringEdit,
-      ],
-      ["testID", props.testID],
-    ];
-
-    for (const [name, value] of optionalEntries) {
-      if (value !== undefined) {
-        // Don't pass multiline to secure text input
-        if (isPotentiallySecure() && name === "multiline") continue;
-        if (isPotentiallySecure() && name === "numberOfLines") continue;
-
-        // console.log(
-        //   "[TextInput] set optional prop",
-        //   JSON.stringify({ nodeId, name, value })
-        // );
-        setProperty(node, name, value);
-      }
-    }
   });
+
+  createEffect(() => {
+    const node = hostNode();
+    if (!node) return;
+    const nodeId = (node as any)?.id;
+    const nextHandler = local.handler ?? noopInputHandlerWorklet;
+    logSync("handler-worklet", {
+      nodeId,
+      hasCustomHandler: local.handler !== undefined,
+    });
+    setProperty(node, "handler", nextHandler);
+  });
+
+  createEffect(() => {
+    const node = hostNode();
+    if (!node || !hasStyleAccessor) return;
+    const nextStyle = resolvedStyle();
+    logSync("style", { nodeId: (node as any)?.id, value: nextStyle });
+    setProperty(node, "style", nextStyle as any);
+  });
+
+  const syncOptionalProp = (name: string, value: Accessor<unknown>) => {
+    createEffect(() => {
+      const node = hostNode();
+      if (!node) return;
+      const nextValue = value();
+      if (nextValue === undefined) return;
+      if (isPotentiallySecure() && name === "numberOfLines") return;
+      logSync(`prop:${name}`, { nodeId: (node as any)?.id, value: nextValue });
+      setProperty(node, name, nextValue);
+    });
+  };
+
+  syncOptionalProp("style", () =>
+    hasStyleAccessor ? undefined : (resolvedStyle() as any),
+  );
+  syncOptionalProp("defaultValue", () => local.defaultValue);
+  syncOptionalProp("placeholder", () => local.placeholder);
+  syncOptionalProp("numberOfLines", () => local.numberOfLines);
+  syncOptionalProp("maxLength", () => local.maxLength);
+  syncOptionalProp("editable", () => local.editable);
+  syncOptionalProp("secureTextEntry", () => local.secureTextEntry);
+  syncOptionalProp("inputMode", () => local.inputMode);
+  syncOptionalProp("autoCapitalize", () => local.autoCapitalize);
+  syncOptionalProp("autoCorrect", () => local.autoCorrect);
+  syncOptionalProp("spellCheck", () => local.spellCheck);
+  syncOptionalProp("returnKeyType", () => local.returnKeyType);
+  syncOptionalProp("blurOnSubmit", () => local.blurOnSubmit);
+  syncOptionalProp("submitBehavior", () =>
+    local.submitBehavior ?? (local.multiline ? "newline" : undefined),
+  );
+  syncOptionalProp("selection", () => local.selection);
+  syncOptionalProp("selectionColor", () => local.selectionColor);
+  syncOptionalProp("caretColor", () => local.caretColor);
+  syncOptionalProp("placeholderTextColor", () => local.placeholderTextColor);
+  syncOptionalProp("clearButtonMode", () => local.clearButtonMode);
+  syncOptionalProp("showClearAccessory", () => local.showClearAccessory);
+  syncOptionalProp("eventThrottleMs", () => local.eventThrottleMs);
+  syncOptionalProp("selectTextOnFocus", () => local.selectTextOnFocus);
+  syncOptionalProp("allowProgrammaticJumpDuringEdit", () =>
+    local.allowProgrammaticJumpDuringEdit,
+  );
+  syncOptionalProp("testID", () => local.testID);
 
   return (
     <Show
@@ -628,7 +706,7 @@ export const TextInput: Component<TextInputProps> = (props) => {
               const host = node as HostNode | null;
               setHostNode(host);
               if (!host) {
-                props.ref?.(null);
+                local.ref?.(null);
                 return;
               }
               const imperativeNode = host as HostNode & TextInputRef;
@@ -653,9 +731,10 @@ export const TextInput: Component<TextInputProps> = (props) => {
               imperativeNode.commit = controller.commit;
               imperativeNode.cancelPending = controller.cancelPending;
               imperativeNode.driveFromValue = controller.driveFromValue;
-              props.ref?.(imperativeNode);
+              local.ref?.(imperativeNode);
             })()
           }
+          style={hasStyleAccessor ? undefined : (resolvedStyle() as any)}
         />
       }
     >
@@ -665,7 +744,7 @@ export const TextInput: Component<TextInputProps> = (props) => {
             const host = node as HostNode | null;
             setHostNode(host);
             if (!host) {
-              props.ref?.(null);
+              local.ref?.(null);
               return;
             }
             const imperativeNode = host as HostNode & TextInputRef;
@@ -690,9 +769,10 @@ export const TextInput: Component<TextInputProps> = (props) => {
             imperativeNode.commit = controller.commit;
             imperativeNode.cancelPending = controller.cancelPending;
             imperativeNode.driveFromValue = controller.driveFromValue;
-            props.ref?.(imperativeNode);
+            local.ref?.(imperativeNode);
           })()
         }
+        style={hasStyleAccessor ? undefined : (resolvedStyle() as any)}
       />
     </Show>
   );
