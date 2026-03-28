@@ -38,6 +38,7 @@ internal open class ZynthTextInputView @JvmOverloads constructor(
   internal var manager: ZynthUIManager? = null
   internal var nodeId: Int = -1
   internal var syncSignalId: Int = 0
+  internal var selectTextOnFocus = false
 
   // Event registration flags
   internal var hasOnChange = false
@@ -169,6 +170,9 @@ internal open class ZynthTextInputView @JvmOverloads constructor(
   private val internalFocusListener = OnFocusChangeListener { v, hasFocus ->
     if (hasFocus) {
       emitFocusIfNeeded()
+      if (selectTextOnFocus) {
+        selectAll()
+      }
     } else {
       emitBlurIfNeeded()
     }
@@ -546,6 +550,18 @@ internal open class ZynthTextInputView @JvmOverloads constructor(
       post {
         val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
         imm?.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT)
+      }
+    }
+  }
+
+  fun requestBlurFromJS() {
+    runAfterReveal {
+      if (hasFocus()) {
+        clearFocus()
+      }
+      post {
+        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+        imm?.hideSoftInputFromWindow(windowToken, 0)
       }
     }
   }
@@ -991,6 +1007,13 @@ internal open class ZynthTextInputView @JvmOverloads constructor(
     target: InputConnection?,
     mutable: Boolean,
   ) : InputConnectionWrapper(target, mutable) {
+    override fun sendKeyEvent(event: KeyEvent): Boolean {
+      if (event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_DEL) {
+        emitKeyEvent("")
+      }
+      return super.sendKeyEvent(event)
+    }
+
     override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
       if (suppressNativeEvent) {
         return super.commitText(text, newCursorPosition)
@@ -1018,6 +1041,10 @@ internal open class ZynthTextInputView @JvmOverloads constructor(
     override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
       if (suppressNativeEvent) {
         return super.deleteSurroundingText(beforeLength, afterLength)
+      }
+
+      if (beforeLength == 1 && afterLength == 0) {
+        emitKeyEvent("")
       }
 
       val currentText = this@ZynthTextInputView.text?.toString().orEmpty()

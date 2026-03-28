@@ -122,8 +122,20 @@ object TextInputPropAdapter {
         input.syncSignalId = id
         true
       }
-      "__focusRequest" -> {
-        input.requestFocusFromJS()
+      "selectTextOnFocus" -> {
+        input.selectTextOnFocus = parseBoolean(value) == true
+        true
+      }
+      "requestFocus" -> {
+        if (parseBoolean(value) == true) {
+          input.requestFocusFromJS()
+        }
+        true
+      }
+      "requestBlur" -> {
+        if (parseBoolean(value) == true) {
+          input.requestBlurFromJS()
+        }
         true
       }
       else -> false
