@@ -59,23 +59,39 @@ function getWorkletsBridge(): WorkletsBridge | null {
 }
 
 function ensureWorkletMetadata<T extends (...args: unknown[]) => unknown>(
-  fn: WorkletFunction<T>
+  fn: WorkletFunction<T>,
 ): WorkletFunction<T> {
-  const metadata = fn.__zynth_worklet ?? {};
-  if (!metadata.code) {
-    const code = fn.toString();
-    if (!/\[bytecode\]/i.test(code)) {
-      metadata.code = code;
+  let metadata = fn.__zynth_worklet ?? {};
+  let code = metadata.code || fn.toString();
+
+  if (code && !/\[bytecode\]/i.test(code)) {
+    // Basic cleaning for runtime-created worklets
+    if (code.includes(": ") || code.includes("as ")) {
+      code = code
+        .replace(/:\s*(unknown|any|string|number|boolean|void)/g, "")
+        .replace(/\s*as\s*(string|any|number|boolean)/g, "");
     }
+
+    // Wrap in a safe IIFE to ensure it evaluates to the function value.
+    // This handles all function syntaxes (arrow, shorthand, etc.) reliably.
+    metadata.code = `(function() { return ${code.trim()}; })()`;
   }
+
   fn.__zynth_worklet = metadata;
   return fn;
 }
 
 export function createWorklet<T extends (...args: unknown[]) => unknown>(
-  fn: T
+  fn: T,
 ): WorkletFunction<T> {
-  const worklet = ensureWorkletMetadata(fn as WorkletFunction<T>);
+  const func = fn as WorkletFunction<T>;
+  
+  // If it's already a registered worklet, return it
+  if (func.__zynth_worklet_id !== undefined) {
+    return func;
+  }
+
+  const worklet = ensureWorkletMetadata(func);
   const bridge = getWorkletsBridge();
   const metadata = worklet.__zynth_worklet;
   const closure = worklet.__zynth_worklet_closure;
@@ -113,10 +129,7 @@ export function createWorklet<T extends (...args: unknown[]) => unknown>(
       closure: Object.keys(payloadClosure).length > 0 ? payloadClosure : undefined,
     });
     worklet.__zynth_worklet_id = id;
-    if (bridge.run) {
-      bridge.run(id);
-      return worklet;
-    }
+    return worklet;
   }
   if (!bridge) {
     emitDevtoolsEvent({

@@ -189,7 +189,11 @@ export interface TextInputProps {
   clearButtonMode?: ClearButtonMode;
   showClearAccessory?: boolean;
   inputFilter?: (proposed: string, change: Selection) => string | false;
-  handler?: (currentText: string, newInput: string) => string;
+  handler?: (
+    currentText: string,
+    newInput: string,
+    proposedText: string,
+  ) => string | undefined;
   onChangeText?: (text: string) => void;
   onChange?: (event: TextChangeEvent) => void;
   onSelectionChange?: (selection: Selection) => void;
@@ -212,6 +216,7 @@ export interface TextInputProps {
 const noopInputHandlerWorklet = createWorklet(((
   _currentText: unknown,
   _newInput: unknown,
+  _proposedText: unknown,
 ) => {
   "worklet";
   return undefined;
@@ -441,9 +446,18 @@ export const TextInput: Component<TextInputProps> = (props) => {
       const incomingText = payload.text;
       const previousText = controller.text();
 
-      if (typeof local.handler === "function") {
+      const handler = local.handler;
+      if (typeof handler === "function") {
+        // If the handler is a worklet, the native side already handled it synchronously.
+        // We only proceed if it's NOT a registered worklet.
+        if ((handler as any).__zynth_worklet_id !== undefined) {
+          local.onChangeText?.(incomingText);
+          controller.__setTextFromNative?.(incomingText);
+          return;
+        }
+
         const delta = deriveInputDelta(previousText, incomingText);
-        const transformedText = local.handler(previousText, delta);
+        const transformedText = handler(previousText, delta, incomingText);
         const resolvedText =
           typeof transformedText === "string" ? transformedText : incomingText;
 

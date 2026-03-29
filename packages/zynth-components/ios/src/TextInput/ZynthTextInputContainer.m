@@ -34,4 +34,11 @@
     }
 }
 
+- (void)setSyncSignalId:(NSInteger)syncSignalId {
+    SEL selector = NSSelectorFromString(@"setSyncSignalId:");
+    if ([_inputView respondsToSelector:selector]) {
+        ((void (*)(id, SEL, NSInteger))[_inputView methodForSelector:selector])(_inputView, selector, syncSignalId);
+    }
+}
+
 @end

@@ -1245,13 +1245,13 @@ void registerWorkletOnUIRuntime(const std::shared_ptr<RuntimeState> &state, int 
   }
   auto &rt = *state->uiRuntime;
   try {
-    std::string source = "(" + definition.code + ")";
+    std::string source = definition.code;
     source.append("\n//# sourceURL=zynth-worklet.js");
     auto buffer = std::make_shared<StringBuffer>(source);
     auto result = rt.evaluateJavaScript(buffer, "zynth-worklet.js");
     if (!result.isObject() || !result.getObject(rt).isFunction(rt)) {
       __android_log_print(ANDROID_LOG_WARN, "ZynthWorklets",
-                          "register id=%d failed (not function)", workletId);
+                          "register id=%d failed (evaluated result is NOT a function)", workletId);
       return;
     }
     auto fn = std::make_shared<Function>(result.getObject(rt).getFunction(rt));
@@ -1329,7 +1329,8 @@ std::optional<std::string> runInputHandlerWorkletOnUIRuntime(
     const std::shared_ptr<RuntimeState> &state,
     int workletId,
     const std::string &currentText,
-    const std::string &newInput) {
+    const std::string &newInput,
+    const std::string &proposedText) {
   if (!state) return std::nullopt;
   ensureUIRuntime(state);
   if (!state->uiRuntime) return std::nullopt;
@@ -1380,14 +1381,20 @@ std::optional<std::string> runInputHandlerWorkletOnUIRuntime(
 
   try {
     Value result = fn->call(
-        rt,
-        String::createFromUtf8(rt, currentText),
-        String::createFromUtf8(rt, newInput));
+        rt, {
+        Value(rt, String::createFromUtf8(rt, currentText)),
+        Value(rt, String::createFromUtf8(rt, newInput)),
+        Value(rt, String::createFromUtf8(rt, proposedText))
+        });
     if (result.isString()) {
       return result.asString(rt).utf8(rt);
     }
+  } catch (const std::exception &ex) {
+    __android_log_print(ANDROID_LOG_ERROR, "ZynthWorklets",
+                       "run exception id=%d %s", workletId, ex.what());
   } catch (...) {
-    return std::nullopt;
+    __android_log_print(ANDROID_LOG_ERROR, "ZynthWorklets",
+                       "run unknown exception id=%d", workletId);
   }
   return std::nullopt;
 }
@@ -2593,7 +2600,8 @@ Java_com_zynth_kit_runtime_JSBridge_runInputHandlerOnUiRuntime(JNIEnv *env,
                                                                jlong ptr,
                                                                jint workletId,
                                                                jstring currentText,
-                                                               jstring newInput) {
+                                                               jstring newInput,
+                                                               jstring proposedText) {
   auto *runtime = reinterpret_cast<facebook::hermes::HermesRuntime *>(ptr);
   if (!runtime) return nullptr;
   auto state = sharedStateFor(runtime);
@@ -2601,12 +2609,18 @@ Java_com_zynth_kit_runtime_JSBridge_runInputHandlerOnUiRuntime(JNIEnv *env,
 
   const char *currentUtf8 = currentText ? env->GetStringUTFChars(currentText, nullptr) : nullptr;
   const char *inputUtf8 = newInput ? env->GetStringUTFChars(newInput, nullptr) : nullptr;
+  const char *proposedUtf8 = proposedText ? env->GetStringUTFChars(proposedText, nullptr) : nullptr;
   std::string current = currentUtf8 ? currentUtf8 : "";
   std::string input = inputUtf8 ? inputUtf8 : "";
+  std::string proposed = proposedUtf8 ? proposedUtf8 : "";
   if (currentText && currentUtf8) env->ReleaseStringUTFChars(currentText, currentUtf8);
   if (newInput && inputUtf8) env->ReleaseStringUTFChars(newInput, inputUtf8);
+  if (proposedText && proposedUtf8) {
+    env->ReleaseStringUTFChars(proposedText, proposedUtf8);
+  }
 
-  auto result = runInputHandlerWorkletOnUIRuntime(state, workletId, current, input);
+  auto result = runInputHandlerWorkletOnUIRuntime(
+      state, workletId, current, input, proposed);
   if (!result.has_value()) return nullptr;
   return env->NewStringUTF(result->c_str());
 }

@@ -53,7 +53,8 @@ internal object JSBridge {
     runtimePtr: Long,
     workletId: Int,
     currentText: String,
-    newInput: String
+    newInput: String,
+    proposedText: String,
   ): String?
 
   private val workletHandler = android.os.Handler(android.os.Looper.getMainLooper())

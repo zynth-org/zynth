@@ -16,6 +16,7 @@ import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
+import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputConnectionWrapper
@@ -985,16 +986,30 @@ internal open class ZynthTextInputView @JvmOverloads constructor(
     setActualPadding(left, top, right, bottom)
   }
 
-  private fun applyInputHandler(currentText: String, newInput: String): String? {
+  private fun applyInputHandler(
+    currentText: String,
+    newInput: String,
+    proposedText: String,
+  ): String? {
     val workletId = inputHandlerWorkletId
     if (workletId <= 0) return null
     val mgr = manager ?: return null
-    return mgr.runInputHandlerWorklet(nodeId, workletId, currentText, newInput)
+    return mgr.runInputHandlerWorklet(
+      nodeId,
+      workletId,
+      currentText,
+      newInput,
+      proposedText,
+    )
   }
 
   private fun applyTransformedText(nextText: String): Boolean {
     val editable = text ?: return false
-    editable.replace(0, editable.length, nextText)
+    BaseInputConnection.removeComposingSpans(editable)
+    val current = editable.toString()
+    if (current != nextText) {
+      editable.replace(0, editable.length, nextText)
+    }
     val cursor = nextText.length.coerceIn(0, editable.length)
     try {
       setSelection(cursor, cursor)
@@ -1031,7 +1046,7 @@ internal open class ZynthTextInputView @JvmOverloads constructor(
         append(currentText.substring(safeEnd))
       }
 
-      val transformed = applyInputHandler(currentText, incoming)
+      val transformed = applyInputHandler(currentText, incoming, proposed)
       if (transformed == null || transformed == proposed) {
         return super.commitText(text, newCursorPosition)
       }
@@ -1059,7 +1074,7 @@ internal open class ZynthTextInputView @JvmOverloads constructor(
       val deleteEnd = (safeEnd + afterLength).coerceIn(deleteStart, currentText.length)
       val proposed = currentText.removeRange(deleteStart, deleteEnd)
 
-      val transformed = applyInputHandler(currentText, "")
+      val transformed = applyInputHandler(currentText, "", proposed)
       if (transformed == null || transformed == proposed) {
         return super.deleteSurroundingText(beforeLength, afterLength)
       }
@@ -1067,8 +1082,47 @@ internal open class ZynthTextInputView @JvmOverloads constructor(
     }
 
     override fun setComposingText(text: CharSequence?, newCursorPosition: Int): Boolean {
+      if (suppressNativeEvent) {
+        return super.setComposingText(text, newCursorPosition)
+      }
+
+      val incoming = text?.toString() ?: ""
+      val currentText = this@ZynthTextInputView.text?.toString().orEmpty()
+      
+      // In Android, setComposingText replaces the current composition range
+      // or inserts at the current cursor if no composition exists.
+      val editable = this@ZynthTextInputView.text ?: return super.setComposingText(text, newCursorPosition)
+      val compStart = BaseInputConnection.getComposingSpanStart(editable)
+      val compEnd = BaseInputConnection.getComposingSpanEnd(editable)
+      
+      val start: Int
+      val end: Int
+      if (compStart != -1 && compEnd != -1) {
+        start = compStart
+        end = compEnd
+      } else {
+        start = selectionStart.coerceIn(0, currentText.length)
+        end = selectionEnd.coerceIn(0, currentText.length)
+      }
+      
+      val safeStart = minOf(start, end)
+      val safeEnd = maxOf(start, end)
+      val proposed = buildString {
+        append(currentText.substring(0, safeStart))
+        append(incoming)
+        append(currentText.substring(safeEnd))
+      }
+
+      val transformed = applyInputHandler(currentText, incoming, proposed)
+      if (transformed != null && transformed != proposed) {
+        // If transformed, we finish the composition first to clear IME state,
+        // then apply the full text.
+        super.finishComposingText()
+        return applyTransformedText(transformed)
+      }
+
       val result = super.setComposingText(text, newCursorPosition)
-      if (!suppressNativeEvent && !text.isNullOrEmpty()) {
+      if (!incoming.isEmpty()) {
         updateCompositionState(true)
       }
       return result

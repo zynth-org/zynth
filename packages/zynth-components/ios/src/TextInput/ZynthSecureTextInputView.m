@@ -28,6 +28,26 @@ static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
 
 @implementation ZynthSecureTextInputView
 
+- (void)applyTransformedTextValue:(NSString *)nextText fallback:(NSString *)fallback {
+    NSString *resolved = nextText ?: fallback ?: @"";
+    BOOL hadMarkedText = self.markedTextRange != nil;
+    if (hadMarkedText) {
+        [self unmarkText];
+    }
+    if (hadMarkedText || ![self.text isEqualToString:resolved]) {
+        self.text = resolved;
+    }
+    NSInteger cursor = self.text.length;
+    UITextPosition *position = [self positionFromPosition:self.beginningOfDocument
+                                                   offset:cursor];
+    if (position) {
+        UITextRange *cursorRange = [self textRangeFromPosition:position toPosition:position];
+        if (cursorRange) {
+            self.selectedTextRange = cursorRange;
+        }
+    }
+}
+
 - (instancetype)initWithFrame:(CGRect)frame {
   if (self = [super initWithFrame:frame]) {
     [self configureDefaults];
@@ -239,6 +259,9 @@ static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
 }
 
 - (void)textFieldDidChange:(UITextField *)textField {
+    if (self.syncSignalId > 0 && self.manager) {
+        [self.manager setSyncSignal:(int)self.syncSignalId value:textField.text ?: @""];
+    }
     [self emitChange];
 }
 
@@ -249,20 +272,15 @@ replacementString:(NSString *)string {
     NSString *incoming = string ?: @"";
 
     if (self.inputHandlerWorkletId > 0 && self.manager) {
+        NSString *proposed = [current stringByReplacingCharactersInRange:range withString:incoming];
         NSString *transformed = [self.manager runInputHandlerWorklet:(int)self.inputHandlerWorkletId
                                                          currentText:current
-                                                            newInput:incoming];
-        NSString *proposed = [current stringByReplacingCharactersInRange:range withString:incoming];
+                                                            newInput:incoming
+                                                        proposedText:proposed];
         if ([transformed isKindOfClass:[NSString class]] && ![transformed isEqualToString:proposed]) {
-            textField.text = transformed ?: current;
-            NSInteger cursor = textField.text.length;
-            UITextPosition *position = [textField positionFromPosition:textField.beginningOfDocument
-                                                                offset:cursor];
-            if (position) {
-                UITextRange *cursorRange = [textField textRangeFromPosition:position toPosition:position];
-                if (cursorRange) {
-                    textField.selectedTextRange = cursorRange;
-                }
+            [self applyTransformedTextValue:transformed fallback:current];
+            if (self.syncSignalId > 0 && self.manager) {
+                [self.manager setSyncSignal:(int)self.syncSignalId value:transformed ?: current];
             }
             return NO;
         }

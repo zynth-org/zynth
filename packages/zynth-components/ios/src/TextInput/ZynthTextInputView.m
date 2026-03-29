@@ -39,6 +39,29 @@ static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
 
 @implementation ZynthTextInputView
 
+- (void)applyTransformedTextValue:(NSString *)nextText fallback:(NSString *)fallback {
+  NSString *resolved = nextText ?: fallback ?: @"";
+  BOOL hadMarkedText = self.markedTextRange != nil;
+  [self performProgrammaticUpdate:^{
+    if (hadMarkedText) {
+      [self unmarkText];
+    }
+    if (hadMarkedText || ![self.text isEqualToString:resolved]) {
+      self.text = resolved;
+    }
+    NSInteger cursor = self.text.length;
+    UITextPosition *startPos =
+        [self positionFromPosition:self.beginningOfDocument offset:cursor];
+    if (startPos) {
+      UITextRange *cursorRange =
+          [self textRangeFromPosition:startPos toPosition:startPos];
+      if (cursorRange) {
+        [self setSelectedTextRange:cursorRange];
+      }
+    }
+  }];
+}
+
 - (instancetype)initWithFrame:(CGRect)frame textContainer:(NSTextContainer *)textContainer {
   if (self = [super initWithFrame:frame textContainer:textContainer]) {
     [self configureDefaults];
@@ -525,6 +548,9 @@ static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
       });
     }
     if (shouldSubmit && !allowNewline) {
+      if (self.syncSignalId > 0 && self.manager) {
+        [self.manager setSyncSignal:(int)self.syncSignalId value:current];
+      }
       return NO;
     }
   }
@@ -533,33 +559,28 @@ static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
     NSString *proposed = [current stringByReplacingCharactersInRange:range withString:inserted];
     NSLog(@"[ZynthTextInputView] maxLength check proposed=%@ length=%lu limit=%ld", proposed, (unsigned long)proposed.length, (long)self.maxLength);
     if (proposed.length > (NSUInteger)self.maxLength) {
+      if (self.syncSignalId > 0 && self.manager) {
+        [self.manager setSyncSignal:(int)self.syncSignalId value:current];
+      }
       return NO;
     }
   }
 
   if (self.inputHandlerWorkletId > 0 && self.manager) {
+    NSString *proposed = [current stringByReplacingCharactersInRange:range withString:inserted];
     NSString *transformed = [self.manager runInputHandlerWorklet:(int)self.inputHandlerWorkletId
                                                      currentText:current ?: @""
-                                                        newInput:inserted ?: @""];
-    NSString *proposed = [current stringByReplacingCharactersInRange:range withString:inserted];
+                                                        newInput:inserted ?: @""
+                                                    proposedText:proposed ?: @""];
     if ([transformed isKindOfClass:[NSString class]] && ![transformed isEqualToString:proposed]) {
-      [self performProgrammaticUpdate:^{
-        self.text = transformed ?: current;
-        NSInteger cursor = self.text.length;
-        UITextPosition *startPos =
-            [self positionFromPosition:self.beginningOfDocument offset:cursor];
-        if (startPos) {
-          UITextRange *cursorRange =
-              [self textRangeFromPosition:startPos toPosition:startPos];
-          if (cursorRange) {
-            [self setSelectedTextRange:cursorRange];
-          }
-        }
-      }];
+      [self applyTransformedTextValue:transformed fallback:current];
       if (self.node && self.node.yoga && YGNodeGetOwner(self.node.yoga)) {
         YGNodeMarkDirty(self.node.yoga);
       }
       [self.manager zynth_markNeedsFlush];
+      if (self.syncSignalId > 0 && self.manager) {
+        [self.manager setSyncSignal:(int)self.syncSignalId value:transformed ?: current];
+      }
       return NO;
     }
   }
@@ -600,6 +621,10 @@ static UIColor *ZynthColorFromHexOrNil(NSString *hex) {
   [self emitChangeWithRange:self.pendingRange inserted:self.pendingInserted removed:self.pendingRemoved];
   [self recordEventDispatch];
   self.pendingChange = NO;
+
+  if (self.syncSignalId > 0 && self.manager) {
+    [self.manager setSyncSignal:(int)self.syncSignalId value:textView.text];
+  }
 
   if (self.node && self.node.yoga && YGNodeGetOwner(self.node.yoga)) {
     YGNodeMarkDirty(self.node.yoga);

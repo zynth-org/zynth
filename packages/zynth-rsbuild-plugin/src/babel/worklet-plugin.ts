@@ -140,9 +140,23 @@ export function createWorkletBabelPlugin() {
           );
           const closureExpr = t.objectExpression(closureProps);
 
+          // Strip TS types from the worklet function before stringifying
+          // This ensures the code stored in metadata is valid JS even in a TS file.
+          path.traverse({
+            Function(inner) {
+              if (inner !== path) inner.skip();
+            },
+            TSTypeAnnotation(p) { p.remove(); },
+            TSTypeParameterDeclaration(p) { p.remove(); },
+            TSAsExpression(p) { p.replaceWith(p.node.expression); },
+            TSNonNullExpression(p) { p.replaceWith(p.node.expression); },
+            TSTypeAssertion(p) { p.replaceWith(p.node.expression); },
+          });
+
           const loc = path.node.loc?.start;
           const location = getLocation(state, loc?.line, loc?.column);
           const generatedCode = path.toString();
+          
           const metadata = t.objectExpression([
             t.objectProperty(t.identifier("location"), t.stringLiteral(location)),
             t.objectProperty(t.identifier("code"), t.stringLiteral(generatedCode)),

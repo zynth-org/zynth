@@ -286,6 +286,11 @@ static BOOL ZynthTextInputHandleSetProp(ZynthUIManager *manager,
     return NO;
   }
 
+  if ([name isEqualToString:@"syncSignalId"]) {
+    view.syncSignalId = [value respondsToSelector:@selector(integerValue)] ? [value integerValue] : 0;
+    return YES;
+  }
+
   return NO;
 }
 

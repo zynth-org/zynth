@@ -139,6 +139,11 @@ object TextInputPropAdapter {
         }
         true
       }
+      "handler" -> {
+        val id = parseNumber(value)?.toInt() ?: 0
+        input.inputHandlerWorkletId = id
+        true
+      }
       else -> false
     }
   }

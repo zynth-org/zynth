@@ -347,10 +347,17 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     workletId: Int,
     currentText: String,
     newInput: String,
+    proposedText: String,
   ): String? {
     if (runtimePtr == 0L || workletId <= 0) return null
     return runCatching {
-      JSBridge.runInputHandlerOnUiRuntime(runtimePtr, workletId, currentText, newInput)
+      JSBridge.runInputHandlerOnUiRuntime(
+        runtimePtr,
+        workletId,
+        currentText,
+        newInput,
+        proposedText,
+      )
     }.getOrNull()
   }
 

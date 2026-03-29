@@ -1012,9 +1012,30 @@ static NSString *ZynthVisibility(UIView *view) {
   return @(value);
 }
 
+- (void)setSyncSignal:(int)signalId value:(NSString *)value {
+  ZynthRuntime *runtime = self.zynthRuntime;
+  if (!runtime) return;
+  ZynthHermesRuntimeHost *host = [runtime valueForKey:@"runtime"];
+  if (!host) return;
+  ZynthWorklets *worklets = [host worklets];
+  if (!worklets) return;
+  [worklets setSyncSignalValue:signalId value:value];
+}
+
+- (NSString *_Nullable)syncSignalValue:(int)signalId {
+  ZynthRuntime *runtime = self.zynthRuntime;
+  if (!runtime) return nil;
+  ZynthHermesRuntimeHost *host = [runtime valueForKey:@"runtime"];
+  if (!host) return nil;
+  ZynthWorklets *worklets = [host worklets];
+  if (!worklets) return nil;
+  return [worklets syncSignalValueForId:signalId];
+}
+
 - (NSString *_Nullable)runInputHandlerWorklet:(int)workletId
                                    currentText:(NSString *)currentText
-                                      newInput:(NSString *)newInput {
+                                      newInput:(NSString *)newInput
+                                  proposedText:(NSString *)proposedText {
   ZynthRuntime *runtime = self.zynthRuntime;
   if (!runtime) return nil;
   ZynthHermesRuntimeHost *host = [runtime valueForKey:@"runtime"];
@@ -1023,7 +1044,8 @@ static NSString *ZynthVisibility(UIView *view) {
   if (!worklets) return nil;
   return [worklets runInputHandlerWorkletWithId:workletId
                                     currentText:currentText ?: @""
-                                       newInput:newInput ?: @""];
+                                       newInput:newInput ?: @""
+                                   proposedText:proposedText ?: @""];
 }
 
 - (void)applyKeyboardAvoidingAdjustment:(NSNumber *)nodeId behavior:(NSString *)behavior overlap:(CGFloat)overlap availableHeight:(NSNumber *_Nullable)availableHeight {

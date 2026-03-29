@@ -567,12 +567,12 @@ struct ZynthWorkletClosureValue {
   if (!_uiRuntime) return;
   auto &rt = *_uiRuntime;
   try {
-    std::string source = "(" + code + ")";
+    std::string source = code;
     source.append("\n//# sourceURL=zynth-worklet.js");
     auto buffer = std::make_shared<StringBuffer>(source.c_str());
     Value result = rt.evaluateJavaScript(buffer, "zynth-worklet.js");
     if (!result.isObject() || !result.getObject(rt).isFunction(rt)) {
-      ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] register id=%d failed (not function)", workletId);
+      ZYNTH_WORKLETS_LOG(@"[ZynthWorklets] register id=%d failed (evaluated result is NOT a function)", workletId);
       return;
     }
     auto fn = std::make_shared<Function>(result.getObject(rt).getFunction(rt));
@@ -659,7 +659,8 @@ struct ZynthWorkletClosureValue {
 
 - (nullable NSString *)runInputHandlerWorkletWithId:(int)workletId
                                          currentText:(NSString *)currentText
-                                            newInput:(NSString *)newInput {
+                                            newInput:(NSString *)newInput
+                                        proposedText:(NSString *)proposedText {
   [self ensureUIRuntime];
   if (!_uiRuntime) return nil;
   auto &rt = *_uiRuntime;
@@ -715,9 +716,16 @@ struct ZynthWorkletClosureValue {
   try {
     std::string current = [currentText isKindOfClass:[NSString class]] ? ([currentText UTF8String] ?: "") : "";
     std::string incoming = [newInput isKindOfClass:[NSString class]] ? ([newInput UTF8String] ?: "") : "";
+    std::string proposed = [proposedText isKindOfClass:[NSString class]] ? ([proposedText UTF8String] ?: "") : "";
     Value result =
-        fn->call(rt, String::createFromUtf8(rt, current), String::createFromUtf8(rt, incoming));
+        fn->call(rt, {
+                 Value(rt, String::createFromUtf8(rt, current)),
+                 Value(rt, String::createFromUtf8(rt, incoming)),
+                 Value(rt, String::createFromUtf8(rt, proposed))
+        });
+    
     if (!result.isString()) return nil;
+    
     std::string output = result.asString(rt).utf8(rt);
     return [NSString stringWithUTF8String:output.c_str()];
   } catch (...) {

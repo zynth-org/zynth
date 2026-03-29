@@ -68,8 +68,8 @@ function CreditCardInput() {
   const [text, setText] = createSyncSignal("");
 
   // Transformation happens on the native UI thread
-  const formatCard = createInputHandler((currentText, newChar) => {
-    const combined = (currentText + newChar).replace(/\D/g, "");
+  const formatCard = createInputHandler((currentText, newChar, proposedText) => {
+    const combined = proposedText.replace(/\D/g, "");
     if (combined.length > 16) return currentText;
     return combined.replace(/(.{4})/g, "$1 ").trim();
   });
@@ -110,7 +110,7 @@ function CreditCardInput() {
 | `placeholderTextColor`            | `string`                                                                  | Placeholder text color (Hex).                                              |
 | `clearButtonMode`                 | `never` \| `while-editing` \| `unless-editing` \| `always`                | (iOS) Clear button visibility.                                             |
 | `showClearAccessory`              | `boolean`                                                                 | Shows a clear accessory on supported platforms.                            |
-| `handler`                         | `(current, next) => string`                                               | **Worklet** for UI-thread input transformation (via `createInputHandler`). |
+| `handler`                         | `(current, next, proposed) => string \| undefined`                        | **Worklet** for UI-thread input transformation or rejection. Return `undefined` to accept native input unchanged. |
 | `onChangeText`                    | `(text: string) => void`                                                  | Called when text changes.                                                  |
 | `onChange`                        | `(event: TextChangeEvent) => void`                                        | Native change event callback with delta details.                           |
 | `onSelectionChange`               | `(selection: Selection) => void`                                          | Called when the caret or selection changes.                                |

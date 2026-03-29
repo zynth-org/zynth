@@ -28,6 +28,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, assign) BOOL hasOnFocus;
 @property(nonatomic, assign) BOOL hasOnBlur;
 @property(nonatomic, assign) NSInteger inputHandlerWorkletId;
+@property(nonatomic, assign) NSInteger syncSignalId;
 
 - (void)applyPlaceholderTextColor:(NSString *_Nullable)hexString;
 - (void)applyCaretColor:(NSString *)hexString;

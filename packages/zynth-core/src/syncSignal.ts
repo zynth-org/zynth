@@ -183,7 +183,13 @@ export function createSyncSignal<T extends string = string>(
     const nativeValue = getNativeSyncSignal(syncId);
     if (nativeValue !== null && nativeValue !== trackedValue) {
       cached = nativeValue as T;
-      setValue(() => cached);
+      // Use a microtask to ensure the reactive update happens outside the getter
+      // and avoids potential SolidJS re-entry issues during the render phase.
+      Promise.resolve().then(() => {
+        if (getNativeSyncSignal(syncId) === cached) {
+          setValue(() => cached);
+        }
+      });
       return cached;
     }
     cached = trackedValue;

@@ -574,6 +574,13 @@ export function createAndroidHost(): Host {
     assign("showClearAccessory", props.showClearAccessory);
     assign("testID", props.testID);
 
+    if (props.handler) {
+      const handler = props.handler;
+      if (typeof handler === "function" && (handler as any).__zynth_worklet_id !== undefined) {
+        assign("handler", (handler as any).__zynth_worklet_id);
+      }
+    }
+
     const events: Record<string, Function | undefined> = {
       onChange: props.onChange,
       onChangeText: props.onChangeText,
@@ -843,13 +850,37 @@ export function createAndroidHost(): Host {
         return;
       }
       if (name === "handler") {
+        if (typeof value === "function" && (value as any).__zynth_worklet_id !== undefined) {
+          const workletId = (value as any).__zynth_worklet_id;
+          if (
+            tryEnqueueBatch({
+              type: "setProp",
+              nodeId: node.id,
+              name: "handler",
+              value: workletId,
+            })
+          ) {
+            return;
+          }
+          enqueueBatchOp({
+            type: "setProp",
+            nodeId: node.id,
+            name: "handler",
+            value: workletId,
+          });
+          schedule();
+          return;
+        }
         if (typeof value === "function") {
           enqueueOperation(() => ui.setHandler(node.id, name, value));
           schedule();
           return;
         }
-        if (value == null && typeof ui.clearInputHandler === "function") {
-          enqueueOperation(() => ui.clearInputHandler!(node.id));
+        if (value == null) {
+          if (tryEnqueueBatch({ type: "setProp", nodeId: node.id, name: "handler", value: 0 })) {
+            return;
+          }
+          enqueueBatchOp({ type: "setProp", nodeId: node.id, name: "handler", value: 0 });
           schedule();
         }
         return;
