@@ -1,73 +1,50 @@
-# @zynth/ui
+# UI
 
-A cohesive, themeable UI component library for Zynth.
+The `@zynth/ui` package provides a responsive, robust design system and a suite of smart components built on top of the native primitives from `@zynth/components`. While `@zynth/components` exposes raw, unstyled native views mapping directly to Yoga and platform-level APIs, `@zynth/ui` provides a consistent styling architecture out-of-the-box.
 
-This package provides a set of high-level, opinionated components (`Card`, `Button`, `Badge`, etc.) built on top of `@zynth/components`. It includes a theming system to enforce design consistency across your application.
+This package manages your application's theme, colors, typography, spacing, and interaction states, allowing you to build cohesive user interfaces efficiently. It is designed to run synchronously with the underlying framework to guarantee strict performance and precise layout characteristics across iOS, Android, and Web.
 
-## Setup
+## Core Architecture
 
-Wrap your application root in `UIThemeProvider`.
+The package is split into two primary responsibilities:
+
+1. **Theming Engine**: A reactive token architecture that propagates styling configurations globally. It seamlessly delegates system appearance changes (e.g., toggling between light and dark modes) directly from native OS listeners into your SolidJS reactive graph.
+2. **Component Abstractions**: Intelligent wrappers around `@zynth/components`. Components like `Text`, `Button`, or `Card` inherently implement the global theme context, meaning you rarely have to explicitly style standard components.
+
+## Technical Capabilities
+
+* **System Appearance Sync**: Automatically reacts to native platform configuration switches via `TraitCollection` (iOS) and `Configuration` (Android) changes.
+* **Granular Reactivity**: Theming relies strictly on SolidJS signal propagation, minimizing unnecessary re-renders when token styles change globally.
+* **Component Modularity**: Provides unified interfaces for complex UI elements like toggles, sliders, badges, and QR codes while keeping logic decoupled from layout concerns.
+* **Platform Consistency**: Standardizes spacing, radii, and typographic tokens that visually adapt to the specific screen densities and aspect ratios of your deployment targets.
+
+## Quick Overview
+
+Instead of applying disjointed styles across the application, `@zynth/ui` components subscribe to an environment-level provider.
 
 ```tsx
-import { UIThemeProvider, createTheme } from "@zynth/ui";
+import { UIProvider, Card, Text, Button } from "@zynth/ui";
+import { View } from "@zynth/components";
 
-const theme = createTheme({
-  colors: {
-    accent: "#6200ee",
-    background: "#f5f5f5",
-    // ...
-  }
-});
-
-function App() {
+function ApplicationRoot() {
   return (
-    <UIThemeProvider theme={theme}>
-      <MainScreen />
-    </UIThemeProvider>
+    <UIProvider colorScheme="system">
+      <View style={{ flex: 1, padding: 20 }}>
+        <Card variant="elevated">
+          <Text variant="heading">Overview</Text>
+          <Text color="muted">This card inherits the global design tokens.</Text>
+          <Button title="Confirm" tone="primary" />
+        </Card>
+      </View>
+    </UIProvider>
   );
 }
 ```
 
-## Components
+## Available Features
 
-### `Card`
-A versatile container for grouping content.
+* **Design Tokens**: Configuration options for typography, spacing scales, border radii, and extensive semantic color palettes.
+* **Theme Hooks**: Methods like `useUITheme()` and `createUIColorScheme()` for applying the design system to raw, structural components.
+* **Pre-built Interfaces**: `Card`, `Badge`, `Button`, `Switch`, `Checkbox`, `Radio`, and `QRCode` modules ready for adoption.
 
-| Prop | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `variant` | `'elevated' \| 'outlined' \| 'flat'` | `'elevated'` | Visual style of the card. |
-| `padding` | `'none' \| 'sm' \| 'md' \| 'lg'` | `'md'` | Internal spacing. |
-
-```tsx
-import { Card, Text } from "@zynth/ui";
-
-<Card variant="elevated" padding="lg">
-  <Text>Card Content</Text>
-</Card>
-```
-
-### `Button`
-Extends the native `@zynth/components` Button with theme integration.
-
-```tsx
-import { Button } from "@zynth/ui";
-
-<Button tone="primary" onPress={submit}>
-  Submit
-</Button>
-```
-
-### `Badge`, `Checkbox`, `Radio`, `Switch`, `TextInput`
-Standard form components and indicators that automatically consume the current theme's palette (success, warning, danger, etc.).
-
-## Hooks
-
-### `useUITheme()`
-Returns the current theme object.
-
-```tsx
-import { useUITheme } from "@zynth/ui";
-
-const theme = useUITheme();
-console.log(theme().colors.accent);
-```
+Detailed documentation for theming configuration, system hooks, and individual component references can be found in the subsequent documentation files within the structure.
