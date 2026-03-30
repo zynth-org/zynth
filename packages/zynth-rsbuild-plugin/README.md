@@ -1,87 +1,256 @@
-# @zynth/rsbuild-plugin
+# Rsbuild Plugin
 
-The official Rsbuild plugin for Zynth applications.
+`@zynth/rsbuild-plugin` configures Rsbuild for Zynth applications on iOS, Android, and Web.
 
-This package provides the build configuration and tooling required to compile Zynth apps for both Native (iOS/Android) and Web platforms. It abstracts away the complexity of configuring Rsbuild/Rspack for the unique requirements of the Zynth runtime (Hermes) and the SolidJS universal renderer.
+It provides the default build shape used by Zynth apps, including platform-aware compilation, local asset imports for images and fonts, monorepo package aliasing for `@zynth/*` packages, and the feature hook used by packages that generate build-time modules.
 
-## Features
+For most apps, this package is used through `defineZynthConfig()`. The plugin applies Zynth defaults and still allows standard Rsbuild configuration to be merged in normally.
 
-*   **Dual-Platform Support**: Automatically switches between Native and Web build configurations based on the target platform.
-*   **Monorepo Support**: Automatically discovers and aliases `@zynth/*` packages to their source files, enabling a seamless "edit-refresh" loop for framework development.
-*   **Hermes Compatibility**: Shims browser-specific code (HMR clients, CSS injection) that would crash the native JS engine.
-*   **SolidJS Integration**: Configures the Babel preset for SolidJS, selecting the `universal` output for Native and `dom` for Web.
-*   **Asset Management**: Custom handling for image assets to support native resolution strategies.
+## Basic usage
 
-## Usage
-
-In your `rsbuild.config.ts`:
+### Default app configuration
 
 ```ts
 import { defineZynthConfig } from "@zynth/rsbuild-plugin";
 
-export default defineZynthConfig({
-  // Your standard Rsbuild config here
-  source: {
-    entry: {
-      index: "./src/index.tsx",
+export default defineZynthConfig();
+```
+
+### Select a target platform
+
+```ts
+import { defineZynthConfig } from "@zynth/rsbuild-plugin";
+
+export default defineZynthConfig(
+  {
+    source: {
+      entry: {
+        app: "./src/index.tsx",
+      },
     },
   },
-}, {
-  // Zynth-specific options
-  platform: process.env.ZYNTH_PLATFORM as "ios" | "android" | "web",
+  {
+    platform: process.env.ZYNTH_PLATFORM as "ios" | "android" | "web",
+  },
+);
+```
+
+### Local asset imports
+
+The plugin configures image and font imports so application code can consume local files directly.
+
+```tsx
+import { onMount } from "solid-js";
+import { Image } from "@zynth/components";
+import { Font } from "@zynth/apis";
+import logo from "./assets/logo.png";
+import brandFont from "./assets/brand.ttf";
+
+export function Screen() {
+  onMount(async () => {
+    await Font.loadAsync("Brand", brandFont);
+  });
+
+  return <Image source={logo} style={{ width: 96, height: 96 }} />;
+}
+```
+
+## Advanced examples
+
+### Merge standard Rsbuild configuration
+
+`defineZynthConfig()` accepts a regular Rsbuild config as its first argument. Zynth defaults are applied first, and your app-specific configuration is merged on top.
+
+```ts
+import path from "node:path";
+import { defineZynthConfig } from "@zynth/rsbuild-plugin";
+
+export default defineZynthConfig({
+  tools: {
+    rspack(config) {
+      config.module ??= {};
+      config.module.rules ??= [];
+      config.module.rules.unshift({
+        test: /\.html$/i,
+        include: [path.resolve(process.cwd(), "src/assets/misc")],
+        type: "asset/source",
+      });
+    },
+  },
 });
 ```
 
-## Configuration
+### Generated-module features
 
-### `defineZynthConfig(config, options)`
-
-A wrapper around `defineConfig` that applies Zynth's defaults.
-
-#### Options
-
-*   `platform`: The target platform (`ios`, `android`, `web`). Defaults to `ios` or `process.env.ZYNTH_PLATFORM`.
-*   `babel`: Options for the internal Babel plugin.
-    *   `enable`: Enable/disable Babel (default: `true`).
-    *   `targets`: Custom Babel targets.
-*   `plugin`: Options passed to the underlying plugin.
-    *   `hermesCompat`: Enable Hermes shims (default: `true` for native).
-    *   `writeArtifacts`: Write HMR tokens to `.zynth/artifacts.json` (default: `true`).
-    *   `features`: Extensible feature descriptors (including generated modules).
-
-### Feature Ownership
-
-`@zynth/rsbuild-plugin` is intentionally agnostic. It executes generic feature
-descriptors (for example, generated module features), while feature packages
-own domain-specific semantics.
-
-Example with router filesystem routing:
+Build-time features can generate source files and expose them through stable module identifiers. This is how packages such as `@zynth/router` integrate filesystem-driven features into the build.
 
 ```ts
 import { defineZynthConfig } from "@zynth/rsbuild-plugin";
 import { routerFileSystem } from "@zynth/router/rsbuild";
 
-export default defineZynthConfig({}, {
-  plugin: {
-    features: [routerFileSystem({ enable: true })],
+export default defineZynthConfig(
+  {},
+  {
+    plugin: {
+      features: [routerFileSystem()],
+    },
   },
-});
+);
 ```
 
-In this setup, `@zynth/router` owns route scanning and manifest semantics.
-`@zynth/rsbuild-plugin` only writes/aliases the generated module.
-Router-specific filesystem conventions are documented by each router package.
+### Custom generated module
 
-## How it Works
+```ts
+import { defineZynthConfig } from "@zynth/rsbuild-plugin";
 
-### Native Build
-*   **Target**: `web` (shimmed for Hermes).
-*   **Output**: Single JS bundle (`main.js`), no HTML, no CSS files.
-*   **JSX**: Transpiles SolidJS JSX to `universal` create calls (`@zynth/core/universal`).
-*   **HMR**: Uses a custom shim to prevent the standard WebSocket client from breaking the native bridge.
+export default defineZynthConfig(
+  {},
+  {
+    plugin: {
+      features: [
+        {
+          kind: "generated-module",
+          moduleId: "@app/build-info",
+          outputPath: ".zynth/build-info.ts",
+          generate() {
+            return [
+              "export const buildInfo = {",
+              '  channel: "dev",',
+              "  platform: __ZYNTH_PLATFORM__,",
+              "};",
+            ].join("\\n");
+          },
+        },
+      ],
+    },
+  },
+);
+```
 
-### Web Build
-*   **Target**: Standard web.
-*   **Output**: HTML, JS, CSS.
-*   **JSX**: Transpiles SolidJS JSX to standard DOM operations.
-*   **Aliases**: Automatically resolves `@zynth/core` to its web entry point (`index.web.ts`).
+### Extra aliases
+
+Use `extraAliases` when the app needs to inject additional resolve aliases. Package aliases discovered from the workspace remain the default for `@zynth/*` packages.
+
+```ts
+import path from "node:path";
+import { defineZynthConfig } from "@zynth/rsbuild-plugin";
+
+export default defineZynthConfig(
+  {},
+  {
+    plugin: {
+      extraAliases: {
+        "@app/theme": path.resolve(process.cwd(), "src/theme"),
+      },
+    },
+  },
+);
+```
+
+### Babel configuration
+
+The plugin configures Babel for Zynth defaults, including platform-aware Solid output. Additional targets can be supplied when an app needs different browser or native baselines.
+
+```ts
+import { defineZynthConfig } from "@zynth/rsbuild-plugin";
+
+export default defineZynthConfig(
+  {},
+  {
+    babel: {
+      targets: {
+        ios: "14.0",
+        android: "10.0",
+      },
+    },
+  },
+);
+```
+
+## Special cases and unusual features
+
+- Web is supported by this package. When `platform` is `"web"`, the plugin enables a standard web build with HTML and CSS output.
+- Native and web builds use different defaults. Native emits a single JavaScript bundle and disables CSS output. Web emits HTML, JavaScript, and CSS.
+- Native development injects `__ZYNTH_DEV_SERVER_URL` so runtime asset loaders can resolve local files through the dev server.
+- Imported images and fonts are transformed into asset descriptors rather than plain URL strings. In development they include a file-backed path; on web production builds they emit hashed files.
+- Native builds write asset manifests to `dist/assets/images-manifest.json` and `dist/assets/fonts-manifest.json` so the native toolchain can discover bundled files.
+- Native development also writes `.zynth/artifacts.json` by default. This is used by the development workflow to exchange bundle metadata.
+- Native HMR support is present but still being worked on. It should be treated as development-only and may not behave as consistently as the web development flow.
+- Workspace package aliasing prefers app-local installed packages when available, then falls back to workspace source resolution for `@zynth/*` packages.
+- For web builds, `@zynth/core` resolves to its web entrypoint automatically when one is available.
+- If `platform` is omitted, the plugin uses `process.env.ZYNTH_PLATFORM` when present and otherwise defaults to `"ios"`.
+
+## API reference
+
+### `defineZynthConfig(userConfig?, options?)`
+
+Wraps a standard Rsbuild config with Zynth defaults and returns the final config for the selected platform.
+
+- `userConfig?: RsbuildConfig`
+- `options?: DefineZynthConfigOptions`
+
+### `DefineZynthConfigOptions`
+
+- `platform?: "ios" | "android" | "web"`
+- `plugin?: ZynthRsbuildPluginOptions`
+- `babel?: { enable?: boolean; targets?: { android?: string; ios?: string; [platform: string]: string | undefined } }`
+
+### `ZynthRsbuildPluginOptions`
+
+- `artifactPath?: string`
+  Path for the dev artifact file. Defaults to `<app>/.zynth/artifacts.json`.
+- `workspaceRoot?: string`
+  Explicit workspace root. When omitted, the plugin walks upward to detect the workspace automatically.
+- `hermesCompat?: boolean`
+  Enables the native compatibility shims used by the Zynth development runtime.
+- `extraAliases?: Record<string, string | false | (string | false)[]>`
+  Adds resolve aliases on top of the plugin defaults.
+- `writeArtifacts?: boolean`
+  Controls whether development artifact metadata is written.
+- `features?: ZynthBuildFeature[]`
+  Registers build-time features such as generated modules.
+
+### `ZynthBuildFeatureContext`
+
+The context object passed to generated-module features.
+
+- `appRoot: string`
+- `workspaceRoot: string`
+- `platform: "ios" | "android" | "web"`
+
+### `ZynthGeneratedModuleFeature`
+
+Feature descriptor for generating a module at build time.
+
+- `kind: "generated-module"`
+- `moduleId: string`
+- `outputPath?: string`
+- `generate(context: ZynthBuildFeatureContext): string | Promise<string>`
+
+### `ZynthBuildFeature`
+
+Union of:
+
+- `ZynthGeneratedModuleFeature`
+- `ZynthOpaqueFeature`
+
+### Asset handling enabled by the plugin
+
+Imported image files (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.avif`, `.svg`) are transformed into objects with this shape:
+
+- `type: "asset"`
+- `name: string`
+- `ext: string`
+- `hash: string`
+- `scale?: number`
+- `relativePath?: string`
+- `devPath?: string`
+
+Imported font files (`.ttf`, `.otf`, `.woff`, `.woff2`, `.eot`) are transformed into objects with this shape:
+
+- `type: "font"`
+- `name: string`
+- `ext: string`
+- `hash: string`
+- `relativePath?: string`
+- `devPath?: string`
