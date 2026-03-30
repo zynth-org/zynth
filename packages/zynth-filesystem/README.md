@@ -1,299 +1,200 @@
-# @zynth/filesystem
+# FileSystem
 
-Native filesystem access for Zynth apps.
+FileSystem exposes a compact, cross-platform API for working with files and directories from application code. It provides synchronous metadata accessors, asynchronous I/O (text, bytes, base64), streaming primitives for large files, upload/download helpers, and SolidJS-compatible signals for integrating file state into UI components.
 
-`@zynth/filesystem` combines:
+Basic platform support is provided for iOS and Android. Web runtimes have partial support for some operations (for example, download helpers and stream-based APIs that rely on `fetch`).
 
-- `File` and `Directory` classes for common file operations
-- `Paths` helpers for app-scoped locations and path utilities
-- Solid-friendly signal wrappers for reactive file/directory state
-- Streamed upload helpers (`uploadAsync`, `uploadStream`) for large files
-- Native checksum helpers (`md5`, `sha1`, `sha256`)
+## Basic usage
 
-It intentionally does not own system picker UX. Use `@zynth/document-picker` in app code, then wrap returned URIs with `File`/`Directory`.
+### File interaction
 
-## Basic
-
-### Install
-
-```bash
-npm i @zynth/filesystem
-```
-
-Regenerate native projects after adding the package.
-
-### Basic usage
-
-```ts
+```tsx
 import { File, Paths } from "@zynth/filesystem";
 
-const file = new File(Paths.document, "notes.txt");
-await file.create({ intermediates: true });
-await file.write("Hello Zynth");
+// Create a file relative to the app documents directory
+const note = new File(Paths.document.uri, "notes.txt");
 
-const text = await file.text();
-const info = await file.info({ md5: true });
+// Write and read text
+await note.write("hello world");
+const text = await note.text();
+
+// Sync checks and metadata
+if (note.exists) {
+  console.log(note.size, note.modificationTime);
+}
 ```
 
-### Directory usage
+### Directory enumeration
 
 ```ts
 import { Directory, File, Paths } from "@zynth/filesystem";
 
-const root = new Directory(Paths.document, "workspace");
-await root.create({ intermediates: true, idempotent: true });
-
-const draft = root.createFile("draft.txt");
-await draft.write("first draft");
-
-const entries = await root.list(); // Array<File | Directory>
+const cacheLogs = new Directory(Paths.cache.uri, "logs");
+if (!cacheLogs.exists) {
+  await cacheLogs.create({ intermediates: true });
+}
+const entries = await cacheLogs.list();
+const files = entries.filter((e) => e instanceof File) as File[];
 ```
 
-### Upload helper usage
+## Important and advanced examples
 
-```ts
-import { File, Paths } from "@zynth/filesystem";
+### Reactive file-backed signal (SolidJS)
 
-const video = new File(Paths.document, "movie.mp4");
-
-const response = await video.uploadAsync("https://example.com/upload", {
-  method: "PUT",
-  checksum: { algorithm: "sha256", headerName: "x-content-checksum" },
-  tls: {
-    trustedCertificatesPem: [serverCertificatePem],
-  },
-  onUploadProgress: (event) => {
-    console.log(event.phase, event.bytesSent, event.bytesTotal);
-  },
-});
-```
-
-### Reactive usage (Solid)
-
-```ts
+```tsx
+import { createEffect } from "solid-js";
 import { File, Paths, createFileSignal } from "@zynth/filesystem";
 
-const settingsFile = new File(Paths.document, "settings.json");
+const configFile = new File(Paths.document.uri, "config.json");
 
-const settings = createFileSignal(settingsFile, {
-  initialValue: "{}",
-  read: async () => settingsFile.text(),
-  write: async (next) => settingsFile.write(next),
-});
+const App = () => {
+  const { value, loading, setValue } = createFileSignal(configFile, {
+    initialValue: '{"theme":"system"}',
+  });
 
-await settings.setValue('{"theme":"dark"}');
+  createEffect(() => {
+    if (!loading()) {
+      const parsed = JSON.parse(value());
+      console.log("theme:", parsed.theme);
+    }
+  });
+
+  return (
+    <div>
+      <div>{loading() ? "Loading..." : JSON.parse(value()).theme}</div>
+      <button onClick={() => setValue(JSON.stringify({ theme: "dark" }))}>
+        Set Dark
+      </button>
+    </div>
+  );
+};
 ```
 
-### Picker integration
+### Streaming reads and uploads
 
 ```ts
-import { DocumentPicker } from "@zynth/document-picker";
-import { File } from "@zynth/filesystem";
-
-const result = await DocumentPicker.getDocumentAsync({
-  multiple: false,
-  copyToCacheDirectory: true,
+// Read file as a stream and upload using fetch
+const f = new File(Paths.document.uri, "large.bin");
+const response = await f.uploadAsync("https://upload.example.com/part", {
+  method: "PUT",
+  onUploadProgress: (p) => console.log(p.bytesSent, p.bytesTotal),
+  checksum: "sha256",
 });
 
-if (!result.cancelled && result.assets[0]?.uri) {
-  const file = new File(result.assets[0].uri);
-  console.log(await file.text());
+// Alternatively: consume chunks using the readable stream
+const reader = f.readableStream().getReader();
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+  // process Uint8Array chunk
 }
 ```
 
-## Advanced
-
-### Why `uploadAsync` for big files
-
-`uploadAsync` uses `uploadStream()` internally and sends chunks to the native fetch uploader.
-
-Benefits:
-
-- avoids loading the whole file into JS memory
-- supports upload progress events
-- can attach checksum metadata headers in one call
-
-For low-level control, use `fetch` directly with `body: file.uploadStream(...)`.
-
-### Checksums and integrity metadata
-
-Use `checksumAsync()` or `checksumSync()` to compute digests natively:
+### Download helper
 
 ```ts
-const sha = await file.checksumAsync("sha256");
+// Download a remote URL into the given directory
+const downloadsDir = new Directory(Paths.document.uri, "downloads");
+const saved = await File.downloadFileAsync(
+  "https://example.com/file.zip",
+  downloadsDir,
+  { idempotent: true },
+);
+console.log(saved.uri);
 ```
 
-Supported algorithms:
+## Special cases and notes
 
-- `md5`
-- `sha1`
-- `sha256`
+- Paths.bundle is read-only and intended for immutable compiled assets; write operations on bundle paths will fail.
+- All file and directory URIs are normalized internally; use `Paths` helpers for path arithmetic and inspection.
+- Signals (`createFileSignal`, `createDirectorySignal`) return SolidJS-compatible getters (`value()`, `loading()`, `entries()`) so they can be used directly inside Solid components.
+- Some runtime-dependent features (native uploads, checksums, and certain sync metadata calls) require the native platform module. Where the native bridge is unavailable, operations that rely on it will throw — check runtime availability before calling these methods in non-native environments.
+- Methods like `write`, `move`, and `create` are implemented as atomic operations on supported platforms to reduce the risk of data corruption during unexpected termination.
 
-`uploadAsync` can auto-inject checksum headers:
+## API Reference
 
-- `checksum: "sha256"` -> defaults to `x-zynth-checksum: sha256:<digest>`
-- custom object for `headerName` and prefix behavior
+**Exports:** File, Directory, Paths, createFileSignal, createDirectorySignal and the types listed below.
 
-### TLS pinning in `uploadAsync`
+**File** (class)
 
-For self-signed or private CA HTTPS endpoints, pass request-level trust anchors:
+- `new File(...segments: PathLike[])` — Construct a file URI from path segments.
+- `uri: string` — Full resource URI.
+- `name: string` — Basename of the file.
+- `extension: string` — File extension.
+- `parentDirectory: Directory` — Parent directory object.
+- `exists: boolean` — Synchronous existence check.
+- `size: number` — Synchronous size (0 if missing).
+- `creationTime: number | null` — Synchronous creation timestamp.
+- `modificationTime: number | null` — Synchronous modification timestamp.
+- `md5: string | null` — Synchronous MD5 if available.
+- `type: string` — MIME-like type when available.
+- `info(options?: InfoOptions): Promise<FileInfo>` — Async metadata.
+- `infoSync(options?: InfoOptions): FileInfo` — Sync metadata.
+- `text(): Promise<string>` / `textSync(): string` — Read UTF-8 text.
+- `bytes(): Promise<Uint8Array>` / `bytesSync(): Uint8Array` — Read raw bytes.
+- `base64(): Promise<string>` / `base64Sync(): string` — Read base64-encoded contents.
+- `arrayBuffer(): Promise<ArrayBuffer>` — Read as ArrayBuffer.
+- `checksumAsync(algo?: ChecksumAlgorithm): Promise<string>` / `checksumSync(algo?: ChecksumAlgorithm): string` — Compute checksum.
+- `write(content: string | Uint8Array): Promise<void>` — Atomic write.
+- `create(options?: FileCreateOptions): Promise<void>` — Create an empty file.
+- `delete(): Promise<void>` — Remove file.
+- `copy(destination: Directory | File | string): Promise<void>` — Copy file.
+- `move(destination: Directory | File | string): Promise<void>` — Move file (updates instance URI).
+- `rename(newName: string): Promise<void>` — Rename within parent directory.
+- `uploadStream(options?: UploadStreamOptions): ReadableStream<Uint8Array>` — Stream readable chunks from file.
+- `readableStream()` / `stream()` — Alias for `uploadStream`.
+- `writableStream(): WritableStream<Uint8Array>` — Writable stream that writes on close.
+- `uploadAsync(url: string, options?: UploadOptions): Promise<Response>` — Upload using `fetch` with optional progress and checksum.
+- `static downloadFileAsync(url: string, destination: Directory | File | string, options?: DownloadOptions): Promise<File>` — Download to destination.
 
-```ts
-await file.uploadAsync("https://127.0.0.1:53317/__zynth/upload", {
-  method: "POST",
-  tls: {
-    trustedCertificatesPem: [serverCertificatePem],
-  },
-});
-```
+**Directory** (class)
 
-Notes:
+- `new Directory(...segments: PathLike[])` — Construct a directory URI.
+- `uri: string` — Full directory URI.
+- `name: string` — Directory basename.
+- `parentDirectory: Directory` — Parent directory.
+- `exists: boolean` — Synchronous existence check.
+- `size: number | null` — Synchronous size when available.
+- `info(): Promise<DirectoryInfo>` / `infoSync(): DirectoryInfo` — Metadata.
+- `list(): Promise<Array<File | Directory>>` — Enumerate entries.
+- `create(options?: DirectoryCreateOptions): Promise<void>` — Create directory.
+- `createDirectory(name: string): Directory` — Helper to construct child directory.
+- `createFile(name: string, _mimeType?: string | null): File` — Helper to construct child file.
+- `delete(): Promise<void>` — Recursive deletion.
+- `copy(destination: Directory | File | string): Promise<void>` — Copy directory.
+- `move(destination: Directory | File | string): Promise<void>` — Move directory.
+- `rename(newName: string): Promise<void>` — Rename directory.
 
-- `trustedCertificatesPem` accepts one PEM string or an array of PEM strings.
-- Trust applies only to that request.
-- This is intended for explicit cert pinning/private trust flows.
+**Paths** (static helpers)
 
-### Path semantics and URI support
+- `Paths.document: Directory` — Application documents directory.
+- `Paths.cache: Directory` — Cache directory.
+- `Paths.bundle: Directory` — Read-only application bundle assets.
+- `Paths.appleSharedContainers: Record<string, Directory>` — Shared containers (iOS when applicable).
+- `Paths.availableDiskSpace: number` — Available bytes.
+- `Paths.totalDiskSpace: number` — Total bytes.
+- `Paths.basename(path: PathLike, ext?: string): string`
+- `Paths.dirname(path: PathLike): string`
+- `Paths.extname(path: PathLike): string`
+- `Paths.isAbsolute(path: PathLike): boolean`
+- `Paths.join(...paths: PathLike[]): string`
+- `Paths.normalize(path: PathLike): string`
+- `Paths.parse(path: PathLike)` — Returns `{ base, dir, ext, name, root }`.
+- `Paths.relative(from: PathLike, to: PathLike): string`
+- `Paths.info(...uris: PathLike[]): PathInfo | PathInfo[]` — Path metadata snapshot.
 
-`File`/`Directory` constructors accept path segments (`PathLike`):
+**Signals (reusability with SolidJS)**
 
-- string paths (absolute or relative)
-- URI objects: `{ uri: string }`
-- mixed segments: `new File(Paths.cache, "a", "b.txt")`
+- `createFileSignal<T>(file: File, options: FileSignalOptions<T>): FileSignal<T>` — Returns `{ value(), loading(), error(), refresh(), setValue(), remove() }`.
+- `createDirectorySignal<T = File | Directory>(directory: Directory, options?: DirectorySignalOptions<T>): DirectorySignal<T>` — Returns `{ entries(), loading(), error(), refresh() }`.
 
-File URIs (`file://`) are normalized by the package. `asset://` / `bundle://` are supported for reading/listing where the platform allows it.
+**Types** (selected)
 
-## API reference
+- `PathLike = string | { uri: string }`
+- `FileInfo`, `DirectoryInfo`, `DirectoryEntryInfo` — Metadata shapes.
+- `UploadOptions`, `UploadStreamOptions`, `UploadChecksumOptions` — Upload configuration.
+- `FileSignalOptions<T>`, `FileSignal<T>`, `DirectorySignalOptions<T>`, `DirectorySignal<T>` — Signal types used by the reactive helpers.
 
-### `File`
+---
 
-Properties:
-
-- `uri`
-- `name`
-- `extension`
-- `parentDirectory`
-- `exists`
-- `size`
-- `creationTime`
-- `modificationTime`
-- `md5`
-- `type`
-
-Info/read/write:
-
-- `info(options?: InfoOptions): Promise<FileInfo>`
-- `infoSync(options?: InfoOptions): FileInfo`
-- `text(): Promise<string>`
-- `textSync(): string`
-- `bytes(): Promise<Uint8Array>`
-- `bytesSync(): Uint8Array`
-- `base64(): Promise<string>`
-- `base64Sync(): string`
-- `arrayBuffer(): Promise<ArrayBuffer>`
-- `write(content: string | Uint8Array): Promise<void>`
-
-Streams:
-
-- `readableStream(): ReadableStream<Uint8Array>`
-- `stream(): ReadableStream<Uint8Array>`
-- `writableStream(): WritableStream<Uint8Array>`
-- `uploadStream(options?: UploadStreamOptions): ReadableStream<Uint8Array>`
-
-Upload/checksum:
-
-- `uploadAsync(url: string, options?: UploadOptions): Promise<Response>`
-- `checksumAsync(algorithm?: ChecksumAlgorithm): Promise<string>`
-- `checksumSync(algorithm?: ChecksumAlgorithm): string`
-
-Mutations:
-
-- `create(options?: FileCreateOptions): Promise<void>`
-- `delete(): Promise<void>`
-- `copy(destination: Directory | File | string): Promise<void>`
-- `move(destination: Directory | File | string): Promise<void>`
-- `rename(newName: string): Promise<void>`
-
-Static helpers:
-
-- `downloadFileAsync(url, destination, options?): Promise<File>`
-
-### `Directory`
-
-Properties:
-
-- `uri`
-- `name`
-- `parentDirectory`
-- `exists`
-- `size`
-
-Methods:
-
-- `info(): Promise<DirectoryInfo>`
-- `infoSync(): DirectoryInfo`
-- `list(): Promise<Array<File | Directory>>`
-- `create(options?: DirectoryCreateOptions): Promise<void>`
-- `createDirectory(name: string): Directory`
-- `createFile(name: string, mimeType?): File`
-- `delete(): Promise<void>`
-- `copy(destination: Directory | File | string): Promise<void>`
-- `move(destination: Directory | File | string): Promise<void>`
-- `rename(newName: string): Promise<void>`
-
-### `Paths`
-
-Locations:
-
-- `Paths.document: Directory`
-- `Paths.cache: Directory`
-- `Paths.bundle: Directory`
-- `Paths.appleSharedContainers: Record<string, Directory>`
-
-Disk space:
-
-- `Paths.availableDiskSpace: number`
-- `Paths.totalDiskSpace: number`
-
-Path utilities:
-
-- `basename(path, ext?)`
-- `dirname(path)`
-- `extname(path)`
-- `isAbsolute(path)`
-- `join(...paths)`
-- `normalize(path)`
-- `parse(path)`
-- `relative(from, to)`
-- `info(...uris)`
-
-### Signals
-
-- `createFileSignal(file, options): FileSignal<T>`
-  - `value`, `loading`, `error`, `refresh`, `setValue`, `remove`
-- `createDirectorySignal(directory, options?): DirectorySignal<T>`
-  - `entries`, `loading`, `error`, `refresh`
-
-### Core types
-
-- `PathLike`
-- `PathInfo`
-- `FileInfo`
-- `DirectoryInfo`
-- `DirectoryEntryInfo`
-- `FileCreateOptions`
-- `DirectoryCreateOptions`
-- `InfoOptions`
-- `DownloadOptions`
-- `ChecksumAlgorithm`
-- `UploadProgress`
-- `UploadStreamOptions`
-- `UploadChecksumOptions`
-- `UploadOptions`
-- `FileSignal`, `FileSignalOptions`
-- `DirectorySignal`, `DirectorySignalOptions`
-
-## Platform notes
-
-- iOS App Transport Security (ATS) blocks plain HTTP by default. For local testing, use loopback (`127.0.0.1`) or configure ATS exceptions.
-- `asset://` and `bundle://` paths are read-only on mobile platforms. Write/create/delete/move/rename against those URIs are not supported.
+This document covers the public surface exported from the package entry. Use `Paths` helpers for portable path manipulation and the `File`/`Directory` classes for most I/O. Signals are provided to integrate file state into SolidJS-based UI code.
