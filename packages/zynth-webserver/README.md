@@ -26,7 +26,7 @@ export function LocalServer() {
         },
       });
     } catch (error) {
-      ZynthLogger.debug("Server failed to start", error);
+      console.log("Server failed to start", error);
     }
   };
 
@@ -37,7 +37,7 @@ export function LocalServer() {
   createEffect(() => {
     if (server.status() === "running") {
       const sub = server.subscribe((snapshot) => {
-        ZynthLogger.debug(`Active uploads: ${snapshot.uploadState.activeCount}`);
+        console.log(`Active uploads: ${snapshot.uploadState.activeCount}`);
       });
       onCleanup(() => sub.remove());
     }
@@ -81,7 +81,7 @@ export function SecuredSignalingServer() {
     // Reading data sent to the /__zynth/signal endpoint
     const data = await server.getSignal<{ user: string }>("my-signal-key", true);
     if (data) {
-      ZynthLogger.debug("Signal received:", data.user);
+      console.log("Signal received:", data.user);
     }
   };
 
@@ -99,7 +99,7 @@ export function SecuredSignalingServer() {
 import { WebServer } from "@zynth/webserver";
 
 if (!WebServer.isAvailable()) {
-  ZynthLogger.debug("Local web server is not available in this environment.");
+  console.log("Local web server is not available in this environment.");
 }
 ```
 
