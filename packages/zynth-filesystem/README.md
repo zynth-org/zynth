@@ -37,7 +37,7 @@ const entries = await cacheLogs.list();
 const files = entries.filter((e) => e instanceof File) as File[];
 ```
 
-## Important and advanced examples
+## Advanced examples
 
 ### Reactive file-backed signal (SolidJS)
 

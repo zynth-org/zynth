@@ -29,7 +29,7 @@ function AppStack() {
 }
 ```
 
-## Important and advanced examples
+## Advanced examples
 
 ### Default screen options
 

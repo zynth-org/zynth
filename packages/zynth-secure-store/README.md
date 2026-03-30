@@ -32,7 +32,7 @@ const flag = SecureStore.getItem("launch_flag");
 SecureStore.deleteItem("launch_flag");
 ```
 
-## Important and advanced examples
+## Advanced examples
 
 ### Require authentication before access
 
@@ -62,8 +62,7 @@ const credentials = await SecureStore.getItemAsync("saved_credentials", {
 import { SecureStore } from "@zynth/secure-store";
 
 const secureStoreAvailable = await SecureStore.isAvailableAsync();
-const biometricsAvailable =
-  await SecureStore.canUseBiometricAuthentication();
+const biometricsAvailable = await SecureStore.canUseBiometricAuthentication();
 ```
 
 ### Use a custom service namespace

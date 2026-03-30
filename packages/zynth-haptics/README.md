@@ -27,7 +27,7 @@ const Button = (props) => {
 };
 ```
 
-## Important and advanced examples
+## Advanced examples
 
 ### Notification Feedback
 
@@ -107,6 +107,7 @@ const onValueChange = () => {
 **AndroidHaptics** (Enum)
 
 Provides mapping to native `HapticFeedbackConstants`, including:
+
 - `Clock_Tick`, `Confirm`, `Context_Click`, `Drag_Start`, `Gesture_Start`, `Long_Press`, `Keyboard_Tap`, `Toggle_On`, `Toggle_Off`, and others.
 
 ---

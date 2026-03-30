@@ -13,10 +13,10 @@ Wrap any component that needs gesture recognition with the `GestureDetector` and
 ```tsx
 import { createSignal } from "solid-js";
 import { View } from "@zynth/components";
-import { 
-  GestureDetector, 
-  createTapGesture, 
-  createPanGesture 
+import {
+  GestureDetector,
+  createTapGesture,
+  createPanGesture,
 } from "@zynth/gesture-handler";
 
 const App = () => {
@@ -36,20 +36,20 @@ const App = () => {
 
   return (
     <GestureDetector gesture={[tap, pan]}>
-      <View 
-        style={{ 
-          width: 200, 
-          height: 200, 
+      <View
+        style={{
+          width: 200,
+          height: 200,
           backgroundColor: pressed() ? "darkblue" : "blue",
-          borderRadius: 20 
-        }} 
+          borderRadius: 20,
+        }}
       />
     </GestureDetector>
   );
 };
 ```
 
-## Important and advanced examples
+## Advanced examples
 
 ### Reactive gesture composition
 
@@ -58,28 +58,30 @@ Since `GestureDetector` accepts a reactive `gesture` prop, you can use SolidJS p
 ```tsx
 import { createMemo, createSignal } from "solid-js";
 import { View } from "@zynth/components";
-import { GestureDetector, createPanGesture, createPinchGesture } from "@zynth/gesture-handler";
+import {
+  GestureDetector,
+  createPanGesture,
+  createPinchGesture,
+} from "@zynth/gesture-handler";
 
 const InteractiveLayer = (props) => {
   const [isLocked, setIsLocked] = createSignal(false);
 
   const gestures = createMemo(() => {
     if (isLocked()) return [];
-    
+
     return [
       createPanGesture({
-        onUpdate: (e) => props.onTranslate(e.translationX, e.translationY)
+        onUpdate: (e) => props.onTranslate(e.translationX, e.translationY),
       }),
       createPinchGesture({
-        onUpdate: (e) => props.onScale(e.scale)
-      })
+        onUpdate: (e) => props.onScale(e.scale),
+      }),
     ];
   });
 
   return (
-    <GestureDetector gesture={gestures()}>
-      {props.children}
-    </GestureDetector>
+    <GestureDetector gesture={gestures()}>{props.children}</GestureDetector>
   );
 };
 ```
@@ -90,11 +92,11 @@ Gestures and animations in Zynth are both powered by the same underlying reactiv
 
 ```tsx
 import { View, Text } from "@zynth/components";
-import { 
-  Animated, 
-  createSharedValue, 
-  createAnimatedStyle, 
-  withSpring 
+import {
+  Animated,
+  createSharedValue,
+  createAnimatedStyle,
+  withSpring,
 } from "@zynth/animate";
 import { GestureDetector, createPanGesture } from "@zynth/gesture-handler";
 

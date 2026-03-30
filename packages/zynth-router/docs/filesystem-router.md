@@ -47,7 +47,7 @@ export function App() {
 }
 ```
 
-## Important and advanced examples
+## Advanced examples
 
 ### Folder and file naming rules
 

@@ -47,7 +47,7 @@ export function App() {
 }
 ```
 
-## Important and advanced examples
+## Advanced examples
 
 ### Tabs with local stacks
 
@@ -78,10 +78,7 @@ function ProfileTab() {
   return (
     <ProfileStack.Navigator>
       <ProfileStack.Screen name="ProfileMain" component={ProfileMainScreen} />
-      <ProfileStack.Screen
-        name="Preferences"
-        component={PreferencesScreen}
-      />
+      <ProfileStack.Screen name="Preferences" component={PreferencesScreen} />
     </ProfileStack.Navigator>
   );
 }

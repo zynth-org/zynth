@@ -14,7 +14,7 @@ import {
 } from "@zynth/router";
 ```
 
-## Important and advanced examples
+## Advanced examples
 
 ### Direct navigator exports
 

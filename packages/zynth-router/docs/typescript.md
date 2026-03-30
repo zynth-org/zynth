@@ -18,7 +18,7 @@ type RootStackParams = {
 const Stack = createStackNavigator<RootStackParams>();
 ```
 
-## Important and advanced examples
+## Advanced examples
 
 ### Typed navigation and route access
 
@@ -59,7 +59,9 @@ function ProfileScreen(props: ProfileProps) {
 import type { ScreenComponent } from "@zynth/router";
 import { Text } from "@zynth/components";
 
-const SettingsScreen: ScreenComponent<RootStackParams, "Settings"> = (props) => {
+const SettingsScreen: ScreenComponent<RootStackParams, "Settings"> = (
+  props,
+) => {
   props.navigation.setOptions({ title: "Settings" });
   return <Text>Settings</Text>;
 };

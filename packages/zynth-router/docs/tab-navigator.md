@@ -40,7 +40,7 @@ function AppTabs() {
 }
 ```
 
-## Important and advanced examples
+## Advanced examples
 
 ### Configuring the tab bar
 

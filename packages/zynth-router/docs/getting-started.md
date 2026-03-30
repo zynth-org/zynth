@@ -36,7 +36,7 @@ export function App() {
 }
 ```
 
-## Important and advanced examples
+## Advanced examples
 
 ### Navigating from a screen
 

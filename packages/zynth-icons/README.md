@@ -23,7 +23,7 @@ const App = () => {
 };
 ```
 
-## Important and advanced examples
+## Advanced examples
 
 ### Integrating with UI Components
 
@@ -56,12 +56,12 @@ const ToggleHeart = () => {
   const [isActive, setIsActive] = createSignal(false);
 
   return (
-    <HiHeart 
+    <HiHeart
       onPress={() => setIsActive(!isActive())}
-      style={{ 
-        color: isActive() ? "#EF4444" : "#94A3B8", 
-        fontSize: 32 
-      }} 
+      style={{
+        color: isActive() ? "#EF4444" : "#94A3B8",
+        fontSize: 32,
+      }}
     />
   );
 };
@@ -79,6 +79,7 @@ const ToggleHeart = () => {
 **Import Pattern**
 
 Import icons from the appropriate set to keep your bundle size small:
+
 - `@zynth/icons/ai` — Ant Design
 - `@zynth/icons/bs` — Bootstrap Icons
 - `@zynth/icons/fa` — Font Awesome
@@ -91,6 +92,7 @@ Import icons from the appropriate set to keep your bundle size small:
 **Props**
 
 Each icon component accepts all standard `Text` props, including:
+
 - `style` — Supports `color`, `fontSize`, `opacity`, `margin`, etc.
 - `onPress` — Tap interaction handler.
 - `onLongPress` — Long press interaction handler.
