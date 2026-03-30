@@ -1,104 +1,152 @@
-# @zynth/markdown
+# Markdown
 
-Ultra-fast native Markdown parsing for Zynth apps using cmark-gfm, exposed through the Zynth native bridge.
+High-performance native Markdown parsing and rendering for Zynth applications, providing full CommonMark compliance and GitHub Flavored Markdown (GFM) support.
 
-## Features
+`@zynth/markdown` leverages a native `cmark-gfm` back-end to provide granular, reactive markdown rendering. It abstracts:
 
-- **cmark-gfm parsing**: Native parser for GitHub Flavored Markdown.
-- **Synchronous API**: `parseMarkdown()` returns an AST immediately.
-- **Renderer helper**: `MarkdownRenderer` maps nodes to Zynth primitives.
+- Native-speed parsing via JSI/Bridge
+- Full GFM extension support (Tables, Task lists, Strikethrough)
+- Customizable component mapping for bespoke design systems
+- Efficient tree-to-component transformation using SolidJS primitives
 
-## Installation
+## Basic usage
 
-```tsx
-import { parseMarkdown, MarkdownRenderer } from "@zynth/markdown";
-```
+### Rendering Markdown
 
-## Native Dependency
-
-The cmark-gfm source is provided as a git submodule. Initialize it once with:
-
-```bash
-yarn workspace @zynth/markdown setup:cmark-gfm
-```
-
-This also installs required headers into the submodule source tree.
-
-## Usage
-
-### Parse Markdown
-
-```ts
-import { parseMarkdown } from "@zynth/markdown";
-
-const nodes = parseMarkdown("# Hello\n\n**Bold** text");
-```
-
-### Render Markdown
+The `MarkdownRenderer` is the primary entry point for displaying markdown content. It automatically transforms raw strings into a layout of native Zynth components.
 
 ```tsx
 import { MarkdownRenderer } from "@zynth/markdown";
 
-export function Article(props: { content: string }) {
-  return <MarkdownRenderer content={props.content} />;
+function Article(props) {
+  return (
+    <MarkdownRenderer 
+      content={props.markdownSource} 
+      options={{
+        extensions: {
+          tasklist: true,
+          strikethrough: true
+        }
+      }}
+    />
+  );
 }
 ```
 
-### Custom Components
+### Manual Parsing
 
-```tsx
-import type { MarkdownComponentMap } from "@zynth/markdown";
-import { Text, View } from "@zynth/components";
-
-const components: MarkdownComponentMap = {
-  heading: (props) => (
-    <Text style={{ fontSize: 24, fontWeight: "700" }}>{props.children}</Text>
-  ),
-  blockquote: (props) => (
-    <View style={{ borderLeftWidth: 3, borderLeftColor: "#ddd", paddingLeft: 12 }}>
-      {props.children}
-    </View>
-  ),
-};
-```
-
-## API
-
-### `parseMarkdown(content, options?)`
-
-Returns an array of Markdown nodes. Falls back to a plain-text document on non-native platforms.
-
-### `parseMarkdownDocument(content, options?)`
-
-Returns the root document node.
-
-### `parseMarkdownRaw(content, options?)`
-
-Returns the raw JSON string produced by the native parser.
-
-### `MarkdownRenderer`
-
-A convenience renderer that maps Markdown nodes to Zynth primitives.
-
-## Options
+If you need to manipulate the markdown tree before rendering, use `parseMarkdown` to get a structured AST of `MarkdownNode` objects.
 
 ```ts
-type MarkdownParseOptions = {
-  sourcepos?: boolean;
-  hardbreaks?: boolean;
-  smart?: boolean;
-  safe?: boolean;
-  extensions?: {
-    table?: boolean;
-    strikethrough?: boolean;
-    autolink?: boolean;
-    tagfilter?: boolean;
-    tasklist?: boolean;
-  };
-};
+import { parseMarkdown } from "@zynth/markdown";
+
+const nodes = parseMarkdown("# Hello World\nThis is **Zynth**.");
+
+// Result is an array of MarkdownNode objects
+nodes.forEach(node => {
+  if (node.type === "heading") {
+    console.log("Heading level:", node.level);
+  }
+});
 ```
 
-## Notes
+## Advanced
 
-- Code blocks render as plain text; syntax highlighting can be added later.
-- Tables are composed using `View` primitives and basic borders.
+### Custom Component Mapping
+
+You can override how specific markdown elements are rendered by providing a `components` map. This is useful for injecting custom styles or specialized internal components (like a custom code block with syntax highlighting).
+
+```tsx
+import { MarkdownRenderer, MarkdownComponentProps } from "@zynth/markdown";
+import { Text, View } from "@zynth/components";
+
+const MyHeading = (props: MarkdownComponentProps) => (
+  <View style={{ borderBottomWidth: 2, borderBottomColor: "blue", marginBottom: 10 }}>
+    <Text style={{ fontSize: 24, fontWeight: "800" }}>{props.children}</Text>
+  </View>
+);
+
+function CustomMarkdown() {
+  return (
+    <MarkdownRenderer
+      content="# Custom Heading\nStandard text here."
+      components={{
+        heading: MyHeading
+      }}
+    />
+  );
+}
+```
+
+### Parsing Options and Extensions
+
+Zynth Markdown supports fine-tuning the parser's behavior via the `MarkdownParseOptions` object.
+
+```ts
+import { parseMarkdown } from "@zynth/markdown";
+
+const doc = parseMarkdown("~~deleted~~", {
+  extensions: {
+    strikethrough: true,
+    table: true,
+    autolink: true,
+    tasklist: true
+  },
+  smart: true,      // Convert straight quotes to curly, etc.
+  hardbreaks: true, // Treat newlines as hard line breaks
+  sourcepos: true   // Include source position data in nodes
+});
+```
+
+## Special cases
+
+- **Thematic Breaks**: Standard `---` or `***` markdown syntax renders as a `thematic_break` node, mapped to a `View` with a thin border by default.
+- **Native Availability**: The package includes `isMarkdownAvailable()` to verify if the native parser bridge is initialized. If unavailable, the renderer falls back to displaying pre-formatted text to ensure content is always visible.
+- **HTML Inlining**: While `html_inline` and `html_block` are supported in the parser, they render their raw literal content unless a custom component is mapping to those types.
+
+## API Reference
+
+### `MarkdownRenderer` Props
+
+- `content: string`
+  The raw markdown string to render.
+- `options?: MarkdownParseOptions`
+  Parsing configuration (extensions and parser flags).
+- `components?: MarkdownComponentMap`
+  Optional map of custom components to override default rendering behavior.
+
+### Core Functions
+
+- `parseMarkdown(content: string, options?: MarkdownParseOptions): MarkdownNode[]`
+  Parses markdown and returns the top-level children nodes of the document.
+- `parseMarkdownDocument(content: string, options?: MarkdownParseOptions): MarkdownNode`
+  Returns the root `document` node containing all siblings and child nodes.
+- `parseMarkdownRaw(content: string, options?: MarkdownParseOptions): string`
+  Returns the raw JSON AST string directly from the native parser.
+- `isMarkdownAvailable(): boolean`
+  Returns `true` if the native back-end is properly linked and available.
+
+### Types
+
+- `MarkdownNode`
+  - `type: MarkdownNodeType`
+  - `children?: MarkdownNode[]`
+  - `literal?: string` (for text, code, etc.)
+  - `level?: number` (for headings)
+  - `url?: string` (for links and images)
+  - `listType?: "bullet" | "ordered"`
+  - `align?: "left" | "center" | "right" | "none"` (for tables)
+
+- `MarkdownParseOptions`
+  - `extensions?: MarkdownExtensions`
+  - `smart?: boolean`
+  - `hardbreaks?: boolean`
+  - `sourcepos?: boolean`
+  - `safe?: boolean`
+
+- `MarkdownExtensions`
+  - `table: boolean`
+  - `strikethrough: boolean`
+  - `autolink: boolean`
+  - `tasklist: boolean`
+  - `tagfilter: boolean`
