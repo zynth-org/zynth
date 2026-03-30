@@ -1,119 +1,44 @@
-# @zynth/apis
+# APIs
 
-A collection of core native APIs for the Zynth framework.
+The standard library of Zynth APIs, providing essential infrastructure for platform detection, hardware access, and lifecycle management.
 
-This package provides essential native capabilities like screen dimensions, font loading, and platform detection. It bridges the gap between JavaScript and the native host environment, offering a consistent API across iOS, Android, and Web.
+`@zynth/apis` is a suite of reactive, cross-platform interfaces that bridge the gap between native OS capabilities and JavaScript. It provides stable communication patterns for accessing system state through the Zynth JSI bridge.
 
-## APIs
+## Features
 
-### `Platform`
-Detect the current operating system and run platform-specific logic.
+- **Platform Detection**: Branch code based on OS and handle platform-specific values.
+- **Display Metrics**: Reactive access to window and screen dimensions with rotation support.
+- **Hardware Metadata**: Access to device information including models, identifiers, and hardware features.
+- **Dynamic Fonts**: Registration system for fonts that synchronizes with UI rendering.
+- **Lifecycle & Safety**: Monitor connectivity, app state transitions, and safe area insets.
 
-```tsx
-import { Platform, OS } from "@zynth/apis";
+## Documentation Index
 
-// Check the OS
-if (Platform.OS === OS.IOS) {
-  console.log("Running on iOS");
-}
+Explore the specialized technical guides for the Zynth standard API suite:
 
-// Select value based on platform
-const padding = Platform.select({
-  ios: 20,
-  android: 10,
-  default: 0,
-});
-```
+- **[Platform](./docs/Platform.md)**: OS detection and `Platform.select`.
+- **[Dimensions](./docs/Dimensions.md)**: Screen and window metrics.
+- **[Device](./docs/Device.md)**: Hardware info and unique identifiers.
+- **[AppState](./docs/AppState.md)**: App lifecycle (active/background).
+- **[Font](./docs/Font.md)**: Dynamic font loading and registration.
+- **[Network](./docs/Network.md)**: Connectivity and reachability status.
+- **[SafeArea](./docs/SafeArea.md)**: Notch handling and system insets.
 
-### `Dimensions`
-Retrieve screen and window dimensions. Listen for updates (e.g., orientation changes).
+## Getting Started
 
-```tsx
-import { Dimensions } from "@zynth/apis";
-
-// Get current dimensions
-const { window, screen } = Dimensions.all();
-console.log(`Window width: ${window.width}`);
-
-// Subscribe to changes
-const unsubscribe = Dimensions.subscribe(({ window }) => {
-  console.log("New dimensions:", window);
-});
-```
-
-### `Font`
-Load custom fonts dynamically at runtime.
+Most APIs in this package provide reactive state out-of-the-box, though some require setup at the root of your application (like `SafeAreaProvider`).
 
 ```tsx
-import { Font } from "@zynth/apis";
+import { SafeAreaProvider, Platform } from "@zynth/apis";
 
-// Load a font
-const result = await Font.loadAsync("MyCustomFont", "MyCustomFont.ttf");
-
-if (result.success) {
-  console.log(`Font loaded at: ${result.path}`);
-}
-```
-
-### `createFontLoader`
-Idiomatic Solid utility to load multiple fonts and integrate with `<Suspense>`. It returns a `Resource<boolean>`.
-
-```tsx
-import { createFontLoader } from "@zynth/apis";
-import { Suspense } from "solid-js";
+// APIs are globally available once the framework is initialized
+const os = Platform.OS;
 
 function Root() {
-  const fonts = createFontLoader({
-    "Diablo": require("./fonts/diablo.ttf"),
-    "Inter": require("./fonts/inter.otf")
-  });
-
   return (
-    <Suspense fallback={<Loading />}>
-      {/* Accessing fonts() triggers Suspense until all are ready */}
-      {fonts() && <MainApp />}
-    </Suspense>
+    <SafeAreaProvider>
+       <App />
+    </SafeAreaProvider>
   );
 }
-```
-
-### `AppState`
-Track whether the app is active, inactive, or in the background.
-
-```tsx
-import { AppState } from "@zynth/apis";
-
-console.log(AppState.currentState);
-
-const subscription = AppState.addEventListener("change", (state) => {
-  console.log("App state changed:", state);
-});
-
-subscription.remove();
-```
-
-### `Network`
-Observe connectivity changes and inspect current network status.
-
-```tsx
-import { Network } from "@zynth/apis";
-
-console.log(Network.currentState);
-
-const unsubscribe = Network.subscribe((state) => {
-  console.log("Network state:", state.type, state.isConnected);
-});
-
-unsubscribe();
-```
-
-### `Device`
-Read device details such as model, platform, OS version, and runtime identifiers.
-
-```tsx
-import { Device } from "@zynth/apis";
-
-const info = Device.getInfo();
-console.log(info.model, info.osName, info.osVersion);
-console.log(info.hasRoundedDisplayCorners, info.displayCornerRadius);
 ```
