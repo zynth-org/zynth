@@ -1,6 +1,6 @@
 # Keyboard
 
-Zynth provides a high-performance bridge for physical and virtual keyboard state, enabling granular reactivity and layout adjustments during keyboard transitions.
+The keyboard subsystem in Zynth provides a high-performance bridge for physical and virtual keyboard state, enabling granular reactivity and layout adjustments during keyboard transitions.
 
 Zynth's keyboard management is built on three pillars:
 - **`KeyboardProvider`**: A reactive context that tracks visibility, height, and animation state.
@@ -91,13 +91,3 @@ const unsubscribe = Keyboard.addListener((state) => {
 - `isAnimating: boolean`
 - `duration: number` (Animation duration in ms)
 - `easing: string` (Animation curve name)
-
----
-
-## Detailed Documentation
-
-For specific component documentation, please consult:
-- **[Keyboard Hooks](./docs/Hooks.md)**
-- **[KeyboardAvoidingView](./docs/KeyboardAvoidingView.md)**
-- **[KeyboardAwareScrollView](./docs/KeyboardAwareScrollView.md)**
-- **[KeyboardStickyView](./docs/KeyboardStickyView.md)**
