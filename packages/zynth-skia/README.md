@@ -1,42 +1,35 @@
 # @zynth/skia
 
-Declarative and imperative Skia rendering for Zynth.
+Skia rendering for Zynth, with declarative drawing nodes, imperative surface submission, resource loading helpers, runtime shaders, and reactive path utilities.
 
-This README is the docs index. Each section is split into a separate page so tooling can parse it independently.
-
-## Docs index
-
-### Basic
+### Core
 
 - [01 - Basic](./docs/01-basic.md)
-  install, first canvas, and minimal setup
-- [02 - Declarative Canvas API](./docs/02-declarative-canvas.md)
-  `Canvas`, `Group`, `Paint`, `Rect`, `Circle`, `Path`
+  package overview, renderer model, and first canvas
+- [02 - Declarative Canvas](./docs/02-declarative-canvas.md)
+  `Canvas`, shape nodes, paint inheritance, gradients, masks, images, SVG, and Skottie
+- [03 - Imperative Surface](./docs/03-imperative-surface.md)
+  `SkiaView`, `createSkiaSurface()`, frames, and direct command submission
 
 ### Advanced
 
-- [03 - Imperative Surface API](./docs/03-imperative-surface.md)
-  `SkiaView`, `createSkiaSurface`, and command submission
 - [04 - Shaders and Values](./docs/04-shaders-and-values.md)
-  `createShader`, `createSkiaValue`, uniform patterns
-- [05 - Paths, Transforms, Capabilities](./docs/05-paths-transforms-capabilities.md)
-  SVG path coverage (`A/a` included), group transforms, feature gates
-- [06 - Binaries and Native Assets](./docs/06-binaries-and-assets.md)
-  manifest contract, sync/update/verify policy
-- [08 - Reactive Primitives](./docs/08-reactive-primitives.md)
-  shared-signal-first primitives (`createClock`, `createPathInterpolation`, `createPathValue`)
+  `createShader()`, runtime effects, `Skia`, and shared values
+- [05 - Paths, Transforms, and Capabilities](./docs/05-paths-transforms-capabilities.md)
+  `createPath()`, SVG path parsing, transform props, and runtime feature checks
+- [06 - Animations](./docs/06-animations.md)
+  shared numeric values, scalar interpolation, and animated Skia props
+- [07 - Reactive Primitives](./docs/07-reactive-primitives.md)
+  `createClock()`, `createPathInterpolation()`, and `createPathValue()`
+- [08 - Fonts](./docs/08-fonts.md)
+  font creation, resource loading, matching, and text setup
 
-### API reference
+### Reference
 
-- [07 - API Reference](./docs/07-api-reference.md)
-  exported functions, components, and core types
+- [09 - API Reference](./docs/09-api-reference.md)
+  public exports, command types, prop types, and package-level helpers
 
-## Status
+## Platform support
 
-- Binary provisioning is manifest-driven via `binaries.manifest.json`.
-- Native `zynth-skia-view` is available on iOS and Android.
-- Declarative + imperative paths share the same packed native command flow.
-
-## Maintainers
-
-For release and artifact maintenance, use [06 - Binaries and Native Assets](./docs/06-binaries-and-assets.md).
+- Native rendering is available on iOS and Android.
+- Web support is partial. Some helpers can run in browser-like environments, but there is no dedicated web renderer export in this package.

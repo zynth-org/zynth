@@ -1,77 +1,165 @@
-# @zynth/skia - Shaders and Values
+# Shaders and Values
 
-## `createSkiaValue`
+`@zynth/skia` exposes two related shader models. `createShader()` builds a JavaScript-evaluated color program for declarative drawing, while `createRuntimeEffect()` and `Skia.RuntimeEffect.Make(...)` build native runtime shaders for rects, circles, and paths. The package also exposes `createSkiaValue()` for local values and shared numeric values.
 
-```ts
+These APIs are designed to fit SolidJS state and signals without introducing a separate animation runtime in application code.
+
+## Basic usage
+
+```tsx
+import {
+  Canvas,
+  Paint,
+  Rect,
+  createShader,
+  createSkiaValue,
+} from "@zynth/skia";
+
 const [time, setTime] = createSkiaValue(0, { shared: true });
-```
 
-- `shared: true` uses shared-signal backing for numeric values.
-- For non-numeric values, it falls back to Solid `createSignal` semantics.
-
-For shared-signal-driven animation primitives (`createClock`, `createPathInterpolation`, `createPathValue`), see `08-reactive-primitives.md`.
-
-## `createShader`
-
-```ts
 const shader = createShader(
-  "h.rgba(32 + 160 * h.fract(u.t * 0.2 + input.x / input.width), 120, 220, 1)",
+  "h.rgba(16 + 180 * h.fract(u.t * 0.15 + input.x / input.width), 120, 220, 1)",
   { t: time },
 );
+
+export function ShaderCard() {
+  return (
+    <Canvas
+      clearColor="#020617"
+      time={time}
+      style={{ width: 320, height: 180 }}
+    >
+      <Paint shader={shader}>
+        <Rect x={16} y={16} width={288} height={148} />
+      </Paint>
+    </Canvas>
+  );
+}
 ```
 
-`input` fields:
+## Advanced examples
 
-- `x`, `y`, `width`, `height`, `time`
+### Updating uniforms after creation
 
-Helper namespace `h` includes:
+```tsx
+import { Canvas, Paint, Rect, createShader } from "@zynth/skia";
 
-- `clamp`, `mix`, `smoothstep`, `fract`
-- `vec2`, `vec3`, `vec4`
-- `rgb`, `rgba`, `toColor`
+const shader = createShader("h.rgba(255 * u.mix, 90, 180, 1)", { mix: 0.2 });
 
-## `Skia.RuntimeEffect.Make`
+shader.setUniform("mix", 0.65);
 
-`RuntimeEffect.Make` compiles SKSL for native RuntimeEffect rendering and returns an effect object with `makeShader(...)`.
+export function UniformUpdate() {
+  return (
+    <Canvas style={{ width: 220, height: 120 }}>
+      <Paint shader={shader}>
+        <Rect x={12} y={12} width={196} height={96} />
+      </Paint>
+    </Canvas>
+  );
+}
+```
 
-```ts
-const effect = Skia.RuntimeEffect.Make(`
+### Runtime shader effects
+
+```tsx
+import {
+  Canvas,
+  Rect,
+  Shader,
+  createClock,
+  createRuntimeEffect,
+} from "@zynth/skia";
+
+const clock = createClock();
+
+const effect = createRuntimeEffect(`
 uniform float iTime;
 uniform vec2 iResolution;
 
-vec4 main(vec2 fragCoord) {
+half4 main(vec2 fragCoord) {
   vec2 uv = fragCoord / iResolution;
-  return vec4(uv.x, uv.y, 0.8 + 0.2 * sin(iTime), 1.0);
+  return half4(uv.x, 0.35 + 0.25 * sin(iTime), uv.y, 1.0);
 }
 `);
-if (!effect) throw new Error("Couldn't compile shader");
 
-const shader = effect.makeShader({
-  r: 0.1,
-  g: 0.6,
-  b: 0.9,
-});
+if (!effect) {
+  throw new Error("Runtime shader effect could not be created.");
+}
+
+export function RuntimeShaderRect() {
+  return (
+    <Canvas frameLoop style={{ width: 320, height: 180 }}>
+      <Rect x={0} y={0} width={320} height={180}>
+        <Shader
+          source={effect}
+          uniforms={() => ({
+            iTime: clock(),
+            iResolution: [320, 180],
+          })}
+        />
+      </Rect>
+    </Canvas>
+  );
+}
 ```
 
-`Shader` component usage:
+### Building values for shared numeric state
 
 ```tsx
-<Rect x={0} y={0} width={320} height={180}>
-  <Shader source={effect} uniforms={{ t: time }} />
-</Rect>
+import { createSkiaValue } from "@zynth/skia";
+
+const [progress, setProgress] = createSkiaValue(0, { shared: true });
+
+setProgress(0.5);
 ```
 
-Current scope:
+## Special cases and unusual features
 
-- RuntimeEffect shaders render natively on `Rect` fill.
-- RuntimeEffect on `Circle`/`Path` is not supported yet.
+- `createSkiaValue(initial, { shared: true })` creates shared numeric values only when the initial value is a number. Other value types remain local Solid signals.
+- `createShader()` evaluates to colors and is useful for declarative paint composition.
+- `createRuntimeEffect()` returns `null` for empty source strings.
+- Runtime effects are exposed both as standalone helpers and through the `Skia` namespace.
+- `resolveRuntimeUniforms()` and `resolveRuntimeShaderUniformMap()` are used internally to normalize uniform objects and are also part of the exported API for advanced composition.
 
-## Example
+## API Reference
 
-```tsx
-<Canvas clearColor="#020617" time={time} style={{ width: 320, height: 180 }}>
-  <Paint shader={shader}>
-    <Rect x={0} y={0} width={320} height={180} />
-  </Paint>
-</Canvas>
-```
+### `createSkiaValue<T>(initial, options?)`
+
+- `initial: T`
+- `options?: { shared?: boolean }`
+- returns `[Accessor<T>, Setter<T>]`
+
+### `createShader(source, uniforms?)`
+
+- `source: string`
+- `uniforms?: Record<string, SkiaUniformValue>`
+- returns `SkiaShaderProgram`
+
+### `SkiaShaderProgram`
+
+- `source: string`
+- `uniforms: SkiaUniformMap`
+- `evaluate(input: SkiaShaderInput): string`
+- `setUniform(name: string, value: SkiaUniformValue): void`
+- `runtimeEffect?: SkiaRuntimeEffect`
+
+### `createRuntimeEffect(source)`
+
+- `source: string`
+- returns `SkiaRuntimeEffect | null`
+
+### `SkiaRuntimeEffect`
+
+- `source: string`
+- `makeShader(uniforms?: SkiaRuntimeUniforms): SkiaShaderProgram`
+
+### `Skia` namespace helpers
+
+- `Skia.RuntimeEffect.Make(source)`
+- `Skia.Data.fromBytes(bytes)`
+- `Skia.Data.fromBase64(base64)`
+- `Skia.Image.MakeImageFromEncoded(data)`
+- `Skia.Image.MakeImage(info, data, rowBytes)`
+- `Skia.SVG.MakeFromString(source, fontMgr?, resources?)`
+- `Skia.SVG.MakeFromData(data, fontMgr?, resources?)`
+- `Skia.Skottie.Make(source)`
