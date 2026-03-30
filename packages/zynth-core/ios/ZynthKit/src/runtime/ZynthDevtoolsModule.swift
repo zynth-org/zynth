@@ -96,7 +96,7 @@ final class ZynthDevtoolsModule: ZynthModule {
 #if DEBUG
 
 final class ZynthDevtoolsClient: NSObject {
-  private let queue = DispatchQueue(label: "dev.zynth.devtools")
+  private let queue = DispatchQueue(label: "dev.zynthai.comtools")
   private var session: URLSession!
   private var socket: URLSessionWebSocketTask?
   private var baseURL: URL?

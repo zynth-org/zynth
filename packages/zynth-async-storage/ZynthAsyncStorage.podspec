@@ -4,7 +4,7 @@ Pod::Spec.new do |s|
   s.summary      = "High-performance AsyncStorage for Zynth"
   s.homepage     = "https://github.com/x64Bits/zynth"
   s.license      = "MIT"
-  s.author       = { "Zynth Team" => "team@zynth.dev" }
+  s.author       = { "Zynth Team" => "team@zynthai.com" }
   s.platform     = :ios, "13.0"
   s.source       = { :path => "." }
   s.source_files = "ios/**/*.{h,m,swift}"

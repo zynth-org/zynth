@@ -1,13 +1,13 @@
 import Foundation
 
 private enum DevSupportKeys {
-  static var devClient = "zynth.devClient"
-  static var devServerURL = "zynth.devServerURL"
-  static var devServerToken = "zynth.devServerToken"
+  static var devClient = "zynthai.comClient"
+  static var devServerURL = "zynthai.comServerURL"
+  static var devServerToken = "zynthai.comServerToken"
   static var latestDevHash = "zynth.latestDevHash"
   static var lastAppliedDevHash = "zynth.lastAppliedDevHash"
   static var isApplyingHotUpdate = "zynth.isApplyingHotUpdate"
-  static var devRuntimeName = "zynth.devRuntimeName"
+  static var devRuntimeName = "zynthai.comRuntimeName"
 }
 
 @objc(ZynthDevSupport) public final class ZynthDevSupport: NSObject {

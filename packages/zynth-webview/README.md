@@ -20,7 +20,7 @@ const controller = createWebViewController();
 
 <WebView
   style={{ flex: 1 }}
-  source={{ uri: "https://zynth.dev" }}
+  source={{ uri: "https://zynthai.com" }}
   controller={controller}
   onNavigationStateChange={(event) => {
     console.log("URL", event.nativeEvent.url);

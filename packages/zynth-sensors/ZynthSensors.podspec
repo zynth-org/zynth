@@ -4,7 +4,7 @@ Pod::Spec.new do |s|
   s.summary      = "Motion and environment sensor APIs for Zynth"
   s.homepage     = "https://github.com/x64Bits/zynth"
   s.license      = "MIT"
-  s.author       = { "Zynth Team" => "team@zynth.dev" }
+  s.author       = { "Zynth Team" => "team@zynthai.com" }
   s.source       = { :path => "." }
 
   s.platform     = :ios, "13.0"

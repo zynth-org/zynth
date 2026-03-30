@@ -10,7 +10,7 @@ Pod::Spec.new do |s|
   s.summary      = summary
   s.homepage     = "https://github.com/zynth/zynth"
   s.license      = "MIT"
-  s.authors      = { "Zynth Team" => "team@zynth.dev" }
+  s.authors      = { "Zynth Team" => "team@zynthai.com" }
   s.platforms    = { :ios => "13.0" }
   s.source       = { :git => "https://github.com/zynth/zynth.git", :tag => "#{s.version}" }
 

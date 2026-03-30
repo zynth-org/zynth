@@ -24,7 +24,7 @@ Regenerate native projects after adding the package.
 ```tsx
 import { QRCode } from "@zynth/ui";
 
-<QRCode value="https://zynth.dev" />
+<QRCode value="https://zynthai.com" />;
 ```
 
 ### Styled usage
@@ -33,13 +33,13 @@ import { QRCode } from "@zynth/ui";
 import { QRCode } from "@zynth/ui";
 
 <QRCode
-  value="https://zynth.dev/docs"
+  value="https://zynthai.com/docs"
   size={220}
   level="M"
   color="#111111"
   backgroundColor="#ffffff"
   quietZone={4}
-/>
+/>;
 ```
 
 ### Logo usage
@@ -49,7 +49,7 @@ import { QRCode } from "@zynth/ui";
 import logo from "../assets/logo.png";
 
 <QRCode
-  value="https://zynth.dev/invite/abc123"
+  value="https://zynthai.com/invite/abc123"
   level="H"
   size={240}
   logoSource={logo}
@@ -57,7 +57,7 @@ import logo from "../assets/logo.png";
   logoPadding={8}
   logoBackgroundColor="#ffffff"
   logoBorderRadius={14}
-/>
+/>;
 ```
 
 ## Advanced
