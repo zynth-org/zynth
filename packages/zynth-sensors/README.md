@@ -1,205 +1,154 @@
-# @zynth/sensors
+# Sensors
 
-Device sensor APIs for Zynth with Solid-friendly composables and per-sensor permission helpers.
+The `Sensors` module exposes comprehensive read access to fundamental device capabilities including the accelerometer, gyroscope, device motion algorithms, magnetometers, and pedometer. Built natively using CoreMotion on iOS and SensorManager on Android, the real-world readings are bridged efficiently to JavaScript through direct HostObject references and parsed directly into reactive SolidJS signals while minimizing heavy cross-bridge serialization costs.
 
-`@zynth/sensors` includes:
-
-- Accelerometer
-- Barometer
-- Device Motion
-- Gyroscope
-- Light Sensor
-- Magnetometer
-- Magnetometer Uncalibrated
-- Pedometer
-
-## Basic
-
-### Install
-
-```bash
-npm i @zynth/sensors
-```
-
-Regenerate native projects after adding the package.
-
-### Basic usage
-
-```ts
-import { Sensors, createAccelerometer } from "@zynth/sensors";
-
-const available = await Sensors.isAvailableAsync("accelerometer");
-const permission = await Sensors.requestPermissionAsync("accelerometer");
-
-const accelerometer = createAccelerometer({
-  autoStart: false,
-  requestPermission: true,
-  sampleIntervalMs: 80,
-});
-
-await accelerometer.start();
-console.log(available, permission.status, accelerometer.reading());
-```
-
-### Recommended Solid usage
-
-Use `createXxx` composables inside components. They manage native subscription lifecycle (`onMount`/`onCleanup`) and expose stable Solid accessors.
-
-```ts
-import { createGyroscope } from "@zynth/sensors";
-
-const gyro = createGyroscope({
-  autoStart: true,
-  requestPermission: true,
-  sampleIntervalMs: 100,
-});
-
-const value = gyro.reading();
-const active = gyro.active();
-```
-
-## Advanced
-
-### Why `createXxx` composables
-
-Each sensor composable returns a `SensorController` with:
-
-- accessors: `reading`, `available`, `permission`, `active`, `error`
-- actions: `start`, `stop`, `refreshCurrent`, `refreshAvailability`, `refreshPermission`, `requestPermission`
-
-This is the default DX for Solid apps, while low-level `Sensors.*` methods stay available for custom orchestration.
-
-### Low-level API usage
-
-Use `Sensors` directly when you want full control over start/stop/listen flows:
-
-```ts
-import { Sensors } from "@zynth/sensors";
-
-const sub = await Sensors.addListener("deviceMotion", (reading) => {
-  console.log(reading.attitude?.pitch, reading.attitude?.roll, reading.attitude?.yaw);
-}, { sampleIntervalMs: 120 });
-
-const current = await Sensors.getReadingAsync("deviceMotion");
-await Sensors.stopAsync("deviceMotion");
-sub.remove();
-```
-
-### Sampling interval
-
-- `sampleIntervalMs` defaults to `100`
-- Minimum interval is clamped to `10` ms
-
-### Availability vs permission
-
-- `isAvailableAsync(sensor)` checks if the device/platform exposes that sensor.
-- `getPermissionAsync(sensor)` checks runtime permission status.
-- `requestPermissionAsync(sensor)` only prompts when the platform requires it.
-
-If a sensor is unavailable, permission returns:
-
-- `status: "unavailable"`
-- `granted: false`
-- `canAskAgain: false`
-
-## Permissions and Platform Notes
-
-### iOS
-
-Add this to app config (`zynth.ios.infoPlist`):
-
-- `NSMotionUsageDescription`
-
-Example:
+Before utilizing health-related or restricted sensors such as the Pedometer or advanced Device Motion, you must declare the necessary permissions and usage descriptions in your `app.json` configuration file.
 
 ```json
 {
   "zynth": {
     "ios": {
       "infoPlist": {
-        "NSMotionUsageDescription": "This app uses motion sensors to provide sensor data."
+        "NSMotionUsageDescription": "This app requires access to the device's motion sensors to track steps and physical activity."
       }
+    },
+    "android": {
+      "permissions": [
+        "android.permission.ACTIVITY_RECOGNITION"
+      ]
     }
   }
 }
 ```
 
-Behavior notes:
+## Basic usage
 
-- `accelerometer`, `gyroscope`, `deviceMotion`: use iOS motion authorization.
-- `pedometer`: uses Core Motion pedometer authorization.
-- `lightSensor`: unavailable on iOS in current implementation.
-- `magnetometerUncalibrated`: unavailable on iOS in current implementation.
+The most common approach is instantiating a reactive sensor controller using primitives like `createAccelerometer`. The controller provides granular accessors that integrate cleanly into your render tree and automatically disconnect when your component unmounts.
 
-### Android
+```tsx
+import { Text, View } from "@zynth/components";
+import { createAccelerometer } from "@zynth/sensors";
 
-Manifest requirement (already declared by the package):
+export function TiltDisplay() {
+  const accelerometer = createAccelerometer({ autoStart: true, sampleIntervalMs: 100 });
 
-- `android.permission.ACTIVITY_RECOGNITION` for pedometer on API 29+
+  return (
+    <View style={{ flex: 1, padding: 16 }}>
+      <Text>Accelerometer Output</Text>
+      <Text>X: {accelerometer.reading()?.x.toFixed(3) ?? "-"}</Text>
+      <Text>Y: {accelerometer.reading()?.y.toFixed(3) ?? "-"}</Text>
+      <Text>Z: {accelerometer.reading()?.z.toFixed(3) ?? "-"}</Text>
+    </View>
+  );
+}
+```
 
-Behavior notes:
+## Advanced usage and permissions
 
-- Most sensors are granted by default at runtime.
-- `pedometer` requires runtime permission request on API 29+.
+Certain sensors like the pedometer require explicit user consent before relaying historical or health-related biometric data. You can leverage the controller's built-in capability to request permissions effectively before allocating active tracking instances.
 
-### Sensor matrix (current implementation)
+```tsx
+import { Button, Text, View } from "@zynth/components";
+import { createPedometer } from "@zynth/sensors";
 
-- `accelerometer`: iOS/Android available by hardware, runtime permission flow supported
-- `barometer`: iOS/Android available by hardware, no dedicated runtime prompt
-- `deviceMotion`: iOS/Android available by hardware, runtime permission flow supported
-- `gyroscope`: iOS/Android available by hardware, runtime permission flow supported
-- `lightSensor`: Android only (iOS returns unavailable)
-- `magnetometer`: iOS/Android available by hardware
-- `magnetometerUncalibrated`: Android only (iOS returns unavailable)
-- `pedometer`: iOS/Android available by hardware, explicit runtime permission handling
+export function PedometerView() {
+  const pedometer = createPedometer({
+    autoStart: false,
+    requestPermission: false,
+  });
 
-## API reference
+  const handleStartTracking = async () => {
+    const perm = await pedometer.requestPermission();
+    if (perm.granted) {
+      await pedometer.start();
+    } else {
+      console.log("Pedometer permissions denied.");
+    }
+  };
 
-### `Sensors`
+  return (
+    <View style={{ padding: 24, gap: 16 }}>
+      <Text>Steps taken: {pedometer.reading()?.steps ?? 0}</Text>
+      <Button 
+        onPress={handleStartTracking} 
+        disabled={pedometer.active()}
+      >
+        <Text>Start tracking</Text>
+      </Button>
+    </View>
+  );
+}
+```
 
-- `isAvailableAsync(sensor: SensorKind): Promise<boolean>`
-- `getPermissionAsync(sensor: SensorKind): Promise<SensorPermissionResponse>`
-- `requestPermissionAsync(sensor: SensorKind): Promise<SensorPermissionResponse>`
-- `startAsync(sensor: SensorKind, options?: SensorStartOptions): Promise<boolean>`
-- `stopAsync(sensor: SensorKind): Promise<void>`
-- `getReadingAsync(sensor: SensorKind): Promise<SensorReading | null>`
-- `addListener(sensor, listener, options?): Promise<SensorSubscription>`
+## Special Cases
 
-### Sensor composables
+### Hardware Constraints
 
-- `createAccelerometer(options?)`
-- `createBarometer(options?)`
-- `createDeviceMotion(options?)`
-- `createGyroscope(options?)`
-- `createLightSensor(options?)`
-- `createMagnetometer(options?)`
-- `createMagnetometerUncalibrated(options?)`
-- `createPedometer(options?)`
+It is common for environments such as iOS Simulators, Android Emulators, or Web targets to lack specific physical hardware availability (like accelerometers or light sensors). Always verify that the device physically supports an underlying sensor before attempting to start a subscription by evaluating `controller.available()`.
 
-Each returns `SensorController<TSample>`.
+## API Reference
 
-### Core types
+### Primitives
 
-- `SensorKind`
-  - `"accelerometer" | "barometer" | "deviceMotion" | "gyroscope" | "lightSensor" | "magnetometer" | "magnetometerUncalibrated" | "pedometer"`
-- `SensorPermissionStatus`
-  - `"granted" | "denied" | "restricted" | "undetermined" | "unavailable"`
-- `SensorPermissionResponse`
-  - `status`, `granted`, `canAskAgain`
-- `SensorStartOptions`
-  - `sampleIntervalMs?`
-- `CreateSensorOptions`
-  - `autoStart?`, `requestPermission?`, `sampleIntervalMs?`
-- `SensorSubscription`
-  - `remove()`
+The framework abstracts the underlying native module via specific SolidJS reactive hooks targeting individual component algorithms:
 
-Reading types are exported per sensor:
+*   `createAccelerometer(options?: CreateSensorOptions)`
+*   `createBarometer(options?: CreateSensorOptions)`
+*   `createDeviceMotion(options?: CreateSensorOptions)`
+*   `createGyroscope(options?: CreateSensorOptions)`
+*   `createLightSensor(options?: CreateSensorOptions)`
+*   `createMagnetometer(options?: CreateSensorOptions)`
+*   `createMagnetometerUncalibrated(options?: CreateSensorOptions)`
+*   `createPedometer(options?: CreateSensorOptions)`
 
-- `AccelerometerSample`
-- `BarometerSample`
-- `DeviceMotionSample`
-- `GyroscopeSample`
-- `LightSensorSample`
-- `MagnetometerSample`
-- `MagnetometerUncalibratedSample`
-- `PedometerSample`
+### `SensorController<TSample>`
+
+The unified interface tracking and administrating subscriptions emitted by any of the native hook creations.
+
+**Members**
+
+*   `reading()`: Accessor outputting the current specific `TSample` interval output, or `null`.
+*   `available()`: Accessor indicating securely if the explicit sensor hardware was detected correctly.
+*   `permission()`: Accessor holding the resolution map of the permissions (`SensorPermissionResponse | null`).
+*   `active()`: Accessor determining if polling loops are processing data from the OS.
+*   `error()`: Accessor signaling abrupt crash faults on the native thread.
+*   `start()`: Executes a `Promise<boolean>` binding native observers and activating the poll interval loop.
+*   `stop()`: Drops native binding synchronously enforcing cleanup.
+*   `requestPermission()`: Invokes a `Promise<SensorPermissionResponse>` mapping the OS-level modal dialog if applicable.
+
+### `CreateSensorOptions`
+
+Employed when invoking the initialization hooks configuring their lifecycle.
+
+*   `autoStart` (`boolean`, optional): Determines whether to bypass manual start requirements natively once the DOM commits.
+*   `requestPermission` (`boolean`, optional): Pushes explicit permission modal requests inherently if `autoStart` engages.
+*   `sampleIntervalMs` (`number`, optional): Millisecond delay instructing internal host logic to throttle serialization.
+
+### Readings & Samples
+
+Each sensor extends a base implementation containing `{ timestamp: number; accuracy?: number }`.
+
+#### `AccelerometerSample`, `GyroscopeSample`, `MagnetometerSample`
+*   `x` (`number`): Lateral axes mappings.
+*   `y` (`number`): Vertical axes mappings.
+*   `z` (`number`): Depth mappings.
+
+#### `LightSensorSample`
+*   `illuminanceLux` (`number`): Floating lux integer capturing ambient intensities around the core receiver.
+
+#### `BarometerSample`
+*   `pressureKPa` (`number`): Floating structural mapping tracking environmental atmospheric properties.
+*   `relativeAltitudeMeters` (`number`, optional): Device differential vertical movement relative to sea level defaults.
+
+#### `DeviceMotionSample`
+Comprehensive aggregated outputs mapping real-world physical device chassis orientations via fusion techniques natively bridging multiple underlying sensors.
+*   `acceleration` (`{ x, y, z }`, optional)
+*   `gravity` (`{ x, y, z }`, optional)
+*   `rotationRate` (`{ x, y, z }`, optional)
+*   `attitude` (`{ pitch, roll, yaw, quaternion }`, optional)
+
+#### `PedometerSample`
+*   `steps` (`number`)
+*   `distanceMeters` (`number`, optional): Total historical or session length mappings depending on core OS reporting structures.
+*   `floorsAscended` (`number`, optional)
+*   `floorsDescended` (`number`, optional)
