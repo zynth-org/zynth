@@ -1,506 +1,210 @@
-# @zynth/webserver
+# WebServer
 
-Embedded native HTTP server for Zynth apps.
+The `WebServer` module provides a lightweight HTTP server powered natively by Civetweb on iOS and Android. It binds via JSI to deliver a secure localhost server, ideal for handling cross-device file uploads, local metadata callbacks, and general app-to-web signaling without relying on a remote backend.
 
-`@zynth/webserver` provides:
+Designed to have a minimal footprint, it runs efficiently in the background while conserving battery and memory consumption. It provides both imperative APIs through the `WebServer` object and reactive primitives like `createWebServerSignal` specifically tailored for SolidJS views.
 
-- Static content serving from local files or inline HTML
-- HTTP transport (legacy-compatible) and optional HTTPS transport
-- Local file upload endpoints
-- Typed upload lifecycle events (`started`, `progress`, `completed`, `failed`)
-- Optional upload metadata callback endpoint
-- Optional token guard for upload/events/signal routes
-- Upload state inspection (active uploads + totals)
-- In-memory app-to-web signaling endpoint (`/__zynth/signal`)
-- Solid-friendly signal + subscription helpers
+## Basic usage
 
-## Install
+The most common use case is starting a simple HTTP server to serve static content or accept local uploads. We recommend using `createWebServerSignal` to seamlessly integrate the server's lifecycle and state into your UI.
 
-```bash
-npm i @zynth/webserver
-```
+```tsx
+import { Button, Text, View } from "@zynth/components";
+import { createWebServerSignal } from "@zynth/webserver";
+import { createEffect, onCleanup } from "solid-js";
 
-Regenerate native projects after adding the package.
+export function LocalServer() {
+  const server = createWebServerSignal();
 
-## Quick Start
+  const handleStart = async () => {
+    try {
+      await server.start({
+        port: 8080,
+        upload: {
+          enabled: true,
+          path: "/__zynth/upload",
+        },
+      });
+    } catch (error) {
+      ZynthLogger.debug("Server failed to start", error);
+    }
+  };
 
-```ts
-import { WebServer } from "@zynth/webserver";
+  const handleStop = async () => {
+    await server.stop();
+  };
 
-const info = await WebServer.start({
-  port: 0,
-  indexHtml: "<h1>Hello from Zynth</h1>",
-  upload: {
-    enabled: true,
-    maxBytes: 10 * 1024 * 1024,
-  },
-  events: {
-    enabled: true,
-  },
-});
+  createEffect(() => {
+    if (server.status() === "running") {
+      const sub = server.subscribe((snapshot) => {
+        ZynthLogger.debug(`Active uploads: ${snapshot.uploadState.activeCount}`);
+      });
+      onCleanup(() => sub.remove());
+    }
+  });
 
-console.log(info.url, info.uploadPath, info.eventsPath, info.signalPath);
-
-await WebServer.stop();
-```
-
-### HTTPS Start (LAN Production)
-
-```ts
-const info = await WebServer.start({
-  port: 53317,
-  tls: {
-    enabled: true,
-    certificatePath: "/absolute/path/to/server.pem",
-  },
-  security: {
-    authToken: "zynth-server-token",
-    authTokenHeader: "X-Zynth-Server-Token",
-  },
-});
-
-console.log(info.url, info.scheme, info.secureTransport);
-```
-
-### HTTPS Start With Managed Certificate Persistence
-
-```ts
-const info = await WebServer.start({
-  port: 0,
-  tls: {
-    enabled: true,
-    managed: {
-      alias: "lan-server",
-      autoGenerate: true,
-      commonName: "localhost",
-      validDays: 365,
-      rotateAfterMs: 7 * 24 * 60 * 60 * 1000,
-    },
-  },
-});
-```
-
-### Managed TLS lifecycle details
-
-Managed TLS can now be fully framework-owned:
-
-- certificate generation (self-signed, native)
-- persistence under app cache
-- rotation via `rotateAfterMs`
-- stable aliasing via `managed.alias`
-
-You can also trigger cert lifecycle directly:
-
-```ts
-const cert = await WebServer.upsertManagedTlsCertificate({
-  alias: "lan-server",
-  generateIfMissing: true,
-  commonName: "localhost",
-  validDays: 365,
-  rotateAfterMs: 7 * 24 * 60 * 60 * 1000,
-});
-
-console.log(cert.certificatePath, cert.fingerprintSha256, cert.existed);
-```
-
-Read managed cert material for app-side pinning:
-
-```ts
-const current = await WebServer.getManagedTlsCertificate("lan-server");
-if (current) {
-  console.log(current.alias, current.fingerprintSha256);
-  // current.certificatePem contains CERTIFICATE block(s) only (no private key)
+  return (
+    <View>
+      <Text>Server Status: {server.status()}</Text>
+      <Button title="Start Server" onPress={handleStart} disabled={server.status() === "running"} />
+      <Button title="Stop Server" onPress={handleStop} disabled={server.status() !== "running"} />
+    </View>
+  );
 }
 ```
 
-## Solid Integration
+## Advanced signals and tokens
 
-Use `createWebServerSignal()` in components to manage lifecycle state and read events.
+For secure interactions or single-page app signaling, `WebServer` supports authenticated requests and dynamic signal states. You can require an authorization token for uploads and seamlessly send data back to your application runtime using the signal API.
 
-```ts
+```tsx
 import { createWebServerSignal } from "@zynth/webserver";
 
-const server = createWebServerSignal();
+const AUTH_TOKEN = "secure-auth-token";
 
-await server.start({
-  port: 0,
-  upload: { enabled: true },
-  events: { enabled: true },
-});
+export function SecuredSignalingServer() {
+  const server = createWebServerSignal();
 
-const events = await server.pollEvents(100);
-console.log(events.length);
-```
+  const handleStart = async () => {
+    await server.start({
+      port: 0, // Automatically assign an open port
+      security: {
+        authToken: AUTH_TOKEN,
+      },
+      events: {
+        enabled: true,
+      }
+    });
+  };
 
-## Endpoints
-
-Default endpoints (when enabled):
-
-- Upload: `/__zynth/upload`
-- Browser->App event postbox: `/__zynth/events`
-- App->Browser signal store: `/__zynth/signal`
-- Compatibility alias: `/__zynth/reply`
-
-Optional endpoint:
-
-- Upload metadata callback: disabled by default (`upload.metadataPath`)
-
-## Uploads
-
-### Start With Upload + Metadata + Guard
-
-```ts
-await WebServer.start({
-  security: {
-    authToken: "zynth-demo-token",
-    authTokenHeader: "X-Zynth-Server-Token",
-    authTokenQueryParam: "token",
-  },
-  upload: {
-    enabled: true,
-    path: "/__zynth/upload",
-    metadataPath: "/__zynth/upload/metadata",
-    maxBytes: 10 * 1024 * 1024,
-  },
-  events: {
-    enabled: true,
-  },
-});
-```
-
-### Upload Event Types
-
-- `upload_started`
-- `upload_progress`
-- `upload_completed`
-- `upload_failed`
-- `upload_metadata`
-
-Use `WebServer.drainEvents(...)` or `WebServer.subscribe(...)` to receive them.
-
-### Upload State
-
-```ts
-const state = await WebServer.getUploadState();
-console.log(state.activeCount, state.totalCompleted, state.totalBytesReceived);
-```
-
-## In-Memory Signaling
-
-The signal store solves app->browser communication without filesystem polling.
-
-### API
-
-- `WebServer.setSignal(key, payload)`
-- `WebServer.getSignal(key, consume?)`
-- `WebServer.getSignalPath()`
-
-Compatibility aliases:
-
-- `setReply` -> `setSignal`
-- `getReply` -> `getSignal`
-- `/__zynth/reply` -> `/__zynth/signal`
-
-### Semantics
-
-- Writes are keyed (`key -> JSON payload`).
-- `GET /__zynth/signal?id=<key>` defaults to consume-on-read.
-- Use `consume=0` for non-consuming reads.
-- Missing key returns `204 No Content`.
-
-### HTTP Contract
-
-- `GET /__zynth/signal?id=<key>&consume=1|0`
-  - `200` with JSON payload when found
-  - `204` when not found
-  - `400` when `id` is missing
-  - `405` for unsupported methods
-
-### App-Side Example
-
-```ts
-await WebServer.setSignal("offer-42", {
-  requestId: "offer-42",
-  decision: "accepted",
-  accepted: true,
-  at: Date.now(),
-});
-
-const peek = await WebServer.getSignal("offer-42", false);
-console.log(peek);
-```
-
-### Browser-Side Example
-
-```ts
-async function waitForDecision(requestId: string): Promise<unknown | null> {
-  const deadline = Date.now() + 30_000;
-  while (Date.now() < deadline) {
-    const res = await fetch(
-      `/__zynth/signal?id=${encodeURIComponent(requestId)}&consume=1`
-    );
-    if (res.status === 200) {
-      return await res.json();
+  const handleIncomingSignal = async () => {
+    // Reading data sent to the /__zynth/signal endpoint
+    const data = await server.getSignal<{ user: string }>("my-signal-key", true);
+    if (data) {
+      ZynthLogger.debug("Signal received:", data.user);
     }
-    if (res.status !== 204) {
-      throw new Error(`Signal read failed: HTTP ${res.status}`);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
+  };
+
   return null;
 }
 ```
 
-## Full Offer/Decision Handshake (Recommended)
+## Special Cases
 
-This is the common pattern for accept/reject workflows.
+### Web Support and Multi-Target Availability
 
-### 1) Browser posts offer to app
+`WebServer` relies on native hardware bindings (specifically Civetweb in C++). Because of browser security constraints, HTTP server capabilities are fundamentally unsupported directly on Web targets. You should evaluate `WebServer.isAvailable()` before mounting server-dependent logic to gracefully degrade on the web.
 
-```ts
-await fetch("/__zynth/events", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    type: "signal_offer",
-    requestId: "offer-123",
-    fileName: "report.pdf",
-    size: 120394,
-    at: Date.now(),
-  }),
-});
-```
+```tsx
+import { WebServer } from "@zynth/webserver";
 
-### 2) App listens for `message` events
-
-```ts
-const events = await WebServer.drainEvents(100);
-for (const event of events) {
-  if (event.type !== "message" || typeof event.payload !== "object") continue;
-  const payload = event.payload as Record<string, unknown>;
-  if (payload.type === "signal_offer" && typeof payload.requestId === "string") {
-    // Show offer in UI, then resolve with setSignal(...)
-  }
+if (!WebServer.isAvailable()) {
+  ZynthLogger.debug("Local web server is not available in this environment.");
 }
 ```
 
-### 3) App resolves request ID
+### Automatic Port Assignment
 
-```ts
-await WebServer.setSignal("offer-123", {
-  requestId: "offer-123",
-  decision: "rejected",
-  accepted: false,
-  reason: "user_declined",
-  at: Date.now(),
-});
-```
-
-### 4) Browser receives final decision
-
-```ts
-const res = await fetch("/__zynth/signal?id=offer-123&consume=1");
-if (res.status === 200) {
-  const decision = await res.json();
-  console.log(decision);
-}
-```
-
-## Subscriptions
-
-`WebServer.subscribe` is the preferred continuous stream API.
-
-```ts
-const sub = WebServer.subscribe(
-  (snapshot) => {
-    console.log(snapshot.running, snapshot.uploadState.activeCount);
-    snapshot.events.forEach((event) => {
-      console.log(event.type, event.payload);
-    });
-  },
-  {
-    pollIntervalMs: 400,
-    maxEvents: 100,
-    includeUploadState: true,
-  },
-);
-
-sub.remove();
-```
-
-## Production Notes
-
-- HTTP remains supported for compatibility/dev flows. HTTPS is optional and opt-in via `tls.enabled`.
-- In production, `WebServer.start()` blocks insecure HTTP by default. Set `security.allowInsecureHttp=true` only for explicit non-production or trusted internal workflows.
-- `security.authToken` protects upload, metadata, events, and signal endpoints. Prefer passing it via header (`security.authTokenHeader`) instead of query parameters.
-- Prefer stable request IDs (UUIDs) for signaling keys.
-- Use `consume=1` for one-shot decisions.
-- Use `consume=0` only for diagnostics/preview.
-- Treat `204` as "not ready yet", not as an error.
-- Keep polling intervals reasonable (300-1000ms).
-- Signal storage is in-memory and process-local.
-- Legacy alias endpoints/methods are supported for compatibility.
+If you provide `0` as the port in your configurations, the OS will automatically assign an available port. This avoids potential collisions with other services or instances of the framework. You can inspect the allocated URL and port by checking `server.info()`.
 
 ## API Reference
 
-### `WebServer`
+### `createWebServerSignal`
 
-- `start(options?: WebServerStartOptions): Promise<WebServerInfo>`
-- `upsertManagedTlsCertificate(options): Promise<WebServerManagedTlsCertificateInfo>`
-- `getManagedTlsCertificate(alias?): Promise<WebServerManagedTlsCertificate | null>`
-- `stop(): Promise<void>`
-- `isRunning(): Promise<boolean>`
-- `getInfo(): Promise<WebServerInfo | null>`
-- `getUploadState(): Promise<WebServerUploadState>`
-- `drainEvents(maxEvents?: number): Promise<WebServerEvent[]>`
-- `setSignal(key: string, payload: unknown): Promise<void>`
-- `getSignal<T = unknown>(key: string, consume?: boolean): Promise<T | null>`
-- `setReply(key: string, payload: unknown): Promise<void>` (compatibility alias)
-- `getReply<T = unknown>(key: string, consume?: boolean): Promise<T | null>` (compatibility alias)
-- `subscribe(listener, options?): WebServerSubscription`
-- `isAvailable(): boolean`
-- `getSignalPath(): string`
-- `getReplyPath(): string`
+Creates a reactive API object integrated with SolidJS, exposing signals for connection status, server info, and errors. Additionally, it exposes methods to orchestrate the server state and listen for activities.
 
-### `createWebServerSignal()`
-
-Returns `WebServerSignal` with:
-
-- Accessors: `status`, `info`, `error`
-- Actions:
-  - `start`, `stop`
-  - `pollEvents`, `getUploadState`
-  - `setSignal`, `getSignal`
-  - `setReply`, `getReply`
-  - `subscribe`
-
-### Core Types
-
-- `WebServerStatus`
-  - `"idle" | "starting" | "running" | "stopped" | "error"`
-
-- `WebServerStartOptions`
-  - `host?`, `port?`, `documentRoot?`, `indexHtml?`, `upload?`, `events?`, `security?`, `tls?`
-
-- `WebServerUploadOptions`
-  - `enabled?`, `path?`, `directory?`, `maxBytes?`
-  - `metadataPath?`, `authToken?`, `authTokenHeader?`, `authTokenQueryParam?`
-  - note: upload auth fields are supported for backward compatibility; prefer `security.*`
-
-- `WebServerSecurityOptions`
-  - `allowInsecureHttp?`
-  - `authToken?`, `authTokenHeader?`, `authTokenQueryParam?`
-
-- `WebServerTlsOptions`
-  - `enabled?`
-  - `certificatePath?` (PEM certificate/private key bundle for CivetWeb `ssl_certificate`)
-  - `certificatePem?` (inline PEM bundle; persisted by framework before start)
-  - `managed?`
-    - `alias?`
-    - `rotateAfterMs?`
-    - `pem?`
-    - `getPem?`
-    - `autoGenerate?` (defaults to `true` when no PEM source is provided)
-    - `commonName?` (used for self-signed generation)
-    - `validDays?` (1..3650; used for self-signed generation)
-
-- `WebServer.upsertManagedTlsCertificate(options)`
-  - `alias?`
-  - `pem?`
-  - `rotateAfterMs?`
-  - `generateIfMissing?`
-  - `commonName?`
-  - `validDays?`
-
-- `WebServerEventsOptions`
-  - `enabled?`, `path?`
-
-- `WebServerManagedTlsCertificateInfo`
-  - `alias`, `certificatePath`, `fingerprintSha256`, `updatedAt`, `existed`
-
-- `WebServerManagedTlsCertificate`
-  - `alias`, `certificatePath`, `certificatePem`, `fingerprintSha256`, `updatedAt`
-
-- `WebServerInfo`
-  - `host`, `port`, `url`, `scheme`, `secureTransport`, `documentRoot?`, `uploadPath?`, `uploadMetadataPath?`, `eventsPath?`, `signalPath?`, `replyPath?`
-
-## Native TLS Build Flags
-
-TLS transport availability is controlled at native build time.
-
-- Android compiles CivetWeb with TLS (bundled mbedTLS backend) when Gradle property `zynthWebServerTls=true`.
-- iOS compiles with TLS only when pod install evaluates `ZYNTH_WEBSERVER_TLS=1`.
-- On Android, if TLS is requested but mbedTLS sources are missing, the module falls back to `NO_SSL` and emits a CMake warning (build succeeds, HTTPS remains unavailable).
-- `zynth prebuild android` auto-fetches the required mbedTLS/CivetWeb TLS sources when `nativeTls` is enabled, so those sources do not need to be committed in your app repository.
-
-The recommended way is to configure this in `app.json` and let `zynth prebuild` wire both platforms.
-
-```json
-{
-  "zynth": {
-    "packages": {
-      "@zynth/webserver": {
-        "nativeTls": true
-      }
-    }
-  }
-}
-```
-
-Prebuild behavior:
-
-- `zynth prebuild android` writes `zynthWebServerTls=true` to `android/gradle.properties`.
-- `zynth prebuild ios` runs `pod install` with `ZYNTH_WEBSERVER_TLS=1`.
-
-Aliases accepted for backward compatibility in package config:
-
-- `tlsNative`
-- `nativeTlsEnabled`
-- `enableNativeTls`
-- `enableTls`
-
-If TLS is requested at runtime (`tls.enabled=true`) but native was built without TLS, startup fails with `E_TLS_NOT_AVAILABLE` (or `E_NATIVE_ERROR` on older builds).
-
-## Client Trust For Self-Signed HTTPS
-
-Server-side TLS startup and client-side HTTPS trust are separate concerns.
-
-When your server uses a self-signed certificate, Android `fetch` must be given an explicit trust bundle for that request. Use the PEM certificate block you started the server with:
+**Type**
 
 ```ts
-const res = await fetch("https://127.0.0.1:53317/__zynth/events", {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    "X-Zynth-Server-Token": "zynth-demo-token",
-  },
-  body: JSON.stringify({ ping: true }),
-  tls: {
-    trustedCertificatesPem: [serverPemCertificate],
-  },
-});
+function createWebServerSignal(): WebServerSignal;
 ```
 
-Notes:
+**Returns**
 
-- `trustedCertificatesPem` accepts one PEM string or an array of PEM strings.
-- This affects only the current request and does not modify global OS trust settings.
-- For production peer-to-peer flows, pin the expected peer certificate/fingerprint and rotate trust explicitly.
+A `WebServerSignal` interface consisting of:
+*   `status`: Accessor to the current lifecycle phase (`"idle" | "starting" | "running" | "stopped" | "error"`).
+*   `info`: Accessor to resolved server information and URLs.
+*   `error`: Accessor to runtime errors.
+*   `start(options?: WebServerStartOptions)`: Starts the server.
+*   `stop()`: Stops the active server.
+*   `subscribe(listener, options)`: Polls server events continuously.
+*   `getSignal(key, consume)`: Reads an inbound HTTP payload securely.
+*   `setSignal(key, payload)`: Sets an outbound payload.
 
-- `WebServerEventType`
-  - `"upload_started" | "upload_progress" | "upload_completed" | "upload_failed" | "upload_metadata" | "message"`
+### `WebServer`
 
-- `WebServerEvent`
-  - `type`, `payload`, `rawPayload`
+The fundamental object providing imperative control over the Web Server engine.
 
-- `WebServerUploadState`
-  - `activeCount`, `totalStarted`, `totalCompleted`, `totalFailed`, `totalBytesReceived`, `activeUploads`
+### `WebServer.start`
 
-- `WebServerSubscribeOptions`
-  - `pollIntervalMs?`, `maxEvents?`, `emitImmediately?`, `includeUploadState?`
+Starts the HTTP server securely using the designated configurations. 
 
-- `WebServerSubscriptionSnapshot`
-  - `timestamp`, `running`, `info`, `uploadState`, `events`
+**Type**
 
-- `WebServerSubscription`
-  - `remove()`
+```ts
+function start(options?: WebServerStartOptions): Promise<WebServerInfo>;
+```
+
+**Parameters**
+
+*   `options` (`WebServerStartOptions`, optional): Configuration for the HTTP instance.
+    *   `host` (`string`, optional): Host interface to bind (defaults to `0.0.0.0`).
+    *   `port` (`number`, optional): Port directly requested, `0` assigns automatically.
+    *   `tls` (`WebServerTlsOptions`, optional): Native managed or manual TLS provisioning instructions.
+    *   `upload` (`WebServerUploadOptions`, optional): Setup paths, directory, sizes, and auth tokens for file ingestion.
+    *   `events` (`WebServerEventsOptions`, optional): Enable and specify a path for generic event payloads.
+    *   `security` (`WebServerSecurityOptions`, optional): Handle tokens and insecure HTTP behavior settings.
+
+### `WebServer.stop`
+
+Brings down the server synchronously and detaches listening sockets.
+
+**Type**
+
+```ts
+function stop(): Promise<void>;
+```
+
+### `WebServer.subscribe`
+
+Registers a continuous polling mechanism that will execute a designated listener capturing events or progress in uploads. 
+
+**Type**
+
+```ts
+function subscribe(listener: (snapshot: WebServerSubscriptionSnapshot) => void, options?: WebServerSubscribeOptions): WebServerSubscription;
+```
+
+**Returns**
+
+An object with a `.remove()` method to cleanly execute detachment and clear the polling interval.
+
+### `WebServer.setSignal`
+
+Saves an arbitrary JavaScript object to memory mapped by a key, accessible remotely via HTTP or directly by the native environment later.
+
+**Type**
+
+```ts
+function setSignal(key: string, payload: unknown): Promise<void>;
+```
+
+### `WebServer.getSignal`
+
+Resolves a payload securely from the signal endpoint. A common practice is setting `consume = true` so the payload is concurrently removed from native memory upon retrieval.
+
+**Type**
+
+```ts
+function getSignal<T = unknown>(key: string, consume?: boolean): Promise<T | null>;
+```
+
+### `WebServer.isAvailable`
+
+Returns true if the target system environment safely executes the Civetweb wrapper. Evaluates strictly to `false` on Web environments.
+
+**Type**
+
+```ts
+function isAvailable(): boolean;
+```
