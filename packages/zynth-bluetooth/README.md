@@ -1,88 +1,46 @@
-# @zynth/bluetooth
+# Bluetooth
 
-Secure Bluetooth package for Zynth with separate APIs for:
+Comprehensive Bluetooth integration for Zynth applications, supporting Low Energy (BLE), Classic (Android), and Mesh Networking.
 
-- Bluetooth Classic (`BluetoothClassic`)
-- Bluetooth Low Energy (`BluetoothBLE`)
+The `@zynth/bluetooth` package provides a unified, reactive API for interacting with Bluetooth hardware. It is divided into three specialized subsystems:
 
-This package is optimized for Android native execution through Zynth modules + JSI bridge calls.
+- **[Bluetooth BLE (Low Energy)](./docs/BLE.md)**: Hardware-accelerated scanning, GATT client/server operations, and peripheral mode.
+- **[Bluetooth Classic](./docs/Classic.md)**: Support for legacy RFCOMM/SPP serial devices (**Android only**).
+- **[Bluetooth Mesh](./docs/Mesh.md)**: Decentralized, multi-hop mesh networking over BLE.
+
+## Quick Start
+
+Before using any Bluetooth features, ensure that the device supports the required transport and that the user has granted the necessary permissions.
+
+```tsx
+import { BluetoothBLE } from "@zynth/bluetooth";
+
+const checkSupport = async () => {
+  if (BluetoothBLE.isSupported()) {
+    const status = await BluetoothBLE.requestPermissionsAsync();
+    
+    if (status.allGranted) {
+      console.log("Ready to use Bluetooth!");
+    }
+  }
+};
+```
 
 ## Platform Support
 
-- Android: Bluetooth Classic + BLE supported.
-- iOS:
-  - BLE supported (scan/connect/services/read/write/notifications/RSSI, with structured errors).
-  - Classic Bluetooth methods return `E_UNAVAILABLE`.
-  - Classic Bluetooth on iOS requires MFi-compliant accessories and Apple-approved protocols.
+| Feature | iOS (CoreBluetooth) | Android (Gatt/Socket) |
+| :--- | :---: | :---: |
+| **BLE Scan/Connect** | [x] | [x] |
+| **GATT Operations** | [x] | [x] |
+| **BLE Peripheral** | [x] | [x] |
+| **Classic Discovery** | [ ] | [x] |
+| **RFCOMM (SPP)** | [ ] | [x] |
+| **Mesh Networking** | [x] | [x] |
 
-## Design Goals
+---
 
-- Predictable, typed Promise-based API (Web Bluetooth-style ergonomics).
-- Security through `exportedMethods` + `protectedMethods` runtime validation.
-- Native-speed operations with synchronous fast-path checks where safe.
-- Clear, structured errors from native operations.
+## Detailed Documentation
 
-## API Surface
-
-```ts
-import { BluetoothClassic, BluetoothBLE } from "@zynth/bluetooth";
-```
-
-### Mesh Chat Runtime
-
-```ts
-import { BluetoothMesh } from "@zynth/bluetooth";
-
-await BluetoothMesh.startNodeAsync({
-  nodeId: "node-a",
-  serviceUuid: "180F",
-  characteristicUuid: "2A19",
-  ttl: 3,
-});
-
-await BluetoothMesh.sendMessageAsync({
-  roomId: "demo-room",
-  payloadBase64: "SGVsbG8gbWVzaA==",
-});
-```
-
-`BluetoothMesh` adds BitChat-like building blocks on top of BLE:
-
-- peer discovery and session lifecycle events
-- relay with TTL + hop count + dedupe
-- bounded store-and-forward queue
-- Noise-style PSK session key derivation + AES-GCM payload protection
-
-Security is optional at runtime: if `globalThis.crypto` (with `subtle`) is unavailable, mesh security operations are skipped and a warning is emitted once.
-
-### Permissions
-
-```ts
-await BluetoothClassic.requestPermissionsAsync();
-await BluetoothBLE.requestPermissionsAsync();
-```
-
-### Classic Discovery + Connect
-
-```ts
-await BluetoothClassic.startDiscoveryAsync();
-const devices = await BluetoothClassic.getDiscoveredDevicesAsync();
-const connection = await BluetoothClassic.connectAsync({ deviceId: devices[0].id });
-await BluetoothClassic.writeAsync(connection.connectionId, "SGVsbG8=");
-```
-
-### BLE Scan + Connect + MTU
-
-```ts
-await BluetoothBLE.startScanAsync({ serviceUuids: ["180F"] });
-const devices = await BluetoothBLE.getScannedDevicesAsync();
-const connection = await BluetoothBLE.connectAsync({ deviceId: devices[0].id });
-await BluetoothBLE.requestMtuAsync(connection.connectionId, 247);
-```
-
-## Events
-
-- `BluetoothClassic.addListener((event) => ...)`
-- `BluetoothBLE.addListener((event) => ...)`
-
-Each API emits discovery/scan results, connection updates, data/notification events, and structured errors.
+- **[BLE (Scanning, Peripheral, GATT)](./docs/BLE.md)**
+- **[Classic (RFCOMM, Discovery)](./docs/Classic.md)**
+- **[Mesh (P2P, Relay, Security)](./docs/Mesh.md)**
