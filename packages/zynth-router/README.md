@@ -1,45 +1,61 @@
-# @zynth/router
+# Router
 
-A robust, type-safe navigation library for Zynth applications.
+`@zynth/router` provides navigation primitives for Zynth applications built with SolidJS. It keeps navigation state in JavaScript, renders screens through `@zynth/screens`, and exposes typed navigators, hooks, and filesystem-driven routing for stack, tab, and sheet-based flows.
 
-Designed to mimic the API of React Navigation, `@zynth/router` manages navigation state in JavaScript memory while driving native transitions via `@zynth/screens`. This decoupling makes it ideal for the Zynth Hypervisor and multi-app environments where a single native `UINavigationController` cannot be shared.
+Router supports iOS and Android as primary targets. Web support is partial and follows the adapters provided by the Zynth screen and component layers, with web-specific rendering for headers and tab bars where native containers are not available.
 
-## Installation
-
-This package is included by default in the `app` template.
-
-```bash
-yarn add @zynth/router @zynth/screens @zynth/components @zynth/apis @zynth/core
-```
-
-## Quick Start
+## Basic usage
 
 ```tsx
-import { NavigationContainer, createStackNavigator } from "@zynth/router";
-import { HomeScreen, DetailsScreen } from "./screens";
+import {
+  NavigationContainer,
+  createStackNavigator,
+  useNavigation,
+} from "@zynth/router";
+import { View, Text, Button } from "@zynth/components";
 
-// 1. Define your route params
-export type RootStackParams = {
+type RootStackParams = {
   Home: undefined;
-  Details: { itemId: string; title?: string };
+  Details: { itemId: string };
 };
 
-// 2. Create the navigator
 const Stack = createStackNavigator<RootStackParams>();
+
+function HomeScreen() {
+  const navigation = useNavigation<RootStackParams>();
+
+  return (
+    <View style={{ flex: 1, padding: 24, justifyContent: "center" }}>
+      <Text style={{ fontSize: 24, marginBottom: 16 }}>Home</Text>
+      <Button onPress={() => navigation.navigate("Details", { itemId: "42" })}>
+        Open details
+      </Button>
+    </View>
+  );
+}
+
+function DetailsScreen() {
+  return (
+    <View style={{ flex: 1, padding: 24, justifyContent: "center" }}>
+      <Text style={{ fontSize: 24 }}>Details</Text>
+    </View>
+  );
+}
 
 export default function App() {
   return (
     <NavigationContainer>
       <Stack.Navigator initialRouteName="Home">
-        <Stack.Screen 
-          name="Home" 
-          component={HomeScreen} 
-          options={{ title: "Welcome" }}
+        <Stack.Screen
+          name="Home"
+          component={HomeScreen}
+          options={{ title: "Overview" }}
         />
-        <Stack.Screen 
-          name="Details" 
+        <Stack.Screen
+          name="Details"
           component={DetailsScreen}
-          options={({ route }) => ({ title: route.params.title ?? "Details" })}
+          options={{ title: "Item", animation: "push" }}
+          initialParams={{ itemId: "initial" }}
         />
       </Stack.Navigator>
     </NavigationContainer>
@@ -47,17 +63,87 @@ export default function App() {
 }
 ```
 
-## API Reference
+## Advanced examples
 
-### Filesystem Router
+### Stack and tabs together
 
-`@zynth/router` can render a filesystem-generated screen tree:
+```tsx
+import {
+  NavigationContainer,
+  createStackNavigator,
+  createTabNavigator,
+} from "@zynth/router";
+
+type RootTabs = {
+  Feed: undefined;
+  Settings: undefined;
+};
+
+type FeedStack = {
+  FeedHome: undefined;
+  Article: { slug: string };
+};
+
+const Tabs = createTabNavigator<RootTabs>();
+const Stack = createStackNavigator<FeedStack>();
+
+function FeedNavigator() {
+  return (
+    <Stack.Navigator>
+      <Stack.Screen name="FeedHome" component={FeedHomeScreen} />
+      <Stack.Screen
+        name="Article"
+        component={ArticleScreen}
+        options={{ presentation: "push", animation: "push" }}
+      />
+    </Stack.Navigator>
+  );
+}
+
+export function App() {
+  return (
+    <NavigationContainer>
+      <Tabs.Navigator
+        tabBarOptions={{
+          tabBarActiveTintColor: "#111827",
+          tabBarInactiveTintColor: "#6b7280",
+        }}
+      >
+        <Tabs.Screen
+          name="Feed"
+          component={FeedNavigator}
+          options={{
+            title: "Feed",
+            tab: {
+              label: "Feed",
+              icon: { systemName: "newspaper" },
+            },
+          }}
+        />
+        <Tabs.Screen
+          name="Settings"
+          component={SettingsScreen}
+          options={{
+            title: "Settings",
+            tab: {
+              label: "Settings",
+              icon: { systemName: "gearshape" },
+            },
+          }}
+        />
+      </Tabs.Navigator>
+    </NavigationContainer>
+  );
+}
+```
+
+### Filesystem router
 
 ```tsx
 import { NavigationContainer, createFileSystemRouter } from "@zynth/router";
-import fileSystemRouterManifest from "@zynth/router/fs-routes";
+import routes from "@zynth/router/fs-routes";
 
-const AppRouter = createFileSystemRouter(fileSystemRouterManifest);
+const AppRouter = createFileSystemRouter(routes);
 
 export default function App() {
   return (
@@ -68,123 +154,82 @@ export default function App() {
 }
 ```
 
-The manifest is generated through the router rsbuild helper, which emits
-an rsbuild generic generated-module feature.
+### Bottom sheet flows
 
-Recommended config:
-
-```ts
-import { defineZynthConfig } from "@zynth/rsbuild-plugin";
-import { routerFileSystem } from "@zynth/router/rsbuild";
-
-export default defineZynthConfig({}, {
-  plugin: {
-    features: [routerFileSystem({ enable: true })],
-  },
-});
-```
-
-Filesystem router safety checks:
-* Duplicate resolved route names fail generation with a descriptive error.
-* Invalid `initialRouteName` in Stack navigators falls back to first registered screen (with warning).
-* Nested Stack/Tabs header ownership should be explicit via `headerShown` to avoid parent/child back mismatches.
-
-Filesystem conventions:
-* `_layout.stack.tsx` (or `.ts/.jsx/.js`) defines a Stack navigator for a directory.
-* `_layout.tabs.tsx` (or `.ts/.jsx/.js`) defines a BottomTabs navigator for a directory.
-* Screen files (`.tsx/.ts/.jsx/.js`) map to route names.
-* `index.*` maps to the directory route.
-* Route-group directories like `(tabs)` are pathless grouping segments.
-
-### Navigators
-
-#### `createStackNavigator<ParamList>()`
-Creates a stack navigator that manages a stack of screens. Transitions are animated (push, pop).
-
-**Props (`Stack.Navigator`):**
-*   `initialRouteName`: The name of the route to render first.
-*   `screenOptions`: Default options for all screens.
-
-**Props (`Stack.Screen`):**
-*   `name`: Route name (key of `ParamList`).
-*   `component`: The component to render.
-*   `options`: Screen-specific options (title, header, etc.).
-*   `initialParams`: Default params for the route.
-
-#### `createTabNavigator<ParamList>()`
-Creates a bottom tab navigator.
-
-**Props (`Tab.Navigator`):**
-*   `tabBarOptions`: Global tab bar styling (`activeTintColor`, `backgroundColor`).
-*   `tabBar`: Custom tab bar component function.
-
-**Options (`Tab.Screen` options):**
-*   `tab`: Configuration object:
-    *   `label`: Text label for the tab.
-    *   `icon`: Icon factory or descriptor.
-    *   `badge`: Badge count/text.
-
-#### `createBottomSheetNavigator<ParamList>()`
-Creates a stack navigator that lives inside a native bottom sheet.
-
-**Props (`BottomSheet.Navigator`):**
-*   `bottomSheetOptions`: Global sheet config (`snapPoints`, `initialSnapIndex`).
-
-### Hooks
-
-#### `useNavigation<T>()`
-Returns the `navigation` object to dispatch actions.
+BottomSheet navigation is experimental and currently unstable. Use it with caution in production code.
 
 ```tsx
-const navigation = useNavigation();
-navigation.navigate("Details", { itemId: "123" });
-navigation.goBack();
-```
+import { NavigationContainer, createBottomSheetNavigator } from "@zynth/router";
 
-**Methods:**
-*   `navigate(name, params)`: Navigate to a route.
-*   `push(name, params)`: Push a new instance of a route.
-*   `goBack()`: Pop the current screen.
-*   `popToTop()`: Go to the first screen.
-*   `setOptions(options)`: Update the current screen's options.
-
-#### `useRoute<T>()`
-Returns the current route's state (key, name, params).
-
-```tsx
-const route = useRoute<RouteProps>();
-console.log(route.params().itemId);
-```
-
-#### `createFocusEffect(callback)`
-Runs a side-effect when the screen comes into focus.
-
-```tsx
-createFocusEffect(() => {
-  console.log("Screen focused");
-  return () => console.log("Screen blurred");
-});
-```
-
-### Types
-
-#### `ScreenOptions`
-Common options for screens.
-
-| Property | Type | Description |
-| :--- | :--- | :--- |
-| `title` | `string` | Header title. |
-| `headerShown` | `boolean` | Show/hide the header. |
-| `headerRight` | `() => JSX.Element` | Custom right header component. |
-| `presentation` | `'card' \| 'modal'` | Screen transition style. |
-| `animation` | `'push' \| 'fade' \| 'none'` | Specific animation type. |
-
-#### `RouteParamList`
-A TypeScript type defining the mapping of route names to their parameters.
-
-```ts
-type AppParams = {
-  Login: undefined;
-  Profile: { userId: number };
+type SheetRoutes = {
+  Filters: undefined;
+  Sort: undefined;
 };
+
+const Sheet = createBottomSheetNavigator<SheetRoutes>();
+
+export function FiltersSheet() {
+  return (
+    <NavigationContainer>
+      <Sheet.Navigator bottomSheetOptions={{ snapPoints: ["40%", "80%"] }}>
+        <Sheet.Screen
+          name="Filters"
+          component={FiltersScreen}
+          options={{ title: "Filters" }}
+        />
+        <Sheet.Screen
+          name="Sort"
+          component={SortScreen}
+          options={{
+            title: "Sort",
+            bottomSheet: { initialSnapIndex: 1 },
+          }}
+        />
+      </Sheet.Navigator>
+    </NavigationContainer>
+  );
+}
 ```
+
+## Special cases and unusual features
+
+- Navigators are typed from your route map, so `navigate`, `push`, `replace`, screen names, and route params stay aligned with a single source of truth.
+- Tabs keep their own history. Calling `goBack()` inside a tab navigator returns to the previously selected tab when history is available.
+- Filesystem routing supports `_layout.stack.*` and `_layout.tabs.*` conventions, `index.*` route resolution, and pathless `(group)` segments through the generated manifest.
+- BottomSheet navigation is experimental and unstable. The API surface is available, but compatibility and behavior may change.
+- `useHeaderMetrics()` and `useTabBarMetrics()` expose layout measurements for content that needs to sit below headers or above tab bars.
+- Web support is partial. Stack and tab flows render on the web, but native headers, tab bars, and sheet presentation may differ from iOS and Android.
+
+## API Reference
+
+### Main exports
+
+- `NavigationContainer`
+- `createStackNavigator`
+- `createTabNavigator`
+- `createBottomSheetNavigator` (experimental)
+- `createFileSystemRouter`
+- `createRouter`
+- `Stack`, `Tabs`, `BottomSheet` (`BottomSheet` is experimental)
+- `useNavigation`
+- `useRoute`
+- `useParams`
+- `useRouteName`
+- `useIsFocused`
+- `createFocusEffect`
+- `createBeforeRemove`
+- `useNavigationState`
+- `useScreenOptions`
+- `useHeaderMetrics`
+- `useTabBarMetrics`
+
+### Documentation map
+
+- [Getting Started](/Users/ignaciozsabo/code/zynth/framework/packages/zynth-router/docs/getting-started.md)
+- [Hooks](/Users/ignaciozsabo/code/zynth/framework/packages/zynth-router/docs/hooks.md)
+- [Filesystem Router](/Users/ignaciozsabo/code/zynth/framework/packages/zynth-router/docs/filesystem-router.md)
+- [Stack Navigator](/Users/ignaciozsabo/code/zynth/framework/packages/zynth-router/docs/stack-navigator.md)
+- [Tab Navigator](/Users/ignaciozsabo/code/zynth/framework/packages/zynth-router/docs/tab-navigator.md)
+- [Nested Navigators](/Users/ignaciozsabo/code/zynth/framework/packages/zynth-router/docs/nested-navigators.md)
+- [TypeScript](/Users/ignaciozsabo/code/zynth/framework/packages/zynth-router/docs/typescript.md)
+- [API Reference](/Users/ignaciozsabo/code/zynth/framework/packages/zynth-router/docs/api-reference.md)

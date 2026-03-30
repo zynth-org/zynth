@@ -1,8 +1,10 @@
 # Stack Navigator
 
-The Stack Navigator manages a stack of screens with push/pop transitions, similar to navigation in mobile apps.
+`createStackNavigator()` builds a typed stack flow where screens are pushed, replaced, popped, and reset through a shared navigation context. Stack screens can define headers, presentation modes, animations, and per-screen initial params.
 
-## Creating a Stack Navigator
+Stacks are the default choice for linear flows such as details pages, drill-down interfaces, onboarding, and modal presentation layered over a main route sequence.
+
+## Basic usage
 
 ```tsx
 import { createStackNavigator } from "@zynth/router";
@@ -11,63 +13,41 @@ type StackParams = {
   Home: undefined;
   Details: { id: string };
   Settings: undefined;
+  Compose: undefined;
 };
 
 const Stack = createStackNavigator<StackParams>();
+
+function AppStack() {
+  return (
+    <Stack.Navigator initialRouteName="Home">
+      <Stack.Screen name="Home" component={HomeScreen} />
+      <Stack.Screen name="Details" component={DetailsScreen} />
+      <Stack.Screen name="Settings" component={SettingsScreen} />
+    </Stack.Navigator>
+  );
+}
 ```
 
-## Basic Usage
+## Important and advanced examples
 
-```tsx
-<Stack.Navigator initialRouteName="Home">
-  <Stack.Screen name="Home" component={HomeScreen} />
-  <Stack.Screen name="Details" component={DetailsScreen} />
-  <Stack.Screen name="Settings" component={SettingsScreen} />
-</Stack.Navigator>
-```
-
-## Navigator Props
-
-### `initialRouteName`
-
-The screen to show when the navigator first loads.
-
-```tsx
-<Stack.Navigator initialRouteName="Home">{/* ... */}</Stack.Navigator>
-```
-
-### `screenOptions`
-
-Default options applied to all screens. Can be an object or a function.
+### Default screen options
 
 ```tsx
 <Stack.Navigator
   screenOptions={{
     headerShown: true,
-    headerBackgroundColor: "#1d4ed8",
-    headerTintColor: "#ffffff",
+    headerBackgroundColor: "#ffffff",
+    headerTintColor: "#111827",
+    headerShadowVisible: true,
   }}
 >
-  {/* ... */}
+  <Stack.Screen name="Home" component={HomeScreen} />
+  <Stack.Screen name="Details" component={DetailsScreen} />
 </Stack.Navigator>
 ```
 
-Or as a function:
-
-```tsx
-<Stack.Navigator
-  screenOptions={() => ({
-    headerShown: true,
-    headerBackgroundColor: isDarkMode() ? "#000" : "#fff",
-  })}
->
-  {/* ... */}
-</Stack.Navigator>
-```
-
-## Screen Options
-
-Each screen can have its own options:
+### Per-screen presentation and animation
 
 ```tsx
 <Stack.Screen
@@ -75,158 +55,17 @@ Each screen can have its own options:
   component={DetailsScreen}
   options={{
     title: "Details",
-    headerShown: true,
-    headerBackgroundColor: "#1d4ed8",
-    headerTintColor: "#ffffff",
-    headerShadowVisible: true,
-    animation: "push", // "push" | "modal" | "zoom" | "fade" | "none"
-    presentation: "push", // "push" | "modal"
+    animation: "zoom",
+    presentation: "zoom",
     gestureEnabled: true,
   }}
 />
-```
 
-### Available Options
-
-| Option                  | Type                  | Default     | Description                       |
-| ----------------------- | --------------------- | ----------- | --------------------------------- |
-| `title`                 | `string`              | Screen name | Header title text                 |
-| `headerShown`           | `boolean`             | `true`      | Show/hide header                  |
-| `headerBackgroundColor` | `string`              | `"#ffffff"` | Header background color           |
-| `headerTintColor`       | `string`              | `"#111827"` | Header text and back button color |
-| `headerShadowVisible`   | `boolean`             | `true`      | Show/hide header shadow           |
-| `animation`             | Animation type        | `"push"`    | Screen transition animation       |
-| `presentation`          | `"push"` \| `"modal"` | `"push"`    | Screen presentation style         |
-| `gestureEnabled`        | `boolean`             | `true`      | Enable back gesture               |
-
-## Navigation Methods
-
-Use the `useNavigation` hook to access navigation methods:
-
-```tsx
-import { useNavigation } from "@zynth/router";
-
-function MyScreen() {
-  const navigation = useNavigation<StackParams>();
-
-  // Navigation methods available:
-  // navigation.navigate(name, params?)
-  // navigation.push(name, params?)
-  // navigation.pop(count?)
-  // navigation.goBack()
-  // navigation.replace(name, params?)
-  // navigation.reset(state)
-  // navigation.setParams(params)
-  // navigation.setOptions(options)
-  // navigation.canGoBack()
-}
-```
-
-### `navigate(name, params?)`
-
-Navigate to a screen. If the screen already exists in the stack, pop to it.
-
-```tsx
-navigation.navigate("Details", { id: "123" });
-```
-
-### `push(name, params?)`
-
-Push a new screen onto the stack, even if it already exists.
-
-```tsx
-navigation.push("Details", { id: "456" });
-```
-
-### `pop(count?)`
-
-Pop one or more screens from the stack.
-
-```tsx
-navigation.pop(); // Pop 1 screen
-navigation.pop(2); // Pop 2 screens
-```
-
-### `goBack()`
-
-Go back to the previous screen (same as `pop(1)`).
-
-```tsx
-navigation.goBack();
-```
-
-### `replace(name, params?)`
-
-Replace the current screen with a new one.
-
-```tsx
-navigation.replace("Home");
-```
-
-### `reset(state)`
-
-Reset the navigation state completely.
-
-```tsx
-navigation.reset({
-  index: 0,
-  routes: [{ name: "Home" }],
-});
-```
-
-### `setParams(params)`
-
-Update params for the current screen.
-
-```tsx
-navigation.setParams({ id: "789" });
-```
-
-### `setOptions(options)`
-
-Update options for the current screen.
-
-```tsx
-navigation.setOptions({ title: "New Title" });
-```
-
-### `canGoBack()`
-
-Returns `true` if there's a screen to go back to.
-
-```tsx
-if (navigation.canGoBack()) {
-  navigation.goBack();
-}
-```
-
-## Animation Types
-
-Control how screens transition:
-
-```tsx
 <Stack.Screen
-  name="Details"
-  component={DetailsScreen}
-  options={{ animation: "push" }}
-/>
-```
-
-Available animations:
-
-- **`push`** (default) - Slide from right, previous screen slides left
-- **`modal`** - Slide up from bottom
-- **`zoom`** - Zoom in/out effect
-- **`fade`** - Crossfade transition
-- **`none`** - No animation
-
-## Presentation Styles
-
-```tsx
-<Stack.Screen
-  name="Modal"
-  component={ModalScreen}
+  name="Compose"
+  component={ComposeScreen}
   options={{
+    title: "Compose",
     presentation: "modal",
     animation: "modal",
     headerShown: false,
@@ -234,130 +73,113 @@ Available animations:
 />
 ```
 
-- **`push`** - Standard stack behavior
-- **`modal`** - Presented as a modal (typically slides up)
-
-## Dynamic Options
-
-Update options based on state:
+### Dynamic header content
 
 ```tsx
 import { createEffect } from "solid-js";
+import { Button } from "@zynth/components";
 import { useNavigation } from "@zynth/router";
 
-function MyScreen() {
-  const navigation = useNavigation();
-  const [title, setTitle] = createSignal("Initial Title");
+function DetailsScreen() {
+  const navigation = useNavigation<StackParams>();
 
   createEffect(() => {
     navigation.setOptions({
-      title: title(),
+      title: "Current item",
+      headerRight: () => (
+        <Button variant="ghost" onPress={() => saveCurrentItem()}>
+          Save
+        </Button>
+      ),
     });
   });
 
-  return (
-    <View>
-      <Pressable onPress={() => setTitle("Updated Title")}>
-        <Text>Change Title</Text>
-      </Pressable>
-    </View>
-  );
+  return null;
 }
 ```
 
-## Header Customization
-
-While the router provides a default header, you can hide it and create your own:
+### Stack actions
 
 ```tsx
-<Stack.Screen
-  name="Custom"
-  component={CustomScreen}
-  options={{ headerShown: false }}
-/>;
+import { useNavigation } from "@zynth/router";
 
-function CustomScreen() {
-  const navigation = useNavigation();
+function Actions() {
+  const navigation = useNavigation<StackParams>();
 
-  return (
-    <View style={{ flex: 1 }}>
-      {/* Your custom header */}
-      <View
-        style={{
-          height: 60,
-          backgroundColor: "#007AFF",
-          flexDirection: "row",
-          alignItems: "center",
-        }}
-      >
-        <Pressable onPress={() => navigation.goBack()}>
-          <Text style={{ color: "white" }}>← Back</Text>
-        </Pressable>
-        <Text style={{ color: "white", fontSize: 18 }}>Custom Header</Text>
-      </View>
+  navigation.navigate("Details", { id: "42" });
+  navigation.push("Details", { id: "84" });
+  navigation.replace("Settings");
+  navigation.pop();
+  navigation.popToTop();
+  navigation.reset({
+    index: 0,
+    routes: [{ name: "Home" }],
+  });
 
-      {/* Screen content */}
-      <View style={{ flex: 1 }}>{/* ... */}</View>
-    </View>
-  );
+  return null;
 }
 ```
 
-## Example: E-commerce Flow
+## Special cases and unusual features
 
-```tsx
-type ShopStackParams = {
-  ProductList: undefined;
-  ProductDetails: { productId: string };
-  Cart: undefined;
-  Checkout: { total: number };
-  OrderConfirmation: { orderId: string };
-};
+- `navigate()` reuses an existing route in the stack when the route name already exists. Use `push()` when a new route instance is required.
+- `initialRouteName` is validated against registered screens. If it does not match, the stack falls back to the first registered screen.
+- Screen options can be provided per navigator, per screen, and updated at runtime through `navigation.setOptions()` or `useScreenOptions()`.
+- Header rendering differs by platform. iOS can use native header integration, while web and some non-native contexts render headers in JavaScript.
 
-const ShopStack = createStackNavigator<ShopStackParams>();
+## API Reference
 
-function ShopNavigator() {
-  return (
-    <ShopStack.Navigator initialRouteName="ProductList">
-      <ShopStack.Screen
-        name="ProductList"
-        component={ProductListScreen}
-        options={{ title: "Products" }}
-      />
-      <ShopStack.Screen
-        name="ProductDetails"
-        component={ProductDetailsScreen}
-        options={{ title: "Product Details" }}
-      />
-      <ShopStack.Screen
-        name="Cart"
-        component={CartScreen}
-        options={{ title: "Shopping Cart" }}
-      />
-      <ShopStack.Screen
-        name="Checkout"
-        component={CheckoutScreen}
-        options={{
-          title: "Checkout",
-          presentation: "modal",
-          animation: "modal",
-        }}
-      />
-      <ShopStack.Screen
-        name="OrderConfirmation"
-        component={OrderConfirmationScreen}
-        options={{
-          title: "Order Complete",
-          gestureEnabled: false,
-        }}
-      />
-    </ShopStack.Navigator>
-  );
-}
-```
+### `createStackNavigator<ParamList>()`
 
-## Next Steps
+Returns a typed object with:
 
-- Learn about [Tab Navigator](./tab-navigator.md)
-- Explore [Nested Navigators](./nested-navigators.md)
-- Master [Navigation Hooks](./hooks.md)
+- `Navigator`
+- `Screen`
+
+### `Stack.Navigator`
+
+Props:
+
+- `id?: string`
+- `initialRouteName?: string`
+- `screenOptions?: ScreenOptions | (() => ScreenOptions | undefined)`
+- `children?: JSX.Element`
+
+### `Stack.Screen`
+
+Props:
+
+- `name: RouteName`
+- `component: ScreenComponent<ParamList, RouteName>`
+- `options?: ScreenOptions | (() => ScreenOptions | undefined)`
+- `initialParams?: ParamList[RouteName]`
+
+### `ScreenOptions`
+
+Header:
+
+- `title?: string`
+- `subtitle?: string`
+- `largeTitle?: boolean`
+- `headerShown?: boolean`
+- `headerTintColor?: string`
+- `headerTitleColor?: string`
+- `headerBackgroundColor?: string`
+- `headerStyle?: "default" | "liquidGlass"`
+- `headerBlurEffect?: "systemUltraThin" | "systemThin" | "systemChromatic"`
+- `headerTransparent?: boolean`
+- `headerShadowVisible?: boolean`
+- `userInterfaceStyle?: "dark" | "light" | "system"`
+- `headerBackVisible?: boolean`
+- `headerLeft?: (props: HeaderLeftProps) => JSX.Element`
+- `headerRight?: () => JSX.Element`
+- `headerRightButton?: HeaderRightButtonOptions`
+- `headerTitle?: () => JSX.Element`
+
+Transitions and content:
+
+- `gestureEnabled?: boolean`
+- `presentation?: "push" | "modal" | "transparentModal" | "fullScreen" | "zoom"`
+- `animation?: "push" | "modal" | "zoom" | "fade" | "none"`
+- `animationEnabled?: boolean`
+- `contentBackgroundColor?: string`

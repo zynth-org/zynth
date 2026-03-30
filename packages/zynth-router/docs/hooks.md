@@ -1,546 +1,220 @@
-# Navigation Hooks
+# Hooks
 
-`@zynth/router` provides several hooks for accessing navigation state and functionality within your screens.
+Router hooks expose navigation helpers, route data, focus state, screen options, and layout measurements from the current navigator context. They are designed for use inside screen components rendered by stack, tab, or bottom-sheet navigators.
 
-## useNavigation
+Most hooks return accessors or tuples that fit directly into SolidJS reactive code. This keeps route state readable without introducing additional wrapper state in the component.
 
-Get access to navigation methods for the current screen.
+## Basic usage
 
 ```tsx
-import { useNavigation } from "@zynth/router";
+import { useNavigation, useRoute } from "@zynth/router";
+import { Button, Text, View } from "@zynth/components";
 
 type StackParams = {
   Home: undefined;
   Details: { id: string };
 };
 
-function MyScreen() {
+function HomeScreen() {
   const navigation = useNavigation<StackParams>();
 
   return (
-    <Pressable onPress={() => navigation.navigate("Details", { id: "123" })}>
-      <Text>Go to Details</Text>
-    </Pressable>
+    <View style={{ flex: 1, justifyContent: "center", padding: 24 }}>
+      <Button onPress={() => navigation.navigate("Details", { id: "123" })}>
+        Open details
+      </Button>
+    </View>
   );
 }
-```
-
-### Methods
-
-```tsx
-const navigation = useNavigation<ParamList>();
-
-// Navigate to a screen
-navigation.navigate(name, params?);
-
-// Push a new screen (stack only)
-navigation.push(name, params?);
-
-// Pop screens (stack only)
-navigation.pop(count?);
-
-// Go back
-navigation.goBack();
-
-// Replace current screen
-navigation.replace(name, params?);
-
-// Reset navigation state
-navigation.reset(state);
-
-// Update params
-navigation.setParams(params);
-
-// Update options
-navigation.setOptions(options);
-
-// Check if can go back
-navigation.canGoBack();
-
-// Get parent navigator (for nested navigators)
-navigation.getParent();
-
-// Check if screen is focused
-navigation.isFocused();
-```
-
-## useRoute
-
-Access the current route's information (name, params, key).
-
-```tsx
-import { useRoute } from "@zynth/router";
-
-type StackParams = {
-  Details: { id: string; title: string };
-};
 
 function DetailsScreen() {
   const route = useRoute<StackParams, "Details">();
 
-  // Access params (reactive)
-  const { id, title } = route.params();
-
-  // Access route metadata
-  const routeName = route.name; // "Details"
-  const routeKey = route.key; // unique key
-
   return (
-    <View>
-      <Text>ID: {id}</Text>
-      <Text>Title: {title}</Text>
+    <View style={{ flex: 1, justifyContent: "center", padding: 24 }}>
+      <Text>Current id: {route.params().id}</Text>
     </View>
   );
 }
 ```
 
-### Properties
+## Advanced examples
 
-```tsx
-const route = useRoute<ParamList, RouteName>();
-
-route.key; // Unique route key
-route.name; // Route name
-route.params(); // Route params (Accessor)
-route.setParams; // Update params function
-```
-
-## useParams
-
-Shorthand for accessing route params.
+### Reading and updating params with `useParams`
 
 ```tsx
 import { useParams } from "@zynth/router";
+import { Button, Text, View } from "@zynth/components";
 
-type StackParams = {
-  Details: { id: string; title: string };
+type DetailsParams = {
+  Details: { id: string; mode?: "summary" | "full" };
 };
 
 function DetailsScreen() {
-  const params = useParams<StackParams, "Details">();
+  const [params, setParams] = useParams<DetailsParams["Details"]>();
 
   return (
-    <View>
-      <Text>ID: {params().id}</Text>
-      <Text>Title: {params().title}</Text>
+    <View style={{ flex: 1, justifyContent: "center", padding: 24 }}>
+      <Text>{params().id}</Text>
+      <Button onPress={() => setParams({ mode: "full" })}>
+        Show full mode
+      </Button>
     </View>
   );
 }
 ```
 
-## useRouteName
-
-Get the current route name.
+### Updating screen options reactively
 
 ```tsx
-import { useRouteName } from "@zynth/router";
+import { createEffect, createSignal } from "solid-js";
+import { useScreenOptions } from "@zynth/router";
 
-function MyScreen() {
-  const routeName = useRouteName();
+function EditableTitleScreen() {
+  const [title, setTitle] = createSignal("Draft");
+  const [, setOptions] = useScreenOptions();
 
-  return <Text>Current route: {routeName}</Text>;
+  createEffect(() => {
+    setOptions({ title: title() });
+  });
+
+  return null;
 }
 ```
 
-## useIsFocused
-
-Check if the current screen is focused.
+### Focus-aware work
 
 ```tsx
-import { useIsFocused } from "@zynth/router";
+import { createFocusEffect, useIsFocused } from "@zynth/router";
 import { createEffect } from "solid-js";
 
-function MyScreen() {
-  const isFocused = useIsFocused();
-
-  createEffect(() => {
-    if (isFocused()) {
-      console.log("Screen is focused");
-      // Fetch fresh data, resume animations, etc.
-    } else {
-      console.log("Screen is not focused");
-      // Pause animations, clean up, etc.
-    }
-  });
-
-  return (
-    <View>
-      <Text>Focused: {String(isFocused())}</Text>
-    </View>
-  );
-}
-```
-
-## createFocusEffect
-
-Run side effects when the screen comes into focus.
-
-```tsx
-import { createFocusEffect } from "@zynth/router";
-
-function MyScreen() {
-  createFocusEffect(() => {
-    console.log("Screen focused");
-
-    // Fetch data
-    fetchData();
-
-    // Return cleanup function
-    return () => {
-      console.log("Screen unfocused");
-      // Cancel requests, clean up subscriptions, etc.
-    };
-  });
-
-  return <View>{/* ... */}</View>;
-}
-```
-
-### Example: Refresh Data on Focus
-
-```tsx
 function FeedScreen() {
-  const [posts, setPosts] = createSignal([]);
-  const [loading, setLoading] = createSignal(false);
-
-  const loadPosts = async () => {
-    setLoading(true);
-    try {
-      const data = await fetchPosts();
-      setPosts(data);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  createFocusEffect(() => {
-    loadPosts();
-  });
-
-  return (
-    <View>
-      <Show when={!loading()} fallback={<Spinner />}>
-        <For each={posts()}>{(post) => <PostCard post={post} />}</For>
-      </Show>
-    </View>
-  );
-}
-```
-
-## createBeforeRemove
-
-Prevent navigation or show confirmation dialog.
-
-```tsx
-import { createBeforeRemove } from "@zynth/router";
-import { createSignal } from "solid-js";
-
-function EditProfileScreen() {
-  const [hasUnsavedChanges, setHasUnsavedChanges] = createSignal(false);
-
-  createBeforeRemove((event) => {
-    if (!hasUnsavedChanges()) {
-      return; // Allow navigation
-    }
-
-    // Prevent navigation
-    event.preventDefault();
-
-    // Show confirmation dialog
-    const confirmed = confirm("You have unsaved changes. Discard them?");
-
-    if (confirmed) {
-      setHasUnsavedChanges(false);
-      // Allow navigation by dispatching the action again
-      event.retry();
-    }
-  });
-
-  return (
-    <View>
-      <Input onChange={() => setHasUnsavedChanges(true)} />
-      {/* ... */}
-    </View>
-  );
-}
-```
-
-## useNavigationState
-
-Access the raw navigation state.
-
-```tsx
-import { useNavigationState } from "@zynth/router";
-
-function MyScreen() {
-  const state = useNavigationState();
-
-  return (
-    <View>
-      <Text>Current index: {state().index}</Text>
-      <Text>Total routes: {state().routes.length}</Text>
-    </View>
-  );
-}
-```
-
-### Use Cases
-
-- Display breadcrumbs
-- Show custom back button based on stack depth
-- Debug navigation state
-
-```tsx
-function Breadcrumbs() {
-  const state = useNavigationState();
-
-  return (
-    <View style={{ flexDirection: "row", gap: 8 }}>
-      <For each={state().routes}>
-        {(route, index) => (
-          <>
-            <Text>{route.name}</Text>
-            <Show when={index() < state().routes.length - 1}>
-              <Text> → </Text>
-            </Show>
-          </>
-        )}
-      </For>
-    </View>
-  );
-}
-```
-
-## useScreenOptions
-
-Get or update screen options dynamically.
-
-```tsx
-import { useScreenOptions } from "@zynth/router";
-import { createEffect, createSignal } from "solid-js";
-
-function MyScreen() {
-  const [options, setOptions] = useScreenOptions();
-  const [count, setCount] = createSignal(0);
-
-  // Update title based on state
-  createEffect(() => {
-    setOptions({
-      title: `Count: ${count()}`,
-    });
-  });
-
-  return (
-    <View>
-      <Text>Current title: {options().title}</Text>
-      <Pressable onPress={() => setCount((c) => c + 1)}>
-        <Text>Increment</Text>
-      </Pressable>
-    </View>
-  );
-}
-```
-
-## useHeaderMetrics
-
-Get header dimensions (useful for layouts).
-
-```tsx
-import { useHeaderMetrics } from "@zynth/router";
-
-function MyScreen() {
-  const headerMetrics = useHeaderMetrics();
-
-  return (
-    <View style={{ paddingTop: headerMetrics().height }}>
-      {/* Content positioned below header */}
-    </View>
-  );
-}
-```
-
-## useTabBarMetrics
-
-Get tab bar dimensions.
-
-```tsx
-import { useTabBarMetrics } from "@zynth/router";
-
-function MyScreen() {
-  const tabBarMetrics = useTabBarMetrics();
-
-  return (
-    <View style={{ paddingBottom: tabBarMetrics().height }}>
-      {/* Content positioned above tab bar */}
-    </View>
-  );
-}
-```
-
-## Advanced: useNavigationContext
-
-Access the raw navigation context (advanced use cases).
-
-```tsx
-import { useNavigationContext } from "@zynth/router";
-
-function MyScreen() {
-  const navContext = useNavigationContext();
-
-  console.log("Navigator ID:", navContext.navigatorId);
-  console.log("Navigator Type:", navContext.navigatorType); // "stack" | "tabs"
-
-  return <View>{/* ... */}</View>;
-}
-```
-
-## Advanced: useRouteContext
-
-Access the raw route context (advanced use cases).
-
-```tsx
-import { useRouteContext } from "@zynth/router";
-
-function MyScreen() {
-  const routeContext = useRouteContext();
-
-  console.log("Route key:", routeContext.key);
-  console.log("Route name:", routeContext.name);
-  console.log("Is focused:", routeContext.isFocused());
-
-  return <View>{/* ... */}</View>;
-}
-```
-
-## Combining Hooks
-
-```tsx
-import {
-  useNavigation,
-  useRoute,
-  useIsFocused,
-  createFocusEffect,
-  createBeforeRemove,
-} from "@zynth/router";
-import { createSignal, createEffect } from "solid-js";
-
-type StackParams = {
-  EditPost: { postId: string; initialContent: string };
-};
-
-function EditPostScreen() {
-  const navigation = useNavigation<StackParams>();
-  const route = useRoute<StackParams, "EditPost">();
   const isFocused = useIsFocused();
 
-  const { postId, initialContent } = route.params();
-  const [content, setContent] = createSignal(initialContent);
-  const [hasChanges, setHasChanges] = createSignal(false);
-
-  // Track changes
-  createEffect(() => {
-    setHasChanges(content() !== initialContent);
+  createFocusEffect(() => {
+    refreshFeed();
   });
 
-  // Warn before leaving with unsaved changes
-  createBeforeRemove((event) => {
-    if (hasChanges()) {
-      event.preventDefault();
-      if (confirm("Discard changes?")) {
-        event.retry();
-      }
+  createEffect(() => {
+    if (!isFocused()) {
+      pauseFeedAnimations();
     }
   });
 
-  // Auto-save when screen loses focus
-  createFocusEffect(() => {
-    return () => {
-      if (hasChanges()) {
-        savePost(postId, content());
-      }
-    };
-  });
+  return null;
+}
+```
 
-  // Update title dynamically
-  createEffect(() => {
-    navigation.setOptions({
-      title: hasChanges() ? "Editing* Post" : "Edit Post",
-    });
-  });
+### Layout metrics for headers and tab bars
+
+```tsx
+import { useHeaderMetrics, useTabBarMetrics } from "@zynth/router";
+import { View } from "@zynth/components";
+
+function ScreenLayout() {
+  const header = useHeaderMetrics();
+  const tabBar = useTabBarMetrics();
 
   return (
-    <View>
-      <TextInput
-        value={content()}
-        onChange={(e) => setContent(e.target.value)}
-      />
-      <Pressable
-        onPress={async () => {
-          await savePost(postId, content());
-          navigation.goBack();
-        }}
-      >
-        <Text>Save</Text>
-      </Pressable>
-    </View>
+    <View
+      style={{
+        flex: 1,
+        paddingTop: header().height,
+        paddingBottom: tabBar().height,
+      }}
+    />
   );
 }
 ```
 
-## Best Practices
+## Special cases and unusual features
 
-### 1. Type Your Hooks
+- `useNavigation()` resolves the current navigator first and bubbles unknown routes to a parent navigator when one is available.
+- `useParams()` returns a tuple, not a single accessor. The first item is the params accessor and the second updates the current route params.
+- `useScreenOptions()` also returns a tuple. The setter merges the provided options into the current route options.
+- `useNavigationState()` exposes the full reactive state tree for the current navigator and is useful for custom navigation UI.
+- `createBeforeRemove()` is part of the public router surface for removal interception flows.
 
-Always provide route param types:
+## API Reference
 
-```tsx
-// ❌ Untyped
-const navigation = useNavigation();
-const route = useRoute();
+### `useNavigation<ParamList>()`
 
-// ✅ Typed
-const navigation = useNavigation<StackParams>();
-const route = useRoute<StackParams, "Details">();
-```
+Returns `NavigationHelpers<ParamList>`.
 
-### 2. Use Appropriate Hooks
+Methods:
 
-- `useParams()` when you only need params
-- `useRoute()` when you need full route info
-- `useRouteName()` when you only need the name
+- `navigate(name, params?)`
+- `push(name, params?)`
+- `pop(count?)`
+- `popToTop()`
+- `goBack()`
+- `replace(name, params?)`
+- `reset(state)`
+- `setParams(params)`
+- `setOptions(options)`
+- `canGoBack()`
+- `getParent()`
+- `isFocused()`
 
-### 3. Cleanup in createFocusEffect
+### `useRoute<ParamList, RouteName>()`
 
-Always return a cleanup function:
+Returns:
 
-```tsx
-createFocusEffect(() => {
-  const subscription = subscribe();
+- `key: string`
+- `name: RouteName`
+- `params: Accessor<ParamList[RouteName]>`
+- `setParams(params: Partial<ParamList[RouteName]>)`
 
-  return () => {
-    subscription.unsubscribe();
-  };
-});
-```
+### `useParams<Params>()`
 
-### 4. Guard createBeforeRemove
+Returns:
 
-Only prevent navigation when necessary:
+- `[Accessor<Params>, (params: Partial<Params>) => void]`
 
-```tsx
-createBeforeRemove((event) => {
-  if (!shouldPrevent()) {
-    return; // Allow navigation
-  }
+### `useRouteName()`
 
-  event.preventDefault();
-  // Show dialog...
-});
-```
+Returns:
 
-## Next Steps
+- `string`
 
-- Learn about [TypeScript](./typescript.md) integration
-- Check the [API Reference](./api-reference.md)
-- Explore [Stack Navigator](./stack-navigator.md)
-- Explore [Tab Navigator](./tab-navigator.md)
+### `useIsFocused()`
+
+Returns:
+
+- `Accessor<boolean>`
+
+### `createFocusEffect(callback)`
+
+Parameters:
+
+- `callback: () => void | (() => void)`
+
+### `createBeforeRemove(handler)`
+
+Parameters:
+
+- `handler: BeforeRemoveHandler`
+
+### `useNavigationState<ParamList>()`
+
+Returns:
+
+- `Accessor<NavigationState<ParamList>>`
+
+### `useScreenOptions()`
+
+Returns:
+
+- `[() => ScreenOptions, (options: ScreenOptions) => void]`
+
+### `useHeaderMetrics(extraHeight?)`
+
+Returns:
+
+- `Accessor<{ height: number; inset: number }>`
+
+### `useTabBarMetrics(extraHeight?)`
+
+Returns:
+
+- `Accessor<{ height: number; inset: number }>`
