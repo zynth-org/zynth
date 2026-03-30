@@ -8,9 +8,29 @@ The `@zynth/bluetooth` package provides a unified, reactive API for interacting 
 - **[Bluetooth Classic](./docs/Classic.md)**: Support for legacy RFCOMM/SPP serial devices (**Android only**).
 - **[Bluetooth Mesh](./docs/Mesh.md)**: Decentralized, multi-hop mesh networking over BLE.
 
-## Quick Start
+Before using any Bluetooth features, you must declare the required permissions in your `app.json` configuration file.
 
-Before using any Bluetooth features, ensure that the device supports the required transport and that the user has granted the necessary permissions.
+```json
+{
+  "zynth": {
+    "ios": {
+      "infoPlist": {
+        "NSBluetoothAlwaysUsageDescription": "This app uses Bluetooth to connect to peripherals."
+      }
+    },
+    "android": {
+      "permissions": [
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.BLUETOOTH_SCAN",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.BLUETOOTH_ADVERTISE"
+      ]
+    }
+  }
+}
+```
+
+## Quick Start
 
 ```tsx
 import { BluetoothBLE } from "@zynth/bluetooth";

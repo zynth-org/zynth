@@ -4,6 +4,21 @@ The `Network` API provides simple, cross-platform monitoring of device connectiv
 
 It abstracts the differences between iOS (Network framework), Android (ConnectivityManager), and Web (Navigator.onLine) to provide a unified reactive state.
 
+To monitor network state on Android, you must declare the following permissions in your `app.json`.
+
+```json
+{
+  "zynth": {
+    "android": {
+      "permissions": [
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.INTERNET"
+      ]
+    }
+  }
+}
+```
+
 ## Basic usage
 
 ### Synchronous State

@@ -2,6 +2,28 @@
 
 Secure, web-based authentication transitions for Zynth applications, providing a unified interface for OAuth2 and OpenID Connect flows.
 
+To receive authentication redirects, you must configure your application's scheme in `app.json`.
+
+```json
+{
+  "zynth": {
+    "scheme": "my-app",
+    "ios": {
+      "infoPlist": {
+        "CFBundleURLTypes": [{ "CFBundleURLSchemes": ["my-app"] }]
+      }
+    },
+    "android": {
+      "intentFilters": [{
+        "actions": ["android.intent.action.VIEW"],
+        "categories": ["android.intent.category.DEFAULT", "android.intent.category.BROWSABLE"],
+        "data": [{ "scheme": "my-app" }]
+      }]
+    }
+  }
+}
+```
+
 `@zynth/auth-session` manages the lifecycle of authentication requests by leveraging native browser components (**ASWebAuthenticationSession** on iOS and **Custom Tabs** on Android). This ensures that credentials remain isolated from the application and that redirects are captured securely by the native OS.
 
 ## Basic usage
