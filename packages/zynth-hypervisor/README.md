@@ -1,6 +1,6 @@
 # Hypervisor
 
-High-isolation guest runtimes for Zynth applications, enabling micro-frontend architectures and secure plugin sandboxing.
+High-isolation guest runtimes for Zynth applications, enabling micro-frontend architectures and plugin sandboxing.
 
 The Hypervisor component provides the primitive for embedding a full Zynth environment (Yoga layout + Hermes runtime) inside another Zynth application. It abstracts:
 
