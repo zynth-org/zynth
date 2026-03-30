@@ -1,54 +1,84 @@
-# @zynth/document-picker
+# DocumentPicker
 
-Pick files/documents from the system picker on iOS and Android.
+Native document and file selection system for Zynth applications, providing a unified interface for the system's file explorers.
 
-This package opens the native document picker, returns file metadata, and can copy selected files into the app cache directory so they can be read immediately by `@zynth/filesystem`.
+`@zynth/document-picker` leverages **UIDocumentPickerViewController** on iOS and the **Storage Access Framework (SAF)** on Android to allow users to select files from their device, iCloud, or Google Drive.
 
-## Features
+## Basic usage
 
-- Select one or many files
-- Filter by MIME type / UTType identifier
-- Returns file `uri`, `name`, `mimeType`, and `size`
-- Optional `copyToCacheDirectory` behavior (enabled by default)
+### Picking a single document
 
-## Usage
+The `getDocumentAsync` method opens the system's document picker. It resolves with a result object containing the selected file's metadata or a cancelled state.
 
-```ts
+```tsx
 import { DocumentPicker } from "@zynth/document-picker";
 
-const result = await DocumentPicker.getDocumentAsync({
-  multiple: true,
-  type: ["image/*", "application/pdf"],
-  copyToCacheDirectory: true,
-});
+const pickFile = async () => {
+  const result = await DocumentPicker.getDocumentAsync({
+    type: "application/pdf", // Optional: filter by MIME type
+    copyToCacheDirectory: true // Optional: copy file to internal cache
+  });
 
-if (!result.cancelled) {
-  console.log(result.assets);
-}
+  if (!result.cancelled) {
+    const asset = result.assets[0];
+    console.log("File URI:", asset.uri);
+    console.log("File Name:", asset.name);
+    console.log("File Size:", asset.size);
+  }
+};
 ```
 
-## API
+## Advanced
 
-### `DocumentPicker.getDocumentAsync(options?)`
+### Picking Multiple Files
 
-Returns:
+You can allow users to select multiple documents at once by enabling the `multiple` option.
 
-- `{ cancelled: true, assets: [] }` if user cancels
-- `{ cancelled: false, assets: DocumentPickerAsset[] }` on success
+```tsx
+const pickMultiple = async () => {
+  const result = await DocumentPicker.getDocumentAsync({
+    multiple: true,
+    type: ["image/*", "application/pdf"]
+  });
 
-Options:
+  if (!result.cancelled) {
+    result.assets.forEach(asset => {
+      console.log(`Picked: ${asset.name} (${asset.mimeType})`);
+    });
+  }
+};
+```
 
-- `multiple?: boolean`
-- `type?: string | string[]`
-- `copyToCacheDirectory?: boolean` (default: `true`)
+### Filtering by Type
 
-### `DocumentPicker.isAvailable()`
+The `type` option accepts MIME types. On iOS, these are automatically converted to **UTTypes** for system compatibility.
 
-Returns whether the native module bridge is available on the current platform/runtime.
+- `*/*`: All files (default).
+- `image/*`: All images.
+- `application/pdf`: PDF files.
+- `text/plain`: Text files.
 
-## Chooser Matrix
+## Special cases
 
-- Import external files into app: `@zynth/document-picker`
-- Import camera/gallery image into app: `@zynth/image-picker`
-- Open/share/export files using system handlers: `@zynth/file-intents`
-- Save image/video into Photos/Gallery: `@zynth/media-library`
+- **Caching Behavior**: By default, `copyToCacheDirectory` is `true`. 
+  - On **iOS**, the file is copied to a temporary directory using `FileManager` to ensure the app has persistent read access (resolving security-scope resource issues).
+  - On **Android**, the content is read from the `ContentResolver` and written to the app's internal cache directory. 
+  - If set to `false`, the returned URI is the original system URI (e.g., `content://` on Android). Note that these URIs may require special permissions or may not be accessible after the app is restarted.
+- **Large Files**: File discovery and metadata reading are performed on native background threads to prevent UI freezes. However, reading or copying extremely large files (e.g., GB-sized videos) will still be limited by the device's I/O and available cache space.
+- **Native Implementation**: 
+  - On **iOS**, it uses `UIDocumentPickerViewController` with `.item` or specific `UTType` filters.
+  - On **Android**, it uses `Intent.ACTION_OPEN_DOCUMENT` which provides access to all document providers (Downloads, Drive, SD Card).
+
+## API Reference
+
+### `DocumentPicker` Methods
+
+- `getDocumentAsync(options?: DocumentPickerOptions): Promise<DocumentPickerResult>`
+- `isAvailable(): boolean`
+
+### `DocumentPickerAsset` (Type)
+
+- `uri: string`: The URI to the selected file.
+- `name: string | null`: The display name of the file.
+- `mimeType: string | null`: The MIME type of the file.
+- `size: number | null`: The size of the file in bytes.
