@@ -1,87 +1,57 @@
-# @zynth/animate
+# Animation
 
-High-performance, declarative animations for Zynth.
+> [!WARNING]
+> The `@zynth/animate` library is currently under active development and constant improvement. It is not yet considered production-ready.
 
-This library provides a physics-based animation system that runs on the UI thread (native) or the JS thread (web/polyfill), ensuring buttery smooth 60/120fps interactions. It is inspired by `react-native-reanimated`.
+High-performance, frame-synced animations for Zynth applications using the JSI native bridge.
+
+The `@zynth/animate` package enables developers to create complex, fluid animations that run at 60/120fps by offloading the heavy lifting to the native thread. It provides a familiar, declarative API for Shared Values, interpolated styles, and lifecycle transitions.
 
 ## Features
 
-*   **Shared Values**: Reactive values that can be animated on the UI thread without bridging overhead.
-*   **Worklets**: (Internal) Logic that runs synchronously on the UI thread.
-*   **Layout Transitions**: Automatically animate entering, exiting, and layout changes.
-*   **Physics**: Spring and Timing animations.
+- **Shared Values**: Reactive primitives synchronized with the native animation thread.
+- **Hardware-Accelerated Styles**: Style mappings that bypass the JS thread for transforms and opacity.
+- **Declarative Lifecycle**: Built-in support for entry and exit animations (Fade, Slide, Zoom).
+- **Layout Intelligence**: Automatically animate components when their position or size changes.
 
-## Usage
+## Documentation Index
 
-### Basic Animation
+Explore the specialized guides for each part of the animation system:
+
+- **[Core Animations](./docs/Animation.md)**: `createSharedValue`, `withTiming`, `withSpring`, and basic animation control.
+- **[AnimatedView](./docs/AnimatedView.md)**: Components, `createAnimatedStyle`, and the `visible` lifecycle prop.
+- **[Interpolation](./docs/Interpolation.md)**: Range mapping, `interpolate`, and extrapolation strategies.
+- **[Entry & Exit](./docs/EntryExit.md)**: Mounting/unmounting animations and `Keyframe` builders.
+- **[Layout Transitions](./docs/LayoutTransitions.md)**: Animating automatic layout shifts and `LinearTransition`.
+
+## Quick Start
+
+### 1. Create a Shared Value
+
+Shared values are the reactive source for all animations.
 
 ```tsx
-import { Animated, createSharedValue, createAnimatedStyle, withSpring } from "@zynth/animate";
-import { Button } from "@zynth/components";
+import { createSharedValue, withSpring } from "@zynth/animate";
 
-function MyComponent() {
-  const width = createSharedValue(100);
+const opacity = createSharedValue(0);
 
+const show = () => {
+  opacity.value = withSpring(1);
+};
+```
+
+### 2. Map to a Component
+
+Use `createAnimatedStyle` to connect your shared values to an `AnimatedView`.
+
+```tsx
+import { AnimatedView, createAnimatedStyle } from "@zynth/animate";
+
+function FadeInView() {
   const style = createAnimatedStyle(() => ({
-    width: width.value,
-    height: 100,
-    backgroundColor: "red",
+    opacity: opacity.value
   }));
 
-  return (
-    <>
-      <Animated.View style={style} />
-      <Button onPress={() => (width.value = withSpring(Math.random() * 300))}>
-        Animate
-      </Button>
-    </>
-  );
+  return <AnimatedView style={style} />;
 }
 ```
-
-### Entering/Exiting Animations
-
-Animate views when they mount or unmount.
-
-```tsx
-import { Animated, FadeIn, FadeOut } from "@zynth/animate";
-
-<Animated.View 
-  entering={FadeIn.duration(500)} 
-  exiting={FadeOut}
->
-  <Text>Hello</Text>
-</Animated.View>
-```
-
-### Layout Transitions
-
-Animate position changes when the layout updates (e.g., list reordering).
-
-```tsx
-import { Animated, LinearTransition } from "@zynth/animate";
-
-<Animated.View layout={LinearTransition.springify()}>
-  {/* Content */}
-</Animated.View>
-```
-
-## API Reference
-
-### `createSharedValue(initialValue)`
-Creates a reference to a value that can be animated.
-*   `.value`: Get or set the current value. Assigning an animation function (like `withTiming`) triggers an animation.
-
-### `createAnimatedStyle(() => style)`
-Creates a reactive style object that updates whenever accessed shared values change. Returns a style object compatible with `Animated.View`.
-
-### `Animated.View`
-A wrapper around the native `View` that accepts `createAnimatedStyle` results and handles layout animations.
-
-### Animation Functions
-*   `withSpring(toValue, config)`: Physics-based spring animation.
-*   `withTiming(toValue, config)`: Time-based animation with easing.
-
-### Transition Objects
-*   `FadeIn`, `FadeOut`: Opacity transitions.
-*   `LinearTransition`: Standard layout change transition.
