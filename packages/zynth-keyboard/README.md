@@ -1,6 +1,6 @@
 # Keyboard
 
-Zynth provides a high-performance bridge for physical and virtual keyboard state, enabling granular reactivity and layout adjustments during keyboard transitions.
+Zynth provides a bridge for physical and virtual keyboard state, enabling granular reactivity and layout adjustments during keyboard transitions.
 
 Zynth's keyboard management is built on three pillars:
 - **`KeyboardProvider`**: A reactive context that tracks visibility, height, and animation state.
