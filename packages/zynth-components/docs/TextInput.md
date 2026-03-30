@@ -38,7 +38,7 @@ Use `value` when the parent should own the source of truth. Use `defaultValue` w
 
 For **controlled** `TextInput` usage, it is highly recommended to use `createSyncSignal` instead of a standard `createSignal`.
 
-Standard signals can cause undesirable effects such as cursor jumps, text flickers, or synchronization lag because they rely on asynchronous bridge communication. `createSyncSignal` is specifically designed for high-performance synchronization between the JavaScript environment and the native text buffer, ensuring that the field remains responsive and stable during rapid editing.
+Standard signals can cause undesirable effects such as cursor jumps, text flickers, or synchronization lag because they rely on asynchronous bridge communication. `createSyncSignal` is specifically designed for responsive synchronization between the JavaScript environment and the native text buffer, ensuring that the field remains responsive and stable during rapid editing.
 
 ```tsx
 import { createSyncSignal } from "@zynth/core";
