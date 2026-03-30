@@ -1,6 +1,6 @@
 # Layout Transitions
 
-> [!CAUTION]
+> [!WARNING]
 > Layout Transitions are currently experimental and may exhibit instability in complex layouts or during rapid state updates. Use with caution in development environments.
 
 Automatically animate position and size changes across layout passes.
@@ -20,8 +20,8 @@ function DynamicList(props) {
     <View>
       <For each={props.items}>
         {(item) => (
-          <AnimatedView 
-            layout={LinearTransition.springify()} 
+          <AnimatedView
+            layout={LinearTransition.springify()}
             style={{ padding: 10, marginBottom: 5 }}
           >
             <Text>{item.text}</Text>
@@ -50,8 +50,8 @@ While linear transitions are standard, you can "springify" a transition to give 
 Control the speed of the layout adjustment to match the rhythm of your primary animations.
 
 ```tsx
-LinearTransition.duration(200) // Fast and snappy
-LinearTransition.delay(100)    // Staggered response
+LinearTransition.duration(200); // Fast and snappy
+LinearTransition.delay(100); // Staggered response
 ```
 
 ## Special cases
@@ -62,12 +62,15 @@ LinearTransition.delay(100)    // Staggered response
 ## API Reference
 
 ### `LinearTransition` Builder
+
 The primary builder for animating layout shifts.
+
 - `duration(ms: number)`: Sets the transition time.
 - `springify()`: Switches the interpolation from linear to spring physics.
 - `delay(ms: number)`: Adds a delay before the transition begins.
 
 ### `LayoutTransitionConfig`
+
 - `duration?: number`
 - `spring?: boolean`
 - `delay?: number`
