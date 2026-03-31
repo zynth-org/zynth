@@ -11,15 +11,18 @@ The `UIProvider` (or `UIThemeProvider`) is the primary entry point for the UI ki
 To start using the UI kit, wrap your main application component with the `UIProvider`.
 
 ```tsx
-import { render } from "solid-js/web";
 import { UIProvider } from "@zynth/ui";
-import { App } from "./App";
+import { View, Text } from "@zynth/components";
 
-render(() => (
-  <UIProvider colorScheme="system">
-    <App />
-  </UIProvider>
-), document.getElementById("root"));
+function App() {
+  return (
+    <UIProvider colorScheme="system">
+      <View>
+        <Text>Hello, Zynth+SolidJS!</Text>
+      </View>
+    </UIProvider>
+  );
+}
 ```
 
 ### Advanced Implementation
