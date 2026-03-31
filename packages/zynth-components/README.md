@@ -1,4 +1,4 @@
-# @zynth/components
+# Components
 
 The standard UI primitive library for the Zynth framework.
 
@@ -6,11 +6,11 @@ This package provides the core building blocks for constructing native user inte
 
 ## Primitives
 
-*   **Containers**: `View`, `ScrollView`, `GlassView`
-*   **Content**: `Text`, `Image`, `SystemIcon`
-*   **Interactions**: `Button`, `Pressable`, `TextInput`, `Switch`, `Slider`
-*   **Lists**: `FlatList` (Virtualized, recycled list for high performance)
-*   **Overlays**: `Modal`, `Alert`
+- **Containers**: `View`, `ScrollView`, `GlassView`
+- **Content**: `Text`, `Image`, `SystemIcon`
+- **Interactions**: `Button`, `Pressable`, `TextInput`, `Switch`, `Slider`
+- **Lists**: `VirtualList`, `FlatList` (Virtualized, recycled list for high performance)
+- **Overlays**: `Modal`, `Alert`
 
 ## Usage
 
@@ -21,9 +21,7 @@ export function MyComponent() {
   return (
     <View style={{ padding: 20 }}>
       <Text style={{ fontSize: 18, fontWeight: "bold" }}>Hello Zynth</Text>
-      <Button onPress={() => console.log("Pressed!")}>
-        Press Me
-      </Button>
+      <Button onPress={() => console.log("Pressed!")}>Press Me</Button>
     </View>
   );
 }

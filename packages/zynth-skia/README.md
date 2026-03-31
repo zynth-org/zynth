@@ -4,29 +4,29 @@ Skia rendering for Zynth, with declarative drawing nodes, imperative surface sub
 
 ### Core
 
-- [01 - Basic](./docs/01-basic.md)
+- [Basic](./docs/01-basic)
   package overview, renderer model, and first canvas
-- [02 - Declarative Canvas](./docs/02-declarative-canvas.md)
+- [Declarative Canvas](./docs/02-declarative-canvas)
   `Canvas`, shape nodes, paint inheritance, gradients, masks, images, SVG, and Skottie
-- [03 - Imperative Surface](./docs/03-imperative-surface.md)
+- [Imperative Surface](./docs/03-imperative-surface)
   `SkiaView`, `createSkiaSurface()`, frames, and direct command submission
 
 ### Advanced
 
-- [04 - Shaders and Values](./docs/04-shaders-and-values.md)
+- [Shaders and Values](./docs/04-shaders-and-values)
   `createShader()`, runtime effects, `Skia`, and shared values
-- [05 - Paths, Transforms, and Capabilities](./docs/05-paths-transforms-capabilities.md)
+- [Paths, Transforms, and Capabilities](./docs/05-paths-transforms-capabilities)
   `createPath()`, SVG path parsing, transform props, and runtime feature checks
-- [06 - Animations](./docs/06-animations.md)
+- [Animations](./docs/06-animations)
   shared numeric values, scalar interpolation, and animated Skia props
-- [07 - Reactive Primitives](./docs/07-reactive-primitives.md)
+- [Reactive Primitives](./docs/07-reactive-primitives)
   `createClock()`, `createPathInterpolation()`, and `createPathValue()`
-- [08 - Fonts](./docs/08-fonts.md)
+- [Fonts](./docs/08-fonts)
   font creation, resource loading, matching, and text setup
 
 ### Reference
 
-- [09 - API Reference](./docs/09-api-reference.md)
+- [API Reference](./docs/09-api-reference)
   public exports, command types, prop types, and package-level helpers
 
 ## Platform support

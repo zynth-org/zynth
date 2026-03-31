@@ -225,11 +225,11 @@ export function FiltersSheet() {
 
 ### Documentation map
 
-- [Getting Started](/Users/ignaciozsabo/code/zynth/framework/packages/zynth-router/docs/getting-started.md)
-- [Hooks](/Users/ignaciozsabo/code/zynth/framework/packages/zynth-router/docs/hooks.md)
-- [Filesystem Router](/Users/ignaciozsabo/code/zynth/framework/packages/zynth-router/docs/filesystem-router.md)
-- [Stack Navigator](/Users/ignaciozsabo/code/zynth/framework/packages/zynth-router/docs/stack-navigator.md)
-- [Tab Navigator](/Users/ignaciozsabo/code/zynth/framework/packages/zynth-router/docs/tab-navigator.md)
-- [Nested Navigators](/Users/ignaciozsabo/code/zynth/framework/packages/zynth-router/docs/nested-navigators.md)
-- [TypeScript](/Users/ignaciozsabo/code/zynth/framework/packages/zynth-router/docs/typescript.md)
-- [API Reference](/Users/ignaciozsabo/code/zynth/framework/packages/zynth-router/docs/api-reference.md)
+- [Getting Started](./docs/getting-started)
+- [Hooks](./docs/hooks)
+- [Filesystem Router](./docs/filesystem-router)
+- [Stack Navigator](/docs/stack-navigator)
+- [Tab Navigator](./docs/tab-navigator)
+- [Nested Navigators](./docs/nested-navigators)
+- [TypeScript](./docs/typescript)
+- [API Reference](./docs/api-reference)
