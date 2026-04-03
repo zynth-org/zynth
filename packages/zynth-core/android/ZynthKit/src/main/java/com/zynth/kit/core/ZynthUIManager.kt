@@ -30,7 +30,7 @@ import kotlin.math.roundToInt
 
 // TODO: Move this to a separate file or optimize
 private const val TRACE_TAG = "ZynthUIManager"
-private const val TEXT_METRICS_TAG = "ZynthTextMetrics"
+internal const val AXON_LAYOUT_TAG = "ZynthAxonLayout"
 private const val DEFAULT_PERSPECTIVE = 500f
 private const val DEBUG_TEXT = false
 private const val DEBUG_TEXT_DIRTY = false
@@ -1567,10 +1567,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     val width = if (text.isEmpty()) 0f else paint.measureText(text)
     val metrics = paint.fontMetrics
     val lineHeight = (metrics.bottom - metrics.top).coerceAtLeast(1f)
-    Log.i(
-      TEXT_METRICS_TAG,
-      "measure fontId=$fontId text=${text.take(32)} vertical=$isVertical textSizePx=${paint.textSize} top=${metrics.top} ascent=${metrics.ascent} descent=${metrics.descent} bottom=${metrics.bottom} leading=${metrics.leading} widthPx=$width lineHeightPx=$lineHeight lineHeightDp=${pxToDp(lineHeight)}",
-    )
     return if (isVertical) {
       floatArrayOf(lineHeight, width)
     } else {
@@ -1615,12 +1611,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     val fontId = axonRegisterResolvedFont(family, weight, italic, sizePx)
     if (fontId == Int.MAX_VALUE) return
     val text = textView.text?.toString().orEmpty()
-    val metrics = textView.paint.fontMetrics
-    val lineHeight = (metrics.bottom - metrics.top).coerceAtLeast(1f)
-    Log.i(
-      TEXT_METRICS_TAG,
-      "sync node=$nodeId fontId=$fontId family=$family weight=$weight italic=$italic textSizePx=$sizePx textSizeDp=${pxToDp(sizePx)} viewTextSizePx=${textView.textSize} viewLineHeightPx=$lineHeight viewLineHeightDp=${pxToDp(lineHeight)} top=${metrics.top} ascent=${metrics.ascent} descent=${metrics.descent} bottom=${metrics.bottom} text=${text.take(48)}",
-    )
     JSBridge.axonSetTextMeasure(runtimePtr, nodeId, text, fontId)
   }
 
@@ -1637,12 +1627,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       textSize = sizePx
       typeface = createTypefaceForAxonFont(family, weight, italic)
     }
-    val metrics = paint.fontMetrics
-    val lineHeight = (metrics.bottom - metrics.top).coerceAtLeast(1f)
-    Log.i(
-      TEXT_METRICS_TAG,
-      "register fontId=$fontId family=$family weight=$weight italic=$italic sizePx=$sizePx sizeDp=${pxToDp(sizePx)} top=${metrics.top} ascent=${metrics.ascent} descent=${metrics.descent} bottom=${metrics.bottom} lineHeightPx=$lineHeight lineHeightDp=${pxToDp(lineHeight)}",
-    )
     axonFontIds[key] = fontId
     axonFontPaints[fontId] = paint
     return fontId

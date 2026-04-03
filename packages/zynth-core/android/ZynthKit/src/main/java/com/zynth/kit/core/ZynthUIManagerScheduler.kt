@@ -274,6 +274,10 @@ internal fun ZynthUIManager.performLayoutInternal(
 
 private fun ZynthUIManager.performAxonLayoutInternal(surfaceId: Int, width: Int, height: Int): Boolean {
   if (width <= 0 || height <= 0 || runtimePtr == 0L) return false
+  Log.i(
+    AXON_LAYOUT_TAG,
+    "surface=$surfaceId rootWidthPx=$width rootHeightPx=$height rootWidthDp=${pxToDp(width.toFloat())} rootHeightDp=${pxToDp(height.toFloat())}",
+  )
   if (!JSBridge.axonComputeLayout(runtimePtr, surfaceId, width.toFloat(), height.toFloat())) {
     return false
   }
@@ -315,12 +319,14 @@ private fun ZynthUIManager.performAxonLayoutInternal(surfaceId: Int, width: Int,
     if (changed) {
       view.layout(left, top, right, bottom)
     }
-    if (view is TextView) {
-      val metrics = view.paint.fontMetrics
-      val lineHeightPx = (metrics.bottom - metrics.top).coerceAtLeast(1f)
+    if (widthPx > width) {
+      val node = nodeStates[id]
+      val parentId = parents[id]
+      val parentType = parentId?.let { nodeStates[it]?.type } ?: "surface"
+      val sampleText = (view as? TextView)?.text?.toString()?.take(48).orEmpty()
       Log.i(
-        "ZynthTextMetrics",
-        "frame node=$id class=${view.javaClass.simpleName} widthPx=$widthPx heightPx=$heightPx measured=${view.measuredWidth}x${view.measuredHeight} lineHeightPx=$lineHeightPx lineHeightDp=${pxToDp(lineHeightPx)} textSizePx=${view.textSize} text=${view.text?.toString()?.take(48).orEmpty()}",
+        AXON_LAYOUT_TAG,
+        "overflow surface=$surfaceId node=$id type=${node?.type} parent=$parentId/$parentType class=${view.javaClass.simpleName} frame=${left},${top} ${widthPx}x${heightPx} measured=${view.measuredWidth}x${view.measuredHeight} rootWidthPx=$width text=$sampleText",
       )
     }
     onFrameApplied(id, left, top, right, bottom, changed)

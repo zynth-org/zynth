@@ -2372,6 +2372,8 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
         const jint surfaceId = static_cast<jint>(args[0].asNumber());
         state->activeSurfaceId = static_cast<int>(surfaceId);
         axonEnsureNode(state, state->activeSurfaceId);
+        state->nodeTypes[state->activeSurfaceId] = "root";
+        axonSetStyleStringForNode(state, state->activeSurfaceId, 33, "column");
         env->CallVoidMethod(state->uiManager, state->setSurface, surfaceId);
         return Value::undefined();
       });
