@@ -29,7 +29,7 @@ class ProgressIndicatorRegistrar : ZynthComponentRegistrar {
           val indicator = node.view as? ZynthProgressIndicatorView ?: return@ZynthComponentDescriptor
           
           // Set up measurement handler for proper layout
-          manager.getLayoutEngine().setMeasureHandler(node.id) { input ->
+          manager.setMeasureHandler(node.id) { input ->
             val widthValue = when {
               input.width.isNaN() -> 0
               input.width.isInfinite() -> Int.MAX_VALUE / 2

@@ -1,9 +1,9 @@
 package com.zynth.kit.core
 
 import android.util.Log
-import android.os.SystemClock
-import android.view.View
 import android.widget.TextView
+import android.os.SystemClock
+import com.zynth.kit.runtime.JSBridge
 
 private const val DEBUG_SCHEDULER = false
 private const val ATOMIC_LAYOUT_APPLY_BUDGET_MS = 48.0
@@ -47,11 +47,11 @@ internal fun ZynthUIManager.handleFrame() {
   val startNs = System.nanoTime()
   if (!didWarmup) {
     didWarmup = true
-    warmUpTextMeasurement()
+    warmUpLayoutRuntime()
   }
   val dirty = dirtySurfaces.toSet()
   dirtySurfaces.clear()
-  val nodeCount = surfaceYoga.values.sumOf { it.nodeCount() }
+  val nodeCount = nodeStates.size
   val forceAtomic = atomicCommitPending
   val layoutApplyBudgetMs =
     if (forceAtomic) ATOMIC_LAYOUT_APPLY_BUDGET_MS
@@ -146,14 +146,12 @@ private fun ZynthUIManager.recordPerfSample(
   if (styleMs > perfMaxStyleMs) perfMaxStyleMs = styleMs
   if (layoutEventsMs > perfMaxLayoutEventsMs) perfMaxLayoutEventsMs = layoutEventsMs
 
-  var measures = 0
-  var changed = 0
-  var nodes = 0
-  for (layout in surfaceYoga.values) {
-    nodes += layout.nodeCount()
-    measures += layout.lastLayoutMeasureCount()
-    changed += layout.lastLayoutChangedCount()
-  }
+  val measures: Int
+  val changed: Int
+  val nodes: Int
+  nodes = nodeStates.size
+  measures = 0
+  changed = 0
   perfMeasures += measures
   perfChanged += changed
   perfNodes = nodes
@@ -258,7 +256,6 @@ internal fun ZynthUIManager.performLayoutInternal(
       continue
     }
 
-    val layout = surfaceYoga[surfaceId] ?: continue
     val root = surfaceRoots[surfaceId] ?: rootView
     var width = root.width.takeIf { it > 0 } ?: root.measuredWidth
     var height = root.height.takeIf { it > 0 } ?: root.measuredHeight
@@ -267,7 +264,7 @@ internal fun ZynthUIManager.performLayoutInternal(
       height = rootView.height.takeIf { it > 0 } ?: rootView.measuredHeight
     }
     syncSurfaceRootSize(surfaceId, root, width, height)
-    val complete = layout.layout(width, height, nodes, perSurfaceApplyBudgetMs)
+    val complete = performAxonLayoutInternal(surfaceId, width, height)
     if (!complete) {
       incomplete.add(surfaceId)
     }
@@ -275,9 +272,104 @@ internal fun ZynthUIManager.performLayoutInternal(
   return incomplete
 }
 
-internal fun ZynthUIManager.warmUpTextMeasurement() {
-  val textView = TextView(rootView.context)
+private fun ZynthUIManager.performAxonLayoutInternal(surfaceId: Int, width: Int, height: Int): Boolean {
+  if (width <= 0 || height <= 0 || runtimePtr == 0L) return false
+  if (!JSBridge.axonComputeLayout(runtimePtr, surfaceId, width.toFloat(), height.toFloat())) {
+    return false
+  }
+
+  val ids = collectSurfaceNodeIds(surfaceId)
+  if (ids.isEmpty()) {
+    return true
+  }
+  val nodeIds = ids.toIntArray()
+  val frames = FloatArray(nodeIds.size * 4)
+  if (!JSBridge.axonCollectFrames(runtimePtr, nodeIds, frames)) {
+    return false
+  }
+
+  for (index in nodeIds.indices) {
+    val id = nodeIds[index]
+    val view = nodes[id] ?: continue
+    val base = index * 4
+    val left = frames[base].toInt()
+    val top = frames[base + 1].toInt()
+    val widthPx = frames[base + 2].toInt()
+    val heightPx = frames[base + 3].toInt()
+    val right = left + widthPx
+    val bottom = top + heightPx
+    val changed =
+      view.left != left || view.top != top || view.right != right || view.bottom != bottom
+    if (view is ZynthLayoutView) {
+      view.updateLayoutBounds(widthPx, heightPx)
+    }
+    val widthSpec = android.view.View.MeasureSpec.makeMeasureSpec(widthPx, android.view.View.MeasureSpec.EXACTLY)
+    val heightSpec = android.view.View.MeasureSpec.makeMeasureSpec(heightPx, android.view.View.MeasureSpec.EXACTLY)
+    if (
+      view.measuredWidth != widthPx ||
+      view.measuredHeight != heightPx ||
+      view.isLayoutRequested
+    ) {
+      view.measure(widthSpec, heightSpec)
+    }
+    if (changed) {
+      view.layout(left, top, right, bottom)
+    }
+    if (view is TextView) {
+      val metrics = view.paint.fontMetrics
+      val lineHeightPx = (metrics.bottom - metrics.top).coerceAtLeast(1f)
+      Log.i(
+        "ZynthTextMetrics",
+        "frame node=$id class=${view.javaClass.simpleName} widthPx=$widthPx heightPx=$heightPx measured=${view.measuredWidth}x${view.measuredHeight} lineHeightPx=$lineHeightPx lineHeightDp=${pxToDp(lineHeightPx)} textSizePx=${view.textSize} text=${view.text?.toString()?.take(48).orEmpty()}",
+      )
+    }
+    onFrameApplied(id, left, top, right, bottom, changed)
+  }
+
+  return true
+}
+
+private fun ZynthUIManager.collectSurfaceNodeIds(surfaceId: Int): List<Int> {
+  val roots = children[surfaceId] ?: return emptyList()
+  val ordered = ArrayList<Int>(roots.size.coerceAtLeast(16))
+  val stack = ArrayDeque<Int>()
+  for (index in roots.indices.reversed()) {
+    stack.addLast(roots[index])
+  }
+  while (stack.isNotEmpty()) {
+    val id = stack.removeLast()
+    if (nodeSurfaces[id] != surfaceId) {
+      continue
+    }
+    val parentId = parents[id]
+    if (parentId != null) {
+      val parentNode = nodeStates[parentId]
+      val node = nodeStates[id]
+      if (parentNode?.type == "text" && node?.type == "text") {
+        continue
+      }
+    }
+    if (!nodes.containsKey(id)) {
+      continue
+    }
+    ordered.add(id)
+    val childIds = children[id] ?: continue
+    for (index in childIds.indices.reversed()) {
+      stack.addLast(childIds[index])
+    }
+  }
+  return ordered
+}
+
+internal fun ZynthUIManager.warmUpLayoutRuntime() {
+  if (usesAxonLayoutRuntime()) {
+    refreshAxonEnvironment()
+    prewarmAxonTypography()
+    return
+  }
+
+  val textView = android.widget.TextView(rootView.context)
   textView.text = "Z"
-  val spec = View.MeasureSpec.makeMeasureSpec(1000, View.MeasureSpec.AT_MOST)
+  val spec = android.view.View.MeasureSpec.makeMeasureSpec(1000, android.view.View.MeasureSpec.AT_MOST)
   textView.measure(spec, spec)
 }

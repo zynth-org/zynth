@@ -16,8 +16,8 @@ open class ZynthLayoutView @JvmOverloads constructor(
   attrs: AttributeSet? = null,
   defStyleAttr: Int = 0
 ) : FrameLayout(context, attrs, defStyleAttr) {
-  private var yogaWidth = -1
-  private var yogaHeight = -1
+  private var layoutWidth = -1
+  private var layoutHeight = -1
 
   private var overflowHidden: Boolean = false
   private var clipPath: Path? = null
@@ -169,19 +169,19 @@ open class ZynthLayoutView @JvmOverloads constructor(
     borderDrawable?.drawBorder(canvas)
   }
 
-  fun updateYogaLayout(width: Int, height: Int) {
-    yogaWidth = width
-    yogaHeight = height
+  fun updateLayoutBounds(width: Int, height: Int) {
+    layoutWidth = width
+    layoutHeight = height
   }
 
   override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-    val measuredWidth = if (yogaWidth >= 0) {
-      yogaWidth
+    val measuredWidth = if (layoutWidth >= 0) {
+      layoutWidth
     } else {
       MeasureSpec.getSize(widthMeasureSpec)
     }
-    val measuredHeight = if (yogaHeight >= 0) {
-      yogaHeight
+    val measuredHeight = if (layoutHeight >= 0) {
+      layoutHeight
     } else {
       MeasureSpec.getSize(heightMeasureSpec)
     }
@@ -206,7 +206,7 @@ open class ZynthLayoutView @JvmOverloads constructor(
   }
 
   override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
-    // Yoga drives layout via explicit view.layout calls.
+    // Axon drives layout via explicit view.layout calls.
     // However, during Android layout passes (e.g. inside ScrollView), we must confirm children.
     for (i in 0 until childCount) {
       val child = getChildAt(i)

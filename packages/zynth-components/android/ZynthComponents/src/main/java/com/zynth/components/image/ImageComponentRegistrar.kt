@@ -30,8 +30,8 @@ class ImageComponentRegistrar : ZynthComponentRegistrar {
           if (imageComponent == null) {
             imageComponent = ZynthImageComponent(
               root = manager.getRootView(),
-              engine = manager.getLayoutEngine(),
               eventDispatcher = { nodeId, event, payload -> manager.dispatchEvent(nodeId, event, payload) },
+              markDirty = { nodeId -> manager.markNodeDirty(nodeId) },
               scheduleFlush = { manager.flush() },
             )
           }

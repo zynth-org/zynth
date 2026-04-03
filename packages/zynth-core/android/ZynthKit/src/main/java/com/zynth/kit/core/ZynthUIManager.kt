@@ -1,8 +1,11 @@
 package com.zynth.kit.core
 
 import android.graphics.Typeface
+import android.text.TextPaint
 import android.os.Handler
 import android.os.Looper
+import androidx.core.graphics.Insets
+import androidx.core.view.WindowInsetsCompat
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import android.view.Choreographer
@@ -13,11 +16,10 @@ import android.view.ViewPropertyAnimator
 import android.widget.TextView
 import android.util.Log
 import com.zynth.kit.components.ZynthComponentRegistry
-import com.zynth.kit.layout.LayoutEngine
 import com.zynth.kit.layout.MeasureHandler
-import com.zynth.kit.layout.Rect as LayoutRect
+import com.zynth.kit.layout.MeasureInput
+import com.zynth.kit.layout.MeasureMode
 import com.zynth.kit.layout.Style
-import com.zynth.kit.layout.ZynthYogaLayout
 import com.zynth.kit.components.ZynthComponentDescriptor
 import com.zynth.kit.runtime.JSBridge
 import org.json.JSONObject
@@ -28,9 +30,27 @@ import kotlin.math.roundToInt
 
 // TODO: Move this to a separate file or optimize
 private const val TRACE_TAG = "ZynthUIManager"
+private const val TEXT_METRICS_TAG = "ZynthTextMetrics"
 private const val DEFAULT_PERSPECTIVE = 500f
 private const val DEBUG_TEXT = false
 private const val DEBUG_TEXT_DIRTY = false
+
+private data class AxonFontKey(
+  val family: String,
+  val weight: Int,
+  val italic: Boolean,
+  val sizePxBits: Int,
+)
+
+internal data class AxonEnvironmentSnapshot(
+  val density: Float,
+  val fontScale: Float,
+  val localeTag: String,
+  val isRtl: Boolean,
+  val viewportWidthPx: Int,
+  val viewportHeightPx: Int,
+  val safeInsetsPx: Insets,
+)
 
 private fun resolveTypedPropName(keyToken: Int, strings: Array<String?>): String {
   if (keyToken >= 0) {
@@ -150,6 +170,7 @@ private fun resolveTypedPropName(keyToken: Int, strings: Array<String?>): String
     111 -> "clearButtonMode"
     112 -> "showClearAccessory"
     113 -> "__scrollCommand"
+    114 -> "direction"
     else -> ""
   }
 }
@@ -158,6 +179,15 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal var runtimePtr: Long = 0L
   internal val mainHandler = Handler(Looper.getMainLooper())
   internal val density = rootView.resources.displayMetrics.density
+  internal var axonEnvironment = AxonEnvironmentSnapshot(
+    density = density,
+    fontScale = rootView.resources.configuration.fontScale,
+    localeTag = rootView.resources.configuration.locales[0]?.toLanguageTag() ?: "und",
+    isRtl = rootView.resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_RTL,
+    viewportWidthPx = rootView.resources.displayMetrics.widthPixels,
+    viewportHeightPx = rootView.resources.displayMetrics.heightPixels,
+    safeInsetsPx = Insets.NONE,
+  )
   internal var nextId = 1
   internal val nodes = HashMap<Int, View>()
   internal val nodeStates = HashMap<Int, Node>()
@@ -165,7 +195,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal val children = HashMap<Int, MutableList<Int>>()
   internal val nodeSurfaces = HashMap<Int, Int>()
   internal val surfaceRoots = HashMap<Int, ViewGroup>()
-  internal val surfaceYoga = HashMap<Int, ZynthYogaLayout>()
   internal val dirtySurfaces = HashSet<Int>()
   internal val surfaceSizes = HashMap<Int, Pair<Int, Int>>()
   internal val surfaceLayoutListeners = HashMap<Int, View.OnLayoutChangeListener>()
@@ -179,7 +208,10 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal val styleLayoutDirtyNodes = HashSet<Int>()
   internal val styleLayoutFrames = HashMap<Int, android.graphics.Rect>()
   internal val textStyleStates = HashMap<Int, ZynthTextStyleState>()
-  internal val yogaStyleCache = HashMap<Int, MutableMap<String, Any?>>()
+  internal val measureHandlers = HashMap<Int, MeasureHandler>()
+  private val axonFontIds = HashMap<AxonFontKey, Int>()
+  private val axonFontPaints = HashMap<Int, TextPaint>()
+  internal val layoutStyleCache = HashMap<Int, MutableMap<String, Any?>>()
   internal val pointerEvents = HashMap<Int, String>()
   internal val pressNodes = HashSet<Int>()
   internal val longPressNodes = HashSet<Int>()
@@ -245,7 +277,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal var firstMountCommitListener: (() -> Unit)? = null
   private var didDispatchFirstMountCommit = false
   internal val frameCallback = Choreographer.FrameCallback { handleFrame() }
-  private val layoutEngine: LayoutEngine = LayoutEngineAdapter()
   private data class TimerEntry(
     val handler: Handler,
     val runnable: Runnable,
@@ -473,6 +504,10 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   }
 
   fun setRuntimePtr(ptr: Long) {
+    if (runtimePtr != ptr) {
+      axonFontIds.clear()
+      axonFontPaints.clear()
+    }
     runtimePtr = ptr
   }
 
@@ -506,7 +541,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
         nodeStates[id] = node
         pointerEvents[id] = "auto"
         nodeSurfaces[id] = activeSurfaceId
-        yogaForSurface(activeSurfaceId).ensureNode(id, view)
         markSurfaceDirty(activeSurfaceId)
         descriptor?.onNodeCreated?.invoke(this, node)
         traceOp("createNode", type, startNs)
@@ -548,7 +582,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
         floatVal
       }
       cacheYogaStyle(id, name, scaled)
-      yogaForNode(id).setStyle(id, name, scaled)
       markSurfaceDirtyForNode(id)
       maybeNotifyStyle(descriptor, node, name, value.toString())
       traceOp("setProp", node?.type, startNs)
@@ -659,51 +692,37 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     }
     if (view is TextView && name == "fontSize") {
       val size = value?.toFloatOrNull() ?: return
+      textStyleStates.getOrPut(id) { ZynthTextStyleState() }.fontSizePx = dpToPx(size)
       view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, dpToPx(size))
+      syncAxonTextMeasurement(id, view)
       maybeNotifyStyle(descriptor, node, name, value)
       traceOp("setProp", node?.type, startNs)
       return
     }
     if (view is TextView && name == "fontWeight") {
       val weight = value ?: return
-      val style = if (weight == "bold" || weight == "700" || weight == "600") {
-        Typeface.BOLD
-      } else {
-        Typeface.NORMAL
-      }
-      view.setTypeface(view.typeface, style)
+      val textState = textStyleStates.getOrPut(id) { ZynthTextStyleState() }
+      textState.fontWeight = weight
+      applyResolvedTextTypeface(view, textState)
+      syncAxonTextMeasurement(id, view)
       maybeNotifyStyle(descriptor, node, name, value)
       traceOp("setProp", node?.type, startNs)
       return
     }
     if (view is TextView && name == "fontStyle") {
-      val style = if (value == "italic") Typeface.ITALIC else Typeface.NORMAL
-      view.setTypeface(view.typeface, style)
+      val textState = textStyleStates.getOrPut(id) { ZynthTextStyleState() }
+      textState.fontStyle = value
+      applyResolvedTextTypeface(view, textState)
+      syncAxonTextMeasurement(id, view)
       maybeNotifyStyle(descriptor, node, name, value)
       traceOp("setProp", node?.type, startNs)
       return
     }
     if (view is TextView && name == "fontFamily") {
-      if (value == null) {
-        view.typeface = Typeface.DEFAULT
-        maybeNotifyStyle(descriptor, node, name, value)
-        traceOp("setProp", node?.type, startNs)
-        return
-      }
-      val family = value
-      val custom = assetProvider?.getTypeface(family)
-      val style = view.typeface?.style ?: Typeface.NORMAL
-      if (custom != null) {
-        // If it's an icon font, we MUST use the typeface directly.
-        // Typeface.create(custom, style) can fail to preserve the glyphs if the style (e.g. Bold) isn't supported by the font file.
-        if (family.contains("Icon")) {
-          view.typeface = custom
-        } else {
-          view.typeface = Typeface.create(custom, style)
-        }
-      } else {
-        view.typeface = Typeface.create(family, style)
-      }
+      val textState = textStyleStates.getOrPut(id) { ZynthTextStyleState() }
+      textState.fontFamily = value
+      applyResolvedTextTypeface(view, textState)
+      syncAxonTextMeasurement(id, view)
       maybeNotifyStyle(descriptor, node, name, value)
       traceOp("setProp", node?.type, startNs)
       return
@@ -723,7 +742,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     if (name == "width") {
       val scaled = scaleYogaValue(name, value)
       cacheYogaStyle(id, "width", scaled)
-      yogaForNode(id).setStyle(id, "width", scaled)
       markSurfaceDirtyForNode(id)
       maybeNotifyStyle(descriptor, node, name, value)
       traceOp("setProp", node?.type, startNs)
@@ -732,7 +750,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     if (name == "height") {
       val scaled = scaleYogaValue(name, value)
       cacheYogaStyle(id, "height", scaled)
-      yogaForNode(id).setStyle(id, "height", scaled)
       markSurfaceDirtyForNode(id)
       maybeNotifyStyle(descriptor, node, name, value)
       traceOp("setProp", node?.type, startNs)
@@ -740,7 +757,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     }
     if (name == "flexDirection") {
       cacheYogaStyle(id, "flexDirection", value)
-      yogaForNode(id).setStyle(id, "flexDirection", value)
       markSurfaceDirtyForNode(id)
       maybeNotifyStyle(descriptor, node, name, value)
       traceOp("setProp", node?.type, startNs)
@@ -748,7 +764,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     }
     val scaled = scaleYogaValue(name, value)
     cacheYogaStyle(id, name, scaled)
-    yogaForNode(id).setStyle(id, name, scaled)
     markSurfaceDirtyForNode(id)
     maybeNotifyStyle(descriptor, node, name, value)
     traceOp("setProp", node?.type, startNs)
@@ -902,7 +917,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     if (!handledByDescriptor && view is TextView) {
       node?.cachedText = text
       applyTextValue(id, view, text)
-      yogaForNode(id).markDirty(id)
       markSurfaceDirtyForNode(id)
     }
     traceOp("setText", node?.type, startNs)
@@ -968,7 +982,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       moveSubtreeToSurface(childId, surfaceId, parentId, index)
     } else {
       nodeSurfaces[childId] = surfaceId
-      yogaForSurface(surfaceId).ensureNode(childId, child)
     }
 
     val descriptor = parentState?.let { ZynthComponentRegistry.getDescriptor(it.type) }
@@ -978,15 +991,13 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
 
     if (parent is TextView && child is TextView) {
       // Text composition is handled by the descriptor via updateComposedText
-      yogaForNode(parentId).markDirty(parentId)
       markSurfaceDirty(surfaceId)
       traceOp("insertChild", parentState?.type, startNs)
       return
     }
     val group = parent as? ViewGroup
     if (group == null) {
-      val yogaParentId = if (isSurfaceRoot) 0 else parentId
-      yogaForSurface(surfaceId).insertChild(yogaParentId, childId, index)
+      markSurfaceDirty(surfaceId)
       return
     }
     val targetIndex = index.coerceIn(0, group.childCount)
@@ -1005,8 +1016,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       }
       actualParent.invalidate()
     }
-    val yogaParentId = if (isSurfaceRoot) 0 else parentId
-    yogaForSurface(surfaceId).insertChild(yogaParentId, childId, index)
     markSurfaceDirty(surfaceId)
     traceOp("insertChild", parentState?.type, startNs)
   }
@@ -1030,9 +1039,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     detachNode(childId)
     parents.remove(childId)
     (child.parent as? ViewGroup)?.removeView(child)
-    val yogaParentId = if (isSurfaceRootId(parentId)) 0 else parentId
     val surfaceId = nodeSurfaces[childId] ?: activeSurfaceId
-    yogaForSurface(surfaceId).removeChild(yogaParentId, childId)
     markSurfaceDirtyForNode(childId)
     traceOp("removeChild", parentState?.type, startNs)
   }
@@ -1108,8 +1115,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     }
   }
 
-  fun getLayoutEngine(): LayoutEngine = layoutEngine
-
   fun getRootView(): ZynthRootView = rootView
 
   fun snapshot(options: JSONObject? = null): JSONObject {
@@ -1126,41 +1131,26 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       runOnMain { applyKeyboardAvoidingAdjustment(nodeId, behavior, overlapPx, availableHeightPx) }
       return
     }
-    val yoga = yogaForNode(nodeId)
-    val overlap = overlapPx.coerceAtLeast(0f)
-
-    if (overlap <= 0f) {
-      if (behavior == "padding") {
-        val original = yogaStyleCache[nodeId]?.get("paddingBottom")
-        when (original) {
-          is Float -> yoga.setStyle(nodeId, "paddingBottom", original)
-          is String -> yoga.setStyle(nodeId, "paddingBottom", original)
-          else -> yoga.setStyle(nodeId, "paddingBottom", "0")
-        }
-      } else if (behavior == "height") {
-        val original = yogaStyleCache[nodeId]?.get("marginBottom")
-        when (original) {
-          is Float -> yoga.setStyle(nodeId, "marginBottom", original)
-          is String -> yoga.setStyle(nodeId, "marginBottom", original)
-          else -> yoga.setStyle(nodeId, "marginBottom", "0")
-        }
-      }
-      markSurfaceDirtyForNode(nodeId)
-      return
-    }
-
     if (behavior == "padding") {
-      val base = getCachedFloat(nodeId, "paddingBottom")
-      yoga.setStyle(nodeId, "paddingBottom", base + overlap)
+      val value = if (overlapPx <= 0f) {
+        getCachedFloat(nodeId, "paddingBottom")
+      } else {
+        getCachedFloat(nodeId, "paddingBottom") + overlapPx.coerceAtLeast(0f)
+      }
+      setAxonStyleNumber(nodeId, 20, value)
     } else if (behavior == "height") {
-       val base = getCachedFloat(nodeId, "marginBottom")
-       yoga.setStyle(nodeId, "marginBottom", base + overlap)
+      val value = if (overlapPx <= 0f) {
+        getCachedFloat(nodeId, "marginBottom")
+      } else {
+        getCachedFloat(nodeId, "marginBottom") + overlapPx.coerceAtLeast(0f)
+      }
+      setAxonStyleNumber(nodeId, 27, value)
     }
     markSurfaceDirtyForNode(nodeId)
   }
 
   private fun getCachedFloat(nodeId: Int, name: String): Float {
-    val value = yogaStyleCache[nodeId]?.get(name) ?: return 0f
+    val value = layoutStyleCache[nodeId]?.get(name) ?: return 0f
     return when (value) {
       is Float -> value
       is String -> value.toFloatOrNull() ?: 0f
@@ -1184,9 +1174,16 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   }
 
   fun setMeasureHandler(nodeId: Int, handler: MeasureHandler?) {
-    layoutEngine.setMeasureHandler(nodeId, handler)
+    if (handler == null) {
+      measureHandlers.remove(nodeId)
+    } else {
+      measureHandlers[nodeId] = handler
+    }
+    if (usesAxonLayoutRuntime()) {
+      JSBridge.axonSetMeasureHandler(runtimePtr, nodeId, handler != null)
+    }
     if (handler != null) {
-      layoutEngine.markDirty(nodeId)
+      markNodeDirty(nodeId)
     }
   }
 
@@ -1198,8 +1195,55 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     if (DEBUG_TEXT_DIRTY) {
       Log.d("ZynthText", "markNodeDirty node=$nodeId\n${Throwable().stackTraceToString()}")
     }
-    layoutEngine.markDirty(nodeId)
+    markSurfaceDirtyForNode(nodeId)
     requestLayout()
+  }
+
+  fun syncTextNodeMeasurement(nodeId: Int) {
+    val textView = nodes[nodeId] as? TextView ?: return
+    syncAxonTextMeasurement(nodeId, textView)
+  }
+
+  internal fun refreshAxonEnvironment(): AxonEnvironmentSnapshot {
+    val metrics = rootView.resources.displayMetrics
+    val configuration = rootView.resources.configuration
+    val insets = rootView.rootWindowInsets?.let {
+      WindowInsetsCompat.toWindowInsetsCompat(it, rootView)
+    }?.getInsets(WindowInsetsCompat.Type.systemBars()) ?: Insets.NONE
+    val viewportWidth = rootView.width.takeIf { it > 0 }
+      ?: rootView.measuredWidth.takeIf { it > 0 }
+      ?: metrics.widthPixels
+    val viewportHeight = rootView.height.takeIf { it > 0 }
+      ?: rootView.measuredHeight.takeIf { it > 0 }
+      ?: metrics.heightPixels
+    axonEnvironment = AxonEnvironmentSnapshot(
+      density = metrics.density.takeIf { it > 0f } ?: 1f,
+      fontScale = configuration.fontScale.takeIf { it > 0f } ?: 1f,
+      localeTag = configuration.locales[0]?.toLanguageTag() ?: "und",
+      isRtl = configuration.layoutDirection == View.LAYOUT_DIRECTION_RTL,
+      viewportWidthPx = viewportWidth,
+      viewportHeightPx = viewportHeight,
+      safeInsetsPx = insets,
+    )
+    return axonEnvironment
+  }
+
+  internal fun applyAxonEnvironmentToSurface(surfaceId: Int) {
+    if (!usesAxonLayoutRuntime()) return
+    val environment = refreshAxonEnvironment()
+    setAxonStyleString(surfaceId, 114, if (environment.isRtl) "rtl" else "ltr")
+    if (surfaceId == rootView.rootId) {
+      surfaceSizes[surfaceId] = environment.viewportWidthPx to environment.viewportHeightPx
+    }
+  }
+
+  fun bootstrapAxonEnvironment() {
+    if (!usesAxonLayoutRuntime()) return
+    val environment = refreshAxonEnvironment()
+    setAxonStyleString(0, 114, if (environment.isRtl) "rtl" else "ltr")
+    for (surfaceId in surfaceRoots.keys) {
+      applyAxonEnvironmentToSurface(surfaceId)
+    }
   }
 
 
@@ -1467,6 +1511,187 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
 
   internal fun pxToDp(value: Float): Double = if (density == 0f) value.toDouble() else (value / density).toDouble()
 
+  internal fun usesAxonLayoutRuntime(): Boolean = runtimePtr != 0L
+
+  internal fun setAxonStyleNumber(nodeId: Int, propId: Int, value: Float): Boolean {
+    if (!usesAxonLayoutRuntime()) return false
+    return JSBridge.axonSetStyleNumber(runtimePtr, nodeId, propId, value)
+  }
+
+  internal fun setAxonStyleString(nodeId: Int, propId: Int, value: String): Boolean {
+    if (!usesAxonLayoutRuntime()) return false
+    return JSBridge.axonSetStyleString(runtimePtr, nodeId, propId, value)
+  }
+
+  fun axonRegisterResolvedFont(family: String, weight: Int, italic: Boolean, sizePx: Float): Int {
+    val key = AxonFontKey(family, weight, italic, sizePx.toBits())
+    axonFontIds[key]?.let { return it }
+    if (!usesAxonLayoutRuntime()) return Int.MAX_VALUE
+    val fontId = JSBridge.axonRegisterResolvedFont(runtimePtr, family, weight, italic, sizePx)
+    return rememberAxonResolvedFont(key, family, weight, italic, sizePx, fontId)
+  }
+
+  internal fun axonPrewarmResolvedFont(family: String, weight: Int, italic: Boolean, sizePx: Float): Int {
+    val key = AxonFontKey(family, weight, italic, sizePx.toBits())
+    axonFontIds[key]?.let { return it }
+    if (!usesAxonLayoutRuntime()) return Int.MAX_VALUE
+    val fontId = JSBridge.axonPrewarmResolvedFont(runtimePtr, family, weight, italic, sizePx)
+    return rememberAxonResolvedFont(key, family, weight, italic, sizePx, fontId)
+  }
+
+  internal fun prewarmAxonTypography() {
+    if (!usesAxonLayoutRuntime()) return
+    val commonTuples = arrayOf(
+      AxonFontKey("sans-serif", 400, false, dpToPx(16f).toBits()),
+      AxonFontKey("sans-serif", 600, false, dpToPx(20f).toBits()),
+      AxonFontKey("sans-serif", 400, false, dpToPx(12f).toBits()),
+    )
+    for (tuple in commonTuples) {
+      axonPrewarmResolvedFont(
+        tuple.family,
+        tuple.weight,
+        tuple.italic,
+        Float.fromBits(tuple.sizePxBits),
+      )
+    }
+  }
+
+  internal fun isLayoutDirectionRtl(): Boolean {
+    return rootView.resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_RTL
+  }
+
+  fun axonDensity(): Float = density
+
+  fun axonMeasureText(fontId: Int, text: String, isVertical: Boolean): FloatArray? {
+    val paint = axonFontPaints[fontId] ?: return null
+    val width = if (text.isEmpty()) 0f else paint.measureText(text)
+    val metrics = paint.fontMetrics
+    val lineHeight = (metrics.bottom - metrics.top).coerceAtLeast(1f)
+    Log.i(
+      TEXT_METRICS_TAG,
+      "measure fontId=$fontId text=${text.take(32)} vertical=$isVertical textSizePx=${paint.textSize} top=${metrics.top} ascent=${metrics.ascent} descent=${metrics.descent} bottom=${metrics.bottom} leading=${metrics.leading} widthPx=$width lineHeightPx=$lineHeight lineHeightDp=${pxToDp(lineHeight)}",
+    )
+    return if (isVertical) {
+      floatArrayOf(lineHeight, width)
+    } else {
+      floatArrayOf(width, lineHeight)
+    }
+  }
+
+  fun axonMeasureNode(
+    nodeId: Int,
+    width: Float,
+    widthMode: Int,
+    height: Float,
+    heightMode: Int,
+  ): FloatArray? {
+    val handler = measureHandlers[nodeId] ?: return null
+    val measured = handler(
+      MeasureInput(
+        width = width,
+        widthMode = when (widthMode) {
+          1 -> MeasureMode.EXACTLY
+          2 -> MeasureMode.AT_MOST
+          else -> MeasureMode.UNDEFINED
+        },
+        height = height,
+        heightMode = when (heightMode) {
+          1 -> MeasureMode.EXACTLY
+          2 -> MeasureMode.AT_MOST
+          else -> MeasureMode.UNDEFINED
+        },
+      )
+    )
+    return floatArrayOf(measured.first, measured.second)
+  }
+
+  internal fun syncAxonTextMeasurement(nodeId: Int, textView: TextView) {
+    if (!usesAxonLayoutRuntime()) return
+    val textState = textStyleStates[nodeId]
+    val family = textState?.fontFamily ?: "sans-serif"
+    val weight = parseAxonFontWeight(textState?.fontWeight, textView.typeface)
+    val italic = textState?.fontStyle == "italic" || (textState?.fontStyle == null && (textView.typeface?.isItalic == true))
+    val sizePx = textState?.fontSizePx ?: textView.textSize
+    val fontId = axonRegisterResolvedFont(family, weight, italic, sizePx)
+    if (fontId == Int.MAX_VALUE) return
+    val text = textView.text?.toString().orEmpty()
+    val metrics = textView.paint.fontMetrics
+    val lineHeight = (metrics.bottom - metrics.top).coerceAtLeast(1f)
+    Log.i(
+      TEXT_METRICS_TAG,
+      "sync node=$nodeId fontId=$fontId family=$family weight=$weight italic=$italic textSizePx=$sizePx textSizeDp=${pxToDp(sizePx)} viewTextSizePx=${textView.textSize} viewLineHeightPx=$lineHeight viewLineHeightDp=${pxToDp(lineHeight)} top=${metrics.top} ascent=${metrics.ascent} descent=${metrics.descent} bottom=${metrics.bottom} text=${text.take(48)}",
+    )
+    JSBridge.axonSetTextMeasure(runtimePtr, nodeId, text, fontId)
+  }
+
+  private fun rememberAxonResolvedFont(
+    key: AxonFontKey,
+    family: String,
+    weight: Int,
+    italic: Boolean,
+    sizePx: Float,
+    fontId: Int,
+  ): Int {
+    if (fontId == Int.MAX_VALUE) return fontId
+    val paint = TextPaint(TextPaint.ANTI_ALIAS_FLAG).apply {
+      textSize = sizePx
+      typeface = createTypefaceForAxonFont(family, weight, italic)
+    }
+    val metrics = paint.fontMetrics
+    val lineHeight = (metrics.bottom - metrics.top).coerceAtLeast(1f)
+    Log.i(
+      TEXT_METRICS_TAG,
+      "register fontId=$fontId family=$family weight=$weight italic=$italic sizePx=$sizePx sizeDp=${pxToDp(sizePx)} top=${metrics.top} ascent=${metrics.ascent} descent=${metrics.descent} bottom=${metrics.bottom} lineHeightPx=$lineHeight lineHeightDp=${pxToDp(lineHeight)}",
+    )
+    axonFontIds[key] = fontId
+    axonFontPaints[fontId] = paint
+    return fontId
+  }
+
+  private fun applyResolvedTextTypeface(textView: TextView, textState: ZynthTextStyleState) {
+    val family = textState.fontFamily
+    val weight = parseAxonFontWeight(textState.fontWeight, textView.typeface)
+    val italic = textState.fontStyle == "italic"
+    val style = when {
+      italic && weight >= 600 -> Typeface.BOLD_ITALIC
+      italic -> Typeface.ITALIC
+      weight >= 600 -> Typeface.BOLD
+      else -> Typeface.NORMAL
+    }
+    textView.typeface = if (family.isNullOrEmpty()) {
+      Typeface.create(Typeface.DEFAULT, style)
+    } else {
+      createTypefaceForAxonFont(family, weight, italic)
+    }
+  }
+
+  private fun createTypefaceForAxonFont(family: String, weight: Int, italic: Boolean): Typeface {
+    val style = when {
+      italic && weight >= 600 -> Typeface.BOLD_ITALIC
+      italic -> Typeface.ITALIC
+      weight >= 600 -> Typeface.BOLD
+      else -> Typeface.NORMAL
+    }
+    val custom = assetProvider?.getTypeface(family)
+    return when {
+      custom != null && family.contains("Icon") -> custom
+      custom != null -> Typeface.create(custom, style)
+      else -> Typeface.create(family, style)
+    }
+  }
+
+  private fun parseAxonFontWeight(raw: String?, typeface: Typeface?): Int {
+    return when (raw) {
+      "100" -> 100
+      "200" -> 200
+      "300" -> 300
+      "500" -> 500
+      "600" -> 600
+      "700", "bold", "800", "900" -> 700
+      else -> if (typeface?.isBold == true) 700 else 400
+    }
+  }
+
   private fun scaleYogaValue(name: String, value: String?): String? {
     if (value.isNullOrBlank()) return value
     val trimmed = value.trim()
@@ -1485,33 +1710,13 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   }
 
   private fun cacheYogaStyle(id: Int, name: String, value: Any?) {
-    val styles = yogaStyleCache.getOrPut(id) { HashMap() }
+    val styles = layoutStyleCache.getOrPut(id) { HashMap() }
     styles[name] = value
   }
 
-  private fun reapplyYogaStyles(id: Int, surfaceId: Int) {
-    val styles = yogaStyleCache[id] ?: return
-    val layout = yogaForSurface(surfaceId)
-    for ((name, value) in styles) {
-      when (value) {
-        is Float -> layout.setStyle(id, name, value)
-        is String -> layout.setStyle(id, name, value)
-      }
-    }
-  }
-
   private fun moveSubtreeToSurface(nodeId: Int, surfaceId: Int, parentId: Int, index: Int) {
-    val view = nodes[nodeId] ?: return
-    val previousSurfaceId = nodeSurfaces[nodeId]
-    if (previousSurfaceId != null && previousSurfaceId != surfaceId) {
-      surfaceYoga[previousSurfaceId]?.removeNode(nodeId)
-    }
+    nodes[nodeId] ?: return
     nodeSurfaces[nodeId] = surfaceId
-    val layout = yogaForSurface(surfaceId)
-    layout.ensureNode(nodeId, view)
-    reapplyYogaStyles(nodeId, surfaceId)
-    val yogaParentId = if (parentId == 0 || isSurfaceRootId(parentId)) 0 else parentId
-    layout.insertChild(yogaParentId, nodeId, index)
 
     val childIds = children[nodeId]?.toList() ?: return
     for ((childIndex, childId) in childIds.withIndex()) {
@@ -1626,12 +1831,24 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       if (value.isFinite()) {
         // Snap to physical pixels to avoid sub-pixel layout oscillation.
         val px = dpToPx(value).roundToInt().toFloat()
-        val previous = yogaStyleCache[nodeId]?.get(name) as? Float
+        val previous = layoutStyleCache[nodeId]?.get(name) as? Float
         if (previous != null && kotlin.math.abs(previous - px) < 0.5f) {
           Unit
         } else {
           cacheYogaStyle(nodeId, name, px)
-          yogaForNode(nodeId).setStyle(nodeId, name, px)
+          val propId = when (name) {
+            "width" -> 1
+            "height" -> 2
+            "minWidth" -> 3
+            "minHeight" -> 4
+            "maxWidth" -> 5
+            "maxHeight" -> 6
+            "flexBasis" -> 10
+            else -> 0
+          }
+          if (propId != 0) {
+            setAxonStyleNumber(nodeId, propId, px)
+          }
           changed = true
         }
       }
@@ -1797,57 +2014,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     )
   }
 
-  private inner class LayoutEngineAdapter : LayoutEngine {
-    override fun createNode(id: Int) {
-      nodes[id]?.let { yogaForNode(id).ensureNode(id, it) }
-    }
-
-    override fun removeNode(id: Int) {
-      yogaForNode(id).removeNode(id)
-    }
-
-    override fun insertChild(parent: Int, child: Int, index: Int) {
-      yogaForNode(child).insertChild(parent, child, index)
-    }
-
-    override fun setStyle(id: Int, style: com.zynth.kit.layout.Style) {
-      style
-    }
-
-    override fun calculateLayout(width: Int, height: Int) {
-      width
-      height
-    }
-
-    override fun calculateLayoutForNode(nodeId: Int, width: Float, height: Float) {
-      nodeId
-      width
-      height
-    }
-
-    override fun frame(id: Int): LayoutRect {
-      val view = nodes[id] ?: return LayoutRect(0, 0, 0, 0)
-      return LayoutRect(view.left, view.top, view.right, view.bottom)
-    }
-
-    override fun getAllFrames(): Map<Int, LayoutRect> {
-      val frames = HashMap<Int, LayoutRect>(nodes.size)
-      for ((id, view) in nodes) {
-        frames[id] = LayoutRect(view.left, view.top, view.right, view.bottom)
-      }
-      return frames
-    }
-
-    override fun setMeasureHandler(id: Int, handler: MeasureHandler?) {
-      yogaForNode(id).setMeasureHandler(id, handler)
-    }
-
-    override fun markDirty(id: Int) {
-      yogaForNode(id).markDirty(id)
-      markSurfaceDirtyForNode(id)
-    }
-  }
-
   private fun maybeNotifyStyle(
     descriptor: com.zynth.kit.components.ZynthComponentDescriptor?,
     node: Node?,
@@ -1871,7 +2037,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       "marginBottom", "marginLeft",
       "gap", "rowGap", "columnGap",
       "aspectRatio",
-      "flexDirection", "justifyContent", "alignItems", "alignSelf", "alignContent",
+      "flexDirection", "direction", "justifyContent", "alignItems", "alignSelf", "alignContent",
       "flexWrap", "position", "display", "overflow",
       "background", "backgroundImage", "backgroundColor",
       "borderColor", "borderStyle", "borderRadius", "borderWidth",
@@ -2021,6 +2187,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
         111 -> { setProp(nodeId, "clearButtonMode", value); return true }
         112 -> { setProp(nodeId, "showClearAccessory", value); return true }
         113 -> { setProp(nodeId, "__scrollCommand", value); return true }
+        114 -> { setProp(nodeId, "direction", value); return true }
       }
     }
     return false

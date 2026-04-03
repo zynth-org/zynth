@@ -55,7 +55,7 @@ class SliderComponentRegistrar : ZynthComponentRegistrar {
             }
           }
 
-          manager.getLayoutEngine().setMeasureHandler(node.id) { input ->
+          manager.setMeasureHandler(node.id) { input ->
             val widthValue = when {
               input.width.isNaN() -> 0
               input.width.isInfinite() -> Int.MAX_VALUE / 2
