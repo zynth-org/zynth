@@ -2810,6 +2810,22 @@ Java_com_zynth_kit_runtime_JSBridge_axonPrewarmResolvedFont(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
+Java_com_zynth_kit_runtime_JSBridge_axonInvalidateFontCache(
+    JNIEnv *,
+    jobject,
+    jlong ptr,
+    jint fontId) {
+  auto *runtime = reinterpret_cast<facebook::hermes::HermesRuntime *>(ptr);
+  if (!runtime) return JNI_FALSE;
+  RuntimeState *state = stateFor(runtime);
+  if (!state || !state->axonEngine) return JNI_FALSE;
+  bool ok = axon_font_invalidate_cache(
+      state->axonEngine,
+      static_cast<std::uint32_t>(fontId));
+  return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_zynth_kit_runtime_JSBridge_axonSetTextMeasure(
     JNIEnv *env,
     jobject,

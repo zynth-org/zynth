@@ -30,7 +30,6 @@ import kotlin.math.roundToInt
 
 // TODO: Move this to a separate file or optimize
 private const val TRACE_TAG = "ZynthUIManager"
-internal const val AXON_LAYOUT_TAG = "ZynthAxonLayout"
 private const val DEFAULT_PERSPECTIVE = 500f
 private const val DEBUG_TEXT = false
 private const val DEBUG_TEXT_DIRTY = false
@@ -40,6 +39,14 @@ private data class AxonFontKey(
   val weight: Int,
   val italic: Boolean,
   val sizePxBits: Int,
+  val lineHeightPxBits: Int,
+  val lineSpacingPxBits: Int,
+  val letterSpacingPxBits: Int,
+)
+
+private data class AxonFontProbe(
+  val paint: TextPaint,
+  val lineBoxHeightPx: Float,
 )
 
 internal data class AxonEnvironmentSnapshot(
@@ -210,7 +217,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal val textStyleStates = HashMap<Int, ZynthTextStyleState>()
   internal val measureHandlers = HashMap<Int, MeasureHandler>()
   private val axonFontIds = HashMap<AxonFontKey, Int>()
-  private val axonFontPaints = HashMap<Int, TextPaint>()
+  private val axonFontProbes = HashMap<Int, AxonFontProbe>()
   internal val layoutStyleCache = HashMap<Int, MutableMap<String, Any?>>()
   internal val pointerEvents = HashMap<Int, String>()
   internal val pressNodes = HashSet<Int>()
@@ -506,7 +513,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   fun setRuntimePtr(ptr: Long) {
     if (runtimePtr != ptr) {
       axonFontIds.clear()
-      axonFontPaints.clear()
+      axonFontProbes.clear()
     }
     runtimePtr = ptr
   }
@@ -1524,27 +1531,75 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   }
 
   fun axonRegisterResolvedFont(family: String, weight: Int, italic: Boolean, sizePx: Float): Int {
-    val key = AxonFontKey(family, weight, italic, sizePx.toBits())
+    return axonRegisterResolvedFont(family, weight, italic, sizePx, null, null, null)
+  }
+
+  fun axonRegisterResolvedFont(
+    family: String,
+    weight: Int,
+    italic: Boolean,
+    sizePx: Float,
+    lineHeightPx: Float?,
+    lineSpacingPx: Float?,
+    letterSpacingPx: Float?,
+  ): Int {
+    val key = AxonFontKey(
+      family,
+      weight,
+      italic,
+      sizePx.toBits(),
+      (lineHeightPx ?: Float.NaN).toBits(),
+      (lineSpacingPx ?: Float.NaN).toBits(),
+      (letterSpacingPx ?: Float.NaN).toBits(),
+    )
     axonFontIds[key]?.let { return it }
     if (!usesAxonLayoutRuntime()) return Int.MAX_VALUE
     val fontId = JSBridge.axonRegisterResolvedFont(runtimePtr, family, weight, italic, sizePx)
-    return rememberAxonResolvedFont(key, family, weight, italic, sizePx, fontId)
+    return rememberAxonResolvedFont(
+      key,
+      family,
+      weight,
+      italic,
+      sizePx,
+      lineHeightPx,
+      lineSpacingPx,
+      letterSpacingPx,
+      fontId,
+    )
   }
 
   internal fun axonPrewarmResolvedFont(family: String, weight: Int, italic: Boolean, sizePx: Float): Int {
-    val key = AxonFontKey(family, weight, italic, sizePx.toBits())
+    val key = AxonFontKey(
+      family,
+      weight,
+      italic,
+      sizePx.toBits(),
+      Float.NaN.toBits(),
+      Float.NaN.toBits(),
+      Float.NaN.toBits(),
+    )
     axonFontIds[key]?.let { return it }
     if (!usesAxonLayoutRuntime()) return Int.MAX_VALUE
     val fontId = JSBridge.axonPrewarmResolvedFont(runtimePtr, family, weight, italic, sizePx)
-    return rememberAxonResolvedFont(key, family, weight, italic, sizePx, fontId)
+    return rememberAxonResolvedFont(
+      key,
+      family,
+      weight,
+      italic,
+      sizePx,
+      null,
+      null,
+      null,
+      fontId,
+    )
   }
 
   internal fun prewarmAxonTypography() {
     if (!usesAxonLayoutRuntime()) return
     val commonTuples = arrayOf(
-      AxonFontKey("sans-serif", 400, false, dpToPx(16f).toBits()),
-      AxonFontKey("sans-serif", 600, false, dpToPx(20f).toBits()),
-      AxonFontKey("sans-serif", 400, false, dpToPx(12f).toBits()),
+      AxonFontKey("sans-serif", 400, false, dpToPx(16f).toBits(), Float.NaN.toBits(), Float.NaN.toBits(), Float.NaN.toBits()),
+      AxonFontKey("sans-serif", 600, false, dpToPx(20f).toBits(), Float.NaN.toBits(), Float.NaN.toBits(), Float.NaN.toBits()),
+      AxonFontKey("sans-serif", 400, false, dpToPx(12f).toBits(), Float.NaN.toBits(), Float.NaN.toBits(), Float.NaN.toBits()),
     )
     for (tuple in commonTuples) {
       axonPrewarmResolvedFont(
@@ -1563,10 +1618,9 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   fun axonDensity(): Float = density
 
   fun axonMeasureText(fontId: Int, text: String, isVertical: Boolean): FloatArray? {
-    val paint = axonFontPaints[fontId] ?: return null
-    val width = if (text.isEmpty()) 0f else paint.measureText(text)
-    val metrics = paint.fontMetrics
-    val lineHeight = (metrics.bottom - metrics.top).coerceAtLeast(1f)
+    val probe = axonFontProbes[fontId] ?: return null
+    val width = if (text.isEmpty()) 0f else probe.paint.measureText(text)
+    val lineHeight = probe.lineBoxHeightPx.coerceAtLeast(1f)
     return if (isVertical) {
       floatArrayOf(lineHeight, width)
     } else {
@@ -1608,7 +1662,15 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     val weight = parseAxonFontWeight(textState?.fontWeight, textView.typeface)
     val italic = textState?.fontStyle == "italic" || (textState?.fontStyle == null && (textView.typeface?.isItalic == true))
     val sizePx = textState?.fontSizePx ?: textView.textSize
-    val fontId = axonRegisterResolvedFont(family, weight, italic, sizePx)
+    val fontId = axonRegisterResolvedFont(
+      family,
+      weight,
+      italic,
+      sizePx,
+      textState?.lineHeight,
+      textState?.lineSpacing,
+      textState?.letterSpacing,
+    )
     if (fontId == Int.MAX_VALUE) return
     val text = textView.text?.toString().orEmpty()
     JSBridge.axonSetTextMeasure(runtimePtr, nodeId, text, fontId)
@@ -1620,16 +1682,61 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
     weight: Int,
     italic: Boolean,
     sizePx: Float,
+    lineHeightPx: Float?,
+    lineSpacingPx: Float?,
+    letterSpacingPx: Float?,
     fontId: Int,
   ): Int {
     if (fontId == Int.MAX_VALUE) return fontId
     val paint = TextPaint(TextPaint.ANTI_ALIAS_FLAG).apply {
       textSize = sizePx
       typeface = createTypefaceForAxonFont(family, weight, italic)
+      letterSpacingPx?.let { spacingPx ->
+        val base = if (sizePx > 1f) sizePx else 16f * density
+        letterSpacing = spacingPx / base
+      }
     }
+    val lineBoxHeightPx = measureAxonLineBoxHeight(
+      family,
+      weight,
+      italic,
+      sizePx,
+      lineHeightPx,
+      lineSpacingPx,
+      letterSpacingPx,
+    )
     axonFontIds[key] = fontId
-    axonFontPaints[fontId] = paint
+    axonFontProbes[fontId] = AxonFontProbe(paint, lineBoxHeightPx)
+    if (usesAxonLayoutRuntime()) {
+      JSBridge.axonInvalidateFontCache(runtimePtr, fontId)
+    }
     return fontId
+  }
+
+  private fun measureAxonLineBoxHeight(
+    family: String,
+    weight: Int,
+    italic: Boolean,
+    sizePx: Float,
+    lineHeightPx: Float?,
+    lineSpacingPx: Float?,
+    letterSpacingPx: Float?,
+  ): Float {
+    val probeView = TextView(rootView.context).apply {
+      includeFontPadding = false
+      text = "Ag"
+      setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, sizePx)
+      typeface = createTypefaceForAxonFont(family, weight, italic)
+      setPadding(0, 0, 0, 0)
+      letterSpacingPx?.let { spacingPx ->
+        val base = if (sizePx > 1f) sizePx else 16f * density
+        letterSpacing = spacingPx / base
+      }
+    }
+    val naturalLineHeight = probeView.lineHeight.toFloat().coerceAtLeast(1f)
+    val resolvedLineHeight = (lineHeightPx ?: naturalLineHeight).coerceAtLeast(1f)
+    val resolvedSpacing = (lineSpacingPx ?: 0f).coerceAtLeast(0f)
+    return (resolvedLineHeight + resolvedSpacing).coerceAtLeast(1f)
   }
 
   private fun applyResolvedTextTypeface(textView: TextView, textState: ZynthTextStyleState) {

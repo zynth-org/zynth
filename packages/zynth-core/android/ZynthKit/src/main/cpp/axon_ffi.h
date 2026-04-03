@@ -43,6 +43,7 @@ std::size_t axon_node_create(EngineBase *engine, const void *style);
 bool axon_node_insert_child(EngineBase *engine, std::size_t parent, std::size_t child, std::size_t index);
 bool axon_node_remove_child(EngineBase *engine, std::size_t parent, std::size_t child);
 bool axon_node_set_measure_text(EngineBase *engine, std::size_t node, const char *text, std::size_t font_id);
+bool axon_font_invalidate_cache(EngineBase *engine, std::uint32_t font_id);
 bool axon_node_set_measure_callback(EngineBase *engine, std::size_t node, bool enabled);
 bool axon_node_style_set_number(EngineBase *engine, std::size_t node, std::uint32_t prop, float value);
 bool axon_node_style_set_string(EngineBase *engine, std::size_t node, std::uint32_t prop, const char *value);
@@ -76,6 +77,7 @@ inline std::size_t axon_node_create(EngineBase *, const void *) { return std::si
 inline bool axon_node_insert_child(EngineBase *, std::size_t, std::size_t, std::size_t) { return false; }
 inline bool axon_node_remove_child(EngineBase *, std::size_t, std::size_t) { return false; }
 inline bool axon_node_set_measure_text(EngineBase *, std::size_t, const char *, std::size_t) { return false; }
+inline bool axon_font_invalidate_cache(EngineBase *, std::uint32_t) { return false; }
 inline bool axon_node_set_measure_callback(EngineBase *, std::size_t, bool) { return false; }
 inline bool axon_node_style_set_number(EngineBase *, std::size_t, std::uint32_t, float) { return false; }
 inline bool axon_node_style_set_string(EngineBase *, std::size_t, std::uint32_t, const char *) { return false; }

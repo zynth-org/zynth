@@ -155,16 +155,26 @@ internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, va
   if (view is TextView) {
     if (isTextNode) {
       when (name) {
-        "lineHeight",
-        "lineSpacing",
-        "paragraphSpacing",
-        "baselineShift",
-        "letterSpacing",
-        "minimumFontScale",
-        "textDecorationLine",
-        "textTransform",
-        "hyphenation",
-        "fontSize" -> {
+        "lineHeight", "lineSpacing", "paragraphSpacing", "baselineShift", "letterSpacing" -> {
+          val textState = textStyleStates.getOrPut(id) { ZynthTextStyleState() }
+          when (name) {
+            "lineHeight" -> textState.lineHeight = dpToPx(floatVal)
+            "lineSpacing" -> textState.lineSpacing = dpToPx(floatVal)
+            "paragraphSpacing" -> textState.paragraphSpacing = dpToPx(floatVal)
+            "baselineShift" -> textState.baselineShift = dpToPx(floatVal)
+            "letterSpacing" -> textState.letterSpacing = dpToPx(floatVal)
+          }
+          syncAxonTextMeasurement(id, view)
+          markSurfaceDirtyForNode(id)
+          return true
+        }
+        "minimumFontScale" -> {
+          textStyleStates.getOrPut(id) { ZynthTextStyleState() }.minimumFontScale = floatVal
+          syncAxonTextMeasurement(id, view)
+          markSurfaceDirtyForNode(id)
+          return true
+        }
+        "textDecorationLine", "textTransform", "hyphenation", "fontSize" -> {
           return true
         }
       }
@@ -501,16 +511,26 @@ internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, va
   if (view is TextView) {
     if (isTextNode) {
       when (name) {
-        "lineHeight",
-        "lineSpacing",
-        "paragraphSpacing",
-        "baselineShift",
-        "letterSpacing",
-        "minimumFontScale",
-        "textDecorationLine",
-        "textTransform",
-        "hyphenation",
-        "fontSize" -> {
+        "lineHeight", "lineSpacing", "paragraphSpacing", "baselineShift", "letterSpacing" -> {
+          val textState = textStyleStates.getOrPut(id) { ZynthTextStyleState() }
+          when (name) {
+            "lineHeight" -> textState.lineHeight = value.toFloatOrNull()?.let { dpToPx(it) }
+            "lineSpacing" -> textState.lineSpacing = value.toFloatOrNull()?.let { dpToPx(it) }
+            "paragraphSpacing" -> textState.paragraphSpacing = value.toFloatOrNull()?.let { dpToPx(it) }
+            "baselineShift" -> textState.baselineShift = value.toFloatOrNull()?.let { dpToPx(it) }
+            "letterSpacing" -> textState.letterSpacing = value.toFloatOrNull()?.let { dpToPx(it) }
+          }
+          syncAxonTextMeasurement(id, view)
+          markSurfaceDirtyForNode(id)
+          return true
+        }
+        "minimumFontScale" -> {
+          textStyleStates.getOrPut(id) { ZynthTextStyleState() }.minimumFontScale = value.toFloatOrNull()
+          syncAxonTextMeasurement(id, view)
+          markSurfaceDirtyForNode(id)
+          return true
+        }
+        "textDecorationLine", "textTransform", "hyphenation", "fontSize" -> {
           return true
         }
       }

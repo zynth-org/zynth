@@ -74,6 +74,7 @@ internal object JSBridge {
     italic: Boolean,
     sizePx: Float,
   ): Int
+  external fun axonInvalidateFontCache(runtimePtr: Long, fontId: Int): Boolean
   external fun axonSetTextMeasure(runtimePtr: Long, nodeId: Int, text: String, fontId: Int): Boolean
   external fun axonSetMeasureHandler(runtimePtr: Long, nodeId: Int, enabled: Boolean): Boolean
   external fun axonMeasureNode(
