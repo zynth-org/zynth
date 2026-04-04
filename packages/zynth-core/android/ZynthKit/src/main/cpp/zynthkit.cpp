@@ -6,6 +6,7 @@
 
 #include "UICommandsRegistry.h"
 #include "ZynthJSIPluginRegistry.h"
+#include "ZynthYogaLayoutRuntime.h"
 #include "axon_ffi.h"
 
 #include <memory>
@@ -26,6 +27,14 @@
 #include <cmath>
 
 using namespace facebook::jsi;
+
+#ifndef ZYNTH_LAYOUT_ENGINE_AXON
+#define ZYNTH_LAYOUT_ENGINE_AXON 0
+#endif
+
+#ifndef ZYNTH_LAYOUT_ENGINE_YOGA
+#define ZYNTH_LAYOUT_ENGINE_YOGA 0
+#endif
 
 namespace {
 JavaVM *gVm = nullptr;
@@ -74,13 +83,25 @@ struct ZynthWorkletDefinition {
 };
 
 struct RuntimeState {
+  enum class AxonTextMeasureMode {
+    Java = 0,
+    Fallback = 1,
+  };
+  struct AxonFallbackFontMetrics {
+    float sizePx = 16.0f;
+    float lineHeightPx = 20.0f;
+    float avgAdvancePx = 8.8f;
+  };
   facebook::hermes::HermesRuntime *runtime = nullptr;
   EngineBase *axonEngine = nullptr;
+  ZynthYogaLayoutRuntime *yogaRuntime = nullptr;
   std::unordered_map<int, std::size_t> axonNodes;
+  std::unordered_map<std::uint32_t, AxonFallbackFontMetrics> axonFallbackFonts;
   std::unordered_map<int, std::string> nodeTypes;
   int activeSurfaceId = 0;
   float density = 1.0f;
   std::uint32_t axonDefaultFontId = UINT32_MAX;
+  AxonTextMeasureMode axonTextMeasureMode = AxonTextMeasureMode::Java;
   jobject uiManager = nullptr;
   jclass uiClass = nullptr;
   jclass jsBridgeClass = nullptr;
@@ -111,7 +132,9 @@ struct RuntimeState {
   jmethodID axonRegisterResolvedFont = nullptr;
   jmethodID axonMeasureText = nullptr;
   jmethodID axonMeasureNode = nullptr;
+  jmethodID yogaMeasureTextNode = nullptr;
   jmethodID axonDensity = nullptr;
+  jmethodID noteAxonMetricsBatch = nullptr;
   jmethodID postRegisterWorklet = nullptr;
   jmethodID postRunWorklet = nullptr;
   jmethodID devtoolsEmit = nullptr;
@@ -350,6 +373,13 @@ void axonMirrorSetText(RuntimeState *state, int nodeId, const std::string &text)
         ((std::isfinite(state->density) && state->density > 0.0f) ? state->density : 1.0f) * 16.0f;
     state->axonDefaultFontId =
         axon_font_register_resolved(state->axonEngine, "sans-serif", 400, false, default_font_size_px);
+    if (state->axonDefaultFontId != UINT32_MAX) {
+      state->axonFallbackFonts[state->axonDefaultFontId] = RuntimeState::AxonFallbackFontMetrics{
+          default_font_size_px,
+          std::max(default_font_size_px * 1.3f, 1.0f),
+          std::max(default_font_size_px * 0.55f, 1.0f),
+      };
+    }
   }
   if (state->axonDefaultFontId == UINT32_MAX) return;
   axon_node_set_measure_text(state->axonEngine, nativeId, text.c_str(), state->axonDefaultFontId);
@@ -451,6 +481,41 @@ bool axonMeasureTextWithJava(
   if (!state || !state->uiManager || !state->axonMeasureText || !text || !out_metrics) {
     return false;
   }
+  if (state->axonTextMeasureMode == RuntimeState::AxonTextMeasureMode::Fallback) {
+    auto metricsIt = state->axonFallbackFonts.find(font_id);
+    RuntimeState::AxonFallbackFontMetrics metrics =
+        metricsIt != state->axonFallbackFonts.end()
+            ? metricsIt->second
+            : RuntimeState::AxonFallbackFontMetrics{};
+    const float lineHeight = std::max(metrics.lineHeightPx, 1.0f);
+    float width = 0.0f;
+    std::size_t visibleCount = 0;
+    bool inWhitespaceRun = false;
+    for (std::size_t i = 0; i < len; i++) {
+      unsigned char ch = text[i];
+      if (ch == '\n' || ch == '\r') {
+        inWhitespaceRun = false;
+        continue;
+      }
+      const bool isWhitespace = std::isspace(ch) != 0;
+      if (isWhitespace) {
+        if (!inWhitespaceRun) {
+          width += metrics.avgAdvancePx * 0.5f;
+          inWhitespaceRun = true;
+        }
+        continue;
+      }
+      inWhitespaceRun = false;
+      visibleCount += 1;
+      width += metrics.avgAdvancePx;
+    }
+    if (visibleCount == 0 && len > 0) {
+      width = metrics.avgAdvancePx * 0.5f;
+    }
+    out_metrics->width = is_vertical ? lineHeight : width;
+    out_metrics->height = is_vertical ? width : lineHeight;
+    return true;
+  }
   JNIEnv *env = getEnv();
   if (!env) return false;
   std::string utf8(reinterpret_cast<const char *>(text), len);
@@ -512,6 +577,234 @@ bool axonMeasureNodeWithJava(
   return true;
 }
 
+bool yogaMeasureTextWithJava(
+    void *user_data,
+    int nodeId,
+    float width,
+    int widthMode,
+    float height,
+    int heightMode,
+    float *outWidth,
+    float *outHeight) {
+  auto *state = reinterpret_cast<RuntimeState *>(user_data);
+  if (!state || !state->uiManager || !state->yogaMeasureTextNode || !outWidth || !outHeight) {
+    return false;
+  }
+  JNIEnv *env = getEnv();
+  if (!env) return false;
+  jobject result = env->CallObjectMethod(
+      state->uiManager,
+      state->yogaMeasureTextNode,
+      static_cast<jint>(nodeId),
+      static_cast<jfloat>(width),
+      static_cast<jint>(widthMode),
+      static_cast<jfloat>(height),
+      static_cast<jint>(heightMode));
+  if (!result) return false;
+  auto *array = reinterpret_cast<jfloatArray>(result);
+  if (env->GetArrayLength(array) < 2) {
+    env->DeleteLocalRef(array);
+    return false;
+  }
+  jfloat values[2] = {0.0f, 0.0f};
+  env->GetFloatArrayRegion(array, 0, 2, values);
+  env->DeleteLocalRef(array);
+  *outWidth = values[0];
+  *outHeight = values[1];
+  return true;
+}
+
+bool yogaMeasureNodeWithJava(
+    void *user_data,
+    int nodeId,
+    float width,
+    int widthMode,
+    float height,
+    int heightMode,
+    float *outWidth,
+    float *outHeight) {
+  auto *state = reinterpret_cast<RuntimeState *>(user_data);
+  if (!state || !state->uiManager || !state->axonMeasureNode || !outWidth || !outHeight) {
+    return false;
+  }
+  JNIEnv *env = getEnv();
+  if (!env) return false;
+  jobject result = env->CallObjectMethod(
+      state->uiManager,
+      state->axonMeasureNode,
+      static_cast<jint>(nodeId),
+      static_cast<jfloat>(width),
+      static_cast<jint>(widthMode),
+      static_cast<jfloat>(height),
+      static_cast<jint>(heightMode));
+  if (!result) return false;
+  auto *array = reinterpret_cast<jfloatArray>(result);
+  if (env->GetArrayLength(array) < 2) {
+    env->DeleteLocalRef(array);
+    return false;
+  }
+  jfloat values[2] = {0.0f, 0.0f};
+  env->GetFloatArrayRegion(array, 0, 2, values);
+  env->DeleteLocalRef(array);
+  *outWidth = values[0];
+  *outHeight = values[1];
+  return true;
+}
+
+void layoutRememberNodeType(RuntimeState *state, int nodeId, const std::string &type) {
+  if (!state) return;
+  state->nodeTypes[nodeId] = type;
+#if ZYNTH_LAYOUT_ENGINE_YOGA
+  if (state->yogaRuntime) {
+    zynth_yoga_runtime_set_node_type(state->yogaRuntime, nodeId, type.c_str());
+  }
+#endif
+}
+
+void layoutMirrorSetText(RuntimeState *state, int nodeId, const std::string &text) {
+#if ZYNTH_LAYOUT_ENGINE_AXON
+  axonMirrorSetText(state, nodeId, text);
+#elif ZYNTH_LAYOUT_ENGINE_YOGA
+  if (!state || !state->yogaRuntime) return;
+  nodeId = axonResolveTreeNodeId(state, nodeId);
+  zynth_yoga_runtime_set_text(state->yogaRuntime, nodeId, text.c_str());
+#endif
+}
+
+void layoutMirrorSetProp(RuntimeState *state, int nodeId, const std::string &name, const Value &value,
+                         Runtime &rt) {
+#if ZYNTH_LAYOUT_ENGINE_AXON
+  axonMirrorSetProp(state, nodeId, name, value, rt);
+#elif ZYNTH_LAYOUT_ENGINE_YOGA
+  if (!state || !state->yogaRuntime) return;
+  nodeId = axonResolveTreeNodeId(state, nodeId);
+  auto propId = axonPropIdForName(name);
+  if (!propId.has_value()) return;
+  if (value.isNumber()) {
+    const float raw = static_cast<float>(value.asNumber());
+    const float scaled = axonScaleNumberValue(state, *propId, raw);
+    zynth_yoga_runtime_set_style_number(state->yogaRuntime, nodeId, *propId, scaled);
+    return;
+  }
+  if (value.isString()) {
+    std::string text = value.asString(rt).utf8(rt);
+    zynth_yoga_runtime_set_style_string(state->yogaRuntime, nodeId, *propId, text.c_str());
+    return;
+  }
+  if (value.isBool()) {
+    const char *text = value.getBool() ? "true" : "false";
+    zynth_yoga_runtime_set_style_string(state->yogaRuntime, nodeId, *propId, text);
+  }
+#endif
+}
+
+void layoutMirrorInsertChild(RuntimeState *state, int parentId, int childId, int index) {
+#if ZYNTH_LAYOUT_ENGINE_AXON
+  axonMirrorInsertChild(state, parentId, childId, index);
+#elif ZYNTH_LAYOUT_ENGINE_YOGA
+  if (!state || !state->yogaRuntime) return;
+  zynth_yoga_runtime_insert_child(
+      state->yogaRuntime,
+      axonResolveTreeNodeId(state, parentId),
+      axonResolveTreeNodeId(state, childId),
+      index);
+#endif
+}
+
+void layoutMirrorRemoveChild(RuntimeState *state, int parentId, int childId) {
+#if ZYNTH_LAYOUT_ENGINE_AXON
+  axonMirrorRemoveChild(state, parentId, childId);
+#elif ZYNTH_LAYOUT_ENGINE_YOGA
+  if (!state || !state->yogaRuntime) return;
+  zynth_yoga_runtime_remove_child(
+      state->yogaRuntime,
+      axonResolveTreeNodeId(state, parentId),
+      axonResolveTreeNodeId(state, childId));
+#endif
+}
+
+void layoutMirrorDropNode(RuntimeState *state, int nodeId) {
+#if ZYNTH_LAYOUT_ENGINE_AXON
+  axonMirrorDropNode(state, nodeId);
+#elif ZYNTH_LAYOUT_ENGINE_YOGA
+  if (!state) return;
+  nodeId = axonResolveTreeNodeId(state, nodeId);
+  state->nodeTypes.erase(nodeId);
+  if (state->yogaRuntime) {
+    zynth_yoga_runtime_drop_node(state->yogaRuntime, nodeId);
+  }
+#endif
+}
+
+bool layoutComputeLayoutForRoot(RuntimeState *state, int rootId, float width, float height) {
+#if ZYNTH_LAYOUT_ENGINE_AXON
+  return axonComputeLayoutForRoot(state, rootId, width, height);
+#elif ZYNTH_LAYOUT_ENGINE_YOGA
+  if (!state || !state->yogaRuntime) return false;
+  return zynth_yoga_runtime_compute_layout(
+      state->yogaRuntime,
+      axonResolveTreeNodeId(state, rootId),
+      width,
+      height);
+#else
+  return false;
+#endif
+}
+
+bool layoutCollectFrames(RuntimeState *state, const int *nodeIds, std::size_t count, float *outFrames) {
+#if ZYNTH_LAYOUT_ENGINE_AXON
+  if (!state || !state->axonEngine) return false;
+  for (std::size_t i = 0; i < count; i++) {
+    auto it = state->axonNodes.find(nodeIds[i]);
+    if (it == state->axonNodes.end()) {
+      continue;
+    }
+    AxonLayoutResult layout = axon_get_layout(state->axonEngine, it->second);
+    const std::size_t base = i * 4;
+    outFrames[base + 0] = layout.x;
+    outFrames[base + 1] = layout.y;
+    outFrames[base + 2] = layout.width;
+    outFrames[base + 3] = layout.height;
+  }
+  return true;
+#elif ZYNTH_LAYOUT_ENGINE_YOGA
+  if (!state || !state->yogaRuntime) return false;
+  return zynth_yoga_runtime_collect_frames(state->yogaRuntime, nodeIds, count, outFrames);
+#else
+  return false;
+#endif
+}
+
+bool layoutSetStyleNumberForNode(RuntimeState *state, int nodeId, std::uint32_t propId, float value) {
+#if ZYNTH_LAYOUT_ENGINE_AXON
+  return axonSetStyleNumberForNode(state, nodeId, propId, value);
+#elif ZYNTH_LAYOUT_ENGINE_YOGA
+  if (!state || !state->yogaRuntime) return false;
+  return zynth_yoga_runtime_set_style_number(
+      state->yogaRuntime,
+      axonResolveTreeNodeId(state, nodeId),
+      propId,
+      value);
+#else
+  return false;
+#endif
+}
+
+bool layoutSetStyleStringForNode(RuntimeState *state, int nodeId, std::uint32_t propId, const std::string &value) {
+#if ZYNTH_LAYOUT_ENGINE_AXON
+  return axonSetStyleStringForNode(state, nodeId, propId, value);
+#elif ZYNTH_LAYOUT_ENGINE_YOGA
+  if (!state || !state->yogaRuntime) return false;
+  return zynth_yoga_runtime_set_style_string(
+      state->yogaRuntime,
+      axonResolveTreeNodeId(state, nodeId),
+      propId,
+      value.c_str());
+#else
+  return false;
+#endif
+}
+
 void applyStyle(Runtime &rt, RuntimeState *state, JNIEnv *env, jint nodeId, const Object &style) {
   static const char *numericKeys[] = {
       "width", "height", "flex", "flexGrow", "flexShrink", "flexBasis",
@@ -563,10 +856,10 @@ void applyStyle(Runtime &rt, RuntimeState *state, JNIEnv *env, jint nodeId, cons
     if (!style.hasProperty(rt, key)) continue;
     Value v = style.getProperty(rt, key);
     if (v.isNumber()) {
-      axonMirrorSetProp(state, nodeId, key, v, rt);
+      layoutMirrorSetProp(state, nodeId, key, v, rt);
       callSetProp(env, state, nodeId, key, std::to_string(v.asNumber()));
     } else if (v.isString()) {
-      axonMirrorSetProp(state, nodeId, key, v, rt);
+      layoutMirrorSetProp(state, nodeId, key, v, rt);
       callSetProp(env, state, nodeId, key, v.asString(rt).utf8(rt));
     }
   }
@@ -575,7 +868,7 @@ void applyStyle(Runtime &rt, RuntimeState *state, JNIEnv *env, jint nodeId, cons
     if (!style.hasProperty(rt, key)) continue;
     Value v = style.getProperty(rt, key);
     if (v.isString()) {
-      axonMirrorSetProp(state, nodeId, key, v, rt);
+      layoutMirrorSetProp(state, nodeId, key, v, rt);
       callSetProp(env, state, nodeId, key, v.asString(rt).utf8(rt));
     }
   }
@@ -596,7 +889,7 @@ void applyProp(Runtime &rt, RuntimeState *state, JNIEnv *env, jint nodeId, const
     applyStyle(rt, state, env, nodeId, value.asObject(rt));
     return;
   }
-  axonMirrorSetProp(state, nodeId, name, value, rt);
+  layoutMirrorSetProp(state, nodeId, name, value, rt);
   if (value.isString()) {
     callSetProp(env, state, nodeId, name, value.asString(rt).utf8(rt));
     return;
@@ -1860,7 +2153,7 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
         jint nodeId = env->CallIntMethod(state->uiManager, state->createNode, jType);
         env->DeleteLocalRef(jType);
         if (nodeId > 0) {
-          state->nodeTypes[static_cast<int>(nodeId)] = type;
+          layoutRememberNodeType(state, static_cast<int>(nodeId), type);
           axonEnsureNode(state, static_cast<int>(nodeId));
         }
         return Value(static_cast<double>(nodeId));
@@ -1890,7 +2183,7 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
         if (!env) return Value::undefined();
         jint nodeId = static_cast<jint>(args[0].asNumber());
         std::string text = args[1].isString() ? args[1].asString(rt).utf8(rt) : "";
-        axonMirrorSetText(state, static_cast<int>(nodeId), text);
+        layoutMirrorSetText(state, static_cast<int>(nodeId), text);
         jstring jText = env->NewStringUTF(text.c_str());
         env->CallVoidMethod(state->uiManager, state->setText, nodeId, jText);
         env->DeleteLocalRef(jText);
@@ -1950,7 +2243,7 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
         if (!state) return Value::undefined();
         JNIEnv *env = getEnv();
         if (!env) return Value::undefined();
-        axonMirrorInsertChild(
+        layoutMirrorInsertChild(
             state,
             static_cast<int>(args[0].asNumber()),
             static_cast<int>(args[1].asNumber()),
@@ -1971,7 +2264,7 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
         if (!state) return Value::undefined();
         JNIEnv *env = getEnv();
         if (!env) return Value::undefined();
-        axonMirrorRemoveChild(
+        layoutMirrorRemoveChild(
             state,
             static_cast<int>(args[0].asNumber()),
             static_cast<int>(args[1].asNumber()));
@@ -2090,6 +2383,31 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
           if (scopeVal.isString() && isAtomicKind(scopeVal.asString(rt).utf8(rt))) return true;
           return false;
         };
+        auto recordBatchMetrics = [&]() {
+          if (!state->noteAxonMetricsBatch) return;
+          Value metaVal = payload.getProperty(rt, "meta");
+          if (!metaVal.isObject()) return;
+          Object metaObject = metaVal.asObject(rt);
+          int surfaceId = state->activeSurfaceId;
+          Value targetVal = metaObject.getProperty(rt, "target");
+          if (targetVal.isNumber()) {
+            surfaceId = static_cast<int>(targetVal.asNumber());
+          }
+          std::string kind;
+          Value kindVal = metaObject.getProperty(rt, "kind");
+          if (kindVal.isString()) {
+            kind = kindVal.asString(rt).utf8(rt);
+          } else {
+            Value scopeVal = metaObject.getProperty(rt, "scope");
+            if (scopeVal.isString()) {
+              kind = scopeVal.asString(rt).utf8(rt);
+            }
+          }
+          jstring jKind = env->NewStringUTF(kind.c_str());
+          env->CallVoidMethod(state->uiManager, state->noteAxonMetricsBatch, static_cast<jint>(surfaceId), jKind);
+          env->DeleteLocalRef(jKind);
+        };
+        recordBatchMetrics();
         struct AtomicCommitScope {
           JNIEnv *env = nullptr;
           RuntimeState *state = nullptr;
@@ -2109,7 +2427,7 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
         };
         AtomicCommitScope atomicCommitScope(env, state, shouldUseAtomicCommit());
         auto mirrorPackedOps = [&](const double *opsData, size_t opCount, const Array &stringTable) {
-          if (!opsData || !state || !state->axonEngine) return;
+          if (!opsData || !state) return;
           size_t i = 0;
           while (i < opCount) {
             int opcode = static_cast<int>(opsData[i++]);
@@ -2123,24 +2441,16 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
                 if (keyToken >= 0) {
                   continue;
                 }
-                std::size_t nativeId = axonEnsureNode(state, nodeId);
-                if (nativeId == std::numeric_limits<std::size_t>::max()) {
-                  continue;
-                }
                 std::uint32_t propId = static_cast<std::uint32_t>(-keyToken);
                 if (valueType == 1) {
                   const float raw = static_cast<float>(payloadValue);
                   const float scaled = axonScaleNumberValue(state, propId, raw);
-                  axon_node_style_set_number(
-                      state->axonEngine,
-                      nativeId,
-                      propId,
-                      scaled);
+                  layoutSetStyleNumberForNode(state, nodeId, propId, scaled);
                 } else if (valueType == 2) {
                   Value entry = stringTable.getValueAtIndex(rt, static_cast<size_t>(payloadValue));
                   if (entry.isString()) {
                     std::string value = entry.asString(rt).utf8(rt);
-                    axon_node_style_set_string(state->axonEngine, nativeId, propId, value.c_str());
+                    layoutSetStyleStringForNode(state, nodeId, propId, value);
                   }
                 }
                 break;
@@ -2151,7 +2461,7 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
                 int textIndex = static_cast<int>(opsData[i++]);
                 Value entry = stringTable.getValueAtIndex(rt, static_cast<size_t>(textIndex));
                 std::string text = entry.isString() ? entry.asString(rt).utf8(rt) : "";
-                axonMirrorSetText(state, nodeId, text);
+                layoutMirrorSetText(state, nodeId, text);
                 break;
               }
               case 3: {
@@ -2159,19 +2469,19 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
                 int parentId = static_cast<int>(opsData[i++]);
                 int childId = static_cast<int>(opsData[i++]);
                 int index = static_cast<int>(opsData[i++]);
-                axonMirrorInsertChild(state, parentId, childId, index);
+                layoutMirrorInsertChild(state, parentId, childId, index);
                 break;
               }
               case 4: {
                 if (i + 1 >= opCount) return;
                 int parentId = static_cast<int>(opsData[i++]);
                 int childId = static_cast<int>(opsData[i++]);
-                axonMirrorRemoveChild(state, parentId, childId);
+                layoutMirrorRemoveChild(state, parentId, childId);
                 break;
               }
               case 5: {
                 if (i >= opCount) return;
-                axonMirrorDropNode(state, static_cast<int>(opsData[i++]));
+                layoutMirrorDropNode(state, static_cast<int>(opsData[i++]));
                 break;
               }
               default:
@@ -2321,7 +2631,7 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
             } else if (valueVal.isNumber()) {
               text = std::to_string(valueVal.asNumber());
             }
-            axonMirrorSetText(state, static_cast<int>(idVal.asNumber()), text);
+            layoutMirrorSetText(state, static_cast<int>(idVal.asNumber()), text);
             jstring jText = env->NewStringUTF(text.c_str());
             env->CallVoidMethod(state->uiManager, state->setText, static_cast<jint>(idVal.asNumber()), jText);
             env->DeleteLocalRef(jText);
@@ -2332,7 +2642,7 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
             Value childVal = op.getProperty(rt, "childId");
             Value indexVal = op.getProperty(rt, "index");
             if (!parentVal.isNumber() || !childVal.isNumber() || !indexVal.isNumber()) continue;
-            axonMirrorInsertChild(
+            layoutMirrorInsertChild(
                 state,
                 static_cast<int>(parentVal.asNumber()),
                 static_cast<int>(childVal.asNumber()),
@@ -2348,7 +2658,7 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
             Value childVal = op.getProperty(rt, "childId");
             if (!parentVal.isNumber() || !childVal.isNumber()) continue;
             removeHandlersForNode(runtime, static_cast<int>(childVal.asNumber()));
-            axonMirrorRemoveChild(
+            layoutMirrorRemoveChild(
                 state,
                 static_cast<int>(parentVal.asNumber()),
                 static_cast<int>(childVal.asNumber()));
@@ -2372,8 +2682,13 @@ void installUIBindings(Runtime &rt, facebook::hermes::HermesRuntime *runtime) {
         const jint surfaceId = static_cast<jint>(args[0].asNumber());
         state->activeSurfaceId = static_cast<int>(surfaceId);
         axonEnsureNode(state, state->activeSurfaceId);
-        state->nodeTypes[state->activeSurfaceId] = "root";
-        axonSetStyleStringForNode(state, state->activeSurfaceId, 33, "column");
+        layoutRememberNodeType(state, state->activeSurfaceId, "root");
+        layoutSetStyleStringForNode(state, state->activeSurfaceId, 33, "column");
+#if ZYNTH_LAYOUT_ENGINE_YOGA
+        if (state->yogaRuntime) {
+          zynth_yoga_runtime_set_surface_root(state->yogaRuntime, state->activeSurfaceId);
+        }
+#endif
         env->CallVoidMethod(state->uiManager, state->setSurface, surfaceId);
         return Value::undefined();
       });
@@ -2539,6 +2854,12 @@ Java_com_zynth_kit_runtime_JSBridge_destroyHermesRuntime(JNIEnv *, jobject, jlon
           axon_engine_free(it->second->axonEngine);
           it->second->axonEngine = nullptr;
         }
+        #if ZYNTH_LAYOUT_ENGINE_YOGA
+        if (it->second->yogaRuntime) {
+          zynth_yoga_runtime_destroy(it->second->yogaRuntime);
+          it->second->yogaRuntime = nullptr;
+        }
+        #endif
         if (it->second->uiManager) env->DeleteGlobalRef(it->second->uiManager);
         if (it->second->uiClass) env->DeleteGlobalRef(it->second->uiClass);
         if (it->second->jsBridgeClass) env->DeleteGlobalRef(it->second->jsBridgeClass);
@@ -2561,12 +2882,16 @@ Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlon
   state->uiManager = env->NewGlobalRef(uiManager);
   state->uiClass = static_cast<jclass>(env->NewGlobalRef(env->GetObjectClass(uiManager)));
   state->activeSurfaceId = 0;
+#if ZYNTH_LAYOUT_ENGINE_AXON
   state->axonEngine = axon_engine_new();
   if (state->axonEngine) {
     state->axonNodes[0] = axon_node_create(state->axonEngine, nullptr);
     axon_text_set_measure_callback(state->axonEngine, axonMeasureTextWithJava, state.get());
     axon_node_set_measurement_callback(state->axonEngine, axonMeasureNodeWithJava, state.get());
   }
+#elif ZYNTH_LAYOUT_ENGINE_YOGA
+  state->yogaRuntime = zynth_yoga_runtime_create(state.get(), yogaMeasureTextWithJava, yogaMeasureNodeWithJava);
+#endif
   state->createNode = env->GetMethodID(state->uiClass, "createNode", "(Ljava/lang/String;)I");
   state->setProp = env->GetMethodID(state->uiClass, "setProp", "(ILjava/lang/String;Ljava/lang/String;)V");
   state->setText = env->GetMethodID(state->uiClass, "setText", "(ILjava/lang/String;)V");
@@ -2595,7 +2920,11 @@ Java_com_zynth_kit_runtime_JSBridge_installUIBindings(JNIEnv *env, jobject, jlon
       env->GetMethodID(state->uiClass, "axonMeasureText", "(ILjava/lang/String;Z)[F");
   state->axonMeasureNode =
       env->GetMethodID(state->uiClass, "axonMeasureNode", "(IFIFI)[F");
+  state->yogaMeasureTextNode =
+      env->GetMethodID(state->uiClass, "yogaMeasureTextNode", "(IFIFI)[F");
   state->axonDensity = env->GetMethodID(state->uiClass, "axonDensity", "()F");
+  state->noteAxonMetricsBatch =
+      env->GetMethodID(state->uiClass, "noteAxonMetricsBatch", "(ILjava/lang/String;)V");
   if (state->axonDensity) {
     state->density = env->CallFloatMethod(state->uiManager, state->axonDensity);
   }
@@ -2674,7 +3003,114 @@ Java_com_zynth_kit_runtime_JSBridge_axonComputeLayout(
   if (!runtime) return JNI_FALSE;
   RuntimeState *state = stateFor(runtime);
   if (!state) return JNI_FALSE;
-  return axonComputeLayoutForRoot(state, static_cast<int>(rootId), width, height) ? JNI_TRUE : JNI_FALSE;
+  return layoutComputeLayoutForRoot(state, static_cast<int>(rootId), width, height) ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_com_zynth_kit_runtime_JSBridge_axonGetLastComputeStats(
+    JNIEnv *env,
+    jobject,
+    jlong ptr) {
+  auto *runtime = reinterpret_cast<facebook::hermes::HermesRuntime *>(ptr);
+  if (!runtime) return nullptr;
+  RuntimeState *state = stateFor(runtime);
+  if (!state || !state->axonEngine) return nullptr;
+  AxonComputeStats stats{};
+  if (!axon_get_last_compute_stats(state->axonEngine, &stats)) {
+    return nullptr;
+  }
+  jlong values[] = {
+      static_cast<jlong>(stats.total_time_ns),
+      static_cast<jlong>(stats.node_count),
+      static_cast<jlong>(stats.layout_node_calls),
+      static_cast<jlong>(stats.layout_cache_hits),
+      static_cast<jlong>(stats.layout_cache_misses),
+      static_cast<jlong>(stats.min_content_cache_hits),
+      static_cast<jlong>(stats.min_content_cache_misses),
+      static_cast<jlong>(stats.intrinsic_measure_calls),
+      static_cast<jlong>(stats.intrinsic_text_calls),
+      static_cast<jlong>(stats.intrinsic_host_calls),
+      static_cast<jlong>(stats.prepare_calls),
+      static_cast<jlong>(stats.prepare_cache_hits),
+      static_cast<jlong>(stats.prepare_cache_misses),
+      static_cast<jlong>(stats.prepare_time_ns),
+      static_cast<jlong>(stats.layout_calls),
+      static_cast<jlong>(stats.layout_time_ns),
+      static_cast<jlong>(stats.min_content_calls),
+      static_cast<jlong>(stats.min_content_time_ns),
+      static_cast<jlong>(stats.setup_cache_hits),
+      static_cast<jlong>(stats.setup_cache_misses),
+      static_cast<jlong>(stats.segment_cache_hits),
+      static_cast<jlong>(stats.segment_cache_misses),
+      static_cast<jlong>(stats.host_measure_calls),
+      static_cast<jlong>(stats.host_measure_time_ns),
+      static_cast<jlong>(stats.prepared_segments),
+      static_cast<jlong>(stats.prepared_bytes),
+      static_cast<jlong>(stats.top_layout_node_ids[0]),
+      static_cast<jlong>(stats.top_layout_node_counts[0]),
+      static_cast<jlong>(stats.top_layout_constraint_unique_counts[0]),
+      static_cast<jlong>(stats.top_layout_constraint_samples[0][0].available_width_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[0][0].available_height_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[0][0].known_width_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[0][0].known_height_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[0][0].flags),
+      static_cast<jlong>(stats.top_layout_constraint_samples[0][1].available_width_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[0][1].available_height_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[0][1].known_width_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[0][1].known_height_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[0][1].flags),
+      static_cast<jlong>(stats.top_layout_constraint_samples[0][2].available_width_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[0][2].available_height_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[0][2].known_width_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[0][2].known_height_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[0][2].flags),
+      static_cast<jlong>(stats.top_layout_node_ids[1]),
+      static_cast<jlong>(stats.top_layout_node_counts[1]),
+      static_cast<jlong>(stats.top_layout_constraint_unique_counts[1]),
+      static_cast<jlong>(stats.top_layout_constraint_samples[1][0].available_width_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[1][0].available_height_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[1][0].known_width_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[1][0].known_height_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[1][0].flags),
+      static_cast<jlong>(stats.top_layout_constraint_samples[1][1].available_width_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[1][1].available_height_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[1][1].known_width_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[1][1].known_height_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[1][1].flags),
+      static_cast<jlong>(stats.top_layout_constraint_samples[1][2].available_width_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[1][2].available_height_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[1][2].known_width_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[1][2].known_height_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[1][2].flags),
+      static_cast<jlong>(stats.top_layout_node_ids[2]),
+      static_cast<jlong>(stats.top_layout_node_counts[2]),
+      static_cast<jlong>(stats.top_layout_constraint_unique_counts[2]),
+      static_cast<jlong>(stats.top_layout_constraint_samples[2][0].available_width_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[2][0].available_height_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[2][0].known_width_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[2][0].known_height_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[2][0].flags),
+      static_cast<jlong>(stats.top_layout_constraint_samples[2][1].available_width_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[2][1].available_height_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[2][1].known_width_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[2][1].known_height_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[2][1].flags),
+      static_cast<jlong>(stats.top_layout_constraint_samples[2][2].available_width_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[2][2].available_height_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[2][2].known_width_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[2][2].known_height_bits),
+      static_cast<jlong>(stats.top_layout_constraint_samples[2][2].flags),
+      static_cast<jlong>(stats.top_min_content_node_ids[0]),
+      static_cast<jlong>(stats.top_min_content_node_counts[0]),
+      static_cast<jlong>(stats.top_min_content_node_ids[1]),
+      static_cast<jlong>(stats.top_min_content_node_counts[1]),
+      static_cast<jlong>(stats.top_min_content_node_ids[2]),
+      static_cast<jlong>(stats.top_min_content_node_counts[2]),
+  };
+  jlongArray array = env->NewLongArray(static_cast<jsize>(sizeof(values) / sizeof(values[0])));
+  if (!array) return nullptr;
+  env->SetLongArrayRegion(array, 0, static_cast<jsize>(sizeof(values) / sizeof(values[0])), values);
+  return array;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
@@ -2687,7 +3123,7 @@ Java_com_zynth_kit_runtime_JSBridge_axonCollectFrames(
   auto *runtime = reinterpret_cast<facebook::hermes::HermesRuntime *>(ptr);
   if (!runtime || !nodeIds || !outFrames) return JNI_FALSE;
   RuntimeState *state = stateFor(runtime);
-  if (!state || !state->axonEngine) return JNI_FALSE;
+  if (!state) return JNI_FALSE;
 
   const jsize count = env->GetArrayLength(nodeIds);
   if (env->GetArrayLength(outFrames) < count * 4) return JNI_FALSE;
@@ -2696,19 +3132,9 @@ Java_com_zynth_kit_runtime_JSBridge_axonCollectFrames(
   std::vector<jfloat> frames(static_cast<size_t>(count) * 4, 0.0f);
   env->GetIntArrayRegion(nodeIds, 0, count, ids.data());
 
-  for (jsize i = 0; i < count; i++) {
-    auto it = state->axonNodes.find(static_cast<int>(ids[static_cast<size_t>(i)]));
-    if (it == state->axonNodes.end()) {
-      continue;
-    }
-    AxonLayoutResult layout = axon_get_layout(state->axonEngine, it->second);
-    const size_t base = static_cast<size_t>(i) * 4;
-    frames[base + 0] = layout.x;
-    frames[base + 1] = layout.y;
-    frames[base + 2] = layout.width;
-    frames[base + 3] = layout.height;
+  if (!layoutCollectFrames(state, ids.data(), static_cast<size_t>(count), frames.data())) {
+    return JNI_FALSE;
   }
-
   env->SetFloatArrayRegion(outFrames, 0, count * 4, frames.data());
   return JNI_TRUE;
 }
@@ -2725,7 +3151,7 @@ Java_com_zynth_kit_runtime_JSBridge_axonSetStyleNumber(
   if (!runtime) return JNI_FALSE;
   RuntimeState *state = stateFor(runtime);
   if (!state) return JNI_FALSE;
-  return axonSetStyleNumberForNode(
+  return layoutSetStyleNumberForNode(
              state,
              static_cast<int>(nodeId),
              static_cast<std::uint32_t>(propId),
@@ -2750,7 +3176,7 @@ Java_com_zynth_kit_runtime_JSBridge_axonSetStyleString(
   if (!chars) return JNI_FALSE;
   std::string text(chars);
   env->ReleaseStringUTFChars(value, chars);
-  return axonSetStyleStringForNode(
+  return layoutSetStyleStringForNode(
              state,
              static_cast<int>(nodeId),
              static_cast<std::uint32_t>(propId),
@@ -2771,6 +3197,7 @@ Java_com_zynth_kit_runtime_JSBridge_axonRegisterResolvedFont(
   auto *runtime = reinterpret_cast<facebook::hermes::HermesRuntime *>(ptr);
   if (!runtime || !family) return static_cast<jint>(UINT32_MAX);
   RuntimeState *state = stateFor(runtime);
+#if ZYNTH_LAYOUT_ENGINE_AXON
   if (!state || !state->axonEngine) return static_cast<jint>(UINT32_MAX);
   const char *chars = env->GetStringUTFChars(family, nullptr);
   if (!chars) return static_cast<jint>(UINT32_MAX);
@@ -2780,8 +3207,17 @@ Java_com_zynth_kit_runtime_JSBridge_axonRegisterResolvedFont(
       static_cast<std::uint16_t>(weight),
       italic == JNI_TRUE,
       sizePx);
+  const float clampedSizePx = sizePx > 0.0f ? sizePx : 16.0f;
+  state->axonFallbackFonts[fontId] = RuntimeState::AxonFallbackFontMetrics{
+      clampedSizePx,
+      std::max(clampedSizePx * 1.3f, 1.0f),
+      std::max(clampedSizePx * 0.55f, 1.0f),
+  };
   env->ReleaseStringUTFChars(family, chars);
   return static_cast<jint>(fontId);
+#else
+  return 0;
+#endif
 }
 
 extern "C" JNIEXPORT jint JNICALL
@@ -2796,6 +3232,7 @@ Java_com_zynth_kit_runtime_JSBridge_axonPrewarmResolvedFont(
   auto *runtime = reinterpret_cast<facebook::hermes::HermesRuntime *>(ptr);
   if (!runtime || !family) return static_cast<jint>(UINT32_MAX);
   RuntimeState *state = stateFor(runtime);
+#if ZYNTH_LAYOUT_ENGINE_AXON
   if (!state || !state->axonEngine) return static_cast<jint>(UINT32_MAX);
   const char *chars = env->GetStringUTFChars(family, nullptr);
   if (!chars) return static_cast<jint>(UINT32_MAX);
@@ -2805,8 +3242,37 @@ Java_com_zynth_kit_runtime_JSBridge_axonPrewarmResolvedFont(
       static_cast<std::uint16_t>(weight),
       italic == JNI_TRUE,
       sizePx);
+  const float clampedSizePx = sizePx > 0.0f ? sizePx : 16.0f;
+  state->axonFallbackFonts[fontId] = RuntimeState::AxonFallbackFontMetrics{
+      clampedSizePx,
+      std::max(clampedSizePx * 1.3f, 1.0f),
+      std::max(clampedSizePx * 0.55f, 1.0f),
+  };
   env->ReleaseStringUTFChars(family, chars);
   return static_cast<jint>(fontId);
+#else
+  return 0;
+#endif
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_zynth_kit_runtime_JSBridge_axonSetTextMeasureMode(
+    JNIEnv *,
+    jobject,
+    jlong ptr,
+    jint mode) {
+  auto *runtime = reinterpret_cast<facebook::hermes::HermesRuntime *>(ptr);
+  if (!runtime) return JNI_FALSE;
+  RuntimeState *state = stateFor(runtime);
+  if (!state) return JNI_FALSE;
+#if ZYNTH_LAYOUT_ENGINE_AXON
+  state->axonTextMeasureMode =
+      mode == 1 ? RuntimeState::AxonTextMeasureMode::Fallback
+                : RuntimeState::AxonTextMeasureMode::Java;
+#else
+  mode = mode;
+#endif
+  return JNI_TRUE;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
@@ -2818,11 +3284,16 @@ Java_com_zynth_kit_runtime_JSBridge_axonInvalidateFontCache(
   auto *runtime = reinterpret_cast<facebook::hermes::HermesRuntime *>(ptr);
   if (!runtime) return JNI_FALSE;
   RuntimeState *state = stateFor(runtime);
+#if ZYNTH_LAYOUT_ENGINE_AXON
   if (!state || !state->axonEngine) return JNI_FALSE;
   bool ok = axon_font_invalidate_cache(
       state->axonEngine,
       static_cast<std::uint32_t>(fontId));
   return ok ? JNI_TRUE : JNI_FALSE;
+#else
+  fontId = fontId;
+  return JNI_TRUE;
+#endif
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
@@ -2836,6 +3307,7 @@ Java_com_zynth_kit_runtime_JSBridge_axonSetTextMeasure(
   auto *runtime = reinterpret_cast<facebook::hermes::HermesRuntime *>(ptr);
   if (!runtime || !text) return JNI_FALSE;
   RuntimeState *state = stateFor(runtime);
+#if ZYNTH_LAYOUT_ENGINE_AXON
   if (!state || !state->axonEngine) return JNI_FALSE;
   std::size_t nativeId = axonEnsureNode(state, static_cast<int>(nodeId));
   if (nativeId == std::numeric_limits<std::size_t>::max()) return JNI_FALSE;
@@ -2848,6 +3320,15 @@ Java_com_zynth_kit_runtime_JSBridge_axonSetTextMeasure(
       static_cast<std::size_t>(fontId));
   env->ReleaseStringUTFChars(text, chars);
   return ok ? JNI_TRUE : JNI_FALSE;
+#else
+  if (!state) return JNI_FALSE;
+  const char *chars = env->GetStringUTFChars(text, nullptr);
+  if (!chars) return JNI_FALSE;
+  layoutMirrorSetText(state, static_cast<int>(nodeId), chars);
+  env->ReleaseStringUTFChars(text, chars);
+  fontId = fontId;
+  return JNI_TRUE;
+#endif
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
@@ -2860,12 +3341,24 @@ Java_com_zynth_kit_runtime_JSBridge_axonSetMeasureHandler(
   auto *runtime = reinterpret_cast<facebook::hermes::HermesRuntime *>(ptr);
   if (!runtime) return JNI_FALSE;
   RuntimeState *state = stateFor(runtime);
-  if (!state || !state->axonEngine) return JNI_FALSE;
+  if (!state) return JNI_FALSE;
+#if ZYNTH_LAYOUT_ENGINE_AXON
+  if (!state->axonEngine) return JNI_FALSE;
   std::size_t nativeId = axonEnsureNode(state, static_cast<int>(nodeId));
   if (nativeId == std::numeric_limits<std::size_t>::max()) return JNI_FALSE;
   return axon_node_set_measure_callback(state->axonEngine, nativeId, enabled == JNI_TRUE)
       ? JNI_TRUE
       : JNI_FALSE;
+#elif ZYNTH_LAYOUT_ENGINE_YOGA
+  if (!state->yogaRuntime) return JNI_FALSE;
+  zynth_yoga_runtime_set_measure_handler(
+      state->yogaRuntime,
+      axonResolveTreeNodeId(state, static_cast<int>(nodeId)),
+      enabled == JNI_TRUE);
+  return JNI_TRUE;
+#else
+  return JNI_FALSE;
+#endif
 }
 
 extern "C" JNIEXPORT void JNICALL

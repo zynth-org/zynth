@@ -18,6 +18,11 @@ module.exports = {
       type: "boolean",
       default: false,
     });
+    yargs.option("axon-enabled", {
+      describe: "Enable the Axon Android layout engine during prebuild/native build",
+      type: "boolean",
+      default: false,
+    });
   },
   handler: (argv) => {
     const appDir = argv.app
@@ -29,7 +34,10 @@ module.exports = {
     } catch (_error) {
       // Standalone app: use app root as command root
     }
-    const options = { dev: !argv.production };
+    const options = {
+      dev: !argv.production,
+      axonEnabled: argv.platform === "android" ? argv.axonEnabled : false,
+    };
     ensurePrebuild(root, appDir, argv.platform, options);
   },
 };

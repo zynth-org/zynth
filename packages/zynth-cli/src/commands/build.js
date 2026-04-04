@@ -108,6 +108,16 @@ module.exports = {
       choices: ["apk", "aab"],
       default: "apk",
     });
+    yargs.option("prebuild", {
+      describe: "Regenerate native project before building",
+      type: "boolean",
+      default: false,
+    });
+    yargs.option("axon-enabled", {
+      describe: "Enable the Axon Android layout engine during prebuild/native build",
+      type: "boolean",
+      default: false,
+    });
   },
   handler: async (argv) => {
     const appDir = argv.app
@@ -157,6 +167,13 @@ module.exports = {
     if (argv.platform === "ios") {
       await buildIOS(root, appDir, argv);
     } else {
+      if (argv.prebuild) {
+        ensurePrebuild(root, appDir, "android", {
+          dev: false,
+          quiet: false,
+          axonEnabled: argv.axonEnabled,
+        });
+      }
       removeAndroidDevConfigAsset(appDir);
       // Android needs manual bundle copy since Gradle doesn't auto-copy in release builds
       copyBundleToAndroid(appDir);

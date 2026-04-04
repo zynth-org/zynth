@@ -27,6 +27,9 @@ class DevtoolsModule(
     "isConnected",
     "setPerformanceOverlayEnabled",
     "getPerformanceOverlayStats",
+    "enableAxonMetricsHarness",
+    "disableAxonMetricsHarness",
+    "setAxonTextMeasureMode",
   )
 
   companion object {
@@ -200,6 +203,22 @@ class DevtoolsModule(
           "jsFps" to 0,
         )
         JSONObject().put("result", JSONObject(stats))
+      }
+      "enableAxonMetricsHarness" -> {
+        val label = args.getOptionalString("label")
+        val delayMs = args.getLong("delayMs", 400L)
+        val batchKind = args.getOptionalString("batchKind")
+        val surfaceId = if (args.has("surfaceId")) args.getInt("surfaceId") else null
+        runtime?.enableAxonMetricsHarness(label, delayMs, batchKind, surfaceId)
+        ok()
+      }
+      "disableAxonMetricsHarness" -> {
+        runtime?.disableAxonMetricsHarness()
+        ok()
+      }
+      "setAxonTextMeasureMode" -> {
+        val mode = args.getString("mode", "java")
+        JSONObject().put("result", runtime?.setAxonTextMeasureMode(mode) ?: false)
       }
       else -> error("unknown_method")
     }

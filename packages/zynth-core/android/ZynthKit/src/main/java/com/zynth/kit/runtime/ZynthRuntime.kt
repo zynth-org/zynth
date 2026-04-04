@@ -311,6 +311,23 @@ class ZynthRuntime(val root: ZynthRootView) {
     return ZynthNativePerformanceOverlay.getPerformanceOverlaySnapshot()
   }
 
+  fun enableAxonMetricsHarness(
+    label: String?,
+    delayMs: Long,
+    batchKind: String?,
+    surfaceId: Int?,
+  ) {
+    uiManager.enableAxonMetricsHarness(label, delayMs, batchKind, surfaceId)
+  }
+
+  fun disableAxonMetricsHarness() {
+    uiManager.disableAxonMetricsHarness()
+  }
+
+  fun setAxonTextMeasureMode(mode: String): Boolean {
+    return uiManager.setAxonTextMeasureMode(mode)
+  }
+
   internal fun evaluateScript(code: String, sourceUrl: String? = null) {
     runOnJSSync {
       JSBridge.evaluateScript(runtimePtr, code, sourceUrl)

@@ -1814,6 +1814,7 @@ async function devAndroid(root, appDir, options = {}) {
     ensurePrebuild(root, appDir, "android", {
       dev: true,
       quiet: quietOutput,
+      axonEnabled: options.axonEnabled,
     });
   } else if (!fs.existsSync(androidDir)) {
     // If android dir is missing, we must prebuild regardless of flag
@@ -1821,6 +1822,7 @@ async function devAndroid(root, appDir, options = {}) {
     ensurePrebuild(root, appDir, "android", {
       dev: true,
       quiet: quietOutput,
+      axonEnabled: options.axonEnabled,
     });
   }
 

@@ -12,6 +12,7 @@ const templatesRoot = path.resolve(__dirname, "..", "templates");
 export function main(options: any = {}): void {
   const appDir = process.cwd();
   const quiet = Boolean(options.quiet);
+  const axonEnabled = resolveAxonEnabled(options.axonEnabled);
   if (!quiet) {
     console.log("◆ Starting Android prebuild...");
     console.log(`◆ App directory: ${appDir}`);
@@ -49,10 +50,23 @@ export function main(options: any = {}): void {
     }
     upsertGradleProperty(
       gradlePropsDest,
+      "zynthAxonEnabled",
+      axonEnabled ? "true" : "false"
+    );
+    upsertGradleProperty(
+      gradlePropsDest,
+      "zynthLayoutEngine",
+      axonEnabled ? "axon" : "yoga"
+    );
+    upsertGradleProperty(
+      gradlePropsDest,
       "zynthWebServerTls",
       webServerTlsEnabled ? "true" : "false"
     );
     if (!quiet) {
+      console.log(
+        `◆ Android layout engine: ${axonEnabled ? "Axon" : "Yoga"}`
+      );
       console.log(
         `◆ @zynth/webserver native TLS: ${webServerTlsEnabled ? "enabled" : "disabled"}`
       );
@@ -172,6 +186,11 @@ function parseBoolean(value: unknown): boolean | null {
     if (normalized === "false") return false;
   }
   return null;
+}
+
+function resolveAxonEnabled(value: unknown): boolean {
+  const parsed = parseBoolean(value);
+  return parsed === true;
 }
 
 function resolveWebServerNativeTls(appDir: string): boolean {
