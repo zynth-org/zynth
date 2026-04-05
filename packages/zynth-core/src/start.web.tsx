@@ -1,4 +1,4 @@
-import { Platform, OS } from "@zynth/apis";
+import { Platform, OS } from "./platform";
 import { render, setHost } from "./renderer";
 import { createIOSHost } from "./host/ios";
 import { createAndroidHost } from "./host/android";

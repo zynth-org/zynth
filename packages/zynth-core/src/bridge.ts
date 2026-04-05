@@ -80,8 +80,6 @@ type ZynthNativeError = Error & {
  */
 export function getGlobalObject(): any {
   if (typeof globalThis !== "undefined") return globalThis;
-  if (typeof global !== "undefined") return global;
-  if (typeof window !== "undefined") return window;
   try {
     return Function("return this")();
   } catch {

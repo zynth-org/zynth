@@ -1373,7 +1373,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
 
   return (
     <Show when={topologyKey()} keyed>
-      {() => (
+      {(_key) => (
         <ScrollView
           ref={attachRef}
           horizontal={props.horizontal}

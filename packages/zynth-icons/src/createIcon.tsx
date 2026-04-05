@@ -126,18 +126,18 @@ export function createIcon(glyph: string, fontFamily: string) {
     // Always render the same Text element to avoid layout thrashing
     // Use a space character as placeholder until font is ready
     // This maintains proper text composition in the native layer
-    const mergedStyle = createStyle(() => props.style);
+    const mergedStyle = createStyle(() => props.style as any);
 
     return (
       <Text
         {...props}
         text={isReady() ? glyph : " "}
         style={{
-          ...mergedStyle(),
+          ...(mergedStyle() || {}),
           fontFamily: isReady() ? fontFamily : undefined,
           height:
             Platform.OS === "android"
-              ? mergedStyle().fontSize || 16
+              ? mergedStyle()?.fontSize || 16
               : undefined,
         }}
       />

@@ -9,11 +9,4 @@ export type {
 } from "./types";
 
 export { createSafeAreaInsets, createSafeAreaFrame } from "./hooks";
-export { SafeAreaView } from "./SafeAreaView";
-export type {
-  SafeAreaViewProps,
-  SafeAreaEdge,
-  SafeAreaMode,
-} from "./SafeAreaView";
-
 export { getInitialWindowMetrics } from "./initialWindowMetrics";

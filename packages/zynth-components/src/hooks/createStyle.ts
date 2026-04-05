@@ -1,12 +1,12 @@
 import { createMemo, type Accessor } from "solid-js";
-import type { Style, StyleProp, StyleRef } from "@zynth/core";
+import type { Style, StyleProp } from "@zynth/core";
 
 /**
  * Merges an array of styles or a single style into a final Style object.
  * Properly handles SolidJS reactivity using createMemo to avoid breaking responsiveness.
  *
  * @param style - An Accessor to a StyleProp (single or array)
- * @returns A reactive memo of the merged Style object or a StyleRef
+ * @returns A reactive memo of the merged Style object
  *
  * @example
  * ```tsx
@@ -20,18 +20,16 @@ import type { Style, StyleProp, StyleRef } from "@zynth/core";
  */
 export const createStyle = (
   style: Accessor<StyleProp | undefined>
-): Accessor<Style | StyleRef | undefined> => {
+): Accessor<Style | undefined> => {
   return createMemo(() => {
     const s = style();
     if (s === undefined) return undefined;
     if (!Array.isArray(s)) return s;
 
-    return s.reduce<Style | StyleRef>((acc, curr) => {
+    return s.reduce<Style>((acc, curr) => {
       if (!curr) return acc;
-      // If we have a StyleRef in the array, we might have a problem merging it
-      // but for now let's just keep the existing logic and assume curr is Style if it's not a Ref
-      return { ...acc, ...curr } as Style;
-    }, {}) as Style;
+      return { ...acc, ...curr };
+    }, {});
   });
 };
 

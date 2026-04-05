@@ -45,6 +45,8 @@ export { createWorklet } from "./worklet";
 export type { WorkletFunction, WorkletMetadata, WorkletPayload } from "./worklet";
 export { shareSignalRef, isSignalRef, getSignalRefId } from "./signalRef";
 export type { SignalRef, SignalRefKind } from "./signalRef";
+export { OS, Platform } from "./platform";
+export type { PlatformSelectSpec } from "./platform";
 export {
   createSignalRuntime,
   getRuntimeKind,

@@ -1,4 +1,5 @@
-import { OS, Platform } from "./platform";
+import { OS, Platform } from "@zynth/core";
+import type { PlatformSelectSpec } from "@zynth/core";
 import { Dimensions } from "./dimensions";
 import { Font, createFontLoader } from "./font";
 import { Glyphs } from "./glyphs";
@@ -17,7 +18,7 @@ export {
   Network,
   Device,
 };
-export type { PlatformSelectSpec } from "./platform";
+export type { PlatformSelectSpec };
 export type {
   DimensionMetrics,
   DimensionsSnapshot,

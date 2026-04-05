@@ -10,7 +10,8 @@ export type NodeType =
   | "secure-text-input"
   | "scroll-view"
   | "switch"
-  | "slider";
+  | "slider"
+  | "progress-indicator";
 
 export interface HostNode {
   id: number; // for marker: generate a synthetic negative or a distinct counter

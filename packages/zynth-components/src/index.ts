@@ -15,6 +15,7 @@ export * from "./primitives/Slider";
 export * from "./primitives/TextField";
 export * from "./primitives/Alert";
 export * from "./primitives/StatusBar";
+export * from "./primitives/SafeAreaView";
 export * from "./primitives/Menu";
 export * from "./primitives/Popover";
 export * from "./primitives/DatePicker";

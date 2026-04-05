@@ -1,5 +1,4 @@
-import { callNativeSync, getGlobalObject } from "@zynth/core";
-import { Platform } from "./platform";
+import { callNativeSync, getGlobalObject, Platform } from "@zynth/core";
 
 const MODULE_NAME = "Device";
 
