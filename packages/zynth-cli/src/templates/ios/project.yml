@@ -50,7 +50,7 @@ targets:
         SWIFT_OBJC_BRIDGING_HEADER: ""
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
         OTHER_LDFLAGS: "$(inherited) -ObjC"
-    prebuildScripts:
+    bootstrapScripts:
       - name: BundleJS
         basedOnDependencyAnalysis: true
         inputFiles:

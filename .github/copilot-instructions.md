@@ -12,8 +12,8 @@ You're working on a project in Zynth, a cross-platform framework for iOS and And
 ## Build, Test, and Development Commands
 
 - Root builds: `yarn build` builds all workspaces; `yarn bundle` / `bundle:apps` / `bundle:packages` use the Zynth CLI to produce JS bundles.
-- Native prep: `yarn prebuild:ios` or `yarn prebuild:android` regenerate native projects from templates; `yarn reset:ios` / `reset:android` wipe derived native artifacts.
-- Dev loops (demo app): from the root, `yarn zynth dev ios --prebuild` or `yarn zynth dev android --prebuild` run bundling plus the platform pipeline. Inside `apps/components`, use `yarn zynth dev` for the same paired flows, or `yarn dev` for JS-only dev server.
+- Native prep: `yarn bootstrap:ios` or `yarn bootstrap:android` regenerate native projects from templates; `yarn reset:ios` / `reset:android` wipe derived native artifacts.
+- Dev loops (demo app): from the root, `yarn zynth dev ios --bootstrap` or `yarn zynth dev android --bootstrap` run bundling plus the platform pipeline. Inside `apps/components`, use `yarn zynth dev` for the same paired flows, or `yarn dev` for JS-only dev server.
 - Keep `yarn sync-aliases` handy after adding new workspace packages or path aliases.
 
 ## Coding Style & Naming Conventions

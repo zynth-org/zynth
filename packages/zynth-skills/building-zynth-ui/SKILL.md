@@ -34,7 +34,7 @@ references/
 Zynth generates temporary `/ios` and `/android` directories. **NEVER** modify files inside these folders manually as they are overwritten.
 
 1.  **Start Dev Server**: Use `yarn zynth dev ios` or `yarn zynth dev android`.
-2.  **Use --prebuild**: When adding native modules or changing app configuration, always use the `--prebuild` flag to regenerate the native project.
+2.  **Use --bootstrap**: When adding native modules or changing app configuration, always use the `--bootstrap` flag to regenerate the native project.
 3.  **Web Support**: Zynth supports web targets via `yarn zynth dev web`. It uses Vanilla CSS and optimized SolidJS rendering.
 
 ## Code Style

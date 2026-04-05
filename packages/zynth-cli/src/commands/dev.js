@@ -14,7 +14,7 @@ module.exports = {
       describe: "Platform to run on",
       choices: ["ios", "android"],
     });
-    yargs.option("prebuild", {
+    yargs.option("bootstrap", {
       describe: "Regenerate native project before launching",
       type: "boolean",
       default: false,
@@ -50,7 +50,7 @@ module.exports = {
       default: false,
     });
     yargs.option("axon-enabled", {
-      describe: "Enable the Axon Android layout engine during prebuild/native build",
+      describe: "Enable the Axon Android layout engine during bootstrap/native build",
       type: "boolean",
       default: false,
     });
@@ -67,7 +67,7 @@ module.exports = {
     }
     if (argv.platform === "ios") {
       await devIOS(root, appDir, {
-        prebuild: argv.prebuild,
+        bootstrap: argv.bootstrap,
         devices: argv.devices,
         local: argv.local,
         hmrNetwork: argv.hmrNetwork,
@@ -77,7 +77,7 @@ module.exports = {
       });
     } else {
       await devAndroid(root, appDir, {
-        prebuild: argv.prebuild,
+        bootstrap: argv.bootstrap,
         local: argv.local,
         hmrNetwork: argv.hmrNetwork,
         devtools: argv.devtools,

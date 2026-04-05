@@ -220,7 +220,7 @@ async function createNewModule(argv) {
 
   console.log(chalk.green("[OK] Module created:"), targetDir);
   console.log(chalk.cyan("[i] Next steps:"));
-  console.log("  - run `yarn zynth prebuild ios` or `yarn zynth prebuild android`");
+  console.log("  - run `yarn zynth bootstrap ios` or `yarn zynth bootstrap android`");
 }
 
 async function ensureModuleAlias(appDir) {

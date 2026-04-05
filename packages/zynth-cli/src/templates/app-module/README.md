@@ -63,10 +63,10 @@ Update the Android package/namespace in `android/ZynthMyModule/build.gradle.kts`
 - `{{MODULE_NAME_PASCAL}}Module.kt` handles state and emits `{{MODULE_NAME_PASCAL}}:change`
 - `{{MODULE_NAME_PASCAL}}Bridge.kt` exports constants and sync state access
 
-### 4. Prebuild
+### 4. Bootstrap
 
 ```bash
-yarn zynth prebuild ios
+yarn zynth bootstrap ios
 ```
 
 ### 5. Use in Your App

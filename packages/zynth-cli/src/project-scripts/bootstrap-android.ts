@@ -14,14 +14,14 @@ export function main(options: any = {}): void {
   const quiet = Boolean(options.quiet);
   const axonEnabled = resolveAxonEnabled(options.axonEnabled);
   if (!quiet) {
-    console.log("◆ Starting Android prebuild...");
+    console.log("◆ Starting Android bootstrap...");
     console.log(`◆ App directory: ${appDir}`);
   }
 
   try {
     console.log("◆ Generating Android project from template...");
     if (quiet) {
-      process.env.ZYNTH_QUIET_PREBUILD = "1";
+      process.env.ZYNTH_QUIET_BOOTSTRAP = "1";
     }
     const config = generateAndroidProject(appDir, options);
     const webServerTlsEnabled = resolveWebServerNativeTls(appDir);
@@ -29,7 +29,7 @@ export function main(options: any = {}): void {
       ensureWebServerTlsSources({ quiet });
     }
     if (quiet) {
-      delete process.env.ZYNTH_QUIET_PREBUILD;
+      delete process.env.ZYNTH_QUIET_BOOTSTRAP;
       console.log("  ├─ Generated Android Legacy Icons");
       console.log("  ├─ Generated Android Splash Assets");
       console.log(
@@ -84,7 +84,7 @@ export function main(options: any = {}): void {
     if (isDev) {
       if (!quiet) {
         console.log(
-          "\n◆ Dev prebuild skips copying the JS bundle (served via Rsbuild dev server).",
+          "\n◆ Dev bootstrap skips copying the JS bundle (served via Rsbuild dev server).",
         );
       }
     } else if (fs.existsSync(bundleSrc)) {
@@ -155,7 +155,7 @@ export function main(options: any = {}): void {
       }
     } else if (!quiet) {
       console.warn(
-        "\n! JS bundle not found (dist/main.js). Run the JS build before prebuild.",
+        "\n! JS bundle not found (dist/main.js). Run the JS build before bootstrap.",
       );
     }
     if (!quiet) {
@@ -167,11 +167,11 @@ export function main(options: any = {}): void {
       console.log("  ./gradlew :app:installDebug");
       console.log(`  adb shell am start -n ${config.bundleId}/.MainActivity`);
     } else {
-      console.log("✔ Android prebuild completed successfully!");
+      console.log("✔ Android bootstrap completed successfully!");
       console.log("");
     }
   } catch (error: any) {
-    console.error("\n! Android prebuild failed:", error.message);
+    console.error("\n! Android bootstrap failed:", error.message);
     process.exit(1);
   }
 }

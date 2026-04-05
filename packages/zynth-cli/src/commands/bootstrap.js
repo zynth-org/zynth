@@ -2,15 +2,15 @@ const path = require("path");
 const {
   findWorkspaceRoot,
   findAppDirectory,
-  ensurePrebuild,
+  ensureBootstrap,
 } = require("../utils");
 
 module.exports = {
-  command: "prebuild <platform>",
+  command: "bootstrap <platform>",
   describe: "Generate native project from templates",
   builder: (yargs) => {
     yargs.positional("platform", {
-      describe: "Platform to prebuild for",
+      describe: "Platform to bootstrap for",
       choices: ["ios", "android"],
     });
     yargs.option("production", {
@@ -19,7 +19,7 @@ module.exports = {
       default: false,
     });
     yargs.option("axon-enabled", {
-      describe: "Enable the Axon Android layout engine during prebuild/native build",
+      describe: "Enable the Axon Android layout engine during bootstrap/native build",
       type: "boolean",
       default: false,
     });
@@ -38,6 +38,6 @@ module.exports = {
       dev: !argv.production,
       axonEnabled: argv.platform === "android" ? argv.axonEnabled : false,
     };
-    ensurePrebuild(root, appDir, argv.platform, options);
+    ensureBootstrap(root, appDir, argv.platform, options);
   },
 };

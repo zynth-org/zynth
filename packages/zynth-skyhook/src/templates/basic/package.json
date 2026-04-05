@@ -29,8 +29,8 @@
   },
   "scripts": {
     "build": "rsbuild build --config rsbuild.config.mjs",
-    "prebuild:ios": "zynth prebuild ios",
-    "prebuild:android": "zynth prebuild android",
+    "bootstrap:ios": "zynth bootstrap ios",
+    "bootstrap:android": "zynth bootstrap android",
     "ios:dev": "zynth dev ios",
     "android:dev": "zynth dev android",
     "reset:ios": "zynth reset ios",

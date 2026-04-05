@@ -108,13 +108,13 @@ module.exports = {
       choices: ["apk", "aab"],
       default: "apk",
     });
-    yargs.option("prebuild", {
+    yargs.option("bootstrap", {
       describe: "Regenerate native project before building",
       type: "boolean",
       default: false,
     });
     yargs.option("axon-enabled", {
-      describe: "Enable the Axon Android layout engine during prebuild/native build",
+      describe: "Enable the Axon Android layout engine during bootstrap/native build",
       type: "boolean",
       default: false,
     });
@@ -167,8 +167,8 @@ module.exports = {
     if (argv.platform === "ios") {
       await buildIOS(root, appDir, argv);
     } else {
-      if (argv.prebuild) {
-        ensurePrebuild(root, appDir, "android", {
+      if (argv.bootstrap) {
+        ensureBootstrap(root, appDir, "android", {
           dev: false,
           quiet: false,
           axonEnabled: argv.axonEnabled,
@@ -193,7 +193,7 @@ function copyBundleToAndroid(appDir) {
   const androidDir = path.join(appDir, "android");
   if (!fs.existsSync(androidDir)) {
     throw new Error(
-      `✖ Android project not found at ${androidDir}. Run 'zynth prebuild android' first to generate the native project.`
+      `✖ Android project not found at ${androidDir}. Run 'zynth bootstrap android' first to generate the native project.`
     );
   }
 
@@ -453,7 +453,7 @@ async function buildIOS(root, appDir, argv) {
   if (!fs.existsSync(iosDir)) {
     throw new Error(
       `✖ iOS project not found at ${iosDir}.\n` +
-        `Run 'zynth prebuild ios' first to generate the native project, then configure signing in Xcode.`
+        `Run 'zynth bootstrap ios' first to generate the native project, then configure signing in Xcode.`
     );
   }
 

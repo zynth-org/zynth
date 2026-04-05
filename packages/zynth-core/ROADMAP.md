@@ -108,9 +108,9 @@ The runtime must expose the following globals via JSI HostObjects:
 
 ---
 
-## Build/Prebuild Selection Strategy
+## Build/Bootstrap Selection Strategy
 
-- Make the core runtime the default for `zynth dev` and `zynth prebuild`.
+- Make the core runtime the default for `zynth dev` and `zynth bootstrap`.
 - When enabled, templates should link to `packages/zynth-core/ios` and `packages/zynth-core/android` instead of `packages/zynth-core/ios` and `packages/zynth-core/android`.
 - This allows side-by-side legacy and new runtime without breaking existing apps.
 - Hermes configuration should remain aligned with the proven legacy setup in the Podfile and Android Gradle configuration.
@@ -160,7 +160,7 @@ The runtime must expose the following globals via JSI HostObjects:
 
 **Exit Criteria**
 
-- Can run `yarn zynth dev ios --prebuild` and see a blank root view.
+- Can run `yarn zynth dev ios --bootstrap` and see a blank root view.
 
 **Status**
 

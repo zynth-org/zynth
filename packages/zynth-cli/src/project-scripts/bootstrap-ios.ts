@@ -12,18 +12,18 @@ export function main(options: any = {}): void {
   const quiet = Boolean(options.quiet);
 
   if (!quiet) {
-    console.log("◆ Starting iOS prebuild...");
+    console.log("◆ Starting iOS bootstrap...");
     console.log(`◆ App directory: ${appDir}`);
   }
 
   try {
     console.log("◆ Generating iOS project from template...");
     if (quiet) {
-      process.env.ZYNTH_QUIET_PREBUILD = "1";
+      process.env.ZYNTH_QUIET_BOOTSTRAP = "1";
     }
     generateIOSProject(appDir, options);
     if (quiet) {
-      delete process.env.ZYNTH_QUIET_PREBUILD;
+      delete process.env.ZYNTH_QUIET_BOOTSTRAP;
     }
     if (quiet) {
       const projectPath = path.join(appDir, "ios");
@@ -61,13 +61,13 @@ export function main(options: any = {}): void {
       env: podEnv,
     });
 
-    console.log("✔ iOS prebuild completed successfully!");
+    console.log("✔ iOS bootstrap completed successfully!");
     console.log("");
     if (!quiet) {
       console.log("➔ You can now open the .xcworkspace file in Xcode");
     }
   } catch (error: any) {
-    console.error("\n✖ Prebuild failed:", error.message);
+    console.error("\n✖ Bootstrap failed:", error.message);
     process.exit(1);
   }
 }

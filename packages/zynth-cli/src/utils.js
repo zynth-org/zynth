@@ -966,16 +966,16 @@ function getAndroidConfig(root, appDir) {
   return { ...base, bundleId: pkgName };
 }
 
-function ensurePrebuild(root, appDir, platform, options = {}) {
-  const scriptName = platform === "ios" ? "prebuild-ios" : "prebuild-android";
+function ensureBootstrap(root, appDir, platform, options = {}) {
+  const scriptName = platform === "ios" ? "bootstrap-ios" : "bootstrap-android";
   const scriptPath = resolveInternalProjectScriptPath(scriptName);
 
-  // Load and call the prebuild script with options
-  const prebuildModule = requireScript(scriptPath);
+  // Load and call the bootstrap script with options
+  const bootstrapModule = requireScript(scriptPath);
   const originalCwd = process.cwd();
   try {
     process.chdir(appDir);
-    prebuildModule.main(options);
+    bootstrapModule.main(options);
   } finally {
     process.chdir(originalCwd);
   }
@@ -1472,7 +1472,7 @@ async function devIOS(root, appDir, options = {}) {
   const config = getIOSConfig(root, appDir);
   const iosDir = path.join(appDir, "ios");
   let targetDevice = null;
-  const quietOutput = Boolean(options.quietOutput ?? options.prebuild);
+  const quietOutput = Boolean(options.quietOutput ?? options.bootstrap);
   const devtoolsEnabled = options.devtools !== false;
   const devtoolsPort = Number(
     process.env.ZYNTH_DEVTOOLS_PORT || options.devtoolsPort || 7080
@@ -1522,12 +1522,12 @@ async function devIOS(root, appDir, options = {}) {
     };
   }
 
-  if (options.prebuild) {
+  if (options.bootstrap) {
     if (!quietOutput) {
-      console.log("◆ Regenerating iOS project (--prebuild)");
+      console.log("◆ Regenerating iOS project (--bootstrap)");
     }
     removeDirectory(iosDir);
-    ensurePrebuild(root, appDir, "ios", {
+    ensureBootstrap(root, appDir, "ios", {
       dev: true,
       quiet: quietOutput,
     });
@@ -1535,7 +1535,7 @@ async function devIOS(root, appDir, options = {}) {
 
   if (!fs.existsSync(iosDir)) {
     console.error(
-      "✖ iOS project not found. Run `zynth prebuild ios` or pass --prebuild."
+      "✖ iOS project not found. Run `zynth bootstrap ios` or pass --bootstrap."
     );
     process.exit(1);
   }
@@ -1546,7 +1546,7 @@ async function devIOS(root, appDir, options = {}) {
   );
   if (!fs.existsSync(workspacePath)) {
     console.error(
-      `❌ Missing workspace at ${workspacePath}. Regenerate with --prebuild.`
+      `❌ Missing workspace at ${workspacePath}. Regenerate with --bootstrap.`
     );
     process.exit(1);
   }
@@ -1807,19 +1807,19 @@ async function devAndroid(root, appDir, options = {}) {
   );
   const devtoolsUrlOverride = process.env.ZYNTH_DEVTOOLS_URL;
   const devtoolsToken = process.env.ZYNTH_DEVTOOLS_TOKEN || null;
-  const quietOutput = Boolean(options.quietOutput ?? options.prebuild);
+  const quietOutput = Boolean(options.quietOutput ?? options.bootstrap);
   const verboseBuild = Boolean(options.verbose);
 
-  if (options.prebuild) {
-    ensurePrebuild(root, appDir, "android", {
+  if (options.bootstrap) {
+    ensureBootstrap(root, appDir, "android", {
       dev: true,
       quiet: quietOutput,
       axonEnabled: options.axonEnabled,
     });
   } else if (!fs.existsSync(androidDir)) {
-    // If android dir is missing, we must prebuild regardless of flag
-    console.log("◆ Android directory missing. Running prebuild...");
-    ensurePrebuild(root, appDir, "android", {
+    // If android dir is missing, we must bootstrap regardless of flag
+    console.log("◆ Android directory missing. Running bootstrap...");
+    ensureBootstrap(root, appDir, "android", {
       dev: true,
       quiet: quietOutput,
       axonEnabled: options.axonEnabled,
@@ -2167,7 +2167,7 @@ function resetIOS(appDir) {
     }
   }
   console.log(
-    "🧹 Removed iOS build artifacts. Run `zynth prebuild ios` to regenerate."
+    "🧹 Removed iOS build artifacts. Run `zynth bootstrap ios` to regenerate."
   );
 }
 
@@ -2179,7 +2179,7 @@ function resetAndroid(appDir) {
     }
   }
   console.log(
-    "🧹 Removed Android build artifacts. Run `zynth prebuild android` to regenerate."
+    "🧹 Removed Android build artifacts. Run `zynth bootstrap android` to regenerate."
   );
 }
 
@@ -2201,7 +2201,7 @@ module.exports = {
   runCommandFilteredAndroid,
   devIOS,
   devAndroid,
-  ensurePrebuild,
+  ensureBootstrap,
   ensureBundle,
   getConnectedAndroidDevices,
   startIOSLogs,

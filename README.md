@@ -50,7 +50,7 @@ yarn dev:ios
 yarn dev:android
 ```
 
-The CLI handles everything: bundling your JS, generating the native projects (via prebuild), and launching the native build tools.
+The CLI handles everything: bundling your JS, generating the native projects (via bootstrap), and launching the native build tools.
 
 ### Building for Production
 

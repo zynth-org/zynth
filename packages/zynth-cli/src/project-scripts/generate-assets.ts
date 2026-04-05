@@ -105,7 +105,7 @@ function generateIOSIcons(appDir: string, iconPath: string, appName: string): vo
   });
 
   fs.writeFileSync(path.join(iconSetDir, 'Contents.json'), JSON.stringify(contents, null, 2));
-  const quiet = Boolean(process.env.ZYNTH_QUIET_PREBUILD);
+  const quiet = Boolean(process.env.ZYNTH_QUIET_BOOTSTRAP);
   if (!quiet) {
     console.log('  ✓ Generated iOS App Icons');
   }
@@ -162,7 +162,7 @@ function generateIOSSplashAssets(appDir: string, splash: any, appName: string): 
     info: { version: 1, author: 'xcode' },
   };
   fs.writeFileSync(path.join(imagesetDir, 'Contents.json'), JSON.stringify(imageset, null, 2));
-  const quiet = Boolean(process.env.ZYNTH_QUIET_PREBUILD);
+  const quiet = Boolean(process.env.ZYNTH_QUIET_BOOTSTRAP);
   if (!quiet) {
     console.log('  ✓ Generated iOS Splash Assets');
   }
@@ -188,7 +188,7 @@ function generateAndroidIcons(appDir: string, iconPath: string): void {
     resizeImage(iconPath, path.join(targetDir, 'ic_launcher.png'), size, size);
     resizeImage(iconPath, path.join(targetDir, 'ic_launcher_round.png'), size, size);
   }
-  const quiet = Boolean(process.env.ZYNTH_QUIET_PREBUILD);
+  const quiet = Boolean(process.env.ZYNTH_QUIET_BOOTSTRAP);
   if (!quiet) {
     console.log('  ✓ Generated Android Legacy Icons');
   }
@@ -237,7 +237,7 @@ function generateAndroidAdaptiveIcons(appDir: string, adaptive: { foregroundImag
     fs.writeFileSync(path.join(anydpiDir, 'ic_launcher.xml'), iconXml);
     fs.writeFileSync(path.join(anydpiDir, 'ic_launcher_round.xml'), iconXml);
     
-  const quiet = Boolean(process.env.ZYNTH_QUIET_PREBUILD);
+  const quiet = Boolean(process.env.ZYNTH_QUIET_BOOTSTRAP);
   if (!quiet) {
     console.log('  ✓ Generated Android Adaptive Icons');
   }
@@ -270,7 +270,7 @@ function copyFonts(appDir: string, fonts: string[], platform: 'ios' | 'android',
     const destPath = path.join(targetDir, fontFileName);
     fs.copyFileSync(sourcePath, destPath);
     
-    const quiet = Boolean(process.env.ZYNTH_QUIET_PREBUILD);
+    const quiet = Boolean(process.env.ZYNTH_QUIET_BOOTSTRAP);
     if (!quiet) {
       console.log(`  ✓ Copied font: ${fontFileName}`);
     }
@@ -296,7 +296,7 @@ function copyBundledImages(appDir: string, platform: 'ios' | 'android', appName:
     : path.join(appDir, 'android', 'app', 'src', 'main', 'assets');
   fs.mkdirSync(targetRoot, { recursive: true });
 
-  const quiet = Boolean(process.env.ZYNTH_QUIET_PREBUILD);
+  const quiet = Boolean(process.env.ZYNTH_QUIET_BOOTSTRAP);
   const copied: string[] = [];
 
   for (const [relativeDestPath, sourcePath] of Object.entries(manifest)) {
