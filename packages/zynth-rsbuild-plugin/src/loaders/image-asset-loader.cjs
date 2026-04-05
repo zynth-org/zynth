@@ -1,23 +1,11 @@
-import crypto from "node:crypto";
-import path from "node:path";
-import fs from "node:fs";
-
-interface ImageAssetDescriptor {
-  type: "asset";
-  name: string;
-  ext: string;
-  hash: string;
-  scale?: number;
-  relativePath?: string;
-  devPath?: string;
-}
+const crypto = require("node:crypto");
+const path = require("node:path");
+const fs = require("node:fs");
 
 /**
  * Custom Rspack loader that transforms image imports into ImageAssetDescriptor objects.
- * In development, includes the absolute file path for serving via dev server.
- * In production, includes a hash for bundled assets.
  */
-export default function imageAssetLoader(this: any, content: Buffer): string {
+function imageAssetLoader(content) {
   const mode =
     this.mode || this._compilation?.options?.mode || process.env?.NODE_ENV;
   const isDev = mode !== "production";
@@ -37,15 +25,15 @@ export default function imageAssetLoader(this: any, content: Buffer): string {
   const scale = scaleMatch ? parseInt(scaleMatch[1], 10) : undefined;
   const baseName = scaleMatch ? parsed.name.replace(/@\d+x$/, "") : parsed.name;
 
-  const descriptor: ImageAssetDescriptor = {
+  const descriptor = {
     type: "asset",
     name: baseName,
-    ext: parsed.ext.slice(1), // Remove leading dot
+    ext: parsed.ext.slice(1),
     hash,
     scale,
   };
 
-  // Record image in manifest for native build discovery
+  // Record image in manifest
   try {
     const distDir = path.resolve(this.rootContext, "dist");
     const manifestDir = path.join(distDir, "assets");
@@ -55,7 +43,7 @@ export default function imageAssetLoader(this: any, content: Buffer): string {
       fs.mkdirSync(manifestDir, { recursive: true });
     }
 
-    let manifest: Record<string, string> = {};
+    let manifest = {};
     if (fs.existsSync(manifestPath)) {
       try {
         manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
@@ -67,11 +55,8 @@ export default function imageAssetLoader(this: any, content: Buffer): string {
     const nativeAssetId = `${baseName}-${hash}.${parsed.ext.slice(1)}`;
     manifest[`images/${nativeAssetId}`] = absolutePath;
     fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
-  } catch (_error) {
-    // Ignore manifest write errors (might happen in some environments)
-  }
+  } catch (_error) {}
 
-  // In development, include the absolute path for dev server serving
   if (isDev) {
     descriptor.devPath = absolutePath;
   } else if (isWeb) {
@@ -80,10 +65,8 @@ export default function imageAssetLoader(this: any, content: Buffer): string {
     descriptor.relativePath = fileName;
   }
 
-  // Return the descriptor as a module export
-  return `export default ${JSON.stringify(descriptor)};`;
+  return `module.exports = ${JSON.stringify(descriptor)};`;
 }
 
-// We need to read the file as a buffer to calculate the hash,
-// but we're returning JavaScript code, so mark this as raw input only
-export const raw = true;
+module.exports = imageAssetLoader;
+module.exports.raw = true;

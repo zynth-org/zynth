@@ -17,9 +17,10 @@
 #include "mbedtls/pk.h"
 #include "mbedtls/platform.h"
 #include "mbedtls/ssl.h"
+#include "mbedtls/ssl_ciphersuites.h"
 #include "mbedtls/x509.h"
 #include "mbedtls/x509_crt.h"
-#if defined(MBEDTLS_PSA_CRYPTO_C)
+#if (defined(MBEDTLS_PSA_CRYPTO_C) || defined(MBEDTLS_USE_PSA_CRYPTO)) && (MBEDTLS_VERSION_NUMBER >= 0x03000000)
 #include "psa/crypto.h"
 #endif
 #include <string.h>
@@ -94,7 +95,7 @@ mbed_sslctx_init(SSL_CTX *ctx, const char *crt, const char *cipherlist)
 	mbedtls_ctr_drbg_init(&ctx->ctr);
 	mbedtls_x509_crt_init(&ctx->cert);
 
-#ifdef MBEDTLS_PSA_CRYPTO_C
+#if (defined(MBEDTLS_PSA_CRYPTO_C) || defined(MBEDTLS_USE_PSA_CRYPTO)) && (MBEDTLS_VERSION_NUMBER >= 0x03000000)
 	/* Initialize PSA crypto (mandatory with TLS 1.3)
 	 * This must be done before calling any other PSA Crypto
 	 * functions or they will fail with PSA_ERROR_BAD_STATE
@@ -336,7 +337,11 @@ int mbed_sslctx_set_ciphersuites(mbedtls_ssl_config *conf, const char *cipher_li
 		}
 		const mbedtls_ssl_ciphersuite_t *ciphersuite = mbedtls_ssl_ciphersuite_from_string(token);
 		if (ciphersuite != NULL) {
+#if MBEDTLS_VERSION_NUMBER >= 0x03000000
+			const int id = mbedtls_ssl_ciphersuite_get_id(ciphersuite);
+#else
 			const int id = ciphersuite->id;
+#endif
 			DEBUG_TRACE("Adding ciphersuite '%s' (ID %d)", token, id);
 			ciphersuites[count++] = id;
 		}

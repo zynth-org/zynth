@@ -315,6 +315,38 @@ function ensureWebServerTlsSources(params: { quiet: boolean }): void {
       path.join(civetwebSourceDir, "src", "wolfssl_extras.inl"),
       path.join(civetwebDir, "wolfssl_extras.inl"),
     );
+
+    // Patch mod_mbedtls.inl for mbedTLS 2.28 compatibility
+    const modMbedPath = path.join(civetwebDir, "mod_mbedtls.inl");
+    let modMbedContent = fs.readFileSync(modMbedPath, "utf8");
+
+    // 1. Add missing headers and ensure MBEDTLS_VERSION_NUMBER is seen
+    if (!modMbedContent.includes("#include \"mbedtls/version.h\"")) {
+      modMbedContent = modMbedContent.replace(
+        "#include \"mbedtls/ctr_drbg.h\"",
+        "#include \"mbedtls/version.h\"\n#include \"mbedtls/ssl_ciphersuites.h\"\n#include \"mbedtls/ctr_drbg.h\""
+      );
+    }
+
+    // 2. Fix ciphersuite ID access for mbedTLS 2.x
+    modMbedContent = modMbedContent.replace(
+      "const int id = mbedtls_ssl_ciphersuite_get_id(ciphersuite);",
+      "#if MBEDTLS_VERSION_NUMBER >= 0x03000000\n\t\t\tconst int id = mbedtls_ssl_ciphersuite_get_id(ciphersuite);\n#else\n\t\t\tconst int id = ciphersuite->id;\n#endif"
+    );
+
+    // 3. Fix PSA initialization for mbedTLS 2.x
+    modMbedContent = modMbedContent.replace(
+      "const psa_status_t status = psa_crypto_init();",
+      "#if (defined(MBEDTLS_PSA_CRYPTO_C) || defined(MBEDTLS_USE_PSA_CRYPTO)) && (MBEDTLS_VERSION_NUMBER >= 0x03000000)\n\t\t\tconst psa_status_t status = psa_crypto_init();\n#endif"
+    );
+
+    // Also wrap the PSA status check
+    modMbedContent = modMbedContent.replace(
+      "if (status != PSA_SUCCESS) {",
+      "#if (defined(MBEDTLS_PSA_CRYPTO_C) || defined(MBEDTLS_USE_PSA_CRYPTO)) && (MBEDTLS_VERSION_NUMBER >= 0x03000000)\n\t\tif (status != PSA_SUCCESS) {\n#else\n\t\tif (0) {\n#endif"
+    );
+
+    fs.writeFileSync(modMbedPath, modMbedContent, "utf8");
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }

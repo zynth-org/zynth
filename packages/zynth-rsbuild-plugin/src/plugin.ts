@@ -9,7 +9,7 @@ import * as rspack from "@rspack/core";
 import type {
   ZynthBuildFeatureContext,
   ZynthRsbuildPluginOptions,
-} from "./types.js";
+} from "./types";
 import {
   escapeRegExp,
   isGeneratedModuleFeature,
@@ -17,7 +17,7 @@ import {
   resolveFeatureOutputFile,
   resolveFeaturePlatform,
   writeGeneratedModuleFile,
-} from "./features.js";
+} from "./features";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HMR_SHIM_PATH = path.join(__dirname, "shims/hmr-client-empty.js");
@@ -25,11 +25,11 @@ const OVERLAY_SHIM_PATH = path.join(__dirname, "shims/overlay-empty.js");
 const CSS_SHIM_PATH = path.join(__dirname, "shims/css-empty.js");
 const IMAGE_ASSET_LOADER_PATH = path.join(
   __dirname,
-  "loaders/image-asset-loader.js",
+  "loaders/image-asset-loader.cjs",
 );
 const FONT_ASSET_LOADER_PATH = path.join(
   __dirname,
-  "loaders/font-asset-loader.js",
+  "loaders/font-asset-loader.cjs",
 );
 const require = createRequire(import.meta.url);
 

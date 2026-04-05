@@ -1,9 +1,9 @@
 import type { RsbuildConfig } from "@rsbuild/core";
-import { getWebConfig } from "./config-web.js";
-import { getNativeConfig } from "./config-native.js";
-import type { DefineZynthConfigOptions } from "./types.js";
+import { getWebConfig } from "./config-web";
+import { getNativeConfig } from "./config-native";
+import type { DefineZynthConfigOptions } from "./types";
 
-export * from "./types.js";
+export * from "./types";
 
 export function defineZynthConfig(
   userConfig: RsbuildConfig = {},

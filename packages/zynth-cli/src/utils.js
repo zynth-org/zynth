@@ -324,6 +324,7 @@ function runCommandFilteredAndroid(command, args, options = {}) {
     buildIndicator.update(reportedPackages.size, displayName);
   }
 
+  let lastDiagnosticAt = 0;
   function isDiagnostic(line) {
     return (
       /\bFAILURE\b/i.test(line) ||
@@ -331,7 +332,18 @@ function runCommandFilteredAndroid(command, args, options = {}) {
       /\bERROR\b/i.test(line) ||
       /\bException\b/i.test(line) ||
       /^\s*w:/i.test(line) ||
-      /^\s*e:/i.test(line)
+      /^\s*e:/i.test(line) ||
+      line.includes("* What went wrong:") ||
+      line.includes("* Try:") ||
+      (line.startsWith("> ") && !line.startsWith("> Task")) ||
+      /\berror:/i.test(line) ||
+      /\bCaused by:/i.test(line) ||
+      /\bCould not find\b/i.test(line) ||
+      /\bUnknown property\b/i.test(line) ||
+      line.includes("Unable to locate a Java Runtime") ||
+      line.includes("The operation couldn’t be completed") ||
+      line.includes("Command not found") ||
+      line.includes("Permission denied")
     );
   }
 
@@ -344,8 +356,25 @@ function runCommandFilteredAndroid(command, args, options = {}) {
       // Check for package tasks
       tryReportPackage(line);
 
-      if (isDiagnostic(line)) {
+      const isDiag = isDiagnostic(line);
+      const now = Date.now();
+
+      if (isDiag) {
+        lastDiagnosticAt = now;
         writeBuildLine(stream, line);
+      } else if (now - lastDiagnosticAt < 2000) {
+        // Show context lines for 2 seconds after a diagnostic
+        // but avoid showing too much noise (like task names or downloads)
+        const isNoise = 
+          line.startsWith("> Task") || 
+          line.startsWith("Searching for") ||
+          line.startsWith("Download") ||
+          line.startsWith("Get ") ||
+          line.startsWith("Checking ");
+          
+        if (!isNoise) {
+          writeBuildLine(stream, line, "    ");
+        }
       }
     }
   }
