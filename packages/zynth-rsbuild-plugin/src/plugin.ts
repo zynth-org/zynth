@@ -9,7 +9,7 @@ import * as rspack from "@rspack/core";
 import type {
   ZynthBuildFeatureContext,
   ZynthRsbuildPluginOptions,
-} from "./types";
+} from "./types.js";
 import {
   escapeRegExp,
   isGeneratedModuleFeature,
@@ -17,7 +17,7 @@ import {
   resolveFeatureOutputFile,
   resolveFeaturePlatform,
   writeGeneratedModuleFile,
-} from "./features";
+} from "./features.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HMR_SHIM_PATH = path.join(__dirname, "shims/hmr-client-empty.js");

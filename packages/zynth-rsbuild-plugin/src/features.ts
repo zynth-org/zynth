@@ -4,7 +4,7 @@ import type {
   ZynthBuildFeature,
   ZynthBuildFeatureContext,
   ZynthGeneratedModuleFeature,
-} from "./types";
+} from "./types.js";
 
 const DEFAULT_FEATURES_OUTPUT_DIR = ".zynth/features";
 

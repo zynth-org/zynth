@@ -5,9 +5,9 @@ import {
 } from "@rsbuild/core";
 import { pluginBabel } from "@rsbuild/plugin-babel";
 import deepmerge from "deepmerge";
-import type { DefineZynthConfigOptions } from "./types";
-import { createZynthRsbuildPlugin } from "./plugin";
-import { createWorkletBabelPlugin } from "./babel/worklet-plugin";
+import type { DefineZynthConfigOptions } from "./types.js";
+import { createZynthRsbuildPlugin } from "./plugin.js";
+import { createWorkletBabelPlugin } from "./babel/worklet-plugin.js";
 
 const DEFAULT_NATIVE_CONFIG: RsbuildConfig = {
   source: {

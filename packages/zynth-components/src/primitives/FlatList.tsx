@@ -11,6 +11,7 @@ import {
   For,
   getOwner,
   runWithOwner,
+  Show,
 } from "solid-js";
 import type { Accessor, Setter } from "solid-js";
 import { Platform, OS } from "@zynth/apis";
@@ -245,8 +246,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
     }
   };
 
-  const [scrollRef, setScrollRef] =
-    createSignal<ScrollViewRef | null>(null);
+  const [scrollRef, setScrollRef] = createSignal<ScrollViewRef | null>(null);
 
   const [viewportSize, setViewportSize] = createSignal(0);
   let lastOffset = 0;
@@ -291,7 +291,6 @@ export function FlatList<T>(props: FlatListProps<T>) {
     }
     return props.keyExtractor(item, dataIndex);
   };
-
 
   const estimatedItemSize = createMemo(() => {
     const estimate = props.estimatedItemSize;
@@ -618,7 +617,6 @@ export function FlatList<T>(props: FlatListProps<T>) {
     return Math.max(0, getTotalSize() - base - size);
   };
 
-
   let lastRangeStart = -1;
   let lastRangeEnd = -1;
 
@@ -712,7 +710,9 @@ export function FlatList<T>(props: FlatListProps<T>) {
             : Number.POSITIVE_INFINITY;
         const nextSize = Math.min(dataLength, rangeCount, maxPoolSize);
         if (nextSize === dataLength && props.debug) {
-          log(`Pool expanded to dataLength=${dataLength} (rangeCount=${rangeCount.toFixed(0)})`);
+          log(
+            `Pool expanded to dataLength=${dataLength} (rangeCount=${rangeCount.toFixed(0)})`,
+          );
         }
         schedulePoolGrowth(nextSize);
       }
@@ -842,10 +842,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
       pendingBindingsFrame = true;
       requestAnimationFrame(() => {
         pendingBindingsFrame = false;
-        updateBindingsForOffset(
-          pendingBindingsOffset,
-          pendingBindingsViewport,
-        );
+        updateBindingsForOffset(pendingBindingsOffset, pendingBindingsViewport);
       });
       return;
     }
@@ -876,10 +873,8 @@ export function FlatList<T>(props: FlatListProps<T>) {
     if (!hasFooterDecorator()) setFooterExtent(0);
   });
 
-  const getHeaderExtent = () =>
-    hasHeaderDecorator() ? headerExtent() : 0;
-  const getFooterExtent = () =>
-    hasFooterDecorator() ? footerExtent() : 0;
+  const getHeaderExtent = () => (hasHeaderDecorator() ? headerExtent() : 0);
+  const getFooterExtent = () => (hasFooterDecorator() ? footerExtent() : 0);
 
   const getListOffset = (rawOffset: number, viewport: number) => {
     const adjusted = Math.max(0, rawOffset - getHeaderExtent());
@@ -1088,7 +1083,10 @@ export function FlatList<T>(props: FlatListProps<T>) {
       }
       return;
     }
-    if (queued === undefined || Math.abs(size - queued) >= MEASUREMENT_EPSILON) {
+    if (
+      queued === undefined ||
+      Math.abs(size - queued) >= MEASUREMENT_EPSILON
+    ) {
       pendingMeasurementCache.set(key, size);
       // Topology switches (e.g. numColumns) should settle measurements in the same tick.
       schedulePendingMeasurementFlush(!forceImmediateMeasurementFlush);
@@ -1186,7 +1184,10 @@ export function FlatList<T>(props: FlatListProps<T>) {
         viewport > 0 ? viewport : effectiveViewport(),
         true,
       );
-      handleBoundaryEvents(offset, viewport > 0 ? viewport : effectiveViewport());
+      handleBoundaryEvents(
+        offset,
+        viewport > 0 ? viewport : effectiveViewport(),
+      );
       updateAnchor(offset, viewport > 0 ? viewport : effectiveViewport());
       props.onScroll?.(event);
     });
@@ -1338,7 +1339,8 @@ export function FlatList<T>(props: FlatListProps<T>) {
         : metrics.viewportSize.height;
       const viewPosition = Math.max(0, Math.min(options.viewPosition ?? 0, 1));
       const viewOffset = options.viewOffset ?? 0;
-      const target = itemOffset - (viewport - itemSize) * viewPosition + viewOffset;
+      const target =
+        itemOffset - (viewport - itemSize) * viewPosition + viewOffset;
       scheduleScrollTo(Math.max(0, target), options.animated ?? false);
     };
     imperativeNode.scrollToOffset = (options) => {
@@ -1368,7 +1370,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
   });
 
   return (
-    <Show when={topologyKey()} keyed>
+    <Show when={true} keyed>
       {(_key) => (
         <ScrollView
           ref={attachRef}
@@ -1378,11 +1380,13 @@ export function FlatList<T>(props: FlatListProps<T>) {
           config={props.scrollViewConfig}
           eventThrottleMs={props.scrollEventThrottleMs}
           eventMinDisplacementPx={
-            props.scrollEventMinDisplacementPx ?? (Platform.OS === OS.IOS ? 1.0 : 0)
+            props.scrollEventMinDisplacementPx ??
+            (Platform.OS === OS.IOS ? 1.0 : 0)
           }
           bridgeCoalescing={props.scrollBridgeCoalescing}
           decelerationRate={
-            props.decelerationRate ?? (Platform.OS === OS.IOS ? "normal" : "normal")
+            props.decelerationRate ??
+            (Platform.OS === OS.IOS ? "normal" : "normal")
           }
           contentSize={manualContentSize()}
           testID={props.testID}
@@ -1395,263 +1399,281 @@ export function FlatList<T>(props: FlatListProps<T>) {
             <View style={requiredContentStyle()}>
               <Index each={poolSlots()}>
                 {(slot) => {
-              const slotData = slot();
-              const rowStartIndex = createMemo(() => {
-                const idx = slotData.index();
-                if (idx < 0) return -1;
-                return getDataStartIndexForVirtualIndex(idx);
-              });
-              const rowItemOffsets = createMemo(() => {
-                const idx = slotData.index();
-                if (idx < 0) return [];
-                const count = getDataCountForVirtualIndex(idx);
-                const offsets: number[] = [];
-                for (let i = 0; i < count; i += 1) {
-                  offsets.push(i);
-                }
-                return offsets;
-              });
+                  const slotData = slot();
+                  const rowStartIndex = createMemo(() => {
+                    const idx = slotData.index();
+                    if (idx < 0) return -1;
+                    return getDataStartIndexForVirtualIndex(idx);
+                  });
+                  const rowItemOffsets = createMemo(() => {
+                    const idx = slotData.index();
+                    if (idx < 0) return [];
+                    const count = getDataCountForVirtualIndex(idx);
+                    const offsets: number[] = [];
+                    for (let i = 0; i < count; i += 1) {
+                      offsets.push(i);
+                    }
+                    return offsets;
+                  });
 
-              const position = createMemo(() => {
-                layoutVersion();
-                const idx = slotData.index();
-                if (idx < 0) return -9999;
-                return getItemPosition(idx);
-              });
+                  const position = createMemo(() => {
+                    layoutVersion();
+                    const idx = slotData.index();
+                    if (idx < 0) return -9999;
+                    return getItemPosition(idx);
+                  });
 
-              const extent = createMemo(() => {
-                layoutVersion();
-                const idx = slotData.index();
-                if (idx < 0) return estimatedItemSize();
-                return getSizeForIndex(idx);
-              });
+                  const extent = createMemo(() => {
+                    layoutVersion();
+                    const idx = slotData.index();
+                    if (idx < 0) return estimatedItemSize();
+                    return getSizeForIndex(idx);
+                  });
 
-              const contentStyle = createMemo((): Style => {
-                if (props.horizontal) {
-                  return { height: "100%" };
-                }
-                return { width: "100%" };
-              });
-              const rowContentStyle = createMemo((): Style | undefined => {
-                if (!isMultiColumn()) return undefined;
-                return {
-                  flexDirection: "row",
-                  width: "100%",
-                };
-              });
-
-              const itemStyle = createMemo((): Style => {
-                const size = extent();
-                const isFlow = isFlowLayout();
-                
-                if (props.horizontal) {
-                  if (isFlow) {
+                  const contentStyle = createMemo((): Style => {
+                    if (props.horizontal) {
+                      return { height: "100%" };
+                    }
+                    return { width: "100%" };
+                  });
+                  const rowContentStyle = createMemo((): Style | undefined => {
+                    if (!isMultiColumn()) return undefined;
                     return {
-                      position: "relative",
+                      flexDirection: "row",
+                      width: "100%",
+                    };
+                  });
+
+                  const itemStyle = createMemo((): Style => {
+                    const size = extent();
+                    const isFlow = isFlowLayout();
+
+                    if (props.horizontal) {
+                      if (isFlow) {
+                        return {
+                          position: "relative",
+                          left: 0,
+                          top: 0,
+                          minWidth: size,
+                          height: "100%",
+                          overflow: "visible",
+                        };
+                      }
+                      return {
+                        position: "absolute",
+                        left: position(),
+                        top: 0,
+                        minWidth: size,
+                        height: "100%",
+                        overflow: "visible",
+                      };
+                    }
+                    if (isFlow) {
+                      return {
+                        position: "relative",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        minHeight: size,
+                        overflow: "visible",
+                      };
+                    }
+                    return {
+                      position: "absolute",
+                      top: position(),
                       left: 0,
-                      top: 0,
-                      minWidth: size,
-                      height: "100%",
+                      width: "100%",
+                      minHeight: size,
                       overflow: "visible",
                     };
-                  }
-                  return {
-                    position: "absolute",
-                    left: position(),
-                    top: 0,
-                    minWidth: size,
-                    height: "100%",
-                    overflow: "visible",
-                  };
-                }
-                if (isFlow) {
-                  return {
-                    position: "relative",
-                    top: 0,
-                    left: 0,
-                    width: "100%",
-                    minHeight: size,
-                    overflow: "visible",
-                  };
-                }
-                return {
-                  position: "absolute",
-                  top: position(),
-                  left: 0,
-                  width: "100%",
-                  minHeight: size,
-                  overflow: "visible",
-                };
-              });
-
-              const handleLayout = createMemo(() => {
-                const token = slotData.layoutToken();
-                return (event: LayoutChangeEvent) => {
-                  runWithOwner(owner, () => {
-                    if (slotData.layoutToken() !== token) return;
-                    const idx = slotData.index();
-                    if (idx < 0 || idx >= dataKeys.length) return;
-                    const key = slotData.key();
-                    if (!key) return;
-                    const layout = event?.nativeEvent?.layout;
-                    if (!layout) return;
-                    const size = props.horizontal ? layout.width : layout.height;
-                    recordMeasurement(key, idx, size);
                   });
-                };
-              });
 
-              return (
-                <View style={itemStyle}>
-                  <View
-                    key={slotData.key() ?? slotData.layoutToken()}
-                    style={contentStyle}
-                    onLayout={handleLayout()}
-                  >
-                    <View style={rowContentStyle()}>
-                      <For each={rowItemOffsets()}>
-                        {(columnOffset) => {
-                          const itemIndex = createMemo(() => {
-                            const start = rowStartIndex();
-                            if (start < 0) return -1;
-                            const index = start + columnOffset;
-                            if (index < 0 || index >= props.data.length) return -1;
-                            return index;
-                          });
-                          const itemSignal = createMemo<T | null>(() => {
-                            const index = itemIndex();
-                            if (index < 0) return null;
-                            const item = props.data[index];
-                            return item ?? null;
-                          });
-                          const itemProxy = new Proxy(
-                            {},
-                            {
-                              get(_, prop) {
+                  const handleLayout = createMemo(() => {
+                    const token = slotData.layoutToken();
+                    return (event: LayoutChangeEvent) => {
+                      runWithOwner(owner, () => {
+                        if (slotData.layoutToken() !== token) return;
+                        const idx = slotData.index();
+                        if (idx < 0 || idx >= dataKeys.length) return;
+                        const key = slotData.key();
+                        if (!key) return;
+                        const layout = event?.nativeEvent?.layout;
+                        if (!layout) return;
+                        const size = props.horizontal
+                          ? layout.width
+                          : layout.height;
+                        recordMeasurement(key, idx, size);
+                      });
+                    };
+                  });
+
+                  return (
+                    <View style={itemStyle}>
+                      <View
+                        key={slotData.key() ?? slotData.layoutToken()}
+                        style={contentStyle}
+                        onLayout={handleLayout()}
+                      >
+                        <View style={rowContentStyle()}>
+                          <For each={rowItemOffsets()}>
+                            {(columnOffset) => {
+                              const itemIndex = createMemo(() => {
+                                const start = rowStartIndex();
+                                if (start < 0) return -1;
+                                const index = start + columnOffset;
+                                if (index < 0 || index >= props.data.length)
+                                  return -1;
+                                return index;
+                              });
+                              const itemSignal = createMemo<T | null>(() => {
+                                const index = itemIndex();
+                                if (index < 0) return null;
+                                const item = props.data[index];
+                                return item ?? null;
+                              });
+                              const itemProxy = new Proxy(
+                                {},
+                                {
+                                  get(_, prop) {
+                                    const item = itemSignal();
+                                    if (item == null) return undefined;
+                                    const value = Reflect.get(
+                                      item as any,
+                                      prop,
+                                      item,
+                                    );
+                                    return typeof value === "function"
+                                      ? value.bind(item)
+                                      : value;
+                                  },
+                                  has(_, prop) {
+                                    const item = itemSignal();
+                                    if (item == null) return false;
+                                    if (
+                                      typeof item !== "object" &&
+                                      typeof item !== "function"
+                                    ) {
+                                      return false;
+                                    }
+                                    return prop in (item as object);
+                                  },
+                                  ownKeys() {
+                                    const item = itemSignal();
+                                    return item ? Reflect.ownKeys(item) : [];
+                                  },
+                                  getOwnPropertyDescriptor(_, prop) {
+                                    const item = itemSignal();
+                                    if (!item) return undefined;
+                                    const descriptor =
+                                      Object.getOwnPropertyDescriptor(
+                                        item,
+                                        prop,
+                                      );
+                                    if (!descriptor) return undefined;
+                                    return {
+                                      ...descriptor,
+                                      configurable: true,
+                                    };
+                                  },
+                                },
+                              ) as T;
+
+                              const indexValue = {
+                                valueOf: () => itemIndex(),
+                                toString: () => String(itemIndex()),
+                                [Symbol.toPrimitive](hint: string) {
+                                  const value = itemIndex();
+                                  return hint === "string"
+                                    ? String(value)
+                                    : value;
+                                },
+                              } as unknown as number;
+
+                              const renderKeyList = createMemo(() => {
                                 const item = itemSignal();
-                                if (item == null) return undefined;
-                                const value = Reflect.get(item as any, prop, item);
-                                return typeof value === "function"
-                                  ? value.bind(item)
-                                  : value;
-                              },
-                              has(_, prop) {
-                                const item = itemSignal();
-                                if (item == null) return false;
-                                if (
-                                  typeof item !== "object" &&
-                                  typeof item !== "function"
-                                ) {
-                                  return false;
+                                if (item === null || item === undefined)
+                                  return [];
+                                if (props.recycle) {
+                                  return [`stable:${topologyEpoch()}`];
                                 }
-                                return prop in (item as object);
-                              },
-                              ownKeys() {
-                                const item = itemSignal();
-                                return item ? Reflect.ownKeys(item) : [];
-                              },
-                              getOwnPropertyDescriptor(_, prop) {
-                                const item = itemSignal();
-                                if (!item) return undefined;
-                                const descriptor = Object.getOwnPropertyDescriptor(
-                                  item,
-                                  prop,
-                                );
-                                if (!descriptor) return undefined;
-                                return { ...descriptor, configurable: true };
-                              },
-                            },
-                          ) as T;
+                                const epoch = renderEpoch();
+                                return [`${itemIndex()}:${epoch}`];
+                              });
 
-                          const indexValue = {
-                            valueOf: () => itemIndex(),
-                            toString: () => String(itemIndex()),
-                            [Symbol.toPrimitive](hint: string) {
-                              const value = itemIndex();
-                              return hint === "string" ? String(value) : value;
-                            },
-                          } as unknown as number;
+                              const columnStyle = createMemo((): Style => {
+                                if (!isMultiColumn()) {
+                                  return { width: "100%" };
+                                }
+                                return { width: `${100 / columnCount()}%` };
+                              });
 
-                          const renderKeyList = createMemo(() => {
-                            const item = itemSignal();
-                            if (item === null || item === undefined) return [];
-                            if (props.recycle) {
-                              return [`stable:${topologyEpoch()}`];
-                            }
-                            const epoch = renderEpoch();
-                            return [`${itemIndex()}:${epoch}`];
-                          });
-
-                          const columnStyle = createMemo((): Style => {
-                            if (!isMultiColumn()) {
-                              return { width: "100%" };
-                            }
-                            return { width: `${100 / columnCount()}%` };
-                          });
-
+                              return (
+                                <View style={columnStyle()}>
+                                  <For each={renderKeyList()}>
+                                    {() =>
+                                      props.renderItem({
+                                        item: itemProxy,
+                                        index: indexValue,
+                                        itemSignal,
+                                        indexSignal: itemIndex,
+                                      })
+                                    }
+                                  </For>
+                                </View>
+                              );
+                            }}
+                          </For>
+                        </View>
+                        {(() => {
+                          const SeparatorComponent =
+                            props.ItemSeparatorComponent;
+                          if (!SeparatorComponent) return null;
+                          const virtualIndex = slotData.index();
+                          if (
+                            virtualIndex === -1 ||
+                            virtualIndex >= dataKeys.length - 1
+                          ) {
+                            return null;
+                          }
+                          const leadingIndex = isMultiColumn()
+                            ? getDataStartIndexForVirtualIndex(virtualIndex) +
+                              getDataCountForVirtualIndex(virtualIndex) -
+                              1
+                            : getDataStartIndexForVirtualIndex(virtualIndex);
+                          const trailingIndex =
+                            getDataStartIndexForVirtualIndex(virtualIndex + 1);
+                          if (
+                            leadingIndex < 0 ||
+                            leadingIndex >= props.data.length ||
+                            trailingIndex < 0 ||
+                            trailingIndex >= props.data.length
+                          ) {
+                            return null;
+                          }
+                          const leading = props.data[leadingIndex];
+                          const trailing = props.data[trailingIndex];
+                          if (leading === undefined || trailing === undefined) {
+                            return null;
+                          }
                           return (
-                            <View style={columnStyle()}>
-                              <For each={renderKeyList()}>
-                                {() =>
-                                  props.renderItem({
-                                    item: itemProxy,
-                                    index: indexValue,
-                                    itemSignal,
-                                    indexSignal: itemIndex,
-                                  })
-                                }
-                              </For>
-                            </View>
+                            <SeparatorComponent
+                              leadingItem={leading}
+                              trailingItem={trailing}
+                              leadingIndex={leadingIndex}
+                              trailingIndex={trailingIndex}
+                            />
                           );
-                        }}
-                      </For>
+                        })()}
+                      </View>
                     </View>
-                    {(() => {
-                      const SeparatorComponent = props.ItemSeparatorComponent;
-                      if (!SeparatorComponent) return null;
-                      const virtualIndex = slotData.index();
-                      if (virtualIndex === -1 || virtualIndex >= dataKeys.length - 1) {
-                        return null;
-                      }
-                      const leadingIndex = isMultiColumn()
-                        ? getDataStartIndexForVirtualIndex(virtualIndex) +
-                          getDataCountForVirtualIndex(virtualIndex) -
-                          1
-                        : getDataStartIndexForVirtualIndex(virtualIndex);
-                      const trailingIndex =
-                        getDataStartIndexForVirtualIndex(virtualIndex + 1);
-                      if (
-                        leadingIndex < 0 ||
-                        leadingIndex >= props.data.length ||
-                        trailingIndex < 0 ||
-                        trailingIndex >= props.data.length
-                      ) {
-                        return null;
-                      }
-                      const leading = props.data[leadingIndex];
-                      const trailing = props.data[trailingIndex];
-                      if (leading === undefined || trailing === undefined) {
-                        return null;
-                      }
-                      return (
-                        <SeparatorComponent
-                          leadingItem={leading}
-                          trailingItem={trailing}
-                          leadingIndex={leadingIndex}
-                          trailingIndex={trailingIndex}
-                        />
-                      );
-                    })()}
-                  </View>
-                </View>
-              );
-            }}
-          </Index>
-        </View>
-      ) : (
-        renderDecorator(props.ListEmptyComponent)
-      )}
-      {renderFooter()}
+                  );
+                }}
+              </Index>
+            </View>
+          ) : (
+            renderDecorator(props.ListEmptyComponent)
+          )}
+          {renderFooter()}
         </ScrollView>
       )}
     </Show>
