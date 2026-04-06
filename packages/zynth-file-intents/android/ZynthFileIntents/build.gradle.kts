@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "dev.zynth.fileintents"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         minSdk = 24

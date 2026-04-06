@@ -3,6 +3,7 @@ package {{BUNDLE_ID}}
 import android.os.Bundle
 import android.util.Log
 import android.view.WindowManager
+import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.zynth.kit.core.ZynthRootView
@@ -26,17 +27,7 @@ class MainActivity : AppCompatActivity() {
 
 {{ACTIVITY_ON_CREATE_HOOKS}}
 
-    // Enable edge-to-edge display
-    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-      window.setDecorFitsSystemWindows(false)
-    } else {
-      @Suppress("DEPRECATION")
-      window.decorView.systemUiVisibility = (
-        android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-        or android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-        or android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-      )
-    }
+    enableEdgeToEdge()
 
     // Ensure IME insets are reported consistently (required for keyboard detection).
     @Suppress("DEPRECATION")

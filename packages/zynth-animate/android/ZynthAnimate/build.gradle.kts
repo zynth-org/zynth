@@ -5,11 +5,10 @@ plugins {
 
 android {
     namespace = "dev.zynth.animate"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         minSdk = 24
-        targetSdk = 34
         externalNativeBuild {
             cmake {
                 cppFlags("-fexceptions", "-frtti", "-std=c++17")

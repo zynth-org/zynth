@@ -636,7 +636,7 @@ internal open class ZynthTextInputView @JvmOverloads constructor(
   private fun schedulePostRevealDispatch() {
     if (pendingPostRevealCallbacks.isEmpty() || postRevealDispatchScheduled) return
     postRevealDispatchScheduled = true
-    ViewCompat.postOnAnimation(this) {
+    postOnAnimation {
       postRevealDispatchScheduled = false
       while (pendingPostRevealCallbacks.isNotEmpty()) {
         pendingPostRevealCallbacks.removeFirst().invoke()

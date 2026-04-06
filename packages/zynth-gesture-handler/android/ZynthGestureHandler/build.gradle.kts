@@ -5,11 +5,10 @@ plugins {
 
 android {
   namespace = "com.zynth.gesturehandler"
-  compileSdk = 34
+  compileSdk = 35
 
   defaultConfig {
     minSdk = 24
-    targetSdk = 34
   }
 
   buildTypes {

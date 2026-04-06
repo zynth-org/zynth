@@ -4,12 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "dev.zynth.ui"
-    compileSdk = 34
+    namespace = "com.zynth.ui"
+    compileSdk = 35
 
     defaultConfig {
         minSdk = 24
-        targetSdk = 34
     }
 
     buildTypes {

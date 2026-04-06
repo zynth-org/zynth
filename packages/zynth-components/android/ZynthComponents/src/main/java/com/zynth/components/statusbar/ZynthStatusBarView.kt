@@ -10,6 +10,7 @@ import android.view.Window
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 
+@Suppress("DEPRECATION")
 class ZynthStatusBarView(context: Context) : View(context) {
   private var barStyle: String? = null
   private var hidden: Boolean? = null

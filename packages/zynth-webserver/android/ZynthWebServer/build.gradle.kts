@@ -10,14 +10,13 @@ val zynthWebServerTlsEnabled =
 
 android {
     namespace = "dev.zynth.webserver"
-    compileSdk = 34
+    compileSdk = 35
     buildFeatures {
         buildConfig = true
     }
 
     defaultConfig {
         minSdk = 24
-        targetSdk = 34
         buildConfigField(
             "boolean",
             "ZYNTH_WEBSERVER_TLS_REQUESTED",

@@ -5,11 +5,10 @@ plugins {
 
 android {
   namespace = "dev.zynth.skia"
-  compileSdk = 34
+  compileSdk = 35
 
   defaultConfig {
     minSdk = 24
-    targetSdk = 34
     ndk {
       abiFilters += listOf("arm64-v8a", "x86", "x86_64")
     }

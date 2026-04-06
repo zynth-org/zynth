@@ -23,7 +23,7 @@ plugins {
 
 android {
   namespace = "com.zynth.kit"
-  compileSdk = 34
+  compileSdk = 35
 
   defaultConfig {
     minSdk = 24
@@ -100,7 +100,9 @@ tasks.matching { task ->
 }
 
 dependencies {
-  implementation("androidx.core:core-ktx:1.12.0")
+  implementation("androidx.core:core-ktx:1.15.0")
+  implementation("androidx.activity:activity-ktx:1.9.3")
+  implementation("androidx.appcompat:appcompat:1.7.0")
   implementation("com.facebook.hermes:hermes-android:$hermesVersion")
   implementation("com.facebook.soloader:soloader:0.10.5")
   compileOnly("com.facebook.react:react-android:$reactNativeVersion")

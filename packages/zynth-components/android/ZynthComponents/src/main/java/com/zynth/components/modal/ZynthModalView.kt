@@ -174,6 +174,7 @@ class ZynthModalView(context: Context) : FrameLayout(context) {
     manager.dispatchEvent(nodeId, name, payload)
   }
 
+  @Suppress("DEPRECATION")
   private inner class ZynthModalDialog(
     context: Context,
     private val hostView: ZynthModalView,

@@ -3,7 +3,7 @@ apply plugin: 'kotlin-android'
 
 android {
     namespace "dev.zynth.automation"
-    compileSdkVersion 34
+    compileSdkVersion 35
 
     defaultConfig {
         minSdkVersion 24

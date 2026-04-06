@@ -8,7 +8,7 @@ import java.io.FileInputStream
 
 android {
   namespace = "{{BUNDLE_ID}}"
-  compileSdk = 34
+  compileSdk = 35
   buildFeatures {
     buildConfig = true
   }
@@ -31,7 +31,7 @@ android {
   defaultConfig {
     applicationId = "{{BUNDLE_ID}}"
     minSdk = 24
-    targetSdk = 34
+    targetSdk = 35
     versionCode = {{VERSION_CODE}}
     versionName = "{{VERSION_NAME}}"
     buildConfigField("String", "ZYNTH_DEV_SERVER_URL", {{ZYNTH_DEV_SERVER_URL}})
@@ -93,9 +93,10 @@ android {
 
 dependencies {
   implementation(project(":ZynthKit"))
-  implementation("androidx.core:core-ktx:1.12.0")
+  implementation("androidx.core:core-ktx:1.15.0")
+  implementation("androidx.activity:activity-ktx:1.9.3")
   implementation("androidx.core:core-splashscreen:1.0.1")
-  implementation("androidx.appcompat:appcompat:1.6.1")
-  implementation("com.google.android.material:material:1.11.0")
+  implementation("androidx.appcompat:appcompat:1.7.0")
+  implementation("com.google.android.material:material:1.12.0")
 {{ZYNTH_COMPONENT_MODULE_DEPENDENCIES}}
 }

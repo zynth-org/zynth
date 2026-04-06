@@ -5,11 +5,10 @@ plugins {
 
 android {
   namespace = "com.zynth.webview"
-  compileSdk = 34
+  compileSdk = 35
 
   defaultConfig {
     minSdk = 24
-    targetSdk = 34
   }
 
   buildTypes {
