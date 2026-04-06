@@ -108,6 +108,7 @@ internal fun ZynthUIManager.handleFrame() {
       )
     )
   }
+  budgetMetrics.recordPass(lastFrameMs, overBudget)
   frameProfiler?.invoke(lastFrameMs, lastLayoutMs, overBudget, nodeCount)
   var layoutEventNs = 0L
   if (layoutComplete) {

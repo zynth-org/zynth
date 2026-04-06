@@ -1,6 +1,15 @@
 import { callNative } from "./bridge";
 
-export type CoreSystemFeature = "startupTime";
+export type CoreSystemFeature = "startupTime" | "budgetMetrics";
+
+export type BudgetMetrics = {
+  totalPasses: number;
+  lastPassMs: number;
+  shortestPassMs: number;
+  longestPassMs: number;
+  budgetOverruns: number;
+  enabled: boolean;
+};
 
 export type StartupTimeMetrics = {
   enabled: boolean;
@@ -52,7 +61,7 @@ export type CoreSystemMetricsSnapshot = {
 };
 
 function normalizeFeatureName(feature: string): CoreSystemFeature | null {
-  if (feature === "startupTime") {
+  if (feature === "startupTime" || feature === "budgetMetrics") {
     return feature;
   }
   return null;
@@ -95,10 +104,18 @@ export async function getStartupTimeMetrics(): Promise<StartupTimeMetrics | null
 }
 
 /**
+ * Returns budget metrics for the UI manager.
+ */
+export async function getBudgetMetrics(): Promise<BudgetMetrics | null> {
+  return callNative<BudgetMetrics | null>("CoreSystem", "getBudgetMetrics", {});
+}
+
+/**
  * Convenience API for future runtime-production features.
  */
 export const CoreSystem = {
   enableFeatures: enableCoreSystemFeatures,
   getMetrics: getCoreSystemMetrics,
   getStartupMetrics: getStartupTimeMetrics,
+  getBudgetMetrics: getBudgetMetrics,
 };

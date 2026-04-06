@@ -286,6 +286,7 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   private var batchNeedsLayout = false
   private var atomicCommitDepth = 0
   internal var atomicCommitPending = false
+  internal val budgetMetrics = com.zynth.kit.runtime.ZynthBudgetMetrics()
   var assetProvider: AssetProvider? = null
 
   fun scheduleTimer(runtimePtr: Long, timerId: Int, delayMs: Int, repeat: Boolean) {

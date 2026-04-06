@@ -13,6 +13,7 @@ internal class CoreSystemModule(private val runtime: ZynthRuntime) : ZynthModule
     "enableFeatures",
     "getMetrics",
     "getStartupMetrics",
+    "getBudgetMetrics",
   )
 
   override fun call(method: String, args: ZynthArgs): JSONObject {
@@ -27,6 +28,7 @@ internal class CoreSystemModule(private val runtime: ZynthRuntime) : ZynthModule
         }
         JSONObject().put("result", result)
       }
+      "getBudgetMetrics" -> JSONObject().put("result", runtime.getUIManager().budgetMetrics.makeSnapshot())
       else -> JSONObject().put("error", "unknown_method").put("method", method)
     }
   }
@@ -34,6 +36,9 @@ internal class CoreSystemModule(private val runtime: ZynthRuntime) : ZynthModule
   private fun handleEnableFeatures(args: ZynthArgs): JSONObject {
     val features = parseFeatures(args.getAny("features"))
     runtime.startupMetrics.enableFeatures(features)
+    if (features.contains("budgetMetrics")) {
+      runtime.getUIManager().budgetMetrics.enable(true)
+    }
     return JSONObject().put("result", true)
   }
 

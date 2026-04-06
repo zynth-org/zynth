@@ -36,6 +36,9 @@ class ZynthRuntime(val root: ZynthRootView) {
     if (isStartupMetricsBootstrapEnabled()) {
       startupMetrics.enableFeatures(listOf("startupTime"))
     }
+    if (isBudgetMetricsBootstrapEnabled()) {
+      uiManager.budgetMetrics.enable(true)
+    }
     startupMetrics.markRuntimeConstructStart()
     runtimePtr = JSBridge.createHermesRuntime()
     startupMetrics.markRuntimeConstructEnd()
@@ -82,6 +85,26 @@ class ZynthRuntime(val root: ZynthRootView) {
     val entries = rawCoreFeatures.split(',')
     for (entry in entries) {
       if (entry.trim() == "startupTime") {
+        return true
+      }
+    }
+    return false
+  }
+
+  private fun isBudgetMetricsBootstrapEnabled(): Boolean {
+    val rawBudgetFlag = System.getProperty("ZYNTH_BUDGET_METRICS")?.trim()
+    if (rawBudgetFlag != null && parseBooleanLike(rawBudgetFlag)) {
+      return true
+    }
+
+    val rawCoreFeatures = System.getProperty("ZYNTH_CORE_FEATURES")?.trim()
+    if (rawCoreFeatures.isNullOrEmpty()) {
+      return false
+    }
+
+    val entries = rawCoreFeatures.split(',')
+    for (entry in entries) {
+      if (entry.trim() == "budgetMetrics") {
         return true
       }
     }
