@@ -9,6 +9,7 @@ const readline = require("readline");
 const BUILD_SHIMMER_START = Date.now();
 const { createDevtoolsHub } = require("./devtools/hub");
 const { IOS_BUILD_NOISE_PATTERNS } = require("./ios-build-filters");
+const { ANDROID_BUILD_NOISE_PATTERNS } = require("./android-build-filters");
 
 let devtoolsPublish = null;
 let tsRuntimeRegistered = false;
@@ -325,7 +326,14 @@ function runCommandFilteredAndroid(command, args, options = {}) {
   }
 
   let lastDiagnosticAt = 0;
+  const noisePatterns = ANDROID_BUILD_NOISE_PATTERNS;
+
+  function shouldSkip(line) {
+    return noisePatterns.some((pattern) => pattern.test(line));
+  }
+
   function isDiagnostic(line) {
+    if (shouldSkip(line)) return false;
     return (
       /\bFAILURE\b/i.test(line) ||
       /\bBUILD FAILED\b/i.test(line) ||
@@ -335,7 +343,7 @@ function runCommandFilteredAndroid(command, args, options = {}) {
       /^\s*e:/i.test(line) ||
       line.includes("* What went wrong:") ||
       line.includes("* Try:") ||
-      (line.startsWith("> ") && !line.startsWith("> Task")) ||
+      (line.startsWith("> ") && !line.startsWith("> Task") && !line.startsWith("> @zynth/") && !line.startsWith("> node ")) ||
       /\berror:/i.test(line) ||
       /\bCaused by:/i.test(line) ||
       /\bCould not find\b/i.test(line) ||
@@ -366,6 +374,7 @@ function runCommandFilteredAndroid(command, args, options = {}) {
         // Show context lines for 2 seconds after a diagnostic
         // but avoid showing too much noise (like task names or downloads)
         const isNoise = 
+          shouldSkip(line) ||
           line.startsWith("> Task") || 
           line.startsWith("Searching for") ||
           line.startsWith("Download") ||

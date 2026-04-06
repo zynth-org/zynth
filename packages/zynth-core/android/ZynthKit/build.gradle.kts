@@ -38,8 +38,7 @@ android {
         arguments(
           "-DANDROID_STL=c++_shared",
           "-DZYNTH_AXON_ENABLED=${if (axonEnabled) "ON" else "OFF"}",
-          "-DZYNTH_LAYOUT_ENGINE=$layoutEngineName",
-          "-DYOGA_BINARIES_DIR=${layout.buildDirectory.dir("yoga-ready").get().asFile.absolutePath}"
+          "-DZYNTH_LAYOUT_ENGINE=$layoutEngineName"
         )
       }
     }
@@ -81,70 +80,15 @@ android {
 
   sourceSets {
     getByName("main") {
-      jniLibs.srcDirs(layout.buildDirectory.dir("yoga-ready/libs"))
+      jniLibs.srcDirs("../../native/vendor/yoga/android")
     }
   }
 }
 
-val fetchYogaBinaries by tasks.registering {
-  val outputDir = layout.buildDirectory.dir("yoga-downloads")
-  outputs.dir(outputDir)
-  doLast {
-    val downloadDir = outputDir.get().asFile
-    if (!downloadDir.exists()) downloadDir.mkdirs()
-
-    val abiMap = mapOf(
-      "arm64-v8a" to "arm-64",
-      "armeabi-v7a" to "arm-v7",
-      "x86_64" to "arm-x64",
-      "x86" to "arm-x86"
-    )
-
-    // Download headers
-    val headerFile = file("${downloadDir.absolutePath}/headers.tar.gz")
-    if (!headerFile.exists()) {
-      println("◆ Downloading Yoga headers v$yogaVersion...")
-      URI("$yogaBaseUrl/yoga-headers-v$yogaVersion.tar.gz").toURL().openStream().use { input ->
-        headerFile.outputStream().use { output -> input.copyTo(output) }
-      }
-    }
-
-    // Download binaries for each ABI
-    abiMap.forEach { (abi, assetSuffix) ->
-      val dest = file("${downloadDir.absolutePath}/$abi.tar.gz")
-      if (!dest.exists()) {
-        println("◆ Downloading Yoga binary for $abi...")
-        URI("$yogaBaseUrl/yoga-android-$assetSuffix-v$yogaVersion.tar.gz").toURL().openStream().use { input ->
-          dest.outputStream().use { output -> input.copyTo(output) }
-        }
-      }
-    }
-  }
-}
-
-val extractYogaBinaries by tasks.registering {
-  dependsOn(fetchYogaBinaries)
-  val downloadDir = layout.buildDirectory.dir("yoga-downloads").get().asFile
-  val readyDir = layout.buildDirectory.dir("yoga-ready").get().asFile
-  outputs.dir(readyDir)
-  
-  doLast {
-    val abiList = listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
-    
-    // Extract headers
-    copy {
-      from(tarTree(resources.gzip(file("${downloadDir.absolutePath}/headers.tar.gz"))))
-      into(file("${readyDir.absolutePath}/headers/yoga"))
-    }
-
-    // Extract each ABI
-    abiList.forEach { abi ->
-      copy {
-        from(tarTree(resources.gzip(file("${downloadDir.absolutePath}/$abi.tar.gz"))))
-        into(file("${readyDir.absolutePath}/libs/$abi"))
-      }
-    }
-  }
+val syncYogaBinaries by tasks.registering(Exec::class) {
+  workingDir = projectDir.parentFile.parentFile // packages/zynth-core
+  executable = "npm"
+  args("run", "sync:yoga")
 }
 
 tasks.matching { task ->
@@ -152,7 +96,7 @@ tasks.matching { task ->
   task.name.startsWith("buildCMake") ||
   (task.name.startsWith("merge") && task.name.endsWith("JniLibFolders"))
 }.configureEach {
-  dependsOn(extractYogaBinaries)
+  dependsOn(syncYogaBinaries)
 }
 
 dependencies {

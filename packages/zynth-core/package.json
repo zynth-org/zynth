@@ -16,6 +16,16 @@
     },
     "./package.json": "./package.json"
   },
+  "files": [
+    "dist",
+    "ios",
+    "android",
+    "native",
+    "scripts",
+    "yoga.manifest.json",
+    "ZynthKit.podspec",
+    "README.md"
+  ],
   "sideEffects": [
     "./src/polyfills/URLSearchParams.ts",
     "./src/polyfills/URL.ts",
@@ -40,6 +50,9 @@
   "scripts": {
     "build": "yarn build:js && yarn build:types",
     "build:js": "rm -rf dist/esm && tsc --project tsconfig.esm.json",
-    "build:types": "tsc --project tsconfig.types.json"
+    "build:types": "tsc --project tsconfig.types.json",
+    "sync:yoga": "node scripts/sync-yoga-binaries.mjs sync",
+    "update:yoga": "node scripts/sync-yoga-binaries.mjs update",
+    "postinstall": "node scripts/sync-yoga-binaries.mjs sync"
   }
 }

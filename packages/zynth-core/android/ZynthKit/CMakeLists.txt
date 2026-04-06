@@ -52,19 +52,23 @@ set(ZYNTHKIT_SOURCES
 if(ZYNTH_LAYOUT_ENGINE STREQUAL "YOGA")
   list(APPEND ZYNTHKIT_SOURCES src/main/cpp/ZynthYogaLayoutRuntime.cpp)
   
-  if(DEFINED YOGA_BINARIES_DIR)
+  if(NOT DEFINED YOGA_BINARIES_DIR)
+     set(YOGA_BINARIES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../native/vendor/yoga")
+  endif()
+
+  if(EXISTS "${YOGA_BINARIES_DIR}/headers/yoga/Yoga.h")
     set(YOGA_INCLUDE_DIR "${YOGA_BINARIES_DIR}/headers")
-    set(YOGA_LIB_PATH "${YOGA_BINARIES_DIR}/libs/${ANDROID_ABI}/libyogacore.so")
+    set(YOGA_LIB_PATH "${YOGA_BINARIES_DIR}/android/${ANDROID_ABI}/libyogacore.so")
     
     if(NOT EXISTS "${YOGA_LIB_PATH}")
-      message(FATAL_ERROR "Yoga binary not found for ${ANDROID_ABI} at ${YOGA_LIB_PATH}")
+      message(FATAL_ERROR "Yoga binary not found for ${ANDROID_ABI} at ${YOGA_LIB_PATH}. Run 'npm run sync:yoga' first.")
     endif()
 
     add_library(yogacore SHARED IMPORTED)
     set_target_properties(yogacore PROPERTIES IMPORTED_LOCATION "${YOGA_LIB_PATH}")
     set(YOGA_LINK_TARGET yogacore)
   else()
-    message(FATAL_ERROR "YOGA_BINARIES_DIR not defined. Yoga pre-compiled binaries required.")
+    message(FATAL_ERROR "YOGA_BINARIES_DIR not found at ${YOGA_BINARIES_DIR}. Run 'npm run sync:yoga' first.")
   endif()
 endif()
 

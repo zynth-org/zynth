@@ -1,0 +1,51 @@
+{
+  "version": "yoga-v3.2.1",
+  "artifacts": [
+    {
+      "id": "yoga-headers",
+      "platform": "shared",
+      "arch": "any",
+      "variant": "headers",
+      "url": "https://github.com/x64Bits/skia-assets/releases/download/yoga-v3.2.1/yoga-headers-v3.2.1.tar.gz",
+      "sha256": "6f21e6acd6055ee01cee45f22a91b399902aad5e8c94a77467e4b07746003877",
+      "destination": "native/vendor/yoga/headers"
+    },
+    {
+      "id": "android-arm64-v8a",
+      "platform": "android",
+      "arch": "arm64-v8a",
+      "variant": "arm64-v8a",
+      "url": "https://github.com/x64Bits/skia-assets/releases/download/yoga-v3.2.1/yoga-android-arm-64-v3.2.1.tar.gz",
+      "sha256": "858ebba222b29816ca8b73cab74196787d6280a61da3ad7787fae0943e2985c9",
+      "destination": "native/vendor/yoga/android/arm64-v8a"
+    },
+    {
+      "id": "android-armeabi-v7a",
+      "platform": "android",
+      "arch": "armeabi-v7a",
+      "variant": "armeabi-v7a",
+      "url": "https://github.com/x64Bits/skia-assets/releases/download/yoga-v3.2.1/yoga-android-arm-v7-v3.2.1.tar.gz",
+      "sha256": "2ff73c92590756ed9f103abfa5e628444e549b1a1ba42afc768d73c96122b268",
+      "destination": "native/vendor/yoga/android/armeabi-v7a"
+    },
+    {
+      "id": "android-x86_64",
+      "platform": "android",
+      "arch": "x86_64",
+      "variant": "x86_64",
+      "url": "https://github.com/x64Bits/skia-assets/releases/download/yoga-v3.2.1/yoga-android-arm-x64-v3.2.1.tar.gz",
+      "sha256": "78c418494b9a846e70c0fc4253282421401f0080bfae8ddb3f9085f5e8d35187",
+      "destination": "native/vendor/yoga/android/x86_64"
+    },
+    {
+      "id": "android-x86",
+      "platform": "android",
+      "arch": "x86",
+      "variant": "x86",
+      "url": "https://github.com/x64Bits/skia-assets/releases/download/yoga-v3.2.1/yoga-android-arm-x86-v3.2.1.tar.gz",
+      "sha256": "84b71af0457535a4b84a8de3e3a5e662b948af7737a673179e9d53a4ecab5fc0",
+      "destination": "native/vendor/yoga/android/x86",
+      "optional": true
+    }
+  ]
+}

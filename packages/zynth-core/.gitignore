@@ -1,0 +1,4 @@
+# Yoga Vendored Binaries
+native/vendor/yoga/
+native/vendor/.cache_yoga/
+native/vendor/.tmp_yoga/
