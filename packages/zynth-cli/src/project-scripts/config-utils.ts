@@ -9,6 +9,9 @@ export interface AppConfig {
   workspaceName: string;
   displayName: string;
   version: string;
+  versionCode: number;
+  versionName: string;
+  buildNumber: string;
   infoPlist: Record<string, any>;
   androidConfig: any;
   devServerUrl?: string;
@@ -114,6 +117,7 @@ export function getAppConfig(appDir: string): AppConfig {
 
   // Clean app name for Xcode (no spaces, special chars)
   const cleanAppName = (appConfig.name || appName).replace(/[^a-zA-Z0-9]/g, "");
+  const version = appConfig.version || pkg.version || "1.0.0";
 
   return {
     appName: cleanAppName,
@@ -126,7 +130,10 @@ export function getAppConfig(appDir: string): AppConfig {
       `com.zynth.${appName.replace(/-/g, "")}`,
     workspaceName: pkg.name || `@demo/${appName}`,
     displayName: appConfig.name || pkg.displayName || appName,
-    version: appConfig.version || pkg.version || "1.0.0",
+    version,
+    versionCode: appConfig.android?.versionCode || 1,
+    versionName: appConfig.android?.versionName || version,
+    buildNumber: String(appConfig.ios?.buildNumber || "1"),
     infoPlist: buildInfoPlistDefaults(
       (appConfig.ios?.infoPlist || {}) as Record<string, unknown>
     ),
@@ -136,3 +143,4 @@ export function getAppConfig(appDir: string): AppConfig {
       appConfig.android?.startupMetrics?.enabled === true,
   };
 }
+

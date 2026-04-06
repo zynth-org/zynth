@@ -312,6 +312,8 @@ function replacePlaceholders(content: string, config: AppConfig, extras: any = {
       /\{\{\s*APP_NAME_CAP\s*\}\}/g,
       config.appNameCapitalized || config.appName
     )
+    .replace(/\{\{\s*VERSION_CODE\s*\}\}/g, String(config.versionCode))
+    .replace(/\{\{\s*VERSION_NAME\s*\}\}/g, config.versionName)
     .replace(
       /\{\{\s*ZYNTH_COMPONENT_MODULE_INCLUDES\s*\}\}/g,
       extras.componentIncludes ?? ""

@@ -32,8 +32,8 @@ android {
     applicationId = "{{BUNDLE_ID}}"
     minSdk = 24
     targetSdk = 34
-    versionCode = 1
-    versionName = "1.0"
+    versionCode = {{VERSION_CODE}}
+    versionName = "{{VERSION_NAME}}"
     buildConfigField("String", "ZYNTH_DEV_SERVER_URL", {{ZYNTH_DEV_SERVER_URL}})
     buildConfigField("String", "ZYNTH_DEV_SERVER_TOKEN", {{ZYNTH_DEV_SERVER_TOKEN}})
     buildConfigField("boolean", "ZYNTH_STARTUP_METRICS_ENABLED", {{ZYNTH_STARTUP_METRICS_ENABLED}})

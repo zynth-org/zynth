@@ -305,7 +305,9 @@ function replacePlaceholders(content: string, config: AppConfig, extras: any = {
     .replace(/\{\{BUNDLE_ID\}\}/g, config.bundleId)
     .replace(/\{\{WORKSPACE_NAME\}\}/g, config.workspaceName)
     .replace(/\{\{APP_DIR\}\}/g, config.appDir)
-    .replace(/\{\{DISPLAY_NAME\}\}/g, config.displayName);
+    .replace(/\{\{DISPLAY_NAME\}\}/g, config.displayName)
+    .replace(/\{\{VERSION\}\}/g, config.version)
+    .replace(/\{\{BUILD_NUMBER\}\}/g, config.buildNumber);
 
   output = output.replace(
     /\{\{ZYNTH_IOS_RUNTIME_PACKAGE\}\}/g,
