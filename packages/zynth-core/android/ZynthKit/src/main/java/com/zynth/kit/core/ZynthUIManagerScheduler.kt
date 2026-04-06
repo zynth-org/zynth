@@ -2,6 +2,7 @@ package com.zynth.kit.core
 
 import android.util.Log
 import android.os.SystemClock
+import android.widget.TextView
 import com.zynth.kit.BuildConfig
 import com.zynth.kit.runtime.JSBridge
 
@@ -265,7 +266,7 @@ internal fun ZynthUIManager.performLayoutInternal(
       height = rootView.height.takeIf { it > 0 } ?: rootView.measuredHeight
     }
     syncSurfaceRootSize(surfaceId, root, width, height)
-    val complete = performAxonLayoutInternal(surfaceId, width, height)
+    val complete = performLayoutPassInternal(surfaceId, width, height)
     if (!complete) {
       incomplete.add(surfaceId)
     }
@@ -273,7 +274,7 @@ internal fun ZynthUIManager.performLayoutInternal(
   return incomplete
 }
 
-private fun ZynthUIManager.performAxonLayoutInternal(surfaceId: Int, width: Int, height: Int): Boolean {
+private fun ZynthUIManager.performLayoutPassInternal(surfaceId: Int, width: Int, height: Int): Boolean {
   if (width <= 0 || height <= 0 || runtimePtr == 0L) return false
   val passStartNs = SystemClock.elapsedRealtimeNanos()
   val computeStartNs = passStartNs
@@ -283,7 +284,9 @@ private fun ZynthUIManager.performAxonLayoutInternal(surfaceId: Int, width: Int,
   val computeNs = SystemClock.elapsedRealtimeNanos() - computeStartNs
   logAxonDeepMetrics(surfaceId)
 
+  val traversalStartNs = SystemClock.elapsedRealtimeNanos()
   val ids = collectSurfaceNodeIds(surfaceId)
+  SystemClock.elapsedRealtimeNanos() - traversalStartNs
   if (ids.isEmpty()) {
     recordAxonMetricsPass(
       surfaceId,
@@ -306,6 +309,7 @@ private fun ZynthUIManager.performAxonLayoutInternal(surfaceId: Int, width: Int,
   val collectNs = SystemClock.elapsedRealtimeNanos() - collectStartNs
 
   val applyStartNs = SystemClock.elapsedRealtimeNanos()
+  var layoutCount = 0
   for (index in nodeIds.indices) {
     val id = nodeIds[index]
     val view = nodes[id] ?: continue
@@ -323,15 +327,21 @@ private fun ZynthUIManager.performAxonLayoutInternal(surfaceId: Int, width: Int,
     }
     val widthSpec = android.view.View.MeasureSpec.makeMeasureSpec(widthPx, android.view.View.MeasureSpec.EXACTLY)
     val heightSpec = android.view.View.MeasureSpec.makeMeasureSpec(heightPx, android.view.View.MeasureSpec.EXACTLY)
-    if (
-      view.measuredWidth != widthPx ||
-      view.measuredHeight != heightPx ||
-      view.isLayoutRequested
-    ) {
+    val widthChanged = view.measuredWidth != widthPx
+    val heightChanged = view.measuredHeight != heightPx
+    val layoutRequested = view.isLayoutRequested
+    val shouldMeasure = when {
+      widthChanged || heightChanged -> true
+      layoutRequested && view is ZynthLayoutView -> false
+      else -> layoutRequested
+    }
+    if (shouldMeasure) {
       view.measure(widthSpec, heightSpec)
     }
-    if (changed) {
+    val shouldRelayout = changed || (layoutRequested && view is TextView)
+    if (shouldRelayout) {
       view.layout(left, top, right, bottom)
+      layoutCount += 1
     }
     onFrameApplied(id, left, top, right, bottom, changed)
   }

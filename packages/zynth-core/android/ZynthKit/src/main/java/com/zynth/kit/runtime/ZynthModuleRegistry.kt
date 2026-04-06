@@ -57,8 +57,6 @@ class ZynthModuleRegistry {
     private fun validateNonce(args: ZynthArgs) {
         synchronized(this) {
             val session = bridgeSessionId ?: throw SecurityException("E_INVALID_SESSION: Bridge session not initialized")
-            Log.i(TAG, "Validating nonce for session: $session")
-            
             val sessionId = try { args.getString("bridgeSessionId") } catch (e: Exception) { 
                 throw SecurityException("E_INVALID_SESSION: Missing bridgeSessionId") 
             }
@@ -81,13 +79,10 @@ class ZynthModuleRegistry {
     }
 
     fun register(module: ZynthModule) {
-        Log.i(TAG, "Registering module: ${module.name}")
         synchronized(this) {
             modules[module.name] = module
         }
-        Log.i(TAG, "Module registered. Total modules: ${modules.size}, keys: ${modules.keys}")
         module.initialize()
-        Log.i(TAG, "Module initialized: ${module.name}")
     }
 
     fun destroy() {
@@ -113,15 +108,12 @@ class ZynthModuleRegistry {
     }
 
     fun call(name: String, method: String, args: Array<Any?>): JSONObject {
-        Log.i(TAG, "call(name=$name, method=$method)")
         val module = synchronized(this) { modules[name] }
         if (module == null) {
             Log.w(TAG, "Module not found: $name")
             val sanitized = ZynthErrorMapper.sanitizeModuleError("module_not_found")
             return errorJson(sanitized)
         }
-
-        Log.i(TAG, "Module found, calling: $name.$method")
         if (!module.exportedMethods.contains(method)) {
             Log.w(TAG, "Method not exported: $name.$method")
             val sanitized = ZynthErrorMapper.sanitizeModuleError("method_not_exported")
@@ -141,7 +133,6 @@ class ZynthModuleRegistry {
     }
 
     fun callSync(name: String, method: String, args: Array<Any?>): Any? {
-        Log.i(TAG, "callSync(name=$name, method=$method)")
         val module = synchronized(this) { modules[name] }
         if (module == null) {
             val sanitized = ZynthErrorMapper.sanitizeModuleError("module_not_found")
