@@ -113,11 +113,6 @@ module.exports = {
       type: "boolean",
       default: false,
     });
-    yargs.option("axon-enabled", {
-      describe: "Enable the Axon Android layout engine during bootstrap/native build",
-      type: "boolean",
-      default: false,
-    });
   },
   handler: async (argv) => {
     const appDir = argv.app
@@ -171,7 +166,6 @@ module.exports = {
         ensureBootstrap(root, appDir, "android", {
           dev: false,
           quiet: false,
-          axonEnabled: argv.axonEnabled,
         });
       }
       removeAndroidDevConfigAsset(appDir);

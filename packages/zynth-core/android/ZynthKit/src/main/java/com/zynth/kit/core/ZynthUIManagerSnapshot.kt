@@ -32,7 +32,7 @@ internal fun ZynthUIManager.buildScreenSnapshot(options: JSONObject?): JSONObjec
 
 private fun ZynthUIManager.buildScreenSnapshotOnMain(options: JSONObject?): JSONObject {
   val includeGlobalFrame = options?.optBoolean("includeGlobalFrame", true) ?: true
-  val includeLayoutStyles = options?.optBoolean("includeLayoutStyles", options?.optBoolean("includeYogaStyles", true) ?: true) ?: true
+  val includeYogaStyles = options?.optBoolean("includeYogaStyles", true) ?: true
   val includeResolvedStyles = options?.optBoolean("includeResolvedStyles", false) ?: false
   val includeComponentState = options?.optBoolean("includeComponentState", false) ?: false
   val includeText = options?.optBoolean("includeText", false) ?: false
@@ -111,8 +111,8 @@ private fun ZynthUIManager.buildScreenSnapshotOnMain(options: JSONObject?): JSON
       if (includeGlobalFrame) {
         nodeJson.put("frameGlobal", globalFrameForView(view))
       }
-      if (includeLayoutStyles) {
-        nodeJson.put("layoutStyles", jsonFromMap(layoutStyleCache[nodeId]))
+      if (includeYogaStyles) {
+        nodeJson.put("yogaStyles", jsonFromMap(yogaStyleCache[nodeId]))
       }
       if (includeResolvedStyles) {
         nodeJson.put("resolvedStyles", resolvedStylesForNode(nodeId, view))
@@ -152,30 +152,11 @@ private fun ZynthUIManager.buildScreenSnapshotOnMain(options: JSONObject?): JSON
     )
   }
 
-  val environment = refreshAxonEnvironment()
   return JSONObject()
     .put("version", 1)
     .put("platform", "android")
     .put("timestampMs", System.currentTimeMillis())
     .put("density", density.toDouble())
-    .put(
-      "axonEnvironment",
-      JSONObject()
-        .put("density", environment.density.toDouble())
-        .put("fontScale", environment.fontScale.toDouble())
-        .put("locale", environment.localeTag)
-        .put("rtl", environment.isRtl)
-        .put("viewportWidth", environment.viewportWidthPx)
-        .put("viewportHeight", environment.viewportHeightPx)
-        .put(
-          "safeInsets",
-          JSONObject()
-            .put("top", environment.safeInsetsPx.top)
-            .put("right", environment.safeInsetsPx.right)
-            .put("bottom", environment.safeInsetsPx.bottom)
-            .put("left", environment.safeInsetsPx.left)
-        )
-    )
     .put("surfaces", surfaces)
     .put("warnings", warnings)
 }
@@ -269,7 +250,7 @@ private fun Any?.toIntOrNull(): Int? {
 }
 
 private fun ZynthUIManager.resolvedStylesForNode(nodeId: Int, view: View): JSONObject {
-  val configuredElevation = layoutStyleCache[nodeId]?.get("elevation").asDoubleOrNull()
+  val configuredElevation = yogaStyleCache[nodeId]?.get("elevation").asDoubleOrNull()
   val styleState = styleStates[nodeId]
   val output = JSONObject()
     .put("opacity", view.alpha.toDouble())

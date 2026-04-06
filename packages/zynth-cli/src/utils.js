@@ -1852,7 +1852,6 @@ async function devAndroid(root, appDir, options = {}) {
     ensureBootstrap(root, appDir, "android", {
       dev: true,
       quiet: quietOutput,
-      axonEnabled: options.axonEnabled,
     });
   } else if (!fs.existsSync(androidDir)) {
     // If android dir is missing, we must bootstrap regardless of flag
@@ -1860,7 +1859,6 @@ async function devAndroid(root, appDir, options = {}) {
     ensureBootstrap(root, appDir, "android", {
       dev: true,
       quiet: quietOutput,
-      axonEnabled: options.axonEnabled,
     });
   }
 

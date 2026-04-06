@@ -29,6 +29,7 @@ import coil.request.Disposable
 import coil.request.ImageRequest
 import com.zynth.kit.core.ZynthRootView
 import com.zynth.kit.core.ZynthUIManager
+import com.zynth.kit.layout.LayoutEngine
 import com.zynth.kit.layout.MeasureInput
 import com.zynth.kit.layout.MeasureMode
 import com.zynth.kit.layout.Style
@@ -48,8 +49,8 @@ import org.json.JSONTokener
  */
 internal class ZynthImageComponent(
   private val root: ZynthRootView,
+  private val engine: LayoutEngine,
   private val eventDispatcher: (Int, String, JSONObject?) -> Unit,
-  private val markDirty: (Int) -> Unit,
   private val scheduleFlush: () -> Unit,
 ) {
   private companion object {
@@ -197,7 +198,7 @@ internal class ZynthImageComponent(
         imageView.clipToOutline = false
       }
     }
-    markDirty(node.id)
+    engine.markDirty(node.id)
     scheduleFlush()
   }
 
@@ -344,7 +345,7 @@ internal class ZynthImageComponent(
       setTint(imageView, state.tintColor, state.isSystemSource, state.systemName)
       state.intrinsicWidth = 0
       state.intrinsicHeight = 0
-      markDirty(node.id)
+      engine.markDirty(node.id)
       scheduleFlush()
     }
   }
@@ -428,7 +429,7 @@ internal class ZynthImageComponent(
       state.intrinsicWidth = widthPoints.roundToInt().coerceAtLeast(1)
       state.intrinsicHeight = heightPoints.roundToInt().coerceAtLeast(1)
       setTint(imageView, state.tintColor, state.isSystemSource, state.systemName)
-      markDirty(node.id)
+      engine.markDirty(node.id)
       scheduleFlush()
       dispatchImageLoadEvent(node, widthPoints, heightPoints)
     }

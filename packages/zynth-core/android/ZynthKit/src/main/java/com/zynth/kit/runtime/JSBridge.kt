@@ -56,37 +56,6 @@ internal object JSBridge {
     newInput: String,
     proposedText: String,
   ): String?
-  external fun axonComputeLayout(runtimePtr: Long, rootId: Int, width: Float, height: Float): Boolean
-  external fun axonGetLastComputeStats(runtimePtr: Long): LongArray?
-  external fun axonCollectFrames(runtimePtr: Long, nodeIds: IntArray, outFrames: FloatArray): Boolean
-  external fun axonSetStyleNumber(runtimePtr: Long, nodeId: Int, propId: Int, value: Float): Boolean
-  external fun axonSetStyleString(runtimePtr: Long, nodeId: Int, propId: Int, value: String): Boolean
-  external fun axonRegisterResolvedFont(
-    runtimePtr: Long,
-    family: String,
-    weight: Int,
-    italic: Boolean,
-    sizePx: Float,
-  ): Int
-  external fun axonPrewarmResolvedFont(
-    runtimePtr: Long,
-    family: String,
-    weight: Int,
-    italic: Boolean,
-    sizePx: Float,
-  ): Int
-  external fun axonSetTextMeasureMode(runtimePtr: Long, mode: Int): Boolean
-  external fun axonInvalidateFontCache(runtimePtr: Long, fontId: Int): Boolean
-  external fun axonSetTextMeasure(runtimePtr: Long, nodeId: Int, text: String, fontId: Int): Boolean
-  external fun axonSetMeasureHandler(runtimePtr: Long, nodeId: Int, enabled: Boolean): Boolean
-  external fun axonMeasureNode(
-    runtimePtr: Long,
-    nodeId: Int,
-    width: Float,
-    widthMode: Int,
-    height: Float,
-    heightMode: Int,
-  ): FloatArray?
 
   private val workletHandler = android.os.Handler(android.os.Looper.getMainLooper())
 

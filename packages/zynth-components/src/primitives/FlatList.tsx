@@ -11,7 +11,6 @@ import {
   For,
   getOwner,
   runWithOwner,
-  Show,
 } from "solid-js";
 import type { Accessor, Setter } from "solid-js";
 import { Platform, OS } from "@zynth/apis";
@@ -261,9 +260,6 @@ export function FlatList<T>(props: FlatListProps<T>) {
   });
   const isMultiColumn = createMemo(
     () => !props.horizontal && columnCount() > 1,
-  );
-  const topologyKey = createMemo(
-    () => `${props.horizontal ? 1 : 0}:${columnCount()}`,
   );
   const getVirtualLength = () => {
     if (!isMultiColumn()) return props.data.length;
@@ -1649,13 +1645,13 @@ export function FlatList<T>(props: FlatListProps<T>) {
                   </View>
                 </View>
               );
-                }}
-              </Index>
-            </View>
-          ) : (
-            renderDecorator(props.ListEmptyComponent)
-          )}
-          {renderFooter()}
+            }}
+          </Index>
+        </View>
+      ) : (
+        renderDecorator(props.ListEmptyComponent)
+      )}
+      {renderFooter()}
         </ScrollView>
       )}
     </Show>

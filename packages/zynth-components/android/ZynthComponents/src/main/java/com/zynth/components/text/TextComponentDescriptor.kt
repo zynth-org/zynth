@@ -4,6 +4,7 @@ import android.graphics.Typeface
 import android.util.Log
 import android.os.SystemClock
 import android.util.TypedValue
+import android.view.View.MeasureSpec
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.TextView
@@ -11,7 +12,9 @@ import com.zynth.kit.components.ZynthComponentDescriptor
 import com.zynth.kit.components.ZynthComponentRegistrar
 import com.zynth.kit.core.ZynthUIManager
 import com.zynth.kit.runtime.FontRegistry
+import com.zynth.kit.layout.MeasureMode
 import com.zynth.kit.layout.Style
+import kotlin.math.roundToInt
 
 /**
  * Helper function to parse JSON string values
@@ -28,6 +31,28 @@ private const val DEBUG_TEXT = false
 
 private fun isIconFontFamily(family: String): Boolean {
   return family.contains("Icon")
+}
+
+private data class TextMeasureCache(
+  val key: Int,
+  val width: Float,
+  val height: Float,
+)
+
+private fun hashMeasureKey(
+  text: CharSequence,
+  textView: TextView,
+  widthSpec: Int,
+  heightSpec: Int,
+): Int {
+  var result = text.hashCode()
+  result = 31 * result + textView.textSize.toBits()
+  result = 31 * result + (textView.typeface?.hashCode() ?: 0)
+  result = 31 * result + textView.letterSpacing.toBits()
+  result = 31 * result + textView.maxLines
+  result = 31 * result + widthSpec
+  result = 31 * result + heightSpec
+  return result
 }
 
 private fun rebuildComposedText(manager: ZynthUIManager, rootId: Int, styleKey: String) {
@@ -51,7 +76,6 @@ private fun rebuildComposedText(manager: ZynthUIManager, rootId: Int, styleKey: 
   // Always apply composed text so span-only style changes (color/weight/lineHeight/etc.)
   // are reflected even when the raw string is unchanged.
   applyTextSynchronously(textView, composed.text)
-  manager.syncTextNodeMeasurement(root.id)
   if (previous != next) {
     manager.markNodeDirty(root.id)
   }
@@ -64,10 +88,7 @@ private fun rebuildRawText(manager: ZynthUIManager, rootId: Int, styleKey: Strin
   val immediateText = buildRawText(root, manager, styleKey)
   if (rootTextView.text.toString() != immediateText) {
     rootTextView.text = immediateText
-    manager.syncTextNodeMeasurement(root.id)
     manager.markNodeDirty(root.id)
-  } else {
-    manager.syncTextNodeMeasurement(root.id)
   }
 }
 
@@ -77,12 +98,71 @@ private fun rebuildRawText(manager: ZynthUIManager, rootId: Int, styleKey: Strin
 fun createTextComponentDescriptor(): ZynthComponentDescriptor {
   val textStyleKey = "textStyle"
   val textManagerKey = "textManager"
+  val textMeasureCacheKey = "textMeasureCache"
   return ZynthComponentDescriptor(
     type = "text",
     createView = { context, _ -> ZynthTextView(context) },
     onNodeCreated = { manager, node ->
       val textView = node.view as? TextView ?: return@ZynthComponentDescriptor
+      
+      // Set up measurement handler for text
+      val measureTag = "ZynthText/measure"
+      manager.getLayoutEngine().setMeasureHandler(node.id) { input ->
+        val measureStart = SystemClock.elapsedRealtimeNanos()
+        val widthValue = when {
+          input.width.isNaN() -> 0
+          input.width.isInfinite() -> Int.MAX_VALUE / 2
+          else -> input.width.roundToInt()
+        }
+        val heightValue = when {
+          input.height.isNaN() -> 0
+          input.height.isInfinite() -> Int.MAX_VALUE / 2
+          else -> input.height.roundToInt()
+        }
+        
+        val widthSpec = when (input.widthMode) {
+          MeasureMode.EXACTLY -> MeasureSpec.makeMeasureSpec(widthValue, MeasureSpec.EXACTLY)
+          MeasureMode.AT_MOST -> MeasureSpec.makeMeasureSpec(widthValue, MeasureSpec.AT_MOST)
+          MeasureMode.UNDEFINED -> MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
+        }
+        val heightSpec = when (input.heightMode) {
+          MeasureMode.EXACTLY -> MeasureSpec.makeMeasureSpec(heightValue, MeasureSpec.EXACTLY)
+          MeasureMode.AT_MOST -> MeasureSpec.makeMeasureSpec(heightValue, MeasureSpec.AT_MOST)
+          MeasureMode.UNDEFINED -> MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
+        }
+        
+        val currentText = textView.text ?: ""
+        val cacheKey = hashMeasureKey(currentText, textView, widthSpec, heightSpec)
+        val cached = node.attachments[textMeasureCacheKey] as? TextMeasureCache
+        if (cached != null && cached.key == cacheKey) {
+          return@setMeasureHandler cached.width to cached.height
+        }
 
+        if (currentText.isEmpty()) {
+          val measuredWidth = 0f
+          val measuredHeight = (textView.textSize * 1.2f).coerceAtLeast(1f)
+          node.attachments[textMeasureCacheKey] =
+            TextMeasureCache(cacheKey, measuredWidth, measuredHeight)
+          return@setMeasureHandler measuredWidth to measuredHeight
+        }
+
+        textView.measure(widthSpec, heightSpec)
+        val measuredWidth = textView.measuredWidth.coerceAtLeast(1).toFloat()
+        val measuredHeight = textView.measuredHeight
+          .coerceAtLeast((textView.textSize * 1.2f).roundToInt())
+          .toFloat()
+        node.attachments[textMeasureCacheKey] =
+          TextMeasureCache(cacheKey, measuredWidth, measuredHeight)
+        val durationMs = (SystemClock.elapsedRealtimeNanos() - measureStart) / 1_000_000.0
+        if (durationMs > 8) {
+          Log.w(
+            measureTag,
+            "Slow text measure: node=${node.id} text='${node.cachedText.take(24)}' duration=${"%.2f".format(durationMs)}ms",
+          )
+        }
+        measuredWidth to measuredHeight
+      }
+      
       // Set appropriate layout params
       node.view.layoutParams = FrameLayout.LayoutParams(
         ViewGroup.LayoutParams.WRAP_CONTENT,

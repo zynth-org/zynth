@@ -88,17 +88,10 @@ export {
   PerformanceOverlay,
   setPerformanceOverlayEnabled,
   getPerformanceOverlayStats,
-  enableAxonMetricsHarness,
-  disableAxonMetricsHarness,
-  setAxonTextMeasureMode,
 } from "./performanceOverlay";
 export type {
   CoreSystemFeature,
   CoreSystemMetricsSnapshot,
   StartupTimeMetrics,
 } from "./coreSystem";
-export type {
-  PerformanceOverlayStats,
-  AxonMetricsHarnessOptions,
-  AxonTextMeasureMode,
-} from "./performanceOverlay";
+export type { PerformanceOverlayStats } from "./performanceOverlay";

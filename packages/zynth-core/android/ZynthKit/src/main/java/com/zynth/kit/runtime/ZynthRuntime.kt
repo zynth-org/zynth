@@ -172,7 +172,6 @@ class ZynthRuntime(val root: ZynthRootView) {
     runOnJS {
       startupMetrics.markJsRuntimeSetupStart()
       JSBridge.installUIBindings(runtimePtr, uiManager)
-      uiManager.bootstrapAxonEnvironment()
       registry.setSessionId(bridgeSessionId)
       JSBridge.installModuleRegistry(runtimePtr, registry)
       installHmrShim()
@@ -309,23 +308,6 @@ class ZynthRuntime(val root: ZynthRootView) {
 
   fun getPerformanceOverlayStats(): Map<String, Any> {
     return ZynthNativePerformanceOverlay.getPerformanceOverlaySnapshot()
-  }
-
-  fun enableAxonMetricsHarness(
-    label: String?,
-    delayMs: Long,
-    batchKind: String?,
-    surfaceId: Int?,
-  ) {
-    uiManager.enableAxonMetricsHarness(label, delayMs, batchKind, surfaceId)
-  }
-
-  fun disableAxonMetricsHarness() {
-    uiManager.disableAxonMetricsHarness()
-  }
-
-  fun setAxonTextMeasureMode(mode: String): Boolean {
-    return uiManager.setAxonTextMeasureMode(mode)
   }
 
   internal fun evaluateScript(code: String, sourceUrl: String? = null) {

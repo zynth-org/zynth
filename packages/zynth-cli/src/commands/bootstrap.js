@@ -18,11 +18,6 @@ module.exports = {
       type: "boolean",
       default: false,
     });
-    yargs.option("axon-enabled", {
-      describe: "Enable the Axon Android layout engine during bootstrap/native build",
-      type: "boolean",
-      default: false,
-    });
   },
   handler: (argv) => {
     const appDir = argv.app
@@ -34,10 +29,7 @@ module.exports = {
     } catch (_error) {
       // Standalone app: use app root as command root
     }
-    const options = {
-      dev: !argv.production,
-      axonEnabled: argv.platform === "android" ? argv.axonEnabled : false,
-    };
+    const options = { dev: !argv.production };
     ensureBootstrap(root, appDir, argv.platform, options);
   },
 };

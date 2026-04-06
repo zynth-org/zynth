@@ -155,26 +155,16 @@ internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, va
   if (view is TextView) {
     if (isTextNode) {
       when (name) {
-        "lineHeight", "lineSpacing", "paragraphSpacing", "baselineShift", "letterSpacing" -> {
-          val textState = textStyleStates.getOrPut(id) { ZynthTextStyleState() }
-          when (name) {
-            "lineHeight" -> textState.lineHeight = dpToPx(floatVal)
-            "lineSpacing" -> textState.lineSpacing = dpToPx(floatVal)
-            "paragraphSpacing" -> textState.paragraphSpacing = dpToPx(floatVal)
-            "baselineShift" -> textState.baselineShift = dpToPx(floatVal)
-            "letterSpacing" -> textState.letterSpacing = dpToPx(floatVal)
-          }
-          syncAxonTextMeasurement(id, view)
-          markSurfaceDirtyForNode(id)
-          return true
-        }
-        "minimumFontScale" -> {
-          textStyleStates.getOrPut(id) { ZynthTextStyleState() }.minimumFontScale = floatVal
-          syncAxonTextMeasurement(id, view)
-          markSurfaceDirtyForNode(id)
-          return true
-        }
-        "textDecorationLine", "textTransform", "hyphenation", "fontSize" -> {
+        "lineHeight",
+        "lineSpacing",
+        "paragraphSpacing",
+        "baselineShift",
+        "letterSpacing",
+        "minimumFontScale",
+        "textDecorationLine",
+        "textTransform",
+        "hyphenation",
+        "fontSize" -> {
           return true
         }
       }
@@ -184,49 +174,47 @@ internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, va
       "lineHeight" -> {
         textState.lineHeight = dpToPx(floatVal)
         textState.applyTo(view)
-        syncAxonTextMeasurement(id, view)
+        yogaForNode(id).markDirty(id)
         markSurfaceDirtyForNode(id)
         return true
       }
       "lineSpacing" -> {
         textState.lineSpacing = dpToPx(floatVal)
         textState.applyTo(view)
-        syncAxonTextMeasurement(id, view)
+        yogaForNode(id).markDirty(id)
         markSurfaceDirtyForNode(id)
         return true
       }
       "paragraphSpacing" -> {
         textState.paragraphSpacing = dpToPx(floatVal)
         textState.applyTo(view)
-        syncAxonTextMeasurement(id, view)
+        yogaForNode(id).markDirty(id)
         markSurfaceDirtyForNode(id)
         return true
       }
       "baselineShift" -> {
         textState.baselineShift = dpToPx(floatVal)
         textState.applyTo(view)
-        syncAxonTextMeasurement(id, view)
+        yogaForNode(id).markDirty(id)
         markSurfaceDirtyForNode(id)
         return true
       }
       "letterSpacing" -> {
         textState.letterSpacing = dpToPx(floatVal)
         textState.applyTo(view)
-        syncAxonTextMeasurement(id, view)
+        yogaForNode(id).markDirty(id)
         markSurfaceDirtyForNode(id)
         return true
       }
       "minimumFontScale" -> {
         textState.minimumFontScale = floatVal
         textState.applyTo(view)
-        syncAxonTextMeasurement(id, view)
+        yogaForNode(id).markDirty(id)
         markSurfaceDirtyForNode(id)
         return true
       }
       "fontSize" -> {
-        textState.fontSizePx = dpToPx(floatVal)
         view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, dpToPx(floatVal))
-        syncAxonTextMeasurement(id, view)
         return true
       }
     }
@@ -511,26 +499,16 @@ internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, va
   if (view is TextView) {
     if (isTextNode) {
       when (name) {
-        "lineHeight", "lineSpacing", "paragraphSpacing", "baselineShift", "letterSpacing" -> {
-          val textState = textStyleStates.getOrPut(id) { ZynthTextStyleState() }
-          when (name) {
-            "lineHeight" -> textState.lineHeight = value.toFloatOrNull()?.let { dpToPx(it) }
-            "lineSpacing" -> textState.lineSpacing = value.toFloatOrNull()?.let { dpToPx(it) }
-            "paragraphSpacing" -> textState.paragraphSpacing = value.toFloatOrNull()?.let { dpToPx(it) }
-            "baselineShift" -> textState.baselineShift = value.toFloatOrNull()?.let { dpToPx(it) }
-            "letterSpacing" -> textState.letterSpacing = value.toFloatOrNull()?.let { dpToPx(it) }
-          }
-          syncAxonTextMeasurement(id, view)
-          markSurfaceDirtyForNode(id)
-          return true
-        }
-        "minimumFontScale" -> {
-          textStyleStates.getOrPut(id) { ZynthTextStyleState() }.minimumFontScale = value.toFloatOrNull()
-          syncAxonTextMeasurement(id, view)
-          markSurfaceDirtyForNode(id)
-          return true
-        }
-        "textDecorationLine", "textTransform", "hyphenation", "fontSize" -> {
+        "lineHeight",
+        "lineSpacing",
+        "paragraphSpacing",
+        "baselineShift",
+        "letterSpacing",
+        "minimumFontScale",
+        "textDecorationLine",
+        "textTransform",
+        "hyphenation",
+        "fontSize" -> {
           return true
         }
       }
@@ -540,63 +518,63 @@ internal fun ZynthUIManager.applyStyleProp(id: Int, view: View, name: String, va
       "lineHeight" -> {
         textState.lineHeight = value.toFloatOrNull()?.let { dpToPx(it) }
         textState.applyTo(view)
-        syncAxonTextMeasurement(id, view)
+        yogaForNode(id).markDirty(id)
         markSurfaceDirtyForNode(id)
         return true
       }
       "lineSpacing" -> {
         textState.lineSpacing = value.toFloatOrNull()?.let { dpToPx(it) }
         textState.applyTo(view)
-        syncAxonTextMeasurement(id, view)
+        yogaForNode(id).markDirty(id)
         markSurfaceDirtyForNode(id)
         return true
       }
       "paragraphSpacing" -> {
         textState.paragraphSpacing = value.toFloatOrNull()?.let { dpToPx(it) }
         textState.applyTo(view)
-        syncAxonTextMeasurement(id, view)
+        yogaForNode(id).markDirty(id)
         markSurfaceDirtyForNode(id)
         return true
       }
       "baselineShift" -> {
         textState.baselineShift = value.toFloatOrNull()?.let { dpToPx(it) }
         textState.applyTo(view)
-        syncAxonTextMeasurement(id, view)
+        yogaForNode(id).markDirty(id)
         markSurfaceDirtyForNode(id)
         return true
       }
       "letterSpacing" -> {
         textState.letterSpacing = value.toFloatOrNull()?.let { dpToPx(it) }
         textState.applyTo(view)
-        syncAxonTextMeasurement(id, view)
+        yogaForNode(id).markDirty(id)
         markSurfaceDirtyForNode(id)
         return true
       }
       "minimumFontScale" -> {
         textState.minimumFontScale = value.toFloatOrNull()
         textState.applyTo(view)
-        syncAxonTextMeasurement(id, view)
+        yogaForNode(id).markDirty(id)
         markSurfaceDirtyForNode(id)
         return true
       }
       "textDecorationLine" -> {
         textState.textDecorationLine = value
         textState.applyTo(view)
-        syncAxonTextMeasurement(id, view)
+        yogaForNode(id).markDirty(id)
         markSurfaceDirtyForNode(id)
         return true
       }
       "textTransform" -> {
         textState.textTransform = value
         textState.applyTo(view)
-        syncAxonTextMeasurement(id, view)
+        yogaForNode(id).markDirty(id)
         markSurfaceDirtyForNode(id)
         return true
       }
       "hyphenation" -> {
         textState.hyphenation = value
         textState.applyTo(view)
-        syncAxonTextMeasurement(id, view)
+        yogaForNode(id).markDirty(id)
         markSurfaceDirtyForNode(id)
         return true
       }
@@ -627,12 +605,10 @@ internal fun ZynthUIManager.applyTextValue(id: Int, textView: TextView, text: St
   val state = textStyleStates[id]
   if (state == null) {
     textView.text = text
-    syncAxonTextMeasurement(id, textView)
     return
   }
   state.rawText = text
   state.applyTo(textView)
-  syncAxonTextMeasurement(id, textView)
 }
 
 private fun ZynthUIManager.ensureBorderDrawable(id: Int, view: View): ZynthBorderDrawable {

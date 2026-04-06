@@ -185,7 +185,6 @@ export function createAndroidHost(): Host {
     clearButtonMode: 111,
     showClearAccessory: 112,
     __scrollCommand: 113,
-    direction: 114,
   };
 
   const encodeTypedBatch = (
@@ -693,13 +692,6 @@ export function createAndroidHost(): Host {
       PARENTS.set(0, null);
       CHILDREN.set(0, []);
       TYPES.set(0, "root");
-      enqueueBatchOp({
-        type: "setProp",
-        nodeId: 0,
-        name: "flexDirection",
-        value: "column",
-      });
-      schedule();
       return { id: 0, type: "root" };
     },
     createNode(type, props) {
@@ -731,38 +723,6 @@ export function createAndroidHost(): Host {
       PARENTS.set(id, null);
       CHILDREN.set(id, []);
       TYPES.set(id, type);
-      const styleValue = props?.style;
-      const hasExplicitFlexDirection =
-        Array.isArray(styleValue)
-          ? styleValue.some(
-              (entry) =>
-                !!entry &&
-                typeof entry === "object" &&
-                "flexDirection" in (entry as Record<string, unknown>),
-            )
-          : !!styleValue &&
-            typeof styleValue === "object" &&
-            "flexDirection" in (styleValue as Record<string, unknown>);
-      const shouldDefaultToColumn =
-        type !== "text" &&
-        type !== "image" &&
-        type !== "switch" &&
-        type !== "slider" &&
-        type !== "progress-indicator" &&
-        type !== "text-input" &&
-        type !== "secure-text-input" &&
-        !hasExplicitFlexDirection;
-      if (shouldDefaultToColumn) {
-        const op: BatchOperation = {
-          type: "setProp",
-          nodeId: id,
-          name: "flexDirection",
-          value: "column",
-        };
-        if (!tryEnqueueBatch(op)) {
-          enqueueBatchOp(op);
-        }
-      }
       if (props?.style) {
         const op: BatchOperation = {
           type: "setProp",

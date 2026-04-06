@@ -50,9 +50,6 @@
   "scripts": {
     "build": "yarn build:js && yarn build:types",
     "build:js": "rm -rf dist/esm && tsc --project tsconfig.esm.json",
-    "build:types": "tsc --project tsconfig.types.json",
-    "sync:yoga": "node scripts/sync-yoga-binaries.mjs sync",
-    "update:yoga": "node scripts/sync-yoga-binaries.mjs update",
-    "postinstall": "node scripts/sync-yoga-binaries.mjs sync"
+    "build:types": "tsc --project tsconfig.types.json"
   }
 }

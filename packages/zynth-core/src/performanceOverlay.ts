@@ -8,15 +8,6 @@ export type PerformanceOverlayStats = {
   jsFps: number;
 };
 
-export type AxonMetricsHarnessOptions = {
-  label?: string;
-  delayMs?: number;
-  batchKind?: string;
-  surfaceId?: number;
-};
-
-export type AxonTextMeasureMode = "java" | "fallback";
-
 function normalizeStats(value: unknown): PerformanceOverlayStats | null {
   if (!value || typeof value !== "object") {
     return null;
@@ -67,50 +58,8 @@ export async function getPerformanceOverlayStats(): Promise<PerformanceOverlaySt
   }
 }
 
-/**
- * Enables a native Axon metrics harness for the next matching startup/layout batch.
- */
-export async function enableAxonMetricsHarness(
-  options: AxonMetricsHarnessOptions = {}
-): Promise<boolean> {
-  try {
-    await callNative("Devtools", "enableAxonMetricsHarness", options);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Disables the native Axon metrics harness.
- */
-export async function disableAxonMetricsHarness(): Promise<boolean> {
-  try {
-    await callNative("Devtools", "disableAxonMetricsHarness", {});
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Controls whether Axon text measurement uses the Java probe or a native fallback estimator.
- */
-export async function setAxonTextMeasureMode(
-  mode: AxonTextMeasureMode
-): Promise<boolean> {
-  try {
-    await callNative("Devtools", "setAxonTextMeasureMode", { mode });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 export const PerformanceOverlay = {
   setEnabled: setPerformanceOverlayEnabled,
   getStats: getPerformanceOverlayStats,
-  enableAxonMetricsHarness,
-  disableAxonMetricsHarness,
-  setAxonTextMeasureMode,
 };
+
