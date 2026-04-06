@@ -249,10 +249,41 @@ function formatActivityIntentFilters(androidConfig: any): string {
   return blocks.length ? `\n${blocks.join("\n")}` : "";
 }
 
+function formatAndroidFeatures(androidConfig: any): string {
+  const features = Array.isArray(androidConfig?.features)
+    ? androidConfig.features
+    : [];
+  if (!features.length) {
+    return "";
+  }
+
+  const lines: string[] = [];
+  for (const entry of features) {
+    if (typeof entry === "string") {
+      lines.push(`    <uses-feature android:name="${escapeXml(entry.trim())}" />`);
+    } else if (entry && typeof entry === "object") {
+      const name = typeof entry.name === "string" ? entry.name.trim() : "";
+      if (!name) continue;
+      const attrs = [`android:name="${escapeXml(name)}"`];
+      if (typeof entry.required === "boolean") {
+        attrs.push(`android:required="${entry.required}"`);
+      }
+      lines.push(`    <uses-feature ${attrs.join(" ")} />`);
+    }
+  }
+  return lines.length ? "\n" + lines.join("\n") : "";
+}
+
 function formatAndroidPermissions(androidConfig: any): string {
   const permissions = Array.isArray(androidConfig?.permissions)
-    ? androidConfig.permissions
+    ? [...androidConfig.permissions]
     : [];
+
+  // DEFAULT PERMISSIONS (if not already present)
+  if (!permissions.includes("android.permission.INTERNET")) {
+    permissions.unshift("android.permission.INTERNET");
+  }
+
   if (!permissions.length) {
     return "";
   }
@@ -298,7 +329,7 @@ function formatAndroidPermissions(androidConfig: any): string {
     lines.push(`    <uses-permission ${attrs.join(" ")} />`);
   }
 
-  return lines.length ? `\n${lines.join("\n")}` : "";
+  return lines.length ? "\n" + lines.join("\n") : "";
 }
 
 function replacePlaceholders(content: string, config: AppConfig, extras: any = {}): string {
@@ -364,6 +395,10 @@ function replacePlaceholders(content: string, config: AppConfig, extras: any = {
     .replace(
       /\{\{\s*ANDROID_USES_PERMISSIONS\s*\}\}/g,
       extras.androidUsesPermissions ?? ""
+    )
+    .replace(
+      /\{\{\s*ANDROID_FEATURES\s*\}\}/g,
+      extras.androidFeatures ?? ""
     )
     .replace(
       /\{\{\s*APP_ICON_DRAWABLE\s*\}\}/g,
@@ -786,6 +821,7 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
   const applicationAttributes = formatApplicationAttributes(baseConfig.androidConfig, dev);
   const activityIntentFilters = formatActivityIntentFilters(baseConfig.androidConfig);
   const androidUsesPermissions = formatAndroidPermissions(baseConfig.androidConfig);
+  const androidFeatures = formatAndroidFeatures(baseConfig.androidConfig);
   const appJsonPath = path.join(appDir, "app.json");
   let appConfig: any = {};
   if (fs.existsSync(appJsonPath)) {
@@ -912,6 +948,7 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
         activityAttributes,
         activityIntentFilters,
         androidUsesPermissions,
+        androidFeatures,
         appIconDrawable,
         appRoundIconDrawable,
         splashIconDrawable,

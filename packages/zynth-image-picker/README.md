@@ -16,18 +16,19 @@ Before using any Image Picker features, you must declare the required permission
       }
     },
     "android": {
+      "features": [
+        { "name": "android.hardware.camera", "required": false }
+      ],
       "permissions": [
         "android.permission.CAMERA"
-      ],
-      "otherConfigs": {
-        "imagePickerProvider": {
-          "authority": "${applicationId}.zynth.imagepicker.provider"
-        }
-      }
+      ]
     }
   }
 }
 ```
+
+> [!IMPORTANT]
+> **Google Play Privacy Policy**: If you include `android.permission.CAMERA`, Google Play **requires** you to provide a Privacy Policy URL in the Google Play Console (App Content -> Privacy Policy). Failing to do so will result in a warning or rejection.
 
 ## Quick Start
 
