@@ -8,10 +8,6 @@ import android.widget.TextView
 
 internal data class ZynthTextStyleState(
   var rawText: String = "",
-  var fontSizePx: Float? = null,
-  var fontFamily: String? = null,
-  var fontWeight: String? = null,
-  var fontStyle: String? = null,
   var lineHeight: Float? = null,
   var lineSpacing: Float? = null,
   var paragraphSpacing: Float? = null,
@@ -23,7 +19,7 @@ internal data class ZynthTextStyleState(
   var hyphenation: String? = null,
 ) {
   fun applyTo(textView: TextView) {
-    val transformed = transformedText()
+    val transformed = applyTextTransform(rawText)
     val spannable = SpannableString(transformed)
 
     if (textDecorationLine?.contains("underline") == true) {
@@ -67,10 +63,6 @@ internal data class ZynthTextStyleState(
         if (hyphenation == "none") android.text.Layout.HYPHENATION_FREQUENCY_NONE
         else android.text.Layout.HYPHENATION_FREQUENCY_NORMAL
     }
-  }
-
-  fun transformedText(): String {
-    return applyTextTransform(rawText)
   }
 
   private fun applyTextTransform(text: String): String {

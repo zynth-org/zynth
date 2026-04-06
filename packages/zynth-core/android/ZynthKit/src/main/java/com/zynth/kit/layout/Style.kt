@@ -7,6 +7,9 @@ import com.zynth.kit.core.ZynthShadowParser
 import com.zynth.kit.core.ShadowLayer
 import com.zynth.kit.core.ZynthTransformParser
 import com.zynth.kit.core.TransformOperation
+import com.facebook.yoga.YogaAlign
+import com.facebook.yoga.YogaFlexDirection
+import com.facebook.yoga.YogaJustify
 import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONException
@@ -127,15 +130,37 @@ data class Style(
     COLUMN,
     ROW,
     ROW_REVERSE,
-    COLUMN_REVERSE
+    COLUMN_REVERSE;
+    
+    fun toFlexDirection(): YogaFlexDirection = when (this) {
+      COLUMN -> YogaFlexDirection.COLUMN
+      ROW -> YogaFlexDirection.ROW
+      ROW_REVERSE -> YogaFlexDirection.ROW_REVERSE
+      COLUMN_REVERSE -> YogaFlexDirection.COLUMN_REVERSE
+    }
   }
   
   enum class JustifyContent {
-    FLEX_START, FLEX_END, CENTER, SPACE_BETWEEN, SPACE_AROUND
+    FLEX_START, FLEX_END, CENTER, SPACE_BETWEEN, SPACE_AROUND;
+    
+    fun toJustify(): YogaJustify = when (this) {
+      FLEX_START -> YogaJustify.FLEX_START
+      FLEX_END -> YogaJustify.FLEX_END
+      CENTER -> YogaJustify.CENTER
+      SPACE_BETWEEN -> YogaJustify.SPACE_BETWEEN
+      SPACE_AROUND -> YogaJustify.SPACE_AROUND
+    }
   }
   
   enum class AlignItems {
-    STRETCH, FLEX_START, FLEX_END, CENTER
+    STRETCH, FLEX_START, FLEX_END, CENTER;
+    
+    fun toAlignItems(): YogaAlign = when (this) {
+      STRETCH -> YogaAlign.STRETCH
+      FLEX_START -> YogaAlign.FLEX_START
+      FLEX_END -> YogaAlign.FLEX_END
+      CENTER -> YogaAlign.CENTER
+    }
   }
   
   companion object {

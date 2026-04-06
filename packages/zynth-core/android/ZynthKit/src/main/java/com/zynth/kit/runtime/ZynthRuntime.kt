@@ -172,7 +172,6 @@ class ZynthRuntime(val root: ZynthRootView) {
     runOnJS {
       startupMetrics.markJsRuntimeSetupStart()
       JSBridge.installUIBindings(runtimePtr, uiManager)
-      uiManager.bootstrapAxonEnvironment()
       registry.setSessionId(bridgeSessionId)
       JSBridge.installModuleRegistry(runtimePtr, registry)
       installHmrShim()

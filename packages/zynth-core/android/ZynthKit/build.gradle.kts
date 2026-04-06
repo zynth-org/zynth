@@ -60,7 +60,7 @@ dependencies {
   implementation("androidx.activity:activity-ktx:1.9.3")
   implementation("androidx.appcompat:appcompat:1.7.0")
   implementation("com.facebook.hermes:hermes-android:$hermesVersion")
-  implementation("com.facebook.soloader:soloader:0.10.5")
+  implementation("com.facebook.yoga:yoga:$yogaVersion")
   compileOnly("com.facebook.react:react-android:$reactNativeVersion")
   implementation("com.squareup.okhttp3:okhttp:4.12.0")
   implementation("com.facebook.yoga:yoga:$yogaVersion")
