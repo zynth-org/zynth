@@ -43,18 +43,6 @@ else()
   set(ZYNTH_AXON_LINKED 0)
 endif()
 
-set(ZYNTH_YOGA_LIB_PATH
-  "${CMAKE_CURRENT_SOURCE_DIR}/build/yoga-extracted/jni/${ANDROID_ABI}/libyoga.so"
-)
-if(ZYNTH_LAYOUT_ENGINE STREQUAL "YOGA")
-  if(EXISTS "${ZYNTH_YOGA_LIB_PATH}")
-    add_library(zynth_yoga SHARED IMPORTED)
-    set_target_properties(zynth_yoga PROPERTIES IMPORTED_LOCATION "${ZYNTH_YOGA_LIB_PATH}")
-  else()
-    message(FATAL_ERROR "Yoga Android shared library not found at ${ZYNTH_YOGA_LIB_PATH}. Run Gradle dependency resolution for com.facebook.yoga:yoga first.")
-  endif()
-endif()
-
 set(ZYNTHKIT_SOURCES
   src/main/cpp/zynthkit.cpp
   src/main/cpp/UICommandsRegistry.cpp
@@ -63,6 +51,21 @@ set(ZYNTHKIT_SOURCES
 
 if(ZYNTH_LAYOUT_ENGINE STREQUAL "YOGA")
   list(APPEND ZYNTHKIT_SOURCES src/main/cpp/ZynthYogaLayoutRuntime.cpp)
+  
+  if(DEFINED YOGA_BINARIES_DIR)
+    set(YOGA_INCLUDE_DIR "${YOGA_BINARIES_DIR}/headers")
+    set(YOGA_LIB_PATH "${YOGA_BINARIES_DIR}/libs/${ANDROID_ABI}/libyogacore.so")
+    
+    if(NOT EXISTS "${YOGA_LIB_PATH}")
+      message(FATAL_ERROR "Yoga binary not found for ${ANDROID_ABI} at ${YOGA_LIB_PATH}")
+    endif()
+
+    add_library(yogacore SHARED IMPORTED)
+    set_target_properties(yogacore PROPERTIES IMPORTED_LOCATION "${YOGA_LIB_PATH}")
+    set(YOGA_LINK_TARGET yogacore)
+  else()
+    message(FATAL_ERROR "YOGA_BINARIES_DIR not defined. Yoga pre-compiled binaries required.")
+  endif()
 endif()
 
 add_library(zynthkit SHARED ${ZYNTHKIT_SOURCES})
@@ -74,8 +77,8 @@ find_package(fbjni REQUIRED CONFIG)
 target_include_directories(zynthkit
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/main/cpp
+    ${YOGA_INCLUDE_DIR}
     $<TARGET_PROPERTY:ReactAndroid::jsi,INTERFACE_INCLUDE_DIRECTORIES>
-    $<TARGET_PROPERTY:ReactAndroid::reactnative,INTERFACE_INCLUDE_DIRECTORIES>
 )
 
 target_compile_definitions(zynthkit PRIVATE
@@ -96,10 +99,9 @@ target_link_libraries(zynthkit
   PRIVATE
     ${ZYNTH_HERMES_TARGET}
     ReactAndroid::jsi
-    $<$<STREQUAL:${ZYNTH_LAYOUT_ENGINE},YOGA>:ReactAndroid::reactnative>
     fbjni::fbjni
+    ${YOGA_LINK_TARGET}
     $<$<TARGET_EXISTS:axon_engine>:axon_engine>
-    $<$<TARGET_EXISTS:zynth_yoga>:zynth_yoga>
     log
 )
 

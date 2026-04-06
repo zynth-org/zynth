@@ -3,25 +3,18 @@ import org.gradle.api.attributes.Bundling
 import org.gradle.api.attributes.Category
 import org.gradle.api.attributes.LibraryElements
 import org.gradle.api.attributes.Usage
+import java.net.URI
+import java.io.InputStream
 
 val reactNativeVersion = "0.84.0-rc.1"
 val hermesVersion = "250829098.0.6"
 val yogaVersion = "3.2.1"
+val yogaBaseUrl = "https://github.com/x64Bits/skia-assets/releases/download/yoga-v$yogaVersion"
+
 val axonEnabled =
   (providers.gradleProperty("zynthAxonEnabled").orNull ?: "false").toBoolean()
 val layoutEngineName = if (axonEnabled) "AXON" else "YOGA"
-val yogaRuntime by configurations.creating {
-  isCanBeConsumed = false
-  isCanBeResolved = true
-  isTransitive = false
-  attributes {
-    attribute(Category.CATEGORY_ATTRIBUTE, objects.named(Category.LIBRARY))
-    attribute(Bundling.BUNDLING_ATTRIBUTE, objects.named(Bundling.EXTERNAL))
-    attribute(LibraryElements.LIBRARY_ELEMENTS_ATTRIBUTE, objects.named("aar"))
-    attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage.JAVA_RUNTIME))
-    attribute(BuildTypeAttr.ATTRIBUTE, objects.named("release"))
-  }
-}
+// Removed yogaRuntime configuration as we are using custom binaries
 
 plugins {
   id("com.android.library")
@@ -45,7 +38,8 @@ android {
         arguments(
           "-DANDROID_STL=c++_shared",
           "-DZYNTH_AXON_ENABLED=${if (axonEnabled) "ON" else "OFF"}",
-          "-DZYNTH_LAYOUT_ENGINE=$layoutEngineName"
+          "-DZYNTH_LAYOUT_ENGINE=$layoutEngineName",
+          "-DYOGA_BINARIES_DIR=${layout.buildDirectory.dir("yoga-ready").get().asFile.absolutePath}"
         )
       }
     }
@@ -78,24 +72,87 @@ android {
         "**/libhermesvm.so",
         "**/libhermes-executor-debug.so",
         "**/libhermes-executor-release.so",
-        "**/libfbjni.so"
+        "**/libfbjni.so",
+        "**/libreactnative.so",
+        "**/libyoga.so"
       )
+    }
+  }
+
+  sourceSets {
+    getByName("main") {
+      jniLibs.srcDirs(layout.buildDirectory.dir("yoga-ready/libs"))
     }
   }
 }
 
-val extractYogaRuntime by tasks.registering(Sync::class) {
-  onlyIf { !axonEnabled }
-  from(yogaRuntime.elements.map { files ->
-    files.map { zipTree(it.asFile) }
-  })
-  into(layout.buildDirectory.dir("yoga-extracted"))
+val fetchYogaBinaries by tasks.registering {
+  val outputDir = layout.buildDirectory.dir("yoga-downloads")
+  outputs.dir(outputDir)
+  doLast {
+    val downloadDir = outputDir.get().asFile
+    if (!downloadDir.exists()) downloadDir.mkdirs()
+
+    val abiMap = mapOf(
+      "arm64-v8a" to "arm-64",
+      "armeabi-v7a" to "arm-v7",
+      "x86_64" to "arm-x64",
+      "x86" to "arm-x86"
+    )
+
+    // Download headers
+    val headerFile = file("${downloadDir.absolutePath}/headers.tar.gz")
+    if (!headerFile.exists()) {
+      println("◆ Downloading Yoga headers v$yogaVersion...")
+      URI("$yogaBaseUrl/yoga-headers-v$yogaVersion.tar.gz").toURL().openStream().use { input ->
+        headerFile.outputStream().use { output -> input.copyTo(output) }
+      }
+    }
+
+    // Download binaries for each ABI
+    abiMap.forEach { (abi, assetSuffix) ->
+      val dest = file("${downloadDir.absolutePath}/$abi.tar.gz")
+      if (!dest.exists()) {
+        println("◆ Downloading Yoga binary for $abi...")
+        URI("$yogaBaseUrl/yoga-android-$assetSuffix-v$yogaVersion.tar.gz").toURL().openStream().use { input ->
+          dest.outputStream().use { output -> input.copyTo(output) }
+        }
+      }
+    }
+  }
+}
+
+val extractYogaBinaries by tasks.registering {
+  dependsOn(fetchYogaBinaries)
+  val downloadDir = layout.buildDirectory.dir("yoga-downloads").get().asFile
+  val readyDir = layout.buildDirectory.dir("yoga-ready").get().asFile
+  outputs.dir(readyDir)
+  
+  doLast {
+    val abiList = listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
+    
+    // Extract headers
+    copy {
+      from(tarTree(resources.gzip(file("${downloadDir.absolutePath}/headers.tar.gz"))))
+      into(file("${readyDir.absolutePath}/headers/yoga"))
+    }
+
+    // Extract each ABI
+    abiList.forEach { abi ->
+      copy {
+        from(tarTree(resources.gzip(file("${downloadDir.absolutePath}/$abi.tar.gz"))))
+        into(file("${readyDir.absolutePath}/libs/$abi"))
+      }
+    }
+  }
 }
 
 tasks.matching { task ->
-  task.name.startsWith("configureCMake") || task.name.startsWith("buildCMake")
+  task.name.startsWith("configureCMake") || 
+  task.name.startsWith("buildCMake") ||
+  (task.name.startsWith("merge") && task.name.endsWith("JniLibFolders"))
 }.configureEach {
-  dependsOn(extractYogaRuntime)
+  dependsOn(extractYogaBinaries)
 }
 
 dependencies {
@@ -104,9 +161,5 @@ dependencies {
   implementation("com.facebook.soloader:soloader:0.10.5")
   compileOnly("com.facebook.react:react-android:$reactNativeVersion")
   implementation("com.squareup.okhttp3:okhttp:4.12.0")
-  if (!axonEnabled) {
-    add("yogaRuntime", "com.facebook.yoga:yoga:$yogaVersion")
-  }
+  // Using custom Yoga binaries instead of Maven dependency
 }
-
-// Force rebuild of ZynthKit - gemini-fix-font-loading
