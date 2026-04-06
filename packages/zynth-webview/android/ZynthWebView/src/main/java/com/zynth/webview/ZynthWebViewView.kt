@@ -38,7 +38,6 @@ class ZynthWebViewView(context: Context) : WebView(context) {
     settings.domStorageEnabled = true
     settings.useWideViewPort = true
     settings.loadWithOverviewMode = true
-    settings.databaseEnabled = true
     settings.allowFileAccess = true
     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
       settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW

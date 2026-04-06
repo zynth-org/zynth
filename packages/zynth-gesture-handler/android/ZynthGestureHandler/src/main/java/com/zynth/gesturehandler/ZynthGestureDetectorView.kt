@@ -8,7 +8,6 @@ import android.view.MotionEvent
 import android.view.VelocityTracker
 import android.view.ViewConfiguration
 import android.widget.FrameLayout
-import androidx.core.view.GestureDetectorCompat
 import com.zynth.kit.core.ZynthUIManager
 import org.json.JSONObject
 import kotlin.math.abs
@@ -71,7 +70,7 @@ class ZynthGestureDetectorView(context: Context) : FrameLayout(context) {
     emitLongPress("start", durationMs = longPressMinDurationMs)
   }
 
-  private val gestureDetector: GestureDetectorCompat = GestureDetectorCompat(
+  private val gestureDetector: GestureDetector = GestureDetector(
     context,
     object : GestureDetector.SimpleOnGestureListener() {
       override fun onDown(e: MotionEvent): Boolean {
