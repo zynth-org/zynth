@@ -18,7 +18,6 @@
     "bundle": "zynth bundle all",
     "reset:ios": "yarn workspace @demo/sn-demo reset:ios",
     "reset:android": "yarn workspace @demo/sn-demo reset:android",
-    "native": "node --experimental-strip-types scripts/build-native.ts",
     "generate": "node --experimental-strip-types scripts/generate.ts",
     "sync-aliases": "node scripts/sync-workspace-aliases.js",
     "new:package": "node --experimental-strip-types scripts/new-package.ts"

@@ -2,14 +2,11 @@ package com.zynth.kit.core
 
 import android.util.Log
 import android.os.SystemClock
-import android.widget.TextView
-import com.zynth.kit.BuildConfig
 import com.zynth.kit.runtime.JSBridge
 
 private const val DEBUG_SCHEDULER = false
 private const val ATOMIC_LAYOUT_APPLY_BUDGET_MS = 48.0
 private const val ATOMIC_LAYOUT_PHASE_BUDGET_NS = 64_000_000L
-private const val AXON_DEEP_METRICS_TAG = "ZynthAxonDeep"
 
 internal fun ZynthUIManager.setFrameProfilerInternal(
   profiler: ((frameMs: Double, layoutMs: Double, overBudget: Boolean, nodeCount: Int) -> Unit)?
@@ -98,7 +95,7 @@ internal fun ZynthUIManager.handleFrame() {
   //     overBudget
   //   )
   // )
-  if (overBudget && BuildConfig.ZYNTH_LAYOUT_DEBUG_LOGS) {
+  if (overBudget) {
     budgetOverruns += 1
     Log.w(
       "ZynthUI",
@@ -276,40 +273,22 @@ internal fun ZynthUIManager.performLayoutInternal(
 
 private fun ZynthUIManager.performLayoutPassInternal(surfaceId: Int, width: Int, height: Int): Boolean {
   if (width <= 0 || height <= 0 || runtimePtr == 0L) return false
-  val passStartNs = SystemClock.elapsedRealtimeNanos()
-  val computeStartNs = passStartNs
   if (!JSBridge.axonComputeLayout(runtimePtr, surfaceId, width.toFloat(), height.toFloat())) {
     return false
   }
-  val computeNs = SystemClock.elapsedRealtimeNanos() - computeStartNs
-  logAxonDeepMetrics(surfaceId)
 
   val traversalStartNs = SystemClock.elapsedRealtimeNanos()
   val ids = collectSurfaceNodeIds(surfaceId)
   SystemClock.elapsedRealtimeNanos() - traversalStartNs
   if (ids.isEmpty()) {
-    recordAxonMetricsPass(
-      surfaceId,
-      AxonMetricsPassSample(
-        startNs = passStartNs,
-        computeNs = computeNs,
-        collectNs = 0L,
-        applyNs = 0L,
-        nodeCount = 0,
-      )
-    )
     return true
   }
   val nodeIds = ids.toIntArray()
   val frames = FloatArray(nodeIds.size * 4)
-  val collectStartNs = SystemClock.elapsedRealtimeNanos()
   if (!JSBridge.axonCollectFrames(runtimePtr, nodeIds, frames)) {
     return false
   }
-  val collectNs = SystemClock.elapsedRealtimeNanos() - collectStartNs
 
-  val applyStartNs = SystemClock.elapsedRealtimeNanos()
-  var layoutCount = 0
   for (index in nodeIds.indices) {
     val id = nodeIds[index]
     val view = nodes[id] ?: continue
@@ -338,127 +317,13 @@ private fun ZynthUIManager.performLayoutPassInternal(surfaceId: Int, width: Int,
     if (shouldMeasure) {
       view.measure(widthSpec, heightSpec)
     }
-    val shouldRelayout = changed || (layoutRequested && view is TextView)
-    if (shouldRelayout) {
+    if (changed) {
       view.layout(left, top, right, bottom)
-      layoutCount += 1
     }
     onFrameApplied(id, left, top, right, bottom, changed)
   }
-  val applyNs = SystemClock.elapsedRealtimeNanos() - applyStartNs
-  recordAxonMetricsPass(
-    surfaceId,
-    AxonMetricsPassSample(
-      startNs = passStartNs,
-      computeNs = computeNs,
-      collectNs = collectNs,
-      applyNs = applyNs,
-      nodeCount = nodeIds.size,
-    )
-  )
 
   return true
-}
-
-private fun ZynthUIManager.logAxonDeepMetrics(surfaceId: Int) {
-  if (!BuildConfig.ZYNTH_LAYOUT_DEBUG_METRICS) return
-  val raw = JSBridge.axonGetLastComputeStats(runtimePtr) ?: return
-  if (raw.size < 86) return
-  fun nanosToMs(index: Int): Double = raw[index] / 1_000_000.0
-  fun bitsToFloat(bits: Long): Float = Float.fromBits(bits.toInt())
-  fun formatOptionalFloat(bits: Long): String {
-    return if (bits == 4294967295L) "-" else "%.1f".format(bitsToFloat(bits))
-  }
-  fun formatConstraintSample(startIndex: Int): String? {
-    val awBits = raw[startIndex]
-    val ahBits = raw[startIndex + 1]
-    val kwBits = raw[startIndex + 2]
-    val khBits = raw[startIndex + 3]
-    val flags = raw[startIndex + 4].toInt()
-    if (awBits == 0L && ahBits == 0L && kwBits == 0L && khBits == 0L && flags == 0) {
-      return null
-    }
-    val widthDefinite = (flags and 1) != 0
-    val heightDefinite = (flags and (1 shl 1)) != 0
-    val rtl = (flags and (1 shl 2)) != 0
-    return "aw=${"%.1f".format(bitsToFloat(awBits))} ah=${"%.1f".format(bitsToFloat(ahBits))} " +
-      "kw=${formatOptionalFloat(kwBits)} kh=${formatOptionalFloat(khBits)} " +
-      "wd=$widthDefinite hd=$heightDefinite rtl=$rtl"
-  }
-  fun sanitizeTextPreview(text: String): String {
-    return text
-      .replace("\n", "\\n")
-      .replace("\r", "\\r")
-      .replace("\"", "'")
-      .take(32)
-  }
-  fun describeNode(nodeId: Long): String {
-    if (nodeId < 0 || nodeId > Int.MAX_VALUE) return "id=$nodeId"
-    val id = nodeId.toInt()
-    val node = nodeStates[id]
-    val view = nodes[id]
-    if (node == null && view == null) return "id=$id:missing"
-    val parentId = parents[id]?.toString() ?: "root"
-    val surface = nodeSurfaces[id]?.toString() ?: "?"
-    val type = node?.type ?: "?"
-    val viewName = view?.javaClass?.simpleName ?: "?"
-    val childCount = children[id]?.size ?: 0
-    val textPreview = node?.cachedText?.takeIf { it.isNotEmpty() }
-      ?: (view as? android.widget.TextView)?.text?.toString()?.takeIf { it.isNotEmpty() }
-    val textPart = textPreview?.let { " text=\"${sanitizeTextPreview(it)}\"" } ?: ""
-    return "id=$id type=$type view=$viewName parent=$parentId surface=$surface children=$childCount$textPart"
-  }
-  fun formatTopNodes(startIndex: Int): String {
-    val pairs = ArrayList<String>(3)
-    var cursor = startIndex
-    repeat(3) {
-      val nodeId = raw[cursor]
-      val count = raw[cursor + 1]
-      val uniqueConstraints = raw[cursor + 2]
-      if (nodeId != 4294967295L && count > 0L) {
-        val samples = ArrayList<String>(3)
-        var sampleCursor = cursor + 3
-        repeat(3) {
-          formatConstraintSample(sampleCursor)?.let { samples += it }
-          sampleCursor += 5
-        }
-        val samplesPart = if (samples.isEmpty()) "-" else samples.joinToString(" ; ")
-        pairs += "${describeNode(nodeId)} count=$count unique_constraints=$uniqueConstraints samples=[$samplesPart]"
-      }
-      cursor += 18
-    }
-    return if (pairs.isEmpty()) "-" else pairs.joinToString(" | ")
-  }
-  fun formatTopMinNodes(startIndex: Int): String {
-    val pairs = ArrayList<String>(3)
-    var cursor = startIndex
-    repeat(3) {
-      val nodeId = raw[cursor]
-      val count = raw[cursor + 1]
-      if (nodeId != 4294967295L && count > 0L) {
-        pairs += "${describeNode(nodeId)} count=$count"
-      }
-      cursor += 2
-    }
-    return if (pairs.isEmpty()) "-" else pairs.joinToString(" | ")
-  }
-  if (BuildConfig.ZYNTH_LAYOUT_DEBUG_METRICS) {
-    Log.d(
-      AXON_DEEP_METRICS_TAG,
-      "surface=$surfaceId total_ms=${"%.2f".format(nanosToMs(0))} nodes=${raw[1]} " +
-        "layout_node_calls=${raw[2]} layout_cache_hits=${raw[3]} layout_cache_misses=${raw[4]} " +
-        "min_cache_hits=${raw[5]} min_cache_misses=${raw[6]} " +
-        "intrinsic_calls=${raw[7]} text_intrinsic_calls=${raw[8]} host_intrinsic_calls=${raw[9]} " +
-        "prepare_calls=${raw[10]} prepare_hits=${raw[11]} prepare_misses=${raw[12]} prepare_ms=${"%.2f".format(nanosToMs(13))} " +
-        "text_layout_calls=${raw[14]} text_layout_ms=${"%.2f".format(nanosToMs(15))} " +
-        "text_min_calls=${raw[16]} text_min_ms=${"%.2f".format(nanosToMs(17))} " +
-        "setup_hits=${raw[18]} setup_misses=${raw[19]} " +
-        "segment_hits=${raw[20]} segment_misses=${raw[21]} " +
-        "host_measure_calls=${raw[22]} host_measure_ms=${"%.2f".format(nanosToMs(23))} " +
-        "prepared_segments=${raw[24]} prepared_bytes=${raw[25]} " +
-        "top_layout_nodes=${formatTopNodes(26)} top_min_nodes=${formatTopMinNodes(80)}"
-    )
-  }
 }
 
 private fun ZynthUIManager.collectSurfaceNodeIds(surfaceId: Int): List<Int> {

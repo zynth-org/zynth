@@ -320,9 +320,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
   internal var perfMaxChangedCount = 0
   internal var perfMaxNodes = 0
   internal var perfMaxSurfaces = 0
-  internal val axonMetricsLock = Any()
-  internal var axonMetricsHarnessConfig: AxonMetricsHarnessConfig? = null
-  internal var axonMetricsHarnessSession: AxonMetricsHarnessSession? = null
   private var batchDepth = 0
   private var batchNeedsLayout = false
   private var atomicCommitDepth = 0
@@ -523,23 +520,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
 
   fun setFrameProfiler(profiler: ((frameMs: Double, layoutMs: Double, overBudget: Boolean, nodeCount: Int) -> Unit)?) {
     setFrameProfilerInternal(profiler)
-  }
-
-  fun enableAxonMetricsHarness(label: String?, delayMs: Long, batchKind: String?, surfaceId: Int?) {
-    enableAxonMetricsHarnessInternal(
-      label = label,
-      delayMs = delayMs,
-      batchKind = batchKind,
-      surfaceId = surfaceId,
-    )
-  }
-
-  fun disableAxonMetricsHarness() {
-    disableAxonMetricsHarnessInternal()
-  }
-
-  fun noteAxonMetricsBatch(surfaceId: Int, kind: String?) {
-    noteAxonMetricsBatchInternal(surfaceId = surfaceId, kind = kind)
   }
 
   fun createNode(type: String): Int {
@@ -1637,16 +1617,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
 
   fun axonDensity(): Float = density
 
-  fun setAxonTextMeasureMode(mode: String): Boolean {
-    if (!usesAxonLayoutRuntime()) return false
-    val normalized = mode.trim().lowercase()
-    val nativeMode = when (normalized) {
-      "fallback" -> 1
-      else -> 0
-    }
-    return JSBridge.axonSetTextMeasureMode(runtimePtr, nativeMode)
-  }
-
   fun axonMeasureText(fontId: Int, text: String, isVertical: Boolean): FloatArray? {
     val probe = axonFontProbes[fontId] ?: return null
     val width = if (text.isEmpty()) 0f else probe.paint.measureText(text)
@@ -1683,31 +1653,6 @@ class ZynthUIManager(internal val rootView: ZynthRootView) : ZynthEventSink {
       )
     )
     return floatArrayOf(measured.first, measured.second)
-  }
-
-  fun yogaMeasureTextNode(
-    nodeId: Int,
-    width: Float,
-    widthMode: Int,
-    height: Float,
-    heightMode: Int,
-  ): FloatArray? {
-    val view = nodes[nodeId] ?: return axonMeasureNode(nodeId, width, widthMode, height, heightMode)
-    val widthSpec = when (widthMode) {
-      1 -> View.MeasureSpec.makeMeasureSpec(width.toInt().coerceAtLeast(0), View.MeasureSpec.EXACTLY)
-      2 -> View.MeasureSpec.makeMeasureSpec(width.toInt().coerceAtLeast(0), View.MeasureSpec.AT_MOST)
-      else -> View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
-    }
-    val heightSpec = when (heightMode) {
-      1 -> View.MeasureSpec.makeMeasureSpec(height.toInt().coerceAtLeast(0), View.MeasureSpec.EXACTLY)
-      2 -> View.MeasureSpec.makeMeasureSpec(height.toInt().coerceAtLeast(0), View.MeasureSpec.AT_MOST)
-      else -> View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
-    }
-    view.measure(widthSpec, heightSpec)
-    return floatArrayOf(
-      view.measuredWidth.toFloat().coerceAtLeast(0f),
-      view.measuredHeight.toFloat().coerceAtLeast(0f),
-    )
   }
 
   internal fun syncAxonTextMeasurement(nodeId: Int, textView: TextView) {

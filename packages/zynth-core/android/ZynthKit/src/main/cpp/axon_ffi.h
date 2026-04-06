@@ -14,47 +14,6 @@ struct AxonTextMetrics {
   float width;
   float height;
 };
-struct AxonLayoutConstraintSample {
-  std::uint32_t available_width_bits;
-  std::uint32_t available_height_bits;
-  std::uint32_t known_width_bits;
-  std::uint32_t known_height_bits;
-  std::uint32_t flags;
-};
-struct AxonComputeStats {
-  std::uint64_t total_time_ns;
-  std::uint64_t node_count;
-  std::uint64_t layout_node_calls;
-  std::uint64_t layout_cache_hits;
-  std::uint64_t layout_cache_misses;
-  std::uint64_t min_content_cache_hits;
-  std::uint64_t min_content_cache_misses;
-  std::uint64_t intrinsic_measure_calls;
-  std::uint64_t intrinsic_text_calls;
-  std::uint64_t intrinsic_host_calls;
-  std::uint64_t prepare_calls;
-  std::uint64_t prepare_cache_hits;
-  std::uint64_t prepare_cache_misses;
-  std::uint64_t prepare_time_ns;
-  std::uint64_t layout_calls;
-  std::uint64_t layout_time_ns;
-  std::uint64_t min_content_calls;
-  std::uint64_t min_content_time_ns;
-  std::uint64_t setup_cache_hits;
-  std::uint64_t setup_cache_misses;
-  std::uint64_t segment_cache_hits;
-  std::uint64_t segment_cache_misses;
-  std::uint64_t host_measure_calls;
-  std::uint64_t host_measure_time_ns;
-  std::uint64_t prepared_segments;
-  std::uint64_t prepared_bytes;
-  std::uint32_t top_layout_node_ids[3];
-  std::uint64_t top_layout_node_counts[3];
-  std::uint64_t top_layout_constraint_unique_counts[3];
-  AxonLayoutConstraintSample top_layout_constraint_samples[3][3];
-  std::uint32_t top_min_content_node_ids[3];
-  std::uint64_t top_min_content_node_counts[3];
-};
 
 typedef bool (*AxonHostMeasureTextFn)(
     void *user_data,
@@ -89,7 +48,6 @@ bool axon_node_set_measure_callback(EngineBase *engine, std::size_t node, bool e
 bool axon_node_style_set_number(EngineBase *engine, std::size_t node, std::uint32_t prop, float value);
 bool axon_node_style_set_string(EngineBase *engine, std::size_t node, std::uint32_t prop, const char *value);
 bool axon_compute_layout(EngineBase *engine, std::size_t root, float width, float height);
-bool axon_get_last_compute_stats(EngineBase *engine, AxonComputeStats *out_stats);
 AxonLayoutResult axon_get_layout(EngineBase *engine, std::size_t node);
 std::uint32_t axon_font_register_resolved(
     EngineBase *engine,
@@ -124,7 +82,6 @@ inline bool axon_node_set_measure_callback(EngineBase *, std::size_t, bool) { re
 inline bool axon_node_style_set_number(EngineBase *, std::size_t, std::uint32_t, float) { return false; }
 inline bool axon_node_style_set_string(EngineBase *, std::size_t, std::uint32_t, const char *) { return false; }
 inline bool axon_compute_layout(EngineBase *, std::size_t, float, float) { return false; }
-inline bool axon_get_last_compute_stats(EngineBase *, AxonComputeStats *) { return false; }
 inline AxonLayoutResult axon_get_layout(EngineBase *, std::size_t) { return AxonLayoutResult{0, 0, 0, 0}; }
 inline std::uint32_t axon_font_register_resolved(
     EngineBase *,

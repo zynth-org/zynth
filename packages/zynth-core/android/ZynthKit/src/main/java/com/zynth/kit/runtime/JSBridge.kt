@@ -57,7 +57,6 @@ internal object JSBridge {
     proposedText: String,
   ): String?
   external fun axonComputeLayout(runtimePtr: Long, rootId: Int, width: Float, height: Float): Boolean
-  external fun axonGetLastComputeStats(runtimePtr: Long): LongArray?
   external fun axonCollectFrames(runtimePtr: Long, nodeIds: IntArray, outFrames: FloatArray): Boolean
   external fun axonSetStyleNumber(runtimePtr: Long, nodeId: Int, propId: Int, value: Float): Boolean
   external fun axonSetStyleString(runtimePtr: Long, nodeId: Int, propId: Int, value: String): Boolean
@@ -75,7 +74,6 @@ internal object JSBridge {
     italic: Boolean,
     sizePx: Float,
   ): Int
-  external fun axonSetTextMeasureMode(runtimePtr: Long, mode: Int): Boolean
   external fun axonInvalidateFontCache(runtimePtr: Long, fontId: Int): Boolean
   external fun axonSetTextMeasure(runtimePtr: Long, nodeId: Int, text: String, fontId: Int): Boolean
   external fun axonSetMeasureHandler(runtimePtr: Long, nodeId: Int, enabled: Boolean): Boolean
