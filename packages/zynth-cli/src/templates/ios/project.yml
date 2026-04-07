@@ -1,6 +1,7 @@
 name: {{APP_NAME}}
 options:
   minimumXcodeGenVersion: 2.38.0
+  shared: true
   deploymentTarget:
     iOS: "15.1"
 settings:
@@ -52,7 +53,7 @@ targets:
         SWIFT_OBJC_BRIDGING_HEADER: ""
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
         OTHER_LDFLAGS: "$(inherited) -ObjC"
-    bootstrapScripts:
+    preBuildScripts:
       - name: BundleJS
         basedOnDependencyAnalysis: true
         inputFiles:
@@ -65,11 +66,6 @@ targets:
         script: |
           # Exit immediately if a command exits with a non-zero status.
           set -e
-
-          # 🎯 FIX: Explicitly set the PATH for NVM-managed executables.
-          # You must use the directory containing the 'node' and 'yarn' binaries.
-          # WARNING: If you change your Node version using NVM, you must update the version number here!
-          export PATH="/Users/ignaciozsabo/.nvm/versions/node/v22.20.0/bin:$PATH"
 
           # ✅ Navigate from the Xcode project dir to the root of your framework.
           cd "$PROJECT_DIR/../../../"
@@ -107,32 +103,29 @@ targets:
             cp "$HBC_PATH" "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/main.hbc"
           fi
 
-          # Copy bundled image assets discovered during JS build.
-          IMAGES_MANIFEST_PATH="apps/{{APP_DIR}}/dist/assets/images-manifest.json"
-          if [ -f "$IMAGES_MANIFEST_PATH" ]; then
-            echo "🖼️ Copying bundled image assets..."
-            export IMAGES_MANIFEST_PATH
-            node -e '
-              const fs = require("fs");
-              const path = require("path");
-              const manifestPath = process.env.IMAGES_MANIFEST_PATH;
-              const resourcesDir = path.join(
-                process.env.BUILT_PRODUCTS_DIR || "",
-                process.env.UNLOCALIZED_RESOURCES_FOLDER_PATH || "",
-              );
-              let copied = 0;
-              const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-              for (const [relativeDest, sourcePath] of Object.entries(manifest)) {
-                if (!relativeDest || typeof sourcePath !== "string") continue;
-                if (!fs.existsSync(sourcePath)) continue;
-                const normalizedDest = relativeDest.replace(/^\/+/, "");
-                const outputPath = path.join(resourcesDir, normalizedDest);
-                fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-                fs.copyFileSync(sourcePath, outputPath);
-                copied += 1;
-              }
-              console.log(`  ✓ Copied ${copied} bundled image asset(s)`);
-            '
+          # Copy bundled image assets discovered during JS build (Shell-only approach)
+          ASSETS_DIR="apps/{{APP_DIR}}/dist/assets"
+          if [ -d "$ASSETS_DIR" ]; then
+            echo "🖼️ Copying bundled image assets from $ASSETS_DIR..."
+            DEST_ASSETS_DIR="$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/assets"
+            mkdir -p "$DEST_ASSETS_DIR"
+            cp -R "$ASSETS_DIR/" "$DEST_ASSETS_DIR/"
+            echo "  ✓ Assets copied"
           fi
     dependencies:
       - sdk: JavaScriptCore.framework
+schemes:
+  {{APP_NAME}}:
+    build:
+      targets:
+        {{APP_NAME}}: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
