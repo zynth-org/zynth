@@ -431,8 +431,8 @@ function removeDirectoryWithRetries(targetDir: string, retries = 5): void {
   }
 }
 
-export function generateIOSProject(appDir: string, options: any = {}) {
-  const { dev = true, quiet = false } = options; // Default to dev mode for backward compatibility
+export async function generateIOSProject(appDir: string, options: any = {}) {
+  const { dev = true, quiet = false, glyphMap } = options; // Default to dev mode for backward compatibility
   const iosRuntimePackage = "@zynth/core";
   const iosRuntimeDir = "zynth-core";
   const iosHermesDir = "zynth-core/ios";
@@ -496,6 +496,14 @@ export function generateIOSProject(appDir: string, options: any = {}) {
   if (devServerToken) {
     config.infoPlist["ZynthDevServerToken"] = devServerToken;
   }
+
+  // Generate assets before templating so project.yml can include copied fonts
+  // in UIAppFonts and XcodeGen can add them to the app target resources.
+  await generateAssets(appDir, "ios", dev, glyphMap);
+  if (quiet) {
+    console.log("  ├─ Generated iOS App Icons");
+    console.log("  ├─ Generated iOS Splash Assets");
+  }
   
   const infoPlistProperties = formatInfoPlistProperties(config.infoPlist);
 
@@ -512,7 +520,7 @@ export function generateIOSProject(appDir: string, options: any = {}) {
   }
   
   const uiAppFontsLine = fontFiles.length > 0 
-    ? `        UIAppFonts:\n${fontFiles.map(f => `          - ${f}`).join('\n')}`
+    ? `        UIAppFonts:\n${fontFiles.map(f => `          - fonts/${f}`).join('\n')}`
     : "";
 
   const hasSplash = Boolean(splashConfig.image || splashConfig.backgroundColor);
@@ -584,13 +592,6 @@ static NSString *const kZynthSplashResizeMode = @"${splashResizeMode}";`;
     }
   }
 
-  // Generate assets (Icons, Splash)
-  generateAssets(appDir, "ios", dev);
-  if (quiet) {
-    console.log("  ├─ Generated iOS App Icons");
-    console.log("  ├─ Generated iOS Splash Assets");
-  }
-
   if (!quiet) {
     console.log(`✅ iOS project generated at ${targetDir}`);
     console.log("");
@@ -621,7 +622,10 @@ if (require.main === module) {
   }
 
   try {
-    generateIOSProject(appPath);
+    generateIOSProject(appPath).catch((error: any) => {
+      console.error("Failed to generate iOS project:", error.message);
+      process.exit(1);
+    });
   } catch (error: any) {
     console.error("Error generating iOS project:", error.message);
     process.exit(1);

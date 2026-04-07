@@ -156,10 +156,10 @@ module.exports = {
     }
 
     if (argv.platform === "ios") {
-      await buildIOS(root, appDir, argv);
+      await buildIOS(root, appDir, argv, glyphMap);
     } else {
       if (argv.bootstrap) {
-        ensureBootstrap(root, appDir, "android", {
+        await ensureBootstrap(root, appDir, "android", {
           dev: false,
           quiet: false,
         });
@@ -499,9 +499,27 @@ function printAndroidArtifactSummary(androidDir, signingConfigured, preferredFor
   return relativePath;
 }
 
-async function buildIOS(root, appDir, argv) {
+async function buildIOS(root, appDir, argv, glyphMap = null) {
   const config = getIOSConfig(root, appDir);
   const iosDir = path.join(appDir, "ios");
+
+  if (argv.bootstrap) {
+    await ensureBootstrap(root, appDir, "ios", {
+      dev: false,
+      quiet: false,
+      glyphMap,
+    });
+  } else {
+    console.log("◆ Generating assets for ios...");
+    try {
+      const { generateAssets } = requireScript(
+        resolveInternalProjectScriptPath("generate-assets")
+      );
+      await generateAssets(appDir, "ios", false, glyphMap);
+    } catch (e) {
+      console.warn(`! Failed to generate assets: ${e.message}`);
+    }
+  }
 
   if (!fs.existsSync(iosDir)) {
     throw new Error(

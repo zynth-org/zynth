@@ -1004,7 +1004,7 @@ function getAndroidConfig(root, appDir) {
   return { ...base, bundleId: pkgName };
 }
 
-function ensureBootstrap(root, appDir, platform, options = {}) {
+async function ensureBootstrap(root, appDir, platform, options = {}) {
   const scriptName = platform === "ios" ? "bootstrap-ios" : "bootstrap-android";
   const scriptPath = resolveInternalProjectScriptPath(scriptName);
 
@@ -1013,7 +1013,7 @@ function ensureBootstrap(root, appDir, platform, options = {}) {
   const originalCwd = process.cwd();
   try {
     process.chdir(appDir);
-    bootstrapModule.main(options);
+    await bootstrapModule.main(options);
   } finally {
     process.chdir(originalCwd);
   }
@@ -1565,7 +1565,7 @@ async function devIOS(root, appDir, options = {}) {
       console.log("◆ Regenerating iOS project (--bootstrap)");
     }
     removeDirectory(iosDir);
-    ensureBootstrap(root, appDir, "ios", {
+    await ensureBootstrap(root, appDir, "ios", {
       dev: true,
       quiet: quietOutput,
     });
@@ -1849,14 +1849,14 @@ async function devAndroid(root, appDir, options = {}) {
   const verboseBuild = Boolean(options.verbose);
 
   if (options.bootstrap) {
-    ensureBootstrap(root, appDir, "android", {
+    await ensureBootstrap(root, appDir, "android", {
       dev: true,
       quiet: quietOutput,
     });
   } else if (!fs.existsSync(androidDir)) {
     // If android dir is missing, we must bootstrap regardless of flag
     console.log("◆ Android directory missing. Running bootstrap...");
-    ensureBootstrap(root, appDir, "android", {
+    await ensureBootstrap(root, appDir, "android", {
       dev: true,
       quiet: quietOutput,
     });

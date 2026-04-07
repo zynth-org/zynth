@@ -1,6 +1,6 @@
 import { createSignal, onMount, onCleanup, createComponent } from "solid-js";
 import { Text, TextProps, createStyle } from "@zynth/components";
-import { Font, Platform } from "@zynth/apis";
+import { Font, OS, Platform } from "@zynth/apis";
 
 // Track font loading state globally
 const fontLoadState = new Map<string, "loading" | "loaded" | "error">();
@@ -20,9 +20,12 @@ function ensureWebFontSource(fontFamily: string) {
     return;
   }
 
-  const globalObj =
-    typeof globalThis !== "undefined" ? (globalThis as any) : (window as any);
-  const sources = (globalObj.__zynth_web_font_sources ??= {}) as WebFontSources;
+  const globalObj = globalThis as Record<string, unknown>;
+  const existingSources = globalObj.__zynth_web_font_sources;
+  const sources =
+    existingSources !== null && typeof existingSources === "object"
+      ? (existingSources as WebFontSources)
+      : ((globalObj.__zynth_web_font_sources = {}) as WebFontSources);
 
   if (!sources[fontFamily]) {
     sources[fontFamily] = new URL(
@@ -50,19 +53,14 @@ function loadFont(fontFamily: string): Promise<void> {
   const promise = Font.loadAsync(fontFamily, resourceName)
     .then(() => {
       fontLoadState.set(fontFamily, "loaded");
-      // Notify all listeners that font is ready
       const listeners = fontLoadListeners.get(fontFamily);
       if (listeners) {
         listeners.forEach((cb) => cb());
       }
     })
-    .catch((err) => {
+    .catch((error: unknown) => {
       fontLoadState.set(fontFamily, "error");
-      console.log(
-        `Failed to load icon font ${fontFamily}:`,
-        JSON.stringify(err),
-      );
-      throw err;
+      throw error;
     });
 
   fontLoadPromises.set(fontFamily, promise);
@@ -79,39 +77,36 @@ function subscribeToFont(fontFamily: string, callback: () => void): () => void {
   return () => listeners!.delete(callback);
 }
 
+function shouldLoadFontAtRuntime(): boolean {
+  return Platform.OS !== OS.IOS;
+}
+
 export function createIcon(glyph: string, fontFamily: string) {
+  if (shouldLoadFontAtRuntime()) {
+    loadFont(fontFamily).catch(() => {});
+  } else if (!fontLoadState.has(fontFamily)) {
+    fontLoadState.set(fontFamily, "loaded");
+  }
+
   return (props: TextProps) => {
-    const [isReady, setIsReady] = createSignal(
-      fontLoadState.get(fontFamily) === "loaded",
-    );
+    const [fontRevision, setFontRevision] = createSignal(0);
 
     onMount(() => {
-      // If already loaded, we're good (initialized to true)
-      if (fontLoadState.get(fontFamily) === "loaded") {
+      if (!shouldLoadFontAtRuntime()) {
         return;
       }
 
       let cancelled = false;
 
-      const checkAndSetReady = () => {
+      const bumpFontRevision = () => {
         if (cancelled) return;
-        // Use double requestAnimationFrame to ensure we're past the next paint
-        // This gives the native side ample time to update the FontRegistry
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            if (!cancelled) {
-              setIsReady(true);
-            }
-          });
-        });
+        setFontRevision((value) => value + 1);
       };
 
-      // Subscribe to font load completion
-      const unsubscribe = subscribeToFont(fontFamily, checkAndSetReady);
+      const unsubscribe = subscribeToFont(fontFamily, bumpFontRevision);
 
-      // Ensure loading is triggered
       loadFont(fontFamily)
-        .then(checkAndSetReady)
+        .then(bumpFontRevision)
         .catch(() => {});
 
       onCleanup(() => {
@@ -120,23 +115,22 @@ export function createIcon(glyph: string, fontFamily: string) {
       });
     });
 
-    // Always render the same Text element to avoid layout thrashing
-    // Use a space character as placeholder until font is ready
-    // This maintains proper text composition in the native layer
-    const mergedStyle = createStyle(() => props.style as any);
+    const mergedStyle = createStyle(() => {
+      const nextStyle = props.style;
+      return typeof nextStyle === "function" ? nextStyle() : nextStyle;
+    });
 
     return createComponent(Text, {
       ...props,
       get text() {
-        // High priority: always use our glyph when ready
-        return isReady() ? glyph : " ";
+        return glyph;
       },
       get style() {
+        fontRevision();
         const base = mergedStyle() || {};
         return {
           ...base,
-          // High priority: force our fontFamily when ready
-          fontFamily: isReady() ? fontFamily : base.fontFamily,
+          fontFamily,
           height:
             Platform.OS === "android"
               ? base.fontSize || 16

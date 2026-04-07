@@ -19,7 +19,7 @@ module.exports = {
       default: false,
     });
   },
-  handler: (argv) => {
+  handler: async (argv) => {
     const appDir = argv.app
       ? path.resolve(process.cwd(), argv.app)
       : findAppDirectory(process.cwd());
@@ -30,6 +30,6 @@ module.exports = {
       // Standalone app: use app root as command root
     }
     const options = { dev: !argv.production };
-    ensureBootstrap(root, appDir, argv.platform, options);
+    await ensureBootstrap(root, appDir, argv.platform, options);
   },
 };

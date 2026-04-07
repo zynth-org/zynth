@@ -7,7 +7,7 @@ function dim(text: string): string {
   return `\u001b[2m${text}\u001b[0m`;
 }
 
-export function main(options: any = {}): void {
+export async function main(options: any = {}): Promise<void> {
   const appDir = process.cwd();
   const quiet = Boolean(options.quiet);
 
@@ -21,7 +21,7 @@ export function main(options: any = {}): void {
     if (quiet) {
       process.env.ZYNTH_QUIET_BOOTSTRAP = "1";
     }
-    generateIOSProject(appDir, options);
+    await generateIOSProject(appDir, options);
     if (quiet) {
       delete process.env.ZYNTH_QUIET_BOOTSTRAP;
     }
@@ -229,5 +229,8 @@ function copyDir(sourceDir: string, destDir: string): void {
 }
 
 if (require.main === module) {
-  main();
+  main().catch((error: any) => {
+    console.error("\n✖ Bootstrap failed:", error.message);
+    process.exit(1);
+  });
 }

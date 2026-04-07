@@ -71,6 +71,17 @@ targets:
 
           # Check if bundle already exists and we're in Release mode
           BUNDLE_PATH="apps/{{APP_DIR}}/dist/main.js"
+          mkdir -p "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
+
+          FONTS_DIR="$PROJECT_DIR/{{APP_NAME}}/fonts"
+          if [ -d "$FONTS_DIR" ]; then
+            echo "🔤 Copying bundled fonts from $FONTS_DIR..."
+            DEST_FONTS_DIR="$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/fonts"
+            mkdir -p "$DEST_FONTS_DIR"
+            cp "$FONTS_DIR"/* "$DEST_FONTS_DIR/" 2>/dev/null || true
+            echo "  ✓ Fonts copied"
+          fi
+
           if [ "$CONFIGURATION" = "Release" ]; then
             echo "⚡ Release build detected - using pre-built bundle"
             if [ ! -f "$BUNDLE_PATH" ]; then
@@ -84,14 +95,11 @@ targets:
             fi
           else
             echo "⚡ Debug build - skipping bundle copy (Rsbuild dev server supplies JS)."
-            mkdir -p "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
             rm -f "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/main.js"
             rm -f "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/main.hbc"
             touch "${SCRIPT_OUTPUT_FILE_0}"
             exit 0
           fi
-
-          mkdir -p "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
 
           # Prefer Hermes bytecode in Release and omit JS source to reduce app size.
           HBC_PATH="apps/{{APP_DIR}}/dist/main.hbc"
