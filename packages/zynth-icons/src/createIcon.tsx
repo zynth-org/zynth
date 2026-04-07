@@ -1,4 +1,4 @@
-import { createSignal, onMount, onCleanup } from "solid-js";
+import { createSignal, onMount, onCleanup, createComponent } from "solid-js";
 import { Text, TextProps, createStyle } from "@zynth/components";
 import { Font, Platform } from "@zynth/apis";
 
@@ -80,9 +80,6 @@ function subscribeToFont(fontFamily: string, callback: () => void): () => void {
 }
 
 export function createIcon(glyph: string, fontFamily: string) {
-  // Eagerly start loading at module init time
-  loadFont(fontFamily);
-
   return (props: TextProps) => {
     const [isReady, setIsReady] = createSignal(
       fontLoadState.get(fontFamily) === "loaded",
@@ -128,19 +125,24 @@ export function createIcon(glyph: string, fontFamily: string) {
     // This maintains proper text composition in the native layer
     const mergedStyle = createStyle(() => props.style as any);
 
-    return (
-      <Text
-        {...props}
-        text={isReady() ? glyph : " "}
-        style={{
-          ...(mergedStyle() || {}),
-          fontFamily: isReady() ? fontFamily : undefined,
+    return createComponent(Text, {
+      ...props,
+      get text() {
+        // High priority: always use our glyph when ready
+        return isReady() ? glyph : " ";
+      },
+      get style() {
+        const base = mergedStyle() || {};
+        return {
+          ...base,
+          // High priority: force our fontFamily when ready
+          fontFamily: isReady() ? fontFamily : base.fontFamily,
           height:
             Platform.OS === "android"
-              ? mergedStyle()?.fontSize || 16
-              : undefined,
-        }}
-      />
-    );
+              ? base.fontSize || 16
+              : base.height,
+        };
+      },
+    });
   };
 }

@@ -5,10 +5,140 @@
   "main": "dist/esm/index.js",
   "module": "dist/esm/index.js",
   "types": "dist/types/index.d.ts",
-  "sideEffects": [
-    "./src/index.web.ts",
-    "./web/**/*"
-  ],
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "native": "./dist/esm/index.js",
+      "import": "./dist/esm/index.js",
+      "browser": "./dist/web/index.js",
+      "default": "./dist/esm/index.js"
+    },
+    "./createIcon": {
+      "types": "./dist/types/createIcon.d.ts",
+      "import": "./dist/esm/createIcon.js",
+      "default": "./dist/esm/createIcon.js"
+    },
+    "./createSvgIcon": {
+      "types": "./dist/types/createSvgIcon.d.ts",
+      "native": "./dist/esm/createSvgIcon.js",
+      "import": "./dist/esm/createSvgIcon.js",
+      "browser": "./dist/web/createSvgIcon.js",
+      "default": "./dist/esm/createSvgIcon.js"
+    },
+    "./ai": {
+      "types": "./dist/types/ai.d.ts",
+      "native": "./dist/esm/ai.js",
+      "import": "./dist/esm/ai.js",
+      "browser": "./dist/web/ai.js",
+      "default": "./dist/esm/ai.js"
+    },
+    "./bi": {
+      "types": "./dist/types/bi.d.ts",
+      "native": "./dist/esm/bi.js",
+      "import": "./dist/esm/bi.js",
+      "browser": "./dist/web/bi.js",
+      "default": "./dist/esm/bi.js"
+    },
+    "./bs": {
+      "types": "./dist/types/bs.d.ts",
+      "native": "./dist/esm/bs.js",
+      "import": "./dist/esm/bs.js",
+      "browser": "./dist/web/bs.js",
+      "default": "./dist/esm/bs.js"
+    },
+    "./cg": {
+      "types": "./dist/types/cg.d.ts",
+      "native": "./dist/esm/cg.js",
+      "import": "./dist/esm/cg.js",
+      "browser": "./dist/web/cg.js",
+      "default": "./dist/esm/cg.js"
+    },
+    "./fa": {
+      "types": "./dist/types/fa.d.ts",
+      "native": "./dist/esm/fa.js",
+      "import": "./dist/esm/fa.js",
+      "browser": "./dist/web/fa.js",
+      "default": "./dist/esm/fa.js"
+    },
+    "./fi": {
+      "types": "./dist/types/fi.d.ts",
+      "native": "./dist/esm/fi.js",
+      "import": "./dist/esm/fi.js",
+      "browser": "./dist/web/fi.js",
+      "default": "./dist/esm/fi.js"
+    },
+    "./hi": {
+      "types": "./dist/types/hi.d.ts",
+      "native": "./dist/esm/hi.js",
+      "import": "./dist/esm/hi.js",
+      "browser": "./dist/web/hi.js",
+      "default": "./dist/esm/hi.js"
+    },
+    "./im": {
+      "types": "./dist/types/im.d.ts",
+      "native": "./dist/esm/im.js",
+      "import": "./dist/esm/im.js",
+      "browser": "./dist/web/im.js",
+      "default": "./dist/esm/im.js"
+    },
+    "./io": {
+      "types": "./dist/types/io.d.ts",
+      "native": "./dist/esm/io.js",
+      "import": "./dist/esm/io.js",
+      "browser": "./dist/web/io.js",
+      "default": "./dist/esm/io.js"
+    },
+    "./oc": {
+      "types": "./dist/types/oc.d.ts",
+      "native": "./dist/esm/oc.js",
+      "import": "./dist/esm/oc.js",
+      "browser": "./dist/web/oc.js",
+      "default": "./dist/esm/oc.js"
+    },
+    "./ri": {
+      "types": "./dist/types/ri.d.ts",
+      "native": "./dist/esm/ri.js",
+      "import": "./dist/esm/ri.js",
+      "browser": "./dist/web/ri.js",
+      "default": "./dist/esm/ri.js"
+    },
+    "./si": {
+      "types": "./dist/types/si.d.ts",
+      "native": "./dist/esm/si.js",
+      "import": "./dist/esm/si.js",
+      "browser": "./dist/web/si.js",
+      "default": "./dist/esm/si.js"
+    },
+    "./tb": {
+      "types": "./dist/types/tb.d.ts",
+      "native": "./dist/esm/tb.js",
+      "import": "./dist/esm/tb.js",
+      "browser": "./dist/web/tb.js",
+      "default": "./dist/esm/tb.js"
+    },
+    "./ti": {
+      "types": "./dist/types/ti.d.ts",
+      "native": "./dist/esm/ti.js",
+      "import": "./dist/esm/ti.js",
+      "browser": "./dist/web/ti.js",
+      "default": "./dist/esm/ti.js"
+    },
+    "./vs": {
+      "types": "./dist/types/vs.d.ts",
+      "native": "./dist/esm/vs.js",
+      "import": "./dist/esm/vs.js",
+      "browser": "./dist/web/vs.js",
+      "default": "./dist/esm/vs.js"
+    },
+    "./wi": {
+      "types": "./dist/types/wi.d.ts",
+      "native": "./dist/esm/wi.js",
+      "import": "./dist/esm/wi.js",
+      "browser": "./dist/web/wi.js",
+      "default": "./dist/esm/wi.js"
+    }
+  },
   "license": "MIT",
   "files": [
     "assets",
@@ -35,8 +165,8 @@
     "svgtofont": "6.5.0"
   },
   "scripts": {
-    "build": "yarn build:js && yarn build:types",
-    "build:js": "rm -rf dist/esm && tsc --project tsconfig.esm.json",
+    "build": "rm -rf dist && yarn build:js && yarn build:types && yarn generate",
+    "build:js": "tsc --project tsconfig.esm.json",
     "build:types": "tsc --project tsconfig.types.json",
     "generate": "node --experimental-strip-types scripts/generate.ts"
   },

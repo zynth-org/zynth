@@ -11,8 +11,7 @@ function run() {
       description: "Explicit app directory",
     })
     .demandCommand(1, "You need at least one command before moving on")
-    .help()
-    .strict().argv;
+    .help().argv;
 }
 
 module.exports = { run };

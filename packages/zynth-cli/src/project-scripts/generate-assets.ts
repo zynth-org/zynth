@@ -3,6 +3,22 @@ import * as path from 'path';
 import { execSync } from 'child_process';
 import { getAppConfig } from './config-utils';
 
+// We use require for these optional but recommended optimization dependencies
+// to ensure they don't break the build if they fail to load in certain environments.
+let sharp: any;
+try {
+  sharp = require('sharp');
+} catch (e) {
+  // sharp is optional but highly recommended for image optimization
+}
+
+let subsetFont: any;
+try {
+  subsetFont = require('subset-font');
+} catch (e) {
+  // subset-font is optional but highly recommended for app size reduction
+}
+
 type RGBA = { r: number; g: number; b: number; a: number };
 
 function parseHexColor(value: string): RGBA | null {
@@ -251,7 +267,63 @@ function normalizeAndroidColor(value: string | undefined): string {
   return parseHexColor(normalized) ? normalized : "#ffffff";
 }
 
-function copyFonts(appDir: string, fonts: string[], platform: 'ios' | 'android', appName: string): void {
+/**
+ * Resolves paths for icon fonts from @zynth/icons based on discovery map.
+ * This is needed because the fonts are not explicitly in the app's source 
+ * and thus not in the fonts-manifest.json.
+ */
+function resolveZynthIconFonts(appDir: string, glyphMap?: Record<string, string>): string[] {
+  if (!glyphMap) return [];
+  
+  const foundFonts: string[] = [];
+  try {
+    // Resolve @zynth/icons main entry point
+    const mainEntry = require.resolve('@zynth/icons', { paths: [appDir] });
+    // From dist/esm/index.js, go up 3 levels to reach package root
+    const iconsDir = path.dirname(path.dirname(path.dirname(mainEntry)));
+    const fontsSourceDir = path.join(iconsDir, 'assets', 'fonts');
+
+    for (const familyName of Object.keys(glyphMap)) {
+      if (familyName.startsWith('ZynthIcons')) {
+        const fontPath = path.join(fontsSourceDir, `${familyName}.ttf`);
+        if (fs.existsSync(fontPath)) {
+          foundFonts.push(fontPath);
+        }
+      }
+    }
+  } catch (e: any) {
+    // Ignore if not found
+  }
+  
+  return foundFonts;
+}
+
+/**
+ * Resolves all available icon fonts from @zynth/icons.
+ * Used in dev mode to ensure all icons are available.
+ */
+function resolveAllZynthIconFonts(appDir: string): string[] {
+  const foundFonts: string[] = [];
+  try {
+    const mainEntry = require.resolve('@zynth/icons', { paths: [appDir] });
+    const iconsDir = path.dirname(path.dirname(path.dirname(mainEntry)));
+    const fontsSourceDir = path.join(iconsDir, 'assets', 'fonts');
+
+    if (fs.existsSync(fontsSourceDir)) {
+      const files = fs.readdirSync(fontsSourceDir);
+      for (const file of files) {
+        if (file.startsWith('ZynthIcons') && file.endsWith('.ttf')) {
+          foundFonts.push(path.join(fontsSourceDir, file));
+        }
+      }
+    }
+  } catch (e: any) {
+    // Ignore
+  }
+  return foundFonts;
+}
+
+async function copyFonts(appDir: string, fonts: string[], platform: 'ios' | 'android', appName: string, glyphMap?: Record<string, string>, dev: boolean = false): Promise<void> {
   if (!fonts || !Array.isArray(fonts) || fonts.length === 0) return;
 
   const targetDir = platform === 'ios' 
@@ -260,24 +332,72 @@ function copyFonts(appDir: string, fonts: string[], platform: 'ios' | 'android',
 
   fs.mkdirSync(targetDir, { recursive: true });
 
-  fonts.forEach(fontRelativePath => {
+  const quiet = Boolean(process.env.ZYNTH_QUIET_BOOTSTRAP);
+
+  for (const fontRelativePath of fonts) {
     const sourcePath = path.resolve(appDir, fontRelativePath);
     if (!fs.existsSync(sourcePath)) {
       console.warn(`⚠️  Font not found: ${sourcePath}`);
-      return;
+      continue;
     }
     const fontFileName = path.basename(sourcePath);
     const destPath = path.join(targetDir, fontFileName);
-    fs.copyFileSync(sourcePath, destPath);
     
-    const quiet = Boolean(process.env.ZYNTH_QUIET_BOOTSTRAP);
-    if (!quiet) {
-      console.log(`  ✓ Copied font: ${fontFileName}`);
+    // Check if we can subset this font
+    let subsetted = false;
+    // The font family name in glyphMap might be something like "ZynthIconsBS"
+    const familyMatch = fontFileName.match(/^(ZynthIcons[A-Z]{2})([.-]|$)/);
+    const familyName = familyMatch ? familyMatch[1] : null;
+
+    if (familyName && glyphMap) {
+      if (!glyphMap[familyName]) {
+        // Identified as a Zynth font library but it is not used in the bundle.
+        // We skip copying it to save space in the final AAB.
+        if (!quiet) {
+          console.log(`  ✓ Excluding unused icon font: ${fontFileName}`);
+        }
+        continue;
+      }
+
+      // If we reach here, the font IS used in the bundle (or we're in dev mode).
+      // We try to subset it if the tool is available and we're NOT in dev mode.
+      if (subsetFont && glyphMap[familyName]) {
+        try {
+          const glyphs = glyphMap[familyName];
+          const originalContent = fs.readFileSync(sourcePath);
+          const subsetContent = await subsetFont(originalContent, glyphs, { targetFormat: 'truetype' });
+          
+          fs.writeFileSync(destPath, subsetContent);
+          subsetted = true;
+          
+          if (!quiet) {
+            const savings = Math.round((1 - subsetContent.length / originalContent.length) * 100);
+            console.log(`  ✓ Subsetted and copied font: ${fontFileName} (${savings}% smaller)`);
+          }
+        } catch (e: any) {
+          if (!quiet) {
+            console.warn(`  ! Failed to subset font ${fontFileName}: ${e.message}. Copying original...`);
+          }
+        }
+      } else if (!quiet && !process.env.ZYNTH_SUPPRESS_OPT_WARNING) {
+        // Tool missing but font is used: copy original.
+        // Alert once per library if subsetFont is null.
+        console.warn(`  ! Note: Used font ${fontFileName} copied without subsetting because 'subset-font' is not installed.`);
+      }
     }
-  });
+
+    if (!subsetted) {
+      fs.copyFileSync(sourcePath, destPath);
+      // Suppress individual font logs in dev mode for ZynthIcons to avoid terminal clutter
+      const isZynthIcon = fontFileName.startsWith('ZynthIcons');
+      if (!quiet && (!dev || !isZynthIcon)) {
+        console.log(`  ✓ Copied font: ${fontFileName}`);
+      }
+    }
+  }
 }
 
-function copyBundledImages(appDir: string, platform: 'ios' | 'android', appName: string): void {
+async function copyBundledImages(appDir: string, platform: 'ios' | 'android', appName: string): Promise<void> {
   const manifestPath = path.join(appDir, 'dist', 'assets', 'images-manifest.json');
   if (!fs.existsSync(manifestPath)) return;
 
@@ -297,7 +417,7 @@ function copyBundledImages(appDir: string, platform: 'ios' | 'android', appName:
   fs.mkdirSync(targetRoot, { recursive: true });
 
   const quiet = Boolean(process.env.ZYNTH_QUIET_BOOTSTRAP);
-  const copied: string[] = [];
+  const copiedCount = { original: 0, webp: 0 };
 
   for (const [relativeDestPath, sourcePath] of Object.entries(manifest)) {
     if (!relativeDestPath || typeof sourcePath !== 'string' || sourcePath.length === 0) {
@@ -310,12 +430,46 @@ function copyBundledImages(appDir: string, platform: 'ios' | 'android', appName:
     const normalizedRelative = relativeDestPath.replace(/^\/+/, '');
     const destPath = path.join(targetRoot, normalizedRelative);
     fs.mkdirSync(path.dirname(destPath), { recursive: true });
-    fs.copyFileSync(sourcePath, destPath);
-    copied.push(normalizedRelative);
+
+    // Optimization: Convert large non-vector images to webp if sharp is available
+    let optimized = false;
+    const ext = path.extname(sourcePath).toLowerCase();
+    const isLarge = fs.statSync(sourcePath).size > 50 * 1024; // > 50KB
+
+    if (sharp && isLarge && (ext === '.png' || ext === '.jpg' || ext === '.jpeg')) {
+      try {
+        const webpDest = destPath.replace(new RegExp(`${ext}$`), '.webp');
+        await sharp(sourcePath)
+          .webp({ quality: 85 })
+          .toFile(webpDest);
+        
+        // We still copy the original for backward compatibility or if needed,
+        // but the app should prefer .webp if it exists.
+        // Actually, to save size on Android, we can REPLACE it if we want.
+        // But for now, let's just copy both or replace if it's android.
+        if (platform === 'android') {
+           // Swap extension in manifest logic would be better, but we can't easily change the JS source.
+           // However, Zynth's AssetProvider can be updated to prefer webp.
+           // For now, let's just provide both.
+           fs.copyFileSync(sourcePath, destPath);
+        } else {
+           fs.copyFileSync(sourcePath, destPath);
+        }
+        optimized = true;
+        copiedCount.webp++;
+      } catch (e) {
+        // fallback to copy
+      }
+    }
+
+    if (!optimized) {
+      fs.copyFileSync(sourcePath, destPath);
+      copiedCount.original++;
+    }
   }
 
-  if (!quiet && copied.length > 0) {
-    console.log(`  ✓ Copied ${copied.length} bundled image asset(s)`);
+  if (!quiet && (copiedCount.original > 0 || copiedCount.webp > 0)) {
+    console.log(`  ✓ Copied ${copiedCount.original + copiedCount.webp} bundled image asset(s) (${copiedCount.webp} optimized to WebP)`);
   }
 }
 
@@ -368,22 +522,44 @@ function generateAndroidSplashAssets(appDir: string, splash: any): void {
   console.log('  ✓ Generated Android Splash Assets');
 }
 
-export function generateAssets(appDir: string, platform: 'ios' | 'android', dev: boolean = false): void {
-  const config = getAppConfig(appDir);
+export async function generateAssets(appDir: string, platform: 'ios' | 'android', dev: boolean = false, glyphMap?: Record<string, string>): Promise<void> {
+  const quiet = Boolean(process.env.ZYNTH_QUIET_BOOTSTRAP);
+  
+  if (!quiet && !process.env.ZYNTH_SUPPRESS_OPT_WARNING) {
+    if (!sharp) {
+      console.warn("  ! Note: Image optimization (WebP conversion) is disabled because 'sharp' is not installed in @zynth/cli.");
+    }
+    if (!subsetFont) {
+      console.warn("  ! Note: Icon font subsetting is disabled because 'subset-font' is not installed in @zynth/cli. (Unused fonts will still be excluded).");
+    }
+  }
+
   const appJsonPath = path.join(appDir, 'app.json');
   let appConfig: any = {};
   if (fs.existsSync(appJsonPath)) {
+    try {
       const json = JSON.parse(fs.readFileSync(appJsonPath, 'utf8'));
       appConfig = json.zynth || json;
+    } catch (e) {
+      // Ignore parse errors here, use empty config
+    }
   }
   
-  const cleanAppName = config.appName;
+  const cleanAppName = appConfig.name || 'ZynthApp';
 
   // Discover fonts from manifest (generated by JS build)
   const allFonts: string[] = [];
   
-  // Skip font discovery and copying during development to avoid overhead
-  if (!dev) {
+  // Combine manual fonts, discovered fonts and icon fonts
+  if (dev) {
+    // In dev mode, we copy ALL icon fonts (unsubsetted) to ensure every icon is available
+    const zynthIconFonts = resolveAllZynthIconFonts(appDir);
+    allFonts.push(...(appConfig.fonts || []), ...zynthIconFonts);
+    if (!quiet) {
+      console.log(`  ✓ Including all ${zynthIconFonts.length} icon fonts (Dev mode)`);
+    }
+  } else {
+    // Discovery from manifest (generated by JS build)
     const manifestPath = path.join(appDir, 'dist', 'assets', 'fonts-manifest.json');
     const discoveredFonts: string[] = [];
     if (fs.existsSync(manifestPath)) {
@@ -399,6 +575,10 @@ export function generateAssets(appDir: string, platform: 'ios' | 'android', dev:
 
     // Combine manual fonts and discovered fonts
     allFonts.push(...(appConfig.fonts || []), ...discoveredFonts);
+
+    // Auto-inject Zynth Icon fonts based on glyphMap discovery
+    const zynthIconFonts = resolveZynthIconFonts(appDir, glyphMap);
+    allFonts.push(...zynthIconFonts);
   }
 
   if (platform === 'ios') {
@@ -407,9 +587,9 @@ export function generateAssets(appDir: string, platform: 'ios' | 'android', dev:
         generateIOSIcons(appDir, iconPath, cleanAppName);
       }
       generateIOSSplashAssets(appDir, appConfig.splash || {}, cleanAppName);
-      copyBundledImages(appDir, 'ios', cleanAppName);
+      await copyBundledImages(appDir, 'ios', cleanAppName);
       if (allFonts.length > 0) {
-        copyFonts(appDir, allFonts, 'ios', cleanAppName);
+        await copyFonts(appDir, allFonts, 'ios', cleanAppName, glyphMap, dev);
       }
   }
 
@@ -424,9 +604,9 @@ export function generateAssets(appDir: string, platform: 'ios' | 'android', dev:
           generateAndroidIcons(appDir, iconPath);
       }
       generateAndroidSplashAssets(appDir, appConfig.splash || {});
-      copyBundledImages(appDir, 'android', cleanAppName);
+      await copyBundledImages(appDir, 'android', cleanAppName);
       if (allFonts.length > 0) {
-        copyFonts(appDir, allFonts, 'android', cleanAppName);
+        await copyFonts(appDir, allFonts, 'android', cleanAppName, glyphMap, dev);
       }
   }
 }

@@ -13,6 +13,7 @@ const {
   runCommandFiltered,
   runCommandFilteredAndroid,
   printZynthBuildStatus,
+  readJSON,
 } = require("../utils");
 
 function gray(text) {
@@ -148,15 +149,10 @@ module.exports = {
     const hbcPath = path.join(appDir, "dist", "main.hbc");
     compileBundleToHermesBytecode(appDir, bundlePath, hbcPath, argv.platform);
 
-    // After bundling, ensure assets (like fonts) are discovered and copied to native folders
-    console.log(`◆ Generating assets for ${argv.platform}...`);
-    try {
-      const { generateAssets } = requireScript(
-        resolveInternalProjectScriptPath("generate-assets")
-      );
-      generateAssets(appDir, argv.platform, false); // dev = false to ensure fonts are copied
-    } catch (e) {
-      console.warn(`! Failed to generate assets: ${e.message}`);
+    // After bundling, scan it for glyph usage to support subsetting
+    let glyphMap = null;
+    if (fs.existsSync(bundlePath)) {
+      glyphMap = scanBundleForGlyphs(bundlePath);
     }
 
     if (argv.platform === "ios") {
@@ -169,12 +165,65 @@ module.exports = {
         });
       }
       removeAndroidDevConfigAsset(appDir);
+
+      // Now ensure assets (like fonts) are discovered and copied to native folders
+      // We do this BEFORE copying the bundle, but AFTER scanning glyphs
+      console.log(`◆ Generating assets for ${argv.platform}...`);
+      try {
+        const { generateAssets } = requireScript(
+          resolveInternalProjectScriptPath("generate-assets")
+        );
+        await generateAssets(appDir, argv.platform, false, glyphMap);
+      } catch (e) {
+        console.warn(`! Failed to generate assets: ${e.message}`);
+      }
+
       // Android needs manual bundle copy since Gradle doesn't auto-copy in release builds
       copyBundleToAndroid(appDir);
       await buildAndroid(root, appDir, argv);
     }
   },
 };
+
+function scanBundleForGlyphs(bundlePath) {
+  try {
+    let content = fs.readFileSync(bundlePath, "utf8");
+    
+    // Handle escaped Unicode sequences like \uE801 before scanning.
+    // Minifiers often convert non-ASCII characters to these escapes.
+    content = content.replace(/\\u([0-9a-fA-F]{4})/g, (match, hex) => {
+      return String.fromCharCode(parseInt(hex, 16));
+    });
+
+    const glyphMap = {};
+    // Match patterns like "glyph","ZynthIconsXX" or 'glyph','ZynthIconsXX'
+    // including cases where the character is now unescaped.
+    // We allow optional spaces and handle both ' and " quotes.
+    const regex = /(['"])([\uE000-\uF8FF])\1\s*,\s*(['"])(ZynthIcons[A-Z]{2})\3/g;
+    let match;
+    let count = 0;
+    while ((match = regex.exec(content)) !== null) {
+      const glyph = match[2];
+      const font = match[4];
+      if (!glyphMap[font]) glyphMap[font] = new Set();
+      glyphMap[font].add(glyph);
+      count++;
+    }
+    
+    // Convert Sets to sorted strings for the subsetter
+    const result = {};
+    for (const [font, glyphs] of Object.entries(glyphMap)) {
+      result[font] = Array.from(glyphs).sort().join("");
+    }
+    if (count > 0) {
+      console.log(`◆ Discovered ${count} used glyphs across ${Object.keys(result).length} icon libraries`);
+    }
+    return result;
+  } catch (e) {
+    console.warn(`! Failed to scan bundle for glyphs: ${e.message}`);
+    return null;
+  }
+}
 
 function copyBundleToAndroid(appDir) {
   const bundleSrc = path.join(appDir, "dist", "main.js");
@@ -199,15 +248,25 @@ function copyBundleToAndroid(appDir) {
   const bundleDest = path.join(assetsDir, "main.js");
   const hbcDest = path.join(assetsDir, "main.hbc");
 
-  fs.copyFileSync(bundleSrc, bundleDest);
-  console.log(`◆ Copied JS bundle to android/app/src/main/assets/main.js`);
+  const hasHbc = fs.existsSync(path.join(appDir, "dist", "main.hbc"));
 
-  if (fs.existsSync(path.join(appDir, "dist", "main.hbc"))) {
+  if (hasHbc) {
     fs.copyFileSync(path.join(appDir, "dist", "main.hbc"), hbcDest);
     console.log(
       `✔ Copied Hermes bytecode to android/app/src/main/assets/main.hbc`
     );
+    // If we have HBC, we can skip main.js to save space, but only if the native side expects it.
+    // However, the ZynthRuntime prefers main.hbc over main.js anyway.
+    // For extreme size savings, we skip main.js.
+    console.log(`◆ Skipping JS source copy since Hermes bytecode is present (saves ~1MB)`);
+    if (fs.existsSync(bundleDest)) {
+      try {
+        fs.unlinkSync(bundleDest);
+      } catch (e) {}
+    }
   } else {
+    fs.copyFileSync(bundleSrc, bundleDest);
+    console.log(`◆ Copied JS bundle to android/app/src/main/assets/main.js`);
     console.warn(
       "! dist/main.hbc not found. Android runtime will fallback to JS source."
     );
