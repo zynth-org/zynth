@@ -61,8 +61,7 @@ targets:
           - $(SRCROOT)/../dist/main.hbc
           - $(SRCROOT)/../dist/assets/images-manifest.json
         outputFiles:
-          - $(BUILT_PRODUCTS_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/main.js
-          - $(BUILT_PRODUCTS_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/main.hbc
+          - $(DERIVED_FILE_DIR)/BundleJS.stamp
         script: |
           # Exit immediately if a command exits with a non-zero status.
           set -e
@@ -88,19 +87,22 @@ targets:
             mkdir -p "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
             rm -f "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/main.js"
             rm -f "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/main.hbc"
+            touch "${SCRIPT_OUTPUT_FILE_0}"
             exit 0
           fi
 
-          # Copy the generated JS bundle into the app's resources folder (Release only).
-          echo "📄 Copying main.js to app resources..."
           mkdir -p "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
-          cp "$BUNDLE_PATH" "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/main.js"
 
-          # Try to copy Hermes bytecode if it exists (for faster startup)
+          # Prefer Hermes bytecode in Release and omit JS source to reduce app size.
           HBC_PATH="apps/{{APP_DIR}}/dist/main.hbc"
           if [ -f "$HBC_PATH" ]; then
             echo "📦 Copying Hermes bytecode..."
             cp "$HBC_PATH" "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/main.hbc"
+            rm -f "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/main.js"
+          else
+            echo "📄 Hermes bytecode missing; copying main.js fallback..."
+            rm -f "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/main.hbc"
+            cp "$BUNDLE_PATH" "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/main.js"
           fi
 
           # Copy bundled image assets discovered during JS build (Shell-only approach)
@@ -112,6 +114,8 @@ targets:
             cp -R "$ASSETS_DIR/" "$DEST_ASSETS_DIR/"
             echo "  ✓ Assets copied"
           fi
+
+          touch "${SCRIPT_OUTPUT_FILE_0}"
     dependencies:
       - sdk: JavaScriptCore.framework
 schemes:
