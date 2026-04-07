@@ -188,7 +188,7 @@ static inline void ZynthStartupMetricsRecordFrame(NSString *sessionId,
       if (!strongRuntime) return;
       ZynthStartupMetricsRecordFrame(sessionIdForFrame, frameMs, layoutMs);
       ZynthNativePerformanceOverlayManager *overlayManager = [ZynthNativePerformanceOverlayManager shared];
-      [overlayManager recordPerformanceFrameWithFrameMs:frameMs nodeCount:nodeCount];
+      [overlayManager recordPerformanceFrameWithFrameMs:frameMs overBudget:overBudget nodeCount:nodeCount];
       [strongRuntime callGlobal:@"__zynth_reportFrame"
                            args:@[
                              @(frameMs),

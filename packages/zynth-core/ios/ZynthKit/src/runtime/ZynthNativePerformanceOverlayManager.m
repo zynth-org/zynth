@@ -1,6 +1,7 @@
 #import "ZynthNativePerformanceOverlayManager.h"
 #import "ZynthRuntime.h"
 
+#import <float.h>
 #import <math.h>
 #import <mach/mach.h>
 #import <QuartzCore/QuartzCore.h>
@@ -14,7 +15,15 @@
 @property(nonatomic, strong) UILabel *performanceViewsValueLabel;
 @property(nonatomic, strong) UILabel *performanceUiFpsValueLabel;
 @property(nonatomic, strong) UILabel *performanceJsFpsValueLabel;
+@property(nonatomic, strong) UILabel *performanceChevronLabel;
+@property(nonatomic, strong) UIStackView *performanceBudgetDetailsStack;
+@property(nonatomic, strong) UILabel *performanceLastPassValueLabel;
+@property(nonatomic, strong) UILabel *performanceShortestPassValueLabel;
+@property(nonatomic, strong) UILabel *performanceLongestPassValueLabel;
+@property(nonatomic, strong) UILabel *performanceBudgetOverrunsValueLabel;
+@property(nonatomic, strong) UILabel *performanceBudgetPassesValueLabel;
 @property(nonatomic, assign) BOOL performanceEnabled;
+@property(nonatomic, assign) BOOL performanceOverlayExpanded;
 @property(nonatomic, assign) NSUInteger performanceUiFrameCount;
 @property(nonatomic, assign) NSUInteger performanceJsTickCount;
 @property(nonatomic, assign) NSUInteger performanceNodeCount;
@@ -33,6 +42,11 @@
 @property(nonatomic, assign) NSUInteger performanceJsWarnStreak;
 @property(nonatomic, assign) NSUInteger performanceUiRecoverStreak;
 @property(nonatomic, assign) NSUInteger performanceJsRecoverStreak;
+@property(nonatomic, assign) NSUInteger performanceBudgetPasses;
+@property(nonatomic, assign) NSUInteger performanceBudgetOverruns;
+@property(nonatomic, assign) NSTimeInterval performanceLastPassMs;
+@property(nonatomic, assign) NSTimeInterval performanceShortestPassMs;
+@property(nonatomic, assign) NSTimeInterval performanceLongestPassMs;
 - (void)resetPerformanceCounters;
 - (void)ensurePerformanceOverlayVisible;
 - (void)removePerformanceOverlay;
@@ -42,9 +56,15 @@
 - (void)positionPerformanceOverlayAtDefault;
 - (void)clampPerformanceOverlayToBounds;
 - (void)onPerformanceOverlayPan:(UIPanGestureRecognizer *)recognizer;
+- (void)onPerformanceOverlayTap:(UITapGestureRecognizer *)recognizer;
 - (UIView *)performanceMetricColumnWithTitle:(NSString *)title
-                                  valueLabel:(UILabel **)valueLabel
-                                  valueColor:(UIColor *)valueColor;
+	                                  valueLabel:(UILabel **)valueLabel
+	                                  valueColor:(UIColor *)valueColor;
+- (UIView *)performanceBudgetRowWithTitle:(NSString *)title valueLabel:(UILabel **)valueLabel;
+- (void)recordBudgetPassWithFrameMs:(NSTimeInterval)frameMs overBudget:(BOOL)overBudget;
+- (void)togglePerformanceOverlayExpanded;
+- (void)applyPerformanceOverlayExpandedState;
+- (NSString *)formatMilliseconds:(NSTimeInterval)value;
 - (void)startDisplayLink;
 - (void)stopDisplayLink;
 - (void)onDisplayLinkTick:(CADisplayLink *)displayLink;
@@ -58,6 +78,8 @@ static const NSUInteger ZynthPerfWarnOffset = 6;
 static const NSUInteger ZynthPerfRecoverOffset = 3;
 static const NSUInteger ZynthPerfWarnSamples = 3;
 static const NSUInteger ZynthPerfRecoverSamples = 2;
+static const CGFloat ZynthPerfOverlayCollapsedHeight = 62.0;
+static const CGFloat ZynthPerfOverlayExpandedHeight = 142.0;
 
 @implementation ZynthNativePerformanceOverlayManager
 
@@ -118,11 +140,16 @@ static const NSUInteger ZynthPerfRecoverSamples = 2;
     snapshot = @{
       @"enabled": @(self.performanceEnabled),
       @"ramMb": @(self.performanceRamMb),
-      @"views": @(self.performanceNodeCount),
-      @"uiFps": @(self.performanceUiFps),
-      @"jsFps": @(self.performanceJsFps),
-    };
-  };
+	      @"views": @(self.performanceNodeCount),
+	      @"uiFps": @(self.performanceUiFps),
+	      @"jsFps": @(self.performanceJsFps),
+	      @"lastPassMs": @(self.performanceLastPassMs),
+	      @"shortestPassMs": @(self.performanceBudgetPasses > 0 ? self.performanceShortestPassMs : 0.0),
+	      @"longestPassMs": @(self.performanceLongestPassMs),
+	      @"budgetOverruns": @(self.performanceBudgetOverruns),
+	      @"totalPasses": @(self.performanceBudgetPasses),
+	    };
+	  };
   if ([NSThread isMainThread]) {
     readBlock();
   } else {
@@ -132,12 +159,13 @@ static const NSUInteger ZynthPerfRecoverSamples = 2;
 }
 
 - (void)recordPerformanceFrameWithFrameMs:(NSTimeInterval)frameMs
+                               overBudget:(BOOL)overBudget
                                  nodeCount:(NSUInteger)nodeCount {
-  (void)frameMs;
   dispatch_block_t updateBlock = ^{
     if (!self.performanceEnabled) return;
     self.performanceNodeCount = nodeCount;
     [self ensurePerformanceOverlayVisible];
+    [self recordBudgetPassWithFrameMs:frameMs overBudget:overBudget];
     if (self.performanceOverlay != nil && self.rootView != nil) {
       [self.rootView bringSubviewToFront:self.performanceOverlay];
     }
@@ -194,10 +222,15 @@ static const NSUInteger ZynthPerfRecoverSamples = 2;
   self.performanceUiWarnActive = NO;
   self.performanceJsWarnActive = NO;
   self.performanceUiWarnStreak = 0;
-  self.performanceJsWarnStreak = 0;
-  self.performanceUiRecoverStreak = 0;
-  self.performanceJsRecoverStreak = 0;
-}
+	  self.performanceJsWarnStreak = 0;
+	  self.performanceUiRecoverStreak = 0;
+	  self.performanceJsRecoverStreak = 0;
+	  self.performanceBudgetPasses = 0;
+	  self.performanceBudgetOverruns = 0;
+	  self.performanceLastPassMs = 0.0;
+	  self.performanceShortestPassMs = DBL_MAX;
+	  self.performanceLongestPassMs = 0.0;
+	}
 
 - (void)ensurePerformanceOverlayVisible {
   UIView *root = self.rootView;
@@ -213,7 +246,8 @@ static const NSUInteger ZynthPerfRecoverSamples = 2;
     CGFloat topInset = root.safeAreaInsets.top;
     CGFloat availableWidth = MAX(210.0, root.bounds.size.width - horizontal * 2.0);
     CGFloat width = MIN(360.0, availableWidth);
-    CGRect frame = CGRectMake(horizontal, topInset + 10.0, width, 62.0);
+	    CGFloat height = self.performanceOverlayExpanded ? ZynthPerfOverlayExpandedHeight : ZynthPerfOverlayCollapsedHeight;
+	    CGRect frame = CGRectMake(horizontal, topInset + 10.0, width, height);
     UIView *pill = [[UIView alloc] initWithFrame:frame];
     pill.autoresizingMask = UIViewAutoresizingNone;
     pill.backgroundColor = [UIColor colorWithRed:0.06 green:0.07 blue:0.10 alpha:0.68];
@@ -226,9 +260,12 @@ static const NSUInteger ZynthPerfRecoverSamples = 2;
     pill.layer.zPosition = 100001.0;
     pill.clipsToBounds = YES;
 
-    UIPanGestureRecognizer *pan =
-      [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(onPerformanceOverlayPan:)];
-    [pill addGestureRecognizer:pan];
+	    UIPanGestureRecognizer *pan =
+	      [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(onPerformanceOverlayPan:)];
+	    [pill addGestureRecognizer:pan];
+	    UITapGestureRecognizer *tap =
+	      [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(onPerformanceOverlayTap:)];
+	    [pill addGestureRecognizer:tap];
 
     UIVisualEffectView *blur = nil;
     if (@available(iOS 13.0, *)) {
@@ -239,44 +276,89 @@ static const NSUInteger ZynthPerfRecoverSamples = 2;
       [pill addSubview:blur];
     }
 
-    UIStackView *row = [[UIStackView alloc] init];
-    row.translatesAutoresizingMaskIntoConstraints = NO;
-    row.axis = UILayoutConstraintAxisHorizontal;
-    row.alignment = UIStackViewAlignmentFill;
-    row.distribution = UIStackViewDistributionFillEqually;
-    row.spacing = 8.0;
+	    UIStackView *stack = [[UIStackView alloc] init];
+	    stack.translatesAutoresizingMaskIntoConstraints = NO;
+	    stack.axis = UILayoutConstraintAxisVertical;
+	    stack.alignment = UIStackViewAlignmentFill;
+	    stack.distribution = UIStackViewDistributionFill;
+	    stack.spacing = 8.0;
+
+	    UIStackView *row = [[UIStackView alloc] init];
+	    row.axis = UILayoutConstraintAxisHorizontal;
+	    row.alignment = UIStackViewAlignmentFill;
+	    row.distribution = UIStackViewDistributionFill;
+	    row.spacing = 8.0;
 
     UILabel *ramValue = nil;
     UILabel *viewsValue = nil;
     UILabel *uiValue = nil;
     UILabel *jsValue = nil;
     UIView *ramColumn = [self performanceMetricColumnWithTitle:@"RAM" valueLabel:&ramValue valueColor:[UIColor colorWithWhite:0.90 alpha:1.0]];
-    UIView *viewsColumn = [self performanceMetricColumnWithTitle:@"VIEWS" valueLabel:&viewsValue valueColor:[UIColor colorWithWhite:0.90 alpha:1.0]];
-    UIView *uiColumn = [self performanceMetricColumnWithTitle:@"UI" valueLabel:&uiValue valueColor:[UIColor colorWithRed:0.30 green:0.86 blue:0.57 alpha:1.0]];
-    UIView *jsColumn = [self performanceMetricColumnWithTitle:@"JS" valueLabel:&jsValue valueColor:[UIColor colorWithRed:0.34 green:0.91 blue:0.63 alpha:1.0]];
+	    UIView *viewsColumn = [self performanceMetricColumnWithTitle:@"VIEWS" valueLabel:&viewsValue valueColor:[UIColor colorWithWhite:0.90 alpha:1.0]];
+	    UIView *uiColumn = [self performanceMetricColumnWithTitle:@"UI" valueLabel:&uiValue valueColor:[UIColor colorWithRed:0.30 green:0.86 blue:0.57 alpha:1.0]];
+	    UIView *jsColumn = [self performanceMetricColumnWithTitle:@"JS" valueLabel:&jsValue valueColor:[UIColor colorWithRed:0.34 green:0.91 blue:0.63 alpha:1.0]];
+	    UILabel *chevronLabel = [[UILabel alloc] init];
+	    chevronLabel.text = @"v";
+	    chevronLabel.textColor = [UIColor colorWithWhite:0.90 alpha:1.0];
+	    chevronLabel.font = [UIFont systemFontOfSize:18.0 weight:UIFontWeightBold];
+	    chevronLabel.textAlignment = NSTextAlignmentCenter;
 
-    [row addArrangedSubview:ramColumn];
-    [row addArrangedSubview:viewsColumn];
-    [row addArrangedSubview:uiColumn];
-    [row addArrangedSubview:jsColumn];
+	    [row addArrangedSubview:ramColumn];
+	    [row addArrangedSubview:viewsColumn];
+	    [row addArrangedSubview:uiColumn];
+	    [row addArrangedSubview:jsColumn];
+	    [row addArrangedSubview:chevronLabel];
+	    [NSLayoutConstraint activateConstraints:@[
+	      [viewsColumn.widthAnchor constraintEqualToAnchor:ramColumn.widthAnchor],
+	      [uiColumn.widthAnchor constraintEqualToAnchor:ramColumn.widthAnchor],
+	      [jsColumn.widthAnchor constraintEqualToAnchor:ramColumn.widthAnchor],
+	      [chevronLabel.widthAnchor constraintEqualToConstant:30.0],
+	    ]];
 
-    [pill addSubview:row];
-    [NSLayoutConstraint activateConstraints:@[
-      [row.leadingAnchor constraintEqualToAnchor:pill.leadingAnchor constant:10.0],
-      [row.trailingAnchor constraintEqualToAnchor:pill.trailingAnchor constant:-10.0],
-      [row.topAnchor constraintEqualToAnchor:pill.topAnchor constant:6.0],
-      [row.bottomAnchor constraintEqualToAnchor:pill.bottomAnchor constant:-6.0],
-    ]];
+	    UILabel *lastPassValue = nil;
+	    UILabel *shortestPassValue = nil;
+	    UILabel *longestPassValue = nil;
+	    UILabel *overrunsValue = nil;
+	    UILabel *passesValue = nil;
+	    UIStackView *details = [[UIStackView alloc] init];
+	    details.axis = UILayoutConstraintAxisVertical;
+	    details.alignment = UIStackViewAlignmentFill;
+	    details.distribution = UIStackViewDistributionFill;
+	    details.spacing = 2.0;
+	    [details addArrangedSubview:[self performanceBudgetRowWithTitle:@"Last Pass" valueLabel:&lastPassValue]];
+	    [details addArrangedSubview:[self performanceBudgetRowWithTitle:@"Shortest" valueLabel:&shortestPassValue]];
+	    [details addArrangedSubview:[self performanceBudgetRowWithTitle:@"Longest" valueLabel:&longestPassValue]];
+	    [details addArrangedSubview:[self performanceBudgetRowWithTitle:@"Overruns" valueLabel:&overrunsValue]];
+	    [details addArrangedSubview:[self performanceBudgetRowWithTitle:@"Passes" valueLabel:&passesValue]];
+	    details.hidden = !self.performanceOverlayExpanded;
+	    [stack addArrangedSubview:row];
+	    [stack addArrangedSubview:details];
 
-    self.performanceRamValueLabel = ramValue;
-    self.performanceViewsValueLabel = viewsValue;
-    self.performanceUiFpsValueLabel = uiValue;
-    self.performanceJsFpsValueLabel = jsValue;
-    self.performanceOverlay = pill;
+	    [pill addSubview:stack];
+	    [NSLayoutConstraint activateConstraints:@[
+	      [stack.leadingAnchor constraintEqualToAnchor:pill.leadingAnchor constant:10.0],
+	      [stack.trailingAnchor constraintEqualToAnchor:pill.trailingAnchor constant:-10.0],
+	      [stack.topAnchor constraintEqualToAnchor:pill.topAnchor constant:6.0],
+	      [stack.bottomAnchor constraintLessThanOrEqualToAnchor:pill.bottomAnchor constant:-6.0],
+	    ]];
 
-    [root addSubview:pill];
-    [self positionPerformanceOverlayAtDefault];
-  }
+	    self.performanceRamValueLabel = ramValue;
+	    self.performanceViewsValueLabel = viewsValue;
+	    self.performanceUiFpsValueLabel = uiValue;
+	    self.performanceJsFpsValueLabel = jsValue;
+	    self.performanceChevronLabel = chevronLabel;
+	    self.performanceBudgetDetailsStack = details;
+	    self.performanceLastPassValueLabel = lastPassValue;
+	    self.performanceShortestPassValueLabel = shortestPassValue;
+	    self.performanceLongestPassValueLabel = longestPassValue;
+	    self.performanceBudgetOverrunsValueLabel = overrunsValue;
+	    self.performanceBudgetPassesValueLabel = passesValue;
+	    self.performanceOverlay = pill;
+
+	    [root addSubview:pill];
+	    [self positionPerformanceOverlayAtDefault];
+	    [self applyPerformanceOverlayExpandedState];
+	  }
 
   [self clampPerformanceOverlayToBounds];
   [root bringSubviewToFront:self.performanceOverlay];
@@ -286,11 +368,18 @@ static const NSUInteger ZynthPerfRecoverSamples = 2;
   [self.performanceOverlay removeFromSuperview];
   self.performanceOverlay = nil;
   self.performanceRamValueLabel = nil;
-  self.performanceViewsValueLabel = nil;
-  self.performanceUiFpsValueLabel = nil;
-  self.performanceJsFpsValueLabel = nil;
-  self.performanceJSPingPending = NO;
-}
+	  self.performanceViewsValueLabel = nil;
+	  self.performanceUiFpsValueLabel = nil;
+	  self.performanceJsFpsValueLabel = nil;
+	  self.performanceChevronLabel = nil;
+	  self.performanceBudgetDetailsStack = nil;
+	  self.performanceLastPassValueLabel = nil;
+	  self.performanceShortestPassValueLabel = nil;
+	  self.performanceLongestPassValueLabel = nil;
+	  self.performanceBudgetOverrunsValueLabel = nil;
+	  self.performanceBudgetPassesValueLabel = nil;
+	  self.performanceJSPingPending = NO;
+	}
 
 - (void)samplePerformanceIfNeeded {
   CFTimeInterval now = CACurrentMediaTime();
@@ -331,11 +420,19 @@ static const NSUInteger ZynthPerfRecoverSamples = 2;
   if (self.performanceOverlay == nil) return;
 
   self.performanceRamValueLabel.text = [NSString stringWithFormat:@"%luMB", (unsigned long)self.performanceRamMb];
-  self.performanceViewsValueLabel.text = [NSString stringWithFormat:@"%lu", (unsigned long)self.performanceNodeCount];
-  self.performanceUiFpsValueLabel.text = [NSString stringWithFormat:@"%lu", (unsigned long)self.performanceUiFps];
-  self.performanceJsFpsValueLabel.text = [NSString stringWithFormat:@"%lu", (unsigned long)self.performanceJsFps];
+	  self.performanceViewsValueLabel.text = [NSString stringWithFormat:@"%lu", (unsigned long)self.performanceNodeCount];
+	  self.performanceUiFpsValueLabel.text = [NSString stringWithFormat:@"%lu", (unsigned long)self.performanceUiFps];
+	  self.performanceJsFpsValueLabel.text = [NSString stringWithFormat:@"%lu", (unsigned long)self.performanceJsFps];
+	  self.performanceLastPassValueLabel.text = [self formatMilliseconds:self.performanceLastPassMs];
+	  self.performanceShortestPassValueLabel.text =
+	    [self formatMilliseconds:(self.performanceBudgetPasses > 0 ? self.performanceShortestPassMs : 0.0)];
+	  self.performanceLongestPassValueLabel.text = [self formatMilliseconds:self.performanceLongestPassMs];
+	  self.performanceBudgetOverrunsValueLabel.text =
+	    [NSString stringWithFormat:@"%lu", (unsigned long)self.performanceBudgetOverruns];
+	  self.performanceBudgetPassesValueLabel.text =
+	    [NSString stringWithFormat:@"%lu", (unsigned long)self.performanceBudgetPasses];
 
-  UIColor *goodColor = [UIColor colorWithRed:0.30 green:0.86 blue:0.57 alpha:1.0];
+	  UIColor *goodColor = [UIColor colorWithRed:0.30 green:0.86 blue:0.57 alpha:1.0];
   UIColor *warnColor = [UIColor colorWithRed:0.98 green:0.80 blue:0.22 alpha:1.0];
   self.performanceUiFpsValueLabel.textColor = self.performanceUiWarnActive ? warnColor : goodColor;
   self.performanceJsFpsValueLabel.textColor = self.performanceJsWarnActive ? warnColor : goodColor;
@@ -394,12 +491,21 @@ static const NSUInteger ZynthPerfRecoverSamples = 2;
     frame.origin.y = self.performanceDragOrigin.y + translation.y;
     overlay.frame = frame;
     [self clampPerformanceOverlayToBounds];
+	  }
+	}
+
+- (void)onPerformanceOverlayTap:(UITapGestureRecognizer *)recognizer {
+  UIView *overlay = self.performanceOverlay;
+  if (!overlay || recognizer.state != UIGestureRecognizerStateEnded) return;
+  CGPoint location = [recognizer locationInView:overlay];
+  if (location.x >= overlay.bounds.size.width - 52.0 && location.y <= ZynthPerfOverlayCollapsedHeight) {
+    [self togglePerformanceOverlayExpanded];
   }
 }
 
 - (UIView *)performanceMetricColumnWithTitle:(NSString *)title
-                                  valueLabel:(UILabel **)valueLabel
-                                  valueColor:(UIColor *)valueColor {
+	                                  valueLabel:(UILabel **)valueLabel
+	                                  valueColor:(UIColor *)valueColor {
   UIStackView *column = [[UIStackView alloc] init];
   column.axis = UILayoutConstraintAxisVertical;
   column.alignment = UIStackViewAlignmentCenter;
@@ -422,8 +528,72 @@ static const NSUInteger ZynthPerfRecoverSamples = 2;
 
   if (valueLabel != NULL) {
     *valueLabel = metricValue;
+	  }
+	  return column;
+	}
+
+- (UIView *)performanceBudgetRowWithTitle:(NSString *)title valueLabel:(UILabel **)valueLabel {
+  UIStackView *row = [[UIStackView alloc] init];
+  row.axis = UILayoutConstraintAxisHorizontal;
+  row.alignment = UIStackViewAlignmentCenter;
+  row.distribution = UIStackViewDistributionFill;
+  row.spacing = 8.0;
+
+  UILabel *titleLabel = [[UILabel alloc] init];
+  titleLabel.text = title;
+  titleLabel.textColor = [UIColor colorWithWhite:0.68 alpha:0.95];
+  titleLabel.font = [UIFont systemFontOfSize:10.0 weight:UIFontWeightSemibold];
+  titleLabel.textAlignment = NSTextAlignmentLeft;
+  [row addArrangedSubview:titleLabel];
+
+  UILabel *metricValue = [[UILabel alloc] init];
+  metricValue.text = @"0";
+  metricValue.textColor = [UIColor colorWithWhite:0.90 alpha:1.0];
+  metricValue.font = [UIFont monospacedDigitSystemFontOfSize:10.0 weight:UIFontWeightSemibold];
+  metricValue.textAlignment = NSTextAlignmentRight;
+  [row addArrangedSubview:metricValue];
+  NSLayoutConstraint *valueWidth = [metricValue.widthAnchor constraintGreaterThanOrEqualToConstant:96.0];
+  valueWidth.active = YES;
+
+  if (valueLabel != NULL) {
+    *valueLabel = metricValue;
   }
-  return column;
+  return row;
+}
+
+- (void)recordBudgetPassWithFrameMs:(NSTimeInterval)frameMs overBudget:(BOOL)overBudget {
+  if (!isfinite(frameMs) || frameMs < 0.0) return;
+  self.performanceBudgetPasses += 1;
+  self.performanceLastPassMs = frameMs;
+  self.performanceShortestPassMs = MIN(self.performanceShortestPassMs, frameMs);
+  self.performanceLongestPassMs = MAX(self.performanceLongestPassMs, frameMs);
+  if (overBudget) {
+    self.performanceBudgetOverruns += 1;
+  }
+  [self updatePerformanceOverlayLabels];
+}
+
+- (void)togglePerformanceOverlayExpanded {
+  self.performanceOverlayExpanded = !self.performanceOverlayExpanded;
+  [self applyPerformanceOverlayExpandedState];
+  [self updatePerformanceOverlayLabels];
+}
+
+- (void)applyPerformanceOverlayExpandedState {
+  UIView *overlay = self.performanceOverlay;
+  if (!overlay) return;
+  self.performanceChevronLabel.text = self.performanceOverlayExpanded ? @"^" : @"v";
+  self.performanceBudgetDetailsStack.hidden = !self.performanceOverlayExpanded;
+  CGRect frame = overlay.frame;
+  frame.size.height = self.performanceOverlayExpanded ? ZynthPerfOverlayExpandedHeight : ZynthPerfOverlayCollapsedHeight;
+  overlay.frame = frame;
+  [overlay setNeedsLayout];
+  [overlay layoutIfNeeded];
+  [self clampPerformanceOverlayToBounds];
+}
+
+- (NSString *)formatMilliseconds:(NSTimeInterval)value {
+  return [NSString stringWithFormat:@"%.2fms", value];
 }
 
 - (void)startDisplayLink {

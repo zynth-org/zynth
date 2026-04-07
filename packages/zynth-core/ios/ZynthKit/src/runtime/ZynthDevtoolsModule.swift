@@ -46,8 +46,15 @@ final class ZynthDevtoolsModule: ZynthModule {
   }
 
   func call(method: String, args: ZynthArgs) throws -> Any? {
-#if DEBUG
     switch method {
+    case "setPerformanceOverlayEnabled":
+      let enabled = args.bool("enabled", default: false)
+      runtime?.setPerformanceOverlayEnabled(enabled)
+      return ["result": true]
+    case "getPerformanceOverlayStats":
+      let snapshot = runtime?.performanceOverlaySnapshot() ?? [:]
+      return ["result": snapshot]
+#if DEBUG
     case "connect":
       let urlString = try args.string("url")
       guard let url = URL(string: urlString) else {
@@ -65,19 +72,14 @@ final class ZynthDevtoolsModule: ZynthModule {
       return ["result": true]
     case "isConnected":
       return ["result": client.isConnected]
-    case "setPerformanceOverlayEnabled":
-      let enabled = args.bool("enabled", default: false)
-      runtime?.setPerformanceOverlayEnabled(enabled)
-      return ["result": true]
-    case "getPerformanceOverlayStats":
-      let snapshot = runtime?.performanceOverlaySnapshot() ?? [:]
-      return ["result": snapshot]
-    default:
-      return ["error": "unknown_method", "method": method]
-    }
-#else
-    return ["result": false]
 #endif
+    default:
+#if DEBUG
+      return ["error": "unknown_method", "method": method]
+#else
+      return ["result": false]
+#endif
+    }
   }
 
   private func forwardInboundDevtoolsEvent(_ event: [String: Any]) {

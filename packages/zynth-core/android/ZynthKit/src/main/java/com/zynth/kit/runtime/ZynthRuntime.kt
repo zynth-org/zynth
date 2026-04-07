@@ -52,7 +52,7 @@ class ZynthRuntime(val root: ZynthRootView) {
     }
     uiManager.setFrameProfiler { frameMs, layoutMs, overBudget, nodeCount ->
       startupMetrics.recordFrame(frameMs, layoutMs)
-      ZynthNativePerformanceOverlay.recordPerformanceFrame(nodeCount)
+      ZynthNativePerformanceOverlay.recordPerformanceFrame(frameMs, overBudget, nodeCount)
       runOnJS {
         JSBridge.callGlobalFrame(runtimePtr, "__zynth_reportFrame", frameMs, layoutMs, overBudget, nodeCount)
       }

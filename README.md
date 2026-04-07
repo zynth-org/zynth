@@ -21,6 +21,7 @@ Zynth brings fine-grained reactivity to native mobile development. By combining 
 - Node.js >= 18
 - Yarn
 - Xcode (for iOS)
+- xcodegen, cocoapods (for iOS)
 - Android Studio (for Android)
 
 ### Installation

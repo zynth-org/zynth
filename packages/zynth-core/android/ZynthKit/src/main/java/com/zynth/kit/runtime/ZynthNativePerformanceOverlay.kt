@@ -29,8 +29,16 @@ internal object ZynthNativePerformanceOverlay {
   private const val PERF_VIEWS_VALUE_TAG = 94_002
   private const val PERF_UI_VALUE_TAG = 94_003
   private const val PERF_JS_VALUE_TAG = 94_004
+  private const val PERF_CHEVRON_TAG = 94_005
+  private const val PERF_DETAILS_TAG = 94_006
+  private const val PERF_LAST_PASS_VALUE_TAG = 94_007
+  private const val PERF_SHORTEST_PASS_VALUE_TAG = 94_008
+  private const val PERF_LONGEST_PASS_VALUE_TAG = 94_009
+  private const val PERF_OVERRUNS_VALUE_TAG = 94_010
+  private const val PERF_PASSES_VALUE_TAG = 94_011
   private const val OVERLAY_WIDTH_DP = 330
   private const val OVERLAY_HEIGHT_DP = 62
+  private const val OVERLAY_EXPANDED_HEIGHT_DP = 142
   private const val FPS_EMA_ALPHA = 0.26
   private const val FPS_WARN_OFFSET = 6
   private const val FPS_RECOVER_OFFSET = 3
@@ -54,6 +62,10 @@ internal object ZynthNativePerformanceOverlay {
   private val performanceJsPingPending = AtomicBoolean(false)
   private var performanceDragStartX: Float = 0f
   private var performanceDragStartY: Float = 0f
+  private var performanceTouchDownRawX: Float = 0f
+  private var performanceTouchDownRawY: Float = 0f
+  private var performanceChevronPressed: Boolean = false
+  private var performanceOverlayExpanded: Boolean = false
   private var uiFrameCallback: Choreographer.FrameCallback? = null
   private var uiFpsEma: Double = -1.0
   private var jsFpsEma: Double = -1.0
@@ -63,6 +75,11 @@ internal object ZynthNativePerformanceOverlay {
   private var jsWarnStreak: Int = 0
   private var uiRecoverStreak: Int = 0
   private var jsRecoverStreak: Int = 0
+  private var performanceBudgetPasses: Long = 0L
+  private var performanceLastPassMs: Double = 0.0
+  private var performanceShortestPassMs: Double = Double.MAX_VALUE
+  private var performanceLongestPassMs: Double = 0.0
+  private var performanceBudgetOverruns: Long = 0L
 
   fun attach(root: ZynthRootView) {
     rootRef = WeakReference(root)
@@ -121,17 +138,23 @@ internal object ZynthNativePerformanceOverlay {
       "views" to performanceNodeCount,
       "uiFps" to performanceUiFps,
       "jsFps" to performanceJsFps,
+      "lastPassMs" to performanceLastPassMs,
+      "shortestPassMs" to if (performanceBudgetPasses > 0L) performanceShortestPassMs else 0.0,
+      "longestPassMs" to performanceLongestPassMs,
+      "budgetOverruns" to performanceBudgetOverruns,
+      "totalPasses" to performanceBudgetPasses,
     )
   }
 
   @JvmStatic
-  fun recordPerformanceFrame(nodeCount: Int) {
+  fun recordPerformanceFrame(frameMs: Double, overBudget: Boolean, nodeCount: Int) {
     val update: () -> Unit = update@{
       if (!performanceEnabled) {
         return@update
       }
       performanceNodeCount = nodeCount.coerceAtLeast(0)
       ensurePerformanceOverlay()
+      recordBudgetPass(frameMs, overBudget)
       rootView()?.bringChildToFront(performanceOverlayView)
     }
     if (Looper.myLooper() == Looper.getMainLooper()) {
@@ -183,6 +206,11 @@ internal object ZynthNativePerformanceOverlay {
     jsWarnStreak = 0
     uiRecoverStreak = 0
     jsRecoverStreak = 0
+    performanceBudgetPasses = 0L
+    performanceLastPassMs = 0.0
+    performanceShortestPassMs = Double.MAX_VALUE
+    performanceLongestPassMs = 0.0
+    performanceBudgetOverruns = 0L
   }
 
   private fun startUiFrameLoop() {
@@ -225,7 +253,7 @@ internal object ZynthNativePerformanceOverlay {
       val insets = root.rootWindowInsets?.let { WindowInsetsCompat.toWindowInsetsCompat(it) }
       val topInset = insets?.getInsets(WindowInsetsCompat.Type.systemBars())?.top ?: statusBarHeight(root)
       val overlay = LinearLayout(root.context).apply {
-        orientation = LinearLayout.HORIZONTAL
+        orientation = LinearLayout.VERTICAL
         gravity = Gravity.CENTER_VERTICAL
         setPadding(dp(10), dp(6), dp(10), dp(6))
         background = roundedBackground(
@@ -244,6 +272,9 @@ internal object ZynthNativePerformanceOverlay {
             MotionEvent.ACTION_DOWN -> {
               performanceDragStartX = event.rawX - view.x
               performanceDragStartY = event.rawY - view.y
+              performanceTouchDownRawX = event.rawX
+              performanceTouchDownRawY = event.rawY
+              performanceChevronPressed = event.x >= view.width - dp(52) && event.y <= dp(OVERLAY_HEIGHT_DP)
               true
             }
             MotionEvent.ACTION_MOVE -> {
@@ -253,7 +284,15 @@ internal object ZynthNativePerformanceOverlay {
               true
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-              clampPerformanceOverlayPosition(view)
+              val dx = event.rawX - performanceTouchDownRawX
+              val dy = event.rawY - performanceTouchDownRawY
+              val wasTap = (dx * dx + dy * dy) <= (dp(8) * dp(8)).toFloat()
+              if (event.actionMasked == MotionEvent.ACTION_UP && performanceChevronPressed && wasTap) {
+                togglePerformanceOverlayExpanded()
+              } else {
+                clampPerformanceOverlayPosition(view)
+              }
+              performanceChevronPressed = false
               true
             }
             else -> false
@@ -266,14 +305,43 @@ internal object ZynthNativePerformanceOverlay {
       val ui = performanceMetricColumn(root.context, "UI", PERF_UI_VALUE_TAG, Color.parseColor("#4ADE80"))
       val js = performanceMetricColumn(root.context, "JS", PERF_JS_VALUE_TAG, Color.parseColor("#4ADE80"))
 
-      overlay.addView(ram, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-      overlay.addView(views, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-      overlay.addView(ui, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-      overlay.addView(js, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+      val header = LinearLayout(root.context).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+      }
+      val chevron = TextView(root.context).apply {
+        id = PERF_CHEVRON_TAG
+        text = "v"
+        setTextColor(Color.parseColor("#E5E7EB"))
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+        gravity = Gravity.CENTER
+        typeface = Typeface.DEFAULT_BOLD
+      }
+      header.addView(ram, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+      header.addView(views, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+      header.addView(ui, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+      header.addView(js, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+      header.addView(chevron, LinearLayout.LayoutParams(dp(34), LinearLayout.LayoutParams.WRAP_CONTENT))
 
+      val details = LinearLayout(root.context).apply {
+        id = PERF_DETAILS_TAG
+        orientation = LinearLayout.VERTICAL
+        visibility = if (performanceOverlayExpanded) View.VISIBLE else View.GONE
+        setPadding(0, dp(8), 0, 0)
+      }
+      details.addView(performanceDetailRow(root.context, "Last Pass", PERF_LAST_PASS_VALUE_TAG))
+      details.addView(performanceDetailRow(root.context, "Shortest", PERF_SHORTEST_PASS_VALUE_TAG))
+      details.addView(performanceDetailRow(root.context, "Longest", PERF_LONGEST_PASS_VALUE_TAG))
+      details.addView(performanceDetailRow(root.context, "Overruns", PERF_OVERRUNS_VALUE_TAG))
+      details.addView(performanceDetailRow(root.context, "Passes", PERF_PASSES_VALUE_TAG))
+
+      overlay.addView(header, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+      overlay.addView(details, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+
+      performanceOverlayView = overlay
       root.addView(overlay)
       ensureOverlaySizeAndPosition(overlay, topInset)
-      performanceOverlayView = overlay
+      applyPerformanceOverlayExpandedState(overlay)
     }
 
     performanceOverlayView?.let { overlay ->
@@ -352,14 +420,36 @@ internal object ZynthNativePerformanceOverlay {
     val views = overlay.findViewById<TextView>(PERF_VIEWS_VALUE_TAG)
     val ui = overlay.findViewById<TextView>(PERF_UI_VALUE_TAG)
     val js = overlay.findViewById<TextView>(PERF_JS_VALUE_TAG)
+    val lastPass = overlay.findViewById<TextView>(PERF_LAST_PASS_VALUE_TAG)
+    val shortestPass = overlay.findViewById<TextView>(PERF_SHORTEST_PASS_VALUE_TAG)
+    val longestPass = overlay.findViewById<TextView>(PERF_LONGEST_PASS_VALUE_TAG)
+    val overruns = overlay.findViewById<TextView>(PERF_OVERRUNS_VALUE_TAG)
+    val passes = overlay.findViewById<TextView>(PERF_PASSES_VALUE_TAG)
     ram?.text = "${performanceRamMb}MB"
     views?.text = performanceNodeCount.toString()
     ui?.text = performanceUiFps.toString()
     js?.text = performanceJsFps.toString()
+    lastPass?.text = formatMs(performanceLastPassMs)
+    shortestPass?.text = formatMs(if (performanceBudgetPasses > 0L) performanceShortestPassMs else 0.0)
+    longestPass?.text = formatMs(performanceLongestPassMs)
+    overruns?.text = performanceBudgetOverruns.toString()
+    passes?.text = performanceBudgetPasses.toString()
     val good = Color.parseColor("#4ADE80")
     val warn = Color.parseColor("#FACC15")
     ui?.setTextColor(if (uiWarnActive) warn else good)
     js?.setTextColor(if (jsWarnActive) warn else good)
+  }
+
+  private fun recordBudgetPass(frameMs: Double, overBudget: Boolean) {
+    if (!frameMs.isFinite() || frameMs < 0.0) return
+    performanceBudgetPasses += 1L
+    performanceLastPassMs = frameMs
+    performanceShortestPassMs = kotlin.math.min(performanceShortestPassMs, frameMs)
+    performanceLongestPassMs = kotlin.math.max(performanceLongestPassMs, frameMs)
+    if (overBudget) {
+      performanceBudgetOverruns += 1L
+    }
+    updatePerformanceOverlayLabels()
   }
 
   private fun smoothFps(previous: Double, raw: Int): Double {
@@ -452,6 +542,62 @@ internal object ZynthNativePerformanceOverlay {
     }
   }
 
+  private fun performanceDetailRow(
+    context: Context,
+    title: String,
+    valueId: Int,
+  ): LinearLayout {
+    return LinearLayout(context).apply {
+      orientation = LinearLayout.HORIZONTAL
+      gravity = Gravity.CENTER_VERTICAL
+      addView(TextView(context).apply {
+        text = title
+        setTextColor(Color.parseColor("#9CA3AF"))
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+      }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+      addView(TextView(context).apply {
+        id = valueId
+        text = "0"
+        setTextColor(Color.parseColor("#E5E7EB"))
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+        typeface = Typeface.MONOSPACE
+        gravity = Gravity.END
+      }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+    }
+  }
+
+  private fun togglePerformanceOverlayExpanded() {
+    performanceOverlayExpanded = !performanceOverlayExpanded
+    applyPerformanceOverlayExpandedState(performanceOverlayView)
+    updatePerformanceOverlayLabels()
+  }
+
+  private fun applyPerformanceOverlayExpandedState(view: View?) {
+    val overlay = view as? ViewGroup ?: return
+    overlay.findViewById<TextView>(PERF_CHEVRON_TAG)?.text =
+      if (performanceOverlayExpanded) "^" else "v"
+    overlay.findViewById<View>(PERF_DETAILS_TAG)?.visibility =
+      if (performanceOverlayExpanded) View.VISIBLE else View.GONE
+    val targetHeight = dp(if (performanceOverlayExpanded) OVERLAY_EXPANDED_HEIGHT_DP else OVERLAY_HEIGHT_DP)
+    val params = overlay.layoutParams
+    if (params != null && params.height != targetHeight) {
+      params.height = targetHeight
+      overlay.layoutParams = params
+    }
+    val width = if (overlay.width > 0) overlay.width else dp(OVERLAY_WIDTH_DP)
+    val left = overlay.left
+    val top = overlay.top
+    val widthSpec = View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY)
+    val heightSpec = View.MeasureSpec.makeMeasureSpec(targetHeight, View.MeasureSpec.EXACTLY)
+    overlay.measure(widthSpec, heightSpec)
+    overlay.layout(left, top, left + width, top + targetHeight)
+    clampPerformanceOverlayPosition(overlay)
+  }
+
+  private fun formatMs(value: Double): String {
+    return "%.2fms".format(value)
+  }
+
   private fun clampPerformanceOverlayPosition(view: View) {
     val root = rootView() ?: return
     val insets = root.rootWindowInsets?.let { WindowInsetsCompat.toWindowInsetsCompat(it) }
@@ -460,7 +606,7 @@ internal object ZynthNativePerformanceOverlay {
     val rootWidth = if (root.width > 0) root.width else root.resources.displayMetrics.widthPixels
     val rootHeight = if (root.height > 0) root.height else root.resources.displayMetrics.heightPixels
     val viewWidth = if (view.width > 0) view.width else dp(OVERLAY_WIDTH_DP)
-    val viewHeight = if (view.height > 0) view.height else dp(OVERLAY_HEIGHT_DP)
+    val viewHeight = if (view.height > 0) view.height else dp(if (performanceOverlayExpanded) OVERLAY_EXPANDED_HEIGHT_DP else OVERLAY_HEIGHT_DP)
     val minX = dp(8).toFloat()
     val maxX = (rootWidth - viewWidth - dp(8)).toFloat().coerceAtLeast(minX)
     val minY = (topInset + dp(8)).toFloat()
@@ -527,7 +673,7 @@ internal object ZynthNativePerformanceOverlay {
       return
     }
     val width = dp(OVERLAY_WIDTH_DP)
-    val height = dp(OVERLAY_HEIGHT_DP)
+    val height = dp(if (performanceOverlayExpanded) OVERLAY_EXPANDED_HEIGHT_DP else OVERLAY_HEIGHT_DP)
     val left = dp(16)
     val top = topInset + dp(10)
     val widthSpec = View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY)

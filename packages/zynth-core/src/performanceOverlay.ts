@@ -1,11 +1,26 @@
 import { callNative } from "./bridge";
 
 export type PerformanceOverlayStats = {
+  /** Whether the native overlay is currently mounted. */
   enabled: boolean;
+  /** Current process resident memory in megabytes. */
   ramMb: number;
+  /** Number of native views under the active root. */
   views: number;
+  /** Smoothed UI display-link FPS. */
   uiFps: number;
+  /** Smoothed JS ping FPS. */
   jsFps: number;
+  /** Most recent Zynth UI manager frame pass duration in milliseconds. */
+  lastPassMs: number;
+  /** Shortest recorded Zynth UI manager frame pass duration in milliseconds. */
+  shortestPassMs: number;
+  /** Longest recorded Zynth UI manager frame pass duration in milliseconds. */
+  longestPassMs: number;
+  /** Count of recorded Zynth UI manager frame passes that exceeded budget. */
+  budgetOverruns: number;
+  /** Count of Zynth UI manager frame passes recorded while the overlay is enabled. */
+  totalPasses: number;
 };
 
 function normalizeStats(value: unknown): PerformanceOverlayStats | null {
@@ -19,12 +34,23 @@ function normalizeStats(value: unknown): PerformanceOverlayStats | null {
     }
     return Math.max(0, Math.round(entry));
   };
+  const asDuration = (entry: unknown): number => {
+    if (typeof entry !== "number" || !Number.isFinite(entry)) {
+      return 0;
+    }
+    return Math.max(0, entry);
+  };
   return {
     enabled: Boolean(record.enabled),
     ramMb: asNumber(record.ramMb),
     views: asNumber(record.views),
     uiFps: asNumber(record.uiFps),
     jsFps: asNumber(record.jsFps),
+    lastPassMs: asDuration(record.lastPassMs),
+    shortestPassMs: asDuration(record.shortestPassMs),
+    longestPassMs: asDuration(record.longestPassMs),
+    budgetOverruns: asNumber(record.budgetOverruns),
+    totalPasses: asNumber(record.totalPasses),
   };
 }
 
@@ -62,4 +88,3 @@ export const PerformanceOverlay = {
   setEnabled: setPerformanceOverlayEnabled,
   getStats: getPerformanceOverlayStats,
 };
-

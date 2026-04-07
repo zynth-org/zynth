@@ -12,6 +12,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)setPerformanceOverlayEnabled:(BOOL)enabled;
 - (NSDictionary<NSString *, NSNumber *> *)performanceOverlaySnapshot;
 - (void)recordPerformanceFrameWithFrameMs:(NSTimeInterval)frameMs
+                               overBudget:(BOOL)overBudget
                                 nodeCount:(NSUInteger)nodeCount;
 - (BOOL)requestPerformanceJSPing;
 - (void)recordPerformanceJSPing;
