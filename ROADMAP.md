@@ -45,6 +45,7 @@ This document outlines the current status and future development plan for the Zy
 - [x] @zynth/rsbuild-plugin: Build configuration for Native/Web.
 - [x] CLI-bundled templates: Project scaffolding blueprints.
 - [x] @zynth/skyhook: AI-powered generation backend.
+- [ ] iOS project generation cleanup: move inline `project.yml` bundle packaging logic into a generated script and validate XcodeGen build phases. See `docs/ios-project-generation-migration.md`.
 
 ---
 
