@@ -383,6 +383,14 @@ function replacePlaceholders(content: string, config: AppConfig, extras: any = {
       /\{\{\s*ZYNTH_STARTUP_METRICS_ENABLED\s*\}\}/g,
       extras.startupMetricsEnabledBuildConfig ?? "false"
     )
+    .replace(
+      /\{\{\s*ZYNTH_ANDROID_MINIFY_ENABLED\s*\}\}/g,
+      extras.androidMinifyEnabledBuildConfig ?? "false"
+    )
+    .replace(
+      /\{\{\s*ZYNTH_ANDROID_SHRINK_RESOURCES\s*\}\}/g,
+      extras.androidShrinkResourcesBuildConfig ?? "false"
+    )
     .replace(/\{\{\s*ACTIVITY_ATTRIBUTES\s*\}\}/g, extras.activityAttributes ?? "")
     .replace(
       /\{\{\s*APPLICATION_ATTRIBUTES\s*\}\}/g,
@@ -869,6 +877,13 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
   const startupMetricsEnabledBuildConfig = config.androidStartupMetricsEnabled
     ? "\"true\""
     : "\"false\"";
+  const androidMinifyEnabledBuildConfig = config.androidMinifyEnabled
+    ? "true"
+    : "false";
+  const androidShrinkResourcesBuildConfig =
+    config.androidMinifyEnabled && config.androidShrinkResources
+      ? "true"
+      : "false";
   const runtimeModuleImports = "";
   const runtimeModuleInstalls = "    // No default modules for core runtime";
   const skipLegacyModules = true;
@@ -963,6 +978,8 @@ export function generateAndroidProject(appDir: string, options: any = {}): AppCo
         devServerUrlBuildConfig,
         devServerTokenBuildConfig,
         startupMetricsEnabledBuildConfig,
+        androidMinifyEnabledBuildConfig,
+        androidShrinkResourcesBuildConfig,
       });
       fs.writeFileSync(targetPath, processed, "utf8");
     }

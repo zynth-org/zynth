@@ -41,8 +41,8 @@ android {
 
   buildTypes {
     release {
-      isMinifyEnabled = true
-      isShrinkResources = true
+      isMinifyEnabled = {{ZYNTH_ANDROID_MINIFY_ENABLED}}
+      isShrinkResources = {{ZYNTH_ANDROID_SHRINK_RESOURCES}}
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       if (signingConfigs.getByName("release").storeFile != null) {
         signingConfig = signingConfigs.getByName("release")

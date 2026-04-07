@@ -16,6 +16,8 @@ export interface AppConfig {
   androidConfig: any;
   devServerUrl?: string;
   androidStartupMetricsEnabled?: boolean;
+  androidMinifyEnabled?: boolean;
+  androidShrinkResources?: boolean;
 }
 
 function buildInfoPlistDefaults(
@@ -141,6 +143,7 @@ export function getAppConfig(appDir: string): AppConfig {
     devServerUrl: appConfig.devServerUrl,
     androidStartupMetricsEnabled:
       appConfig.android?.startupMetrics?.enabled === true,
+    androidMinifyEnabled: appConfig.android?.build?.minifyEnabled === true,
+    androidShrinkResources: appConfig.android?.build?.shrinkResources === true,
   };
 }
-
