@@ -82,6 +82,15 @@ targets:
             echo "  ✓ Fonts copied"
           fi
 
+          IMAGES_DIR="$PROJECT_DIR/{{APP_NAME}}/images"
+          if [ -d "$IMAGES_DIR" ]; then
+            echo "🖼️ Copying bundled images from $IMAGES_DIR..."
+            DEST_IMAGES_DIR="$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/images"
+            mkdir -p "$DEST_IMAGES_DIR"
+            cp "$IMAGES_DIR"/* "$DEST_IMAGES_DIR/" 2>/dev/null || true
+            echo "  ✓ Images copied"
+          fi
+
           if [ "$CONFIGURATION" = "Release" ]; then
             echo "⚡ Release build detected - using pre-built bundle"
             if [ ! -f "$BUNDLE_PATH" ]; then

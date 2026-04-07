@@ -371,14 +371,31 @@ static void SNImageLoadAsset(NSString *asset, id bundleValue, id scaleValue, Zyn
   if ([scaleValue respondsToSelector:@selector(doubleValue)]) {
     scale = (CGFloat)[scaleValue doubleValue];
   }
-  UIImage *image = [UIImage imageNamed:asset inBundle:bundle compatibleWithTraitCollection:nil];
-  if (!image) {
-    NSString *resourcePath = bundle.resourcePath;
-    if (resourcePath.length > 0) {
-      NSString *assetPath = [resourcePath stringByAppendingPathComponent:asset];
-      if ([[NSFileManager defaultManager] fileExistsAtPath:assetPath]) {
+  UIImage *image = nil;
+  NSString *resourcePath = bundle.resourcePath;
+  NSString *fileName = asset.lastPathComponent;
+  NSArray<NSString *> *pathCandidates = fileName.length > 0 && ![fileName isEqualToString:asset]
+    ? @[asset, fileName]
+    : @[asset];
+
+  if (resourcePath.length > 0) {
+    NSFileManager *fileManager = [NSFileManager defaultManager];
+    for (NSString *candidate in pathCandidates) {
+      NSString *assetPath = [resourcePath stringByAppendingPathComponent:candidate];
+      if ([fileManager fileExistsAtPath:assetPath]) {
         image = [UIImage imageWithContentsOfFile:assetPath];
+        if (image) break;
       }
+    }
+  }
+
+  if (!image) {
+    for (NSString *candidate in pathCandidates) {
+      if ([candidate rangeOfString:@"/"].location != NSNotFound) {
+        continue;
+      }
+      image = [UIImage imageNamed:candidate inBundle:bundle compatibleWithTraitCollection:nil];
+      if (image) break;
     }
   }
   if (!image) {

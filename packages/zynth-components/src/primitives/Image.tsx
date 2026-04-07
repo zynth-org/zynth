@@ -96,11 +96,8 @@ export const Image: Component<ImageProps> = (props) => {
 
     // Try next source if available
     if (nextIndex < sourceList.length) {
-      console.log("[Image] Trying fallback source at index", nextIndex);
       setCurrentSourceIndex(nextIndex);
     } else {
-      console.log("[Image] All sources failed, calling onError");
-      // All sources failed, call the user's error handler
       props.onError?.(event);
     }
   };
@@ -227,7 +224,6 @@ function descriptorToNativeSource(
   const assetId = descriptor.ext
     ? `images/${baseAssetId}.${descriptor.ext}`
     : `images/${baseAssetId}`;
-  console.log("[Image] Using asset ID:", assetId);
   return {
     asset: assetId,
     scale: descriptor.scale,
