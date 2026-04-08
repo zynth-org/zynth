@@ -384,7 +384,7 @@ export const TextInput: Component<TextInputProps> = (props) => {
   const debugLabel = createMemo(() => local.testID ?? "TextInput");
   const logSync = (phase: string, data?: Record<string, unknown>) => {
     if (!local.debugSync) return;
-    console.log(`[TextInput sync:${debugLabel()}] ${phase}`, data ?? {});
+    // console.log(`[TextInput sync:${debugLabel()}] ${phase}`, data ?? {});
   };
 
   // createEffect(() => {
@@ -694,8 +694,9 @@ export const TextInput: Component<TextInputProps> = (props) => {
   syncOptionalProp("spellCheck", () => local.spellCheck);
   syncOptionalProp("returnKeyType", () => local.returnKeyType);
   syncOptionalProp("blurOnSubmit", () => local.blurOnSubmit);
-  syncOptionalProp("submitBehavior", () =>
-    local.submitBehavior ?? (local.multiline ? "newline" : undefined),
+  syncOptionalProp(
+    "submitBehavior",
+    () => local.submitBehavior ?? (local.multiline ? "newline" : undefined),
   );
   syncOptionalProp("selection", () => local.selection);
   syncOptionalProp("selectionColor", () => local.selectionColor);
@@ -705,8 +706,9 @@ export const TextInput: Component<TextInputProps> = (props) => {
   syncOptionalProp("showClearAccessory", () => local.showClearAccessory);
   syncOptionalProp("eventThrottleMs", () => local.eventThrottleMs);
   syncOptionalProp("selectTextOnFocus", () => local.selectTextOnFocus);
-  syncOptionalProp("allowProgrammaticJumpDuringEdit", () =>
-    local.allowProgrammaticJumpDuringEdit,
+  syncOptionalProp(
+    "allowProgrammaticJumpDuringEdit",
+    () => local.allowProgrammaticJumpDuringEdit,
   );
   syncOptionalProp("testID", () => local.testID);
 

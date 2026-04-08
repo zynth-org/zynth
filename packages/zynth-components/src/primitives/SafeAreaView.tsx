@@ -65,7 +65,7 @@ export const SafeAreaView: Component<SafeAreaViewProps> = (props) => {
       edges: ["top", "right", "bottom", "left"] as SafeAreaEdge[],
       mode: "padding" as SafeAreaMode,
     },
-    props
+    props,
   );
 
   const insets = createSafeAreaInsets();
@@ -91,12 +91,6 @@ export const SafeAreaView: Component<SafeAreaViewProps> = (props) => {
 
     // Merge with user styles - this is safe because we're inside createMemo
     return { ...safeAreaStyle, ...(merged.style || {}) };
-  });
-
-  createEffect(() => {
-    console.log("SafeArea insets", JSON.stringify(insets));
-    console.log("SafeAreaView edges", JSON.stringify(merged.edges));
-    console.log("SafeAreaView computedStyle", JSON.stringify(computedStyle()));
   });
 
   return <View style={computedStyle()}>{merged.children}</View>;

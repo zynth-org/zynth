@@ -12,7 +12,7 @@ export interface ScrollStopController {
   shouldStopScroll(
     targetOffset: number,
     contentReady: boolean,
-    isScrolling: boolean
+    isScrolling: boolean,
   ): boolean;
 
   /**
@@ -57,14 +57,14 @@ export class AppleStyleScrollController implements ScrollStopController {
   shouldStopScroll(
     targetOffset: number,
     contentReady: boolean,
-    isScrolling: boolean
+    isScrolling: boolean,
   ): boolean {
     // Don't block if content is ready
     if (contentReady) {
       if (this.blocked) {
-        console.log(
-          "[ScrollController] Content ready, resuming scroll after block"
-        );
+        // console.log(
+        //   "[ScrollController] Content ready, resuming scroll after block"
+        // );
         this.resumeScroll();
       }
       return false;
@@ -80,7 +80,7 @@ export class AppleStyleScrollController implements ScrollStopController {
       const blockDuration = Date.now() - this.blockStartTime;
       if (blockDuration > this.maxBlockDuration) {
         console.warn(
-          `[ScrollController] Block timeout (${blockDuration}ms), forcing resume`
+          `[ScrollController] Block timeout (${blockDuration}ms), forcing resume`,
         );
         this.resumeScroll();
         return false;
@@ -89,9 +89,9 @@ export class AppleStyleScrollController implements ScrollStopController {
 
     // Content not ready during scroll - block it!
     if (!this.blocked) {
-      console.log(
-        "[ScrollController] Content not ready, blocking scroll (Apple-style)"
-      );
+      // console.log(
+      //   "[ScrollController] Content not ready, blocking scroll (Apple-style)",
+      // );
       this.stopScroll();
     }
 
@@ -105,7 +105,7 @@ export class AppleStyleScrollController implements ScrollStopController {
     this.blockStartTime = Date.now();
 
     this.scrollRef?.stop?.();
-    console.log("[ScrollController] Scroll STOPPED imperatively");
+    // console.log("[ScrollController] Scroll STOPPED imperatively");
   }
 
   resumeScroll(): void {
@@ -115,9 +115,9 @@ export class AppleStyleScrollController implements ScrollStopController {
     this.blocked = false;
     this.blockStartTime = 0;
 
-    console.log(
-      `[ScrollController] Scroll RESUMED after ${blockDuration}ms block`
-    );
+    // console.log(
+    //   `[ScrollController] Scroll RESUMED after ${blockDuration}ms block`,
+    // );
   }
 
   isBlocked(): boolean {
@@ -145,7 +145,7 @@ export class GapRecoveryManager {
   detectGap(
     itemsInRange: number,
     contentReady: boolean,
-    isScrolling: boolean
+    isScrolling: boolean,
   ): boolean {
     // Gap detected if:
     // 1. We should have items (range not empty)

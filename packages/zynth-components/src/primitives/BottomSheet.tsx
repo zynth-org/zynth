@@ -338,7 +338,7 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
     }
 
     const now = Date.now();
-    console.log(now, dynamicLayoutCommandCooldownUntil, delta);
+    // console.log(now, dynamicLayoutCommandCooldownUntil, delta);
     if (now < dynamicLayoutCommandCooldownUntil) {
       return;
     }
