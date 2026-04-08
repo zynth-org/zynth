@@ -15,24 +15,25 @@ This tracks the migration from Zynth's custom native hot-update apply engine to 
 
 ## Phase 2: Transport
 
-- [x] Let Rsbuild's client create the HMR WebSocket from JS.
+- [x] Use native dev-server transport for HMR `hash`/`ok` messages.
 - [x] Keep native dev-support connected only as watchdog/status/reload support.
 - [x] Stop native iOS dev-support from fetching/evaluating hot-update chunks.
 - [x] Stop native Android dev-support from fetching/evaluating hot-update chunks.
 - [x] Add debug logging for WebSocket connect/open/message/send/close.
-- [ ] Confirm Rsbuild logs WebSocket connected on iOS.
-- [ ] Confirm Rsbuild logs WebSocket connected on Android.
+- [x] Confirm native transport works on iOS.
+- [x] Confirm native transport works on Android.
 
 ## Phase 3: Rspack Apply
 
 - [x] Patch Rspack script loader hook to fetch/evaluate hot-update chunks without a fake DOM.
 - [x] Add debug logging for HMR compat install, loader patching, chunk fetch, chunk evaluation, and reload fallback.
 - [x] Use native `hash`/`ok` messages as the trigger for Rspack `hot.check(true)` when Rsbuild's browser HMR client is not injected.
-- [ ] Confirm a leaf text edit updates without resetting local Solid signal state.
-- [ ] Confirm deleting a JSX child removes the native element.
-- [ ] Confirm add/remove component export either patches correctly or falls back to full reload.
-- [ ] Confirm editing a route screen preserves navigation state when safe.
-- [ ] Confirm editing router implementation/manifest reloads deterministically.
+- [x] Confirm a leaf text edit updates without resetting local Solid signal state.
+- [x] Confirm deleting a JSX child removes the native element.
+- [x] Confirm add/remove component export either patches correctly or falls back to full reload.
+- [x] Confirm editing a route screen preserves navigation state when safe.
+- [x] Confirm editing router implementation/manifest reloads deterministically.
+- [x] Pulse the native HMR visual indicator after successful Rspack apply.
 
 ## Phase 4: Cleanup
 
@@ -51,3 +52,4 @@ This tracks the migration from Zynth's custom native hot-update apply engine to 
 - The native-message driver now calls `hot.check(true)` on the first completed rebuild instead of waiting for a second edit; Rspack decides if there is nothing to apply.
 - Native Solid Refresh now uses `bundler: "rspack-esm"` and disables JSX-level refresh wrapping (`jsx: false`) to reduce risky structural JSX remounts in the native renderer.
 - Full reload fallback now calls `__zynth_disposeRoot()` before native evaluates the fresh dev bundle, preventing duplicated roots/listeners after recovering from a failed HMR apply.
+- Fallback reload now disposes the entry HMR listeners and re-patches the Rspack loader when a fresh bundle installs a new `__webpack_require__` in the same Hermes VM.

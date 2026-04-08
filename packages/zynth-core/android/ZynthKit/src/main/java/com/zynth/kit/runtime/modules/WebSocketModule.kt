@@ -20,6 +20,7 @@ internal class WebSocketModule(private val runtime: ZynthRuntime) : ZynthModule 
     "send",
     "close",
     "reloadDevBundle",
+    "pulseHmrIndicator",
   )
 
   private val client = OkHttpClient.Builder()
@@ -41,6 +42,7 @@ internal class WebSocketModule(private val runtime: ZynthRuntime) : ZynthModule 
       "send" -> send(args)
       "close" -> close(args)
       "reloadDevBundle" -> reloadDevBundle(args)
+      "pulseHmrIndicator" -> pulseHmrIndicator(args)
       else -> JSONObject().put("error", "unknown_method").put("method", method)
     }
   }
@@ -131,6 +133,11 @@ internal class WebSocketModule(private val runtime: ZynthRuntime) : ZynthModule 
         emit(-1, "error", JSONObject().put("message", "Dev bundle reload failed: ${t.message}"))
       }
     }, "ZynthDevBundleReload").start()
+    return JSONObject().put("result", true)
+  }
+
+  private fun pulseHmrIndicator(args: ZynthArgs): JSONObject {
+    ZynthHmrVisualIndicator.pulse(runtime.root)
     return JSONObject().put("result", true)
   }
 

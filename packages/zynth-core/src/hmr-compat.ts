@@ -15,8 +15,12 @@ type RuntimeGlobal = Record<string, unknown> & {
   __ZYNTH_HMR_DEBUG?: unknown;
   __zynth_hmr_compat_installed?: boolean;
   __zynth_hmr_loader_installed?: boolean;
+  __zynth_hmr_loader_require?: unknown;
   __zynth_reloadFromDevServer?: () => void;
   __zynth_getRootId?: () => number | null;
+  __zynth_disposeRoot?: () => void;
+  __zynth_entry_hmr_dispose?: () => void;
+  Solid$$?: boolean;
   window?: Record<string, unknown>;
   self?: unknown;
 };
@@ -108,6 +112,11 @@ function installReloadHook(): void {
     if (typeof disposeRoot === "function") {
       disposeRoot();
     }
+    const disposeEntryHMR = g.__zynth_entry_hmr_dispose;
+    if (typeof disposeEntryHMR === "function") {
+      disposeEntryHMR();
+    }
+    g.Solid$$ = false;
     void callNative("WebSocket", "reloadDevBundle", {
       url: g.__ZYNTH_DEV_SERVER_URL,
       token: g.__ZYNTH_DEV_SERVER_TOKEN,
@@ -120,7 +129,6 @@ function installReloadHook(): void {
 
 function installRspackLoaderPatch(): void {
   const g = getGlobalObject();
-  if (g.__zynth_hmr_loader_installed) return;
   const runtimeRequire =
     typeof __webpack_require__ === "function"
       ? __webpack_require__
@@ -129,7 +137,14 @@ function installRspackLoaderPatch(): void {
     debugLog("loader patch skipped; __webpack_require__ unavailable");
     return;
   }
+  if (
+    g.__zynth_hmr_loader_installed &&
+    g.__zynth_hmr_loader_require === runtimeRequire
+  ) {
+    return;
+  }
   g.__zynth_hmr_loader_installed = true;
+  g.__zynth_hmr_loader_require = runtimeRequire;
 
   const previousLoad = runtimeRequire.l;
   debugLog("patching Rspack script loader", {

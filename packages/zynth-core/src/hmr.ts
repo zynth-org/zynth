@@ -1,4 +1,5 @@
 import { installNativeHMRCompat } from "./hmr-compat";
+import { callNative } from "./bridge";
 
 const __HMR_DEBUG = (function () {
   const g = globalThis as any;
@@ -275,6 +276,12 @@ function installRspackNativeApplyDriver(hot: any): () => void {
     const status = typeof hot.status === "function" ? hot.status() : "unknown";
     if (status !== "idle" && status !== "unknown") {
       UPDATE_LOG.log("hot runtime not idle", { trigger, status });
+      if (status === "fail") {
+        const reload = (globalThis as any).__zynth_reloadFromDevServer;
+        if (typeof reload === "function") {
+          reload();
+        }
+      }
       return;
     }
     applyInFlight = true;
@@ -290,6 +297,11 @@ function installRspackNativeApplyDriver(hot: any): () => void {
           updatedModules,
           latestHash,
         });
+        void callNative("WebSocket", "pulseHmrIndicator", {}).catch(
+          (error) => {
+            UPDATE_LOG.warn("pulseHmrIndicator failed", error);
+          },
+        );
         lastAppliedHash = latestHash;
         applyInFlight = false;
       },
@@ -713,6 +725,7 @@ function setupModuleHotAccept(hot: any) {
 }
 
 export function setupEntryPointHMR(): (() => void) | undefined {
+  const g = globalThis as any;
   if (devHMRBootstrapInstalled) {
     return;
   }
@@ -725,6 +738,12 @@ export function setupEntryPointHMR(): (() => void) | undefined {
 
   devHMRBootstrapInstalled = true;
   BOOT_LOG.log("Installing dev HMR bootstrap");
+
+  const previousEntryDispose = g.__zynth_entry_hmr_dispose;
+  if (typeof previousEntryDispose === "function") {
+    BOOT_LOG.log("Disposing previous entry HMR bootstrap");
+    previousEntryDispose();
+  }
 
   ensureModuleTables();
 
@@ -743,17 +762,22 @@ export function setupEntryPointHMR(): (() => void) | undefined {
   registerAppModuleCandidate("./App");
   registerAppModuleCandidate("./App.tsx");
 
-  const g = globalThis as any;
   g.__zynth_handleHotUpdate = handleAppHotUpdate;
   g.__zynth_registerAppModuleCandidate = registerAppModuleCandidate;
 
   installNativeHMRCompat();
   BOOT_LOG.log("HMR bootstrap ready");
 
-  return () => {
+  const disposeEntryHMR = () => {
     disposeNativeWarningListener();
     disposeRspackApplyDriver();
+    if (g.__zynth_entry_hmr_dispose === disposeEntryHMR) {
+      g.__zynth_entry_hmr_dispose = undefined;
+    }
   };
+  g.__zynth_entry_hmr_dispose = disposeEntryHMR;
+
+  return disposeEntryHMR;
 }
 
 let debugWrappersInstalled = false;

@@ -15,7 +15,7 @@ final class WebSocketModule: NSObject, ZynthModule, URLSessionWebSocketDelegate 
   }
 
   var exportedMethods: [String] {
-    ["connect", "send", "close", "reloadDevBundle"]
+    ["connect", "send", "close", "reloadDevBundle", "pulseHmrIndicator"]
   }
 
   func invalidate() {
@@ -38,6 +38,8 @@ final class WebSocketModule: NSObject, ZynthModule, URLSessionWebSocketDelegate 
       return try close(args)
     case "reloadDevBundle":
       return reloadDevBundle(args)
+    case "pulseHmrIndicator":
+      return pulseHmrIndicator(args)
     default:
       return ["error": "unknown_method", "method": method]
     }
@@ -93,6 +95,25 @@ final class WebSocketModule: NSObject, ZynthModule, URLSessionWebSocketDelegate 
     }
     DispatchQueue.main.async {
       runtime.refreshDevBundle()
+    }
+    return ["result": true]
+  }
+
+  private func pulseHmrIndicator(_ args: ZynthArgs) -> Any {
+    DispatchQueue.main.async {
+      guard let managerClass = NSClassFromString("ZynthNativeErrorOverlayManager") as? NSObject.Type else {
+        return
+      }
+      let sharedSelector = NSSelectorFromString("shared")
+      let flashSelector = NSSelectorFromString("flashHmrIndicator")
+      guard managerClass.responds(to: sharedSelector),
+            let unmanaged = managerClass.perform(sharedSelector) else {
+        return
+      }
+      let manager = unmanaged.takeUnretainedValue() as AnyObject
+      if manager.responds(to: flashSelector) {
+        _ = manager.perform(flashSelector)
+      }
     }
     return ["result": true]
   }
