@@ -1,6 +1,7 @@
 package com.zynth.kit.runtime.modules
 
 import com.zynth.kit.runtime.ZynthArgs
+import com.zynth.kit.runtime.ZynthHmrVisualIndicator
 import com.zynth.kit.runtime.ZynthModule
 import com.zynth.kit.runtime.ZynthRuntime
 import okhttp3.OkHttpClient
