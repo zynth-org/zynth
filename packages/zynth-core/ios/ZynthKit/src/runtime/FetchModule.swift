@@ -767,5 +767,40 @@ private func coerceBodyData(_ body: Any) -> Data? {
   if let bytes = body as? [UInt8] {
     return Data(bytes)
   }
+  if let dict = body as? [String: Any] {
+    return coerceIndexedDictionaryData(dict)
+  }
   return nil
+}
+
+private func coerceIndexedDictionaryData(_ body: [String: Any]) -> Data? {
+  if let lengthNumber = body["length"] as? NSNumber {
+    let length = lengthNumber.intValue
+    guard length >= 0 else {
+      return nil
+    }
+    var bytes = [UInt8]()
+    bytes.reserveCapacity(length)
+    for index in 0..<length {
+      guard let value = body[String(index)] as? NSNumber else {
+        return nil
+      }
+      bytes.append(UInt8(truncating: value))
+    }
+    return Data(bytes)
+  }
+
+  let numericKeys = body.keys.compactMap { Int($0) }.sorted()
+  guard let lastIndex = numericKeys.last, lastIndex >= 0 else {
+    return nil
+  }
+
+  var bytes = Array(repeating: UInt8(0), count: lastIndex + 1)
+  for index in numericKeys {
+    guard let value = body[String(index)] as? NSNumber else {
+      return nil
+    }
+    bytes[index] = UInt8(truncating: value)
+  }
+  return Data(bytes)
 }

@@ -472,6 +472,7 @@ class FetchModule(private val runtime: ZynthRuntime) : ZynthModule {
                 }
                 bytes
             }
+            is JSONObject -> coerceIndexedObjectBytes(body)
             is ByteBuffer -> {
                 val duplicate = body.slice()
                 val bytes = ByteArray(duplicate.remaining())
@@ -486,8 +487,74 @@ class FetchModule(private val runtime: ZynthRuntime) : ZynthModule {
                 }
                 bytes
             }
+            is Map<*, *> -> coerceIndexedMapBytes(body)
             else -> null
         }
+    }
+
+    private fun coerceIndexedObjectBytes(body: JSONObject): ByteArray? {
+        val length = body.optInt("length", -1)
+        if (length >= 0) {
+            val bytes = ByteArray(length)
+            for (index in 0 until length) {
+                if (!body.has(index.toString())) {
+                    return null
+                }
+                bytes[index] = body.optInt(index.toString(), -1).toByte()
+            }
+            return bytes
+        }
+
+        val numericKeys = body.keys().asSequence()
+            .mapNotNull { key -> key.toIntOrNull() }
+            .sorted()
+            .toList()
+        if (numericKeys.isEmpty()) {
+            return null
+        }
+
+        val lastIndex = numericKeys.last()
+        if (lastIndex < 0) {
+            return null
+        }
+        val bytes = ByteArray(lastIndex + 1)
+        for (index in numericKeys) {
+            if (index < 0 || index >= bytes.size) {
+                return null
+            }
+            bytes[index] = body.optInt(index.toString(), -1).toByte()
+        }
+        return bytes
+    }
+
+    private fun coerceIndexedMapBytes(body: Map<*, *>): ByteArray? {
+        val length = (body["length"] as? Number)?.toInt()
+        if (length != null && length >= 0) {
+            val bytes = ByteArray(length)
+            for (index in 0 until length) {
+                val value = body[index.toString()] as? Number ?: return null
+                bytes[index] = value.toInt().toByte()
+            }
+            return bytes
+        }
+
+        val numericKeys = body.keys
+            .mapNotNull { (it as? String)?.toIntOrNull() }
+            .sorted()
+        if (numericKeys.isEmpty()) {
+            return null
+        }
+
+        val lastIndex = numericKeys.last()
+        if (lastIndex < 0) {
+            return null
+        }
+        val bytes = ByteArray(lastIndex + 1)
+        for (index in numericKeys) {
+            val value = body[index.toString()] as? Number ?: return null
+            bytes[index] = value.toInt().toByte()
+        }
+        return bytes
     }
 
     private fun resolveBodyFilePath(uri: String): String? {

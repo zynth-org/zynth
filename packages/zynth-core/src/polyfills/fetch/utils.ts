@@ -16,13 +16,21 @@ export function normalizeHeaderName(name: string): string {
 export function coerceBody(body?: BodyInit): FetchPayload["body"] {
   if (body == null) return undefined;
   if (typeof body === "string") return body;
-  if (body instanceof ArrayBuffer) return body;
+  if (body instanceof ArrayBuffer) {
+    return bytesToNumberArray(new Uint8Array(body));
+  }
   if (body instanceof Uint8Array) {
-    const copy = new Uint8Array(body.byteLength);
-    copy.set(body);
-    return copy.buffer;
+    return bytesToNumberArray(body);
   }
   return undefined;
+}
+
+function bytesToNumberArray(bytes: Uint8Array): number[] {
+  const values = new Array<number>(bytes.byteLength);
+  for (let index = 0; index < bytes.byteLength; index += 1) {
+    values[index] = bytes[index];
+  }
+  return values;
 }
 
 export function isReadableStreamBody(

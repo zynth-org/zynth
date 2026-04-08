@@ -329,9 +329,7 @@ async function pumpUploadStreamToNative(args: UploadPumpArgs): Promise<void> {
         continue;
       }
 
-      // Optimization: Pass the buffer directly if possible, or Uint8Array.
-      // Many JSI implementations can handle binary data directly.
-      const chunkPayload = chunk;
+      const chunkPayload = toBodyByteArray(chunk);
       const chunkResult = await Promise.resolve(
         args.bridge.call("Fetch", "uploadChunk", {
           id: args.requestId,
@@ -494,13 +492,13 @@ async function resolveBody(
   const BlobCtor = globalObject.Blob as any;
   const URLSearchParamsCtor = globalObject.URLSearchParams as any;
 
-  if (FormDataCtor && body instanceof FormDataCtor) {
+  if (isFormDataBody(body, FormDataCtor)) {
     const payload = await (body as any).toPayload();
     if (!headers.has("content-type")) {
       headers.set("content-type", payload.contentType);
     }
-    const buffer = payload.body.buffer.slice(0);
-    return { body: buffer, uploadLength: buffer.byteLength };
+    const bytes = toBodyByteArray(payload.body);
+    return { body: bytes, uploadLength: bytes.length };
   }
 
   if (URLSearchParamsCtor && body instanceof URLSearchParamsCtor) {
@@ -520,7 +518,8 @@ async function resolveBody(
     if (type && !headers.has("content-type")) {
       headers.set("content-type", type);
     }
-    return { body: buffer, uploadLength: buffer.byteLength };
+    const bytes = toBodyByteArray(new Uint8Array(buffer));
+    return { body: bytes, uploadLength: bytes.length };
   }
 
   const raw = coerceBody(body);
@@ -532,6 +531,31 @@ async function resolveBody(
   }
 
   return null;
+}
+
+function isFormDataBody(body: BodyInit, FormDataCtor: any): boolean {
+  if (!body || typeof body !== "object") {
+    return false;
+  }
+  if (FormDataCtor && body instanceof FormDataCtor) {
+    return typeof (body as any).toPayload === "function";
+  }
+  return typeof (body as any).toPayload === "function";
+}
+
+function cloneUint8Array(bytes: Uint8Array): Uint8Array {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy;
+}
+
+function toBodyByteArray(bytes: Uint8Array): number[] {
+  const copy = cloneUint8Array(bytes);
+  const output = new Array<number>(copy.byteLength);
+  for (let index = 0; index < copy.byteLength; index += 1) {
+    output[index] = copy[index];
+  }
+  return output;
 }
 
 function inferUploadTotalBytes(
