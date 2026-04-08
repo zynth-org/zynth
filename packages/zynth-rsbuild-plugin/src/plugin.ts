@@ -20,7 +20,6 @@ import {
 } from "./features.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const HMR_SHIM_PATH = path.join(__dirname, "shims/hmr-client-empty.js");
 const OVERLAY_SHIM_PATH = path.join(__dirname, "shims/overlay-empty.js");
 const CSS_SHIM_PATH = path.join(__dirname, "shims/css-empty.js");
 const IMAGE_ASSET_LOADER_PATH = path.join(
@@ -102,6 +101,10 @@ export function createZynthRsbuildPlugin(
         workspaceRoot: repoRoot,
         platform: resolveFeaturePlatform(isWeb),
       };
+      const nativeHmrCompatEntry = path.join(
+        repoRoot,
+        "packages/zynth-core/src/hmr-prelude.ts",
+      );
 
       for (const feature of options.features ?? []) {
         if (isGeneratedModuleFeature(feature)) {
@@ -181,10 +184,6 @@ export function createZynthRsbuildPlugin(
 
           config.plugins?.push(
             new rspack.NormalModuleReplacementPlugin(
-              /@rsbuild[\\/](core|rsbuild)[\\/]dist[\\/]client[\\/]hmr.js$/,
-              HMR_SHIM_PATH,
-            ),
-            new rspack.NormalModuleReplacementPlugin(
               /@rsbuild[\\/](core|rsbuild)[\\/]dist[\\/]client[\\/]overlay.js$/,
               OVERLAY_SHIM_PATH,
             ),
@@ -206,6 +205,18 @@ export function createZynthRsbuildPlugin(
       // Add middleware to serve static files via /@fs/ routes (for dev mode)
       if (api.context.action === "dev") {
         api.modifyRsbuildConfig((config) => {
+          if (!isWeb) {
+            config.source ??= {};
+            const existingPreEntry = config.source.preEntry;
+            const preEntries = Array.isArray(existingPreEntry)
+              ? existingPreEntry
+              : typeof existingPreEntry === "string"
+                ? [existingPreEntry]
+                : [];
+            if (!preEntries.includes(nativeHmrCompatEntry)) {
+              config.source.preEntry = [nativeHmrCompatEntry, ...preEntries];
+            }
+          }
           // Inject dev server URL
           const devServerHost = config.server?.host || "0.0.0.0";
           const devServerPort = config.server?.port || (isWeb ? 7076 : 7070);
@@ -223,6 +234,12 @@ export function createZynthRsbuildPlugin(
           defines["globalThis.__ZYNTH_DEV_SERVER_URL"] =
             JSON.stringify(devServerUrl);
           defines.__ZYNTH_DEV_SERVER_URL = JSON.stringify(devServerUrl);
+          const hmrDebugValue = process.env?.ZYNTH_HMR_DEBUG;
+          const hmrDebugEnabled =
+            hmrDebugValue === "1" || hmrDebugValue === "true";
+          defines["globalThis.__ZYNTH_HMR_DEBUG"] =
+            JSON.stringify(hmrDebugEnabled);
+          defines.__ZYNTH_HMR_DEBUG = JSON.stringify(hmrDebugEnabled);
 
           config.dev ??= {};
           const existingSetup = config.dev.setupMiddlewares;
@@ -382,9 +399,7 @@ function ensureAliases(
   }
 
   const staticAliases: Record<string, string> = {
-    "@rsbuild/core/dist/client/hmr.js": HMR_SHIM_PATH,
     "@rsbuild/core/dist/client/overlay.js": OVERLAY_SHIM_PATH,
-    "@rsbuild/rsbuild/dist/client/hmr.js": HMR_SHIM_PATH,
     "@rsbuild/rsbuild/dist/client/overlay.js": OVERLAY_SHIM_PATH,
   };
 

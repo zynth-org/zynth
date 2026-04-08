@@ -6,6 +6,7 @@ import "./polyfills/ReadableStream";
 import "./polyfills/Blob";
 import "./polyfills/FormData";
 import "./polyfills/fetch";
+import "./polyfills/WebSocket";
 export * from "./renderer";
 export * from "./host/HostTypes";
 export { createIOSHost } from "./host/ios";
@@ -23,6 +24,14 @@ export { ReadableStream } from "./polyfills/ReadableStream";
 export { Blob } from "./polyfills/Blob";
 export { FormData } from "./polyfills/FormData";
 export { fetch, Headers, Request, Response } from "./polyfills/fetch";
+export { WebSocket, installWebSocket } from "./polyfills/WebSocket";
+export type {
+  ZynthWebSocketCloseEvent,
+  ZynthWebSocketErrorEvent,
+  ZynthWebSocketEvent,
+  ZynthWebSocketMessageEvent,
+  ZynthWebSocketEventType,
+} from "./polyfills/WebSocket";
 export * from "./hmr";
 export { setActiveSurface, getActiveSurface } from "./surface";
 export { ensureDevtoolsBridge, emitDevtoolsEvent, addDevtoolsListener } from "./devtools";

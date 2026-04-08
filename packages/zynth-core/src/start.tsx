@@ -86,6 +86,8 @@ export function start(App: () => any): () => void {
     }
   };
 
+  g.__zynth_getRootId = () => lastRootId;
+
   g.__zynth_updateApp = (NextApp: () => any) => {
     if ((globalThis as any).__ZYNTH_HMR_TRACE === true) {
       console.log("[HMR-TRACE] __zynth_updateApp called");
@@ -129,6 +131,8 @@ export function start(App: () => any): () => void {
     lastRootId = null;
     disposeDevBanner = null;
     devBannerSurfaceId = null;
+    hasStarted = false;
+    delete g.__zynth_getRootId;
   };
 
   g.__startApp = (...args: any[]) => {

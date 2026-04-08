@@ -103,7 +103,8 @@ public extension ZynthRuntime {
       self?.emitEvent(name: name, payload: data)
     }
     let coreSystem = CoreSystemModule(runtime: self)
-    var modules: [ZynthModule] = [fetch, coreSystem]
+    let webSocket = WebSocketModule(runtime: self)
+    var modules: [ZynthModule] = [fetch, coreSystem, webSocket]
 #if DEBUG
     modules.append(ZynthDevtoolsModule(runtime: self))
     installDevtoolsCrashHandlersIfNeeded()

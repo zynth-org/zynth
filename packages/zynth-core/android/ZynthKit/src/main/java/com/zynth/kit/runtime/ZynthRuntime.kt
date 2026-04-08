@@ -10,6 +10,7 @@ import com.zynth.kit.core.addSurfaceFirstFrameListener
 import com.zynth.kit.runtime.modules.CoreSystemModule
 import com.zynth.kit.runtime.modules.DevtoolsModule
 import com.zynth.kit.runtime.modules.FetchModule
+import com.zynth.kit.runtime.modules.WebSocketModule
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
@@ -137,7 +138,7 @@ class ZynthRuntime(val root: ZynthRootView) {
   fun installDefaultModules() {
     startupMetrics.markModuleInitStart()
     DevtoolsModule.start(root.context)
-    installModules(listOf(DevtoolsModule(root.context, this), FetchModule(this), CoreSystemModule(this)))
+    installModules(listOf(DevtoolsModule(root.context, this), FetchModule(this), CoreSystemModule(this), WebSocketModule(this)))
     startupMetrics.markModuleInitEnd()
   }
 

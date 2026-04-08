@@ -34,6 +34,7 @@ if (typeof globalThis.queueMicrotask !== "function") {
 let lastRootId: number | null = null;
 let currentApp: (() => any) | null = null;
 let disposeCurrentApp: (() => void) | null = null;
+let hasStarted = false;
 
 export function start(App: () => any): () => void {
   // Web Platform Initialization
@@ -107,6 +108,8 @@ export function start(App: () => any): () => void {
     }
   };
 
+  g.__zynth_getRootId = () => lastRootId;
+
   g.__zynth_updateApp = (NextApp: () => any) => {
     if (typeof NextApp !== "function") {
       console.warn("[ZynthRuntime] updateApp received non-function", NextApp);
@@ -133,6 +136,8 @@ export function start(App: () => any): () => void {
     disposeCurrentApp = null;
     currentApp = null;
     lastRootId = null;
+    hasStarted = false;
+    delete g.__zynth_getRootId;
   };
 
   g.__startApp = (...args: any[]) => {
@@ -151,6 +156,11 @@ export function start(App: () => any): () => void {
       console.error("[__startApp] no app registered for rendering");
       return;
     }
+    if (hasStarted && lastRootId === rootId) {
+      console.log("[ZynthRuntime] __startApp ignored (already started)");
+      return;
+    }
+    hasStarted = true;
 
     try {
       disposeCurrentApp?.();

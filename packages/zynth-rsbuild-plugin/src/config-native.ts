@@ -165,7 +165,7 @@ function createNativeBabelPlugin(
       if (isDev) {
         options.plugins = [
           ...(options.plugins ?? []),
-          ["solid-refresh/babel", { bundler: "standard" }],
+          ["solid-refresh/babel", { bundler: "rspack-esm", jsx: false }],
         ];
       }
       return options;

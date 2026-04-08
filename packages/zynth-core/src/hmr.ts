@@ -1,3 +1,5 @@
+import { installNativeHMRCompat } from "./hmr-compat";
+
 const __HMR_DEBUG = (function () {
   const g = globalThis as any;
   const enabled =
@@ -177,6 +179,8 @@ declare const module: {
       deps?: string | string[],
       callback?: (updatedModule?: { default?: unknown }) => void,
     ): void;
+    check?: (autoApply?: boolean) => Promise<unknown> | unknown;
+    status?: () => string;
   };
 };
 
@@ -227,6 +231,83 @@ function shouldEnableDevHMR(hot: any): boolean {
     return proc.env.NODE_ENV !== "production";
   }
   return false;
+}
+
+function installRspackNativeApplyDriver(hot: any): () => void {
+  let latestHash: string | null = null;
+  let lastAppliedHash: string | null = null;
+  let applyInFlight = false;
+
+  function shouldApply(payload: ZynthHMRPayload): boolean {
+    if (payload.type === "hash") {
+      latestHash = typeof payload.data === "string" ? payload.data : latestHash;
+      UPDATE_LOG.log("received hash", latestHash);
+      return false;
+    }
+    if (
+      payload.type !== "ok" &&
+      payload.type !== "still-ok" &&
+      payload.type !== "built" &&
+      payload.type !== "sync"
+    ) {
+      return false;
+    }
+    if (!latestHash) {
+      UPDATE_LOG.log("skipping apply; no hash yet", payload.type);
+      return false;
+    }
+    if (lastAppliedHash === latestHash) {
+      UPDATE_LOG.log("skipping apply; hash already applied", latestHash);
+      return false;
+    }
+    return true;
+  }
+
+  function requestApply(trigger: string): void {
+    if (applyInFlight) {
+      UPDATE_LOG.log("apply already in flight", trigger);
+      return;
+    }
+    if (!hot || typeof hot.check !== "function") {
+      UPDATE_LOG.warn("hot.check unavailable; cannot apply", trigger);
+      return;
+    }
+    const status = typeof hot.status === "function" ? hot.status() : "unknown";
+    if (status !== "idle" && status !== "unknown") {
+      UPDATE_LOG.log("hot runtime not idle", { trigger, status });
+      return;
+    }
+    applyInFlight = true;
+    UPDATE_LOG.log("calling hot.check(true)", {
+      trigger,
+      latestHash,
+      lastAppliedHash,
+      status,
+    });
+    Promise.resolve(hot.check(true)).then(
+      (updatedModules) => {
+        UPDATE_LOG.log("hot.check resolved", {
+          updatedModules,
+          latestHash,
+        });
+        lastAppliedHash = latestHash;
+        applyInFlight = false;
+      },
+      (error) => {
+        UPDATE_LOG.error("hot.check failed", error);
+        applyInFlight = false;
+        const reload = (globalThis as any).__zynth_reloadFromDevServer;
+        if (typeof reload === "function") {
+          reload();
+        }
+      },
+    );
+  }
+
+  return onNativeHMR((payload) => {
+    if (!shouldApply(payload)) return;
+    requestApply(payload.type);
+  });
 }
 
 function ensureModuleTables() {
@@ -657,6 +738,7 @@ export function setupEntryPointHMR(): (() => void) | undefined {
       }
     }
   });
+  const disposeRspackApplyDriver = installRspackNativeApplyDriver(hot);
 
   registerAppModuleCandidate("./App");
   registerAppModuleCandidate("./App.tsx");
@@ -665,12 +747,12 @@ export function setupEntryPointHMR(): (() => void) | undefined {
   g.__zynth_handleHotUpdate = handleAppHotUpdate;
   g.__zynth_registerAppModuleCandidate = registerAppModuleCandidate;
 
-  installWebpackHotUpdateHook();
-  setupModuleHotAccept(hot);
+  installNativeHMRCompat();
   BOOT_LOG.log("HMR bootstrap ready");
 
   return () => {
     disposeNativeWarningListener();
+    disposeRspackApplyDriver();
   };
 }
 

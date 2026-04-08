@@ -103,7 +103,8 @@ internal fun ZynthRuntime.handleDevMessageInternal(payload: String) {
     ZynthNativeErrorOverlay.dismissForHmrUpdate()
   }
   when (type) {
-    "update" -> applyHotUpdate()
+    "update" -> ZynthHmrVisualIndicator.pulse(root)
+    "errors" -> showNativeBuildErrorOverlay(json)
     "hash" -> {
       val hash = json.optString("data", "")
       if (hash.isNotBlank()) {
@@ -114,6 +115,31 @@ internal fun ZynthRuntime.handleDevMessageInternal(payload: String) {
   }
 
   emitHmrPayloadToJS(payload)
+}
+
+private fun showNativeBuildErrorOverlay(payload: JSONObject) {
+  val data = payload.optJSONObject("data")
+  val text = data?.optJSONArray("text")
+  val message = text?.optString(0)?.takeIf { it.isNotBlank() } ?: "Build failed"
+  val stack = if (text != null && text.length() > 1) {
+    buildString {
+      for (index in 1 until text.length()) {
+        if (isNotEmpty()) append('\n')
+        append(text.optString(index))
+      }
+    }
+  } else {
+    ""
+  }
+  val event = JSONObject()
+    .put("topic", "error/build")
+    .put("level", "error")
+    .put("tag", "hmr")
+    .put("data", JSONObject()
+      .put("message", message)
+      .put("stack", stack)
+    )
+  ZynthNativeErrorOverlay.handleRawEvent(event.toString())
 }
 
 internal fun ZynthRuntime.installHmrShim() {
@@ -159,8 +185,7 @@ private fun ZynthRuntime.handleCompilationSuccess(trigger: String) {
     lastAppliedDevHash = hash
     return
   }
-  if (lastAppliedDevHash == hash) return
-  applyHotUpdate()
+  lastAppliedDevHash = hash
 }
 
 internal fun ZynthRuntime.applyHotUpdate() {

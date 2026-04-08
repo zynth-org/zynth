@@ -124,7 +124,9 @@ extension ZynthRuntime {
     }
     switch type {
     case "update":
-      applyHotUpdate()
+      flashNativeHmrIndicator()
+    case "errors":
+      showNativeBuildErrorOverlay(payload)
     case "hash":
       if let hash = payload["data"] as? String {
         latestDevHash = hash
@@ -138,6 +140,39 @@ extension ZynthRuntime {
     callGlobal("__zynth_receiveHMRMessage", args: [text])
   }
 
+  private func showNativeBuildErrorOverlay(_ payload: [String: Any]) {
+    guard let managerClass = NSClassFromString("ZynthNativeErrorOverlayManager") as? NSObject.Type else {
+      return
+    }
+    let sharedSelector = NSSelectorFromString("shared")
+    let rawSelector = NSSelectorFromString("handleRawEventJSON:")
+    guard managerClass.responds(to: sharedSelector),
+          let unmanaged = managerClass.perform(sharedSelector) else {
+      return
+    }
+    let manager = unmanaged.takeUnretainedValue() as AnyObject
+    guard manager.responds(to: rawSelector) else { return }
+
+    let data = payload["data"] as? [String: Any]
+    let text = data?["text"] as? [String]
+    let message = text?.first ?? "Build failed"
+    let event: [String: Any] = [
+      "topic": "error/build",
+      "level": "error",
+      "tag": "hmr",
+      "data": [
+        "message": message,
+        "stack": text?.dropFirst().joined(separator: "\n") ?? "",
+      ],
+    ]
+    guard JSONSerialization.isValidJSONObject(event),
+          let jsonData = try? JSONSerialization.data(withJSONObject: event, options: []),
+          let json = String(data: jsonData, encoding: .utf8) else {
+      return
+    }
+    _ = manager.perform(rawSelector, with: json)
+  }
+
   private func handleCompilationSuccess(trigger: String) {
     if isApplyingHotUpdate { return }
     guard devServerURL != nil else { return }
@@ -148,8 +183,7 @@ extension ZynthRuntime {
       lastAppliedDevHash = latestHash
       return
     }
-    if lastAppliedDevHash == latestHash { return }
-    applyHotUpdate()
+    lastAppliedDevHash = latestHash
   }
 
   private func installHmrShim() {
