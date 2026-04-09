@@ -62,8 +62,11 @@ static const CFTimeInterval kZynthButtonLongPressDuration = 0.5;
   if (!@available(iOS 15.0, *)) return;
   UIButtonConfiguration *config = self.configuration;
   if (!config || !config.background) return;
+  if (config.cornerStyle == UIButtonConfigurationCornerStyleCapsule) return;
+
   CGFloat radius = self.layer.cornerRadius;
-  if (radius <= 0.0) return;
+  if (fabs(config.background.cornerRadius - radius) < 0.01) return;
+
   config.cornerStyle = UIButtonConfigurationCornerStyleFixed;
   config.background.cornerRadius = radius;
   self.configuration = config;
@@ -411,23 +414,17 @@ static const CFTimeInterval kZynthButtonLongPressDuration = 0.5;
   }
 
   // 6. Corner Style
+  CGFloat resolvedRadius = [self zynth_resolvedCornerRadius];
   if ([self.rounded isEqualToString:@"pill"] || [self.rounded isEqualToString:@"full"]) {
     config.cornerStyle = UIButtonConfigurationCornerStyleCapsule;
-  } else if ([self.rounded isEqualToString:@"none"]) {
-    config.cornerStyle = UIButtonConfigurationCornerStyleFixed;
-    if (config.background) {
-      config.background.cornerRadius = 0.0;
-    }
-  } else if (self.rounded.length == 0) {
-    // No rounded token was provided (e.g. JS style.borderRadius is driving shape).
-    // Keep a fixed style and mirror the host layer radius.
-    config.cornerStyle = UIButtonConfigurationCornerStyleFixed;
-    if (config.background) {
-      config.background.cornerRadius = MAX(0.0, self.layer.cornerRadius);
-    }
   } else {
-    // Default to system-defined dynamic corner style (available iOS 15+)
-    config.cornerStyle = UIButtonConfigurationCornerStyleDynamic;
+    // Standard tokens (sm, md, lg), JS style.borderRadius, or default.
+    // We use Fixed style to ensure our calculated radius is applied immediately
+    // without system transition artifacts.
+    config.cornerStyle = UIButtonConfigurationCornerStyleFixed;
+    if (config.background) {
+      config.background.cornerRadius = resolvedRadius;
+    }
   }
 
   // Apply Configuration
@@ -526,6 +523,7 @@ static const CFTimeInterval kZynthButtonLongPressDuration = 0.5;
 - (void)zynth_setDisabled:(BOOL)disabled {
   _zynthDisabled = disabled;
   self.enabled = !disabled;
+  [self updateNativeConfiguration];
 }
 
 - (void)zynth_setLoading:(BOOL)loading {
