@@ -1,0 +1,401 @@
+{
+  "schemaVersion": 1,
+  "updated": "2026-04-09",
+  "status": "draft",
+  "description": "Source of truth for Zynth package release classification, version tracks, and distribution strategy.",
+  "releasePolicy": {
+    "packageManager": "yarn@1",
+    "defaultPrereleaseTag": "alpha",
+    "initialFrameworkTrack": "framework-lockstep",
+    "cliTrack": "cli-independent",
+    "initialFrameworkPackages": [
+      "@zynth/core",
+      "@zynth/apis",
+      "@zynth/components"
+    ],
+    "initialCliPackage": {
+      "workspaceName": "@zynth/cli",
+      "publishName": "zynth",
+      "bin": "zynth"
+    }
+  },
+  "trackDefinitions": {
+    "framework-lockstep": "Initial runtime packages that should move together during alpha.",
+    "cli-independent": "CLI package versioned independently from framework runtime packages.",
+    "later-alpha": "Public candidate package staged for a later alpha wave.",
+    "internal": "Not published to npm."
+  },
+  "distributionDefinitions": {
+    "js-built": "Publish built JavaScript and type artifacts.",
+    "native-source": "Publish built JavaScript plus iOS and Android native source for consumer app toolchains.",
+    "managed-binaries": "Publish built JavaScript plus native integration files and managed binary payload support.",
+    "internal": "No public npm distribution."
+  },
+  "readinessDefinitions": {
+    "ready-for-alpha-preflight": "Package is part of the first alpha scope but still needs metadata, pack, and smoke validation.",
+    "staged": "Package is intentionally excluded from the first alpha and will be revisited later.",
+    "private": "Package should remain private and excluded from publish scripts."
+  },
+  "packages": [
+    {
+      "name": "@zynth/core",
+      "path": "packages/zynth-core",
+      "publishName": "@zynth/core",
+      "releaseTier": "initial-framework-alpha",
+      "versionTrack": "framework-lockstep",
+      "distribution": "native-source",
+      "readiness": "ready-for-alpha-preflight",
+      "notes": "Core runtime and renderer. Ships built JS plus iOS, Android, native, Yoga, and podspec payloads."
+    },
+    {
+      "name": "@zynth/apis",
+      "path": "packages/zynth-apis",
+      "publishName": "@zynth/apis",
+      "releaseTier": "initial-framework-alpha",
+      "versionTrack": "framework-lockstep",
+      "distribution": "native-source",
+      "readiness": "ready-for-alpha-preflight",
+      "notes": "Platform API surface required by the initial framework release."
+    },
+    {
+      "name": "@zynth/components",
+      "path": "packages/zynth-components",
+      "publishName": "@zynth/components",
+      "releaseTier": "initial-framework-alpha",
+      "versionTrack": "framework-lockstep",
+      "distribution": "native-source",
+      "readiness": "ready-for-alpha-preflight",
+      "notes": "Initial public component package."
+    },
+    {
+      "name": "@zynth/cli",
+      "path": "packages/zynth-cli",
+      "publishName": "zynth",
+      "releaseTier": "initial-cli-alpha",
+      "versionTrack": "cli-independent",
+      "distribution": "js-built",
+      "readiness": "ready-for-alpha-preflight",
+      "notes": "Workspace package should be renamed or otherwise published as the unscoped zynth CLI package before release."
+    },
+    {
+      "name": "@zynth/ui",
+      "path": "packages/zynth-ui",
+      "publishName": "@zynth/ui",
+      "releaseTier": "later-alpha",
+      "versionTrack": "later-alpha",
+      "distribution": "native-source",
+      "readiness": "staged",
+      "notes": "Primitive UI package. Revisit once initial component public surface is confirmed."
+    },
+    {
+      "name": "@zynth/router",
+      "path": "packages/zynth-router",
+      "publishName": "@zynth/router",
+      "releaseTier": "later-alpha",
+      "versionTrack": "later-alpha",
+      "distribution": "js-built",
+      "readiness": "staged",
+      "notes": "Navigation package staged for a later alpha wave."
+    },
+    {
+      "name": "@zynth/animate",
+      "path": "packages/zynth-animate",
+      "publishName": "@zynth/animate",
+      "releaseTier": "later-alpha",
+      "versionTrack": "later-alpha",
+      "distribution": "native-source",
+      "readiness": "staged",
+      "notes": "Animation package requires hot-path and native payload validation before public alpha."
+    },
+    {
+      "name": "@zynth/screens",
+      "path": "packages/zynth-screens",
+      "publishName": "@zynth/screens",
+      "releaseTier": "later-alpha",
+      "versionTrack": "later-alpha",
+      "distribution": "native-source",
+      "readiness": "staged",
+      "notes": "Native screens package staged for later alpha."
+    },
+    {
+      "name": "@zynth/skia",
+      "path": "packages/zynth-skia",
+      "publishName": "@zynth/skia",
+      "releaseTier": "later-alpha",
+      "versionTrack": "later-alpha",
+      "distribution": "managed-binaries",
+      "readiness": "staged",
+      "notes": "Binary-heavy package. Requires strict binary sync, release prep, and pack validation."
+    },
+    {
+      "name": "@zynth/icons",
+      "path": "packages/zynth-icons",
+      "publishName": "@zynth/icons",
+      "releaseTier": "later-alpha",
+      "versionTrack": "later-alpha",
+      "distribution": "native-source",
+      "readiness": "staged",
+      "notes": "Icon package staged for later alpha."
+    },
+    {
+      "name": "@zynth/safe-area",
+      "path": "packages/zynth-safe-area",
+      "publishName": "@zynth/safe-area",
+      "releaseTier": "later-alpha",
+      "versionTrack": "later-alpha",
+      "distribution": "native-source",
+      "readiness": "staged",
+      "notes": "Safe area package staged for later alpha."
+    },
+    {
+      "name": "@zynth/gesture-handler",
+      "path": "packages/zynth-gesture-handler",
+      "publishName": "@zynth/gesture-handler",
+      "releaseTier": "later-alpha",
+      "versionTrack": "later-alpha",
+      "distribution": "native-source",
+      "readiness": "staged",
+      "notes": "Gesture package staged for later alpha after native interaction validation."
+    },
+    {
+      "name": "@zynth/rsbuild-plugin",
+      "path": "packages/zynth-rsbuild-plugin",
+      "publishName": "@zynth/rsbuild-plugin",
+      "releaseTier": "later-alpha",
+      "versionTrack": "later-alpha",
+      "distribution": "js-built",
+      "readiness": "staged",
+      "notes": "Build integration package staged until CLI and template flow are validated."
+    },
+    {
+      "name": "@zynth/async-storage",
+      "path": "packages/zynth-async-storage",
+      "publishName": "@zynth/async-storage",
+      "releaseTier": "extras-alpha",
+      "versionTrack": "later-alpha",
+      "distribution": "native-source",
+      "readiness": "staged",
+      "notes": "Optional storage module."
+    },
+    {
+      "name": "@zynth/auth-session",
+      "path": "packages/zynth-auth-session",
+      "publishName": "@zynth/auth-session",
+      "releaseTier": "extras-alpha",
+      "versionTrack": "later-alpha",
+      "distribution": "native-source",
+      "readiness": "staged",
+      "notes": "Optional authentication/session module."
+    },
+    {
+      "name": "@zynth/automation",
+      "path": "packages/zynth-automation",
+      "publishName": "@zynth/automation",
+      "releaseTier": "extras-alpha",
+      "versionTrack": "later-alpha",
+      "distribution": "native-source",
+      "readiness": "staged",
+      "notes": "Optional automation module."
+    },
+    {
+      "name": "@zynth/bluetooth",
+      "path": "packages/zynth-bluetooth",
+      "publishName": "@zynth/bluetooth",
+      "releaseTier": "extras-alpha",
+      "versionTrack": "later-alpha",
+      "distribution": "native-source",
+      "readiness": "staged",
+      "notes": "Optional Bluetooth module with higher native permission and platform validation burden."
+    },
+    {
+      "name": "@zynth/crypto",
+      "path": "packages/zynth-crypto",
+      "publishName": "@zynth/crypto",
+      "releaseTier": "extras-alpha",
+      "versionTrack": "later-alpha",
+      "distribution": "native-source",
+      "readiness": "staged",
+      "notes": "Optional crypto module."
+    },
+    {
+      "name": "@zynth/document-picker",
+      "path": "packages/zynth-document-picker",
+      "publishName": "@zynth/document-picker",
+      "releaseTier": "extras-alpha",
+      "versionTrack": "later-alpha",
+      "distribution": "native-source",
+      "readiness": "staged",
+      "notes": "Optional document picker module."
+    },
+    {
+      "name": "@zynth/file-intents",
+      "path": "packages/zynth-file-intents",
+      "publishName": "@zynth/file-intents",
+      "releaseTier": "extras-alpha",
+      "versionTrack": "later-alpha",
+      "distribution": "native-source",
+      "readiness": "staged",
+      "notes": "Optional file intents module."
+    },
+    {
+      "name": "@zynth/filesystem",
+      "path": "packages/zynth-filesystem",
+      "publishName": "@zynth/filesystem",
+      "releaseTier": "extras-alpha",
+      "versionTrack": "later-alpha",
+      "distribution": "native-source",
+      "readiness": "staged",
+      "notes": "Optional filesystem module."
+    },
+    {
+      "name": "@zynth/haptics",
+      "path": "packages/zynth-haptics",
+      "publishName": "@zynth/haptics",
+      "releaseTier": "extras-alpha",
+      "versionTrack": "later-alpha",
+      "distribution": "native-source",
+      "readiness": "staged",
+      "notes": "Optional haptics module."
+    },
+    {
+      "name": "@zynth/hypervisor",
+      "path": "packages/zynth-hypervisor",
+      "publishName": "@zynth/hypervisor",
+      "releaseTier": "extras-alpha",
+      "versionTrack": "later-alpha",
+      "distribution": "native-source",
+      "readiness": "staged",
+      "notes": "Advanced runtime composition module. Stage until core release is stable."
+    },
+    {
+      "name": "@zynth/image-picker",
+      "path": "packages/zynth-image-picker",
+      "publishName": "@zynth/image-picker",
+      "releaseTier": "extras-alpha",
+      "versionTrack": "later-alpha",
+      "distribution": "native-source",
+      "readiness": "staged",
+      "notes": "Optional image picker module."
+    },
+    {
+      "name": "@zynth/keyboard",
+      "path": "packages/zynth-keyboard",
+      "publishName": "@zynth/keyboard",
+      "releaseTier": "extras-alpha",
+      "versionTrack": "later-alpha",
+      "distribution": "native-source",
+      "readiness": "staged",
+      "notes": "Optional keyboard module."
+    },
+    {
+      "name": "@zynth/markdown",
+      "path": "packages/zynth-markdown",
+      "publishName": "@zynth/markdown",
+      "releaseTier": "extras-alpha",
+      "versionTrack": "later-alpha",
+      "distribution": "native-source",
+      "readiness": "staged",
+      "notes": "Optional markdown module."
+    },
+    {
+      "name": "@zynth/media-library",
+      "path": "packages/zynth-media-library",
+      "publishName": "@zynth/media-library",
+      "releaseTier": "extras-alpha",
+      "versionTrack": "later-alpha",
+      "distribution": "native-source",
+      "readiness": "staged",
+      "notes": "Optional media library module."
+    },
+    {
+      "name": "@zynth/network",
+      "path": "packages/zynth-network",
+      "publishName": "@zynth/network",
+      "releaseTier": "extras-alpha",
+      "versionTrack": "later-alpha",
+      "distribution": "native-source",
+      "readiness": "staged",
+      "notes": "Optional network module."
+    },
+    {
+      "name": "@zynth/secure-store",
+      "path": "packages/zynth-secure-store",
+      "publishName": "@zynth/secure-store",
+      "releaseTier": "extras-alpha",
+      "versionTrack": "later-alpha",
+      "distribution": "native-source",
+      "readiness": "staged",
+      "notes": "Optional secure storage module with stricter native validation requirements."
+    },
+    {
+      "name": "@zynth/sensors",
+      "path": "packages/zynth-sensors",
+      "publishName": "@zynth/sensors",
+      "releaseTier": "extras-alpha",
+      "versionTrack": "later-alpha",
+      "distribution": "native-source",
+      "readiness": "staged",
+      "notes": "Optional sensors module."
+    },
+    {
+      "name": "@zynth/splash-screen",
+      "path": "packages/zynth-splash-screen",
+      "publishName": "@zynth/splash-screen",
+      "releaseTier": "extras-alpha",
+      "versionTrack": "later-alpha",
+      "distribution": "native-source",
+      "readiness": "staged",
+      "notes": "Optional splash screen module."
+    },
+    {
+      "name": "@zynth/web-browser",
+      "path": "packages/zynth-web-browser",
+      "publishName": "@zynth/web-browser",
+      "releaseTier": "extras-alpha",
+      "versionTrack": "later-alpha",
+      "distribution": "native-source",
+      "readiness": "staged",
+      "notes": "Optional web browser module."
+    },
+    {
+      "name": "@zynth/webserver",
+      "path": "packages/zynth-webserver",
+      "publishName": "@zynth/webserver",
+      "releaseTier": "extras-alpha",
+      "versionTrack": "later-alpha",
+      "distribution": "native-source",
+      "readiness": "staged",
+      "notes": "Optional embedded webserver module. Validate native vendored sources carefully before publish."
+    },
+    {
+      "name": "@zynth/webview",
+      "path": "packages/zynth-webview",
+      "publishName": "@zynth/webview",
+      "releaseTier": "extras-alpha",
+      "versionTrack": "later-alpha",
+      "distribution": "native-source",
+      "readiness": "staged",
+      "notes": "Optional webview module."
+    },
+    {
+      "name": "@zynth/skills",
+      "path": "packages/zynth-skills",
+      "publishName": "@zynth/skills",
+      "releaseTier": "internal",
+      "versionTrack": "internal",
+      "distribution": "internal",
+      "readiness": "private",
+      "notes": "Already marked private. Exclude from release scripts."
+    },
+    {
+      "name": "@zynth/skyhook",
+      "path": "packages/zynth-skyhook",
+      "publishName": "@zynth/skyhook",
+      "releaseTier": "internal",
+      "versionTrack": "internal",
+      "distribution": "internal",
+      "readiness": "private",
+      "notes": "Already marked private and skipped by the current package build script. Exclude from release scripts."
+    }
+  ]
+}

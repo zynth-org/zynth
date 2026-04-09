@@ -20,11 +20,18 @@
     "reset:android": "yarn workspace @demo/sn-demo reset:android",
     "generate": "node --experimental-strip-types scripts/generate.ts",
     "sync-aliases": "node scripts/sync-workspace-aliases.js",
-    "new:package": "node --experimental-strip-types scripts/new-package.ts"
+    "new:package": "node --experimental-strip-types scripts/new-package.ts",
+    "changeset": "changeset",
+    "changeset:status": "changeset status",
+    "changeset:pre": "changeset pre",
+    "version:packages": "changeset version",
+    "release:packages": "changeset publish",
+    "release:alpha": "changeset publish --tag alpha"
   },
   "devDependencies": {
-    "@zynth/cli": "*",
+    "@changesets/cli": "^2.30.0",
     "@types/node": "^25.0.3",
+    "@zynth/cli": "*",
     "baseline-browser-mapping": "^2.9.14",
     "hermes-compiler": "250829098.0.6",
     "solid-refresh": "^0.7.5",
