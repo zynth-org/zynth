@@ -66,7 +66,7 @@ targets:
           # Exit immediately if a command exits with a non-zero status.
           set -e
 
-          # ✅ Navigate from the Xcode project dir to the root of your framework.
+          # Navigate from the Xcode project dir to the root of your framework.
           cd "$PROJECT_DIR/../../../"
 
           # Check if bundle already exists and we're in Release mode
@@ -75,24 +75,24 @@ targets:
 
           FONTS_DIR="$PROJECT_DIR/{{APP_NAME}}/fonts"
           if [ -d "$FONTS_DIR" ]; then
-            echo "🔤 Copying bundled fonts from $FONTS_DIR..."
+            echo "Copying bundled fonts from $FONTS_DIR..."
             DEST_FONTS_DIR="$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/fonts"
             mkdir -p "$DEST_FONTS_DIR"
             cp "$FONTS_DIR"/* "$DEST_FONTS_DIR/" 2>/dev/null || true
-            echo "  ✓ Fonts copied"
+            echo "Fonts copied"
           fi
 
           IMAGES_DIR="$PROJECT_DIR/{{APP_NAME}}/images"
           if [ -d "$IMAGES_DIR" ]; then
-            echo "🖼️ Copying bundled images from $IMAGES_DIR..."
+            echo "Copying bundled images from $IMAGES_DIR..."
             DEST_IMAGES_DIR="$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/images"
             mkdir -p "$DEST_IMAGES_DIR"
             cp "$IMAGES_DIR"/* "$DEST_IMAGES_DIR/" 2>/dev/null || true
-            echo "  ✓ Images copied"
+            echo "Images copied"
           fi
 
           if [ "$CONFIGURATION" = "Release" ]; then
-            echo "⚡ Release build detected - using pre-built bundle"
+            echo "Release build detected: using pre-built bundle"
             if [ ! -f "$BUNDLE_PATH" ]; then
               echo "---" >&2
               echo "FATAL ERROR: JS bundle not found at $BUNDLE_PATH" >&2
@@ -103,7 +103,7 @@ targets:
               exit 1
             fi
           else
-            echo "⚡ Debug build - skipping bundle copy (Rsbuild dev server supplies JS)."
+            echo "Debug build detected: skipping bundle copy (Rsbuild dev server supplies JS)."
             rm -f "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/main.js"
             rm -f "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/main.hbc"
             touch "${SCRIPT_OUTPUT_FILE_0}"
@@ -113,11 +113,11 @@ targets:
           # Prefer Hermes bytecode in Release and omit JS source to reduce app size.
           HBC_PATH="apps/{{APP_DIR}}/dist/main.hbc"
           if [ -f "$HBC_PATH" ]; then
-            echo "📦 Copying Hermes bytecode..."
+            echo "Copying Hermes bytecode..."
             cp "$HBC_PATH" "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/main.hbc"
             rm -f "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/main.js"
           else
-            echo "📄 Hermes bytecode missing; copying main.js fallback..."
+            echo "Hermes bytecode missing; copying main.js fallback..."
             rm -f "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/main.hbc"
             cp "$BUNDLE_PATH" "$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/main.js"
           fi
@@ -125,11 +125,11 @@ targets:
           # Copy bundled image assets discovered during JS build (Shell-only approach)
           ASSETS_DIR="apps/{{APP_DIR}}/dist/assets"
           if [ -d "$ASSETS_DIR" ]; then
-            echo "🖼️ Copying bundled image assets from $ASSETS_DIR..."
+            echo "Copying bundled image assets from $ASSETS_DIR..."
             DEST_ASSETS_DIR="$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/assets"
             mkdir -p "$DEST_ASSETS_DIR"
             cp -R "$ASSETS_DIR/" "$DEST_ASSETS_DIR/"
-            echo "  ✓ Assets copied"
+            echo "Assets copied"
           fi
 
           touch "${SCRIPT_OUTPUT_FILE_0}"

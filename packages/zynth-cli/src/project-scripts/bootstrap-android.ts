@@ -9,6 +9,33 @@ import { generateAndroidProject } from "./generate-android";
 
 const templatesRoot = path.resolve(__dirname, "..", "templates");
 
+function resolveHermesCompilerBinary(appDir: string): string | null {
+  try {
+    const hermesCompilerPackageJson = require.resolve("hermes-compiler/package.json", {
+      paths: [appDir],
+    });
+    const packageDir = path.dirname(hermesCompilerPackageJson);
+
+    const platformCandidates =
+      process.platform === "darwin"
+        ? ["hermesc/osx-bin/hermesc", "hermesc/linux64-bin/hermesc"]
+        : process.platform === "linux"
+          ? ["hermesc/linux64-bin/hermesc", "hermesc/osx-bin/hermesc"]
+          : ["hermesc/win64-bin/hermesc.exe", "hermesc/linux64-bin/hermesc", "hermesc/osx-bin/hermesc"];
+
+    for (const relativeCandidate of platformCandidates) {
+      const candidate = path.join(packageDir, relativeCandidate);
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    }
+  } catch (_error) {
+    // Dependency is optional for dev-only flows.
+  }
+
+  return null;
+}
+
 export function main(options: any = {}): void {
   const appDir = process.cwd();
   const quiet = Boolean(options.quiet);
@@ -87,24 +114,9 @@ export function main(options: any = {}): void {
           console.log("◆ Compiling to Hermes bytecode...");
         }
 
-        // Try to find hermesc in common locations
-        let hermescPath: string | undefined;
-        const possiblePaths = [
-          "hermesc", // In PATH
-          "npx hermesc", // Via npm
-          path.join(process.env.ANDROID_HOME || "", "hermes", "bin", "hermesc"), // Android SDK
-          path.join(appDir, "node_modules", "hermes-engine", "bin", "hermesc"), // Local app dependency
-        ];
-
-        for (const testPath of possiblePaths) {
-          try {
-            execSync(`${testPath} --help`, { stdio: "ignore" });
-            hermescPath = testPath;
-            break;
-          } catch (e) {
-            // Continue to next path
-          }
-        }
+        // Resolve hermesc from the app's hermes-compiler dependency to avoid
+        // relying on a global/system installation.
+        const hermescPath = resolveHermesCompilerBinary(appDir);
 
         if (hermescPath) {
           const hermesArgs = [
@@ -128,7 +140,7 @@ export function main(options: any = {}): void {
         } else {
           if (!quiet) {
             console.warn(
-              "! hermesc not found. HBC compilation skipped. Install hermes-engine or add hermesc to PATH.",
+              "! hermesc not found in app dependencies. HBC compilation skipped. Add hermes-compiler to package.json.",
             );
           }
         }

@@ -9,7 +9,13 @@ function resolveAppTemplateDir() {
 }
 
 async function createNewApp(argv) {
-  const { directory, path: customPath } = argv;
+  const {
+    directory,
+    path: customPath,
+    yes,
+    displayName: cliDisplayName,
+    slug: cliSlug,
+  } = argv;
 
   const baseDir = customPath ? path.resolve(customPath) : process.cwd();
 
@@ -22,6 +28,12 @@ async function createNewApp(argv) {
 
   let appDirectory = directory;
   if (!appDirectory) {
+    if (yes) {
+      console.error(
+        chalk.red("Directory is required in non-interactive mode. Pass it as `zynth new <directory> --yes`.")
+      );
+      process.exit(1);
+    }
     const response = await prompts({
       type: "text",
       name: "directory",
@@ -43,22 +55,39 @@ async function createNewApp(argv) {
   const appName = path.basename(appPath);
   const appTemplateDir = resolveAppTemplateDir();
 
-  const questions = [
-    {
-      type: "text",
-      name: "displayName",
-      message: "Enter the display name for your app:",
-      initial: appName,
-    },
-    {
-      type: "text",
-      name: "slug",
-      message: "Enter the slug for your app:",
-      initial: appName.toLowerCase().replace(/\s+/g, "-"),
-    },
-  ];
+  const defaultDisplayName = appName;
+  const defaultSlug = appName.toLowerCase().replace(/\s+/g, "-");
+  let displayName = cliDisplayName;
+  let slug = cliSlug;
 
-  const { displayName, slug } = await prompts(questions);
+  if (yes) {
+    displayName = displayName || defaultDisplayName;
+    slug = slug || defaultSlug;
+  } else {
+    const questions = [];
+    if (!displayName) {
+      questions.push({
+        type: "text",
+        name: "displayName",
+        message: "Enter the display name for your app:",
+        initial: defaultDisplayName,
+      });
+    }
+    if (!slug) {
+      questions.push({
+        type: "text",
+        name: "slug",
+        message: "Enter the slug for your app:",
+        initial: defaultSlug,
+      });
+    }
+
+    if (questions.length > 0) {
+      const answers = await prompts(questions);
+      displayName = displayName || answers.displayName;
+      slug = slug || answers.slug;
+    }
+  }
 
   if (!displayName || !slug) {
     console.error(chalk.red("App name and slug are required."));
@@ -137,6 +166,20 @@ module.exports = {
         alias: "p",
         type: "string",
         description: "The path to create the app in",
+      })
+      .option("display-name", {
+        type: "string",
+        description: "Display name for app.json (non-interactive friendly)",
+      })
+      .option("slug", {
+        type: "string",
+        description: "Slug for app.json and package.json (non-interactive friendly)",
+      })
+      .option("yes", {
+        alias: "y",
+        type: "boolean",
+        default: false,
+        description: "Run non-interactively using defaults for missing values",
       });
   },
   handler: (argv) => {
