@@ -1,6 +1,7 @@
 {
   "name": "@zynth/core",
   "version": "0.0.1",
+  "description": "Zynth native runtime, SolidJS renderer, JSI host interface, and flex layout core.",
   "type": "module",
   "main": "dist/esm/index.js",
   "module": "dist/esm/index.js",
@@ -39,6 +40,27 @@
     "./dist/esm/index.js"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zynth-org/zynth",
+    "directory": "packages/zynth-core"
+  },
+  "homepage": "https://github.com/zynth-org/zynth#readme",
+  "bugs": {
+    "url": "https://github.com/zynth-org/zynth/issues"
+  },
+  "keywords": [
+    "zynth",
+    "solid-js",
+    "native-runtime",
+    "jsi",
+    "yoga",
+    "ios",
+    "android"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "peerDependencies": {
     "solid-js": ">=1.8.0"
   },

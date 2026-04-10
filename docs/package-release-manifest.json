@@ -14,7 +14,7 @@
       "@zynth/components"
     ],
     "initialCliPackage": {
-      "workspaceName": "@zynth/cli",
+      "workspaceName": "zynth",
       "publishName": "zynth",
       "bin": "zynth"
     }
@@ -68,14 +68,14 @@
       "notes": "Initial public component package."
     },
     {
-      "name": "@zynth/cli",
+      "name": "zynth",
       "path": "packages/zynth-cli",
       "publishName": "zynth",
       "releaseTier": "initial-cli-alpha",
       "versionTrack": "cli-independent",
       "distribution": "js-built",
       "readiness": "ready-for-alpha-preflight",
-      "notes": "Workspace package should be renamed or otherwise published as the unscoped zynth CLI package before release."
+      "notes": "Public CLI package exposing the zynth binary."
     },
     {
       "name": "@zynth/ui",

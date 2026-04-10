@@ -8,6 +8,26 @@
   "types": "dist/types/index.d.ts",
   "sideEffects": false,
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zynth-org/zynth",
+    "directory": "packages/zynth-apis"
+  },
+  "homepage": "https://github.com/zynth-org/zynth#readme",
+  "bugs": {
+    "url": "https://github.com/zynth-org/zynth/issues"
+  },
+  "keywords": [
+    "zynth",
+    "native-apis",
+    "solid-js",
+    "jsi",
+    "ios",
+    "android"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "files": [
     "dist",
     "android",

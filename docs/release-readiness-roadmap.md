@@ -19,7 +19,7 @@ The goal is to make publishing safe, repeatable, and maintainable for a solo mai
 - [x] Initial public framework package set recorded: `@zynth/core`, `@zynth/apis`, and `@zynth/components`.
 - [x] Package release manifest created at `docs/package-release-manifest.json`.
 - [x] Changesets configured.
-- [ ] Initial public package metadata hardened.
+- [x] Initial public package metadata hardened.
 - [ ] Release preflight validator implemented.
 - [ ] Pack validation implemented.
 - [ ] Consumer smoke fixture validation implemented.
@@ -442,22 +442,22 @@ Goal:
 
 TODO:
 
-- audit `package.json` for every intended public package
-- add missing `description`, `repository`, `homepage`, `bugs`, `keywords`, and `engines` where needed
-- verify `exports`, `main`, `module`, and `types`
-- verify `files` whitelists
-- ensure each package has a real `README.md`
-- ensure licenses are correct
-- mark internal packages private
+- [x] audit `package.json` for every intended public package
+- [x] add missing `description`, `repository`, `homepage`, `bugs`, `keywords`, and `engines` where needed
+- [x] verify `exports`, `main`, `module`, and `types`
+- [x] verify `files` whitelists
+- [x] ensure each package has a real `README.md`
+- [x] ensure licenses are correct
+- [x] mark internal packages private
 
 Mark ready when:
 
-- all intended public packages meet the metadata checklist
+- [x] all intended public packages meet the metadata checklist
 
 Validate:
 
-- run the preflight metadata validator
-- inspect at least one tarball per package category
+- [x] run the preflight metadata validator
+- [ ] inspect at least one tarball per package category
 
 ## Phase 2: Versioning foundation
 
@@ -619,7 +619,7 @@ To keep scope controlled, implement release readiness in this order:
 
 1. [x] Create the package release manifest.
 2. [x] Add Changesets.
-3. Harden package metadata for the first public packages.
+3. [x] Harden package metadata for the first public packages.
 4. Add preflight validation.
 5. Add `npm pack --dry-run` validation.
 6. Add fixture smoke tests.

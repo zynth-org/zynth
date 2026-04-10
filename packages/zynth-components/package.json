@@ -1,6 +1,7 @@
 {
   "name": "@zynth/components",
   "version": "0.0.1",
+  "description": "Native Zynth UI primitives and components for building SolidJS-powered iOS, Android, and partial web apps.",
   "type": "module",
   "main": "dist/esm/index.js",
   "module": "dist/esm/index.js",
@@ -12,6 +13,26 @@
     "./web/**/*"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zynth-org/zynth",
+    "directory": "packages/zynth-components"
+  },
+  "homepage": "https://github.com/zynth-org/zynth#readme",
+  "bugs": {
+    "url": "https://github.com/zynth-org/zynth/issues"
+  },
+  "keywords": [
+    "zynth",
+    "components",
+    "solid-js",
+    "native-ui",
+    "ios",
+    "android"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "files": [
     "dist",
     "android",

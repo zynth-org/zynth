@@ -1,4 +1,4 @@
-# @zynth/cli
+# zynth
 
 The command-line interface for the Zynth framework.
 

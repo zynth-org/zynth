@@ -528,10 +528,10 @@ export async function generateAssets(appDir: string, platform: 'ios' | 'android'
   
   if (!quiet && !process.env.ZYNTH_SUPPRESS_OPT_WARNING) {
     if (!sharp) {
-      console.warn("  ! Note: Image optimization (WebP conversion) is disabled because 'sharp' is not installed in @zynth/cli.");
+      console.warn("  ! Note: Image optimization (WebP conversion) is disabled because 'sharp' is not installed in zynth.");
     }
     if (!subsetFont) {
-      console.warn("  ! Note: Icon font subsetting is disabled because 'subset-font' is not installed in @zynth/cli. (Unused fonts will still be excluded).");
+      console.warn("  ! Note: Icon font subsetting is disabled because 'subset-font' is not installed in zynth. (Unused fonts will still be excluded).");
     }
   }
 

@@ -2190,7 +2190,7 @@ function bundle(scope, root) {
   if (scope === "packages" || scope === "all") {
     const packages = listWorkspaces(root, "packages");
     packages
-      .filter((workspace) => workspace.name !== "@zynth/cli")
+      .filter((workspace) => workspace.name !== "zynth")
       .forEach(runWorkspaceBuild);
   }
 }

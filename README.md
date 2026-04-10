@@ -136,7 +136,7 @@ export function BouncingBox() {
 
 We welcome contributions! Please see `CONTRIBUTING.md` (coming soon) for details on how to set up the monorepo for development.
 
-1.  Clone the repo: `git clone https://github.com/zynth/zynth.git`
+1.  Clone the repo: `git clone https://github.com/zynth-org/zynth.git`
 2.  Install dependencies: `yarn`
 3.  Run the demo app: `cd apps/components && yarn dev:ios`
 

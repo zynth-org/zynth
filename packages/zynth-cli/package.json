@@ -1,22 +1,32 @@
 {
-  "name": "@zynth/cli",
+  "name": "zynth",
   "version": "0.0.1",
-  "description": "Zynth development CLI",
+  "description": "Command-line tools for creating, bootstrapping, developing, and bundling Zynth native apps.",
   "license": "MIT",
   "bin": {
     "zynth": "./bin/zynth"
   },
   "files": [
     "bin",
-    "src"
+    "src",
+    "README.md"
   ],
   "keywords": [
     "zynth",
-    "cli"
+    "cli",
+    "ios",
+    "android",
+    "native-apps",
+    "solid-js"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/zynth/zynth"
+    "url": "https://github.com/zynth-org/zynth",
+    "directory": "packages/zynth-cli"
+  },
+  "homepage": "https://github.com/zynth-org/zynth#readme",
+  "bugs": {
+    "url": "https://github.com/zynth-org/zynth/issues"
   },
   "engines": {
     "node": ">=18"
