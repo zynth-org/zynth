@@ -26,6 +26,7 @@
     "changeset:pre": "changeset pre",
     "version:packages": "changeset version",
     "release:preflight": "node --experimental-strip-types scripts/release-preflight.ts",
+    "release:pack": "node --experimental-strip-types scripts/release-pack-validation.ts",
     "release:packages": "changeset publish",
     "release:alpha": "changeset publish --tag alpha"
   },

@@ -21,7 +21,7 @@ The goal is to make publishing safe, repeatable, and maintainable for a solo mai
 - [x] Changesets configured.
 - [x] Initial public package metadata hardened.
 - [x] Release preflight validator implemented.
-- [ ] Pack validation implemented.
+- [x] Pack validation implemented.
 - [ ] Consumer smoke fixture validation implemented.
 - [ ] Alpha publish workflow implemented.
 
@@ -457,7 +457,7 @@ Mark ready when:
 Validate:
 
 - [x] run the preflight metadata validator
-- [ ] inspect at least one tarball per package category
+- [x] inspect at least one tarball per package category
 
 ## Phase 2: Versioning foundation
 
@@ -490,7 +490,7 @@ Goal:
 TODO:
 
 - [x] add repo preflight validation
-- add pack validation
+- [x] add pack validation
 - add fixture smoke installs
 - add checks for native file presence
 - add checks for peer dependency alignment
@@ -621,7 +621,7 @@ To keep scope controlled, implement release readiness in this order:
 2. [x] Add Changesets.
 3. [x] Harden package metadata for the first public packages.
 4. [x] Add preflight validation.
-5. Add `npm pack --dry-run` validation.
+5. [x] Add `npm pack --dry-run` validation.
 6. Add fixture smoke tests.
 7. Add alpha publish workflow.
 8. Publish only the first three framework packages plus the CLI.
