@@ -8,11 +8,11 @@ Pod::Spec.new do |s|
   s.name         = "ZynthBluetooth"
   s.version      = package["version"]
   s.summary      = summary
-  s.homepage     = "https://github.com/zynth/zynth"
+  s.homepage     = "https://github.com/zynth-org/zynth"
   s.license      = "MIT"
   s.authors      = { "Zynth Team" => "team@zynthai.com" }
   s.platforms    = { :ios => "13.0" }
-  s.source       = { :git => "https://github.com/zynth/zynth.git", :tag => "#{s.version}" }
+  s.source       = { :git => "https://github.com/zynth-org/zynth.git", :tag => "#{s.version}" }
 
   s.source_files = "ios/**/*.{h,m,mm,swift}"
   s.swift_version = "5.9"

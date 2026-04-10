@@ -4,10 +4,10 @@ Pod::Spec.new do |s|
   s.summary      = "Zynth Core iOS runtime (new)"
   s.license      = { :type => "MIT" }
   s.author       = { "Zynth" => "dev@zynthstack.dev" }
-  s.homepage     = "https://github.com/zynth/zynth"
+  s.homepage     = "https://github.com/zynth-org/zynth"
   s.platform     = :ios, "15.0"
 
-  s.source       = { :git => "https://github.com/zynth/zynth.git", :tag => s.version.to_s }
+  s.source       = { :git => "https://github.com/zynth-org/zynth.git", :tag => s.version.to_s }
   s.source_files = "ios/ZynthKit/include/**/*.{h}", "ios/ZynthKit/src/**/*.{h,m,mm,cpp,c,swift}"
   s.public_header_files = "ios/ZynthKit/include/**/*.h"
 
