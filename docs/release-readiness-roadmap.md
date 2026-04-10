@@ -20,7 +20,7 @@ The goal is to make publishing safe, repeatable, and maintainable for a solo mai
 - [x] Package release manifest created at `docs/package-release-manifest.json`.
 - [x] Changesets configured.
 - [x] Initial public package metadata hardened.
-- [ ] Release preflight validator implemented.
+- [x] Release preflight validator implemented.
 - [ ] Pack validation implemented.
 - [ ] Consumer smoke fixture validation implemented.
 - [ ] Alpha publish workflow implemented.
@@ -489,7 +489,7 @@ Goal:
 
 TODO:
 
-- add repo preflight validation
+- [x] add repo preflight validation
 - add pack validation
 - add fixture smoke installs
 - add checks for native file presence
@@ -498,11 +498,11 @@ TODO:
 
 Mark ready when:
 
-- validation catches missing files, bad metadata, bad exports, and stale builds before publish
+- [x] validation catches missing files, bad metadata, bad exports, and stale builds before publish
 
 Validate:
 
-- break one thing intentionally and confirm the correct validator catches it
+- [x] break one thing intentionally and confirm the correct validator catches it
 
 ## Phase 4: Alpha release pipeline
 
@@ -620,7 +620,7 @@ To keep scope controlled, implement release readiness in this order:
 1. [x] Create the package release manifest.
 2. [x] Add Changesets.
 3. [x] Harden package metadata for the first public packages.
-4. Add preflight validation.
+4. [x] Add preflight validation.
 5. Add `npm pack --dry-run` validation.
 6. Add fixture smoke tests.
 7. Add alpha publish workflow.
