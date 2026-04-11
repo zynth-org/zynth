@@ -20,6 +20,7 @@ yarn.lock
 # Build artifacts
 **/.build
 projects/**/build/
+.tmp
 
 # iOS / Xcode (generated projects - not templates)
 apps/*/ios/

@@ -134,6 +134,25 @@ function normalizeEntry(entry: string) {
   return normalize(entry).replace(/^\.\//, "").replace(/\/$/, "");
 }
 
+function hasPackedPathWithPrefix(packedSet: Set<string>, prefix: string) {
+  const normalizedPrefix = normalizeEntry(prefix);
+  for (const path of packedSet) {
+    if (path === normalizedPrefix || path.startsWith(`${normalizedPrefix}/`)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function hasPackedPodspec(packedSet: Set<string>) {
+  for (const path of packedSet) {
+    if (path.endsWith(".podspec")) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function pathCoveredByEntry(filePath: string, entry: string) {
   const normalizedPath = normalizeEntry(filePath);
   const normalizedEntry = normalizeEntry(entry);
@@ -163,7 +182,7 @@ function runNpmPackDryRun(packageDir: string) {
   return parsed[0];
 }
 
-function validatePackContents(pkgName: string, pkg: PackageJson, pack: NpmPackDryRunResult) {
+function validatePackContents(pkgName: string, pkg: PackageJson, manifestPackage: ManifestPackage, pack: NpmPackDryRunResult) {
   const packedFiles = pack.files ?? [];
   if (packedFiles.length === 0) {
     fail(`${pkgName}: npm pack output contains no files`);
@@ -203,6 +222,16 @@ function validatePackContents(pkgName: string, pkg: PackageJson, pack: NpmPackDr
         fail(`${pkgName}: packed tarball is missing exports target ${target}`);
       }
     }
+
+    if (!hasPackedPathWithPrefix(packedSet, "dist")) {
+      fail(`${pkgName}: packed tarball is missing dist directory contents`);
+    }
+    if (!hasPackedPathWithPrefix(packedSet, "dist/esm")) {
+      fail(`${pkgName}: packed tarball is missing dist/esm directory contents`);
+    }
+    if (!hasPackedPathWithPrefix(packedSet, "dist/types")) {
+      fail(`${pkgName}: packed tarball is missing dist/types directory contents`);
+    }
   } else if (typeof pkg.bin === "object") {
     for (const target of Object.values(pkg.bin)) {
       if (isNonEmptyString(target) && !packedSet.has(normalizeEntry(target))) {
@@ -211,7 +240,14 @@ function validatePackContents(pkgName: string, pkg: PackageJson, pack: NpmPackDr
     }
   }
 
-  const bannedPatterns = [".tsbuildinfo", ".DS_Store", "node_modules/"];
+  const bannedPatterns = [
+    ".tsbuildinfo",
+    ".DS_Store",
+    "node_modules/",
+    "/build/",
+    "/.cxx/",
+    "/.gradle/",
+  ];
   for (const path of packedPaths) {
     if (bannedPatterns.some((pattern) => path.includes(pattern))) {
       fail(`${pkgName}: packed tarball includes banned path ${path}`);
@@ -221,6 +257,21 @@ function validatePackContents(pkgName: string, pkg: PackageJson, pack: NpmPackDr
   const unpackedSize = pack.unpackedSize ?? 0;
   if (unpackedSize > 100 * 1024 * 1024) {
     log(`  WARN ${pkgName} unpacked tarball is large (${unpackedSize} bytes)`);
+  }
+
+  if (
+    manifestPackage.readiness === "ready-for-alpha-preflight" &&
+    (manifestPackage.distribution === "native-source" || manifestPackage.distribution === "managed-binaries")
+  ) {
+    if (!hasPackedPathWithPrefix(packedSet, "ios")) {
+      fail(`${pkgName}: native package tarball is missing ios sources`);
+    }
+    if (!hasPackedPathWithPrefix(packedSet, "android")) {
+      fail(`${pkgName}: native package tarball is missing android sources`);
+    }
+    if (!hasPackedPodspec(packedSet)) {
+      fail(`${pkgName}: native package tarball is missing podspec`);
+    }
   }
 }
 
@@ -267,7 +318,7 @@ async function main() {
 
     log(`  → packing ${target.name}`);
     const pack = runNpmPackDryRun(workspacePackage.packageDir);
-    validatePackContents(target.name, workspacePackage.packageJson, pack);
+    validatePackContents(target.name, workspacePackage.packageJson, target, pack);
     totalPackedSize += pack.size ?? 0;
     totalUnpackedSize += pack.unpackedSize ?? 0;
   }

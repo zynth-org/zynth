@@ -38,6 +38,7 @@ type ReleaseManifest = {
 
 type PackageJson = {
   name?: string;
+  version?: string;
   private?: boolean;
   description?: string;
   license?: string;
@@ -52,6 +53,8 @@ type PackageJson = {
   types?: string;
   exports?: string | Record<string, unknown>;
   bin?: string | Record<string, string>;
+  dependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
 };
 
 type WorkspacePackage = {
@@ -175,6 +178,54 @@ function collectExportTargets(value: unknown, targets: string[]) {
   for (const nested of Object.values(value as Record<string, unknown>)) {
     collectExportTargets(nested, targets);
   }
+}
+
+function fileNameLooksLikePodspec(fileName: string) {
+  return fileName.endsWith(".podspec");
+}
+
+async function hasPodspec(packageDir: string) {
+  const entries = await readdir(packageDir, { withFileTypes: true });
+  return entries.some((entry) => entry.isFile() && fileNameLooksLikePodspec(entry.name));
+}
+
+async function hasDirectoryWithFiles(path: string) {
+  if (!(await pathExists(path))) {
+    return false;
+  }
+
+  const entries = await readdir(path, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.name === ".DS_Store") {
+      continue;
+    }
+    if (entry.isFile()) {
+      return true;
+    }
+    if (entry.isDirectory()) {
+      const nestedHasFiles = await hasDirectoryWithFiles(join(path, entry.name));
+      if (nestedHasFiles) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function peerRangeLooksAligned(range: string, expectedVersion: string) {
+  const normalized = range.trim();
+  const accepted = new Set([
+    expectedVersion,
+    `^${expectedVersion}`,
+    `~${expectedVersion}`,
+    `>=${expectedVersion}`,
+    `workspace:${expectedVersion}`,
+    "workspace:^",
+    "workspace:~",
+    "workspace:*",
+  ]);
+  return accepted.has(normalized);
 }
 
 function shouldValidatePackage(manifestPackage: ManifestPackage, scope: "ready" | "public" | "all") {
@@ -312,6 +363,21 @@ async function validatePackage(manifestPackage: ManifestPackage, workspacePackag
         fail(`${manifestPackage.name} exports target does not exist: ${target}`);
       }
     }
+
+    const distDir = join(workspacePackage.packageDir, "dist");
+    if (!(await hasDirectoryWithFiles(distDir))) {
+      fail(`${manifestPackage.name} dist directory is missing or empty`);
+    }
+
+    const distEsmDir = join(workspacePackage.packageDir, "dist", "esm");
+    if (!(await hasDirectoryWithFiles(distEsmDir))) {
+      fail(`${manifestPackage.name} dist/esm directory is missing or empty`);
+    }
+
+    const distTypesDir = join(workspacePackage.packageDir, "dist", "types");
+    if (!(await hasDirectoryWithFiles(distTypesDir))) {
+      fail(`${manifestPackage.name} dist/types directory is missing or empty`);
+    }
   }
 
   if (manifestPackage.name === manifestPackage.publishName && manifestPackage.publishName === "zynth") {
@@ -323,6 +389,71 @@ async function validatePackage(manifestPackage: ManifestPackage, workspacePackag
     const binTarget = join(workspacePackage.packageDir, (bin as Record<string, string>).zynth);
     if (!(await pathExists(binTarget))) {
       fail(`zynth CLI bin target does not exist: ${(bin as Record<string, string>).zynth}`);
+    }
+  }
+
+  if (
+    manifestPackage.readiness === "ready-for-alpha-preflight" &&
+    (manifestPackage.distribution === "native-source" || manifestPackage.distribution === "managed-binaries")
+  ) {
+    const iosDir = join(workspacePackage.packageDir, "ios");
+    const androidDir = join(workspacePackage.packageDir, "android");
+    if (!(await pathExists(iosDir))) {
+      fail(`${manifestPackage.name} must include an ios directory for native distribution`);
+    }
+    if (!(await pathExists(androidDir))) {
+      fail(`${manifestPackage.name} must include an android directory for native distribution`);
+    }
+    if (!(await hasPodspec(workspacePackage.packageDir))) {
+      fail(`${manifestPackage.name} must include a podspec file for iOS native distribution`);
+    }
+  }
+}
+
+function validatePeerDependencyAlignment(
+  targets: ManifestPackage[],
+  workspaceMap: Map<string, WorkspacePackage>,
+  manifestMap: Map<string, ManifestPackage>,
+) {
+  const frameworkLockstepTargets = new Set(
+    targets
+      .filter((target) => target.versionTrack === "framework-lockstep")
+      .map((target) => target.name),
+  );
+
+  for (const target of targets) {
+    const workspacePackage = workspaceMap.get(target.name);
+    if (!workspacePackage) {
+      fail(`Workspace package not found for manifest entry ${target.name}`);
+    }
+
+    const packagePeers = workspacePackage.packageJson.peerDependencies ?? {};
+    for (const [peerName, peerRange] of Object.entries(packagePeers)) {
+      const peerManifest = manifestMap.get(peerName);
+      if (!peerManifest) {
+        continue;
+      }
+
+      if (peerManifest.readiness === "private" || peerManifest.releaseTier === "internal") {
+        fail(`${target.name} declares peer dependency on internal package ${peerName}`);
+      }
+
+      if (
+        target.versionTrack === "framework-lockstep" &&
+        frameworkLockstepTargets.has(peerName) &&
+        isNonEmptyString(peerRange)
+      ) {
+        const peerWorkspace = workspaceMap.get(peerName);
+        const expectedVersion = peerWorkspace?.packageJson.version;
+        if (!isNonEmptyString(expectedVersion)) {
+          fail(`Could not resolve expected version for peer package ${peerName}`);
+        }
+        if (!peerRangeLooksAligned(peerRange, expectedVersion)) {
+          fail(
+            `${target.name} peer dependency on ${peerName} is not aligned with lockstep policy: "${peerRange}" (expected ${expectedVersion}, ^${expectedVersion}, ~${expectedVersion}, or workspace equivalent)`,
+          );
+        }
+      }
     }
   }
 }
@@ -355,6 +486,8 @@ async function main() {
     fail(`No manifest packages matched the requested scope: ${scope}`);
   }
 
+  const manifestMap = new Map(manifest.packages.map((entry) => [entry.name, entry]));
+
   for (const target of targets) {
     const workspacePackage = workspaceMap.get(target.name);
     if (!workspacePackage) {
@@ -364,6 +497,8 @@ async function main() {
     log(`  → validating ${target.name}`);
     await validatePackage(target, workspacePackage);
   }
+
+  validatePeerDependencyAlignment(targets, workspaceMap, manifestMap);
 
   log(`✅ Release preflight passed for ${targets.length} package(s).`);
 }

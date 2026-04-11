@@ -1,0 +1,8 @@
+# Template local build metadata/cache
+src/templates/**/.gradle/
+src/templates/**/build/
+src/templates/**/.cxx/
+
+# Local package build output
+dist/
+tsconfig.tsbuildinfo

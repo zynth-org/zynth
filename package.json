@@ -28,6 +28,7 @@
     "release:preflight": "node --experimental-strip-types scripts/release-preflight.ts",
     "release:pack": "node --experimental-strip-types scripts/release-pack-validation.ts",
     "release:fixture": "node --experimental-strip-types scripts/release-fixture-smoke.ts",
+    "release:versioning-drill": "node --experimental-strip-types scripts/release-versioning-drill.ts",
     "release:packages": "changeset publish",
     "release:alpha": "changeset publish --tag alpha"
   },

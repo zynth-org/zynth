@@ -35,7 +35,10 @@
   },
   "files": [
     "dist",
-    "android",
+    "android/ZynthComponents/build.gradle.kts",
+    "android/ZynthComponents/consumer-rules.pro",
+    "android/ZynthComponents/proguard-rules.pro",
+    "android/ZynthComponents/src",
     "ios",
     "src",
     "web",

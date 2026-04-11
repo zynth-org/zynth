@@ -19,11 +19,12 @@
   },
   "files": [
     "dist",
-    "ios",
-    "android",
-    "native",
-    "scripts",
-    "yoga.manifest.json",
+    "ios/ZynthKit",
+    "ios/hermes-engine",
+    "android/ZynthKit/src",
+    "android/ZynthKit/CMakeLists.txt",
+    "android/ZynthKit/build.gradle.kts",
+    "android/ZynthKit/consumer-rules.pro",
     "ZynthKit.podspec",
     "README.md"
   ],

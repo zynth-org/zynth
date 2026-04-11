@@ -1,0 +1,57 @@
+name: Release Alpha
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_fixture:
+        description: "Run fixture smoke validation (android + ios)"
+        required: true
+        default: true
+        type: boolean
+
+concurrency:
+  group: release-alpha-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-alpha:
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    env:
+      CI: true
+      npm_config_cache: ${{ github.workspace }}/.tmp/npm-cache
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Changeset status
+        run: yarn changeset:status
+
+      - name: Release preflight
+        run: yarn release:preflight
+
+      - name: Release pack validation
+        run: yarn release:pack
+
+      - name: Fixture smoke validation
+        if: ${{ inputs.run_fixture }}
+        run: yarn release:fixture
+
+      - name: Readiness summary
+        run: |
+          echo "Release readiness workflow completed."
+          echo "All configured validation gates passed."
+          echo "Publishing is intentionally disabled in CI for now."

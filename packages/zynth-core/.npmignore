@@ -1,0 +1,4 @@
+# Android local build outputs (must never ship in npm tarballs)
+android/**/build/
+android/**/.cxx/
+android/**/.gradle/

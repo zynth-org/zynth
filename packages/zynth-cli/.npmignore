@@ -1,0 +1,4 @@
+# Template local build metadata/cache must not ship
+src/templates/**/.gradle/
+src/templates/**/build/
+src/templates/**/.cxx/

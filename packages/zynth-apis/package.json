@@ -37,10 +37,12 @@
   },
   "files": [
     "dist",
-    "android",
+    "android/build.gradle",
+    "android/src",
     "ios",
     "src",
     "package.json",
+    "README.md",
     "ZynthAPIs.podspec"
   ],
   "devDependencies": {

@@ -1,4 +1,4 @@
-# Yoga Vendored Binaries
-native/vendor/yoga/
-native/vendor/.cache_yoga/
-native/vendor/.tmp_yoga/
+# Android local native and Gradle build outputs
+android/**/build/
+android/**/.cxx/
+android/**/.gradle/

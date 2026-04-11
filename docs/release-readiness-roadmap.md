@@ -1,6 +1,7 @@
 # Zynth Release Readiness Roadmap
 
 This document is the release preparation plan for the first public Zynth package releases.
+This roadmap is temporary and should be retired in favor of `docs/release-operations.md` once the release system is stable.
 
 It is written for the current Zynth monorepo shape:
 
@@ -23,7 +24,8 @@ The goal is to make publishing safe, repeatable, and maintainable for a solo mai
 - [x] Release preflight validator implemented.
 - [x] Pack validation implemented.
 - [x] Consumer smoke fixture validation implemented.
-- [ ] Alpha publish workflow implemented.
+- [x] Alpha CI readiness workflow implemented (publish disabled).
+- [ ] Alpha publish execution enabled.
 
 ## Release Principles
 
@@ -361,27 +363,28 @@ Validation:
 - run the fixture bootstrap
 - build and start the app successfully
 
-## 6. Publish workflow
+## 6. CI readiness workflow (publish deferred)
 
-Add a release workflow that only publishes after validation passes.
+Add a release workflow that runs all validation gates and keeps publish disabled for now.
 
 Recommended behavior:
 
-- publish from CI, not from an ad hoc local shell
+- run from CI, not from an ad hoc local shell
 - allow manual triggering for alpha
 - require successful build and preflight checks first
-- publish prereleases under `alpha`
-- promote to `latest` only when explicitly chosen
+- keep publishing disabled in this stage
 
 Ready when:
 
-- the workflow can produce an alpha release without manual file editing
-- the workflow refuses to publish invalid packages
+- the workflow runs all required release validation gates
+- the workflow fails fast on invalid packages
+- publish remains explicitly disabled
 
 Validation:
 
-- run the workflow in dry-run or staging mode
-- confirm dist-tags and package selection are correct
+- run the workflow manually
+- confirm all readiness gates pass on valid input
+- confirm no publish step is executed
 
 ## 7. Release checklist document
 
@@ -396,7 +399,7 @@ The checklist should include:
 - run build and validation
 - run pack checks
 - run fixture smoke tests
-- publish alpha
+- if publishing is enabled, publish alpha
 - install from npm in a clean environment
 - verify docs and examples
 - collect feedback/issues
@@ -407,7 +410,8 @@ Ready when:
 
 Validation:
 
-- perform at least one test alpha using only the checklist
+- in readiness mode, perform at least one dry-run cycle using only the checklist
+- in publish mode, perform at least one alpha using only the checklist
 
 ## Phase-by-Phase TODO Plan
 
@@ -472,14 +476,15 @@ TODO:
 - [x] configure changelog generation
 - [x] document version policy in the repo
 - [x] add scripts for creating and applying changesets
+- [x] add isolated versioning drill script (`yarn release:versioning-drill`)
 
 Mark ready when:
 
-- [ ] maintainers can add a changeset, run the version command, and produce a coherent release diff
+- [x] maintainers can add a changeset, run the version command, and produce a coherent release diff
 
 Validate:
 
-- [ ] create a fake alpha change and inspect all resulting package version updates
+- [x] create a fake alpha change and inspect all resulting package version updates
 
 ## Phase 3: Validation gates
 
@@ -492,9 +497,9 @@ TODO:
 - [x] add repo preflight validation
 - [x] add pack validation
 - [x] add fixture smoke installs
-- add checks for native file presence
-- add checks for peer dependency alignment
-- add checks for build artifacts
+- [x] add checks for native file presence
+- [x] add checks for peer dependency alignment
+- [x] add checks for build artifacts
 
 Mark ready when:
 
@@ -508,23 +513,24 @@ Validate:
 
 Goal:
 
-- ship alpha safely and repeatedly
+- keep alpha pipeline safely ready, then enable publishing intentionally
 
 TODO:
 
-- add CI/manual publish workflow
+- [x] add CI readiness workflow (manual trigger, publish disabled)
 - support prerelease versions
-- publish under `alpha`
+- add controlled publish switch for `alpha` when ready
 - document rollback and unpublish constraints
-- verify install instructions using the published alpha packages
+- verify install instructions using fixture tarballs until publish is enabled
 
 Mark ready when:
 
-- at least one successful alpha is published and consumed externally
+- readiness workflow is stable and publishing can be enabled with explicit configuration
 
 Validate:
 
-- install the published alpha into a clean project and verify bootstrap
+- in readiness mode: run fixture-based clean bootstrap checks
+- in publish mode: install published alpha into a clean project and verify bootstrap
 
 ## Phase 5: Feedback loop
 
@@ -623,7 +629,7 @@ To keep scope controlled, implement release readiness in this order:
 4. [x] Add preflight validation.
 5. [x] Add `npm pack --dry-run` validation.
 6. [x] Add fixture smoke tests.
-7. Add alpha publish workflow.
+7. [x] Add alpha readiness workflow (no publish).
 8. Publish only the first three framework packages plus the CLI.
 9. Expand package coverage after alpha feedback.
 
@@ -640,8 +646,8 @@ Zynth is ready for its first public alpha release when all of the following are 
 - preflight validation exists and passes
 - pack validation exists and passes
 - fixture smoke installs exist and pass
-- alpha publish workflow exists
+- alpha readiness workflow exists
 - install and upgrade docs are clear enough for external users
 - at least one end-to-end dry run has been completed before publishing
 
-At that point, the project is not just publishable. It is operationally maintainable.
+At that point, the project is release-ready and operationally maintainable.
