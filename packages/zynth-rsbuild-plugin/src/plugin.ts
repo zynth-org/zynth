@@ -101,9 +101,9 @@ export function createZynthRsbuildPlugin(
         workspaceRoot: repoRoot,
         platform: resolveFeaturePlatform(isWeb),
       };
-      const nativeHmrCompatEntry = path.join(
+      const nativeHmrCompatEntry = await resolveNativeHmrCompatEntry(
+        api.context.rootPath,
         repoRoot,
-        "packages/zynth-core/src/hmr-prelude.ts",
       );
 
       for (const feature of options.features ?? []) {
@@ -279,6 +279,30 @@ export function createZynthRsbuildPlugin(
       });
     },
   };
+}
+
+async function resolveNativeHmrCompatEntry(
+  appRoot: string,
+  repoRoot: string,
+): Promise<string> {
+  const appRequire = createRequire(path.join(appRoot, "package.json"));
+  const packageJsonPath =
+    safeResolve(appRequire, "@zynth/core/package.json") ??
+    safeResolve(require, "@zynth/core/package.json");
+
+  if (packageJsonPath) {
+    const packageDir = path.dirname(packageJsonPath);
+    const installedEntry = await pickFirstExisting([
+      path.join(packageDir, "src/hmr-prelude.ts"),
+      path.join(packageDir, "src/hmr-prelude.js"),
+      path.join(packageDir, "dist/esm/hmr-prelude.js"),
+    ]);
+    if (installedEntry) {
+      return installedEntry;
+    }
+  }
+
+  return path.join(repoRoot, "packages/zynth-core/src/hmr-prelude.ts");
 }
 
 function ensureResolveCondition(
