@@ -91,6 +91,29 @@ export function SecuredSignalingServer() {
 
 ## Special Cases
 
+### Importing local `.html` files in app code
+
+If your app imports static HTML files (for example `import pageHtml from "./assets/page.html"`), add this in `rsbuild.config`:
+
+```ts
+import path from "node:path";
+import { defineZynthConfig } from "@zynth/rsbuild-plugin";
+
+export default defineZynthConfig({
+  tools: {
+    rspack(config) {
+      config.module ??= {};
+      config.module.rules ??= [];
+      config.module.rules.unshift({
+        test: /\.html$/i,
+        include: [path.resolve(process.cwd(), "src/assets/misc")],
+        type: "asset/source",
+      });
+    },
+  },
+});
+```
+
 ### Web Support and Multi-Target Availability
 
 `WebServer` relies on native hardware bindings (specifically Civetweb in C++). Because of browser security constraints, HTTP server capabilities are fundamentally unsupported directly on Web targets. You should evaluate `WebServer.isAvailable()` before mounting server-dependent logic to gracefully degrade on the web.

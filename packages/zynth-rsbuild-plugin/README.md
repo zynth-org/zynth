@@ -234,6 +234,7 @@ Union of:
 - `ZynthGeneratedModuleFeature`
 - `ZynthOpaqueFeature`
 
+
 ### Asset handling enabled by the plugin
 
 Imported image files (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.avif`, `.svg`) are transformed into objects with this shape:

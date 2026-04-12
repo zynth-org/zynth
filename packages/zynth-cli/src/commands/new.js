@@ -8,6 +8,25 @@ function resolveAppTemplateDir() {
   return path.join(__dirname, "..", "templates", "app");
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function updateHtmlTitle(htmlPath, title) {
+  if (!fs.existsSync(htmlPath)) {
+    return;
+  }
+  const source = fs.readFileSync(htmlPath, "utf8");
+  const escapedTitle = escapeHtml(title);
+  const next = source.replace(/<title>[\s\S]*?<\/title>/i, `<title>${escapedTitle}</title>`);
+  fs.writeFileSync(htmlPath, next, "utf8");
+}
+
 async function createNewApp(argv) {
   const {
     directory,
@@ -142,6 +161,8 @@ export default function App() {
   packageJson.name = slug;
   fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
 
+  updateHtmlTitle(path.join(appPath, "public", "index.html"), displayName);
+
       console.log(`\n\x1b[32m✔\x1b[0m App created successfully!`);
 
   
@@ -149,7 +170,8 @@ export default function App() {
     chalk.cyan(`To get started, run:
 
   cd ${appDirectory}
-  yarn zynth dev ios`)
+  yarn zynth dev ios
+  yarn zynth dev web`)
   );
 }
 

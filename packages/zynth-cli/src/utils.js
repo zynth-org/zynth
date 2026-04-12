@@ -1023,6 +1023,269 @@ function ensureBundle(appDir) {
   runCommand("yarn", ["build"], { cwd: appDir });
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function resolveWebTitle(appDir) {
+  try {
+    const appJsonPath = path.join(appDir, "app.json");
+    if (!fs.existsSync(appJsonPath)) {
+      return "Zynth Web";
+    }
+    const appJson = readJSON(appJsonPath);
+    const zynthName =
+      appJson &&
+      appJson.zynth &&
+      typeof appJson.zynth === "object" &&
+      typeof appJson.zynth.name === "string"
+        ? appJson.zynth.name.trim()
+        : "";
+    const appName =
+      appJson && typeof appJson.name === "string" ? appJson.name.trim() : "";
+    const resolved = zynthName || appName || "Zynth Web";
+    return escapeHtml(resolved);
+  } catch (_error) {
+    return "Zynth Web";
+  }
+}
+
+function createDefaultWebIndexHtml(title) {
+  return `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>${title}</title>
+    <style>
+      body, html {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100vh;
+        height: 100dvh;
+        overflow: hidden;
+        background-color: #ffffff;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+      }
+      #root {
+        width: 100%;
+        height: 100vh;
+        height: 100dvh;
+        display: flex;
+        flex-direction: column;
+        font-family: inherit;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
+`;
+}
+
+function findRsbuildConfigPath(appDir) {
+  const candidateNames = [
+    "rsbuild.config.ts",
+    "rsbuild.config.mts",
+    "rsbuild.config.js",
+    "rsbuild.config.mjs",
+    "rsbuild.config.cjs",
+    "rsbuild.config.cts",
+  ];
+  for (const name of candidateNames) {
+    const candidate = path.join(appDir, name);
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function getTypeScriptModule() {
+  try {
+    return require("typescript");
+  } catch (_error) {
+    return null;
+  }
+}
+
+function getScriptKindFromFilePath(filePath, ts) {
+  const ext = path.extname(filePath).toLowerCase();
+  switch (ext) {
+    case ".ts":
+      return ts.ScriptKind.TS;
+    case ".mts":
+      return ts.ScriptKind.TS;
+    case ".cts":
+      return ts.ScriptKind.TS;
+    case ".tsx":
+      return ts.ScriptKind.TSX;
+    case ".js":
+      return ts.ScriptKind.JS;
+    case ".mjs":
+      return ts.ScriptKind.JS;
+    case ".cjs":
+      return ts.ScriptKind.JS;
+    default:
+      return ts.ScriptKind.Unknown;
+  }
+}
+
+function analyzeRsbuildConfigFeatureUsage(filePath, source) {
+  const fallback = {
+    hasDefineZynthConfig: /defineZynthConfig\s*\(/.test(source),
+  };
+  const ts = getTypeScriptModule();
+  if (!ts) {
+    return fallback;
+  }
+
+  try {
+    const sourceFile = ts.createSourceFile(
+      filePath,
+      source,
+      ts.ScriptTarget.Latest,
+      true,
+      getScriptKindFromFilePath(filePath, ts)
+    );
+    const importedNames = new Map();
+    const namespaceImports = new Map();
+
+    for (const statement of sourceFile.statements) {
+      if (!ts.isImportDeclaration(statement)) continue;
+      if (!ts.isStringLiteral(statement.moduleSpecifier)) continue;
+      const moduleName = statement.moduleSpecifier.text;
+      const clause = statement.importClause;
+      if (!clause || !clause.namedBindings) continue;
+
+      if (ts.isNamespaceImport(clause.namedBindings)) {
+        namespaceImports.set(clause.namedBindings.name.text, moduleName);
+        continue;
+      }
+
+      if (ts.isNamedImports(clause.namedBindings)) {
+        for (const element of clause.namedBindings.elements) {
+          const local = element.name.text;
+          const imported = (element.propertyName || element.name).text;
+          importedNames.set(local, { imported, moduleName });
+        }
+      }
+    }
+
+    let hasDefineZynthConfig = false;
+    const fromRsbuildPlugin = (identifierName, expectedImportedName) => {
+      const importRecord = importedNames.get(identifierName);
+      return (
+        importRecord &&
+        importRecord.moduleName === "@zynth/rsbuild-plugin" &&
+        importRecord.imported === expectedImportedName
+      );
+    };
+
+    const visit = (node) => {
+      if (ts.isCallExpression(node)) {
+        const expr = node.expression;
+        if (ts.isIdentifier(expr)) {
+          if (fromRsbuildPlugin(expr.text, "defineZynthConfig")) {
+            hasDefineZynthConfig = true;
+          }
+        } else if (
+          ts.isPropertyAccessExpression(expr) &&
+          ts.isIdentifier(expr.expression)
+        ) {
+          const ns = expr.expression.text;
+          const moduleName = namespaceImports.get(ns);
+          if (moduleName === "@zynth/rsbuild-plugin") {
+            if (expr.name.text === "defineZynthConfig") {
+              hasDefineZynthConfig = true;
+            }
+          }
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+
+    return {
+      hasDefineZynthConfig,
+    };
+  } catch (_error) {
+    return fallback;
+  }
+}
+
+function ensureWebProjectScaffold(appDir) {
+  const publicDir = path.join(appDir, "public");
+  const indexHtmlPath = path.join(publicDir, "index.html");
+  fs.mkdirSync(publicDir, { recursive: true });
+  if (!fs.existsSync(indexHtmlPath)) {
+    fs.writeFileSync(
+      indexHtmlPath,
+      createDefaultWebIndexHtml(resolveWebTitle(appDir)),
+      "utf8"
+    );
+  }
+
+  const rsbuildConfigPath = findRsbuildConfigPath(appDir);
+  if (!rsbuildConfigPath) {
+    console.warn(
+      "! rsbuild.config file was not found. This may cause web build/dev issues."
+    );
+    return;
+  }
+
+  let rsbuildConfigRaw = "";
+  try {
+    rsbuildConfigRaw = fs.readFileSync(rsbuildConfigPath, "utf8");
+  } catch (_error) {
+    rsbuildConfigRaw = "";
+  }
+
+  const detectedUsage = analyzeRsbuildConfigFeatureUsage(
+    rsbuildConfigPath,
+    rsbuildConfigRaw
+  );
+
+  if (!detectedUsage.hasDefineZynthConfig) {
+    console.warn(
+      `! Required Zynth web config was not detected in ${path.basename(
+        rsbuildConfigPath
+      )}. This may cause web build/dev issues.`
+    );
+  }
+}
+
+function runRsbuildWithPlatform(appDir, action, args = []) {
+  const command = process.platform === "win32" ? "npx.cmd" : "npx";
+  runCommand(command, ["rsbuild", action, ...args], {
+    cwd: appDir,
+    env: {
+      ...process.env,
+      ZYNTH_PLATFORM: "web",
+      BASELINE_BROWSER_MAPPING_IGNORE_OLD_DATA: "true",
+      BROWSERSLIST_IGNORE_OLD_DATA: "true",
+      FORCE_COLOR: "1",
+    },
+  });
+}
+
+function devWeb(appDir) {
+  ensureWebProjectScaffold(appDir);
+  runRsbuildWithPlatform(appDir, "dev");
+}
+
+function buildWeb(appDir) {
+  ensureWebProjectScaffold(appDir);
+  runRsbuildWithPlatform(appDir, "build");
+}
+
 function removeDirectory(targetPath) {
   if (fs.existsSync(targetPath)) {
     removeDirectoryWithRetries(targetPath);
@@ -2246,6 +2509,9 @@ module.exports = {
   getLocalIp,
   getAndroidConfig,
   startZynthHMRServer,
+  ensureWebProjectScaffold,
+  devWeb,
+  buildWeb,
   getZynthRuntimeVersion,
   printZynthDevStatus,
   printZynthBuildStatus,

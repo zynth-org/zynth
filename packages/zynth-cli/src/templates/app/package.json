@@ -28,7 +28,7 @@
     "bootstrap:android": "yarn zynth bootstrap android",
     "ios:dev": "yarn zynth dev ios",
     "android:dev": "yarn zynth dev android",
-    "reset:ios": "yarn zynth reset ios",
-    "reset:android": "yarn zynth reset android"
+    "web:dev": "yarn zynth dev web",
+    "web:build": "yarn zynth build web"
   }
 }

@@ -14,6 +14,7 @@ const {
   runCommandFilteredAndroid,
   printZynthBuildStatus,
   readJSON,
+  buildWeb,
 } = require("../utils");
 
 function gray(text) {
@@ -69,11 +70,11 @@ function loadAppDotEnv(appDir) {
 
 module.exports = {
   command: "build <platform>",
-  describe: "Build production version of the app",
+  describe: "Build production version of the app (native or web)",
   builder: (yargs) => {
     yargs.positional("platform", {
       describe: "Platform to build for",
-      choices: ["ios", "android"],
+      choices: ["ios", "android", "web"],
     });
     yargs.option("skip-bundle", {
       describe: "Skip JS bundle generation",
@@ -130,6 +131,11 @@ module.exports = {
       root = findWorkspaceRoot(process.cwd());
     } catch (_error) {
       // Standalone app: use app root as command root
+    }
+
+    if (argv.platform === "web") {
+      buildWeb(appDir);
+      return;
     }
 
     // Build JS bundle if not skipped

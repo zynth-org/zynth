@@ -4,15 +4,16 @@ const {
   findAppDirectory,
   devIOS,
   devAndroid,
+  devWeb,
 } = require("../utils");
 
 module.exports = {
   command: "dev <platform>",
-  describe: "Bundle JS and run native project",
+  describe: "Run app in development mode (native or web)",
   builder: (yargs) => {
     yargs.positional("platform", {
       describe: "Platform to run on",
-      choices: ["ios", "android"],
+      choices: ["ios", "android", "web"],
     });
     yargs.option("bootstrap", {
       describe: "Regenerate native project before launching",
@@ -59,6 +60,10 @@ module.exports = {
       root = findWorkspaceRoot(process.cwd());
     } catch (_error) {
       // Standalone app: use app root as command root
+    }
+    if (argv.platform === "web") {
+      devWeb(appDir);
+      return;
     }
     if (argv.platform === "ios") {
       await devIOS(root, appDir, {

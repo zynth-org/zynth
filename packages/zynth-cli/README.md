@@ -6,10 +6,10 @@ This tool orchestrates the development, build, and bundling process for Zynth ap
 
 ## Commands
 
-- `zynth dev`: Starts the development server with Hot Module Replacement (HMR).
+- `zynth dev <platform>`: Runs iOS/Android native flows or web (`zynth dev web`) with automatic web scaffold setup.
 - `zynth start`: Starts the JavaScript dev server (`rsbuild dev`) and Zynth devtools hub without `concurrently`.
 - `zynth bootstrap`: Generates/Updates the native `android` and `ios` project directories based on the project configuration and installed modules.
-- `zynth build`: Builds the native application.
+- `zynth build <platform>`: Builds iOS/Android native artifacts or web (`zynth build web`) with automatic web scaffold setup.
 - `zynth bundle`: Bundles the JavaScript application into a single file for production.
 - `zynth reset`: Cleans and regenerates the native directories from scratch.
 - `zynth create`: Scaffolds a new Zynth application.
