@@ -22,6 +22,7 @@ import com.zynth.kit.core.ZynthRootView
 import java.lang.ref.WeakReference
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.roundToInt
 
 internal object ZynthNativePerformanceOverlay {
@@ -39,21 +40,25 @@ internal object ZynthNativePerformanceOverlay {
   private const val OVERLAY_WIDTH_DP = 330
   private const val OVERLAY_HEIGHT_DP = 62
   private const val OVERLAY_EXPANDED_HEIGHT_DP = 142
-  private const val FPS_EMA_ALPHA = 0.26
   private const val FPS_WARN_OFFSET = 6
   private const val FPS_RECOVER_OFFSET = 3
   private const val FPS_WARN_SAMPLES = 3
   private const val FPS_RECOVER_SAMPLES = 2
-  private const val UI_FPS_DISPLAY_DEADBAND = 2
-  private const val JS_FPS_DISPLAY_DEADBAND = 2
+  private const val UI_FPS_DISPLAY_DEADBAND = 1
+  private const val JS_FPS_DISPLAY_DEADBAND = 1
+  private const val JS_RESPONSE_BUDGET_GRACE = 1.1
+  private const val FRAME_BUDGET_MS = 14.0
 
   private val mainHandler = Handler(Looper.getMainLooper())
   private var rootRef: WeakReference<ZynthRootView>? = null
   private var rootLayoutListener: OnLayoutChangeListener? = null
   private var performanceOverlayView: View? = null
   @Volatile private var performanceEnabled: Boolean = false
-  private var performanceUiFrameCount: Int = 0
-  private val performanceJsTickCount = AtomicInteger(0)
+  private val performanceJsResponseCount = AtomicInteger(0)
+  private val performanceJsOnTimeResponseCount = AtomicInteger(0)
+  private val performanceJsLateWindowCount = AtomicInteger(0)
+  private val performanceJsPingIssuedAtNanos = AtomicLong(0L)
+  private val performanceJsPingMarkedLate = AtomicBoolean(false)
   private var performanceNodeCount: Int = 0
   private var performanceUiFps: Int = 0
   private var performanceJsFps: Int = 0
@@ -67,8 +72,6 @@ internal object ZynthNativePerformanceOverlay {
   private var performanceChevronPressed: Boolean = false
   private var performanceOverlayExpanded: Boolean = false
   private var uiFrameCallback: Choreographer.FrameCallback? = null
-  private var uiFpsEma: Double = -1.0
-  private var jsFpsEma: Double = -1.0
   private var uiWarnActive: Boolean = false
   private var jsWarnActive: Boolean = false
   private var uiWarnStreak: Int = 0
@@ -80,6 +83,8 @@ internal object ZynthNativePerformanceOverlay {
   private var performanceShortestPassMs: Double = Double.MAX_VALUE
   private var performanceLongestPassMs: Double = 0.0
   private var performanceBudgetOverruns: Long = 0L
+  private var performanceWindowPasses: Long = 0L
+  private var performanceWindowConsumedFrames: Long = 0L
 
   fun attach(root: ZynthRootView) {
     rootRef = WeakReference(root)
@@ -168,16 +173,39 @@ internal object ZynthNativePerformanceOverlay {
   fun requestPerformanceJsPing(): Boolean {
     if (!performanceEnabled) {
       performanceJsPingPending.set(false)
+      performanceJsPingIssuedAtNanos.set(0L)
+      performanceJsPingMarkedLate.set(false)
       return false
     }
-    return performanceJsPingPending.compareAndSet(false, true)
+    val nowNanos = SystemClock.elapsedRealtimeNanos()
+    val issuedAtNanos = performanceJsPingIssuedAtNanos.get()
+    if (
+      performanceJsPingPending.get() &&
+      issuedAtNanos > 0L &&
+      nowNanos - issuedAtNanos > jsResponseBudgetNanos() &&
+      performanceJsPingMarkedLate.compareAndSet(false, true)
+    ) {
+      performanceJsLateWindowCount.incrementAndGet()
+    }
+    if (!performanceJsPingPending.compareAndSet(false, true)) {
+      return false
+    }
+    performanceJsPingIssuedAtNanos.set(nowNanos)
+    performanceJsPingMarkedLate.set(false)
+    return true
   }
 
   @JvmStatic
   fun recordPerformanceJsPing() {
     performanceJsPingPending.set(false)
     if (!performanceEnabled) return
-    performanceJsTickCount.incrementAndGet()
+    val nowNanos = SystemClock.elapsedRealtimeNanos()
+    val issuedAtNanos = performanceJsPingIssuedAtNanos.getAndSet(0L)
+    performanceJsPingMarkedLate.set(false)
+    performanceJsResponseCount.incrementAndGet()
+    if (issuedAtNanos > 0L && nowNanos - issuedAtNanos <= jsResponseBudgetNanos()) {
+      performanceJsOnTimeResponseCount.incrementAndGet()
+    }
   }
 
   private fun rootView(): ZynthRootView? {
@@ -190,16 +218,17 @@ internal object ZynthNativePerformanceOverlay {
   }
 
   private fun resetPerformanceCounters() {
-    performanceUiFrameCount = 0
-    performanceJsTickCount.set(0)
+    performanceJsResponseCount.set(0)
+    performanceJsOnTimeResponseCount.set(0)
+    performanceJsLateWindowCount.set(0)
+    performanceJsPingIssuedAtNanos.set(0L)
+    performanceJsPingMarkedLate.set(false)
     performanceNodeCount = 0
     performanceUiFps = 0
     performanceJsFps = 0
     performanceRamMb = 0
     performanceLastSampleMs = SystemClock.elapsedRealtime()
     performanceJsPingPending.set(false)
-    uiFpsEma = -1.0
-    jsFpsEma = -1.0
     uiWarnActive = false
     jsWarnActive = false
     uiWarnStreak = 0
@@ -211,6 +240,8 @@ internal object ZynthNativePerformanceOverlay {
     performanceShortestPassMs = Double.MAX_VALUE
     performanceLongestPassMs = 0.0
     performanceBudgetOverruns = 0L
+    performanceWindowPasses = 0L
+    performanceWindowConsumedFrames = 0L
   }
 
   private fun startUiFrameLoop() {
@@ -218,7 +249,6 @@ internal object ZynthNativePerformanceOverlay {
     val callback = object : Choreographer.FrameCallback {
       override fun doFrame(frameTimeNanos: Long) {
         if (!performanceEnabled) return
-        performanceUiFrameCount += 1
         samplePerformanceIfNeeded()
         ensurePerformanceOverlay()
         val overlay = performanceOverlayView
@@ -370,8 +400,6 @@ internal object ZynthNativePerformanceOverlay {
     if (root != null && !root.hasWindowFocus()) {
       performanceUiFps = targetFps
       performanceJsFps = targetFps
-      uiFpsEma = targetFps.toDouble()
-      jsFpsEma = targetFps.toDouble()
       uiWarnActive = false
       jsWarnActive = false
       uiWarnStreak = 0
@@ -380,20 +408,14 @@ internal object ZynthNativePerformanceOverlay {
       jsRecoverStreak = 0
       performanceRamMb = readProcessRamMb()
       performanceNodeCount = countViews(root)
-      performanceUiFrameCount = 0
-      performanceJsTickCount.set(0)
+      resetSampleWindow()
       performanceLastSampleMs = nowMs
       updatePerformanceOverlayLabels()
       return
     }
 
-    val elapsedSec = elapsedMs / 1000.0
-    val rawUiFps = (performanceUiFrameCount / elapsedSec).roundToInt().coerceAtLeast(0)
-    val rawJsFps = (performanceJsTickCount.getAndSet(0) / elapsedSec).roundToInt().coerceAtLeast(0)
-    uiFpsEma = smoothFps(uiFpsEma, rawUiFps)
-    jsFpsEma = smoothFps(jsFpsEma, rawJsFps)
-    performanceUiFps = uiFpsEma.roundToInt().coerceIn(0, targetFps)
-    performanceJsFps = jsFpsEma.roundToInt().coerceIn(0, targetFps)
+    performanceUiFps = computeBudgetUiFps(targetFps)
+    performanceJsFps = computeJsFps(targetFps)
     if (performanceUiFps >= targetFps - UI_FPS_DISPLAY_DEADBAND) {
       performanceUiFps = targetFps
     }
@@ -403,7 +425,7 @@ internal object ZynthNativePerformanceOverlay {
     updateAlertState(targetFps)
     performanceRamMb = readProcessRamMb()
     performanceNodeCount = countViews(root)
-    performanceUiFrameCount = 0
+    resetSampleWindow()
     performanceLastSampleMs = nowMs
     updatePerformanceOverlayLabels()
   }
@@ -443,6 +465,8 @@ internal object ZynthNativePerformanceOverlay {
   private fun recordBudgetPass(frameMs: Double, overBudget: Boolean) {
     if (!frameMs.isFinite() || frameMs < 0.0) return
     performanceBudgetPasses += 1L
+    performanceWindowPasses += 1L
+    performanceWindowConsumedFrames += consumedFrameSlots(frameMs)
     performanceLastPassMs = frameMs
     performanceShortestPassMs = kotlin.math.min(performanceShortestPassMs, frameMs)
     performanceLongestPassMs = kotlin.math.max(performanceLongestPassMs, frameMs)
@@ -452,15 +476,47 @@ internal object ZynthNativePerformanceOverlay {
     updatePerformanceOverlayLabels()
   }
 
-  private fun smoothFps(previous: Double, raw: Int): Double {
-    if (previous < 0.0) return raw.toDouble()
-    return (previous * (1.0 - FPS_EMA_ALPHA)) + (raw * FPS_EMA_ALPHA)
-  }
-
   private fun targetFps(): Int {
     val refreshRate = rootView()?.display?.refreshRate ?: 60f
     if (!refreshRate.isFinite() || refreshRate < 30f) return 60
     return refreshRate.roundToInt().coerceAtLeast(30)
+  }
+
+  private fun targetFrameIntervalNanos(): Long {
+    return (1_000_000_000.0 / targetFps().toDouble()).roundToInt().toLong().coerceAtLeast(1L)
+  }
+
+  private fun jsResponseBudgetNanos(): Long {
+    return (targetFrameIntervalNanos().toDouble() * JS_RESPONSE_BUDGET_GRACE).roundToInt().toLong().coerceAtLeast(1L)
+  }
+
+  private fun computeBudgetUiFps(targetFps: Int): Int {
+    if (performanceWindowPasses <= 0L || performanceWindowConsumedFrames <= 0L) {
+      return targetFps
+    }
+    val deliveredRatio = performanceWindowPasses.toDouble() / performanceWindowConsumedFrames.toDouble()
+    return (deliveredRatio * targetFps.toDouble()).roundToInt().coerceIn(0, targetFps)
+  }
+
+  private fun computeJsFps(targetFps: Int): Int {
+    val responses = performanceJsResponseCount.getAndSet(0)
+    val onTimeResponses = performanceJsOnTimeResponseCount.getAndSet(0)
+    val lateWindows = performanceJsLateWindowCount.getAndSet(0)
+    val windows = (responses + lateWindows).coerceAtLeast(1)
+    val responsiveRatio = onTimeResponses.toDouble() / windows.toDouble()
+    return (responsiveRatio * targetFps.toDouble()).roundToInt().coerceIn(0, targetFps)
+  }
+
+  private fun resetSampleWindow() {
+    performanceWindowPasses = 0L
+    performanceWindowConsumedFrames = 0L
+    performanceJsResponseCount.set(0)
+    performanceJsOnTimeResponseCount.set(0)
+    performanceJsLateWindowCount.set(0)
+  }
+
+  private fun consumedFrameSlots(frameMs: Double): Long {
+    return kotlin.math.ceil(frameMs / FRAME_BUDGET_MS).toLong().coerceAtLeast(1L)
   }
 
   private fun updateAlertState(targetFps: Int) {
