@@ -75,8 +75,7 @@ type RowMetric = { index: number; length: number; offset: number };
 
 const EMPTY_RANGE: Range = { first: 0, last: -1 };
 const DEFAULT_INITIAL_RENDER = 10;
-const DEFAULT_BATCH = 10;
-const DEFAULT_WINDOW_SIZE = 21;
+const DEFAULT_WINDOW_SIZE = 5;
 const DEFAULT_ESTIMATED_ITEM = 56;
 const EPSILON = 0.001;
 
@@ -311,7 +310,6 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
   let highestMeasuredRowIndex = -1;
   let edgeEndToken = -1;
   let edgeStartToken = -1;
-  let scheduledWindowPass: ReturnType<typeof setTimeout> | undefined;
   let lastColumns = -1;
   let lastHeader = 0;
   let lastInitialScrollIndex: number | undefined;
@@ -378,7 +376,13 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
         offset: layout.offset,
       };
     }
-    return rowMetrics.get(rowIndex) ?? null;
+    const metric = rowMetrics.get(rowIndex);
+    if (!metric) return null;
+    return {
+      index: rowIndex,
+      length: metric.length,
+      offset: 0,
+    };
   };
 
   const getApproxRow = (rowIndex: number): RowMetric => {
@@ -389,38 +393,24 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
 
     measurementVersion();
     const clampedIndex = clamp(rowIndex, 0, totalRows - 1);
-    const exact = getMeasuredRow(clampedIndex);
-    if (exact) {
-      return exact;
+    if (props.getItemLayout) {
+      const exact = getMeasuredRow(clampedIndex);
+      if (exact) {
+        return exact;
+      }
     }
 
     const average = averageRowLength();
-
-    for (let previous = clampedIndex - 1; previous >= 0; previous -= 1) {
-      const anchor = getMeasuredRow(previous);
-      if (!anchor) continue;
-      return {
-        index: clampedIndex,
-        length: average,
-        offset:
-          anchor.offset + anchor.length + average * (clampedIndex - previous - 1),
-      };
+    let offset = 0;
+    for (let index = 0; index < clampedIndex; index += 1) {
+      offset += rowMetrics.get(index)?.length ?? average;
     }
-
-    for (let next = clampedIndex + 1; next < totalRows; next += 1) {
-      const anchor = getMeasuredRow(next);
-      if (!anchor) continue;
-      return {
-        index: clampedIndex,
-        length: average,
-        offset: Math.max(0, anchor.offset - average * (next - clampedIndex)),
-      };
-    }
+    const length = rowMetrics.get(clampedIndex)?.length ?? average;
 
     return {
       index: clampedIndex,
-      length: average,
-      offset: average * clampedIndex,
+      length,
+      offset,
     };
   };
 
@@ -483,90 +473,38 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     const rowOffset = Math.max(0, scrollOffset() - headerLength());
     const visibleStart = clamp(rowOffset, 0, Math.max(0, totalRowsLength() - viewport));
     const visibleEnd = visibleStart + viewport;
-    const targetWindow = Math.max(1, props.windowSize ?? DEFAULT_WINDOW_SIZE);
-    const overscanLength = Math.max(0, (targetWindow - 1) * viewport);
     const velocity = scrollVelocity();
-    const favorEnd = velocity > 1;
-    const favorStart = velocity < -1;
-    const overscanStart = Math.max(0, visibleStart - overscanLength * 0.5);
-    const overscanEnd = Math.max(visibleEnd, visibleEnd + overscanLength * 0.5);
 
     let first = findRowAtOffset(visibleStart);
     let last = findRowAtOffset(Math.max(visibleStart, visibleEnd - EPSILON));
-    let overscanFirst = findRowAtOffset(overscanStart);
-    let overscanLast = findRowAtOffset(
-      Math.max(overscanStart, overscanEnd - EPSILON),
-    );
 
     if (first < 0) first = 0;
     if (last < first) last = first;
-    if (overscanFirst < 0) overscanFirst = 0;
-    if (overscanLast < last) overscanLast = last;
 
-    const previous = normalizeRange(currentRange, totalRows);
-    let next: Range = { first, last };
-    let newRows = countAddedRows(previous, next);
-    const batchLimit = Math.max(1, props.maxToRenderPerBatch ?? DEFAULT_BATCH);
+    const average = Math.max(1, averageRowLength());
+    const targetWindow = Math.max(1, Math.min(9, props.windowSize ?? DEFAULT_WINDOW_SIZE));
+    const visibleRowCount = Math.max(1, last - first + 1);
+    const windowRows = Math.max(
+      visibleRowCount,
+      Math.ceil((targetWindow * viewport) / average),
+    );
+    const halfWindowRows = Math.max(
+      0,
+      Math.ceil((windowRows - visibleRowCount) / 2),
+    );
+    const overscanRows = Math.max(0, Math.min(12, props.overscan ?? 2));
+    const directionalRows =
+      Math.abs(velocity) > 1 ? Math.min(6, Math.ceil(Math.abs(velocity) / 400)) : 0;
+    const extraBefore = halfWindowRows + overscanRows + (velocity < -1 ? directionalRows : 0);
+    const extraAfter = halfWindowRows + overscanRows + (velocity > 1 ? directionalRows : 0);
 
-    while (next.first > overscanFirst || next.last < overscanLast) {
-      const canGrowStart = next.first > overscanFirst;
-      const canGrowEnd = next.last < overscanLast;
-      const growsNewStart =
-        canGrowStart &&
-        (previous.last < next.first - 1 || previous.first > next.first - 1);
-      const growsNewEnd =
-        canGrowEnd &&
-        (previous.first > next.last + 1 || previous.last < next.last + 1);
-
-      if (
-        newRows >= batchLimit &&
-        (!canGrowStart || growsNewStart) &&
-        (!canGrowEnd || growsNewEnd)
-      ) {
-        break;
-      }
-
-      if (
-        canGrowStart &&
-        !(favorEnd && canGrowEnd && (newRows < batchLimit || !growsNewEnd))
-      ) {
-        next = { first: next.first - 1, last: next.last };
-        if (growsNewStart) newRows += 1;
-      }
-
-      if (
-        canGrowEnd &&
-        !(favorStart && canGrowStart && (newRows < batchLimit || !growsNewStart))
-      ) {
-        next = { first: next.first, last: next.last + 1 };
-        if (growsNewEnd) newRows += 1;
-      }
-    }
-
-    const overscanRows = Math.max(0, props.overscan ?? 0);
     return normalizeRange(
       {
-        first: next.first - overscanRows,
-        last: next.last + overscanRows,
+        first: first - extraBefore,
+        last: last + extraAfter,
       },
       totalRows,
     );
-  };
-
-  const runWindowPass = () => {
-    const current = untrack(renderRange);
-    const next = computeWindowStep(current);
-    if (!isRangeEqual(current, next)) {
-      setRenderRange(next);
-    }
-
-    const followUp = computeWindowStep(next);
-    if (!isRangeEqual(next, followUp)) {
-      scheduledWindowPass = setTimeout(
-        runWindowPass,
-        Math.max(1, props.updateCellsBatchingPeriod ?? 50),
-      );
-    }
   };
 
   const readAxisOffsetFromEvent = (event: ScrollEvent): number =>
@@ -626,20 +564,17 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     if (props.getItemLayout) return;
     const layout = event.nativeEvent.layout;
     const nextLength = isHorizontal() ? layout.width : layout.height;
-    const nextOffset = (isHorizontal() ? layout.x : layout.y) - headerLength();
     if (!hasNumber(nextLength) || nextLength <= 0) return;
-    if (!hasNumber(nextOffset)) return;
 
     const metric: RowMetric = {
       index: rowIndex,
       length: nextLength,
-      offset: Math.max(0, nextOffset),
+      offset: 0,
     };
     const previous = rowMetrics.get(rowIndex);
     if (
       previous &&
-      Math.abs(previous.length - metric.length) < 0.5 &&
-      Math.abs(previous.offset - metric.offset) < 0.5
+      Math.abs(previous.length - metric.length) < 0.5
     ) {
       return;
     }
@@ -779,18 +714,11 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
   });
 
   createEffect(() => {
-    if (scheduledWindowPass) {
-      clearTimeout(scheduledWindowPass);
-      scheduledWindowPass = undefined;
-    }
-
     props.data.length;
     props.disableVirtualization;
     props.initialNumToRender;
     props.initialScrollIndex;
-    props.maxToRenderPerBatch;
     props.overscan;
-    props.updateCellsBatchingPeriod;
     props.windowSize;
     axisViewportLength();
     headerLength();
@@ -799,7 +727,11 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
     totalRowsLength();
     measurementVersion();
 
-    runWindowPass();
+    const current = untrack(renderRange);
+    const next = computeWindowStep(current);
+    if (!isRangeEqual(current, next)) {
+      setRenderRange(next);
+    }
   });
 
   createEffect(() => {
@@ -856,9 +788,6 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
   });
 
   onCleanup(() => {
-    if (scheduledWindowPass) {
-      clearTimeout(scheduledWindowPass);
-    }
     if (props.ref) {
       props.ref(null);
     }
