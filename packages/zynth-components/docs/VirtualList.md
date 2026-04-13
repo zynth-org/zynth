@@ -68,6 +68,7 @@ The component includes support for a `ListHeaderComponent` and a `ListFooterComp
 | `onEndReached` | `() => void` | Event triggered as the scroll approaches the end. |
 | `onEndReachedThreshold` | `number` | Threshold (0-1) relative to viewport size. |
 | `horizontal` | `boolean` | Enables horizontal scrolling mode. |
+| `inverted` | `boolean` | Reverses the list using native scroll inversion. |
 | `initialNumToRender`| `number` | Items to render on the first pass (mount). |
 | `removeClippedSubviews`| `boolean` | Enables aggressive clipping of non-visible views. |
 
@@ -93,3 +94,4 @@ The `estimatedItemSize` property is also available as an optional hint for the v
 
 - **Scroll Performance**: While both `FlatList` and `VirtualList` use virtualization, `VirtualList` is optimized for simpler structures with consistent item sizes (`getItemLayout`).
 - **Memory Management**: For extremely large datasets (10,000+ items), ensure `keyExtractor` is provided to allow the renderer to track node identity accurately during updates.
+- **Inverted Lists**: `inverted` is supported, but on iOS transparent router headers that use native blur or Liquid Glass can render incorrectly because the platform also inverts the header edge effect. Prefer non-transparent headers on those screens, or add screen-level top padding when `headerTransparent` is `false`.

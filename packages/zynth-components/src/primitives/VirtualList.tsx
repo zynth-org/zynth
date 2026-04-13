@@ -188,9 +188,9 @@ const renderSlot = (slot: VirtualListSlot): JSX.Element | null => {
 
 const createInversionStyle = (horizontal: boolean): Style => {
   if (horizontal) {
-    return { transform: [{ rotateY: "180deg" }] } as unknown as Style;
+    return { transform: [{ scaleX: -1 }] };
   }
-  return { transform: [{ rotateX: "180deg" }] } as unknown as Style;
+  return { transform: [{ scaleY: -1 }] };
 };
 
 const resolveInitialRange = (
@@ -1060,9 +1060,7 @@ export function VirtualList<T>(props: VirtualListProps<T>) {
                         style={
                           itemsPerRow() > 1
                             ? ({ flex: 1 } as Style)
-                            : childInversionStyle()
-                              ? childInversionStyle()!
-                              : undefined
+                            : undefined
                         }
                       >
                         {props.renderItem({ item: item(), index: itemIndex })}

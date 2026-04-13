@@ -3,6 +3,7 @@
 #import "ZynthUIManager+Internal.h"
 #import "ZynthUIManager.h"
 
+#import <objc/message.h>
 #import <QuartzCore/QuartzCore.h>
 
 static NSTimeInterval ZynthScrollCurrentTime(void) {
@@ -314,6 +315,27 @@ static NSTimeInterval ZynthScrollCurrentTime(void) {
   } else {
     self.scrollView.layer.transform = CATransform3DIdentity;
   }
+  [self zynth_updateInvertedEdgeEffects];
+}
+
+- (void)zynth_updateInvertedEdgeEffects {
+  if (@available(iOS 26.0, *)) {
+    BOOL hideTopEdgeEffect = self.inverted;
+    [self zynth_setScrollEdgeEffectHiddenForKey:@"topEdgeEffect" hidden:hideTopEdgeEffect];
+  }
+}
+
+- (void)zynth_setScrollEdgeEffectHiddenForKey:(NSString *)key hidden:(BOOL)hidden {
+  id effect = nil;
+  @try {
+    effect = [self.scrollView valueForKey:key];
+  } @catch (__unused NSException *exception) {
+    effect = nil;
+  }
+  if (!effect) return;
+  SEL hiddenSelector = @selector(setHidden:);
+  if (![effect respondsToSelector:hiddenSelector]) return;
+  ((void (*)(id, SEL, BOOL))objc_msgSend)(effect, hiddenSelector, hidden);
 }
 
 - (void)zynth_setScrollEnabled:(BOOL)enabled {
