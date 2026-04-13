@@ -63,7 +63,7 @@ export type InternalScrollViewRef = ScrollViewRef & {
   __setHost?: (node: HostNode | null) => void;
   __applyMetrics?: (
     metrics: ScrollMetrics,
-    state?: { dragging?: boolean; decelerating?: boolean },
+    state?: { dragging?: boolean; decelerating?: boolean }
   ) => void;
 };
 
@@ -118,7 +118,7 @@ export function createScrollViewRef(): ScrollViewRef {
           nodeId,
           hasX ? x : undefined,
           hasY ? y : undefined,
-          animated,
+          animated
         );
         return;
       }
@@ -354,11 +354,11 @@ export const normalizeEvent = (event: any): ScrollEvent => ({
     event?.velocity === undefined
       ? null
       : event.velocity === null
-        ? null
-        : {
-            x: event.velocity?.x ?? 0,
-            y: event.velocity?.y ?? 0,
-          },
+      ? null
+      : {
+          x: event.velocity?.x ?? 0,
+          y: event.velocity?.y ?? 0,
+        },
   zoomScale: event?.zoomScale ?? 1,
 });
 
@@ -417,7 +417,7 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
   ]);
 
   const axis = createMemo<Axis>(() =>
-    local.horizontal ? "horizontal" : "vertical",
+    local.horizontal ? "horizontal" : "vertical"
   );
   const resolvedChildren = resolveChildren(() => local.children);
   const scrollViewStyle = createMemo<StyleProp>(() => {
@@ -467,14 +467,14 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
   const resolvedScrollEnabled = createMemo(() => local.scrollEnabled ?? true);
 
   const resolvedDirectionalLock = createMemo(
-    () => local.directionalLockEnabled ?? true,
+    () => local.directionalLockEnabled ?? true
   );
   const resolvedThrottle = createMemo(() => local.eventThrottleMs ?? 16);
   const resolvedMinDisplacement = createMemo(
-    () => local.eventMinDisplacementPx ?? 0,
+    () => local.eventMinDisplacementPx ?? 0
   );
   const resolvedBridgeCoalescing = createMemo(
-    () => local.bridgeCoalescing ?? false,
+    () => local.bridgeCoalescing ?? false
   );
   const resolvedOverScrollBehavior = createMemo(() => {
     if (local.overScrollBehavior) return local.overScrollBehavior;
@@ -485,7 +485,7 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
 
   const updateFromEvent = (
     rawEvent: any,
-    state?: { dragging?: boolean; decelerating?: boolean },
+    state?: { dragging?: boolean; decelerating?: boolean }
   ) => {
     const event = normalizeEvent(rawEvent);
     const nextMetrics = makeMetricsFromEvent(event);
@@ -602,14 +602,14 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
       setProperty(
         node,
         "showsVerticalScrollIndicator",
-        local.showsVerticalScrollIndicator,
+        local.showsVerticalScrollIndicator
       );
     }
     if (local.showsHorizontalScrollIndicator !== undefined) {
       setProperty(
         node,
         "showsHorizontalScrollIndicator",
-        local.showsHorizontalScrollIndicator,
+        local.showsHorizontalScrollIndicator
       );
     }
     if (local.indicatorStyle) {
@@ -628,7 +628,11 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
       setProperty(node, "decelerationRate", local.decelerationRate);
     }
     if (local.contentOffsetSharedValue !== undefined) {
-      setProperty(node, "contentOffsetSharedValue", local.contentOffsetSharedValue);
+      setProperty(
+        node,
+        "contentOffsetSharedValue",
+        local.contentOffsetSharedValue
+      );
     }
 
     setProperty(node, "onScroll", handleScroll);
@@ -708,7 +712,7 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
 
   if (Platform.OS === OS.IOS && local.contentSize) {
     return (
-        <recycler-scroll-view
+      <recycler-scroll-view
         ref={(node: any) => {
           const host = (node as unknown as HostNode) ?? null;
           setHostNode(host);

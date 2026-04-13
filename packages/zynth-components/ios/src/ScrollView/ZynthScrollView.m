@@ -319,10 +319,16 @@ static NSTimeInterval ZynthScrollCurrentTime(void) {
 }
 
 - (void)zynth_updateInvertedEdgeEffects {
-  if (@available(iOS 26.0, *)) {
-    BOOL hideTopEdgeEffect = self.inverted;
-    [self zynth_setScrollEdgeEffectHiddenForKey:@"topEdgeEffect" hidden:hideTopEdgeEffect];
-  }
+    if (@available(iOS 26.0, *)) {
+        BOOL shouldHide = self.inverted;
+        
+        [self zynth_setScrollEdgeEffectHiddenForKey:@"topEdgeEffect" hidden:shouldHide];
+        [self zynth_setScrollEdgeEffectHiddenForKey:@"bottomEdgeEffect" hidden:shouldHide];
+        
+        if (shouldHide) {
+            self.scrollView.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
+        }
+    }
 }
 
 - (void)zynth_setScrollEdgeEffectHiddenForKey:(NSString *)key hidden:(BOOL)hidden {
