@@ -45,6 +45,10 @@ class ZynthScrollViewRegistrar : ZynthComponentRegistrar {
                   scrollView.setScrollEnabled(value.toString().toBoolean())
                   true
                 }
+                "inverted" -> {
+                  scrollView.setInverted(value.toString().toBoolean())
+                  true
+                }
                 "directionalLockEnabled" -> {
                   scrollView.setDirectionalLockEnabled(value.toString().toBoolean())
                   true
@@ -113,6 +117,16 @@ class ZynthScrollViewRegistrar : ZynthComponentRegistrar {
                   scrollView.setContentOffsetSharedValue(value?.toString()?.toDoubleOrNull()?.toInt())
                   true
                 }
+                "contentSize" -> {
+                  val str = value?.toString()
+                  val arg = if (str != null && str.trim().startsWith("{")) {
+                    try { JSONObject(str) } catch (e: Exception) { null }
+                  } else {
+                    null
+                  }
+                  scrollView.setManualContentSize(arg)
+                  true
+                }
                 "__scrollCommand" -> {
                   val str = value?.toString()
                   if (str != null) {
@@ -142,6 +156,7 @@ class ZynthScrollViewRegistrar : ZynthComponentRegistrar {
             it.setShowsHorizontalScrollIndicator(true)
             it.setIndicatorStyle(null)
             it.setOverScrollBehavior("auto")
+            it.setManualContentSize(null)
           }
         },
       ),

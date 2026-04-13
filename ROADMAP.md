@@ -90,6 +90,9 @@ This track hardens `@zynth/skia` so animation hooks and shader pipelines stay UI
 - [ ] Individual Rounded corners have discrepancy between iOS and Android.
 - [ ] iOS: Reload Hypervisor doesn't clean the redbox.
 - [ ] iOS: Transparency buttons doesn't works.
+- [ ] iOS: Custom CLI output when the app doesn't have the correct icons set, instead of the Xcode error
+- [ ] Peer dep screens on router package.
+- [ ] Autolink on new native packages.
 - [x] iOS: DatePicker imperative won't open.
 - [x] iOS: Stack Modal bug that return to details with.
 - [x] iOS: Crash on `TextHighRefreshSignalExample`

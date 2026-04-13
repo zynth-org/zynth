@@ -23,6 +23,7 @@ static NSTimeInterval ZynthScrollCurrentTime(void) {
 @property(nonatomic, strong) UIScrollView *scrollView;
 @property(nonatomic, strong) ZynthScrollViewContentView *contentView;
 @property(nonatomic, assign) ZynthScrollAxis axis;
+@property(nonatomic, assign) BOOL inverted;
 @property(nonatomic, assign) BOOL scrollEnabled;
 @property(nonatomic, assign) BOOL directionalLockEnabled;
 @property(nonatomic, assign) BOOL bridgeCoalescing;
@@ -290,9 +291,28 @@ static NSTimeInterval ZynthScrollCurrentTime(void) {
   _scrollView.alwaysBounceVertical = !horizontal;
   _scrollView.showsHorizontalScrollIndicator = horizontal;
   _scrollView.showsVerticalScrollIndicator = !horizontal;
+  [self applyInversionTransform];
   [self setNeedsLayout];
   if (self.snapEnabled) {
     [self scheduleSnapCheckWithForce:(self.snapStrictness && [self.snapStrictness isEqualToString:@"mandatory"])];
+  }
+}
+
+- (void)zynth_setInverted:(BOOL)inverted {
+  if (_inverted == inverted) return;
+  _inverted = inverted;
+  [self applyInversionTransform];
+}
+
+- (void)applyInversionTransform {
+  if (self.inverted) {
+    if (self.axis == ZynthScrollAxisHorizontal) {
+      self.scrollView.layer.transform = CATransform3DMakeRotation(M_PI, 0, 1, 0);
+    } else {
+      self.scrollView.layer.transform = CATransform3DMakeRotation(M_PI, 1, 0, 0);
+    }
+  } else {
+    self.scrollView.layer.transform = CATransform3DIdentity;
   }
 }
 

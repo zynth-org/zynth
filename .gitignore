@@ -69,3 +69,4 @@ packages/zynth-webserver/native/mbedtls/
 packages/zynth-skyhook/vendor
 apps/**/modules/ios/.build
 apps/**/modules/**/android/**/build/
+/apps/components

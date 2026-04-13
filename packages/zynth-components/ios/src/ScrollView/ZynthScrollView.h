@@ -40,6 +40,7 @@ typedef NS_ENUM(NSInteger, ZynthScrollAxis) {
 - (void)zynth_applyCommand:(NSDictionary *_Nullable)command;
 
 - (void)zynth_setManualContentSize:(NSDictionary *_Nullable)size;
+- (void)zynth_setInverted:(BOOL)inverted;
 
 - (void)zynth_lockAxis:(NSString *_Nullable)axisName;
 

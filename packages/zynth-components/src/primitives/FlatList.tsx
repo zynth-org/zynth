@@ -820,7 +820,7 @@ export function FlatList<T>(props: FlatListProps<T>) {
         }
       }
 
-      if (isFlow && firstActiveIndex !== -1) {
+      if (isFlow && firstActiveIndex !== -1 && !isInverted()) {
         setIsFlowLayout(true);
         setFlowOffset(getOffsetForIndex(firstActiveIndex));
       } else {
@@ -1032,8 +1032,17 @@ export function FlatList<T>(props: FlatListProps<T>) {
     );
 
     if (config.startRenderingFromBottom && !initialBottomScrollApplied) {
-      scheduleScrollTo(Math.max(0, total - viewport), false);
-      initialBottomScrollApplied = true;
+      const scroll = scrollRef();
+      const nativeMetrics = scroll?.getMetricsNow();
+      const nativeViewport = props.horizontal
+        ? (nativeMetrics?.viewportSize.width ?? 0)
+        : (nativeMetrics?.viewportSize.height ?? 0);
+      const resolvedViewport = nativeViewport > 0 ? nativeViewport : viewport;
+      const hasMeasuredViewport = nativeViewport > 0 || lastViewport > 0;
+      if (hasMeasuredViewport && resolvedViewport > 0) {
+        scheduleScrollTo(Math.max(0, total - resolvedViewport), false);
+        initialBottomScrollApplied = true;
+      }
     }
 
     if (prependedCount > 0 && anchorKey) {
@@ -1222,6 +1231,18 @@ export function FlatList<T>(props: FlatListProps<T>) {
     return resolvePadding(props.contentContainerStyle as Style | Style[]);
   });
 
+  const resolvedMaintainVisibleContentPosition =
+    createMemo<MaintainVisibleContentPosition | undefined>(() => {
+      const config = props.maintainVisibleContentPosition;
+      if (!isInverted()) return config;
+      if (config?.disabled) return config;
+      return {
+        ...config,
+        startRenderingFromBottom:
+          config?.startRenderingFromBottom ?? true,
+      };
+    });
+
   const scrollContentSize = createMemo(() => {
     const padding = contentContainerPadding();
     const paddingMain = props.horizontal
@@ -1391,6 +1412,9 @@ export function FlatList<T>(props: FlatListProps<T>) {
           contentSize={manualContentSize()}
           testID={props.testID}
           contentOffsetSharedValue={props.contentOffsetSharedValue}
+          maintainVisibleContentPosition={
+            resolvedMaintainVisibleContentPosition()
+          }
           onLayout={props.onLayout}
           onScroll={handleScroll}
         >

@@ -47,6 +47,7 @@ internal class ZynthScrollView(
   private var nodeId: Int = -1
   private var axis: Axis = Axis.VERTICAL
   private var scrollEnabled: Boolean = true
+  private var inverted: Boolean = false
   private var directionalLockEnabled: Boolean = true
   private var overScrollBehavior: String = "auto"
   private var eventThrottleMs: Long = 16L
@@ -54,6 +55,8 @@ internal class ZynthScrollView(
   private var bridgeCoalescing: Boolean = false
   private var contentOffsetSharedValue: Int? = null
   private var lastCommandSeq: Long = -1L
+  private var manualContentWidth = 0
+  private var manualContentHeight = 0
 
   private var isDragging = false
   private var isDecelerating = false
@@ -307,10 +310,39 @@ internal class ZynthScrollView(
     host.setLockedAxis(null)
     updateScrollEnabled()
     applyIndicatorStyles()
+    applyInversionTransform()
     if (snapEnabled) {
       scheduleSnapCheck(force = snapStrictness == "mandatory")
     }
     scheduleContentGeometryUpdate()
+  }
+
+  fun setInverted(inverted: Boolean?) {
+    val desired = inverted ?: false
+    if (this.inverted == desired) return
+    this.inverted = desired
+    applyInversionTransform()
+  }
+
+  private fun applyInversionTransform() {
+    if (inverted) {
+      if (axis == Axis.HORIZONTAL) {
+        horizontalHost.view.scaleX = -1f
+        horizontalHost.view.scaleY = 1f
+        verticalHost.view.scaleX = 1f
+        verticalHost.view.scaleY = 1f
+      } else {
+        verticalHost.view.scaleY = -1f
+        verticalHost.view.scaleX = 1f
+        horizontalHost.view.scaleX = 1f
+        horizontalHost.view.scaleY = 1f
+      }
+    } else {
+      horizontalHost.view.scaleX = 1f
+      horizontalHost.view.scaleY = 1f
+      verticalHost.view.scaleX = 1f
+      verticalHost.view.scaleY = 1f
+    }
   }
 
   fun setScrollEnabled(enabled: Boolean?) {
@@ -496,6 +528,17 @@ internal class ZynthScrollView(
   fun setContentOffsetSharedValue(value: Int?) {
     android.util.Log.d("ZynthScrollView", "setContentOffsetSharedValue: $value")
     contentOffsetSharedValue = value
+  }
+
+  fun setManualContentSize(value: JSONObject?) {
+    if (value == null) {
+      manualContentWidth = 0
+      manualContentHeight = 0
+    } else {
+      manualContentWidth = max(0, (value.optDouble("width", 0.0) * density).roundToInt())
+      manualContentHeight = max(0, (value.optDouble("height", 0.0) * density).roundToInt())
+    }
+    scheduleContentGeometryUpdate()
   }
 
   fun scrollTo(x: Int?, y: Int?, animated: Boolean) {
@@ -1091,6 +1134,25 @@ internal class ZynthScrollView(
     val viewportWidth = if (width > 0) width else measuredWidth
     val viewportHeight = if (height > 0) height else measuredHeight
     if (viewportWidth <= 0 || viewportHeight <= 0) return
+
+    if (manualContentWidth > 0 || manualContentHeight > 0) {
+      val widthPx = max(manualContentWidth, viewportWidth).coerceAtLeast(0)
+      val heightPx = max(manualContentHeight, viewportHeight).coerceAtLeast(0)
+      val params = (contentView.layoutParams as? LayoutParams)
+        ?: LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
+      if (params.width != widthPx || params.height != heightPx) {
+        params.width = widthPx
+        params.height = heightPx
+        contentView.layoutParams = params
+      }
+      if (contentView.width != widthPx || contentView.height != heightPx) {
+        val widthSpec = MeasureSpec.makeMeasureSpec(widthPx, MeasureSpec.EXACTLY)
+        val heightSpec = MeasureSpec.makeMeasureSpec(heightPx, MeasureSpec.EXACTLY)
+        contentView.measure(widthSpec, heightSpec)
+        contentView.layout(0, 0, widthPx, heightPx)
+      }
+      return
+    }
 
     var contentWidth = viewportWidth
     var contentHeight = viewportHeight

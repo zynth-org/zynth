@@ -34,6 +34,12 @@ static BOOL ZynthScrollViewHandleSetProp(ZynthUIManager *manager,
     return YES;
   }
 
+  if ([name isEqualToString:@"inverted"]) {
+    BOOL inverted = value && value != (id)[NSNull null] ? [value boolValue] : NO;
+    [scrollView zynth_setInverted:inverted];
+    return YES;
+  }
+
   if ([name isEqualToString:@"directionalLockEnabled"]) {
     BOOL enabled = value && value != (id)[NSNull null] ? [value boolValue] : YES;
     [scrollView zynth_setDirectionalLockEnabled:enabled];

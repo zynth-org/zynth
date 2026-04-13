@@ -5,6 +5,7 @@ import {
   createSignal,
   onCleanup,
   splitProps,
+  untrack,
 } from "solid-js";
 import { Platform, OS } from "@zynth/apis";
 import type { ParentComponent } from "solid-js";
@@ -337,6 +338,7 @@ export type ScrollViewProps = {
   /** Manual content size override (width, height) for virtualized lists. */
   contentSize?: { width: number; height: number };
   testID?: string;
+  inverted?: boolean;
   /**
    * The native ID of a SharedValue to be updated synchronously on the UI thread
    * with the scroll offset. This bypasses the JS bridge for high-performance animations.
@@ -383,6 +385,7 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
     "scrollEnabled",
     "style",
     "contentContainerStyle",
+    "maintainVisibleContentPosition",
     "showsVerticalScrollIndicator",
     "showsHorizontalScrollIndicator",
     "indicatorStyle",
@@ -408,6 +411,7 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
     "onLayout",
     "contentSize",
     "testID",
+    "inverted",
     "contentOffsetSharedValue",
     "children",
   ]);
@@ -416,6 +420,13 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
     local.horizontal ? "horizontal" : "vertical",
   );
   const resolvedChildren = resolveChildren(() => local.children);
+  const scrollViewStyle = createMemo<StyleProp>(() => {
+    const base: Style = { overflow: "hidden" };
+    if (!local.style) return base;
+    return Array.isArray(local.style)
+      ? [base, ...local.style]
+      : [base, local.style];
+  });
   const containerStyle = createMemo<StyleProp>(() => {
     const axisValue = axis();
     const userStyle = local.contentContainerStyle;
@@ -451,6 +462,7 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
 
   let lastContentWidth = INITIAL_METRICS.contentSize.width;
   let lastContentHeight = INITIAL_METRICS.contentSize.height;
+  let initialBottomStartApplied = false;
 
   const resolvedScrollEnabled = createMemo(() => local.scrollEnabled ?? true);
 
@@ -529,6 +541,28 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
     local.onMomentumScrollEnd?.(normal);
   };
 
+  const handleLayout = (event: LayoutChangeEvent) => {
+    if (disposed) return;
+    const layout = event?.nativeEvent?.layout;
+    if (layout) {
+      const previousMetrics = metrics();
+      const nextMetrics: ScrollMetrics = {
+        ...previousMetrics,
+        contentSize: local.contentSize ?? previousMetrics.contentSize,
+        viewportSize: {
+          width: layout.width ?? 0,
+          height: layout.height ?? 0,
+        },
+      };
+      setMetrics(nextMetrics);
+      imperativeRef.__applyMetrics?.(nextMetrics, {
+        dragging: isDragging(),
+        decelerating: isDecelerating(),
+      });
+    }
+    local.onLayout?.(event);
+  };
+
   createEffect(() => {
     imperativeRef.__setHost?.(hostNode());
     imperativeRef.__applyMetrics?.(metrics(), {
@@ -563,9 +597,7 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
       setProperty(node, "scrollPadding", local.scrollPadding ?? null);
     }
 
-    if (local.style) {
-      setProperty(node, "style", local.style as any);
-    }
+    setProperty(node, "style", scrollViewStyle() as any);
     if (local.showsVerticalScrollIndicator !== undefined) {
       setProperty(
         node,
@@ -589,6 +621,9 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
     if (local.testID) {
       setProperty(node, "testID", local.testID);
     }
+    if (local.inverted !== undefined) {
+      setProperty(node, "inverted", local.inverted);
+    }
     if (local.decelerationRate !== undefined) {
       setProperty(node, "decelerationRate", local.decelerationRate);
     }
@@ -601,7 +636,59 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
     setProperty(node, "onScrollEndDrag", handleScrollEndDrag);
     setProperty(node, "onMomentumScrollBegin", handleMomentumScrollBegin);
     setProperty(node, "onMomentumScrollEnd", handleMomentumScrollEnd);
-    setProperty(node, "onLayout", local.onLayout);
+    setProperty(node, "onLayout", handleLayout);
+  });
+
+  createEffect(() => {
+    if (!local.contentSize) return;
+    const previousMetrics = untrack(metrics);
+    if (
+      previousMetrics.contentSize.width === local.contentSize.width &&
+      previousMetrics.contentSize.height === local.contentSize.height
+    ) {
+      return;
+    }
+    const nextMetrics: ScrollMetrics = {
+      ...previousMetrics,
+      contentSize: local.contentSize,
+    };
+    setMetrics(nextMetrics);
+    imperativeRef.__applyMetrics?.(nextMetrics, {
+      dragging: isDragging(),
+      decelerating: isDecelerating(),
+    });
+  });
+
+  createEffect(() => {
+    const config = local.maintainVisibleContentPosition;
+    if (!config || config.disabled || !config.startRenderingFromBottom) {
+      initialBottomStartApplied = false;
+      return;
+    }
+
+    const nextMetrics = metrics();
+    const viewport =
+      axis() === "horizontal"
+        ? nextMetrics.viewportSize.width
+        : nextMetrics.viewportSize.height;
+    const content =
+      axis() === "horizontal"
+        ? nextMetrics.contentSize.width
+        : nextMetrics.contentSize.height;
+
+    if (viewport <= 0 || content <= 0) return;
+    if (isDragging() || isDecelerating()) return;
+
+    const maxOffset = Math.max(0, content - viewport);
+    if (initialBottomStartApplied) return;
+    if (maxOffset <= 0) return;
+
+    if (axis() === "horizontal") {
+      imperativeRef.ui.scrollTo({ x: maxOffset, animated: false });
+    } else {
+      imperativeRef.ui.scrollTo({ y: maxOffset, animated: false });
+    }
+    initialBottomStartApplied = true;
   });
 
   onCleanup(() => {
