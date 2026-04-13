@@ -10,6 +10,12 @@ static NSTimeInterval ZynthScrollCurrentTime(void) {
   return CACurrentMediaTime();
 }
 
+static CGFloat ZynthClamp(CGFloat value, CGFloat minValue, CGFloat maxValue) {
+  if (value < minValue) return minValue;
+  if (value > maxValue) return maxValue;
+  return value;
+}
+
 @class ZynthScrollView;
 
 // Forward declare the content view class
@@ -60,6 +66,7 @@ static NSTimeInterval ZynthScrollCurrentTime(void) {
 @property(nonatomic, strong, nullable) NSNumber *contentOffsetSharedValue;
 
 - (void)scheduleContentGeometryUpdate;
+- (CGPoint)zynth_clampedContentOffset:(CGPoint)offset;
 @end
 
 // Implementation of the content view
@@ -614,7 +621,7 @@ static NSTimeInterval ZynthScrollCurrentTime(void) {
     NSNumber *yValue = [command objectForKey:@"y"];
     CGFloat targetX = xValue ? [xValue doubleValue] : self.scrollView.contentOffset.x;
     CGFloat targetY = yValue ? [yValue doubleValue] : self.scrollView.contentOffset.y;
-    CGPoint offset = CGPointMake(targetX, targetY);
+    CGPoint offset = [self zynth_clampedContentOffset:CGPointMake(targetX, targetY)];
     [self.scrollView setContentOffset:offset animated:animated];
     if (!animated) {
       [self emitScrollEventNamed:@"onScroll" force:YES];
@@ -627,7 +634,7 @@ static NSTimeInterval ZynthScrollCurrentTime(void) {
     CGFloat dx = [command[@"dx"] respondsToSelector:@selector(doubleValue)] ? [command[@"dx"] doubleValue] : 0;
     CGFloat dy = [command[@"dy"] respondsToSelector:@selector(doubleValue)] ? [command[@"dy"] doubleValue] : 0;
     CGPoint current = self.scrollView.contentOffset;
-    CGPoint offset = CGPointMake(current.x + dx, current.y + dy);
+    CGPoint offset = [self zynth_clampedContentOffset:CGPointMake(current.x + dx, current.y + dy)];
     [self.scrollView setContentOffset:offset animated:animated];
     if (!animated) {
       [self emitScrollEventNamed:@"onScroll" force:YES];
@@ -654,6 +661,23 @@ static NSTimeInterval ZynthScrollCurrentTime(void) {
     [self zynth_lockAxis:axis];
     return;
   }
+}
+
+- (CGPoint)zynth_clampedContentOffset:(CGPoint)offset {
+  UIScrollView *scrollView = self.scrollView;
+  UIEdgeInsets inset = scrollView.adjustedContentInset;
+  CGSize boundsSize = scrollView.bounds.size;
+  CGSize contentSize = scrollView.contentSize;
+
+  CGFloat minX = -inset.left;
+  CGFloat minY = -inset.top;
+  CGFloat maxX = MAX(minX, contentSize.width - boundsSize.width + inset.right);
+  CGFloat maxY = MAX(minY, contentSize.height - boundsSize.height + inset.bottom);
+
+  return CGPointMake(
+    ZynthClamp(offset.x, minX, maxX),
+    ZynthClamp(offset.y, minY, maxY)
+  );
 }
 
 - (void)zynth_lockAxis:(NSString *_Nullable)axisName {
