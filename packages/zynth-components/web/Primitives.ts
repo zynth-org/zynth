@@ -5,6 +5,7 @@ const divComponents = [
   "pressable",
   "glass-view",
   "glass-container",
+  "blur-view",
 ];
 
 divComponents.forEach((type) => {

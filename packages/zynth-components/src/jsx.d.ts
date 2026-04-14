@@ -56,6 +56,18 @@ interface GlassContainerElementProps {
   testID?: string;
 }
 
+interface BlurViewElementProps {
+  style?: Style | StyleRef;
+  children?: ZynthChildren;
+  blurIntensity?: number;
+  blurTint?: "default" | "light" | "dark";
+  blurVariant?: "blur" | "glass";
+  interactive?: boolean;
+  tintColor?: string;
+  pointerEvents?: "auto" | "none" | "box-none" | "box-only";
+  testID?: string;
+}
+
 interface TextElementProps {
   style?: Style | StyleRef;
   children?: ZynthChildren;
@@ -77,6 +89,7 @@ declare module "solid-js" {
       button: SolidButtonProps & { testID?: string };
       "glass-view": GlassViewElementProps & { [key: string]: any };
       "glass-container": GlassContainerElementProps & { [key: string]: any };
+      "blur-view": BlurViewElementProps & { [key: string]: any };
       "progress-indicator": ProgressIndicatorProps & { [key: string]: any };
       "switch-view": SwitchProps & { [key: string]: any };
       "slider-view": SliderProps & { [key: string]: any };

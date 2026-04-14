@@ -23,6 +23,7 @@ export * from "./primitives/Modal";
 export * from "./primitives/BottomSheet";
 export * from "./primitives/GlassView";
 export * from "./primitives/GlassContainer";
+export * from "./primitives/BlurView";
 import "./runtimeGlyphs";
 export { createStyle, mergeStyles } from "./hooks/createStyle";
 export { createPressableRef } from "./primitives/pressable/controller";

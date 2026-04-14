@@ -15,4 +15,5 @@ import "./ProgressIndicator";
 import "./Modal";
 import "./GlassView";
 import "./GlassContainer";
+import "./BlurView";
 import "./StatusBar";

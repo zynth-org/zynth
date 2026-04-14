@@ -1,6 +1,7 @@
 com.zynth.components.alert.ZynthAlertRegistrar
 com.zynth.components.button.ZynthButtonRegistrar
 com.zynth.components.bottomsheet.ZynthBottomSheetRegistrar
+com.zynth.components.blur.BlurComponentRegistrar
 com.zynth.components.datepicker.DatePickerComponentRegistrar
 com.zynth.components.image.ImageComponentRegistrar
 com.zynth.components.menu.MenuComponentRegistrar

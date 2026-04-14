@@ -239,6 +239,12 @@ static CGFloat ZynthClamp(CGFloat value, CGFloat minValue, CGFloat maxValue) {
     if ([view isKindOfClass:[UIControl class]]) {
       continue;
     }
+    // Nested scroll views manage their own internal content size. If we
+    // recurse into them, the outer scroll view starts counting the inner
+    // scroll content as extra parent height.
+    if ([view isKindOfClass:[ZynthScrollView class]] && view != self) {
+      continue;
+    }
 
     NSArray<UIView *> *children = view.subviews;
     for (NSInteger i = children.count - 1; i >= 0; i--) {

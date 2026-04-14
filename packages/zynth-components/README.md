@@ -6,7 +6,7 @@ This package provides the core building blocks for constructing native user inte
 
 ## Primitives
 
-- **Containers**: `View`, `ScrollView`, `GlassView`
+- **Containers**: `View`, `ScrollView`, `GlassView`, `BlurView`
 - **Content**: `Text`, `Image`, `SystemIcon`
 - **Interactions**: `Button`, `Pressable`, `TextInput`, `Switch`, `Slider`
 - **Lists**: `VirtualList`, `FlatList` (Virtualized, recycled list for high performance)

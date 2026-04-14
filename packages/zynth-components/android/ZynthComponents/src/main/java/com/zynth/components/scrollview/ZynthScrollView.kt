@@ -1178,6 +1178,12 @@ internal class ZynthScrollView(
         }
         contentWidth = max(contentWidth, rect.right)
         contentHeight = max(contentHeight, rect.bottom)
+        // Nested scroll views manage their own internal content extents.
+        // Treat them as leaves so the parent scroll view doesn't count
+        // the descendant scroll content as extra outer height.
+        if (view is ZynthScrollView) {
+          return
+        }
         if (view is ViewGroup) {
           for (i in 0 until view.childCount) {
             accumulate(view.getChildAt(i))
