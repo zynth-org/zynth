@@ -1,4 +1,10 @@
-import { onCleanup, type Component, type JSX, type ParentComponent } from "solid-js";
+import {
+  createMemo,
+  onCleanup,
+  type Component,
+  type JSX,
+  type ParentComponent,
+} from "solid-js";
 import type { HostNode, Style } from "@zynth/core";
 import { setProperty } from "@zynth/core";
 
@@ -130,24 +136,26 @@ export function createPopoverRef(): PopoverRef {
 export const usePopoverRef = () => createPopoverRef();
 
 const PopoverRoot: ParentComponent<PopoverProps> = (props) => {
-  const styleBackgroundColor =
-    typeof props.style?.backgroundColor === "string"
-      ? props.style.backgroundColor
+  const resolvedSurfaceColor = createMemo(() => {
+    const backgroundColor = props.style?.backgroundColor;
+    return typeof backgroundColor === "string" ? backgroundColor : undefined;
+  });
+  const resolvedCornerRadius = createMemo(() => {
+    const borderRadius = props.style?.borderRadius;
+    return typeof borderRadius === "number" && Number.isFinite(borderRadius)
+      ? borderRadius
       : undefined;
-  const styleBorderRadius =
-    typeof props.style?.borderRadius === "number" && Number.isFinite(props.style.borderRadius)
-      ? props.style.borderRadius
+  });
+  const resolvedElevation = createMemo(() => {
+    const elevation = props.style?.elevation;
+    if (typeof elevation === "number" && Number.isFinite(elevation)) {
+      return elevation;
+    }
+    const shadowRadius = props.style?.shadowRadius;
+    return typeof shadowRadius === "number" && Number.isFinite(shadowRadius)
+      ? shadowRadius
       : undefined;
-  const styleElevation =
-    typeof props.style?.elevation === "number" && Number.isFinite(props.style.elevation)
-      ? props.style.elevation
-      : typeof props.style?.shadowRadius === "number" && Number.isFinite(props.style.shadowRadius)
-        ? props.style.shadowRadius
-        : undefined;
-
-  const resolvedSurfaceColor = styleBackgroundColor;
-  const resolvedCornerRadius = styleBorderRadius;
-  const resolvedElevation = styleElevation;
+  });
 
   onCleanup(() => {
     props.ref?.(null);
@@ -191,9 +199,9 @@ const PopoverRoot: ParentComponent<PopoverProps> = (props) => {
       style={props.style}
       onOpen={props.onOpen}
       onClose={props.onClose}
-      surfaceColor={resolvedSurfaceColor}
-      cornerRadius={resolvedCornerRadius}
-      elevation={resolvedElevation}
+      surfaceColor={resolvedSurfaceColor()}
+      cornerRadius={resolvedCornerRadius()}
+      elevation={resolvedElevation()}
       dismissOnOutsidePress={props.dismissOnOutsidePress}
       offsetX={props.offsetX}
       offsetY={props.offsetY}

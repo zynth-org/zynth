@@ -2,6 +2,7 @@ import {
   splitProps,
   createSignal,
   createEffect,
+  createMemo,
   onCleanup,
   type Component,
 } from "solid-js";
@@ -156,6 +157,9 @@ export const TextField: Component<TextFieldProps> = (props) => {
   const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
   const [text, setText] = createSignal(local.value ?? local.defaultValue ?? "");
   const [focused, setFocused] = createSignal(false);
+  const style = createMemo<Record<string, unknown> | undefined>(() =>
+    local.style as Record<string, unknown> | undefined
+  );
 
   const assignRef = (node: (HostNode & TextFieldRef) | null) => {
     if (typeof local.ref === "function") {
@@ -204,62 +208,46 @@ export const TextField: Component<TextFieldProps> = (props) => {
     const node = hostNode();
     if (!node) return;
 
-    setProperty(node, "placeholder", local.placeholder ?? "");
-    setProperty(node, "disabled", local.disabled ?? false);
-    setProperty(node, "editable", local.editable ?? true);
-    setProperty(node, "secureTextEntry", local.secureTextEntry ?? false);
-    setProperty(node, "keyboardType", local.keyboardType ?? "default");
-    setProperty(node, "returnKeyType", local.returnKeyType ?? "done");
-    setProperty(node, "autoCapitalize", local.autoCapitalize ?? "sentences");
-    setProperty(node, "autoCorrect", local.autoCorrect ?? true);
-    // Only send variant if explicitly set - don't interfere with default filled style
-    if (local.variant !== undefined) {
-      setProperty(node, "variant", local.variant);
-    }
-    if (local.maxLength !== undefined) {
-      setProperty(node, "maxLength", local.maxLength);
-    }
-
-    // Set event handlers
     setProperty(node, "onChange", handleChange);
     setProperty(node, "onFocus", handleFocus);
     setProperty(node, "onBlur", handleBlur);
     setProperty(node, "onSubmit", handleSubmit);
   });
 
+  const syncProp = (name: string, value: () => unknown) => {
+    createEffect(() => {
+      const node = hostNode();
+      if (!node) return;
+      setProperty(node, name, value());
+    });
+  };
+
+  syncProp("placeholder", () => local.placeholder ?? "");
+  syncProp("disabled", () => local.disabled ?? false);
+  syncProp("editable", () => local.editable ?? true);
+  syncProp("secureTextEntry", () => local.secureTextEntry ?? false);
+  syncProp("keyboardType", () => local.keyboardType ?? "default");
+  syncProp("returnKeyType", () => local.returnKeyType ?? "done");
+  syncProp("autoCapitalize", () => local.autoCapitalize ?? "sentences");
+  syncProp("autoCorrect", () => local.autoCorrect ?? true);
+  syncProp("variant", () => local.variant);
+  syncProp("maxLength", () => local.maxLength);
+
   // Sync style properties to native
-  createEffect(() => {
-    const node = hostNode();
-    if (!node || !local.style) return;
-
-    const style = local.style as Record<string, unknown>;
-
-    if (style.backgroundColor !== undefined) {
-      setProperty(node, "backgroundColor", style.backgroundColor);
-    }
-    if (style.borderRadius !== undefined) {
-      setProperty(node, "borderRadius", style.borderRadius);
-    }
-    if (style.borderWidth !== undefined) {
-      setProperty(node, "borderWidth", style.borderWidth);
-    }
-    if (style.borderColor !== undefined) {
-      setProperty(node, "borderColor", style.borderColor);
-    }
-    if (style.color !== undefined) {
-      setProperty(node, "textColor", style.color);
-    }
-    const placeholderColor =
-      local.placeholderColor ?? style.placeholderColor ?? undefined;
-    if (placeholderColor !== undefined) {
-      setProperty(node, "placeholderColor", placeholderColor);
-    }
-  });
+  syncProp("backgroundColor", () => style()?.backgroundColor);
+  syncProp("borderRadius", () => style()?.borderRadius);
+  syncProp("borderWidth", () => style()?.borderWidth);
+  syncProp("borderColor", () => style()?.borderColor);
+  syncProp("textColor", () => style()?.color);
+  syncProp(
+    "placeholderColor",
+    () => local.placeholderColor ?? style()?.placeholderColor
+  );
 
   // Filter out styles that are handled natively to avoid double-application
-  const filteredStyle = () => {
-    if (!local.style) return undefined;
-    const style = local.style as Record<string, unknown>;
+  const filteredStyle = createMemo(() => {
+    const nextStyle = style();
+    if (!nextStyle) return undefined;
     const {
       backgroundColor,
       borderRadius,
@@ -268,9 +256,9 @@ export const TextField: Component<TextFieldProps> = (props) => {
       color,
       placeholderColor,
       ...rest
-    } = style;
+    } = nextStyle;
     return rest;
-  };
+  });
 
   return (
     <text-field

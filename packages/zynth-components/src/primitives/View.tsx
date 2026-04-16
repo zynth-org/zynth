@@ -1,7 +1,9 @@
 import {
   children as resolveChildren,
   createEffect,
+  createMemo,
   createSignal,
+  onCleanup,
   splitProps,
 } from "solid-js";
 import type { JSX, ParentComponent } from "solid-js";
@@ -61,32 +63,33 @@ export const View: ParentComponent<ViewProps> = (props) => {
     return typeof style === "function" ? style() : style;
   });
   const [hostNode, setHostNode] = createSignal<HostNode | null>(null);
-  const hasStyleAccessor = typeof local.style === "function";
-  const resolvedPointer = local.pointerEvents ?? "auto";
-  const pressHandlers: Record<string, (() => void) | undefined> = {
-    onPress: local.onPress,
-  };
-  const shouldEnablePress = resolvedPointer !== "none";
-  const appliedPressHandlers = shouldEnablePress ? pressHandlers : {};
+  const hasStyleAccessor = createMemo(() => typeof local.style === "function");
+  const appliedOnPress = createMemo(() =>
+    local.pointerEvents === "none" ? undefined : local.onPress
+  );
   const refProp = (node: HostNode | null) => {
     setHostNode(node);
     (local.ref ?? noopRef)(node);
   };
 
   createEffect(() => {
-    if (!hasStyleAccessor) return;
+    if (!hasStyleAccessor()) return;
     const node = hostNode();
     if (!node) return;
     const nextStyle = resolvedStyle() ?? {};
     setProperty(node, "style", nextStyle);
   });
 
+  onCleanup(() => {
+    (local.ref ?? noopRef)(null);
+  });
+
   return (
     <view
-      style={(hasStyleAccessor ? undefined : (resolvedStyle() as any)) as any}
+      style={(hasStyleAccessor() ? undefined : (resolvedStyle() as any)) as any}
       layout={local.layout}
       onLayout={local.onLayout}
-      onPress={appliedPressHandlers.onPress}
+      onPress={appliedOnPress()}
       accessibilityLabel={local.accessibilityLabel}
       accessibilityHint={local.accessibilityHint}
       accessibilityRole={local.accessibilityRole}

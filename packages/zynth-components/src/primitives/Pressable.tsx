@@ -416,6 +416,12 @@ export const Pressable: ParentComponent<PressableProps> = (props) => {
 
     setProperty(node, "style", resolvedStyle());
     setProperty(node, "stateLayerStyle", resolvedStateLayerStyle());
+  });
+
+  createEffect(() => {
+    const node = hostNode();
+    if (!node) return;
+
     setProperty(node, "disabled", resolvedDisabled());
     setProperty(node, "pressEffect", resolvedPressEffect());
     setProperty(node, "pressRetentionOffset", resolvedPressRetention());
@@ -444,6 +450,12 @@ export const Pressable: ParentComponent<PressableProps> = (props) => {
     setProperty(node, "accessibilityLabel", local.accessibilityLabel);
     setProperty(node, "accessibilityHint", local.accessibilityHint);
     setProperty(node, "testID", local.testID);
+  });
+
+  createEffect(() => {
+    const node = hostNode();
+    if (!node) return;
+
     setProperty(node, "onPressIn", handlePressIn);
     setProperty(node, "onPressOut", handlePressOut);
     setProperty(node, "onPress", handlePress);
@@ -455,6 +467,12 @@ export const Pressable: ParentComponent<PressableProps> = (props) => {
     setProperty(node, "onBlur", handleBlur);
     setProperty(node, "onKeyDown", handleKeyDown);
     setProperty(node, "onKeyUp", handleKeyUp);
+  });
+
+  createEffect(() => {
+    const node = hostNode();
+    if (!node) return;
+
     // Keep native pressable hidden until this prop pass has configured visuals/events.
     setProperty(node, "ready", local.ready ?? true);
   });
