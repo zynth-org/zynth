@@ -7,7 +7,7 @@ import {
   splitProps,
   untrack,
 } from "solid-js";
-import { Platform, OS } from "@zynth/apis";
+import { platform } from "@zynth/apis";
 import type { ParentComponent } from "solid-js";
 import type { HostNode, Style, StyleProp } from "@zynth/core";
 import { scheduleOnUIAfter, setProperty, shareSignalRef } from "@zynth/core";
@@ -710,7 +710,7 @@ const ScrollViewImpl: ParentComponent<ScrollViewProps> = (props) => {
     assignRef(null);
   });
 
-  if (Platform.OS === OS.IOS && local.contentSize) {
+  if (platform.current === "ios" && local.contentSize) {
     return (
       <recycler-scroll-view
         ref={(node: any) => {

@@ -44,7 +44,7 @@ function Header() {
 
 ### Reactive Insets (Hooks)
 
-For complex custom layouts where a simple view is not enough, use the `createSafeAreaInsets` hook to receive reactive inset values.
+For complex custom layouts where a simple view is not enough, use `createSafeAreaInsets()` to receive a reactive inset binding.
 
 ```tsx
 import { createSafeAreaInsets } from "@zynth/apis";
@@ -53,7 +53,7 @@ function CustomNav() {
   const insets = createSafeAreaInsets();
 
   return (
-    <View style={{ height: 60 + insets().top }}>
+    <View style={{ height: 60 + insets.top }}>
       <Text>Offset by Status Bar</Text>
     </View>
   );
@@ -79,8 +79,8 @@ function CustomNav() {
 - `style?: Style`
   Base styles for the view.
 
-### `createSafeAreaInsets(): Accessor<SafeAreaInsets>`
-Returns a reactive accessor for current system insets.
+### `createSafeAreaInsets(): SafeAreaInsets`
+Returns a reactive binding object for current system insets. Property reads such as `insets.top` stay up to date in reactive contexts.
 
 ### `SafeAreaInsets` (Type)
 - `top: number`

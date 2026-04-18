@@ -5,7 +5,7 @@ import {
   setActiveSurface,
   type HostNode,
 } from "@zynth/core";
-import { Platform, OS } from "@zynth/apis";
+import { platform } from "@zynth/apis";
 import { runWithOwner, type JSX, type Owner } from "solid-js";
 
 export type HeaderAccessoryPosition = "right";
@@ -186,7 +186,7 @@ export function unregisterNativeHeaderAccessory(
 }
 
 function installGlobalAccessors() {
-  if (Platform.OS !== OS.IOS) {
+  if (platform.current !== "ios") {
     return;
   }
   const globalObj = globalThis as Record<string, unknown>;

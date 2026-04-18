@@ -20,7 +20,7 @@ import {
   BottomSheet as ZynthBottomSheet,
   type BottomSheetRef,
 } from "@zynth/components";
-import { Platform, OS, createSafeAreaInsets } from "@zynth/apis";
+import { createSafeAreaInsets, platform } from "@zynth/apis";
 import {
   ScreenContainer,
   ScreenSheetContainer,
@@ -434,7 +434,7 @@ export function BottomSheetNavigator(
     // On iOS, we use the native header provided by the navigation controller (via ScreenPrimitive props).
     // On Android, we currently render a JS-based header.
     const shouldRenderHeaderBar = createMemo(
-      () => headerShown() && Platform.OS === OS.ANDROID,
+      () => headerShown() && platform.current === "android",
     );
 
     // Provide a static header height (no safe area) to children if we are rendering a custom header
@@ -443,10 +443,10 @@ export function BottomSheetNavigator(
       shouldRenderHeaderBar() ? DEFAULT_HEADER_HEIGHT : 0;
 
     const Container =
-      Platform.OS === OS.IOS ? ScreenSheetContainer : ScreenContainer;
+      platform.current === "ios" ? ScreenSheetContainer : ScreenContainer;
 
     const defaultBackgroundColor =
-      Platform.OS === OS.ANDROID ? "#ffffff" : "transparent";
+      platform.current === "android" ? "#ffffff" : "transparent";
 
     return (
       <HeaderHeightContext.Provider value={headerHeightValue}>
@@ -627,7 +627,7 @@ function HeaderBar(props: HeaderBarProps) {
         }}
       >
         <SystemIcon
-          name={Platform.select({
+          name={platform.choose({
             ios: "chevron.left",
             android: "ic_arrow_back",
           })}

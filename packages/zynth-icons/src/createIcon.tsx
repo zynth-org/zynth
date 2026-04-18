@@ -1,6 +1,6 @@
 import { createSignal, onMount, onCleanup, createComponent } from "solid-js";
 import { Text, TextProps, createStyle } from "@zynth/components";
-import { Font, OS, Platform } from "@zynth/apis";
+import { Font, platform } from "@zynth/apis";
 
 // Track font loading state globally
 const fontLoadState = new Map<string, "loading" | "loaded" | "error">();
@@ -78,7 +78,7 @@ function subscribeToFont(fontFamily: string, callback: () => void): () => void {
 }
 
 function shouldLoadFontAtRuntime(): boolean {
-  return Platform.OS !== OS.IOS;
+  return platform.current !== "ios";
 }
 
 export function createIcon(glyph: string, fontFamily: string) {
@@ -132,7 +132,7 @@ export function createIcon(glyph: string, fontFamily: string) {
           ...base,
           fontFamily,
           height:
-            Platform.OS === "android"
+            platform.current === "android"
               ? base.fontSize || 16
               : base.height,
         };

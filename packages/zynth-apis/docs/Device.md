@@ -1,17 +1,17 @@
 # Device
 
-The `Device` API provides comprehensive metadata about the hardware and operating system environment.
+The default hardware metadata surface in Zynth is `device`, which provides comprehensive information about the hardware and operating system environment.
 
 It aggregates information from native property managers to provide unique identifiers, model names, and display hardware characteristics (such as notch areas and corner radii).
 
 ## Basic usage
 
-Access the frozen `DeviceInfo` object directly. No asynchronous call is required for the initial read as information is synchronized during app bootstrap.
+Access the frozen `DeviceInfo` object directly through `device.current`. No asynchronous call is required for the initial read because information is synchronized during app bootstrap.
 
 ```tsx
-import { Device } from "@zynth/apis";
+import { device } from "@zynth/apis";
 
-const info = Device.info;
+const info = device.current;
 
 console.log(`Manufacturer: ${info.manufacturer}`);
 console.log(`Model: ${info.model}`);
@@ -25,7 +25,7 @@ console.log(`Running on Emulator: ${info.isEmulator}`);
 Zynth provides a globally unique ID (`uniqueId`) which is persistent for the installation of the application.
 
 ```ts
-const deviceUid = Device.info.uniqueId;
+const deviceUid = device.current.uniqueId;
 // Example: "3F2504E0-4F89-41D3-9A0C-0305E82C3301"
 ```
 
@@ -34,8 +34,8 @@ const deviceUid = Device.info.uniqueId;
 You can detect if the device has a rounded display and query its hardware corner radius.
 
 ```ts
-if (Device.info.hasRoundedDisplayCorners) {
-    console.log(`Corner radius: ${Device.info.displayCornerRadius}dp`);
+if (device.current.hasRoundedDisplayCorners) {
+    console.log(`Corner radius: ${device.current.displayCornerRadius}dp`);
 }
 ```
 
@@ -46,8 +46,11 @@ if (Device.info.hasRoundedDisplayCorners) {
 
 ## API Reference
 
-### `Device.info`: `DeviceInfo`
+### `device.current`: `DeviceInfo`
 The current, immutable snapshot of the device metadata.
+
+### `device.refresh(): DeviceInfo`
+Refreshes the device snapshot from the native source and returns the latest value.
 
 ### `DeviceInfo` Structure
 - `platform: "ios" | "android" | "web"`
@@ -65,3 +68,7 @@ The current, immutable snapshot of the device metadata.
 - `isEmulator: boolean`
 - `hasRoundedDisplayCorners: boolean`
 - `displayCornerRadius: number | null`
+
+### Legacy compatibility
+
+`Device.info`, `Device.getInfo()`, and `Device.refresh()` remain available for compatibility.

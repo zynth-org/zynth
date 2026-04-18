@@ -1,6 +1,6 @@
 # AppState
 
-The `AppState` API monitors the application's lifecycle state, notifying you when the app moves between the foreground and the background.
+The default lifecycle surface in Zynth is `appState`, which monitors the application's lifecycle state and notifies you when the app moves between the foreground and the background.
 
 This is critical for scenarios like pausing heavy animations, closing network sockets, or managing persistent local storage when the user switches apps.
 
@@ -8,12 +8,12 @@ This is critical for scenarios like pausing heavy animations, closing network so
 
 ### Synchronous State
 
-You can check the current status of the application using `AppState.currentState`.
+You can check the current status of the application using `appState.current`.
 
 ```ts
-import { AppState } from "@zynth/apis";
+import { appState } from "@zynth/apis";
 
-if (AppState.currentState === "active") {
+if (appState.current === "active") {
   // Application is in the foreground
 }
 ```
@@ -23,9 +23,9 @@ if (AppState.currentState === "active") {
 Subscribe to lifecycle transitions to react to user actions in real-time.
 
 ```tsx
-import { AppState } from "@zynth/apis";
+import { appState } from "@zynth/apis";
 
-const subscription = AppState.addEventListener("change", (nextState) => {
+const unsubscribe = appState.onChange((nextState) => {
   console.log(`App transitioned to: ${nextState}`);
   
   if (nextState === "background") {
@@ -33,7 +33,7 @@ const subscription = AppState.addEventListener("change", (nextState) => {
   }
 });
 
-// Later: subscription.remove();
+// Later: unsubscribe();
 ```
 
 ## Advanced
@@ -51,15 +51,18 @@ const subscription = AppState.addEventListener("change", (nextState) => {
 
 ## API Reference
 
-### `AppState.currentState`: `AppStateStatus`
+### `appState.current`: `AppStateStatus`
 Returns the current snapshot of the app's visibility state.
 
-### `AppState.addEventListener(type: 'change', listener: (state: AppStateStatus) => void): AppStateSubscription`
-Adds a listener for state changes.
-- **Returns**: A subscription object with a `.remove()` method.
+### `appState.subscribe(listener: (state: AppStateStatus) => void): () => void`
+Adds a reactive listener and returns an unsubscribe function.
 
-### `AppState.subscribe(listener: (state: AppStateStatus) => void): () => void`
-Utility method that functions like `addEventListener` but returns a direct unsubscribe function.
+### `appState.onChange(listener: (state: AppStateStatus) => void): () => void`
+Alias for `subscribe()`, intended for app lifecycle handlers.
 
-### `AppState.refresh(): AppStateStatus`
+### `appState.refresh(): AppStateStatus`
 Forces an immediate check of the current native or document visibility state.
+
+### Legacy compatibility
+
+`AppState.currentState`, `AppState.addEventListener("change", ...)`, `AppState.subscribe()`, and `AppState.refresh()` remain available for compatibility.

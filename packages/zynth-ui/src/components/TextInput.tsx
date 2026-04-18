@@ -1,4 +1,3 @@
-import { Platform } from "@zynth/apis";
 import {
   TextInput as NativeTextInput,
   type TextInputProps as NativeTextInputProps,

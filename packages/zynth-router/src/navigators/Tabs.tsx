@@ -15,7 +15,7 @@ import {
 } from "solid-js";
 import { View, Text, Button } from "@zynth/components";
 import { ScreenTabsContainer } from "@zynth/screens";
-import { Platform, OS } from "@zynth/apis";
+import { platform } from "@zynth/apis";
 import {
   NavigationContext,
   type NavigationContextValue,
@@ -222,7 +222,8 @@ export function TabsNavigator(props: TabsNavigatorProps): JSX.Element {
   };
 
   const navigatorId = props.id ?? `tabs-${generateKey()}`;
-  const useNativeTabBar = Platform.OS === OS.IOS || Platform.OS === OS.ANDROID;
+  const useNativeTabBar =
+    platform.current === "ios" || platform.current === "android";
 
   // Start with empty state
   const [state, setState] = createSignal<NavigationState>({

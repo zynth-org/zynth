@@ -1,5 +1,5 @@
 import { createMemo, type JSX, type ParentComponent } from "solid-js";
-import { Platform, OS } from "@zynth/apis";
+import { platform } from "@zynth/apis";
 import { View } from "@zynth/components";
 import type { Style } from "@zynth/core";
 import { useKeyboard } from "./hooks";
@@ -70,7 +70,7 @@ export interface KeyboardAvoidingViewProps {
 export const KeyboardAvoidingView: ParentComponent<
   KeyboardAvoidingViewProps
 > = (props) => {
-  if (Platform.OS === OS.ANDROID || Platform.OS === OS.IOS) {
+  if (platform.current === "android" || platform.current === "ios") {
     return (
       <zynth-keyboard-avoiding-view
         style={props.style}

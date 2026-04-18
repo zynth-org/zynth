@@ -1,4 +1,5 @@
 import { callNativeSync, getGlobalObject, sharedNativeEventEmitter } from "@zynth/core";
+import { createSignal } from "solid-js";
 
 const MODULE_NAME = "ZynthNetworkCore";
 const EVENT_NAME = "zynth.network.change";
@@ -121,6 +122,7 @@ let currentState: NetworkState =
   readNativeConstants() ?? readFromBridge() ?? readWebState() ?? DEFAULT_STATE;
 
 const listeners = new Set<NetworkListener>();
+const [connectivityRevision, setConnectivityRevision] = createSignal(0);
 
 function emit(nextState: NetworkState): void {
   if (
@@ -132,6 +134,7 @@ function emit(nextState: NetworkState): void {
     return;
   }
   currentState = nextState;
+  setConnectivityRevision((value) => value + 1);
   const snapshot = Array.from(listeners);
   for (const listener of snapshot) {
     listener(nextState);
@@ -159,6 +162,43 @@ if (typeof window !== "undefined" && typeof window.addEventListener === "functio
 type NetworkSubscription = {
   remove(): void;
 };
+
+type ConnectivityBinding = Readonly<{
+  readonly current: NetworkState;
+  subscribe(listener: NetworkListener): () => void;
+  onChange(listener: NetworkListener): () => void;
+  refresh(): NetworkState;
+}>;
+
+function createConnectivityBinding(): ConnectivityBinding {
+  return Object.freeze({
+    get current(): NetworkState {
+      connectivityRevision();
+      return currentState;
+    },
+    subscribe(listener: NetworkListener): () => void {
+      return Network.subscribe(listener);
+    },
+    onChange(listener: NetworkListener): () => void {
+      return Network.subscribe(listener);
+    },
+    refresh(): NetworkState {
+      return Network.refresh();
+    },
+  });
+}
+
+/**
+ * Creates a reactive connectivity binding for Solid components.
+ */
+export function createConnectivity(): ConnectivityBinding {
+  return createConnectivityBinding();
+}
+
+/**
+ * Shared connectivity binding exposing the latest network snapshot.
+ */
+export const connectivity = createConnectivityBinding();
 
 export const Network = Object.freeze({
   get currentState(): NetworkState {

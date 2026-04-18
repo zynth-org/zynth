@@ -3,6 +3,7 @@ import {
   getGlobalObject,
   sharedNativeEventEmitter,
 } from "@zynth/core";
+import { createSignal } from "solid-js";
 
 const MODULE_NAME = "AppState";
 const EVENT_NAME = "zynth.appstate.change";
@@ -69,10 +70,12 @@ function readFromDocument(): AppStateStatus | null {
 }
 
 const listeners = new Set<AppStateListener>();
+const [appStateRevision, setAppStateRevision] = createSignal(0);
 
 function emit(nextState: AppStateStatus): void {
   if (nextState === currentState) return;
   currentState = nextState;
+  setAppStateRevision((value) => value + 1);
   const snapshot = Array.from(listeners);
   for (const listener of snapshot) {
     listener(nextState);
@@ -111,6 +114,43 @@ setTimeout(() => {
 type AppStateSubscription = {
   remove(): void;
 };
+
+type AppStateBinding = Readonly<{
+  readonly current: AppStateStatus;
+  subscribe(listener: AppStateListener): () => void;
+  onChange(listener: AppStateListener): () => void;
+  refresh(): AppStateStatus;
+}>;
+
+function createAppStateBinding(): AppStateBinding {
+  return Object.freeze({
+    get current(): AppStateStatus {
+      appStateRevision();
+      return currentState;
+    },
+    subscribe(listener: AppStateListener): () => void {
+      return AppState.subscribe(listener);
+    },
+    onChange(listener: AppStateListener): () => void {
+      return AppState.subscribe(listener);
+    },
+    refresh(): AppStateStatus {
+      return AppState.refresh();
+    },
+  });
+}
+
+/**
+ * Creates a reactive app-state binding for lifecycle-aware components.
+ */
+export function createAppState(): AppStateBinding {
+  return createAppStateBinding();
+}
+
+/**
+ * Shared lifecycle binding exposing the current application state.
+ */
+export const appState = createAppStateBinding();
 
 export const AppState = Object.freeze({
   get currentState(): AppStateStatus {

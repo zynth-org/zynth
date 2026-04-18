@@ -14,7 +14,7 @@ import {
   setActiveSurface,
   setProperty,
 } from "@zynth/core";
-import { Dimensions, Platform } from "@zynth/apis";
+import { platform, viewport } from "@zynth/apis";
 import { View } from "./View";
 
 export type SnapPoint = number | `${number}%`;
@@ -83,7 +83,7 @@ const DEFAULT_SHEET_STYLE: Style = {
 
 const DEFAULT_CONTENT_STYLE: Style = {
   flex: 1,
-  ...Platform.select({
+  ...platform.choose({
     ios: {},
     android: {
       borderTopLeftRadius: 12,
@@ -216,14 +216,14 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
   const resolvedOpen = () =>
     isControlled() ? !!local.open : uncontrolledOpen();
 
-  const [windowSize, setWindowSize] = createSignal(Dimensions.get("window"));
-  const useSurfacePortal = () => Platform.OS === "ios";
+  const [windowSize, setWindowSize] = createSignal(viewport.window);
+  const useSurfacePortal = () => platform.current === "ios";
   const portalSurfaceId = useSurfacePortal()
     ? allocateBottomSheetSurfaceId()
     : null;
 
   createEffect(() => {
-    const unsubscribe = Dimensions.observe("window", (metrics) => {
+    const unsubscribe = viewport.observe("window", (metrics) => {
       setWindowSize(metrics);
     });
     onCleanup(unsubscribe);
@@ -258,7 +258,7 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
   const contentStyle = createMemo<Style>(() => {
     const resolvedMaxHeight = Number(maxSnapHeight());
     const baseStyle =
-      local.dynamicContentHeight && Platform.OS === "android"
+      local.dynamicContentHeight && platform.current === "android"
         ? DYNAMIC_ANDROID_CONTENT_STYLE
         : DEFAULT_CONTENT_STYLE;
     const style: Style = {
@@ -266,7 +266,7 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
       ...local.contentContainerStyle,
     };
     if (
-      Platform.OS !== "ios" &&
+      platform.current !== "ios" &&
       resolvedMaxHeight > 0 &&
       local.contentContainerStyle?.height == null &&
       local.contentContainerStyle?.maxHeight == null
@@ -279,7 +279,7 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
   const sheetStyle = createMemo<Style>(() => ({
     ...DEFAULT_SHEET_STYLE,
     ...local.style,
-    ...Platform.select({
+    ...platform.choose({
       ios: {},
       android: {
         width: 0,
@@ -306,7 +306,7 @@ export const BottomSheet: ParentComponent<BottomSheetProps> = (props) => {
       height: windowSize().height,
     };
   });
-  const useWindowWrapper = () => Platform.OS === "android";
+  const useWindowWrapper = () => platform.current === "android";
 
   const handleContentLayout = (event: LayoutEvent) => {
     if (!local.dynamicContentHeight) {

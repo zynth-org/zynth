@@ -1,4 +1,4 @@
-import { Platform, OS } from "@zynth/apis";
+import { platform } from "@zynth/apis";
 import { NativeEventEmitter } from "@zynth/core";
 import { createEffect, onCleanup, untrack, type Accessor } from "solid-js";
 
@@ -39,7 +39,7 @@ function updateNativeCanGoBack() {
 }
 
 function ensureSubscription() {
-  if (Platform.OS !== OS.ANDROID) return;
+  if (platform.current !== "android") return;
   if (subscription) return;
 
   const emitter = new NativeEventEmitter();
@@ -56,7 +56,7 @@ export function registerAndroidBackHandler(
   canGoBack: Accessor<boolean>,
   onBack: () => void
 ) {
-  if (Platform.OS !== OS.ANDROID) return;
+  if (platform.current !== "android") return;
 
   const entry: BackHandlerEntry = {
     canGoBack,

@@ -1,7 +1,7 @@
-import { Platform, OS } from "@zynth/apis";
+import { platform } from "@zynth/apis";
 import { withHostBatch } from "@zynth/core";
 
-const isAndroid = Platform.OS === OS.ANDROID;
+const isAndroid = platform.current === "android";
 
 export function runAtomicNavigationTransition(
   enabled: boolean,

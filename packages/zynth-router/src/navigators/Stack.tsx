@@ -12,7 +12,7 @@ import {
   type Accessor,
 } from "solid-js";
 import { View, Text, Button, Pressable, SystemGlyph } from "@zynth/components";
-import { Platform, OS, createSafeAreaInsets } from "@zynth/apis";
+import { createSafeAreaInsets, platform } from "@zynth/apis";
 import {
   ScreenContainer,
   Screen as ScreenPrimitive,
@@ -472,12 +472,12 @@ export function StackNavigator(props: StackNavigatorProps): JSX.Element {
       const config = screenRegistry.get(route.name);
       return resolveOptions(route.options, config?.options);
     });
-    const useNativeHeader = Platform.OS === OS.IOS;
+    const useNativeHeader = platform.current === "ios";
     const headerShown = createMemo(
       () => currentOptions()?.headerShown !== false,
     );
     const shouldRenderHeaderBar = createMemo(
-      () => headerShown() && (!useNativeHeader || Platform.OS === OS.WEB),
+      () => headerShown() && (!useNativeHeader || platform.current === "web"),
     );
 
     return (
@@ -811,7 +811,7 @@ function HeaderBar(props: HeaderBarProps) {
           borderRadius: 999,
         }}
       >
-        {Platform.OS === OS.WEB ? (
+        {platform.current === "web" ? (
           <BackArrowIcon
             color={tintColor()}
             style={{ width: 24, height: 24, zIndex: 999 }}

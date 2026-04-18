@@ -4,6 +4,7 @@ import {
   getGlobalObject,
   getModulesBridge,
 } from "@zynth/core";
+import { createSignal } from "solid-js";
 
 const DIMENSIONS_EVENT = "zynth.dimensions.change";
 const EPSILON = 0.01;
@@ -200,6 +201,7 @@ function diffSnapshots(
 }
 
 const listeners = new Set<DimensionsListener>();
+const [dimensionsRevision, setDimensionsRevision] = createSignal(0);
 
 const defaultMetrics: DimensionMetrics = Object.freeze({
   width: 0,
@@ -246,6 +248,7 @@ function updateState(
     changed,
     timestamp: Date.now(),
   });
+  setDimensionsRevision((value) => value + 1);
 
   if (listeners.size > 0) {
     const snapshotListeners = Array.from(listeners);
@@ -313,6 +316,61 @@ const nativeSubscription = attachNativeEmitter();
 export type SubscribeOptions = {
   emitCurrent?: boolean;
 };
+
+type Viewport = Readonly<{
+  readonly current: DimensionsSnapshot;
+  readonly window: DimensionMetrics;
+  readonly screen: DimensionMetrics;
+  subscribe(listener: DimensionsListener, options?: SubscribeOptions): () => void;
+  observe(
+    key: DimensionKey,
+    listener: (metrics: DimensionMetrics, meta: DimensionsUpdateMeta) => void,
+    options?: SubscribeOptions
+  ): () => void;
+  refresh(): Promise<DimensionsSnapshot>;
+}>;
+
+function createViewportBinding(): Viewport {
+  return Object.freeze({
+    get current(): DimensionsSnapshot {
+      dimensionsRevision();
+      return currentSnapshot;
+    },
+    get window(): DimensionMetrics {
+      dimensionsRevision();
+      return currentSnapshot.window;
+    },
+    get screen(): DimensionMetrics {
+      dimensionsRevision();
+      return currentSnapshot.screen;
+    },
+    subscribe(listener: DimensionsListener, options?: SubscribeOptions): () => void {
+      return Dimensions.subscribe(listener, options);
+    },
+    observe(
+      key: DimensionKey,
+      listener: (metrics: DimensionMetrics, meta: DimensionsUpdateMeta) => void,
+      options?: SubscribeOptions
+    ): () => void {
+      return Dimensions.observe(key, listener, options);
+    },
+    refresh(): Promise<DimensionsSnapshot> {
+      return Dimensions.refresh();
+    },
+  });
+}
+
+/**
+ * Creates a reactive viewport binding for Solid components.
+ */
+export function createViewport(): Viewport {
+  return createViewportBinding();
+}
+
+/**
+ * Shared viewport binding exposing current window and screen metrics.
+ */
+export const viewport = createViewportBinding();
 
 export class Dimensions {
   static get current(): DimensionsSnapshot {

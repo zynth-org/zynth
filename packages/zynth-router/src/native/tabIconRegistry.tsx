@@ -5,7 +5,7 @@ import {
   setActiveSurface,
   type HostNode,
 } from "@zynth/core";
-import { Platform, OS } from "@zynth/apis";
+import { platform } from "@zynth/apis";
 import { runWithOwner, type Owner, createSignal } from "solid-js";
 import type { TabIconFactory } from "../types";
 
@@ -146,7 +146,7 @@ function mountIcon(
         // On Android, we MUST flush synchronously while the surface is active.
         // On iOS, synchronous flushing might interfere with native animations (e.g. TabBar transitions),
         // so we defer to the microtask queue to be safe.
-        if (Platform.OS === OS.ANDROID) {
+        if (platform.current === "android") {
           flushHostQueue();
         } else {
           queueMicrotask(() => {

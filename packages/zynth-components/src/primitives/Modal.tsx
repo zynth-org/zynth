@@ -9,7 +9,7 @@ import {
 } from "solid-js";
 import type { HostNode, Style } from "@zynth/core";
 import { setProperty } from "@zynth/core";
-import { Dimensions } from "@zynth/apis";
+import { viewport } from "@zynth/apis";
 import { View } from "./View";
 
 export type ModalAnimation = "fade" | "slide" | "zoom" | "none";
@@ -114,10 +114,10 @@ export const Modal: ParentComponent<ModalProps> = (props) => {
   const resolvedOverlayOpacity = () =>
     local.overlayOpacity ?? DEFAULT_OVERLAY_OPACITY;
 
-  const [screenSize, setScreenSize] = createSignal(Dimensions.get("screen"));
+  const [screenSize, setScreenSize] = createSignal(viewport.screen);
 
   createEffect(() => {
-    const unsubscribe = Dimensions.observe("screen", (metrics) => {
+    const unsubscribe = viewport.observe("screen", (metrics) => {
       setScreenSize(metrics);
     });
     onCleanup(unsubscribe);

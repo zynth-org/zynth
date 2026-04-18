@@ -1,6 +1,6 @@
 # Network
 
-The `Network` API provides simple, cross-platform monitoring of device connectivity and internet reachability.
+The default connectivity surface in Zynth is `connectivity`, which provides simple, cross-platform monitoring of device connectivity and internet reachability.
 
 It abstracts the differences between iOS (Network framework), Android (ConnectivityManager), and Web (Navigator.onLine) to provide a unified reactive state.
 
@@ -23,12 +23,12 @@ To monitor network state on Android, you must declare the following permissions 
 
 ### Synchronous State
 
-Access the current connectivity snapshot using `Network.currentState`.
+Access the current connectivity snapshot using `connectivity.current`.
 
 ```ts
-import { Network } from "@zynth/apis";
+import { connectivity } from "@zynth/apis";
 
-const { isConnected, type } = Network.currentState;
+const { isConnected, type } = connectivity.current;
 
 if (!isConnected) {
   console.log("Offline mode active.");
@@ -40,9 +40,9 @@ if (!isConnected) {
 React to changes in network quality or type (e.g., switching from WiFi to Cellular).
 
 ```ts
-import { Network } from "@zynth/apis";
+import { connectivity } from "@zynth/apis";
 
-const unsubscribe = Network.subscribe((state) => {
+const unsubscribe = connectivity.subscribe((state) => {
   if (state.type === "cellular" && state.isExpensive) {
     console.log("Heads up: Using metered data.");
   }
@@ -68,13 +68,16 @@ Zynth classifies connections into the following stable categories:
 
 ## API Reference
 
-### `Network.currentState`: `NetworkState`
+### `connectivity.current`: `NetworkState`
 Returns the current frozen snapshot of the connectivity status.
 
-### `Network.subscribe(listener: (state: NetworkState) => void): () => void`
+### `connectivity.subscribe(listener: (state: NetworkState) => void): () => void`
 Adds a reactive listener for connectivity changes. Returns an unsubscribe function.
 
-### `Network.refresh(): NetworkState`
+### `connectivity.onChange(listener: (state: NetworkState) => void): () => void`
+Alias for `subscribe()`.
+
+### `connectivity.refresh(): NetworkState`
 Triggers an immediate re-poll of the native connectivity manager.
 
 ### `NetworkState` (Type)
@@ -82,3 +85,7 @@ Triggers an immediate re-poll of the native connectivity manager.
 - `isInternetReachable: boolean`
 - `type: NetworkType`
 - `isExpensive: boolean`
+
+### Legacy compatibility
+
+`Network.currentState`, `Network.subscribe()`, `Network.addEventListener("change", ...)`, and `Network.refresh()` remain available for compatibility.

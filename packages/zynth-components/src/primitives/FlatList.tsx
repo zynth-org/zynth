@@ -14,7 +14,7 @@ import {
   Show,
 } from "solid-js";
 import type { Accessor, Setter } from "solid-js";
-import { Platform, OS } from "@zynth/apis";
+import { platform } from "@zynth/apis";
 import type { HostNode, Style } from "@zynth/core";
 import { ScrollView, type ScrollViewRef } from "./ScrollView";
 import type {
@@ -1402,12 +1402,12 @@ export function FlatList<T>(props: FlatListProps<T>) {
           eventThrottleMs={props.scrollEventThrottleMs}
           eventMinDisplacementPx={
             props.scrollEventMinDisplacementPx ??
-            (Platform.OS === OS.IOS ? 1.0 : 0)
+            (platform.current === "ios" ? 1.0 : 0)
           }
           bridgeCoalescing={props.scrollBridgeCoalescing}
           decelerationRate={
             props.decelerationRate ??
-            (Platform.OS === OS.IOS ? "normal" : "normal")
+            (platform.current === "ios" ? "normal" : "normal")
           }
           contentSize={manualContentSize()}
           testID={props.testID}

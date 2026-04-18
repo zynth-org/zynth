@@ -1,4 +1,5 @@
 import { callNativeSync, getGlobalObject, Platform } from "@zynth/core";
+import { createSignal } from "solid-js";
 
 const MODULE_NAME = "Device";
 
@@ -128,6 +129,36 @@ function readWebDeviceInfo(): DeviceInfo {
 
 let currentInfo: DeviceInfo =
   readNativeConstants() ?? readFromBridge() ?? readWebDeviceInfo();
+const [deviceRevision, setDeviceRevision] = createSignal(0);
+
+type DeviceBinding = Readonly<{
+  readonly current: DeviceInfo;
+  refresh(): DeviceInfo;
+}>;
+
+function createDeviceBinding(): DeviceBinding {
+  return Object.freeze({
+    get current(): DeviceInfo {
+      deviceRevision();
+      return currentInfo;
+    },
+    refresh(): DeviceInfo {
+      return Device.refresh();
+    },
+  });
+}
+
+/**
+ * Creates a reactive device binding for current hardware metadata.
+ */
+export function createDevice(): DeviceBinding {
+  return createDeviceBinding();
+}
+
+/**
+ * Shared device binding exposing the latest device metadata snapshot.
+ */
+export const device = createDeviceBinding();
 
 export const Device = Object.freeze({
   get info(): DeviceInfo {
@@ -138,6 +169,7 @@ export const Device = Object.freeze({
   },
   refresh(): DeviceInfo {
     currentInfo = readFromBridge() ?? readNativeConstants() ?? readWebDeviceInfo();
+    setDeviceRevision((value) => value + 1);
     return currentInfo;
   },
 });

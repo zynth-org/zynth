@@ -1,5 +1,5 @@
 import { createEffect, createSignal, onCleanup, type Component } from "solid-js";
-import { Platform, OS } from "@zynth/apis";
+import { platform } from "@zynth/apis";
 import type {
   Style,
   ImageAssetSource as CoreImageAssetSource,
@@ -191,7 +191,7 @@ function normalizeSingleSource(source: ImageSource): ImageSource {
     typeof source === "object" &&
     (source as any).type === "asset"
   ) {
-    if (Platform.OS === OS.WEB) {
+    if (platform.current === "web") {
       return source as ImageDescriptorSource;
     }
     return descriptorToNativeSource(source as ImageDescriptorSource);
