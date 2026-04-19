@@ -280,6 +280,58 @@ function createBridgeAdapter(): StorageAdapter | null {
   };
 }
 
+function createWebAdapter(): StorageAdapter | null {
+  if (typeof localStorage === "undefined") {
+    return null;
+  }
+
+  return {
+    async getItem(key) {
+      return localStorage.getItem(key);
+    },
+    async setItem(key, value) {
+      localStorage.setItem(key, value);
+    },
+    async removeItem(key) {
+      localStorage.removeItem(key);
+    },
+    async mergeItem(key, value) {
+      const current = localStorage.getItem(key);
+      localStorage.setItem(key, mergeJsonStrings(current, value));
+    },
+    async clear() {
+      localStorage.clear();
+    },
+    async getAllKeys() {
+      const keys: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key !== null) keys.push(key);
+      }
+      return keys;
+    },
+    async multiGet(keys) {
+      return keys.map((key) => [key, localStorage.getItem(key)] as const);
+    },
+    async multiSet(pairs) {
+      for (const [key, value] of pairs) {
+        localStorage.setItem(key, value);
+      }
+    },
+    async multiRemove(keys) {
+      for (const key of keys) {
+        localStorage.removeItem(key);
+      }
+    },
+    async multiMerge(pairs) {
+      for (const [key, value] of pairs) {
+        const current = localStorage.getItem(key);
+        localStorage.setItem(key, mergeJsonStrings(current, value));
+      }
+    },
+  };
+}
+
 let cachedAdapter: StorageAdapter | null = null;
 
 export function getStorageAdapter(): StorageAdapter {
@@ -296,7 +348,7 @@ export function getStorageAdapter(): StorageAdapter {
 
   if (!cachedAdapter) {
     warnMissingNativeOnce();
-    cachedAdapter = createMemoryAdapter();
+    cachedAdapter = createWebAdapter() ?? createMemoryAdapter();
   }
   return cachedAdapter;
 }
