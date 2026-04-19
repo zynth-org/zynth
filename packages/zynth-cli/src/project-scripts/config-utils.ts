@@ -127,7 +127,9 @@ export function getAppConfig(appDir: string): AppConfig {
       cleanAppName.charAt(0).toUpperCase() + cleanAppName.slice(1),
     appDir: appName,
     bundleId:
+      appConfig.android?.package ||
       appConfig.ios?.bundleIdentifier ||
+      appConfig.slug ||
       pkg.bundleId ||
       `com.zynth.${appName.replace(/-/g, "")}`,
     workspaceName: pkg.name || `@demo/${appName}`,
