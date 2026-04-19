@@ -16,7 +16,7 @@ export {
   getNextSibling,
   getNodeValue,
   isTextNode,
-  insert, // <-- Added this export
+  insert,
   spread,
   use,
 } from "./renderer";
@@ -37,7 +37,3 @@ export function setProperty(
 export const setProp = (node: HostNode, name: string, value: any) => {
   setProperty(node, name, value);
 };
-
-// The custom buggy 'insert' function has been removed.
-// The correct version from './renderer.ts' is now exported above, which
-// properly handles markers for conditional rendering and node removal.
