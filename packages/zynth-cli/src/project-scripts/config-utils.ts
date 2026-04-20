@@ -51,6 +51,7 @@ function buildInfoPlistDefaults(
 
   return {
     UIApplicationSceneManifest: mergedSceneManifest,
+    ITSAppUsesNonExemptEncryption: false,
     ...restInfoPlist,
   };
 }

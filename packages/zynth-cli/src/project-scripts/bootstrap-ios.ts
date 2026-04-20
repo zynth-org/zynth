@@ -55,11 +55,29 @@ export async function main(options: any = {}): Promise<void> {
       ensureWebServerTlsSources({ quiet });
     }
 
-    console.log("◆ Installing CocoaPods dependencies...");
     execSync("pod install", {
       stdio: quiet ? "pipe" : "inherit",
       env: podEnv,
     });
+    
+    // Patch hermesvm.xcframework to remove faulty dSYM references for Xcode 16+
+    try {
+      const zynthCorePkgPath = require.resolve("@zynth/core/package.json", { paths: [appDir] });
+      const zynthCoreDir = path.dirname(zynthCorePkgPath);
+      const hermesXcframeworkPlist = path.join(zynthCoreDir, "ios/hermes-engine/destroot/Library/Frameworks/universal/hermesvm.xcframework/Info.plist");
+      
+      if (fs.existsSync(hermesXcframeworkPlist)) {
+        if (!quiet) {
+          console.log("◆ Patching hermesvm.xcframework (removing dSYM references)...");
+        }
+        // Remove DebugSymbolsPath from all slices in the xcframework metadata
+        // Note: We use PlistBuddy which is standard on macOS
+        execSync(`/usr/libexec/PlistBuddy -c "Delete :AvailableLibraries:0:DebugSymbolsPath" "${hermesXcframeworkPlist}" 2>/dev/null || true`, { stdio: "ignore" });
+        execSync(`/usr/libexec/PlistBuddy -c "Delete :AvailableLibraries:1:DebugSymbolsPath" "${hermesXcframeworkPlist}" 2>/dev/null || true`, { stdio: "ignore" });
+      }
+    } catch (e) {
+      // Ignore errors if @zynth/core or plist is not found
+    }
 
     console.log("✔ iOS bootstrap completed successfully!");
     console.log("");

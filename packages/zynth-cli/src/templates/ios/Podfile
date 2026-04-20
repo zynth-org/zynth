@@ -59,6 +59,13 @@ post_install do |installer|
           ${PODS_ROOT}/hermes-engine/public
         ].join(' ')
       end
+      if t.name == 'hermes-engine'
+        t.build_configurations.each do |config|
+          config.build_settings['STRIP_INSTALLED_PRODUCT'] = 'YES'
+          config.build_settings['STRIP_STYLE'] = 'non-global'
+          config.build_settings['DEBUG_INFORMATION_FORMAT'] = 'dwarf'
+        end
+      end
     end
   end
 
