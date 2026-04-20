@@ -91,7 +91,7 @@ function generateIOSIcons(appDir: string, iconPath: string, appName: string): vo
 
     contents.images.push({
       size: `${spec.size}x${spec.size}`,
-      idiom: "iphone",
+      idiom: spec.size === 1024 ? "ios-marketing" : "iphone",
       filename: filename,
       scale: `${spec.scale}x`
     });
