@@ -1,4 +1,4 @@
-import type { ImagePickerAPI, ImagePickerOptions, ImagePickerResult, PermissionResponse } from "./types";
+import type { ImagePickerAPI, ImagePickerOptions, ImagePickerResult, PermissionResponse } from "../src/types";
 
 function createHiddenFileInput(capture?: string): Promise<ImagePickerResult> {
   return new Promise((resolve) => {
@@ -23,10 +23,6 @@ function createHiddenFileInput(capture?: string): Promise<ImagePickerResult> {
     };
 
     const handleCancel = () => {
-      // Browsers don't consistently fire cancel events for file inputs.
-      // We rely on focus changes as a heuristic in some complex implementations,
-      // but for standard web compat, resolving on change is primary.
-      // If we need a strict cancel detect, it involves tracking window focus.
       resolve({ cancelled: true });
       cleanup();
     };
@@ -65,7 +61,6 @@ export const WebImagePicker: ImagePickerAPI = {
   requestCameraPermissionsAsync: async (): Promise<PermissionResponse> => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      // Stop immediately since we just wanted to ask permission
       stream.getTracks().forEach((track) => track.stop());
       return {
         status: "granted",
@@ -87,7 +82,6 @@ export const WebImagePicker: ImagePickerAPI = {
     if (typeof document === "undefined") {
       return { cancelled: true, error: "document is undefined" };
     }
-    // Specifying "environment" prefers the back camera on mobile devices
     return createHiddenFileInput("environment");
   },
 
